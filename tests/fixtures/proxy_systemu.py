@@ -12,14 +12,15 @@ import pytest
 
 @contextmanager
 def system_proxy(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
-    """Proxy HTTP i HTTPS ze zmiennych środowiska (stąd czyta je urllib na każdym systemie); daje linie żądań, które
-    do niego doszły, a każde odrzuca kodem 502."""
+    """Proxy HTTP i HTTPS ze zmiennych środowiska (stąd czyta je urllib na każdym systemie); daje metodę i cel każdego
+    żądania, które do niego doszło (bez wersji HTTP: urllib Pythona 3.11 łączy CONNECT w HTTP/1.0, nowszy w 1.1),
+    a każde odrzuca kodem 502."""
 
     requests: list[str] = []
 
     class _Proxy(BaseHTTPRequestHandler):
         def _refuse(self) -> None:
-            requests.append(self.requestline)
+            requests.append(f"{self.command} {self.path}")
             self.send_response(502)
             self.end_headers()
 

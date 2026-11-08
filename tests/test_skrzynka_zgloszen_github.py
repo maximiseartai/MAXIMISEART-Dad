@@ -131,7 +131,7 @@ def test_skrzynka_laczy_sie_z_githubem_przez_proxy_z_ustawien_systemu(monkeypatc
         outcome = GitHubReportBox(transport=SKRZYNKA_TRANSPORT).labelled_issues("zgloszenie", include_closed=False, key=KEY)
 
     assert outcome == Unreachable()
-    assert proxied == ["CONNECT api.github.com:443 HTTP/1.1"]
+    assert proxied == ["CONNECT api.github.com:443"]
 
 
 def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki() -> None:
