@@ -3,10 +3,13 @@
 //    sięga do jej symbolu z typu Schema (types.gen.ts) albo kształtu zSchema (zod.gen.ts), co rozstrzyga checker
 //    TypeScriptu, nie nazwa. Użycie to odczyt (`.pole`, `["pole"]`, `x[klucz]` z kluczem typu literału,
 //    destrukturyzacja, `"pole" in x`) albo zapis (klucz literału obiektu typu schematu, np. wysyłane ciało, atrybut
-//    JSX), także przez typ, do którego wartość płynie (`Pick<…>`, typ propsów, ograniczenie parametru typu, wynik
-//    funkcji): odczyt pola celu czyta źródło, a zapisane pole źródła trafia do celu. Wzmianka w typie
-//    (`RunInfo["process"]`) nie jest użyciem. Granica: pole czytane tylko w kodzie ogólnym (`Object.entries`,
-//    `JSON.stringify`) reguła uznaje za nieużyte, więc takie pole potrzebuje wpisu w FIELDS_OUTSIDE_UI.
+//    JSX; w miejscu unii tylko w wariantach, do których literał da się przypisać), także przez typ, do którego
+//    wartość płynie (`Pick<…>`, typ propsów, ograniczenie parametru typu, wynik funkcji, parametr funkcji podanej
+//    jako callback): odczyt pola celu czyta źródło, a zapisane pole źródła trafia do celu. Wzmianka w typie
+//    (`RunInfo["process"]`) nie jest użyciem. Granice: pole czytane tylko w kodzie ogólnym (`Object.entries`,
+//    `JSON.stringify`) reguła uznaje za nieużyte, więc takie pole potrzebuje wpisu w FIELDS_OUTSIDE_UI. Literał typu
+//    odpowiedzi serwera (atrapa, optymistyczna aktualizacja) liczy się jako użycie pola, choć UI go nie czyta; to
+//    łapie tylko przegląd.
 // 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`.
 // 3. Sieć (fetch, EventSource, WebSocket, XMLHttpRequest, sendBeacon) i JSON.parse tylko w plikach z NETWORK_FILES,
 //    które parsują każdą odpowiedź serwera schematem z kontraktu. Wpis w NETWORK_FILES ma powód, a zbędny wpis
@@ -228,7 +231,8 @@ function readProperties(checker, node) {
   return []
 }
 
-// Właściwości, które węzeł zapisuje: klucz literału obiektu (np. wysyłane ciało) i atrybut JSX.
+// Właściwości, które węzeł zapisuje: klucz literału obiektu (np. wysyłane ciało) i atrybut JSX. Literał w miejscu
+// unii zapisuje tylko warianty, do których da się go przypisać: `{ title, body }` jako `Note | Decision` to `Note`.
 function writtenProperties(checker, node) {
   if (ts.isJsxAttribute(node)) {
     return [checker.getSymbolAtLocation(node.name)]
@@ -236,8 +240,17 @@ function writtenProperties(checker, node) {
 
   if (ts.isObjectLiteralElementLike(node) && ts.isObjectLiteralExpression(node.parent) && node.name !== undefined) {
     const name = propertyName(node.name)
+    const target = literalType(checker, node.parent)
 
-    return name === undefined ? [] : propertiesNamed(literalType(checker, node.parent), name)
+    if (name === undefined || target === undefined) {
+      return []
+    }
+
+    const literal = checker.getTypeAtLocation(node.parent)
+
+    return members(target)
+      .filter((member) => !target.isUnion() || checker.isTypeAssignableTo(literal, member))
+      .flatMap((member) => member.getProperty(name) ?? [])
   }
 
   return []
@@ -350,12 +363,25 @@ class Flows {
       return
     }
 
-    // `open: () => Promise<{ name: string }>` czyta `name` z odpowiedzi funkcji, która tu płynie.
+    // Funkcja płynie w miejsce funkcji: wynik płynie z niej (`open: () => Promise<{ name: string }>` czyta `name`
+    // z odpowiedzi), a argumenty do niej (`checks.map(checkRow)` daje `DiagnosisCheck` parametrowi `CheckRow`).
     const signatures = target.getCallSignatures()
 
     if (signatures.length > 0) {
       for (const called of members(from).flatMap((member) => member.getCallSignatures())) {
-        signatures.forEach((signature) => this.relate(called.getReturnType(), signature.getReturnType(), depth + 1))
+        for (const signature of signatures) {
+          this.relate(called.getReturnType(), signature.getReturnType(), depth + 1)
+
+          const count = Math.min(called.getParameters().length, signature.getParameters().length)
+
+          for (let position = 0; position < count; position++) {
+            this.relate(
+              signature.getTypeParameterAtPosition(position),
+              called.getTypeParameterAtPosition(position),
+              depth + 1
+            )
+          }
+        }
       }
 
       return
