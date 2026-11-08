@@ -10,6 +10,7 @@ pilnuje:
   - src/rozliczenia/register_columns.py
   - src/rozliczenia/workbook_save.py
   - src/rozliczenia/workbook_files.py
+  - tools/lib/eksplorator.py
 ci: .agents/skills/verify-zapis-intermax/scripts/explore_intermax.py
 ---
 
@@ -142,7 +143,7 @@ The last line is the verdict:
 | `INTERMAX OK` | 0 | Every rule holds in every schedule. |
 | `INTERMAX OK, ZNANE USTALENIA: n` | 0 | Only the known findings below, each printed with its shortest counterexample. |
 | `INTERMAX: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below. The counterexample is printed. |
-| `INTERMAX: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If a change fixed it, delete it from `KNOWN_FINDINGS` and from this file. |
+| `INTERMAX: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding did not show in a run of its `after`. If a change fixed it, delete it from `KNOWN_FINDINGS` and from this file. |
 
 ## How it works and what it covers
 
@@ -243,9 +244,13 @@ Not covered:
    violation;
    `tests/test_mutacje_skilli.py` reds a finding with a part without one.
 
-A known finding lives in `KNOWN_FINDINGS` in `explore_intermax.py` with the
-story after which it is excused and its shape. When a code change fixes it, the check ends
-with `ZNALEZISKO ZNIKNĘŁO`: delete the entry there and here.
+A known finding lives in `KNOWN_FINDINGS` in `explore_intermax.py` as an `Excuse`
+of `tools/lib/eksplorator.py`, with the story after which it is excused, its
+shape and in `after` the runs after which it always shows: both findings show in
+Uporządkowanie and in the first restore, not in the second restore in the same
+second (explorer run of 2026-11-08 on 1f7719a31). When a code change fixes one,
+the check ends with `ZNALEZISKO ZNIKNĘŁO` naming the run: narrow or delete the
+entry there and here.
 
 ## When the check fails
 

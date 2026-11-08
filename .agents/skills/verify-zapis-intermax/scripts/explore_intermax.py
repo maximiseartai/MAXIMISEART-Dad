@@ -63,6 +63,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia import intermax_copies, intermax_file, intermax_replace, intermax_restore, workbook_files
@@ -70,6 +71,7 @@ from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting, WriteMismatch
 from rozliczenia.message import StopError
 from rozliczenia.run_context import RunContext
+from eksplorator import Choices, Excuse, Kind, excuse_line, excused, gone_lines, schedules, verdict
 
 from tests.fixtures.intermax import Intermax, Order
 
@@ -111,49 +113,33 @@ class Bounds:
     refusals: int = 2
     long_pauses: int = 1
 
+    def budget(self) -> dict[str, int]:
+        """How many times each choice that is not ``ok`` may be picked in a schedule (``eksplorator.Choices``)."""
+
+        return {
+            "pracownik": self.worker,
+            "excel": self.excel,
+            "oserror": self.oserror,
+            "niezgodny": self.mismatch,
+            "kill": self.kills,
+            "onedrive": self.refusals,
+            "dluga": self.long_pauses,
+        }
+
 
 class Scheduler:
-    """Picks one option at each point from the schedule prefix, then the first option; records what it could pick."""
+    """Plays out at each point the option that ``choices`` picks; ``faults`` are the picked faults and actors, in order."""
 
-    def __init__(
-        self,
-        prefix: Sequence[int],
-        bounds: Bounds,
-        act: Callable[[Actor], None],
-        locked: Callable[[], bool],
-    ) -> None:
-        self._prefix = prefix
+    def __init__(self, choices: Choices, act: Callable[[Actor], None], locked: Callable[[], bool]) -> None:
+        self._choices = choices
         self._act = act
         self._locked = locked
-        self.taken: list[int] = []
-        self.options: list[int] = []
-        self.left: dict[Choice, int] = {
-            "pracownik": bounds.worker,
-            "excel": bounds.excel,
-            "oserror": bounds.oserror,
-            "niezgodny": bounds.mismatch,
-            "kill": bounds.kills,
-            "onedrive": bounds.refusals,
-            "dluga": bounds.long_pauses,
-        }
         self.trace: list[str] = []
-        self.faults: list[tuple[str, str]] = []
+        self.faults = choices.faults
         self.step = ""
 
     def say(self, line: str) -> None:
         self.trace.append(line)
-
-    def _pick(self, offered: Sequence[Choice], step: str) -> Choice:
-        allowed = [choice for choice in offered if self.left.get(choice, 1) > 0]
-        position = len(self.taken)
-        index = self._prefix[position] if position < len(self._prefix) else 0
-        self.taken.append(index)
-        self.options.append(len(allowed))
-        chosen = allowed[index]
-        if chosen in self.left:
-            self.left[chosen] -= 1
-            self.faults.append((chosen, step))
-        return chosen
 
     def point(
         self,
@@ -176,7 +162,7 @@ class Scheduler:
                 offered.insert(-1, fails)
             offered[-1:-1] = extra
             self.step = step
-            chosen = self._pick(offered, step)
+            chosen = self._choices.pick(offered, step)
             if chosen == "kill":
                 self.say(f"proces ginie przed: {step}")
                 raise Crash
@@ -386,7 +372,8 @@ class Violation:
     rule: str
     detail: str
     trace: tuple[str, ...]
-    kind: Literal["known", "new"]
+    excuse: tuple[Kind, Excuse[FindingShape]] | None
+    mode: Mode
 
 
 def _check(world: World, outcome: Outcome, failure: str) -> list[tuple[str, str]]:
@@ -539,16 +526,6 @@ class FindingShape:
         )
 
 
-@dataclass(frozen=True)
-class Finding:
-    """A break of the rule ``name`` that the report lists apart from new ones, only in ``shape``: the same rule broken
-    otherwise is a new violation."""
-
-    name: str
-    story: str
-    shape: FindingShape
-
-
 CHANGE_AFTER_READ = FindingShape(
     came_before=frozenset({READ, EXCEL, WRITE, CHECK, EXISTS, CREATE, REPLACE}),
     refusals_after=0,
@@ -559,30 +536,29 @@ CHANGE_AFTER_READ = FindingShape(
 a worker's change that comes after the read of the original, and after which the run neither paused nor was refused, is
 lost under the run's file."""
 
-KNOWN_FINDINGS: tuple[Finding, ...] = (
-    Finding(
+# Each entry names its rule; its shape judges how the run lost the worker's change (``Came``).
+KNOWN_FINDINGS: tuple[Excuse[FindingShape], ...] = (
+    Excuse(
+        "BEZ_UTRATY_ZMIAN",
         "BEZ_UTRATY_ZMIAN",
         "Uporządkowanie i przywrócenie Kopii nie sprawdzają tuż przed os.replace, czy INTERMAX ma wciąż bajty, które "
         "przeczytały (przed pierwszą próbą wcale, przed ponowną po przerwie): zmiana pracownika z innego komputera, "
         "którą OneDrive wgrał w trakcie, przepada",
         CHANGE_AFTER_READ,
+        after=(ORDERING, RESTORE),
     ),
-    Finding(
+    Excuse(
+        "KOPIA_ZASTAPIONEGO",
         "KOPIA_ZASTAPIONEGO",
         "Kopia INTERMAX powstaje z bajtów przeczytanych na początku (current w replace_register), więc "
         "nie ma też zmiany pracownika, która przyszła w trakcie",
         replace(CHANGE_AFTER_READ, copy=frozenset({Copy.OF_READ})),
+        after=(ORDERING, RESTORE),
     ),
 )
 
 
-def _finding(rule: str) -> Finding | None:
-    return next((finding for finding in KNOWN_FINDINGS if finding.name == rule), None)
-
-
-def execute(
-    mode: Mode, prefix: Sequence[int], work: Path, versions: tuple[bytes, bytes, bytes], bounds: Bounds
-) -> tuple[Scheduler, list[Violation]]:
+def execute(mode: Mode, choices: Choices, work: Path, versions: tuple[bytes, bytes, bytes]) -> list[Violation]:
     shutil.rmtree(work / "OneDrive", ignore_errors=True)
     shutil.rmtree(work / "Kopie INTERMAX", ignore_errors=True)
     folder = work / "OneDrive"
@@ -613,7 +589,7 @@ def execute(
             scheduler.say("tata otwiera INTERMAX w Excelu (plik ~$)")
             world.lock.write_bytes(b"tata")
 
-    scheduler = Scheduler(prefix, bounds, act, world.lock.exists)
+    scheduler = Scheduler(choices, act, world.lock.exists)
     outcome: Outcome = "podsumowanie"
     failure = ""
     scheduler.say(mode if mode == ORDERING else f"{mode} {world.chosen}")
@@ -643,23 +619,19 @@ def execute(
     violations = []
     came = _came(world, scheduler.faults)
     for rule, detail in _check(world, outcome, failure):
-        known = _finding(rule)
-        kind: Literal["known", "new"] = "known" if known and known.shape.holds(came) else "new"
-        violations.append(Violation(rule, detail, trace, kind))
-    return scheduler, violations
+        violations.append(Violation(rule, detail, trace, excused(rule, came, known=KNOWN_FINDINGS), mode))
+    return violations
 
 
-def next_prefix(scheduler: Scheduler) -> list[int] | None:
-    for position in range(len(scheduler.taken) - 1, -1, -1):
-        if scheduler.taken[position] + 1 < scheduler.options[position]:
-            return [*scheduler.taken[:position], scheduler.taken[position] + 1]
-    return None
+MODES: tuple[Mode, ...] = (ORDERING, RESTORE, SAME_SECOND)
 
 
 @dataclass
 class Report:
     schedules: int = 0
     shortest: dict[tuple[str, str], Violation] = field(default_factory=dict)
+    excused: set[tuple[str, str]] = field(default_factory=set)
+    """Each known finding with each mode it showed in."""
 
 
 def explore(bounds: Bounds | None = None) -> Report:
@@ -668,51 +640,40 @@ def explore(bounds: Bounds | None = None) -> Report:
     with tempfile.TemporaryDirectory(prefix="zapis-intermax-") as directory:
         work = Path(directory).resolve()  # order_register resolves the path of INTERMAX
         versions = _synthetic(work)
-        modes: tuple[Mode, ...] = (ORDERING, RESTORE, SAME_SECOND)
-        for mode in modes:
-            prefix: list[int] | None = []
-            while prefix is not None:
-                scheduler, violations = execute(mode, prefix, work, versions, bounds)
+        for mode in MODES:
+            for violations in schedules(lambda choices: execute(mode, choices, work, versions), bounds.budget()):
                 report.schedules += 1
                 for violation in violations:
-                    key = (violation.rule, violation.kind)
+                    key = (violation.rule, "new" if violation.excuse is None else violation.excuse[0])
                     seen = report.shortest.get(key)
                     if seen is None or len(violation.trace) < len(seen.trace):
                         report.shortest[key] = violation
-                prefix = next_prefix(scheduler)
+                    if violation.excuse is not None:
+                        report.excused.add((violation.excuse[1].name, violation.mode))
     return report
 
 
 def summarize(report: Report, *, strict: bool = False) -> tuple[list[str], int]:
     lines = [f"Harmonogramy: {report.schedules}."]
     new = known = 0
-    for (rule, kind), violation in sorted(report.shortest.items()):
-        finding = _finding(rule)
-        if kind == "known" and finding is not None and not strict:
+    for _key, violation in sorted(report.shortest.items()):
+        if violation.excuse is not None and not strict:
             known += 1
-            lines.append(f"znane ustalenie {rule}: {finding.story}")
+            lines.append(excuse_line(*violation.excuse))
         else:
             new += 1
-            lines.append(f"NOWE NARUSZENIE {rule}")
+            lines.append(f"NOWE NARUSZENIE {violation.rule}")
         lines.append(f"   {violation.detail}")
         lines.extend(
             f"   {number}. {step}"
             for number, step in enumerate(violation.trace, start=1)
         )
-    gone = [finding.name for finding in KNOWN_FINDINGS if (finding.name, "known") not in report.shortest]
-    lines.extend(
-        f"ZNALEZISKO ZNIKNĘŁO {rule}: usuń je z KNOWN_FINDINGS i z SKILL.md"
-        for rule in gone
-    )
+    disappeared = gone_lines(MODES, report.excused, known=KNOWN_FINDINGS)
+    lines.extend(disappeared)
     lines.append("")
-    if new:
-        lines.append(f"INTERMAX: NOWE NARUSZENIE ({new})")
-        return lines, 1
-    if gone and not strict:
-        lines.append(f"INTERMAX: ZNALEZISKO ZNIKNĘŁO ({len(gone)})")
-        return lines, 1
-    lines.append(f"INTERMAX OK, ZNANE USTALENIA: {known}" if known else "INTERMAX OK")
-    return lines, 0
+    verdict_line, code = verdict("INTERMAX", new=new, gone=len(disappeared), known=known)
+    lines.append(verdict_line)
+    return lines, code
 
 
 def main(argv: Sequence[str] | None = None) -> int:
