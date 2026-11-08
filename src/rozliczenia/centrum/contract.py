@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from rozliczenia import domain
 from rozliczenia.message import DadFile, Message as ProcessMessage
 from rozliczenia.period_folder import PeriodPlace, PeriodStatus
+from rozliczenia.process_run import StopEnding
 from rozliczenia.quantities_to_fill import CellSource, FillKind, RowState
 
 
@@ -100,11 +101,20 @@ class ThemeChange(_Model):
     theme: Theme
 
 
-class ProcessStep(_Model):
-    """Krok okresu, który robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a ``None`` ma
-    proces bez podglądu (Wycena w efenix)."""
+# Każdy proces ma klucz, ten sam w Uruchomieniach i w Metrykach.
+ProcessKey = Literal["preparation", "settlement", "efenix", "intermax"]
+# Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX ma własną kartę poza okresami.
+PeriodProcessKey = Literal["preparation", "settlement", "efenix"]
+# Krok okresu, który robi proces.
+StepAction = Literal["prepare_collective_file", "price_in_efenix", "create_worker_settlements"]
 
-    action: Literal["prepare_collective_file", "price_in_efenix", "create_worker_settlements"]
+
+class ProcessStep(_Model):
+    """Krok okresu, który robi proces ``process``; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a
+    ``None`` ma proces bez podglądu (Wycena w efenix)."""
+
+    action: StepAction
+    process: PeriodProcessKey
     label: str
     hint: str
     preview_hint: str | None
@@ -155,6 +165,8 @@ class PeriodRow(_Model):
     worker_settlements_folder_exists: bool
     worker_settlement_count: int
     last_complete: bool
+    fillable: bool
+    """Plik zbiorczy jest przygotowany, więc „Uzupełnij” prowadzi na podsumowanie jego Uzupełnienia."""
     path: list[PathStep]
     next_step: NextStep
     secondary_step: ProcessStep | None
@@ -196,10 +208,6 @@ class Opened(_Model):
     name: str
 
 
-# Każdy proces ma klucz, ten sam w Uruchomieniach i w Metrykach.
-ProcessKey = Literal["preparation", "settlement", "efenix", "intermax"]
-# Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX ma własną kartę poza okresami.
-PeriodProcessKey = Literal["preparation", "settlement", "efenix"]
 RunMode = Literal["RUN", "DRY-RUN"]
 Pricing = Literal["bez Przekazania", "z Przekazaniem"]
 """Tryb Wyceny w efenix (wartości ``efenix_pricing.PricingMode``, ADR 0027): bez Przekazania do akceptacji gotowych
@@ -299,9 +307,19 @@ class RecentResults(_Model):
     results: ResultCounts
 
 
-class Metrics(_Model):
-    """Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego."""
+class ProcessFacts(_Model):
+    """Proces w Metrykach: klucz i krótka nazwa w filtrach."""
 
+    process: ProcessKey
+    label: str
+
+
+class Metrics(_Model):
+    """Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego.
+
+    ``processes``: procesy w kolejności statystyk; pierwszy jest wybrany w filtrze."""
+
+    processes: list[ProcessFacts]
     phases: list[str]
     minimum_completed_runs: int
     runs: list[ProcessRun]
@@ -338,11 +356,13 @@ class ProcessSetup(_Model):
     uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
     podglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera
     przyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”).
+    ``reads``: plik danych procesu, Rejestr zleceń z Ustawień albo Plik zbiorczy wybranego okresu.
     """
 
     process: PeriodProcessKey
     title: str
     creates: str
+    reads: Literal["register", "collective_file"]
     reminder: str
     confirms_readiness: bool
     preview_hint: str | None
@@ -700,14 +720,15 @@ DiagnosisOffer = Literal["on_request", "automatic"]
 # Otwarcie tego, co proces zapisał: akcja po wyniku z zapisem, którą deklaruje proces (``run_view``).
 ResultAction = Literal["open_collective_file", "open_worker_settlements_folder", "open_order_register"]
 NextAction = Literal["run", "rerun", ResultAction]
+Ending = Literal["finished", StopEnding]
+"""Sposób zakończenia Uruchomienia: ``finished`` albo Zatrzymaniem (``process_run.StopEnding``, znaczenia przy ``Stop``)."""
 
 
 class LoggedOutcome(_Model):
     """Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.
 
     Zatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się
-    skończyło: ``finished``, własne zatrzymanie procesu (``stop``), Zatrzymanie po odmowie w Decyzji taty
-    (``declined``), nieoczekiwany błąd (``unexpected``) albo błąd po zakończeniu silnika (``after_engine``).
+    skończyło (``Ending``).
     ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
     wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
     Zatrzymania).
@@ -715,7 +736,7 @@ class LoggedOutcome(_Model):
 
     result: RunResult
     headline: str
-    ending: Literal["finished", "stop", "declined", "unexpected", "after_engine"]
+    ending: Ending
     next_action: NextAction
     stop_kind: StopKind | None
     stops: list[Message]

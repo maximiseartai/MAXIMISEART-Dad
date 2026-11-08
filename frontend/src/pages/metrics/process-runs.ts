@@ -1,15 +1,13 @@
-import type { Process, ProcessRun } from "@/api/centrum"
+import type { Metrics, Process, ProcessRun } from "@/api/centrum"
 import { isFailure } from "@/components/run-result-badge"
 import type { FilterOption } from "@/components/segmented-filter"
 
 export type Mode = ProcessRun["mode"]
 
-export const PROCESS_OPTIONS: ReadonlyArray<FilterOption<Process>> = [
-  { value: "preparation", label: "Przygotowanie" },
-  { value: "settlement", label: "Przebieg" },
-  { value: "efenix", label: "efenix" },
-  { value: "intermax", label: "INTERMAX" },
-]
+/** Filtr procesu: procesy z serwera, w jego kolejności. */
+export function processOptions(processes: Metrics["processes"]): Array<FilterOption<Process>> {
+  return processes.map(({ process, label }) => ({ value: process, label }))
+}
 
 export const MODE_OPTIONS: ReadonlyArray<FilterOption<Mode>> = [
   { value: "RUN", label: "RUN" },

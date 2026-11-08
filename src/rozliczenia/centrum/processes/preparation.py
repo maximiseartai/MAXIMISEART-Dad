@@ -74,6 +74,7 @@ _VIEW: Final[PeriodProcessView[PreparationInputs, PreparationSummary]] = PeriodP
 # może się nie otworzyć, a wtedy przyczyną jest OneDrive, nie uszkodzony plik.
 KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodProcessKind(
     key="preparation",
+    short_title="Przygotowanie",
     view=_VIEW,
     core=preparation_process.PROCESS,
     default_metrics=PREPARATION_METRICS,

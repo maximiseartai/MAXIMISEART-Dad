@@ -180,7 +180,7 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
               <FieldLabel>Pliki</FieldLabel>
               {settings.state === "ready" ? (
                 <div className="flex flex-col gap-1">
-                  {chosen.process !== "preparation" ? (
+                  {chosen.reads === "collective_file" ? (
                     <CollectiveFile choice={chosenPeriod} />
                   ) : (
                     <SettingPath label="Rejestr zleceń" icon={<FileSpreadsheetIcon />} path="order_register" />

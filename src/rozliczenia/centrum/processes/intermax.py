@@ -47,6 +47,7 @@ _VIEW: Final[ProcessView[OrderingInputs, OrderingSummary]] = ProcessView(
 )
 KIND: Final[ProcessKind[OrderingInputs, OrderingSummary]] = ProcessKind(
     key="intermax",
+    short_title="INTERMAX",
     view=_VIEW,
     core=intermax_process.PROCESS,
     default_metrics=INTERMAX_METRICS,

@@ -134,6 +134,7 @@ class PeriodStarts:
             process=kind.key,
             title=kind.title,
             creates=kind.start.creates,
+            reads="register" if kind.reads_register else "collective_file",
             reminder=view.reminder,
             confirms_readiness=view.confirms_readiness,
             preview_hint=kind.preview_hint,

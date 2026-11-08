@@ -1,18 +1,11 @@
 import { ArrowRightIcon, EyeIcon, PlayIcon } from "lucide-react"
 
-import type { FillStep, PeriodProcess, PeriodRow, ProcessStep } from "@/api/centrum"
+import type { FillStep, PeriodRow, ProcessStep } from "@/api/centrum"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { href } from "@/lib/address"
 import { isActive, useRuns } from "@/lib/runs"
 import { FillLink } from "@/pages/filling/fill-link"
-
-/** Proces, który robi krok okresu; „none” (okres zamknięty) nie ma procesu. */
-const STEP_PROCESSES: Record<ProcessStep["action"], PeriodProcess> = {
-  prepare_collective_file: "preparation",
-  price_in_efenix: "efenix",
-  create_worker_settlements: "settlement",
-}
 
 const PRIMARY_LOOK = { size: "lg", className: "h-11 px-5 text-base" } as const
 
@@ -58,7 +51,6 @@ export function FillAction({ period, secondary }: { period: PeriodRow; secondary
 
 function PreviewAction({ period, step, hint, look }: { period: PeriodRow; step: ProcessStep; hint: string; look: Look }) {
   const { view, start } = useRuns()
-  const process = STEP_PROCESSES[step.action]
 
   if (isActive(view)) {
     return (
@@ -76,7 +68,7 @@ function PreviewAction({ period, step, hint, look }: { period: PeriodRow; step: 
           <Button
             {...look}
             onClick={() =>
-              start({ process, period: period.token, dry_run: true }).then((started) => started && showRuns())
+              start({ process: step.process, period: period.token, dry_run: true }).then((started) => started && showRuns())
             }
           />
         }
@@ -113,7 +105,7 @@ function DraftButton({
             {...look}
             aria-label={label}
             onClick={() => {
-              setDraft({ process: STEP_PROCESSES[step.action], period: period.token })
+              setDraft({ process: step.process, period: period.token })
               showRuns()
             }}
           />

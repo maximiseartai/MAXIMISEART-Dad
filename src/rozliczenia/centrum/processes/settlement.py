@@ -81,6 +81,7 @@ def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
 # startu.
 KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProcessKind(
     key="settlement",
+    short_title="Przebieg",
     view=PeriodProcessView(
         reminder="Zapisz i zamknij Plik zbiorczy w Excelu",
         confirms_readiness=True,

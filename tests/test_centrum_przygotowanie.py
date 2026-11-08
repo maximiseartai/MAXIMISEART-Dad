@@ -452,7 +452,11 @@ def test_wybor_okresu_proponuje_ostatni_pelny_okres_i_starsze_ze_statusem_okresu
     processes = centrum.client.get("/api/runs/setup").json()["processes"]
     setup = processes[0]
 
-    assert [process["process"] for process in processes] == ["preparation", "efenix", "settlement"]
+    assert [(process["process"], process["reads"]) for process in processes] == [
+        ("preparation", "register"),
+        ("efenix", "collective_file"),
+        ("settlement", "collective_file"),
+    ]
     assert (setup["process"], setup["title"], setup["blocker"]) == ("preparation", "Przygotowanie pliku zbiorczego", None)
     assert setup["reminder"] == "Zapisz i zamknij Rejestr zleceń w Excelu"
     assert (setup["confirms_readiness"], setup["preview_hint"]) == (

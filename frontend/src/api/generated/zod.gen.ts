@@ -632,6 +632,21 @@ export const zProblem = z.object({
 });
 
 /**
+ * ProcessFacts
+ *
+ * Proces w Metrykach: klucz i krótka nazwa w filtrach.
+ */
+export const zProcessFacts = z.object({
+    process: z.enum([
+        'preparation',
+        'settlement',
+        'efenix',
+        'intermax'
+    ]),
+    label: z.string()
+});
+
+/**
  * ProcessRun
  *
  * Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.
@@ -675,6 +690,7 @@ export const zProcessRun = z.object({
  * uruchomieniem, czy „Uruchom” potwierdza Gotowość, i podpowiedź „Podgląd bez zapisu” (``None``: proces nie ma
  * podglądu bez zapisu, jak Wycena w efenix). ``pricing_modes``: tryby Wyceny w efenix, z których tata wybiera
  * przyciskiem przy każdym starcie, w kolejności przycisków (pusta lista: proces bez trybów i z jednym „Uruchom”).
+ * ``reads``: plik danych procesu, Rejestr zleceń z Ustawień albo Plik zbiorczy wybranego okresu.
  */
 export const zProcessSetup = z.object({
     process: z.enum([
@@ -684,6 +700,7 @@ export const zProcessSetup = z.object({
     ]),
     title: z.string(),
     creates: z.string(),
+    reads: z.enum(['register', 'collective_file']),
     reminder: z.string(),
     confirms_readiness: z.boolean(),
     preview_hint: z.string().nullable(),
@@ -696,14 +713,19 @@ export const zProcessSetup = z.object({
 /**
  * ProcessStep
  *
- * Krok okresu, który robi proces; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a ``None`` ma
- * proces bez podglądu (Wycena w efenix).
+ * Krok okresu, który robi proces ``process``; ``preview_hint`` to podpowiedź „Podgląd bez zapisu” tego procesu, a
+ * ``None`` ma proces bez podglądu (Wycena w efenix).
  */
 export const zProcessStep = z.object({
     action: z.enum([
         'prepare_collective_file',
         'price_in_efenix',
         'create_worker_settlements'
+    ]),
+    process: z.enum([
+        'preparation',
+        'settlement',
+        'efenix'
     ]),
     label: z.string(),
     hint: z.string(),
@@ -744,6 +766,7 @@ export const zPeriodRow = z.object({
     worker_settlements_folder_exists: z.boolean(),
     worker_settlement_count: z.int(),
     last_complete: z.boolean(),
+    fillable: z.boolean(),
     path: z.array(zPathStep),
     next_step: z.discriminatedUnion('action', [
         zProcessStep.extend({ action: z.literal('create_worker_settlements') }),
@@ -983,8 +1006,11 @@ export const zRecentResults = z.object({
  * Metrics
  *
  * Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego.
+ *
+ * ``processes``: procesy w kolejności statystyk; pierwszy jest wybrany w filtrze.
  */
 export const zMetrics = z.object({
+    processes: z.array(zProcessFacts),
     phases: z.array(z.string()),
     minimum_completed_runs: z.int(),
     runs: z.array(zProcessRun),
@@ -1477,8 +1503,7 @@ export const zRunSummary = z.object({
  * Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.
  *
  * Zatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się
- * skończyło: ``finished``, własne zatrzymanie procesu (``stop``), Zatrzymanie po odmowie w Decyzji taty
- * (``declined``), nieoczekiwany błąd (``unexpected``) albo błąd po zakończeniu silnika (``after_engine``).
+ * skończyło (``Ending``).
  * ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
  * wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
  * Zatrzymania).

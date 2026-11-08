@@ -111,7 +111,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Metryki INTERMAX po DRY-RUN Przygotowania bez wciśniętego trybu",
-        (Edit(BUILD, "l=c.some(e=>e.value===i)?i:c[0]?.value??i;", "l=i;"),),
+        (Edit(BUILD, "d=u.some(e=>e.value===i)?i:u[0]?.value??i;", "d=i;"),),
         UPORZADKOWANIE,
         "po DRY-RUN Przygotowania Metryki INTERMAX nie mają wciśniętego trybu, a wykres mówi, że procesu nie uruchomiono",
     ),
