@@ -88,6 +88,16 @@ def _internal_header_after_k(tmp_path: Path) -> PreparationFixture:
     return fixture
 
 
+def _internal_header_repeated_after_k(tmp_path: Path) -> PreparationFixture:
+    """Wzorzec rozliczenia wewnętrznego z nagłówkiem docelowym w B1 i drugi raz w N1: openpyxl wpisuje pod ostatnim."""
+
+    fixture = make_preparation_fixture(tmp_path)
+    workbook = load_workbook(write_internal_template(fixture.internal_template_path))
+    active_worksheet(workbook)["N1"] = INTERNAL_TEMPLATE_HEADERS[1]
+    workbook.save(fixture.internal_template_path)
+    return fixture
+
+
 def _formula_in(reference: str) -> Callable[[Path], PreparationFixture]:
     """Wzorzec z formułą w Wierszu danych: kopia go nie przyjmuje, bo wpisanie wartości zmienia ``calcChain``."""
 
@@ -173,6 +183,9 @@ def _cells(path: Path) -> dict[str, object]:
         pytest.param(_formula_in("K18"), False, True, id="formula-w-ostatniej-kolumnie-danych-przez-openpyxl"),
         pytest.param(_formula_in("AP18"), False, True, id="formula-w-ostatniej-kolumnie-ilosci-przez-openpyxl"),
         pytest.param(_internal_header_after_k, True, False, id="naglowek-wewnetrznego-za-K-przez-openpyxl"),
+        pytest.param(
+            _internal_header_repeated_after_k, True, False, id="naglowek-wewnetrznego-powtorzony-za-K-przez-openpyxl"
+        ),
     ],
 )
 def test_pliki_okresu_z_kopii_wzorca_sa_takie_jak_z_openpyxl(

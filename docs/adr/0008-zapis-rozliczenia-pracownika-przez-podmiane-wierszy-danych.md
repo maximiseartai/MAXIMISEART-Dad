@@ -422,8 +422,10 @@ drogi zapisu ustawiają w `calcPr` te same:
 
 Kopia czyta nagłówek pliku okresu tylko w kolumnach danych wejściowych A:K, a
 droga przez openpyxl szuka nagłówków docelowych Rozliczenia wewnętrznego w
-całym wierszu 1. Wzorca, którego nagłówek docelowy leży dalej niż K, kopia więc
-nie przyjmuje i idzie on przez openpyxl. U taty nagłówki docelowe zajmują A:K.
+całym wierszu 1 i wpisuje pod ostatnim wystąpieniem każdego z nich. Kopia
+przyjmuje więc Wzorzec tylko wtedy, gdy oba miejsca to ta sama kolumna; Wzorzec
+z nagłówkiem docelowym dalej niż K albo powtórzonym za K idzie przez openpyxl.
+U taty nagłówki docelowe zajmują A:K bez powtórzeń.
 
 Poza tym, co widać w Excelu, kopia zachowuje części Wzorca, które openpyxl
 pomijał albo zastępował: ustawienia drukarki
@@ -445,6 +447,7 @@ Odrzucony 2026-10-22 kierunek „Rozliczenie wewnętrzne kopią Wzorca” jest t
 zmianą wydajności z własnym pomiarem.
 
 Testy właściciele: `tests/test_plik_zbiorczy_kopia_wzorca.py` porównuje oba
-pliki okresu z obu dróg zapisu, także dla Wzorca z nagłówkiem docelowym za K, a
+pliki okresu z obu dróg zapisu, także dla Wzorca z nagłówkiem docelowym za K
+albo powtórzonym za K, a
 `tests/test_workbook_files.py` sprawdza flagi przeliczania Rozliczenia
 wewnętrznego na obu drogach.

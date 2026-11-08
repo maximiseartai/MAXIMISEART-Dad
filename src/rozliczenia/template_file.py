@@ -316,8 +316,9 @@ class TemplateFile:
     def _template_copy(self) -> TemplateCopy | None:
         """Wzorzec do kopii z podmienionymi Wierszami danych; ``None``, gdy jego kształt wymaga openpyxl (ADR 0008).
 
-        Kopia czyta nagłówek tylko w kolumnach danych wejściowych, więc Wzorca pliku okresu z nagłówkiem docelowym
-        dalej w wierszu nie przyjmuje: droga przez openpyxl szuka go tam, gdzie szuka go ``_header``.
+        Kopia wpisuje pod nagłówkiem docelowym z kolumn danych wejściowych, a droga przez openpyxl pod jego ostatnim
+        wystąpieniem w całym wierszu (``_header``, ``header_columns``), więc kopia przyjmuje Wzorzec pliku okresu tylko
+        wtedy, gdy oba wskazują dla każdego nagłówka docelowego tę samą kolumnę.
         """
 
         if not self._copy_read:
@@ -325,8 +326,8 @@ class TemplateFile:
             self._copy = None
             with suppress(UnsupportedShape):
                 copy = TemplateCopy.of(self._loaded(), self._rules.sheet)
-                found = header_columns(copy.header)
-                if all(normalize_text(target) in found for target in self._rules.headers):
+                found, whole = header_columns(copy.header), header_columns(copy.whole_header)
+                if all(found.get(normalize_text(target)) == whole.get(normalize_text(target)) for target in self._rules.headers):
                     self._copy = copy
         return self._copy
 

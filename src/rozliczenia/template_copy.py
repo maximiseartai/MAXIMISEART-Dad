@@ -275,6 +275,7 @@ class TemplateCopy:
         filter_name: _FilterName | None,
         title: str,
         header: list[object],
+        whole_header: list[object],
         has_input_data: bool,
         look: RowLook,
         zero_row_count: int,
@@ -289,6 +290,8 @@ class TemplateCopy:
         """Nazwa aktywnego arkusza."""
         self.header = header
         """Wartości wiersza nagłówka w kolumnach danych wejściowych (od A), jak do sprawdzenia WYKONAWCA."""
+        self.whole_header = whole_header
+        """Wartości całego wiersza nagłówka (od A), w którym droga przez openpyxl szuka nagłówków docelowych."""
         self.has_input_data = has_input_data
         """Wiersze danych Wzorca mają już wartość w kolumnach danych wejściowych; formuły nie są danymi."""
         self.merged_cells = sheet.merged_cells
@@ -395,6 +398,7 @@ def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
         filter_name,
         active.title,
         sheet.header(shared_strings),
+        sheet.header(shared_strings, whole_row=True),
         sheet.has_input_data,
         look,
         sheet.zero_row_count(styles),
@@ -607,7 +611,9 @@ class _Sheet:
         dimension = _DIMENSION.search(xml, 0, sheet_data.start)
         self._dimension = None if dimension is None else (dimension.start(1), dimension.end(1), range_boundaries(dimension.group(1).decode("ascii")))
 
-    def header(self, shared_strings: list[str]) -> list[object]:
+    def header(self, shared_strings: list[str], *, whole_row: bool = False) -> list[object]:
+        """Wartości wiersza nagłówka od A: w kolumnach danych wejściowych albo (``whole_row``) w całym wierszu."""
+
         values: list[object] = [None] * self._layout.input_columns
         position = bisect_left(self._numbers, self._layout.header_row)
         if position == len(self._rows) or self._rows[position].number != self._layout.header_row:
@@ -615,7 +621,8 @@ class _Sheet:
         row = self._rows[position]
         for cell in _CELL.finditer(self._xml, row.start, row.end):
             column = _column(cell.group(1))
-            if column <= self._layout.input_columns:
+            if column <= self._layout.input_columns or whole_row:
+                values.extend([None] * (column - len(values)))
                 values[column - 1] = _header_value(cell.group(3), cell.group(4), shared_strings)
         return values
 
