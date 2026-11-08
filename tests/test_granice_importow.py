@@ -1595,26 +1595,30 @@ def test_kod_spoza_testow_nie_importuje_testow() -> None:
     )
 
 
+# Każda postać importu tests, którą zna sprawdzenie, i moduł, który z niej czyta.
 TESTS_IMPORTS: typing.Final = {
-    "import": "import tests.fixtures.settlement as s",
-    "import-pakietu": "import tests",
-    "from-modulu": "from tests.fixtures.settlement import PERIOD",
-    "from-pakietu-fixtures": "from tests.fixtures import settlement",
-    "from-pakietu-tests": "from tests import test_ilosci_uslug",
-    "import-w-funkcji": "def f() -> None:\n    from tests.fixtures.intermax import Intermax",
-    "type-checking": "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from tests.fixtures.efenix import Order",
-    "importlib": 'import importlib\nm = importlib.import_module("tests.fixtures.settlement")',
-    "import-module": 'from importlib import import_module\nm = import_module("tests.fixtures.settlement")',
-    "dunder-import": 'm = __import__("tests.fixtures.settlement")',
-    "sys-path-folder": 'import sys\nsys.path.insert(0, str(ROOT / "tests" / "fixtures"))',
-    "sys-path-napis": 'import sys\nsys.path.append("tests/fixtures")',
-    "sys-path-windows": 'import sys\nsys.path.append("C:\\\\repo\\\\tests")',
+    "import": ("import tests.fixtures.settlement as s", "tests.fixtures.settlement"),
+    "import-pakietu": ("import tests", "tests"),
+    "from-modulu": ("from tests.fixtures.settlement import PERIOD", "tests.fixtures.settlement"),
+    "from-pakietu-fixtures": ("from tests.fixtures import settlement", "tests.fixtures.settlement"),
+    "from-pakietu-tests": ("from tests import test_ilosci_uslug", "tests.test_ilosci_uslug"),
+    "import-w-funkcji": ("def f() -> None:\n    from tests.fixtures.intermax import Intermax", "tests.fixtures.intermax"),
+    "type-checking": (
+        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from tests.fixtures.efenix import Order",
+        "tests.fixtures.efenix",
+    ),
+    "importlib": ('import importlib\nm = importlib.import_module("tests.fixtures.settlement")', "tests.fixtures.settlement"),
+    "import-module": ('from importlib import import_module\nm = import_module("tests.fixtures.settlement")', "tests.fixtures.settlement"),
+    "dunder-import": ('m = __import__("tests.fixtures.settlement")', "tests.fixtures.settlement"),
+    "sys-path-folder": ('import sys\nsys.path.insert(0, str(ROOT / "tests" / "fixtures"))', "sys.path 'tests'"),
+    "sys-path-napis": ('import sys\nsys.path.append("tests/fixtures")', "sys.path 'tests/fixtures'"),
+    "sys-path-windows": ('import sys\nsys.path.append("C:\\\\repo\\\\tests")', "sys.path 'C:\\\\repo\\\\tests'"),
 }
 
 
-@pytest.mark.parametrize("code", TESTS_IMPORTS.values(), ids=TESTS_IMPORTS.keys())
-def test_sprawdzenie_granicy_testow_lapie_kazda_wyliczona_postac_importu_testow(code: str) -> None:
-    assert _tests_imports(ast.parse(code))
+@pytest.mark.parametrize(("code", "module"), TESTS_IMPORTS.values(), ids=TESTS_IMPORTS.keys())
+def test_sprawdzenie_granicy_testow_lapie_kazda_wyliczona_postac_importu_testow(code: str, module: str) -> None:
+    assert [found for _, found in _tests_imports(ast.parse(code))] == [module]
 
 
 def test_sprawdzenie_granicy_testow_przepuszcza_test_uruchomiony_po_sciezce_i_obce_moduly() -> None:
