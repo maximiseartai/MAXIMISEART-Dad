@@ -20,6 +20,13 @@ w ``TYPE_CHECKING``: zmiana układu Wzorca albo biblioteki skoroszytu nie dotyka
 Domknięcie idzie tylko po modułach ``src/``, więc biblioteki spoza ``src/``, która sama wczytuje openpyxl, i
 skoroszytu czytanego bez openpyxl (zip, XML) nie łapie: to zostaje przeglądowi.
 
+Katalog procesów (``centrum/catalog.py``), wpis procesu (``centrum/process_kind.py``) i wpisy w ``centrum/processes/``
+nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy okresów ani okna efenix, także przez inne
+moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
+komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
+katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń
+i plik metryk procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``, ``Catalog.steered``).
+
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
 plików i wątków.
@@ -42,7 +49,8 @@ zostaje przeglądowi.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
-(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), moduł ``comment_versions`` przypisany innej
+(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod inną nazwą
+(przypisaną albo ``type(prepared)``), moduł ``comment_versions`` przypisany innej
 nazwie poza importem, wysyłka Logów zmieniona w słuchaczu kolejki bez nazwania etykiety (np. po ``run_id``) albo
 zbudowana z etykietą wziętą z innej wysyłki (``post.target.label``) oraz celowe obejście strażnika bez nazwy jego typów
 (``object.__new__(type(logs))``, zmiana ``__class__``).
@@ -102,6 +110,25 @@ RUN_LOGS_FORMAT = (
 )
 RUN_HOST = frozenset({"rozliczenia.centrum.runs", "rozliczenia.centrum.diagnosis"})
 RUN_LOGS_LABEL = "logi-uruchomienia"
+# Katalog procesów i wpisy procesów: moduły, których nie wczytują, i jedyny moduł, który czyta wpisy i składa Uruchomienie
+# gotowe do startu.
+CATALOG_MODULES = (
+    "rozliczenia/centrum/catalog.py",
+    "rozliczenia/centrum/process_kind.py",
+    *sorted(path.relative_to(SRC).as_posix() for path in (SRC / "rozliczenia" / "centrum" / "processes").glob("*.py")),
+)
+NOT_IN_CATALOG = frozenset(
+    {
+        "rozliczenia.centrum.runs",
+        "rozliczenia.centrum.diagnosis",
+        "rozliczenia.centrum.configuration",
+        "rozliczenia.centrum.period_board",
+        "rozliczenia.efenix_browser",
+    }
+)
+SERVER_LIBRARIES = frozenset({"fastapi", "starlette", "uvicorn"})
+PROCESS_KINDS = "rozliczenia.centrum.processes"
+CATALOG = SRC / "rozliczenia" / "centrum" / "catalog.py"
 VERSIONS = "rozliczenia.centrum.comment_versions"
 # Pytania kolejki, czy wysyłka doszła albo została odrzucona: jedyne, czemu kod poza post_of podaje etykietę Logów.
 QUEUE_QUESTIONS = frozenset({"delivered", "rejected"})
@@ -313,6 +340,81 @@ def test_format_logow_uruchomienia_nie_wczytuje_gospodarza_uruchomien_ani_diagno
             "Schemat Logów Uruchomienia, strażnik reguły danych i postęp Wyceny (RUN_LOGS_FORMAT w "
             "tests/test_granice_importow.py) nie wczytują gospodarza Uruchomień (runs) ani Diagnozy (diagnosis), także "
             "przez inne moduły src i importem w funkcji: Logi z nich składa src/rozliczenia/centrum/logs_of_run.py.",
+        ]
+    )
+
+
+def _is_outside_catalog(module: str) -> bool:
+    return module in NOT_IN_CATALOG or module.split(".")[0] in SERVER_LIBRARIES
+
+
+def test_katalog_procesow_nie_wczytuje_serwera_okna_efenix_ani_modulow_centrum_ktore_go_czytaja() -> None:
+    found = {chain for file in CATALOG_MODULES for chain in _chains(file, _is_outside_catalog)}
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Katalog procesów, wpis procesu i wpisy w centrum/processes (CATALOG_MODULES w tests/test_granice_importow.py) "
+            "nie wczytują FastAPI, runs, diagnosis, configuration, period_board ani efenix_browser, także przez inne "
+            "moduły src i importem w funkcji: czytają je Skrypt dla maszyn, odtworzenie i wersje komentarza bez serwera. "
+            "Przenieś typ, którego potrzebują, do modułu bez tych zależności (jak Settings w centrum/settings.py).",
+        ]
+    )
+
+
+def _imported_modules(path: Path) -> Iterator[tuple[int, str]]:
+    """Moduły, które importuje plik ``path``, z linią; ``from a import b`` daje ``a`` i ``a.b``, a import względny
+    w ``src`` moduł, który wskazuje."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield node.lineno, alias.name
+        elif isinstance(node, ast.ImportFrom):
+            if node.level and not path.is_relative_to(SRC):
+                continue
+            base = _from_module(node, path.relative_to(SRC).as_posix()) if node.level else node.module or ""
+            yield node.lineno, base
+            for alias in node.names:
+                yield node.lineno, f"{base}.{alias.name}"
+
+
+def test_wpisy_procesow_czyta_tylko_katalog_procesow() -> None:
+    found = {
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {module}"
+        for path in _python_files()
+        if path != CATALOG and not path.is_relative_to(SRC / "rozliczenia" / "centrum" / "processes")
+        for line, module in _imported_modules(path)
+        if module == PROCESS_KINDS or module.startswith(f"{PROCESS_KINDS}.")
+    }
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Wpis procesu (centrum/processes/<proces>.py) importuje tylko src/rozliczenia/centrum/catalog.py: Centrum, "
+            "narzędzia, testy i skrypty skilli biorą wpis z katalogu (catalog.declaration_of, Catalog.kind), rdzeń "
+            "i plik metryk z Catalog, a podpowiedź podglądu z ProcessKind.preview_hint.",
+        ]
+    )
+
+
+def test_uruchomienie_gotowe_do_startu_sklada_tylko_katalog_procesow() -> None:
+    found = {
+        f"{path.relative_to(ROOT).as_posix()}:{node.lineno}: {ast.unparse(node.func)}("
+        for path in _python_files()
+        if path != CATALOG
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Call)
+        and (node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)) == "PreparedRun"
+    }
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "PreparedRun składa tylko Catalog.prepared (src/rozliczenia/centrum/catalog.py): rdzeń i historia metryk "
+            "procesu pochodzą z katalogu, więc Centrum, Skrypt dla maszyn, odtworzenie, testy i skrypty skilli "
+            "podmieniają je tylko przez Catalog.with_metrics i Catalog.steered.",
         ]
     )
 
