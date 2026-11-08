@@ -66,7 +66,7 @@
     "RunHost.start": "f1a3bb66892ff369"
   },
   "src/rozliczenia/centrum/process_kind.py": {
-    "PreparedRun.conduct": "a65f1c7fc16b43d0"
+    "PreparedRun.conduct": "a3e1e3cad04aa266"
   },
   "src/rozliczenia/centrum/outbox.py": {
     "Outbox.post": "ec7d3d2ed8b91d68",
