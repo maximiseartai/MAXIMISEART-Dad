@@ -28,34 +28,25 @@ import uuid
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Final, Generic, Literal, Protocol, TypeVar
+from typing import Any, Final, Literal, Protocol
 
 import anyio
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.catalog import ProcessDeclaration, declaration_of
+from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.process_kind import PreparedRun
 from rozliczenia.centrum.run_origins import CentrumRuns
-from rozliczenia.centrum.run_view import ProcessView, Shown, WarnedSummary
+from rozliczenia.centrum.run_view import ProcessView, Shown
 from rozliczenia.centrum.stops import NO_DIAGNOSIS, StoppedRun, Stops
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.decision import Decision
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
-from rozliczenia.process_run import (
-    Finished,
-    Interlocutor,
-    Outcome,
-    Process,
-    ProcessInputs,
-    Stop,
-    StopEnding,
-    run_process,
-)
+from rozliczenia.process_run import Finished, Outcome, Stop, StopEnding
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
-from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 
 _STREAM_POLL_SECONDS: Final = 0.05
@@ -80,49 +71,6 @@ _STOP_HEADLINES: Final[Mapping[contract.StopKind, str]] = {
     "for_maks": "Błąd",
     "declined": "Przerwano",
 }
-
-InputsT = TypeVar("InputsT", bound=ProcessInputs)
-SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
-
-
-@dataclass(frozen=True)
-class PreparedRun(Generic[InputsT, SummaryT]):
-    """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu, okres, rdzeń procesu, jego wejście i Kontekst
-    Uruchomienia (``run_context.RunContexts.new``). ``pricing``: tryb Wyceny w efenix (``None``: proces bez trybów).
-    """
-
-    declaration: ProcessDeclaration[InputsT, SummaryT]
-    period: str
-    process: Process[InputsT, SummaryT, RunContext]
-    inputs: InputsT
-    context: RunContext
-    pricing: contract.Pricing | None = None
-
-    @property
-    def dry_run(self) -> bool:
-        return self.inputs.dry_run
-
-    @property
-    def input_copy(self) -> InputCopy | None:
-        """Kopia wejścia, którą czytniki procesu wypełniają w trakcie Uruchomienia; ``None``: Uruchomienie bez Kopii."""
-
-        return self.context.files.copy
-
-    def conduct(self, interlocutor: Interlocutor) -> Outcome[Shown[SummaryT]]:
-        """Uruchomienie przez rdzeń z rozmówcą ``interlocutor`` i plikiem metryk procesu."""
-
-        return run_process(
-            self.process,
-            self.inputs,
-            interlocutor,
-            view=self.declaration.view.shown,
-            metrics_path=self.process.metrics_path(),
-            context=self.context,
-        )
-
-    def progress_view(self, snapshot: ProgressSnapshot) -> contract.Progress:
-        return self.declaration.view.progress(snapshot, dry_run=self.dry_run)
-
 
 Ending = Literal["finished", StopEnding]
 
@@ -172,6 +120,21 @@ class EndedRun:
     ended_at: datetime
     input_copy: InputCopy | None = None
     """Kopia wejścia Uruchomienia (``PreparedRun.input_copy``) z tym, co czytniki przeczytały do jego końca."""
+
+    @classmethod
+    def of(
+        cls,
+        prepared: PreparedRun[Any, Any],
+        core: Outcome[Shown[Any]] | None,
+        *,
+        info: contract.RunInfo,
+        stopped: StoppedRun | None,
+        progress: contract.Progress,
+        started_at: datetime,
+    ) -> EndedRun:
+        """Koniec Uruchomienia ``prepared`` w tej chwili, z jego Kopią wejścia: w Centrum (``_Run``) i w odtworzeniu."""
+
+        return cls(info, core, stopped, progress, started_at, datetime.now(timezone.utc), prepared.input_copy)
 
     @property
     def result(self) -> contract.RunResult:
@@ -505,9 +468,7 @@ class _Run:
         self._host = host
         self._prepared = prepared
         self._stops = stops
-        self.info = prepared.declaration.run_info(
-            run_id=uuid.uuid4().hex, period=prepared.period, dry_run=prepared.dry_run, pricing=prepared.pricing
-        )
+        self.info = prepared.info(uuid.uuid4().hex)
         self.started_at = datetime.now(timezone.utc)
         self._progress = prepared.progress_view(ProgressProjection().snapshot)
         self._stale = False
@@ -551,14 +512,13 @@ class _Run:
         )
 
     def _ended(self, core: Outcome[Shown[Any]] | None, stop: Stop | None, since: datetime) -> EndedRun:
-        return EndedRun(
+        return EndedRun.of(
+            self._prepared,
+            core,
             info=self.info,
-            core=core,
             stopped=self._stops.ended(self.info, stop, shown=self._show_report),
             progress=self._progress,
             started_at=since,
-            ended_at=datetime.now(timezone.utc),
-            input_copy=self._prepared.input_copy,
         )
 
     def _show_report(self, state: contract.ReportState) -> None:

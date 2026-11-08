@@ -24,7 +24,7 @@ from rozliczenia.centrum.catalog import EFENIX
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.period_board import located_period_folder, observed_period_folder, read_board, requested_period
 from rozliczenia.centrum.processes import Processes
-from rozliczenia.centrum.runs import PreparedRun
+from rozliczenia.centrum.process_kind import PreparedRun
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import EfenixInputs, OrderJournal, PricingMode
 from rozliczenia.efenix_window import OpenEfenix

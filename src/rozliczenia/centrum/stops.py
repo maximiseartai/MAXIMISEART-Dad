@@ -21,7 +21,7 @@ sam oddaje ``RunHost``, który pokazuje go na karcie Uruchomienia.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import threading
 from typing import Final, Protocol, overload
 
@@ -72,21 +72,22 @@ class Stops:
             with self._lock:
                 self._last.pop(info.process, None)
             return None
-        fingerprint = ProblemFingerprint.of(info.process, stop.message)
+        named = plain(info, stop)
         if stop.kind == "declined":
             # Odmowa w Decyzji taty to jego odpowiedź, nie problem: jak wynik bez Zatrzymania kończy Powtórkę.
             with self._lock:
                 self._last.pop(info.process, None)
-            return StoppedRun(info, stop, fingerprint, "declined", None, None)
+            return named
+        fingerprint = named.fingerprint
         with self._lock:
             repeated = self._last.get(info.process) == fingerprint
             self._last[info.process] = fingerprint
-        kind: contract.StopKind = "repeated" if repeated and stop.stop_kind == "for_tata" else stop.stop_kind
+        kind: contract.StopKind = "repeated" if repeated and named.kind == "for_tata" else named.kind
         offer: contract.DiagnosisOffer | None = (
             None if kind == "for_tata" else "on_request" if stop.kind == "stop" else "automatic"
         )
         report = None if offer is None else self._reports.handle(fingerprint, shown=shown)
-        return StoppedRun(info, stop, fingerprint, kind, offer, report)
+        return replace(named, kind=kind, offer=offer, report=report)
 
     def diagnose(self, stopped: StoppedRun) -> contract.Diagnosis:
         report = stopped.report
@@ -129,3 +130,11 @@ class StoppedRun:
     kind: contract.StopKind
     offer: contract.DiagnosisOffer | None
     report: ReportHandle | None
+
+
+def plain(info: contract.RunInfo, stop: Stop) -> StoppedRun:
+    """Zatrzymanie ``stop`` nazwane jak w Centrum, bez Powtórki, Diagnozy i Zgłoszenia: tak je ma odtworzenie z Logów,
+    a ``Stops.ended`` dokłada do niego resztę."""
+
+    kind: contract.StopKind = "declined" if stop.kind == "declined" else stop.stop_kind
+    return StoppedRun(info, stop, ProblemFingerprint.of(info.process, stop.message), kind, None, None)

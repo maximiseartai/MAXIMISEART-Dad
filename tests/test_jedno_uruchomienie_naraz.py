@@ -236,7 +236,7 @@ def test_watek_modelu_czekajacy_poza_modelem_konczy_sprawdzenie_luka_modelu_z_na
             ")",
             "wątek modelu przez 1 s nie doszedł do pierwszego kroku",
             "karta Uruchom 1: odpowiedź 200: running",
-            "conduct",
+            "work",
             id="przed_pierwszym_krokiem",
         ),
         pytest.param(
