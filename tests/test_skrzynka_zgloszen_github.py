@@ -134,15 +134,33 @@ def test_skrzynka_laczy_sie_z_githubem_przez_proxy_z_ustawien_systemu(monkeypatc
     assert proxied == ["CONNECT api.github.com:443"]
 
 
-def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki_na_inny_serwer() -> None:
-    # Serwer pod innym portem to inny origin, jak inny host: klucz taty tam nie idzie.
-    with github_api({"/lista": Answer(body=[])}) as elsewhere:
-        with github_api({"/lista": Answer(301, headers={"Location": f"{elsewhere.url}/lista"})}) as box:
-            answer = SKRZYNKA_TRANSPORT(HttpRequest("GET", f"{box.url}/lista", headers(KEY), None))
+@pytest.mark.parametrize("same_server_hops", [0, 1], ids=["wprost", "po-przekierowaniu-na-tym-samym-serwerze"])
+def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki_na_inny_serwer(same_server_hops: int) -> None:
+    # Serwer pod innym portem to inny origin, jak inny host: klucz taty tam nie idzie, także gdy wcześniej przeszedł
+    # przekierowanie na tym samym serwerze.
+    with github_api({"/lista": Answer(body=[])}) as elsewhere, github_api({}) as box:
+        box.answers = {
+            **{f"/{hop}": Answer(302, headers={"Location": f"{box.url}/{hop + 1}"}) for hop in range(same_server_hops)},
+            f"/{same_server_hops}": Answer(301, headers={"Location": f"{elsewhere.url}/lista"}),
+        }
+        answer = SKRZYNKA_TRANSPORT(HttpRequest("GET", f"{box.url}/0", headers(KEY), None))
 
     assert answer.status == 200
-    assert [asked.authorization for asked in box.asked] == [f"Bearer {KEY}"]
+    assert [asked.authorization for asked in box.asked] == [f"Bearer {KEY}"] * (same_server_hops + 1)
     assert [asked.authorization for asked in elsewhere.asked] == [None]
+
+
+def test_przekierowanie_skrzynki_na_adres_z_nieczytelnym_portem_to_skrzynka_nieosiagalna(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Z takim adresem urllib się nie połączy, więc Skrzynka czeka jak bez sieci i ponawia później.
+    listed = f"/repos/{report_box.REPOSITORY}/issues?state=open&labels=zgloszenie&per_page=100&page=1"
+    with github_api({listed: Answer(301, headers={"Location": "http://127.0.0.1:abc/lista"})}) as box:
+        monkeypatch.setattr(report_box, "API", box.url)
+        outcome = GitHubReportBox(transport=SKRZYNKA_TRANSPORT).labelled_issues("zgloszenie", include_closed=False, key=KEY)
+
+    assert outcome == Unreachable()
+    assert [asked.path for asked in box.asked] == [listed]
 
 
 def test_przeniesione_repozytorium_zgloszen_odpowiada_skrzynce_z_kluczem_taty_pod_adresem_przekierowania(
