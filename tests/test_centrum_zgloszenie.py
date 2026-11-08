@@ -10,16 +10,15 @@ import json
 import re
 import shutil
 import threading
-import time
 from pathlib import Path
 from typing import Any, NoReturn
 
 import pytest
 
-from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.input_checks import FILE_READERS
-from rozliczenia.centrum.keyed_box import KEY_CHECK_THREAD
+from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.keyed_box import KEY_CHECK_THREAD
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.centrum.reports import REPORT_THREAD, SEARCH_DEADLINE_S
@@ -50,7 +49,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from tests.fixtures.potomne import wait_for
+from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.preparation import PERIOD
 from tests.fixtures.settlement import write_quantity_source
 
@@ -560,9 +559,7 @@ def current_report(centrum: PreparingCentrum) -> object:
 def report_becomes(centrum: PreparingCentrum, expected: object) -> object:
     """Stan Zgłoszenia na karcie, gdy dojdzie do ``expected`` (odpowiedź skrzynki przychodzi w tle), albo po 10 s."""
 
-    deadline = time.monotonic() + 10
-    while (report := current_report(centrum)) != expected and time.monotonic() < deadline:
-        time.sleep(0.01)
+    _, report = wait_for_value(lambda: current_report(centrum), lambda report: report == expected, 10, every=0.01)
     return report
 
 

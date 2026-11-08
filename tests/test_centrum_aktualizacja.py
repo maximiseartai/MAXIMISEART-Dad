@@ -47,7 +47,7 @@ from rozliczenia.centrum.tool_update import (
 
 from tests.fixtures.centrum import NO_RELEASE, join_threads_since, views_until, write_report_key
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end, stopped_for_maks
-from tests.fixtures.potomne import wait_for
+from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.preparation import PERIOD, incomplete_period_rows
 from tests.fixtures.tool_clone import (
     NEW_REQUIREMENTS,
@@ -109,13 +109,9 @@ def update_until_result(centrum: PreparingCentrum) -> dict[str, Any]:
 
 
 def tool_update_until(centrum: PreparingCentrum, reached: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
-    deadline = time.monotonic() + UPDATE_WAIT_S
-    while True:
-        view = dict(centrum.client.get("/api/tool-update").json())
-        if reached(view):
-            return view
-        assert time.monotonic() < deadline, f"Aktualizacja narzędzia utknęła w {view}."
-        time.sleep(0.02)
+    done, view = wait_for_value(lambda: dict(centrum.client.get("/api/tool-update").json()), reached, UPDATE_WAIT_S, every=0.02)
+    assert done, f"Aktualizacja narzędzia utknęła w {view}."
+    return view
 
 
 def tool_on_configuration(centrum: PreparingCentrum) -> dict[str, Any]:
@@ -470,10 +466,7 @@ def test_w_trakcie_aktualizacji_uruchomienie_druga_aktualizacja_i_zamkniecie_sa_
     second = centrum.client.post("/api/tool-update")
     closing = centrum.client.post("/api/shutdown")
     hold.set()
-    deadline = time.monotonic() + 30
-    while centrum.client.get("/api/tool-update").json()["state"] == "running":
-        assert time.monotonic() < deadline
-        time.sleep(0.02)
+    assert wait_for(lambda: centrum.client.get("/api/tool-update").json()["state"] != "running", 30, every=0.02)
     run_after = centrum.start(dry_run=True)
 
     assert (run.status_code, run.json()) == (

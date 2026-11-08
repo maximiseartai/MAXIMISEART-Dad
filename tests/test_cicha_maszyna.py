@@ -9,12 +9,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import time
 import uuid
 
 import pytest
 
 from tests.fixtures.cicha_maszyna import MachineBusy, QuietMachine, ZegarTestu, quiet_machine
+from tests.fixtures.potomne import wait_for
 
 # Pomiar wydajnosc trwa około 5 minut (features/wydajnosc.md); agent ma 10 minut na jedno polecenie.
 POMIAR_S = 5 * 60
@@ -97,12 +97,9 @@ def proces(argv: list[str], fragment: str, executable: str | None = None) -> Ite
 
     process = subprocess.Popen(argv, executable=executable)
     try:
-        deadline = time.monotonic() + 10
-        while fragment not in subprocess.run(
-            ["ps", "-ww", "-o", "command=", "-p", str(process.pid)], capture_output=True, text=True, check=False
-        ).stdout:
-            assert time.monotonic() < deadline, f"ps nie pokazał procesu {argv}"
-            time.sleep(0.05)
+        command = ["ps", "-ww", "-o", "command=", "-p", str(process.pid)]
+        shown = wait_for(lambda: fragment in subprocess.run(command, capture_output=True, text=True, check=False).stdout, 10)
+        assert shown, f"ps nie pokazał procesu {argv}"
         yield
     finally:
         process.kill()

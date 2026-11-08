@@ -23,7 +23,7 @@ import pytest
 from tests.fixtures.brama_typow import FAKE_GATE
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, git, repository
-from tests.fixtures.potomne import beating, potomne
+from tests.fixtures.potomne import beating, potomne, wait_for
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -632,15 +632,11 @@ def test_przerwane_narzedzie_konczy_trwajace_mutacje_i_sprzata(tmp_path: Path) -
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    deadline = time.monotonic() + 60
-    while not started.exists() and time.monotonic() < deadline:
-        time.sleep(0.1)
+    wait_for(started.exists, 60, every=0.1)
 
     tool.send_signal(signal.SIGINT)
     tool.wait(timeout=20)
-    deadline = time.monotonic() + 20
-    while any(scratch.iterdir()) and time.monotonic() < deadline:
-        time.sleep(0.1)
+    wait_for(lambda: not any(scratch.iterdir()), 20, every=0.1)
 
     assert (started.exists(), beating(beats)) == (True, False)
     assert git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1

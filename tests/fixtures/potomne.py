@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 import sys
 import time
+from typing import TypeVar
 
 from tests.fixtures.git_repo import git
 
@@ -18,7 +19,9 @@ sys.path.insert(0, str(TOOLS / "lib"))
 
 import potomne  # noqa: E402
 
-__all__ = ["TOOLS", "beating", "potomne", "wait_for", "with_grandchild", "worktrees"]
+__all__ = ["TOOLS", "beating", "potomne", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
+
+T = TypeVar("T")
 
 GRANDCHILD = "import sys, time\nwhile True:\n    open(sys.argv[1], 'a').write('.')\n    time.sleep(0.1)\n"
 
@@ -41,7 +44,10 @@ def beating(beats: Path) -> bool:
     return wait_for(lambda: beats.stat().st_size != before, 2)
 
 
-def wait_for(condition: Callable[[], bool], seconds: float = 60) -> bool:
+def wait_for(condition: Callable[[], bool], seconds: float = 60, *, every: float = 0.05) -> bool:
+    """``condition`` pytane co ``every`` s, aż da prawdę (``True``) albo minie ``seconds`` s (``False``); po terminie
+    pada jeszcze jedno pytanie."""
+
     deadline = time.monotonic() + seconds
     while True:
         expired = time.monotonic() >= deadline
@@ -49,7 +55,21 @@ def wait_for(condition: Callable[[], bool], seconds: float = 60) -> bool:
             return True
         if expired:
             return False
-        time.sleep(0.05)
+        time.sleep(every)
+
+
+def wait_for_value(
+    read: Callable[[], T], reached: Callable[[T], bool], seconds: float = 60, *, every: float = 0.05
+) -> tuple[bool, T]:
+    """``wait_for`` na wartość: czy ``read()`` doszło do ``reached`` i ostatnia odczytana wartość."""
+
+    values: list[T] = []
+
+    def now_reached() -> bool:
+        values.append(read())
+        return reached(values[-1])
+
+    return wait_for(now_reached, seconds, every=every), values[-1]
 
 
 def worktrees(repo: Path) -> list[Path]:

@@ -19,7 +19,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import time
 from types import ModuleType
 
 import pytest
@@ -311,10 +310,7 @@ def test_zabity_runner_nie_zostawia_skryptu_mutacji(tmp_path: Path) -> None:
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": script})
     runner = subprocess.Popen(_tool(tmp_path), cwd=tmp_path, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     try:
-        deadline = time.monotonic() + 60
-        while not ready.exists() and time.monotonic() < deadline:
-            time.sleep(0.05)
-        assert ready.exists(), "skrypt mutacji nie ruszył"
+        assert wait_for(ready.exists, 60), "skrypt mutacji nie ruszył"
         runner.kill()
         runner.wait(timeout=30)
 
