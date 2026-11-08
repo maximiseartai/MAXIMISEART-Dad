@@ -63,12 +63,13 @@ TABLE = [
         "lista zleceń, także przy starcie, z odpowiedzią 4xx/5xx (nawigacja nie zgłasza wtedy błędu), a pola Numer na niej "
         "nie ma: adres odpowiada, więc to nie EfenixUnreachable (#878)", "D"),
     Row("efenix_browser", "wait_for_login", "WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)",
-        "karta zamknięta w czasie czekania na logowanie", "E"),
+        "karta zamknięta w czasie czekania na logowanie, także pytaniem o sesję, które przez nią padło", "E"),
     Row("efenix_browser", "wait_for_login", "EfenixUnreachable(unanswered.failure)",
-        "efenix nie odpowiedział na ostatnie pytanie o sesję przed końcem LOGIN_TIMEOUT_MS: błąd Playwrighta "
-        "(Operation.OPEN), więc to nie brak logowania (spis #27)", "D przy starcie"),
+        "efenix nie odpowiedział na ostatnie pytanie o sesję przed końcem LOGIN_TIMEOUT_MS ani na żadne przez dwa czasy "
+        "okna przed nim: błąd Playwrighta (Operation.OPEN), więc to nie brak logowania (spis #27)", "D przy starcie"),
     Row("efenix_browser", "wait_for_login", "LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)",
-        "tata nie zalogował się w LOGIN_TIMEOUT_MS, a efenix odpowiedział na ostatnie pytanie o sesję", "E"),
+        "tata nie zalogował się w LOGIN_TIMEOUT_MS, a efenix odpowiedział na ostatnie pytanie o sesję albo na któreś przez "
+        "dwa czasy okna przed nim", "E"),
     Row("efenix_browser", "_session_open", "UnexpectedPage(PagePart.LIST, HttpStatus(response.status))",
         "lista zleceń, o którą okno pyta w czasie czekania na logowanie, z odpowiedzią 4xx/5xx: adres odpowiada, a tata "
         "mógł się już zalogować, więc to nie brak logowania po LOGIN_TIMEOUT_MS (#891)", "D"),

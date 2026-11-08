@@ -43,9 +43,10 @@ pyta efenix o listę zleceń w tej samej sesji przeglądarki bez przekierowań, 
 tata pisze, najwyżej co ``LOGIN_POLL_MS``; gdy strona przejdzie ze strony logowania na inną, pyta od razu, jeśli od
 poprzedniego pytania minął ten odstęp, a inaczej po nim. Gdy lista odpowiada, otwiera ją i proces rusza; lista ze
 statusem błędu (4xx, 5xx) to ``UnexpectedPage`` z ``HttpStatus`` jak przy starcie, brak logowania przez
-``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a gdy efenix nie odpowiedział na ostatnie pytanie przed końcem tego czasu,
-``EfenixUnreachable`` z błędem przeglądarki jak przy starcie; pytanie bez odpowiedzi czekania nie kończy. Karta, okno
-albo przeglądarka zamknięte w tym czasie to ``WindowClosed`` najpóźniej po ``LOGIN_POLL_MS``.
+``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a gdy efenix nie odpowiedział na ostatnie pytanie przed końcem tego czasu ani
+na żadne przez dwa czasy okna przed nim, ``EfenixUnreachable`` z błędem przeglądarki jak przy starcie; pytanie bez
+odpowiedzi czekania nie kończy. Karta, okno albo przeglądarka zamknięte w tym czasie to ``WindowClosed`` najpóźniej
+po ``LOGIN_POLL_MS``.
 
 Stronę zlecenia czyta ``efenix_page.read_order`` tak, jak widzi ją tata: data wykonania, kwota końcowa i ilość każdej
 pozycji. Datę ustawia przyciskiem kalendarza ``#button-calendar`` i kalendarzem pickadate pola ``#field_data_instalacji`` okna
@@ -339,11 +340,14 @@ class BrowserEfenix:
     ) -> None:
         """Otwiera listę zleceń, a na stronie logowania czeka w ``login``, aż tata się zaloguje; ``LoggedOut`` po
         ``timeout_ms`` bez logowania (najwyżej ``LOGIN_POLL_MS`` później), ``EfenixUnreachable`` po nim, gdy efenix nie
-        odpowiedział na ostatnie pytanie o sesję, ``UnexpectedPage`` listy ze statusem HTTP, gdy lista odpowiada stroną
-        błędu serwera, a ``WindowClosed`` najpóźniej ``LOGIN_POLL_MS`` po zamknięciu karty, okna albo całej przeglądarki.
-        ``clock`` (sekundy) mierzy czas czekania.
+        odpowiedział na ostatnie pytanie o sesję ani na żadne przez dwa czasy okna przed nim, ``UnexpectedPage`` listy ze
+        statusem HTTP, gdy lista odpowiada stroną błędu serwera, a ``WindowClosed`` najpóźniej ``LOGIN_POLL_MS`` po
+        zamknięciu karty, okna albo całej przeglądarki. ``clock`` (sekundy) mierzy czas czekania.
 
-        Pytanie bez odpowiedzi nie kończy czekania: gdy sieć wróci, tata może się jeszcze zalogować.
+        Pytanie bez odpowiedzi nie kończy czekania: gdy sieć wróci, tata może się jeszcze zalogować. Dwa czasy okna to
+        co najmniej dwa pełne pytania bez odpowiedzi także przy efenix, który wisi, więc jedno zerwane połączenie tuż
+        przed limitem po 15 minutach odpowiedzi zostaje brakiem logowania. Pytanie, które padło, bo tata zamknął kartę
+        albo przeglądarkę, to ``WindowClosed``, a nie efenix bez odpowiedzi, także na granicy limitu.
 
         Zamkniętą kartę rozpoznaje po ``Page.is_closed`` przed każdym sprawdzeniem, bo czekanie Playwrighta na adres karty
         zamkniętej przed nim nie zgłasza jej zamknięcia, tylko kończy się po swoim limicie. Efenix pyta najwyżej co
@@ -356,8 +360,10 @@ class BrowserEfenix:
             return
         except LoggedOut:
             pass
+        silence_s = 2 * self._timeout_ms / 1000
         with login():
-            deadline = clock() + timeout_ms / 1000
+            answered = clock()
+            deadline = answered + timeout_ms / 1000
             while True:
                 if self._page.is_closed():
                     raise WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)
@@ -365,6 +371,8 @@ class BrowserEfenix:
                 try:
                     session_open = self._session_open()
                 except _Failed as failed:
+                    if self.closed:
+                        continue
                     session_open, unanswered = False, failed
                 if session_open:
                     try:
@@ -373,9 +381,11 @@ class BrowserEfenix:
                     except LoggedOut:
                         pass
                 asked = clock()
+                if unanswered is None:
+                    answered = asked
                 remaining_ms = round((deadline - asked) * 1000)
                 if remaining_ms <= 0:
-                    if unanswered is not None:
+                    if unanswered is not None and asked - answered >= silence_s:
                         raise EfenixUnreachable(unanswered.failure) from unanswered.__cause__
                     raise LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)
                 # Czekanie kończy się po limicie, a w karcie zamkniętej w jego trakcie błędem; o zamknięciu mówi ``is_closed``.

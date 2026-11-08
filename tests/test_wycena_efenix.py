@@ -47,7 +47,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
 from playwright.sync_api import Browser, Error as PlaywrightError, Page, Request as PlaywrightRequest, Route
-from playwright.sync_api import Response as PlaywrightResponse
+from playwright.sync_api import Response as PlaywrightResponse, TimeoutError as PlaywrightTimeoutError
 import pytest
 
 from rozliczenia.dad_files import DadFiles
@@ -81,6 +81,7 @@ from rozliczenia.efenix_window import (
     UnexpectedPage,
     WindowAction,
     WindowCause,
+    WindowClosed,
 )
 from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
@@ -3256,10 +3257,78 @@ def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_cze
         questions = _session_questions(atrapa)
 
     assert questions >= 2
-    assert (stopped.value.part, stopped.value.cause) == (
+    assert (stopped.value.part, stopped.value.cause, type(stopped.value.__cause__)) == (
         PagePart.LIST,
         BrowserFailure(TIMEOUT, Operation.OPEN),
+        PlaywrightTimeoutError,
     )
+
+
+@pytest.mark.parametrize(
+    ("last_answer", "stop"),
+    [
+        pytest.param(898.0, LoggedOut, id="jedno-zerwanie-tuz-przed-limitem"),
+        pytest.param(840.5, LoggedOut, id="cisza-krotsza-niz-dwa-czasy-okna"),
+        pytest.param(840.0, EfenixUnreachable, id="cisza-przez-dwa-czasy-okna"),
+    ],
+)
+def test_po_limicie_czekania_na_logowanie_niedostepny_efenix_tylko_gdy_efenix_milczal_przez_dwa_czasy_okna(
+    page: Page, last_answer: float, stop: type[Exception]
+) -> None:
+    """Tata się nie loguje, a efenix odpowiada na pytania o sesję do ``last_answer`` sekundy z 900 sekund limitu, potem
+    sieć znika: po limicie to efenix bez odpowiedzi tylko wtedy, gdy milczał przez dwa czasy okna (dwa razy 30 sekund),
+    a jedno zerwane połączenie po odpowiedziach dalej mówi tacie o logowaniu. Zegar okna: start w 0, pytanie z
+    odpowiedzią w ``last_answer`` (sieć znika po nim) i pytanie bez odpowiedzi na końcu limitu."""
+
+    with atrapa_efenix([]) as atrapa:
+        atrapa.expire_session()
+        readings = iter([0.0, last_answer])
+
+        def clock() -> float:
+            reading = next(readings, efenix_browser.LOGIN_TIMEOUT_MS / 1000)
+            if reading == last_answer:
+                atrapa.outage = Outage.CUT
+            return reading
+
+        with pytest.raises(stop), efenix_browser.window(page, atrapa.url, login=nullcontext, clock=clock):
+            pass
+        questions = _session_questions(atrapa)
+
+    assert questions == 2
+
+
+def test_przegladarka_zamknieta_przed_pytaniem_o_sesje_na_granicy_limitu_to_zamkniete_okno(page: Page) -> None:
+    """Tata zamyka przeglądarkę, gdy okno czeka na jego logowanie, tuż przed pytaniem o sesję na granicy limitu, a
+    ``Page.is_closed`` jeszcze o tym nie wie (#878): pytanie, które padło przez zamknięcie, to zamknięte okno, nie efenix
+    bez odpowiedzi ani brak logowania. Zegar okna: start w 0, a pierwsze pytanie już po limicie."""
+
+    with atrapa_efenix([]) as atrapa:
+        atrapa.expire_session()
+        waiting = False
+        is_closed = page.is_closed
+
+        def closing_unnoticed() -> bool:
+            nonlocal waiting
+            closed = is_closed()
+            if waiting:
+                waiting = False
+                page.context.close()
+            return closed
+
+        readings = iter([0.0])
+
+        def clock() -> float:
+            nonlocal waiting
+            reading = next(readings, 3600.0)
+            # Start czekania: tata zamyka przeglądarkę przed pierwszym pytaniem o sesję.
+            waiting = reading == 0.0
+            return reading
+
+        page.is_closed = closing_unnoticed  # type: ignore[method-assign]
+        with pytest.raises(WindowClosed) as stopped, efenix_browser.window(page, atrapa.url, login=nullcontext, clock=clock):
+            pass
+
+    assert (stopped.value.part, stopped.value.cause) == (PagePart.LIST, Closed.DURING_LOGIN)
 
 
 @pytest.mark.parametrize(

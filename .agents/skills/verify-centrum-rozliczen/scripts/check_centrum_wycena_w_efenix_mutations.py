@@ -25,7 +25,7 @@ MUTATIONS = (
     ),
     Mutation(
         "okno nie mówi, że czeka na logowanie",
-        (Edit(EFENIX_BROWSER, "        with login():\n            deadline", "        if True:\n            deadline"),),
+        (Edit(EFENIX_BROWSER, "        with login():\n            answered", "        if True:\n            answered"),),
         WYCENA,
         "tata nie wie, że proces czeka, aż zaloguje się w oknie efenix",
     ),
