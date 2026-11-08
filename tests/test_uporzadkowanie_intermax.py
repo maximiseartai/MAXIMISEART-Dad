@@ -1936,7 +1936,7 @@ def test_odmowa_podmiany_bez_excela_po_krotkiej_ponownej_probie_to_onedrive_dla_
 
     assert (stop.message.code, stop.stop_kind) == ("INTERMAX_SYNCHRONIZOWANY", "for_tata")
     assert stop.message.what == "OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony."
-    assert stop.message.action == "Spróbuj za chwilę: poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie."
+    assert stop.message.action == "Poczekaj, aż OneDrive skończy synchronizację, potem uruchom ponownie."
     assert (clock.seconds, len(attempts)) == (4005.0, 11)
     _without_order_data(stop.message, layout.raw)
 

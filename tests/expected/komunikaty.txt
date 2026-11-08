@@ -709,7 +709,7 @@ rollback_failed [COFNIECIE_NIEUDANE]
 register_unusable #1 [BRAK_INTERMAX]
   Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX i uruchom ponownie.
+  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX, potem uruchom ponownie.
 
 register_unusable #2 [INTERMAX_OTWARTY]
   Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
@@ -736,15 +736,45 @@ register_unusable #6 [NIECZYTELNY_INTERMAX]
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
   Co zrobić: Otwórz INTERMAX w Excelu i sprawdź, czy się otwiera. Jeśli tak, zapisz go, zamknij i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
-register_missing [BRAK_INTERMAX]
+register_unusable #7 [PRZYWRACANIE_BRAK_INTERMAX]
   Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX i uruchom ponownie.
+  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX, potem przywróć kopię jeszcze raz.
 
-register_open [INTERMAX_OTWARTY]
+register_unusable #8 [PRZYWRACANIE_INTERMAX_OTWARTY]
   Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i uruchom ponownie.
+  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i przywróć kopię jeszcze raz.
+
+register_unusable #9 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
+  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+register_unusable #10 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
+  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+register_unusable #11 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
+  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+register_unusable #12 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
+  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+register_missing #1 [BRAK_INTERMAX]
+  Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX, potem uruchom ponownie.
+
+register_missing #2 [PRZYWRACANIE_BRAK_INTERMAX]
+  Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX, potem przywróć kopię jeszcze raz.
 
 no_order_sheet [BRAK_ARKUSZA_ZLECEN]
   Co się stało: W INTERMAX nie ma arkusza zleceń z nagłówkami od AKCJE do UWAGI w wierszu 1. INTERMAX nie został zmieniony.
@@ -801,28 +831,73 @@ unsupported_shape [NIEOBSLUGIWANY_UKLAD_INTERMAX]
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
-register_syncing [INTERMAX_SYNCHRONIZOWANY]
+refused #1 [INTERMAX_OTWARTY]
+  Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i uruchom ponownie.
+
+refused #2 [INTERMAX_SYNCHRONIZOWANY]
   Co się stało: OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Spróbuj za chwilę: poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie.
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, potem uruchom ponownie.
 
-write_check_failed [ZAPIS_INTERMAX_NIEZGODNY]
+refused #3 [ZAPIS_INTERMAX_NIEUDANY]
+  Co się stało: Nie udało się zapisać INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+refused #4 [ZAPIS_INTERMAX_NIEZGODNY]
   Co się stało: Sprawdzenie zapisu wykazało różnicę, więc zapis został odrzucony. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
-register_write_failed [ZAPIS_INTERMAX_NIEUDANY]
-  Co się stało: Nie udało się zapisać INTERMAX. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
-
-copy_failed [KOPIA_INTERMAX_NIEUDANA]
+refused #5 [KOPIA_INTERMAX_NIEUDANA]
   Co się stało: Nie udało się zrobić Kopii INTERMAX. INTERMAX nie został zmieniony.
   Gdzie: folder Narzedzie\Kopie INTERMAX
-  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
-old_copies_kept [STARE_KOPIE_INTERMAX]
+refused #6 [KOPIA_INTERMAX_NIEUDANA]
+  Co się stało: Nie udało się zrobić Kopii INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: folder Narzedzie\Kopie INTERMAX
+  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+refused #7 [PRZYWRACANIE_INTERMAX_OTWARTY]
+  Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i przywróć kopię jeszcze raz.
+
+refused #8 [PRZYWRACANIE_INTERMAX_SYNCHRONIZOWANY]
+  Co się stało: OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, potem przywróć kopię jeszcze raz.
+
+refused #9 [PRZYWRACANIE_NIEUDANE]
+  Co się stało: Nie udało się przywrócić kopii. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+refused #10 [PRZYWRACANIE_NIEUDANE]
+  Co się stało: Nie udało się przywrócić kopii. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+refused #11 [PRZYWRACANIE_KOPIA_NIEUDANA]
+  Co się stało: Nie udało się zrobić Kopii obecnego INTERMAX, więc kopia nie została przywrócona. INTERMAX nie został zmieniony.
+  Gdzie: folder Narzedzie\Kopie INTERMAX
+  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+refused #12 [PRZYWRACANIE_PRZED_CHWILA]
+  Co się stało: Przed chwilą przywrócono już kopię INTERMAX, więc ta kopia nie została przywrócona.
+  Gdzie: folder Narzedzie\Kopie INTERMAX
+  Co zrobić: Odśwież Konfigurację i sprawdź listę kopii. Jeśli nadal trzeba, przywróć kopię jeszcze raz.
+
+old_copies_kept #1 [STARE_KOPIE_INTERMAX]
   Co się stało: INTERMAX został uporządkowany, ale nie udało się usunąć starszych Kopii INTERMAX.
+  Gdzie: folder Narzedzie\Kopie INTERMAX
+  Co zrobić: Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie.
+
+old_copies_kept #2 [PRZYWRACANIE_STARE_KOPIE]
+  Co się stało: Kopia została przywrócona, ale nie udało się usunąć starszych Kopii INTERMAX.
   Gdzie: folder Narzedzie\Kopie INTERMAX
   Co zrobić: Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie.
 
@@ -870,66 +945,6 @@ copy_damaged [KOPIA_INTERMAX_USZKODZONA]
   Co się stało: Ta Kopia INTERMAX jest uszkodzona, więc nie została przywrócona. INTERMAX nie został zmieniony.
   Gdzie: plik INTERMAX przed uporządkowaniem 2026-09-14 07-30-00.xlsx, folder Kopie INTERMAX
   Co zrobić: Wybierz inną kopię z listy.
-
-restore_register_unusable #1 [PRZYWRACANIE_BRAK_INTERMAX]
-  Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX, potem przywróć kopię jeszcze raz.
-
-restore_register_unusable #2 [PRZYWRACANIE_INTERMAX_OTWARTY]
-  Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i przywróć kopię jeszcze raz.
-
-restore_register_unusable #3 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
-  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
-
-restore_register_unusable #4 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
-  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
-
-restore_register_unusable #5 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
-  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
-
-restore_register_unusable #6 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
-  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
-
-restore_register_open [PRZYWRACANIE_INTERMAX_OTWARTY]
-  Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem przywróć kopię jeszcze raz. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i przywróć kopię jeszcze raz.
-
-restore_register_syncing [PRZYWRACANIE_INTERMAX_SYNCHRONIZOWANY]
-  Co się stało: OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, potem przywróć kopię jeszcze raz.
-
-restore_copy_failed [PRZYWRACANIE_KOPIA_NIEUDANA]
-  Co się stało: Nie udało się zrobić Kopii obecnego INTERMAX, więc kopia nie została przywrócona. INTERMAX nie został zmieniony.
-  Gdzie: folder Narzedzie\Kopie INTERMAX
-  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
-
-restored_moment_ago [PRZYWRACANIE_PRZED_CHWILA]
-  Co się stało: Przed chwilą przywrócono już kopię INTERMAX, więc ta kopia nie została przywrócona.
-  Gdzie: folder Narzedzie\Kopie INTERMAX
-  Co zrobić: Odśwież Konfigurację i sprawdź listę kopii. Jeśli nadal trzeba, przywróć kopię jeszcze raz.
-
-restore_failed [PRZYWRACANIE_NIEUDANE]
-  Co się stało: Nie udało się przywrócić kopii. INTERMAX nie został zmieniony.
-  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
-  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
-
-old_copies_kept_after_restore [PRZYWRACANIE_STARE_KOPIE]
-  Co się stało: Kopia została przywrócona, ale nie udało się usunąć starszych Kopii INTERMAX.
-  Gdzie: folder Narzedzie\Kopie INTERMAX
-  Co zrobić: Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie.
 
 unexpected_failure [BLAD_NIEOCZEKIWANY]
   Co się stało: Wystąpił nieoczekiwany błąd. INTERMAX nie został zmieniony.

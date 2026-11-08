@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Final, Generic, Literal, TypeVar
 
@@ -245,7 +246,11 @@ INTERMAX: Final = ProcessDeclaration(
     title=intermax_process.PROCESS.name,
     view=run_view.INTERMAX,
     core=lambda processes: processes.intermax,
-    settings=(NeededSetting(run_view.INTERMAX.register_name, "register", intermax_messages.register_missing),),
+    settings=(NeededSetting(
+            run_view.INTERMAX.register_name,
+            "register",
+            partial(intermax_messages.register_missing, replacement=intermax_messages.ORDERING),
+        ),),
     templates=(),
     checks=("tata_settings", "files_in_onedrive", "intermax", *_TAIL),
 )

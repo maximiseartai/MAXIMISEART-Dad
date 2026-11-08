@@ -12,7 +12,7 @@ from decimal import Decimal
 from functools import partial
 from pathlib import Path
 
-from rozliczenia import efenix_messages, intermax_messages
+from rozliczenia import efenix_messages, intermax_messages, intermax_replace
 from rozliczenia import preparation_messages as messages
 from rozliczenia import settlement_messages, worker_config_messages
 from rozliczenia.centrum import (
@@ -334,12 +334,14 @@ EFENIX_SAMPLES: Samples = {
 COPIES = Path("C:/Narzedzie/Kopie INTERMAX")
 COPY = COPIES / "INTERMAX przed uporządkowaniem 2026-09-14 07-30-00.xlsx"
 SEPTEMBER_14 = date(2026, 9, 14)
+REPLACEMENTS = (intermax_messages.ORDERING, intermax_messages.RESTORE)
 INTERMAX_SAMPLES: Samples = {
     "register_unusable": [
-        partial(intermax_messages.register_unusable, WorkbookError(REGISTER, problem)) for problem in Problem
+        partial(intermax_messages.register_unusable, WorkbookError(REGISTER, problem), replacement)
+        for replacement in REPLACEMENTS
+        for problem in Problem
     ],
-    "register_missing": [lambda: intermax_messages.register_missing(REGISTER)],
-    "register_open": [lambda: intermax_messages.register_open(REGISTER)],
+    "register_missing": [partial(intermax_messages.register_missing, REGISTER, replacement) for replacement in REPLACEMENTS],
     "no_order_sheet": [lambda: intermax_messages.no_order_sheet(REGISTER)],
     "no_raw_orders": [lambda: intermax_messages.no_raw_orders(REGISTER, SHEET)],
     "raw_orders_in_several_sheets": [
@@ -361,24 +363,16 @@ INTERMAX_SAMPLES: Samples = {
         lambda: intermax_messages.day_already_ordered(REGISTER, SHEET, SEPTEMBER_14, 816, 816),
     ],
     "unsupported_shape": [lambda: intermax_messages.unsupported_shape(REGISTER, SHEET)],
-    "register_syncing": [lambda: intermax_messages.register_syncing(REGISTER)],
-    "write_check_failed": [lambda: intermax_messages.write_check_failed(REGISTER)],
-    "register_write_failed": [lambda: intermax_messages.register_write_failed(REGISTER)],
-    "copy_failed": [lambda: intermax_messages.copy_failed(COPIES)],
-    "old_copies_kept": [lambda: intermax_messages.old_copies_kept(COPIES)],
+    "refused": [
+        partial(intermax_messages.refused, refusal, REGISTER, COPIES, replacement)
+        for replacement in REPLACEMENTS
+        for refusal in intermax_replace.Refusal
+    ],
+    "old_copies_kept": [partial(intermax_messages.old_copies_kept, COPIES, replacement) for replacement in REPLACEMENTS],
     "copies_unreadable": [lambda: intermax_messages.copies_unreadable(COPIES)],
     "copy_missing": [lambda: intermax_messages.copy_missing(COPIES, COPY.name)],
     "copy_unusable": [partial(intermax_messages.copy_unusable, WorkbookError(COPY, problem)) for problem in Problem],
     "copy_damaged": [lambda: intermax_messages.copy_damaged(COPY)],
-    "restore_register_unusable": [
-        partial(intermax_messages.restore_register_unusable, WorkbookError(REGISTER, problem)) for problem in Problem
-    ],
-    "restore_register_open": [lambda: intermax_messages.restore_register_open(REGISTER)],
-    "restore_register_syncing": [lambda: intermax_messages.restore_register_syncing(REGISTER)],
-    "restore_copy_failed": [lambda: intermax_messages.restore_copy_failed(COPIES)],
-    "restored_moment_ago": [lambda: intermax_messages.restored_moment_ago(COPIES)],
-    "restore_failed": [lambda: intermax_messages.restore_failed(REGISTER)],
-    "old_copies_kept_after_restore": [lambda: intermax_messages.old_copies_kept_after_restore(COPIES)],
     "unexpected_failure": [intermax_messages.unexpected_failure],
     "summary_not_shown": [intermax_messages.summary_not_shown],
     "plan_not_shown": [intermax_messages.plan_not_shown],

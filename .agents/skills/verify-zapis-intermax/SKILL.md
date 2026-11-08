@@ -80,7 +80,7 @@ happens first. Each is one indivisible step of this code:
 | the temporary file | `Disk.write` of the temporary file in `replace_register`, inside `workbook_save.write_atomically`; may raise `OSError` (`Refusal.WRITE_FAILED`) |
 | the write check | `Register.check` on the re-read temporary file, which Uporządkowanie gives `replace_register` as `check`; may find a mismatch (`WriteMismatch`). The restore compares bytes and has no such point |
 | the Kopia's name | `Disk.exists` of the Kopia's name in `replace_register`, after the write check and the Excel lock check; may raise `OSError` when the Kopie folder cannot be searched (`Refusal.COPY_FAILED`, as Python 3.11–3.13 do for a folder without access) |
-| the Kopia | `Disk.create` of the Kopia with the bytes read (`current`), after the name; may raise `OSError`, and raises `FileExistsError` (`O_EXCL`) when a Kopia of that name exists (`Refusal.COPY_EXISTS`, which the restore names `restored_moment_ago`), also one written after `Disk.exists`; a Kopia of a name that was taken is never removed |
+| the Kopia | `Disk.create` of the Kopia with the bytes read (`current`), after the name; may raise `OSError`, and raises `FileExistsError` (`O_EXCL`) when a Kopia of that name exists (`Refusal.COPY_EXISTS`, which `intermax_messages.refused` names `PRZYWRACANIE_PRZED_CHWILA` for the restore), also one written after `Disk.exists`; a Kopia of a name that was taken is never removed |
 | the replace | `Disk.replace` of the temporary file over INTERMAX in the `replace` that `replace_register` gives `workbook_save.write_atomically`; may raise `OSError`, may be refused by OneDrive (`PermissionError` without the `~$` lock, which it retries), and raises `PermissionError` while the `~$` lock exists, as Windows does for a file Excel holds |
 | the pause before a retry | `waiting.pause` in that `replace`, after a refusal and before it reads INTERMAX again (`Disk.read`) and retries; may last the whole retry time (`_RETRY_S`), so the next refusal ends in `Refusal.ONEDRIVE_HOLDS`. The checker's `Waiting` clock moves only in this pause and never sleeps |
 | the old Kopie | `Disk.remove` of a Kopia older than the `KEPT` newest after the replace; may raise `OSError`, which `replace_register` returns as `Replaced.old_copies_kept` and both processes turn into a warning |
@@ -193,7 +193,7 @@ Not covered:
   (`verify-jedno-uruchomienie-naraz`);
 - the order of Kopie by the moment in their name around a clock change;
 - a second Uporządkowanie in the same second (its `Refusal.COPY_EXISTS` becomes the
-  ordinary Zatrzymanie `copy_failed`): after an Uporządkowanie no Surowe
+  ordinary Zatrzymanie `KOPIA_INTERMAX_NIEUDANA`): after an Uporządkowanie no Surowe
   zlecenia are left to order;
 - the order of the write check before the Kopia: the one cleanup removes a
   Kopia after any failure, so a Kopia made before the check leaves no trace the
