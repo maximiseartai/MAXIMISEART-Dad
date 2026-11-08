@@ -28,7 +28,7 @@ MUTATIONS = (
         (
             Edit(
                 INTERMAX_RUN,
-                '            open_in_excel=[] if register is None else open_in_excel([InputWorkbook("INTERMAX", register, "data_file")]),\n',
+                '            open_in_excel=[] if register is None else open_in_excel([InputWorkbook(_VIEW.register_name, register, "data_file")]),\n',
                 "            open_in_excel=[],\n",
             ),
         ),

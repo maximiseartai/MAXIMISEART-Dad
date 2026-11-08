@@ -90,7 +90,7 @@ class IntermaxEntry:
             title=_KIND.title,
             reminder=_VIEW.reminder,
             blocker=_KIND.settings_blocker(settings),
-            open_in_excel=[] if register is None else open_in_excel([InputWorkbook("INTERMAX", register, "data_file")]),
+            open_in_excel=[] if register is None else open_in_excel([InputWorkbook(_VIEW.register_name, register, "data_file")]),
             last=last,
         )
 

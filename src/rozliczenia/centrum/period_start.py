@@ -118,8 +118,8 @@ class PeriodStarts:
                 last_complete = last_complete_period(self.today())
                 recent = [SettlementPeriod(last_complete.tuesday - timedelta(weeks=week)) for week in range(chooser.weeks)]
                 folders = None if settings.periods_directory is None else scan_period_folders(settings.periods_directory)
-                register = [] if settings.register is None else [InputWorkbook("Rejestr zleceń", settings.register, "data_file")]
-                open_register = open_in_excel(register)
+                register = settings.register
+                open_register = [] if register is None else open_in_excel([InputWorkbook(view.register_name, register, "data_file")])
                 reminder = view.start_reminder(data_file_open=bool(open_register), template_open=bool(open_templates))
                 periods = [
                     _recent_choice(
