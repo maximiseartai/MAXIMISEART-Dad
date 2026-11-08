@@ -40,6 +40,11 @@ zostaje przeglądowi.
   importach i ``isinstance``, a ``_MINTED`` i napis z ich nazwą w żadnej postaci, więc test łapie
   ``object.__new__(GuardedLogs)``, ``object.__setattr__`` slotu i ``cast(GuardedLogs, …)``.
 
+Wyrocznie skilli (``.agents/skills/*/scripts``) i narzędzia (``tools/``) biorą z ``src`` tylko publiczne nazwy
+(docs/agents/skille.md, „Co wyrocznia bierze z src”): mechanikę przez publiczny punkt obserwacji, a dane o świecie
+zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do prywatnych nazw i globali modułów, a eksplorator
+kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox`` (spis N13).
+
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
 (``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), moduł ``comment_versions`` przypisany innej
@@ -836,3 +841,324 @@ LOGS_POST_ALLOWED: typing.Final = {
 @pytest.mark.parametrize("code", LOGS_POST_ALLOWED.values(), ids=LOGS_POST_ALLOWED.keys())
 def test_sprawdzenie_wysylki_logow_przepuszcza_kod_bez_wysylki_logow(code: str) -> None:
     assert _logs_post_breaks(ast.parse(code), "rozliczenia/centrum/proba.py") == []
+
+
+# Wyrocznie skilli i narzędzia, które biorą z ``src`` tylko publiczne nazwy (docs/agents/skille.md, „Co wyrocznia bierze
+# z src”).
+ORACLES: typing.Final = (".agents/skills/*/scripts/**/*.py", "tools/**/*.py")
+SRC_PACKAGE: typing.Final = "rozliczenia"
+
+
+def _private(name: str) -> bool:
+    """Prywatna nazwa: ``_x`` i ``__dict__``, ale nie dunder i nie sam separator ``_``."""
+
+    return (
+        name.startswith("_") and name.strip("_") != "" and not (name.startswith("__") and name.endswith("__"))
+    ) or name == "__dict__"
+
+
+def _private_text(node: ast.expr) -> bool:
+    """Napis stały z prywatnym członem kropkowym: ``"_x"``, ``"m._x"``, ``"._x"`` (względny import)."""
+
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and any(part.isidentifier() and _private(part) for part in node.value.split("."))
+    )
+
+
+def _src_path(text: object) -> bool:
+    """Napis ``rozliczenia.…``: ścieżka kropkowa modułu albo nazwy w ``src``."""
+
+    return isinstance(text, str) and text.split(".")[0] == SRC_PACKAGE and all(
+        part.isidentifier() for part in text.split(".")
+    )
+
+
+def _literal(node: ast.expr) -> Iterator[ast.expr]:
+    """Węzeł i, gdy to krotka, lista, zbiór, słownik albo rozpakowanie, każdy jego element na dowolnej głębokości."""
+
+    yield node
+    if isinstance(node, ast.Starred):
+        yield from _literal(node.value)
+    elif isinstance(node, ast.Tuple | ast.List | ast.Set):
+        for element in node.elts:
+            yield from _literal(element)
+    elif isinstance(node, ast.Dict):
+        for part in (*node.keys, *node.values):
+            if part is not None:
+                yield from _literal(part)
+
+
+def _private_in(nodes: typing.Iterable[ast.expr]) -> bool:
+    return any(_private_text(part) for node in nodes for part in _literal(node))
+
+
+def _bound_in_class(node: ast.ClassDef) -> Iterator[tuple[int, str]]:
+    """Nazwy, które wiąże ciało klasy w swoim zasięgu: ``def``, ``class`` i cel przypisania, także w ``if`` i ``for``."""
+
+    pending: list[ast.AST] = [*node.body]
+    while pending:
+        child = pending.pop()
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            yield child.lineno, child.name
+        elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
+            yield child.lineno, child.id
+        elif not isinstance(child, ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp):
+            pending.extend(ast.iter_child_nodes(child))
+
+
+# Biorą nazwę napisem, a obiekt dopiero w następnym wywołaniu: ``operator.attrgetter("_x")(m)``.
+GETTERS: typing.Final = frozenset({"attrgetter", "methodcaller"})
+
+
+def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
+    """Miejsca, w których kod sięga do prywatnej nazwy ``src``: modułu, klasy albo funkcji wziętej z ``rozliczenia…``.
+
+    Nazwa z ``src`` to nazwa, którą wiąże import z ``rozliczenia`` (``import rozliczenia.x``, ``import … as m``,
+    ``from rozliczenia… import n``), łańcuch atrybutów i indeksów od niej (``outbox.Outbox``, ``runs.RunHost[int]``),
+    ``sys.modules["rozliczenia.…"]``, napis stały ``rozliczenia.…`` i klasa, której baza jest z ``src`` (podklasa
+    ``class Log(CentrumLog)`` i dalsze podklasy). Sięgnięcie to:
+
+    - prywatny atrybut nazwy z ``src``, import prywatnej nazwy i ``vars`` nazwy z ``src``;
+    - prywatna nazwa, którą wiąże ciało podklasy klasy z ``src`` (``def _write``, ``_write = staticmethod(…)``), bo
+      nadpisuje prywatną nazwę klasy z ``src`` albo tak wygląda: AST nie wie, których nazw klasa z ``src`` nie ma;
+    - w wywołaniu dowolnej funkcji, w którego argumencie (pozycyjnym albo nazwanym, na dowolnym miejscu i na dowolnej
+      głębokości krotki, listy, zbioru i słownika) stoi nazwa z ``src``: każdy prywatny napis stały wśród argumentów,
+      na dowolnej głębokości takiego literału, i prywatna nazwa argumentu nazwanego (``getattr``,
+      ``object.__setattr__``, ``mock.patch.object(target=m, attribute="_x")``, ``mock.patch.multiple(m, _x=…)``,
+      ``__import__("rozliczenia.…", fromlist=["_x"])``, ``import_module("._x", "rozliczenia.…")``,
+      ``type("X", (CentrumLog,), {"_write": f})``);
+    - nazwa z ``src`` wprost w literale krotki, listy, zbioru albo słownika (także rozpakowana: ``(*m.NAMES, "_x")``)
+      i prywatny napis na dowolnej głębokości tego literału (``PATCHED = [[m, "_x"]]``, ``{m: "_x"}``,
+      ``{"target": m, "attribute": "_x"}``), więc dwie pary w jednej liście (``[[hypothesis, "_x"], [m, "y"]]``) nie
+      alarmują;
+    - ``attrgetter`` i ``methodcaller`` z prywatnym napisem, choć obiekt dostają w innym wywołaniu;
+    - napis stały ``rozliczenia.…._x`` gdziekolwiek (``mock.patch("rozliczenia.centrum.outbox._queued", …)``).
+
+    Napis ``"_x"`` obok publicznego łańcucha od modułu z ``src`` alarmuje (``Path(outbox.QUEUE_DIRECTORY, "_archiwum")``),
+    bo AST nie odróżni publicznej wartości od klasy (``setattr(outbox.Outbox, "_send_all", f)``); sam separator ``"_"``
+    nie jest prywatną nazwą.
+
+    Granica, którą łapie tylko przegląd: prywatny atrybut instancji (``outbox._draining``, ``super()._write``); nazwa
+    albo ścieżka złożona w trakcie działania (f-napis, sklejenie, zmienna, ``dir`` albo ``inspect.getmembers`` w pętli);
+    kod w napisie (``exec("outbox._queued = read")``, ``eval``); moduł przekazany przez zmienną, parametr albo wynik
+    wywołania, którego nie wiąże import (``m = import_module("rozliczenia.…")``, ``def patch(module)``), także
+    ``vars(m)`` i ``m.__dict__`` takiego modułu, i moduł w wyrażeniu, które nie jest nazwą, łańcuchem, indeksem ani
+    literałem (``(m := outbox)._x``, ``(outbox if c else x)._x``); prywatny napis albo nazwa argumentu w innym
+    wywołaniu niż moduł (``f(m, g("_x"))``, ``type("X", (K,), dict(_x=f))``) poza ``attrgetter`` i ``methodcaller``;
+    prywatna nazwa przypisana podklasie po jej definicji z innego modułu; to, czy kopia danych o świecie zewnętrznym
+    jest celowa.
+    """
+
+    bound: set[str] = set()
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] == SRC_PACKAGE:
+                    bound.add(alias.asname or SRC_PACKAGE)
+        elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == SRC_PACKAGE:
+            for alias in node.names:
+                if _private(alias.name):
+                    found.append((node.lineno, ast.unparse(node)))
+                bound.add(alias.asname or alias.name)
+
+    def from_src(node: ast.expr) -> bool:
+        while isinstance(node, ast.Attribute):
+            node = node.value
+        if isinstance(node, ast.Subscript):
+            return from_src(node.value) or from_src(node.slice)
+        return (isinstance(node, ast.Name) and node.id in bound) or (
+            isinstance(node, ast.Constant) and _src_path(node.value)
+        )
+
+    def src_in(nodes: typing.Iterable[ast.expr]) -> bool:
+        return any(from_src(part) for node in nodes for part in _literal(node))
+
+    subclasses = [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+    while grown := [node for node in subclasses if node.name not in bound and any(map(from_src, node.bases))]:
+        bound.update(node.name for node in grown)
+    for node in subclasses:
+        if node.name in bound:
+            found.extend((line, f"{node.name}.{name}") for line, name in _bound_in_class(node) if _private(name))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and _private(node.attr) and from_src(node.value):
+            found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.Call):
+            values = [*node.args, *(kw.value for kw in node.keywords)]
+            called = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+            with_module = src_in(values) and (
+                called == "vars" or any(kw.arg is not None and _private(kw.arg) for kw in node.keywords) or _private_in(values)
+            )
+            if with_module or (called in GETTERS and _private_in(values)):
+                found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.Tuple | ast.List | ast.Set | ast.Dict):
+            parts = [*filter(None, node.keys), *node.values] if isinstance(node, ast.Dict) else node.elts
+            parts = [part.value if isinstance(part, ast.Starred) else part for part in parts]
+            if any(map(from_src, parts)) and _private_in(parts):
+                found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.Constant) and _src_path(node.value) and _private_text(node):
+            found.append((node.lineno, repr(node.value)))
+    return sorted(set(found))
+
+
+def test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy() -> None:
+    reaches = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
+        for pattern in ORACLES
+        for path in sorted(ROOT.glob(pattern))
+        for line, code in _private_reaches(ast.parse(path.read_text(encoding="utf-8")))
+    ]
+
+    assert reaches == [], (
+        "wyrocznia sięga do prywatnej nazwy src; mechanikę bierze przez publiczny punkt obserwacji (nazwę, metodę stanu, "
+        "szew), a dane o świecie zewnętrznym kopiuje celowo (docs/agents/skille.md, „Co wyrocznia bierze z src”):\n"
+        + "\n".join(reaches)
+    )
+
+
+# Każda droga do prywatnej nazwy src, którą zna sprawdzenie (spis N13 z 7.11.2026: explore_outbox, explore_intermax,
+# explore_runs, github_przypadki_aktualnosci).
+PRIVATE_REACHES: typing.Final = {
+    "atrybut-modulu": "from rozliczenia.centrum import outbox as outbox_module\nv = outbox_module._version(path)",
+    "atrybut-modulu-z-pakietu": "from rozliczenia import intermax_replace\nseconds = intermax_replace._RETRY_S",
+    "atrybut-klasy": "from rozliczenia.centrum.keyed_box import KeyedBox\nnotes = KeyedBox._notes",
+    "pelna-sciezka": "import rozliczenia.centrum.runs\nclass Mine(rozliczenia.centrum.runs._Run):\n    pass\n",
+    "import-prywatnej-nazwy": "from rozliczenia.efenix_messages import _UNCHANGED",
+    "slownik-modulu": 'from rozliczenia.centrum import outbox\nnames = vars(outbox)\nnames["_queued"] = read',
+    "dict-modulu": "from rozliczenia.centrum import outbox\nnames = outbox.__dict__",
+    "setattr-z-napisem": 'from rozliczenia import preparation_files\nsetattr(preparation_files, "_write_period_file", step)',
+    "getattr-z-napisem": 'from rozliczenia.centrum import runs\nrun = getattr(runs, "_Run")',
+    "krotka-podmienianych-nazw": 'from rozliczenia.centrum import runs\nPATCHED = ((runs, "threading"), (runs, "_Run"))',
+    "slownik-podmienianych-nazw": 'from rozliczenia.centrum import runs\nPATCHED = {runs: "_Run"}',
+    # Przegląd #1115, runda 1: podmiana globalu modułu przez dowolną funkcję, nie tylko getattr/setattr.
+    "mock-patch-object": (
+        "from unittest import mock\nfrom rozliczenia.centrum import outbox\n"
+        'patched = mock.patch.object(outbox, "_queued", read)'
+    ),
+    "mock-patch-object-ze-slowem-kluczowym": (
+        "from unittest import mock\nfrom rozliczenia.centrum import outbox\n"
+        'patched = mock.patch.object(outbox, attribute="_queued", new=read)'
+    ),
+    "builtins-setattr": 'import builtins\nfrom rozliczenia.centrum import outbox\nbuiltins.setattr(outbox, "_queued", 1)',
+    "object-setattr": 'from rozliczenia.centrum import outbox\nobject.__setattr__(outbox, "_queued", 1)',
+    "mock-patch-sciezka": 'from unittest import mock\npatched = mock.patch("rozliczenia.centrum.outbox._queued", read)',
+    "import-module-prywatnego-modulu": 'import importlib\nmodule = importlib.import_module("rozliczenia.centrum._private")',
+    "sciezka-przez-prywatny-modul": 'from unittest import mock\npatched = mock.patch("rozliczenia._wnetrze.read", read)',
+    # Przegląd #1115, runda 2: moduł na dowolnym miejscu wywołania, prywatna nazwa argumentu nazwanego, para w liście.
+    "mock-patch-multiple": (
+        "from unittest import mock\nfrom rozliczenia.centrum import outbox\n"
+        "patched = mock.patch.multiple(outbox, _queued=read)"
+    ),
+    "mock-patch-object-wszystko-nazwane": (
+        "from unittest import mock\nfrom rozliczenia.centrum import outbox\n"
+        'patched = mock.patch.object(target=outbox, attribute="_queued", new=read)'
+    ),
+    "lista-w-liscie": 'from rozliczenia.centrum import outbox\nPATCHED = [[outbox, "_queued"]]',
+    "attrgetter": 'import operator\nfrom rozliczenia.centrum import outbox\nread = operator.attrgetter("_queued")(outbox)',
+    "methodcaller": 'import operator\ncall = operator.methodcaller("_remove", path)',
+    "import-z-fromlist": 'module = __import__("rozliczenia.centrum.outbox", fromlist=["_queued"])',
+    # Reguła ogólna (decyzja koordynatora po rundzie 2): moduł na każdym miejscu, napis na każdej głębokości literału.
+    "modul-na-dalszym-miejscu": 'from rozliczenia.centrum import outbox\nswap(read, "_queued", outbox)',
+    "napis-w-krotce-argumentu": 'from rozliczenia.centrum import outbox\nswap(outbox, ("threading", "_queued"))',
+    "rozpakowanie-w-literale": 'from rozliczenia.centrum import outbox\nswap(outbox, ("threading", *("_queued",)))',
+    "slowo-kluczowe-ze-slownika": 'from rozliczenia.centrum import outbox\nswap(outbox, **{"_queued": read})',
+    "slownik-nazwanych-argumentow": (
+        'from rozliczenia.centrum import outbox\nPATCH = {"target": outbox, "attribute": "_queued"}'
+    ),
+    "slownik-nazwa-przed-modulem": 'from rozliczenia.centrum import runs\nPATCHED = {"_Run": runs}',
+    "para-gleboko-w-literale": 'from rozliczenia.centrum import runs\nPATCHED = (runs, [("_Run", "threading")])',
+    "import-module-wzgledny": 'import importlib\nmodule = importlib.import_module("._wnetrze", "rozliczenia.centrum")',
+    "sys-modules": 'import sys\nread = sys.modules["rozliczenia.centrum.outbox"]._queued',
+    "sciezka-w-stalej": 'TARGET = "rozliczenia.centrum.outbox._queued"',
+    "napis-modulu-i-nazwa": 'from unittest import mock\npatched = mock.patch.object("rozliczenia.centrum.outbox", "_queued")',
+    # Przegląd #1115, runda 3: nadpisanie prywatnej nazwy klasy z src w podklasie (dawny ``_Log._write`` eksploratora
+    # kolejki, explore_outbox.py:795 na #1111) i dwie linie sprawdzenia bez przypadku.
+    "nadpisanie-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\n"
+        "class Log(CentrumLog):\n    def _write(self, event, **facts):\n        return None\n"
+    ),
+    "nadpisanie-w-podklasie-async": (
+        "from rozliczenia.centrum import outbox\nclass Box(outbox.Outbox):\n    async def _send_all(self):\n        pass\n"
+    ),
+    "przypisanie-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n    _write = staticmethod(print)\n"
+    ),
+    "przypisanie-z-adnotacja-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n    _write: object = print\n"
+    ),
+    "nadpisanie-pod-warunkiem-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n"
+        "    if QUIET:\n        def _write(self, event, **facts):\n            return None\n"
+    ),
+    "klasa-w-podklasie": (
+        "from rozliczenia.centrum import outbox\nclass Box(outbox.Outbox):\n    class _State:\n        pass\n"
+    ),
+    "nadpisanie-w-podklasie-podklasy": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Quiet(Log):\n    def _write(self, event, **facts):\n"
+        "        return None\nclass Log(CentrumLog):\n    pass\n"
+    ),
+    "nadpisanie-w-podklasie-typu-ogolnego": (
+        "from rozliczenia.centrum import runs\nclass Mine(runs.RunHost[int]):\n    def _note(self):\n        pass\n"
+    ),
+    "atrybut-podklasy": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n    pass\nwrite = Log._write"
+    ),
+    "type-z-klasa-z-src": (
+        'from rozliczenia.centrum.log import CentrumLog\nLog = type("Log", (CentrumLog,), {"_write": print})'
+    ),
+    "rozpakowanie-modulu-w-literale": 'from rozliczenia.centrum import outbox\nPATCHED = (*outbox.ADDRESSES_FILE, "_queued")',
+    "prywatny-modul-w-stalej": 'TARGET = "rozliczenia._wnetrze"',
+}
+
+
+@pytest.mark.parametrize("code", PRIVATE_REACHES.values(), ids=PRIVATE_REACHES.keys())
+def test_sprawdzenie_wyroczni_lapie_kazda_droge_do_prywatnej_nazwy_src(code: str) -> None:
+    assert _private_reaches(ast.parse(code))
+
+
+def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych_obiektow_i_prywatne_nazwy_spoza_src() -> None:
+    code = (
+        "from unittest import mock\n"
+        "import operator\n"
+        "import hypothesis\n"
+        "from rozliczenia.centrum import outbox as outbox_module\n"
+        "from rozliczenia.centrum.outbox import RETRY_S, Outbox\n"
+        "class Box:\n"
+        "    def __init__(self) -> None:\n"
+        "        self._ids = 0\n"
+        "def run(outbox: Outbox) -> object:\n"
+        '    """Dawniej ``rozliczenia.centrum.outbox._queued``, teraz ``Outbox.state()``."""\n'
+        "    names = vars(Box())\n"
+        '    show(outbox_module, mock.patch.object(hypothesis, "_settings", None))\n'
+        '    mock.patch.multiple(hypothesis, _settings=None)\n'
+        '    mock.patch.object(target=hypothesis, attribute="_settings")\n'
+        '    patched = [[hypothesis, "_settings"], [outbox_module, "threading"]]\n'
+        '    module = __import__("rozliczenia.centrum.outbox", fromlist=["Outbox"])\n'
+        '    read = operator.attrgetter("state")(outbox)\n'
+        '    log = "rozliczenia.centrum.outbox._queued to stara nazwa"\n'
+        '    print(outbox_module, "_queued zastąpiło state()")\n'
+        '    setattr(outbox_module, "threading", None)\n'
+        '    mock.patch.object(hypothesis, "_settings", None)\n'
+        '    mock.patch("rozliczenia.centrum.outbox.LOCAL_QUEUE_DISK", None)\n'
+        '    mock.patch("hypothesis._settings", None)\n'
+        '    log = "rozliczenia._x to zdanie, nie ścieżka"\n'
+        '    log = f"{outbox_module.__name__}._queued"\n'
+        '    path = Path(outbox_module.QUEUE_DIRECTORY, "_")\n'
+        '    return outbox.state(), outbox_module.SCHEMA_VERSION, RETRY_S, {outbox_module: "threading"}, getattr(Box(), "_ids")\n'
+        "class TrackedRun(Outbox):\n"
+        "    def __init__(self) -> None:\n"
+        "        _local = 1\n"
+        "        self._ids = [_n for _n in range(_local)]\n"
+        "    names = {_k: 1 for _k in ()}\n"
+        "    limit = _LIMIT\n"
+        "    def state(self) -> object:\n"
+        "        return super().state()\n"
+        "class Own:\n"
+        "    def _write(self) -> None:\n"
+        "        pass\n"
+    )
+
+    assert _private_reaches(ast.parse(code)) == []
