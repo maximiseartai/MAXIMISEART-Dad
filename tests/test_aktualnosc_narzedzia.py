@@ -447,8 +447,19 @@ def test_przekierowanie_pytania_z_tokenem_na_inny_host_idzie_tam_bez_tokenu() ->
     assert [asked.authorization for asked in elsewhere.asked] == [None, None, None]
 
 
-@pytest.mark.parametrize("refusal", [401, 403, 404])
-def test_odmowa_pytania_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktualizacji(refusal: int) -> None:
+@pytest.mark.parametrize(
+    ("refusal", "authorizations"),
+    [
+        (401, [WITH_TOKEN, None, None, None, WITH_TOKEN, None]),
+        (403, [WITH_TOKEN, None, None, None, WITH_TOKEN, None]),
+        # 404 bywa prawdziwą odpowiedzią wyszukiwania, więc token zostaje dla następnych pytań.
+        (404, [WITH_TOKEN, None, WITH_TOKEN, None, WITH_TOKEN, None, WITH_TOKEN, None]),
+    ],
+    ids=["401", "403", "404"],
+)
+def test_odmowa_pytania_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktualizacji(
+    refusal: int, authorizations: list[str | None]
+) -> None:
     with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=refusal) as api:
         freshness = ToolFreshness(
             local=lambda: OLDER,
@@ -463,8 +474,8 @@ def test_odmowa_pytania_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktuali
     assert published == (
         PublishedRelease(Release((0, 2, 0), "v0.2.0"), "", datetime(2026, 11, 8, 6, tzinfo=timezone.utc)),
     )
-    # Każde sprawdzenie pyta raz z tokenem, a po odmowie ponawia to pytanie i idzie dalej bez tokenu.
-    assert [asked.authorization for asked in api.asked] == [WITH_TOKEN, None, None, None, WITH_TOKEN, None]
+    # Każde sprawdzenie pyta z tokenem, a po odmowie ponawia to pytanie bez tokenu.
+    assert [asked.authorization for asked in api.asked] == authorizations
 
 
 LIMIT_RESET = datetime(2026, 11, 8, 3, 49, tzinfo=timezone.utc)

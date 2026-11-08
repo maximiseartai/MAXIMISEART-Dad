@@ -18,9 +18,11 @@ Pytania do API GitHuba idą z Tokenem do Zgłoszeń, gdy jest plik klucza: daje 
 ``KeyedBox.github_key``, a token daje limit konta (5000 pytań na godzinę) zamiast
 60 na godzinę wspólnych dla całego adresu IP. Nagłówek ``Authorization`` dostaje
 tylko host API, a urllib nie przenosi go na adres przekierowania. Odmowa pytania
-z tokenem (401, 403 bez wyczerpanego limitu, 404) to jedno ponowienie tego
-pytania bez tokenu, a reszta sprawdzenia idzie już bez niego: stary albo zły
-token nie zabiera tacie aktualizacji. Odmowa z powodu wyczerpanego limitu pytania
+z tokenem (401, 403 bez wyczerpanego limitu) to jedno ponowienie tego pytania
+bez tokenu, a reszta sprawdzenia idzie już bez niego: stary albo zły token nie
+zabiera tacie aktualizacji. 404 z tokenem to ponowienie tylko tego pytania bez
+tokenu, bo 404 bywa prawdziwą odpowiedzią wyszukiwania. Klucza, którego nie da
+się wysłać w nagłówku, ``KeyedBox.github_key`` nie daje. Odmowa z powodu wyczerpanego limitu pytania
 z tokenem też daje jedno ponowienie bez tokenu, bo limit konta (wspólny z agentami
 Maksa) i limit adresu IP to dwie osobne pule. Odmowa z powodu limitu pytania bez
 tokenu to ``RateLimited`` z chwilą, od której limit znów jest pełny; Diagnoza ją nazywa.
@@ -455,7 +457,7 @@ def _tag_commits(asking: _Asking, url: str) -> dict[str, str] | None:
 
 
 # Odmowy pytania z tokenem, po których to samo pytanie idzie jeszcze raz bez tokenu (opis modułu).
-_TOKEN_REFUSALS: Final = frozenset({401, 403, 404})
+_TOKEN_REFUSALS: Final = frozenset({401, 403})
 
 
 class _Asking:
@@ -472,10 +474,13 @@ class _Asking:
     def json(self, url: str) -> object:
         return self.page(url)[0]
 
-    def page(self, url: str) -> tuple[object, str | None]:
-        """Treść JSON odpowiedzi ``url`` i adres następnej strony z nagłówka ``Link``; ``_NoAnswer`` przy porażce."""
+    def page(self, url: str, *, with_token: bool = True) -> tuple[object, str | None]:
+        """Treść JSON odpowiedzi ``url`` i adres następnej strony z nagłówka ``Link``; ``_NoAnswer`` przy porażce.
 
-        token = self._token if urlsplit(url)[:2] == self._host else None
+        404 na pytanie z tokenem to jedno ponowienie tego pytania bez tokenu, ale token zostaje dla następnych:
+        wyszukiwanie binarne dostaje 404 także wtedy, gdy ``tip~k`` sięga przed pierwszy commit repozytorium."""
+
+        token = self._token if with_token and urlsplit(url)[:2] == self._host else None
         request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "centrum-rozliczen"})
         if token is not None:
             # Zwykły nagłówek urllib przenosi na adres przekierowania, także na inny host.
@@ -492,6 +497,8 @@ class _Asking:
             if token is not None and (limited is not None or failure.code in _TOKEN_REFUSALS):
                 self._token = None
                 return self.page(url)
+            if token is not None and failure.code == 404:
+                return self.page(url, with_token=False)
             raise (_NotFound if failure.code == 404 else _NoAnswer) from failure
         except (OSError, ValueError) as failure:  # brak sieci, zerwane połączenie, nie JSON
             raise _NoAnswer from failure

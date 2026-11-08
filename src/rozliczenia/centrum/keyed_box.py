@@ -82,6 +82,7 @@ from rozliczenia.centrum.report_box import (
     Unreachable,
     UploadOutcome,
     newest_with_line,
+    sendable,
 )
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.tool_freshness import ANSWER_KEPT_S, NO_ANSWER_KEPT_S
@@ -572,12 +573,15 @@ class KeyedBox:
         return "refused" if verdict.refused else "accepted"
 
     def github_key(self) -> str | None:
-        """Klucz do pytań Aktualności narzędzia i Powiadomienia o nowej wersji do API GitHuba; ``None`` bez pliku klucza.
+        """Klucz do pytań Aktualności narzędzia i Powiadomienia o nowej wersji do API GitHuba; ``None`` bez pliku klucza
+        i dla klucza, którego nie da się wysłać w nagłówku (``report_box.sendable``), bo taki nagłówek wywraca pytanie,
+        zanim dojdzie do GitHuba, a pytanie bez tokenu i tak dostaje odpowiedź.
 
         Bez werdyktu i bez pytania Skrzynki: ich odmowa mówi o publicznym repozytorium, nie o Skrzynce (opis modułu).
         """
 
-        return self._key()
+        key = self._key()
+        return key if key is not None and sendable(key) else None
 
     def check_in_background(self) -> None:
         """Przy starcie Centrum: sprawdzenie klucza w tle, żeby pierwsza Konfiguracja nie czekała na Skrzynkę."""

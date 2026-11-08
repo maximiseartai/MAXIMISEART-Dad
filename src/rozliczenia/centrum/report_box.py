@@ -259,7 +259,7 @@ class GitHubReportBox:
         self._transport = transport
 
     def open_issue(self, label: Label, title: str, body: str, *, key: str) -> SendOutcome:
-        if not _sendable(key):
+        if not sendable(key):
             return Refused()
         payload = {"title": title, "body": body, "labels": [label]}
         answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/issues", payload, key)
@@ -269,13 +269,13 @@ class GitHubReportBox:
         return Sent(number) if isinstance(number, int) else Unreachable()
 
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
-        if not _sendable(key):
+        if not sendable(key):
             return Refused()
         answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/issues/{number}/comments", {"body": body}, key)
         return _commented(answer, 201)
 
     def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
-        if not _sendable(key):
+        if not sendable(key):
             return Refused()
         answer = self._send("PATCH", f"{_API}/repos/{REPOSITORY}/issues/comments/{comment_id}", {"body": body}, key)
         return _commented(answer, 200)
@@ -318,7 +318,7 @@ class GitHubReportBox:
         coś zmieni, więc to ``Rejected``: kolejka zatrzymuje tylko plik w Archiwum, nie wysyłki za nim.
         """
 
-        if not _sendable(key):
+        if not sendable(key):
             return Refused()
         payload = {"tag_name": tag, "name": title, "body": description, "make_latest": "false"}
         answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/releases", payload, key)
@@ -330,7 +330,7 @@ class GitHubReportBox:
         return Archive(found, ()) if found is not None else Unreachable()
 
     def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
-        if not _sendable(key):
+        if not sendable(key):
             return Refused()
         query = urllib.parse.urlencode({"name": name, "label": label})
         url = f"{_UPLOADS}/repos/{REPOSITORY}/releases/{archive_id}/assets?{query}"
@@ -341,7 +341,7 @@ class GitHubReportBox:
         return asset if asset is not None else Unreachable()
 
     def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
-        if not _sendable(key):
+        if not sendable(key):
             return Refused()
         answer = self._exchange(
             HttpRequest(
@@ -358,7 +358,7 @@ class GitHubReportBox:
     def _pages(self, query: str, key: str) -> list[object] | Refused | Unreachable:
         """Wpisy listy GitHuba ze wszystkich stron, najwyżej ``_MAX_PAGES``; ``query`` to adres z ``?`` albo ``&`` na końcu."""
 
-        if not _sendable(key):
+        if not sendable(key):
             return Refused()
         found: list[object] = []
         for page in range(1, _MAX_PAGES + 1):
@@ -405,8 +405,11 @@ class GitHubReportBox:
         return response
 
 
-def _sendable(key: str) -> bool:
-    """Klucz da się wysłać w nagłówku ``Authorization``: widoczne znaki ASCII bez spacji, jak każdy token GitHuba."""
+def sendable(key: str) -> bool:
+    """Klucz da się wysłać w nagłówku ``Authorization``: widoczne znaki ASCII bez spacji, jak każdy token GitHuba.
+
+    Tę samą regułę stosuje ``KeyedBox.github_key`` dla pytań o Wydania: klucza, którego nie da się wysłać, nie dostają.
+    """
 
     return key.isascii() and key.isprintable() and " " not in key
 
