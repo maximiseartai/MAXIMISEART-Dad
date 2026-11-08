@@ -191,6 +191,11 @@ class PageElement:
     many: bool = False
     clicked: bool = False
 
+    def fits(self, count: int) -> bool:
+        """Element jest na stronie ``count`` razy, tyle, ile deklaruje."""
+
+        return count == 1 or (self.many and count > 1)
+
 
 class Element(enum.Enum):
     """Element strony efenix, którego używa okno: na której stronie (``page``), jego nazwa, selektor i liczba

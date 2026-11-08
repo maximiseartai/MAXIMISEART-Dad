@@ -89,12 +89,14 @@ TABLE = [
     Row("efenix_browser", "_read_order", "UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM))",
         "formularz logowania pod adresem strony zlecenia, bez przekierowania, a odczyt strony się nie udał", "E"),
     Row("efenix_page", "single", "UnexpectedPage(part, ElementCount(selector, count))",
-        "element okna (#field_numer, #data_install, #cena_all2, przyciski i okna dialogowe) nie dokładnie raz", "C"),
+        "#data_install, #cena_all2 albo pole Ilość pozycji do wpisania nie dokładnie raz", "C"),
+    Row("efenix_browser", "_element", "UnexpectedPage(part, ElementCount(element.selector, count))",
+        "element okna z efenix_page.Element (#field_numer, przyciski, pola i okna dialogowe) nie tyle razy, ile deklaruje "
+        "jego PageElement: dokładnie raz, a przycisk zamknięcia okna dialogowego [data-dismiss=\"modal\"] co najmniej raz",
+        "C"),
     Row("efenix_browser", "_still_single", "UnexpectedPage(part, ElementCount(selector, count))",
         "#field_numer nie dokładnie raz po wpisaniu numeru albo Enter, które się nie udały: odpowiedź szukania listy "
         "włożyła do #wyniki stronę listy po sprawdzeniu pola (#971)", "C"),
-    Row("efenix_browser", "_close", "UnexpectedPage(part, ElementCount(selector, count))",
-        "okno dialogowe bez przycisku zamknięcia [data-dismiss=\"modal\"]", "C"),
     Row("efenix_page", "amount", "UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))",
         "#cena_all2 (ORDER) albo price_all odpowiedzi (QUANTITY) nie jest liczbą z kropką", "C"),
     # --- szukanie i tabela wyników ---
@@ -128,7 +130,7 @@ TABLE = [
     Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, fault)",
         "okno Emmetta, gdy któreś jest już widoczne, nie dokładnie raz na stronie albo propozycja w nim nie dokładnie raz "
         "(ElementCount z efenix_page.emmett_window_fault, tej samej reguły, którą narzędzie zgodności mierzy efenix); "
-        "zaraz po kliknięciu przycisku Emmetta okno Emmetta nie dokładnie raz to single", "C"),
+        "zaraz po kliknięciu przycisku Emmetta okno Emmetta nie dokładnie raz to _element", "C"),
     Row("efenix_browser", "load_emmett", "LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)",
         "odpowiedź „Załaduj do zlecenia” przekierowana na page_login.php", "E"),
     Row("efenix_browser", "load_emmett", "UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))",

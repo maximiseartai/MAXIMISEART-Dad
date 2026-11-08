@@ -78,9 +78,10 @@ kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``, które s
 Przekazanie do akceptacji okno robi przyciskiem ``#button_forward_to_accept`` i „Tak” w ``#dialog_forward_yes_no``: czeka
 na koniec żądania ``action_change_status.php`` i na przeładowanie strony, które robi skrypt efenix po odpowiedzi, jak po
 „Załaduj do zlecenia”. Gdy skrypt efenix po przycisku Przekazania pokaże zamiast okna zmiany statusu okno informacji
-``#dialog_info``, efenix odmówił Przekazania: okno czeka, aż okno informacji przestanie się pojawiać (bootstrap efenix
-nie zamyka okna w trakcie animacji pokazania), czyta tekst ``#dialog_info_field_info`` jako ``ForwardRefusal``, zamyka
-okno informacji i oddaje odmowę, a „Tak” nie klika. Strażnik zmiany statusu (``window``) stoi na całym kontekście przeglądarki okna, więc widzi także
+``#dialog_info``, efenix odmówił Przekazania: okno czyta tekst ``#dialog_info_field_info`` jako ``ForwardRefusal``,
+zamyka okno informacji i oddaje odmowę, a „Tak” nie klika. Każde okno dialogowe okno zamyka dopiero po końcu jego animacji
+pokazania, bo bootstrap efenix (``.modal.fade``) nie zamyka okna w jej trakcie (#1084).
+Strażnik zmiany statusu (``window``) stoi na całym kontekście przeglądarki okna, więc widzi także
 żądania ramek i kart, które otworzy strona: każde żądanie, w którego ścieżce jest ``action_change_status``, przepuszcza
 tylko wtedy, gdy okno jest w Przekazaniu do akceptacji, to jego pierwsze takie żądanie, a jest to POST z polem ``xstatus``
 dokładnie raz, równym dokładnie „Do akceptacji”, i z polem ``order_id`` dokładnie raz, równym identyfikatorowi
@@ -195,7 +196,13 @@ _PICK_DAY: Final = """(field, [year, month, day]) => {
 }"""
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
 _COUNT: Final = "(selector) => ({count: document.querySelectorAll(selector).length})"
-_SETTLED: Final = "(selector) => document.querySelector(selector)?.getAnimations({subtree: true}).length === 0"
+_SETTLED: Final = """(selector) => {
+    const dialog = document.querySelector(selector);
+    return dialog !== null && dialog.getAnimations({subtree: true}).every(
+        (running) => !Number.isFinite(running.effect?.getComputedTiming().endTime));
+}"""
+"""Okno dialogowe skończyło każdą animację, która ma koniec. Animacji bez końca (spinner) okno nie czeka, bo czekałoby do
+końca czasu okna."""
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -326,7 +333,7 @@ class BrowserEfenix:
         self._opened = True
         self._ensure_logged_in(PagePart.LIST)
         try:
-            self._only(Element.NUMBER.selector, PagePart.LIST)
+            self._element(Element.NUMBER, PagePart.LIST)
         except UnexpectedPage as unread:
             # Strona błędu serwera efenix: adres odpowiada, więc to nie ``EfenixUnreachable``, także przy starcie.
             if response is not None and not response.ok:
@@ -428,9 +435,9 @@ class BrowserEfenix:
         ``False``: kalendarz efenix zamienił dzień na inny, więc okno zamknęło kalendarz bez „Potwierdź”.
         """
 
-        self._click(self._only(Element.DATE_BUTTON.selector, PagePart.DATE))
+        self._click(self._element(Element.DATE_BUTTON, PagePart.DATE))
         self._shown(Element.DATE_DIALOG, PagePart.DATE)
-        field = self._only(Element.DATE_FIELD.selector, PagePart.DATE)
+        field = self._element(Element.DATE_FIELD, PagePart.DATE)
         with _doing(Operation.PICK):
             picked = field.evaluate(_PICK_DAY, [day.year, day.month, day.day], timeout=self._timeout_ms)
         with _doing(Operation.READ):
@@ -440,7 +447,7 @@ class BrowserEfenix:
         if shown != day.isoformat():
             self._close(Element.DATE_DIALOG, Element.DATE_DISMISS, PagePart.DATE)
             return False
-        confirm = self._only(Element.DATE_OK.selector, PagePart.DATE)
+        confirm = self._element(Element.DATE_OK, PagePart.DATE)
         answer = self._answer(SET_DATE, lambda _params: True, lambda: self._click(confirm))
         if _redirected_to_login(answer):
             raise LoggedOut(PagePart.DATE, LoginSign.REDIRECT)
@@ -457,12 +464,12 @@ class BrowserEfenix:
         przeładowanie, które ją porzuca, nic nie zmienia (#895).
         """
 
-        button = self._only(Element.EMMETT_BUTTON.selector, PagePart.EMMETT)
+        button = self._element(Element.EMMETT_BUTTON, PagePart.EMMETT)
         with _doing(Operation.ANSWER), self._page.expect_request(
             lambda request: _is_post(request, FILL_EMMETT), timeout=self._timeout_ms
         ) as asked:
             self._click(button)
-        dialogs = self._only(Element.EMMETT_DIALOG.selector, PagePart.EMMETT)
+        dialogs = self._element(Element.EMMETT_DIALOG, PagePart.EMMETT)
         with _doing(Operation.ELEMENT):
             dialogs.locator("visible=true").first.wait_for(state="visible", timeout=self._timeout_ms)
         with _doing(Operation.READ):
@@ -470,7 +477,7 @@ class BrowserEfenix:
         if (fault := emmett_window_fault(window)) is not None:
             raise UnexpectedPage(PagePart.EMMETT, fault)
         seen = Proposal.SHOWN if window.shows else Proposal.NOTHING if _came_whole(asked.value) else Proposal.LOST
-        load = self._only(Element.EMMETT_LOAD.selector, PagePart.EMMETT)
+        load = self._element(Element.EMMETT_LOAD, PagePart.EMMETT)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
             answer = self._answer(LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
             if _redirected_to_login(answer):
@@ -487,7 +494,8 @@ class BrowserEfenix:
         field_id = self._positions.get(position)
         if field_id is None:
             raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))
-        field = self._only(f"{QUANTITY}#{field_id}", PagePart.QUANTITY)
+        with _doing(Operation.READ):
+            field = single(self._page, f"{QUANTITY}#{field_id}", PagePart.QUANTITY)
         self._click(field)
         with _doing(Operation.FILL):
             field.fill(str(quantity), timeout=self._timeout_ms)
@@ -515,10 +523,10 @@ class BrowserEfenix:
         ``action_change_status.php`` i przeładowanie strony, które robi skrypt efenix po odpowiedzi. Odmowę efenix w
         oknie informacji oddaje bez „Tak” (``_refusal``)."""
 
-        self._click(self._only(Element.FORWARD_BUTTON.selector, PagePart.FORWARD))
+        self._click(self._element(Element.FORWARD_BUTTON, PagePart.FORWARD))
         if (refusal := self._refusal()) is not None:
             return refusal
-        confirm = self._only(Element.FORWARD_OK.selector, PagePart.FORWARD)
+        confirm = self._element(Element.FORWARD_OK, PagePart.FORWARD)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
             answer = self._status_answer(lambda: self._click(confirm))
             if _redirected_to_login(answer):
@@ -528,19 +536,17 @@ class BrowserEfenix:
 
     def _refusal(self) -> ForwardRefusal | None:
         """Odmowa Przekazania, gdy po przycisku Przekazania skrypt efenix pokazał okno informacji, a nie okno zmiany
-        statusu: okno czeka na pokazanie jednego z nich, a z okna informacji po końcu jego animacji czyta tekst i zamyka
-        je."""
+        statusu: okno czeka na pokazanie jednego z nich, a z okna informacji czyta tekst i zamyka je. Tekst skrypt efenix
+        wpisuje, zanim pokaże okno."""
 
-        dialog = self._only(Element.FORWARD_DIALOG.selector, PagePart.FORWARD)
-        info = self._only(Element.INFO_DIALOG.selector, PagePart.FORWARD)
+        dialog = self._element(Element.FORWARD_DIALOG, PagePart.FORWARD)
+        info = self._element(Element.INFO_DIALOG, PagePart.FORWARD)
         with _doing(Operation.ELEMENT):
             dialog.or_(info).filter(visible=True).first.wait_for(state="visible", timeout=self._timeout_ms)
             refused = info.is_visible()
         if not refused:
             return None
-        with _doing(Operation.ELEMENT):
-            self._page.wait_for_function(_SETTLED, arg=Element.INFO_DIALOG.selector, timeout=self._timeout_ms)
-        text = self._only(Element.INFO_TEXT.selector, PagePart.FORWARD)
+        text = self._element(Element.INFO_TEXT, PagePart.FORWARD)
         with _doing(Operation.READ):
             shown = text.text_content(timeout=self._timeout_ms) or ""
         self._close(Element.INFO_DIALOG, Element.INFO_DISMISS, PagePart.FORWARD)
@@ -609,9 +615,16 @@ class BrowserEfenix:
         self._positions = dict(positions)
         return pricing
 
-    def _only(self, selector: str, part: PagePart) -> Locator:
+    def _element(self, element: Element, part: PagePart) -> Locator:
+        """Element strony tyle razy, ile deklaruje jego ``PageElement`` (``fits``: dokładnie raz albo, z ``many``, co
+        najmniej raz); inna liczba to ``ElementCount``. Narzędzie zgodności mierzy efenix tą samą regułą."""
+
+        located = self._page.locator(element.selector)
         with _doing(Operation.READ):
-            return single(self._page, selector, part)
+            count = located.count()
+        if not element.element.fits(count):
+            raise UnexpectedPage(part, ElementCount(element.selector, count))
+        return located
 
     @contextmanager
     def _still_single(self, selector: str, part: PagePart) -> Iterator[None]:
@@ -634,7 +647,7 @@ class BrowserEfenix:
             raise
 
     def _shown(self, element: Element, part: PagePart) -> None:
-        located = self._only(element.selector, part)
+        located = self._element(element, part)
         with _doing(Operation.ELEMENT):
             located.wait_for(state="visible", timeout=self._timeout_ms)
 
@@ -651,16 +664,13 @@ class BrowserEfenix:
             return answer.text()
 
     def _close(self, dialog: Element, dismiss: Element, part: PagePart) -> None:
-        """Zamyka okno dialogowe ``dialog`` jego przyciskiem zamknięcia ``dismiss``, bez „Potwierdź”, i czeka, aż zniknie."""
+        """Zamyka okno dialogowe ``dialog`` pierwszym jego przyciskiem zamknięcia ``dismiss``, bez „Potwierdź”, po końcu
+        animacji okna (``_SETTLED``), i czeka, aż zniknie."""
 
-        selector = dismiss.selector
-        buttons = self._page.locator(selector)
-        with _doing(Operation.READ):
-            count = buttons.count()
-        if count == 0:
-            raise UnexpectedPage(part, ElementCount(selector, count))
-        self._click(buttons.first)
-        located = self._only(dialog.selector, part)
+        located = self._element(dialog, part)
+        with _doing(Operation.ELEMENT):
+            self._page.wait_for_function(_SETTLED, arg=dialog.selector, timeout=self._timeout_ms)
+        self._click(self._element(dismiss, part).first)
         with _doing(Operation.ELEMENT):
             located.wait_for(state="hidden", timeout=self._timeout_ms)
 
