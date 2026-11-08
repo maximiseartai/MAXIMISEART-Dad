@@ -50,6 +50,8 @@ HIDE_TAB = (
     "document.dispatchEvent(new Event('visibilitychange'))"
 )
 SHOW_TAB = "delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))"
+# Synthetic Token do Zgłoszeń Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
+REPORT_KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
 # The Logi Uruchomienia beside the Centrum log (ADR 0015): one file per Uruchomienie procesu.
 RUN_LOGS = "logs/uruchomienia"
 
@@ -231,18 +233,21 @@ class Run:
         print(f"  ok: {message}", flush=True)
 
 
-def choose_periods_directory(run: Run, page: Page) -> None:
-    run.answer_picker(run.fixture["periods_directory"])
+def choose_periods_directory(run: Run, page: Page, path: str | None = None) -> None:
+    """Dad points Centrum to the folder okresów ``path`` (the fixture's without it) from the empty Tablica okresów."""
+
+    run.answer_picker(run.fixture["periods_directory"] if path is None else path)
     page.get_by_role("button", name="Wskaż folder okresów", exact=True).click()
     expect(page.get_by_role("table", name="Tablica okresów")).to_be_visible()
 
 
-def ensure_files_set(run: Run, page: Page) -> None:
-    """Points Centrum to the fixture's folder okresów and Rejestr zleceń unless a feature before did."""
+def ensure_files_set(run: Run, page: Page, periods_directory: str | None = None) -> None:
+    """Points Centrum to the folder okresów ``periods_directory`` (the fixture's without it) and the fixture's Rejestr
+    zleceń unless a feature before did."""
 
     settings = run.api("/api/settings", "ustawienia-przed-uruchomieniem")
     if settings["periods_directory"] == {"state": "not_set"}:
-        choose_periods_directory(run, page)
+        choose_periods_directory(run, page, periods_directory)
     if settings["order_register"] == {"state": "not_set"}:
         run.answer_picker(run.fixture["order_register"])
         page.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()

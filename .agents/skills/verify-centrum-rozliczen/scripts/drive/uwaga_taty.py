@@ -17,7 +17,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from drive.common import (
     PAGES,
-    Run,
+    REPORT_KEY,
     box_issues,
     close_centrum,
     current_run,
@@ -33,20 +33,17 @@ from drive.common import (
     queued_posts,
     read_json,
     remove,
+    Run,
     start_centrum,
     switch_theme,
     toggle_theme,
 )
+from drive.teksty import FOR_KEY, MODES, WRITE
 
 FEATURE = "uwaga-taty"
 LABEL = "uwaga-taty"
-WRITE = "Napisz do Maksa"
 SENT = "Uwaga wysłana do Maksa."
-# The one element of Uwaga taty, Zgłoszenie and Powiadomienia when the Token do Zgłoszeń is missing or refused (Q17).
-FOR_KEY = "Token do Zgłoszeń nie działa. Skontaktuj się z Maksem."
 REFUSED_CONTENT = "Tej Uwagi nie da się wysłać. Skontaktuj się z Maksem."
-# Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
-KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
 # Synthetic Uwagi: the first waits for the key, the second has no Treść.
 FIRST = ("Brakuje kolumny z kilometrami", "W Pliku zbiorczym nie ma kilometrów.\nDopisuję je ręcznie.")
 SECOND = ("Proszę o większą czcionkę", "")
@@ -86,7 +83,6 @@ REFUSED = ("Uwaga, której Skrzynka nie przyjmie", "Treść odrzucona przez Skrz
 LOGS_LABEL = "logi-uruchomienia"
 LOGS_LINK = re.compile(r"^\[Logi Uruchomienia\]\((.*)\)$", re.MULTILINE)
 MARKDOWN_LINK = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
-MODES = {"DRY-RUN": "podgląd", "RUN": "zapis"}
 NO_RUNS = "Nie ma jeszcze Uruchomień z Centrum."
 NOT_IN_HISTORY = "Tego Uruchomienia nie ma w historii Centrum. Wybierz inne albo wyślij Uwagę ogólną."
 LAPTOP = ViewportSize(width=1280, height=720)
@@ -592,7 +588,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "uwaga-wyslana")
     print("  harness: Maks writes the key; the skrzynka answers each issue after a pause", flush=True)
-    key_file.write_text(KEY + "\n", encoding="utf-8")
+    key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     pacing.parent.mkdir(exist_ok=True)
     pacing.write_text(str(BOX_PACING_MS), encoding="utf-8")
     try:
@@ -637,10 +633,10 @@ def drive(run: Run, page: Page) -> None:
     )
     log = run.log()
     run.check(
-        all(text not in log for text in (KEY, FIRST[0], FIRST[1].splitlines()[0], SECOND[0])),
+        all(text not in log for text in (REPORT_KEY, FIRST[0], FIRST[1].splitlines()[0], SECOND[0])),
         "the Centrum log has neither the key nor the text of an Uwaga",
     )
-    run.check(KEY not in page.content(), "the key never reaches the browser")
+    run.check(REPORT_KEY not in page.content(), "the key never reaches the browser")
     _close(dialog)
     try:
         _drive_pinned(run, page, config, box)

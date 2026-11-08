@@ -29,13 +29,13 @@ from drive.common import (
     settle,
     start_card_warns_while_open,
 )
+from drive.teksty import FILES_UNCHANGED
 from drive.uzupelnienie import drive_result_card
 
 # An older period with no successful DRY-RUN in the fixture's metrics; its confirmation keeps the no-preview warning.
 NOT_PREVIEWED = "08_14_09_2026"
 PREPARATION = "przygotowanie-pliku-zbiorczego"
 INCOMPLETE_PERIOD_WHAT = "Ostatnie zlecenie okresu jest z soboty 10.10.2026"
-FILES_UNCHANGED = "Nic nie zapisano, Twoje pliki są bez zmian."
 # Ilości usług warnings of the fixture's Plik zbiorczy rows (create_centrum_fixture.DEVICES): "Co się stało" and "Gdzie".
 COLLECTIVE_FILE = f"Rozliczenie {LAST_COMPLETE} - zbiorcze.xlsx"
 QUANTITY_WARNINGS = (

@@ -10,8 +10,8 @@ from typing import Any
 from playwright.sync_api import Locator, Page, expect
 
 from drive.common import (
+    REPORT_KEY,
     ROW_MARKER,
-    Run,
     advance_clock,
     box_issues,
     close_centrum,
@@ -27,26 +27,22 @@ from drive.common import (
     read_json,
     reload_with_answer,
     remove,
+    Run,
     start_centrum,
     stop_banner,
 )
+from drive.teksty import FOR_KEY, NOT_FOUND, TEMPLATE_MISSING
 
 FEATURE = "zgloszenie"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.
 PERIOD = "08_14_09_2026"
-TEMPLATE_MISSING = "Nie znaleziono wzorca, z którego powstają pliki okresu."
-NOT_FOUND = "Nie znalazłem przyczyny na tym komputerze."
 TITLE = f"BRAK_WZORCA: {TEMPLATE_MISSING} Nie utworzono żadnego pliku."
-# The one element of Uwaga taty, Zgłoszenie and Powiadomienia when the Token do Zgłoszeń is missing or refused (Q17).
-FOR_KEY = "Token do Zgłoszeń nie działa. Skontaktuj się z Maksem."
 FOR_INTERNET = "Zgłoszenie czeka na internet. Wyśle się samo."
 REJECTED = "Tego Zgłoszenia nie da się wysłać. Skontaktuj się z Maksem."
 SENT = "Zgłoszenie wysłane do Maksa. Poczekaj na naprawę."
 WAITING = "Zgłoszenie tego problemu już jest wysłane i czeka na naprawę."
 # Heading of the comment the queue adds to the open Zgłoszenie when its problem returns (ADR 0007, #820).
 RETURNED = "## Zgłoszenie wróciło\n\n"
-# Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
-KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
 
 
 def _stop_for_maks(run: Run, page: Page, name: str, missing: str = "internal_template") -> str:
@@ -179,24 +175,24 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_text("Zgłoszenia: brak tokenu", exact=True)).to_be_visible()
     run.capture(page, "62-zgloszenie-konfiguracja-brak-klucza")
     print("  harness: Maks writes the key to config/zgloszenia-klucz.txt", flush=True)
-    key_file.write_text(KEY + "\n", encoding="utf-8")
+    key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     configuration = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja")
     expect(page.get_by_text("Zgłoszenia: gotowe", exact=True)).to_be_visible()
     run.check(configuration["reports"] == "ready", "Konfiguracja reports the key as ready")
-    run.check(KEY not in json.dumps(configuration) and KEY not in page.content(), "the key value never reaches the browser")
+    run.check(REPORT_KEY not in json.dumps(configuration) and REPORT_KEY not in page.content(), "the key value never reaches the browser")
     run.capture(page, "63-zgloszenie-konfiguracja-gotowe")
     refusing = box / "odmawia-klucza"
     print("  harness: the skrzynka refuses the key Maks writes next (an expired token)", flush=True)
     box.mkdir(exist_ok=True)  # run alone, nothing reached the skrzynka yet
     refusing.touch()
-    key_file.write_text(KEY + "_WYGASLY\n", encoding="utf-8")
+    key_file.write_text(REPORT_KEY + "_WYGASLY\n", encoding="utf-8")
     refused = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja-odrzucony")
     expect(page.get_by_text("Zgłoszenia: token odrzucony", exact=True)).to_be_visible()
     run.check(refused["reports"] == "refused_key", "Konfiguracja reports the refused key")
     run.capture(page, "63b-zgloszenie-konfiguracja-odrzucony")
     print("  harness: Maks writes a new key the skrzynka accepts", flush=True)
     remove(refusing)
-    key_file.write_text(KEY + "\n", encoding="utf-8")
+    key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     accepted = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja-nowy-token")
     expect(page.get_by_text("Zgłoszenia: gotowe", exact=True)).to_be_visible()
     run.check(accepted["reports"] == "ready", "Konfiguracja reports the new key as ready")
@@ -225,7 +221,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(
         f"skrzynka-wyslano etykieta=zgloszenie okres={PERIOD} numer={number}" in log, "the Centrum log records the sending"
     )
-    run.check(KEY not in log and KEY not in json.dumps(issue), "the key is neither in the log nor in the Zgłoszenie")
+    run.check(REPORT_KEY not in log and REPORT_KEY not in json.dumps(issue), "the key is neither in the log nor in the Zgłoszenie")
     run.capture(page, "64-zgloszenie-wyslane")
 
     run.step(FEATURE, "zgloszenie-po-odswiezeniu")

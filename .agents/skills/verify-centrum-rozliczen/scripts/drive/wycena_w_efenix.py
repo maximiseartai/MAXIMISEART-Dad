@@ -24,13 +24,13 @@ from drive.common import (
     run_logs,
     stop_banner,
 )
+from drive.teksty import BELL_FRESH
 
 FEATURE = "wycena-w-efenix"
 PROCESS = "Wycena w efenix"
 PERIOD = "08_14_09_2026"
 COLLECTIVE_FILE = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 LOGIN = "Zaloguj się w oknie efenix"
-BELL_FRESH = "Powiadomienia, są nowe"
 DONE = "Wycena w efenix gotowa · wymaga sprawdzenia"
 # serve_centrum.EFENIX_ORDERS: row → (order number, Wykonawca); 18 is ready, 19 unknown to efenix, 20 differs from Emmett,
 # 21 is „Rozliczone” in efenix.

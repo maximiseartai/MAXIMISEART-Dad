@@ -23,6 +23,7 @@ from drive.common import (
     served_version,
     while_open,
 )
+from drive.teksty import ABOUT_LOGS, MODES
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
 
 FEATURE = "logi-uruchomienia"
@@ -31,11 +32,8 @@ LABEL = "logi-uruchomienia"
 KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ_LOGOW"
 # The last line of a comment: the link to the file of its full Logi in the Archiwum Logów okresu (a GitHub Release).
 LINK = re.compile(r"- Pełne Logi: \[(?P<name>[^\]]+)\]\(https://github\.com/[^/]+/[^/]+/releases/download/(?P<tag>[^/]+)/(?P=name)\)")
-MODES = {"DRY-RUN": "podgląd", "RUN": "zapis"}
 # A Wydanie's tag (ADR 0014): vMAJOR.MINOR.PATCH without leading zeros or suffixes.
 RELEASE_TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
-# What Dad could read about the Logi: the word in any of its cases, or their folder.
-ABOUT_LOGS = re.compile(r"\bLog(i|ów|ach|ami)\b|uruchomienia/")
 
 Json = dict[str, Any]
 """A file of Logi or a card, parsed from JSON."""

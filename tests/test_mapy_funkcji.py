@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / ".agents" / "skills"
 MAPS = sorted(path.parent for path in SKILLS.glob("*/features"))
 FEATURE_LISTS = ("FEATURES", "EXPLICIT_FEATURES")
-PACKAGE_HELPERS = frozenset({"__init__", "common"})
+PACKAGE_HELPERS = frozenset({"__init__", "common", "teksty"})
 LINK = re.compile(r"\]\(\./([^)]+\.md)\)")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 DRIVING = re.compile(r"## Driving it with \S.*")
@@ -194,7 +194,7 @@ def test_kazdy_plik_funkcji_i_modul_pakietu_ma_funkcje_w_kodzie_skilla(skill: Pa
         if path.stem not in driven
     ] + [
         f"moduł {skill.name}/{module.source} nie jest funkcją harnessu: dopisz `{module.name}` do {lists} "
-        "albo przenieś wspólny kod do common.py"
+        "albo przenieś wspólny kod do common.py (teksty ekranu do teksty.py)"
         for module in _package_modules(skill)
         if module.name not in driven
     ]

@@ -10,6 +10,7 @@ from pathlib import Path
 from playwright.sync_api import Locator, Page, expect
 
 from drive.common import Run, move, remove, served_version, unreadable, version_line
+from drive.teksty import UPDATE_BUTTON, WRITE
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
 REPORT_TO_MAINTAINER = "Przekaż ten komunikat osobie utrzymującej narzędzie."
@@ -99,8 +100,8 @@ def drive(run: Run, page: Page) -> None:
     run.check(
         page.url.endswith("#/konfiguracja")
         and buttons.count() == 4
-        and buttons.filter(has_text="Zaktualizuj narzędzie").count() == 0
-        and page.locator("main").get_by_role("button", name="Napisz do Maksa", exact=True).count() == 1
+        and buttons.filter(has_text=UPDATE_BUTTON).count() == 0
+        and page.locator("main").get_by_role("button", name=WRITE, exact=True).count() == 1
         and page.locator("main").get_by_role("button", name="Powiadomienia", exact=False).count() == 1,
         "the page offers no action besides the header's menu, `Napisz do Maksa`, Powiadomienia and theme buttons; the current tool"
         " has no `Zaktualizuj narzędzie`",

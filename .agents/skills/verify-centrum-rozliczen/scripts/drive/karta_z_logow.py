@@ -24,13 +24,12 @@ from drive.common import (
     run_logs,
     start_centrum,
 )
+from drive.teksty import ABOUT_LOGS
 
 FEATURE = "karta-z-logow"
 LAST_STARTED = "logs/ostatnie-uruchomienie.json"
 # What the live card has and the Logi do not hold: order_notes carry the order numbers and Wykonawcy of Wycena w efenix.
 LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
-# What Dad could read about the Logi: the word in any of its cases, or their folder.
-ABOUT_LOGS = re.compile(r"\bLog(i|ów|ach|ami)\b|uruchomienia/")
 INTERRUPTED_WHAT = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
 WRITE_ADVICE = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."
 MISSING = "Karty tego Uruchomienia nie ma"

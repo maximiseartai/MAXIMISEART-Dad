@@ -27,6 +27,7 @@ from drive.common import (
     unreadable,
     while_open,
 )
+from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
 
 FEATURE = "diagnoza"
 # A period without a Folder okresu that no feature prepares; the Rejestr zleceń has no orders in it, so no
@@ -34,25 +35,20 @@ FEATURE = "diagnoza"
 PERIOD = "08_14_09_2026"
 REGISTER_OPEN = "Rejestr zleceń jest otwarty w Excelu. Nie utworzono żadnego pliku."
 NO_ORDERS = "W Rejestrze zleceń nie ma żadnego zlecenia z tego okresu."
-TEMPLATE_MISSING = "Nie znaleziono wzorca, z którego powstają pliki okresu."
 # The one Komunikat of the konfiguracja wykonawców, the same in both processes.
 WORKER_CONFIG_NOT_UTF8 = "Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8."
 WORKER_CONFIG_INACCESSIBLE = "Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program."
-NOT_FOUND = "Nie znalazłem przyczyny na tym komputerze."
 CONFIRMS = "Diagnoza potwierdza ten komunikat."
-FILES_UNCHANGED = "Nic nie zapisano, Twoje pliki są bez zmian."
 NOT_DAD_FILES = "To nie wynika z Twoich plików."
 NOT_CHECKED_UNEXPECTED = "Nie udało się sprawdzić: nieoczekiwany błąd."
 # The Centrum log entry of a check that failed itself: the exception type and the check, never its text.
 UNEXPECTED_IN_DIAGNOSIS = 'nieoczekiwany-wyjatek typ=RuntimeError miejsce="Diagnoza: Rejestr zleceń"'
 UNEXPECTED_CODE = "BLAD_NIEOCZEKIWANY"
-FOR_KEY = "Token do Zgłoszeń nie działa. Skontaktuj się z Maksem."
 KEY_CHECK = "Token do Zgłoszeń"
 NO_KEY = "Na tym komputerze nie ma Tokenu do Zgłoszeń. Zgłoszenie poczeka, aż Maks go wpisze."
 KEY_REFUSED = "Skrzynka Zgłoszeń odrzuca Token do Zgłoszeń. Zgłoszenie poczeka, aż Maks go wymieni."
 # A key of its own: the skrzynka refuses it here, and Centrum remembers that refusal per key for a quarter of an hour.
 REFUSED_KEY = "github_pat_VERIFY_DIAGNOZA_ODRZUCONY"
-PROPOSAL = "Jest też nowsza wersja narzędzia."
 OTHER_MAIN = "e" * 40
 CHECKS = (
     "Ustawienia taty",
@@ -198,7 +194,7 @@ def drive(run: Run, page: Page) -> None:
         expect(proposal).to_contain_text(PROPOSAL)
         expect(page.get_by_role("button", name="Uruchom ponownie", exact=True)).to_have_count(0)
         run.check(True, "a cause only Maks removes has no Uruchom ponownie; the newer version is only a quiet proposal")
-        update = proposal.get_by_role("button", name="Zaktualizuj narzędzie", exact=True)
+        update = proposal.get_by_role("button", name=UPDATE_BUTTON, exact=True)
         expect(update).to_be_enabled()
         send = diagnosis.get_by_role("button", name="Wyślij do Maksa", exact=True)
         run.check(
