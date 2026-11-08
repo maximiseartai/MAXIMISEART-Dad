@@ -496,7 +496,7 @@ FROZEN_TIMES = {
 def test_plan_bierze_zawsze_odleglosc_1_a_dalsze_w_budzecie_i_nazywa_zostawione(budget_s: float, deferred: tuple[str, ...]) -> None:
     tests = sorted(path for path in FROZEN_DISTANCES if path.startswith("tests/"))
 
-    chosen = szybko.plan(tests, FROZEN_DISTANCES, FROZEN_TIMES, budget_s)
+    chosen = szybko.plan(tests, FROZEN_DISTANCES, czasy_ci.KosztyPlikow(FROZEN_TIMES), budget_s)
 
     # Plik spoza tabeli kosztuje tyle, co mediana tabeli: 2,5 s.
     costs = {**dict.fromkeys(tests, 2.5), **FROZEN_TIMES}

@@ -1,0 +1,197 @@
+"""Po merge'u do domyślnej gałęzi repozytorium, przed sprzątaniem, zamyka jego otwarte issues, które opis PR wskazuje
+słowem „Naprawia”. GitHub tego słowa nie zna, więc bez narzędzia takie issues zostawały otwarte. Każde dostaje
+komentarz z numerem PR i pełnym SHA commitu merge'a, a linia ``SCAL OK`` podaje ``zamknięte: #N``. Opis bez słowa
+„Naprawia” pomija bez pytania GitHuba. Z nim pyta o domyślną gałąź (``gh repo view``), a przy merge'u do niej
+renderuje opis rendererem GitHuba (``gh api markdown``, ``mode=gfm``, ``context`` to repozytorium PR), więc to GitHub
+decyduje, co jest kodem, cytatem albo komentarzem HTML.
+
+Issue się liczy, gdy GitHub zamienił jego odwołanie na link do issue tego repozytorium (bez względu na wielkość liter
+właściciela i nazwy), a link stoi na liście numerów zaraz po słowie „Naprawia”, pisanym dokładnie tak, od wielkiej
+litery, które zaczyna linię akapitu albo punktu listy. Linia liczy się tylko wtedy, gdy jej tekst zaczyna się
+w akapicie albo punkcie listy, a wszystko, w czym ten blok stoi, to akapity, punkty i listy; w samym bloku tekst może
+stać jeszcze w pogrubieniu albo kursywie. Każde inne miejsce niczego nie zamyka, także takie, którego tu nie wymieniono
+i którego GitHub dopiero zacznie używać: nagłówek, tabela, ``<details>`` i ``<summary>``, cytat i alert GitHuba
+(``> [!NOTE]``), blok HTML (``<div>``, ``<section>``, ``<dl>``), przypis i ``<pre>``, także gdy GitHub owinie tekst
+w nich w akapit albo punkt listy. Linię kończy tylko ``<br>``, którym GitHub zastępuje koniec wiersza, oraz początek
+i koniec bloku: akapitu, punktu listy, nagłówka, cytatu, tabeli, ``<pre>``, ``<div>``, ``<details>``, ``<summary>``
+i ``<hr>``. Każdy inny znacznik (``<q>``, ``<kbd>``, emoji, wzór ``$…$`` i każdy, którego GitHub dopiero zacznie
+używać) należy do linii, a jego tekst się liczy, poza kodem i przekreśleniem. Liczy się więc ``Naprawia #490``,
+``Naprawia #490, #491 i #492 oraz #493``, kilka linii, także pogrubionych, i adres issue. Lista kończy się na
+pierwszym tekście innym niż przecinek, „i”, „oraz” albo numer, którego GitHub nie zlinkował (nieistniejący): „Naprawia
+#490. Nie naprawia #491” zamyka tylko #490. Kończy ją też odwołanie do innego repozytorium: w ``Naprawia
+MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#12, #13`` GitHub linkuje ``#13`` do tego repo, ale autor wylicza tam
+Zgłoszenia. Zgłoszenie zostaje otwarte, bo zamknięte mówi Centrum taty, że poprawka czeka na aktualizację, a merge do
+``main`` to jeszcze nie Wydanie. Nie zamyka: „Naprawia” w środku linii (także „Ten PR <q>nie</q> Naprawia #490”),
+„naprawia” małą literą (także w zawiniętej linii „Ten PR nie do końca⏎naprawia #490”), linii, która zaczyna się od
+kodu, przekreślenia (także takich, które zaczęły się przed końcem poprzedniego wiersza: ``~~Ten PR⏎nie~~ Naprawia
+#490``), obrazka albo pola punktu listy zadań (``- [ ] Naprawia #490``), linii spoza akapitów i list (wyżej), kodu
+(fragmentu, bloku i ``<pre>``), przekreślenia, PR-a, issue już zamkniętego ani issues, które GitHub zamyka sam
+(``closingIssuesReferences``: ``Closes``, ``Fixes``, ``Resolves``).
+
+Merge do innej gałęzi niż domyślna (stos PR-ów) niczego nie zamyka i nie renderuje opisu, jak GitHub przy ``Closes``,
+a linia podaje ``bez zamykania „Naprawia”: baza <gałąź> to nie <domyślna>``. Gdy GitHub nie poda domyślnej gałęzi
+albo nie wyrenderuje opisu (``gh`` z błędem albo po czasie, pusta odpowiedź), narzędzie niczego nie zamyka, tylko
+ostrzega ``UWAGA: GitHub nie podał domyślnej gałęzi`` albo ``UWAGA: GitHub nie wyrenderował opisu PR`` z dopiskiem
+``nie zamknięto issues z „Naprawia”, zamknij je ręcznie``. Gdy GitHub po merge'u nie poda commitu merge'a, narzędzie
+nie zamyka, bo nie wie, czy PR wszedł do gałęzi (np. czeka w kolejce merge'a), tylko ostrzega ``UWAGA: GitHub nie
+podał commitu merge'a, nie zamknięto #N, zamknij ręcznie``. Każdy błąd przy zamykaniu (``gh`` z błędem albo po
+czasie, odpowiedź bez stanu issue) kończy się ostrzeżeniem ``UWAGA: nie zamknięto #N, zamknij ręcznie``. Każde z tych
+ostrzeżeń stoi w linii ``SCAL OK`` z kodem 0, bo PR jest już scalony. Z ``--bez-merge`` tylko czyta, niczego nie
+zamyka, a linia podaje ``po merge'u zamknie: #N`` (a zamiast „nie zamknięto …” ostrzeżenia ``nie sprawdzono …``).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from html.parser import HTMLParser
+import json
+import re
+from urllib.parse import urlsplit
+
+import github
+from stan_pr import Pull
+
+LINK = "\x01"
+NOT_TEXT = "\x00"
+_REFERENCE = rf"(?:{LINK}|(?:[\w.-]+/[\w.-]+)?#\d+)"
+FIXES = re.compile(rf"\s*Naprawia\s+({_REFERENCE}(?:\s*(?:,|\bi\b|\boraz\b)\s*{_REFERENCE})*)")
+REFERENCE = re.compile(_REFERENCE)
+BLOCKS = frozenset({"blockquote", "details", "div", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "li", "p", "pre", "summary", "table"})
+LIST_OR_PARAGRAPH = frozenset({"li", "ol", "p", "ul"})
+EMPHASIS = frozenset({"em", "strong"})
+HIDDEN = frozenset({"code", "del", "s", "strike"})
+VOID = frozenset({"area", "br", "col", "embed", "hr", "img", "input", "source", "track", "wbr"})
+
+
+@dataclass(frozen=True)
+class _Link:
+    repository: str
+    number: int
+    issue: bool
+
+
+class _Lines(HTMLParser):
+    """Linie akapitów i punktów list w HTML opisu PR: ``LINK`` w miejscu linku do issue albo PR, ``NOT_TEXT`` w miejscu kodu, przekreślenia, obrazka i pola wyboru.
+
+    Linię kończy ``<br>`` i początek albo koniec bloku z ``BLOCKS``, a każdy inny znacznik należy do linii. Linia
+    trafia do ``lines`` tylko wtedy, gdy jej tekst zaczyna się wewnątrz samych ``LIST_OR_PARAGRAPH`` i ``EMPHASIS``,
+    a najgłębszy z tych bloków to akapit albo punkt listy.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lines: list[list[str | _Link]] = []
+        self._line: list[str | _Link] = []
+        self._start: tuple[str, ...] | None = None
+        self._open: list[str] = []
+        self._link: _Link | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        if tag in BLOCKS or tag == "br":
+            self._end_line()
+        if tag in {"img", "input"} or (tag in HIDDEN and not self._hidden()):
+            self._append(NOT_TEXT)
+        elif tag == "a" and not self._hidden() and "issue-link" in (attributes.get("class") or "").split():
+            _, owner, name, _, number = urlsplit(attributes.get("data-url") or "").path.split("/")
+            self._link = _Link(f"{owner}/{name}", int(number), attributes.get("data-hovercard-type") == "issue")
+        if tag not in VOID:
+            self._open.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in BLOCKS:
+            self._end_line()
+        if tag in self._open:
+            del self._open[len(self._open) - 1 - self._open[::-1].index(tag) :]
+        if tag == "a" and self._link is not None:
+            self._line.append(self._link)
+            self._link = None
+
+    def handle_data(self, data: str) -> None:
+        if not self._hidden() and self._link is None:
+            self._append(data)
+
+    def _hidden(self) -> bool:
+        return not HIDDEN.isdisjoint(self._open)
+
+    def _append(self, part: str) -> None:
+        if self._start is None and part.strip():
+            self._start = tuple(self._open)
+        self._line.append(part)
+
+    def _end_line(self) -> None:
+        blocks = [tag for tag in self._start or () if tag not in EMPHASIS]
+        if blocks and blocks[-1] in {"p", "li"} and LIST_OR_PARAGRAPH.issuperset(blocks):
+            self.lines.append(self._line)
+        self._line, self._start = [], None
+        if self._hidden():
+            self._append(NOT_TEXT)  # kod albo przekreślenie przechodzi przez ``<br>`` na początek następnej linii
+
+
+def fixed_issues(body: str, repository: str) -> tuple[int, ...]:
+    """Numery issues ``repository`` z linii „Naprawia” opisu PR ``body`` wyrenderowanego przez GitHuba.
+
+    Rzuca wyjątek, gdy GitHub opisu nie wyrenderował.
+    """
+
+    rendered = github.gh("api", "markdown", "--input", "-", wejscie=json.dumps({"text": body, "mode": "gfm", "context": repository}))
+    if not rendered.strip():
+        raise ValueError("GitHub zwrócił pusty HTML")
+    parser = _Lines()
+    parser.feed(rendered)
+    parser.close()
+    numbers: list[int] = []
+    for line in parser.lines:
+        listed = FIXES.match("".join(LINK if isinstance(part, _Link) else part for part in line))
+        links = iter(part for part in line if isinstance(part, _Link))
+        for reference in REFERENCE.finditer(listed[1] if listed else ""):
+            if reference[0] != LINK:
+                if "/" in reference[0]:
+                    break
+                continue
+            link = next(links)
+            if link.repository.casefold() != repository.casefold():
+                break
+            if link.issue and link.number not in numbers:
+                numbers.append(link.number)
+    return tuple(numbers)
+
+
+def close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
+    """Zamyka otwarte issues z linii „Naprawia” z komentarzem o merge'u, a przed merge'em tylko je podaje."""
+
+    if "Naprawia" not in pull.body:
+        return ""
+    unchecked = "nie zamknięto issues z „Naprawia”, zamknij je ręcznie" if merged else "nie sprawdzono „Naprawia”"
+    try:
+        default_branch = str(json.loads(github.gh("repo", "view", pull.repository, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"])
+    except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
+        return f" | UWAGA: GitHub nie podał domyślnej gałęzi, {unchecked}"
+    if pull.base != default_branch:
+        return f" | bez zamykania „Naprawia”: baza {pull.base} to nie {default_branch}"
+    try:
+        fixes = [number for number in fixed_issues(pull.body, pull.repository) if number not in pull.closed_by_github]
+    except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
+        return f" | UWAGA: GitHub nie wyrenderował opisu PR, {unchecked}"
+    closes = merged and merge_commit is not None
+    open_issues, failed = [], []
+    for number in fixes:
+        try:
+            if json.loads(github.gh("api", f"repos/{pull.repository}/issues/{number}"))["state"] != "open":
+                continue
+            if closes:
+                comment = f"Naprawione przez #{pull.number}, scalone jako {merge_commit}."
+                github.gh("issue", "close", str(number), "--repo", pull.repository, "--comment", comment)
+            open_issues.append(f"#{number}")
+        except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
+            failed.append(f"#{number}")
+    if merged and not closes:
+        missed = [*open_issues, *failed]
+        return f" | UWAGA: GitHub nie podał commitu merge'a, nie zamknięto {', '.join(missed)}, zamknij ręcznie" if missed else ""
+    done, warning = ("zamknięte", "UWAGA: nie zamknięto {}, zamknij ręcznie") if merged else (
+        "po merge'u zamknie", "UWAGA: nie sprawdzono {}"
+    )
+    parts = [f"{done}: {', '.join(open_issues)}"] if open_issues else []
+    parts += [warning.format(", ".join(failed))] if failed else []
+    return "".join(f" | {part}" for part in parts)
+

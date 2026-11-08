@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "tools" / "ci"))
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import czasy_ci  # noqa: E402
+import niestabilne_testy  # noqa: E402
 import plan_runu  # noqa: E402
 import wykonaj_zadanie  # noqa: E402
 import wyniki_testow  # noqa: E402
@@ -714,3 +715,7 @@ def test_junit_daje_id_pytest_wynik_i_wlasnosci_kazdego_testu_takze_bez_konfigur
             ),
         ]
     )
+    # Błąd kolekcji nie ma id testu, więc ponowienie nie ma czego ponowić; porażkę i błąd fixture zdejmuje po id.
+    assert niestabilne_testy.padniete(junit) is None
+    wyniki_testow.bez_porazek(junit, [f"{plik}::{nazwa}" for nazwa in ("test_zly", "test_fixture", "test_opis[dwa i dwa]")])
+    assert [(test.plik, test.id) for test in wyniki_testow.testy(junit) if test.wynik == "padł"] == [(modul, None)]

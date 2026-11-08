@@ -11,12 +11,12 @@ Zmianę, testy dotknięte zmianą i ich odległość od niej liczy ``tools/lib/w
 który wynika z samego kodu, więc świeży worktree wybiera tak samo. Zmiana pliku, od którego zależy każdy test
 (``Context.TESTS`` tego modułu: konfiguracja i zależności, ``conftest.py`` każdego testu i fixture gita, którą
 wczytuje dla całej sesji), wybiera wszystkie testy. Test, który już przeszedł na tych samych plikach, nie biegnie
-drugi raz: pamięć zielonych testów leży w katalogu gita worktree. Krok pytest bierze ``WORKERS`` workerów, chyba że
-ustawiono ``PYTEST_XDIST_AUTO_NUM_WORKERS``.
+drugi raz: pamięć zielonych testów leży w katalogu gita worktree. Krok pytest bierze ``czasy_ci.WORKERY_LOKALNE``
+workerów, chyba że ustawiono ``PYTEST_XDIST_AUTO_NUM_WORKERS``.
 
 Z wybranych testów biegną zawsze pliki w odległości najwyżej 1 od zmiany w grafie zależności (``plan``), czyli
 zmienione albo zależne wprost od zmienionego pliku, a dalsze po odległości i czasie w CI rosnąco, dopóki mieszczą
-się w budżecie ``BUDGET_S``. Czas pliku to jego koszt na Linuksie z ostatnich runów main (``tools/lib/czasy_ci.py``,
+się w budżecie ``BUDGET_S``. Czas pliku to jego koszt na Linuksie z ostatnich runów main (``czasy_ci.lokalne``,
 kopia w ``.git/czasy-ci`` odświeżana raz na dobę, a po nieudanym pobraniu w następnym przebiegu); bez niej, na przykład
 bez sieci, każdy plik waży 0 i biegnie, a szybko mówi to linią ``SZYBKO | bez czasów CI (<przyczyna>)``. Test, który importuje albo
 czyta zmieniony plik konfiguracji, ma najwyżej 2, więc biegnie w budżecie przed testami bez drogi w grafie. Resztę liczy pełny pytest w CI, a szybko wypisuje ją przed wynikiem
@@ -54,7 +54,6 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
-import statistics
 import subprocess
 import sys
 import threading
@@ -75,7 +74,6 @@ import wyniki_testow
 from zakres_runu import podstawa_na_pull_request
 
 GREEN = "szybko-zielone.json"
-WORKERS = "4"
 # Sekundy czasów CI na workera. Porażki pytest w szybko z 23–24.10 łapie ten sam plan od 20 s wzwyż, bo prawie
 # wszystkie padły w odległości 0–1 albo w testach struktury, więc budżet stoi blisko tej granicy.
 BUDGET_S = 45.0
@@ -121,14 +119,12 @@ class Plan:
     deferred_s: float
 
 
-def plan(tests: Iterable[str], distances: dict[str, int], times: dict[str, float], budget_s: float = BUDGET_S) -> Plan:
+def plan(tests: Iterable[str], distances: dict[str, int], costs: czasy_ci.KosztyPlikow, budget_s: float = BUDGET_S) -> Plan:
     """Pliki w odległości najwyżej 1 od zmiany biegną zawsze, także ponad budżet. Dalsze, po odległości i koszcie
-    rosnąco, biegną, gdy suma kosztów na ``WORKERS`` workerów mieści się jeszcze w ``budget_s``. Koszt pliku bez
-    pomiaru to mediana pomiarów."""
+    rosnąco, biegną, gdy suma kosztów na ``czasy_ci.WORKERY_LOKALNE`` workerów mieści się jeszcze w ``budget_s``."""
 
-    default = statistics.median(times.values()) if times else 0.0
-    cost = {test: times.get(test, default) for test in tests}
-    capacity, used = budget_s * int(WORKERS), 0.0
+    cost = {test: costs.s(test) for test in tests}
+    capacity, used = budget_s * czasy_ci.WORKERY_LOKALNE, 0.0
     run, deferred = [], []
     for test in sorted(cost, key=lambda test: (distances.get(test, math.inf), cost[test], test)):
         if distances.get(test, math.inf) <= 1 or used + cost[test] <= capacity:
@@ -145,11 +141,9 @@ def _select(changed: frozenset[str]) -> Selection:
     return Selection({test: impact.fingerprint(test) for test in impact.tests}, impact.distances, f"zmiana w {', '.join(full)}" if full else None)
 
 
-def _times(root: Path) -> dict[str, float]:
-    times = czasy_ci.z_mainu(czasy_ci.katalog_checkoutu(root), odswiez_po_s=czasy_ci.ODSWIEZ_S)
-    costs = times.pliki(czasy_ci.TOR_LOKALNY)
-    if not costs:
-        why = times.blad or f"brak plików testów toru {czasy_ci.TOR_LOKALNY} w {czasy_ci.ARTEFAKT}"
+def _times(root: Path) -> czasy_ci.KosztyPlikow:
+    costs, why = czasy_ci.lokalne(root)
+    if why is not None:
         print(f"SZYBKO | bez czasów CI ({why}): każdy plik waży 0, więc biegnie cały wybór", flush=True)
     return costs
 
@@ -246,7 +240,7 @@ def _steps(root: Path, tests: Iterable[str], junit: Path) -> list[ci_lokalnie.St
 
 def _environment(root: Path) -> dict[str, str]:
     # Gołe ``-n auto`` bierze wszystkie rdzenie Maca, na którym pracuje naraz kilku agentów.
-    return {"PYTEST_XDIST_AUTO_NUM_WORKERS": WORKERS, **environment(root), "PYTHON": sys.executable}
+    return {"PYTEST_XDIST_AUTO_NUM_WORKERS": str(czasy_ci.WORKERY_LOKALNE), **environment(root), "PYTHON": sys.executable}
 
 
 def _run_all(steps: list[ci_lokalnie.Step], interruptible: ci_lokalnie.Step | None = None) -> tuple[list[str], list[str]]:

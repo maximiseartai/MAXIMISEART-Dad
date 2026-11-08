@@ -394,6 +394,8 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
     assert re.fullmatch(rf"PLAN CI \| push \| wszystkie pliki \| cel \d+ s \| (\d+) zadań runu \(limit {plan_ci.ZADANIA_RUNU_MAIN}\) \| czasy z runów main: brak \(wagi domyślne\)", out[1]), out[1]
     assert out[-1] == f"PLAN CI DIGEST | {plan.digest}"
     assert {unit for job in plan.zadania if job.tor == "linux-3.14" for unit in job.jednostki} == {f"pytest:{name}" for name in pliki_testow()}
+    # Plik bez pomiaru waży ``DOMYSLNIE.plik_s``, więc pliki repozytorium nie mieszczą się w jednym zadaniu.
+    assert len([job for job in plan.zadania if job.tor == "linux-3.14"]) > 1
     # Push biegnie każdy krok każdego skilla repozytorium.
     assert planned_steps == every_step != set()
     assert output == {"pytest": json.dumps(plan.macierz("pytest"), ensure_ascii=False), "mutations": json.dumps(plan.macierz("mutations"), ensure_ascii=False)}

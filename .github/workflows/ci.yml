@@ -306,7 +306,7 @@ jobs:
       contents: read
       # tools/ci/zapis_czasow.py reads the step times of this job from the run's jobs API.
       actions: read
-    # tools/ci/mutacje_skilli.py limits each script to 30 min; this catches a hang in the runner itself.
+    # tools/ci/wykonaj_zadanie.py limits each script to 30 min; this catches a hang in the runner itself.
     timeout-minutes: 60
     strategy:
       fail-fast: false
