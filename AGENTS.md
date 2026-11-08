@@ -60,7 +60,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 
 Gdy operator Cię poprawi, dopisz regułę z jej strażnikiem do tabeli, do której należy: regułę o tym, jak pisać kod i testy, do tabeli jej sekcji w [`CODING_STANDARDS.md`](CODING_STANDARDS.md) (po angielsku), regułę procesu gałęzi z [`docs/agents/pr-i-ci.md`](docs/agents/pr-i-ci.md) albo [`docs/agents/skille.md`](docs/agents/skille.md) do tabeli tego pliku, a pozostałą regułę procesu do tabeli niżej.
 Jeśli reguła już tam była, a nic jej nie pilnowało, to błąd się powtórzył: w tej samej zmianie dodaj sprawdzenie, które go łapie.
-Wyjątek zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` w `tests/test_uszkodzone_wejscia.py`).
+Wyjątek zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` i `known()` w `tests/fixtures/fakt_domeny.py`).
 Szczegóły strażnika, jego wyjątki i granicę (co łapie tylko przegląd) opisuje jego docstring.
 
 | Reguła | Co jej pilnuje |

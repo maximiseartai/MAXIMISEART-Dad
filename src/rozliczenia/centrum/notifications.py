@@ -59,6 +59,8 @@ SCHEMA_VERSION: Final = 1
 CHECK_INTERVAL_S: Final = 10 * 60
 # Tyle odczyt Powiadomień czeka na trwające pytanie skrzynki i GitHuba, zanim odpowie ostatnim znanym stanem.
 CHECK_WAIT_S: Final = 3.0
+# Nazwa wątku pytania skrzynki i GitHuba o Powiadomienia.
+CHECK_THREAD: Final = "powiadomienia-sprawdzanie"
 
 # Stany, które dał Maks: tylko one są nowe dla taty, dopóki ich nie zobaczy.
 _NEWS: Final[frozenset[contract.CaseState]] = frozenset({"rozwiazana", "przeczytana"})
@@ -175,9 +177,7 @@ class Notifications:
             now = self._clock()
             if self._asked_at is None or now - self._asked_at >= CHECK_INTERVAL_S:
                 self._asked_at = now  # rezerwuje pytanie: równoległy odczyt nie pyta drugi raz
-                self._check = threading.Thread(
-                    target=self._ask, name="powiadomienia-sprawdzanie", daemon=True
-                )
+                self._check = threading.Thread(target=self._ask, name=CHECK_THREAD, daemon=True)
                 self._check.start()
             return self._check
 

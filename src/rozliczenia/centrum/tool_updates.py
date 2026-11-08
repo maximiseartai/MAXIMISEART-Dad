@@ -48,6 +48,9 @@ from rozliczenia.centrum.tool_update import (
     read_result,
 )
 
+# Nazwa wątku Aktualizacji narzędzia (``ToolUpdates.start``); po udanej kończy się, gdy opiekun wystartował i Centrum
+# się zamknęło.
+UPDATE_THREAD: Final = "aktualizacja-narzedzia"
 # Odmowa „Wyślij do Maksa”, gdy ostatnia Aktualizacja narzędzia nie zawiodła.
 _NO_FAILED_UPDATE: Final = "Zgłoszenie powstaje po nieudanej aktualizacji narzędzia."
 
@@ -125,9 +128,7 @@ class ToolUpdates:
         first = contract.ToolUpdateRunning(state="running", step="fetching")
         with self._lock:
             self._view = first
-        threading.Thread(
-            target=self._update, args=(clone, before, port), name="aktualizacja-narzedzia", daemon=True
-        ).start()
+        threading.Thread(target=self._update, args=(clone, before, port), name=UPDATE_THREAD, daemon=True).start()
         return first
 
     def _after_restart(self) -> None:

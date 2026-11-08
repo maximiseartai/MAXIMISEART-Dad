@@ -60,6 +60,8 @@ from rozliczenia.process_run import Stop
 UNSENT_DIRECTORY: Final = "zgloszenia"
 # Podgląd Zgłoszenia czeka w tle na odpowiedź skrzynki o otwarte Zgłoszenie najwyżej tyle, co Diagnoza na commit `main`.
 SEARCH_DEADLINE_S: Final = 3.0
+# Nazwa wątku, w którym Zgłoszenie pyta skrzynkę i czeka na swoją wysyłkę.
+REPORT_THREAD: Final = "zgloszenie-skrzynka"
 
 # Zgłoszenie nieudanej Aktualizacji narzędzia ma tyle ostatnich wpisów dziennika co Zgłoszenie z Diagnozy.
 _UPDATE_LOG_ENTRIES: Final = 20
@@ -391,7 +393,7 @@ class ReportHandle:
         with self._changed:
             self._preview = preview
             asking = self._asking = threading.Thread(
-                target=self._ask, args=(self._sends, comeback), name="zgloszenie-skrzynka", daemon=True
+                target=self._ask, args=(self._sends, comeback), name=REPORT_THREAD, daemon=True
             )
         asking.start()
         return preview.view

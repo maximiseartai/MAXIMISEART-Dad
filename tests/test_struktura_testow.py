@@ -1,4 +1,5 @@
-"""Struktura testów: moduły niczego nie eksportują, a test czeka na stan i mierzy czas bez stałej liczby sekund.
+"""Struktura testów: moduły niczego nie eksportują, a test czeka na stan przez ``wait_for`` i mierzy czas bez stałej
+liczby sekund.
 
 Wspólne dane i pomocniki są w ``tests.fixtures``.
 """
@@ -26,6 +27,8 @@ TIME_READINGS = CLOCKS | {
     "datetime.datetime.utcnow",
 }
 SLEEPS = frozenset({"time.sleep", "asyncio.sleep"})
+# Jedyne czekanie na stan w testach: pętla z terminem, która śpi między pytaniami.
+WAITING = "fixtures/potomne.py::wait_for"
 SIMULATED_TIME = {
     "test_centrum_przygotowanie.py::test_czas_czekania_na_decyzje_nie_wlicza_sie_do_czasu_ani_metryk": (
         "tata myśli 1,5 s nad Decyzją, a test mierzy zegarem testu, że ten czas nie wlicza się do metryk (f17b7fe)"
@@ -94,12 +97,11 @@ def _handed_over(definition: Definition, tree: ast.Module, parents: dict[ast.AST
 
 
 def _fixed_sleeps(tree: ast.Module) -> Iterator[tuple[ast.Call, str]]:
-    """Sen poza pętlą z terminem i poza podróbką, z nazwą funkcji, w której jest.
+    """Sen poza podróbką, z nazwą funkcji, w której jest; pętla z własnym terminem też się liczy.
 
-    Pętla (``while`` albo ``for``) ma termin, gdy pyta zegar (``time.monotonic()``). Podróbka to lambda, funkcja
-    albo klasa, którą test przekazuje dalej jako wartość: jej sen udaje czas pracy kodu pod testem. Znana granica:
-    zdarzenie w zmiennej, którego nikt nie ustawia (``hold.wait(2)``), i podróbka, którą test woła sam przez inną
-    nazwę, przechodzą, bo odróżnienie ich wymaga analizy przepływu danych.
+    Podróbka to lambda, funkcja albo klasa, którą test przekazuje dalej jako wartość: jej sen udaje czas pracy kodu pod
+    testem. Znana granica: zdarzenie w zmiennej, którego nikt nie ustawia (``hold.wait(2)``), podróbka, którą test woła
+    sam przez inną nazwę, i pętla z terminem bez snu przechodzą, bo odróżnienie ich wymaga analizy przepływu danych.
     """
 
     names = imports(tree)
@@ -112,13 +114,8 @@ def _fixed_sleeps(tree: ast.Module) -> Iterator[tuple[ast.Call, str]]:
         while node in parents:
             node = parents[node]
             enclosing.append(node)
-        polling = any(
-            isinstance(loop, (ast.While, ast.For))
-            and any(isinstance(asked, ast.Call) and dotted(asked.func, names, "") in CLOCKS for asked in ast.walk(loop))
-            for loop in enclosing
-        )
         faked = any(isinstance(node, Definition) and _handed_over(node, tree, parents) for node in enclosing)
-        if not (polling or faked):
+        if not faked:
             functions = [node for node in enclosing if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
             yield call, functions[0].name if functions else "<moduł>"
 
@@ -128,6 +125,8 @@ def test_testy_czekaja_na_stan_a_nie_stala_liczbe_sekund() -> None:
     for path in sorted(TESTS.rglob("*.py")):
         name = path.relative_to(TESTS).as_posix()
         for call, function in _fixed_sleeps(ast.parse(path.read_text(encoding="utf-8"))):
+            if f"{name}::{function}" == WAITING:
+                continue
             if f"{name}::{function}" in SIMULATED_TIME:
                 simulated.add(f"{name}::{function}")
             else:
@@ -137,7 +136,8 @@ def test_testy_czekaja_na_stan_a_nie_stala_liczbe_sekund() -> None:
     assert not found, "\n".join(
         [
             *found,
-            "Czekaj na stan przez wait_for z tests/fixtures/potomne.py (brak zdarzenia: assert not wait_for(zdarzenie, s)); "
+            "Czekaj na stan przez wait_for z tests/fixtures/potomne.py, także zamiast pętli z własnym terminem "
+            "(brak zdarzenia: assert not wait_for(zdarzenie, s)); "
             "czas pracy podróbki śpi w funkcji, lambdzie albo klasie, którą test przekazuje kodowi pod testem, a czas "
             "symulowany w samym teście wpisz do SIMULATED_TIME z powodem.",
         ]

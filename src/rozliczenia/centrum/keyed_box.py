@@ -90,6 +90,8 @@ REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
 # Ostatni zapis każdego rodzaju, którego skutek widać tylko na liście (``KeyedBox._ready``), obok klucza; poza
 # ``config/zgloszenia``, w którym weryfikacja Kontroli ilości widzi tylko kolejkę.
 OPENING_FILE: Final = "skrzynka-zakladanie.txt"
+# Nazwa wątku sprawdzenia Tokenu do Zgłoszeń (``KeyedBox.judge``).
+KEY_CHECK_THREAD: Final = "skrzynka-klucz"
 # Przyjęty klucz Centrum pamięta jak każdą odpowiedź GitHuba, a brak odpowiedzi o kluczu jak każdy brak odpowiedzi.
 ACCEPTED_KEPT_S: Final = ANSWER_KEPT_S
 # Odrzucony klucz nie zmieni się sam: Maks wymienia plik (nowy skrót, więc sprawdzenie od razu) albo uprawnienia tokenu.
@@ -595,7 +597,7 @@ class KeyedBox:
             probe = None
             if self._due(digest, self._clock()):
                 if self._probe is None or not self._probe.is_alive():
-                    self._probe = threading.Thread(target=self._check, args=(key,), name="skrzynka-klucz", daemon=True)
+                    self._probe = threading.Thread(target=self._check, args=(key,), name=KEY_CHECK_THREAD, daemon=True)
                     self._probe.start()
                 probe = self._probe
         if probe is not None:

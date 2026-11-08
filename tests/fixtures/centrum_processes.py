@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.catalog import Catalog
+from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
@@ -35,7 +36,6 @@ from rozliczenia.run_context import RunContext
 
 from tests.fixtures.centrum import (
     NO_EFENIX,
-    QUEUE_THREAD,
     RUN_LOGS_IN_BACKGROUND,
     CentrumClient,
     FakeGitHub,

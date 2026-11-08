@@ -10,17 +10,18 @@ import json
 import re
 import shutil
 import threading
-import time
 from pathlib import Path
 from typing import Any, NoReturn
 
 import pytest
 
 from rozliczenia.input_checks import FILE_READERS
+from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.keyed_box import KEY_CHECK_THREAD
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Refused, Unreachable
-from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
+from rozliczenia.centrum.reports import REPORT_THREAD, SEARCH_DEADLINE_S
 
 from tests.fixtures.centrum import (
     REPORT_KEY,
@@ -48,7 +49,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from tests.fixtures.potomne import wait_for
+from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.preparation import PERIOD
 from tests.fixtures.settlement import write_quantity_source
 
@@ -433,13 +434,13 @@ def test_zatrzymanie_centrum_czeka_na_kazdy_jego_watek_takze_sprzed_ponownego_st
 
     with centrum.client:
         running = centrum.client.threads()
-        with pytest.raises(AssertionError, match="żyją wątki .*zgloszenie-skrzynka"):
+        with pytest.raises(AssertionError, match=f"żyją wątki .*{REPORT_THREAD}"):
             centrum.client.stop(timeout_s=0)
         hold.set()
         centrum.client.stop()
         centrum.client.stop()
 
-    assert {"zgloszenie-skrzynka", "skrzynka-klucz"} <= {thread.name for thread in running}
+    assert {REPORT_THREAD, KEY_CHECK_THREAD} <= {thread.name for thread in running}
     assert [thread.name for thread in running if thread.is_alive()] == []
 
 
@@ -534,10 +535,10 @@ def test_zatrzymanie_centrum_nie_czeka_na_budzik_centrum_poprzedniego_testu_nast
 
     def ring() -> None:
         rings.wait()
-        threading.Thread(target=next_rings.wait, name="budzik", daemon=True).start()
+        threading.Thread(target=next_rings.wait, name=ALARM_THREAD, daemon=True).start()
 
     # Budzik kolejki Centrum z poprzedniego testu (``SYSTEM_CLOCK``): dzwoni co ``RETRY_S`` i nastawia następny.
-    earlier = threading.Thread(target=ring, name="budzik", daemon=True)
+    earlier = threading.Thread(target=ring, name=ALARM_THREAD, daemon=True)
     earlier.start()
     started = plain_centrum(tmp_path)
     rings.set()
@@ -558,9 +559,7 @@ def current_report(centrum: PreparingCentrum) -> object:
 def report_becomes(centrum: PreparingCentrum, expected: object) -> object:
     """Stan Zgłoszenia na karcie, gdy dojdzie do ``expected`` (odpowiedź skrzynki przychodzi w tle), albo po 10 s."""
 
-    deadline = time.monotonic() + 10
-    while (report := current_report(centrum)) != expected and time.monotonic() < deadline:
-        time.sleep(0.01)
+    _, report = wait_for_value(lambda: current_report(centrum), lambda report: report == expected, 10, every=0.01)
     return report
 
 
@@ -704,7 +703,7 @@ def diagnosed_to_end(centrum: PreparingCentrum, run_id: str) -> str:
 
     since = new_line()
     body: str = diagnose(centrum, run_id)["report"]["body"]
-    join_threads_since(since, named="zgloszenie-skrzynka")
+    join_threads_since(since, named=REPORT_THREAD)
     return body
 
 

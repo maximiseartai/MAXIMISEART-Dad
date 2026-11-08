@@ -349,15 +349,12 @@ def test_wydanie_daleko_na_linii_main_kosztuje_tylko_logarytm_porownan(github: s
     assert _comparisons() <= 12  # log2(1001) + 2
 
 
-def test_aktualnosc_w_centrum_pamieta_linie_main_miedzy_sprawdzeniami(
-    github: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(tool_freshness, "TOOL_API", f"{github}/z-galezi")
-    monkeypatch.setattr(tool_freshness, "_GITHUB_LINE", {})
+def test_aktualnosc_w_centrum_pamieta_linie_main_miedzy_sprawdzeniami(github: str) -> None:
+    release = GITHUB_RELEASES(lambda: None, f"{github}/z-galezi")
 
-    assert GITHUB_RELEASES() == GitHubReleases(None, None)
+    assert release() == GitHubReleases(None, None)
     _ASKED.clear()
-    assert GITHUB_RELEASES() == GitHubReleases(None, None)
+    assert release() == GitHubReleases(None, None)
     assert _comparisons() == 0
 
 

@@ -98,6 +98,8 @@ else:
     import fcntl
 
 QUEUE_DIRECTORY: Final = "kolejka"
+# Nazwa wątku przejścia kolejki (``_in_thread``).
+QUEUE_THREAD: Final = "skrzynka-kolejka"
 # Poza ``config/zgloszenia``: weryfikacja Kontroli ilości sprawdza, że jest tam tylko kolejka.
 ADDRESSES_FILE: Final = "skrzynka-adresy.jsonl"
 # Schemat 3 (#844) niesie plik do Archiwum okresu; stare Centrum, które go nie zna, zostawia taki plik w kolejce,
@@ -630,10 +632,14 @@ def _unlink(path: Path) -> None:
 LOCAL_QUEUE_DISK: Final = QueueDisk(read=_read_text, write=replace_atomically, remove=_unlink)
 
 
-def _in_thread(drain: Callable[[], None]) -> None:
-    """Przejście kolejki w nowym wątku ``skrzynka-kolejka``, który nie trzyma zamknięcia Centrum."""
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
-    threading.Thread(target=drain, name="skrzynka-kolejka", daemon=True).start()
+
+def _in_thread(drain: Callable[[], None]) -> None:
+    """Przejście kolejki w nowym wątku ``QUEUE_THREAD``, który nie trzyma zamknięcia Centrum."""
+
+    threading.Thread(target=drain, name=QUEUE_THREAD, daemon=True).start()
 
 
 def _queued(path: Path, disk: QueueDisk) -> _Queued | None:
@@ -1178,13 +1184,16 @@ class Outbox:
         addresses: Path | None = None,
         disk: QueueDisk = LOCAL_QUEUE_DISK,
         start: Callable[[Callable[[], None]], None] = _in_thread,
+        now: Callable[[], datetime] = _utc_now,
     ) -> None:
         """``disk`` czyta, zapisuje i usuwa pliki kolejki, a ``start`` uruchamia przejście (``_drain``) w tle; inne niż
-        domyślne daje tylko wyrocznia ``verify-kolejka-skrzynki``, która decyduje o każdym kroku."""
+        domyślne daje tylko wyrocznia ``verify-kolejka-skrzynki``, która decyduje o każdym kroku. ``now`` to zegar
+        ścienny komputera w UTC, z którego ``post`` bierze chwilę do nazwy pliku."""
 
         self._directory = directory
         self._disk = disk
         self._start = start
+        self._now = now
         self._box = box
         self._log = log
         self._clock = clock
@@ -1284,7 +1293,7 @@ class Outbox:
         """
 
         with self._lock:  # chwila i numer razem: każda następna nazwa tej kolejki sortuje się po poprzedniej
-            now = datetime.now(timezone.utc)
+            now = self._now()
             moment = now if self._last_moment is None else max(now, self._last_moment + _TICK)
             self._last_moment = moment
             name = f"{moment:%Y%m%dT%H%M%S%fZ}-{next(self._sequence):04d}-{post.target.label}-{post.run_id[:8]}.json"

@@ -7,7 +7,6 @@ import os
 import socket
 import subprocess
 import sys
-import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -21,6 +20,7 @@ from rozliczenia.centrum import restart_guardian
 
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.centrum import ToolDirectory
+from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, copy_centrum_runtime, free_port
 
 COMMIT = "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e"
@@ -47,24 +47,31 @@ def _browser_recorder(directory: Path) -> tuple[Path, Path]:
 
 
 def _health(port: int, *, timeout_s: float = 30) -> dict[str, object]:
-    deadline = time.monotonic() + timeout_s
-    while True:
+    """``health`` Centrum na porcie; ostatni ``OSError``, gdy przez ``timeout_s`` nie odpowiedziało."""
+
+    answers: list[dict[str, object]] = []
+    failures: list[OSError] = []
+
+    def answered() -> bool:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
                 body = json.load(response)
-                assert isinstance(body, dict)
-                return body
-        except OSError:
-            if time.monotonic() > deadline:
-                raise
-            time.sleep(0.1)
+        except OSError as failure:
+            failures.append(failure)
+            return False
+        assert isinstance(body, dict)
+        answers.append(body)
+        return True
+
+    if not wait_for(answered, timeout_s, every=0.1):
+        raise failures[-1]
+    return answers[-1]
 
 
 def _wait_for_line(path: Path) -> str:
-    deadline = time.monotonic() + 10
-    while not path.exists() or not path.read_text(encoding="utf-8").strip():
-        assert time.monotonic() < deadline, "Przeglądarka nie dostała adresu Centrum."
-        time.sleep(0.1)
+    assert wait_for(lambda: path.exists() and bool(path.read_text(encoding="utf-8").strip()), 10, every=0.1), (
+        "Przeglądarka nie dostała adresu Centrum."
+    )
     return path.read_text(encoding="utf-8").strip()
 
 
@@ -122,13 +129,14 @@ def _launch_again(runtime: Path, port: int, environment: dict[str, str]) -> subp
 def _opened_addresses(path: Path, count: int) -> list[str]:
     """Adresy otwarte w przeglądarce, gdy jest ich już ``count``."""
 
-    deadline = time.monotonic() + 10
-    while True:
-        addresses = path.read_text(encoding="utf-8").split() if path.exists() else []
-        if len(addresses) >= count:
-            return addresses
-        assert time.monotonic() < deadline, "Przeglądarka nie dostała adresu Centrum."
-        time.sleep(0.1)
+    done, addresses = wait_for_value(
+        lambda: path.read_text(encoding="utf-8").split() if path.exists() else [],
+        lambda addresses: len(addresses) >= count,
+        10,
+        every=0.1,
+    )
+    assert done, "Przeglądarka nie dostała adresu Centrum."
+    return addresses
 
 
 def test_ponowne_uruchomienie_tylko_otwiera_karte_dzialajacego_centrum(tmp_path: Path) -> None:

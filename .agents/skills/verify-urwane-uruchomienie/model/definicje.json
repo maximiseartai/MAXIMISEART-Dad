@@ -69,7 +69,7 @@
     "PreparedRun.conduct": "a3e1e3cad04aa266"
   },
   "src/rozliczenia/centrum/outbox.py": {
-    "Outbox.post": "ec7d3d2ed8b91d68",
+    "Outbox.post": "19126edf56368c11",
     "Outbox.resume": "2a67b7d7c8f5622c",
     "Rank": "d27ac44226b11a48",
     "Version": "b20196684cf428b5",

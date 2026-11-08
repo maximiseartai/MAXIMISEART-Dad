@@ -20,6 +20,7 @@ from rozliczenia.centrum.case_delivery import case_outbox, note_post
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_NOTES_FILE, OLD_REPORTS_FILE, REPORT, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.notifications import CHECK_THREAD
 from rozliczenia.centrum.outbox import KnownIssue, NewIssue, Outbox, PeriodThread, Post
 from rozliczenia.centrum.report_box import (
     ArchiveOutcome,
@@ -717,7 +718,7 @@ def test_sprawdzanie_powiadomien_w_tle_nie_wstrzymuje_zamkniecia_centrum(tmp_pat
     hold = started.report_box.search_hold = threading.Event()
     try:
         started.client.get("/api/notifications")
-        checks = [thread for thread in threading.enumerate() if thread.name == "powiadomienia-sprawdzanie"]
+        checks = [thread for thread in threading.enumerate() if thread.name == CHECK_THREAD]
     finally:
         hold.set()
 

@@ -36,6 +36,7 @@ from rozliczenia import tool_files
 from rozliczenia.tool_files import start_command
 
 from tests.fixtures.centrum import ToolDirectory
+from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.tool_clone import (
     FIRST_VERSION,
     REPOSITORY_ROOT,
@@ -63,16 +64,17 @@ def _get(port: int, path: str) -> dict[str, object]:
 def _health(port: int, *, commit: str | None = None, timeout_s: float = 60) -> dict[str, object]:
     """``health`` Centrum na porcie; z ``commit`` dopiero wtedy, gdy odpowiada Centrum w tym commicie (skróconym)."""
 
-    deadline = time.monotonic() + timeout_s
-    while True:
+    def health() -> dict[str, object] | None:
         try:
-            health = _get(port, "/api/health")
-            if commit is None or health["commit"] == commit[:7]:
-                return health
+            return _get(port, "/api/health")
         except OSError:
-            pass
-        assert time.monotonic() < deadline, "Centrum nie odpowiedziało na health."
-        time.sleep(0.1)
+            return None
+
+    done, answer = wait_for_value(
+        health, lambda answer: answer is not None and (commit is None or answer["commit"] == commit[:7]), timeout_s, every=0.1
+    )
+    assert done and answer is not None, "Centrum nie odpowiedziało na health."
+    return answer
 
 
 def _close(port: int) -> None:
@@ -87,13 +89,14 @@ def _close_if_running(port: int) -> None:
         _close(port)
     except OSError:
         return
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
+    def stopped() -> bool:
         try:
             _get(port, "/api/health")
         except OSError:
-            return
-        time.sleep(0.1)
+            return True
+        return False
+
+    wait_for(stopped, 30, every=0.1)
 
 
 def _log_lines(clone: Path) -> list[str]:
@@ -267,10 +270,7 @@ def test_skrot_klikniety_w_trakcie_ponownego_startu_nie_cofa_nowej_wersji_ktora_
     restart = Restart(port, before, newest, repository.clone, repository.clone / "config" / RESULT_FILE, False, work)
     try:
         guardian, exits = _guardian_in_background(restart, dialogs)
-        deadline = time.monotonic() + 60
-        while not started.exists():
-            assert time.monotonic() < deadline, "Opiekun nie uruchomił nowej wersji."
-            time.sleep(0.05)
+        assert wait_for(started.exists, 60), "Opiekun nie uruchomił nowej wersji."
         # Skrót trzyma port od listen_locally do listener.close() po odczycie dziennika; tu ta chwila trwa 3 s.
         with socket.socket() as shortcut:
             shortcut.bind(("127.0.0.1", port))
@@ -404,10 +404,7 @@ def test_gdy_po_cofnieciu_stara_wersja_ze_skrotu_juz_trzyma_port_opiekun_konczy_
     shortcut: subprocess.Popen[bytes] | None = None
     try:
         guardian, exits = _guardian_in_background(restart, dialogs)
-        deadline = time.monotonic() + 60
-        while not started.exists():
-            assert time.monotonic() < deadline, "Opiekun nie uruchomił nowej wersji."
-            time.sleep(0.05)
+        assert wait_for(started.exists, 60), "Opiekun nie uruchomił nowej wersji."
         shortcut = subprocess.Popen(
             [sys.executable, str(old_copy / "run_centrum.py"), "--port", str(port), "--no-browser"],
             cwd=old_copy,
@@ -459,9 +456,7 @@ def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_p
     try:
         guardian, exits = _guardian_in_background(restart, dialogs)
         deadline = time.monotonic() + 90
-        while not started.exists():
-            assert time.monotonic() < deadline, "Opiekun nie uruchomił starej wersji po cofnięciu."
-            time.sleep(0.05)
+        assert wait_for(started.exists, 90), "Opiekun nie uruchomił starej wersji po cofnięciu."
         shortcut = subprocess.Popen(
             [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
             cwd=clone,
@@ -473,9 +468,11 @@ def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_p
         health = _health(port, timeout_s=5)
         view = _get(port, "/api/tool-update")
         # Stara wersja od opiekuna kończy się sama, gdy po _SHORTCUT_HOLDS_PORT_S zastanie Centrum ze skrótu.
-        while "juz-dziala" not in [line.split(" ", 2)[1] for line in _log_lines(clone)]:
-            assert time.monotonic() < deadline, "Stara wersja od opiekuna nie zakończyła się."
-            time.sleep(0.1)
+        assert wait_for(
+            lambda: "juz-dziala" in [line.split(" ", 2)[1] for line in _log_lines(clone)],
+            deadline - time.monotonic(),
+            every=0.1,
+        ), "Stara wersja od opiekuna nie zakończyła się."
     finally:
         _close_if_running(port)
         if shortcut is not None:

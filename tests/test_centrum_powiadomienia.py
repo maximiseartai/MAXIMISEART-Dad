@@ -351,9 +351,7 @@ def test_przy_starcie_centrum_skrzynka_jest_pytana_w_tle_przed_odczytem_powiadom
     asked = polls(centrum)
 
     with centrum.client:  # start Centrum, jak po kliknięciu skrótu
-        deadline = time.monotonic() + 5
-        while polls(centrum) == asked and time.monotonic() < deadline:
-            time.sleep(0.01)
+        wait_for(lambda: polls(centrum) != asked, 5, every=0.01)
         asked_at_start = polls(centrum)
 
         assert rows(centrum) == [("zgloszenie", what, "rozwiazana", True)]
@@ -377,9 +375,7 @@ def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_ta
         box.search_hold.set()
 
     assert took < CHECK_WAIT_S + 2
-    deadline = time.monotonic() + 5
-    while rows(centrum)[0][2] == "wyslana" and time.monotonic() < deadline:
-        time.sleep(0.01)
+    wait_for(lambda: rows(centrum)[0][2] != "wyslana", 5, every=0.01)
     assert rows(centrum) == [("zgloszenie", what, "rozwiazana", True)]
 
 
@@ -535,9 +531,7 @@ def test_github_jest_pytany_o_wydania_przy_starcie_i_najwyzej_raz_na_10_minut_ws
     github, clock = centrum.surroundings.github, centrum.surroundings.clock
 
     with centrum.client:  # start Centrum, jak po kliknięciu skrótu
-        deadline = time.monotonic() + 5
-        while github.asked_published == 0 and time.monotonic() < deadline:
-            time.sleep(0.01)
+        wait_for(lambda: github.asked_published != 0, 5, every=0.01)
         assert (github.asked, github.asked_published) == (1, 1)
 
         for _ in range(3):

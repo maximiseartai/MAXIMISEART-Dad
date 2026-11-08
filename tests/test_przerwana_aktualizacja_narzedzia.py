@@ -18,7 +18,6 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 from typing import Any
 import urllib.request
 
@@ -27,6 +26,7 @@ import pytest
 from rozliczenia.centrum import tool_update
 
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum
+from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, FakeInstaller, ToolRepository, centrum_tool_repository, free_port
 
 DAD_MAPPING = "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n"
@@ -70,17 +70,21 @@ def _shortcut(clone: Path, port: int) -> Iterator[subprocess.Popen[str]]:
 
 
 def _health(process: subprocess.Popen[str], port: int) -> dict[str, Any]:
-    deadline = time.monotonic() + 60
-    while True:
+    answers: list[dict[str, Any]] = []
+
+    def answered() -> bool:
         try:
-            return _get(port, "/api/health", timeout_s=1)
+            answers.append(_get(port, "/api/health", timeout_s=1))
+            return True
         except OSError:
             pass
         if process.poll() is not None:
             output = process.stdout.read() if process.stdout else ""
             raise AssertionError(f"Centrum ze skrótu zakończyło się kodem {process.returncode}:\n{output}")
-        assert time.monotonic() < deadline, "Centrum ze skrótu nie odpowiedziało na health."
-        time.sleep(0.1)
+        return False
+
+    assert wait_for(answered, 60, every=0.1), "Centrum ze skrótu nie odpowiedziało na health."
+    return answers[-1]
 
 
 def _refusal(process: subprocess.Popen[str], port: int) -> tuple[int, str]:
@@ -123,13 +127,9 @@ def _version_without_its_library(repository: ToolRepository) -> str:
 
 def _update_until(centrum: PreparingCentrum, reached: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
     assert centrum.client.post("/api/tool-update").status_code == 202
-    deadline = time.monotonic() + 30
-    while True:
-        view = dict(centrum.client.get("/api/tool-update").json())
-        if reached(view):
-            return view
-        assert time.monotonic() < deadline, f"Aktualizacja narzędzia utknęła w {view}."
-        time.sleep(0.02)
+    done, view = wait_for_value(lambda: dict(centrum.client.get("/api/tool-update").json()), reached, 30, every=0.02)
+    assert done, f"Aktualizacja narzędzia utknęła w {view}."
+    return view
 
 
 def test_po_wylaczeniu_komputera_w_trakcie_instalacji_bibliotek_skrot_wraca_do_poprzedniej_wersji_z_plikiem_taty(
