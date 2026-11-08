@@ -142,7 +142,6 @@ _COMPRESSION_LEVEL: Final = 6
 _MAX_TEXT: Final = 32767  # openpyxl przycina tekst komórki do tej długości
 
 _CELL = re.compile(rb'<c r="([A-Z]{1,3})(\d+)"([^>]*?)(?:/>|>(.*?)</c>)', re.S)
-_CELL_WITH_CONTENT = re.compile(rb'<c r="([A-Z]{1,3})\d+"[^>]*(?<!/)>(.*?)</c>', re.S)  # komórka z treścią
 _STYLE = re.compile(rb'\ss="(\d+)"')
 _TYPE = re.compile(rb'\st="(\w+)"')
 _FORMULA = re.compile(rb"<f[\s>/]")
@@ -154,7 +153,6 @@ _DIMENSION = re.compile(rb'<dimension ref="([A-Z]+\d+(?::[A-Z]+\d+)?)"')
 _MERGE_CELL: Final = f"{SPREADSHEET_NS} mergeCell"
 _CELL_OR_ROW_STYLE = re.compile(rb'<(?:[\w.-]+:)?(?:c|row)\s[^>]*?\bs="([0-9]+)"')
 _COLUMN_STYLE = re.compile(rb'<(?:[\w.-]+:)?col\s[^>]*?\bstyle="([0-9]+)"')
-_ANY_STYLE = re.compile(rb's="([0-9]+)"')
 _ALIGNMENT = re.compile(rb"<alignment\b[^>]*?(?:/>|>.*?</alignment>)", re.S)
 _HEIGHT = re.compile(rb'\s(?:ht|customHeight)="[^"]*"')
 _NUM_FMT = re.compile(rb"<numFmt\b([^>]*?)/?>")
@@ -415,14 +413,24 @@ def _require_known_styles(sheet_xml: bytes, cell_style_count: int) -> None:
     """Styl komórki, wiersza albo kolumny arkusza jest wśród ``cell_style_count`` stylów skoroszytu, bo inaczej openpyxl
     nie wczyta Wzorca (``IndexError``); taki Wzorzec pliku okresu idzie dawną drogą, która go klasyfikuje."""
 
-    # Styl każdej komórki i wiersza jest też w zbiorze wszystkich ``s="N"``, który znajduje się ~3× szybciej; dokładne
-    # wyrażenie rozstrzyga tylko wtedy, gdy ten szerszy zbiór ma styl spoza stylów skoroszytu.
-    cell_or_row_styles = set(_ANY_STYLE.findall(sheet_xml))
-    if max(map(int, cell_or_row_styles), default=0) >= cell_style_count:
-        cell_or_row_styles = set(_CELL_OR_ROW_STYLE.findall(sheet_xml))
-    styles = [int(index) for index in (*cell_or_row_styles, *set(_COLUMN_STYLE.findall(sheet_xml)))]
+    # Styl każdej komórki i wiersza jest też wśród wszystkich ``s="N"``, a kolumny wśród wszystkich ``style="N"``.
+    # Te szersze wyrażenia zaczynają się stałym tekstem, więc szukanie w nich numeru spoza stylów skoroszytu jest
+    # kilka razy szybsze; dokładne wyrażenia rozstrzygają tylko wtedy, gdy któreś coś znalazło, albo przy zerze stylów
+    # skoroszytu, przy którym ``default=0`` niżej odrzuca też arkusz bez żadnego stylu.
+    unknown = rb'="' + _number_at_least(cell_style_count) + rb'"'
+    if cell_style_count and re.search(rb"s" + unknown, sheet_xml) is None and re.search(rb"style" + unknown, sheet_xml) is None:
+        return
+    styles = [int(index) for index in (*set(_CELL_OR_ROW_STYLE.findall(sheet_xml)), *set(_COLUMN_STYLE.findall(sheet_xml)))]
     if max(styles, default=0) >= cell_style_count:
         raise UnsupportedShape("style")
+
+
+def _number_at_least(number: int) -> bytes:
+    """Wyrażenie liczby dziesiętnej (cyfry, także z zerami na początku) nie mniejszej niż ``number``."""
+
+    digits = str(number)
+    greater = [f"{digits[:i]}[{int(digit) + 1}-9][0-9]{{{len(digits) - i - 1}}}" for i, digit in enumerate(digits) if digit != "9"]
+    return f"0*(?:{'|'.join([digits, *greater, f'[1-9][0-9]{{{len(digits)},}}'])})".encode("ascii")
 
 
 def _target_of_type(workbook_rels: Mapping[str, Relationship], suffix: str) -> str | None:
@@ -851,11 +859,13 @@ def _writable_data_rows_have_input(
     robi dawna droga przez openpyxl (``UnsupportedShape``). Formuły nie są danymi.
     """
 
+    # Wyrażenie znajduje tylko komórki z treścią w kolumnach Wiersza danych i Ilości usług, więc formuły
+    # pozostałych kolumn (we Wzorcu taty dziesiątki tysięcy) pomija przeszukiwanie bez kodu Pythona.
+    columns = _columns_pattern([*range(1, layout.data_columns + 1), *layout.quantity_columns])
+    cell_with_content = re.compile(rb'<c r="(' + columns + rb')\d+"[^>]*+(?<!/)>(.*?)</c>', re.S)
     has_input = False
-    for cell in _CELL_WITH_CONTENT.finditer(xml, data_start, data_end):
+    for cell in cell_with_content.finditer(xml, data_start, data_end):
         column = _column(cell.group(1))
-        if column > layout.data_columns and column not in layout.quantity_columns:
-            continue
         content = cell.group(2)
         if _FORMULA.search(content):
             raise UnsupportedShape("formula in data row")
@@ -866,6 +876,19 @@ def _writable_data_rows_have_input(
         if (min_column or 1) <= layout.data_columns and (max_row or min_row or 1) >= layout.first_data_row:
             raise UnsupportedShape("merged data rows")
     return has_input
+
+
+def _columns_pattern(columns: Sequence[int]) -> bytes:
+    """Wyrażenie liter kolumn ``columns``: klasa ostatnich liter dla każdego przedrostka, np. ``[ABC]|A[AB]``.
+
+    Alternatywa wszystkich liter jest wolniejsza od przeszukania każdej komórki, bo każdą sprawdza po kolei.
+    """
+
+    last_letters: dict[str, str] = {}
+    for column in columns:
+        letters = get_column_letter(column)
+        last_letters[letters[:-1]] = last_letters.get(letters[:-1], "") + letters[-1]
+    return "|".join(f"{prefix}[{last}]" for prefix, last in last_letters.items()).encode("ascii")
 
 
 def _hyperlinks_place(xml: bytes, data_end: int) -> tuple[int, bytes, bytes]:

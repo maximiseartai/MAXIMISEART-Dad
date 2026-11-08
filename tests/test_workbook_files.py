@@ -241,9 +241,16 @@ def test_numer_stylu_poza_komorka_i_wierszem_nie_czyni_wzorca_nieczytelnym(tmp_p
 
 
 _OUTSIDE_STYLES = {
-    "wiersza": (rb'<row r="([0-9]+)"', rb'<row r="\1" s="99999" customFormat="1"'),
-    "kolumny": (rb'(<col [^>]*?)style="[0-9]+"', rb'\1style="99999"'),
+    "wiersza": (rb'<row r="([0-9]+)"', rb'<row r="\1" s="%d" customFormat="1"'),
+    "kolumny": (rb'(<col [^>]*?)style="[0-9]+"', rb'\1style="%d"'),
 }
+
+
+def _cell_style_count(path: Path) -> int:
+    with package_parts(path.read_bytes()) as parts:
+        cell_styles = re.search(rb"<cellXfs\b.*?</cellXfs>", parts["xl/styles.xml"], re.S)
+    assert cell_styles is not None
+    return cell_styles.group(0).count(b"<xf ")
 
 
 # Wzorzec w kształcie Pliku zbiorczego (z autofiltrem) przyjmuje kopia Wzorca, a ``styled_template`` nie.
@@ -255,16 +262,26 @@ _OUTSIDE_STYLES = {
         pytest.param(write_collective_template, "kolumny", id="kolumny-kopia"),
     ],
 )
+@pytest.mark.parametrize(
+    "outside",
+    [
+        pytest.param(lambda count: count, id="rowny-liczbie-stylow"),
+        pytest.param(lambda count: count + 1, id="o-jeden-dalej"),
+        pytest.param(lambda count: 10 ** len(str(count)), id="pierwszy-o-cyfre-dluzszy"),
+        pytest.param(lambda count: 99999, id="daleko"),
+    ],
+)
 @pytest.mark.parametrize("opening", [_check_template, _plan_template])
 def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(
-    tmp_path: Path, opening: Callable[[Path], None], styled: str, make: Callable[[Path], Path]
+    tmp_path: Path, opening: Callable[[Path], None], outside: Callable[[int], int], styled: str, make: Callable[[Path], Path]
 ) -> None:
     path = make(tmp_path / "Skoroszyt.xlsx")
     pattern, replacement = _OUTSIDE_STYLES[styled]
+    style = outside(_cell_style_count(path))
     rewrite_parts(
         path,
         lambda name, data: (
-            re.sub(pattern, replacement, data, count=1) if name.startswith("xl/worksheets/") else data
+            re.sub(pattern, replacement % style, data, count=1) if name.startswith("xl/worksheets/") else data
         ),
     )
 

@@ -73,6 +73,17 @@ def _leftovers(tmp_path: Path) -> PreparationFixture:
     return fixture
 
 
+def _formula_in(reference: str) -> Callable[[Path], PreparationFixture]:
+    """Wzorzec z formułą w Wierszu danych: kopia go nie przyjmuje, bo wpisanie wartości zmienia ``calcChain``."""
+
+    def make(tmp_path: Path) -> PreparationFixture:
+        fixture = make_preparation_fixture(tmp_path)
+        replace_cells(fixture.collective_template_path, {reference: f'<c r="{reference}"><f>1+1</f><v>2</v></c>'})
+        return fixture
+
+    return make
+
+
 def _filter_database(path: Path) -> list[str]:
     """Zakres nazwy ``_xlnm._FilterDatabase``: openpyxl jej nie wczytuje, Excel filtruje według niej."""
 
@@ -141,6 +152,8 @@ def _cells(path: Path) -> dict[str, object]:
         pytest.param(_row_style, True, id="styl-wiersza"),
         pytest.param(_leftovers, True, id="resztki-formatowania-wzorca"),
         pytest.param(_filter_name_ref_error, False, id="nazwa-filtra-ref-przez-openpyxl"),
+        pytest.param(_formula_in("K18"), False, id="formula-w-ostatniej-kolumnie-danych-przez-openpyxl"),
+        pytest.param(_formula_in("AP18"), False, id="formula-w-ostatniej-kolumnie-ilosci-przez-openpyxl"),
     ],
 )
 def test_plik_zbiorczy_z_kopii_wzorca_jest_taki_jak_z_openpyxl(
