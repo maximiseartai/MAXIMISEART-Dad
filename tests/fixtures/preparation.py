@@ -22,6 +22,7 @@ from rozliczenia.collective_preparation import (
     PreparationSummary,
     prepare_collective_file,
 )
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.decision import Conversation
 from rozliczenia.domain import ProgressObserver
 from rozliczenia.message import Message
@@ -514,7 +515,11 @@ def run_preparation(
     dry_run: bool = False,
     observer: ProgressObserver | None = None,
     conversation: Conversation = UNASKED,
+    files: DadFiles | None = None,
 ) -> PreparationSummary:
+    """Przygotowanie ``fixture`` w okresie ``period``; ``files``: uchwyt plików taty z Kopią wejścia (``None``: bez
+    Kopii)."""
+
     inputs = PreparationInputs(
         fixture.register_path,
         fixture.periods_directory,
@@ -524,7 +529,8 @@ def run_preparation(
         fixture.collective_template_path,
         dry_run,
     )
-    return prepare_collective_file(inputs, RunContext(observer=observer, conversation=conversation))
+    context = RunContext(observer=observer, conversation=conversation)
+    return prepare_collective_file(inputs, context if files is None else replace(context, files=files))
 
 
 def collective_row(number: int, started: datetime, successful: str, worker: str) -> tuple[object, ...]:
