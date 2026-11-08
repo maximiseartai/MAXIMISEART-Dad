@@ -22,12 +22,12 @@ from typing import TYPE_CHECKING
 from openpyxl.utils import get_column_letter
 
 from . import preparation_messages as messages
-from . import raw_orders, workbook_files
+from . import raw_orders, register_file, workbook_files
 from .message import StopError
 from .register_columns import COLUMNS, DATE, TARGET_HEADERS, WORKER, Column
+from .register_file import DuplicatedHeaders, MissingHeaders, NoOrderSheet
 from .settlement_period import SettlementPeriod
-from .text import normalize_text
-from .workbook_files import ReadRow, ReadWorkbook, RegisterRow, header_columns, is_blank
+from .workbook_files import ReadRow, ReadWorkbook, RegisterRow, is_blank
 
 if TYPE_CHECKING:
     from .dad_files import ReadFile
@@ -126,57 +126,21 @@ def _headers(workbook: ReadWorkbook) -> Iterator[tuple[str, Sequence[object]]]:
         yield sheet.title, next(sheet.values(min_row=1, max_row=1), ())
 
 
-def _register_position(column: Column, columns: dict[str, int]) -> int | None:
-    return next(
-        (columns[name] for name in map(normalize_text, column.register_headers) if name in columns),
-        None,
-    )
-
-
-def _missing_headers(header: Sequence[object]) -> list[str]:
-    columns = header_columns(header)
-    return [column.label for column in COLUMNS if _register_position(column, columns) is None]
-
-
-def _duplicated_headers(header: Sequence[object]) -> list[str]:
-    """Kolumny, których nagłówek, w dowolnym przyjmowanym zapisie, występuje więcej niż raz."""
-
-    normalized = [normalize_text(value) for value in header if not is_blank(value)]
-    return [
-        column.label
-        for column in COLUMNS
-        if sum(normalized.count(name) for name in set(map(normalize_text, column.register_headers))) > 1
-    ]
-
-
 def _order_sheet_positions(register_path: Path, headers: Iterable[tuple[str, Sequence[object]]]) -> dict[str, list[int]]:
-    """Arkusze Rejestru rozpoznane po komplecie wymaganych nagłówków w pierwszym wierszu (``headers``: tytuł i wartości
-    wiersza 1 każdego arkusza): tytuł → numery kolumn ``COLUMNS``.
+    """Arkusze zleceń Rejestru (``register_file.recognize``, ta sama reguła co w Uporządkowaniu INTERMAX) z wierszy 1
+    ``headers`` (tytuł i wartości wiersza 1 każdego arkusza): tytuł → numery kolumn ``COLUMNS``; Zatrzymanie, gdy
+    żadnego nie ma albo wymagany nagłówek stoi więcej niż raz."""
 
-    Arkusze bez większości wymaganych nagłówków (listy, komentarze, ukryte) są pomijane.
-    Arkusz z większością, ale nie kompletem nagłówków, wskazuje brakujący nagłówek.
-    """
-
-    sheets: dict[str, list[int]] = {}
-    closest: tuple[str, list[str]] | None = None  # arkusz z najmniejszą liczbą braków
-    for title, header in headers:
-        missing = _missing_headers(header)
-        if missing:
-            if len(missing) < len(COLUMNS) / 2 and (closest is None or len(missing) < len(closest[1])):
-                closest = (title, missing)
-            continue
-        duplicated = _duplicated_headers(header)
-        if duplicated:
-            raise StopError(messages.register_with_duplicated_headers(register_path, title, duplicated))
-        columns = header_columns(header)
-        sheets[title] = [
-            position for column in COLUMNS if (position := _register_position(column, columns)) is not None
-        ]
-    if sheets:
-        return sheets
-    if closest is not None:
-        raise StopError(messages.register_without_headers(register_path, *closest))
-    raise StopError(messages.register_without_data_sheet(register_path, [column.label for column in COLUMNS]))
+    recognized = register_file.recognize(headers)
+    match recognized:
+        case DuplicatedHeaders(sheet, labels):
+            raise StopError(messages.register_with_duplicated_headers(register_path, sheet, labels))
+        case MissingHeaders(sheet, labels):
+            raise StopError(messages.register_without_headers(register_path, sheet, labels))
+        case NoOrderSheet():
+            raise StopError(messages.register_without_data_sheet(register_path, [column.label for column in COLUMNS]))
+        case _:
+            return {sheet.name: [sheet.positions[column] for column in COLUMNS] for sheet in recognized}
 
 
 def _read_register_sheets(workbook: ReadWorkbook, positions: dict[str, list[int]]) -> list[RegisterSheet]:

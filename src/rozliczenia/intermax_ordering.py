@@ -2,16 +2,17 @@
 
 Operacją procesu jest ``order_register()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty
 rozpoznania, planu dnia i zapisu na Komunikaty: Sprawdzanie (INTERMAX jest i nie jest otwarty w Excelu), Odczyt
-danych (``intermax_file.Register``), Planowanie (``raw_orders.recognize`` w każdym arkuszu zleceń, odmowa dnia,
-który już jest Dniem uporządkowanym (``_ordered_days``), i ``raw_orders.plan_day`` z widokiem na dzisiejszy dzień z
-``now``) i Zapisywanie (bajty dnia z
-``intermax_file.Register.ordered`` przez podmianę INTERMAX ``intermax_replace`` z Kopią INTERMAX). Nie ma podglądu
-bez zapisu ani Decyzji taty. Zatrzymania zgłasza jako ``StopError``, a wynik nie zawiera danych klientów.
+danych (``register_file.read`` i obszary wklejania z rozpoznania arkuszy zleceń, ``_paste_areas``), Planowanie
+(``raw_orders.recognize`` w każdym obszarze wklejania, odmowa dnia, który już jest Dniem uporządkowanym
+(``_ordered_days``), i ``raw_orders.plan_day`` z widokiem na dzisiejszy dzień z ``now``) i Zapisywanie (bajty dnia z
+``intermax_file.ordered`` przez podmianę INTERMAX ``intermax_replace`` z Kopią INTERMAX). Nie ma podglądu bez zapisu
+ani Decyzji taty. Zatrzymania zgłasza jako ``StopError``, a wynik nie zawiera danych klientów.
 
 Obok procesu, tylko do odczytu: ``register_problem`` dla Diagnozy i ``register_days`` (Dni uporządkowane) dla karty
 Uporządkowania INTERMAX w Centrum rozliczeń. Dzień uporządkowany Planowanie i karta rozpoznają jedną regułą
-(``_ordered_days``): w każdym arkuszu zleceń, przeglądem z granicą 6 dni przed dzisiejszym dniem, a dla wklejonego
-dnia sprzed niej w tym dniu.
+(``_ordered_days``): w każdym obszarze wklejania, przeglądem z granicą 6 dni przed dzisiejszym dniem, a dla wklejonego
+dnia sprzed niej w tym dniu. Rozpoznanie arkuszy zleceń proces, Diagnoza i karta tłumaczą na Komunikaty w jednym
+miejscu (``_paste_areas``).
 """
 
 from __future__ import annotations
@@ -25,11 +26,10 @@ from types import MappingProxyType
 
 from openpyxl.utils.cell import get_column_letter
 
-from . import raw_orders, workbook_files
+from . import intermax_file, raw_orders, register_file, workbook_files
 from . import intermax_messages as messages
 from .dad_files import DadFiles
 from .domain import ProgressPhase
-from .intermax_file import OrderSheet, Register
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Replaced, Waiting, replace_register
 from .message import Message, StopError
 from .phase_runner import PhaseRunner
@@ -43,6 +43,7 @@ from .raw_orders import (
     Undated,
     WithoutWorker,
 )
+from .register_file import DuplicatedHeaders, MissingHeaders, NoOrderSheet, OrderSheets, PasteArea, RegisterFile
 from .workbook_files import WorkbookError
 from .workbook_parts import UnsupportedShape
 from .run_context import RunContext
@@ -137,50 +138,54 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
 
     phases.check(check)
 
-    def read() -> Register:
+    def read() -> tuple[RegisterFile, tuple[PasteArea, ...]]:
         try:
-            register = Register.read(register_path, files)
+            register = register_file.read(register_path, files)
         except WorkbookError as error:
             raise StopError(messages.register_unusable(error, messages.ORDERING)) from error
+        register.enter_copy()
+        areas = _paste_areas(register)
         if files.copy is not None:
-            register.copy_paste()
-        if not register.order_sheets:
-            raise StopError(messages.no_order_sheet(register_path))
-        return register
+            for area in areas:
+                area.copy_paste()
+        return register, areas
 
-    register = phases.read(read)
+    register, areas = phases.read(read)
 
-    def plan() -> tuple[OrderSheet, RawBlock, DayPlan]:
-        found: list[tuple[OrderSheet, RawBlock | Obstacle]] = []
-        for candidate in register.order_sheets:
-            with _stops(lambda: messages.unsupported_shape(register_path, candidate.name), UnsupportedShape):
+    def plan() -> tuple[PasteArea, RawBlock, DayPlan]:
+        found: list[tuple[PasteArea, RawBlock | Obstacle]] = []
+        for candidate in areas:
+            with _stops(lambda: messages.unsupported_shape(register_path, candidate.sheet), UnsupportedShape):
                 recognized = raw_orders.recognize(candidate.rows_from_bottom(), candidate.columns)
             if recognized is not None:
                 found.append((candidate, recognized))
         if not found:
-            raise StopError(messages.no_raw_orders(register_path, register.order_sheets[0].name))
+            raise StopError(messages.no_raw_orders(register_path, areas[0].sheet))
         if len(found) > 1:
-            raise StopError(messages.raw_orders_in_several_sheets(register_path, [sheet.name for sheet, _ in found]))
-        [(sheet, recognized)] = found
+            raise StopError(messages.raw_orders_in_several_sheets(register_path, [area.sheet for area, _ in found]))
+        [(area, recognized)] = found
         if not isinstance(recognized, RawBlock):
-            raise StopError(_obstacle(register_path, sheet.name, recognized))
+            raise StopError(_obstacle(register_path, area.sheet, recognized))
         today = now().date()
-        if recognized.day in _ordered_days(register, min(recognized.day, _earliest_shown(today))):
+        if recognized.day in _ordered_days(register_path, areas, min(recognized.day, _earliest_shown(today))):
             first, last = recognized.orders[0].row, recognized.orders[-1].row
-            raise StopError(messages.day_already_ordered(register_path, sheet.name, recognized.day, first, last))
-        return sheet, recognized, raw_orders.plan_day(recognized, sheet.rows_from_bottom(), sheet.columns, today)
+            raise StopError(messages.day_already_ordered(register_path, area.sheet, recognized.day, first, last))
+        return area, recognized, raw_orders.plan_day(recognized, area.rows_from_bottom(), area.columns, today)
 
-    sheet, block, day = phases.plan(plan, issue_count=lambda _: 0)
+    area, block, day = phases.plan(plan, issue_count=lambda _: 0)
 
     def save() -> Replaced:
         def written_as_planned(written: bytes) -> None:
-            register.check(written, sheet, block, day)
+            intermax_file.check(register, written, area, block, day)
 
-        with _stops(lambda: messages.unsupported_shape(register_path, sheet.name), UnsupportedShape):
+        with (
+            _stops(lambda: messages.unsupported_shape(register_path, area.sheet), UnsupportedShape),
+            _stops_unusable(),
+        ):
             outcome = replace_register(
                 register_path,
                 register.content,
-                register.ordered(sheet, block, day),
+                intermax_file.ordered(register, area, block, day),
                 written_as_planned,
                 before="ordering",
                 copies=copies_directory,
@@ -210,6 +215,30 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
     return replace(summary, phase_durations_ms=phases.durations_ms())
 
 
+@contextmanager
+def _stops_unusable() -> Iterator[None]:
+    try:
+        yield
+    except WorkbookError as error:
+        raise StopError(messages.register_unusable(error, messages.ORDERING)) from error
+
+
+def _paste_areas(register: RegisterFile) -> tuple[PasteArea, ...]:
+    """Obszary wklejania arkuszy zleceń Rejestru albo ``StopError`` z Komunikatem, którym Odczyt danych mówi, że ich
+    nie ma: jedno tłumaczenie rozpoznania dla procesu, Diagnozy i karty."""
+
+    match register.order_sheets:
+        case DuplicatedHeaders(sheet, labels):
+            raise StopError(messages.register_with_duplicated_headers(register.path, sheet, labels))
+        case NoOrderSheet() | MissingHeaders():
+            raise StopError(messages.no_order_sheet(register.path))
+        case OrderSheets() as sheets:
+            areas = sheets.paste_areas()
+            if not areas:
+                raise StopError(messages.no_order_sheet(register.path))
+            return areas
+
+
 def _obstacle(register: Path, sheet: str, obstacle: Obstacle) -> Message:
     match obstacle:
         case AboveOrdered(row, ordered_row):
@@ -225,15 +254,17 @@ def _obstacle(register: Path, sheet: str, obstacle: Obstacle) -> Message:
 def register_problem(register_path: Path, files: DadFiles) -> Message | None:
     """Komunikat, którym Sprawdzanie albo Odczyt danych zatrzymałyby Uporządkowanie INTERMAX; ``None``, gdy przechodzą.
 
-    Tylko czyta, uchwytem ``files``, więc Diagnoza sprawdza INTERMAX tą samą regułą co proces. ``Register.read``
+    Tylko czyta, uchwytem ``files``, więc Diagnoza sprawdza INTERMAX tą samą regułą co proces. ``register_file.read``
     sprawdza najpierw to samo co Sprawdzanie i daje ten sam Komunikat, więc wystarcza sam.
     """
 
     try:
-        register = Register.read(register_path, files)
+        _paste_areas(register_file.read(register_path, files))
     except WorkbookError as error:
         return messages.register_unusable(error, messages.ORDERING)
-    return None if register.order_sheets else messages.no_order_sheet(register_path)
+    except StopError as stop:
+        return stop.message
+    return None
 
 
 @dataclass(frozen=True)
@@ -254,14 +285,12 @@ def register_days(register_path: Path, today: date, files: DadFiles) -> tuple[Re
     """
 
     try:
-        register = Register.read(register_path, files, despite_excel_lock=True)
+        register = register_file.read(register_path, files, despite_excel_lock=True)
     except WorkbookError as error:
         return messages.register_unusable(error, messages.ORDERING)
-    if not register.order_sheets:
-        return messages.no_order_sheet(register_path)
     since = _earliest_shown(today)
     try:
-        ordered = _ordered_days(register, since)
+        ordered = _ordered_days(register.path, _paste_areas(register), since)
     except StopError as stop:
         return stop.message
     shown = ordered | {since + timedelta(days=offset) for offset in range(_SHOWN_DAYS)}
@@ -272,15 +301,15 @@ def _earliest_shown(today: date) -> date:
     return today - timedelta(days=_SHOWN_DAYS - 1)
 
 
-def _ordered_days(register: Register, since: date) -> frozenset[date]:
-    """Dni uporządkowane od ``since`` w którymkolwiek arkuszu zleceń (``raw_orders.ordered_days``).
+def _ordered_days(register: Path, areas: tuple[PasteArea, ...], since: date) -> frozenset[date]:
+    """Dni uporządkowane od ``since`` w którymkolwiek obszarze wklejania (``raw_orders.ordered_days``).
 
     Wszystkie arkusze, bo dzień uporządkowany w starszym arkuszu tata może wkleić do nowszego. ``StopError`` z
     Komunikatem Planowania, gdy wierszy arkusza nie da się rozdzielić.
     """
 
     ordered: set[date] = set()
-    for sheet in register.order_sheets:
-        with _stops(lambda: messages.unsupported_shape(register.path, sheet.name), UnsupportedShape):
-            ordered |= raw_orders.ordered_days(sheet.rows_from_bottom(), sheet.columns, since)
+    for area in areas:
+        with _stops(lambda: messages.unsupported_shape(register, area.sheet), UnsupportedShape):
+            ordered |= raw_orders.ordered_days(area.rows_from_bottom(), area.columns, since)
     return frozenset(ordered)

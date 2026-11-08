@@ -8,11 +8,12 @@ przywracania.
 from __future__ import annotations
 
 import zipfile
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from io import BytesIO
 from pathlib import Path
+from xml.etree import ElementTree
 
 from . import intermax_copies, workbook_files
 from . import intermax_messages as messages
@@ -20,6 +21,7 @@ from .intermax_copies import Copy
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting, WriteMismatch, replace_register
 from .message import Message, StopError
 from .workbook_files import WorkbookError
+from .workbook_parts import office_document, package_parts
 
 
 @dataclass(frozen=True)
@@ -31,14 +33,16 @@ class Restored:
     warnings: list[Message]
 
 
-def _parts(content: bytes) -> list[str]:
-    """Nazwy części archiwum zip ``content``; bajty, które nie są zipem, nie mają żadnej."""
+def _is_workbook(content: bytes) -> bool:
+    """``content`` to skoroszyt Excela: zip, którego relacja dokumentu (``workbook_parts.office_document``) wskazuje
+    część w paczce, tak jak przy odczycie Rejestru (``register_file.read``); treści arkuszy nie sprawdza."""
 
     try:
-        with zipfile.ZipFile(BytesIO(content)) as archive:
-            return archive.namelist()
-    except zipfile.BadZipFile:
-        return []
+        with package_parts(content) as parts:
+            document = office_document(parts)
+            return document is not None and document in parts
+    except (zipfile.BadZipFile, zlib.error, KeyError, ElementTree.ParseError):
+        return False
 
 
 def copies(directory: Path) -> list[Copy]:
@@ -81,7 +85,7 @@ def restore(
         content = workbook_files.workbook_content(chosen.path)
     except WorkbookError as error:
         raise StopError(messages.copy_unusable(error)) from error
-    if "xl/workbook.xml" not in _parts(content):  # skoroszyt Excela; treści arkuszy nie sprawdza
+    if not _is_workbook(content):
         raise StopError(messages.copy_damaged(chosen.path))
 
     def check(written: bytes) -> None:

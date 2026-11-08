@@ -47,8 +47,8 @@ MUTATIONS = (
             Edit(
                 INTERMAX_ORDERING,
                 "shown = ordered | {",
-                "shown = ordered | {order.when.date() for sheet in register.order_sheets"
-                " for order in raw_orders.pasted(sheet.rows_from_bottom(), sheet.columns)"
+                "shown = ordered | {order.when.date() for area in _paste_areas(register)"
+                " for order in raw_orders.pasted(area.rows_from_bottom(), area.columns)"
                 " if isinstance(order, raw_orders.RawOrder)} | {",
             ),
         ),

@@ -7,8 +7,8 @@ pokazują go jako przyczynę albo problem pliku.
 
 Sprawdzanie Przygotowania pliku zbiorczego szuka też Surowych zleceń na dole każdego arkusza zleceń
 (``raw_orders_in_period``) tym samym rozpoznaniem bloku i odczytem arkusza co Uporządkowanie INTERMAX
-(``raw_orders.pasted`` na ``intermax_file.Register``) i oddaje je jako fakt, który Przygotowanie tłumaczy na
-Zatrzymanie.
+(``raw_orders.pasted`` na obszarach wklejania z ``register_file.read``) i oddaje je jako fakt, który Przygotowanie
+tłumaczy na Zatrzymanie.
 
 Rejestr czyta uchwyt plików taty (``dad_files.DadFiles``) ze źródłem bajtów czytników (``Readers.source``). Komórki
 zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych uchwytu (ADR 0025). Wiersz
@@ -24,11 +24,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from . import client_data, input_copy, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
+from . import client_data, input_copy, preparation_files, preparation_register, raw_orders, register_file, settlement_files, settlement_messages, workbook_files
 from . import worker_config_messages
 from . import preparation_messages as messages
 from .dad_files import DadFiles, ReadFile
-from .intermax_file import Register
 from .message import Message, StopError
 from .period_folder import (
     PeriodFolder,
@@ -39,6 +38,7 @@ from .period_folder import (
 )
 from .preparation_files import PeriodFiles
 from .preparation_register import RegisterSheet
+from .register_file import OrderSheets
 from .register_columns import TARGET_HEADERS
 from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
@@ -213,18 +213,24 @@ def raw_orders_in_period(register: Path, period: SettlementPeriod, files: DadFil
     Dzień nie daje się ustalić, gdy Surowe zlecenie nie ma daty albo Wykonawcy: wtedy to Uporządkowanie INTERMAX
     mówi, co poprawić. Wiersz z wyglądem z aplikacji nad uporządkowanymi bez bloku na dole nie jest Surowym
     zleceniem i Przygotowania nie zatrzymuje. Zatrzymanie przy nieczytelnym Rejestrze.
+
+    Surowych zleceń szuka tylko w obszarach wklejania: arkusz zleceń starszego układu, bez ``AKCJE`` i ``UWAGI``, nie
+    ma obszaru, bo aplikacja firmowa do niego nie wkleja (``register_file.OrderSheet.paste``). Rejestr bez arkusza
+    zleceń to ``None``: Zatrzymanie o jego nagłówkach daje Odczyt danych.
     """
 
     with _stops(messages.register_unusable), workbook_files.unreadable_as_error(register):
-        intermax = Register.read(register, files)
-        for sheet in intermax.order_sheets:
+        intermax = register_file.read(register, files)
+        if not isinstance(intermax.order_sheets, OrderSheets):
+            return None
+        for area in intermax.order_sheets.paste_areas():
             try:
-                pasted = raw_orders.pasted(sheet.rows_from_bottom(), sheet.columns)
+                pasted = raw_orders.pasted(area.rows_from_bottom(), area.columns)
             except UnsupportedShape as error:
                 raise WorkbookError(register, Problem.UNREADABLE) from error
             found = _raw_rows_in_period(pasted, period)
             if found is not None:
-                return RawOrders(sheet.name, *found)
+                return RawOrders(area.sheet, *found)
     return None
 
 
