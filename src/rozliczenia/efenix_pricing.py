@@ -121,9 +121,8 @@ from .efenix_window import (
 from .message import Message, StopError
 from .phase_runner import PhaseRunner
 from .workbook_files import WorkbookError
-from .period_folder import PeriodFolder, PeriodFolderError
+from .period_folder import collective_period_token
 from .run_context import RunContext
-from .telemetry import UNKNOWN_PERIOD
 
 __all__ = [
     "NO_JOURNAL",
@@ -328,10 +327,7 @@ class EfenixInputs:
 
     @property
     def period(self) -> str:
-        try:
-            return PeriodFolder.from_collective_file(self.source.expanduser().resolve()).period.token
-        except PeriodFolderError:
-            return UNKNOWN_PERIOD
+        return collective_period_token(self.source)
 
     @property
     def dry_run(self) -> bool:

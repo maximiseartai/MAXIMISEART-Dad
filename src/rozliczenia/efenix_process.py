@@ -18,36 +18,25 @@ from __future__ import annotations
 from . import efenix_pricing
 from . import efenix_messages as messages
 from .efenix_pricing import EfenixInputs, OrderKind, PricingSummary
-from .process_run import Finished, Process
+from .process_run import Counter, Process
 from .run_context import RunContext
 from .tool_files import EFENIX_METRICS
 
-_COUNTERS = frozenset({"orders", "ready", "errors", "emmett_warnings", "with_photos", "defects"})
-
-
-def _finished(_inputs: EfenixInputs, summary: PricingSummary) -> Finished:
-    return Finished(
-        result="OK" if not summary.warnings else "WYMAGA_SPRAWDZENIA",
-        counters={
-            "orders": len(summary.results),
-            "ready": summary.count(OrderKind.READY),
-            "errors": summary.count(OrderKind.ERROR),
-            "emmett_warnings": summary.count(OrderKind.WARNING),
-            "with_photos": summary.with_photos,
-            "defects": summary.defects,
-        },
-        phase_durations_ms=summary.phase_durations_ms,
-    )
-
-
 PROCESS: Process[EfenixInputs, PricingSummary, RunContext] = Process(
     name="Wycena w efenix",
-    counter_names=_COUNTERS,
+    counters=(
+        Counter("orders", lambda summary: len(summary.results)),
+        Counter("ready", lambda summary: summary.count(OrderKind.READY)),
+        Counter("errors", lambda summary: summary.count(OrderKind.ERROR)),
+        Counter("emmett_warnings", lambda summary: summary.count(OrderKind.WARNING)),
+        Counter("with_photos", lambda summary: summary.with_photos),
+        Counter("defects", lambda summary: summary.defects),
+    ),
+    result=lambda _inputs, summary: "OK" if not summary.warnings else "WYMAGA_SPRAWDZENIA",
+    preview=None,
     metrics_path=lambda: EFENIX_METRICS,
     metrics_failure_tail="Wycena w efenix zakończyła się niezależnie.",
     execute=efenix_pricing.price_orders,
-    finished=_finished,
     unexpected_failure=messages.unexpected_failure(),
-    plan_not_shown=messages.plan_not_shown(),
     summary_not_shown=messages.summary_not_shown(),
 )

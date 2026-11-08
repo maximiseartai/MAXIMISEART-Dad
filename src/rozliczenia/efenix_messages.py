@@ -401,16 +401,6 @@ def unexpected_failure() -> Message:
     )
 
 
-def plan_not_shown() -> Message:
-    """Wycena w efenix nie ma podglądu bez zapisu; Komunikat rdzenia dla trybu bez zapisu."""
-
-    return Message.to_maintainer(
-        code="EFENIX_PLAN_NIEPOKAZANY",
-        what=f"{_PROCESS} skończyła się, ale nie udało się pokazać planu. {_UNCHANGED}",
-        where=_PROCESS,
-    )
-
-
 def summary_not_shown() -> Message:
     """Proces skończył się, ale nie udało się zbudować podsumowania."""
 

@@ -327,7 +327,6 @@ EFENIX_SAMPLES: Samples = {
     ],
     "marks_not_saved": [partial(efenix_messages.marks_not_saved, SOURCE, refusal) for refusal in Refusal],
     "unexpected_failure": [efenix_messages.unexpected_failure],
-    "plan_not_shown": [efenix_messages.plan_not_shown],
     "summary_not_shown": [efenix_messages.summary_not_shown],
 }
 
@@ -375,5 +374,4 @@ INTERMAX_SAMPLES: Samples = {
     "copy_damaged": [lambda: intermax_messages.copy_damaged(COPY)],
     "unexpected_failure": [intermax_messages.unexpected_failure],
     "summary_not_shown": [intermax_messages.summary_not_shown],
-    "plan_not_shown": [intermax_messages.plan_not_shown],
 }

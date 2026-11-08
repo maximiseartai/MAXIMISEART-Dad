@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Literal
 
 from .settlement_period import PERIOD_TOKEN_PATTERN, SettlementPeriod, parse_period_token
+from .telemetry import UNKNOWN_PERIOD
 
 # ``{token}`` to token okresu, ``{worker}`` nazwa Wykonawcy.
 _INTERNAL_SETTLEMENT = "Rozliczenie wew. {token}.xlsx"
@@ -248,6 +249,16 @@ def _exists(listed: Mapping[str, os.DirEntry[str]], path: Path, *, directory: bo
     if entry is None:
         return path.is_dir() if directory else path.is_file()
     return entry.is_dir() if directory else entry.is_file()
+
+
+def collective_period_token(path: Path) -> str:
+    """Token okresu Pliku zbiorczego ``path`` do rekordu metryk Uruchomienia; ``nieznany``, gdy ścieżka nie jest
+    Plikiem zbiorczym w swoim Folderze okresu (proces sam zatrzymuje się wtedy Komunikatem)."""
+
+    try:
+        return PeriodFolder.from_collective_file(path.expanduser().resolve()).period.token
+    except PeriodFolderError:
+        return UNKNOWN_PERIOD
 
 
 def collective_file_name(period: SettlementPeriod) -> str:

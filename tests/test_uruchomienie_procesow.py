@@ -99,7 +99,8 @@ def test_podsumowanie_ktorego_nie_da_sie_pokazac_konczy_zatrzymaniem_a_pliki_okr
 
     outcome = run(case, tmp_path / "metrics.jsonl", dry_run=dry_run, view=fail)
 
-    not_shown = case.process.plan_not_shown if dry_run else case.process.summary_not_shown
+    assert case.process.preview is not None
+    not_shown = case.process.preview.plan_not_shown if dry_run else case.process.summary_not_shown
     assert outcome.ending == Stop("after_engine", not_shown)
     assert [path.exists() for path in case.period_files] == [not dry_run] * len(case.period_files)
 

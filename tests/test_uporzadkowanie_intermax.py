@@ -2228,7 +2228,7 @@ def test_nieoczekiwany_blad_przed_podmiana_mowi_ze_intermax_nie_zostal_zmieniony
     assert "INTERMAX nie został zmieniony." in stop.message.what
 
 
-@pytest.mark.parametrize("ending", ["unexpected_failure", "plan_not_shown", "summary_not_shown"])
+@pytest.mark.parametrize("ending", ["unexpected_failure", "summary_not_shown"])
 def test_komunikaty_zakonczen_uporzadkowania_maja_trzy_czesci_i_nazywaja_proces(ending: str) -> None:
     message = getattr(PROCESS, ending)
 

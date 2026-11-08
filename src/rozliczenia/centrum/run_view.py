@@ -19,12 +19,12 @@ from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingSummary
 from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.period_folder import period_status_label
-from rozliczenia.process_run import ProcessInputs
+from rozliczenia.process_run import ProcessInputs, ProcessSummary
 from rozliczenia.quantity_rules import WEEKDAY_LABELS
 from rozliczenia.progress import ProgressSnapshot
 
 
-class WarnedSummary(Protocol):
+class WarnedSummary(ProcessSummary, Protocol):
     """Podsumowanie procesu z ostrzeżeniami, które karta Uruchomienia pokazuje z kodami Komunikatów."""
 
     @property
