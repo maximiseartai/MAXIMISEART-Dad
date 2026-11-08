@@ -40,7 +40,7 @@ from drive.common import (
     switch_theme,
     toggle_theme,
 )
-from drive.teksty import FOR_KEY, WRITE
+from drive.teksty import FOR_KEY, MODES, WRITE
 from rozliczenia.centrum.contract import ProcessKey
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
 from rozliczenia.preparation_process import PROCESS as PREPARATION
@@ -721,7 +721,7 @@ def _offers(run: Run, choices: Locator, offered: list[dict[str, Any]], checked: 
     run.check(
         all(
             entry["process_label"] in text
-            and f"{entry['period']} · {entry['mode_word']} · {local_time(entry['started_at'])}" in text
+            and f"{entry['period']} · {MODES[entry['mode']]} · {local_time(entry['started_at'])}" in text
             and _result_word(entry) in text
             for entry, text in zip(offered, texts, strict=True)
         ),

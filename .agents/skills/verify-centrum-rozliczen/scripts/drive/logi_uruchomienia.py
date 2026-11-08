@@ -27,7 +27,6 @@ from drive.common import (
 from drive.teksty import ABOUT_LOGS
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
 from tests.fixtures.scenariusz_centrum import ROW_MARKER
-from rozliczenia.domain import RunMode
 
 FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"
@@ -55,12 +54,12 @@ def _one_new(run: Run, before: set[str], what: str) -> Json:
     return record
 
 
-def _matches_card(run: Run, record: Json, view: Json, mode: RunMode) -> None:
+def _matches_card(run: Run, record: Json, view: Json, mode: str) -> None:
     info, result = view["run"], view["result"]
     run.check(
         (record["run_id"], record["process"], record["period"], record["mode"])
         == (info["id"], info["process"], info["period"], mode),
-        f"the Logi name the card's Uruchomienie {info['id']} and say it was a {mode.word}",
+        f"the Logi name the card's Uruchomienie {info['id']} and say it was a {mode}",
     )
     run.check(
         (record["result"], record["ending"], record["stop_kind"])
@@ -148,7 +147,7 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
     view = _card(run, "logi-podglad")
     record = _one_new(run, before, "Podgląd bez zapisu")
-    _matches_card(run, record, view, RunMode.DRY_RUN)
+    _matches_card(run, record, view, "DRY-RUN")
     _names_running_tool(run, record)
     run.check(
         _codes(record) == [("warning", "BRAK_MAPOWANIA")],
@@ -165,7 +164,7 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_label("Zatrzymanie")).to_contain_text("W Pliku zbiorczym jest WYKONAWCA")
     view = _card(run, "logi-zatrzymanie")
     record = _one_new(run, before, "Zatrzymanie")
-    _matches_card(run, record, view, RunMode.RUN)
+    _matches_card(run, record, view, "RUN")
     _names_running_tool(run, record)
     run.check(
         _codes(record) == [("stop", "NIEZNANY_WYKONAWCA")],
@@ -177,7 +176,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "logi-szablony")
     view = read_json(settled)
     [record] = [record for record in run_logs(run).values() if record["run_id"] == view["run"]["id"]]
-    _matches_card(run, record, view, RunMode.RUN)
+    _matches_card(run, record, view, "RUN")
     workers, rows = run.fixture["workers"], run.fixture["settlement"]["rows_per_worker"]
     templates = record["templates"]
     run.check(
