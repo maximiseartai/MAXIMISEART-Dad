@@ -54,12 +54,12 @@ def test_publikacja_plikow_okresu_zachowuje_nienadpisywanie_i_razem_albo_zaden_w
     writing = 0
     interleaved = False
 
-    def counted(*args: object) -> object:
+    def counted(*args: object, **options: object) -> object:
         nonlocal writing, interleaved
         interleaved |= writing > 0
         writing += 1
         try:
-            return write_period_files(*args)
+            return write_period_files(*args, **options)
         finally:
             writing -= 1
 
@@ -195,8 +195,9 @@ def test_drzewo_harmonogramow_nie_zalezy_od_tego_czym_pathlib_pyta_o_plik(monkey
 def test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_sprawdzeniem(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], ci: str, code: int, last: str
 ) -> None:
-    """Krok zapisu skoroszytu (``_write_period_file``) sprawdzenie zastępuje własnym, więc jego zmiana nie wywraca go
-    sama: w CI rozjazd z ``model/definicje.json`` kończy je porażką, zanim ruszy, a poza CI tylko ostrzega."""
+    """Kroki dysku Zapisywania (domyślne ``preparation_files.Disk``) sprawdzenie zastępuje własnymi, więc ich zmiana
+    nie wywraca go sama: w CI rozjazd z ``model/definicje.json`` kończy je porażką, zanim ruszy, a poza CI tylko
+    ostrzega."""
 
     explorer = _load_explorer()
     monkeypatch.setenv("GITHUB_ACTIONS", ci)

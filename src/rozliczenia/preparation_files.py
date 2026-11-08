@@ -13,10 +13,11 @@ import os
 import shutil
 import tempfile
 from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Final
 
 from . import preparation_messages as messages
 from .message import StopError
@@ -101,10 +102,42 @@ def plan_period_files(
     )
 
 
+def _make_staging(prefix: str, directory: Path) -> Path:
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=directory))
+
+
+def _create_file(template: TemplateFile, target: Path, rows: Sequence[RegisterRow]) -> Route:
+    return template.create(target, rows)
+
+
+def _remove_staging(staging: Path) -> None:
+    shutil.rmtree(staging, ignore_errors=True)
+
+
+@dataclass(frozen=True)
+class Disk:
+    """Kroki Zapisywania poza publikacją; ``LOCAL_DISK`` to prawdziwe, a sprawdzenie ``verify-publikacja-plikow-okresu``
+    podaje własne, żeby prowadzić je na dysku w pamięci bez łatania modułu.
+
+    ``make_staging``: nowy folder tymczasowy o początku nazwy ``prefix`` w folderze ``directory`` (``OSError``).
+    ``create_file``: plik okresu ``target`` z Wzorca z Wierszami danych i jego droga zapisu (ADR 0008).
+    ``remove_staging``: usunięcie folderu tymczasowego, którego może się nie dać usunąć; nigdy nie zgłasza błędu.
+    """
+
+    make_staging: Callable[[str, Path], Path] = _make_staging
+    create_file: Callable[[TemplateFile, Path, Sequence[RegisterRow]], Route] = _create_file
+    remove_staging: Callable[[Path], None] = _remove_staging
+
+
+LOCAL_DISK: Final = Disk()
+
+
 def write_period_files(
     files: PeriodFiles,
     orders: Sequence[PeriodOrder],
     collective_rows: Sequence[CollectiveRow],
+    *,
+    disk: Disk = LOCAL_DISK,
 ) -> RouteCounts:
     """Zapisywanie: przygotowuje oba pliki w folderze tymczasowym, publikuje je razem i podaje ich drogi zapisu.
 
@@ -118,25 +151,29 @@ def write_period_files(
     folder = files.folder
     staging_prefix = f".{folder.period.token}.staging-"
     try:
-        staging = Path(tempfile.mkdtemp(prefix=staging_prefix, dir=folder.periods_directory))
+        staging = disk.make_staging(staging_prefix, folder.periods_directory)
     except OSError as exc:
         raise StopError(messages.write_failed(folder.directory)) from exc
     try:
         try:
-            routes = _write_and_publish(staging, files, orders, collective_rows)
+            routes = _write_and_publish(staging, files, orders, collective_rows, disk)
         except (OSError, WorkbookSaveError) as exc:
             raise StopError(messages.write_failed(folder.directory)) from exc
     except BaseException as error:
-        shutil.rmtree(staging, ignore_errors=True)
+        disk.remove_staging(staging)
         if isinstance(error, StopError) and staging.exists():
             raise StopError(messages.staging_left(error.message, folder.periods_directory, staging_prefix)) from error
         raise
-    shutil.rmtree(staging, ignore_errors=True)
+    disk.remove_staging(staging)
     return routes
 
 
 def _write_and_publish(
-    staging: Path, files: PeriodFiles, orders: Sequence[PeriodOrder], collective_rows: Sequence[CollectiveRow]
+    staging: Path,
+    files: PeriodFiles,
+    orders: Sequence[PeriodOrder],
+    collective_rows: Sequence[CollectiveRow],
+    disk: Disk,
 ) -> RouteCounts:
     staged_directory = staging / files.folder.directory.name
     staged_directory.mkdir()
@@ -144,11 +181,13 @@ def _write_and_publish(
     routes = Counter(
         (
             _write_period_file(
+                disk,
                 files.internal_template,
                 staged_directory / internal_name,
                 [order.register_row for order in orders],
             ),
             _write_period_file(
+                disk,
                 files.collective_template,
                 staged_directory / collective_name,
                 [_with_quantities(row) for row in collective_rows],
@@ -170,12 +209,12 @@ def _template_stops() -> Iterator[None]:
 
 
 def _write_period_file(
-    template: TemplateFile, target: Path, rows: Sequence[RegisterRow]
+    disk: Disk, template: TemplateFile, target: Path, rows: Sequence[RegisterRow]
 ) -> tuple[TemplateKind, Route]:
     """Plik z Wzorca z Wierszami danych od pierwszego Wiersza danych, jego rodzaj i droga zapisu (ADR 0008)."""
 
     with _template_stops():
-        return template.kind, template.create(target, rows)
+        return template.kind, disk.create_file(template, target, rows)
 
 
 def _with_quantities(row: CollectiveRow) -> RegisterRow:

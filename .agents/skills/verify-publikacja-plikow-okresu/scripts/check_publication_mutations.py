@@ -94,7 +94,7 @@ MUTATIONS = (
     ),
     Mutation(
         "błąd sprzątania katalogu tymczasowego po publikacji jako zatrzymanie",
-        (Edit(VERIFIED, "    shutil.rmtree(staging, ignore_errors=True)\n    return routes\n", "    shutil.rmtree(staging)\n    return routes\n"),),
+        (Edit(VERIFIED, "    disk.remove_staging(staging)\n    return routes\n", "    disk.remove_staging(staging)\n    if staging.exists():\n        raise OSError(staging)\n    return routes\n"),),
         EXPLORER,
         "oba pliki okresu są w Folderze okresu, a komunikat mówi, że nie utworzono żadnego pliku",
         NEW,
