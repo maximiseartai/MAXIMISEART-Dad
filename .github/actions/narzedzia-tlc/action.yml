@@ -1,0 +1,22 @@
+name: Narzędzia TLC z cache
+description: >-
+  Przywraca Javę (jdk4py) i tla2tools.jar modeli TLA+ skilli verify-*, których wersje i SHA-256 przypina
+  tools/lib/narzedzia_tlc.py, więc nowe przypięcie to nowy klucz. Trafienie oszczędza pobierania z GitHub Releases
+  i PyPI, których przejściowe 504 raz zaczerwieniło zadanie (#930). Zapisuje je akcja narzedzia-tlc/zapis po
+  jednostkach zadania.
+outputs:
+  trafienie:
+    description: "'true', gdy cache miał klucz."
+    value: ${{ steps.cache.outputs.cache-hit }}
+  klucz:
+    description: Klucz cache, pod którym akcja narzedzia-tlc/zapis zapisuje katalog.
+    value: ${{ steps.cache.outputs.cache-primary-key }}
+runs:
+  using: composite
+  steps:
+    - name: Restore TLC tools
+      id: cache
+      uses: actions/cache/restore@v6
+      with:
+        path: .verification/formal-aktualizacja
+        key: tlc-${{ runner.os }}-${{ hashFiles('tools/lib/narzedzia_tlc.py') }}

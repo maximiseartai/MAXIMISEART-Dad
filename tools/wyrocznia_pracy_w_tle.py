@@ -26,7 +26,6 @@ import argparse
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
 import sys
 import tempfile
 import threading
@@ -36,7 +35,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/hooks"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import falszywe_api
-import potomne
 import praca_w_tle
 from repo import ROOT
 
@@ -95,7 +93,7 @@ def answer(body: dict[str, object]) -> bytes:
         if api.stop.is_set():  # Claude Code przed końcem pyta jeszcze raz; wynik przypadku już jest
             return falszywe_api.stream({"type": "text", "text": WAITING})
         api.refusals = max(api.refusals, refusals)
-        api.tool_result = api.tool_result or any(_has_tool_result(message) for message in messages)
+        api.tool_result = api.tool_result or any(falszywe_api.tool_result(message) is not None for message in messages)
         if refusals >= 2:
             api.stop.set()
         if api.tool_result:
@@ -114,11 +112,6 @@ def _texts(message: object) -> list[str]:
             _texts({"content": inner}) if isinstance(inner, list) else [inner] if isinstance(inner, str) else []
         )
     return found
-
-
-def _has_tool_result(message: object) -> bool:
-    content = message.get("content") if isinstance(message, dict) else None
-    return any(isinstance(part, dict) and part.get("type") == "tool_result" for part in content or [])
 
 
 def command_line(case: Case) -> list[str]:
@@ -182,24 +175,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--limit-s", type=float, default=LIMIT_S, help=f"Limit jednego przypadku (domyślnie {LIMIT_S:g} s)."
     )
-    parser.add_argument(
-        "--kontakt-s",
-        type=float,
-        default=falszywe_api.CONTACT_S,
-        help="Po ilu sekundach bez zapytania do fałszywego API wyrocznia kończy Claude Code "
-        f"(domyślnie {falszywe_api.CONTACT_S:g} s).",
-    )
+    falszywe_api.contact_option(parser)
     args = parser.parse_args(argv)
     chosen = [case for case in CASES if not args.nazwy or case.name in args.nazwy]
-    nested = falszywe_api.nested()
-    if nested:
-        print(f"WYROCZNIA BRAK | {nested}")
+    version = falszywe_api.claude_code(ROOT, len(chosen))
+    if version is None:
         return 2
-    if sys.platform == "win32" or shutil.which("claude") is None:
-        print("WYROCZNIA BRAK | potrzebny claude na PATH na macOS albo Linuksie")
-        return 2
-    version = potomne.run(["claude", "--version"], cwd=ROOT, timeout=60).stdout.strip()
-    print(f"Claude Code {version}, przypadki {len(chosen)}", flush=True)
     counts: dict[str, int] = {}
     with tempfile.TemporaryDirectory(prefix="wyrocznia-pracy-w-tle-") as folder:
         log = Path(folder) / "praca_w_tle.jsonl"

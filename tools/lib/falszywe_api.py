@@ -31,19 +31,22 @@ Model to ``MODEL`` (reguła zespołu: tylko Opus); fałszywe API go nie uruchami
 
     import falszywe_api
 
-    if falszywe_api.nested():
+    if falszywe_api.claude_code(ROOT, len(cases)) is None:
         return 2
     ran = falszywe_api.claude(["-p", "…"], answer=lambda body: falszywe_api.stream(block), cwd=ROOT, env={}, timeout=60, stop=stop)
 """
 from __future__ import annotations
 
+import argparse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import http.server
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import threading
 
 import potomne
@@ -95,6 +98,41 @@ def nested() -> str | None:
     """Powód odmowy, gdy wyrocznia biegnie w Claude Code, które uruchomiła wyrocznia; inaczej ``None``."""
 
     return f"uruchomiona w Claude Code wyroczni ({NESTED})" if os.environ.get(NESTED) else None
+
+
+def claude_code(root: Path, cases: int) -> str | None:
+    """Wersja Claude Code wyroczni po linii z nią i liczbą przypadków; ``None`` po linii ``WYROCZNIA BRAK``, gdy
+    wyrocznia biegnie w Claude Code wyroczni albo nie ma ``claude`` na PATH na macOS albo Linuksie."""
+
+    reason = nested()
+    if reason is None and (sys.platform == "win32" or shutil.which("claude") is None):
+        reason = "potrzebny claude na PATH na macOS albo Linuksie"
+    if reason is not None:
+        print(f"WYROCZNIA BRAK | {reason}")
+        return None
+    version = potomne.run(["claude", "--version"], cwd=root, timeout=60).stdout.strip()
+    print(f"Claude Code {version}, przypadki {cases}", flush=True)
+    return version
+
+
+def contact_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--kontakt-s",
+        type=float,
+        default=CONTACT_S,
+        help=f"Po ilu sekundach bez zapytania do fałszywego API wyrocznia kończy Claude Code (domyślnie {CONTACT_S:g} s).",
+    )
+
+
+def tool_result(message: object) -> str | None:
+    """Tekst pierwszego wyniku narzędzia w wiadomości zapytania API albo ``None``, gdy wiadomość go nie ma."""
+
+    content = message.get("content") if isinstance(message, dict) else None
+    for part in content if isinstance(content, list) else []:
+        if isinstance(part, dict) and part.get("type") == "tool_result":
+            inner = part.get("content")
+            return inner if isinstance(inner, str) else json.dumps(inner, ensure_ascii=False)
+    return None
 
 
 def claude(

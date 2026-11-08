@@ -26,12 +26,15 @@ import urllib.error
 import pytest
 import yaml
 
+from tests.fixtures.ci_workflow import action
 from tests.fixtures.model_tlc import model_tlc, narzedzia_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
 from tests.fixtures.potomne import potomne
 
 ROOT = Path(__file__).resolve().parents[1]
 ZAPIS = ROOT / "tools" / "ci" / "zapis_narzedzi_tlc.py"
 WORKFLOWS = {"ci.yml": ROOT / ".github" / "workflows" / "ci.yml", "mutacje-nocne.yml": ROOT / ".github" / "workflows" / "mutacje-nocne.yml"}
+PRZYWROCENIE_TLC = "./.github/actions/narzedzia-tlc"
+ZAPIS_TLC = f"{PRZYWROCENIE_TLC}/zapis"
 SKRYPTY_MODELI = (
     ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_model_kolejki.py",
     ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "scripts" / "sprawdz_urwane_uruchomienie.py",
@@ -525,25 +528,32 @@ def test_kazde_zadanie_z_cache_narzedzi_tlc_zapisuje_go_dopiero_po_sprawdzeniu_j
     for name, path in WORKFLOWS.items():
         for job_name, job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].items():
             steps = job.get("steps", [])
-            cache = [step for step in steps if step.get("with", {}).get("path") == katalog]
-            if not cache:
+            tlc = [step for step in steps if step.get("uses", "").startswith(PRZYWROCENIE_TLC)]
+            if not tlc:
                 continue
-            restore, save = cache
-            [check] = [step for step in steps if step.get("run") == "python tools/ci/zapis_narzedzi_tlc.py"]
+            restore, save = tlc
             units = next(step for step in steps if "tools/ci/wykonaj_zadanie.py" in step.get("run", ""))
             shapes[f"{name}:{job_name}"] = (
-                [step["uses"].split("@")[0] for step in cache],
-                steps.index(restore) < steps.index(units) < steps.index(check) < steps.index(save),
-                check["if"],
+                [step["uses"] for step in tlc],
+                steps.index(restore) < steps.index(units) < steps.index(save),
                 save["if"],
-                save["with"]["key"],
+                save["with"]["klucz"],
+                save.get("continue-on-error"),
             )
+    restored = action(PRZYWROCENIE_TLC)["runs"]["steps"]
+    check, saved = action(ZAPIS_TLC)["runs"]["steps"]
 
     expected = (
-        ["actions/cache/restore", "actions/cache/save"],
+        [PRZYWROCENIE_TLC, ZAPIS_TLC],
         True,
-        "${{ !cancelled() && steps.tlc-cache.outputs.cache-hit != 'true' }}",
-        "${{ !cancelled() && steps.tlc-check.outputs.zapisz == 'true' }}",
-        "${{ steps.tlc-cache.outputs.cache-primary-key }}",
+        "${{ !cancelled() && steps.tlc.outputs.trafienie != 'true' }}",
+        "${{ steps.tlc.outputs.klucz }}",
+        True,
     )
     assert shapes == {"ci.yml:mutations": expected, "mutacje-nocne.yml:skill-mutations": expected}
+    assert [(step["uses"].split("@")[0], step["with"]["path"]) for step in (*restored, saved)] == [
+        ("actions/cache/restore", katalog),
+        ("actions/cache/save", katalog),
+    ]
+    assert (check["run"], check["if"]) == ("python tools/ci/zapis_narzedzi_tlc.py", "${{ !cancelled() }}")
+    assert (saved["if"], saved["with"]["key"]) == ("${{ !cancelled() && steps.sprawdzenie.outputs.zapisz == 'true' }}", "${{ inputs.klucz }}")

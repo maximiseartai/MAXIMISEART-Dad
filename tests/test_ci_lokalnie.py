@@ -14,10 +14,12 @@ from pathlib import Path
 import subprocess
 import sys
 from types import ModuleType
+from typing import Any
 
 import pytest
 import yaml
 
+from tests.fixtures.ci_workflow import action
 from tests.fixtures.git_repo import commit, git, repository
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
 
@@ -36,11 +38,17 @@ def _tool_steps() -> dict[str, object]:
     return steps
 
 
+def _steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Kroki zadania z krokami akcji złożonych z repozytorium (``uses: ./…``) w miejscu kroku, który je woła."""
+
+    return [inner for step in steps for inner in (_steps(action(step["uses"])["runs"]["steps"]) if step.get("uses", "").startswith("./") else [step])]
+
+
 def _commands(job: dict[str, object]) -> list[str]:
-    """Polecenia sprawdzające z kroków `run:` zadania, z `py -3` zapisanym jak `python`."""
+    """Polecenia sprawdzające z kroków `run:` zadania i akcji złożonych, które woła, z `py -3` zapisanym jak `python`."""
 
     commands = []
-    for step in job.get("steps", []):  # type: ignore[attr-defined]
+    for step in _steps(job.get("steps", [])):  # type: ignore[arg-type]
         for line in str(step.get("run", "")).splitlines():
             command = line.strip().replace("py -3 ", "python ")
             if command.startswith(("python ", "npm ", 'stale="$(git')) and not any(

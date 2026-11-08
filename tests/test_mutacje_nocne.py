@@ -30,7 +30,7 @@ import zipfile
 import pytest
 import yaml
 
-from tests.fixtures.ci_workflow import jobs
+from tests.fixtures.ci_workflow import chromium, jobs
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, repository
 
@@ -1038,21 +1038,17 @@ def test_czesc_instaluje_to_samo_co_czesci_pytest_na_linuksie() -> None:
     assert _instalacje_na_linuksie(_nocne()["jobs"]["change-mutations"]) == _instalacje_na_linuksie(jobs()["pytest"])
 
 
-def _kroki_chromium(zadanie: dict[str, Any]) -> list[dict[str, Any]]:
-    return [krok for krok in zadanie["steps"] if "playwright" in str(krok.get("run", "")) + str(krok.get("with", ""))]
-
-
-def test_czesc_oznaczona_przez_plan_instaluje_chromium_tymi_samymi_krokami_co_zadanie_pytest() -> None:
+def test_czesc_oznaczona_przez_plan_instaluje_chromium_tym_samym_krokiem_co_zadanie_pytest() -> None:
     """Część przed mutacjami uruchamia testy dotknięte zmianą, a test, który sięga Atrapy efenix, bez Chromium pada,
     zanim cokolwiek sprawdzi; wtedy część kończy się kodem 2 i czerwieni noc."""
 
     czesc = _nocne()["jobs"]["change-mutations"]
-    kroki = _kroki_chromium(czesc)
+    [krok] = chromium(czesc)
     mutacje_czesci = next(i for i, krok in enumerate(czesc["steps"]) if "tools/mutacje_zmiany.py" in krok.get("run", ""))
 
-    assert kroki == _kroki_chromium(jobs()["pytest"])
-    assert [krok.get("if") for krok in kroki] == ["${{ matrix.przegladarka }}"] * 3
-    assert max(czesc["steps"].index(krok) for krok in kroki) < mutacje_czesci
+    assert [krok] == chromium(jobs()["pytest"])
+    assert krok["if"] == "${{ matrix.przegladarka }}"
+    assert czesc["steps"].index(krok) < mutacje_czesci
 
 
 def _historia_skilli(tmp_path: Path) -> tuple[Path, str]:

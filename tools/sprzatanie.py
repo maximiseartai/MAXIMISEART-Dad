@@ -23,7 +23,7 @@ worktree; gdy nie da się zapytać T3, zostają worktree w ``~/.t3/worktrees``.
 Tuż przed usunięciem ocenia worktree jeszcze raz, ze świeżym ``lsof``. Gdy git odmówi usunięcia, worktree albo
 gałąź zostaje z powodem ``git odmówił (...)``.
 
-Przed oceną pobiera ``origin/main`` (bez ``--bez-fetch``); nieudany fetch tylko zmniejsza liczbę usuniętych.
+Przed oceną pobiera ``origin/main``; nieudany fetch tylko zmniejsza liczbę usuniętych.
 Drukuje linię na każdy worktree i gałąź. Ostatnia linia to ``SPRZĄTANIE RAPORT | do usunięcia N | zostawione M
 (powód liczba, ...) | uruchom z --usun``, a z ``--usun`` ``SPRZĄTANIE OK | usunięte N | zostawione M (...)``;
 worktree z kilkoma powodami liczy się przy każdym. Kod 1 i ``SPRZĄTANIE FAIL`` znaczą, że nie da się odczytać
@@ -87,7 +87,6 @@ class _Threads:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--usun", action="store_true", help="Usuwa; bez tej flagi narzędzie tylko raportuje.")
-    parser.add_argument("--bez-fetch", action="store_true", help=f"Bez pobierania {BASE}.")
     args = parser.parse_args(argv)
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(errors="replace")
@@ -97,10 +96,9 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, subprocess.CalledProcessError):
         print("SPRZĄTANIE FAIL | uruchom w checkoucie repozytorium git")
         return 1
-    if not args.bez_fetch:
-        fetched = _fetch(root)
-        if fetched:
-            print(f"FETCH POMINIĘTY | {fetched}")
+    fetched = _fetch(root)
+    if fetched:
+        print(f"FETCH POMINIĘTY | {fetched}")
     if repo.commit(root, BASE) is None:
         print(f"SPRZĄTANIE FAIL | brak {BASE}, nie ma z czym porównać")
         return 1

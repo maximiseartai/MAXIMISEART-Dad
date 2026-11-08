@@ -11,7 +11,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
   Każdy tor bierze pliki, które `tools/szybko.py` wybiera dla zmiany od bazy (bez jego budżetu czasu), i testy `STRUCTURE` z `tools/lib/wplyw_zmiany.py`.
   Lokalne `tools/szybko.py` uruchamia z tego wyboru zawsze pliki w odległości najwyżej 1 od zmiany, a dalsze tylko w swoim budżecie czasu, i resztę wypisuje jako „zostawione CI”.
   Pomija przy tym plik testu, który już przeszedł, jeśli od tamtej pory nie zmienił się ani on, ani nic, od czego zależy.
-- Zmiana ścieżki, która w tabeli reguł `tools/lib/wplyw_zmiany.py` uruchamia wszystko w bramce PR (`Context.PR_GATE`: pliki, od których zależy każdy test, i `.github/workflows/`), wybiera wszystkie pliki testów, E2E i straż czasu.
+- Zmiana ścieżki, która w tabeli reguł `tools/lib/wplyw_zmiany.py` uruchamia wszystko w bramce PR (`Context.PR_GATE`: pliki, od których zależy każdy test, oraz `.github/workflows/` i akcje złożone `.github/actions/`, które workflowy wołają), wybiera wszystkie pliki testów, E2E i straż czasu.
 - Co biegnie dla zdarzenia (push, PR, noc) i zmiany, rozstrzyga jeden moduł, zakres runu `tools/lib/zakres_runu.py`: plan CI go wycenia i pakuje, a `tools/skille_dla_zmiany.py` drukuje z niego linie `LICZY CI` i `LICZY NOC`.
 - E2E biegnie na Windows 3.11 przy zmianie pod `src/`, a straż czasu przy zmianie w domknięciu jej skryptów (`STRAZ` w `tools/lib/zakres_runu.py`).
 - Mutation checks biegną tylko wtedy, gdy zakres runu wybrał dla zmiany krok skilla (podstawę `ci:` albo skrypt mutacji modelu).

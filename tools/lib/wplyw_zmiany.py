@@ -102,6 +102,8 @@ _RUN_ALL = (
     _Rule(".github/workflows/", frozenset({_GATE})),
     # Zadanie CI mutacji skilli i końce linii kopii, na których biegną jego kroki (#293).
     _Rule(".github/workflows/ci.yml", frozenset({_SKILLS})),
+    # Kroki zadań pytest i Mutation checks, które workflowy wołają jako akcje złożone (Chromium, narzędzia TLC).
+    _Rule(".github/actions/", frozenset({_GATE, _SKILLS})),
     _Rule(".gitattributes", frozenset({_SKILLS})),
 )
 # Testy i węzły ``plik::test``, które biegną przy każdej zmianie: reguły z tabel w ``AGENTS.md``,

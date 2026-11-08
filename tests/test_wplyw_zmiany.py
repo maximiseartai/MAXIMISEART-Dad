@@ -214,6 +214,8 @@ def test_odleglosc_od_zmiany_to_najkrotsza_droga_w_grafie_zaleznosci(tmp_path: P
         # Workflow w bramce PR (ADR 0020), a kroki skilli tylko przy zadaniu CI, w którym biegną (#293).
         (".github/workflows/ci.yml", {Context.PR_GATE, Context.SKILL_STEPS}),
         (".github/workflows/mutacje-nocne.yml", {Context.PR_GATE}),
+        # Akcja złożona to kroki zadań pytest i Mutation checks, które workflowy wołają.
+        (".github/actions/chromium/action.yml", {Context.PR_GATE, Context.SKILL_STEPS}),
         (".gitattributes", {Context.SKILL_STEPS}),
         (".github/scripts/py.cmd", set()),
         ("tests/fixtures/git_repo.py", set()),

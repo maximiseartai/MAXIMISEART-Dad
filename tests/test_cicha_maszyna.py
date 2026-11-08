@@ -136,3 +136,13 @@ def test_przegladarka_zajmuje_maszyne(praca: str) -> None:
 
     with proces([browser, "60"], praca, executable=shutil.which("sleep")):
         assert quiet_machine.busy_commands() == [praca]
+
+
+def test_kazdy_skrypt_z_listy_pracy_maszyny_istnieje_w_repozytorium() -> None:
+    """Fragment ``.py`` z ``BUSY_COMMANDS`` to nazwa skryptu (albo koniec nazw skryptów mutacji): po zmianie nazwy pliku
+    maszyna przestałaby widzieć jego pracę i pomiar biegłby obok niego."""
+
+    root = Path(__file__).resolve().parents[1]
+    scripts = [path.name for folder in (".agents/skills", "tools") for path in (root / folder).rglob("*.py")]
+
+    assert [fragment for fragment in quiet_machine.BUSY_COMMANDS if fragment.endswith(".py") and not any(name.endswith(fragment) for name in scripts)] == []

@@ -43,7 +43,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/hooks"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import falszywe_api
-import potomne
 from repo import ROOT
 import zgoda
 
@@ -100,26 +99,14 @@ def answer(body: dict[str, object]) -> bytes:
     """Każda odpowiedź to ``tool_use`` Bash z poleceniem przypadku; wynik narzędzia z ``body`` kończy przypadek."""
 
     # Claude Code 2.1.310 woła tu tylko POST /v1/messages (1737 zapytań w pomiarach rundy 3 #496).
-    result = tool_result(body)
+    messages = body.get("messages")
+    result = falszywe_api.tool_result(messages[-1] if isinstance(messages, list) and messages else None)
     if result is not None:
         _Api.result = result
         _Api.answered.set()
     return falszywe_api.stream(
         {"type": "tool_use", "id": "toolu_wyrocznia", "name": "Bash", "input": {"command": _Api.command}}
     )
-
-
-def tool_result(body: dict[str, object]) -> str | None:
-    """Tekst wyniku narzędzia w ostatniej wiadomości zapytania albo ``None``, gdy model go jeszcze nie dostał."""
-
-    messages = body.get("messages")
-    last = messages[-1] if isinstance(messages, list) and messages else {}
-    content = last.get("content") if isinstance(last, dict) else None
-    for part in content if isinstance(content, list) else []:
-        if isinstance(part, dict) and part.get("type") == "tool_result":
-            inner = part.get("content")
-            return inner if isinstance(inner, str) else json.dumps(inner, ensure_ascii=False)
-    return None
 
 
 def cases(path: Path) -> list[Case]:
@@ -208,24 +195,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--host-s", type=float, default=HOST_S, help=f"Jak długo host czeka bez odpowiedzi (domyślnie {HOST_S:g} s)."
     )
-    parser.add_argument(
-        "--kontakt-s",
-        type=float,
-        default=falszywe_api.CONTACT_S,
-        help="Po ilu sekundach bez zapytania do fałszywego API wyrocznia kończy Claude Code "
-        f"(domyślnie {falszywe_api.CONTACT_S:g} s).",
-    )
+    falszywe_api.contact_option(parser)
     args = parser.parse_args(argv)
     chosen = [case for case in cases(args.przypadki) if not args.nazwy or case.name in args.nazwy]
-    nested = falszywe_api.nested()
-    if nested:
-        print(f"WYROCZNIA BRAK | {nested}")
+    version = falszywe_api.claude_code(ROOT, len(chosen))
+    if version is None:
         return 2
-    if sys.platform == "win32" or shutil.which("claude") is None:
-        print("WYROCZNIA BRAK | potrzebny claude na PATH na macOS albo Linuksie")
-        return 2
-    version = potomne.run(["claude", "--version"], cwd=ROOT, timeout=60).stdout.strip()
-    print(f"Claude Code {version}, przypadki {len(chosen)}", flush=True)
     cache = Path.home() / ".cache"
     cache.mkdir(exist_ok=True)
     sandbox = Path(tempfile.mkdtemp(prefix="wyrocznia-zgody-", dir=cache))

@@ -11,7 +11,8 @@ widzi tylko ``git push`` z hookami, więc ``git push --no-verify``, ``gh release
 łapie tylko przegląd.
 
 Kroki bierze z ``tools/ci_lokalnie.py``, uruchomionego Pythonem z ``.venv`` checkoutu. Włącza ją
-``tools/setup_worktree.py`` (``core.hooksPath``); git uruchamia ją w katalogu głównym checkoutu.
+``tools/setup_worktree.py`` (``core.hooksPath``), tylko na macOS i Linuksie; git uruchamia ją w katalogu głównym
+checkoutu.
 
 Przed krokami drukuje dwie linie, które tylko informują: werdykt ``tools/praca_w_toku.py --aktualizacja``, czy
 aktualizować gałąź z ``origin/main``, i skille ``verify-*`` do załadowania z ``tools/skille_dla_zmiany.py``. Gdy
@@ -32,7 +33,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 AGENT_MARKERS = ("AI_AGENT", "CLAUDECODE")
-VENV_PYTHON = Path(".venv/Scripts/python.exe" if sys.platform == "win32" else ".venv/bin/python")
+VENV_PYTHON = Path(".venv/bin/python")
 COMMAND = (str(VENV_PYTHON), "tools/ci_lokalnie.py", "--tylko", "ruff,mypy", "--do-pierwszego-bledu")
 NOTE_TIMEOUT_S = 5
 CHECKS = "sprawdzam ruff i mypy (macOS i Windows) przez tools/ci_lokalnie.py; resztę sprawdza CI na GitHubie"
@@ -118,10 +119,6 @@ def main() -> int:
         return 1
     for note in _notes():
         _print_note(note)
-    if sys.platform == "win32":  # tools/setup_worktree.py nie włącza bramy na Windows
-        import potomne
-
-        return potomne.run(COMMAND, cwd=Path.cwd(), echo=True).returncode
     # Hook staje się ci_lokalnie, więc sygnał dla samego hooka też kończy sprawdzenie.
     os.execv(COMMAND[0], COMMAND)
 
