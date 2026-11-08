@@ -847,11 +847,25 @@ def test_sprawdzenie_wysylki_logow_przepuszcza_kod_bez_wysylki_logow(code: str) 
 # z src”).
 ORACLES: typing.Final = (".agents/skills/*/scripts/**/*.py", "tools/**/*.py")
 SRC_PACKAGE: typing.Final = "rozliczenia"
-NAME_CALLS: typing.Final = frozenset({"getattr", "setattr", "delattr", "hasattr"})
 
 
 def _private(name: str) -> bool:
     return (name.startswith("_") and not (name.startswith("__") and name.endswith("__"))) or name == "__dict__"
+
+
+def _private_text(node: ast.expr | None) -> bool:
+    return isinstance(node, ast.Constant) and isinstance(node.value, str) and _private(node.value)
+
+
+def _private_path(text: object) -> bool:
+    """Napis ``rozliczenia.…._x``: ścieżka kropkowa w ``src`` z prywatną nazwą (``mock.patch``, ``import_module``)."""
+
+    if not isinstance(text, str):
+        return False
+    parts = text.split(".")
+    return len(parts) > 1 and parts[0] == SRC_PACKAGE and all(part.isidentifier() for part in parts) and any(
+        _private(part) for part in parts[1:]
+    )
 
 
 def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
@@ -859,9 +873,12 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
 
     Nazwa z ``src`` to każda nazwa, którą wiąże import z ``rozliczenia`` (``import rozliczenia.x``, ``import … as m``,
     ``from rozliczenia… import n``). Sięgnięcie to atrybut prywatny na niej albo w łańcuchu od niej, import prywatnej nazwy,
-    ``vars`` jej, ``getattr``/``setattr``/``delattr``/``hasattr`` z prywatnym napisem i krotka ``(nazwa, "_x")``, w której
-    eksploratory trzymają podmieniane nazwy. Prywatny atrybut instancji (``outbox._draining``) i nazwa złożona w trakcie
-    działania to granica, którą łapie tylko przegląd.
+    ``vars`` jej, wywołanie dowolnej funkcji (``getattr``, ``setattr``, ``mock.patch.object``, ``object.__setattr__``)
+    z nią jako pierwszym argumentem i prywatnym napisem stałym jako drugim albo jako wartością słowa kluczowego, para
+    ``(nazwa, "_x")`` w krotce albo słowniku ``{nazwa: "_x"}``, w których eksploratory trzymają podmieniane nazwy,
+    i napis stały ``rozliczenia.…._x`` (``mock.patch("rozliczenia.centrum.outbox._queued", …)``). Prywatny atrybut
+    instancji (``outbox._draining``), nazwa albo ścieżka złożona w trakcie działania (f-napis, zmienna) i nazwa
+    przekazana przez pośrednika (moduł w zmiennej spoza importu) to granica, którą łapie tylko przegląd.
     """
 
     bound: set[str] = set()
@@ -877,7 +894,7 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
                     found.append((node.lineno, ast.unparse(node)))
                 bound.add(alias.asname or alias.name)
 
-    def from_src(node: ast.expr) -> bool:
+    def from_src(node: ast.expr | None) -> bool:
         while isinstance(node, ast.Attribute):
             node = node.value
         return isinstance(node, ast.Name) and node.id in bound
@@ -885,19 +902,18 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and _private(node.attr) and from_src(node.value):
             found.append((node.lineno, ast.unparse(node)))
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.args and from_src(node.args[0]):
-            name = node.args[1] if len(node.args) > 1 else None
-            if node.func.id == "vars" or (
-                node.func.id in NAME_CALLS
-                and isinstance(name, ast.Constant)
-                and isinstance(name.value, str)
-                and _private(name.value)
-            ):
+        elif isinstance(node, ast.Call) and node.args and from_src(node.args[0]):
+            names = [*node.args[1:2], *(keyword.value for keyword in node.keywords)]
+            if (isinstance(node.func, ast.Name) and node.func.id == "vars") or any(map(_private_text, names)):
                 found.append((node.lineno, ast.unparse(node)))
-        elif isinstance(node, ast.Tuple) and len(node.elts) >= 2 and from_src(node.elts[0]):
-            name = node.elts[1]
-            if isinstance(name, ast.Constant) and isinstance(name.value, str) and _private(name.value):
-                found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.Tuple) and len(node.elts) >= 2 and from_src(node.elts[0]) and _private_text(node.elts[1]):
+            found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.Dict) and any(
+            from_src(key) and _private_text(value) for key, value in zip(node.keys, node.values, strict=True)
+        ):
+            found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.Constant) and _private_path(node.value):
+            found.append((node.lineno, repr(node.value)))
     return sorted(set(found))
 
 
@@ -929,6 +945,21 @@ PRIVATE_REACHES: typing.Final = {
     "setattr-z-napisem": 'from rozliczenia import preparation_files\nsetattr(preparation_files, "_write_period_file", step)',
     "getattr-z-napisem": 'from rozliczenia.centrum import runs\nrun = getattr(runs, "_Run")',
     "krotka-podmienianych-nazw": 'from rozliczenia.centrum import runs\nPATCHED = ((runs, "threading"), (runs, "_Run"))',
+    "slownik-podmienianych-nazw": 'from rozliczenia.centrum import runs\nPATCHED = {runs: "_Run"}',
+    # Przegląd #1115, runda 1: podmiana globalu modułu przez dowolną funkcję, nie tylko getattr/setattr.
+    "mock-patch-object": (
+        "from unittest import mock\nfrom rozliczenia.centrum import outbox\n"
+        'patched = mock.patch.object(outbox, "_queued", read)'
+    ),
+    "mock-patch-object-ze-slowem-kluczowym": (
+        "from unittest import mock\nfrom rozliczenia.centrum import outbox\n"
+        'patched = mock.patch.object(outbox, attribute="_queued", new=read)'
+    ),
+    "builtins-setattr": 'import builtins\nfrom rozliczenia.centrum import outbox\nbuiltins.setattr(outbox, "_queued", 1)',
+    "object-setattr": 'from rozliczenia.centrum import outbox\nobject.__setattr__(outbox, "_queued", 1)',
+    "mock-patch-sciezka": 'from unittest import mock\npatched = mock.patch("rozliczenia.centrum.outbox._queued", read)',
+    "import-module-prywatnego-modulu": 'import importlib\nmodule = importlib.import_module("rozliczenia.centrum._private")',
+    "sciezka-przez-prywatny-modul": 'from unittest import mock\npatched = mock.patch("rozliczenia._wnetrze.read", read)',
 }
 
 
@@ -939,15 +970,22 @@ def test_sprawdzenie_wyroczni_lapie_kazda_droge_do_prywatnej_nazwy_src(code: str
 
 def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_i_prywatne_pola_wlasnych_obiektow() -> None:
     code = (
+        "from unittest import mock\n"
+        "import hypothesis\n"
         "from rozliczenia.centrum import outbox as outbox_module\n"
         "from rozliczenia.centrum.outbox import RETRY_S, Outbox\n"
         "class Box:\n"
         "    def __init__(self) -> None:\n"
         "        self._ids = 0\n"
-        "def run(outbox: Outbox, path) -> object:\n"
+        "def run(outbox: Outbox) -> object:\n"
         "    names = vars(Box())\n"
         '    setattr(outbox_module, "threading", None)\n'
-        '    return outbox.state(), outbox_module.queue_version(path), RETRY_S, outbox_module.__name__, getattr(Box(), "_ids")\n'
+        '    mock.patch.object(hypothesis, "_settings", None)\n'
+        '    mock.patch("rozliczenia.centrum.outbox.LOCAL_QUEUE_DISK", None)\n'
+        '    mock.patch("hypothesis._settings", None)\n'
+        '    log = "rozliczenia._x to zdanie, nie ścieżka"\n'
+        '    log = f"{outbox_module.__name__}._queued"\n'
+        '    return outbox.state(), outbox_module.SCHEMA_VERSION, RETRY_S, {outbox_module: "threading"}, getattr(Box(), "_ids")\n'
     )
 
     assert _private_reaches(ast.parse(code)) == []

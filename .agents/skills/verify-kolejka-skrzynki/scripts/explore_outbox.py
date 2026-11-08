@@ -1019,6 +1019,9 @@ def _waiting_broken(post: Post, box: MemoryBox, queue: Path) -> list[tuple[str, 
     return broken
 
 
+# A deliberate copy of the end of a wysyłka mark (``_mark`` in outbox.py; docs/agents/skille.md, „Co wyrocznia bierze
+# z src”): marks in the Skrzynka outlive a Wydanie, and the next one reads them, so a change of the format must break
+# this checker.
 _VERSION = re.compile(r"wersja (\S+) -->")
 _ASSET_VERSION = re.compile(r"\(wersja (\S+)\)$")
 
