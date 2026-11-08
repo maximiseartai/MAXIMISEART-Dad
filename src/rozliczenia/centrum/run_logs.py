@@ -46,13 +46,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Final, Literal, assert_never
+from typing import Annotated, Any, Final, Literal, assert_never
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SerializationInfo, SerializerFunctionWrapHandler, model_serializer
 
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.dad_actions import DadActions, StoredRunMode
+from rozliczenia.centrum.dad_actions import ButtonPressed, DadActions, StoredRunMode
 from rozliczenia.domain import ProgressPhase, WorkerStatus
 from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_pricing import OrderKind, OrderResult, PricingStopped, PricingSummary, StoppedOrder
@@ -577,7 +577,8 @@ class RunLog(StartFacts):
     ``issue_count``, ``templates`` i ``duration_ms`` są puste tylko wtedy, gdy sam rdzeń (``run_process``) rzucił wyjątek,
     albo w Logach Urwanego Uruchomienia (``ending`` ``interrupted``), które nie mają też wyniku (``result`` ``None``).
     Centrum zapisuje schemat 3, a czyta też pliki schematu 1 (bez godzin kroków i dziennika działań taty) i 2 (tryb
-    i tryb przycisków startu w dzienniku działań taty jako słowo „podgląd”/„zapis”, ``StoredRunMode``).
+    i tryb przycisków startu w dzienniku działań taty jako słowo „podgląd”/„zapis”, ``StoredRunMode``), a taki plik
+    zapisuje z powrotem w jego schemacie (``_in_own_schema``).
     """
 
     schema_version: Literal[1, 2, 3]
@@ -623,6 +624,22 @@ class RunLog(StartFacts):
     """Uwagi techniczne o Kopii wejścia, osobno od ``technical_notes``, które pokazuje karta Uruchomienia z Logów: wiersz
     ze śladem przesunięcia, który łamie fakt domeny (``logs_of_run.logs_of``), i uwagi strażnika reguły danych o
     wartościach zamaskowanych w Kopii (``guard_logs``)."""
+
+    @model_serializer(mode="wrap")
+    def _in_own_schema(self, handler: SerializerFunctionWrapHandler, info: SerializationInfo) -> dict[str, Any]:
+        """JSON Logów w ich schemacie: plik sprzed schematu 3, który start Centrum zapisuje z powrotem przy dzienniku
+        Wyceny (``comment_versions.close``), ma dalej tryb i tryb przycisków startu słowem, bo odtworzenie czyta go kodem
+        jego commitu (``tool.commit``)."""
+
+        dumped: dict[str, Any] = handler(self)
+        if self.schema_version == SCHEMA_VERSION or not info.mode_is_json():
+            return dumped
+        dumped["mode"] = self.mode.word
+        if self.dad_actions is not None:
+            for action, entry in zip(self.dad_actions.entries, dumped["dad_actions"]["entries"], strict=True):
+                if isinstance(action, ButtonPressed) and action.mode is not None:
+                    entry["mode"] = action.mode.word
+        return dumped
 
     @classmethod
     def interrupted(

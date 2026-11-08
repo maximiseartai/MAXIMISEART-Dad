@@ -71,6 +71,7 @@ from rozliczenia.centrum.logs_disk import (
     Missing,
     Refused,
     Unreadable,
+    name_of,
 )
 from rozliczenia.centrum.outbox import PeriodThread, Post, Rank
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
@@ -779,6 +780,29 @@ def test_katalog_logow_ktory_nie_przyjal_pliku_przy_starcie_nie_zatrzymuje_logow
     assert (post.rank, journal.exists()) == (Rank.STAND_IN, False)
     assert [line.split(" ", 1)[1].split(" typ=")[0] for line in lines] == ["dziennik-wyceny-niedostepny"]
     assert lines[0].endswith("miejsce=start")
+
+
+def test_logi_sprzed_schematu_3_przy_dzienniku_wyceny_zostaja_w_swoim_schemacie_ze_slowem_trybu(tmp_path: Path) -> None:
+    """Start Centrum zastaje dziennik Wyceny i plik Logów schematu 2, który zapisało Centrum sprzed schematu 3 (Logi,
+    których przyjęcia przez kolejkę nikt nie zapisał): plik Logów i plik w Archiwum Logów okresu mają te Logi w ich
+    schemacie, z trybem i trybem przycisku startu słowem, bo odtworzenie czyta je kodem ich commitu (``tool.commit``)."""
+
+    logs = full_logs()
+    old = json.loads(logs.text)
+    entries = [entry | {"mode": RunMode(entry["mode"]).word} if entry.get("mode") else entry for entry in old["dad_actions"]["entries"]]
+    old |= {"schema_version": 2, "mode": logs.mode.word, "dad_actions": old["dad_actions"] | {"entries": entries}}
+    assert "zapis" in [entry.get("mode") for entry in entries], "przycisk startu ze słowem trybu"
+    left_journal(tmp_path, logs.start)
+    path = tmp_path / "uruchomienia" / name_of(logs.start)
+    path.parent.mkdir()
+    path.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")
+    queue = RecordingQueue()
+
+    _started(_comments(tmp_path, queue))
+
+    [post] = queue.posts
+    assert post.archive is not None
+    assert json.loads(path.read_text(encoding="utf-8")) == json.loads(gzip.decompress(post.archive.packed())) == old
 
 
 def test_wersja_zastepcza_idzie_do_kolejki_raz_choc_kazde_zapytanie_api_pyta_o_wysylke(tmp_path: Path) -> None:
