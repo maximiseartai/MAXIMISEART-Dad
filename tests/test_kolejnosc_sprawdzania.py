@@ -14,8 +14,9 @@ from typing import Generic, TypeVar
 
 import pytest
 
-from rozliczenia.engine import run_settlements
+from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.message import Message, StopError
+from rozliczenia.run_context import RunContext
 
 from tests.fixtures.preparation import (
     INTERNAL_SETTLEMENT_NAME,
@@ -60,7 +61,7 @@ class Settlement:
 
     def stop(self) -> Message:
         with pytest.raises(StopError) as raised:
-            run_settlements(self.source, self.config, worker_template_path=self.worker_template)
+            run_settlements(SettlementInputs(self.source, self.config, self.worker_template), RunContext())
         return raised.value.message
 
 

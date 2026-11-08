@@ -94,7 +94,8 @@ from rozliczenia.efenix_window import (
     WindowAction,
 )
 from rozliczenia.dad_files import DadFiles
-from rozliczenia.efenix_process import EfenixInputs
+from rozliczenia.run_context import RunContext
+from rozliczenia.efenix_pricing import EfenixInputs
 from rozliczenia.message import Message
 from rozliczenia.process_run import Outcome, Stop, run_process
 from rozliczenia.workbook_files import read_data_rows
@@ -963,6 +964,7 @@ def _price(place: Place, page: Page, url: str) -> Outcome[PricingSummary]:
         Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=place.root / "metryki.jsonl",
+        context=RunContext(files=DadFiles()),
     )
 
 

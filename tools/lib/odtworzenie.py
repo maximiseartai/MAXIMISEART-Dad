@@ -38,8 +38,8 @@ zapisuje, i metryki. Nic nie idzie do Skrzynki Zgłoszeń, bo odtworzenie nie ma
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 import enum
@@ -79,21 +79,20 @@ from rozliczenia.centrum.run_logs import (
 )
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun, PreparedRun
 from rozliczenia.centrum.stops import StoppedRun
-from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, forbidden_columns
+from rozliczenia.client_data import MASKS, ForbiddenColumn, forbidden_columns
 from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
-from rozliczenia.efenix_pricing import PricingMode
-from rozliczenia.efenix_process import EfenixInputs
-from rozliczenia.input_checks import FILE_READERS
-from rozliczenia.input_copy import InputCopy
-from rozliczenia.intermax_process import OrderingInputs
-from rozliczenia.preparation_process import PreparationInputs
+from rozliczenia.efenix_pricing import EfenixInputs, PricingMode
+from rozliczenia.intermax_ordering import OrderingInputs
+from rozliczenia.collective_preparation import PreparationInputs
 from rozliczenia.raw_orders import SHIFT
 from rozliczenia.register_columns import COLUMNS, DAY_FILL, ORDERED_FONT, ORDERED_SIZE
 from rozliczenia.process_run import Finished, Stop, run_process
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
-from rozliczenia.settlement_process import SettlementInputs
+from rozliczenia.run_context import RunContexts
+from rozliczenia.engine import SettlementInputs
 from rozliczenia.text import normalize_text
 from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
@@ -436,7 +435,6 @@ class _Setup:
     """Uruchomienie gotowe do startu w katalogu roboczym i granice, które odbudowa wejścia znalazła po drodze."""
 
     prepared: PreparedRun[Any, Any]
-    forbidden: ForbiddenValues
     limits: list[Limit] = field(default_factory=list)
 
 
@@ -543,20 +541,13 @@ def _collective_limits(record: RunLog) -> list[Limit]:
 def _settlement(record: RunLog, work: _Work) -> _Setup:
     source = _collective_file(record, work, {})
     configuration = _configured(work)
-    forbidden, copy = ForbiddenValues(), InputCopy()
     inputs = SettlementInputs(
         source,
         dry_run=record.mode == "podgląd",
         config_path=configuration["worker_config"],
         worker_template_path=configuration["worker_template"],
-        readers=FILE_READERS,
-        forbidden=forbidden,
-        copy=copy,
     )
-    return _Setup(
-        PreparedRun(SETTLEMENT, record.period, SETTLEMENT.core(_PROCESSES), inputs, copy),
-        forbidden,
-    )
+    return _Setup(PreparedRun(SETTLEMENT, record.period, SETTLEMENT.core(_PROCESSES), inputs, RunContexts().new()))
 
 
 def _configured(work: _Work) -> dict[str, Path]:
@@ -632,7 +623,6 @@ def _preparation(record: RunLog, work: _Work) -> _Setup:
     register, limits = _register_file(record, work, "rejestr", _ORDERED_FONT)
     periods = work.folder("okresy")
     configuration = _configured(work)
-    forbidden, copy = ForbiddenValues(), InputCopy()
     inputs = PreparationInputs(
         register,
         periods,
@@ -641,12 +631,9 @@ def _preparation(record: RunLog, work: _Work) -> _Setup:
         config_path=configuration["worker_config"],
         internal_template_path=configuration["internal_template"],
         collective_template_path=configuration["collective_template"],
-        readers=FILE_READERS,
-        forbidden=forbidden,
-        copy=copy,
     )
-    prepared = PreparedRun(PREPARATION, record.period, PREPARATION.core(_PROCESSES), inputs, copy)
-    return _Setup(prepared, forbidden, limits)
+    prepared = PreparedRun(PREPARATION, record.period, PREPARATION.core(_PROCESSES), inputs, RunContexts().new())
+    return _Setup(prepared, limits)
 
 
 def _preparation_limits(record: RunLog) -> list[Limit]:
@@ -665,16 +652,9 @@ def _preparation_limits(record: RunLog) -> list[Limit]:
 def _intermax(record: RunLog, work: _Work) -> _Setup:
     register, limits = _register_file(record, work, "intermax", _PASTED_FONT)
     moment = _intermax_moment(record, work)
-    forbidden, copy = ForbiddenValues(), InputCopy()
-    inputs = OrderingInputs(
-        register,
-        work.folder("Kopie INTERMAX"),
-        now=lambda: moment,
-        forbidden=forbidden,
-        copy=copy,
-    )
-    prepared = PreparedRun(INTERMAX, inputs.period, INTERMAX.core(_PROCESSES), inputs, copy)
-    return _Setup(prepared, forbidden, limits)
+    inputs = OrderingInputs(register, work.folder("Kopie INTERMAX"), now=lambda: moment)
+    prepared = PreparedRun(INTERMAX, inputs.period, INTERMAX.core(_PROCESSES), inputs, RunContexts().new())
+    return _Setup(prepared, limits)
 
 
 def _intermax_moment(record: RunLog, work: _Work) -> datetime:
@@ -722,7 +702,8 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
 def _efenix(record: RunLog, work: _Work) -> _Setup:
     orders = record.efenix_orders or []
     source = _collective_file(record, work, atrapa_z_logow.file_addresses(orders))
-    scope = read_scope(source)
+    # Zakres tylko do budowy Atrapy efenix: ten odczyt nie należy do Uruchomienia, więc nie trafia do jego Kopii.
+    scope = read_scope(source, DadFiles())
     if not isinstance(scope, PricingScope):
         scoped: Sequence[atrapa_z_logow.ScopedOrder] = ()
     else:
@@ -731,19 +712,11 @@ def _efenix(record: RunLog, work: _Work) -> _Setup:
     today = work.efenix_today or record.started_at.astimezone().date()
     atrapa = work.stack.enter_context(atrapa_z_logow.started(fed, today))
     url = atrapa.url
-    forbidden, copy = ForbiddenValues(), InputCopy()
     pricing = record.pricing or contract.DEFAULT_PRICING
-    inputs = EfenixInputs(
-        source,
-        lambda _login: efenix_browser.chromium(url),
-        pace=None,
-        forbidden=forbidden,
-        copy=copy,
-        mode=PricingMode(pricing),
-    )
-    prepared = PreparedRun(EFENIX, record.period, EFENIX.core(_PROCESSES), inputs, copy, pricing=pricing)
+    inputs = EfenixInputs(source, lambda _login: efenix_browser.chromium(url), pace=None, mode=PricingMode(pricing))
+    prepared = PreparedRun(EFENIX, record.period, EFENIX.core(_PROCESSES), inputs, RunContexts().new(), pricing=pricing)
     limits = [Limit(text, blocking=blocking) for text, blocking in fed.limits]
-    return _Setup(prepared, forbidden, limits)
+    return _Setup(prepared, limits)
 
 
 def _efenix_limits(record: RunLog) -> list[Limit]:
@@ -799,10 +772,6 @@ class _Tata:
     def show_progress(self, snapshot: ProgressSnapshot) -> None:
         self.progress = self._prepared.progress_view(snapshot)
 
-    @contextmanager
-    def waiting(self) -> Iterator[None]:
-        yield
-
 
 def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
     """Uruchomienie odtworzenia przez rdzeń procesu i jego Logi po strażniku, jak w Centrum (``RunComments.run_ended``)."""
@@ -819,6 +788,7 @@ def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
         tata,
         view=prepared.declaration.view.shown,
         metrics_path=work / "metryki.jsonl",
+        context=prepared.context,
     )
     stop = None if isinstance(core.ending, Finished) else core.ending
     ended = EndedRun(
@@ -837,7 +807,7 @@ def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
         environment=environment,
         dad_actions=DadActions(entries=[], omitted=0),
     )
-    return guard_logs(replayed, setup.forbidden).record
+    return guard_logs(replayed, prepared.context.files.forbidden).record
 
 
 def _stopped(info: contract.RunInfo, stop: Stop) -> StoppedRun:

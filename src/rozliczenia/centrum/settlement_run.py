@@ -24,11 +24,9 @@ from rozliczenia.centrum.runs import PreparedRun
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
-from rozliczenia.client_data import ForbiddenValues
-from rozliczenia.input_copy import InputCopy
-from rozliczenia.input_checks import Readers
-from rozliczenia.settlement_process import SettlementInputs
+from rozliczenia.run_context import RunContexts
 from rozliczenia.telemetry import MetricsStore
+from rozliczenia.engine import SettlementInputs
 
 _VIEW: Final = run_view.SETTLEMENT
 _ELIGIBLE: Final[PeriodStatus] = "collective_file_prepared"
@@ -42,8 +40,7 @@ class SettlementEntry:
     configuration: ConfigurationFiles
     processes: Processes
     today: Callable[[], date]
-    readers: Readers
-    forbidden: ForbiddenValues
+    contexts: RunContexts
 
     @property
     def key(self) -> contract.PeriodProcessKey:
@@ -89,22 +86,18 @@ class SettlementEntry:
         periods_directory = SETTLEMENT.required_paths(self.store.load())["periods_directory"]
         period = requested_period(request.period)
         source = located_period_folder(periods_directory, period).collective_file
-        copy = InputCopy()
         inputs = SettlementInputs(
             source,
             dry_run=request.dry_run,
             config_path=self.configuration.worker_config,
             worker_template_path=self.configuration.worker_template,
-            readers=self.readers,
-            forbidden=self.forbidden,
-            copy=copy,
         )
         return PreparedRun(
             declaration=SETTLEMENT,
             period=period.token,
             process=SETTLEMENT.core(self.processes),
             inputs=inputs,
-            input_copy=copy,
+            context=self.contexts.new(),
         )
 
 

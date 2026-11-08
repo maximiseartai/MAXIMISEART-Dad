@@ -7,24 +7,28 @@ rozliczeń i Przygotowania pliku zbiorczego.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 import time
 from typing import NoReturn
 
 import pytest
 
-from rozliczenia.decision import Conversation, Declined
-from rozliczenia.domain import ProgressObserver
+from rozliczenia.decision import Declined
+from rozliczenia.domain import ProgressPhase
 from rozliczenia.message import Message, StopError
 from rozliczenia.phase_runner import PhaseRunner
 from rozliczenia.process_run import Finished, Outcome, Process, Stop, run_process
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.run_clock import RunClock
+from rozliczenia.run_context import RunContext
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.fake_process import (
     ENDINGS,
     METRICS_WARNING,
     PERIOD,
+    QUESTION,
     SECRET,
     Durations,
     Inputs,
@@ -43,7 +47,7 @@ def durations_view(_inputs: Inputs, durations: Durations) -> Durations:
 
 
 def run_core(
-    process: Process[Inputs, Durations],
+    process: Process[Inputs, Durations, RunContext],
     metrics_path: Path,
     *,
     dry_run: bool = False,
@@ -52,7 +56,12 @@ def run_core(
     clock: Callable[[], float] = time.perf_counter,
 ) -> Outcome[Durations]:
     return run_process(
-        process, Inputs(dry_run=dry_run), tata or Tata(), view=view, metrics_path=metrics_path, clock=clock
+        process,
+        Inputs(dry_run=dry_run),
+        tata or Tata(),
+        view=view,
+        metrics_path=metrics_path,
+        context=RunContext(clock=RunClock(clock)),
     )
 
 
@@ -60,10 +69,10 @@ def run_core(
 def test_core_closes_every_ending_with_a_message(tmp_path: Path, dry_run: bool) -> None:
     own = stop_error("Brak pliku.")
 
-    def stop_in_engine(_inputs: Inputs, _observer: ProgressObserver, _conversation: Conversation) -> NoReturn:
+    def stop_in_engine(_inputs: Inputs, _context: RunContext) -> NoReturn:
         raise own
 
-    endings: dict[str, tuple[Process[Inputs, Durations], Callable[[Inputs, Durations], Durations]]] = {
+    endings: dict[str, tuple[Process[Inputs, Durations, RunContext], Callable[[Inputs, Durations], Durations]]] = {
         "stop": (fake_process(execute=stop_in_engine), durations_view),
         "unexpected": (fake_process(execute=fail), durations_view),
         "after_engine": (fake_process(finished=fail), durations_view),
@@ -100,7 +109,7 @@ def test_core_closes_every_ending_with_a_message(tmp_path: Path, dry_run: bool) 
 def test_rekord_metryk_zatrzymania_do_maksa_ma_rodzaj_i_kod_bez_tresci_komunikatu(tmp_path: Path) -> None:
     to_maks = Message.to_maintainer("ZLA_KONFIGURACJA", SECRET, "Proces testowy")
 
-    def stop_to_maks(_inputs: Inputs, _observer: ProgressObserver, _conversation: Conversation) -> NoReturn:
+    def stop_to_maks(_inputs: Inputs, _context: RunContext) -> NoReturn:
         raise StopError(to_maks)
 
     run_core(fake_process(execute=stop_to_maks), tmp_path / "metrics.jsonl")
@@ -118,8 +127,8 @@ def test_zatrzymanie_zapisuje_rekord_z_okresem_zerowymi_licznikami_i_czasami_eta
 ) -> None:
     checking_ms = 50
 
-    def stop_in_reading(_inputs: Inputs, observer: ProgressObserver, _conversation: Conversation) -> NoReturn:
-        phases = PhaseRunner(observer)
+    def stop_in_reading(_inputs: Inputs, context: RunContext) -> NoReturn:
+        phases = PhaseRunner(context.observer, clock=context.clock.now)
         phases.check(lambda: time.sleep(checking_ms / 1000))
 
         def read() -> NoReturn:
@@ -163,7 +172,7 @@ def test_przerwanie_przechodzi_przez_rdzen(tmp_path: Path, interrupted_at: str) 
     def interrupt() -> NoReturn:
         raise KeyboardInterrupt
 
-    def interrupted(_inputs: Inputs, _observer: ProgressObserver, _conversation: Conversation) -> NoReturn:
+    def interrupted(_inputs: Inputs, _context: RunContext) -> NoReturn:
         interrupt()
 
     if interrupted_at == "w-silniku":
@@ -179,11 +188,9 @@ def test_czas_decyzji_taty_nie_liczy_sie_do_czasu_uruchomienia(tmp_path: Path) -
     clock = ManualClock()
     tata = Tata(before_answer=lambda: clock.advance(600))
 
-    def working_250_ms_before_and_500_ms_after_decision(
-        inputs: Inputs, observer: ProgressObserver, conversation: Conversation
-    ) -> Durations:
+    def working_250_ms_before_and_500_ms_after_decision(inputs: Inputs, context: RunContext) -> Durations:
         clock.advance(0.25)
-        durations = asking_between_planning_and_saving(inputs, observer, conversation)
+        durations = asking_between_planning_and_saving(inputs, context)
         clock.advance(0.5)
         return durations
 
@@ -201,10 +208,83 @@ def test_czas_decyzji_taty_nie_liczy_sie_do_czasu_uruchomienia(tmp_path: Path) -
     assert record["total_duration_ms"] == 750
 
 
+def test_decyzja_taty_w_trakcie_etapu_nie_liczy_sie_do_czasu_etapu_ani_czasu_uruchomienia(tmp_path: Path) -> None:
+    clock = ManualClock()
+    tata = Tata(before_answer=lambda: clock.advance(600))
+
+    def asking_while_reading(_inputs: Inputs, context: RunContext) -> Durations:
+        phases = PhaseRunner(context.observer, clock=context.clock.now)
+        phases.check(lambda: None)
+
+        def read() -> None:
+            clock.advance(0.25)
+            context.conversation.confirm(QUESTION)
+            clock.advance(0.5)
+
+        phases.read(read)
+        phases.plan(lambda: None, issue_count=lambda _planned: 0)
+        phases.save(lambda: None)
+        return phases.durations_ms()
+
+    outcome = run_core(fake_process(execute=asking_while_reading), tmp_path / "metrics.jsonl", tata=tata, clock=clock)
+
+    assert len(tata.decisions) == 1
+    assert outcome.view is not None
+    assert outcome.view[ProgressPhase.READING] == 750
+    assert outcome.total_duration_ms == 750
+
+
+@dataclass
+class TataSeeingSteps(Tata):
+    """Tata, który zapisuje ``Czas uruchomienia`` z postępu przy każdym nowym kroku Zapisywania."""
+
+    reached_ms: list[int] = field(default_factory=list)
+    _last: object = None
+
+    def show_progress(self, snapshot: ProgressSnapshot) -> None:
+        if snapshot.step is not None and snapshot.step != self._last:
+            self._last = snapshot.step
+            self.reached_ms.append(snapshot.total_elapsed_ms)
+
+
+def test_czekanie_silnika_na_tate_z_decyzja_w_srodku_zatrzymuje_zegar_raz_dla_krokow_etapu_i_uruchomienia(
+    tmp_path: Path,
+) -> None:
+    clock = ManualClock()
+    tata = TataSeeingSteps(before_answer=lambda: clock.advance(600))
+
+    def waiting_for_tata_while_saving(_inputs: Inputs, context: RunContext) -> Durations:
+        phases = PhaseRunner(context.observer, clock=context.clock.now)
+        phases.check(lambda: None)
+        phases.read(lambda: None)
+        phases.plan(lambda: None, issue_count=lambda _planned: 0)
+
+        def save() -> None:
+            clock.advance(0.25)
+            with context.clock.hold():
+                clock.advance(300)
+                phases.step("czekam na tatę")
+                context.conversation.confirm(QUESTION)
+                phases.step("tata odpowiedział")
+            clock.advance(0.5)
+            phases.step("dalej")
+
+        phases.save(save)
+        return phases.durations_ms()
+
+    outcome = run_core(
+        fake_process(execute=waiting_for_tata_while_saving), tmp_path / "metrics.jsonl", tata=tata, clock=clock
+    )
+
+    assert tata.reached_ms == [250, 250, 750]
+    assert outcome.view is not None
+    assert (outcome.view[ProgressPhase.SAVING], outcome.total_duration_ms) == (750, 750)
+
+
 def test_odmowa_w_decyzji_taty_to_zatrzymanie_po_odmowie_a_w_metrykach_zatrzymanie_dla_taty(tmp_path: Path) -> None:
     refused = Message("ODMOWA", "Tata wybrał „Przerwij”.", "Proces testowy", "Uruchom ponownie.")
 
-    def declining(_inputs: Inputs, _observer: ProgressObserver, _conversation: Conversation) -> NoReturn:
+    def declining(_inputs: Inputs, _context: RunContext) -> NoReturn:
         raise Declined(refused)
 
     outcome = run_core(fake_process(execute=declining), tmp_path / "metrics.jsonl")
@@ -214,8 +294,8 @@ def test_odmowa_w_decyzji_taty_to_zatrzymanie_po_odmowie_a_w_metrykach_zatrzyman
     assert [record["stop"] for record in records(tmp_path / "metrics.jsonl")] == [{"kind": "for_tata", "code": "ODMOWA"}]
 
 
-def stop_in_reading(_inputs: Inputs, observer: ProgressObserver, _conversation: Conversation) -> NoReturn:
-    phases = PhaseRunner(observer)
+def stop_in_reading(_inputs: Inputs, context: RunContext) -> NoReturn:
+    phases = PhaseRunner(context.observer, clock=context.clock.now)
     phases.check(lambda: None)
 
     def read() -> NoReturn:
@@ -225,8 +305,8 @@ def stop_in_reading(_inputs: Inputs, observer: ProgressObserver, _conversation: 
     raise AssertionError("Odczyt danych miał zatrzymać proces.")
 
 
-def stop_in_saving(_inputs: Inputs, observer: ProgressObserver, _conversation: Conversation) -> NoReturn:
-    phases = PhaseRunner(observer)
+def stop_in_saving(_inputs: Inputs, context: RunContext) -> NoReturn:
+    phases = PhaseRunner(context.observer, clock=context.clock.now)
     phases.check(lambda: None)
     phases.read(lambda: None)
     phases.plan(lambda: None, issue_count=lambda _planned: 0)
@@ -266,7 +346,7 @@ class BlindTata(Tata):
 )
 def test_pliki_taty_sa_bez_zmian_tylko_w_podgladzie_albo_gdy_zapisywanie_sie_nie_zaczelo(
     tmp_path: Path,
-    engine: Callable[[Inputs, ProgressObserver, Conversation], Durations],
+    engine: Callable[[Inputs, RunContext], Durations],
     dry_run: bool,
     tata: Tata,
     unchanged: bool,

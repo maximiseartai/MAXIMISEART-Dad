@@ -28,6 +28,7 @@ from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.run_logs import RunLog
 
 from tests.fixtures.centrum import ToolDirectory, phase_states, views_until, write_report_key
+from tests.fixtures.centrum_processes import Surroundings
 from tests.fixtures.centrum_intermax import (
     NOW,
     PERIOD,
@@ -797,7 +798,7 @@ def _sent(centrum: OrderingCentrum) -> list[str]:
 
 
 def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_oraz_odcisk_przeczytanego_intermax(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """Kopia wejścia Uporządkowania to każdy arkusz zleceń INTERMAX z nagłówkami bez ``ADRES`` i ``NUMER UMOWY`` i z
     wklejonymi wierszami, które Planowanie rozpoznaje, a nie z uporządkowanymi dniami nad nimi ani starszym arkuszem bez
@@ -810,22 +811,25 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
 
     pasted = list(Intermax().raw)
     pasted[2] = replace(pasted[2], cells=((1, "A-SYN"),))
-    centrum = ordering_centrum(tmp_path, Intermax(older_sheet=True, raw=pasted))
-    os.utime(centrum.register, (READ_AT.timestamp(), READ_AT.timestamp()))
-    content = centrum.register.read_bytes()
-    file_bytes = workbook_files.file_bytes
+    watched: dict[Path, bytes] = {}
     saved_again: list[bytes] = []
 
     def read_then_saved(path: Path) -> bytes:
-        read = file_bytes(path)
-        if path == centrum.register and read == content:
+        read = workbook_files.file_bytes(path)
+        if watched.get(path) == read:
             rewrite_parts(path, lambda name, data: data.replace(b">komentarz<", b">komentarz zapisany znowu<"))
             os.utime(path, (SAVED_AGAIN_AT.timestamp(), SAVED_AGAIN_AT.timestamp()))
             saved_again.append(path.read_bytes())
         return read
 
-    # Uporządkowanie dostaje źródło bajtów czytników (input_checks.Readers.source) dopiero w N1a-1.
-    monkeypatch.setattr(workbook_files, "file_bytes", read_then_saved)
+    centrum = ordering_centrum(
+        tmp_path,
+        Intermax(older_sheet=True, raw=pasted),
+        surroundings=Surroundings(readers=replace(input_checks.FILE_READERS, source=read_then_saved)),
+    )
+    os.utime(centrum.register, (READ_AT.timestamp(), READ_AT.timestamp()))
+    content = centrum.register.read_bytes()
+    watched[centrum.register] = content
 
     view = centrum.run_to_end()
 

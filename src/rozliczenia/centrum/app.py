@@ -69,6 +69,7 @@ from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool
 from rozliczenia.centrum.version import SERVICE, short_commit
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.dad_files import DadFiles
+from rozliczenia.run_context import RunContexts
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.intermax_copies import default_directory as default_intermax_copies
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
@@ -257,13 +258,15 @@ def create_app(
         log,
         comments,
     )
+    # Kontekst każdego Uruchomienia procesu: uchwyt plików taty tej pracy z nową Kopią wejścia i czytniki.
+    contexts = RunContexts(files=files, readers=readers)
     # Adaptery startu procesów z katalogu procesów; reszta Centrum pyta wpis procesu w katalogu, nie adapter.
     entries: list[ProcessEntry] = [
-        PreparationEntry(store, configuration, processes, today, readers, forbidden),
+        PreparationEntry(store, configuration, processes, today, contexts),
         # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
         # Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
-        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata(), disk.journal, forbidden),
-        SettlementEntry(store, configuration, processes, today, readers, forbidden),
+        EfenixEntry(store, processes, today, efenix_window or EfenixWindow.of_tata(), disk.journal, contexts),
+        SettlementEntry(store, configuration, processes, today, contexts),
     ]
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
@@ -274,7 +277,7 @@ def create_app(
         Waiting(clock, pause),
         intermax_disk,
         surroundings.cloud_files,
-        files,
+        contexts,
     )
     # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
     cards = RunCards(disk, lambda: read_runs(processes, centrum_runs.started()))

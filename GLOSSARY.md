@@ -497,6 +497,19 @@ bezpiecznym Komunikatem zrozumiałym dla taty, nigdy z treścią błędu
 technicznego.
 _Avoid_: Przebieg (zarezerwowany dla Przebiegu rozliczeń)
 
+## Kontekst Uruchomienia
+
+To, co gospodarz Uruchomienia procesu (Centrum rozliczeń, Skrypt dla maszyn,
+odtworzenie z Logów) daje silnikowi każdego procesu obok jego wejścia
+(`run_context.RunContext`): uchwyt plików taty z pamięcią reguły danych pracy
+i, w Uruchomieniu z Logami, nową Kopią wejścia, czytniki Rejestru zleceń i
+Wzorców, zegar Uruchomienia oraz obserwatora postępu i rozmowę z tatą, które
+dokłada rdzeń. Zegar Uruchomienia stoi, gdy proces czeka na tatę (Decyzja taty,
+logowanie w efenix), więc ten czas nie wlicza się ani do czasów etapów, ani do
+`Czas uruchomienia`. Zależność jednego procesu (okno efenix, folder Kopii
+INTERMAX) nie należy do Kontekstu, tylko do wejścia procesu.
+_Avoid_: ustawienia Uruchomienia, środowisko
+
 ## Decyzja taty
 
 Pytanie, które proces zadaje tacie w trakcie Uruchomienia procesu; dziś tylko

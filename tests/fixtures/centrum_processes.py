@@ -24,14 +24,13 @@ from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.tool_update import ToolClone, find_git
-from rozliczenia.decision import EngineConversation
-from rozliczenia.domain import ProgressObserver
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.dad_files import ReadFile
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.preparation_register import RegisterSheet
 from rozliczenia.settlement_period import SettlementPeriod
 from rozliczenia.process_run import Finished, Process, ProcessInputs
+from rozliczenia.run_context import RunContext
 
 from tests.fixtures.centrum import (
     NO_EFENIX,
@@ -91,11 +90,11 @@ class Engines:
             intermax=self._steered(real.intermax),
         )
 
-    def _steered(self, real: Process[InputsT, SummaryT]) -> Process[InputsT, SummaryT]:
-        def execute(inputs: InputsT, observer: ProgressObserver, conversation: EngineConversation) -> SummaryT:
+    def _steered(self, real: Process[InputsT, SummaryT, RunContext]) -> Process[InputsT, SummaryT, RunContext]:
+        def execute(inputs: InputsT, context: RunContext) -> SummaryT:
             if self.fail_engine:
                 raise RuntimeError("nieprzewidziany błąd przy SYN-001")
-            return real.execute(inputs, observer, conversation)
+            return real.execute(inputs, context)
 
         def finished(inputs: InputsT, summary: SummaryT) -> Finished:
             if self.fail_summary:

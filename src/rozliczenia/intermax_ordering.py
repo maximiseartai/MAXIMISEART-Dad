@@ -16,7 +16,6 @@ dnia sprzed niej w tym dniu.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -28,10 +27,8 @@ from openpyxl.utils.cell import get_column_letter
 
 from . import raw_orders, workbook_files
 from . import intermax_messages as messages
-from .client_data import ForbiddenValues
 from .dad_files import DadFiles
-from .domain import ProgressObserver, ProgressPhase
-from .input_copy import InputCopy
+from .domain import ProgressPhase
 from .intermax_file import OrderSheet, Register
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Replaced, Waiting, replace_register
 from .message import Message, StopError
@@ -48,12 +45,45 @@ from .raw_orders import (
 )
 from .workbook_files import WorkbookError
 from .workbook_parts import UnsupportedShape
+from .run_context import RunContext
+from .settlement_period import period_of
 
-__all__ = ["OrderingSummary", "RegisterDay", "order_register", "register_days"]
+__all__ = ["OrderingInputs", "OrderingSummary", "RegisterDay", "order_register", "register_days"]
 
 # Karta Uporządkowania INTERMAX pokazuje dziś i 6 dni przed nim oraz późniejsze Dni uporządkowane; tyle dni wstecz
 # sięga też przegląd Dni uporządkowanych, więc obejmuje cały okres rozliczeniowy dzisiejszego dnia (7 dni).
 _SHOWN_DAYS = 7
+
+
+def _local_now() -> datetime:
+    return datetime.now().astimezone()
+
+
+@dataclass(frozen=True)
+class OrderingInputs:
+    """Wejście procesu Uporządkowania INTERMAX: INTERMAX z Ustawień taty, folder Kopii i zegar procesu.
+
+    ``period`` to okres dzisiejszej daty z zegara procesu, ustalony przy tworzeniu wejścia, czyli przy starcie:
+    Uruchomienie po północy z poniedziałku na wtorek dalej należy do okresu, w którym wystartowało (ADR 0019).
+    ``waiting``: zegar w sekundach i przerwa krótkiej ponownej próby podmiany, której odmawia OneDrive, a ``disk``
+    kroki podmiany INTERMAX na dysku.
+    """
+
+    register_path: Path
+    copies_directory: Path
+    now: Callable[[], datetime] = _local_now
+    waiting: Waiting = field(default_factory=Waiting)
+    disk: Disk = LOCAL_DISK
+    period: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "period", period_of(self.now().date()).token)
+
+    @property
+    def dry_run(self) -> bool:
+        """Uporządkowanie INTERMAX nie ma podglądu bez zapisu."""
+
+        return False
 
 
 @dataclass
@@ -83,32 +113,21 @@ def _stops(explain: Callable[[], Message], *errors: type[Exception]) -> Iterator
         raise StopError(explain()) from error
 
 
-def order_register(
-    register_path: Path,
-    copies_directory: Path,
-    *,
-    now: Callable[[], datetime],
-    waiting: Waiting,
-    disk: Disk = LOCAL_DISK,
-    observer: ProgressObserver | None = None,
-    clock: Callable[[], float] = time.perf_counter,
-    forbidden: ForbiddenValues | None = None,
-    copy: InputCopy | None = None,
-) -> OrderingSummary:
-    """Porządkuje Surowe zlecenia dnia w INTERMAX ``register_path``.
+def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSummary:
+    """Porządkuje Surowe zlecenia dnia w INTERMAX ``inputs.register_path``.
 
     Zgłasza ``StopError``, gdy nie można działać bezpiecznie; INTERMAX zostaje wtedy nietknięty. Zapisuje podmianą
-    INTERMAX (``intermax_replace``) z Kopią INTERMAX w ``copies_directory`` z nazwą z ``now()`` i nazywa jej fakt
-    Komunikatem Uporządkowania; nieudane usunięcie starszych Kopii to ostrzeżenie: INTERMAX jest już uporządkowany.
-    ``clock`` to zegar w sekundach, z którego liczone są czasy etapów, ``waiting`` zegar i przerwa krótkiej ponownej
-    próby podmiany, której odmawia OneDrive, a ``disk`` kroki podmiany na dysku. Komórki zakazanych kolumn
-    przeczytanych wierszy poznaje ``forbidden`` (reguła danych, ADR 0025), a wklejone wiersze, które rozpoznaje
-    Planowanie, i odcisk przeczytanego INTERMAX Kopia wejścia Uruchomienia ``copy`` (#842).
+    INTERMAX (``intermax_replace``) z Kopią INTERMAX w ``inputs.copies_directory`` z nazwą z ``inputs.now()`` i nazywa jej
+    fakt Komunikatem Uporządkowania; nieudane usunięcie starszych Kopii to ostrzeżenie: INTERMAX jest już uporządkowany.
+    INTERMAX czyta uchwyt plików taty ``context.files``: komórki zakazanych kolumn przeczytanych wierszy zna pamięć
+    reguły danych (ADR 0025), a wklejone wiersze, które rozpoznaje Planowanie, i odcisk przeczytanego INTERMAX Kopia
+    wejścia Uruchomienia (#842).
     """
 
-    phases = PhaseRunner(observer, clock=clock)
-    register_path = register_path.expanduser().resolve()
-    files = DadFiles.adapted(forbidden, copy)
+    phases = PhaseRunner(context.observer, clock=context.clock.now)
+    register_path = inputs.register_path.expanduser().resolve()
+    copies_directory, now, waiting, disk = inputs.copies_directory, inputs.now, inputs.waiting, inputs.disk
+    files = context.files
 
     def check() -> None:
         try:

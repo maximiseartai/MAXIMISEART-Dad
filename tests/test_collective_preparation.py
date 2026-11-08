@@ -78,7 +78,6 @@ from tests.fixtures.preparation import (
     other_warnings,
     run_preparation,
 )
-from tests.fixtures.clock import ManualClock
 from tests.fixtures.interlocutor import Tata
 
 
@@ -1382,21 +1381,3 @@ def test_dry_run_of_incomplete_period_does_not_ask_tata(tmp_path: Path) -> None:
 
     assert tata.decisions == []
     assert [warning.code for warning in other_warnings(plan.warnings)] == ["NIEPELNY_OKRES"]
-
-
-def test_time_of_decyzja_taty_is_not_counted_in_przygotowanie_time(tmp_path: Path) -> None:
-    fixture = incomplete_period_fixture(tmp_path)
-    clock = ManualClock()
-    tata = Tata(before_answer=lambda: clock.advance(600))
-    recorded: list[ProgressEvent] = []
-
-    def each_phase_takes_125_ms(event: ProgressEvent) -> None:
-        recorded.append(event)
-        if isinstance(event, PhaseStarted):
-            clock.advance(0.125)
-
-    summary = run_preparation(fixture, observer=each_phase_takes_125_ms, conversation=tata, clock=clock)
-
-    assert len(tata.decisions) == 1
-    assert dict(summary.phase_durations_ms) == dict.fromkeys(ProgressPhase, 125)
-    assert max(event.elapsed_ms or 0 for event in recorded) == 500

@@ -6,11 +6,10 @@ budowane w katalogu tymczasowym. Nie zawierają prawdziwych danych klientów.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-import time
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
@@ -18,12 +17,14 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia.collective_preparation import (
+    PreparationInputs,
     PreparationSummary,
     prepare_collective_file,
 )
 from rozliczenia.decision import Conversation
 from rozliczenia.domain import ProgressObserver
 from rozliczenia.message import Message
+from rozliczenia.run_context import UNASKED, RunContext
 from tests.fixtures.settlement import write_mapping
 from tests.fixtures.workbooks import TEMPLATE_VIEW, View, active_worksheet, add_external_link_fixture, set_view
 
@@ -506,21 +507,18 @@ def run_preparation(
     *,
     dry_run: bool = False,
     observer: ProgressObserver | None = None,
-    conversation: Conversation | None = None,
-    clock: Callable[[], float] = time.perf_counter,
+    conversation: Conversation = UNASKED,
 ) -> PreparationSummary:
-    return prepare_collective_file(
+    inputs = PreparationInputs(
         fixture.register_path,
         fixture.periods_directory,
         period,
         fixture.config_path,
-        internal_template_path=fixture.internal_template_path,
-        collective_template_path=fixture.collective_template_path,
-        dry_run=dry_run,
-        observer=observer,
-        conversation=conversation,
-        clock=clock,
+        fixture.internal_template_path,
+        fixture.collective_template_path,
+        dry_run,
     )
+    return prepare_collective_file(inputs, RunContext(observer=observer, conversation=conversation))
 
 
 def collective_row(number: int, started: datetime, successful: str, worker: str) -> tuple[object, ...]:

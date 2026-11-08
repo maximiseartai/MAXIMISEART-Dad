@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import json
 from pathlib import Path
@@ -12,12 +12,16 @@ from typing import Any
 import pytest
 
 from rozliczenia import preparation_process, settlement_process
-from rozliczenia.collective_preparation import PreparationSummary
-from rozliczenia.preparation_process import PreparationInputs
-from rozliczenia.process_run import Outcome, Process, ProcessInputs, Stop, run_process
-from rozliczenia.settlement_process import SettlementInputs
+from rozliczenia.collective_preparation import PreparationInputs, PreparationSummary
+from rozliczenia.engine import SettlementInputs
+from rozliczenia.domain import ProgressPhase
+from rozliczenia.process_run import Finished, Outcome, Process, ProcessInputs, Stop, run_process
+from rozliczenia.progress import PhaseState, ProgressSnapshot
+from rozliczenia.run_clock import RunClock
+from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 
+from tests.fixtures.clock import ManualClock
 from tests.fixtures.fake_process import fail
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.preparation import PreparationFixture, incomplete_period_fixture, make_preparation_fixture, register_order
@@ -29,7 +33,7 @@ PHASES = {"Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"}
 
 @dataclass(frozen=True)
 class ProcessCase:
-    process: Process[Any, Any]
+    process: Process[Any, Any, RunContext]
     inputs: Callable[[bool], ProcessInputs]
     period_files: tuple[Path, ...]
     client_data_markers: tuple[str, ...]
@@ -81,7 +85,9 @@ def run(
     dry_run: bool = False,
     view: Callable[[Any, Any], object] = summary_view,
 ) -> Outcome[object]:
-    return run_process(case.process, case.inputs(dry_run), Tata(), view=view, metrics_path=metrics_path)
+    return run_process(
+        case.process, case.inputs(dry_run), Tata(), view=view, metrics_path=metrics_path, context=RunContext()
+    )
 
 
 @pytest.mark.parametrize("dry_run", [False, True], ids=["RUN", "DRY-RUN"])
@@ -226,6 +232,7 @@ def test_problem_przebiegu_rozliczen_i_ostrzezenie_przygotowania_sa_licznikami_r
         Tata(),
         view=summary_view,
         metrics_path=tmp_path / "przebieg.jsonl",
+        context=RunContext(),
     )
     prepared = run(
         preparation(tmp_path, fixture=incomplete_period_fixture(tmp_path / "przygotowanie")),
@@ -271,3 +278,37 @@ def test_zapisane_przygotowanie_okresu_z_samymi_zleceniami_nieskutecznymi_wymaga
     assert outcome.result == "WYMAGA_SPRAWDZENIA"
     assert isinstance(outcome.view, PreparationSummary)
     assert "KOLUMNY_Z_OPISU" in [warning.code for warning in outcome.view.warnings]
+
+
+@dataclass
+class TataWithPhasesOf125Ms(Tata):
+    """Tata, przy którym każdy etap trwa 125 ms zegara ``clock``, a odpowiedź na Decyzję 10 minut."""
+
+    clock: ManualClock = field(default_factory=ManualClock)
+    started: set[ProgressPhase] = field(default_factory=set)
+
+    def show_progress(self, snapshot: ProgressSnapshot) -> None:
+        for phase, state in snapshot.phase_states.items():
+            if state is PhaseState.RUNNING and phase not in self.started:
+                self.started.add(phase)
+                self.clock.advance(0.125)
+
+
+def test_czas_decyzji_taty_nie_liczy_sie_do_czasow_etapow_ani_czasu_uruchomienia_przygotowania(tmp_path: Path) -> None:
+    tata = TataWithPhasesOf125Ms()
+    tata.before_answer = lambda: tata.clock.advance(600)
+    case = preparation(tmp_path, fixture=incomplete_period_fixture(tmp_path))
+
+    outcome = run_process(
+        case.process,
+        case.inputs(False),
+        tata,
+        view=summary_view,
+        metrics_path=tmp_path / "metryki.jsonl",
+        context=RunContext(clock=RunClock(tata.clock)),
+    )
+
+    assert len(tata.decisions) == 1
+    assert isinstance(outcome.ending, Finished)
+    assert dict(outcome.ending.phase_durations_ms) == dict.fromkeys(ProgressPhase, 125)
+    assert outcome.total_duration_ms == 500

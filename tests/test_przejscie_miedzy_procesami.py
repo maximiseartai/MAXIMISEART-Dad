@@ -6,7 +6,8 @@ from datetime import datetime
 from pathlib import Path
 
 from rozliczenia import quantity_check
-from rozliczenia.engine import run_settlements
+from rozliczenia.engine import SettlementInputs, run_settlements
+from rozliczenia.run_context import RunContext
 
 from tests.fixtures.preparation import PERIOD, make_preparation_fixture
 from tests.fixtures.preparation import cell_values, collective_row, register_order, run_preparation
@@ -21,7 +22,10 @@ def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zlecen
     write_template(worker_template)
 
     preparation = run_preparation(fixture)
-    settlement = run_settlements(preparation.collective_file, fixture.config_path, worker_template_path=worker_template)
+    settlement = run_settlements(
+        SettlementInputs(preparation.collective_file, fixture.config_path, worker_template),
+        RunContext(),
+    )
 
     assert settlement.warnings == []
     assert [(result.worker_name, result.status, result.rows) for result in settlement.results] == [
@@ -89,7 +93,10 @@ def test_swiezo_przygotowany_plik_zbiorczy_daje_kontrole_ilosci_bez_roznic(tmp_p
     write_template(worker_template)
 
     preparation = run_preparation(fixture)
-    settlement = run_settlements(preparation.collective_file, fixture.config_path, worker_template_path=worker_template)
+    settlement = run_settlements(
+        SettlementInputs(preparation.collective_file, fixture.config_path, worker_template),
+        RunContext(),
+    )
     result = quantity_check.check(settlement.orders)
 
     assert isinstance(result, quantity_check.QuantityCheck)

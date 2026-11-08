@@ -35,6 +35,7 @@ from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_view import WarnedSummary
 from rozliczenia.message import Message
 from rozliczenia.process_run import Process, ProcessInputs
+from rozliczenia.run_context import RunContext
 from rozliczenia.centrum.settings import Settings
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
@@ -115,7 +116,7 @@ class ProcessDeclaration(Generic[InputsT, SummaryT]):
     key: contract.ProcessKey
     title: str
     view: run_view.ProcessView[InputsT, SummaryT]
-    core: Callable[[Processes], Process[InputsT, SummaryT]]
+    core: Callable[[Processes], Process[InputsT, SummaryT, RunContext]]
     settings: tuple[NeededSetting, ...]
     templates: tuple[TemplateRole, ...]
     checks: tuple[CheckStep, ...]

@@ -76,17 +76,6 @@ def test_etap_uruchomiony_w_trakcie_poprzedniego_jest_bledem_kodu() -> None:
     assert calls == []
 
 
-def test_wstrzymanie_zegara_w_trakcie_etapu_jest_bledem_kodu() -> None:
-    runner = PhaseRunner(None)
-
-    def pause_inside_stage() -> None:
-        with runner.paused():
-            pass
-
-    with pytest.raises(ProgressProtocolError):
-        runner.check(pause_inside_stage)
-
-
 def run_until_plan(runner: PhaseRunner) -> None:
     runner.check(lambda: None)
     runner.read(lambda: None)

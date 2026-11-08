@@ -18,14 +18,12 @@ from rozliczenia.centrum.metrics import previewed_periods
 from rozliczenia.centrum.period_board import observed_period_folder, requested_period
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
-from rozliczenia.client_data import ForbiddenValues
-from rozliczenia.input_copy import InputCopy
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import PeriodFolders, period_status_label, scan_period_folders
-from rozliczenia.preparation_process import PreparationInputs
-from rozliczenia.input_checks import Readers
+from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 from rozliczenia.telemetry import MetricsStore
+from rozliczenia.collective_preparation import PreparationInputs
 
 _VIEW: Final = run_view.PREPARATION
 _CHOSEN_WEEKS: Final = 8
@@ -39,8 +37,7 @@ class PreparationEntry:
     configuration: ConfigurationFiles
     processes: Processes
     today: Callable[[], date]
-    readers: Readers
-    forbidden: ForbiddenValues
+    contexts: RunContexts
 
     @property
     def key(self) -> contract.PeriodProcessKey:
@@ -82,7 +79,6 @@ class PreparationEntry:
     def prepare(self, request: contract.RunRequest) -> PreparedRun[Any, Any]:
         paths = PREPARATION.required_paths(self.store.load())
         period = requested_period(request.period).token
-        copy = InputCopy()
         inputs = PreparationInputs(
             paths["register"],
             paths["periods_directory"],
@@ -91,16 +87,13 @@ class PreparationEntry:
             config_path=self.configuration.worker_config,
             internal_template_path=self.configuration.internal_template,
             collective_template_path=self.configuration.collective_template,
-            readers=self.readers,
-            forbidden=self.forbidden,
-            copy=copy,
         )
         return PreparedRun(
             declaration=PREPARATION,
             period=period,
             process=PREPARATION.core(self.processes),
             inputs=inputs,
-            input_copy=copy,
+            context=self.contexts.new(),
         )
 
 

@@ -69,13 +69,14 @@ from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_pricing import PricingMode
-from rozliczenia.efenix_process import EfenixInputs
-from rozliczenia.intermax_process import OrderingInputs
+from rozliczenia.efenix_pricing import EfenixInputs
+from rozliczenia.intermax_ordering import OrderingInputs
 from rozliczenia.message import Message
-from rozliczenia.preparation_process import PreparationInputs
+from rozliczenia.collective_preparation import PreparationInputs
 from rozliczenia.process_run import Finished, Process, ProcessInputs, StopEnding, run_process
+from rozliczenia.run_context import RunContext
 from rozliczenia.progress import ProgressSnapshot
-from rozliczenia.settlement_process import SettlementInputs
+from rozliczenia.engine import SettlementInputs
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=run_view.WarnedSummary)
@@ -129,13 +130,13 @@ class _Unattended:
 
 
 def _conduct(
-    process: Process[InputsT, SummaryT],
+    process: Process[InputsT, SummaryT, RunContext],
     view: run_view.ResultView[InputsT, SummaryT],
     inputs: InputsT,
     metrics: Path,
 ) -> tuple[ProcessResult, int]:
     unattended = _Unattended(lambda snapshot: view.progress(snapshot, dry_run=inputs.dry_run))
-    outcome = run_process(process, inputs, unattended, view=view.shown, metrics_path=metrics)
+    outcome = run_process(process, inputs, unattended, view=view.shown, metrics_path=metrics, context=RunContext())
     shown = outcome.view
     ending = outcome.ending
     result = ProcessResult(

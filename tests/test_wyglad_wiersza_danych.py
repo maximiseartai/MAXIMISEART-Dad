@@ -18,9 +18,10 @@ from openpyxl.cell.cell import Cell, MergedCell
 from openpyxl.styles import Font, PatternFill, Protection
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia.engine import run_settlements
+from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.row_look import GENERAL, RowLook
+from rozliczenia.run_context import RunContext
 
 from tests.fixtures.preparation import (
     PERIOD,
@@ -71,7 +72,7 @@ def _chain(tmp_path: Path) -> Chain:
     leave_data_row_leftovers(worker_template, first_row=18, rows=LEFTOVER_ROWS, columns=12)
 
     run_preparation(fixture)
-    run_settlements(fixture.collective_file_path, fixture.config_path, worker_template_path=worker_template)
+    run_settlements(SettlementInputs(fixture.collective_file_path, fixture.config_path, worker_template), RunContext())
 
     worker = fixture.period_directory / f"Rozliczenie pracowników {PERIOD}" / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"
     return Chain(

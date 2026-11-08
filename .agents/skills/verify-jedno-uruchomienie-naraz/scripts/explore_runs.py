@@ -71,6 +71,7 @@ from rozliczenia.decision import Decision
 from rozliczenia.message import Message
 from rozliczenia.preparation_process import PROCESS
 from rozliczenia.progress import ProgressProjection
+from rozliczenia.run_context import RunContext
 import rozjazd_modelu
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -427,6 +428,7 @@ PREPARED: runs.PreparedRun[Any, Any] = runs.PreparedRun(
     period="08_14_09_2026",
     process=PROCESS,
     inputs=SimpleNamespace(dry_run=False),
+    context=RunContext(),
 )
 
 
@@ -527,7 +529,7 @@ def harness(scheduler: Scheduler) -> Iterator[World]:
             super().work()
             self.model_returned = True
 
-    def engine(process: Any, inputs: Any, interlocutor: Any, *, view: Any, metrics_path: Path) -> Any:
+    def engine(process: Any, inputs: Any, interlocutor: Any, *, view: Any, metrics_path: Path, context: Any) -> Any:
         variant = scheduler.step("silnik: Sprawdzanie … Zapisywanie", variants=("bez Decyzji", WITH_DECISION))
         if variant == WITH_DECISION:
             interlocutor.confirm(DECISION)

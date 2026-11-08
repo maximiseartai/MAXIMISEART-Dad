@@ -57,7 +57,7 @@ from rozliczenia.efenix_mark import Mark
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
 from rozliczenia.efenix_address import AddressPart
 from rozliczenia.efenix_checks import ListedRead
-from rozliczenia.efenix_pricing import OrderKind, PricingMode, PricingStopped, PricingSummary
+from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingMode, PricingStopped, PricingSummary
 from rozliczenia.efenix_window import (
     BrowserFailure,
     StatusChangeBlocked,
@@ -86,13 +86,14 @@ from rozliczenia.efenix_window import (
 from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
 from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault
-from rozliczenia.efenix_process import EfenixInputs
-from rozliczenia.engine import run_settlements
+from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState, ProgressSnapshot, SavingStep
 from rozliczenia.tool_files import TOOL_ROOT
 from rozliczenia.workbook_files import excel_lock_file, read_computed_rows, read_data_rows
 from rozliczenia.workbook_parts import UnsupportedShape
+from rozliczenia.run_clock import RunClock
+from rozliczenia.run_context import RunContext
 
 from tests.fixtures.atrapa_efenix import (
     LIST_PAGE,
@@ -220,10 +221,11 @@ def _launched(
 ) -> Priced:
     return run_process(
         efenix_process.PROCESS,
-        EfenixInputs(source, open_efenix, pace=pace, clock=clock, mode=mode),
+        EfenixInputs(source, open_efenix, pace=pace, mode=mode),
         tata or Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=source.parent.parent / "metryki.jsonl",
+        context=RunContext(clock=RunClock(clock)),
     )
 
 
@@ -3051,16 +3053,11 @@ def test_okno_na_stronie_logowania_czeka_az_tata_sie_zaloguje_a_czas_czekania_ni
 
         outcome = run_process(
             efenix_process.PROCESS,
-            EfenixInputs(
-                source,
-                lambda login: efenix_browser.window(page, atrapa.url, login=login),
-                pace=None,
-                clock=lambda: now[0],
-            ),
+            EfenixInputs(source, lambda login: efenix_browser.window(page, atrapa.url, login=login), pace=None),
             LoggingIn(),
             view=lambda _inputs, summary: summary,
             metrics_path=metrics,
-            clock=lambda: now[0],
+            context=RunContext(clock=RunClock(lambda: now[0])),
         )
     [record] = [json.loads(line) for line in metrics.read_text(encoding="utf-8").splitlines()]
 
@@ -3410,6 +3407,7 @@ def _run_with(source: Path, open_efenix: Callable[[Login], AbstractContextManage
         Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=source.parent.parent / "metryki.jsonl",
+        context=RunContext(),
     )
 
 
@@ -3457,7 +3455,10 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
     write_template(template)
     assert _marked(source) == [18, 19]
 
-    summary = run_settlements(source, write_mapping(tmp_path / "worker_mapping.yaml"), worker_template_path=template)
+    summary = run_settlements(
+        SettlementInputs(source, write_mapping(tmp_path / "worker_mapping.yaml"), template),
+        RunContext(),
+    )
 
     assert summary.written_count == 1
     written = source.parent / f"Rozliczenie pracowników {PERIOD}" / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"

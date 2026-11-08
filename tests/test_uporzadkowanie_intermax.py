@@ -26,13 +26,16 @@ from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.utils.cell import coordinate_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from rozliczenia import intermax_copies
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
-from rozliczenia.intermax_ordering import OrderingSummary, RegisterDay, register_days
+from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary, RegisterDay, register_days
 from rozliczenia.intermax_replace import LOCAL_DISK, Waiting
-from rozliczenia.intermax_process import PROCESS, OrderingInputs
+from rozliczenia.intermax_process import PROCESS
 from rozliczenia.message import Message
+from rozliczenia.run_clock import RunClock
+from rozliczenia.run_context import RunContext
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState
 from rozliczenia.tool_files import TOOL_ROOT
@@ -85,7 +88,12 @@ def _run(
         (disk or FaultyDisk()).disk(),
     )
     return run_process(
-        PROCESS, inputs, Tata(), view=lambda _inputs, summary: summary, metrics_path=tmp_path / "m.jsonl", clock=ManualClock()
+        PROCESS,
+        inputs,
+        Tata(),
+        view=lambda _inputs, summary: summary,
+        metrics_path=tmp_path / "m.jsonl",
+        context=RunContext(clock=RunClock(ManualClock())),
     )
 
 
@@ -1085,7 +1093,7 @@ def test_scalone_komorki_w_surowych_zleceniach_to_zatrzymanie_do_maksa_bez_zapis
 
 @pytest.mark.parametrize("now", [datetime(2026, 10, 25, 21, 5, 7), datetime(2026, 10, 27, 8, 0, 0)])
 def test_uruchomienie_ma_okres_dzisiejszej_daty_z_zegara_procesu(tmp_path: Path, now: datetime) -> None:
-    inputs = replace(OrderingInputs(tmp_path / REGISTER_NAME), now=lambda: now)
+    inputs = replace(OrderingInputs(tmp_path / REGISTER_NAME, tmp_path / "Kopie INTERMAX"), now=lambda: now)
 
     assert inputs.period == {25: "20_26_10_2026", 27: "27_02_11_2026"}[now.day]
     assert inputs.dry_run is False
@@ -2173,14 +2181,21 @@ def test_podsumowanie_ktorego_nie_da_sie_pokazac_mowi_ze_intermax_jest_uporzadko
     def broken(_inputs: OrderingInputs, _summary: OrderingSummary) -> OrderingSummary:
         raise RuntimeError("widok")
 
-    outcome = run_process(PROCESS, inputs, Tata(), view=broken, metrics_path=tmp_path / "m.jsonl", clock=ManualClock())
+    outcome = run_process(
+        PROCESS,
+        inputs,
+        Tata(),
+        view=broken,
+        metrics_path=tmp_path / "m.jsonl",
+        context=RunContext(clock=RunClock(ManualClock())),
+    )
 
     stop = _stop(outcome)
     assert (stop.kind, stop.message.code, stop.stop_kind) == ("after_engine", "BLAD_PODSUMOWANIA", "for_maks")
 
 
 def test_kopie_intermax_trafiaja_do_folderu_narzedzia_poza_onedrive(tmp_path: Path) -> None:
-    assert OrderingInputs(tmp_path / REGISTER_NAME).copies_directory == TOOL_ROOT / "Kopie INTERMAX"
+    assert intermax_copies.default_directory() == TOOL_ROOT / "Kopie INTERMAX"
 
 
 def test_niedostepny_intermax_to_zatrzymanie_dla_taty_bez_zapisu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

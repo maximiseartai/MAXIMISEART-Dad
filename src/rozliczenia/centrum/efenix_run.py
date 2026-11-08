@@ -25,13 +25,11 @@ from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.period_board import located_period_folder, observed_period_folder, read_board, requested_period
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun
-from rozliczenia.client_data import ForbiddenValues
-from rozliczenia.input_copy import InputCopy
 from rozliczenia.efenix_pace import Pace
-from rozliczenia.efenix_pricing import OrderJournal, PricingMode
+from rozliczenia.efenix_pricing import EfenixInputs, OrderJournal, PricingMode
 from rozliczenia.efenix_window import OpenEfenix
-from rozliczenia.efenix_process import EfenixInputs
 from rozliczenia.period_folder import PeriodStatus, collective_file_name, scan_period_folders
+from rozliczenia.run_context import RunContexts
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
@@ -81,7 +79,7 @@ class EfenixEntry:
     today: Callable[[], date]
     window: EfenixWindow
     journal: OrderJournal
-    forbidden: ForbiddenValues
+    contexts: RunContexts
 
     @property
     def key(self) -> contract.PeriodProcessKey:
@@ -116,14 +114,11 @@ class EfenixEntry:
             raise contract.Refusal(409, _NO_PREVIEW)
         period = requested_period(request.period)
         source = located_period_folder(periods_directory, period).collective_file
-        copy = InputCopy()
         inputs = EfenixInputs(
             source,
             self.window.opener(),
             self.window.pace,
             journal=self.journal,
-            forbidden=self.forbidden,
-            copy=copy,
             mode=PricingMode(request.pricing),
         )
         return PreparedRun(
@@ -131,7 +126,7 @@ class EfenixEntry:
             period=period.token,
             process=EFENIX.core(self.processes),
             inputs=inputs,
-            input_copy=copy,
+            context=self.contexts.new(),
             pricing=request.pricing,
         )
 

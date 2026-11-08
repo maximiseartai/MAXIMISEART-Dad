@@ -12,8 +12,9 @@ from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 import pytest
 
-from rozliczenia.engine import run_settlements
+from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.quantity_rules import QuantityColumn
+from rozliczenia.run_context import RunContext
 from tests.fixtures.settlement import PERIOD, CellValue, make_fixture, write_quantity_source
 from tests.fixtures.workbooks import active_worksheet, hyperlinks, marked_for_copy, refused_by_copy, written_by_copy
 
@@ -72,8 +73,8 @@ def test_rozliczenie_pracownika_nie_ma_ilosci_tylko_dla_inea_a_plik_zbiorczy_i_k
     highlight_and_link_ap18(source_path)
     source_before = source_path.read_bytes()
 
-    preview = run_settlements(source_path, config_path, worker_template_path=template_path, dry_run=True)
-    summary = run_settlements(source_path, config_path, worker_template_path=template_path)
+    preview = run_settlements(SettlementInputs(source_path, config_path, template_path, dry_run=True), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, config_path, template_path), RunContext())
 
     assert dict(summary.inea_only_cleared) == {AP: 2, AK: 2}, "puste AP w wierszu GNIAZDO się nie liczy, 0 się liczy"
     assert dict(preview.inea_only_cleared) == dict(summary.inea_only_cleared)
@@ -107,7 +108,8 @@ def test_bez_naglowka_urzadzenia_rozliczenie_pracownika_ma_ilosci_jak_plik_zbior
         workbook.close()
 
     summary = run_settlements(
-        source_path, config_path, worker_template_path=tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+        SettlementInputs(source_path, config_path, tmp_path / "Wzorzec rozliczenia pracownika.xlsx"),
+        RunContext(),
     )
 
     assert dict(summary.inea_only_cleared) == {AP: 0, AK: 0}
