@@ -36,7 +36,7 @@ from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
 from rozliczenia.centrum.diagnosis import Surroundings, diagnose, files_of_process
-from rozliczenia.centrum.efenix_run import EfenixEntry, EfenixWindow
+from rozliczenia.centrum.efenix_chrome import EfenixWindow
 from rozliczenia.centrum.filling import FillingReads, filling_router
 from rozliczenia.centrum.intermax_run import IntermaxEntry, intermax_copies_router, intermax_router
 from rozliczenia.centrum.log import CentrumLog
@@ -44,6 +44,7 @@ from rozliczenia.centrum.logs_disk import LogsOnDisk
 from rozliczenia.centrum.metrics import metrics_router, read_runs
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE, Notifications, ReadNotifications, notifications_router
 from rozliczenia.centrum.period_board import periods_router
+from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.keyed_box import OPENING_FILE, KeyedBox, NotesFile, read_report_key
@@ -51,14 +52,13 @@ from rozliczenia.centrum.report_box import GitHubReportBox, ReportBox
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
-from rozliczenia.centrum.preparation_run import PreparationEntry
 from rozliczenia.centrum.run_cards import RunCards, run_cards_router
 from rozliczenia.centrum.run_comments import RecordMaker, RunComments
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
-from rozliczenia.centrum.runs import ProcessEntry, RunHost, runs_router
+from rozliczenia.centrum.process_kind import HostParts
+from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.centrum.settings_router import settings_router
-from rozliczenia.centrum.settlement_run import SettlementEntry
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
 from rozliczenia.centrum.timing import server_timing, timing_router
@@ -227,7 +227,7 @@ def create_app(
     )
     # Pliki Logów Uruchomienia, plik ostatniego startu i dziennik Wyceny w efenix w katalogu Logów (ADR 0017); dziennik
     # przeżywa nagłe zgaśnięcie Centrum w trakcie Wyceny (#845).
-    disk = LogsOnDisk(log, journaled="efenix")
+    disk = LogsOnDisk(log, journaled=catalog.journaled)
     # Logi Uruchomienia z dzisiejszym narzędziem, środowiskiem i działaniami taty.
     records = RecordMaker(
         commit=surroundings.tool_freshness.local,
@@ -259,24 +259,19 @@ def create_app(
     )
     # Kontekst każdego Uruchomienia procesu: uchwyt plików taty tej pracy z nową Kopią wejścia i czytniki.
     contexts = RunContexts(files=files, readers=readers)
-    # Adaptery startu procesów z katalogu procesów; reszta Centrum pyta wpis procesu w katalogu, nie adapter.
-    entries: list[ProcessEntry] = [
-        PreparationEntry(store, configuration, catalog, today, contexts),
-        # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
-        # Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
-        EfenixEntry(store, catalog, today, efenix_window or EfenixWindow.of_tata(), disk.journal, contexts),
-        SettlementEntry(store, configuration, catalog, today, contexts),
-    ]
+    # Zależności procesów od Centrum: okno efenix taty (Google Chrome w profilu narzędzia z prawdziwym efenix; testy
+    # podają okno Atrapy efenix), dziennik Wyceny w efenix w katalogu Logów, zegar procesu i podmiana INTERMAX.
+    parts = HostParts(
+        efenix=(efenix_window or EfenixWindow.of_tata()).opening(),
+        journal=disk.journal,
+        now=now,
+        waiting=Waiting(clock, pause),
+        disk=intermax_disk,
+    )
+    starts = PeriodStarts(store, configuration, catalog, today, contexts, parts)
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
-        store,
-        catalog,
-        intermax_copies or default_intermax_copies(),
-        now,
-        Waiting(clock, pause),
-        intermax_disk,
-        surroundings.cloud_files,
-        contexts,
+        store, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
     # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
     cards = RunCards(disk, lambda: read_runs(catalog, centrum_runs.started()))
@@ -324,7 +319,7 @@ def create_app(
         result_file=settings_path.parent / RESULT_FILE,
         release=release,
     )
-    app.include_router(runs_router(runs, entries))
+    app.include_router(runs_router(runs, starts))
     app.include_router(intermax_router(runs, intermax, lambda: cards.latest(intermax.key)))
     app.include_router(intermax_copies_router(runs, intermax))
     app.include_router(run_cards_router(cards))

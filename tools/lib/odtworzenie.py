@@ -54,14 +54,15 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import column_index_from_string
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia import collective_layout, efenix_browser, intermax_copies
+from rozliczenia import collective_layout, intermax_copies
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import CATALOG, declaration_of
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum import stops
 from rozliczenia.centrum.logs_of_run import logs_of
-from rozliczenia.centrum.process_kind import PreparedRun
+from rozliczenia.centrum.efenix_chrome import atrapa_opening
+from rozliczenia.centrum.process_kind import HostParts, PreparedRun, Start
 from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun
@@ -70,15 +71,11 @@ from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
-from rozliczenia.efenix_pricing import EfenixInputs, PricingMode
-from rozliczenia.intermax_ordering import OrderingInputs
-from rozliczenia.collective_preparation import PreparationInputs
 from rozliczenia.raw_orders import SHIFT
 from rozliczenia.register_columns import COLUMNS, DAY_FILL, ORDERED_FONT, ORDERED_SIZE
-from rozliczenia.process_run import Finished, ProcessInputs
+from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.run_context import RunContexts
-from rozliczenia.engine import SettlementInputs
 from rozliczenia.text import normalize_text
 from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
@@ -523,29 +520,25 @@ def _collective_limits(record: RunLog) -> list[Limit]:
 def _settlement(record: RunLog, work: _Work) -> _Setup:
     source = _collective_file(record, work, {})
     configuration = _configured(work)
-    inputs = SettlementInputs(
-        source,
+    start = Start(
+        {
+            "collective_file": source,
+            "worker_config": configuration["worker_config"],
+            "worker_template": configuration["worker_template"],
+        },
+        period=record.period,
         dry_run=record.mode == "podgląd",
-        config_path=configuration["worker_config"],
-        worker_template_path=configuration["worker_template"],
     )
-    return _Setup(_prepared(work, "settlement", record.period, inputs))
+    return _Setup(_prepared(work, "settlement", start))
 
 
 def _prepared(
-    work: _Work,
-    key: contract.ProcessKey,
-    period: str,
-    inputs: ProcessInputs,
-    *,
-    pricing: contract.Pricing | None = None,
+    work: _Work, key: contract.ProcessKey, start: Start, parts: HostParts | None = None
 ) -> PreparedRun[Any, Any]:
     """Uruchomienie z Kopią wejścia i plikiem metryk w katalogu roboczym, w miejscu pliku metryk procesu."""
 
     metrics = work.path("metryki.jsonl")
-    return CATALOG.with_metrics({key: metrics}).prepared(
-        key, period=period, inputs=inputs, context=RunContexts().new(), pricing=pricing
-    )
+    return CATALOG.with_metrics({key: metrics}).prepared(key, start, parts or HostParts(), RunContexts().new())
 
 
 def _configured(work: _Work) -> dict[str, Path]:
@@ -621,16 +614,18 @@ def _preparation(record: RunLog, work: _Work) -> _Setup:
     register, limits = _register_file(record, work, "rejestr", _ORDERED_FONT)
     periods = work.folder("okresy")
     configuration = _configured(work)
-    inputs = PreparationInputs(
-        register,
-        periods,
-        record.period,
+    start = Start(
+        {
+            "register": register,
+            "periods_directory": periods,
+            "worker_config": configuration["worker_config"],
+            "internal_template": configuration["internal_template"],
+            "collective_template": configuration["collective_template"],
+        },
+        period=record.period,
         dry_run=record.mode == "podgląd",
-        config_path=configuration["worker_config"],
-        internal_template_path=configuration["internal_template"],
-        collective_template_path=configuration["collective_template"],
     )
-    return _Setup(_prepared(work, "preparation", record.period, inputs), limits)
+    return _Setup(_prepared(work, "preparation", start), limits)
 
 
 def _preparation_limits(record: RunLog) -> list[Limit]:
@@ -649,8 +644,9 @@ def _preparation_limits(record: RunLog) -> list[Limit]:
 def _intermax(record: RunLog, work: _Work) -> _Setup:
     register, limits = _register_file(record, work, "intermax", _PASTED_FONT)
     moment = _intermax_moment(record, work)
-    inputs = OrderingInputs(register, work.folder("Kopie INTERMAX"), now=lambda: moment)
-    return _Setup(_prepared(work, "intermax", inputs.period, inputs), limits)
+    # Okres Uporządkowania to okres dnia z zegara procesu u taty (ADR 0019), więc start go nie podaje.
+    start = Start({"register": register, "copies_directory": work.folder("Kopie INTERMAX")}, period=None, dry_run=False)
+    return _Setup(_prepared(work, "intermax", start, HostParts(now=lambda: moment)), limits)
 
 
 def _intermax_moment(record: RunLog, work: _Work) -> datetime:
@@ -707,11 +703,9 @@ def _efenix(record: RunLog, work: _Work) -> _Setup:
     fed = atrapa_z_logow.fed(orders, scoped)
     today = work.efenix_today or record.started_at.astimezone().date()
     atrapa = work.stack.enter_context(atrapa_z_logow.started(fed, today))
-    url = atrapa.url
-    pricing = record.pricing or contract.DEFAULT_PRICING
-    inputs = EfenixInputs(source, lambda _login: efenix_browser.chromium(url), pace=None, mode=PricingMode(pricing))
+    start = Start({"collective_file": source}, period=record.period, dry_run=False, pricing=record.pricing)
     limits = [Limit(text, blocking=blocking) for text, blocking in fed.limits]
-    return _Setup(_prepared(work, "efenix", record.period, inputs, pricing=pricing), limits)
+    return _Setup(_prepared(work, "efenix", start, HostParts(efenix=atrapa_opening(atrapa.url))), limits)
 
 
 def _efenix_limits(record: RunLog) -> list[Limit]:

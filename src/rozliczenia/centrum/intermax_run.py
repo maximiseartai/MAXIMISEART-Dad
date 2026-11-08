@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, timezone
 from pathlib import Path
 from typing import Any, Final
 
@@ -31,16 +31,14 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.diagnosis_messages import file_only_in_cloud
 from rozliczenia.centrum.live_file import saved_version
-from rozliczenia.centrum.process_kind import PreparedRun
+from rozliczenia.centrum.process_kind import HostParts, PreparedRun, Start
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia import intermax_ordering, intermax_restore
 from rozliczenia.intermax_copies import Copy
-from rozliczenia.intermax_replace import Disk, Waiting
 from rozliczenia.run_context import RunContexts
 from rozliczenia.message import Message, StopError
 from rozliczenia.text import short_day_label
 from rozliczenia.centrum.settings import Settings, SettingsStore
-from rozliczenia.intermax_ordering import OrderingInputs
 
 _KIND: Final = declaration_of("intermax")
 _VIEW: Final = _KIND.view
@@ -63,10 +61,10 @@ class _LastDaysRead:
 
 @dataclass(frozen=True)
 class IntermaxEntry:
-    """Adapter startu Uporządkowania INTERMAX: katalog procesów, folder Kopii INTERMAX i zegar procesu.
+    """Adapter startu Uporządkowania INTERMAX: katalog procesów, folder Kopii INTERMAX i zależności procesu od Centrum.
 
-    ``waiting``: zegar Centrum i jego przerwa dla krótkiej ponownej próby podmiany, której odmawia OneDrive, a
-    ``disk`` kroki podmiany INTERMAX na dysku, te same dla Uporządkowania i przywrócenia Kopii. ``cloud_files``
+    ``parts``: zegar procesu, zegar Centrum i jego przerwa dla krótkiej ponownej próby podmiany, której odmawia
+    OneDrive, i kroki podmiany INTERMAX na dysku, te same dla Uporządkowania i przywrócenia Kopii. ``cloud_files``
     rozpoznaje INTERMAX „tylko online” w OneDrive, gdy jego dni nie dają się odczytać. ``contexts``: Kontekst
     Uruchomienia pracy Centrum; jego uchwytem plików taty karta czyta dni.
     """
@@ -74,9 +72,7 @@ class IntermaxEntry:
     store: SettingsStore
     catalog: Catalog
     copies_directory: Path
-    now: Callable[[], datetime]
-    waiting: Waiting
-    disk: Disk
+    parts: HostParts
     cloud_files: CloudFiles
     contexts: RunContexts
     _last_days: _LastDaysRead = field(default_factory=_LastDaysRead, compare=False, repr=False)
@@ -104,7 +100,7 @@ class IntermaxEntry:
         register = self.store.load().register
         if register is None:
             return contract.IntermaxDays(days=[], problem=None)
-        today = self.now().date()
+        today = self.parts.now().date()
         version = saved_version(register)
         last = self._last_days.read
         if last is not None and (last.register, last.version, last.today) == (register, version, today):
@@ -122,8 +118,8 @@ class IntermaxEntry:
         """Wejście procesu z Ustawień taty; ``contract.Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
         register = _register(self.store.load())
-        inputs = OrderingInputs(register, self.copies_directory, now=self.now, waiting=self.waiting, disk=self.disk)
-        return self.catalog.prepared(self.key, period=inputs.period, inputs=inputs, context=self.contexts.new())
+        start = Start({"register": register, "copies_directory": self.copies_directory}, period=None, dry_run=False)
+        return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def copies(self) -> contract.IntermaxCopies:
         """Kopie INTERMAX od najnowszej albo Komunikat, gdy folderu Kopii nie da się odczytać."""
@@ -139,8 +135,9 @@ class IntermaxEntry:
 
         register = _register(self.store.load())
         try:
+            parts = self.parts
             restored = intermax_restore.restore(
-                name, register, self.copies_directory, now=self.now, waiting=self.waiting, disk=self.disk
+                name, register, self.copies_directory, now=parts.now, waiting=parts.waiting, disk=parts.disk
             )
         except StopError as stop:
             return contract.IntermaxRestoreRefused(state="refused", message=contract.Message.of(stop.message))

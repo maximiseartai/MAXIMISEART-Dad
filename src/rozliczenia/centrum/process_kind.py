@@ -1,13 +1,16 @@
 """Wpis procesu w katalogu procesów i Uruchomienie procesu gotowe do startu, to samo dla każdego gospodarza.
 
-Wpis (``ProcessKind``) deklaruje to, o co Centrum pyta proces poza budową karty przed startem i wejścia: klucz procesu,
-widok Uruchomienia, rdzeń procesu i jego domyślny plik metryk, Ustawienia taty, bez których proces nie startuje,
-czytane Wzorce i sprawdzenia Diagnozy w kolejności wyjaśniania. Diagnoza, Logi Uruchomienia, karty z Logów, Metryki,
-Konfiguracja i start pytają wpis zamiast rozgałęziać się po kluczu procesu. Wpisy zbiera katalog (``catalog``).
+Wpis (``ProcessKind``) deklaruje wszystko, o co gospodarze pytają proces: klucz procesu, widok Uruchomienia, rdzeń
+procesu i jego domyślny plik metryk, czego wejście procesu potrzebuje (``needs``) i jak je zbudować (``inputs``),
+Ustawienia taty, bez których proces nie startuje, sprawdzenia Diagnozy w kolejności wyjaśniania, tryby Wyceny w efenix
+i dziennik Wyceny. Proces z okresem (``PeriodProcessKind``) ma też politykę karty startu (``PeriodStart``). Diagnoza,
+Logi Uruchomienia, karty z Logów, Metryki, Konfiguracja i start pytają wpis zamiast rozgałęziać się po kluczu procesu.
+Wpisy zbiera katalog (``catalog``).
 
-Centrum rozliczeń (``runs.Run``), Skrypt dla maszyn (``tools/uruchom_proces.py``) i odtworzenie z Logów
-(``tools/lib/odtworzenie.py``) dostają ``PreparedRun`` z katalogu (``Catalog.prepared``) i prowadzą je przez
-``PreparedRun.conduct``: ten sam rdzeń, widok, plik metryk i Kontekst Uruchomienia. Gospodarz daje tylko rozmówcę.
+Centrum rozliczeń (``period_start``, ``intermax_run``), Skrypt dla maszyn (``tools/uruchom_proces.py``) i odtworzenie
+z Logów (``tools/lib/odtworzenie.py``) mówią, co mają, w języku potrzeb (``Start``, ``HostParts``), dostają
+``PreparedRun`` z katalogu (``Catalog.prepared``) i prowadzą je przez ``PreparedRun.conduct``: to samo wejście, rdzeń,
+widok, plik metryk i Kontekst Uruchomienia. Gospodarz daje tylko rozmówcę.
 
 Moduł nie wczytuje ``runs``, Diagnozy, Konfiguracji, Tablicy okresów, okna efenix ani FastAPI, także przez inne moduły
 (``tests/test_granice_importow.py``): każdy moduł Centrum i gospodarze bez serwera biorą go bez cyklu.
@@ -16,16 +19,23 @@ Moduł nie wczytuje ``runs``, Diagnozy, Konfiguracji, Tablicy okresów, okna efe
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Final, Generic, Literal, Protocol, TypeVar
+from typing import Any, Final, Generic, Literal, Protocol, TypeGuard, TypeVar, get_args
 
 from rozliczenia import preparation_messages
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.settings import Settings
+from rozliczenia.efenix_pace import Pace
+from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
+from rozliczenia.efenix_window import OpenEfenix
 from rozliczenia.input_copy import InputCopy
+from rozliczenia.intermax_ordering import local_now
+from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
+from rozliczenia.period_folder import PeriodStatus
 from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs, run_process
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.run_context import RunContext
@@ -37,6 +47,78 @@ SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
 SettingField = Literal["register", "periods_directory"]
 # Wzorzec, który proces czyta; Konfiguracja wymienia każdy pod jego rolą.
 TemplateRole = Literal["internal", "collective", "worker"]
+TemplateNeed = Literal["internal_template", "collective_template", "worker_template"]
+PathNeed = Literal["register", "periods_directory", "collective_file", "worker_config", "copies_directory", TemplateNeed]
+Need = PathNeed | Literal["period", "efenix_window"]
+"""Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
+ścieżkę (``period_start``, ``intermax_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie odbudowuje ją z Logów.
+``period``: token okresu (``Start.period``), ``efenix_window``: okno efenix gospodarza (``HostParts.efenix``)."""
+
+
+def _is_path(need: Need) -> TypeGuard[PathNeed]:
+    return need in get_args(PathNeed)
+
+
+_TEMPLATE_ROLES: Final[Mapping[TemplateNeed, TemplateRole]] = {
+    "internal_template": "internal",
+    "collective_template": "collective",
+    "worker_template": "worker",
+}
+
+
+@dataclass(frozen=True)
+class Start:
+    """Start jednego Uruchomienia w języku potrzeb, ten sam dla Centrum, Skryptu dla maszyn i odtworzenia.
+
+    ``paths`` ma ścieżkę każdej potrzeby-pliku procesu (sprawdza ``Catalog.prepared``). ``period``: token okresu, gdy
+    gospodarz go zna (karta, ``--period``, Logi); ``None``: okres wynika z wejścia. ``pricing``: tryb Wyceny w efenix
+    wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
+    trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``.
+    """
+
+    paths: Mapping[PathNeed, Path]
+    period: str | None
+    dry_run: bool
+    pricing: contract.Pricing | None = None
+
+    def path(self, need: PathNeed) -> Path:
+        return self.paths[need]
+
+    def token(self) -> str:
+        """Token okresu procesu z potrzebą ``period``; ``Catalog.prepared`` już sprawdził, że jest."""
+
+        assert self.period is not None, "Catalog.prepared sprawdza potrzebę period"
+        return self.period
+
+
+@dataclass(frozen=True)
+class EfenixOpening:
+    """Okno efenix od gospodarza: jak je otworzyć i tempo ludzkie (``None``: bez przerw, tylko Atrapa efenix)."""
+
+    open: OpenEfenix
+    pace: Pace | None
+
+
+@dataclass(frozen=True)
+class HostParts:
+    """Zależności jednego procesu, które daje gospodarz raz na swoje życie; domyślne to komputer bez Centrum.
+
+    Centrum: okno efenix taty z tempem, dziennik Wyceny w efenix z Logów (``logs_disk.Journal``), zegar Centrum, przerwa
+    ponownej próby podmiany INTERMAX i kroki podmiany na dysku. Skrypt dla maszyn i odtworzenie: okno Atrapy efenix
+    (``efenix_chrome.atrapa_opening``), reszta domyślna (odtworzenie: ``now`` z Logów).
+    """
+
+    efenix: EfenixOpening | None = None
+    journal: OrderJournal = NO_JOURNAL
+    now: Callable[[], datetime] = local_now
+    waiting: Waiting = field(default_factory=Waiting)
+    disk: Disk = LOCAL_DISK
+
+    def window(self) -> EfenixOpening:
+        """Okno efenix; ``Catalog.prepared`` już sprawdził, że jest, gdy proces go potrzebuje."""
+
+        assert self.efenix is not None, "Catalog.prepared sprawdza potrzebę efenix_window"
+        return self.efenix
 
 
 @dataclass(frozen=True)
@@ -106,24 +188,58 @@ PERIODS_DIRECTORY: Final = NeededSetting(
 TAIL: Final[tuple[CheckStep, ...]] = ("tool_freshness", "report_key", "centrum_log")
 
 
+@dataclass(frozen=True)
+class ByStatus:
+    """Okresy z Tablicy okresów o Statusie okresu z ``statuses``; ``none_ready``: blokada karty, gdy żadnego nie ma."""
+
+    statuses: frozenset[PeriodStatus]
+    none_ready: str
+
+
+@dataclass(frozen=True)
+class RecentWeeks:
+    """Ostatnie ``weeks`` pełnych okresów ze Statusem z Folderu okresu: proces, który dopiero tworzy pliki okresu."""
+
+    weeks: int
+
+
+@dataclass(frozen=True)
+class PeriodStart:
+    """Karta startu procesu, który tata uruchamia z okresem: co powstaje (``creates``), jak wybrać okresy
+    (``chooser``) i odmowa startu bez zapisu (``no_preview``), która jest wtedy i tylko wtedy, gdy rdzeń nie ma Podglądu
+    bez zapisu."""
+
+    creates: str
+    chooser: ByStatus | RecentWeeks
+    no_preview: str | None = None
+
+
 @dataclass(frozen=True, kw_only=True)
 class ProcessKind(Generic[InputsT, SummaryT]):
-    """Wpis katalogu procesów: wszystko, o co Centrum pyta proces poza budową karty przed startem i wejścia.
+    """Wpis katalogu procesów: wszystko, o co gospodarze pytają proces.
 
     ``core`` to rdzeń procesu (testy podmieniają go przez ``Catalog.steered``), a ``default_metrics`` plik metryk
     procesu w katalogu narzędzia (testy i ``--metrics`` podmieniają go przez ``Catalog.with_metrics``); oba czyta się
-    przez katalog. ``settings`` to potrzebne Ustawienia taty w kolejności odmowy i Diagnozy, ``templates`` czytane
-    Wzorce, a ``checks`` sprawdzenia Diagnozy w kolejności wyjaśniania: pierwsze, które nie przeszło, wyjaśnia
-    Zatrzymanie.
+    przez katalog. ``needs`` to potrzeby wejścia procesu, a ``inputs`` jedyna budowa wejścia z nich: czysta funkcja
+    startu i zależności gospodarza, bez I/O. ``settings`` to potrzebne Ustawienia taty w kolejności odmowy i Diagnozy,
+    a ``checks`` sprawdzenia Diagnozy w kolejności wyjaśniania: pierwsze, które nie przeszło, wyjaśnia Zatrzymanie.
+    ``journaled``: proces pisze dziennik Wyceny w efenix (``logs_disk.LogsOnDisk``).
     """
 
     key: contract.ProcessKey
     view: ProcessView[InputsT, SummaryT]
     core: Process[InputsT, SummaryT, RunContext]
     default_metrics: Path
+    needs: tuple[Need, ...]
+    inputs: Callable[[Start, HostParts], InputsT]
     settings: tuple[NeededSetting, ...]
-    templates: tuple[TemplateRole, ...]
     checks: tuple[CheckStep, ...]
+    journaled: bool = False
+
+    def __post_init__(self) -> None:
+        modes = self.view.pricing_modes
+        # Logi sprzed trybów nie mają trybu, a Wycena biegła wtedy bez Przekazania (ADR 0027): pierwszy tryb to ten.
+        assert not modes or modes[0] == contract.DEFAULT_PRICING, f"{self.key}: pierwszy tryb to {contract.DEFAULT_PRICING}"
 
     @property
     def title(self) -> str:
@@ -138,6 +254,18 @@ class ProcessKind(Generic[InputsT, SummaryT]):
         return self.view.preview_hint if isinstance(self.view, PeriodProcessView) else None
 
     @property
+    def path_needs(self) -> tuple[PathNeed, ...]:
+        """Potrzeby-pliki procesu: klucze ``Start.paths``."""
+
+        return tuple(need for need in self.needs if _is_path(need))
+
+    @property
+    def templates(self) -> tuple[TemplateRole, ...]:
+        """Wzorce, które proces czyta, z jego potrzeb."""
+
+        return tuple(role for need, role in _TEMPLATE_ROLES.items() if need in self.needs)
+
+    @property
     def reads_register(self) -> bool:
         """Rejestr zleceń jest plikiem procesu: proces go czyta."""
 
@@ -149,23 +277,31 @@ class ProcessKind(Generic[InputsT, SummaryT]):
 
         return any(setting.field == "periods_directory" for setting in self.settings)
 
-    def run_info(
-        self, *, run_id: str, period: str, dry_run: bool, pricing: contract.Pricing | None
-    ) -> contract.RunInfo:
-        """Uruchomienie procesu na karcie: ta sama reguła na żywo i dla karty z Logów Uruchomienia.
+    def pricing_of(self, chosen: contract.Pricing | None) -> contract.Pricing | None:
+        """Tryb Wyceny w efenix Uruchomienia, jedna reguła na żywo, w Skrypcie dla maszyn i dla Logów.
 
-        ``pricing`` ``None`` w procesie z trybami to Logi sprzed trybów, a wtedy Wycena w efenix biegła w pierwszym,
-        domyślnym trybie; proces bez trybów nie ma trybu.
+        Proces bez trybów nie ma trybu. ``chosen`` ``None`` w procesie z trybami (Logi sprzed trybów, Skrypt bez
+        ``--z-przekazaniem``) to pierwszy, domyślny tryb. ``ValueError`` (błąd gospodarza), gdy ``chosen`` nie jest
+        trybem procesu: odmowę dla taty daje wcześniej karta startu.
         """
 
         modes = self.view.pricing_modes
+        if chosen is not None and chosen not in modes:
+            raise ValueError(f"{self.title} nie ma trybu {chosen}")
+        return None if not modes else modes[0] if chosen is None else chosen
+
+    def run_info(
+        self, *, run_id: str, period: str, dry_run: bool, pricing: contract.Pricing | None
+    ) -> contract.RunInfo:
+        """Uruchomienie procesu na karcie: ta sama reguła na żywo i dla karty z Logów Uruchomienia."""
+
         return contract.RunInfo(
             id=run_id,
             process=self.key,
             title=self.title,
             period=period,
             dry_run=dry_run,
-            pricing=None if not modes else modes[0] if pricing is None else pricing,
+            pricing=self.pricing_of(pricing),
             confirms_readiness=self.view.confirms_readiness,
             register_name=self.view.register_name,
         )
@@ -187,10 +323,19 @@ class ProcessKind(Generic[InputsT, SummaryT]):
 
 @dataclass(frozen=True, kw_only=True)
 class PeriodProcessKind(ProcessKind[InputsT, SummaryT]):
-    """Wpis procesu, który tata uruchamia z okresem na karcie okresów; Podgląd bez zapisu ma proces, którego widok to
-    ``run_view.PeriodProcessView`` (Wycena w efenix go nie ma)."""
+    """Wpis procesu, który tata uruchamia z okresem z karty Uruchomień: ``start`` to polityka jego karty startu.
+
+    Podgląd bez zapisu ma proces, którego widok to ``run_view.PeriodProcessView`` (Wycena w efenix go nie ma).
+    """
 
     key: contract.PeriodProcessKey
+    start: PeriodStart
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        assert (self.start.no_preview is None) is (self.core.preview is not None), (
+            f"{self.key}: odmowa startu bez zapisu wtedy i tylko wtedy, gdy rdzeń nie ma Podglądu bez zapisu"
+        )
 
 
 class Engine(Protocol):

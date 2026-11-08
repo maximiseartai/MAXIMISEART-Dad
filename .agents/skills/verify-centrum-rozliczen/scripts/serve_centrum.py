@@ -148,7 +148,7 @@ from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.efenix_run import EfenixWindow
+from rozliczenia.centrum.efenix_chrome import EfenixWindow
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.report_box import (
     Archive,

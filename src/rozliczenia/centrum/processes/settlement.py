@@ -6,7 +6,16 @@ from typing import Final
 
 from rozliczenia import settlement_messages, settlement_process
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, TAIL, PeriodFolderCheck, PeriodProcessKind
+from rozliczenia.centrum.process_kind import (
+    PERIODS_DIRECTORY,
+    TAIL,
+    ByStatus,
+    HostParts,
+    PeriodFolderCheck,
+    PeriodProcessKind,
+    PeriodStart,
+    Start,
+)
 from rozliczenia.centrum.run_view import PeriodProcessView, count_figure
 from rozliczenia.engine import SettlementInputs, SettlementSummary
 from rozliczenia.period_folder import period_status_label
@@ -59,6 +68,17 @@ def _summary(summary: SettlementSummary, dry_run: bool) -> contract.RunSummary:
     )
 
 
+def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
+    return SettlementInputs(
+        start.path("collective_file"),
+        dry_run=start.dry_run,
+        config_path=start.path("worker_config"),
+        worker_template_path=start.path("worker_template"),
+    )
+
+
+# Kliknięcie „Uruchom” jest potwierdzeniem Gotowości Pliku zbiorczego: Centrum nie zgaduje jej z pliku ani nie blokuje
+# startu.
 KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProcessKind(
     key="settlement",
     view=PeriodProcessView(
@@ -72,8 +92,17 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     ),
     core=settlement_process.PROCESS,
     default_metrics=SETTLEMENT_METRICS,
+    needs=("collective_file", "worker_config", "worker_template"),
+    inputs=_inputs,
+    start=PeriodStart(
+        creates="Rozliczenia pracowników",
+        chooser=ByStatus(
+            frozenset({"collective_file_prepared"}),
+            f"Żaden okres nie ma Statusu „{period_status_label('collective_file_prepared')}”. "
+            "Najpierw przygotuj plik zbiorczy.",
+        ),
+    ),
     settings=(PERIODS_DIRECTORY,),
-    templates=("worker",),
     checks=(
         "tata_settings",
         "files_in_onedrive",

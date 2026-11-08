@@ -148,7 +148,7 @@ which `save` holds), `metrics_saved` and the Historia (no step of this path read
 them since #870/#871: `RunCards` and the metrics files are the card's, ADR 0017), and `create_app` (see below). Three
 changes move the model without changing a definition, so look for them in the diff: a call of
 `comments.send_left_behind()` in `create_app` outside the dependency `send_interrupted`, the `journal` that `create_app`
-hands to `EfenixEntry` in `entries` (`disk.journal`; another journal or none, and the Wycena writes no entries that the start reads),
+puts in `HostParts` (`parts.journal`, `disk.journal`, which the efenix entry gives the Wycena; another journal or none, and the Wycena writes no entries that the start reads),
 and a new caller of `RunComments`, of `comment_versions.close`, of `Journal.end` or of `Journal.remove`
 outside these definitions, or a progress that reaches the queue another way than `RunComments._progress`. Add such code to the table and to `model/definicje.json`. The table lives in data, not in the script, because a path named in the script would make the
 change-impact selection (`tools/lib/wplyw_zmiany.py`) run the test of the script on every change of `app.py` or
