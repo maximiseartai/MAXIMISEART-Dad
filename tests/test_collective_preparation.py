@@ -1381,3 +1381,60 @@ def test_dry_run_of_incomplete_period_does_not_ask_tata(tmp_path: Path) -> None:
 
     assert tata.decisions == []
     assert [warning.code for warning in other_warnings(plan.warnings)] == ["NIEPELNY_OKRES"]
+
+
+def _orders_around_period() -> list[RegisterRow]:
+    """Trzy zlecenia z 2025 r. (wiersze 2–4) i trzy zlecenia okresu 08_14_09_2026 (wiersze 5–7)."""
+
+    return [
+        *earlier_orders(3, 100),
+        register_order(2, datetime(2026, 9, 8, 8, 0)),
+        register_order(3, datetime(2026, 9, 10, 8, 0)),
+        register_order(4, datetime(2026, 9, 11, 8, 0)),
+    ]
+
+
+@pytest.mark.parametrize(("opening", "closing"), [(b"<!-- ", b" -->"), (b"<![CDATA[", b"]]>")], ids=["komentarz", "cdata"])
+def test_komentarz_zaczety_przed_okresem_i_zamkniety_w_wierszach_okresu_ukrywa_ich_zlecenia(
+    tmp_path: Path, opening: bytes, closing: bytes
+) -> None:
+    """Wiersze 3–5 Rejestru są w komentarzu XML (albo CDATA), więc nie są wierszami arkusza: pierwsze zlecenie okresu
+    nie jest zleceniem, a dwa następne są."""
+
+    fixture = make_preparation_fixture(tmp_path, _orders_around_period())
+
+    def commented(name: str, data: bytes) -> bytes:
+        if name != "xl/worksheets/sheet2.xml":
+            return data
+        data = data.replace(b'<row r="3"', opening + b'<row r="3"', 1)
+        return data.replace(b'<row r="6"', closing + b'<row r="6"', 1)
+
+    rewrite_parts(fixture.register_path, commented)
+
+    assert run_preparation(fixture).period_order_count == 2
+
+
+
+def test_formula_glowna_wspolnej_formuly_w_wierszu_okresu_daje_jedno_zlecenie_tego_wiersza(tmp_path: Path) -> None:
+    """Formuła główna wspólnej formuły stoi w pierwszym wierszu okresu, a drugi wiersz okresu się do niej odwołuje:
+    każdy wiersz okresu jest jednym zleceniem z formułą przeniesioną na swój wiersz."""
+
+    fixture = make_preparation_fixture(tmp_path, _orders_around_period())
+    workbook = load_workbook(fixture.register_path)
+    for row in (5, 6):
+        workbook["ZLECENIA"].cell(row, 13).value = f"=N{row}"
+    workbook.save(fixture.register_path)
+    workbook.close()
+
+    def share(name: str, data: bytes) -> bytes:
+        if name != "xl/worksheets/sheet2.xml":
+            return data
+        data = data.replace(b"<f>N5</f>", b'<f t="shared" ref="M5:M6" si="0">N5</f>')
+        return data.replace(b"<f>N6</f>", b'<f t="shared" si="0"/>')
+
+    rewrite_parts(fixture.register_path, share)
+
+    summary = run_preparation(fixture)
+
+    assert summary.period_order_count == 3
+    assert [row[10] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == ["=N5", "=N6", "montaż"]

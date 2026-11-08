@@ -488,8 +488,8 @@ def _raise_irregular(xml: bytes, start: int, end: int, otherwise: str = "") -> N
 
 # --- zawężanie ---------------------------------------------------------------------------------
 
-_Narrow = Callable[[bytes, SheetData], bytes]
-"""Zawężenie XML arkusza o danym ``SheetData``; arkusz spoza jego kształtu to ``IrregularSheetData``."""
+_Narrow = Callable[[bytes], bytes]
+"""Zawężenie XML arkusza; arkusz spoza kształtu, który zawężenie sprawdza, to ``IrregularSheetData``."""
 _Choose = Callable[[str, bytes], _Narrow | None]
 """Zawężenie części zip o tej nazwie i treści; ``None``: część zostaje bez zmian."""
 
@@ -504,7 +504,8 @@ def rows_with_input(content: bytes, input_columns: int) -> bytes:
     letters = b"|".join(get_column_letter(column).encode("ascii") for column in range(1, input_columns + 1))
     with_input = re.compile(rb'<c r="(?:' + letters + rb')[0-9]+"[^>]*(?<!/)>')
 
-    def narrow(xml: bytes, sheet: SheetData) -> bytes:
+    def narrow(xml: bytes) -> bytes:
+        sheet = SheetData.of(xml)
         cells = with_input.finditer(xml, sheet.start, sheet.end)
         return _with_rows(xml, sheet, {sheet.row_index(cell.start()) for cell in cells})
 
@@ -521,7 +522,10 @@ def rows_dated_between(
 
     Zakres arkusza to wiersze od pierwszego do ostatniego z liczbą z [``low``,
     ``high``] w kolumnie daty; zwracany jest dla każdego zawężonego arkusza (pusty,
-    gdy żadna komórka daty nie ma takiej liczby), a zawężony arkusz ma też wiersz 1. Arkusz bez zwróconego zakresu
+    gdy żadna komórka daty nie ma takiej liczby), a zawężony arkusz ma też wiersz 1 i wiersze z formułą główną
+    wspólnej formuły. Granice zakresu biorą się z komórek daty jego pierwszego i ostatniego wiersza, bez dzielenia
+    całego arkusza na wiersze: arkusz Rejestru zleceń ma dziesiątki tysięcy wierszy, a okres to kilkaset na dole.
+    Arkusz bez zwróconego zakresu
     zostaje w całości, a pozostałe części są przepisane bez zmian. Uszkodzenie
     skoroszytu zgłaszają ``zipfile`` (np. ``BadZipFile``), ``zlib``, brak części
     ``KeyError`` albo ``expat`` (``ExpatError``).
@@ -533,17 +537,22 @@ def rows_dated_between(
         letter = get_column_letter(column).encode("ascii")
         date_cell = re.compile(rb'<c r="' + letter + rb'(\d+)"([^>]*)(?<!/)>(.*?)</c>', re.DOTALL)
 
-        def narrow(xml: bytes, sheet: SheetData) -> bytes:
-            numbers = [
-                int(found.group(1))
-                for found in date_cell.finditer(xml, sheet.start, sheet.end)
+        def narrow(xml: bytes) -> bytes:
+            start, end = _sheet_data_bounds(xml)
+            dated = [
+                (int(found.group(1)), found.start())
+                for found in date_cell.finditer(xml, start, end)
                 if _is_number_between(found.group(2), found.group(3), low, high)
             ]
-            kept = range(min(numbers), max(numbers) + 1) if numbers else range(0)
-            rows = {index for index, row in enumerate(sheet.rows) if row.number in kept or row.number == 1}
-            narrowed = _with_rows(xml, sheet, rows)
+            rows = _first_row(xml, start, end)
+            kept = range(0)
+            if dated:
+                begin, finish = _window(xml, start, end, dated)
+                rows |= {(begin, finish)} | _master_rows(xml, start, begin) | _master_rows(xml, finish, end)
+                kept = range(min(dated)[0], max(dated)[0] + 1)
+            expat.ParserCreate().Parse(xml, True)
             ranges[title] = kept
-            return narrowed
+            return b"".join([xml[:start], *(xml[begin:finish] for begin, finish in sorted(rows)), xml[end:]])
 
         return narrow
 
@@ -568,9 +577,47 @@ def _rewritten(content: bytes, choose: Callable[[Mapping[str, bytes]], _Choose])
             narrow = narrowing(info.filename, data)
             if narrow is not None:
                 with suppress(IrregularSheetData):
-                    data = narrow(data, SheetData.of(data))
+                    data = narrow(data)
             target.writestr(info.filename, data)
     return reduced.getvalue()
+
+
+def _window(xml: bytes, start: int, end: int, dated: Sequence[tuple[int, int]]) -> tuple[int, int]:
+    """Granice w XML wierszy od pierwszego do ostatniego z wierszy ``dated`` (numer, miejsce komórki daty w nim).
+
+    Komentarz albo CDATA, który zaczyna się nad nimi, a kończy w nich, i granica innego ``<sheetData>`` w nich to
+    ``IrregularSheetData``: wiersze w komentarzu nie są wierszami arkusza. Resztę kształtu sprawdza openpyxl, który
+    czyta zawężony arkusz.
+    """
+
+    begin = xml.rfind(b"<row", start, min(dated)[1])
+    finish = xml.find(b"</row>", max(dated)[1], end)
+    if begin < 0 or finish < 0 or _IRREGULAR_IN_ROW.search(xml, begin, finish):
+        raise IrregularSheetData("komentarz, CDATA albo drugi sheetData")
+    return begin, finish + len(b"</row>")
+
+
+def _first_row(xml: bytes, start: int, end: int) -> set[tuple[int, int]]:
+    """Granice w XML wiersza 1, gdy arkusz zaczyna się od niego (nagłówki Rejestru zleceń); inaczej pusty zbiór."""
+
+    begin = xml.find(b"<row", start, end)
+    if begin < 0 or not xml.startswith(b'<row r="1"', begin):
+        return set()
+    tag_end = xml.index(b">", begin)
+    finish = tag_end + 1 if xml[tag_end - 1 : tag_end] == b"/" else xml.index(b"</row>", tag_end) + len(b"</row>")
+    return {(begin, finish)}
+
+
+def _master_rows(xml: bytes, start: int, end: int) -> set[tuple[int, int]]:
+    """Granice w XML wierszy z formułą główną wspólnej formuły: openpyxl potrzebuje jej, by czytać formuły z niej
+    przeniesione."""
+
+    rows: set[tuple[int, int]] = set()
+    for found in _SHARED_FORMULA_MASTER.finditer(xml, start, end):
+        begin = xml.rfind(b"<row", start, found.start())
+        if begin >= 0:
+            rows.add((begin, xml.index(b"</row>", found.end(), end) + len(b"</row>")))
+    return rows
 
 
 def _with_rows(xml: bytes, sheet: SheetData, kept: Iterable[int]) -> bytes:
