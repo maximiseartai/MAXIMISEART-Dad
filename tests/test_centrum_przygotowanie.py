@@ -77,7 +77,7 @@ def test_podglad_bez_zapisu_pokazuje_plan_i_nie_tworzy_plikow_ani_folderu_okresu
     assert started.status_code == 200
     assert started.json()["state"] == "running"
     assert finished["run"]["process"] == "preparation"
-    assert (finished["run"]["period"], finished["run"]["dry_run"]) == (PERIOD, True)
+    assert (finished["run"]["period"], finished["run"]["mode"]) == (PERIOD, "DRY-RUN")
     assert finished["run"]["confirms_readiness"] is False
     result = finished["result"]
     assert (result["result"], result["ending"], result["next_action"]) == ("OK", "finished", "run")
@@ -645,7 +645,7 @@ def test_bez_wskazanego_rejestru_zlecen_uruchomienie_jest_odrzucone(tmp_path: Pa
     client = bare_centrum(tmp_path, today=TODAY).client
 
     setup, _efenix, _settlement = client.get("/api/runs/setup").json()["processes"]
-    refused = client.post("/api/runs", json={"process": "preparation", "period": PERIOD, "dry_run": True})
+    refused = client.post("/api/runs", json={"process": "preparation", "period": PERIOD, "mode": "DRY-RUN"})
 
     assert setup["blocker"] == "Najpierw wskaż Rejestr zleceń i folder okresów."
     assert (refused.status_code, refused.json()) == (409, {"message": "Najpierw wskaż Rejestr zleceń i folder okresów."})
@@ -666,7 +666,7 @@ def test_uruchomienie_z_obcej_strony_jest_odrzucone(tmp_path: Path) -> None:
 
     refused = centrum.client.post(
         "/api/runs",
-        json={"process": "preparation", "period": PERIOD, "dry_run": False},
+        json={"process": "preparation", "period": PERIOD, "mode": "RUN"},
         headers={"Origin": "http://zly.example"},
     )
 

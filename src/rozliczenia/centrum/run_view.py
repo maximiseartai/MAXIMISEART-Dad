@@ -107,7 +107,7 @@ class ProcessView(ResultView[InputsT, SummaryT]):
     def modes(self) -> tuple[contract.RunMode, ...]:
         """Tryby Uruchomienia procesu: bez Podglądu bez zapisu tylko zapis."""
 
-        return ("RUN",)
+        return (contract.RunMode.RUN,)
 
     def start_reminder(self, *, data_file_open: bool, template_open: bool) -> str | None:
         """Przypomnienie w stopce karty startu; znika, gdy „Uruchom” blokuje tylko Wzorzec otwarty w Excelu.
@@ -126,7 +126,7 @@ class PeriodProcessView(ProcessView[InputsT, SummaryT]):
 
     @property
     def modes(self) -> tuple[contract.RunMode, ...]:
-        return ("RUN", "DRY-RUN")
+        return (contract.RunMode.RUN, contract.RunMode.DRY_RUN)
 
 
 def count_figure(label: str, value: int) -> contract.Figure:

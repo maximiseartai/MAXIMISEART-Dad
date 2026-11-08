@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 
-from rozliczenia.centrum.run_logs import StartFacts
+from rozliczenia.centrum.run_logs import LoggedOrder, StartFacts
 from rozliczenia.efenix_pricing import OrderKind
 
 
@@ -18,6 +18,10 @@ class OrderDone:
     row: int
     outcome: OrderKind
     code: str | None
+
+    @classmethod
+    def of(cls, order: LoggedOrder) -> OrderDone:
+        return cls(order.row, order.outcome, order.code)
 
 
 @dataclass(frozen=True)

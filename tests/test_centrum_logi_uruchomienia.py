@@ -32,6 +32,7 @@ from playwright.sync_api import Browser, sync_playwright
 import pytest
 
 from rozliczenia import settlement_messages, workbook_files
+from rozliczenia.domain import RunMode
 from rozliczenia.centrum import app, contract
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
 from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
@@ -261,42 +262,42 @@ class Ending:
 ENDINGS = {
     "sukces-podglad": Ending(
         lambda tmp_path, _: _settlement(tmp_path, dry_run=True),
-        "podgląd",
+        "DRY-RUN",
         ("OK", "finished", None),
         [],
         files_unchanged=True,
     ),
     "sukces-zapis": Ending(
         lambda tmp_path, _: _settlement(tmp_path, dry_run=False),
-        "zapis",
+        "RUN",
         ("OK", "finished", None),
         [],
         files_unchanged=False,
     ),
     "sprawdzenie-podglad": Ending(
         lambda tmp_path, _: _settlement(tmp_path, dry_run=True, include_unmapped=True),
-        "podgląd",
+        "DRY-RUN",
         ("WYMAGA_SPRAWDZENIA", "finished", None),
         [("warning", "BRAK_MAPOWANIA")],
         files_unchanged=True,
     ),
     "sprawdzenie-zapis": Ending(
         lambda tmp_path, _: _preparation(tmp_path, dry_run=False),
-        "zapis",
+        "RUN",
         ("WYMAGA_SPRAWDZENIA", "finished", None),
         QUANTITY_WARNINGS,
         files_unchanged=False,
     ),
     "dla-taty-zapis": Ending(
         _existing_worker_settlements,
-        "zapis",
+        "RUN",
         ("BLAD_KRYTYCZNY", "stop", "for_tata"),
         [("stop", "FOLDER_ROZLICZEN_ISTNIEJE")],
         files_unchanged=True,
     ),
     "dla-taty-podglad": Ending(
         _missing_collective_file,
-        "podgląd",
+        "DRY-RUN",
         ("BLAD_KRYTYCZNY", "stop", "for_tata"),
         [("stop", "BRAK_PLIKU_ZBIORCZEGO")],
         # Zatrzymanie dla taty z przyczyną w wyjątku (``WorkbookError``) też ma ślad wywołań (#976).
@@ -305,14 +306,14 @@ ENDINGS = {
     ),
     "decyzja-przerwij": Ending(
         _aborted_decision,
-        "zapis",
+        "RUN",
         ("BLAD_KRYTYCZNY", "declined", "declined"),
         [("stop", "PRZERWANO_NIEPELNY_OKRES")],
         files_unchanged=True,
     ),
     "do-maksa-zapis": Ending(
         _broken_worker_config,
-        "zapis",
+        "RUN",
         ("BLAD_KRYTYCZNY", "stop", "for_maks"),
         [("stop", "ZLA_KONFIGURACJA_WYKONAWCOW")],
         "rozliczenia.message.StopError",
@@ -320,7 +321,7 @@ ENDINGS = {
     ),
     "wyjatek-zapis": Ending(
         _failing(settling_centrum, dry_run=False, engine=True),
-        "zapis",
+        "RUN",
         ("BLAD_KRYTYCZNY", "unexpected", "for_maks"),
         UNEXPECTED,
         "RuntimeError",
@@ -328,7 +329,7 @@ ENDINGS = {
     ),
     "wyjatek-podglad": Ending(
         _failing(preparing_centrum, dry_run=True, engine=True),
-        "podgląd",
+        "DRY-RUN",
         ("BLAD_KRYTYCZNY", "unexpected", "for_maks"),
         UNEXPECTED,
         "RuntimeError",
@@ -336,7 +337,7 @@ ENDINGS = {
     ),
     "po-silniku-podglad": Ending(
         _failing(settling_centrum, dry_run=True, engine=False),
-        "podgląd",
+        "DRY-RUN",
         ("BLAD_KRYTYCZNY", "after_engine", "for_maks"),
         [("stop", "BLAD_PLANU")],
         "ValueError",
@@ -344,7 +345,7 @@ ENDINGS = {
     ),
     "po-silniku-zapis": Ending(
         _failing(preparing_centrum, dry_run=False, engine=False),
-        "zapis",
+        "RUN",
         ("BLAD_KRYTYCZNY", "after_engine", "for_maks"),
         [("stop", "BLAD_PODSUMOWANIA")],
         "ValueError",
@@ -352,7 +353,7 @@ ENDINGS = {
     ),
     "po-silniku-adapter": Ending(
         _adapter_net(preparing_centrum, dry_run=True),
-        "podgląd",
+        "DRY-RUN",
         ("BLAD_KRYTYCZNY", "after_engine", "for_maks"),
         [("stop", "BLAD_WYNIKU")],
         "ValueError",
@@ -360,7 +361,7 @@ ENDINGS = {
     ),
     "bez-rdzenia-zapis": Ending(
         _core_failed(settling_centrum, dry_run=False),
-        "zapis",
+        "RUN",
         ("BLAD_KRYTYCZNY", "after_engine", "for_maks"),
         [("stop", "BLAD_WYNIKU")],
         "ValueError",
@@ -414,7 +415,7 @@ def test_logi_maja_etapy_i_przetworzenia_szablonow_pracownika_z_wynikiem_wiersza
     [path] = log_files(centrum)
     [record] = records(centrum)
     assert record.keys() == KEYS
-    assert (record["schema_version"], record["diagnosis"], record["trace"]) == (2, None, None)
+    assert (record["schema_version"], record["diagnosis"], record["trace"]) == (3, None, None)
     assert record["intermax_entries"] is None, "Wpisy INTERMAX ma tylko Uporządkowanie INTERMAX"
     assert record["tool"] == {"wydanie": None, "commit": TOOL_COMMIT}
     assert [{key: phase[key] for key in ("phase", "state", "duration_ms")} for phase in record["phases"]] == view[
@@ -1041,7 +1042,7 @@ def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_
     box = centrum.surroundings.report_box
     assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     [record] = records(centrum)
-    assert (record["run_id"], record["mode"], record["period"]) == (view["run"]["id"], "podgląd", PERIOD)
+    assert (record["run_id"], record["mode"], record["period"]) == (view["run"]["id"], "DRY-RUN", PERIOD)
     titles = [issue.title for issue in box.background_issues if issue.label == "logi-uruchomienia"]
     assert titles == [f"Logi Uruchomienia {PERIOD}"]
 
@@ -1246,7 +1247,7 @@ def _pricing_centrum(tmp_path: Path, atrapa: AtrapaEfenix, *arguments: str) -> S
 def _start_pricing(centrum: SettlingCentrum, *, dry_run: bool = False, pricing: str | None = None) -> Any:
     """Start Wyceny w efenix jak przycisk karty startu; bez ``pricing`` żądanie nie ma trybu (domyślny)."""
 
-    request: dict[str, Any] = {"process": "efenix", "period": PERIOD, "dry_run": dry_run}
+    request: dict[str, Any] = {"process": "efenix", "period": PERIOD, "mode": RunMode.of(dry_run=dry_run)}
     if pricing is not None:
         request["pricing"] = pricing
     return centrum.client.post("/api/runs", json=request)
@@ -1634,7 +1635,7 @@ def test_tryb_z_przekazaniem_ma_tylko_wycena_w_efenix_a_inny_proces_z_nim_dostaj
     centrum = settling_centrum(tmp_path)
     processes = centrum.client.get("/api/runs/setup").json()["processes"]
     refused = centrum.client.post(
-        "/api/runs", json={"process": "settlement", "period": PERIOD, "dry_run": True, "pricing": "z Przekazaniem"}
+        "/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN", "pricing": "z Przekazaniem"}
     )
     current = centrum.client.get("/api/runs/current").json()
 
@@ -2285,7 +2286,7 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
     assert dad_actions(earlier) == [
         ("start Centrum",),
         ("przycisk", "choosePeriodsDirectory"),
-        ("przycisk", "startRun", "settlement", "podgląd"),
+        ("przycisk", "startRun", "settlement", "DRY-RUN"),
     ]
     assert dad_actions(later) == [
         ("widok", "okresy", "navigation"),
@@ -2294,7 +2295,7 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
         ("przycisk", "closeCentrum"),
         ("start Centrum",),
         ("widok", "uruchomienia", "cold_start"),
-        ("przycisk", "startRun", "settlement", "zapis"),
+        ("przycisk", "startRun", "settlement", "RUN"),
     ]
     assert later["dad_actions"]["omitted"] == 0
     times = action_moments(later)
@@ -2321,7 +2322,7 @@ def test_logi_maja_najnowsze_dzialania_taty_do_limitu_a_liczbe_starszych_obok(tm
     _, record = logged_record(centrum, run_id)
     assert dad_actions(record) == [
         *[("widok", "okresy", "navigation")] * (MAX_ENTRIES - 1),
-        ("przycisk", "startRun", "settlement", "podgląd"),
+        ("przycisk", "startRun", "settlement", "DRY-RUN"),
     ]
     assert record["dad_actions"]["omitted"] == 3
 
@@ -2422,7 +2423,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
         write_collective_file(centrum.period_parent, CUT)
         before, _ = atrapa.state()
         with centrum_process(tmp_path, atrapa.url) as process:
-            status, started = process.post("/api/runs", {"process": "efenix", "period": PERIOD, "dry_run": False})
+            status, started = process.post("/api/runs", {"process": "efenix", "period": PERIOD, "mode": "RUN"})
             stalled = wait_for(lambda: atrapa.state()[0][3].execution_date is not None, 120)
             process.kill()
         after, _ = atrapa.state()
@@ -2468,7 +2469,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
         ("start Centrum",),
         ("przycisk", "choosePeriodsDirectory"),
         ("start Centrum",),
-        ("przycisk", "startRun", "efenix", "zapis"),
+        ("przycisk", "startRun", "efenix", "RUN"),
     ], "działania taty sprzed zgaśnięcia, bez startu Centrum po nim"
     assert utc(record["started_at"]) <= utc(record["ended_at"]) == utc(entries[-1]["at"])
     assert (logs_json(box, comment), "- Wynik: brak, Centrum zamknęło się w trakcie (Urwane Uruchomienie)" in comment) == (record, True)
@@ -2644,7 +2645,7 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
     started = StartFacts(
         run_id="b" * 32,
         process="efenix",
-        mode="zapis",
+        mode=RunMode.RUN,
         period=PERIOD,
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
@@ -2718,7 +2719,7 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_do_nastep
     started = StartFacts(
         run_id="d" * 32,
         process="efenix",
-        mode="zapis",
+        mode=RunMode.RUN,
         period=PERIOD,
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
@@ -2748,7 +2749,7 @@ def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_b
     started = StartFacts(
         run_id="d" * 32,
         process="efenix",
-        mode="zapis",
+        mode=RunMode.RUN,
         period=PERIOD,
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
@@ -3112,7 +3113,7 @@ def test_centrum_zgaszone_w_trakcie_logowania_taty_w_efenix_zamienia_komentarz_p
         write_collective_file(centrum.period_parent, PRICED)
         atrapa.expire_session()
         with centrum_process(tmp_path, atrapa.url) as process:
-            status, started = process.post("/api/runs", {"process": "efenix", "period": PERIOD, "dry_run": False})
+            status, started = process.post("/api/runs", {"process": "efenix", "period": PERIOD, "mode": "RUN"})
             queued = wait_for(lambda: len(queued_logs(queue)) == 1, 60)
             process.kill()
     on_disk = [entry["entry"] for journal in journals(centrum) for entry in journal_entries(journal)]
@@ -3335,7 +3336,7 @@ def test_logi_wyceny_w_efenix_maja_wiersze_pliku_zbiorczego_z_kwota_i_odcisk_prz
         source = write_collective_file(centrum.period_parent, [ready, unknown])
         content = source.read_bytes()
         read = fingerprint(content, source)
-        started = centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": False})
+        started = centrum.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "mode": "RUN"})
         assert started.status_code == 200, started.json()
         result = finished_view(centrum.client)["result"]
 
@@ -3408,7 +3409,7 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
     with ExitStack() as stack:
         centrum = COPY_PROCESSES[process](tmp_path, stack)
         write_report_key(ToolDirectory(tmp_path))
-        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "mode": "DRY-RUN" if process != "efenix" else "RUN"})
         assert started.status_code == 200, started.json()
         result = finished_view(centrum.client)["result"]
 
@@ -3536,7 +3537,7 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
             centrum = settling_centrum(tmp_path, surroundings=Surroundings(readers=readers))
         assert isinstance(centrum, SettlingCentrum)
         _saved_at(centrum.collective_file, READ_AT)
-        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "mode": "DRY-RUN" if process != "efenix" else "RUN"})
         assert started.status_code == 200, started.json()
         result = finished_view(centrum.client)["result"]
 
@@ -3585,7 +3586,7 @@ def test_logi_uruchomienia_zatrzymanego_na_braku_wykonawcy_w_h17_maja_odcisk_i_n
     with ExitStack() as stack:
         centrum = setup(tmp_path, stack)
         content = centrum.collective_file.read_bytes()
-        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "mode": "DRY-RUN" if process != "efenix" else "RUN"})
         assert started.status_code == 200, started.json()
         finished_view(centrum.client)
 
@@ -3687,7 +3688,7 @@ def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do
         setup = NUMBER_PROCESSES[process](tmp_path, stack)
         centrum = setup.centrum
         write_report_key(ToolDirectory(tmp_path))
-        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})
+        started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "mode": "DRY-RUN" if process != "efenix" else "RUN"})
         assert started.status_code == 200, started.json()
         result = finished_view(centrum.client)["result"]
 
@@ -3749,7 +3750,7 @@ def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         started_at = datetime.now(timezone.utc) - timedelta(hours=1)
-        started = StartFacts(run_id=run_1, process="efenix", mode="zapis", period=PERIOD, started_at=started_at)
+        started = StartFacts(run_id=run_1, process="efenix", mode=RunMode.RUN, period=PERIOD, started_at=started_at)
         begun = begun_line(started_at + timedelta(seconds=30), row=18, place=1, total=6)
         journal_1 = left_journal(centrum.log_path.parent, started, begun)
         centrum.client.stop()
@@ -3920,7 +3921,7 @@ def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierw
 
 
 PRICING_START = StartFacts(
-    run_id="e" * 32, process="efenix", mode="zapis", period=PERIOD, started_at=utc("2026-09-16T10:15:00+00:00")
+    run_id="e" * 32, process="efenix", mode=RunMode.RUN, period=PERIOD, started_at=utc("2026-09-16T10:15:00+00:00")
 )
 
 
@@ -3959,7 +3960,7 @@ def test_uruchomienie_innego_procesu_nie_ma_dziennika_ani_postepu(tmp_path: Path
     log = CentrumLog(tmp_path / "centrum.log")
     disk = LogsOnDisk(log, journaled="efenix")
     settlement = StartFacts(
-        run_id="f" * 32, process="settlement", mode="zapis", period=PERIOD, started_at=PRICING_START.started_at
+        run_id="f" * 32, process="settlement", mode=RunMode.RUN, period=PERIOD, started_at=PRICING_START.started_at
     )
 
     disk.started(settlement)
@@ -4229,7 +4230,7 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     started = StartFacts(
         run_id="c" * 32,
         process="efenix",
-        mode="zapis",
+        mode=RunMode.RUN,
         period=PERIOD,
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )

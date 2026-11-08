@@ -3315,12 +3315,7 @@
             "title": "Process"
           },
           "mode": {
-            "type": "string",
-            "enum": [
-              "RUN",
-              "DRY-RUN"
-            ],
-            "title": "Mode"
+            "$ref": "#/components/schemas/RunMode"
           },
           "completed_runs": {
             "type": "integer",
@@ -3918,12 +3913,7 @@
             "title": "Started At"
           },
           "mode": {
-            "type": "string",
-            "enum": [
-              "RUN",
-              "DRY-RUN"
-            ],
-            "title": "Mode"
+            "$ref": "#/components/schemas/RunMode"
           },
           "period": {
             "type": "string",
@@ -3952,6 +3942,12 @@
               }
             ],
             "title": "Stop Kind"
+          },
+          "mode_word": {
+            "type": "string",
+            "title": "Mode Word",
+            "description": "Słowo trybu w wierszu okna Uwagi, to samo co w Uwadze taty (``RunMode.word``).",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -3963,7 +3959,8 @@
           "mode",
           "period",
           "result",
-          "stop_kind"
+          "stop_kind",
+          "mode_word"
         ],
         "title": "PinnableRun",
         "description": "Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.\n\nPola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć."
@@ -4141,12 +4138,7 @@
             "title": "Started At"
           },
           "mode": {
-            "type": "string",
-            "enum": [
-              "RUN",
-              "DRY-RUN"
-            ],
-            "title": "Mode"
+            "$ref": "#/components/schemas/RunMode"
           },
           "period": {
             "type": "string",
@@ -5080,9 +5072,8 @@
             "type": "string",
             "title": "Period"
           },
-          "dry_run": {
-            "type": "boolean",
-            "title": "Dry Run"
+          "mode": {
+            "$ref": "#/components/schemas/RunMode"
           },
           "pricing": {
             "anyOf": [
@@ -5115,7 +5106,7 @@
           "process",
           "title",
           "period",
-          "dry_run",
+          "mode",
           "pricing",
           "confirms_readiness",
           "register_name"
@@ -5162,6 +5153,15 @@
         ],
         "title": "RunInterrupted",
         "description": "Urwane Uruchomienie: Centrum zamknęło się w jego trakcie, więc nie ma jego wyniku.\n\nNie ma wyniku ani rekordu metryk. ``advice`` mówi w trzech częściach, co się stało i co zrobić, osobno dla podglądu\n(nic nie zapisał) i zapisu. ``orders``: zlecenia Wyceny w efenix skończone przed zamknięciem Centrum, z każdym\nwynikiem, z Logów Urwanego Uruchomienia, które start Centrum zamknął z dziennika Wyceny w efenix (``None``: inny\nproces albo Logów nie ma)."
+      },
+      "RunMode": {
+        "type": "string",
+        "enum": [
+          "RUN",
+          "DRY-RUN"
+        ],
+        "title": "RunMode",
+        "description": "Tryb Uruchomienia procesu: zapis albo Podgląd bez zapisu. Jedyny słownik trybu: rekord metryk, dziennik\nCentrum, Zgłoszenie, kontrakt Centrum, Logi Uruchomienia i dziennik działań taty niosą jego wartość, a słowo\n(``word``) pokazują Uwaga taty i jej okno."
       },
       "RunOutcome": {
         "properties": {
@@ -5426,9 +5426,8 @@
             "type": "string",
             "title": "Period"
           },
-          "dry_run": {
-            "type": "boolean",
-            "title": "Dry Run"
+          "mode": {
+            "$ref": "#/components/schemas/RunMode"
           },
           "pricing": {
             "type": "string",
@@ -5445,7 +5444,7 @@
         "required": [
           "process",
           "period",
-          "dry_run"
+          "mode"
         ],
         "title": "RunRequest",
         "description": "Start Uruchomienia procesu; pliki wejściowe wylicza serwer z ustawień i okresu.\n\n``pricing``: tryb Wyceny w efenix, który tata wybrał przyciskiem; proces bez trybów przyjmuje tylko domyślny."

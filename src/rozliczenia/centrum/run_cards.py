@@ -131,13 +131,13 @@ class RunCards:
         assert ending != "interrupted" and result is not None, "Logi Urwanego Uruchomienia nie mają karty wyniku"
         declaration = declaration_of(record.process)
         info = declaration.run_info(
-            run_id=record.run_id, period=record.period, dry_run=record.mode == "podgląd", pricing=record.pricing
+            run_id=record.run_id, period=record.period, mode=record.mode, pricing=record.pricing
         )
         headline, next_action = verdict(
             ending=ending,
             stop_kind=record.stop_kind,
             result=result,
-            dry_run=info.dry_run,
+            dry_run=info.mode.dry_run,
             view=declaration.view,
         )
         messages = {
@@ -180,7 +180,7 @@ class RunCards:
             return None
         declaration = declaration_of(started.process)
         info = declaration.run_info(
-            run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd", pricing=started.pricing
+            run_id=started.run_id, period=started.period, mode=started.mode, pricing=started.pricing
         )
         # Bez ``stop_kind`` sposób zakończenia nie zmienia tytułu ani akcji. Wiersz Historii nie mówi, czy Zatrzymanie
         # przyszło po silniku (``after_engine``), więc po zapisie karta proponuje ponowne Uruchomienie, nie otwarcie
@@ -189,7 +189,7 @@ class RunCards:
             ending="stop",
             stop_kind=row.stop_kind,
             result=row.result,
-            dry_run=info.dry_run,
+            dry_run=info.mode.dry_run,
             view=declaration.view,
         )
         return contract.RunRecorded(
@@ -226,13 +226,13 @@ def _orders(record: RunLog) -> contract.CountGroup | None:
 
 def _interrupted(started: StartFacts, orders: contract.CountGroup | None) -> contract.RunInterrupted:
     info = declaration_of(started.process).run_info(
-        run_id=started.run_id, period=started.period, dry_run=started.mode == "podgląd", pricing=started.pricing
+        run_id=started.run_id, period=started.period, mode=started.mode, pricing=started.pricing
     )
     return contract.RunInterrupted(
         state="interrupted",
         run=info,
         started_at=started.started_at,
-        advice=_interrupted_advice(info.title, info.period, dry_run=info.dry_run),
+        advice=_interrupted_advice(info.title, info.period, dry_run=info.mode.dry_run),
         orders=orders,
     )
 

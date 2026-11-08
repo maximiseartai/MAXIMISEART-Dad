@@ -37,7 +37,6 @@ _UNKNOWN_RUN: Final = (
     "Tego Uruchomienia nie ma już w historii Centrum rozliczeń. Wybierz inne Uruchomienie albo wyślij Uwagę ogólną."
 )
 _NO_HISTORY: Final = "Nie udało się odczytać historii Uruchomień. Odśwież kartę albo wyślij Uwagę ogólną."
-_MODE_WORDS: Final[dict[contract.RunMode, str]] = {"DRY-RUN": "podgląd", "RUN": "zapis"}
 
 History = Callable[[], list[contract.ProcessRun]]
 """Uruchomienia procesu z plików metryk od najnowszego (``metrics.read_runs``); ``OSError``: pliki nieczytelne."""
@@ -78,7 +77,7 @@ def note_issue(
 def _pinned_footer(pinned: PinnedRun, version: str) -> str:
     run = pinned.run
     started = run.started_at.astimezone()
-    facts = (run.process_label, run.period, _MODE_WORDS[run.mode], _result_word(run), f"{started:%d.%m.%Y, %H:%M}")
+    facts = (run.process_label, run.period, run.mode.word, _result_word(run), f"{started:%d.%m.%Y, %H:%M}")
     return f"Uruchomienie: {' · '.join((*facts, version))}\n{logs_line(run.run_id, pinned.logs)}"
 
 

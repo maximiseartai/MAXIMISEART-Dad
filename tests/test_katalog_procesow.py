@@ -120,7 +120,7 @@ def test_kazdy_proces_ma_wlasna_historie_metryk_w_katalogu_narzedzia() -> None:
 def _period_setup(key: str) -> Callable[[TestClient], tuple[str | None, Any]]:
     def setup_and_start(client: TestClient) -> tuple[str | None, Any]:
         setup = next(process for process in client.get("/api/runs/setup").json()["processes"] if process["process"] == key)
-        return setup["blocker"], client.post("/api/runs", json={"process": key, "period": PERIOD, "dry_run": True})
+        return setup["blocker"], client.post("/api/runs", json={"process": key, "period": PERIOD, "mode": "DRY-RUN"})
 
     return setup_and_start
 
@@ -166,7 +166,7 @@ def _stopped_settlement(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
 def _stopped_efenix(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
     settling = settling_centrum(tmp_path)
     settling.engines.fail_engine = True
-    assert settling.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "dry_run": False}).status_code == 200
+    assert settling.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "mode": "RUN"}).status_code == 200
     return settling.client, finished_view(settling.client)
 
 

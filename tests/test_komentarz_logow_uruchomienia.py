@@ -35,6 +35,7 @@ from pydantic import BaseModel
 import pytest
 
 from rozliczenia.centrum.cloud_files import CloudFiles
+from rozliczenia.domain import RunMode
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
 from rozliczenia.centrum.comment_versions import (
     LABEL,
@@ -204,7 +205,7 @@ def test_komentarz_postepu_wyceny_mowi_wyniki_zlecen_tymi_samymi_slowami_co_logi
     """Komentarz postępu Wyceny w efenix liczy zlecenia skończone z każdym wynikiem, w kolejności wyników karty, i mówi
     ostatnie skończone z wynikiem i kodem Komunikatu, słowami wyniku z Logów Uruchomienia („gotowe”, „błąd”)."""
 
-    started = StartFacts(run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 14, 8, tzinfo=timezone.utc))
+    started = StartFacts(run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 14, 8, tzinfo=timezone.utc))
     done = (
         OrderDone(18, OrderKind.ERROR, "EFENIX_NIEZNANY_NUMER"),
         OrderDone(19, OrderKind.READY, None),
@@ -242,7 +243,7 @@ def _versions() -> dict[str, CommentVersion]:
 
     logs = guard_logs(record(process="efenix", run_id=RUN_ID), ForbiddenValues())
     started = StartFacts(
-        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=logs.record.started_at
+        run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=logs.record.started_at
     )
     progress = PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, 19)
     text = guard_text("Postęp albo wynik bez Logów.", "komentarz", ForbiddenValues())
@@ -306,7 +307,7 @@ def _progress() -> PricingProgress:
     """Postęp Wyceny w efenix Uruchomienia ``RUN_ID``: jedno zlecenie skończone z dwóch."""
 
     started = StartFacts(
-        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
+        run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
     )
     return PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, 19)
 
@@ -480,7 +481,7 @@ def _journal(end: EndEntry | None) -> JournalRead:
     """Dziennik Wyceny Uruchomienia ``RUN_ID`` z zaczętym zleceniem z wiersza 19 i wpisem końca ``end``."""
 
     started = StartFacts(
-        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
+        run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
     )
     interruption = LoggedInterruption(row=19, place=1, total=2, omitted=0)
     return JournalRead(started, [], interruption, datetime(2026, 9, 10, 8, 5), 2, end)
@@ -720,7 +721,7 @@ def _urwane(directory: Path) -> Path:
     """Dziennik Urwanego Uruchomienia ``RUN_ID``, które zgasło przy zleceniu z wiersza 19."""
 
     started = StartFacts(
-        run_id=RUN_ID, process="efenix", mode="zapis", period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
+        run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
     )
     return left_journal(directory, started, begun_line(datetime(2026, 9, 10, 8, 1), row=19, place=1, total=2))
 
@@ -801,7 +802,7 @@ PRICING = RunInfo(
     process="efenix",
     title="Wycena w efenix",
     period="08_14_09_2026",
-    dry_run=False,
+    mode=RunMode.RUN,
     pricing="bez Przekazania",
     confirms_readiness=False,
     register_name="Rejestr zleceń",
@@ -1177,10 +1178,10 @@ _FULL_STEP: Final[dict[str, Any]] = {
 # Pełne Logi: każde pole schematu ma wartość, a każda wartość jest jedna w Logach. Tekst spoza zamkniętych list i pól
 # narzędzia to syntetyczna treść plików taty i strony efenix.
 FULL_LOGS: Final[dict[str, Any]] = {
-    "schema_version": 2,
+    "schema_version": 3,
     "run_id": RUN_ID,
     "process": "efenix",
-    "mode": "zapis",
+    "mode": "DRY-RUN",
     "pricing": "z Przekazaniem",
     "period": "08_14_09_2026",
     "started_at": "2026-10-23T20:47:20.846240Z",
@@ -1272,7 +1273,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
         "entries": [
             {"at": "2026-10-23T20:40:00.500000Z", "action": "start Centrum"},
             {"at": "2026-10-23T20:41:00.600000Z", "action": "widok", "page": "okresy", "kind": "cold_start"},
-            {"at": "2026-10-23T20:47:20.700000Z", "action": "przycisk", "operation": "startRun", "process": "efenix", "mode": "zapis"},
+            {"at": "2026-10-23T20:47:20.700000Z", "action": "przycisk", "operation": "startRun", "process": "efenix", "mode": "RUN"},
         ],
         "omitted": 0,
     },
@@ -1327,10 +1328,11 @@ def _json_at(logs: RunLog, place: str) -> str:
 
 
 # Pola Logów, które niosą tylko słowa i chwile narzędzia (ADR 0025, #936), i wartość z każdego z nich w pełnych Logach.
+# Tryb to ``DRY-RUN``, bo ``RUN`` jest krótsze niż ``client_data.MIN_VALUE``, więc reguła danych go nie pamięta.
 TOOL_FIELD_VALUES: Final = {
     "run_id": RUN_ID,
     "process": "efenix",
-    "mode": "zapis",
+    "mode": "DRY-RUN",
     "period": "08_14_09_2026",
     "started_at": "2026-10-23T20:47:20.846240Z",
     "ended_at": "2026-10-23T20:49:31.857060Z",

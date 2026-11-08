@@ -27,7 +27,7 @@ import threading
 from typing import Annotated, Final, Literal
 
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, RootModel, ValidationError
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
@@ -37,6 +37,11 @@ DAD_ACTIONS_FILE: Final = "dzialania-taty.jsonl"
 MAX_ENTRIES: Final = 1000
 # Zapytania, które nie są przyciskiem taty: szkic Uwagi okno wysyła samo przy pisaniu, a pomiar widoku jest widokiem.
 _NOT_PRESSED: Final = frozenset({"draftDadNote", "recordViewTiming"})
+
+
+StoredRunMode = Annotated[contract.RunMode, BeforeValidator(contract.RunMode.stored)]
+"""Tryb Uruchomienia w pliku na dysku taty (ten dziennik, Logi Uruchomienia, plik ostatniego startu, dziennik Wyceny w
+efenix): wartość ``RunMode``, a w plikach sprzed schematu Logów 3 jego słowo."""
 
 
 class _Record(BaseModel):
@@ -66,7 +71,7 @@ class ButtonPressed(_Record):
     action: Literal["przycisk"]
     operation: str
     process: contract.ProcessKey | None = None
-    mode: Literal["podgląd", "zapis"] | None = None
+    mode: StoredRunMode | None = None
 
 
 DadAction = Annotated[CentrumStarted | ViewOpened | ButtonPressed, Field(discriminator="action")]
@@ -165,6 +170,7 @@ def _pressed(at: datetime, operation: str, body: bytes) -> ButtonPressed:
         except ValidationError:
             pass
         else:
-            mode: Literal["podgląd", "zapis"] = "podgląd" if request.dry_run else "zapis"
-            return ButtonPressed(at=at, action="przycisk", operation=operation, process=request.process, mode=mode)
+            return ButtonPressed(
+                at=at, action="przycisk", operation=operation, process=request.process, mode=request.mode
+            )
     return ButtonPressed(at=at, action="przycisk", operation=operation)

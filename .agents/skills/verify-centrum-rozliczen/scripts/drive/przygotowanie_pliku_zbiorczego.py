@@ -222,7 +222,7 @@ def drive(run: Run, page: Page) -> None:
         figure(progress, "Ostrzeżenia") == len(preview_warnings),
         "the live counters show the projection's Ostrzeżenia (as many as the preview's warnings) while the decision waits",
     )
-    second = {"process": "preparation", "period": LAST_COMPLETE, "dry_run": True}
+    second = {"process": "preparation", "period": LAST_COMPLETE, "mode": "DRY-RUN"}
     run.check(run.post("/api/runs", "przygotowanie-trwa-juz", second).status == 409, "a second Uruchomienie procesu is refused")
     run.check(
         run.post("/api/shutdown", "przygotowanie-zamkniecie-odmowa").status == 409,

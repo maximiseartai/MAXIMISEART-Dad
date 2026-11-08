@@ -165,7 +165,7 @@ class EndedRun:
     def files_unchanged(self) -> bool:
         """Pliki taty bez zmian; gdy rdzeń nie oddał wyniku, wiadomo to tylko o podglądzie bez zapisu."""
 
-        return self.info.dry_run if self.core is None else self.core.files_unchanged
+        return self.info.mode.dry_run if self.core is None else self.core.files_unchanged
 
     @property
     def ending(self) -> Ending:
@@ -187,7 +187,7 @@ class EndedRun:
             ending=self.ending,
             stop_kind=None if stopped is None else stopped.kind,
             result=self.result,
-            dry_run=self.info.dry_run,
+            dry_run=self.info.mode.dry_run,
             view=view,
         )
         return contract.RunOutcome(

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from rozliczenia import efenix_messages, preparation_messages
 from rozliczenia.call_trace import CallCause, CallFrame, CallTrace
+from rozliczenia.domain import RunMode
 from rozliczenia.centrum import contract, update_messages
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
@@ -211,7 +212,7 @@ def stop_report(entries: tuple[str, ...]) -> StopReport:
         process="preparation",
         title="Przygotowanie pliku zbiorczego",
         period="08_14_09_2026",
-        dry_run=True,
+        mode=RunMode.DRY_RUN,
         pricing=None,
         confirms_readiness=False,
         register_name="Rejestr zleceń",
@@ -267,7 +268,7 @@ def test_zgloszenie_zatrzymania_do_maksa_z_przyczyna_w_wyjatku_ma_typ_kazdej_prz
         process="efenix",
         title="Wycena w efenix",
         period="08_14_09_2026",
-        dry_run=False,
+        mode=RunMode.RUN,
         pricing="bez Przekazania",
         confirms_readiness=False,
         register_name="Rejestr zleceń",

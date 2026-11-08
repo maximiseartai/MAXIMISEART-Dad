@@ -156,7 +156,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
         waiting["state"] == "running" and progress["step"]["label"] == LOGIN and started["pricing"] == "bez Przekazania",
         "the Uruchomienie without Przekazanie waits for Dad's login in the efenix window and says so on the card",
     )
-    other = {"process": "settlement", "period": PERIOD, "dry_run": True}
+    other = {"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"}
     run.check(
         run.post("/api/runs", "efenix-drugie-uruchomienie", other).status == 409,
         "no other Uruchomienie starts while it waits",

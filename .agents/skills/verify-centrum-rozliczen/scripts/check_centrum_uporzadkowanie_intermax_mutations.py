@@ -105,7 +105,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Metryki INTERMAX z trybem DRY-RUN",
-        (Edit(RUN_VIEW, '        return ("RUN",)\n', '        return ("RUN", "DRY-RUN")\n'),),
+        (Edit(RUN_VIEW, '        return (contract.RunMode.RUN,)\n', '        return (contract.RunMode.RUN, contract.RunMode.DRY_RUN)\n'),),
         UPORZADKOWANIE,
         "Metryki proponują przy INTERMAX tryb DRY-RUN, którego Uporządkowanie nie ma, z pustym wykresem",
     ),

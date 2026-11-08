@@ -170,7 +170,7 @@ def test_powiadomienie_o_wycenie_w_efenix_przeczytane_przez_tate_zostaje_na_lisc
     centrum = settling_centrum(tmp_path)
     centrum.engines.fail_engine = True
     period = centrum.period_directory.name
-    assert centrum.client.post("/api/runs", json={"process": "efenix", "period": period, "dry_run": False}).status_code == 200
+    assert centrum.client.post("/api/runs", json={"process": "efenix", "period": period, "mode": "RUN"}).status_code == 200
     finished_view(centrum.client)
 
     def pricings(answer: dict[str, Any]) -> list[tuple[str, bool]]:

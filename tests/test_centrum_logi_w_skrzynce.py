@@ -27,6 +27,7 @@ from typing import Any, Final
 
 import pytest
 
+from odtworzenie import COMPARED, NOT_COMPARED
 from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG
@@ -35,6 +36,7 @@ from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+from rozliczenia.domain import RunMode
 
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
@@ -544,7 +546,7 @@ def test_wyslane_zgloszenie_prowadzi_do_komentarza_logow_swojego_uruchomienia(tm
     assert report.body == preview["body"]
     link = f"- Logi: https://github.com/{REPOSITORY}/issues/{thread.number}#issuecomment-2"
     assert link in report.body.splitlines()
-    assert archived(centrum, thread.comments[1]).startswith(('{\n  "schema_version": 2,\n  "run_id": "' + run_id).encode())
+    assert archived(centrum, thread.comments[1]).startswith(('{\n  "run_id": "' + run_id).encode())
 
 
 def test_diagnoza_bez_sieci_jest_w_pliku_logow_a_w_kolejce_zastepuje_logi_bez_niej_a_zgloszenie_dziala_jak_dotad(
@@ -705,6 +707,17 @@ ORDERED_AT = datetime(2026, 10, 26, 15, 16, 17)
 INTERMAX_COPY = "INTERMAX przed uporządkowaniem 2026-10-26 15-16-17.xlsx"
 
 
+def test_odtworzenie_porownuje_kazde_pole_logow_poza_faktami_startu_i_okolicznosciami() -> None:
+    """Nowe pole Logów trafia do porównania odtworzenia albo do pól, które odtworzenie bierze z Logów albo które zależą od
+    chwili i komputera (``NOT_COMPARED``), a nie wychodzi dopiero w biegu odtworzenia."""
+
+    compared = [part.key for part in COMPARED]
+
+    assert len(compared) == len(set(compared))
+    assert set(compared).isdisjoint(NOT_COMPARED)
+    assert set(compared) | NOT_COMPARED == set(RunLog.model_fields)
+
+
 def _tool() -> ModuleType:
     spec = importlib.util.spec_from_file_location("odtworz_uruchomienie", TOOL)
     assert spec is not None and spec.loader is not None
@@ -824,7 +837,7 @@ def _efenix(
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, PRICED)
         write_report_key(ToolDirectory(tmp_path))
-        request = {"process": "efenix", "period": PERIOD, "dry_run": False, "pricing": pricing}
+        request = {"process": "efenix", "period": PERIOD, "mode": "RUN", "pricing": pricing}
         started = centrum.client.post("/api/runs", json=request)
         assert started.status_code == 200, started.json()
         assert finished_view(centrum.client)["result"]["result"] == result
@@ -852,7 +865,7 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
 
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
-    assert lines[1] == f"Uruchomienie: {_title(record)}, {record['mode']}, okres {record['period']}, {produced.archived.stem}"
+    assert lines[1] == f"Uruchomienie: {_title(record)}, {RunMode(record['mode']).word}, okres {record['period']}, {produced.archived.stem}"
     replayed = json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))
     assert (replayed["process"], replayed["mode"], replayed["result"]) == (process, record["mode"], record["result"])
     trace = {"settlement": "templates", "preparation": "summary", "intermax": "intermax_entries", "efenix": "efenix_orders"}

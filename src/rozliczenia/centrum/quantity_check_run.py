@@ -31,7 +31,7 @@ class QuantityCheckAfterRun:
 
     def run_ended(self, run: EndedRun) -> None:
         summary = None if run.shown is None else run.shown.engine_summary
-        if run.info.dry_run or not isinstance(summary, SettlementSummary):
+        if run.info.mode.dry_run or not isinstance(summary, SettlementSummary):
             return
         period, run_id = run.info.period, run.info.id
         result = quantity_check.check(summary.orders)

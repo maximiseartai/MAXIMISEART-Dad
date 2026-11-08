@@ -297,7 +297,7 @@ def without_logs_markdown(final: ResultWithoutLogs) -> str:
 
 
 def _comment_title(run: StartFacts | RunLog) -> str:
-    return f"**Logi Uruchomienia**: {declaration_of(run.process).title}, {run.mode}, okres {run.period}\n\n"
+    return f"**Logi Uruchomienia**: {declaration_of(run.process).title}, {run.mode.word}, okres {run.period}\n\n"
 
 
 def _run_line(run: StartFacts | RunLog) -> str:

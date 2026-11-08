@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.outbox import QUEUE_THREAD
+from rozliczenia.domain import RunMode
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
@@ -297,7 +298,7 @@ class PreparingCentrum:
         return ToolDirectory(self.tmp_path)
 
     def start(self, *, dry_run: bool, period: str = PERIOD) -> Any:
-        return self.client.post("/api/runs", json={"process": "preparation", "period": period, "dry_run": dry_run})
+        return self.client.post("/api/runs", json={"process": "preparation", "period": period, "mode": RunMode.of(dry_run=dry_run)})
 
     def metric_records(self) -> list[dict[str, Any]]:
         text = self.metrics_path.read_text(encoding="utf-8")
@@ -397,7 +398,7 @@ class SettlingCentrum:
         return self.period_directory / WORKER_SETTLEMENTS
 
     def start(self, *, dry_run: bool, period: str = PERIOD) -> Any:
-        return self.client.post("/api/runs", json={"process": "settlement", "period": period, "dry_run": dry_run})
+        return self.client.post("/api/runs", json={"process": "settlement", "period": period, "mode": RunMode.of(dry_run=dry_run)})
 
     def metric_records(self) -> list[dict[str, Any]]:
         text = self.metrics_path.read_text(encoding="utf-8")

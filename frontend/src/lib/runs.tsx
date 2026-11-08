@@ -8,6 +8,7 @@ import {
   type DecisionAnswer,
   type RunEvent,
   type RunInfo,
+  type RunMode,
   type RunRequest,
   type RunView,
 } from "@/api/centrum"
@@ -20,11 +21,9 @@ export type RunDraft = Pick<RunRequest, "process" | "period">
 /** Start Uruchomienia: proces z okresem albo Uporządkowanie INTERMAX, które bierze tylko Ustawienia taty. */
 export type RunStart = RunRequest | { process: "intermax" }
 
-/** Ten sam proces jeszcze raz: z okresem i trybem `dryRun`, a Uporządkowanie INTERMAX z Ustawień taty. */
-export function rerunOf(run: RunInfo, dryRun: boolean): RunStart {
-  return run.process === "intermax"
-    ? { process: "intermax" }
-    : { process: run.process, period: run.period, dry_run: dryRun }
+/** Ten sam proces jeszcze raz: z okresem i trybem `mode`, a Uporządkowanie INTERMAX z Ustawień taty. */
+export function rerunOf(run: RunInfo, mode: RunMode): RunStart {
+  return run.process === "intermax" ? { process: "intermax" } : { process: run.process, period: run.period, mode }
 }
 
 type RunsContextValue = {
@@ -69,7 +68,7 @@ function awaitsDecision(view: RunView | null, runId: string): boolean {
 function announce(event: RunEvent, before: RunView | null) {
   const view = event.view
 
-  if (view.state !== "finished" || view.run.dry_run || view.result.ending !== "finished") {
+  if (view.state !== "finished" || view.run.mode === "DRY-RUN" || view.result.ending !== "finished") {
     return
   }
 
@@ -187,7 +186,7 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        start(rerunOf(run, run.dry_run))
+        start(rerunOf(run, run.mode))
       },
       deciding: deciding.running?.[0] ?? null,
       decide: (runId, answer) => void decide(runId, answer),

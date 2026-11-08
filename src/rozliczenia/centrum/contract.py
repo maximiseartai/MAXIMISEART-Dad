@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field
 
 from rozliczenia import domain
 from rozliczenia.message import DadFile, Message as ProcessMessage
@@ -208,7 +208,7 @@ class Opened(_Model):
     name: str
 
 
-RunMode = Literal["RUN", "DRY-RUN"]
+RunMode = domain.RunMode
 Pricing = Literal["bez Przekazania", "z Przekazaniem"]
 """Tryb Wyceny w efenix (wartości ``efenix_pricing.PricingMode``, ADR 0027): bez Przekazania do akceptacji gotowych
 zleceń albo z nim."""
@@ -261,6 +261,13 @@ class PinnableRun(_Model):
     period: str
     result: RunResult
     stop_kind: RecordedStopKind | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def mode_word(self) -> str:
+        """Słowo trybu w wierszu okna Uwagi, to samo co w Uwadze taty (``RunMode.word``)."""
+
+        return self.mode.word
 
 
 class PhasePercentiles(_Model):
@@ -384,7 +391,7 @@ class RunRequest(_Model):
 
     process: PeriodProcessKey
     period: str
-    dry_run: bool
+    mode: RunMode
     pricing: Pricing = DEFAULT_PRICING
 
 
@@ -440,16 +447,10 @@ class RunInfo(_Model):
     process: ProcessKey
     title: str
     period: str
-    dry_run: bool
+    mode: RunMode
     pricing: Pricing | None
     confirms_readiness: bool
     register_name: str
-
-    @property
-    def mode(self) -> RunMode:
-        """Tryb tego Uruchomienia w dzienniku Centrum i w Zgłoszeniu: podgląd bez zapisu albo zapis."""
-
-        return "DRY-RUN" if self.dry_run else "RUN"
 
 
 class Message(_Model):

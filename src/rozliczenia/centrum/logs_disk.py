@@ -135,34 +135,21 @@ LogsRead = Found | Missing | Unreadable | Refused
 """Co dysk mówi o Logach jednego Uruchomienia."""
 
 
-class _StartedFile(BaseModel):
-    """Plik ostatniego startu (schemat 1): te same fakty co nagłówek Logów Uruchomienia."""
+class _StartedFile(StartFacts):
+    """Plik ostatniego startu: fakty startu Uruchomienia. Schemat 2 ma tryb jako wartość ``RunMode``, a schemat 1
+    jego słowo (``StoredRunMode``)."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal[1]
-    run_id: str
-    process: contract.ProcessKey
-    mode: Literal["podgląd", "zapis"]
-    period: str
-    started_at: datetime
-    pricing: contract.Pricing | None = None
+    schema_version: Literal[1, 2]
 
 
 class _JournalRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-class _JournalStarted(_JournalRecord):
+class _JournalStarted(StartFacts):
     """Pierwsza linia dziennika: start Uruchomienia, te same fakty co plik ostatniego startu."""
 
     entry: Literal["start Uruchomienia"]
-    run_id: str
-    process: contract.ProcessKey
-    mode: Literal["podgląd", "zapis"]
-    period: str
-    started_at: datetime
-    pricing: contract.Pricing | None = None
 
 
 class _OrderBegun(_JournalRecord):
@@ -204,15 +191,7 @@ def _utc_now() -> datetime:
 
 
 def _first_line(start: StartFacts) -> _JournalStarted:
-    return _JournalStarted(
-        entry="start Uruchomienia",
-        run_id=start.run_id,
-        process=start.process,
-        mode=start.mode,
-        period=start.period,
-        started_at=start.started_at,
-        pricing=start.pricing,
-    )
+    return _JournalStarted(**dict(start.start), entry="start Uruchomienia")
 
 
 class Journal:
@@ -305,7 +284,7 @@ class Journal:
                 case _OrderBegun():
                     self._total, self._current = entry.total, entry.row
                 case _OrderEnded(order=order):
-                    self._done.append(OrderDone(order.row, order.outcome, order.code))
+                    self._done.append(OrderDone.of(order))
                     self._current = None
                 case _RunEnded():
                     pass
@@ -355,7 +334,7 @@ class JournalRead:
     def progress(self) -> PricingProgress:
         """To, co dziennik ma, w kształcie postępu: zlecenia skończone, ile wszystkich i zlecenie zaczęte bez wyniku."""
 
-        done = tuple(OrderDone(order.row, order.outcome, order.code) for order in self.orders)
+        done = tuple(OrderDone.of(order) for order in self.orders)
         return PricingProgress(self.started, done, self.total, self.interruption.row)
 
 
@@ -411,16 +390,8 @@ def _read_journal(path: Path) -> JournalRead | None:
         total=None if begun is None else begun.total,
         omitted=omitted,
     )
-    start = StartFacts(
-        run_id=started.run_id,
-        process=started.process,
-        mode=started.mode,
-        period=started.period,
-        started_at=started.started_at,
-        pricing=started.pricing,
-    )
     return JournalRead(
-        start,
+        started.start,
         orders,
         interruption,
         started.started_at if last is None else last.at,
@@ -464,15 +435,7 @@ class LogsOnDisk:
         udało się zapisać."""
 
         self.journal._run_started(start)
-        started = _StartedFile(
-            schema_version=1,
-            run_id=start.run_id,
-            process=start.process,
-            mode=start.mode,
-            period=start.period,
-            started_at=start.started_at,
-            pricing=start.pricing,
-        )
+        started = _StartedFile(**dict(start.start), schema_version=2)
         replace_atomically(self._last_started, started.model_dump_json(indent=2) + "\n")
 
     def write(self, logs: GuardedLogs) -> None:
@@ -493,14 +456,7 @@ class LogsOnDisk:
             started = _StartedFile.model_validate_json(self._last_started.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
-        return StartFacts(
-            run_id=started.run_id,
-            process=started.process,
-            mode=started.mode,
-            period=started.period,
-            started_at=started.started_at,
-            pricing=started.pricing,
-        )
+        return started.start
 
     def logs(self, run_id: str) -> LogsRead:
         """Logi Uruchomienia ``run_id``; identyfikator, którego Centrum nie nadaje, nie ma pliku Logów (``Missing``) bez

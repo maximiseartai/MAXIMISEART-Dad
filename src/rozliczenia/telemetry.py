@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Literal, TypedDict, get_args
 
-from .domain import PHASES, ProgressPhase, StopKind
+from .domain import PHASES, ProgressPhase, RunMode, StopKind
 from .settlement_period import PERIOD_TOKEN_PATTERN
 from .write_routes import Route, RouteCounts, TemplateKind
 
@@ -20,7 +20,7 @@ from .write_routes import Route, RouteCounts, TemplateKind
 # Wersja 3 dodaje ``routes``: ile zapisanych plików każdego rodzaju powstało każdą drogą zapisu z Wzorca (ADR 0008).
 METRICS_SCHEMA_VERSION = 3
 MINIMUM_STATISTIC_SAMPLES = 5
-METRIC_MODES = frozenset({"RUN", "DRY-RUN"})
+METRIC_MODES = frozenset(RunMode)
 METRIC_RESULTS = frozenset({"OK", "WYMAGA_SPRAWDZENIA", "BLAD_KRYTYCZNY"})
 # Okres w rekordzie, gdy tokenu nie udało się ustalić.
 UNKNOWN_PERIOD = "nieznany"
