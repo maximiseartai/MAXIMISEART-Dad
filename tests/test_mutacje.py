@@ -981,12 +981,13 @@ def test_jak_ci_uruchamia_mutacje_z_plikami_zadania_runu_w_ktorym_stoi_zmieniony
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
 def test_jak_ci_uruchamia_kazda_mutacje_w_kazdym_zadaniu_runu_ze_zmienionym_testem(tmp_path: Path) -> None:
-    """Zmieniony test stoi w dwóch zadaniach, a mutację wykrywa tylko sąsiad z drugiego, więc biegną oba."""
+    """Zmieniony test stoi w dwóch zadaniach, a mutację wykrywa tylko sąsiad z drugiego, więc biegną oba; krok CI
+    zadania nie jest plikiem testów."""
 
     second = "pytest (Python 3.14, Linux, 2/2)"
     plan = [
         _job("linux-3.14", LINUX_1, "pytest:tests/test_zmieniony.py#1/2"),
-        _job("linux-3.14", second, "pytest:tests/test_sasiad.py", "pytest:tests/test_zmieniony.py#2/2"),
+        _job("linux-3.14", second, "pytest:tests/test_sasiad.py", "pytest:tests/test_zmieniony.py#2/2", "krok:timing"),
     ]
     repo, env, _ = _ci_repository(tmp_path, {"123": plan}, [])
 
@@ -1062,14 +1063,14 @@ def test_jak_ci_nie_przyjmuje_wlasnego_polecenia(tmp_path: Path, entry: dict[str
     assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, error)
 
 
-def _check_all(repo: Path, anchor: str, replacement: str, *, base: str | None = None) -> subprocess.CompletedProcess[str]:
+def _check_all(repo: Path, anchor: str, replacement: str) -> subprocess.CompletedProcess[str]:
     """``check_all`` skryptu mutacji skilla z atrapą bramy (``FAKE_GATE``), jedną mutacją pakietu i poleceniem, które
     tylko go importuje."""
 
     script = (
         "import sys\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nimport mutacje\nfrom mutacje import Edit, Mutation, check_all\n"
         f"{FAKE_GATE}\nmutation = Mutation('m', (Edit(Path({PACKAGE!r}), {anchor!r}, {replacement!r}),), {IMPORT!r})\n"
-        f"raise SystemExit(check_all([mutation], base={base!r}, gate=brama))\n"
+        "raise SystemExit(check_all([mutation], gate=brama))\n"
     )
     return subprocess.run([sys.executable, "-c", script], cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
 
@@ -1089,15 +1090,44 @@ def test_brama_typow_czerwona_bez_mutacji_zostawia_przezyta_mutacje_przezyta(tmp
     ]
 
 
-def test_przeglad_z_wiersza_polecen_nie_liczy_bramy_typow_jako_wykrycia(tmp_path: Path) -> None:
-    """Przegląd (``check_all`` z ``base``) dowodzi, że jego polecenie łapie mutację; mypy sprawdza się ``-- -m mypy``."""
+# Atrapy ``python -m ruff`` i ``python -m mypy`` w korzeniu kopii, które biegną przed zainstalowanymi: ruff zgłasza
+# niezdefiniowaną nazwę (F821, wykrycie bramy typów) w każdej linii ``src`` z komentarzem ``# brama: F821``, a mypy przechodzi.
+FAKE_RUFF = """\
+import json, pathlib, sys
+found = [
+    {"code": "F821", "filename": str(path), "location": {"row": number}, "message": "Undefined name"}
+    for path in sorted(pathlib.Path("src").rglob("*.py"))
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+    if "# brama: F821" in line
+]
+print(json.dumps(found))
+sys.exit(1 if found else 0)
+"""
 
-    repo = repository(tmp_path / "repo", {PACKAGE: "NIC = 0\n"})
+
+@pytest.mark.parametrize(
+    ("skill", "verdict"), [(True, "WYKRYTA PRZEZ BRAMĘ TYPÓW: m → ruff: "), (False, "NIEWYKRYTA: mutacja → kod wyjścia 0")], ids=["skrypt-skilla", "przeglad"]
+)
+def test_przeglad_z_wiersza_polecen_nie_liczy_bramy_typow_jako_wykrycia(tmp_path: Path, skill: bool, verdict: str) -> None:
+    """Przegląd dowodzi, że jego polecenie łapie mutację (mypy sprawdza się ``-- -m mypy``), więc mutacja, którą łapie
+    tylko brama typów, jest w nim NIEWYKRYTA, a w skrypcie mutacji skilla WYKRYTA PRZEZ BRAMĘ TYPÓW."""
+
+    tools = {f"{name}/{module}": "" for name in ("ruff", "mypy") for module in ("__init__.py", "__main__.py")}
+    repo = repository(tmp_path / "repo", {PACKAGE: "NIC = 0\n", **tools, "ruff/__main__.py": FAKE_RUFF})
     commit(repo, "baza")
+    mutated = ("NIC = 0", "NIC = 1  # brama: F821")
 
-    answered = _check_all(repo, "NIC = 0", "NIC = 1  # brama: mypy assignment", base="HEAD")
+    if skill:
+        script = (
+            "import sys\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nfrom mutacje import Edit, Mutation, check_all\n"
+            f"raise SystemExit(check_all([Mutation('m', (Edit(Path({PACKAGE!r}), *{mutated!r}),), {IMPORT!r})]))\n"
+        )
+        answered = subprocess.run([sys.executable, "-c", script], cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
+    else:
+        answered = _in_repository(repo, "--zmiana", PACKAGE, *mutated, "--baza", "HEAD", "--", *IMPORT)
 
-    assert (answered.returncode, answered.stdout.splitlines()) == (1, ["NIEWYKRYTA: m → kod wyjścia 0", "MUTACJE: 1 bez oczekiwanego wyniku"]), answered.stderr
+    assert answered.stdout.splitlines()[0].startswith(verdict), answered.stdout + answered.stderr
+    assert answered.returncode == (0 if skill else 1), answered.stdout + answered.stderr
 
 
 def test_brama_typow_bez_wyniku_przed_koncem_czasu_wywolujacego_daje_bez_werdyktu(tmp_path: Path) -> None:

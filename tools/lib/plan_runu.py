@@ -13,6 +13,7 @@ Moduł używa tylko biblioteki standardowej, bo plan i werdykt biegną systemowy
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import asdict, dataclass
 import hashlib
 import json
@@ -23,6 +24,9 @@ from jednostka import Klucz, Rodzaj
 from zakres_runu import KROKI, MUTACJE, TORY, Zdarzenie
 
 WERSJA = 1
+# Artefakt runu ``ci.yml`` z planem i plik planu w nim (``--wyjscie`` zadania ``plan``).
+ARTEFAKT = "plan"
+PLIK = "plan.json"
 # Zapis wykonania zadania: wynik każdej jednostki i ostrzeżenia ``CZAS BLISKO LIMITU`` (``tools/ci/wykonaj_zadanie.py``).
 WYKONANIE = Path(".ci-czasy", "wykonanie.json")
 PONOWIENIE_LIMIT_S = 10 * 60
@@ -84,6 +88,17 @@ class Plan:
             Klucz.z_tekstu(klucz)
         return plan
 
+    def pliki_pytest(self, tory: Collection[str], zmienione: Collection[str]) -> list[tuple[str, list[str]]]:
+        """Nazwa i pliki testów (i węzły ``plik::test``) każdego zadania pytest z ``tory``, w którym stoi plik z
+        ``zmienione``; kolejność zadań i plików jak w planie, bez powtórzeń, a udział pliku ``#k/n`` to cały plik."""
+
+        znalezione = []
+        for zadanie in self.zadania:
+            pliki = list(dict.fromkeys(klucz.nazwa for klucz in zadanie.klucze if klucz.rodzaj is Rodzaj.PYTEST))
+            if zadanie.tor in tory and any(plik.partition("::")[0] in zmienione for plik in pliki):
+                znalezione.append((zadanie.nazwa, pliki))
+        return znalezione
+
     def macierz(self, szablon: str) -> list[dict[str, str | bool | int]]:
         """``include`` macierzy zadania ``szablon`` w ci.yml (``[]``, gdy plan nie ma jego zadań: zadanie jest pominięte)."""
 
@@ -106,6 +121,12 @@ class Plan:
         kroki = [KROKI[klucz.nazwa] for klucz in zadanie.klucze if klucz.rodzaj is Rodzaj.KROK]
         ponowienie = PONOWIENIE_LIMIT_S if self.zdarzenie is Zdarzenie.PULL_REQUEST else 0
         return math.ceil((NARZUT_ZADANIA_S + limit_pytest_s(zadanie) + ponowienie + sum(sum(krok.limity_s) for krok in kroki)) / 60)
+
+
+def tory_systemu(windows: bool) -> list[str]:
+    """Tory pytest systemu Windows (``windows``) albo pozostałych systemów, w kolejności ``TORY``."""
+
+    return [tor.nazwa for tor in TORY if tor.os.startswith("windows") == windows]
 
 
 def limit_pytest_s(zadanie: Zadanie) -> float:

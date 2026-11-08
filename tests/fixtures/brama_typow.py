@@ -33,7 +33,7 @@ def brama(copy, **_):
     return mutacje.Checked(tuple(found), late)
 '''
 
-# ``pyproject.toml`` repozytorium testu, w którym prawdziwe kroki ruff i mypy bramy (``ci_lokalnie.static_steps``)
+# ``pyproject.toml`` repozytorium testu, w którym prawdziwe kroki ruff i mypy bramy (``kroki_lokalne.static_steps``)
 # sprawdzają tylko jego ``src``: ``pyproject.toml`` checkoutu nazywa pliki, których repozytorium testu nie ma, więc tam
 # mypy pada już bez mutacji.
 TYPE_GATE_ON_SRC = """\

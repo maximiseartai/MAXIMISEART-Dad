@@ -101,8 +101,8 @@ def test_do_pierwszego_bledu_pomija_kroki_po_pierwszym_nieudanym(
     monkeypatch.setattr(tool, "ROOT", tmp_path)
     second_ran = tmp_path / "drugi-krok"
     steps = [
-        tool.Step("pierwszy", "ruff", "", (sys.executable, "-c", "raise SystemExit(1)"), tmp_path),
-        tool.Step("drugi", "mypy", "", (sys.executable, "-c", f"open({str(second_ran)!r}, 'w')"), tmp_path),
+        tool.Step("pierwszy", "ruff", (sys.executable, "-c", "raise SystemExit(1)"), tmp_path),
+        tool.Step("drugi", "mypy", (sys.executable, "-c", f"open({str(second_ran)!r}, 'w')"), tmp_path),
     ]
     monkeypatch.setattr(tool, "_steps", lambda root: steps)
 

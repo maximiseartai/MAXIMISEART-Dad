@@ -83,7 +83,7 @@ def _tool(root: Path) -> list[str]:
 
     names = (
         "tools/ci/wykonaj_zadanie.py", "tools/lib/niestabilne_testy.py", "tools/lib/wyniki_testow.py", "tools/lib/plan_runu.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/ciezkie_ci.py",
-        "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/czasy_ci.py", "tools/lib/github.py",
+        "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/kroki_lokalne.py", "tools/lib/czasy_ci.py", "tools/lib/github.py",
         "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py",
     )
     copy_files(root, [name for name in names if not (root / name).exists()])
