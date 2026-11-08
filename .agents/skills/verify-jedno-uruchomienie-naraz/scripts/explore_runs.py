@@ -636,9 +636,10 @@ def _start_tab(world: World, number: int) -> Callable[[], None]:
         scheduler.step("żądanie POST /api/runs dociera do serwera")
         _current_actor().in_flight = True
         try:
-            created = len(world.created)
             view = world.host.start(world.prepared)
-            if any(not run.thread_started for run in world.created[created:]):
+            # Only this tab's Run: another tab's Run created meanwhile may not have reached its own thread start yet.
+            tab = _current_actor().name
+            if any(not run.thread_started for run in world.created if run.creator == tab):
                 raise ModelGap("RunHost.start uruchomił wątek Uruchomienia spoza threads.Thread")
             scheduler.note(f"odpowiedź 200: {view.state}")
         except contract.Refusal as refusal:
