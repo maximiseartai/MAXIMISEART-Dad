@@ -11,6 +11,7 @@ from typing import Final
 from rozliczenia import intermax_messages, intermax_process
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.process_kind import TAIL, HostParts, NeededSetting, ProcessKind, Start
+from rozliczenia.centrum.run_logs import LoggedEntries, ProcessLogs
 from rozliczenia.centrum.run_view import ProcessView, count_figure, elapsed_only
 from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary
 from rozliczenia.text import day_label
@@ -28,6 +29,10 @@ def _summary(summary: OrderingSummary, _dry_run: bool) -> contract.RunSummary:
         worker_settlements=None,
         intermax_copy=summary.copy_name,
     )
+
+
+def _logs(summary: OrderingSummary | None, _facts: object) -> ProcessLogs:
+    return ProcessLogs(intermax_entries=None if summary is None else LoggedEntries.of(summary))
 
 
 def _inputs(start: Start, parts: HostParts) -> OrderingInputs:
@@ -61,4 +66,5 @@ KIND: Final[ProcessKind[OrderingInputs, OrderingSummary]] = ProcessKind(
         ),
     ),
     checks=("tata_settings", "files_in_onedrive", "intermax", *TAIL),
+    logs=_logs,
 )

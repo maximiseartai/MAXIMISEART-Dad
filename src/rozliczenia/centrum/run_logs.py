@@ -3,9 +3,10 @@
 Logi powstają z tych samych faktów co karta Uruchomienia (``logs_of_run.logs_of``): wynik, Komunikaty z kodami,
 podsumowanie, etapy, ślad wywołań Zatrzymania, a z ostatniego snapshotu projekcji postępu Przetworzenia Szablonów
 pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z Diagnozy z rozmiarem i atrybutem OneDrive.
-Z podsumowania silnika Przebiegu rozliczeń jest też liczba wyczyszczonych Ilości tylko dla INEA, której karta nie
-pokazuje (ADR 0018), a z podsumowania Uporządkowania INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019):
-wiersze i operatorzy, bez innej treści wierszy. Z podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``):
+Dodatki Logów procesu (``ProcessLogs``) daje jego wpis w katalogu procesów: z podsumowania silnika Przebiegu rozliczeń
+liczba wyczyszczonych Ilości tylko dla INEA, której karta nie pokazuje (ADR 0018), a z podsumowania Uporządkowania
+INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy. Z
+podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``):
 wiersz Pliku zbiorczego, wynik z kodem Komunikatu, ilości z pliku po kodach pozycji, ``Kwota`` (AU) i działania okna efenix
 z czasami i odczytem strony po każdym (``LoggedStep``, #843): przy szukaniu każdy wiersz listy ze statusem, loginem
 realizatora, zgodnością numeru i nazwami części adresu, którymi różni się od ``ADRES`` (``LoggedResult``), przy otwarciu
@@ -48,7 +49,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Final, Literal, assert_never
 
-from pydantic import BaseModel, ConfigDict, SerializationInfo, SerializerFunctionWrapHandler, model_serializer
+from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model_serializer
 
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
@@ -452,6 +453,17 @@ class LoggedWindowStop(_Record):
         )
 
 
+class ProcessLogs(_Record):
+    """Dodatki Logów jednego procesu: wpis procesu w katalogu daje je z podsumowania silnika i faktów Zatrzymania
+    (``ProcessKind.logs``), a plik ma je jako pola ``RunLog`` o tych samych nazwach. Proces bez dodatków ma wszystkie
+    ``None``."""
+
+    inea_only_cleared: dict[str, int] | None = None
+    intermax_entries: LoggedEntries | None = None
+    efenix_orders: list[LoggedOrder] | None = None
+    efenix_stop: LoggedWindowStop | None = None
+
+
 class LoggedInterruption(_Record):
     """Urwana Wycena w efenix z dziennika: zlecenie zaczęte bez wyniku i wpisy dziennika, których nie dało się odczytać.
 
@@ -492,12 +504,13 @@ class LoggedSheet(_Record):
     """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny (bez zakazanych kolumn), wiersze i puste wiersze
     z odczytanego zakresu, które proces liczy (Rejestr zleceń).
 
-    ``shifted_row``: przesunięty pierwszy wiersz wklejenia INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie
-    kolumny na lewo od nagłówka, a tu stoją pod nim (``input_copy.CopiedSheet.shifted_row``); ``None``: bez niego i
-    pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki dozwolone
-    w każdym ich możliwym położeniu (``input_copy.CopiedSheet.uncertain_rows``). ``last_ordered_row`` i ``yellow_row``:
-    ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz dnia, bez treści
-    (``input_copy.CopiedSheet.last_ordered_row``); ``None``: bez takiego wiersza, inne pliki i pliki sprzed #847.
+    Fakty wklejenia INTERMAX (``input_copy.PasteFacts``) poza wierszami ze śladem przesunięcia, które idą do uwag
+    (``RunLog.input_copy_notes``), stoją płasko w arkuszu. ``shifted_row``: przesunięty pierwszy wiersz wklejenia
+    INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie kolumny na lewo od nagłówka, a tu stoją pod nim; ``None``:
+    bez niego i pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki
+    dozwolone w każdym ich możliwym położeniu. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty
+    wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz dnia, bez treści; ``None``: bez takiego wiersza,
+    inne pliki i pliki sprzed #847.
     """
 
     sheet: str
@@ -512,6 +525,7 @@ class LoggedSheet(_Record):
 
     @classmethod
     def of(cls, sheet: CopiedSheet) -> LoggedSheet:
+        paste = sheet.paste
         return cls(
             sheet=sheet.name,
             header_row=sheet.header_row,
@@ -521,10 +535,10 @@ class LoggedSheet(_Record):
                 for row in sheet.rows
             ],
             empty_rows=list(sheet.empty_rows),
-            shifted_row=sheet.shifted_row,
-            uncertain_rows=list(sheet.uncertain_rows),
-            last_ordered_row=sheet.last_ordered_row,
-            yellow_row=sheet.yellow_row,
+            shifted_row=paste.shifted_row,
+            uncertain_rows=list(paste.uncertain_rows),
+            last_ordered_row=paste.last_ordered_row,
+            yellow_row=paste.yellow_row,
         )
 
 
@@ -626,13 +640,13 @@ class RunLog(StartFacts):
     wartościach zamaskowanych w Kopii (``guard_logs``)."""
 
     @model_serializer(mode="wrap")
-    def _in_own_schema(self, handler: SerializerFunctionWrapHandler, info: SerializationInfo) -> dict[str, Any]:
-        """JSON Logów w ich schemacie: plik sprzed schematu 3, który start Centrum zapisuje z powrotem przy dzienniku
-        Wyceny (``comment_versions.close``), ma dalej tryb i tryb przycisków startu słowem, bo odtworzenie czyta go kodem
-        jego commitu (``tool.commit``)."""
+    def _in_own_schema(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Logi w ich schemacie: plik sprzed schematu 3, który start Centrum zapisuje z powrotem przy dzienniku Wyceny
+        (``comment_versions.close``), ma dalej tryb i tryb przycisków startu słowem, bo odtworzenie czyta go kodem jego
+        commitu (``tool.commit``). Zrzut w trybie Pythona też ma słowo: ``StoredRunMode`` czyta je z powrotem."""
 
         dumped: dict[str, Any] = handler(self)
-        if self.schema_version == SCHEMA_VERSION or not info.mode_is_json():
+        if self.schema_version == SCHEMA_VERSION:
             return dumped
         dumped["mode"] = self.mode.word
         if self.dad_actions is not None:
@@ -684,4 +698,9 @@ class RunLog(StartFacts):
         """Treść pliku Logów; te same znaki idą do Skrzynki Zgłoszeń."""
 
         return self.model_dump_json(indent=2) + "\n"
+
+
+assert all(RunLog.model_fields[name].annotation == field.annotation for name, field in ProcessLogs.model_fields.items()), (
+    "dodatki Logów procesu to pola RunLog tych samych typów"
+)
 

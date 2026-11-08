@@ -34,7 +34,8 @@ import pytest
 from rozliczenia import settlement_messages, workbook_files
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum import app, contract
-from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, MAX_ENTRIES
+from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
 from rozliczenia.centrum.log import CentrumLog
@@ -262,6 +263,9 @@ class Ending:
     """Typ wyjątku w śladzie wywołań."""
     files_unchanged: bool = field(kw_only=True)
     """Karta mówi, że pliki taty są bez zmian: podgląd albo koniec przed Zapisywaniem."""
+    collective_file_prepared: bool = field(default=False, kw_only=True)
+    """Wynik przygotował Plik zbiorczy okresu (Przygotowanie z zapisem bez Zatrzymania): karta pokazuje pod nim
+    Uzupełnienie pliku zbiorczego."""
 
 
 ENDINGS = {
@@ -292,6 +296,7 @@ ENDINGS = {
         ("WYMAGA_SPRAWDZENIA", "finished", None),
         QUANTITY_WARNINGS,
         files_unchanged=False,
+        collective_file_prepared=True,
     ),
     "dla-taty-zapis": Ending(
         _existing_worker_settlements,
@@ -389,6 +394,7 @@ def test_kazda_droga_zakonczenia_w_obu_trybach_daje_jeden_plik_logow_z_wynikiem_
     assert (record["result"], record["ending"], record["stop_kind"]) == ending.result
     assert (card["result"], card["ending"], card["stop_kind"]) == ending.result
     assert card["files_unchanged"] is ending.files_unchanged
+    assert card["collective_file_prepared"] is ending.collective_file_prepared
     assert [(message["kind"], message["code"]) for message in record["messages"]] == ending.messages
     assert three_parts(record) == card_messages(view)
     assert (record["trace"] or {}).get("exception_type") == ending.trace
@@ -947,7 +953,7 @@ def test_wiersz_starszego_ukladu_rejestru_z_wykonawca_w_calibri_8_zaczyna_blok_p
     period_sheets(read(register, DadFiles(copy=copy)), parse_period_token(PERIOD))
 
     [[sheet]] = [file.sheets for file in copy.files()]
-    assert sheet.uncertain_rows == (app_row,)
+    assert sheet.paste.uncertain_rows == (app_row,)
 
 
 @pytest.mark.parametrize(
@@ -1072,8 +1078,8 @@ def test_wpis_taty_w_calibri_8_tylko_w_uwagi_konczy_blok_w_przygotowaniu_tak_jak
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
     broken = [int(found) for found in re.findall(r"Fakt domeny złamany: wiersz (\d+) ", " ".join(record["input_copy_notes"]))]
-    assert (broken, sheet["uncertain_rows"]) == (list(ordered.traced_rows), list(ordered.uncertain_rows))
-    assert ordered.uncertain_rows, "wiersz próbny jest w obu położeniach w Uporządkowaniu"
+    assert (broken, sheet["uncertain_rows"]) == (list(ordered.paste.traced_rows), list(ordered.paste.uncertain_rows))
+    assert ordered.paste.uncertain_rows, "wiersz próbny jest w obu położeniach w Uporządkowaniu"
 
 
 def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczytu_pod_naglowkiem(tmp_path: Path) -> None:
@@ -1437,10 +1443,11 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     assert (setup["title"], setup["preview_hint"], [period["token"] for period in setup["periods"]]) == ("Wycena w efenix", None, [PERIOD])
     assert (preview.status_code, busy.status_code, waiting["state"]) == (409, 409, "running")
     assert busy.json()["message"].startswith(f"Trwa już Uruchomienie procesu: Wycena w efenix, okres {PERIOD}.")
-    assert (result["result"], result["headline"], result["next_action"]) == (
+    assert (result["result"], result["headline"], result["next_action"], result["collective_file_prepared"]) == (
         "WYMAGA_SPRAWDZENIA",
         "Wycena w efenix gotowa · wymaga sprawdzenia",
         "open_collective_file",
+        False,
     )
     assert {figure["label"]: figure["value"] for figure in result["summary"]["figures"]} == {
         "Zlecenia w zakresie": 6,

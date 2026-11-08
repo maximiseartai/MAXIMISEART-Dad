@@ -67,6 +67,7 @@ _VIEW: Final[PeriodProcessView[PreparationInputs, PreparationSummary]] = PeriodP
     preview_hint="Nic nie zostanie zapisane. Zobaczysz plan i nazwy obu plików.",
     done=period_status_label("collective_file_prepared"),
     result_action="open_collective_file",
+    prepares_collective_file=True,
     _figures=_figures,
     _summary=_summary,
 )

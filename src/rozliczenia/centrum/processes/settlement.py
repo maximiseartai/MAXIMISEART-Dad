@@ -16,8 +16,10 @@ from rozliczenia.centrum.process_kind import (
     PeriodStart,
     Start,
 )
+from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, count_figure
 from rozliczenia.engine import SettlementInputs, SettlementSummary
+from rozliczenia.order_facts import CollectiveOrders
 from rozliczenia.period_folder import period_status_label
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.tool_files import SETTLEMENT_METRICS
@@ -68,6 +70,18 @@ def _summary(summary: SettlementSummary, dry_run: bool) -> contract.RunSummary:
     )
 
 
+def _logs(summary: SettlementSummary | None, _facts: object) -> ProcessLogs:
+    return ProcessLogs(
+        inea_only_cleared=None
+        if summary is None
+        else {column.value: count for column, count in summary.inea_only_cleared.items()}
+    )
+
+
+def _quantity_check(summary: SettlementSummary) -> CollectiveOrders:
+    return summary.orders
+
+
 def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
     return SettlementInputs(
         start.path("collective_file"),
@@ -113,4 +127,6 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
         "period_files_in_excel",
         *TAIL,
     ),
+    logs=_logs,
+    quantity_check=_quantity_check,
 )

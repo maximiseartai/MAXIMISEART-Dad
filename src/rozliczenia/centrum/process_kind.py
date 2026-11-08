@@ -2,8 +2,8 @@
 
 Wpis (``ProcessKind``) deklaruje wszystko, o co gospodarze pytają proces: klucz procesu, widok Uruchomienia, rdzeń
 procesu i jego domyślny plik metryk, czego wejście procesu potrzebuje (``needs``) i jak je zbudować (``inputs``),
-Ustawienia taty, bez których proces nie startuje, sprawdzenia Diagnozy w kolejności wyjaśniania, tryby Wyceny w efenix
-i dziennik Wyceny. Proces z okresem (``PeriodProcessKind``) ma też politykę karty startu (``PeriodStart``). Diagnoza,
+Ustawienia taty, bez których proces nie startuje, sprawdzenia Diagnozy w kolejności wyjaśniania, tryby Wyceny w efenix,
+dziennik Wyceny, dodatki Logów procesu i Zlecenia Kontroli ilości. Proces z okresem (``PeriodProcessKind``) ma też politykę karty startu (``PeriodStart``). Diagnoza,
 Logi Uruchomienia, karty z Logów, Metryki, Konfiguracja i start pytają wpis zamiast rozgałęziać się po kluczu procesu.
 Wpisy zbiera katalog (``catalog``).
 
@@ -26,6 +26,7 @@ from typing import Any, Final, Generic, Literal, Protocol, TypeGuard, TypeVar, g
 
 from rozliczenia import preparation_messages
 from rozliczenia.centrum import contract
+from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.settings import Settings
 from rozliczenia.domain import RunMode
@@ -36,6 +37,7 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_ordering import local_now
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
+from rozliczenia.order_facts import CollectiveOrders
 from rozliczenia.period_folder import PeriodStatus
 from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs, run_process
 from rozliczenia.progress import ProgressSnapshot
@@ -231,7 +233,10 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     startu i zależności gospodarza, bez I/O. ``settings`` to potrzebne Ustawienia taty w kolejności odmowy i Diagnozy,
     a ``checks`` sprawdzenia Diagnozy w kolejności wyjaśniania: pierwsze, które nie przeszło, wyjaśnia Zatrzymanie.
     ``journaled``: proces pisze dziennik Wyceny w efenix (``logs_disk.LogsOnDisk``). ``short_title``: krótka nazwa
-    procesu w filtrach Metryk.
+    procesu w filtrach Metryk. ``logs``: dodatki Logów Uruchomienia procesu (``run_logs.ProcessLogs``) z podsumowania
+    silnika (``None``: Uruchomienie bez wyniku) i faktów Zatrzymania (``process_run.Stop.facts``; ``None`` bez nich).
+    ``quantity_check``: Zlecenia z podsumowania, które po zapisie sprawdza Kontrola ilości (ADR 0013); ``None``: proces
+    bez Kontroli ilości.
     """
 
     key: contract.ProcessKey
@@ -244,6 +249,8 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     settings: tuple[NeededSetting, ...]
     checks: tuple[CheckStep, ...]
     journaled: bool = False
+    logs: Callable[[SummaryT | None, object], ProcessLogs] = lambda _summary, _facts: ProcessLogs()
+    quantity_check: Callable[[SummaryT], CollectiveOrders] | None = None
 
     def __post_init__(self) -> None:
         modes = self.view.pricing_modes

@@ -782,7 +782,8 @@ export type KindToFill = {
  * skończyło (``Ending``).
  * ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
  * wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
- * Zatrzymania).
+ * Zatrzymania). ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
+ * Uzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``).
  */
 export type LoggedOutcome = {
     /**
@@ -818,6 +819,10 @@ export type LoggedOutcome = {
      */
     technical_notes: Array<string>;
     summary: RunSummary | null;
+    /**
+     * Collective File Prepared
+     */
+    collective_file_prepared: boolean;
 };
 
 /**
@@ -2091,6 +2096,10 @@ export type RunOutcome = {
      */
     technical_notes: Array<string>;
     summary: RunSummary | null;
+    /**
+     * Collective File Prepared
+     */
+    collective_file_prepared: boolean;
     /**
      * Diagnosis
      */

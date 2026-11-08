@@ -32,7 +32,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import CONFIGURATION_WAIT_S, ConfigurationFiles, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
 from rozliczenia.centrum.contract import Health, Problem, Refusal
-from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, DadActionJournal
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
 from rozliczenia.centrum.diagnosis import Surroundings, diagnose, files_of_process

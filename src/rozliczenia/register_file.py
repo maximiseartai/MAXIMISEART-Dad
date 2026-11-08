@@ -31,7 +31,7 @@ same fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w
 które Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy
 wiersz, bez zakazanych kolumn (``input_copy.SheetCopy.row``). Wiersz z siatki (``raw_orders.RowPositions.uncertain``)
 ma w Kopii tylko komórki dozwolone w obu położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wiersz ze śladem
-przesunięcia arkusz ma w ``traced_rows``. Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie
+przesunięcia arkusz ma w faktach wklejenia (``input_copy.PasteFacts.traced_rows``). Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie
 zapisuje, nie mają nagłówka, a jedna z nich u taty niesie części adresu ze słowami sklejonymi ``_``, których strażnik
 nie rozpozna jako wartości ``ADRES``. Nad wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza
 (``raw_orders.above_paste``), od których Planowanie liczy wiersz dnia, bez ich treści (#847).
@@ -453,8 +453,7 @@ class PasteArea:
             self._forbidden_columns,
             copied_columns=copied,
             date_column=columns.date,
-            last_ordered_row=above.last_ordered,
-            yellow_row=above.yellow,
+            above=above,
         )
         for facts in pasted:
             sheet.row(facts.number, _values(facts), self._positions(facts, facts is pasted[0], shifted))

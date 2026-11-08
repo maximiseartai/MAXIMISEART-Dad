@@ -732,7 +732,8 @@ class LoggedOutcome(_Model):
     skończyło (``Ending``).
     ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
     wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
-    Zatrzymania).
+    Zatrzymania). ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
+    Uzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``).
     """
 
     result: RunResult
@@ -744,6 +745,7 @@ class LoggedOutcome(_Model):
     warnings: list[Message]
     technical_notes: list[str]
     summary: RunSummary | None
+    collective_file_prepared: bool
 
 
 class OrderNote(_Model):

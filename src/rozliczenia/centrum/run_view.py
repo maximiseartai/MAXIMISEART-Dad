@@ -94,6 +94,8 @@ class ProcessView(ResultView[InputsT, SummaryT]):
     ``result_action`` otwiera to, co proces zapisał, jako akcja po wyniku, a ``register_name`` to nazwa
     Rejestru zleceń z Komunikatów procesu, pod którą karta proponuje go otworzyć. ``pricing_modes`` to tryby Wyceny w
     efenix, które tata wybiera przyciskiem przy każdym starcie, pierwszy domyślny (pusta krotka: proces bez trybów).
+    ``prepares_collective_file``: wynik procesu z zapisem przygotowuje Plik zbiorczy okresu (Przygotowanie; Wycena w
+    efenix też proponuje go otworzyć, ale go nie tworzy).
     """
 
     reminder: str
@@ -102,12 +104,19 @@ class ProcessView(ResultView[InputsT, SummaryT]):
     result_action: contract.ResultAction
     register_name: str = "Rejestr zleceń"
     pricing_modes: tuple[contract.Pricing, ...] = ()
+    prepares_collective_file: bool = False
 
     @property
     def modes(self) -> tuple[contract.RunMode, ...]:
         """Tryby Uruchomienia procesu: bez Podglądu bez zapisu tylko zapis."""
 
         return (contract.RunMode.RUN,)
+
+    def collective_file_prepared(self, *, ending: contract.Ending, dry_run: bool) -> bool:
+        """Wynik przygotował Plik zbiorczy okresu: proces go przygotowuje i skończył się z zapisem bez Zatrzymania; jedna
+        reguła dla karty na żywo i karty z Logów (``contract.LoggedOutcome.collective_file_prepared``)."""
+
+        return self.prepares_collective_file and ending == "finished" and not dry_run
 
     def start_reminder(self, *, data_file_open: bool, template_open: bool) -> str | None:
         """Przypomnienie w stopce karty startu; znika, gdy „Uruchom” blokuje tylko Wzorzec otwarty w Excelu.

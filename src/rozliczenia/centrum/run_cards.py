@@ -163,6 +163,9 @@ class RunCards:
                 warnings=messages["warning"],
                 technical_notes=record.technical_notes,
                 summary=record.summary,
+                collective_file_prepared=declaration.view.collective_file_prepared(
+                    ending=ending, dry_run=info.mode.dry_run
+                ),
             ),
         )
 

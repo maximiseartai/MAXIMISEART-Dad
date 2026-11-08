@@ -25,7 +25,7 @@ from pathlib import Path
 from . import workbook_files
 from .client_data import ForbiddenColumn, ForbiddenValues
 from .input_copy import InputCopy, SheetCopy, Values, WorkbookCopy
-from .raw_orders import UNDER_HEADER, RowPositions
+from .raw_orders import UNDER_HEADER, AbovePaste, RowPositions
 from .workbook_files import ByteSource
 
 ForbiddenPositions = Sequence[tuple[ForbiddenColumn, int]]
@@ -95,8 +95,7 @@ class ReadFile:
         *,
         copied_columns: Collection[int] | None = None,
         date_column: int | None = None,
-        last_ordered_row: int | None = None,
-        yellow_row: int | None = None,
+        above: AbovePaste | None = None,
         span: Collection[int] | None = None,
     ) -> WitnessedSheet:
         """Arkusz ``name`` w pamięci i, gdy uchwyt ma Kopię, w Kopii wejścia (``input_copy.WorkbookCopy.sheet``)."""
@@ -111,8 +110,7 @@ class ReadFile:
                 {column for _, column in forbidden},
                 copied_columns=copied_columns,
                 date_column=date_column,
-                last_ordered_row=last_ordered_row,
-                yellow_row=yellow_row,
+                above=above,
                 span=span,
             )
         return WitnessedSheet(self._forbidden, tuple(forbidden), copied)
