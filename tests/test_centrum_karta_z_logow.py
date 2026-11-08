@@ -37,7 +37,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from tests.fixtures.dziennik_wyceny import left_journal
+from tests.fixtures.dziennik_wyceny import journal_path, left_journal, start_line
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD
 from tests.fixtures.run_cards import first_view, restored, unlisted
@@ -513,6 +513,20 @@ def test_plik_z_krotszym_identyfikatorem_w_nazwie_nie_jest_logami_uruchomienia(t
     disk = on_disk(tmp_path)
 
     assert (disk.logs("abc"), disk.newest("efenix")) == (Missing(), None)
+
+
+def test_dziennik_wyceny_sprzed_schematu_3_ze_slowem_trybu_ma_ten_sam_start(tmp_path: Path) -> None:
+    """Dziennik Wyceny w efenix, który zostawiło Centrum sprzed schematu Logów 3, ma w pierwszej linii słowo trybu
+    („zapis”), a start Centrum czyta go jako ten sam start Uruchomienia, więc zamyka go Logami Urwanego Uruchomienia."""
+
+    started = start()
+    path = journal_path(tmp_path, started)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(start_line(started) | {"mode": "zapis"}) + "\n", encoding="utf-8")
+
+    [left] = on_disk(tmp_path).left_behind()
+
+    assert left.journal is not None and left.journal.started == started
 
 
 def test_plik_w_miejscu_katalogu_logow_to_brak_logow_a_nie_odmowa(tmp_path: Path) -> None:
