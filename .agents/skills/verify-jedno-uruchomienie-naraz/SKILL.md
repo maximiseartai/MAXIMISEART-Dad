@@ -1,6 +1,6 @@
 ---
 name: verify-jedno-uruchomienie-naraz
-description: Exhaustively check that Centrum rozliczeń runs one Uruchomienie procesu, Aktualizacja narzędzia or przywrócenie Kopii INTERMAX at a time and never closes during one (also while it waits for Dad's Decyzja), under every interleaving of browser tabs, Dad and the server. Use when a change touches `RunHost` or `_Run` in `src/rozliczenia/centrum/runs.py`, `Shutdown` in `shutdown.py`, `stop_when_asked` in `server.py`, the `refuse_while` wiring in `app.py`, `ToolUpdates.start` or `_update` in `tool_updates.py`, adds another action that must wait for a running Uruchomienie, or `test_jedno_uruchomienie_naraz` fails.
+description: Exhaustively check that Centrum rozliczeń runs one Uruchomienie procesu, Aktualizacja narzędzia or przywrócenie Kopii INTERMAX at a time and never closes during one (also while it waits for Dad's Decyzja), under every interleaving of browser tabs, Dad and the server. Use when a change touches `RunHost` or `Run` in `src/rozliczenia/centrum/runs.py`, `Shutdown` in `shutdown.py`, `stop_when_asked` in `server.py`, the `refuse_while` wiring in `app.py`, `ToolUpdates.start` or `_update` in `tool_updates.py`, adds another action that must wait for a running Uruchomienie, or `test_jedno_uruchomienie_naraz` fails.
 pilnuje:
   - src/rozliczenia/centrum/runs.py
   - src/rozliczenia/centrum/shutdown.py
@@ -60,7 +60,7 @@ table, above all the parts modelled by hand, whose change the check cannot see.
   Harm: the card jumps from „trwa” straight to the next Uruchomienie and never
   shows the result; Dad finds it only in Historia (#723).
 
-An Uruchomienie is in progress from the moment `RunHost.start` creates its `_Run`
+An Uruchomienie is in progress from the moment `RunHost.start` creates its `Run`
 until `RunHost.finished` has written its end to the Centrum log. The checker
 tracks this itself, not through the code's `ended` flag. An Aktualizacja is in
 progress from a successful `RunHost.begin_update` until `end_update` returns or,
@@ -75,7 +75,7 @@ after a new version, until the restart guardian has started and
 | `runs.py` `RunHost.begin_update`, `end_update`, `_busy_locked` | check and claim of `_updating` under `_lock`; refusal while closing, updating, restoring or running |
 | `runs.py` `RunHost.begin_restore`, `end_restore`; `start` | check and claim of `_restoring` under `_lock`; `start` refuses while restoring |
 | `intermax_run.py` `intermax_copies_router` | modelled by hand: `begin_restore`, the restore as one step inside the request, then `end_restore` |
-| `runs.py` `_Run.work`, `RunHost.end`, `confirm`, `answer` | `ended` set only in `RunHost.end`, under `_lock` together with the result; after-run actions (`RunHost.after`) before `finished`; waiting for the Decyzja on `_decided` |
+| `runs.py` `Run.work`, `RunHost.end`, `confirm`, `answer` | `ended` set only in `RunHost.end`, under `_lock` together with the result; after-run actions (`RunHost.after`) before `finished`; waiting for the Decyzja on `_decided` |
 | `shutdown.py` `Shutdown.request`, `wait`, `refuse_while`, `close_for_update` | refusal check, then `_requested.set()`; `close_for_update` sets it without the check |
 | `tool_updates.py` `ToolUpdates.start`, `_update`, `_restart` | modelled by hand: `begin_update`, a log entry, the thread; then either `end_update` or the guardian and `close_for_update` |
 | `app.py` `create_app`: `shutdown.refuse_while(runs.shutdown_refusal)` | the wiring the harness copies |
@@ -176,7 +176,7 @@ guardian work is one step ending either without a new version (or in a failure),
 then `end_update`, or with the guardian started, then the real
 `Shutdown.close_for_update`. Replaced: the last Uruchomienie before Centrum's start (`previous`) by none, and the start file (`run_started`)
 by one step that writes nothing. Replaced: `run_process` by an engine with one work step, an optional Decyzja
-through the real `_Run.confirm` (both variants are explored) and an end step. Every
+through the real `Run.confirm` (both variants are explored) and an end step. Every
 Uruchomienie ends in success. Modelled by hand: after `Shutdown.wait()` returns,
 the server may end at any moment when no HTTP request is in flight. This is
 uvicorn's `should_exit` tick (≤ 0.1 s), during which new requests are still
@@ -190,7 +190,7 @@ received.
 | `aktualizacja` | 1, plus 2 „Zaktualizuj narzędzie” tabs | ≤ 1 | ≤ 1 |
 | `przywracanie` | 1, plus 2 „Przywróć tę kopię” tabs | ≤ 1 | ≤ 1 |
 
-Not covered: Zatrzymania and errors inside the engine (`_Run.work`'s `except`
+Not covered: Zatrzymania and errors inside the engine (`Run.work`'s `except`
 path), `tools/uruchom_proces.py` or a second Centrum process on another port,
 Windows logoff, the SSE stream itself (`_event_stream`, read through `RunHost`'s views), Diagnoza and Zgłoszenie (`diagnose`/`send_report`), more tabs or clicks than
 above, and what Aktualizacja narzędzia does to the clone (the
@@ -251,7 +251,7 @@ py -3 .agents\skills\verify-jedno-uruchomienie-naraz\scripts\check_runs_mutation
 
 It must end with `MUTACJE OK`. These all give `NOWE NARUSZENIE`: the check and
 claim in `start` under two lock entries (two Uruchomienia at once), a refusal that
-skips a run waiting for its Decyzja, `ended` set at the start of `_Run.work`,
+skips a run waiting for its Decyzja, `ended` set at the start of `Run.work`,
 the actions after the result moved below `RunHost.end`, `ended` set under `_lock`
 before the result is published outside it, `start` clearing the previous result from `_events`,
 `Shutdown.request` without the refusal, an accepted shutdown that does not set

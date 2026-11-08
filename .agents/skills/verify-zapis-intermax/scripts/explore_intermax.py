@@ -316,7 +316,7 @@ def _waiting(world: World, scheduler: Scheduler) -> Waiting:
     def pause(seconds: float) -> None:
         if scheduler.point(PAUSE, extra=("dluga",)) == "dluga":
             scheduler.say("przerwa trwa cały czas ponownych prób")
-            world.seconds += intermax_replace._RETRY_S
+            world.seconds += intermax_replace.RETRY_S
         else:
             world.seconds += seconds
         scheduler.say("ponowna próba podmiany")
@@ -343,6 +343,8 @@ def _synthetic(work: Path) -> tuple[bytes, bytes, bytes]:
 def _old_copies(earlier: bytes) -> dict[str, bytes]:
     """``KEPT`` Kopie from earlier days, named as the replace names them, alternately before an Uporządkowanie and
     before a restore, so that sorting by name (``przywróceniem`` < ``uporządkowaniem``) differs from sorting in time.
+    The names are a deliberate copy of ``intermax_copies`` (docs/agents/skille.md, „Co wyrocznia bierze z src”): Kopie
+    in tata's folder from an earlier Wydanie keep them, so the replace must still recognise them.
 
     The oldest holds the ``earlier`` INTERMAX, the others their own bytes.
     """

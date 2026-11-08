@@ -33,7 +33,8 @@ EXPECTED_ORDERS = 6
 EXPECTED_WORKERS = 3
 EXPECTED_DAY = "pon 26.10.2026"
 EXPECTED_PHASES = ["Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"]
-# Kopia INTERMAX: named after the moment it comes from, in the computer's clock.
+# Kopia INTERMAX: named after the moment it comes from, in the computer's clock. A deliberate copy of the name in
+# ``intermax_copies`` (docs/agents/skille.md, „Co wyrocznia bierze z src”): tata finds the Kopia by this name.
 COPY_NAME = re.compile(r"INTERMAX przed uporządkowaniem (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})\.xlsx")
 COPY_MOMENT = "%Y-%m-%d %H-%M-%S"
 

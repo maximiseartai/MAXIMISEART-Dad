@@ -60,7 +60,7 @@
     "create_app.runs": "4be9a7a56dd66879"
   },
   "src/rozliczenia/centrum/runs.py": {
-    "_Run.work": "0daf80cf23e8ea53",
+    "Run.work": "0daf80cf23e8ea53",
     "RunHost.after": "3b394aacf6701175",
     "RunHost.shutdown_refusal": "7b2f8610fb13f295",
     "RunHost.start": "134b21e6de066ce8"

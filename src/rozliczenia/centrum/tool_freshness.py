@@ -247,24 +247,24 @@ def releases_from(
     wszystkich stron nie wiadomo, które Wydanie jest najnowsze, więc więcej niż
     ``github.MAX_PAGES`` stron to ``None``. Wydanie leży na `main` tak jak w Aktualizacji
     narzędzia (``tool_update.MainLine``): jego commit leży na linii pierwszych
-    rodziców `main` (``_on_first_parent_line``). Odpowiedź dla commitu, który
+    rodziców `main` (``on_first_parent_line``). Odpowiedź dla commitu, który
     jest przodkiem `main`, trafia do ``known`` i się nie zmienia, bo `main`
     rośnie tylko o nowe commity. Diagnoza czeka na odpowiedź najwyżej
     ``timeout_s`` (``deadline.within``); spóźniona odpowiedź i tak trafia do
     ``known``. Połączenie idzie wprost, bez serwera proxy z ustawień systemu.
-    Pytania idą z tokenem ``token`` tak, jak mówi opis modułu (``_Asking``), a
+    Pytania idą z tokenem ``token`` tak, jak mówi opis modułu (``Asking``), a
     sprawdzenie bez odpowiedzi po odmowie z powodu limitu to ``RateLimited``.
     """
 
     line = {} if known is None else known
 
     def fetch() -> ReleaseAnswer:
-        asking = _Asking(api, timeout_s, token)
+        asking = Asking(api, timeout_s, token)
         answer = newest(asking)
         return answer if answer is not None else asking.limited
 
-    def newest(asking: _Asking) -> GitHubReleases | None:
-        commits = _tag_commits(asking, f"{api}/tags?per_page={PAGE_SIZE}")
+    def newest(asking: Asking) -> GitHubReleases | None:
+        commits = tag_commits(asking, f"{api}/tags?per_page={PAGE_SIZE}")
         if commits is None:
             return None
         asked = 0
@@ -274,37 +274,37 @@ def releases_from(
             nonlocal asked
             asked += 1
             if asked > _CANDIDATES:
-                raise _NoAnswer
+                raise NoAnswer
             if commit in line:
                 return line[commit]
             if not tips:
                 tips.append(_main_tip(asking))
-            on_line = _on_first_parent_line(asking, commit, tips[0])
+            on_line = on_first_parent_line(asking, commit, tips[0])
             if on_line is not None:
                 line[commit] = on_line
             return on_line is True
 
         try:
             found = newest_on_main(commits, on_main)
-        except _NoAnswer:
+        except NoAnswer:
             return None
         return GitHubReleases(found.commit, None if found.release is None else found.release.tag)
 
     return within(timeout_s, fetch, name="github-wydania")
 
 
-def _main_tip(asking: _Asking) -> str:
+def _main_tip(asking: Asking) -> str:
     """Czubek `main` teraz: wszystkie porównania jednego sprawdzenia liczą od tego samego commitu."""
 
     ref = asking.json(f"{asking.api}/git/ref/heads/main")
     target = ref.get("object") if isinstance(ref, dict) else None
     sha = target.get("sha") if isinstance(target, dict) else None
     if not isinstance(sha, str) or not is_commit(sha):
-        raise _NoAnswer
+        raise NoAnswer
     return sha
 
 
-def _on_first_parent_line(asking: _Asking, commit: str, tip: str) -> bool | None:
+def on_first_parent_line(asking: Asking, commit: str, tip: str) -> bool | None:
     """Czy ``commit`` jest jednym z ``tip~k``, czyli leży na linii pierwszych rodziców ``tip``; ``None``, gdy nie
     jest przodkiem ``tip``.
 
@@ -320,7 +320,7 @@ def _on_first_parent_line(asking: _Asking, commit: str, tip: str) -> bool | None
     wciągnięta merge'em, commit wypchnięty wprost na `main`).
     """
 
-    status, ahead = _compare(asking, commit, tip)
+    status, ahead = compare(asking, commit, tip)
     if status == "identical":
         return True
     if status != "ahead":
@@ -331,8 +331,8 @@ def _on_first_parent_line(asking: _Asking, commit: str, tip: str) -> bool | None
     while beyond - contains > 1:
         middle = (contains + beyond) // 2
         try:
-            status, _ = _compare(asking, commit, f"{tip}~{middle}")
-        except _NotFound:
+            status, _ = compare(asking, commit, f"{tip}~{middle}")
+        except NotFound:
             status = "behind"
         if status == "identical":
             return True
@@ -343,7 +343,7 @@ def _on_first_parent_line(asking: _Asking, commit: str, tip: str) -> bool | None
     return False
 
 
-def _merged_into_main(asking: _Asking, commit: str) -> bool:
+def _merged_into_main(asking: Asking, commit: str) -> bool:
     """Czy GitHub scalił ``commit`` do `main` jako commit PR (``merge_commit_sha``), czyli ``commit`` był czubkiem
     `main`; ``False`` także przy odmowie i odpowiedzi w innym kształcie, bo wtedy decyduje wyszukiwanie binarne.
 
@@ -353,7 +353,7 @@ def _merged_into_main(asking: _Asking, commit: str) -> bool:
 
     try:
         pulls = asking.json(f"{asking.api}/commits/{commit}/pulls")
-    except _NoAnswer:
+    except NoAnswer:
         pulls = ()
     return any(
         isinstance(pull, dict)
@@ -365,7 +365,7 @@ def _merged_into_main(asking: _Asking, commit: str) -> bool:
     )
 
 
-def _compare(asking: _Asking, commit: str, head: str) -> tuple[str, int]:
+def compare(asking: Asking, commit: str, head: str) -> tuple[str, int]:
     """Stan ``commit`` względem ``head`` (``ahead``: ``head`` go zawiera) i liczba commitów ``head`` spoza niego, ze
     strony porównania bez commitów i plików."""
 
@@ -373,7 +373,7 @@ def _compare(asking: _Asking, commit: str, head: str) -> tuple[str, int]:
     status = compared.get("status") if isinstance(compared, dict) else None
     ahead = compared.get("ahead_by") if isinstance(compared, dict) else None
     if not isinstance(status, str) or type(ahead) is not int:
-        raise _NoAnswer
+        raise NoAnswer
     return status, ahead
 
 
@@ -394,8 +394,8 @@ def published_from(api: str, *, timeout_s: float, token: str | None = None) -> t
 
     def fetch() -> tuple[PublishedRelease, ...] | None:
         try:
-            return parse_published(_Asking(api, timeout_s, token).json(f"{api}/releases?per_page={PUBLISHED_PAGE}"))
-        except _NoAnswer:
+            return parse_published(Asking(api, timeout_s, token).json(f"{api}/releases?per_page={PUBLISHED_PAGE}"))
+        except NoAnswer:
             return None
 
     return within(timeout_s, fetch, name="github-notki-wydan")
@@ -427,15 +427,15 @@ def _published(entry: object) -> PublishedRelease | None:
     return PublishedRelease(release, notes or "", published_at) if published_at.tzinfo is not None else None
 
 
-class _NoAnswer(Exception):
+class NoAnswer(Exception):
     """GitHub nie dał pełnej odpowiedzi; Aktualność to wtedy ``None``."""
 
 
-class _NotFound(_NoAnswer):
+class NotFound(NoAnswer):
     """GitHub odpowiedział 404: nie zna takiego commitu."""
 
 
-def _tag_commits(asking: _Asking, url: str) -> dict[str, str] | None:
+def tag_commits(asking: Asking, url: str) -> dict[str, str] | None:
     """Tagi i ich commity ze wszystkich stron listy tagów; ``None`` bez pełnej listy."""
 
     commits: dict[str, str] = {}
@@ -443,7 +443,7 @@ def _tag_commits(asking: _Asking, url: str) -> dict[str, str] | None:
     for _ in range(MAX_PAGES):
         try:
             tags, following = asking.page(page)
-        except _NoAnswer:
+        except NoAnswer:
             return None
         if not isinstance(tags, list):
             return None
@@ -461,7 +461,7 @@ def _tag_commits(asking: _Asking, url: str) -> dict[str, str] | None:
 _TOKEN_REFUSALS: Final = frozenset({401, 403})
 
 
-class _Asking:
+class Asking:
     """Pytania jednego sprawdzenia do API repozytorium ``api``: z tokenem tylko do hosta ``api``, dopóki GitHub nie
     odmówi pytania z nim (opis modułu); ``limited`` to ostatnia odmowa z powodu limitu."""
 
@@ -476,7 +476,7 @@ class _Asking:
         return self.page(url)[0]
 
     def page(self, url: str, *, with_token: bool = True) -> tuple[object, str | None]:
-        """Treść JSON odpowiedzi ``url`` i adres następnej strony z nagłówka ``Link``; ``_NoAnswer`` przy porażce.
+        """Treść JSON odpowiedzi ``url`` i adres następnej strony z nagłówka ``Link``; ``NoAnswer`` przy porażce.
 
         404 na pytanie z tokenem to jedno ponowienie tego pytania bez tokenu, ale token zostaje dla następnych:
         wyszukiwanie binarne dostaje 404 także wtedy, gdy ``tip~k`` sięga przed pierwszy commit repozytorium."""
@@ -490,17 +490,17 @@ class _Asking:
             if 200 <= response.status < 300:
                 return json.loads(response.body), next_page(response)
         except (OSError, HTTPException, ValueError) as failure:  # brak sieci, zerwane połączenie, nie JSON
-            raise _NoAnswer from failure
+            raise NoAnswer from failure
         reset = rate_limit_reset(response)  # odmowa GitHuba
         if reset is not None and token is None:
             self.limited = RateLimited(reset)
-            raise _NoAnswer
+            raise NoAnswer
         if token is not None and (reset is not None or response.status in _TOKEN_REFUSALS):
             self._token = None
             return self.page(url)
         if token is not None and response.status == 404:
             return self.page(url, with_token=False)
-        raise _NotFound if response.status == 404 else _NoAnswer
+        raise NotFound if response.status == 404 else NoAnswer
 
 
 def _tag_commit(tag: object) -> tuple[str, str] | None:

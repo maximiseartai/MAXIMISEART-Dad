@@ -1,6 +1,6 @@
 """Uruchomienie procesu gotowe do startu, to samo dla każdego gospodarza rdzenia Uruchomienia procesu.
 
-Centrum rozliczeń (``runs._Run``), Skrypt dla maszyn (``tools/uruchom_proces.py``) i odtworzenie z Logów
+Centrum rozliczeń (``runs.Run``), Skrypt dla maszyn (``tools/uruchom_proces.py``) i odtworzenie z Logów
 (``tools/lib/odtworzenie.py``) budują ``PreparedRun`` i prowadzą je przez ``PreparedRun.conduct``: ten sam rdzeń,
 widok z wpisu katalogu procesów i Kontekst Uruchomienia. Gospodarz daje tylko rozmówcę, a plik metryk wybiera,
 podając rdzeń procesu z jego ``metrics_path``.
