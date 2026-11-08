@@ -104,6 +104,7 @@ FEATURES = (
         "metryki",
         (
             "20-metryki-karty-okresow",
+            "2c-metryki-karty-okresow-bez-odczytu",
             "21-metryki-wykres",
             "2a-metryki-wykres-waski",
             "28-metryki-wykres-szczegoly-ciemny",
