@@ -67,6 +67,7 @@ from tests.fixtures.intermax import (
 )
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace, no_space, partial_copy, writing
+from tests.fixtures.workbooks import without_sheet
 
 NOW = datetime(2026, 10, 25, 21, 5, 7)
 COPY_NAME = "INTERMAX przed uporządkowaniem 2026-10-25 21-05-07.xlsx"
@@ -2150,6 +2151,21 @@ def test_skoroszyt_bez_czesci_stylow_albo_dokumentu_to_nieczytelny_intermax_bez_
     path, _ = _register(tmp_path)
     dropped = re.compile(rb'<Relationship [^>]*Type="[^"]*%s"[^>]*/>' % re.escape(relationship.encode()))
     rewrite_parts(path, lambda name, data: dropped.sub(b"", data) if name == part else data)
+
+    with _nothing_written(tmp_path, path):
+        outcome = _run(tmp_path)
+
+    stop = _stop(outcome)
+    assert (stop.message.code, stop.stop_kind) == ("NIECZYTELNY_INTERMAX", "for_tata")
+    assert outcome.progress.phase_states[ProgressPhase.READING] == PhaseState.FAILED
+
+
+def test_skoroszyt_bez_arkusza_to_nieczytelny_intermax_bez_zapisu(tmp_path: Path) -> None:
+    """Skoroszyt, którego dokument nie wymienia żadnego arkusza: Excel takiego nie zapisuje, a openpyxl go nie otwiera,
+    więc tata słyszy o nieczytelnym INTERMAX, tak jak w Przygotowaniu pliku zbiorczego, a nie o braku arkusza zleceń."""
+
+    path, _ = _register(tmp_path)
+    without_sheet(path)
 
     with _nothing_written(tmp_path, path):
         outcome = _run(tmp_path)

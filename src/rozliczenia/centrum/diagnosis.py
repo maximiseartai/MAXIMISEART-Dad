@@ -31,7 +31,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, Final
 
-from rozliczenia import input_checks, intermax_ordering, preparation_messages, workbook_files
+from rozliczenia import intermax_ordering, preparation_messages, preparation_register, workbook_files
 from rozliczenia.centrum import contract, diagnosis_messages
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.cloud_files import CloudFiles
@@ -318,7 +318,7 @@ def _register(computer: _Computer, label: str) -> list[CheckResult]:
     register = computer.settings.existing_register
     if register is None:
         return [CheckResult.not_checked(label, "Rejestru zleceń nie ma na miejscu.")]
-    problem = input_checks.register_problem(register, computer.readers, computer.dad_files)
+    problem = preparation_register.register_problem(register, computer.dad_files)
     if problem is not None:
         return [CheckResult.failed(label, problem)]
     return [CheckResult.passed(label, "Nie jest otwarty w Excelu, otwiera się i ma wymagane nagłówki.")]

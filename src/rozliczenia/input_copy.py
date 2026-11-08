@@ -3,9 +3,9 @@
 Uruchomienie z Centrum ma swoją Kopię wejścia (``InputCopy``) w uchwycie plików taty (``dad_files.DadFiles``), a
 czytnik, który czyta dla niego plik taty, oddaje jej przez ten uchwyt bajty, z których czytał plik, zakazane kolumny
 każdego arkusza i każdy przeczytany wiersz z jego położeniami (``raw_orders.RowPositions``): Rejestr zleceń w
-Przygotowaniu pliku zbiorczego (``input_checks.read_register``), Plik zbiorczy w Przebiegu rozliczeń
+Przygotowaniu pliku zbiorczego (``register_file.OrderSheets.period_rows``), Plik zbiorczy w Przebiegu rozliczeń
 (``workbook_files.read_data_rows``), w Wycenie w efenix (``workbook_files.read_computed_rows``) i INTERMAX w
-Uporządkowaniu INTERMAX (``register_file.read``, #842). Zakazane kolumny to te, których komórki ten sam czytnik
+Uporządkowaniu INTERMAX (``register_file.PasteArea.copy_paste``, #842). Zakazane kolumny to te, których komórki ten sam czytnik
 oddaje pamięci reguły danych (``client_data.ForbiddenValues``). Proces bez Centrum (Skrypt dla maszyn) Kopii nie ma, bo
 nie ma Logów.
 
@@ -165,16 +165,16 @@ class SheetCopy:
 
     def _cells(self, values: Values, positions: RowPositions) -> dict[str, CellValue]:
         """Jedyna reguła komórki Kopii (ADR 0025 „Kopia wejścia”): komórka z kolumny c stoi w Kopii pod c +
-        ``positions.read``, gdy w każdym położeniu z ``positions.known`` stoi w kolumnie, którą Kopia niesie, a nie pod
-        zakazanym nagłówkiem. Data z godziną spod ``date_column`` (czytana z przesunięciem ``read``) zostaje, bo nie jest
-        wartością zakazanej kolumny, a bez niej odtworzenie nie powtórzy Uruchomienia (#847)."""
+        ``positions.read``, gdy tam i w każdym położeniu z ``positions.known`` stoi w kolumnie, którą Kopia niesie, a nie
+        pod zakazanym nagłówkiem. Data z godziną spod ``date_column`` (czytana z przesunięciem ``read``) zostaje, bo nie
+        jest wartością zakazanej kolumny, a bez niej odtworzenie nie powtórzy Uruchomienia (#847)."""
 
         numbered = _numbered(values)
         read, known = positions.read, positions.known
         placed = {
             column + read: value
             for column, value in numbered.items()
-            if all(self._allowed(column + offset) for offset in known)
+            if all(self._allowed(column + offset) for offset in {read, *known})
         }
         if self.date_column is not None:
             when = numbered.get(self.date_column - read)

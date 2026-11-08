@@ -8,8 +8,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
   pusta Kopia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu wyników szukania, wiersz Kopii albo
   zlecenie śladu efenix, które strażnik reguły danych pominął) kończy odtworzenie bez uruchomienia procesu: wynik
-  takiego odtworzenia nic by nie znaczył. Zastrzeżenie (maski strażnika w Kopii, wiersz INTERMAX w obu położeniach bez
-  komórek dozwolonych tylko w jednym, pole albo element, które strażnik pominął poza wejściem, Wzorce spoza Logów,
+  takiego odtworzenia nic by nie znaczył. Zastrzeżenie (maski strażnika w Kopii, wiersz Rejestru zleceń albo INTERMAX
+  w obu położeniach bez komórek dozwolonych tylko w jednym, pole albo element, które strażnik pominął poza wejściem, Wzorce spoza Logów,
   Surowe zlecenia, dni nad wklejeniem, Atrapa w miejscu efenix) raport podaje przy każdym wyniku, bo może tłumaczyć
   różnicę.
 - Pliki wejścia powstają w katalogu roboczym z Kopii wejścia, pod tą samą nazwą w folderach o tych samych nazwach co
@@ -584,15 +584,30 @@ def _above_paste(created: Worksheet, sheet: LoggedSheet) -> None:
 def _preparation(record: RunLog, work: _Work) -> _Rebuilt:
     # Kopia nie ma wyglądu komórek, a z wyglądu uporządkowanego wiersza Rejestru pamięć reguły danych wie, że jego
     # komórki stoją pod nagłówkiem (#918): wiersze mają krój uporządkowanych wierszy taty. Pierwszy wiersz bloku
-    # wklejenia u taty (bez tego wyglądu) i wiersz z siatki reguły położenia mają w Kopii maski w miejscu tekstu dwie
-    # kolumny na lewo od ``ADRES`` i ``NUMER UMOWY`` (u taty ``DATA`` i ``NUMER ZL.``), więc różnicę z nich tłumaczy
-    # zastrzeżenie o maskach (``_masked_limits``).
+    # wklejenia u taty (bez tego wyglądu) nie ma w Kopii komórek, które w jego położeniu stoją pod ``ADRES`` i ``NUMER
+    # UMOWY`` (u taty ``DATA`` i ``NUMER ZL.``), a różnicę z wiersza z siatki tłumaczy zastrzeżenie o nim
+    # (``_preparation_limits``).
     register, limits = _register_file(record, work, "rejestr", _ORDERED_FONT)
     return _Rebuilt({"register": register, "periods_directory": work.folder("okresy")}, limits=limits)
 
 
 def _preparation_limits(record: RunLog) -> list[Limit]:
-    return _one_file_limits(record, "Przygotowanie pliku zbiorczego") or [
+    limits = _one_file_limits(record, "Przygotowanie pliku zbiorczego")
+    if limits:
+        return limits
+    uncertain = _uncertain_rows(record)
+    if uncertain:
+        limits.append(
+            Limit(
+                f"Kopia wejścia ma wiersze Rejestru zleceń w obu położeniach ({uncertain}): to wiersze z siatki reguły "
+                "położenia (ślad przesunięcia albo pierwszy wiersz bloku, którego przesunięcia nie widać), a nie ma w nich "
+                "komórek, które w którymś położeniu stałyby pod ADRES, NUMER UMOWY albo poza kolumnami Rejestru, które "
+                "czyta Przygotowanie (u taty NUMER ZL. i DATA GODZ. POCZ., gdy nie jest datą z godziną), więc odtworzony "
+                "wiersz ich nie ma, a Planowanie może zdecydować inaczej (ADR 0025)"
+            )
+        )
+    return [
+        *limits,
         Limit(
             "Surowe zlecenia na dole arkuszy Rejestru zleceń nie są w Kopii wejścia: odtworzony Rejestr ich nie ma, więc "
             "Zatrzymanie o nich się nie powtórzy"
@@ -630,10 +645,8 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
     limits = _one_file_limits(record, "Uporządkowanie INTERMAX")
     if limits:
         return limits
-    uncertain = [(sheet.sheet, sheet.uncertain_rows) for sheet in _the_file(record).sheets if sheet.uncertain_rows]
-    limits = []
-    if uncertain:
-        where = "; ".join(f"arkusz {name}, wiersze {', '.join(map(str, rows))}" for name, rows in uncertain)
+    where = _uncertain_rows(record)
+    if where:
         limits.append(
             Limit(
                 f"Kopia wejścia ma wiersze INTERMAX w obu położeniach ({where}): to wiersze z siatki reguły położenia "
@@ -652,6 +665,14 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
         ),
         Limit("kolumn z aplikacji za UWAGI nie ma w Kopii wejścia: odtworzony INTERMAX ich nie ma"),
     ]
+
+
+def _uncertain_rows(record: RunLog) -> str:
+    """Wiersze w obu położeniach (``uncertain_rows``) każdego arkusza Kopii wejścia jedynego pliku, po arkuszach; pusty
+    napis, gdy ich nie ma."""
+
+    uncertain = [(sheet.sheet, sheet.uncertain_rows) for sheet in _the_file(record).sheets if sheet.uncertain_rows]
+    return "; ".join(f"arkusz {name}, wiersze {', '.join(map(str, rows))}" for name, rows in uncertain)
 
 
 def _efenix(record: RunLog, work: _Work) -> _Rebuilt:

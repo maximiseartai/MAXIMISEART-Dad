@@ -2,7 +2,7 @@
 
 Każde otwarcie skoroszytu w obu procesach przechodzi przez ten moduł: Plik
 zbiorczy (``read_data_rows``) daje Wiersze danych z komórkami po kolumnie (``DataRow``), a Rejestr zleceń
-(``read_workbook``) wiersze z komórkami pod nagłówkiem docelowym (``RegisterRow``); komórka niesie wartość,
+(``register_file``) wiersze z komórkami pod nagłówkiem docelowym (``RegisterRow``); komórka niesie wartość,
 Wyróżnienia, format liczby i Hiperłącze (``DataCell``). Wzorce czyta przez ``open_workbook`` plik z Wzorca
 (``template_file``). Otwarcie
 sprawdza dostępność i klasyfikuje każde uszkodzenie, a problem zgłasza jako
@@ -37,7 +37,6 @@ from xml.parsers.expat import ExpatError
 from openpyxl import load_workbook
 from openpyxl.cell.rich_text import CellRichText
 from openpyxl.utils import column_index_from_string, get_column_letter
-from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH
 from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet._read_only import ReadOnlyWorksheet
@@ -57,11 +56,11 @@ from .collective_layout import (
     QUANTITY_COLUMNS,
     WORKER_COLUMN,
 )
-from .highlights import Face, Highlights, LookReader
+from .highlights import Highlights, LookReader
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL
-from .workbook_parts import first_rows, rows_dated_between, rows_with_input
+from .workbook_parts import rows_with_input
 from .text import normalize_text
 
 if TYPE_CHECKING:
@@ -534,146 +533,6 @@ def read_computed_rows(path: Path, files: DadFiles) -> ComputedRows:
     return ComputedRows(header_columns(sheet.header[: INPUT_COLUMNS[-1]]), rows, sheet.file.content)
 
 
-class ReadRow(NamedTuple):
-    """Wiersz arkusza z ``ReadSheet.data_rows``: wartości całego wiersza od A, wiersz z komórkami pod nagłówkiem
-    docelowym i krój czcionki każdej z tych komórek po nagłówku docelowym."""
-
-    values: tuple[object, ...]
-    row: RegisterRow
-    faces: Mapping[str, Face]
-
-
-class ReadSheet:
-    """Arkusz skoroszytu otwartego tylko do odczytu; każdy odczyt komórek jest klasyfikowany.
-
-    ``rows`` to zakres wierszy danych arkusza zawężonego przez ``ReadWorkbook.narrowed``; ``None``: wszystkie wiersze.
-    """
-
-    def __init__(self, path: Path, content: bytes, sheet: Worksheet, rows: range | None = None) -> None:
-        self._path = path
-        self._content = content
-        self._sheet = sheet
-        self._rows = rows
-
-    @property
-    def title(self) -> str:
-        return self._sheet.title
-
-    def values(self, min_row: int, max_row: int | None = None) -> Iterator[tuple[object, ...]]:
-        return classified(self._path, self._sheet.iter_rows(min_row=min_row, max_row=max_row, values_only=True))
-
-    def data_rows(self, min_row: int, columns: Mapping[str, int]) -> Iterator[ReadRow]:
-        """Wartości całego wiersza, wiersz z komórkami ``columns`` (nagłówek docelowy → kolumna od 1) i krój czcionki
-        tych komórek, od ``min_row`` w dół.
-
-        Wyróżnienia czyta ta sama reguła co w Pliku zbiorczym (``highlights.LookReader``), a format liczby każdej
-        komórki to jej format, ogólny dla brakującej. W arkuszu zawężonym tylko wiersze z jego zakresu.
-        """
-
-        return classified(self._path, self._data_rows(min_row, columns))
-
-    def _data_rows(self, min_row: int, columns: Mapping[str, int]) -> Iterator[ReadRow]:
-        max_row = None
-        if self._rows is not None:
-            min_row, max_row = max(min_row, self._rows.start), self._rows.stop - 1
-            if min_row > max_row:
-                return
-        links = read_sheet_hyperlinks(self._content, self.title)
-        highlights = LookReader()
-        for number, cells in enumerate(self._sheet.iter_rows(min_row=min_row, max_row=max_row), start=min_row):
-            values = tuple(getattr(cell, "value", None) for cell in cells)
-            row_links = links.row(number, values)
-            picked = {header: cells[column - 1] if column <= len(cells) else None for header, column in columns.items()}
-            looks = {header: highlights.look(cell) for header, cell in picked.items()}
-            row = RegisterRow(
-                number,
-                MappingProxyType(
-                    {
-                        header: DataCell(
-                            getattr(cell, "value", None),
-                            looks[header][0],
-                            getattr(cell, "number_format", None) or GENERAL,
-                            row_links.get(columns[header]),
-                        )
-                        for header, cell in picked.items()
-                    }
-                ),
-            )
-            yield ReadRow(values, row, {header: face for header, (_, face) in looks.items()})
-
-
-class _Narrowing(NamedTuple):
-    """Zawężenie skoroszytu: arkusze z kolumną daty (tytuł → kolumna od 1), przedział dat i system dat skoroszytu."""
-
-    date_columns: Mapping[str, int]
-    start: datetime
-    end: datetime
-    epoch: datetime
-
-
-class ReadWorkbook:
-    """Skoroszyt otwarty tylko do odczytu, np. Rejestr zleceń; zawężony (``narrowed``) zna bajty, z których powstał."""
-
-    def __init__(
-        self,
-        path: Path,
-        content: bytes,
-        workbook: Workbook,
-        ranges: Mapping[str, range] | None = None,
-        source: bytes | None = None,
-        narrowing: _Narrowing | None = None,
-    ) -> None:
-        self._path = path
-        self._content = content
-        self._workbook = workbook
-        self._ranges = ranges or {}
-        self._source = content if source is None else source
-        self._narrowing = narrowing
-
-    def sheets(self) -> Iterator[ReadSheet]:
-        with unreadable_as_error(self._path):
-            worksheets = list(self._workbook.worksheets)
-        for sheet in worksheets:
-            yield ReadSheet(self._path, self._content, cast(Worksheet, sheet), self._ranges.get(sheet.title))
-
-    @contextmanager
-    def narrowed(self, date_columns: Mapping[str, int], start: datetime, end: datetime) -> Iterator[ReadWorkbook]:
-        """Ten skoroszyt z arkuszami ``date_columns`` (tytuł → kolumna daty od 1) zawężonymi do dat z [``start``, ``end``).
-
-        Arkusz zawężony czyta tylko wiersz 1 i wiersze od pierwszego do ostatniego, którego
-        data może leżeć w przedziale (``workbook_parts.rows_dated_between``); wartości, formaty i
-        Hiperłącza tych wierszy są takie jak przy odczycie całego arkusza. Skoroszyt już zawężony tak samo w każdym
-        arkuszu ``date_columns`` jest sobą; inaczej zawężane są bajty, z których powstał.
-        """
-
-        epoch = self._workbook.epoch
-        narrowing = self._narrowing
-        if (
-            narrowing is not None
-            and (narrowing.start, narrowing.end, narrowing.epoch) == (start, end, epoch)
-            and all(narrowing.date_columns.get(title) == column for title, column in date_columns.items())
-        ):
-            yield self
-            return
-        with _narrowed(self._path, self._source, _Narrowing(date_columns, start, end, epoch)) as workbook:
-            yield workbook
-
-
-@contextmanager
-def _narrowed(path: Path, source: bytes, narrowing: _Narrowing) -> Iterator[ReadWorkbook]:
-    # Liczba dni od początku systemu dat skoroszytu (1900 albo 1904), z dniem zapasu z obu stron: openpyxl
-    # zaokrągla część dnia do milisekund. Wiersz zakresu z datą spoza przedziału czytający i tak pomija.
-    day = timedelta(days=1)
-    low, high = ((moment - narrowing.epoch) / day for moment in (narrowing.start - day, narrowing.end + day))
-    with unreadable_as_error(path):
-        content, ranges = rows_dated_between(source, narrowing.date_columns, low, high)
-    workbook = _open(path, BytesIO(content), read_only=True)
-    try:
-        yield ReadWorkbook(path, content, workbook, ranges, source, narrowing)
-    finally:
-        workbook.close()
-
-
 def workbook_content(path: Path) -> bytes:
     """Bajty skoroszytu, który jest na dysku i nie jest otwarty w Excelu; inaczej ``WorkbookError``."""
 
@@ -702,35 +561,3 @@ def open_workbook(path: Path, content: bytes, *, read_only: bool) -> Iterator[Wo
         yield workbook
     finally:
         workbook.close()
-
-
-DateColumns: TypeAlias = Callable[[Mapping[str, Sequence[object]]], Mapping[str, int]]
-"""Arkusze z kolumną daty (tytuł → kolumna od 1) po wierszu 1 każdego arkusza (tytuł → wartości od kolumny A)."""
-
-
-@contextmanager
-def read_workbook(
-    path: Path, content: bytes, dated: tuple[DateColumns, datetime, datetime] | None = None
-) -> Iterator[ReadWorkbook]:
-    """Skoroszyt ``path`` z jego bajtów (``workbook_content``) tylko do odczytu z formatem i Hiperłączami komórek.
-
-    Zamykany przy wyjściu z bloku. openpyxl i Hiperłącza czytają te same bajty, odczytane z dysku raz.
-    Z ``dated`` (kolumny daty, początek i koniec przedziału) skoroszyt jest od razu zawężony
-    (``ReadWorkbook.narrowed``) do arkuszy i kolumn, które kolumny daty wskazują po tekstach wiersza 1 bez openpyxl
-    (``workbook_parts.first_rows``), więc openpyxl nie otwiera całego skoroszytu ani razu; wiersz 1 każdego arkusza
-    zostaje, więc czytający rozpoznaje nagłówki z wartości openpyxl i zawęża jeszcze raz, gdy rozpoznał inne.
-    """
-
-    if dated is None:
-        workbook = _open(path, BytesIO(content), read_only=True)
-        try:
-            yield ReadWorkbook(path, content, workbook)
-        finally:
-            workbook.close()
-        return
-    date_columns, start, end = dated
-    with unreadable_as_error(path):
-        first = first_rows(content)
-    epoch = MAC_EPOCH if first.date1904 else WINDOWS_EPOCH
-    with _narrowed(path, content, _Narrowing(date_columns(first.sheets), start, end, epoch)) as narrowed:
-        yield narrowed

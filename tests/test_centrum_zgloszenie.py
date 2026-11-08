@@ -5,7 +5,6 @@ from __future__ import annotations
 import codecs
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 import json
 import re
 import shutil
@@ -15,7 +14,6 @@ from typing import Any, NoReturn
 
 import pytest
 
-from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.keyed_box import KEY_CHECK_THREAD
@@ -41,6 +39,7 @@ from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.centrum_processes import (
+    on_register_read,
     PreparingCentrum,
     SettlingCentrum,
     Surroundings,
@@ -213,7 +212,7 @@ def test_adres_wpisany_jako_wykonawca_wychodzi_w_tytule_zgloszenia_zamaskowany_z
 MARKER = "SYN-SLAD-158 treść wyjątku z Rejestru zleceń"
 
 
-def raise_with_marker(*args: object) -> NoReturn:
+def raise_with_marker(path: Path) -> NoReturn:
     raise KeyError(MARKER)
 
 
@@ -228,7 +227,7 @@ def trace_section(body: str) -> list[str]:
 
 
 def test_nieoczekiwany_wyjatek_daje_w_zgloszeniu_typ_i_ramki_kodu_narzedzia_bez_tresci_wyjatku(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, register=raise_with_marker)))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=on_register_read(raise_with_marker)))
     write_report_key(centrum.tool)
     stopped = run_to_end(centrum, dry_run=True)
     run_id = stopped["run"]["id"]
@@ -242,7 +241,7 @@ def test_nieoczekiwany_wyjatek_daje_w_zgloszeniu_typ_i_ramki_kodu_narzedzia_bez_
     frames = section[section.index("```text") + 1 : section.index("```")]
     assert all(re.fullmatch(r"(src|tests)/[\w/]+\.py:\d+ w \S+", frame) for frame in frames), frames
     assert re.fullmatch(r"src/rozliczenia/process_run\.py:\d+ w _run_engine", frames[0])
-    assert any(re.fullmatch(r"src/rozliczenia/collective_preparation\.py:\d+ w <lambda>", frame) for frame in frames)
+    assert any(re.fullmatch(r"src/rozliczenia/collective_preparation\.py:\d+ w check", frame) for frame in frames)
     raising_line = raise_with_marker.__code__.co_firstlineno + 1
     assert frames[-1] == f"tests/test_centrum_zgloszenie.py:{raising_line} w raise_with_marker"
     [report] = centrum.surroundings.report_box.sent

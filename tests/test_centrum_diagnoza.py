@@ -27,6 +27,7 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from tests.fixtures.centrum_processes import (
+    on_register_read,
     PreparingCentrum,
     SettlingCentrum,
     Surroundings,
@@ -504,10 +505,10 @@ def test_nieoczekiwany_wyjatek_bez_przyczyny_na_komputerze_kaze_wyslac_do_maksa_
 def test_nieoczekiwany_wyjatek_ktory_wraca_w_diagnozie_zostawia_sprawdzenie_niesprawdzone_a_zgloszenie_mozna_wyslac(
     tmp_path: Path,
 ) -> None:
-    def fail_unexpectedly(*args: object) -> NoReturn:
+    def fail_unexpectedly(path: Path) -> NoReturn:
         raise RuntimeError("nieprzewidziany błąd przy SYN-001")
 
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, register=fail_unexpectedly)))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=on_register_read(fail_unexpectedly)))
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
 
     diagnosis = diagnose(centrum, run_id)

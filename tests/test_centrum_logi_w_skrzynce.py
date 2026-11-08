@@ -750,9 +750,13 @@ def _settlement(tmp_path: Path) -> Produced:
     return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
 
 
-def _preparation(tmp_path: Path) -> Produced:
+def _preparation(tmp_path: Path, paste: Callable[[Path], object] | None = None) -> Produced:
+    """Logi zapisu Przygotowania; ``paste`` zmienia przedtem Rejestr zleceń."""
+
     tmp_path.mkdir()
     centrum = preparing_centrum(tmp_path)
+    if paste is not None:
+        paste(centrum.fixture.register_path)
     write_report_key(ToolDirectory(tmp_path))
     assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     configuration = {centrum.fixture.config_path.parent, centrum.fixture.internal_template_path.parent}
@@ -1262,6 +1266,28 @@ def test_logi_z_przesunietym_wierszem_w_srodku_wklejenia_maja_uwage_o_fakcie_dom
         "ZL., ZWROT, UWAGI i DATA GODZ. POCZ., gdy nie jest datą z godziną), więc odtworzony wiersz ich nie ma, a reguła, "
         "która je czyta, może zdecydować inaczej (ADR 0025)"
     ) in lines
+
+
+def test_logi_przygotowania_z_wierszem_rejestru_z_siatki_odtwarzaja_sie_z_zastrzezeniem_o_nim(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Wiersz z wyglądem z aplikacji na miejscu na górze odczytu okresu zaczyna blok, a jego przesunięcia nie widać:
+    pamięć zna go w obu położeniach, a Kopia wejścia Przygotowania ma go w ``uncertain_rows`` bez komórek dozwolonych
+    tylko w jednym, więc raport odtworzenia ma o nim zastrzeżenie."""
+
+    def in_place_on_top(register: Path) -> None:
+        paste_raw_orders(register, [register_order(1, datetime(2026, 9, 8, 9))], first=2, in_place_from="DATA GODZ. POCZ.")
+
+    produced = _preparation(tmp_path / "taty", in_place_on_top)
+    [sheet] = produced.record["input_copy"][0]["sheets"]
+
+    _, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
+
+    assert sheet["uncertain_rows"] == [2]
+    granice = lines[lines.index("Granice:") + 1 :]
+    assert [line for line in granice if line.startswith(
+        f"- Kopia wejścia ma wiersze Rejestru zleceń w obu położeniach (arkusz {sheet['sheet']}, wiersze 2): "
+    )], granice
 
 
 # Pierwszy wiersz bloku wklejenia przychodzi z aplikacji przesunięty o dwie kolumny w lewo (fakt domeny, ADR 0025): jego

@@ -16,7 +16,8 @@ from pathlib import Path
 
 from . import preparation_messages as messages
 from .message import StopError
-from .preparation_register import RegisterSheet, cell_value
+from .preparation_register import cell_value
+from .register_file import RegisterSheet
 from .register_columns import ACTIVITIES, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER
 from .quantity_rules import OrderContent, RuleResult, evaluate
 from .settlement_period import SettlementPeriod

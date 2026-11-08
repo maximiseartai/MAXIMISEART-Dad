@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from typing import Final
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
@@ -456,6 +457,10 @@ class PreparationFixture:
         return self.period_directory / COLLECTIVE_FILE_NAME
 
 
+REGISTER_NAME: Final = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
+"""Nazwa Rejestru zleceń fixture Przygotowania (``make_preparation_fixture``)."""
+
+
 def make_preparation_fixture(tmp_path: Path, rows: list[RegisterRow] | None = None) -> PreparationFixture:
     """Rejestr, folder okresów ``INEA``, konfiguracja wykonawców i oba wzorce w ``tmp_path``."""
 
@@ -464,7 +469,7 @@ def make_preparation_fixture(tmp_path: Path, rows: list[RegisterRow] | None = No
     periods_directory = tmp_path / "INEA"
     periods_directory.mkdir()
     return PreparationFixture(
-        register_path=write_register(tmp_path / "ZLECENIA INTERMAX OD 08_11_2021.xlsx", rows),
+        register_path=write_register(tmp_path / REGISTER_NAME, rows),
         periods_directory=periods_directory,
         config_path=write_mapping(config_directory / "worker_mapping.yaml"),
         internal_template_path=write_internal_template(

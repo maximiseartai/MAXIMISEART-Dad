@@ -28,7 +28,7 @@ from rozliczenia.domain import (
 from rozliczenia.progress import PhaseState, ProgressProjection
 from rozliczenia.message import StopError
 from rozliczenia.highlights import PLAIN
-from rozliczenia.preparation_register import read_register
+from rozliczenia.preparation_register import period_sheets, read, register_problem
 from rozliczenia.register_columns import COLUMNS
 from rozliczenia.workbook_files import DataCell
 from rozliczenia.settlement_period import parse_period_token
@@ -465,17 +465,33 @@ def test_rejestr_row_ending_before_the_last_column_has_an_empty_general_cell_the
         path, lambda name, data: re.sub(rb"<dimension [^>]*/>", b"", data) if name.startswith("xl/worksheets/") else data
     )
 
-    [register] = read_register(DadFiles().read(path))
+    [register] = period_sheets(read(path, DadFiles()), None)
 
     [row] = register.register_rows
     assert row.cells["CZYNNOŚCI ZREALIZOWANE"] == DataCell(None, PLAIN, "General", None)
     assert row.cells["MIASTO"].value == "syntetyczne miasto"
 
 
+def test_odczyt_danych_okresu_ma_wiersze_od_dnia_przed_okresem_do_dnia_po_nim(tmp_path: Path) -> None:
+    """Odczyt danych okresu ma wiersze od pierwszego do ostatniego z datą z dniem zapasu z obu stron okresu (openpyxl
+    zaokrągla część dnia do milisekund), a Planowanie bierze z nich tylko zlecenia okresu."""
+
+    period = parse_period_token(PERIOD)
+    days = [period.start + timedelta(days=offset, hours=9) for offset in range(-4, 11)]
+    orders: list[RegisterRow] = [register_order(number, day) for number, day in enumerate(days, start=1)]
+    path = write_register(tmp_path / "Rejestr.xlsx", orders)
+
+    [sheet] = period_sheets(read(path, DadFiles()), period)
+
+    margin = timedelta(days=1)
+    window = [row for row, day in enumerate(days, start=2) if period.start - margin <= day < period.end + margin]
+    assert [row.number for row in sheet.register_rows] == window
+
+
 def test_rejestr_rows_remembered_after_podglad_cannot_be_changed(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(tmp_path)
     link_register_order_numbers(fixture.register_path, "https://firma.example/zlecenie/")
-    row = read_register(DadFiles().read(fixture.register_path), parse_period_token(PERIOD))[0].register_rows[0]
+    row = period_sheets(read(fixture.register_path, DadFiles()), parse_period_token(PERIOD))[0].register_rows[0]
     header, cell = next((header, cell) for header, cell in row.cells.items() if cell.hyperlink is not None)
 
     with pytest.raises(TypeError):
@@ -1575,22 +1591,22 @@ def test_rejestr_w_ksztalcie_ktorego_zawezenie_tekstow_wspolnych_nie_zna_daje_te
     ],
     ids=["zagniezdzony", "zagniezdzony-z-prefiksem", "w-innej-przestrzeni-nazw", "cdata", "komentarz", "instrukcja"],
 )
-def test_tekst_wspolny_w_ksztalcie_spoza_listy_daje_te_same_wiersze_okresu_co_odczyt_calego_rejestru(
+def test_tekst_wspolny_w_ksztalcie_spoza_listy_zatrzymuje_przygotowanie_na_nieczytelnym_rejestrze(
     tmp_path: Path, item: str, odd: str
 ) -> None:
-    """openpyxl liczy każdy ``<si>`` tabeli tekstów wspólnych z przestrzeni nazw arkusza, także zagnieżdżony w tekście
-    i to przed nim, a nie liczy ``<si>`` z innej przestrzeni nazw ani znaczników w CDATA, komentarzu i instrukcji
-    przetwarzania: miasto, które zlecenia okresu dzielą z wcześniejszymi, stoi w takim kształcie. Wiersze okresu są
-    takie same jak w odczycie całego Rejestru."""
+    """Tabela tekstów wspólnych w kształcie, którego granic ``<si>`` czytnik Rejestru nie zna (zagnieżdżony ``<si>``,
+    ``<si>`` z innej przestrzeni nazw, znaczniki w CDATA, komentarzu albo instrukcji przetwarzania; Excel tak nie
+    zapisuje): Przygotowanie zatrzymuje się na nieczytelnym Rejestrze, a Diagnoza mówi to samo, zamiast zgadywać, który
+    tekst ma komórka."""
 
     fixture = _excel_register_after_history(tmp_path)
     rewrite_parts(
         fixture.register_path,
         lambda name, data: data.replace(item.encode(), odd.encode(), 1) if name == "xl/sharedStrings.xml" else data,
     )
-    file = DadFiles().read(fixture.register_path)
 
-    [period] = read_register(file, parse_period_token(PERIOD))
-    [whole] = read_register(file)
+    with pytest.raises(StopError) as raised:
+        run_preparation(fixture)
 
-    assert period.register_rows == tuple(row for row in whole.register_rows if row.number in range(42, 45))
+    assert raised.value.message.code == "USZKODZONY_REJESTR"
+    assert register_problem(fixture.register_path, DadFiles()) == raised.value.message

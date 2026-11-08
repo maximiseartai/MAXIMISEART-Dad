@@ -40,8 +40,6 @@ from rozliczenia.workbook_files import (
     RegisterRow,
     WorkbookError,
     read_data_rows,
-    read_workbook,
-    workbook_content,
 )
 from rozliczenia.template_copy import Package
 from rozliczenia.template_file import TemplateFile
@@ -133,12 +131,6 @@ def styled_template(path: Path) -> Path:
     return path
 
 
-def _read_with_format(path: Path) -> None:
-    with read_workbook(path, workbook_content(path)) as workbook:
-        for sheet in workbook.sheets():
-            list(sheet.data_rows(min_row=1, columns={get_column_letter(column): column for column in range(1, 15)}))
-
-
 def _check_template(path: Path) -> None:
     TemplateFile.collective_file(path).check()
 
@@ -173,7 +165,6 @@ def _worker_settlement(path: Path) -> None:
 
 OPENINGS: dict[str, Callable[[Path], object]] = {
     "odczyt": _read_data_rows,
-    "odczyt-z-formatem": _read_with_format,
     "wzorzec": _check_template,
     "planowanie-wzorca": _plan_template,
     "plik-okresu-z-wzorca": _period_file,
@@ -1364,43 +1355,6 @@ def test_rejestr_zawezony_do_okresu_ma_wiersze_z_liczba_daty_z_przedzialu_w_kazd
     _, ranges = rows_dated_between(path.read_bytes(), {"ZLECENIA": 1}, 46279.0, 46288.0)
 
     assert ranges == ({} if kept is None else {"ZLECENIA": kept})
-
-
-@pytest.mark.parametrize(
-    "guessed", [{}, {"Zlecenia": 2}, {"Zlecenia": 1}], ids=["bez_kolumn", "inna_kolumna", "rozpoznana_kolumna"]
-)
-def test_rejestr_zawezony_po_wierszu_1_bez_openpyxl_daje_wiersze_okresu_z_rozpoznanej_kolumny_daty(
-    tmp_path: Path, guessed: dict[str, int]
-) -> None:
-    """Rejestr zleceń otwarty od razu zawężony po kolumnach daty z wiersza 1 bez openpyxl ma wiersz 1 z nagłówkami, a
-    po rozpoznaniu kolumny daty daje wiersze okresu z niej, także gdy z wiersza 1 bez openpyxl wyszła inna kolumna albo
-    żadna."""
-
-    path = tmp_path / "Rejestr.xlsx"
-    workbook = Workbook()
-    orders = active_worksheet(workbook)
-    orders.title = "Zlecenia"
-    orders.append(["DATA GODZ. POCZ.", "MIASTO"])
-    for day in range(1, 21):
-        orders.append([datetime(2026, 9, day, 8), f"miasto {day}"])
-    workbook.save(path)
-    start, end = datetime(2026, 9, 10), datetime(2026, 9, 13)
-    seen: list[dict[str, object]] = []
-
-    def date_columns(headers: Any) -> dict[str, int]:
-        seen.append(dict(headers))
-        return guessed
-
-    with read_workbook(path, path.read_bytes(), (date_columns, start, end)) as read:
-        headers = [next(sheet.values(min_row=1, max_row=1)) for sheet in read.sheets()]
-        numbers = []
-        for moved in (timedelta(0), timedelta(days=3)):
-            with read.narrowed({"Zlecenia": 1}, start + moved, end + moved) as narrowed:
-                numbers.append([found.row.number for sheet in narrowed.sheets() for found in sheet.data_rows(2, {"DATA": 1})])
-
-    assert seen == [{"Zlecenia": ["DATA GODZ. POCZ.", "MIASTO"]}]
-    assert headers == [("DATA GODZ. POCZ.", "MIASTO")]
-    assert numbers == [list(range(10, 15)), list(range(13, 18))], "okres z dniem zapasu z obu stron"
 
 
 def _rows(content: bytes) -> dict[int, tuple[object, ...]]:

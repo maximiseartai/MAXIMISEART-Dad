@@ -26,10 +26,7 @@ from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.tool_update import ToolClone, find_git
 from rozliczenia.efenix_pace import Pace
-from rozliczenia.dad_files import ReadFile
 from rozliczenia.input_checks import FILE_READERS, Readers
-from rozliczenia.preparation_register import RegisterSheet
-from rozliczenia.settlement_period import SettlementPeriod
 from rozliczenia.process_run import Outcome, Process, ProcessInputs, ProcessSummary, run_process
 from rozliczenia.telemetry import CompletedResult
 from rozliczenia.run_context import RunContext
@@ -53,6 +50,7 @@ from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import (
     PERIOD,
+    REGISTER_NAME,
     PreparationFixture,
     RegisterRow,
     make_preparation_fixture,
@@ -213,7 +211,7 @@ class Surroundings:
 
 @dataclass
 class HeldRegister:
-    """Rejestr zleceń, którego odczyt w Uruchomieniu procesu czeka, aż test go puści (``released``).
+    """Rejestr zleceń, którego pierwszy odczyt bajtów czeka, aż test go puści (``released``).
 
     ``reading`` mówi, że Uruchomienie już czyta Rejestr. Ponowny start Centrum w tym czasie to Centrum zamknięte
     w trakcie Uruchomienia: stare Uruchomienie nie kończy się, dopóki test go nie puści.
@@ -223,12 +221,24 @@ class HeldRegister:
     released: threading.Event = field(default_factory=threading.Event)
 
     def readers(self) -> Readers:
-        def register(file: ReadFile, period: SettlementPeriod | None) -> list[RegisterSheet]:
-            self.reading.set()
-            self.released.wait()
-            return FILE_READERS.register(file, period)
+        def held(path: Path) -> None:
+            if not self.reading.is_set():
+                self.reading.set()
+                self.released.wait()
 
-        return replace(FILE_READERS, register=register)
+        return on_register_read(held)
+
+
+def on_register_read(before: Callable[[Path], None]) -> Readers:
+    """Czytniki plików, których źródło bajtów woła ``before`` przed każdym odczytem Rejestru zleceń fixture Przygotowania
+    (``REGISTER_NAME``): usterka, czekanie albo zapis pliku trafia do Uruchomienia procesu i do Diagnozy."""
+
+    def source(path: Path) -> bytes:
+        if path.name == REGISTER_NAME:
+            before(path)
+        return FILE_READERS.source(path)
+
+    return replace(FILE_READERS, source=source)
 
 
 def _client(

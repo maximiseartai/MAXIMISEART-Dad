@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import datetime, timedelta
 import itertools
 import json
@@ -15,7 +14,6 @@ from typing import Any, NoReturn
 import pytest
 
 from rozliczenia import preparation_process
-from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.centrum import contract, run_view
 
@@ -26,7 +24,14 @@ from tests.fixtures.preparation import (
     PERIOD,
     incomplete_period_rows,
 )
-from tests.fixtures.centrum_processes import TODAY, PreparingCentrum, Surroundings, preparing_centrum, run_to_end
+from tests.fixtures.centrum_processes import (
+    TODAY,
+    PreparingCentrum,
+    Surroundings,
+    on_register_read,
+    preparing_centrum,
+    run_to_end,
+)
 from tests.fixtures.potomne import wait_for
 
 # Podsumowanie wyniku na domyślnym syntetycznym Rejestrze zleceń, takie samo w podglądzie i przy Uruchom.
@@ -399,10 +404,10 @@ def test_nienadpisywanie_zatrzymuje_bez_zmiany_istniejacego_pliku_okresu(tmp_pat
 
 
 def test_nieoczekiwany_wyjatek_pokazuje_trzy_czesci_bez_tekstu_wyjatku_i_danych_klientow(tmp_path: Path) -> None:
-    def fail_unexpectedly(*args: object) -> NoReturn:
+    def fail_unexpectedly(path: Path) -> NoReturn:
         raise RuntimeError("nieprzewidziany błąd przy SYN-001")
 
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, register=fail_unexpectedly)))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=on_register_read(fail_unexpectedly)))
 
     centrum.start(dry_run=False)
     view = finished_view(centrum.client)
@@ -416,7 +421,7 @@ def test_nieoczekiwany_wyjatek_pokazuje_trzy_czesci_bez_tekstu_wyjatku_i_danych_
             "action": "Uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.",
         }
     ]
-    assert phase_states(view)["Odczyt danych"] == "failed"
+    assert phase_states(view)["Sprawdzanie"] == "failed"
     assert "SYN-" not in shown
     assert "RuntimeError" not in shown
     assert list(centrum.fixture.periods_directory.iterdir()) == []

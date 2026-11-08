@@ -22,7 +22,7 @@ from datetime import date
 from pathlib import Path
 from types import MappingProxyType
 
-from . import input_checks, preparation_files, preparation_plan
+from . import input_checks, preparation_files, preparation_plan, preparation_register
 from . import preparation_messages as messages
 from .decision import Decision, Declined
 from .domain import ProgressPhase
@@ -31,6 +31,7 @@ from .phase_runner import PhaseRunner
 from .preparation_files import CollectiveFilePlan
 from .preparation_plan import IncompletePeriod, Plan
 from .quantity_rules import DESCRIPTION_COLUMNS
+from .register_file import RegisterFile
 from .text import day_label
 from .write_routes import RouteCounts
 from .run_context import RunContext
@@ -147,8 +148,9 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
     Planowaniu, a przed Zapisywaniem pyta przez nią o Decyzję taty; odmowa to
     ``Declined`` bez zapisu, z podpowiedzią zgody tego rozmówcy. Czas
     czekania na Decyzję wstrzymuje zegar Uruchomienia, więc nie wlicza się do czasów etapów. Bez rozmówcy
-    (``run_context.UNASKED``) Przygotowanie o nic nie pyta. ``context.readers`` czytają Rejestr zleceń i wzorce w
-    Sprawdzaniu i Odczycie danych, a Rejestr czyta uchwyt plików taty ``context.files``: komórki zakazanych kolumn zna
+    (``run_context.UNASKED``) Przygotowanie o nic nie pyta. ``context.readers`` sprawdzają wzorce w Sprawdzaniu, a
+    Rejestr zleceń czyta raz w Sprawdzaniu uchwyt plików taty ``context.files``, więc strażnik Surowych zleceń i Odczyt
+    danych decydują na tych samych bajtach: komórki zakazanych kolumn zna
     pamięć reguły danych (ADR 0025), a wiersze Rejestru z Odczytu danych Kopia wejścia Uruchomienia (#841).
     """
 
@@ -161,8 +163,8 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
     internal_template = inputs.internal_template_path.expanduser().resolve()
     collective_template = inputs.collective_template_path.expanduser().resolve()
 
-    def check() -> tuple[preparation_files.PeriodFiles, dict[str, str]]:
-        checked = input_checks.check_preparation(
+    def check() -> tuple[preparation_files.PeriodFiles, dict[str, str], RegisterFile]:
+        files, worker_mapping = input_checks.check_preparation(
             register_path,
             periods_directory,
             period,
@@ -171,17 +173,18 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
             collective_template=collective_template,
             readers=readers,
         )
-        raw = input_checks.raw_orders_in_period(register_path, checked[0].folder.period, dad_files)
+        register = preparation_register.read(register_path, dad_files)
+        raw = preparation_register.raw_orders_in_period(register, files.folder.period)
         if raw is not None:
             raise StopError(messages.raw_orders_not_ordered(register_path, raw.sheet, raw.first_row, raw.last_row))
-        return checked
+        return files, worker_mapping, register
 
-    files, worker_mapping = phases.check(check)
+    files, worker_mapping, register = phases.check(check)
     folder = files.folder
-    register = phases.read(lambda: input_checks.read_register(register_path, folder.period, readers, dad_files))
+    sheets = phases.read(lambda: preparation_register.period_sheets(register, folder.period))
 
     def plan_orders() -> tuple[Plan, CollectiveFilePlan, list[Message]]:
-        plan = preparation_plan.plan_period_orders(register_path, register, folder.period, config_path, worker_mapping)
+        plan = preparation_plan.plan_period_orders(register_path, sheets, folder.period, config_path, worker_mapping)
         collective = preparation_files.plan_period_files(files, len(plan.orders), plan.collective_rows)
         return plan, collective, _plan_warnings(register_path, files, plan, collective)
 
