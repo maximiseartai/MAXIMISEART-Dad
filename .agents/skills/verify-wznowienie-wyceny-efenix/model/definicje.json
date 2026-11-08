@@ -16,12 +16,12 @@
     "same_amount": "bc973a2141c850aa"
   },
   "src/rozliczenia/efenix_browser.py": {
-    "BrowserEfenix.load_emmett": "6faf729dcccce92f",
-    "BrowserEfenix.enter_quantity": "e5b13ff875fc0e83",
+    "BrowserEfenix.load_emmett": "db405e989f5892fd",
+    "BrowserEfenix.enter_quantity": "cc679495701f4c6b",
     "BrowserEfenix._finished": "af03337f484dd240",
     "_came_whole": "74cfead327507694",
-    "BrowserEfenix.forward_to_accept": "31e7ec56d0c3364c",
-    "BrowserEfenix._refusal": "124ce9ba8ea0a270",
+    "BrowserEfenix.forward_to_accept": "44fdfa15b4451bda",
+    "BrowserEfenix._refusal": "6db03a32bf79bec1",
     "BrowserEfenix._status_answer": "92368310cf29e855"
   },
   "src/rozliczenia/efenix_checks.py": {
