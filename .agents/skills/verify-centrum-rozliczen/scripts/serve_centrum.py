@@ -191,7 +191,7 @@ from skrypt_skilla import Parser
 from tests.fixtures.atrapa_efenix import atrapa_efenix
 from tests.fixtures.widok_skrzynki import shown
 from tests.fixtures.efenix import write_collective_file
-from tests.fixtures.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED
+from tests.fixtures.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
 
 EFENIX_SEARCH_DELAY_S = 1.0
 
@@ -557,7 +557,7 @@ def _efenix_window(root: Path) -> Iterator[EfenixWindow]:
     known = [
         replace(order.in_efenix(f"90{index}"), status="Rozliczone") if order.number in EFENIX_SETTLED else order.in_efenix(f"90{index}")
         for index, order in enumerate(EFENIX_ORDERS)
-        if order.number != "#QX9002"
+        if order.number not in EFENIX_UNKNOWN
     ]
     with atrapa_efenix(known, answer_delay_s=EFENIX_SEARCH_DELAY_S) as atrapa:
         atrapa.expire_session()

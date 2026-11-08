@@ -22,6 +22,10 @@ pilnuje:
   - requirements.txt
   - .github/workflows/verify-centrum-na-windowsie.yml
   - tests/fixtures/scenariusz_centrum.py
+  - tests/fixtures/preparation.py
+  - tests/fixtures/settlement.py
+  - tests/fixtures/scenariusz_rozliczen.py
+  - tests/fixtures/efenix.py
   - .agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py
 ---
 
