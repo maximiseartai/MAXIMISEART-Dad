@@ -9,6 +9,7 @@ pilnuje:
   - tools/lib/model_efenix.py
   - tests/fixtures/okno_w_procesie.py
   - tests/fixtures/efenix.py
+  - tools/lib/eksplorator.py
 ci: .agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py
 ci-czesci: 8
 ---
@@ -131,9 +132,11 @@ The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does
   the window waits for all of them in one time limit; at „Załaduj do zlecenia” it ends like the run without a fault.
 - `--rola`: the request roles of `Role` (`strona-zlecenia`, `zaladuj-do-zlecenia`, `ilosc`, …).
 - `--lista` prints the cases of this part (`MUTACJE_CZESC`) without a browser; `--zostaw-run` keeps the run files.
-- The last line is the verdict: `WYCENA EFENIX OK`, `WYCENA EFENIX: NOWE NARUSZENIE (n)`, `WYCENA EFENIX: LUKA MODELU
-  (n)` (the window sends requests `EXPECTED_CALLS` does not know: the space is stale) or `WYCENA EFENIX: ZNALEZISKO
-  ZNIKNĘŁO (n)` (a run or a part ran a case after which a known finding always shows, and it did not).
+- The last line is the verdict: `WYCENA EFENIX OK` or `WYCENA EFENIX OK, ZNANE USTALENIA: n, ZAAKCEPTOWANE RYZYKA: m`
+  (a count of zero left out; exit 0), `WYCENA EFENIX: NOWE NARUSZENIE (n)` (exit 1), `WYCENA EFENIX: LUKA MODELU (n)`
+  (the window sends requests `EXPECTED_CALLS` does not know: the space is stale; exit 2) or `WYCENA EFENIX: ZNALEZISKO
+  ZNIKNĘŁO (n)` (a run or a part ran a case after which a known finding or accepted risk always shows, and it did not;
+  exit 1).
 
 ## Evidence
 
@@ -157,8 +160,8 @@ remove that folder (only one with `.katalog-runu`).
 
 ## Known findings
 
-A known finding is a violation the code has today, in `KNOWN_FINDINGS` with the story after which it is excused and its
-`RiskShape` (Accepted risks below); it does not fail the check. One that is sure to show names in `after` the first runs after which it showed in every whole
+A known finding is a violation the code has today, in `KNOWN_FINDINGS` as an `Excuse` of `tools/lib/eksplorator.py`
+with the story after which it is excused and its `RiskShape` (Accepted risks below); it does not fail the check. One that is sure to show names in `after` the first runs after which it showed in every whole
 run. Each of them counts on its own: a run or CI part that runs one of them and does not show the finding after
 that very case ends with `ZNALEZISKO ZNIKNĘŁO`, naming the cases, also while the finding still shows after the others
 (a fix of the list only). Narrow the entry there and here to the cases after which it still shows, or delete it. A name outside the space is `LUKA MODELU`. A `flaky` one (a race) names none and never reports
@@ -184,7 +187,8 @@ the window no longer reads that answer, and no entry excuses it.
 ## Accepted risks
 
 An accepted risk is a violation of WZNOWIENIE the model accepts as a known finding, and the report lists it apart from
-new violations without failing. Each entry of `ACCEPTED_RISKS` and `KNOWN_FINDINGS` has a `RiskShape` whose four parts
+new violations without failing. It names in `after` the first runs after which it always shows, or is `flaky`, as a
+known finding does. Each entry of `ACCEPTED_RISKS` and `KNOWN_FINDINGS` has a `RiskShape` whose four parts
 are all required, so an entry cannot match on fewer of them (#920):
 
 - **step**: the window's step at which run 1 broke (`interrupted_at`): that of its last request as the proxy saw it, a

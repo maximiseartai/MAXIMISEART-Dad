@@ -73,6 +73,7 @@ from openpyxl.styles import PatternFill
 from playwright.sync_api import Browser, Page, Request, Route, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
+from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
 from awarie_efenix import DAD, DAD_LOGINS, FORBIDDEN_CLICK, LOGOUTS, OUTAGES, Call, Counter, Fault, Plan, Proxy, call_kind
 from rozliczenia import efenix_browser, efenix_process
 from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop
@@ -656,34 +657,11 @@ class RiskShape:
         )
 
 
-@dataclass(frozen=True)
-class Risk:
-    """A violation the report lists apart from new ones: a second run that broke BladTylkoPoZmianieTaty in ``shape``."""
-
-    name: str
-    story: str
-    shape: RiskShape
-
-    def matches(self, violation: Violation) -> bool:
-        return violation.resumed is not None and self.shape.holds(violation.resumed)
-
-
-@dataclass(frozen=True)
-class Known(Risk):
-    """A violation the code has today. ``after``: the first runs (``Case.name``) after which it always shows, so a
-    run, or a part of one, that ran one of them without it reports it gone; ``flaky``: a race that names none, because
-    no run is sure to show it, so its absence is no sign it is gone."""
-
-    after: tuple[str, ...]
-    flaky: bool = False
-
-    def __post_init__(self) -> None:
-        if self.flaky == bool(self.after):
-            raise ValueError(f"znane ustalenie {self.name} nazywa przypadki, po których występuje, albo jest flaky")
-
-
-KNOWN_FINDINGS: Final[tuple[Known, ...]] = ()
-ACCEPTED_RISKS: Final[tuple[Risk, ...]] = ()
+# A second run that broke BladTylkoPoZmianieTaty in an entry's shape (its ``Resumed``). An entry names in ``after`` the
+# first runs (``Case.name``) after which it always shows, so a run, or a part of one, that ran one of them without it
+# reports it gone, or is ``flaky``: a race that no run is sure to show.
+KNOWN_FINDINGS: Final[tuple[Excuse[RiskShape], ...]] = ()
+ACCEPTED_RISKS: Final[tuple[Excuse[RiskShape], ...]] = ()
 """None since #960: the second run completes every order to the file (ADR 0026), so the model's accepted findings
 ``przerwanie-po-zaladuj`` (#774) and ``przerwanie-przed-zapisem-ilosci`` (#864), which came from the Ślad Wyceny Emmetta,
 are gone."""
@@ -1413,8 +1391,8 @@ def in_pool(tasks: Sequence[Callable[[Browser], object]], workers: int, label: C
 class Report:
     lines: list[str] = field(default_factory=list)
     new: list[Violation] = field(default_factory=list)
-    known: dict[str, list[Violation]] = field(default_factory=dict)
-    accepted: dict[str, list[Violation]] = field(default_factory=dict)
+    excused: dict[str, tuple[Kind, Excuse[RiskShape], list[Violation]]] = field(default_factory=dict)
+    """Each known finding and accepted risk that showed, with the violations it excused."""
     gaps: list[str] = field(default_factory=list)
     ran: set[str] = field(default_factory=set)
     """Names of the first runs whose fault took effect."""
@@ -1422,19 +1400,19 @@ class Report:
 
 def sort_violations(violations: Sequence[Violation], report: Report) -> None:
     for violation in violations:
-        if risk := next((risk for risk in ACCEPTED_RISKS if risk.matches(violation)), None):
-            report.accepted.setdefault(risk.name, []).append(violation)
-        elif known := next((known for known in KNOWN_FINDINGS if known.matches(violation)), None):
-            report.known.setdefault(known.name, []).append(violation)
-        else:
+        found = excused(violation.rule, violation.resumed, known=KNOWN_FINDINGS, accepted=ACCEPTED_RISKS)
+        if found is None:
             report.new.append(violation)
+        else:
+            report.excused.setdefault(found[1].name, (*found, []))[2].append(violation)
 
 
 def known_gaps() -> list[str]:
-    """Each case a known finding names in ``after`` is a case of the space, or its absence would go unseen."""
+    """Each case an entry names in ``after`` is a case of the space, or its absence would go unseen."""
 
     space = {case.name for case in cases(list(AXES), None)}
-    return [f"znane ustalenie {known.name} nazywa przypadek spoza przestrzeni: {name}" for known in KNOWN_FINDINGS for name in known.after if name not in space]
+    entries = (*KNOWN_FINDINGS, *ACCEPTED_RISKS)
+    return [f"wpis {entry.name} nazywa przypadek spoza przestrzeni: {name}" for entry in entries for name in entry.after if name not in space]
 
 
 def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequence[str] | None, workers: int) -> Report:
@@ -1618,19 +1596,7 @@ def _keep(evidence: Path, name: str, run: Run, violations: Sequence[Violation], 
     (folder / f"{slug}.json").write_text(json.dumps(content, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
 
 
-def gone_findings(report: Report) -> dict[str, list[str]]:
-    """Each known finding with the cases of its ``after`` that this run or part ran and after which it did not show:
-    each such case on its own, so a fix of one case gives it away while the finding still shows after the others."""
-
-    gone: dict[str, list[str]] = {}
-    for known in KNOWN_FINDINGS:
-        shown = {violation.case for violation in report.known.get(known.name, [])}
-        if missing := sorted(name for name in report.ran.intersection(known.after) if name not in shown):
-            gone[known.name] = missing
-    return gone
-
-
-def summarize(report: Report) -> list[str]:
+def summarize(report: Report) -> tuple[list[str], int]:
     lines = list(report.lines)
     groups: dict[tuple[str, str], list[Violation]] = {}
     for violation in report.new:
@@ -1638,26 +1604,23 @@ def summarize(report: Report) -> list[str]:
     for (rule, tag), group in sorted(groups.items()):
         lines.append(f"NOWE NARUSZENIE {rule} ({tag}): {len(group)} przypadków")
         lines += [f"  {violation.case} | {violation.detail}" for violation in group[:3]]
-    for name, group in sorted(report.known.items()):
-        lines.append(f"znane ustalenie {name}: {len(group)} przypadków, np. {group[0].case} | {group[0].detail}")
-    for name, group in sorted(report.accepted.items()):
-        lines.append(f"zaakceptowane ryzyko {name}: {len(group)} przypadków, np. {group[0].case}")
-    gone = gone_findings(report)
-    lines += [
-        f"ZNALEZISKO ZNIKNĘŁO {name} po {', '.join(missing)}: zawęź je w KNOWN_FINDINGS i w SKILL.md do przypadków, po "
-        "których dalej występuje, albo je usuń"
-        for name, missing in gone.items()
-    ]
-    if report.gaps:
-        lines += [f"LUKA MODELU: {gap}" for gap in report.gaps]
-        lines.append(f"{VERDICT}: LUKA MODELU ({len(report.gaps)})")
-    elif report.new:
-        lines.append(f"{VERDICT}: NOWE NARUSZENIE ({len({violation.case for violation in report.new})})")
-    elif gone:
-        lines.append(f"{VERDICT}: ZNALEZISKO ZNIKNĘŁO ({len(gone)})")
-    else:
-        lines.append(f"{VERDICT} OK")
-    return lines
+    for _name, (kind, entry, group) in sorted(report.excused.items()):
+        lines.append(f"{excuse_line(kind, entry)} | {len(group)} przypadków, np. {group[0].case} | {group[0].detail}")
+    shown = {(name, violation.case) for name, (_kind, _entry, group) in report.excused.items() for violation in group}
+    disappeared = gone_lines(report.ran, shown, known=KNOWN_FINDINGS, accepted=ACCEPTED_RISKS)
+    lines += disappeared
+    lines += [f"LUKA MODELU: {gap}" for gap in report.gaps]
+    kinds = [kind for kind, _entry, _group in report.excused.values()]
+    verdict_line, code = verdict(
+        VERDICT,
+        new=len({violation.case for violation in report.new}),
+        gone=len(disappeared),
+        known=kinds.count("known"),
+        accepted=kinds.count("accepted"),
+        gaps=len(report.gaps),
+    )
+    lines.append(verdict_line)
+    return lines, code
 
 
 def doctor() -> list[str]:
@@ -1707,11 +1670,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         if not args.zostaw_run:
             remove_run_root(run.root)
-    lines = summarize(report)
+    lines, code = summarize(report)
     lines.insert(0, f"dowody: {run.evidence}")
     (run.evidence / "raport.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines), flush=True)
-    return 0 if lines[-1] == f"{VERDICT} OK" else 1
+    return code
 
 
 if __name__ == "__main__":

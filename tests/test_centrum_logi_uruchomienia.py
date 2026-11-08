@@ -1673,9 +1673,8 @@ def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich
         "--run-dir", str(tmp_path), "--variant", "odpowiedzi", "zabity-proces", "--rola", "zaladuj-do-zlecenia", "--rownolegle", "4"
     )
 
+    # Werdykt z wybaczonym naruszeniem ma ich liczbę („WYCENA EFENIX OK, ZNANE USTALENIA: n”).
     assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
-    excused = [line.partition(":")[0] for line in lines if line.startswith(("znane ustalenie ", "zaakceptowane ryzyko "))]
-    assert excused == [], "\n".join(lines)
     assert any(" ponownych uruchomień " in line for line in lines), "\n".join(lines)
     [evidence] = (tmp_path / "evidence").iterdir()
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
