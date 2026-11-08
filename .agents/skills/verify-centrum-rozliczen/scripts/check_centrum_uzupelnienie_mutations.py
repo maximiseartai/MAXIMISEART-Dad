@@ -25,7 +25,7 @@ MUTATIONS = (
     ),
     Mutation(
         "karta wyniku pokazuje starą kopię podsumowania",
-        (Edit(BUILD, "{fresh:!0}", "{fresh:!1}"),),
+        (Edit(BUILD, "[e],{fresh:!0}),r=", "[e],{fresh:!1}),r="),),
         UZUPELNIENIE,
         "zaraz po Przygotowaniu karta wyniku pokazuje przez sekundę stan sprzed niego, np. „Nie ma Pliku zbiorczego”",
     ),

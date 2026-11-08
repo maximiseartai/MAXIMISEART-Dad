@@ -112,24 +112,10 @@ export function ConfirmRunDialog({
   )
 }
 
-type PeriodRows = { period: string; found: WithoutQuantity }
-
 const UNREAD: WithoutQuantity = { state: "unread" }
 
-const NO_PERIOD = () => Promise.resolve(null)
-
-// `useResource` pamięta ostatnie dane pod funkcją odczytu, więc każdy okres ma jedną, tę samą funkcję.
-const loads = new Map<string, () => Promise<PeriodRows | null>>()
-
-function rowsOf(period: string) {
-  let load = loads.get(period)
-
-  if (load === undefined) {
-    load = () => getWithoutQuantity(period).then((found) => ({ period, found }))
-    loads.set(period, load)
-  }
-
-  return load
+function withoutQuantityOf(period: string | null): Promise<WithoutQuantity | null> {
+  return period === null ? Promise.resolve(null) : getWithoutQuantity(period)
 }
 
 /**
@@ -137,13 +123,13 @@ function rowsOf(period: string) {
  * odpowiedzi dla tego okresu. Odczyt, który się nie udał, jest jak Plik zbiorczy bez odczytu.
  */
 function useWithoutQuantity(period: string | null): WithoutQuantity | null {
-  const { resource } = useResource(period === null ? NO_PERIOD : rowsOf(period))
+  const { resource } = useResource(withoutQuantityOf, [period])
 
   if (resource.state === "failed") {
     return UNREAD
   }
 
-  return resource.state === "ready" && resource.data?.period === period ? resource.data.found : null
+  return resource.state === "ready" ? resource.data : null
 }
 
 /** Wiersze bez ilości okresu; Plik zbiorczy bez odczytu też jest wymieniony, żeby cisza nie znaczyła „nic nie zostało”. */

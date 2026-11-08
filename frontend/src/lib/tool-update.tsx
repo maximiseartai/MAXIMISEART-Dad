@@ -3,6 +3,7 @@ import * as React from "react"
 import { failureMessage } from "@/api/client"
 import { getHealth, getToolUpdate, startToolUpdate, type ToolUpdate } from "@/api/centrum"
 import { toast } from "@/components/ui/toast"
+import { useAction } from "@/lib/action"
 
 // Krok trwającej aktualizacji karta czyta co pół sekundy; poza aktualizacją nie pyta wcale.
 const POLL_MS = 500
@@ -13,6 +14,8 @@ const RELOADED_AFTER_UPDATE = "centrum-po-aktualizacji"
 type ToolUpdateContextValue = {
   /** Aktualizacja narzędzia według serwera; `null`, dopóki nikt jej nie odczytał. */
   update: ToolUpdate | null
+  /** Komunikat ostatniego nieudanego odczytu Aktualizacji narzędzia; `null`, gdy serwer potem podał jej stan. */
+  readFailure: string | null
   /** Start wysłany albo aktualizacja trwa: każdy przycisk aktualizacji jest wtedy wyłączony. */
   busy: boolean
   /**
@@ -24,6 +27,12 @@ type ToolUpdateContextValue = {
   read: () => void
 }
 
+/**
+ * Stan Aktualizacji narzędzia i nieudany odczyt razem: każdy stan, który serwer podał później (start, krok w trakcie,
+ * odczyt), zastępuje nieudany odczyt, bo inaczej rada „Centrum nie odpowiada” zasłoniłaby Komunikat porażki Aktualizacji.
+ */
+type Shown = Pick<ToolUpdateContextValue, "update" | "readFailure">
+
 const ToolUpdateContext = React.createContext<ToolUpdateContextValue | null>(null)
 
 /**
@@ -34,19 +43,23 @@ const ToolUpdateContext = React.createContext<ToolUpdateContextValue | null>(nul
  * działa nowe Centrum.
  */
 export function ToolUpdateProvider({ children }: { children: React.ReactNode }) {
-  const [update, setUpdate] = React.useState<ToolUpdate | null>(null)
-  const [starting, setStarting] = React.useState(false)
+  const [{ update, readFailure }, setShown] = React.useState<Shown>({ update: null, readFailure: null })
   const [clicked, setClicked] = React.useState(false)
-  // Tata klika dwa razy z przyzwyczajenia: drugie kliknięcie przed odpowiedzią serwera nic nie wysyła.
-  const sent = React.useRef(false)
   // Identyfikator startu Centrum sprzed kliknięcia (`health`); inny znaczy, że działa już nowe Centrum.
   const instance = React.useRef<string | null>(null)
   const running = update?.state === "running"
   const restarted = update?.state === "failed" && update.after_restart && !clicked
 
+  const show = React.useCallback((result: ToolUpdate) => setShown({ update: result, readFailure: null }), [])
+
+  const failRead = React.useCallback(
+    (failure: Error) => setShown((shown) => ({ ...shown, readFailure: failureMessage(failure) })),
+    []
+  )
+
   const read = React.useCallback(() => {
-    getToolUpdate().then(setUpdate, () => undefined)
-  }, [])
+    getToolUpdate().then(show, failRead)
+  }, [show, failRead])
 
   // Porażkę ponownego startu widać na każdej stronie, także na tej, na którą tata trafia ze skrótu, więc stan
   // aktualizacji karta czyta przy każdym wejściu.
@@ -55,14 +68,14 @@ export function ToolUpdateProvider({ children }: { children: React.ReactNode }) 
 
     sessionStorage.removeItem(RELOADED_AFTER_UPDATE)
     Promise.all([getToolUpdate(), reloaded ? getHealth() : null]).then(([result, health]) => {
-      setUpdate(result)
+      show(result)
 
       if (health !== null && result.state === "updated") {
         const version = health.commit === null ? "nowej wersji" : `wersji ${health.commit}`
         toast.add({ title: "Zaktualizowano", description: `Centrum działa w ${version}.` })
       }
-    }, () => undefined)
-  }, [])
+    }, failRead)
+  }, [show, failRead])
 
   // Każda odpowiedź w trakcie aktualizacji to nowy obiekt `update`, więc po niej idzie kolejne pytanie. Centrum nie
   // odpowiada w trakcie aktualizacji tylko wtedy, gdy zamknęło się przed ponownym startem: karta pokazuje ten krok.
@@ -83,40 +96,33 @@ export function ToolUpdateProvider({ children }: { children: React.ReactNode }) 
             return
           }
 
-          return getToolUpdate().then(setUpdate)
+          return getToolUpdate().then(show)
         })
-        .catch(() => setUpdate({ state: "running", step: "restarting" }))
+        .catch(() => show({ state: "running", step: "restarting" }))
     }, POLL_MS)
 
     return () => window.clearTimeout(timer)
-  }, [update])
+  }, [update, show])
 
-  const start = React.useCallback(() => {
-    if (sent.current) {
-      return
-    }
-
-    sent.current = true
-    setStarting(true)
+  const starting = useAction(() => {
     setClicked(true)
-    getHealth()
+
+    return getHealth()
       .then((health) => {
         instance.current = health.instance
 
         return startToolUpdate()
       })
-      .then(setUpdate, (failure: Error) =>
-        toast.add({ title: "Nie zaktualizowano narzędzia", description: failureMessage(failure), type: "error" })
-      )
-      .finally(() => {
-        sent.current = false
-        setStarting(false)
-      })
-  }, [])
+      .then(show)
+  }, "Nie zaktualizowano narzędzia")
+
+  const run = starting.run
+  const start = React.useCallback(() => void run(), [run])
+  const busy = starting.running !== null || running
 
   const value = React.useMemo<ToolUpdateContextValue>(
-    () => ({ update, busy: starting || running, restarted, start, read }),
-    [update, starting, running, restarted, start, read]
+    () => ({ update, readFailure, busy, restarted, start, read }),
+    [update, readFailure, busy, restarted, start, read]
   )
 
   return <ToolUpdateContext.Provider value={value}>{children}</ToolUpdateContext.Provider>

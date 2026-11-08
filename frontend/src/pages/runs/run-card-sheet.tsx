@@ -1,19 +1,17 @@
 import * as React from "react"
-import { FileClockIcon, RotateCcwIcon } from "lucide-react"
+import { FileClockIcon } from "lucide-react"
 
-import { failureMessage } from "@/api/client"
-import { getRunCard, type RunCard, type ProcessRun, type RunRestored } from "@/api/centrum"
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { getRunCard, type ProcessRun, type RunRestored } from "@/api/centrum"
+import { LoadFailure } from "@/components/load-failure"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useResource } from "@/lib/use-resource"
 import { HistoryRunCard } from "@/pages/runs/run-card"
 
 const OPEN = "Karta Uruchomienia"
-
-type Card = { state: "loading" } | { state: "failed"; message: string } | { state: "ready"; card: RunCard }
 
 /** Przycisk wiersza Historii: karta tego Uruchomienia z jego Logów Uruchomienia w panelu z boku. */
 export function RunCardButton({ run }: { run: ProcessRun }) {
@@ -99,44 +97,15 @@ function CardSheet({
 
 /** Odczyt karty przy każdym otwarciu panelu (panel montuje treść tylko otwarty). */
 function RunCardBody({ runId }: { runId: string }) {
-  const [card, setCard] = React.useState<Card>({ state: "loading" })
-
-  const fetchCard = React.useCallback(
-    () =>
-      getRunCard(runId).then(
-        (found) => setCard({ state: "ready", card: found }),
-        (failure: Error) => setCard({ state: "failed", message: failureMessage(failure) })
-      ),
-    [runId]
-  )
-
-  React.useEffect(() => {
-    fetchCard()
-  }, [fetchCard])
-
-  const retry = () => {
-    setCard({ state: "loading" })
-    fetchCard()
-  }
+  const { resource: card, reload } = useResource(getRunCard, [runId], { fresh: true })
 
   switch (card.state) {
     case "loading":
       return <Skeleton className="h-64 w-full" aria-label="Wczytywanie karty Uruchomienia" />
     case "failed":
-      return (
-        <Alert variant="destructive">
-          <AlertTitle>Nie udało się odczytać karty Uruchomienia</AlertTitle>
-          <AlertDescription>{card.message}</AlertDescription>
-          <AlertAction>
-            <Button size="sm" variant="outline" onClick={retry}>
-              <RotateCcwIcon data-icon="inline-start" />
-              Spróbuj ponownie
-            </Button>
-          </AlertAction>
-        </Alert>
-      )
+      return <LoadFailure what="karty Uruchomienia" message={card.message} reload={reload} className="" />
     case "ready":
-      return card.card.state === "restored" ? <HistoryRunCard card={card.card} /> : <MissingCard />
+      return card.data.state === "restored" ? <HistoryRunCard card={card.data} /> : <MissingCard />
     default: {
       const unhandled: never = card
 

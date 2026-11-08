@@ -65,15 +65,17 @@ async function shouldRead(token: string, watch: Watch): Promise<boolean> {
 }
 
 /**
- * `useResource` dla widoku, który pokazuje Plik zbiorczy okresu `token` na żywo: gdy karta jest widoczna, co
- * POLL_MS pyta serwer o znacznik zapisu i czyta widok od nowa dopiero po jego zmianie albo po nieudanym odczycie.
+ * `useResource` dla widoku, który pokazuje Plik zbiorczy okresu na żywo (okres to pierwszy argument odczytu): gdy
+ * karta jest widoczna, co POLL_MS pyta serwer o znacznik zapisu i czyta widok od nowa dopiero po jego zmianie albo
+ * po nieudanym odczycie.
  */
-export function useLiveFile<T extends LiveFileView>(
-  token: string,
-  load: () => Promise<T>,
+export function useLiveFile<Args extends readonly [string, ...ReadonlyArray<string>], T extends LiveFileView>(
+  read: (...args: Args) => Promise<T>,
+  args: Args,
   options: { fresh?: boolean } = {}
 ) {
-  const live = useResource(load, options)
+  const [token] = args
+  const live = useResource(read, args, options)
   const { resource, reload } = live
   const watch = React.useRef<Watch>({ next: "wait" })
 

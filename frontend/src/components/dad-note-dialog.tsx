@@ -22,8 +22,8 @@ import { Field, FieldLabel, FieldTitle } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/components/ui/toast"
-import type { Resource } from "@/lib/use-resource"
+import { useAction } from "@/lib/action"
+import { useResource, type Resource } from "@/lib/use-resource"
 
 const TITLE_MAX_LENGTH = zDadNoteRequest.shape.title.toJSONSchema().maxLength
 
@@ -59,9 +59,10 @@ export function DadNoteForm({ openedFrom, close }: { openedFrom: string | null; 
   const [body, setBody] = React.useState("")
   const [scope, setScope] = React.useState<Scope>(openedFrom === null ? "general" : "run")
   const [checked, setChecked] = React.useState(openedFrom)
-  const [sending, setSending] = React.useState(false)
   const [answer, setAnswer] = React.useState<DadNoteState | null>(null)
-  const { runs, reload: reloadRuns } = usePinnableRuns(openedFrom)
+  // Uruchomienia do wyboru, z Uruchomieniem, z którego tata otworzył okno; każde otwarcie czyta je od nowa.
+  const { resource: runs, reload: reloadRuns } = useResource(getDadNoteRuns, [openedFrom], { fresh: true })
+  const sending = useAction((sendable: DadNoteRequest) => sendDadNote(sendable).then(setAnswer))
   const note = React.useMemo(() => noteFor(title, body, scope, runs, checked), [title, body, scope, runs, checked])
 
   const { shown, sendable } = useDraft(note)
@@ -77,13 +78,7 @@ export function DadNoteForm({ openedFrom, close }: { openedFrom: string | null; 
       return
     }
 
-    setSending(true)
-
-    sendDadNote(sendable)
-      .then(setAnswer, (failure: Error) => {
-        toast.add({ title: "Nie udało się", description: failureMessage(failure), type: "error" })
-      })
-      .finally(() => setSending(false))
+    void sending.run(sendable)
   }
 
   return (
@@ -136,50 +131,13 @@ export function DadNoteForm({ openedFrom, close }: { openedFrom: string | null; 
         <Preview shown={shown} />
       </div>
       <DialogFooter>
-        <Button type="submit" disabled={title.trim() === "" || sendable === null || sending}>
-          {sending ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
+        <Button type="submit" disabled={title.trim() === "" || sendable === null || sending.running !== null}>
+          {sending.running !== null ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
           Wyślij
         </Button>
       </DialogFooter>
     </form>
   )
-}
-
-/**
- * Uruchomienia do wyboru, czytane raz na otwarcie okna (z Uruchomieniem, z którego tata je otworzył) i od nowa
- * po „Spróbuj ponownie”. Liczy się tylko najnowszy odczyt.
- */
-function usePinnableRuns(selected: string | null) {
-  const [runs, setRuns] = React.useState<Resource<ReadonlyArray<PinnableRun>>>({ state: "loading" })
-  const latest = React.useRef(0)
-
-  const reload = React.useCallback(() => {
-    const read = ++latest.current
-
-    return getDadNoteRuns(selected).then(
-      (list) => {
-        if (read === latest.current) {
-          setRuns({ state: "ready", data: list })
-        }
-      },
-      (failure: Error) => {
-        if (read === latest.current) {
-          setRuns({ state: "failed", message: failureMessage(failure) })
-        }
-      }
-    )
-  }, [selected])
-
-  React.useEffect(() => {
-    reload()
-
-    // Odczyt, który wróci po zamknięciu okna albo zmianie Uruchomienia, niczego już nie pokazuje.
-    return () => {
-      latest.current += 1
-    }
-  }, [reload])
-
-  return { runs, reload }
 }
 
 /** Uwaga do szkicu i do wysłania; `null`, gdy przy „Do Uruchomienia” nie jest zaznaczone Uruchomienie z listy. */

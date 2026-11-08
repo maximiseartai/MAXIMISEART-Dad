@@ -25,13 +25,10 @@ import { PeriodBoardTable } from "@/pages/periods/period-board-table"
 import { PeriodStats } from "@/pages/periods/period-stats"
 
 export function PeriodsPage() {
-  const { filesVersion } = useSettings()
-
   return (
     <>
       <PageHeader title="Okresy" />
-      {/* Nowe pliki taty to nowy odczyt Tablicy okresów; zmiana motywu nim nie jest. */}
-      <PeriodsContent key={filesVersion} />
+      <PeriodsContent />
     </>
   )
 }
@@ -43,8 +40,8 @@ export function PeriodsPage() {
  */
 function PeriodsContent() {
   const { settings, reload: reloadSettings } = useSettings()
-  const { resource: board, reload: reloadBoard } = useResource(getPeriodBoard)
-  const { resource: metrics, reload: reloadMetrics } = useResource(getMetrics)
+  const { resource: board, reload: reloadBoard } = useResource(getPeriodBoard, [])
+  const { resource: metrics, reload: reloadMetrics } = useResource(getMetrics, [])
   const entrance = useContentEntrance(settings.state === "loading")
 
   const failures = [

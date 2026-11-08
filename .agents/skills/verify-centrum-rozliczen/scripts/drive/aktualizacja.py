@@ -22,6 +22,7 @@ RESTARTING = "Ponowne uruchamianie Centrum…"
 NO_CONNECTION = "Nie zaktualizowano narzędzia: brak połączenia z GitHubem."
 RETRY = "Narzędzie działa dalej w poprzedniej wersji. Sprawdź internet i kliknij „Zaktualizuj narzędzie” jeszcze raz."
 REPORT_BUTTON = "Wyślij do Maksa"
+READ_FAILED = "Nie udało się odczytać stanu aktualizacji."
 INSTALLING = "Instalowanie bibliotek…"
 LIBRARIES_FAILED = "Nie udało się zainstalować bibliotek nowej wersji narzędzia."
 NEW_VERSION_FAILED = "Nowa wersja narzędzia nie wystartowała."
@@ -117,9 +118,17 @@ def _without_internet(run: Run) -> Iterator[None]:
 def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first: str) -> None:
     run.step(FEATURE, "aktualizacja-brak-sieci")
     with _without_internet(run):
+        # Harness: Centrum was busy for a moment as Dad entered Konfiguracja, so the read of the update's state failed.
+        page.route("**/api/tool-update", lambda route: route.abort() if route.request.method == "GET" else route.fallback())
+        try:
+            page.reload()
+            expect(_status(page, READ_FAILED)).to_be_visible()
+        finally:
+            page.unroute("**/api/tool-update")
         card.get_by_role("button", name=BUTTON, exact=True).click()
         message = card.get_by_role("alert", name="Ostrzeżenie")
         expect(message).to_contain_text(NO_CONNECTION, timeout=20_000)
+        expect(_status(page, READ_FAILED)).to_have_count(0)
         expect(message).to_contain_text("narzędzie na tym komputerze")
         expect(message).to_contain_text(RETRY)
         update = card.get_by_role("button", name=BUTTON, exact=True)

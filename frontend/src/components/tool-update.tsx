@@ -1,5 +1,5 @@
 import * as React from "react"
-import { CircleCheckIcon, RefreshCwIcon } from "lucide-react"
+import { CircleCheckIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react"
 
 import { reportToolUpdate, type ToolUpdate } from "@/api/centrum"
 import { ReportToMaks } from "@/components/report-to-maks"
@@ -43,15 +43,24 @@ export function ToolUpdateButton({ primary, size }: { primary: boolean; size?: "
 }
 
 /**
- * Stan Aktualizacji narzędzia przy przycisku: krok w trakcie, Komunikat porażki z „Wyślij do Maksa” albo „Masz
- * najnowszą wersję.”. Każde miejsce z przyciskiem ma ten stan, więc to on odczytuje aktualizację przy wejściu na
+ * Stan Aktualizacji narzędzia przy przycisku: krok w trakcie, Komunikat porażki z „Wyślij do Maksa”, „Masz
+ * najnowszą wersję.” albo nieudany odczyt stanu. Każde miejsce z przyciskiem ma ten stan, więc to on odczytuje aktualizację przy wejściu na
  * stronę. Udana aktualizacja kończy się przeładowaniem karty i powiadomieniem, a porażka ponownego startu
  * Komunikatem pod tytułem strony (`ToolUpdateAfterRestart`), więc tu ich nie ma.
  */
 export function ToolUpdateStatus() {
-  const { update, restarted, read } = useToolUpdate()
+  const { update, readFailure, restarted, read } = useToolUpdate()
 
   React.useEffect(read, [read])
+
+  if (readFailure !== null && update?.state !== "running") {
+    return (
+      <p role="status" className="wejscie flex items-center gap-2 text-sm text-destructive">
+        <TriangleAlertIcon className="size-4 shrink-0" aria-hidden />
+        Nie udało się odczytać stanu aktualizacji. {readFailure}
+      </p>
+    )
+  }
 
   if (update === null || update.state === "idle" || update.state === "updated") {
     return null

@@ -19,16 +19,15 @@ import {
 } from "@/api/centrum"
 import type { RowState } from "@/api/generated"
 import { zFillKind } from "@/api/generated/zod.gen"
+import { LoadFailure } from "@/components/load-failure"
 import { PageHeader } from "@/components/page-header"
 import { ThreePartMessage } from "@/components/three-part-message"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { href, usePagePath } from "@/lib/address"
 import { useContentEntrance } from "@/lib/content-entrance"
-import { useSettings } from "@/lib/settings"
 import { useLiveFile } from "@/lib/use-live-file"
 import type { Resource } from "@/lib/use-resource"
 import { AfterSettlement, afterSettlementHint } from "@/pages/filling/after-settlement"
@@ -52,31 +51,15 @@ const CHIPS: Record<RowState, { look: string; label: string | null; shown: boole
   without_quantity: { look: "border border-dashed text-muted-foreground", label: "bez ilości", shown: true },
 }
 
-// `useResource` pamięta ostatnie dane pod funkcją odczytu, więc każdy okres ma jedną, tę samą funkcję.
-const loads = new Map<string, () => Promise<QuantitiesToFill>>()
-
-/** Odczyt Ilości do uzupełnienia okresu, ten sam dla podsumowania i karty wyniku Przygotowania. */
-export function quantitiesOf(token: string) {
-  let load = loads.get(token)
-
-  if (load === undefined) {
-    load = () => getQuantitiesToFill(token)
-    loads.set(token, load)
-  }
-
-  return load
-}
-
 /** Podsumowanie Uzupełnienia pliku zbiorczego okresu z adresu `#/uzupelnienie/<okres>`. */
 export function FillingPage() {
   const [token = "", part] = usePagePath()
-  const { filesVersion } = useSettings()
   const kind = zFillKind.safeParse(part)
 
   if (kind.success) {
     return (
       <KindPage
-        key={`${token}/${kind.data}/${filesVersion}`}
+        key={`${token}/${kind.data}`}
         title={TITLE}
         token={token}
         kind={kind.data}
@@ -96,8 +79,7 @@ export function FillingPage() {
         <ArrowLeftIcon className="size-4" aria-hidden />
         Okresy
       </a>
-      {/* Inny okres albo nowe pliki taty to nowy odczyt; zmiana motywu nim nie jest. */}
-      <FillingContent key={`${token}/${filesVersion}`} token={token} />
+      <FillingContent key={token} token={token} />
     </>
   )
 }
@@ -112,7 +94,7 @@ function OpenCollectiveFile({ token }: { token: string }) {
 }
 
 function FillingContent({ token }: { token: string }) {
-  const { resource } = useLiveFile(token, quantitiesOf(token))
+  const { resource, reload } = useLiveFile(getQuantitiesToFill, [token])
 
   return (
     <>
@@ -126,12 +108,20 @@ function FillingContent({ token }: { token: string }) {
         }
         action={hasCollectiveFile(resource) ? <OpenCollectiveFile token={token} /> : undefined}
       />
-      <FillingState token={token} resource={resource} />
+      <FillingState token={token} resource={resource} reload={reload} />
     </>
   )
 }
 
-function FillingState({ token, resource }: { token: string; resource: Resource<QuantitiesToFill> }) {
+function FillingState({
+  token,
+  resource,
+  reload,
+}: {
+  token: string
+  resource: Resource<QuantitiesToFill>
+  reload: () => Promise<void>
+}) {
   const entrance = useContentEntrance(resource.state === "loading")
 
   switch (resource.state) {
@@ -139,10 +129,7 @@ function FillingState({ token, resource }: { token: string; resource: Resource<Q
       return <FillingSkeleton />
     case "failed":
       return (
-        <Alert variant="destructive" className="wejscie">
-          <AlertTitle>Nie udało się odczytać okresu</AlertTitle>
-          <AlertDescription>{resource.message}</AlertDescription>
-        </Alert>
+        <LoadFailure what="okresu" message={resource.message} reload={reload} />
       )
     case "ready": {
       const found = resource.data

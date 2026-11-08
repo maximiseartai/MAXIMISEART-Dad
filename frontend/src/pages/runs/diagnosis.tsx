@@ -8,14 +8,13 @@ import {
   StethoscopeIcon,
 } from "lucide-react"
 
-import { failureMessage } from "@/api/client"
 import { diagnoseRun, reportRun, type Diagnosis, type DiagnosisCheck, type RunOutcome } from "@/api/centrum"
 import { Disclosure } from "@/components/disclosure"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { ThreePartMessage } from "@/components/three-part-message"
 import { ToolUpdateButton, ToolUpdateStatus } from "@/components/tool-update"
-import { toast } from "@/components/ui/toast"
+import { useAction } from "@/lib/action"
 import { ReportToMaks } from "@/components/report-to-maks"
 
 type StopDiagnosis = {
@@ -40,20 +39,16 @@ export function useStopDiagnosis(
   report: RunOutcome["report"],
   onRerun: () => void
 ): StopDiagnosis {
-  const [checking, setChecking] = React.useState(false)
   const [diagnosis, setDiagnosis] = React.useState<Diagnosis | null>(null)
   const started = React.useRef(false)
+  const diagnosing = useAction(() => diagnoseRun(runId).then(setDiagnosis))
+  const checking = diagnosing.running !== null
+  const run = diagnosing.run
 
   const diagnose = React.useCallback(() => {
     started.current = true
-    setChecking(true)
-
-    diagnoseRun(runId)
-      .then(setDiagnosis, (failure: Error) => {
-        toast.add({ title: "Nie udało się", description: failureMessage(failure), type: "error" })
-      })
-      .finally(() => setChecking(false))
-  }, [runId])
+    void run()
+  }, [run])
 
   React.useEffect(() => {
     if (offer === "automatic" && !started.current) {

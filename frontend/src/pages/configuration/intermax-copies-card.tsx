@@ -43,7 +43,7 @@ type Outcome = IntermaxRestore | { state: "failed"; message: string }
  * nowa, bo stan sprzed przywrócenia jest teraz nową Kopią.
  */
 export function IntermaxCopiesCard() {
-  const { resource: copies, reload } = useResource(getIntermaxCopies)
+  const { resource: copies, reload } = useResource(getIntermaxCopies, [])
   const [chosen, setChosen] = React.useState<IntermaxCopy | null>(null)
   const [restoring, setRestoring] = React.useState(false)
   const [outcome, setOutcome] = React.useState<Outcome | null>(null)

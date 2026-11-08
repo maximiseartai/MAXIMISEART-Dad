@@ -1,6 +1,5 @@
 import * as React from "react"
 
-import { failureMessage } from "@/api/client"
 import {
   changeTheme,
   chooseOrderRegister,
@@ -11,8 +10,8 @@ import {
   type Settings,
   type Theme,
 } from "@/api/centrum"
-import { toast } from "@/components/ui/toast"
-import { forgetLastReads, useResource, type Resource } from "@/lib/use-resource"
+import { showFailure, useAction } from "@/lib/action"
+import { DadFilesVersion, useResource, type Resource } from "@/lib/use-resource"
 
 // Kopia motywu w przeglądarce tylko na pierwsze malowanie (index.html); źródłem prawdy są ustawienia na serwerze.
 const THEME_KEY = "centrum-rozliczen-motyw"
@@ -24,8 +23,6 @@ type SettingsContextValue = {
   settings: Resource<Settings>
   /** Odczyt Ustawień taty od nowa, np. po „Spróbuj ponownie”. */
   reload: () => Promise<void>
-  /** Rośnie przy każdym wskazaniu innego folderu okresów albo Rejestru zleceń: klucz treści czytanej z tych plików. */
-  filesVersion: number
   theme: Theme
   /** Plik, którego okno wyboru jest teraz otwarte; dopóki jest, żaden przycisk nie otwiera drugiego. */
   picker: PickedPath | null
@@ -60,22 +57,14 @@ function applyTheme(theme: Theme) {
 
 /**
  * Tożsamość plików taty, z których serwer czyta strony: folder okresów i Rejestr zleceń, bez motywu.
- * Inna tożsamość to nowy odczyt stron (klucz ich treści); zmiana motywu niczego nie czyta ponownie.
+ * Inna tożsamość to nowy odczyt stron; zmiana motywu niczego nie czyta ponownie.
  */
-export function filesIdentity(settings: Settings): string {
-  return JSON.stringify([settings.periods_directory, settings.order_register])
-}
-
 function files(settings: Resource<Settings>): string | null {
-  return settings.state === "ready" ? filesIdentity(settings.data) : null
-}
-
-function showFailure(failure: Error) {
-  toast.add({ title: "Nie udało się", description: failureMessage(failure), type: "error" })
+  return settings.state === "ready" ? JSON.stringify([settings.data.periods_directory, settings.data.order_register]) : null
 }
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const { resource: settings, reload, replace } = useResource(getSettings)
+  const { resource: settings, reload, replace } = useResource(getSettings, [], { fromDadFiles: false })
   const [firstPaintTheme] = React.useState<Theme>(currentTheme)
   const [chosenTheme, setChosenTheme] = React.useState<Theme | null>(null)
   const [filesVersion, setFilesVersion] = React.useState(0)
@@ -88,47 +77,31 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [theme])
 
-  // Jedno okno wyboru naraz, wspólne dla wszystkich stron: tata klika dwa razy z przyzwyczajenia, a okno Windows
-  // pojawia się po chwili, więc drugie kliknięcie (albo „Zmień” przy drugim pliku) otworzyłoby drugie okno.
-  const openPicker = React.useRef<PickedPath | null>(null)
-  const [picker, setPicker] = React.useState<PickedPath | null>(null)
-
-  const remember = React.useCallback(
-    (choice: Choice) => {
+  // Jedno okno wyboru naraz, wspólne dla wszystkich stron: okno Windows pojawia się po chwili, więc drugie
+  // kliknięcie (albo „Zmień” przy drugim pliku) otworzyłoby drugie okno.
+  const picking = useAction((path: PickedPath) =>
+    PICKERS[path]().then((choice) => {
       const chosen: Resource<Settings> = { state: "ready", data: choice.settings }
 
       // Ostatnie dane stron pochodzą z poprzednich plików, więc nie mogą się pokazać jako bieżące.
       if (files(chosen) !== files(settings)) {
-        forgetLastReads()
         setFilesVersion((version) => version + 1)
       }
 
       replace(chosen)
-    },
-    [replace, settings]
+    })
   )
+
+  const pick = picking.run
+  const picker = picking.running?.[0] ?? null
 
   const value = React.useMemo<SettingsContextValue>(
     () => ({
       settings,
       reload,
-      filesVersion,
       theme,
       picker,
-      choose: (path) => {
-        if (openPicker.current !== null) {
-          return
-        }
-
-        openPicker.current = path
-        setPicker(path)
-        PICKERS[path]()
-          .then(remember, showFailure)
-          .finally(() => {
-            openPicker.current = null
-            setPicker(null)
-          })
-      },
+      choose: (path) => void pick(path),
       toggleTheme: () => {
         const next = theme === "dark" ? "light" : "dark"
 
@@ -136,10 +109,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         changeTheme(next).then((saved) => replace({ state: "ready", data: saved }), showFailure)
       },
     }),
-    [settings, reload, filesVersion, theme, picker, remember, replace]
+    [settings, reload, theme, picker, pick, replace]
   )
 
-  return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>
+  return (
+    <SettingsContext.Provider value={value}>
+      <DadFilesVersion.Provider value={filesVersion}>{children}</DadFilesVersion.Provider>
+    </SettingsContext.Provider>
+  )
 }
 
 export function useSettings() {

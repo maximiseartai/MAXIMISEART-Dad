@@ -9,7 +9,7 @@ class CentrumError extends Error {}
 const UNREACHABLE =
   "Centrum rozliczeń nie odpowiada. Zamknij kartę i uruchom Centrum ponownie."
 
-const UNEXPECTED =
+export const UNEXPECTED =
   "Centrum rozliczeń odpowiedziało w nieoczekiwany sposób. Odśwież kartę."
 
 export function failureMessage(failure: Error): string {

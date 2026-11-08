@@ -1,13 +1,14 @@
 import { cn } from "cn"
 import { ClipboardPenLineIcon } from "lucide-react"
 
+import { getQuantitiesToFill } from "@/api/centrum"
 import { LoadFailure } from "@/components/load-failure"
 import { ThreePartMessage } from "@/components/three-part-message"
 import { Button } from "@/components/ui/button"
 import { href } from "@/lib/address"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { useLiveFile } from "@/lib/use-live-file"
-import { FillingSkeleton, FillingSummary, quantitiesOf } from "@/pages/filling/filling-page"
+import { FillingSkeleton, FillingSummary } from "@/pages/filling/filling-page"
 import { SaveHint } from "@/pages/filling/save-hint"
 
 /**
@@ -16,7 +17,7 @@ import { SaveHint } from "@/pages/filling/save-hint"
  */
 export function FillingOnResult({ token }: { token: string }) {
   // Karta powstaje, gdy Uruchomienie zmieniło pliki okresu, więc kopia sprzed niego byłaby nieaktualna.
-  const { resource, reload } = useLiveFile(token, quantitiesOf(token), { fresh: true })
+  const { resource, reload } = useLiveFile(getQuantitiesToFill, [token], { fresh: true })
   const entrance = useContentEntrance(resource.state === "loading")
 
   return (
