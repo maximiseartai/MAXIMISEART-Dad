@@ -342,6 +342,10 @@ INTERMAX_SAMPLES: Samples = {
     ],
     "register_missing": [partial(intermax_messages.register_missing, REGISTER, replacement) for replacement in REPLACEMENTS],
     "no_order_sheet": [lambda: intermax_messages.no_order_sheet(REGISTER)],
+    "register_with_duplicated_headers": [
+        lambda: intermax_messages.register_with_duplicated_headers(REGISTER, SHEET, ["ADRES"]),
+        lambda: intermax_messages.register_with_duplicated_headers(REGISTER, SHEET, ["ADRES", "UMOWA"]),
+    ],
     "no_raw_orders": [lambda: intermax_messages.no_raw_orders(REGISTER, SHEET)],
     "raw_orders_in_several_sheets": [
         lambda: intermax_messages.raw_orders_in_several_sheets(REGISTER, [SHEET, "ZLECENIA 2025"])

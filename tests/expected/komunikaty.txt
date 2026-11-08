@@ -781,6 +781,16 @@ no_order_sheet [BRAK_ARKUSZA_ZLECEN]
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
   Co zrobić: Sprawdź nagłówki arkusza zleceń w wierszu 1 i uruchom ponownie.
 
+register_with_duplicated_headers #1 [POWTORZONY_NAGLOWEK_INTERMAX]
+  Co się stało: W INTERMAX nagłówek ADRES występuje więcej niż raz, więc nie wiadomo, z której kolumny brać dane. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA, wiersz 1
+  Co zrobić: Zostaw nagłówek ADRES tylko w jednej kolumnie, zapisz i zamknij INTERMAX i uruchom ponownie.
+
+register_with_duplicated_headers #2 [POWTORZONY_NAGLOWEK_INTERMAX]
+  Co się stało: W INTERMAX nagłówki ADRES, UMOWA występują więcej niż raz, więc nie wiadomo, z której kolumny brać dane. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA, wiersz 1
+  Co zrobić: Zostaw każdy z nagłówków ADRES, UMOWA tylko w jednej kolumnie, zapisz i zamknij INTERMAX i uruchom ponownie.
+
 no_raw_orders [BRAK_SUROWYCH_ZLECEN]
   Co się stało: Na dole arkusza zleceń nie ma wklejonych zleceń do uporządkowania. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA

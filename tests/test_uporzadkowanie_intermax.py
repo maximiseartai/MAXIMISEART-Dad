@@ -2136,6 +2136,29 @@ def test_teksty_wspolne_zepsute_albo_w_ksztalcie_spoza_listy_to_nieczytelny_inte
     assert (stop.message.code, stop.stop_kind) == ("NIECZYTELNY_INTERMAX", "for_tata")
 
 
+@pytest.mark.parametrize(
+    ("part", "relationship"),
+    [("xl/_rels/workbook.xml.rels", "/styles"), ("_rels/.rels", "/officeDocument")],
+    ids=["bez-stylow", "bez-dokumentu-skoroszytu"],
+)
+def test_skoroszyt_bez_czesci_stylow_albo_dokumentu_to_nieczytelny_intermax_bez_zapisu(
+    tmp_path: Path, part: str, relationship: str
+) -> None:
+    """Paczka, której relacje nie wskazują stylów albo dokumentu skoroszytu: Excel takiej nie zapisuje, a tata słyszy o
+    nieczytelnym INTERMAX, nie o błędzie narzędzia."""
+
+    path, _ = _register(tmp_path)
+    dropped = re.compile(rb'<Relationship [^>]*Type="[^"]*%s"[^>]*/>' % re.escape(relationship.encode()))
+    rewrite_parts(path, lambda name, data: dropped.sub(b"", data) if name == part else data)
+
+    with _nothing_written(tmp_path, path):
+        outcome = _run(tmp_path)
+
+    stop = _stop(outcome)
+    assert (stop.message.code, stop.stop_kind) == ("NIECZYTELNY_INTERMAX", "for_tata")
+    assert outcome.progress.phase_states[ProgressPhase.READING] == PhaseState.FAILED
+
+
 def test_pusty_tekst_wspolny_i_biale_znaki_przy_si_nie_przesuwaja_tekstow_zlecen(tmp_path: Path) -> None:
     """``<si/>`` na początku listy tekstów wspólnych i ``<si >`` w nowej linii przy każdym innym: poprawny XML, którego
     Excel nie zapisuje, a który Uporządkowanie czyta tak samo jak zwykły."""
@@ -2168,6 +2191,31 @@ def test_bez_naglowka_zlecen_w_wierszu_1_zatrzymanie_dla_taty_bez_zapisu(tmp_pat
         stop = _stop(_run(tmp_path))
 
     assert (stop.message.code, stop.stop_kind) == ("BRAK_ARKUSZA_ZLECEN", "for_tata")
+
+
+def test_powtorzony_naglowek_adres_zatrzymuje_uporzadkowanie_dla_taty_bez_zapisu(tmp_path: Path) -> None:
+    """Druga kolumna ``ADRES`` w wierszu 1 (tu za ``UWAGI``): nie wiadomo, z której kolumny brać dane, a pamięć reguły
+    danych znałaby tylko jedną z nich, więc Uporządkowanie zatrzymuje się jak Przygotowanie na tym samym pliku."""
+
+    path, _ = _register(tmp_path)
+    _edited(path, lambda sheet: setattr(sheet.cell(1, LAST + 1), "value", "ADRES"))
+
+    with _nothing_written(tmp_path, path):
+        outcome = _run(tmp_path)
+
+    stop = _stop(outcome)
+    assert (stop.message.code, stop.stop_kind) == ("POWTORZONY_NAGLOWEK_INTERMAX", "for_tata")
+    assert stop.message.where == f"plik {REGISTER_NAME}, folder OneDrive, arkusz {ORDER_SHEET}, wiersz 1"
+    assert outcome.progress.phase_states[ProgressPhase.READING] == PhaseState.FAILED
+
+
+def test_karta_z_powtorzonym_naglowkiem_mowi_to_samo_co_uporzadkowanie(tmp_path: Path) -> None:
+    path, _ = _register(tmp_path)
+    _edited(path, lambda sheet: setattr(sheet.cell(1, LAST + 1), "value", "adres"))
+
+    days = register_days(path, _TODAY, DadFiles())
+
+    assert isinstance(days, Message) and days.code == "POWTORZONY_NAGLOWEK_INTERMAX", days
 
 
 def test_karta_przed_wklejeniem_bez_arkusza_zlecen_mowi_to_samo_co_uporzadkowanie(tmp_path: Path) -> None:

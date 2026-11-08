@@ -131,6 +131,27 @@ def no_order_sheet(register: Path) -> Message:
     )
 
 
+def register_with_duplicated_headers(register: Path, sheet: str, headers: Sequence[str]) -> Message:
+    """Wymagany nagłówek występuje w wierszu 1 arkusza zleceń więcej niż raz, więc nie wiadomo, z której kolumny brać
+    dane; ten sam fakt zatrzymuje Przygotowanie pliku zbiorczego."""
+
+    single = len(headers) == 1
+    listed = ", ".join(headers)
+    return Message(
+        code="POWTORZONY_NAGLOWEK_INTERMAX",
+        dad_file="order_register",
+        what=(
+            f"W INTERMAX {'nagłówek' if single else 'nagłówki'} {listed} {'występuje' if single else 'występują'} "
+            f"więcej niż raz, więc nie wiadomo, z której kolumny brać dane. {_UNCHANGED}"
+        ),
+        where=f"{file_label(register)}, arkusz {sheet}, wiersz 1",
+        action=(
+            f"Zostaw {'nagłówek' if single else 'każdy z nagłówków'} {listed} tylko w jednej kolumnie, zapisz i zamknij "
+            "INTERMAX i uruchom ponownie."
+        ),
+    )
+
+
 def no_raw_orders(register: Path, sheet: str) -> Message:
     """Na dole arkusza zleceń nie ma Surowych zleceń; nic nie zapisano."""
 

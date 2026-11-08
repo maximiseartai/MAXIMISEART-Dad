@@ -8,10 +8,10 @@ real workbook. A second restore starts as one in the same second as an earlier r
 Kopia that the replace would name, so its ``Disk.create`` raises ``FileExistsError``. Nine steps of the code are
 points where the checker picks what happens first:
 
-- after ``Register.read`` has read INTERMAX (in the restore: after ``workbook_content`` has read it);
-- ``workbook_files.is_open_in_excel`` on INTERMAX (in ``check``, in ``Register.read`` and before the Kopia);
+- after ``register_file.read`` has read INTERMAX (in the restore: after ``workbook_content`` has read it);
+- ``workbook_files.is_open_in_excel`` on INTERMAX (in ``check``, in ``register_file.read`` and before the Kopia);
 - ``Disk.write`` of the temporary file next to INTERMAX, which may raise ``OSError``;
-- the check of that file (``Register.check``), which may find it does not match (``WriteMismatch``); the restore
+- the check of that file (``intermax_file.check``), which may find it does not match (``WriteMismatch``); the restore
   compares bytes and has no such point;
 - ``Disk.exists`` of the Kopia's name, which may raise ``OSError`` (a Kopie folder it cannot search);
 - ``Disk.create`` of the Kopia (in the restore: the Kopia of the current state), which may raise ``OSError``;
@@ -66,7 +66,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from rozliczenia import intermax_copies, intermax_file, intermax_replace, intermax_restore, workbook_files
+from rozliczenia import intermax_copies, intermax_file, intermax_replace, intermax_restore, register_file, workbook_files
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting, WriteMismatch
 from rozliczenia.message import StopError
@@ -83,7 +83,7 @@ INJECTED = "plik zablokowany"
 READ = "po odczycie INTERMAX"
 EXCEL = "is_open_in_excel(INTERMAX)"
 WRITE = "zapis pliku tymczasowego obok INTERMAX"
-CHECK = "Register.check sprawdza plik tymczasowy"
+CHECK = "intermax_file.check sprawdza plik tymczasowy"
 EXISTS = "Disk.exists (nazwa Kopii INTERMAX)"
 CREATE = "Disk.create (Kopia INTERMAX)"
 REPLACE = "os.replace pliku tymczasowego na INTERMAX"
@@ -221,17 +221,17 @@ class World:
 def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
     """Wraps the read, the Excel lock and the write check, which the runs reach through their modules; restores them."""
 
-    real_read: Callable[..., intermax_file.Register] = intermax_file.Register.read.__func__  # type: ignore[attr-defined]
+    real_read = register_file.read
     real_content = workbook_files.workbook_content
-    real_check = intermax_file.Register.check
+    real_check = intermax_file.check
     real_open = workbook_files.is_open_in_excel
 
-    def read(cls: type[intermax_file.Register], /, path: Path, *arguments: Any, **options: Any) -> intermax_file.Register:
+    def read(path: Path, *arguments: Any, **options: Any) -> register_file.RegisterFile:
         # Uchwyt plików taty i ``despite_excel_lock`` przechodzą bez zmian.
-        register = real_read(cls, path, *arguments, **options)
+        register = real_read(path, *arguments, **options)
         if path == world.register:
             world.read = register.content
-            scheduler.say("Register.read czyta INTERMAX")
+            scheduler.say("register_file.read czyta INTERMAX")
             scheduler.point(READ)
         return register
 
@@ -243,24 +243,24 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
             scheduler.point(READ)
         return read
 
-    def check(self: intermax_file.Register, *arguments: Any) -> None:
+    def check(register: register_file.RegisterFile, written: bytes, area: Any, block: Any, plan: Any) -> None:
         scheduler.point(CHECK, fails="niezgodny")
-        real_check(self, *arguments)
+        real_check(register, written, area, block, plan)
 
     def is_open(path: Path) -> bool:
         if path == world.register:
             scheduler.point(EXCEL)
         return real_open(path)
 
-    intermax_file.Register.read = classmethod(read)  # type: ignore[method-assign,assignment]
-    intermax_file.Register.check = check  # type: ignore[method-assign,assignment]
+    register_file.read = read
+    intermax_file.check = check
     workbook_files.is_open_in_excel = is_open
     workbook_files.workbook_content = content
     try:
         yield
     finally:
-        intermax_file.Register.read = classmethod(real_read)  # type: ignore[method-assign,assignment]
-        intermax_file.Register.check = real_check  # type: ignore[method-assign]
+        register_file.read = real_read
+        intermax_file.check = real_check
         workbook_files.is_open_in_excel = real_open
         workbook_files.workbook_content = real_content
 

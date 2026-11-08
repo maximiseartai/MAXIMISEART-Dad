@@ -12,8 +12,8 @@ ostatnim uporządkowanym a blokiem, w którym co najmniej połowa kolumn zleceni
 komórki ma wypełnienie stylu wiersza: u taty żółty wiersz to zwykle styl całego wiersza bez żadnej komórki.
 Sam blok, bez przeglądu nad nim i bez przeszkód, oddaje ``pasted``: z niego Przygotowanie pliku zbiorczego wie,
 z których dni są Surowe zlecenia. Ten sam blok daje ``pasted_rows``: jego wiersze jako fakty, które Kopia wejścia
-Uporządkowania niesie, a ``shifts`` przesunięcia wierszy: wiersz, którego komórki rozpoznanie czyta dwie kolumny na
-lewo od swojego nagłówka, i położenia, w których pamięć reguły danych zna wartości wiersza.
+Uporządkowania niesie, a ``shifted_row`` wiersz, którego komórki rozpoznanie czyta dwie kolumny na lewo od swojego
+nagłówka.
 
 Pamięć reguły danych zna każdy wiersz w jednym położeniu (decyzja Maksa z 5.11.2026, ADR 0025): pierwszy wiersz bloku
 wklejenia (``first_in_block``) przesunięty o ``SHIFT`` kolumn w lewo, bo tak przychodzi z aplikacji firmowej zawsze (fakt
@@ -47,13 +47,14 @@ zawierają treści wierszy poza datą i Wykonawcą potrzebnymi do kolejności or
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
+from functools import cached_property
 from itertools import chain, groupby
 from types import MappingProxyType
-from typing import Final
+from typing import Final, TypeVar
 
 from .register_columns import ORDERED_FONT, ORDERED_SIZE
 from .text import normalize_text
@@ -65,6 +66,7 @@ _EARLIER_ROWS: Final = 10
 """Tyle kolejnych uporządkowanych wierszy z wcześniejszym dniem kończy przegląd nad blokiem."""
 _COMPANY_SUFFIX: Final = re.compile(r"[\s-]*S\.?\s*A\.?\s*$", re.IGNORECASE)
 """Dopisek ``S.A.`` za nazwą operatora (także ``SA``, ``S.A``), oddzielony spacją, myślnikiem albo niczym: ``NetiaSA``."""
+_Row = TypeVar("_Row")
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,13 @@ class OrderColumns:
     devices: int
     activities: int
     contract_number: int
+
+    @cached_property
+    def look_columns(self) -> frozenset[int]:
+        """Kolumny, z których krój wiersza mówi, czy jest uporządkowany (``look``): od ``first`` do ``last`` bez
+        ``worker``, którą tata pisze też Calibri 9."""
+
+        return frozenset(range(self.first, self.last + 1)) - {self.worker}
 
 
 @dataclass(frozen=True)
@@ -177,14 +186,15 @@ class RowFacts:
 
 @dataclass(frozen=True)
 class RawOrder:
-    """Surowe zlecenie: wiersz arkusza, przesunięcie pierwszego wiersza, data z godziną, Wykonawca, operator i rodzaj.
+    """Surowe zlecenie: wiersz arkusza, przesunięcie, data z godziną, Wykonawca, operator i rodzaj.
 
-    ``operator`` to nazwa operatora z ``CZYNNOŚCI`` taka, jak z aplikacji, bez spacji na brzegach (``None``: puste),
-    a ``kind`` rodzaj zlecenia z ``URZĄDZENIA``.
+    ``offset``: o tyle kolumn na lewo od swoich nagłówków stoją komórki wiersza (``SHIFT`` w przesuniętym pierwszym
+    wierszu bloku, inaczej 0). ``operator`` to nazwa operatora z ``CZYNNOŚCI`` taka, jak z aplikacji, bez spacji na
+    brzegach (``None``: puste), a ``kind`` rodzaj zlecenia z ``URZĄDZENIA``.
     """
 
     row: int
-    shifted: bool
+    offset: int
     when: datetime
     worker: str
     operator: str | None
@@ -395,37 +405,6 @@ def row_positions(*, first: bool, left_of_date: object, date: object, read: int 
     return RowPositions(read, known, not first and shift_traced(left_of_date))
 
 
-@dataclass(frozen=True)
-class Shifts:
-    """Przesunięcia wierszy arkusza zleceń z rozpoznania bloku (``shifts``).
-
-    ``shifted_row``: pierwszy wiersz bloku Surowych zleceń, który rozpoznanie czyta przesunięty o ``SHIFT`` kolumn w
-    lewo, bo pod ``DATA GODZ. POCZ.`` nie ma daty z godziną; ``None``: bez niego. ``first_row``: pierwszy wiersz bloku
-    Surowych zleceń (``None``: bez bloku), w nim pierwszy wiersz bloku wklejenia z ``first_in_block``.
-    """
-
-    shifted_row: int | None
-    columns: OrderColumns
-    first_row: int | None
-
-    def read(self, row: int) -> int:
-        """Przesunięcie, z którym rozpoznanie czyta wiersz ``row``: ``SHIFT`` w ``shifted_row``, inaczej 0."""
-
-        return SHIFT if row == self.shifted_row else 0
-
-    def positions(self, row: RowFacts, first: bool) -> RowPositions:
-        """Położenia wiersza ``row`` (``row_positions``); ``first``: wiersz jest pierwszym wierszem swojego bloku wklejenia
-        (``first_in_block``)."""
-
-        columns = self.columns
-        return row_positions(
-            first=first,
-            left_of_date=row.value(columns.date - SHIFT),
-            date=row.value(columns.date),
-            read=self.read(row.number),
-        )
-
-
 def shift_traced(left_of_date: object) -> bool:
     """Ślad przesunięcia wiersza czytanego pod nagłówkami: data z godziną ``SHIFT`` kolumn na lewo od ``DATA GODZ.
     POCZ.`` (``left_of_date``; u taty kolumna A bez nagłówka). Wiersz na miejscu jej tam nie ma, a przesunięty wiersz z
@@ -459,29 +438,48 @@ def both_positions(*, first: bool, left_of_date: object, date: object) -> bool:
     return shift_traced(left_of_date)
 
 
-def shifts(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Shifts:
-    """Przesunięcia wierszy arkusza zleceń z tego samego rozpoznania bloku co w ``recognize`` i ``pasted``."""
+def shifted_row(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> int | None:
+    """Wiersz, którego komórki rozpoznanie czyta ``SHIFT`` kolumn na lewo od nagłówków (``RawOrder.offset``): pierwszy
+    wiersz bloku Surowych zleceń z tego samego rozpoznania co w ``recognize`` i ``pasted``, gdy pod ``DATA GODZ. POCZ.``
+    nie ma daty z godziną; ``None``: bez niego."""
 
-    raw = _bottom(iter(rows_from_bottom), columns)[0]
-    return Shifts(_shifted(raw, columns), columns, raw[0].number if raw else None)
+    return _shifted(_bottom(iter(rows_from_bottom), columns)[0], columns)
 
 
-def first_in_block(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Iterator[tuple[RowFacts, bool]]:
+class RowLook(Enum):
+    """Wygląd wiersza arkusza zleceń, z którego ``first_in_block`` poznaje granice bloku wklejenia."""
+
+    BLANK = "pusty"
+    ORDERED = "uporządkowany"
+    APP = "z aplikacji"
+
+
+def look(row: RowFacts, columns: OrderColumns) -> RowLook:
+    """Wygląd wiersza: pusty bez wartości, uporządkowany z choć jedną komórką z wartością w Calibri 8 w
+    ``OrderColumns.look_columns`` (bez ``WYKONAWCA``), inaczej z aplikacji."""
+
+    if row.blank:
+        return RowLook.BLANK
+    return RowLook.ORDERED if _is_ordered(row, columns) else RowLook.APP
+
+
+def first_in_block(rows_from_bottom: Iterable[_Row], look: Callable[[_Row], RowLook]) -> Iterator[tuple[_Row, bool]]:
     """Wiersze arkusza zleceń od ostatniego w górę, każdy z tym, czy jest pierwszym wierszem swojego bloku wklejenia:
     wiersz z wyglądem z aplikacji, nad którym najbliższy wiersz z wartościami ma wygląd uporządkowany albo nie ma
-    żadnego. To pierwszy wiersz bloku na dole arkusza i każdego bloku nad uporządkowanymi, jak w Rejestrze w
-    Przygotowaniu. Wiersz z wyglądem z aplikacji wychodzi dopiero po przeczytaniu najbliższego wiersza z wartościami nad
-    nim, więc odczyt sięga o jeden taki wiersz dalej niż ten, kto przestaje czytać."""
+    żadnego. To pierwszy wiersz bloku na dole arkusza i każdego bloku nad uporządkowanymi. Wiersz z wyglądem z aplikacji
+    wychodzi dopiero po przeczytaniu najbliższego wiersza z wartościami nad nim, więc odczyt sięga o jeden taki wiersz
+    dalej niż ten, kto przestaje czytać. Wiersz może być dowolnego typu, bo jego wygląd daje ``look``."""
 
-    waiting: list[RowFacts] = []  # wiersz z wyglądem z aplikacji i puste wiersze nad nim
+    waiting: list[_Row] = []  # wiersz z wyglądem z aplikacji i puste wiersze nad nim
     for row in rows_from_bottom:
-        if row.blank:
+        found = look(row)
+        if found is RowLook.BLANK:
             if waiting:
                 waiting.append(row)
             else:
                 yield row, False
             continue
-        ordered = _is_ordered(row, columns)
+        ordered = found is RowLook.ORDERED
         if waiting:
             yield waiting[0], ordered
             yield from ((blank, False) for blank in waiting[1:])
@@ -520,7 +518,7 @@ def _bottom(rows: Iterator[RowFacts], columns: OrderColumns) -> tuple[list[RowFa
 
 def _pasted(raw: list[RowFacts], columns: OrderColumns) -> list[RawOrder | Undated | WithoutWorker]:
     shifted = _shifted(raw, columns)
-    return [_order(row, columns, row.number == shifted) for row in raw]
+    return [_order(row, columns, SHIFT if row.number == shifted else 0) for row in raw]
 
 
 def _shifted(raw: list[RowFacts], columns: OrderColumns) -> int | None:
@@ -603,8 +601,7 @@ def _dated(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, anchor: 
             yield row.number, when
 
 
-def _order(row: RowFacts, columns: OrderColumns, shifted: bool) -> RawOrder | Undated | WithoutWorker:
-    offset = SHIFT if shifted else 0
+def _order(row: RowFacts, columns: OrderColumns, offset: int) -> RawOrder | Undated | WithoutWorker:
     when = row.value(columns.date - offset)
     if not isinstance(when, datetime):
         return Undated(row.number, columns.date - offset)
@@ -613,7 +610,7 @@ def _order(row: RowFacts, columns: OrderColumns, shifted: bool) -> RawOrder | Un
         return WithoutWorker(row.number, columns.worker - offset)
     operator = row.value(columns.activities - offset)
     kind = _KINDS.get(_name(row.value(columns.devices - offset)), OrderKind.OTHER)
-    return RawOrder(row.number, shifted, when, str(worker), None if operator is None else str(operator).strip(), kind)
+    return RawOrder(row.number, offset, when, str(worker), None if operator is None else str(operator).strip(), kind)
 
 
 def _name(value: object) -> str:
@@ -672,11 +669,8 @@ def _is_date(value: object) -> bool:
 
 
 def _order_cells(row: RowFacts, columns: OrderColumns) -> list[CellFacts]:
-    return [
-        cell
-        for column, cell in row.cells.items()
-        if columns.first <= column <= columns.last and column != columns.worker and cell.value is not None
-    ]
+    span = columns.look_columns
+    return [cell for column, cell in row.cells.items() if column in span and cell.value is not None]
 
 
 def ordered_look(faces: Iterable[tuple[str | None, float | None]]) -> bool:

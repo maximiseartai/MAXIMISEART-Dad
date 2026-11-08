@@ -71,7 +71,7 @@ from xml.etree import ElementTree
 from xml.parsers import expat
 
 from openpyxl.utils import get_column_letter
-from openpyxl.utils.cell import coordinate_to_tuple
+from openpyxl.utils.cell import column_index_from_string, coordinate_to_tuple
 from openpyxl.workbook.properties import WorkbookProperties
 
 SPREADSHEET_NS: Final = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -504,6 +504,83 @@ def _raise_irregular(xml: bytes, start: int, end: int, otherwise: str = "") -> N
     if _WITHOUT_LEADING_R.search(xml, start, end):
         raise IrregularSheetData("r")
     raise IrregularSheetData(otherwise)
+
+
+# --- komórki wiersza --------------------------------------------------------------------------
+
+_XML_CELL: Final = re.compile(rb'<c r="([A-Z]{1,3})(\d+)"([^>]*?)(?:/>|>(.*?)</c>)', re.S)
+_XML_CELL_STYLE: Final = re.compile(rb'\ss="(\d+)"')
+_XML_CELL_TYPE: Final = re.compile(rb'\st="(\w+)"')
+_XML_CELL_VALUE: Final = re.compile(rb"<v(?:\s[^>]*)?>([^<]*)</v>")
+_ROW_ATTRIBUTE: Final = re.compile(rb'\s([\w:]+)="([^"]*)"')
+
+
+@dataclass(frozen=True)
+class SheetCell:
+    """Komórka ``<c>`` wiersza arkusza: kolumna (od 1), atrybuty poza ``r`` i treść (``None``: element pusty)."""
+
+    column: int
+    attributes: bytes
+    content: bytes | None
+
+    @property
+    def style(self) -> int:
+        found = _XML_CELL_STYLE.search(self.attributes)
+        return int(found.group(1)) if found else 0
+
+    @property
+    def kind(self) -> bytes | None:
+        found = _XML_CELL_TYPE.search(self.attributes)
+        return found.group(1) if found else None
+
+    @property
+    def unstyled(self) -> bytes:
+        """Atrybuty bez stylu ``s``."""
+
+        return _XML_CELL_STYLE.sub(b"", self.attributes)
+
+    @property
+    def value(self) -> bytes | None:
+        """Tekst elementu ``<v>``; ``None`` bez niego."""
+
+        found = _XML_CELL_VALUE.search(self.content or b"")
+        return None if found is None else found.group(1)
+
+    @property
+    def valued(self) -> bool:
+        """Komórka ma wartość: ``<v>`` albo tekst wbudowany ``<is>``."""
+
+        return self.value is not None or b"<is>" in (self.content or b"")
+
+    def xml(self, column: int, row: int, attributes: bytes | None = None) -> bytes:
+        """Element komórki w kolumnie ``column`` wiersza ``row`` z jej treścią i atrybutami (``None``: jej własne)."""
+
+        reference = get_column_letter(column).encode("ascii") + b"%d" % row
+        attributes = self.attributes if attributes is None else attributes
+        if self.content is None:
+            return b'<c r="' + reference + b'"' + attributes + b"/>"
+        return b'<c r="' + reference + b'"' + attributes + b">" + self.content + b"</c>"
+
+
+def sheet_cells(row_xml: bytes) -> list[SheetCell]:
+    """Komórki XML wiersza po kolei."""
+
+    return [
+        SheetCell(column_index_from_string(found.group(1).decode("ascii")), found.group(3), found.group(4))
+        for found in _XML_CELL.finditer(row_xml)
+    ]
+
+
+def row_tag(xml: bytes, row: SheetRow) -> bytes:
+    """Znacznik otwierający ``<row …>`` wiersza ``row`` z XML arkusza ``xml``."""
+
+    return xml[row.start : xml.index(b">", row.start) + 1]
+
+
+def row_attributes(tag: bytes) -> dict[bytes, bytes]:
+    """Atrybuty znacznika ``<row …>`` po nazwie."""
+
+    return dict(_ROW_ATTRIBUTE.findall(tag))
 
 
 # --- zawężanie ---------------------------------------------------------------------------------

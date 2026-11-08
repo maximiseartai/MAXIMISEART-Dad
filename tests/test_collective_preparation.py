@@ -42,6 +42,7 @@ from tests.fixtures.preparation import (
     OLD_REGISTER_HEADERS,
     PERIOD,
     TEMPLATE_NARROW_COLUMN_WIDTHS,
+    RAW_ORDER_FONT,
     PreparationFixture,
     RegisterRow,
     default_register_rows,
@@ -172,6 +173,25 @@ def test_rejestr_in_old_layout_still_fills_both_period_files(tmp_path: Path) -> 
         collective_row(4, datetime(2026, 9, 12, 12, 0), " Tak ", "kamil.syntetyczny"),
         collective_row(6, datetime(2026, 9, 14, 18, 30), "TAK", "dariusz.fikcyjny2"),
     ]
+
+
+def test_rejestr_in_old_layout_has_no_paste_area_so_rows_with_app_look_do_not_stop_preparation(tmp_path: Path) -> None:
+    """Starszy układ Rejestru (bez ``AKCJE`` i ``UWAGI``) nie ma obszaru wklejania, do którego aplikacja firmowa wkleja,
+    więc Sprawdzanie nie szuka w nim Surowych zleceń, choć jego wiersze okresu nie mają Calibri 8."""
+
+    fixture = make_preparation_fixture(tmp_path)
+    write_register(fixture.register_path, in_old_layout(default_register_rows()), headers=OLD_REGISTER_HEADERS)
+    workbook = load_workbook(fixture.register_path)
+    sheet = workbook["ZLECENIA"]
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = RAW_ORDER_FONT
+    workbook.save(fixture.register_path)
+    workbook.close()
+
+    summary = run_preparation(fixture)
+
+    assert summary.period_order_count == 4
 
 
 def with_drive_to_every_order(

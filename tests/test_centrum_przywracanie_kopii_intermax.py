@@ -329,18 +329,27 @@ def test_przywrocenie_kopii_ktorej_lista_nie_wymienia_odmawia(tmp_path: Path, na
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
 
 
-def _zip_without_workbook() -> bytes:
+def _zip_without_workbook(*, relationship: bool = False) -> bytes:
+    """Zip bez dokumentu skoroszytu; ``relationship``: relacje paczki wskazują go, ale części nie ma."""
+
     archive = BytesIO()
     with zipfile.ZipFile(archive, "w") as written:
         written.writestr("[Content_Types].xml", "<Types/>")
+        if relationship:
+            written.writestr(
+                "_rels/.rels",
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+                'officeDocument" Target="xl/workbook.xml"/></Relationships>',
+            )
         written.writestr("xl/worksheets/sheet1.xml", "<worksheet/>")
     return archive.getvalue()
 
 
 @pytest.mark.parametrize(
     "damaged",
-    [b"to nie jest skoroszyt", _zip_without_workbook()],
-    ids=["nie-zip", "zip-bez-skoroszytu"],
+    [b"to nie jest skoroszyt", _zip_without_workbook(), _zip_without_workbook(relationship=True)],
+    ids=["nie-zip", "zip-bez-skoroszytu", "relacja-do-brakujacej-czesci"],
 )
 def test_uszkodzona_kopia_nie_jest_przywracana(tmp_path: Path, damaged: bytes) -> None:
     centrum = _ordered(tmp_path)
@@ -355,6 +364,32 @@ def test_uszkodzona_kopia_nie_jest_przywracana(tmp_path: Path, damaged: bytes) -
         "action": "Wybierz inną kopię z listy.",
     }
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
+
+
+def _with_workbook_in(content: bytes, part: str) -> bytes:
+    """Skoroszyt ``content`` z dokumentem skoroszytu w części ``part`` zamiast ``xl/workbook.xml``: relacje paczki go
+    wskazują, więc to dalej skoroszyt, tylko zapisany inaczej niż przez Excel."""
+
+    renamed = {"xl/workbook.xml": part, "xl/_rels/workbook.xml.rels": f"xl/_rels/{part.rsplit('/', 1)[1]}.rels"}
+    archive = BytesIO()
+    with zipfile.ZipFile(BytesIO(content)) as source, zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as written:
+        for info in source.infolist():
+            data = source.read(info)
+            if info.filename in ("_rels/.rels", "[Content_Types].xml"):
+                data = data.replace(b"/xl/workbook.xml", f"/{part}".encode()).replace(b'"xl/workbook.xml"', f'"{part}"'.encode())
+            written.writestr(renamed.get(info.filename, info.filename), data)
+    return archive.getvalue()
+
+
+def test_kopia_z_dokumentem_skoroszytu_w_innej_czesci_jest_przywracana(tmp_path: Path) -> None:
+    centrum = _ordered(tmp_path)
+    kopia = _with_workbook_in((centrum.copies / ORDERED).read_bytes(), "xl/skoroszyt.xml")
+    (centrum.copies / ORDERED).write_bytes(kopia)
+
+    response = _restore(centrum, ORDERED)
+
+    assert response.json()["state"] == "restored", response.json()
+    assert centrum.register.read_bytes() == kopia
 
 
 def test_kopia_usunieta_miedzy_lista_a_odczytem_to_komunikat_ze_jej_juz_nie_ma(

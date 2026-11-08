@@ -5,7 +5,7 @@ czytnik, który czyta dla niego plik taty, oddaje jej przez ten uchwyt bajty, z 
 każdego arkusza i każdy przeczytany wiersz z jego położeniami (``raw_orders.RowPositions``): Rejestr zleceń w
 Przygotowaniu pliku zbiorczego (``input_checks.read_register``), Plik zbiorczy w Przebiegu rozliczeń
 (``workbook_files.read_data_rows``), w Wycenie w efenix (``workbook_files.read_computed_rows``) i INTERMAX w
-Uporządkowaniu INTERMAX (``intermax_file.Register.read``, #842). Zakazane kolumny to te, których komórki ten sam czytnik
+Uporządkowaniu INTERMAX (``register_file.read``, #842). Zakazane kolumny to te, których komórki ten sam czytnik
 oddaje pamięci reguły danych (``client_data.ForbiddenValues``). Proces bez Centrum (Skrypt dla maszyn) Kopii nie ma, bo
 nie ma Logów.
 
