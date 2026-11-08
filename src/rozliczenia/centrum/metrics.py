@@ -26,15 +26,26 @@ CentrumStarted = Mapping[tuple[str, str], str | None]
 """Identyfikator Uruchomienia z Centrum po parze (proces, ``started_at``) z ``CentrumRuns.started``."""
 
 
-def read_runs(catalog: Catalog, centrum_started: CentrumStarted) -> list[contract.ProcessRun]:
-    """Uruchomienia procesu każdego procesu z katalogu ``catalog`` z jego plików metryk, od najnowszego."""
+class History:
+    """Historia: Uruchomienia procesu każdego procesu z katalogu ``catalog`` z jego plików metryk, z pochodzeniem z
+    Centrum z ``centrum_runs``. Jedyne źródło Historii dla kart Uruchomień, Uwag taty i Metryk."""
 
-    return _runs(catalog, _records(catalog), centrum_started)
+    def __init__(self, catalog: Catalog, centrum_runs: CentrumRuns) -> None:
+        self._catalog = catalog
+        self._centrum_runs = centrum_runs
+
+    def runs(self) -> list[contract.ProcessRun]:
+        """Uruchomienia procesu od najnowszego; ``OSError``: plików metryk nie da się odczytać."""
+
+        return _runs(self._catalog, _records(self._catalog), self._centrum_runs.started())
+
+    def metrics(self, today: date) -> contract.Metrics:
+        """Metryki procesów katalogu; statystyki każdego procesu tylko w trybach jego widoku."""
+
+        return _metrics(self._catalog, today, self._centrum_runs.started())
 
 
-def read_metrics(catalog: Catalog, today: date, centrum_started: CentrumStarted) -> contract.Metrics:
-    """Metryki procesów katalogu ``catalog``; statystyki każdego procesu tylko w trybach jego widoku."""
-
+def _metrics(catalog: Catalog, today: date, centrum_started: CentrumStarted) -> contract.Metrics:
     records = _records(catalog)
     runs = _runs(catalog, records, centrum_started)
     since = today - timedelta(weeks=_RECENT_WEEKS)
@@ -173,13 +184,13 @@ def _started(record: Mapping[str, Any]) -> datetime:
     return datetime.fromisoformat(record["started_at"])
 
 
-def metrics_router(catalog: Catalog, today: Callable[[], date], centrum_runs: CentrumRuns) -> APIRouter:
+def metrics_router(history: History, today: Callable[[], date]) -> APIRouter:
     router = APIRouter(prefix="/api/metrics", tags=["metryki"])
 
     @router.get("", operation_id="getMetrics", responses={500: {"model": contract.Problem}})
     def metrics() -> contract.Metrics:
         try:
-            return read_metrics(catalog, today(), centrum_runs.started())
+            return history.metrics(today())
         except OSError:
             raise contract.Refusal(500, "Nie udało się odczytać plików metryk. Odśwież kartę.") from None
 

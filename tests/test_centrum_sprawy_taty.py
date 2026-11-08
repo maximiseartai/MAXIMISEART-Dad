@@ -16,12 +16,12 @@ from typing import Any
 
 import pytest
 
-from rozliczenia.centrum.case_delivery import case_outbox, note_post
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY, case_outbox, note_post
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_NOTES_FILE, OLD_REPORTS_FILE, REPORT, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.notifications import CHECK_THREAD
-from rozliczenia.centrum.outbox import KnownIssue, NewIssue, Outbox, PeriodThread, Post
+from rozliczenia.centrum.outbox import QUEUE_DIRECTORY, KnownIssue, NewIssue, Outbox, PeriodThread, Post
 from rozliczenia.centrum.report_box import (
     ArchiveOutcome,
     Closure,
@@ -50,6 +50,7 @@ from tests.fixtures.centrum import (
     centrum,
 )
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.praca_centrum import centrum_work
 from tests.fixtures.locked_file import lock_file
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -118,7 +119,7 @@ def old_files(tmp_path: Path, reports: str = "zgloszenia-wyslane.json", notes: s
 
 
 def cases(tmp_path: Path) -> list[Case]:
-    return DadCases(tmp_path / "config", log(tmp_path), pause=ManualClock().pause).all()
+    return DadCases(centrum_work(tmp_path / "config", log(tmp_path))).all()
 
 
 def with_document(tmp_path: Path, name: str, document: object) -> None:
@@ -146,7 +147,7 @@ def test_pierwszy_zapis_przenosi_stare_sprawy_do_pliku_spraw_taty_a_stare_pliki_
     config = old_files(tmp_path)
     old = {name: (config / name).read_bytes() for name in (OLD_REPORTS_FILE, OLD_NOTES_FILE)}
 
-    DadCases(config, log(tmp_path), pause=ManualClock().pause).add(NEW)
+    DadCases(centrum_work(config, log(tmp_path))).add(NEW)
     restarted = cases(tmp_path)
     for name in old:
         (config / name).unlink()
@@ -285,7 +286,7 @@ def test_tytul_nie_tekst_i_nieczytelny_czas_zostawiaja_sprawe_bez_nich(tmp_path:
 
 
 def test_numer_issue_dostaje_tylko_sprawa_z_wysylki_o_jej_etykiecie_i_identyfikatorze(tmp_path: Path) -> None:
-    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(outcomes=[Sent(20)], issues=[ZGLOSZENIE_3], background=LOGS))
 
     skrzynka.sent(
@@ -303,7 +304,7 @@ def test_numer_issue_dostaje_tylko_sprawa_z_wysylki_o_jej_etykiecie_i_identyfika
 
 
 def test_uwaga_dostarczona_drugi_raz_ma_numer_nowego_issue(tmp_path: Path) -> None:
-    stored = DadCases(tmp_path / "config", log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
     stored.add(NEW)
 
     answers = (stored.numbered(NOTE, NEW.id, 20), stored.numbered(NOTE, NEW.id, 21))
@@ -313,7 +314,7 @@ def test_uwaga_dostarczona_drugi_raz_ma_numer_nowego_issue(tmp_path: Path) -> No
 
 
 def test_sprawe_wskazuje_rodzaj_i_identyfikator_a_z_kilku_wysylek_liczy_sie_ostatnia(tmp_path: Path) -> None:
-    stored = DadCases(tmp_path / "config", log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
     first = Case(REPORT, "3f0c1b2a9d8e7f60", "Brak Wzorca", None, at(20, 8), 7, Closure("completed", at(21, 8)))
     again = Case(REPORT, "3f0c1b2a9d8e7f60", "Brak Wzorca", None, at(22, 8), 15)
     note = Case(NOTE, "3f0c1b2a9d8e7f60", "Uwaga o tym samym identyfikatorze", None, at(23, 8), 16)
@@ -328,7 +329,7 @@ def test_sprawe_wskazuje_rodzaj_i_identyfikator_a_z_kilku_wysylek_liczy_sie_osta
 
 
 def test_numer_zgloszenia_dostaje_tylko_czekajace_zgloszenie_a_bez_niego_nic_sie_nie_zmienia(tmp_path: Path) -> None:
-    stored = DadCases(tmp_path / "config", log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
     queued = Case(REPORT, "3f0c1b2a9d8e7f60", "Brak Wzorca", None, at(22, 8), None)
     note = Case(NOTE, "3f0c1b2a9d8e7f60", "Uwaga o tym samym identyfikatorze", None, at(23, 8), None)
     for case in (queued, note):
@@ -384,7 +385,7 @@ def test_skrzynka_jest_pytana_o_rodzaj_z_otwartymi_sprawami_a_jej_zamkniecia_tra
     config = old_files(tmp_path)
     closed = Closure("completed", at(24, 15))
     box = AnsweringBox({"uwaga-taty": (Issue(12, "", closed), Issue(11, "", None), Issue(40, "", closed))})
-    stored = DadCases(config, log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(config, log(tmp_path)))
     stored.forget(REPORT, "a1b2c3d4e5f60718")
 
     stored.ask_box(keyed(box))
@@ -395,7 +396,7 @@ def test_skrzynka_jest_pytana_o_rodzaj_z_otwartymi_sprawami_a_jej_zamkniecia_tra
 
 def test_uwaga_w_kolejce_i_zamkniete_sprawy_nie_pytaja_skrzynki(tmp_path: Path) -> None:
     config = old_files(tmp_path)
-    stored = DadCases(config, log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(config, log(tmp_path)))
     stored.forget(REPORT, "a1b2c3d4e5f60718")
     stored.forget(NOTE, "0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d")
     box = AnsweringBox({})
@@ -410,7 +411,7 @@ def test_bez_odpowiedzi_skrzynki_zostaje_ostatni_znany_stan(tmp_path: Path) -> N
     closed = Closure("completed", at(24, 15))
     box = AnsweringBox({"zgloszenie": Unreachable(), "uwaga-taty": (Issue(12, "", closed),)})
 
-    DadCases(config, log(tmp_path), pause=ManualClock().pause).ask_box(keyed(box))
+    DadCases(centrum_work(config, log(tmp_path))).ask_box(keyed(box))
 
     assert [label for label, _, _ in box.asked] == ["zgloszenie", "uwaga-taty"]
     assert [case.closure for case in cases(tmp_path)] == [
@@ -426,7 +427,7 @@ def test_po_odmowie_klucza_skrzynka_nie_jest_pytana_o_drugi_rodzaj_a_stan_zostaj
     config = old_files(tmp_path)
     box = AnsweringBox({"zgloszenie": Refused(), "uwaga-taty": (Issue(12, "", Closure("completed", at(24, 15))),)})
 
-    DadCases(config, log(tmp_path), pause=ManualClock().pause).ask_box(keyed(box))
+    DadCases(centrum_work(config, log(tmp_path))).ask_box(keyed(box))
 
     assert [label for label, _, _ in box.asked] == ["zgloszenie"]
     assert [case.closure for case in cases(tmp_path)] == [case.closure for case in OLD_CASES]
@@ -436,7 +437,7 @@ def test_sprawa_niedostepnego_pliku_czeka_w_pamieci_az_zapisze_ja_zmiana_ktora_n
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     locked = lock_file(monkeypatch, DAD_CASES_FILE)
-    stored = DadCases(tmp_path / "config", log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
 
     stored.add(NEW)
     waiting = (stored.all(), stored.file.unavailable, cases(tmp_path))
@@ -450,7 +451,7 @@ def test_sprawa_niedostepnego_pliku_czeka_w_pamieci_az_zapisze_ja_zmiana_ktora_n
 
 def test_sprawa_bez_zmian_nie_zapisuje_pliku(tmp_path: Path) -> None:
     config = old_files(tmp_path)
-    stored = DadCases(config, log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(config, log(tmp_path)))
 
     stored.forget(NOTE, "nieznana")
     stored.numbered(NOTE, "nieznana", 3)
@@ -520,7 +521,7 @@ def test_stary_plik_z_urwanym_json_nie_zabiera_spraw_z_drugiego(tmp_path: Path) 
 def test_sprawa_bez_czasow_i_z_polskimi_literami_wraca_z_pliku_bez_zmian(tmp_path: Path) -> None:
     case = Case(REPORT, "3f0c1b2a9d8e7f60", None, None, None, 7, Closure("not_planned", None))
     note = Case(NOTE, NEW.id, "Brakuje ilości", None, at(24, 12), 8, run_id="b4c3d2e1f0a94b8c")
-    stored = DadCases(tmp_path / "config", log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
     stored.add(case)
     stored.add(note)
 
@@ -547,14 +548,13 @@ class Skrzynka:
     def __init__(self, tmp_path: Path, stored: DadCases, box: FakeReportBox) -> None:
         self._tmp_path, self._stored = tmp_path, stored
         self.box = box
-        self.directory = tmp_path / "kolejka"
-        self.directory.mkdir()
+        self.directory = tmp_path / "skrzynka" / UNSENT_DIRECTORY / QUEUE_DIRECTORY
+        self.directory.mkdir(parents=True)
         self.outbox = self._outbox()
 
     def _outbox(self) -> Outbox:
-        clock = ManualClock()
-        keyed = KeyedBox(self.box, lambda: REPORT_KEY, clock=clock)
-        return case_outbox(self.directory, keyed, log(self._tmp_path), self._stored, clock=clock, addresses=None)
+        work = centrum_work(self._tmp_path / "skrzynka", log(self._tmp_path))
+        return case_outbox(work, KeyedBox(self.box, lambda: REPORT_KEY, clock=work.clock), self._stored)
 
     def sent(self, *posts: Post, left: int = 0) -> None:
         """Kładzie ``posts`` w kolejce i czeka na koniec przejścia, także wysyłek następczych z tego przejścia, po którym
@@ -596,7 +596,7 @@ OTHER_TARGETS = {
 def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian(
     tmp_path: Path, target: PeriodThread | KnownIssue | NewIssue
 ) -> None:
-    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[ZGLOSZENIE_3], background=LOGS))
     # Logi także pod identyfikatorem Uwagi: wysyłka innej etykiety nie dostaje odnośnika, choć Logi o nim są.
     skrzynka.logs_delivered(PINNED_RUN, PINNED_ID)
@@ -612,7 +612,7 @@ def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian(
 def test_tylko_nowa_uwaga_dostaje_komentarz_o_odrzuconych_logach(
     tmp_path: Path, target: PeriodThread | KnownIssue | NewIssue
 ) -> None:
-    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[ZGLOSZENIE_3, UWAGA_12], background=LOGS))
 
     skrzynka.sent(Post(target, period=None, run_id=PINNED_ID, header=None, parts=(f"Treść\n{REJECTED_LOGS}",)))
@@ -621,7 +621,7 @@ def test_tylko_nowa_uwaga_dostaje_komentarz_o_odrzuconych_logach(
 
 
 def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path) -> None:
-    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     box = FakeReportBox(background=LOGS)
     box.background_comment_outcomes.append(Rejected())
     skrzynka = Skrzynka(tmp_path, stored, box)
@@ -643,7 +643,7 @@ def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path) -> N
 def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi(tmp_path: Path) -> None:
     """Słuchacz wymienia linię Logów po stanie wysyłki, nie po końcówce tekstu, więc kolejność stopki nie ma znaczenia."""
 
-    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
 
@@ -658,7 +658,7 @@ def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zg
     """Plik kolejki, który zapisało Wydanie v0.5.1 (cel bez nagłówka ``again``), idzie jak wtedy: komentarzem
     „Zgłoszenie wróciło” do otwartego Zgłoszenia tego odcisku, a czekająca sprawa dostaje jego numer."""
 
-    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     stored.add(Case(REPORT, "3f0c1b2a9d8e7f60", "Nie znaleziono wzorca.", None, at(25, 8), None))
     open_report = FakeIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[open_report]))
@@ -680,7 +680,7 @@ def test_uwaga_z_logami_w_drodze_z_kolejki_wydania_sprzed_stanu_wysylki_dostaje_
     dostaje odnośnik do Logów, które doszły przed nią."""
 
     run_id, note_id = "5d4c3b2a19087f6e5d4c3b2a19087f6e", "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b"
-    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     stored.add(Case(NOTE, note_id, "Brakuje ilości przy montażu", "6a797a55f42a", at(25, 8), None, run_id=run_id))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(run_id)
@@ -701,7 +701,7 @@ def test_uwaga_z_logami_w_drodze_z_kolejki_wydania_sprzed_stanu_wysylki_dostaje_
 
 
 def test_wysylka_uwagi_nieznanej_temu_komputerowi_idzie_bez_zmian(tmp_path: Path) -> None:
-    stored = DadCases(old_files(tmp_path), log(tmp_path), pause=ManualClock().pause)
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
 

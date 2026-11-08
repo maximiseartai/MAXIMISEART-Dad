@@ -694,6 +694,12 @@ class CentrumClient(TestClient):
 
         return threads_since(self.since)
 
+    def start(self) -> None:
+        """Start serwera jak u taty (``lifespan``): Kolejka wysyłki wznawia wysyłki, a po niej idą wersje zastępcze z
+        dzienników Wyceny w efenix. Bez niego klient tylko obsługuje zapytania aplikacji."""
+
+        self.__enter__()
+
     def stop(self, timeout_s: float = STOP_S) -> None:
         """Zamyka serwer (``lifespan``) i czeka, aż skończy się każdy wątek Centrum; drugie ``stop`` nic nie robi.
 

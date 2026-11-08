@@ -31,13 +31,13 @@ from typing import Final
 from fastapi import APIRouter, Request
 
 from rozliczenia.centrum import contract, restart_guardian, update_messages
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.reports import ReportHandle, Reports, UpdateReport
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import CommitSource, GitHubReleases, ReleaseSource
 from rozliczenia.centrum.tool_update import (
+    RESULT_FILE,
     UNEXPECTED,
     UP_TO_DATE,
     ROLLBACK_FAILED,
@@ -47,6 +47,7 @@ from rozliczenia.centrum.tool_update import (
     UpdateResult,
     read_result,
 )
+from rozliczenia.centrum.work import CentrumWork
 
 # Nazwa wątku Aktualizacji narzędzia (``ToolUpdates.start``); po udanej kończy się, gdy opiekun wystartował i Centrum
 # się zamknęło.
@@ -79,25 +80,24 @@ class ToolUpdates:
 
     def __init__(
         self,
+        work: CentrumWork,
         clone: Callable[[], ToolClone],
         runs: RunHost,
-        log: CentrumLog,
         commit: CommitSource,
         reports: Reports,
         *,
         shutdown: Shutdown,
         guardian: GuardianLauncher,
-        result_file: Path,
         release: ReleaseSource,
     ) -> None:
         self._clone = clone
         self._runs = runs
-        self._log = log
+        self._log = work.log
         self._reports = reports
         self._commit = commit
         self._shutdown = shutdown
         self._guardian = guardian
-        self._result_file = result_file
+        self._result_file = work.config / RESULT_FILE
         self._release = release
         self._lock = threading.Lock()
         self._view: contract.ToolUpdate | _Failed = contract.ToolUpdateIdle(state="idle")

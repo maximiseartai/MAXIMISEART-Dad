@@ -12,7 +12,7 @@ rozliczeń okresu się odbył, mówi Status okresu z plików Folderu okresu, ten
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -33,6 +33,7 @@ from rozliczenia.order_facts import MissingHeaders
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.quantities_to_fill import FillKind, KindToFill, quantities_to_fill
 from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.text import plural
 from rozliczenia.workbook_files import WorkbookError, excel_lock_file
 
@@ -47,8 +48,8 @@ class FillingReads:
     którego pamięć reguły danych poznaje komórki zakazanych kolumn każdego odczytu (ADR 0025).
     """
 
-    def __init__(self, *, clock: Callable[[], float], files: DadFiles) -> None:
-        self.reads: LastGoodReads[NumberedOrders] = LastGoodReads(clock=clock)
+    def __init__(self, work: CentrumWork, files: DadFiles) -> None:
+        self.reads: LastGoodReads[NumberedOrders] = LastGoodReads(clock=work.clock)
         self.files = files
 
     def run_ended(self, run: EndedRun) -> None:

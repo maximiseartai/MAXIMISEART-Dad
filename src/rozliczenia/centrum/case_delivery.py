@@ -20,29 +20,35 @@ każde jej issue dostaje najwyżej jeden taki komentarz, także po ponownym star
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 from typing import Final
 
-from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS_LABEL
 from rozliczenia.centrum.dad_cases import NOTE, REPORT, CaseKind, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
-from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import Deliveries, KnownIssue, NewIssue, OpenIssue, Outbox, Post
+from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY, Deliveries, KnownIssue, NewIssue, OpenIssue, Outbox, Post
 from rozliczenia.centrum.report_issue import fingerprint_of
+from rozliczenia.centrum.work import CentrumWork
 
+# Katalog Zgłoszeń i Uwag taty, których Skrzynka jeszcze nie dostała, w ``config``; w nim Kolejka wysyłki.
+UNSENT_DIRECTORY: Final = "zgloszenia"
 # Stan wysyłki Uwagi (``Post.state``): stopka mówi, że Logi przypiętego Uruchomienia są w drodze.
 _LOGS_ON_THE_WAY: Final = "logi-w-drodze"
 # Stan Uwagi po ``prepare``: wychodzi z linią, że Skrzynka odrzuciła treść Logów, więc po niej idzie komentarz z odnośnikiem.
 _LOGS_REJECTED: Final = "logi-odrzucone"
 
 
-def case_outbox(
-    directory: Path, box: KeyedBox, log: CentrumLog, cases: DadCases, *, clock: Clock, addresses: Path | None
-) -> Outbox:
-    """Kolejka Skrzynki Zgłoszeń w ``directory``, której doręczenia dają Sprawom taty ``cases`` numer i odnośnik do Logów."""
+def case_outbox(work: CentrumWork, box: KeyedBox, cases: DadCases) -> Outbox:
+    """Kolejka Skrzynki Zgłoszeń pracy Centrum ``work`` w ``config/zgloszenia/kolejka``, z adresami dostarczonych wysyłek
+    obok, której doręczenia dają Sprawom taty ``cases`` numer i odnośnik do Logów."""
 
-    return Outbox(directory, box, log, clock=clock, listener=_CaseDelivery(cases), addresses=addresses)
+    return Outbox(
+        work.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY,
+        box,
+        work.log,
+        clock=work.clock,
+        listener=_CaseDelivery(cases),
+        addresses=work.config / ADDRESSES_FILE,
+    )
 
 
 def logs_line(run_id: str, logs: str | None) -> str:

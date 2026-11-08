@@ -22,7 +22,7 @@ import pytest
 
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY, PeriodThread, Post
-from rozliczenia.centrum.reports import UNSENT_DIRECTORY
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.server import serve
 from rozliczenia.tool_files import listen_locally
 from rozliczenia.centrum.shutdown import Shutdown

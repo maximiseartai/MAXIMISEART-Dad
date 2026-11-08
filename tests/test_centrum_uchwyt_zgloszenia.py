@@ -39,7 +39,6 @@ from rozliczenia.centrum.reports import (
     report_target,
 )
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
-from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.efenix_window import PagePart
 from rozliczenia.process_run import Stop
 
@@ -53,6 +52,7 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.praca_centrum import centrum_work
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.potomne import wait_for
 
@@ -120,14 +120,11 @@ class Computer:
             join_threads_since(self.since, named=QUEUE_THREAD)
             self.clock = ManualClock()
         self.since = new_line()
+        work = centrum_work(self.config, self.log, self.clock)
         keyed = KeyedBox(self.box, lambda: read_report_key(self.config), clock=self.clock)
-        stored = DadCases(self.config, self.log, pause=self.clock.pause)
-        outbox = case_outbox(
-            self.config / "zgloszenia" / "kolejka", keyed, self.log, stored, clock=self.clock, addresses=None
-        )
-        reports = Reports(
-            keyed, outbox, lambda: TOOL_COMMIT, stored, search_deadline_s=self.search_deadline_s, forbidden=ForbiddenValues()
-        )
+        stored = DadCases(work)
+        outbox = case_outbox(work, keyed, stored)
+        reports = Reports(work, keyed, outbox, lambda: TOOL_COMMIT, stored, search_deadline_s=self.search_deadline_s)
         self.outbox, self.keyed, self.stored = outbox, keyed, stored
         return reports
 
@@ -617,7 +614,7 @@ def test_uwaga_taty_o_identyfikatorze_rownym_odciskowi_nie_jest_poprzednim_zglos
     computer.with_key()
     fingerprint = source(computer).fingerprint.digest
     note = Case(NOTE, fingerprint, "Uwaga o tym samym identyfikatorze", None, datetime.now(timezone.utc), 4)
-    DadCases(computer.config, computer.log, pause=ManualClock().pause).add(note)
+    DadCases(centrum_work(computer.config, computer.log)).add(note)
 
     _, _, body = prepared(computer.reports(), computer)
 

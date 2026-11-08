@@ -39,7 +39,7 @@ from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import RETRY_S
+from rozliczenia.centrum.outbox import RETRY_S, Outbox, Post
 from rozliczenia.centrum.logs_disk import EndEntry, Journal, LogsOnDisk, name_of
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
@@ -2508,6 +2508,7 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
         torn.write(TORN)
     entries, journal_text = journal_entries(journal), journal.read_text(encoding="utf-8")
     centrum.restart()
+    centrum.client.start()
     previous = centrum.client.get("/api/runs/current").json()["previous"]
     box = centrum.surroundings.report_box
     sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
@@ -2628,7 +2629,7 @@ def _pricing_cut_before_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka_ida_przy_nastepnym_starcie_raz(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, ale Centrum gaśnie znowu przed pierwszym zapytaniem,
+    """Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, ale Centrum gaśnie znowu przed startem serwera,
     więc przed wysyłką: dziennik zostaje obok pliku Logów. Następny start wysyła te Logi do Skrzynki raz, karta ma Urwane
     Uruchomienie, a dziennik znika."""
 
@@ -2639,6 +2640,7 @@ def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka
     closed = ([(record["run_id"], record["ending"]) for record in records(centrum)], len(journals(centrum)), len(logs_comments(box)))
 
     centrum.restart()
+    centrum.client.start()
     previous = centrum.client.get("/api/runs/current").json()["previous"]
     sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
     centrum.client.stop()
@@ -2646,6 +2648,41 @@ def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka
     assert closed == ([(run_id, "interrupted")], 1, 0)
     assert (sent, [(logs["run_id"], logs["ending"]) for logs in (logs_json(box, comment) for comment in logs_comments(box))]) == (True, [(run_id, "interrupted")])
     assert ((previous["state"], previous["run"]["id"]), journals(centrum)) == (("interrupted", run_id), [])
+
+
+def test_start_serwera_wysyla_logi_urwanego_uruchomienia_raz_po_wznowieniu_kolejki_wysylki(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Budowa aplikacji zamyka dziennik Urwanej Wyceny i niczego nie wysyła. Start serwera wznawia Kolejkę wysyłki i
+    dopiero po tym kładzie w niej Logi Urwanego Uruchomienia, przed pierwszym zapytaniem karty, więc kolejka nie dostaje
+    wysyłki przed swoim startem; zapytania karty po starcie nie wysyłają ich drugi raz."""
+
+    centrum, run_id, _ = _pricing_cut_before_result(tmp_path, monkeypatch)
+    box = centrum.surroundings.report_box
+    steps: list[str] = []
+    resume, post = Outbox.resume, Outbox.post
+
+    def resuming(outbox: Outbox) -> None:
+        steps.append("wznowienie kolejki")
+        resume(outbox)
+
+    def queueing(outbox: Outbox, sent: Post) -> bool:
+        steps.append(f"wysyłka {sent.rank.name} {sent.run_id}")
+        return post(outbox, sent)
+
+    monkeypatch.setattr(Outbox, "resume", resuming)
+    monkeypatch.setattr(Outbox, "post", queueing)
+    centrum.restart()
+    built = list(steps)
+    centrum.client.start()
+    started = list(steps)
+    for _ in range(3):
+        assert centrum.client.get("/api/runs/current").status_code == 200
+    sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
+    centrum.client.stop()
+
+    assert (built, started, steps) == ([], ["wznowienie kolejki", f"wysyłka STAND_IN {run_id}"], started)
+    assert (sent, len(logs_comments(box)), journals(centrum)) == (True, 1, [])
 
 
 def test_dziennik_urwanej_wyceny_ktorego_logow_kolejka_wysylki_nie_przyjela_zostaje_do_nastepnego_startu(
@@ -2658,12 +2695,14 @@ def test_dziennik_urwanej_wyceny_ktorego_logow_kolejka_wysylki_nie_przyjela_zost
     box = centrum.surroundings.report_box
     queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
     centrum.restart()
+    centrum.client.start()
     assert centrum.client.get("/api/runs/current").status_code == 200
     centrum.client.stop()
     kept = (len(journals(centrum)), len(logs_comments(box)))
 
     queue.unlink()
     centrum.restart()
+    centrum.client.start()
     assert centrum.client.get("/api/runs/current").status_code == 200
     sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
     centrum.client.stop()
@@ -2753,6 +2792,7 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
         logs.write_text(written.text, encoding="utf-8")
 
     centrum.restart()
+    centrum.client.start()
     centrum.client.get("/api/runs/current")
     box = centrum.surroundings.report_box
     sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
@@ -2846,10 +2886,12 @@ def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_b
 
     with unlisted(monkeypatch, path.parent):
         centrum.restart()
+        centrum.client.start()
         centrum.client.get("/api/runs/current")
         centrum.client.stop()
     after_refusal = path.read_bytes()
     centrum.restart()
+    centrum.client.start()
     centrum.client.get("/api/runs/current")
     box = centrum.surroundings.report_box
     sent = box.wait_until(lambda fake: logs_arrived(fake, 1))
@@ -3160,6 +3202,7 @@ def test_komentarz_postepu_urwanej_wyceny_w_efenix_zamienia_w_podsumowanie_naste
     box.search_failure = None
 
     centrum.restart()
+    centrum.client.start()
     assert centrum.client.get("/api/runs/current").status_code == 200
     _, texts = comment_history(centrum)
     centrum.client.stop()
@@ -3831,12 +3874,14 @@ def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego
         centrum.client.stop()
         with _refused(monkeypatch, "read_text", lambda path, _: path == journal_1):
             centrum.restart()
+            centrum.client.start()
             assert centrum.client.get("/api/runs/current").status_code == 200
         skipped = (journal_1.exists(), log_files(centrum))
         assert _start_pricing(centrum).status_code == 200
         run_2 = finished_view(centrum.client)["run"]["id"]
         centrum.client.stop()
         centrum.restart()
+        centrum.client.start()
         assert centrum.client.get("/api/runs/current").status_code == 200
         sent = box.wait_until(lambda fake: logs_arrived(fake, 2))
         centrum.client.stop()
@@ -4184,6 +4229,7 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
         closed = centrum.client
         blocked.unlink()
         centrum.restart()
+        centrum.client.start()
         assert centrum.client.get("/api/runs/current").status_code == 200
         queue = tmp_path / "config" / "zgloszenia" / "kolejka"
         settled = wait_for(lambda: queued_logs(queue) == [], 10)
@@ -4269,6 +4315,7 @@ def test_centrum_zgaszone_po_wpisie_konca_a_przed_logami_z_wynikiem_konczy_komen
         box = centrum.surroundings.report_box
         closed = centrum.client
         centrum.restart()
+        centrum.client.start()
         assert centrum.client.get("/api/runs/current").status_code == 200
         ended = box.wait_until(
             lambda fake: [text.splitlines()[-1] for issue in fake.issues_with(PROGRESS_LABEL) for text in issue.comments]

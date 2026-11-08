@@ -21,7 +21,6 @@ Centrum) stoi obok. Nieudany zapis wpisu to linia dziennika Centrum, nigdy błą
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 import threading
 from typing import Final
 
@@ -31,7 +30,7 @@ from pydantic import RootModel, ValidationError
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.dad_actions import ButtonPressed, CentrumStarted, DadAction, DadActions, ViewOpened
-from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.work import CentrumWork
 
 DAD_ACTIONS_FILE: Final = "dzialania-taty.jsonl"
 MAX_ENTRIES: Final = 1000
@@ -50,9 +49,9 @@ def _utc_now() -> datetime:
 class DadActionJournal:
     """Plik ``path`` z działaniami taty, które czekają na Logi następnego Uruchomienia."""
 
-    def __init__(self, path: Path, log: CentrumLog) -> None:
-        self._path = path
-        self._log = log
+    def __init__(self, work: CentrumWork) -> None:
+        self._path = work.log.directory / DAD_ACTIONS_FILE
+        self._log = work.log
         self._lock = threading.Lock()
         # Start tej pracy Centrum, dopóki nie trafił do pliku z jej pierwszym działaniem.
         self._started: CentrumStarted | None = CentrumStarted(at=_utc_now(), action="start Centrum")

@@ -66,9 +66,9 @@ komentarz mają te same znaki także po Logach, które zapisała praca Centrum s
 zapisać, nie zatrzymuje Logów w drodze do Maksa. Dziennika, którego nie da się odczytać, ani dziennika, którego pliku Logów
 system nie daje odczytać (``logs_disk.Refused``), start nie rusza: spróbuje następny.
 
-Wersja zastępcza idzie do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero przy pierwszym zapytaniu API tej pracy Centrum
-(``RunComments.send_left_behind``): przychodzi ono po ``lifespan``, a więc po ``Outbox.resume``, więc kolejka nie dostaje
-wysyłki przed swoim startem (model ``verify-kolejka-skrzynki``). Dziennik znika, gdy kolejka ją przyjęła
+Wersja zastępcza idzie do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero w starcie serwera (``lifespan``), po
+``Outbox.resume`` (``RunComments.send_left_behind``), więc kolejka nie dostaje wysyłki przed swoim startem (model
+``verify-kolejka-skrzynki``). Dziennik znika, gdy kolejka ją przyjęła
 (``comment_versions.journal_after``), a Centrum zgaszone przed tym wysyła ją przy następnym starcie, więc wysyłka jest co
 najmniej raz, jak w całej kolejce. Wersja zastępcza ma stopień wyższy od każdego postępu i niższy od Logów z wynikiem
 (``comment_versions.rank_of``), więc zamienia postęp w podsumowanie także po cofnięciu zegara komputera, a Logów z wynikiem,
@@ -90,7 +90,6 @@ import threading
 from typing import Final, Protocol, TypeVar, assert_never
 
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.comment_versions import (
     LABEL,
@@ -107,7 +106,6 @@ from rozliczenia.centrum.comment_versions import (
 )
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.diagnosis import Diagnosis
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import JournalKey, JournalRead, LogsOnDisk
 from rozliczenia.centrum.outbox import Post
 from rozliczenia.centrum.report_box import Label
@@ -117,7 +115,7 @@ from rozliczenia.centrum.run_logs_guard import GuardedLogs, guard_logs, guard_te
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
-from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.period_folder import PeriodFolderInaccessible
 
 PROGRESS_S: Final = 300.0
@@ -151,8 +149,8 @@ class CommentQueue(Protocol):
 @dataclass(frozen=True)
 class LeftBehindClosed:
     """Dowód, że start Centrum zamknął każdy dziennik Wyceny, który zostawiła poprzednia praca Centrum
-    (``RunComments.close_left_behind``). Karta ostatniego Uruchomienia (``run_cards.RunCards.last``) go bierze, więc w
-    ``create_app`` nie przeczyta Logów, zanim powstaną Logi Urwanego Uruchomienia. Kod, który go tworzy sam, omija tę
+    (``RunComments.close_left_behind``). Karta ostatniego Uruchomienia (``run_cards.RunCards.last``) go bierze, więc
+    nie przeczyta Logów, zanim powstaną Logi Urwanego Uruchomienia. Kod, który go tworzy sam, omija tę
     kolejność: to zostaje przeglądowi."""
 
 
@@ -241,21 +239,12 @@ class RunComments:
     """Komentarz Uruchomienia każdego Uruchomienia procesu z Centrum (docstring modułu) na Logach na dysku ``disk``, w
     kolejce ``queue``, po strażniku ``forbidden``, z postępem na zegarze ``clock``; Logi składa ``records``."""
 
-    def __init__(
-        self,
-        disk: LogsOnDisk,
-        queue: CommentQueue,
-        *,
-        forbidden: ForbiddenValues,
-        clock: Clock,
-        log: CentrumLog,
-        records: RecordMaker,
-    ) -> None:
+    def __init__(self, work: CentrumWork, disk: LogsOnDisk, queue: CommentQueue, records: RecordMaker) -> None:
         self._disk = disk
         self._queue = queue
-        self._forbidden = forbidden
-        self._clock = clock
-        self._log = log
+        self._forbidden = work.forbidden
+        self._clock = work.clock
+        self._log = work.log
         self._records = records
         # Postęp, Logi z wynikiem i Diagnoza: postęp, który już idzie do kolejki, jest w niej przed Logami, a dwie
         # Diagnozy naraz (dwie karty) piszą plik i komentarz jedna po drugiej.
@@ -410,10 +399,10 @@ class RunComments:
                 self._pending.append((left.key, closing))
         return LeftBehindClosed()
 
-    async def send_left_behind(self) -> None:
-        """Zależność każdej trasy API: przy pierwszym zapytaniu tej pracy Centrum, już po ``Outbox.resume``, wersje
-        zastępcze z zamkniętych dzienników idą do Kolejki wysyłki, a dziennik, którego wersję kolejka przyjęła, znika
-        (``journal_after``); dziennik wersji, której kolejka nie przyjęła, czeka na następny start."""
+    def send_left_behind(self) -> None:
+        """Krok startu serwera po ``Outbox.resume``, przed pierwszym zapytaniem: wersje zastępcze z zamkniętych dzienników
+        idą do Kolejki wysyłki, a dziennik, którego wersję kolejka przyjęła, znika (``journal_after``); dziennik wersji,
+        której kolejka nie przyjęła, czeka na następny start."""
 
         with self._lock:
             pending, self._pending = self._pending, []

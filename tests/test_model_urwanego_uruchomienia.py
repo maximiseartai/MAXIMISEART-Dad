@@ -91,7 +91,7 @@ def _change(root: Path, name: str) -> None:
         pytest.param("RunComments.send_left_behind", id="wysylka-wersji-zastepczych"),
         pytest.param("close", id="macierz-startu"),
         pytest.param("create_app.runs", id="kolejnosc-dzialan-po-wyniku"),
-        pytest.param("create_app.send_interrupted", id="wysylka-przy-zapytaniu"),
+        pytest.param("RunHost.__init__", id="logi-pierwsze-po-wyniku"),
         pytest.param("create_app.lifespan", id="start-kolejki"),
         pytest.param("run_process", id="wynik-uruchomienia"),
         pytest.param("_remove", id="usuniecie-dziennika"),

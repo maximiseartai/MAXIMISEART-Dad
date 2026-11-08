@@ -23,7 +23,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_RE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
-from rozliczenia.centrum.reports import UNSENT_DIRECTORY
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import LOG_PATH, SETTINGS

@@ -32,7 +32,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import CONFIGURATION_WAIT_S, ConfigurationFiles, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
 from rozliczenia.centrum.contract import Health, Problem, Refusal
-from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, DadActionJournal
+from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
 from rozliczenia.centrum.diagnosis import Surroundings, diagnose, files_of_process
@@ -41,20 +41,18 @@ from rozliczenia.centrum.filling import FillingReads, filling_router
 from rozliczenia.centrum.intermax_run import IntermaxEntry, intermax_copies_router, intermax_router
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LogsOnDisk
-from rozliczenia.centrum.metrics import metrics_router, read_runs
-from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE, Notifications, ReadNotifications, notifications_router
+from rozliczenia.centrum.metrics import History, metrics_router
+from rozliczenia.centrum.notifications import Notifications, notifications_router
 from rozliczenia.centrum.period_board import periods_router
 from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.atomic_file import replace_atomically
-from rozliczenia.centrum.keyed_box import OPENING_FILE, KeyedBox, NotesFile, read_report_key
+from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_box import GitHubReportBox, ReportBox
-from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
-from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, UNSENT_DIRECTORY, Reports
+from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, Reports
 from rozliczenia.centrum.run_cards import RunCards, run_cards_router
 from rozliczenia.centrum.run_comments import RecordMaker, RunComments
-from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
+from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.process_kind import HostParts
 from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.settings import SettingsStore
@@ -64,10 +62,10 @@ from rozliczenia.centrum.stops import Stops
 from rozliczenia.centrum.timing import server_timing, timing_router
 from rozliczenia.centrum.tool_freshness import RememberedRelease, ToolFreshness
 from rozliczenia.centrum import restart_guardian
-from rozliczenia.centrum.tool_update import RESULT_FILE, ToolClone
+from rozliczenia.centrum.tool_update import ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool_update_router
 from rozliczenia.centrum.version import SERVICE, short_commit
-from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.run_context import RunContexts
 from rozliczenia.input_checks import FILE_READERS, Readers
@@ -104,24 +102,21 @@ def create_app(
     now: Callable[[], datetime] = lambda: datetime.now().astimezone(),
     efenix_window: EfenixWindow | None = None,
 ) -> FastAPI:
+    work = CentrumWork(config=settings_path.parent, log=log, clock=clock, pause=pause)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # Powiadomienia: pierwsze pytanie skrzynki o stan spraw taty przy starcie, nie dopiero przy odczycie.
         notifications.check_in_background()
         # Klucz do Zgłoszeń: pierwsze sprawdzenie w tle, żeby Konfiguracja nie czekała na Skrzynkę.
         box.check_in_background()
-        # Kontrole ilości, Logi i Uwagi taty, których poprzednia praca Centrum nie wysłała (brak sieci albo klucza),
-        # wychodzą w tle.
+        # Wysyłki, których poprzednia praca Centrum nie wysłała, a po nich wersje zastępcze z jej dzienników Wyceny w
+        # efenix: kolejka nie dostaje wysyłki przed swoim startem.
         outbox.resume()
+        comments.send_left_behind()
         yield
 
-    # Działania taty w Centrum dla Logów następnego Uruchomienia: każda trasa API wpisuje widok albo przycisk.
-    dad_actions = DadActionJournal(log.directory / DAD_ACTIONS_FILE, log)
-
-    async def send_interrupted() -> None:
-        # Wersje zastępcze z dzienników Wyceny w efenix idą przy pierwszym zapytaniu, już po ``lifespan``.
-        await comments.send_left_behind()
-
+    dad_actions = DadActionJournal(work)
     # Bez /docs i /openapi.json: kontrakt eksportuje tools/ci/export_openapi.py, a Swagger ładowałby skrypty z sieci.
     app = FastAPI(
         title="Centrum rozliczeń",
@@ -130,7 +125,7 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
-        dependencies=[Depends(dad_actions.observe), Depends(send_interrupted)],
+        dependencies=[Depends(dad_actions.observe)],
     )
 
     @app.middleware("http")
@@ -181,18 +176,10 @@ def create_app(
     app.include_router(settings_router(store, platform))
     configuration = configuration_files or ConfigurationFiles.default()
     app.include_router(periods_router(store, platform, today, catalog))
-    # Uruchomienia z Centrum we własnym dzienniku obok ustawień; schemat metryk się nie zmienia.
-    centrum_runs = CentrumRuns(settings_path.parent / CENTRUM_RUNS_FILE)
-    # Sprawy taty: wysłane Zgłoszenia i Uwagi taty w jednym pliku stanu obok Ustawień taty (ADR 0015).
-    config = settings_path.parent
-    cases = DadCases(config, log, pause=pause)
-    # Zgłoszenia do Maksa: skrzynka obok platformy, klucz obok Ustawień taty (ADR 0007).
-    box = KeyedBox(
-        report_box or GitHubReportBox(),
-        lambda: read_report_key(config),
-        clock=clock,
-        opening=NotesFile(config / OPENING_FILE, replace_atomically, log.box_notes_unavailable),
-    )
+    centrum_runs = CentrumRuns(work.config)
+    history = History(catalog, centrum_runs)
+    cases = DadCases(work)
+    box = KeyedBox.of_work(report_box or GitHubReportBox(), work)
     # Najnowsze Wydanie na GitHubie, pytane z kluczem do Zgłoszeń, gdy jest: jedna pamiętana odpowiedź dla Konfiguracji,
     # Powiadomień i wyniku Aktualizacji narzędzia (limit API); Diagnoza pyta za każdym razem, a jej odpowiedź też trafia
     # do pamięci.
@@ -204,31 +191,16 @@ def create_app(
         cloud_files or CloudFiles.of_system(),
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
-    # Reguła danych (ADR 0025): zakazane wartości z każdego pliku taty, który ta praca Centrum przeczytała, dla
-    # strażnika każdej wysyłki do Skrzynki; jedna pamięć na pracę Centrum, tylko w pamięci.
-    forbidden = ForbiddenValues()
     # Uchwyt plików taty tej pracy: Diagnoza, Uzupełnienie i dni INTERMAX czytają nim pliki taty ze źródłem bajtów
     # czytników, a jego pamięć to pamięć reguły danych pracy.
-    files = DadFiles(source=readers.source, forbidden=forbidden)
-    filling = FillingReads(clock=clock, files=files)
+    files = DadFiles(source=readers.source, forbidden=work.forbidden)
+    filling = FillingReads(work, files)
     app.include_router(filling_router(store, log, surroundings.cloud_files, filling))
-    # Kontrola ilości, Logi Uruchomienia, Uwagi taty i Zgłoszenia: w kolejce Skrzynki, wysyłane w tle (ADR 0007, 0013,
-    # 0015); co doręczenie znaczy dla Spraw taty, wiedzą Sprawy taty w Skrzynce.
-    outbox = case_outbox(
-        config / UNSENT_DIRECTORY / QUEUE_DIRECTORY, box, log, cases, clock=clock, addresses=config / ADDRESSES_FILE
-    )
+    outbox = case_outbox(work, box, cases)
     reports = Reports(
-        box,
-        outbox,
-        surroundings.tool_freshness.local,
-        cases,
-        search_deadline_s=report_search_deadline_s,
-        forbidden=forbidden,
+        work, box, outbox, surroundings.tool_freshness.local, cases, search_deadline_s=report_search_deadline_s
     )
-    # Pliki Logów Uruchomienia, plik ostatniego startu i dziennik Wyceny w efenix w katalogu Logów (ADR 0017); dziennik
-    # przeżywa nagłe zgaśnięcie Centrum w trakcie Wyceny (#845).
     disk = LogsOnDisk(log, journaled=catalog.journaled)
-    # Logi Uruchomienia z dzisiejszym narzędziem, środowiskiem i działaniami taty.
     records = RecordMaker(
         commit=surroundings.tool_freshness.local,
         wydanie=surroundings.tool_freshness.wydanie,
@@ -238,10 +210,7 @@ def create_app(
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
     )
-    # Komentarz Uruchomienia w issue Logów okresu: postęp Wyceny w efenix (#846), plik Logów i Logi z wynikiem (ADR 0015),
-    # Diagnoza, a przy starcie Centrum wersje zastępcze z dzienników Wyceny w efenix, które zostawiła poprzednia praca.
-    comments = RunComments(disk, outbox, forbidden=forbidden, clock=clock, log=log, records=records)
-    # Jedno Uruchomienie procesu albo Aktualizacja narzędzia naraz; w ich trakcie zamknięcie Centrum jest odrzucone.
+    comments = RunComments(work, disk, outbox, records)
     stops = Stops(
         reports,
         lambda process, period: diagnose(
@@ -257,10 +226,8 @@ def create_app(
         log,
         comments,
     )
-    # Kontekst każdego Uruchomienia procesu: uchwyt plików taty tej pracy z nową Kopią wejścia i czytniki.
     contexts = RunContexts(files=files, readers=readers)
-    # Zależności procesów od Centrum: okno efenix taty (Google Chrome w profilu narzędzia z prawdziwym efenix; testy
-    # podają okno Atrapy efenix), dziennik Wyceny w efenix w katalogu Logów, zegar procesu i podmiana INTERMAX.
+    # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
     parts = HostParts(
         efenix=(efenix_window or EfenixWindow.of_tata()).opening(),
         journal=disk.journal,
@@ -273,50 +240,27 @@ def create_app(
     intermax = IntermaxEntry(
         store, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
-    # Karty Uruchomień z pliku startu, Logów Uruchomienia i Historii: ostatnie po starcie Centrum i wiersz Historii (ADR 0017).
-    cards = RunCards(disk, lambda: read_runs(catalog, centrum_runs.started()))
-    # Dzienniki Wyceny w efenix z poprzedniej pracy Centrum stają się wersjami zastępczymi komentarza Uruchomienia, a
-    # Urwane Wyceny dostają Logi, zanim karta ostatniego Uruchomienia przeczyta Logi (``closed``).
+    cards = RunCards(disk, history.runs)
     closed = comments.close_left_behind()
-
-    # Powiadomienia o Uwagach taty, wysłanych Zgłoszeniach, Wydaniach i zakończonych Wycenach w efenix z Logów
-    # Uruchomienia; przeczytane obok Ustawień taty (ADR 0015).
-    notifications = Notifications(
-        cases,
-        ReadNotifications(config / NOTIFICATIONS_FILE, log, pause=pause),
-        box,
-        surroundings.tool_freshness,
-        release,
-        log,
-        lambda: cards.ended("efenix"),
-        clock=clock,
-    )
+    notifications = Notifications(work, cases, box, surroundings.tool_freshness, release, lambda: cards.ended("efenix"))
     runs = RunHost(
         log,
         centrum_runs,
         stops,
         previous=cards.last(closed),
-        run_started=comments.run_started,
-        # Komentarz Uruchomienia pierwszy: wpis końca dziennika Wyceny w efenix, Logi z wynikiem i dziennik po ich
-        # przyjęciu przez kolejkę, zanim cokolwiek innego po wyniku (#871).
-        after_run=[
-            comments,
-            QuantityCheckAfterRun(outbox, surroundings.tool_freshness.local, forbidden),
-            filling,
-        ],
+        logs=comments,
+        after_run=[QuantityCheckAfterRun(work, outbox, surroundings.tool_freshness.local), filling],
     )
     shutdown.refuse_while(runs.shutdown_refusal)
-    # Klon narzędzia, które Centrum aktualizuje (ADR 0009); w testach klon z lokalnym „origin”. Po sukcesie
-    # opiekun ponownego startu zostawia wynik obok Ustawień taty, a to Centrum odczytuje go teraz, raz.
+    # Klon narzędzia, które Centrum aktualizuje (ADR 0009); w testach klon z lokalnym „origin”.
     updates = ToolUpdates(
+        work,
         lambda: tool_update or ToolClone.of_system(),
         runs,
-        log,
         surroundings.tool_freshness.local,
         reports,
         shutdown=shutdown,
         guardian=guardian or (lambda copy, restart: restart_guardian.launch(copy, restart)),
-        result_file=settings_path.parent / RESULT_FILE,
         release=release,
     )
     app.include_router(runs_router(runs, starts))
@@ -325,17 +269,9 @@ def create_app(
     app.include_router(run_cards_router(cards))
     app.include_router(notifications_router(notifications))
     app.include_router(
-        dad_notes_router(
-            cases,
-            outbox,
-            box,
-            surroundings.tool_freshness.local,
-            lambda: read_runs(catalog, centrum_runs.started()),
-            comments.link,
-            forbidden,
-        )
+        dad_notes_router(work, cases, outbox, box, surroundings.tool_freshness.local, history.runs, comments.link)
     )
-    app.include_router(metrics_router(catalog, today, centrum_runs))
+    app.include_router(metrics_router(history, today))
     app.include_router(
         configuration_router(
             configuration, surroundings.tool_freshness, release, lambda: box.judge(wait_s=CONFIGURATION_WAIT_S), readers
