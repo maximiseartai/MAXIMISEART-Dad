@@ -56,6 +56,7 @@ from tests.fixtures.preparation import (
     write_register,
 )
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
+from tests.fixtures.intermax import like_excel
 from tests.fixtures.workbooks import (
     TEMPLATE_VIEW,
     View,
@@ -1438,3 +1439,121 @@ def test_formula_glowna_wspolnej_formuly_w_wierszu_okresu_daje_jedno_zlecenie_te
 
     assert summary.period_order_count == 3
     assert [row[10] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == ["=N5", "=N6", "montaż"]
+
+
+_SECOND_PERIOD_ORDER = internal_row(3, datetime(2026, 9, 10, 8, 0), "NIE", "dariusz.fikcyjny2")
+_PERIOD_ORDERS_AFTER_HISTORY = (
+    internal_row(2, datetime(2026, 9, 8, 8, 0), "tak", "adrian.testowy"),
+    (*_SECOND_PERIOD_ORDER[:3], 7, *_SECOND_PERIOD_ORDER[4:]),
+    internal_row(4, datetime(2026, 9, 14, 18, 0), "tak", "kamil.syntetyczny"),
+)
+
+
+def _excel_register_after_history(tmp_path: Path, lista_rows: int = 1) -> PreparationFixture:
+    """Rejestr zapisany jak w Excelu (teksty wspólne, nagłówek UWAGI tekstem sformatowanym z podpowiedzią wymowy):
+    40 zleceń z 2025 r. w wierszach 2–41, trzy zlecenia okresu 08_14_09_2026 w wierszach 42–44 i pięć z 2025 r. za
+    nimi; UMOWA drugiego zlecenia okresu to liczba 7. Teksty zleceń okresu stoją w tabeli tekstów wspólnych za tekstami
+    wcześniejszych zleceń, a miasto, urządzenie, czynność i wykonawcę dzielą z nimi. Arkusz ``lista`` ma
+    ``lista_rows`` wykonawców pod nagłówkiem, a arkusz ``notatki`` za arkuszem zleceń tekst z końca tabeli."""
+
+    rows: list[RegisterRow] = [
+        *earlier_orders(40, 100),
+        register_order(2, datetime(2026, 9, 8, 8, 0)),
+        register_order(3, datetime(2026, 9, 10, 8, 0), successful="NIE", worker="dariusz.fikcyjny2") | {"UMOWA": 7},
+        register_order(4, datetime(2026, 9, 14, 18, 0), worker="kamil.syntetyczny"),
+        *earlier_orders(5, 200),
+    ]
+    fixture = make_preparation_fixture(tmp_path, rows)
+    workbook = load_workbook(fixture.register_path)
+    for row in range(3, lista_rows + 2):
+        workbook["lista"].cell(row, 1).value = f"wykonawca.syntetyczny{row}"
+    workbook.create_sheet("notatki")["A1"] = "notatka syntetyczna"
+    workbook.save(fixture.register_path)
+    workbook.close()
+    like_excel(fixture.register_path)
+    return fixture
+
+
+def test_teksty_zlecen_okresu_z_konca_tabeli_tekstow_wspolnych_rejestru_trafiaja_do_rozliczenia_wewnetrznego(
+    tmp_path: Path,
+) -> None:
+    fixture = _excel_register_after_history(tmp_path)
+
+    summary = run_preparation(fixture)
+
+    assert (summary.period_order_count, summary.successful_order_count) == (3, 2)
+    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_TEMPLATE_HEADERS)) == list(
+        _PERIOD_ORDERS_AFTER_HISTORY
+    )
+
+
+def _value_of_period_cell(change: Callable[[bytes], bytes]) -> Callable[[str, bytes], bytes]:
+    """Zmiana ``<v>`` komórki ADRES drugiego zlecenia okresu (E43) przez ``change``."""
+
+    def changed(name: str, data: bytes) -> bytes:
+        if name != "xl/worksheets/sheet2.xml":
+            return data
+        cell = data.index(b'<c r="E43"')
+        start = data.index(b"<v>", cell)
+        end = data.index(b"</v>", start) + len(b"</v>")
+        return data[:start] + change(data[start:end]) + data[end:]
+
+    return changed
+
+
+def _out_of_table_in_lista_row_2(name: str, data: bytes) -> bytes:
+    old, new = b'<c r="A2" t="s"><v>1</v>', b'<c r="A2" t="s"><v>99999</v>'
+    return data.replace(old, new) if name == "xl/worksheets/sheet1.xml" else data
+
+
+def _broken_far_after_lista_header(name: str, data: bytes) -> bytes:
+    return data.replace(b"</sheetData>", b"</sheetData><zepsuty>") if name == "xl/worksheets/sheet1.xml" else data
+
+
+@pytest.mark.parametrize(
+    ("lista_rows", "change"),
+    [
+        (1, _value_of_period_cell(lambda value: b"<v>" + b"".join(b"&#%d;" % digit for digit in value[3:-4]) + b"</v>")),
+        (1, _out_of_table_in_lista_row_2),
+        (3000, _broken_far_after_lista_header),
+    ],
+    ids=[
+        "numer-tekstu-encjami",
+        "numer-spoza-tabeli-w-nieczytanym-wierszu",
+        "zepsuty-xml-za-wierszem-1-listy",
+    ],
+)
+def test_rejestr_w_ksztalcie_ktorego_zawezenie_tekstow_wspolnych_nie_zna_daje_te_same_zlecenia_okresu(
+    tmp_path: Path, lista_rows: int, change: Callable[[str, bytes], bytes]
+) -> None:
+    """Numer tekstu wspólnego zapisany encjami, numer spoza tabeli w wierszu, którego Przygotowanie nie czyta, albo
+    zepsuty XML daleko za wierszem 1 arkusza bez zleceń: zawężony Rejestr ma wtedy całą tabelę tekstów wspólnych, więc
+    zlecenia okresu są takie same jak bez nich."""
+
+    fixture = _excel_register_after_history(tmp_path, lista_rows)
+    rewrite_parts(fixture.register_path, change)
+
+    run_preparation(fixture)
+
+    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_TEMPLATE_HEADERS)) == list(
+        _PERIOD_ORDERS_AFTER_HISTORY
+    )
+
+
+def test_tekst_wspolny_w_tekscie_wspolnym_przesuwa_numery_tak_samo_w_odczycie_okresu_jak_calego_rejestru(
+    tmp_path: Path,
+) -> None:
+    """openpyxl liczy każdy ``<si>`` tabeli tekstów wspólnych, także zagnieżdżony w tekście, i to przed nim: miasto,
+    które zlecenia okresu dzielą z wcześniejszymi, ma numer tekstu zagnieżdżonego. Wiersze okresu są takie same jak w
+    odczycie całego Rejestru."""
+
+    fixture = _excel_register_after_history(tmp_path)
+    item = "<si><t>POZNAŃ</t></si>".encode()
+    nested = "<si><t>POZNAŃ</t><si><t>obcy tekst</t></si></si>".encode()
+    rewrite_parts(fixture.register_path, lambda name, data: data.replace(item, nested) if name == "xl/sharedStrings.xml" else data)
+    file = DadFiles().read(fixture.register_path)
+
+    [period] = read_register(file, parse_period_token(PERIOD))
+    [whole] = read_register(file)
+
+    assert period.register_rows == tuple(row for row in whole.register_rows if row.number in range(42, 45))

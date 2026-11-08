@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 from typing import IO, Any, cast
 
@@ -24,7 +25,7 @@ from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.styles.fills import Fill
 from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import column_index_from_string, get_column_letter
-from openpyxl.utils.datetime import MAC_EPOCH
+from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH
 
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
@@ -45,7 +46,14 @@ from rozliczenia.workbook_files import (
 from rozliczenia.template_copy import Package
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route
-from rozliczenia.workbook_parts import FirstRows, UnsupportedShape, active_sheet, first_rows, package_parts
+from rozliczenia.workbook_parts import (
+    FirstRows,
+    UnsupportedShape,
+    active_sheet,
+    first_rows,
+    package_parts,
+    rows_dated_between,
+)
 from rozliczenia.workbook_save import (
     ExternalLinksError,
     SaveProblem,
@@ -61,7 +69,13 @@ from tests.fixtures.benchmark import (
     write_synthetic_templates,
     zip_part,
 )
-from tests.fixtures.preparation import INTERNAL_TEMPLATE_HEADERS, write_collective_template, write_internal_template
+from tests.fixtures.preparation import (
+    INTERNAL_TEMPLATE_HEADERS,
+    register_order,
+    write_collective_template,
+    write_internal_template,
+    write_register,
+)
 from tests.fixtures.porownanie import compare_worker_settlements, renumber_cell_styles
 from tests.fixtures.workbooks import (
     active_worksheet,
@@ -1328,3 +1342,39 @@ def test_rejestr_zawezony_po_wierszu_1_bez_openpyxl_daje_wiersze_okresu_z_rozpoz
     assert seen == [{"Zlecenia": ["DATA GODZ. POCZ.", "MIASTO"]}]
     assert headers == [("DATA GODZ. POCZ.", "MIASTO")]
     assert numbers == [list(range(10, 15)), list(range(13, 18))], "okres z dniem zapasu z obu stron"
+
+
+def _rows(content: bytes) -> dict[int, tuple[object, ...]]:
+    workbook = load_workbook(BytesIO(content), read_only=True)
+    try:
+        rows = enumerate(workbook["ZLECENIA"].iter_rows(values_only=True), start=1)
+        return {number: values for number, values in rows if any(value is not None for value in values)}
+    finally:
+        workbook.close()
+
+
+def test_rejestr_zawezony_do_okresu_niesie_w_tabeli_tekstow_wspolnych_tylko_teksty_swoich_wierszy(tmp_path: Path) -> None:
+    """Rejestr zapisany jak w Excelu: wiersze 2 i 4 to zlecenia z 2025 r., a wiersz 3 zlecenie z 8.09.2026. Po zawężeniu
+    do tego dnia tabela tekstów wspólnych nie ma tekstów wierszy 2 i 4, a wiersze 1 i 3 mają te same wartości co w
+    całym Rejestrze."""
+
+    path = write_register(
+        tmp_path / "Rejestr.xlsx",
+        [
+            register_order(100, datetime(2025, 3, 4, 8, 0)),
+            register_order(2, datetime(2026, 9, 8, 8, 0)),
+            register_order(101, datetime(2025, 3, 5, 8, 0)),
+        ],
+    )
+    like_excel(path)
+    content = path.read_bytes()
+    day = (datetime(2026, 9, 8) - WINDOWS_EPOCH) / timedelta(days=1)
+
+    narrowed, ranges = rows_dated_between(content, {"ZLECENIA": 3}, day, day + 1)
+
+    with package_parts(narrowed) as parts:
+        table = parts["xl/sharedStrings.xml"]
+    assert ranges == {"ZLECENIA": range(3, 4)}
+    assert (b"UM-SYN-002" in table, b"UM-SYN-100" in table, b"UM-SYN-101" in table) == (True, False, False)
+    whole = _rows(content)
+    assert _rows(narrowed) == {1: whole[1], 3: whole[3]}
