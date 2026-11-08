@@ -49,14 +49,16 @@ from .workbook_parts import UnsupportedShape
 from .run_context import RunContext
 from .settlement_period import period_of
 
-__all__ = ["OrderingInputs", "OrderingSummary", "RegisterDay", "order_register", "register_days"]
+__all__ = ["OrderingInputs", "OrderingSummary", "RegisterDay", "local_now", "order_register", "register_days"]
 
 # Karta Uporządkowania INTERMAX pokazuje dziś i 6 dni przed nim oraz późniejsze Dni uporządkowane; tyle dni wstecz
 # sięga też przegląd Dni uporządkowanych, więc obejmuje cały okres rozliczeniowy dzisiejszego dnia (7 dni).
 _SHOWN_DAYS = 7
 
 
-def _local_now() -> datetime:
+def local_now() -> datetime:
+    """Chwila na zegarze komputera w jego strefie czasu: zegar procesu poza Centrum i odtworzeniem."""
+
     return datetime.now().astimezone()
 
 
@@ -72,7 +74,7 @@ class OrderingInputs:
 
     register_path: Path
     copies_directory: Path
-    now: Callable[[], datetime] = _local_now
+    now: Callable[[], datetime] = local_now
     waiting: Waiting = field(default_factory=Waiting)
     disk: Disk = LOCAL_DISK
     period: str = field(init=False)

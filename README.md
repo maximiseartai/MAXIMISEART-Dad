@@ -481,11 +481,12 @@ npm run build      # build do src/rozliczenia/centrum/static/
   procesu (wzór: `settlement_process.PROCESS`), klucz w `contract.ProcessKey`,
   wpis procesu `KIND` z widokiem w `centrum/processes/<proces>.py` (wzór:
   `centrum/processes/settlement.py`: widok, rdzeń, plik metryk, Ustawienia
-  taty, Wzorce i kroki Diagnozy procesu), jego pozycja w `KINDS`
-  (`centrum/catalog.py`) i adapter startu (wzór:
-  `SettlementEntry`, spełnia `runs.ProcessEntry`) na liście `entries` w
-  `create_app`. Diagnoza, Logi Uruchomienia, karty z Logów, Metryki i Konfiguracja
-  pytają wpis, więc `runs.py` i one się nie zmieniają; czego brakuje, mówi
+  taty, Wzorce, kroki Diagnozy procesu, potrzeby wejścia `needs` i budowa
+  wejścia `inputs`, a proces z okresem także karta startu `PeriodStart`),
+  jego pozycja w `KINDS` (`centrum/catalog.py`), a procesu z okresem także
+  kafelek w `_TILES` (`centrum/period_start.py`). Start, Diagnoza, Logi
+  Uruchomienia, karty z Logów, Metryki i Konfiguracja pytają wpis, więc
+  `runs.py` i one się nie zmieniają; czego brakuje, mówi
   `tests/test_katalog_procesow.py`.
 
 Podczas pracy nad UI `npm run dev` działa obok `run_centrum.py --no-browser`

@@ -9,16 +9,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Final, get_args
 
 from fastapi.testclient import TestClient
 import pytest
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import CATALOG
-from rozliczenia.centrum.process_kind import PeriodProcessKind, ProcessKind
+from rozliczenia.centrum.efenix_chrome import atrapa_opening
+from rozliczenia.centrum.process_kind import HostParts, PathNeed, PeriodProcessKind, ProcessKind, Start
 from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.efenix_pricing import PricingMode
+from rozliczenia.run_context import RunContext
 from rozliczenia.tool_files import TOOL_ROOT
 from tests.fixtures.centrum import centrum, finished_view
 from tests.fixtures.centrum_intermax import ordering_centrum
@@ -32,6 +35,75 @@ def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
 
     assert sorted(keys) == sorted(get_args(contract.ProcessKey))
     assert sorted(period_keys) == sorted(get_args(contract.PeriodProcessKey))
+
+
+def test_tryb_z_karty_to_tryb_silnika_wyceny_w_efenix_pod_ta_sama_nazwa() -> None:
+    """Tryb Wyceny, który tata wybiera przyciskiem (``contract.Pricing``), silnik zna pod tą samą nazwą (ADR 0027): inny
+    tryb na karcie wywróciłby start Wyceny w trakcie budowy wejścia."""
+
+    assert {mode.value for mode in PricingMode} == set(get_args(contract.Pricing))
+
+
+_SETTLEMENT_FILES: Final[dict[PathNeed, Path]] = {
+    "collective_file": Path("plik-zbiorczy.xlsx"),
+    "worker_config": Path("konfiguracja.xlsx"),
+}
+_ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php"))
+
+
+@pytest.mark.parametrize(
+    ("key", "start", "parts", "error"),
+    [
+        ("settlement", Start(_SETTLEMENT_FILES, period=None, dry_run=False), HostParts(), "potrzebuje plików"),
+        (
+            "preparation",
+            Start(
+                {
+                    "register": Path("rejestr.xlsx"),
+                    "periods_directory": Path("okresy"),
+                    "worker_config": Path("konfiguracja.xlsx"),
+                    "internal_template": Path("wewnetrzny.xlsx"),
+                    "collective_template": Path("zbiorczy.xlsx"),
+                },
+                period=None,
+                dry_run=True,
+            ),
+            HostParts(),
+            "potrzebuje okresu",
+        ),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False), HostParts(), "potrzebuje okna efenix"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True), _ATRAPA, "nie ma Podglądu bez zapisu"),
+        (
+            "settlement",
+            Start({**_SETTLEMENT_FILES, "worker_template": Path("wzorzec.xlsx")}, None, False, pricing="z Przekazaniem"),
+            HostParts(),
+            "nie ma trybu z Przekazaniem",
+        ),
+    ],
+    ids=["bez-pliku", "bez-okresu", "bez-okna-efenix", "podglad-bez-podgladu", "tryb-spoza-procesu"],
+)
+def test_start_bez_potrzeby_procesu_to_blad_gospodarza_a_nie_uruchomienie(
+    key: contract.ProcessKey, start: Start, parts: HostParts, error: str
+) -> None:
+    """Odmowy dla taty daje karta startu; start, któremu brakuje potrzeby wpisu procesu, to błąd gospodarza (Centrum,
+    Skryptu dla maszyn albo odtworzenia), który katalog zgłasza, zanim zbuduje wejście procesu."""
+
+    with pytest.raises(ValueError, match=error):
+        CATALOG.prepared(key, start, parts, RunContext())
+
+
+@pytest.mark.parametrize(("chosen", "expected"), [(None, "bez Przekazania"), ("z Przekazaniem", "z Przekazaniem")])
+def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
+    chosen: contract.Pricing | None, expected: contract.Pricing
+) -> None:
+    """Skrypt dla maszyn bez ``--z-przekazaniem`` i Logi sprzed trybów nie wybierają trybu, a Wycena biegnie wtedy bez
+    Przekazania (ADR 0027): ten sam tryb w wejściu silnika i w Uruchomieniu na karcie."""
+
+    start = Start({"collective_file": Path("plik-zbiorczy.xlsx")}, period=None, dry_run=False, pricing=chosen)
+
+    prepared = CATALOG.prepared("efenix", start, _ATRAPA, RunContext())
+
+    assert (prepared.inputs.mode.value, prepared.info("u").pricing) == (expected, expected)
 
 
 def test_kazdy_proces_ma_wlasna_historie_metryk_w_katalogu_narzedzia() -> None:

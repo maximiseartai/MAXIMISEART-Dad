@@ -8,7 +8,7 @@ Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Centrum rozliczeń ot
 narzędzia i czeka w nim na logowanie taty (``efenix_browser.chrome``), Skrypt dla maszyn otwiera Chromium Playwrighta
 (``efenix_browser.chromium``), a testy okno na Atrapie efenix. Czas czekania na logowanie wstrzymuje zegar
 Uruchomienia, tak jak Decyzja taty. Tempo ludzkie okna (``efenix_pace``) wybiera każdy rozmówca:
-Centrum taty bierze je z okna taty (``centrum.efenix_run.EfenixWindow.of_tata``), a testy, weryfikacja i Skrypt dla
+Centrum taty bierze je z okna taty (``centrum.efenix_chrome.EfenixWindow.of_tata``), a testy, weryfikacja i Skrypt dla
 maszyn na Atrapie efenix wyłączają je (``None``).
 """
 

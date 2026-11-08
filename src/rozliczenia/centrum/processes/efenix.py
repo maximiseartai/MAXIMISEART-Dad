@@ -1,6 +1,9 @@
 """Wycena w efenix w katalogu procesów: wpis i widok Uruchomienia.
 
-Wycena czyta Plik zbiorczy okresu i wycenia jego zlecenia w efenix; nie ma Podglądu bez zapisu ani Wzorców.
+Wycena czyta Plik zbiorczy okresu i wycenia jego zlecenia w efenix w oknie efenix gospodarza; nie ma Podglądu bez
+zapisu ani Wzorców. Do wyboru są okresy, które mają Plik zbiorczy, a Status okresu się nie zmienia. Tryb Wyceny
+(ADR 0027) tata wybiera przy każdym starcie jednym z dwóch przycisków i Centrum go nie pamięta. Wejście ma dziennik
+Wyceny w efenix gospodarza (w Centrum ``logs_disk.Journal``), który przeżywa nagłe zgaśnięcie Centrum.
 """
 
 from __future__ import annotations
@@ -9,9 +12,18 @@ from typing import Final
 
 from rozliczenia import efenix_messages, efenix_process
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, TAIL, PeriodFolderCheck, PeriodProcessKind
+from rozliczenia.centrum.process_kind import (
+    PERIODS_DIRECTORY,
+    TAIL,
+    ByStatus,
+    HostParts,
+    PeriodFolderCheck,
+    PeriodProcessKind,
+    PeriodStart,
+    Start,
+)
 from rozliczenia.centrum.run_view import ProcessView, count_figure, elapsed_only, order_label
-from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingSummary
+from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingMode, PricingSummary
 from rozliczenia.tool_files import EFENIX_METRICS
 
 # Listy zleceń na karcie bieżącego Uruchomienia: najpierw te, które zostały tacie.
@@ -58,6 +70,13 @@ def _notes(summary: PricingSummary) -> list[contract.OrderNotes]:
     ]
 
 
+def _inputs(start: Start, parts: HostParts) -> EfenixInputs:
+    window = parts.window()
+    return EfenixInputs(
+        start.path("collective_file"), window.open, window.pace, journal=parts.journal, mode=PricingMode(start.pricing)
+    )
+
+
 KIND: Final[PeriodProcessKind[EfenixInputs, PricingSummary]] = PeriodProcessKind(
     key="efenix",
     view=ProcessView(
@@ -72,8 +91,18 @@ KIND: Final[PeriodProcessKind[EfenixInputs, PricingSummary]] = PeriodProcessKind
     ),
     core=efenix_process.PROCESS,
     default_metrics=EFENIX_METRICS,
+    needs=("collective_file", "efenix_window"),
+    inputs=_inputs,
+    start=PeriodStart(
+        creates="Wyceny zleceń i Znaczniki efenix",
+        chooser=ByStatus(
+            frozenset({"collective_file_prepared", "worker_settlements_ready"}),
+            "Żaden okres nie ma Pliku zbiorczego. Najpierw przygotuj plik zbiorczy.",
+        ),
+        no_preview="Wycena w efenix nie ma podglądu bez zapisu. "
+        "Uruchom ją przyciskiem „Uzupełnij bez zapisu” albo „Uzupełnij i zapisz”.",
+    ),
     settings=(PERIODS_DIRECTORY,),
-    templates=(),
     checks=(
         "tata_settings",
         "files_in_onedrive",
@@ -81,4 +110,5 @@ KIND: Final[PeriodProcessKind[EfenixInputs, PricingSummary]] = PeriodProcessKind
         "period_files_in_excel",
         *TAIL,
     ),
+    journaled=True,
 )

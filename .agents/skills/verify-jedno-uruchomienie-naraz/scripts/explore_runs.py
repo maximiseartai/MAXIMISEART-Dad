@@ -59,7 +59,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from types import FrameType, SimpleNamespace
+from types import FrameType
 from typing import Any, NoReturn
 
 from greenlet import getcurrent  # type: ignore[import-untyped]  # greenlet ships no type hints
@@ -493,7 +493,21 @@ def prepared_run(scheduler: Scheduler) -> process_kind.PreparedRun[Any, Any]:
     ``PreparedRun.conduct`` runs in every schedule."""
 
     return CATALOG.with_engine(partial(engine, scheduler)).prepared(
-        "preparation", period="08_14_09_2026", inputs=SimpleNamespace(dry_run=False), context=RunContext()
+        "preparation",
+        # Uruchomienie files by name only: the checker's engine replaces the core, so nothing reads them.
+        process_kind.Start(
+            {
+                "register": Path("Rejestr.xlsx"),
+                "periods_directory": Path("okresy"),
+                "worker_config": Path("konfiguracja.xlsx"),
+                "internal_template": Path("wewnetrzny.xlsx"),
+                "collective_template": Path("zbiorczy.xlsx"),
+            },
+            period="08_14_09_2026",
+            dry_run=False,
+        ),
+        process_kind.HostParts(),
+        RunContext(),
     )
 
 

@@ -9,9 +9,13 @@ from rozliczenia.centrum import contract
 from rozliczenia.centrum.process_kind import (
     PERIODS_DIRECTORY,
     TAIL,
+    HostParts,
     NeededSetting,
     PeriodFolderCheck,
     PeriodProcessKind,
+    PeriodStart,
+    RecentWeeks,
+    Start,
 )
 from rozliczenia.centrum.run_view import PeriodProcessView, count_figure, elapsed_figure
 from rozliczenia.collective_preparation import PreparationInputs, PreparationSummary
@@ -45,6 +49,18 @@ def _summary(summary: PreparationSummary, _dry_run: bool) -> contract.RunSummary
     )
 
 
+def _inputs(start: Start, _parts: HostParts) -> PreparationInputs:
+    return PreparationInputs(
+        start.path("register"),
+        start.path("periods_directory"),
+        start.token(),
+        dry_run=start.dry_run,
+        config_path=start.path("worker_config"),
+        internal_template_path=start.path("internal_template"),
+        collective_template_path=start.path("collective_template"),
+    )
+
+
 _VIEW: Final[PeriodProcessView[PreparationInputs, PreparationSummary]] = PeriodProcessView(
     reminder="Zapisz i zamknij Rejestr zleceń w Excelu",
     confirms_readiness=False,
@@ -61,11 +77,13 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
     view=_VIEW,
     core=preparation_process.PROCESS,
     default_metrics=PREPARATION_METRICS,
+    needs=("register", "periods_directory", "period", "worker_config", "internal_template", "collective_template"),
+    inputs=_inputs,
+    start=PeriodStart(creates="Rozliczenie wewnętrzne i Plik zbiorczy", chooser=RecentWeeks(8)),
     settings=(
         NeededSetting(_VIEW.register_name, "register", preparation_messages.register_missing),
         PERIODS_DIRECTORY,
     ),
-    templates=("internal", "collective"),
     checks=(
         "tata_settings",
         "files_in_onedrive",

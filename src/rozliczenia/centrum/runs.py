@@ -35,8 +35,8 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.process_kind import PreparedRun
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.run_view import ProcessView, Shown
@@ -52,7 +52,6 @@ from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 _STREAM_POLL_SECONDS: Final = 0.05
 _KEEPALIVE_SECONDS: Final = 15.0
 _RECONNECT_MS: Final = 1000
-_PRICING_ONLY: Final = "{title} nie ma trybu z Przekazaniem do akceptacji."
 CONTINUE_HINT: Final = "przy decyzji wybierz „Kontynuuj”"
 """Jak w Centrum wyraża się zgodę w Decyzji taty (``Conversation.continue_hint``); ten sam tekst ma Komunikat po
 odmowie w Uruchomieniu odtworzonym z Logów (``tools/odtworz_uruchomienie.py``)."""
@@ -611,36 +610,16 @@ _STREAM_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 
-class ProcessEntry(Protocol):
-    """Adapter startu procesu z okresem: co pokazać przed startem i jak przygotować Uruchomienie.
-
-    Klucz procesu podaje jego wpis w katalogu procesów (``catalog``).
-    """
-
-    @property
-    def key(self) -> contract.ProcessKey: ...
-
-    def setup(self) -> contract.ProcessSetup: ...
-
-    def prepare(self, request: contract.RunRequest) -> PreparedRun[Any, Any]:
-        """Wejście procesu z ustawień i okresu; ``contract.Refusal``, gdy czegoś brakuje."""
-        ...
-
-
-def runs_router(host: RunHost, entries: Sequence[ProcessEntry]) -> APIRouter:
+def runs_router(host: RunHost, starts: PeriodStarts) -> APIRouter:
     router = APIRouter(prefix="/api/runs", tags=["uruchomienia"])
-    by_key: Mapping[str, ProcessEntry] = {entry.key: entry for entry in entries}
 
     @router.get("/setup", operation_id="getRunSetup")
     def setup() -> contract.RunSetup:
-        return contract.RunSetup(processes=[entry.setup() for entry in entries])
+        return starts.setup()
 
     @router.post("", operation_id="startRun", responses=contract.NOT_FOUND_OR_CONFLICT)
     def start(request: contract.RunRequest) -> contract.RunView:
-        declaration = declaration_of(request.process)
-        if request.pricing not in (declaration.view.pricing_modes or (contract.DEFAULT_PRICING,)):
-            raise contract.Refusal(409, _PRICING_ONLY.format(title=declaration.title))
-        return host.start(by_key[request.process].prepare(request))
+        return host.start(starts.prepare(request))
 
     @router.get("/current", operation_id="getCurrentRun")
     def current() -> contract.RunView:

@@ -22,7 +22,7 @@ from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.catalog import CATALOG, Catalog
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.efenix_run import EfenixWindow
+from rozliczenia.centrum.efenix_chrome import EfenixWindow
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, REPORT
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE

@@ -18,7 +18,6 @@ from cele_mutacji_centrum import (
     EFENIX_BROWSER,
     EFENIX_CHECKS,
     EFENIX_KIND,
-    EFENIX_RUN,
     LOGS_OF_RUN,
     NOTIFICATIONS,
     RUN_LOGS,
@@ -29,7 +28,7 @@ from mutacje import Edit, Mutation, check_all
 MUTATIONS = (
     Mutation(
         "bez przycisku dla okresu z Plikiem zbiorczym przygotowanym",
-        (Edit(EFENIX_RUN, 'frozenset({"collective_file_prepared", "worker_settlements_ready"})', 'frozenset({"worker_settlements_ready"})'),),
+        (Edit(EFENIX_KIND, 'frozenset({"collective_file_prepared", "worker_settlements_ready"})', 'frozenset({"worker_settlements_ready"})'),),
         WYCENA,
         "tata nie może wycenić okresu zaraz po Uzupełnieniu pliku zbiorczego",
     ),
@@ -65,7 +64,7 @@ MUTATIONS = (
     ),
     Mutation(
         "przycisk „Uzupełnij i zapisz” uzupełnia bez Przekazania",
-        (Edit(EFENIX_RUN, "            mode=PricingMode(request.pricing),\n", "            mode=PricingMode.FILL,\n"),),
+        (Edit(EFENIX_KIND, "mode=PricingMode(start.pricing)", "mode=PricingMode.FILL"),),
         WYCENA,
         "tata wybrał zapis, a gotowe zlecenia czekają w efenix na zielony „Zapisz”, o którym myśli, że Centrum go kliknęło",
     ),

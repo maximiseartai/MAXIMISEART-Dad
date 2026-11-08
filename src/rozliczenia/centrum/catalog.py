@@ -6,8 +6,9 @@ wpisów. ``Catalog`` trzyma wpisy z rdzeniami i plikiem metryk każdego procesu:
 i karty przed startem biorą rdzeń, historię metryk i silnik procesu tylko stąd, więc test podmienia je jednym obiektem
 (``with_metrics``, ``steered``, ``with_engine``), a Skrypt dla maszyn i odtworzenie podają własny plik metryk tak samo.
 
-Kartę przed startem i wejście procesu buduje adapter startu procesu (``*_run.py``): proces z okresem przez
-``runs.ProcessEntry``, Uporządkowanie INTERMAX własną kartą poza okresami (ADR 0019).
+Wejście procesu buduje tylko ``Catalog.prepared`` z wpisu procesu (``ProcessKind.inputs``), ten sam dla każdego
+gospodarza. Kartę przed startem procesu z okresem składa ``period_start.PeriodStarts`` z polityki wpisu
+(``PeriodStart``), a Uporządkowanie INTERMAX ma własną kartę poza okresami (``intermax_run``, ADR 0019).
 
 Moduł leży nisko w grafie importów i nie robi I/O przy wczytaniu: nie wczytuje ``runs``, Diagnozy, Konfiguracji,
 Tablicy okresów, okna efenix ani FastAPI (``tests/test_granice_importow.py``), więc każdy moduł Centrum może go czytać
@@ -22,9 +23,9 @@ from pathlib import Path
 from typing import Any, Final
 
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.process_kind import Engine, PreparedRun, ProcessKind
+from rozliczenia.centrum.process_kind import Engine, HostParts, PeriodProcessKind, PreparedRun, ProcessKind, Start
 from rozliczenia.centrum.processes import efenix, intermax, preparation, settlement
-from rozliczenia.process_run import Process, ProcessInputs, run_process
+from rozliczenia.process_run import Process, run_process
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 
@@ -32,6 +33,7 @@ KINDS: Final[tuple[ProcessKind[Any, Any], ...]] = (preparation.KIND, settlement.
 """Kolejność statystyk w Metrykach."""
 
 _BY_KEY: Final[Mapping[contract.ProcessKey, ProcessKind[Any, Any]]] = {kind.key: kind for kind in KINDS}
+assert sum(kind.journaled for kind in KINDS) == 1, "dziennik Wyceny w efenix w katalogu Logów pisze jeden proces"
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,19 @@ class Catalog:
         """Wpis procesu ``key`` z rdzeniem tego katalogu."""
 
         return next(kind for kind in self.kinds if kind.key == key)
+
+    def period_kind(self, key: contract.PeriodProcessKey) -> PeriodProcessKind[Any, Any]:
+        """Wpis procesu z okresem ``key`` z rdzeniem tego katalogu."""
+
+        kind = self.kind(key)
+        assert isinstance(kind, PeriodProcessKind), f"{key} to proces z okresem (contract.PeriodProcessKey)"
+        return kind
+
+    @property
+    def journaled(self) -> contract.ProcessKey:
+        """Proces, który pisze dziennik Wyceny w efenix w katalogu Logów."""
+
+        return next(kind.key for kind in self.kinds if kind.journaled)
 
     def metrics(self, key: contract.ProcessKey) -> MetricsStore:
         """Historia metryk procesu ``key``: plik metryk tego katalogu z licznikami rdzenia procesu."""
@@ -76,17 +91,30 @@ class Catalog:
         return replace(self, engine=engine)
 
     def prepared(
-        self,
-        key: contract.ProcessKey,
-        *,
-        period: str,
-        inputs: ProcessInputs,
-        context: RunContext,
-        pricing: contract.Pricing | None = None,
+        self, key: contract.ProcessKey, start: Start, parts: HostParts, context: RunContext
     ) -> PreparedRun[Any, Any]:
-        """Uruchomienie procesu ``key`` gotowe do startu: rdzeń i historia metryk procesu z tego katalogu."""
+        """Uruchomienie procesu ``key`` gotowe do startu ``start`` z zależnościami gospodarza ``parts`` i Kontekstem
+        Uruchomienia ``context``: rdzeń i historia metryk procesu z tego katalogu.
 
-        return PreparedRun(self.kind(key), period, inputs, context, self.metrics(key), pricing, self.engine)
+        Wejście buduje wpis procesu ze startu z trybem Uruchomienia (``ProcessKind.pricing_of``). Okres Uruchomienia to
+        ``start.period``, a bez niego okres z wejścia (Plik zbiorczy, dzień Uporządkowania INTERMAX, ADR 0019).
+        ``ValueError`` to błąd gospodarza, nie taty: start bez potrzeby procesu albo Podgląd bez zapisu procesu bez
+        niego; odmowy dla taty daje wcześniej karta startu (``period_start``, ``intermax_run``).
+        """
+
+        kind = self.kind(key)
+        if set(start.paths) != set(kind.path_needs):
+            raise ValueError(f"{kind.title} potrzebuje plików {sorted(kind.path_needs)}, a start ma {sorted(start.paths)}")
+        if "period" in kind.needs and start.period is None:
+            raise ValueError(f"{kind.title} potrzebuje okresu")
+        if "efenix_window" in kind.needs and parts.efenix is None:
+            raise ValueError(f"{kind.title} potrzebuje okna efenix")
+        if start.dry_run and kind.core.preview is None:
+            raise ValueError(f"{kind.title} nie ma Podglądu bez zapisu")
+        pricing = kind.pricing_of(start.pricing)
+        inputs = kind.inputs(replace(start, pricing=pricing), parts)
+        period = inputs.period if start.period is None else start.period
+        return PreparedRun(kind, period, inputs, context, self.metrics(key), pricing, self.engine)
 
 
 CATALOG: Final = Catalog.default()

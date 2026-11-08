@@ -10,7 +10,7 @@ from typing import Final
 
 from rozliczenia import intermax_messages, intermax_process
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.process_kind import TAIL, NeededSetting, ProcessKind
+from rozliczenia.centrum.process_kind import TAIL, HostParts, NeededSetting, ProcessKind, Start
 from rozliczenia.centrum.run_view import ProcessView, count_figure, elapsed_only
 from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary
 from rozliczenia.text import day_label
@@ -30,6 +30,12 @@ def _summary(summary: OrderingSummary, _dry_run: bool) -> contract.RunSummary:
     )
 
 
+def _inputs(start: Start, parts: HostParts) -> OrderingInputs:
+    return OrderingInputs(
+        start.path("register"), start.path("copies_directory"), now=parts.now, waiting=parts.waiting, disk=parts.disk
+    )
+
+
 _VIEW: Final[ProcessView[OrderingInputs, OrderingSummary]] = ProcessView(
     reminder="Zapisz i zamknij INTERMAX w Excelu",
     confirms_readiness=False,
@@ -44,6 +50,8 @@ KIND: Final[ProcessKind[OrderingInputs, OrderingSummary]] = ProcessKind(
     view=_VIEW,
     core=intermax_process.PROCESS,
     default_metrics=INTERMAX_METRICS,
+    needs=("register", "copies_directory"),
+    inputs=_inputs,
     settings=(
         NeededSetting(
             _VIEW.register_name,
@@ -51,6 +59,5 @@ KIND: Final[ProcessKind[OrderingInputs, OrderingSummary]] = ProcessKind(
             partial(intermax_messages.register_missing, replacement=intermax_messages.ORDERING),
         ),
     ),
-    templates=(),
     checks=("tata_settings", "files_in_onedrive", "intermax", *TAIL),
 )

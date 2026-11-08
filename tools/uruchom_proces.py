@@ -63,22 +63,18 @@ from pydantic import BaseModel, ConfigDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rozliczenia import efenix_browser, intermax_copies
+from rozliczenia import intermax_copies
 from rozliczenia.centrum import contract, run_view
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.process_kind import PreparedRun
+from rozliczenia.centrum.efenix_chrome import atrapa_opening
+from rozliczenia.centrum.process_kind import HostParts, PreparedRun, Start
 from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
-from rozliczenia.efenix_pricing import PricingMode
-from rozliczenia.efenix_pricing import EfenixInputs
-from rozliczenia.intermax_ordering import OrderingInputs
 from rozliczenia.message import Message
-from rozliczenia.collective_preparation import PreparationInputs
-from rozliczenia.process_run import Finished, Outcome, ProcessInputs, StopEnding
+from rozliczenia.process_run import Finished, Outcome, StopEnding
 from rozliczenia.run_context import RunContext
 from rozliczenia.progress import ProgressSnapshot
-from rozliczenia.engine import SettlementInputs
 
 _EXIT_CODES = {"OK": 0, "WYMAGA_SPRAWDZENIA": 2, "BLAD_KRYTYCZNY": 1}
 
@@ -145,49 +141,51 @@ class _Unattended:
 
 
 def _prepared(
-    key: contract.ProcessKey,
-    inputs: ProcessInputs,
-    metrics: Path,
-    pricing: contract.Pricing | None = None,
+    key: contract.ProcessKey, start: Start, metrics: Path, parts: HostParts | None = None
 ) -> PreparedRun[Any, Any]:
     """Uruchomienie bez Kopii wejścia, z plikiem metryk ``metrics`` (``--metrics``) w miejscu pliku metryk procesu."""
 
-    return CATALOG.with_metrics({key: metrics}).prepared(
-        key, period=inputs.period, inputs=inputs, context=RunContext(), pricing=pricing
-    )
+    return CATALOG.with_metrics({key: metrics}).prepared(key, start, parts or HostParts(), RunContext())
 
 
 def _settle(args: argparse.Namespace) -> PreparedRun[Any, Any]:
-    inputs = SettlementInputs(
-        args.source, dry_run=args.dry_run, config_path=args.config, worker_template_path=args.worker_template
+    start = Start(
+        {"collective_file": args.source, "worker_config": args.config, "worker_template": args.worker_template},
+        period=None,
+        dry_run=args.dry_run,
     )
-    return _prepared("settlement", inputs, args.metrics)
+    return _prepared("settlement", start, args.metrics)
 
 
 def _prepare(args: argparse.Namespace) -> PreparedRun[Any, Any]:
-    inputs = PreparationInputs(
-        args.register,
-        args.periods_directory,
-        args.period,
+    start = Start(
+        {
+            "register": args.register,
+            "periods_directory": args.periods_directory,
+            "worker_config": args.config,
+            "internal_template": args.internal_template,
+            "collective_template": args.collective_template,
+        },
+        period=args.period,
         dry_run=args.dry_run,
-        config_path=args.config,
-        internal_template_path=args.internal_template,
-        collective_template_path=args.collective_template,
     )
-    return _prepared("preparation", inputs, args.metrics)
+    return _prepared("preparation", start, args.metrics)
 
 
 def _order(args: argparse.Namespace) -> PreparedRun[Any, Any]:
-    inputs = OrderingInputs(args.register, args.copies)
-    return _prepared("intermax", inputs, args.metrics)
+    start = Start({"register": args.register, "copies_directory": args.copies}, period=None, dry_run=False)
+    return _prepared("intermax", start, args.metrics)
 
 
 def _price(args: argparse.Namespace) -> PreparedRun[Any, Any]:
-    url: str = args.efenix_url
     # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
-    pricing: contract.Pricing = "z Przekazaniem" if args.z_przekazaniem else contract.DEFAULT_PRICING
-    inputs = EfenixInputs(args.source, lambda _login: efenix_browser.chromium(url), pace=None, mode=PricingMode(pricing))
-    return _prepared("efenix", inputs, args.metrics, pricing=pricing)
+    start = Start(
+        {"collective_file": args.source},
+        period=None,
+        dry_run=False,
+        pricing="z Przekazaniem" if args.z_przekazaniem else None,
+    )
+    return _prepared("efenix", start, args.metrics, HostParts(efenix=atrapa_opening(args.efenix_url)))
 
 
 class _Parser(argparse.ArgumentParser):
