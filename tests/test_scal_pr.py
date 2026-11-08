@@ -144,7 +144,7 @@ class MergeGitHub(FakeGitHub):
                 **files,
             },
             tool="tools/scal_pr.py",
-            copies=("tools/lib/werdykt_scalenia.py", "tools/lib/github.py", "tools/lib/wplyw_zmiany.py"),
+            copies=("tools/lib/werdykt_scalenia.py", "tools/lib/github.py", "tools/lib/wplyw_zmiany.py", "tools/lib/wyniki_testow.py"),
             gh=FAKE_GH,
         )
         _empty_state(self.bin)
@@ -637,6 +637,8 @@ def test_pr_ktory_nie_scala_sie_czysto_z_biezacym_main_nie_jest_scalany(
 WITH_PYTEST = PYPROJECT + '\n[tool.pytest.ini_options]\npythonpath = ["."]\n'
 SUM_TEST = "from kod import suma\n\n\ndef test_suma_dodatnich() -> None:\n    assert suma(2, 2) == 4\n"
 NEGATIVE_TEST = "\n\ndef test_suma_ujemnych() -> None:\n    assert suma(-1, -1) == -2\n"
+# Id z parametrem ze spacją: wynik testu scalenia czyta junit, a nie linię ``FAILED`` wyjścia, którą spacja dzieli.
+DESCRIBED_TEST = '\n\nimport pytest\n\n\n@pytest.mark.parametrize("opis", ["dwa i dwa"])\ndef test_suma_opisana(opis: str) -> None:\n    assert suma(-2, -2) == -4\n'
 SLOW_TEST = "\n\ndef test_suma_ujemnych() -> None:\n    import time\n\n    time.sleep(60)\n"
 ZERO_TEST = "\n\ndef test_zero() -> None:\n    from kod.pomoc import ZERO\n\n    assert ZERO == 0\n"
 HELPER = "ZERO: int = 0\n"
@@ -709,6 +711,7 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
             None,
             f"pada: {SUM_TEST_FILE}::test_suma_ujemnych (na samym main {{main}} pada też: {SUM_TEST_FILE}::test_suma_dodatnich)",
         ),
+        ({SUM_TEST_FILE: SUM_TEST + DESCRIBED_TEST}, ABS_SUM, None, f"pada: {SUM_TEST_FILE}::test_suma_opisana[dwa i dwa]"),
         ({SUM_TEST_FILE: SUM_TEST + SLOW_TEST}, ABS_SUM, ("MERGE_TEST_TIMEOUT_S = 300", "MERGE_TEST_TIMEOUT_S = 5"), f"bez wyniku po 5 s: {SUM_TEST_FILE}"),
         (
             {SUM_TEST_FILE: SUM_TEST + NEGATIVE_TEST},
@@ -718,7 +721,7 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
             "pada: pytest kod 4: {prog}: error: unrecognized arguments: --nieznana-opcja",
         ),
     ],
-    ids=["test-pada", "test-pada-a-inny-pada-juz-na-main", "test-ponad-limit-czasu", "pytest-nie-startuje"],
+    ids=["test-pada", "test-pada-a-inny-pada-juz-na-main", "test-z-parametrem-ze-spacja-pada", "test-ponad-limit-czasu", "pytest-nie-startuje"],
 )
 def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_scalany(
     tmp_path: Path, pull_files: dict[str, str], main_sum: str, replaced: tuple[str, str] | None, reason: str
@@ -1176,7 +1179,7 @@ def test_przeglad_oznacza_pass_dla_head_poza_regulami_werdyktu(tmp_path: Path) -
 
 
 REAL_SKILLS_FOR_CHANGE = (
-    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/ci/mutacje_skilli.py", "tools/plan_ci.py", "tools/lib/plan_runu.py", "tools/lib/niestabilne_testy.py", "tools/mutacje_zmiany.py",
+    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/plan_ci.py", "tools/lib/plan_runu.py", "tools/lib/niestabilne_testy.py", "tools/lib/wyniki_testow.py", "tools/mutacje_zmiany.py",
     "tools/lib/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
 )
 

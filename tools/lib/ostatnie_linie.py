@@ -6,7 +6,7 @@ standardowej i działa pod Pythonem 3.9 macOS (``per-file-target-version`` w ``p
 """
 
 # ``tools/mutacje.py`` (``check_all``) kończy nią każdy skrypt mutacji skilla, który przeszedł; czyta
-# ``tools/ci/mutacje_skilli.py``.
+# ``tools/ci/wykonaj_zadanie.py``.
 MUTACJE_OK = "MUTACJE OK"
 # ``tools/skille_dla_zmiany.py``; czytają ``tools/scal_pr.py`` i brama ``tools/hooks/pre-push``.
 SKILLE_VERIFY = "SKILLE VERIFY: "

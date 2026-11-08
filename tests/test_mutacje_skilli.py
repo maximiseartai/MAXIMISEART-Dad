@@ -1,4 +1,4 @@
-"""``tools/ci/mutacje_skilli.py`` nie przepuszcza skryptu mutacji, który zgubił się albo nie dał werdyktu, a kroki skilli
+"""Wykonanie kroków skilli pushu (``tools/ci/wykonaj_zadanie.py --kroki-pushu``) nie przepuszcza skryptu mutacji, który zgubił się albo nie dał werdyktu, a kroki skilli
 (``tools/lib/kroki_skilli.py``) mają polecenie, części i przeglądarkę z frontmattera i skryptów skilla.
 
 Każdy test buduje własne ``.agents/skills`` i uruchamia obok nich kopię narzędzia albo czyta katalog
@@ -35,9 +35,9 @@ sys.path.insert(0, str(TOOLS / "lib"))
 from jednostka import Klucz  # noqa: E402
 import rozjazd_modelu  # noqa: E402
 
-TOOL = TOOLS / "ci" / "mutacje_skilli.py"
 STEPS = TOOLS / "lib" / "kroki_skilli.py"
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
+OK_LINE = "WYKONANIE OK | kroki skilli pushu"
 CHECKED = "src/pakiet/sprawdzany.py"
 GUARDED = "---\nname: verify-x\npilnuje:\n  - src/pakiet/rout*.py\n---\n"
 ANCHORS = "src/pakiet/kotwice.txt"
@@ -82,17 +82,17 @@ def _tool(root: Path) -> list[str]:
     """Kopia narzędzia w ``root``; kopii, która już jest, nie nadpisuje, bo test może ją zmieniać."""
 
     names = (
-        "tools/ci/mutacje_skilli.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/ciezkie_ci.py",
+        "tools/ci/wykonaj_zadanie.py", "tools/lib/niestabilne_testy.py", "tools/lib/wyniki_testow.py", "tools/lib/plan_runu.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/ciezkie_ci.py",
         "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/czasy_ci.py", "tools/lib/github.py",
         "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py",
     )
     copy_files(root, [name for name in names if not (root / name).exists()])
-    return [sys.executable, str(root / "tools" / "ci" / "mutacje_skilli.py")]
+    return [sys.executable, str(root / "tools" / "ci" / "wykonaj_zadanie.py"), "--kroki-pushu"]
 
 
-def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def _run(root: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [*_tool(root), *args],
+        _tool(root),
         cwd=root,
         stdin=subprocess.DEVNULL,
         capture_output=True,
@@ -120,7 +120,7 @@ def test_skrypty_z_werdyktem_przechodza(tmp_path: Path) -> None:
     result = _run(tmp_path)
 
     assert result.returncode == 0, result.stdout
-    assert result.stdout.splitlines()[-1] == "MUTACJE SKILLI OK"
+    assert result.stdout.splitlines()[-1] == OK_LINE
 
 
 def test_skrypt_mutacji_o_zlej_nazwie_albo_w_podfolderze_daje_fail(tmp_path: Path) -> None:
@@ -161,7 +161,7 @@ def test_wzmianka_w_prozie_nie_daje_fail(tmp_path: Path, mention: str) -> None:
     result = _run(tmp_path)
 
     assert result.returncode == 0, result.stdout
-    assert result.stdout.splitlines()[-1] == "MUTACJE SKILLI OK"
+    assert result.stdout.splitlines()[-1] == OK_LINE
 
 
 def test_skrypt_bez_werdyktu_daje_fail(tmp_path: Path) -> None:
@@ -170,23 +170,25 @@ def test_skrypt_bez_werdyktu_daje_fail(tmp_path: Path) -> None:
     result = _run(tmp_path)
 
     assert result.returncode == 1
-    assert ".agents/skills/verify-a/scripts/check_a_mutations.py" in result.stdout.splitlines()[-1]
+    assert result.stdout.splitlines()[-1] == "WYKONANIE FAIL | skill:verify-a/check_a_mutations.py"
 
 
 def test_skrypt_po_limicie_czasu_daje_fail_a_kolejne_dalej_ruszaja(tmp_path: Path) -> None:
     # Wybór kroków importuje skrypt, żeby przeczytać jego tabelę, więc ``sleep`` na poziomie modułu biegłby w procesie
     # narzędzia, a nie w skrypcie, którego pilnuje limit. Werdykt po ``sleep`` sprawia, że FAIL daje tylko limit.
-    late = "import time\n\nif __name__ == '__main__':\n    time.sleep(60)\n" + "".join(f"    {line}\n" for line in PASSING.splitlines())
+    _tool(tmp_path)
+    copy = tmp_path / "tools" / "ci" / "wykonaj_zadanie.py"
+    copy.write_text(copy.read_text(encoding="utf-8").replace("LIMIT_S = 30 * 60", "LIMIT_S = 1"), encoding="utf-8")
+    late = "import time\n\nif __name__ == '__main__':\n    time.sleep(15)\n" + "".join(f"    {line}\n" for line in PASSING.splitlines())
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": late})
     _skill(tmp_path, "verify-b", {"check_b_mutations.py": PASSING})
 
-    result = _run(tmp_path, "--limit-s", "1")
+    result = _run(tmp_path)
 
-    assert result.returncode == 1
-    assert "OK   .agents/skills/verify-b/scripts/check_b_mutations.py" in result.stdout
-    final = result.stdout.splitlines()[-1]
-    assert ".agents/skills/verify-a/scripts/check_a_mutations.py" in final
-    assert "verify-b" not in final
+    assert result.returncode == 1, result.stdout
+    assert re.search(r"^FAIL skill:verify-a/check_a_mutations\.py \(\d+ s\): przekroczył limit 1 s$", result.stdout, re.MULTILINE), result.stdout
+    assert "OK   skill:verify-b/check_b_mutations.py" in result.stdout
+    assert result.stdout.splitlines()[-1] == "WYKONANIE FAIL | skill:verify-a/check_a_mutations.py"
 
 
 def test_wyjscie_skryptu_mutacji_widac_w_trakcie_jego_pracy(tmp_path: Path) -> None:
@@ -211,7 +213,7 @@ def test_wyjscie_skryptu_mutacji_widac_w_trakcie_jego_pracy(tmp_path: Path) -> N
             seen.touch()
     runner.wait(timeout=30)
 
-    assert (runner.returncode, lines[-1]) == (0, "MUTACJE SKILLI OK"), lines
+    assert (runner.returncode, lines[-1]) == (0, OK_LINE), lines
 
 
 def test_nazwe_kroku_widac_zanim_krok_cokolwiek_wydrukuje(tmp_path: Path) -> None:
@@ -233,11 +235,11 @@ def test_nazwe_kroku_widac_zanim_krok_cokolwiek_wydrukuje(tmp_path: Path) -> Non
     lines = []
     for line in runner.stdout:
         lines.append(line.rstrip("\n"))
-        if line.rstrip("\n") == "== .agents/skills/verify-a/scripts/check_a_mutations.py":
+        if line.rstrip("\n") == "== skill:verify-a/check_a_mutations.py":
             seen.touch()
     runner.wait(timeout=30)
 
-    assert (runner.returncode, lines[-1]) == (0, "MUTACJE SKILLI OK"), lines
+    assert (runner.returncode, lines[-1]) == (0, OK_LINE), lines
 
 
 @pytest.mark.parametrize(
@@ -270,20 +272,6 @@ def test_zadanie_mutations_ci_lokalnie_uruchamia_skrypty_mutacji_skilli(tmp_path
     assert [line.partition(" (")[0] for line in lines if line.startswith(("OK ", "FAIL "))] == [step], result.stdout
 
 
-def test_skrypt_bez_limitu_z_wiersza_polecen_przerywa_domyslny_limit_czasu(tmp_path: Path) -> None:
-    _tool(tmp_path)
-    copy = tmp_path / "tools" / "ci" / "mutacje_skilli.py"
-    copy.write_text(copy.read_text(encoding="utf-8").replace("LIMIT_S = 30 * 60", "LIMIT_S = 1"), encoding="utf-8")
-    late = "import time\n\nif __name__ == '__main__':\n    time.sleep(15)\n" + "".join(f"    {line}\n" for line in PASSING.splitlines())
-    _skill(tmp_path, "verify-a", {"check_a_mutations.py": late})
-
-    result = _run(tmp_path)
-
-    assert result.returncode == 1, result.stdout
-    assert "FAIL .agents/skills/verify-a/scripts/check_a_mutations.py" in result.stdout
-    assert "przekroczył limit 1 s" in result.stdout
-
-
 @pytest.mark.parametrize(
     "mention",
     [
@@ -298,7 +286,7 @@ def test_sciezka_z_kropka_albo_bezwzgledna_do_skryptu_w_repo_przechodzi(tmp_path
     result = _run(tmp_path)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.splitlines()[-1] == "MUTACJE SKILLI OK"
+    assert result.stdout.splitlines()[-1] == OK_LINE
 
 
 def test_sciezka_bezwzgledna_spoza_repo_daje_nazwany_fail(tmp_path: Path) -> None:
@@ -487,8 +475,8 @@ def test_podstawa_ci_biegnie_z_argumentami_przed_mutacjami_skilla(tmp_path: Path
 
     assert result.returncode == 0, result.stdout + result.stderr
     lines = result.stdout.splitlines()
-    assert lines.index(f"== PODSTAWA verify-d: {command}") < lines.index("sprawdzone --feature all") < lines.index("== .agents/skills/verify-d/scripts/check_d_mutations.py")
-    assert lines[-1] == "MUTACJE SKILLI OK"
+    assert lines.index("== skill:verify-d/ci") < lines.index("sprawdzone --feature all") < lines.index("== skill:verify-d/check_d_mutations.py")
+    assert lines[-1] == OK_LINE
 
 
 def test_czerwona_podstawa_ci_daje_fail_takze_w_skillu_bez_skryptu_mutacji(tmp_path: Path) -> None:
@@ -498,8 +486,8 @@ def test_czerwona_podstawa_ci_daje_fail_takze_w_skillu_bez_skryptu_mutacji(tmp_p
     result = _run(tmp_path)
 
     assert result.returncode == 1
-    assert "FAIL PODSTAWA verify-d" in result.stdout
-    assert result.stdout.splitlines()[-1] == "MUTACJE SKILLI FAIL | PODSTAWA verify-d"
+    assert "FAIL skill:verify-d/ci" in result.stdout
+    assert result.stdout.splitlines()[-1] == "WYKONANIE FAIL | skill:verify-d/ci"
 
 
 @pytest.mark.parametrize(("parts", "chosen"), [("", 1), ("ci-czesci: 1\n", 1), ("ci-czesci: 4\n", 4)], ids=["bez klucza", "jedna", "cztery"])
@@ -525,7 +513,7 @@ def test_zly_klucz_ci_czesci_daje_fail_podstawy(tmp_path: Path, value: str) -> N
 
     assert result.returncode == 1
     assert "FAIL PODSTAWA verify-d: ci-czesci w .agents/skills/verify-d/SKILL.md nie jest liczbą części od 1" in result.stdout
-    assert result.stdout.splitlines()[-1] == "MUTACJE SKILLI FAIL | PODSTAWA verify-d"
+    assert result.stdout.splitlines()[-1] == "WYKONANIE FAIL | PODSTAWA verify-d"
 
 
 @pytest.mark.parametrize("command", ["docs/opis.md", "", ".agents/skills/verify-d/scripts/nie_ma.py"])
@@ -539,7 +527,7 @@ def test_klucz_ci_bez_skryptu_z_repozytorium_daje_fail(tmp_path: Path, command: 
 
     assert result.returncode == 1
     assert "FAIL PODSTAWA verify-d: ci w .agents/skills/verify-d/SKILL.md nie zaczyna się skryptem .py z repozytorium" in result.stdout
-    assert result.stdout.splitlines()[-1] == "MUTACJE SKILLI FAIL | PODSTAWA verify-d"
+    assert result.stdout.splitlines()[-1] == "WYKONANIE FAIL | PODSTAWA verify-d"
 
 
 def test_krok_skilla_biegnie_w_checkoucie_swojego_skilla_a_nie_w_katalogu_biezacym_ani_checkoucie_narzedzia(
@@ -556,11 +544,11 @@ def test_krok_skilla_biegnie_w_checkoucie_swojego_skilla_a_nie_w_katalogu_biezac
     _skill(checkout, "verify-a", {"check_a_mutations.py": script})
     monkeypatch.chdir(tmp_path)
     monkeypatch.syspath_prepend(str(TOOLS / "ci"))
-    import mutacje_skilli
+    import wykonaj_zadanie
 
     krok = _load_tool(monkeypatch).Katalog.skanuj(checkout).krok(Klucz.z_tekstu("skill:verify-a/check_a_mutations.py"))
 
-    assert mutacje_skilli.run(krok, limit_s=60).powod is None
+    assert wykonaj_zadanie.run(krok, limit_s=60).powod is None
     assert Path((checkout / ".agents/skills/verify-a/scripts/katalog.txt").read_text(encoding="utf-8")).resolve() == checkout.resolve()
 
 

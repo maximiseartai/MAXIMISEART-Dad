@@ -203,12 +203,16 @@ class Przezyta:
 
     @classmethod
     def z_zapisu(cls, wpis: dict[str, Any], *, bez_werdyktu: bool = False) -> Przezyta:
-        """Wpis ``mutacje_zmiany.entry``; wpis bez któregoś pola to ``ValueError``."""
+        """Wpis ``mutacje_zmiany.entry``; wpis bez któregoś pola, z polem ``null`` albo z polem innego typu to ``ValueError``."""
 
+        if not isinstance(wpis, dict):
+            raise ValueError(f"wpis mutacji to nie obiekt JSON: {wpis}")
+        if brak := next((pole for pole in ("plik", "linia", "opis", "linie", "klucz") if wpis.get(pole) is None), None):
+            raise ValueError(f"wpis mutacji bez pola {brak!r}: {wpis}")
         try:
             return cls(str(wpis["plik"]), int(wpis["linia"]), str(wpis["opis"]), tuple(wpis["linie"]), str(wpis["klucz"]), bez_werdyktu)
-        except KeyError as blad:
-            raise ValueError(f"wpis mutacji bez pola {blad}: {wpis}") from None
+        except TypeError as blad:
+            raise ValueError(f"wpis mutacji z polem innego typu ({blad}): {wpis}") from None
 
     @property
     def w_issue(self) -> str:
@@ -235,7 +239,9 @@ def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
             problemy.append(f"część {numer}/{liczba} bez zapisu: {blad}")
             continue
         przezyte += czesci
-        if zapis.get("kod") not in mutacje_zmiany.KODY_Z_WYNIKIEM:
+        if zapis.get("kod") is None:
+            problemy.append(f"część {numer}/{liczba} bez kodu wyjścia: {zapis.get('wynik')}")
+        elif zapis["kod"] not in mutacje_zmiany.KODY_Z_WYNIKIEM:
             problemy.append(f"część {numer}/{liczba}: {zapis.get('wynik')}")
     return przezyte, problemy
 

@@ -21,6 +21,7 @@ import pytest
 import yaml
 
 from tests.fixtures.ci_workflow import jobs
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
@@ -235,6 +236,28 @@ def test_narzedzia_czytaja_artefakt_w_ktorym_ci_yml_wysyla_zapis_niestabilnych_t
 
 def test_narzedzia_pytaja_o_check_zadania_required_z_ci_yml() -> None:
     assert jobs()["required"]["name"] == REQUIRED
+
+
+def test_gh_nie_czyta_wejscia_wolajacego_i_biegnie_w_katalogu_checkoutu(tmp_path: Path) -> None:
+    """Klient ``gh`` (``tools/lib/github.py``) bez wejścia nie zabiera wejścia wołającego, które w bramie pre-push jest
+    listą wypychanych refów, i biegnie w katalogu checkoutu, gdziekolwiek stoi wołający."""
+
+    fake_cli(tmp_path / "bin", "gh", "import json, os, sys\nprint(json.dumps({'katalog': os.getcwd(), 'wejscie': sys.stdin.read()}))\n")
+    wolajacy = f"import sys\nsys.path.insert(0, {str(ROOT / 'tools' / 'lib')!r})\nimport github\nprint(github.gh('api', 'user'), end='')\n"
+
+    zrobione = subprocess.run(
+        [sys.executable, "-c", wolajacy],
+        input="refs/heads/main 1111111 refs/heads/main 2222222\n",
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    gh = json.loads(zrobione.stdout)
+    assert (Path(gh["katalog"]).resolve(), gh["wejscie"]) == (ROOT.resolve(), "")
 
 
 def test_flaky_test_z_otwartym_issue_poza_pierwsza_strona_listy_dostaje_komentarz_a_nie_drugie_issue() -> None:

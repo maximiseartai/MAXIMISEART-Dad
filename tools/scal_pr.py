@@ -144,6 +144,7 @@ import re
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Literal
 from urllib.parse import urlsplit
@@ -158,6 +159,7 @@ from repo import REMOTE, ROOT
 import repo
 import werdykt_scalenia
 from wplyw_zmiany import Context, Repository, run_all
+import wyniki_testow
 
 RUN_ID = re.compile(r"/actions/runs/(\d+)/")
 JOB_NOT_FAILED = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
@@ -176,7 +178,6 @@ MERGE_TEST_DISTANCE = 1
 MERGE_TEST_BUDGET_S = 180.0
 MERGE_TEST_TIMEOUT_S = 300
 MERGE_TEST_WORKERS = "4"  # workery xdist, chyba że ustawiono PYTEST_XDIST_AUTO_NUM_WORKERS, jak tools/szybko.py
-FAILED_TEST = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)
 LINK = "\x01"
 NOT_TEXT = "\x00"
 _REFERENCE = rf"(?:{LINK}|(?:[\w.-]+/[\w.-]+)?#\d+)"
@@ -534,23 +535,30 @@ def _merge_test(copy: Path, where: str, base: str, head: str) -> str:
 
 
 def _failed_tests(copy: Path, tests: Sequence[str], what: str) -> list[str]:
-    """Testy z ``tests``, które padły pytestem w ``copy``, po kolei z wyjścia. Rzuca ``_Refused``, gdy pytest nie daje
-    wyniku w limicie czasu albo pada, nie nazywając testu (wtedy z przyczyną ze stderr, np. nieznana opcja)."""
+    """Testy z ``tests``, które padły pytestem w ``copy``, po kolei z junit: id testu, a błąd kolekcji plikiem. Rzuca
+    ``_Refused``, gdy pytest nie daje wyniku w limicie czasu albo pada, nie nazywając testu (wtedy z przyczyną ze stderr,
+    np. nieznana opcja)."""
 
     workers = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS", MERGE_TEST_WORKERS)
-    try:
-        done = potomne.run(
-            [sys.executable, "-m", "pytest", "-q", "-rfE", "-n", "auto", *tests],
-            cwd=copy,
-            env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": workers},
-            timeout=MERGE_TEST_TIMEOUT_S,
-        )
-    except subprocess.TimeoutExpired:
-        raise _Refused(f"{what} bez wyniku po {MERGE_TEST_TIMEOUT_S} s: {', '.join(tests)}") from None
-    if not done.returncode:
-        return []
-    print(done.stdout.rstrip(), done.stderr.rstrip(), sep="\n", flush=True)
-    if failed := list(dict.fromkeys(FAILED_TEST.findall(done.stdout))):
+    with tempfile.TemporaryDirectory() as folder:
+        junit = Path(folder, "junit.xml")
+        try:
+            done = potomne.run(
+                [sys.executable, "-m", "pytest", "-q", "-rfE", "-n", "auto", *wyniki_testow.zapis(junit), *tests],
+                cwd=copy,
+                env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": workers},
+                timeout=MERGE_TEST_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired:
+            raise _Refused(f"{what} bez wyniku po {MERGE_TEST_TIMEOUT_S} s: {', '.join(tests)}") from None
+        if not done.returncode:
+            return []
+        print(done.stdout.rstrip(), done.stderr.rstrip(), sep="\n", flush=True)
+        try:
+            results = wyniki_testow.testy(junit)
+        except (OSError, ValueError):
+            results = []
+    if failed := list(dict.fromkeys(name for test in results if test.wynik == "padł" and (name := test.id or test.plik))):
         return failed
     lines = (done.stderr.strip() or done.stdout.strip()).splitlines()
     reason = next((line.strip() for line in reversed(lines) if "error" in line.lower()), lines[-1].strip() if lines else "bez wyjścia")

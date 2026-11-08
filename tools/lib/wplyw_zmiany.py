@@ -14,7 +14,8 @@ i ``tools/skille_dla_zmiany.py``:
 Zmiana to ścieżki, którymi checkout, razem z niezacommitowanymi i nieśledzonymi plikami, różni się od ``merge-base``
 HEAD z bazą; przeniesienie daje starą i nową ścieżkę, a usunięty plik też jest zmianą.
 
-Test jest dotknięty, gdy zmiana obejmuje jego plik albo plik, od którego zależy. Zależności wynikają z samego
+Plik testów to plik pod ``tests/`` o nazwie z ``TEST_FILES`` (``is_test_file``), tak samo w wyborze testów i w zakresie
+runu, który na pushu bierze każdy plik testów. Test jest dotknięty, gdy zmiana obejmuje jego plik albo plik, od którego zależy. Zależności wynikają z samego
 kodu, więc świeży worktree wybiera tak samo:
 
 - importy modułów Pythona;
@@ -89,6 +90,8 @@ class _Rule:
 
 
 _TESTS, _GATE, _SKILLS = Context.TESTS, Context.PR_GATE, Context.SKILL_STEPS
+# Domyślne python_files pytest: pyproject.toml go nie zmienia.
+TEST_FILES = ("test_*.py", "*_test.py")
 # Zmiana członka tabeli zmienia, co biegnie na pull request, więc według ADR 0020 wymaga dowodu z backtestu.
 _RUN_ALL = (
     # Konfiguracja pytest i narzędzi (#305).
@@ -226,7 +229,7 @@ class Repository:
         distances = graph.distances_from(changed - set(full))
         readers = {source for source, targets in graph.depends_on.items() if targets & set(full)}
         distances |= {reader: min(distances.get(reader, 2), 2) for reader in readers}
-        tests = {path for path in graph.files if _is_test(path) and (self.root / path).is_file()}
+        tests = {path for path in graph.files if is_test_file(path) and (self.root / path).is_file()}
         if not full:
             tests &= distances.keys()
         return Impact(tuple(sorted(tests)), distances, self.root, graph)
@@ -257,7 +260,7 @@ class Repository:
     def _runners(self) -> dict[str, frozenset[str]]:
         graph = self._graph(frozenset())
         found: dict[str, set[str]] = defaultdict(set)
-        for test in sorted(path for path in graph.depends_on if _is_test(path)):
+        for test in sorted(path for path in graph.depends_on if is_test_file(path)):
             reached, pending = {test}, [test]
             while pending:
                 source = pending.pop()
@@ -478,6 +481,8 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
     return data
 
 
-def _is_test(path: str) -> bool:
+def is_test_file(path: str) -> bool:
+    """Plik testów: plik pod ``tests/``, którego nazwa pasuje do ``TEST_FILES``."""
+
     pure = PurePosixPath(path)
-    return pure.parts[0] == "tests" and pure.name.startswith("test_") and pure.suffix == ".py"
+    return pure.parts[0] == "tests" and any(fnmatchcase(pure.name, pattern) for pattern in TEST_FILES)

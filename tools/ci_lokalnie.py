@@ -91,8 +91,8 @@ def _steps(root: Path) -> list[Step]:
         # Własny cache, bo zmiana --platform unieważnia wspólny i oba kroki sprawdzałyby za każdym razem całość.
         Step("mypy (Windows)", "mypy", "-m mypy --platform win32", (python, "-m", "mypy", "--platform", "win32", "--cache-dir", ".mypy_cache/win32"), root),
         Step("pytest", "pytest", "tools/ci/wykonaj_zadanie.py", (python, "-m", "pytest", "-q", "-n", "auto"), root),
-        # W CI kroki skilli biegną z planu, w zadaniach Mutation checks; tu wszystkie po kolei.
-        Step("mutacje skilli", "mutations", "tools/ci/wykonaj_zadanie.py", (python, "tools/ci/mutacje_skilli.py"), root),
+        # W CI kroki skilli biegną z planu, w zadaniach Mutation checks; tu tym samym wykonaniem wszystkie kroki pushu po kolei.
+        Step("mutacje skilli", "mutations", "tools/ci/wykonaj_zadanie.py", (python, "tools/ci/wykonaj_zadanie.py", "--kroki-pushu"), root),
         Step("npm ci", "frontend", "npm ci", (npm, "ci"), frontend),
         *(
             Step(f"npm run {script}", "frontend", f"npm run {script}", (npm, "run", script), frontend)

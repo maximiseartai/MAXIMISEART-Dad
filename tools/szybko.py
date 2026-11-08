@@ -60,7 +60,6 @@ import sys
 import threading
 import time
 import tomllib
-import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
@@ -72,6 +71,7 @@ from repo import BASE, ROOT
 import repo
 import rozjazd_modelu
 from wplyw_zmiany import STRUCTURE, Context, Repository, changed_since, run_all, with_structure
+import wyniki_testow
 from zakres_runu import podstawa_na_pull_request
 
 GREEN = "szybko-zielone.json"
@@ -182,22 +182,12 @@ class GreenMemory:
 
 def _passed(junit: Path, ran: Iterable[str]) -> set[str]:
     try:
-        cases = list(ET.parse(junit).iter("testcase"))
-    except (OSError, ET.ParseError):
+        tests = wyniki_testow.testy(junit)
+    except (OSError, ValueError):
         return set()
     ran = set(ran)
-    seen: set[str] = set()
-    failed: set[str] = set()
-    for case in cases:
-        # ``tests.test_x`` albo ``tests.test_x.TestKlasa``
-        parts = case.get("classname", "").split(".")
-        test = next((path for end in range(len(parts), 0, -1) if (path := "/".join(parts[:end]) + ".py") in ran), None)
-        if test is None:
-            continue
-        seen.add(test)
-        if case.find("failure") is not None or case.find("error") is not None:
-            failed.add(test)
-    return seen - failed
+    passed = {test.plik for test in tests if test.plik in ran} - {test.plik for test in tests if test.wynik == "padł"}
+    return {str(plik) for plik in passed}
 
 
 def _merge_with(base: str) -> str | None:
@@ -215,7 +205,7 @@ def _merge_with(base: str) -> str | None:
 
 
 def _pytest_arguments(tests: Iterable[str], junit: Path) -> tuple[str, ...]:
-    return (*with_structure(tests), f"--junitxml={junit}")
+    return (*with_structure(tests), *wyniki_testow.zapis(junit))
 
 
 def _pytest(root: Path, name: str, arguments: Iterable[str]) -> ci_lokalnie.Step:
