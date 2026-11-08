@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import datetime, timezone
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -35,6 +36,8 @@ from rozliczenia.centrum.tool_freshness import (
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.version import tool_commit
 from tests.fixtures.github_api import Answer, github_api, newest_on_main
+
+from tests.fixtures.proxy_systemu import system_proxy
 
 # Prawdziwe ``github_releases`` z chwili importu: autouse ``bez_githuba`` (``tests/conftest.py``) podmienia je w module.
 GITHUB_RELEASES = tool_freshness.github_releases
@@ -198,8 +201,9 @@ for _repository, _commit in _MERGED_NOT_IN_MAIN.items():
     _PAGES[f"/{_repository}/commits/{_commit}/pulls"] = (json.dumps([_pull(_commit)]), None)
 
 
-# Ścieżki pytań do atrapy GitHuba, w kolejności; ``github`` czyści listę przed testem.
+# Ścieżki i nagłówki pytań do atrapy GitHuba, w kolejności; ``github`` czyści listy przed testem.
 _ASKED: list[str] = []
+_ASKED_HEADERS: list[Message] = []
 
 
 def _comparisons() -> int:
@@ -209,6 +213,7 @@ def _comparisons() -> int:
 class _GitHub(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         _ASKED.append(self.path)
+        _ASKED_HEADERS.append(self.headers)
         repository, _, rest = self.path[1:].partition("/")
         if self.path in _PAGES:
             body, following = _PAGES[self.path]
@@ -256,6 +261,7 @@ class _GitHub(BaseHTTPRequestHandler):
 @pytest.fixture
 def github() -> Iterator[str]:
     _ASKED.clear()
+    _ASKED_HEADERS.clear()
     server = ThreadingHTTPServer(("127.0.0.1", 0), _GitHub)
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
     thread.start()
@@ -270,6 +276,26 @@ def test_najnowsze_wydanie_to_najwyzszy_numer_a_nie_ostatni_tag_alfabetycznie(gi
 
 def test_najnowsze_wydanie_ze_wszystkich_stron_listy_tagow(github: str) -> None:
     assert releases_from(f"{github}/strony", timeout_s=30) == GitHubReleases(NEWEST, "v1.0.0")
+
+
+def test_aktualnosc_pyta_github_naglowkami_api_rest_z_wersja_api(github: str) -> None:
+    # Nagłówki z dokumentacji REST API GitHuba: typ odpowiedzi, wersja API i obowiązkowy User-Agent (bez niego 403).
+    expected = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "centrum-rozliczen"}
+
+    assert releases_from(f"{github}/tagi", timeout_s=30) == GitHubReleases(NEWEST, "v0.10.0")
+    assert published_from(f"{github}/wydania", timeout_s=30) is not None
+
+    assert len(_ASKED_HEADERS) >= 2
+    assert all({name: headers[name] for name in expected} == expected for headers in _ASKED_HEADERS)
+
+
+def test_aktualnosc_laczy_sie_z_githubem_wprost_mimo_proxy_w_ustawieniach_systemu(
+    github: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with system_proxy(monkeypatch) as proxied:
+        assert releases_from(f"{github}/tagi", timeout_s=30) == GitHubReleases(NEWEST, "v0.10.0")
+
+    assert proxied == []
 
 
 def test_wyzsze_wydanie_spoza_main_jest_pominiete_a_nizsze_na_main_wybrane(github: str) -> None:

@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from rozliczenia.centrum.github import HttpRequest, HttpResponse
+from rozliczenia.centrum.github import HttpRequest, HttpResponse, headers
 from rozliczenia.centrum.report_box import (
     Archive,
     Asset,
@@ -47,9 +47,12 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.reports import report_target
+from rozliczenia.centrum import report_box
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
+from tests.fixtures.github_api import Answer, github_api
+from tests.fixtures.proxy_systemu import system_proxy
 from tests.fixtures.sluchacz_kolejki import QueueListener
 
 SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
@@ -63,6 +66,9 @@ TITLE = "BRAK_WZORCA: Nie znaleziono wzorca."
 BODY = "## Komunikat\n"
 FINGERPRINT = "0123456789abcdef"
 KEY = "github_pat_SYNTETYCZNY"
+# Prawdziwy transport Skrzynki z chwili importu: autouse ``bez_skrzynki_zgloszen_na_githubie`` (``tests/conftest.py``)
+# podmienia ``urllib_transport`` w module.
+SKRZYNKA_TRANSPORT = report_box.urllib_transport
 
 
 @dataclass
@@ -105,6 +111,38 @@ def test_utworzone_issue_to_wyslane_zgloszenie_z_numerem() -> None:
     assert request.body is not None
     assert json.loads(request.body) == {"title": TITLE, "body": BODY, "labels": ["zgloszenie"]}
     assert KEY not in repr(request)
+
+
+def test_skrzynka_pyta_github_naglowkami_api_rest_z_wersja_api_i_kluczem_taty() -> None:
+    # Nagłówki z dokumentacji REST API GitHuba: typ odpowiedzi, wersja API, obowiązkowy User-Agent i klucz.
+    _, transport = send_with(lambda: HttpResponse(201, json.dumps({"number": 42}).encode()))
+
+    [request] = transport.requests
+    assert {name: request.headers[name] for name in ("Accept", "X-GitHub-Api-Version", "User-Agent", "Authorization")} == {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "centrum-rozliczen",
+        "Authorization": f"Bearer {KEY}",
+    }
+
+
+def test_skrzynka_laczy_sie_z_githubem_przez_proxy_z_ustawien_systemu(monkeypatch: pytest.MonkeyPatch) -> None:
+    with system_proxy(monkeypatch) as proxied:
+        outcome = GitHubReportBox(transport=SKRZYNKA_TRANSPORT).labelled_issues("zgloszenie", include_closed=False, key=KEY)
+
+    assert outcome == Unreachable()
+    assert proxied == ["CONNECT api.github.com:443 HTTP/1.1"]
+
+
+def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki() -> None:
+    # Przekierowanie może wskazać inny host; klucz taty dostaje tylko adres, pod który Skrzynka wysłała żądanie.
+    with github_api({"/lista": Answer(body=[])}) as elsewhere:
+        with github_api({"/lista": Answer(301, headers={"Location": f"{elsewhere.url}/lista"})}) as box:
+            answer = SKRZYNKA_TRANSPORT(HttpRequest("GET", f"{box.url}/lista", headers(KEY), None))
+
+    assert answer.status == 200
+    assert [asked.authorization for asked in box.asked] == [f"Bearer {KEY}"]
+    assert [asked.authorization for asked in elsewhere.asked] == [None]
 
 
 @pytest.mark.parametrize("label", ["kontrola-ilosci", "logi-uruchomienia"])
