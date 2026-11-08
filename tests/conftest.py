@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from fastapi.testclient import TestClient
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from rozliczenia.centrum import report_box, restart_guardian, tool_freshness
+from rozliczenia.centrum import github, report_box, restart_guardian, tool_freshness
 from rozliczenia.centrum.tool_update import ToolClone
 from rozliczenia.centrum.log import CentrumLog
 
@@ -142,7 +142,7 @@ def bez_skrzynki_zgloszen_na_githubie(monkeypatch: pytest.MonkeyPatch) -> Iterat
 
     attempts: list[str] = []
 
-    def github_in_test(request: report_box.HttpRequest) -> NoReturn:
+    def github_in_test(request: github.HttpRequest) -> NoReturn:
         attempts.append(f"{request.method} {request.url}")
         raise AssertionError("Test Centrum łączy się ze Skrzynką Zgłoszeń na GitHubie; podstaw report_box w create_app.")
 

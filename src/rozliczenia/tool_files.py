@@ -42,7 +42,6 @@ DEFAULT_PORT: Final = 47811
 
 REPOSITORY: Final = "maximiseartai/MAXIMISEART-Dad"
 REPOSITORY_URL: Final = f"https://github.com/{REPOSITORY}.git"
-REPOSITORY_API: Final = f"https://api.github.com/repos/{REPOSITORY}"
 
 # Flagi ``run_centrum.py``. Opiekun ze starej kopii startuje nimi nową wersję, więc to kontrakt między wersjami.
 PORT_FLAG: Final = "--port"

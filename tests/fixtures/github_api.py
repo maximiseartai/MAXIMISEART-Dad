@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
-from typing import Final
+from typing import Final, Literal
 
 from rozliczenia.centrum.tool_freshness import PUBLISHED_PAGE
 
@@ -19,11 +19,15 @@ _LEFT: Final = {"X-RateLimit-Remaining": "59"}
 
 @dataclass(frozen=True)
 class Answer:
-    """Odpowiedź atrapy: status, treść JSON i nagłówki (``Link``, ``Location``, ``X-RateLimit-*``)."""
+    """Odpowiedź atrapy: status, treść JSON i nagłówki (``Link``, ``Location``, ``X-RateLimit-*``).
+
+    ``ending`` zmienia koniec treści: ``"endless"`` to treść bez końca, aż klient przestanie czytać, a ``"cut"`` to
+    połączenie zerwane w środku treści."""
 
     status: int = 200
     body: object = None
     headers: Mapping[str, str] = field(default_factory=dict)
+    ending: Literal["endless", "cut"] | None = None
 
 
 @dataclass(frozen=True)
@@ -36,20 +40,25 @@ class Asked:
 
 class GitHubApi:
     """Atrapa pod ``url``: ``answers`` po ścieżce, a na każde pytanie z tokenem odmowa ``refused_token``, gdy jest
-    (status albo cała odpowiedź, np. odmowa z powodu limitu konta)."""
+    (status albo cała odpowiedź, np. odmowa z powodu limitu konta). Repozytorium ``private`` na pytanie bez tokenu
+    odpowiada 404, jak prywatne repozytorium GitHuba."""
 
-    def __init__(self, answers: Mapping[str, Answer], refused_token: int | Answer | None) -> None:
+    def __init__(self, answers: Mapping[str, Answer], refused_token: int | Answer | None, private: bool) -> None:
         self.answers = answers
         self.refused_token = refused_token
+        self.private = private
         self.asked: list[Asked] = []
         self.url = ""
+        self.closing = threading.Event()
 
 
 @contextmanager
-def github_api(answers: Mapping[str, Answer], *, refused_token: int | Answer | None = None) -> Iterator[GitHubApi]:
+def github_api(
+    answers: Mapping[str, Answer], *, refused_token: int | Answer | None = None, private: bool = False
+) -> Iterator[GitHubApi]:
     """Atrapa API GitHuba czynna w bloku ``with``; ścieżka spoza ``answers`` to 404."""
 
-    api = GitHubApi(answers, refused_token)
+    api = GitHubApi(answers, refused_token, private)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -57,17 +66,35 @@ def github_api(answers: Mapping[str, Answer], *, refused_token: int | Answer | N
             api.asked.append(Asked(self.path, authorization))
             refused = api.refused_token
             refusal = Answer(refused, {"message": "Bad credentials"}, _LEFT) if isinstance(refused, int) else refused
+            not_found = Answer(404, {"message": "Not Found"}, _LEFT)
             if authorization is not None and refusal is not None:
                 answer = refusal
+            elif authorization is None and api.private:
+                answer = not_found
             else:
-                answer = api.answers.get(self.path, Answer(404, {"message": "Not Found"}, _LEFT))
+                answer = api.answers.get(self.path, not_found)
             body = json.dumps(answer.body).encode("utf-8")
             self.send_response(answer.status)
             for name, value in answer.headers.items():
                 self.send_header(name, value)
-            self.send_header("Content-Length", str(len(body)))
+            if answer.ending is None:
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
-            self.wfile.write(body)
+            self._chunked(body, endless=answer.ending == "endless")
+
+        def _chunked(self, body: bytes, *, endless: bool) -> None:
+            self.close_connection = True
+            chunk = b"%x\r\n%s\r\n" % (len(body), body)
+            try:
+                self.wfile.write(chunk)
+                while endless and not api.closing.is_set():
+                    self.wfile.write(chunk)
+            except OSError:  # klient przestał czytać
+                pass
 
         def log_message(self, format: str, *args: object) -> None:
             pass
@@ -79,6 +106,7 @@ def github_api(answers: Mapping[str, Answer], *, refused_token: int | Answer | N
     try:
         yield api
     finally:
+        api.closing.set()
         server.shutdown()
         server.server_close()
         thread.join()

@@ -15,12 +15,8 @@ import sys
 
 import pytest
 
-from rozliczenia.centrum.report_box import (
-    REPOSITORY,
-    GitHubReportBox,
-    HttpRequest,
-    Unreachable,
-)
+from rozliczenia.centrum.github import HttpRequest
+from rozliczenia.centrum.report_box import REPOSITORY, GitHubReportBox, Unreachable
 
 SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
 sys.path.insert(0, str(SKILL / "scripts"))

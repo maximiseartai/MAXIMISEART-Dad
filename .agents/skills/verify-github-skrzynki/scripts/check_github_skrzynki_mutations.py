@@ -17,6 +17,7 @@ from mutacje import Edit, Mutation, check_all
 BOX = Path("src/rozliczenia/centrum/report_box.py")
 KEYED = Path("src/rozliczenia/centrum/keyed_box.py")
 FRESHNESS = Path("src/rozliczenia/centrum/tool_freshness.py")
+GITHUB = Path("src/rozliczenia/centrum/github.py")
 OUTBOX = Path("src/rozliczenia/centrum/outbox.py")
 BOX_TESTS = Path("tests/test_skrzynka_zgloszen_github.py")
 REPLAY = ".agents/skills/verify-github-skrzynki/scripts/github_skrzynki.py"
@@ -59,7 +60,7 @@ MUTATIONS = (
         (
             Edit(
                 BOX,
-                "            if len(entries) < _PAGE_SIZE:\n                break\n",
+                "            if len(entries) < PAGE_SIZE:\n                break\n",
                 "            break\n",
             ),
         ),
@@ -106,7 +107,7 @@ MUTATIONS = (
             Edit(
                 BOX,
                 "tuple(asset for asset in map(_asset, assets) if asset is not None)",
-                "tuple(asset for asset in map(_asset, assets[:_PAGE_SIZE]) if asset is not None)",
+                "tuple(asset for asset in map(_asset, assets[:PAGE_SIZE]) if asset is not None)",
             ),
         ),
         _replay("archiwum"),
@@ -118,8 +119,8 @@ MUTATIONS = (
         (
             Edit(
                 BOX,
-                'url=f"{_API}/repos/{REPOSITORY}/releases/assets/{asset_id}",',
-                'url=f"{_API}/repos/{REPOSITORY}/releases/assets/{asset_id + 1}",',
+                'url=f"{API}/repos/{REPOSITORY}/releases/assets/{asset_id}",',
+                'url=f"{API}/repos/{REPOSITORY}/releases/assets/{asset_id + 1}",',
             ),
         ),
         _replay("archiwum"),
@@ -176,7 +177,7 @@ MUTATIONS = (
     ),
     Mutation(
         "nagłówek Link bez następnej strony",
-        (Edit(FRESHNESS, "return None if found is None else found[1]", "return None"),),
+        (Edit(GITHUB, "return None if found is None else found[1]", "return None"),),
         _replay("aktualnosc"),
         "Aktualność nie widzi Wydań z dalszych stron tagów",
         FAIL,
@@ -186,8 +187,8 @@ MUTATIONS = (
         (
             Edit(
                 FRESHNESS,
-                "raise (_NotFound if failure.code == 404 else _NoAnswer) from failure",
-                "raise _NoAnswer from failure",
+                "raise _NotFound if response.status == 404 else _NoAnswer\n",
+                "raise _NoAnswer\n",
             ),
         ),
         _replay("aktualnosc"),

@@ -61,6 +61,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal, TypeVar
 
+from rozliczenia.centrum.github import ANSWER_KEPT_S, NO_ANSWER_KEPT_S, sendable
 from rozliczenia.centrum.report_box import (
     Archive,
     ArchiveOutcome,
@@ -82,17 +83,14 @@ from rozliczenia.centrum.report_box import (
     Unreachable,
     UploadOutcome,
     newest_with_line,
-    sendable,
 )
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
-from rozliczenia.centrum.tool_freshness import ANSWER_KEPT_S, NO_ANSWER_KEPT_S
 
 REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
 # Ostatni zapis każdego rodzaju, którego skutek widać tylko na liście (``KeyedBox._ready``), obok klucza; poza
 # ``config/zgloszenia``, w którym weryfikacja Kontroli ilości widzi tylko kolejkę.
 OPENING_FILE: Final = "skrzynka-zakladanie.txt"
-# Przyjęty klucz Centrum pamięta jak odpowiedź o Wydaniach (``tool_freshness.RememberedRelease``), a brak odpowiedzi
-# o kluczu jak brak odpowiedzi o Wydaniach (``NO_ANSWER_KEPT_S``).
+# Przyjęty klucz Centrum pamięta jak każdą odpowiedź GitHuba, a brak odpowiedzi o kluczu jak każdy brak odpowiedzi.
 ACCEPTED_KEPT_S: Final = ANSWER_KEPT_S
 # Odrzucony klucz nie zmieni się sam: Maks wymienia plik (nowy skrót, więc sprawdzenie od razu) albo uprawnienia tokenu.
 REFUSED_KEPT_S: Final = 15 * 60
@@ -574,7 +572,7 @@ class KeyedBox:
 
     def github_key(self) -> str | None:
         """Klucz do pytań Aktualności narzędzia i Powiadomienia o nowej wersji do API GitHuba; ``None`` bez pliku klucza
-        i dla klucza, którego nie da się wysłać w nagłówku (``report_box.sendable``), bo taki nagłówek wywraca pytanie,
+        i dla klucza, którego nie da się wysłać w nagłówku (``github.sendable``), bo taki nagłówek wywraca pytanie,
         zanim dojdzie do GitHuba, a pytanie bez tokenu i tak dostaje odpowiedź.
 
         Bez werdyktu i bez pytania Skrzynki: ich odmowa mówi o publicznym repozytorium, nie o Skrzynce (opis modułu).

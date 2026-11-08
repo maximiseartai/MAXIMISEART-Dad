@@ -33,9 +33,10 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from rozliczenia import tool_files
 from rozliczenia.centrum import report_box
+from rozliczenia.centrum.github import API
 from rozliczenia.centrum.report_box import GitHubReportBox
+from rozliczenia.tool_files import REPOSITORY as TOOL_REPOSITORY
 
 from skrypt_skilla import Parser, create_run_root, new_run
 
@@ -45,9 +46,7 @@ import github_przypadki_skrzynki as skrzynka
 import github_sprzatanie
 import github_wiernosc
 from github_wymiana import (
-    API,
     RUN_MARKER,
-    TOOL_REPOSITORY,
     TRIAL,
     TRIAL_ARCHIVE,
     TRIALS,
@@ -372,13 +371,8 @@ def _unauthenticated_remaining() -> int | None:
 def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_key: bool) -> tuple[bool, str]:
     problems: list[str] = []
     facts = [f"klucz={token_kind(key)}", f"sprzatanie={token_kind(admin.token)}"]
-    if (
-        not all(trial.startswith(report_box.REPOSITORY + "-") for trial in TRIALS)
-        or tool_files.REPOSITORY_API != f"{API}/repos/{TOOL_REPOSITORY}"
-    ):
-        problems.append(
-            f"adresy klientów nie są tymi, które skill zna: {report_box.REPOSITORY}, {tool_files.REPOSITORY_API}"
-        )
+    if not all(trial.startswith(report_box.REPOSITORY + "-") for trial in TRIALS):
+        problems.append(f"adres Skrzynki nie jest tym, który skill zna: {report_box.REPOSITORY}")
     trials = [trial for trial, feature in ((TRIAL, "skrzynka"), (TRIAL_ARCHIVE, "archiwum")) if feature in features]
     client = Admin(key, Pace())
     for trial in trials:
