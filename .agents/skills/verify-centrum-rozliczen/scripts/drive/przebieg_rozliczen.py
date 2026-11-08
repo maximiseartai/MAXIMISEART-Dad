@@ -24,6 +24,7 @@ from drive.common import (
     period_files,
     period_row,
     priced_in_efenix,
+    read_bytes,
     remove,
     start_card_warns_while_open,
     stop_banner,
@@ -412,7 +413,7 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "45-przebieg-status-okresu")
 
     run.step(feature, "przebieg-nienadpisywanie")
-    before = {path.name: path.read_bytes() for path in worker_settlements.iterdir()}
+    before = {path.name: read_bytes(path) for path in worker_settlements.iterdir()}
     start = {"process": "settlement", "period": LAST_COMPLETE, "dry_run": False}
     started = run.post("/api/runs", "przebieg-nienadpisywanie-start", start).status
     run.check(started == 200, "a second RUN of the closed period starts (the Okres list no longer offers it)")
@@ -432,7 +433,7 @@ def drive(run: Run, page: Page) -> None:
         "the stop has three parts and no full path",
     )
     run.check(
-        {path.name: path.read_bytes() for path in worker_settlements.iterdir()} == before,
+        {path.name: read_bytes(path) for path in worker_settlements.iterdir()} == before,
         "Nienadpisywanie: the Rozliczenia pracowników are unchanged",
     )
     run.capture(page, "46-przebieg-nienadpisywanie")

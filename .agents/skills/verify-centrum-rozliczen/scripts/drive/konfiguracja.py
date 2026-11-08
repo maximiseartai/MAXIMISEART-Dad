@@ -9,7 +9,7 @@ from pathlib import Path
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive.common import Run, move, remove, served_version, unreadable, version_line
+from drive.common import Run, move, read_bytes, remove, served_version, unreadable, version_line
 from drive.teksty import UPDATE_BUTTON, WRITE
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
@@ -25,7 +25,7 @@ def _configuration_snapshot(files: dict[str, Path]) -> dict[str, tuple[bytes, in
 
     config = next(iter(files.values())).parent
     paths = [*files.values(), *config.glob("~$*")]
-    return {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in sorted(paths)}
+    return {path.name: (read_bytes(path), path.stat().st_mtime_ns) for path in sorted(paths)}
 
 
 @contextmanager

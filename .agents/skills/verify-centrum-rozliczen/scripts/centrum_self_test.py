@@ -6,7 +6,10 @@ numbers (no browser), that the retrying helpers of ``drive/common.py`` outlast a
 file the server holds open, retry nothing else and nothing longer, and take the key away only after a step wrote it,
 that the result of a started Uruchomienie is never the one before it and the Centrum log is read as ``log.py`` writes it,
 that a file the server puts in place is read once it is there and only a vanished queue file is left out,
-that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment,
+that the drive reads files in no other way than through those readers (``_direct_reads``),
+that the scripted skrzynka reads an issue file the drive is putting in place once it is there,
+that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, and that
+the drive fails on the clock's wake-up thread once it has died,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
 evidence text is strict UTF-8 and screenshots are PNG files, and that no workbook content (the fixture's row marker) reached the
 evidence.
@@ -61,6 +64,9 @@ SHARED_REMOVING = {"os": frozenset({"remove", "replace"}), "shutil": frozenset({
 PATH_SHARED = frozenset({"replace", "move"})
 PATHLIB_CLASSES = frozenset({"Path", "PosixPath", "WindowsPath"})
 DRIVE_HELPERS = frozenset({"remove", "remove_tree", "remove_empty_folder", "move", "replace_file"})
+# The readers of ``drive/common.py`` that wait while the server puts a file in place (#1087); ``read_json`` reads
+# through ``read_text``.
+DRIVE_READERS = frozenset({"read_text", "read_bytes"})
 GUARD_HEADING = "### Guard of deletions in the drive"  # the section of features/README.md with the guard's tables
 # Each sample of a deletion or move with the one finding the guard reports for it.
 REMOVAL_SAMPLES = {
@@ -296,6 +302,71 @@ def _check_drive_removals(errors: list[str]) -> None:
             )
 
 
+def _direct_reads(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
+    """Each attribute ``read_text`` or ``read_bytes`` in ``source``, called or not, and each ``getattr`` with one of
+    those names as a constant, outside the top-level functions ``helpers``, as ``<line>: .<name>``: the drive reads
+    files only through ``read_text``, ``read_bytes`` and ``read_json`` of ``drive/common.py``, which wait while the
+    server puts a file in place (#1087).
+
+    It takes every file for one the server may put in place, so no list of the server's files can fall behind it. Its
+    boundary, which review checks: a handle (``path.open()``, ``open(path)``, ``with … as handle: handle.read()``), a
+    library that opens the path itself (``load_workbook``, ``gzip.open``, ``yaml.safe_load`` of a handle), a name
+    computed at run time (``getattr(p, name)``, ``operator.methodcaller("read_text")``), another process, and code
+    outside ``drive/*.py``."""
+
+    tree = ast.parse(source)
+    skipped = {
+        id(inner)
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in helpers
+        for inner in ast.walk(node)
+    }
+    found = []
+    for node in ast.walk(tree):
+        if id(node) in skipped:
+            continue
+        if isinstance(node, ast.Attribute) and node.attr in DRIVE_READERS:
+            found.append((node.lineno, node.attr))
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value in DRIVE_READERS
+        ):
+            found.append((node.lineno, str(node.args[1].value)))
+    return [f"{line}: .{name}" for line, name in sorted(found)]
+
+
+def _check_drive_reads(errors: list[str]) -> None:
+    """The drive reads files only through the readers of ``drive/common.py``: the guard reports a read in any form of
+    ``Path`` and leaves the readers themselves and a call of them alone."""
+
+    for sample in (
+        'p.read_text(encoding="utf-8")',
+        "p.read_bytes()",
+        "while_open(p.read_bytes)",
+        "(a / b).read_text()",
+        "map(Path.read_bytes, paths)",
+        "getattr(p, 'read_text')()",
+    ):
+        if len(_direct_reads(sample)) != 1:
+            errors.append(f"the guard of reads takes {sample!r} for no read of a file")
+    for sample in ("read_text(p)", "read_bytes(a / b)", "read_json(p)['x']"):
+        if found := _direct_reads(sample):
+            errors.append(f"the guard of reads takes {sample!r} for a direct read: {found}")
+    if not _direct_reads("def read_text(path):\n    return path.read_text()\n", frozenset()):
+        errors.append("the guard of reads lets a feature hide a read in its own function named like a reader")
+    for path in sorted((SCRIPTS_ROOT / "drive").glob("*.py")):
+        helpers = DRIVE_READERS if path.name == "common.py" else frozenset()
+        for finding in _direct_reads(path.read_text(encoding="utf-8"), helpers):
+            errors.append(
+                f"drive/{path.name}:{finding}; read through read_text, read_bytes or read_json of drive/common.py, which "
+                "wait while the server puts the file in place on Windows (#1087)"
+            )
+
+
 def _check_guard_documented(errors: list[str]) -> None:
     """features/README.md shows the forms and the boundary of the guard as the table rows of ``_removals``, in order."""
 
@@ -427,19 +498,45 @@ def _check_result_of_start(errors: list[str]) -> None:
             )
 
 
-def _check_read_while_put_in_place(errors: list[str]) -> None:
-    """``run_logs`` (through ``read_json``) and ``Run.remembered`` wait while the server puts a file of Logi or the
-    settings file in place, which refuses a read for a moment on Windows (#1087, the night of #1132), and
-    ``queued_posts`` leaves out only a queue file that is gone, never one it cannot read."""
+def _read_while_put_in_place(path: Path, read: Callable[[], object]) -> object:
+    """What ``read`` gives, or the refusal it raises, while another thread puts ``path`` in place: the system refuses
+    to read it for 0.3 s (``unreadable``), as Windows does while a file is put in place (#1087)."""
 
     import contextlib
     import io
-    import json
-    import tempfile
     import threading
     import time
 
-    from drive.common import Run, queued_posts, run_logs, unreadable
+    from drive.common import unreadable
+
+    refusing = threading.Event()
+
+    def put_in_place() -> None:
+        with unreadable(path):
+            refusing.set()
+            time.sleep(0.3)
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        server = threading.Thread(target=put_in_place)
+        server.start()
+        refusing.wait()
+        try:
+            return read()
+        except PermissionError as failure:
+            return failure
+        finally:
+            server.join()
+
+
+def _check_read_while_put_in_place(errors: list[str]) -> None:
+    """``read_text``, ``read_bytes``, ``run_logs`` (through ``read_json``) and ``Run.remembered`` wait while the server
+    puts a file of Logi or the settings file in place, which refuses a read for a moment on Windows (#1087, the night of
+    #1132), and ``queued_posts`` leaves out only a queue file that is gone, never one it cannot read."""
+
+    import json
+    import tempfile
+
+    from drive.common import Run, queued_posts, read_bytes, read_text, run_logs
 
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch) / "run"
@@ -453,29 +550,16 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
         settings.parent.mkdir()
         settings.write_text("rejestr_zlecen: INTERMAX.xlsx\n", encoding="utf-8")
 
-        def read_while_put_in_place(path: Path, read: Callable[[], object]) -> object:
-            refusing = threading.Event()
-
-            def put_in_place() -> None:
-                with unreadable(path):
-                    refusing.set()
-                    time.sleep(0.3)
-
-            with contextlib.redirect_stdout(io.StringIO()):
-                server = threading.Thread(target=put_in_place)
-                server.start()
-                refusing.wait()
-                try:
-                    return read()
-                except PermissionError as failure:
-                    return failure
-                finally:
-                    server.join()
-
-        read = read_while_put_in_place(logs, lambda: run_logs(run))
+        read = _read_while_put_in_place(logs, lambda: read_text(logs))
+        if read != '{"run_id": "aaaaaaaa"}':
+            errors.append(f"read_text gives up on a file the server is putting in place: {read!r}")
+        read = _read_while_put_in_place(logs, lambda: read_bytes(logs))
+        if read != b'{"run_id": "aaaaaaaa"}':
+            errors.append(f"read_bytes gives up on a file the server is putting in place: {read!r}")
+        read = _read_while_put_in_place(logs, lambda: run_logs(run))
         if read != {logs.name: {"run_id": "aaaaaaaa"}}:
             errors.append(f"run_logs gives up on a file of Logi the server is putting in place: {read!r}")
-        read = read_while_put_in_place(settings, lambda: run.remembered("rejestr_zlecen"))
+        read = _read_while_put_in_place(settings, lambda: run.remembered("rejestr_zlecen"))
         if read != "INTERMAX.xlsx":
             errors.append(f"Run.remembered gives up on the settings file the server is putting in place: {read!r}")
 
@@ -565,6 +649,94 @@ def _check_clock_moved_whole(errors: list[str]) -> None:
             server.join()
         if waited is not True:
             errors.append(f"Centrum's clock gives up on a move the drive is putting in place: {waited!r}")
+
+
+def _check_box_reads_while_put_in_place(errors: list[str]) -> None:
+    """The scripted skrzynka reads an issue file once the drive has put it in place (``edit_issue``): its comments,
+    a new comment and the issues with a label each wait while the system refuses to read it (#1087)."""
+
+    import json
+    import tempfile
+
+    from serve_centrum import FileReportBox
+
+    with tempfile.TemporaryDirectory() as scratch:
+        directory = Path(scratch) / "skrzynka-zgloszen"
+        directory.mkdir()
+        issue = directory / "1.json"
+        body = {"number": 1, "title": "t", "body": "b", "labels": ["zgloszenie"], "state": "open", "comments": ["c"]}
+        issue.write_text(json.dumps(body), encoding="utf-8")
+        box = FileReportBox(directory)
+
+        def comments() -> object:
+            found = box.comments(1, key="k")
+            return [comment.body for comment in found] if isinstance(found, tuple) else found
+
+        def labelled() -> object:
+            found = box.labelled_issues("zgloszenie", include_closed=False, key="k")
+            return [issue.number for issue in found] if isinstance(found, tuple) else found
+
+        reads: dict[str, Callable[[], object]] = {
+            "its comments": comments,
+            "a new comment": lambda: type(box.comment(1, "nowy", key="k")).__name__,
+            "the issues with a label": labelled,
+        }
+        expected: dict[str, object] = {"its comments": ["c"], "a new comment": "Commented", "the issues with a label": [1]}
+        for what, read in reads.items():
+            got = _read_while_put_in_place(issue, read)
+            if got != expected[what]:
+                errors.append(f"the scripted skrzynka gives up on {what} while the drive puts the issue in place: {got!r}")
+
+
+def _check_clock_alarm_failure(errors: list[str]) -> None:
+    """Once the wake-up thread of Centrum's clock dies (here on a move it cannot read), the drive fails on it at the
+    next ``advance_clock`` and at a wait that times out, instead of waiting for a wake-up that never fires (#1124)."""
+
+    import contextlib
+    import io
+    import json
+    import tempfile
+    import threading
+    import time
+
+    from drive.common import DriveFailure, Run, advance_clock
+    from serve_centrum import ScriptedClock
+
+    hook = threading.excepthook
+    threading.excepthook = lambda failure: None  # the dying thread's traceback is the file below
+    try:
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch) / "run"
+            (root / "zegar").mkdir(parents=True)
+            (root / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
+            (root / "zegar" / "przesuniecie-min.txt").write_text("jedna minuta", encoding="utf-8")
+            run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
+            ScriptedClock(root)
+            died = root / "zegar" / "budzik-padl.txt"
+            deadline = time.monotonic() + 5
+            while not died.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if "could not convert" not in (died.read_text(encoding="utf-8") if died.exists() else ""):
+                errors.append("the wake-up thread of Centrum's clock dies without leaving why in zegar/budzik-padl.txt")
+                return
+            steps: dict[str, Callable[[], None]] = {
+                "advance_clock": lambda: advance_clock(run, 1, "the self-test moves a dead clock"),
+                "Run.wait_for": lambda: run.wait_for(lambda: False, "a wake-up of a dead clock", timeout_s=0.1),
+            }
+            failures: list[str] = []
+            with contextlib.redirect_stdout(io.StringIO()):
+                for name, step in steps.items():
+                    try:
+                        step()
+                    except (DriveFailure, ValueError, OSError) as failure:  # a step that reads the dead clock fails otherwise
+                        if not (isinstance(failure, DriveFailure) and "clock died" in str(failure)):
+                            failures.append(f"{name}: {failure!r}")
+                    else:
+                        failures.append(f"{name} goes on")
+            if failures:
+                errors.append(f"the drive does not fail on the dead wake-up thread of Centrum's clock: {failures}")
+    finally:
+        threading.excepthook = hook
 
 
 def _check_log_entries(errors: list[str]) -> None:
@@ -761,12 +933,15 @@ def main(argv: list[str] | None = None) -> int:
     _check_drop_report_key(errors)
     _check_result_of_start(errors)
     _check_read_while_put_in_place(errors)
+    _check_box_reads_while_put_in_place(errors)
     _check_clock_moved_whole(errors)
+    _check_clock_alarm_failure(errors)
     _check_log_entries(errors)
     _check_performance_gate(errors)
     _check_machine_lock(errors)
     _check_guard_documented(errors)
     _check_drive_removals(errors)
+    _check_drive_reads(errors)
     if args.evidence_root:
         _check_evidence(Path(args.evidence_root), errors)
     if errors:

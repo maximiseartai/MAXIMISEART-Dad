@@ -15,6 +15,7 @@ from drive.common import (
     current_run,
     dad_tab,
     ended_run_shown,
+    read_bytes,
     remove,
     result_of_start,
     run_again,
@@ -160,7 +161,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(True, "once Excel closes INTERMAX the button is enabled again")
 
     run.step(FEATURE, "uporzadkowanie-dotykiem")
-    original = register.read_bytes()
+    original = read_bytes(register)
     _order_by_touch(run, page, register, original, fixture)
 
     run.step(FEATURE, "zatrzymanie-dla-taty")
@@ -273,10 +274,10 @@ def _order_by_touch(run: Run, page: Page, register: Path, original: bytes, fixtu
         expect(live.get_by_text(f"Okres {PERIOD}", exact=True)).to_be_visible()
         copies = sorted(path.name for path in Path(fixture["copies"]).iterdir())
         run.check(
-            bool(COPY.fullmatch(copy)) and copies == [copy] and (Path(fixture["copies"]) / copy).read_bytes() == original,
+            bool(COPY.fullmatch(copy)) and copies == [copy] and read_bytes(Path(fixture["copies"]) / copy) == original,
             "the Kopia INTERMAX holds the bytes from before the write and is named after the clock",
         )
-        run.check(register.read_bytes() != original, "Dad's INTERMAX is ordered on disk")
+        run.check(read_bytes(register) != original, "Dad's INTERMAX is ordered on disk")
         run.capture(touch, "233-intermax-wynik")
         opened = len(run.lines("opened.jsonl"))
         live.get_by_role("button", name="Otwórz INTERMAX", exact=True).tap()

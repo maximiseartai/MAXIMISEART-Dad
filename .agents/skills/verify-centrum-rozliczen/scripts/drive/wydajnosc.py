@@ -28,7 +28,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Browser, BrowserContext, CDPSession, Page, Request, expect
 
 from drive import DEFAULT_REPEATS
-from drive.common import PAGES, DriveFailure, Run, dad_context, ensure_files_set, replace_file
+from drive.common import PAGES, DriveFailure, Run, dad_context, ensure_files_set, read_json, read_text, replace_file
 from tests.fixtures.scenariusz_centrum import COLLECTIVE_HEADERS, LAST_COMPLETE
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
@@ -445,7 +445,7 @@ def _trace(browsing: Browsing, page_id: str, path: Path) -> dict[str, Any]:
         browsing.open(page, page_id)
         page.wait_for_timeout(SETTLE_MS)
         browsing.browser.stop_tracing()
-    events = json.loads(path.read_text(encoding="utf-8"))["traceEvents"]
+    events = read_json(path)["traceEvents"]
     renderers = {
         (event["pid"], event["tid"])
         for event in events
@@ -728,7 +728,7 @@ def drive(run: Run, page: Page, *, baseline_path: Path = BASELINE, repeats: int 
 
     run.step(feature, "wydajnosc-porownanie")
     baseline: dict[str, Any] = (
-        json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.exists() else {}
+        read_json(baseline_path) if baseline_path.exists() else {}
     )
     over = over_budget(measured, baseline)
     again = remeasure(browser, run.url, repeats, over, collective_file) if over else None
@@ -741,7 +741,7 @@ def drive(run: Run, page: Page, *, baseline_path: Path = BASELINE, repeats: int 
         json.dumps(candidate(measured, report["margines"], repeats), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    print((out / "raport.txt").read_text(encoding="utf-8"), flush=True)
+    print(read_text(out / "raport.txt"), flush=True)
     if report["porazki"]:
         raise DriveFailure(f"wydajnosc: {len(report['porazki'])} porażek, see wydajnosc/raport.txt")
     run.check(True, "every scenario is within its budget and sends the expected API requests")

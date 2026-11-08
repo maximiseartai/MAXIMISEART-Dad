@@ -18,9 +18,11 @@ from drive.common import (
     drop_report_key,
     finished_view,
     queued,
+    read_bytes,
+    read_json,
+    read_text,
     run_logs,
     served_version,
-    while_open,
 )
 from drive.teksty import ABOUT_LOGS, MODES
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
@@ -124,7 +126,7 @@ def _archived(run: Run, tag: str, name: str) -> bytes:
     lacks it."""
 
     path = run.root / "skrzynka-archiwum" / tag / name
-    return gzip.decompress(path.read_bytes()) if path.is_file() else b""
+    return gzip.decompress(read_bytes(path)) if path.is_file() else b""
 
 
 def _ended_in_centrum_log(run: Run) -> list[tuple[str, str, str, str, str]]:
@@ -172,7 +174,7 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "161-logi-zatrzymanie")
 
     run.step(FEATURE, "logi-szablony")
-    view = json.loads(settled.read_text(encoding="utf-8"))
+    view = read_json(settled)
     [record] = [record for record in run_logs(run).values() if record["run_id"] == view["run"]["id"]]
     _matches_card(run, record, view, "zapis")
     workers, rows = run.fixture["workers"], run.fixture["settlement"]["rows_per_worker"]
@@ -204,7 +206,7 @@ def drive(run: Run, page: Page) -> None:
     page.reload()
     expect(page.get_by_label("Zatrzymanie")).to_be_visible()
     _nothing_about_logs(run, page, "Uruchomienia after a reload")
-    texts = [while_open(lambda: path.read_text(encoding="utf-8")) for path in sorted(run.run_logs_dir.glob("*.json"))]
+    texts = [read_text(path) for path in sorted(run.run_logs_dir.glob("*.json"))]
     run.check(
         not any(json.dumps(str(run.root))[1:-1] in text or ROW_MARKER in text for text in texts),
         "no file of Logi holds a path in the run root or workbook row content",
@@ -228,7 +230,7 @@ def drive(run: Run, page: Page) -> None:
     finally:
         drop_report_key(key_file)
     # Bytes, not text: reading text turns the \r\n of a file written in text mode on Windows back into \n.
-    files = sorted(while_open(path.read_bytes) for path in run.run_logs_dir.glob("*.json"))
+    files = sorted(read_bytes(path) for path in run.run_logs_dir.glob("*.json"))
     threads = box_issues(run, LABEL)
     (run.evidence / "api" / "logi-skrzynka.json").write_text(
         json.dumps(
@@ -276,7 +278,7 @@ def drive(run: Run, page: Page) -> None:
         ),
         "each comment is in the issue of its own period and links the Archiwum of that period",
     )
-    listed = json.loads((run.root / "skrzynka-archiwum" / "archiwa.json").read_text(encoding="utf-8"))
+    listed = read_json(run.root / "skrzynka-archiwum" / "archiwa.json")
     run.check(
         sorted(archive["tag"] for archive in listed) == [f"logi-{period}" for period in periods]
         and sum(len(archive["assets"]) for archive in listed) == len(files),

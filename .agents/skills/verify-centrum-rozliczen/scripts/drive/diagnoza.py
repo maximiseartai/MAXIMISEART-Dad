@@ -19,12 +19,12 @@ from drive.common import (
     period_choice,
     queued,
     queued_posts,
+    read_bytes,
     read_json,
     remove,
     run_again,
     stop_banner,
     unreadable,
-    while_open,
 )
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
 from tests.fixtures.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
@@ -66,7 +66,7 @@ CHECKS = (
 
 
 def _snapshot(paths: list[Path]) -> list[tuple[bytes, int]]:
-    return [(path.read_bytes(), path.stat().st_mtime_ns) for path in paths]
+    return [(read_bytes(path), path.stat().st_mtime_ns) for path in paths]
 
 
 def drive(run: Run, page: Page) -> None:
@@ -250,7 +250,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "diagnoza-w-logach")
     run_id = str(run_info["id"])
     [logs] = run.run_logs_dir.glob(f"*-{run_id}.json")
-    data = while_open(logs.read_bytes)  # bytes: reading text hides the \r\n of a text-mode write on Windows
+    data = read_bytes(logs)  # bytes: reading text hides the \r\n of a text-mode write on Windows
     logged = json.loads(data)["diagnosis"]
     run.check(
         logged["explanation"]["code"] == "NIE_ZNALEZIONO_PRZYCZYNY"

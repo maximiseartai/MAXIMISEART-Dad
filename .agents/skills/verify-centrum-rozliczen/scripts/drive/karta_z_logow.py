@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import re
 from typing import Any
@@ -19,6 +18,7 @@ from drive.common import (
     kill_centrum,
     local_time,
     move,
+    read_json,
     remove_tree,
     run_logs,
     start_centrum,
@@ -211,7 +211,7 @@ def drive(run: Run, page: Page) -> None:
         interrupted = current_run(run, "karta-przerwana")
         previous = interrupted["previous"]
         assert isinstance(previous, dict)
-        started = json.loads((run.root / LAST_STARTED).read_text(encoding="utf-8"))
+        started = read_json(run.root / LAST_STARTED)
         run.check(
             (interrupted["state"], previous["state"], previous["run"], previous["started_at"])
             == ("idle", "interrupted", killed, started["started_at"]),

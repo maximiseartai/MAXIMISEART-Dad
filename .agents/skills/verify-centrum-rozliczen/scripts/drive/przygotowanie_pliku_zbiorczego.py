@@ -10,6 +10,7 @@ from playwright.sync_api import Page, Request, expect
 from drive.common import (
     HIDE_TAB,
     SHOW_TAB,
+    read_bytes,
     Run,
     active_run_signs,
     current_run,
@@ -367,7 +368,7 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "36-przygotowanie-status-okresu")
 
     run.step(feature, "przygotowanie-nienadpisywanie")
-    before = [path.read_bytes() for path in period_files(run)]
+    before = [read_bytes(path) for path in period_files(run)]
     page.goto(run.url + "#/uruchomienia")
     page.get_by_role("button", name="Nowe Uruchomienie procesu").click()
     page.get_by_role("button", name="Uruchom", exact=True).click()
@@ -380,7 +381,7 @@ def drive(run: Run, page: Page) -> None:
         (result["stop_kind"], result["headline"], result["opens"]) == ("for_tata", "Do poprawy", None),
         "Nienadpisywanie is a stop Dad fixes himself, with no file of his to open",
     )
-    run.check([path.read_bytes() for path in period_files(run)] == before, "Nienadpisywanie: both files are unchanged")
+    run.check([read_bytes(path) for path in period_files(run)] == before, "Nienadpisywanie: both files are unchanged")
     run.capture(page, "37-przygotowanie-nienadpisywanie")
 
     run.step(feature, "przygotowanie-historia")

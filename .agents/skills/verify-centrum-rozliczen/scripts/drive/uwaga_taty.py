@@ -31,7 +31,9 @@ from drive.common import (
     local_time,
     queued,
     queued_posts,
+    read_bytes,
     read_json,
+    read_text,
     remove,
     Run,
     start_centrum,
@@ -390,7 +392,7 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
     # Centrum zapamiętuje Uruchomienia z Centrum we własnym pliku obok ustawień: napęd dopisuje je przez właściciela
     # pliku (run_origins), więc zmiana jego formatu nie zostawia Centrum pliku, którego ono nie przeczyta.
     registry = Path(run.fixture["settings"]).parent / CENTRUM_RUNS_FILE
-    before = registry.read_bytes() if registry.exists() else None
+    before = read_bytes(registry) if registry.exists() else None
     processes: tuple[tuple[ProcessKey, Process[Any, Any, Any]], ...] = (
         ("settlement", SETTLEMENT),
         ("preparation", PREPARATION),
@@ -937,7 +939,7 @@ def _laptop(run: Run, page: Page, about: Locator, target: str) -> None:
 def _not_in_history(run: Run, page: Page, period: str) -> None:
     run.step(FEATURE, "uwaga-spoza-historii")
     metrics = Path(run.fixture["metrics"]["settlement"])
-    records, mode = metrics.read_bytes(), metrics.stat().st_mode
+    records, mode = read_bytes(metrics), metrics.stat().st_mode
     page.goto(run.url + "#/uruchomienia")
     page.get_by_role("tab", name="Uruchomienie", exact=True).click()
     if ended_run_shown(current_run(run, "uwaga-przed-podgladem-bez-metryk")):
@@ -952,8 +954,8 @@ def _not_in_history(run: Run, page: Page, period: str) -> None:
         finished_result(run, "uwaga-podglad-bez-metryk")
     finally:
         metrics.chmod(mode)
-    run_id = str(json.loads((run.evidence / "api" / "uwaga-podglad-bez-metryk.json").read_text(encoding="utf-8"))["run"]["id"])
-    run.check(metrics.read_bytes() == records, "the preview added no record to the read-only metrics file")
+    run_id = str(read_json(run.evidence / "api" / "uwaga-podglad-bez-metryk.json")["run"]["id"])
+    run.check(read_bytes(metrics) == records, "the preview added no record to the read-only metrics file")
     offered = _note_runs(run, run_id, "uwaga-uruchomienia-spoza-historii")
     run.check(
         offered != [] and run_id not in [entry["run_id"] for entry in offered],
@@ -1102,7 +1104,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     run.wait_for(lambda: not any(path.exists() for path in refused), "at the start the queue tried the rejected Uwaga again", timeout_s=30)
     run.check(
         [(issue["title"], issue["body"]) for issue in box_issues(run, LABEL) if issue["title"] == REFUSED[0]]
-        == [(REFUSED[0], json.loads((run.evidence / "api" / "uwaga-szkic-odrzucona.json").read_text(encoding="utf-8"))["body"])],
+        == [(REFUSED[0], read_json(run.evidence / "api" / "uwaga-szkic-odrzucona.json")["body"])],
         "once the skrzynka takes it, the rejected Uwaga is one issue, exactly as its figure showed it",
     )
     logs = _logs_comment(run, run_id)
@@ -1116,7 +1118,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
 
     run.step(FEATURE, "uwaga-logi-nie-powstaly")
     key_file = config / "zgloszenia-klucz.txt"
-    key = key_file.read_text(encoding="utf-8")
+    key = read_text(key_file)
     print("  harness: without the key the preview's Logi wait in the queue", flush=True)
     drop_report_key(key_file)
     try:
@@ -1127,7 +1129,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
         key_file.write_text(key, encoding="utf-8")
     print("  harness: Maks writes the key again; the Logi file leaves the queue, as when Centrum could not write it", flush=True)
     [logs_file] = queued(run, LOGS_LABEL, missing)
-    logs_text = logs_file.read_bytes()
+    logs_text = read_bytes(logs_file)
     remove(logs_file)
     try:
         body, issue = _send_pinned(run, page, box, missing, NO_LOGS, "bez-logow")

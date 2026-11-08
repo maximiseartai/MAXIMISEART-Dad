@@ -19,6 +19,7 @@ from drive.common import (
     last_opened_is,
     open_setup,
     period_choice,
+    read_text,
     remove_tree,
     result_of_start,
     run_logs,
@@ -79,7 +80,7 @@ def _address_fills(source: Path) -> dict[int, str | None]:
 def _log_in(run: Run) -> None:
     """Harness: Dad logs in to efenix in the window Centrum opened (the Atrapa's login form, posted from here)."""
 
-    address = (run.root / "efenix" / "adres.txt").read_text(encoding="utf-8")
+    address = read_text(run.root / "efenix" / "adres.txt")
     # The form of page_login.php posts to action_login.php with a hidden fingerprint, as in efenix.
     login = address.rsplit("/", 1)[0] + "/action_login.php"
     print("  harness: Dad logs in to the Atrapa efenix (the login form, posted to action_login.php)", flush=True)
