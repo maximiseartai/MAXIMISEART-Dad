@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Generic, Literal, TypeVar
+from typing import Any, Final, Generic, Literal, Protocol, TypeVar
 
 from rozliczenia import preparation_messages
 from rozliczenia.centrum import contract
@@ -193,11 +193,28 @@ class PeriodProcessKind(ProcessKind[InputsT, SummaryT]):
     key: contract.PeriodProcessKey
 
 
+class Engine(Protocol):
+    """``process_run.run_process`` w tym, czego używa ``PreparedRun.conduct``."""
+
+    def __call__(
+        self,
+        process: Process[Any, Any, RunContext],
+        inputs: ProcessInputs,
+        interlocutor: Interlocutor,
+        /,
+        *,
+        view: Callable[[Any, Any], Any],
+        metrics_path: Path,
+        context: RunContext,
+    ) -> Outcome[Any]: ...
+
+
 @dataclass(frozen=True)
 class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
-    w efenix (``None``: proces bez trybów). Powstaje tylko w ``Catalog.prepared``.
+    w efenix (``None``: proces bez trybów), ``engine``: silnik z katalogu (``run_process``; inny daje tylko wyrocznia
+    ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``). Powstaje tylko w ``Catalog.prepared``.
     """
 
     kind: ProcessKind[InputsT, SummaryT]
@@ -206,6 +223,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     context: RunContext
     metrics: MetricsStore
     pricing: contract.Pricing | None = None
+    engine: Engine = run_process
 
     @property
     def dry_run(self) -> bool:
@@ -225,7 +243,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     def conduct(self, interlocutor: Interlocutor) -> Outcome[Shown[SummaryT]]:
         """Uruchomienie przez rdzeń z rozmówcą ``interlocutor`` i plikiem metryk procesu."""
 
-        return run_process(
+        return self.engine(
             self.kind.core,
             self.inputs,
             interlocutor,

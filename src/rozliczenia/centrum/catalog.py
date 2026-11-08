@@ -3,8 +3,8 @@ w działaniu (``Catalog``).
 
 Wpis procesu (``process_kind.ProcessKind``) leży w ``centrum/processes/<proces>.py``, a ``KINDS`` to jedyna lista
 wpisów. ``Catalog`` trzyma wpisy z rdzeniami i plikiem metryk każdego procesu: Uruchomienia, Metryki, Tablica okresów
-i karty przed startem biorą rdzeń i historię metryk procesu tylko stąd, więc test podmienia oba jednym obiektem
-(``with_metrics``, ``steered``), a Skrypt dla maszyn i odtworzenie podają własny plik metryk tak samo.
+i karty przed startem biorą rdzeń, historię metryk i silnik procesu tylko stąd, więc test podmienia je jednym obiektem
+(``with_metrics``, ``steered``, ``with_engine``), a Skrypt dla maszyn i odtworzenie podają własny plik metryk tak samo.
 
 Kartę przed startem i wejście procesu buduje adapter startu procesu (``*_run.py``): proces z okresem przez
 ``runs.ProcessEntry``, Uporządkowanie INTERMAX własną kartą poza okresami (ADR 0019).
@@ -22,9 +22,9 @@ from pathlib import Path
 from typing import Any, Final
 
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.process_kind import PreparedRun, ProcessKind
+from rozliczenia.centrum.process_kind import Engine, PreparedRun, ProcessKind
 from rozliczenia.centrum.processes import efenix, intermax, preparation, settlement
-from rozliczenia.process_run import Process, ProcessInputs
+from rozliczenia.process_run import Process, ProcessInputs, run_process
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 
@@ -36,10 +36,12 @@ _BY_KEY: Final[Mapping[contract.ProcessKey, ProcessKind[Any, Any]]] = {kind.key:
 
 @dataclass(frozen=True)
 class Catalog:
-    """Wpisy procesów z rdzeniami (``kinds``) i plik metryk każdego procesu (``metrics_paths``)."""
+    """Wpisy procesów z rdzeniami (``kinds``), plik metryk każdego procesu (``metrics_paths``) i silnik, który prowadzi
+    każde Uruchomienie (``engine``)."""
 
     kinds: tuple[ProcessKind[Any, Any], ...]
     metrics_paths: Mapping[contract.ProcessKey, Path]
+    engine: Engine = run_process
 
     @classmethod
     def default(cls) -> Catalog:
@@ -67,6 +69,12 @@ class Catalog:
 
         return replace(self, kinds=tuple(replace(kind, core=steer(kind.core)) for kind in self.kinds))
 
+    def with_engine(self, engine: Engine) -> Catalog:
+        """Ten katalog z silnikiem ``engine`` w miejscu ``run_process``: tylko wyrocznia
+        ``verify-jedno-uruchomienie-naraz``, której silnik to kroki modelu, a ``PreparedRun.conduct`` zostaje prawdziwe."""
+
+        return replace(self, engine=engine)
+
     def prepared(
         self,
         key: contract.ProcessKey,
@@ -78,7 +86,7 @@ class Catalog:
     ) -> PreparedRun[Any, Any]:
         """Uruchomienie procesu ``key`` gotowe do startu: rdzeń i historia metryk procesu z tego katalogu."""
 
-        return PreparedRun(self.kind(key), period, inputs, context, self.metrics(key), pricing)
+        return PreparedRun(self.kind(key), period, inputs, context, self.metrics(key), pricing, self.engine)
 
 
 CATALOG: Final = Catalog.default()

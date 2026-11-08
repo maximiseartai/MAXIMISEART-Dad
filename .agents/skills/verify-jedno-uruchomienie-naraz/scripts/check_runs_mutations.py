@@ -1,4 +1,4 @@
-"""Show that explore_runs.py fails on broken variants of RunHost and Shutdown.
+"""Show that explore_runs.py fails on broken variants of RunHost, Shutdown and PreparedRun.conduct.
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must
 end the checker's report with the expected line. A mutation whose anchor text is no
@@ -16,6 +16,7 @@ from mutacje import Edit, Mutation, check_all
 
 RUNS = Path("src/rozliczenia/centrum/runs.py")
 SHUTDOWN = Path("src/rozliczenia/centrum/shutdown.py")
+PROCESS_KIND = Path("src/rozliczenia/centrum/process_kind.py")
 EXPLORER = ".agents/skills/verify-jedno-uruchomienie-naraz/scripts/explore_runs.py"
 NEW = "URUCHOMIENIA: NOWE NARUSZENIE"
 
@@ -144,6 +145,26 @@ MUTATIONS = (
         (Edit(RUNS, "        self._lock = threads.Lock()\n", "        self._lock = threading.Lock()\n"),),
         (EXPLORER, "--scope", "zamknij-w-trakcie"),
         "model nie widzi blokady, której RunHost nie wziął ze szwu, więc nie może nic orzec",
+        "URUCHOMIENIA: LUKA MODELU",
+    ),
+    Mutation(
+        "wątek Uruchomienia z threading obok szwu threads",
+        (Edit(RUNS, "        self._threads.Thread(target=run.work,", "        threading.Thread(target=run.work,"),),
+        (EXPLORER, "--scope", "zamknij-w-trakcie"),
+        "Uruchomienie biegnie w wątku, którego model nie prowadzi, więc nie może nic orzec",
+        "URUCHOMIENIA: LUKA MODELU",
+    ),
+    Mutation(
+        "PreparedRun.conduct czeka na prawdziwy Event przed silnikiem",
+        (
+            Edit(
+                PROCESS_KIND,
+                "        return self.engine(\n",
+                "        __import__('threading').Event().wait()\n        return self.engine(\n",
+            ),
+        ),
+        (EXPLORER, "--scope", "zamknij-w-trakcie"),
+        "Uruchomienie wisi na zawsze, a Centrum nie da się zamknąć: eksplorator prowadzi prawdziwe conduct (przegląd #1127)",
         "URUCHOMIENIA: LUKA MODELU",
     ),
     Mutation(

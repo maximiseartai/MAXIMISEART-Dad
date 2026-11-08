@@ -5,6 +5,8 @@ pilnuje:
   - src/rozliczenia/centrum/runs.py
   - src/rozliczenia/centrum/shutdown.py
   - src/rozliczenia/centrum/threads.py
+  - src/rozliczenia/centrum/process_kind.py
+  - src/rozliczenia/centrum/catalog.py
   - src/rozliczenia/centrum/server.py
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/tool_updates.py
@@ -180,8 +182,9 @@ guardian work is one step ending either without a new version (or in a failure),
 then `end_update`, or with the guardian started, then the real
 `Shutdown.close_for_update`. Replaced: the last Uruchomienie before Centrum's start (`previous`) by none, and the start file (`run_started`)
 by one step that writes nothing. Replaced: `run_process` by an engine with one work step, an optional Decyzja
-through the real `Run.confirm` (both variants are explored) and an end step, as the `conduct` of the
-`PreparedRun` every tab starts (`ModelledRun`). Every
+through the real `Run.confirm` (both variants are explored) and an end step, as the engine of the catalog
+(`Catalog.with_engine`) whose `Catalog.prepared` gives the Uruchomienie every tab starts, so the real
+`PreparedRun.conduct` runs. Every
 Uruchomienie ends in success. Modelled by hand: after `Shutdown.wait()` returns,
 the server may end at any moment when no HTTP request is in flight. This is
 uvicorn's `should_exit` tick (≤ 0.1 s), during which new requests are still
@@ -263,8 +266,9 @@ before the result is published outside it, `start` clearing the previous result 
 `_closing`, `begin_update` without the closing or the running check, `start`
 without the updating check, `begin_restore` without the running check,
 `start` without the restoring check, and `_busy_locked` blind to a restore. `RLock` in `RunHost` gives `LUKA MODELU`,
-and so do a `RunHost` lock from `threading` beside the `threads` seam and a real lock outside `threading` held across a
-step of `start`.
+and so do a `RunHost` lock from `threading` beside the `threads` seam, the Uruchomienie thread from `threading` beside
+it, a real lock outside `threading` held across a step of `start`, and a `PreparedRun.conduct` that waits on a real Event
+before the engine.
 CI runs this in the `mutations` job. A mutation reported as `NIEAKTUALNA` no longer matches its file.
 Rewrite its `anchor` and `replacement` in `check_runs_mutations.py` so it breaks
 the same rule again in the new code.

@@ -28,8 +28,8 @@ per schedule, and checks four rules:
 
 Given through public seams, not by replacing anything in the verified modules: model primitives that hand control to
 the checker as the ``threads`` of ``RunHost`` and ``Shutdown`` (``threads.Threading``); an engine with two steps and an
-optional Decyzja through the real ``Run.confirm`` as the ``PreparedRun.conduct`` of the run every tab starts (in the code
-it runs ``run_process``); ``CentrumLog``, ``CentrumRuns`` and the start file (``run_started``) as steps that write
+optional Decyzja through the real ``Run.confirm`` in place of ``run_process``, as the engine of the catalog
+(``Catalog.with_engine``) that builds the run every tab starts, so the real ``PreparedRun.conduct`` runs; ``CentrumLog``, ``CentrumRuns`` and the start file (``run_started``) as steps that write
 nothing, with no Uruchomienie before Centrum's start; the actions after the result
 (``AfterRun``) as one step that writes nothing. ``RunHost``'s ``created`` hands the checker each new ``Run`` under the
 lock, and the checker reads the views through ``RunHost.events_after``. ``ToolUpdates``
@@ -39,8 +39,9 @@ new version (or with a failure) or with the guardian started. Modelled by hand:
 ``stop_when_asked`` in ``server.py`` and uvicorn's graceful shutdown. After ``Shutdown.wait`` returns,
 the server may end at any moment when no HTTP request is in flight; a request that arrived before
 that is served to the end. Any other use of the ``threads`` seam (``RLock``, ``wait(timeout=...)``) stops the check as
-LUKA MODELU, and so do a ``RunHost`` that takes no lock from it and a modelled thread that waits on something outside
-the model (a real lock or Event, ``time.sleep``) for ``STALL_SECONDS`` without a step.
+LUKA MODELU, and so do a ``RunHost`` that takes no lock from it or starts the Uruchomienie thread beside it, and a
+modelled thread that waits on something outside the model (a real lock or Event, ``time.sleep``) for
+``STALL_SECONDS`` without a step.
 
 Schedules that reach a state already explored are cut short: the code is deterministic, so a state
 (each thread's steps so far, every Uruchomienie's flags, the lock and the Events) has the same
@@ -55,10 +56,13 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from types import FrameType, SimpleNamespace
-from typing import Any
+from typing import Any, NoReturn
+
+from greenlet import getcurrent  # type: ignore[import-untyped]  # greenlet ships no type hints
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
@@ -99,6 +103,14 @@ class ModelGap(BaseException):
     """The real code used ``threading`` in a way the model primitives do not cover."""
 
 
+def _end_foreign_thread() -> NoReturn:
+    """Ends a thread outside the model that reaches a model primitive; ``threading`` ends a thread on ``SystemExit``
+    (the class itself, not a subclass) without a traceback. Its start is the LUKA MODELU, reported by the modelled thread
+    that started it (``_start_tab``)."""
+
+    raise SystemExit
+
+
 # --- Scheduler: one modelled thread runs at a time, from one step to the next (``eksplorator.Interleaving``) --------
 #
 # A modelled thread that waits on a real lock, Event or sleep outside the model stops that one OS thread with it, and
@@ -130,7 +142,7 @@ _ABORT = "\0abort"
 def _current_actor() -> Actor:
     actor = Interleaving.current()
     if not isinstance(actor, Actor):
-        raise ModelGap("krok poza wątkiem modelu")
+        _end_foreign_thread()
     return actor
 
 
@@ -231,13 +243,15 @@ class Tracked:
     done: bool = False
     after_done: bool = False
     returned: bool = False
+    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)
 
 
 class ModelLock:
     """The lock of ``RunHost``: entering is one step, which can be taken only while the lock is free.
 
     The checker itself reads ``RunHost`` between steps, outside any modelled thread, when every modelled thread waits
-    before a step of its own: that read is no step and does not take the lock.
+    before a step of its own: that read is no step and does not take the lock. Any other thread is outside the model
+    and ends (``_end_foreign_thread``).
     """
 
     def __init__(self, scheduler: Scheduler, label: str) -> None:
@@ -247,6 +261,8 @@ class ModelLock:
 
     def __enter__(self) -> bool:
         if Interleaving.current() is None:
+            if getcurrent() is not self._scheduler.home:
+                _end_foreign_thread()
             return True
         self._scheduler.step(f"wejście w blokadę {self.label}", enabled=lambda: self.owner is None)
         self.owner = _current_actor().name
@@ -304,6 +320,8 @@ class ModelThread:
     def start(self) -> None:
         self._scheduler.step("start wątku Uruchomienia")
         run = self._tracked(getattr(self._target, "__self__", None))
+        if run is not None:
+            run.thread_started = True
 
         def body() -> None:
             self._target()
@@ -434,38 +452,41 @@ SCOPES = {
     "przywracanie": Scope("przywracanie", start_tabs=1, close_clicks=1, decisions=1, restore_tabs=2),
 }
 
-PREPARED: process_kind.PreparedRun[Any, Any] = CATALOG.prepared(
-    "preparation", period="08_14_09_2026", inputs=SimpleNamespace(dry_run=False), context=RunContext()
-)
+def engine(
+    scheduler: Scheduler,
+    process: Any,
+    _inputs: Any,
+    interlocutor: Interlocutor,
+    /,
+    **_: Any,
+) -> process_run.Outcome[Any]:
+    """The checker's engine in place of ``run_process`` (``Catalog.with_engine``): a work step that ends with or without
+    a Decyzja taken through the real ``Run.confirm``, then the end with the metrics record. Every Uruchomienie ends in
+    success."""
+
+    variant = scheduler.step("silnik: Sprawdzanie … Zapisywanie", variants=("bez Decyzji", WITH_DECISION))
+    if variant == WITH_DECISION:
+        interlocutor.confirm(DECISION)
+    scheduler.step("silnik kończy i dopisuje rekord metryk")
+    ending = process_run.Finished("OK", {name: 0 for name in process.counter_names}, {})
+    return process_run.Outcome(
+        ending=ending,
+        view=None,
+        total_duration_ms=0,
+        technical_notes=(),
+        metrics_saved=True,
+        progress=ProgressProjection().snapshot,
+        files_unchanged=False,
+    )
 
 
-@dataclass(frozen=True)
-class ModelledRun(process_kind.PreparedRun[Any, Any]):
-    """``PREPARED`` with the checker's engine as ``conduct``: a work step that ends with or without a Decyzja taken
-    through the real ``Run.confirm``, then the end with the metrics record. Every Uruchomienie ends in success."""
+def prepared_run(scheduler: Scheduler) -> process_kind.PreparedRun[Any, Any]:
+    """The Uruchomienie every start tab asks for: from ``Catalog.prepared`` with the checker's ``engine``, so the real
+    ``PreparedRun.conduct`` runs in every schedule."""
 
-    scheduler: Scheduler | None = None
-
-    @classmethod
-    def of(cls, prepared: process_kind.PreparedRun[Any, Any], scheduler: Scheduler) -> ModelledRun:
-        return cls(**{part.name: getattr(prepared, part.name) for part in fields(prepared)}, scheduler=scheduler)
-
-    def conduct(self, interlocutor: Interlocutor) -> process_run.Outcome[Any]:
-        assert self.scheduler is not None
-        variant = self.scheduler.step("silnik: Sprawdzanie … Zapisywanie", variants=("bez Decyzji", WITH_DECISION))
-        if variant == WITH_DECISION:
-            interlocutor.confirm(DECISION)
-        self.scheduler.step("silnik kończy i dopisuje rekord metryk")
-        ending = process_run.Finished("OK", {name: 0 for name in self.kind.core.counter_names}, {})
-        return process_run.Outcome(
-            ending=ending,
-            view=None,
-            total_duration_ms=0,
-            technical_notes=(),
-            metrics_saved=True,
-            progress=ProgressProjection().snapshot,
-            files_unchanged=False,
-        )
+    return CATALOG.with_engine(partial(engine, scheduler)).prepared(
+        "preparation", period="08_14_09_2026", inputs=SimpleNamespace(dry_run=False), context=RunContext()
+    )
 
 
 @dataclass(frozen=True)
@@ -506,7 +527,7 @@ class World:
     host: runs.RunHost
     shutdown: shutdown.Shutdown
     lock: ModelLock | None
-    prepared: ModelledRun
+    prepared: process_kind.PreparedRun[Any, Any]
     log: Any = None
     exited: bool = False
     closes_refused: int = 0
@@ -594,7 +615,7 @@ def wire(scheduler: Scheduler) -> World:
         host,
         stopper,
         host_threads.locks[0] if len(host_threads.locks) == 1 else None,
-        ModelledRun.of(PREPARED, scheduler),
+        prepared_run(scheduler),
         log=log,
     )
     world_box.append(world)
@@ -607,7 +628,10 @@ def _start_tab(world: World, number: int) -> Callable[[], None]:
         scheduler.step("żądanie POST /api/runs dociera do serwera")
         _current_actor().in_flight = True
         try:
+            created = len(world.created)
             view = world.host.start(world.prepared)
+            if any(not run.thread_started for run in world.created[created:]):
+                raise ModelGap("RunHost.start uruchomił wątek Uruchomienia spoza threads.Thread")
             scheduler.note(f"odpowiedź 200: {view.state}")
         except contract.Refusal as refusal:
             world.starts_refused += 1
