@@ -3182,6 +3182,10 @@
                 "type": "null"
               }
             ]
+          },
+          "collective_file_prepared": {
+            "type": "boolean",
+            "title": "Collective File Prepared"
           }
         },
         "additionalProperties": false,
@@ -3195,10 +3199,11 @@
           "stops",
           "warnings",
           "technical_notes",
-          "summary"
+          "summary",
+          "collective_file_prepared"
         ],
         "title": "LoggedOutcome",
-        "description": "Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.\n\nZatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się\nskończyło (``Ending``).\n``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba\nwylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez\nZatrzymania)."
+        "description": "Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.\n\nZatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się\nskończyło (``Ending``).\n``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba\nwylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez\nZatrzymania). ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim\nUzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``)."
       },
       "Message": {
         "properties": {
@@ -5248,6 +5253,10 @@
               }
             ]
           },
+          "collective_file_prepared": {
+            "type": "boolean",
+            "title": "Collective File Prepared"
+          },
           "diagnosis": {
             "anyOf": [
               {
@@ -5350,6 +5359,7 @@
           "warnings",
           "technical_notes",
           "summary",
+          "collective_file_prepared",
           "diagnosis",
           "report",
           "files_unchanged",

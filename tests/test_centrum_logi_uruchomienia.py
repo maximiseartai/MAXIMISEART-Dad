@@ -263,6 +263,9 @@ class Ending:
     """Typ wyjątku w śladzie wywołań."""
     files_unchanged: bool = field(kw_only=True)
     """Karta mówi, że pliki taty są bez zmian: podgląd albo koniec przed Zapisywaniem."""
+    collective_file_prepared: bool = field(default=False, kw_only=True)
+    """Wynik przygotował Plik zbiorczy okresu (Przygotowanie z zapisem bez Zatrzymania): karta pokazuje pod nim
+    Uzupełnienie pliku zbiorczego."""
 
 
 ENDINGS = {
@@ -293,6 +296,7 @@ ENDINGS = {
         ("WYMAGA_SPRAWDZENIA", "finished", None),
         QUANTITY_WARNINGS,
         files_unchanged=False,
+        collective_file_prepared=True,
     ),
     "dla-taty-zapis": Ending(
         _existing_worker_settlements,
@@ -390,6 +394,7 @@ def test_kazda_droga_zakonczenia_w_obu_trybach_daje_jeden_plik_logow_z_wynikiem_
     assert (record["result"], record["ending"], record["stop_kind"]) == ending.result
     assert (card["result"], card["ending"], card["stop_kind"]) == ending.result
     assert card["files_unchanged"] is ending.files_unchanged
+    assert card["collective_file_prepared"] is ending.collective_file_prepared
     assert [(message["kind"], message["code"]) for message in record["messages"]] == ending.messages
     assert three_parts(record) == card_messages(view)
     assert (record["trace"] or {}).get("exception_type") == ending.trace
@@ -1438,10 +1443,11 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     assert (setup["title"], setup["preview_hint"], [period["token"] for period in setup["periods"]]) == ("Wycena w efenix", None, [PERIOD])
     assert (preview.status_code, busy.status_code, waiting["state"]) == (409, 409, "running")
     assert busy.json()["message"].startswith(f"Trwa już Uruchomienie procesu: Wycena w efenix, okres {PERIOD}.")
-    assert (result["result"], result["headline"], result["next_action"]) == (
+    assert (result["result"], result["headline"], result["next_action"], result["collective_file_prepared"]) == (
         "WYMAGA_SPRAWDZENIA",
         "Wycena w efenix gotowa · wymaga sprawdzenia",
         "open_collective_file",
+        False,
     )
     assert {figure["label"]: figure["value"] for figure in result["summary"]["figures"]} == {
         "Zlecenia w zakresie": 6,

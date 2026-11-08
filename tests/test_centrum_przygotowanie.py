@@ -82,6 +82,7 @@ def test_podglad_bez_zapisu_pokazuje_plan_i_nie_tworzy_plikow_ani_folderu_okresu
     result = finished["result"]
     assert (result["result"], result["ending"], result["next_action"]) == ("OK", "finished", "run")
     assert result["headline"] == "Podgląd gotowy · nic nie zapisano"
+    assert result["collective_file_prepared"] is False
     assert result["summary"] == SUMMARY
     assert result["stops"] == []
     assert [warning["where"] for warning in result["warnings"]] == QUANTITY_WARNINGS_WHERE

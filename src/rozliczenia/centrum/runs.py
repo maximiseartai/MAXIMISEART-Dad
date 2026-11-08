@@ -205,6 +205,7 @@ class EndedRun:
             files_unchanged=self.files_unchanged,
             opens=None if stopped is None else stopped.stop.message.dad_file,
             order_notes=None if self.shown is None else self.shown.notes,
+            collective_file_prepared=view.collective_file_prepared(ending=self.ending, dry_run=self.info.mode.dry_run),
         )
 
 

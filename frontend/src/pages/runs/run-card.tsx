@@ -406,13 +406,7 @@ function OutcomeBody({
 }) {
   const [stop] = result.stops
 
-  // Wynik bez Zatrzymania, który proponuje otworzyć Plik zbiorczy zapisany jako plik okresu, to Plik zbiorczy przygotowany
-  // (Wycena w efenix też proponuje Plik zbiorczy, ale go nie tworzy).
-  const prepared =
-    filling &&
-    result.next_action === "open_collective_file" &&
-    stop === undefined &&
-    (result.summary?.files.some((file) => file.kind === "collective_file") ?? false)
+  const prepared = filling && result.collective_file_prepared
 
   return (
     <>

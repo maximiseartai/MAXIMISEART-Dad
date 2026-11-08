@@ -1516,7 +1516,8 @@ export const zRunSummary = z.object({
  * skończyło (``Ending``).
  * ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
  * wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
- * Zatrzymania).
+ * Zatrzymania). ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
+ * Uzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``).
  */
 export const zLoggedOutcome = z.object({
     result: z.enum([
@@ -1548,7 +1549,8 @@ export const zLoggedOutcome = z.object({
     stops: z.array(zMessage),
     warnings: z.array(zMessage),
     technical_notes: z.array(z.string()),
-    summary: zRunSummary.nullable()
+    summary: zRunSummary.nullable(),
+    collective_file_prepared: z.boolean()
 });
 
 /**
@@ -1595,6 +1597,7 @@ export const zRunOutcome = z.object({
     warnings: z.array(zMessage),
     technical_notes: z.array(z.string()),
     summary: zRunSummary.nullable(),
+    collective_file_prepared: z.boolean(),
     diagnosis: z.enum(['on_request', 'automatic']).nullable(),
     report: z.discriminatedUnion('state', [
         zReportReady,
