@@ -27,8 +27,8 @@ per schedule, and checks four rules:
   result before such a read leaves the card without it; the result is then only in Historia.
 
 Replaced: ``threading`` inside ``runs.py`` and ``shutdown.py`` by model primitives that hand control to
-the checker; ``run_process`` by an engine with two steps and an optional Decyzja through the real
-``_Run.confirm``; ``CentrumLog``, ``CentrumRuns`` and the start file (``run_started``) by steps that write
+the checker; ``run_process`` (called in ``process_kind.py``) by an engine with two steps and an optional Decyzja
+through the real ``_Run.confirm``; ``CentrumLog``, ``CentrumRuns`` and the start file (``run_started``) by steps that write
 nothing, with no Uruchomienie before Centrum's start; the actions after the result
 (``AfterRun``) by one step that writes nothing. ``ToolUpdates``
 (``tool_updates.py``) is modelled by hand around the real ``begin_update``, ``end_update`` and
@@ -63,7 +63,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from rozliczenia import process_run
-from rozliczenia.centrum import contract, runs, shutdown
+from rozliczenia.centrum import contract, process_kind, runs, shutdown
 from rozliczenia.centrum.catalog import PREPARATION
 from rozliczenia.decision import Decision
 from rozliczenia.message import Message
@@ -396,7 +396,7 @@ SCOPES = {
     "przywracanie": Scope("przywracanie", start_tabs=1, close_clicks=1, decisions=1, restore_tabs=2),
 }
 
-PREPARED: runs.PreparedRun[Any, Any] = runs.PreparedRun(
+PREPARED: process_kind.PreparedRun[Any, Any] = process_kind.PreparedRun(
     declaration=PREPARATION,
     period="08_14_09_2026",
     process=PROCESS,
@@ -486,7 +486,7 @@ def harness(scheduler: Scheduler) -> Iterator[World]:
     world_box: list[World] = []
 
     class TrackedRun(runs._Run):
-        def __init__(self, host: runs.RunHost, prepared: runs.PreparedRun[Any, Any], stops: Any) -> None:
+        def __init__(self, host: runs.RunHost, prepared: process_kind.PreparedRun[Any, Any], stops: Any) -> None:
             super().__init__(host, prepared, stops)
             self.model_name = f"Uruchomienie {len(created) + 1}"
             self.model_creator = _current_actor().name
@@ -566,7 +566,7 @@ def harness(scheduler: Scheduler) -> Iterator[World]:
 PATCHED: tuple[tuple[ModuleType, str], ...] = (
     (runs, "threading"),
     (shutdown, "threading"),
-    (runs, "run_process"),
+    (process_kind, "run_process"),
     (runs, "_Run"),
 )
 

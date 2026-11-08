@@ -21,9 +21,10 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   ``ADRES`` i numeru Orange stoją wartości syntetyczne z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``),
   których żaden plik taty nie ma. Wzorce i Konfigurację wykonawców daje folder ``configuration``, bo Logi mają z nich
   tylko nazwę i rozmiar.
-- Proces biegnie przez ten sam rdzeń (``process_run.run_process``) i ten sam wpis katalogu procesów co w Centrum, z
-  Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``logs_of`` i strażnik (``guard_logs``), jak w
-  Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa tylko wtedy, gdy Logi kończą się odmową.
+- Proces biegnie przez to samo Uruchomienie co w Centrum (``process_kind.PreparedRun.conduct``: ten sam rdzeń i wpis
+  katalogu procesów), z Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``EndedRun.of``,
+  ``logs_of`` i strażnik (``guard_logs``), jak w Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa
+  tylko wtedy, gdy Logi kończą się odmową.
 - Porównanie (``first_difference``) idzie po polach Logów w kolejności przyczyn: Kopia wejścia (czy pliki z Kopii
   czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty, uwagi techniczne, podsumowanie, liczba
   problemów, etapy, Szablony pracownika, Ilości tylko dla INEA, Wpisy INTERMAX, ślad zleceń i Zatrzymanie okna efenix
@@ -40,7 +41,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, timezone
 import enum
 import json
@@ -65,12 +66,12 @@ from rozliczenia.centrum.catalog import (
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.processes import Processes
-from rozliczenia.centrum.reports import ProblemFingerprint
+from rozliczenia.centrum import stops
 from rozliczenia.centrum.logs_of_run import logs_of
+from rozliczenia.centrum.process_kind import PreparedRun
 from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
-from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun, PreparedRun
-from rozliczenia.centrum.stops import StoppedRun
+from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun
 from rozliczenia.client_data import MASKS, ForbiddenColumn, forbidden_columns
 from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.dad_files import DadFiles
@@ -81,7 +82,7 @@ from rozliczenia.intermax_ordering import OrderingInputs
 from rozliczenia.collective_preparation import PreparationInputs
 from rozliczenia.raw_orders import SHIFT
 from rozliczenia.register_columns import COLUMNS, DAY_FILL, ORDERED_FONT, ORDERED_SIZE
-from rozliczenia.process_run import Finished, Stop, run_process
+from rozliczenia.process_run import Finished, ProcessInputs
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.run_context import RunContexts
 from rozliczenia.engine import SettlementInputs
@@ -242,7 +243,7 @@ def replay(
         limits += setup.limits
         if any(limit.blocking for limit in setup.limits):
             return Report(Verdict.IMPOSSIBLE, None, tuple(limits))
-        replayed = _run(record, setup, work)
+        replayed = _run(record, setup)
     difference = first_difference(record, replayed)
     return Report(
         Verdict.AGREES if difference is None else Verdict.DIFFERS,
@@ -537,7 +538,22 @@ def _settlement(record: RunLog, work: _Work) -> _Setup:
         config_path=configuration["worker_config"],
         worker_template_path=configuration["worker_template"],
     )
-    return _Setup(PreparedRun(SETTLEMENT, record.period, SETTLEMENT.core(_PROCESSES), inputs, RunContexts().new()))
+    return _Setup(_prepared(work, SETTLEMENT, record.period, inputs))
+
+
+def _prepared(
+    work: _Work,
+    declaration: ProcessDeclaration[Any, Any],
+    period: str,
+    inputs: ProcessInputs,
+    *,
+    pricing: contract.Pricing | None = None,
+) -> PreparedRun[Any, Any]:
+    """Uruchomienie z Kopią wejścia i plikiem metryk w katalogu roboczym, w miejscu pliku metryk procesu."""
+
+    metrics = work.path("metryki.jsonl")
+    process = replace(declaration.core(_PROCESSES), metrics_path=lambda: metrics)
+    return PreparedRun(declaration, period, process, inputs, RunContexts().new(), pricing)
 
 
 def _configured(work: _Work) -> dict[str, Path]:
@@ -622,8 +638,7 @@ def _preparation(record: RunLog, work: _Work) -> _Setup:
         internal_template_path=configuration["internal_template"],
         collective_template_path=configuration["collective_template"],
     )
-    prepared = PreparedRun(PREPARATION, record.period, PREPARATION.core(_PROCESSES), inputs, RunContexts().new())
-    return _Setup(prepared, limits)
+    return _Setup(_prepared(work, PREPARATION, record.period, inputs), limits)
 
 
 def _preparation_limits(record: RunLog) -> list[Limit]:
@@ -643,8 +658,7 @@ def _intermax(record: RunLog, work: _Work) -> _Setup:
     register, limits = _register_file(record, work, "intermax", _PASTED_FONT)
     moment = _intermax_moment(record, work)
     inputs = OrderingInputs(register, work.folder("Kopie INTERMAX"), now=lambda: moment)
-    prepared = PreparedRun(INTERMAX, inputs.period, INTERMAX.core(_PROCESSES), inputs, RunContexts().new())
-    return _Setup(prepared, limits)
+    return _Setup(_prepared(work, INTERMAX, inputs.period, inputs), limits)
 
 
 def _intermax_moment(record: RunLog, work: _Work) -> datetime:
@@ -704,9 +718,8 @@ def _efenix(record: RunLog, work: _Work) -> _Setup:
     url = atrapa.url
     pricing = record.pricing or contract.DEFAULT_PRICING
     inputs = EfenixInputs(source, lambda _login: efenix_browser.chromium(url), pace=None, mode=PricingMode(pricing))
-    prepared = PreparedRun(EFENIX, record.period, EFENIX.core(_PROCESSES), inputs, RunContexts().new(), pricing=pricing)
     limits = [Limit(text, blocking=blocking) for text, blocking in fed.limits]
-    return _Setup(prepared, limits)
+    return _Setup(_prepared(work, EFENIX, record.period, inputs, pricing=pricing), limits)
 
 
 def _efenix_limits(record: RunLog) -> list[Limit]:
@@ -763,32 +776,22 @@ class _Tata:
         self.progress = self._prepared.progress_view(snapshot)
 
 
-def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
+def _run(record: RunLog, setup: _Setup) -> RunLog:
     """Uruchomienie odtworzenia przez rdzeń procesu i jego Logi po strażniku, jak w Centrum (``RunComments.run_ended``)."""
 
     prepared = setup.prepared
     tata = _Tata(prepared, consent=record.ending != "declined")
-    info = prepared.declaration.run_info(
-        run_id=record.run_id, period=record.period, dry_run=prepared.dry_run, pricing=prepared.pricing
-    )
+    info = prepared.info(record.run_id)
     started_at = datetime.now(timezone.utc)
-    core = run_process(
-        prepared.process,
-        prepared.inputs,
-        tata,
-        view=prepared.declaration.view.shown,
-        metrics_path=work / "metryki.jsonl",
-        context=prepared.context,
-    )
+    core = prepared.conduct(tata)
     stop = None if isinstance(core.ending, Finished) else core.ending
-    ended = EndedRun(
+    ended = EndedRun.of(
+        prepared,
+        core,
         info=info,
-        core=core,
-        stopped=None if stop is None else _stopped(info, stop),
+        stopped=None if stop is None else stops.plain(info, stop),
         progress=tata.progress,
         started_at=started_at,
-        ended_at=datetime.now(timezone.utc),
-        input_copy=prepared.input_copy,
     )
     environment = Environment(system=platform.platform(), python=platform.python_version(), files=None)
     replayed = logs_of(
@@ -798,13 +801,6 @@ def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
         dad_actions=DadActions(entries=[], omitted=0),
     )
     return guard_logs(replayed, prepared.context.files.forbidden).record
-
-
-def _stopped(info: contract.RunInfo, stop: Stop) -> StoppedRun:
-    """Zatrzymanie odtworzenia tak, jak je nazywa Centrum (``Stops.ended``) bez Powtórki, Diagnozy i Zgłoszenia."""
-
-    kind = "declined" if stop.kind == "declined" else stop.stop_kind
-    return StoppedRun(info, stop, ProblemFingerprint.of(info.process, stop.message), kind, None, None)
 
 
 # --- porównanie -----------------------------------------------------------------------------------------------------

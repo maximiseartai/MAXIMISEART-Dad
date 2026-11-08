@@ -32,7 +32,8 @@ from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.diagnosis_messages import file_only_in_cloud
 from rozliczenia.centrum.live_file import saved_version
 from rozliczenia.centrum.processes import Processes
-from rozliczenia.centrum.runs import PreparedRun, RunHost
+from rozliczenia.centrum.process_kind import PreparedRun
+from rozliczenia.centrum.runs import RunHost
 from rozliczenia import intermax_ordering, intermax_restore
 from rozliczenia.intermax_copies import Copy
 from rozliczenia.intermax_replace import Disk, Waiting

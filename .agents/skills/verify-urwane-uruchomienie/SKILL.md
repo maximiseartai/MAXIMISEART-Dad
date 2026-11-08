@@ -9,6 +9,7 @@ pilnuje:
   - src/rozliczenia/centrum/logs_disk.py
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/runs.py
+  - src/rozliczenia/centrum/process_kind.py
   - src/rozliczenia/centrum/outbox.py
   - src/rozliczenia/centrum/launcher.py
   - src/rozliczenia/centrum/atomic_file.py
@@ -118,7 +119,7 @@ unless named otherwise):
 | `WpisSkonczone` | `save`: `journal.ended(result)` after the result (its Komunikat and file quantities in it) → `Journal._write` |
 | `Zatrzymanie` | `save`: a `StopError` after `journal.begun` of an order and before its `journal.ended` (the window stops), or before the first `journal.begun` (the window closed while it waits for Dad's login); `save` marks the ready orders and raises it on, and `run_process` returns with the Zatrzymanie, so the Wycena reaches its result without „zlecenie skończone” of that order |
 | `Postep` | `RunComments.run_started` (at the start of the Wycena) or `_refresh` (every `PROGRESS_S`) → `RunComments._progress`: `Outbox.post(post_of(ProgressVersion(...)))` (`Rank.DRAFT`, `rank_of`) when `Journal.progress` gives a progress (no `_header`) and the watched Wycena is this one and not `ended` (`_Watched`), under the lock of `RunComments`. The model counts the progress as possible from the first line on the disk (`postepMozliwy`); a progress the queue accepted becomes the newest version of the comment when it is newer (`Przyjmij`), a refused one changes nothing |
-| `Wynik` | `runs.py` `_Run.work` → `PreparedRun.conduct` → `process_run.py` `run_process`: the engine reached its result, the metrics record (the Historia row) is written or not (`metrics_saved`), and `run_process` returns; when it raises, `_Run.work` goes on with a Stop. Nothing on the journal path reads the Historia row, so the model has none |
+| `Wynik` | `runs.py` `_Run.work` → `process_kind.py` `PreparedRun.conduct` → `process_run.py` `run_process`: the engine reached its result, the metrics record (the Historia row) is written or not (`metrics_saved`), and `run_process` returns; when it raises, `_Run.work` goes on with a Stop. Nothing on the journal path reads the Historia row, so the model has none |
 | `WpisKonca` | `_Run.work` → `RunHost.after` → `RunComments.run_ended`, the first of `after_run` in `create_app` (assignment `runs`), step 1 in its own `_step`: `Journal.end`: when no write confirmed the first line (`self._header`, and a failed write may have left it), `_remove(path, ...)` (`unlink`; no file, or a file in place of the folder, leaves nothing to remove; `OSError` leaves the journal without its end entry); otherwise `_write(_RunEnded(..., result=result))` (`write`, `flush`, `fsync`), whose `OSError` leaves the journal without its end entry |
 | `LogiWyniku` | `RunComments.run_ended` after step 1, whatever it did: `_Watched.ended` under the lock (the end of the progress), then in `_step` `_own` (the Logs with the result through `guard_logs`; an exception there ends `run_ended`, so nothing goes to the queue and the journal stays) and `_keep`: `LogsOnDisk.write` of these Logs, whose exception goes out of `_keep` only after the post (`finally`), and `_step` writes its type to the Centrum log |
 | `WyslijWynik` | `_keep`: `finally:` `Outbox.post(post_of(OwnLogs(logs)))` (`Rank.OWN`, `rank_of`), whose result `run_ended` keeps as `accepted` (an exception of `post` leaves none, as not accepted) |
@@ -135,7 +136,7 @@ path from the module, `Class.method` a method and `create_app.runs` an assignmen
 `JournalRead`, `_read_journal`, `_remove`, `LogsOnDisk.started`, `left_behind`, `remove_journal`, `write`, `name_of` in `logs_disk.py`;
 `create_app.lifespan`, `create_app.send_interrupted`, the assignments `create_app.app`, `create_app.disk`,
 `create_app.comments`, `create_app.closed` and `create_app.runs` (its `run_started` is `comments.run_started`, its
-`after_run` starts with `comments`, and its `previous` is `cards.last(closed)`) in `app.py`; `_Run.work`, `PreparedRun.conduct`, `RunHost.start`, `RunHost.after`, `RunHost.shutdown_refusal` in `runs.py`;
+`after_run` starts with `comments`, and its `previous` is `cards.last(closed)`) in `app.py`; `_Run.work`, `RunHost.start`, `RunHost.after`, `RunHost.shutdown_refusal` in `runs.py`; `PreparedRun.conduct` in `process_kind.py`;
 `Outbox.post`, `Outbox.resume`, `Rank`, `Version`, `_version_of`, `_superseded` in `outbox.py`; `_start`,
 `_listen_when_released` in `launcher.py`; `replace_atomically` in `atomic_file.py`; `price_orders.save` in `efenix_pricing.py`;
 `run_process` in `process_run.py`. Every code name in the table above is one of them, except six left out on purpose:

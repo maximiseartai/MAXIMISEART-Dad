@@ -55,9 +55,10 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 import sys
-from typing import NoReturn, TypeVar
+from typing import Any, NoReturn
 
 from pydantic import BaseModel, ConfigDict
 
@@ -65,7 +66,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import efenix_browser, efenix_process, intermax_copies, intermax_process, preparation_process, settlement_process
 from rozliczenia.centrum import contract, run_view
+from rozliczenia.centrum.catalog import EFENIX, INTERMAX, PREPARATION, SETTLEMENT, ProcessDeclaration
 from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.process_kind import PreparedRun
+from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_pricing import PricingMode
@@ -73,13 +77,11 @@ from rozliczenia.efenix_pricing import EfenixInputs
 from rozliczenia.intermax_ordering import OrderingInputs
 from rozliczenia.message import Message
 from rozliczenia.collective_preparation import PreparationInputs
-from rozliczenia.process_run import Finished, Process, ProcessInputs, StopEnding, run_process
+from rozliczenia.process_run import Finished, Outcome, ProcessInputs, StopEnding
 from rozliczenia.run_context import RunContext
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.engine import SettlementInputs
 
-InputsT = TypeVar("InputsT", bound=ProcessInputs)
-SummaryT = TypeVar("SummaryT", bound=run_view.WarnedSummary)
 _EXIT_CODES = {"OK": 0, "WYMAGA_SPRAWDZENIA": 2, "BLAD_KRYTYCZNY": 1}
 
 class _Model(BaseModel):
@@ -112,6 +114,21 @@ class ProcessResult(_Model):
     technical_notes: list[str]
     metrics_saved: bool
 
+    @classmethod
+    def of(cls, outcome: Outcome[run_view.Shown[Any]], progress: contract.Progress) -> ProcessResult:
+        shown = outcome.view
+        ending = outcome.ending
+        return cls(
+            result=outcome.result,
+            summary=None if shown is None else shown.summary,
+            warnings=[] if shown is None else [CodedMessage.of(warning) for warning in shown.warnings],
+            stop=None if isinstance(ending, Finished) else StopResult(kind=ending.kind, message=CodedMessage.of(ending.message)),
+            progress=progress,
+            total_duration_ms=outcome.total_duration_ms,
+            technical_notes=list(outcome.technical_notes),
+            metrics_saved=outcome.metrics_saved,
+        )
+
 
 class _Unattended:
     continue_hint = f"uruchom proces w Centrum rozliczeń i {CONTINUE_HINT}"
@@ -129,37 +146,26 @@ class _Unattended:
         self.progress = self._progress_view(snapshot)
 
 
-def _conduct(
-    process: Process[InputsT, SummaryT, RunContext],
-    view: run_view.ResultView[InputsT, SummaryT],
-    inputs: InputsT,
+def _prepared(
+    declaration: ProcessDeclaration[Any, Any],
+    inputs: ProcessInputs,
     metrics: Path,
-) -> tuple[ProcessResult, int]:
-    unattended = _Unattended(lambda snapshot: view.progress(snapshot, dry_run=inputs.dry_run))
-    outcome = run_process(process, inputs, unattended, view=view.shown, metrics_path=metrics, context=RunContext())
-    shown = outcome.view
-    ending = outcome.ending
-    result = ProcessResult(
-        result=outcome.result,
-        summary=None if shown is None else shown.summary,
-        warnings=[] if shown is None else [CodedMessage.of(warning) for warning in shown.warnings],
-        stop=None if isinstance(ending, Finished) else StopResult(kind=ending.kind, message=CodedMessage.of(ending.message)),
-        progress=unattended.progress,
-        total_duration_ms=outcome.total_duration_ms,
-        technical_notes=list(outcome.technical_notes),
-        metrics_saved=outcome.metrics_saved,
-    )
-    return result, _EXIT_CODES[outcome.result]
+    pricing: contract.Pricing | None = None,
+) -> PreparedRun[Any, Any]:
+    """Uruchomienie bez Kopii wejścia, z plikiem metryk ``metrics`` (``--metrics``) w miejscu pliku metryk procesu."""
+
+    process = replace(declaration.core(Processes.default()), metrics_path=lambda: metrics)
+    return PreparedRun(declaration, inputs.period, process, inputs, RunContext(), pricing)
 
 
-def _settle(args: argparse.Namespace) -> tuple[ProcessResult, int]:
+def _settle(args: argparse.Namespace) -> PreparedRun[Any, Any]:
     inputs = SettlementInputs(
         args.source, dry_run=args.dry_run, config_path=args.config, worker_template_path=args.worker_template
     )
-    return _conduct(settlement_process.PROCESS, run_view.SETTLEMENT, inputs, args.metrics)
+    return _prepared(SETTLEMENT, inputs, args.metrics)
 
 
-def _prepare(args: argparse.Namespace) -> tuple[ProcessResult, int]:
+def _prepare(args: argparse.Namespace) -> PreparedRun[Any, Any]:
     inputs = PreparationInputs(
         args.register,
         args.periods_directory,
@@ -169,20 +175,20 @@ def _prepare(args: argparse.Namespace) -> tuple[ProcessResult, int]:
         internal_template_path=args.internal_template,
         collective_template_path=args.collective_template,
     )
-    return _conduct(preparation_process.PROCESS, run_view.PREPARATION, inputs, args.metrics)
+    return _prepared(PREPARATION, inputs, args.metrics)
 
 
-def _order(args: argparse.Namespace) -> tuple[ProcessResult, int]:
+def _order(args: argparse.Namespace) -> PreparedRun[Any, Any]:
     inputs = OrderingInputs(args.register, args.copies)
-    return _conduct(intermax_process.PROCESS, run_view.INTERMAX, inputs, args.metrics)
+    return _prepared(INTERMAX, inputs, args.metrics)
 
 
-def _price(args: argparse.Namespace) -> tuple[ProcessResult, int]:
+def _price(args: argparse.Namespace) -> PreparedRun[Any, Any]:
     url: str = args.efenix_url
     # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
-    mode = PricingMode.FORWARD if args.z_przekazaniem else PricingMode.FILL
-    inputs = EfenixInputs(args.source, lambda _login: efenix_browser.chromium(url), pace=None, mode=mode)
-    return _conduct(efenix_process.PROCESS, run_view.EFENIX, inputs, args.metrics)
+    pricing: contract.Pricing = "z Przekazaniem" if args.z_przekazaniem else contract.DEFAULT_PRICING
+    inputs = EfenixInputs(args.source, lambda _login: efenix_browser.chromium(url), pace=None, mode=PricingMode(pricing))
+    return _prepared(EFENIX, inputs, args.metrics, pricing=pricing)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -206,7 +212,7 @@ def _parser() -> argparse.ArgumentParser:
         "--metrics", type=Path, default=settlement_process.PROCESS.metrics_path(), help="Plik metryk JSONL."
     )
     settlement.add_argument("--dry-run", action="store_true", help="Podgląd bez zapisu.")
-    settlement.set_defaults(run=_settle)
+    settlement.set_defaults(prepare=_settle)
 
     preparation = processes.add_parser("preparation", help=preparation_process.PROCESS.name)
     preparation.add_argument("--register", type=Path, required=True, help="Rejestr zleceń.")
@@ -223,7 +229,7 @@ def _parser() -> argparse.ArgumentParser:
         "--metrics", type=Path, default=preparation_process.PROCESS.metrics_path(), help="Plik metryk JSONL."
     )
     preparation.add_argument("--dry-run", action="store_true", help="Podgląd bez zapisu.")
-    preparation.set_defaults(run=_prepare)
+    preparation.set_defaults(prepare=_prepare)
 
     ordering = processes.add_parser("intermax", help=intermax_process.PROCESS.name)
     ordering.add_argument("--register", type=Path, required=True, help="Rejestr zleceń (INTERMAX).")
@@ -233,7 +239,7 @@ def _parser() -> argparse.ArgumentParser:
     ordering.add_argument(
         "--metrics", type=Path, default=intermax_process.PROCESS.metrics_path(), help="Plik metryk JSONL."
     )
-    ordering.set_defaults(run=_order)
+    ordering.set_defaults(prepare=_order)
 
     pricing = processes.add_parser("efenix", help=efenix_process.PROCESS.name)
     pricing.add_argument("--source", type=Path, required=True, help="Plik zbiorczy.")
@@ -242,17 +248,20 @@ def _parser() -> argparse.ArgumentParser:
         "--z-przekazaniem", action="store_true", help="Gotowe zlecenia przekaż do akceptacji (tryb z Przekazaniem)."
     )
     pricing.add_argument("--metrics", type=Path, default=efenix_process.PROCESS.metrics_path(), help="Plik metryk JSONL.")
-    pricing.set_defaults(run=_price)
+    pricing.set_defaults(prepare=_price)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    run: Callable[[argparse.Namespace], tuple[ProcessResult, int]] = args.run
-    result, exit_code = run(args)
+    prepare: Callable[[argparse.Namespace], PreparedRun[Any, Any]] = args.prepare
+    prepared = prepare(args)
+    unattended = _Unattended(prepared.progress_view)
+    outcome = prepared.conduct(unattended)
+    result = ProcessResult.of(outcome, unattended.progress)
     sys.stdout.buffer.write(result.model_dump_json(indent=2).encode("utf-8") + b"\n")
     sys.stdout.buffer.flush()
-    return exit_code
+    return _EXIT_CODES[outcome.result]
 
 
 if __name__ == "__main__":
