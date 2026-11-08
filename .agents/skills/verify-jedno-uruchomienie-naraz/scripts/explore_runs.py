@@ -57,9 +57,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType, ModuleType, SimpleNamespace
-from typing import Any, Literal
-
-from greenlet import getcurrent, greenlet  # type: ignore[import-untyped]  # greenlet ships no type hints
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
@@ -72,6 +70,7 @@ from rozliczenia.message import Message
 from rozliczenia.preparation_process import PROCESS
 from rozliczenia.progress import ProgressProjection
 from rozliczenia.run_context import RunContext
+from eksplorator import Choices, Excuse, Interleaving, Shape, Thread, excuse_line, excused, gone_lines, schedules, verdict
 import rozjazd_modelu
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -99,11 +98,7 @@ class ModelGap(BaseException):
     """The real code used ``threading`` in a way the model primitives do not cover."""
 
 
-# --- Scheduler: one modelled thread runs at a time, from one step to the next ------------------------
-#
-# Each modelled thread is a greenlet on the checker's own OS thread. With an OS thread each, every step was a
-# hand-over through the kernel, several hundred thousand per check, and on a CI runner busy with other xdist workers
-# each one waited for a free CPU until the check hit pytest's 120 s limit (#565). A greenlet switch does not wait.
+# --- Scheduler: one modelled thread runs at a time, from one step to the next (``eksplorator.Interleaving``) --------
 #
 # A modelled thread that waits on a real lock, Event or sleep outside the model stops that one OS thread with it, and
 # no code of the thread runs again: no hub and no trace hook can see it. So ``explore`` runs the check on a thread of
@@ -122,23 +117,18 @@ class Pending:
 
 
 @dataclass
-class Actor:
-    name: str
-    status: Literal["running", "parked", "done"] = "running"
+class Actor(Thread):
     pending: Pending | None = None
-    go: str | None = None
     in_flight: bool = False
     run: Any = None  # the _Run whose work() this thread runs
-    history: list[str] = field(default_factory=list)
-    greenlet: greenlet | None = None
 
 
 _ABORT = "\0abort"
 
 
 def _current_actor() -> Actor:
-    actor: Actor | None = getattr(getcurrent(), "actor", None)
-    if actor is None:
+    actor = Interleaving.current()
+    if not isinstance(actor, Actor):
         raise ModelGap("krok poza wątkiem modelu")
     return actor
 
@@ -162,17 +152,16 @@ class Progress:
     abandoned: bool = False  # explore gave up on it: a thread that wakes up later stops at its next step
 
 
-class Scheduler:
+class Scheduler(Interleaving[Actor]):
     def __init__(self, trace: list[str], progress: Progress) -> None:
-        self.home = getcurrent()  # the checker, which picks every step
-        self.actors: list[Actor] = []
+        super().__init__()
         self.trace = trace
         self.gaps: list[str] = []
         self.running: Actor | None = None  # the thread between two of its steps
         self.progress = progress
         progress.scheduler = self
 
-    def spawn(self, name: str, body: Callable[[], None], run: Any = None) -> Actor:
+    def add(self, name: str, body: Callable[[], None], run: Any = None) -> Actor:
         """Adds a thread that runs up to its first step at the next ``settle``."""
 
         actor = Actor(name, run=run)
@@ -185,14 +174,9 @@ class Scheduler:
             except ModelGap as gap:
                 self.gaps.append(f"{actor.name}: {gap}")
             finally:
-                actor.status = "done"
                 actor.pending = None
 
-        # A thread spawned by another thread still ends into the checker, not into the thread that spawned it.
-        actor.greenlet = greenlet(main, parent=self.home)
-        actor.greenlet.actor = actor
-        self.actors.append(actor)
-        return actor
+        return self.spawn(actor, main)
 
     def step(
         self,
@@ -205,11 +189,8 @@ class Scheduler:
 
         actor = _current_actor()
         actor.pending = Pending(call, _code_location(), enabled, variants)
-        actor.status = "parked"
-        self.home.switch()
-        outcome, actor.go = actor.go, None
+        outcome = self.park(actor)
         actor.pending = None
-        assert outcome is not None  # release() set it before switching here
         if outcome == _ABORT:
             raise Abort()
         actor.history.append(f"{call} → {outcome}" if outcome else call)
@@ -218,24 +199,16 @@ class Scheduler:
     def note(self, text: str) -> None:
         self.trace.append(f"{_current_actor().name}: {text}")
 
-    def settle(self) -> None:
-        """Runs every released or new thread up to its next step or its end."""
-
-        while (actor := next((actor for actor in self.actors if actor.status == "running"), None)) is not None:
-            assert actor.greenlet is not None
-            self.running = actor
-            actor.greenlet.switch()
-            self.running = None
-            if self.progress.abandoned:
-                raise Abort()
-            self.progress.steps += 1
-
-    def release(self, actor: Actor, outcome: str) -> None:
-        actor.status = "running"
-        actor.go = outcome
+    def _switch(self, thread: Actor) -> None:
+        self.running = thread
+        super()._switch(thread)
+        self.running = None
+        if self.progress.abandoned:
+            raise Abort()
+        self.progress.steps += 1
 
     def abort_all(self) -> None:
-        for actor in self.actors:
+        for actor in self.threads:
             if actor.status == "parked":
                 self.release(actor, _ABORT)
         self.settle()
@@ -307,7 +280,7 @@ class ModelThread:
         self._scheduler.step("start wątku Uruchomienia")
         run = getattr(self._target, "__self__", None)
         name = getattr(run, "model_name", "Uruchomienie")
-        self._scheduler.spawn(f"wątek {name}", self._target, run)
+        self._scheduler.add(f"wątek {name}", self._target, run)
 
 
 class ModelThreading:
@@ -497,7 +470,7 @@ class World:
 
         if self.requested():
             return "po przyjęciu prośby o zamknięcie"
-        for actor in self.scheduler.actors:
+        for actor in self.scheduler.threads:
             if actor.name == CLOSE_TAB and actor.pending is not None and actor.pending.call in (
                 CLOSE_LOG,
                 REQUESTED_SET,
@@ -661,7 +634,7 @@ def _update_tab(world: World, number: int) -> Callable[[], None]:
         world.updates.append(update)
         world.log.update_started()
         scheduler.step("start wątku aktualizacji")
-        scheduler.spawn(f"wątek {update.name}", _update_thread(world, update))
+        scheduler.add(f"wątek {update.name}", _update_thread(world, update))
         scheduler.note("odpowiedź 202: aktualizacja trwa")
         _current_actor().in_flight = False
 
@@ -749,7 +722,7 @@ def _server(world: World) -> Callable[[], None]:
         world.shutdown.wait()
         world.scheduler.step(
             "serwer kończy pracę: uvicorn zamknięty, proces Pythona się kończy, wątki daemon giną",
-            enabled=lambda: not any(actor.in_flight for actor in world.scheduler.actors),
+            enabled=lambda: not any(actor.in_flight for actor in world.scheduler.threads),
         )
         world.exited = True
         for run in world.in_progress():
@@ -799,8 +772,6 @@ def _server(world: World) -> Callable[[], None]:
 
 @dataclass
 class Execution:
-    picks: list[int]
-    widths: list[int]
     trace: list[str]
     violations: list[Violation]
     gaps: list[str]
@@ -833,7 +804,7 @@ def _state(world: World) -> object:
                 actor.pending.call if actor.pending else None,
                 actor.in_flight,
             )
-            for actor in world.scheduler.actors
+            for actor in world.scheduler.threads
         ),
         tuple(
             (
@@ -855,25 +826,14 @@ def _state(world: World) -> object:
     )
 
 
-def execute(scope: Scope, prefix: Sequence[int], visited: set[object], progress: Progress) -> Execution:
-    picks: list[int] = []
-    widths: list[int] = []
+def execute(scope: Scope, choices: Choices, visited: set[object], progress: Progress) -> Execution:
     trace: list[str] = []
-
-    def choose(count: int) -> int:
-        index = prefix[len(picks)] if len(picks) < len(prefix) else 0
-        picks.append(index)
-        widths.append(count)
-        return index
-
     scheduler = Scheduler(trace, progress)
     try:
         with harness(scheduler) as world:
-            cut = _drive(world, scope, choose, picks, len(prefix), visited)
+            cut = _drive(world, scope, choices, visited)
     except ModelGap as gap:
         return Execution(
-            picks,
-            widths,
             trace,
             [],
             [f"wiązanie RunHost i Shutdown: {gap}"],
@@ -886,8 +846,6 @@ def execute(scope: Scope, prefix: Sequence[int], visited: set[object], progress:
     if cut and not world.violations:
         trace.append("dalej ten sam stan co w harmonogramie sprawdzonym wcześniej")
     return Execution(
-        picks,
-        widths,
         trace,
         world.violations,
         list(scheduler.gaps),
@@ -904,28 +862,21 @@ def execute(scope: Scope, prefix: Sequence[int], visited: set[object], progress:
     )
 
 
-def _drive(
-    world: World,
-    scope: Scope,
-    choose: Callable[[int], int],
-    picks: list[int],
-    replay: int,
-    visited: set[object],
-) -> bool:
+def _drive(world: World, scope: Scope, choices: Choices, visited: set[object]) -> bool:
     """Runs one schedule to its end; ``True`` when it was cut short at an already explored state."""
 
     scheduler = world.scheduler
     if world.lock is None:
         scheduler.gaps.append("RunHost nie ma blokady _lock z threading.Lock()")
     for number in range(1, scope.start_tabs + 1):
-        scheduler.spawn(f"karta Uruchom {number}", _start_tab(world, number))
+        scheduler.add(f"karta Uruchom {number}", _start_tab(world, number))
     for number in range(1, scope.update_tabs + 1):
-        scheduler.spawn(f"karta Zaktualizuj {number}", _update_tab(world, number))
+        scheduler.add(f"karta Zaktualizuj {number}", _update_tab(world, number))
     for number in range(1, scope.restore_tabs + 1):
-        scheduler.spawn(f"karta Przywróć {number}", _restore_tab(world, number))
-    scheduler.spawn(CLOSE_TAB, _close_tab(world, scope.close_clicks))
-    scheduler.spawn("tata", _decision_tab(world, scope.decisions))
-    scheduler.spawn("serwer", _server(world))
+        scheduler.add(f"karta Przywróć {number}", _restore_tab(world, number))
+    scheduler.add(CLOSE_TAB, _close_tab(world, scope.close_clicks))
+    scheduler.add("tata", _decision_tab(world, scope.decisions))
+    scheduler.add("serwer", _server(world))
     try:
         while not scheduler.gaps:
             scheduler.settle()
@@ -948,7 +899,7 @@ def _drive(
                 return False
             options = [
                 (actor, variant)
-                for actor in scheduler.actors
+                for actor in scheduler.threads
                 if actor.status == "parked" and actor.pending is not None and actor.pending.enabled()
                 for variant in actor.pending.variants
             ]
@@ -956,10 +907,10 @@ def _drive(
                 _check_results_on_card(world)
                 return False
             state = _state(world)
-            if len(picks) >= replay and state in visited:
+            if not choices.replaying and state in visited:
                 return True
             visited.add(state)
-            actor, variant = options[choose(len(options))]
+            actor, variant = options[choices.choose(len(options))]
             assert actor.pending is not None
             detail = f" → {variant}" if variant else ""
             scheduler.trace.append(f"{actor.name}: {actor.pending.call}{detail} [{actor.pending.where}]")
@@ -985,13 +936,6 @@ def _check_results_on_card(world: World) -> None:
                     "od jego startu, nie dostaje jego wyniku: zostaje tylko w Historii",
                 )
             )
-
-
-def next_prefix(execution: Execution) -> list[int] | None:
-    for depth in range(len(execution.picks) - 1, -1, -1):
-        if execution.picks[depth] + 1 < execution.widths[depth]:
-            return execution.picks[:depth] + [execution.picks[depth] + 1]
-    return None
 
 
 @dataclass
@@ -1110,9 +1054,7 @@ def _stalled(progress: Progress, checker: threading.Thread) -> tuple[str, list[s
 
 def _explore(report: ScopeReport, progress: Progress) -> None:
     visited: set[object] = set()
-    prefix: list[int] | None = []
-    while prefix is not None:
-        execution = execute(report.scope, prefix, visited, progress)
+    for execution in schedules(lambda choices: execute(report.scope, choices, visited, progress)):
         report.schedules += 1
         report.states = len(visited)  # so far, also for a check that stalls
         report.clean_closes += execution.clean_close
@@ -1134,29 +1076,20 @@ def _explore(report: ScopeReport, progress: Progress) -> None:
                 )
         for gap in execution.gaps:
             report.gaps.setdefault(gap, execution.trace)
-        prefix = next_prefix(execution)
 
 
 # --- Report -------------------------------------------------------------------------------------------
 
-# Real defects in the current code, reported on every run until a code change fixes them: signature → why.
-# Empty since „Zamknij” that is not refused closes RunHost to new Uruchomienia and Aktualizacje under its lock.
-KNOWN_FINDINGS: dict[tuple[object, ...], str] = {}
+# Real defects in the current code, reported on every run until a code change fixes them. An entry's shape judges a
+# violation's ``signature``. Empty since „Zamknij” that is not refused closes RunHost to new Uruchomienia and
+# Aktualizacje under its lock.
+KNOWN_FINDINGS: tuple[Excuse[Shape], ...] = ()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Outcome:
-    new_violations: int
-    known_findings: int
-    gaps: int
-    vacuous: int
     lines: list[str]
-
-    @property
-    def exit_code(self) -> int:
-        if self.gaps:
-            return 2
-        return 1 if self.new_violations or self.vacuous else 0
+    exit_code: int
 
 
 def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcome:
@@ -1166,6 +1099,7 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
     ]
     new = known = gaps = vacuous = 0
     shown: dict[tuple[object, ...], str] = {}
+    excuses_shown: set[tuple[str, str]] = set()
     for report in reports:
         lines.append(f"zakres {report.scope.name}: {report.scope.describe()}")
         lines.append(
@@ -1180,10 +1114,12 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
             lines.append(f"  LUKA MODELU: {gap}")
             lines.extend(f"    {number}. {step}" for number, step in enumerate(trace, start=1))
         for signature, (violation, trace) in sorted(report.counterexamples.items(), key=lambda item: str(item[0])):
-            finding = KNOWN_FINDINGS.get(signature)
-            if finding is not None and not strict:
+            found = excused(violation.rule, signature, known=KNOWN_FINDINGS)
+            if found is not None:
+                excuses_shown.add((found[1].name, report.scope.name))
+            if found is not None and not strict:
                 known += signature not in shown
-                lines.append(f"  ZNANE USTALENIE ({violation.rule}): {finding}")
+                lines.append(f"  {excuse_line(*found)}")
             else:
                 new += signature not in shown
                 lines.append(f"  NARUSZENIE {violation.rule}: {violation.text}")
@@ -1193,15 +1129,19 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
             shown[signature] = report.scope.name
             lines.extend(f"    {number}. {step}" for number, step in enumerate(trace, start=1))
         lines.append("")
-    if gaps:
-        lines.append(f"URUCHOMIENIA: LUKA MODELU ({gaps}): kod używa threading w sposób, którego model nie obejmuje.")
-    elif new or vacuous:
-        lines.append(f"URUCHOMIENIA: NOWE NARUSZENIE ({new + vacuous})")
-    elif known:
-        lines.append(f"URUCHOMIENIA OK, ZNANE USTALENIA: {known}")
-    else:
-        lines.append("URUCHOMIENIA OK")
-    return Outcome(new, known, gaps, vacuous, lines)
+    finished = [report.scope.name for report in reports if not report.gaps]
+    disappeared = gone_lines(finished, excuses_shown, known=KNOWN_FINDINGS)
+    lines.extend(disappeared)
+    verdict_line, code = verdict(
+        "URUCHOMIENIA",
+        new=new + vacuous,
+        gone=len(disappeared),
+        known=known,
+        gaps=gaps,
+        gap_reason=": kod używa threading w sposób, którego model nie obejmuje.",
+    )
+    lines.append(verdict_line)
+    return Outcome(lines, code)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

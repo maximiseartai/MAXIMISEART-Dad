@@ -186,3 +186,24 @@ def test_drzewo_harmonogramow_nie_zalezy_od_tego_czym_pathlib_pyta_o_plik(monkey
         trees[version] = (report.schedules, report.states)
 
     assert trees["3.11 i 3.12"] == trees["3.14"], trees
+
+
+@pytest.mark.parametrize(
+    ("ci", "code", "last"),
+    [("true", 1, "PUBLIKACJA: ROZJAZD MODELU Z KODEM"), ("false", 0, "PUBLIKACJA OK, ZAAKCEPTOWANE RYZYKA: 2")],
+)
+def test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_sprawdzeniem(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], ci: str, code: int, last: str
+) -> None:
+    """Krok zapisu skoroszytu (``_write_period_file``) sprawdzenie zastępuje własnym, więc jego zmiana nie wywraca go
+    sama: w CI rozjazd z ``model/definicje.json`` kończy je porażką, zanim ruszy, a poza CI tylko ostrzega."""
+
+    explorer = _load_explorer()
+    monkeypatch.setenv("GITHUB_ACTIONS", ci)
+    monkeypatch.setattr(explorer.rozjazd_modelu, "rozjazd", lambda skill, root: f"kod opisany modelem zmienił się: {skill.name}.")
+    monkeypatch.setattr(explorer, "SCOPES", {"jedno-uruchomienie": explorer.SCOPES["jedno-uruchomienie"]})
+
+    exited = explorer.main([])
+
+    lines = capsys.readouterr().out.splitlines()
+    assert (exited, lines[0], lines[-1]) == (code, "UWAGA: kod opisany modelem zmienił się: verify-publikacja-plikow-okresu.", last)

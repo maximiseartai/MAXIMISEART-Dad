@@ -21,8 +21,8 @@ axis and a request role (`--rola`) to check one place while you work on it; CI r
 
 ## Proof and skip reporting
 
-- The last line is the verdict: `WYCENA EFENIX OK`, `WYCENA EFENIX: NOWE NARUSZENIE (n)`, `WYCENA EFENIX: LUKA
-  MODELU (n)` or `WYCENA EFENIX: ZNALEZISKO ZNIKNĘŁO (n)`.
+- The last line is the verdict: `WYCENA EFENIX OK` (also with `, ZNANE USTALENIA: n` or `, ZAAKCEPTOWANE RYZYKA: m`),
+  `WYCENA EFENIX: NOWE NARUSZENIE (n)`, `WYCENA EFENIX: LUKA MODELU (n)` or `WYCENA EFENIX: ZNALEZISKO ZNIKNĘŁO (n)`.
 - Evidence stays in `<run dir>/evidence/<id>/`: `raport.txt`, `przebieg-bez-awarii.txt` and one JSON per
   counterexample in `kontrprzyklady/` (requests with the fault marked, efenix before and after, Znaczniki, Logi).
 - A run with `--variant` or `--rola` narrowed, or one part of `MUTACJE_CZESC`, does not report a vanished finding.
