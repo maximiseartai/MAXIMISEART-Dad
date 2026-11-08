@@ -129,12 +129,12 @@ def test_bramka_pr_biegnie_wybrany_plik_testow_raz_bez_jego_wezlow_ze_struktury(
 
 
 def test_push_biegnie_pelne_ci_main_na_trzech_torach_z_kazdym_plikiem_testow_a_noc_bez_pytest(tmp_path: Path) -> None:
-    repo = repository(tmp_path / "repo", GATE)
+    repo = repository(tmp_path / "repo", {**GATE, "tests/c_test.py": "def test_c() -> None:\n    pass\n"})
 
     main = zakres(Zdarzenie.PUSH, frozenset({"tests/test_a.py"}), repo)
     night = zakres(Zdarzenie.NOC, frozenset({"src/pakiet/a.py"}), repo)
 
-    assert (main.tory, main.pliki, main.zrodlo) == (TORY, ("tests/test_a.py", "tests/test_b.py"), "wszystkie pliki")
+    assert (main.tory, main.pliki, main.zrodlo) == (TORY, ("tests/c_test.py", "tests/test_a.py", "tests/test_b.py"), "wszystkie pliki")
     assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [("windows-3.11", ("e2e",)), ("windows-3.14", ("e2e", "timing")), ("linux-3.14", ())]
     assert (night.tory, night.pliki, night.zrodlo) == ((), (), "bez pytest")
 

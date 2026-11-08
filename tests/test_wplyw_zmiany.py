@@ -149,8 +149,8 @@ def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, 
 
 def test_plik_testow_z_koncowka_test_jest_wybierany_jak_plik_z_przedrostkiem_a_modul_pomocniczy_nie(tmp_path: Path) -> None:
     """Plik testów to plik, który pytest zbiera (domyślne ``python_files``: ``test_*.py`` i ``*_test.py``), więc wybór
-    na pull request bierze ``tests/a_test.py`` tak samo jak pełne CI ``main``, a moduł obok bez takiej nazwy nie jest
-    testem."""
+    na pull request bierze ``tests/a_test.py`` tak samo jak pełne CI ``main``, a moduł obok bez takiej nazwy i plik z taką
+    nazwą poza ``tests/`` nie są testem."""
 
     repo = _repo(
         tmp_path,
@@ -161,6 +161,8 @@ def test_plik_testow_z_koncowka_test_jest_wybierany_jak_plik_z_przedrostkiem_a_m
             "tests/a_test.py": "from pakiet import a\n",
             "tests/pomoc_a.py": "from pakiet import a\n",
             "tests/test_a.txt": "pakiet/a.py\n",
+            # Skrypt skilla z końcówką ``_test`` leży poza ``tests/``, więc nie jest plikiem testów.
+            ".agents/skills/verify-a/scripts/self_test.py": "from pakiet import a\n",
         },
     )
 
