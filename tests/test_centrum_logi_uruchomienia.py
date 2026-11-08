@@ -1027,12 +1027,12 @@ def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczyt
 
 
 def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:
-    """Strażnik porównuje słowa, a nie pochodzenie wartości (#936): Rejestr zleceń z ``ADRES`` równym słowu trybu
-    (``podgląd``) i tokenowi okresu daje Logi w pliku i w Skrzynce z trybem i okresem, które dało narzędzie, w issue Logów
-    tego okresu."""
+    """Strażnik porównuje słowa, a nie pochodzenie wartości (#936): Rejestr zleceń z ``ADRES`` równym trybowi, który
+    stoi w pliku Logów (``DRY-RUN``), i tokenowi okresu daje Logi w pliku i w Skrzynce z trybem i okresem, które dało
+    narzędzie, w issue Logów tego okresu."""
 
     rows = default_register_rows()
-    rows[2] = {**(rows[2] or {}), "ADRES": "podgląd"}
+    rows[2] = {**(rows[2] or {}), "ADRES": "DRY-RUN"}
     rows[4] = {**(rows[4] or {}), "ADRES": PERIOD}
     centrum = preparing_centrum(tmp_path, rows)
     write_report_key(ToolDirectory(tmp_path))
