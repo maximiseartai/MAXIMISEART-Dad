@@ -1017,13 +1017,7 @@ def test_nagranie_archiwum_odtwarza_sie_przy_gzipie_innej_maszyny(monkeypatch: p
     monkeypatch.setattr(gzip, "compress", compress_like_other_machine)
     recording = github_wymiana.read_recording(SKILL / "nagrania" / "archiwum-fine-grained.json")
 
-    results = github_skrzynki.replay(
-        "archiwum-fine-grained",
-        github_przypadki_archiwum.CASES,
-        recording,
-        github_skrzynki.replay_archiwum,
-        github_przypadki_archiwum.describe,
-    )
+    results = github_skrzynki.replay("archiwum-fine-grained", recording)
 
     assert [(result.case, result.problems) for result in results if not result.ok] == []
     assert len(results) == len(github_przypadki_archiwum.CASES)

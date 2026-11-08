@@ -27,7 +27,7 @@ import secrets
 import subprocess
 import sys
 import traceback
-from typing import Final, TypeVar
+from typing import Any, Final, Generic, TypeVar
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
@@ -67,10 +67,6 @@ from github_wymiana import (
 )
 
 ROOT = Path(__file__).resolve().parents[4]
-FEATURES = ("skrzynka", "archiwum", "aktualnosc", "wiernosc-atrap")
-LIVE: Final = ("skrzynka", "archiwum", "aktualnosc")
-# Funkcje, które piszą do repozytoriów próbnych: ich przebieg ma katalog runu, stan sprzed runu i sprzątanie.
-WRITING: Final = ("skrzynka", "archiwum")
 SKILL: Final = Path(__file__).resolve().parents[1]
 RECORDINGS: Final = SKILL / "nagrania"
 REPLAY_KEY: Final = "github_pat_ODTWORZENIE"
@@ -96,6 +92,17 @@ class Result:
     @property
     def ok(self) -> bool:
         return not self.problems
+
+
+@dataclass(frozen=True)
+class LiveRun:
+    """Przebieg na żywo: klucz klienta, harness z kluczem ``gh``, katalog runu (stan sprzed runu i księga funkcji,
+    które piszą) i klucz Aktualności (``None``: bez klucza, jak Centrum taty bez pliku klucza)."""
+
+    key: str
+    admin: Admin
+    root: Path
+    freshness_key: str | None
 
 
 def _short(path: str) -> str:
@@ -139,7 +146,8 @@ def _run_case(
 # --- przebieg na żywo -----------------------------------------------------------------------------------------------
 
 
-def live_skrzynka(key: str, admin: Admin, root: Path, pace: Pace) -> list[Result]:
+def live_skrzynka(context: LiveRun) -> list[Result]:
+    key, admin, root, pace = context.key, context.admin, context.root, context.admin.pace
     recorder = Recorder()
     transport = LiveTransport(recorder, pace)
     box = GitHubReportBox(transport=transport)
@@ -184,7 +192,8 @@ def live_skrzynka(key: str, admin: Admin, root: Path, pace: Pace) -> list[Result
     return results
 
 
-def live_archiwum(key: str, admin: Admin, root: Path, pace: Pace) -> list[Result]:
+def live_archiwum(context: LiveRun) -> list[Result]:
+    key, admin, root, pace = context.key, context.admin, context.root, context.admin.pace
     recorder = Recorder()
     box = GitHubReportBox(transport=LiveTransport(recorder, pace, trial=TRIAL_ARCHIVE))
     run = json.loads((root / github_sprzatanie.RUN_FILE).read_text(encoding="utf-8"))["run"]
@@ -211,7 +220,8 @@ def live_archiwum(key: str, admin: Admin, root: Path, pace: Pace) -> list[Result
     return results
 
 
-def live_aktualnosc(token: str | None) -> list[Result]:
+def live_aktualnosc(context: LiveRun) -> list[Result]:
+    token = context.freshness_key
     oracle = aktualnosc.Oracle.read()
     live = aktualnosc.AktualnoscLive(oracle)
     results = []
@@ -279,16 +289,15 @@ def _facts(entry: dict[str, object]) -> Facts:
     return found
 
 
-def replay(
-    feature: str,
-    cases: Sequence[Case[Live, Client]],
-    recording: dict[str, object],
-    drive: Callable[[Case[Live, Client], Facts, list[Exchange]], tuple[object, list[str]]],
-    describe: Callable[[object], str],
-) -> list[Result]:
+def replay(name: str, recording: dict[str, object]) -> list[Result]:
+    """Przypadki funkcji nagrania ``name`` (``skrzynka-<rodzaj klucza>``, ``aktualnosc``) na jego wymianach."""
+
+    each = feature(feature_of(name))
+    play = each.replay
+    assert play is not None, f"funkcja {each.name} nie ma odtwarzania"
     entries = _entries(recording)
     results = []
-    for case in cases:
+    for case in each.cases:
         entry = entries.get(case.id)
         if entry is None:
             results.append(
@@ -298,7 +307,7 @@ def replay(
                     [],
                     "-",
                     case.expected,
-                    [f"nagranie {feature} nie ma przypadku {case.id}"],
+                    [f"nagranie {name} nie ma przypadku {case.id}"],
                 )
             )
             continue
@@ -306,32 +315,20 @@ def replay(
 
         def check(
             facts: Facts,
-            case: Case[Live, Client] = case,
+            case: Case[Any, Any] = case,
             exchanges: list[Exchange] = exchanges,
         ) -> tuple[object, list[Exchange], list[str]]:
-            outcome, problems = drive(case, facts, exchanges)
+            outcome, problems = play(case, facts, exchanges)
             return outcome, exchanges, problems
 
-        result, _ = _run_case(case, _facts(entry), dict, check, describe)
+        result, _ = _run_case(case, _facts(entry), dict, check, each.describe)
         results.append(result)
     return results
 
 
-def replay_skrzynka(
-    case: Case[skrzynka.SkrzynkaLive, skrzynka.Client],
-    facts: Facts,
-    exchanges: list[Exchange],
-) -> tuple[object, list[str]]:
-    transport = ReplayTransport(exchanges)
-    outcome = case.check(skrzynka.Client(GitHubReportBox(transport=transport), REPLAY_KEY), facts)
-    return outcome, transport.finish()
+def replay_box(case: Case[Live, skrzynka.Client], facts: Facts, exchanges: list[Exchange]) -> tuple[object, list[str]]:
+    """Klient Skrzynki (Zgłoszenia i Archiwum Logów okresu) na nagranych wymianach przypadku."""
 
-
-def replay_archiwum(
-    case: Case[archiwum.ArchiwumLive, skrzynka.Client],
-    facts: Facts,
-    exchanges: list[Exchange],
-) -> tuple[object, list[str]]:
     transport = ReplayTransport(exchanges)
     outcome = case.check(skrzynka.Client(GitHubReportBox(transport=transport), REPLAY_KEY), facts)
     return outcome, transport.finish()
@@ -373,7 +370,8 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
     facts = [f"klucz={token_kind(key)}", f"sprzatanie={token_kind(admin.token)}"]
     if not all(trial.startswith(report_box.REPOSITORY + "-") for trial in TRIALS):
         problems.append(f"adres Skrzynki nie jest tym, który skill zna: {report_box.REPOSITORY}")
-    trials = [trial for trial, feature in ((TRIAL, "skrzynka"), (TRIAL_ARCHIVE, "archiwum")) if feature in features]
+    selected = [each for each in FEATURES if each.name in features]
+    trials = [each.repository for each in selected if each.writes]
     client = Admin(key, Pace())
     for trial in trials:
         status, repository = admin.request("GET", f"/repos/{trial}")
@@ -393,8 +391,6 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
         status, _ = client.request("GET", f"/repos/{trial}")
         if status != 200:
             problems.append(f"klucz klienta nie widzi repozytorium próbnego {trial} ({status})")
-    if "archiwum" in features:
-        problems += _archive_baseline(admin)
     if trials:
         status, limits = client.request("GET", "/rate_limit")
         remaining = limits.get("resources", {}).get("core", {}).get("remaining") if isinstance(limits, dict) else None
@@ -407,13 +403,9 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
             problems.append(
                 f"pozostałości wcześniejszych runów: {', '.join(left[:5])} (sprzątnij je skryptem sprzątania ich runu)"
             )
-    if "skrzynka" in features:
-        _, labels = admin.request("GET", f"/repos/{TRIAL}/labels?per_page=100")
-        names = {entry.get("name") for entry in labels} if isinstance(labels, list) else set()
-        present = sorted(names & {*skrzynka.LABELS_MADE, skrzynka.ABSENT_LABEL})
-        if present:
-            problems.append(f"repozytorium próbne ma już etykiety Skrzynki {present}: run zakłada je sam")
-    if "aktualnosc" in features:
+    for each in selected:
+        problems += each.baseline(admin)
+    if any(each.live is not None and not each.writes for each in selected):
         if freshness_with_key:
             _, limits = admin.request("GET", "/rate_limit")
             remaining = (
@@ -434,6 +426,15 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
     )
 
 
+def _box_baseline(admin: Admin) -> list[str]:
+    """Repozytorium próbne Skrzynki bez etykiet Skrzynki: run zakłada je sam."""
+
+    _, labels = admin.request("GET", f"/repos/{TRIAL}/labels?per_page=100")
+    names = {entry.get("name") for entry in labels} if isinstance(labels, list) else set()
+    present = sorted(names & {*skrzynka.LABELS_MADE, skrzynka.ABSENT_LABEL})
+    return [f"repozytorium próbne ma już etykiety Skrzynki {present}: run zakłada je sam"] if present else []
+
+
 def _archive_baseline(admin: Admin) -> list[str]:
     """Repozytorium próbne Archiwum jak w ``features/README.md``: co najmniej jeden commit, bez Release'ów i tagów."""
 
@@ -448,17 +449,83 @@ def _archive_baseline(admin: Admin) -> list[str]:
     return problems
 
 
+# --- rejestr funkcji ------------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Feature(Generic[Live, Client]):
+    """Funkcja ``--feature``: jej plik ``features/<name>.md`` i wszystko, czego tryby potrzebują.
+
+    ``cases`` to tabela przypadków (``github_przypadki_*.py``), które ``replay`` gra na nagraniu, a ``live`` na
+    ``repository``: funkcja na repozytorium próbnym pisze (katalog runu, stan sprzed runu, sprzątanie, nagranie na
+    każdy rodzaj klucza), a na repozytorium narzędzia tylko czyta. ``baseline`` to stan repozytorium, od którego
+    przebieg zaczyna (Doctor), ``unchecked`` to przypadki, których przebieg nie sprawdza, z powodem.
+    """
+
+    name: str
+    cases: Sequence[Case[Live, Client]] = ()
+    describe: Callable[[object], str] = repr
+    replay: Callable[[Case[Live, Client], Facts, list[Exchange]], tuple[object, list[str]]] | None = None
+    live: Callable[[LiveRun], list[Result]] | None = None
+    repository: str | None = None
+    baseline: Callable[[Admin], list[str]] = lambda admin: []
+    unchecked: Sequence[tuple[str, str]] = ()
+
+    @property
+    def writes(self) -> bool:
+        return self.repository in TRIALS
+
+
+FEATURES: Final[tuple[Feature[Any, Any], ...]] = (
+    Feature(
+        "skrzynka",
+        cases=skrzynka.CASES,
+        describe=skrzynka.describe,
+        replay=replay_box,
+        live=live_skrzynka,
+        repository=TRIAL,
+        baseline=_box_baseline,
+        unchecked=skrzynka.UNCHECKED,
+    ),
+    Feature(
+        "archiwum",
+        cases=archiwum.CASES,
+        describe=archiwum.describe,
+        replay=replay_box,
+        live=live_archiwum,
+        repository=TRIAL_ARCHIVE,
+        baseline=_archive_baseline,
+        unchecked=archiwum.UNCHECKED,
+    ),
+    Feature(
+        "aktualnosc",
+        cases=aktualnosc.CASES,
+        describe=aktualnosc.describe,
+        replay=replay_aktualnosc,
+        live=live_aktualnosc,
+        repository=TOOL_REPOSITORY,
+    ),
+    # Bez sieci: atrapy testów wobec nagrań każdej funkcji.
+    Feature("wiernosc-atrap"),
+)
+LIVE: Final = tuple(each.name for each in FEATURES if each.live is not None)
+
+
+def feature(name: str) -> Feature[Any, Any]:
+    [found] = [each for each in FEATURES if each.name == name]
+    return found
+
+
 # --- wynik ----------------------------------------------------------------------------------------------------------
 
 
 def unchecked(kinds: dict[str, str]) -> list[str]:
-    lines = [f"NIESPRAWDZONE | skrzynka/{name} | {why}" for name, why in skrzynka.UNCHECKED]
-    lines += [f"NIESPRAWDZONE | archiwum/{name} | {why}" for name, why in archiwum.UNCHECKED]
-    for feature in WRITING:
-        box_kinds = sorted(kind for name, kind in kinds.items() if feature_of(name) == feature)
-        if box_kinds and FINE_GRAINED not in box_kinds:
+    lines = [f"NIESPRAWDZONE | {each.name}/{name} | {why}" for each in FEATURES for name, why in each.unchecked]
+    for each in FEATURES:
+        box_kinds = sorted(kind for name, kind in kinds.items() if feature_of(name) == each.name)
+        if each.writes and box_kinds and FINE_GRAINED not in box_kinds:
             lines.append(
-                f"NIESPRAWDZONE | {feature}/klucz-taty | przebieg kluczem {', '.join(box_kinds)}, a klucz taty to "
+                f"NIESPRAWDZONE | {each.name}/klucz-taty | przebieg kluczem {', '.join(box_kinds)}, a klucz taty to "
                 f"{FINE_GRAINED} (Issues i Contents RW): uruchom na-zywo --klucz-plik z tokenem fine-grained repozytoriów próbnych"
             )
     if kinds.get("aktualnosc") not in (None, "bez klucza"):
@@ -468,7 +535,7 @@ def unchecked(kinds: dict[str, str]) -> list[str]:
     return lines
 
 
-def recording(feature: str, results: list[Result], kind: str) -> dict[str, object]:
+def recording(name: str, results: list[Result], kind: str) -> dict[str, object]:
     head = subprocess.run(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
         capture_output=True,
@@ -479,7 +546,7 @@ def recording(feature: str, results: list[Result], kind: str) -> dict[str, objec
         "nagrano": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "commit": head,
         "klucz": kind,
-        "repozytorium": {"skrzynka": TRIAL, "archiwum": TRIAL_ARCHIVE}.get(feature, TOOL_REPOSITORY),
+        "repozytorium": feature(feature_of(name)).repository,
         "przypadki": {
             result.case: {
                 "fakty": result.facts,
@@ -524,7 +591,7 @@ def _features(value: str, allowed: Sequence[str]) -> tuple[str, ...]:
 def main() -> int:
     parser = Parser(description=__doc__.splitlines()[0])
     parser.add_argument("tryb", choices=("doctor", "na-zywo", "odtworz"))
-    parser.add_argument("--feature", choices=(*FEATURES, "all"), default="all")
+    parser.add_argument("--feature", choices=(*(each.name for each in FEATURES), "all"), default="all")
     parser.add_run_dir()
     parser.add_argument(
         "--klucz-plik",
@@ -545,7 +612,7 @@ def main() -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "-" + secrets.token_hex(3)
     if arguments.tryb == "odtworz":
         return replay_all(
-            _features(arguments.feature, FEATURES),
+            _features(arguments.feature, [each.name for each in FEATURES]),
             arguments.run_dir / "evidence" / f"odtworzenie-{stamp}",
         )
     if arguments.feature == "wiernosc-atrap":
@@ -570,15 +637,17 @@ def live_all(
 ) -> int:
     run = new_run(arguments.run_dir, f"github-{stamp}")
     (run.evidence / "doctor.txt").write_text(doctor_line + "\n", encoding="utf-8")
-    names = {feature: f"{feature}-{token_slug(key)}" for feature in WRITING if feature in features}
-    kinds = {name: token_kind(key) for name in names.values()}
+    selected = [each for each in FEATURES if each.name in features]
     freshness_key = admin.token if arguments.aktualnosc_z_kluczem else None
-    if "aktualnosc" in features:
-        kinds["aktualnosc"] = "bez klucza" if freshness_key is None else f"{token_kind(admin.token)} (gh)"
+    # Nagranie funkcji, która pisze, ma rodzaj klucza klienta w nazwie, bo każdy rodzaj nagrywa się osobno.
+    names = {each.name: f"{each.name}-{token_slug(key)}" if each.writes else each.name for each in selected}
+    freshness_kind = "bez klucza" if freshness_key is None else f"{token_kind(admin.token)} (gh)"
+    kinds = {names[each.name]: token_kind(key) if each.writes else freshness_kind for each in selected}
+    context = LiveRun(key, admin, run.root, freshness_key)
     results: dict[str, list[Result]] = {}
     lines = [doctor_line]
     restored = True
-    if names:
+    if any(each.writes for each in selected):
         root = create_run_root(run.root)
         before = github_sprzatanie.state(admin)
         (root / github_sprzatanie.RUN_FILE).write_text(
@@ -588,11 +657,13 @@ def live_all(
             ),
             encoding="utf-8",
         )
-        drives = {"skrzynka": live_skrzynka, "archiwum": live_archiwum}
         try:
-            for feature, name in names.items():
+            for each in selected:
+                if not each.writes or each.live is None:
+                    continue
+                name = names[each.name]
                 try:
-                    results[name] = drives[feature](key, admin, root, admin.pace)
+                    results[name] = each.live(context)
                 except Exception:  # noqa: BLE001 - przerwany przebieg to VERIFY FAIL, a sprzątanie biegnie i tak
                     results[name] = [
                         Result(
@@ -608,11 +679,12 @@ def live_all(
             restored, cleaned = github_sprzatanie.clean(root)
             lines.append(cleaned[-1])
             (run.evidence / "harness.txt").write_text("\n".join(admin.log) + "\n", encoding="utf-8")
-    if "aktualnosc" in features:
-        results["aktualnosc"] = live_aktualnosc(freshness_key)
+    for each in selected:
+        if not each.writes and each.live is not None:
+            results[names[each.name]] = each.live(context)
     recordings = {name: _cases_of(document) for name, document in stored_recordings().items()}
     for name, found in results.items():
-        document = recording(feature_of(name), found, kinds[name])
+        document = recording(name, found, kinds[name])
         write_recording(run.evidence / "nagrania" / f"{name}.json", document)
         if arguments.zapisz_nagrania:
             write_recording(RECORDINGS / f"{name}.json", document)
@@ -644,12 +716,8 @@ def replay_all(features: Sequence[str], evidence: Path) -> int:
             f"NAGRANIE | {name} | {document.get('nagrano')} | klucz {document.get('klucz')} | commit {str(document.get('commit'))[:9]}"
         )
         kinds[name] = str(document.get("klucz"))
-        if feature_of(name) == "skrzynka" and "skrzynka" in features:
-            results[name] = replay(name, skrzynka.CASES, document, replay_skrzynka, skrzynka.describe)
-        elif feature_of(name) == "archiwum" and "archiwum" in features:
-            results[name] = replay(name, archiwum.CASES, document, replay_archiwum, archiwum.describe)
-        elif feature_of(name) == "aktualnosc" and "aktualnosc" in features:
-            results[name] = replay(name, aktualnosc.CASES, document, replay_aktualnosc, aktualnosc.describe)
+        if feature_of(name) in features:
+            results[name] = replay(name, document)
     if "wiernosc-atrap" in features:
         differences += fidelity(
             lines,
