@@ -134,8 +134,8 @@ def test_skrzynka_laczy_sie_z_githubem_przez_proxy_z_ustawien_systemu(monkeypatc
     assert proxied == ["CONNECT api.github.com:443"]
 
 
-def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki() -> None:
-    # Przekierowanie może wskazać inny host; klucz taty dostaje tylko adres, pod który Skrzynka wysłała żądanie.
+def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki_na_inny_serwer() -> None:
+    # Serwer pod innym portem to inny origin, jak inny host: klucz taty tam nie idzie.
     with github_api({"/lista": Answer(body=[])}) as elsewhere:
         with github_api({"/lista": Answer(301, headers={"Location": f"{elsewhere.url}/lista"})}) as box:
             answer = SKRZYNKA_TRANSPORT(HttpRequest("GET", f"{box.url}/lista", headers(KEY), None))
@@ -143,6 +143,23 @@ def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki() -> None:
     assert answer.status == 200
     assert [asked.authorization for asked in box.asked] == [f"Bearer {KEY}"]
     assert [asked.authorization for asked in elsewhere.asked] == [None]
+
+
+def test_przeniesione_repozytorium_zgloszen_odpowiada_skrzynce_z_kluczem_taty_pod_adresem_przekierowania(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GitHub przekierowuje przeniesione albo przemianowane repozytorium (301) na ``/repositories/<id>/…`` tego samego
+    hosta, a prywatne repozytorium Zgłoszeń bez klucza odpowiada 404, czyli odmową Skrzynki."""
+
+    listed = "issues?state=open&labels=zgloszenie&per_page=100&page=1"
+    with github_api({f"/repositories/1/{listed}": Answer(body=[])}, private=True) as box:
+        moved = Answer(301, headers={"Location": f"{box.url}/repositories/1/{listed}"})
+        box.answers = {**box.answers, f"/repos/{report_box.REPOSITORY}/{listed}": moved}
+        monkeypatch.setattr(report_box, "API", box.url)
+        outcome = GitHubReportBox(transport=SKRZYNKA_TRANSPORT).labelled_issues("zgloszenie", include_closed=False, key=KEY)
+
+    assert outcome == ()
+    assert [asked.authorization for asked in box.asked] == [f"Bearer {KEY}"] * 2
 
 
 @pytest.mark.parametrize("label", ["kontrola-ilosci", "logi-uruchomienia"])

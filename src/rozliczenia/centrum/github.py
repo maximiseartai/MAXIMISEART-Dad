@@ -3,7 +3,11 @@
 Z GitHubem rozmawiają dwa klienty Centrum: Aktualność narzędzia (``tool_freshness``, publiczne repozytorium narzędzia,
 z kluczem taty, gdy jest) i Skrzynka Zgłoszeń (``report_box``, prywatne repozytorium Zgłoszeń z kluczem taty). Oba
 składają żądanie z ``headers`` i wysyłają je przez ``send``, więc nowy nagłówek, wersja API albo zmiana połączenia
-ląduje tutaj. Klucz w ``Authorization`` ``send`` wysyła tylko pod adres żądania, nigdy pod adres przekierowania.
+ląduje tutaj. Klucz w ``Authorization`` nigdy nie idzie za przekierowaniem na inny origin (schemat, host, port), a za
+przekierowaniem na ten sam origin idzie tylko w kliencie, który tak mówi (``KeyAfterRedirect``): GitHub przekierowuje
+przeniesione repozytorium na ``/repositories/<id>/…`` tego samego hosta, a prywatne repozytorium Zgłoszeń bez klucza
+odpowiada 404, więc Skrzynka niesie klucz dalej (``"same-origin"``). Aktualność od #1097 nie niesie tokenu za żadnym
+przekierowaniem (``"nowhere"``): publiczne repozytorium narzędzia odpowiada też bez niego.
 
 Proxy z ustawień systemu klienty traktują różnie, jak przed wydzieleniem tego modułu: Aktualność łączy się wprost
 (``"direct"``), a Skrzynka przez proxy systemu (``"system"``). Nic w repozytorium nie uzasadnia tej różnicy; to pytanie
@@ -21,8 +25,10 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import re
-from typing import Final, Literal
+from http.client import HTTPMessage
+from typing import IO, Final, Literal
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from rozliczenia.tool_files import REPOSITORY
@@ -44,6 +50,7 @@ ANSWER_KEPT_S: Final = 10 * 60
 NO_ANSWER_KEPT_S: Final = 60
 
 Proxy = Literal["system", "direct"]
+KeyAfterRedirect = Literal["same-origin", "nowhere"]
 
 
 @dataclass(frozen=True)
@@ -89,7 +96,14 @@ def sendable(key: str) -> bool:
     return key.isascii() and key.isprintable() and " " not in key
 
 
-def send(request: HttpRequest, *, proxy: Proxy, timeout_s: float, read_limit: int | None = None) -> HttpResponse:
+def send(
+    request: HttpRequest,
+    *,
+    proxy: Proxy,
+    key_after_redirect: KeyAfterRedirect,
+    timeout_s: float,
+    read_limit: int | None = None,
+) -> HttpResponse:
     """Żądanie HTTPS przez bibliotekę standardową; odpowiedź z kodem błędu HTTP to też odpowiedź.
 
     ``read_limit`` ucina treść do tylu bajtów (ucięty JSON jest nieczytelny jak każdy inny).
@@ -100,7 +114,9 @@ def send(request: HttpRequest, *, proxy: Proxy, timeout_s: float, read_limit: in
     if "Authorization" in request.headers:
         # Zwykły nagłówek urllib przenosi na adres przekierowania, także na inny host.
         sent.add_unredirected_header("Authorization", request.headers["Authorization"])
-    handlers = [] if proxy == "system" else [urllib.request.ProxyHandler({})]
+    handlers: list[urllib.request.BaseHandler] = [] if proxy == "system" else [urllib.request.ProxyHandler({})]
+    if key_after_redirect == "same-origin":
+        handlers.append(_KeyToSameOrigin())
     try:
         with urllib.request.build_opener(*handlers).open(sent, timeout=timeout_s) as response:
             body = response.read() if read_limit is None else response.read(read_limit)
@@ -109,6 +125,34 @@ def send(request: HttpRequest, *, proxy: Proxy, timeout_s: float, read_limit: in
         with error:
             body = error.read() if read_limit is None else error.read(read_limit)
             return HttpResponse(error.code, body, _lowered(error.headers.items()))
+
+
+class _KeyToSameOrigin(urllib.request.HTTPRedirectHandler):
+    """Przekierowanie, które niesie klucz dalej, gdy nowy adres ma ten sam origin co adres z kluczem."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        key = req.unredirected_hdrs.get("Authorization")
+        if redirected is not None and key is not None and _origin(redirected.full_url) == _origin(req.full_url):
+            redirected.add_unredirected_header("Authorization", key)
+        return redirected
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None]:
+    parts = urllib.parse.urlsplit(url)
+    scheme = parts.scheme.lower()
+    return scheme, parts.hostname, parts.port or _DEFAULT_PORTS.get(scheme)
+
+
+_DEFAULT_PORTS: Final = {"http": 80, "https": 443}
 
 
 def _lowered(received: Iterable[tuple[str, str]]) -> dict[str, str]:

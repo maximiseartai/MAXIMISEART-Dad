@@ -484,7 +484,9 @@ class _Asking:
         token = self._token if with_token and urlsplit(url)[:2] == self._host else None
         request = HttpRequest("GET", url, headers(token), None)
         try:
-            response = send(request, proxy="direct", timeout_s=self._timeout_s, read_limit=_PAGE_BYTES)
+            response = send(
+                request, proxy="direct", key_after_redirect="nowhere", timeout_s=self._timeout_s, read_limit=_PAGE_BYTES
+            )
             if 200 <= response.status < 300:
                 return json.loads(response.body), next_page(response)
         except (OSError, HTTPException, ValueError) as failure:  # brak sieci, zerwane połączenie, nie JSON

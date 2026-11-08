@@ -482,6 +482,20 @@ def test_przekierowanie_pytania_z_tokenem_na_inny_host_idzie_tam_bez_tokenu() ->
     assert [asked.authorization for asked in elsewhere.asked] == [None, None, None]
 
 
+def test_przekierowanie_pytania_z_tokenem_na_ten_sam_host_idzie_tam_bez_tokenu() -> None:
+    """Publiczne repozytorium narzędzia odpowiada także bez tokenu, więc token nie idzie za żadnym przekierowaniem."""
+
+    answers = newest_on_main(REPOSITORY, "v0.2.0", NEWEST)
+    moved = {path: path.replace(REPOSITORY, "/repositories/1") for path in answers}
+    with github_api({}) as api:
+        redirects = {path: Answer(301, headers={"Location": f"{api.url}{target}"}) for path, target in moved.items()}
+        api.answers = redirects | {moved[path]: answer for path, answer in answers.items()}
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert newest == GitHubReleases(NEWEST, "v0.2.0")
+    assert [(asked.path in moved, asked.authorization) for asked in api.asked] == [(True, WITH_TOKEN), (False, None)] * 3
+
+
 @pytest.mark.parametrize(
     ("refusal", "authorizations"),
     [
@@ -577,6 +591,13 @@ def test_odpowiedz_urwana_w_trakcie_tresci_to_brak_odpowiedzi_a_nie_wyjatek() ->
     }
     with github_api(answers) as api:
         assert releases_from(f"{api.url}{REPOSITORY}", timeout_s=30) == GitHubReleases(NEWEST, "v0.2.0")
+
+
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
+def test_lista_tagow_urwana_w_trakcie_tresci_to_brak_odpowiedzi_a_nie_wyjatek() -> None:
+    cut = Answer(body=[{"name": "v0.2.0", "commit": {"sha": NEWEST}}], ending="cut")
+    with github_api({f"{REPOSITORY}/tags?per_page=100": cut}) as api:
+        assert releases_from(f"{api.url}{REPOSITORY}", timeout_s=30) is None
 
 
 @pytest.mark.parametrize(("pages", "complete"), [(10, True), (11, False)], ids=["10-stron", "11-stron"])

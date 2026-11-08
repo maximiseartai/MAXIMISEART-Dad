@@ -206,7 +206,8 @@ REPOSITORY: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia"
 _TIMEOUT_S: Final = 15.0
 _REFUSALS: Final = frozenset({401, 403, 404})
 # GitHub odpowiada na przekroczony limit zapytań (podstawowy i „secondary”) kodem 403 z „rate limit” w ``message``
-# (429 nie jest odmową, więc i tak jest ``Unreachable``); ``HttpResponse`` nie niesie nagłówków, a treść to mówi.
+# (429 nie jest odmową, więc i tak jest ``Unreachable``). Skrzynka rozpoznaje limit po treści, nie po nagłówkach
+# (``github.rate_limit_reset``): nagrania ``verify-github-skrzynki`` nagłówków odpowiedzi nie niosą.
 _RATE_LIMIT: Final = b"rate limit"
 # Odpowiedzi na treść wysyłki (zła albo za długa), nie na klucz ani sieć.
 _REJECTIONS: Final = frozenset({400, 413, 422})
@@ -231,7 +232,7 @@ def archive_url(tag: str, name: str) -> str:
 def urllib_transport(request: HttpRequest) -> HttpResponse:
     """Żądanie Skrzynki do GitHuba przez proxy z ustawień systemu (``github`` mówi, czemu tak)."""
 
-    return send(request, proxy="system", timeout_s=_TIMEOUT_S)
+    return send(request, proxy="system", key_after_redirect="same-origin", timeout_s=_TIMEOUT_S)
 
 
 class GitHubReportBox:

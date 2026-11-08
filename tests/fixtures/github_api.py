@@ -40,21 +40,25 @@ class Asked:
 
 class GitHubApi:
     """Atrapa pod ``url``: ``answers`` po ścieżce, a na każde pytanie z tokenem odmowa ``refused_token``, gdy jest
-    (status albo cała odpowiedź, np. odmowa z powodu limitu konta)."""
+    (status albo cała odpowiedź, np. odmowa z powodu limitu konta). Repozytorium ``private`` na pytanie bez tokenu
+    odpowiada 404, jak prywatne repozytorium GitHuba."""
 
-    def __init__(self, answers: Mapping[str, Answer], refused_token: int | Answer | None) -> None:
+    def __init__(self, answers: Mapping[str, Answer], refused_token: int | Answer | None, private: bool) -> None:
         self.answers = answers
         self.refused_token = refused_token
+        self.private = private
         self.asked: list[Asked] = []
         self.url = ""
         self.closing = threading.Event()
 
 
 @contextmanager
-def github_api(answers: Mapping[str, Answer], *, refused_token: int | Answer | None = None) -> Iterator[GitHubApi]:
+def github_api(
+    answers: Mapping[str, Answer], *, refused_token: int | Answer | None = None, private: bool = False
+) -> Iterator[GitHubApi]:
     """Atrapa API GitHuba czynna w bloku ``with``; ścieżka spoza ``answers`` to 404."""
 
-    api = GitHubApi(answers, refused_token)
+    api = GitHubApi(answers, refused_token, private)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -62,10 +66,13 @@ def github_api(answers: Mapping[str, Answer], *, refused_token: int | Answer | N
             api.asked.append(Asked(self.path, authorization))
             refused = api.refused_token
             refusal = Answer(refused, {"message": "Bad credentials"}, _LEFT) if isinstance(refused, int) else refused
+            not_found = Answer(404, {"message": "Not Found"}, _LEFT)
             if authorization is not None and refusal is not None:
                 answer = refusal
+            elif authorization is None and api.private:
+                answer = not_found
             else:
-                answer = api.answers.get(self.path, Answer(404, {"message": "Not Found"}, _LEFT))
+                answer = api.answers.get(self.path, not_found)
             body = json.dumps(answer.body).encode("utf-8")
             self.send_response(answer.status)
             for name, value in answer.headers.items():
