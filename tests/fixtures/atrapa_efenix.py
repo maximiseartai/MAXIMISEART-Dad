@@ -40,8 +40,9 @@ anulowanie (``#button_forward_to_cancel``) ze wspólnym oknem ``#dialog_forward_
 ``action_change_status.php`` (``order_id``, ``xstatus``, ``comment``, jak efenix) i przeładowuje stronę po odpowiedzi, a
 które stoi na stronie przed oknem Emmetta. Zlecenie z ``forward_refusal`` (model) ma przycisk Przekazania, który zamiast
 okna zmiany statusu pokazuje okno informacji ``#dialog_info`` z tym tekstem w ``#dialog_info_field_info``, jak skrypt
-efenix, gdy odmawia Przekazania. Okno informacji pojawia się, jak okno bootstrapa efenix, animacją przezroczystości, w
-której trakcie jego przyciski zamknięcia nic nie robią. Okna zamyka przycisk ``[data-dismiss="modal"]``.
+efenix, gdy odmawia Przekazania. Każde okno dialogowe pojawia się, jak okno bootstrapa efenix (``.modal.fade``), animacją
+przezroczystości okna i dłuższą jego dziecka ``.modal-dialog``, a do końca tej drugiej przyciski zamknięcia okna nic nie
+robią, a przycisk ``.btn-ok`` działa. Okna zamyka przycisk ``[data-dismiss="modal"]``.
 Ilość zapisuje skrypt strony po wyjściu z pola (Enter też z niego wychodzi) przez ``action_save_index.php``, a odpowiedź
 JSON (``result``, ``price_index``, ``price_all``) odświeża ``#cena-…`` i ``#cena_all2``; bez sesji ta odpowiedź to
 ``result: nok``, jak w efenix.
@@ -141,7 +142,8 @@ EFENIX_EMMETT_RELOAD_MS = 1000
 # W Atrapie domyślnie krócej, żeby testy szły szybko.
 _EMMETT_RELOAD_MS = 200
 _APPEAR_MS = 300
-"""Animacja pokazania okna informacji, jak w bootstrapie 4, który ładuje strona zlecenia efenix (``.modal.fade .modal-dialog``: 300 ms)."""
+"""Animacja pokazania każdego okna dialogowego, jak w bootstrapie 4, który ładuje strona zlecenia efenix: ``.modal.fade
+.modal-dialog`` 300 ms, a samo ``.modal.fade`` połowę tego (150 ms). Bootstrap kończy pokazanie na ``.modal-dialog``."""
 
 
 class Changed(enum.Enum):
@@ -165,6 +167,10 @@ class Changed(enum.Enum):
     )
     NUMBER_FIELD_GONE = "lista po wpisaniu numeru nie ma już pola Numer"
     SECOND_EMMETT_DIALOG = "strona zlecenia dopisuje drugie okno Emmetta, zanim przeglądarka pokaże pierwsze"
+    OTHER_ANIMATIONS_IN_INFO = (
+        "okno informacji ma spinner, którego animacja nie kończy się nigdy, i etykietę, której skończona animacja zostaje "
+        "na niej (fill: forwards)"
+    )
 
 
 class Unread(enum.Enum):
@@ -768,6 +774,23 @@ new MutationObserver((_zmiany, obserwator) => {
 """
 
 
+# Spinner w oknie informacji, który kręci się bez końca od pokazania okna, jak ``.spinner-border`` strony zlecenia efenix
+# (tam poza oknami dialogowymi), i etykieta, której krótka animacja wejścia zostaje po końcu na etykiecie
+# (``animation-fill-mode: forwards``, jak w animate.css i MDB), więc ``getAnimations`` dalej ją oddaje.
+_OTHER_ANIMATIONS_IN_INFO_SCRIPT = """
+document.getElementById('button_forward_to_accept').addEventListener('click', () => {
+  const body = document.querySelector('#dialog_info .modal-body');
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner-border';
+  const label = document.createElement('label');
+  label.textContent = 'Informacja';
+  body.append(spinner, label);
+  spinner.animate([{transform: 'rotate(0deg)'}, {transform: 'rotate(360deg)'}], {duration: 750, iterations: Infinity});
+  label.animate([{opacity: 0}, {opacity: 1}], {duration: 50, fill: 'forwards'});
+});
+"""
+
+
 # Skrypt i elementy strony, które przy wczytaniu i przy opuszczeniu strony wysyłają zapis, zmianę statusu i wylogowanie
 # każdą drogą przeglądarki: okno, beacon, ``fetch`` z ``keepalive``, WebSocket, worker, service worker, przejście. Na
 # początku skrypt czyści stronę, więc strona, na której w ogóle biegnie, nie ma już budowy efenix.
@@ -842,23 +865,26 @@ def _results(orders: Sequence[AtrapaOrder], changed: Changed | Unread | None) ->
 
 _ORDER_SCRIPT = """
 (function () {
-  const show = (id) => { document.getElementById(id).style.display = 'block'; };
+  // Jak modal bootstrapa 4: okno pojawia się krócej niż jego .modal-dialog, a zamknięcie do końca animacji .modal-dialog
+  // nic nie robi.
+  const show = (id) => {
+    const modal = document.getElementById(id);
+    modal.dataset.pojawia = 'tak';
+    modal.style.display = 'block';
+    modal.animate([{opacity: 0}, {opacity: 1}], {duration: __APPEAR__ / 2});
+    modal.querySelector('.modal-dialog').animate([{opacity: 0}, {opacity: 1}], {duration: __APPEAR__}).finished.then(() => {
+      delete modal.dataset.pojawia;
+    });
+  };
   const hide = (id) => { document.getElementById(id).style.display = 'none'; };
   const post = (url, data) => fetch(url, {method: 'POST', body: new URLSearchParams(data)});
   const mainId = document.getElementById('main_id').value;
   let status = '';
-  // Jak modal bootstrapa 4: zamknięcie w trakcie animacji pokazania nic nie robi.
-  const appear = (id) => {
-    const modal = document.getElementById(id);
-    modal.dataset.pojawia = 'tak';
-    show(id);
-    modal.animate([{opacity: 0}, {opacity: 1}], {duration: __APPEAR__}).finished.then(() => { delete modal.dataset.pojawia; });
-  };
   const forward = document.getElementById('button_forward_to_accept');
   forward.addEventListener('click', () => {
     if (forward.dataset.odmowa !== undefined) {
       document.getElementById('dialog_info_field_info').textContent = forward.dataset.odmowa;
-      appear('dialog_info');
+      show('dialog_info');
       return;
     }
     status = 'Do akceptacji';
@@ -1047,6 +1073,8 @@ def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int,
     )
     if changed is Changed.SECOND_EMMETT_DIALOG:
         script += _SECOND_EMMETT_DIALOG_SCRIPT
+    if changed is Changed.OTHER_ANIMATIONS_IN_INFO:
+        script += _OTHER_ANIMATIONS_IN_INFO_SCRIPT
     if status_change is StatusChange.FORWARD_CANCELS:
         script = script.replace("status = 'Do akceptacji';", "status = 'Anulowane';")
     if status_change in _FORWARD_REQUESTS:
@@ -1090,17 +1118,18 @@ def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread 
 
 # Okno informacji jak w efenix: tekst w ``#dialog_info_field_info`` i dwa przyciski zamknięcia, bez „Tak”.
 _INFO_DIALOG: Final = (
-    '<div class="modal" id="dialog_info" style="display: none"><h5>Informacja</h5>'
+    '<div class="modal" id="dialog_info" style="display: none"><div class="modal-dialog"><h5>Informacja</h5>'
     '<button type="button" class="close" data-dismiss="modal">×</button>'
     '<div class="modal-body"><div id="dialog_info_field_info"> </div></div>'
-    '<button type="button" class="btn btn-default" data-dismiss="modal">Zamknij</button></div>'
+    '<button type="button" class="btn btn-default" data-dismiss="modal">Zamknij</button></div></div>'
 )
 
 
 def _dialog(dialog_id: str, title: str, body: str, ok: str) -> str:
     return (
-        f'<div class="modal" id="{dialog_id}" style="display: none"><h5>{escape(title)}</h5><div class="modal-body">{body}</div>'
-        f'<button type="button" class="btn btn-secondary" data-dismiss="modal">Zamknij</button><button type="button" class="btn btn-ok">{escape(ok)}</button></div>'
+        f'<div class="modal" id="{dialog_id}" style="display: none"><div class="modal-dialog"><h5>{escape(title)}</h5>'
+        f'<div class="modal-body">{body}</div><button type="button" class="btn btn-secondary" data-dismiss="modal">Zamknij</button>'
+        f'<button type="button" class="btn btn-ok">{escape(ok)}</button></div></div>'
     )
 
 

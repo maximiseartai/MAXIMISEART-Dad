@@ -269,9 +269,9 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "        button = self._only(Element.EMMETT_BUTTON.selector, PagePart.EMMETT)\n",
-                '        self._click(self._only("#button_forward_to_accept", PagePart.EMMETT))\n'
-                "        button = self._only(Element.EMMETT_BUTTON.selector, PagePart.EMMETT)\n",
+                "        button = self._element(Element.EMMETT_BUTTON, PagePart.EMMETT)\n",
+                "        self._click(self._element(Element.FORWARD_BUTTON, PagePart.EMMETT))\n"
+                "        button = self._element(Element.EMMETT_BUTTON, PagePart.EMMETT)\n",
             ),
         ),
         explorer("zamkniete-okno", "szukanie"),

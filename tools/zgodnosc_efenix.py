@@ -711,7 +711,7 @@ def _check_elements(page: Page, part: Part, elements: Sequence[PageElement], rep
     for element in elements:
         located = page.locator(element.selector)
         found = located.count()
-        if found == 0 or (found > 1 and not element.many):
+        if not element.fits(found):
             report.differ(part, f"{element.name} ({element.selector}): {found} zamiast {'co najmniej 1' if element.many else '1'}")
         elif element.clicked and not located.first.is_visible():
             report.differ(part, f"{element.name} ({element.selector}) jest ukryty w HTML strony")
