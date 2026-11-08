@@ -1,6 +1,6 @@
 """Faults between the efenix window and the Atrapa efenix: a local proxy that breaks one request of a Wycena w efenix.
 
-The window talks to ``Proxy.url``; the proxy forwards every request to the Atrapa efenix (``tests/fixtures/atrapa_efenix.py``)
+The window talks to ``Proxy.url``; the proxy forwards every request to the Atrapa efenix (``tools/lib/atrapy/atrapa_efenix.py``)
 without following redirects and answers the browser itself, so it can break any request, the redirects and page files
 included, which ``page.route`` of Playwright misses. It changes the Atrapa only where a fault says so (``LOGGED_OUT``
 ends its session), and it adds to every page it passes on two things the Atrapa lacks and efenix has or the check needs:
@@ -41,13 +41,24 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Final
 from urllib.parse import parse_qs, urlparse
 
-# Adresy stron efenix z Atrapy, celowej kopii efenix (docs/agents/skille.md, „Co wyrocznia bierze z src”): pośrednik
-# stoi przed Atrapą, więc rozpoznaje żądania po jej adresach, a nie po adresach kodu, który sprawdza.
-from tests.fixtures.atrapa_efenix import FILL_EMMETT, LIST_PAGE, LOGIN_PAGE, ORDER_PAGE, SEARCH
+# Adresy stron i przyciski efenix z Atrapy, celowej kopii efenix (docs/agents/skille.md, „Co wyrocznia bierze z src”):
+# pośrednik stoi przed Atrapą, więc rozpoznaje żądania i kliknięcia po jej adresach i przyciskach, a nie po tych z kodu,
+# który sprawdza.
+from atrapy.atrapa_efenix import (
+    BY_LIST,
+    CANCEL_BUTTON,
+    FILL_EMMETT,
+    FORWARD_BUTTON,
+    LIST_PAGE,
+    LOGIN_PAGE,
+    ORDER_PAGE,
+    SEARCH,
+    STATUS_DIALOG,
+)
 
 STYLESHEET: Final = "css/efenix.css"
 FORBIDDEN_CLICK: Final = "__przycisk-spoza-listy"
-_FORBIDDEN_BUTTONS: Final = "#button_forward_to_accept, #button_forward_to_cancel, #dialog_forward_yes_no .btn-ok"
+_FORBIDDEN_BUTTONS: Final = f"#{FORWARD_BUTTON}, #{CANCEL_BUTTON}, #{STATUS_DIALOG} .btn-ok"
 _WATCHER: Final = (
     "<script>document.addEventListener('click', (event) => {"
     f" const button = event.target.closest && event.target.closest('{_FORBIDDEN_BUTTONS}');"
@@ -55,7 +66,6 @@ _WATCHER: Final = (
     " }, true);</script>"
 )
 _PAGES: Final = (LIST_PAGE, ORDER_PAGE, LOGIN_PAGE)
-_BY_LIST: Final = "powrot"
 _ELSEWHERE: Final = f"/{LIST_PAGE}?przekierowanie=1"
 
 
@@ -123,7 +133,7 @@ def call_kind(method: str, url: str, body: str) -> tuple[str, str, str]:
     path = urlparse(url).path.lstrip("/") or LIST_PAGE
     search = ""
     if path == SEARCH and method == "POST":
-        search = "lista" if parse_qs(body).get("rodzaj") == [_BY_LIST] else "okno"
+        search = "lista" if parse_qs(body).get("rodzaj") == [BY_LIST] else "okno"
     return method, path, search
 
 

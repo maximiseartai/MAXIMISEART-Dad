@@ -8,8 +8,8 @@ spoza standardowej aktualizacja, którą opiekun kończy, mogła właśnie zmien
 kopii (``test_opiekun_ponownego_startu.py``) łapie brak modułu dopiero po minucie czekania na nową wersję, a
 bibliotekę spoza standardowej, którą Python ma, przepuszcza.
 
-Model efenix (``tools/lib/model_efenix.py``) importuje tylko bibliotekę standardową, a Atrapa efenix
-(``tests/fixtures/atrapa_efenix.py``) tylko ją i model: z nimi testy i narzędzia porównują Wycenę w efenix, więc nie
+Model efenix (``tools/lib/atrapy/model_efenix.py``) importuje tylko bibliotekę standardową, a Atrapa efenix
+(``tools/lib/atrapy/atrapa_efenix.py``) tylko ją i model: z nimi testy i narzędzia porównują Wycenę w efenix, więc nie
 biorą niczego z kodu pod testem (``src``). Okno w procesie (``tests/fixtures/okno_w_procesie.py``) bierze z kodu pod
 testem tylko typy seamu okna efenix (klasy i aliasy typów z ``efenix_window``), a decyzje bierze
 z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną drugą stroną kontraktu z oknem przeglądarki.
@@ -85,8 +85,8 @@ GUARDIAN = SRC / "rozliczenia" / "centrum" / "restart_guardian.py"
 ROOT = SRC.parent
 # Wyrocznia Wyceny w efenix i moduły spoza biblioteki standardowej, które wolno jej importować.
 EFENIX_ORACLE = {
-    ROOT / "tools" / "lib" / "model_efenix.py": frozenset[str](),
-    ROOT / "tests" / "fixtures" / "atrapa_efenix.py": frozenset({"model_efenix"}),
+    ROOT / "tools" / "lib" / "atrapy" / "model_efenix.py": frozenset[str](),
+    ROOT / "tools" / "lib" / "atrapy" / "atrapa_efenix.py": frozenset({"atrapy.model_efenix"}),
 }
 # Okno w procesie i moduły kodu pod testem, z których bierze tylko typy.
 WINDOW_IN_PROCESS = ROOT / "tests" / "fixtures" / "okno_w_procesie.py"
@@ -589,8 +589,8 @@ def test_model_i_atrapa_efenix_nie_importuja_kodu_pod_testem() -> None:
     assert not found, "\n".join(
         [
             *sorted(found),
-            "Model efenix (tools/lib/model_efenix.py) importuje tylko bibliotekę standardową, a Atrapa efenix "
-            "(tests/fixtures/atrapa_efenix.py) tylko ją i model: test porównuje z nimi Wycenę w efenix, więc nie biorą "
+            "Model efenix (tools/lib/atrapy/model_efenix.py) importuje tylko bibliotekę standardową, a Atrapa efenix "
+            "(tools/lib/atrapy/atrapa_efenix.py) tylko ją i model: test porównuje z nimi Wycenę w efenix, więc nie biorą "
             "niczego z kodu pod testem. Napisz potrzebny kod w modelu albo w Atrapie.",
         ]
     )
@@ -603,7 +603,7 @@ def test_okno_w_procesie_bierze_z_kodu_pod_testem_tylko_typy_seamu() -> None:
             found += [ast.unparse(node) for alias in node.names if not _is_stdlib(alias.name)]
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if node.level or not (_is_stdlib(module) or module == "model_efenix" or module in WINDOW_SEAM):
+            if node.level or not (_is_stdlib(module) or module == "atrapy.model_efenix" or module in WINDOW_SEAM):
                 found.append(ast.unparse(node))
             elif module in WINDOW_SEAM:
                 imported = importlib.import_module(module)
@@ -617,7 +617,7 @@ def test_okno_w_procesie_bierze_z_kodu_pod_testem_tylko_typy_seamu() -> None:
         [
             *sorted(found),
             "Okno w procesie (tests/fixtures/okno_w_procesie.py) bierze z rozliczenia tylko klasy i aliasy typów z "
-            "efenix_window, a decyzje z modelu efenix (tools/lib/model_efenix.py).",
+            "efenix_window, a decyzje z modelu efenix (tools/lib/atrapy/model_efenix.py).",
         ]
     )
 
@@ -1450,3 +1450,4 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
     )
 
     assert _private_reaches(ast.parse(code)) == []
+

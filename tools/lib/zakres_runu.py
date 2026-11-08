@@ -123,7 +123,7 @@ KROKI = {krok.nazwa: krok for krok in (E2E, TIMING)}
 STRAZ = ("tools/syntetyczne_wzorce.py", "tools/benchmark_przebiegu.py")
 # Atrapa efenix odpowiada tylko przeglądarce: plik testów, który sięga jej modułu, prowadzi Chromium sam albo przez
 # Skrypt dla maszyn.
-PRZEGLADARKA = "tests/fixtures/atrapa_efenix.py"
+PRZEGLADARKA = "tools/lib/atrapy/atrapa_efenix.py"
 
 
 @dataclass(frozen=True)

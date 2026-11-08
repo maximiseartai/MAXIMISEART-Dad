@@ -3,7 +3,7 @@
 Model trzyma to, co w efenix trzyma serwer: zlecenia z wyceną, datą wykonania, statusem i propozycją Emmetta, jedną
 sesję i decyzje serwera o każdym działaniu okna (``Action``): szukanie, strona zlecenia, zapis daty wykonania,
 propozycja Emmetta, „Załaduj do zlecenia” z odmowami, zapis ilości i zmiana statusu. Atrapa efenix
-(``tests/fixtures/atrapa_efenix.py``) tłumaczy żądanie okna na działanie ``SerwerEfenix``, a jego wynik na odpowiedź
+(``tools/lib/atrapy/atrapa_efenix.py``) tłumaczy żądanie okna na działanie ``SerwerEfenix``, a jego wynik na odpowiedź
 HTTP; budowa stron, skrypty stron, ścieżki i awarie sieci zostają w niej. Test widzi stan po przebiegu przez
 ``StanEfenix``.
 

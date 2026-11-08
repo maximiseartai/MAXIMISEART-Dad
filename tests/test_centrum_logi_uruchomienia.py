@@ -60,7 +60,7 @@ from rozliczenia.register_file import OrderSheets
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.telemetry import MetricsStore
 
-from tests.fixtures.atrapa_efenix import (
+from atrapy.atrapa_efenix import (
     CATALOG,
     LIST_PAGE,
     TODAY,

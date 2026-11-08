@@ -591,7 +591,7 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
     """Test pliku ``okno.py`` sięga Atrapy efenix przez fixture, więc biegnie w prawdziwej przeglądarce; test ``a.py``
     nie. Każdy plik ma swoją część (po dwie mutacje: granica porównania i cofnięcie fragmentu)."""
 
-    fixture = "from tests.fixtures.atrapa_efenix import ATRAPA as OKNO\n"
+    fixture = "from atrapy.atrapa_efenix import ATRAPA as OKNO\n"
     repo = repository(
         tmp_path / "repo",
         {
@@ -600,7 +600,7 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
             "src/pakiet/okno.py": "def b(x: int) -> bool:\n    return x > 1\n",
             "tests/__init__.py": "",
             "tests/fixtures/__init__.py": "",
-            "tests/fixtures/atrapa_efenix.py": "ATRAPA = 1\n",
+            "tools/lib/atrapy/atrapa_efenix.py": "ATRAPA = 1\n",
             "tests/fixtures/okno.py": fixture,
             "tests/test_a.py": "from pakiet.a import a\n\n\ndef test_a() -> None:\n    assert a(2)\n",
             "tests/test_okno.py": "from pakiet.okno import b\nfrom tests.fixtures.okno import OKNO\n\n\ndef test_b() -> None:\n    assert b(OKNO + 1)\n",

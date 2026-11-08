@@ -58,7 +58,7 @@ from tests.fixtures.settlement import (
     write_quantity_source,
     write_template,
 )
-from tests.fixtures.atrapa_efenix import amount_of, atrapa_efenix
+from atrapy.atrapa_efenix import amount_of, atrapa_efenix
 from tests.fixtures.efenix import Order as EfenixOrder
 from tests.fixtures.efenix import write_collective_file
 from tests.fixtures.intermax import Intermax

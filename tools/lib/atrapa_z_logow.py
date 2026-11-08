@@ -32,9 +32,8 @@ from rozliczenia.centrum.run_logs import (
 from rozliczenia.efenix_address import AddressPart, address_differences
 from rozliczenia.efenix_window import WindowAction
 
-from model_efenix import CATALOG, PRICES, EfenixOrder
-
-from tests.fixtures.atrapa_efenix import AtrapaEfenix, atrapa_efenix
+from atrapy.atrapa_efenix import AtrapaEfenix, atrapa_efenix
+from atrapy.model_efenix import CATALOG, PRICES, EfenixOrder
 
 SYNTHETIC_ADDRESS: Final = "ul. Odtworzeniowa {row}"
 """``ADRES`` wiersza odtworzonego pliku, który reguła adresu efenix rozbiera (rodzaj, nazwa ulicy, numer)."""

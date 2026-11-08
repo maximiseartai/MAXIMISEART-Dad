@@ -42,7 +42,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 import zipfile
 
-from model_efenix import Action, StanEfenix
+from atrapy.model_efenix import Action, StanEfenix
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
@@ -95,7 +95,7 @@ from rozliczenia.workbook_parts import UnsupportedShape
 from rozliczenia.run_clock import RunClock
 from rozliczenia.run_context import RunContext
 
-from tests.fixtures.atrapa_efenix import (
+from atrapy.atrapa_efenix import (
     LIST_PAGE,
     LIST_SCRIPT,
     LOAD_EMMETT,

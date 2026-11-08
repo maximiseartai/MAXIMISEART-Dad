@@ -47,7 +47,7 @@ from tests.fixtures.centrum import (
     views_until,
     write_report_key,
 )
-from tests.fixtures.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
+from atrapy.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum_intermax import Clock, ordering_centrum
 from tests.fixtures.efenix import Order as EfenixOrder
 from tests.fixtures.efenix import write_collective_file

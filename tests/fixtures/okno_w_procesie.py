@@ -1,6 +1,6 @@
 """Okno w procesie: okno efenix Wyceny (``efenix_window.Efenix``) wprost na modelu efenix, bez HTTP i przeglądarki.
 
-``okno(stan, login)`` daje okno na stanie ``StanEfenix`` z ``tools/lib/model_efenix.py``, tym samym, który pod Atrapą
+``okno(stan, login)`` daje okno na stanie ``StanEfenix`` z ``tools/lib/atrapy/model_efenix.py``, tym samym, który pod Atrapą
 efenix trzyma zlecenia i sesję (decyzja Maksa 6.11.2026: to test na Atrapie, ADR 0024). Okno woła działania
 ``SerwerEfenix`` i tłumaczy ich wynik na to, co z odpowiedzi Atrapy efenix robi okno przeglądarki
 (``efenix_browser.BrowserEfenix``): wiersze listy (``_listed``), stronę zlecenia, wyjątki okna z częścią strony i przyczyną oraz
@@ -24,7 +24,7 @@ import functools
 import re
 from typing import Concatenate, Generic, ParamSpec, TypeVar
 
-from model_efenix import (
+from atrapy.model_efenix import (
     EfenixOrder,
     EmmettRefusal,
     NoOrder,

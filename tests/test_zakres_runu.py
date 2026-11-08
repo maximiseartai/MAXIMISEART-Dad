@@ -140,13 +140,13 @@ def test_push_biegnie_pelne_ci_main_na_trzech_torach_z_kazdym_plikiem_testow_a_n
 
 
 def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_request_i_na_pushu(tmp_path: Path) -> None:
-    atrapa = "from tests.fixtures.atrapa_efenix import ATRAPA\n\n\ndef test_c() -> None:\n    assert ATRAPA\n"
+    atrapa = "from atrapy.atrapa_efenix import ATRAPA\n\n\ndef test_c() -> None:\n    assert ATRAPA\n"
     files = {
         **GATE,
         "tests/__init__.py": "",
         "tests/fixtures/__init__.py": "",
         PRZEGLADARKA: "ATRAPA = 1\n",
-        "tests/fixtures/okno.py": "from tests.fixtures.atrapa_efenix import ATRAPA as OKNO\n",
+        "tests/fixtures/okno.py": "from atrapy.atrapa_efenix import ATRAPA as OKNO\n",
         "tests/test_c.py": atrapa,
         "tests/test_d.py": "from tests.fixtures.okno import OKNO\n\n\ndef test_d() -> None:\n    assert OKNO\n",
     }
