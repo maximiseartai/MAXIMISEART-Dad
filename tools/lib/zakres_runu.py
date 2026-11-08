@@ -2,7 +2,7 @@
 
 Jedyne miejsce polityki „co biegnie” (ADR 0020, ADR 0021); plan runu (``tools/plan_ci.py``) tylko wycenia i pakuje
 wynik, ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``LICZY NOC``, a
-``tools/ci/mutacje_skilli.py`` uruchamia kroki skilli pushu:
+``tools/ci/wykonaj_zadanie.py --kroki-pushu`` uruchamia kroki skilli pushu:
 
     praca = zakres(Zdarzenie.PULL_REQUEST, changed_since(ROOT, "origin/main"), ROOT)
     praca.tory, praca.pliki, praca.zrodlo        # pytest: tory z krokami CI i pliki testów
@@ -49,15 +49,13 @@ from pathlib import Path, PurePosixPath
 from jednostka import Czesc
 from kroki_skilli import Katalog, Step, hits, model_watched, repeats, watched
 from repo import ROOT
-from wplyw_zmiany import Context, Repository, run_all, with_structure
+from wplyw_zmiany import TEST_FILES, Context, Repository, run_all, with_structure
 
 __all__ = [
     "E2E", "KROKI", "MUTACJE", "PRZEGLADARKA", "STRAZ", "TIMING", "TORY", "Krok", "KrokSkilla", "Tor", "ZakresRunu", "Zdarzenie", "pliki_testow",
     "podstawa_na_pull_request", "potrzebuja_chromium", "zakres",
 ]
 
-# Domyślne python_files pytest: pyproject.toml go nie zmienia.
-PLIKI_TESTOW = ("test_*.py", "*_test.py")
 # Powody pominięcia kroku skilla, który biegnie przy innym zdarzeniu.
 NIGHTLY = "skrypt mutacji biegnie nocą na main (mutacje-nocne.yml, ADR 0021)"
 ON_PULL_REQUEST = "podstawa biegnie na pull request, nie nocą"
@@ -150,7 +148,9 @@ MUTACJE = Tor("mutacje", "mutations", "windows-3.14", "windows-latest", "3.14", 
 
 
 def pliki_testow(root: Path = ROOT) -> list[str]:
-    return sorted({sciezka.relative_to(root).as_posix() for wzorzec in PLIKI_TESTOW for sciezka in (root / "tests").rglob(wzorzec)})
+    # Glob ze zmiennej: graf wpływu (wplyw_zmiany) nie wiąże wtedy zakresu z każdym plikiem pod tests/, jak przy
+    # dosłownym rglob("*.py"), więc zmiana jednego testu nie wybiera każdego testu, który importuje zakres.
+    return sorted({sciezka.relative_to(root).as_posix() for wzorzec in TEST_FILES for sciezka in (root / "tests").rglob(wzorzec)})
 
 
 @dataclass(frozen=True)
@@ -200,7 +200,7 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
     """Zakres runu ``zdarzenie`` dla zmiany ``zmiana`` (ścieżki od bazy; push jej nie czyta) w checkoucie ``root``: pliki
     testów i kroki skilli tego checkoutu (``Katalog.skanuj(root)``)."""
 
-    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push w ``tools/ci/mutacje_skilli.py`` biegnie też poza gitem.
+    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push w ``tools/ci/wykonaj_zadanie.py --kroki-pushu`` biegnie też poza gitem.
     repository = cache(lambda: Repository.scan(root))
     tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root, repository)
     katalog = Katalog.skanuj(root)

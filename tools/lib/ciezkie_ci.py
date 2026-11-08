@@ -1,7 +1,7 @@
 """Ciężkie zadania CI liczy GitHub, a lokalnie biegną tylko do odtworzenia ich konkretnej porażki.
 
-Ciężkie zadania to ``change-mutations`` (``tools/mutacje_zmiany.py``) i ``mutations`` (``tools/ci/mutacje_skilli.py``
-dla wszystkich skilli): trwają kilkanaście minut i dłużej, a CI liczy je w częściach, ``mutations`` po pushu, a
+Ciężkie zadania to ``change-mutations`` (``tools/mutacje_zmiany.py``) i ``mutations`` (``tools/ci/wykonaj_zadanie.py
+--kroki-pushu`` dla wszystkich skilli): trwają kilkanaście minut i dłużej, a CI liczy je w częściach, ``mutations`` po pushu, a
 ``change-mutations`` nocą na ``main`` (ADR 0021).
 ``tools/mutacje_zmiany.py`` i ``tools/ci_lokalnie.py`` z ``mutations`` (także pełne, bez ``--tylko``) pytają
 ``refusal`` przed startem, a ``tools/mutacje.py`` pyta ``mutations_refusal``, bo lista dłuższa niż ``TARGETED``
@@ -18,7 +18,7 @@ Skrypty ``check_*_mutations.py`` skilli ``verify-*`` wołają ``check_all`` wpro
 w repozytorium, więc przegląda ją PR.
 
 Granica: tylko przegląd łapie ``GITHUB_ACTIONS`` albo ``MAXIMISEART_NA_SCALONYCH_PR``
-podstawione ręcznie, ``tools/na_scalonych_pr.py --commit`` z commitem własnej gałęzi, ``tools/ci/mutacje_skilli.py``
+podstawione ręcznie, ``tools/na_scalonych_pr.py --commit`` z commitem własnej gałęzi, ``tools/ci/wykonaj_zadanie.py``
 uruchomione wprost, własny skrypt, który woła silnik (``check_all``, ``verdicts``) z długą listą, pytest z własną
 pętlą mutacji, a także ręczne ``change-mutations`` w kilku uruchomieniach ``tools/mutacje.py`` po najwyżej ``TARGETED``
 mutacji albo dla zmiany, która daje ich najwyżej tyle: strażnik liczy listę jednego uruchomienia, nie jej pochodzenie.

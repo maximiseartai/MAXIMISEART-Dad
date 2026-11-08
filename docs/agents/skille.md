@@ -15,7 +15,7 @@
 - Skrypt mutacji skilla na PR nie biegnie, bo mierzy jakość sprawdzenia skilla, a nie zmianę (ADR 0021).
   Wyjątkiem jest skrypt mutacji modelu TLA+, którego każda mutacja psuje plik w folderze `model/` skilla (dziś `check_model_kolejki_mutations.py`, `check_model_wznowienia_mutations.py` i `check_model_urwanego_mutations.py`): na PR biegnie, gdy zmienia się plik w `model/`, sam skrypt, sprawdzenie, które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (silnik `tools/lib/model_tlc.py` i jego importy), bo zmiana modelu albo silnika może zostawić mutację bez werdyktu (`BŁĄD MODELU`, #667).
   Wtedy stoi w linii `LICZY CI`, a nie `LICZY NOC`.
-  Biegnie w pełnym CI `main` i nocą na `main` (`mutacje-nocne.yml`), gdy od bazy nocy (`tools/mutacje_nocne.py`) zmienił się plik w folderze skilla, runner mutacji (`tools/mutacje.py`, `tools/ci/mutacje_skilli.py`, `tools/lib/kroki_skilli.py`) albo sprawdzenie, które uruchamiają jego mutacje.
+  Biegnie w pełnym CI `main` i nocą na `main` (`mutacje-nocne.yml`), gdy od bazy nocy (`tools/mutacje_nocne.py`) zmienił się plik w folderze skilla, runner mutacji (`tools/mutacje.py`, `tools/ci/wykonaj_zadanie.py`, `tools/lib/kroki_skilli.py`) albo sprawdzenie, które uruchamiają jego mutacje.
   Skrypt, który padł nocą, trafia linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił plik zmieniony od bazy, który uruchomił krok (`KrokSkilla.pliki` w `tools/lib/zakres_runu.py`): najpierw plik w folderze skilla, potem inny, a bez takiego pliku ostatni PR nocy.
 - Skrypt mutacji drukuje w logu czas polecenia każdej mutacji (linia `CZAS`), a mutację, której polecenie trwało ponad połowę limitu `--limit-s` z `tools/mutacje.py`, wymienia linią `CZAS BLISKO LIMITU` ze skryptem, częścią i limitem.
   To nie porażka, ale zanim limit da `PRZEKROCZONY CZAS` i czerwony `main` (#911), przenieś taką mutację do mniejszego zakresu sprawdzenia albo przyspiesz sprawdzenie.
@@ -27,7 +27,7 @@
 
 ## Nowy albo zmieniony skill
 
-- Skrypt mutacji skilla nazwij `scripts/check_<co>_mutations.py` i zostaw w nim tylko tabelę `Mutation` dla `check_all` z `tools/mutacje.py`; CI uruchamia go sam przez `tools/ci/mutacje_skilli.py`.
+- Skrypt mutacji skilla nazwij `scripts/check_<co>_mutations.py` i zostaw w nim tylko tabelę `Mutation` dla `check_all` z `tools/mutacje.py`; CI uruchamia go sam przez `tools/ci/wykonaj_zadanie.py`.
   Człon `<co>` odróżnia go od skryptów innych skilli, bo mypy odrzuca dwa moduły o tej samej nazwie.
   Jego wywołanie w `SKILL.md` pilnuje, żeby nie wypadł z CI po zmianie nazwy albo usunięciu.
 - Długą podstawę (`ci:`), której jednostki (funkcje, zakresy) biegną niezależnie albo po kolei od świeżego startu, podziel kluczem `ci-czesci: <n>` we frontmatterze.

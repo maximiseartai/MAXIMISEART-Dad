@@ -377,25 +377,19 @@ CONTRACTS = (
 
 
 def _texts(tree: ast.AST) -> list[tuple[int, str]]:
-    """Napisy kodu (stałe i początki f-stringów) bez docstringów i innych napisów stojących samotnie jako instrukcja."""
+    """Napisy kodu, także każdy stały kawałek f-stringu, bez docstringów i innych napisów stojących samotnie jako instrukcja."""
 
     alone = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)}
-    found = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.JoinedStr) and node.values and isinstance(first := node.values[0], ast.Constant):
-            found += [(node.lineno, str(part.value)) for part in node.values if isinstance(part, ast.Constant) and part is not first]
-            found.append((node.lineno, str(first.value)))
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in alone:
-            found.append((node.lineno, node.value))
-    return found
+    return [(node.lineno, node.value) for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in alone]
 
 
 def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None:
     """Klucz jednostki planu (``pytest:``, ``krok:``, ``skill:``, ``narzut:``), nazwę zmiennej części ``MUTACJE_CZESC``
     i początek ostatniej linii, którą czyta inne narzędzie, hook albo CI, pisze w ``tools/`` i skryptach skilli tylko
     ich właściciel: reszta składa je i rozbiera przez ``jednostka.Klucz``, ``jednostka.Czesc`` i stałe właściciela, więc
-    zmiana napisu po jednej stronie nie zostawia drugiej z cichym „nieznane”. F-string liczy się od swojego początku,
-    a nazwy zmiennej szuka w każdym jego kawałku; napisu złożonego w czasie biegu test nie widzi."""
+    zmiana napisu po jednej stronie nie zostawia drugiej z cichym „nieznane”. Każdy stały kawałek f-stringu liczy się od
+    swojego początku, a nazwy zmiennej szuka w całym kawałku. Napisu złożonego w czasie biegu ani części ``#k/n``
+    doklejonej do klucza poza właścicielem test nie widzi: separator ``#`` stoi też w napisach spoza kontraktu."""
 
     paths = sorted({*TOOLS.rglob("*.py"), TOOLS / "hooks" / "pre-push", *SKILLS.glob("*/scripts/**/*.py")})
     found = [

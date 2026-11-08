@@ -9,8 +9,7 @@ Zadanie pytest (``tools/ci/wykonaj_zadanie.py``) zapisuje dwa pliki, a dwa narz�
   na pushu do `main`). Test z kwarantanny ma w junit własność ``WLASNOSC`` (``tests/conftest.py``). ``stan_kwarantanny``
   mówi ``tools/wydanie.py``, czy na commicie testy z kwarantanny przeszły.
 
-Id testu to id pytest (``tests/test_x.py::Klasa::test_y[parametry]``), odtworzone z junit (``junit_family = "xunit1"``):
-plik z atrybutu ``file``, klasy z ``classname`` za modułem tego pliku i nazwa z parametrami z ``name``.
+Id testu to id pytest (``tests/test_x.py::Klasa::test_y[parametry]``), które junit podaje ``tools/lib/wyniki_testow.py``.
 """
 
 from __future__ import annotations
@@ -22,7 +21,8 @@ import json
 from pathlib import Path
 import re
 from typing import Literal
-from xml.etree import ElementTree
+
+import wyniki_testow
 
 FLAKY_TESTY = Path(".ci-niestabilne", "flaky-testy.json")
 # Początek nazwy artefaktu z ``FLAKY_TESTY`` i z ``KWARANTANNA`` każdego zadania pytest w ``ci.yml``.
@@ -143,26 +143,10 @@ def stan_kwarantanny(zapisy: Iterable[ZapisKwarantanny]) -> StanKwarantanny:
     return "przeszła"
 
 
-def _id(test: ElementTree.Element) -> str | None:
-    plik = (test.get("file") or "").replace("\\", "/")
-    modul = plik.removesuffix(".py").replace("/", ".")
-    klasy, nazwa = test.get("classname", ""), test.get("name")
-    if not plik.endswith(".py") or nazwa is None or not (klasy == modul or klasy.startswith(f"{modul}.")):
-        return None
-    return "::".join([plik, *klasy[len(modul) :].split(".")[1:], nazwa])
+def _wynik(test: wyniki_testow.Test) -> Wynik:
+    """Wynik testu z kwarantanny i ponowienia: jego xfail to porażka, a xpass przejście."""
 
-
-def _testy(junit: Path) -> list[tuple[str | None, ElementTree.Element]]:
-    return [(_id(test), test) for test in ElementTree.parse(junit).getroot().iter("testcase")]
-
-
-def _wynik(test: ElementTree.Element) -> Wynik:
-    if test.find("failure") is not None or test.find("error") is not None:
-        return "padł"
-    pominiety = test.find("skipped")
-    if pominiety is None:
-        return "przeszedł"
-    return "padł" if pominiety.get("type") == "pytest.xfail" else "pominięty"
+    return "padł" if test.wynik == "xfail" else test.wynik
 
 
 def padniete(junit: Path) -> tuple[str, ...] | None:
@@ -170,13 +154,12 @@ def padniete(junit: Path) -> tuple[str, ...] | None:
     kolekcji): wtedy nie ma czego ponowić."""
 
     try:
-        testy = _testy(junit)
-    except (OSError, ElementTree.ParseError):
+        padly = [test.id for test in wyniki_testow.testy(junit) if test.wynik == "padł"]
+    except (OSError, ValueError):
         return None
-    padly = [(id_testu, test) for id_testu, test in testy if test.find("failure") is not None or test.find("error") is not None]
-    if any(id_testu is None for id_testu, _ in padly):
+    if any(id_testu is None for id_testu in padly):
         return None
-    return tuple(dict.fromkeys(id_testu for id_testu, _ in padly if id_testu is not None))
+    return tuple(dict.fromkeys(id_testu for id_testu in padly if id_testu is not None))
 
 
 def po_ponowieniu(junit: Path, ponowienie: Path, testy: Sequence[str]) -> bool:
@@ -184,17 +167,12 @@ def po_ponowieniu(junit: Path, ponowienie: Path, testy: Sequence[str]) -> bool:
     czasów zgłasza wynik pliku testów, który sprawdza ``Required CI status``."""
 
     try:
-        wyniki = {id_testu: _wynik(test) for id_testu, test in _testy(ponowienie)}
-    except (OSError, ElementTree.ParseError):
+        wyniki = {test.id: _wynik(test) for test in wyniki_testow.testy(ponowienie)}
+    except (OSError, ValueError):
         return False
     if any(wyniki.get(test) != "przeszedł" for test in testy):
         return False
-    drzewo = ElementTree.parse(junit)
-    for test in drzewo.getroot().iter("testcase"):
-        if _id(test) in testy:
-            for porazka in [*test.findall("failure"), *test.findall("error")]:
-                test.remove(porazka)
-    drzewo.write(junit, encoding="utf-8", xml_declaration=True)
+    wyniki_testow.bez_porazek(junit, testy)
     return True
 
 
@@ -202,7 +180,7 @@ def wyniki_kwarantanny(junit: Path) -> dict[str, Wynik]:
     """Wynik każdego testu z kwarantanny w junit; jego xfail to porażka, a xpass przejście."""
 
     try:
-        testy = _testy(junit)
-    except (OSError, ElementTree.ParseError):
+        testy = wyniki_testow.testy(junit)
+    except (OSError, ValueError):
         return {}
-    return {id_testu: _wynik(test) for id_testu, test in testy if id_testu and any(w.get("name") == WLASNOSC for w in test.iter("property"))}
+    return {test.id: _wynik(test) for test in testy if test.id and WLASNOSC in test.wlasnosci}

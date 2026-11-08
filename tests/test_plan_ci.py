@@ -413,6 +413,7 @@ def mini_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]
 
     (tmp_path / "tools" / "lib").mkdir(parents=True)
     shutil.copy2(ROOT / "tools" / "lib" / "pytest_czesc.py", tmp_path / "tools" / "lib" / "pytest_czesc.py")
+    shutil.copy2(ROOT / "tools" / "lib" / "jednostka.py", tmp_path / "tools" / "lib" / "jednostka.py")
     (tmp_path / "tests").mkdir()
     cases = "\n".join(f"def test_{index:02}() -> None:\n    assert {index % 10 != 7}\n" for index in range(30))
     (tmp_path / "tests" / "test_mini.py").write_text(cases, encoding="utf-8")
@@ -459,6 +460,8 @@ def test_udzialy_pliku_dziela_go_miedzy_zadania_bez_luk_i_powtorzen_a_kazdy_ma_t
 
     assert Counter(name for names in ran for name in names) == Counter(f"test_{index:02}" for index in range(tests))
     assert all(ran), ran
+    # Testy pliku posortowane po id idą po kolei do udziałów 1, 2, …, n, 1, 2, …
+    assert ran == [{f"test_{index:02}" for index in range(share - 1, tests, shares)} for share in range(1, shares + 1)]
 
 
 def test_zadanie_wykonuje_kroki_po_czerwonym_pytest_przerywa_krok_po_limicie_i_zapisuje_wynik_z_planem(

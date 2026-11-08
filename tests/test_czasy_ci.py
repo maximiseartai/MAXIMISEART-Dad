@@ -25,10 +25,12 @@ from tests.fixtures.ci_workflow import jobs
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
+sys.path.insert(0, str(ROOT / "tools" / "lib"))
 
 import czasy_ci  # noqa: E402
 import plan_runu  # noqa: E402
 import wykonaj_zadanie  # noqa: E402
+import wyniki_testow  # noqa: E402
 import zapis_czasow  # noqa: E402
 from zakres_runu import MUTACJE, TORY  # noqa: E402
 from zapis_czasow import KROKI, main  # noqa: E402
@@ -622,3 +624,93 @@ def test_zapis_ci_podaje_czasy_pod_torem_pomiarow_planu_a_tor_lokalny_jest_torem
     assert {_recorded(job, "--tor") for job in ("pytest", "mutations")} == {"${{ runner.os }}-${{ steps.python.outputs.python-version }}"}
     assert [zapis_czasow._tor(f"{runner[tor.os]}-{tor.python}.0") for tor in tory] == [tor.pomiary for tor in tory]
     assert czasy_ci.TOR_LOKALNY in {tor.pomiary for tor in TORY}
+
+
+# Każdy kształt wyniku pytest, który junit niesie inaczej: test w klasie, parametr ze spacją i ``::``, porażka, błąd
+# fixture, pominięcie, xfail, xpass, własność junit i plik, którego nie da się zaimportować (błąd kolekcji).
+WSZYSTKIE_WYNIKI = """import pytest
+
+
+def test_ok() -> None:
+    pass
+
+
+def test_zly() -> None:
+    assert False
+
+
+@pytest.fixture
+def zepsuta() -> None:
+    raise RuntimeError("fixture")
+
+
+def test_fixture(zepsuta: None) -> None:
+    pass
+
+
+@pytest.mark.skip
+def test_pominiety() -> None:
+    pass
+
+
+@pytest.mark.xfail
+def test_xfail() -> None:
+    assert False
+
+
+@pytest.mark.xfail
+def test_xpass() -> None:
+    pass
+
+
+@pytest.mark.parametrize("opis", ["dwa i dwa", "a::b"])
+def test_opis(opis: str) -> None:
+    assert opis != "dwa i dwa"
+
+
+def test_z_wlasnoscia(record_property):
+    record_property("kwarantanna", "powód")
+
+
+class TestKlasa:
+    def test_metoda(self) -> None:
+        pass
+"""
+
+
+def test_junit_daje_id_pytest_wynik_i_wlasnosci_kazdego_testu_takze_bez_konfiguracji_junit_projektu(tmp_path: Path) -> None:
+    """Narzędzia czytają junit jednym czytnikiem (``tools/lib/wyniki_testow.py``), a narzędzie, które uruchamia pytest w
+    drzewie bez ``junit_family = "xunit1"``, wymusza tę postać argumentami ``zapis``."""
+
+    (tmp_path / "tests" / "pod").mkdir(parents=True)
+    (tmp_path / "tests" / "pod" / "test_wyniki.py").write_text(WSZYSTKIE_WYNIKI, encoding="utf-8")
+    (tmp_path / "tests" / "pod" / "test_nie_importuje.py").write_text("import nie_ma_takiego_modulu\n", encoding="utf-8")
+    junit = tmp_path / "junit.xml"
+    subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--continue-on-collection-errors", *wyniki_testow.zapis(junit), "tests"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+    )
+
+    plik, modul = "tests/pod/test_wyniki.py", "tests/pod/test_nie_importuje.py"
+    assert sorted((test.plik, test.id, test.wynik, test.wlasnosci) for test in wyniki_testow.testy(junit)) == sorted(
+        [
+            (modul, None, "padł", frozenset()),
+            *(
+                (plik, f"{plik}::{nazwa}", wynik, wlasnosci)
+                for nazwa, wynik, wlasnosci in [
+                    ("test_ok", "przeszedł", frozenset()),
+                    ("test_zly", "padł", frozenset()),
+                    ("test_fixture", "padł", frozenset()),
+                    ("test_pominiety", "pominięty", frozenset()),
+                    ("test_xfail", "xfail", frozenset()),
+                    ("test_xpass", "przeszedł", frozenset()),
+                    ("test_opis[dwa i dwa]", "padł", frozenset()),
+                    ("test_opis[a::b]", "przeszedł", frozenset()),
+                    ("test_z_wlasnoscia", "przeszedł", frozenset({"kwarantanna"})),
+                    ("TestKlasa::test_metoda", "przeszedł", frozenset()),
+                ]
+            ),
+        ]
+    )

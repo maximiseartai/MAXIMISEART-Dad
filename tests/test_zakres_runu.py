@@ -186,7 +186,7 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         (".agents/skills/verify-a/scripts/sprawdz_a.py", True),
         (".agents/skills/verify-a/SKILL.md", True),
         ("requirements.txt", True),
-        ("tools/ci/mutacje_skilli.py", True),
+        ("tools/ci/wykonaj_zadanie.py", True),
         ("tools/lib/kroki_skilli.py", True),
         ("tools/mutacje.py", True),
     ],
@@ -444,7 +444,7 @@ BASELINE_D = ".agents/skills/verify-d/scripts/sprawdz_d.py"
         ("src/pakiet/pomocnik.py", False),
         (".agents/skills/verify-d/SKILL.md", True),
         ("requirements.txt", True),
-        ("tools/ci/mutacje_skilli.py", False),
+        ("tools/ci/wykonaj_zadanie.py", False),
     ],
 )
 def test_ze_zmianami_od_bazy_podstawa_ci_biegnie_przy_trafieniu_w_pilnuje_albo_folder_skilla(
@@ -697,7 +697,7 @@ def test_komentarz_nazwa_kroku_i_runner_mutacji_skilli_nie_sa_odwolaniem_do_kata
     krok = (
         "      # Runs .agents/skills/verify-a/scripts/sprawdz_a.py through the plan.\n"
         "      - name: Plan the mutation scripts of the skills changed since the base\n"
-        "        run: python tools/ci/mutacje_skilli.py --plan .ci-plan/plan.json --id mutacje-skilli-1\n"
+        "        run: python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie mutacje-1\n"
         "      - uses: org/skills-cache@v1\n"
         "        with:\n          path: docs/myskills/\n"
     )
@@ -715,7 +715,7 @@ def test_workflowy_runow_nie_wywoluja_skryptow_skilli_poza_planem() -> None:
     skryptu, ``runpy``, ``working-directory`` i ``cd`` do folderu skilla, ``${{ matrix.* }}`` i glob w ścieżce, ścieżkę
     w ``env`` i ścieżkę Windows, także pisaną innymi wielkimi literami (``.AGENTS\\SKILLS``), w każdym kroku i jobie.
     Skrypty skilli workflow uruchamia tylko przez plan i runner
-    (``tools/ci/mutacje_skilli.py``, ``tools/plan_ci.py``), które nie nazywają katalogu skilli.
+    (``tools/ci/wykonaj_zadanie.py``, ``tools/plan_ci.py``), które nie nazywają katalogu skilli.
 
     Granica: komentarze YAML nie są sprawdzane. Nie łapie ścieżki złożonej w czasie runu z części bez tych segmentów
     (``".ag""ents"``, wynik innego kroku spoza planu), globu bez obu segmentów (``.*/*/verify-*/...``), ``find

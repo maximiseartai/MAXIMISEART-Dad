@@ -17,7 +17,7 @@ globów ścieżek względem korzenia (``*`` obejmuje też ``/``), mówi, przy zm
 (``hits``).
 
 Kiedy który krok biegnie, rozstrzyga zakres runu (``tools/lib/zakres_runu.py``), a uruchamia go
-``tools/ci/mutacje_skilli.py`` (``run``).
+``tools/ci/wykonaj_zadanie.py`` (``run``).
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ PATTERN = "check_*_mutations.py"
 MENTION = re.compile(r"[\w.\\/-]*scripts[\\/]check_\w+_mutations\.py")
 BASELINE = "PODSTAWA"
 # Runner mutacji: jego zmiana może zmienić werdykt każdego skryptu mutacji (uruchomienie kroku, jego polecenie i części).
-RUNNER = ("tools/mutacje.py", "tools/ci/mutacje_skilli.py", "tools/lib/kroki_skilli.py")
+RUNNER = ("tools/mutacje.py", "tools/ci/wykonaj_zadanie.py", "tools/lib/kroki_skilli.py")
 # Powód w ``Hits`` dla pliku w folderze skilla.
 FOLDER = "folder skilla"
 # Folder modelu TLA+ w skillu: skrypt mutacji, który psuje tylko pliki w nim, biegnie też na pull request (ADR 0021).

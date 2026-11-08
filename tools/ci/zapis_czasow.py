@@ -31,13 +31,13 @@ import sys
 import time
 from typing import Any
 import urllib.request
-from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 from czasy_ci import WERSJA, Jednostka, Zapis, wczytaj
 import jednostka
 from jednostka import Rodzaj
+import wyniki_testow
 
 # Krok zadania, który właśnie się skończył, API pokazuje przez około sekundę bez wyniku (conclusion: null).
 ODCZYTY_API = 5
@@ -55,20 +55,14 @@ def _tor(runner: str) -> str:
 
 
 def _junit(plik: Path) -> list[Jednostka]:
-    try:
-        korzen = ElementTree.parse(plik).getroot()
-    except ElementTree.ParseError as error:
-        raise ValueError(f"to nie jest XML ({error})") from None
     sekundy: dict[str, float] = defaultdict(float)
     porazki = set()
-    for test in korzen.iter("testcase"):
-        nazwa, czas = test.get("file"), test.get("time")
-        if nazwa is None or czas is None:
-            raise ValueError(f"test {test.get('name')} bez atrybutu file albo time (pytest bez junit_family = xunit1)")
-        nazwa = nazwa.replace("\\", "/")
-        sekundy[nazwa] += float(czas)
-        if test.find("failure") is not None or test.find("error") is not None:
-            porazki.add(nazwa)
+    for test in wyniki_testow.testy(plik):
+        if test.plik is None or test.sekundy is None:
+            raise ValueError(f"test {test.nazwa} bez atrybutu file albo time (pytest bez junit_family = xunit1)")
+        sekundy[test.plik] += test.sekundy
+        if test.wynik == "padł":
+            porazki.add(test.plik)
     if not sekundy:
         raise ValueError("brak testów")
     return [Jednostka(jednostka.pytest(nazwa), round(s, 3), "fail" if nazwa in porazki else "ok") for nazwa, s in sorted(sekundy.items())]

@@ -1,6 +1,6 @@
 """Pliki Centrum i polecenia funkcji, których używają skrypty mutacji ``check_centrum_<funkcja>_mutations.py``.
 
-Nazwa bez ``mutation``: ``tools/ci/mutacje_skilli.py`` daje FAIL plikowi skilla z ``mutation`` w nazwie spoza wzorca
+Nazwa bez ``mutation``: ``Katalog.skanuj`` (``tools/lib/kroki_skilli.py``) daje FAIL plikowi skilla z ``mutation`` w nazwie spoza wzorca
 ``check_*_mutations.py``.
 
 Stałe trzymaj w kolejności alfabetycznej: dopiski dwóch PR-ów trafiają wtedy w różne miejsca pliku.

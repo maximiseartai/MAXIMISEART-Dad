@@ -273,6 +273,35 @@ def test_czesc_bez_zapisu_z_uszkodzonym_zapisem_albo_z_porazka_bez_przezytych_cz
     assert wyjscie[-1].endswith(f"; część 3/4: {testy_padaja[1]}; część 4/4 bez zapisu: Expecting value: line 1 column 1 (char 0)")
 
 
+def test_czesc_z_polem_wpisu_null_albo_innego_typu_albo_bez_kodu_wyjscia_czerwieni_przebieg_i_mowi_czego_brakuje(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Pole ``null`` i pole innego typu dają porażkę samej części, jak brak pola, a zapis bez kodu wyjścia mówi, że go
+    brakuje, choć jego wynik wygląda na przejście; przeżyte reszty idą do issue."""
+
+    repo, baza = _historia(tmp_path)
+    github = GitHubWPamieci()
+    zapisy = _zapisy(
+        tmp_path / "zapisy",
+        {
+            1: (PRZEZYLO, [{**_przezyta("src/a.py:1 stała"), "linie": None}]),
+            2: (PRZEZYLO, [{**_przezyta("src/a.py:1 stała"), "linie": 1}]),
+            3: (PRZEZYLO, [_przezyta("src/a.py:1 stała")]),
+        },
+    )
+    bez_kodu = zapisy / "mutacje-nocne-3" / "czesc.json"
+    bez_kodu.write_text(json.dumps({key: value for key, value in json.loads(bez_kodu.read_text(encoding="utf-8")).items() if key != "kod"} | {"wynik": OK[1]}), encoding="utf-8")
+
+    kod = mutacje_nocne.zglos(github, repo, baza, zapisy, 3, RUN)
+
+    porazka = capsys.readouterr().out.splitlines()[-1]
+    assert kod == 1
+    assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #11"]
+    assert porazka.startswith("MUTACJE NOCNE FAIL | część 1/3 bez zapisu: wpis mutacji bez pola 'linie': "), porazka
+    assert "; część 2/3 bez zapisu: wpis mutacji z polem innego typu (" in porazka, porazka
+    assert porazka.endswith(f"; część 3/3 bez kodu wyjścia: {OK[1]}"), porazka
+
+
 def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a_przebieg_zostaje_zielony(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

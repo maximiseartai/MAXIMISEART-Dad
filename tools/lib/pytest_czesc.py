@@ -3,8 +3,8 @@
     python -m pytest -n auto -p tools.lib.pytest_czesc --czesci czesci.json tests/test_a.py tests/test_b.py
 
 ``czesci.json`` to ``{"tests/test_a.py": {"n": 3, "udzialy": [1, 3]}}``: testy pliku posortowane po id idą po
-kolei do udziałów 1, 2, 3, 1, 2, …, a zostają te z udziałów 1 i 3. Plik bez wpisu zostaje cały. Zbiór id pliku nie
-zależy od innych plików zadania, od kolejności, w jakiej ustawiły testy wcześniejsze hooki, ani od ``PYTHONHASHSEED``,
+kolei do udziałów 1, 2, 3, 1, 2, … (``Czesc.co_nta`` z ``tools/lib/jednostka.py``), a zostają te z udziałów 1 i 3.
+Plik bez wpisu zostaje cały. Zbiór id pliku nie zależy od innych plików zadania, od kolejności, w jakiej ustawiły testy wcześniejsze hooki, ani od ``PYTHONHASHSEED``,
 więc udziały 1..n dzielą plik bez luk i bez powtórzeń w każdym procesie toru, także z testami, których plan nie znał,
 a plik z co najmniej n testami ma test w każdym udziale. Lista id w linii poleceń nie wchodzi w grę: 3620 id jednego
 pliku przekracza 32 767 znaków linii Windows. Pod xdist każdy worker odznacza to samo, więc kontroler widzi zgodne
@@ -16,8 +16,14 @@ from __future__ import annotations
 from collections import defaultdict
 import json
 from pathlib import Path
+import sys
 
 import pytest
+
+# Wtyczka ładuje się jako ``tools.lib.pytest_czesc`` przed ``tests/conftest.py``, który kładzie ``tools/lib`` na ``sys.path``.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+from jednostka import Czesc
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -35,11 +41,16 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     # Po kolei, nie crc32 id modulo n: udział bez testów nie zgłasza wyniku i czerwieni Required, a crc32 modulo 3 nie
     # dał żadnego z 7 testów test_kopia_wzorca.py udziałowi 1 (run 40910405317). Po id, nie w kolejności items: hak
     # testów dlugi z tests/conftest.py biegnie przed tym i ustawia je zależnie od wszystkich plików zadania.
-    udzial = {nodeid: numer % czesci[plik]["n"] + 1 for plik, nodeids in pliki.items() if plik in czesci for numer, nodeid in enumerate(sorted(nodeids))}
+    wybrane = {
+        nodeid
+        for plik, nodeids in pliki.items()
+        if plik in czesci
+        for k in czesci[plik]["udzialy"]
+        for nodeid in Czesc(k, czesci[plik]["n"]).co_nta(sorted(nodeids))
+    }
     zostaja: list[pytest.Item] = []
     odznaczone: list[pytest.Item] = []
     for item in items:
-        czesc = czesci.get(item.nodeid.split("::")[0])
-        (zostaja if czesc is None or udzial[item.nodeid] in czesc["udzialy"] else odznaczone).append(item)
+        (zostaja if item.nodeid.split("::")[0] not in czesci or item.nodeid in wybrane else odznaczone).append(item)
     config.hook.pytest_deselected(items=odznaczone)
     items[:] = zostaja

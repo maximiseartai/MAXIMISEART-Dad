@@ -147,6 +147,26 @@ def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, 
     assert untouched not in Repository.scan(repo).impact(frozenset({changed})).tests
 
 
+def test_plik_testow_z_koncowka_test_jest_wybierany_jak_plik_z_przedrostkiem_a_modul_pomocniczy_nie(tmp_path: Path) -> None:
+    """Plik testów to plik, który pytest zbiera (domyślne ``python_files``: ``test_*.py`` i ``*_test.py``), więc wybór
+    na pull request bierze ``tests/a_test.py`` tak samo jak pełne CI ``main``, a moduł obok bez takiej nazwy nie jest
+    testem."""
+
+    repo = _repo(
+        tmp_path,
+        {
+            "src/pakiet/__init__.py": "",
+            "src/pakiet/a.py": "A = 1\n",
+            "tests/test_a.py": "from pakiet import a\n",
+            "tests/a_test.py": "from pakiet import a\n",
+            "tests/pomoc_a.py": "from pakiet import a\n",
+            "tests/test_a.txt": "pakiet/a.py\n",
+        },
+    )
+
+    assert sorted(Repository.scan(repo).impact(frozenset({"src/pakiet/a.py"})).tests) == ["tests/a_test.py", "tests/test_a.py"]
+
+
 def test_skan_katalogu_poza_repozytorium_gita_pada_zamiast_dac_puste_repozytorium(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Puste repozytorium nie wybrałoby żadnego testu, jak zmiana, której nic nie dotyczy.
     folder = tmp_path / "bez_gita"
