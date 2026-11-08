@@ -102,19 +102,15 @@ Covered files: `src/rozliczenia/intermax_replace.py` (`replace_register`,
 `src/rozliczenia/workbook_files.py` (`workbook_content`, `ensure_available`,
 `is_open_in_excel`, `excel_lock_file`).
 
-**Sync commit: `95df8f2a9`** (2026-10-31, #716). At this commit the checker was
-confirmed to describe the code above. Since the previous sync commit `054308111` (#710) both runs replace INTERMAX
-through one sequence, `intermax_replace.replace_register`: the steps of the table are in the same order, with one new
-step, the check of the Kopia's name (`Disk.exists`) before the Kopia, which `3713b4c1b` took beside `Disk`, so no point
-covered it and an `OSError` there escaped. The temporary file, the Kopia's name, the Kopia, the replace and the removal
-of older Kopie go through `Disk`, which the checker now
-gives both runs instead of patching `Path.write_bytes`, `os` and `intermax_copies`; the restore no longer reads the
-Excel lock a second time while it sorts a failed replace; a Kopia of a name that was taken is never removed; and an
-`OSError` from writing the temporary file is `Refusal.WRITE_FAILED`, so the known finding about it is gone. To see
-whether it needs another look:
+**Sync commit: `b4df65fbb`** (2026-11-08, N5a). At this commit the checker was
+confirmed to describe the code above. Since the previous sync commit `95df8f2a9` (#716) the read of INTERMAX moved from
+`intermax_file.Register.read` to `register_file.read`, and the write check from `Register.check` to
+`intermax_file.check`; the checker's read and write-check points moved with them. The steps between the read and the
+replace, the Kopia and the removal of older Kopie are unchanged, and the run reaches the same verdict
+(`INTERMAX OK, ZNANE USTALENIA: 2`). To see whether it needs another look:
 
 ```bash
-git log --oneline 95df8f2a9..HEAD -- src/rozliczenia/intermax_replace.py src/rozliczenia/intermax_ordering.py src/rozliczenia/intermax_restore.py src/rozliczenia/intermax_copies.py src/rozliczenia/intermax_file.py src/rozliczenia/register_file.py src/rozliczenia/workbook_save.py src/rozliczenia/workbook_files.py
+git log --oneline b4df65fbb..HEAD -- src/rozliczenia/intermax_replace.py src/rozliczenia/intermax_ordering.py src/rozliczenia/intermax_restore.py src/rozliczenia/intermax_copies.py src/rozliczenia/intermax_file.py src/rozliczenia/register_file.py src/rozliczenia/workbook_save.py src/rozliczenia/workbook_files.py
 ```
 
 Read each listed commit against the table. A change matters when it adds,
