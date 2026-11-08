@@ -132,7 +132,7 @@ class EndedRun:
         progress: contract.Progress,
         started_at: datetime,
     ) -> EndedRun:
-        """Koniec Uruchomienia ``prepared`` w tej chwili, z jego Kopią wejścia: w Centrum (``_Run``) i w odtworzeniu."""
+        """Koniec Uruchomienia ``prepared`` w tej chwili, z jego Kopią wejścia: w Centrum (``Run``) i w odtworzeniu."""
 
         return cls(info, core, stopped, progress, started_at, datetime.now(timezone.utc), prepared.input_copy)
 
@@ -269,7 +269,7 @@ class RunHost:
         self._sequence = 0
         first = contract.RunIdle(state="idle", previous=previous)
         self._events: list[contract.RunEvent] = [contract.RunEvent(sequence=0, view=first)]
-        self._run: _Run | None = None
+        self._run: Run | None = None
         self._updating = False
         self._restoring = False
         self._closing = False
@@ -356,7 +356,7 @@ class RunHost:
                     f"Trwa już Uruchomienie procesu: {running.title}, okres {running.period}. "
                     "Poczekaj na jego wynik w Uruchomieniach.",
                 )
-            run = _Run(self, prepared, self._stops)
+            run = Run(self, prepared, self._stops)
             self._run = run
             # Wynik poprzedniego Uruchomienia zostaje dla karty, która go jeszcze nie odczytała (#723).
             self._events = self._events[-1:]
@@ -436,7 +436,7 @@ class RunHost:
             ending=run.ending,
         )
 
-    def end(self, run: _Run, result: contract.RunFinished) -> None:
+    def end(self, run: Run, result: contract.RunFinished) -> None:
         """Wynik Uruchomienia ``run`` na kartę i koniec Uruchomienia pod jedną blokadą.
 
         Start z drugiej karty, który czeka na koniec Uruchomienia, nie wejdzie między wynik a koniec (#723).
@@ -446,7 +446,7 @@ class RunHost:
             self._publish_locked(result)
             run.ended = True
 
-    def publish(self, run: _Run, view: contract.RunView) -> None:
+    def publish(self, run: Run, view: contract.RunView) -> None:
         with self._lock:
             if self._run is run:
                 self._publish_locked(view)
@@ -456,7 +456,7 @@ class RunHost:
         self._events.append(contract.RunEvent(sequence=self._sequence, view=view))
 
 
-class _Run:
+class Run:
     """Jedno Uruchomienie procesu i jednocześnie jego rozmówca w rdzeniu (``Interlocutor``).
 
     ``show_progress`` zamienia snapshot projekcji na widok i publikuje go.

@@ -180,6 +180,23 @@ def _parsed(text: str) -> _Notes:
         return _Notes()
 
 
+@dataclass(frozen=True)
+class BoxState:
+    """Zapisy ``KeyedBox``, od których zależy, co odpowie kolejce (``KeyedBox.state``): z pliku ``opening`` bez dawnych
+    skutków tagi Archiwów, id plików wysłanych i usuniętych oraz numery issue, które dokłada do list, nazwy plików Archiwum
+    z ostatnich odpowiedzi ``archive``, rodzaje zapisów bez odpowiedzi sprzed mniej niż ``LIST_LAG_S`` (każdy wstrzymuje
+    następny zapis swojego rodzaju, ``_held``, bo lista nie przychodzi później niż teraz) i listy tego wątku, przy których
+    pliku nie dało się odczytać. Plik, którego nie da się odczytać, nie ma zapisów."""
+
+    archives: tuple[str, ...]
+    uploads: tuple[int, ...]
+    removals: tuple[int, ...]
+    names: tuple[tuple[int, str], ...]
+    opened: tuple[int, ...]
+    pending: tuple[str, ...]
+    unread_lists: tuple[str, ...]
+
+
 KeyJudgement = Literal["accepted", "refused", "unchecked", "missing"]
 """Co wiadomo o kluczu: przyjęty, odrzucony, jeszcze bez odpowiedzi Skrzynki (np. brak sieci) albo brak pliku klucza.
 
@@ -228,6 +245,25 @@ class KeyedBox:
         self._lists = threading.local()  # listed_at: chwila ostatniego pytania wątku o listę, na które przyszła
         self._unavailable_noted = False  # pierwszy błąd pliku ``opening`` w tej pracy Centrum już w ``unavailable``
         self._names: dict[int, str] = {}  # id pliku Archiwum z ostatnich odpowiedzi ``archive``: jego nazwa
+
+    def state(self) -> BoxState:
+        """Zapisy, od których zależą następne odpowiedzi (``BoxState``), w chwili ``clock`` i dla list tego wątku;
+        wyrocznia ``verify-kolejka-skrzynki`` porównuje je, by nie sprawdzać drugi raz stanu, który już zna."""
+
+        now = self._clock()
+        with self._lock:
+            notes = self._notes() or _Notes()
+            pending = tuple(sorted(kind for kind, (moment, _) in notes.pending.items() if 0 <= now - moment < LIST_LAG_S))
+            names = tuple(sorted(self._names.items()))
+        return BoxState(
+            tuple(sorted(tag for _, tag, _ in notes.archives)),
+            tuple(sorted(asset.id for _, _, asset in notes.uploads)),
+            tuple(sorted(asset for _, asset in notes.removals)),
+            names,
+            tuple(sorted(issue.number for _, _, issue in notes.opened)),
+            pending,
+            tuple(sorted(kind for kind, at in self._listed_at().items() if at is None)),
+        )
 
     def open_issue(self, label: Label, title: str, body: str) -> SendOutcome | NoKey:
         """Nowe issue; ``Unreachable`` bez zapytania, gdy zakładanie z etykietą ``label`` jest wstrzymane (opis modułu)."""

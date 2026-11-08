@@ -8,7 +8,7 @@ Wydanie lies on the first-parent line of `main` (ADR 0014), and the list of GitH
 
 ## Sub-features
 
-- `tagi-strony`: `_tag_commits` with a small page size → every tag with its commit as in `git ls-remote`, from at
+- `tagi-strony`: `tag_commits` with a small page size → every tag with its commit as in `git ls-remote`, from at
   least two pages.
 - `najnowsze-wydanie`: `releases_from` → the commit and tag of the highest `vX.Y.Z` tag on the first-parent line of
   `main` by `git log --first-parent`.
@@ -18,7 +18,7 @@ Wydanie lies on the first-parent line of `main` (ADR 0014), and the list of GitH
 - `linia-bez-pr`: a commit pushed to `main` without a PR → `True` by binary search.
 - `poza-linia`: the second parent of a merge (a branch commit) → `False`.
 - `nie-przodek`: the tip compared with an older commit of the line → `None`.
-- `przed-poczatkiem`: compare with `tip~k` beyond the first commit → 404, `_NotFound`.
+- `przed-poczatkiem`: compare with `tip~k` beyond the first commit → 404, `NotFound`.
 
 ## How to get to it (user POV)
 

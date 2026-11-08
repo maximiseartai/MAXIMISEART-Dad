@@ -760,7 +760,7 @@ _KINDS: Final[Mapping[contract.ProcessKey, _Kind]] = {
 
 class _Tata:
     """Rozmówca odtworzenia jak tata w Logach: zgoda w Decyzji taty, chyba że Logi kończą się odmową, i ostatni widok
-    postępu, jak karta Centrum (``runs._Run``)."""
+    postępu, jak karta Centrum (``runs.Run``)."""
 
     continue_hint = CONTINUE_HINT
 

@@ -3,7 +3,7 @@
 Oczekiwany wynik daje wyrocznia z Gita, nie z API: ``git ls-remote`` (tagi i czubek `main` protokołem Gita) i
 ``git rev-list --first-parent`` na pobranym `main`, z reguły Wydania z ADR 0014 (tag ``vMAJOR.MINOR.PATCH`` na linii
 pierwszych rodziców `main`, nowsze to wyższy numer). Przypadki pytają funkcje, z których Aktualność składa odpowiedź
-(``_tag_commits``, ``_on_first_parent_line``, ``_compare``), i całe ``releases_from`` i ``published_from``.
+(``tag_commits``, ``on_first_parent_line``, ``compare``), i całe ``releases_from`` i ``published_from``.
 """
 
 from __future__ import annotations
@@ -111,10 +111,10 @@ def _asked(client: Client) -> int:
     return len(client.proxy.exchanges)
 
 
-def _asking(client: Client) -> tool_freshness._Asking:
+def _asking(client: Client) -> tool_freshness.Asking:
     """Pytania jednego sprawdzenia bez tokenu, jak u taty bez pliku klucza."""
 
-    return tool_freshness._Asking(client.api, TIMEOUT_S, None)
+    return tool_freshness.Asking(client.api, TIMEOUT_S, None)
 
 
 # --- przypadki ------------------------------------------------------------------------------------------------------
@@ -126,7 +126,7 @@ def _prepare_tag_pages(live: AktualnoscLive, earlier: Facts) -> Facts:
 
 
 def _tag_pages(client: Client, facts: Facts) -> object:
-    found = tool_freshness._tag_commits(_asking(client), f"{client.api}/tags?per_page={facts['na_stronie']}")
+    found = tool_freshness.tag_commits(_asking(client), f"{client.api}/tags?per_page={facts['na_stronie']}")
     return (found, _asked(client))
 
 
@@ -211,7 +211,7 @@ def _prepare_branch(live: AktualnoscLive, earlier: Facts) -> Facts:
 
 
 def _on_line(client: Client, facts: Facts) -> object:
-    return tool_freshness._on_first_parent_line(_asking(client), str(facts["commit"]), str(facts["czubek"]))
+    return tool_freshness.on_first_parent_line(_asking(client), str(facts["commit"]), str(facts["czubek"]))
 
 
 def _prepare_not_ancestor(live: AktualnoscLive, earlier: Facts) -> Facts:
@@ -228,24 +228,24 @@ def _prepare_before_first(live: AktualnoscLive, earlier: Facts) -> Facts:
 
 def _before_first(client: Client, facts: Facts) -> object:
     try:
-        return tool_freshness._compare(_asking(client), str(facts["commit"]), f"{facts['czubek']}~{facts['glebokosc']}")
-    except tool_freshness._NotFound:
-        return "404: GitHub nie zna takiego commitu (_NotFound)"
-    except tool_freshness._NoAnswer:
-        return "brak pełnej odpowiedzi (_NoAnswer)"
+        return tool_freshness.compare(_asking(client), str(facts["commit"]), f"{facts['czubek']}~{facts['glebokosc']}")
+    except tool_freshness.NotFound:
+        return "404: GitHub nie zna takiego commitu (NotFound)"
+    except tool_freshness.NoAnswer:
+        return "brak pełnej odpowiedzi (NoAnswer)"
 
 
 def _is(expected: object) -> Callable[[Facts, object], list[str]]:
     return lambda facts, outcome: _expect(outcome, expected)
 
 
-LINE_SOURCE: Final = "tool_freshness._on_first_parent_line: Wydanie leży na linii pierwszych rodziców `main` (ADR 0014)"
+LINE_SOURCE: Final = "tool_freshness.on_first_parent_line: Wydanie leży na linii pierwszych rodziców `main` (ADR 0014)"
 
 CASES: Final[tuple[Case[AktualnoscLive, Client], ...]] = (
     Case(
         "tagi-strony",
         "tagi i ich commity jak w git ls-remote, zebrane z co najmniej 2 stron (nagłówek Link)",
-        "tool_freshness._tag_commits: „Tagi i ich commity ze wszystkich stron listy tagów”",
+        "tool_freshness.tag_commits: „Tagi i ich commity ze wszystkich stron listy tagów”",
         _prepare_tag_pages,
         _tag_pages,
         _judge_tag_pages,
@@ -293,18 +293,18 @@ CASES: Final[tuple[Case[AktualnoscLive, Client], ...]] = (
     Case(
         "nie-przodek",
         "None: commit nie jest przodkiem porównywanego czubka",
-        "tool_freshness._on_first_parent_line: „None, gdy nie jest przodkiem tip”",
+        "tool_freshness.on_first_parent_line: „None, gdy nie jest przodkiem tip”",
         _prepare_not_ancestor,
         _on_line,
         _is(None),
     ),
     Case(
         "przed-poczatkiem",
-        "404: GitHub nie zna tip~k sprzed pierwszego commitu (_NotFound)",
-        "tool_freshness._on_first_parent_line: „tip~k sprzed pierwszego commitu repozytorium (404) nie zawiera commit”",
+        "404: GitHub nie zna tip~k sprzed pierwszego commitu (NotFound)",
+        "tool_freshness.on_first_parent_line: „tip~k sprzed pierwszego commitu repozytorium (404) nie zawiera commit”",
         _prepare_before_first,
         _before_first,
-        _is("404: GitHub nie zna takiego commitu (_NotFound)"),
+        _is("404: GitHub nie zna takiego commitu (NotFound)"),
     ),
 )
 

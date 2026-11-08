@@ -60,16 +60,16 @@
     "create_app.runs": "4be9a7a56dd66879"
   },
   "src/rozliczenia/centrum/runs.py": {
-    "_Run.work": "0daf80cf23e8ea53",
+    "Run.work": "0daf80cf23e8ea53",
     "RunHost.after": "3b394aacf6701175",
     "RunHost.shutdown_refusal": "7b2f8610fb13f295",
-    "RunHost.start": "134b21e6de066ce8"
+    "RunHost.start": "710d19e128a208fb"
   },
   "src/rozliczenia/centrum/process_kind.py": {
     "PreparedRun.conduct": "60359d67fe8e2c54"
   },
   "src/rozliczenia/centrum/outbox.py": {
-    "Outbox.post": "7c75e38248766fe4",
+    "Outbox.post": "ec7d3d2ed8b91d68",
     "Outbox.resume": "2a67b7d7c8f5622c",
     "Rank": "d27ac44226b11a48",
     "Version": "b20196684cf428b5",

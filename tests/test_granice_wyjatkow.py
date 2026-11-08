@@ -20,7 +20,7 @@ BROAD = frozenset({"Exception", "BaseException"})
 NESTED = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 OTHER_ENDINGS = {
     "restart_guardian.py::_rolled_back": "każda porażka cofnięcia kończy się okienkiem dla taty",
-    "runs.py::_Run.work": "RunHost.failed zapisuje typ wyjątku przez unexpected_failure dziennika Centrum",
+    "runs.py::Run.work": "RunHost.failed zapisuje typ wyjątku przez unexpected_failure dziennika Centrum",
 }
 
 

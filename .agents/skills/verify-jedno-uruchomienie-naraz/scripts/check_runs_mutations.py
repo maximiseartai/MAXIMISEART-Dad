@@ -17,29 +17,30 @@ from mutacje import Edit, Mutation, check_all
 RUNS = Path("src/rozliczenia/centrum/runs.py")
 SHUTDOWN = Path("src/rozliczenia/centrum/shutdown.py")
 EXPLORER = ".agents/skills/verify-jedno-uruchomienie-naraz/scripts/explore_runs.py"
+NEW = "URUCHOMIENIA: NOWE NARUSZENIE"
 
 # Each mutation runs only the explorer scope that catches it: every scope for every mutation costs minutes in CI.
 MUTATIONS = (
     Mutation(
         "sprawdzenie i zajęcie w RunHost.start pod dwiema blokadami",
-        (Edit(RUNS, "            run = _Run(self, prepared, self._stops)\n", "        with self._lock:\n            run = _Run(self, prepared, self._stops)\n"),),
+        (Edit(RUNS, "            run = Run(self, prepared, self._stops)\n", "        with self._lock:\n            run = Run(self, prepared, self._stops)\n"),),
         (EXPLORER, "--scope", "dwie-karty"),
         "dwie karty „Uruchom” prowadzą dwa Uruchomienia naraz na tym samym Folderze okresu",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "odmowa zamknięcia pomija Uruchomienie czekające na Decyzję",
         (Edit(RUNS, "        if run is None or run.ended:\n", "        if run is None or run.ended or run.awaiting_decision:\n"),),
         (EXPLORER, "--scope", "zamknij-w-trakcie"),
         "Centrum zamyka się, gdy tata jeszcze nie odpowiedział na Decyzję",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
-        "ended ustawione na początku _Run.work",
+        "ended ustawione na początku Run.work",
         (Edit(RUNS, "        prepared = self._prepared\n        core: Outcome[Shown[Any]] | None = None\n", "        prepared = self._prepared\n        self.ended = True\n        core: Outcome[Shown[Any]] | None = None\n"),),
         (EXPLORER, "--scope", "zamknij-w-trakcie"),
         "Centrum zamyka się w trakcie silnika i kolejne „Uruchom” startuje drugie Uruchomienie",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "działania po wyniku po końcu Uruchomienia",
@@ -53,7 +54,7 @@ MUTATIONS = (
         ),
         (EXPLORER, "--scope", "zamknij-w-trakcie"),
         "Centrum zamyka się po wyniku, zanim Kontrola ilości trafi do pliku kolejki",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "koniec Uruchomienia przed wynikiem na karcie",
@@ -66,70 +67,70 @@ MUTATIONS = (
         ),
         (EXPLORER, "--scope", "dwie-karty"),
         "druga karta startuje między końcem a wynikiem pierwszego Uruchomienia i jego wynik nie trafia na kartę",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "start czyści wynik poprzedniego Uruchomienia",
         (Edit(RUNS, "            self._events = self._events[-1:]\n", "            self._events = []\n"),),
         (EXPLORER, "--scope", "dwie-karty"),
         "druga karta startuje, zanim karta odczyta wynik pierwszego Uruchomienia, i wynik znika ze strumienia",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "Shutdown.request bez odmowy",
         (Edit(SHUTDOWN, "        message = self._blocker()\n", "        message = None\n"),),
         (EXPLORER, "--scope", "zamknij-w-trakcie"),
         "„Zamknij” zamyka Centrum w trakcie każdego Uruchomienia",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "zamknięcie przyjęte bez odcięcia nowych startów",
         (Edit(RUNS, "                self._closing = True\n", "                pass\n"),),
         (EXPLORER, "--scope", "zamknij-w-trakcie"),
         "„Uruchom” albo „Zaktualizuj narzędzie” tuż po „Zamknij” startuje wątek, który koniec serwera zabija",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "begin_update bez odmowy po przyjętym zamknięciu",
         (Edit(RUNS, "            if self._closing:\n                raise contract.Refusal(409, _CLOSING.format(then=\"zaktualizuj narzędzie\"))\n", ""),),
         (EXPLORER, "--scope", "aktualizacja"),
         "aktualizacja startuje po „Zamknij” i ginie w trakcie Gita albo pip",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "begin_update bez sprawdzenia trwającego Uruchomienia",
         (Edit(RUNS, "            busy = self._busy_locked(\"zaktualizuj narzędzie\")\n", "            busy = None\n"),),
         (EXPLORER, "--scope", "aktualizacja"),
         "aktualizacja przesuwa klon narzędzia pod pracującym silnikiem",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "RunHost.start bez odmowy w trakcie aktualizacji",
         (Edit(RUNS, "            if self._updating:\n                raise contract.Refusal(409, _UPDATING.format(then=\"uruchom proces\"))\n", ""),),
         (EXPLORER, "--scope", "aktualizacja"),
         "Uruchomienie startuje, gdy aktualizacja zmienia kod i biblioteki narzędzia",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "begin_restore bez sprawdzenia trwającego Uruchomienia",
         (Edit(RUNS, "            busy = self._busy_locked(_RESTORE)\n", "            busy = None\n"),),
         (EXPLORER, "--scope", "przywracanie"),
         "przywrócenie Kopii podmienia INTERMAX pod pracującym Uporządkowaniem INTERMAX",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "RunHost.start bez odmowy w trakcie przywracania",
         (Edit(RUNS, "            if self._restoring:\n                raise contract.Refusal(409, _RESTORING.format(then=\"uruchom proces\"))\n", ""),),
         (EXPLORER, "--scope", "przywracanie"),
         "Uporządkowanie INTERMAX startuje, gdy przywrócenie podmienia INTERMAX",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "zajęte miejsce nie widzi przywracania",
         (Edit(RUNS, "        if self._restoring:\n            return _RESTORING.format(then=then)\n", ""),),
         (EXPLORER, "--scope", "przywracanie"),
         "dwie karty „Przywróć tę kopię” podmieniają INTERMAX naraz",
-        "URUCHOMIENIA: NOWE NARUSZENIE",
+        NEW,
     ),
     Mutation(
         "RLock zamiast Lock w RunHost",

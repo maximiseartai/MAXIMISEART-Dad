@@ -759,6 +759,8 @@ def _run_body(run: Run, layout: Layout) -> None:
         run.stop_text = message.text if message is not None else str(error)
 
 
+# Celowa kopia zdania Komunikatu, które tata czyta (``preparation_messages``, docs/agents/skille.md, „Co wyrocznia
+# bierze z src”): Zatrzymanie, które mówi je przy pliku okresu na dysku, okłamuje tatę, także gdy zdanie zmieniono w src.
 NOTHING_CREATED = "Nie utworzono żadnego pliku"
 
 

@@ -69,7 +69,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from openpyxl.styles import PatternFill
 from playwright.sync_api import Browser, Page, Request, Route, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
@@ -77,7 +76,7 @@ from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
 from awarie_efenix import DAD, DAD_LOGINS, FORBIDDEN_CLICK, LOGOUTS, OUTAGES, Call, Counter, Fault, Plan, Proxy, call_kind
 from rozliczenia import efenix_browser, efenix_process
 from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop
-from rozliczenia.efenix_mark import Mark
+from rozliczenia.efenix_mark import Mark, mark_of
 from rozliczenia.efenix_page import FILL_EMMETT, LOAD_EMMETT, LOGIN_PAGE, ORDER_PAGE, SAVE_QUANTITY, SEARCH, SET_DATE
 from rozliczenia.efenix_pricing import OrderError, OrderResult, PricingStopped, PricingSummary
 from rozliczenia.efenix_window import (
@@ -671,12 +670,8 @@ are gone."""
 def marked(source: Path) -> tuple[int, ...]:
     """Rows of the Plik zbiorczy whose ``ADRES`` has the Znacznik efenix, read the way Przebieg rozliczeń reads them."""
 
-    rows = []
-    for row in read_data_rows(source, DadFiles(), despite_excel_lock=True).rows:
-        fill = row.cells[1].highlights.fill
-        if isinstance(fill, PatternFill) and fill.patternType == "solid" and str(fill.fgColor.rgb)[-6:].upper() == Mark.READY.value:
-            rows.append(row.number)
-    return tuple(rows)
+    rows = read_data_rows(source, DadFiles(), despite_excel_lock=True).rows
+    return tuple(row.number for row in rows if mark_of(row.cells[1].highlights.fill) is Mark.READY)
 
 
 class Journal:
@@ -1092,6 +1087,8 @@ def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[
             add("ZMIANA_ZE_SLADEM", "zmiana bez dziennika", f"zlecenie {index + 1} zmieniło się w efenix bez wpisu „zaczynam” w dzienniku")
     outcome = run.outcome
     if outcome is not None:
+        # Celowa kopia zdania, które tata czyta w Komunikacie (``efenix_messages``, docs/agents/skille.md, „Co wyrocznia
+        # bierze z src”): Komunikat, który przestał je mówić, przestaje też obiecywać, że nic się nie zmieniło.
         if isinstance(outcome.ending, Stop) and "W efenix nic się nie zmieniło." in outcome.ending.message.what and tuple(after) != tuple(before):
             add("ZMIANA_ZE_SLADEM", "komunikat bez zmian", "Komunikat mówi, że w efenix nic się nie zmieniło, a zmieniło się")
         outcomes = _outcomes(_summary(outcome))

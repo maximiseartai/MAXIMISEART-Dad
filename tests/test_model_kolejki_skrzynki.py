@@ -193,7 +193,7 @@ import sys
 sys.path.insert(0, sys.argv[1])
 import explore_outbox
 
-explore_outbox.outbox_module.Outbox.send_in_background = lambda self: None
+explore_outbox.Outbox.send_in_background = lambda self: None
 raise SystemExit(explore_outbox.main(sys.argv[2:]))
 """
 

@@ -10,7 +10,7 @@ per schedule, and checks four rules:
 
 - JEDNO_NARAZ: at no moment are two Uruchomienia procesu in progress, or an Uruchomienie and an
   Aktualizacja narzędzia, or two Aktualizacje. An Uruchomienie is in progress from the moment
-  ``RunHost.start`` creates its ``_Run`` until ``RunHost.finished`` has written its end to the Centrum
+  ``RunHost.start`` creates its ``Run`` until ``RunHost.finished`` has written its end to the Centrum
   log, after the engine and the metrics record. The checker tracks this itself, not through the code's
   ``ended`` flag, so a flag set too early is caught. An Aktualizacja is in progress from a successful
   ``RunHost.begin_update`` until ``RunHost.end_update`` returns or the restart guardian has started.
@@ -28,7 +28,7 @@ per schedule, and checks four rules:
 
 Replaced: ``threading`` inside ``runs.py`` and ``shutdown.py`` by model primitives that hand control to
 the checker; ``run_process`` (called in ``process_kind.py``) by an engine with two steps and an optional Decyzja
-through the real ``_Run.confirm``; ``CentrumLog``, ``CentrumRuns`` and the start file (``run_started``) by steps that write
+through the real ``Run.confirm``; ``CentrumLog``, ``CentrumRuns`` and the start file (``run_started``) by steps that write
 nothing, with no Uruchomienie before Centrum's start; the actions after the result
 (``AfterRun``) by one step that writes nothing. ``ToolUpdates``
 (``tool_updates.py``) is modelled by hand around the real ``begin_update``, ``end_update`` and
@@ -120,7 +120,7 @@ class Pending:
 class Actor(Thread):
     pending: Pending | None = None
     in_flight: bool = False
-    run: Any = None  # the _Run whose work() this thread runs
+    run: Any = None  # the Run whose work() this thread runs
 
 
 _ABORT = "\0abort"
@@ -485,7 +485,7 @@ def harness(scheduler: Scheduler) -> Iterator[World]:
     created: list[Any] = []
     world_box: list[World] = []
 
-    class TrackedRun(runs._Run):
+    class TrackedRun(runs.Run):
         def __init__(self, host: runs.RunHost, prepared: process_kind.PreparedRun[Any, Any], stops: Any) -> None:
             super().__init__(host, prepared, stops)
             self.model_name = f"Uruchomienie {len(created) + 1}"
@@ -525,7 +525,7 @@ def harness(scheduler: Scheduler) -> Iterator[World]:
 
     # Each verified file sees its own stand-ins; the originals come back after the schedule.
     stand_ins = (
-        ModelThreading(scheduler, "runs.py", "RunHost._lock", "_Run._decided", events),
+        ModelThreading(scheduler, "runs.py", "RunHost._lock", "Run._decided", events),
         ModelThreading(scheduler, "shutdown.py", "Shutdown", "Shutdown._requested", events),
         engine,
         TrackedRun,
@@ -567,7 +567,7 @@ PATCHED: tuple[tuple[ModuleType, str], ...] = (
     (runs, "threading"),
     (shutdown, "threading"),
     (process_kind, "run_process"),
-    (runs, "_Run"),
+    (runs, "Run"),
 )
 
 

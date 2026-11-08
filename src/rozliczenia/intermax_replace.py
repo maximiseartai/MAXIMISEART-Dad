@@ -7,7 +7,7 @@ rodzaj Kopii INTERMAX (``Before``). Ukrywa resztę (ADR 0019):
    odczytany jeszcze raz i sprawdzony;
 2. dopiero po zgodnym sprawdzeniu: INTERMAX otwarty w Excelu (plik blokady) zatrzymuje podmianę, a inaczej powstaje
    Kopia INTERMAX z bajtami sprzed podmiany, z nazwą z chwili ``now()``;
-3. atomowa podmiana; odmowę bez pliku blokady Excela (OneDrive synchronizuje INTERMAX) ponawia przez ``_RETRY_S``
+3. atomowa podmiana; odmowę bez pliku blokady Excela (OneDrive synchronizuje INTERMAX) ponawia przez ``RETRY_S``
    sekund zegara ``Waiting``, a przed każdą ponowną próbą czyta INTERMAX jeszcze raz i podmienia tylko INTERMAX o
    bajtach sprzed podmiany;
 4. po udanej podmianie zostaje ``intermax_copies.KEPT`` najnowszych Kopii obu nazw.
@@ -42,7 +42,7 @@ from .workbook_save import WorkbookSaveError, write_atomically
 
 __all__ = ["LOCAL_DISK", "Disk", "Refusal", "Replaced", "Waiting", "WriteMismatch", "replace_register"]
 
-_RETRY_S: Final = 5.0
+RETRY_S: Final = 5.0
 """Tyle sekund podmiana ponawia zastąpienie INTERMAX, którego system odmawia, choć Excel go nie trzyma."""
 _PAUSE_S: Final = 0.5
 
@@ -57,7 +57,7 @@ class Refusal(Enum):
     EXCEL_HOLDS = "Excel trzyma INTERMAX"
     """Plik blokady Excela przed Kopią, przy odmowie podmiany albo przy odczycie przed ponowną próbą."""
     ONEDRIVE_HOLDS = "OneDrive trzyma INTERMAX"
-    """System odmawia podmiany bez pliku blokady dłużej niż ``_RETRY_S`` sekund albo OneDrive wgrał w przerwie między
+    """System odmawia podmiany bez pliku blokady dłużej niż ``RETRY_S`` sekund albo OneDrive wgrał w przerwie między
     próbami inną wersję INTERMAX, albo jej nie da się odczytać."""
     WRITE_FAILED = "zapis nieudany"
     """Pliku tymczasowego nie da się utworzyć ani zapisać albo podmiana kończy się błędem innym niż odmowa dostępu,
@@ -199,7 +199,7 @@ def replace_register(
 
     def replace(temporary: Path, target: Path) -> None:
         nonlocal replaced
-        deadline = waiting.clock() + _RETRY_S
+        deadline = waiting.clock() + RETRY_S
         while True:
             try:
                 disk.replace(temporary, target)
