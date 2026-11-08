@@ -895,16 +895,24 @@ def _private_in(nodes: typing.Iterable[ast.expr]) -> bool:
 
 
 def _bound_in_class(node: ast.ClassDef) -> Iterator[tuple[int, str]]:
-    """Nazwy, które wiąże ciało klasy w swoim zasięgu: ``def``, ``class`` i cel przypisania, także w ``if`` i ``for``."""
+    """Nazwy, które wiąże ciało klasy w swoim zasięgu, także w ``if``, ``for`` i ``try``: ``def``, ``class``, cel
+    przypisania, import, ``except … as`` i przechwycenie w ``case``."""
 
     pending: list[ast.AST] = [*node.body]
     while pending:
         child = pending.pop()
         if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             yield child.lineno, child.name
-        elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
+            continue
+        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
             yield child.lineno, child.id
-        elif not isinstance(child, ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp):
+        elif isinstance(child, ast.alias):
+            yield child.lineno, child.asname or child.name
+        elif isinstance(child, ast.ExceptHandler | ast.MatchAs | ast.MatchStar) and child.name:
+            yield child.lineno, child.name
+        elif isinstance(child, ast.MatchMapping) and child.rest:
+            yield child.lineno, child.rest
+        if not isinstance(child, ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp):
             pending.extend(ast.iter_child_nodes(child))
 
 
@@ -917,22 +925,25 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
 
     Nazwa z ``src`` to nazwa, którą wiąże import z ``rozliczenia`` (``import rozliczenia.x``, ``import … as m``,
     ``from rozliczenia… import n``), łańcuch atrybutów i indeksów od niej (``outbox.Outbox``, ``runs.RunHost[int]``),
-    ``sys.modules["rozliczenia.…"]``, napis stały ``rozliczenia.…`` i klasa, której baza jest z ``src`` (podklasa
-    ``class Log(CentrumLog)`` i dalsze podklasy). Sięgnięcie to:
+    ale nie wyrażenie z taką nazwą w indeksie (``list[CentrumLog]``, ``REGISTRY[outbox]``), ``sys.modules["rozliczenia.…"]``,
+    napis stały ``rozliczenia.…`` i klasa, której baza jest z ``src`` (podklasa ``class Log(CentrumLog)`` i dalsze
+    podklasy). Sięgnięcie to:
 
     - prywatny atrybut nazwy z ``src``, import prywatnej nazwy i ``vars`` nazwy z ``src``;
-    - prywatna nazwa, którą wiąże ciało podklasy klasy z ``src`` (``def _write``, ``_write = staticmethod(…)``), bo
-      nadpisuje prywatną nazwę klasy z ``src`` albo tak wygląda: AST nie wie, których nazw klasa z ``src`` nie ma;
+    - prywatna nazwa, którą wiąże ciało podklasy klasy z ``src`` (``def _write``, ``_write = staticmethod(…)``, import,
+      ``except … as _write``, ``case _write``), bo nadpisuje prywatną nazwę klasy z ``src`` albo tak wygląda: AST nie wie, których nazw klasa z ``src`` nie ma;
     - w wywołaniu dowolnej funkcji, w którego argumencie (pozycyjnym albo nazwanym, na dowolnym miejscu i na dowolnej
-      głębokości krotki, listy, zbioru i słownika) stoi nazwa z ``src``: każdy prywatny napis stały wśród argumentów,
+      głębokości krotki, listy, zbioru i słownika) albo w odbiorcy metody (``m.__getattribute__("_x")``) stoi nazwa z
+      ``src``: każdy prywatny napis stały wśród argumentów,
       na dowolnej głębokości takiego literału, i prywatna nazwa argumentu nazwanego (``getattr``,
       ``object.__setattr__``, ``mock.patch.object(target=m, attribute="_x")``, ``mock.patch.multiple(m, _x=…)``,
       ``__import__("rozliczenia.…", fromlist=["_x"])``, ``import_module("._x", "rozliczenia.…")``,
       ``type("X", (CentrumLog,), {"_write": f})``);
     - nazwa z ``src`` wprost w literale krotki, listy, zbioru albo słownika (także rozpakowana: ``(*m.NAMES, "_x")``)
       i prywatny napis na dowolnej głębokości tego literału (``PATCHED = [[m, "_x"]]``, ``{m: "_x"}``,
-      ``{"target": m, "attribute": "_x"}``), więc dwie pary w jednej liście (``[[hypothesis, "_x"], [m, "y"]]``) nie
-      alarmują;
+      ``{"target": m, "attribute": "_x"}``), a także prywatny napis wprost w literale i nazwa z ``src`` na dowolnej
+      jego głębokości (``{"_x": (m, f)}``, ``[("_x", (m, f))]``), więc dwie pary w jednej liście
+      (``[[hypothesis, "_x"], [m, "y"]]``) nie alarmują;
     - ``attrgetter`` i ``methodcaller`` z prywatnym napisem, choć obiekt dostają w innym wywołaniu;
     - napis stały ``rozliczenia.…._x`` gdziekolwiek (``mock.patch("rozliczenia.centrum.outbox._queued", …)``).
 
@@ -942,10 +953,11 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
 
     Granica, którą łapie tylko przegląd: prywatny atrybut instancji (``outbox._draining``, ``super()._write``); nazwa
     albo ścieżka złożona w trakcie działania (f-napis, sklejenie, zmienna, ``dir`` albo ``inspect.getmembers`` w pętli);
-    kod w napisie (``exec("outbox._queued = read")``, ``eval``); moduł przekazany przez zmienną, parametr albo wynik
-    wywołania, którego nie wiąże import (``m = import_module("rozliczenia.…")``, ``def patch(module)``), także
-    ``vars(m)`` i ``m.__dict__`` takiego modułu, i moduł w wyrażeniu, które nie jest nazwą, łańcuchem, indeksem ani
-    literałem (``(m := outbox)._x``, ``(outbox if c else x)._x``); prywatny napis albo nazwa argumentu w innym
+    kod w napisie (``exec("outbox._queued = read")``, ``eval``); moduł lub klasa przekazane przez zmienną, parametr
+    albo wynik wywołania, których nie wiąże import (``m = import_module("rozliczenia.…")``, ``def patch(module)``,
+    ``Base = outbox.Outbox`` i ``class X(Base)``), także ``vars(m)`` i ``m.__dict__`` takiego modułu, i moduł lub
+    klasa w wyrażeniu, które nie jest nazwą, łańcuchem ani literałem (``(m := outbox)._x``, ``(outbox if c else x)._x``,
+    ``REGISTRY[outbox]._x``, ``class X(*[CentrumLog])``); prywatny napis albo nazwa argumentu w innym
     wywołaniu niż moduł (``f(m, g("_x"))``, ``type("X", (K,), dict(_x=f))``) poza ``attrgetter`` i ``methodcaller``;
     prywatna nazwa przypisana podklasie po jej definicji z innego modułu; to, czy kopia danych o świecie zewnętrznym
     jest celowa.
@@ -968,7 +980,7 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
         while isinstance(node, ast.Attribute):
             node = node.value
         if isinstance(node, ast.Subscript):
-            return from_src(node.value) or from_src(node.slice)
+            return from_src(node.value) or (isinstance(node.slice, ast.Constant) and _src_path(node.slice.value))
         return (isinstance(node, ast.Name) and node.id in bound) or (
             isinstance(node, ast.Constant) and _src_path(node.value)
         )
@@ -989,7 +1001,8 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
         elif isinstance(node, ast.Call):
             values = [*node.args, *(kw.value for kw in node.keywords)]
             called = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
-            with_module = src_in(values) and (
+            receiver = [node.func.value] if isinstance(node.func, ast.Attribute) else []
+            with_module = src_in([*values, *receiver]) and (
                 called == "vars" or any(kw.arg is not None and _private(kw.arg) for kw in node.keywords) or _private_in(values)
             )
             if with_module or (called in GETTERS and _private_in(values)):
@@ -997,7 +1010,7 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
         elif isinstance(node, ast.Tuple | ast.List | ast.Set | ast.Dict):
             parts = [*filter(None, node.keys), *node.values] if isinstance(node, ast.Dict) else node.elts
             parts = [part.value if isinstance(part, ast.Starred) else part for part in parts]
-            if any(map(from_src, parts)) and _private_in(parts):
+            if (any(map(from_src, parts)) and _private_in(parts)) or (any(map(_private_text, parts)) and src_in(parts)):
                 found.append((node.lineno, ast.unparse(node)))
         elif isinstance(node, ast.Constant) and _src_path(node.value) and _private_text(node):
             found.append((node.lineno, repr(node.value)))
@@ -1111,6 +1124,32 @@ PRIVATE_REACHES: typing.Final = {
     ),
     "rozpakowanie-modulu-w-literale": 'from rozliczenia.centrum import outbox\nPATCHED = (*outbox.ADDRESSES_FILE, "_queued")',
     "prywatny-modul-w-stalej": 'TARGET = "rozliczenia._wnetrze"',
+    # Przegląd #1123, runda 1: moduł głębiej w literale niż prywatny napis, zbiór, inne wiązania w ciele podklasy i
+    # metoda modułu wywołana z napisem.
+    "slownik-nazwa-do-pary": 'from rozliczenia.centrum import outbox\nPATCHES = {"_queued": (outbox, read)}',
+    "lista-par-nazwa-do-pary": 'from rozliczenia.centrum import outbox\nPATCHES = [("_queued", (outbox, read))]',
+    "zbior-w-literale": 'from rozliczenia.centrum import outbox\nPATCHED = {outbox, "_queued"}',
+    "zbior-w-argumencie": 'from rozliczenia.centrum import outbox\nswap({outbox}, "_queued")',
+    "import-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n    from os import devnull as _write\n"
+    ),
+    "except-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n"
+        "    try:\n        pass\n    except ValueError as _write:\n        pass\n"
+    ),
+    "case-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n"
+        "    match QUIET:\n        case _write:\n            pass\n"
+    ),
+    "gwiazdka-case-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n"
+        "    match QUIET:\n        case [*_write]:\n            pass\n"
+    ),
+    "reszta-slownika-case-w-podklasie": (
+        "from rozliczenia.centrum.log import CentrumLog\nclass Log(CentrumLog):\n"
+        "    match QUIET:\n        case {**_write}:\n            pass\n"
+    ),
+    "getattribute-modulu": 'from rozliczenia.centrum import outbox\nread = outbox.__getattribute__("_queued")',
 }
 
 
@@ -1147,6 +1186,8 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
         '    log = "rozliczenia._x to zdanie, nie ścieżka"\n'
         '    log = f"{outbox_module.__name__}._queued"\n'
         '    path = Path(outbox_module.QUEUE_DIRECTORY, "_")\n'
+        '    mock.patch("tests.rozliczenia._x", None)\n'
+        "    cache = REGISTRY[outbox_module]._cache\n"
         '    return outbox.state(), outbox_module.SCHEMA_VERSION, RETRY_S, {outbox_module: "threading"}, getattr(Box(), "_ids")\n'
         "class TrackedRun(Outbox):\n"
         "    def __init__(self) -> None:\n"
@@ -1159,6 +1200,9 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
         "class Own:\n"
         "    def _write(self) -> None:\n"
         "        pass\n"
+        "class Logs(list[Outbox]):\n"
+        "    def _add(self, box: Outbox) -> None:\n"
+        "        self.append(box)\n"
     )
 
     assert _private_reaches(ast.parse(code)) == []
