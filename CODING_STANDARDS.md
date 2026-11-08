@@ -151,7 +151,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 
 | Rule | Guard |
 |---|---|
-| Every field of the contract's schemas (`frontend/src/api/openapi.json`) is used in `frontend/src` outside `generated/`, or `FIELDS_OUTSIDE_UI` lists it with its reason. | `npm run rules` (rule 1 in `frontend/scripts/rules.mjs`) in CI job `Frontend` |
+| Every field of the contract's schemas (`frontend/src/api/openapi.json`) is read or written in `frontend/src` outside `generated/` through its generated type, as the TypeScript checker resolves it (the same name on another type does not count), or `FIELDS_OUTSIDE_UI` lists it with its reason. | `npm run rules` (rule 1 in `frontend/scripts/rules.mjs`) in CI job `Frontend` |
 | The UI never branches on a process name, outside the files `PROCESS_COMPARISON_FILES` lists with their reasons. | `npm run rules` (rule 2 in `frontend/scripts/rules.mjs`) in CI job `Frontend` |
 | The frontend reaches the server (`fetch`, `EventSource`, `WebSocket`, `XMLHttpRequest`, `sendBeacon`) and calls `JSON.parse` only in the files of `NETWORK_FILES`, which parse every server response and stream event with a schema generated from the server models. | `npm run rules` (rule 3 in `frontend/scripts/rules.mjs`) in CI job `Frontend` |
 | After a change to the server models, and after a merge or a rebase, regenerate the contract and the Centrum build (`npm run regen` in `frontend/`), because the `merge=wygenerowane` driver keeps the current HEAD's version of them. | step „Require the committed contract and build to be fresh” of CI job `Frontend` |
