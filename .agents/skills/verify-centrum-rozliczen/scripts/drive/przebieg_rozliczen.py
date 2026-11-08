@@ -30,7 +30,6 @@ from drive.common import (
     start_card_warns_while_open,
     stop_banner,
 )
-from drive.przygotowanie_pliku_zbiorczego import drive_preparation
 
 SETTLEMENT = "przebieg-rozliczen"
 WORKER_SETTLEMENTS = f"Rozliczenie pracowników {LAST_COMPLETE}"
@@ -139,7 +138,7 @@ def _template_lock_left_behind(run: Run, page: Page) -> None:
     run.capture(page, "4d-przebieg-nowe-uruchomienie-bez-blokady")
 
 
-def drive_settlement(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     feature = SETTLEMENT
     internal_settlement, collective_file = period_files(run)
     period_folder = collective_file.parent
@@ -153,9 +152,6 @@ def drive_settlement(run: Run, page: Page) -> None:
     ]
     [empty_worker] = [worker for worker, count in zip(workers, orders, strict=True) if count == 0]
     needs_check = run.fixture["settlement"]["needs_check"]
-    if not collective_file.is_file():
-        # Dad's path starts with Przygotowanie pliku zbiorczego; alone, this feature drives it first.
-        drive_preparation(run, page)
 
     run.step(feature, "przebieg-gotowosc")
     filled = _fill_readiness(collective_file)

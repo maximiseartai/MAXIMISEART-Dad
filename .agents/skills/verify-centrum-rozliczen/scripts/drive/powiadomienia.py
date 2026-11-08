@@ -11,10 +11,10 @@ import sys
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive import aktualizacja, uwaga_taty, zgloszenie
+from drive import uwaga_taty, zgloszenie
 from drive.common import (
     PAGES,
-    Run,
+    REPORT_KEY,
     advance_clock,
     box_issues,
     drop_report_key,
@@ -23,16 +23,16 @@ from drive.common import (
     read_json,
     release_only,
     remove,
+    Run,
+    toggle_theme,
 )
+from drive.teksty import BELL_FRESH, UPDATE_BUTTON, UP_TO_DATE, WRITE
 
 FEATURE = "powiadomienia"
 BELL = "Powiadomienia"
-BELL_FRESH = "Powiadomienia, są nowe"
 RESOLVED = "Rozwiązana. Będzie w następnej wersji."
 READ = "Maks przeczytał."
 SENT_NOTE = "Wysłana do Maksa."
-# Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
-KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
 CLOSED_AT = "2026-10-19T09:15:00Z"
 INTRO = "Ta wersja przyspiesza rozliczenia."
 POINTS = (
@@ -120,22 +120,11 @@ def _enter(page: Page, run: Run, page_id: str, heading: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def _toggle_theme(page: Page) -> None:
-    page.locator("header").get_by_role("button", name="Włącz motyw", exact=False).click()
-
-
-def drive_notifications(run: Run, page: Page) -> None:
-    config = Path(run.fixture["settings"]).parent
+def drive(run: Run, page: Page) -> None:
+    config = run.config
     key_file = config / "zgloszenia-klucz.txt"
     box = run.box
-    # A part of `all` may start at uwaga-taty or later (SKILL.md), so each case this feature closes is checked apart.
-    if not any(issue["state"] == "open" for issue in zgloszenie.reports(run)):
-        print("  harness: no open Zgłoszenie yet, so zgloszenie runs first", flush=True)
-        zgloszenie.drive_report(run, page)
-    if not box_issues(run, uwaga_taty.LABEL):
-        print("  harness: no Uwaga taty sent yet, so uwaga-taty runs first", flush=True)
-        uwaga_taty.drive_dad_note(run, page)
-    key_file.write_text(KEY + "\n", encoding="utf-8")
+    key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     notes = box_issues(run, uwaga_taty.LABEL)
     reports = zgloszenie.reports(run)
     note, report = notes[-1], next(issue for issue in reports if issue["state"] == "open")
@@ -145,12 +134,12 @@ def drive_notifications(run: Run, page: Page) -> None:
     advance_clock(run, 10, "the next read may ask the skrzynka again")
     for page_id, heading in PAGES.items():
         _enter(page, run, page_id, heading)
-        bell, write = _bell(page), page.get_by_role("button", name=uwaga_taty.WRITE, exact=True)
+        bell, write = _bell(page), page.get_by_role("button", name=WRITE, exact=True)
         expect(bell).to_be_visible()
         bell_box, write_box = bell.bounding_box(), write.bounding_box()
         run.check(
             bell_box is not None and write_box is not None and write_box["x"] < bell_box["x"],
-            f"{heading}: the bell sits right of „{uwaga_taty.WRITE}”",
+            f"{heading}: the bell sits right of „{WRITE}”",
         )
     answer = run.api("/api/notifications", "powiadomienia-wyslane")
     items = answer["items"]
@@ -231,10 +220,10 @@ def drive_notifications(run: Run, page: Page) -> None:
     expect(page.get_by_role("alert")).to_have_count(0)
     expect(error_toasts(page)).to_have_count(0)
     run.capture(page, "182-powiadomienia-widok")
-    _toggle_theme(page)
+    toggle_theme(page)
     expect(note_row.get_by_label("nowe", exact=True)).to_be_visible()
     run.capture(page, "183-powiadomienia-widok-drugi-motyw")
-    _toggle_theme(page)
+    toggle_theme(page)
 
     run.step(FEATURE, "powiadomienia-po-wyjsciu")
     page.get_by_role("link", name="Okresy", exact=True).click()
@@ -266,7 +255,7 @@ def drive_notifications(run: Run, page: Page) -> None:
             remove(run.root / "github" / name, missing_ok=True)
     _drive_unavailable_files(run, page, config, box)
     log = run.log()
-    run.check(KEY not in log and KEY not in page.content(), "the key is neither in the Centrum log nor in the browser")
+    run.check(REPORT_KEY not in log and REPORT_KEY not in page.content(), "the key is neither in the Centrum log nor in the browser")
     drop_report_key(key_file)
 
 
@@ -305,13 +294,13 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     _expect_points(card)
     solved = card.get_by_role("list", name="Rozwiązane sprawy").get_by_role("listitem")
     expect(solved).to_have_text([f"Uwaga: {note['title']}", f"Zgłoszenie: {what}"])
-    expect(card.get_by_role("button", name=aktualizacja.BUTTON, exact=True)).to_be_enabled()
+    expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_enabled()
     # In `all` the features before this one leave `Masz najnowszą wersję.` from an older Wydanie (#373).
     run.check(
         run.api("/api/tool-update", "powiadomienia-nowa-wersja-aktualizacja")["state"] != "up_to_date",
         "the button of a newer Wydanie has no earlier `Masz najnowszą wersję.`",
     )
-    expect(card.get_by_role("status").filter(has_text=aktualizacja.UP_TO_DATE)).to_have_count(0)
+    expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_have_count(0)
     expect(card.get_by_label("nowe", exact=True)).to_be_visible()
     listed = page.get_by_role("list", name=BELL)
     card_box, list_box = card.bounding_box(), listed.bounding_box()
@@ -334,10 +323,10 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     )
     expect(page.get_by_role("alert")).to_have_count(0)
     run.capture(page, "185-powiadomienia-nowa-wersja")
-    _toggle_theme(page)
+    toggle_theme(page)
     expect(card).to_be_visible()
     run.capture(page, "186-powiadomienia-nowa-wersja-drugi-motyw")
-    _toggle_theme(page)
+    toggle_theme(page)
 
     run.step(FEATURE, "powiadomienia-aktualizacja")
     tool = run.fixture["tool"]
@@ -346,12 +335,12 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     print("  harness: the newest Wydanie in the local origin is the clone's own commit", flush=True)
     release_only(Path(tool["origin"]), head)
     updates = run.log().count("aktualizacja-koniec")
-    card.get_by_role("button", name=aktualizacja.BUTTON, exact=True).click()
+    card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
     run.wait_for(
         lambda: run.log().count("aktualizacja-koniec") == updates + 1,
         "the card's button starts the Aktualizacja narzędzia",
     )
-    expect(card.get_by_role("status").filter(has_text=aktualizacja.UP_TO_DATE)).to_be_visible()
+    expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible()
     last = run.log_entries()[-1]
     run.check(
         last.event == "aktualizacja-koniec" and last.facts.get("wynik") == "AKTUALNA",

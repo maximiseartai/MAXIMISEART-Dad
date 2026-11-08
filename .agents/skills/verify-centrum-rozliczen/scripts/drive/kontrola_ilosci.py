@@ -7,23 +7,21 @@ import time
 
 from playwright.sync_api import Page, expect
 
-from drive import przebieg_rozliczen
 from drive.common import (
     LAST_COMPLETE,
+    REPORT_KEY,
     ROW_MARKER,
-    Run,
     box_issues,
     close_centrum,
     drop_report_key,
     queued,
     remove,
+    Run,
     start_centrum,
 )
 
 FEATURE = "kontrola-ilosci"
 LABEL = "kontrola-ilosci"
-# Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
-KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
 # Long enough to load Okresy in the tab while the skrzynka still holds the Kontrola sent again at start.
 BOX_PACING_MS = 4000
 
@@ -42,14 +40,11 @@ def _open_periods(page: Page, run: Run) -> None:
     expect(page.get_by_role("heading", name="Okresy", exact=True)).to_be_visible()
 
 
-def drive_quantity_check(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     config = run.config
     key_file = config / "zgloszenia-klucz.txt"
     offline = run.box / "brak-sieci"
     pacing = run.root / "pacing" / "skrzynka-ms.txt"
-    if not queued(run, LABEL):
-        print("  harness: no Kontrola ilości waits yet, so przebieg-rozliczen runs first", flush=True)
-        przebieg_rozliczen.drive_settlement(run, page)
     checks_before = len(box_issues(run, LABEL))
 
     run.step(FEATURE, "kontrola-w-kolejce")
@@ -80,7 +75,7 @@ def drive_quantity_check(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "kontrola-bez-sieci-po-starcie")
     print("  harness: Maks writes the key; Dad's internet is down", flush=True)
-    key_file.write_text(KEY + "\n", encoding="utf-8")
+    key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     offline.parent.mkdir(exist_ok=True)
     offline.touch()
     close_centrum(run, page)
@@ -143,6 +138,6 @@ def drive_quantity_check(run: Run, page: Page) -> None:
     )
     run.wait_for(lambda: queued(run, LABEL) == [], "the sent Kontrola file is removed")
     log = run.log()
-    run.check(KEY not in log and ROW_MARKER not in log, "the Centrum log has neither the key nor workbook content")
-    run.check(KEY not in body, "the key is not in the Kontrola")
+    run.check(REPORT_KEY not in log and ROW_MARKER not in log, "the Centrum log has neither the key nor workbook content")
+    run.check(REPORT_KEY not in body, "the key is not in the Kontrola")
     drop_report_key(key_file)

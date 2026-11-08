@@ -20,22 +20,17 @@ from drive.common import (
     settle,
     stop_banner,
 )
+from drive.teksty import FETCHING, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON, UP_TO_DATE
 
 FEATURE = "aktualnosc-i-onedrive"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.
 PERIOD = "08_14_09_2026"
-TEMPLATE_MISSING = "Nie znaleziono wzorca, z którego powstają pliki okresu."
 NEWER = "Jest nowsza wersja narzędzia."
-PROPOSAL = "Jest też nowsza wersja narzędzia."
-NOT_FOUND = "Nie znalazłem przyczyny na tym komputerze."
 ONLY_IN_CLOUD = "Plik jest tylko w OneDrive w chmurze, bez kopii na tym komputerze."
 KEEP_ON_DEVICE = "„Zawsze zachowuj na tym urządzeniu”"
 OTHER_MAIN = "f" * 40
 FRESHNESS = "Aktualność narzędzia"
 ONEDRIVE = "Pliki w OneDrive"
-UPDATE_BUTTON = "Zaktualizuj narzędzie"
-FETCHING = "Pobieranie nowej wersji…"
-UP_TO_DATE = "Masz najnowszą wersję."
 # Long enough to see the update running and click its button again; the local "origin" answers in milliseconds.
 UPDATE_PACING_MS = 4000
 
@@ -94,7 +89,7 @@ def _shown_checks(page: Page) -> Locator:
     return diagnosis.get_by_role("list", name="Sprawdzono").get_by_role("listitem")
 
 
-def drive_freshness_and_onedrive(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     register = Path(run.fixture["order_register"])
     github = run.root / "github"
     onedrive = run.root / "onedrive"

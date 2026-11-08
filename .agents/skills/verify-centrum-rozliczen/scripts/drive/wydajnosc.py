@@ -28,7 +28,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Browser, BrowserContext, CDPSession, Page, Request, expect
 
 from drive import DEFAULT_REPEATS
-from drive.common import LAST_COMPLETE, PAGES, DriveFailure, Run, dad_context, replace_file
+from drive.common import LAST_COMPLETE, PAGES, DriveFailure, Run, dad_context, ensure_files_set, replace_file
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 BASELINE = SKILL_ROOT / "wydajnosc-baseline.json"
@@ -686,12 +686,7 @@ def _prepare_year_of_work(run: Run, page: Page) -> None:
 
     year = run.fixture["year_of_work"]
     page.goto(run.url + "#/okresy")
-    run.answer_picker(year["periods_directory"])
-    page.get_by_role("button", name="Wskaż folder okresów", exact=True).click()
-    expect(page.get_by_role("table", name="Tablica okresów")).to_be_visible()
-    run.answer_picker(run.fixture["order_register"])
-    page.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
-    run.wait_for(lambda: run.remembered("rejestr_zlecen") == run.fixture["order_register"], "Rejestr zleceń set")
+    ensure_files_set(run, page, year["periods_directory"])
     periods = run.api("/api/periods", "wydajnosc-tablica")["periods"]
     assert isinstance(periods, list)
     tokens = {period["token"] for period in periods}
@@ -713,7 +708,7 @@ def _prepare_year_of_work(run: Run, page: Page) -> None:
     page.goto("about:blank")
 
 
-def drive_performance(run: Run, page: Page, *, baseline_path: Path = BASELINE, repeats: int = DEFAULT_REPEATS) -> None:
+def drive(run: Run, page: Page, *, baseline_path: Path = BASELINE, repeats: int = DEFAULT_REPEATS) -> None:
     feature = "wydajnosc"
     out = run.evidence / "wydajnosc"
     out.mkdir(exist_ok=True)

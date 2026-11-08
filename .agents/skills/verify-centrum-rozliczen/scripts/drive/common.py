@@ -25,6 +25,8 @@ from zoneinfo import ZoneInfo
 from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize, expect
 import yaml
 
+from drive import feature
+
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"
 # Pages of the sidebar menu in its order: contract id (`#/<id>`, `PageId`) and the heading Dad reads.
@@ -42,6 +44,16 @@ ROW_MARKER = "CENTRUM-SYN-ROW"
 REPEAT_SETTLE_MS = 300
 # Dad's return to Centrum's window: the pages read the server again (`useResource`).
 FOCUS = "window.dispatchEvent(new Event('focus'))"
+# Harness: the page reports itself hidden, so the Uruchomienia stream pauses and its next view arrives late.
+HIDE_TAB = (
+    "Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});"
+    "document.dispatchEvent(new Event('visibilitychange'))"
+)
+SHOW_TAB = "delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))"
+# Synthetic Token do Zgłoszeń Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
+REPORT_KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
+# The Logi Uruchomienia beside the Centrum log (ADR 0015): one file per Uruchomienie procesu.
+RUN_LOGS = "logs/uruchomienia"
 
 
 class DriveFailure(Exception):
@@ -90,8 +102,6 @@ class Run:
         self.evidence = evidence
         self.fixture = json.loads((root / "fixture.json").read_text(encoding="utf-8"))
         self.feature = ""
-        # Feature files and PRs cite a screenshot by its number, so one number belongs to one feature.
-        self._number_owners: dict[str, str] = {}
         for name in ("screenshots", "aria", "api", "state"):
             (evidence / name).mkdir(parents=True, exist_ok=True)
 
@@ -112,6 +122,10 @@ class Run:
         """The queue of the skrzynka Zgłoszeń: one file per post waiting to be sent."""
 
         return self.config / "zgloszenia" / "kolejka"
+
+    @property
+    def run_logs_dir(self) -> Path:
+        return self.root / RUN_LOGS
 
     @property
     def log_path(self) -> Path:
@@ -140,13 +154,12 @@ class Run:
         """Screenshot and ARIA snapshot after every running transition has finished.
 
         ``live`` captures while a stage runs: its indeterminate bar loops forever, so do not wait.
-        ``clip`` takes a close-up of that part of the viewport instead of the page.
+        ``clip`` takes a close-up of that part of the viewport instead of the page. ``name`` is one of the current
+        feature's ``screenshots`` in ``FEATURES``, which give each number to one feature.
         """
 
-        number = name.split("-", 1)[0]
-        owner = self._number_owners.setdefault(number, self.feature)
-        if owner != self.feature:
-            raise DriveFailure(f"screenshot {name} of {self.feature} uses number {number}, which belongs to {owner}")
+        if name not in feature(self.feature).screenshots:
+            raise DriveFailure(f"screenshot {name} is not among the screenshots of {self.feature} in drive/__init__.py")
         if not live:
             page.wait_for_function(
                 "document.getAnimations().every((animation) => animation.playState !== 'running')"
@@ -220,22 +233,33 @@ class Run:
         print(f"  ok: {message}", flush=True)
 
 
-def choose_periods_directory(run: Run, page: Page) -> None:
-    run.answer_picker(run.fixture["periods_directory"])
+def choose_periods_directory(run: Run, page: Page, path: str | None = None) -> None:
+    """Dad points Centrum to the folder okresów ``path`` (the fixture's without it) from the empty Tablica okresów."""
+
+    run.answer_picker(run.fixture["periods_directory"] if path is None else path)
     page.get_by_role("button", name="Wskaż folder okresów", exact=True).click()
     expect(page.get_by_role("table", name="Tablica okresów")).to_be_visible()
 
 
-def ensure_files_set(run: Run, page: Page) -> None:
-    """Points Centrum to the fixture's folder okresów and Rejestr zleceń unless a feature before did."""
+def ensure_files_set(run: Run, page: Page, periods_directory: str | None = None) -> None:
+    """Points Centrum to the folder okresów ``periods_directory`` (the fixture's without it) and the fixture's Rejestr
+    zleceń unless a feature before did."""
 
     settings = run.api("/api/settings", "ustawienia-przed-uruchomieniem")
     if settings["periods_directory"] == {"state": "not_set"}:
-        choose_periods_directory(run, page)
+        choose_periods_directory(run, page, periods_directory)
     if settings["order_register"] == {"state": "not_set"}:
         run.answer_picker(run.fixture["order_register"])
         page.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
         run.wait_for(lambda: run.remembered("rejestr_zlecen") == run.fixture["order_register"], "Rejestr zleceń set")
+
+
+def frontend_ms(source: str, name: str) -> int:
+    """A time of the page, ``const <name> = <ms>`` in ``frontend/src/<source>``, for a wait with nothing on screen to
+    wait for, so the wait follows the page when its time changes."""
+
+    [ms] = re.findall(rf"^const {name} = (\d+)$", (REPO_ROOT / "frontend" / "src" / source).read_text(encoding="utf-8"), re.M)
+    return int(ms)
 
 
 def period_choice(token: str, status: str) -> str:
@@ -380,6 +404,15 @@ def queued_posts(run: Run, label: str, run_id: str | None = None) -> list[dict[s
     return posts
 
 
+def run_logs(run: Run, process: str | None = None) -> dict[str, dict[str, Any]]:
+    """The files of Logi of ``process`` (every one without it) by name, oldest first, as the name starts with the start.
+
+    The server puts a file of Logi in place whole, also when it adds a Diagnoza, so each is read with ``read_json``."""
+
+    pattern = "*.json" if process is None else f"*-{process}-*.json"
+    return {path.name: read_json(path) for path in sorted(run.run_logs_dir.glob(pattern))}
+
+
 def advance_clock(run: Run, minutes: float, why: str) -> None:
     """Harness: Centrum's clock moves ``minutes`` on (``<root>/zegar/przesuniecie-min.txt``), so ``why``."""
 
@@ -475,6 +508,27 @@ def dad_tab(
         yield tab
     finally:
         context.close()
+
+
+def toggle_theme(page: Page) -> str:
+    """Dad clicks the theme icon in the header; the theme it switched to (``jasny`` or ``ciemny``), once the icon
+    offers the other one."""
+
+    toggle = page.locator("header").get_by_role("button", name="Włącz motyw", exact=False)
+    theme = str(toggle.get_attribute("aria-label")).removeprefix("Włącz motyw ")
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-label", f"Włącz motyw {'ciemny' if theme == 'jasny' else 'jasny'}")
+    return theme
+
+
+def switch_theme(page: Page, theme: str) -> bool:
+    """Switches to ``theme`` (``jasny`` or ``ciemny``) unless it is shown; whether it switched."""
+
+    toggle = page.locator("header").get_by_role("button", name="Włącz motyw", exact=False)
+    if toggle.get_attribute("aria-label") != f"Włącz motyw {theme}":
+        return False
+    toggle_theme(page)
+    return True
 
 
 def reload_with_answer(run: Run, page: Page, path: str, name: str) -> Any:

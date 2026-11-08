@@ -11,12 +11,10 @@ import subprocess
 from playwright.sync_api import Locator, Page, expect
 
 from drive.common import Run, advance_clock, answers, move, release_only, remove, served_version, version_line
+from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
 
 FEATURE = "aktualizacja"
-BUTTON = "Zaktualizuj narzędzie"
 UPDATED = "Zaktualizowano"
-UP_TO_DATE = "Masz najnowszą wersję."
-FETCHING = "Pobieranie nowej wersji…"
 RESTARTING = "Ponowne uruchamianie Centrum…"
 NO_CONNECTION = "Nie zaktualizowano narzędzia: brak połączenia z GitHubem."
 RETRY = "Narzędzie działa dalej w poprzedniej wersji. Sprawdź internet i kliknij „Zaktualizuj narzędzie” jeszcze raz."
@@ -120,13 +118,13 @@ def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first
             expect(_status(page, READ_FAILED)).to_be_visible()
         finally:
             page.unroute("**/api/tool-update")
-        card.get_by_role("button", name=BUTTON, exact=True).click()
+        card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
         message = card.get_by_role("alert", name="Ostrzeżenie")
         expect(message).to_contain_text(NO_CONNECTION, timeout=20_000)
         expect(_status(page, READ_FAILED)).to_have_count(0)
         expect(message).to_contain_text("narzędzie na tym komputerze")
         expect(message).to_contain_text(RETRY)
-        update = card.get_by_role("button", name=BUTTON, exact=True)
+        update = card.get_by_role("button", name=UPDATE_BUTTON, exact=True)
         expect(update).to_be_enabled()
         report = card.get_by_role("button", name=REPORT_BUTTON, exact=True)
         expect(report).to_be_visible()
@@ -171,7 +169,7 @@ def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first
         page.reload()
         expect(card).to_contain_text("Nie sprawdzono")
         expect(card.get_by_role("alert", name="Ostrzeżenie")).to_contain_text(NO_CONNECTION)
-        expect(card.get_by_role("button", name=BUTTON, exact=True)).to_have_count(0)
+        expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_have_count(0)
         configuration = run.api("/api/configuration", "aktualizacja-brak-sieci-konfiguracja")
         run.check(
             (configuration["freshness"], configuration["update_offered"]) == ("not_checked", False),
@@ -209,7 +207,7 @@ def _since_update(run: Run) -> list[str]:
     return events[len(events) - events[::-1].index("aktualizacja-start") :]
 
 
-def drive_update(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     tool = run.fixture["tool"]
     clone, first, newest, dad_files = Path(tool["clone"]), tool["first"], tool["newest"], tool["dad_files"]
     origin, libraries = Path(tool["origin"]), tool["libraries"]
@@ -242,7 +240,7 @@ def drive_update(run: Run, page: Page) -> None:
             == (first, {"commit": first[:7], "since": first_since}, "newer", True),
             "the server reports the clone's commit, the day the clone moved there, a newer version, and offers the update",
         )
-        expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_enabled()
+        expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_enabled()
         run.check(
             run.api("/api/tool-update", "aktualizacja-przed")["state"] == "idle",
             "no Aktualizacja narzędzia since Centrum started",
@@ -254,16 +252,16 @@ def drive_update(run: Run, page: Page) -> None:
         run.step(FEATURE, "aktualizacja-postep")
         page.reload()
         expect(card).to_contain_text("Jest nowsza wersja")
-        expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_enabled()
+        expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_enabled()
         print(f"  harness: each Aktualizacja narzędzia waits {UPDATE_PACING_MS} ms before it looks for Git", flush=True)
         pacing.write_text(str(UPDATE_PACING_MS), encoding="utf-8")
         print(f"  harness: the restarted Centrum waits {RESTART_PACING_MS} ms before it starts", flush=True)
         restart_pacing.write_text(str(RESTART_PACING_MS), encoding="utf-8")
         before_health = run.api("/api/health", "aktualizacja-health-przed")
         page.evaluate("window.przedPonownymStartem = true")
-        card.get_by_role("button", name=BUTTON, exact=True).dblclick()
+        card.get_by_role("button", name=UPDATE_BUTTON, exact=True).dblclick()
         expect(card.get_by_role("status").filter(has_text=FETCHING)).to_be_visible()
-        expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_disabled()
+        expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
         view = run.api("/api/tool-update", "aktualizacja-postep")
         run.check(view == {"state": "running", "step": "fetching"}, "the server reports the step `fetching`")
         run.check(
@@ -286,7 +284,7 @@ def drive_update(run: Run, page: Page) -> None:
     try:
         run.step(FEATURE, "aktualizacja-ponowny-start")
         expect(_status(page, RESTARTING)).to_be_visible(timeout=20_000)
-        expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_disabled()
+        expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
         # The card shows the restart once the server says it restarts, before the old Centrum closes its port;
         # on Windows the old one still answers then.
         run.wait_for(lambda: not answers(run.url), "the old Centrum has closed and the new one is not up yet")
@@ -311,7 +309,7 @@ def drive_update(run: Run, page: Page) -> None:
         updated_commit, since = served_version(run)
         expect(card.get_by_text(version_line(updated_commit, since), exact=True)).to_be_visible()
         expect(card).to_contain_text("Aktualna")
-        expect(card.get_by_role("button", name=BUTTON, exact=True)).to_have_count(0)
+        expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_have_count(0)
         health = run.api("/api/health", "aktualizacja-health-po")
         run.check(
             health["commit"] == newest[:7] and health["instance"] != before_health["instance"],
@@ -346,7 +344,7 @@ def drive_update(run: Run, page: Page) -> None:
         _github_dormant_release(run)
         page.reload()
         expect(card).to_contain_text("Jest nowsza wersja")
-        card.get_by_role("button", name=BUTTON, exact=True).click()
+        card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
         expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible()
         view = run.api("/api/tool-update", "aktualizacja-najnowsza")
         run.check(view == {"state": "up_to_date"}, "the server reports the newest version")
@@ -372,7 +370,7 @@ def drive_update(run: Run, page: Page) -> None:
         page.reload()
         card = _tool_card(page)
         expect(card).to_contain_text("Jest nowsza wersja")
-        card.get_by_role("button", name=BUTTON, exact=True).click()
+        card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
         expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible(timeout=20_000)
         expect(card.get_by_role("alert")).to_have_count(0)
         run.check(_head(clone) == newest, "after the failed installation the tool is up to date on the newest commit")
@@ -380,7 +378,7 @@ def drive_update(run: Run, page: Page) -> None:
         with page.expect_response(lambda response: response.url.endswith("/api/tool-update")):
             page.reload()
         expect(card).to_contain_text("Aktualna")
-        expect(card.get_by_role("button", name=BUTTON, exact=True)).to_have_count(0)
+        expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_have_count(0)
         expect(page.get_by_role("alert")).to_have_count(0)
         run.check(True, "with GitHub's newest Wydanie on the tool's commit, Konfiguracja shows it current, with no button and no alert")
         expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_have_count(0)
@@ -419,9 +417,9 @@ def _drive_failed_installation(
         "with a newer Wydanie than the one the last update was up to date with, the server forgets that result",
     )
     expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_have_count(0)
-    card.get_by_role("button", name=BUTTON, exact=True).click()
+    card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
     expect(card.get_by_role("status").filter(has_text=INSTALLING)).to_be_visible()
-    expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_disabled()
+    expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
     view = run.api("/api/tool-update", "aktualizacja-instalowanie")
     run.check(view == {"state": "running", "step": "installing"}, "the server reports the step `installing`")
     run.capture(page, "130-aktualizacja-instalowanie", live=True)
@@ -433,7 +431,7 @@ def _drive_failed_installation(
     expect(message).to_contain_text("Narzędzie działa dalej w poprzedniej wersji.")
     expect(card).to_contain_text(newest[:7])
     expect(card).to_contain_text("Jest nowsza wersja")
-    expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_enabled()
+    expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_enabled()
     view = run.api("/api/tool-update", "aktualizacja-instalacja-nieudana")
     run.check(
         (view["state"], view["message"], view["next_action"])
@@ -479,9 +477,9 @@ def _drive_new_version_not_starting(
     expect(card).to_contain_text("Jest nowsza wersja")
     before_health = run.api("/api/health", "aktualizacja-nie-wystartowala-health-przed")
     page.evaluate("window.przedPonownymStartem = true")
-    card.get_by_role("button", name=BUTTON, exact=True).click()
+    card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
     expect(_status(page, RESTARTING)).to_be_visible(timeout=20_000)
-    expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_disabled()
+    expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
     run.wait_for(lambda: not answers(run.url), "the old Centrum has closed, and no Centrum answers yet")
     _entered(_status(page, RESTARTING))
     run.capture(page, "135-aktualizacja-nie-wystartowala-ponowny-start", live=True)
@@ -572,7 +570,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     card = _tool_card(page)
     expect(card).to_contain_text("Jest nowsza wersja")
     page.evaluate("window.przedPonownymStartem = true")
-    card.get_by_role("button", name=BUTTON, exact=True).click()
+    card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
     expect(_status(page, RESTARTING)).to_be_visible(timeout=20_000)
     run.wait_for(
         lambda: result.exists() and json.loads(result.read_text(encoding="utf-8"))["wynik"] == "NOWA_WERSJA_NIE_WYSTARTOWALA",

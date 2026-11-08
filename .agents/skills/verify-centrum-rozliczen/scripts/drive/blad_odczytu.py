@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from playwright.sync_api import Locator, Page, Route, expect
 
 from drive.common import Run, ensure_files_set, sent_requests
+from drive.teksty import WRITE
 
 FEATURE = "blad-odczytu"
 RETRY = "Spróbuj ponownie"
@@ -225,7 +226,7 @@ def _unreadable_stream(run: Run, page: Page) -> None:
     run.check(True, "with the stream readable again the page starts as usual")
 
 
-def drive_load_failures(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     page.goto(run.url)
     ensure_files_set(run, page)
     board = page.get_by_role("table", name="Tablica okresów")
@@ -292,10 +293,10 @@ def drive_load_failures(run: Run, page: Page) -> None:
         shot="147-blad-odczytu-powiadomienia",
     )
 
-    dialog = page.get_by_role("dialog", name="Napisz do Maksa", exact=True)
+    dialog = page.get_by_role("dialog", name=WRITE, exact=True)
 
     def note_runs() -> None:
-        page.get_by_role("button", name="Napisz do Maksa", exact=True).click()
+        page.get_by_role("button", name=WRITE, exact=True).click()
         expect(dialog).to_be_visible()
         dialog.get_by_role("group", name="Dotyczy", exact=True).get_by_role(
             "button", name="Do Uruchomienia", exact=True

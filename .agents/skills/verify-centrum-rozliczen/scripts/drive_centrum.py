@@ -10,50 +10,37 @@ to ``<evidence>/state``.
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
-from collections.abc import Callable
-import functools
+import importlib
 from pathlib import Path
 import shutil
 import sys
+from typing import Any
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
 
-from drive import (
-    DEFAULT_REPEATS,
-    EXPLICIT_FEATURES,
-    FEATURES,
-    aktualizacja,
-    aktualnosc_i_onedrive,
-    blad_odczytu,
-    diagnoza,
-    karta_z_logow,
-    konfiguracja,
-    kopie_intermax,
-    kontrola_ilosci,
-    logi_uruchomienia,
-    metryki,
-    pomiar_u_taty,
-    powiadomienia,
-    przebieg_rozliczen,
-    przygotowanie_pliku_zbiorczego,
-    start_i_zamykanie,
-    tablica_okresow,
-    uklad_folderow_taty,
-    uporzadkowanie_intermax,
-    ustawienia,
-    uwaga_taty,
-    uzupelnienie,
-    wycena_w_efenix,
-    wydajnosc,
-    zgloszenie,
-)
+from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
 from drive.common import DriveFailure, Run, dad_context
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser
+
+# Every feature's module, imported before the drive starts, so a broken one fails it at once.
+MODULES = {each.name: importlib.import_module(each.module) for each in FEATURES}
+
+
+def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str, Any]) -> None:
+    """Drives feature ``name`` after each of its ``needs`` that ``driven`` (this drive so far) lacks."""
+
+    for need in feature(name).needs:
+        if need not in driven:
+            print(f"  harness: {name} needs the state of {need}, which this drive has not driven, so it runs first", flush=True)
+            drive(run, page, need, driven, options)
+    MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
+    driven.append(name)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
@@ -63,55 +50,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--feature",
         nargs="+",
-        choices=("all", *FEATURES, *EXPLICIT_FEATURES),
+        choices=("all", *MODULES),
         default=["all"],
         help="all, or the features to drive in this order (a part of all in CI).",
     )
     parser.add_argument(
-        "--baseline", type=Path, default=wydajnosc.BASELINE, help="wydajnosc: the baseline to compare with."
+        "--baseline", type=Path, default=MODULES["wydajnosc"].BASELINE, help="wydajnosc: the baseline to compare with."
     )
     parser.add_argument(
         "--powtorzenia", type=int, default=DEFAULT_REPEATS, help="wydajnosc: repetitions per scenario and profile."
     )
     args = parser.parse_args(argv)
     run = Run(args.root, args.url, Path(args.evidence).resolve())
-    drives: dict[str, Callable[[Run, Page], None]] = {
-        "ustawienia": ustawienia.drive_settings,
-        "tablica-okresow": tablica_okresow.drive_period_board,
-        "uklad-folderow-taty": uklad_folderow_taty.drive_dad_layout,
-        "konfiguracja": konfiguracja.drive_configuration,
-        "aktualizacja": aktualizacja.drive_update,
-        "metryki": metryki.drive_metrics,
-        "blad-odczytu": blad_odczytu.drive_load_failures,
-        "przygotowanie-pliku-zbiorczego": przygotowanie_pliku_zbiorczego.drive_preparation,
-        "uzupelnienie": uzupelnienie.drive_filling,
-        "przebieg-rozliczen": przebieg_rozliczen.drive_settlement,
-        "kontrola-ilosci": kontrola_ilosci.drive_quantity_check,
-        "diagnoza": diagnoza.drive_diagnosis,
-        "aktualnosc-i-onedrive": aktualnosc_i_onedrive.drive_freshness_and_onedrive,
-        "zgloszenie": zgloszenie.drive_report,
-        "uwaga-taty": uwaga_taty.drive_dad_note,
-        "logi-uruchomienia": logi_uruchomienia.drive_run_logs,
-        "karta-z-logow": karta_z_logow.drive_run_card_from_logs,
-        "powiadomienia": powiadomienia.drive_notifications,
-        "pomiar-u-taty": pomiar_u_taty.drive_measurement,
-        "uporzadkowanie-intermax": uporzadkowanie_intermax.drive_intermax_ordering,
-        "kopie-intermax": kopie_intermax.drive_intermax_copies,
-        "wycena-w-efenix": wycena_w_efenix.drive_efenix_pricing,
-        "start-i-zamykanie": start_i_zamykanie.drive_start_and_close,
-        "wydajnosc": functools.partial(
-            wydajnosc.drive_performance, baseline_path=args.baseline.resolve(), repeats=args.powtorzenia
-        ),
-    }
-    selected = FEATURES if args.feature == ["all"] else tuple(args.feature)
+    options = {"baseline_path": args.baseline.resolve(), "repeats": args.powtorzenia}
+    selected = ALL if args.feature == ["all"] else tuple(args.feature)
+    driven: list[str] = []
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             try:
                 page = dad_context(browser).new_page()
                 page.set_default_timeout(10_000)
-                for feature in selected:
-                    drives[feature](run, page)
+                for name in selected:
+                    drive(run, page, name, driven, options)
             except Exception:
                 if "page" in locals():
                     page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
@@ -126,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
             source = run.root / name
             if source.exists():
                 shutil.copy2(source, run.evidence / "state" / source.name)
-        logs = run.root / "logs" / "uruchomienia"
+        logs = run.run_logs_dir
         if logs.is_dir():
             shutil.copytree(logs, run.evidence / "state" / logs.name, dirs_exist_ok=True)
     print(f"DRIVE OK | features={','.join(selected)}")

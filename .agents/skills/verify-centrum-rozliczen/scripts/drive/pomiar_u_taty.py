@@ -59,7 +59,7 @@ def _check_requests(run: Run, timing: dict[str, str], where: str) -> None:
     )
 
 
-def drive_measurement(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     server_timings: list[dict[str, str]] = []
 
     def remember(response: Response) -> None:

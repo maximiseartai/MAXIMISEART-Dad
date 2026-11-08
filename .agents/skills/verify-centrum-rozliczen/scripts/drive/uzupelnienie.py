@@ -15,11 +15,14 @@ from playwright.sync_api import Locator, Page, Request, expect
 
 from create_centrum_fixture import PRICE_LIST
 from drive.common import (
+    HIDE_TAB,
     LAST_COMPLETE,
     ROW_MARKER,
+    SHOW_TAB,
     LogEntry,
     Run,
     close_centrum,
+    frontend_ms,
     last_opened_is,
     move,
     next_step_names_current_step,
@@ -28,15 +31,17 @@ from drive.common import (
     remove,
     remove_empty_folder,
     start_centrum,
+    switch_theme,
 )
-from drive.przygotowanie_pliku_zbiorczego import HIDE_TAB, SHOW_TAB, drive_preparation
 
 FEATURE = "uzupelnienie"
 SUMMARY = f"#/uzupelnienie/{LAST_COMPLETE}"
 API = f"/api/periods/{LAST_COMPLETE}/quantities-to-fill"
 VERSION_API = f"/api/periods/{LAST_COMPLETE}/collective-file-version"
-# The page asks about the saved version every 3 s (frontend/src/lib/use-live-file.ts); a full read follows.
-LIVE_TIMEOUT_MS = 10_000
+# How often the page asks about the saved version of the Plik zbiorczy; a full read follows a change.
+POLL_MS = frontend_ms("lib/use-live-file.ts", "POLL_MS")
+# Three of the page's checks and the full read after the last.
+LIVE_TIMEOUT_MS = 3 * POLL_MS + 1_000
 KIND_TITLES = {"without_rule": "Wiersze bez reguły", "from_description": "Wiersze z opisu"}
 # The fixture's Plik zbiorczy after Przygotowanie: rows 18 and 20 carry a device the Reguły ilości do not know,
 # row 19 is prewencja (create_centrum_fixture.py, DEVICES).
@@ -208,8 +213,8 @@ WATCH_RETURNS = """() => {
   window.addEventListener("focus", () => { window.__powroty += 1 })
   document.addEventListener("visibilitychange", () => { window.__powroty += 1 })
 }"""
-# Longer than two of the page's 3-second version checks.
-HIDDEN_MS = 7_000
+# Longer than two of the page's version checks.
+HIDDEN_MS = 2 * POLL_MS + 1_000
 
 
 def _live_result_card(run: Run, page: Page, filling: Locator, collective_file: Path) -> None:
@@ -487,10 +492,10 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
         _capture(run, page, f"{shot}-{width}px", answer)
     if original is not None:
         page.set_viewport_size(original)
-    switched = _light_theme(page)
+    switched = switch_theme(page, "jasny")
     _capture(run, page, f"{shot}-jasny", answer)
     if switched:
-        page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
+        switch_theme(page, "ciemny")
 
     number = table.get_by_role("rowheader").first
     before = number.bounding_box()
@@ -557,22 +562,8 @@ def _write_dad_value(collective_file: Path, row: int, value: int | None = 1) -> 
         workbook.close()
 
 
-def _light_theme(page: Page) -> bool:
-    """Switches to the light theme for the screenshot; True when it was dark and must be switched back."""
-
-    light = page.locator("header").get_by_role("button", name="Włącz motyw jasny", exact=True)
-    if light.count() == 0:
-        return False
-    light.click()
-    expect(page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True)).to_be_visible()
-    return True
-
-
-def drive_filling(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     _, collective_file = period_files(run)
-    if not collective_file.is_file():
-        # Dad's path starts with Przygotowanie pliku zbiorczego; alone, this feature drives it first.
-        drive_preparation(run, page)
     original = collective_file.read_bytes()
     lock = collective_file.with_name(f"~${collective_file.name}")
     try:
@@ -706,10 +697,10 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
             pass
     run.check(asked.count(API) == views, "two more checks of the unchanged saved version read nothing again")
     _check_screen(run, page, after, "after Dad's value")
-    switched = _light_theme(page)
+    switched = switch_theme(page, "jasny")
     run.capture(page, "222-uzupelnienie-po-wpisie")
     if switched:
-        page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
+        switch_theme(page, "ciemny")
 
     run.step(FEATURE, "uzupelnienie-tabela-bez-reguly")
     without_rule = _drive_kind(run, page, "without_rule", "225-uzupelnienie-bez-reguly")
@@ -912,10 +903,10 @@ def _drive_after_settlement(run: Run, page: Page, collective_file: Path) -> None
             "row 20 reads „bez ilości” on the screen under its number",
         )
         _capture(run, page, "253-uzupelnienie-po-przebiegu-bez-reguly", kind)
-        switched = _light_theme(page)
+        switched = switch_theme(page, "jasny")
         _capture(run, page, "253-uzupelnienie-po-przebiegu-bez-reguly-jasny", kind)
         if switched:
-            page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
+            switch_theme(page, "ciemny")
     finally:
         remove_empty_folder(worker_settlements)
     page.goto(run.url)

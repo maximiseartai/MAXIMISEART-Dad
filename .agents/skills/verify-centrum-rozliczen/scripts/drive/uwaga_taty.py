@@ -17,7 +17,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from drive.common import (
     PAGES,
-    Run,
+    REPORT_KEY,
     box_issues,
     close_centrum,
     current_run,
@@ -33,18 +33,17 @@ from drive.common import (
     queued_posts,
     read_json,
     remove,
+    Run,
     start_centrum,
+    switch_theme,
+    toggle_theme,
 )
+from drive.teksty import FOR_KEY, MODES, WRITE
 
 FEATURE = "uwaga-taty"
 LABEL = "uwaga-taty"
-WRITE = "Napisz do Maksa"
 SENT = "Uwaga wysłana do Maksa."
-# The one element of Uwaga taty, Zgłoszenie and Powiadomienia when the Token do Zgłoszeń is missing or refused (Q17).
-FOR_KEY = "Token do Zgłoszeń nie działa. Skontaktuj się z Maksem."
 REFUSED_CONTENT = "Tej Uwagi nie da się wysłać. Skontaktuj się z Maksem."
-# Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
-KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
 # Synthetic Uwagi: the first waits for the key, the second has no Treść.
 FIRST = ("Brakuje kolumny z kilometrami", "W Pliku zbiorczym nie ma kilometrów.\nDopisuję je ręcznie.")
 SECOND = ("Proszę o większą czcionkę", "")
@@ -84,7 +83,6 @@ REFUSED = ("Uwaga, której Skrzynka nie przyjmie", "Treść odrzucona przez Skrz
 LOGS_LABEL = "logi-uruchomienia"
 LOGS_LINK = re.compile(r"^\[Logi Uruchomienia\]\((.*)\)$", re.MULTILINE)
 MARKDOWN_LINK = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
-MODES = {"DRY-RUN": "podgląd", "RUN": "zapis"}
 NO_RUNS = "Nie ma jeszcze Uruchomień z Centrum."
 NOT_IN_HISTORY = "Tego Uruchomienia nie ma w historii Centrum. Wybierz inne albo wyślij Uwagę ogólną."
 LAPTOP = ViewportSize(width=1280, height=720)
@@ -325,7 +323,7 @@ def _drive_low_windows(run: Run, page: Page) -> None:
     try:
         for second_theme in (False, True):
             if second_theme:
-                page.locator("header").get_by_role("button", name="Włącz motyw", exact=False).click()
+                toggle_theme(page)
             theme = "jasny" if page.locator("header").get_by_role("button", name="Włącz motyw ciemny").count() else "ciemny"
             themes.append(theme)
             for window, kind in ((screen, "lines"), *LOW_WINDOWS):
@@ -354,7 +352,7 @@ def _drive_low_windows(run: Run, page: Page) -> None:
                 expect(dialog).to_have_count(0)
     finally:
         page.set_viewport_size(screen)
-    page.locator("header").get_by_role("button", name="Włącz motyw", exact=False).click()
+    toggle_theme(page)
     run.check(sorted(themes) == ["ciemny", "jasny"], "the low windows were checked in both themes")
 
 
@@ -438,7 +436,7 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
             registry.write_bytes(before)
 
 
-def drive_dad_note(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     config = run.config
     key_file = config / "zgloszenia-klucz.txt"
     box = run.box
@@ -590,7 +588,7 @@ def drive_dad_note(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "uwaga-wyslana")
     print("  harness: Maks writes the key; the skrzynka answers each issue after a pause", flush=True)
-    key_file.write_text(KEY + "\n", encoding="utf-8")
+    key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     pacing.parent.mkdir(exist_ok=True)
     pacing.write_text(str(BOX_PACING_MS), encoding="utf-8")
     try:
@@ -635,10 +633,10 @@ def drive_dad_note(run: Run, page: Page) -> None:
     )
     log = run.log()
     run.check(
-        all(text not in log for text in (KEY, FIRST[0], FIRST[1].splitlines()[0], SECOND[0])),
+        all(text not in log for text in (REPORT_KEY, FIRST[0], FIRST[1].splitlines()[0], SECOND[0])),
         "the Centrum log has neither the key nor the text of an Uwaga",
     )
-    run.check(KEY not in page.content(), "the key never reaches the browser")
+    run.check(REPORT_KEY not in page.content(), "the key never reaches the browser")
     _close(dialog)
     try:
         _drive_pinned(run, page, config, box)
@@ -755,22 +753,13 @@ def _opened_about(run: Run, page: Page, run_id: str, name: str) -> tuple[Locator
     return dialog, offered
 
 
-def _theme(page: Page, name: str) -> bool:
-    toggle = page.locator("header").get_by_role("button", name=f"Włącz motyw {name}", exact=True)
-    if toggle.count() == 0:
-        return False
-    toggle.click()
-    expect(toggle).to_have_count(0)
-    return True
-
-
 def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     period = run.fixture["settlement"]["needs_check"]
 
     run.step(FEATURE, "uwaga-przycisk-na-karcie")
     page.goto(run.url)
     ensure_files_set(run, page)
-    was_dark = _theme(page, "jasny")
+    was_dark = switch_theme(page, "jasny")
     page.goto(run.url + "#/uruchomienia")
     if ended_run_shown(current_run(run, "uwaga-przed-podgladem")):
         page.get_by_role("button", name="Nowe Uruchomienie procesu", exact=True).click()
@@ -904,7 +893,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     _laptop(run, page, about, target)
     _not_in_history(run, page, period)
     if was_dark:
-        _theme(page, "ciemny")
+        switch_theme(page, "ciemny")
     _drive_missing_logs(run, page, config, box, period)
 
 

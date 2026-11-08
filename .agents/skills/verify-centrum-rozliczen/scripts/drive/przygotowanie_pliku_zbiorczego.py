@@ -8,8 +8,10 @@ from pathlib import Path
 from playwright.sync_api import Page, Request, expect
 
 from drive.common import (
+    HIDE_TAB,
     LAST_COMPLETE,
     ROW_MARKER,
+    SHOW_TAB,
     Run,
     active_run_signs,
     current_run,
@@ -17,6 +19,7 @@ from drive.common import (
     error_toasts,
     figure,
     finished_result,
+    frontend_ms,
     history_rows,
     last_opened_is,
     next_step_names_current_step,
@@ -27,12 +30,13 @@ from drive.common import (
     settle,
     start_card_warns_while_open,
 )
+from drive.teksty import FILES_UNCHANGED
+from drive.uzupelnienie import drive_result_card
 
 # An older period with no successful DRY-RUN in the fixture's metrics; its confirmation keeps the no-preview warning.
 NOT_PREVIEWED = "08_14_09_2026"
 PREPARATION = "przygotowanie-pliku-zbiorczego"
 INCOMPLETE_PERIOD_WHAT = "Ostatnie zlecenie okresu jest z soboty 10.10.2026"
-FILES_UNCHANGED = "Nic nie zapisano, Twoje pliki są bez zmian."
 # Ilości usług warnings of the fixture's Plik zbiorczy rows (create_centrum_fixture.DEVICES): "Co się stało" and "Gdzie".
 COLLECTIVE_FILE = f"Rozliczenie {LAST_COMPLETE} - zbiorcze.xlsx"
 QUANTITY_WARNINGS = (
@@ -40,12 +44,6 @@ QUANTITY_WARNINGS = (
     ("rozlicza się z opisu technika", f"plik {COLLECTIVE_FILE}, wiersz 19"),
     ("Ilości, które wynikają z opisu technika", f"plik {COLLECTIVE_FILE}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
 )
-# Harness: the page reports itself hidden, so the Uruchomienia stream pauses and its next view arrives late.
-HIDE_TAB = (
-    "Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});"
-    "document.dispatchEvent(new Event('visibilitychange'))"
-)
-SHOW_TAB = "delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))"
 
 
 def _started_once(run: Run, page: Page, sent: list[Request], what: str) -> None:
@@ -79,7 +77,7 @@ def _preparation_records(run: Run, name: str) -> list[dict[str, object]]:
     return [entry for entry in runs if entry["process"] == "preparation"]
 
 
-def drive_preparation(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     feature = PREPARATION
     expected = run.fixture["preparation"]
     period_folder = period_files(run)[0].parent
@@ -334,15 +332,12 @@ def drive_preparation(run: Run, page: Page) -> None:
         "the Centrum log records the start and end of each Uruchomienie procesu with safe facts only",
     )
     run.capture(page, "35-przygotowanie-zapisane")
-    # Imported here: drive.uzupelnienie drives Przygotowanie first when it runs alone.
-    from drive.uzupelnienie import drive_result_card
-
     drive_result_card(run, page)
 
     run.step(feature, "przygotowanie-otwieranie")
-    # The tab drops a repeat of the same file for 1.5 s after the server's answer (REPEAT_IGNORED_MS in
-    # open-period-path.ts); the Plik zbiorczy was opened by the double click above.
-    page.wait_for_timeout(1_600)
+    # The tab drops a repeat of the same file for a while after the server's answer, with nothing on screen; the Plik
+    # zbiorczy was opened by the double click above.
+    page.wait_for_timeout(frontend_ms("pages/periods/open-period-path.ts", "REPEAT_IGNORED_MS") + 100)
     period_file_list = page.get_by_role("list", name="Pliki okresu")
     opened_before = len(run.lines("opened.jsonl"))
     for path in (internal_settlement, collective_file):

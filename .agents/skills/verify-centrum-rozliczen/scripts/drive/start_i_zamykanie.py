@@ -92,7 +92,7 @@ def _expect_runs_shown(tab: Page) -> None:
     expect(tab.get_by_label("Wczytywanie Uruchomień", exact=True)).to_have_count(0)
 
 
-def drive_start_and_close(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     feature = "start-i-zamykanie"
     port = int(urllib.parse.urlsplit(run.url).port or 0)
     served_log = run.log_path

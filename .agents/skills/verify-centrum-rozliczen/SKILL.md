@@ -22,8 +22,9 @@ server's answer and the files on disk.
 CI runs `run_centrum_verification.py --feature all` (the `ci:` key) in Mutation checks on Windows whenever a change
 touches this skill, in up to `ci-czesci` parts: part k of n (`MUTACJE_CZESC=k/n`) drives the k-th of n consecutive runs of
 the order of `all` (`FEATURES` in `scripts/drive/__init__.py`) on its own fixture and Centrum, so a feature must also pass
-right after the fixture or after any earlier feature of that order: a feature that needs an earlier feature's state
-drives that feature itself when the state is missing (`powiadomienia` drives `zgloszenie` and `uwaga-taty`). A pull
+right after the fixture or after any earlier feature of that order: a feature that finds an earlier feature's state
+names it in `needs` of its `Feature`, and the drive drives that one first when it has not yet (`powiadomienia` needs
+`zgloszenie` and `uwaga-taty`). A pull
 request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci` after a change that
 picks this check on a pull request. A red run leaves its evidence in the `evidence-<job id>-<attempt>` artifact (e.g.
 `evidence-mutacje-2-1`), and its job name in the plan says which part.
@@ -159,9 +160,9 @@ run dir is `.verification` of the checkout, or any path given with `--run-dir`:
 - `screenshots/NN-<step>.png` and `aria/NN-<step>.txt` for each step, captured
   after transitions finish; on failure, also `screenshots/zz-failure.png`.
   `NN` belongs to one feature only (feature files and PRs cite it alone; views of one
-  step, such as `225-…-1280px` and `225-…-jasny`, share it): the drive fails when a
-  feature captures a number another feature captured in the same run, and the
-  runner when two required screenshots share it;
+  step, such as `225-…-1280px` and `225-…-jasny`, share it): the drive fails on a
+  screenshot that is not among its feature's `screenshots` in `FEATURES`, and the
+  runner when the screenshots of two features share a number;
 - `api/*.json` with the server's answers, including the refused foreign
   `Origin` and `Host` requests, and `api/start-*.txt` with the real launcher's
   console output;

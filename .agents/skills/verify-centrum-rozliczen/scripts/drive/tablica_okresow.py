@@ -23,7 +23,7 @@ from drive.common import (
 )
 
 
-def drive_period_board(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     feature = "tablica-okresow"
     periods = Path(run.fixture["periods_directory"])
 
