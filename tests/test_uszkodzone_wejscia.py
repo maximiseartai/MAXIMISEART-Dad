@@ -489,26 +489,14 @@ NOT_SWEPT: dict[str, str] = {
 }
 
 
-# Znane przypadki: powód, termin i zgoda Maksa. Po terminie przypadek znów pada, a naprawiony pada od razu (strict).
-KNOWN_UNTIL = date(2026, 10, 29)
-KNOWN: dict[tuple[str, str, str], str] = {}
-
-
 def _cases() -> list[Any]:
     return [
-        pytest.param(entry, damage, name, id=f"{entry}-{damage}-{name}", marks=_known(entry, damage, name))
+        pytest.param(entry, damage, name, id=f"{entry}-{damage}-{name}")
         for entry in ENTRIES
         for damage, (kinds, _) in DAMAGES.items()
         for name, (_, kind) in FILES.items()
         if kind in kinds
     ]
-
-
-def _known(entry: str, damage: str, name: str) -> tuple[pytest.MarkDecorator, ...]:
-    reason = KNOWN.get((entry, damage, name))
-    if reason is None or datetime.now().astimezone().date() > KNOWN_UNTIL:
-        return ()
-    return (pytest.mark.xfail(strict=True, reason=reason),)
 
 
 @pytest.fixture(scope="session")
