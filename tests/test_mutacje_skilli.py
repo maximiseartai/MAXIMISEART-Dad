@@ -591,6 +591,8 @@ def test_kazde_przyjete_ryzyko_i_znane_ustalenie_eksploratora_ma_mutacje_tuz_za_
 _SHAPED = '''from dataclasses import dataclass
 import enum
 
+from eksplorator import Excuse
+
 
 class Rodzaj(enum.Enum):
     A = "a"
@@ -603,15 +605,12 @@ class Ksztalt:
     rodzaj: frozenset[Rodzaj]
     stan: int
 
-
-@dataclass(frozen=True)
-class Wpis:
-    name: str
-    shape: Ksztalt
+    def holds(self, observed):
+        return False
 
 
-ACCEPTED_RISKS = (Wpis("ryzyko", Ksztalt(frozenset({"zapis"}), frozenset(Rodzaj), 1)),)
-KNOWN_FINDINGS = {("ZNANE", 1): Wpis("ustalenie", Ksztalt(frozenset({"zapis"}), frozenset({Rodzaj.A}), 2))}
+ACCEPTED_RISKS = (Excuse("ryzyko", "R", "historia", Ksztalt(frozenset({"zapis"}), frozenset(Rodzaj), 1), after=("z",)),)
+KNOWN_FINDINGS = (Excuse("ustalenie", "R", "historia", Ksztalt(frozenset({"zapis"}), frozenset({Rodzaj.A}), 2), after=("z",)),)
 '''
 _TABLE = '''from pathlib import Path
 
@@ -667,7 +666,7 @@ MUTATIONS = tuple(
             id="mutacja-innego-eksploratora",
         ),
         pytest.param(
-            _SHAPED.replace('Wpis("ryzyko"', 'Wpis("inne"'),
+            _SHAPED.replace('Excuse("ryzyko"', 'Excuse("inne"'),
             _TABLE,
             [
                 "check_x_mutations.py: BOUNDARIES ma wpis ryzyko, którego eksplorator nie ma",
@@ -685,8 +684,22 @@ MUTATIONS = tuple(
         pytest.param(
             "ACCEPTED_RISKS = {('R', 1): 'opis'}\nKNOWN_FINDINGS = ()\n",
             "",
-            ["ACCEPTED_RISKS opis: wpis bez nazwy albo bez jawnego kształtu (dataklasa w ``shape``)"],
-            id="sygnatura-albo-predykat-zamiast-ksztaltu",
+            ["ACCEPTED_RISKS ('R', 1): wpis nie jest Excuse z tools/lib/eksplorator.py"],
+            id="sygnatura-zamiast-wpisu",
+        ),
+        pytest.param(
+            _SHAPED.replace("ACCEPTED_RISKS = (", "@dataclass(frozen=True)\nclass Wpis:\n    name: str\n    shape: object\n\n\n"
+            "ACCEPTED_RISKS = (Wpis('własny', None), "),
+            _TABLE,
+            ["ACCEPTED_RISKS Wpis(name='własny', shape=None): wpis nie jest Excuse z tools/lib/eksplorator.py"],
+            id="wlasny-typ-wpisu",
+        ),
+        pytest.param(
+            "from eksplorator import Excuse\n\n\nclass Predykat:\n    def holds(self, observed):\n        return True\n\n\n"
+            "ACCEPTED_RISKS = (Excuse('po skutku', 'R', 'historia', Predykat(), after=('z',)),)\n",
+            "",
+            ["ACCEPTED_RISKS po skutku: wpis bez jawnego kształtu (dataklasa w ``shape``)"],
+            id="predykat-zamiast-ksztaltu",
         ),
     ],
 )

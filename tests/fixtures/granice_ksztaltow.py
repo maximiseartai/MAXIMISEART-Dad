@@ -3,11 +3,11 @@
 granicą każdej części swojego kształtu (#920).
 
 Przyjęte ryzyko albo znane ustalenie, które wybacza szerzej, niż mówi jego historia, przepuszcza zepsuty kod jako
-znany (#867 runda 3, #916 rundy 1 i 2). Każdy wpis ``ACCEPTED_RISKS`` i ``KNOWN_FINDINGS`` eksploratora (krotka wpisów
-albo słownik, którego wartości są wpisami) ma więc:
+znany (#867 runda 3, #916 rundy 1 i 2). Każdy wpis krotek ``ACCEPTED_RISKS`` i ``KNOWN_FINDINGS`` eksploratora ma więc:
 
-- ``name`` (tekst) i ``shape``: dataklasę, której każde pole to część kształtu z historii wpisu, a nie predykat
-  dopasowany po skutku;
+- jeden typ, ``Excuse`` z ``tools/lib/eksplorator.py``, bo każdy eksplorator z własnym typem wpisu rozstrzygał i
+  zgłaszał go po swojemu (cztery typy przed N13b, z czego dwa przechodziły strażnika tylko przy pustych listach), a jego
+  ``shape`` to dataklasa, której każde pole to część kształtu z historii wpisu, a nie predykat dopasowany po skutku;
 - w ``BOUNDARIES`` dokładnie jednego skryptu ``check_*_mutations.py`` swojego katalogu, pod swoją nazwą i nazwą
   każdej części, co najmniej jedną mutację z tabeli ``MUTATIONS`` tego skryptu, która uruchamia ten eksplorator i kończy
   się linią ``…NOWE NARUSZENIE``: tę samą szkodę z tą jedną częścią inną, niż mówi historia.
@@ -33,14 +33,8 @@ import enum
 import json
 from pathlib import Path
 import sys
-from typing import Any
 
 NEW = "NOWE NARUSZENIE"
-
-
-def _entries(module: Any, kind: str) -> list[Any]:
-    found = getattr(module, kind, ())
-    return list(found.values()) if isinstance(found, dict) else list(found)
 
 
 def _parts(shape: object) -> list[str] | None:
@@ -65,13 +59,13 @@ def gaps(explorer: Path) -> list[str]:
     found: list[str] = []
     entries: dict[str, list[str]] = {}
     for kind in ("ACCEPTED_RISKS", "KNOWN_FINDINGS"):
-        for entry in _entries(module, kind):
-            name = getattr(entry, "name", None)
-            parts = _parts(getattr(entry, "shape", None))
-            if not isinstance(name, str) or parts is None:
-                found.append(f"{kind} {str(entry)[:80]}: wpis bez nazwy albo bez jawnego kształtu (dataklasa w ``shape``)")
+        for entry in getattr(module, kind, ()):
+            if (type(entry).__module__, type(entry).__qualname__) != ("eksplorator", "Excuse"):
+                found.append(f"{kind} {str(entry)[:80]}: wpis nie jest Excuse z tools/lib/eksplorator.py")
+            elif (parts := _parts(entry.shape)) is None:
+                found.append(f"{kind} {entry.name}: wpis bez jawnego kształtu (dataklasa w ``shape``)")
             else:
-                entries[name] = parts
+                entries[entry.name] = parts
     tables = {}
     for script in sorted(scripts.glob("check_*_mutations.py")):
         table = __import__(script.stem)
@@ -105,6 +99,7 @@ GAPS = 3
 
 if __name__ == "__main__":
     sys.path.insert(0, sys.argv[1])
+    sys.path.insert(0, str(Path(sys.argv[1]) / "lib"))
     found = gaps(Path(sys.argv[2]).resolve())
     print(json.dumps(found, ensure_ascii=False))
     raise SystemExit(GAPS if found else 0)
