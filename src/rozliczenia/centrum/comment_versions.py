@@ -14,17 +14,17 @@ wersja to ta sama wysyłka (Uruchomienie i etykieta), więc kolejka zmienia ten 
 
 Wersja końcowa zamienia więc postęp w podsumowanie także po cofnięciu zegara komputera, a wersja zastępcza nie zastępuje
 Logów z wynikiem, które kolejka już przyjęła. Każda wersja niesie tylko tekst po strażniku reguły danych pracy Centrum
-(``run_logs.GuardedLogs``, ``run_logs.GuardedText``, ADR 0025), więc wysyłka (``post_of``) strażnika nie potrzebuje, a
-wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``), ``TypeError`` w konstruktorze wersji. Dziennik Wyceny znika tylko po wersji końcowej,
+(``run_logs_guard.GuardedLogs``, ``run_logs_guard.GuardedText``, ADR 0025), więc wysyłka (``post_of``) strażnika nie
+potrzebuje, a wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``), ``TypeError`` w konstruktorze wersji. Dziennik Wyceny znika tylko po wersji końcowej,
 którą kolejka przyjęła (``journal_after``), bo do tej chwili jest śladem komentarza, który może jeszcze mówić, że
 Uruchomienie trwa.
 
 Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wybiera ``close``: cała macierz startu w jednym
 ``match``, ze strażnikiem w środku, więc start Centrum (``run_comments.RunComments``) dostaje tylko wersję po strażniku.
 
-Typy Logów bierze z ``run_logs`` do adnotacji i, importem w funkcji, do ``isinstance`` w konstruktorach wersji i do
-strażnika w ``close``, a typy odczytu dysku i nazwę pliku Logów (``name_of``) z ``logs_disk`` też w funkcji: przy
-wczytaniu moduł bierze tylko nazwy bez I/O (``tests/test_granice_importow.py``).
+Strażnika i typy po nim bierze z ``run_logs_guard``, typy schematu Logów (``run_logs``) i postępu Wyceny tylko do
+adnotacji, a typy odczytu dysku i nazwę pliku Logów (``name_of``) z ``logs_disk`` importem w funkcji: przy wczytaniu
+moduł bierze tylko nazwy bez I/O (``tests/test_granice_importow.py``).
 """
 
 from __future__ import annotations
@@ -37,21 +37,15 @@ from rozliczenia.centrum import contract
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank
 from rozliczenia.centrum.report_box import Label
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, guard_logs, guard_text
 from rozliczenia.centrum.version import short_commit
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from rozliczenia.centrum.logs_disk import JournalRead, LeftJournal
-    from rozliczenia.centrum.run_logs import (
-        GuardedLogs,
-        GuardedText,
-        LoggedDiagnosis,
-        LoggedMessage,
-        PricingProgress,
-        RunLog,
-        StartFacts,
-    )
+    from rozliczenia.centrum.pricing_progress import PricingProgress
+    from rozliczenia.centrum.run_logs import LoggedDiagnosis, LoggedMessage, RunLog, StartFacts
     from rozliczenia.client_data import ForbiddenValues
 
 LABEL: Final[Label] = "logi-uruchomienia"
@@ -118,19 +112,16 @@ class WithoutLogsVersion:
 
 
 def _require_logs(logs: object) -> None:
-    """Wersja z Logami bierze tylko Logi po strażniku (``run_logs._MINTED``): Logi sprzed strażnika podane przez ``Any``
-    typ przepuszcza, a tu rzucają ``TypeError``."""
-
-    from rozliczenia.centrum.run_logs import GuardedLogs
+    """Wersja z Logami bierze tylko Logi po strażniku (``run_logs_guard._MINTED``): Logi sprzed strażnika podane przez
+    ``Any`` typ przepuszcza, a tu rzucają ``TypeError``."""
 
     if not isinstance(logs, GuardedLogs):
         raise TypeError("Wersja komentarza Uruchomienia bierze tylko Logi po strażniku z guard_logs.")
 
 
 def _require_text(text: object) -> None:
-    """Postęp i wynik bez Logów biorą tylko tekst po strażniku (``run_logs._MINTED``), także gdy typ go nie widzi."""
-
-    from rozliczenia.centrum.run_logs import GuardedText
+    """Postęp i wynik bez Logów biorą tylko tekst po strażniku (``run_logs_guard._MINTED``), także gdy typ go nie
+    widzi."""
 
     if not isinstance(text, GuardedText):
         raise TypeError("Wersja komentarza Uruchomienia bierze tylko tekst po strażniku z guard_text.")
@@ -201,7 +192,6 @@ def close(left: LeftJournal, forbidden: ForbiddenValues, interrupted: Callable[[
     """
 
     from rozliczenia.centrum.logs_disk import Found, Missing, Refused, Unreadable
-    from rozliczenia.centrum.run_logs import guard_logs, guard_text
 
     read = left.journal
     if read is None:

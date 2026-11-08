@@ -1,8 +1,7 @@
-"""Logi Uruchomienia na komputerze taty (ADR 0015): jeden plik JSON na Uruchomienie procesu z Centrum.
+"""Schemat Logów Uruchomienia na komputerze taty (ADR 0015): jeden plik JSON na Uruchomienie procesu z Centrum.
 
-Działanie po wyniku Uruchomienia (``runs.AfterRun``), w każdej drodze zakończenia i w obu trybach. Logi powstają
-z tych samych faktów co karta Uruchomienia (``EndedRun``): wynik, Komunikaty z kodami, podsumowanie, etapy, ślad
-wywołań Zatrzymania, a z ostatniego snapshotu projekcji postępu (``EndedRun.snapshot``) Przetworzenia Szablonów
+Logi powstają z tych samych faktów co karta Uruchomienia (``logs_of_run.logs_of``): wynik, Komunikaty z kodami,
+podsumowanie, etapy, ślad wywołań Zatrzymania, a z ostatniego snapshotu projekcji postępu Przetworzenia Szablonów
 pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z Diagnozy z rozmiarem i atrybutem OneDrive.
 Z podsumowania silnika Przebiegu rozliczeń jest też liczba wyczyszczonych Ilości tylko dla INEA, której karta nie
 pokazuje (ADR 0018), a z podsumowania Uporządkowania INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019):
@@ -18,77 +17,39 @@ nie udało; a każde Zatrzymanie z przyczyną w wyjątku, także dla taty, ma ś
 Zatrzymanie przy starcie okna efenix nazywa drogę startu, która zawiodła, i typ jej wyjątku (#976).
 Wiersze danych niesie tylko Kopia wejścia (``input_copy``, #841): każdy plik taty, który Uruchomienie przeczytało, z
 odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange (w Uporządkowaniu INTERMAX wklejone wiersze,
-#842), zebrana po końcu procesu z tego, co czytniki oddały Kopii wejścia Uruchomienia (``EndedRun.input_copy``). Poza nią komórkę cytuje tylko Komunikat
-(``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Przed zapisem pliku i przed wysyłką Logi przechodzą
-przez strażnika reguły danych pracy Centrum (``guard_logs``, ADR 0025), a plik i wysyłka biorą tylko Logi z niego
-(``GuardedLogs``) i tekst komentarza z niego (``GuardedText``): wartość ``ADRES`` albo numeru Orange z przeczytanych
-plików, także wpisana w inną komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą
-techniczną, a telefony i ulice w tekście są zamaskowane. Pola, które niosą tylko słowa i chwile narzędzia (okres,
-Uruchomienie, proces, chwile startu i końca, commit), i nazwy pól schematu zostają bez maski (#936).
-Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
+#842). Poza nią komórkę cytuje tylko Komunikat (``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Plik i
+wysyłka biorą tylko Logi po strażniku reguły danych (``run_logs_guard``, ADR 0025). Skrypt dla maszyn nie ma działań po
+wyniku, więc Logów nie tworzy.
 
 Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
 Przetworzenie Szablonu pracownika też, a działanie okna efenix chwilę rozpoczęcia, więc widać przerwy i czekanie, których
-czasy trwania nie liczą. Etapy i Szablony mają chwile z projekcji postępu (``ProgressSnapshot``), działania okna efenix
-z jego śladu (``efenix_trace``). Dochodzi dziennik działań taty w Centrum (``dad_actions``) od Logów poprzedniego
-Uruchomienia do końca tego, bez treści zapytań, więc bez treści Uwagi taty. Karta z Logów i Historia czytają oba
-schematy: plik schematu 1 nie ma godzin ani dziennika, a te pola są w nim ``None``.
+czasy trwania nie liczą. Dochodzi dziennik działań taty w Centrum (``dad_actions``) od Logów poprzedniego Uruchomienia do
+końca tego, bez treści zapytań, więc bez treści Uwagi taty. Karta z Logów i Historia czytają oba schematy: plik schematu 1
+nie ma godzin ani dziennika, a te pola są w nim ``None``.
 
-Plik leży w katalogu Logów obok dziennika Centrum, poza Gitem i OneDrive, bez rotacji. Nazwa to czas startu (UTC),
-klucz procesu i identyfikator Uruchomienia, więc jest jedna na Uruchomienie i układa się chronologicznie. Zapis jest
-atomowy (``logs_disk.LogsOnDisk.write``); nieudany to w dzienniku Centrum tylko jego typ, bez zmiany wyniku i bez
-Komunikatu. Kiedy Logi powstają, idą do pliku i do Skrzynki, decyduje komentarz Uruchomienia (``run_comments.RunComments``).
+Plik leży w katalogu Logów obok dziennika Centrum (``logs_disk``), poza Gitem i OneDrive, bez rotacji. Urwana Wycena w
+efenix (#845) ma Logi z dziennika Wyceny (``RunLog.interrupted``): sposób zakończenia ``interrupted``, bez wyniku, czasu,
+etapów i Komunikatów, ze śladem zleceń skończonych przed zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku
+(``LoggedInterruption``); ich koniec to ostatni wpis dziennika, bo chwili zgaśnięcia nikt nie zapisał.
 
-Te same Logi idą przez kolejkę Skrzynki Zgłoszeń (``Outbox``) jedną wysyłką (``comment_versions.post_of``, #844): do
-issue okresu z etykietą ``logi-uruchomienia``, także zamkniętego, jeden komentarz na Uruchomienie z podsumowaniem w
-Markdown (``comment_versions.summary_markdown``) i odnośnikiem do pełnych Logów, a do Archiwum Logów okresu (GitHub
-Release ``logi-<okres>`` w repozytorium Skrzynki, nie Wydanie narzędzia) plik o nazwie pliku Logów spakowany gzipem,
-który rozpakowany ma znak w znak tekst pliku Logów.
-
-Diagnoza Zatrzymania dopisuje się do Logów swojego Uruchomienia (``run_comments.RunComments.diagnosed``): ten sam plik
-dostaje pole ``diagnosis`` (``LoggedDiagnosis``, ``GuardedLogs.with_diagnosis``), a Logi idą do kolejki drugi raz z tym
-samym identyfikatorem wysyłki (Uruchomienie i etykieta), więc kolejka podmienia plik w Archiwum i zmienia komentarz tego
-Uruchomienia zamiast dokładać nowy (#840, #844). Diagnoza z tym samym wynikiem co ostatnio dopisana
-(``LoggedDiagnosis.same_result``) nie zmienia niczego.
-
-Urwana Wycena w efenix (#845) ma Logi z dziennika Wyceny w efenix (``RunLog.interrupted``), które start Centrum zamyka i
-wysyła jak zwykłe Logi (``run_comments.RunComments``): sposób zakończenia
-``interrupted``, bez wyniku (``result`` ``None``), czasu, etapów i Komunikatów, ze śladem zleceń skończonych przed
-zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku (``LoggedInterruption``). Koniec takich Logów to ostatni wpis
-dziennika, bo chwili zgaśnięcia nikt nie zapisał.
-
-W trakcie Wyceny w efenix jej komentarz Uruchomienia pokazuje postęp z dziennika (``PricingProgress``, #846). Każda
-wysyłka Logów jednego Uruchomienia to wersja komentarza Uruchomienia ze stopniem (``comment_versions.rank_of``,
-``outbox.Rank``, #910), który wybiera nadawca, a nie zegar: postęp ma najniższy (``DRAFT``), wersja zastępcza, którą
-następny start Centrum wysyła z dziennika (Logi z pliku, Logi Urwanego Uruchomienia albo wynik bez Logów,
-``ResultWithoutLogs``), środkowy (``STAND_IN``), a Logi z pracy Centrum Uruchomienia (z wynikiem, z Diagnozą) najwyższy
-(``OWN``). Wersja końcowa zamienia więc komentarz postępu w podsumowanie także po cofnięciu zegara, a wersja zastępcza
-nie zastępuje Logów z wynikiem, które kolejka już przyjęła, w kolejce ani w Skrzynce. Start wysyła ją tylko za Wycenę,
-której Logów kolejka nie przyjęła w pracy jej Uruchomienia, bo inaczej dziennik już zniknął (``run_comments``).
+Moduł zależy tylko od kontraktu i typów silnika, które Logi niosą, a nie od gospodarza Uruchomień ani Diagnozy: Logi z
+nich składa ``logs_of_run`` (``tests/test_granice_importow.py``).
 """
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from pathlib import Path
-import re
-from typing import Annotated, Final, Literal, assert_never, final
+from typing import Annotated, Final, Literal, assert_never
 
-from pydantic import BaseModel, ConfigDict, ValidationError
-from pydantic.fields import FieldInfo
+from pydantic import BaseModel, ConfigDict
 
-from rozliczenia.client_data import ForbiddenValues, Guarded
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.dad_actions import DadActions
-from rozliczenia.centrum.diagnosis import CheckState, Diagnosis
-from rozliczenia.centrum.runs import EndedRun, Ending
 from rozliczenia.domain import ProgressPhase, WorkerStatus
-from rozliczenia.engine import SettlementSummary
 from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_pricing import OrderKind, OrderResult, PricingStopped, PricingSummary, StoppedOrder
 from rozliczenia.efenix_window import (
@@ -107,16 +68,14 @@ from rozliczenia.efenix_trace import TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
+from rozliczenia.process_run import StopEnding
 from rozliczenia.progress import ProgressSnapshot
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 
-LoggedEnding = Literal[Ending, "interrupted"]
+LoggedEnding = Literal["finished", StopEnding, "interrupted"]
 """Sposób zakończenia w Logach: jak na karcie (``runs.Ending``) albo ``interrupted``, Urwane Uruchomienie, którego Logi
 zamknął start Centrum z dziennika Wyceny w efenix."""
-
-ProcessFiles = Callable[[contract.ProcessKey, str], Sequence[Path]]
-"""Pliki taty Uruchomienia procesu dla tokenu okresu, z Ustawieniami taty z chwili końca Uruchomienia."""
 
 
 class _Record(BaseModel):
@@ -230,12 +189,12 @@ class LoggedCheck(_Record):
     """Sprawdzenie Diagnozy jak na liście „Sprawdzono” taty; ``code`` to kod Komunikatu sprawdzenia, które nie przeszło."""
 
     label: str
-    state: CheckState
+    state: contract.CheckState
     detail: str
     code: str | None
 
     @property
-    def result(self) -> tuple[str, CheckState, str | None, str | None]:
+    def result(self) -> tuple[str, contract.CheckState, str | None, str | None]:
         """Sprawdzenie bez okoliczności: ``detail`` sprawdzenia, które przeszło, to fakt chwili (liczba wpisów dziennika
         rośnie z każdą Diagnozą), a przy ``failed`` i ``not_checked`` sam wynik: treść Komunikatu albo powód."""
 
@@ -249,26 +208,6 @@ class LoggedDiagnosis(_Record):
     explanation: Explanation
     next_action: contract.DiagnosisNextAction
     checks: list[LoggedCheck]
-
-    @classmethod
-    def of(cls, diagnosis: Diagnosis, *, diagnosed_at: datetime) -> LoggedDiagnosis:
-        explanation = diagnosis.explanation
-        return cls(
-            diagnosed_at=diagnosed_at,
-            explanation=Explanation(
-                code=explanation.code, what=explanation.what, where=explanation.where, action=explanation.action
-            ),
-            next_action=diagnosis.next_action,
-            checks=[
-                LoggedCheck(
-                    label=check.label,
-                    state=check.state,
-                    detail=check.detail,
-                    code=None if check.message is None else check.message.code,
-                )
-                for check in diagnosis.checks
-            ],
-        )
 
     def same_result(self, other: LoggedDiagnosis) -> bool:
         """Te same Logi Diagnozy bez okoliczności: bez chwili i z każdym sprawdzeniem jako ``LoggedCheck.result``."""
@@ -649,64 +588,8 @@ class RunLog(_Record):
     ``None``: Logi Urwanego Uruchomienia, pliki sprzed tego pola i Uporządkowania INTERMAX sprzed #842."""
     input_copy_notes: list[str] = []
     """Uwagi techniczne o Kopii wejścia, osobno od ``technical_notes``, które pokazuje karta Uruchomienia z Logów: wiersz
-    ze śladem przesunięcia, który łamie fakt domeny (``_domain_fact_notes``), i uwagi strażnika reguły danych o
+    ze śladem przesunięcia, który łamie fakt domeny (``logs_of_run.logs_of``), i uwagi strażnika reguły danych o
     wartościach zamaskowanych w Kopii (``guard_logs``)."""
-
-    @classmethod
-    def of(cls, run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
-        info, stopped, snapshot = run.info, run.stopped, run.snapshot
-        engine_summary = None if run.shown is None else run.shown.engine_summary
-        facts = None if stopped is None else stopped.stop.facts
-        priced = engine_summary if isinstance(engine_summary, PricingSummary) else None
-        if isinstance(facts, PricingStopped):
-            priced = facts.summary
-        copied = None if run.input_copy is None else run.input_copy.files()
-        return cls(
-            schema_version=2,
-            run_id=info.id,
-            process=info.process,
-            mode="podgląd" if info.dry_run else "zapis",
-            pricing=info.pricing,
-            period=info.period,
-            started_at=run.started_at,
-            ended_at=run.ended_at,
-            duration_ms=run.duration_ms,
-            tool=tool,
-            result=run.result,
-            ending=run.ending,
-            stop_kind=None if stopped is None else stopped.kind,
-            issue_count=None if snapshot is None else snapshot.issue_count,
-            messages=[LoggedMessage.of("stop", stop) for stop in run.stops]
-            + [LoggedMessage.of("warning", warning) for warning in run.warnings],
-            technical_notes=list(run.technical_notes),
-            summary=None if run.shown is None else run.shown.summary,
-            phases=LoggedPhase.all_of(run.progress.phases, snapshot),
-            templates=[]
-            if snapshot is None
-            else [
-                LoggedTemplate(
-                    wykonawca=template.worker_name,
-                    outcome=template.outcome,
-                    rows=template.rows,
-                    duration_ms=template.duration_ms,
-                    started_at=template.started_at,
-                    ended_at=template.ended_at,
-                )
-                for template in snapshot.templates
-            ],
-            inea_only_cleared={column.value: count for column, count in engine_summary.inea_only_cleared.items()}
-            if isinstance(engine_summary, SettlementSummary)
-            else None,
-            intermax_entries=LoggedEntries.of(engine_summary) if isinstance(engine_summary, OrderingSummary) else None,
-            efenix_orders=None if priced is None else LoggedOrder.all_of(priced),
-            efenix_stop=LoggedWindowStop.of(facts) if isinstance(facts, PricingStopped) else None,
-            environment=environment,
-            trace=None if stopped is None else stopped.stop.trace,
-            diagnosis=None,
-            dad_actions=dad_actions,
-            input_copy=None if copied is None else [LoggedInputFile.of(file) for file in copied],
-            input_copy_notes=[] if copied is None else _domain_fact_notes(copied),
-        )
 
     @classmethod
     def interrupted(
@@ -797,456 +680,3 @@ class StartFacts:
             started_at=started_at,
             pricing=info.pricing,
         )
-
-
-def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
-    """Uwaga o każdym wierszu Kopii ze śladem przesunięcia poza pierwszym wierszem bloku wklejenia
-    (``CopiedSheet.traced_rows``): fakt domeny, na którym stoi reguła położenia wiersza, nie zachodzi (ADR 0025)."""
-
-    return [
-        f"Fakt domeny złamany: wiersz {row} arkusza {sheet.name} w {file.name} ma datę z godziną dwie kolumny na lewo od "
-        "DATA GODZ. POCZ., a nie jest pierwszym wierszem bloku wklejenia; pamięć reguły danych zna go w obu położeniach "
-        "(ADR 0025)."
-        for file in files
-        for sheet in file.sheets
-        for row in sheet.traced_rows
-    ]
-
-
-def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
-    """Logi po strażniku reguły danych (``ForbiddenValues.guard``): każdy tekst i klucz bez zakazanych wartości, z
-    zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna z kolumną i polem pliku.
-
-    Strażnik widzi każdy tekst pliku: także datę, kwotę i wartość ``Decimal``, które JSON zapisuje jako tekst. Liczbę
-    sprawdza w polu z wartościami z komórek pliku taty albo ze strony efenix (``READ_VALUES``: komórki Kopii wejścia i
-    ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``ForbiddenValues.guard_number``), i liczba z
-    zakazaną wartością albo telefonem staje się w całości maską. Liczb, które policzyło narzędzie, nie sprawdza.
-
-    Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia
-    trafiłaby też w pole, które niesie tylko to, co dało narzędzie. Takich pól (``TOOL_FIELDS``) nie maskuje i zostawia
-    w nich wartość z rekordu, a klucza pola modelu Logów (nazwy pola schematu) też nie: maska w nich gubiła całe Logi
-    albo ich okres, Uruchomienie i commit (#936). Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
-    maskuje.
-
-    Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
-    niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
-    pokazuje karta Uruchomienia z Logów: Kopii karta nie pokazuje, więc karta po starcie Centrum zostaje taka jak przed
-    nim (ADR 0017). Pole typowane, które maski nie przyjmuje, zostaje puste albo odpada z uwagą techniczną
-    (``_representable``). Logi bez niczego do zamaskowania wracają te same.
-    """
-
-    notes: list[str] = []
-    copy_notes: list[str] = []
-
-    def noted(found: Guarded, place: str) -> str:
-        (copy_notes if re.split(r"[.\[]", place)[0] == _INPUT_COPY else notes).extend(found.notes)
-        return found.text
-
-    def text(value: str, place: str) -> str:
-        return noted(forbidden.guard(value, place or "Logi"), place)
-
-    def number(value: int | float, place: str) -> object:
-        found = forbidden.guard_number(value, place)
-        return value if found is None else noted(found, place)
-
-    def walk(source: object, value: object, place: str, read: bool) -> object:
-        """``value`` z JSON-a Logów i ``source``, z którego powstał (``None``: poza modelem Logów); ``read``: w polu
-        ``READ_VALUES``."""
-
-        if place in TOOL_FIELDS:
-            return value
-        if isinstance(value, str):
-            return text(value, place)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return number(value, place) if read else value
-        if isinstance(value, list):
-            sources = source if isinstance(source, list) else [None] * len(value)
-            return [
-                walk(item, entry, f"{place}[{index}]", read)
-                for index, (item, entry) in enumerate(zip(sources, value, strict=True))
-            ]
-        if isinstance(value, dict):
-            items: dict[str, object] = {}
-            for key, entry in value.items():
-                child, field = _child(source, key)
-                marked = field is not None and READ_VALUES in field.metadata
-                items[key if field is not None else text(key, place)] = walk(child, entry, _field(place, key), read or marked)
-            return items
-        return value
-
-    dumped = record.model_dump(mode="json")
-    walked = walk(record, dumped, "", False)
-    if walked == dumped:
-        return record
-    assert isinstance(walked, dict)
-    walked["technical_notes"] = [*walked["technical_notes"], *dict.fromkeys(notes)]
-    walked["input_copy_notes"] = [*walked["input_copy_notes"], *dict.fromkeys(copy_notes)]
-    return _representable(walked)
-
-
-_INPUT_COPY: Final = "input_copy"
-"""Pole Kopii wejścia w Logach; uwagi strażnika o nim idą do ``input_copy_notes``."""
-
-TOOL_FIELDS: Final = frozenset(
-    {
-        "run_id",
-        "process",
-        "mode",
-        "period",
-        "started_at",
-        "ended_at",
-        "tool",
-        "result",
-        "ending",
-        "stop_kind",
-        "phases",
-        "trace",
-        "dad_actions",
-        "environment.system",
-        "environment.python",
-    }
-)
-"""Pola Logów (ścieżka JSON jak w uwadze strażnika), które niosą tylko słowa i chwile narzędzia, więc strażnik
-(``guard_logs``) zostawia w nich wartość z rekordu (#936). Każde ma wartość z kodu narzędzia, a nie z pliku taty:
-``run_id`` to ``uuid4``, ``period`` token okresu z ``parse_period_token`` albo z zegara (INTERMAX), ``process``,
-``mode``, ``result``, ``ending`` i ``stop_kind`` to wartości zamkniętych list schematu, ``started_at`` i ``ended_at``
-chwile zegara Centrum (w Logach Urwanego Uruchomienia z dziennika Wyceny, który pisze Centrum), ``tool`` Wydanie i
-commit z Gita narzędzia, ``phases`` etapy z zamkniętej listy ze stanem, czasem i chwilami projekcji postępu, ``trace``
-typy wyjątków i ramki kodu narzędzia bez treści wyjątku (``call_trace``), ``dad_actions`` chwile, wartości zamkniętych
-list i operacje API z kontraktu bez treści zapytań, a ``system`` i ``python`` Środowiska moduł ``platform``.
-
-Pole spoza listy może nieść treść pliku taty (tekst Komunikatu, Wykonawca, nazwa pliku, odczyt strony efenix, Kopia
-wejścia), więc strażnik maskuje je dalej, także w polu z wartością narzędzia w modelu, który niesie i jedno, i drugie
-(kod Komunikatu, wynik zlecenia efenix). Liczby, które policzyło narzędzie (``schema_version``, ``duration_ms``,
-``issue_count``, ``interruption``), zostają i bez listy, bo strażnik sprawdza tylko liczby z ``READ_VALUES``. Każde
-pole najwyższego poziomu bez ``None`` poza Środowiskiem jest więc na liście, jest liczbą narzędzia albo listą, z której
-maska zabiera najwyżej element, a Środowisko (``environment``) ma poza listą tylko pliki procesu (lista albo ``None``),
-więc maska nie gubi całych Logów (``UnrepresentableLogs``).
-
-Pole z listy strażnik zostawia z całym poddrzewem, więc test struktury w ``tests/test_komentarz_logow_uruchomienia.py``
-przechodzi typ każdego z nich (modele, dataclassy, unie) i czerwienieje, gdy w poddrzewie jest typ, który przyjmuje
-dowolny tekst (``str`` spoza jawnych wyjątków z powodem w teście, słownik, ``Any``), liczba ``READ_VALUES`` albo typ,
-którego test nie zna."""
-
-_Path = tuple[str | int, ...]
-
-
-class UnrepresentableLogs(ValueError):
-    """Logi, w których maska strażnika trafiła w pole, które nie może stracić wartości: pole najwyższego poziomu bez
-    ``None`` spoza listy pól narzędzia (``TOOL_FIELDS``), albo ``stuck``: cięcia (``_representable``) przestały zmieniać
-    Logi, czyli błąd w cięciach. ``place``: to pole albo miejsce ostatniego cięcia.
-
-    Schemat Logów nie ma dziś pola najwyższego poziomu bez ``None``, które gubiłoby Logi (#936). Nowe takie pole wywraca
-    przemiatanie pełnych Logów w ``tests/test_komentarz_logow_uruchomienia.py``, które każe pełnym Logom mieć wartość w
-    każdym polu ``RunLog``: każdy tekst i każda liczba tych Logów (od ``MIN_VALUE`` znaków) po kolei jako wartość z pliku
-    taty, także liczba w polu ``READ_VALUES``. Pole, którego wartość w pełnych Logach jest krótsza, przemiatanie
-    przepuszcza."""
-
-    def __init__(self, place: str, *, stuck: bool = False) -> None:
-        reason = (
-            f"cięcia strażnika przestały zmieniać Logi (ostatnie w polu {place})"
-            if stuck
-            else f"Logi bez miejsca na maskę strażnika w polu {place} (#936)"
-        )
-        super().__init__(reason)
-        self.place = place
-        self.stuck = stuck
-
-
-@dataclass(frozen=True)
-class GuardCut:
-    """Miejsce Logów, które straciło wartość, bo strażnik zamaskował w nim pole, które maski nie przyjmuje
-    (``_representable``): ``removed`` element listy odpadł, inaczej pole jest puste. ``place``: ścieżka JSON jak w
-    uwadze strażnika."""
-
-    place: str
-    removed: bool
-
-
-def guard_cuts(record: RunLog) -> tuple[GuardCut, ...]:
-    """Miejsca, które strażnik pominął albo zostawił puste, z uwag technicznych i uwag o Kopii wejścia Logów."""
-
-    found = (_CUT_NOTE.fullmatch(note) for note in (*record.technical_notes, *record.input_copy_notes))
-    return tuple(
-        GuardCut(match["removed"] or match["emptied"], match["removed"] is not None) for match in found if match
-    )
-
-
-def _cut_note(place: str, removed: bool) -> str:
-    what = f"pominięto {place}" if removed else f"pole {place} jest puste"
-    return f"Reguła danych: {what}: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
-
-
-_CUT_NOTE: Final = re.compile(
-    r"Reguła danych: (?:pominięto (?P<removed>\S+)|pole (?P<emptied>\S+) jest puste): strażnik zamaskował w nim "
-    r"wartość, której pole nie przyjmuje\."
-)
-"""Uwaga ``_cut_note``; miejsce (``_place``) nie ma spacji."""
-
-
-def _representable(walked: dict[str, object]) -> RunLog:
-    """Logi z JSON-a po strażniku (``_guarded``), w którym każde pole przyjmuje swoją wartość.
-
-    Pole typowane (kwota ``Decimal``, data, wartość z zamkniętej listy), w którym strażnik zamaskował tekst, maski nie
-    przyjmuje, więc takie Logi nie przeszłyby walidacji i przepadły. Pole dostaje ``None``, a gdy i ``None`` nie
-    przyjmuje, odpada najbliższy element listy nad nim (zlecenie, krok, plik) albo ``None`` dostaje pole nad nim
-    (``_cut``), z uwagą techniczną o tym miejscu (``guard_cuts``). Pole Logów najwyższego poziomu bez ``None`` i poza
-    listą nie ma czego stracić, więc dałoby ``UnrepresentableLogs``, ale każde takie pole niesie słowa narzędzia, których
-    strażnik nie maskuje (``TOOL_FIELDS``, #936).
-
-    Każde cięcie zabiera Logom co najmniej jedną wartość, więc cięć jest najwyżej tyle, ile Logi mają wartości:
-    po tylu obrotach bez poprawnych Logów pętla kończy się ``UnrepresentableLogs``, a nie wisi z końcem Uruchomienia.
-    """
-
-    # Miejsce w Logach przed cięciami → odpadło z listy (``False``: dostało ``None``). Błędy idą od ostatniego, więc
-    # element, który odpada, przesuwa w liście tylko elementy już bez błędów, a miejsca w uwagach są te sprzed cięć.
-    cuts: dict[_Path, bool] = {}
-    place: _Path = ()
-    for _ in range(_values(walked) + 1):
-        try:
-            record = RunLog.model_validate(walked)
-        except ValidationError as failure:
-            place, removed = _cut(walked, _existing(walked, failure.errors()[-1]["loc"]))
-            if removed:
-                cuts = {cut: kind for cut, kind in cuts.items() if cut[: len(place)] != place}
-            cuts[place] = removed
-            continue
-        notes: dict[bool, list[str]] = {True: [], False: []}  # Kopia wejścia → uwagi
-        for path, removed in sorted(cuts.items()):
-            notes[path[0] == _INPUT_COPY].append(_cut_note(_place(path), removed))
-        return record.model_copy(
-            update={
-                "technical_notes": [*record.technical_notes, *notes[False]],
-                "input_copy_notes": [*record.input_copy_notes, *notes[True]],
-            }
-        )
-    raise UnrepresentableLogs(_place(place), stuck=True)
-
-
-def _cut(walked: dict[str, object], path: _Path) -> tuple[_Path, bool]:
-    """Najgłębsze miejsce ścieżki błędu walidacji ``path``, które może stracić wartość, i czy odpadło z listy.
-
-    Element listy odpada, a pole z wartością dostaje ``None``. Pole, które już ma ``None``, a wciąż ma błąd, ``None``
-    nie przyjmuje, więc wartość traci miejsce wyżej; ścieżka bez takiego miejsca to ``UnrepresentableLogs``.
-    """
-
-    for depth in range(len(path), 0, -1):
-        place = path[:depth]
-        container, key = _at(walked, place[:-1]), place[-1]
-        if isinstance(container, list) and isinstance(key, int):
-            del container[key]
-            return place, True
-        if isinstance(container, dict) and container[key] is not None:
-            container[key] = None
-            return place, False
-    raise UnrepresentableLogs(_place(path))
-
-
-def _values(value: object) -> int:
-    """Liczba wartości JSON-a (słowników, list i liści) bez ``None``: ile razy najwyżej da się coś z niego zabrać."""
-
-    if isinstance(value, dict):
-        return 1 + sum(_values(entry) for entry in value.values())
-    if isinstance(value, list):
-        return 1 + sum(_values(entry) for entry in value)
-    return 0 if value is None else 1
-
-
-def _existing(walked: object, location: Sequence[str | int]) -> _Path:
-    """Najdłuższy początek miejsca błędu walidacji ``location``, który jest w JSON-ie ``walked`` (dalej pydantic dopisuje
-    nazwy wariantów typu)."""
-
-    path: list[str | int] = []
-    for key in location:
-        if isinstance(walked, dict) and key in walked:
-            walked = walked[key]
-        elif isinstance(walked, list) and isinstance(key, int):
-            walked = walked[key]
-        else:
-            break
-        path.append(key)
-    return tuple(path)
-
-
-def _at(walked: object, path: _Path) -> object:
-    for key in path:
-        if isinstance(walked, dict):
-            walked = walked[key]
-        elif isinstance(walked, list) and isinstance(key, int):
-            walked = walked[key]
-    return walked
-
-
-def _place(path: _Path) -> str:
-    place = ""
-    for key in path:
-        place = f"{place}[{key}]" if isinstance(key, int) else _field(place, key)
-    return place
-
-
-def _child(source: object, key: str) -> tuple[object, FieldInfo | None]:
-    """Wartość pod kluczem ``key`` modelu albo słownika ``source``, z którego powstał JSON Logów, i pole modelu z tym
-    kluczem (``None``: klucz słownika, czyli dane, albo JSON poza modelem Logów)."""
-
-    if isinstance(source, BaseModel):
-        return getattr(source, key, None), type(source).model_fields.get(key)
-    if isinstance(source, Mapping):
-        return source.get(key), None
-    return None, None
-
-
-def _field(place: str, key: str) -> str:
-    name = key if _FIELD_NAME.fullmatch(key) else "[…]"
-    return f"{place}.{name}" if place else name
-
-
-_FIELD_NAME: Final = re.compile(r"[a-z_]+")
-"""Nazwa pola schematu Logów; inny klucz (operator, kod pozycji, litera kolumny) to dane."""
-
-
-@dataclass(frozen=True)
-class OrderDone:
-    """Zlecenie skończone w trakcie Wyceny w efenix, jak we wpisie dziennika „zlecenie skończone”: wiersz Pliku
-    zbiorczego, wynik i kod Komunikatu zlecenia (``None`` przy gotowym, rozliczonym i przekazanym)."""
-
-    row: int
-    outcome: OrderKind
-    code: str | None
-
-
-@dataclass(frozen=True)
-class PricingProgress:
-    """Postęp Wyceny w efenix w trakcie Uruchomienia (#846): to, co ma jej dziennik na dysku.
-
-    ``done``: zlecenia skończone po kolei; ``total``: ile zleceń ma przebieg, z ostatniego wpisu „zaczynam zlecenie”
-    (``None`` przed pierwszym, np. gdy okno efenix czeka na logowanie taty, albo gdy dziennika nie da się zapisać);
-    ``current``: wiersz zlecenia zaczętego bez wyniku (``None`` między zleceniami).
-    """
-
-    started: StartFacts
-    done: tuple[OrderDone, ...]
-    total: int | None
-    current: int | None
-
-    def outcomes(self) -> tuple[tuple[OrderKind, int], ...]:
-        """Ile zleceń skończonych ma każdy wynik, w kolejności ``OrderKind``, bez wyników, których nie ma żadne."""
-
-        counted = Counter(order.outcome for order in self.done)
-        return tuple((kind, counted[kind]) for kind in OrderKind if counted[kind])
-
-
-_MINTED: Final = object()
-"""Dowód, że wartość wyszła ze strażnika reguły danych: ``GuardedLogs`` i ``GuardedText`` daje tylko ``guard_logs`` i
-``guard_text``.
-
-Sprawdzenia łapią błąd kodu, który zapomniał strażnika albo przerobił wartość, która go przeszła (Logi Urwanego
-Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to zostaje przeglądowi.
-
-- Konstruktor bez ``_MINTED`` rzuca ``TypeError``, a ``_MINTED`` zna tylko ten moduł.
-- ``dataclasses.replace``: to nie są dataclassy, więc mypy odrzuca wywołanie (``type-var``), a Python rzuca ``TypeError``.
-- Przypisanie i usunięcie pola albo slotu: mypy odrzuca przypisanie (właściwość tylko do odczytu), a ``__setattr__`` i
-  ``__delattr__`` rzucają ``AttributeError``. Dlatego ``copy.copy``, ``copy.deepcopy`` i ``pickle.loads`` też rzucają:
-  odtworzenie wartości ustawia sloty przez ``__setattr__``. ``copy.replace`` rzuca ``TypeError``, bo nie ma
-  ``__replace__``. Wartość jest niezmienna, więc kopia nie jest potrzebna.
-- Podklasa, także zrobiona przez ``type()``: mypy odrzuca ``class`` (``final``), a ``__init_subclass__`` rzuca
-  ``TypeError``.
-- Wartość innego typu, np. Logi sprzed strażnika podane przez ``Any``, ``cast(Any, …)`` albo ``# type: ignore``: typ jej
-  nie widzi, więc wersje komentarza Uruchomienia (``comment_versions``) i plik Logów (``LogsOnDisk.write``), jedyne miejsca,
-  które biorą Logi albo tekst po strażniku, sprawdzają ``isinstance`` i rzucają ``TypeError``.
-- ``_MINTED`` i nazwa ``GuardedLogs`` albo ``GuardedText`` poza adnotacją, importem i ``isinstance`` (np.
-  ``object.__new__(GuardedLogs)``, ``cast(GuardedLogs, …)``, napis ze slotem ``_GuardedLogs__…``): łapie test
-  ``tests/test_granice_importow.py``.
-- Granica, którą łapie tylko przegląd: celowe obejście bez tych nazw, np. ``object.__new__(type(logs))`` (wartość bez
-  slotów, której odczyt rzuca ``AttributeError``), zmiana ``__class__`` innej wartości albo nazwa złożona w trakcie
-  działania.
-- Pydantic tu nie ma: ``record.model_copy`` daje ``RunLog``, a nie Logi po strażniku."""
-
-
-@final
-class GuardedLogs:
-    """Logi Uruchomienia po strażniku reguły danych tej pracy Centrum (ADR 0025), z ``guard_logs``.
-
-    Plik Logów (``LogsOnDisk.write``) i wysyłka Logów (``comment_versions.post_of``) biorą tylko takie Logi, więc Logi,
-    które ominęły strażnika (Logi Urwanego Uruchomienia przed 2ff78b6b3), to błąd typu (``_MINTED``). ``text``: znaki
-    pliku Logów i pliku w Archiwum Logów okresu.
-    """
-
-    __slots__ = ("__record", "__source")
-    __record: RunLog
-    __source: RunLog
-    """Logi, które przeszły przez strażnika: Diagnoza dopisuje się do nich, a nie do ich maski."""
-
-    def __init__(self, record: RunLog, source: RunLog, proof: object) -> None:
-        if proof is not _MINTED:
-            raise TypeError("Logi po strażniku daje tylko guard_logs.")
-        object.__setattr__(self, "_GuardedLogs__record", record)
-        object.__setattr__(self, "_GuardedLogs__source", source)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Logi po strażniku nie mają podklas: daje je tylko guard_logs.")
-
-    @property
-    def record(self) -> RunLog:
-        return self.__record
-
-    @property
-    def text(self) -> str:
-        return self.__record.text
-
-    def with_diagnosis(self, diagnosis: LoggedDiagnosis, forbidden: ForbiddenValues) -> GuardedLogs | None:
-        """Te Logi z Diagnozą ``diagnosis``, przepuszczone przez strażnika drugi raz razem z nią, jak Logi z wynikiem;
-        ``None``: Logi mają już Diagnozę z tym samym wynikiem (``LoggedDiagnosis.same_result``)."""
-
-        last = self.__source.diagnosis
-        if last is not None and diagnosis.same_result(last):
-            return None
-        return guard_logs(self.__source.model_copy(update={"diagnosis": diagnosis}), forbidden)
-
-    def __setattr__(self, name: str, value: object) -> None:
-        raise AttributeError("Logi po strażniku są niezmienne: nowe daje guard_logs.")
-
-    def __delattr__(self, name: str) -> None:
-        raise AttributeError("Logi po strażniku są niezmienne: nowe daje guard_logs.")
-
-
-def guard_logs(record: RunLog, forbidden: ForbiddenValues) -> GuardedLogs:
-    """Logi ``record`` po strażniku reguły danych ``forbidden`` (``_guarded``) z dowodem strażnika; narzędzia, które nie
-    piszą pliku ani nie wysyłają, biorą z nich ``record``."""
-
-    return GuardedLogs(_guarded(record, forbidden), record, _MINTED)
-
-
-@final
-class GuardedText:
-    """Tekst komentarza bez pliku Logów (postęp, wynik bez Logów) po strażniku reguły danych, z ``guard_text``
-    (``_MINTED``)."""
-
-    __slots__ = ("__text",)
-    __text: str
-
-    def __init__(self, text: str, proof: object) -> None:
-        if proof is not _MINTED:
-            raise TypeError("Tekst po strażniku daje tylko guard_text.")
-        object.__setattr__(self, "_GuardedText__text", text)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Tekst po strażniku nie ma podklas: daje go tylko guard_text.")
-
-    @property
-    def text(self) -> str:
-        return self.__text
-
-    def __setattr__(self, name: str, value: object) -> None:
-        raise AttributeError("Tekst po strażniku jest niezmienny: nowy daje guard_text.")
-
-    def __delattr__(self, name: str) -> None:
-        raise AttributeError("Tekst po strażniku jest niezmienny: nowy daje guard_text.")
-
-
-def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> GuardedText:
-    """Tekst ``text`` po strażniku reguły danych ``forbidden``: zamaskowana wartość to uwaga techniczna na jego końcu, z
-    miejscem ``place``."""
-
-    found = forbidden.guard(text, place)
-    return GuardedText(found.text + "".join(f"\n- Uwaga techniczna: {note}" for note in found.notes), _MINTED)
-

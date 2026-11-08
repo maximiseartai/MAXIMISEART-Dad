@@ -22,7 +22,7 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   których żaden plik taty nie ma. Wzorce i Konfigurację wykonawców daje folder ``configuration``, bo Logi mają z nich
   tylko nazwę i rozmiar.
 - Proces biegnie przez ten sam rdzeń (``process_run.run_process``) i ten sam wpis katalogu procesów co w Centrum, z
-  Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``RunLog.of`` i strażnik (``guard_logs``), jak w
+  Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``logs_of`` i strażnik (``guard_logs``), jak w
   Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa tylko wtedy, gdy Logi kończą się odmową.
 - Porównanie (``first_difference``) idzie po polach Logów w kolejności przyczyn: Kopia wejścia (czy pliki z Kopii
   czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty, uwagi techniczne, podsumowanie, liczba
@@ -46,7 +46,6 @@ import enum
 import json
 from pathlib import Path
 import platform
-import re
 from typing import Any, Final
 
 from openpyxl import Workbook
@@ -67,16 +66,9 @@ from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.reports import ProblemFingerprint
-from rozliczenia.centrum.run_logs import (
-    Environment,
-    LoggedCell,
-    LoggedInputFile,
-    LoggedSheet,
-    LoggedTyped,
-    RunLog,
-    guard_cuts,
-    guard_logs,
-)
+from rozliczenia.centrum.logs_of_run import logs_of
+from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog
+from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun, PreparedRun
 from rozliczenia.centrum.stops import StoppedRun
 from rozliczenia.client_data import MASKS, ForbiddenColumn, forbidden_columns
@@ -302,7 +294,7 @@ def _limits(record: RunLog, kind: _Kind, configuration: Path | None) -> list[Lim
 
 
 def _guard_limits(record: RunLog) -> list[Limit]:
-    """Miejsca Logów, które strażnik reguły danych pominął albo zostawił puste (``run_logs.guard_cuts``), bo maska trafiła
+    """Miejsca Logów, które strażnik reguły danych pominął albo zostawił puste (``guard_cuts``), bo maska trafiła
     w pole, które jej nie przyjmuje. W wejściu odtworzenia (Kopia wejścia bez odcisku pliku, ślad zleceń efenix, z którego
     powstaje Atrapa) to granica blokująca: odtworzone wejście nie jest wejściem taty, a różnica wskazałaby fałszywą
     przyczynę. Poza wejściem to zastrzeżenie: różnica w tym miejscu jest skutkiem maski."""
@@ -311,19 +303,17 @@ def _guard_limits(record: RunLog) -> list[Limit]:
     for cut in guard_cuts(record):
         lost = "pominął" if cut.removed else "zostawił puste"
         place = f"{lost} w Logach {cut.place} (maska w polu, które jej nie przyjmuje)"
-        if _replay_input(cut.place):
+        if _replay_input(cut):
             limits.append(Limit(f"strażnik reguły danych {place}, a odtworzenie buduje z niego wejście", blocking=True))
         else:
             limits.append(Limit(f"Strażnik reguły danych {place}: różnica w tym miejscu jest skutkiem maski"))
     return limits
 
 
-def _replay_input(place: str) -> bool:
-    """Czy miejsce Logów ``place`` (ścieżka JSON) to wejście odtworzenia: Kopia wejścia poza odciskiem pliku albo ślad
-    zleceń efenix."""
+def _replay_input(cut: GuardCut) -> bool:
+    """Czy miejsce cięcia ``cut`` to wejście odtworzenia: Kopia wejścia poza odciskiem pliku albo ślad zleceń efenix."""
 
-    top = re.split(r"[.\[]", place)[0]
-    return top == "efenix_orders" or (top == "input_copy" and ".fingerprint" not in place)
+    return cut.field == "efenix_orders" or (cut.field == "input_copy" and ".fingerprint" not in cut.place)
 
 
 def _typed_limits(copied: Sequence[LoggedInputFile]) -> list[Limit]:
@@ -801,7 +791,7 @@ def _run(record: RunLog, setup: _Setup, work: Path) -> RunLog:
         input_copy=prepared.input_copy,
     )
     environment = Environment(system=platform.platform(), python=platform.python_version(), files=None)
-    replayed = RunLog.of(
+    replayed = logs_of(
         ended,
         tool=record.tool,
         environment=environment,

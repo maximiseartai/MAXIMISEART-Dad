@@ -1,7 +1,7 @@
 """Show that sprawdz_urwane_uruchomienie.py fails when the TLA+ model of the Dziennik Wyceny loses a guard the code has.
 
 Each mutation removes from ``model/UrwaneUruchomienie.tla`` one guard or step whose counterpart in
-``src/rozliczenia/centrum/run_comments.py``, ``comment_versions.py``, ``logs_disk.py``, ``run_logs.py``, ``app.py``,
+``src/rozliczenia/centrum/run_comments.py``, ``comment_versions.py``, ``logs_disk.py``, ``run_logs_guard.py``, ``app.py``,
 ``src/rozliczenia/efenix_pricing.py`` or ``process_run.py``
 the mutation names, runs on its own copy of the checkout (``tools/mutacje.py``) and must end the check with
 ``URWANE URUCHOMIENIE: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as

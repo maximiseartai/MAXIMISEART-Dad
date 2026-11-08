@@ -2,7 +2,7 @@
 (* Ślad Wyceny w efenix, którą przerwało zgaśnięcie Centrum, przez kolejne starty Centrum: dziennik Wyceny w efenix    *)
 (* (src/rozliczenia/centrum/logs_disk.py: Journal, LogsOnDisk.left_behind; run_comments.py:                       *)
 (* RunComments.close_left_behind i send_left_behind, comment_versions.close), Logi Urwanego                          *)
-(* Uruchomienia (run_comments.py: RecordMaker.interrupted; run_logs.py: guard_logs) i ich droga do Kolejki          *)
+(* Uruchomienia (run_comments.py: RecordMaker.interrupted; run_logs_guard.py: guard_logs) i ich droga do Kolejki    *)
 (* wysyłki (Outbox.post), obok Logów Wyceny, która doszła do wyniku, i wpisu końca w jej dzienniku, i komentarz       *)
 (* postępu Wyceny (#846: RunComments._progress), który wersja końcowa zamienia w podsumowanie: Logi z wynikiem, a gdy *)
 (* ich kolejka nie przyjęła w pracy Uruchomienia, wersja zastępcza z następnego startu (#910). Każda akcja to jeden    *)

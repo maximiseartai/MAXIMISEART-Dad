@@ -1,8 +1,10 @@
 {
   "src/rozliczenia/centrum/run_logs.py": {
     "RunLog.interrupted": "33aac1b5b5a48abd",
+    "LoggedEnding": "8ec4ecd3bd0ce997"
+  },
+  "src/rozliczenia/centrum/run_logs_guard.py": {
     "_guarded": "17cc5e8be6f63955",
-    "LoggedEnding": "8ec4ecd3bd0ce997",
     "guard_logs": "220c4b2868ecc3fc",
     "GuardedLogs": "5fdd32a040cfba44"
   },
