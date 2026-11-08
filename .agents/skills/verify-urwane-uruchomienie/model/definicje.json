@@ -1,6 +1,6 @@
 {
   "src/rozliczenia/centrum/run_logs.py": {
-    "RunLog.interrupted": "33aac1b5b5a48abd",
+    "RunLog.interrupted": "cea8ac122ea339d0",
     "LoggedEnding": "f7ebf8e1ca3bb563"
   },
   "src/rozliczenia/centrum/run_logs_guard.py": {
@@ -38,13 +38,13 @@
     "_NAME": "191666e2ace14a7c",
     "_RUN_ID": "38b226cc6aeae33a",
     "LogsRead": "2dfbc7e2c338f6b7",
-    "Journal": "0ad2ecf30040e004",
-    "_first_line": "9e428daecbdf1f07",
+    "Journal": "70096bab4e9680c7",
+    "_first_line": "f9a16b6e76575975",
     "_RunEnded": "242ccffd41c0ef05",
-    "JournalRead": "e5b35b59400e4346",
-    "_read_journal": "dfebb6da939d24d2",
+    "JournalRead": "0e4cbc86128d9c88",
+    "_read_journal": "0566cf4fcc730794",
     "_remove": "56e443ad89f7a91e",
-    "LogsOnDisk.started": "27bed62b161c2a3b",
+    "LogsOnDisk.started": "3ccf23d17059de9b",
     "LogsOnDisk.left_behind": "6575679b81ab383e",
     "LogsOnDisk.remove_journal": "68bae958d9af8c30",
     "LogsOnDisk.write": "06579a5e26974e34",
@@ -87,6 +87,6 @@
     "price_orders.save": "944904a2f85b713b"
   },
   "src/rozliczenia/process_run.py": {
-    "run_process": "3ce6879957b4ef79"
+    "run_process": "38a0bddd94005209"
   }
 }
