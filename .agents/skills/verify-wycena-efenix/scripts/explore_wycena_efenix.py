@@ -73,12 +73,27 @@ from playwright.sync_api import Browser, Page, Request, Route, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
-from awarie_efenix import DAD, DAD_LOGINS, FORBIDDEN_CLICK, LOGOUTS, OUTAGES, Call, Counter, Fault, Plan, Proxy, call_kind
+from awarie_efenix import (
+    DAD,
+    DAD_LOGINS,
+    FORBIDDEN_CLICK,
+    LOGOUTS,
+    OUTAGES,
+    STYLESHEET,
+    Call,
+    Counter,
+    Fault,
+    Plan,
+    Proxy,
+    call_kind,
+)
 from rozliczenia import efenix_browser, efenix_process
-from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop
+from rozliczenia.centrum.contract import DEFAULT_PRICING
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LogsOnDisk
+from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop, StartFacts
 from rozliczenia.efenix_mark import Mark, mark_of
-from rozliczenia.efenix_page import FILL_EMMETT, LOAD_EMMETT, LOGIN_PAGE, ORDER_PAGE, SAVE_QUANTITY, SEARCH, SET_DATE
-from rozliczenia.efenix_pricing import OrderError, OrderResult, PricingStopped, PricingSummary
+from rozliczenia.efenix_pricing import OrderError, OrderJournal, PricingStopped, PricingSummary
 from rozliczenia.efenix_window import (
     BrowserFailure,
     Closed,
@@ -100,12 +115,40 @@ from rozliczenia.message import Message
 from rozliczenia.process_run import Outcome, Stop, run_process
 from rozliczenia.workbook_files import read_data_rows
 from skrypt_skilla import Parser, create_run_root, new_run, part, remove_run_root
-from tests.fixtures.atrapa_efenix import EFENIX_EMMETT_RELOAD_MS, AtrapaOrder, amount_of, atrapa_efenix
+# Adresy stron i skryptów efenix z Atrapy, celowej kopii efenix (docs/agents/skille.md, „Co wyrocznia bierze z src”): adres
+# to fakt świata efenix, więc jego zmiana w efenix_page ma wywrócić sprawdzenie, a nie przejść razem z nim.
+from tests.fixtures.atrapa_efenix import (
+    EFENIX_EMMETT_RELOAD_MS,
+    FILL_EMMETT,
+    LIST_PAGE,
+    LIST_SCRIPT,
+    LOAD_EMMETT,
+    LOGIN_PAGE,
+    ORDER_PAGE,
+    ORDER_SCRIPT,
+    SAVE_QUANTITY,
+    SEARCH,
+    SET_DATE,
+    AtrapaOrder,
+    amount_of,
+    atrapa_efenix,
+)
+from tests.fixtures.dziennik_wyceny import begun_rows, ended_outcomes, journal_path
 from tests.fixtures.efenix import Order, write_collective_file
 from tests.fixtures.interlocutor import Tata
 from tests.fixtures.settlement import PERIOD
 
 VERDICT: Final = "WYCENA EFENIX"
+START: Final = StartFacts(
+    run_id="wycena-efenix",
+    process="efenix",
+    mode="zapis",
+    period=PERIOD,
+    started_at=datetime(2026, 10, 20, 8, tzinfo=timezone.utc),
+    pricing=DEFAULT_PRICING,
+)
+"""The start of every run as Centrum writes it in the first line of the dziennik; fixed, so the dziennik differs between
+runs only in its entries and their moments."""
 LIMIT_MS: Final = 3_000 + EFENIX_EMMETT_RELOAD_MS
 """The window's time limit in the checker: the 3 s of the sweep of ``tests/test_wycena_efenix.py`` and the reload the
 efenix script makes after „Załaduj do zlecenia”, which the window waits for in the same time limit as its answer, so an
@@ -245,16 +288,13 @@ def step(role: Role) -> Role:
     return PAGE_OF.get(role, role)
 
 
-_LIST = "index.php"
-_CSS = "css/efenix.css"
-
 
 def _page(path: str, script: str, role: Role, file_role: Role) -> list[tuple[str, str, str, Role]]:
-    return [("GET", path, "", role), ("GET", _CSS, "", file_role), ("GET", script, "", file_role)]
+    return [("GET", path, "", role), ("GET", STYLESHEET, "", file_role), ("GET", script, "", file_role)]
 
 
 def _order_calls(quantities: int) -> list[tuple[str, str, str, Role]]:
-    script = "js/page_order_edit.js"
+    script = ORDER_SCRIPT
     return [
         *_page(ORDER_PAGE, script, Role.ORDER_OPEN, Role.ORDER_FILE),
         ("POST", SET_DATE, "", Role.DATE),
@@ -272,11 +312,11 @@ def _expected_calls() -> tuple[tuple[Call, Role, int], ...]:
     do zlecenia” with the page reloaded by the efenix script, and one quantity per position empty at Emmett; the second
     order opens the list again, which searches the previous number by itself."""
 
-    script = "js/index.js"
+    script = LIST_SCRIPT
     plan = [
-        [*_page(_LIST, script, Role.LIST_START, Role.LIST_FILE_START), ("POST", SEARCH, "okno", Role.SEARCH), *_order_calls(2)],
+        [*_page(LIST_PAGE, script, Role.LIST_START, Role.LIST_FILE_START), ("POST", SEARCH, "okno", Role.SEARCH), *_order_calls(2)],
         [
-            *_page(_LIST, script, Role.LIST_AGAIN, Role.LIST_FILE_AGAIN),
+            *_page(LIST_PAGE, script, Role.LIST_AGAIN, Role.LIST_FILE_AGAIN),
             ("POST", SEARCH, "lista", Role.BY_LIST),
             ("POST", SEARCH, "okno", Role.SEARCH),
             *_order_calls(0),
@@ -674,51 +714,6 @@ def marked(source: Path) -> tuple[int, ...]:
     return tuple(row.number for row in rows if mark_of(row.cells[1].highlights.fill) is Mark.READY)
 
 
-class Journal:
-    """Dziennik Wyceny w efenix of a run, as Centrum writes it (``efenix_pricing.OrderJournal``): one line per entry."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-
-    def begun(self, row: int, place: int, total: int) -> None:
-        self._write({"begun": row, "place": place, "total": total})
-
-    def ended(self, result: OrderResult) -> None:
-        self._write({"ended": json.loads(LoggedOrder.of(result).model_dump_json())})
-
-    def _write(self, entry: dict[str, object]) -> None:
-        with self.path.open("a", encoding="utf-8") as file:
-            file.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            file.flush()
-
-    @staticmethod
-    def begun_rows(text: str) -> set[int]:
-        rows = set()
-        for line in text.splitlines():
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(entry, dict) and isinstance(entry.get("begun"), int):
-                rows.add(entry["begun"])
-        return rows
-
-    @staticmethod
-    def ended_outcomes(text: str) -> dict[int, str]:
-        """Outcome of each order the dziennik has ended („zlecenie skończone”), by its row."""
-
-        outcomes = {}
-        for line in text.splitlines():
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            ended = entry.get("ended") if isinstance(entry, dict) else None
-            if isinstance(ended, dict) and isinstance(ended.get("row"), int) and isinstance(ended.get("outcome"), str):
-                outcomes[ended["row"]] = ended["outcome"]
-        return outcomes
-
-
 @dataclass(frozen=True)
 class Disk:
     """What a run leaves on disk and in efenix: Atrapa orders, the Plik zbiorczy and the dziennik."""
@@ -771,15 +766,26 @@ class Place:
         return self.root / "plik" / PERIOD / f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 
     @property
+    def logs(self) -> Path:
+        return self.root / "Logi"
+
+    @property
     def journal(self) -> Path:
-        return self.root / "dziennik.jsonl"
+        return journal_path(self.logs, START)
 
     def prepare(self, disk: Disk) -> None:
-        """The Plik zbiorczy ``disk`` left, with a new dziennik, as each Uruchomienie has its own."""
+        """The Plik zbiorczy ``disk`` left; the run starts its own dziennik (``started``), as each Uruchomienie has one."""
 
         self.source.parent.mkdir(parents=True)
         self.source.write_bytes(disk.source)
-        self.journal.write_bytes(b"")
+
+    def started(self) -> OrderJournal:
+        """The dziennik of the run as Centrum starts it (``LogsOnDisk.started``, its first line on disk) and writes it: the
+        checks read the bytes the real code leaves for the next start of Centrum."""
+
+        logs = LogsOnDisk(CentrumLog(self.logs / "centrum.log"), journaled="efenix")
+        logs.started(START)
+        return logs.journal
 
     def disk(self, orders: Sequence[AtrapaOrder]) -> Disk:
         return Disk(tuple(copy.deepcopy(list(orders))), self.source.read_bytes(), _read(self.journal))
@@ -933,7 +939,7 @@ def _price(place: Place, page: Page, url: str) -> Outcome[PricingSummary]:
 
     return run_process(
         efenix_process.PROCESS,
-        EfenixInputs(place.source, open_efenix, pace=None, journal=Journal(place.journal)),
+        EfenixInputs(place.source, open_efenix, pace=None, journal=place.started()),
         Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=place.root / "metryki.jsonl",
@@ -1071,7 +1077,7 @@ def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[
     if [state.status for state in after] != [state.status for state in before]:
         add("BEZ_ZMIANY_STATUSU", "status", f"status zlecenia zmienił się: {[str(state) for state in after]}")
     steps = _steps(run.outcome)
-    begun = Journal.begun_rows(run.after.journal.decode("utf-8", "replace"))
+    begun = begun_rows(run.after.journal.decode("utf-8", "replace"))
     for index, (was, now) in enumerate(zip(before, after, strict=True)):
         if was == now:
             continue
@@ -1148,7 +1154,7 @@ def check_killed(name: str, case: Case, run: Run) -> list[Violation]:
     if [state.status for state in after] != [state.status for state in INITIAL]:
         add("BEZ_ZMIANY_STATUSU", "status", f"status zlecenia zmienił się: {[str(state) for state in after]}")
     journal = run.after.journal.decode("utf-8", "replace")
-    begun, ended = Journal.begun_rows(journal), Journal.ended_outcomes(journal)
+    begun, ended = begun_rows(journal), ended_outcomes(journal)
     for index, (was, now) in enumerate(zip(INITIAL, after, strict=True)):
         if was != now and FIRST_ROW + index not in begun:
             add("ZMIANA_ZE_SLADEM", "zmiana bez dziennika", f"zlecenie {index + 1} zmieniło się w efenix ({was} → {now}) bez wpisu „zaczynam” w dzienniku")
@@ -1633,7 +1639,7 @@ def doctor() -> list[str]:
                     response = page.goto(proxy.url, wait_until="load", timeout=10_000)
                     if response is None or not response.ok or page.locator("#field_numer").count() != 1:
                         problems.append("Atrapa efenix przez pośrednika nie pokazuje listy zleceń")
-                    if [call.path for call in proxy.calls()][:1] != ["index.php"]:
+                    if [call.path for call in proxy.calls()][:1] != [LIST_PAGE]:
                         problems.append("pośrednik nie widzi żądań okna")
             finally:
                 browser.close()

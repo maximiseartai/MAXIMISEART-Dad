@@ -6,6 +6,10 @@ pilnuje:
   - frontend/*
   - run_centrum.py
   - tests/fixtures/scenariusz_centrum.py
+  - tests/fixtures/preparation.py
+  - tests/fixtures/settlement.py
+  - tests/fixtures/scenariusz_rozliczen.py
+  - tests/fixtures/efenix.py
 ci: .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature all
 ci-czesci: 8
 ---

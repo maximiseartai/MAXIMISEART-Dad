@@ -43,25 +43,27 @@ directory onwards: `staged_directory.mkdir()`, both staged writes,
 `_publish()`, `ensure_period_files_absent()` and the rollback. Run it when a diff
 touches any of these, or the exception mapping in `write_period_files`, or makes
 `prepare_collective_file()` publish without going through `write_period_files`.
-Changes to workbook content (`_write_period_file`, styles, Rejestr reading) do
-not matter here: the check replaces workbook writing with one step that creates
-the staged file and returns the file's kind and a route, as `_write_period_file`
-returns them for the metrics record (`RouteCounts`).
+Changes to workbook content (`_create_file`, styles, Rejestr reading) do
+not matter here: the check gives `write_period_files` its own `preparation_files.Disk`,
+whose workbook writing is one step that creates the staged file and returns a route,
+as `_create_file` returns it for the metrics record (`RouteCounts`).
 
-The one part modelled by hand is that workbook step: `_write_period_file` of
-`preparation_files.py`, whose digest is in `model/definicje.json`. When it
-changes, `explore_publication.py` fails in CI with
+The parts modelled by hand are the defaults of `preparation_files.Disk` that the
+check's `period_disk()` replaces: `_make_staging`, `_create_file` and
+`_remove_staging` of `preparation_files.py`, whose digests are in
+`model/definicje.json`. When one of them changes, `explore_publication.py` fails in CI with
 `PUBLIKACJA: ROZJAZD MODELU Z KODEM` before the check, and prints the drift as an
 `UWAGA:` line above the verdict elsewhere; `tools/szybko.py` fails on the same
 drift before you push (step `rozjazd modelu`).
 
 ## Bring the model in line
 
-When `_write_period_file` changes:
+When `_make_staging`, `_create_file` or `_remove_staging` changes:
 
 1. Read the diff: the drift line names the changed definition.
-2. Change `write_period_file` in `harness()` of `explore_publication.py` so that it does what the code does: what it
-   returns for the metrics record, what it raises, and which files it creates.
+2. Change its step in `period_disk()` of `explore_publication.py` so that it does what the code does: what it
+   returns (the staging directory, the route for the metrics record), what it raises, and which files it creates or
+   removes.
 3. Run the check and `--strict`. A new violation is a finding: replay it on the code before you call it a bug.
 4. Run `tools/przesun_model.py verify-publikacja-plikow-okresu` only after the harness describes the code, and write
    in the commit message what changed in the harness and why.
@@ -93,7 +95,7 @@ The last line is the verdict:
 | `PUBLIKACJA OK, ZNANE USTALENIA: n, ZAAKCEPTOWANE RYZYKA: m` | 0 | Only the known findings and accepted risks below, each printed with its counterexample. A count of zero is left out. |
 | `PUBLIKACJA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or `BRAK_PUBLIKACJI`: with no errors, kills, or Dad actions, nothing was ever published. |
 | `PUBLIKACJA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding or accepted risk did not show in a scope of its `after`. If a change fixed it, narrow or delete it in `KNOWN_FINDINGS` or `ACCEPTED_RISKS` and below. |
-| `PUBLIKACJA: ROZJAZD MODELU Z KODEM` | 1 | Only in CI, before the check: `_write_period_file` differs from its digest in `model/definicje.json` (see „Bring the model in line”). |
+| `PUBLIKACJA: ROZJAZD MODELU Z KODEM` | 1 | Only in CI, before the check: `_make_staging`, `_create_file` or `_remove_staging` differs from its digest in `model/definicje.json` (see „Bring the model in line”). |
 | `PUBLIKACJA: LUKA MODELU (n)` | 2 | The code made a filesystem call the in-memory disk does not model. No verdict on the rules. |
 
 `--scope jedno-uruchomienie` or `--scope dwa-uruchomienia` runs one scope.
@@ -197,7 +199,7 @@ is the code that made the call. Then sort it into one of three cases:
   Accepted risks here.
 - **Modeling error**: the story contains a step Windows would not do, such as a
   rename that replaces a file, or a step the code cannot reach. Fix the
-  in-memory disk (`VirtualDisk`) or the harness, then rerun the mutations below.
+  in-memory disk (`VirtualDisk`) or `period_disk()`, then rerun the mutations below.
 - **LUKA MODELU**: the code started using a call the disk does not model (for
   example `shutil.move`, `open`, `os.scandir`). Model the call in `intercepted()`
   and `VirtualDisk` with its Windows behaviour, or ask whether the code should

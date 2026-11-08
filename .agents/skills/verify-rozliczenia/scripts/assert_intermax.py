@@ -18,14 +18,16 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from create_intermax_fixture import COPIES_DIRECTORY, MANIFEST_NAME, REGISTER_NAME, ROW_MARKERS
+from create_intermax_fixture import COPIES_DIRECTORY, MANIFEST_NAME, ROW_MARKERS
 from skrypt_skilla import Parser
 from wynik_uruchomienia import check_metrics, contract, finish, load_result
 
 from tests.fixtures.intermax import FIRST, LAST, NUMBER, ORDER_SHEET
+from tests.fixtures.scenariusz_rozliczen import REGISTER_NAME
 
 # Uporządkowanie INTERMAX: Wykonawcy alphabetically (anna, bartek, jan), each from the earliest hour to the latest.
 EXPECTED_ORDER_NUMBERS = ("ZL-78202", "ZL-78205", "ZL-78203", "ZL-78206", "ZL-78204", "ZL-78201")

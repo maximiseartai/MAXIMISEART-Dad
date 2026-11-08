@@ -62,6 +62,7 @@ from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.github import HttpResponse
@@ -72,7 +73,6 @@ from rozliczenia.centrum.outbox import (
     LOCAL_QUEUE_DISK,
     RETRY_S,
     ArchiveFile,
-    Deliveries,
     KnownIssue,
     NewIssue,
     Outbox,
@@ -105,6 +105,7 @@ from rozliczenia.centrum.report_box import (
 )
 from rozliczenia.centrum.reports import report_target
 from eksplorator import Choices, Excuse, Kind, Shape, excuse_line, excused, gone_lines, schedules, verdict
+from tests.fixtures.sluchacz_kolejki import QueueListener
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 # GitHub's answers to a step of the Archiwum it refuses until Maks changes something: a key without the permission to
@@ -119,17 +120,6 @@ def _github(answer: HttpResponse) -> GitHubReportBox:
     return GitHubReportBox(transport=lambda request: answer)
 
 
-class _Unchanged:
-    """Słuchacz kolejki bez Spraw taty: każda wysyłka idzie bez zmian i bez wysyłek następczych."""
-
-    def prepare(self, post: Post, sent: Deliveries) -> Post | None:
-        return post
-
-    def delivered(self, post: Post, number: int) -> tuple[Post, ...]:
-        return ()
-
-    def rejected(self, post: Post) -> None:
-        return None
 # Passes beyond one per failure until the queue must be empty; a pass without a failure delivers or removes each file.
 EXTRA_PASSES = 3
 # Początek dopisku części, gdy Archiwum nie przyjęło pliku (outbox._waiting_note). Celowa kopia (docs/agents/skille.md,
@@ -1164,7 +1154,7 @@ def execute(name: str, choices: Choices, work: Path, visited: set[object]) -> li
             keyed[0],
             _Log(failures),
             clock=clock,
-            listener=_Unchanged(),
+            listener=QueueListener(),
             disk=QueueDisk(read=disk.read, write=disk.write, remove=disk.remove),
             start=started_threads.append,
         )

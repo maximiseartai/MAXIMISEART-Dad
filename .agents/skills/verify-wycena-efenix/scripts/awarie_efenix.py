@@ -41,7 +41,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Final
 from urllib.parse import parse_qs, urlparse
 
-from rozliczenia.efenix_page import FILL_EMMETT, LOGIN_PAGE, ORDER_PAGE, SEARCH
+# Adresy stron efenix z Atrapy, celowej kopii efenix (docs/agents/skille.md, „Co wyrocznia bierze z src”): pośrednik
+# stoi przed Atrapą, więc rozpoznaje żądania po jej adresach, a nie po adresach kodu, który sprawdza.
+from tests.fixtures.atrapa_efenix import FILL_EMMETT, LIST_PAGE, LOGIN_PAGE, ORDER_PAGE, SEARCH
 
 STYLESHEET: Final = "css/efenix.css"
 FORBIDDEN_CLICK: Final = "__przycisk-spoza-listy"
@@ -52,9 +54,9 @@ _WATCHER: Final = (
     f" if (button) navigator.sendBeacon('{FORBIDDEN_CLICK}', button.id || 'tak');"
     " }, true);</script>"
 )
-_PAGES: Final = ("index.php", ORDER_PAGE, LOGIN_PAGE)
+_PAGES: Final = (LIST_PAGE, ORDER_PAGE, LOGIN_PAGE)
 _BY_LIST: Final = "powrot"
-_ELSEWHERE: Final = "/index.php?przekierowanie=1"
+_ELSEWHERE: Final = f"/{LIST_PAGE}?przekierowanie=1"
 
 
 class Fault(enum.Enum):
@@ -118,7 +120,7 @@ class Call:
 def call_kind(method: str, url: str, body: str) -> tuple[str, str, str]:
     """Kind of a request as the proxy and the browser side both see it."""
 
-    path = urlparse(url).path.lstrip("/") or "index.php"
+    path = urlparse(url).path.lstrip("/") or LIST_PAGE
     search = ""
     if path == SEARCH and method == "POST":
         search = "lista" if parse_qs(body).get("rodzaj") == [_BY_LIST] else "okno"
@@ -189,7 +191,7 @@ class Proxy:
         server = self._server = _Server(_handler(self))
         self._thread = threading.Thread(target=server.serve_forever, name="awarie-efenix", daemon=True)
         self._thread.start()
-        self.url = f"http://127.0.0.1:{server.server_address[1]}/index.php"
+        self.url = f"http://127.0.0.1:{server.server_address[1]}/{LIST_PAGE}"
         return self
 
     def __exit__(self, *_exc: object) -> None:
@@ -313,7 +315,7 @@ def _handler(proxy: Proxy) -> type[BaseHTTPRequestHandler]:
                 self._send(_Answer(HTTPStatus.NO_CONTENT, (), b""))
                 return
             call, fault = proxy._decide(method, self.path, body.decode("utf-8", "replace"))
-            if method == "GET" and call.path == "index.php" and proxy._take_error_list():
+            if method == "GET" and call.path == LIST_PAGE and proxy._take_error_list():
                 self._send(_error_page(HTTPStatus.INTERNAL_SERVER_ERROR))
                 return
             if fault is Fault.CUT:

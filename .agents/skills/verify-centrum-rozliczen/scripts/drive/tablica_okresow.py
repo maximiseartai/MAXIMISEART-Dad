@@ -21,6 +21,7 @@ from drive.common import (
     sent_requests,
     settle,
 )
+from tests.fixtures.scenariusz_centrum import NEEDS_CHECK
 
 
 def drive(run: Run, page: Page) -> None:
@@ -65,35 +66,35 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "tablica-droga-okresu")
     steps = {row["token"]: row for row in rows}
     run.check(
-        [step["label"] for step in steps["29_05_10_2026"]["path"]]
+        [step["label"] for step in steps[NEEDS_CHECK]["path"]]
         == ["Plik zbiorczy", "Uzupełnienie w Excelu", "Wycena w efenix", "Rozliczenia pracowników"]
-        and [step["stage"] for step in steps["29_05_10_2026"]["path"]] == ["done", "now", "later", "later"]
+        and [step["stage"] for step in steps[NEEDS_CHECK]["path"]] == ["done", "now", "later", "later"]
         and [step["stage"] for step in steps["22_28_09_2026"]["path"]] == ["done", "done", "not_done", "done"],
         "Droga okresu has four steps; a closed period without Wycena w efenix shows that step as not done",
     )
-    filling = steps["29_05_10_2026"]["next_step"]
+    filling = steps[NEEDS_CHECK]["next_step"]
     run.check(
         (filling["action"], filling["label"], filling["then"]["action"], filling["then"]["preview_hint"])
         == ("fill_collective_file", "Uzupełnij plik zbiorczy", "price_in_efenix", None)
-        and steps["29_05_10_2026"]["secondary_step"]["action"] == "create_worker_settlements"
-        and all(row["secondary_step"] is None for row in rows if row["token"] != "29_05_10_2026"),
+        and steps[NEEDS_CHECK]["secondary_step"]["action"] == "create_worker_settlements"
+        and all(row["secondary_step"] is None for row in rows if row["token"] != NEEDS_CHECK),
         "with a Plik zbiorczy and no Wycena w efenix, the next step is Uzupełnij plik zbiorczy, then Wycena w efenix "
         "(no preview), and Przebieg rozliczeń stays reachable beside it",
     )
-    prepared = period_row(page, "29_05_10_2026")
+    prepared = period_row(page, NEEDS_CHECK)
     row_steps = prepared.get_by_role("cell").last.get_by_role("button")
     names = ["Utwórz rozliczenia pracowników", "Wyceń w efenix", "Uzupełnij"]
     expect(row_steps).to_have_count(len(names))
     for index, name in enumerate(names):
-        expect(row_steps.nth(index)).to_have_accessible_name(f"{name}, okres 29_05_10_2026")
+        expect(row_steps.nth(index)).to_have_accessible_name(f"{name}, okres {NEEDS_CHECK}")
     run.check(
         True,
-        "the row of 29_05_10_2026 offers Uzupełnij and, beside it, Wyceń w efenix and Utwórz rozliczenia pracowników",
+        f"the row of {NEEDS_CHECK} offers Uzupełnij and, beside it, Wyceń w efenix and Utwórz rozliczenia pracowników",
     )
-    prepared.get_by_role("button", name="Wyceń w efenix, okres 29_05_10_2026", exact=True).click()
+    prepared.get_by_role("button", name=f"Wyceń w efenix, okres {NEEDS_CHECK}", exact=True).click()
     expect(page.get_by_text("Nowe Uruchomienie procesu", exact=True)).to_be_visible()
     expect(page.get_by_role("radio", name="Wycena w efenix")).to_be_checked()
-    expect(page.get_by_role("combobox", name="Okres")).to_contain_text("29_05_10_2026")
+    expect(page.get_by_role("combobox", name="Okres")).to_contain_text(NEEDS_CHECK)
     run.check(True, "Wyceń w efenix opens a new Uruchomienie with the tile Wycena w efenix and that period chosen")
     # A reload forgets the chosen tile, so later features start from the default Nowe Uruchomienie procesu.
     page.goto(run.url + "#/okresy")
@@ -109,7 +110,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "tablica-otwieranie")
     opened_before = len(run.lines("opened.jsonl"))
     clicks = [
-        ("Plik zbiorczy, okres 29_05_10_2026", periods / "29_05_10_2026" / "Rozliczenie 29_05_10_2026 - zbiorcze.xlsx"),
+        (f"Plik zbiorczy, okres {NEEDS_CHECK}", periods / NEEDS_CHECK / f"Rozliczenie {NEEDS_CHECK} - zbiorcze.xlsx"),
         ("Rozliczenie wewnętrzne, okres 22_28_09_2026", periods / "22_28_09_2026" / "Rozliczenie wew. 22_28_09_2026.xlsx"),
         ("Folder okresu, okres 15_21_09_2026", periods / "15_21_09_2026"),
         ("Rozliczenia pracowników: 3, okres 22_28_09_2026",
@@ -227,12 +228,12 @@ def drive(run: Run, page: Page) -> None:
     run.check(True, "once the server answers, a (simulated) return to the tab shows the board again")
 
     run.step(feature, "tablica-podpowiedz")
-    period_row(page, "29_05_10_2026").get_by_text("Wyceń w efenix").hover()
+    period_row(page, NEEDS_CHECK).get_by_text("Wyceń w efenix").hover()
     expect(page.get_by_text("Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.")).to_be_visible()
     run.capture(page, "09-tablica-podpowiedz", full_page=False)
-    period_row(page, "29_05_10_2026").get_by_text("Uzupełnij", exact=True).hover()
+    period_row(page, NEEDS_CHECK).get_by_text("Uzupełnij", exact=True).hover()
     expect(page.get_by_text("Uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.", exact=True)).to_be_visible()
-    period_row(page, "29_05_10_2026").get_by_text("Utwórz rozliczenia pracowników").hover()
+    period_row(page, NEEDS_CHECK).get_by_text("Utwórz rozliczenia pracowników").hover()
     expect(page.get_by_text("Możesz je utworzyć także bez Wyceny w efenix, na przykład gdy efenix nie działa.")).to_be_visible()
     run.check(
         True,

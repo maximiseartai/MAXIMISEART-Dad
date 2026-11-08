@@ -1,5 +1,7 @@
 {
   "src/rozliczenia/preparation_files.py": {
-    "_write_period_file": "3d16e069ad1afdb5"
+    "_make_staging": "401b0a810e3d3acb",
+    "_create_file": "e83cc846e39fa032",
+    "_remove_staging": "79330a117a1cd3e6"
   }
 }

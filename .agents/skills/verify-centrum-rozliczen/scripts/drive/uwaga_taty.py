@@ -39,6 +39,12 @@ from drive.common import (
     toggle_theme,
 )
 from drive.teksty import FOR_KEY, MODES, WRITE
+from rozliczenia.centrum.contract import ProcessKey
+from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
+from rozliczenia.preparation_process import PROCESS as PREPARATION
+from rozliczenia.process_run import Process
+from rozliczenia.settlement_process import PROCESS as SETTLEMENT
+from rozliczenia.telemetry import MetricsStore
 
 FEATURE = "uwaga-taty"
 LABEL = "uwaga-taty"
@@ -381,20 +387,23 @@ def _low_with_list(run: Run, page: Page, dialog: Locator, choices: Locator, what
 
 def _drive_full_window_list(run: Run, page: Page) -> None:
     run.step(FEATURE, "uwaga-pelne-okno-lista")
-    registry = Path(run.fixture["settings"]).parent / "centrum-uruchomienia.jsonl"
+    # Centrum zapamiętuje Uruchomienia z Centrum we własnym pliku obok ustawień: napęd dopisuje je przez właściciela
+    # pliku (run_origins), więc zmiana jego formatu nie zostawia Centrum pliku, którego ono nie przeczyta.
+    registry = Path(run.fixture["settings"]).parent / CENTRUM_RUNS_FILE
     before = registry.read_bytes() if registry.exists() else None
-    started = []
-    for process in ("settlement", "preparation"):
-        for line in Path(run.fixture["metrics"][process]).read_text(encoding="utf-8").splitlines():
-            try:
-                started.append((json.loads(line)["started_at"], process))
-            except (ValueError, KeyError, TypeError):
-                continue
+    processes: tuple[tuple[ProcessKey, Process[Any, Any, Any]], ...] = (
+        ("settlement", SETTLEMENT),
+        ("preparation", PREPARATION),
+    )
+    metrics = {key: MetricsStore(Path(run.fixture["metrics"][key]), process.counter_names) for key, process in processes}
+    started = [(record["started_at"], key) for key, store in metrics.items() for record in store.read()]
     newest = sorted(started, reverse=True)[:FULL_LIST_RUNS]
+    run.check(len(newest) == FULL_LIST_RUNS, f"the fixture's metrics files hold at least {FULL_LIST_RUNS} runs ({len(newest)})")
     try:
-        with registry.open("a", encoding="utf-8") as log:
-            for number, (at, process) in enumerate(newest):
-                log.write(json.dumps({"process": process, "started_at": at, "run_id": f"uwaga-lista-{number}"}) + "\n")
+        origins = CentrumRuns(registry)
+        for number, (at, key) in enumerate(newest):
+            moment = datetime.fromisoformat(at)
+            origins.remember(key, f"uwaga-lista-{number}", metrics[key], moment, moment)
         dialog = _open(page)
         _scope(dialog, "Do Uruchomienia").click()
         choices = dialog.get_by_role("radiogroup", name="Uruchomienie", exact=True)

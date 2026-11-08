@@ -14,10 +14,10 @@ re-running the code once per schedule, and checks two rules:
   neither. The one allowed exception is a stop whose message names every file
   left and does not say that no file was created.
 
-Only two things are replaced: workbook writing (``_write_period_file``) by a step
-that creates the staged file, and the staging directory (``tempfile.mkdtemp`` and
-``shutil.rmtree``) by a directory on the in-memory disk whose removal is one step
-that may fail, as when OneDrive holds the folder. A filesystem call that the in-memory disk does not model
+Nothing in the code is replaced: the checker gives ``write_period_files`` its own
+``preparation_files.Disk``, whose workbook writing is a step that creates the staged
+file and whose staging directory (made and removed) is a directory on the in-memory
+disk whose removal is one step that may fail, as when OneDrive holds the folder. A filesystem call that the in-memory disk does not model
 stops the check as LUKA MODELU instead of passing silently.
 
 Schedules that reach a state already explored are cut short: the code is
@@ -38,7 +38,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -51,7 +51,7 @@ from rozliczenia import preparation_files
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.template_file import TemplateFile
-from rozliczenia.write_routes import Route, TemplateKind
+from rozliczenia.write_routes import Route
 from eksplorator import Choices, Excuse, Interleaving, Kind, Thread, excuse_line, excused, gone_lines, schedules, verdict
 import rozjazd_modelu
 
@@ -456,68 +456,49 @@ def intercepted(disk: VirtualDisk, scheduler: Scheduler) -> Iterator[None]:
             setattr(owner, name, original)
 
 
-# --- Harness replacements: workbook writing and the staging directory ------------------------------
+# --- Steps of the code outside the os calls: workbook writing and the staging directory -----------------
 
 
-class _StagingDirectory:
-    """``tempfile.mkdtemp`` and ``shutil.rmtree`` of the staging directory on the in-memory disk.
+def period_disk(disk: VirtualDisk, scheduler: Scheduler) -> preparation_files.Disk:
+    """The steps of ``preparation_files.Disk`` on the in-memory disk: the staging directory and workbook writing.
 
-    A killed process leaves the directory behind: the removal of a run that was killed or cut short takes no step.
-    The removal fails like the real one, as when OneDrive holds the folder: with ``ignore_errors`` the folder stays
-    and the failure is swallowed, otherwise it is raised. A kill during the removal is not explored: the run's
-    outcome is already decided, as with a kill while the result is shown, which the checker does not explore either.
+    Workbook writing is one step that creates the staged file and returns its route, as ``_create_file`` returns it for
+    the metrics record (``RouteCounts``). A killed process leaves the staging directory behind: the removal of a run
+    that was killed or cut short takes no step. The removal fails like the real one, as when OneDrive holds the folder:
+    the folder stays and the failure is swallowed. A kill during the removal is not explored: the run's outcome is
+    already decided, as with a kill while the result is shown, which the checker does not explore either.
     """
 
-    def __init__(self, disk: VirtualDisk, scheduler: Scheduler) -> None:
-        self.disk = disk
-        self.scheduler = scheduler
-
-    def mkdtemp(self, *, prefix: str, dir: Path) -> str:
+    def make_staging(prefix: str, directory: Path) -> Path:
         run = _current_run()
         if run is None:
             raise ModelGap("katalog tymczasowy poza uruchomieniem procesu")
-        path = Path(dir) / f"{prefix}{run.name}"
-        self.disk.mkdir(path)
-        return str(path)
+        path = directory / f"{prefix}{run.name}"
+        disk.mkdir(path)
+        return path
 
-    def rmtree(self, path: Path, ignore_errors: bool = False) -> None:
-        if not self.disk.covers(path):
-            raise ModelGap("usunięcie katalogu spoza dysku w pamięci")
-        try:
-            self.scheduler.step(
-                "usunięcie katalogu tymczasowego",
-                (path,),
-                mutating=True,
-                perform=lambda: self.disk.remove_tree(path),
-                killable=False,
-            )
-        except OSError:
-            if not ignore_errors:
-                raise
-
-
-@contextmanager
-def harness(disk: VirtualDisk, scheduler: Scheduler) -> Iterator[None]:
-    def write_period_file(template: TemplateFile, target: Path, rows: object) -> tuple[TemplateKind, Route]:
+    def create_file(template: TemplateFile, target: Path, rows: object) -> Route:
         scheduler.step(
             "zapis skoroszytu",
             (target,),
             mutating=True,
             perform=lambda: disk.create(target, is_dir=False, owner=disk.actor),
         )
-        return template.kind, Route.COPY
+        return Route.COPY
 
-    staging = _StagingDirectory(disk, scheduler)
-    replacements: dict[str, Any] = {"_write_period_file": write_period_file, "tempfile": staging, "shutil": staging}
-    originals = {name: getattr(preparation_files, name) for name in replacements}
-    for name, value in replacements.items():
-        setattr(preparation_files, name, value)
-    try:
-        with intercepted(disk, scheduler):
-            yield
-    finally:
-        for name, value in originals.items():
-            setattr(preparation_files, name, value)
+    def remove_staging(path: Path) -> None:
+        if not disk.covers(path):
+            raise ModelGap("usunięcie katalogu spoza dysku w pamięci")
+        with suppress(OSError):
+            scheduler.step(
+                "usunięcie katalogu tymczasowego",
+                (path,),
+                mutating=True,
+                perform=lambda: disk.remove_tree(path),
+                killable=False,
+            )
+
+    return preparation_files.Disk(make_staging=make_staging, create_file=create_file, remove_staging=remove_staging)
 
 
 def probe_interception() -> list[str]:
@@ -742,9 +723,9 @@ class Execution:
     disturbances: int
 
 
-def _run_body(run: Run, layout: Layout) -> None:
+def _run_body(run: Run, layout: Layout, steps: preparation_files.Disk) -> None:
     try:
-        preparation_files.write_period_files(layout.files, [], [])
+        preparation_files.write_period_files(layout.files, [], [], disk=steps)
         run.result = "SUKCES"
     except (Crash, Abort):
         run.result = "PRZERWANE"
@@ -816,9 +797,10 @@ def execute(scope: Scope, choices: Choices, visited: set[object]) -> Execution:
     disturbances = 0
     cut = False
 
-    with harness(disk, scheduler):
+    steps = period_disk(disk, scheduler)
+    with intercepted(disk, scheduler):
         for run in runs:
-            scheduler.spawn(run, partial(_run_body, run, layout))
+            scheduler.spawn(run, partial(_run_body, run, layout, steps))
             scheduler.settle()
         while True:
             scheduler.settle()

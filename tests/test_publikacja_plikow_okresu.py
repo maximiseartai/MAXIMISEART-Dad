@@ -54,12 +54,12 @@ def test_publikacja_plikow_okresu_zachowuje_nienadpisywanie_i_razem_albo_zaden_w
     writing = 0
     interleaved = False
 
-    def counted(*args: object) -> object:
+    def counted(*args: object, **options: object) -> object:
         nonlocal writing, interleaved
         interleaved |= writing > 0
         writing += 1
         try:
-            return write_period_files(*args)
+            return write_period_files(*args, **options)
         finally:
             writing -= 1
 
@@ -195,8 +195,9 @@ def test_drzewo_harmonogramow_nie_zalezy_od_tego_czym_pathlib_pyta_o_plik(monkey
 def test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_sprawdzeniem(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], ci: str, code: int, last: str
 ) -> None:
-    """Krok zapisu skoroszytu (``_write_period_file``) sprawdzenie zastępuje własnym, więc jego zmiana nie wywraca go
-    sama: w CI rozjazd z ``model/definicje.json`` kończy je porażką, zanim ruszy, a poza CI tylko ostrzega."""
+    """Kroki dysku Zapisywania (domyślne ``preparation_files.Disk``) sprawdzenie zastępuje własnymi, więc ich zmiana
+    nie wywraca go sama: w CI rozjazd z ``model/definicje.json`` kończy je porażką, zanim ruszy, a poza CI tylko
+    ostrzega."""
 
     explorer = _load_explorer()
     monkeypatch.setenv("GITHUB_ACTIONS", ci)
@@ -207,3 +208,16 @@ def test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_s
 
     lines = capsys.readouterr().out.splitlines()
     assert (exited, lines[0], lines[-1]) == (code, "UWAGA: kod opisany modelem zmienił się: verify-publikacja-plikow-okresu.", last)
+
+
+def test_przyjete_ryzyko_ktorego_nie_pokazal_zakres_z_jego_after_wywraca_werdykt() -> None:
+    """Przyjęte ryzyko ADR 0005 występuje zawsze po obu zakresach (``after``): zakres, który przeszedł do końca bez niego,
+    daje ``ZNALEZISKO ZNIKNĘŁO`` i kod 1, bo wpis przestał opisywać kod (docs/agents/skille.md, wpisy eksploratorów)."""
+
+    explorer = _load_explorer()
+    report = explorer.ScopeReport(explorer.SCOPES["jedno-uruchomienie"], schedules=1, undisturbed_successes=1)
+
+    outcome = explorer.summarize([report])
+
+    assert (outcome.exit_code, outcome.lines[-1]) == (1, "PUBLIKACJA: ZNALEZISKO ZNIKNĘŁO (1)"), "\n".join(outcome.lines)
+    assert outcome.lines[-2].startswith("ZNALEZISKO ZNIKNĘŁO ADR 0005 (RAZEM_ALBO_ZADEN) po jedno-uruchomienie:")

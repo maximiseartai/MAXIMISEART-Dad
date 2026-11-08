@@ -85,6 +85,8 @@ EFENIX_ORDERS = (
 )
 # The orders of ``EFENIX_ORDERS`` with the status „Rozliczone” in efenix (an Zlecenie rozliczone, #821).
 EFENIX_SETTLED = frozenset({"#QX9004"})
+# The orders of ``EFENIX_ORDERS`` that efenix does not know: the Atrapa efenix does not hold them.
+EFENIX_UNKNOWN = frozenset({"#QX9002"})
 # The ADRES of every order (tests.fixtures.efenix.Order), pieces of it and of its Dane adresowe in the Atrapa: the rule of data (ADR 0025) keeps
 # each out of the Logi.
 EFENIX_ADDRESS_MARKERS = (ADDRESS, "TESTOWA", "Testowa", "Miasto-Dzielnica")
