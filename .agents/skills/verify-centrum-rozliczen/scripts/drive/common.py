@@ -210,14 +210,16 @@ class Run:
             return []
         return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line]
 
-    def settings_text(self) -> str:
+    def settings_text(self) -> str | None:
+        """The settings file as the server last put it in place (``while_open``), ``None`` before Centrum wrote it."""
+
         settings = Path(self.fixture["settings"])
-        return settings.read_text(encoding="utf-8") if settings.exists() else ""
+        return while_open(lambda: settings.read_text(encoding="utf-8")) if settings.exists() else None
 
     def remembered(self, key: str) -> object:
         """One value of the settings file as Centrum wrote it (``folder_okresow``, ``rejestr_zlecen``, ``motyw``)."""
 
-        document = yaml.safe_load(self.settings_text()) or {}
+        document = yaml.safe_load(self.settings_text() or "") or {}
         assert isinstance(document, dict)
         return document.get(key)
 

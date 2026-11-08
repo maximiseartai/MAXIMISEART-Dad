@@ -70,7 +70,7 @@ def drive(run: Run, page: Page) -> None:
     sources = [Path(source) for source in fixture["copies"]]
     oldest, middle, newest = (source.name for source in sources)
     settings = Path(run.fixture["settings"])
-    saved = settings.read_text(encoding="utf-8") if settings.exists() else None
+    saved = run.settings_text()
     kopie_before = _kopie(folder)
     original = register.read_bytes()
     print("  harness: INTERMAX of this feature in the settings and three Kopie of both names in the folder", flush=True)
