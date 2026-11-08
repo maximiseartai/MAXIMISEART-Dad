@@ -150,6 +150,9 @@ from repo import BASE, ROOT
 import repo
 import wplyw_zmiany
 
+# Mutacji naraz i workerów xdist pokrycia: 4 vCPU runnera Linux nocy. Stała, a nie ``mutacje.PARALLEL`` (rdzenie
+# komputera), bo z niej plan nocy liczy rozmiar części (``mutacje_nocne.NA_CZESC``, ADR 0021), który nie może zależeć od
+# komputera, na którym plan biegnie.
 WORKERS = 4
 # Limit czasu testów jednej mutacji (``--limit-s``): polecenie bez wyniku po nim to PRZEKROCZONY CZAS.
 MUTATION_LIMIT_S = 900
@@ -1011,12 +1014,12 @@ def _mutate(
         for (mutant, mutation, remaining), (verdict, shown) in zip(queued, verdicts, strict=True):
             # ZAWIESZENIE (pytest-timeout) czerwieni CI, więc kończy mutację jak WYKRYTA, bez szerszych testów.
             caught, last = mutacje.in_ci(verdict, shown)
-            if verdict == mutacje.NO_VERDICT:
+            if verdict == mutacje.Verdict.NO_VERDICT:
                 unchecked.append((mutant, texts[mutant.path]))
             elif not caught and not remaining:
                 passed.append((mutant, mutation, verdict, shown, label))
                 continue
-            if caught or verdict == mutacje.NO_VERDICT or not remaining:
+            if caught or verdict == mutacje.Verdict.NO_VERDICT or not remaining:
                 print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
             elif remaining[1:]:
                 further.append((mutant, replace(mutation, command=_command(remaining[0])), remaining[1:]))
@@ -1027,10 +1030,10 @@ def _mutate(
     clock.append(time.monotonic())
     for (mutant, mutation), (verdict, shown) in zip(wide, mutacje.verdicts([m for _, m in wide], workers=1, limit_s=args.limit_s, deadline=deadline), strict=True):
         caught, last = mutacje.in_ci(verdict, shown)
-        if not caught and verdict != mutacje.NO_VERDICT:
+        if not caught and verdict != mutacje.Verdict.NO_VERDICT:
             passed.append((mutant, mutation, verdict, shown, " (testy pliku)"))
             continue
-        if verdict == mutacje.NO_VERDICT:
+        if verdict == mutacje.Verdict.NO_VERDICT:
             unchecked.append((mutant, texts[mutant.path]))
         print(f"{verdict}: {mutation.name} → {last} (testy pliku)", flush=True)
     clock.append(time.monotonic())
@@ -1044,7 +1047,7 @@ def _mutate(
     for mutant, mutation, tests_verdict, tests_shown, label in passed:
         verdict, shown = (tests_verdict, tests_shown) if mutant.revert else next(gated)
         caught, last = mutacje.in_ci(verdict, shown)
-        if verdict == mutacje.NO_VERDICT:
+        if verdict == mutacje.Verdict.NO_VERDICT:
             unchecked.append((mutant, texts[mutant.path]))
         elif not caught:
             survived.append((mutant, texts[mutant.path]))

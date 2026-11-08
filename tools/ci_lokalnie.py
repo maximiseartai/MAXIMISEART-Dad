@@ -31,7 +31,6 @@ Kroki i kopie commitów nie przeżywają ``ci_lokalnie``, także zabitego przez 
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 from pathlib import Path
 import shutil
@@ -42,7 +41,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
-from mutacje import environment
+from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps
 from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
 import potomne
 from repo import BASE, ROOT
@@ -61,57 +60,39 @@ COMMANDS_ELSEWHERE = {
     "tools/ci/zapis_czasow.py": "pomiar czasów zadania (artefakt czasy-ci), nic nie sprawdza",
     "tools/ci/zapis_narzedzi_tlc.py": "decyzja o zapisie cache narzędzi TLC (#940), nie sprawdza zmiany",
 }
-OUTPUT_ON_FAILURE = 40
 EVERY_COMMIT_JOBS = ("ruff", "mypy", "pytest")
-# Zadania bramy pre-push (``--tylko ruff,mypy``); ich krokami biegną też szybko i brama typów mutacji (tools/mutacje.py).
-STATIC_JOBS = ("ruff", "mypy")
-
-
-@dataclass(frozen=True)
-class Step:
-    name: str
-    job: str
-    # Fragment polecenia `run:` w ci.yml, które ten krok odtwarza.
-    ci: str
-    command: tuple[str, ...]
-    cwd: Path
 
 
 def _npm() -> str:
     return shutil.which("npm") or "npm"
 
 
-def _steps(root: Path) -> list[Step]:
+def _reproduced(root: Path) -> list[tuple[str, Step]]:
+    """Każdy krok narzędzia z fragmentem polecenia `run:` w ci.yml, które odtwarza."""
+
     python, npm, frontend = sys.executable, _npm(), root / "frontend"
+    ruff, mypy, mypy_windows = static_steps(root)
     return [
-        Step("ruff", "ruff", "-m ruff check", (python, "-m", "ruff", "check"), root),
-        # Gałęzie innych systemów niż Windows sprawdza mypy systemu, na którym biegnie; CI biegnie na Linuksie.
-        Step("mypy", "mypy", "-m mypy --platform linux", (python, "-m", "mypy"), root),
-        # Gałęzie tylko dla Windows używają API, którego inne systemy nie mają.
-        # Własny cache, bo zmiana --platform unieważnia wspólny i oba kroki sprawdzałyby za każdym razem całość.
-        Step("mypy (Windows)", "mypy", "-m mypy --platform win32", (python, "-m", "mypy", "--platform", "win32", "--cache-dir", ".mypy_cache/win32"), root),
-        Step("pytest", "pytest", "tools/ci/wykonaj_zadanie.py", (python, "-m", "pytest", "-q", "-n", "auto"), root),
+        ("-m ruff check", ruff),
+        ("-m mypy --platform linux", mypy),
+        ("-m mypy --platform win32", mypy_windows),
+        ("tools/ci/wykonaj_zadanie.py", pytest_step(root)),
         # W CI kroki skilli biegną z planu, w zadaniach Mutation checks; tu tym samym wykonaniem wszystkie kroki pushu po kolei.
-        Step("mutacje skilli", "mutations", "tools/ci/wykonaj_zadanie.py", (python, "tools/ci/wykonaj_zadanie.py", "--kroki-pushu"), root),
-        Step("npm ci", "frontend", "npm ci", (npm, "ci"), frontend),
+        ("tools/ci/wykonaj_zadanie.py", Step("mutacje skilli", "mutations", (python, "tools/ci/wykonaj_zadanie.py", "--kroki-pushu"), root)),
+        ("npm ci", Step("npm ci", "frontend", (npm, "ci"), frontend)),
         *(
-            Step(f"npm run {script}", "frontend", f"npm run {script}", (npm, "run", script), frontend)
+            (f"npm run {script}", Step(f"npm run {script}", "frontend", (npm, "run", script), frontend))
             for script in ("contract", "typecheck", "lint", "rules", "unused", "duplicates", "build")
         ),
-        Step(
-            "kontrakt i build zacommitowane",
-            "frontend",
+        (
             f"git status --porcelain -- {' '.join(GENERATED)}",
-            repo.command("status", "--porcelain", "--", *GENERATED),
-            root,
+            Step("kontrakt i build zacommitowane", "frontend", repo.command("status", "--porcelain", "--", *GENERATED), root),
         ),
     ]
 
 
-def static_steps(root: Path) -> list[Step]:
-    """Kroki ruff i mypy obu systemów w ``root``, w kolejności bramy pre-push."""
-
-    return [step for step in _steps(root) if step.job in STATIC_JOBS]
+def _steps(root: Path) -> list[Step]:
+    return [step for _, step in _reproduced(root)]
 
 
 def _dependencies_fresh(frontend: Path) -> bool:
@@ -201,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.kroki_ci:
         reproduced = sorted({CI_JOB.get(job, job) for job in known})
         elsewhere = {"zadania": JOBS_ELSEWHERE, "polecenia": COMMANDS_ELSEWHERE}
-        print(json.dumps({"lokalnie": reproduced, "gdzie_indziej": elsewhere, "fragmenty": [s.ci for s in steps]}))
+        print(json.dumps({"lokalnie": reproduced, "gdzie_indziej": elsewhere, "fragmenty": [ci for ci, _ in _reproduced(ROOT)]}))
         return 0
     jobs = set(args.tylko.split(",")) if args.tylko else set(EVERY_COMMIT_JOBS if args.kazdy_commit else known)
     if unknown := jobs - known:

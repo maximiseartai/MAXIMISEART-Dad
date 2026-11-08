@@ -105,7 +105,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
@@ -126,12 +126,11 @@ import time
 from typing import Any, NamedTuple, Protocol, TypeVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-# ci_lokalnie (brama typów) importuje dopiero w funkcji, bo sam importuje ten moduł.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import ciezkie_ci
 import github
-from jednostka import ZMIENNA_CZESCI, Czesc, Klucz, Rodzaj
+from jednostka import ZMIENNA_CZESCI, Czesc
+from kroki_lokalne import environment, static_steps
 from ostatnie_linie import MUTACJE_OK
 import potomne
 from repo import BASE, ROOT
@@ -140,7 +139,8 @@ import repo
 TIMEOUT = 600
 # Mutacji naraz najwyżej tyle, ile rdzeni ma komputer (4 vCPU runnera Windows CI), i najwyżej 8 (16 rdzeni Maca dzielą
 # agenci). Osiem eksploratorów naraz na 4 vCPU dzieliło procesor, więc czas mutacji zależał od tego, ile ciężkich mutacji
-# plan CI wrzucił do jednej części (do 600 s limitu, #963, #968).
+# plan CI wrzucił do jednej części (do 600 s limitu, #963, #968). Noc ma własne ``mutacje_zmiany.WORKERS``: z niego plan
+# nocy liczy rozmiar części, który nie może zależeć od komputera, na którym plan biegnie.
 PARALLEL = min(8, os.cpu_count() or 1)
 # Cache mypy kroków bramy typów (``--cache-dir`` kroku Windows leży w nim), który kopia bez mutacji daje kopiom mutacji.
 MYPY_CACHE = ".mypy_cache"
@@ -173,7 +173,6 @@ class Verdict(StrEnum):
     NO_VERDICT = "BEZ WERDYKTU"  # koniec czasu wywołującego przed wynikiem
 
 
-NO_VERDICT = Verdict.NO_VERDICT
 HANG_CAUGHT = "liczona jako wykryta: pytest-timeout czerwieni test w CI"
 OVER_LIMIT_NOTE = "limit --limit-s narzędzia, nie pytest-timeout"
 
@@ -209,19 +208,6 @@ class Mutation:
     command: tuple[str, ...]  # argumenty Pythona, uruchamiane w korzeniu kopii
     harm: str = ""
     expected: str | None = None  # początek ostatniej linii wyjścia; None: polecenie kończy się błędem
-
-
-def environment(copy: Path, *, concurrent: bool = False) -> dict[str, str]:
-    nested = {"PYTEST_XDIST_AUTO_NUM_WORKERS": "1"} if concurrent else {}
-    # Część dzieli tabelę tego skryptu, nie tabele, które sprawdzane polecenie samo uruchamia.
-    inherited = {name: value for name, value in os.environ.items() if name != ZMIENNA_CZESCI}
-    return {
-        **nested,
-        **inherited,
-        "PYTHONPATH": os.pathsep.join([str(copy / "src"), os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep),
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUTF8": "1",
-    }
 
 
 @contextmanager
@@ -433,7 +419,7 @@ class Finding:
     """Diagnostyka kroku bramy typów."""
 
     step: str  # nazwa kroku: ruff, mypy, mypy (Windows)
-    job: str  # narzędzie kroku (``Step.job`` w ``tools/ci_lokalnie.py``): ruff albo mypy
+    job: str  # narzędzie kroku (``Step.job`` w ``tools/lib/kroki_lokalne.py``): ruff albo mypy
     code: str | None  # kod reguły; None: wyjście, którego nie dało się przeczytać jako diagnostyk
     text: str  # plik, linia i komunikat, które pokazuje werdykt
 
@@ -524,15 +510,14 @@ def wrong(finding: Finding) -> bool:
 
 
 def static_gate(copy: Path, *, limit_s: float, stop: threading.Event, deadline: float | None) -> Checked:
-    """Kroki ruff i mypy obu systemów bramy pre-push (``ci_lokalnie.static_steps``) w kopii, z diagnostykami w JSON.
+    """Kroki ruff i mypy obu systemów bramy pre-push (``kroki_lokalne.static_steps``) w kopii, z diagnostykami w JSON.
 
     Diagnostyki każdego kroku, który padł; kroki biegną do pierwszego, którego diagnostyka liczy się jako wykrycie
     (``wrong``), albo do pierwszego, który nie skończył się w czasie.
     """
 
     found: list[Finding] = []
-    # Przez import_module: ci_lokalnie importuje ten moduł.
-    for step in importlib.import_module("ci_lokalnie").static_steps(copy):
+    for step in static_steps(copy):
         tool = _TOOLS[step.job]
         left = _left(limit_s, deadline)
         if left <= 0:
@@ -669,10 +654,50 @@ def _against_base(
     return result
 
 
-def check_all(
-    mutations: Sequence[Mutation], *, parallel: bool = True, limit_s: float = TIMEOUT, base: str | None = None, gate: Gate = static_gate
-) -> int:
-    """Podstawa, werdykt i czas polecenia każdej mutacji; kod 0, gdy CI złapałoby każdą (``in_ci``).
+class _Judge(Protocol):
+    def __call__(
+        self, mutations: Sequence[Mutation], found: Sequence[tuple[Verdict, str]], *, workers: int, limit_s: float
+    ) -> list[tuple[Verdict, str, bool]]: ...
+
+
+def _skill_judgement(
+    mutations: Sequence[Mutation], found: Sequence[tuple[Verdict, str]], *, workers: int, limit_s: float, gate: Gate
+) -> list[tuple[Verdict, str, bool]]:
+    """Werdykt skryptu mutacji skilla: mutację, którą polecenie przepuściło, sprawdza jeszcze ``type_gate`` z ``gate``, a
+    wykryciem jest to, co złapałoby CI (``in_ci``)."""
+
+    judged = []
+    for verdict, shown in type_gate(mutations, found, workers=workers, limit_s=limit_s, gate=gate):
+        caught, last = in_ci(verdict, shown)
+        judged.append((verdict, last, caught))
+    return judged
+
+
+def _review_judgement(
+    mutations: Sequence[Mutation], found: Sequence[tuple[Verdict, str]], *, workers: int, limit_s: float, base: str
+) -> list[tuple[Verdict, str, bool]]:
+    """Werdykt przeglądu z wiersza poleceń: porażką jest wszystko poza WYKRYTA, także ZAWIESZENIE, a mutacja NIEWYKRYTA
+    biegnie też na merge-base HEAD z ``base`` (REGRES), bez bramy typów."""
+
+    compared = _against_base(mutations, found, base, workers=workers, limit_s=limit_s)
+    return [(verdict, shown, verdict is Verdict.CAUGHT) for verdict, shown in compared]
+
+
+def check_all(mutations: Sequence[Mutation], *, limit_s: float = TIMEOUT, gate: Gate = static_gate) -> int:
+    """Główna funkcja skryptu mutacji skilla (``check_<co>_mutations.py``): mutacje naraz (``PARALLEL``) z werdyktem,
+    który złapałoby CI, po bramie typów ``gate``; kod 0, gdy CI złapałoby każdą.
+
+    Część tabeli bierze z ``MUTACJE_CZESC`` w środowisku procesu, które ustawia plan CI, a nazwę skryptu do ostrzeżenia
+    ``CZAS BLISKO LIMITU`` z ``sys.argv[0]``, więc działa tylko jako główna funkcja procesu skryptu.
+    """
+
+    judge = partial(_skill_judgement, gate=gate)
+    return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=PARALLEL, limit_s=limit_s)
+
+
+def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: str, workers: int, limit_s: float) -> int:
+    """Podstawa, werdykt ``judge`` i czas polecenia każdej mutacji części ``part`` (pusta: całej listy); kod 0, gdy
+    ``judge`` uznał każdą za wykrytą.
 
     Pod linią ``PODSTAWA CZERWONA`` stderr dostaje koniec stdout i stderr polecenia podstawy (``BASE_TAIL`` linii
     każdego), także podstawy, która przekroczyła ``limit_s``, bo ostatnia linia nie zawsze mówi, co padło, a kopii
@@ -681,22 +706,18 @@ def check_all(
 
     Przed linią werdyktu każdej mutacji linia ``CZAS`` na stderr podaje czas jej polecenia, a mutację, której polecenie
     trwało ponad ``NEAR_LIMIT`` limitu ``limit_s``, linia ``CZAS BLISKO LIMITU`` na stderr przed linią końcową wymienia ze
-    skryptem, częścią i limitem (``NearLimit.line``), zanim limit da PRZEKROCZONY CZAS (#911, #927). Log CI skryptu skilla
-    ma obie, a ``near_limits`` czyta ostrzeżenia z obu strumieni wyniku skryptu (#935). To nie werdykt,
-    więc stdout (werdykty i linia końcowa) i kod wyjścia się nie zmieniają. Czas ma każda mutacja, której polecenie biegło, także po limicie, więc linię ``CZAS`` i
-    ostrzeżenie dostaje też PRZEKROCZONY CZAS, który brama typów zmienia w WYKRYTA PRZEZ BRAMĘ TYPÓW, i ZAWIESZENIE,
-    które ``in_ci`` liczy jako wykrycie; bez linii ``CZAS`` jest tylko mutacja, której polecenie nie biegło (NIEAKTUALNA, BEZ
-    WERDYKTU przed startem).
-
-    Bez ``base`` (skrypty mutacji skilli) mutację, którą polecenie przepuściło, sprawdza jeszcze ``type_gate`` z ``gate``. Z
-    ``base``, czyli w przeglądzie z wiersza poleceń, porażką jest wszystko poza WYKRYTA, także ZAWIESZENIE, a mutacja
-    NIEWYKRYTA biegnie też na merge-base HEAD z ``base`` (REGRES), bez bramy typów.
+    skryptem ``script``, częścią i limitem (``NearLimit.line``), zanim limit da PRZEKROCZONY CZAS (#911, #927). Log CI
+    skryptu skilla ma obie, a ``near_limits`` czyta ostrzeżenia z obu strumieni wyniku skryptu (#935). To nie werdykt,
+    więc stdout (werdykty i linia końcowa) i kod wyjścia się nie zmieniają. Czas ma każda mutacja, której polecenie
+    biegło, także po limicie, więc linię ``CZAS`` i ostrzeżenie dostaje też PRZEKROCZONY CZAS, który brama typów zmienia w
+    WYKRYTA PRZEZ BRAMĘ TYPÓW, i ZAWIESZENIE, które ``in_ci`` liczy jako wykrycie; bez linii ``CZAS`` jest tylko mutacja,
+    której polecenie nie biegło (NIEAKTUALNA, BEZ WERDYKTU przed startem).
     """
 
     if not mutations:
         print("MUTACJE: brak mutacji, więc nie ma czego dowieść")
         return 1
-    if part := os.environ.get(ZMIENNA_CZESCI):
+    if part:
         total = len(mutations)
         mutations = _part(mutations, part)
         print(f"MUTACJE CZĘŚĆ {part}: {len(mutations)} z {total} mutacji", flush=True)
@@ -715,16 +736,10 @@ def check_all(
         print("MUTACJE: polecenie bez mutacji pada albo daje wynik mutacji, więc wynik po mutacji niczego nie dowodzi")
         return 2
     failures = 0
-    workers = PARALLEL if parallel else 1
     timed = list(_timed(mutations, workers=workers, limit_s=limit_s))
-    found = [(verdict, last) for verdict, last, _ in timed]
     times = [seconds for _, _, seconds in timed]
-    if base is not None:
-        found = _against_base(mutations, found, base, workers=workers, limit_s=limit_s)
-    else:
-        found = type_gate(mutations, found, workers=workers, limit_s=limit_s, gate=gate)
-    for mutation, (verdict, shown), seconds in zip(mutations, found, times, strict=True):
-        caught, last = (verdict is Verdict.CAUGHT, shown) if base is not None else in_ci(verdict, shown)
+    judged = judge(mutations, [(verdict, last) for verdict, last, _ in timed], workers=workers, limit_s=limit_s)
+    for mutation, (verdict, last, caught), seconds in zip(mutations, judged, times, strict=True):
         failures += not caught
         harm = f" ({mutation.harm})" if mutation.harm else ""
         if seconds is not None:
@@ -732,9 +747,15 @@ def check_all(
         print(f"{verdict}: {mutation.name}{harm} → {last}", flush=True)
     for mutation, seconds in zip(mutations, times, strict=True):
         if seconds is not None and seconds > NEAR_LIMIT * limit_s:
-            print(NearLimit(_script(), os.environ.get(ZMIENNA_CZESCI, ""), mutation.name, round(seconds), limit_s).line, file=sys.stderr, flush=True)
+            print(NearLimit(script, part, mutation.name, round(seconds), limit_s).line, file=sys.stderr, flush=True)
     print(MUTACJE_OK if not failures else f"MUTACJE: {failures} bez oczekiwanego wyniku")
     return 1 if failures else 0
+
+
+def _environment_part() -> str:
+    """Część ``K/N`` z ``MUTACJE_CZESC`` w środowisku procesu; pusta bez niej."""
+
+    return os.environ.get(ZMIENNA_CZESCI, "")
 
 
 def _script() -> str:
@@ -819,7 +840,7 @@ def _entry_problem(entry: object) -> str | None:
     return f"ma zły albo brakujący klucz {wrong[0]!r}" if wrong else None
 
 
-def _from_file(path: Path, command: tuple[str, ...], *, own_command: bool = True) -> list[Mutation]:
+def _from_file(path: Path, command: tuple[str, ...]) -> list[Mutation]:
     """Mutacje z pliku JSON; plik innej postaci niż ``FILE_SHAPE`` to ``ValueError``, która ją podaje."""
 
     entries = json.loads(path.read_text(encoding="utf-8"))
@@ -828,8 +849,6 @@ def _from_file(path: Path, command: tuple[str, ...], *, own_command: bool = True
     for number, entry in enumerate(entries, 1):
         if problem := _entry_problem(entry):
             raise ValueError(f"{path}: wpis {number} {problem}; postać: {FILE_SHAPE}")
-    if not own_command and (named := [entry["nazwa"] for entry in entries if "polecenie" in entry]):
-        raise ValueError(f"--jak-ci składa polecenie samo, a wpisy {', '.join(named)} mają własne")
     return [
         Mutation(
             name=entry["nazwa"],
@@ -839,21 +858,6 @@ def _from_file(path: Path, command: tuple[str, ...], *, own_command: bool = True
         )
         for entry in entries
     ]
-
-
-def ci_jobs(jobs: Iterable[tuple[str, str, Sequence[str]]], tracks: Collection[str], tested: Collection[str]) -> list[tuple[str, list[str]]]:
-    """Nazwa i pliki testów (i węzły ``plik::test``) każdego zadania pytest (tor, nazwa, jednostki) z ``tracks``, w
-    którym stoi plik z ``tested``.
-
-    Kolejność zadań i plików jak w planie, bez powtórzeń; udział pliku ``#k/n`` to cały plik.
-    """
-
-    found = []
-    for track, name, units in jobs:
-        files = list(dict.fromkeys(klucz.nazwa for klucz in map(Klucz.z_tekstu, units) if klucz.rodzaj is Rodzaj.PYTEST))
-        if track in tracks and any(file.partition("::")[0] in tested for file in files):
-            found.append((name, files))
-    return found
 
 
 def _output(*arguments: str) -> str:
@@ -885,7 +889,8 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
     """Każda mutacja raz na każde zadanie pytest runu ``run`` (pusty: ``_last_run``), w którym stoi test zmieniony od
     ``base``, z poleceniem ``pytest -n 1`` z plikami tego zadania."""
 
-    # Przez import_module: kopie narzędzi w repozytoriach testów nie mają ani plan_runu, ani wplyw_zmiany.
+    # Przez import_module: okrojone kopie narzędzi w repozytoriach testów (tests/fixtures/git_repo.py) nie mają planu
+    # runu ani wpływu zmiany, a to narzędzie w nich działa bez --jak-ci.
     plan_runu = importlib.import_module("plan_runu")
     wplyw_zmiany = importlib.import_module("wplyw_zmiany")
     try:
@@ -894,10 +899,10 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
         raise ValueError(f"brak merge-base HEAD z {base}, więc nie wiadomo, które testy zmieniono: {error.stderr.strip()}") from error
     run = run or _last_run()
     with tempfile.TemporaryDirectory(prefix="plan-ci-") as folder:
-        _output("run", "download", run, "--name", "plan", "--dir", folder)
-        plan = plan_runu.Plan.z_json((Path(folder) / "plan.json").read_text(encoding="utf-8"))
-    tracks = {track.nazwa for track in importlib.import_module("zakres_runu").TORY if track.os.startswith("windows") == (sys.platform == "win32")}
-    jobs = ci_jobs([(job.tor, job.nazwa, job.jednostki) for job in plan.zadania], tracks, tested)
+        _output("run", "download", run, "--name", plan_runu.ARTEFAKT, "--dir", folder)
+        plan = plan_runu.Plan.z_json((Path(folder) / plan_runu.PLIK).read_text(encoding="utf-8"))
+    tracks = plan_runu.tory_systemu(windows=sys.platform == "win32")
+    jobs = plan.pliki_pytest(tracks, tested)
     if not jobs:
         raise ValueError(f"run {run} nie stawia w zadaniu pytest toru {', '.join(sorted(tracks))} pliku testów zmienionego od {base}")
     commands = {name: ("-m", "pytest", "-q", "-n", "1", "-p", "no:cacheprovider", *files) for name, files in jobs}
@@ -919,7 +924,6 @@ def main(argv: list[str] | None = None) -> int:
         metavar=("PLIK", "KOTWICA", "ZAMIANA"),
         help="Jedna zmiana mutacji; powtórz dla mutacji w kilku miejscach.",
     )
-    parser.add_argument("--nazwa", default="mutacja", help="Nazwa mutacji z --zmiana w raporcie.")
     parser.add_argument("--plik", type=Path, help="Plik JSON z listą mutacji.")
     parser.add_argument("--rownolegle", action="store_true", help="Mutacje naraz, każda w swojej kopii.")
     parser.add_argument("--limit-s", type=float, default=TIMEOUT, help="Limit czasu jednego polecenia w sekundach.")
@@ -941,12 +945,14 @@ def main(argv: list[str] | None = None) -> int:
     if jak_ci and command:
         parser.error("--jak-ci składa polecenie samo, więc nie podawaj go po --")
     try:
-        mutations = _from_file(args.plik, command, own_command=not jak_ci) if args.plik else []
+        mutations = _from_file(args.plik, command) if args.plik else []
         if args.zmiana:
             edits = tuple(Edit(Path(file), anchor, replacement) for file, anchor, replacement in args.zmiana)
-            mutations.append(Mutation(args.nazwa, edits, command))
+            mutations.append(Mutation("mutacja", edits, command))
     except ValueError as error:
         parser.error(str(error))
+    if jak_ci and (named := [mutation.name for mutation in mutations if mutation.command]):
+        parser.error(f"--jak-ci składa polecenie samo, a wpisy {', '.join(named)} mają własne")
     if not mutations or not (jak_ci or all(mutation.command for mutation in mutations)):
         parser.error("podaj mutację (--zmiana albo --plik) i polecenie po --, np. -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu, albo --jak-ci")
     if jak_ci:
@@ -957,7 +963,9 @@ def main(argv: list[str] | None = None) -> int:
     if refused := ciezkie_ci.mutations_refusal(len(mutations), args.odtwarzam, root=ROOT):
         print(refused)
         return 2
-    return check_all(mutations, parallel=args.rownolegle, limit_s=args.limit_s, base=args.baza)
+    judge = partial(_review_judgement, base=args.baza)
+    workers = PARALLEL if args.rownolegle else 1
+    return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=workers, limit_s=args.limit_s)
 
 
 if __name__ == "__main__":

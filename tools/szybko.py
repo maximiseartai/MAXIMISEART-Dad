@@ -47,7 +47,7 @@ import argparse
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import json
 import math
 import os
@@ -62,9 +62,8 @@ import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
-import ci_lokalnie
 import czasy_ci
-from mutacje import environment
+from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps
 import potomne
 from repo import BASE, ROOT
 import repo
@@ -202,16 +201,11 @@ def _pytest_arguments(tests: Iterable[str], junit: Path) -> tuple[str, ...]:
     return (*with_structure(tests), *wyniki_testow.zapis(junit))
 
 
-def _pytest(root: Path, name: str, arguments: Iterable[str]) -> ci_lokalnie.Step:
-    pytest = next(step for step in ci_lokalnie._steps(root) if step.job == "pytest")
-    return replace(pytest, name=name, command=(*pytest.command, *arguments))
+def _failing(root: Path, name: str, why: str) -> Step:
+    return Step(name, "pytest", (sys.executable, "-c", f"raise SystemExit({why!r})"), root)
 
 
-def _failing(root: Path, name: str, why: str) -> ci_lokalnie.Step:
-    return ci_lokalnie.Step(name, "pytest", "", (sys.executable, "-c", f"raise SystemExit({why!r})"), root)
-
-
-def _imports_on_oldest(root: Path) -> list[ci_lokalnie.Step]:
+def _imports_on_oldest(root: Path) -> list[Step]:
     """CI testuje też najstarszy Python z ``requires-python``, a ``.venv`` bywa nowszy: kod tylko dla nowszego Pythona
     pada dopiero w CI. Krok jest pusty, gdy szybko biegnie tym najstarszym albo projekt go nie podaje."""
 
@@ -231,11 +225,11 @@ def _imports_on_oldest(root: Path) -> list[ci_lokalnie.Step]:
     if uv is None:
         return [_failing(root, name, f"brak uv, więc szybko nie sprawdzi Pythona {version}: zainstaluj uv albo .venv z {version}")]
     requirements = ("--with-requirements", "requirements.txt") if (root / "requirements.txt").is_file() else ()
-    return [ci_lokalnie.Step(name, "pytest", "", (sys.executable, "-c", WITH_UV, uv, version, IMPORT_ALL, *requirements), root)]
+    return [Step(name, "pytest", (sys.executable, "-c", WITH_UV, uv, version, IMPORT_ALL, *requirements), root)]
 
 
-def _steps(root: Path, tests: Iterable[str], junit: Path) -> list[ci_lokalnie.Step]:
-    return [*ci_lokalnie.static_steps(root), _pytest(root, "pytest", _pytest_arguments(tests, junit)), *_imports_on_oldest(root)]
+def _steps(root: Path, tests: Iterable[str], junit: Path) -> list[Step]:
+    return [*static_steps(root), pytest_step(root, "pytest", _pytest_arguments(tests, junit)), *_imports_on_oldest(root)]
 
 
 def _environment(root: Path) -> dict[str, str]:
@@ -243,13 +237,13 @@ def _environment(root: Path) -> dict[str, str]:
     return {"PYTEST_XDIST_AUTO_NUM_WORKERS": str(czasy_ci.WORKERY_LOKALNE), **environment(root), "PYTHON": sys.executable}
 
 
-def _run_all(steps: list[ci_lokalnie.Step], interruptible: ci_lokalnie.Step | None = None) -> tuple[list[str], list[str]]:
+def _run_all(steps: list[Step], interruptible: Step | None = None) -> tuple[list[str], list[str]]:
     """Kroki naraz; zwraca nazwy kroków, które padły, i przerwanych. Gdy padnie krok inny niż ``interruptible``,
     ``interruptible`` jest przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie trzeba czekać."""
 
     stop, failure = threading.Event(), threading.Event()
 
-    def run(step: ci_lokalnie.Step) -> tuple[bool | None, str, float]:
+    def run(step: Step) -> tuple[bool | None, str, float]:
         started = time.monotonic()
         try:
             done = potomne.run(
@@ -272,7 +266,7 @@ def _run_all(steps: list[ci_lokalnie.Step], interruptible: ci_lokalnie.Step | No
             print(f"{'OK  ' if passed else 'FAIL'} {step.name} ({elapsed:.0f} s)", flush=True)
             if not passed:
                 failed.append(step.name)
-                print("\n".join(output.rstrip().splitlines()[-ci_lokalnie.OUTPUT_ON_FAILURE :]), flush=True)
+                print("\n".join(output.rstrip().splitlines()[-OUTPUT_ON_FAILURE :]), flush=True)
     except BaseException:
         # Przerwanie w głównym wątku nie dociera do wątków, które czekają na swoje polecenia.
         stop.set()
@@ -330,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         if merge := _merge_with(args.baza):
             copy = copies.enter_context(potomne.commit_copy(ROOT, merge))
             # Biegnie razem z krokiem pytest, więc bez workerów xdist nie podwaja liczby rdzeni szybko.
-            steps.append(_pytest(copy, f"testy struktury po mergu z {args.baza}", (*STRUCTURE, "-n", "0")))
+            steps.append(pytest_step(copy, f"testy struktury po mergu z {args.baza}", (*STRUCTURE, "-n", "0")))
         failed, interrupted = _run_all(steps, next(step for step in steps if step.name == "pytest"))
     failed = (["rozjazd modelu"] if drift else []) + failed
     memory.remember(selection, junit, chosen.run)
