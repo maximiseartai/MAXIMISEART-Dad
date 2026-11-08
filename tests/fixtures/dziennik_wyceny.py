@@ -91,7 +91,12 @@ def _entries(text: str) -> list[dict[str, object]]:
 def begun_rows(text: str) -> set[int]:
     """Wiersze Pliku zbiorczego zleceń, które dziennik ``text`` zaczął („zaczynam zlecenie”)."""
 
-    return {entry["row"] for entry in _entries(text) if entry.get("entry") == BEGUN and isinstance(entry.get("row"), int)}
+    rows = set()
+    for entry in _entries(text):
+        row = entry.get("row")
+        if entry.get("entry") == BEGUN and isinstance(row, int):
+            rows.add(row)
+    return rows
 
 
 def ended_outcomes(text: str) -> dict[int, str]:

@@ -42,6 +42,7 @@ from drive.teksty import FOR_KEY, MODES, WRITE
 from rozliczenia.centrum.contract import ProcessKey
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
 from rozliczenia.preparation_process import PROCESS as PREPARATION
+from rozliczenia.process_run import Process
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
 from rozliczenia.telemetry import MetricsStore
 
@@ -390,10 +391,11 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
     # pliku (run_origins), więc zmiana jego formatu nie zostawia Centrum pliku, którego ono nie przeczyta.
     registry = Path(run.fixture["settings"]).parent / CENTRUM_RUNS_FILE
     before = registry.read_bytes() if registry.exists() else None
-    metrics: dict[ProcessKey, MetricsStore] = {
-        key: MetricsStore(Path(run.fixture["metrics"][key]), process.counter_names)
-        for key, process in (("settlement", SETTLEMENT), ("preparation", PREPARATION))
-    }
+    processes: tuple[tuple[ProcessKey, Process[Any, Any, Any]], ...] = (
+        ("settlement", SETTLEMENT),
+        ("preparation", PREPARATION),
+    )
+    metrics = {key: MetricsStore(Path(run.fixture["metrics"][key]), process.counter_names) for key, process in processes}
     started = [(record["started_at"], key) for key, store in metrics.items() for record in store.read()]
     newest = sorted(started, reverse=True)[:FULL_LIST_RUNS]
     run.check(len(newest) == FULL_LIST_RUNS, f"the fixture's metrics files hold at least {FULL_LIST_RUNS} runs ({len(newest)})")
