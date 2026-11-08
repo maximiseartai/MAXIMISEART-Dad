@@ -17,6 +17,8 @@ import pytest
 from tests.fixtures.skladnia import dotted, imports
 
 TESTS = Path(__file__).resolve().parent
+# Atrapy wspólne z testami żyją poza tests/ (granica N13d), ale reguły czekania i limitów czasu obejmują je jak testy.
+ATRAPY = TESTS.parent / "tools" / "lib" / "atrapy"
 CLOCKS = frozenset({"time.monotonic", "time.perf_counter"})
 TIME_READINGS = CLOCKS | {
     "time.time",
@@ -51,6 +53,23 @@ def test_moduly_testow_importuja_pomocniki_tylko_z_fixtures() -> None:
     }
 
     assert imports == set(), "przenieś pomocnik do tests/fixtures i importuj go stamtąd; moduł testu niczego nie eksportuje"
+
+
+def _scanned() -> list[tuple[Path, str]]:
+    """Pliki testów i atrap z nazwą do list wyjątków: względem ``tests/`` dla testów, względem korzenia dla atrap."""
+    return [(path, path.relative_to(TESTS).as_posix()) for path in sorted(TESTS.rglob("*.py"))] + [
+        (path, _shown(path)) for path in sorted(ATRAPY.rglob("*.py"))
+    ]
+
+
+def _shown(path: Path) -> str:
+    return path.relative_to(TESTS.parent).as_posix()
+
+
+def test_reguly_czekania_i_limitow_czasu_czytaja_testy_i_atrapy() -> None:
+    read = {name for _, name in _scanned()}
+
+    assert {"test_struktura_testow.py", "fixtures/potomne.py", "tools/lib/atrapy/sluchacz_kolejki.py"} <= read
 
 
 Definition = ast.Lambda | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
@@ -122,15 +141,14 @@ def _fixed_sleeps(tree: ast.Module) -> Iterator[tuple[ast.Call, str]]:
 
 def test_testy_czekaja_na_stan_a_nie_stala_liczbe_sekund() -> None:
     found, simulated = [], set()
-    for path in sorted(TESTS.rglob("*.py")):
-        name = path.relative_to(TESTS).as_posix()
+    for path, name in _scanned():
         for call, function in _fixed_sleeps(ast.parse(path.read_text(encoding="utf-8"))):
             if f"{name}::{function}" == WAITING:
                 continue
             if f"{name}::{function}" in SIMULATED_TIME:
                 simulated.add(f"{name}::{function}")
             else:
-                found.append(f"tests/{name}:{call.lineno}: {ast.unparse(call)} czeka stałą liczbą sekund")
+                found.append(f"{_shown(path)}:{call.lineno}: {ast.unparse(call)} czeka stałą liczbą sekund")
     found += [f"SIMULATED_TIME: {key} nie ma już snu, usuń wpis" for key in sorted(SIMULATED_TIME.keys() - simulated)]
 
     assert not found, "\n".join(
@@ -320,14 +338,13 @@ def _constant_time_bounds(tree: ast.Module) -> Iterator[tuple[ast.Compare, str]]
 
 def test_zmierzony_czas_nie_jest_ograniczony_stala_liczba() -> None:
     found, excepted = [], set()
-    for path in sorted(TESTS.rglob("*.py")):
-        name = path.relative_to(TESTS).as_posix()
+    for path, name in _scanned():
         for compare, function in _constant_time_bounds(ast.parse(path.read_text(encoding="utf-8"))):
             key = f"{name}::{function}::{ast.unparse(compare)}"
             if key in CONSTANT_TIME_BOUNDS:
                 excepted.add(key)
             else:
-                found.append(f"tests/{name}:{compare.lineno}: {ast.unparse(compare)} ogranicza zmierzony czas stałą liczbą ({key})")
+                found.append(f"{_shown(path)}:{compare.lineno}: {ast.unparse(compare)} ogranicza zmierzony czas stałą liczbą ({key})")
     found += [
         f"CONSTANT_TIME_BOUNDS: {key} nie ma już takiej asercji, usuń wpis"
         for key in sorted(CONSTANT_TIME_BOUNDS.keys() - excepted)

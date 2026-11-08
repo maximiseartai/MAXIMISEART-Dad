@@ -1536,6 +1536,7 @@ TESTS_IMPORTS: typing.Final = {
     "from-modulu": ("from tests.fixtures.settlement import PERIOD", "tests.fixtures.settlement"),
     "from-pakietu-fixtures": ("from tests.fixtures import settlement", "tests.fixtures.settlement"),
     "from-pakietu-tests": ("from tests import test_ilosci_uslug", "tests.test_ilosci_uslug"),
+    "from-modulu-poza-fixtures": ("from tests.conftest import ROOT", "tests.conftest"),
     "import-w-funkcji": ("def f() -> None:\n    from tests.fixtures.intermax import Intermax", "tests.fixtures.intermax"),
     "type-checking": (
         "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from tests.fixtures.efenix import Order",
