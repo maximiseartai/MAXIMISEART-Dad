@@ -83,7 +83,7 @@ VARIABLES
     najnowsza,       \* najnowsza wersja komentarza Uruchomienia r, którą przyjęła kolejka (Wersje): ją ma w końcu
                      \* Skrzynka, bo kolejka zastępuje starszą (_superseded), a Skrzynka nie bierze starszej (_settle)
     \* Pamięć jednej pracy Centrum: znika ze zgaśnięciem i zamknięciem.
-    centrum,         \* "stoi" | "zamyka" (create_app: close, potem lifespan) | "wysyla" (pierwsze zapytanie: send) |
+    centrum,         \* "stoi" | "zamyka" (create_app: close, potem lifespan) | "wysyla" (lifespan: send) |
                      \* "dziala"
     wznowiona,       \* lifespan tej pracy Centrum wywołał już Outbox.resume
     kursor,          \* który dziennik z sorted(glob) czyta close
@@ -349,17 +349,17 @@ UsunDziennik ==
                    awarieOdczytu, awarieLogow, awarieKolejki, cofniecia, duchy, poWyniku, inneZnaki, bezStrazy,
                    przedWznowieniem, bezZlecenia, wyparty>>
 
-(* app.py lifespan: outbox.resume() przed pierwszym zapytaniem HTTP (uvicorn kończy start lifespan, zanim przyjmie   *)
-(* zapytanie z kolejki gniazda).                                                                                    *)
+(* app.py lifespan: outbox.resume() przed wersjami zastępczymi i przed pierwszym zapytaniem HTTP (uvicorn kończy    *)
+(* start lifespan, zanim przyjmie zapytanie z kolejki gniazda).                                                     *)
 Wznow ==
     /\ centrum = "zamyka" /\ kursor > Wyceny /\ ~wznowiona
     /\ wznowiona' = TRUE
     /\ UNCHANGED <<dysk, centrum, kursor, krokZamykania, rekord, oczekujace, doWyslania, krokWysylki, bieg, faza,
                    zlecenie, naglowekCzeka, wKolejce, liczniki, duchy, zdarzenia>>
 
-(* Pierwsze zapytanie API: zależność send_interrupted -> RunComments.send_left_behind bierze całe _pending pod blokadą *)
-(* (pending, self._pending = self._pending, []); następne zapytania dostają pustą listę.                             *)
-PierwszeZapytanie ==
+(* app.py lifespan po outbox.resume(): RunComments.send_left_behind bierze całe _pending pod blokadą                  *)
+(* (pending, self._pending = self._pending, []), przed pierwszym zapytaniem HTTP.                                   *)
+WysylkaStartu ==
     /\ centrum = "zamyka" /\ kursor > Wyceny
     /\ wznowiona
     /\ doWyslania' = oczekujace /\ oczekujace' = <<>> /\ krokWysylki' = "post"
@@ -403,8 +403,8 @@ UsunPoWysylce ==
 
 (* Tata uruchamia Wycenę w efenix: RunHost.start -> RunComments.run_started -> LogsOnDisk.started ->               *)
 (* Journal._run_started (start w pamięci,                                                                           *)
-(* _header), zanim ruszy wątek; pierwsza linia idzie na dysk w tym samym wywołaniu (ZapiszStart). Każde zapytanie   *)
-(* przechodzi najpierw send_interrupted.                                                                           *)
+(* _header), zanim ruszy wątek; pierwsza linia idzie na dysk w tym samym wywołaniu (ZapiszStart). Zapytanie startu   *)
+(* przychodzi po lifespan, a więc po wysyłce wersji zastępczych.                                                   *)
 StartWyceny ==
     /\ centrum = "dziala" /\ bieg = 0 /\ nastepny <= Wyceny
     /\ bieg' = nastepny /\ nastepny' = nastepny + 1 /\ faza' = "start" /\ zlecenie' = 1 /\ naglowekCzeka' = TRUE
@@ -641,7 +641,7 @@ Zgasniecie ==
                    inneZnaki, bezStrazy, przedWznowieniem, wyparty>>
 
 (* Tata zamyka Centrum („Zamknij Centrum rozliczeń”): Shutdown przyjmuje je tylko, gdy żadne Uruchomienie nie trwa  *)
-(* (runs.shutdown_refusal), a samo zapytanie przeszło już send_interrupted.                                       *)
+(* (runs.shutdown_refusal), a samo zapytanie przyszło po lifespan.                                                *)
 Zamkniecie ==
     /\ centrum = "dziala" /\ bieg = 0
     /\ centrum' = "stoi"
@@ -649,16 +649,16 @@ Zamkniecie ==
                    zlecenie, naglowekCzeka, wKolejce, liczniki, duchy, zdarzenia>>
 
 Next ==
-    \/ Start \/ Czytaj \/ ZapiszLogi \/ UsunDziennik \/ Wznow \/ PierwszeZapytanie \/ Wyslij \/ UsunPoWysylce
+    \/ Start \/ Czytaj \/ ZapiszLogi \/ UsunDziennik \/ Wznow \/ WysylkaStartu \/ Wyslij \/ UsunPoWysylce
     \/ StartWyceny \/ ZapiszStart \/ WpisZaczete \/ ZmianaWEfenix \/ WpisSkonczone \/ Zatrzymanie \/ Postep \/ Wynik
     \/ WpisKonca \/ LogiWyniku \/ WyslijWynik \/ UsunPoLogach \/ KoniecUruchomienia \/ Zgasniecie \/ Zamkniecie
 
 (* Działający kod robi następny krok, tata otwiera Centrum, gdy żadne nie działa, i kiedyś je zamyka, gdy nic nie    *)
-(* trwa (Centrum nie działa bez końca), a przeglądarka wysyła pierwsze zapytanie. Wyceny tata uruchamia, kiedy chce. *)
+(* trwa (Centrum nie działa bez końca). Wyceny tata uruchamia, kiedy chce.                                         *)
 (* Postęp zależy od budzika, a Wycena dochodzi do wyniku bez niego, więc Postep sprawiedliwości nie potrzebuje.      *)
 Sprawiedliwosc ==
     /\ WF_vars(Start) /\ WF_vars(Czytaj) /\ WF_vars(ZapiszLogi) /\ WF_vars(UsunDziennik) /\ WF_vars(Wznow)
-    /\ WF_vars(PierwszeZapytanie) /\ WF_vars(Wyslij) /\ WF_vars(UsunPoWysylce) /\ WF_vars(ZapiszStart)
+    /\ WF_vars(WysylkaStartu) /\ WF_vars(Wyslij) /\ WF_vars(UsunPoWysylce) /\ WF_vars(ZapiszStart)
     /\ WF_vars(WpisZaczete) /\ WF_vars(ZmianaWEfenix) /\ WF_vars(WpisSkonczone) /\ WF_vars(Wynik) /\ WF_vars(WpisKonca)
     /\ WF_vars(LogiWyniku) /\ WF_vars(WyslijWynik) /\ WF_vars(UsunPoLogach) /\ WF_vars(KoniecUruchomienia)
     /\ WF_vars(Zamkniecie)

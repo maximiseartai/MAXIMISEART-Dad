@@ -161,7 +161,7 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "wersja zastępcza do kolejki przed Outbox.resume (create_app: send_left_behind zaraz po close_left_behind, nie w zależności)",
+        "wersja zastępcza do kolejki przed Outbox.resume (create_app: send_left_behind zaraz po close_left_behind, nie w lifespan)",
         (Edit(MODEL, "    /\\ centrum = \"zamyka\" /\\ kursor > Wyceny\n    /\\ wznowiona\n",
               "    /\\ centrum = \"zamyka\" /\\ kursor > Wyceny\n"),),
         _check("zwykle"),

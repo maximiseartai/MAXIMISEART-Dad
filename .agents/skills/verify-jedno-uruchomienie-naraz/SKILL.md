@@ -51,8 +51,8 @@ table, above all the parts modelled by hand, whose change the check cannot see.
   started: killed mid-Git or mid-pip, it leaves the clone for the next start to
   roll back.
 - **PO_WYNIKU_PRZED_KONCEM**: Centrum's server never ends between an
-  Uruchomienie's result and its actions after the result (`RunHost.after`, the
-  `after_run` list in `create_app`). Harm: the Logi Uruchomienia of every
+  Uruchomienie's result and its actions after the result (`RunHost.after`: the
+  Logi Uruchomienia `logs`, then the `after_run` list in `create_app`). Harm: the Logi Uruchomienia of every
   Uruchomienie and the Kontrola ilości of a Przebieg rozliczeń land in their files
   in those actions; a shutdown or update accepted in between kills the thread
   before the files exist, and Maks never gets them.
@@ -74,7 +74,7 @@ after a new version, until the restart guardian has started and
 
 | Covered code | What the check relies on |
 | --- | --- |
-| `runs.py` `RunHost.start`, `shutdown_refusal`, `decide`, `finished`, `publish` | check and claim of `_run` under `_lock`; refusal while a run has not ended; an accepted shutdown sets `_closing` under the same lock; the start file (`run_started`, `logs_disk.LogsOnDisk.started`) written outside the lock, after the claim and before the thread; `start` keeps the last view (the previous result) in `_events` |
+| `runs.py` `RunHost.start`, `shutdown_refusal`, `decide`, `finished`, `publish` | check and claim of `_run` under `_lock`; refusal while a run has not ended; an accepted shutdown sets `_closing` under the same lock; the start file (`logs.run_started`, `logs_disk.LogsOnDisk.started`) written outside the lock, after the claim and before the thread; `start` keeps the last view (the previous result) in `_events` |
 | `runs.py` `RunHost.begin_update`, `end_update`, `_busy_locked` | check and claim of `_updating` under `_lock`; refusal while closing, updating, restoring or running |
 | `runs.py` `RunHost.begin_restore`, `end_restore`; `start` | check and claim of `_restoring` under `_lock`; `start` refuses while restoring |
 | `intermax_run.py` `intermax_copies_router` | modelled by hand: `begin_restore`, the restore as one step inside the request, then `end_restore` |
@@ -97,7 +97,7 @@ git diff $(git log -1 --format=%h -- .agents/skills/verify-jedno-uruchomienie-na
 
 Changes to process content, progress views, Diagnoza or Zgłoszenia
 do not matter here: the checker replaces the engine with fixed steps. Neither do
-the actions after the result themselves (`after_run` in `app.py`): the checker
+the actions after the result themselves (`logs` and `after_run` in `app.py`): the checker
 replaces them with one step, and their network work runs on a thread outside
 `runs.py` that holds nothing. The same holds for the start-time retry of that
 queue (`outbox.resume()` in `lifespan`).
@@ -180,8 +180,8 @@ Replaced: `ToolUpdates` by a „Zaktualizuj narzędzie” tab that calls the rea
 `begin_update`, logs and starts the update thread, and a thread whose Git, pip and
 guardian work is one step ending either without a new version (or in a failure),
 then `end_update`, or with the guardian started, then the real
-`Shutdown.close_for_update`. Replaced: the last Uruchomienie before Centrum's start (`previous`) by none, and the start file (`run_started`)
-by one step that writes nothing. Replaced: `run_process` by an engine with one work step, an optional Decyzja
+`Shutdown.close_for_update`. Replaced: the last Uruchomienie before Centrum's start (`previous`) by none, and the Logi Uruchomienia (`logs`: the
+start file of `run_started` and the actions after the result) by one step each that writes nothing. Replaced: `run_process` by an engine with one work step, an optional Decyzja
 through the real `Run.confirm` (both variants are explored) and an end step, as the engine of the catalog
 (`Catalog.with_engine`) whose `Catalog.prepared` gives the Uruchomienie every tab starts, so the real
 `PreparedRun.conduct` runs. Every
