@@ -1,0 +1,26 @@
+name: Zapis narzędzi TLC do cache
+description: >-
+  Klucz zapisuje się raz i się nie nadpisuje, więc akcja zapisuje katalog tylko z jarem o przypiętym SHA-256: katalog
+  bez niego (pobranie, które padło do końca, zadanie, którego jednostki nie uruchamiają modelu) dałby każdemu
+  następnemu zadaniu trafienie bez jara (#940). Sprawdzenie decyduje tylko o zapisie, więc wołający krok ma
+  continue-on-error.
+inputs:
+  klucz:
+    description: Wyjście klucz akcji narzedzia-tlc.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check the TLC tools before saving them
+      id: sprawdzenie
+      # Także po czerwonej jednostce zadania: krok, który woła akcję, biegnie, gdy run nie jest anulowany.
+      if: ${{ !cancelled() }}
+      shell: bash
+      run: python tools/ci/zapis_narzedzi_tlc.py
+
+    - name: Save TLC tools
+      if: ${{ !cancelled() && steps.sprawdzenie.outputs.zapisz == 'true' }}
+      uses: actions/cache/save@v6
+      with:
+        path: .verification/formal-aktualizacja
+        key: ${{ inputs.klucz }}

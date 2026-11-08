@@ -222,23 +222,9 @@ jobs:
 
       # Test files that reach Atrapa efenix (tests/fixtures/atrapa_efenix.py) drive a real browser, in the test or through
       # the machine script; the plan marks the jobs that run them. Playwright comes with the tool's dependencies, so only its browser is missing.
-      - name: Playwright version
-        id: playwright
+      - name: Chromium
         if: ${{ matrix.przegladarka }}
-        shell: bash
-        run: python -c "from importlib.metadata import version; print('version=' + version('playwright'))" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Chromium
-        if: ${{ matrix.przegladarka }}
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
-          key: chromium-headless-shell-${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
-
-      # Linux also needs the system libraries of the headless shell, which the cache does not hold.
-      - name: Install Chromium
-        if: ${{ matrix.przegladarka }}
-        run: python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} --only-shell chromium
+        uses: ./.github/actions/chromium
 
       - uses: actions/download-artifact@v8
         with:
@@ -343,66 +329,35 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -r requirements.txt
 
-      # verify-centrum-rozliczen drives Centrum in Chromium; the plan marks the jobs that run its steps. Only the browser
-      # packages pinned in the dev extra of pyproject.toml (Playwright, and tzdata for Dad's time zone on Windows), not
-      # the whole extra: skill scripts add src to sys.path themselves, so the package need not be installed.
-      - name: Install Playwright
-        id: playwright
+      # verify-centrum-rozliczen drives Centrum in Chromium; the plan marks the jobs that run its steps.
+      - name: Chromium
         if: ${{ matrix.przegladarka }}
-        run: |
-          $packages = python -c "import tomllib; dev = tomllib.load(open('pyproject.toml', 'rb'))['project']['optional-dependencies']['dev']; print(' '.join(p.replace(' ', '') for p in dev if p.startswith(('playwright==', 'tzdata=='))))"
-          uv pip install --system --python "${{ steps.python.outputs.python-path }}" $packages.Split(' ')
-          python -c "from importlib.metadata import version; print('version=' + version('playwright'))" >> $env:GITHUB_OUTPUT
-
-      # One playwright version always downloads the same browser, so the jobs share it; on a hit the install below
-      # finds it in place. Headless Chromium runs the headless shell alone, a third of the full browser's size.
-      - name: Cache Chromium
-        if: ${{ matrix.przegladarka }}
-        uses: actions/cache@v6
+        uses: ./.github/actions/chromium
         with:
-          path: ~\AppData\Local\ms-playwright
-          key: chromium-headless-shell-${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
-
-      - name: Install Chromium
-        if: ${{ matrix.przegladarka }}
-        run: python -m playwright install --only-shell chromium
+          playwright: 'true'
+          python: ${{ steps.python.outputs.python-path }}
 
       - uses: actions/download-artifact@v8
         with:
           name: plan
           path: .ci-plan
 
-      # Java (jdk4py) and tla2tools.jar of the TLA+ models of the verify-* skills, whose versions and SHA-256 are pinned
-      # in tools/lib/narzedzia_tlc.py, so a new pin is a new key. A hit spares the download from GitHub Releases and
-      # PyPI, whose passing 504 once turned this job red (#930). The steps after the units save the folder.
       - name: Restore TLC tools
-        id: tlc-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: .verification/formal-aktualizacja
-          key: tlc-${{ runner.os }}-${{ hashFiles('tools/lib/narzedzia_tlc.py') }}
+        id: tlc
+        uses: ./.github/actions/narzedzia-tlc
 
       # Each baseline and mutation script (or part of one) of the job, also after a red one.
       - name: Run the planned units
         id: units
         run: python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
 
-      # The key is saved once and never overwritten, so it is saved only with the jar of the pinned SHA-256: a folder
-      # without it (a download that failed to the end, a job whose units run no model) would give each later job a hit
-      # without the jar (#940). The check only decides the save and never turns the job red.
-      - name: Check the TLC tools before saving them
-        id: tlc-check
-        if: ${{ !cancelled() && steps.tlc-cache.outputs.cache-hit != 'true' }}
-        continue-on-error: true
-        run: python tools/ci/zapis_narzedzi_tlc.py
-
+      # The check of the jar only decides the save and never turns the job red.
       - name: Save TLC tools
-        if: ${{ !cancelled() && steps.tlc-check.outputs.zapisz == 'true' }}
+        if: ${{ !cancelled() && steps.tlc.outputs.trafienie != 'true' }}
         continue-on-error: true
-        uses: actions/cache/save@v6
+        uses: ./.github/actions/narzedzia-tlc/zapis
         with:
-          path: .verification/formal-aktualizacja
-          key: ${{ steps.tlc-cache.outputs.cache-primary-key }}
+          klucz: ${{ steps.tlc.outputs.klucz }}
 
       # A red baseline (e.g. Centrum --feature all) leaves its screenshots and logs here; mutation copies keep none.
       - name: Upload baseline evidence on failure

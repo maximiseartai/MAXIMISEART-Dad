@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 import yaml
 
-from tests.fixtures.ci_workflow import WORKFLOW, combinations, jobs
+from tests.fixtures.ci_workflow import CHROMIUM, WORKFLOW, action, chromium, combinations, jobs
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "ci"))
@@ -89,19 +89,15 @@ def test_github_konczy_zadanie_pytest_po_limicie_z_planu_a_nie_po_szesciu_godzin
 
 
 def test_mutation_checks_instaluja_playwright_i_chromium_tylko_w_zadaniu_ktore_plan_oznaczyl() -> None:
-    steps = jobs()["mutations"]["steps"]
+    job = jobs()["mutations"]
 
-    installs = {step["name"]: step.get("if") for step in steps if "playwright" in step.get("run", "") or ".[dev]" in step.get("run", "")}
-
-    assert installs == {"Install Playwright": "${{ matrix.przegladarka }}", "Install Chromium": "${{ matrix.przegladarka }}"}
+    assert [step["name"] for step in job["steps"] if ".[dev]" in step.get("run", "")] == []
+    assert [(step["if"], step["with"]["playwright"]) for step in chromium(job)] == [("${{ matrix.przegladarka }}", "true")]
 
 
 def test_zadanie_pytest_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_plikiem_testow_atrapy_efenix() -> None:
-    steps = jobs()["pytest"]["steps"]
-
-    browser = {step["name"]: step.get("if") for step in steps if "playwright" in str(step.get("run", "")) + str(step.get("with", ""))}
-
-    assert browser == dict.fromkeys(["Playwright version", "Cache Chromium", "Install Chromium"], "${{ matrix.przegladarka }}")
+    # Playwright przychodzi z zależnościami narzędzia (requirements.txt, dodatek dev), więc brakuje tylko przeglądarki.
+    assert [(step["if"], step.get("with")) for step in chromium(jobs()["pytest"])] == [("${{ matrix.przegladarka }}", None)]
 
 
 TESTS_RUN_BY = ("tools/ci/wykonaj_zadanie.py", "tools/mutacje_zmiany.py")
@@ -116,11 +112,12 @@ def test_kazde_zadanie_ktore_uruchamia_testy_albo_kroki_skilli_instaluje_chromiu
     workflow_jobs: dict[str, dict[str, Any]] = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]
     running = {name: job for name, job in workflow_jobs.items() if any(tool in str(job.get("steps")) for tool in TESTS_RUN_BY)}
 
-    installs = {
-        name: [step.get("if") for step in job["steps"] if "playwright install" in step.get("run", "")] for name, job in running.items()
-    }
+    installs = {name: [step.get("if") for step in chromium(job)] for name, job in running.items()}
 
     assert installs == dict.fromkeys(running, ["${{ matrix.przegladarka }}"])
+    # Chromium instaluje tylko akcja, więc wersja, cache i biblioteki systemowe mają jedną kopię.
+    assert [name for name, job in running.items() for step in job["steps"] if "playwright install" in str(step.get("run"))] == []
+    assert any("playwright install" in step.get("run", "") for step in action(CHROMIUM)["runs"]["steps"])
 
 
 def _required(

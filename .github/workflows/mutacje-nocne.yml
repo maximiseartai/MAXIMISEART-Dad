@@ -115,25 +115,11 @@ jobs:
         # editable install does not hide a mutation: tools/mutacje.py puts the copy's src first.
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
 
-      # The same Chromium steps as the pytest parts of ci.yml: test files that reach Atrapa efenix drive a real browser,
-      # and the part runs them before it mutates (tools/mutacje_nocne.py marks such a part).
-      - name: Playwright version
-        id: playwright
+      # As in the pytest parts of ci.yml: test files that reach Atrapa efenix drive a real browser, and the part runs them
+      # before it mutates (tools/mutacje_nocne.py marks such a part).
+      - name: Chromium
         if: ${{ matrix.przegladarka }}
-        shell: bash
-        run: python -c "from importlib.metadata import version; print('version=' + version('playwright'))" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Chromium
-        if: ${{ matrix.przegladarka }}
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
-          key: chromium-headless-shell-${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
-
-      # Linux also needs the system libraries of the headless shell, which the cache does not hold.
-      - name: Install Chromium
-        if: ${{ matrix.przegladarka }}
-        run: python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} --only-shell chromium
+        uses: ./.github/actions/chromium
 
       # Code 1 is surviving mutations and code 3 mutations the part's time limit left without a verdict: results the
       # last job files, so the part stays green. Any other failure (code 2: the tests fail or hang without mutations, a
@@ -187,61 +173,34 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -r requirements.txt
 
-      - name: Install Playwright
-        id: playwright
+      - name: Chromium
         if: ${{ matrix.przegladarka }}
-        run: |
-          $packages = python -c "import tomllib; dev = tomllib.load(open('pyproject.toml', 'rb'))['project']['optional-dependencies']['dev']; print(' '.join(p.replace(' ', '') for p in dev if p.startswith(('playwright==', 'tzdata=='))))"
-          uv pip install --system --python "${{ steps.python.outputs.python-path }}" $packages.Split(' ')
-          python -c "from importlib.metadata import version; print('version=' + version('playwright'))" >> $env:GITHUB_OUTPUT
-
-      - name: Cache Chromium
-        if: ${{ matrix.przegladarka }}
-        uses: actions/cache@v6
+        uses: ./.github/actions/chromium
         with:
-          path: ~\AppData\Local\ms-playwright
-          key: chromium-headless-shell-${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
-
-      - name: Install Chromium
-        if: ${{ matrix.przegladarka }}
-        run: python -m playwright install --only-shell chromium
+          playwright: 'true'
+          python: ${{ steps.python.outputs.python-path }}
 
       - uses: actions/download-artifact@v8
         with:
           name: plan-skilli
           path: .ci-plan
 
-      # Java (jdk4py) and tla2tools.jar of the TLA+ models of the verify-* skills, whose versions and SHA-256 are pinned
-      # in tools/lib/narzedzia_tlc.py, so a new pin is a new key. A hit spares the download from GitHub Releases and
-      # PyPI, whose passing 504 once turned this job red (#930). The steps after the units save the folder.
       - name: Restore TLC tools
-        id: tlc-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: .verification/formal-aktualizacja
-          key: tlc-${{ runner.os }}-${{ hashFiles('tools/lib/narzedzia_tlc.py') }}
+        id: tlc
+        uses: ./.github/actions/narzedzia-tlc
 
       # A failed script is a result to file, not a broken job: the last job reads the record of each job's units.
       - name: Run the planned mutation scripts
         continue-on-error: true
         run: python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie ${{ matrix.id }}
 
-      # The key is saved once and never overwritten, so it is saved only with the jar of the pinned SHA-256: a folder
-      # without it (a download that failed to the end, a job whose units run no model) would give each later job a hit
-      # without the jar (#940). The check only decides the save and never turns the job red.
-      - name: Check the TLC tools before saving them
-        id: tlc-check
-        if: ${{ !cancelled() && steps.tlc-cache.outputs.cache-hit != 'true' }}
-        continue-on-error: true
-        run: python tools/ci/zapis_narzedzi_tlc.py
-
+      # The check of the jar only decides the save and never turns the job red.
       - name: Save TLC tools
-        if: ${{ !cancelled() && steps.tlc-check.outputs.zapisz == 'true' }}
+        if: ${{ !cancelled() && steps.tlc.outputs.trafienie != 'true' }}
         continue-on-error: true
-        uses: actions/cache/save@v6
+        uses: ./.github/actions/narzedzia-tlc/zapis
         with:
-          path: .verification/formal-aktualizacja
-          key: ${{ steps.tlc-cache.outputs.cache-primary-key }}
+          klucz: ${{ steps.tlc.outputs.klucz }}
 
       - name: Upload the record of the units
         if: ${{ !cancelled() }}
