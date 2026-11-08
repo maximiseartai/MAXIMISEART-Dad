@@ -1,11 +1,12 @@
 // Reguły frontendu z CODING_STANDARDS, których Oxlint nie wyraża (brak no-restricted-syntax w Oxlint 1.88):
 // 1. Każda właściwość schematów kontraktu (src/api/openapi.json) jest użyta w src poza generated/: kod wartości
 //    sięga do jej symbolu z typu Schema (types.gen.ts) albo kształtu zSchema (zod.gen.ts), co rozstrzyga checker
-//    TypeScriptu, nie nazwa. Użycie to dostęp (`.pole`, `["pole"]`, `x[klucz]` z kluczem typu literału),
-//    destrukturyzacja, klucz literału obiektu typu schematu (np. wysyłane ciało), atrybut JSX i `"pole" in x`, także
-//    przez typ, do którego wartość płynie (`Pick<…>`, typ propsów, ograniczenie parametru typu, wynik funkcji);
-//    wzmianka w typie (`RunInfo["process"]`) nie jest użyciem. Granica: pole czytane tylko w kodzie ogólnym
-//    (`Object.entries`, `JSON.stringify`) reguła uznaje za nieużyte, więc takie pole potrzebuje wpisu w FIELDS_OUTSIDE_UI.
+//    TypeScriptu, nie nazwa. Użycie to odczyt (`.pole`, `["pole"]`, `x[klucz]` z kluczem typu literału,
+//    destrukturyzacja, `"pole" in x`) albo zapis (klucz literału obiektu typu schematu, np. wysyłane ciało, atrybut
+//    JSX), także przez typ, do którego wartość płynie (`Pick<…>`, typ propsów, ograniczenie parametru typu, wynik
+//    funkcji): odczyt pola celu czyta źródło, a zapisane pole źródła trafia do celu. Wzmianka w typie
+//    (`RunInfo["process"]`) nie jest użyciem. Granica: pole czytane tylko w kodzie ogólnym (`Object.entries`,
+//    `JSON.stringify`) reguła uznaje za nieużyte, więc takie pole potrzebuje wpisu w FIELDS_OUTSIDE_UI.
 // 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`.
 // 3. Sieć (fetch, EventSource, WebSocket, XMLHttpRequest, sendBeacon) i JSON.parse tylko w plikach z NETWORK_FILES,
 //    które parsują każdą odpowiedź serwera schematem z kontraktu. Wpis w NETWORK_FILES ma powód, a zbędny wpis
@@ -175,6 +176,10 @@ function contractDeclarations(program, checker, contract) {
   return { declarations, declared }
 }
 
+function link(edges, from, to) {
+  edges.set(from, (edges.get(from) ?? new Set()).add(to))
+}
+
 function members(type) {
   return type.isUnion() ? type.types : [type]
 }
@@ -191,8 +196,8 @@ function propertyName(name) {
   return ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : undefined
 }
 
-// Właściwości, do których sięga węzeł kodu wartości; każda niesie deklaracje z typów, z których pochodzi.
-function reachedProperties(checker, node) {
+// Właściwości, które węzeł kodu wartości czyta; każda niesie deklaracje z typów, z których pochodzi.
+function readProperties(checker, node) {
   if (ts.isPropertyAccessExpression(node)) {
     return [checker.getSymbolAtLocation(node.name)]
   }
@@ -206,20 +211,10 @@ function reachedProperties(checker, node) {
       .flatMap((key) => propertiesNamed(object, key.value))
   }
 
-  if (ts.isJsxAttribute(node)) {
-    return [checker.getSymbolAtLocation(node.name)]
-  }
-
   if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
     const name = propertyName(node.propertyName ?? node.name)
 
     return name === undefined ? [] : propertiesNamed(checker.getTypeAtLocation(node.parent), name)
-  }
-
-  if (ts.isObjectLiteralElementLike(node) && ts.isObjectLiteralExpression(node.parent) && node.name !== undefined) {
-    const name = propertyName(node.name)
-
-    return name === undefined ? [] : propertiesNamed(literalType(checker, node.parent), name)
   }
 
   if (
@@ -228,6 +223,21 @@ function reachedProperties(checker, node) {
     ts.isStringLiteralLike(node.left)
   ) {
     return propertiesNamed(checker.getTypeAtLocation(node.right), node.left.text)
+  }
+
+  return []
+}
+
+// Właściwości, które węzeł zapisuje: klucz literału obiektu (np. wysyłane ciało) i atrybut JSX.
+function writtenProperties(checker, node) {
+  if (ts.isJsxAttribute(node)) {
+    return [checker.getSymbolAtLocation(node.name)]
+  }
+
+  if (ts.isObjectLiteralElementLike(node) && ts.isObjectLiteralExpression(node.parent) && node.name !== undefined) {
+    const name = propertyName(node.name)
+
+    return name === undefined ? [] : propertiesNamed(literalType(checker, node.parent), name)
   }
 
   return []
@@ -290,14 +300,19 @@ function flow(checker, node) {
 const OPAQUE = ts.TypeFlags.Primitive | ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never
 
 /**
- * Pole typu docelowego czyta pole tej samej nazwy w wartości, która do niego płynie: `<RunResultBadge run={pinnable} />`
- * z `run: Pick<ProcessRun, "result">` czyta `PinnableRun.result`. Krawędź prowadzi od deklaracji pola celu do
- * deklaracji pola źródła, w głąb pól i elementów tablic do `MAX_DEPTH`.
+ * Wartość płynie w typ docelowy, więc czytanie pola celu czyta pole tej samej nazwy w źródle (`<RunResultBadge
+ * run={pinnable} />` z `run: Pick<ProcessRun, "result">` czyta `PinnableRun.result`), a zapisane pole źródła trafia
+ * do pola celu (Uwaga zapisana jako `DadNoteRequest` idzie do serwera jako `DadNoteText`). Krawędzie łączą
+ * deklaracje pól w obu kierunkach, w głąb pól i elementów tablic do `MAX_DEPTH`.
  */
 class Flows {
   static MAX_DEPTH = 4
 
-  edges = new Map()
+  // Deklaracja pola celu → deklaracje pól źródła (czytanie).
+  backward = new Map()
+
+  // Deklaracja pola źródła → deklaracje pól celu (zapis).
+  forward = new Map()
 
   related = new Map()
 
@@ -319,8 +334,14 @@ class Flows {
     seen.add(to)
     this.related.set(from, seen)
 
-    for (const target of members(to)) {
-      this.relateMember(from, target, depth)
+    // Każdy wariant źródła płynie tylko w warianty celu, do których da się go przypisać, a wariant obecny po obu
+    // stronach w siebie: `RunInfo | Decision` w `RunInfo | Decision | null` nie łączy `RunInfo.title` z `Decision.title`.
+    const targets = members(to)
+
+    for (const origin of members(from).filter((member) => !targets.includes(member))) {
+      for (const target of targets.filter((member) => this.checker.isTypeAssignableTo(origin, member))) {
+        this.relateMember(origin, target, depth)
+      }
     }
   }
 
@@ -359,25 +380,26 @@ class Flows {
     }
 
     for (const property of target.getProperties().filter(isDeclaredInSource)) {
-      for (const read of propertiesNamed(from, property.name)) {
+      for (const origin of propertiesNamed(from, property.name)) {
         for (const declaration of property.declarations ?? []) {
-          const origins = this.edges.get(declaration) ?? new Set()
-          read.declarations?.forEach((origin) => origins.add(origin))
-          this.edges.set(declaration, origins)
+          for (const originDeclaration of origin.declarations ?? []) {
+            link(this.backward, declaration, originDeclaration)
+            link(this.forward, originDeclaration, declaration)
+          }
         }
 
-        this.relate(this.checker.getTypeOfSymbol(read), this.checker.getTypeOfSymbol(property), depth + 1)
+        this.relate(this.checker.getTypeOfSymbol(origin), this.checker.getTypeOfSymbol(property), depth + 1)
       }
     }
   }
 
-  // Deklaracje czytane wprost i przez każdą krawędź od nich.
-  closure(reached) {
-    const all = new Set(reached)
-    const pending = [...reached]
+  // Deklaracje czytane albo zapisane wprost i przez każdą krawędź od nich w kierunku `edges`.
+  static closure(start, edges) {
+    const all = new Set(start)
+    const pending = [...start]
 
     while (pending.length > 0) {
-      for (const origin of this.edges.get(pending.pop()) ?? []) {
+      for (const origin of edges.get(pending.pop()) ?? []) {
         if (!all.has(origin)) {
           all.add(origin)
           pending.push(origin)
@@ -492,11 +514,15 @@ function location(file, node) {
 }
 
 // Deklaracje pól, do których sięga kod wartości pliku, przepływy wartości, porównania nazwy procesu i połączenia.
-function inspect({ file, checker, flows, names }, reached, comparisons, network) {
+function inspect({ file, checker, flows, names }, { read, written }, comparisons, network) {
   function visit(node) {
     if (!isInType(node)) {
-      for (const property of reachedProperties(checker, node)) {
-        property?.declarations?.forEach((declaration) => reached.add(declaration))
+      for (const property of readProperties(checker, node)) {
+        property?.declarations?.forEach((declaration) => read.add(declaration))
+      }
+
+      for (const property of writtenProperties(checker, node)) {
+        property?.declarations?.forEach((declaration) => written.add(declaration))
       }
 
       for (const { from, to } of [flow(checker, node) ?? [], inferredFlows(checker, node)].flat()) {
@@ -532,7 +558,7 @@ const names = processNames(contract)
 
 const flows = new Flows(checker)
 
-const reached = new Set()
+const reached = { read: new Set(), written: new Set() }
 
 const comparisons = []
 
@@ -554,7 +580,11 @@ for (const file of program.getSourceFiles().filter(isHandWritten)) {
   }
 }
 
-const used = new Set([...flows.closure(reached)].flatMap((declaration) => declarations.get(declaration) ?? []))
+const used = new Set(
+  [...Flows.closure(reached.read, flows.backward), ...Flows.closure(reached.written, flows.forward)].flatMap(
+    (declaration) => declarations.get(declaration) ?? []
+  )
+)
 
 const fields = contractFields(contract)
 
