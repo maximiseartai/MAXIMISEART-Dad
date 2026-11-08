@@ -6,9 +6,11 @@ wartości wejścia. Okres, konfiguracja wykonawców, nazwy plików okresu i nag�
 (``PERIOD``, ``SOURCE_NAME`` i ``WORKERS`` z ``tests/fixtures/settlement.py``, ``INTERNAL_SETTLEMENT_NAME``,
 ``COLLECTIVE_FILE_NAME`` i nagłówki z ``tests/fixtures/preparation.py``).
 
-Tu stoją fakty wejścia i oczekiwane Ilości usług z Reguł ilości taty; to, które zlecenia trafiają do którego pliku
-i w jakiej kolejności, wyrocznie piszą jawnie same, żeby błąd procesu w wyborze albo kolejności nie przeszedł
-razem z danymi.
+Tu stoją fakty wejścia i dwa oczekiwania, które wyrocznie obu skilli sprawdzają tak samo, napisane ręcznie, a nie
+wyliczone z ``ORDERS``: Ilości usług z Reguł ilości taty (``QUANTITIES``) i Wiersze danych Rozliczenia pracownika
+każdego Wykonawcy w ich kolejności (``WORKER_ORDERS``); generatory ich nie czytają. To, które zlecenia trafiają do
+Rozliczenia wewnętrznego i Pliku zbiorczego i w jakiej kolejności, wyrocznie piszą jawnie same, żeby błąd procesu w
+wyborze albo kolejności nie przeszedł razem z danymi.
 """
 
 from __future__ import annotations

@@ -26,6 +26,7 @@ from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Pag
 import yaml
 
 from drive import feature
+from tests.fixtures.scenariusz_centrum import LAST_COMPLETE
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"
@@ -35,10 +36,6 @@ PAGES = {"okresy": "Okresy", "uruchomienia": "Uruchomienia", "metryki": "Metryki
 DAD_TIME_ZONE = ZoneInfo("Europe/Warsaw")
 # Dad's screen: the drive's tab and every other tab it opens unless a feature needs another window.
 DAD_VIEWPORT: ViewportSize = {"width": 1440, "height": 1000}
-# The fixture's last complete period, without a Folder okresu.
-LAST_COMPLETE = "06_12_10_2026"
-# The fixture puts this marker in every synthetic workbook row; it must never reach the Centrum log.
-ROW_MARKER = "CENTRUM-SYN-ROW"
 # Dad double-clicks out of habit and double-taps the touch screen: the second click comes within milliseconds,
 # so a repeated request is sent well within this, and an answer reaches the screen (a refusal as a toast) too.
 REPEAT_SETTLE_MS = 300

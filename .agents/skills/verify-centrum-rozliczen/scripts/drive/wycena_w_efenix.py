@@ -25,26 +25,23 @@ from drive.common import (
     stop_banner,
 )
 from drive.teksty import BELL_FRESH
+from tests.fixtures.efenix import FIRST_ROW, SOURCE_NAME
+from tests.fixtures.scenariusz_centrum import EFENIX_ADDRESS_MARKERS, EFENIX_ORDERS, EFENIX_PERIOD
 
 FEATURE = "wycena-w-efenix"
 PROCESS = "Wycena w efenix"
-PERIOD = "08_14_09_2026"
-COLLECTIVE_FILE = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
+PERIOD = EFENIX_PERIOD
+COLLECTIVE_FILE = SOURCE_NAME
 LOGIN = "Zaloguj się w oknie efenix"
 DONE = "Wycena w efenix gotowa · wymaga sprawdzenia"
-# serve_centrum.EFENIX_ORDERS: row → (order number, Wykonawca); 18 is ready, 19 unknown to efenix, 20 differs from Emmett,
+# Row → (order number, Wykonawca) of EFENIX_ORDERS; 18 is ready, 19 unknown to efenix, 20 differs from Emmett,
 # 21 is „Rozliczone” in efenix.
 ORDERS = {
-    18: ("QX9001", "adrian.testowy"),
-    19: ("QX9002", "beata.testowa"),
-    20: ("QX9003", "celina.testowa"),
-    21: ("QX9004", "dorota.testowa"),
+    row: (order.number.removeprefix("#"), order.worker) for row, order in enumerate(EFENIX_ORDERS, start=FIRST_ROW)
 }
-# The made-up ADRES of every order in the Plik zbiorczy and its Dane adresowe in the Atrapa (tests.fixtures.efenix.Order):
-# the rule of data (ADR 0025) keeps both out of the Logi.
-ADDRESSES = ("UL. TESTOWA 12/3", "TESTOWA", "Testowa", "Miasto-Dzielnica")
-# Znacznik efenix (rozliczenia.efenix_mark.MARK_RGB), the light purple of ADRES in a ready order's row, and the Znacznik
-# przekazania, the darker purple of an order the Wycena with Przekazanie forwarded to acceptance (ADR 0027).
+# Znacznik efenix, the light purple of ADRES in a ready order's row, and the Znacznik przekazania, the darker purple of
+# an order the Wycena with Przekazanie forwarded to acceptance: the colours of ADR 0027, written here and not taken from
+# rozliczenia.efenix_mark, because the tests take them from there and this drive is what checks them.
 MARK_RGB = "E0CCFF"
 FORWARDED_RGB = "B48AFF"
 # The two buttons of the setup card in Dad's words, „zapis” being the green „Zapisz” in efenix, with their captions.
@@ -248,7 +245,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
     whole = json.dumps(record, ensure_ascii=False)
     traced = [(order["row"], order["outcome"]) for order in record["efenix_orders"]]
     private = [number for number, _worker in ORDERS.values() if number in trace]
-    private += [address for address in ADDRESSES if address in whole]
+    private += [address for address in EFENIX_ADDRESS_MARKERS if address in whole]
     run.check(
         traced == [(18, "gotowe"), (19, "błąd"), (20, "ostrzeżenie Emmetta"), (21, "rozliczone")] and private == [],
         "the Logi trace every order by its row, the Zlecenie rozliczone as rozliczone, the trace without its order "

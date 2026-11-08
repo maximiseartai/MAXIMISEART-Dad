@@ -23,6 +23,11 @@ import sys
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+
+from tests.fixtures.scenariusz_centrum import ROW_MARKER
 
 SCRIPT = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT.parents[1]
@@ -42,7 +47,6 @@ REQUIRED_FEATURE_HEADINGS = (
     "## Driving it with Playwright for Python",
     "## Gotchas",
 )
-ROW_MARKER = "CENTRUM-SYN-ROW"  # create_centrum_fixture.py puts it in every synthetic workbook
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 # Deleting, moving or replacing a file or folder fails on Windows while another process holds it open (WinError 32,
 # #921), so the drive does it only through the retrying helpers of ``drive/common.py`` (``DRIVE_HELPERS``). The forms

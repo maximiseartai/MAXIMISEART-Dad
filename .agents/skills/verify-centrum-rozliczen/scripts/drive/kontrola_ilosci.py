@@ -8,9 +8,7 @@ import time
 from playwright.sync_api import Page, expect
 
 from drive.common import (
-    LAST_COMPLETE,
     REPORT_KEY,
-    ROW_MARKER,
     box_issues,
     close_centrum,
     drop_report_key,
@@ -19,6 +17,7 @@ from drive.common import (
     Run,
     start_centrum,
 )
+from tests.fixtures.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 
 FEATURE = "kontrola-ilosci"
 LABEL = "kontrola-ilosci"

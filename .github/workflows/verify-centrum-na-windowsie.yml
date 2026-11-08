@@ -32,6 +32,8 @@ on:
       - src/rozliczenia/centrum/tool_updates.py
       - src/rozliczenia/centrum/update_messages.py
       - src/rozliczenia/centrum/version.py
+      - tests/fixtures/scenariusz_centrum.py
+      - .agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py
   push:
     branches:
       - main

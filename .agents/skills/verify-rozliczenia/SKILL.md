@@ -70,8 +70,12 @@ Hiperłącza, row markers, the Ilości usług the Reguły ilości give, the rows
 Gotowość fills) live once in `tests/fixtures/scenariusz_rozliczen.py`, beside
 the period, konfiguracja wykonawców and Wzorzec headers of the tests: the
 `create_*` scripts build the files from them and the `assert_*` scripts,
-`fill_readiness.py` and `self_test.py` read the same values. Which orders land
-in which file and in what order stays written out in each `assert_*` script.
+`fill_readiness.py` and `self_test.py` read the same values. Two expectations
+live there too, written out by hand for the oracles of both skills and never
+read by a generator: the Ilości usług (`QUANTITIES`) and each Wykonawca's
+Rozliczenie pracownika rows in order (`WORKER_ORDERS`). Which orders land in
+the Rozliczenie wewnętrzne and the Plik zbiorczy and in what order stays
+written out in each `assert_*` script.
 
 ## What CI runs and what stays local
 

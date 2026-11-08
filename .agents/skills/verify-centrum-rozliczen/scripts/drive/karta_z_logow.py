@@ -10,7 +10,6 @@ from typing import Any
 from playwright.sync_api import Page, expect
 
 from drive.common import (
-    LAST_COMPLETE,
     Run,
     close_centrum,
     current_run,
@@ -25,6 +24,7 @@ from drive.common import (
     start_centrum,
 )
 from drive.teksty import ABOUT_LOGS
+from tests.fixtures.scenariusz_centrum import LAST_COMPLETE
 
 FEATURE = "karta-z-logow"
 LAST_STARTED = "logs/ostatnie-uruchomienie.json"

@@ -12,12 +12,15 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.worker_config import load_worker_mapping
 from skrypt_skilla import Parser
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderError
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import WorkbookError
+from tests.fixtures.scenariusz_rozliczen import WORKER_TEMPLATE_NAME
+from tests.fixtures.settlement import PERIOD, SOURCE_NAME, WORKERS
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
@@ -34,16 +37,16 @@ def _check(root: Path, expected_version: str) -> tuple[str, int]:
     if sys.version_info < (3, 11):
         raise ValueError("Python 3.11 or newer is required")
 
-    source = root / "08_14_09_2026" / "Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"
+    source = root / PERIOD / SOURCE_NAME
     folder = PeriodFolder.from_collective_file(source)
     period = folder.period.token
     target_directory = folder.worker_settlements
     mapping = load_worker_mapping(root / "worker_mapping.yaml")
-    if len(mapping) != 3:
-        raise ValueError("synthetic mapping must contain three workers")
+    if len(mapping) != len(WORKERS):
+        raise ValueError(f"synthetic mapping must contain {len(WORKERS)} workers")
     if target_directory.exists():
         raise ValueError("target directory must not exist before dry-run")
-    TemplateFile.worker_settlement(root / "Wzorzec rozliczenia pracownika.xlsx").check()
+    TemplateFile.worker_settlement(root / WORKER_TEMPLATE_NAME).check()
 
     workbook = load_workbook(source, read_only=True, data_only=False)
     try:

@@ -21,10 +21,11 @@ from drive.common import (
     stop_banner,
 )
 from drive.teksty import FETCHING, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON, UP_TO_DATE
+from tests.fixtures.scenariusz_centrum import PERIOD_WITHOUT_FILES
 
 FEATURE = "aktualnosc-i-onedrive"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.
-PERIOD = "08_14_09_2026"
+PERIOD = PERIOD_WITHOUT_FILES
 NEWER = "Jest nowsza wersja narzędzia."
 ONLY_IN_CLOUD = "Plik jest tylko w OneDrive w chmurze, bez kopii na tym komputerze."
 KEEP_ON_DEVICE = "„Zawsze zachowuj na tym urządzeniu”"

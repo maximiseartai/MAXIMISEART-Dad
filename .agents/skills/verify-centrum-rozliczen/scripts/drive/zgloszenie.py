@@ -11,7 +11,6 @@ from playwright.sync_api import Locator, Page, expect
 
 from drive.common import (
     REPORT_KEY,
-    ROW_MARKER,
     advance_clock,
     box_issues,
     close_centrum,
@@ -32,10 +31,11 @@ from drive.common import (
     stop_banner,
 )
 from drive.teksty import FOR_KEY, NOT_FOUND, TEMPLATE_MISSING
+from tests.fixtures.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 
 FEATURE = "zgloszenie"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.
-PERIOD = "08_14_09_2026"
+PERIOD = PERIOD_WITHOUT_FILES
 TITLE = f"BRAK_WZORCA: {TEMPLATE_MISSING} Nie utworzono żadnego pliku."
 FOR_INTERNET = "Zgłoszenie czeka na internet. Wyśle się samo."
 REJECTED = "Tego Zgłoszenia nie da się wysłać. Skontaktuj się z Maksem."
