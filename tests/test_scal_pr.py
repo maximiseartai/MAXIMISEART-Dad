@@ -22,11 +22,13 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fak
 from tests.fixtures.git_repo import commit, git
 
 import czasy_ci
-import scal_pr
+import naprawia
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
+# Moduły, na które scal_pr dzieli swoje powody zmiany.
+LIB = ("stan_pr", "werdykt_pr", "naprawia", "testy_scalenia", "kontekst_przegladu")
 TEMPLATE = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "pr" / "SKILL.md"
 BODY = opisy_pr.wzor("Cel.")
 SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
@@ -141,10 +143,11 @@ class MergeGitHub(FakeGitHub):
                 ".gitignore": ".mypy_cache/\n.ruff_cache/\n__pycache__/\nposprzatane\n",
                 "pyproject.toml": PYPROJECT,
                 ".agents/skills/pr/SKILL.md": TEMPLATE.read_text(encoding="utf-8"),
+                "tools/sprzatanie.py": CLEANUP,
                 **files,
             },
             tool="tools/scal_pr.py",
-            copies=("tools/lib/werdykt_scalenia.py", "tools/lib/github.py", "tools/lib/wplyw_zmiany.py", "tools/lib/wyniki_testow.py"),
+            copies=(*(f"tools/lib/{module}.py" for module in LIB), "tools/lib/werdykt_scalenia.py", "tools/lib/github.py", "tools/lib/wplyw_zmiany.py", "tools/lib/wyniki_testow.py"),
             gh=FAKE_GH,
         )
         _empty_state(self.bin)
@@ -276,7 +279,7 @@ def _last_line(answered: subprocess.CompletedProcess[str]) -> str:
 
 
 def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": CLEANUP})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     main = github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
     github.comment(1, f"WERDYKT: FAIL {head}\n- krytyczne: brak testu")
@@ -679,7 +682,7 @@ def test_test_dotkniety_zmiana_pr_i_zmiana_main_od_merge_base_biegnie_na_scaleni
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
     assert re.fullmatch(
         rf"SCAL OK \| #1 {head[:7]} \| scalony do main jako {merge_commit[:7]} \(baza {main[:7]}\)"
-        rf" \| test scalenia: {SUM_TEST_FILE} przechodzą \(\d+ s\) \| sprzątanie pominięte: brak tools/sprzatanie.py",
+        rf" \| test scalenia: {SUM_TEST_FILE} przechodzą \(\d+ s\) \| sprzątanie: SPRZĄTANIE OK \| 0 usuniętych",
         _last_line(merged),
     )
 
@@ -694,7 +697,7 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
     assert re.fullmatch(
         rf"SCAL OK \| #1 {head[:7]} \| scalony do main jako {merge_commit[:7]} \(baza {main[:7]}\)"
         rf" \| test scalenia: {SUM_TEST_FILE} bez porażek przez PR, a na samym main {main[:7]} pada już:"
-        rf" {SUM_TEST_FILE}::test_suma_dodatnich \(\d+ s\) \| sprzątanie pominięte: brak tools/sprzatanie.py",
+        rf" {SUM_TEST_FILE}::test_suma_dodatnich \(\d+ s\) \| sprzątanie: SPRZĄTANIE OK \| 0 usuniętych",
         _last_line(merged),
     )
 
@@ -712,6 +715,8 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
             f"pada: {SUM_TEST_FILE}::test_suma_ujemnych (na samym main {{main}} pada też: {SUM_TEST_FILE}::test_suma_dodatnich)",
         ),
         ({SUM_TEST_FILE: SUM_TEST + DESCRIBED_TEST}, ABS_SUM, None, f"pada: {SUM_TEST_FILE}::test_suma_opisana[dwa i dwa]"),
+        # Błąd kolekcji nowego pliku testów nie ma id testu, więc odmowa nazywa plik.
+        ({NEGATIVE_TEST_FILE: "from kod import suma\n\nassert suma(-1, -1) == -2\n"}, ABS_SUM, None, f"pada: {NEGATIVE_TEST_FILE}"),
         ({SUM_TEST_FILE: SUM_TEST + SLOW_TEST}, ABS_SUM, ("MERGE_TEST_TIMEOUT_S = 300", "MERGE_TEST_TIMEOUT_S = 5"), f"bez wyniku po 5 s: {SUM_TEST_FILE}"),
         (
             {SUM_TEST_FILE: SUM_TEST + NEGATIVE_TEST},
@@ -721,14 +726,14 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
             "pada: pytest kod 4: {prog}: error: unrecognized arguments: --nieznana-opcja",
         ),
     ],
-    ids=["test-pada", "test-pada-a-inny-pada-juz-na-main", "test-z-parametrem-ze-spacja-pada", "test-ponad-limit-czasu", "pytest-nie-startuje"],
+    ids=["test-pada", "test-pada-a-inny-pada-juz-na-main", "test-z-parametrem-ze-spacja-pada", "blad-kolekcji", "test-ponad-limit-czasu", "pytest-nie-startuje"],
 )
 def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_scalany(
     tmp_path: Path, pull_files: dict[str, str], main_sum: str, replaced: tuple[str, str] | None, reason: str
 ) -> None:
     github, head, main = _merge_test_github(tmp_path, pull_files, {"kod/__init__.py": main_sum}, {SUM_TEST_FILE: 1.0})
     if replaced is not None:
-        tool = github.checkout / "tools" / "scal_pr.py"
+        tool = github.checkout / "tools" / "lib" / "testy_scalenia.py"
         tool.write_text(tool.read_text(encoding="utf-8").replace(*replaced), encoding="utf-8")
 
     answered = github.run("1")
@@ -814,7 +819,7 @@ def test_baza_przesunieta_z_innego_klonu_przed_sprawdzeniem_jest_baza_scalenia(t
 
 
 def test_po_merge_zamyka_otwarte_issues_z_naprawia_z_komentarzem_a_bez_merge_tylko_je_podaje(tmp_path: Path) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": CLEANUP})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.open_issues(3, 4, 6, 7)
     github.open_issues(5, state="closed")
@@ -869,7 +874,7 @@ def test_pr_bez_slowa_naprawia_nie_pyta_o_domyslna_galaz_ani_nie_renderuje_opisu
 
     assert _last_line(checked).endswith("bez merge'a (--bez-merge)")
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
-    assert f"jako {merge_commit[:7]} (baza {github.start[:7]}) | sprzątanie pominięte" in _last_line(merged)
+    assert f"jako {merge_commit[:7]} (baza {github.start[:7]}) | sprzątanie: SPRZĄTANIE OK" in _last_line(merged)
     assert github.repo_views() == []
     assert github.renders() == []
 
@@ -965,13 +970,13 @@ def test_naprawia_wskazuje_issues_tego_repo_tylko_na_poczatku_linii_tekstu_ktory
 ) -> None:
     monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
 
-    assert scal_pr.fixed_issues(body, opisy_pr.REPO) == fixes
+    assert naprawia.fixed_issues(body, opisy_pr.REPO) == fixes
 
 
 def test_naprawia_wskazuje_issues_tego_repo_bez_wzgledu_na_wielkosc_liter_jego_nazwy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
 
-    assert scal_pr.fixed_issues(opisy_pr.SCALENIE["dwa"], opisy_pr.REPO.swapcase()) == (3, 4)
+    assert naprawia.fixed_issues(opisy_pr.SCALENIE["dwa"], opisy_pr.REPO.swapcase()) == (3, 4)
 
 
 @pytest.mark.parametrize(("number", "fixes"), opisy_pr.PRAWDZIWE.items(), ids=[f"pr-{number}" for number in opisy_pr.PRAWDZIWE])
@@ -980,7 +985,7 @@ def test_opisy_scalonych_pr_wskazuja_issues_ktore_github_zostawil_otwarte(
 ) -> None:
     monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
 
-    assert scal_pr.fixed_issues(opisy_pr.real_body(number), opisy_pr.REPO) == fixes
+    assert naprawia.fixed_issues(opisy_pr.real_body(number), opisy_pr.REPO) == fixes
 
 
 def test_kazdy_opis_testow_ma_html_z_renderera_githuba() -> None:
@@ -1197,7 +1202,7 @@ def test_przeglad_z_prawdziwym_skille_dla_zmiany_z_head_pr_podaje_skille_zmiany_
 def test_przeglad_nie_czeka_dluzej_niz_limit_na_skille_dla_zmiany(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/skille_dla_zmiany.py": "import time\n\ntime.sleep(60)\n"})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    tool = github.checkout / "tools" / "scal_pr.py"
+    tool = github.checkout / "tools" / "lib" / "kontekst_przegladu.py"
     tool.write_text(tool.read_text(encoding="utf-8").replace("SKILLS_TIMEOUT_S = 300", "SKILLS_TIMEOUT_S = 1"), encoding="utf-8")
 
     answered = github.run("1", "--przeglad")
