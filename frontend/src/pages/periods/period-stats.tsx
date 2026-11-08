@@ -43,7 +43,8 @@ export function PeriodStats({
         stats={[
           preparedStat,
           { label: "Ostatnie uruchomienie", icon: <ClockIcon aria-hidden />, ...pending },
-          { label: "Ostatnie 8 tygodni", icon: <ListChecksIcon aria-hidden />, ...pending },
+          // Liczbę tygodni zna tylko serwer (`recent.weeks`), więc przed odczytem metryk etykieta jej nie podaje.
+          { label: "Ostatnie tygodnie", icon: <ListChecksIcon aria-hidden />, ...pending },
         ]}
       />
     )
