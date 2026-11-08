@@ -129,7 +129,7 @@ def _client(
         ToolDirectory(tmp_path),
         platform=platform,
         today=clock.moments[0].date(),
-        processes=engines.processes(),
+        catalog=engines.catalog(),
         tool_freshness=surroundings.tool_freshness(),
         cloud_files=None if onedrive is None else onedrive.cloud_files(),
         report_box=surroundings.report_box,

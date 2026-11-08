@@ -13,13 +13,13 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import APP, BUILD, CATALOG, INTERMAX_ORDERING, INTERMAX_RUN, RUN_VIEW, UPORZADKOWANIE
+from cele_mutacji_centrum import APP, BUILD, INTERMAX_KIND, INTERMAX_ORDERING, INTERMAX_RUN, RUN_VIEW, UPORZADKOWANIE
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
     Mutation(
         "karta bez braku INTERMAX w Ustawieniach",
-        (Edit(INTERMAX_RUN, "            blocker=INTERMAX.settings_blocker(settings),\n", "            blocker=None,\n"),),
+        (Edit(INTERMAX_RUN, "            blocker=_KIND.settings_blocker(settings),\n", "            blocker=None,\n"),),
         UPORZADKOWANIE,
         "bez wskazanego INTERMAX karta nie mówi tacie, co ustawić",
     ),
@@ -69,19 +69,19 @@ MUTATIONS = (
     ),
     Mutation(
         "wynik bez nazwy Kopii INTERMAX",
-        (Edit(RUN_VIEW, "        intermax_copy=summary.copy_name,\n", "        intermax_copy=None,\n"),),
+        (Edit(INTERMAX_KIND, "        intermax_copy=summary.copy_name,\n", "        intermax_copy=None,\n"),),
         UPORZADKOWANIE,
         "tata nie wie, która Kopia INTERMAX ma stan sprzed zapisu",
     ),
     Mutation(
         "wynik otwiera Plik zbiorczy zamiast INTERMAX",
-        (Edit(RUN_VIEW, '    result_action="open_order_register",\n', '    result_action="open_collective_file",\n'),),
+        (Edit(INTERMAX_KIND, '    result_action="open_order_register",\n', '    result_action="open_collective_file",\n'),),
         UPORZADKOWANIE,
         "akcja po wyniku nie otwiera uporządkowanego INTERMAX",
     ),
     Mutation(
         "Zatrzymanie proponuje Rejestr zleceń zamiast INTERMAX",
-        (Edit(RUN_VIEW, '    register_name="INTERMAX",\n', ""),),
+        (Edit(INTERMAX_KIND, '    register_name="INTERMAX",\n', ""),),
         UPORZADKOWANIE,
         "karta mówi „INTERMAX”, a przycisk Zatrzymania „Otwórz Rejestr zleceń”: dwie nazwy jednego pliku",
     ),
@@ -95,9 +95,9 @@ MUTATIONS = (
         "Diagnoza bez sprawdzenia INTERMAX",
         (
             Edit(
-                CATALOG,
-                '    checks=("tata_settings", "files_in_onedrive", "intermax", *_TAIL),\n',
-                '    checks=("tata_settings", "files_in_onedrive", *_TAIL),\n',
+                INTERMAX_KIND,
+                '    checks=("tata_settings", "files_in_onedrive", "intermax", *TAIL),\n',
+                '    checks=("tata_settings", "files_in_onedrive", *TAIL),\n',
             ),
         ),
         UPORZADKOWANIE,

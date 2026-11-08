@@ -176,8 +176,8 @@ def test_centrum_zamkniete_przed_zapamietaniem_uruchomienia_daje_karte_z_wynikie
     [record] = centrum.metric_records()
     start_file = json.loads((centrum.log_path.parent / "ostatnie-uruchomienie.json").read_text(encoding="utf-8"))
     started_at = datetime.fromisoformat(start_file["started_at"])
-    processes = centrum.engines.processes()
-    preparation, settlement = processes.preparation.counter_names, processes.settlement.counter_names
+    catalog = centrum.engines.catalog()
+    preparation, settlement = catalog.metrics("preparation").counter_names, catalog.metrics("settlement").counter_names
     append_record(centrum.metrics_path, preparation, record, started_at - timedelta(hours=1))
     append_record(centrum.engines.metrics.settlement, settlement, record, started_at)
     append_record(centrum.metrics_path, preparation, record, started_at + timedelta(hours=1))

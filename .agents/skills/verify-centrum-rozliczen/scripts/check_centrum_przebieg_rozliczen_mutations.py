@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import BUILD, PRZEBIEG, RUN_VIEW, SETTLEMENT_MESSAGES
+from cele_mutacji_centrum import BUILD, PRZEBIEG, RUN_VIEW, SETTLEMENT_KIND, SETTLEMENT_MESSAGES
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -31,13 +31,13 @@ MUTATIONS = (
     ),
     Mutation(
         "po Przebiegu rozliczeń akcją główną jest Plik zbiorczy",
-        (Edit(RUN_VIEW, '    result_action="open_worker_settlements_folder",\n', '    result_action="open_collective_file",\n'),),
+        (Edit(SETTLEMENT_KIND, '        result_action="open_worker_settlements_folder",\n', '        result_action="open_collective_file",\n'),),
         PRZEBIEG,
         "po zapisie Rozliczeń pracowników karta proponuje otwarcie Pliku zbiorczego zamiast ich folderu",
     ),
     Mutation(
         "pusty szablon nie jest oznaczony",
-        (Edit(RUN_VIEW, '                empty=result.status == "PUSTY_SZABLON",\n', "                empty=False,\n"),),
+        (Edit(SETTLEMENT_KIND, '                empty=result.status == "PUSTY_SZABLON",\n', "                empty=False,\n"),),
         PRZEBIEG,
         "Rozliczenie pracownika bez zleceń wygląda jak zapisane, bez oznaczenia „pusty”",
     ),

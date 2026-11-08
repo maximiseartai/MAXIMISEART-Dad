@@ -17,11 +17,11 @@ from cele_mutacji_centrum import (
     BUILD,
     EFENIX_BROWSER,
     EFENIX_CHECKS,
+    EFENIX_KIND,
     EFENIX_RUN,
     LOGS_OF_RUN,
     NOTIFICATIONS,
     RUN_LOGS,
-    RUN_VIEW,
     WYCENA,
 )
 from mutacje import Edit, Mutation, check_all
@@ -41,7 +41,7 @@ MUTATIONS = (
     ),
     Mutation(
         "karta bez numerów zleceń i Wykonawców",
-        (Edit(RUN_VIEW, "    _notes=_pricing_notes,\n", ""),),
+        (Edit(EFENIX_KIND, "        _notes=_notes,\n", ""),),
         WYCENA,
         "tata widzi tylko wiersze pliku, bez numeru zlecenia i Wykonawcy, którego ma szukać w efenix",
     ),
@@ -73,7 +73,7 @@ MUTATIONS = (
         "karta bez listy zleceń przekazanych",
         (
             Edit(
-                RUN_VIEW,
+                EFENIX_KIND,
                 "_NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.FORWARDED, OrderKind.SETTLED)",
                 "_NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.SETTLED)",
             ),

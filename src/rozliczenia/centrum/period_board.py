@@ -5,7 +5,7 @@ obserwację plików i Status okresu z nazwą zna silnik (``period_folder``);
 treści skoroszytów Centrum nie czyta. Wycena w efenix okresu jest zaliczona, gdy
 ostatnie jej Uruchomienie w Historii (plik metryk procesu) skończyło się wynikiem
 OK; Statusu okresu nie zmienia. Tu są Droga okresu, następny krok i krok obok
-niego (podpowiedź podglądu deklaruje proces w ``run_view``) oraz etykiety i wybór plików do otwarcia.
+niego (podpowiedź podglądu deklaruje wpis procesu w katalogu procesów) oraz etykiety i wybór plików do otwarcia.
 """
 
 from __future__ import annotations
@@ -17,11 +17,11 @@ from typing import Final, Literal
 
 from fastapi import APIRouter
 
-from rozliczenia.centrum import contract, run_view
-from rozliczenia.centrum.catalog import EFENIX, PERIODS_DIRECTORY, first_choose
+from rozliczenia.centrum import contract
+from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.processes import Processes
+from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, first_choose
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import (
     PeriodFolder,
@@ -36,13 +36,12 @@ from rozliczenia.period_folder import (
     scan_period_folders,
 )
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period, parse_period_token
-from rozliczenia.telemetry import MetricsStore
 
 _PREPARE: Final = contract.ProcessStep(
     action="prepare_collective_file",
     label="Przygotuj plik zbiorczy",
     hint="Z Rejestru zleceń powstaną Rozliczenie wewnętrzne i Plik zbiorczy.",
-    preview_hint=run_view.PREPARATION.preview_hint,
+    preview_hint=declaration_of("preparation").preview_hint,
 )
 _PRICE: Final = contract.ProcessStep(
     action="price_in_efenix",
@@ -63,7 +62,7 @@ _SETTLE: Final = contract.ProcessStep(
     action="create_worker_settlements",
     label="Utwórz rozliczenia pracowników",
     hint="Wycena w efenix skończyła się wynikiem OK. Teraz rozliczenia pracowników z Pliku zbiorczego.",
-    preview_hint=run_view.SETTLEMENT.preview_hint,
+    preview_hint=declaration_of("settlement").preview_hint,
 )
 _SETTLE_BEFORE_PRICING: Final = _SETTLE.model_copy(
     update={"hint": "Możesz je utworzyć także bez Wyceny w efenix, na przykład gdy efenix nie działa."}
@@ -146,8 +145,8 @@ def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> cont
     )
 
 
-def read_board(periods_directory: Path | None, today: date, processes: Processes) -> contract.PeriodBoard:
-    """Tablica okresów z folderu okresów; ``processes`` daje Historię Wyceny w efenix (plik metryk jej rdzenia)."""
+def read_board(periods_directory: Path | None, today: date, catalog: Catalog) -> contract.PeriodBoard:
+    """Tablica okresów z folderu okresów; ``catalog`` daje Historię Wyceny w efenix (jej plik metryk)."""
 
     if periods_directory is None:
         return contract.BoardNotSet(state="not_set")
@@ -157,8 +156,7 @@ def read_board(periods_directory: Path | None, today: date, processes: Processes
     folders = {folder.period: folder for folder in scan_period_folders(periods_directory).found()}
     folders.setdefault(last_complete, PeriodFolder(periods_directory, last_complete))
     newest_first = sorted(folders.values(), key=lambda folder: folder.period.tuesday, reverse=True)
-    efenix = EFENIX.core(processes)
-    priced = last_results(MetricsStore(efenix.metrics_path(), efenix.counter_names))
+    priced = last_results(catalog.metrics("efenix"))
     rows = [
         _row(folder, last_complete=folder.period == last_complete, pricing=_pricing(priced.get(folder.period.token)))
         for folder in newest_first
@@ -220,13 +218,13 @@ def requested_folder(store: SettingsStore, token: str) -> PeriodFolder:
 
 
 def periods_router(
-    store: SettingsStore, platform: Platform, today: Callable[[], date], processes: Processes
+    store: SettingsStore, platform: Platform, today: Callable[[], date], catalog: Catalog
 ) -> APIRouter:
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 
     @router.get("", operation_id="getPeriodBoard")
     def board() -> contract.PeriodBoard:
-        return read_board(store.load().periods_directory, today(), processes)
+        return read_board(store.load().periods_directory, today(), catalog)
 
     @router.post("/{token}/open", operation_id="openPeriodPath", responses=contract.NOT_FOUND_OR_CONFLICT)
     def open_period_path(token: str, request: contract.OpenRequest) -> contract.Opened:

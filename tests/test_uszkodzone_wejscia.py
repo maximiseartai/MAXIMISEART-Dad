@@ -220,7 +220,7 @@ class World:
             platform=platform,
             today=TODAY,
             now=lambda: NOW,
-            processes=self.engines.processes(),
+            catalog=self.engines.catalog(),
             report_box=GitHubReportBox(transport=_offline_like_urllib),
         )
 

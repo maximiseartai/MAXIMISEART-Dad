@@ -20,7 +20,7 @@ from fastapi import APIRouter
 
 from rozliczenia import input_checks, workbook_files
 from rozliczenia.centrum import contract
-from rozliczenia.centrum.catalog import TemplateRole
+from rozliczenia.centrum.process_kind import TemplateRole
 from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.tool_freshness import Judgement, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit

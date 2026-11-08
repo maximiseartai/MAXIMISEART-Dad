@@ -55,7 +55,6 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 import sys
 from typing import Any, NoReturn
@@ -64,12 +63,11 @@ from pydantic import BaseModel, ConfigDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rozliczenia import efenix_browser, efenix_process, intermax_copies, intermax_process, preparation_process, settlement_process
+from rozliczenia import efenix_browser, intermax_copies
 from rozliczenia.centrum import contract, run_view
-from rozliczenia.centrum.catalog import EFENIX, INTERMAX, PREPARATION, SETTLEMENT, ProcessDeclaration
+from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.process_kind import PreparedRun
-from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_pricing import PricingMode
@@ -147,22 +145,23 @@ class _Unattended:
 
 
 def _prepared(
-    declaration: ProcessDeclaration[Any, Any],
+    key: contract.ProcessKey,
     inputs: ProcessInputs,
     metrics: Path,
     pricing: contract.Pricing | None = None,
 ) -> PreparedRun[Any, Any]:
     """Uruchomienie bez Kopii wejścia, z plikiem metryk ``metrics`` (``--metrics``) w miejscu pliku metryk procesu."""
 
-    process = replace(declaration.core(Processes.default()), metrics_path=lambda: metrics)
-    return PreparedRun(declaration, inputs.period, process, inputs, RunContext(), pricing)
+    return CATALOG.with_metrics({key: metrics}).prepared(
+        key, period=inputs.period, inputs=inputs, context=RunContext(), pricing=pricing
+    )
 
 
 def _settle(args: argparse.Namespace) -> PreparedRun[Any, Any]:
     inputs = SettlementInputs(
         args.source, dry_run=args.dry_run, config_path=args.config, worker_template_path=args.worker_template
     )
-    return _prepared(SETTLEMENT, inputs, args.metrics)
+    return _prepared("settlement", inputs, args.metrics)
 
 
 def _prepare(args: argparse.Namespace) -> PreparedRun[Any, Any]:
@@ -175,12 +174,12 @@ def _prepare(args: argparse.Namespace) -> PreparedRun[Any, Any]:
         internal_template_path=args.internal_template,
         collective_template_path=args.collective_template,
     )
-    return _prepared(PREPARATION, inputs, args.metrics)
+    return _prepared("preparation", inputs, args.metrics)
 
 
 def _order(args: argparse.Namespace) -> PreparedRun[Any, Any]:
     inputs = OrderingInputs(args.register, args.copies)
-    return _prepared(INTERMAX, inputs, args.metrics)
+    return _prepared("intermax", inputs, args.metrics)
 
 
 def _price(args: argparse.Namespace) -> PreparedRun[Any, Any]:
@@ -188,7 +187,7 @@ def _price(args: argparse.Namespace) -> PreparedRun[Any, Any]:
     # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
     pricing: contract.Pricing = "z Przekazaniem" if args.z_przekazaniem else contract.DEFAULT_PRICING
     inputs = EfenixInputs(args.source, lambda _login: efenix_browser.chromium(url), pace=None, mode=PricingMode(pricing))
-    return _prepared(EFENIX, inputs, args.metrics, pricing=pricing)
+    return _prepared("efenix", inputs, args.metrics, pricing=pricing)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -202,19 +201,19 @@ def _parser() -> argparse.ArgumentParser:
     parser = _Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     processes = parser.add_subparsers(required=True, metavar="PROCES")
 
-    settlement = processes.add_parser("settlement", help=settlement_process.PROCESS.name)
+    settlement = processes.add_parser("settlement", help=CATALOG.kind("settlement").title)
     settlement.add_argument("--source", type=Path, required=True, help="Plik zbiorczy.")
     settlement.add_argument("--config", type=Path, default=files.worker_config, help="Konfiguracja wykonawców.")
     settlement.add_argument(
         "--worker-template", type=Path, default=files.worker_template, help="Wzorzec rozliczenia pracownika."
     )
     settlement.add_argument(
-        "--metrics", type=Path, default=settlement_process.PROCESS.metrics_path(), help="Plik metryk JSONL."
+        "--metrics", type=Path, default=CATALOG.metrics_paths["settlement"], help="Plik metryk JSONL."
     )
     settlement.add_argument("--dry-run", action="store_true", help="Podgląd bez zapisu.")
     settlement.set_defaults(prepare=_settle)
 
-    preparation = processes.add_parser("preparation", help=preparation_process.PROCESS.name)
+    preparation = processes.add_parser("preparation", help=CATALOG.kind("preparation").title)
     preparation.add_argument("--register", type=Path, required=True, help="Rejestr zleceń.")
     preparation.add_argument("--periods-directory", type=Path, required=True, help="Folder okresów.")
     preparation.add_argument("--period", required=True, help="Token okresu, np. 08_14_09_2026.")
@@ -226,28 +225,28 @@ def _parser() -> argparse.ArgumentParser:
         "--collective-template", type=Path, default=files.collective_template, help="Wzorzec pliku zbiorczego."
     )
     preparation.add_argument(
-        "--metrics", type=Path, default=preparation_process.PROCESS.metrics_path(), help="Plik metryk JSONL."
+        "--metrics", type=Path, default=CATALOG.metrics_paths["preparation"], help="Plik metryk JSONL."
     )
     preparation.add_argument("--dry-run", action="store_true", help="Podgląd bez zapisu.")
     preparation.set_defaults(prepare=_prepare)
 
-    ordering = processes.add_parser("intermax", help=intermax_process.PROCESS.name)
+    ordering = processes.add_parser("intermax", help=CATALOG.kind("intermax").title)
     ordering.add_argument("--register", type=Path, required=True, help="Rejestr zleceń (INTERMAX).")
     ordering.add_argument(
         "--copies", type=Path, default=intermax_copies.default_directory(), help="Folder Kopii INTERMAX."
     )
     ordering.add_argument(
-        "--metrics", type=Path, default=intermax_process.PROCESS.metrics_path(), help="Plik metryk JSONL."
+        "--metrics", type=Path, default=CATALOG.metrics_paths["intermax"], help="Plik metryk JSONL."
     )
     ordering.set_defaults(prepare=_order)
 
-    pricing = processes.add_parser("efenix", help=efenix_process.PROCESS.name)
+    pricing = processes.add_parser("efenix", help=CATALOG.kind("efenix").title)
     pricing.add_argument("--source", type=Path, required=True, help="Plik zbiorczy.")
     pricing.add_argument("--efenix-url", required=True, help="Adres listy zleceń efenix (w testach Atrapy efenix).")
     pricing.add_argument(
         "--z-przekazaniem", action="store_true", help="Gotowe zlecenia przekaż do akceptacji (tryb z Przekazaniem)."
     )
-    pricing.add_argument("--metrics", type=Path, default=efenix_process.PROCESS.metrics_path(), help="Plik metryk JSONL.")
+    pricing.add_argument("--metrics", type=Path, default=CATALOG.metrics_paths["efenix"], help="Plik metryk JSONL.")
     pricing.set_defaults(prepare=_price)
     return parser
 

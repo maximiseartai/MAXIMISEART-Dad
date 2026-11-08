@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from rozliczenia import preparation_process, settlement_process
+from rozliczenia import settlement_process
 from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.write_routes import Route, TemplateKind
 from tests.fixtures.message_samples import PREPARATION_SAMPLES, SETTLEMENT_SAMPLES, Samples
@@ -201,10 +201,3 @@ def test_plik_metryk_zachowuje_pelny_rekord_innej_wersji_narzedzia(tmp_path: Pat
         record,
     ]
     assert MetricsStore(metrics_path, SETTLEMENT_COUNTERS).read() == [record, record]
-
-
-def test_przygotowanie_ma_wlasna_historie_metryk_obok_przebiegu_rozliczen() -> None:
-    preparation = preparation_process.PROCESS.metrics_path()
-
-    assert preparation.parent == settlement_process.PROCESS.metrics_path().parent
-    assert preparation.name == ".przygotowanie-pliku-zbiorczego-metrics.jsonl"

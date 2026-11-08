@@ -13,7 +13,6 @@ from .collective_preparation import PreparationInputs, PreparationSummary
 from .process_run import Counter, Preview, Process
 from .run_context import RunContext
 from .telemetry import CompletedResult
-from .tool_files import PREPARATION_METRICS
 
 
 def _result(inputs: PreparationInputs, _summary: PreparationSummary) -> CompletedResult:
@@ -37,7 +36,6 @@ PROCESS: Process[PreparationInputs, PreparationSummary, RunContext] = Process(
     result=_result,
     routes=lambda summary: summary.routes,
     preview=Preview(messages.plan_not_shown()),
-    metrics_path=lambda: PREPARATION_METRICS,
     metrics_failure_tail="Przygotowanie pliku zbiorczego zakończyło się niezależnie.",
     execute=collective_preparation.prepare_collective_file,
     unexpected_failure=messages.unexpected_failure(),

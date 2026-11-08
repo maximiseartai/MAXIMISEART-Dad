@@ -1,8 +1,9 @@
 """Widok Uruchomienia: to, co karta Uruchomienia pokazuje ze snapshotu postępu i z podsumowania procesu.
 
-Jedyne miejsce prezentacji procesów w Centrum rozliczeń. Projekcja postępu pozostaje jedynym
-interpretatorem Zdarzeń przebiegu (ADR 0002); widok tylko wybiera i nazywa jej fakty, a przeglądarka
-renderuje go bez rozróżniania procesów (ADR 0004). Kontrakt niesie wyłącznie to, co karta pokazuje.
+Tu są typy widoku i liczby wspólne dla procesów; widok każdego procesu leży przy jego wpisie w katalogu procesów
+(``centrum/processes/<proces>.py``). Projekcja postępu pozostaje jedynym interpretatorem Zdarzeń przebiegu
+(ADR 0002); widok tylko wybiera i nazywa jej fakty, a przeglądarka renderuje go bez rozróżniania procesów (ADR 0004).
+Kontrakt niesie wyłącznie to, co karta pokazuje.
 """
 
 from __future__ import annotations
@@ -10,17 +11,12 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Final, Generic, Protocol, TypeVar
+from typing import Generic, Protocol, TypeVar
 
 from rozliczenia.centrum import contract
-from rozliczenia.collective_preparation import PreparationInputs, PreparationSummary
-from rozliczenia.engine import SettlementInputs, SettlementSummary
-from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingSummary
-from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary
+from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.message import Message
-from rozliczenia.period_folder import period_status_label
 from rozliczenia.process_run import ProcessInputs, ProcessSummary
-from rozliczenia.quantity_rules import WEEKDAY_LABELS
 from rozliczenia.progress import ProgressSnapshot
 
 
@@ -133,129 +129,20 @@ class PeriodProcessView(ProcessView[InputsT, SummaryT]):
         return ("RUN", "DRY-RUN")
 
 
-def _count(label: str, value: int) -> contract.Figure:
+def count_figure(label: str, value: int) -> contract.Figure:
+    """Liczba na karcie Uruchomienia pod nazwą ``label``."""
+
     return contract.Figure(label=label, value=value, unit="count")
 
 
-# Etykiety Przebiegu rozliczeń wspólne dla liczb na żywo i wyniku.
-_ROWS: Final = "Wiersze danych"
-_PLANNED: Final = "Planowane szablony"
-_WRITTEN: Final = "Zapisane szablony"
-_EMPTY: Final = "Puste szablony"
-
-
-def _settlement_figures(snapshot: ProgressSnapshot, dry_run: bool) -> list[contract.Figure]:
-    counters = snapshot.metric_counters()
-    return [
-        _count(_ROWS, snapshot.rows),
-        _count(_PLANNED, counters["planned"]) if dry_run else _count(_WRITTEN, counters["written"]),
-        _count(_EMPTY, counters["empty"]),
-        _count("Problemy", snapshot.issue_count),
-    ]
-
-
-def _settlement_summary(summary: SettlementSummary, dry_run: bool) -> contract.RunSummary:
-    figures = (
-        [
-            _count(_ROWS, summary.total_rows),
-            _count(_PLANNED, summary.planned_count),
-            _count(_EMPTY, summary.empty_count),
-        ]
-        if dry_run
-        else [
-            _count(_WRITTEN, summary.written_count),
-            _count(_EMPTY, summary.empty_count),
-        ]
-    )
-    return contract.RunSummary(
-        figures=figures,
-        counts=None,
-        files=[],
-        worker_settlements=[
-            contract.WorkerSettlement(
-                worker=result.worker_name,
-                file=result.output_file.name,
-                orders=result.rows,
-                empty=result.status == "PUSTY_SZABLON",
-            )
-            for result in summary.results
-        ],
-    )
-
-
-def _elapsed(snapshot: ProgressSnapshot) -> contract.Figure:
+def elapsed_figure(snapshot: ProgressSnapshot) -> contract.Figure:
     return contract.Figure(label="Czas uruchomienia", value=snapshot.total_elapsed_ms, unit="ms")
 
 
-def _elapsed_only(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
-    return [_elapsed(snapshot)]
+def elapsed_only(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
+    """Liczby na żywo procesu, który pokazuje w trakcie tylko czas uruchomienia."""
 
-
-def _preparation_figures(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
-    return [_count("Ostrzeżenia", snapshot.issue_count), _elapsed(snapshot)]
-
-
-def _preparation_summary(summary: PreparationSummary, _dry_run: bool) -> contract.RunSummary:
-    return contract.RunSummary(
-        figures=[
-            _count("Zlecenia okresu", summary.period_order_count),
-            _count("Zlecenia skuteczne", summary.successful_order_count),
-            _count("Pominięte puste wiersze", summary.skipped_empty_rows),
-        ],
-        counts=contract.CountGroup(
-            title="Zlecenia na dzień",
-            counts=[
-                contract.Count(label=label, count=count) for label, count in summary.labeled_orders_per_day()
-            ],
-        ),
-        files=[
-            contract.PeriodFile(name=summary.internal_settlement_file.name, kind="internal_settlement"),
-            contract.PeriodFile(name=summary.collective_file.name, kind="collective_file"),
-        ],
-        worker_settlements=None,
-    )
-
-
-SETTLEMENT: Final[PeriodProcessView[SettlementInputs, SettlementSummary]] = PeriodProcessView(
-    reminder="Zapisz i zamknij Plik zbiorczy w Excelu",
-    confirms_readiness=True,
-    preview_hint="Nic nie zostanie zapisane. Zobaczysz plan plików każdego Wykonawcy.",
-    done=period_status_label("worker_settlements_ready"),
-    result_action="open_worker_settlements_folder",
-    _figures=_settlement_figures,
-    _summary=_settlement_summary,
-)
-PREPARATION: Final[PeriodProcessView[PreparationInputs, PreparationSummary]] = PeriodProcessView(
-    reminder="Zapisz i zamknij Rejestr zleceń w Excelu",
-    confirms_readiness=False,
-    preview_hint="Nic nie zostanie zapisane. Zobaczysz plan i nazwy obu plików.",
-    done=period_status_label("collective_file_prepared"),
-    result_action="open_collective_file",
-    _figures=_preparation_figures,
-    _summary=_preparation_summary,
-)
-
-
-def _ordering_summary(summary: OrderingSummary, _dry_run: bool) -> contract.RunSummary:
-    day = f"{WEEKDAY_LABELS[summary.day.weekday()]} {summary.day:%d.%m.%Y}"
-    return contract.RunSummary(
-        figures=[_count("Zlecenia", summary.order_count), _count("Wykonawcy", summary.worker_count)],
-        counts=contract.CountGroup(title="Uporządkowany dzień", counts=[contract.Count(label=day, count=summary.order_count)]),
-        files=[],
-        worker_settlements=None,
-        intermax_copy=summary.copy_name,
-    )
-
-
-INTERMAX: Final[ProcessView[OrderingInputs, OrderingSummary]] = ProcessView(
-    reminder="Zapisz i zamknij INTERMAX w Excelu",
-    confirms_readiness=False,
-    done="INTERMAX uporządkowany",
-    result_action="open_order_register",
-    register_name="INTERMAX",
-    _figures=_elapsed_only,
-    _summary=_ordering_summary,
-)
+    return [elapsed_figure(snapshot)]
 
 
 def order_label(kind: OrderKind) -> str:
@@ -279,59 +166,3 @@ def order_counts(counted: Counter[OrderKind]) -> list[contract.Count]:
     """Liczba zleceń z każdym wynikiem pod jego nazwą, w kolejności ``OrderKind``."""
 
     return [contract.Count(label=order_label(kind), count=counted[kind]) for kind in OrderKind]
-
-
-# Listy zleceń na karcie bieżącego Uruchomienia: najpierw te, które zostały tacie.
-_NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.FORWARDED, OrderKind.SETTLED)
-
-
-def _pricing_summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSummary:
-    return contract.RunSummary(
-        figures=[
-            _count("Zlecenia w zakresie", len(summary.results)),
-            *(_count(order_label(kind), summary.count(kind)) for kind in OrderKind),
-        ],
-        counts=contract.CountGroup(
-            title="Pominięte",
-            counts=[
-                contract.Count(label="Ze zdjęciami", count=summary.with_photos),
-                contract.Count(label="Usterki", count=summary.defects),
-                contract.Count(label="Nieznalezione w efenix", count=summary.not_found),
-            ],
-            zero_warns=False,
-        ),
-        files=[],
-        worker_settlements=None,
-    )
-
-
-def _pricing_notes(summary: PricingSummary) -> list[contract.OrderNotes]:
-    return [
-        contract.OrderNotes(
-            title=order_label(kind),
-            done=not kind.left_for_tata,
-            notes=[
-                contract.OrderNote(
-                    row=result.order.row,
-                    order=result.order.number,
-                    worker=result.order.worker,
-                    what=None if result.message is None else result.message.what,
-                )
-                for result in summary.results
-                if result.kind is kind
-            ],
-        )
-        for kind in _NOTED
-    ]
-
-
-EFENIX: Final[ProcessView[EfenixInputs, PricingSummary]] = ProcessView(
-    reminder="Zapisz i zamknij Plik zbiorczy w Excelu",
-    confirms_readiness=False,
-    done="Wycena w efenix gotowa",
-    result_action="open_collective_file",
-    pricing_modes=("bez Przekazania", "z Przekazaniem"),
-    _figures=_elapsed_only,
-    _summary=_pricing_summary,
-    _notes=_pricing_notes,
-)

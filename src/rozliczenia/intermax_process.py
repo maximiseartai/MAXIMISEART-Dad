@@ -12,7 +12,6 @@ from . import intermax_messages as messages
 from .intermax_ordering import OrderingInputs, OrderingSummary
 from .process_run import Counter, Process
 from .run_context import RunContext
-from .tool_files import INTERMAX_METRICS
 
 PROCESS: Process[OrderingInputs, OrderingSummary, RunContext] = Process(
     name="Uporządkowanie INTERMAX",
@@ -22,7 +21,6 @@ PROCESS: Process[OrderingInputs, OrderingSummary, RunContext] = Process(
     ),
     result=lambda _inputs, _summary: "OK",
     preview=None,
-    metrics_path=lambda: INTERMAX_METRICS,
     metrics_failure_tail="Uporządkowanie INTERMAX zakończyło się niezależnie.",
     execute=intermax_ordering.order_register,
     unexpected_failure=messages.unexpected_failure(),

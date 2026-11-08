@@ -231,9 +231,11 @@ def test_watek_modelu_czekajacy_poza_modelem_konczy_sprawdzenie_luka_modelu_z_na
     ("waits", "stalled", "last", "waiting_in"),
     [
         pytest.param(
-            "explore_runs.PREPARED = replace(\n"
-            "    explore_runs.PREPARED, process=replace(explore_runs.PREPARED.process, metrics_path=never.wait)\n"
-            ")",
+            "class Waits:\n"
+            "    @property\n"
+            "    def path(self):\n"
+            "        return never.wait()\n"
+            "explore_runs.PREPARED = replace(explore_runs.PREPARED, metrics=Waits())",
             "wątek modelu przez 1 s nie doszedł do pierwszego kroku",
             "karta Uruchom 1: odpowiedź 200: running",
             "work",
