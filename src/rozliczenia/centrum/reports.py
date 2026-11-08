@@ -511,6 +511,8 @@ class Reports:
         self._lock = threading.Lock()
         # Ostatnia odpowiedź skrzynki w tej pracy Centrum: odcisk problemu → numer otwartego Zgłoszenia albo None.
         self._open: dict[str, int | None] = {}
+        # Ile numerów issue dostały sprawy problemu w tej pracy Centrum: odpowiedź na pytanie sprzed numeru jest starsza.
+        self._numbered: dict[str, int] = {}
         self._handles: dict[str, weakref.WeakSet[ReportHandle]] = {}
         cases.watch(REPORT, self._heard)
 
@@ -531,6 +533,7 @@ class Reports:
         with self._lock:
             if isinstance(news, CaseNumbered):
                 self._open[news.case_id] = news.number
+                self._numbered[news.case_id] = self._numbered.get(news.case_id, 0) + 1
             handles = list(self._handles.get(news.case_id, ()))
         for handle in handles:
             match news:
@@ -590,16 +593,20 @@ class Reports:
         """Pyta skrzynkę o otwarte Zgłoszenie problemu; bez klucza albo odpowiedzi zostaje to, co już wiadomo.
 
         Brak odpowiedzi w ``search_deadline_s`` (u taty ``SEARCH_DEADLINE_S``) to brak odpowiedzi: spóźniona
-        przepada, a kolejka i tak szuka otwartego Zgłoszenia, zanim założy nowe.
+        przepada, a kolejka i tak szuka otwartego Zgłoszenia, zanim założy nowe. Odpowiedź też przepada, gdy w trakcie
+        pytania sprawa problemu dostała numer issue: skrzynka odpowiadała o stanie sprzed tego issue.
         """
 
+        with self._lock:
+            numbered = self._numbered.get(fingerprint, 0)
         answer = within(self._search_deadline_s, lambda: (self._find_open(fingerprint),), name="skrzynka-szukaj")
         if answer is None:
             return
         [found] = answer
         if found is None or isinstance(found, int):
             with self._lock:
-                self._open[fingerprint] = found
+                if self._numbered.get(fingerprint, 0) == numbered:
+                    self._open[fingerprint] = found
 
     def _find_open(self, fingerprint: str) -> FindOutcome | NoKey:
         return self._box.find_issue(REPORT.label, fingerprint_line(fingerprint), include_closed=False)

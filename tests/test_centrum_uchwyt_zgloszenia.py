@@ -723,6 +723,41 @@ def test_odpowiedz_skrzynki_na_pytanie_sprzed_wysylki_nie_zmienia_wyniku_wysylki
     assert (owner.states, dump(handle.state)) == ([queued], queued)
 
 
+def test_odpowiedz_skrzynki_sprzed_numeru_zgloszenia_nie_zaciera_go_gdy_dochodzi_po_nim(
+    computer: Computer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    computer.with_key()
+    reports = computer.reports()
+    keyed = computer.keyed
+    assert keyed is not None
+    find_issue = keyed.find_issue
+    answered, arrives = threading.Event(), threading.Event()
+
+    def late(label: Label, line: str, *, include_closed: bool) -> object:
+        """Pierwsza odpowiedź „brak otwartego Zgłoszenia” policzona przed wysyłką dochodzi dopiero po niej."""
+
+        answer = find_issue(label, line, include_closed=include_closed)
+        if not answered.is_set():
+            answered.set()
+            arrives.wait()
+        return answer
+
+    monkeypatch.setattr(keyed, "find_issue", late)
+    report = source(computer)
+    first = reports.handle(report.fingerprint)
+
+    try:
+        first.prepare(report)
+        assert answered.wait(10)
+        assert dump(first.send()) == SENT
+        assert wait_for(lambda: dump(reports.handle(report.fingerprint).state) == WAITING)
+    finally:
+        arrives.set()
+    first.wait_for_box()
+
+    assert dump(reports.handle(report.fingerprint).state) == WAITING
+
+
 def test_dostarczenie_tuz_po_koncu_czekania_na_skrzynke_daje_stan_wyslane(
     computer: Computer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
