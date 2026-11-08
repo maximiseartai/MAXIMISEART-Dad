@@ -19,7 +19,7 @@ from rozliczenia.intermax_replace import Waiting
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.run_context import RunContext
 from rozliczenia.dad_files import DadFiles
-from rozliczenia.input_checks import FILE_READERS, register_problem
+from rozliczenia.preparation_register import register_problem
 from rozliczenia.message import StopError
 
 from tests.fixtures.preparation import (
@@ -613,7 +613,7 @@ def test_zepsuty_znacznik_w_wierszu_wczesniejszego_okresu_nie_zatrzymuje_przygot
     fixture = _damaged_in_earlier_period(tmp_path / "zepsuty", break_tag_of_row_2)
 
     summary = run_preparation(fixture)
-    diagnosis = register_problem(fixture.register_path, FILE_READERS, DadFiles())
+    diagnosis = register_problem(fixture.register_path, DadFiles())
 
     assert (summary.period_order_count, summary.successful_order_count) == (intact.period_order_count, intact.successful_order_count)
     assert diagnosis is not None and diagnosis.code == "USZKODZONY_REJESTR"

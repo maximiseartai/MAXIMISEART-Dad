@@ -47,7 +47,7 @@ from tests.fixtures.preparation import (
     link_register_order_numbers,
     make_preparation_fixture,
 )
-from rozliczenia.preparation_register import read_register
+from rozliczenia.preparation_register import period_sheets, read
 from rozliczenia.workbook_files import read_data_rows
 from tests.fixtures.settlement import (
     PERIOD,
@@ -235,7 +235,7 @@ def test_adres_hiperlacza_z_rejestru_nie_trafia_do_wyniku_przygotowania_ani_metr
     for completed in outputs:
         assert sentinel not in completed.stdout + completed.stderr
     assert sentinel not in (fixture.register_path.parent / "metrics.jsonl").read_text(encoding="utf-8")
-    assert sentinel not in repr(read_register(DadFiles().read(fixture.register_path)))
+    assert sentinel not in repr(period_sheets(read(fixture.register_path, DadFiles()), None))
 
 
 @pytest.mark.parametrize(("good_views", "phase_states"), [(0, set()), (1, {"pending"})])

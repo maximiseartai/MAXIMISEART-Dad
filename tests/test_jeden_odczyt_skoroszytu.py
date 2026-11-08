@@ -6,9 +6,8 @@ skoroszyt w openpyxl tylko z bajtów. Odczyt z dysku poza nimi trafia w klasyfik
 ``OSError`` to plik nieczytelny, i tata dostaje Komunikat o uszkodzonym pliku, który jest cały.
 
 ``DadFiles.read`` bierze chwilę zmiany pliku przed jego bajtami, więc odcisk w Kopii wejścia ma chwilę przeczytanej
-wersji. Bajty z ``file_bytes``, ``workbook_content`` albo ``template_content`` i skoroszyt z ``read_workbook`` albo
-``open_workbook`` mają tylko
-miejsca z ``ONLY`` i ``EXCEPTIONS``, więc nowy czytnik nie czyta wartości pliku taty obok uchwytu, bez sprawdzenia
+wersji. Bajty z ``file_bytes``, ``workbook_content`` albo ``template_content`` i skoroszyt z ``open_workbook`` mają
+tylko miejsca z ``ONLY`` i ``EXCEPTIONS``, więc nowy czytnik nie czyta wartości pliku taty obok uchwytu, bez sprawdzenia
 dostępności, ``Readers.source``, pamięci i Kopii. Pamięć reguły danych i Kopię wejścia pisze tylko świadek arkusza
 (``dad_files.WitnessedSheet``), więc Kopia nie ma wiersza, którego nie zna pamięć (ADR 0025). Test podstawia bajty przez
 ``input_checks.Readers.source``, a nie łata modułu skoroszytu.
@@ -43,8 +42,9 @@ ONLY: dict[str, frozenset[str]] = {
     ),
     "workbook_content": frozenset(),
     "template_content": frozenset({"rozliczenia/template_file.py::_read"}),
-    "read_workbook": frozenset(),
-    "open_workbook": frozenset({"rozliczenia/template_file.py::_openpyxl_workbook"}),
+    "open_workbook": frozenset(
+        {"rozliczenia/template_file.py::_openpyxl_workbook", "rozliczenia/register_file.py::_windows"}
+    ),
     "_modified_at": frozenset({"rozliczenia/dad_files.py::read"}),
     "ReadFile": frozenset({"rozliczenia/dad_files.py::read"}),
     "InputCopy": frozenset({"rozliczenia/dad_files.py::for_run"}),
@@ -71,27 +71,11 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
         "rozliczenia/efenix_marking.py::mark_orders",
     ): "porównanie bajtów pliku przed zapisem Znaczników, nie jego wartości",
     (
-        "read_workbook",
-        "rozliczenia/preparation_register.py::read_register",
-    ): "Rejestr Przygotowania z bajtów ReadFile; pamięć i Kopię pisze input_checks.read_register do N5b-1",
-    (
-        "read_workbook",
-        "rozliczenia/preparation_register.py::_period_sheets",
-    ): "Rejestr Przygotowania z bajtów ReadFile; pamięć i Kopię pisze input_checks.read_register do N5b-1",
-    (
         "remember_value",
         "rozliczenia/efenix_pricing.py::_searched",
     ): "adres z listy efenix, a nie z pliku taty",
-    (
-        "remember_value",
-        "rozliczenia/input_checks.py::read_register",
-    ): "pamięć Rejestru w Przygotowaniu do N5b-1",
-    (
-        "workbook",
-        "rozliczenia/input_checks.py::_copied",
-    ): "Kopia Rejestru w Przygotowaniu do N5b-1",
 }
-"""Miejsca poza ``ONLY`` z powodem: stałe albo z terminem PR-u rozplątania 7.11, który je zdejmuje."""
+"""Miejsca poza ``ONLY`` z powodem."""
 
 MODULE = "workbook_files"
 PATCHERS = frozenset({"setattr", "delattr", "patch", "object", "multiple"})
@@ -234,9 +218,9 @@ def test_plik_taty_czyta_jedna_droga_a_pamiec_i_kopie_pisze_tylko_swiadek_arkusz
 def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -> None:
     reader = (
         "from . import workbook_files\n"
-        "from .workbook_files import read_workbook as opened, workbook_content\n"
+        "from .workbook_files import open_workbook as opened, workbook_content\n"
         "def first_address(path):\n"
-        "    with workbook_files.read_workbook(path, workbook_files.file_bytes(path)) as read:\n"
+        "    with workbook_files.open_workbook(path, workbook_files.file_bytes(path), read_only=True) as read:\n"
         "        return read.workbook.active['B18'].value\n"
         "def first_address_after_check(path):\n"
         "    with opened(path, workbook_content(path)) as read:\n"
@@ -251,7 +235,7 @@ def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -
 
     assert sorted(found) == sorted(
         [
-            "src/rozliczenia/sonda.py:4: workbook_files.read_workbook(...) w rozliczenia/sonda.py::first_address",
+            "src/rozliczenia/sonda.py:4: workbook_files.open_workbook(...) w rozliczenia/sonda.py::first_address",
             "src/rozliczenia/sonda.py:4: workbook_files.file_bytes(...) w rozliczenia/sonda.py::first_address",
             "src/rozliczenia/sonda.py:7: opened(...) w rozliczenia/sonda.py::first_address_after_check",
             "src/rozliczenia/sonda.py:7: workbook_content(...) w rozliczenia/sonda.py::first_address_after_check",
@@ -302,7 +286,7 @@ def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_
         "    monkeypatch.setattr(input_checks, 'FILE_READERS', None)\n"
         "    monkeypatch.setattr(wf_bytes, '__doc__', '')\n"
         "    mock.patch.object(sys, 'stdin')\n"
-        "    mock.patch('rozliczenia.input_checks.read_register')\n"
+        "    mock.patch('rozliczenia.input_checks.check_preparation')\n"
     )
 
     assert sorted(line for line, _ in _patches(test)) == [8, 9, 10, 11, 12, 13, 13, 15]

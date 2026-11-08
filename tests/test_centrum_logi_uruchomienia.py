@@ -49,11 +49,11 @@ from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, WindowAction
 from rozliczenia.client_data import ForbiddenValues
-from rozliczenia.dad_files import DadFiles, ReadFile
-from rozliczenia.input_checks import FILE_READERS, Readers, read_register, register_problem
+from rozliczenia.dad_files import DadFiles
+from rozliczenia.input_checks import FILE_READERS, Readers
+from rozliczenia.preparation_register import period_sheets, read, register_problem
 from rozliczenia.period_folder import PeriodFolderInaccessible
-from rozliczenia.preparation_register import RegisterSheet
-from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
+from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.telemetry import MetricsStore
 
 from tests.fixtures.atrapa_efenix import (
@@ -97,6 +97,7 @@ from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import (
     PERIOD,
+    REGISTER_NAME,
     default_register_rows,
     incomplete_period_rows,
     paste_raw_orders,
@@ -879,10 +880,76 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
     assert len(broken) == (name in REGISTER_TRACED), record["input_copy_notes"]
 
 
+REGISTER_COPY_POSITIONS: dict[str, tuple[Callable[[Path], object], int, bool]] = {
+    # przesunięcie widać: pamięć zna wiersz tylko przesuniętego, więc C i I to jego ADRES i NUMER UMOWY
+    "przesuniety_pierwszy_wiersz_nad_uporzadkowanymi": (_above_ordered(), ABOVE_ORDERED, False),
+    # na miejscu na górze odczytu okresu z datą z godziną pod DATA: pierwszy wiersz bloku z siatki, w obu położeniach
+    "pierwszy_wiersz_na_miejscu_na_gorze_odczytu": (
+        lambda register: paste_raw_orders(register, [_register_probe(datetime(2026, 9, 8, 9))], first=2, in_place_from="DATA GODZ. POCZ."),
+        2,
+        True,
+    ),
+}
+"""Pierwszy wiersz bloku w Odczycie danych Przygotowania: wklejenie, numer wiersza próbnego i czy jest z siatki."""
+
+
+@pytest.mark.parametrize(("paste", "row", "uncertain"), REGISTER_COPY_POSITIONS.values(), ids=REGISTER_COPY_POSITIONS.keys())
+def test_kopia_przygotowania_nie_ma_komorek_pierwszego_wiersza_bloku_ktore_w_jego_polozeniu_stoja_pod_zakazana_kolumna(
+    tmp_path: Path, paste: Callable[[Path], object], row: int, uncertain: bool
+) -> None:
+    """Kopia wejścia Przygotowania ma wiersz Rejestru według reguły komórki z ADR 0025, tej samej co w Uporządkowaniu
+    INTERMAX: komórka, która w którymś położeniu wiersza stoi pod ``ADRES`` albo ``NUMER UMOWY``, nie jest w Kopii, a
+    wiersz z siatki jest w ``uncertain_rows`` z datą z godziną spod ``DATA GODZ. POCZ.``. Kolumny C i I stoją dwie
+    kolumny przed ``ADRES`` (E) i ``NUMER UMOWY`` (K). ``SKUTECZNE`` (L) wiersza z siatki w położeniu przesuniętym
+    stoi pod ``ZWROT`` (N), kolumną wklejenia, więc zostaje."""
+
+    centrum = preparing_centrum(tmp_path)
+    paste(centrum.fixture.register_path)
+
+    run_to_end(centrum, dry_run=True)
+
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [sheet] = copied["sheets"]
+    [cells] = [found["cells"] for found in sheet["rows"] if found["row"] == row]
+    assert sorted({"C", "I"} & cells.keys()) == (["C"] if uncertain else [])
+    assert sheet["uncertain_rows"] == ([row] if uncertain else [])
+    if uncertain:
+        assert (cells["C"], cells["L"]) == (moment("2026-09-08T09:00:00"), "tak")
+
+
+@pytest.mark.parametrize(
+    ("damage", "stop"),
+    [
+        (lambda register: paste_raw_orders(register, [register_order(90, datetime(2026, 9, 14, 9))]), "SUROWE_ZLECENIA_W_OKRESIE"),
+        (lambda register: write_register(register, default_register_rows(), headers=("", "DATA GODZ. POCZ.")), "BRAK_ARKUSZA_ZLECEN"),
+    ],
+    ids=["surowe-zlecenia-w-sprawdzaniu", "bez-arkusza-zlecen-w-odczycie-danych"],
+)
+def test_logi_przygotowania_zatrzymanego_na_rejestrze_maja_jego_odcisk(
+    tmp_path: Path, damage: Callable[[Path], object], stop: str
+) -> None:
+    """Przygotowanie zatrzymane na Rejestrze zleceń, w Sprawdzaniu na Surowych zleceniach albo w Odczycie danych na
+    nagłówkach: Kopia wejścia ma odcisk Rejestru, na którym się zatrzymało, bez arkuszy, więc zatrzymanie da się
+    powiązać z wersją pliku."""
+
+    centrum = preparing_centrum(tmp_path)
+    register = centrum.fixture.register_path
+    damage(register)
+
+    run_to_end(centrum, dry_run=True)
+
+    [record] = records(centrum)
+    assert [message["code"] for message in record["messages"] if message["kind"] == "stop"] == [stop]
+    [copied] = record["input_copy"]
+    assert (copied["name"], copied["sheets"]) == (register.name, [])
+    assert logged_fingerprint(copied) == fingerprint(register.read_bytes(), register)
+
+
 def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_gorze_rejestru_z_data_jako_tekstem(
     tmp_path: Path,
 ) -> None:
-    """Diagnoza czyta cały Rejestr zleceń od wiersza 2 (``input_checks.register_problem``, jak ``centrum/diagnosis.py``).
+    """Diagnoza czyta cały Rejestr zleceń od wiersza 2 (``preparation_register.register_problem``, jak ``centrum/diagnosis.py``).
     Wklejenie stoi pod nagłówkami bez uporządkowanych wierszy, a jego pierwszy wiersz jest przesunięty z datą jako tekstem,
     więc bez śladu przesunięcia: na górze arkusza zaczyna blok, a pamięć reguły danych zna jego adres i numer Orange
     (przegląd #984 r1, D1)."""
@@ -893,7 +960,7 @@ def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_g
     paste_raw_orders(register, [probe, register_order(78, datetime(2026, 9, 10, 12))], first=2)
     memory = ForbiddenValues()
 
-    register_problem(register, FILE_READERS, DadFiles(forbidden=memory))
+    register_problem(register, DadFiles(forbidden=memory))
 
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
 
@@ -925,7 +992,7 @@ wiersze (``default_register_rows``) i wklejenie."""
 def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_calibri_8(
     tmp_path: Path, case: tuple[bool, Callable[[Path], object]]
 ) -> None:
-    """Diagnoza czyta cały Rejestr zleceń (``input_checks.register_problem``, jak ``centrum/diagnosis.py``). Tata wpisał
+    """Diagnoza czyta cały Rejestr zleceń (``preparation_register.register_problem``, jak ``centrum/diagnosis.py``). Tata wpisał
     coś w Calibri 8 w wiersz wklejenia, więc za pierwszy wiersz bloku uchodzi wiersz próbny pod nim, który stoi na
     miejscu z datą jako tekstem albo z datą z godziną pod ``DATA GODZ. POCZ.`` i w kolumnie A: jego przesunięcia nie
     widać, więc pamięć reguły danych zna jego adres i numer Orange pod nagłówkami (przegląd #984 r2, W1, i r3, D1)."""
@@ -935,7 +1002,7 @@ def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_
     paste(register)
     memory = ForbiddenValues()
 
-    register_problem(register, FILE_READERS, DadFiles(forbidden=memory))
+    register_problem(register, DadFiles(forbidden=memory))
 
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
 
@@ -952,7 +1019,7 @@ def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczyt
     paste_raw_orders(register, [probe], first=len(earlier) + 2, in_place_from="DATA GODZ. POCZ.")
     memory = ForbiddenValues()
 
-    [sheet] = read_register(register, parse_period_token(PERIOD), FILE_READERS, DadFiles(forbidden=memory))
+    [sheet] = period_sheets(read(register, DadFiles(forbidden=memory)), parse_period_token(PERIOD))
 
     assert sheet.register_rows[0].number == len(earlier) + 2, "odczyt okresu zaczyna się od wiersza próbnego"
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
@@ -3159,10 +3226,10 @@ def moment(text: str) -> dict[str, str]:
 def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_orange_oraz_odcisk_rejestru(
     tmp_path: Path,
 ) -> None:
-    """Kopia wejścia Przygotowania to arkusz zleceń Rejestru: kolumny, które proces przenosi, pod nagłówkiem Rejestru
-    (wiersz 1) w ich kolumnach arkusza, bez ``ADRES`` (E) i ``NUMER UMOWY`` (K), i każde zlecenie okresu z jego
-    komórkami. Arkusz bez nagłówków zleceń („lista”) i kolumny, których proces nie przenosi (AKCJE, ZWROT, UWAGI),
-    w Kopii nie stoją."""
+    """Kopia wejścia Przygotowania to arkusz zleceń Rejestru: nagłówki Rejestru (wiersz 1) kolumn wklejenia od A do
+    ``UWAGI`` w ich kolumnach arkusza, bez ``ADRES`` (E) i ``NUMER UMOWY`` (K), i każde zlecenie okresu z komórkami
+    kolumn, które proces przenosi. Arkusz bez nagłówków zleceń („lista”) w Kopii nie stoi, a kolumny, których proces nie
+    przenosi (AKCJE, ZWROT, UWAGI), mają w niej nagłówek bez komórek: z nich odtworzenie zna granicę wklejenia."""
 
     centrum = preparing_centrum(tmp_path)
     register = centrum.fixture.register_path
@@ -3177,6 +3244,7 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
     [sheet] = copied["sheets"]
     assert (sheet["sheet"], sheet["header_row"]) == ("ZLECENIA", 1)
     assert sheet["columns"] == {
+        "B": "AKCJE",
         "C": "DATA GODZ. POCZ.",
         "D": "MIASTO",
         "F": "UMOWA",
@@ -3186,6 +3254,8 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
         "J": "WYKONAWCA",
         "L": "SKUTECZNE",
         "M": "CZYNNOŚCI ZREALIZOWANE",
+        "N": "ZWROT",
+        "O": "UWAGI",
     }
     rows = {row["row"]: row["cells"] for row in sheet["rows"]}
     in_period = {
@@ -3415,19 +3485,21 @@ def _register_gone(path: Path) -> None:
 def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy_plik_zmienil_sie_zaraz_po_odczycie(
     tmp_path: Path, after_reading: Callable[[Path], None]
 ) -> None:
-    """Rejestr zapisany znowu (Autozapis Excela, OneDrive) albo przeniesiony zaraz po odczycie: odcisk w Kopii wejścia
-    to rozmiar i skrót bajtów, z których Przygotowanie przeczytało zlecenia, i chwila zmiany tej wersji, sprzed odczytu,
-    a Kopia nie czyta pliku drugi raz, więc nie zatrzymuje Przygotowania."""
+    """Rejestr zapisany znowu (Autozapis Excela, OneDrive) albo przeniesiony zaraz po odczycie: Przygotowanie czyta jego
+    bajty raz, więc strażnik Surowych zleceń i Odczyt danych decydują na tej samej wersji, a odcisk w Kopii wejścia to
+    rozmiar i skrót tych bajtów i chwila zmiany tej wersji, sprzed odczytu. Kopia nie czyta pliku drugi raz, więc nie
+    zatrzymuje Przygotowania."""
 
     content: list[bytes] = []
 
-    def read_then_changed(file: ReadFile, period: SettlementPeriod | None) -> list[RegisterSheet]:
-        content.append(file.content)
-        read = FILE_READERS.register(file, period)
-        after_reading(file.path)
+    def read_then_changed(path: Path) -> bytes:
+        read = FILE_READERS.source(path)
+        if path.name == REGISTER_NAME:
+            content.append(read)
+            after_reading(path)
         return read
 
-    readers = replace(FILE_READERS, register=read_then_changed)
+    readers = replace(FILE_READERS, source=read_then_changed)
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=readers))
     _saved_at(centrum.fixture.register_path, READ_AT)
 

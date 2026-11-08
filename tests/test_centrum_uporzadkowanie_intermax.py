@@ -21,7 +21,7 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 import pytest
 
-from rozliczenia import input_checks, intermax_copies, workbook_files
+from rozliczenia import input_checks, intermax_copies, preparation_register, workbook_files
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.centrum.logs_disk import name_of
@@ -1422,7 +1422,7 @@ TYPED_IN_DIAGNOSIS = {
 def test_diagnoza_intermax_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_calibri_8(
     tmp_path: Path, intermax: Intermax, edit: Callable[[Path], None]
 ) -> None:
-    """Diagnoza czyta cały INTERMAX jako Rejestr zleceń (``input_checks.register_problem``, jak ``centrum/diagnosis.py``).
+    """Diagnoza czyta cały INTERMAX jako Rejestr zleceń (``preparation_register.register_problem``, jak ``centrum/diagnosis.py``).
     Tata wpisał coś w Calibri 8 w przesunięty pierwszy wiersz wklejenia, więc za pierwszy wiersz bloku uchodzi wiersz
     próbny pod nim, który stoi na miejscu: pamięć reguły danych zna jego adres i numer Orange pod nagłówkami."""
 
@@ -1431,6 +1431,6 @@ def test_diagnoza_intermax_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpise
     edit(path)
     memory = ForbiddenValues()
 
-    input_checks.register_problem(path, input_checks.FILE_READERS, DadFiles(forbidden=memory))
+    preparation_register.register_problem(path, DadFiles(forbidden=memory))
 
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []

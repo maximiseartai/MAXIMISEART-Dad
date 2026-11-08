@@ -105,8 +105,8 @@ then the installation fails the same way.
 One harness-only fault hook: while ``<root>/awaria/odczyt-rejestru`` exists,
 reading the Rejestr zleceń raises an exception the process does not expect, so
 the drive can show Dad's path after a nieoczekiwany wyjątek. The hook is the
-Rejestr reader of the ``Readers`` this Centrum gets (``input_checks``), which the
-Uruchomienie procesu and its Diagnoza both read with, so the fault reaches the
+byte source of the ``Readers`` this Centrum gets (``input_checks``), which the
+Uruchomienie procesu and its Diagnoza both read the Rejestr with, so the fault reaches the
 Diagnoza too, as a real one that does not go away would. No synthetic file causes one,
 because every known problem has its own Komunikat.
 
@@ -181,10 +181,7 @@ from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness, parse_published
 from rozliczenia.centrum.tool_update import ToolClone, find_git, pip_install, release_at
 from rozliczenia.centrum.version import commit_since, tool_commit
-from rozliczenia.dad_files import ReadFile
 from rozliczenia.input_checks import FILE_READERS, Readers
-from rozliczenia.preparation_register import RegisterSheet
-from rozliczenia.settlement_period import SettlementPeriod
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.tool_files import listen_locally
 from rozliczenia.write_routes import Route
@@ -570,15 +567,16 @@ def _pace_worker_templates(root: Path, worker_template: Path) -> None:
     setattr(TemplateFile, "create", paced)
 
 
-def _register_failing_on_hook(root: Path) -> Readers:
-    """Readers whose Rejestr reader raises while ``<root>/awaria/odczyt-rejestru`` exists (see the module doc)."""
+def _register_failing_on_hook(root: Path, register: Path) -> Readers:
+    """Readers whose byte source raises on the fixture's Rejestr ``register`` while ``<root>/awaria/odczyt-rejestru``
+    exists (see the module doc)."""
 
-    def register(file: ReadFile, period: SettlementPeriod | None) -> list[RegisterSheet]:
-        if (root / "awaria" / "odczyt-rejestru").exists():
+    def source(path: Path) -> bytes:
+        if (root / "awaria" / "odczyt-rejestru").exists() and path.name == register.name:
             raise RuntimeError("synthetic unexpected failure")
-        return FILE_READERS.register(file, period)
+        return FILE_READERS.source(path)
 
-    return replace(FILE_READERS, register=register)
+    return replace(FILE_READERS, source=source)
 
 
 @contextmanager
@@ -645,7 +643,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         tool_update=ToolClone(
             clone, origin=str(Path(fixture["tool"]["origin"])), find_git=_paced_git(root), install=_paced_install(root)
         ),
-        readers=_register_failing_on_hook(root),
+        readers=_register_failing_on_hook(root, Path(fixture["order_register"])),
         intermax_copies=Path(fixture["intermax"]["copies"]),
         now=lambda: datetime.combine(today, datetime.now().astimezone().timetz()),
         efenix_window=efenix,

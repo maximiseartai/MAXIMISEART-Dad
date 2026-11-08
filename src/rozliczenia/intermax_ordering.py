@@ -145,7 +145,6 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
             register = register_file.read(register_path, files)
         except WorkbookError as error:
             raise StopError(messages.register_unusable(error, messages.ORDERING)) from error
-        register.enter_copy()
         areas = _paste_areas(register)
         if files.copy is not None:
             for area in areas:
