@@ -575,7 +575,6 @@ class Run:
 def _decision_view(decision: Decision) -> contract.Decision:
     return contract.Decision(
         question=decision.question,
-        title=decision.title,
         message=contract.Message.of(decision.message),
         counts=contract.CountGroup(
             title=decision.counts_title,

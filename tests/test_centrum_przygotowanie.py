@@ -142,7 +142,6 @@ def test_niepelny_okres_czeka_na_decyzje_taty_z_zleceniami_na_dzien(tmp_path: Pa
 
     assert view["decision"] == {
         "question": "Kontynuować mimo niepełnego okresu?",
-        "title": "Ostrzeżenie: niepełny okres",
         "message": {
             "what": (
                 "Ostatnie zlecenie okresu jest z soboty 12.09.2026, a okres kończy się w poniedziałek 14.09.2026. "

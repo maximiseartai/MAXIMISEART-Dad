@@ -144,7 +144,7 @@ def _without_quantity(folder: PeriodFolder, files: DadFiles) -> contract.Without
     if isinstance(found, MissingHeaders):
         return contract.WithoutQuantityUnread(state="unread")
     rows = list(quantities_to_fill(found.rows, settled=_settled(folder)).without_quantity)
-    return contract.WithoutQuantityRead(state="read", rows=rows, sentence=without_quantity_sentence(rows))
+    return contract.WithoutQuantityRead(state="read", sentence=without_quantity_sentence(rows))
 
 
 def _settled(folder: PeriodFolder) -> bool:
@@ -176,7 +176,6 @@ def _table(listed: KindToFill, read: GoodRead[NumberedOrders], *, settled: bool)
         state="ready",
         read=_stamp(read),
         settled=settled,
-        kind=listed.kind,
         columns=[contract.PriceListItem(column=column, name=name) for column, name in read.value.price_list.items()],
         rows=[
             contract.KindTableRow(

@@ -357,17 +357,13 @@ export type DadNoteWaiting = {
 /**
  * Decision
  *
- * Pytanie do taty z części decyzji procesu: tytuł, komunikat w trzech częściach i liczby (np. Zlecenia na dzień).
+ * Pytanie do taty z części decyzji procesu: komunikat w trzech częściach i liczby (np. Zlecenia na dzień).
  */
 export type Decision = {
     /**
      * Question
      */
     question: string;
-    /**
-     * Title
-     */
-    title: string;
     message: Message;
     counts: CountGroup;
 };
@@ -640,7 +636,7 @@ export type IntermaxRestoreRequest = {
 /**
  * IntermaxRestored
  *
- * INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako Kopia ``previous``.
+ * INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako nowa Kopia na liście Kopii.
  *
  * ``warnings``: Komunikaty o tym, czego przywrócenie nie dokończyło (starsze Kopie zostały).
  */
@@ -650,7 +646,6 @@ export type IntermaxRestored = {
      */
     state: 'restored';
     restored: IntermaxCopy;
-    previous: IntermaxCopy;
     /**
      * Warnings
      */
@@ -716,7 +711,6 @@ export type KindTableReady = {
      * Settled
      */
     settled: boolean;
-    kind: FillKind;
     /**
      * Columns
      */
@@ -2519,10 +2513,6 @@ export type WithoutQuantityRead = {
      * State
      */
     state: 'read';
-    /**
-     * Rows
-     */
-    rows: Array<number>;
     /**
      * Sentence
      */

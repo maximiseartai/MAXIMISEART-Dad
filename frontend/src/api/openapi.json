@@ -2478,10 +2478,6 @@
             "type": "string",
             "title": "Question"
           },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
           "message": {
             "$ref": "#/components/schemas/Message"
           },
@@ -2493,12 +2489,11 @@
         "type": "object",
         "required": [
           "question",
-          "title",
           "message",
           "counts"
         ],
         "title": "Decision",
-        "description": "Pytanie do taty z części decyzji procesu: tytuł, komunikat w trzech częściach i liczby (np. Zlecenia na dzień)."
+        "description": "Pytanie do taty z części decyzji procesu: komunikat w trzech częściach i liczby (np. Zlecenia na dzień)."
       },
       "DecisionAnswer": {
         "properties": {
@@ -2892,9 +2887,6 @@
           "restored": {
             "$ref": "#/components/schemas/IntermaxCopy"
           },
-          "previous": {
-            "$ref": "#/components/schemas/IntermaxCopy"
-          },
           "warnings": {
             "items": {
               "$ref": "#/components/schemas/Message"
@@ -2908,11 +2900,10 @@
         "required": [
           "state",
           "restored",
-          "previous",
           "warnings"
         ],
         "title": "IntermaxRestored",
-        "description": "INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako Kopia ``previous``.\n\n``warnings``: Komunikaty o tym, czego przywrócenie nie dokończyło (starsze Kopie zostały)."
+        "description": "INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako nowa Kopia na liście Kopii.\n\n``warnings``: Komunikaty o tym, czego przywrócenie nie dokończyło (starsze Kopie zostały)."
       },
       "IntermaxSetup": {
         "properties": {
@@ -3006,9 +2997,6 @@
             "type": "boolean",
             "title": "Settled"
           },
-          "kind": {
-            "$ref": "#/components/schemas/FillKind"
-          },
           "columns": {
             "items": {
               "$ref": "#/components/schemas/PriceListItem"
@@ -3030,7 +3018,6 @@
           "state",
           "read",
           "settled",
-          "kind",
           "columns",
           "rows"
         ],
@@ -6013,13 +6000,6 @@
             "const": "read",
             "title": "State"
           },
-          "rows": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array",
-            "title": "Rows"
-          },
           "sentence": {
             "anyOf": [
               {
@@ -6036,7 +6016,6 @@
         "type": "object",
         "required": [
           "state",
-          "rows",
           "sentence"
         ],
         "title": "WithoutQuantityRead",

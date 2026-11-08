@@ -774,7 +774,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     expected = _without_quantity(_ready(run, "uzupelnienie-gotowe-podsumowanie"))
     answer = _go_to_settlement(run, page, LAST_COMPLETE, "uzupelnienie-gotowe")
     run.check(
-        answer == {"state": "read", "rows": expected, "sentence": "2 wiersze bez ilości: 19, 20"} and expected == [19, 20],
+        answer == {"state": "read", "sentence": "2 wiersze bez ilości: 19, 20"} and expected == [19, 20],
         "the period's rows without quantity are 19 and 20, the summary's rows not done",
     )
     run.capture(page, "215-uzupelnienie-gotowe")
@@ -920,7 +920,7 @@ def _without_quantity(answer: dict[str, object]) -> list[int]:
 
 
 def _go_to_settlement(run: Run, page: Page, period: str, name: str) -> dict[str, object]:
-    """Clicks Gotowe on the summary: Przebieg rozliczeń with the period chosen; returns the period's rows without quantity."""
+    """Clicks Gotowe on the summary: Przebieg rozliczeń with the period chosen; returns the server's answer on the period's rows without quantity."""
 
     page.get_by_role("button", name="Gotowe, rozlicz pracowników", exact=True).click()
     expect(page).to_have_url(f"{run.url.rstrip('/')}/#/uruchomienia")

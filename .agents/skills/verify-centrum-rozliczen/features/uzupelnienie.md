@@ -50,7 +50,7 @@ on screen, not yellow.
 - `uzupelnienie-odczyt-nieudany`: a Plik zbiorczy Centrum cannot read (being saved) keeps the last good state on screen with `Stan z <HH:MM>.` and no Komunikat; once it reads again the time disappears by itself.
 - `uzupelnienie-otworz`: `Otwórz Plik zbiorczy` opens the period's Plik zbiorczy (`opened.jsonl`).
 - `uzupelnienie-powrot`: the link `Okresy` leads back and Wstecz returns to the same summary.
-- `uzupelnienie-gotowe`: with Excel closed, `Gotowe, rozlicz pracowników` opens `#/uruchomienia` with Przebieg rozliczeń and `06_12_10_2026` chosen; `GET /api/periods/<token>/without-quantity` is the summary's rows not done (`[19, 20]`), and the setup itself carries no rows.
+- `uzupelnienie-gotowe`: with Excel closed, `Gotowe, rozlicz pracowników` opens `#/uruchomienia` with Przebieg rozliczeń and `06_12_10_2026` chosen; the sentence of `GET /api/periods/<token>/without-quantity` names the summary's rows not done (`2 wiersze bez ilości: 19, 20`), and the setup itself carries no rows.
 - `uzupelnienie-gotowe-potwierdzenie`: `Uruchom` opens `Uruchomić z zapisem?`, which says `2 wiersze bez ilości: 19, 20` and keeps `Uruchom` enabled; `Anuluj` closes it.
 - `uzupelnienie-gotowe-po-podgladzie`: `Podgląd bez zapisu` on the form, then `Uruchom` on the result card opens the same dialog with `2 wiersze bez ilości: 19, 20` (Dad's usual path); `Anuluj` closes it.
 - `uzupelnienie-gotowe-bez-odczytu`: with the Plik zbiorczy of `29_05_10_2026` damaged (harness, restored after), `Gotowe` on its summary chooses that period, not the preselected one; its rows answer `{state: unread}`, and the dialog says `Nie udało się sprawdzić wierszy bez ilości` with `Uruchom` enabled.

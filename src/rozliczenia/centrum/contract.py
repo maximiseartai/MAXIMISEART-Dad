@@ -519,7 +519,6 @@ class WithoutQuantityRead(_Model):
     """
 
     state: Literal["read"]
-    rows: list[int]
     sentence: str | None
 
 
@@ -570,7 +569,6 @@ class KindTableReady(_Model):
     state: Literal["ready"]
     read: CollectiveFileRead
     settled: bool
-    kind: FillKind
     columns: list[PriceListItem]
     rows: list[KindTableRow]
 
@@ -593,10 +591,9 @@ class CountGroup(_Model):
 
 
 class Decision(_Model):
-    """Pytanie do taty z części decyzji procesu: tytuł, komunikat w trzech częściach i liczby (np. Zlecenia na dzień)."""
+    """Pytanie do taty z części decyzji procesu: komunikat w trzech częściach i liczby (np. Zlecenia na dzień)."""
 
     question: str
-    title: str
     message: Message
     counts: CountGroup
 
@@ -932,14 +929,13 @@ class IntermaxRestoreRequest(_Model):
 
 
 class IntermaxRestored(_Model):
-    """INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako Kopia ``previous``.
+    """INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako nowa Kopia na liście Kopii.
 
     ``warnings``: Komunikaty o tym, czego przywrócenie nie dokończyło (starsze Kopie zostały).
     """
 
     state: Literal["restored"]
     restored: IntermaxCopy
-    previous: IntermaxCopy
     warnings: list[Message]
 
 

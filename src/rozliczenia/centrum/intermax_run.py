@@ -144,7 +144,6 @@ class IntermaxEntry:
         return contract.IntermaxRestored(
             state="restored",
             restored=_copy(restored.restored),
-            previous=_copy(restored.previous),
             warnings=[contract.Message.of(warning) for warning in restored.warnings],
         )
 

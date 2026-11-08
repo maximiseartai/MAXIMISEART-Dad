@@ -347,11 +347,10 @@ export const zMessage = z.object({
 /**
  * Decision
  *
- * Pytanie do taty z części decyzji procesu: tytuł, komunikat w trzech częściach i liczby (np. Zlecenia na dzień).
+ * Pytanie do taty z części decyzji procesu: komunikat w trzech częściach i liczby (np. Zlecenia na dzień).
  */
 export const zDecision = z.object({
     question: z.string(),
-    title: z.string(),
     message: zMessage,
     counts: zCountGroup
 });
@@ -394,14 +393,13 @@ export const zIntermaxRestoreRefused = z.object({
 /**
  * IntermaxRestored
  *
- * INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako Kopia ``previous``.
+ * INTERMAX ma bajty Kopii ``restored``, a jego stan sprzed przywrócenia leży jako nowa Kopia na liście Kopii.
  *
  * ``warnings``: Komunikaty o tym, czego przywrócenie nie dokończyło (starsze Kopie zostały).
  */
 export const zIntermaxRestored = z.object({
     state: z.literal('restored'),
     restored: zIntermaxCopy,
-    previous: zIntermaxCopy,
     warnings: z.array(zMessage)
 });
 
@@ -1031,7 +1029,6 @@ export const zKindTableReady = z.object({
     state: z.literal('ready'),
     read: zCollectiveFileRead,
     settled: z.boolean(),
-    kind: zFillKind,
     columns: z.array(zPriceListItem),
     rows: z.array(zKindTableRow)
 });
@@ -1434,7 +1431,6 @@ export const zViewTiming = z.object({
  */
 export const zWithoutQuantityRead = z.object({
     state: z.literal('read'),
-    rows: z.array(z.int()),
     sentence: z.string().nullable()
 });
 

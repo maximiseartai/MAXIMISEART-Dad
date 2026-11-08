@@ -89,7 +89,6 @@ def test_tabela_wierszy_bez_reguly_ma_teksty_wierszy_i_szare_wartosci_narzedzia(
     table = _table(_prepared(tmp_path), "without_rule")
 
     assert table["state"] == "ready"
-    assert table["kind"] == "without_rule"
     assert [row["row"] for row in table["rows"]] == [19, 22]
     first = table["rows"][0]
     assert (first["state"], first["worker"], first["devices"], first["activities"], first["completed"]) == (
