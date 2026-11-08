@@ -928,6 +928,31 @@ def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadk
     assert ADDRESS_VALUE not in path.read_text(encoding="utf-8")
 
 
+def test_intermax_bez_arkusza_zlecen_zatrzymuje_uporzadkowanie_dla_taty_a_kopia_ma_odcisk_pliku_bez_arkuszy(
+    tmp_path: Path,
+) -> None:
+    """INTERMAX, którego żaden arkusz nie ma w wierszu 1 nagłówków zleceń: Uporządkowanie zatrzymuje się dla taty, a Kopia
+    wejścia ma odcisk pliku, na którym proces się zatrzymał, choć nie ma w niej żadnego arkusza."""
+
+    centrum = ordering_centrum(tmp_path)
+    rewrite_parts(centrum.register, lambda name, data: data.replace(b">AKCJE<", b">AKCJE X<"))
+    content = centrum.register.read_bytes()
+
+    result = _stopped(centrum)["result"]
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == (
+        "for_tata",
+        "W INTERMAX nie ma arkusza zleceń z nagłówkami od AKCJE do UWAGI w wierszu 1. INTERMAX nie został zmieniony.",
+    )
+    [logs] = centrum.run_logs()
+    [copied] = logs["input_copy"]
+    assert (copied["name"], copied["fingerprint"]["sha256"], copied["sheets"]) == (
+        REGISTER_NAME,
+        hashlib.sha256(content).hexdigest(),
+        [],
+    )
+
+
 # --- Położenia wklejonego wiersza (#842, #913) ---------------------------------------------------------------------------
 # Tabela położeń z opisu PR #905: wiersz próbny niesie syntetyczny adres i numer Orange tam, gdzie w pliku stoją jego
 # kolumny ``ADRES`` i ``NUMER UMOWY``, a ostatnie zlecenie wklejenia cytuje je w ``CZYNNOŚCI ZREALIZOWANE``, więc

@@ -8,8 +8,9 @@ odczytu daje w odcisku chwilę wcześniejszej wersji; o wersji rozstrzyga skrót
 Wiersz pliku trafia do procesu dopiero przez świadka arkusza: ``WitnessedSheet.row`` zapisuje go jednym wywołaniem w
 pamięci reguły danych (``forbidden``) i w Kopii wejścia (``copy``), więc Kopia nie ma wiersza, którego nie zna pamięć.
 ``SheetMemory`` zapisuje wiersz tylko w pamięci: wiersze, które czytnik czyta tylko do przeglądu (nad wklejeniem
-INTERMAX), nie należą do Kopii. Pamięć jest w każdym uchwycie, a Kopia tylko w uchwycie Uruchomienia z Logami
-(``for_run``); pamięci Skryptu dla maszyn nic nie czyta, bo Skrypt nic nie wysyła.
+INTERMAX), nie należą do Kopii. Pamięć jest w każdym uchwycie, a Kopia tylko w uchwycie Uruchomienia z Logami (do
+N1a-1 Kopię tworzy adapter Centrum, ``centrum/*_run.py``); pamięci Skryptu dla maszyn nic nie czyta, bo Skrypt nic nie
+wysyła.
 
 Uchwyt jest niezmienny i dzielony między wątkami pracy Centrum; zmienny stan to pamięć (``ForbiddenValues`` ma zamek) i
 Kopia jednego Uruchomienia.
@@ -18,7 +19,7 @@ Kopia jednego Uruchomienia.
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -63,11 +64,6 @@ class DadFiles:
         workbook_files.ensure_available(path, despite_excel_lock=despite_excel_lock)
         modified = _modified_at(path)
         return ReadFile(path, self.source(path), modified, self.forbidden, self.copy)
-
-    def for_run(self) -> DadFiles:
-        """Uchwyt jednego Uruchomienia: ta sama pamięć i źródło, nowa Kopia wejścia."""
-
-        return replace(self, copy=InputCopy())
 
 
 def _modified_at(path: Path) -> datetime | None:
