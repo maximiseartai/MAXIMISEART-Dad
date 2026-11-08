@@ -43,7 +43,8 @@ zostaje przeglądowi.
 Wyrocznie skilli (``.agents/skills/*/scripts``) i narzędzia (``tools/``) biorą z ``src`` tylko publiczne nazwy
 (docs/agents/skille.md, „Co wyrocznia bierze z src”): mechanikę przez publiczny punkt obserwacji, a dane o świecie
 zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do prywatnych nazw i globali modułów, a eksplorator
-kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox`` (spis N13).
+kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox`` (spis N13). ``explore_runs.py`` czyta jeszcze
+prywatne pola ``RunHost``, czego strażnik nie widzi (docstring ``_private_reaches``).
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
@@ -918,6 +919,8 @@ def _bound_in_class(node: ast.ClassDef) -> Iterator[tuple[int, str]]:
 
 # Biorą nazwę napisem, a obiekt dopiero w następnym wywołaniu: ``operator.attrgetter("_x")(m)``.
 GETTERS: typing.Final = frozenset({"attrgetter", "methodcaller"})
+# Biorą obiekt i nazwę atrybutu, którą AST zna tylko wtedy, gdy jest napisem stałym.
+BY_NAME: typing.Final = frozenset({"getattr", "setattr", "delattr"})
 
 
 def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
@@ -950,17 +953,22 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     8. napis stały ``rozliczenia…._x`` gdziekolwiek (``mock.patch("rozliczenia.centrum.outbox._queued", …)``);
     9. prywatna nazwa, którą wiąże ciało podklasy klasy z ``src``, także pod ``if``, ``for`` i ``try``: ``def``,
        ``async def``, ``class``, cel przypisania, import, ``except … as``, przechwycenie w ``case``; nadpisuje
-       prywatną nazwę klasy z ``src`` albo tak wygląda, bo AST nie wie, których nazw klasa z ``src`` nie ma.
+       prywatną nazwę klasy z ``src`` albo tak wygląda, bo AST nie wie, których nazw klasa z ``src`` nie ma;
+    10. ``getattr``, ``setattr`` i ``delattr`` (także ``builtins.``) z nazwą z ``src`` jako pierwszym argumentem i
+        nazwą atrybutu, która nie jest napisem stałym (``setattr(preparation_files, name, value)`` w pętli po
+        podmienianych nazwach), bo AST nie wie, czy nazwa w zmiennej jest prywatna.
 
     Każdą inną postać sięgnięcia łapie tylko przegląd, np. przez ``__globals__``, ``vars``, ``__dict__``, ``dir`` albo
     ``inspect.getmembers`` modułu wziętego inaczej niż importem, zmienną, parametr, wynik wywołania albo inne wyrażenie
     (``m = import_module(…)``, ``Base = outbox.Outbox``, ``(m := outbox)._x``, ``REGISTRY[outbox]._x``,
     ``type(x)._y``, ``class X(*[CentrumLog])``), prywatny atrybut instancji (``outbox._draining``, ``super()._write``),
-    nazwę złożoną w trakcie działania (f-napis, sklejenie), wzorzec ``match`` (``case CentrumLog(_write=w)``), ``exec``
+    nazwę złożoną w trakcie działania (f-napis, sklejenie) poza postacią 10, wzorzec ``match`` (``case CentrumLog(_write=w)``), ``exec``
     i ``eval``, prywatny napis w innym wywołaniu niż to z nazwą z ``src`` (``f(m, g("_x"))``, ``dict(_x=…)``), literał
     bez nazwy z ``src`` i prywatnego napisu wprost (``[[m], ["_x"]]``), napis w ciele podklasy
     (``__slots__ = ("_x",)``, ``locals()["_x"] = f``) i przypisanie podklasie po jej definicji, a także to, czy kopia danych o świecie
-    zewnętrznym jest celowa.
+    zewnętrznym jest celowa. Takie sięgnięcie stoi jeszcze w ``explore_runs.py`` skilla ``verify-urwane-uruchomienie``:
+    czyta prywatne pola instancji ``host._sequence`` i ``world.host._events`` gospodarza ``runs.RunHost`` (C4 spisu
+    N13, następny PR N13c).
 
     Znane fałszywe alarmy: napis ``"_x"`` obok publicznego łańcucha od nazwy z ``src`` alarmuje
     (``Path(outbox.QUEUE_DIRECTORY, "_archiwum")``), bo AST nie odróżni publicznej wartości od klasy
@@ -1013,7 +1021,14 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
             receiver = [node.func.value] if isinstance(node.func, ast.Attribute) else []
             private_keyword = any(kw.arg is not None and _private(kw.arg) for kw in node.keywords)
             with_module = src_in([*values, *receiver]) and (called == "vars" or private_keyword or _private_in(values))
-            if with_module or (called in GETTERS and _private_in(values)) or (from_src(node.func) and private_keyword):
+            by_variable = called in BY_NAME and len(node.args) > 1 and from_src(node.args[0])
+            by_variable = by_variable and not isinstance(node.args[1], ast.Constant)
+            if (
+                with_module
+                or by_variable
+                or (called in GETTERS and _private_in(values))
+                or (from_src(node.func) and private_keyword)
+            ):
                 found.append((node.lineno, ast.unparse(node)))
         elif isinstance(node, ast.Tuple | ast.List | ast.Set | ast.Dict):
             parts = [*filter(None, node.keys), *node.values] if isinstance(node, ast.Dict) else node.elts
@@ -1167,6 +1182,20 @@ PRIVATE_REACHES: typing.Final = {
     "import-prywatnego-modulu": "import rozliczenia.centrum._wnetrze",
     "import-prywatnego-modulu-jako": "import rozliczenia.centrum._wnetrze as wnetrze",
     "import-z-prywatnego-modulu": "from rozliczenia.centrum._wnetrze import read",
+    # Przegląd #1123, runda 3: pętla podmian z nazwą atrybutu w zmiennej (explore_publication.py:511-520 skilla
+    # verify-publikacja-plikow-okresu na #1111–#1121).
+    "setattr-z-nazwa-w-zmiennej": (
+        "from rozliczenia import preparation_files\n"
+        "for name, value in REPLACEMENTS.items():\n    setattr(preparation_files, name, value)"
+    ),
+    "getattr-z-nazwa-w-zmiennej": (
+        "from rozliczenia import preparation_files\n"
+        "originals = {name: getattr(preparation_files, name) for name in REPLACEMENTS}"
+    ),
+    "delattr-z-nazwa-w-wyrazeniu": 'from rozliczenia.centrum import outbox\ndelattr(outbox, "_" + NAME)',
+    "builtins-setattr-z-nazwa-w-zmiennej": (
+        "import builtins\nfrom rozliczenia.centrum import outbox\nbuiltins.setattr(outbox, name, None)"
+    ),
 }
 
 
@@ -1205,6 +1234,8 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
         '    path = Path(outbox_module.QUEUE_DIRECTORY, "_")\n'
         '    mock.patch("tests.rozliczenia._x", None)\n'
         "    cache = REGISTRY[outbox_module]._cache\n"
+        "    setattr(Box(), name, value)\n"
+        "    version = getattr(outbox_module, \"SCHEMA_VERSION\")\n"
         '    return outbox.state(), outbox_module.SCHEMA_VERSION, RETRY_S, {outbox_module: "threading"}, getattr(Box(), "_ids")\n'
         "class TrackedRun(Outbox):\n"
         "    def __init__(self) -> None:\n"
