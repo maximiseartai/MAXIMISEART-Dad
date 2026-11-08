@@ -138,6 +138,41 @@ def test_numer_budynku_z_ukosnikiem_i_lokal_w_efenix_to_numer_z_dwoma_ukosnikami
 @pytest.mark.parametrize(
     ("collective", "efenix"),
     [
+        pytest.param("UL. NAZWA 8B/27/3", "Poznań-Nowe Miasto ul.Nazwa 8B Lokal 27/3", id="8B-lokal-27/3"),
+        pytest.param("ul. Nazwa Ulicy 12/7/2", "Poznań ul.Nazwa Ulicy 12 Lokal 7/2", id="12-lokal-7/2"),
+        pytest.param("UL. NAZWA 13/14/16", "Poznań ul.Nazwa 13/14 Lokal 16", id="13/14-lokal-16-dalej-rowne"),
+    ],
+)
+def test_numer_z_dwoma_ukosnikami_w_pliku_to_budynek_z_lokalem_z_ukosnikiem_albo_budynek_z_ukosnikiem_z_lokalem(
+    collective: str, efenix: str
+) -> None:
+    """Tata pisze ``X/Y/Z`` i dla budynku ``X/Y`` z lokalem ``Z`` (#829), i dla budynku ``X`` z lokalem ``Y/Z`` (Uwaga
+    taty z 7.11.2026, okres 20_26_10); który to podział, mówi efenix, więc adres pliku jest równy obu."""
+
+    assert address_differences(collective, efenix) == ()
+
+
+@pytest.mark.parametrize(
+    ("collective", "efenix", "parts"),
+    [
+        pytest.param("UL. NAZWA 8B/27/3", "Poznań ul.Nazwa 8B Lokal 27/4", (AddressPart.FLAT,), id="inny-lokal-z-ukosnikiem"),
+        pytest.param("UL. NAZWA 8B/27/3", "Poznań ul.Nazwa 8C Lokal 27/3", (AddressPart.NUMBER,), id="inny-budynek"),
+        pytest.param("UL. NAZWA 13/14/16", "Poznań ul.Nazwa 13 Lokal 16", (AddressPart.NUMBER,), id="remis-podzialow-jak-829"),
+        pytest.param("UL. NAZWA 8B/27", "Poznań ul.Nazwa 8B Lokal 27/3", (AddressPart.FLAT,), id="jeden-ukosnik-to-lokal-bez-ukosnika"),
+        pytest.param("UL. INNA 8B/27/3", "Poznań ul.Nazwa 8B Lokal 27/3", (AddressPart.STREET,), id="inna-ulica-ten-sam-podzial"),
+    ],
+)
+def test_lokal_z_ukosnikiem_rozni_sie_od_innego_lokalu_budynku_albo_ulicy(
+    collective: str, efenix: str, parts: tuple[AddressPart, ...]
+) -> None:
+    """Różnica to części podziału ``X/Y/Z``, który różni się najmniej; przy remisie podział z #829 (budynek ``X/Y``)."""
+
+    assert address_differences(collective, efenix) == parts
+
+
+@pytest.mark.parametrize(
+    ("collective", "efenix"),
+    [
         pytest.param("UL. NAZWA 13/14/17", "Poznań ul.Nazwa 13/14 Lokal 16", id="inny-lokal"),
         pytest.param("UL. NAZWA 13 LOKAL 16", "Poznań ul.Nazwa 13/14 Lokal 16", id="numer-bez-ukosnika"),
         pytest.param("UL. NAZWA 13/15/16", "Poznań ul.Nazwa 13/14 Lokal 16", id="inna-druga-czesc-numeru"),
