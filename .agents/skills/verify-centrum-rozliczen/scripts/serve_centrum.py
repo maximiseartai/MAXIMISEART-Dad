@@ -193,6 +193,8 @@ from tests.fixtures.efenix import write_collective_file
 from tests.fixtures.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
 
 EFENIX_SEARCH_DELAY_S = 1.0
+# How long Centrum's clock tries again to read the move the drive is putting in place (``ScriptedClock``).
+MOVE_READ_S = 10.0
 
 
 class ScriptedPlatform:
@@ -467,8 +469,22 @@ class ScriptedClock:
         threading.Thread(target=self._fire_due, name="zegar-budzik", daemon=True).start()
 
     def __call__(self) -> float:
-        moved = self._moved
-        return time.monotonic() + (float(moved.read_text(encoding="utf-8")) * 60 if moved.exists() else 0.0)
+        return time.monotonic() + self._moved_s()
+
+    def _moved_s(self) -> float:
+        """The move in seconds. The drive puts the file in place whole (``put_text``), and Windows refuses a read for
+        that moment (#1087), so a refused read is tried again for at most ``MOVE_READ_S``."""
+
+        deadline = time.monotonic() + MOVE_READ_S
+        while True:
+            try:
+                return float(self._moved.read_text(encoding="utf-8")) * 60
+            except FileNotFoundError:
+                return 0.0
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.01)
 
     def after(self, seconds: float, wake: Callable[[], None]) -> None:
         with self._lock:

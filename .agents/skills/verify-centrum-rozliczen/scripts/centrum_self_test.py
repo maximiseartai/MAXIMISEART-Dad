@@ -6,6 +6,7 @@ numbers (no browser), that the retrying helpers of ``drive/common.py`` outlast a
 file the server holds open, retry nothing else and nothing longer, and take the key away only after a step wrote it,
 that the result of a started Uruchomienie is never the one before it and the Centrum log is read as ``log.py`` writes it,
 that a file the server puts in place is read once it is there and only a vanished queue file is left out,
+that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
 evidence text is strict UTF-8 and screenshots are PNG files, and that no workbook content (the fixture's row marker) reached the
 evidence.
@@ -488,6 +489,73 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
             errors.append("queued_posts leaves out a queue file it cannot read, so a lost post passes")
 
 
+def _check_clock_moved_whole(errors: list[str]) -> None:
+    """Centrum's clock (``ScriptedClock``) reads each move of ``advance_clock`` whole while its wake-up thread asks it
+    every 0.2 s: a read of a half-written file stopped that thread, so the queue never tried again (#1124). A read the
+    system refuses while the file is put in place (#1087) waits for it."""
+
+    import contextlib
+    import io
+    import json
+    import tempfile
+    import threading
+    import time
+
+    from drive.common import Run, advance_clock, unreadable
+    from serve_centrum import ScriptedClock
+
+    moves = 200
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch) / "run"
+        root.mkdir()
+        (root / "fixture.json").write_text(json.dumps({"settings": str(root / "config" / "s.yaml")}), encoding="utf-8")
+        run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
+        clock = ScriptedClock(root)
+        failures: list[BaseException] = []
+        moved = threading.Event()
+
+        def read_meanwhile() -> None:
+            while not moved.is_set():
+                try:
+                    clock()
+                except (ValueError, OSError) as failure:
+                    failures.append(failure)
+                    return
+
+        reader = threading.Thread(target=read_meanwhile)
+        reader.start()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                for _ in range(moves):
+                    advance_clock(run, 1, "the self-test reads it meanwhile")
+        finally:
+            moved.set()
+            reader.join()
+        if failures:
+            errors.append(f"Centrum's clock fails on a move of advance_clock it reads meanwhile: {failures[0]!r}")
+        if clock() - time.monotonic() < moves * 60 - 1:
+            errors.append(f"Centrum's clock does not stand {moves} minutes on after {moves} moves of one minute")
+
+        refusing = threading.Event()
+
+        def put_in_place() -> None:
+            with unreadable(root / "zegar" / "przesuniecie-min.txt"):
+                refusing.set()
+                time.sleep(0.3)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            server = threading.Thread(target=put_in_place)
+            server.start()
+            refusing.wait()
+            try:
+                waited: object = clock() - time.monotonic() >= moves * 60 - 1
+            except PermissionError as failure:
+                waited = failure
+            server.join()
+        if waited is not True:
+            errors.append(f"Centrum's clock gives up on a move the drive is putting in place: {waited!r}")
+
+
 def _check_log_entries(errors: list[str]) -> None:
     """``log_entries`` reads a fact whose value has a space, which the Centrum log writes in quotes (``log.py``)."""
 
@@ -682,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
     _check_drop_report_key(errors)
     _check_result_of_start(errors)
     _check_read_while_put_in_place(errors)
+    _check_clock_moved_whole(errors)
     _check_log_entries(errors)
     _check_performance_gate(errors)
     _check_machine_lock(errors)

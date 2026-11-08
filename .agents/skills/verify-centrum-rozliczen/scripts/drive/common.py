@@ -343,17 +343,23 @@ def replace_file(source: Path, target: Path) -> None:
     while_open(lambda: os.replace(source, target))
 
 
+def put_text(path: Path, text: str) -> None:
+    """Harness: write ``text`` as ``path`` whole (``replace_file``), for a file the server reads from its own threads:
+    a plain write leaves it empty for a moment, as the skrzynka's own writes did on Windows (#963, #1124)."""
+
+    written = path.with_name(f"{path.name}.zapis")
+    written.write_text(text, encoding="utf-8")
+    replace_file(written, path)
+
+
 def edit_issue(box: Path, number: object, **changes: object) -> None:
     """Harness: Maks edits issue ``number`` of the skrzynka Zgłoszeń (closes it), and GitHub shows the edit at once.
 
-    The server reads the issue's file from its own threads, so the edited file takes its place whole (``replace_file``):
-    a plain write leaves it empty for a moment, as the skrzynka's own writes did on Windows (#963)."""
+    The server reads the issue's file from its own threads, so the edited file takes its place whole (``put_text``)."""
 
     path = box / f"{number}.json"
-    edited = path.with_name(f"{path.name}.edycja")
     issue = {**json.loads(path.read_text(encoding="utf-8")), **changes}
-    edited.write_text(json.dumps(issue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    replace_file(edited, path)
+    put_text(path, json.dumps(issue, ensure_ascii=False, indent=2) + "\n")
 
 
 def drop_report_key(key_file: Path, *, missing_ok: bool = False) -> None:
@@ -411,12 +417,14 @@ def run_logs(run: Run, process: str | None = None) -> dict[str, dict[str, Any]]:
 
 
 def advance_clock(run: Run, minutes: float, why: str) -> None:
-    """Harness: Centrum's clock moves ``minutes`` on (``<root>/zegar/przesuniecie-min.txt``), so ``why``."""
+    """Harness: Centrum's clock moves ``minutes`` on (``<root>/zegar/przesuniecie-min.txt``), so ``why``.
+
+    The clock's wake-up thread reads the file every 0.2 s, so it takes its place whole (``put_text``)."""
 
     moved = run.root / "zegar" / "przesuniecie-min.txt"
     moved.parent.mkdir(exist_ok=True)
     before = float(moved.read_text(encoding="utf-8")) if moved.exists() else 0.0
-    moved.write_text(str(before + minutes), encoding="utf-8")
+    put_text(moved, str(before + minutes))
     print(f"  harness: Centrum's clock moves {minutes:g} min on, so {why}", flush=True)
 
 
