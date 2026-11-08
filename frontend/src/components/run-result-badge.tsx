@@ -2,6 +2,7 @@ import { CircleCheckIcon, CircleStopIcon, OctagonXIcon, TriangleAlertIcon } from
 
 import type { ProcessRun, ResultCounts } from "@/api/centrum"
 import { Badge } from "@/components/ui/badge"
+import { plural } from "@/lib/format"
 
 /** Zatrzymanie „do Maksa”, także nieoczekiwany wyjątek: jedyne przerwane, które Centrum pokazuje jako błąd. */
 export function isFailure(run: Pick<ProcessRun, "stop_kind">): boolean {
@@ -45,13 +46,9 @@ export function RunResultBadge({ run }: { run: Pick<ProcessRun, "result" | "stop
   }
 }
 
-const PLURAL = new Intl.PluralRules("pl-PL")
-
-const FAILED_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = { one: "błąd", few: "błędy" }
-
 /** `3 do sprawdzenia · 2 zatrzymane · 1 błąd`: dopisek pod liczbą wyników OK. */
 export function otherResults(results: ResultCounts): string {
-  const failed = FAILED_FORMS[PLURAL.select(results.failed)] ?? "błędów"
+  const failed = plural(results.failed, { one: "błąd", few: "błędy", many: "błędów" })
 
   return `${results.needs_review} do sprawdzenia · ${results.stopped} zatrzymane · ${results.failed} ${failed}`
 }

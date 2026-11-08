@@ -11,10 +11,8 @@ import {
   type Theme,
 } from "@/api/centrum"
 import { showFailure, useAction } from "@/lib/action"
+import { rememberTheme, showTheme } from "@/lib/theme"
 import { DadFilesVersion, useResource, type Resource } from "@/lib/use-resource"
-
-// Kopia motywu w przeglądarce tylko na pierwsze malowanie (index.html); źródłem prawdy są ustawienia na serwerze.
-const THEME_KEY = "centrum-rozliczen-motyw"
 
 /** Plik taty wskazywany natywnym oknem wyboru: pole Ustawień taty, które jest ścieżką. */
 export type PickedPath = { [Key in keyof Settings]: Settings[Key] extends PathSetting ? Key : never }[keyof Settings]
@@ -48,9 +46,8 @@ function applyTheme(theme: Theme) {
 
   freeze.textContent = "*,*::before,*::after{transition:none!important}"
   document.head.append(freeze)
-  root.classList.toggle("dark", theme === "dark")
-  root.style.colorScheme = theme
-  localStorage.setItem(THEME_KEY, theme)
+  showTheme(theme)
+  rememberTheme(theme)
   window.getComputedStyle(root).getPropertyValue("color")
   requestAnimationFrame(() => requestAnimationFrame(() => freeze.remove()))
 }

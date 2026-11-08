@@ -2,12 +2,11 @@ import type * as React from "react"
 import { cn } from "cn"
 import { LoaderCircleIcon } from "lucide-react"
 
+import { href } from "@/lib/address"
 import { isActive, useRuns, type ActiveRunView } from "@/lib/runs"
-import type { Page, PageHref } from "@/pages"
+import type { Page } from "@/pages"
 
 export const RUNS_PAGE: Page["id"] = "uruchomienia"
-
-const RUNS_HREF: PageHref = `#/${RUNS_PAGE}`
 
 /**
  * Jak bieżące Uruchomienie wygląda poza swoją kartą. Czekanie na Decyzję taty woła tatę, bo okno decyzji
@@ -55,7 +54,7 @@ export function ActiveRunLink({ current }: { current: Page["id"] }) {
 
   return (
     <a
-      href={RUNS_HREF}
+      href={href(RUNS_PAGE)}
       className="wejscie inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[0.8rem] font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <span className="flex size-4 items-center justify-center">{sign.mark}</span>

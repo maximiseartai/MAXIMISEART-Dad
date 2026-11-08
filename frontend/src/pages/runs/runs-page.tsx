@@ -31,7 +31,6 @@ export function RunsPage() {
   return (
     <Tabs defaultValue="uruchomienie" className="gap-6">
       <PageHeader
-        title="Uruchomienia"
         action={
           <TabsList>
             <TabsTrigger value="uruchomienie">

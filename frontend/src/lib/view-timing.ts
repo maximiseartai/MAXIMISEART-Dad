@@ -62,7 +62,7 @@ function visibleSkeleton() {
 }
 
 function isReady(page: Page): boolean {
-  return document.querySelector("h1")?.textContent === page.title && document.querySelector(LOADING) === null
+  return document.querySelector(`h1[data-page="${page.id}"]`) !== null && document.querySelector(LOADING) === null
 }
 
 // Chromium podaje FCP dopiero po wyświetleniu klatki, czasem później niż gotowa treść.

@@ -10,7 +10,7 @@ import {
 } from "lucide-react"
 
 import type { ViewTiming } from "@/api/generated"
-import { hashParts, href, useHash, type Href } from "@/lib/address"
+import { hashParts, useHash } from "@/lib/address"
 import { ConfigurationPage } from "@/pages/configuration/configuration-page"
 import { FillingPage } from "@/pages/filling/filling-page"
 import { MetricsPage } from "@/pages/metrics/metrics-page"
@@ -28,7 +28,7 @@ export const NOTIFICATIONS_PAGE = {
 } as const
 
 /**
- * Strony Centrum. Nowa strona to nowy wpis: menu, adres `#/<id>` i treść biorą się stąd. Strona z `menu: false`
+ * Strony Centrum. Nowa strona to nowy wpis: menu, adres `#/<id>`, tytuł w `PageHeader` i treść biorą się stąd. Strona z `menu: false`
  * (Powiadomienia, otwierane dzwonkiem; Uzupełnienie, otwierane z Okresów) nie ma pozycji w menu, a `inMenu` to
  * pozycja menu, którą wtedy podświetla. Człony adresu za `#/<id>` (np. okres w `#/uzupelnienie/<okres>`) czyta
  * sama strona przez `usePagePath`. Kolejność wpisów to kolejność w menu; pierwszy wpis jest stroną startową.
@@ -59,16 +59,10 @@ export const PAGES = [
 
 export type Page = (typeof PAGES)[number]
 
-export type PageHref = Href
-
 function pageOf(hash: string): Page {
   const [id] = hashParts(hash)
 
   return PAGES.find((page) => page.id === id) ?? PAGES[0]
-}
-
-export function pageHref(page: Page): PageHref {
-  return href(page.id)
 }
 
 /** Pozycja menu podświetlona na stronie `page`: ona sama albo, dla strony spoza menu, jej `inMenu`. */

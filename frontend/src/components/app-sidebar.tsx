@@ -14,7 +14,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { menuPageId, PAGES, pageHref, type Page } from "@/pages"
+import { href } from "@/lib/address"
+import { menuPageId, PAGES, type Page } from "@/pages"
 
 export function AppSidebar({
   current,
@@ -26,7 +27,7 @@ export function AppSidebar({
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<a href={pageHref(PAGES[0])} />}>
+            <SidebarMenuButton size="lg" render={<a href={href(PAGES[0].id)} />}>
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <ReceiptTextIcon className="size-4" />
               </span>
@@ -46,7 +47,7 @@ export function AppSidebar({
                     tooltip={page.title}
                     render={
                       <a
-                        href={pageHref(page)}
+                        href={href(page.id)}
                         aria-current={page.id === current.id ? "page" : undefined}
                       />
                     }

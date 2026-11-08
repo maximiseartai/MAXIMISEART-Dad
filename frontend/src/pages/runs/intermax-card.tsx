@@ -1,5 +1,5 @@
 import { cn } from "cn"
-import { CheckIcon, FileSpreadsheetIcon, HistoryIcon, InfoIcon, ListOrderedIcon, TriangleAlertIcon } from "lucide-react"
+import { CheckIcon, FileSpreadsheetIcon, HistoryIcon, InfoIcon, ListOrderedIcon } from "lucide-react"
 
 import {
   getIntermaxDays,
@@ -9,17 +9,16 @@ import {
   type RunRestored,
 } from "@/api/centrum"
 import { LoadFailure } from "@/components/load-failure"
+import { SettingPath } from "@/components/setting-path"
 import { ThreePartMessage } from "@/components/three-part-message"
-import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { WarningSentences } from "@/components/warning-sentences"
 import { dateTime } from "@/lib/format"
 import { useRuns } from "@/lib/runs"
-import { useSettings } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
 import { RestoredCardButton } from "@/pages/runs/run-card-sheet"
-import { SettingPath } from "@/pages/runs/run-setup-card"
 
 /**
  * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty, tu pod nazwą, którą zna tata,
@@ -47,7 +46,6 @@ export function IntermaxCard() {
 
 function IntermaxSetupCard({ setup }: { setup: IntermaxSetup }) {
   const { starting, start } = useRuns()
-  const { settings, picker, choose } = useSettings()
   const blocked = setup.blocker !== null || setup.open_in_excel.length > 0
   const notes = setup.blocker === null ? setup.open_in_excel : [setup.blocker, ...setup.open_in_excel]
 
@@ -58,26 +56,9 @@ function IntermaxSetupCard({ setup }: { setup: IntermaxSetup }) {
         <CardDescription>Zlecenia dnia wklejone na dół INTERMAX.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {settings.state === "ready" ? (
-          <SettingPath
-            label="INTERMAX"
-            icon={<FileSpreadsheetIcon />}
-            setting={settings.data.order_register}
-            disabled={picker !== null}
-            onChoose={() => choose("order_register")}
-          />
-        ) : null}
+        <SettingPath label="INTERMAX" icon={<FileSpreadsheetIcon />} path="order_register" />
         {setup.blocker === null ? <RegisterDays /> : null}
-        {notes.length === 0 ? null : (
-          <Alert className="wejscie">
-            <TriangleAlertIcon className="text-warning!" />
-            <AlertTitle className="flex flex-col gap-0.5">
-              {notes.map((sentence) => (
-                <span key={sentence}>{sentence}</span>
-              ))}
-            </AlertTitle>
-          </Alert>
-        )}
+        <WarningSentences sentences={notes} />
         {setup.last === null ? null : <LastOrdering last={setup.last} />}
       </CardContent>
       <CardFooter className="gap-2">

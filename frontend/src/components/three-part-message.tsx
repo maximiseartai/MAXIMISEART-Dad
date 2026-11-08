@@ -118,7 +118,8 @@ function Banner({ kind, children }: { kind: MessageKind; children: React.ReactNo
   )
 }
 
-function WhereAndAction({ message }: { message: Message }) {
+/** „Gdzie” i „Co zrobić” Komunikatu: dwa wiersze z ikonami pod tym, co się stało. */
+export function WhereAndAction({ message }: { message: Message }) {
   return (
     <>
       <span className="flex gap-2">

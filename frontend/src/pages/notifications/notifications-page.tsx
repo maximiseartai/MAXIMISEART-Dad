@@ -123,7 +123,7 @@ export function NotificationsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <PageHeader title="Powiadomienia" />
+      <PageHeader />
       {notifications.state === "loading" ? <NotificationsSkeleton /> : null}
       {notifications.state === "failed" ? (
         <LoadFailure what="Powiadomień" message={notifications.message} reload={reload} />

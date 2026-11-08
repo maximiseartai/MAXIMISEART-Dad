@@ -5,15 +5,6 @@
     <link rel="icon" href="data:," />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Centrum rozliczeń</title>
-    <script>
-      // Motyw ciemny domyślnie; zapamiętany jasny już przy pierwszym malowaniu, zanim przyjdą ustawienia z serwera.
-      try {
-        if (localStorage.getItem("centrum-rozliczen-motyw") === "light") {
-          document.documentElement.classList.remove("dark")
-          document.documentElement.style.colorScheme = "light"
-        }
-      } catch {}
-    </script>
   </head>
   <body>
     <div id="root"></div>
