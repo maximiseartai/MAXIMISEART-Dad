@@ -10,7 +10,7 @@ from copy import copy
 from dataclasses import replace
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import IO, Any, cast
@@ -24,6 +24,7 @@ from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.styles.fills import Fill
 from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import column_index_from_string, get_column_letter
+from openpyxl.utils.datetime import MAC_EPOCH
 
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
@@ -44,7 +45,7 @@ from rozliczenia.workbook_files import (
 from rozliczenia.template_copy import Package
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route
-from rozliczenia.workbook_parts import UnsupportedShape, active_sheet, package_parts
+from rozliczenia.workbook_parts import FirstRows, UnsupportedShape, active_sheet, first_rows, package_parts
 from rozliczenia.workbook_save import (
     ExternalLinksError,
     SaveProblem,
@@ -81,6 +82,7 @@ from tests.fixtures.workbooks import (
     without_styles,
 )
 from tests.fixtures.data_rows import data_row, register_row
+from tests.fixtures.intermax import like_excel
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.settlement import COLLECTIVE_HEADERS, write_source, write_template
 
@@ -1248,3 +1250,81 @@ def test_wzorzec_z_ukrytym_aktywnym_arkuszem_idzie_dawna_droga_i_wiersze_trafiaj
     finally:
         saved.close()
     assert (route, written) == (Route.OPENPYXL if hidden else Route.COPY, ("hidden" if hidden else "visible", "syntetyczne miasto"))
+
+
+def test_wiersz_1_bez_openpyxl_ma_teksty_komorek_takie_jak_openpyxl(tmp_path: Path) -> None:
+    """Rejestr zleceń jest zawężany po kolumnach daty z wiersza 1 czytanego bez openpyxl: tekst wspólny (także z
+    fragmentami i podpowiedzią wymowy), wbudowany i typu ``str`` jest taki, jaki daje openpyxl, liczba, formuła i pusta
+    komórka nie są tekstem, a arkusz bez wiersza 1 nie ma tekstów."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    workbook.epoch = MAC_EPOCH
+    orders = active_worksheet(workbook)
+    orders.title = "Zlecenia"
+    for column, value in enumerate(["DATA GODZ. POCZ.", "UWAGI", 5, "=A1", None, "  MIASTO  ", "x", "x"], start=1):
+        orders.cell(1, column, value)
+    workbook.create_sheet("Lista").cell(2, 1, "WYKONAWCA")
+    workbook.save(path)
+    like_excel(path)
+    replace_cells(
+        path,
+        {
+            "D1": '<c r="D1" t="str"><f>A1</f><v>DATA GODZ. POCZ.</v></c>',
+            "G1": '<c r="G1" t="str"><v>tekst</v></c>',
+            "H1": '<c t="inlineStr"><is><r><t>NUMER</t></r><r><t xml:space="preserve"> ZL.</t></r>'
+            '<rPh sb="0" eb="1"><t>X</t></rPh></is></c>',
+        },
+    )
+
+    opened = load_workbook(path, read_only=True)
+    try:
+        by_openpyxl: dict[str, list[object]] = {}
+        for sheet in opened.worksheets:
+            row: list[object] = [cell.value if cell.data_type == "s" else None for cell in next(sheet.iter_rows(max_row=1), ())]
+            while row and row[-1] is None:  # openpyxl dopełnia brakujący wiersz 1 pustymi komórkami
+                row.pop()
+            by_openpyxl[sheet.title] = row
+        assert opened.epoch == MAC_EPOCH
+    finally:
+        opened.close()
+    texts = ["DATA GODZ. POCZ.", "UWAGI", None, None, None, "  MIASTO  ", "tekst", "NUMER ZL."]
+    assert first_rows(path.read_bytes()) == FirstRows(True, {"Zlecenia": texts, "Lista": []})
+    assert by_openpyxl == {"Zlecenia": texts, "Lista": []}
+
+
+@pytest.mark.parametrize(
+    "guessed", [{}, {"Zlecenia": 2}, {"Zlecenia": 1}], ids=["bez_kolumn", "inna_kolumna", "rozpoznana_kolumna"]
+)
+def test_rejestr_zawezony_po_wierszu_1_bez_openpyxl_daje_wiersze_okresu_z_rozpoznanej_kolumny_daty(
+    tmp_path: Path, guessed: dict[str, int]
+) -> None:
+    """Rejestr zleceń otwarty od razu zawężony po kolumnach daty z wiersza 1 bez openpyxl ma wiersz 1 z nagłówkami, a
+    po rozpoznaniu kolumny daty daje wiersze okresu z niej, także gdy z wiersza 1 bez openpyxl wyszła inna kolumna albo
+    żadna."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    orders = active_worksheet(workbook)
+    orders.title = "Zlecenia"
+    orders.append(["DATA GODZ. POCZ.", "MIASTO"])
+    for day in range(1, 21):
+        orders.append([datetime(2026, 9, day, 8), f"miasto {day}"])
+    workbook.save(path)
+    start, end = datetime(2026, 9, 10), datetime(2026, 9, 13)
+    seen: list[dict[str, object]] = []
+
+    def date_columns(headers: Any) -> dict[str, int]:
+        seen.append(dict(headers))
+        return guessed
+
+    with read_workbook(path, path.read_bytes(), (date_columns, start, end)) as read:
+        headers = [next(sheet.values(min_row=1, max_row=1)) for sheet in read.sheets()]
+        numbers = []
+        for moved in (timedelta(0), timedelta(days=3)):
+            with read.narrowed({"Zlecenia": 1}, start + moved, end + moved) as narrowed:
+                numbers.append([found.row.number for sheet in narrowed.sheets() for found in sheet.data_rows(2, {"DATA": 1})])
+
+    assert seen == [{"Zlecenia": ["DATA GODZ. POCZ.", "MIASTO"]}]
+    assert headers == [("DATA GODZ. POCZ.", "MIASTO")]
+    assert numbers == [list(range(10, 15)), list(range(13, 18))], "okres z dniem zapasu z obu stron"
