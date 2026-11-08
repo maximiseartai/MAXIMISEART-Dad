@@ -1334,6 +1334,39 @@ def test_wiersz_1_bez_openpyxl_ma_teksty_komorek_takie_jak_openpyxl(tmp_path: Pa
 
 
 @pytest.mark.parametrize(
+    ("cell", "kept"),
+    [
+        ('<c r="A3"><v>046279.25</v></c>', range(3, 6)),
+        ('<c r="A3"><v>46278.9999999999999999</v></c>', range(3, 6)),
+        ('<c r="A6"><v>46288</v></c>', range(4, 7)),
+        ('<c r="A2" t="d"><v>45000</v></c>', None),
+    ],
+    ids=["zero-na-poczatku", "cyfry-zaokraglone-do-poczatku", "koniec-przedzialu", "data-typu-d-cyframi"],
+)
+def test_rejestr_zawezony_do_okresu_ma_wiersze_z_liczba_daty_z_przedzialu_w_kazdym_jej_zapisie(
+    tmp_path: Path, cell: str, kept: range | None
+) -> None:
+    """Kolumna daty z liczbami w zapisie openpyxl (``t="n"``) i Excela (bez typu), w wierszach 4–5 z przedziału
+    46279–46288: wiersz z liczbą z przedziału jest w zakresie okresu także wtedy, gdy liczba ma zero na początku, cyfry,
+    które ``float`` zaokrągla do początku przedziału, albo jest jego końcem. Komórka daty typu ``d``, także zapisana
+    cyframi daleko poza przedziałem, zostawia arkusz w całości, bez zakresu."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    orders = active_worksheet(workbook)
+    orders.title = "ZLECENIA"
+    orders.append(["DATA"])
+    for value in (45000.5, 46000.5, 46280.5, 46281.5, 47000.5):
+        orders.append([value])
+    workbook.save(path)
+    replace_cells(path, {cell[len('<c r="') : cell.index('"', len('<c r="'))]: cell})
+
+    _, ranges = rows_dated_between(path.read_bytes(), {"ZLECENIA": 1}, 46279.0, 46288.0)
+
+    assert ranges == ({} if kept is None else {"ZLECENIA": kept})
+
+
+@pytest.mark.parametrize(
     "guessed", [{}, {"Zlecenia": 2}, {"Zlecenia": 1}], ids=["bez_kolumn", "inna_kolumna", "rozpoznana_kolumna"]
 )
 def test_rejestr_zawezony_po_wierszu_1_bez_openpyxl_daje_wiersze_okresu_z_rozpoznanej_kolumny_daty(

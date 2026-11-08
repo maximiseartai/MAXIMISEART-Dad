@@ -54,6 +54,7 @@ którego to przepisanie nie zna, tabela i arkusze zostają bez zmian.
 
 from __future__ import annotations
 
+import math
 import posixpath
 import re
 import zipfile
@@ -552,10 +553,15 @@ def rows_dated_between(
     """
 
     ranges: dict[str, range] = {}
+    days = b"|".join(b"%d" % day for day in range(math.floor(low) - 1, math.floor(high) + 1))
+    # Komórka bez typu innego niż ``n`` z liczbą zapisaną samymi cyframi, której część całkowita jest spoza ``days``, ma
+    # liczbę spoza [low, high] (``float`` zaokrągla ją najwyżej do części całkowitej plus 1), więc parser wyrażeń jej nie
+    # oddaje: kolumna daty Rejestru zleceń ma dziesiątki tysięcy komórek, a ``_is_number_between`` sprawdza resztę.
+    outside = rb"""(?:(?!\st=["'](?!n["']))[^>])*><v>(?!0*(?:""" + days + rb""")(?:\.\d+)?</v>)\d+(?:\.\d+)?</v>"""
 
     def dated(title: str, column: int) -> _Narrow:
         letter = get_column_letter(column).encode("ascii")
-        date_cell = re.compile(rb'<c r="' + letter + rb'(\d+)"([^>]*)(?<!/)>(.*?)</c>', re.DOTALL)
+        date_cell = re.compile(rb'<c r="' + letter + rb'(\d+)"(?!' + outside + rb")([^>]*)(?<!/)>(.*?)</c>", re.DOTALL)
 
         def narrow(xml: bytes) -> bytes:
             start, end = _sheet_data_bounds(xml)
