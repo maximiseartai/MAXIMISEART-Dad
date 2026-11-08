@@ -1138,16 +1138,17 @@ def test_odmowa_przekazania_przez_efenix_to_blad_zlecenia_bez_znacznika_a_nastep
     ]
 
 
-def test_odmowa_przekazania_w_oknie_informacji_ze_spinnerem_bez_konca_to_blad_zlecenia_a_nie_zatrzymanie_po_czasie_okna(
+def test_odmowa_przekazania_w_oknie_informacji_ze_spinnerem_i_skonczona_animacja_to_blad_zlecenia_a_nie_zatrzymanie(
     tmp_path: Path, page: Page
 ) -> None:
     """Okno zamyka okno dialogowe po końcu jego animacji pokazania, ale nie czeka na animację, która nie kończy się nigdy
-    (spinner w oknie informacji), bo czekałoby do końca czasu okna: odmowa Przekazania to dalej błąd zlecenia."""
+    (spinner w oknie informacji), ani na skończoną, która zostaje na elemencie (``fill: forwards``), bo czekałoby do końca
+    czasu okna: odmowa Przekazania to dalej błąd zlecenia."""
 
     order = Order("#8391", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
     source = write_collective_file(tmp_path, [order])
     in_efenix = replace(order.in_efenix("901"), execution_date=DAY, forward_refusal=ForwardRefusal.NO_LENGTH.value)
-    with atrapa_efenix([in_efenix], changed=Changed.ENDLESS_ANIMATION_IN_INFO) as atrapa:
+    with atrapa_efenix([in_efenix], changed=Changed.OTHER_ANIMATIONS_IN_INFO) as atrapa:
         outcome = _run(source, page, atrapa.url, mode=PricingMode.FORWARD, timeout_ms=3_000)
         requests = atrapa.status_requests()
 
@@ -1402,7 +1403,7 @@ CHANGED: dict[Changed, tuple[PagePart, WindowCause, WindowAction]] = {
 }
 
 
-@pytest.mark.parametrize("changed", [changed for changed in Changed if changed is not Changed.ENDLESS_ANIMATION_IN_INFO])
+@pytest.mark.parametrize("changed", [changed for changed in Changed if changed is not Changed.OTHER_ANIMATIONS_IN_INFO])
 def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_maksa_z_czescia_strony(
     tmp_path: Path, page: Page, changed: Changed
 ) -> None:

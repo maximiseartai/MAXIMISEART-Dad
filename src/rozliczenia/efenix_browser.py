@@ -199,10 +199,11 @@ _COUNT: Final = "(selector) => ({count: document.querySelectorAll(selector).leng
 _SETTLED: Final = """(selector) => {
     const dialog = document.querySelector(selector);
     return dialog !== null && dialog.getAnimations({subtree: true}).every(
-        (running) => !Number.isFinite(running.effect?.getComputedTiming().endTime));
+        (animation) => animation.playState !== 'running' || !Number.isFinite(animation.effect?.getComputedTiming().endTime));
 }"""
-"""Okno dialogowe skończyło każdą animację, która ma koniec. Animacji bez końca (spinner) okno nie czeka, bo czekałoby do
-końca czasu okna."""
+"""Okno dialogowe i jego poddrzewo nie mają już biegnącej animacji z końcem: bootstrap 4 kończy pokazanie okna na
+przejściu dziecka ``.modal-dialog``. Okno nie czeka na animację bez końca (spinner) ani wstrzymaną, bo czekałoby do końca
+czasu okna, a skończona animacja z ``fill: forwards`` zostaje w ``getAnimations`` jako ``finished``."""
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 

@@ -381,7 +381,7 @@ def _click(browser: Browser, address: str, _elsewhere: str) -> None:
 def _click_and_close(browser: Browser, address: str, _elsewhere: str) -> None:
     tab = _clicked(browser, address)
     # Maks zamyka okno już pokazane: bootstrap efenix, jak Atrapa, nie zamyka okna w trakcie animacji pokazania.
-    tab.wait_for_function("(dialog) => document.querySelector(dialog).getAnimations().length === 0", arg=DIALOG)
+    tab.wait_for_function("(dialog) => document.querySelector(dialog).getAnimations({subtree: true}).length === 0", arg=DIALOG)
     tab.click(f'{DIALOG} [data-dismiss="modal"]')
     tab.locator(DIALOG).wait_for(state="hidden")
 
