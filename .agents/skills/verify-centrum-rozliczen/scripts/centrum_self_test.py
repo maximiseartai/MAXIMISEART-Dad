@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+from collections.abc import Callable
 import os
 from pathlib import Path
 import re
@@ -427,9 +428,9 @@ def _check_result_of_start(errors: list[str]) -> None:
 
 
 def _check_read_while_put_in_place(errors: list[str]) -> None:
-    """``run_logs`` (through ``read_json``) waits while the server puts a file of Logi in place, which refuses a read
-    for a moment on Windows (#1087), and ``queued_posts`` leaves out only a queue file that is gone, never one it
-    cannot read."""
+    """``run_logs`` (through ``read_json``) and ``Run.remembered`` wait while the server puts a file of Logi or the
+    settings file in place, which refuses a read for a moment on Windows (#1087, the night of #1132), and
+    ``queued_posts`` leaves out only a queue file that is gone, never one it cannot read."""
 
     import contextlib
     import io
@@ -449,24 +450,34 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
         run.run_logs_dir.mkdir(parents=True)
         logs = run.run_logs_dir / "20261019T060000Z-preparation-aaaaaaaa.json"
         logs.write_text(json.dumps({"run_id": "aaaaaaaa"}), encoding="utf-8")
-        refusing = threading.Event()
+        settings.parent.mkdir()
+        settings.write_text("rejestr_zlecen: INTERMAX.xlsx\n", encoding="utf-8")
 
-        def put_in_place() -> None:
-            with unreadable(logs):
-                refusing.set()
-                time.sleep(0.3)
+        def read_while_put_in_place(path: Path, read: Callable[[], object]) -> object:
+            refusing = threading.Event()
 
-        with contextlib.redirect_stdout(io.StringIO()):
-            server = threading.Thread(target=put_in_place)
-            server.start()
-            refusing.wait()
-            try:
-                read: object = run_logs(run)
-            except PermissionError as failure:
-                read = failure
-            server.join()
+            def put_in_place() -> None:
+                with unreadable(path):
+                    refusing.set()
+                    time.sleep(0.3)
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                server = threading.Thread(target=put_in_place)
+                server.start()
+                refusing.wait()
+                try:
+                    return read()
+                except PermissionError as failure:
+                    return failure
+                finally:
+                    server.join()
+
+        read = read_while_put_in_place(logs, lambda: run_logs(run))
         if read != {logs.name: {"run_id": "aaaaaaaa"}}:
             errors.append(f"run_logs gives up on a file of Logi the server is putting in place: {read!r}")
+        read = read_while_put_in_place(settings, lambda: run.remembered("rejestr_zlecen"))
+        if read != "INTERMAX.xlsx":
+            errors.append(f"Run.remembered gives up on the settings file the server is putting in place: {read!r}")
 
         # Windows creates no symbolic link without a privilege; the forms of a vanished and an unreadable file are
         # the same there, and a refusal is retried for RETRY_OPEN_S, so the queue is checked where links are free.
