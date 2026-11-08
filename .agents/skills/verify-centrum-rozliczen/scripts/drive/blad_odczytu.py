@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Locator, Page, Route, expect
 
-from drive.common import Run, ensure_files_set, sent_requests
+from drive.common import HIDE_TAB, SHOW_TAB, Run, ensure_files_set, sent_requests
 from drive.teksty import WRITE
 
 FEATURE = "blad-odczytu"
@@ -142,39 +142,45 @@ def _retry_in_flight(run: Run, page: Page) -> None:
     run.check(True, "the next try reads Konfiguracja")
 
 
-def _filling_retries(run: Run, page: Page) -> None:
-    """A failed read of the Uzupełnienie summary has „Spróbuj ponownie”, and the page comes back once Centrum answers."""
+def _filling_retries(run: Run, page: Page, *, step: str, part: str, content: Locator, shot: str) -> None:
+    """A failed read of a page of Uzupełnienie (``#/uzupelnienie/<needs_check><part>``) has „Spróbuj ponownie”, whose
+    click reads it again, and the page comes back once Centrum answers."""
 
-    run.step(FEATURE, "blad-odczytu-uzupelnienie")
+    run.step(FEATURE, step)
     token = str(run.fixture["settlement"]["needs_check"])
-    pattern = f"**/api/periods/{token}/quantities-to-fill"
-    content = page.get_by_role("button", name="Gotowe, rozlicz pracowników", exact=True)
+    pattern = f"**/api/periods/{token}/quantities-to-fill{part}"
     held: list[Route] = []
     page.route(pattern, lambda route: route.abort())
     try:
-        page.goto(run.url + f"#/uzupelnienie/{token}")
+        page.goto(run.url + f"#/uzupelnienie/{token}{part}")
         failure = _failure(page, "okresu")
         expect(failure).to_contain_text(UNREACHABLE)
         expect(content).to_have_count(0)
         button = failure.get_by_role("button", name=RETRY, exact=True)
         expect(button).to_be_enabled()
-        # Harness: the re-read is held. The live page also re-reads by itself every few seconds, so only the waiting
-        # button tells that the click read again.
+        # The live page re-reads a failed read by itself every few seconds while the tab is visible, so the tab is
+        # hidden first (harness): a read on its way meets the abort, and only the click can read again.
+        page.evaluate(HIDE_TAB)
         page.unroute(pattern)
         page.route(pattern, lambda route: held.append(route))
         page.wait_for_function("document.getAnimations().every((animation) => animation.playState !== 'running')")
         button.click()
         expect(button).to_be_disabled()
-        run.check(True, f"a failed read of the Uzupełnienie summary (unreachable, harness) shows „Nie udało się odczytać okresu”, and {RETRY} reads again")
-        run.capture(page, "148c-blad-odczytu-uzupelnienie", live=True)  # the spinner turns until the answer
+        run.check(
+            len(held) == 1,
+            f"a failed read of {pattern} (unreachable, harness) shows „Nie udało się odczytać okresu”, and with the live "
+            f"re-read paused (hidden tab, harness) {RETRY} reads again ({len(held)} read(s) on their way)",
+        )
+        run.capture(page, shot, live=True)  # the spinner turns until the answer
     finally:
         # A held request goes through before the route is removed: removing it hands every held request on by itself.
         for route in held:
             route.continue_()
         page.unroute(pattern)
+        page.evaluate(SHOW_TAB)
     expect(content).to_be_visible()
     expect(failure).to_have_count(0)
-    run.check(True, "once Centrum answers, the summary replaces the Komunikat")
+    run.check(True, "once Centrum answers, the page replaces the Komunikat")
 
 
 def _tool_update_unread(run: Run, page: Page, open_page: Callable[[], None]) -> None:
@@ -312,5 +318,13 @@ def drive(run: Run, page: Page) -> None:
     )
     page.keyboard.press("Escape")
     expect(dialog).to_have_count(0)
-    _filling_retries(run, page)
+    _filling_retries(
+        run, page, step="blad-odczytu-uzupelnienie", part="",
+        content=page.get_by_role("button", name="Gotowe, rozlicz pracowników", exact=True), shot="148c-blad-odczytu-uzupelnienie",
+    )
+    _filling_retries(
+        run, page, step="blad-odczytu-uzupelnienie-rodzaj", part="/without_rule",
+        content=page.get_by_role("main").get_by_role("heading", name="Wiersze bez reguły", level=2, exact=True),
+        shot="148e-blad-odczytu-uzupelnienie-rodzaj",
+    )
     _unreadable_stream(run, page)
