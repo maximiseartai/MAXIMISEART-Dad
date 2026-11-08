@@ -32,7 +32,7 @@ from playwright.sync_api import Browser, sync_playwright
 import pytest
 
 from rozliczenia import settlement_messages, workbook_files
-from rozliczenia.centrum import app, contract, process_kind
+from rozliczenia.centrum import app, contract
 from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
 from rozliczenia.centrum.efenix_run import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
@@ -233,11 +233,7 @@ def _core_failed(
 
     def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ran:
         steered = centrum(tmp_path)
-
-        def broken(*args: object, **kwargs: object) -> NoReturn:
-            raise ValueError("synthetic core failure SYN-002")
-
-        monkeypatch.setattr(process_kind, "run_process", broken)
+        steered.engines.fail_core = True
         return steered, run_to_end(steered, dry_run=dry_run)
 
     return run
