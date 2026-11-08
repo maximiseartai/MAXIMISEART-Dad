@@ -207,3 +207,16 @@ def test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_s
 
     lines = capsys.readouterr().out.splitlines()
     assert (exited, lines[0], lines[-1]) == (code, "UWAGA: kod opisany modelem zmienił się: verify-publikacja-plikow-okresu.", last)
+
+
+def test_przyjete_ryzyko_ktorego_nie_pokazal_zakres_z_jego_after_wywraca_werdykt() -> None:
+    """Przyjęte ryzyko ADR 0005 występuje zawsze po obu zakresach (``after``): zakres, który przeszedł do końca bez niego,
+    daje ``ZNALEZISKO ZNIKNĘŁO`` i kod 1, bo wpis przestał opisywać kod (docs/agents/skille.md, wpisy eksploratorów)."""
+
+    explorer = _load_explorer()
+    report = explorer.ScopeReport(explorer.SCOPES["jedno-uruchomienie"], schedules=1, undisturbed_successes=1)
+
+    outcome = explorer.summarize([report])
+
+    assert (outcome.exit_code, outcome.lines[-1]) == (1, "PUBLIKACJA: ZNALEZISKO ZNIKNĘŁO (1)"), "\n".join(outcome.lines)
+    assert outcome.lines[-2].startswith("ZNALEZISKO ZNIKNĘŁO ADR 0005 (RAZEM_ALBO_ZADEN) po jedno-uruchomienie:")

@@ -164,6 +164,22 @@ def test_naruszenie_wybacza_tylko_wpis_jego_reguly_w_jego_ksztalcie_a_przyjete_r
     assert excused("REGULA", None, known=(known,), accepted=(risk,)) is None
 
 
+@dataclass(frozen=True)
+class _KazdaObserwacja:
+    def holds(self, observed: object) -> bool:
+        return True
+
+
+def test_naruszenie_bez_obserwacji_jest_nowe_takze_dla_ksztaltu_ktory_przyjmuje_kazda_obserwacje() -> None:
+    """Docstring ``excused``: naruszenie bez obserwacji (``None``) nie ma historii, którą wpis mógłby rozpoznać, więc
+    żaden wpis go nie wybacza, nawet taki, którego kształt przyjąłby wszystko."""
+
+    wszystko = Excuse("wszystko", "REGULA", "historia wszystko", _KazdaObserwacja(), after=("zakres",))
+
+    assert excused("REGULA", "zapis", known=(wszystko,)) == ("known", wszystko)
+    assert excused("REGULA", None, known=(wszystko,), accepted=(wszystko,)) is None
+
+
 def test_linia_wpisu_ma_rodzaj_nazwe_regule_i_historie() -> None:
     assert excuse_line("known", _wpis("zabity proces")) == "ZNANE USTALENIE zabity proces (REGULA): historia zabity proces"
     assert excuse_line("accepted", _wpis("REGULA")) == "ZAAKCEPTOWANE RYZYKO REGULA: historia REGULA"
