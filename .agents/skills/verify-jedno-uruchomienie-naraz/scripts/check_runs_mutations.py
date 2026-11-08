@@ -23,7 +23,7 @@ NEW = "URUCHOMIENIA: NOWE NARUSZENIE"
 MUTATIONS = (
     Mutation(
         "sprawdzenie i zajęcie w RunHost.start pod dwiema blokadami",
-        (Edit(RUNS, "            run = Run(self, prepared, self._stops)\n", "        with self._lock:\n            run = Run(self, prepared, self._stops)\n"),),
+        (Edit(RUNS, "            run = Run(self, prepared, self._stops, self._threads)\n", "        with self._lock:\n            run = Run(self, prepared, self._stops, self._threads)\n"),),
         (EXPLORER, "--scope", "dwie-karty"),
         "dwie karty „Uruchom” prowadzą dwa Uruchomienia naraz na tym samym Folderze okresu",
         NEW,
@@ -134,9 +134,16 @@ MUTATIONS = (
     ),
     Mutation(
         "RLock zamiast Lock w RunHost",
-        (Edit(RUNS, "        self._lock = threading.Lock()\n", "        self._lock = threading.RLock()\n"),),
+        (Edit(RUNS, "        self._lock = threads.Lock()\n", "        self._lock = threads.RLock()\n"),),
         (EXPLORER, "--scope", "zamknij-w-trakcie"),
         "model nie zna tej blokady, więc nie może nic orzec",
+        "URUCHOMIENIA: LUKA MODELU",
+    ),
+    Mutation(
+        "blokada RunHost z threading obok szwu threads",
+        (Edit(RUNS, "        self._lock = threads.Lock()\n", "        self._lock = threading.Lock()\n"),),
+        (EXPLORER, "--scope", "zamknij-w-trakcie"),
+        "model nie widzi blokady, której RunHost nie wziął ze szwu, więc nie może nic orzec",
         "URUCHOMIENIA: LUKA MODELU",
     ),
     Mutation(

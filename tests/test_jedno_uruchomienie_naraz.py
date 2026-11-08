@@ -59,7 +59,6 @@ raise SystemExit(code)
 # Skrypt, w którym wątek modelu czeka na zawsze na prawdziwy Event w miejscu z parametru testu.
 WAITS_FOR_GOOD = """
 import sys
-from dataclasses import replace
 from threading import Event
 
 sys.path.insert(0, sys.argv[1])
@@ -103,7 +102,6 @@ report = explore_runs.explore(explore_runs.SCOPES["zamknij-w-trakcie"])
 for gap in report.gaps:
     print("LUKA:", gap)
 print(explore_runs.summarize([report]).lines[-1])
-print("prawdziwe threading w runs.py:", explore_runs.runs.threading is threading)
 schedules = report.schedules
 checker = next(thread for thread in threading.enumerate() if thread.name == "sprawdzenie przeplotów")
 held.release()
@@ -221,21 +219,16 @@ def test_watek_modelu_czekajacy_poza_modelem_konczy_sprawdzenie_luka_modelu_z_na
     [gap] = [line.removeprefix("LUKA: ") for line in lines if line.startswith("LUKA: ")]
     assert gap.startswith("karta Uruchom 1: po kroku „żądanie POST /api/runs dociera do serwera” wątek modelu"), output
     assert "(with held:)" in gap, output
-    assert lines[-3].startswith("URUCHOMIENIA: LUKA MODELU"), output
-    # To, co biegnie w procesie po raporcie, używa Centrum z prawdziwym threading, a wątek, który doczekał się po
-    # porzuceniu, kończy się na następnym kroku i nie zmienia już raportu.
-    assert lines[-2:] == ["prawdziwe threading w runs.py: True", "po zwolnieniu blokady: skończony 0"], output
+    assert lines[-2].startswith("URUCHOMIENIA: LUKA MODELU"), output
+    # Wątek, który doczekał się po porzuceniu, kończy się na następnym kroku i nie zmienia już raportu.
+    assert lines[-1] == "po zwolnieniu blokady: skończony 0", output
 
 
 @pytest.mark.parametrize(
     ("waits", "stalled", "last", "waiting_in"),
     [
         pytest.param(
-            "class Waits:\n"
-            "    @property\n"
-            "    def path(self):\n"
-            "        return never.wait()\n"
-            "explore_runs.PREPARED = replace(explore_runs.PREPARED, metrics=Waits())",
+            "explore_runs.ModelledRun.conduct = lambda self, interlocutor: never.wait()",
             "wątek modelu przez 1 s nie doszedł do pierwszego kroku",
             "karta Uruchom 1: odpowiedź 200: running",
             "work",
