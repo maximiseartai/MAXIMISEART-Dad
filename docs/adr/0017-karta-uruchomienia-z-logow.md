@@ -83,7 +83,7 @@ pozostawionym dziennikiem (`close`) i kiedy dziennik znika (`journal_after`).
 `run_comments.py` układa kroki startu i końca Uruchomienia w kolejności tych
 dopisków. Fakty startu mają jeden typ (`run_logs.StartFacts`, w Logach
 `RunLog.start`), a plik i wysyłka biorą tylko Logi po strażniku reguły danych
-(`run_logs.guard_logs`).
+(`run_logs_guard.guard_logs`).
 
 ## Kontekst
 

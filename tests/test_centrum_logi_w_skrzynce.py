@@ -31,7 +31,8 @@ from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
-from rozliczenia.centrum.run_logs import RunLog, guard_logs
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
 from tests.fixtures.centrum import (

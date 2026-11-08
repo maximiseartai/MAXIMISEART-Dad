@@ -13,7 +13,17 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import BUILD, EFENIX_BROWSER, EFENIX_CHECKS, EFENIX_RUN, NOTIFICATIONS, RUN_LOGS, RUN_VIEW, WYCENA
+from cele_mutacji_centrum import (
+    BUILD,
+    EFENIX_BROWSER,
+    EFENIX_CHECKS,
+    EFENIX_RUN,
+    LOGS_OF_RUN,
+    NOTIFICATIONS,
+    RUN_LOGS,
+    RUN_VIEW,
+    WYCENA,
+)
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -37,7 +47,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Logi bez śladu zleceń",
-        (Edit(RUN_LOGS, "efenix_orders=None if priced is None else LoggedOrder.all_of(priced)", "efenix_orders=None"),),
+        (Edit(LOGS_OF_RUN, "efenix_orders=None if priced is None else LoggedOrder.all_of(priced)", "efenix_orders=None"),),
         WYCENA,
         "Maks nie odtworzy problemu zlecenia z Logów Uruchomienia",
     ),

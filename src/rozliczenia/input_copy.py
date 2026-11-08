@@ -14,7 +14,7 @@ którą uchwyt bierze przed odczytem bajtów (``dad_files.DadFiles.read``). Plik
 końcu procesu, zanim karta pokaże wynik: odcisk (rozmiar, chwila zmiany i skrót SHA-256 przeczytanych bajtów) i arkusze
 z kolumnami po nagłówku i wierszami po numerze, bez zakazanych kolumn i bez pustych komórek. Komórki wiersza liczy jedna
 reguła (``SheetCopy.row``). Wolny tekst i wartości zakazanych kolumn w innych komórkach, także liczby, maskuje
-strażnik Logów (``run_logs.guard_logs``), jak w każdym innym polu Logów.
+strażnik Logów (``run_logs_guard.guard_logs``), jak w każdym innym polu Logów.
 
 Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Komunikaty i ślad. Wygląd komórek
 (Wyróżnienia, format liczby, Hiperłącza) proces tylko przenosi do plików, które tworzy, więc go nie ma.

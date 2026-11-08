@@ -25,7 +25,7 @@ zapisuje w dzienniku Centrum, a Wycena biegnie dalej.
    pójdą do Skrzynki, więc dziennik sam mówi następnemu startowi, czy jego Uruchomienie doszło do wyniku i do jakiego, a
    start nie zgaduje tego z Historii (#870, #871); Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie,
    zamiast niego usuwa dziennik, który mógł po nim zostać;
-2. Logi z wynikiem (``RecordMaker.of``) po strażniku reguły danych (``run_logs.guard_logs``, ADR 0025);
+2. Logi z wynikiem (``RecordMaker.of``) po strażniku reguły danych (``run_logs_guard.guard_logs``, ADR 0025);
 3. plik Logów (``LogsOnDisk.write``), a potem, także gdy pliku nie dało się zapisać, te same Logi do Kolejki wysyłki
    (``comment_versions.OwnLogs``, stopień najwyższy): komentarz z podsumowaniem i plik w Archiwum Logów okresu;
 4. dziennik znika, gdy kolejka przyjęła Logi (``comment_versions.journal_after``); inaczej zostaje do następnego startu,
@@ -80,7 +80,7 @@ i Logi Urwanego Uruchomienia.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from functools import cache, partial
@@ -111,18 +111,9 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import JournalKey, JournalRead, LogsOnDisk
 from rozliczenia.centrum.outbox import Post
 from rozliczenia.centrum.report_box import Label
-from rozliczenia.centrum.run_logs import (
-    Environment,
-    GuardedLogs,
-    LoggedDiagnosis,
-    LoggedFile,
-    ProcessFiles,
-    RunLog,
-    StartFacts,
-    Tool,
-    guard_logs,
-    guard_text,
-)
+from rozliczenia.centrum.logs_of_run import logged_diagnosis, logs_of
+from rozliczenia.centrum.run_logs import Environment, LoggedFile, RunLog, StartFacts, Tool
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
@@ -139,6 +130,9 @@ _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
 """Miejsce zamaskowanej wartości w uwadze technicznej postępu."""
 
 T = TypeVar("T")
+
+ProcessFiles = Callable[[contract.ProcessKey, str], Sequence[Path]]
+"""Pliki taty Uruchomienia procesu dla tokenu okresu, z Ustawieniami taty z chwili końca Uruchomienia."""
 
 
 class CommentQueue(Protocol):
@@ -183,10 +177,10 @@ class RecordMaker:
         self._dad_actions = dad_actions
 
     def of(self, run: EndedRun) -> RunLog:
-        """Logi Uruchomienia ``run``, które doszło do działań po wyniku (``RunLog.of``)."""
+        """Logi Uruchomienia ``run``, które doszło do działań po wyniku (``logs_of_run.logs_of``)."""
 
         environment = self._environment(run.info.process, run.info.period)
-        return RunLog.of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
+        return logs_of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
 
     def interrupted(self, journal: JournalRead) -> RunLog:
         """Logi Urwanego Uruchomienia z dziennika ``journal`` (``RunLog.interrupted``): Aktualizacja narzędzia nie startuje
@@ -370,7 +364,7 @@ class RunComments:
             last = self._last
             if last is None or last.record.run_id != run_id:
                 return
-            logged = LoggedDiagnosis.of(diagnosis, diagnosed_at=datetime.now(timezone.utc))
+            logged = logged_diagnosis(diagnosis, diagnosed_at=datetime.now(timezone.utc))
             logs = last.with_diagnosis(logged, self._forbidden)
             if logs is None:
                 return

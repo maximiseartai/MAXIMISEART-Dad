@@ -29,7 +29,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 from rozliczenia import input_checks, intermax_ordering, preparation_messages, workbook_files
 from rozliczenia.centrum import contract, diagnosis_messages
@@ -54,8 +54,6 @@ from rozliczenia.period_folder import (
 from rozliczenia.centrum.settings import Settings
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 
-CheckState = Literal["passed", "failed", "not_checked"]
-
 _LOG_ENTRIES: Final = 20
 
 
@@ -67,7 +65,7 @@ class CheckResult:
     """
 
     label: str
-    state: CheckState
+    state: contract.CheckState
     detail: str
     message: Message | None = None
     fixed_by_update: bool = False

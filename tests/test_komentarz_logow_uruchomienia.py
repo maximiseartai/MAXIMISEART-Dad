@@ -73,18 +73,9 @@ from rozliczenia.centrum.logs_disk import (
 )
 from rozliczenia.centrum.outbox import PeriodThread, Post, Rank
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
-from rozliczenia.centrum.run_logs import (
-    READ_VALUES,
-    TOOL_FIELDS,
-    GuardedLogs,
-    LoggedInterruption,
-    OrderDone,
-    PricingProgress,
-    RunLog,
-    StartFacts,
-    guard_logs,
-    guard_text,
-)
+from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
+from rozliczenia.centrum.run_logs import READ_VALUES, LoggedInterruption, RunLog, StartFacts
+from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
 from rozliczenia.efenix_pricing import OrderKind
@@ -346,7 +337,7 @@ def test_postep_i_wynik_bez_logow_ida_do_skrzynki_z_tekstem_po_strazniku(kind: s
     assert "- Uwaga techniczna: Reguła danych: zamaskowano wartość kolumny ADRES" in comment
 
 
-# Drogi do Logów albo tekstu po strażniku bez guard_logs i guard_text, które zamyka sam typ (docstring run_logs._MINTED).
+# Drogi do Logów albo tekstu po strażniku bez guard_logs i guard_text, które zamyka sam typ (docstring run_logs_guard._MINTED).
 NOT_FROM_GUARD: Final[dict[str, Callable[[Any], object]]] = {
     "replace": lambda value: dataclasses.replace(value, **_field_change(value)),
     "kopia": copy.copy,
@@ -1137,6 +1128,35 @@ def test_maska_w_chwili_zmiany_pliku_kopii_wejscia_daje_puste_pole_z_uwaga_kopii
         "której pole nie przyjmuje."
     )
     assert kept.technical_notes == []
+
+
+def test_miejsca_ktore_straznik_pominal_albo_zostawil_puste_wracaja_z_uwag_logow_po_strazniku() -> None:
+    """Plik Logów ma cięcie strażnika tylko w uwadze technicznej, więc odtworzenie czyta z uwag Logów po strażniku
+    (``guard_cuts``) każde miejsce, które straciło wartość, z tym samym rodzajem: pominięty element listy i puste pole,
+    w uwagach technicznych i w uwagach Kopii wejścia."""
+
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ORANGE, 12345)
+    forbidden.remember_value(ForbiddenColumn.ORANGE, "123456Z")
+    orders = [
+        {"row": 18, "outcome": "gotowe", "code": None, "file": {}, "file_amount": "12345.67", "steps": [_step(None)]},
+        {"row": 19, "outcome": "gotowe", "code": None, "file": {}, "file_amount": "10.00", "steps": [_step("12345.67")]},
+    ]
+    fingerprint = {"size": 10, "modified_at": "2026-10-23T20:47:20.123456Z", "sha256": "0" * 64}
+    logs = record(
+        process="efenix",
+        efenix_orders=orders,
+        input_copy=[{"name": "plik.xlsx", "fingerprint": fingerprint, "sheets": []}],
+    )
+
+    kept = guard_logs(logs, forbidden).record
+
+    assert [(cut.place, cut.removed, cut.field) for cut in guard_cuts(kept)] == [
+        ("efenix_orders[0]", True, "efenix_orders"),
+        ("efenix_orders[1].steps[0].amount", False, "efenix_orders"),
+        ("input_copy[0].fingerprint.modified_at", False, "input_copy"),
+    ]
+    assert guard_cuts(logs) == ()
 
 
 _FULL_STEP: Final[dict[str, Any]] = {

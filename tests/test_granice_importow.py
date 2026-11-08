@@ -34,9 +34,9 @@ zostaje przeglądowi.
   imporcie. Etykietę Logów (``comment_versions.LABEL``) kod poza ``post_of`` tylko podaje kolejce w pytaniu
   ``delivered`` albo ``rejected``, a napis ``logi-uruchomienia`` stoi tylko w ``Literal``.
 - Logi i tekst po strażniku (``GuardedLogs``, ``GuardedText``) daje tylko ``guard_logs`` i ``guard_text`` z
-  ``run_logs``, inaczej ich typ niczego by nie dowodził. Konstruktor bez dowodu strażnika (``_MINTED``), ``replace``,
+  ``run_logs_guard``, inaczej ich typ niczego by nie dowodził. Konstruktor bez dowodu strażnika (``_MINTED``), ``replace``,
   kopię, ``pickle``, zmianę pola, podklasę i wartość innego typu (``Any``) zamyka sam typ albo jego sprawdzenie przy
-  uruchomieniu (docstring ``run_logs._MINTED``). Poza ``run_logs`` nazwy tych typów padają tylko w adnotacjach,
+  uruchomieniu (docstring ``run_logs_guard._MINTED``). Poza ``run_logs_guard`` nazwy tych typów padają tylko w adnotacjach,
   importach i ``isinstance``, a ``_MINTED`` i napis z ich nazwą w żadnej postaci, więc test łapie
   ``object.__new__(GuardedLogs)``, ``object.__setattr__`` slotu i ``cast(GuardedLogs, …)``.
 
@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import ast
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 import importlib
 from pathlib import Path
@@ -81,20 +81,10 @@ PURE_VERSIONS = {
     "rozliczenia.centrum.outbox": frozenset({"ArchiveFile", "PeriodThread", "Post", "Rank"}),
     "rozliczenia.centrum.report_box": frozenset({"Label"}),
     "rozliczenia.centrum.version": frozenset({"short_commit"}),
-    "rozliczenia.centrum.run_logs": frozenset(
-        {
-            "GuardedLogs",
-            "GuardedText",
-            "LoggedDiagnosis",
-            "LoggedMessage",
-            "PricingProgress",
-            "RunLog",
-            "StartFacts",
-            # strażnik reguły danych: liczy na pamięci ForbiddenValues, bez plików
-            "guard_logs",
-            "guard_text",
-        }
-    ),
+    "rozliczenia.centrum.run_logs": frozenset({"LoggedDiagnosis", "LoggedMessage", "RunLog", "StartFacts"}),
+    "rozliczenia.centrum.pricing_progress": frozenset({"PricingProgress"}),
+    # strażnik reguły danych: liczy na pamięci ForbiddenValues, bez plików
+    "rozliczenia.centrum.run_logs_guard": frozenset({"GuardedLogs", "GuardedText", "guard_logs", "guard_text"}),
     # odczyt dysku, który start Centrum podaje macierzy close, jako wartość: typy bez metod, które czytają pliki, i nazwa
     # pliku Logów w Archiwum Logów okresu (name_of liczy ją z faktów startu, bez plików)
     "rozliczenia.centrum.logs_disk": frozenset(
@@ -102,7 +92,15 @@ PURE_VERSIONS = {
     ),
     "rozliczenia.client_data": frozenset({"ForbiddenValues"}),
 }
-RUN_LOGS = "rozliczenia/centrum/run_logs.py"
+RUN_LOGS_GUARD = "rozliczenia/centrum/run_logs_guard.py"
+# Moduły Logów Uruchomienia, które czytają karta z Logów, plik Logów i odtworzenie, i moduły, których nie wczytują:
+# gospodarz Uruchomień i Diagnoza zmieniają się z procesami, a Logi z nich składa tylko logs_of_run.
+RUN_LOGS_FORMAT = (
+    "rozliczenia/centrum/run_logs.py",
+    "rozliczenia/centrum/run_logs_guard.py",
+    "rozliczenia/centrum/pricing_progress.py",
+)
+RUN_HOST = frozenset({"rozliczenia.centrum.runs", "rozliczenia.centrum.diagnosis"})
 RUN_LOGS_LABEL = "logi-uruchomienia"
 VERSIONS = "rozliczenia.centrum.comment_versions"
 # Pytania kolejki, czy wysyłka doszła albo została odrzucona: jedyne, czemu kod poza post_of podaje etykietę Logów.
@@ -262,7 +260,13 @@ def _is_workbook(module: str) -> bool:
 
 
 def _workbook_chains(file: str, root: Path = SRC) -> set[str]:
-    """Łańcuchy importów od pliku ``file`` do warstwy skoroszytu, każdy import z plikiem i linią.
+    """Łańcuchy importów od pliku ``file`` do warstwy skoroszytu (``_chains``)."""
+
+    return _chains(file, _is_workbook, root)
+
+
+def _chains(file: str, target: Callable[[str], bool], root: Path = SRC) -> set[str]:
+    """Łańcuchy importów od pliku ``file`` do modułu, który spełnia ``target``, każdy import z plikiem i linią.
 
     Idzie wszerz po modułach ``src/`` (``root``), także po importach w funkcji, więc łańcuch jest najkrótszy do
     każdego modułu po drodze. Moduł spoza ``src/`` (biblioteka) kończy drogę.
@@ -277,7 +281,7 @@ def _workbook_chains(file: str, root: Path = SRC) -> set[str]:
             continue
         for found in _imports(current, root):
             chain = (*reached[_module_name(current)], found)
-            if _is_workbook(found.module):
+            if target(found.module):
                 chains.add(" → ".join(map(str, chain)))
             elif found.module not in reached:
                 reached[found.module] = chain
@@ -296,6 +300,19 @@ def test_rdzen_uruchomienia_nie_wczytuje_warstwy_skoroszytu() -> None:
             "Moduły z WITHOUT_WORKBOOK (tests/test_granice_importow.py, powód przy każdym) nie wczytują template_file "
             "ani openpyxl, także przez inne moduły src i importem w funkcji. Przenieś typ albo stałą, której potrzebują, "
             "do modułu bez skoroszytu (jak write_routes, register_columns) i niech warstwa skoroszytu importuje ją stamtąd.",
+        ]
+    )
+
+
+def test_format_logow_uruchomienia_nie_wczytuje_gospodarza_uruchomien_ani_diagnozy() -> None:
+    found = {chain for file in RUN_LOGS_FORMAT for chain in _chains(file, RUN_HOST.__contains__)}
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Schemat Logów Uruchomienia, strażnik reguły danych i postęp Wyceny (RUN_LOGS_FORMAT w "
+            "tests/test_granice_importow.py) nie wczytują gospodarza Uruchomień (runs) ani Diagnozy (diagnosis), także "
+            "przez inne moduły src i importem w funkcji: Logi z nich składa src/rozliczenia/centrum/logs_of_run.py.",
         ]
     )
 
@@ -466,7 +483,7 @@ def _type_nodes(tree: ast.AST) -> set[ast.AST]:
 
 def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     """Miejsca, z których Logi albo tekst po strażniku mogą powstać albo się zmienić z pominięciem ``guard_logs`` i
-    ``guard_text`` drogą, której nie zamyka typ ani jego sprawdzenie przy uruchomieniu (docstring ``run_logs._MINTED``):
+    ``guard_text`` drogą, której nie zamyka typ ani jego sprawdzenie przy uruchomieniu (docstring ``run_logs_guard._MINTED``):
     ``_MINTED`` w każdej postaci, także napis; nazwa ``GuardedLogs`` albo ``GuardedText`` (także pod inną nazwą z
     importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą (także slot
     ``_GuardedLogs__…``) poza docstringiem. Celowego obejścia bez tych nazw nie łapie (docstring modułu)."""
@@ -513,7 +530,7 @@ def test_logi_i_tekst_po_strazniku_powstaja_tylko_ze_straznika() -> None:
     found = [
         f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
         for path in _python_files()
-        if path not in {SRC / RUN_LOGS, GUARD_CHECK}
+        if path not in {SRC / RUN_LOGS_GUARD, GUARD_CHECK}
         for line, code in _guard_bypasses(ast.parse(path.read_text(encoding="utf-8")))
     ]
 
@@ -521,7 +538,7 @@ def test_logi_i_tekst_po_strazniku_powstaja_tylko_ze_straznika() -> None:
         [
             *found,
             f"Logi i tekst po strażniku reguły danych (GuardedLogs, GuardedText) daje tylko guard_logs i guard_text z "
-            f"src/{RUN_LOGS}. Poza nim te nazwy padają tylko w adnotacjach, importach i isinstance, a napis z nimi i "
+            f"src/{RUN_LOGS_GUARD}. Poza nim te nazwy padają tylko w adnotacjach, importach i isinstance, a napis z nimi i "
             "dowód strażnika (_MINTED) nigdzie, bo object.__new__, object.__setattr__ i cast typ przepuszcza. Kopia, "
             "replace, zmiana pola, podklasa i wartość innego typu rzucają (docstring _MINTED).",
         ]
@@ -529,21 +546,21 @@ def test_logi_i_tekst_po_strazniku_powstaja_tylko_ze_straznika() -> None:
 
 
 # Drogi obok guard_logs i guard_text, których typ nie zamyka (przegląd #1038, rundy 1 i 2, i docstring
-# run_logs._MINTED). Podklasę zamyka też __init_subclass__, a cast(Any, …) sprawdzenie przy uruchomieniu (testy w
+# run_logs_guard._MINTED). Podklasę zamyka też __init_subclass__, a cast(Any, …) sprawdzenie przy uruchomieniu (testy w
 # tests/test_komentarz_logow_uruchomienia.py).
 GUARD_BYPASSES: typing.Final = {
     "nowa-wartosc-bez-konstruktora": "logs = object.__new__(GuardedLogs)",
     "slot-istniejacej-wartosci": 'object.__setattr__(logs, "_GuardedLogs__record", record)',
     "logi-sprzed-straznika-rzutowane": "logs = cast(GuardedLogs, record)",
     "rzutowanie-napisem": 'logs = cast("GuardedLogs", record)',
-    "konstruktor-z-modulu": "text = run_logs.GuardedText(text, proof)",
+    "konstruktor-z-modulu": "text = run_logs_guard.GuardedText(text, proof)",
     "nazwa-z-importu-pod-inna-nazwa": (
-        "from rozliczenia.centrum.run_logs import GuardedLogs as Logs\nlogs = Logs.__new__(Logs)"
+        "from rozliczenia.centrum.run_logs_guard import GuardedLogs as Logs\nlogs = Logs.__new__(Logs)"
     ),
-    "dowod-z-importu": "from rozliczenia.centrum.run_logs import _MINTED",
-    "dowod-z-atrybutu-modulu": "proof = run_logs._MINTED",
-    "dowod-przez-getattr": 'proof = getattr(run_logs, "_MINTED")',
-    "dowod-ze-slownika-modulu": 'proof = vars(run_logs)["_MINTED"]',
+    "dowod-z-importu": "from rozliczenia.centrum.run_logs_guard import _MINTED",
+    "dowod-z-atrybutu-modulu": "proof = run_logs_guard._MINTED",
+    "dowod-przez-getattr": 'proof = getattr(run_logs_guard, "_MINTED")',
+    "dowod-ze-slownika-modulu": 'proof = vars(run_logs_guard)["_MINTED"]',
     "podklasa": "class Mine(GuardedLogs):\n    pass\n",
     "konstruktor-czesciowy": "make = functools.partial(GuardedLogs)",
     # przegląd #1038, runda 3: isinstance zwalnia tylko typ w drugim argumencie, nie wartość w pierwszym
@@ -558,7 +575,7 @@ def test_sprawdzenie_straznika_lapie_kazda_droge_obok_niego_ktorej_typ_nie_zamyk
 
 def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_imporcie_isinstance_i_docstringu() -> None:
     code = (
-        "from rozliczenia.centrum.run_logs import GuardedLogs, GuardedText\n"
+        "from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText\n"
         "def keep(logs: GuardedLogs, text: 'GuardedText | None' = None) -> GuardedLogs:\n"
         '    """Logi po strażniku (``GuardedLogs``) idą dalej bez zmian."""\n'
         "    last: GuardedLogs | None = logs\n"

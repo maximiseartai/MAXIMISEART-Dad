@@ -40,18 +40,9 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.logs_disk import EndEntry, Journal, LogsOnDisk, name_of
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
-from rozliczenia.centrum.run_logs import (
-    Environment,
-    LoggedInterruption,
-    LoggedOrder,
-    LoggedStep,
-    OrderDone,
-    PricingProgress,
-    RunLog,
-    StartFacts,
-    Tool,
-    guard_text,
-)
+from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
+from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, LoggedOrder, LoggedStep, RunLog, StartFacts, Tool
+from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace

@@ -964,11 +964,15 @@ class DecisionAnswer(_Model):
     answer: Literal["continue", "abort"]
 
 
+CheckState = Literal["passed", "failed", "not_checked"]
+"""Wynik sprawdzenia Diagnozy; ten sam w Logach Uruchomienia (``run_logs.LoggedCheck``)."""
+
+
 class DiagnosisCheck(_Model):
     """Jedno sprawdzenie Diagnozy: co sprawdzono, czy przeszło i krótko dlaczego, bez pełnych ścieżek."""
 
     label: str
-    state: Literal["passed", "failed", "not_checked"]
+    state: CheckState
     detail: str
 
 

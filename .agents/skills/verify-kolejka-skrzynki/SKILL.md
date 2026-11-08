@@ -162,7 +162,7 @@ queues the Logi Uruchomienia again with the same identifier, changes the comment
 of its Uruchomienie, and an older queue file that arrives after a newer one
 (read once with an `OSError`) changes and adds nothing, even when it has more
 parts. The moment orders only versions of one rank, which come from one Centrum
-process (only the last Uruchomienie of a process has a Diagnoza, `run_logs.py`,
+process (only the last Uruchomienie of a process has a Diagnoza, `run_comments.py`,
 and only the running Wycena a progress), where `Outbox.post` gives every name a
 moment after the one before, also when the computer's clock went back, or are
 stand-in versions of one journal from two starts, which have the same kind. The queue never edits an issue body. The delivery marker and `_undeleted` now only spare a retry its requests
