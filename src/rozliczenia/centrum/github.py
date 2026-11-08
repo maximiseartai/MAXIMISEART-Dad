@@ -146,10 +146,17 @@ class _KeyToSameOrigin(urllib.request.HTTPRedirectHandler):
         return redirected
 
 
-def _origin(url: str) -> tuple[str, str | None, int | None]:
+def _origin(url: str) -> tuple[str, str | None, int | None] | None:
+    """Origin adresu; ``None``, gdy portu nie da się odczytać: takiego adresu nie ma z kim porównać, a urllib nie
+    połączy się z nim i zgłosi brak połączenia."""
+
     parts = urllib.parse.urlsplit(url)
     scheme = parts.scheme.lower()
-    return scheme, parts.hostname, parts.port or _DEFAULT_PORTS.get(scheme)
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    return scheme, parts.hostname, port or _DEFAULT_PORTS.get(scheme)
 
 
 _DEFAULT_PORTS: Final = {"http": 80, "https": 443}
