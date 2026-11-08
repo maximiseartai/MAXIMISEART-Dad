@@ -48,7 +48,12 @@ pierwszy sekret na jego komputerze:
   wpisuje go do `config/zgloszenia-klucz.txt` poza Gitem; tata nie ma pola na
   klucz. Klucz nie trafia do odpowiedzi Centrum, dziennika, Zgłoszenia ani
   przeglądarki; Konfiguracja pokazuje tylko „gotowe”, „brak klucza” albo
-  „klucz odrzucony” (#426).
+  „klucz odrzucony” (#426). Od 8.11.2026 Centrum pyta tym kluczem także
+  publiczne repozytorium narzędzia o Wydania (ADR 0014), bo bez klucza 60
+  pytań na godzinę dzieli cały adres IP taty, a z nim 5000 na godzinę ma
+  konto. Klucz idzie tylko do `api.github.com`, nigdy na adres
+  przekierowania; odmowa pytania z kluczem to jedno ponowienie bez niego i nie
+  zmienia werdyktu Skrzynki o kluczu.
 - Co Skrzynka mówi o kluczu, wie jedno miejsce (`KeyedBox`): odmowa przy
   zakładaniu issue albo liście issue odrzuca klucz, każda inna odpowiedź go
   przyjmuje, a brak sieci niczego nie zmienia. Limit zapytań GitHuba (403 z

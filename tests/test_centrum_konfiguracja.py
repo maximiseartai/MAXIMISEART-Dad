@@ -11,11 +11,14 @@ from typing import Any, NoReturn
 import pytest
 from openpyxl import load_workbook
 
+from rozliczenia.centrum import tool_freshness
+
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import Problem, WorkbookError
-from tests.fixtures.centrum import TOOL_COMMIT, CentrumClient, FakeGitHub, ToolDirectory, centrum_app
+from tests.fixtures.centrum import TOOL_COMMIT, CentrumClient, FakeGitHub, ToolDirectory, centrum_app, write_report_key
+from tests.fixtures.github_api import github_api, newest_on_main
 from tests.fixtures.centrum_processes import write_configuration
 from tests.fixtures.workbooks import cut_sheet_after_data_rows
 from tests.fixtures.settlement import write_template
@@ -402,3 +405,40 @@ def test_narzedzie_poza_klonem_gita_ma_nieznana_wersje(tmp_path: Path) -> None:
     configuration = read_configuration(configured(tmp_path, FakeGitHub(tool_commit=None)))
 
     assert (configuration["version"], configuration["freshness"]) == (None, "not_checked")
+
+
+# Prawdziwe ``github_releases`` z chwili importu: autouse ``bez_githuba`` (``tests/conftest.py``) podmienia je w module.
+GITHUB_RELEASES = tool_freshness.github_releases
+NEWER_RELEASE = "2222222222222222222222222222222222222222"
+
+
+@pytest.mark.parametrize(
+    ("key", "refused_token", "authorizations"),
+    [
+        (None, None, {None}),
+        ("token-wymyslony-w-tescie", None, {"Bearer token-wymyslony-w-tescie"}),
+        ("token-wymyslony-w-tescie", 401, {"Bearer token-wymyslony-w-tescie", None}),
+    ],
+    ids=["bez-pliku-klucza", "z-tokenem", "odrzucony-token"],
+)
+def test_konfiguracja_pyta_github_o_wydania_z_tokenem_do_zgloszen_tylko_gdy_jest_plik_klucza(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    key: str | None,
+    refused_token: int | None,
+    authorizations: set[str | None],
+) -> None:
+    monkeypatch.setattr(tool_freshness, "github_releases", GITHUB_RELEASES)
+    tool = ToolDirectory(tmp_path)
+    write_configuration(tool)
+    if key is not None:
+        write_report_key(tool, key)
+    with github_api(newest_on_main("/repos/tata/narzedzie", "v9.0.0", NEWER_RELEASE), refused_token=refused_token) as api:
+        monkeypatch.setattr(tool_freshness, "REPOSITORY_API", f"{api.url}/repos/tata/narzedzie")
+        client = CentrumClient(centrum_app(tool, tool_freshness=None))
+        configuration = client.get("/api/configuration").json()
+        client.stop()
+
+    assert {asked.authorization for asked in api.asked} == authorizations
+    # Odmowa tokenu przez GitHub nie zabiera propozycji aktualizacji ani nie odrzuca klucza Skrzynki.
+    assert (configuration["update_offered"], configuration["reports"]) == (True, "missing_key" if key is None else "ready")

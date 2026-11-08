@@ -183,10 +183,6 @@ def create_app(
     app.include_router(periods_router(store, platform, today, processes))
     # Uruchomienia z Centrum we własnym dzienniku obok ustawień; schemat metryk się nie zmienia.
     centrum_runs = CentrumRuns(settings_path.parent / CENTRUM_RUNS_FILE)
-    # Najnowsze Wydanie na GitHubie: jedna pamiętana odpowiedź dla Konfiguracji, Powiadomień i wyniku Aktualizacji
-    # narzędzia (limit API bez klucza); Diagnoza pyta za każdym razem, a jej odpowiedź też trafia do pamięci.
-    freshness = tool_freshness or ToolFreshness.of_system()
-    release = RememberedRelease(freshness.release, clock=clock)
     # Sprawy taty: wysłane Zgłoszenia i Uwagi taty w jednym pliku stanu obok Ustawień taty (ADR 0015).
     config = settings_path.parent
     cases = DadCases(config, log, pause=pause)
@@ -197,6 +193,11 @@ def create_app(
         clock=clock,
         opening=NotesFile(config / OPENING_FILE, replace_atomically, log.box_notes_unavailable),
     )
+    # Najnowsze Wydanie na GitHubie, pytane z kluczem do Zgłoszeń, gdy jest: jedna pamiętana odpowiedź dla Konfiguracji,
+    # Powiadomień i wyniku Aktualizacji narzędzia (limit API); Diagnoza pyta za każdym razem, a jej odpowiedź też trafia
+    # do pamięci.
+    freshness = tool_freshness or ToolFreshness.of_system(box.github_key)
+    release = RememberedRelease(freshness.release, clock=clock)
     # Diagnoza: commit `main` z GitHuba, atrybuty OneDrive i werdykt Skrzynki o kluczu to granice komputera taty.
     surroundings = Surroundings(
         replace(freshness, release=release.fresh),

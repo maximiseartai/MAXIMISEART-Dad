@@ -740,7 +740,10 @@ _Avoid_: niepewny wiersz, wiersz bez pewnego położenia
 Token, którym Centrum rozliczeń wysyła do Skrzynki Zgłoszeń. Wpisuje go Maks na
 komputerze taty, a tata go nie widzi. Może go brakować albo Skrzynka może go
 odrzucić; wtedy nic nie wychodzi, dopóki Maks go nie naprawi, a tata widzi, że
-Token do Zgłoszeń nie działa i ma skontaktować się z Maksem.
+Token do Zgłoszeń nie działa i ma skontaktować się z Maksem. Tym samym tokenem
+Centrum pyta publiczne repozytorium narzędzia o Wydania, bo z nim GitHub
+odpowiada na więcej pytań; gdy GitHub go tam nie przyjmie, Centrum pyta bez
+niego, a Token do Zgłoszeń dalej działa.
 _Avoid_: klucz, hasło
 
 ## Kolejka wysyłki
@@ -837,7 +840,8 @@ _Avoid_: upgrade, git pull, instalacja
 ## Aktualność narzędzia
 
 Czy narzędzie na komputerze taty jest na najnowszym Wydaniu: `Aktualna`,
-`Jest nowsza wersja` albo `Nie sprawdzono` (bez internetu). Pokazuje ją
+`Jest nowsza wersja` albo `Nie sprawdzono` (bez internetu albo gdy GitHub
+chwilowo nie odpowiada na pytania o nową wersję). Pokazuje ją
 Konfiguracja i sprawdza Diagnoza; nowsza wersja jest przyczyną Zatrzymania
 tylko wtedy, gdy Diagnoza nie znalazła innej.
 _Avoid_: świeżość, freshness

@@ -2,7 +2,7 @@
 
 Diagnoza and Konfiguracja tell Dad whether a newer Wydanie exists („Jest nowsza wersja”, „Aktualna”, „Nie
 sprawdzono”), and Powiadomienia show the published Wydania with their notes. Centrum asks the public tool repository
-without a key: the tags (paged by `Link`), the tip of `main`, compare and the PRs of a commit to decide whether a
+with the Token do Zgłoszeń when Dad has the key file, and without a key otherwise: the tags (paged by `Link`), the tip of `main`, compare and the PRs of a commit to decide whether a
 Wydanie lies on the first-parent line of `main` (ADR 0014), and the list of GitHub Releases. Here the real
 `tool_freshness` asks the real repository through a recording proxy, and Git says what the answer must be.
 

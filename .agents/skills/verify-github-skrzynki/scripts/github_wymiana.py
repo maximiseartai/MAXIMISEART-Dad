@@ -5,8 +5,8 @@ Skrzynki (``report_box.REPOSITORY``) na jedno z repozytoriów próbnych ``TRIALS
 z commitem, w którym da się założyć Archiwum okresu) i nigdzie indziej, przez ``urllib_transport`` klienta, a w
 odtwarzaniu ``ReplayTransport`` odpowiada nagranymi odpowiedziami w nagranej kolejności. Aktualność
 narzędzia (``tool_freshness``) nie ma transportu, tylko adres API, więc pyta lokalnego ``GitHubProxy``: na żywo
-przekazuje on każde GET do ``api.github.com`` (tylko repozytorium narzędzia, bez klucza jak u taty albo z kluczem
-``gh``), a w odtwarzaniu odpowiada z nagrania.
+przekazuje on każde GET do ``api.github.com`` (tylko repozytorium narzędzia, bez klucza jak u taty bez pliku klucza
+albo z kluczem ``gh``), a w odtwarzaniu odpowiada z nagrania.
 
 Nagranie wymiany ma metodę, ścieżkę z zapytaniem (bez hosta, adres Skrzynki tak, jak wysłał go klient), skrót SHA-256
 i długość treści żądania (bez nagłówków, więc bez klucza), status, nagłówek ``Link`` i ciało odpowiedzi przycięte przez

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -386,12 +387,15 @@ def test_github_bez_wydania_konfiguracja_pamieta_jak_kazda_odpowiedz_przez_10_mi
     assert github.asked == 1
 
 
-def test_bez_odpowiedzi_githuba_konfiguracja_pyta_znowu_po_minucie(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "limited", [None, datetime(2026, 11, 8, 3, 49, tzinfo=timezone.utc)], ids=["brak-sieci", "limit-githuba"]
+)
+def test_bez_odpowiedzi_githuba_konfiguracja_pyta_znowu_po_minucie(tmp_path: Path, limited: datetime | None) -> None:
     centrum = preparing_centrum(tmp_path)
     github, clock = centrum.surroundings.github, centrum.surroundings.clock
-    github.release = None
+    github.release, github.limited = None, limited
     offline = tool_on_configuration(centrum)["freshness"]
-    github.release = NEWER_MAIN
+    github.release, github.limited = NEWER_MAIN, None
 
     still_offline = tool_on_configuration(centrum)["freshness"]
     clock.advance(minutes=1)

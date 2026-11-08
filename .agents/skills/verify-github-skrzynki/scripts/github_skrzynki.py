@@ -469,7 +469,7 @@ def unchecked(kinds: dict[str, str]) -> list[str]:
             )
     if kinds.get("aktualnosc") not in (None, "bez klucza"):
         lines.append(
-            f"NIESPRAWDZONE | aktualnosc/bez-klucza | Aktualność pytana kluczem {kinds['aktualnosc']}, a Centrum taty pyta bez klucza"
+            f"NIESPRAWDZONE | aktualnosc/bez-klucza | Aktualność pytana kluczem {kinds['aktualnosc']}, a Centrum taty bez pliku klucza pyta bez klucza"
         )
     return lines
 

@@ -38,7 +38,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles, Template, workers_problem
 from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT, CentrumLog, event_of
-from rozliczenia.centrum.tool_freshness import ToolFreshness, offers_update
+from rozliczenia.centrum.tool_freshness import RateLimited, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import Readers
@@ -274,11 +274,20 @@ def _check(label: str) -> Callable[[_CheckRun], _Check]:
 @_check("Aktualność narzędzia")
 def _tool_freshness(computer: _Computer, label: str) -> list[CheckResult]:
     freshness = computer.surroundings.tool_freshness
-    judgement = freshness.judge()
+    judgement, answer = freshness.assess()
     if offers_update(judgement):
         return [CheckResult.newer_tool_version(label)]
     if judgement == "current":
         return [CheckResult.passed(label, f"Najnowsza wersja z GitHuba, commit {short_commit(freshness.local() or '')}.")]
+    if isinstance(answer, RateLimited):
+        # Połączenie jest, tylko GitHub odmawia do odnowienia limitu, więc „brak połączenia” wprowadzałby tatę w błąd.
+        return [
+            CheckResult.not_checked(
+                label,
+                "Nie sprawdzono: GitHub chwilowo nie odpowiada na pytania o nową wersję. "
+                f"Centrum sprawdzi ponownie po {answer.reset.astimezone():%H:%M}.",
+            )
+        ]
     return [CheckResult.not_checked(label, _NOT_CHECKED_FRESHNESS[judgement])]
 
 
