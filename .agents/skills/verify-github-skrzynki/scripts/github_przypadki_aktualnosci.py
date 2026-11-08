@@ -25,12 +25,12 @@ from rozliczenia.centrum.tool_freshness import (
     published_from,
     releases_from,
 )
+from rozliczenia.tool_files import REPOSITORY_URL
 
-from github_wymiana import TOOL_REPOSITORY, Case, Facts, GitHubProxy
+from github_wymiana import Case, Facts, GitHubProxy
 
 ROOT = Path(__file__).resolve().parents[4]
 TIMEOUT_S: Final = 60.0
-REMOTE: Final = f"https://github.com/{TOOL_REPOSITORY}.git"
 _RELEASE: Final = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
 
 
@@ -60,7 +60,7 @@ class Oracle:
 
     @classmethod
     def read(cls) -> Oracle:
-        listed = _git("ls-remote", REMOTE)
+        listed = _git("ls-remote", REPOSITORY_URL)
         refs: dict[str, str] = {}
         for row in listed.splitlines():
             sha, name = row.split("\t")
@@ -71,7 +71,7 @@ class Oracle:
             if name.startswith("refs/tags/")
         }
         tip = refs["refs/heads/main"]
-        _git("fetch", "--quiet", "--no-tags", REMOTE, "main")
+        _git("fetch", "--quiet", "--no-tags", REPOSITORY_URL, "main")
         log = _git("log", "--first-parent", "--format=%H%x09%P%x09%s", tip)
         line = tuple(
             Commit(sha, tuple(parents.split()), subject)

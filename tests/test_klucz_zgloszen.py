@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from rozliczenia.centrum.github import NO_ANSWER_KEPT_S
 from rozliczenia.centrum.keyed_box import (
     ACCEPTED_KEPT_S,
     LIST_LAG_S,
@@ -28,7 +29,6 @@ from rozliczenia.centrum.keyed_box import (
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
-from rozliczenia.centrum.tool_freshness import NO_ANSWER_KEPT_S
 
 from tests.fixtures.centrum import FakeIssue, FakeReportBox
 from tests.fixtures.clock import ManualClock

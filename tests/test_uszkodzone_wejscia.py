@@ -30,7 +30,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia import period_folder
-from rozliczenia.centrum.report_box import GitHubReportBox, HttpRequest, HttpResponse
+from rozliczenia.centrum.github import HttpRequest, HttpResponse
+from rozliczenia.centrum.report_box import GitHubReportBox
 
 from tests.fixtures.centrum import (
     QUEUE_THREAD,

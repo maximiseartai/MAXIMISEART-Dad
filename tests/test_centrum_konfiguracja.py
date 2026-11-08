@@ -437,7 +437,7 @@ def test_konfiguracja_pyta_github_o_wydania_z_tokenem_do_zgloszen_tylko_gdy_jest
     if key is not None:
         write_report_key(tool, key)
     with github_api(newest_on_main("/repos/tata/narzedzie", "v9.0.0", NEWER_RELEASE), refused_token=refused_token) as api:
-        monkeypatch.setattr(tool_freshness, "REPOSITORY_API", f"{api.url}/repos/tata/narzedzie")
+        monkeypatch.setattr(tool_freshness, "TOOL_API", f"{api.url}/repos/tata/narzedzie")
         client = CentrumClient(centrum_app(tool, tool_freshness=None))
         configuration = client.get("/api/configuration").json()
         client.stop()

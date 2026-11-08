@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from rozliczenia.centrum.github import HttpRequest, HttpResponse
 from rozliczenia.centrum.report_box import (
     Archive,
     Asset,
@@ -31,8 +32,6 @@ from rozliczenia.centrum.report_box import (
     Commented,
     FindOutcome,
     GitHubReportBox,
-    HttpRequest,
-    HttpResponse,
     Issue,
     IssuesOutcome,
     Label,

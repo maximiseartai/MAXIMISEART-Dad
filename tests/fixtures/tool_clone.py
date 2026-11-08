@@ -307,7 +307,7 @@ def github_api_of(origin: Path, *, asked: list[str] | None = None) -> Iterator[s
     """API GitHuba (lista tagów, czubek `main` i porównanie commitów) dla repozytorium ``origin``, liczone Gitem w
     ``origin``; ścieżka każdego pytania trafia do ``asked``.
 
-    Adres zwrócony przez blok to repozytorium w tym API (``REPOSITORY_API``). Porównanie przyjmuje commity tak jak
+    Adres zwrócony przez blok to repozytorium w tym API (``github.TOOL_API``). Porównanie przyjmuje commity tak jak
     GitHub, także ``<commit>~k``, a commitu, którego nie ma (``~k`` sprzed pierwszego commitu), nie zna (404).
     """
 

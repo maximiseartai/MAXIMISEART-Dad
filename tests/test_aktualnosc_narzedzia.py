@@ -21,8 +21,8 @@ import time
 
 import pytest
 
-from rozliczenia import tool_files
 from rozliczenia.centrum import tool_freshness, tool_update
+from rozliczenia.centrum.github import TOOL_API
 from rozliczenia.centrum.tool_freshness import (
     GitHubReleases,
     PublishedRelease,
@@ -315,7 +315,7 @@ def test_wydanie_daleko_na_linii_main_kosztuje_tylko_logarytm_porownan(github: s
 def test_aktualnosc_w_centrum_pamieta_linie_main_miedzy_sprawdzeniami(
     github: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(tool_freshness, "REPOSITORY_API", f"{github}/z-galezi")
+    monkeypatch.setattr(tool_freshness, "TOOL_API", f"{github}/z-galezi")
     monkeypatch.setattr(tool_freshness, "_GITHUB_LINE", {})
 
     assert GITHUB_RELEASES() == GitHubReleases(None, None)
@@ -393,7 +393,7 @@ def test_aktualnosc_i_aktualizacja_pytaja_repozytorium_tego_checkoutu_bez_przeki
     ).stdout.strip()
     repository = re.sub(r"^(https://github\.com/|git@github\.com:)|\.git$", "", origin)
 
-    assert tool_files.REPOSITORY_API == f"https://api.github.com/repos/{repository}"
+    assert TOOL_API == f"https://api.github.com/repos/{repository}"
     assert tool_update.ToolClone(Path()).origin == f"https://github.com/{repository}.git"
 
 

@@ -33,13 +33,25 @@ from __future__ import annotations
 
 import http.client
 import json
-import urllib.error
 import urllib.parse
-import urllib.request
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Final, Literal, Protocol, get_args
+
+from rozliczenia.centrum.github import (
+    API,
+    MAX_PAGES,
+    PAGE_SIZE,
+    UPLOADS,
+    WEB,
+    HttpRequest,
+    HttpResponse,
+    Transport,
+    headers,
+    send,
+    sendable,
+)
 
 
 Label = Literal["zgloszenie", "kontrola-ilosci", "logi-uruchomienia", "uwaga-taty"]
@@ -190,28 +202,7 @@ class ReportBox(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class HttpRequest:
-    method: str
-    url: str
-    headers: Mapping[str, str] = field(repr=False)  # nagłówki niosą klucz taty
-    body: bytes | None
-
-
-@dataclass(frozen=True)
-class HttpResponse:
-    status: int
-    body: bytes
-
-
-# Transport HTTP skrzynki GitHuba; brak sieci to ``OSError``, urwana albo nieczytelna odpowiedź ``HTTPException``. Testy podstawiają własny, bez prawdziwego GitHuba.
-Transport = Callable[[HttpRequest], HttpResponse]
-
 REPOSITORY: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia"
-_API: Final = "https://api.github.com"
-# Pliki GitHub Release idą na osobny adres (dokumentacja „Upload a release asset”).
-_UPLOADS: Final = "https://uploads.github.com"
-_WEB: Final = "https://github.com"
 _TIMEOUT_S: Final = 15.0
 _REFUSALS: Final = frozenset({401, 403, 404})
 # GitHub odpowiada na przekroczony limit zapytań (podstawowy i „secondary”) kodem 403 z „rate limit” w ``message``
@@ -222,9 +213,6 @@ _REJECTIONS: Final = frozenset({400, 413, 422})
 # Odpowiedź na założenie Release w repozytorium bez commitu, którą raz dała Skrzynka 2026-11-04 („Git Repository is
 # empty.”); repozytorium próbne odpowiada 422 (``_REJECTIONS``), nagrania ``verify-github-skrzynki``.
 _EMPTY_REPOSITORY: Final = 409
-# Issue z etykietą przegląda się stronami po 100; dziesięć stron to więcej, niż jedna etykieta kiedykolwiek będzie miała.
-_PAGE_SIZE: Final = 100
-_MAX_PAGES: Final = 10
 _CLOSE_REASONS: Final[Mapping[str, CloseReason]] = {reason: reason for reason in get_args(CloseReason)}
 
 
@@ -237,19 +225,13 @@ def newest_with_line(issues: tuple[Issue, ...], line: str) -> int | None:
 def archive_url(tag: str, name: str) -> str:
     """Adres pobrania pliku ``name`` z Archiwum z tagiem ``tag`` (GitHub Release w repozytorium Zgłoszeń)."""
 
-    return f"{_WEB}/{REPOSITORY}/releases/download/{urllib.parse.quote(tag)}/{urllib.parse.quote(name)}"
+    return f"{WEB}/{REPOSITORY}/releases/download/{urllib.parse.quote(tag)}/{urllib.parse.quote(name)}"
 
 
 def urllib_transport(request: HttpRequest) -> HttpResponse:
-    """Żądanie HTTPS przez bibliotekę standardową; odpowiedź z kodem błędu HTTP to też odpowiedź."""
+    """Żądanie Skrzynki do GitHuba przez proxy z ustawień systemu (``github`` mówi, czemu tak)."""
 
-    sent = urllib.request.Request(request.url, data=request.body, headers=dict(request.headers), method=request.method)
-    try:
-        with urllib.request.urlopen(sent, timeout=_TIMEOUT_S) as response:
-            return HttpResponse(response.status, response.read())
-    except urllib.error.HTTPError as error:
-        with error:
-            return HttpResponse(error.code, error.read())
+    return send(request, proxy="system", timeout_s=_TIMEOUT_S)
 
 
 class GitHubReportBox:
@@ -262,7 +244,7 @@ class GitHubReportBox:
         if not sendable(key):
             return Refused()
         payload = {"title": title, "body": body, "labels": [label]}
-        answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/issues", payload, key)
+        answer = self._send("POST", f"{API}/repos/{REPOSITORY}/issues", payload, key)
         if not isinstance(answer, HttpResponse):
             return answer
         number = _json_field(answer.body, "number") if answer.status == 201 else None
@@ -271,40 +253,40 @@ class GitHubReportBox:
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
         if not sendable(key):
             return Refused()
-        answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/issues/{number}/comments", {"body": body}, key)
+        answer = self._send("POST", f"{API}/repos/{REPOSITORY}/issues/{number}/comments", {"body": body}, key)
         return _commented(answer, 201)
 
     def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
         if not sendable(key):
             return Refused()
-        answer = self._send("PATCH", f"{_API}/repos/{REPOSITORY}/issues/comments/{comment_id}", {"body": body}, key)
+        answer = self._send("PATCH", f"{API}/repos/{REPOSITORY}/issues/comments/{comment_id}", {"body": body}, key)
         return _commented(answer, 200)
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         """Issue z etykietą strona po stronie; wpis bez numeru (nie issue) pomija, a porażka strony to porażka całości."""
 
         state = "all" if include_closed else "open"
-        entries = self._pages(f"{_API}/repos/{REPOSITORY}/issues?state={state}&labels={label}&", key)
+        entries = self._pages(f"{API}/repos/{REPOSITORY}/issues?state={state}&labels={label}&", key)
         return entries if not isinstance(entries, list) else tuple(i for i in map(_issue, entries) if i is not None)
 
     def comments(self, number: int, *, key: str) -> CommentsOutcome:
         """Komentarze issue strona po stronie; wpis bez identyfikatora albo adresu pomija, a porażka strony to porażka
         całości."""
 
-        entries = self._pages(f"{_API}/repos/{REPOSITORY}/issues/{number}/comments?", key)
+        entries = self._pages(f"{API}/repos/{REPOSITORY}/issues/{number}/comments?", key)
         return entries if not isinstance(entries, list) else tuple(c for c in map(_comment, entries) if c is not None)
 
     def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
         """Release z tagiem ``tag`` z listy Release'ów i jego pliki, oba strona po stronie; porażka strony to porażka
         całości. Lista, a nie Release po tagu: 404 po tagu znaczy też brak uprawnienia, a lista bez niego jest pusta."""
 
-        releases = self._pages(f"{_API}/repos/{REPOSITORY}/releases?", key)
+        releases = self._pages(f"{API}/repos/{REPOSITORY}/releases?", key)
         if not isinstance(releases, list):
             return releases
         found = next((_release_id(entry) for entry in releases if _tag(entry) == tag), None)
         if found is None:
             return None
-        assets = self._pages(f"{_API}/repos/{REPOSITORY}/releases/{found}/assets?", key)
+        assets = self._pages(f"{API}/repos/{REPOSITORY}/releases/{found}/assets?", key)
         if not isinstance(assets, list):
             return assets
         return Archive(found, tuple(asset for asset in map(_asset, assets) if asset is not None))
@@ -321,7 +303,7 @@ class GitHubReportBox:
         if not sendable(key):
             return Refused()
         payload = {"tag_name": tag, "name": title, "body": description, "make_latest": "false"}
-        answer = self._send("POST", f"{_API}/repos/{REPOSITORY}/releases", payload, key)
+        answer = self._send("POST", f"{API}/repos/{REPOSITORY}/releases", payload, key)
         if not isinstance(answer, HttpResponse):
             return answer
         if answer.status == _EMPTY_REPOSITORY:
@@ -333,7 +315,7 @@ class GitHubReportBox:
         if not sendable(key):
             return Refused()
         query = urllib.parse.urlencode({"name": name, "label": label})
-        url = f"{_UPLOADS}/repos/{REPOSITORY}/releases/{archive_id}/assets?{query}"
+        url = f"{UPLOADS}/repos/{REPOSITORY}/releases/{archive_id}/assets?{query}"
         answer = self._submit("POST", url, data, "application/octet-stream", key)
         if not isinstance(answer, HttpResponse):
             return answer
@@ -346,8 +328,8 @@ class GitHubReportBox:
         answer = self._exchange(
             HttpRequest(
                 method="DELETE",
-                url=f"{_API}/repos/{REPOSITORY}/releases/assets/{asset_id}",
-                headers=_headers(key),
+                url=f"{API}/repos/{REPOSITORY}/releases/assets/{asset_id}",
+                headers=headers(key),
                 body=None,
             )
         )
@@ -356,21 +338,21 @@ class GitHubReportBox:
         return Removed() if answer.status == 204 else Unreachable()
 
     def _pages(self, query: str, key: str) -> list[object] | Refused | Unreachable:
-        """Wpisy listy GitHuba ze wszystkich stron, najwyżej ``_MAX_PAGES``; ``query`` to adres z ``?`` albo ``&`` na końcu."""
+        """Wpisy listy GitHuba ze wszystkich stron, najwyżej ``MAX_PAGES``; ``query`` to adres z ``?`` albo ``&`` na końcu."""
 
         if not sendable(key):
             return Refused()
         found: list[object] = []
-        for page in range(1, _MAX_PAGES + 1):
-            paged = f"{query}per_page={_PAGE_SIZE}&page={page}"
-            answer = self._exchange(HttpRequest(method="GET", url=paged, headers=_headers(key), body=None))
+        for page in range(1, MAX_PAGES + 1):
+            paged = f"{query}per_page={PAGE_SIZE}&page={page}"
+            answer = self._exchange(HttpRequest(method="GET", url=paged, headers=headers(key), body=None))
             if not isinstance(answer, HttpResponse):
                 return answer
             entries = _json(answer.body) if answer.status == 200 else None
             if not isinstance(entries, list):
                 return Unreachable()
             found.extend(entries)
-            if len(entries) < _PAGE_SIZE:
+            if len(entries) < PAGE_SIZE:
                 break
         return found
 
@@ -385,7 +367,7 @@ class GitHubReportBox:
         """Wysyłka treści ``body``; odpowiedź na samą treść (``_REJECTIONS``) to ``Rejected``."""
 
         answer = self._exchange(
-            HttpRequest(method=method, url=url, headers={**_headers(key), "Content-Type": content_type}, body=body)
+            HttpRequest(method=method, url=url, headers={**headers(key), "Content-Type": content_type}, body=body)
         )
         return Rejected() if isinstance(answer, HttpResponse) and answer.status in _REJECTIONS else answer
 
@@ -403,24 +385,6 @@ class GitHubReportBox:
         if response.status in _REFUSALS and _RATE_LIMIT not in response.body:
             return Refused()
         return response
-
-
-def sendable(key: str) -> bool:
-    """Klucz da się wysłać w nagłówku ``Authorization``: widoczne znaki ASCII bez spacji, jak każdy token GitHuba.
-
-    Tę samą regułę stosuje ``KeyedBox.github_key`` dla pytań o Wydania: klucza, którego nie da się wysłać, nie dostają.
-    """
-
-    return key.isascii() and key.isprintable() and " " not in key
-
-
-def _headers(key: str) -> dict[str, str]:
-    return {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {key}",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "centrum-rozliczen",
-    }
 
 
 def _commented(answer: HttpResponse | Refused | Rejected | Unreachable, status: int) -> CommentOutcome:

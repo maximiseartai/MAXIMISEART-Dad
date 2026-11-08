@@ -1,0 +1,139 @@
+"""Polityka HTTP Centrum wobec API GitHuba: adresy, nagłówki, połączenie, stronicowanie i pamięć odpowiedzi.
+
+Z GitHubem rozmawiają dwa klienty Centrum: Aktualność narzędzia (``tool_freshness``, publiczne repozytorium narzędzia,
+z kluczem taty, gdy jest) i Skrzynka Zgłoszeń (``report_box``, prywatne repozytorium Zgłoszeń z kluczem taty). Oba
+składają żądanie z ``headers`` i wysyłają je przez ``send``, więc nowy nagłówek, wersja API albo zmiana połączenia
+ląduje tutaj. Klucz w ``Authorization`` ``send`` wysyła tylko pod adres żądania, nigdy pod adres przekierowania.
+
+Proxy z ustawień systemu klienty traktują różnie, jak przed wydzieleniem tego modułu: Aktualność łączy się wprost
+(``"direct"``), a Skrzynka przez proxy systemu (``"system"``). Nic w repozytorium nie uzasadnia tej różnicy; to pytanie
+do Maksa, więc każdy klient mówi swoje ``Proxy`` jawnie.
+
+Listy GitHub daje stronami po najwyżej ``PAGE_SIZE`` wpisów, a klient czyta najwyżej ``MAX_PAGES`` stron. Aktualność
+idzie za ``rel="next"`` z nagłówka ``Link`` (``next_page``); transport Skrzynki i jej nagrania w
+``verify-github-skrzynki`` nagłówków nie niosą, więc Skrzynka pyta o kolejne numery stron, aż strona przyjdzie
+niepełna.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import re
+from typing import Final, Literal
+import urllib.error
+import urllib.request
+
+from rozliczenia.tool_files import REPOSITORY
+
+API: Final = "https://api.github.com"
+# Pliki GitHub Release idą na osobny adres (dokumentacja „Upload a release asset”).
+UPLOADS: Final = "https://uploads.github.com"
+WEB: Final = "https://github.com"
+TOOL_API: Final = f"{API}/repos/{REPOSITORY}"
+
+PAGE_SIZE: Final = 100
+# Dziesięć stron po 100: 1000 tagów przy Wydaniu na tydzień to lata, a jedna etykieta Skrzynki nigdy tylu issue nie ma.
+MAX_PAGES: Final = 10
+
+# API GitHuba bez tokenu odpowiada na 60 pytań na godzinę z jednego adresu, a bez sieci każde pytanie czeka do
+# limitu czasu: odpowiedź GitHuba Centrum pamięta przez 10 minut, także „brak Wydań”, a brak odpowiedzi (także odmowę
+# z powodu limitu) przez minutę (internet może zaraz wrócić).
+ANSWER_KEPT_S: Final = 10 * 60
+NO_ANSWER_KEPT_S: Final = 60
+
+Proxy = Literal["system", "direct"]
+
+
+@dataclass(frozen=True)
+class HttpRequest:
+    method: str
+    url: str
+    headers: Mapping[str, str] = field(repr=False)  # nagłówki niosą klucz taty
+    body: bytes | None
+
+
+@dataclass(frozen=True)
+class HttpResponse:
+    """Odpowiedź GitHuba: kod, treść i nagłówki z nazwami małymi literami (puste: transport ich nie niesie)."""
+
+    status: int
+    body: bytes
+    headers: Mapping[str, str] = field(default_factory=dict)
+
+
+# Transport HTTP do GitHuba; brak sieci to ``OSError``, urwana albo nieczytelna odpowiedź ``HTTPException``. Testy
+# podstawiają własny, bez prawdziwego GitHuba.
+Transport = Callable[[HttpRequest], HttpResponse]
+
+
+def headers(key: str | None = None) -> dict[str, str]:
+    """Nagłówki każdego żądania Centrum do API GitHuba; z ``key`` także klucz w ``Authorization``."""
+
+    sent = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "centrum-rozliczen",
+    }
+    return sent if key is None else {**sent, "Authorization": f"Bearer {key}"}
+
+
+def sendable(key: str) -> bool:
+    """Klucz da się wysłać w nagłówku ``Authorization``: widoczne znaki ASCII bez spacji, jak każdy token GitHuba.
+
+    Klucza, którego nie da się wysłać, nie dostaje żaden klient: Skrzynka uznaje go za odrzucony, a pytania o Wydania
+    idą bez niego (``KeyedBox.github_key``).
+    """
+
+    return key.isascii() and key.isprintable() and " " not in key
+
+
+def send(request: HttpRequest, *, proxy: Proxy, timeout_s: float, read_limit: int | None = None) -> HttpResponse:
+    """Żądanie HTTPS przez bibliotekę standardową; odpowiedź z kodem błędu HTTP to też odpowiedź.
+
+    ``read_limit`` ucina treść do tylu bajtów (ucięty JSON jest nieczytelny jak każdy inny).
+    """
+
+    plain = {name: value for name, value in request.headers.items() if name != "Authorization"}
+    sent = urllib.request.Request(request.url, data=request.body, headers=plain, method=request.method)
+    if "Authorization" in request.headers:
+        # Zwykły nagłówek urllib przenosi na adres przekierowania, także na inny host.
+        sent.add_unredirected_header("Authorization", request.headers["Authorization"])
+    handlers = [] if proxy == "system" else [urllib.request.ProxyHandler({})]
+    try:
+        with urllib.request.build_opener(*handlers).open(sent, timeout=timeout_s) as response:
+            body = response.read() if read_limit is None else response.read(read_limit)
+            return HttpResponse(response.status, body, _lowered(response.headers.items()))
+    except urllib.error.HTTPError as error:
+        with error:
+            body = error.read() if read_limit is None else error.read(read_limit)
+            return HttpResponse(error.code, body, _lowered(error.headers.items()))
+
+
+def _lowered(received: Iterable[tuple[str, str]]) -> dict[str, str]:
+    return {name.lower(): value for name, value in received}
+
+
+def next_page(response: HttpResponse) -> str | None:
+    """Adres następnej strony listy z nagłówka ``Link`` (``rel="next"``); ``None`` na ostatniej stronie."""
+
+    link = response.headers.get("link")
+    found = None if link is None else _NEXT_PAGE.search(link)
+    return None if found is None else found[1]
+
+
+def rate_limit_reset(response: HttpResponse) -> datetime | None:
+    """Chwila, od której limit pytań znów jest pełny, gdy GitHub odmówił z powodu wyczerpanego limitu (403 albo 429
+    z ``X-RateLimit-Remaining: 0`` i chwilą ``X-RateLimit-Reset`` w sekundach od 1970 roku); ``None`` dla każdej innej
+    odpowiedzi."""
+
+    if response.status not in (403, 429) or response.headers.get("x-ratelimit-remaining") != "0":
+        return None
+    reset = response.headers.get("x-ratelimit-reset", "")
+    if re.fullmatch(r"[0-9]{1,10}", reset) is None:
+        return None
+    return datetime.fromtimestamp(int(reset), timezone.utc)
+
+
+_NEXT_PAGE: Final = re.compile(r'<([^>]+)>;\s*rel="next"')

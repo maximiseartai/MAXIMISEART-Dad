@@ -67,6 +67,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 from rozliczenia.centrum import keyed_box as keyed_box_module
 from rozliczenia.centrum import outbox as outbox_module
 from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.github import HttpResponse
 from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import (
@@ -90,7 +91,6 @@ from rozliczenia.centrum.report_box import (
     CommentsOutcome,
     Commented,
     GitHubReportBox,
-    HttpResponse,
     Issue,
     IssuesOutcome,
     Label,

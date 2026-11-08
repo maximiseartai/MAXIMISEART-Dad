@@ -35,23 +35,16 @@ import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from rozliczenia.centrum.report_box import (
-    REPOSITORY,
-    HttpRequest,
-    HttpResponse,
-    urllib_transport,
-)
+from rozliczenia.centrum.github import API, UPLOADS, WEB, HttpRequest, HttpResponse
+from rozliczenia.centrum.report_box import REPOSITORY, urllib_transport
+from rozliczenia.tool_files import REPOSITORY as TOOL_REPOSITORY
 
-API: Final = "https://api.github.com"
-UPLOADS: Final = "https://uploads.github.com"
 TRIAL: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba"
 # Repozytorium próbne z jednym commitem (README na ``main``): Release, a więc Archiwum okresu, wymaga commitu.
 TRIAL_ARCHIVE: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum"
 TRIALS: Final = (TRIAL, TRIAL_ARCHIVE)
-WEB: Final = "https://github.com"
 # Plik Release pobrany przez API przekierowuje na podpisany adres pod tą domeną.
 DOWNLOAD_HOST: Final = ".githubusercontent.com"
-TOOL_REPOSITORY: Final = "maximiseartai/MAXIMISEART-Dad"
 RUN_MARKER: Final = "verify-github-skrzynki run="
 LONG_TEXT: Final = 2000
 # Pola odpowiedzi, które czytają ``report_box`` i ``tool_freshness``, i pola komunikatów błędu GitHuba.

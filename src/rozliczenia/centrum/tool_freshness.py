@@ -17,7 +17,7 @@ nowej wersji czyta stąd też opublikowane Wydania z ich notkami
 Pytania do API GitHuba idą z Tokenem do Zgłoszeń, gdy jest plik klucza: daje go
 ``KeyedBox.github_key``, a token daje limit konta (5000 pytań na godzinę) zamiast
 60 na godzinę wspólnych dla całego adresu IP. Nagłówek ``Authorization`` dostaje
-tylko host API, a urllib nie przenosi go na adres przekierowania. Odmowa pytania
+tylko host API, a ``github.send`` nie przenosi go na adres przekierowania. Odmowa pytania
 z tokenem (401, 403 bez wyczerpanego limitu) to jedno ponowienie tego pytania
 bez tokenu, a reszta sprawdzenia idzie już bez niego: stary albo zły token nie
 zabiera tacie aktualizacji. 404 z tokenem to ponowienie tylko tego pytania bez
@@ -32,21 +32,30 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from functools import partial
 import json
 from pathlib import Path
-import re
 import threading
 from typing import Final, Literal
-import urllib.error
-import urllib.request
 from urllib.parse import urlsplit
 
 from rozliczenia.centrum.deadline import within
+from rozliczenia.centrum.github import (
+    ANSWER_KEPT_S,
+    MAX_PAGES,
+    NO_ANSWER_KEPT_S,
+    PAGE_SIZE,
+    TOOL_API,
+    HttpRequest,
+    headers,
+    next_page,
+    rate_limit_reset,
+    send,
+)
 from rozliczenia.centrum.tool_update import Release, contains_commit, find_git, newest_on_main, release_at
 from rozliczenia.centrum.version import commit_since, is_commit, tool_commit
-from rozliczenia.tool_files import REPOSITORY_API, TOOL_ROOT
+from rozliczenia.tool_files import TOOL_ROOT
 
 CommitSource = Callable[[], str | None]
 
@@ -101,8 +110,6 @@ def offers_update(judgement: Judgement) -> bool:
     return judgement == "newer"
 
 
-# 1000 tagów: przy Wydaniu na tydzień na lata. Strona 100 tagów to kilkadziesiąt kB.
-_PAGES: Final = 10
 # Tyle najwyższych Wydań sprawdza się po kolei, zanim jedno leży na `main`; dalej wynik jest nieznany.
 _CANDIDATES: Final = 5
 _PAGE_BYTES: Final = 1_000_000
@@ -183,13 +190,6 @@ class ToolFreshness:
         return ("current" if self.contains(answer.newest, local) else "newer"), answer
 
 
-# API GitHuba bez tokenu odpowiada na 60 pytań na godzinę z jednego adresu, a bez sieci każde pytanie czeka do
-# 3 s: Konfiguracja pamięta odpowiedź przez 10 minut, także „brak Wydań”, a brak odpowiedzi (także odmowę z powodu
-# limitu) przez minutę (internet może zaraz wrócić).
-ANSWER_KEPT_S: Final = 10 * 60
-NO_ANSWER_KEPT_S: Final = 60
-
-
 class RememberedRelease:
     """Odpowiedź ``release`` pamiętana przez ``ANSWER_KEPT_S`` na zegarze ``clock``; brak odpowiedzi krócej.
 
@@ -234,7 +234,7 @@ def github_releases(token: str | None = None) -> ReleaseAnswer:
     """Najnowsze Wydanie na `main` publicznego repozytorium, pytane z tokenem ``token``, gdy jest; ``None`` bez sieci,
     po limicie czasu, przy odmowie."""
 
-    return releases_from(REPOSITORY_API, timeout_s=_TIMEOUT_S, known=_GITHUB_LINE, token=token)
+    return releases_from(TOOL_API, timeout_s=_TIMEOUT_S, known=_GITHUB_LINE, token=token)
 
 
 def releases_from(
@@ -244,7 +244,7 @@ def releases_from(
 
     Lista tagów (``tags``) przychodzi stronami (nagłówek ``Link``); bez
     wszystkich stron nie wiadomo, które Wydanie jest najnowsze, więc więcej niż
-    ``_PAGES`` stron to ``None``. Wydanie leży na `main` tak jak w Aktualizacji
+    ``github.MAX_PAGES`` stron to ``None``. Wydanie leży na `main` tak jak w Aktualizacji
     narzędzia (``tool_update.MainLine``): jego commit leży na linii pierwszych
     rodziców `main` (``_on_first_parent_line``). Odpowiedź dla commitu, który
     jest przodkiem `main`, trafia do ``known`` i się nie zmienia, bo `main`
@@ -263,7 +263,7 @@ def releases_from(
         return answer if answer is not None else asking.limited
 
     def newest(asking: _Asking) -> GitHubReleases | None:
-        commits = _tag_commits(asking, f"{api}/tags?per_page=100")
+        commits = _tag_commits(asking, f"{api}/tags?per_page={PAGE_SIZE}")
         if commits is None:
             return None
         asked = 0
@@ -384,7 +384,7 @@ def github_published(token: str | None = None) -> tuple[PublishedRelease, ...] |
     """Opublikowane Wydania publicznego repozytorium, pytane z tokenem ``token``, gdy jest; ``None`` bez sieci, po
     limicie czasu, przy odmowie."""
 
-    return published_from(REPOSITORY_API, timeout_s=_TIMEOUT_S, token=token)
+    return published_from(TOOL_API, timeout_s=_TIMEOUT_S, token=token)
 
 
 def published_from(api: str, *, timeout_s: float, token: str | None = None) -> tuple[PublishedRelease, ...] | None:
@@ -439,7 +439,7 @@ def _tag_commits(asking: _Asking, url: str) -> dict[str, str] | None:
 
     commits: dict[str, str] = {}
     page = url
-    for _ in range(_PAGES):
+    for _ in range(MAX_PAGES):
         try:
             tags, following = asking.page(page)
         except _NoAnswer:
@@ -481,39 +481,23 @@ class _Asking:
         wyszukiwanie binarne dostaje 404 także wtedy, gdy ``tip~k`` sięga przed pierwszy commit repozytorium."""
 
         token = self._token if with_token and urlsplit(url)[:2] == self._host else None
-        request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "centrum-rozliczen"})
-        if token is not None:
-            # Zwykły nagłówek urllib przenosi na adres przekierowania, także na inny host.
-            request.add_unredirected_header("Authorization", f"Bearer {token}")
-        direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        request = HttpRequest("GET", url, headers(token), None)
         try:
-            with direct.open(request, timeout=self._timeout_s) as response:
-                return json.loads(response.read(_PAGE_BYTES)), _next_page(response.headers.get("Link"))
-        except urllib.error.HTTPError as failure:  # odmowa GitHuba
-            limited = _rate_limited(failure)
-            if limited is not None and token is None:
-                self.limited = limited
-                raise _NoAnswer from failure
-            if token is not None and (limited is not None or failure.code in _TOKEN_REFUSALS):
-                self._token = None
-                return self.page(url)
-            if token is not None and failure.code == 404:
-                return self.page(url, with_token=False)
-            raise (_NotFound if failure.code == 404 else _NoAnswer) from failure
+            response = send(request, proxy="direct", timeout_s=self._timeout_s, read_limit=_PAGE_BYTES)
+            if 200 <= response.status < 300:
+                return json.loads(response.body), next_page(response)
         except (OSError, ValueError) as failure:  # brak sieci, zerwane połączenie, nie JSON
             raise _NoAnswer from failure
-
-
-def _rate_limited(failure: urllib.error.HTTPError) -> RateLimited | None:
-    """Odmowa z powodu wyczerpanego limitu: 403 albo 429 z ``X-RateLimit-Remaining: 0`` i chwilą ``X-RateLimit-Reset``
-    w sekundach od 1970 roku; ``None`` dla każdej innej odmowy."""
-
-    if failure.code not in (403, 429) or failure.headers.get("X-RateLimit-Remaining") != "0":
-        return None
-    reset = failure.headers.get("X-RateLimit-Reset", "")
-    if re.fullmatch(r"[0-9]{1,10}", reset) is None:
-        return None
-    return RateLimited(datetime.fromtimestamp(int(reset), timezone.utc))
+        reset = rate_limit_reset(response)  # odmowa GitHuba
+        if reset is not None and token is None:
+            self.limited = RateLimited(reset)
+            raise _NoAnswer
+        if token is not None and (reset is not None or response.status in _TOKEN_REFUSALS):
+            self._token = None
+            return self.page(url)
+        if token is not None and response.status == 404:
+            return self.page(url, with_token=False)
+        raise _NotFound if response.status == 404 else _NoAnswer
 
 
 def _tag_commit(tag: object) -> tuple[str, str] | None:
@@ -524,11 +508,3 @@ def _tag_commit(tag: object) -> tuple[str, str] | None:
     name, commit = tag.get("name"), tag.get("commit")
     sha = commit.get("sha") if isinstance(commit, dict) else None
     return (name, sha) if isinstance(name, str) and isinstance(sha, str) and is_commit(sha) else None
-
-
-def _next_page(link: str | None) -> str | None:
-    found = None if link is None else _NEXT_PAGE.search(link)
-    return None if found is None else found[1]
-
-
-_NEXT_PAGE: Final = re.compile(r'<([^>]+)>;\s*rel="next"')
