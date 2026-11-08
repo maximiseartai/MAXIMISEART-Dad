@@ -40,6 +40,11 @@ zostaje przeglądowi.
   importach i ``isinstance``, a ``_MINTED`` i napis z ich nazwą w żadnej postaci, więc test łapie
   ``object.__new__(GuardedLogs)``, ``object.__setattr__`` slotu i ``cast(GuardedLogs, …)``.
 
+Wyrocznie skilli (``.agents/skills/*/scripts``) i narzędzia (``tools/``) biorą z ``src`` tylko publiczne nazwy
+(docs/agents/skille.md, „Co wyrocznia bierze z src”): mechanikę przez publiczny punkt obserwacji, a dane o świecie
+zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do prywatnych nazw i globali modułów, a eksplorator
+kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox`` (spis N13).
+
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
 (``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), moduł ``comment_versions`` przypisany innej
@@ -836,3 +841,113 @@ LOGS_POST_ALLOWED: typing.Final = {
 @pytest.mark.parametrize("code", LOGS_POST_ALLOWED.values(), ids=LOGS_POST_ALLOWED.keys())
 def test_sprawdzenie_wysylki_logow_przepuszcza_kod_bez_wysylki_logow(code: str) -> None:
     assert _logs_post_breaks(ast.parse(code), "rozliczenia/centrum/proba.py") == []
+
+
+# Wyrocznie skilli i narzędzia, które biorą z ``src`` tylko publiczne nazwy (docs/agents/skille.md, „Co wyrocznia bierze
+# z src”).
+ORACLES: typing.Final = (".agents/skills/*/scripts/**/*.py", "tools/**/*.py")
+SRC_PACKAGE: typing.Final = "rozliczenia"
+NAME_CALLS: typing.Final = frozenset({"getattr", "setattr", "delattr", "hasattr"})
+
+
+def _private(name: str) -> bool:
+    return (name.startswith("_") and not (name.startswith("__") and name.endswith("__"))) or name == "__dict__"
+
+
+def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
+    """Miejsca, w których kod sięga do prywatnej nazwy ``src``: modułu, klasy albo funkcji wziętej z ``rozliczenia…``.
+
+    Nazwa z ``src`` to każda nazwa, którą wiąże import z ``rozliczenia`` (``import rozliczenia.x``, ``import … as m``,
+    ``from rozliczenia… import n``). Sięgnięcie to atrybut prywatny na niej albo w łańcuchu od niej, import prywatnej nazwy,
+    ``vars`` jej, ``getattr``/``setattr``/``delattr``/``hasattr`` z prywatnym napisem i krotka ``(nazwa, "_x")``, w której
+    eksploratory trzymają podmieniane nazwy. Prywatny atrybut instancji (``outbox._draining``) i nazwa złożona w trakcie
+    działania to granica, którą łapie tylko przegląd.
+    """
+
+    bound: set[str] = set()
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] == SRC_PACKAGE:
+                    bound.add(alias.asname or SRC_PACKAGE)
+        elif isinstance(node, ast.ImportFrom) and not node.level and (node.module or "").split(".")[0] == SRC_PACKAGE:
+            for alias in node.names:
+                if _private(alias.name):
+                    found.append((node.lineno, ast.unparse(node)))
+                bound.add(alias.asname or alias.name)
+
+    def from_src(node: ast.expr) -> bool:
+        while isinstance(node, ast.Attribute):
+            node = node.value
+        return isinstance(node, ast.Name) and node.id in bound
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and _private(node.attr) and from_src(node.value):
+            found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.args and from_src(node.args[0]):
+            name = node.args[1] if len(node.args) > 1 else None
+            if node.func.id == "vars" or (
+                node.func.id in NAME_CALLS
+                and isinstance(name, ast.Constant)
+                and isinstance(name.value, str)
+                and _private(name.value)
+            ):
+                found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.Tuple) and len(node.elts) >= 2 and from_src(node.elts[0]):
+            name = node.elts[1]
+            if isinstance(name, ast.Constant) and isinstance(name.value, str) and _private(name.value):
+                found.append((node.lineno, ast.unparse(node)))
+    return sorted(set(found))
+
+
+def test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy() -> None:
+    reaches = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
+        for pattern in ORACLES
+        for path in sorted(ROOT.glob(pattern))
+        for line, code in _private_reaches(ast.parse(path.read_text(encoding="utf-8")))
+    ]
+
+    assert reaches == [], (
+        "wyrocznia sięga do prywatnej nazwy src; mechanikę bierze przez publiczny punkt obserwacji (nazwę, metodę stanu, "
+        "szew), a dane o świecie zewnętrznym kopiuje celowo (docs/agents/skille.md, „Co wyrocznia bierze z src”):\n"
+        + "\n".join(reaches)
+    )
+
+
+# Każda droga do prywatnej nazwy src, którą zna sprawdzenie (spis N13 z 7.11.2026: explore_outbox, explore_intermax,
+# explore_runs, github_przypadki_aktualnosci).
+PRIVATE_REACHES: typing.Final = {
+    "atrybut-modulu": "from rozliczenia.centrum import outbox as outbox_module\nv = outbox_module._version(path)",
+    "atrybut-modulu-z-pakietu": "from rozliczenia import intermax_replace\nseconds = intermax_replace._RETRY_S",
+    "atrybut-klasy": "from rozliczenia.centrum.keyed_box import KeyedBox\nnotes = KeyedBox._notes",
+    "pelna-sciezka": "import rozliczenia.centrum.runs\nclass Mine(rozliczenia.centrum.runs._Run):\n    pass\n",
+    "import-prywatnej-nazwy": "from rozliczenia.efenix_messages import _UNCHANGED",
+    "slownik-modulu": 'from rozliczenia.centrum import outbox\nnames = vars(outbox)\nnames["_queued"] = read',
+    "dict-modulu": "from rozliczenia.centrum import outbox\nnames = outbox.__dict__",
+    "setattr-z-napisem": 'from rozliczenia import preparation_files\nsetattr(preparation_files, "_write_period_file", step)',
+    "getattr-z-napisem": 'from rozliczenia.centrum import runs\nrun = getattr(runs, "_Run")',
+    "krotka-podmienianych-nazw": 'from rozliczenia.centrum import runs\nPATCHED = ((runs, "threading"), (runs, "_Run"))',
+}
+
+
+@pytest.mark.parametrize("code", PRIVATE_REACHES.values(), ids=PRIVATE_REACHES.keys())
+def test_sprawdzenie_wyroczni_lapie_kazda_droge_do_prywatnej_nazwy_src(code: str) -> None:
+    assert _private_reaches(ast.parse(code))
+
+
+def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_i_prywatne_pola_wlasnych_obiektow() -> None:
+    code = (
+        "from rozliczenia.centrum import outbox as outbox_module\n"
+        "from rozliczenia.centrum.outbox import RETRY_S, Outbox\n"
+        "class Box:\n"
+        "    def __init__(self) -> None:\n"
+        "        self._ids = 0\n"
+        "def run(outbox: Outbox, path) -> object:\n"
+        "    names = vars(Box())\n"
+        '    setattr(outbox_module, "threading", None)\n'
+        '    return outbox.state(), outbox_module.queue_version(path), RETRY_S, outbox_module.__name__, getattr(Box(), "_ids")\n'
+    )
+
+    assert _private_reaches(ast.parse(code)) == []
