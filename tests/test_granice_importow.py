@@ -921,46 +921,53 @@ GETTERS: typing.Final = frozenset({"attrgetter", "methodcaller"})
 
 
 def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
-    """Miejsca, w których kod sięga do prywatnej nazwy ``src``: modułu, klasy albo funkcji wziętej z ``rozliczenia…``.
+    """Miejsca, w których kod sięga do prywatnej nazwy ``src`` w jednej z postaci wyliczonych niżej.
 
     Nazwa z ``src`` to nazwa, którą wiąże import z ``rozliczenia`` (``import rozliczenia.x``, ``import … as m``,
-    ``from rozliczenia… import n``), łańcuch atrybutów i indeksów od niej (``outbox.Outbox``, ``runs.RunHost[int]``),
-    ale nie wyrażenie z taką nazwą w indeksie (``list[CentrumLog]``, ``REGISTRY[outbox]``), ``sys.modules["rozliczenia.…"]``,
-    napis stały ``rozliczenia.…`` i klasa, której baza jest z ``src`` (podklasa ``class Log(CentrumLog)`` i dalsze
-    podklasy). Sięgnięcie to:
+    ``from rozliczenia… import n``) albo klasa, której baza jest z ``src`` (``class Log(CentrumLog)`` i dalsze
+    podklasy), łańcuch atrybutów i indeksów od takiej nazwy (``outbox.Outbox``, ``runs.RunHost[int]``), indeks napisem
+    ścieżki (``sys.modules["rozliczenia.…"]``) i napis stały ``rozliczenia.…``. Wyrażenie z nazwą z ``src`` tylko w
+    indeksie (``list[CentrumLog]``, ``REGISTRY[outbox]``) nią nie jest. Prywatny napis to napis stały z członem
+    kropkowym ``_x`` (``"_x"``, ``"m._x"``, ``"._x"``). Strażnik łapie dokładnie te postacie:
 
-    - prywatny atrybut nazwy z ``src``, import prywatnej nazwy i ``vars`` nazwy z ``src``;
-    - prywatna nazwa, którą wiąże ciało podklasy klasy z ``src`` (``def _write``, ``_write = staticmethod(…)``, import,
-      ``except … as _write``, ``case _write``), bo nadpisuje prywatną nazwę klasy z ``src`` albo tak wygląda: AST nie wie, których nazw klasa z ``src`` nie ma;
-    - w wywołaniu dowolnej funkcji, w którego argumencie (pozycyjnym albo nazwanym, na dowolnym miejscu i na dowolnej
-      głębokości krotki, listy, zbioru i słownika) albo w odbiorcy metody (``m.__getattribute__("_x")``) stoi nazwa z
-      ``src``: każdy prywatny napis stały wśród argumentów,
-      na dowolnej głębokości takiego literału, i prywatna nazwa argumentu nazwanego (``getattr``,
-      ``object.__setattr__``, ``mock.patch.object(target=m, attribute="_x")``, ``mock.patch.multiple(m, _x=…)``,
-      ``__import__("rozliczenia.…", fromlist=["_x"])``, ``import_module("._x", "rozliczenia.…")``,
-      ``type("X", (CentrumLog,), {"_write": f})``);
-    - nazwa z ``src`` wprost w literale krotki, listy, zbioru albo słownika (także rozpakowana: ``(*m.NAMES, "_x")``)
-      i prywatny napis na dowolnej głębokości tego literału (``PATCHED = [[m, "_x"]]``, ``{m: "_x"}``,
-      ``{"target": m, "attribute": "_x"}``), a także prywatny napis wprost w literale i nazwa z ``src`` na dowolnej
-      jego głębokości (``{"_x": (m, f)}``, ``[("_x", (m, f))]``), więc dwie pary w jednej liście
-      (``[[hypothesis, "_x"], [m, "y"]]``) nie alarmują;
-    - ``attrgetter`` i ``methodcaller`` z prywatnym napisem, choć obiekt dostają w innym wywołaniu;
-    - napis stały ``rozliczenia.…._x`` gdziekolwiek (``mock.patch("rozliczenia.centrum.outbox._queued", …)``).
+    1. ``from rozliczenia… import _x`` i import z prywatnego modułu (``from rozliczenia._wnetrze import x``);
+    2. ``import rozliczenia…._x``, z ``as`` i bez;
+    3. ``m._x`` i ``m.__dict__`` dla nazwy z ``src`` (``outbox._queued``, ``Log._write``,
+       ``sys.modules["rozliczenia.…"]._x``) oraz ``vars(m)``;
+    4. wywołanie dowolnej funkcji z nazwą z ``src`` w argumencie (pozycyjnym albo nazwanym, na dowolnej głębokości
+       krotki, listy, zbioru i słownika) albo jako odbiorcą metody i z prywatnym napisem wśród argumentów (na dowolnej
+       głębokości takiego literału) albo prywatnym argumentem nazwanym: ``getattr(m, "_x")``, ``setattr``,
+       ``object.__setattr__``, ``mock.patch.object(target=m, attribute="_x")``, ``mock.patch.multiple(m, _x=…)``,
+       ``m.__getattribute__("_x")``, ``__import__("rozliczenia.…", fromlist=["_x"])``,
+       ``import_module("._x", "rozliczenia.…")``, ``type("X", (CentrumLog,), {"_write": f})``;
+    5. prywatny argument nazwany przy wywołaniu nazwy z ``src`` (``ReadFile(…, _forbidden=…, _copy=…)``,
+       ``drain(_clock=…)``);
+    6. literał krotki, listy, zbioru albo słownika z nazwą z ``src`` wprost (także rozpakowaną: ``(*m.NAMES, "_x")``)
+       i prywatnym napisem na dowolnej jego głębokości (``[[m, "_x"]]``, ``{m: "_x"}``,
+       ``{"target": m, "attribute": "_x"}``) albo z prywatnym napisem wprost i nazwą z ``src`` na dowolnej głębokości
+       (``{"_x": (m, f)}``), więc dwie pary w jednej liście (``[[hypothesis, "_x"], [m, "y"]]``) nie alarmują;
+    7. ``attrgetter`` i ``methodcaller`` z prywatnym napisem, choć obiekt dostają w innym wywołaniu;
+    8. napis stały ``rozliczenia…._x`` gdziekolwiek (``mock.patch("rozliczenia.centrum.outbox._queued", …)``);
+    9. prywatna nazwa, którą wiąże ciało podklasy klasy z ``src``, także pod ``if``, ``for`` i ``try``: ``def``,
+       ``async def``, ``class``, cel przypisania, import, ``except … as``, przechwycenie w ``case``; nadpisuje
+       prywatną nazwę klasy z ``src`` albo tak wygląda, bo AST nie wie, których nazw klasa z ``src`` nie ma.
 
-    Napis ``"_x"`` obok publicznego łańcucha od modułu z ``src`` alarmuje (``Path(outbox.QUEUE_DIRECTORY, "_archiwum")``),
-    bo AST nie odróżni publicznej wartości od klasy (``setattr(outbox.Outbox, "_send_all", f)``); sam separator ``"_"``
-    nie jest prywatną nazwą.
+    Każdą inną postać sięgnięcia łapie tylko przegląd, np. przez ``__globals__``, ``vars``, ``__dict__``, ``dir`` albo
+    ``inspect.getmembers`` modułu wziętego inaczej niż importem, zmienną, parametr, wynik wywołania albo inne wyrażenie
+    (``m = import_module(…)``, ``Base = outbox.Outbox``, ``(m := outbox)._x``, ``REGISTRY[outbox]._x``,
+    ``type(x)._y``, ``class X(*[CentrumLog])``), prywatny atrybut instancji (``outbox._draining``, ``super()._write``),
+    nazwę złożoną w trakcie działania (f-napis, sklejenie), wzorzec ``match`` (``case CentrumLog(_write=w)``), ``exec``
+    i ``eval``, prywatny napis w innym wywołaniu niż to z nazwą z ``src`` (``f(m, g("_x"))``, ``dict(_x=…)``), literał
+    bez nazwy z ``src`` i prywatnego napisu wprost (``[[m], ["_x"]]``), napis w ciele podklasy
+    (``__slots__ = ("_x",)``, ``locals()["_x"] = f``) i przypisanie podklasie po jej definicji, a także to, czy kopia danych o świecie
+    zewnętrznym jest celowa.
 
-    Granica, którą łapie tylko przegląd: prywatny atrybut instancji (``outbox._draining``, ``super()._write``); nazwa
-    albo ścieżka złożona w trakcie działania (f-napis, sklejenie, zmienna, ``dir`` albo ``inspect.getmembers`` w pętli);
-    kod w napisie (``exec("outbox._queued = read")``, ``eval``); moduł lub klasa przekazane przez zmienną, parametr
-    albo wynik wywołania, których nie wiąże import (``m = import_module("rozliczenia.…")``, ``def patch(module)``,
-    ``Base = outbox.Outbox`` i ``class X(Base)``), także ``vars(m)`` i ``m.__dict__`` takiego modułu, i moduł lub
-    klasa w wyrażeniu, które nie jest nazwą, łańcuchem ani literałem (``(m := outbox)._x``, ``(outbox if c else x)._x``,
-    ``REGISTRY[outbox]._x``, ``class X(*[CentrumLog])``); prywatny napis albo nazwa argumentu w innym
-    wywołaniu niż moduł (``f(m, g("_x"))``, ``type("X", (K,), dict(_x=f))``) poza ``attrgetter`` i ``methodcaller``;
-    prywatna nazwa przypisana podklasie po jej definicji z innego modułu; to, czy kopia danych o świecie zewnętrznym
-    jest celowa.
+    Znane fałszywe alarmy: napis ``"_x"`` obok publicznego łańcucha od nazwy z ``src`` alarmuje
+    (``Path(outbox.QUEUE_DIRECTORY, "_archiwum")``), bo AST nie odróżni publicznej wartości od klasy
+    (``setattr(outbox.Outbox, "_send_all", f)``), a sam separator ``"_"`` nie jest prywatną nazwą. Nazwy z ``src`` nie
+    znają zasięgu: parametr albo klasa w innej funkcji o nazwie z ``src`` liczy się jak nazwa z ``src``
+    (``def f(outbox): return outbox._ids`` przy ``from rozliczenia.centrum import outbox``). Na HEAD i na commitach
+    scalenia PR-ów takich trafień nie ma, a obejście to inna nazwa (``outbox as outbox_module``).
     """
 
     bound: set[str] = set()
@@ -970,9 +977,11 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
             for alias in node.names:
                 if alias.name.split(".")[0] == SRC_PACKAGE:
                     bound.add(alias.asname or SRC_PACKAGE)
+                    if any(map(_private, alias.name.split("."))):
+                        found.append((node.lineno, ast.unparse(node)))
         elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == SRC_PACKAGE:
             for alias in node.names:
-                if _private(alias.name):
+                if _private(alias.name) or any(map(_private, (node.module or "").split("."))):
                     found.append((node.lineno, ast.unparse(node)))
                 bound.add(alias.asname or alias.name)
 
@@ -1002,10 +1011,9 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
             values = [*node.args, *(kw.value for kw in node.keywords)]
             called = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
             receiver = [node.func.value] if isinstance(node.func, ast.Attribute) else []
-            with_module = src_in([*values, *receiver]) and (
-                called == "vars" or any(kw.arg is not None and _private(kw.arg) for kw in node.keywords) or _private_in(values)
-            )
-            if with_module or (called in GETTERS and _private_in(values)):
+            private_keyword = any(kw.arg is not None and _private(kw.arg) for kw in node.keywords)
+            with_module = src_in([*values, *receiver]) and (called == "vars" or private_keyword or _private_in(values))
+            if with_module or (called in GETTERS and _private_in(values)) or (from_src(node.func) and private_keyword):
                 found.append((node.lineno, ast.unparse(node)))
         elif isinstance(node, ast.Tuple | ast.List | ast.Set | ast.Dict):
             parts = [*filter(None, node.keys), *node.values] if isinstance(node, ast.Dict) else node.elts
@@ -1150,6 +1158,15 @@ PRIVATE_REACHES: typing.Final = {
         "    match QUIET:\n        case {**_write}:\n            pass\n"
     ),
     "getattribute-modulu": 'from rozliczenia.centrum import outbox\nread = outbox.__getattribute__("_queued")',
+    # Przegląd #1123, runda 2: prywatny argument nazwany przy wywołaniu nazwy z src (pola ``_forbidden`` i ``_copy``
+    # dataklasy ``ReadFile``, src/rozliczenia/dad_files.py) i import prywatnego modułu.
+    "prywatny-argument-klasy-z-src": (
+        "from rozliczenia.dad_files import ReadFile\nFILE = ReadFile(path, content, None, _forbidden=None, _copy=None)"
+    ),
+    "prywatny-argument-funkcji-z-src": "from rozliczenia.centrum.outbox import drain\ndrain(_clock=fake)",
+    "import-prywatnego-modulu": "import rozliczenia.centrum._wnetrze",
+    "import-prywatnego-modulu-jako": "import rozliczenia.centrum._wnetrze as wnetrze",
+    "import-z-prywatnego-modulu": "from rozliczenia.centrum._wnetrze import read",
 }
 
 
@@ -1203,6 +1220,8 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
         "class Logs(list[Outbox]):\n"
         "    def _add(self, box: Outbox) -> None:\n"
         "        self.append(box)\n"
+        "def own(box: Box) -> object:\n"
+        "    return Box(_ids=1), run(_ids=1), Outbox(state=1), Outbox(\"_tmp\")\n"
     )
 
     assert _private_reaches(ast.parse(code)) == []
