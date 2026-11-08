@@ -34,7 +34,8 @@ import pytest
 from rozliczenia import settlement_messages, workbook_files
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum import app, contract
-from rozliczenia.centrum.dad_actions import DAD_ACTIONS_FILE, MAX_ENTRIES, DadActions
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, MAX_ENTRIES
+from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
 from rozliczenia.centrum.log import CentrumLog

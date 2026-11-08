@@ -56,7 +56,7 @@ from rozliczenia.centrum.comment_versions import (
     without_logs_markdown,
 )
 from rozliczenia.centrum.contract import Progress, RunInfo, RunResult
-from rozliczenia.centrum.dad_actions import DadActionJournal
+from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import (
