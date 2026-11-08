@@ -3461,12 +3461,13 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
     """Plik zbiorczy zapisany znowu (Autozapis Excela, OneDrive) zaraz po tym, jak Przebieg rozliczeń albo Wycena w
     efenix przeczytały jego bajty: odcisk w Kopii wejścia ma chwilę zmiany przeczytanej wersji, sprzed odczytu."""
 
-    file_bytes = workbook_files.file_bytes
+    saved_again: list[Path] = []
 
     def read_then_saved(path: Path) -> bytes:
-        content = file_bytes(path)
+        content = workbook_files.file_bytes(path)
         if path.name == SOURCE_NAME:
             _saved_at(path, SAVED_AGAIN_AT)
+            saved_again.append(path)
         return content
 
     readers = replace(FILE_READERS, source=read_then_saved)
@@ -3482,6 +3483,7 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
         result = finished_view(centrum.client)["result"]
 
     assert result["stop_kind"] is None, result["stops"]
+    assert saved_again, "proces czyta Plik zbiorczy źródłem bajtów czytników, a plik zapisano znowu zaraz po odczycie"
     [record] = records(centrum)
     [copied] = record["input_copy"]
     assert (copied["name"], logged_fingerprint(copied)["modified_at"]) == (SOURCE_NAME, READ_AT)

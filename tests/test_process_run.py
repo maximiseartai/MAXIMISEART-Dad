@@ -7,6 +7,7 @@ rozliczeń i Przygotowania pliku zbiorczego.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 import time
 from typing import NoReturn
@@ -231,6 +232,53 @@ def test_decyzja_taty_w_trakcie_etapu_nie_liczy_sie_do_czasu_etapu_ani_czasu_uru
     assert outcome.view is not None
     assert outcome.view[ProgressPhase.READING] == 750
     assert outcome.total_duration_ms == 750
+
+
+@dataclass
+class TataSeeingSteps(Tata):
+    """Tata, który zapisuje ``Czas uruchomienia`` z postępu przy każdym nowym kroku Zapisywania."""
+
+    reached_ms: list[int] = field(default_factory=list)
+    _last: object = None
+
+    def show_progress(self, snapshot: ProgressSnapshot) -> None:
+        if snapshot.step is not None and snapshot.step != self._last:
+            self._last = snapshot.step
+            self.reached_ms.append(snapshot.total_elapsed_ms)
+
+
+def test_czekanie_silnika_na_tate_z_decyzja_w_srodku_zatrzymuje_zegar_raz_dla_krokow_etapu_i_uruchomienia(
+    tmp_path: Path,
+) -> None:
+    clock = ManualClock()
+    tata = TataSeeingSteps(before_answer=lambda: clock.advance(600))
+
+    def waiting_for_tata_while_saving(_inputs: Inputs, context: RunContext) -> Durations:
+        phases = PhaseRunner(context.observer, clock=context.clock.now)
+        phases.check(lambda: None)
+        phases.read(lambda: None)
+        phases.plan(lambda: None, issue_count=lambda _planned: 0)
+
+        def save() -> None:
+            clock.advance(0.25)
+            with context.clock.hold():
+                clock.advance(300)
+                phases.step("czekam na tatę")
+                context.conversation.confirm(QUESTION)
+                phases.step("tata odpowiedział")
+            clock.advance(0.5)
+            phases.step("dalej")
+
+        phases.save(save)
+        return phases.durations_ms()
+
+    outcome = run_core(
+        fake_process(execute=waiting_for_tata_while_saving), tmp_path / "metrics.jsonl", tata=tata, clock=clock
+    )
+
+    assert tata.reached_ms == [250, 250, 750]
+    assert outcome.view is not None
+    assert (outcome.view[ProgressPhase.SAVING], outcome.total_duration_ms) == (750, 750)
 
 
 def test_odmowa_w_decyzji_taty_to_zatrzymanie_po_odmowie_a_w_metrykach_zatrzymanie_dla_taty(tmp_path: Path) -> None:
