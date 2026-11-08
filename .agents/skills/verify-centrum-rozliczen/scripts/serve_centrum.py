@@ -177,7 +177,6 @@ from rozliczenia.centrum.report_box import (
     close_reason,
 )
 from rozliczenia.centrum.server import serve
-from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness, parse_published
 from rozliczenia.centrum.tool_update import ToolClone, find_git, pip_install, release_at
@@ -568,13 +567,12 @@ def _pace_worker_templates(root: Path, worker_template: Path) -> None:
     setattr(TemplateFile, "create", paced)
 
 
-def _register_failing_on_hook(root: Path, settings: Path) -> Readers:
-    """Readers whose byte source raises on the Rejestr of the settings while ``<root>/awaria/odczyt-rejestru`` exists
-    (see the module doc)."""
+def _register_failing_on_hook(root: Path, register: Path) -> Readers:
+    """Readers whose byte source raises on the fixture's Rejestr ``register`` while ``<root>/awaria/odczyt-rejestru``
+    exists (see the module doc)."""
 
     def source(path: Path) -> bytes:
-        register = SettingsStore(settings).load().register
-        if (root / "awaria" / "odczyt-rejestru").exists() and register is not None and path.name == register.name:
+        if (root / "awaria" / "odczyt-rejestru").exists() and path.name == register.name:
             raise RuntimeError("synthetic unexpected failure")
         return FILE_READERS.source(path)
 
@@ -645,7 +643,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         tool_update=ToolClone(
             clone, origin=str(Path(fixture["tool"]["origin"])), find_git=_paced_git(root), install=_paced_install(root)
         ),
-        readers=_register_failing_on_hook(root, Path(fixture["settings"])),
+        readers=_register_failing_on_hook(root, Path(fixture["order_register"])),
         intermax_copies=Path(fixture["intermax"]["copies"]),
         now=lambda: datetime.combine(today, datetime.now().astimezone().timetz()),
         efenix_window=efenix,
