@@ -63,6 +63,7 @@ from types import SimpleNamespace
 from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from rozliczenia.centrum import keyed_box as keyed_box_module
 from rozliczenia.centrum import outbox as outbox_module
@@ -104,6 +105,7 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
 )
 from rozliczenia.centrum.reports import report_target
+from eksplorator import Choices, Excuse, Kind, Shape, excuse_line, excused, gone_lines, schedules, verdict
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 # GitHub's answers to a step of the Archiwum it refuses until Maks changes something: a key without the permission to
@@ -422,24 +424,27 @@ class Bounds:
     """Steps of the Archiwum okresu refused (``Refused``: a key without the permission to write the repository's
     contents); 0 leaves the refusal out of the schedules."""
 
+    def budget(self) -> dict[str, int]:
+        """How many times each fault may be picked in a schedule (``eksplorator.Choices``)."""
+
+        return {
+            "unreachable": self.unreachable,
+            "lost": self.lost,
+            "oserror": self.disk,
+            "unreadable": self.reads,
+            "refused": self.refusals,
+            "kill": self.kills,
+        }
+
 
 class Scheduler:
-    """Picks one option at each step from the schedule prefix, then the first option; records what it could pick."""
+    """Plays out at each step the option that ``choices`` picks; ``faults`` are the picked faults, in order."""
 
-    def __init__(self, prefix: Sequence[int], bounds: Bounds) -> None:
-        self._prefix = prefix
-        self.taken: list[int] = []
-        self.options: list[int] = []
-        self.left = {
-            "unreachable": bounds.unreachable,
-            "lost": bounds.lost,
-            "oserror": bounds.disk,
-            "unreadable": bounds.reads,
-            "refused": bounds.refusals,
-            "kill": bounds.kills,
-        }
+    def __init__(self, choices: Choices) -> None:
+        self.choices = choices
+        self.left = choices.left
+        self.faults = choices.faults
         self.trace: list[str] = []
-        self.faults: list[tuple[str, str]] = []
         self.superseded: set[str] = set()  # places (``versions``) of wysyłki whose newer version is in the queue
         self.older_sent: list[str] = []  # box writes of a superseded place: NAJNOWSZA_WERSJA
 
@@ -447,16 +452,7 @@ class Scheduler:
         self.trace.append(line)
 
     def _pick(self, offered: Sequence[Choice], what: str) -> Choice:
-        allowed = [choice for choice in offered if self.left.get(choice, 1) > 0]
-        position = len(self.taken)
-        index = self._prefix[position] if position < len(self._prefix) else 0
-        self.taken.append(index)
-        self.options.append(len(allowed))
-        chosen = allowed[index]
-        if chosen in self.left:
-            self.left[chosen] -= 1
-            self.faults.append((chosen, what.split("(")[0]))
-        return chosen
+        return self.choices.pick(offered, what.split("(")[0])
 
     def _killed(self, chosen: Choice, what: str) -> None:
         if chosen == "kill":
@@ -777,35 +773,10 @@ Faults = Sequence[tuple[str, str]]
 """What went wrong in a schedule, in order: (``unreachable``/``lost``/``oserror``/``unreadable``/``kill``/``restart``, the step)."""
 
 
-@dataclass(frozen=True)
-class Excuse:
-    """A break of ``rule`` in ``scope`` that is reported but does not fail the check, only after the faults that
-    ``because`` names: the same rule broken in a schedule without them, or without any fault, is a new violation."""
-
-    scope: str
-    rule: str
-    text: str
-    because: Callable[[Faults], bool]
-
-
-# Each must break in its scope after its faults, or the check ends with ZNALEZISKO ZNIKNĘŁO.
-KNOWN_FINDINGS: tuple[Excuse, ...] = ()
-ACCEPTED_RISKS: tuple[Excuse, ...] = ()
-Kind = Literal["known", "accepted", "new"]
-
-
-def _kind(scope: str, rule: str, faults: Faults) -> Kind:
-    if any(
-        e.scope == scope and e.rule == rule and e.because(faults)
-        for e in KNOWN_FINDINGS
-    ):
-        return "known"
-    if any(
-        e.scope == scope and e.rule == rule and e.because(faults)
-        for e in ACCEPTED_RISKS
-    ):
-        return "accepted"
-    return "new"
+# An entry's shape judges the faults of its schedule (``Faults``); each names in ``after`` the scopes after which it
+# always shows, or the check ends with ZNALEZISKO ZNIKNĘŁO.
+KNOWN_FINDINGS: tuple[Excuse[Shape], ...] = ()
+ACCEPTED_RISKS: tuple[Excuse[Shape], ...] = ()
 
 
 class _Log(CentrumLog):
@@ -931,7 +902,7 @@ class Violation:
     rule: str
     detail: str
     trace: tuple[str, ...]
-    kind: Kind
+    excuse: tuple[Kind, Excuse[Shape]] | None
 
 
 def _marked(path: Path) -> bool:
@@ -1159,7 +1130,7 @@ def _state(
         tuple(sorted(scheduler.left.items())),
         frozenset(scheduler.faults),
         tuple(
-            excuse.because(scheduler.faults)
+            excuse.shape.holds(scheduler.faults)
             for excuse in (*KNOWN_FINDINGS, *ACCEPTED_RISKS)
         ),
         passes,
@@ -1204,12 +1175,10 @@ def _emptied(work: Path) -> None:
             os.remove(os.path.join(folder, name))
 
 
-def execute(
-    name: str, prefix: Sequence[int], work: Path, visited: set[object]
-) -> tuple[Scheduler, list[Violation]]:
-    """One schedule: write the wysyłki, then passes and restarts as ``prefix`` picks until failures run out.
+def execute(name: str, choices: Choices, work: Path, visited: set[object]) -> list[Violation]:
+    """One schedule: write the wysyłki, then passes and restarts as ``choices`` picks until failures run out.
 
-    A schedule that reaches a pass boundary already explored, past the steps it replays from ``prefix``, stops
+    A schedule that reaches a pass boundary already explored, past the steps it replays from the prefix, stops
     there: the code is deterministic, so that state has the same futures, and the schedules that branch after it
     from the first visit check them.
     """
@@ -1217,7 +1186,7 @@ def execute(
     scope = SCOPES[name]
     _emptied(work)
     queue = work / "config" / "zgloszenia" / "kolejka"
-    scheduler = Scheduler(prefix, scope.bounds)
+    scheduler = Scheduler(choices)
     clock = _Clock()
     box = MemoryBox(scheduler, clock, empty_repository=scope.empty_repository, list_lag=scope.list_lag)
     for label, title, body in scope.issues:
@@ -1322,8 +1291,8 @@ def execute(
                     len(pending),
                     keyed[0],
                 )
-                if state in visited and len(scheduler.taken) >= len(prefix):
-                    return scheduler, []
+                if state in visited and not choices.replaying:
+                    return []
                 visited.add(state)
                 passes -= 1
                 scheduler.say(
@@ -1339,26 +1308,19 @@ def execute(
     faults = tuple(scheduler.faults)
     # A pass that could not read the newer file sends the older one, and the newer then changes its comment.
     older = [] if any(fault == "unreadable" for fault, _ in faults) else scheduler.older_sent
-    return scheduler, [
-        Violation(rule, detail, trace, _kind(name, rule, faults))
+    return [
+        Violation(rule, detail, trace, excused(rule, faults, known=KNOWN_FINDINGS, accepted=ACCEPTED_RISKS))
         for rule, detail in _check(
             scope, box, queue, failures, ended, older, any(kind == "refused" for kind, _ in faults)
         )
     ]
 
 
-def next_prefix(scheduler: Scheduler) -> list[int] | None:
-    for position in range(len(scheduler.taken) - 1, -1, -1):
-        if scheduler.taken[position] + 1 < scheduler.options[position]:
-            return [*scheduler.taken[:position], scheduler.taken[position] + 1]
-    return None
-
-
 @dataclass
 class ScopeReport:
     name: str
     schedules: int = 0
-    shortest: dict[tuple[str, Kind], Violation] = field(default_factory=dict)
+    shortest: dict[tuple[str, str], Violation] = field(default_factory=dict)
     stopped: bool = False  # ended at the first schedule with a new violation (``--stop-at-new``)
 
 
@@ -1373,22 +1335,18 @@ def explore(name: str, *, stop_at_new: bool = False) -> ScopeReport:
 
     report = ScopeReport(name)
     with tempfile.TemporaryDirectory(prefix="kolejka-skrzynki-") as directory:
-        prefix: list[int] | None = []
         visited: set[object] = set()
-        while prefix is not None:
-            scheduler, violations = execute(
-                name, prefix, Path(directory) / "praca", visited
-            )
+        work = Path(directory) / "praca"
+        for violations in schedules(lambda choices: execute(name, choices, work, visited), SCOPES[name].bounds.budget()):
             report.schedules += 1
             for violation in violations:
-                key = (violation.rule, violation.kind)
+                key = (violation.rule, "new" if violation.excuse is None else violation.excuse[0])
                 seen = report.shortest.get(key)
                 if seen is None or len(violation.trace) < len(seen.trace):
                     report.shortest[key] = violation
-            if stop_at_new and any(violation.kind == "new" for violation in violations):
+            if stop_at_new and any(violation.excuse is None for violation in violations):
                 report.stopped = True
                 break
-            prefix = next_prefix(scheduler)
     return report
 
 
@@ -1400,63 +1358,38 @@ class Outcome:
 
 def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcome:
     lines: list[str] = []
-    new = known = accepted = gone = 0
+    new = 0
+    counts: dict[Kind, int] = {"known": 0, "accepted": 0}
+    shown: set[tuple[str, str]] = set()
     for report in reports:
         stopped = " Koniec na pierwszym nowym naruszeniu (--stop-at-new)." if report.stopped else ""
         lines.append(
             f"== {report.name}: {SCOPES[report.name].description} Harmonogramy: {report.schedules}.{stopped}"
         )
-        for (rule, kind), violation in sorted(report.shortest.items()):
-            excuses = {"known": KNOWN_FINDINGS, "accepted": ACCEPTED_RISKS}.get(
-                kind, ()
-            )
-            text = next(
-                (e.text for e in excuses if e.scope == report.name and e.rule == rule),
-                "",
-            )
-            if kind == "known" and not strict:
-                known += 1
-                lines.append(f"   znane ustalenie {rule}: {text}")
-            elif kind == "accepted" and not strict:
-                accepted += 1
-                lines.append(f"   zaakceptowane ryzyko {rule}: {text}")
+        for _key, violation in sorted(report.shortest.items()):
+            if violation.excuse is not None:
+                shown.add((violation.excuse[1].name, report.name))
+            if violation.excuse is not None and not strict:
+                counts[violation.excuse[0]] += 1
+                lines.append(f"   {excuse_line(*violation.excuse)}")
             else:
                 new += 1
-                lines.append(f"   NOWE NARUSZENIE {rule}")
+                lines.append(f"   NOWE NARUSZENIE {violation.rule}")
             lines.append(f"   {violation.detail}")
             lines.extend(
                 f"   {number}. {step}"
                 for number, step in enumerate(violation.trace, start=1)
             )
-        expected: list[tuple[Excuse, Kind]] = [
-            *((e, "known") for e in KNOWN_FINDINGS),
-            *((e, "accepted") for e in ACCEPTED_RISKS),
-        ]
-        for excuse, expected_kind in expected:
-            # A scope that stopped early did not reach every schedule, so a finding it did not see may still be there.
-            if (
-                not report.stopped
-                and excuse.scope == report.name
-                and (excuse.rule, expected_kind) not in report.shortest
-            ):
-                gone += 1
-                lines.append(
-                    f"   ZNALEZISKO ZNIKNĘŁO {excuse.rule}: usuń je z KNOWN_FINDINGS albo ACCEPTED_RISKS i z SKILL.md"
-                )
+    # A scope that stopped early did not reach every schedule, so an entry it did not see may still be there.
+    finished = [report.name for report in reports if not report.stopped]
+    disappeared = gone_lines(finished, shown, known=KNOWN_FINDINGS, accepted=ACCEPTED_RISKS)
+    lines.extend(disappeared)
     lines.append("")
-    if new or gone:
-        lines.append(
-            f"KOLEJKA: NOWE NARUSZENIE ({new})"
-            if new
-            else f"KOLEJKA: ZNALEZISKO ZNIKNĘŁO ({gone})"
-        )
-        return Outcome(lines, 1)
-    counts = [
-        f"ZNANE USTALENIA: {known}" if known else "",
-        f"ZAAKCEPTOWANE RYZYKA: {accepted}" if accepted else "",
-    ]
-    lines.append(", ".join(["KOLEJKA OK", *filter(None, counts)]))
-    return Outcome(lines, 0)
+    verdict_line, code = verdict(
+        "KOLEJKA", new=new, gone=len(disappeared), known=counts["known"], accepted=counts["accepted"]
+    )
+    lines.append(verdict_line)
+    return Outcome(lines, code)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

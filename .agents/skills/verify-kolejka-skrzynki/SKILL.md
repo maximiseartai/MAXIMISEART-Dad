@@ -13,6 +13,7 @@ pilnuje:
   - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
+  - tools/lib/eksplorator.py
 ci: .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_kolejke.py
 ci-czesci: 3
 ---
@@ -290,7 +291,7 @@ The last line is the verdict:
 | `KOLEJKA OK` | 0 | Every rule holds in every schedule. |
 | `KOLEJKA OK, ZNANE USTALENIA: n, ZAAKCEPTOWANE RYZYKA: m` | 0 | Only the known findings and accepted risks below, each printed with its shortest counterexample. A count of zero is left out. |
 | `KOLEJKA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below. The counterexample is printed. |
-| `KOLEJKA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding or accepted risk no longer happens. If a change fixed it, delete it from `KNOWN_FINDINGS` or `ACCEPTED_RISKS` and from this file. |
+| `KOLEJKA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding or accepted risk did not show in a scope of its `after` that ran to the end. If a change fixed it, delete it from `KNOWN_FINDINGS` or `ACCEPTED_RISKS` and from this file. |
 
 ## How it works and what it covers
 
@@ -417,9 +418,12 @@ as `post`, refused content and two file errors in a row.
 None. The former finding `przejecie` (a retried Zgłoszenie in several parts
 lost its later parts) is gone since a Zgłoszenie always has one part (above).
 
-A known finding lives in `KNOWN_FINDINGS` in `explore_outbox.py`, with the
-faults after which it is excused. When a code change fixes it, the check ends
-with `ZNALEZISKO ZNIKNĘŁO`: delete the entry there and here.
+A known finding lives in `KNOWN_FINDINGS` in `explore_outbox.py` as an `Excuse`
+of `tools/lib/eksplorator.py`: a `shape` (a dataclass whose fields are the parts
+of its story and whose `holds` judges the faults of a schedule) and in `after`
+the scopes after which it always shows. When a code change fixes it, a scope of
+`after` that runs to the end ends the check with `ZNALEZISKO ZNIKNĘŁO`: delete
+the entry there and here.
 
 ## Accepted risks
 
@@ -427,8 +431,8 @@ None. The former risk of a second issue of an Uwaga taty after the connection
 broke (ADR 0015 before its note of #840) is gone: the retry finds the issue by
 the mark in its body (`_deliver_new_issue`).
 
-An accepted risk lives in `ACCEPTED_RISKS` in `explore_outbox.py` with the
-decision it rests on and the faults after which it is accepted.
+An accepted risk lives in `ACCEPTED_RISKS` in `explore_outbox.py`, an `Excuse`
+like a known finding, with the decision it rests on in its story.
 
 ## When the check fails
 
