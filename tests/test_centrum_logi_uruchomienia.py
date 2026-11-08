@@ -953,7 +953,7 @@ def test_wiersz_starszego_ukladu_rejestru_z_wykonawca_w_calibri_8_zaczyna_blok_p
     period_sheets(read(register, DadFiles(copy=copy)), parse_period_token(PERIOD))
 
     [[sheet]] = [file.sheets for file in copy.files()]
-    assert sheet.uncertain_rows == (app_row,)
+    assert sheet.paste.uncertain_rows == (app_row,)
 
 
 @pytest.mark.parametrize(
@@ -1078,8 +1078,8 @@ def test_wpis_taty_w_calibri_8_tylko_w_uwagi_konczy_blok_w_przygotowaniu_tak_jak
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
     broken = [int(found) for found in re.findall(r"Fakt domeny złamany: wiersz (\d+) ", " ".join(record["input_copy_notes"]))]
-    assert (broken, sheet["uncertain_rows"]) == (list(ordered.traced_rows), list(ordered.uncertain_rows))
-    assert ordered.uncertain_rows, "wiersz próbny jest w obu położeniach w Uporządkowaniu"
+    assert (broken, sheet["uncertain_rows"]) == (list(ordered.paste.traced_rows), list(ordered.paste.uncertain_rows))
+    assert ordered.paste.uncertain_rows, "wiersz próbny jest w obu położeniach w Uporządkowaniu"
 
 
 def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczytu_pod_naglowkiem(tmp_path: Path) -> None:
