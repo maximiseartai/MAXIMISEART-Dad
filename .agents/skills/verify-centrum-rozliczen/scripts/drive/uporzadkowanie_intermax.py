@@ -99,7 +99,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "bez-intermax")
     settings = Path(run.fixture["settings"])
-    saved = settings.read_text(encoding="utf-8") if settings.exists() else None
+    saved = run.settings_text()
     without = {key: value for key, value in (yaml.safe_load(saved or "") or {}).items() if key != "rejestr_zlecen"}
     print("  harness: the settings file without the Rejestr zleceń, as before Dad points to it", flush=True)
     settings.parent.mkdir(parents=True, exist_ok=True)
