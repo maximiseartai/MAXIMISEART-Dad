@@ -16,15 +16,19 @@ from fastapi import APIRouter
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.threads import Threading
 
 ShutdownBlocker = Callable[[], str | None]
 """Bezpieczny komunikat, dlaczego teraz nie można zamknąć Centrum, albo ``None``, gdy można."""
 
 
 class Shutdown:
-    def __init__(self, log: CentrumLog) -> None:
+    def __init__(self, log: CentrumLog, *, threads: Threading = threading) -> None:
+        """``threads`` daje Event prośby o zamknięcie; inny niż moduł ``threading`` daje tylko wyrocznia
+        ``verify-jedno-uruchomienie-naraz`` (``threads.Threading``)."""
+
         self._log = log
-        self._requested = threading.Event()
+        self._requested = threads.Event()
         self._blocker: ShutdownBlocker = lambda: None
 
     def refuse_while(self, blocker: ShutdownBlocker) -> None:

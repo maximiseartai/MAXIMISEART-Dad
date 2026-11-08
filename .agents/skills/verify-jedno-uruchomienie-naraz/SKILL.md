@@ -4,6 +4,9 @@ description: Exhaustively check that Centrum rozliczeń runs one Uruchomienie pr
 pilnuje:
   - src/rozliczenia/centrum/runs.py
   - src/rozliczenia/centrum/shutdown.py
+  - src/rozliczenia/centrum/threads.py
+  - src/rozliczenia/centrum/process_kind.py
+  - src/rozliczenia/centrum/catalog.py
   - src/rozliczenia/centrum/server.py
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/tool_updates.py
@@ -127,7 +130,7 @@ script checks the worktree's own `src`.
 | `URUCHOMIENIA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or a scope never reached a behaviour it must reach (`BRAK_ZAMKNIECIA`, `BRAK_ODMOWY_ZAMKNIECIA`, `BRAK_WYNIKU`, `BRAK_ODMOWY_STARTU`, `BRAK_DRUGIEGO_WYNIKU`), so the check would prove nothing. |
 | `URUCHOMIENIA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding did not show in a scope of its `after` that ran to the end. If a change fixed it, narrow or delete it in `KNOWN_FINDINGS` and below. |
 | `URUCHOMIENIA: ROZJAZD MODELU Z KODEM` | 1 | Only in CI, before the check: a part modelled by hand differs from its digest in `model/definicje.json` (see „Bring the model in line”). |
-| `URUCHOMIENIA: LUKA MODELU (n)` | 2 | `runs.py` or `shutdown.py` uses `threading` in a way the model does not cover (for example `RLock`, `Condition`, `wait(timeout=...)`), or a modelled thread waits on something outside the model. No verdict on the rules. |
+| `URUCHOMIENIA: LUKA MODELU (n)` | 2 | `RunHost`, `Run` or `Shutdown` uses its `threads` seam in a way the model does not cover (for example `RLock`, `Condition`, `wait(timeout=...)`), `RunHost` takes no lock from it, or a modelled thread waits on something outside the model. No verdict on the rules. |
 
 A modelled thread that waits on a real lock or Event, or on `time.sleep`, outside the model ends the check about
 10 s after its last step, not at pytest's 120 s limit, with a line like
@@ -150,8 +153,9 @@ blocked, with every lock it holds, until its process ends: the script's process 
 thread is a daemon). So every test runs `explore` on the real code in a process of its own with a time limit, even a
 test whose stand-in releases what the thread waits on: code under check can stall on a lock of its own first, and in
 the pytest worker that lock stopped every later test of Centrum while the session hung with no LUKA in its log (#651).
-Inside `runs.py` and
-`shutdown.py`, `threading` is replaced by model primitives: entering
+Nothing in the verified modules is replaced: `RunHost`, its `Run` and `Shutdown`
+get model primitives through their `threads` seam (`threads.Threading`, the
+`threading` module by default), so entering
 `RunHost._lock`, each `Event.set`/`clear`/`wait` and starting the Uruchomienie
 thread is one indivisible step, as is each Centrum log entry and
 `CentrumRuns.remember` (file writes in the real code). Before each step the
@@ -159,8 +163,10 @@ checker lets any thread whose step can go now go first, and it tries every such
 order. A lock entry can go only while the lock is free, and `wait()` only once the
 Event is set. The actions after the result (`AfterRun`) are one step that
 writes nothing. A card's event stream is not a modelled thread: at the end of
-every schedule the checker reads `RunHost`'s views (`_events`) as a card would
-next read them, from the view it read when each Uruchomienie started, and finds
+every schedule the checker reads `RunHost`'s views (`events_after`, between steps,
+so without a step of the lock) as a card would
+next read them, from the view it read when each Uruchomienie started (`RunHost`'s
+`created` hook hands over each new `Run` with the last view before it), and finds
 there the result of every Uruchomienie whose thread finished its work. In
 `dwie-karty` that holds only if a second Uruchomienie started after the first
 result (`BRAK_DRUGIEGO_WYNIKU` otherwise). Schedules that reach a state already
@@ -176,7 +182,9 @@ guardian work is one step ending either without a new version (or in a failure),
 then `end_update`, or with the guardian started, then the real
 `Shutdown.close_for_update`. Replaced: the last Uruchomienie before Centrum's start (`previous`) by none, and the start file (`run_started`)
 by one step that writes nothing. Replaced: `run_process` by an engine with one work step, an optional Decyzja
-through the real `Run.confirm` (both variants are explored) and an end step. Every
+through the real `Run.confirm` (both variants are explored) and an end step, as the engine of the catalog
+(`Catalog.with_engine`) whose `Catalog.prepared` gives the Uruchomienie every tab starts, so the real
+`PreparedRun.conduct` runs. Every
 Uruchomienie ends in success. Modelled by hand: after `Shutdown.wait()` returns,
 the server may end at any moment when no HTTP request is in flight. This is
 uvicorn's `should_exit` tick (≤ 0.1 s), during which new requests are still
@@ -231,7 +239,7 @@ requests, `wątek Uruchomienie n` is the thread `RunHost.start` spawned,
   such as a request arriving after uvicorn stopped accepting, or a thread
   passing a lock another thread holds. Fix the model primitives or the actors in
   `explore_runs.py`, then rerun the mutations below.
-- **LUKA MODELU**: model the new `threading` use in `ModelThreading` with its
+- **LUKA MODELU**: model the new use of the `threads` seam in `ModelThreading` with its
   real semantics (a step per entry or signal, and a step that can go only when
   it would not block), or ask whether the code should avoid it. For a thread
   that waits outside the model, the printed line names the wait to model or avoid. Never reword a
@@ -258,7 +266,9 @@ before the result is published outside it, `start` clearing the previous result 
 `_closing`, `begin_update` without the closing or the running check, `start`
 without the updating check, `begin_restore` without the running check,
 `start` without the restoring check, and `_busy_locked` blind to a restore. `RLock` in `RunHost` gives `LUKA MODELU`,
-and so does a real lock outside `threading` held across a step of `start`.
+and so do a `RunHost` lock from `threading` beside the `threads` seam, the Uruchomienie thread from `threading` beside
+it, a real lock outside `threading` held across a step of `start`, and a `PreparedRun.conduct` that waits on a real Event
+before the engine.
 CI runs this in the `mutations` job. A mutation reported as `NIEAKTUALNA` no longer matches its file.
 Rewrite its `anchor` and `replacement` in `check_runs_mutations.py` so it breaks
 the same rule again in the new code.

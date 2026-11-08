@@ -26,18 +26,21 @@ per schedule, and checks four rules:
   at the end of every schedule. A card reads the stream every 50 ms, so a start from a second tab that drops the
   result before such a read leaves the card without it; the result is then only in Historia.
 
-Replaced: ``threading`` inside ``runs.py`` and ``shutdown.py`` by model primitives that hand control to
-the checker; ``run_process`` (called in ``process_kind.py``) by an engine with two steps and an optional Decyzja
-through the real ``Run.confirm``; ``CentrumLog``, ``CentrumRuns`` and the start file (``run_started``) by steps that write
+Given through public seams, not by replacing anything in the verified modules: model primitives that hand control to
+the checker as the ``threads`` of ``RunHost`` and ``Shutdown`` (``threads.Threading``); an engine with two steps and an
+optional Decyzja through the real ``Run.confirm`` in place of ``run_process``, as the engine of the catalog
+(``Catalog.with_engine``) that builds the run every tab starts, so the real ``PreparedRun.conduct`` runs; ``CentrumLog``, ``CentrumRuns`` and the start file (``run_started``) as steps that write
 nothing, with no Uruchomienie before Centrum's start; the actions after the result
-(``AfterRun``) by one step that writes nothing. ``ToolUpdates``
+(``AfterRun``) as one step that writes nothing. ``RunHost``'s ``created`` hands the checker each new ``Run`` under the
+lock, and the checker reads the views through ``RunHost.events_after``. ``ToolUpdates``
 (``tool_updates.py``) is modelled by hand around the real ``begin_update``, ``end_update`` and
 ``Shutdown.close_for_update``: Git, pip and the restart guardian are one step that ends either without a
 new version (or with a failure) or with the guardian started. Modelled by hand:
 ``stop_when_asked`` in ``server.py`` and uvicorn's graceful shutdown. After ``Shutdown.wait`` returns,
 the server may end at any moment when no HTTP request is in flight; a request that arrived before
-that is served to the end. Any other ``threading`` use in the two files stops the check as LUKA MODELU, and so does
-a modelled thread that waits on something outside the model (a real lock or Event, ``time.sleep``) for
+that is served to the end. Any other use of the ``threads`` seam (``RLock``, ``wait(timeout=...)``) stops the check as
+LUKA MODELU, and so do a ``RunHost`` that takes no lock from it or starts the Uruchomienie thread beside it, and a
+modelled thread that waits on something outside the model (a real lock or Event, ``time.sleep``) for
 ``STALL_SECONDS`` without a step.
 
 Schedules that reach a state already explored are cut short: the code is deterministic, so a state
@@ -52,12 +55,14 @@ import linecache
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
-from types import FrameType, ModuleType, SimpleNamespace
-from typing import Any
+from types import FrameType, SimpleNamespace
+from typing import Any, NoReturn
+
+from greenlet import getcurrent  # type: ignore[import-untyped]  # greenlet ships no type hints
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
@@ -67,6 +72,7 @@ from rozliczenia.centrum import contract, process_kind, runs, shutdown
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.decision import Decision
 from rozliczenia.message import Message
+from rozliczenia.process_run import Interlocutor
 from rozliczenia.progress import ProgressProjection
 from rozliczenia.run_context import RunContext
 from eksplorator import Choices, Excuse, Interleaving, Shape, Thread, excuse_line, excused, gone_lines, schedules, verdict
@@ -97,6 +103,18 @@ class ModelGap(BaseException):
     """The real code used ``threading`` in a way the model primitives do not cover."""
 
 
+def _end_foreign_thread() -> NoReturn:
+    """Ends a system thread outside the model (neither a modelled thread nor the checker's own) that reaches a model
+    primitive; ``threading`` ends a thread on ``SystemExit`` (the class itself, not a subclass) without a traceback.
+
+    This only keeps the thread quiet; it reports nothing, because it runs beside the checker and a report from it would
+    land in whichever schedule runs at that moment. The LUKA MODELU is the start of that thread, which the modelled
+    thread that started it reports: ``_start_tab`` for an Uruchomienie thread started beside ``threads.Thread``.
+    """
+
+    raise SystemExit
+
+
 # --- Scheduler: one modelled thread runs at a time, from one step to the next (``eksplorator.Interleaving``) --------
 #
 # A modelled thread that waits on a real lock, Event or sleep outside the model stops that one OS thread with it, and
@@ -119,7 +137,7 @@ class Pending:
 class Actor(Thread):
     pending: Pending | None = None
     in_flight: bool = False
-    run: Any = None  # the Run whose work() this thread runs
+    run: Tracked | None = None  # the Uruchomienie whose work() this thread runs
 
 
 _ABORT = "\0abort"
@@ -160,7 +178,7 @@ class Scheduler(Interleaving[Actor]):
         self.progress = progress
         progress.scheduler = self
 
-    def add(self, name: str, body: Callable[[], None], run: Any = None) -> Actor:
+    def add(self, name: str, body: Callable[[], None], run: Tracked | None = None) -> Actor:
         """Adds a thread that runs up to its first step at the next ``settle``."""
 
         actor = Actor(name, run=run)
@@ -184,8 +202,14 @@ class Scheduler(Interleaving[Actor]):
         enabled: Callable[[], bool] = lambda: True,
         variants: tuple[str, ...] = ("",),
     ) -> str:
-        """Parks the calling thread until the checker picks this step; returns the picked variant."""
+        """Parks the calling thread until the checker picks this step; returns the picked variant.
 
+        A step in the checker's own thread (building ``RunHost`` and ``Shutdown``, reading ``events_after``) is a
+        LUKA MODELU, as every step outside a modelled thread; only a system thread outside the model ends quietly.
+        """
+
+        if Interleaving.current() is None and getcurrent() is not self.home:
+            _end_foreign_thread()
         actor = _current_actor()
         actor.pending = Pending(call, _code_location(), enabled, variants)
         outcome = self.park(actor)
@@ -213,11 +237,32 @@ class Scheduler(Interleaving[Actor]):
         self.settle()
 
 
-# --- Model primitives in place of ``threading`` inside runs.py and shutdown.py --------------------------
+# --- Model primitives given to RunHost, Run and Shutdown as their ``threads`` (``threads.Threading``) ----------------
+
+
+@dataclass
+class Tracked:
+    """One Uruchomienie as the checker tracks it from the moment ``RunHost.start`` creates its ``Run`` (``created``)."""
+
+    run: runs.Run
+    name: str
+    creator: str
+    window: str
+    card_seen: int
+    """A card that has read the stream up to this start: every view it reads later has a higher sequence."""
+    done: bool = False
+    after_done: bool = False
+    returned: bool = False
+    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)
 
 
 class ModelLock:
-    """``RunHost._lock``: entering is one step, which can be taken only while the lock is free."""
+    """The lock of ``RunHost``: entering is one step, which can be taken only while the lock is free.
+
+    The checker itself reads ``RunHost`` between steps, outside any modelled thread, when every modelled thread waits
+    before a step of its own: that read is no step and does not take the lock. Any other thread takes it as a step,
+    which ends a system thread outside the model (``Scheduler.step``).
+    """
 
     def __init__(self, scheduler: Scheduler, label: str) -> None:
         self._scheduler = scheduler
@@ -225,12 +270,15 @@ class ModelLock:
         self.owner: str | None = None
 
     def __enter__(self) -> bool:
+        if getcurrent() is self._scheduler.home:
+            return True
         self._scheduler.step(f"wejście w blokadę {self.label}", enabled=lambda: self.owner is None)
         self.owner = _current_actor().name
         return True
 
     def __exit__(self, *_: object) -> None:
-        self.owner = None
+        if Interleaving.current() is not None:
+            self.owner = None
 
 
 class ModelEvent:
@@ -265,25 +313,37 @@ class ModelThread:
     def __init__(
         self,
         scheduler: Scheduler,
+        tracked: Callable[[object], Tracked | None],
         *,
-        target: Callable[[], None],
+        target: Callable[[], object],
         name: str,
         daemon: bool,
     ) -> None:
         if not daemon:
             raise ModelGap("wątek Uruchomienia nie jest daemon: koniec procesu Pythona by na niego czekał")
         self._scheduler = scheduler
+        self._tracked = tracked
         self._target = target
 
     def start(self) -> None:
         self._scheduler.step("start wątku Uruchomienia")
-        run = getattr(self._target, "__self__", None)
-        name = getattr(run, "model_name", "Uruchomienie")
-        self._scheduler.add(f"wątek {name}", self._target, run)
+        run = self._tracked(getattr(self._target, "__self__", None))
+        if run is not None:
+            run.thread_started = True
+
+        def body() -> None:
+            self._target()
+            if run is not None:
+                run.returned = True
+
+        self._scheduler.add(f"wątek {run.name if run is not None else 'Uruchomienie'}", body, run)
 
 
 class ModelThreading:
-    """Stands in for the ``threading`` module inside one verified file."""
+    """The ``threads`` of one verified class (``threads.Threading``); remembers the locks it gave out.
+
+    ``tracked`` finds the tracked Uruchomienie of the ``Run`` whose ``work`` a new thread runs.
+    """
 
     def __init__(
         self,
@@ -292,23 +352,28 @@ class ModelThreading:
         lock_label: str,
         event_label: str,
         events: list[ModelEvent],
+        tracked: Callable[[object], Tracked | None] = lambda _run: None,
     ):
         self._scheduler = scheduler
         self._module = module
         self._lock_label = lock_label
         self._event_label = event_label
         self._events = events
+        self._tracked = tracked
+        self.locks: list[ModelLock] = []
 
     def Lock(self) -> ModelLock:  # noqa: N802 - same name as threading.Lock
-        return ModelLock(self._scheduler, self._lock_label)
+        lock = ModelLock(self._scheduler, self._lock_label)
+        self.locks.append(lock)
+        return lock
 
     def Event(self) -> ModelEvent:  # noqa: N802 - same name as threading.Event
         event = ModelEvent(self._scheduler, self._event_label)
         self._events.append(event)
         return event
 
-    def Thread(self, *, target: Callable[[], None], name: str, daemon: bool = False) -> ModelThread:  # noqa: N802
-        return ModelThread(self._scheduler, target=target, name=name, daemon=daemon)
+    def Thread(self, *, target: Callable[[], object], name: str, daemon: bool = False) -> ModelThread:  # noqa: N802
+        return ModelThread(self._scheduler, self._tracked, target=target, name=name, daemon=daemon)
 
     def __getattr__(self, name: str) -> Any:
         raise ModelGap(f"threading.{name} w {self._module}")
@@ -325,7 +390,7 @@ class LogSteps:
             self._scheduler.step(f"dziennik Centrum: {name}")
             run = _current_actor().run
             if name == "run_finished" and run is not None:
-                run.model_done = True
+                run.done = True
 
         return entry
 
@@ -340,7 +405,7 @@ class AfterRunSteps:
         self._scheduler.step("po wyniku: działania po wyniku Uruchomienia (plik kolejki)")
         run = _current_actor().run
         if run is not None:
-            run.model_after_done = True
+            run.after_done = True
 
 
 class CentrumRunsSteps:
@@ -395,9 +460,41 @@ SCOPES = {
     "przywracanie": Scope("przywracanie", start_tabs=1, close_clicks=1, decisions=1, restore_tabs=2),
 }
 
-PREPARED: process_kind.PreparedRun[Any, Any] = CATALOG.prepared(
-    "preparation", period="08_14_09_2026", inputs=SimpleNamespace(dry_run=False), context=RunContext()
-)
+def engine(
+    scheduler: Scheduler,
+    process: Any,
+    _inputs: Any,
+    interlocutor: Interlocutor,
+    /,
+    **_: Any,
+) -> process_run.Outcome[Any]:
+    """The checker's engine in place of ``run_process`` (``Catalog.with_engine``): a work step that ends with or without
+    a Decyzja taken through the real ``Run.confirm``, then the end with the metrics record. Every Uruchomienie ends in
+    success."""
+
+    variant = scheduler.step("silnik: Sprawdzanie … Zapisywanie", variants=("bez Decyzji", WITH_DECISION))
+    if variant == WITH_DECISION:
+        interlocutor.confirm(DECISION)
+    scheduler.step("silnik kończy i dopisuje rekord metryk")
+    ending = process_run.Finished("OK", {name: 0 for name in process.counter_names}, {})
+    return process_run.Outcome(
+        ending=ending,
+        view=None,
+        total_duration_ms=0,
+        technical_notes=(),
+        metrics_saved=True,
+        progress=ProgressProjection().snapshot,
+        files_unchanged=False,
+    )
+
+
+def prepared_run(scheduler: Scheduler) -> process_kind.PreparedRun[Any, Any]:
+    """The Uruchomienie every start tab asks for: from ``Catalog.prepared`` with the checker's ``engine``, so the real
+    ``PreparedRun.conduct`` runs in every schedule."""
+
+    return CATALOG.with_engine(partial(engine, scheduler)).prepared(
+        "preparation", period="08_14_09_2026", inputs=SimpleNamespace(dry_run=False), context=RunContext()
+    )
 
 
 @dataclass(frozen=True)
@@ -434,10 +531,11 @@ class World:
 
     scheduler: Scheduler
     events: list[ModelEvent]
-    created: list[Any]
+    created: list[Tracked]
     host: runs.RunHost
     shutdown: shutdown.Shutdown
     lock: ModelLock | None
+    prepared: process_kind.PreparedRun[Any, Any]
     log: Any = None
     exited: bool = False
     closes_refused: int = 0
@@ -448,8 +546,8 @@ class World:
     restores: list[Restore] = field(default_factory=list)
     violations: list[Violation] = field(default_factory=list)
 
-    def in_progress(self) -> list[Any]:
-        return [run for run in self.created if not run.model_done]
+    def in_progress(self) -> list[Tracked]:
+        return [run for run in self.created if not run.done]
 
     def updating(self) -> list[Update]:
         return [update for update in self.updates if not update.done]
@@ -474,43 +572,25 @@ class World:
         return "przed sprawdzeniem odmowy"
 
 
-@contextmanager
-def harness(scheduler: Scheduler) -> Iterator[World]:
+def wire(scheduler: Scheduler) -> World:
+    """The real ``RunHost`` and ``Shutdown`` of one schedule, wired as in ``create_app``, with the checker's seams."""
+
     events: list[ModelEvent] = []
-    created: list[Any] = []
+    created: list[Tracked] = []
     world_box: list[World] = []
 
-    class TrackedRun(runs.Run):
-        def __init__(self, host: runs.RunHost, prepared: process_kind.PreparedRun[Any, Any], stops: Any) -> None:
-            super().__init__(host, prepared, stops)
-            self.model_name = f"Uruchomienie {len(created) + 1}"
-            self.model_creator = _current_actor().name
-            self.model_window = world_box[0].close_window()
-            self.model_done = False
-            self.model_after_done = False
-            # A card that has read the stream up to this start: every view it reads later has a higher sequence.
-            self.model_card_seen = host._sequence
-            self.model_returned = False
-            created.append(self)
+    def tracked(run: object) -> Tracked | None:
+        return next((known for known in created if known.run is run), None)
 
-        def work(self) -> None:
-            super().work()
-            self.model_returned = True
-
-    def engine(process: Any, inputs: Any, interlocutor: Any, *, view: Any, metrics_path: Path, context: Any) -> Any:
-        variant = scheduler.step("silnik: Sprawdzanie … Zapisywanie", variants=("bez Decyzji", WITH_DECISION))
-        if variant == WITH_DECISION:
-            interlocutor.confirm(DECISION)
-        scheduler.step("silnik kończy i dopisuje rekord metryk")
-        ending = process_run.Finished("OK", {name: 0 for name in process.counter_names}, {})
-        return process_run.Outcome(
-            ending=ending,
-            view=None,
-            total_duration_ms=0,
-            technical_notes=(),
-            metrics_saved=True,
-            progress=ProgressProjection().snapshot,
-            files_unchanged=False,
+    def track(run: runs.Run, last: contract.RunEvent) -> None:
+        created.append(
+            Tracked(
+                run,
+                f"Uruchomienie {len(created) + 1}",
+                _current_actor().name,
+                world_box[0].close_window(),
+                last.sequence,
+            )
         )
 
     class NoStops:
@@ -518,61 +598,36 @@ def harness(scheduler: Scheduler) -> Iterator[World]:
             if stop is not None:
                 raise ModelGap("Zatrzymanie w Stops.ended; model kończy każde Uruchomienie sukcesem")
 
-    # Each verified file sees its own stand-ins; the originals come back after the schedule.
-    stand_ins = (
-        ModelThreading(scheduler, "runs.py", "RunHost._lock", "Run._decided", events),
-        ModelThreading(scheduler, "shutdown.py", "Shutdown", "Shutdown._requested", events),
-        engine,
-        TrackedRun,
+    log = LogSteps(scheduler)
+    host_threads = ModelThreading(scheduler, "runs.py", "RunHost._lock", "Run._decided", events, tracked)
+    # Wired as in create_app (app.py): RunHost, then Shutdown.refuse_while(runs.shutdown_refusal).
+    stopper = shutdown.Shutdown(
+        log,  # type: ignore[arg-type]
+        threads=ModelThreading(scheduler, "shutdown.py", "Shutdown", "Shutdown._requested", events),
     )
-    originals = _originals()
-    for (module, name), value in zip(PATCHED, stand_ins, strict=True):
-        setattr(module, name, value)
-    try:
-        log = LogSteps(scheduler)
-        # Wired as in create_app (app.py): RunHost, then Shutdown.refuse_while(runs.shutdown_refusal).
-        stopper = shutdown.Shutdown(log)  # type: ignore[arg-type]
-        host = runs.RunHost(
-            log,  # type: ignore[arg-type]
-            CentrumRunsSteps(scheduler),  # type: ignore[arg-type]
-            NoStops(),  # type: ignore[arg-type]
-            previous=None,
-            run_started=StartFileSteps(scheduler).run_started,
-            after_run=[AfterRunSteps(scheduler)],
-        )
-        stopper.refuse_while(host.shutdown_refusal)
-        lock = getattr(host, "_lock", None)
-        world = World(
-            scheduler,
-            events,
-            created,
-            host,
-            stopper,
-            lock if isinstance(lock, ModelLock) else None,
-            log=log,
-        )
-        world_box.append(world)
-        yield world
-    finally:
-        _put_back(originals)
-
-
-# What ``harness`` replaces in the verified files; ``explore`` puts it back itself after a schedule that never ends.
-PATCHED: tuple[tuple[ModuleType, str], ...] = (
-    (runs, "threading"),
-    (shutdown, "threading"),
-    (process_kind, "run_process"),
-    (runs, "Run"),
-)
-
-
-def _originals() -> list[tuple[ModuleType, str, object]]:
-    return [(module, name, getattr(module, name)) for module, name in PATCHED]
-
-
-def _put_back(originals: list[tuple[ModuleType, str, object]]) -> None:
-    for module, name, value in originals:
-        setattr(module, name, value)
+    host = runs.RunHost(
+        log,  # type: ignore[arg-type]
+        CentrumRunsSteps(scheduler),  # type: ignore[arg-type]
+        NoStops(),  # type: ignore[arg-type]
+        previous=None,
+        run_started=StartFileSteps(scheduler).run_started,
+        after_run=[AfterRunSteps(scheduler)],
+        threads=host_threads,
+        created=track,
+    )
+    stopper.refuse_while(host.shutdown_refusal)
+    world = World(
+        scheduler,
+        events,
+        created,
+        host,
+        stopper,
+        host_threads.locks[0] if len(host_threads.locks) == 1 else None,
+        prepared_run(scheduler),
+        log=log,
+    )
+    world_box.append(world)
+    return world
 
 
 def _start_tab(world: World, number: int) -> Callable[[], None]:
@@ -581,7 +636,10 @@ def _start_tab(world: World, number: int) -> Callable[[], None]:
         scheduler.step("żądanie POST /api/runs dociera do serwera")
         _current_actor().in_flight = True
         try:
-            view = world.host.start(PREPARED)
+            created = len(world.created)
+            view = world.host.start(world.prepared)
+            if any(not run.thread_started for run in world.created[created:]):
+                raise ModelGap("RunHost.start uruchomił wątek Uruchomienia spoza threads.Thread")
             scheduler.note(f"odpowiedź 200: {view.state}")
         except contract.Refusal as refusal:
             world.starts_refused += 1
@@ -682,9 +740,9 @@ def _restore_tab(world: World, number: int) -> Callable[[], None]:
 
 
 def _decision_tab(world: World, decisions: int) -> Callable[[], None]:
-    def awaiting() -> Any | None:
+    def awaiting() -> runs.Run | None:
         return next(
-            (run for run in world.created if run.awaiting_decision and not run.ended),
+            (tracked.run for tracked in world.created if tracked.run.awaiting_decision and not tracked.run.ended),
             None,
         )
 
@@ -721,22 +779,22 @@ def _server(world: World) -> Callable[[], None]:
         )
         world.exited = True
         for run in world.in_progress():
-            doing = "czeka na Decyzję taty" if run.awaiting_decision else "trwa"
+            doing = "czeka na Decyzję taty" if run.run.awaiting_decision else "trwa"
             world.violations.append(
                 Violation(
                     "BEZ_ZAMKNIECIA_W_TRAKCIE",
-                    ("BEZ_ZAMKNIECIA_W_TRAKCIE", run.model_window),
-                    f"Centrum kończy pracę, a {run.model_name} (z: {run.model_creator}) {doing}; "
-                    f"wystartowało {run.model_window}",
+                    ("BEZ_ZAMKNIECIA_W_TRAKCIE", run.window),
+                    f"Centrum kończy pracę, a {run.name} (z: {run.creator}) {doing}; "
+                    f"wystartowało {run.window}",
                 )
             )
         for run in world.created:
-            if run.model_done and not run.model_after_done:
+            if run.done and not run.after_done:
                 world.violations.append(
                     Violation(
                         "PO_WYNIKU_PRZED_KONCEM",
                         ("PO_WYNIKU_PRZED_KONCEM",),
-                        f"Centrum kończy pracę po wyniku {run.model_name} (z: {run.model_creator}), "
+                        f"Centrum kończy pracę po wyniku {run.name} (z: {run.creator}), "
                         "zanim przeszły jego działania po wyniku",
                     )
                 )
@@ -784,13 +842,13 @@ class Execution:
 
 def _state(world: World) -> object:
     # The views a card can still read and each card's cursor decide WYNIK_NA_KARCIE; run ids differ in every schedule.
-    names = {run.info.id: run.model_name for run in world.created}
+    names: dict[object, str] = {run.run.info.id: run.name for run in world.created}
     return (
         tuple(
             (event.sequence, event.view.state, names.get(getattr(getattr(event.view, "run", None), "id", None)))
-            for event in world.host._events
+            for event in world.host.events_after(-1)
         ),
-        tuple((run.model_card_seen, run.model_returned) for run in world.created),
+        tuple((run.card_seen, run.returned) for run in world.created),
         tuple(
             (
                 actor.name,
@@ -803,13 +861,13 @@ def _state(world: World) -> object:
         ),
         tuple(
             (
-                run.model_name,
-                run.model_creator,
-                run.model_window,
-                run.model_done,
-                run.model_after_done,
-                run.ended,
-                run.awaiting_decision,
+                run.name,
+                run.creator,
+                run.window,
+                run.done,
+                run.after_done,
+                run.run.ended,
+                run.run.awaiting_decision,
             )
             for run in world.created
         ),
@@ -825,8 +883,8 @@ def execute(scope: Scope, choices: Choices, visited: set[object], progress: Prog
     trace: list[str] = []
     scheduler = Scheduler(trace, progress)
     try:
-        with harness(scheduler) as world:
-            cut = _drive(world, scope, choices, visited)
+        world = wire(scheduler)
+        cut = _drive(world, scope, choices, visited)
     except ModelGap as gap:
         return Execution(
             trace,
@@ -848,12 +906,12 @@ def execute(scope: Scope, choices: Choices, visited: set[object], progress: Prog
         clean_close=world.exited and not world.violations,
         close_refused=world.closes_refused > 0,
         start_refused=world.starts_refused > 0,
-        run_ended=any(run.model_done for run in world.created),
+        run_ended=any(run.done for run in world.created),
         update_refused=world.updates_refused > 0,
         update_restarted=any(update.restarted for update in world.updates) and not world.violations,
         restore_refused=world.restores_refused > 0,
         restore_done=any(restore.done for restore in world.restores) and not world.violations,
-        results_shown_twice=sum(run.model_returned for run in world.created) > 1,
+        results_shown_twice=sum(run.returned for run in world.created) > 1,
     )
 
 
@@ -862,7 +920,7 @@ def _drive(world: World, scope: Scope, choices: Choices, visited: set[object]) -
 
     scheduler = world.scheduler
     if world.lock is None:
-        scheduler.gaps.append("RunHost nie ma blokady _lock z threading.Lock()")
+        scheduler.gaps.append("RunHost nie wziął jednej blokady z threads.Lock()")
     for number in range(1, scope.start_tabs + 1):
         scheduler.add(f"karta Uruchom {number}", _start_tab(world, number))
     for number in range(1, scope.update_tabs + 1):
@@ -882,7 +940,7 @@ def _drive(world: World, scope: Scope, choices: Choices, visited: set[object]) -
                 violation.rule == "JEDNO_NARAZ" for violation in world.violations
             ):
                 names = ", ".join(
-                    [f"{run.model_name} (z: {run.model_creator})" for run in running]
+                    [f"{run.name} (z: {run.creator})" for run in running]
                     + [f"{update.name} (z: {update.creator})" for update in updating]
                     + [f"{restore.name} (z: {restore.creator})" for restore in restoring]
                 )
@@ -919,15 +977,15 @@ def _check_results_on_card(world: World) -> None:
     """WYNIK_NA_KARCIE at the end of a schedule: what a card reads next, read without a step of the lock."""
 
     for run in world.created:
-        if not run.model_returned:
+        if not run.returned:
             continue
-        readable = [event.view for event in world.host._events if event.sequence > run.model_card_seen]
-        if not any(isinstance(view, contract.RunFinished) and view.run.id == run.info.id for view in readable):
+        readable = [event.view for event in world.host.events_after(run.card_seen)]
+        if not any(isinstance(view, contract.RunFinished) and view.run.id == run.run.info.id for view in readable):
             world.violations.append(
                 Violation(
                     "WYNIK_NA_KARCIE",
                     ("WYNIK_NA_KARCIE",),
-                    f"{run.model_name} (z: {run.model_creator}) skończyło pracę, a karta, która śledzi strumień "
+                    f"{run.name} (z: {run.creator}) skończyło pracę, a karta, która śledzi strumień "
                     "od jego startu, nie dostaje jego wyniku: zostaje tylko w Historii",
                 )
             )
@@ -993,7 +1051,6 @@ def explore(scope: Scope) -> ScopeReport:
     report = ScopeReport(scope)
     progress = Progress()
     failures: list[BaseException] = []
-    originals = _originals()
 
     def check() -> None:
         try:
@@ -1010,15 +1067,17 @@ def explore(scope: Scope) -> ScopeReport:
         if progress.steps != seen:
             seen, since = progress.steps, time.monotonic()
         elif time.monotonic() - since >= STALL_SECONDS:
-            # The checker's thread stays blocked for good, so the verified files get their real threading back here.
             progress.abandoned = True
-            _put_back(originals)
             gap, trace = _stalled(progress, checker)
             report.gaps[gap] = trace
             break
     report.seconds = time.perf_counter() - started
     if failures:
-        raise failures[0]
+        failure = failures[0]
+        if isinstance(failure, SystemExit):
+            # Raised again in the main thread, a SystemExit without a code ends the process with 0 and no verdict.
+            raise RuntimeError(f"sprawdzenie przeplotów skończyło się SystemExit({failure.code!r}) bez werdyktu") from failure
+        raise failure
     return report
 
 

@@ -25,10 +25,11 @@ nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy o
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
 komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
 katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``dataclasses.replace`` z ``metrics=`` albo
-z Uruchomienia, którego nazwa mówi ``prepared``), w ``src/``, narzędziach, testach i skryptach skilli: rdzeń i plik metryk
-procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``, ``Catalog.steered``). Kopię wolno
-zrobić tylko wstrzyknięciu usterki w skrypt eksploratora w napisie, z atrapą, której katalog nie składa (historia metryk,
-która czeka, w ``test_jedno_uruchomienie_naraz.py``).
+z Uruchomienia, którego nazwa mówi ``prepared``) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
+plik metryk i silnik procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``,
+``Catalog.steered``, ``Catalog.with_engine``). Eksplorator Uruchomień daje swój silnik przez ``Catalog.with_engine``, więc
+prawdziwe ``PreparedRun.conduct`` biegnie w każdym harmonogramie (przegląd #1127: podklasa z własnym ``conduct`` je
+omijała).
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
@@ -52,9 +53,9 @@ zostaje przeglądowi.
 
 Wyrocznie skilli (``.agents/skills/*/scripts``) i narzędzia (``tools/``) biorą z ``src`` tylko publiczne nazwy
 (docs/agents/skille.md, „Co wyrocznia bierze z src”): mechanikę przez publiczny punkt obserwacji, a dane o świecie
-zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do prywatnych nazw i globali modułów, a eksplorator
-kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox`` (spis N13). ``explore_runs.py`` czyta jeszcze
-prywatne pola ``RunHost``, czego strażnik nie widzi (docstring ``_private_reaches``).
+zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do prywatnych nazw i globali modułów, eksplorator
+kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox``, a eksplorator Uruchomień z prywatnych pól
+``RunHost`` (spis N13).
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
@@ -414,10 +415,10 @@ _COPYING_MODULES: typing.Final = frozenset({"dataclasses", "copy"})
 
 
 def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
-    """Wywołania w ``tree``, które składają ``PreparedRun`` obok ``Catalog.prepared``: jego konstruktor (nazwa albo
-    atrybut ``PreparedRun``) i kopia przez ``replace`` z ``dataclasses`` albo ``copy`` albo przez ``__replace__``, z innym
-    plikiem metryk (``metrics=``) albo z Uruchomienia, którego nazwa mówi ``prepared``. Konstruktor i ``replace`` test
-    rozpoznaje także pod nazwą z importu (``import … as``).
+    """Miejsca w ``tree``, które składają ``PreparedRun`` obok ``Catalog.prepared``: jego konstruktor (nazwa albo
+    atrybut ``PreparedRun``), podklasa (składa się sama, ``cls(...)``) i kopia przez ``replace`` z ``dataclasses`` albo
+    ``copy`` albo przez ``__replace__``, z innym plikiem metryk (``metrics=``) albo z Uruchomienia, którego nazwa mówi
+    ``prepared``. Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
 
     Kopię z innym rdzeniem (``kind=``) test rozpoznaje tylko po nazwie kopiowanej wartości, bo pole ``kind`` mają też
     inne dataclassy (``stops.StopShown``).
@@ -434,6 +435,12 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
             copies |= {f"{alias.asname}.replace" for alias in node.names if alias.name in _COPYING_MODULES and alias.asname}
     found: list[tuple[int, str]] = []
     for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for base in node.bases:
+                named = base.value if isinstance(base, ast.Subscript) else base
+                if (named.id if isinstance(named, ast.Name) else getattr(named, "attr", None)) in builds:
+                    found.append((node.lineno, f"class {node.name}({ast.unparse(base)})"))
+            continue
         if not isinstance(node, ast.Call):
             continue
         func = node.func
@@ -463,9 +470,9 @@ def test_uruchomienie_gotowe_do_startu_sklada_tylko_katalog_procesow() -> None:
         [
             *sorted(found),
             "PreparedRun składa tylko Catalog.prepared (src/rozliczenia/centrum/catalog.py), także kopią "
-            "(dataclasses.replace z metrics= albo z wartości prepared): rdzeń i historia metryk procesu pochodzą "
-            "z katalogu, więc Centrum, Skrypt dla maszyn, odtworzenie, testy i skrypty skilli podmieniają je tylko "
-            "przez Catalog.with_metrics i Catalog.steered.",
+            "(dataclasses.replace z metrics= albo z wartości prepared) i podklasą: rdzeń, historia metryk i silnik "
+            "procesu pochodzą z katalogu, więc Centrum, Skrypt dla maszyn, odtworzenie, testy i skrypty skilli "
+            "podmieniają je tylko przez Catalog.with_metrics, Catalog.steered i Catalog.with_engine.",
         ]
     )
 
@@ -481,6 +488,9 @@ PREPARED_RUN_BUILDS: typing.Final = {
     "dunder-replace": "run = PREPARED.__replace__(kind=other)",
     "replace-pod-nazwa-z-importu": "from dataclasses import replace as _r\nrun = _r(run, metrics=None)",
     "modul-pod-nazwa-z-importu": "import dataclasses as dc\nrun = dc.replace(run, metrics=store)",
+    # Przegląd #1127, runda 1: podklasa z własnym conduct składała się przez cls(**pola).
+    "podklasa-z-modulu": "class Modelled(process_kind.PreparedRun[Any, Any]):\n    pass",
+    "podklasa-pod-nazwa-z-importu": "from rozliczenia.centrum.process_kind import PreparedRun as _G\nclass M(_G):\n    pass",
 }
 # Kopie innych wartości, napisy i nazwy typu, które sprawdzenie przepuszcza.
 PREPARED_RUN_ALLOWED: typing.Final = {
@@ -489,6 +499,7 @@ PREPARED_RUN_ALLOWED: typing.Final = {
     "replace-bez-wartosci-w-argumencie": "copy = replace(**changes)",
     "replace-innej-funkcji-pod-ta-nazwa": "from os import replace as swap\nswap(prepared, target)",
     "adnotacja-i-isinstance": "def f(run: PreparedRun) -> bool:\n    return isinstance(run, PreparedRun)\n",
+    "podklasa-innej-klasy-generycznej": "class Shown(Generic[SummaryT]):\n    pass",
 }
 
 
@@ -1145,9 +1156,7 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     i ``eval``, prywatny napis w innym wywołaniu niż to z nazwą z ``src`` (``f(m, g("_x"))``, ``dict(_x=…)``), literał
     bez nazwy z ``src`` i prywatnego napisu wprost (``[[m], ["_x"]]``), napis w ciele podklasy
     (``__slots__ = ("_x",)``, ``locals()["_x"] = f``) i przypisanie podklasie po jej definicji, a także to, czy kopia danych o świecie
-    zewnętrznym jest celowa. Takie sięgnięcie stoi jeszcze w ``explore_runs.py`` skilla ``verify-urwane-uruchomienie``:
-    czyta prywatne pola instancji ``host._sequence`` i ``world.host._events`` gospodarza ``runs.RunHost`` (C4 spisu
-    N13, następny PR N13c).
+    zewnętrznym jest celowa.
 
     Znane fałszywe alarmy: napis ``"_x"`` obok publicznego łańcucha od nazwy z ``src`` alarmuje
     (``Path(outbox.QUEUE_DIRECTORY, "_archiwum")``), bo AST nie odróżni publicznej wartości od klasy
@@ -1375,6 +1384,11 @@ PRIVATE_REACHES: typing.Final = {
     "builtins-setattr-z-nazwa-w-zmiennej": (
         "import builtins\nfrom rozliczenia.centrum import outbox\nbuiltins.setattr(outbox, name, None)"
     ),
+    # Przegląd #1123, runda 4: obiekt postaci 10 inny niż goła nazwa z importu.
+    "setattr-z-nazwa-w-zmiennej-na-lancuchu": "from rozliczenia import centrum\nsetattr(centrum.outbox, name, None)",
+    "setattr-z-nazwa-w-zmiennej-na-sys-modules": (
+        "import sys\nsetattr(sys.modules['rozliczenia.centrum.outbox'], name, None)"
+    ),
 }
 
 
@@ -1414,6 +1428,7 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
         '    mock.patch("tests.rozliczenia._x", None)\n'
         "    cache = REGISTRY[outbox_module]._cache\n"
         "    setattr(Box(), name, value)\n"
+        "    setattr(Box(), name, outbox_module.RETRY_S)\n"
         "    version = getattr(outbox_module, \"SCHEMA_VERSION\")\n"
         '    return outbox.state(), outbox_module.SCHEMA_VERSION, RETRY_S, {outbox_module: "threading"}, getattr(Box(), "_ids")\n'
         "class TrackedRun(Outbox):\n"

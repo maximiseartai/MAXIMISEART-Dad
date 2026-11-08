@@ -41,6 +41,7 @@ from rozliczenia.centrum.process_kind import PreparedRun
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.run_view import ProcessView, Shown
 from rozliczenia.centrum.stops import NO_DIAGNOSIS, StoppedRun, Stops
+from rozliczenia.centrum.threads import Signal, Threading
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.decision import Decision
 from rozliczenia.input_copy import InputCopy
@@ -247,6 +248,11 @@ class RunHost:
     nieudany zapis startu trafia tylko do dziennika. Uruchomienie kończy się (``end``) pod tą
     samą blokadą co publikacja jego wyniku, a start następnego zostawia ten wynik w widokach,
     więc karta, która czyta strumień co chwilę, dostaje wynik każdego Uruchomienia.
+
+    ``threads`` daje blokadę, Event decyzji taty i wątek Uruchomienia (``threads.Threading``), a ``created`` dostaje
+    każdy nowy ``Run`` pod blokadą, zanim zajmie miejsce „jedno naraz”, z ostatnim widokiem sprzed jego startu (tym, co
+    karta mogła już przeczytać). Inne niż domyślne (moduł ``threading`` i nic) daje tylko wyrocznia
+    ``verify-jedno-uruchomienie-naraz``, która decyduje o każdym kroku.
     """
 
     def __init__(
@@ -258,13 +264,17 @@ class RunHost:
         previous: contract.PastRun | None,
         run_started: Callable[[contract.RunInfo, datetime], None],
         after_run: Sequence[AfterRun],
+        threads: Threading = threading,
+        created: Callable[[Run, contract.RunEvent], None] = lambda _run, _last: None,
     ) -> None:
         self._log = log
         self._centrum_runs = centrum_runs
         self._stops = stops
         self._run_started = run_started
         self._after_run = tuple(after_run)
-        self._lock = threading.Lock()
+        self._threads = threads
+        self._created = created
+        self._lock = threads.Lock()
         self._sequence = 0
         first = contract.RunIdle(state="idle", previous=previous)
         self._events: list[contract.RunEvent] = [contract.RunEvent(sequence=0, view=first)]
@@ -355,7 +365,8 @@ class RunHost:
                     f"Trwa już Uruchomienie procesu: {running.title}, okres {running.period}. "
                     "Poczekaj na jego wynik w Uruchomieniach.",
                 )
-            run = Run(self, prepared, self._stops)
+            run = Run(self, prepared, self._stops, self._threads)
+            self._created(run, self._events[-1])
             self._run = run
             # Wynik poprzedniego Uruchomienia zostaje dla karty, która go jeszcze nie odczytała (#723).
             self._events = self._events[-1:]
@@ -366,7 +377,7 @@ class RunHost:
             self._run_started(run.info, run.started_at)
         except Exception as failure:  # zapis startu na dysku nie może zmienić Uruchomienia
             self._log.unexpected_failure(failure, where="start Uruchomienia procesu")
-        threading.Thread(target=run.work, name=f"uruchomienie-{run.info.id}", daemon=True).start()
+        self._threads.Thread(target=run.work, name=f"uruchomienie-{run.info.id}", daemon=True).start()
         return view
 
     def decide(self, run_id: str, answer: contract.DecisionAnswer) -> contract.RunView:
@@ -462,7 +473,7 @@ class Run:
     dostaje ``progress_stale``, a rdzeń odłącza podgląd bez wpływu na wynik.
     """
 
-    def __init__(self, host: RunHost, prepared: PreparedRun[Any, Any], stops: Stops) -> None:
+    def __init__(self, host: RunHost, prepared: PreparedRun[Any, Any], stops: Stops, threads: Threading) -> None:
         self._host = host
         self._prepared = prepared
         self._stops = stops
@@ -470,7 +481,7 @@ class Run:
         self.started_at = datetime.now(timezone.utc)
         self._progress = prepared.progress_view(ProgressProjection().snapshot)
         self._stale = False
-        self._decided = threading.Event()
+        self._decided: Signal = threads.Event()
         self._consent = False
         self.awaiting_decision = False
         self.ended = False

@@ -29,7 +29,7 @@ from rozliczenia.dad_files import ReadFile
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.preparation_register import RegisterSheet
 from rozliczenia.settlement_period import SettlementPeriod
-from rozliczenia.process_run import Process, ProcessInputs, ProcessSummary
+from rozliczenia.process_run import Outcome, Process, ProcessInputs, ProcessSummary, run_process
 from rozliczenia.telemetry import CompletedResult
 from rozliczenia.run_context import RunContext
 
@@ -72,18 +72,25 @@ SummaryT = TypeVar("SummaryT", bound=ProcessSummary)
 
 @dataclass
 class Engines:
-    """Prawdziwe rdzenie obu procesów, sterowane przez seam ``Process``.
+    """Prawdziwe rdzenie obu procesów, sterowane przez seam ``Process``, i prawdziwy silnik katalogu.
 
     ``fail_engine``: silnik rzuca nieoczekiwany wyjątek, zanim przeczyta pliki taty. ``fail_summary``:
     silnik kończy pracę, a wynik procesu (``Process.result``) rzuca wyjątek, czyli podsumowania nie da się pokazać.
+    ``fail_core``: sam rdzeń Uruchomienia (``run_process``) rzuca wyjątek, więc nie oddaje wyniku.
     """
 
     metrics: MetricsPaths
     fail_engine: bool = False
     fail_summary: bool = False
+    fail_core: bool = False
 
     def catalog(self) -> Catalog:
-        return self.metrics.catalog().steered(self._steered)
+        return self.metrics.catalog().steered(self._steered).with_engine(self._engine)
+
+    def _engine(self, *args: Any, **kwargs: Any) -> Outcome[Any]:
+        if self.fail_core:
+            raise ValueError("synthetic core failure SYN-002")
+        return run_process(*args, **kwargs)
 
     def _steered(self, real: Process[InputsT, SummaryT, RunContext]) -> Process[InputsT, SummaryT, RunContext]:
         def execute(inputs: InputsT, context: RunContext) -> SummaryT:
