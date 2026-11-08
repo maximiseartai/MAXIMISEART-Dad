@@ -24,8 +24,11 @@ Katalog procesów (``centrum/catalog.py``), wpis procesu (``centrum/process_kind
 nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy okresów ani okna efenix, także przez inne
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
 komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
-katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń
-i plik metryk procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``, ``Catalog.steered``).
+katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``dataclasses.replace`` z ``metrics=`` albo
+z Uruchomienia, którego nazwa mówi ``prepared``), w ``src/``, narzędziach, testach i skryptach skilli: rdzeń i plik metryk
+procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``, ``Catalog.steered``). Kopię wolno
+zrobić tylko wstrzyknięciu usterki w skrypt eksploratora w napisie, z atrapą, której katalog nie składa (historia metryk,
+która czeka, w ``test_jedno_uruchomienie_naraz.py``).
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
@@ -49,8 +52,9 @@ zostaje przeglądowi.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
-(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod inną nazwą
-(przypisaną albo ``type(prepared)``), moduł ``comment_versions`` przypisany innej
+(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod nazwą
+przypisaną poza importem albo jako ``type(prepared)``, kopia ``PreparedRun`` przez ``replace`` przypisane innej nazwie
+poza importem albo z innym rdzeniem (``kind=``) z wartości, której nazwa nie mówi ``prepared``, moduł ``comment_versions`` przypisany innej
 nazwie poza importem, wysyłka Logów zmieniona w słuchaczu kolejki bez nazwania etykiety (np. po ``run_id``) albo
 zbudowana z etykietą wziętą z innej wysyłki (``post.target.label``) oraz celowe obejście strażnika bez nazwy jego typów
 (``object.__new__(type(logs))``, zmiana ``__class__``).
@@ -399,24 +403,97 @@ def test_wpisy_procesow_czyta_tylko_katalog_procesow() -> None:
     )
 
 
+# Moduły z funkcją ``replace``, która kopiuje dataclassę z podmienionymi polami.
+_COPYING_MODULES: typing.Final = frozenset({"dataclasses", "copy"})
+
+
+def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
+    """Wywołania w ``tree``, które składają ``PreparedRun`` obok ``Catalog.prepared``: jego konstruktor (nazwa albo
+    atrybut ``PreparedRun``) i kopia przez ``replace`` z ``dataclasses`` albo ``copy`` albo przez ``__replace__``, z innym
+    plikiem metryk (``metrics=``) albo z Uruchomienia, którego nazwa mówi ``prepared``. Konstruktor i ``replace`` test
+    rozpoznaje także pod nazwą z importu (``import … as``).
+
+    Kopię z innym rdzeniem (``kind=``) test rozpoznaje tylko po nazwie kopiowanej wartości, bo pole ``kind`` mają też
+    inne dataclassy (``stops.StopShown``).
+    """
+
+    builds = {"PreparedRun"}
+    copies = {"replace", *(f"{module}.replace" for module in _COPYING_MODULES)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            builds |= {alias.asname for alias in node.names if alias.name == "PreparedRun" and alias.asname}
+            if node.module in _COPYING_MODULES:
+                copies |= {alias.asname or alias.name for alias in node.names if alias.name == "replace"}
+        elif isinstance(node, ast.Import):
+            copies |= {f"{alias.asname}.replace" for alias in node.names if alias.name in _COPYING_MODULES and alias.asname}
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if (func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)) in builds:
+            found.append((node.lineno, f"{ast.unparse(func)}("))
+            continue
+        if isinstance(func, ast.Attribute) and func.attr == "__replace__":
+            copied = ast.unparse(func.value)
+        elif ast.unparse(func) in copies:
+            copied = ast.unparse(node.args[0]) if node.args else ""
+        else:
+            continue
+        if "prepared" in copied.lower() or any(keyword.arg == "metrics" for keyword in node.keywords):
+            found.append((node.lineno, ast.unparse(node)))
+    return found
+
+
 def test_uruchomienie_gotowe_do_startu_sklada_tylko_katalog_procesow() -> None:
     found = {
-        f"{path.relative_to(ROOT).as_posix()}:{node.lineno}: {ast.unparse(node.func)}("
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {call}"
         for path in _python_files()
         if path != CATALOG
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if isinstance(node, ast.Call)
-        and (node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)) == "PreparedRun"
+        for line, call in _prepared_run_builds(ast.parse(path.read_text(encoding="utf-8")))
     }
 
     assert not found, "\n".join(
         [
             *sorted(found),
-            "PreparedRun składa tylko Catalog.prepared (src/rozliczenia/centrum/catalog.py): rdzeń i historia metryk "
-            "procesu pochodzą z katalogu, więc Centrum, Skrypt dla maszyn, odtworzenie, testy i skrypty skilli "
-            "podmieniają je tylko przez Catalog.with_metrics i Catalog.steered.",
+            "PreparedRun składa tylko Catalog.prepared (src/rozliczenia/centrum/catalog.py), także kopią "
+            "(dataclasses.replace z metrics= albo z wartości prepared): rdzeń i historia metryk procesu pochodzą "
+            "z katalogu, więc Centrum, Skrypt dla maszyn, odtworzenie, testy i skrypty skilli podmieniają je tylko "
+            "przez Catalog.with_metrics i Catalog.steered.",
         ]
     )
+
+
+# Złożenie PreparedRun obok Catalog.prepared (kopie i nazwy z importu: przegląd #1122, runda 1).
+PREPARED_RUN_BUILDS: typing.Final = {
+    "konstruktor": "run = PreparedRun(kind, period, inputs, context, metrics)",
+    "konstruktor-z-modulu": "run = process_kind.PreparedRun(kind, period, inputs, context, metrics)",
+    "konstruktor-pod-nazwa-z-importu": "from rozliczenia.centrum.process_kind import PreparedRun as _G\nrun = _G(1, 2)",
+    "replace-z-plikiem-metryk": "run = replace(run, metrics=MetricsStore(path, ()))",
+    "dataclasses-replace-uruchomienia": "run = dataclasses.replace(prepared, kind=other)",
+    "copy-replace-z-atrybutu": "run = copy.replace(self.prepared, period=period)",
+    "dunder-replace": "run = PREPARED.__replace__(kind=other)",
+    "replace-pod-nazwa-z-importu": "from dataclasses import replace as _r\nrun = _r(run, metrics=None)",
+    "modul-pod-nazwa-z-importu": "import dataclasses as dc\nrun = dc.replace(run, metrics=store)",
+}
+# Kopie innych wartości, napisy i nazwy typu, które sprawdzenie przepuszcza.
+PREPARED_RUN_ALLOWED: typing.Final = {
+    "pole-kind-innej-dataclassy": "shown = replace(named, kind=kind, offer=offer)",
+    "replace-napisu": 'line = text.replace("PREPARED", "")',
+    "replace-bez-wartosci-w-argumencie": "copy = replace(**changes)",
+    "replace-innej-funkcji-pod-ta-nazwa": "from os import replace as swap\nswap(prepared, target)",
+    "adnotacja-i-isinstance": "def f(run: PreparedRun) -> bool:\n    return isinstance(run, PreparedRun)\n",
+}
+
+
+@pytest.mark.parametrize("code", PREPARED_RUN_BUILDS.values(), ids=PREPARED_RUN_BUILDS.keys())
+def test_sprawdzenie_katalogu_lapie_zlozenie_uruchomienia_obok_catalog_prepared(code: str) -> None:
+    assert _prepared_run_builds(ast.parse(code))
+
+
+@pytest.mark.parametrize("code", PREPARED_RUN_ALLOWED.values(), ids=PREPARED_RUN_ALLOWED.keys())
+def test_sprawdzenie_katalogu_przepuszcza_kopie_innych_wartosci(code: str) -> None:
+    assert _prepared_run_builds(ast.parse(code)) == []
 
 
 # Drzewa src z modułem rdzenia a.py i drogą do warstwy skoroszytu, którą sprawdzenie łapie.
