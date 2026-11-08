@@ -61,9 +61,10 @@ from bisect import bisect_right
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cached_property, lru_cache
 from io import BytesIO
 from itertools import islice, pairwise
+from types import MappingProxyType
 from typing import Any, Final, NamedTuple, NoReturn, cast
 from xml.etree import ElementTree
 from xml.parsers import expat
@@ -105,6 +106,18 @@ def package_parts(content: bytes) -> Iterator[Mapping[str, bytes]]:
 
     with zipfile.ZipFile(BytesIO(content)) as archive:
         yield _ZipParts(archive)
+
+
+# Przygotowanie czyta ten sam Rejestr zleceń w Sprawdzaniu (Surowe zlecenia, ``intermax_file.Register``) i w Odczycie
+# danych (zawężenie): jego arkusz to dziesiątki MB XML, więc drugie rozpakowanie zip kosztuje tyle co reszta zawężenia.
+@lru_cache(maxsize=1)
+def unpacked(content: bytes) -> tuple[tuple[zipfile.ZipInfo, ...], Mapping[str, bytes]]:
+    """Wpisy zip skoroszytu ``content`` (.xlsx) w kolejności z pliku i ich rozpakowane części po nazwie, tylko do odczytu;
+    zepsuty zip zgłasza ``zipfile`` (np. ``BadZipFile``) albo ``zlib``."""
+
+    with zipfile.ZipFile(BytesIO(content)) as archive:
+        infos = tuple(archive.infolist())
+        return infos, MappingProxyType({info.filename: archive.read(info) for info in infos})
 
 
 class _ZipParts(Mapping[str, bytes]):
@@ -577,11 +590,12 @@ def _rewritten(content: bytes, choose: Callable[[Mapping[str, bytes]], _Choose],
     """
 
     reduced = BytesIO()
-    with zipfile.ZipFile(BytesIO(content)) as archive, zipfile.ZipFile(reduced, "w", zipfile.ZIP_STORED) as target:
-        narrowing = choose(_ZipParts(archive))
+    infos, unpacked_parts = unpacked(content)
+    with zipfile.ZipFile(reduced, "w", zipfile.ZIP_STORED) as target:
+        narrowing = choose(unpacked_parts)
         parts: list[tuple[str, bytes]] = []
-        for info in archive.infolist():
-            data = archive.read(info)
+        for info in infos:
+            data = unpacked_parts[info.filename]
             narrow = narrowing(info.filename, data)
             if narrow is not None:
                 with suppress(IrregularSheetData):

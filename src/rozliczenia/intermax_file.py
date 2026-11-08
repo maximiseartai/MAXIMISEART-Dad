@@ -91,6 +91,7 @@ from .workbook_parts import (
     office_document,
     relationships,
     style_list,
+    unpacked,
 )
 from .text import normalize_text
 
@@ -328,9 +329,7 @@ class Register:
         self.path = path = file.path
         self.content = content = file.content
         with workbook_files.unreadable_as_error(path):
-            archive = zipfile.ZipFile(BytesIO(content))
-            self._infos = archive.infolist()
-            self._parts = {info.filename: archive.read(info) for info in self._infos}
+            self._infos, self._parts = unpacked(content)
             workbook = cast(str, office_document(self._parts))  # bez dokumentu: KeyError, czyli nieczytelny
             rels = relationships(self._parts, workbook)
             root = ElementTree.fromstring(self._parts[workbook])
