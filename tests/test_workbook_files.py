@@ -1072,14 +1072,23 @@ def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu
     ]
 
 
-def test_rozliczenie_wewnetrzne_powstaje_przez_openpyxl_bez_wymuszonego_przeliczania(tmp_path: Path) -> None:
-    template_path = write_internal_template(tmp_path / "Wzorzec rozliczenia wewnętrznego.xlsx")
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+def test_rozliczenie_wewnetrzne_przelicza_formuly_przy_otwarciu_bez_wymuszonego_przeliczania(
+    tmp_path: Path, copied: bool
+) -> None:
+    template_path = marked_for_copy(write_internal_template(tmp_path / "Wzorzec rozliczenia wewnętrznego.xlsx"))
+    rewrite_parts(  # ``calcPr`` jak we Wzorcu taty, bez żadnej flagi przeliczania
+        template_path,
+        lambda name, data: re.sub(rb"<calcPr\b[^>]*/>", b'<calcPr calcId="191029"/>', data) if name == "xl/workbook.xml" else data,
+    )
+    if not copied:
+        refused_by_copy(template_path)
     target = tmp_path / "Rozliczenie wewnętrzne.xlsx"
 
     route = TemplateFile.internal_settlement(template_path).create(target, [_register_row()])
 
-    assert route is Route.OPENPYXL
-    assert not load_workbook(target).calculation.forceFullCalc
+    assert route is (Route.COPY if copied else Route.OPENPYXL)
+    assert calculation_flags(target) == {"calcMode": None, "fullCalcOnLoad": "1", "forceFullCalc": None}
 
 
 def test_plik_zbiorczy_z_kopii_ma_wymiar_arkusza_z_wpisanymi_iloscami_uslug(tmp_path: Path) -> None:

@@ -93,7 +93,7 @@ The coverage at this commit:
 | `src/rozliczenia/row_look.py` (`RowLook`, `CellLook`, `wraps`) | Wygląd Wiersza danych both paths give A:L; judged by WYGLAD_WIERSZA |
 | `src/rozliczenia/hyperlinks.py` (`Hyperlink`) | the Hiperłącze both paths write; its reader `read_sheet_hyperlinks` is covered by pytest (`tests/test_hiperlacza_pliku_zbiorczego.py`), not here |
 | `src/rozliczenia/template_file.py`: `TemplateFile` (`check`, `create`, `_read`, `_template_copy`, `_create_with_openpyxl`), `_in_columns` (a `DataRow` cell in its own column), `_package_writer`; `src/rozliczenia/write_routes.py`: `Route`; `src/rozliczenia/workbook_save.py`: `write_atomically` | the real entry point; which path it takes (`create` returns it) |
-| `src/rozliczenia/template_file.py`: `TemplateFile._create_with_openpyxl`, `_write_rows`, `_request_full_recalculation`; `src/rozliczenia/workbook_save.py`: `save_from_template`, `_restore_external_link_parts` | the reference (old openpyxl path) |
+| `src/rozliczenia/template_file.py`: `TemplateFile._create_with_openpyxl`, `_write_rows`, `_request_recalculation`; `src/rozliczenia/workbook_save.py`: `save_from_template`, `_restore_external_link_parts` | the reference (old openpyxl path) |
 | `tools/porownanie_rozliczen.py` (`compare_worker_settlements` and its per-cell helpers, `_hyperlink` among them) | the judge for WIERNA_KOPIA |
 | `tools/syntetyczne_wzorce.py` (`write_settlement_template`), `tests/fixtures/settlement.py` (`write_template`), `tests/fixtures/workbooks.py` (`add_external_link_fixture`, `refused_by_copy`) | the Wzorce under test and the twin the copy refuses |
 

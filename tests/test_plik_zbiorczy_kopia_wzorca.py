@@ -1,7 +1,8 @@
-"""Plik zbiorczy z kopii Wzorca (ADR 0008) jest taki sam jak zapisany przez openpyxl.
+"""Plik zbiorczy i Rozliczenie wewnętrzne z kopii Wzorca (ADR 0008) są takie same jak zapisane przez openpyxl.
 
-Test właściciel drogi kopii w Przygotowaniu pliku zbiorczego: obie drogi zapisu dają te same
-wartości, Wygląd Wiersza danych, Hiperłącza, wysokości wierszy, scalenia, autofiltr i odwołania zewnętrzne.
+Test właściciel drogi kopii w Przygotowaniu pliku zbiorczego: obie drogi zapisu dają te same wartości, Wygląd
+Wiersza danych, Hiperłącza, wymiary wierszy i kolumn, blokadę wierszy, scalenia, autofiltr, flagi przeliczania i
+odwołania zewnętrzne.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from openpyxl.utils import get_column_letter
 
 from tests.fixtures.preparation import (
     COLLECTIVE_TEMPLATE_ZERO_ROWS,
+    INTERNAL_TEMPLATE_HEADERS,
     PreparationFixture,
     link_register_order_numbers,
     make_dad_layout_fixture,
@@ -31,6 +33,7 @@ from tests.fixtures.preparation import (
     register_order,
     run_preparation,
     write_collective_template,
+    write_internal_template,
 )
 from tests.fixtures.workbooks import (
     active_worksheet,
@@ -70,6 +73,18 @@ def _row_style(tmp_path: Path) -> PreparationFixture:
 def _leftovers(tmp_path: Path) -> PreparationFixture:
     fixture = make_preparation_fixture(tmp_path)
     leave_data_row_leftovers(fixture.collective_template_path, first_row=18, rows=6, columns=12)
+    return fixture
+
+
+def _internal_header_after_k(tmp_path: Path) -> PreparationFixture:
+    """Wzorzec rozliczenia wewnętrznego z kolumną przed nagłówkami: nagłówek docelowy w L, poza nagłówkiem kopii."""
+
+    fixture = make_preparation_fixture(tmp_path)
+    workbook = load_workbook(write_internal_template(fixture.internal_template_path))
+    active_worksheet(workbook).insert_cols(1)
+    active_worksheet(workbook)["A1"] = "LP"
+    workbook.save(fixture.internal_template_path)
+    assert active_worksheet(load_workbook(fixture.internal_template_path))["L1"].value == INTERNAL_TEMPLATE_HEADERS[10]
     return fixture
 
 
@@ -129,56 +144,68 @@ def _cells(path: Path) -> dict[str, object]:
         }
         names = {name: str(value.attr_text) for name, value in sheet.defined_names.items()}
         heights = {row: dimension.ht for row, dimension in sheet.row_dimensions.items()}
+        calculation = workbook.calculation
         return {
             **cells,
             "wysokosci": heights,
+            "szerokosci": {letter: dimension.width for letter, dimension in sheet.column_dimensions.items()},
+            "blokada": sheet.freeze_panes,
             "autofiltr": sheet.auto_filter.ref,
             "scalenia": sorted(str(merged) for merged in sheet.merged_cells.ranges),
             "nazwy arkusza": names,
             "_FilterDatabase": _filter_database(path),
-            "przeliczenie": workbook.calculation.fullCalcOnLoad,
+            "przeliczenie": (calculation.calcMode, calculation.fullCalcOnLoad, calculation.forceFullCalc),
         }
     finally:
         workbook.close()
 
 
 @pytest.mark.parametrize(
-    ("make_fixture", "copied"),
+    ("make_fixture", "collective_copied", "internal_copied"),
     [
-        pytest.param(make_preparation_fixture, True, id="syntetyczny"),
-        pytest.param(_linked, True, id="hiperlacza"),
-        pytest.param(make_dad_layout_fixture, True, id="uklad-taty"),
-        pytest.param(_synthetic, True, id="wzorce-ksztaltu-taty"),
-        pytest.param(_row_style, True, id="styl-wiersza"),
-        pytest.param(_leftovers, True, id="resztki-formatowania-wzorca"),
-        pytest.param(_filter_name_ref_error, False, id="nazwa-filtra-ref-przez-openpyxl"),
-        pytest.param(_formula_in("K18"), False, id="formula-w-ostatniej-kolumnie-danych-przez-openpyxl"),
-        pytest.param(_formula_in("AP18"), False, id="formula-w-ostatniej-kolumnie-ilosci-przez-openpyxl"),
+        pytest.param(make_preparation_fixture, True, True, id="syntetyczny"),
+        pytest.param(_linked, True, True, id="hiperlacza"),
+        pytest.param(make_dad_layout_fixture, True, True, id="uklad-taty"),
+        pytest.param(_synthetic, True, True, id="wzorce-ksztaltu-taty"),
+        pytest.param(_row_style, True, True, id="styl-wiersza"),
+        pytest.param(_leftovers, True, True, id="resztki-formatowania-wzorca"),
+        pytest.param(_filter_name_ref_error, False, True, id="nazwa-filtra-ref-przez-openpyxl"),
+        pytest.param(_formula_in("K18"), False, True, id="formula-w-ostatniej-kolumnie-danych-przez-openpyxl"),
+        pytest.param(_formula_in("AP18"), False, True, id="formula-w-ostatniej-kolumnie-ilosci-przez-openpyxl"),
+        pytest.param(_internal_header_after_k, True, False, id="naglowek-wewnetrznego-za-K-przez-openpyxl"),
     ],
 )
-def test_plik_zbiorczy_z_kopii_wzorca_jest_taki_jak_z_openpyxl(
-    tmp_path: Path, make_fixture: Callable[[Path], PreparationFixture], copied: bool
+def test_pliki_okresu_z_kopii_wzorca_sa_takie_jak_z_openpyxl(
+    tmp_path: Path,
+    make_fixture: Callable[[Path], PreparationFixture],
+    collective_copied: bool,
+    internal_copied: bool,
 ) -> None:
     (tmp_path / "kopia").mkdir()
     (tmp_path / "openpyxl").mkdir()
     by_copy = make_fixture(tmp_path / "kopia")
     by_openpyxl = make_fixture(tmp_path / "openpyxl")
-    marked_for_copy(by_copy.collective_template_path)
-    refused_by_copy(marked_for_copy(by_openpyxl.collective_template_path))
+    for template in (by_copy.collective_template_path, by_copy.internal_template_path):
+        marked_for_copy(template)
+    for template in (by_openpyxl.collective_template_path, by_openpyxl.internal_template_path):
+        refused_by_copy(marked_for_copy(template))
     run_preparation(by_copy)
     run_preparation(by_openpyxl)
 
-    created, reference = by_copy.collective_file_path, by_openpyxl.collective_file_path
-    with zipfile.ZipFile(created) as archive:
-        keeps_template_calc_chain = "xl/calcChain.xml" in archive.namelist()
-    with zipfile.ZipFile(by_copy.collective_template_path) as archive:
-        template_has_calc_chain = "xl/calcChain.xml" in archive.namelist()
+    for created, reference, template, copied in (
+        (by_copy.collective_file_path, by_openpyxl.collective_file_path, by_copy.collective_template_path, collective_copied),
+        (by_copy.internal_settlement_path, by_openpyxl.internal_settlement_path, by_copy.internal_template_path, internal_copied),
+    ):
+        with zipfile.ZipFile(created) as archive:
+            keeps_template_calc_chain = "xl/calcChain.xml" in archive.namelist()
+        with zipfile.ZipFile(template) as archive:
+            template_has_calc_chain = "xl/calcChain.xml" in archive.namelist()
 
-    assert written_by_copy(created) == copied
-    assert not has_xml_comment(reference)
-    assert _cells(created) == _cells(reference)
-    assert external_link_parts(created) == external_link_parts(reference)
-    assert keeps_template_calc_chain == (copied and template_has_calc_chain)
+        assert written_by_copy(created) == copied
+        assert not has_xml_comment(reference)
+        assert _cells(created) == _cells(reference)
+        assert external_link_parts(created) == external_link_parts(reference)
+        assert keeps_template_calc_chain == (copied and template_has_calc_chain)
 
 
 

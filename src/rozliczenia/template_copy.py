@@ -25,10 +25,10 @@ składa z tego jedną kopię:
   ``customHeight``), a pozostałe komórki, w tym formuły, wspólne formuły i style, zostają
   bajt w bajt; kompresowany jest tylko początek arkusza do granicy kawałka za ostatnim
   wpisanym wierszem, reszta to gotowe kawałki z pierwszej kopii;
-- ``calcPr`` w ``xl/workbook.xml`` dostaje ``calcMode="auto"``, ``fullCalcOnLoad="1"``
-  i ``forceFullCalc="1"``, jak przy zapisie przez openpyxl;
-- Plik okresu (``SheetLayout.period_file``), czyli Plik zbiorczy, dostaje też element ``autoFilter`` na
-  nagłówek i wpisane wiersze oraz ten sam zakres w nazwie ``_xlnm._FilterDatabase`` w
+- ``calcPr`` w ``xl/workbook.xml`` dostaje flagi przeliczania układu (``SheetLayout.recalculation``), te same co
+  przy zapisie przez openpyxl;
+- plik okresu (``SheetLayout.period_file``), czyli Plik zbiorczy i Rozliczenie wewnętrzne, dostaje też
+  element ``autoFilter`` na nagłówek i wpisane wiersze oraz ten sam zakres w nazwie ``_xlnm._FilterDatabase`` w
   ``xl/workbook.xml``;
 - Hiperłącza wpisanych komórek trafiają do jednego bloku ``<hyperlinks>`` w miejscu,
   które wyznacza mu schemat arkusza, a ich relacje są dopisywane na końcu relacji
@@ -38,7 +38,7 @@ składa z tego jedną kopię:
 
 Wzorzec, którego kształtu ten moduł nie obsługuje (np. formuła w kolumnach Wiersza
 danych, scalenie w Wierszach danych, własne hiperłącza arkusza, XML z prefiksami albo
-bez atrybutów ``r``, uszkodzona część XML, a w Pliku zbiorczym brak autofiltra albo
+bez atrybutów ``r``, uszkodzona część XML, a w pliku okresu brak autofiltra albo
 styl spoza stylów skoroszytu), zgłasza
 ``UnsupportedShape``;
 tak samo wartość, której typu moduł nie zapisuje. Wtedy ``template_file`` sprawdza Wzorzec
@@ -61,6 +61,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from enum import Enum
 from io import BytesIO
 from typing import IO, Any, Final, TypeVar, cast
 from xml.etree import ElementTree
@@ -157,7 +158,6 @@ _ALIGNMENT = re.compile(rb"<alignment\b[^>]*?(?:/>|>.*?</alignment>)", re.S)
 _HEIGHT = re.compile(rb'\s(?:ht|customHeight)="[^"]*"')
 _NUM_FMT = re.compile(rb"<numFmt\b([^>]*?)/?>")
 _NUM_FMT_ID = re.compile(rb'numFmtId="(\d+)"')
-_CALC_FLAGS: Final = ((b"calcMode", b"auto"), (b"fullCalcOnLoad", b"1"), (b"forceFullCalc", b"1"))
 _RELATIONSHIPS_PREFIX = re.compile(rb"""xmlns:([\w.-]+)\s*=\s*["']""" + OFFICE_REL.encode() + rb"""["']""")
 _RELATIONSHIP_NUMBER = re.compile(r"rId(\d+)")
 # Elementy arkusza, które schemat (CT_Worksheet) stawia między ``sheetData`` a ``hyperlinks``; każdy inny element
@@ -234,6 +234,16 @@ class Row:
     """Litera kolumny → liczba wpisana w komórkę Wzorca z jej stylem; tylko w ``SheetLayout.quantity_columns``."""
 
 
+class Recalculation(Enum):
+    """Flagi przeliczania, które ``calcPr`` pliku z Wzorca dostaje na obu drogach zapisu: atrybut i jego wartość."""
+
+    ON_LOAD = (("fullCalcOnLoad", "1"),)
+    """Excel przelicza formuły przy otwarciu, jak w każdym pliku zapisanym przez openpyxl, który nie zapisuje ich
+    wyników."""
+    FORCED = (("calcMode", "auto"), ("fullCalcOnLoad", "1"), ("forceFullCalc", "1"))
+    """Do tego tryb automatyczny i pełne przeliczenie przy każdym przeliczeniu."""
+
+
 @dataclass(frozen=True)
 class SheetLayout:
     """Układ arkusza Wzorca, jeden dla kopii i drogi przez openpyxl (``template_file``): gdzie są nagłówek, Wiersze
@@ -247,6 +257,8 @@ class SheetLayout:
     """Kolumny wyglądu (``row_look``); te za kolumnami Wiersza danych dostają sam wygląd, a treść zostaje z Wzorca."""
     period_file: bool
     """Plik okresu z Przygotowania: autofiltr obejmuje nagłówek i wpisane wiersze, a wygląd ma każda wpisana kolumna."""
+    recalculation: Recalculation
+    """Flagi przeliczania w ``calcPr`` skoroszytu; pozostałe atrybuty ``calcPr`` zostają z Wzorca."""
     quantity_columns: range = range(0)
     """Kolumny Ilości usług; formuła w nich w Wierszach danych to ``UnsupportedShape``, jak w kolumnach Wiersza danych."""
 
@@ -354,10 +366,10 @@ def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
             styles_index = index
             parts.append(None)
         elif info.filename == workbook_name and layout.period_file:
-            filter_name = _FilterName(info, index, _with_full_recalculation(workbook_xml), active.position)
+            filter_name = _FilterName(info, index, _with_recalculation(workbook_xml, layout.recalculation), active.position)
             parts.append(None)
         elif info.filename == workbook_name:
-            parts.append(_compressed_part(info, _with_full_recalculation(workbook_xml)))
+            parts.append(_compressed_part(info, _with_recalculation(workbook_xml, layout.recalculation)))
         else:
             parts.append(_raw_part(content, info))
     if sheet_index < 0:
@@ -459,19 +471,20 @@ def _plain_text(element: ElementTree.Element) -> str:
     return "".join(texts)
 
 
-def _with_full_recalculation(workbook_xml: bytes) -> bytes:
-    """``calcPr`` z flagami przeliczania takimi jak przy zapisie przez openpyxl; pozostałe atrybuty bez zmian."""
+def _with_recalculation(workbook_xml: bytes, recalculation: Recalculation) -> bytes:
+    """``calcPr`` z flagami przeliczania ``recalculation`` jak przy zapisie przez openpyxl; pozostałe atrybuty bez zmian."""
 
     found = _CALC_PR.search(workbook_xml)
     if found is None:
         raise UnsupportedShape("calcPr")
+    flags = [(flag.encode("ascii"), value.encode("ascii")) for flag, value in recalculation.value]
     attributes = [(match.group(1), match.group(0)) for match in _ATTRIBUTE.finditer(found.group(2))]
     names = [name for name, _ in attributes]
     rendered = [
-        next((name + b'="' + value + b'"' for flag, value in _CALC_FLAGS if flag == name), text)
+        next((name + b'="' + value + b'"' for flag, value in flags if flag == name), text)
         for name, text in attributes
     ]
-    rendered += [flag + b'="' + value + b'"' for flag, value in _CALC_FLAGS if flag not in names]
+    rendered += [flag + b'="' + value + b'"' for flag, value in flags if flag not in names]
     tag = b"<" + found.group(1) + b"calcPr " + b" ".join(rendered) + (b"/>" if found.group(3) else b">")
     return workbook_xml[: found.start()] + tag + workbook_xml[found.end() :]
 
@@ -484,7 +497,7 @@ _ABSOLUTE_RANGE = re.compile(rb"\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?")
 
 
 class _FilterName:
-    """``xl/workbook.xml`` Pliku zbiorczego: nazwa ``_xlnm._FilterDatabase`` aktywnego arkusza idzie za autofiltrem."""
+    """``xl/workbook.xml`` pliku okresu: nazwa ``_xlnm._FilterDatabase`` aktywnego arkusza idzie za autofiltrem."""
 
     def __init__(self, info: zipfile.ZipInfo, index: int, xml: bytes, sheet_position: int) -> None:
         self._info = info
@@ -583,7 +596,7 @@ class _Sheet:
         if layout.period_file:
             self._filter = _autofilter(xml, data_end, self._links_at)
         # Ostatni kawałek zaczyna się w miejscu bloku Hiperłączy, więc kopia z nimi kompresuje tylko ogon arkusza;
-        # przedostatni w Pliku zbiorczym od autofiltra, który zmienia się w każdej kopii.
+        # przedostatni w pliku okresu od autofiltra, który zmienia się w każdej kopii.
         self._boundaries = [
             self._data_start,
             *(row.start for row in self._rows[first + _ROWS_PER_CHUNK :: _ROWS_PER_CHUNK]),
@@ -638,7 +651,7 @@ class _Sheet:
         return styles
 
     def read_filter_columns(self, shared_strings: list[str]) -> None:
-        """Kolumny autofiltra Pliku zbiorczego: od pierwszej do ostatniej niepustej komórki wiersza nagłówka."""
+        """Kolumny autofiltra pliku okresu: od pierwszej do ostatniej niepustej komórki wiersza nagłówka."""
 
         position = bisect_left(self._numbers, self._layout.header_row)
         if position == len(self._rows) or self._rows[position].number != self._layout.header_row:
@@ -654,7 +667,7 @@ class _Sheet:
         self._filter_columns = (min(columns), max(columns))
 
     def filter_ref(self, row_count: int) -> str | None:
-        """Zakres autofiltra Pliku zbiorczego: nagłówek i wpisane wiersze; ``None``: autofiltr zostaje z Wzorca."""
+        """Zakres autofiltra pliku okresu: nagłówek i wpisane wiersze; ``None``: autofiltr zostaje z Wzorca."""
 
         if self._filter is None:
             return None

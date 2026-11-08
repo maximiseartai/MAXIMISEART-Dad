@@ -32,7 +32,7 @@ from .highlights import PLAIN
 from .register_columns import TARGET_HEADERS
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL, RowLook, wraps
-from .template_copy import InvalidValue, Package, Row, SheetLayout, TemplateCopy
+from .template_copy import InvalidValue, Package, Recalculation, Row, SheetLayout, TemplateCopy
 from .collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, INPUT_COLUMNS, LOOK_COLUMNS, QUANTITY_COLUMNS
 from .workbook_files import (
     DataRow,
@@ -65,9 +65,6 @@ class _Rules:
     kind: TemplateKind
     worker_header: bool
     """Nagłówek w kolumnach danych wejściowych z WYKONAWCA w H; bez niego nagłówek to cały wiersz."""
-    copy: bool
-    """Plik może powstać kopią Wzorca (ADR 0008). Kopia zawsze każe Excelowi przeliczyć formuły przy otwarciu, więc
-    droga przez openpyxl robi wtedy to samo; Rozliczenie wewnętrzne powstaje tylko przez openpyxl, bez tego."""
     headers: tuple[str, ...] = ()
     """Nagłówki docelowe pliku okresu, pod którymi stają komórki wiersza Rejestru zleceń; szukane w wierszu nagłówka
     Wzorca bez względu na wielkość liter i spacje. Rozliczenie pracownika ich nie ma: komórka kolumny Pliku
@@ -88,10 +85,10 @@ _WORKER_SETTLEMENT = _Rules(
         data_columns=DATA_ROW_COLUMNS[-1],
         look_columns=LOOK_COLUMNS[-1],
         period_file=False,
+        recalculation=Recalculation.FORCED,
     ),
     kind=TemplateKind.WORKER_SETTLEMENT,
     worker_header=True,
-    copy=True,
 )
 _COLLECTIVE_FILE = _Rules(
     SheetLayout(
@@ -101,11 +98,11 @@ _COLLECTIVE_FILE = _Rules(
         data_columns=INPUT_COLUMNS[-1],
         look_columns=LOOK_COLUMNS[-1],
         period_file=True,
+        recalculation=Recalculation.FORCED,
         quantity_columns=QUANTITY_COLUMNS,
     ),
     kind=TemplateKind.COLLECTIVE_FILE,
     worker_header=True,
-    copy=True,
     headers=TARGET_HEADERS,
 )
 _INTERNAL_SETTLEMENT = _Rules(
@@ -116,10 +113,10 @@ _INTERNAL_SETTLEMENT = _Rules(
         data_columns=INPUT_COLUMNS[-1],
         look_columns=_INTERNAL_LOOK_COLUMNS[-1],
         period_file=True,
+        recalculation=Recalculation.ON_LOAD,
     ),
     kind=TemplateKind.INTERNAL_SETTLEMENT,
     worker_header=False,
-    copy=False,
     headers=TARGET_HEADERS,
 )
 
@@ -295,7 +292,7 @@ class TemplateFile:
 
         Zarys pochodzi z tego samego odczytu co kopia (``TemplateCopy``), więc Wzorzec jest parsowany raz na
         Uruchomienie, a zmieniony po Sprawdzaniu jest czytany od nowa. Wzorzec, którego kształtu kopia nie przyjmuje,
-        i Rozliczenie wewnętrzne czyta pełne wczytanie przez openpyxl z jego klasyfikacją uszkodzeń.
+        czyta pełne wczytanie przez openpyxl z jego klasyfikacją uszkodzeń.
         """
 
         self._read()
@@ -317,19 +314,25 @@ class TemplateFile:
         return self._outline
 
     def _template_copy(self) -> TemplateCopy | None:
-        """Wzorzec do kopii z podmienionymi Wierszami danych; ``None``, gdy jego kształt wymaga openpyxl (ADR 0008)."""
+        """Wzorzec do kopii z podmienionymi Wierszami danych; ``None``, gdy jego kształt wymaga openpyxl (ADR 0008).
+
+        Kopia czyta nagłówek tylko w kolumnach danych wejściowych, więc Wzorca pliku okresu z nagłówkiem docelowym
+        dalej w wierszu nie przyjmuje: droga przez openpyxl szuka go tam, gdzie szuka go ``_header``.
+        """
 
         if not self._copy_read:
             self._copy_read = True
             self._copy = None
-            if self._rules.copy:
-                with suppress(UnsupportedShape):
-                    self._copy = TemplateCopy.of(self._loaded(), self._rules.sheet)
+            with suppress(UnsupportedShape):
+                copy = TemplateCopy.of(self._loaded(), self._rules.sheet)
+                found = header_columns(copy.header)
+                if all(normalize_text(target) in found for target in self._rules.headers):
+                    self._copy = copy
         return self._copy
 
     def _openpyxl_workbook(self) -> AbstractContextManager[Workbook]:
-        """Pełne wczytanie Wzorca przez openpyxl z jego klasyfikacją uszkodzeń: jedyna droga Rozliczenia wewnętrznego,
-        a dla pozostałych Wzorców droga, gdy kopia nie przyjmuje ich kształtu (ADR 0008)."""
+        """Pełne wczytanie Wzorca przez openpyxl z jego klasyfikacją uszkodzeń: droga, gdy kopia nie przyjmuje kształtu
+        Wzorca (ADR 0008)."""
 
         return open_workbook(self.path, self._loaded(), read_only=False)
 
@@ -352,8 +355,7 @@ class TemplateFile:
                 _write_rows(sheet, self._rules.sheet, _in_columns(rows, target_columns), columns)
             except IllegalCharacterError as exc:
                 raise WorkbookSaveError(target, SaveProblem.INVALID_VALUE) from exc
-            if self._rules.copy:
-                _request_full_recalculation(workbook)
+            _request_recalculation(workbook, self._rules.sheet.recalculation)
             save_from_template(workbook, target, self._loaded())
 
     def _header(self, sheet: Worksheet) -> list[object]:
@@ -495,11 +497,10 @@ def _active_worksheet(path: Path, workbook: Workbook) -> Worksheet:
     return worksheet
 
 
-def _request_full_recalculation(workbook: Workbook) -> None:
-    """Excel przeliczy formuły przy otwarciu; openpyxl nie zapisuje wyników formuł."""
+def _request_recalculation(workbook: Workbook, recalculation: Recalculation) -> None:
+    """Flagi przeliczania układu w ``calcPr``, te same co w kopii; openpyxl nie zapisuje wyników formuł."""
 
     calculation = getattr(workbook, "calculation", None)
     if calculation is not None:
-        calculation.calcMode = "auto"
-        calculation.fullCalcOnLoad = True
-        calculation.forceFullCalc = True
+        for flag, value in recalculation.value:
+            setattr(calculation, flag, value)
