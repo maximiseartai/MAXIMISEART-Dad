@@ -35,9 +35,10 @@ class Asked:
 
 
 class GitHubApi:
-    """Atrapa pod ``url``: ``answers`` po ścieżce, a na każde pytanie z tokenem odmowa ``refused_token``, gdy jest."""
+    """Atrapa pod ``url``: ``answers`` po ścieżce, a na każde pytanie z tokenem odmowa ``refused_token``, gdy jest
+    (status albo cała odpowiedź, np. odmowa z powodu limitu konta)."""
 
-    def __init__(self, answers: Mapping[str, Answer], refused_token: int | None) -> None:
+    def __init__(self, answers: Mapping[str, Answer], refused_token: int | Answer | None) -> None:
         self.answers = answers
         self.refused_token = refused_token
         self.asked: list[Asked] = []
@@ -45,7 +46,7 @@ class GitHubApi:
 
 
 @contextmanager
-def github_api(answers: Mapping[str, Answer], *, refused_token: int | None = None) -> Iterator[GitHubApi]:
+def github_api(answers: Mapping[str, Answer], *, refused_token: int | Answer | None = None) -> Iterator[GitHubApi]:
     """Atrapa API GitHuba czynna w bloku ``with``; ścieżka spoza ``answers`` to 404."""
 
     api = GitHubApi(answers, refused_token)
@@ -54,8 +55,10 @@ def github_api(answers: Mapping[str, Answer], *, refused_token: int | None = Non
         def do_GET(self) -> None:
             authorization = self.headers.get("Authorization")
             api.asked.append(Asked(self.path, authorization))
-            if authorization is not None and api.refused_token is not None:
-                answer = Answer(api.refused_token, {"message": "Bad credentials"}, _LEFT)
+            refused = api.refused_token
+            refusal = Answer(refused, {"message": "Bad credentials"}, _LEFT) if isinstance(refused, int) else refused
+            if authorization is not None and refusal is not None:
+                answer = refusal
             else:
                 answer = api.answers.get(self.path, Answer(404, {"message": "Not Found"}, _LEFT))
             body = json.dumps(answer.body).encode("utf-8")

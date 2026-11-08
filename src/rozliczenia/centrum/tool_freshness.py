@@ -20,8 +20,10 @@ Pytania do API GitHuba idą z Tokenem do Zgłoszeń, gdy jest plik klucza: daje 
 tylko host API, a urllib nie przenosi go na adres przekierowania. Odmowa pytania
 z tokenem (401, 403 bez wyczerpanego limitu, 404) to jedno ponowienie tego
 pytania bez tokenu, a reszta sprawdzenia idzie już bez niego: stary albo zły
-token nie zabiera tacie aktualizacji. Odmowa z powodu wyczerpanego limitu to
-``RateLimited`` z chwilą, od której limit znów jest pełny; Diagnoza ją nazywa.
+token nie zabiera tacie aktualizacji. Odmowa z powodu wyczerpanego limitu pytania
+z tokenem też daje jedno ponowienie bez tokenu, bo limit konta (wspólny z agentami
+Maksa) i limit adresu IP to dwie osobne pule. Odmowa z powodu limitu pytania bez
+tokenu to ``RateLimited`` z chwilą, od której limit znów jest pełny; Diagnoza ją nazywa.
 """
 
 from __future__ import annotations
@@ -484,10 +486,10 @@ class _Asking:
                 return json.loads(response.read(_PAGE_BYTES)), _next_page(response.headers.get("Link"))
         except urllib.error.HTTPError as failure:  # odmowa GitHuba
             limited = _rate_limited(failure)
-            if limited is not None:
+            if limited is not None and token is None:
                 self.limited = limited
                 raise _NoAnswer from failure
-            if token is not None and failure.code in _TOKEN_REFUSALS:
+            if token is not None and (limited is not None or failure.code in _TOKEN_REFUSALS):
                 self._token = None
                 return self.page(url)
             raise (_NotFound if failure.code == 404 else _NoAnswer) from failure

@@ -470,17 +470,32 @@ def test_odmowa_pytania_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktuali
 LIMIT_RESET = datetime(2026, 11, 8, 3, 49, tzinfo=timezone.utc)
 
 
-@pytest.mark.parametrize("token", [None, TOKEN], ids=["bez-tokenu", "z-tokenem"])
+LIMIT = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(LIMIT_RESET.timestamp()))}
+
+
+@pytest.mark.parametrize(("token", "authorizations"), [(None, [None]), (TOKEN, [WITH_TOKEN, None])], ids=["bez-tokenu", "z-tokenem"])
 @pytest.mark.parametrize("status", [403, 429])
-def test_odmowa_z_powodu_limitu_githuba_mowi_kiedy_limit_sie_odnowi_i_nie_jest_ponawiana(
-    status: int, token: str | None
+def test_odmowa_z_powodu_limitu_githuba_mowi_kiedy_limit_sie_odnowi_a_bez_tokenu_nie_jest_ponawiana(
+    status: int, token: str | None, authorizations: list[str | None]
 ) -> None:
-    limit = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(LIMIT_RESET.timestamp()))}
-    refused = Answer(status, {"message": "API rate limit exceeded"}, limit)
+    refused = Answer(status, {"message": "API rate limit exceeded"}, LIMIT)
     with github_api({f"{REPOSITORY}/tags?per_page=100": refused}) as api:
         newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=token)
 
-    assert (newest, len(api.asked)) == (RateLimited(LIMIT_RESET), 1)
+    assert newest == RateLimited(LIMIT_RESET)
+    assert [asked.authorization for asked in api.asked] == authorizations
+
+
+def test_wyczerpany_limit_konta_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktualizacji() -> None:
+    """Limit konta MAXIMISEART-AI dzielą z Centrum agenci Maksa; limit adresu IP taty to osobna pula."""
+
+    limited = Answer(403, {"message": "API rate limit exceeded"}, LIMIT)
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=limited) as api:
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert newest == GitHubReleases(NEWEST, "v0.2.0")
+    assert [asked.authorization for asked in api.asked][:2] == [WITH_TOKEN, None]
+    assert WITH_TOKEN not in [asked.authorization for asked in api.asked][1:]
 
 
 @pytest.mark.parametrize(
