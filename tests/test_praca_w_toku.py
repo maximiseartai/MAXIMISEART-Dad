@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import itertools
 import json
@@ -544,8 +543,18 @@ def _world(tmp_path: Path) -> list[_Checkout]:
     return world
 
 
-@pytest.mark.dlugi
-def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Path) -> None:
+@dataclass(frozen=True)
+class _Built:
+    world: list[_Checkout]
+    github: str
+    compared: str
+
+
+@pytest.fixture(scope="module")
+def built_world(tmp_path_factory: pytest.TempPathFactory) -> _Built:
+    """Świat ``_world`` raz na worker: narzędzie tylko go czyta, a każdy przypadek ogląda go z innego checkoutu."""
+
+    tmp_path = tmp_path_factory.mktemp("swiat")
     world = _world(tmp_path)
     answer = json.dumps(
         [
@@ -553,18 +562,23 @@ def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Pa
             for branch, (pr, files) in _PULL_REQUESTS.items()
         ]
     )
-    github = _fake_gh(tmp_path, answer)
-    by_name = {side.path.name: (side, side.path) for side in world if side.path is not None}
-    runs = {"ja": github, "ja-odlaczony": None, "ja-na-zdalnej": github, "rebasuje": None, "szuka": None}
+    return _Built(world, _fake_gh(tmp_path, answer), _compared(tmp_path / "main"))
 
-    with ThreadPoolExecutor() as pool:
-        reports = dict(zip(runs, pool.map(lambda run: _report(by_name[run[0]][1], path=run[1]), runs.items()), strict=True))
 
-    mismatches = []
-    for name, report in reports.items():
-        expected = _expected_report(by_name[name][0], world, github=runs[name] is not None, compared=_compared(tmp_path / "main"))
-        actual = sorted(report.splitlines())
-        mismatches += [f"{name}: brak {line}" for line in expected if line not in actual]
-        mismatches += [f"{name}: nadmiar {line}" for line in actual if line not in expected]
+# Jedno uruchomienie narzędzia na przypadek: to setki gitów po 25–37 ms na Windows, a pięć w jednym teście przekroczyło
+# tam limit czasu testu (#1133). Bez ``dlugi``, żeby xdist nie rozdał przypadków workerom, z których każdy buduje świat.
+@pytest.mark.parametrize(
+    ("name", "github"),
+    [("ja", True), ("ja-odlaczony", False), ("ja-na-zdalnej", True), ("rebasuje", False), ("szuka", False)],
+)
+def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(built_world: _Built, name: str, github: bool) -> None:
+    [me] = [side for side in built_world.world if side.path is not None and side.path.name == name]
+    assert me.path is not None
 
+    report = _report(me.path, path=built_world.github if github else None)
+
+    expected = _expected_report(me, built_world.world, github=github, compared=built_world.compared)
+    actual = sorted(report.splitlines())
+    mismatches = [f"brak {line}" for line in expected if line not in actual]
+    mismatches += [f"nadmiar {line}" for line in actual if line not in expected]
     assert not mismatches, "\n".join(mismatches)
