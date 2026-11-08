@@ -63,6 +63,7 @@ from rozliczenia.efenix_window import (
     StatusChangeBlocked,
     Closed,
     Efenix,
+    EfenixUnreachable,
     ElementCount,
     EmmettLoad,
     ForwardRefusal,
@@ -3224,12 +3225,13 @@ def test_karta_na_stronie_logowania_bez_logowania_taty_pyta_efenix_o_sesje_co_lo
     assert questions >= 3
 
 
-def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_czekania_a_po_limicie_to_wylogowanie(
+def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_czekania_a_po_limicie_to_niedostepny_efenix(
     page: Page,
 ) -> None:
     """efenix przestaje odpowiadać, gdy okno czeka na logowanie taty: pytanie o sesję kończy się w czasie okna, okno pyta
-    dalej, a po limicie czekania to Zatrzymanie jak bez logowania, nie błąd strony. Czas okna to ćwierć
-    ``LOGIN_POLL_MS``, a domyślny limit karty dwa ``LOGIN_POLL_MS``, dłużej niż limit czekania."""
+    dalej, a po limicie czekania to efenix, którego okno nie otworzyło, z błędem przeglądarki przy otwarciu listy jak przy
+    starcie, a nie „tata się nie zalogował” (spis #27). Czas okna to ćwierć ``LOGIN_POLL_MS``, a domyślny limit karty dwa
+    ``LOGIN_POLL_MS``, dłużej niż limit czekania."""
 
     page.context.set_default_timeout(2 * efenix_browser.LOGIN_POLL_MS)
     with atrapa_efenix([]) as atrapa:
@@ -3241,7 +3243,7 @@ def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_cze
             yield
 
         with (
-            pytest.raises(LoggedOut),
+            pytest.raises(EfenixUnreachable) as stopped,
             efenix_browser.window(
                 page,
                 atrapa.url,
@@ -3254,6 +3256,54 @@ def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_cze
         questions = _session_questions(atrapa)
 
     assert questions >= 2
+    assert (stopped.value.part, stopped.value.cause) == (
+        PagePart.LIST,
+        BrowserFailure(TIMEOUT, Operation.OPEN),
+    )
+
+
+@pytest.mark.parametrize(
+    ("reconnects", "code"),
+    [
+        pytest.param(False, "EFENIX_NIEDOSTEPNY", id="siec-nie-wraca"),
+        pytest.param(True, "EFENIX_WYLOGOWANY", id="siec-wraca-a-tata-sie-nie-loguje"),
+    ],
+)
+def test_siec_ktora_znika_w_czasie_czekania_na_logowanie_daje_po_limicie_niedostepny_efenix_a_gdy_wrocila_wylogowanie(
+    tmp_path: Path, page: Page, reconnects: bool, code: str
+) -> None:
+    """Sieć znika, gdy okno czeka na logowanie taty: Komunikat po limicie czekania mówi tacie o efenix, który nie
+    odpowiada, a nie o logowaniu (spis #27); pytanie bez odpowiedzi nie kończy czekania, więc gdy sieć wróciła, a tata
+    się nie zalogował, to Zatrzymanie jak bez logowania. Rozstrzyga ostatnie pytanie. Zegar okna: start w 0, pierwsze
+    pytanie w 1. sekundzie (sieć wraca po nim albo nie), drugie po limicie 15 minut."""
+
+    orders = [Order("#5701", cells={"O": 1}, amount=_au({"012": 1}))]
+    with atrapa_efenix([orders[0].in_efenix("571")]) as atrapa:
+        atrapa.expire_session()
+        readings = iter([0.0, 1.0])
+
+        def clock() -> float:
+            reading = next(readings, 3600.0)
+            if reading == 1.0 and reconnects:
+                atrapa.reconnect()
+            return reading
+
+        def network_gone(login: Login) -> Login:
+            @contextmanager
+            def waiting() -> Iterator[None]:
+                with login():
+                    atrapa.outage = Outage.CUT
+                    yield
+
+            return waiting
+
+        outcome = _run_with(
+            write_collective_file(tmp_path, orders),
+            lambda login: efenix_browser.window(page, atrapa.url, login=network_gone(login), clock=clock),
+        )
+        questions = _session_questions(atrapa)
+
+    assert (_stop(outcome), _kept(outcome), questions) == (code, False, 2)
 
 
 def test_profil_przegladarki_okna_efenix_lezy_w_katalogu_narzedzia_poza_gitem() -> None:

@@ -64,8 +64,11 @@ TABLE = [
         "nie ma: adres odpowiada, więc to nie EfenixUnreachable (#878)", "D"),
     Row("efenix_browser", "wait_for_login", "WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)",
         "karta zamknięta w czasie czekania na logowanie", "E"),
+    Row("efenix_browser", "wait_for_login", "EfenixUnreachable(unanswered.failure)",
+        "efenix nie odpowiedział na ostatnie pytanie o sesję przed końcem LOGIN_TIMEOUT_MS: błąd Playwrighta "
+        "(Operation.OPEN), więc to nie brak logowania (spis #27)", "D przy starcie"),
     Row("efenix_browser", "wait_for_login", "LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)",
-        "tata nie zalogował się w LOGIN_TIMEOUT_MS", "E"),
+        "tata nie zalogował się w LOGIN_TIMEOUT_MS, a efenix odpowiedział na ostatnie pytanie o sesję", "E"),
     Row("efenix_browser", "_session_open", "UnexpectedPage(PagePart.LIST, HttpStatus(response.status))",
         "lista zleceń, o którą okno pyta w czasie czekania na logowanie, z odpowiedzią 4xx/5xx: adres odpowiada, a tata "
         "mógł się już zalogować, więc to nie brak logowania po LOGIN_TIMEOUT_MS (#891)", "D"),

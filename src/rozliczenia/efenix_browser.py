@@ -12,8 +12,8 @@ tę samą, którą skrypt wkłada do ``#wyniki``, bo lista po wczytaniu sama szu
 jej odpowiedź trafia do ``#wyniki`` w dowolnej chwili; czyta ją ``efenix_page.read_results``, a stronę zlecenia otwiera
 linkiem z wiersza. Przekierowanie strony albo odpowiedzi daty, Wyceny Emmetta i ilości na
 ``page_login.php`` to ``LoggedOut``, tak samo ostrzeżenie o wygasłej sesji w odpowiedzi szukania (``efenix_page.SearchWarning``),
-bo na szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie (adres nie
-odpowiada), to ``EfenixUnreachable``.
+bo na szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie albo w czasie
+czekania na logowanie (adres nie odpowiada), to ``EfenixUnreachable``.
 Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
 budowy, odpowiedź efenix ze statusem błędu, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
 element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Każdy z
@@ -43,8 +43,9 @@ pyta efenix o listę zleceń w tej samej sesji przeglądarki bez przekierowań, 
 tata pisze, najwyżej co ``LOGIN_POLL_MS``; gdy strona przejdzie ze strony logowania na inną, pyta od razu, jeśli od
 poprzedniego pytania minął ten odstęp, a inaczej po nim. Gdy lista odpowiada, otwiera ją i proces rusza; lista ze
 statusem błędu (4xx, 5xx) to ``UnexpectedPage`` z ``HttpStatus`` jak przy starcie, brak logowania przez
-``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a karta, okno albo przeglądarka zamknięte w tym czasie to ``WindowClosed``
-najpóźniej po ``LOGIN_POLL_MS``.
+``LOGIN_TIMEOUT_MS`` to ``LoggedOut``, a gdy efenix nie odpowiedział na ostatnie pytanie przed końcem tego czasu,
+``EfenixUnreachable`` z błędem przeglądarki jak przy starcie; pytanie bez odpowiedzi czekania nie kończy. Karta, okno
+albo przeglądarka zamknięte w tym czasie to ``WindowClosed`` najpóźniej po ``LOGIN_POLL_MS``.
 
 Stronę zlecenia czyta ``efenix_page.read_order`` tak, jak widzi ją tata: data wykonania, kwota końcowa i ilość każdej
 pozycji. Datę ustawia przyciskiem kalendarza ``#button-calendar`` i kalendarzem pickadate pola ``#field_data_instalacji`` okna
@@ -337,9 +338,12 @@ class BrowserEfenix:
         self, login: Login, *, timeout_ms: int = LOGIN_TIMEOUT_MS, clock: Callable[[], float] = time.monotonic
     ) -> None:
         """Otwiera listę zleceń, a na stronie logowania czeka w ``login``, aż tata się zaloguje; ``LoggedOut`` po
-        ``timeout_ms`` bez logowania (najwyżej ``LOGIN_POLL_MS`` później), ``UnexpectedPage`` listy ze statusem HTTP, gdy
-        lista odpowiada stroną błędu serwera, a ``WindowClosed`` najpóźniej ``LOGIN_POLL_MS`` po zamknięciu karty, okna
-        albo całej przeglądarki. ``clock`` (sekundy) mierzy czas czekania.
+        ``timeout_ms`` bez logowania (najwyżej ``LOGIN_POLL_MS`` później), ``EfenixUnreachable`` po nim, gdy efenix nie
+        odpowiedział na ostatnie pytanie o sesję, ``UnexpectedPage`` listy ze statusem HTTP, gdy lista odpowiada stroną
+        błędu serwera, a ``WindowClosed`` najpóźniej ``LOGIN_POLL_MS`` po zamknięciu karty, okna albo całej przeglądarki.
+        ``clock`` (sekundy) mierzy czas czekania.
+
+        Pytanie bez odpowiedzi nie kończy czekania: gdy sieć wróci, tata może się jeszcze zalogować.
 
         Zamkniętą kartę rozpoznaje po ``Page.is_closed`` przed każdym sprawdzeniem, bo czekanie Playwrighta na adres karty
         zamkniętej przed nim nie zgłasza jej zamknięcia, tylko kończy się po swoim limicie. Efenix pyta najwyżej co
@@ -357,7 +361,12 @@ class BrowserEfenix:
             while True:
                 if self._page.is_closed():
                     raise WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)
-                if self._session_open():
+                unanswered: _Failed | None = None
+                try:
+                    session_open = self._session_open()
+                except _Failed as failed:
+                    session_open, unanswered = False, failed
+                if session_open:
                     try:
                         self.open_list()
                         return
@@ -366,6 +375,8 @@ class BrowserEfenix:
                 asked = clock()
                 remaining_ms = round((deadline - asked) * 1000)
                 if remaining_ms <= 0:
+                    if unanswered is not None:
+                        raise EfenixUnreachable(unanswered.failure) from unanswered.__cause__
                     raise LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)
                 # Czekanie kończy się po limicie, a w karcie zamkniętej w jego trakcie błędem; o zamknięciu mówi ``is_closed``.
                 with suppress(PlaywrightError):
@@ -379,13 +390,12 @@ class BrowserEfenix:
         """Lista zleceń odpowiada w sesji okna bez przekierowania na logowanie; pytanie nie zmienia strony okna.
 
         Odpowiedź ze statusem błędu (4xx, 5xx) to ``UnexpectedPage`` listy z tym statusem, jak lista przy starcie: adres
-        odpowiada, a tata mógł się już zalogować, więc czekanie dalej nic nie da (#891).
+        odpowiada, a tata mógł się już zalogować, więc czekanie dalej nic nie da (#891). Pytanie bez odpowiedzi (błąd
+        Playwrighta) to ``_Failed`` otwarcia listy, jak przy starcie.
         """
 
-        try:
+        with _doing(Operation.OPEN):
             response = self._page.context.request.get(self._url, max_redirects=0, timeout=self._timeout_ms)
-        except PlaywrightError:
-            return False
         if response.status >= 400:
             raise UnexpectedPage(PagePart.LIST, HttpStatus(response.status))
         location = urlparse(response.headers.get("location", "")).path
