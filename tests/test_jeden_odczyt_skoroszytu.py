@@ -6,7 +6,8 @@ skoroszyt w openpyxl tylko z bajtów. Odczyt z dysku poza nimi trafia w klasyfik
 ``OSError`` to plik nieczytelny, i tata dostaje Komunikat o uszkodzonym pliku, który jest cały.
 
 ``DadFiles.read`` bierze chwilę zmiany pliku przed jego bajtami, więc odcisk w Kopii wejścia ma chwilę przeczytanej
-wersji. Bajty z ``file_bytes``, ``workbook_content`` albo ``template_content`` i skoroszyt z ``read_workbook`` mają tylko
+wersji. Bajty z ``file_bytes``, ``workbook_content`` albo ``template_content`` i skoroszyt z ``read_workbook`` albo
+``open_workbook`` mają tylko
 miejsca z ``ONLY`` i ``EXCEPTIONS``, więc nowy czytnik nie czyta wartości pliku taty obok uchwytu, bez sprawdzenia
 dostępności, ``Readers.source``, pamięci i Kopii. Pamięć reguły danych i Kopię wejścia pisze tylko świadek arkusza
 (``dad_files.WitnessedSheet``), więc Kopia nie ma wiersza, którego nie zna pamięć (ADR 0025). Test podstawia bajty przez
@@ -16,7 +17,9 @@ Granica: strażnik widzi wywołanie po nazwie funkcji (także z aliasem importu 
 ``workbook_files`` przez ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w
 wywołaniu po nazwie, aliasie importu, jako atrybut (``rozliczenia.workbook_files``) albo jako napis
 ``"rozliczenia.workbook_files…"``. Funkcję albo moduł wzięte do zmiennej (``read = workbook_files.file_bytes``,
-``importlib``, napis złożony w czasie biegu) widzi tylko przegląd.
+``importlib``, napis złożony w czasie biegu), przypisanie wprost (``workbook_files.file_bytes = …``), łatkę przez alias
+łatającego (``patch as p``), ``patch.dict``, ``getattr`` z napisem i surowe ``open(path, "rb")`` w ``src`` widzi tylko
+przegląd.
 """
 
 from __future__ import annotations
@@ -42,6 +45,9 @@ ONLY: dict[str, frozenset[str]] = {
     "workbook_content": frozenset(),
     "template_content": frozenset({"rozliczenia/template_file.py::_read"}),
     "read_workbook": frozenset(),
+    "open_workbook": frozenset(
+        {"rozliczenia/template_file.py::_outline", "rozliczenia/template_file.py::_openpyxl_workbook"}
+    ),
     "_modified_at": frozenset({"rozliczenia/dad_files.py::read"}),
     "ReadFile": frozenset({"rozliczenia/dad_files.py::read"}),
     "InputCopy": frozenset(),
@@ -267,6 +273,8 @@ def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -
         "        return read.workbook.active['B18'].value\n"
         "def template_address(path):\n"
         "    return workbook_files.template_content(path)\n"
+        "def opened_values(path, content):\n"
+        "    return workbook_files.open_workbook(path, content, read_only=True)\n"
     )
 
     found, _ = _src_findings({"rozliczenia/sonda.py": reader})
@@ -278,6 +286,7 @@ def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -
             "src/rozliczenia/sonda.py:7: opened(...) w rozliczenia/sonda.py::first_address_after_check",
             "src/rozliczenia/sonda.py:7: workbook_content(...) w rozliczenia/sonda.py::first_address_after_check",
             "src/rozliczenia/sonda.py:10: workbook_files.template_content(...) w rozliczenia/sonda.py::template_address",
+            "src/rozliczenia/sonda.py:12: workbook_files.open_workbook(...) w rozliczenia/sonda.py::opened_values",
         ]
     )
 
