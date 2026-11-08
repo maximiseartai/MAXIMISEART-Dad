@@ -16,21 +16,29 @@ import zipfile
 import excel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import Parser
 
-
-PERIOD = "08_14_09_2026"
-WORKBOOK_NAMES = (
-    "Wzorzec pliku zbiorczego.xlsx",
-    "Wzorzec rozliczenia pracownika.xlsx",
-    f"Rozliczenie wew. {PERIOD}.xlsx",
-    f"Rozliczenie {PERIOD} - zbiorcze.xlsx",
-    f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx",
-    f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx",
-    f"Rozliczenie {PERIOD} - Kamil Syntetyczny.xlsx",
+from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from tests.fixtures.scenariusz_rozliczen import (
+    COLLECTIVE_TEMPLATE_NAME,
+    PERIODS_DIRECTORY,
+    REGISTER_NAME,
+    TEMPLATES_DIRECTORY,
+    WORKER_TEMPLATE_NAME,
+    worker_settlement_name,
 )
-LINKED_TEMPLATES = ("Wzorzec pliku zbiorczego.xlsx", "Wzorzec rozliczenia pracownika.xlsx")
+from tests.fixtures.settlement import PERIOD, WORKERS
+
+LINKED_TEMPLATES = (COLLECTIVE_TEMPLATE_NAME, WORKER_TEMPLATE_NAME)
+WORKBOOK_NAMES = (
+    *LINKED_TEMPLATES,
+    INTERNAL_SETTLEMENT_NAME,
+    COLLECTIVE_FILE_NAME,
+    *(worker_settlement_name(worker) for worker in WORKERS.values()),
+)
 
 
 def _used_link(template: Path) -> bool:
@@ -67,15 +75,15 @@ def check(root: Path, desk: Path) -> list[str]:
         problems.append("the desk already holds files of another run")
     fixture = root / "okres"
     for name in LINKED_TEMPLATES:
-        template = fixture / "config" / name
+        template = fixture / TEMPLATES_DIRECTORY / name
         if not template.is_file():
-            problems.append(f"fixture lacks config/{name}")
+            problems.append(f"fixture lacks {TEMPLATES_DIRECTORY}/{name}")
         elif not _used_link(template):
-            problems.append(f"config/{name} has no external link used by a formula")
-    for relative in ("ZLECENIA INTERMAX OD 08_11_2021.xlsx", "config/worker_mapping.yaml", "INEA"):
+            problems.append(f"{TEMPLATES_DIRECTORY}/{name} has no external link used by a formula")
+    for relative in (REGISTER_NAME, f"{TEMPLATES_DIRECTORY}/worker_mapping.yaml", PERIODS_DIRECTORY):
         if not (fixture / relative).exists():
             problems.append(f"fixture lacks {relative}")
-    if (fixture / "INEA" / PERIOD).exists():
+    if (fixture / PERIODS_DIRECTORY / PERIOD).exists():
         problems.append(f"Folder okresu {PERIOD} already exists before Przygotowanie")
     if excel.running():
         try:

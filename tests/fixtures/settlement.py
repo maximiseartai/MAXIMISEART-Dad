@@ -29,20 +29,17 @@ NOT_A_PERIOD = "09_15_09_2026"  # wygląda jak token okresu, ale 9 września 202
 SOURCE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 
 
+# Konfiguracja wykonawców: identyfikator Wykonawcy z pliku -> nazwa w Rozliczeniu pracownika.
+WORKERS: dict[str, str] = {
+    "adrian.testowy": "Adrian Testowy",
+    "dariusz.fikcyjny2": "Darek Fikcyjny",
+    "kamil.syntetyczny": "Kamil Syntetyczny",
+}
+
+
 def write_mapping(path: Path) -> Path:
     path.write_text(
-        yaml.safe_dump(
-            {
-                "schema_version": 1,
-                "workers": {
-                    "adrian.testowy": "Adrian Testowy",
-                    "dariusz.fikcyjny2": "Darek Fikcyjny",
-                    "kamil.syntetyczny": "Kamil Syntetyczny",
-                },
-            },
-            allow_unicode=True,
-            sort_keys=False,
-        ),
+        yaml.safe_dump({"schema_version": 1, "workers": WORKERS}, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
     return path

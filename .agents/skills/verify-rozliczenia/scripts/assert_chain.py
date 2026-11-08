@@ -21,6 +21,8 @@ from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from wynik_uruchomienia import (
     Link,
@@ -35,8 +37,24 @@ from wynik_uruchomienia import (
 )
 from skrypt_skilla import Parser
 
+from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from tests.fixtures.scenariusz_rozliczen import (
+    COLLECTIVE_TEMPLATE_NAME,
+    INTERNAL_TEMPLATE_NAME,
+    ORDER_LINK,
+    ORDERS,
+    PERIODS_DIRECTORY,
+    REGISTER_NAME,
+    ROW_MARKER,
+    TEMPLATES_DIRECTORY,
+    WORKER_SETTLEMENTS_DIRECTORY,
+    WORKER_ORDERS,
+    WORKER_TEMPLATE_NAME,
+    order_number,
+    worker_settlement_name,
+)
+from tests.fixtures.settlement import PERIOD, WORKERS
 
-PERIOD = "08_14_09_2026"
 HEADER_ROW = 17
 FIRST_DATA_ROW = 18
 INPUT_COLUMNS = 11  # A:K
@@ -46,59 +64,44 @@ READINESS_COLUMNS = range(13, 46)  # N:AT as 0-based tuple indices
 # Ilości tylko dla INEA (ADR 0018): column -> word in URZĄDZENIA (any case, anywhere in the text) at which the cell stays
 # empty in the Rozliczenie pracownika. Written out here, not imported, so a broken rule in the product fails the check.
 INEA_ONLY = {"AP": "gniazdo", "AK": "technicolor"}
-ROW_MARKER = "PREP-SYN-"
-INTERNAL_NAME = f"Rozliczenie wew. {PERIOD}.xlsx"
-COLLECTIVE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
-TARGET_DIRECTORY_NAME = f"Rozliczenie pracowników {PERIOD}"
-WORKER_TEMPLATE = Path("config") / "Wzorzec rozliczenia pracownika.xlsx"
-# Zlecenia skuteczne of every Wykonawca in Rejestr order; Adrian's two are split by Kamil's.
+WORKER_TEMPLATE = Path(TEMPLATES_DIRECTORY) / WORKER_TEMPLATE_NAME
 EXPECTED_WORKER_ORDERS = {
-    "Adrian Testowy": ("PREP-SYN-ZL-2", "PREP-SYN-ZL-7"),
-    "Darek Fikcyjny": ("PREP-SYN-ZL-6", "PREP-SYN-ZL-8"),
-    "Kamil Syntetyczny": ("PREP-SYN-ZL-4", "PREP-SYN-ZL-9"),
+    WORKERS[worker]: tuple(order_number(number) for number in numbers) for worker, numbers in WORKER_ORDERS.items()
 }
 # Rejestr row of every Zlecenie skuteczne; its NUMER ZL. Hiperłącze ends with that row number.
-ORDER_LINK = "https://przyklad.invalid/zlecenie?caseId=PREP-SYN-LINK&tw=1&wiersz="
-REGISTER_ROWS_OF_ORDERS = {
-    "PREP-SYN-ZL-2": 4,
-    "PREP-SYN-ZL-4": 9,
-    "PREP-SYN-ZL-7": 12,
-    "PREP-SYN-ZL-6": 13,
-    "PREP-SYN-ZL-8": 14,
-    "PREP-SYN-ZL-9": 15,
-}
+REGISTER_ROWS_OF_ORDERS = {order_number(number): ORDERS[number].row for number in (2, 4, 7, 6, 8, 9)}
 EXPECTED_ROWS = sum(len(orders) for orders in EXPECTED_WORKER_ORDERS.values())
 TEMPLATES = len(EXPECTED_WORKER_ORDERS)
 WORKER_SETTLEMENTS = [
     contract.WorkerSettlement(
-        worker=name, file=f"Rozliczenie {PERIOD} - {name}.xlsx", orders=len(orders), empty=not orders
+        worker=name, file=worker_settlement_name(name), orders=len(orders), empty=not orders
     )
     for name, orders in EXPECTED_WORKER_ORDERS.items()
 ]
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
-UNSUCCESSFUL_ORDER = "PREP-SYN-ZL-3"  # Darek's NIE order, present only in the Rozliczenie wewnętrzne
+UNSUCCESSFUL_ORDER = order_number(3)  # Darek's NIE order, present only in the Rozliczenie wewnętrzne
 INPUTS = (
-    ("Rejestr zleceń", Path("ZLECENIA INTERMAX OD 08_11_2021.xlsx"), "fixture_manifest.json", "register_sha256"),
+    ("Rejestr zleceń", Path(REGISTER_NAME), "fixture_manifest.json", "register_sha256"),
     (
         "Wzorzec rozliczenia wewnętrznego",
-        Path("config") / "Wzorzec rozliczenia wewnętrznego.xlsx",
+        Path(TEMPLATES_DIRECTORY) / INTERNAL_TEMPLATE_NAME,
         "fixture_manifest.json",
         "internal_template_sha256",
     ),
     (
         "Wzorzec pliku zbiorczego",
-        Path("config") / "Wzorzec pliku zbiorczego.xlsx",
+        Path(TEMPLATES_DIRECTORY) / COLLECTIVE_TEMPLATE_NAME,
         "fixture_manifest.json",
         "collective_template_sha256",
     ),
     ("Wzorzec rozliczenia pracownika", WORKER_TEMPLATE, "fixture_manifest.json", "worker_template_sha256"),
     (
         "Rozliczenie wewnętrzne",
-        Path("INEA") / PERIOD / INTERNAL_NAME,
+        Path(PERIODS_DIRECTORY) / PERIOD / INTERNAL_SETTLEMENT_NAME,
         "readiness_manifest.json",
         "internal_settlement_sha256",
     ),
-    ("Plik zbiorczy", Path("INEA") / PERIOD / COLLECTIVE_NAME, "readiness_manifest.json", "collective_file_sha256"),
+    ("Plik zbiorczy", Path(PERIODS_DIRECTORY) / PERIOD / COLLECTIVE_FILE_NAME, "readiness_manifest.json", "collective_file_sha256"),
 )
 
 Row = tuple[object, ...]
@@ -142,8 +145,8 @@ def _check_metrics(root: Path, expected: list[tuple[str, str]], errors: list[str
 def _assert_dry_run(root: Path, result_path: Path | None) -> int:
     errors: list[str] = []
     _unchanged_inputs(root, errors)
-    period_directory = root / "INEA" / PERIOD
-    if sorted(path.name for path in period_directory.iterdir()) != sorted([INTERNAL_NAME, COLLECTIVE_NAME]):
+    period_directory = root / PERIODS_DIRECTORY / PERIOD
+    if sorted(path.name for path in period_directory.iterdir()) != sorted([INTERNAL_SETTLEMENT_NAME, COLLECTIVE_FILE_NAME]):
         errors.append("dry-run added entries to the Folder okresu")
     result = load_result(result_path, (ROW_MARKER,), errors)
     if result is not None:
@@ -317,7 +320,7 @@ def _check_worker_files(root: Path, period_directory: Path, target_directory: Pa
     if not isinstance(filled_orders, list) or not filled_orders:
         raise ValueError("readiness_manifest.json names no filled Wiersze danych")
     readiness_orders = set(filled_orders)
-    collective = load_workbook(period_directory / COLLECTIVE_NAME, data_only=False, keep_links=True)
+    collective = load_workbook(period_directory / COLLECTIVE_FILE_NAME, data_only=False, keep_links=True)
     try:
         collective_sheet = _sheet(collective)
         collective_in_file = set(collective_sheet._cells)
@@ -376,7 +379,7 @@ def _check_worker_files(root: Path, period_directory: Path, target_directory: Pa
                 errors.append(f"Plik zbiorczy does not hold the Zlecenia skuteczne of {name} in Rejestr order")
             _check_worker_file(
                 name,
-                target_directory / f"Rozliczenie {PERIOD} - {name}.xlsx",
+                target_directory / worker_settlement_name(name),
                 expected_rows,
                 expected_empty,
                 expected_looks,
@@ -395,13 +398,13 @@ def _check_worker_files(root: Path, period_directory: Path, target_directory: Pa
 def _assert_run(root: Path, result_path: Path | None) -> int:
     errors: list[str] = []
     _unchanged_inputs(root, errors)
-    period_directory = root / "INEA" / PERIOD
-    target_directory = period_directory / TARGET_DIRECTORY_NAME
+    period_directory = root / PERIODS_DIRECTORY / PERIOD
+    target_directory = period_directory / WORKER_SETTLEMENTS_DIRECTORY
     if sorted(path.name for path in period_directory.iterdir()) != sorted(
-        [INTERNAL_NAME, COLLECTIVE_NAME, TARGET_DIRECTORY_NAME]
+        [INTERNAL_SETTLEMENT_NAME, COLLECTIVE_FILE_NAME, WORKER_SETTLEMENTS_DIRECTORY]
     ):
         errors.append("Folder okresu does not hold exactly both period files and the Folder rozliczeń pracowników")
-    expected_files = {f"Rozliczenie {PERIOD} - {name}.xlsx" for name in EXPECTED_WORKER_ORDERS}
+    expected_files = {worker_settlement_name(name) for name in EXPECTED_WORKER_ORDERS}
     inea_only = 0
     if not target_directory.is_dir() or {path.name for path in target_directory.iterdir()} != expected_files:
         errors.append("Folder rozliczeń pracowników does not hold exactly one workbook per Wykonawca")

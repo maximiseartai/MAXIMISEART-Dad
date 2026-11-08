@@ -31,9 +31,27 @@ import excel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.collective_layout import QUANTITY_COLUMNS
 from skrypt_skilla import SKIPPED, Parser, create_run_root, new_run
+from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from tests.fixtures.scenariusz_rozliczen import (
+    COLLECTIVE_TEMPLATE_NAME,
+    FILLED_ORDERS,
+    INTERNAL_TEMPLATE_NAME,
+    PERIODS_DIRECTORY,
+    REGISTER_NAME,
+    ROW_MARKER,
+    TEMPLATES_DIRECTORY,
+    WORKER_ORDERS,
+    WORKER_SETTLEMENTS_DIRECTORY,
+    WORKER_TEMPLATE_NAME,
+    order_number,
+    worker_settlement_name,
+)
+from tests.fixtures.scenariusz_rozliczen import QUANTITIES as ORDER_QUANTITIES
+from tests.fixtures.settlement import PERIOD, WORKERS
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
@@ -42,51 +60,35 @@ PROCESS_SCRIPT = REPO_ROOT / "tools" / "uruchom_proces.py"
 
 # Exit code of the machine script for Wymaga sprawdzenia.
 NEEDS_REVIEW_EXIT = 2
-PERIOD = "08_14_09_2026"
-TEMPLATE_NAMES = (
-    "Wzorzec rozliczenia wewnętrznego.xlsx",
-    "Wzorzec pliku zbiorczego.xlsx",
-    "Wzorzec rozliczenia pracownika.xlsx",
-)
+TEMPLATE_NAMES = (INTERNAL_TEMPLATE_NAME, COLLECTIVE_TEMPLATE_NAME, WORKER_TEMPLATE_NAME)
 HEADER_ROW = 17
 FIRST_ROW = 18
 LAST_SCANNED_ROW = 60
 INPUT_COLUMNS = range(14, 47)  # N:AT, what Dad types
 CALCULATED = "AU{row}:AX{row}"  # amounts; AY looks up the Słownik, which is #N/D without the Słownik itself
 FORMULAS = "AU{row}:AY{row}"
-FILLED_ORDERS = ("PREP-SYN-ZL-2", "PREP-SYN-ZL-7", "PREP-SYN-ZL-6")
-WORKER_ORDERS = {
-    "Adrian Testowy": ("PREP-SYN-ZL-2", "PREP-SYN-ZL-7"),
-    "Darek Fikcyjny": ("PREP-SYN-ZL-6", "PREP-SYN-ZL-8"),
-    "Kamil Syntetyczny": ("PREP-SYN-ZL-4", "PREP-SYN-ZL-9"),
+FILLED = tuple(order_number(number) for number in FILLED_ORDERS)
+WORKER_FILES = {
+    WORKERS[worker]: tuple(order_number(number) for number in numbers) for worker, numbers in WORKER_ORDERS.items()
 }
 # Wyróżnienia of the synthetic Rejestr: ADRES of order 2 yellow with bold dark red, ADRES of order 4 blue, WYKONAWCA
 # of order 4 italic, ADRES of orders 7 and 6 none. Excel shows no fill as white and the automatic colour as black.
 HIGHLIGHTS = {
-    ("PREP-SYN-ZL-2", "adres"): (0xFFFF00, 0xC00000, True, False),
-    ("PREP-SYN-ZL-4", "adres"): (0x00B0F0, 0x000000, False, False),
-    ("PREP-SYN-ZL-4", "wykonawca"): (0xFFFFFF, 0x000000, False, True),
-    ("PREP-SYN-ZL-7", "adres"): (0xFFFFFF, 0x000000, False, False),
-    ("PREP-SYN-ZL-6", "adres"): (0xFFFFFF, 0x000000, False, False),
+    (order_number(2), "adres"): (0xFFFF00, 0xC00000, True, False),
+    (order_number(4), "adres"): (0x00B0F0, 0x000000, False, False),
+    (order_number(4), "wykonawca"): (0xFFFFFF, 0x000000, False, True),
+    (order_number(7), "adres"): (0xFFFFFF, 0x000000, False, False),
+    (order_number(6), "adres"): (0xFFFFFF, 0x000000, False, False),
 }
-ROW_MARKER = "PREP-SYN-"
-# Ilości usług Przygotowanie writes from the Reguły ilości for the fixture's URZĄDZENIA and UMOWA
-# (verify-rozliczenia: create_preparation_fixture.ORDER_CONTENT, assert_preparation.EXPECTED_QUANTITIES).
-QUANTITIES = {
-    "PREP-SYN-ZL-2": {"O": 1, "P": 1, "Q": 1, "S": 3, "T": 1, "V": 1, "Z": 1},
-    "PREP-SYN-ZL-4": {"N": 45, "O": 1, "S": 2, "V": 1, "AG": 1, "AI": 1, "AO": 1},
-    "PREP-SYN-ZL-7": {},
-    "PREP-SYN-ZL-6": {"N": 45, "T": 1, "V": 1},
-    "PREP-SYN-ZL-8": {"V": 1, "AE": 1, "AP": 1},
-    "PREP-SYN-ZL-9": {"O": 1, "P": 1, "Q": 2, "S": 4, "V": 1, "Z": 1, "AK": 1},
-}
+# Ilości usług Przygotowanie writes from the Reguły ilości for the fixture's URZĄDZENIA and UMOWA.
+QUANTITIES = {order_number(number): quantities for number, quantities in ORDER_QUANTITIES.items()}
 # Ilości tylko dla INEA (ADR 0018): AP of the gniazdo order and AK of the technicolor one stay empty in the
 # Rozliczenie pracownika, while the Plik zbiorczy keeps them.
-INEA_ONLY = {"PREP-SYN-ZL-8": "AP", "PREP-SYN-ZL-9": "AK"}
+INEA_ONLY = {order_number(8): "AP", order_number(9): "AK"}
 QUANTITY_SUMS_ROW = 15
-# CZYNNOŚCI ZREALIZOWANE of order 2 has two lines (create_preparation_fixture.completed_activities); every other
+# CZYNNOŚCI ZREALIZOWANE of order 2 has two lines (scenariusz_rozliczen.completed_activities); every other
 # Wiersz danych has one.
-TWO_LINE_ORDER = "PREP-SYN-ZL-2"
+TWO_LINE_ORDER = order_number(2)
 
 
 class VerificationFailure(RuntimeError):
@@ -117,22 +119,22 @@ class Run:
 
     @property
     def config(self) -> Path:
-        return self.fixture / "config"
+        return self.fixture / TEMPLATES_DIRECTORY
 
     @property
     def period_folder(self) -> Path:
-        return self.fixture / "INEA" / PERIOD
+        return self.fixture / PERIODS_DIRECTORY / PERIOD
 
     @property
     def collective_file(self) -> Path:
-        return self.period_folder / f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
+        return self.period_folder / COLLECTIVE_FILE_NAME
 
     @property
     def internal_file(self) -> Path:
-        return self.period_folder / f"Rozliczenie wew. {PERIOD}.xlsx"
+        return self.period_folder / INTERNAL_SETTLEMENT_NAME
 
     def worker_file(self, worker: str) -> Path:
-        return self.period_folder / f"Rozliczenie pracowników {PERIOD}" / f"Rozliczenie {PERIOD} - {worker}.xlsx"
+        return self.period_folder / WORKER_SETTLEMENTS_DIRECTORY / worker_settlement_name(worker)
 
     def on_desk(self, path: Path) -> Path:
         """Byte copy of ``path`` on Excel's desk, where Excel opens it without a dialog."""
@@ -244,8 +246,8 @@ def preparation(run: Run) -> None:
         "przygotowanie",
         [
             str(PROCESS_SCRIPT), "preparation",
-            "--register", str(run.fixture / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"),
-            "--periods-directory", str(run.fixture / "INEA"),
+            "--register", str(run.fixture / REGISTER_NAME),
+            "--periods-directory", str(run.fixture / PERIODS_DIRECTORY),
             "--period", PERIOD,
             "--config", str(run.config / "worker_mapping.yaml"),
             "--internal-template", str(run.config / TEMPLATE_NAMES[0]),
@@ -280,7 +282,7 @@ def settlement(run: Run) -> None:
     if not isinstance(result, dict) or result.get("result") != "OK":
         raise VerificationFailure("Przebieg rozliczeń did not end OK")
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
-    expect(figures.get("Zapisane szablony") == len(WORKER_ORDERS), "Przebieg did not write three Szablony pracowników")
+    expect(figures.get("Zapisane szablony") == len(WORKER_FILES), "Przebieg did not write three Szablony pracowników")
 
 
 @dataclass(frozen=True)
@@ -418,7 +420,7 @@ def period_files_open(
     run.step(feature, "plik-zbiorczy-lacze", f"links={len(links)}")
     layout = _layout(collective)
     rows = _order_rows(collective, layout)
-    expected_orders = {order for orders in WORKER_ORDERS.values() for order in orders}
+    expected_orders = {order for orders in WORKER_FILES.values() for order in orders}
     expect(expected_orders <= set(rows), "Plik zbiorczy lacks Zlecenia skuteczne of the Rejestr")
     _check_formulas(collective, rows, collective_reference[1], label="Plik zbiorczy")
     run.step(feature, "plik-zbiorczy-formuly", f"rows={len(rows)}")
@@ -461,7 +463,7 @@ def readiness(run: Run, collective: Path, layout: Layout) -> tuple[dict[str, lis
     order_letter = column_letter(layout.order)
     unlinked = [str(rows[order]) for order, links in links_before.items() if order_letter not in links]
     expect(not unlinked, f"Przygotowanie left NUMER ZL. without its Rejestr Hiperłącze in rows {', '.join(unlinked)}")
-    for index, order in enumerate(FILLED_ORDERS):
+    for index, order in enumerate(FILLED):
         entries = _entries(index, order)
         excel.type_row(collective, f"N{rows[order]}:AT{rows[order]}", [entries[column] for column in INPUT_COLUMNS])
         typed = excel.read(collective, f"N{rows[order]}:AT{rows[order]}")[0]
@@ -473,7 +475,7 @@ def readiness(run: Run, collective: Path, layout: Layout) -> tuple[dict[str, lis
         expect(not differing, f"Excel holds other values than typed in row {rows[order]}: {', '.join(differing)}")
         amount = excel.read(collective, CALCULATED.format(row=rows[order]))[0][0]
         expect(amount.kind == "n" and amount.number > 0, f"Excel calculated no amount in AU{rows[order]}")
-    run.step(feature, "wpisy", f"rows={len(FILLED_ORDERS)} | columns=N:AT | amounts_calculated=true")
+    run.step(feature, "wpisy", f"rows={len(FILLED)} | columns=N:AT | amounts_calculated=true")
     expected = {order: excel.read(collective, f"A{row}:AT{row}")[0] for order, row in rows.items()}
     excel.save(collective)
     excel.close(collective)
@@ -492,7 +494,7 @@ def readiness(run: Run, collective: Path, layout: Layout) -> tuple[dict[str, lis
     # Dad saves in his Folder okresu; the desk copy goes back byte for byte.
     shutil.copyfile(collective, run.collective_file)
     digest = hashlib.sha256(run.collective_file.read_bytes()).hexdigest()
-    run.observe("gotowosc", {"rows_typed": len(FILLED_ORDERS), "saved_by": "Microsoft Macintosh Excel", "external_link_parts": len(link_parts), "sha256": digest})
+    run.observe("gotowosc", {"rows_typed": len(FILLED), "saved_by": "Microsoft Macintosh Excel", "external_link_parts": len(link_parts), "sha256": digest})
     return expected, links_after
 
 
@@ -506,7 +508,7 @@ def worker_files(
     """Feature rozliczenia-pracownikow-w-excelu: every Rozliczenie pracownika opens and shows the Gotowość."""
 
     feature = "rozliczenia-pracownikow-w-excelu"
-    for worker, orders in WORKER_ORDERS.items():
+    for worker, orders in WORKER_FILES.items():
         path = run.on_desk(run.worker_file(worker))
         label = f"Rozliczenie {worker}"
         seconds = excel.open_file(path)
@@ -538,7 +540,7 @@ def worker_files(
             expect(not unequal, f"{label} rows {', '.join(unequal)} lack the Hiperłącza of the Plik zbiorczy Excel saved")
             run.step(feature, "hiperlacza", f"{worker} | rows={len(rows)}")
             _check_formulas(path, rows, worker_reference[1], label=label)
-            for order in set(rows).intersection(FILLED_ORDERS):
+            for order in set(rows).intersection(FILLED):
                 amount = excel.read(path, CALCULATED.format(row=rows[order]))[0][0]
                 expect(amount.kind == "n" and amount.number > 0, f"{label}: Excel shows no amount for the Gotowość")
             run.step(feature, "formuly", worker)

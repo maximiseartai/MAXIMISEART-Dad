@@ -174,6 +174,8 @@ def _worktree(tmp_path: Path, name: str) -> Path:
     (root / "tools" / "lib").mkdir(parents=True)
     for module in ("skrypt_skilla.py", "jednostka.py"):
         shutil.copy(SKILL_SCRIPTS.parents[3] / "tools" / "lib" / module, root / "tools" / "lib")
+    shutil.copytree(SKILL_SCRIPTS.parents[3] / "tests" / "fixtures", root / "tests" / "fixtures")
+    shutil.copy(SKILL_SCRIPTS.parents[3] / "tests" / "__init__.py", root / "tests")
     return root
 
 
