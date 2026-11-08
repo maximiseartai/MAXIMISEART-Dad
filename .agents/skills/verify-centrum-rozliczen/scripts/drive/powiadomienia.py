@@ -121,17 +121,10 @@ def _enter(page: Page, run: Run, page_id: str, heading: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def drive_notifications(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     config = run.config
     key_file = config / "zgloszenia-klucz.txt"
     box = run.box
-    # A part of `all` may start at uwaga-taty or later (SKILL.md), so each case this feature closes is checked apart.
-    if not any(issue["state"] == "open" for issue in zgloszenie.reports(run)):
-        print("  harness: no open Zgłoszenie yet, so zgloszenie runs first", flush=True)
-        zgloszenie.drive_report(run, page)
-    if not box_issues(run, uwaga_taty.LABEL):
-        print("  harness: no Uwaga taty sent yet, so uwaga-taty runs first", flush=True)
-        uwaga_taty.drive_dad_note(run, page)
     key_file.write_text(KEY + "\n", encoding="utf-8")
     notes = box_issues(run, uwaga_taty.LABEL)
     reports = zgloszenie.reports(run)

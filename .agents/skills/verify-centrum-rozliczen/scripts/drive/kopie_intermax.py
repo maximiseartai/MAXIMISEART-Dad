@@ -63,7 +63,7 @@ def _point_register(run: Run, page: Page, register: Path) -> None:
     run.check(answer.ok and run.remembered("rejestr_zlecen") == str(register), "INTERMAX of this feature is in the settings")
 
 
-def drive_intermax_copies(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     fixture = run.fixture["intermax"]["restore"]
     register = Path(fixture["register"])
     folder = Path(run.fixture["intermax"]["copies"])

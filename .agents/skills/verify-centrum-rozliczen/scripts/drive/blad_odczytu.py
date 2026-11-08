@@ -225,7 +225,7 @@ def _unreadable_stream(run: Run, page: Page) -> None:
     run.check(True, "with the stream readable again the page starts as usual")
 
 
-def drive_load_failures(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     page.goto(run.url)
     ensure_files_set(run, page)
     board = page.get_by_role("table", name="Tablica okresów")

@@ -91,7 +91,7 @@ def _logs(run: Run) -> list[Json]:
     return list(run_logs(run, "intermax").values())
 
 
-def drive_intermax_ordering(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     fixture = run.fixture["intermax"]
     register = Path(fixture["register"])
     before_feature = run.remembered("rejestr_zlecen")

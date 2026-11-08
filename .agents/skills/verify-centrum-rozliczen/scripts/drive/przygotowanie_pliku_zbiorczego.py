@@ -8,8 +8,10 @@ from pathlib import Path
 from playwright.sync_api import Page, Request, expect
 
 from drive.common import (
+    HIDE_TAB,
     LAST_COMPLETE,
     ROW_MARKER,
+    SHOW_TAB,
     Run,
     active_run_signs,
     current_run,
@@ -27,6 +29,7 @@ from drive.common import (
     settle,
     start_card_warns_while_open,
 )
+from drive.uzupelnienie import drive_result_card
 
 # An older period with no successful DRY-RUN in the fixture's metrics; its confirmation keeps the no-preview warning.
 NOT_PREVIEWED = "08_14_09_2026"
@@ -40,12 +43,6 @@ QUANTITY_WARNINGS = (
     ("rozlicza się z opisu technika", f"plik {COLLECTIVE_FILE}, wiersz 19"),
     ("Ilości, które wynikają z opisu technika", f"plik {COLLECTIVE_FILE}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
 )
-# Harness: the page reports itself hidden, so the Uruchomienia stream pauses and its next view arrives late.
-HIDE_TAB = (
-    "Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});"
-    "document.dispatchEvent(new Event('visibilitychange'))"
-)
-SHOW_TAB = "delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))"
 
 
 def _started_once(run: Run, page: Page, sent: list[Request], what: str) -> None:
@@ -79,7 +76,7 @@ def _preparation_records(run: Run, name: str) -> list[dict[str, object]]:
     return [entry for entry in runs if entry["process"] == "preparation"]
 
 
-def drive_preparation(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     feature = PREPARATION
     expected = run.fixture["preparation"]
     period_folder = period_files(run)[0].parent
@@ -334,9 +331,6 @@ def drive_preparation(run: Run, page: Page) -> None:
         "the Centrum log records the start and end of each Uruchomienie procesu with safe facts only",
     )
     run.capture(page, "35-przygotowanie-zapisane")
-    # Imported here: drive.uzupelnienie drives Przygotowanie first when it runs alone.
-    from drive.uzupelnienie import drive_result_card
-
     drive_result_card(run, page)
 
     run.step(feature, "przygotowanie-otwieranie")

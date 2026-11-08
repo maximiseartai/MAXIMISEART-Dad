@@ -91,7 +91,7 @@ def _log_in(run: Run) -> None:
         answer.read()
 
 
-def drive_efenix_pricing(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "przycisk")
     settings = run.api("/api/settings", "efenix-ustawienia")
     if settings["periods_directory"] == {"state": "not_set"}:

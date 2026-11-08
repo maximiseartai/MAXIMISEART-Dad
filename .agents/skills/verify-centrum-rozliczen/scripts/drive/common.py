@@ -25,6 +25,8 @@ from zoneinfo import ZoneInfo
 from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize, expect
 import yaml
 
+from drive import feature
+
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"
 # Pages of the sidebar menu in its order: contract id (`#/<id>`, `PageId`) and the heading Dad reads.
@@ -42,6 +44,12 @@ ROW_MARKER = "CENTRUM-SYN-ROW"
 REPEAT_SETTLE_MS = 300
 # Dad's return to Centrum's window: the pages read the server again (`useResource`).
 FOCUS = "window.dispatchEvent(new Event('focus'))"
+# Harness: the page reports itself hidden, so the Uruchomienia stream pauses and its next view arrives late.
+HIDE_TAB = (
+    "Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});"
+    "document.dispatchEvent(new Event('visibilitychange'))"
+)
+SHOW_TAB = "delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))"
 # The Logi Uruchomienia beside the Centrum log (ADR 0015): one file per Uruchomienie procesu.
 RUN_LOGS = "logs/uruchomienia"
 
@@ -92,8 +100,6 @@ class Run:
         self.evidence = evidence
         self.fixture = json.loads((root / "fixture.json").read_text(encoding="utf-8"))
         self.feature = ""
-        # Feature files and PRs cite a screenshot by its number, so one number belongs to one feature.
-        self._number_owners: dict[str, str] = {}
         for name in ("screenshots", "aria", "api", "state"):
             (evidence / name).mkdir(parents=True, exist_ok=True)
 
@@ -146,13 +152,12 @@ class Run:
         """Screenshot and ARIA snapshot after every running transition has finished.
 
         ``live`` captures while a stage runs: its indeterminate bar loops forever, so do not wait.
-        ``clip`` takes a close-up of that part of the viewport instead of the page.
+        ``clip`` takes a close-up of that part of the viewport instead of the page. ``name`` is one of the current
+        feature's ``screenshots`` in ``FEATURES``, which give each number to one feature.
         """
 
-        number = name.split("-", 1)[0]
-        owner = self._number_owners.setdefault(number, self.feature)
-        if owner != self.feature:
-            raise DriveFailure(f"screenshot {name} of {self.feature} uses number {number}, which belongs to {owner}")
+        if name not in feature(self.feature).screenshots:
+            raise DriveFailure(f"screenshot {name} is not among the screenshots of {self.feature} in drive/__init__.py")
         if not live:
             page.wait_for_function(
                 "document.getAnimations().every((animation) => animation.playState !== 'running')"

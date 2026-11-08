@@ -10,7 +10,7 @@ from playwright.sync_api import Page, Request, Route, expect
 from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory, move
 
 
-def drive_settings(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     feature = "ustawienia"
     register_name = Path(run.fixture["order_register"]).name
 

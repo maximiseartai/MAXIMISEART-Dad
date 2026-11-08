@@ -112,7 +112,7 @@ def _shown_report(page: Page) -> tuple[str, str]:
     return shown.locator("figcaption").inner_text(), shown.locator("pre").inner_text()
 
 
-def drive_report(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     config = run.config
     key_file = config / "zgloszenia-klucz.txt"
     box = run.box

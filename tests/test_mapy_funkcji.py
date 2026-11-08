@@ -1,7 +1,8 @@
 """Mapa funkcji skilla ``verify-*`` (``features/``) zgadza się z jego kodem i ``SKILL.md``.
 
 Mapa to pamięć skilla: agent wybiera z niej funkcję do sprawdzenia, a harness skilla prowadzi funkcje z krotek
-``FEATURES`` i ``EXPLICIT_FEATURES`` w swoich skryptach i z modułów pakietu ``scripts/<pakiet>/``. Rozjazd mapy z kodem
+``FEATURES`` i ``EXPLICIT_FEATURES`` w swoich skryptach (napisów albo rejestru ``Feature("nazwa", …)``) i z modułów
+pakietu ``scripts/<pakiet>/``. Rozjazd mapy z kodem
 czerwieni CI, a nie dopiero przebieg skilla u agenta. Plik funkcji skilla z funkcjami w kodzie odpowiada funkcji z kodu
 w obie strony, więc ``features/README.md`` takiego skilla nie listuje plików: lista bez sprawdzenia kompletności kłamie od
 pierwszej nowej funkcji. Skill bez funkcji w kodzie listuje je w README, a każdy plik funkcji ma tam link.
@@ -46,15 +47,28 @@ def _feature_list_values(tree: ast.Module) -> list[tuple[str, ast.expr]]:
     ]
 
 
+def _names(value: ast.expr) -> list[str]:
+    """Nazwy funkcji z krotki napisów albo z rejestru, którego każdy wpis to wywołanie z nazwą jako pierwszym argumentem."""
+
+    if isinstance(value, ast.Tuple) and value.elts and all(isinstance(entry, ast.Call) for entry in value.elts):
+        return [ast.literal_eval(entry.args[0]) for entry in value.elts if isinstance(entry, ast.Call) and entry.args]
+    names = ast.literal_eval(value)
+    assert isinstance(names, tuple)
+    return list(names)
+
+
 def _code_features(skill: Path) -> list[Feature]:
     features = []
     for path in sorted((skill / "scripts").rglob("*.py")):
         source = path.relative_to(skill).as_posix()
         for name, value in _feature_list_values(ast.parse(path.read_text(encoding="utf-8"))):
             try:
-                features += [Feature(feature, f"{name} w {source}") for feature in ast.literal_eval(value)]
-            except ValueError:
-                pytest.fail(f"{name} w {source}:{value.lineno} nie jest krotką napisów: zapisz funkcje literałem")
+                features += [Feature(feature, f"{name} w {source}") for feature in _names(value)]
+            except (ValueError, AssertionError):
+                pytest.fail(
+                    f"{name} w {source}:{value.lineno} nie jest krotką napisów ani rejestrem Feature(\"nazwa\", …): "
+                    "zapisz funkcje literałem"
+                )
     return features
 
 

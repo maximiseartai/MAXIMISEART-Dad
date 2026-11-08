@@ -19,7 +19,7 @@ def _choose_folder(run: Run, page: Page, path: str) -> None:
     run.wait_for(lambda: run.remembered("folder_okresow") == path, f"the settings file remembers {Path(path).name}")
 
 
-def drive_dad_layout(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     feature = "uklad-folderow-taty"
     dad = run.fixture["dad_layout"]
 

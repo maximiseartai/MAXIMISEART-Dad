@@ -54,7 +54,7 @@ def _template_answer(run: Run, name: str, label: str) -> dict[str, object]:
     return next(template for template in templates if template["label"] == label)
 
 
-def drive_configuration(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     """Every broken state is made by renaming or adding files and undone by renaming back, so a
     Centrum that wrote nothing leaves bytes and modification times exactly as the fixture made them."""
 

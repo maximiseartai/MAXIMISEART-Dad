@@ -209,7 +209,7 @@ def _since_update(run: Run) -> list[str]:
     return events[len(events) - events[::-1].index("aktualizacja-start") :]
 
 
-def drive_update(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     tool = run.fixture["tool"]
     clone, first, newest, dad_files = Path(tool["clone"]), tool["first"], tool["newest"], tool["dad_files"]
     origin, libraries = Path(tool["origin"]), tool["libraries"]

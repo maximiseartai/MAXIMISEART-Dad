@@ -43,7 +43,7 @@ an Uruchomienie from before a restart of Centrum adds nothing.
 Preconditions:
 
 - Centrum is served for this run with `DOCTOR OK`.
-- `przebieg-rozliczen` ran in this run (`api/przebieg-zapisane.json` exists). Run alone (`--feature logi-uruchomienia`), the drive runs it first, with its Przygotowanie pliku zbiorczego.
+- `przebieg-rozliczen` ran in this run (`api/przebieg-zapisane.json` exists). Run alone (`--feature logi-uruchomienia`), the drive runs it first, with its Przygotowanie pliku zbiorczego (`needs` in `FEATURES`).
 - `INEA/29_05_10_2026` still has Status okresu `Plik zbiorczy przygotowany`, with a Wykonawca the konfiguracja wykonawców does not know (`fixture.json` → `settlement.needs_check`).
 
 - **Files of Logi.** The drive reads `<root>/logs/uruchomienia/*.json` before and after each Uruchomienie; exactly one name is new.

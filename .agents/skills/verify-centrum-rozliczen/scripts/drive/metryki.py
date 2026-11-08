@@ -52,7 +52,7 @@ def _other_results(results: dict[str, int]) -> str:
     return f"{results['needs_review']} do sprawdzenia · {results['stopped']} zatrzymane · {failed} {word}"
 
 
-def drive_metrics(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     feature = "metryki"
     fixture_metrics = run.fixture["metrics"]
 

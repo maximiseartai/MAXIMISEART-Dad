@@ -23,7 +23,7 @@ from drive.common import (
     served_version,
     while_open,
 )
-from drive.przebieg_rozliczen import TEMPLATE_PACING_MS, drive_settlement
+from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
 
 FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"
@@ -136,12 +136,9 @@ def _ended_in_centrum_log(run: Run) -> list[tuple[str, str, str, str, str]]:
     ]
 
 
-def drive_run_logs(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     needs_check = run.fixture["settlement"]["needs_check"]
     settled = run.evidence / "api" / "przebieg-zapisane.json"
-    if not settled.exists():
-        # The Logi of a written Przebieg rozliczeń list its Szablony pracowników; alone, this feature drives one.
-        drive_settlement(run, page)
 
     run.step(FEATURE, "logi-podglad")
     before = set(run_logs(run))

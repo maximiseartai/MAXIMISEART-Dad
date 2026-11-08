@@ -3,9 +3,9 @@
 Drive uznaje się za zawieszony dopiero po limicie, który rośnie z liczbą przejeżdżanych funkcji, więc nowa funkcja nie
 wypycha ``--feature all`` poza stały limit kroku.
 
-Każdy zrzut drive'u idzie przez ``Run.capture``, które pilnuje, że jeden numer zrzutu należy do jednej funkcji (pliki
-funkcji i PR-y cytują zrzut po numerze); zrzut prosto przez ``screenshot`` tę regułę omijał (#783: zbliżenia 170b i
-181b). Test czyta kod drive'u, nie uruchamia go, więc łapie też zrzut z rzadko jeżdżącej ścieżki; nie łapie zrzutu
+Każdy zrzut drive'u idzie przez ``Run.capture``, które przyjmuje tylko zrzut z ``screenshots`` jego funkcji w
+``FEATURES``, gdzie jeden numer zrzutu należy do jednej funkcji (pliki funkcji i PR-y cytują zrzut po numerze); zrzut
+prosto przez ``screenshot`` tę regułę omijał (#783: zbliżenia 170b i 181b). Test czyta kod drive'u, nie uruchamia go, więc łapie też zrzut z rzadko jeżdżącej ścieżki; nie łapie zrzutu
 wywołanego bez atrybutu ``screenshot`` (``getattr``).
 """
 

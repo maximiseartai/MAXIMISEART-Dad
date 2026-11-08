@@ -94,7 +94,7 @@ def _shown_checks(page: Page) -> Locator:
     return diagnosis.get_by_role("list", name="Sprawdzono").get_by_role("listitem")
 
 
-def drive_freshness_and_onedrive(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     register = Path(run.fixture["order_register"])
     github = run.root / "github"
     onedrive = run.root / "onedrive"

@@ -713,7 +713,7 @@ def _prepare_year_of_work(run: Run, page: Page) -> None:
     page.goto("about:blank")
 
 
-def drive_performance(run: Run, page: Page, *, baseline_path: Path = BASELINE, repeats: int = DEFAULT_REPEATS) -> None:
+def drive(run: Run, page: Page, *, baseline_path: Path = BASELINE, repeats: int = DEFAULT_REPEATS) -> None:
     feature = "wydajnosc"
     out = run.evidence / "wydajnosc"
     out.mkdir(exist_ok=True)

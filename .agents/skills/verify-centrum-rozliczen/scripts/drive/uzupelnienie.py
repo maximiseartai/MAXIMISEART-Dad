@@ -15,8 +15,10 @@ from playwright.sync_api import Locator, Page, Request, expect
 
 from create_centrum_fixture import PRICE_LIST
 from drive.common import (
+    HIDE_TAB,
     LAST_COMPLETE,
     ROW_MARKER,
+    SHOW_TAB,
     LogEntry,
     Run,
     close_centrum,
@@ -30,7 +32,6 @@ from drive.common import (
     start_centrum,
     switch_theme,
 )
-from drive.przygotowanie_pliku_zbiorczego import HIDE_TAB, SHOW_TAB, drive_preparation
 
 FEATURE = "uzupelnienie"
 SUMMARY = f"#/uzupelnienie/{LAST_COMPLETE}"
@@ -558,11 +559,8 @@ def _write_dad_value(collective_file: Path, row: int, value: int | None = 1) -> 
         workbook.close()
 
 
-def drive_filling(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     _, collective_file = period_files(run)
-    if not collective_file.is_file():
-        # Dad's path starts with Przygotowanie pliku zbiorczego; alone, this feature drives it first.
-        drive_preparation(run, page)
     original = collective_file.read_bytes()
     lock = collective_file.with_name(f"~${collective_file.name}")
     try:

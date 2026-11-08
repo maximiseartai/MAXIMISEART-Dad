@@ -73,7 +73,7 @@ def _snapshot(paths: list[Path]) -> list[tuple[bytes, int]]:
     return [(path.read_bytes(), path.stat().st_mtime_ns) for path in paths]
 
 
-def drive_diagnosis(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     register = Path(run.fixture["order_register"])
     configuration = run.fixture["configuration"]
     assert isinstance(configuration, dict)

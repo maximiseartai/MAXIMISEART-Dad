@@ -60,7 +60,7 @@ def test_czesci_podstawy_centrum_przejezdzaja_kazda_funkcje_all_raz_w_kolejnosci
     for parts in range(1, count + 1):
         driven = [runner.driven("all", {ZMIENNA_CZESCI: f"{number}/{parts}"}) for number in range(1, parts + 1)]
         assert sum(driven, ()) == every, parts
-    assert set(every) == set(runner.REQUIRED_SCREENSHOTS) - set(importlib.import_module("drive").EXPLICIT_FEATURES)
+    assert set(every) == {feature.name for feature in runner.FEATURES if not feature.measurement}
     # Część nie zmienia przebiegu jednej funkcji (mutacje skilla), bo dzieli tylko all.
     assert runner.driven("zgloszenie", {ZMIENNA_CZESCI: "2/8"}) == ("zgloszenie",)
 
@@ -89,8 +89,8 @@ def test_czesc_all_przekazuje_drive_tylko_funkcje_swojej_czesci(
             driven.append(features)
             (evidence / "screenshots").mkdir(exist_ok=True)
             for feature in runner.driven("all", {}) if features == ["all"] else features:
-                for shot in runner.REQUIRED_SCREENSHOTS[feature]:
-                    (evidence / "screenshots" / shot).write_bytes(b"")
+                for shot in runner.feature(feature).screenshots:
+                    (evidence / "screenshots" / f"{shot}.png").write_bytes(b"")
 
     def launch(root: Path, evidence: Path) -> tuple[None, str]:
         (evidence / "server.txt").write_text("OK\n", encoding="utf-8")
@@ -146,18 +146,29 @@ def drive_centrum(monkeypatch: pytest.MonkeyPatch) -> Iterator[ModuleType]:
         del sys.modules[name]
 
 
-def test_drive_przejezdza_tylko_podane_funkcje_w_podanej_kolejnosci(
+def test_drive_przejezdza_podane_funkcje_w_podanej_kolejnosci_po_potrzebach_ktorych_jeszcze_nie_przejechal(
     drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     driven: list[str] = []
-    for feature in drive_centrum.FEATURES:
-        module = getattr(drive_centrum, feature.replace("-", "_"))
-        for name in [name for name in vars(module) if name.startswith("drive_")]:
-            monkeypatch.setattr(module, name, lambda run, page, feature=feature: driven.append(feature))
+    for feature, module in drive_centrum.MODULES.items():
+        monkeypatch.setattr(module, "drive", lambda run, page, feature=feature, **options: driven.append(feature))
     (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
     features = ["uwaga-taty", "logi-uruchomienia", "powiadomienia"]
 
     code = drive_centrum.main(["--root", str(tmp_path), "--url", "http://127.0.0.1:1", "--evidence", str(tmp_path / "dowody"), "--feature", *features])
 
-    assert (code, driven) == (0, features)
+    # logi-uruchomienia zastaje stan przebiegu-rozliczen, a ten przygotowania; powiadomienia zastają zgłoszenie i uwagę,
+    # którą ten przejazd już przejechał.
+    assert (code, driven) == (
+        0,
+        [
+            "uwaga-taty",
+            "przygotowanie-pliku-zbiorczego",
+            "przebieg-rozliczen",
+            "logi-uruchomienia",
+            "zgloszenie",
+            "powiadomienia",
+        ],
+    )
     assert capsys.readouterr().out.splitlines()[-1] == f"DRIVE OK | features={','.join(features)}"
+

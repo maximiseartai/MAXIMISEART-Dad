@@ -83,7 +83,7 @@ def _new_run(page: Page, process: str) -> None:
     radio.click()
 
 
-def drive_run_card_from_logs(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     needs_check = run.fixture["settlement"]["needs_check"]
 
     run.step(FEATURE, "karta-po-zamknieciu")

@@ -440,7 +440,7 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
             registry.write_bytes(before)
 
 
-def drive_dad_note(run: Run, page: Page) -> None:
+def drive(run: Run, page: Page) -> None:
     config = run.config
     key_file = config / "zgloszenia-klucz.txt"
     box = run.box

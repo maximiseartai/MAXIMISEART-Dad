@@ -138,7 +138,7 @@ behaviour, then exactly these H2s in order:
 4. `Gotchas`: traps that waste or invalidate a run.
 
 When a slice adds a feature, add its file in this directory, its module in
-`scripts/drive/` and an entry in `drive_centrum.py`, and its screenshots in
-`REQUIRED_SCREENSHOTS` of `run_centrum_verification.py`, in the same PR. This
+`scripts/drive/` with `drive(run, page)`, and its `Feature` (screenshots,
+`needs`) in `FEATURES` of `scripts/drive/__init__.py`, in the same PR. This
 file lists no features: `tests/test_mapy_funkcji.py` matches the feature files
-with the features of `drive_centrum.py` in both directions.
+with `FEATURES` in both directions.
