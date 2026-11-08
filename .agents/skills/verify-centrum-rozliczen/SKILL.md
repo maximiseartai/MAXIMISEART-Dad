@@ -10,6 +10,8 @@ pilnuje:
   - tests/fixtures/settlement.py
   - tests/fixtures/scenariusz_rozliczen.py
   - tests/fixtures/efenix.py
+  - tests/fixtures/atrapa_efenix.py
+  - tests/fixtures/intermax.py
 ci: .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature all
 ci-czesci: 8
 ---

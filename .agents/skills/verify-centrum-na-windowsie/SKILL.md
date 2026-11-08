@@ -27,6 +27,8 @@ pilnuje:
   - tests/fixtures/settlement.py
   - tests/fixtures/scenariusz_rozliczen.py
   - tests/fixtures/efenix.py
+  - tests/fixtures/atrapa_efenix.py
+  - tests/fixtures/intermax.py
   - .agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py
 ---
 
