@@ -75,8 +75,7 @@ def metric_record(
     ``BLAD_KRYTYCZNY`` i ``stop``; zakończone ma ``stop`` równe ``None``. Okres spoza wzorca okresu trafia jako
     ``nieznany``, a etap bez zmierzonego czasu ma ``0`` ms. ``routes`` ma dla
     każdego rodzaju pliku z Wzorca liczbę zapisanych plików każdej drogi zapisu, a droga bez plików ``0``;
-    domyślnie nie ma żadnego pliku. Rozliczenie wewnętrzne powstaje zawsze drogą openpyxl, więc dopiero
-    rodzaj pliku mówi, czy kopia nie przyjęła Wzorca, który przyjmuje.
+    domyślnie nie ma żadnego pliku. Rodzaj pliku mówi, którego Wzorca kopia nie przyjęła.
     """
 
     result, stop = (ending, None) if isinstance(ending, str) else ("BLAD_KRYTYCZNY", ending)
