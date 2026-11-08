@@ -24,7 +24,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
+from drive import ALL, DEFAULT_REPEATS, FEATURES, broken_rules, feature
 from quiet_machine import MachineBusy, QuietMachine
 from skrypt_skilla import Parser, new_run, part
 
@@ -147,24 +147,14 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
 
 
 def _preflight() -> None:
+    if broken := broken_rules(FEATURES):
+        raise VerificationFailure("; ".join(broken))
     if not (REPO_ROOT / "src" / "rozliczenia" / "centrum" / "static" / "index.html").exists():
         raise VerificationFailure("the built frontend is missing; run `npm ci && npm run build` in frontend/")
     if importlib.util.find_spec("playwright") is None:
         raise VerificationFailure(
             "Playwright for Python is missing; run `pip install playwright` and `python -m playwright install chromium`"
         )
-    # Feature files and PR descriptions name screenshots by number alone.
-    owners: dict[str, set[str]] = {}
-    for each in FEATURES:
-        for shot in each.screenshots:
-            owners.setdefault(shot.split("-", 1)[0], set()).add(each.name)
-    shared = {number: sorted(names) for number, names in owners.items() if len(names) > 1}
-    if shared:
-        raise VerificationFailure(f"screenshot numbers of more than one feature: {shared}")
-    order = [each.name for each in FEATURES]
-    late = [f"{each.name} needs {need}" for each in FEATURES for need in each.needs if need not in order[: order.index(each.name)]]
-    if late:
-        raise VerificationFailure(f"a feature needs one that does not stand before it in FEATURES: {late}")
 
 
 def _verify(features: tuple[str, ...], performance: list[str], run_dir: Path) -> Path:

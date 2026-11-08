@@ -25,6 +25,7 @@ from drive.common import (
 
 # The chart shows the newest Uruchomienia procesu of the chosen process and mode; older ones are in the history.
 CHART_RUNS = 12
+METRICS_ROUTE = "**/api/metrics"
 # A bar is at most this wide, and narrower when its share of the chart is smaller (like recharts' `maxBarSize`).
 MAX_BAR_PX = 28
 # The smallest phone window: the seven bars of Przygotowanie RUN do not fit side by side at the widest size there.
@@ -84,6 +85,9 @@ def drive(run: Run, page: Page) -> None:
     expect(recent_card).to_contain_text(_other_results(results))
     run.check(True, "Okresy shows the last prepared period, the last Uruchomienie procesu and the recent results")
     run.capture(page, "20-metryki-karty-okresow")
+
+    run.step(feature, "metryki-karty-okresow-bez-odczytu")
+    _drive_cards_unread(run, page, stats, recent["weeks"])
 
     run.step(feature, "metryki-p50-p95")
     page.get_by_role("link", name="Metryki", exact=True).click()
@@ -232,6 +236,22 @@ def drive(run: Run, page: Page) -> None:
     finally:
         for path in moved:
             move(path.with_name(path.name + ".odlozony"), path)
+
+
+def _drive_cards_unread(run: Run, page: Page, stats: Locator, weeks: int) -> None:
+    """Without the metrics the card names no number of weeks: only the server knows it (``recent.weeks``)."""
+
+    page.route(METRICS_ROUTE, lambda route: route.abort())
+    page.reload()
+    recent_card = stats.get_by_role("group", name="Ostatnie tygodnie", exact=True)
+    expect(recent_card).to_contain_text("nie udało się odczytać")
+    expect(stats).not_to_contain_text(re.compile(r"\d+\s*tygodni"))
+    run.check(True, "a failed read of the metrics leaves „Ostatnie tygodnie” without a number and „nie udało się odczytać”")
+    run.capture(page, "2c-metryki-karty-okresow-bez-odczytu")
+    page.unroute(METRICS_ROUTE)
+    page.reload()
+    expect(stats.get_by_role("group", name=f"Ostatnie {weeks} tygodni", exact=True)).to_be_visible()
+    run.check(True, f"the next read of the metrics brings back „Ostatnie {weeks} tygodni”")
 
 
 def _chart_runs(runs: list[dict[str, Any]], process: str, mode: str) -> list[dict[str, Any]]:

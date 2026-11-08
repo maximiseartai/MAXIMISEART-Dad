@@ -39,6 +39,7 @@ The feature `<feature>` of `--feature` lives in `<feature>.md` next to this file
 
 Each feature file starts with an H1 and one paragraph on the behaviour, then exactly these H2s in order:
 `Sub-features` (the case ids of its table), `How to get to it (user POV)`, `Driving it with the GitHub harness`
-(starting with `Preconditions:`), and `Gotchas`. A new feature adds its file here, its name to `FEATURES`, its table
-and its replay in `github_skrzynki.py`, in the same PR. This file lists no features: `tests/test_mapy_funkcji.py`
-matches the feature files with `FEATURES` in both directions.
+(starting with `Preconditions:`), and `Gotchas`. A new feature adds its file here, its table `CASES` and its entry
+`Feature("<feature>", …)` in `FEATURES` of `github_skrzynki.py` (replay, live run, repository and the Doctor's
+baseline), in the same PR. This file lists no features: `tests/test_mapy_funkcji.py` matches the feature files with
+`FEATURES` in both directions.

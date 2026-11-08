@@ -7,6 +7,7 @@ the standard library.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import NamedTuple
 
 
@@ -104,6 +105,7 @@ FEATURES = (
         "metryki",
         (
             "20-metryki-karty-okresow",
+            "2c-metryki-karty-okresow-bez-odczytu",
             "21-metryki-wykres",
             "2a-metryki-wykres-waski",
             "28-metryki-wykres-szczegoly-ciemny",
@@ -449,3 +451,19 @@ DEFAULT_REPEATS = 5
 def feature(name: str) -> Feature:
     [found] = [feature for feature in FEATURES if feature.name == name]
     return found
+
+
+def broken_rules(features: Sequence[Feature]) -> list[str]:
+    """Where ``features`` break the rules of the register: one screenshot number belongs to one feature, because
+    feature files and PR descriptions name screenshots by number alone, and a feature's needs stand before it."""
+
+    owners: dict[str, set[str]] = {}
+    for each in features:
+        for shot in each.screenshots:
+            owners.setdefault(shot.split("-", 1)[0], set()).add(each.name)
+    shared = {number: sorted(names) for number, names in owners.items() if len(names) > 1}
+    order = [each.name for each in features]
+    late = [f"{each.name} needs {need}" for each in features for need in each.needs if need not in order[: order.index(each.name)]]
+    return ([f"screenshot numbers of more than one feature: {shared}"] if shared else []) + (
+        [f"a feature needs one that does not stand before it in FEATURES: {late}"] if late else []
+    )
