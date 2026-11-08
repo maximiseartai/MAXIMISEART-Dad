@@ -127,10 +127,10 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: f
     ``przegladarka``: pliki testów, które potrzebują Chromium; ich jednostki (udziały, węzły) dostają je w zadaniu.
     """
 
-    zmierzone = czasy.pliki(tor.pomiary)
-    domyslny = statistics.median(zmierzone.values()) if zmierzone else DOMYSLNIE.plik_s
+    koszty = czasy.koszty(tor.pomiary)
+    domyslny = koszty.typowy(DOMYSLNIE.plik_s)
     kroki = {jednostka.krok(nazwa): czasy.praca(tor.pomiary, jednostka.krok(nazwa)) or KROKI[nazwa].domyslnie_s for nazwa in tor.kroki}
-    wezly = {jednostka.pytest(wezel): min(zmierzone.get(wezel.partition("::")[0], domyslny), domyslny) / WORKERY for wezel in pliki if "::" in wezel}
+    wezly = {jednostka.pytest(wezel): min(koszty.s(wezel.partition("::")[0], DOMYSLNIE.plik_s), domyslny) / WORKERY for wezel in pliki if "::" in wezel}
     narzut, pytest = jednostka.narzut(tor.szablon), jednostka.krok("pytest")
     zadania = [z for z in czasy.zadania(tor.pomiary) if narzut in z]
     narzuty = [z[narzut] for z in zadania]
@@ -138,7 +138,7 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: f
     starty = [z[pytest] - sum(s for k, s in z.items() if jednostka.rodzaj(k) is Rodzaj.PYTEST) / WORKERY for z in zadania if pytest in z]
     return Wycena(
         tor,
-        {jednostka.pytest(plik): zmierzone.get(plik, domyslny) / WORKERY for plik in pliki if "::" not in plik},
+        {jednostka.pytest(plik): koszty.s(plik, DOMYSLNIE.plik_s) / WORKERY for plik in pliki if "::" not in plik},
         {**wezly, **kroki},
         statistics.median(narzuty) if narzuty else DOMYSLNIE.narzut_s,
         max(0.0, statistics.median(starty)) if starty else DOMYSLNIE.start_s,

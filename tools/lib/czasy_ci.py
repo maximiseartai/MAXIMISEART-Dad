@@ -33,11 +33,14 @@ scal``, artefakt ``czasy-ci``, 30 dni), jedyne źródło czasów CI:
 Obserwacje klucza idą po runie, próbie i zadaniu, więc te same zapisy dają ten sam plik bajt w bajt.
 
 Odczyt. ``z_mainu`` daje ``Czasy`` z artefaktów ``czasy-ci`` ostatnich ``ILE_RUNOW`` zielonych runów ``ci.yml`` na main
-(``gh``, w CI z ``GH_TOKEN``), które trzyma w katalogu: plan CI w świeżym katalogu runu, a ``tools/szybko.py``,
-``tools/plan_ci.py`` i ``tools/scal_pr.py`` w ``katalog_checkoutu``, czyli ``.git/czasy-ci`` wspólnym dla worktree,
-odświeżanym co ``ODSWIEZ_S``. Bez sieci, bez ``gh`` i bez artefaktu
-``Czasy`` są puste, a ``blad`` mówi dlaczego: czytający waży wtedy pracę domyślnie, zamiast padać. Obserwacje
-zadania z kilku prób runu liczą się z ostatniej. Moduł używa tylko biblioteki standardowej, bo plan CI i zapis czasów
+(``gh``, w CI z ``GH_TOKEN``), które trzyma w katalogu: plan CI w świeżym katalogu runu, a ``tools/plan_ci.py`` i
+``lokalne`` w ``katalog_checkoutu``, czyli ``.git/czasy-ci`` wspólnym dla worktree, odświeżanym co ``ODSWIEZ_S``. Bez
+sieci, bez ``gh`` i bez artefaktu ``Czasy`` są puste, a ``blad`` mówi dlaczego: czytający waży wtedy pracę domyślnie,
+zamiast padać. Obserwacje zadania z kilku prób runu liczą się z ostatniej.
+
+Koszt pliku testów (``KosztyPlikow``) to jego zmierzona praca, a pliku bez pomiaru mediana zmierzonych plików toru:
+tak ważą pliki plan CI, ``tools/szybko.py`` i test scalenia ``tools/scal_pr.py``. Dwa ostatnie liczą pracę pytestu
+na Macu agenta (``lokalne``): tor ``TOR_LOKALNY`` i ``WORKERY_LOKALNE`` workerów xdist. Moduł używa tylko biblioteki standardowej, bo plan CI i zapis czasów
 biegną systemowym ``python3`` runnera.
 """
 
@@ -68,6 +71,9 @@ ODSWIEZ_S = 24 * 3600
 # Tor, którego czasy ważą pracę na Macu agenta (Linux jak komputer agenta, nie Windows): budżet ``tools/szybko.py`` i
 # limit testu scalenia ``tools/scal_pr.py``.
 TOR_LOKALNY = "linux-3.14"
+# Workery xdist pytestu na Macu agenta, chyba że ustawiono ``PYTEST_XDIST_AUTO_NUM_WORKERS``: gołe ``-n auto`` bierze
+# wszystkie rdzenie Maca, na którym pracuje naraz kilku agentów.
+WORKERY_LOKALNE = 4
 # Tyle najnowszych artefaktów ``czasy-ci`` przegląda odczyt, szukając ``ILE_RUNOW`` z zielonych runów.
 SZUKANE_ARTEFAKTY = 30
 LIMIT_GH_S = 30.0
@@ -104,6 +110,21 @@ class Obserwacja:
 
 
 @dataclass(frozen=True)
+class KosztyPlikow:
+    """Sekundy pracy plików testów toru: plik zmierzony waży swój pomiar, a plik bez pomiaru medianę zmierzonych."""
+
+    zmierzone: Mapping[str, float]
+
+    def typowy(self, bez_pomiarow: float = 0.0) -> float:
+        """Mediana zmierzonych plików, a bez żadnego pomiaru ``bez_pomiarow``."""
+
+        return statistics.median(self.zmierzone.values()) if self.zmierzone else bez_pomiarow
+
+    def s(self, plik: str, bez_pomiarow: float = 0.0) -> float:
+        return self.zmierzone.get(plik, self.typowy(bez_pomiarow))
+
+
+@dataclass(frozen=True)
 class Czasy:
     """Pomiary ostatnich runów main: tor -> klucz -> obserwacje z ostatniej próby każdego zadania."""
 
@@ -127,6 +148,9 @@ class Czasy:
             for klucz in self.tory.get(tor, {})
             if jednostka.rodzaj(klucz) is Rodzaj.PYTEST and (s := self.praca(tor, klucz)) is not None
         }
+
+    def koszty(self, tor: str) -> KosztyPlikow:
+        return KosztyPlikow(self.pliki(tor))
 
     def zadania(self, tor: str) -> list[dict[str, float]]:
         """Pomiary każdego zadania toru w każdym runie: klucz -> sekundy."""
@@ -225,3 +249,14 @@ def z_mainu(katalog: Path, *, odswiez_po_s: float = 0) -> Czasy:
     if not dokumenty and blad is None:
         blad = f"brak artefaktu {ARTEFAKT} z zielonego runu main"
     return Czasy(runy, tory, blad)
+
+
+def lokalne(root: Path) -> tuple[KosztyPlikow, str | None]:
+    """Koszty plików testów toru ``TOR_LOKALNY`` z czasów main w ``katalog_checkoutu`` checkoutu ``root`` i przyczyna,
+    gdy nie ma żadnego pomiaru (wtedy każdy plik waży 0)."""
+
+    czasy = z_mainu(katalog_checkoutu(root), odswiez_po_s=ODSWIEZ_S)
+    koszty = czasy.koszty(TOR_LOKALNY)
+    if koszty.zmierzone:
+        return koszty, None
+    return koszty, czasy.blad or f"brak plików testów toru {TOR_LOKALNY} w {ARTEFAKT}"
