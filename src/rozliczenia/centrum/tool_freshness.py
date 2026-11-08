@@ -34,6 +34,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from functools import partial
+from http.client import HTTPException
 import json
 from pathlib import Path
 import threading
@@ -486,7 +487,7 @@ class _Asking:
             response = send(request, proxy="direct", timeout_s=self._timeout_s, read_limit=_PAGE_BYTES)
             if 200 <= response.status < 300:
                 return json.loads(response.body), next_page(response)
-        except (OSError, ValueError) as failure:  # brak sieci, zerwane połączenie, nie JSON
+        except (OSError, HTTPException, ValueError) as failure:  # brak sieci, zerwane połączenie, nie JSON
             raise _NoAnswer from failure
         reset = rate_limit_reset(response)  # odmowa GitHuba
         if reset is not None and token is None:

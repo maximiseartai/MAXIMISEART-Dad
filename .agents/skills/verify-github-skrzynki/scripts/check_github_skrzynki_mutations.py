@@ -187,8 +187,8 @@ MUTATIONS = (
         (
             Edit(
                 FRESHNESS,
-                "if response.status == 404:\n            raise _NotFound\n",
-                "if response.status == 404:\n            raise _NoAnswer\n",
+                "raise _NotFound if response.status == 404 else _NoAnswer\n",
+                "raise _NoAnswer\n",
             ),
         ),
         _replay("aktualnosc"),

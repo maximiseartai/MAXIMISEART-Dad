@@ -28,6 +28,7 @@ from rozliczenia.centrum.tool_freshness import (
     GitHubReleases,
     PublishedRelease,
     RateLimited,
+    RememberedRelease,
     ToolFreshness,
     offers_update,
     published_from,
@@ -42,6 +43,8 @@ from tests.fixtures.proxy_systemu import system_proxy
 # Prawdziwe ``github_releases`` z chwili importu: autouse ``bez_githuba`` (``tests/conftest.py``) podmienia je w module.
 GITHUB_RELEASES = tool_freshness.github_releases
 MAIN = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
+TOKEN = "token-wymyslony-w-tescie"
+WITH_TOKEN = f"Bearer {TOKEN}"
 BRANCH = "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e"
 OLDER = "1111111111111111111111111111111111111111"
 NEWEST = "2222222222222222222222222222222222222222"
@@ -278,22 +281,30 @@ def test_najnowsze_wydanie_ze_wszystkich_stron_listy_tagow(github: str) -> None:
     assert releases_from(f"{github}/strony", timeout_s=30) == GitHubReleases(NEWEST, "v1.0.0")
 
 
-def test_aktualnosc_pyta_github_naglowkami_api_rest_z_wersja_api(github: str) -> None:
+@pytest.mark.parametrize("token", [None, TOKEN], ids=["bez-tokenu", "z-tokenem"])
+def test_aktualnosc_pyta_github_naglowkami_api_rest_z_wersja_api(github: str, token: str | None) -> None:
     # Nagłówki z dokumentacji REST API GitHuba: typ odpowiedzi, wersja API i obowiązkowy User-Agent (bez niego 403).
-    expected = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "centrum-rozliczen"}
+    expected = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "centrum-rozliczen",
+        "Authorization": None if token is None else f"Bearer {token}",
+    }
 
-    assert releases_from(f"{github}/tagi", timeout_s=30) == GitHubReleases(NEWEST, "v0.10.0")
-    assert published_from(f"{github}/wydania", timeout_s=30) is not None
+    assert releases_from(f"{github}/tagi", timeout_s=30, token=token) == GitHubReleases(NEWEST, "v0.10.0")
+    assert published_from(f"{github}/wydania", timeout_s=30, token=token) is not None
 
     assert len(_ASKED_HEADERS) >= 2
     assert all({name: headers[name] for name in expected} == expected for headers in _ASKED_HEADERS)
 
 
+@pytest.mark.parametrize("token", [None, TOKEN], ids=["bez-tokenu", "z-tokenem"])
 def test_aktualnosc_laczy_sie_z_githubem_wprost_mimo_proxy_w_ustawieniach_systemu(
-    github: str, monkeypatch: pytest.MonkeyPatch
+    github: str, monkeypatch: pytest.MonkeyPatch, token: str | None
 ) -> None:
     with system_proxy(monkeypatch) as proxied:
-        assert releases_from(f"{github}/tagi", timeout_s=30) == GitHubReleases(NEWEST, "v0.10.0")
+        assert releases_from(f"{github}/tagi", timeout_s=30, token=token) == GitHubReleases(NEWEST, "v0.10.0")
+        assert published_from(f"{github}/wydania", timeout_s=30, token=token) is not None
 
     assert proxied == []
 
@@ -443,9 +454,7 @@ def test_lista_wydan_bez_sieci_to_nie_wiadomo() -> None:
     assert published_from(f"http://127.0.0.1:{port}/wydania", timeout_s=30) is None
 
 
-TOKEN = "token-wymyslony-w-tescie"
 REPOSITORY = "/repos/tata/narzedzie"
-WITH_TOKEN = f"Bearer {TOKEN}"
 
 
 def test_z_tokenem_kazde_pytanie_o_wydania_do_hosta_api_idzie_z_tokenem_a_strona_z_innego_hosta_bez_niego() -> None:
@@ -543,6 +552,58 @@ def test_wyczerpany_limit_konta_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje
 def test_odmowa_bez_wyczerpanego_limitu_albo_bez_chwili_odnowienia_to_brak_odpowiedzi(headers: dict[str, str]) -> None:
     with github_api({f"{REPOSITORY}/tags?per_page=100": Answer(403, {"message": "Forbidden"}, headers)}) as api:
         assert releases_from(f"{api.url}{REPOSITORY}", timeout_s=30) is None
+
+
+def test_odmowa_z_trescia_bez_konca_czytana_do_1_mb_a_pytanie_ponowione_bez_tokenu() -> None:
+    endless = Answer(404, {"message": "Not Found", "padding": "x" * 65_536}, ending="endless")
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=endless) as api:
+        published = published_from(f"{api.url}{REPOSITORY}", timeout_s=5, token=TOKEN)
+
+    assert published is not None
+    assert [asked.authorization for asked in api.asked] == [WITH_TOKEN, None]
+
+
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
+def test_odpowiedz_urwana_w_trakcie_tresci_to_brak_odpowiedzi_a_nie_wyjatek() -> None:
+    """Odmowa listy PR-ów commitu (``commits/<sha>/pulls``) to brak odpowiedzi, po którym decyduje wyszukiwanie
+    binarne; urwana treść tej odmowy też."""
+
+    answers = {
+        f"{REPOSITORY}/tags?per_page=100": Answer(body=[{"name": "v0.2.0", "commit": {"sha": NEWEST}}]),
+        f"{REPOSITORY}/git/ref/heads/main": Answer(body={"object": {"sha": MAIN}}),
+        f"{REPOSITORY}/compare/{NEWEST}...{MAIN}?per_page=1&page=2": Answer(body={"status": "ahead", "ahead_by": 1}),
+        f"{REPOSITORY}/commits/{NEWEST}/pulls": Answer(404, {"message": "Not Found"}, ending="cut"),
+        f"{REPOSITORY}/compare/{NEWEST}...{MAIN}~1?per_page=1&page=2": Answer(body={"status": "identical", "ahead_by": 0}),
+    }
+    with github_api(answers) as api:
+        assert releases_from(f"{api.url}{REPOSITORY}", timeout_s=30) == GitHubReleases(NEWEST, "v0.2.0")
+
+
+@pytest.mark.parametrize(("pages", "complete"), [(10, True), (11, False)], ids=["10-stron", "11-stron"])
+def test_lista_tagow_dluzsza_niz_dziesiec_stron_to_brak_odpowiedzi(pages: int, complete: bool) -> None:
+    answers = newest_on_main(REPOSITORY, "v0.2.0", NEWEST)
+    tags = answers.pop(f"{REPOSITORY}/tags?per_page=100")
+    with github_api({}) as api:
+        paths = [f"{REPOSITORY}/tags?per_page=100"] + [f"{REPOSITORY}/tags?per_page=100&page={n}" for n in range(2, pages + 1)]
+        following = [Answer(body=[], headers={"Link": f'<{api.url}{path}>; rel="next"'}) for path in paths[1:]]
+        api.answers = answers | dict(zip(paths, [*following, tags], strict=True))
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30)
+
+    assert newest == (GitHubReleases(NEWEST, "v0.2.0") if complete else None)
+
+
+def test_odpowiedz_githuba_pamietana_dziesiec_minut_a_brak_odpowiedzi_minute() -> None:
+    now = [0.0]
+    answers: list[GitHubReleases | None] = [GitHubReleases(NEWEST, "v0.2.0"), None, GitHubReleases(OLDER, "v0.1.0")]
+    remembered = RememberedRelease(lambda: answers.pop(0), clock=lambda: now[0])
+
+    readings = []
+    for at in (0.0, 599.9, 600.0, 659.9, 660.0):
+        now[0] = at
+        readings.append(remembered())
+
+    newest, older = GitHubReleases(NEWEST, "v0.2.0"), GitHubReleases(OLDER, "v0.1.0")
+    assert readings == [newest, newest, None, None, older]
 
 
 def _git(root: Path, head: str) -> Path:
