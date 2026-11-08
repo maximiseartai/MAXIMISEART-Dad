@@ -25,6 +25,7 @@ from openpyxl.styles.fills import Fill
 from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import column_index_from_string, get_column_letter
 
+from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
 from rozliczenia.highlights import Highlights
 from rozliczenia.register_columns import TARGET_HEADERS
@@ -142,6 +143,10 @@ def _check_worker_settlement_template(path: Path) -> None:
     TemplateFile.worker_settlement(path).check()
 
 
+def _read_data_rows(path: Path) -> object:
+    return read_data_rows(path, DadFiles())
+
+
 def _worker_settlement(path: Path) -> None:
     target = path.with_name("Rozliczenie - Wykonawca.xlsx")
     try:
@@ -151,7 +156,7 @@ def _worker_settlement(path: Path) -> None:
 
 
 OPENINGS: dict[str, Callable[[Path], object]] = {
-    "odczyt": read_data_rows,
+    "odczyt": _read_data_rows,
     "odczyt-z-formatem": _read_with_format,
     "wzorzec": _check_template,
     "planowanie-wzorca": _plan_template,
@@ -203,7 +208,7 @@ def test_skoroszyt_bez_stylow_daje_sie_przeczytac_bez_formatu(tmp_path: Path) ->
     write_source(path, include_unmapped=False)
     without_styles(path)
 
-    assert [row.number for row in read_data_rows(path).rows] == [18, 19, 20]
+    assert [row.number for row in read_data_rows(path, DadFiles()).rows] == [18, 19, 20]
 
 
 def test_numer_stylu_poza_komorka_i_wierszem_nie_czyni_wzorca_nieczytelnym(tmp_path: Path) -> None:
@@ -317,7 +322,7 @@ def move_worker_header(path: Path, cell: str | None) -> None:
 
 
 HEADER_CHECKS: dict[str, Callable[[Path], object]] = {
-    "odczyt-wierszy-danych": read_data_rows,
+    "odczyt-wierszy-danych": _read_data_rows,
     "wzorzec": _check_template,
     "sprawdzanie-wzorca-rozliczenia-pracownika": _check_worker_settlement_template,
 }
@@ -345,7 +350,7 @@ def test_naglowek_wykonawca_nie_zalezy_od_wielkosci_liter_i_spacji(tmp_path: Pat
     move_worker_header(path, "H17")
 
     _check_template(path)
-    assert len(read_data_rows(path).rows) == 3
+    assert len(read_data_rows(path, DadFiles()).rows) == 3
 
 
 def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_a_at(tmp_path: Path) -> None:
@@ -363,7 +368,7 @@ def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_
         workbook.close()
     before = path.read_bytes()
 
-    rows = read_data_rows(path).rows
+    rows = read_data_rows(path, DadFiles()).rows
 
     assert [(row.number, row.worker) for row in rows] == [
         (18, "adrian.testowy"),
@@ -443,7 +448,7 @@ def test_wiersze_danych_po_pustych_wierszach_maja_wartosci_jak_w_excelu(tmp_path
     SHEET_SHAPES[shape](path)
     zeros = {letter: 0 for letter in ("Q", "R", "S", "T", "U", "V", "X")}
 
-    rows = read_data_rows(path).rows
+    rows = read_data_rows(path, DadFiles()).rows
 
     assert [(row.number, row.worker) for row in rows] == [(18, "adrian.testowy"), (100, "beata.fikcyjna"), (150, None)]
     assert all(len(row.cells) == 46 for row in rows)
@@ -797,7 +802,7 @@ def test_rozliczenie_pracownika_ma_hiperlacza_wierszy_danych_jak_plik_z_wzorca(t
         template_path = linked_template(tmp_path / "Wzorzec.xlsx")
     else:
         template_path = write_synthetic_templates(tmp_path / "wzorce") / WORKER_TEMPLATE
-    rows = read_data_rows(linked_collective_file(tmp_path)).rows
+    rows = read_data_rows(linked_collective_file(tmp_path), DadFiles()).rows
 
     created, expected = _settlement_folders(tmp_path, template_path, rows)
 

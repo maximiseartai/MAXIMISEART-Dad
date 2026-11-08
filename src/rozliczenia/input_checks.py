@@ -10,10 +10,10 @@ Sprawdzanie Przygotowania pliku zbiorczego szuka też Surowych zleceń na dole k
 (``raw_orders.pasted`` na ``intermax_file.Register``) i oddaje je jako fakt, który Przygotowanie tłumaczy na
 Zatrzymanie.
 
-Komórki zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych pracy Centrum
-(``forbidden``, ADR 0025), którą Centrum podaje obok czytników; proces bez Centrum jej nie ma. Wiersz Rejestru bez
-wyglądu uporządkowanego może być przesuniętym pierwszym wierszem wklejenia, więc pamięć zna jego komórki w obu
-położeniach (#918). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (``copy``, #841).
+Rejestr czyta uchwyt plików taty (``dad_files.DadFiles``) ze źródłem bajtów czytników (``Readers.source``). Komórki
+zakazanych kolumn przeczytanych arkuszy Rejestru i Surowych zleceń zna pamięć reguły danych uchwytu (ADR 0025). Wiersz
+Rejestru bez wyglądu uporządkowanego może być przesuniętym pierwszym wierszem wklejenia, więc pamięć zna jego komórki w
+obu położeniach (#918). Wiersze Rejestru z Odczytu danych zna też Kopia wejścia Uruchomienia (#841).
 """
 
 from __future__ import annotations
@@ -21,13 +21,13 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Final
 
 from . import client_data, input_copy, preparation_files, preparation_register, raw_orders, settlement_files, settlement_messages, workbook_files
 from . import worker_config_messages
 from . import preparation_messages as messages
+from .dad_files import DadFiles, ReadFile
 from .intermax_file import Register
 from .message import Message, StopError
 from .period_folder import (
@@ -38,11 +38,11 @@ from .period_folder import (
     locate_period_folder,
 )
 from .preparation_files import PeriodFiles
-from .preparation_register import RegisterRead, RegisterSheet
+from .preparation_register import RegisterSheet
 from .register_columns import TARGET_HEADERS
 from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
-from .workbook_files import Problem, WorkbookError
+from .workbook_files import ByteSource, Problem, WorkbookError
 from .text import normalize_text
 from .workbook_parts import UnsupportedShape
 from .worker_config import WorkerConfigError, load_worker_mapping
@@ -50,20 +50,20 @@ from .worker_config import WorkerConfigError, load_worker_mapping
 
 @dataclass(frozen=True)
 class Readers:
-    """Czytniki Rejestru zleceń i Wzorców; błąd pliku zgłaszają jako ``WorkbookError``.
+    """Czytniki Rejestru zleceń i Wzorców i źródło bajtów plików taty; błąd pliku zgłaszają jako ``WorkbookError``.
 
-    Produkcyjne czytają pliki (``FILE_READERS``), a test i weryfikacja podstawiają czytnik, który się psuje.
-    Ten sam obiekt dostają Uruchomienie procesu i Diagnoza, więc usterka czytnika trafia do obu.
+    Produkcyjne czytają pliki (``FILE_READERS``), a test i weryfikacja podstawiają czytnik, który się psuje, albo
+    źródło bajtów, które się psuje, czeka, liczy odczyty albo zapisuje plik zaraz po odczycie. Ten sam obiekt dostają
+    Uruchomienie procesu i Diagnoza, więc usterka czytnika trafia do obu.
     """
 
-    register: Callable[[Path, SettlementPeriod | None], RegisterRead]
-    """Arkusze ze zleceniami Rejestru z bajtami, z których je przeczytał; z ``period`` tylko wiersze, których data może
-    leżeć w okresie.
-
-    Rejestr, którego nie ma albo który jest otwarty w Excelu, to też ``WorkbookError``.
-    """
+    register: Callable[[ReadFile, SettlementPeriod | None], list[RegisterSheet]]
+    """Arkusze ze zleceniami przeczytanego Rejestru; z ``period`` tylko wiersze, których data może leżeć w okresie."""
     template: Callable[[TemplateFile], None]
     """Sprawdzanie Wzorca: istnieje, nie jest otwarty, daje się odczytać i ma układ swojego pliku."""
+    source: ByteSource = workbook_files.file_bytes
+    """Bajty plików taty, które czyta uchwyt plików taty (``dad_files.DadFiles.source``): Rejestru zleceń, INTERMAX w
+    Diagnozie i na karcie dni i Pliku zbiorczego w Przebiegu rozliczeń i Uzupełnieniu."""
 
 
 FILE_READERS: Final = Readers(register=preparation_register.read_register, template=TemplateFile.check)
@@ -138,59 +138,59 @@ def check_preparation(
 
 
 def read_register(
-    register: Path,
-    period: SettlementPeriod | None,
-    readers: Readers,
-    forbidden: client_data.ForbiddenValues | None = None,
-    copy: input_copy.InputCopy | None = None,
+    register: Path, period: SettlementPeriod | None, readers: Readers, files: DadFiles
 ) -> list[RegisterSheet]:
     """Arkusze ze zleceniami Rejestru zleceń albo zatrzymanie, gdy Rejestru nie da się odczytać albo nie ma nagłówków.
 
-    ``forbidden`` poznaje komórki zakazanych kolumn każdego przeczytanego wiersza w jednym położeniu (ADR 0025):
-    pierwszego wiersza bloku wklejenia z widocznym przesunięciem (``RegisterSheet.shifted_rows``) ``raw_orders.SHIFT``
-    kolumn na lewo od nagłówka, wiersza z siatki (``RegisterSheet.both_rows``) w obu, a każdego innego pod nim (#918).
-    ``copy`` poznaje każdy przeczytany wiersz (``_copied``), wiersze ze śladem przesunięcia i chwilę zmiany Rejestru
-    sprzed jego odczytu.
+    Rejestr czyta uchwyt ``files``. Jego pamięć reguły danych poznaje komórki zakazanych kolumn każdego przeczytanego
+    wiersza w jednym położeniu (ADR 0025): pierwszego wiersza bloku wklejenia z widocznym przesunięciem
+    (``RegisterSheet.shifted_rows``) ``raw_orders.SHIFT`` kolumn na lewo od nagłówka, wiersza z siatki
+    (``RegisterSheet.both_rows``) w obu, a każdego innego pod nim (#918). Jego Kopia wejścia poznaje każdy przeczytany
+    wiersz (``_copied``), wiersze ze śladem przesunięcia i chwilę zmiany Rejestru sprzed jego odczytu.
     """
 
-    modified = input_copy.modified_at(register)
     with _stops(messages.register_unusable):
-        read = readers.register(register, period)
-    if forbidden is not None:
-        for sheet in read.sheets:
-            numbers = {column.target_header: number for column, number in sheet.positions.items()}
-            for row in sheet.register_rows:
-                shifted = sheet.shifted_rows.get(row.number)
-                moved = shifted if shifted is not None else sheet.both_rows.get(row.number)
-                for column, header in _FORBIDDEN_HEADERS:
-                    if shifted is None:
-                        forbidden.remember_value(column, row.cells[header].value)
-                    if moved is not None:
-                        forbidden.remember_value(column, moved.get(numbers[header] - raw_orders.SHIFT))
-    if copy is not None:
-        _copied(register, read, modified, copy)
-    return read.sheets
+        file = files.read(register)
+        sheets = readers.register(file, period)
+    # Pamięć i Kopia Rejestru w Przygotowaniu poza świadkiem arkusza do N5b-1 (jedna reguła położenia, R7).
+    for sheet in sheets:
+        numbers = {column.target_header: number for column, number in sheet.positions.items()}
+        for row in sheet.register_rows:
+            shifted = sheet.shifted_rows.get(row.number)
+            moved = shifted if shifted is not None else sheet.both_rows.get(row.number)
+            for column, header in _FORBIDDEN_HEADERS:
+                if shifted is None:
+                    files.forbidden.remember_value(column, row.cells[header].value)
+                if moved is not None:
+                    files.forbidden.remember_value(column, moved.get(numbers[header] - raw_orders.SHIFT))
+    if files.copy is not None:
+        _copied(file, sheets, files.copy)
+    return sheets
 
 
-def _copied(register: Path, read: RegisterRead, modified: datetime | None, copy: input_copy.InputCopy) -> None:
-    """Odczyt Rejestru w Kopii wejścia: bajty, z których czytnik przeczytał arkusze, z chwilą zmiany ``modified`` sprzed
-    odczytu, komórki każdej kolumny ``COLUMNS`` bez zakazanych (``_FORBIDDEN_HEADERS``) w jej kolumnie arkusza pod
-    nagłówkiem Rejestru (wiersz 1), puste wiersze z odczytanego zakresu i wiersze ze śladem przesunięcia
-    (``RegisterSheet.traced_rows``); bez drugiego odczytu pliku, więc Kopia nie zatrzymuje Przygotowania."""
+def _copied(file: ReadFile, sheets: Sequence[RegisterSheet], copy: input_copy.InputCopy) -> None:
+    """Odczyt Rejestru w Kopii wejścia: bajty, z których czytnik przeczytał arkusze, z chwilą zmiany sprzed odczytu,
+    komórki każdej kolumny ``COLUMNS`` bez zakazanych (``_FORBIDDEN_HEADERS``) w jej kolumnie arkusza pod nagłówkiem
+    Rejestru (wiersz 1), puste wiersze z odczytanego zakresu i wiersze ze śladem przesunięcia
+    (``RegisterSheet.traced_rows``); bez drugiego odczytu pliku, więc Kopia nie zatrzymuje Przygotowania. Kopia
+    Przygotowania ma każdy wiersz pod jego nagłówkami, także wiersz z siatki (do N5b-1, R7)."""
 
-    workbook = copy.workbook(register, read.content, modified)
+    workbook = copy.workbook(file.path, file.content, file.modified_at)
     forbidden = {header for _, header in _FORBIDDEN_HEADERS}
-    for sheet in read.sheets:
+    for sheet in sheets:
         positions = sheet.positions
         copied = workbook.sheet(
             sheet.name,
             1,
             {number: column.register_header for column, number in positions.items()},
             {number for column, number in positions.items() if column.target_header in forbidden},
-            traced_rows=sorted(sheet.traced_rows),
         )
         for row in sheet.register_rows:
-            copied.row(row.number, {number: row.cells[column.target_header].value for column, number in positions.items()})
+            copied.row(
+                row.number,
+                {number: row.cells[column.target_header].value for column, number in positions.items()},
+                raw_orders.RowPositions(traced=row.number in sheet.traced_rows),
+            )
         copied.empty_rows(sheet.empty_rows)
 
 
@@ -207,9 +207,7 @@ class RawOrders:
     last_row: int
 
 
-def raw_orders_in_period(
-    register: Path, period: SettlementPeriod, forbidden: client_data.ForbiddenValues | None = None
-) -> RawOrders | None:
+def raw_orders_in_period(register: Path, period: SettlementPeriod, files: DadFiles) -> RawOrders | None:
     """Surowe zlecenia na dole arkusza zleceń z dniem w ``period`` albo z dniem, którego nie da się ustalić.
 
     Dzień nie daje się ustalić, gdy Surowe zlecenie nie ma daty albo Wykonawcy: wtedy to Uporządkowanie INTERMAX
@@ -218,7 +216,7 @@ def raw_orders_in_period(
     """
 
     with _stops(messages.register_unusable), workbook_files.unreadable_as_error(register):
-        intermax = Register.read(register, forbidden=forbidden)
+        intermax = Register.read(register, files)
         for sheet in intermax.order_sheets:
             try:
                 pasted = raw_orders.pasted(sheet.rows_from_bottom(), sheet.columns)
@@ -240,13 +238,11 @@ def _raw_rows_in_period(
     return (pasted[0].row, pasted[-1].row) if in_period else None
 
 
-def register_problem(
-    register: Path, readers: Readers, forbidden: client_data.ForbiddenValues | None = None
-) -> Message | None:
+def register_problem(register: Path, readers: Readers, files: DadFiles) -> Message | None:
     """Komunikat, którym Przygotowanie zatrzymałoby się na Rejestrze zleceń: otwarty w Excelu, nieczytelny, bez nagłówków."""
 
     try:
-        read_register(register, None, readers, forbidden)
+        read_register(register, None, readers, files)
     except StopError as stop:
         return stop.message
     return None

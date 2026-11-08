@@ -6,7 +6,8 @@ są zwracane pod nagłówkiem docelowym każdej kolumny ``register_columns.COLUM
 stoi przesunięty, a wiersz ze śladem przesunięcia może tak stać, więc arkusz oddaje je też z wartościami całego wiersza
 (``RegisterSheet.shifted_rows``, ``RegisterSheet.both_rows``). Dla okresu
 czytane są tylko wiersze od pierwszego do ostatniego, którego data może leżeć w okresie. ``read_register`` to
-produkcyjny czytnik Rejestru dla ``input_checks.Readers``, który tłumaczy jego ``WorkbookError``.
+produkcyjny czytnik Rejestru dla ``input_checks.Readers``, który czyta arkusze z pliku przeczytanego uchwytem plików
+taty (``dad_files.ReadFile``) i tłumaczy jego ``WorkbookError``.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from openpyxl.utils import get_column_letter
 
@@ -26,6 +28,9 @@ from .register_columns import COLUMNS, DATE, TARGET_HEADERS, WORKER, Column
 from .settlement_period import SettlementPeriod
 from .text import normalize_text
 from .workbook_files import ReadRow, ReadWorkbook, RegisterRow, header_columns, is_blank
+
+if TYPE_CHECKING:
+    from .dad_files import ReadFile
 
 
 @dataclass(frozen=True)
@@ -63,35 +68,25 @@ class RegisterSheet:
         return dict(zip(COLUMNS, self._positions, strict=True))
 
 
-@dataclass(frozen=True)
-class RegisterRead:
-    """Odczyt Rejestru zleceń: arkusze ze zleceniami i bajty pliku, z których czytnik je przeczytał (odcisk w Kopii
-    wejścia, ``input_copy``)."""
-
-    sheets: list[RegisterSheet]
-    content: bytes = field(repr=False)
-
-
 def cell_value(row: RegisterRow, column: Column) -> object:
     """Wartość komórki Rejestru pod nagłówkiem ``column`` w wierszu ``row``."""
 
     return row.cells[column.target_header].value
 
 
-def read_register(register_path: Path, period: SettlementPeriod | None = None) -> RegisterRead:
-    """Arkusze ze zleceniami z bajtami Rejestru, z których je przeczytał; ``WorkbookError``, gdy Rejestru nie da się
-    odczytać, i zatrzymanie, gdy nie ma nagłówków.
+def read_register(file: ReadFile, period: SettlementPeriod | None = None) -> list[RegisterSheet]:
+    """Arkusze ze zleceniami przeczytanego Rejestru ``file``; ``WorkbookError``, gdy Rejestru nie da się odczytać, i
+    zatrzymanie, gdy nie ma nagłówków.
 
     Z ``period`` arkusz ma tylko wiersze od pierwszego do ostatniego, którego data
     może leżeć w okresie: Planowanie szuka zleceń okresu i wierszy bez daty tylko
     między pierwszym a ostatnim zleceniem okresu. Bez ``period`` ma wszystkie wiersze.
     """
 
-    content = workbook_files.workbook_content(register_path)
     if period is None:
-        with workbook_files.read_workbook(register_path, content) as workbook:
-            return RegisterRead(_read_register_sheets(workbook, _order_sheet_positions(register_path, workbook)), content)
-    return RegisterRead(list(_period_sheets(register_path, content, period)), content)
+        with workbook_files.read_workbook(file.path, file.content) as workbook:
+            return _read_register_sheets(workbook, _order_sheet_positions(file.path, workbook))
+    return list(_period_sheets(file.path, file.content, period))
 
 
 # Centrum robi Podgląd, a potem RUN tego samego okresu w jednym procesie. Arkusze okresu zależą tylko od bajtów

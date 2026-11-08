@@ -29,6 +29,7 @@ from openpyxl.utils.cell import get_column_letter
 from . import raw_orders, workbook_files
 from . import intermax_messages as messages
 from .client_data import ForbiddenValues
+from .dad_files import DadFiles
 from .domain import ProgressObserver, ProgressPhase
 from .input_copy import InputCopy
 from .intermax_file import OrderSheet, Register
@@ -107,6 +108,7 @@ def order_register(
 
     phases = PhaseRunner(observer, clock=clock)
     register_path = register_path.expanduser().resolve()
+    files = DadFiles.adapted(forbidden, copy)
 
     def check() -> None:
         try:
@@ -118,9 +120,11 @@ def order_register(
 
     def read() -> Register:
         try:
-            register = Register.read(register_path, forbidden=forbidden, copy=copy)
+            register = Register.read(register_path, files)
         except WorkbookError as error:
             raise StopError(messages.register_unusable(error)) from error
+        if files.copy is not None:
+            register.copy_paste()
         if not register.order_sheets:
             raise StopError(messages.no_order_sheet(register_path))
         return register
@@ -213,15 +217,15 @@ def _obstacle(register: Path, sheet: str, obstacle: Obstacle) -> Message:
             return messages.several_days(register, sheet, days, first_row, last_row)
 
 
-def register_problem(register_path: Path) -> Message | None:
+def register_problem(register_path: Path, files: DadFiles) -> Message | None:
     """Komunikat, którym Sprawdzanie albo Odczyt danych zatrzymałyby Uporządkowanie INTERMAX; ``None``, gdy przechodzą.
 
-    Tylko czyta, więc Diagnoza sprawdza INTERMAX tą samą regułą co proces. ``Register.read`` sprawdza najpierw to
-    samo co Sprawdzanie i daje ten sam Komunikat, więc wystarcza sam.
+    Tylko czyta, uchwytem ``files``, więc Diagnoza sprawdza INTERMAX tą samą regułą co proces. ``Register.read``
+    sprawdza najpierw to samo co Sprawdzanie i daje ten sam Komunikat, więc wystarcza sam.
     """
 
     try:
-        register = Register.read(register_path)
+        register = Register.read(register_path, files)
     except WorkbookError as error:
         return messages.register_unusable(error)
     return None if register.order_sheets else messages.no_order_sheet(register_path)
@@ -235,19 +239,17 @@ class RegisterDay:
     ordered: bool
 
 
-def register_days(
-    register_path: Path, today: date, forbidden: ForbiddenValues | None = None
-) -> tuple[RegisterDay, ...] | Message:
+def register_days(register_path: Path, today: date, files: DadFiles) -> tuple[RegisterDay, ...] | Message:
     """Dzień ``today`` i 6 dni przed nim oraz późniejsze Dni uporządkowane, po kolei, każdy ze stanem.
 
     Tylko czyta, także INTERMAX otwarty w Excelu (jego ostatnią zapisaną wersję). Dzień uporządkowany rozpoznaje ta
     sama reguła co Planowanie przed drugim wklejeniem (``_ordered_days``). Komunikat, gdy INTERMAX nie da się
-    odczytać, ten sam co w Odczycie danych i Planowaniu procesu. Komórki zakazanych kolumn przeczytanych wierszy
-    poznaje ``forbidden``.
+    odczytać, ten sam co w Odczycie danych i Planowaniu procesu. INTERMAX czyta uchwyt ``files``, którego pamięć reguły
+    danych poznaje komórki zakazanych kolumn przeczytanych wierszy.
     """
 
     try:
-        register = Register.read(register_path, despite_excel_lock=True, forbidden=forbidden)
+        register = Register.read(register_path, files, despite_excel_lock=True)
     except WorkbookError as error:
         return messages.register_unusable(error)
     if not register.order_sheets:

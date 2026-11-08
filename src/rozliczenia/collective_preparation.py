@@ -26,6 +26,7 @@ from types import MappingProxyType
 from . import input_checks, preparation_files, preparation_plan
 from . import preparation_messages as messages
 from .client_data import ForbiddenValues
+from .dad_files import DadFiles
 from .input_copy import InputCopy
 from .decision import Conversation, Decision, Declined
 from .domain import ProgressObserver, ProgressPhase
@@ -158,6 +159,7 @@ def prepare_collective_file(
     """
 
     phases = PhaseRunner(observer, clock=clock)
+    dad_files = DadFiles.adapted(forbidden, copy, readers.source)
     register_path = register_path.expanduser().resolve()
     periods_directory = periods_directory.expanduser().resolve()
     config_path = config_path.expanduser().resolve()
@@ -174,14 +176,14 @@ def prepare_collective_file(
             collective_template=collective_template,
             readers=readers,
         )
-        raw = input_checks.raw_orders_in_period(register_path, checked[0].folder.period, forbidden)
+        raw = input_checks.raw_orders_in_period(register_path, checked[0].folder.period, dad_files)
         if raw is not None:
             raise StopError(messages.raw_orders_not_ordered(register_path, raw.sheet, raw.first_row, raw.last_row))
         return checked
 
     files, worker_mapping = phases.check(check)
     folder = files.folder
-    register = phases.read(lambda: input_checks.read_register(register_path, folder.period, readers, forbidden, copy))
+    register = phases.read(lambda: input_checks.read_register(register_path, folder.period, readers, dad_files))
 
     def plan_orders() -> tuple[Plan, CollectiveFilePlan, list[Message]]:
         plan = preparation_plan.plan_period_orders(register_path, register, folder.period, config_path, worker_mapping)

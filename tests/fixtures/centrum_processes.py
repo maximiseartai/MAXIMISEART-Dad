@@ -27,7 +27,10 @@ from rozliczenia.centrum.tool_update import ToolClone, find_git
 from rozliczenia.decision import EngineConversation
 from rozliczenia.domain import ProgressObserver
 from rozliczenia.efenix_pace import Pace
+from rozliczenia.dad_files import ReadFile
 from rozliczenia.input_checks import FILE_READERS, Readers
+from rozliczenia.preparation_register import RegisterSheet
+from rozliczenia.settlement_period import SettlementPeriod
 from rozliczenia.process_run import Finished, Process, ProcessInputs
 
 from tests.fixtures.centrum import (
@@ -219,10 +222,10 @@ class HeldRegister:
     released: threading.Event = field(default_factory=threading.Event)
 
     def readers(self) -> Readers:
-        def register(path: Path, period: Any) -> Any:
+        def register(file: ReadFile, period: SettlementPeriod | None) -> list[RegisterSheet]:
             self.reading.set()
             self.released.wait()
-            return FILE_READERS.register(path, period)
+            return FILE_READERS.register(file, period)
 
         return replace(FILE_READERS, register=register)
 

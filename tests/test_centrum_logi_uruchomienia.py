@@ -58,9 +58,11 @@ from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, WindowAction
 from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.dad_files import DadFiles, ReadFile
 from rozliczenia.input_checks import FILE_READERS, read_register, register_problem
 from rozliczenia.period_folder import PeriodFolderInaccessible
-from rozliczenia.settlement_period import parse_period_token
+from rozliczenia.preparation_register import RegisterSheet
+from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 from rozliczenia.telemetry import MetricsStore
 
 from tests.fixtures.atrapa_efenix import (
@@ -904,7 +906,7 @@ def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_g
     paste_raw_orders(register, [probe, register_order(78, datetime(2026, 9, 10, 12))], first=2)
     memory = ForbiddenValues()
 
-    register_problem(register, FILE_READERS, memory)
+    register_problem(register, FILE_READERS, DadFiles(forbidden=memory))
 
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
 
@@ -946,7 +948,7 @@ def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_
     paste(register)
     memory = ForbiddenValues()
 
-    register_problem(register, FILE_READERS, memory)
+    register_problem(register, FILE_READERS, DadFiles(forbidden=memory))
 
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
 
@@ -963,7 +965,7 @@ def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczyt
     paste_raw_orders(register, [probe], first=len(earlier) + 2, in_place_from="DATA GODZ. POCZ.")
     memory = ForbiddenValues()
 
-    [sheet] = read_register(register, parse_period_token(PERIOD), FILE_READERS, memory)
+    [sheet] = read_register(register, parse_period_token(PERIOD), FILE_READERS, DadFiles(forbidden=memory))
 
     assert sheet.register_rows[0].number == len(earlier) + 2, "odczyt okresu zaczyna się od wiersza próbnego"
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
@@ -3427,10 +3429,10 @@ def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy
 
     content: list[bytes] = []
 
-    def read_then_changed(path: Path, period: Any) -> Any:
-        content.append(path.read_bytes())
-        read = FILE_READERS.register(path, period)
-        after_reading(path)
+    def read_then_changed(file: ReadFile, period: SettlementPeriod | None) -> list[RegisterSheet]:
+        content.append(file.content)
+        read = FILE_READERS.register(file, period)
+        after_reading(file.path)
         return read
 
     readers = replace(FILE_READERS, register=read_then_changed)
@@ -3453,7 +3455,7 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
     """Plik zbiorczy zapisany znowu (Autozapis Excela, OneDrive) zaraz po tym, jak Przebieg rozliczeń albo Wycena w
     efenix przeczytały jego bajty: odcisk w Kopii wejścia ma chwilę zmiany przeczytanej wersji, sprzed odczytu."""
 
-    file_bytes = workbook_files._file_bytes
+    file_bytes = workbook_files.file_bytes
 
     def read_then_saved(path: Path) -> bytes:
         content = file_bytes(path)
@@ -3461,10 +3463,13 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
             _saved_at(path, SAVED_AGAIN_AT)
         return content
 
-    # Jedyny odczyt bajtów skoroszytu w src/ (tests/test_jeden_odczyt_skoroszytu.py).
-    monkeypatch.setattr(workbook_files, "_file_bytes", read_then_saved)
     with ExitStack() as stack:
-        centrum = COPY_PROCESSES[process](tmp_path, stack)
+        if process == "efenix":
+            # Wycena dostaje źródło bajtów czytników (input_checks.Readers.source) dopiero w N1a-1.
+            monkeypatch.setattr(workbook_files, "file_bytes", read_then_saved)
+            centrum = _copy_pricing(tmp_path, stack)
+        else:
+            centrum = settling_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, source=read_then_saved)))
         assert isinstance(centrum, SettlingCentrum)
         _saved_at(centrum.collective_file, READ_AT)
         started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})

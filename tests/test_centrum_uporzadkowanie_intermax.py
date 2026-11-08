@@ -23,6 +23,7 @@ import pytest
 
 from rozliczenia import input_checks, intermax_copies, workbook_files
 from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.run_logs import RunLog
 
@@ -812,7 +813,7 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     centrum = ordering_centrum(tmp_path, Intermax(older_sheet=True, raw=pasted))
     os.utime(centrum.register, (READ_AT.timestamp(), READ_AT.timestamp()))
     content = centrum.register.read_bytes()
-    file_bytes = workbook_files._file_bytes
+    file_bytes = workbook_files.file_bytes
     saved_again: list[bytes] = []
 
     def read_then_saved(path: Path) -> bytes:
@@ -823,8 +824,8 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
             saved_again.append(path.read_bytes())
         return read
 
-    # Jedyny odczyt bajtów skoroszytu w src/ (tests/test_jeden_odczyt_skoroszytu.py).
-    monkeypatch.setattr(workbook_files, "_file_bytes", read_then_saved)
+    # Uporządkowanie dostaje źródło bajtów czytników (input_checks.Readers.source) dopiero w N1a-1.
+    monkeypatch.setattr(workbook_files, "file_bytes", read_then_saved)
 
     view = centrum.run_to_end()
 
@@ -925,6 +926,31 @@ def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadk
     assert (sheet["sheet"], [row["cells"]["M"] for row in sheet["rows"] if "M" in row["cells"]]) == (ORDER_SHEET, ["montaż [adres]"])
     [path] = (tmp_path / "logs" / "uruchomienia").glob("*.json")
     assert ADDRESS_VALUE not in path.read_text(encoding="utf-8")
+
+
+def test_intermax_bez_arkusza_zlecen_zatrzymuje_uporzadkowanie_dla_taty_a_kopia_ma_odcisk_pliku_bez_arkuszy(
+    tmp_path: Path,
+) -> None:
+    """INTERMAX, którego żaden arkusz nie ma w wierszu 1 nagłówków zleceń: Uporządkowanie zatrzymuje się dla taty, a Kopia
+    wejścia ma odcisk pliku, na którym proces się zatrzymał, choć nie ma w niej żadnego arkusza."""
+
+    centrum = ordering_centrum(tmp_path)
+    rewrite_parts(centrum.register, lambda name, data: data.replace(b">AKCJE<", b">AKCJE X<"))
+    content = centrum.register.read_bytes()
+
+    result = _stopped(centrum)["result"]
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == (
+        "for_tata",
+        "W INTERMAX nie ma arkusza zleceń z nagłówkami od AKCJE do UWAGI w wierszu 1. INTERMAX nie został zmieniony.",
+    )
+    [logs] = centrum.run_logs()
+    [copied] = logs["input_copy"]
+    assert (copied["name"], copied["fingerprint"]["sha256"], copied["sheets"]) == (
+        REGISTER_NAME,
+        hashlib.sha256(content).hexdigest(),
+        [],
+    )
 
 
 # --- Położenia wklejonego wiersza (#842, #913) ---------------------------------------------------------------------------
@@ -1401,6 +1427,6 @@ def test_diagnoza_intermax_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpise
     edit(path)
     memory = ForbiddenValues()
 
-    input_checks.register_problem(path, input_checks.FILE_READERS, memory)
+    input_checks.register_problem(path, input_checks.FILE_READERS, DadFiles(forbidden=memory))
 
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []

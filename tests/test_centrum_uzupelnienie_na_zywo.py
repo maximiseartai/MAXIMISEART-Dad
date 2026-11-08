@@ -7,7 +7,7 @@ zegar Centrum testu, nigdy uśpienie.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 import shutil
@@ -19,6 +19,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import workbook_files
 from rozliczenia.centrum.live_file import LastGoodReads
+from rozliczenia.input_checks import FILE_READERS
 from tests.fixtures.centrum import FakeOneDrive
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end
@@ -97,18 +98,16 @@ def _log_lines(centrum: PreparingCentrum) -> list[str]:
     return [line for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if LOG_EVENT in line]
 
 
-def test_sprawdzenie_zapisu_bez_zmian_nie_otwiera_skoroszytu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    centrum = _prepared(tmp_path)
-    shown = _get(centrum, VIEW)["read"]["version"]
+def test_sprawdzenie_zapisu_bez_zmian_nie_otwiera_skoroszytu(tmp_path: Path) -> None:
     opened: list[Path] = []
-    file_bytes = workbook_files._file_bytes
 
     def counted(path: Path) -> bytes:
         opened.append(path)
-        return file_bytes(path)
+        return workbook_files.file_bytes(path)
 
-    # Jedyny odczyt bajtów skoroszytu w src/ (tests/test_jeden_odczyt_skoroszytu.py).
-    monkeypatch.setattr(workbook_files, "_file_bytes", counted)
+    centrum = _prepared(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, source=counted)))
+    shown = _get(centrum, VIEW)["read"]["version"]
+    opened.clear()
 
     answers = [_get(centrum, VERSION)["version"] for _ in range(3)]
 

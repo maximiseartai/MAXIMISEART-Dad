@@ -13,6 +13,7 @@ from pathlib import Path
 from openpyxl.utils import get_column_letter
 import pytest
 
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.order_facts import NON_NUMERIC, MissingHeaders, OrderFacts, collective_orders, tata_value
 from rozliczenia.quantity_rules import OrderContent, WeekTime
 from rozliczenia.collective_file import read_data_rows
@@ -156,7 +157,7 @@ def test_wiersz_danych_bez_wykonawcy_tez_przechodzi_przez_filtr(tmp_path: Path) 
     path = tmp_path / "Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"
     write_quantity_source(path, [{"V": 1}, {"H": None, "V": 2}])
 
-    read = read_data_rows(path)
+    read = read_data_rows(path, DadFiles())
 
     assert read.without_worker == [19]
     assert isinstance(read.orders, tuple)

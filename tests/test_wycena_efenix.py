@@ -50,6 +50,7 @@ from playwright.sync_api import Browser, Error as PlaywrightError, Page, Request
 from playwright.sync_api import Response as PlaywrightResponse
 import pytest
 
+from rozliczenia.dad_files import DadFiles
 from rozliczenia import efenix_browser, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
@@ -1968,7 +1969,7 @@ def _address_fills(source: Path) -> dict[int, str | None]:
     """RGB jednolitego wypełnienia ``ADRES`` każdego Wiersza danych tak, jak czyta je Przebieg rozliczeń (``None``: bez)."""
 
     fills: dict[int, str | None] = {}
-    for row in read_data_rows(source, despite_excel_lock=True).rows:
+    for row in read_data_rows(source, DadFiles(), despite_excel_lock=True).rows:
         fill = row.cells[1].highlights.fill
         solid = isinstance(fill, PatternFill) and fill.patternType == "solid"
         fills[row.number] = str(fill.fgColor.rgb)[-6:].upper() if solid and isinstance(fill, PatternFill) else None
@@ -1997,7 +1998,7 @@ def _address_looks(source: Path) -> dict[int, tuple[Font, Border, Protection, Al
 def _amounts(source: Path) -> dict[int, object]:
     """``Kwota`` (AU) każdego Wiersza danych tak, jak policzył ją Excel."""
 
-    return {row.number: row.value("AU") for row in read_computed_rows(source).rows}
+    return {row.number: row.value("AU") for row in read_computed_rows(source, DadFiles()).rows}
 
 
 def _without_address_styles(xml: bytes, rows: Sequence[int]) -> bytes:

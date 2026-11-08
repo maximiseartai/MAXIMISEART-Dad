@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import zipfile
 import zlib
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
@@ -30,7 +30,7 @@ from io import BytesIO
 from pathlib import Path
 import stat
 from types import MappingProxyType
-from typing import IO, Final, NamedTuple, Never, TypeVar, cast
+from typing import IO, TYPE_CHECKING, Final, NamedTuple, Never, TypeAlias, TypeVar, cast
 from xml.etree.ElementTree import ParseError
 from xml.parsers.expat import ExpatError
 
@@ -56,13 +56,15 @@ from .collective_layout import (
     QUANTITY_COLUMNS,
     WORKER_COLUMN,
 )
-from .input_copy import InputCopy, SheetCopy, modified_at
 from .highlights import Highlights
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .quantity_rules import QuantityColumn
 from .row_look import GENERAL
 from .workbook_parts import rows_dated_between, rows_with_input
 from .text import normalize_text
+
+if TYPE_CHECKING:
+    from .dad_files import DadFiles
 
 
 # Błędy openpyxl przy pliku, który nie jest poprawnym skoroszytem .xlsx: przy otwieraniu, a w trybie
@@ -281,13 +283,19 @@ def unreadable_as_error(path: Path) -> Iterator[None]:
         raise WorkbookError(path, Problem.UNREADABLE) from exc
 
 
-def _file_bytes(path: Path) -> bytes:
-    """Bajty skoroszytu z dysku; błąd systemu plików to ``Problem.INACCESSIBLE``, nie uszkodzenie."""
+def file_bytes(path: Path) -> bytes:
+    """Bajty skoroszytu z dysku; błąd systemu plików to ``Problem.INACCESSIBLE``, nie uszkodzenie. Jedyny odczyt bajtów
+    skoroszytu z dysku w ``src`` (``tests/test_jeden_odczyt_skoroszytu.py``)."""
 
     try:
         return path.read_bytes()
     except OSError as exc:
         raise WorkbookError(path, Problem.INACCESSIBLE) from exc
+
+
+ByteSource: TypeAlias = Callable[[Path], bytes]
+"""Źródło bajtów skoroszytu (``dad_files.DadFiles.source``): produkcyjne to ``file_bytes``, a test podstawia źródło,
+które się psuje, liczy odczyty albo zapisuje plik zaraz po odczycie (``input_checks.Readers.source``)."""
 
 
 def classified(path: Path, items: Iterator[_T]) -> Iterator[_T]:
@@ -303,7 +311,7 @@ def classified(path: Path, items: Iterator[_T]) -> Iterator[_T]:
 
 
 def _open(path: Path, source: IO[bytes], *, read_only: bool, computed: bool = False) -> Workbook:
-    """Skoroszyt ``path`` otwarty przez openpyxl z jego bajtów (``_file_bytes``) z klasyfikacją uszkodzeń.
+    """Skoroszyt ``path`` otwarty przez openpyxl z jego bajtów (``file_bytes``) z klasyfikacją uszkodzeń.
 
     ``computed`` (tylko do odczytu): komórka z formułą ma wartość, którą Excel policzył przy ostatnim zapisie, a bez niej
     ``None``.
@@ -362,21 +370,6 @@ def _forbidden_columns(header: Sequence[object]) -> tuple[tuple[client_data.Forb
     return tuple(dict.fromkeys((*FORBIDDEN_POSITIONS, *by_header)))
 
 
-def _copied(
-    copy: InputCopy,
-    path: Path,
-    content: bytes,
-    modified: datetime | None,
-    title: str,
-    header: Sequence[object],
-    forbidden: Sequence[tuple[client_data.ForbiddenColumn, int]],
-) -> SheetCopy:
-    """Arkusz Pliku zbiorczego w Kopii wejścia: bajty ``content`` z chwilą zmiany ``modified`` sprzed ich odczytu,
-    nagłówki z wiersza 17, bez zakazanych kolumn."""
-
-    return copy.workbook(path, content, modified).sheet(title, HEADER_ROW, header, {column for _, column in forbidden})
-
-
 @dataclass(frozen=True)
 class DataRows:
     """Wiersze danych Pliku zbiorczego i nagłówki A17:K17 z tego samego odczytu.
@@ -392,21 +385,15 @@ class DataRows:
     pusta komórka to ``""``."""
 
 
-def read_data_rows(
-    path: Path,
-    *,
-    despite_excel_lock: bool = False,
-    forbidden: client_data.ForbiddenValues | None = None,
-    copy: InputCopy | None = None,
-) -> DataRows:
+def read_data_rows(path: Path, files: DadFiles, *, despite_excel_lock: bool = False) -> DataRows:
     """Wiersze danych Pliku zbiorczego z Wyróżnieniami i Hiperłączami komórek w kolejności z pliku; plik jest tylko czytany.
 
     Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany. Brak
     nagłówka WYKONAWCA w H17 to ``WorkbookError`` ze złym układem. Plik otwarty w Excelu to
     ``WorkbookError``, chyba że wywołujący jawnie pozwala go czytać (``despite_excel_lock``, ADR 0016).
-    Komórki zakazanych kolumn (``_forbidden_columns``) każdego Wiersza danych zna ``forbidden`` (reguła danych, ADR 0025),
-    a bajty pliku, nagłówki A17:AP17 i wartości A:AT każdego Wiersza danych bez tych kolumn Kopia wejścia Uruchomienia
-    ``copy``.
+    Plik czyta uchwyt ``files``, a każdy Wiersz danych przechodzi przez świadka arkusza (``dad_files.WitnessedSheet``):
+    komórki zakazanych kolumn (``_forbidden_columns``) zna pamięć reguły danych (ADR 0025), a bajty pliku, nagłówki
+    A17:AP17 i wartości A:AT bez tych kolumn Kopia wejścia Uruchomienia.
 
     openpyxl czyta tylko wiersze, które mogą mieć wartości w A:K
     (``workbook_parts.rows_with_input``), a nie każdy z ~10 tys. sformatowanych wierszy Pliku
@@ -414,11 +401,9 @@ def read_data_rows(
     całego arkusza.
     """
 
-    ensure_available(path, despite_excel_lock=despite_excel_lock)
-    modified = modified_at(path)
-    original = _file_bytes(path)
+    file = files.read(path, despite_excel_lock=despite_excel_lock)
     with unreadable_as_error(path):
-        content = rows_with_input(original, INPUT_COLUMNS[-1])
+        content = rows_with_input(file.content, INPUT_COLUMNS[-1])
     workbook = _open(path, BytesIO(content), read_only=True)
     try:
         sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
@@ -429,8 +414,7 @@ def read_data_rows(
             ),
             (),
         )
-        remembered_columns = _forbidden_columns(header)
-        copied = None if copy is None else _copied(copy, path, original, modified, sheet.title, header, remembered_columns)
+        witness = file.sheet(sheet.title, HEADER_ROW, header, _forbidden_columns(header))
         header, price_list = header[: INPUT_COLUMNS[-1]], header[QUANTITY_COLUMNS[0] - 1 :]
         check_worker_header(path, sheet.title, header)
         with unreadable_as_error(path):
@@ -446,10 +430,7 @@ def read_data_rows(
             values = tuple(cell.value for cell in row_cells)
             if all(value is None for value in values[: INPUT_COLUMNS[-1]]):
                 continue
-            if forbidden is not None:
-                forbidden.remember(remembered_columns, values)
-            if copied is not None:
-                copied.row(number, values)
+            witness.row(number, values)
             row_links = links.row(number, values)
             with unreadable_as_error(path):
                 rows.append(
@@ -505,24 +486,20 @@ class ComputedRows:
     content: bytes
 
 
-def read_computed_rows(
-    path: Path, *, forbidden: client_data.ForbiddenValues | None = None, copy: InputCopy | None = None
-) -> ComputedRows:
+def read_computed_rows(path: Path, files: DadFiles) -> ComputedRows:
     """Wiersze danych Pliku zbiorczego (A:AU) z wartościami, które policzył Excel, w kolejności z pliku; plik jest tylko
     czytany.
 
     Wiersz bez wartości w A:K nie jest Wierszem danych i jest pomijany, a brak nagłówka WYKONAWCA w H17 to
     ``WorkbookError`` ze złym układem, tak jak w ``read_data_rows``. Plik otwarty w Excelu to ``WorkbookError``.
-    Komórki zakazanych kolumn (``_forbidden_columns``) każdego Wiersza danych zna ``forbidden`` (reguła danych, ADR 0025),
-    a bajty pliku, nagłówki A17:K17 i wartości A:AU każdego Wiersza danych bez tych kolumn Kopia wejścia Uruchomienia
-    ``copy``.
+    Plik czyta uchwyt ``files``, a każdy Wiersz danych przechodzi przez świadka arkusza: komórki zakazanych kolumn
+    (``_forbidden_columns``) zna pamięć reguły danych (ADR 0025), a bajty pliku, nagłówki A17:K17 i wartości A:AU bez
+    tych kolumn Kopia wejścia Uruchomienia.
     """
 
-    ensure_available(path)
-    modified = modified_at(path)
-    original = _file_bytes(path)
+    file = files.read(path)
     with unreadable_as_error(path):
-        content = rows_with_input(original, INPUT_COLUMNS[-1])
+        content = rows_with_input(file.content, INPUT_COLUMNS[-1])
     workbook = _open(path, BytesIO(content), read_only=True, computed=True)
     try:
         sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
@@ -539,17 +516,12 @@ def read_computed_rows(
             )
             if any(value is not None for value in values[: INPUT_COLUMNS[-1]])
         ]
-        remembered_columns = _forbidden_columns(header)
-        if forbidden is not None:
-            for row in rows:
-                forbidden.remember(remembered_columns, row.values)
-        if copy is not None:
-            copied = _copied(copy, path, original, modified, sheet.title, header, remembered_columns)
-            for row in rows:
-                copied.row(row.number, row.values)
+        witness = file.sheet(sheet.title, HEADER_ROW, header, _forbidden_columns(header))
+        for row in rows:
+            witness.row(row.number, row.values)
     finally:
         workbook.close()
-    return ComputedRows(header_columns(header), rows, original)
+    return ComputedRows(header_columns(header), rows, file.content)
 
 
 Face = tuple[str | None, float | None]
@@ -685,14 +657,7 @@ def workbook_content(path: Path) -> bytes:
     """Bajty skoroszytu, który jest na dysku i nie jest otwarty w Excelu; inaczej ``WorkbookError``."""
 
     ensure_available(path)
-    return _file_bytes(path)
-
-
-def saved_workbook_content(path: Path) -> bytes:
-    """Bajty skoroszytu jak ``workbook_content``, także gdy trzyma go Excel: jego ostatnia zapisana wersja (ADR 0016)."""
-
-    ensure_available(path, despite_excel_lock=True)
-    return _file_bytes(path)
+    return file_bytes(path)
 
 
 def template_content(path: Path) -> bytes:
@@ -701,7 +666,7 @@ def template_content(path: Path) -> bytes:
     ensure_available(path)
     if path.suffix.lower() not in _WORKBOOK_SUFFIXES:
         raise WorkbookError(path, Problem.UNREADABLE)
-    return _file_bytes(path)
+    return file_bytes(path)
 
 
 @contextmanager

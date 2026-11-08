@@ -19,7 +19,8 @@ Pamięć reguły danych zna każdy wiersz w jednym położeniu (decyzja Maksa z 
 wklejenia (``first_in_block``) przesunięty o ``SHIFT`` kolumn w lewo, bo tak przychodzi z aplikacji firmowej zawsze (fakt
 domeny: przesunięty jest tylko pierwszy wklejony wiersz), a każdy inny pod nagłówkiem. Siatka (``both_positions``) daje
 oba położenia pierwszemu wierszowi bloku, którego przesunięcia nie widać (``shift_visible``), i innemu wierszowi ze
-śladem przesunięcia, a o tym drugim (``Shifts.traced``) Logi mówią, że fakt jest złamany.
+śladem przesunięcia, a o tym drugim (``RowPositions.traced``) Logi mówią, że fakt jest złamany. Położenia wiersza
+daje jedna reguła (``row_positions``).
 
 Przeszkody: wiersz z wyglądem z aplikacji nad uporządkowanym wierszem, Surowe zlecenie bez daty z godziną albo bez
 Wykonawcy i blok z więcej niż jednego dnia. Pierwsza wymaga przeglądu nad blokiem (``_above``): od ostatniego
@@ -357,14 +358,50 @@ def above_paste(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> 
 
 
 @dataclass(frozen=True)
+class RowPositions:
+    """Położenia wiersza arkusza zleceń (ADR 0025 „Położenie wiersza”) z jednej reguły (``row_positions``).
+
+    ``read``: o tyle kolumn na lewo od swojego nagłówka proces czyta komórki wiersza (``SHIFT`` w przesuniętym pierwszym
+    wierszu bloku Surowych zleceń, inaczej 0). ``known``: przesunięcia, przy których pamięć reguły danych zna jego
+    zakazane komórki, a Kopia wejścia ma tylko komórki dozwolone przy każdym z nich. ``traced``: wiersz, który nie jest
+    pierwszym wierszem bloku wklejenia, ma ślad przesunięcia, więc Logi mówią, że fakt domeny jest złamany.
+    """
+
+    read: int = 0
+    known: tuple[int, ...] = (0,)
+    traced: bool = False
+
+    @property
+    def uncertain(self) -> bool:
+        """Wiersz z siatki: pamięć zna go w obu położeniach (``both_positions``)."""
+
+        return len(self.known) > 1
+
+
+UNDER_HEADER: Final = RowPositions()
+"""Wiersz pod swoimi nagłówkami: każdy wiersz Pliku zbiorczego i Rejestru w Przygotowaniu."""
+
+
+def row_positions(*, first: bool, left_of_date: object, date: object, read: int = 0) -> RowPositions:
+    """Jedyna reguła położenia wiersza arkusza zleceń: wiersz z siatki (``both_positions``) pamięć zna w obu położeniach,
+    pierwszy wiersz bloku wklejenia (``first``) tylko przesunięty o ``SHIFT``, każdy inny tylko pod nagłówkiem.
+    ``left_of_date``: wartość ``SHIFT`` kolumn na lewo od ``DATA GODZ. POCZ.``, ``date``: wartość pod nią, ``read``:
+    przesunięcie, z którym proces czyta wiersz (``RowPositions.read``)."""
+
+    if both_positions(first=first, left_of_date=left_of_date, date=date):
+        known: tuple[int, ...] = (0, SHIFT)
+    else:
+        known = (SHIFT,) if first else (0,)
+    return RowPositions(read, known, not first and shift_traced(left_of_date))
+
+
+@dataclass(frozen=True)
 class Shifts:
-    """O ile kolumn na lewo od swojego nagłówka stoją w pliku komórki wierszy arkusza zleceń (``shifts``).
+    """Przesunięcia wierszy arkusza zleceń z rozpoznania bloku (``shifts``).
 
     ``shifted_row``: pierwszy wiersz bloku Surowych zleceń, który rozpoznanie czyta przesunięty o ``SHIFT`` kolumn w
     lewo, bo pod ``DATA GODZ. POCZ.`` nie ma daty z godziną; ``None``: bez niego. ``first_row``: pierwszy wiersz bloku
-    Surowych zleceń (``None``: bez bloku), w nim pierwszy wiersz bloku wklejenia z ``first_in_block``. Pamięć reguły
-    danych zna wiersz w położeniach ``known``: pierwszy wiersz bloku wklejenia tylko przesunięty, każdy inny tylko pod
-    nagłówkiem, a wiersz z siatki (``both``) w obu położeniach.
+    Surowych zleceń (``None``: bez bloku), w nim pierwszy wiersz bloku wklejenia z ``first_in_block``.
     """
 
     shifted_row: int | None
@@ -376,25 +413,17 @@ class Shifts:
 
         return SHIFT if row == self.shifted_row else 0
 
-    def known(self, row: RowFacts, first: bool) -> tuple[int, ...]:
-        """Przesunięcia, przy których pamięć reguły danych zna ``ADRES`` i ``NUMER UMOWY`` wiersza; ``first``: wiersz jest
-        pierwszym wierszem swojego bloku wklejenia (``first_in_block``)."""
-
-        if self.both(row, first):
-            return (0, SHIFT)
-        return (SHIFT,) if first else (0,)
-
-    def both(self, row: RowFacts, first: bool) -> bool:
-        """Czy pamięć zna wiersz w obu położeniach (``both_positions``)."""
+    def positions(self, row: RowFacts, first: bool) -> RowPositions:
+        """Położenia wiersza ``row`` (``row_positions``); ``first``: wiersz jest pierwszym wierszem swojego bloku wklejenia
+        (``first_in_block``)."""
 
         columns = self.columns
-        return both_positions(first=first, left_of_date=row.value(columns.date - SHIFT), date=row.value(columns.date))
-
-    def traced(self, row: RowFacts, first: bool) -> bool:
-        """Czy wiersz, który nie jest pierwszym wierszem bloku wklejenia, ma ślad przesunięcia (``shift_traced``), więc
-        Logi mają o nim uwagę, że fakt domeny jest złamany."""
-
-        return not first and shift_traced(row.value(self.columns.date - SHIFT))
+        return row_positions(
+            first=first,
+            left_of_date=row.value(columns.date - SHIFT),
+            date=row.value(columns.date),
+            read=self.read(row.number),
+        )
 
 
 def shift_traced(left_of_date: object) -> bool:
@@ -422,7 +451,7 @@ def both_positions(*, first: bool, left_of_date: object, date: object) -> bool:
     bo sam kształt treści nie mówi, gdzie wiersz stoi. Tak wygląda wiersz, który uchodzi za pierwszy, bo tata wpisał coś
     w Calibri 8 w wiersz nad nim (przegląd #984 r1 i r2); granica bloku zostaje z kroju, bo reguła wyglądu z większości
     komórek przestawia u taty granice dziesiątek bloków. Inny wiersz pamięć zna w obu, gdy ma ślad przesunięcia
-    (``shift_traced``), czyli widocznie łamie fakt domeny; tylko o nim Logi mają uwagę (``Shifts.traced``).
+    (``shift_traced``), czyli widocznie łamie fakt domeny; tylko o nim Logi mają uwagę (``RowPositions.traced``).
     """
 
     if first:

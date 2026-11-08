@@ -8,6 +8,7 @@ pilnuje:
   - src/rozliczenia/centrum/contract.py
   - src/rozliczenia/centrum/run_view.py
   - src/rozliczenia/collective_*.py
+  - src/rozliczenia/dad_files.py
   - src/rozliczenia/decision.py
   - src/rozliczenia/domain.py
   - src/rozliczenia/efenix_*.py
