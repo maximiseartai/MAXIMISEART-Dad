@@ -63,7 +63,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from . import client_data, raw_orders, workbook_files
 from .dad_files import DadFiles, ReadFile, SheetMemory
-from .highlights import Face, LookReader
+from .highlights import LookReader
 from .hyperlinks import read_sheet_hyperlinks
 from .raw_orders import SHIFT, CellFacts, OrderColumns, RowFacts, RowLook, RowPositions
 from .register_columns import ACTIVITIES, COLUMNS, CONTRACT_NUMBER, DATE, DAY_FILL, DEVICES, TARGET_HEADERS, WORKER, Column
@@ -218,6 +218,15 @@ class OrderSheet:
     header: tuple[object, ...] = field(repr=False)
     paste: PasteArea | None
 
+    @property
+    def look_columns(self) -> frozenset[int]:
+        """Kolumny, z których krój wiersza mówi, czy jest uporządkowany: ``OrderColumns.look_columns`` obszaru
+        wklejania, a w starszym układzie kolumny ``COLUMNS`` bez ``WYKONAWCA``."""
+
+        if self.paste is not None:
+            return self.paste.columns.look_columns
+        return frozenset(self.positions.values()) - {self.positions[WORKER]}
+
 
 @dataclass(frozen=True, eq=False)
 class OrderSheets:
@@ -248,7 +257,10 @@ class OrderSheets:
         """
 
         file = self._file
-        sheets = tuple((sheet.name, tuple(sheet.positions[column] for column in COLUMNS)) for sheet in self.sheets)
+        sheets = tuple(
+            (sheet.name, tuple(sheet.positions[column] for column in COLUMNS), tuple(sorted(sheet.look_columns)))
+            for sheet in self.sheets
+        )
         if period is None:
             windows = _windows(file.path, file.content, sheets, {})
         else:
@@ -507,17 +519,17 @@ class RegisterSheet:
         return dict(zip(COLUMNS, self._positions, strict=True))
 
 
-_SheetsKey = tuple[tuple[str, tuple[int, ...]], ...]
-"""Arkusze zleceń: nazwa i numery kolumn ``COLUMNS`` (od 1)."""
+_SheetsKey = tuple[tuple[str, tuple[int, ...], tuple[int, ...]], ...]
+"""Arkusze zleceń: nazwa, numery kolumn ``COLUMNS`` (od 1) i kolumny wyglądu (``OrderSheet.look_columns``)."""
 
 
 class _ReadRow(NamedTuple):
-    """Wiersz okna: wartości całego wiersza od A, wiersz z komórkami pod nagłówkiem docelowym i krój czcionki każdej z
-    tych komórek po nagłówku docelowym."""
+    """Wiersz okna: wartości całego wiersza od A, wiersz z komórkami pod nagłówkiem docelowym i czy ma wygląd
+    uporządkowany."""
 
     values: tuple[object, ...]
     row: RegisterRow
-    faces: Mapping[str, Face]
+    ordered: bool
 
 
 @dataclass(frozen=True)
@@ -548,7 +560,7 @@ def _period_read(
     # zaokrągla część dnia do milisekund. Wiersz zakresu z datą spoza przedziału czytający i tak pomija.
     day = timedelta(days=1)
     low, high = ((moment - epoch) / day for moment in (period.start - day, period.end + day))
-    dates = {name: columns[COLUMNS.index(DATE)] for name, columns in sheets}
+    dates = {name: columns[COLUMNS.index(DATE)] for name, columns, _ in sheets}
     with workbook_files.unreadable_as_error(path):
         narrowed, ranges = rows_dated_between(content, dates, low, high)
     return _windows(path, narrowed, sheets, ranges)
@@ -560,18 +572,21 @@ def _windows(path: Path, content: bytes, sheets: _SheetsKey, ranges: Mapping[str
 
     with workbook_files.open_workbook(path, content, read_only=True) as workbook:
         windows = []
-        for name, columns in sheets:
+        for name, columns, look_columns in sheets:
             with workbook_files.unreadable_as_error(path):
                 sheet = cast(Worksheet, workbook[name])
-            read = list(workbook_files.classified(path, _read_rows(content, sheet, columns, ranges.get(name))))
+            read = list(workbook_files.classified(path, _read_rows(content, sheet, columns, look_columns, ranges.get(name))))
             windows.append(_window(name, columns, read))
         return tuple(windows)
 
 
-def _read_rows(content: bytes, sheet: Worksheet, columns: Sequence[int], rows: range | None) -> Iterator[_ReadRow]:
+def _read_rows(
+    content: bytes, sheet: Worksheet, columns: Sequence[int], look_columns: Sequence[int], rows: range | None
+) -> Iterator[_ReadRow]:
     """Wiersze arkusza od 2 (w zakresie ``rows``, gdy jest): komórki ``COLUMNS`` z wartością, Wyróżnieniami tej samej
     reguły co w Pliku zbiorczym (``highlights.LookReader``), formatem liczby (ogólnym dla brakującej komórki) i
-    Hiperłączem."""
+    Hiperłączem, a wiersz z tym, czy jest uporządkowany (``raw_orders.ordered_look`` na komórkach z wartością w
+    ``look_columns``)."""
 
     min_row, max_row = 2, None
     if rows is not None:
@@ -585,14 +600,14 @@ def _read_rows(content: bytes, sheet: Worksheet, columns: Sequence[int], rows: r
         values = tuple(getattr(cell, "value", None) for cell in cells)
         row_links = links.row(number, values)
         picked = {header: cells[column - 1] if column <= len(cells) else None for header, column in targets.items()}
-        looks = {header: highlights.look(cell) for header, cell in picked.items()}
+        looks = {header: highlights.of(cell) for header, cell in picked.items()}
         row = RegisterRow(
             number,
             MappingProxyType(
                 {
                     header: DataCell(
                         getattr(cell, "value", None),
-                        looks[header][0],
+                        looks[header],
                         getattr(cell, "number_format", None) or GENERAL,
                         row_links.get(targets[header]),
                     )
@@ -600,11 +615,16 @@ def _read_rows(content: bytes, sheet: Worksheet, columns: Sequence[int], rows: r
                 }
             ),
         )
-        yield _ReadRow(values, row, {header: face for header, (_, face) in looks.items()})
+        faces = (
+            highlights.look(cells[column - 1])[1]
+            for column in look_columns
+            if column <= len(cells) and not is_blank(values[column - 1])
+        )
+        yield _ReadRow(values, row, raw_orders.ordered_look(faces))
 
 
 def _window(name: str, columns: Sequence[int], read: Sequence[_ReadRow]) -> _Window:
-    looks = {found.row.number: _period_look(found) for found in read}
+    looks = {found.row.number: _look(found) for found in read}
     firsts = {
         found.row.number: first
         for found, first in raw_orders.first_in_block(reversed(read), lambda found: looks[found.row.number])
@@ -633,20 +653,10 @@ def _window(name: str, columns: Sequence[int], read: Sequence[_ReadRow]) -> _Win
     )
 
 
-def _period_look(found: _ReadRow) -> RowLook:
-    """Wygląd wiersza okna z reguły Przygotowania (do N5b-2, które da jej regułę Uporządkowania, ``raw_orders.look``):
-    pusty bez wartości w całym wierszu, uporządkowany z choć jedną komórką z wartością w Calibri 8 spod nagłówków
-    ``COLUMNS`` poza ``WYKONAWCA`` (``raw_orders.ordered_look``), inaczej z aplikacji. Wiersz, który ma ten wygląd tylko
-    w ``AKCJE``, ``ZWROT`` albo ``UWAGI``, tutaj go nie ma."""
-
+def _look(found: _ReadRow) -> RowLook:
     if all(is_blank(value) for value in found.values):
         return RowLook.BLANK
-    ordered = raw_orders.ordered_look(
-        face
-        for header, face in found.faces.items()
-        if header != WORKER.target_header and not is_blank(found.row.cells[header].value)
-    )
-    return RowLook.ORDERED if ordered else RowLook.APP
+    return RowLook.ORDERED if found.ordered else RowLook.APP
 
 
 def _forbidden_positions(positions: Mapping[Column, int]) -> tuple[tuple[client_data.ForbiddenColumn, int], ...]:

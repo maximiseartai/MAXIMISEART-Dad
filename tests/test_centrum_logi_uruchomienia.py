@@ -24,7 +24,7 @@ import stat
 import sys
 import threading
 import time
-from typing import Any, Final, NoReturn
+from typing import Any, Final, NoReturn, cast
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
@@ -51,9 +51,11 @@ from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, WindowAction
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.dad_files import DadFiles
+from rozliczenia.input_copy import InputCopy
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.preparation_register import period_sheets, read, register_problem
 from rozliczenia.period_folder import PeriodFolderInaccessible
+from rozliczenia.register_file import OrderSheets
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.telemetry import MetricsStore
 
@@ -97,9 +99,12 @@ from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import (
+    OLD_REGISTER_HEADERS,
     PERIOD,
+    RAW_ORDER_FONT,
     REGISTER_NAME,
     default_register_rows,
+    in_old_layout,
     incomplete_period_rows,
     paste_raw_orders,
     register_order,
@@ -736,10 +741,12 @@ def _typed_into_first(when: object = datetime(2026, 9, 10, 11), column_a: dateti
     return paste
 
 
-def _typed_into_middle(when: object = datetime(2026, 9, 15, 12), column_a: datetime | None = None) -> Callable[[Path], object]:
-    """Cztery wklejone wiersze na dole po okresie, tata poprawia ``MIASTO`` drugiego w Calibri 8, a trzeci, wiersz próbny
-    z ``when`` pod ``DATA GODZ. POCZ.`` i ``column_a`` w kolumnie A, cytuje w ``CZYNNOŚCI ZREALIZOWANE`` swój adres i
-    numer Orange (sonda R3 z przeglądu #984 r1, RN3 z r2, RC3 i RC4 z r3)."""
+def _typed_into_middle(
+    when: object = datetime(2026, 9, 15, 12), column_a: datetime | None = None, header: str = "MIASTO", typed: str = "POZNAŃ"
+) -> Callable[[Path], object]:
+    """Cztery wklejone wiersze na dole po okresie, tata wpisuje ``typed`` pod ``header`` drugiego w Calibri 8, a trzeci,
+    wiersz próbny z ``when`` pod ``DATA GODZ. POCZ.`` i ``column_a`` w kolumnie A, cytuje w ``CZYNNOŚCI ZREALIZOWANE``
+    swój adres i numer Orange (sonda R3 z przeglądu #984 r1, RN3 z r2, RC3 i RC4 z r3)."""
 
     def paste(register: Path) -> None:
         quoted = {"CZYNNOŚCI ZREALIZOWANE": f"montaż {PROBE_ADDRESS} umowa {PROBE_ORANGE}"}
@@ -751,7 +758,7 @@ def _typed_into_middle(when: object = datetime(2026, 9, 15, 12), column_a: datet
         ]
         first = paste_raw_orders(register, rows)
         _date_in_column_a(register, first + 2, column_a)
-        type_into_register(register, first + 1, "MIASTO", "POZNAŃ")
+        type_into_register(register, first + 1, header, typed)
 
     return paste
 
@@ -919,6 +926,30 @@ def test_kopia_przygotowania_nie_ma_komorek_pierwszego_wiersza_bloku_ktore_w_jeg
         assert (cells["C"], cells["L"]) == (moment("2026-09-08T09:00:00"), "tak")
 
 
+def test_wiersz_starszego_ukladu_rejestru_z_wykonawca_w_calibri_8_zaczyna_blok_pod_uporzadkowanymi(tmp_path: Path) -> None:
+    """Starszy układ Rejestru (bez ``AKCJE`` i ``UWAGI``) bierze wygląd wiersza z kolumn ``COLUMNS`` bez ``WYKONAWCA``:
+    wiersz okresu z krojem z aplikacji, w którym tata wpisał tylko Wykonawcę w Calibri 8, zaczyna blok pod
+    uporządkowanymi, a stoi na miejscu z datą z godziną pod ``DATA GODZ. POCZ.``, więc jedynym wierszem Kopii w obu
+    położeniach jest on."""
+
+    register = write_register(tmp_path / "Rejestr.xlsx", in_old_layout(default_register_rows()), headers=OLD_REGISTER_HEADERS)
+    app_row = 9
+    workbook = load_workbook(register)
+    try:
+        for cell in workbook["ZLECENIA"][app_row]:
+            if cell.value is not None and cell.column != OLD_REGISTER_HEADERS.index("WYKONAWCA") + 1:
+                cell.font = RAW_ORDER_FONT
+        workbook.save(register)
+    finally:
+        workbook.close()
+    copy = InputCopy()
+
+    period_sheets(read(register, DadFiles(copy=copy)), parse_period_token(PERIOD))
+
+    [[sheet]] = [file.sheets for file in copy.files()]
+    assert sheet.uncertain_rows == (app_row,)
+
+
 @pytest.mark.parametrize(
     ("damage", "stop"),
     [
@@ -1006,6 +1037,43 @@ def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_
     register_problem(register, DadFiles(forbidden=memory))
 
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
+
+
+TYPED_INTO_REMARKS: dict[str, tuple[str, datetime | None]] = {
+    "wpis_bez_daty_w_kolumnie_a": ("POZNAŃ", None),
+    "wpis_z_data_w_kolumnie_a": ("POZNAŃ", datetime(2026, 9, 15, 12)),
+    # same spacje to komórka bez wartości także w Uporządkowaniu, więc wiersz pod nią nie zaczyna bloku
+    "same_spacje_z_data_w_kolumnie_a": ("  ", datetime(2026, 9, 15, 12)),
+}
+"""Wpis taty w Calibri 8 w ``UWAGI`` drugiego wiersza wklejenia i data z godziną w kolumnie A wiersza próbnego pod nim."""
+
+
+@pytest.mark.parametrize(("typed", "column_a"), TYPED_INTO_REMARKS.values(), ids=TYPED_INTO_REMARKS.keys())
+def test_wpis_taty_w_calibri_8_tylko_w_uwagi_konczy_blok_w_przygotowaniu_tak_jak_w_uporzadkowaniu_tego_rejestru(
+    tmp_path: Path, typed: str, column_a: datetime | None
+) -> None:
+    """Tata wpisał coś w Calibri 8 tylko w ``UWAGI`` drugiego wiersza wklejenia, a trzeci, wiersz próbny, stoi na miejscu
+    z datą z godziną pod ``DATA GODZ. POCZ.`` (i w kolumnie A albo bez niej). Wiersz uporządkowany ma jedną definicję
+    (``raw_orders.look`` na ``OrderColumns.look_columns``, od ``AKCJE`` do ``UWAGI`` bez ``WYKONAWCA``), więc Podgląd
+    Przygotowania zna granice bloku tak jak Uporządkowanie INTERMAX tego samego pliku: wiersze z uwagą „Fakt domeny
+    złamany” i wiersze w obu położeniach są w Logach Przygotowania te same co w Kopii Uporządkowania."""
+
+    centrum = preparing_centrum(tmp_path)
+    register = centrum.fixture.register_path
+    _typed_into_middle(column_a=column_a, header="UWAGI", typed=typed)(register)
+    ordering = InputCopy()
+    [area] = cast(OrderSheets, read(register, DadFiles(copy=ordering)).order_sheets).paste_areas()
+    area.copy_paste()
+    [[ordered]] = [file.sheets for file in ordering.files()]
+
+    run_to_end(centrum, dry_run=True)
+
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [sheet] = copied["sheets"]
+    broken = [int(found) for found in re.findall(r"Fakt domeny złamany: wiersz (\d+) ", " ".join(record["input_copy_notes"]))]
+    assert (broken, sheet["uncertain_rows"]) == (list(ordered.traced_rows), list(ordered.uncertain_rows))
+    assert ordered.uncertain_rows, "wiersz próbny jest w obu położeniach w Uporządkowaniu"
 
 
 def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczytu_pod_naglowkiem(tmp_path: Path) -> None:

@@ -675,7 +675,7 @@ def _order_cells(row: RowFacts, columns: OrderColumns) -> list[CellFacts]:
 
 def ordered_look(faces: Iterable[tuple[str | None, float | None]]) -> bool:
     """Wygląd wiersza uporządkowanego z kroju i rozmiaru czcionki (``faces``) jego komórek z wartością w kolumnach
-    zlecenia bez ``WYKONAWCA``: choć jedna jest w Calibri 8."""
+    wyglądu (``OrderColumns.look_columns``): choć jedna jest w Calibri 8."""
 
     return (ORDERED_FONT, ORDERED_SIZE) in faces
 
