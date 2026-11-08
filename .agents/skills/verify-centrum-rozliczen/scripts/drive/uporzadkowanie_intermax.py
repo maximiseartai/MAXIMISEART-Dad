@@ -10,7 +10,17 @@ from typing import Any
 from playwright.sync_api import Locator, Page, expect
 import yaml
 
-from drive.common import Run, current_run, dad_tab, ended_run_shown, remove, result_of_start, run_again, stop_banner
+from drive.common import (
+    Run,
+    current_run,
+    dad_tab,
+    ended_run_shown,
+    remove,
+    result_of_start,
+    run_again,
+    run_logs,
+    stop_banner,
+)
 
 FEATURE = "uporzadkowanie-intermax"
 CARD = "Uporządkuj INTERMAX"
@@ -78,8 +88,7 @@ def _days_shown(page: Page) -> Locator:
 
 
 def _logs(run: Run) -> list[Json]:
-    directory = run.root / "logs" / "uruchomienia"
-    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("*-intermax-*.json"))]
+    return list(run_logs(run, "intermax").values())
 
 
 def drive_intermax_ordering(run: Run, page: Page) -> None:

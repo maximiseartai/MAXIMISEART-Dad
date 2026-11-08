@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             source = run.root / name
             if source.exists():
                 shutil.copy2(source, run.evidence / "state" / source.name)
-        logs = run.root / "logs" / "uruchomienia"
+        logs = run.run_logs_dir
         if logs.is_dir():
             shutil.copytree(logs, run.evidence / "state" / logs.name, dirs_exist_ok=True)
     print(f"DRIVE OK | features={','.join(selected)}")

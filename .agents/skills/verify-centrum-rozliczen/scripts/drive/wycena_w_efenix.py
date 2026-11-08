@@ -21,6 +21,7 @@ from drive.common import (
     period_choice,
     remove_tree,
     result_of_start,
+    run_logs,
     stop_banner,
 )
 
@@ -61,8 +62,7 @@ def _live(page: Page) -> Locator:
 
 
 def _logs(run: Run) -> list[Json]:
-    directory = run.root / "logs" / "uruchomienia"
-    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("*-efenix-*.json"))]
+    return list(run_logs(run, "efenix").values())
 
 
 def _address_fills(source: Path) -> dict[int, str | None]:

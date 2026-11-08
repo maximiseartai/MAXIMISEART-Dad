@@ -23,6 +23,7 @@ from drive.common import (
     read_json,
     release_only,
     remove,
+    toggle_theme,
 )
 
 FEATURE = "powiadomienia"
@@ -120,12 +121,8 @@ def _enter(page: Page, run: Run, page_id: str, heading: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def _toggle_theme(page: Page) -> None:
-    page.locator("header").get_by_role("button", name="Włącz motyw", exact=False).click()
-
-
 def drive_notifications(run: Run, page: Page) -> None:
-    config = Path(run.fixture["settings"]).parent
+    config = run.config
     key_file = config / "zgloszenia-klucz.txt"
     box = run.box
     # A part of `all` may start at uwaga-taty or later (SKILL.md), so each case this feature closes is checked apart.
@@ -231,10 +228,10 @@ def drive_notifications(run: Run, page: Page) -> None:
     expect(page.get_by_role("alert")).to_have_count(0)
     expect(error_toasts(page)).to_have_count(0)
     run.capture(page, "182-powiadomienia-widok")
-    _toggle_theme(page)
+    toggle_theme(page)
     expect(note_row.get_by_label("nowe", exact=True)).to_be_visible()
     run.capture(page, "183-powiadomienia-widok-drugi-motyw")
-    _toggle_theme(page)
+    toggle_theme(page)
 
     run.step(FEATURE, "powiadomienia-po-wyjsciu")
     page.get_by_role("link", name="Okresy", exact=True).click()
@@ -334,10 +331,10 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     )
     expect(page.get_by_role("alert")).to_have_count(0)
     run.capture(page, "185-powiadomienia-nowa-wersja")
-    _toggle_theme(page)
+    toggle_theme(page)
     expect(card).to_be_visible()
     run.capture(page, "186-powiadomienia-nowa-wersja-drugi-motyw")
-    _toggle_theme(page)
+    toggle_theme(page)
 
     run.step(FEATURE, "powiadomienia-aktualizacja")
     tool = run.fixture["tool"]

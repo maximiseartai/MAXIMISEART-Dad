@@ -25,6 +25,7 @@ from drive.common import (
     run_again,
     stop_banner,
     unreadable,
+    while_open,
 )
 
 FEATURE = "diagnoza"
@@ -252,8 +253,8 @@ def drive_diagnosis(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "diagnoza-w-logach")
     run_id = str(run_info["id"])
-    [logs] = (run.root / "logs" / "uruchomienia").glob(f"*-{run_id}.json")
-    data = logs.read_bytes()  # bytes: reading text hides the \r\n of a text-mode write on Windows
+    [logs] = run.run_logs_dir.glob(f"*-{run_id}.json")
+    data = while_open(logs.read_bytes)  # bytes: reading text hides the \r\n of a text-mode write on Windows
     logged = json.loads(data)["diagnosis"]
     run.check(
         logged["explanation"]["code"] == "NIE_ZNALEZIONO_PRZYCZYNY"

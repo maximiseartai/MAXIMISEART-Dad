@@ -11,7 +11,18 @@ from typing import Any
 
 from playwright.sync_api import Page, expect
 
-from drive.common import ROW_MARKER, Run, box_issues, drop_report_key, finished_view, queued, served_version
+from drive.common import (
+    ROW_MARKER,
+    RUN_LOGS,
+    Run,
+    box_issues,
+    drop_report_key,
+    finished_view,
+    queued,
+    run_logs,
+    served_version,
+    while_open,
+)
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS, drive_settlement
 
 FEATURE = "logi-uruchomienia"
@@ -20,8 +31,6 @@ LABEL = "logi-uruchomienia"
 KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ_LOGOW"
 # The last line of a comment: the link to the file of its full Logi in the Archiwum Logów okresu (a GitHub Release).
 LINK = re.compile(r"- Pełne Logi: \[(?P<name>[^\]]+)\]\(https://github\.com/[^/]+/[^/]+/releases/download/(?P<tag>[^/]+)/(?P=name)\)")
-# Centrum logs to <root>/logs/centrum-rozliczen.log, so the Logi Uruchomienia are next to it (ADR 0015).
-LOGS = "logs/uruchomienia"
 MODES = {"DRY-RUN": "podgląd", "RUN": "zapis"}
 # A Wydanie's tag (ADR 0014): vMAJOR.MINOR.PATCH without leading zeros or suffixes.
 RELEASE_TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
@@ -32,12 +41,6 @@ Json = dict[str, Any]
 """A file of Logi or a card, parsed from JSON."""
 
 
-def _records(run: Run) -> dict[str, Json]:
-    directory = run.root / LOGS
-    paths = sorted(directory.glob("*.json")) if directory.is_dir() else []
-    return {path.name: json.loads(path.read_text(encoding="utf-8")) for path in paths}
-
-
 def _card(run: Run, name: str) -> Json:
     """The finished card as the browser got it: the one answer ``finished_view`` waited for, kept in ``api/``."""
 
@@ -45,8 +48,8 @@ def _card(run: Run, name: str) -> Json:
 
 
 def _one_new(run: Run, before: set[str], what: str) -> Json:
-    new = {name: record for name, record in _records(run).items() if name not in before}
-    run.check(len(new) == 1, f"{what}: exactly one new file in {LOGS} ({', '.join(sorted(new))})")
+    new = {name: record for name, record in run_logs(run).items() if name not in before}
+    run.check(len(new) == 1, f"{what}: exactly one new file in {RUN_LOGS} ({', '.join(sorted(new))})")
     [record] = new.values()
     return record
 
@@ -141,7 +144,7 @@ def drive_run_logs(run: Run, page: Page) -> None:
         drive_settlement(run, page)
 
     run.step(FEATURE, "logi-podglad")
-    before = set(_records(run))
+    before = set(run_logs(run))
     _new_settlement(run, page, needs_check)
     page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
     expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
@@ -157,7 +160,7 @@ def drive_run_logs(run: Run, page: Page) -> None:
     run.capture(page, "160-logi-podglad")
 
     run.step(FEATURE, "logi-zatrzymanie")
-    before = set(_records(run))
+    before = set(run_logs(run))
     _new_settlement(run, page, needs_check)
     page.get_by_role("button", name="Uruchom", exact=True).click()
     page.get_by_role("alertdialog", name="Uruchomić z zapisem?").get_by_role("button", name="Uruchom", exact=True).click()
@@ -175,7 +178,7 @@ def drive_run_logs(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "logi-szablony")
     view = json.loads(settled.read_text(encoding="utf-8"))
-    [record] = [record for record in _records(run).values() if record["run_id"] == view["run"]["id"]]
+    [record] = [record for record in run_logs(run).values() if record["run_id"] == view["run"]["id"]]
     _matches_card(run, record, view, "zapis")
     workers, rows = run.fixture["workers"], run.fixture["settlement"]["rows_per_worker"]
     templates = record["templates"]
@@ -194,7 +197,7 @@ def drive_run_logs(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "logi-kazde-uruchomienie")
     ended = _ended_in_centrum_log(run)
-    records = sorted(_records(run).values(), key=lambda record: datetime.fromisoformat(record["started_at"]))
+    records = sorted(run_logs(run).values(), key=lambda record: datetime.fromisoformat(record["started_at"]))
     run.check(
         [(record["process"], record["mode"], record["period"], record["result"], record["ending"]) for record in records]
         == ended,
@@ -206,7 +209,7 @@ def drive_run_logs(run: Run, page: Page) -> None:
     page.reload()
     expect(page.get_by_label("Zatrzymanie")).to_be_visible()
     _nothing_about_logs(run, page, "Uruchomienia after a reload")
-    texts = [path.read_text(encoding="utf-8") for path in sorted((run.root / LOGS).glob("*.json"))]
+    texts = [while_open(lambda: path.read_text(encoding="utf-8")) for path in sorted(run.run_logs_dir.glob("*.json"))]
     run.check(
         not any(json.dumps(str(run.root))[1:-1] in text or ROW_MARKER in text for text in texts),
         "no file of Logi holds a path in the run root or workbook row content",
@@ -230,7 +233,7 @@ def drive_run_logs(run: Run, page: Page) -> None:
     finally:
         drop_report_key(key_file)
     # Bytes, not text: reading text turns the \r\n of a file written in text mode on Windows back into \n.
-    files = sorted(path.read_bytes() for path in (run.root / LOGS).glob("*.json"))
+    files = sorted(while_open(path.read_bytes) for path in run.run_logs_dir.glob("*.json"))
     threads = box_issues(run, LABEL)
     (run.evidence / "api" / "logi-skrzynka.json").write_text(
         json.dumps(

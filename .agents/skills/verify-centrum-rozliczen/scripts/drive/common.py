@@ -42,6 +42,8 @@ ROW_MARKER = "CENTRUM-SYN-ROW"
 REPEAT_SETTLE_MS = 300
 # Dad's return to Centrum's window: the pages read the server again (`useResource`).
 FOCUS = "window.dispatchEvent(new Event('focus'))"
+# The Logi Uruchomienia beside the Centrum log (ADR 0015): one file per Uruchomienie procesu.
+RUN_LOGS = "logs/uruchomienia"
 
 
 class DriveFailure(Exception):
@@ -112,6 +114,10 @@ class Run:
         """The queue of the skrzynka Zgłoszeń: one file per post waiting to be sent."""
 
         return self.config / "zgloszenia" / "kolejka"
+
+    @property
+    def run_logs_dir(self) -> Path:
+        return self.root / RUN_LOGS
 
     @property
     def log_path(self) -> Path:
@@ -380,6 +386,15 @@ def queued_posts(run: Run, label: str, run_id: str | None = None) -> list[dict[s
     return posts
 
 
+def run_logs(run: Run, process: str | None = None) -> dict[str, dict[str, Any]]:
+    """The files of Logi of ``process`` (every one without it) by name, oldest first, as the name starts with the start.
+
+    The server puts a file of Logi in place whole, also when it adds a Diagnoza, so each is read with ``read_json``."""
+
+    pattern = "*.json" if process is None else f"*-{process}-*.json"
+    return {path.name: read_json(path) for path in sorted(run.run_logs_dir.glob(pattern))}
+
+
 def advance_clock(run: Run, minutes: float, why: str) -> None:
     """Harness: Centrum's clock moves ``minutes`` on (``<root>/zegar/przesuniecie-min.txt``), so ``why``."""
 
@@ -475,6 +490,27 @@ def dad_tab(
         yield tab
     finally:
         context.close()
+
+
+def toggle_theme(page: Page) -> str:
+    """Dad clicks the theme icon in the header; the theme it switched to (``jasny`` or ``ciemny``), once the icon
+    offers the other one."""
+
+    toggle = page.locator("header").get_by_role("button", name="Włącz motyw", exact=False)
+    theme = str(toggle.get_attribute("aria-label")).removeprefix("Włącz motyw ")
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-label", f"Włącz motyw {'ciemny' if theme == 'jasny' else 'jasny'}")
+    return theme
+
+
+def switch_theme(page: Page, theme: str) -> bool:
+    """Switches to ``theme`` (``jasny`` or ``ciemny``) unless it is shown; whether it switched."""
+
+    toggle = page.locator("header").get_by_role("button", name="Włącz motyw", exact=False)
+    if toggle.get_attribute("aria-label") != f"Włącz motyw {theme}":
+        return False
+    toggle_theme(page)
+    return True
 
 
 def reload_with_answer(run: Run, page: Page, path: str, name: str) -> Any:

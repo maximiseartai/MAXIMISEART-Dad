@@ -34,6 +34,8 @@ from drive.common import (
     read_json,
     remove,
     start_centrum,
+    switch_theme,
+    toggle_theme,
 )
 
 FEATURE = "uwaga-taty"
@@ -325,7 +327,7 @@ def _drive_low_windows(run: Run, page: Page) -> None:
     try:
         for second_theme in (False, True):
             if second_theme:
-                page.locator("header").get_by_role("button", name="Włącz motyw", exact=False).click()
+                toggle_theme(page)
             theme = "jasny" if page.locator("header").get_by_role("button", name="Włącz motyw ciemny").count() else "ciemny"
             themes.append(theme)
             for window, kind in ((screen, "lines"), *LOW_WINDOWS):
@@ -354,7 +356,7 @@ def _drive_low_windows(run: Run, page: Page) -> None:
                 expect(dialog).to_have_count(0)
     finally:
         page.set_viewport_size(screen)
-    page.locator("header").get_by_role("button", name="Włącz motyw", exact=False).click()
+    toggle_theme(page)
     run.check(sorted(themes) == ["ciemny", "jasny"], "the low windows were checked in both themes")
 
 
@@ -755,22 +757,13 @@ def _opened_about(run: Run, page: Page, run_id: str, name: str) -> tuple[Locator
     return dialog, offered
 
 
-def _theme(page: Page, name: str) -> bool:
-    toggle = page.locator("header").get_by_role("button", name=f"Włącz motyw {name}", exact=True)
-    if toggle.count() == 0:
-        return False
-    toggle.click()
-    expect(toggle).to_have_count(0)
-    return True
-
-
 def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     period = run.fixture["settlement"]["needs_check"]
 
     run.step(FEATURE, "uwaga-przycisk-na-karcie")
     page.goto(run.url)
     ensure_files_set(run, page)
-    was_dark = _theme(page, "jasny")
+    was_dark = switch_theme(page, "jasny")
     page.goto(run.url + "#/uruchomienia")
     if ended_run_shown(current_run(run, "uwaga-przed-podgladem")):
         page.get_by_role("button", name="Nowe Uruchomienie procesu", exact=True).click()
@@ -904,7 +897,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     _laptop(run, page, about, target)
     _not_in_history(run, page, period)
     if was_dark:
-        _theme(page, "ciemny")
+        switch_theme(page, "ciemny")
     _drive_missing_logs(run, page, config, box, period)
 
 

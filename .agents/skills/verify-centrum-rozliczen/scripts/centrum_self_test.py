@@ -5,6 +5,7 @@ SKILL.md exists and answers ``--help``, the gate of ``wydajnosc`` on made-up
 numbers (no browser), that the retrying helpers of ``drive/common.py`` outlast a
 file the server holds open, retry nothing else and nothing longer, and take the key away only after a step wrote it,
 that the result of a started Uruchomienie is never the one before it and the Centrum log is read as ``log.py`` writes it,
+that a file the server puts in place is read once it is there and only a vanished queue file is left out,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
 evidence text is strict UTF-8 and screenshots are PNG files, and that no workbook content (the fixture's row marker) reached the
 evidence.
@@ -365,8 +366,9 @@ def _check_retry_while_open(errors: list[str]) -> None:
 
 
 def _check_result_of_start(errors: list[str]) -> None:
-    """``result_of_start`` (and ``run_again``) returns the Uruchomienie Dad's click started, though the server shows the
-    one before it as finished until the tab's request arrives (the flaky „the same stop again offers Diagnoza”)."""
+    """``result_of_start`` (and ``run_again``) returns the Uruchomienie Dad's click started, though the server may show
+    the one before it as finished until the tab's request arrives (the flaky „the same stop again offers Diagnoza”),
+    and also when it shows the new one at once, so the one before is read before the click."""
 
     import contextlib
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -375,40 +377,111 @@ def _check_result_of_start(errors: list[str]) -> None:
     import tempfile
     import threading
 
-    from drive.common import Run, result_of_start
+    from drive.common import DriveFailure, Run, result_of_start
 
-    def finished(run_id: str, stop_kind: str) -> dict[str, object]:
-        return {"state": "finished", "run": {"id": run_id}, "result": {"stop_kind": stop_kind}}
+    for late in (2, 0):
+        # Reads of the current Uruchomienie since Dad's click; the server shows the new one after `late` of them.
+        since_click: list[int] = []
 
-    # The read before the click, then two reads before the tab's request arrives, then the new Uruchomienie.
-    answers = [finished("poprzednie", "for_tata")] * 3 + [finished("nowe", "repeated")]
+        class Scripted(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                if since_click:
+                    since_click[0] += 1
+                new = bool(since_click) and since_click[0] > late
+                shown = {"id": "nowe", "stop_kind": "repeated"} if new else {"id": "poprzednie", "stop_kind": "for_tata"}
+                body = json.dumps(
+                    {"state": "finished", "run": {"id": shown["id"]}, "result": {"stop_kind": shown["stop_kind"]}}
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
 
-    class Scripted(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            body = json.dumps(answers.pop(0) if len(answers) > 1 else answers[0]).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
+            def log_message(self, format: str, *args: object) -> None:
+                pass
 
-        def log_message(self, format: str, *args: object) -> None:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Scripted)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with tempfile.TemporaryDirectory() as scratch:
+                root = Path(scratch) / "run"
+                root.mkdir()
+                (root / "fixture.json").write_text("{}", encoding="utf-8")
+                run = Run(root, f"http://127.0.0.1:{server.server_port}/", Path(scratch) / "evidence")
+                with contextlib.redirect_stdout(io.StringIO()):
+                    result: object = result_of_start(run, "powtorka", lambda: since_click.append(0))
+        except DriveFailure as failure:
+            result = failure
+        finally:
+            server.shutdown()
+            server.server_close()
+        if result != {"stop_kind": "repeated"}:
+            errors.append(
+                f"result_of_start with the new Uruchomienie shown after {late} reads took another one for it: {result}"
+            )
+
+
+def _check_read_while_put_in_place(errors: list[str]) -> None:
+    """``run_logs`` (through ``read_json``) waits while the server puts a file of Logi in place, which refuses a read
+    for a moment on Windows (#1087), and ``queued_posts`` leaves out only a queue file that is gone, never one it
+    cannot read."""
+
+    import contextlib
+    import io
+    import json
+    import tempfile
+    import threading
+    import time
+
+    from drive.common import Run, queued_posts, run_logs, unreadable
+
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch) / "run"
+        root.mkdir()
+        settings = root / "config" / "centrum-ustawienia.yaml"
+        (root / "fixture.json").write_text(json.dumps({"settings": str(settings)}), encoding="utf-8")
+        run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
+        run.run_logs_dir.mkdir(parents=True)
+        logs = run.run_logs_dir / "20261019T060000Z-preparation-aaaaaaaa.json"
+        logs.write_text(json.dumps({"run_id": "aaaaaaaa"}), encoding="utf-8")
+        refusing = threading.Event()
+
+        def put_in_place() -> None:
+            with unreadable(logs):
+                refusing.set()
+                time.sleep(0.3)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            server = threading.Thread(target=put_in_place)
+            server.start()
+            refusing.wait()
+            try:
+                read: object = run_logs(run)
+            except PermissionError as failure:
+                read = failure
+            server.join()
+        if read != {logs.name: {"run_id": "aaaaaaaa"}}:
+            errors.append(f"run_logs gives up on a file of Logi the server is putting in place: {read!r}")
+
+        # Windows creates no symbolic link without a privilege; the forms of a vanished and an unreadable file are
+        # the same there, and a refusal is retried for RETRY_OPEN_S, so the queue is checked where links are free.
+        if sys.platform == "win32":
+            return
+        run.queue.mkdir(parents=True)
+        (run.queue / "1-zgloszenie-aaaaaaaa.json").write_text(json.dumps({"parts": ["czeka"]}), encoding="utf-8")
+        (run.queue / "2-zgloszenie-bbbbbbbb.json").symlink_to(run.queue / "wyslany.json")
+        if queued_posts(run, "zgloszenie") != [{"parts": ["czeka"]}]:
+            errors.append("queued_posts does not leave out a queue file the queue delivered and removed meanwhile")
+        loop = run.queue / "3-zgloszenie-cccccccc.json"
+        loop.symlink_to(loop)
+        try:
+            queued_posts(run, "zgloszenie")
+        except FileNotFoundError:
+            errors.append("queued_posts takes a queue file it cannot read for one that is gone")
+        except OSError:
             pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Scripted)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        with tempfile.TemporaryDirectory() as scratch:
-            root = Path(scratch) / "run"
-            root.mkdir()
-            (root / "fixture.json").write_text("{}", encoding="utf-8")
-            run = Run(root, f"http://127.0.0.1:{server.server_port}/", Path(scratch) / "evidence")
-            with contextlib.redirect_stdout(io.StringIO()):
-                result = result_of_start(run, "powtorka", lambda: None)
-    finally:
-        server.shutdown()
-        server.server_close()
-    if result != {"stop_kind": "repeated"}:
-        errors.append(f"result_of_start took the Uruchomienie before Dad's click for the new one: {result}")
+        else:
+            errors.append("queued_posts leaves out a queue file it cannot read, so a lost post passes")
 
 
 def _check_log_entries(errors: list[str]) -> None:
@@ -604,6 +677,7 @@ def main(argv: list[str] | None = None) -> int:
     _check_retry_while_open(errors)
     _check_drop_report_key(errors)
     _check_result_of_start(errors)
+    _check_read_while_put_in_place(errors)
     _check_log_entries(errors)
     _check_performance_gate(errors)
     _check_machine_lock(errors)

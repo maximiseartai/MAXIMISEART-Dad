@@ -28,6 +28,7 @@ from drive.common import (
     remove,
     remove_empty_folder,
     start_centrum,
+    switch_theme,
 )
 from drive.przygotowanie_pliku_zbiorczego import HIDE_TAB, SHOW_TAB, drive_preparation
 
@@ -487,10 +488,10 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
         _capture(run, page, f"{shot}-{width}px", answer)
     if original is not None:
         page.set_viewport_size(original)
-    switched = _light_theme(page)
+    switched = switch_theme(page, "jasny")
     _capture(run, page, f"{shot}-jasny", answer)
     if switched:
-        page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
+        switch_theme(page, "ciemny")
 
     number = table.get_by_role("rowheader").first
     before = number.bounding_box()
@@ -555,17 +556,6 @@ def _write_dad_value(collective_file: Path, row: int, value: int | None = 1) -> 
         workbook.save(collective_file)
     finally:
         workbook.close()
-
-
-def _light_theme(page: Page) -> bool:
-    """Switches to the light theme for the screenshot; True when it was dark and must be switched back."""
-
-    light = page.locator("header").get_by_role("button", name="Włącz motyw jasny", exact=True)
-    if light.count() == 0:
-        return False
-    light.click()
-    expect(page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True)).to_be_visible()
-    return True
 
 
 def drive_filling(run: Run, page: Page) -> None:
@@ -706,10 +696,10 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
             pass
     run.check(asked.count(API) == views, "two more checks of the unchanged saved version read nothing again")
     _check_screen(run, page, after, "after Dad's value")
-    switched = _light_theme(page)
+    switched = switch_theme(page, "jasny")
     run.capture(page, "222-uzupelnienie-po-wpisie")
     if switched:
-        page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
+        switch_theme(page, "ciemny")
 
     run.step(FEATURE, "uzupelnienie-tabela-bez-reguly")
     without_rule = _drive_kind(run, page, "without_rule", "225-uzupelnienie-bez-reguly")
@@ -912,10 +902,10 @@ def _drive_after_settlement(run: Run, page: Page, collective_file: Path) -> None
             "row 20 reads „bez ilości” on the screen under its number",
         )
         _capture(run, page, "253-uzupelnienie-po-przebiegu-bez-reguly", kind)
-        switched = _light_theme(page)
+        switched = switch_theme(page, "jasny")
         _capture(run, page, "253-uzupelnienie-po-przebiegu-bez-reguly-jasny", kind)
         if switched:
-            page.locator("header").get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
+            switch_theme(page, "ciemny")
     finally:
         remove_empty_folder(worker_settlements)
     page.goto(run.url)

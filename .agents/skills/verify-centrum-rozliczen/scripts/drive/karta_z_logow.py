@@ -21,11 +21,11 @@ from drive.common import (
     local_time,
     move,
     remove_tree,
+    run_logs,
     start_centrum,
 )
 
 FEATURE = "karta-z-logow"
-LOGS = "logs/uruchomienia"
 LAST_STARTED = "logs/ostatnie-uruchomienie.json"
 # What the live card has and the Logi do not hold: order_notes carry the order numbers and Wykonawcy of Wycena w efenix.
 LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
@@ -37,12 +37,6 @@ MISSING = "Karty tego Uruchomienia nie ma"
 WITHOUT_DETAILS = "Centrum zamknęło się tuż po wyniku, więc szczegółów nie ma"
 
 Json = dict[str, Any]
-
-
-def _logged(run: Run) -> dict[str, Json]:
-    directory = run.root / LOGS
-    paths = sorted(directory.glob("*.json")) if directory.is_dir() else []
-    return {path.name: json.loads(path.read_text(encoding="utf-8")) for path in paths}
 
 
 def _restored(view: Json, started_at: str) -> Json:
@@ -95,14 +89,14 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
     run.step(FEATURE, "karta-po-zamknieciu")
     page.goto(run.url)
     ensure_files_set(run, page)
-    before = set(_logged(run))
+    before = set(run_logs(run))
     page.goto(run.url + "#/uruchomienia")
     _new_run(page, "Przebieg rozliczeń")
     expect(page.get_by_role("combobox", name="Okres")).to_contain_text(needs_check)
     page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
     expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
     live = finished_view(run, "karta-przed-zamknieciem")
-    new = [record for name, record in _logged(run).items() if name not in before]
+    new = [record for name, record in run_logs(run).items() if name not in before]
     run.check(len(new) == 1, "the preview left one file of Logi")
     [record] = new
     run.capture(page, "210-karta-przed-zamknieciem")
@@ -145,11 +139,11 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
     assert isinstance(history, list)
     [row] = [entry for entry in history if entry["run_id"] == live["run"]["id"]]
     close_centrum(run, page)
-    [name] = [name for name, logged in _logged(run).items() if logged["run_id"] == live["run"]["id"]]
+    [name] = [name for name, logged in run_logs(run).items() if logged["run_id"] == live["run"]["id"]]
     aside_logs = run.root / "odlozone" / name
     print("  harness: the preview's file of Logi is moved aside, as if Centrum died after the Historia row", flush=True)
     aside_logs.parent.mkdir(exist_ok=True)
-    move(run.root / LOGS / name, aside_logs)
+    move(run.run_logs_dir / name, aside_logs)
     try:
         start_centrum(run, "karta-start-bez-logow")
         _uruchomienia(run, page)
@@ -182,7 +176,7 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
         run.capture(page, "211b-karta-bez-szczegolow")
     finally:
         if aside_logs.exists():
-            move(aside_logs, run.root / LOGS / name)
+            move(aside_logs, run.run_logs_dir / name)
 
     run.step(FEATURE, "karta-przerwana")
     period_folder = Path(run.fixture["periods_directory"]) / LAST_COMPLETE
@@ -192,7 +186,7 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
         aside.parent.mkdir(exist_ok=True)
         move(period_folder, aside)
     try:
-        metrics_before, starts_before, logs_before = _metrics_count(run), _unfinished_starts(run), set(_logged(run))
+        metrics_before, starts_before, logs_before = _metrics_count(run), _unfinished_starts(run), set(run_logs(run))
         _new_run(page, "Przygotowanie pliku zbiorczego")
         expect(page.get_by_role("combobox", name="Okres")).to_contain_text(LAST_COMPLETE)
         page.get_by_role("button", name="Uruchom", exact=True).click()
@@ -224,7 +218,7 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
             == ("idle", "interrupted", killed, started["started_at"]),
             "after the start the last Uruchomienie is the killed RUN, named after its start",
         )
-        run.check(set(_logged(run)) == logs_before, "the killed RUN left no file of Logi")
+        run.check(set(run_logs(run)) == logs_before, "the killed RUN left no file of Logi")
         run.check(_metrics_count(run) == metrics_before, "the killed RUN left no metrics record")
         run.check(
             _unfinished_starts(run) == starts_before + 1,
