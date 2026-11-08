@@ -26,6 +26,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Unreachable
+from rozliczenia.centrum.tool_updates import UPDATE_THREAD
 from rozliczenia.centrum.tool_update import (
     LIBRARIES_FAILED,
     LOCAL_CHANGES,
@@ -44,7 +45,7 @@ from rozliczenia.centrum.tool_update import (
     write_result,
 )
 
-from tests.fixtures.centrum import NO_RELEASE, UPDATE_THREAD, join_threads_since, views_until, write_report_key
+from tests.fixtures.centrum import NO_RELEASE, join_threads_since, views_until, write_report_key
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end, stopped_for_maks
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.preparation import PERIOD, incomplete_period_rows

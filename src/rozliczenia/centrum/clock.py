@@ -22,6 +22,10 @@ class Clock(Protocol):
         ...
 
 
+# Nazwa wątku budzika ``SystemClock.after``.
+ALARM_THREAD: Final = "budzik"
+
+
 class SystemClock:
     """``time.monotonic`` i budzik z ``threading.Timer`` jako wątek demona: zamknięcie Centrum na niego nie czeka."""
 
@@ -31,7 +35,7 @@ class SystemClock:
     def after(self, seconds: float, wake: Callable[[], None]) -> None:
         timer = threading.Timer(seconds, wake)
         timer.daemon = True
-        timer.name = "budzik"
+        timer.name = ALARM_THREAD
         timer.start()
 
 

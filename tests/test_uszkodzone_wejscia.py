@@ -30,11 +30,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia import period_folder
+from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.github import HttpRequest, HttpResponse
+from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.report_box import GitHubReportBox
 
 from tests.fixtures.centrum import (
-    QUEUE_THREAD,
     CentrumClient,
     FakePlatform,
     ToolDirectory,
@@ -62,8 +63,6 @@ DAMAGED = (" uszkodzon", " niepoprawn")
 WORKER_CONFIG_INACCESSIBLE = "Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program."
 GENERIC_500 = "W Centrum rozliczeń wystąpił nieoczekiwany błąd. Odśwież kartę i spróbuj ponownie."
 DIAGNOSIS_UNEXPECTED = "Nie udało się sprawdzić: nieoczekiwany błąd."
-# Wątek budzika ``SYSTEM_CLOCK.after``, którym kolejka Skrzynki bez sieci nastawia ponowienie.
-ALARM_THREAD = "budzik"
 
 TEXT, LINES, XLSX, FOLDER = "tekst", "wiersze", "xlsx", "folder"
 # Kopia INTERMAX, którą Konfiguracja wymienia i przywraca: Rejestr zleceń świata sprzed dnia świata.

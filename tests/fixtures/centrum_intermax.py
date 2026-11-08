@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from rozliczenia import intermax_copies
+from rozliczenia.centrum.outbox import QUEUE_THREAD
 
 from tests.fixtures.centrum import (
-    QUEUE_THREAD,
     CentrumClient,
     FakePlatform,
     ToolDirectory,

@@ -24,7 +24,7 @@ from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT, Case, DadCases
 from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.outbox import PART_LIMIT, RETRY_S, Outbox, Post
+from rozliczenia.centrum.outbox import PART_LIMIT, QUEUE_THREAD, RETRY_S, Outbox, Post
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.report_box import IssuesOutcome, Label, Refused, Unreachable
 from rozliczenia.centrum.reports import (
@@ -43,7 +43,6 @@ from rozliczenia.efenix_window import PagePart
 from rozliczenia.process_run import Stop
 
 from tests.fixtures.centrum import (
-    QUEUE_THREAD,
     REPORT_KEY,
     TOOL_COMMIT,
     FakeReportBox,

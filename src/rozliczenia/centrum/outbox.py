@@ -98,6 +98,8 @@ else:
     import fcntl
 
 QUEUE_DIRECTORY: Final = "kolejka"
+# Nazwa wątku przejścia kolejki (``_in_thread``).
+QUEUE_THREAD: Final = "skrzynka-kolejka"
 # Poza ``config/zgloszenia``: weryfikacja Kontroli ilości sprawdza, że jest tam tylko kolejka.
 ADDRESSES_FILE: Final = "skrzynka-adresy.jsonl"
 # Schemat 3 (#844) niesie plik do Archiwum okresu; stare Centrum, które go nie zna, zostawia taki plik w kolejce,
@@ -631,9 +633,9 @@ LOCAL_QUEUE_DISK: Final = QueueDisk(read=_read_text, write=replace_atomically, r
 
 
 def _in_thread(drain: Callable[[], None]) -> None:
-    """Przejście kolejki w nowym wątku ``skrzynka-kolejka``, który nie trzyma zamknięcia Centrum."""
+    """Przejście kolejki w nowym wątku ``QUEUE_THREAD``, który nie trzyma zamknięcia Centrum."""
 
-    threading.Thread(target=drain, name="skrzynka-kolejka", daemon=True).start()
+    threading.Thread(target=drain, name=QUEUE_THREAD, daemon=True).start()
 
 
 def _queued(path: Path, disk: QueueDisk) -> _Queued | None:
