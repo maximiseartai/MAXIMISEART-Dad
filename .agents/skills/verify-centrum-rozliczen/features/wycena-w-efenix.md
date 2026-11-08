@@ -33,7 +33,7 @@ card of a Wycena „zapis” means only the green „Zapisz”: its badge is `Be
 
 Preconditions:
 
-- Centrum is served for this run with `DOCTOR OK`; `serve_centrum.py` serves the Atrapa efenix with `EFENIX_ORDERS` (rows 18–21: `#QX9001` of `adrian.testowy` ready after the Wycena Emmetta and `T` from the file, `#QX9002` of `beata.testowa` unknown to efenix, `#QX9003` of `celina.testowa` whose Emmett differs from the file, `#QX9004` of `dorota.testowa` with the status `Rozliczone`), logged out, each search answered after 1 s; its address is `<root>/efenix/adres.txt`.
+- Centrum is served for this run with `DOCTOR OK`; `serve_centrum.py` serves the Atrapa efenix with `EFENIX_ORDERS` of `tests/fixtures/scenariusz_centrum.py` (rows 18–21: `#QX9001` of `adrian.testowy` ready after the Wycena Emmetta and `T` from the file, `#QX9002` of `beata.testowa` unknown to efenix, `#QX9003` of `celina.testowa` whose Emmett differs from the file, `#QX9004` of `dorota.testowa` with the status `Rozliczone`), logged out, each search answered after 1 s; its address is `<root>/efenix/adres.txt`.
 - `<root>/efenix/08_14_09_2026/` holds the Plik zbiorczy of those orders with the Kwota (AU) Excel computed.
 
 - **Button.** Harness: the folder okresów set through the picker if no feature before set it, and `<root>/efenix/08_14_09_2026` copied into it (removed again at the end of the feature). `#/uruchomienia`, `Nowe Uruchomienie procesu` when a result is shown, radio `Wycena w efenix`, option `period_choice("08_14_09_2026", "Plik zbiorczy przygotowany")`; `api/efenix-karta-startu.json`. Capture `260`.

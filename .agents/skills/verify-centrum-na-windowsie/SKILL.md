@@ -21,6 +21,8 @@ pilnuje:
   - frontend/src/lib/tool-update.tsx
   - requirements.txt
   - .github/workflows/verify-centrum-na-windowsie.yml
+  - tests/fixtures/scenariusz_centrum.py
+  - .agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py
 ---
 
 # Verify Centrum rozliczeń na Windowsie

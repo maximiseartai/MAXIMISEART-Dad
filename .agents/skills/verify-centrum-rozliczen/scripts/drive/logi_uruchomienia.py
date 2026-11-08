@@ -12,7 +12,6 @@ from typing import Any
 from playwright.sync_api import Page, expect
 
 from drive.common import (
-    ROW_MARKER,
     RUN_LOGS,
     Run,
     box_issues,
@@ -25,6 +24,7 @@ from drive.common import (
 )
 from drive.teksty import ABOUT_LOGS, MODES
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
+from tests.fixtures.scenariusz_centrum import ROW_MARKER
 
 FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"

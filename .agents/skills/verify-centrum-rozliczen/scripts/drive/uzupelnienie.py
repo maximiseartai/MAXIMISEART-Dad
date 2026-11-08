@@ -13,11 +13,8 @@ from openpyxl.utils import column_index_from_string
 from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Locator, Page, Request, expect
 
-from create_centrum_fixture import PRICE_LIST
 from drive.common import (
     HIDE_TAB,
-    LAST_COMPLETE,
-    ROW_MARKER,
     SHOW_TAB,
     LogEntry,
     Run,
@@ -33,6 +30,7 @@ from drive.common import (
     start_centrum,
     switch_theme,
 )
+from tests.fixtures.scenariusz_centrum import LAST_COMPLETE, PRICE_LIST, ROW_MARKER
 
 FEATURE = "uzupelnienie"
 SUMMARY = f"#/uzupelnienie/{LAST_COMPLETE}"
@@ -43,9 +41,6 @@ POLL_MS = frontend_ms("lib/use-live-file.ts", "POLL_MS")
 # Three of the page's checks and the full read after the last.
 LIVE_TIMEOUT_MS = 3 * POLL_MS + 1_000
 KIND_TITLES = {"without_rule": "Wiersze bez reguły", "from_description": "Wiersze z opisu"}
-# The fixture's Plik zbiorczy after Przygotowanie: rows 18 and 20 carry a device the Reguły ilości do not know,
-# row 19 is prewencja (create_centrum_fixture.py, DEVICES).
-EXPECTED_ROWS = {"without_rule": [18, 20], "from_description": [19]}
 # Dad's value goes into a column from the technician's description: it is outside V, T and N, so it also makes
 # its row without rule done, and it moves that column's counter.
 DAD_COLUMN = "Y"
@@ -59,6 +54,14 @@ CHIP_LABELS = {"to_fill": "", "done": " zrobiony", "without_quantity": " bez ilo
 DAD_WIDTHS = (1280, 1536)
 # A period whose Folder okresu holds no Plik zbiorczy.
 EMPTY_PERIOD = "15_21_09_2026"
+
+
+def _expected_rows(run: Run) -> dict[str, list[int]]:
+    """The fixture's Plik zbiorczy rows of each kind after Przygotowanie (``preparation.rows`` of fixture.json)."""
+
+    rows = run.fixture["preparation"]["rows"]
+    assert isinstance(rows, dict)
+    return rows
 
 
 def _in_rows(rows: int) -> str:
@@ -144,7 +147,7 @@ def drive_result_card(run: Run, page: Page) -> None:
     expect(filling.get_by_role("heading", name="Do uzupełnienia w Excelu")).to_be_visible()
     answer = _ready(run, "uzupelnienie-wynik")
     run.check(
-        _rows(answer) == {kind: [(row, False) for row in rows] for kind, rows in EXPECTED_ROWS.items()},
+        _rows(answer) == {kind: [(row, False) for row in rows] for kind, rows in _expected_rows(run).items()},
         "right after Przygotowanie the server lists rows 18 and 20 without rule and row 19 from the description",
     )
     _check_screen(run, filling, answer, "on the Przygotowanie result card")
@@ -166,7 +169,7 @@ def drive_result_card(run: Run, page: Page) -> None:
     page.route(f"**{VERSION_API}", lambda route: route.abort())
     try:
         run.check(True, "harness: the summary's version checks get no answer, so its copy stays the one read before")
-        _write_dad_value(collective_file, EXPECTED_ROWS["without_rule"][0])
+        _write_dad_value(collective_file, _expected_rows(run)["without_rule"][0])
         run.check(True, f"harness: one value typed into column {DAD_COLUMN} of row 18 while the summary is open")
         page.evaluate(WATCH_RESULT_SUMMARY)
         page.go_back()
@@ -230,7 +233,7 @@ def _live_result_card(run: Run, page: Page, filling: Locator, collective_file: P
     section = filling.get_by_role("region", name=KIND_TITLES["without_rule"], exact=True)
     try:
         page.evaluate(WATCH_RETURNS)
-        for row in EXPECTED_ROWS["without_rule"]:
+        for row in _expected_rows(run)["without_rule"]:
             _write_dad_value(collective_file, row)
         run.check(True, f"harness: Dad's values typed into column {DAD_COLUMN} of rows 18 and 20 and saved")
         expect(section).to_contain_text("2 z 2", timeout=LIVE_TIMEOUT_MS)
@@ -433,7 +436,7 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
     columns = answer["columns"]
     assert isinstance(rows, list) and isinstance(columns, list)
     run.check(
-        answer["state"] == "ready" and [row["row"] for row in rows] == EXPECTED_ROWS[kind],
+        answer["state"] == "ready" and [row["row"] for row in rows] == _expected_rows(run)[kind],
         f"{title}: the server lists only this kind's rows, ascending",
     )
     run.check(
@@ -528,7 +531,7 @@ def _live_kind_cell(run: Run, page: Page, collective_file: Path, table_answer: d
     ``table_answer`` is the kind's earlier answer: the row texts it hides in the ARIA snapshot have not changed.
     """
 
-    row = EXPECTED_ROWS["without_rule"][1]
+    row = _expected_rows(run)["without_rule"][1]
     page.get_by_role("region", name=KIND_TITLES["without_rule"], exact=True).get_by_role("link").click()
     table = page.get_by_role("table", name="Wiersze Pliku zbiorczego", exact=True)
     line = table.locator("tr", has=page.get_by_role("rowheader", name=str(row)))
@@ -656,7 +659,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     expect(page.get_by_role("main").get_by_text(LAST_COMPLETE, exact=True)).to_be_visible()
     before = _ready(run, "uzupelnienie-podsumowanie")
     run.check(
-        _rows(before) == {kind: [(row, False) for row in rows] for kind, rows in EXPECTED_ROWS.items()},
+        _rows(before) == {kind: [(row, False) for row in rows] for kind, rows in _expected_rows(run).items()},
         "the server lists rows 18 and 20 without rule and row 19 from the description, none done yet",
     )
     _check_screen(run, page, before, "after Uzupełnij")
@@ -671,7 +674,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     run.capture(page, "221-uzupelnienie-podsumowanie")
 
     run.step(FEATURE, "uzupelnienie-wpis-taty")
-    row = EXPECTED_ROWS["without_rule"][0]
+    row = _expected_rows(run)["without_rule"][0]
     asked: list[str] = []
     page.on("request", lambda request: asked.append(urlsplit(request.url).path))
     page.evaluate("() => { window.__bez_przeladowania = true }")

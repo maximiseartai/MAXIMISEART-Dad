@@ -20,11 +20,12 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+
 from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
 from drive.common import DriveFailure, Run, dad_context
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
-
 from skrypt_skilla import Parser
 
 # Every feature's module, imported before the drive starts, so a broken one fails it at once.

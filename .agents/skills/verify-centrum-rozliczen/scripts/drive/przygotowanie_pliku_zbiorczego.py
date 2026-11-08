@@ -9,8 +9,6 @@ from playwright.sync_api import Page, Request, expect
 
 from drive.common import (
     HIDE_TAB,
-    LAST_COMPLETE,
-    ROW_MARKER,
     SHOW_TAB,
     Run,
     active_run_signs,
@@ -32,18 +30,29 @@ from drive.common import (
 )
 from drive.teksty import FILES_UNCHANGED
 from drive.uzupelnienie import drive_result_card
+from tests.fixtures.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 
 # An older period with no successful DRY-RUN in the fixture's metrics; its confirmation keeps the no-preview warning.
 NOT_PREVIEWED = "08_14_09_2026"
 PREPARATION = "przygotowanie-pliku-zbiorczego"
 INCOMPLETE_PERIOD_WHAT = "Ostatnie zlecenie okresu jest z soboty 10.10.2026"
-# Ilości usług warnings of the fixture's Plik zbiorczy rows (create_centrum_fixture.DEVICES): "Co się stało" and "Gdzie".
 COLLECTIVE_FILE = f"Rozliczenie {LAST_COMPLETE} - zbiorcze.xlsx"
-QUANTITY_WARNINGS = (
-    ("Narzędzie nie zna urządzenia z kolumny URZĄDZENIA", f"plik {COLLECTIVE_FILE}, wiersze 18, 20"),
-    ("rozlicza się z opisu technika", f"plik {COLLECTIVE_FILE}, wiersz 19"),
-    ("Ilości, które wynikają z opisu technika", f"plik {COLLECTIVE_FILE}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
-)
+
+
+def _rows(rows: list[int]) -> str:
+    return f"wiersz {rows[0]}" if len(rows) == 1 else f"wiersze {', '.join(str(row) for row in rows)}"
+
+
+def _quantity_warnings(run: Run) -> tuple[tuple[str, str], ...]:
+    """Ilości usług warnings of the fixture's Plik zbiorczy rows (``preparation.rows`` of fixture.json): "Co się
+    stało" and "Gdzie"."""
+
+    rows = run.fixture["preparation"]["rows"]
+    return (
+        ("Narzędzie nie zna urządzenia z kolumny URZĄDZENIA", f"plik {COLLECTIVE_FILE}, {_rows(rows['without_rule'])}"),
+        ("rozlicza się z opisu technika", f"plik {COLLECTIVE_FILE}, {_rows(rows['from_description'])}"),
+        ("Ilości, które wynikają z opisu technika", f"plik {COLLECTIVE_FILE}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
+    )
 
 
 def _started_once(run: Run, page: Page, sent: list[Request], what: str) -> None:
@@ -57,13 +66,14 @@ def _quantity_warnings_shown(run: Run, page: Page, result: dict[str, object], la
     """The result shows each Ilości usług warning in three parts, with Plik zbiorczy rows and no row content."""
 
     card = page.get_by_role("region", name="Podgląd na żywo")
-    for what, where in QUANTITY_WARNINGS:
+    expected = _quantity_warnings(run)
+    for what, where in expected:
         expect(card.get_by_label("Ostrzeżenie").filter(has_text=what).filter(has_text=where)).to_be_visible()
     warnings = result["warnings"]
     assert isinstance(warnings, list)
     shown = [(warning["what"], warning["where"]) for warning in warnings]
     run.check(
-        all(any(what in text and place == where for text, place in shown) for what, where in QUANTITY_WARNINGS)
+        all(any(what in text and place == where for text, place in shown) for what, where in expected)
         and ROW_MARKER not in json.dumps(warnings, ensure_ascii=False),
         f"{label} shows the Ilości usług warnings with Plik zbiorczy rows and no row content",
     )

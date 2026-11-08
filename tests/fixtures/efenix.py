@@ -24,6 +24,12 @@ from tests.fixtures.workbooks import active_worksheet, add_external_link_fixture
 
 SOURCE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 DAY = date(2026, 9, 9)
+ADDRESS = "UL. TESTOWA 12/3"
+"""``ADRES`` zlecenia w Pliku zbiorczym, domyślny ``Order.address``."""
+EFENIX_ADDRESS = "Miasto-Dzielnica ul.Testowa 12 Lokal 3"
+"""Dane adresowe tego samego zlecenia w Atrapie efenix, domyślny ``Order.efenix_address``."""
+FIRST_ROW = 18
+"""Wiersz danych pierwszego zlecenia ``write_collective_file``; każde następne stoi wiersz niżej."""
 _THIN = Side(style="thin")
 
 
@@ -40,11 +46,11 @@ class Order:
 
     number: str
     worker: str = "adrian.testowy"
-    address: str = "UL. TESTOWA 12/3"
+    address: str = ADDRESS
     day: date | None = DAY
     cells: Mapping[str, CellValue] = field(default_factory=dict)
     amount: float | None = 0.0
-    efenix_address: str = "Miasto-Dzielnica ul.Testowa 12 Lokal 3"
+    efenix_address: str = EFENIX_ADDRESS
     quantities: Mapping[str, int] = field(default_factory=dict)
     emmett: Mapping[str, int] = field(default_factory=dict)
     address_font: Font | None = field(default_factory=lambda: Font(name="Arial", sz=8))
@@ -70,7 +76,7 @@ class Order:
 def write_collective_file(
     directory: Path, orders: Sequence[Order], *, notes_sheet_first: bool = False, headers: Mapping[str, str | None] | None = None
 ) -> Path:
-    """Plik zbiorczy okresu ``PERIOD`` w ``directory/PERIOD`` z nagłówkami Wzorca i Wierszem danych każdego zlecenia od 18.
+    """Plik zbiorczy okresu ``PERIOD`` w ``directory/PERIOD`` z nagłówkami Wzorca i Wierszem danych każdego zlecenia od ``FIRST_ROW``.
 
     ``Kwota`` (AU) to formuła sumy z wartością policzoną przy „zapisie w Excelu”, jak w pliku taty. Komórka ``ADRES`` z
     czcionką ma też obramowanie i odblokowaną ochronę, jak w pliku taty, oraz Wyróżnienia zlecenia. ``notes_sheet_first``
@@ -93,7 +99,7 @@ def write_collective_file(
     sheet.column_dimensions["B"].width = 31.5
     sheet.column_dimensions["F"].width = 12.25
     computed: dict[int, float] = {}
-    for number, order in enumerate(orders, start=18):
+    for number, order in enumerate(orders, start=FIRST_ROW):
         moment = None if order.day is None else datetime(order.day.year, order.day.month, order.day.day, 10, 30)
         cells: dict[str, CellValue] = {
             "A": "MIASTO",

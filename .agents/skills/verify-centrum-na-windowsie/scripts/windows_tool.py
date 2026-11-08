@@ -3,7 +3,7 @@
 ``prepare`` writes, under the run root:
 
 - ``dane/``: the synthetic folder okresów ``INEA``, Rejestr zleceń and Dad's ``config/`` (konfiguracja wykonawców and
-  the three Wzorce) from ``verify-centrum-rozliczen``'s fixture;
+  the three Wzorce) from ``verify-centrum-rozliczen``'s fixture (``create_centrum_fixture.dad_files``);
 - ``wydawca/`` and ``origin.git``: three versions of the tool. ``first`` is this checkout as it is now (tracked and
   untracked files, ignored ones left out), so a run proves the working tree, not the last commit. ``newest`` changes
   ``requirements.txt`` (a comment only, so pip installs nothing new), which makes the update install libraries.
@@ -108,7 +108,8 @@ def prepare(root: Path) -> dict[str, Any]:
     """Writes the run's world under ``root`` (which must not exist) and returns its facts."""
 
     create_run_root(root)
-    data = create_centrum_fixture.create(root / "dane")
+    (root / "dane").mkdir()
+    data = create_centrum_fixture.dad_files(root / "dane")
     origin = root / "origin.git"
     versions = _publish_versions(root / "wydawca", origin)
     recorder, opened = root / "przegladarka.cmd", root / "otwarte-adresy.txt"

@@ -28,7 +28,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Browser, BrowserContext, CDPSession, Page, Request, expect
 
 from drive import DEFAULT_REPEATS
-from drive.common import LAST_COMPLETE, PAGES, DriveFailure, Run, dad_context, ensure_files_set, replace_file
+from drive.common import PAGES, DriveFailure, Run, dad_context, ensure_files_set, replace_file
+from tests.fixtures.scenariusz_centrum import COLLECTIVE_HEADERS, LAST_COMPLETE
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 BASELINE = SKILL_ROOT / "wydajnosc-baseline.json"
@@ -51,10 +52,6 @@ LIVE_ROWS = 430
 LIVE_CHECKS = 3
 VERSION_PATH = f"/api/periods/{LAST_COMPLETE}/collective-file-version"
 VIEW_PATH = f"/api/periods/{LAST_COMPLETE}/quantities-to-fill"
-COLLECTIVE_HEADERS = (
-    "MIASTO", "ADRES", "UMOWA", "URZĄDZENIA", "CZYNNOŚCI", "NUMER ZL.", "DATA", "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE", "SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE",
-)
 LIVE_DEVICES = ("nokia zte", "zte", "nokia", "nokia zte stb")
 # Every fetch of the page with its path, start and answer (headers) in page time.
 FETCHES = r"""

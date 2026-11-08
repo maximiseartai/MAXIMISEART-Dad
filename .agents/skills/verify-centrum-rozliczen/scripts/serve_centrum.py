@@ -116,7 +116,7 @@ Wycena w efenix never reaches efenix.pl (ADR 0024): this script serves the Atrap
 (``tests/fixtures/atrapa_efenix.py``) on a free local port for as long as Centrum runs, writes its address to
 ``<root>/efenix/adres.txt``, and gives Centrum an efenix window in Playwright's headless Chromium with its profile in
 ``<root>/przegladarka-efenix`` and no human pace, like the
-tests of the process (Dad's window pauses about 20 s per order). The Atrapa holds ``EFENIX_ORDERS`` (made-up numbers, addresses and logins), starts
+tests of the process (Dad's window pauses about 20 s per order). The Atrapa holds ``EFENIX_ORDERS`` of ``tests/fixtures/scenariusz_centrum.py`` (made-up numbers, addresses and logins), starts
 logged out, so the window waits for Dad's login, and answers each search after ``EFENIX_SEARCH_DELAY_S``, so the
 live progress can be seen; a form posted to its ``page_login.php`` logs in. At its first start for a run root the
 script also writes the Plik zbiorczy of those orders, with the Kwota (AU) Excel computed, to
@@ -188,20 +188,11 @@ from rozliczenia.tool_files import listen_locally
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
-from tests.fixtures.atrapa_efenix import amount_of, atrapa_efenix
+from tests.fixtures.atrapa_efenix import atrapa_efenix
 from tests.fixtures.widok_skrzynki import shown
-from tests.fixtures.efenix import Order, write_collective_file
+from tests.fixtures.efenix import write_collective_file
+from tests.fixtures.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED
 
-# Wycena w efenix: rows 18–20 of the Plik zbiorczy, one per Wykonawca: ready after the Wycena Emmetta and the quantity
-# from the file, unknown to efenix, and an Emmett whose quantity differs from the file.
-EFENIX_ORDERS = (
-    Order("#QX9001", cells={"O": 1, "T": 2}, amount=float(amount_of({"012": 1, "019": 2})), emmett={"012": 1}),
-    Order("#QX9002", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
-    Order("#QX9003", worker="celina.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 2}),
-    Order("#QX9004", worker="dorota.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
-)
-# The orders of ``EFENIX_ORDERS`` with the status „Rozliczone” in efenix (an Zlecenie rozliczone, #821).
-EFENIX_SETTLED = frozenset({"#QX9004"})
 EFENIX_SEARCH_DELAY_S = 1.0
 
 

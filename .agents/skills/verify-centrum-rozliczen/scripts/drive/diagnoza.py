@@ -8,7 +8,6 @@ from pathlib import Path
 from playwright.sync_api import Page, expect
 
 from drive.common import (
-    ROW_MARKER,
     Run,
     current_run,
     diagnosis_answer,
@@ -28,11 +27,12 @@ from drive.common import (
     while_open,
 )
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
+from tests.fixtures.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 
 FEATURE = "diagnoza"
 # A period without a Folder okresu that no feature prepares; the Rejestr zleceń has no orders in it, so no
 # Uruchomienie of this feature writes a file.
-PERIOD = "08_14_09_2026"
+PERIOD = PERIOD_WITHOUT_FILES
 REGISTER_OPEN = "Rejestr zleceń jest otwarty w Excelu. Nie utworzono żadnego pliku."
 NO_ORDERS = "W Rejestrze zleceń nie ma żadnego zlecenia z tego okresu."
 # The one Komunikat of the konfiguracja wykonawców, the same in both processes.

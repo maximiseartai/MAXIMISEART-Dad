@@ -41,7 +41,7 @@ Wykonawcy, and 258 more synthetic records in both metrics files.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import json
 from pathlib import Path
 import random
@@ -55,24 +55,31 @@ from openpyxl.worksheet.worksheet import Worksheet
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import Parser, create_run_root
 from tests.fixtures.intermax import ORDER_SHEET, Intermax
+from tests.fixtures.scenariusz_centrum import (
+    COLLECTIVE_FILE_ROWS,
+    COLLECTIVE_HEADERS,
+    COMPLETED,
+    DEVICES,
+    EMPTY_WORKER,
+    INTERNAL_HEADERS,
+    LAST_COMPLETE,
+    NEEDS_CHECK,
+    ORDERS,
+    PRICE_LIST,
+    REGISTER_HEADERS,
+    ROW_MARKER,
+    TODAY,
+    UNKNOWN_WORKER,
+    WORKER_IDS,
+    WORKERS,
+)
+from tests.fixtures.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
 
-# Dad's "today" for the run: Monday 19.10.2026, so the last complete period is 06_12_10_2026,
-# whose Folder okresu deliberately does not exist.
-TODAY = "2026-10-19"
-LAST_COMPLETE = "06_12_10_2026"
-# A period whose Plik zbiorczy has a Wiersz danych of a Wykonawca the konfiguracja wykonawców does not know.
-NEEDS_CHECK = "29_05_10_2026"
-UNKNOWN_WORKER = "wykonawca.spoza.konfiguracji"
-WORKERS = ("Wykonawca Testowy A", "Wykonawca Testowy B", "Wykonawca Testowy C")
-# A Wykonawca of the konfiguracja wykonawców without orders: his Szablon pracownika stays empty.
-EMPTY_WORKER = "Wykonawca Testowy D"
-# A synthetic row value inside every workbook. Centrum must never read or show workbook content,
-# so this marker must never appear in evidence (centrum_self_test.py checks it).
-ROW_MARKER = "CENTRUM-SYN-ROW"
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
 PREPARATION_COUNTERS = {"period_orders": 9, "successful_orders": 8, "skipped_empty_rows": 1, "warnings": 0}
 SETTLEMENT_COUNTERS = {
@@ -116,35 +123,6 @@ SETTLEMENT_RUNS: tuple[MetricRun, ...] = (
     ("2026-10-01T15:40:00+00:00", "RUN", "22_28_09_2026", "BLAD_KRYTYCZNY", (500, 0, 0, 0)),
     ("2026-10-01T15:46:00+00:00", "RUN", "22_28_09_2026", "OK", (500, 3400, 800, 8000)),
 )
-WORKER_IDS = ("wykonawca.a", "wykonawca.b", "wykonawca.c", "wykonawca.d")
-INTERNAL_TEMPLATE = "Wzorzec rozliczenia wewnętrznego.xlsx"
-COLLECTIVE_TEMPLATE = "Wzorzec pliku zbiorczego.xlsx"
-WORKER_TEMPLATE = "Wzorzec rozliczenia pracownika.xlsx"
-# The target headers the engine looks for; in the Wzorzec pliku zbiorczego WYKONAWCA must be in H17.
-INTERNAL_HEADERS = (
-    "DATA", "MIASTO", "ADRES", "UMOWA", "URZĄDZENIA", "CZYNNOŚCI", "NUMER ZL.", "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE", "SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE",
-)
-COLLECTIVE_HEADERS = (
-    "MIASTO", "ADRES", "UMOWA", "URZĄDZENIA", "CZYNNOŚCI", "NUMER ZL.", "DATA", "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE", "SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE",
-)
-# Synthetic price-list names in N17:AP17 of the Wzorzec pliku zbiorczego, which Przygotowanie copies into the Plik
-# zbiorczy; the kind page of Uzupełnienie shows them over the quantity columns.
-PRICE_LIST = (
-    "Dodatek za usterkę po godzinach", "Instalacja internetu", "Instalacja telewizji", "Multiroom",
-    "Aktywacja telefonu", "Dostarczenie urządzenia", "Drukowanie umowy", "Prace niestandardowe (rbh)",
-    "Dojazd do klienta", "Przyłącze w mikrokanalizacji", "Przyłącze napowietrzne",
-    "Przyłącze w budynku wielorodzinnym", "Montaż ONT", "Przyłącze doziemne", "Spawanie w mufie",
-    "Przedłużenie przyłącza", "Spawanie gniazdka", "Trasa do splittera", "Instalacja wewnętrzna",
-    "Dodatkowe urządzenie", "Dostarczenie dodatkowego urządzenia", "Usterka", "Sieć domowa do 30 m",
-    "Sieć domowa do 10 m bez przebicia", "Sieć domowa do 15 m z przebiciem", "Modyfikacja sieci domowej",
-    "Wywiad techniczny", "Prace dodatkowe z premii", "Deinstalacja usługi z odbiorem urządzeń",
-)
-# CZYNNOŚCI ZREALIZOWANE: a technician's description long enough to be cut to one line, with the row marker.
-COMPLETED = "Wymiana gniazdka abonenckiego i przedłużenie kabla do salonu, klient prosi o kontakt przed wizytą"
-
-
 YEAR_OF_WORK = "rok-pracy"
 YEAR_PERIODS = 52
 YEAR_WORKERS = tuple(f"Wykonawca Testowy {chr(ord('A') + number)}" for number in range(14))
@@ -154,27 +132,17 @@ MONTHS = (
 )
 
 
-REGISTER_HEADERS = (
-    "nr zlecenia", "DATA GODZ. POCZ.", "WYKONAWCA", "MIASTO", "adres", "STATUS APLIKACJI", "UMOWA",
-    "URZĄDZENIA", "CZYNNOŚCI", "SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE", "NUMER UMOWY/ZLECENIA ORANGE",
-)
-# (start, worker, SKUTECZNE): one order of the previous period, then 06_12_10_2026 ending on Saturday.
-ORDERS = (
-    (datetime(2026, 10, 5, 9, 0), "wykonawca.a", "tak"),
-    (datetime(2026, 10, 6, 8, 0), "wykonawca.a", "tak"),
-    (datetime(2026, 10, 7, 10, 0), "wykonawca.b", "nie"),
-    (datetime(2026, 10, 8, 12, 0), "wykonawca.b", "tak"),
-    (datetime(2026, 10, 10, 9, 30), "wykonawca.c", "tak"),
-)
-# URZĄDZENIA by order number; every other order's URZĄDZENIA is its row marker, a device the Reguły ilości do not
-# know. Plik zbiorczy rows 18 and 20 (orders 2 and 5) warn about the unknown device, row 19 (order 4) about prewencja.
-DEVICES = {4: "prewencja"}
 # What Przygotowanie pliku zbiorczego of LAST_COMPLETE reports for these orders (orders per day from Tuesday).
 EXPECTED_PREPARATION = {
     "period_order_count": 4,
     "successful_order_count": 3,
     "skipped_empty_rows": 0,
     "orders_per_day": [1, 1, 1, 0, 1, 0, 0],
+    # Plik zbiorczy rows without a rule (a device the Reguły ilości do not know) and settled from the description
+    "rows": {
+        "without_rule": [row for number, row in COLLECTIVE_FILE_ROWS.items() if number not in DEVICES],
+        "from_description": [row for number, row in COLLECTIVE_FILE_ROWS.items() if number in DEVICES],
+    },
 }
 
 
@@ -228,14 +196,14 @@ def _configuration(config: Path) -> dict[str, str]:
         ),
         encoding="utf-8",
     )
-    _template(config / INTERNAL_TEMPLATE, 1, INTERNAL_HEADERS)
-    _template(config / COLLECTIVE_TEMPLATE, 17, COLLECTIVE_HEADERS, PRICE_LIST)
-    _template(config / WORKER_TEMPLATE, 17, COLLECTIVE_HEADERS)
+    _template(config / INTERNAL_TEMPLATE_NAME, 1, INTERNAL_HEADERS)
+    _template(config / COLLECTIVE_TEMPLATE_NAME, 17, COLLECTIVE_HEADERS, PRICE_LIST)
+    _template(config / WORKER_TEMPLATE_NAME, 17, COLLECTIVE_HEADERS)
     return {
         "worker_config": str(worker_config),
-        "internal_template": str(config / INTERNAL_TEMPLATE),
-        "collective_template": str(config / COLLECTIVE_TEMPLATE),
-        "worker_template": str(config / WORKER_TEMPLATE),
+        "internal_template": str(config / INTERNAL_TEMPLATE_NAME),
+        "collective_template": str(config / COLLECTIVE_TEMPLATE_NAME),
+        "worker_template": str(config / WORKER_TEMPLATE_NAME),
     }
 
 
@@ -574,11 +542,15 @@ def _tool_clone(root: Path) -> dict[str, object]:
     }
 
 
-def create(root: Path, variant: str | None = None) -> dict[str, object]:
-    create_run_root(root)
+def dad_files(root: Path) -> dict[str, object]:
+    """Dad's files under the existing ``root``: ``config/``, the folder okresów ``INEA`` and the Rejestr zleceń.
+
+    Returns their paths and the board of the folder okresów: token, Status okresu, number of Rozliczenia
+    pracowników, last complete period.
+    """
+
     (root / "config").mkdir()
     configuration = _configuration(root / "config")
-    (root / "picker").mkdir()
     periods = root / "INEA"
     periods.mkdir()
 
@@ -594,15 +566,31 @@ def create(root: Path, variant: str | None = None) -> dict[str, object]:
 
     register = root / "ZLECENIA SYNTETYCZNE OD 01_01_2026.xlsx"
     _register(register)
-
-    fixture: dict[str, object] = {
-        "today": TODAY,
+    return {
         "periods_directory": str(periods),
         "order_register": str(register),
+        "configuration": configuration,
+        "board": [
+            [LAST_COMPLETE, "no_period_files", 0, True],
+            [NEEDS_CHECK, "collective_file_prepared", 0, False],
+            ["22_28_09_2026", "worker_settlements_ready", len(WORKERS), False],
+            ["15_21_09_2026", "no_period_files", 0, False],
+        ],
+    }
+
+
+def create(root: Path, variant: str | None = None) -> dict[str, object]:
+    create_run_root(root)
+    dad = dad_files(root)
+    (root / "picker").mkdir()
+    fixture: dict[str, object] = {
+        "today": TODAY,
+        "periods_directory": dad["periods_directory"],
+        "order_register": dad["order_register"],
         "settings": str(root / "config" / "centrum-ustawienia.yaml"),
         "metrics": _metrics(root),
         # Konfiguracja: the files Centrum checks, and the Wykonawcy in the order of the konfiguracja wykonawców
-        "configuration": configuration,
+        "configuration": dad["configuration"],
         "workers": [*WORKERS, EMPTY_WORKER],
         # Aktualizacja narzędzia: the run's tool clone, its local "origin", both commits, and Dad's files in the clone
         "tool": _tool_clone(root),
@@ -616,12 +604,7 @@ def create(root: Path, variant: str | None = None) -> dict[str, object]:
         # Dad's own layout with months as billing cycles, for uklad-folderow-taty
         "dad_layout": _dad_layout(root),
         # token, Status okresu, number of Rozliczenia pracowników, last complete period
-        "board": [
-            [LAST_COMPLETE, "no_period_files", 0, True],
-            ["29_05_10_2026", "collective_file_prepared", 0, False],
-            ["22_28_09_2026", "worker_settlements_ready", len(WORKERS), False],
-            ["15_21_09_2026", "no_period_files", 0, False],
-        ],
+        "board": dad["board"],
     }
     if variant == YEAR_OF_WORK:
         metrics = fixture["metrics"]

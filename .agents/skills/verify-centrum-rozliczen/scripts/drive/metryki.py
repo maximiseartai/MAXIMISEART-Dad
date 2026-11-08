@@ -13,7 +13,6 @@ from typing import Any
 from playwright.sync_api import Locator, Page, ViewportSize, expect
 
 from drive.common import (
-    LAST_COMPLETE,
     REPO_ROOT,
     Run,
     choose_periods_directory,
@@ -22,6 +21,7 @@ from drive.common import (
     local_time,
     move,
 )
+from tests.fixtures.scenariusz_centrum import LAST_COMPLETE
 
 # The chart shows the newest Uruchomienia procesu of the chosen process and mode; older ones are in the history.
 CHART_RUNS = 12
