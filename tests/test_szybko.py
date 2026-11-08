@@ -38,6 +38,9 @@ BY_CHANGE_ONLY = {
     "tests/test_jedno_uruchomienie_naraz.py::test_rozjazd_czesci_modelowanej_recznie_konczy_sprawdzenie_przeplotow_porazka_w_ci_przed_sprawdzeniem": (
         "sprawdza skrypt skilla z podmienionym rozjazdem we własnym procesie, a nie całe repozytorium; graf wybiera go przy zmianie skilla"
     ),
+    "tests/test_publikacja_plikow_okresu.py::test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_sprawdzeniem": (
+        "sprawdza skrypt skilla z podmienionym rozjazdem, a nie całe repozytorium; graf wybiera go przy zmianie skilla"
+    ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples) i pliku tests/expected/komunikaty.txt (literał)"

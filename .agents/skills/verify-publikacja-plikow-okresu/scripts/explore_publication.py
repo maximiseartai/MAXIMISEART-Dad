@@ -40,18 +40,20 @@ import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
-from greenlet import getcurrent, greenlet  # type: ignore[import-untyped]  # greenlet ships no type hints
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from rozliczenia import preparation_files
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route, TemplateKind
+from eksplorator import Choices, Excuse, Interleaving, Kind, Thread, excuse_line, excused, gone_lines, schedules, verdict
+import rozjazd_modelu
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -227,12 +229,7 @@ class VirtualDisk:
             self._remove(key, "usunął")
 
 
-# --- Scheduler: one Uruchomienie procesu runs at a time, from one step to the next --------------------
-#
-# Each Uruchomienie procesu is a greenlet on the checker's own OS thread. With an OS thread each, every step was a
-# hand-over through the kernel, 140 thousand per check, and on a Windows runner with Python 3.11 busy with other
-# xdist workers each one waited for a free CPU until the check hit pytest's 120 s limit. A greenlet switch does not
-# wait.
+# --- Scheduler: one Uruchomienie procesu runs at a time, from one step to the next (``eksplorator.Interleaving``) ---
 
 
 @dataclass
@@ -254,24 +251,19 @@ class Pending:
 
 
 @dataclass
-class Run:
-    name: str
-    status: Literal["new", "running", "parked", "done"] = "new"
+class Run(Thread):
     pending: Pending | None = None
-    go: str | None = None
     stopped_by: type[BaseException] | None = None
     result: RunResult | None = None
     error: str | None = None
     stop_text: str = ""
     gap: str | None = None
     killed_before: tuple[str, str] | None = None
-    history: list[str] = field(default_factory=list)
-    greenlet: greenlet | None = None
 
 
 def _current_run() -> Run | None:
-    run: Run | None = getattr(getcurrent(), "checked_run", None)
-    return run
+    run = Interleaving.current()
+    return run if isinstance(run, Run) else None
 
 
 def _escaping() -> BaseException | None:
@@ -294,10 +286,10 @@ def _code_location() -> str:
     return "poza preparation_files.py"
 
 
-class Scheduler:
+class Scheduler(Interleaving[Run]):
     def __init__(self, disk: VirtualDisk) -> None:
+        super().__init__()
         self.disk = disk
-        self.home = getcurrent()  # the checker, which picks every step
         self.probe_calls: list[str] | None = None
 
     def step(
@@ -328,9 +320,7 @@ class Scheduler:
             raise escaping
         pending = Pending(call, tuple(self.disk.label(path) for path in paths), mutating, _code_location(), killable)
         run.pending = pending
-        run.status = "parked"
-        self.home.switch()
-        outcome, run.go = run.go, None
+        outcome = self.park(run)
         run.pending = None
         if outcome in ("crash", "abort"):
             run.stopped_by = Crash if outcome == "crash" else Abort
@@ -351,17 +341,9 @@ class Scheduler:
         run.history.append(f"{call}={answer!r}" if not isinstance(answer, os.stat_result) else f"{call}={answer.st_mode}")
         return answer
 
-    def settle(self, runs: Sequence[Run]) -> None:
-        """Runs every released or new Uruchomienie procesu up to its next step or its end."""
-
-        while (run := next((run for run in runs if run.status == "running"), None)) is not None:
-            assert run.greenlet is not None
-            self.disk.actor = run.name
-            run.greenlet.switch()
-
-    def release(self, run: Run, outcome: str) -> None:
-        run.status = "running"
-        run.go = outcome
+    def _switch(self, thread: Run) -> None:
+        self.disk.actor = thread.name
+        super()._switch(thread)
 
 
 # --- Interception of os.* for paths on the in-memory disk ------------------------------------------
@@ -664,22 +646,10 @@ class RiskShape:
         )
 
 
-@dataclass(frozen=True)
-class Risk:
-    """A break of ``rule`` in ``shape`` that the report lists apart from new ones; ``story`` names its decision."""
-
-    name: str
-    rule: str
-    story: str
-    shape: RiskShape
-
-    def matches(self, violation: Violation) -> bool:
-        return violation.rule == self.rule and violation.broken is not None and self.shape.holds(violation.broken)
-
-
-# Breaks of a rule that were consciously accepted; each names the decision that accepted it.
-ACCEPTED_RISKS: tuple[Risk, ...] = (
-    Risk(
+# Breaks of a rule that were consciously accepted; each names the decision that accepted it. Its shape judges a
+# violation's ``broken``.
+ACCEPTED_RISKS: tuple[Excuse[RiskShape], ...] = (
+    Excuse(
         "ADR 0005",
         "RAZEM_ALBO_ZADEN",
         "proces zamknięty między dwoma os.rename w _publish albo po nieudanym drugim os.rename, zanim wycofanie usunęło "
@@ -689,11 +659,12 @@ ACCEPTED_RISKS: tuple[Risk, ...] = (
             left=(INTERNAL,),
             unlink_failed=False,
         ),
+        after=("jedno-uruchomienie", "dwa-uruchomienia"),
     ),
 )
 
 # Findings in the current code. They are reported on every run; any other violation fails the check.
-KNOWN_FINDINGS: tuple[Risk, ...] = ()
+KNOWN_FINDINGS: tuple[Excuse[RiskShape], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -762,8 +733,6 @@ def dad_actions(disk: VirtualDisk, layout: Layout) -> list[tuple[str, Callable[[
 
 @dataclass
 class Execution:
-    picks: list[int]
-    widths: list[int]
     trace: list[str]
     violations: list[Violation]
     gaps: list[str]
@@ -832,21 +801,12 @@ def _razem_albo_zaden(run: Run, layout: Layout, owned: tuple[str, ...]) -> Viola
     )
 
 
-def execute(scope: Scope, prefix: Sequence[int], visited: set[object]) -> Execution:
-    picks: list[int] = []
-    widths: list[int] = []
+def execute(scope: Scope, choices: Choices, visited: set[object]) -> Execution:
     trace: list[str] = []
-
-    def choose(count: int) -> int:
-        index = prefix[len(picks)] if len(picks) < len(prefix) else 0
-        picks.append(index)
-        widths.append(count)
-        return index
-
     layout = make_layout()
     disk = VirtualDisk(layout.disk_root, short_names(scope.runs))
     scheduler = Scheduler(disk)
-    initial_state = scope.initial_states[choose(len(scope.initial_states))]
+    initial_state = scope.initial_states[choices.choose(len(scope.initial_states))]
     prepare_disk(disk, layout, initial_state)
     trace.append(f"stan początkowy: {initial_state}")
     runs = [Run(f"u{index}") for index in range(1, scope.runs + 1)]
@@ -855,20 +815,11 @@ def execute(scope: Scope, prefix: Sequence[int], visited: set[object]) -> Execut
     cut = False
 
     with harness(disk, scheduler):
-        for started, run in enumerate(runs, start=1):
-
-            def body(run: Run = run) -> None:
-                try:
-                    _run_body(run, layout)
-                finally:
-                    run.status = "done"
-
-            run.greenlet = greenlet(body, parent=scheduler.home)
-            run.greenlet.checked_run = run
-            run.status = "running"
-            scheduler.settle(runs[:started])
+        for run in runs:
+            scheduler.spawn(run, partial(_run_body, run, layout))
+            scheduler.settle()
         while True:
-            scheduler.settle(runs)
+            scheduler.settle()
             parked = [run for run in runs if run.status == "parked"]
             if not parked:
                 break
@@ -879,8 +830,7 @@ def execute(scope: Scope, prefix: Sequence[int], visited: set[object]) -> Execut
                 faults_left,
                 crashes_left,
             )
-            replaying = len(picks) < len(prefix)
-            if not replaying and state in visited:
+            if not choices.replaying and state in visited:
                 cut = True
                 for run in parked:
                     scheduler.release(run, "abort")
@@ -897,7 +847,7 @@ def execute(scope: Scope, prefix: Sequence[int], visited: set[object]) -> Execut
                     options.append(("crash", run, None, f"{run.name}: proces zamknięty tuż przed krokiem {step}"))
             if dad_left:
                 options.extend(("dad", None, action, text) for text, action in dad_actions(disk, layout))
-            kind, chosen, action, text = options[choose(len(options))]
+            kind, chosen, action, text = options[choices.choose(len(options))]
             trace.append(text)
             disturbances += kind != "ok"
             if kind == "dad":
@@ -925,14 +875,7 @@ def execute(scope: Scope, prefix: Sequence[int], visited: set[object]) -> Execut
             if violation is not None:
                 violations.append(violation)
     undisturbed_success = not cut and not disturbances and runs[0].result == "SUKCES"
-    return Execution(picks, widths, trace, violations, gaps, successes, undisturbed_success, cut, disturbances)
-
-
-def next_prefix(execution: Execution) -> list[int] | None:
-    for depth in range(len(execution.picks) - 1, -1, -1):
-        if execution.picks[depth] + 1 < execution.widths[depth]:
-            return execution.picks[:depth] + [execution.picks[depth] + 1]
-    return None
+    return Execution(trace, violations, gaps, successes, undisturbed_success, cut, disturbances)
 
 
 # --- Exploration and report ----------------------------------------------------------------------
@@ -956,9 +899,7 @@ def explore(scope: Scope) -> ScopeReport:
     report = ScopeReport(scope)
     visited: set[object] = set()
     started = time.perf_counter()
-    prefix: list[int] | None = []
-    while prefix is not None:
-        execution = execute(scope, prefix, visited)
+    for execution in schedules(lambda choices: execute(scope, choices, visited)):
         report.schedules += 1
         report.successes += execution.successes
         report.undisturbed_successes += execution.undisturbed_success
@@ -970,32 +911,27 @@ def explore(scope: Scope) -> ScopeReport:
                 report.counterexamples[violation.signature] = (violation, execution.trace, rank)
         for gap in execution.gaps:
             report.gaps.setdefault(gap, execution.trace)
-        prefix = next_prefix(execution)
     report.states = len(visited)
     report.seconds = time.perf_counter() - started
     return report
 
 
-@dataclass
+@dataclass(frozen=True)
 class Outcome:
-    new_violations: int
-    known_findings: int
-    accepted_risks: int
-    gaps: int
-    vacuous: int
     lines: list[str]
+    exit_code: int
 
-    @property
-    def exit_code(self) -> int:
-        if self.gaps:
-            return 2
-        return 1 if self.new_violations or self.vacuous else 0
+
+VERDICT = "PUBLIKACJA"
+GAP_REASON = ": kod używa wywołania, którego dysk w pamięci nie modeluje."
 
 
 def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcome:
     lines = ["Publikacja plików okresu (Przygotowanie pliku zbiorczego): sprawdzenie wyczerpujące", ""]
-    new = known = accepted = gaps = vacuous = 0
+    new = gaps = vacuous = 0
+    counts: dict[Kind, int] = {"known": 0, "accepted": 0}
     shown: dict[tuple[object, ...], str] = {}
+    excuses_shown: set[tuple[str, str]] = set()
     for report in reports:
         lines.append(f"zakres {report.scope.name}: {report.scope.describe()}")
         lines.append(
@@ -1010,14 +946,12 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
             lines.append(f"  LUKA MODELU: {gap}")
             lines.extend(f"    {number}. {step}" for number, step in enumerate(trace, start=1))
         for signature, (violation, trace, _) in sorted(report.counterexamples.items(), key=lambda item: str(item[0])):
-            finding = next((entry for entry in KNOWN_FINDINGS if entry.matches(violation)), None)
-            risk = next((entry for entry in ACCEPTED_RISKS if entry.matches(violation)), None)
-            if risk is not None and not strict:
-                accepted += signature not in shown
-                lines.append(f"  ZAAKCEPTOWANE RYZYKO ({violation.rule}): {risk.story}")
-            elif finding is not None and not strict:
-                known += signature not in shown
-                lines.append(f"  ZNANE USTALENIE ({violation.rule}): {finding.story}")
+            found = excused(violation.rule, violation.broken, known=KNOWN_FINDINGS, accepted=ACCEPTED_RISKS)
+            if found is not None:
+                excuses_shown.add((found[1].name, report.scope.name))
+            if found is not None and not strict:
+                counts[found[0]] += signature not in shown
+                lines.append(f"  {excuse_line(*found)}")
             else:
                 new += signature not in shown
                 lines.append(f"  NARUSZENIE {violation.rule}: {violation.text}")
@@ -1027,17 +961,20 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
             shown[signature] = report.scope.name
             lines.extend(f"    {number}. {step}" for number, step in enumerate(trace, start=1))
         lines.append("")
-    if gaps:
-        lines.append(f"PUBLIKACJA: LUKA MODELU ({gaps}): kod używa wywołania, którego dysk w pamięci nie modeluje.")
-    elif new or vacuous:
-        lines.append(f"PUBLIKACJA: NOWE NARUSZENIE ({new + vacuous})")
-    elif known or accepted:
-        counts = [f"ZNANE USTALENIA: {known}"] if known else []
-        counts += [f"ZAAKCEPTOWANE RYZYKA: {accepted}"] if accepted else []
-        lines.append(f"PUBLIKACJA OK, {', '.join(counts)}")
-    else:
-        lines.append("PUBLIKACJA OK")
-    return Outcome(new, known, accepted, gaps, vacuous, lines)
+    finished = [report.scope.name for report in reports if not report.gaps]
+    disappeared = gone_lines(finished, excuses_shown, known=KNOWN_FINDINGS, accepted=ACCEPTED_RISKS)
+    lines.extend(disappeared)
+    verdict_line, code = verdict(
+        VERDICT,
+        new=new + vacuous,
+        gone=len(disappeared),
+        known=counts["known"],
+        accepted=counts["accepted"],
+        gaps=gaps,
+        gap_reason=GAP_REASON,
+    )
+    lines.append(verdict_line)
+    return Outcome(lines, code)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1045,13 +982,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--scope", choices=sorted(SCOPES), action="append", help="one scope; default: all")
     parser.add_argument("--strict", action="store_true", help="report known findings and accepted risks as violations too")
     arguments = parser.parse_args(argv)
+    drift = rozjazd_modelu.rozjazd(Path(__file__).resolve().parents[1], REPO_ROOT)
+    if (failure := rozjazd_modelu.porazka_w_ci(drift, VERDICT)) is not None:
+        print(failure)
+        return 1
     problems = probe_interception()
     if problems:
         print("\n".join(f"LUKA MODELU: {problem}" for problem in problems))
-        print(f"PUBLIKACJA: LUKA MODELU ({len(problems)}): kod używa wywołania, którego dysk w pamięci nie modeluje.")
-        return 2
+        verdict_line, code = verdict(VERDICT, new=0, gone=0, gaps=len(problems), gap_reason=GAP_REASON)
+        print(verdict_line)
+        return code
     reports = [explore(SCOPES[name]) for name in (arguments.scope or SCOPES)]
     outcome = summarize(reports, strict=arguments.strict)
+    if drift is not None:
+        print(f"UWAGA: {drift}\n")
     print("\n".join(outcome.lines))
     return outcome.exit_code
 

@@ -4,6 +4,8 @@ description: Exhaustively check that Przygotowanie pliku zbiorczego publishes Ro
 pilnuje:
   - src/rozliczenia/preparation_files.py
   - src/rozliczenia/collective_preparation.py
+  - tools/lib/rozjazd_modelu.py
+  - tools/lib/eksplorator.py
 ci: .agents/skills/verify-publikacja-plikow-okresu/scripts/explore_publication.py
 ---
 
@@ -16,7 +18,8 @@ a change touches this skill, and `check_publication_mutations.py` in full CI on 
 `main` (`mutacje-nocne.yml`). Run them locally only to reproduce a red CI step or the night's issue, or
 one scope while you work on it. What stays with you: „Does the change
 touch it?” (a change that makes Przygotowanie publish around `write_period_files` escapes the check
-altogether) and sorting a red run as „When the check fails” says.
+altogether), bringing the model in line when the drift says so, and sorting a red run as „When the check fails”
+says.
 
 ## The promise
 
@@ -45,24 +48,23 @@ not matter here: the check replaces workbook writing with one step that creates
 the staged file and returns the file's kind and a route, as `_write_period_file`
 returns them for the metrics record (`RouteCounts`).
 
-**Sync commit: `054308111`** (2026-10-31, `main` after #710). At this commit the
-checker was confirmed to describe the code above. From the previous sync commit
-`11588db1`, `write_period_files` returns the routes of both files
-(`c4d0ffc1b`, `e4824c09c`), so the checker's workbook step returns a kind and a
-route too; Sprawdzanie stops on Surowe zlecenia in the period (#471,
-`c086a9acd`) before Odczyt danych, outside the check; the warning about columns
-from the description became unconditional (`6aa0f6e21`). The publication steps,
-`_publish`, the rollback and the exception mapping did not change, and
-`prepare_collective_file` still publishes only through `write_period_files`. To
-see whether the checker needs another look:
+The one part modelled by hand is that workbook step: `_write_period_file` of
+`preparation_files.py`, whose digest is in `model/definicje.json`. When it
+changes, `explore_publication.py` fails in CI with
+`PUBLIKACJA: ROZJAZD MODELU Z KODEM` before the check, and prints the drift as an
+`UWAGA:` line above the verdict elsewhere; `tools/szybko.py` fails on the same
+drift before you push (step `rozjazd modelu`).
 
-```bash
-git log --oneline 054308111..HEAD -- src/rozliczenia/preparation_files.py src/rozliczenia/collective_preparation.py
-```
+## Bring the model in line
 
-Read each listed commit against the steps above. Move the sync commit forward
-only after the checker matches the code at the new commit and the check and its
-mutations pass there.
+When `_write_period_file` changes:
+
+1. Read the diff: the drift line names the changed definition.
+2. Change `write_period_file` in `harness()` of `explore_publication.py` so that it does what the code does: what it
+   returns for the metrics record, what it raises, and which files it creates.
+3. Run the check and `--strict`. A new violation is a finding: replay it on the code before you call it a bug.
+4. Run `tools/przesun_model.py verify-publikacja-plikow-okresu` only after the harness describes the code, and write
+   in the commit message what changed in the harness and why.
 
 ## Run
 
@@ -90,6 +92,8 @@ The last line is the verdict:
 | `PUBLIKACJA OK` | 0 | Both rules hold in every schedule. |
 | `PUBLIKACJA OK, ZNANE USTALENIA: n, ZAAKCEPTOWANE RYZYKA: m` | 0 | Only the known findings and accepted risks below, each printed with its counterexample. A count of zero is left out. |
 | `PUBLIKACJA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or `BRAK_PUBLIKACJI`: with no errors, kills, or Dad actions, nothing was ever published. |
+| `PUBLIKACJA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding or accepted risk did not show in a scope of its `after`. If a change fixed it, narrow or delete it in `KNOWN_FINDINGS` or `ACCEPTED_RISKS` and below. |
+| `PUBLIKACJA: ROZJAZD MODELU Z KODEM` | 1 | Only in CI, before the check: `_write_period_file` differs from its digest in `model/definicje.json` (see „Bring the model in line”). |
 | `PUBLIKACJA: LUKA MODELU (n)` | 2 | The code made a filesystem call the in-memory disk does not model. No verdict on the rules. |
 
 `--scope jedno-uruchomienie` or `--scope dwa-uruchomienia` runs one scope.
@@ -143,8 +147,8 @@ above, and Przebieg rozliczeń's own folder publication in `settlement_files.py`
 None at present: `KNOWN_FINDINGS` in `explore_publication.py` is empty.
 
 A known finding is a real defect in the current code. It is reported on every
-run until the code is fixed. When a code change fixes it, the checker stops
-printing it. Delete its entry from `KNOWN_FINDINGS` and from this list.
+run until the code is fixed. When a code change fixes it, the check ends with
+`ZNALEZISKO ZNIKNĘŁO`: delete its entry from `KNOWN_FINDINGS` and from this list.
 
 ## Accepted risks
 
@@ -162,8 +166,10 @@ A break of a rule that a recorded decision accepts. It is printed as
    remove the leftover file. The check prints it twice, once for each step the
    process died before.
 
-An entry lives in `ACCEPTED_RISKS` in `explore_publication.py`, names its
-decision and has its shape (`RiskShape`, each part required, #920): the steps
+An entry lives in `ACCEPTED_RISKS` in `explore_publication.py` as an `Excuse` of
+`tools/lib/eksplorator.py`: it names its decision, names in `after` the scopes
+after which it always shows (both, today), and has its shape (`RiskShape`, each
+part required, #920): the steps
 of `_publish` before which the kill of the process ended the run
 (`killed_before`), the run's period files left, exactly (`left`), and no failed
 `os.unlink` of the run (`unlink_failed`): a rollback whose `os.unlink` failed is
@@ -171,8 +177,9 @@ issue #92's case, which ADR 0005 does not cover. A run that was not killed, that
 left other files, or whose `os.unlink` failed breaks the rule anew. Each part has a broken variant just
 outside it in `BOUNDARIES` of `check_publication_mutations.py`, which must give
 a new violation; `tests/test_mutacje_skilli.py` reds an entry with a part
-without one. If a change to the publication code makes it disappear, delete the
-entry here and there, and mark the ADR as superseded.
+without one. If a change to the publication code makes it disappear, the check
+ends with `ZNALEZISKO ZNIKNĘŁO`: delete the entry here and there, and mark the ADR
+as superseded.
 
 ## When the check fails
 
@@ -184,7 +191,8 @@ is the code that made the call. Then sort it into one of three cases:
   the end state breaks the rule as stated above. Report it with the story in
   those words. Fix the product code only if the user asks. If the user accepts
   the risk instead, record the decision in an ADR, add to `ACCEPTED_RISKS` an
-  entry naming the ADR with the shape of its story (`RiskShape`), add to
+  entry naming the ADR with the shape of its story (`RiskShape`) and the scopes
+  it shows in (`after`), add to
   `BOUNDARIES` a broken variant just outside each part of it, and add it to
   Accepted risks here.
 - **Modeling error**: the story contains a step Windows would not do, such as a
