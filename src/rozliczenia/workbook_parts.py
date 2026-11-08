@@ -550,7 +550,6 @@ def rows_dated_between(
                 begin, finish = _window(xml, start, end, dated)
                 rows |= {(begin, finish)} | _master_rows(xml, start, begin) | _master_rows(xml, finish, end)
                 kept = range(min(dated)[0], max(dated)[0] + 1)
-            expat.ParserCreate().Parse(xml, True)
             ranges[title] = kept
             return b"".join([xml[:start], *(xml[begin:finish] for begin, finish in sorted(rows)), xml[end:]])
 
