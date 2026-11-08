@@ -18,7 +18,6 @@ from cele_mutacji_centrum import (
     EFENIX_BROWSER,
     EFENIX_CHECKS,
     EFENIX_KIND,
-    LOGS_OF_RUN,
     NOTIFICATIONS,
     RUN_LOGS,
     WYCENA,
@@ -46,7 +45,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Logi bez śladu zleceń",
-        (Edit(LOGS_OF_RUN, "efenix_orders=None if priced is None else LoggedOrder.all_of(priced)", "efenix_orders=None"),),
+        (Edit(EFENIX_KIND, "efenix_orders=None if priced is None else LoggedOrder.all_of(priced)", "efenix_orders=None"),),
         WYCENA,
         "Maks nie odtworzy problemu zlecenia z Logów Uruchomienia",
     ),

@@ -22,8 +22,9 @@ from rozliczenia.centrum.process_kind import (
     PeriodStart,
     Start,
 )
+from rozliczenia.centrum.run_logs import LoggedOrder, LoggedWindowStop, ProcessLogs
 from rozliczenia.centrum.run_view import ProcessView, count_figure, elapsed_only, order_label
-from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingMode, PricingSummary
+from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingMode, PricingStopped, PricingSummary
 from rozliczenia.tool_files import EFENIX_METRICS
 
 # Listy zleceń na karcie bieżącego Uruchomienia: najpierw te, które zostały tacie.
@@ -70,6 +71,18 @@ def _notes(summary: PricingSummary) -> list[contract.OrderNotes]:
     ]
 
 
+def _logs(summary: PricingSummary | None, facts: object) -> ProcessLogs:
+    """Ślad zleceń z podsumowania, a po Zatrzymaniu okna efenix (``PricingStopped``) ślad zleceń sprzed niego i samo
+    Zatrzymanie."""
+
+    stopped = facts if isinstance(facts, PricingStopped) else None
+    priced = summary if stopped is None else stopped.summary
+    return ProcessLogs(
+        efenix_orders=None if priced is None else LoggedOrder.all_of(priced),
+        efenix_stop=None if stopped is None else LoggedWindowStop.of(stopped),
+    )
+
+
 def _inputs(start: Start, parts: HostParts) -> EfenixInputs:
     window = parts.window()
     return EfenixInputs(
@@ -112,4 +125,5 @@ KIND: Final[PeriodProcessKind[EfenixInputs, PricingSummary]] = PeriodProcessKind
         *TAIL,
     ),
     journaled=True,
+    logs=_logs,
 )
