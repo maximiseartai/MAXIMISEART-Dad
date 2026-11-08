@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Page, Request, Route, expect
 
-from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory, move
+from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory, move, sent_requests, settle
 
 
 def drive(run: Run, page: Page) -> None:
@@ -112,14 +112,16 @@ def drive(run: Run, page: Page) -> None:
 
     page.on("request", count_setup)
     try:
-        for click, then, theme in (
-            ("Włącz motyw jasny", "Włącz motyw ciemny", "light"),
-            ("Włącz motyw ciemny", "Włącz motyw jasny", "dark"),
-        ):
-            page.get_by_role("button", name=click, exact=True).click()
-            expect(page.get_by_role("button", name=then, exact=True)).to_be_visible()
-            run.wait_for(lambda: run.remembered("motyw") == theme, f"the settings file remembers {theme}")
-        page.wait_for_timeout(400)  # a remount after the server's answer would read the start again by now
+        with sent_requests(page, "PUT", "/api/settings/theme") as saves:
+            for click, then, theme in (
+                ("Włącz motyw jasny", "Włącz motyw ciemny", "light"),
+                ("Włącz motyw ciemny", "Włącz motyw jasny", "dark"),
+            ):
+                page.get_by_role("button", name=click, exact=True).click()
+                expect(page.get_by_role("button", name=then, exact=True)).to_be_visible()
+                run.wait_for(lambda: run.remembered("motyw") == theme, f"the settings file remembers {theme}")
+            # A remount on the server's answer would read the start again once that answer reached the page.
+            settle(page, saves)
     finally:
         page.remove_listener("request", count_setup)
     expect(page.get_by_role("button", name="Podgląd bez zapisu", exact=True)).to_be_enabled()

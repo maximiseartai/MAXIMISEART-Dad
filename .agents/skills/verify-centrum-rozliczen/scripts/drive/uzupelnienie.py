@@ -22,6 +22,7 @@ from drive.common import (
     LogEntry,
     Run,
     close_centrum,
+    frontend_ms,
     last_opened_is,
     move,
     next_step_names_current_step,
@@ -37,8 +38,10 @@ FEATURE = "uzupelnienie"
 SUMMARY = f"#/uzupelnienie/{LAST_COMPLETE}"
 API = f"/api/periods/{LAST_COMPLETE}/quantities-to-fill"
 VERSION_API = f"/api/periods/{LAST_COMPLETE}/collective-file-version"
-# The page asks about the saved version every 3 s (frontend/src/lib/use-live-file.ts); a full read follows.
-LIVE_TIMEOUT_MS = 10_000
+# How often the page asks about the saved version of the Plik zbiorczy; a full read follows a change.
+POLL_MS = frontend_ms("lib/use-live-file.ts", "POLL_MS")
+# Three of the page's checks and the full read after the last.
+LIVE_TIMEOUT_MS = 3 * POLL_MS + 1_000
 KIND_TITLES = {"without_rule": "Wiersze bez reguły", "from_description": "Wiersze z opisu"}
 # The fixture's Plik zbiorczy after Przygotowanie: rows 18 and 20 carry a device the Reguły ilości do not know,
 # row 19 is prewencja (create_centrum_fixture.py, DEVICES).
@@ -210,8 +213,8 @@ WATCH_RETURNS = """() => {
   window.addEventListener("focus", () => { window.__powroty += 1 })
   document.addEventListener("visibilitychange", () => { window.__powroty += 1 })
 }"""
-# Longer than two of the page's 3-second version checks.
-HIDDEN_MS = 7_000
+# Longer than two of the page's version checks.
+HIDDEN_MS = 2 * POLL_MS + 1_000
 
 
 def _live_result_card(run: Run, page: Page, filling: Locator, collective_file: Path) -> None:

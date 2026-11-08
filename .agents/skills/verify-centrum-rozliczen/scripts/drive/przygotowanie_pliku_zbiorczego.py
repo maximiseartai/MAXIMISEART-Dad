@@ -19,6 +19,7 @@ from drive.common import (
     error_toasts,
     figure,
     finished_result,
+    frontend_ms,
     history_rows,
     last_opened_is,
     next_step_names_current_step,
@@ -334,9 +335,9 @@ def drive(run: Run, page: Page) -> None:
     drive_result_card(run, page)
 
     run.step(feature, "przygotowanie-otwieranie")
-    # The tab drops a repeat of the same file for 1.5 s after the server's answer (REPEAT_IGNORED_MS in
-    # open-period-path.ts); the Plik zbiorczy was opened by the double click above.
-    page.wait_for_timeout(1_600)
+    # The tab drops a repeat of the same file for a while after the server's answer, with nothing on screen; the Plik
+    # zbiorczy was opened by the double click above.
+    page.wait_for_timeout(frontend_ms("pages/periods/open-period-path.ts", "REPEAT_IGNORED_MS") + 100)
     period_file_list = page.get_by_role("list", name="Pliki okresu")
     opened_before = len(run.lines("opened.jsonl"))
     for path in (internal_settlement, collective_file):

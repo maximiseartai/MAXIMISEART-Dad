@@ -254,6 +254,14 @@ def ensure_files_set(run: Run, page: Page, periods_directory: str | None = None)
         run.wait_for(lambda: run.remembered("rejestr_zlecen") == run.fixture["order_register"], "Rejestr zleceń set")
 
 
+def frontend_ms(source: str, name: str) -> int:
+    """A time of the page, ``const <name> = <ms>`` in ``frontend/src/<source>``, for a wait with nothing on screen to
+    wait for, so the wait follows the page when its time changes."""
+
+    [ms] = re.findall(rf"^const {name} = (\d+)$", (REPO_ROOT / "frontend" / "src" / source).read_text(encoding="utf-8"), re.M)
+    return int(ms)
+
+
 def period_choice(token: str, status: str) -> str:
     """A period in the combobox ``Okres`` as Dad reads it: ``wt 06.10 – pon 12.10 · ostatni pełny · 06_12_10_2026``.
 
