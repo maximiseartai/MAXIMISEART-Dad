@@ -246,7 +246,8 @@ class UnexpectedPage(WindowStop):
 
 
 class EfenixUnreachable(WindowStop):
-    """Okno nie otworzyło efenix przy starcie: adres nie odpowiada albo nie ma połączenia."""
+    """Okno nie otworzyło efenix przy starcie albo w czasie czekania na logowanie taty: adres nie odpowiada albo nie ma
+    połączenia."""
 
     def __init__(self, failure: BrowserFailure) -> None:
         super().__init__(PagePart.LIST, failure)
