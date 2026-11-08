@@ -52,9 +52,9 @@ zostaje przeglądowi.
 
 Wyrocznie skilli (``.agents/skills/*/scripts``) i narzędzia (``tools/``) biorą z ``src`` tylko publiczne nazwy
 (docs/agents/skille.md, „Co wyrocznia bierze z src”): mechanikę przez publiczny punkt obserwacji, a dane o świecie
-zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do prywatnych nazw i globali modułów, a eksplorator
-kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox`` (spis N13). ``explore_runs.py`` czyta jeszcze
-prywatne pola ``RunHost``, czego strażnik nie widzi (docstring ``_private_reaches``).
+zewnętrznym przez celową kopię. Do 8.11.2026 cztery wyrocznie sięgały do prywatnych nazw i globali modułów, eksplorator
+kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox``, a eksplorator Uruchomień z prywatnych pól
+``RunHost`` (spis N13).
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
@@ -1145,9 +1145,7 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     i ``eval``, prywatny napis w innym wywołaniu niż to z nazwą z ``src`` (``f(m, g("_x"))``, ``dict(_x=…)``), literał
     bez nazwy z ``src`` i prywatnego napisu wprost (``[[m], ["_x"]]``), napis w ciele podklasy
     (``__slots__ = ("_x",)``, ``locals()["_x"] = f``) i przypisanie podklasie po jej definicji, a także to, czy kopia danych o świecie
-    zewnętrznym jest celowa. Takie sięgnięcie stoi jeszcze w ``explore_runs.py`` skilla ``verify-urwane-uruchomienie``:
-    czyta prywatne pola instancji ``host._sequence`` i ``world.host._events`` gospodarza ``runs.RunHost`` (C4 spisu
-    N13, następny PR N13c).
+    zewnętrznym jest celowa.
 
     Znane fałszywe alarmy: napis ``"_x"`` obok publicznego łańcucha od nazwy z ``src`` alarmuje
     (``Path(outbox.QUEUE_DIRECTORY, "_archiwum")``), bo AST nie odróżni publicznej wartości od klasy
@@ -1375,6 +1373,11 @@ PRIVATE_REACHES: typing.Final = {
     "builtins-setattr-z-nazwa-w-zmiennej": (
         "import builtins\nfrom rozliczenia.centrum import outbox\nbuiltins.setattr(outbox, name, None)"
     ),
+    # Przegląd #1123, runda 4: obiekt postaci 10 inny niż goła nazwa z importu.
+    "setattr-z-nazwa-w-zmiennej-na-lancuchu": "from rozliczenia import centrum\nsetattr(centrum.outbox, name, None)",
+    "setattr-z-nazwa-w-zmiennej-na-sys-modules": (
+        "import sys\nsetattr(sys.modules['rozliczenia.centrum.outbox'], name, None)"
+    ),
 }
 
 
@@ -1414,6 +1417,7 @@ def test_sprawdzenie_wyroczni_przepuszcza_publiczne_nazwy_prywatne_pola_wlasnych
         '    mock.patch("tests.rozliczenia._x", None)\n'
         "    cache = REGISTRY[outbox_module]._cache\n"
         "    setattr(Box(), name, value)\n"
+        "    setattr(Box(), name, outbox_module.RETRY_S)\n"
         "    version = getattr(outbox_module, \"SCHEMA_VERSION\")\n"
         '    return outbox.state(), outbox_module.SCHEMA_VERSION, RETRY_S, {outbox_module: "threading"}, getattr(Box(), "_ids")\n'
         "class TrackedRun(Outbox):\n"
