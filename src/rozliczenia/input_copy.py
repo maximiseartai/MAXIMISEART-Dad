@@ -117,8 +117,9 @@ Values = Sequence[object] | Mapping[int, object]
 @dataclass
 class SheetCopy:
     """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), kolumny, które
-    Kopia niesie (``None``: każda), kolumna daty z godziną, wiersze nad wklejeniem (``CopiedSheet``) i odwołania do
-    przeczytanych wierszy z ich położeniami."""
+    Kopia niesie (``None``: każda), kolumny wklejenia, w których komórka może stać w innym położeniu (``None``: te,
+    które Kopia niesie), kolumna daty z godziną, wiersze nad wklejeniem (``CopiedSheet``) i odwołania do przeczytanych
+    wierszy z ich położeniami."""
 
     name: str
     header_row: int
@@ -128,6 +129,7 @@ class SheetCopy:
     date_column: int | None = None
     last_ordered_row: int | None = None
     yellow_row: int | None = None
+    span: frozenset[int] | None = None
     _rows: list[tuple[int, Values, RowPositions]] = field(default_factory=list)
     _empty: list[int] = field(default_factory=list)
 
@@ -165,16 +167,19 @@ class SheetCopy:
 
     def _cells(self, values: Values, positions: RowPositions) -> dict[str, CellValue]:
         """Jedyna reguła komórki Kopii (ADR 0025 „Kopia wejścia”): komórka z kolumny c stoi w Kopii pod c +
-        ``positions.read``, gdy tam i w każdym położeniu z ``positions.known`` stoi w kolumnie, którą Kopia niesie, a nie
-        pod zakazanym nagłówkiem. Data z godziną spod ``date_column`` (czytana z przesunięciem ``read``) zostaje, bo nie
-        jest wartością zakazanej kolumny, a bez niej odtworzenie nie powtórzy Uruchomienia (#847)."""
+        ``positions.read``, gdy tam stoi w kolumnie, którą Kopia niesie, a w każdym położeniu z ``positions.known`` w
+        kolumnie wklejenia (``span``), w obu razach nie pod zakazanym nagłówkiem. Data z godziną spod ``date_column``
+        (czytana z przesunięciem ``read``) zostaje, bo nie jest wartością zakazanej kolumny, a bez niej odtworzenie nie
+        powtórzy Uruchomienia (#847)."""
 
         numbered = _numbered(values)
         read, known = positions.read, positions.known
+        span = self.copied_columns if self.span is None else self.span
         placed = {
             column + read: value
             for column, value in numbered.items()
-            if all(self._allowed(column + offset) for offset in {read, *known})
+            if _allowed(column + read, self.forbidden, self.copied_columns)
+            and all(_allowed(column + offset, self.forbidden, span) for offset in known)
         }
         if self.date_column is not None:
             when = numbered.get(self.date_column - read)
@@ -182,8 +187,6 @@ class SheetCopy:
                 placed[self.date_column] = when
         return _cells(placed, self.forbidden)
 
-    def _allowed(self, column: int) -> bool:
-        return column not in self.forbidden and (self.copied_columns is None or column in self.copied_columns)
 
 
 @dataclass
@@ -208,11 +211,13 @@ class WorkbookCopy:
         date_column: int | None = None,
         last_ordered_row: int | None = None,
         yellow_row: int | None = None,
+        span: Collection[int] | None = None,
     ) -> SheetCopy:
         """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
         czytnik oddaje pamięci reguły danych; ``copied_columns``: kolumny, które Kopia niesie (``None``: każda),
         ``date_column``: kolumna daty z godziną, która zostaje w wierszu z siatki (``SheetCopy._cells``),
-        ``last_ordered_row`` i ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``)."""
+        ``last_ordered_row`` i ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``),
+        ``span``: kolumny wklejenia, w których komórka może stać w innym położeniu (``None``: ``copied_columns``)."""
 
         sheet = SheetCopy(
             name,
@@ -223,6 +228,7 @@ class WorkbookCopy:
             date_column,
             last_ordered_row,
             yellow_row,
+            None if span is None else frozenset(span),
         )
         self._sheets.append(sheet)
         return sheet
@@ -251,6 +257,10 @@ class InputCopy:
         """Przeczytane pliki po regule danych, z odciskiem; liczone po końcu procesu, w Logach Uruchomienia."""
 
         return tuple(copy.copied() for copy in self._files)
+
+
+def _allowed(column: int, forbidden: frozenset[int], columns: frozenset[int] | None) -> bool:
+    return column not in forbidden and (columns is None or column in columns)
 
 
 def _numbered(values: Values) -> Mapping[int, object]:

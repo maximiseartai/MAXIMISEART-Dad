@@ -97,6 +97,7 @@ class ReadFile:
         date_column: int | None = None,
         last_ordered_row: int | None = None,
         yellow_row: int | None = None,
+        span: Collection[int] | None = None,
     ) -> WitnessedSheet:
         """Arkusz ``name`` w pamięci i, gdy uchwyt ma Kopię, w Kopii wejścia (``input_copy.WorkbookCopy.sheet``)."""
 
@@ -112,6 +113,7 @@ class ReadFile:
                 date_column=date_column,
                 last_ordered_row=last_ordered_row,
                 yellow_row=yellow_row,
+                span=span,
             )
         return WitnessedSheet(self._forbidden, tuple(forbidden), copied)
 

@@ -240,9 +240,11 @@ class OrderSheets:
         Każdy wiersz z danymi zna pamięć reguły danych uchwytu w położeniach z ``raw_orders.row_positions``: pierwszy
         wiersz bloku wklejenia (``raw_orders.first_in_block`` na wierszach odczytu od dołu, więc wiersz na górze odczytu
         bez wiersza nad nim jest pierwszy) dwie kolumny na lewo od nagłówka, gdy jego przesunięcie widać, każdy inny pod
-        nagłówkiem, a wiersz z siatki w obu. Kopia wejścia ma nagłówki kolumn ``COLUMNS`` z wiersza 1 i każdy wiersz z
-        danymi z komórkami tych kolumn według jego położeń (``input_copy.SheetCopy.row``), puste wiersze odczytanego
-        zakresu i wiersze ze śladem przesunięcia, a nie ma zakazanych kolumn.
+        nagłówkiem, a wiersz z siatki w obu. Kopia wejścia ma nagłówki wiersza 1 kolumn wklejenia od A do ``UWAGI`` (w
+        starszym układzie do ostatniej kolumny ``COLUMNS``) i każdy wiersz z danymi z komórkami kolumn ``COLUMNS``
+        według jego położeń (``input_copy.SheetCopy.row``): komórka wiersza z siatki albo przesuniętego pierwszego
+        wiersza jest w Kopii, gdy w każdym jego położeniu stoi w kolumnie wklejenia, tak jak w Uporządkowaniu, a nie pod
+        zakazaną kolumną. Kopia ma też puste wiersze odczytanego zakresu i wiersze ze śladem przesunięcia.
         """
 
         file = self._file
@@ -254,13 +256,16 @@ class OrderSheets:
         for sheet, window in zip(self.sheets, windows, strict=True):
             positions = sheet.positions
             header = sheet.header
+            last = header_columns(header).get(normalize_text(_LAST), max(positions.values()))
+            span = range(1, max(last, *positions.values()) + 1)
             witnessed = file.sheet(
                 sheet.name,
                 1,
-                {column: header[column - 1] for column in positions.values() if column <= len(header)},
+                {column: header[column - 1] for column in span if column <= len(header)},
                 _forbidden_positions(positions),
                 copied_columns=positions.values(),
                 date_column=positions[DATE],
+                span=span,
             )
             for row in window.rows:
                 witnessed.row(row.number, row.values, row.positions)

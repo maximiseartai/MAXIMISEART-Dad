@@ -900,7 +900,8 @@ def test_kopia_przygotowania_nie_ma_komorek_pierwszego_wiersza_bloku_ktore_w_jeg
     """Kopia wejścia Przygotowania ma wiersz Rejestru według reguły komórki z ADR 0025, tej samej co w Uporządkowaniu
     INTERMAX: komórka, która w którymś położeniu wiersza stoi pod ``ADRES`` albo ``NUMER UMOWY``, nie jest w Kopii, a
     wiersz z siatki jest w ``uncertain_rows`` z datą z godziną spod ``DATA GODZ. POCZ.``. Kolumny C i I stoją dwie
-    kolumny przed ``ADRES`` (E) i ``NUMER UMOWY`` (K)."""
+    kolumny przed ``ADRES`` (E) i ``NUMER UMOWY`` (K). ``SKUTECZNE`` (L) wiersza z siatki w położeniu przesuniętym
+    stoi pod ``ZWROT`` (N), kolumną wklejenia, więc zostaje."""
 
     centrum = preparing_centrum(tmp_path)
     paste(centrum.fixture.register_path)
@@ -914,7 +915,7 @@ def test_kopia_przygotowania_nie_ma_komorek_pierwszego_wiersza_bloku_ktore_w_jeg
     assert sorted({"C", "I"} & cells.keys()) == (["C"] if uncertain else [])
     assert sheet["uncertain_rows"] == ([row] if uncertain else [])
     if uncertain:
-        assert cells["C"] == moment("2026-09-08T09:00:00")
+        assert (cells["C"], cells["L"]) == (moment("2026-09-08T09:00:00"), "tak")
 
 
 @pytest.mark.parametrize(
@@ -3225,10 +3226,10 @@ def moment(text: str) -> dict[str, str]:
 def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_orange_oraz_odcisk_rejestru(
     tmp_path: Path,
 ) -> None:
-    """Kopia wejścia Przygotowania to arkusz zleceń Rejestru: kolumny, które proces przenosi, pod nagłówkiem Rejestru
-    (wiersz 1) w ich kolumnach arkusza, bez ``ADRES`` (E) i ``NUMER UMOWY`` (K), i każde zlecenie okresu z jego
-    komórkami. Arkusz bez nagłówków zleceń („lista”) i kolumny, których proces nie przenosi (AKCJE, ZWROT, UWAGI),
-    w Kopii nie stoją."""
+    """Kopia wejścia Przygotowania to arkusz zleceń Rejestru: nagłówki Rejestru (wiersz 1) kolumn wklejenia od A do
+    ``UWAGI`` w ich kolumnach arkusza, bez ``ADRES`` (E) i ``NUMER UMOWY`` (K), i każde zlecenie okresu z komórkami
+    kolumn, które proces przenosi. Arkusz bez nagłówków zleceń („lista”) w Kopii nie stoi, a kolumny, których proces nie
+    przenosi (AKCJE, ZWROT, UWAGI), mają w niej nagłówek bez komórek: z nich odtworzenie zna granicę wklejenia."""
 
     centrum = preparing_centrum(tmp_path)
     register = centrum.fixture.register_path
@@ -3243,6 +3244,7 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
     [sheet] = copied["sheets"]
     assert (sheet["sheet"], sheet["header_row"]) == ("ZLECENIA", 1)
     assert sheet["columns"] == {
+        "B": "AKCJE",
         "C": "DATA GODZ. POCZ.",
         "D": "MIASTO",
         "F": "UMOWA",
@@ -3252,6 +3254,8 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
         "J": "WYKONAWCA",
         "L": "SKUTECZNE",
         "M": "CZYNNOŚCI ZREALIZOWANE",
+        "N": "ZWROT",
+        "O": "UWAGI",
     }
     rows = {row["row"]: row["cells"] for row in sheet["rows"]}
     in_period = {

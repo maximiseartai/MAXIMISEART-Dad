@@ -1273,7 +1273,8 @@ def test_logi_przygotowania_z_wierszem_rejestru_z_siatki_odtwarzaja_sie_z_zastrz
 ) -> None:
     """Wiersz z wyglądem z aplikacji na miejscu na górze odczytu okresu zaczyna blok, a jego przesunięcia nie widać:
     pamięć zna go w obu położeniach, a Kopia wejścia Przygotowania ma go w ``uncertain_rows`` bez komórek dozwolonych
-    tylko w jednym, więc raport odtworzenia ma o nim zastrzeżenie."""
+    tylko w jednym. Odtworzony Rejestr ma go znowu jako pierwszy wiersz bloku z nagłówkami wklejenia, więc Logi
+    odtwarzają się zgodnie, a raport ma o nim zastrzeżenie."""
 
     def in_place_on_top(register: Path) -> None:
         paste_raw_orders(register, [register_order(1, datetime(2026, 9, 8, 9))], first=2, in_place_from="DATA GODZ. POCZ.")
@@ -1281,9 +1282,10 @@ def test_logi_przygotowania_z_wierszem_rejestru_z_siatki_odtwarzaja_sie_z_zastrz
     produced = _preparation(tmp_path / "taty", in_place_on_top)
     [sheet] = produced.record["input_copy"][0]["sheets"]
 
-    _, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
 
     assert sheet["uncertain_rows"] == [2]
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     granice = lines[lines.index("Granice:") + 1 :]
     assert [line for line in granice if line.startswith(
         f"- Kopia wejścia ma wiersze Rejestru zleceń w obu położeniach (arkusz {sheet['sheet']}, wiersze 2): "
