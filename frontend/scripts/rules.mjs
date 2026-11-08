@@ -1,29 +1,36 @@
 // Reguły frontendu z CODING_STANDARDS, których Oxlint nie wyraża (brak no-restricted-syntax w Oxlint 1.88):
-// 1. Każda właściwość schematów kontraktu (src/api/openapi.json) jest użyta w src poza generated/: kod wartości
-//    sięga do jej symbolu z typu Schema (types.gen.ts) albo kształtu zSchema (zod.gen.ts), co rozstrzyga checker
-//    TypeScriptu, nie nazwa. Użycie to odczyt (`.pole`, `["pole"]`, `x[klucz]` z kluczem typu literału,
-//    destrukturyzacja, `"pole" in x`) albo zapis (klucz literału obiektu typu schematu, np. wysyłane ciało, atrybut
-//    JSX; w miejscu unii tylko w wariantach, do których literał da się przypisać), także przez typ, do którego
-//    wartość płynie (`Pick<…>`, typ propsów, ograniczenie parametru typu, wynik funkcji, parametr funkcji podanej
-//    jako callback): odczyt pola celu czyta źródło, a zapisane pole źródła trafia do celu. Wzmianka w typie
-//    (`RunInfo["process"]`) nie jest użyciem. Granice: pole czytane tylko w kodzie ogólnym (`Object.entries`,
-//    `JSON.stringify`) reguła uznaje za nieużyte, więc takie pole potrzebuje wpisu w FIELDS_OUTSIDE_UI. Literał typu
-//    odpowiedzi serwera (atrapa, optymistyczna aktualizacja) liczy się jako użycie pola, choć UI go nie czyta; to
-//    łapie tylko przegląd.
+// 1. Każda właściwość schematów kontraktu (src/api/openapi.json) jest użyta w src poza generated/ (field-use.mjs):
+//    kod wartości sięga do jej symbolu z typu Schema (types.gen.ts) albo kształtu zSchema (zod.gen.ts), co
+//    rozstrzyga checker TypeScriptu, nie nazwa. Użycie to odczyt (`.pole`, `["pole"]`, `x[klucz]` z kluczem typu
+//    literału, destrukturyzacja, `"pole" in x`) albo zapis (klucz literału obiektu, np. wysyłane ciało, atrybut JSX),
+//    także przez typ, do którego wartość płynie (zmienna, `Pick<…>`, typ propsów, ograniczenie parametru typu, wynik
+//    funkcji, parametr funkcji podanej jako callback, przeciążenia, parametr reszty): odczyt pola celu czyta źródło,
+//    a zapisane pole źródła trafia do celu. Wzmianka w typie (`RunInfo["process"]`) nie jest użyciem.
+//    Gdzie typy są pewne, reguła jest dokładna: wariant unii płynie tylko w warianty, do których da się go przypisać,
+//    a literał w unii zapisuje tylko warianty, które przyjmują jego typ (bez sprawdzania nadmiaru kluczy).
+//    Gdzie przepływu nie umie prześledzić, wraca do nazwy pola, żeby nie dać fałszywego „nieużyte” na kodzie, który
+//    przyjmuje `tsc -b`:
+//    - odczyt pola bez symbolu (wartość `any`, sygnatura indeksu, `"pole" in x` w strażniku typu na `unknown`) i odczyt
+//      pola typu, w który płynie wartość `any`/`unknown` (`x as unknown as T`, `JSON.parse(…) as T`), czyta każde pole
+//      kontraktu tej nazwy;
+//    - pole zapisane w wartość, która wpływa w `any`/`unknown` (też parametr typu bez ograniczenia), trafia do pola tej
+//      nazwy w każdym typie, w który `any`/`unknown` płynie (`{ … } as unknown as IntermaxRestoreRequest`);
+//    - wariant, którego nie da się przypisać do żadnego wariantu celu (`as` do typu węższego), i literał, którego nie
+//      przyjmuje żaden wariant unii, łączą się z każdym wariantem celu po nazwie pola.
+//    Granice, które łapie tylko przegląd: pole czytane tylko w kodzie ogólnym, do którego wartość wpływa jako
+//    `any`/`unknown` albo `object` (`Object.entries`, `JSON.stringify`), reguła uznaje za nieużyte, więc potrzebuje
+//    ono wpisu w FIELDS_OUTSIDE_UI; literał typu odpowiedzi serwera (atrapa, optymistyczna aktualizacja), typ, w który
+//    płyną wartości kilku typów (odczyt `T.title` czyta `title` każdego z nich), i powrót do nazwy liczą pole jako
+//    użyte, choć UI go nie czyta.
 // 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`.
 // 3. Sieć (fetch, EventSource, WebSocket, XMLHttpRequest, sendBeacon) i JSON.parse tylko w plikach z NETWORK_FILES,
 //    które parsują każdą odpowiedź serwera schematem z kontraktu. Wpis w NETWORK_FILES ma powód, a zbędny wpis
 //    wywraca regułę. Granica: destrukturyzację (`const { parse } = JSON`), `JSON["parse"]`, `Reflect.get`,
 //    `Response.json()` i to, czy plik z NETWORK_FILES parsuje odpowiedź schematem, łapie tylko przegląd.
 import { readFileSync } from "node:fs"
-import { join, relative, resolve, sep } from "node:path"
+import { join, relative } from "node:path"
 import ts from "typescript"
-
-const root = resolve(import.meta.dirname, "..")
-
-const source = join(root, "src")
-
-const generated = join(source, "api", "generated")
+import { compilerConfig, fieldUse, isHandWritten, isInType, root, source } from "./field-use.mjs"
 
 // Schematy kontraktu spoza UI; każdy z uzasadnieniem.
 const SCHEMAS_OUTSIDE_UI = new Map([
@@ -87,354 +94,16 @@ const NETWORK_MEMBERS = new Map([
 
 const GLOBAL_OBJECTS = new Set(["window", "globalThis", "self"])
 
-// Te same pliki i opcje, które sprawdza `tsc -b` (tsconfig.app.json), z checkerem typów.
 function createProgram() {
-  const config = ts.getParsedCommandLineOfConfigFile(
-    join(root, "tsconfig.app.json"),
-    {},
-    {
-      ...ts.sys,
-      onUnRecoverableConfigFileDiagnostic(diagnostic) {
-        throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))
-      },
-    }
-  )
+  const config = compilerConfig()
 
   return ts.createProgram({ rootNames: config.fileNames, options: config.options })
 }
 
-// TypeScript podaje ścieżki plików z ukośnikiem `/` także na Windows.
-function under(directory) {
-  return directory.split(sep).join("/") + "/"
-}
-
-// Pola typów z src (kontraktu i UI), nie z bibliotek: przepływ do propsów DOM i Reacta nie czyta pól kontraktu.
-function isDeclaredInSource(property) {
-  return property.declarations?.some((declaration) => declaration.getSourceFile().fileName.startsWith(under(source)))
-}
-
-function isHandWritten(file) {
-  return file.fileName.startsWith(under(source)) && !file.fileName.startsWith(under(generated))
-}
-
-function contractSchemas(contract) {
-  return Object.entries(contract.components.schemas).filter(([schema]) => !SCHEMAS_OUTSIDE_UI.has(schema))
-}
-
 function contractFields(contract) {
-  return contractSchemas(contract).flatMap(([schema, definition]) =>
-    Object.keys(definition.properties ?? {}).map((field) => `${schema}.${field}`)
-  )
-}
-
-function exportsOf(program, checker, name) {
-  const file = program.getSourceFile(join(generated, name))
-
-  if (file === undefined) {
-    throw new Error(`Brak src/api/generated/${name}: uruchom npm run contract.`)
-  }
-
-  return new Map(checker.getExportsOfModule(checker.getSymbolAtLocation(file)).map((symbol) => [symbol.name, symbol]))
-}
-
-// Typy, w których leżą pola schematu: `Schema` z types.gen.ts i kształt `zSchema.shape` z zod.gen.ts, bo odpowiedź
-// z `call` ma typ wywiedziony ze schematu zod, a reszta UI typy z types.gen.ts.
-function schemaTypes(checker, types, schemas, schema) {
-  const found = []
-  const type = types.get(schema)
-  const zod = schemas.get(`z${schema}`)
-
-  if (type !== undefined) {
-    found.push(checker.getDeclaredTypeOfSymbol(type))
-  }
-
-  const parsed = zod === undefined ? undefined : checker.getTypeOfSymbol(zod).getProperty("shape")
-
-  if (parsed !== undefined) {
-    found.push(checker.getTypeOfSymbol(parsed))
-  }
-
-  return found
-}
-
-// Deklaracja pola w wygenerowanym pliku → pola kontraktu, które ją mają.
-function contractDeclarations(program, checker, contract) {
-  const types = exportsOf(program, checker, "types.gen.ts")
-  const schemas = exportsOf(program, checker, "zod.gen.ts")
-  const declarations = new Map()
-  const declared = new Set()
-
-  for (const [schema, definition] of contractSchemas(contract)) {
-    for (const type of schemaTypes(checker, types, schemas, schema)) {
-      for (const field of Object.keys(definition.properties ?? {})) {
-        for (const declaration of type.getProperty(field)?.declarations ?? []) {
-          const key = `${schema}.${field}`
-          declarations.set(declaration, [...(declarations.get(declaration) ?? []), key])
-          declared.add(key)
-        }
-      }
-    }
-  }
-
-  return { declarations, declared }
-}
-
-function link(edges, from, to) {
-  edges.set(from, (edges.get(from) ?? new Set()).add(to))
-}
-
-function members(type) {
-  return type.isUnion() ? type.types : [type]
-}
-
-function propertiesNamed(type, name) {
-  if (type === undefined) {
-    return []
-  }
-
-  return members(type).flatMap((member) => member.getProperty(name) ?? [])
-}
-
-function propertyName(name) {
-  return ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : undefined
-}
-
-// Właściwości, które węzeł kodu wartości czyta; każda niesie deklaracje z typów, z których pochodzi.
-function readProperties(checker, node) {
-  if (ts.isPropertyAccessExpression(node)) {
-    return [checker.getSymbolAtLocation(node.name)]
-  }
-
-  // `range[key]` z `key: "p50_ms" | "p95_ms"` czyta oba pola.
-  if (ts.isElementAccessExpression(node)) {
-    const object = checker.getTypeAtLocation(node.expression)
-
-    return members(checker.getTypeAtLocation(node.argumentExpression))
-      .filter((key) => key.isStringLiteral())
-      .flatMap((key) => propertiesNamed(object, key.value))
-  }
-
-  if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
-    const name = propertyName(node.propertyName ?? node.name)
-
-    return name === undefined ? [] : propertiesNamed(checker.getTypeAtLocation(node.parent), name)
-  }
-
-  if (
-    ts.isBinaryExpression(node) &&
-    node.operatorToken.kind === ts.SyntaxKind.InKeyword &&
-    ts.isStringLiteralLike(node.left)
-  ) {
-    return propertiesNamed(checker.getTypeAtLocation(node.right), node.left.text)
-  }
-
-  return []
-}
-
-// Właściwości, które węzeł zapisuje: klucz literału obiektu (np. wysyłane ciało) i atrybut JSX. Literał w miejscu
-// unii zapisuje tylko warianty, do których da się go przypisać: `{ title, body }` jako `Note | Decision` to `Note`.
-function writtenProperties(checker, node) {
-  if (ts.isJsxAttribute(node)) {
-    return [checker.getSymbolAtLocation(node.name)]
-  }
-
-  if (ts.isObjectLiteralElementLike(node) && ts.isObjectLiteralExpression(node.parent) && node.name !== undefined) {
-    const name = propertyName(node.name)
-    const target = literalType(checker, node.parent)
-
-    if (name === undefined || target === undefined) {
-      return []
-    }
-
-    const literal = checker.getTypeAtLocation(node.parent)
-
-    return members(target)
-      .filter((member) => !target.isUnion() || checker.isTypeAssignableTo(literal, member))
-      .flatMap((member) => member.getProperty(name) ?? [])
-  }
-
-  return []
-}
-
-const ZOD_PARSE = new Set(["parse", "safeParse"])
-
-// Typ, w miejsce którego trafia literał obiektu; `zViewTiming.safeParse({ … })` przyjmuje `unknown`, więc literał
-// sprawdzany schematem zod ma typ jego kształtu.
-function literalType(checker, literal) {
-  const call = literal.parent
-
-  if (
-    ts.isCallExpression(call) &&
-    call.arguments[0] === literal &&
-    ts.isPropertyAccessExpression(call.expression) &&
-    ZOD_PARSE.has(call.expression.name.text)
-  ) {
-    const checked = checker.getTypeAtLocation(call.expression.expression).getProperty("shape")
-
-    if (checked !== undefined) {
-      return checker.getTypeOfSymbol(checked)
-    }
-  }
-
-  return checker.getContextualType(literal)
-}
-
-// Typ wywnioskowany za parametr typu płynie w jego ograniczenie: `useLiveFile(getKindTable, …)` z
-// `T extends LiveFileView` czyta pola odpowiedzi przez `LiveFileView`.
-function inferredFlows(checker, node) {
-  if (!ts.isCallLikeExpression(node)) {
-    return []
-  }
-
-  const signature = checker.getResolvedSignature(node)
-  const parameters = signature?.getDeclaration()?.typeParameters ?? []
-  const inferred = signature === undefined ? [] : (checker.getTypeArgumentsForResolvedSignature(signature) ?? [])
-
-  return parameters.flatMap((parameter, index) => {
-    const constraint = checker.getTypeAtLocation(parameter).getConstraint()
-
-    return constraint === undefined || inferred[index] === undefined ? [] : [{ from: inferred[index], to: constraint }]
-  })
-}
-
-// Wartość, która płynie w miejsce innego typu: argument, atrybut JSX, zwracana wartość, `...x` w literale obiektu.
-function flow(checker, node) {
-  if (ts.isSpreadAssignment(node) && ts.isObjectLiteralExpression(node.parent)) {
-    return { from: checker.getTypeAtLocation(node.expression), to: checker.getContextualType(node.parent) }
-  }
-
-  if (!ts.isExpression(node) || ts.isObjectLiteralExpression(node) || ts.isArrayLiteralExpression(node)) {
-    return undefined
-  }
-
-  return { from: checker.getTypeAtLocation(node), to: checker.getContextualType(node) }
-}
-
-const OPAQUE = ts.TypeFlags.Primitive | ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never
-
-/**
- * Wartość płynie w typ docelowy, więc czytanie pola celu czyta pole tej samej nazwy w źródle (`<RunResultBadge
- * run={pinnable} />` z `run: Pick<ProcessRun, "result">` czyta `PinnableRun.result`), a zapisane pole źródła trafia
- * do pola celu (Uwaga zapisana jako `DadNoteRequest` idzie do serwera jako `DadNoteText`). Krawędzie łączą
- * deklaracje pól w obu kierunkach, w głąb pól i elementów tablic do `MAX_DEPTH`.
- */
-class Flows {
-  static MAX_DEPTH = 4
-
-  // Deklaracja pola celu → deklaracje pól źródła (czytanie).
-  backward = new Map()
-
-  // Deklaracja pola źródła → deklaracje pól celu (zapis).
-  forward = new Map()
-
-  related = new Map()
-
-  constructor(checker) {
-    this.checker = checker
-  }
-
-  relate(from, to, depth = 0) {
-    if (from === undefined || to === undefined || from === to || depth > Flows.MAX_DEPTH) {
-      return
-    }
-
-    const seen = this.related.get(from) ?? new Set()
-
-    if (seen.has(to)) {
-      return
-    }
-
-    seen.add(to)
-    this.related.set(from, seen)
-
-    // Każdy wariant źródła płynie tylko w warianty celu, do których da się go przypisać, a wariant obecny po obu
-    // stronach w siebie: `RunInfo | Decision` w `RunInfo | Decision | null` nie łączy `RunInfo.title` z `Decision.title`.
-    const targets = members(to)
-
-    for (const origin of members(from).filter((member) => !targets.includes(member))) {
-      for (const target of targets.filter((member) => this.checker.isTypeAssignableTo(origin, member))) {
-        this.relateMember(origin, target, depth)
-      }
-    }
-  }
-
-  relateMember(from, target, depth) {
-    if (target.flags & OPAQUE) {
-      return
-    }
-
-    // Funkcja płynie w miejsce funkcji: wynik płynie z niej (`open: () => Promise<{ name: string }>` czyta `name`
-    // z odpowiedzi), a argumenty do niej (`checks.map(checkRow)` daje `DiagnosisCheck` parametrowi `CheckRow`).
-    const signatures = target.getCallSignatures()
-
-    if (signatures.length > 0) {
-      for (const called of members(from).flatMap((member) => member.getCallSignatures())) {
-        for (const signature of signatures) {
-          this.relate(called.getReturnType(), signature.getReturnType(), depth + 1)
-
-          const count = Math.min(called.getParameters().length, signature.getParameters().length)
-
-          for (let position = 0; position < count; position++) {
-            this.relate(
-              signature.getTypeParameterAtPosition(position),
-              called.getTypeParameterAtPosition(position),
-              depth + 1
-            )
-          }
-        }
-      }
-
-      return
-    }
-
-    const awaited = this.checker.getAwaitedType(target)
-
-    if (awaited !== undefined && awaited !== target) {
-      this.relate(this.checker.getAwaitedType(from), awaited, depth + 1)
-
-      return
-    }
-
-    if (this.checker.isArrayType(target) || this.checker.isTupleType(target)) {
-      const element = target.getNumberIndexType()
-
-      for (const origin of members(from)) {
-        this.relate(origin.getNumberIndexType(), element, depth + 1)
-      }
-
-      return
-    }
-
-    for (const property of target.getProperties().filter(isDeclaredInSource)) {
-      for (const origin of propertiesNamed(from, property.name)) {
-        for (const declaration of property.declarations ?? []) {
-          for (const originDeclaration of origin.declarations ?? []) {
-            link(this.backward, declaration, originDeclaration)
-            link(this.forward, originDeclaration, declaration)
-          }
-        }
-
-        this.relate(this.checker.getTypeOfSymbol(origin), this.checker.getTypeOfSymbol(property), depth + 1)
-      }
-    }
-  }
-
-  // Deklaracje czytane albo zapisane wprost i przez każdą krawędź od nich w kierunku `edges`.
-  static closure(start, edges) {
-    const all = new Set(start)
-    const pending = [...start]
-
-    while (pending.length > 0) {
-      for (const origin of edges.get(pending.pop()) ?? []) {
-        if (!all.has(origin)) {
-          all.add(origin)
-          pending.push(origin)
-        }
-      }
-    }
-
-    return all
-  }
+  return Object.entries(contract.components.schemas)
+    .filter(([schema]) => !SCHEMAS_OUTSIDE_UI.has(schema))
+    .flatMap(([schema, definition]) => Object.keys(definition.properties ?? {}).map((field) => `${schema}.${field}`))
 }
 
 function processNames(contract) {
@@ -458,29 +127,6 @@ function isProcessComparison(node, names) {
   }
 
   return ts.isCaseClause(node) && isProcessName(node.expression, names)
-}
-
-// `class X extends EventSource` dziedziczy wartość, choć TypeScript nazywa ten węzeł typem.
-function isClassExtends(node) {
-  return (
-    ts.isExpressionWithTypeArguments(node) &&
-    node.parent.token === ts.SyntaxKind.ExtendsKeyword &&
-    ts.isClassLike(node.parent.parent)
-  )
-}
-
-function isInType(node) {
-  for (let ancestor = node.parent; ancestor !== undefined; ancestor = ancestor.parent) {
-    if (isClassExtends(ancestor)) {
-      return false
-    }
-
-    if (ts.isTypeNode(ancestor)) {
-      return true
-    }
-  }
-
-  return false
 }
 
 function unwrap(node) {
@@ -539,23 +185,9 @@ function location(file, node) {
   return `${relative(root, file.fileName).replaceAll("\\", "/")}:${line + 1}: ${node.getText(file)}`
 }
 
-// Deklaracje pól, do których sięga kod wartości pliku, przepływy wartości, porównania nazwy procesu i połączenia.
-function inspect({ file, checker, flows, names }, { read, written }, comparisons, network) {
+// Porównania nazwy procesu i połączenia w kodzie pliku.
+function inspect(file, names, comparisons, network) {
   function visit(node) {
-    if (!isInType(node)) {
-      for (const property of readProperties(checker, node)) {
-        property?.declarations?.forEach((declaration) => read.add(declaration))
-      }
-
-      for (const property of writtenProperties(checker, node)) {
-        property?.declarations?.forEach((declaration) => written.add(declaration))
-      }
-
-      for (const { from, to } of [flow(checker, node) ?? [], inferredFlows(checker, node)].flat()) {
-        flows.relate(from, to)
-      }
-    }
-
     if (isProcessComparison(node, names)) {
       comparisons.push(location(file, node))
     }
@@ -576,15 +208,9 @@ const contract = JSON.parse(readFileSync(join(source, "api", "openapi.json"), "u
 
 const program = createProgram()
 
-const checker = program.getTypeChecker()
-
-const { declarations, declared } = contractDeclarations(program, checker, contract)
+const { declared, used } = fieldUse(program, contract)
 
 const names = processNames(contract)
-
-const flows = new Flows(checker)
-
-const reached = { read: new Set(), written: new Set() }
 
 const comparisons = []
 
@@ -595,7 +221,7 @@ const connectedFiles = new Set()
 for (const file of program.getSourceFiles().filter(isHandWritten)) {
   const key = relative(root, file.fileName).replaceAll("\\", "/")
   const calls = []
-  inspect({ file, checker, flows, names }, reached, PROCESS_COMPARISON_FILES.has(key) ? [] : comparisons, calls)
+  inspect(file, names, PROCESS_COMPARISON_FILES.has(key) ? [] : comparisons, calls)
 
   if (calls.length > 0) {
     connectedFiles.add(key)
@@ -605,12 +231,6 @@ for (const file of program.getSourceFiles().filter(isHandWritten)) {
     network.push(...calls)
   }
 }
-
-const used = new Set(
-  [...Flows.closure(reached.read, flows.backward), ...Flows.closure(reached.written, flows.forward)].flatMap(
-    (declaration) => declarations.get(declaration) ?? []
-  )
-)
 
 const fields = contractFields(contract)
 

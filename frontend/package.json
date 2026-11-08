@@ -10,7 +10,7 @@
     "lint": "oxlint --deny-warnings",
     "unused": "knip",
     "duplicates": "jscpd",
-    "rules": "node scripts/rules.mjs",
+    "rules": "node scripts/rules.mjs && node --test scripts/field-use.test.mjs",
     "build": "tsc -b && vite build",
     "regen": "npm run contract && npm run build"
   },
