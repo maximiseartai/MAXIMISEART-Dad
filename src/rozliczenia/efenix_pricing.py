@@ -44,8 +44,8 @@ Niedokończone działanie okna to Zatrzymanie „do Maksa” z częścią strony
 (``efenix_window.WindowCause``), a Zatrzymanie z okna niesie w ``StopError.facts`` (``PricingStopped``) tę przyczynę, wynik każdego
 zlecenia sprzed niego i zlecenie, przy którym okno stanęło (``StoppedOrder``: wiersz, miejsce w przebiegu, udane
 działania okna i to, które się nie udało). Komunikat taty przyczyny nie pokazuje.
-Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika: ten czas nie wlicza się do czasów etapów ani,
-przez ``waiting`` rozmowy rdzenia, do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
+Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika, który na ten czas wstrzymuje zegar
+Uruchomienia: czas logowania nie wlicza się do czasów etapów ani do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
 logowanie, zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy
 każdym zleceniu (``efenix_trace``) trafia do jego wyniku, a stamtąd do Logów Uruchomienia. Dziennik Wyceny w efenix
 (``OrderJournal``, w Centrum ``centrum.logs_disk.Journal``) dostaje wpis o każdym zleceniu przed pierwszym działaniem okna przy
@@ -63,9 +63,8 @@ numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku zbiorczego.
 from __future__ import annotations
 
 import enum
-import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -75,8 +74,7 @@ from typing import Final, Protocol
 from . import efenix_messages as messages
 from . import efenix_trace, workbook_files
 from .client_data import ForbiddenColumn, ForbiddenValues
-from .input_copy import InputCopy
-from .domain import ProgressObserver, ProgressPhase
+from .domain import ProgressPhase
 from .efenix_checks import DateRefused, Forwarded, OrderProblem, Settled, date_problem, listing, searched_number
 from .efenix_mark import Mark
 from .efenix_marking import Refusal, mark_orders
@@ -109,7 +107,6 @@ from .efenix_window import (
     EmmettLoad,
     ListedOrder,
     LoggedOut,
-    Login,
     OpenEfenix,
     OrderPricing,
     OtherShape,
@@ -124,9 +121,13 @@ from .efenix_window import (
 from .message import Message, StopError
 from .phase_runner import PhaseRunner
 from .workbook_files import WorkbookError
+from .period_folder import PeriodFolder, PeriodFolderError
+from .run_context import RunContext
+from .telemetry import UNKNOWN_PERIOD
 
 __all__ = [
     "NO_JOURNAL",
+    "EfenixInputs",
     "EmmettWarning",
     "OrderError",
     "OrderJournal",
@@ -309,36 +310,55 @@ class _NoJournal:
 NO_JOURNAL: Final[OrderJournal] = _NoJournal()
 
 
+@dataclass(frozen=True)
+class EfenixInputs:
+    """Wejście procesu Wyceny w efenix: Plik zbiorczy okresu i okno efenix w sesji taty.
+
+    Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). Wycena w efenix nie ma podglądu bez zapisu.
+    ``pace``: tempo ludzkie okna; ``None`` wyłącza przerwy. ``journal``: dziennik Wyceny w efenix w trakcie przebiegu;
+    Centrum podaje swój (``centrum.logs_disk.Journal``), a Skrypt dla maszyn przebiega bez niego. ``mode``: tryb Wyceny,
+    domyślnie bez Przekazania do akceptacji.
+    """
+
+    source: Path
+    open_efenix: OpenEfenix
+    pace: Pace | None
+    journal: OrderJournal = field(default=NO_JOURNAL, compare=False)
+    mode: PricingMode = PricingMode.FILL
+
+    @property
+    def period(self) -> str:
+        try:
+            return PeriodFolder.from_collective_file(self.source.expanduser().resolve()).period.token
+        except PeriodFolderError:
+            return UNKNOWN_PERIOD
+
+    @property
+    def dry_run(self) -> bool:
+        return False
+
+
 # Kroki Zapisywania na karcie Uruchomienia.
 _LOGIN: Final = "Zaloguj się w oknie efenix"
 _ORDERS: Final = "Zlecenia"
 _MARKING: Final = "Znaczniki efenix w Pliku zbiorczym"
 
 
-def price_orders(
-    source: Path,
-    open_efenix: OpenEfenix,
-    *,
-    observer: ProgressObserver | None = None,
-    clock: Callable[[], float] = time.perf_counter,
-    waiting: Login = nullcontext,
-    pace: Pace | None = None,
-    forbidden: ForbiddenValues | None = None,
-    journal: OrderJournal = NO_JOURNAL,
-    copy: InputCopy | None = None,
-    mode: PricingMode = PricingMode.FILL,
-) -> PricingSummary:
-    """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``source`` i oznacza w nim gotowe zlecenia.
+def price_orders(inputs: EfenixInputs, context: RunContext) -> PricingSummary:
+    """Uzupełnia w efenix wycenę każdego zlecenia z zakresu Pliku zbiorczego ``inputs.source`` i oznacza w nim gotowe
+    zlecenia.
 
-    Zgłasza ``StopError``, gdy nie można działać bezpiecznie. ``clock`` to zegar w sekundach, z którego liczone są czasy etapów i śladu zleceń, a
-    ``waiting`` wstrzymuje zegar rozmówcy na czas czekania na logowanie taty. ``pace``: tempo ludzkie okna
-    (``efenix_pace``), ``None`` bez przerw. ``journal``: dziennik Wyceny w efenix (``OrderJournal``). Komórki zakazanych
-    kolumn Pliku zbiorczego i dane adresowe z listy wyników efenix poznaje ``forbidden`` (reguła danych, ADR 0025), a
-    odczyt Pliku zbiorczego Kopia wejścia Uruchomienia ``copy`` (#841). ``mode``: tryb Wyceny (``PricingMode``).
+    Zgłasza ``StopError``, gdy nie można działać bezpiecznie. Zegar Uruchomienia ``context.clock`` liczy czasy etapów i
+    śladu zleceń i stoi na czas czekania na logowanie taty. Plik zbiorczy czyta uchwyt plików taty ``context.files``:
+    komórki zakazanych kolumn Pliku zbiorczego i dane adresowe z listy wyników efenix zna pamięć reguły danych (ADR
+    0025), a odczyt Pliku zbiorczego Kopia wejścia Uruchomienia (#841).
     """
 
-    phases = PhaseRunner(observer, clock=clock)
-    source = source.expanduser().resolve()
+    phases = PhaseRunner(context.observer, clock=context.clock.now)
+    source = inputs.source.expanduser().resolve()
+    open_efenix, pace, journal, mode = inputs.open_efenix, inputs.pace, inputs.journal, inputs.mode
+    files, clock = context.files, context.clock.now
+    forbidden = files.forbidden
 
     def check() -> None:
         try:
@@ -350,7 +370,7 @@ def price_orders(
 
     def read() -> PricingScope | AmountsNotComputed | MissingColumns:
         try:
-            return read_scope(source, forbidden, copy)
+            return read_scope(source, files)
         except WorkbookError as error:
             raise StopError(messages.source_unusable(error)) from error
 
@@ -369,7 +389,7 @@ def price_orders(
 
     @contextmanager
     def login() -> Iterator[None]:
-        with phases.waiting(), waiting():
+        with context.clock.hold():
             phases.step(_LOGIN)
             yield
 
@@ -484,7 +504,7 @@ def _kept(results: Sequence[OrderResult], current: OrderTrace | None, error: Win
 
 
 def _outcome(
-    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues | None, mode: PricingMode
+    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues, mode: PricingMode
 ) -> Outcome:
     """Wynik zlecenia ``order`` z ilościami pliku ``file`` w oknie ``efenix``: sprawdzenia, data wykonania z ``DATA``,
     gdy jest pusta, Wycena Emmetta przy stronie bez ilości, dokończenie do Pliku zbiorczego tylko w górę, a w trybie
@@ -496,7 +516,7 @@ def _outcome(
     return outcome
 
 
-def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Forwarded | OrderError:
+def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbidden: ForbiddenValues) -> Forwarded | OrderError:
     """Gotowe zlecenie ``order`` (wiersz listy ``ready``) przekazane do akceptacji i potwierdzone ponownym szukaniem:
     lista ze statusem „Do akceptacji” i realizatorem i adresem z pliku (``listing``); każda inna to ``NOT_FORWARDED``, a
     odmowa efenix przy Przekazaniu błąd z jej przyczyną."""
@@ -507,18 +527,17 @@ def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbi
     return confirmed if isinstance(confirmed, Forwarded) else OrderError(OrderProblem.NOT_FORWARDED)
 
 
-def _searched(efenix: Efenix, number: str, forbidden: ForbiddenValues | None) -> Sequence[ListedOrder]:
+def _searched(efenix: Efenix, number: str, forbidden: ForbiddenValues) -> Sequence[ListedOrder]:
     """Wiersze listy po szukaniu ``number``; ich dane adresowe poznaje reguła danych ``forbidden``."""
 
     found = efenix.search(number)
-    if forbidden is not None:
-        for listed in found:
-            forbidden.remember_value(ForbiddenColumn.ADDRESS, listed.address)
+    for listed in found:
+        forbidden.remember_value(ForbiddenColumn.ADDRESS, listed.address)
     return found
 
 
 def _priced_outcome(
-    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues | None
+    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues
 ) -> Outcome:
     """Wynik zlecenia bez Przekazania do akceptacji: sprawdzenia, data wykonania, Wycena Emmetta i dokończenie."""
 

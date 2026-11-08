@@ -14,8 +14,9 @@ from openpyxl import load_workbook
 import pytest
 
 from rozliczenia.domain import PhaseStarted, ProgressEvent, ProgressPhase, WorkerStarted
-from rozliczenia.engine import run_settlements
+from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.message import StopError
+from rozliczenia.run_context import RunContext
 
 from tests.fixtures.centrum import CentrumClient, ToolDirectory, centrum_app
 from tests.fixtures.centrum_processes import write_configuration
@@ -44,7 +45,10 @@ def test_przebieg_bez_pliku_zbiorczego_zatrzymuje_sprawdzanie_brakiem_pliku_zbio
     source_path.unlink()
 
     with pytest.raises(StopError) as raised:
-        run_settlements(source_path, config_path, worker_template_path=tmp_path / "Wzorzec rozliczenia pracownika.xlsx")
+        run_settlements(
+            SettlementInputs(source_path, config_path, tmp_path / "Wzorzec rozliczenia pracownika.xlsx"),
+            RunContext(),
+        )
 
     assert raised.value.message.code == "BRAK_PLIKU_ZBIORCZEGO"
 
@@ -60,7 +64,10 @@ def test_przebieg_bez_wzorca_rozliczenia_pracownika_w_zapisywaniu_nie_tworzy_sko
             worker_template_path.unlink()
 
     with pytest.raises(StopError) as raised:
-        run_settlements(source_path, config_path, worker_template_path=worker_template_path, observer=remove_before_first_file)
+        run_settlements(
+            SettlementInputs(source_path, config_path, worker_template_path),
+            RunContext(observer=remove_before_first_file),
+        )
 
     assert (raised.value.message.code, raised.value.message.where) == (
         "BLAD_KOPII_WZORCA",

@@ -34,14 +34,13 @@ from rozliczenia.centrum.live_file import saved_version
 from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.runs import PreparedRun, RunHost
 from rozliczenia import intermax_ordering, intermax_restore
-from rozliczenia.dad_files import DadFiles
-from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_copies import Copy
 from rozliczenia.intermax_replace import Disk, Waiting
-from rozliczenia.intermax_process import OrderingInputs
+from rozliczenia.run_context import RunContexts
 from rozliczenia.message import Message, StopError
 from rozliczenia.text import short_day_label
 from rozliczenia.centrum.settings import Settings, SettingsStore
+from rozliczenia.intermax_ordering import OrderingInputs
 
 _VIEW: Final = INTERMAX.view
 
@@ -67,8 +66,8 @@ class IntermaxEntry:
 
     ``waiting``: zegar Centrum i jego przerwa dla krótkiej ponownej próby podmiany, której odmawia OneDrive, a
     ``disk`` kroki podmiany INTERMAX na dysku, te same dla Uporządkowania i przywrócenia Kopii. ``cloud_files``
-    rozpoznaje INTERMAX „tylko online” w OneDrive, gdy jego dni nie dają się odczytać. ``files``: uchwyt plików taty
-    pracy Centrum, którym karta czyta dni, a którego pamięć reguły danych dostaje też Uporządkowanie.
+    rozpoznaje INTERMAX „tylko online” w OneDrive, gdy jego dni nie dają się odczytać. ``contexts``: Kontekst
+    Uruchomienia pracy Centrum; jego uchwytem plików taty karta czyta dni.
     """
 
     store: SettingsStore
@@ -78,7 +77,7 @@ class IntermaxEntry:
     waiting: Waiting
     disk: Disk
     cloud_files: CloudFiles
-    files: DadFiles
+    contexts: RunContexts
     _last_days: _LastDaysRead = field(default_factory=_LastDaysRead, compare=False, repr=False)
 
     @property
@@ -110,7 +109,7 @@ class IntermaxEntry:
         if last is not None and (last.register, last.version, last.today) == (register, version, today):
             found: tuple[intermax_ordering.RegisterDay, ...] | Message = last.found
         else:
-            found = intermax_ordering.register_days(register, today, self.files)
+            found = intermax_ordering.register_days(register, today, self.contexts.files)
             if version is not None and not isinstance(found, Message):
                 self._last_days.read = _DaysRead(register, version, today, found)
         if isinstance(found, Message):
@@ -122,22 +121,13 @@ class IntermaxEntry:
         """Wejście procesu z Ustawień taty; ``contract.Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
         register = _register(self.store.load())
-        copy = InputCopy()
-        inputs = OrderingInputs(
-            register,
-            self.copies_directory,
-            now=self.now,
-            waiting=self.waiting,
-            disk=self.disk,
-            forbidden=self.files.forbidden,
-            copy=copy,
-        )
+        inputs = OrderingInputs(register, self.copies_directory, now=self.now, waiting=self.waiting, disk=self.disk)
         return PreparedRun(
             declaration=INTERMAX,
             period=inputs.period,
             process=INTERMAX.core(self.processes),
             inputs=inputs,
-            input_copy=copy,
+            context=self.contexts.new(),
         )
 
     def copies(self) -> contract.IntermaxCopies:

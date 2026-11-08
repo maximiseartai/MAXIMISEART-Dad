@@ -10,12 +10,9 @@ from types import MappingProxyType
 from typing import Literal
 
 from . import collective_file, input_checks, settlement_files, settlement_messages
-from .domain import ProgressObserver, ProgressPhase
-from .client_data import ForbiddenValues
+from .domain import ProgressPhase
 from .dad_files import DadFiles
 from .inea_only_quantities import Cleared
-from .input_copy import InputCopy
-from .input_checks import FILE_READERS, Readers
 from .message import Message, StopError
 from .order_facts import CollectiveOrders
 from .phase_runner import PhaseRunner
@@ -23,6 +20,29 @@ from .workbook_files import DataRow, WorkbookError
 from .workbook_save import WorkbookSaveError
 from .text import normalize_text
 from .write_routes import Route, RouteCounts, TemplateKind
+from .period_folder import PeriodFolder, PeriodFolderError
+from .run_context import RunContext
+from .telemetry import UNKNOWN_PERIOD
+
+
+@dataclass(frozen=True)
+class SettlementInputs:
+    """Wejście procesu Przebiegu rozliczeń, gotowe przed startem silnika.
+
+    Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da).
+    """
+
+    source: Path
+    config_path: Path
+    worker_template_path: Path
+    dry_run: bool = False
+
+    @property
+    def period(self) -> str:
+        try:
+            return PeriodFolder.from_collective_file(self.source.expanduser().resolve()).period.token
+        except PeriodFolderError:
+            return UNKNOWN_PERIOD
 
 
 @dataclass(frozen=True)
@@ -160,33 +180,23 @@ def _plan_warnings(source_path: Path, plan: _Plan, *, dry_run: bool) -> list[Mes
     ]
 
 
-def run_settlements(
-    source_path: Path,
-    config_path: Path,
-    *,
-    worker_template_path: Path,
-    dry_run: bool = False,
-    observer: ProgressObserver | None = None,
-    readers: Readers = FILE_READERS,
-    forbidden: ForbiddenValues | None = None,
-    copy: InputCopy | None = None,
-) -> SettlementSummary:
+def run_settlements(inputs: SettlementInputs, context: RunContext) -> SettlementSummary:
     """Uruchamia pełny proces z ochroną przed błędną lokalizacją i duplikacją.
 
     Ten moduł tylko sekwencjonuje cztery etapy i rozlicza Szablon pracownika
     jednego Wykonawcy; pętlę po nich ze zdarzeniami Wykonawców prowadzi
     sekwencer etapów. Konfiguracja wykonawców jest w
     ``worker_config``, a folder tymczasowy, Nienadpisywanie i publikacja
-    Folderu rozliczeń pracowników w ``settlement_files``, a Sprawdzanie Wzorca czytnikami ``readers``
-    w ``input_checks``. Komórki zakazanych kolumn Pliku zbiorczego zna ``forbidden`` (reguła danych, ADR 0025), a jego
-    odczyt Kopia wejścia Uruchomienia ``copy`` (#841).
+    Folderu rozliczeń pracowników w ``settlement_files``, a Sprawdzanie Wzorca czytnikami ``context.readers``
+    w ``input_checks``. Plik zbiorczy czyta uchwyt plików taty ``context.files``: komórki jego zakazanych kolumn zna
+    pamięć reguły danych (ADR 0025), a odczyt Kopia wejścia Uruchomienia (#841).
     """
 
-    phases = PhaseRunner(observer)
-    files = DadFiles.adapted(forbidden, copy, readers.source)
-    source_path = source_path.expanduser().resolve()
-    config_path = config_path.expanduser().resolve()
-    worker_template_path = worker_template_path.expanduser().resolve()
+    phases = PhaseRunner(context.observer, clock=context.clock.now)
+    files, readers, dry_run = context.files, context.readers, inputs.dry_run
+    source_path = inputs.source.expanduser().resolve()
+    config_path = inputs.config_path.expanduser().resolve()
+    worker_template_path = inputs.worker_template_path.expanduser().resolve()
 
     folder, mapping, worker_template = phases.check(
         lambda: input_checks.check_settlement(source_path, config_path, worker_template_path, readers)

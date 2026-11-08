@@ -8,9 +8,8 @@ odczytu daje w odcisku chwilę wcześniejszej wersji; o wersji rozstrzyga skrót
 Wiersz pliku trafia do procesu dopiero przez świadka arkusza: ``WitnessedSheet.row`` zapisuje go jednym wywołaniem w
 pamięci reguły danych (``forbidden``) i w Kopii wejścia (``copy``), więc Kopia nie ma wiersza, którego nie zna pamięć.
 ``SheetMemory`` zapisuje wiersz tylko w pamięci: wiersze, które czytnik czyta tylko do przeglądu (nad wklejeniem
-INTERMAX), nie należą do Kopii. Pamięć jest w każdym uchwycie, a Kopia tylko w uchwycie Uruchomienia z Logami (do
-N1a-1 Kopię tworzy adapter Centrum, ``centrum/*_run.py``); pamięci Skryptu dla maszyn nic nie czyta, bo Skrypt nic nie
-wysyła.
+INTERMAX), nie należą do Kopii. Pamięć jest w każdym uchwycie, a Kopia tylko w uchwycie Uruchomienia z Logami
+(``DadFiles.for_run``); pamięci Skryptu dla maszyn nic nie czyta, bo Skrypt nic nie wysyła.
 
 Uchwyt jest niezmienny i dzielony między wątkami pracy Centrum; zmienny stan to pamięć (``ForbiddenValues`` ma zamek) i
 Kopia jednego Uruchomienia.
@@ -19,7 +18,7 @@ Kopia jednego Uruchomienia.
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,29 +32,18 @@ ForbiddenPositions = Sequence[tuple[ForbiddenColumn, int]]
 """Zakazane kolumny arkusza (reguła danych) z numerem kolumny od 1, z nagłówka arkusza."""
 
 
-def _disk_bytes(path: Path) -> bytes:
-    """``workbook_files.file_bytes`` wołane w chwili odczytu: test Uruchomienia INTERMAX i Wyceny w efenix podstawia je do
-    N1a-1, bo ich silniki nie dostają jeszcze ``input_checks.Readers.source``."""
-
-    return workbook_files.file_bytes(path)
-
-
 @dataclass(frozen=True)
 class DadFiles:
     """Pliki taty jednej pracy: źródło bajtów, pamięć reguły danych i Kopia wejścia Uruchomienia (``None``: bez Logów)."""
 
-    source: ByteSource = _disk_bytes
+    source: ByteSource = workbook_files.file_bytes
     forbidden: ForbiddenValues = field(default_factory=ForbiddenValues)
     copy: InputCopy | None = None
 
-    @classmethod
-    def adapted(
-        cls, forbidden: ForbiddenValues | None, copy: InputCopy | None, source: ByteSource = _disk_bytes
-    ) -> DadFiles:
-        """Uchwyt silnika z jego dzisiejszych argumentów (``None``: pamięć wyrzucana po końcu), do N1a-1, w którym silnik
-        dostaje uchwyt z kontekstu Uruchomienia."""
+    def for_run(self) -> DadFiles:
+        """Uchwyt jednego Uruchomienia z Logami: to samo źródło i ta sama pamięć pracy, z nową Kopią wejścia."""
 
-        return cls(source, ForbiddenValues() if forbidden is None else forbidden, copy)
+        return replace(self, copy=InputCopy())
 
     def read(self, path: Path, *, despite_excel_lock: bool = False) -> ReadFile:
         """Plik ``path`` przeczytany raz; ``WorkbookError``, gdy go nie ma, jest otwarty w Excelu (chyba że

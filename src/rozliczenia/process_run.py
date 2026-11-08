@@ -15,22 +15,21 @@ Komunikaty podane przez proces.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
-from contextlib import AbstractContextManager, contextmanager
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
-import time
 from types import MappingProxyType
-from typing import Any, Generic, Literal, Protocol, TypeVar
+from typing import Any, Generic, Literal, Protocol, Self, TypeVar
 
 from .call_trace import CallTrace
-from .decision import Conversation, Decision, Declined, EngineConversation
+from .decision import Conversation, Decision, Declined
 from .domain import ProgressEvent, ProgressObserver, ProgressPhase, StopKind
 from .message import Message, StopError
 from .progress import PhaseState, ProgressProjection, ProgressSnapshot
 from .telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from .write_routes import RouteCounts
+from .run_clock import RunClock
 
 __all__ = [
     "Finished",
@@ -55,9 +54,21 @@ class ProcessInputs(Protocol):
     def dry_run(self) -> bool: ...
 
 
+class EngineContext(Protocol):
+    """Kontekst Uruchomienia, jak go widzi rdzeń (``run_context.RunContext``): zegar Uruchomienia i ten sam kontekst z
+    obserwatorem postępu i rozmową rdzenia. Rdzeń nie zna reszty kontekstu (plików taty i czytników), więc nie zależy od
+    warstwy skoroszytu."""
+
+    @property
+    def clock(self) -> RunClock: ...
+
+    def engaged(self, observer: ProgressObserver, conversation: Conversation) -> Self: ...
+
+
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT")
 ViewT = TypeVar("ViewT")
+ContextT = TypeVar("ContextT", bound=EngineContext)
 
 
 class Interlocutor(Conversation, Protocol):
@@ -128,11 +139,11 @@ class Finished:
 
 
 @dataclass(frozen=True)
-class Process(Generic[InputsT, SummaryT]):
+class Process(Generic[InputsT, SummaryT, ContextT]):
     """Opis procesu dla rdzenia Uruchomienia procesu, wspólny dla każdego rozmówcy.
 
-    ``name`` to nazwa procesu z GLOSSARY. ``execute`` wywołuje silnik z
-    gotowym wejściem procesu.
+    ``name`` to nazwa procesu z GLOSSARY. ``execute`` to sam silnik: dostaje
+    gotowe wejście procesu i Kontekst Uruchomienia.
     Zatrzymanie zgłasza ``StopError`` z Komunikatem z katalogu procesu.
     Komunikaty zakończeń z tego samego katalogu (``unexpected_failure``,
     ``plan_not_shown``, ``summary_not_shown``) rdzeń dołącza do każdego innego
@@ -145,7 +156,7 @@ class Process(Generic[InputsT, SummaryT]):
     counter_names: frozenset[str]
     metrics_path: Callable[[], Path]
     metrics_failure_tail: str
-    execute: Callable[[InputsT, ProgressObserver, EngineConversation], SummaryT]
+    execute: Callable[[InputsT, ContextT], SummaryT]
     finished: Callable[[InputsT, SummaryT], Finished]
     unexpected_failure: Message
     plan_not_shown: Message
@@ -180,30 +191,10 @@ class Outcome(Generic[ViewT]):
         return self.ending.result if isinstance(self.ending, Finished) else "BLAD_KRYTYCZNY"
 
 
-class _Clock:
-    """``Czas uruchomienia`` od startu silnika, bez czasu decyzji taty."""
-
-    def __init__(self, clock: Callable[[], float]) -> None:
-        self._clock = clock
-        self.started = clock()
-        self.paused_s = 0.0
-
-    def elapsed_ms(self) -> int:
-        return max(0, round((self._clock() - self.started - self.paused_s) * 1000))
-
-    @contextmanager
-    def paused(self) -> Iterator[None]:
-        paused_at = self._clock()
-        try:
-            yield
-        finally:
-            self.paused_s += self._clock() - paused_at
-
-
 class _ClockedConversation:
-    """Rozmowa rozmówcy dla silnika; czas czekania na Decyzję taty i na tatę poza nią wstrzymuje zegar rdzenia."""
+    """Rozmowa rozmówcy dla silnika; czas czekania na Decyzję taty wstrzymuje zegar Uruchomienia."""
 
-    def __init__(self, interlocutor: Interlocutor, clock: _Clock) -> None:
+    def __init__(self, interlocutor: Interlocutor, clock: RunClock) -> None:
         self._interlocutor = interlocutor
         self._clock = clock
 
@@ -212,11 +203,8 @@ class _ClockedConversation:
         return self._interlocutor.continue_hint
 
     def confirm(self, decision: Decision) -> bool:
-        with self._clock.paused():
+        with self._clock.hold():
             return self._interlocutor.confirm(decision)
-
-    def waiting(self) -> AbstractContextManager[None]:
-        return self._clock.paused()
 
 
 class _Observation:
@@ -248,7 +236,7 @@ class _Observation:
             raise
 
 
-def _stop_from(error: Exception, process: Process[Any, Any]) -> Stop:
+def _stop_from(error: Exception, process: Process[Any, Any, Any]) -> Stop:
     """Własne zatrzymanie procesu z jego Komunikatem i faktami; każdy inny wyjątek to Komunikat nieoczekiwanego błędu.
 
     Własne zatrzymanie z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn, bo Maks ustala z niego, gdzie proces
@@ -272,16 +260,15 @@ _DeferredSummary = Callable[[], tuple[Finished, ViewT]]
 
 
 def _run_engine(
-    process: Process[InputsT, SummaryT],
+    process: Process[InputsT, SummaryT, ContextT],
     inputs: InputsT,
-    observation: _Observation,
-    conversation: EngineConversation,
+    context: ContextT,
     view: Callable[[InputsT, SummaryT], ViewT],
 ) -> _DeferredSummary[ViewT] | Stop:
-    """Silnik z podglądem jako obserwatorem; po sukcesie zwraca odroczoną budowę podsumowania i widoku."""
+    """Silnik z kontekstem rdzenia; po sukcesie zwraca odroczoną budowę podsumowania i widoku."""
 
     try:
-        summary = process.execute(inputs, observation, conversation)
+        summary = process.execute(inputs, context)
     except Exception as error:  # noqa: BLE001 - granica procesu: _stop_from rozróżnia błąd typowany od nieoczekiwanego
         return _stop_from(error, process)
     return lambda: (process.finished(inputs, summary), view(inputs, summary))
@@ -301,31 +288,34 @@ def _build_summary(
 
 
 def run_process(
-    process: Process[InputsT, SummaryT],
+    process: Process[InputsT, SummaryT, ContextT],
     inputs: InputsT,
     interlocutor: Interlocutor,
     *,
     view: Callable[[InputsT, SummaryT], ViewT],
     metrics_path: Path,
-    clock: Callable[[], float] = time.perf_counter,
+    context: ContextT,
 ) -> Outcome[ViewT]:
     """Prowadzi jedno Uruchomienie procesu z gotowym wejściem procesu i dowolnym rozmówcą.
 
     ``view`` robi z podsumowania silnika widok rozmówcy; jej wyjątek to błąd po
     silniku z Komunikatem zakończenia procesu. Rekord metryk trafia do
-    ``metrics_path``; rozmówca renderuje ``Outcome`` sam. ``clock`` to zegar
-    w sekundach, z którego rdzeń liczy ``Czas uruchomienia``.
+    ``metrics_path``; rozmówca renderuje ``Outcome`` sam. Silnik dostaje ``context`` z obserwatorem postępu i rozmową
+    rozmówcy, a rdzeń liczy ``Czas uruchomienia`` zegarem kontekstu (``context.clock``).
     """
 
     dry_run = inputs.dry_run
     mode = "DRY-RUN" if dry_run else "RUN"
     started_at = datetime.now(timezone.utc).isoformat()
-    run_clock = _Clock(clock)
+    clock = context.clock
+    started = clock.now()
     observation = _Observation(interlocutor)
     observation.start()
 
-    engine_outcome = _run_engine(process, inputs, observation, _ClockedConversation(interlocutor, run_clock), view)
-    total_duration_ms = run_clock.elapsed_ms()
+    engine_outcome = _run_engine(
+        process, inputs, context.engaged(observation, _ClockedConversation(interlocutor, clock)), view
+    )
+    total_duration_ms = max(0, round((clock.now() - started) * 1000))
     ending, shown = _build_summary(
         engine_outcome, not_shown=process.plan_not_shown if dry_run else process.summary_not_shown
     )

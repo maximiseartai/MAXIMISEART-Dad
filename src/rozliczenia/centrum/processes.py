@@ -8,25 +8,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rozliczenia import efenix_process, intermax_process, preparation_process, settlement_process
-from rozliczenia.collective_preparation import PreparationSummary
-from rozliczenia.engine import SettlementSummary
-from rozliczenia.efenix_pricing import PricingSummary
-from rozliczenia.efenix_process import EfenixInputs
-from rozliczenia.intermax_ordering import OrderingSummary
-from rozliczenia.intermax_process import OrderingInputs
-from rozliczenia.preparation_process import PreparationInputs
+from rozliczenia.collective_preparation import PreparationInputs, PreparationSummary
+from rozliczenia.engine import SettlementInputs, SettlementSummary
+from rozliczenia.efenix_pricing import EfenixInputs, PricingSummary
+from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary
 from rozliczenia.process_run import Process
-from rozliczenia.settlement_process import SettlementInputs
+from rozliczenia.run_context import RunContext
 
 
 @dataclass(frozen=True)
 class Processes:
     """Rdzenie czterech procesów; pola zamiast słownika, bo wpis procesu buduje wejście konkretnego typu."""
 
-    preparation: Process[PreparationInputs, PreparationSummary]
-    settlement: Process[SettlementInputs, SettlementSummary]
-    efenix: Process[EfenixInputs, PricingSummary]
-    intermax: Process[OrderingInputs, OrderingSummary]
+    preparation: Process[PreparationInputs, PreparationSummary, RunContext]
+    settlement: Process[SettlementInputs, SettlementSummary, RunContext]
+    efenix: Process[EfenixInputs, PricingSummary, RunContext]
+    intermax: Process[OrderingInputs, OrderingSummary, RunContext]
 
     @classmethod
     def default(cls) -> Processes:

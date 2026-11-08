@@ -37,7 +37,6 @@ ONLY: dict[str, frozenset[str]] = {
     "load_workbook": frozenset({"rozliczenia/workbook_files.py::_open"}),
     "file_bytes": frozenset(
         {
-            "rozliczenia/dad_files.py::_disk_bytes",
             "rozliczenia/workbook_files.py::workbook_content",
             "rozliczenia/workbook_files.py::template_content",
         }
@@ -50,10 +49,9 @@ ONLY: dict[str, frozenset[str]] = {
     ),
     "_modified_at": frozenset({"rozliczenia/dad_files.py::read"}),
     "ReadFile": frozenset({"rozliczenia/dad_files.py::read"}),
-    "InputCopy": frozenset(),
+    "InputCopy": frozenset({"rozliczenia/dad_files.py::for_run"}),
     "remember_value": frozenset({"rozliczenia/dad_files.py::remember"}),
     "workbook": frozenset({"rozliczenia/dad_files.py::enter_copy"}),
-    "adapted": frozenset(),
 }
 """Wywołanie (nazwa funkcji, klasy albo metody) → jedyne miejsca w ``src`` (plik::funkcja), które je wołają."""
 
@@ -98,30 +96,8 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
         "workbook",
         "rozliczenia/input_checks.py::_copied",
     ): "Kopia Rejestru w Przygotowaniu do N5b-1",
-    **{
-        (
-            "InputCopy",
-            f"rozliczenia/centrum/{run}_run.py::prepare",
-        ): "Kopia Uruchomienia z adaptera Centrum do N1a-1"
-        for run in ("preparation", "settlement", "intermax", "efenix")
-    },
-    **{
-        ("adapted", where): "uchwyt silnika z jego argumentów do N1a-1"
-        for where in (
-            "rozliczenia/engine.py::run_settlements",
-            "rozliczenia/collective_preparation.py::prepare_collective_file",
-            "rozliczenia/intermax_ordering.py::order_register",
-            "rozliczenia/efenix_orders.py::read_scope",
-        )
-    },
 }
 """Miejsca poza ``ONLY`` z powodem: stałe albo z terminem PR-u rozplątania 7.11, który je zdejmuje."""
-
-PATCHED_IN_TESTS: dict[str, str] = {
-    "test_centrum_uporzadkowanie_intermax.py": "Uporządkowanie dostaje Readers.source w N1a-1",
-    "test_centrum_logi_uruchomienia.py": "Wycena w efenix dostaje Readers.source w N1a-1",
-}
-"""Pliki testów, które do N1a-1 łatają ``workbook_files``, bo ich silnik nie bierze jeszcze ``Readers.source``."""
 
 MODULE = "workbook_files"
 PATCHERS = frozenset({"setattr", "delattr", "patch", "object", "multiple"})
@@ -294,22 +270,17 @@ def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -
 def test_test_podstawia_bajty_plikow_taty_przez_readers_source_a_nie_latajac_modul_skoroszytu() -> (
     None
 ):
-    found, patched = [], set()
-    for path in sorted(TESTS.rglob("*.py")):
-        for line, text in _patches(path.read_text(encoding="utf-8")):
-            if path.name in PATCHED_IN_TESTS:
-                patched.add(path.name)
-            else:
-                found.append(f"{path.relative_to(ROOT).as_posix()}:{line}: {text}")
-    found += [
-        f"PATCHED_IN_TESTS: {name} już nie łata workbook_files, usuń wpis"
-        for name in sorted(PATCHED_IN_TESTS.keys() - patched)
+    found = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {text}"
+        for path in sorted(TESTS.rglob("*.py"))
+        for line, text in _patches(path.read_text(encoding="utf-8"))
     ]
 
     assert not found, "\n".join(
         [
             *found,
-            "Bajty plików taty podstawiaj przez replace(FILE_READERS, source=...) w Surroundings(readers=...).",
+            "Bajty plików taty podstawiaj przez replace(FILE_READERS, source=...) w Surroundings(readers=...), a w teście "
+            "silnika przez RunContext(files=DadFiles(source=...)).",
         ]
     )
 

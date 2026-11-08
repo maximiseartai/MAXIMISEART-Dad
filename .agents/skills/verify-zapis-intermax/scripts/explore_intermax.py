@@ -66,9 +66,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia import intermax_copies, intermax_file, intermax_replace, intermax_restore, workbook_files
-from rozliczenia.intermax_ordering import order_register
+from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting, WriteMismatch
 from rozliczenia.message import StopError
+from rozliczenia.run_context import RunContext
 
 from tests.fixtures.intermax import Intermax, Order
 
@@ -620,7 +621,10 @@ def execute(
         try:
             waiting, disk = _waiting(world, scheduler), _disk(world, scheduler)
             if mode == ORDERING:
-                order_register(world.register, world.copies, now=lambda: NOW, waiting=waiting, disk=disk)
+                order_register(
+                    OrderingInputs(world.register, world.copies, now=lambda: NOW, waiting=waiting, disk=disk),
+                    RunContext(),
+                )
             else:
                 intermax_restore.restore(
                     world.chosen, world.register, world.copies, now=lambda: NOW, waiting=waiting, disk=disk

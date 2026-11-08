@@ -19,6 +19,7 @@ from rozliczenia.centrum.processes import Processes
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.domain import PHASES
 from rozliczenia.process_run import Process
+from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MINIMUM_STATISTIC_SAMPLES, MetricsStore, comparable_records, statistics_for
 
 _RECENT_WEEKS = 8
@@ -58,12 +59,12 @@ def read_metrics(processes: Processes, today: date, centrum_started: CentrumStar
     )
 
 
-def _cores(processes: Processes) -> dict[contract.ProcessKey, Process[Any, Any]]:
+def _cores(processes: Processes) -> dict[contract.ProcessKey, Process[Any, Any, RunContext]]:
     return {declaration.key: declaration.core(processes) for declaration in CATALOG}
 
 
 def _records(
-    processes: Mapping[contract.ProcessKey, Process[Any, Any]],
+    processes: Mapping[contract.ProcessKey, Process[Any, Any, RunContext]],
 ) -> dict[contract.ProcessKey, list[dict[str, Any]]]:
     return {
         key: MetricsStore(process.metrics_path(), process.counter_names).read() for key, process in processes.items()
@@ -71,7 +72,7 @@ def _records(
 
 
 def _runs(
-    processes: Mapping[contract.ProcessKey, Process[Any, Any]],
+    processes: Mapping[contract.ProcessKey, Process[Any, Any, RunContext]],
     records: Mapping[contract.ProcessKey, list[dict[str, Any]]],
     centrum_started: CentrumStarted,
 ) -> list[contract.ProcessRun]:

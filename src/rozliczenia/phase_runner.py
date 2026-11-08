@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping, Sequence
 from types import MappingProxyType
 from typing import TypeVar
 
@@ -24,7 +23,6 @@ from .domain import (
     WorkerFailed,
     WorkerStarted,
 )
-
 
 ResultT = TypeVar("ResultT")
 TemplateResultT = TypeVar("TemplateResultT", bound=TemplateResult)
@@ -71,7 +69,9 @@ class PhaseRunner:
     Zegar uruchomienia startuje przy utworzeniu. Awaria obserwatora odłącza go
     do końca uruchomienia i nie zmienia wyniku etapów. Czas etapu jest
     zapisywany także po przerwaniu. ``clock`` to zegar w sekundach, z którego
-    sekwencer liczy wszystkie czasy.
+    sekwencer liczy wszystkie czasy: w Uruchomieniu zegar Uruchomienia
+    (``run_clock.RunClock.now``), który stoi w czasie czekania na tatę, więc
+    ten czas nie wlicza się do czasów etapów ani do ``elapsed_ms`` zdarzeń.
     """
 
     def __init__(self, observer: ProgressObserver | None, *, clock: Callable[[], float] = time.perf_counter) -> None:
@@ -193,35 +193,6 @@ class PhaseRunner:
                 elapsed_ms=self.elapsed_ms(),
             )
         )
-
-    @contextmanager
-    def waiting(self) -> Iterator[None]:
-        """Wstrzymuje zegar uruchomienia i bieżącego etapu na czas czekania na tatę w trakcie etapu (logowanie w efenix).
-
-        Czas czekania nie wlicza się do czasów etapów ani do ``elapsed_ms`` zdarzeń, tak jak czas Decyzji taty.
-        """
-
-        paused_at = self._clock()
-        try:
-            yield
-        finally:
-            paused_s = self._clock() - paused_at
-            self._run_started += paused_s
-            self._phase_started += paused_s
-
-    @contextmanager
-    def paused(self) -> Iterator[None]:
-        """Wstrzymuje zegar uruchomienia między etapami, np. na czas odpowiedzi taty."""
-
-        if self._active_phase is not None:
-            raise ProgressProtocolError(
-                f"Nie można wstrzymać zegara w trakcie etapu {self._active_phase.value}."
-            )
-        paused_at = self._clock()
-        try:
-            yield
-        finally:
-            self._run_started += self._clock() - paused_at
 
     def elapsed_ms(self) -> int:
         """Czas od rozpoczęcia uruchomienia, bez czasu wstrzymania."""

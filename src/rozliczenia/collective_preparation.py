@@ -16,21 +16,16 @@ ilości co zapis), a wzorce i zapis plików okresu w ``preparation_files``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
-import time
 from types import MappingProxyType
 
 from . import input_checks, preparation_files, preparation_plan
 from . import preparation_messages as messages
-from .client_data import ForbiddenValues
-from .dad_files import DadFiles
-from .input_copy import InputCopy
-from .decision import Conversation, Decision, Declined
-from .domain import ProgressObserver, ProgressPhase
-from .input_checks import FILE_READERS, Readers
+from .decision import Decision, Declined
+from .domain import ProgressPhase
 from .message import Message, StopError
 from .phase_runner import PhaseRunner
 from .preparation_files import CollectiveFilePlan
@@ -38,11 +33,26 @@ from .preparation_plan import IncompletePeriod, Plan
 from .quantity_rules import DESCRIPTION_COLUMNS
 from .text import day_label
 from .write_routes import RouteCounts
+from .run_context import RunContext
 
 __all__ = [
+    "PreparationInputs",
     "PreparationSummary",
     "prepare_collective_file",
 ]
+
+
+@dataclass(frozen=True)
+class PreparationInputs:
+    """Wejście procesu Przygotowania pliku zbiorczego, gotowe przed startem silnika."""
+
+    register_path: Path
+    periods_directory: Path
+    period: str
+    config_path: Path
+    internal_template_path: Path
+    collective_template_path: Path
+    dry_run: bool = False
 
 
 @dataclass
@@ -120,22 +130,7 @@ def _incomplete_period_decision(register_path: Path, plan: Plan, summary: Prepar
     )
 
 
-def prepare_collective_file(
-    register_path: Path,
-    periods_directory: Path,
-    period: str,
-    config_path: Path,
-    *,
-    internal_template_path: Path,
-    collective_template_path: Path,
-    dry_run: bool = False,
-    observer: ProgressObserver | None = None,
-    conversation: Conversation | None = None,
-    clock: Callable[[], float] = time.perf_counter,
-    readers: Readers = FILE_READERS,
-    forbidden: ForbiddenValues | None = None,
-    copy: InputCopy | None = None,
-) -> PreparationSummary:
+def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> PreparationSummary:
     """Tworzy w Folderze okresu razem Rozliczenie wewnętrzne i Plik zbiorczy.
 
     Zgłasza ``StopError``, gdy nie można działać bezpiecznie; wtedy nie
@@ -147,24 +142,24 @@ def prepare_collective_file(
     Zapisywanie kończy bez tworzenia czegokolwiek (także Folderu okresu). Wynik
     jest wtedy planem z tymi samymi liczbami, ostrzeżeniami i nazwami plików.
 
-    ``conversation`` to rozmowa z tatą od rdzenia Uruchomienia procesu. Przy
+    ``context.conversation`` to rozmowa z tatą od rdzenia Uruchomienia procesu. Przy
     zapisie, gdy plan ma ostrzeżenie o niepełnym okresie, Przygotowanie po
     Planowaniu, a przed Zapisywaniem pyta przez nią o Decyzję taty; odmowa to
     ``Declined`` bez zapisu, z podpowiedzią zgody tego rozmówcy. Czas
-    czekania na Decyzję nie wlicza się do czasów etapów. Bez rozmowy
-    Przygotowanie o nic nie pyta. ``clock`` to zegar w sekundach, z którego
-    liczone są czasy etapów. ``readers`` czytają Rejestr zleceń i wzorce w Sprawdzaniu i Odczycie danych, a komórki
-    zakazanych kolumn Rejestru poznaje ``forbidden`` (reguła danych, ADR 0025), a wiersze Rejestru z Odczytu danych
-    Kopia wejścia Uruchomienia ``copy`` (#841).
+    czekania na Decyzję wstrzymuje zegar Uruchomienia, więc nie wlicza się do czasów etapów. Bez rozmówcy
+    (``run_context.UNASKED``) Przygotowanie o nic nie pyta. ``context.readers`` czytają Rejestr zleceń i wzorce w
+    Sprawdzaniu i Odczycie danych, a Rejestr czyta uchwyt plików taty ``context.files``: komórki zakazanych kolumn zna
+    pamięć reguły danych (ADR 0025), a wiersze Rejestru z Odczytu danych Kopia wejścia Uruchomienia (#841).
     """
 
-    phases = PhaseRunner(observer, clock=clock)
-    dad_files = DadFiles.adapted(forbidden, copy, readers.source)
-    register_path = register_path.expanduser().resolve()
-    periods_directory = periods_directory.expanduser().resolve()
-    config_path = config_path.expanduser().resolve()
-    internal_template = internal_template_path.expanduser().resolve()
-    collective_template = collective_template_path.expanduser().resolve()
+    phases = PhaseRunner(context.observer, clock=context.clock.now)
+    dad_files, readers, conversation = context.files, context.readers, context.conversation
+    period, dry_run = inputs.period, inputs.dry_run
+    register_path = inputs.register_path.expanduser().resolve()
+    periods_directory = inputs.periods_directory.expanduser().resolve()
+    config_path = inputs.config_path.expanduser().resolve()
+    internal_template = inputs.internal_template_path.expanduser().resolve()
+    collective_template = inputs.collective_template_path.expanduser().resolve()
 
     def check() -> tuple[preparation_files.PeriodFiles, dict[str, str]]:
         checked = input_checks.check_preparation(
@@ -200,13 +195,10 @@ def prepare_collective_file(
         orders_per_day=plan.orders_per_day,
         warnings=warnings,
     )
-    if conversation is not None and not dry_run:
+    if not dry_run:
         decision = _incomplete_period_decision(register_path, plan, summary)
-        if decision is not None:
-            with phases.paused():
-                consent = conversation.confirm(decision)
-            if not consent:
-                raise Declined(messages.incomplete_period_refused(period, conversation.continue_hint))
+        if decision is not None and not conversation.confirm(decision):
+            raise Declined(messages.incomplete_period_refused(period, conversation.continue_hint))
 
     def save_both() -> RouteCounts:
         if dry_run:

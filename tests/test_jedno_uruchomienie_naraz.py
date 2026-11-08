@@ -228,7 +228,7 @@ def test_watek_modelu_czekajacy_poza_modelem_konczy_sprawdzenie_luka_modelu_z_na
 
 
 @pytest.mark.parametrize(
-    ("waits", "stalled", "last"),
+    ("waits", "stalled", "last", "waiting_in"),
     [
         pytest.param(
             "explore_runs.PREPARED = replace(\n"
@@ -236,18 +236,20 @@ def test_watek_modelu_czekajacy_poza_modelem_konczy_sprawdzenie_luka_modelu_z_na
             ")",
             "wątek modelu przez 1 s nie doszedł do pierwszego kroku",
             "karta Uruchom 1: odpowiedź 200: running",
+            "conduct",
             id="przed_pierwszym_krokiem",
         ),
         pytest.param(
             "explore_runs.runs.RunHost.remember = lambda *_: never.wait()",
             "po kroku „silnik kończy i dopisuje rekord metryk” wątek modelu przez 1 s nie doszedł do kolejnego",
             "wątek Uruchomienie 1: silnik kończy i dopisuje rekord metryk [",
+            "work",
             id="po_dwoch_krokach",
         ),
     ],
 )
 def test_watek_modelu_czekajacy_na_zawsze_konczy_proces_sprawdzenia_luka_z_miejscem_czekania_i_harmonogramem(
-    waits: str, stalled: str, last: str
+    waits: str, stalled: str, last: str, waiting_in: str
 ) -> None:
     """Porzucony wątek sprawdzenia czeka do końca procesu, więc proces kończy się po LUCE sam, z LUKĄ w wyjściu (#651).
 
@@ -262,7 +264,7 @@ def test_watek_modelu_czekajacy_na_zawsze_konczy_proces_sprawdzenia_luka_z_miejs
     [gap] = [line for line in lines if line.startswith("  LUKA MODELU: ")]
     assert re.fullmatch(
         rf"  LUKA MODELU: wątek Uruchomienie 1: {re.escape(stalled)} i stoi w threading\.py:\d+ .+, "
-        r"dokąd doszedł z runs\.py:\d+ work, czyli czeka na coś spoza modelu .+",
+        rf"dokąd doszedł z runs\.py:\d+ {waiting_in}, czyli czeka na coś spoza modelu .+",
         gap,
     ), gap
     schedule = lines[lines.index(gap) + 1 : lines.index("", lines.index(gap))]

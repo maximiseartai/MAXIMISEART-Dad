@@ -13,19 +13,15 @@ from dataclasses import dataclass
 from typing import Final, Generic, Protocol, TypeVar
 
 from rozliczenia.centrum import contract
-from rozliczenia.collective_preparation import PreparationSummary
-from rozliczenia.engine import SettlementSummary
-from rozliczenia.efenix_pricing import OrderKind, PricingSummary
-from rozliczenia.efenix_process import EfenixInputs
-from rozliczenia.intermax_ordering import OrderingSummary
-from rozliczenia.intermax_process import OrderingInputs
+from rozliczenia.collective_preparation import PreparationInputs, PreparationSummary
+from rozliczenia.engine import SettlementInputs, SettlementSummary
+from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingSummary
+from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.period_folder import period_status_label
-from rozliczenia.preparation_process import PreparationInputs
 from rozliczenia.process_run import ProcessInputs
 from rozliczenia.quantity_rules import WEEKDAY_LABELS
 from rozliczenia.progress import ProgressSnapshot
-from rozliczenia.settlement_process import SettlementInputs
 
 
 class WarnedSummary(Protocol):

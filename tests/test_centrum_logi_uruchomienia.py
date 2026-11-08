@@ -59,7 +59,7 @@ from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, WindowAction
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.dad_files import DadFiles, ReadFile
-from rozliczenia.input_checks import FILE_READERS, read_register, register_problem
+from rozliczenia.input_checks import FILE_READERS, Readers, read_register, register_problem
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.preparation_register import RegisterSheet
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
@@ -3321,17 +3321,23 @@ def _copy_settlement(tmp_path: Path, _: ExitStack) -> PreparingCentrum | Settlin
     return centrum
 
 
-def _copy_pricing(tmp_path: Path, stack: ExitStack) -> PreparingCentrum | SettlingCentrum:
+def _copy_pricing(
+    tmp_path: Path, stack: ExitStack, readers: Readers = FILE_READERS
+) -> PreparingCentrum | SettlingCentrum:
     """Zlecenie, którego efenix nie zna: Wycena czyta cały wiersz i kończy się wynikiem bez zapisu w efenix."""
 
     atrapa = stack.enter_context(atrapa_efenix([]))
-    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, readers=readers))
     order = Order("#ZLKW03", address=ADDRESS_VALUE, cells={"I": ORANGE_VALUE, "K": FREE_TEXT}, amount=0.0)
     write_collective_file(centrum.period_parent, [order])
     return centrum
 
 
-COPY_PROCESSES = {"preparation": _copy_preparation, "settlement": _copy_settlement, "efenix": _copy_pricing}
+COPY_PROCESSES: dict[str, Callable[[Path, ExitStack], PreparingCentrum | SettlingCentrum]] = {
+    "preparation": _copy_preparation,
+    "settlement": _copy_settlement,
+    "efenix": _copy_pricing,
+}
 
 
 @pytest.mark.parametrize("process", COPY_PROCESSES.keys())
@@ -3450,7 +3456,7 @@ def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy
 
 @pytest.mark.parametrize("process", ["settlement", "efenix"])
 def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_plik_zapisano_zaraz_po_nim(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, process: str
+    tmp_path: Path, process: str
 ) -> None:
     """Plik zbiorczy zapisany znowu (Autozapis Excela, OneDrive) zaraz po tym, jak Przebieg rozliczeń albo Wycena w
     efenix przeczytały jego bajty: odcisk w Kopii wejścia ma chwilę zmiany przeczytanej wersji, sprzed odczytu."""
@@ -3463,13 +3469,12 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
             _saved_at(path, SAVED_AGAIN_AT)
         return content
 
+    readers = replace(FILE_READERS, source=read_then_saved)
     with ExitStack() as stack:
         if process == "efenix":
-            # Wycena dostaje źródło bajtów czytników (input_checks.Readers.source) dopiero w N1a-1.
-            monkeypatch.setattr(workbook_files, "file_bytes", read_then_saved)
-            centrum = _copy_pricing(tmp_path, stack)
+            centrum = _copy_pricing(tmp_path, stack, readers)
         else:
-            centrum = settling_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, source=read_then_saved)))
+            centrum = settling_centrum(tmp_path, surroundings=Surroundings(readers=readers))
         assert isinstance(centrum, SettlingCentrum)
         _saved_at(centrum.collective_file, READ_AT)
         started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "dry_run": process != "efenix"})

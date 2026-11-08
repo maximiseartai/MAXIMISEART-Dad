@@ -16,7 +16,8 @@ import pytest
 
 from rozliczenia.domain import PhaseFailed, PhaseStarted, ProgressEvent, ProgressPhase
 from rozliczenia.intermax_replace import Waiting
-from rozliczenia.intermax_ordering import order_register
+from rozliczenia.intermax_ordering import OrderingInputs, order_register
+from rozliczenia.run_context import RunContext
 from rozliczenia.message import StopError
 
 from tests.fixtures.preparation import (
@@ -464,10 +465,13 @@ def test_okres_po_uporzadkowaniu_intermax_przechodzi_z_uporzadkowanymi_zleceniam
     )
     clock = ManualClock()
     order_register(
-        fixture.register_path,
-        tmp_path / "Kopie INTERMAX",
-        now=lambda: datetime(2026, 9, 12, 20),
-        waiting=Waiting(clock, clock.pause),
+        OrderingInputs(
+            fixture.register_path,
+            tmp_path / "Kopie INTERMAX",
+            now=lambda: datetime(2026, 9, 12, 20),
+            waiting=Waiting(clock, clock.pause),
+        ),
+        RunContext(),
     )
 
     summary = run_preparation(fixture)
@@ -500,10 +504,13 @@ def test_kolor_operatora_z_uporzadkowania_intermax_przechodzi_do_obu_plikow_okre
     paste_raw_orders(fixture.register_path, [tmobile, fault])
     clock = ManualClock()
     order_register(
-        fixture.register_path,
-        tmp_path / "Kopie INTERMAX",
-        now=lambda: datetime(2026, 9, 12, 20),
-        waiting=Waiting(clock, clock.pause),
+        OrderingInputs(
+            fixture.register_path,
+            tmp_path / "Kopie INTERMAX",
+            now=lambda: datetime(2026, 9, 12, 20),
+            waiting=Waiting(clock, clock.pause),
+        ),
+        RunContext(),
     )
 
     run_preparation(fixture)

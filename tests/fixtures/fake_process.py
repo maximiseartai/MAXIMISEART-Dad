@@ -8,11 +8,12 @@ import json
 from pathlib import Path
 from typing import Any, NoReturn
 
-from rozliczenia.decision import Conversation, Decision
-from rozliczenia.domain import ProgressObserver, ProgressPhase
+from rozliczenia.decision import Decision
+from rozliczenia.domain import ProgressPhase
 from rozliczenia.message import Message, StopError
 from rozliczenia.phase_runner import PhaseRunner
 from rozliczenia.process_run import Finished, Process
+from rozliczenia.run_context import RunContext
 
 PERIOD = "08_14_09_2026"
 COUNTERS = frozenset({"items"})
@@ -38,8 +39,8 @@ def stop_error(what: str) -> StopError:
     return StopError(Message(code="ZATRZYMANIE", what=what, where="Proces testowy", action="Uruchom ponownie."))
 
 
-def all_phases(observer: ProgressObserver, before_save: Callable[[], None] = lambda: None) -> Durations:
-    phases = PhaseRunner(observer)
+def all_phases(context: RunContext, before_save: Callable[[], None] = lambda: None) -> Durations:
+    phases = PhaseRunner(context.observer, clock=context.clock.now)
     phases.check(lambda: None)
     phases.read(lambda: None)
     phases.plan(lambda: None, issue_count=lambda _planned: 0)
@@ -48,8 +49,8 @@ def all_phases(observer: ProgressObserver, before_save: Callable[[], None] = lam
     return phases.durations_ms()
 
 
-def execute(_inputs: Inputs, observer: ProgressObserver, _conversation: Conversation) -> Durations:
-    return all_phases(observer)
+def execute(_inputs: Inputs, context: RunContext) -> Durations:
+    return all_phases(context)
 
 
 def finished_with(result: str) -> Callable[[Inputs, Durations], Finished]:
@@ -67,7 +68,7 @@ def fail(*_args: object) -> NoReturn:
     raise RuntimeError(SECRET)
 
 
-def fake_process(**overrides: Any) -> Process[Inputs, Durations]:
+def fake_process(**overrides: Any) -> Process[Inputs, Durations, RunContext]:
     fields: dict[str, Any] = {
         "name": "Proces testowy",
         "counter_names": COUNTERS,
@@ -94,11 +95,9 @@ QUESTION = Decision(
 )
 
 
-def asking_between_planning_and_saving(
-    _inputs: Inputs, observer: ProgressObserver, conversation: Conversation
-) -> Durations:
+def asking_between_planning_and_saving(_inputs: Inputs, context: RunContext) -> Durations:
     def ask() -> None:
-        if not conversation.confirm(QUESTION):
+        if not context.conversation.confirm(QUESTION):
             raise stop_error("Przerwano zgodnie z odpowiedzią.")
 
-    return all_phases(observer, before_save=ask)
+    return all_phases(context, before_save=ask)

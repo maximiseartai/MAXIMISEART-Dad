@@ -20,9 +20,10 @@ from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
 from rozliczenia import client_data
-from rozliczenia.engine import run_settlements
+from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult, WithoutRule, evaluate
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
+from rozliczenia.run_context import RunContext
 from tests.fixtures.formy_telefonu import MASKED, PHONE
 from tests.fixtures.settlement import CellValue, make_fixture, write_quantity_source
 
@@ -179,7 +180,7 @@ def test_ilosci_tylko_dla_inea_przy_slowie_w_dowolnym_miejscu_urzadzen_bez_wzgle
     def cleared_cells_match_words(rows: list[tuple[dict[str, CellValue], set[str]]]) -> None:
         write_quantity_source(source_path, [cells for cells, _ in rows])
 
-        preview = run_settlements(source_path, config_path, worker_template_path=template_path, dry_run=True)
+        preview = run_settlements(SettlementInputs(source_path, config_path, template_path, dry_run=True), RunContext())
 
         expected = {column: sum(1 for cells, words in rows if column in words and cells[column] is not None) for column in INEA_ONLY}
         assert {str(column): count for column, count in preview.inea_only_cleared.items()} == expected, [cells["D"] for cells, _ in rows]
