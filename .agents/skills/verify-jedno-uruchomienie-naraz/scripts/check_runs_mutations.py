@@ -168,6 +168,13 @@ MUTATIONS = (
         "URUCHOMIENIA: LUKA MODELU",
     ),
     Mutation(
+        "Event zamknięcia użyty już w Shutdown.__init__, w wątku sprawdzającego",
+        (Edit(SHUTDOWN, "        self._requested = threads.Event()\n", "        self._requested = threads.Event()\n        self._requested.clear()\n"),),
+        (EXPLORER, "--scope", "zamknij-w-trakcie"),
+        "eksplorator kończył się kodem 0 bez werdyktu, nie sprawdziwszy żadnego harmonogramu (przegląd #1127)",
+        "URUCHOMIENIA: LUKA MODELU",
+    ),
+    Mutation(
         "prawdziwa blokada spoza threading w RunHost.start",
         (
             Edit(RUNS, "import uuid\n", "import uuid\n\n_REAL = __import__('_thread').allocate_lock()\n"),

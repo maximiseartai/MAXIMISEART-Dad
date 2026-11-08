@@ -104,9 +104,13 @@ class ModelGap(BaseException):
 
 
 def _end_foreign_thread() -> NoReturn:
-    """Ends a thread outside the model that reaches a model primitive; ``threading`` ends a thread on ``SystemExit``
-    (the class itself, not a subclass) without a traceback. Its start is the LUKA MODELU, reported by the modelled thread
-    that started it (``_start_tab``)."""
+    """Ends a system thread outside the model (neither a modelled thread nor the checker's own) that reaches a model
+    primitive; ``threading`` ends a thread on ``SystemExit`` (the class itself, not a subclass) without a traceback.
+
+    This only keeps the thread quiet; it reports nothing, because it runs beside the checker and a report from it would
+    land in whichever schedule runs at that moment. The LUKA MODELU is the start of that thread, which the modelled
+    thread that started it reports: ``_start_tab`` for an Uruchomienie thread started beside ``threads.Thread``.
+    """
 
     raise SystemExit
 
@@ -142,7 +146,7 @@ _ABORT = "\0abort"
 def _current_actor() -> Actor:
     actor = Interleaving.current()
     if not isinstance(actor, Actor):
-        _end_foreign_thread()
+        raise ModelGap("krok poza wątkiem modelu")
     return actor
 
 
@@ -198,8 +202,14 @@ class Scheduler(Interleaving[Actor]):
         enabled: Callable[[], bool] = lambda: True,
         variants: tuple[str, ...] = ("",),
     ) -> str:
-        """Parks the calling thread until the checker picks this step; returns the picked variant."""
+        """Parks the calling thread until the checker picks this step; returns the picked variant.
 
+        A step in the checker's own thread (building ``RunHost`` and ``Shutdown``, reading ``events_after``) is a
+        LUKA MODELU, as every step outside a modelled thread; only a system thread outside the model ends quietly.
+        """
+
+        if Interleaving.current() is None and getcurrent() is not self.home:
+            _end_foreign_thread()
         actor = _current_actor()
         actor.pending = Pending(call, _code_location(), enabled, variants)
         outcome = self.park(actor)
@@ -250,8 +260,8 @@ class ModelLock:
     """The lock of ``RunHost``: entering is one step, which can be taken only while the lock is free.
 
     The checker itself reads ``RunHost`` between steps, outside any modelled thread, when every modelled thread waits
-    before a step of its own: that read is no step and does not take the lock. Any other thread is outside the model
-    and ends (``_end_foreign_thread``).
+    before a step of its own: that read is no step and does not take the lock. Any other thread takes it as a step,
+    which ends a system thread outside the model (``Scheduler.step``).
     """
 
     def __init__(self, scheduler: Scheduler, label: str) -> None:
@@ -260,9 +270,7 @@ class ModelLock:
         self.owner: str | None = None
 
     def __enter__(self) -> bool:
-        if Interleaving.current() is None:
-            if getcurrent() is not self._scheduler.home:
-                _end_foreign_thread()
+        if getcurrent() is self._scheduler.home:
             return True
         self._scheduler.step(f"wejście w blokadę {self.label}", enabled=lambda: self.owner is None)
         self.owner = _current_actor().name
@@ -1065,7 +1073,11 @@ def explore(scope: Scope) -> ScopeReport:
             break
     report.seconds = time.perf_counter() - started
     if failures:
-        raise failures[0]
+        failure = failures[0]
+        if isinstance(failure, SystemExit):
+            # Raised again in the main thread, a SystemExit without a code ends the process with 0 and no verdict.
+            raise RuntimeError(f"sprawdzenie przeplotów skończyło się SystemExit({failure.code!r}) bez werdyktu") from failure
+        raise failure
     return report
 
 
