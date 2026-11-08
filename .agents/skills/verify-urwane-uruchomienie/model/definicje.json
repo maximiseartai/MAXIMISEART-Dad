@@ -58,7 +58,8 @@
     "create_app.runs": "4be9a7a56dd66879"
   },
   "src/rozliczenia/centrum/runs.py": {
-    "_Run.work": "76e7c91edeb733d0",
+    "_Run.work": "0daf80cf23e8ea53",
+    "PreparedRun.conduct": "60359d67fe8e2c54",
     "RunHost.after": "3b394aacf6701175",
     "RunHost.shutdown_refusal": "7b2f8610fb13f295",
     "RunHost.start": "134b21e6de066ce8"
@@ -82,6 +83,6 @@
     "price_orders.save": "944904a2f85b713b"
   },
   "src/rozliczenia/process_run.py": {
-    "run_process": "3cdf9c79ee1e1031"
+    "run_process": "4ca7e7725a0c6a8e"
   }
 }
