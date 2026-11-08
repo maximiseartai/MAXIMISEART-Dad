@@ -106,8 +106,11 @@ def jedna_petla_testclient() -> Iterator[None]:
 def bez_githuba(monkeypatch: pytest.MonkeyPatch) -> None:
     """Żaden test nie łączy się z GitHubem: Centrum bez podstawionego ``tool_freshness`` kończy Diagnozę odpowiedzią 500."""
 
-    def github_in_test(token: str | None = None) -> str | None:
-        raise AssertionError("Test Centrum sięga do GitHuba; podstaw tool_freshness w create_app.")
+    def github_in_test(key: object, api: str) -> Callable[[], NoReturn]:
+        def asked() -> NoReturn:
+            raise AssertionError("Test Centrum sięga do GitHuba; podstaw tool_freshness w create_app.")
+
+        return asked
 
     monkeypatch.setattr(tool_freshness, "github_releases", github_in_test)
 

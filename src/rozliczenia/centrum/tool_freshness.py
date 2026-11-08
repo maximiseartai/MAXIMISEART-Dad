@@ -139,7 +139,7 @@ class ToolFreshness:
     def of_system(cls, key: KeySource) -> ToolFreshness:
         """Aktualność narzędzia tego komputera; każde sprawdzenie pyta GitHuba z tokenem ``key()``, gdy jest."""
 
-        return cls.of_clone(TOOL_ROOT, lambda: github_releases(key()), lambda: github_published(key()))
+        return cls.of_clone(TOOL_ROOT, github_releases(key, TOOL_API), lambda: github_published(key()))
 
     @classmethod
     def of_clone(
@@ -227,15 +227,16 @@ class RememberedRelease:
         return answer
 
 
-# Commity Wydań, które są przodkami `main` publicznego repozytorium, i czy leżą na linii jego pierwszych rodziców.
-_GITHUB_LINE: Final[dict[str, bool]] = {}
+def github_releases(key: KeySource, api: str) -> AnswerSource:
+    """Najnowsze Wydanie na `main` repozytorium ``api`` przy każdym pytaniu, z tokenem ``key()``, gdy jest; ``None`` bez
+    sieci, po limicie czasu, przy odmowie.
 
+    Commity Wydań, które są przodkami `main`, i czy leżą na linii jego pierwszych rodziców (``known`` w
+    ``releases_from``), źródło pamięta między pytaniami.
+    """
 
-def github_releases(token: str | None = None) -> ReleaseAnswer:
-    """Najnowsze Wydanie na `main` publicznego repozytorium, pytane z tokenem ``token``, gdy jest; ``None`` bez sieci,
-    po limicie czasu, przy odmowie."""
-
-    return releases_from(TOOL_API, timeout_s=_TIMEOUT_S, known=_GITHUB_LINE, token=token)
+    line: dict[str, bool] = {}
+    return lambda: releases_from(api, timeout_s=_TIMEOUT_S, known=line, token=key())
 
 
 def releases_from(

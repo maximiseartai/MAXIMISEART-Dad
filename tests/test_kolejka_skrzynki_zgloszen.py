@@ -15,11 +15,9 @@ import json
 from pathlib import Path
 import shutil
 import threading
-from types import SimpleNamespace
 
 import pytest
 
-from rozliczenia.centrum import outbox as outbox_module
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, BoxState, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
@@ -78,11 +76,17 @@ ROOT = Path(__file__).resolve().parents[1]
 class Queue:
     """Kolejka na folderze w ``tmp_path`` ze skrzynką ``box`` i kluczem ``key`` (``None``: bez klucza).
 
-    ``delivered`` to Uruchomienie i numer issue każdej wysyłki, którą przyjęła skrzynka (``listener``).
+    ``delivered`` to Uruchomienie i numer issue każdej wysyłki, którą przyjęła skrzynka (``listener``), a ``now`` to
+    zegar ścienny komputera.
     """
 
     def __init__(
-        self, tmp_path: Path, box: FakeReportBox, key: str | None = KEY, listener: QueueListener | None = None
+        self,
+        tmp_path: Path,
+        box: FakeReportBox,
+        key: str | None = KEY,
+        listener: QueueListener | None = None,
+        now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self.directory = tmp_path / "config" / "zgloszenia" / "kolejka"
         self.opening = tmp_path / "config" / OPENING_FILE
@@ -90,6 +94,7 @@ class Queue:
         self.box = box
         self.key = key
         self.clock = ManualClock()
+        self.now = now
         self.listener = listener or QueueListener()
         self.delivered = self.listener.numbers
         self.outbox = self.restarted()
@@ -106,6 +111,7 @@ class Queue:
             log,
             clock=self.clock,
             listener=self.listener,
+            now=self.now,
         )
 
     def passed(self) -> None:
@@ -910,15 +916,12 @@ def test_logi_z_diagnoza_ponowione_po_urwanej_odpowiedzi_nie_zmieniaja_komentarz
     assert "Logi bez Diagnozy" not in issue.comments[1]
 
 
-def test_logi_z_diagnoza_po_cofnieciu_zegara_komputera_zmieniaja_komentarz_uruchomienia(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_logi_z_diagnoza_po_cofnieciu_zegara_komputera_zmieniaja_komentarz_uruchomienia(tmp_path: Path) -> None:
     # Windows poprawia zegar między wysłaniem Logów a Diagnozą: Diagnoza przychodzi z chwilą sprzed wysłania Logów.
     moments = iter(
         (datetime(2026, 9, 14, 12, 0, 5, tzinfo=timezone.utc), datetime(2026, 9, 14, 12, 0, 0, tzinfo=timezone.utc))
     )
-    monkeypatch.setattr(outbox_module, "datetime", SimpleNamespace(now=lambda zone: next(moments)))
-    queue = Queue(tmp_path, FakeReportBox())
+    queue = Queue(tmp_path, FakeReportBox(), now=lambda: next(moments))
 
     queue.outbox.post(run_logs("bez Diagnozy", 2))
     queue.passed()
