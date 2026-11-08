@@ -75,14 +75,12 @@ def test_zla_czesc_centrum_konczy_przebieg_porazka_zanim_cokolwiek_wystartuje(ru
     assert not Path("nie-powstanie").exists()
 
 
-def test_czesc_all_przekazuje_drive_tylko_funkcje_swojej_czesci(
-    runner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def _without_processes(runner: ModuleType, monkeypatch: pytest.MonkeyPatch, missing: str = "") -> list[list[str]]:
+    """Kroki runnera bez procesów: drive zostawia zrzuty funkcji, które dostał (``all`` to każda), poza ``missing``."""
+
     driven: list[list[str]] = []
 
     def step(name: str, arguments: list[str], evidence: Path, timeout: int = 0) -> None:
-        """Krok bez procesu: drive zostawia zrzuty funkcji, które dostał, jak prawdziwy (``all`` to każda)."""
-
         (evidence / f"{name}.txt").write_text("OK\n", encoding="utf-8")
         if name == "drive":
             features = arguments[arguments.index("--feature") + 1 :]
@@ -90,7 +88,8 @@ def test_czesc_all_przekazuje_drive_tylko_funkcje_swojej_czesci(
             (evidence / "screenshots").mkdir(exist_ok=True)
             for feature in runner.driven("all", {}) if features == ["all"] else features:
                 for shot in runner.feature(feature).screenshots:
-                    (evidence / "screenshots" / f"{shot}.png").write_bytes(b"")
+                    if shot != missing:
+                        (evidence / "screenshots" / f"{shot}.png").write_bytes(b"")
 
     def launch(root: Path, evidence: Path) -> tuple[None, str]:
         (evidence / "server.txt").write_text("OK\n", encoding="utf-8")
@@ -100,6 +99,13 @@ def test_czesc_all_przekazuje_drive_tylko_funkcje_swojej_czesci(
     monkeypatch.setattr(runner, "_launch", launch)
     monkeypatch.setattr(runner, "_run_step", step)
     monkeypatch.setattr(runner, "QuietMachine", lambda: SimpleNamespace(run=lambda: nullcontext(0.0)))
+    return driven
+
+
+def test_czesc_all_przekazuje_drive_tylko_funkcje_swojej_czesci(
+    runner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    driven = _without_processes(runner, monkeypatch)
     monkeypatch.setenv(ZMIENNA_CZESCI, "2/8")
     part = list(runner.driven("all"))
 
@@ -108,6 +114,18 @@ def test_czesc_all_przekazuje_drive_tylko_funkcje_swojej_czesci(
     assert (code, driven) == (0, [part])
     assert 1 < len(part) < len(runner.driven("all", {}))
     assert capsys.readouterr().out.splitlines()[-1].startswith(f"VERIFY OK | features={','.join(part)} | ")
+
+
+def test_przejazd_bez_zrzutu_z_rejestru_funkcji_pada(
+    runner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    shot = runner.feature("uzupelnienie").screenshots[-1]
+    _without_processes(runner, monkeypatch, missing=shot)
+
+    code = runner.main(["--feature", "uzupelnienie", "--run-dir", str(tmp_path)])
+
+    assert code == 1
+    assert capsys.readouterr().err.startswith(f"VERIFY FAIL | features=uzupelnienie | evidence is missing: {shot}.png")
 
 
 class _Playwright(ModuleType):
