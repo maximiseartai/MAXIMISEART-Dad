@@ -48,7 +48,9 @@ SettingField = Literal["register", "periods_directory"]
 # Wzorzec, który proces czyta; Konfiguracja wymienia każdy pod jego rolą.
 TemplateRole = Literal["internal", "collective", "worker"]
 TemplateNeed = Literal["internal_template", "collective_template", "worker_template"]
-PathNeed = Literal["register", "periods_directory", "collective_file", "worker_config", "copies_directory", TemplateNeed]
+ConfigurationNeed = Literal["worker_config", TemplateNeed]
+"""Plik Konfiguracji (``configuration.ConfigurationFiles``): Konfiguracja wykonawców albo Wzorzec."""
+PathNeed = Literal["register", "periods_directory", "collective_file", "copies_directory", ConfigurationNeed]
 Need = PathNeed | Literal["period", "efenix_window"]
 """Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
 ścieżkę (``period_start``, ``intermax_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie odbudowuje ją z Logów.
@@ -57,6 +59,10 @@ Need = PathNeed | Literal["period", "efenix_window"]
 
 def _is_path(need: Need) -> TypeGuard[PathNeed]:
     return need in get_args(PathNeed)
+
+
+def _is_configuration(need: Need) -> TypeGuard[ConfigurationNeed]:
+    return need in get_args(ConfigurationNeed)
 
 
 _TEMPLATE_ROLES: Final[Mapping[TemplateNeed, TemplateRole]] = {
@@ -258,6 +264,12 @@ class ProcessKind(Generic[InputsT, SummaryT]):
         """Potrzeby-pliki procesu: klucze ``Start.paths``."""
 
         return tuple(need for need in self.needs if _is_path(need))
+
+    @property
+    def configuration_needs(self) -> tuple[ConfigurationNeed, ...]:
+        """Pliki Konfiguracji, które proces czyta: Konfiguracja wykonawców i Wzorce z jego potrzeb."""
+
+        return tuple(need for need in self.needs if _is_configuration(need))
 
     @property
     def templates(self) -> tuple[TemplateRole, ...]:

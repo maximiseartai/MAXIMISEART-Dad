@@ -47,7 +47,7 @@ import enum
 import json
 from pathlib import Path
 import platform
-from typing import Any, Final
+from typing import Any, Final, assert_never
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -62,7 +62,16 @@ from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum import stops
 from rozliczenia.centrum.logs_of_run import logs_of
 from rozliczenia.centrum.efenix_chrome import atrapa_opening
-from rozliczenia.centrum.process_kind import HostParts, PreparedRun, Start
+from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.process_kind import (
+    ConfigurationNeed,
+    HostParts,
+    PathNeed,
+    PeriodProcessKind,
+    PreparedRun,
+    ProcessKind,
+    Start,
+)
 from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun
@@ -77,7 +86,6 @@ from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.run_context import RunContexts
 from rozliczenia.text import normalize_text
-from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 
 import atrapa_z_logow
@@ -224,16 +232,18 @@ def replay(
     efenix (``None``: dzień startu Uruchomienia w czasie tego komputera).
     """
 
-    kind = _KINDS[record.process]
-    limits = _limits(record, kind, configuration)
+    kind = CATALOG.kind(record.process)
+    rebuild = _rebuild(record.process)
+    limits = _limits(record, kind, rebuild, configuration)
     if any(limit.blocking for limit in limits):
         return Report(Verdict.IMPOSSIBLE, None, tuple(limits))
     with ExitStack() as stack:
-        setup = kind.setup(record, _Work(work, configuration, efenix_today, stack))
-        limits += setup.limits
-        if any(limit.blocking for limit in setup.limits):
+        here = _Work(work, configuration, efenix_today, stack)
+        rebuilt = rebuild.files(record, here)
+        limits += rebuilt.limits
+        if any(limit.blocking for limit in rebuilt.limits):
             return Report(Verdict.IMPOSSIBLE, None, tuple(limits))
-        replayed = _run(record, setup)
+        replayed = _run(record, _prepared(record, kind, rebuilt, here))
     difference = first_difference(record, replayed)
     return Report(
         Verdict.AGREES if difference is None else Verdict.DIFFERS,
@@ -246,7 +256,7 @@ def replay(
 # --- granice --------------------------------------------------------------------------------------------------------
 
 
-def _limits(record: RunLog, kind: _Kind, configuration: Path | None) -> list[Limit]:
+def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, configuration: Path | None) -> list[Limit]:
     if record.ending == "interrupted":
         return [
             Limit(
@@ -271,9 +281,9 @@ def _limits(record: RunLog, kind: _Kind, configuration: Path | None) -> list[Lim
                 blocking=True,
             )
         ]
-    limits = [*_guard_limits(record), *_typed_limits(copied), *_masked_limits(record), *kind.limits(record)]
-    if kind.configuration:
-        limits.append(_configuration_limit(record, configuration, kind.configuration))
+    limits = [*_guard_limits(record), *_typed_limits(copied), *_masked_limits(record), *rebuild.limits(record)]
+    if kind.configuration_needs:
+        limits.append(_configuration_limit(record, configuration, kind.configuration_needs))
     if record.stop_kind == "repeated":
         limits.append(
             Limit(
@@ -346,8 +356,8 @@ def _masked_limits(record: RunLog) -> list[Limit]:
     ]
 
 
-def _configuration_limit(record: RunLog, configuration: Path | None, roles: Sequence[str]) -> Limit:
-    """Konfiguracja wykonawców i Wzorce (``roles``) z folderu ``configuration``: bez folderu odtworzenie nie biegnie, a
+def _configuration_limit(record: RunLog, configuration: Path | None, needs: Sequence[ConfigurationNeed]) -> Limit:
+    """Konfiguracja wykonawców i Wzorce (``needs``) z folderu ``configuration``: bez folderu odtworzenie nie biegnie, a
     plik, którego w nim nie ma, i rozmiar inny niż plik taty w Logach (``environment.files``) raport nazywa."""
 
     if configuration is None or not configuration.is_dir():
@@ -357,11 +367,11 @@ def _configuration_limit(record: RunLog, configuration: Path | None, roles: Sequ
             blocking=True,
         )
     logged = {file.name: file.size for file in (record.environment.files or ())}
-    files = _configuration_files(configuration)
-    missing = [files[role].name for role in roles if not files[role].is_file()]
+    paths = [ConfigurationFiles.in_folder(configuration).path(need) for need in needs]
+    missing = [path.name for path in paths if not path.is_file()]
     sizes = [
         f"{path.name}: u taty {logged[path.name]} B, tu {path.stat().st_size} B"
-        for path in (files[role] for role in roles)
+        for path in paths
         if path.is_file() and logged.get(path.name) not in (None, path.stat().st_size)
     ]
     text = (
@@ -373,15 +383,6 @@ def _configuration_limit(record: RunLog, configuration: Path | None, roles: Sequ
     if sizes:
         text += f"; inny rozmiar niż u taty: {'; '.join(sizes)}"
     return Limit(text)
-
-
-def _configuration_files(folder: Path) -> dict[str, Path]:
-    return {
-        "worker_config": folder / WORKER_CONFIG.name,
-        "internal_template": folder / INTERNAL_TEMPLATE.name,
-        "collective_template": folder / COLLECTIVE_TEMPLATE.name,
-        "worker_template": folder / WORKER_TEMPLATE.name,
-    }
 
 
 # --- pliki wejścia --------------------------------------------------------------------------------------------------
@@ -411,22 +412,22 @@ class _Work:
         return folder
 
 
-@dataclass
-class _Setup:
-    """Uruchomienie gotowe do startu w katalogu roboczym i granice, które odbudowa wejścia znalazła po drodze."""
+@dataclass(frozen=True)
+class _Rebuilt:
+    """Pliki wejścia odbudowane z Logów pod potrzebami procesu (bez Konfiguracji, którą daje folder Konfiguracji),
+    zależności gospodarza i granice, które odbudowa znalazła po drodze."""
 
-    prepared: PreparedRun[Any, Any]
+    paths: Mapping[PathNeed, Path]
+    parts: HostParts = field(default_factory=HostParts)
     limits: list[Limit] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
-class _Kind:
-    """Odtworzenie jednego procesu: granice, odbudowa wejścia i czy czyta Konfigurację i Wzorce."""
+class _Rebuild:
+    """Odtworzenie jednego procesu w tym, czego katalog procesów nie wie: granice Logów i odbudowa plików z Logów."""
 
     limits: Callable[[RunLog], list[Limit]]
-    setup: Callable[[RunLog, _Work], _Setup]
-    configuration: tuple[str, ...] = ()
-    """Pliki z folderu Konfiguracji (klucze ``_configuration_files``), które proces czyta."""
+    files: Callable[[RunLog, _Work], _Rebuilt]
 
 
 def _cell(value: LoggedCell) -> _Written:
@@ -517,33 +518,8 @@ def _collective_limits(record: RunLog) -> list[Limit]:
     return []
 
 
-def _settlement(record: RunLog, work: _Work) -> _Setup:
-    source = _collective_file(record, work, {})
-    configuration = _configured(work)
-    start = Start(
-        {
-            "collective_file": source,
-            "worker_config": configuration["worker_config"],
-            "worker_template": configuration["worker_template"],
-        },
-        period=record.period,
-        dry_run=record.mode == "podgląd",
-    )
-    return _Setup(_prepared(work, "settlement", start))
-
-
-def _prepared(
-    work: _Work, key: contract.ProcessKey, start: Start, parts: HostParts | None = None
-) -> PreparedRun[Any, Any]:
-    """Uruchomienie z Kopią wejścia i plikiem metryk w katalogu roboczym, w miejscu pliku metryk procesu."""
-
-    metrics = work.path("metryki.jsonl")
-    return CATALOG.with_metrics({key: metrics}).prepared(key, start, parts or HostParts(), RunContexts().new())
-
-
-def _configured(work: _Work) -> dict[str, Path]:
-    assert work.configuration is not None, "bez folderu Konfiguracji _configuration_limit blokuje odtworzenie"
-    return _configuration_files(work.configuration)
+def _settlement(record: RunLog, work: _Work) -> _Rebuilt:
+    return _Rebuilt({"collective_file": _collective_file(record, work, {})})
 
 
 def _register_file(record: RunLog, work: _Work, folder: str, font: Font) -> tuple[Path, list[Limit]]:
@@ -605,27 +581,14 @@ def _above_paste(created: Worksheet, sheet: LoggedSheet) -> None:
             created.cell(sheet.yellow_row, column).fill = _YELLOW
 
 
-def _preparation(record: RunLog, work: _Work) -> _Setup:
+def _preparation(record: RunLog, work: _Work) -> _Rebuilt:
     # Kopia nie ma wyglądu komórek, a z wyglądu uporządkowanego wiersza Rejestru pamięć reguły danych wie, że jego
     # komórki stoją pod nagłówkiem (#918): wiersze mają krój uporządkowanych wierszy taty. Pierwszy wiersz bloku
     # wklejenia u taty (bez tego wyglądu) i wiersz z siatki reguły położenia mają w Kopii maski w miejscu tekstu dwie
     # kolumny na lewo od ``ADRES`` i ``NUMER UMOWY`` (u taty ``DATA`` i ``NUMER ZL.``), więc różnicę z nich tłumaczy
     # zastrzeżenie o maskach (``_masked_limits``).
     register, limits = _register_file(record, work, "rejestr", _ORDERED_FONT)
-    periods = work.folder("okresy")
-    configuration = _configured(work)
-    start = Start(
-        {
-            "register": register,
-            "periods_directory": periods,
-            "worker_config": configuration["worker_config"],
-            "internal_template": configuration["internal_template"],
-            "collective_template": configuration["collective_template"],
-        },
-        period=record.period,
-        dry_run=record.mode == "podgląd",
-    )
-    return _Setup(_prepared(work, "preparation", start), limits)
+    return _Rebuilt({"register": register, "periods_directory": work.folder("okresy")}, limits=limits)
 
 
 def _preparation_limits(record: RunLog) -> list[Limit]:
@@ -641,12 +604,12 @@ def _preparation_limits(record: RunLog) -> list[Limit]:
     ]
 
 
-def _intermax(record: RunLog, work: _Work) -> _Setup:
+def _intermax(record: RunLog, work: _Work) -> _Rebuilt:
     register, limits = _register_file(record, work, "intermax", _PASTED_FONT)
     moment = _intermax_moment(record, work)
-    # Okres Uporządkowania to okres dnia z zegara procesu u taty (ADR 0019), więc start go nie podaje.
-    start = Start({"register": register, "copies_directory": work.folder("Kopie INTERMAX")}, period=None, dry_run=False)
-    return _Setup(_prepared(work, "intermax", start, HostParts(now=lambda: moment)), limits)
+    return _Rebuilt(
+        {"register": register, "copies_directory": work.folder("Kopie INTERMAX")}, HostParts(now=lambda: moment), limits
+    )
 
 
 def _intermax_moment(record: RunLog, work: _Work) -> datetime:
@@ -691,7 +654,7 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
     ]
 
 
-def _efenix(record: RunLog, work: _Work) -> _Setup:
+def _efenix(record: RunLog, work: _Work) -> _Rebuilt:
     orders = record.efenix_orders or []
     source = _collective_file(record, work, atrapa_z_logow.file_addresses(orders))
     # Zakres tylko do budowy Atrapy efenix: ten odczyt nie należy do Uruchomienia, więc nie trafia do jego Kopii.
@@ -703,9 +666,8 @@ def _efenix(record: RunLog, work: _Work) -> _Setup:
     fed = atrapa_z_logow.fed(orders, scoped)
     today = work.efenix_today or record.started_at.astimezone().date()
     atrapa = work.stack.enter_context(atrapa_z_logow.started(fed, today))
-    start = Start({"collective_file": source}, period=record.period, dry_run=False, pricing=record.pricing)
     limits = [Limit(text, blocking=blocking) for text, blocking in fed.limits]
-    return _Setup(_prepared(work, "efenix", start, HostParts(efenix=atrapa_opening(atrapa.url))), limits)
+    return _Rebuilt({"collective_file": source}, HostParts(efenix=atrapa_opening(atrapa.url)), limits)
 
 
 def _efenix_limits(record: RunLog) -> list[Limit]:
@@ -729,13 +691,40 @@ def _efenix_limits(record: RunLog) -> list[Limit]:
     return limits
 
 
-_KINDS: Final[Mapping[contract.ProcessKey, _Kind]] = {
-    "settlement": _Kind(_collective_limits, _settlement, ("worker_config", "worker_template")),
-    "preparation": _Kind(_preparation_limits, _preparation, ("worker_config", "internal_template", "collective_template")),
-    "intermax": _Kind(_intermax_limits, _intermax),
-    "efenix": _Kind(_efenix_limits, _efenix),
-}
-"""Odtworzenie każdego procesu z katalogu procesów (``contract.ProcessKey``)."""
+def _rebuild(key: contract.ProcessKey) -> _Rebuild:
+    """Odtworzenie procesu ``key``; nowy proces bez swojej gałęzi pada w mypy."""
+
+    match key:
+        case "settlement":
+            return _Rebuild(_collective_limits, _settlement)
+        case "preparation":
+            return _Rebuild(_preparation_limits, _preparation)
+        case "intermax":
+            return _Rebuild(_intermax_limits, _intermax)
+        case "efenix":
+            return _Rebuild(_efenix_limits, _efenix)
+        case _:
+            assert_never(key)
+
+
+def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work) -> PreparedRun[Any, Any]:
+    """Uruchomienie z Logów ``record`` z plikami odbudowanymi i z folderu Konfiguracji, z Kopią wejścia i plikiem
+    metryk w katalogu roboczym w miejscu pliku metryk procesu. Okres Uporządkowania INTERMAX to okres dnia z zegara
+    procesu u taty (ADR 0019), więc start podaje okres tylko procesowi z okresem."""
+
+    paths = {**rebuilt.paths, **_configured(work, kind.configuration_needs)}
+    period = record.period if isinstance(kind, PeriodProcessKind) else None
+    start = Start(paths, period=period, dry_run=record.mode == "podgląd", pricing=record.pricing)
+    metrics = work.path("metryki.jsonl")
+    return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts().new())
+
+
+def _configured(work: _Work, needs: Sequence[ConfigurationNeed]) -> dict[PathNeed, Path]:
+    if not needs:
+        return {}
+    assert work.configuration is not None, "bez folderu Konfiguracji _configuration_limit blokuje odtworzenie"
+    files = ConfigurationFiles.in_folder(work.configuration)
+    return {need: files.path(need) for need in needs}
 
 
 # --- przebieg -------------------------------------------------------------------------------------------------------
@@ -759,10 +748,9 @@ class _Tata:
         self.progress = self._prepared.progress_view(snapshot)
 
 
-def _run(record: RunLog, setup: _Setup) -> RunLog:
+def _run(record: RunLog, prepared: PreparedRun[Any, Any]) -> RunLog:
     """Uruchomienie odtworzenia przez rdzeń procesu i jego Logi po strażniku, jak w Centrum (``RunComments.run_ended``)."""
 
-    prepared = setup.prepared
     tata = _Tata(prepared, consent=record.ending != "declined")
     info = prepared.info(record.run_id)
     started_at = datetime.now(timezone.utc)
