@@ -8,10 +8,13 @@ numerów zleceń, numerów umów i loginów Wykonawców.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date
+from functools import partial
 from pathlib import Path
+from typing import Final
 
+from .intermax_replace import Refusal
 from .message import IF_ERROR_RETURNS, Message, file_label, folder_label, refer_if
 from .register_columns import ORDERED_FONT, ORDERED_SIZE
 from .text import row_range
@@ -22,37 +25,85 @@ from .workbook_messages import DadWorkbook, WorkbookMessages
 _PROCESS = "Uporządkowanie INTERMAX"
 _UNCHANGED = "INTERMAX nie został zmieniony."
 _INTERMAX = DadWorkbook("INTERMAX", "INTERMAX", "order_register", _UNCHANGED, "uruchom ponownie")
+_AGAIN = "przywróć kopię jeszcze raz"
 
 
-def register_unusable(error: WorkbookError) -> Message:
-    """INTERMAX, którego nie da się użyć; ``error`` mówi dlaczego."""
+@dataclass(frozen=True)
+class Replacement:
+    """Proces, który podmienia INTERMAX: Uporządkowanie (``ORDERING``) albo przywrócenie Kopii (``RESTORE``).
+
+    Komunikaty o INTERMAX, którego proces nie może podmienić, mówią to samo w obu procesach, a różnią się kodem,
+    zwrotem ponowienia (``workbook.again``) i zdaniem „Co się stało” o tym, czego proces nie zrobił. Kod zdania o samym
+    INTERMAX (brak, Excel, OneDrive) to ``prefix`` i kod Uporządkowania.
+    """
+
+    workbook: DadWorkbook
+    prefix: str
+    not_written_code: str
+    not_written: str
+    no_copy_code: str
+    no_copy: str
+    old_copies_code: str
+    done: str
+
+
+ORDERING: Final = Replacement(
+    workbook=_INTERMAX,
+    prefix="",
+    not_written_code="ZAPIS_INTERMAX_NIEUDANY",
+    not_written="Nie udało się zapisać INTERMAX.",
+    no_copy_code="KOPIA_INTERMAX_NIEUDANA",
+    no_copy="Nie udało się zrobić Kopii INTERMAX.",
+    old_copies_code="STARE_KOPIE_INTERMAX",
+    done="INTERMAX został uporządkowany",
+)
+RESTORE: Final = Replacement(
+    workbook=replace(_INTERMAX, again=_AGAIN),
+    prefix="PRZYWRACANIE_",
+    not_written_code="PRZYWRACANIE_NIEUDANE",
+    not_written="Nie udało się przywrócić kopii.",
+    no_copy_code="PRZYWRACANIE_KOPIA_NIEUDANA",
+    no_copy="Nie udało się zrobić Kopii obecnego INTERMAX, więc kopia nie została przywrócona.",
+    old_copies_code="PRZYWRACANIE_STARE_KOPIE",
+    done="Kopia została przywrócona",
+)
+
+
+def register_unusable(error: WorkbookError, replacement: Replacement) -> Message:
+    """INTERMAX, którego proces ``replacement`` nie może użyć; ``error`` mówi dlaczego.
+
+    Przywrócenie czyta tylko bajty INTERMAX, więc INTERMAX, którego nie da się odczytać, nazywa jak niedostępny.
+    """
+
+    def not_synced(register: Path) -> Message:
+        return workbook_messages.not_synced(f"{replacement.prefix}NIEDOSTEPNY_INTERMAX", register, replacement.workbook)
 
     return workbook_messages.unusable(
         error,
         WorkbookMessages(
-            missing=register_missing,
-            open_in_excel=register_open,
-            inaccessible=lambda register: workbook_messages.not_synced("NIEDOSTEPNY_INTERMAX", register, _INTERMAX),
-            unreadable=_register_unreadable,
+            missing=partial(register_missing, replacement=replacement),
+            open_in_excel=partial(_register_open, replacement=replacement),
+            inaccessible=not_synced,
+            unreadable=_register_unreadable if replacement is ORDERING else not_synced,
         ),
     )
 
 
-def register_missing(register: Path) -> Message:
+def register_missing(register: Path, replacement: Replacement) -> Message:
     """Nie ma INTERMAX pod ścieżką z Ustawień taty."""
 
     return Message(
-        code="BRAK_INTERMAX",
+        code=f"{replacement.prefix}BRAK_INTERMAX",
         what=f"Nie znaleziono INTERMAX. {_UNCHANGED}",
         where=file_label(register),
-        action="Wybierz w Ustawieniach właściwy plik INTERMAX i uruchom ponownie.",
+        action=f"Wybierz w Ustawieniach właściwy plik INTERMAX, potem {replacement.workbook.again}.",
     )
 
 
-def register_open(register: Path) -> Message:
+def _register_open(register: Path, replacement: Replacement) -> Message:
     """INTERMAX jest otwarty w Excelu: plik blokady obok przed Kopią INTERMAX albo przy odmowie podmiany pliku."""
 
-    return workbook_messages.open_in_excel("INTERMAX_OTWARTY", register, _INTERMAX)
+    return workbook_messages.open_in_excel(f"{replacement.prefix}INTERMAX_OTWARTY", register, replacement.workbook)
 
 
 def _register_unreadable(register: Path) -> Message:
@@ -184,69 +235,63 @@ def unsupported_shape(register: Path, sheet: str) -> Message:
     )
 
 
-def register_syncing(register: Path) -> Message:
-    """System odmawia podmiany INTERMAX po krótkiej ponownej próbie, a Excel go nie trzyma: OneDrive synchronizuje."""
+def refused(refusal: Refusal, register: Path, copies: Path, replacement: Replacement) -> Message:
+    """Podmiana INTERMAX procesu ``replacement`` odmówiła z powodu ``refusal``; INTERMAX i Kopie są takie, jak były.
 
+    Uporządkowanie sprawdza zapis planem dnia, więc różnica to błąd narzędzia; przywrócenie porównuje same bajty Kopii,
+    więc różnica to nieudany zapis. Kopia o tej samej nazwie przy przywróceniu to przywrócenie z tej samej sekundy.
+    """
+
+    match refusal:
+        case Refusal.EXCEL_HOLDS:
+            return _register_open(register, replacement)
+        case Refusal.ONEDRIVE_HOLDS:
+            return Message(
+                code=f"{replacement.prefix}INTERMAX_SYNCHRONIZOWANY",
+                what=f"OneDrive jeszcze synchronizuje INTERMAX. {_UNCHANGED}",
+                where=file_label(register),
+                action=f"Poczekaj, aż OneDrive skończy synchronizację, potem {replacement.workbook.again}.",
+            )
+        case Refusal.WRITE_MISMATCH if replacement is ORDERING:
+            return Message.to_maintainer(
+                code="ZAPIS_INTERMAX_NIEZGODNY",
+                what=f"Sprawdzenie zapisu wykazało różnicę, więc zapis został odrzucony. {_UNCHANGED}",
+                where=file_label(register),
+            )
+        case Refusal.WRITE_FAILED | Refusal.WRITE_MISMATCH:
+            return _disk_failed(replacement.not_written_code, replacement.not_written, file_label(register), replacement)
+        case Refusal.COPY_EXISTS if replacement is RESTORE:
+            return Message(
+                code="PRZYWRACANIE_PRZED_CHWILA",
+                what="Przed chwilą przywrócono już kopię INTERMAX, więc ta kopia nie została przywrócona.",
+                where=folder_label(copies),
+                action=f"Odśwież Konfigurację i sprawdź listę kopii. Jeśli nadal trzeba, {_AGAIN}.",
+            )
+        case Refusal.COPY_FAILED | Refusal.COPY_EXISTS:
+            return _disk_failed(replacement.no_copy_code, replacement.no_copy, folder_label(copies), replacement)
+
+
+def _disk_failed(code: str, what: str, where: str, replacement: Replacement) -> Message:
     return Message(
-        code="INTERMAX_SYNCHRONIZOWANY",
-        what=f"OneDrive jeszcze synchronizuje INTERMAX. {_UNCHANGED}",
-        where=file_label(register),
-        action="Spróbuj za chwilę: poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie.",
+        code=code,
+        what=f"{what} {_UNCHANGED}",
+        where=where,
+        action=f"Sprawdź, czy na dysku jest wolne miejsce, potem {replacement.workbook.again}. {IF_ERROR_RETURNS}",
     )
 
 
-def write_check_failed(register: Path) -> Message:
-    """Sprawdzenie zapisu wykryło różnicę poza uporządkowanym dniem; INTERMAX nie został podmieniony."""
-
-    return Message.to_maintainer(
-        code="ZAPIS_INTERMAX_NIEZGODNY",
-        what=f"Sprawdzenie zapisu wykazało różnicę, więc zapis został odrzucony. {_UNCHANGED}",
-        where=file_label(register),
-    )
-
-
-def register_write_failed(register: Path) -> Message:
-    """Nie dało się zapisać pliku tymczasowego obok INTERMAX albo podmienić INTERMAX z innego powodu niż Excel i
-    OneDrive, np. brak miejsca na dysku; INTERMAX nie został podmieniony."""
+def old_copies_kept(directory: Path, replacement: Replacement) -> Message:
+    """Ostrzeżenie: INTERMAX jest podmieniony, ale starsze Kopie INTERMAX nie zostały usunięte."""
 
     return Message(
-        code="ZAPIS_INTERMAX_NIEUDANY",
-        what=f"Nie udało się zapisać INTERMAX. {_UNCHANGED}",
-        where=file_label(register),
-        action=f"Sprawdź, czy na dysku jest wolne miejsce, i uruchom ponownie. {IF_ERROR_RETURNS}",
-    )
-
-
-def copy_failed(directory: Path) -> Message:
-    """Nie powstała Kopia INTERMAX, więc INTERMAX nie został podmieniony."""
-
-    return Message(
-        code="KOPIA_INTERMAX_NIEUDANA",
-        what=f"Nie udało się zrobić Kopii INTERMAX. {_UNCHANGED}",
+        code=replacement.old_copies_code,
+        what=f"{replacement.done}, ale nie udało się usunąć starszych Kopii INTERMAX.",
         where=folder_label(directory),
-        action=f"Sprawdź, czy na dysku jest wolne miejsce, i uruchom ponownie. {IF_ERROR_RETURNS}",
+        action=(
+            "Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. "
+            f"{refer_if('Jeśli komunikat wraca', request='przekaż go')}"
+        ),
     )
-
-
-_OLD_COPIES_KEPT = (
-    "Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. "
-    f"{refer_if('Jeśli komunikat wraca', request='przekaż go')}"
-)
-
-
-def old_copies_kept(directory: Path) -> Message:
-    """Ostrzeżenie: INTERMAX jest uporządkowany, ale starsze Kopie INTERMAX nie zostały usunięte."""
-
-    return Message(
-        code="STARE_KOPIE_INTERMAX",
-        what="INTERMAX został uporządkowany, ale nie udało się usunąć starszych Kopii INTERMAX.",
-        where=folder_label(directory),
-        action=_OLD_COPIES_KEPT,
-    )
-
-
-_AGAIN = "przywróć kopię jeszcze raz"
-_INTERMAX_RESTORE = replace(_INTERMAX, again=_AGAIN)
 
 
 def copies_unreadable(directory: Path) -> Message:
@@ -311,94 +356,6 @@ def copy_damaged(copy: Path) -> Message:
         what=f"Ta Kopia INTERMAX jest uszkodzona, więc nie została przywrócona. {_UNCHANGED}",
         where=file_label(copy),
         action="Wybierz inną kopię z listy.",
-    )
-
-
-def restore_register_unusable(error: WorkbookError) -> Message:
-    """INTERMAX, którego przywrócenie nie może zastąpić: brak pliku, otwarty w Excelu albo niedostępny."""
-
-    def not_synced(register: Path) -> Message:
-        return workbook_messages.not_synced("PRZYWRACANIE_NIEDOSTEPNY_INTERMAX", register, _INTERMAX_RESTORE)
-
-    return workbook_messages.unusable(
-        error,
-        WorkbookMessages(
-            missing=_restore_register_missing,
-            open_in_excel=restore_register_open,
-            inaccessible=not_synced,
-            unreadable=not_synced,
-        ),
-    )
-
-
-def _restore_register_missing(register: Path) -> Message:
-    return Message(
-        code="PRZYWRACANIE_BRAK_INTERMAX",
-        what=f"Nie znaleziono INTERMAX. {_UNCHANGED}",
-        where=file_label(register),
-        action=f"Wybierz w Ustawieniach właściwy plik INTERMAX, potem {_AGAIN}.",
-    )
-
-
-def restore_register_open(register: Path) -> Message:
-    """INTERMAX jest otwarty w Excelu, więc przywrócenie Kopii odmawia."""
-
-    return workbook_messages.open_in_excel("PRZYWRACANIE_INTERMAX_OTWARTY", register, _INTERMAX_RESTORE)
-
-
-def restore_register_syncing(register: Path) -> Message:
-    """System odmawia podmiany INTERMAX po krótkiej ponownej próbie, a Excel go nie trzyma: OneDrive synchronizuje."""
-
-    return Message(
-        code="PRZYWRACANIE_INTERMAX_SYNCHRONIZOWANY",
-        what=f"OneDrive jeszcze synchronizuje INTERMAX. {_UNCHANGED}",
-        where=file_label(register),
-        action=f"Poczekaj, aż OneDrive skończy synchronizację, potem {_AGAIN}.",
-    )
-
-
-def restore_copy_failed(directory: Path) -> Message:
-    """Nie powstała Kopia stanu bieżącego, więc przywrócenie niczego nie podmieniło."""
-
-    return Message(
-        code="PRZYWRACANIE_KOPIA_NIEUDANA",
-        what=f"Nie udało się zrobić Kopii obecnego INTERMAX, więc kopia nie została przywrócona. {_UNCHANGED}",
-        where=folder_label(directory),
-        action=f"Sprawdź, czy na dysku jest wolne miejsce, potem {_AGAIN}. {IF_ERROR_RETURNS}",
-    )
-
-
-def restored_moment_ago(directory: Path) -> Message:
-    """Kopia stanu bieżącego z tej samej sekundy już jest: przed chwilą przywrócono kopię, np. w drugiej karcie."""
-
-    return Message(
-        code="PRZYWRACANIE_PRZED_CHWILA",
-        what="Przed chwilą przywrócono już kopię INTERMAX, więc ta kopia nie została przywrócona.",
-        where=folder_label(directory),
-        action=f"Odśwież Konfigurację i sprawdź listę kopii. Jeśli nadal trzeba, {_AGAIN}.",
-    )
-
-
-def restore_failed(register: Path) -> Message:
-    """Plik tymczasowy obok INTERMAX nie powstał, nie ma bajtów Kopii albo podmiana nie udała się z innego powodu niż
-    Excel i OneDrive; INTERMAX nie został podmieniony."""
-
-    return Message(
-        code="PRZYWRACANIE_NIEUDANE",
-        what=f"Nie udało się przywrócić kopii. {_UNCHANGED}",
-        where=file_label(register),
-        action=f"Sprawdź, czy na dysku jest wolne miejsce, potem {_AGAIN}. {IF_ERROR_RETURNS}",
-    )
-
-
-def old_copies_kept_after_restore(directory: Path) -> Message:
-    """Ostrzeżenie: Kopia jest przywrócona, ale starsze Kopie INTERMAX nie zostały usunięte."""
-
-    return Message(
-        code="PRZYWRACANIE_STARE_KOPIE",
-        what="Kopia została przywrócona, ale nie udało się usunąć starszych Kopii INTERMAX.",
-        where=folder_label(directory),
-        action=_OLD_COPIES_KEPT,
     )
 
 

@@ -114,7 +114,7 @@ def order_register(
         try:
             workbook_files.ensure_available(register_path)
         except WorkbookError as error:
-            raise StopError(messages.register_unusable(error)) from error
+            raise StopError(messages.register_unusable(error, messages.ORDERING)) from error
 
     phases.check(check)
 
@@ -122,7 +122,7 @@ def order_register(
         try:
             register = Register.read(register_path, files)
         except WorkbookError as error:
-            raise StopError(messages.register_unusable(error)) from error
+            raise StopError(messages.register_unusable(error, messages.ORDERING)) from error
         if files.copy is not None:
             register.copy_paste()
         if not register.order_sheets:
@@ -170,11 +170,11 @@ def order_register(
                 disk=disk,
             )
         if isinstance(outcome, Refusal):
-            raise StopError(_refused(outcome, register_path, copies_directory))
+            raise StopError(messages.refused(outcome, register_path, copies_directory, messages.ORDERING))
         return outcome
 
     replaced = phases.save(save)
-    warnings = [messages.old_copies_kept(copies_directory)] if replaced.old_copies_kept else []
+    warnings = [messages.old_copies_kept(copies_directory, messages.ORDERING)] if replaced.old_copies_kept else []
     entries: dict[str, list[int]] = {}
     for placement in day.placements:
         if placement.entry is not None:
@@ -189,20 +189,6 @@ def order_register(
         day.day, len(day.placements), day.worker_count, replaced.copy.path.name, frozen, without_entry, warnings
     )
     return replace(summary, phase_durations_ms=phases.durations_ms())
-
-
-def _refused(refusal: Refusal, register: Path, copies: Path) -> Message:
-    match refusal:
-        case Refusal.EXCEL_HOLDS:
-            return messages.register_open(register)
-        case Refusal.ONEDRIVE_HOLDS:
-            return messages.register_syncing(register)
-        case Refusal.WRITE_FAILED:
-            return messages.register_write_failed(register)
-        case Refusal.WRITE_MISMATCH:
-            return messages.write_check_failed(register)
-        case Refusal.COPY_FAILED | Refusal.COPY_EXISTS:
-            return messages.copy_failed(copies)
 
 
 def _obstacle(register: Path, sheet: str, obstacle: Obstacle) -> Message:
@@ -227,7 +213,7 @@ def register_problem(register_path: Path, files: DadFiles) -> Message | None:
     try:
         register = Register.read(register_path, files)
     except WorkbookError as error:
-        return messages.register_unusable(error)
+        return messages.register_unusable(error, messages.ORDERING)
     return None if register.order_sheets else messages.no_order_sheet(register_path)
 
 
@@ -251,7 +237,7 @@ def register_days(register_path: Path, today: date, files: DadFiles) -> tuple[Re
     try:
         register = Register.read(register_path, files, despite_excel_lock=True)
     except WorkbookError as error:
-        return messages.register_unusable(error)
+        return messages.register_unusable(error, messages.ORDERING)
     if not register.order_sheets:
         return messages.no_order_sheet(register_path)
     since = _earliest_shown(today)

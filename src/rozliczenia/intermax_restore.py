@@ -76,7 +76,7 @@ def restore(
     try:
         current = workbook_files.workbook_content(register)
     except WorkbookError as error:
-        raise StopError(messages.restore_register_unusable(error)) from error
+        raise StopError(messages.register_unusable(error, messages.RESTORE)) from error
     try:
         content = workbook_files.workbook_content(chosen.path)
     except WorkbookError as error:
@@ -92,20 +92,7 @@ def restore(
         register, current, content, check, before="restore", copies=directory, now=now, waiting=waiting, disk=disk
     )
     if isinstance(outcome, Refusal):
-        raise StopError(_refused(outcome, register, directory))
-    warnings = [messages.old_copies_kept_after_restore(directory)] if outcome.old_copies_kept else []
+        raise StopError(messages.refused(outcome, register, directory, messages.RESTORE))
+    warnings = [messages.old_copies_kept(directory, messages.RESTORE)] if outcome.old_copies_kept else []
     return Restored(chosen, outcome.copy, warnings)
 
-
-def _refused(refusal: Refusal, register: Path, directory: Path) -> Message:
-    match refusal:
-        case Refusal.EXCEL_HOLDS:
-            return messages.restore_register_open(register)
-        case Refusal.ONEDRIVE_HOLDS:
-            return messages.restore_register_syncing(register)
-        case Refusal.WRITE_FAILED | Refusal.WRITE_MISMATCH:
-            return messages.restore_failed(register)
-        case Refusal.COPY_FAILED:
-            return messages.restore_copy_failed(directory)
-        case Refusal.COPY_EXISTS:
-            return messages.restored_moment_ago(directory)
