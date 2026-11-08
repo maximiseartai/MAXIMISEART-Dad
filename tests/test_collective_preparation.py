@@ -1540,17 +1540,34 @@ def test_rejestr_w_ksztalcie_ktorego_zawezenie_tekstow_wspolnych_nie_zna_daje_te
     )
 
 
-def test_tekst_wspolny_w_tekscie_wspolnym_przesuwa_numery_tak_samo_w_odczycie_okresu_jak_calego_rejestru(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("item", "odd"),
+    [
+        ("<si><t>POZNAŃ</t></si>", "<si><t>POZNAŃ</t><si><t>obcy tekst</t></si></si>"),
+        (
+            "<si><t>POZNAŃ</t></si>",
+            '<si><t>POZNAŃ</t><x:si xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><t>obcy tekst</t></x:si></si>',
+        ),
+        ("<si><t>POZNAŃ</t></si>", '<si xmlns="urn:inna"><t>obcy tekst</t></si><si><t>POZNAŃ</t></si>'),
+        ("<si><t>POZNAŃ</t></si>", "<si><t><![CDATA[POZNAŃ</si><si>]]></t></si>"),
+        ("<si><t>POZNAŃ</t></si>", "<si><t>POZNAŃ</t><!-- </si><si> --></si>"),
+        ("<si><t>POZNAŃ</t></si>", "<si><t>POZNAŃ</t><?obcy </si><si>?></si>"),
+    ],
+    ids=["zagniezdzony", "zagniezdzony-z-prefiksem", "w-innej-przestrzeni-nazw", "cdata", "komentarz", "instrukcja"],
+)
+def test_tekst_wspolny_w_ksztalcie_spoza_listy_daje_te_same_wiersze_okresu_co_odczyt_calego_rejestru(
+    tmp_path: Path, item: str, odd: str
 ) -> None:
-    """openpyxl liczy każdy ``<si>`` tabeli tekstów wspólnych, także zagnieżdżony w tekście, i to przed nim: miasto,
-    które zlecenia okresu dzielą z wcześniejszymi, ma numer tekstu zagnieżdżonego. Wiersze okresu są takie same jak w
-    odczycie całego Rejestru."""
+    """openpyxl liczy każdy ``<si>`` tabeli tekstów wspólnych z przestrzeni nazw arkusza, także zagnieżdżony w tekście
+    i to przed nim, a nie liczy ``<si>`` z innej przestrzeni nazw ani znaczników w CDATA, komentarzu i instrukcji
+    przetwarzania: miasto, które zlecenia okresu dzielą z wcześniejszymi, stoi w takim kształcie. Wiersze okresu są
+    takie same jak w odczycie całego Rejestru."""
 
     fixture = _excel_register_after_history(tmp_path)
-    item = "<si><t>POZNAŃ</t></si>".encode()
-    nested = "<si><t>POZNAŃ</t><si><t>obcy tekst</t></si></si>".encode()
-    rewrite_parts(fixture.register_path, lambda name, data: data.replace(item, nested) if name == "xl/sharedStrings.xml" else data)
+    rewrite_parts(
+        fixture.register_path,
+        lambda name, data: data.replace(item.encode(), odd.encode(), 1) if name == "xl/sharedStrings.xml" else data,
+    )
     file = DadFiles().read(fixture.register_path)
 
     [period] = read_register(file, parse_period_token(PERIOD))

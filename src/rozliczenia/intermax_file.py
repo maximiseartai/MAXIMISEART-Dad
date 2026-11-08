@@ -61,7 +61,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Final, cast
 from xml.etree import ElementTree
-from xml.parsers import expat
 
 from openpyxl.styles.borders import Border
 from openpyxl.styles.colors import Color
@@ -90,6 +89,7 @@ from .workbook_parts import (
     appended,
     office_document,
     relationships,
+    shared_string_spans,
     style_list,
     unpacked,
 )
@@ -116,7 +116,6 @@ _HEADER_ROW = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
 _ATTRIBUTE = re.compile(rb'\s([\w:]+)="([^"]*)"')
 _ROW_LOOK: Final = (b"s", b"customFormat", b"ht", b"customHeight", b"x14ac:dyDescent")
 """Atrybuty ``<row>``, które dają wiersz wygląd: styl wiersza i wysokość; ``x14ac`` deklaruje arkusz taty."""
-_SHARED_ITEM: Final = re.compile(rb"<si\b[^>]*?(?:/>|>(.*?)</si>)", re.S)
 _PHONETIC: Final = re.compile(rb"<rPh\b.*?</rPh>", re.S)
 _SHARED_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
 _SHEET_VIEWS: Final = re.compile(rb"<sheetViews\b.*?</sheetViews>", re.S)
@@ -535,20 +534,22 @@ class _SharedStrings:
     """Teksty wspólne bez podpowiedzi wymowy (``rPh``): zwykły tekst albo tekst każdego fragmentu.
 
     Tekst powstaje dopiero, gdy komórka po niego sięga: INTERMAX taty ma dziesiątki tysięcy tekstów wspólnych, a
-    Uporządkowanie czyta kilkaset wierszy z dołu arkusza. Granice ``<si>`` są szukane bez parsera, więc część
-    sprawdza parser expat, zanim cokolwiek z niej przeczyta: zepsuta część to ``ExpatError``, czyli nieczytelny
-    INTERMAX, a w poprawnym XML każdy ``<si>`` jest elementem, którego ``<si>`` nie zagnieżdża.
+    Uporządkowanie czyta kilkaset wierszy z dołu arkusza. Granice ``<si>`` daje ``shared_string_spans``: zepsuta część
+    to ``ExpatError``, a tabela w kształcie, którego granic nie zna, ``ValueError``, czyli w obu przypadkach nieczytelny
+    INTERMAX.
     """
 
     def __init__(self, xml: bytes) -> None:
-        expat.ParserCreate().Parse(xml, True)
-        self._items = _SHARED_ITEM.findall(xml)
+        self._xml = xml
+        try:
+            self._items = shared_string_spans(xml)
+        except UnsupportedShape as error:
+            raise ValueError(str(error)) from error
         self._texts: dict[int, str] = {}
 
     def __getitem__(self, index: int) -> str:
         if index not in self._texts:
-            item = self._items[index]
-            item = _PHONETIC.sub(b"", item)
+            item = _PHONETIC.sub(b"", self._xml[slice(*self._items[index])])
             self._texts[index] = html.unescape(b"".join(_SHARED_TEXT.findall(item)).decode("utf-8"))
         return self._texts[index]
 

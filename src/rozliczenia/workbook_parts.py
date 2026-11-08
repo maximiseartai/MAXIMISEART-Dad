@@ -681,7 +681,20 @@ def _is_number_between(attributes: bytes, content: bytes, low: float, high: floa
 
 _SHARED_STRINGS_TYPE: Final = "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"
 _CONTENT_TYPE_OVERRIDE: Final = "{http://schemas.openxmlformats.org/package/2006/content-types}Override"
-_SI: Final = f"{SPREADSHEET_NS} si"
+_STRINGS_ROOT: Final = re.compile(
+    rb"(?:<\?xml[^>]*\?>)?\s*<(?:[\w.-]+:)?[\w.-]+((?:\s+[\w.:-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*)\s*(/?)>\s*"
+)
+"""Prolog bez komentarzy, DOCTYPE i instrukcji przetwarzania i znacznik otwierający korzeń z białymi znakami za nim;
+grupa 1 to atrybuty korzenia, grupa 2 ``/`` korzenia bez treści."""
+_MAIN_DEFAULT: Final = re.compile(rb"""\sxmlns\s*=\s*(["'])""" + re.escape(SPREADSHEET_NS.encode("ascii")) + rb"\1")
+_STRING_ITEMS: Final = re.compile(
+    rb"(?:<si(?:\s+(?!xmlns)[\w.:-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*+\s*+"
+    rb"(?:/>|>[^<]*+(?:<(?![!?]|/?(?:[\w.-]+:)?si)[^<]*+)*+</si\s*+>)\s*+)*+"
+)
+"""Ciąg ``<si>`` z białymi znakami między nimi, każdy bez prefiksu i bez ``xmlns``, a w jego treści bez komentarza,
+CDATA, instrukcji przetwarzania i znacznika, którego nazwa bez prefiksu zaczyna się od ``si``; kwantyfikatory bez
+cofania, bo odrzucenie tabeli z dziesiątkami tysięcy tekstów z cofaniem trwałoby długo."""
+_STRING_START: Final = re.compile(rb"<si")
 _CELL: Final = f"{SPREADSHEET_NS} c"
 _CELL_VALUE: Final = f"{SPREADSHEET_NS} v"
 
@@ -692,7 +705,7 @@ def _used_strings_only(parts: Mapping[str, bytes]) -> dict[str, bytes]:
 
     Teksty zostają bajt w bajt i w kolejności z tabeli, więc openpyxl czyta z każdej komórki ten sam tekst. Tabela to
     część, którą wskazuje ``[Content_Types].xml``, tak jak w openpyxl, a arkusze to cel relacji każdego ``<sheet>``
-    skoroszytu. Kształt spoza tego, który znają ``_string_bounds`` i ``_shared_cells``, zepsuty XML albo numer spoza
+    skoroszytu. Kształt spoza tego, który znają ``shared_string_spans`` i ``_shared_cells``, zepsuty XML albo numer spoza
     tabeli, którego openpyxl może nie przeczytać: żadnej podmiany, więc openpyxl czyta skoroszyt jak bez niej.
     """
 
@@ -708,16 +721,16 @@ def _used_strings_only(parts: Mapping[str, bytes]) -> dict[str, bytes]:
         return {}
     table = parts[strings]
     try:
-        bounds = _string_bounds(table)
+        items = shared_string_spans(table)
         cells = {part: _shared_cells(parts[part]) for part in _sheet_parts(parts)}
     except (UnsupportedShape, expat.ExpatError):
         return {}
-    items = list(pairwise(bounds))
     used = sorted({index for found in cells.values() for _, _, index in found})
-    if used and used[-1] >= len(items):
+    if not items or (used and used[-1] >= len(items)):
         return {}
     renumbered = {index: number for number, index in enumerate(used)}
-    replaced = {strings: b"".join([table[: bounds[0]], *(table[slice(*items[index])] for index in used), table[bounds[-1] :]])}
+    kept = (table[slice(*items[index])] for index in used)
+    replaced = {strings: b"".join([table[: items[0][0]], *kept, table[items[-1][1] :]])}
     for part, found in cells.items():
         xml = parts[part]
         pieces: list[bytes] = []
@@ -729,37 +742,30 @@ def _used_strings_only(parts: Mapping[str, bytes]) -> dict[str, bytes]:
     return replaced
 
 
-def _string_bounds(table: bytes) -> list[int]:
-    """Początek każdego ``<si>`` tabeli tekstów wspólnych w kolejności z tabeli i na końcu początek znacznika końca
-    korzenia, z parsera expat: tekst sięga od swojej granicy do następnej, więc ma też to, co stoi za nim, a czego
-    openpyxl nie czyta.
+# Przygotowanie czyta tę samą tabelę w Sprawdzaniu (``intermax_file.Register``) i w Odczycie danych (zawężenie), z tych
+# samych bajtów z ``unpacked``: tabela Rejestru zleceń ma dziesiątki tysięcy tekstów.
+@lru_cache(maxsize=1)
+def shared_string_spans(table: bytes) -> tuple[tuple[int, int], ...]:
+    """Granice każdego ``<si>`` tabeli tekstów wspólnych ``table`` w kolejności z tabeli: od jego początku do początku
+    następnego, a ostatniego do ostatniego znacznika końca, czyli korzenia, więc tekst ma też białe znaki za sobą.
 
-    openpyxl liczy każdy ``<si>`` w części, więc ``<si>`` poza dziećmi korzenia to ``UnsupportedShape``; zepsuty XML to
-    ``ExpatError``.
+    Tabelę sprawdza parser expat (zepsuty XML to ``ExpatError``), a granice dają wyrażenia regularne, które znają jeden
+    kształt: prolog bez komentarzy, DOCTYPE i instrukcji przetwarzania, korzeń bez treści (żadnych tekstów) albo z
+    domyślną przestrzenią nazw arkusza i treścią, która od początku do końca jest ciągiem ``<si>`` (``_STRING_ITEMS``).
+    W poprawnym XML bez komentarzy, CDATA i instrukcji przetwarzania każdy ``<`` zaczyna znacznik, więc każdy ``<si>``
+    jest wtedy dzieckiem korzenia z przestrzeni nazw arkusza, tak jak liczy go openpyxl, a każde ``<si`` w treści
+    korzenia zaczyna tekst. Inny kształt to ``UnsupportedShape``.
     """
 
-    parser = expat.ParserCreate(namespace_separator=" ")
-    bounds: list[int] = []
-    depth = 0
-
-    def start(name: str, _: dict[str, str]) -> None:
-        nonlocal depth
-        depth += 1
-        if name == _SI:
-            if depth != 2:
-                raise UnsupportedShape("teksty wspólne")
-            bounds.append(parser.CurrentByteIndex)
-
-    def end(_: str) -> None:
-        nonlocal depth
-        if depth == 1:
-            bounds.append(parser.CurrentByteIndex)
-        depth -= 1
-
-    parser.StartElementHandler = start
-    parser.EndElementHandler = end
-    parser.Parse(table, True)
-    return bounds
+    expat.ParserCreate(namespace_separator=" ").Parse(table, True)
+    root = _STRINGS_ROOT.match(table)
+    if root is not None and root.group(2):
+        return ()
+    end = table.rfind(b"</")
+    if root is None or not _MAIN_DEFAULT.search(root.group(1)) or not _STRING_ITEMS.fullmatch(table, root.end(), end):
+        raise UnsupportedShape("teksty wspólne")
+    starts = [found.start() for found in _STRING_START.finditer(table, root.end(), end)]
+    return tuple(pairwise([*starts, end]))
 
 
 def _sheet_parts(parts: Mapping[str, bytes]) -> set[str]:

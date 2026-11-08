@@ -256,7 +256,8 @@ _RICH = {"UWAGI": b'<si><r><t>UW</t></r><r><t/></r><r><t>AGI</t></r><rPh sb="0" 
 
 
 def like_excel(path: Path) -> None:
-    """Skoroszyt z openpyxl zapisany tak jak Excel: teksty wspólne zamiast wbudowanych i liczby bez ``t="n"``."""
+    """Skoroszyt z openpyxl zapisany tak jak Excel: teksty wspólne zamiast wbudowanych (tabela z deklaracją XML) i liczby
+    bez ``t="n"``."""
 
     strings: list[bytes] = []
 
@@ -273,7 +274,7 @@ def like_excel(path: Path) -> None:
         return xml.replace(_MAIN_NAMESPACE, _MAIN_NAMESPACE + _X14AC, 1)
 
     rewrite_parts(path, lambda name, data: sheet(data) if name.startswith("xl/worksheets/sheet") else data)
-    table = b'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="%d" uniqueCount="%d">' % (
+    table = b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="%d" uniqueCount="%d">' % (
         len(strings),
         len(strings),
     )

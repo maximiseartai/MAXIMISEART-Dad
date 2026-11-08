@@ -1379,6 +1379,28 @@ def _rows(content: bytes) -> dict[int, tuple[object, ...]]:
         workbook.close()
 
 
+def test_rejestr_z_pusta_tabela_tekstow_wspolnych_zawezony_do_okresu_ma_wiersze_okresu_jak_caly(tmp_path: Path) -> None:
+    """Rejestr zapisany jak w Excelu bez żadnego tekstu, więc z tabelą tekstów wspólnych bez tekstów: zawężony do
+    10–12.09.2026 ma wiersze z tymi datami takie same jak cały Rejestr."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    orders = active_worksheet(workbook)
+    orders.title = "ZLECENIA"
+    for number in range(1, 21):
+        orders.append([datetime(2026, 9, number, 8), number])
+    workbook.save(path)
+    like_excel(path)
+    content = path.read_bytes()
+    day = (datetime(2026, 9, 10) - WINDOWS_EPOCH) / timedelta(days=1)
+
+    narrowed, ranges = rows_dated_between(content, {"ZLECENIA": 1}, day, day + 3)
+
+    whole = _rows(content)
+    assert ranges == {"ZLECENIA": range(10, 13)}
+    assert _rows(narrowed) == {number: whole[number] for number in (1, 10, 11, 12)}
+
+
 def test_rejestr_zawezony_do_okresu_niesie_w_tabeli_tekstow_wspolnych_tylko_teksty_swoich_wierszy(tmp_path: Path) -> None:
     """Rejestr zapisany jak w Excelu: wiersze 2 i 4 to zlecenia z 2025 r., a wiersz 3 zlecenie z 8.09.2026. Po zawężeniu
     do tego dnia tabela tekstów wspólnych nie ma tekstów wierszy 2 i 4, a wiersze 1 i 3 mają te same wartości co w
