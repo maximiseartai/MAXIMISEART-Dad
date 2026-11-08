@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 import sys
 
@@ -22,7 +23,10 @@ from eksplorator import Choices, Excuse, Interleaving, Thread, excuse_line, excu
 
 
 def _leaves(execute: Callable[[Choices], tuple[int, ...]], budget: dict[str, int] | None = None) -> list[tuple[int, ...]]:
-    return list(schedules(execute, budget))
+    """Harmonogramy drzewa testu, najwyżej 20: przejście, które się nie kończy, daje listę inną od oczekiwanej, a nie
+    zawieszony test."""
+
+    return list(islice(schedules(execute, budget), 20))
 
 
 def test_przejscie_drzewa_odwiedza_kazdy_harmonogram_raz_w_glab() -> None:
@@ -68,8 +72,19 @@ class _Watek(Thread):
     log: tuple[str, ...] = ()
 
 
+class _Przeplot(Interleaving[_Watek]):
+    """``Interleaving`` z limitem przełączeń: ``settle``, które przełącza wątki bez końca, pada zamiast wisieć."""
+
+    switches = 0
+
+    def _switch(self, thread: _Watek) -> None:
+        self.switches += 1
+        assert self.switches < 100, f"settle przełącza wątek {thread.name} bez końca"
+        super()._switch(thread)
+
+
 def test_watki_modelu_biegna_po_jednym_do_kolejnego_kroku_z_wynikiem_wybranym_przez_eksplorator() -> None:
-    interleaving: Interleaving[_Watek] = Interleaving()
+    interleaving = _Przeplot()
 
     def body(thread: _Watek) -> Callable[[], None]:
         def run() -> None:
@@ -97,6 +112,25 @@ def test_watki_modelu_biegna_po_jednym_do_kolejnego_kroku_z_wynikiem_wybranym_pr
     assert (first.log, second.log) == (("a1", "a2"), ("b1", "b2"))
     assert [(thread.name, thread.status) for thread in interleaving.threads] == [("a", "done"), ("b", "done"), ("c", "done")]
     assert Interleaving.current() is None
+
+
+def test_wynik_kroku_daje_tylko_release_eksploratora() -> None:
+    """Wątek przełączony bez ``release`` nie dostaje wyniku poprzedniego kroku: taki błąd eksploratora pada od razu,
+    zamiast powtórzyć krok, którego eksplorator nie wybrał."""
+
+    interleaving = _Przeplot()
+    thread = _Watek("a")
+
+    def body() -> None:
+        thread.log += (interleaving.park(thread), interleaving.park(thread))
+
+    interleaving.spawn(thread, body)
+    interleaving.settle()
+    interleaving.release(thread, "pierwszy")
+    interleaving.settle()
+
+    with pytest.raises(AssertionError):
+        thread.greenlet.switch()
 
 
 @dataclass(frozen=True)
