@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from skrypt_skilla import Parser, create_run_root
 
 from tests.fixtures.intermax import Intermax, Order
+from tests.fixtures.scenariusz_rozliczen import REGISTER_NAME
 
-REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 COPIES_DIRECTORY = "Kopie INTERMAX"
 MANIFEST_NAME = "intermax_manifest.json"
 # One pasted day (Monday 26.10.2026) of three Wykonawcy in the order the company app gave them, no two at one hour.
