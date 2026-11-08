@@ -32,7 +32,7 @@ from typing import Literal
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
-from .raw_orders import UNDER_HEADER, RowPositions
+from .raw_orders import UNDER_HEADER, AbovePaste, RowPositions
 
 TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
@@ -69,29 +69,38 @@ class CopiedRow:
 
 
 @dataclass(frozen=True)
-class CopiedSheet:
-    """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny, wiersze i puste wiersze, które proces liczy.
+class PasteFacts:
+    """Fakty wklejenia INTERMAX w przeczytanym arkuszu, same numery wierszy, bez treści; arkusz bez wklejenia ma
+    wszystkie puste.
 
     ``shifted_row``: wiersz, którego komórki czytnik czyta o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
     (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
     ``uncertain_rows``: wiersze wklejenia INTERMAX w obu położeniach (``raw_orders.RowPositions.uncertain``), które mają
     w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu i datę z godziną spod ``DATA GODZ. POCZ.``, więc
-    brak komórki nie znaczy w nich pustej. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i
-    żółty wiersz nad wklejeniem INTERMAX (``raw_orders.above_paste``), sam numer, bez treści; ``None``: bez takiego
-    wiersza i arkusze innych plików. ``traced_rows``: wiersze ze śladem przesunięcia, które nie są pierwszym wierszem
-    bloku wklejenia: łamią fakt domeny, że przesunięty przychodzi tylko pierwszy wklejony wiersz (ADR 0025).
+    brak komórki nie znaczy w nich pustej. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty wiersz nad
+    wklejeniem INTERMAX (``raw_orders.above_paste``); ``None``: bez takiego wiersza. ``traced_rows``: wiersze ze śladem
+    przesunięcia, które nie są pierwszym wierszem bloku wklejenia: łamią fakt domeny, że przesunięty przychodzi tylko
+    pierwszy wklejony wiersz (ADR 0025).
     """
+
+    shifted_row: int | None = None
+    uncertain_rows: tuple[int, ...] = ()
+    last_ordered_row: int | None = None
+    yellow_row: int | None = None
+    traced_rows: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class CopiedSheet:
+    """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny, wiersze, puste wiersze, które proces liczy,
+    i fakty wklejenia INTERMAX (``paste``)."""
 
     name: str
     header_row: int
     columns: Mapping[str, str]
     rows: tuple[CopiedRow, ...]
     empty_rows: tuple[int, ...]
-    shifted_row: int | None = None
-    uncertain_rows: tuple[int, ...] = ()
-    last_ordered_row: int | None = None
-    yellow_row: int | None = None
-    traced_rows: tuple[int, ...] = ()
+    paste: PasteFacts = PasteFacts()
 
 
 @dataclass(frozen=True)
@@ -118,8 +127,8 @@ Values = Sequence[object] | Mapping[int, object]
 class SheetCopy:
     """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), kolumny, które
     Kopia niesie (``None``: każda), kolumny wklejenia, w których komórka może stać w innym położeniu (``None``: te,
-    które Kopia niesie), kolumna daty z godziną, wiersze nad wklejeniem (``CopiedSheet``) i odwołania do przeczytanych
-    wierszy z ich położeniami."""
+    które Kopia niesie), kolumna daty z godziną, wiersze nad wklejeniem INTERMAX (``None``: arkusz bez wklejenia) i
+    odwołania do przeczytanych wierszy z ich położeniami."""
 
     name: str
     header_row: int
@@ -127,8 +136,7 @@ class SheetCopy:
     forbidden: frozenset[int]
     copied_columns: frozenset[int] | None = None
     date_column: int | None = None
-    last_ordered_row: int | None = None
-    yellow_row: int | None = None
+    above: AbovePaste | None = None
     span: frozenset[int] | None = None
     _rows: list[tuple[int, Values, RowPositions]] = field(default_factory=list)
     _empty: list[int] = field(default_factory=list)
@@ -152,17 +160,20 @@ class SheetCopy:
         shifted = [number for number, _, positions in self._rows if positions.read]
         if len(shifted) > 1:
             raise ValueError(f"Arkusz {self.name} ma więcej niż jeden przesunięty wiersz: {shifted}")
+        above = self.above
         return CopiedSheet(
             self.name,
             self.header_row,
             columns,
             tuple(CopiedRow(number, self._cells(values, positions)) for number, values, positions in self._rows),
             tuple(self._empty),
-            shifted[0] if shifted else None,
-            tuple(number for number, _, positions in self._rows if positions.uncertain),
-            self.last_ordered_row,
-            self.yellow_row,
-            tuple(number for number, _, positions in self._rows if positions.traced),
+            PasteFacts(
+                shifted_row=shifted[0] if shifted else None,
+                uncertain_rows=tuple(number for number, _, positions in self._rows if positions.uncertain),
+                last_ordered_row=None if above is None else above.last_ordered,
+                yellow_row=None if above is None else above.yellow,
+                traced_rows=tuple(number for number, _, positions in self._rows if positions.traced),
+            ),
         )
 
     def _cells(self, values: Values, positions: RowPositions) -> dict[str, CellValue]:
@@ -209,14 +220,13 @@ class WorkbookCopy:
         *,
         copied_columns: Collection[int] | None = None,
         date_column: int | None = None,
-        last_ordered_row: int | None = None,
-        yellow_row: int | None = None,
+        above: AbovePaste | None = None,
         span: Collection[int] | None = None,
     ) -> SheetCopy:
         """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
         czytnik oddaje pamięci reguły danych; ``copied_columns``: kolumny, które Kopia niesie (``None``: każda),
         ``date_column``: kolumna daty z godziną, która zostaje w wierszu z siatki (``SheetCopy._cells``),
-        ``last_ordered_row`` i ``yellow_row``: wiersze nad wklejeniem INTERMAX (``CopiedSheet.last_ordered_row``),
+        ``above``: wiersze nad wklejeniem INTERMAX (``PasteFacts.last_ordered_row``),
         ``span``: kolumny wklejenia, w których komórka może stać w innym położeniu (``None``: ``copied_columns``)."""
 
         sheet = SheetCopy(
@@ -226,8 +236,7 @@ class WorkbookCopy:
             frozenset(forbidden),
             None if copied_columns is None else frozenset(copied_columns),
             date_column,
-            last_ordered_row,
-            yellow_row,
+            above,
             None if span is None else frozenset(span),
         )
         self._sheets.append(sheet)

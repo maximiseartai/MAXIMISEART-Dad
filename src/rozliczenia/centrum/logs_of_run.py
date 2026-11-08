@@ -103,7 +103,7 @@ def logged_diagnosis(diagnosis: Diagnosis, *, diagnosed_at: datetime) -> LoggedD
 
 def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
     """Uwaga o każdym wierszu Kopii ze śladem przesunięcia poza pierwszym wierszem bloku wklejenia
-    (``CopiedSheet.traced_rows``): fakt domeny, na którym stoi reguła położenia wiersza, nie zachodzi (ADR 0025)."""
+    (``PasteFacts.traced_rows``): fakt domeny, na którym stoi reguła położenia wiersza, nie zachodzi (ADR 0025)."""
 
     return [
         f"Fakt domeny złamany: wiersz {row} arkusza {sheet.name} w {file.name} ma datę z godziną dwie kolumny na lewo od "
@@ -111,5 +111,5 @@ def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
         "(ADR 0025)."
         for file in files
         for sheet in file.sheets
-        for row in sheet.traced_rows
+        for row in sheet.paste.traced_rows
     ]

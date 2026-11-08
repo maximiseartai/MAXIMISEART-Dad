@@ -504,12 +504,13 @@ class LoggedSheet(_Record):
     """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny (bez zakazanych kolumn), wiersze i puste wiersze
     z odczytanego zakresu, które proces liczy (Rejestr zleceń).
 
-    ``shifted_row``: przesunięty pierwszy wiersz wklejenia INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie
-    kolumny na lewo od nagłówka, a tu stoją pod nim (``input_copy.CopiedSheet.shifted_row``); ``None``: bez niego i
-    pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki dozwolone
-    w każdym ich możliwym położeniu (``input_copy.CopiedSheet.uncertain_rows``). ``last_ordered_row`` i ``yellow_row``:
-    ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz dnia, bez treści
-    (``input_copy.CopiedSheet.last_ordered_row``); ``None``: bez takiego wiersza, inne pliki i pliki sprzed #847.
+    Fakty wklejenia INTERMAX (``input_copy.PasteFacts``) poza wierszami ze śladem przesunięcia, które idą do uwag
+    (``RunLog.input_copy_notes``), stoją płasko w arkuszu. ``shifted_row``: przesunięty pierwszy wiersz wklejenia
+    INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie kolumny na lewo od nagłówka, a tu stoją pod nim; ``None``:
+    bez niego i pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki
+    dozwolone w każdym ich możliwym położeniu. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty
+    wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz dnia, bez treści; ``None``: bez takiego wiersza,
+    inne pliki i pliki sprzed #847.
     """
 
     sheet: str
@@ -524,6 +525,7 @@ class LoggedSheet(_Record):
 
     @classmethod
     def of(cls, sheet: CopiedSheet) -> LoggedSheet:
+        paste = sheet.paste
         return cls(
             sheet=sheet.name,
             header_row=sheet.header_row,
@@ -533,10 +535,10 @@ class LoggedSheet(_Record):
                 for row in sheet.rows
             ],
             empty_rows=list(sheet.empty_rows),
-            shifted_row=sheet.shifted_row,
-            uncertain_rows=list(sheet.uncertain_rows),
-            last_ordered_row=sheet.last_ordered_row,
-            yellow_row=sheet.yellow_row,
+            shifted_row=paste.shifted_row,
+            uncertain_rows=list(paste.uncertain_rows),
+            last_ordered_row=paste.last_ordered_row,
+            yellow_row=paste.yellow_row,
         )
 
 
