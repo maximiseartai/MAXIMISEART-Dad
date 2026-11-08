@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import urllib.request
 
 from playwright.sync_api import Page, Request, expect
 
@@ -214,18 +213,10 @@ def drive_preparation(run: Run, page: Page) -> None:
         figure(progress, "Ostrzeżenia") == len(preview_warnings),
         "the live counters show the projection's Ostrzeżenia (as many as the preview's warnings) while the decision waits",
     )
-    second = urllib.request.Request(
-        run.url.rstrip("/") + "/api/runs",
-        data=json.dumps({"process": "preparation", "period": LAST_COMPLETE, "dry_run": True}).encode(),
-        method="POST",
-        headers={"Content-Type": "application/json", "Origin": run.url.rstrip("/")},
-    )
-    run.check(run.refused(second, "przygotowanie-trwa-juz") == 409, "a second Uruchomienie procesu is refused")
-    close = urllib.request.Request(
-        run.url.rstrip("/") + "/api/shutdown", data=b"", method="POST", headers={"Origin": run.url.rstrip("/")}
-    )
+    second = {"process": "preparation", "period": LAST_COMPLETE, "dry_run": True}
+    run.check(run.post("/api/runs", "przygotowanie-trwa-juz", second).status == 409, "a second Uruchomienie procesu is refused")
     run.check(
-        run.refused(close, "przygotowanie-zamkniecie-odmowa") == 409,
+        run.post("/api/shutdown", "przygotowanie-zamkniecie-odmowa").status == 409,
         "closing Centrum is refused while the Uruchomienie procesu waits for the decision",
     )
     page.reload()
@@ -335,7 +326,7 @@ def drive_preparation(run: Run, page: Page) -> None:
         == [("RUN", "WYMAGA_SPRAWDZENIA"), ("RUN", "BLAD_KRYTYCZNY"), ("DRY-RUN", "OK")],
         "every Uruchomienie procesu appended one record to the process's metrics file",
     )
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+    log = run.log()
     run.check(
         f"uruchomienie-koniec proces=preparation tryb=RUN okres={LAST_COMPLETE} wynik=WYMAGA_SPRAWDZENIA koniec=finished" in log
         and "uruchomienie-start proces=preparation tryb=RUN" in log

@@ -7,11 +7,10 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 from pathlib import Path
 import subprocess
-import urllib.request
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive.common import Run, move, release_only, remove, served_version, version_line
+from drive.common import Run, advance_clock, answers, move, release_only, remove, served_version, version_line
 
 FEATURE = "aktualizacja"
 BUTTON = "Zaktualizuj narzędzie"
@@ -58,11 +57,7 @@ def _github_main(run: Run, commit: str) -> None:
 
 
 def _forget_github_answer(run: Run) -> None:
-    moved = run.root / "zegar" / "przesuniecie-min.txt"
-    moved.parent.mkdir(exist_ok=True)
-    before = float(moved.read_text(encoding="utf-8")) if moved.exists() else 0.0
-    moved.write_text(str(before + MAIN_KEPT_MIN), encoding="utf-8")
-    print(f"  harness: Centrum's clock moves {MAIN_KEPT_MIN} minutes on, so Konfiguracja asks GitHub again", flush=True)
+    advance_clock(run, MAIN_KEPT_MIN, "Konfiguracja asks GitHub again")
 
 
 def _github_dormant_release(run: Run) -> None:
@@ -199,41 +194,19 @@ def _entered(status: Locator) -> None:
     status.evaluate("element => Promise.all(element.getAnimations().map((animation) => animation.finished))")
 
 
-def _post(run: Run, path: str, name: str, body: dict[str, object] | None = None) -> int:
-    request = urllib.request.Request(
-        run.url.rstrip("/") + path,
-        data=b"" if body is None else json.dumps(body).encode(),
-        method="POST",
-        headers={"Origin": run.url.rstrip("/"), "Content-Type": "application/json"},
-    )
-    return run.refused(request, name)
-
-
 def _update_entries(run: Run) -> list[str]:
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
-    return [
-        line.split(" ", 1)[1]
-        for line in log.splitlines()
-        if line.split(" ")[1:2] in (["aktualizacja-start"], ["aktualizacja-koniec"])
-    ]
+    """The start and end entries of every Aktualizacja narzędzia in the Centrum log, without their moment."""
+
+    return [entry.text for entry in run.log_entries() if entry.event in ("aktualizacja-start", "aktualizacja-koniec")]
 
 
 def _log_events(run: Run) -> list[str]:
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
-    return [event for event in (line.split(" ")[1] for line in log.splitlines()) if event != "pomiar"]
+    return [entry.event for entry in run.log_entries() if entry.event != "pomiar"]
 
 
 def _since_update(run: Run) -> list[str]:
     events = _log_events(run)
     return events[len(events) - events[::-1].index("aktualizacja-start") :]
-
-
-def _answers(run: Run) -> bool:
-    try:
-        with urllib.request.urlopen(run.url.rstrip("/") + "/api/health", timeout=2):
-            return True
-    except OSError:
-        return False
 
 
 def drive_update(run: Run, page: Page) -> None:
@@ -294,11 +267,11 @@ def drive_update(run: Run, page: Page) -> None:
         view = run.api("/api/tool-update", "aktualizacja-postep")
         run.check(view == {"state": "running", "step": "fetching"}, "the server reports the step `fetching`")
         run.check(
-            _post(run, "/api/tool-update", "aktualizacja-druga-odmowa") == 409,
+            run.post("/api/tool-update", "aktualizacja-druga-odmowa").status == 409,
             "a second Aktualizacja narzędzia is refused while one runs",
         )
         run.check(
-            _post(run, "/api/shutdown", "aktualizacja-zamkniecie-odmowa") == 409,
+            run.post("/api/shutdown", "aktualizacja-zamkniecie-odmowa").status == 409,
             "closing Centrum is refused while the update runs",
         )
         _entered(_status(page, FETCHING))
@@ -316,10 +289,10 @@ def drive_update(run: Run, page: Page) -> None:
         expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_disabled()
         # The card shows the restart once the server says it restarts, before the old Centrum closes its port;
         # on Windows the old one still answers then.
-        run.wait_for(lambda: not _answers(run), "the old Centrum has closed and the new one is not up yet")
+        run.wait_for(lambda: not answers(run.url), "the old Centrum has closed and the new one is not up yet")
         run.check(_log_events(run)[-3:] == ["aktualizacja-start", "zamkniecie", "stop"], "the old Centrum closed itself and logged its stop")
         run.check(
-            "zamkniecie z=aktualizacja" in (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8"),
+            "zamkniecie z=aktualizacja" in run.log(),
             "the closing names the update, not the card",
         )
         run.capture(page, "100-aktualizacja-ponowny-start", live=True)
@@ -509,7 +482,7 @@ def _drive_new_version_not_starting(
     card.get_by_role("button", name=BUTTON, exact=True).click()
     expect(_status(page, RESTARTING)).to_be_visible(timeout=20_000)
     expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_disabled()
-    run.wait_for(lambda: not _answers(run), "the old Centrum has closed, and no Centrum answers yet")
+    run.wait_for(lambda: not answers(run.url), "the old Centrum has closed, and no Centrum answers yet")
     _entered(_status(page, RESTARTING))
     run.capture(page, "135-aktualizacja-nie-wystartowala-ponowny-start", live=True)
     print("  Dad goes to Uruchomienia while Centrum restarts", flush=True)
@@ -613,7 +586,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     result.write_text(
         json.dumps({"wynik": "ok", "przed": newest, "po": not_starting, "biblioteki": False}) + "\n", encoding="utf-8"
     )
-    run.check(not _answers(run), "the harness put „ok” back before the old version started")
+    run.check(not answers(run.url), "the harness put „ok” back before the old version started")
     remove(run.root / "pacing" / "ponowny-start-ms.txt")
 
     message = page.get_by_role("alert").filter(has_text=UNEXPECTED)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from itertools import pairwise
 import json
 from pathlib import Path
@@ -13,7 +12,16 @@ from typing import Any
 
 from playwright.sync_api import Locator, Page, ViewportSize, expect
 
-from drive.common import DAD_TIME_ZONE, LAST_COMPLETE, REPO_ROOT, Run, choose_periods_directory, history_rows, move
+from drive.common import (
+    LAST_COMPLETE,
+    REPO_ROOT,
+    Run,
+    choose_periods_directory,
+    dad_tab,
+    history_rows,
+    local_time,
+    move,
+)
 
 # The chart shows the newest Uruchomienia procesu of the chosen process and mode; older ones are in the history.
 CHART_RUNS = 12
@@ -44,12 +52,6 @@ def _other_results(results: dict[str, int]) -> str:
     return f"{results['needs_review']} do sprawdzenia · {results['stopped']} zatrzymane · {failed} {word}"
 
 
-def _local(started_at: str) -> str:
-    """The UI's date text in Dad's time zone (``06.10.2026, 08:21``)."""
-
-    return datetime.fromisoformat(started_at).astimezone(DAD_TIME_ZONE).strftime("%d.%m.%Y, %H:%M")
-
-
 def drive_metrics(run: Run, page: Page) -> None:
     feature = "metryki"
     fixture_metrics = run.fixture["metrics"]
@@ -74,7 +76,7 @@ def drive_metrics(run: Run, page: Page) -> None:
     expect(stats.get_by_role("group", name="Ostatni przygotowany okres")).to_contain_text(prepared["token"])
     latest = runs[0]
     latest_card = stats.get_by_role("group", name="Ostatnie uruchomienie")
-    expect(latest_card).to_contain_text(f"{latest['process_label']} · {_local(latest['started_at'])}")
+    expect(latest_card).to_contain_text(f"{latest['process_label']} · {local_time(latest['started_at'])}")
     expect(latest_card).to_contain_text("OK")
     results = recent["results"]
     recent_card = stats.get_by_role("group", name=f"Ostatnie {recent['weeks']} tygodni")
@@ -162,7 +164,7 @@ def drive_metrics(run: Run, page: Page) -> None:
     run.step(feature, "metryki-historia")
     rows = history_rows(page)
     expect(rows).to_have_count(1 + min(10, len(runs)))
-    expect(rows.nth(1)).to_contain_text(_local(runs[0]["started_at"]))
+    expect(rows.nth(1)).to_contain_text(local_time(runs[0]["started_at"]))
     dry_runs_on_page = sum(1 for entry in runs[:10] if entry["mode"] == "DRY-RUN")
     history = page.get_by_role("table", name="Historia Uruchomień procesu")
     expect(history.get_by_text("DRY-RUN", exact=True)).to_have_count(dry_runs_on_page)
@@ -211,7 +213,7 @@ def drive_metrics(run: Run, page: Page) -> None:
     run.check(len(after) == len(runs) + 1, "the next read includes the record from outside Centrum without restarting it")
     page.reload()
     newest = history_rows(page).nth(1)
-    expect(newest).to_contain_text(_local(after[0]["started_at"]))
+    expect(newest).to_contain_text(local_time(after[0]["started_at"]))
     expect(newest).to_contain_text(LAST_COMPLETE)
     expect(newest.locator("[data-slot=badge]", has_text="Zatrzymano")).to_have_attribute("data-variant", "outline")
     expect(newest).to_contain_text(".cmd")
@@ -256,7 +258,7 @@ def _stop_word(entry: dict[str, Any]) -> str:
 
 def _bar_title(entry: dict[str, Any]) -> str:
     stopped = f" · {_stop_word(entry)}" if entry["result"] == "BLAD_KRYTYCZNY" else ""
-    return f"{_local(entry['started_at'])} · okres {entry['period']}{stopped}"
+    return f"{local_time(entry['started_at'])} · okres {entry['period']}{stopped}"
 
 
 def _drive_stop_kinds(run: Run, page: Page, runs: list[dict[str, Any]]) -> None:
@@ -268,7 +270,7 @@ def _drive_stop_kinds(run: Run, page: Page, runs: list[dict[str, Any]]) -> None:
     rows = history_rows(page)
     expect(rows).to_have_count(1 + min(20, len(runs)))
     for entry in stops:
-        row = rows.filter(has_text=_local(entry["started_at"])).filter(has_text=entry["period"])
+        row = rows.filter(has_text=local_time(entry["started_at"])).filter(has_text=entry["period"])
         word, variant = ("Błąd", "destructive") if entry["stop_kind"] == "for_maks" else ("Zatrzymano", "outline")
         expect(row.locator("[data-slot=badge]", has_text=word)).to_have_attribute("data-variant", variant)
     run.check(True, "Historia: „Zatrzymano” outlined for „dla taty” and the old record, „Błąd” red for „do Maksa”")
@@ -315,12 +317,7 @@ def _check_bar_widths(run: Run, chart: Locator, label: str, *, narrow: bool) -> 
 def _drive_narrow_chart(run: Run, page: Page) -> None:
     """In a phone-sized window the bars of the busiest Proces and Tryb get narrower instead of overlapping."""
 
-    browser = page.context.browser
-    assert browser is not None
-    context = browser.new_context(viewport=NARROW_VIEWPORT, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key)
-    try:
-        narrow = context.new_page()
-        narrow.set_default_timeout(10_000)
+    with dad_tab(page, viewport=NARROW_VIEWPORT) as narrow:
         narrow.goto(run.url + "#/metryki")
         chart = narrow.get_by_role("figure", name="Wykres czasów etapów")
         expect(chart).to_be_visible()
@@ -331,8 +328,6 @@ def _drive_narrow_chart(run: Run, page: Page) -> None:
         _check_bar_widths(run, chart, f"{NARROW_VIEWPORT['width']} px, Przygotowanie RUN", narrow=True)
         chart.scroll_into_view_if_needed()
         run.capture(narrow, "2a-metryki-wykres-waski")
-    finally:
-        context.close()
 
 
 def _expect_details(details: Locator, entry: dict[str, Any], measured: list[str]) -> None:
@@ -362,14 +357,7 @@ def _drive_bar_details(run: Run, page: Page, chart: Locator, phases: list[str], 
     page.mouse.move(4, 4)
     run.check(True, "hovering a bar opens its details with „zatrzymano”; leaving the chart and Escape close them")
 
-    browser = page.context.browser
-    assert browser is not None
-    touch_context = browser.new_context(
-        viewport={"width": 1440, "height": 1000}, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=True
-    )
-    try:
-        touch = touch_context.new_page()
-        touch.set_default_timeout(10_000)
+    with dad_tab(page, touch=True) as touch:
         touch.goto(run.url + "#/metryki")
         touch_chart = touch.get_by_role("figure", name="Wykres czasów etapów")
         touch_details = touch.get_by_role("tooltip")
@@ -381,8 +369,6 @@ def _drive_bar_details(run: Run, page: Page, chart: Locator, phases: list[str], 
         touch.get_by_role("heading", name="Metryki", exact=True).tap()
         expect(touch_details).to_have_count(0)
         run.check(True, "tapping a bar with a finger opens its details, tapping another switches, tapping beside closes")
-    finally:
-        touch_context.close()
 
     page.get_by_role("tab", name="Wykres", exact=True).click()
     newest_bar = chart.get_by_role("button", name=_bar_name(newest, measured), exact=True)

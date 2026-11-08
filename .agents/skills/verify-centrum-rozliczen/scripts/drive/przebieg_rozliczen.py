@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-import urllib.request
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -76,16 +75,6 @@ def _fill_readiness(collective_file: Path) -> int:
             filled += 1
     workbook.save(collective_file)
     return filled
-
-
-def _post(run: Run, path: str, body: dict[str, object], name: str) -> int:
-    request = urllib.request.Request(
-        run.url.rstrip("/") + path,
-        data=json.dumps(body).encode(),
-        method="POST",
-        headers={"Content-Type": "application/json", "Origin": run.url.rstrip("/")},
-    )
-    return run.refused(request, name)
 
 
 def _setup_choice(run: Run, name: str) -> dict[str, object]:
@@ -303,11 +292,8 @@ def drive_settlement(run: Run, page: Page) -> None:
             figure(progress, "Zapisane szablony") == 1 and rows == run.fixture["settlement"]["rows_per_worker"][0],
             "the live counters (Wiersze danych, Zapisane szablony) update from the projection during the run",
         )
-        close = urllib.request.Request(
-            run.url.rstrip("/") + "/api/shutdown", data=b"", method="POST", headers={"Origin": run.url.rstrip("/")}
-        )
         run.check(
-            run.refused(close, "przebieg-zamkniecie-odmowa") == 409,
+            run.post("/api/shutdown", "przebieg-zamkniecie-odmowa").status == 409,
             "closing Centrum is refused while the Przebieg rozliczeń runs",
         )
         run.capture(page, "43-przebieg-na-zywo", live=True)
@@ -358,7 +344,7 @@ def drive_settlement(run: Run, page: Page) -> None:
         == [("RUN", "OK", "centrum"), ("DRY-RUN", "OK", "centrum")],
         "both Uruchomienia appended one record each to the process's metrics file, marked as started from Centrum",
     )
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+    log = run.log()
     run.check(
         f"uruchomienie-koniec proces=settlement tryb=RUN okres={LAST_COMPLETE} wynik=OK koniec=finished" in log
         and ROW_MARKER not in log,
@@ -386,12 +372,9 @@ def drive_settlement(run: Run, page: Page) -> None:
         == [{"path": str(worker_settlements / file)} for file in files] + [{"path": str(worker_settlements)}],
         "each Otwórz opens exactly its Wykonawca's Rozliczenie pracownika, the main action the folder, one per click",
     )
-    refused = _post(
-        run,
-        f"/api/periods/{LAST_COMPLETE}/worker-settlements/open",
-        {"worker": f"../{empty_worker}"},
-        "przebieg-otwieranie-spoza-folderu",
-    )
+    outside = {"worker": f"../{empty_worker}"}
+    open_path = f"/api/periods/{LAST_COMPLETE}/worker-settlements/open"
+    refused = run.post(open_path, "przebieg-otwieranie-spoza-folderu", outside).status
     run.check(
         refused == 404 and len(run.lines("opened.jsonl")) == opened_before + len(files) + 1,
         "a Wykonawca name leading out of the Folder rozliczeń pracowników is refused and opens nothing",
@@ -435,12 +418,8 @@ def drive_settlement(run: Run, page: Page) -> None:
 
     run.step(feature, "przebieg-nienadpisywanie")
     before = {path.name: path.read_bytes() for path in worker_settlements.iterdir()}
-    started = _post(
-        run,
-        "/api/runs",
-        {"process": "settlement", "period": LAST_COMPLETE, "dry_run": False},
-        "przebieg-nienadpisywanie-start",
-    )
+    start = {"process": "settlement", "period": LAST_COMPLETE, "dry_run": False}
+    started = run.post("/api/runs", "przebieg-nienadpisywanie-start", start).status
     run.check(started == 200, "a second RUN of the closed period starts (the Okres list no longer offers it)")
     page.goto(run.url + "#/uruchomienia")
     stop = page.get_by_label("Zatrzymanie")

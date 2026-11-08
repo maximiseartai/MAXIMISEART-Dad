@@ -3,27 +3,26 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import re
-import signal
-import sys
 from typing import Any
 
 from playwright.sync_api import Page, expect
 
-from drive import kontrola_ilosci
 from drive.common import (
     LAST_COMPLETE,
     Run,
+    close_centrum,
     current_run,
     ensure_files_set,
-    finished_result,
+    finished_view,
     history_rows,
+    kill_centrum,
+    local_time,
     move,
     remove_tree,
+    start_centrum,
 )
-from drive.metryki import _local
 
 FEATURE = "karta-z-logow"
 LOGS = "logs/uruchomienia"
@@ -57,21 +56,6 @@ def _restored(view: Json, started_at: str) -> Json:
     }
 
 
-def _kill(run: Run) -> None:
-    """Centrum dies with its process mid-work, like a closed console window or a power cut.
-
-    Harness: the drive kills this run's server through the pid in ``server.json`` (on Windows ``TerminateProcess``).
-    """
-
-    pid = int(json.loads((run.root / "server.json").read_text(encoding="utf-8"))["pid"])
-    print("  harness: Centrum dies mid-run (its process is killed)", flush=True)
-    if sys.platform == "win32":
-        os.kill(pid, signal.SIGTERM)
-    else:
-        os.kill(pid, signal.SIGKILL)
-    run.wait_for(lambda: not kontrola_ilosci._answers(run), "Centrum stops serving")
-
-
 def _metrics_count(run: Run) -> int:
     runs = run.api("/api/metrics", "karta-metryki")["runs"]
     assert isinstance(runs, list)
@@ -79,8 +63,8 @@ def _metrics_count(run: Run) -> int:
 
 
 def _unfinished_starts(run: Run) -> int:
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
-    return log.count(" uruchomienie-start ") - log.count(" uruchomienie-koniec ")
+    events = [entry.event for entry in run.log_entries()]
+    return events.count("uruchomienie-start") - events.count("uruchomienie-koniec")
 
 
 def _uruchomienia(run: Run, page: Page) -> None:
@@ -117,18 +101,17 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
     expect(page.get_by_role("combobox", name="Okres")).to_contain_text(needs_check)
     page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
     expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
-    finished_result(run, "karta-przed-zamknieciem")
-    live: Json = json.loads((run.evidence / "api" / "karta-przed-zamknieciem.json").read_text(encoding="utf-8"))
+    live = finished_view(run, "karta-przed-zamknieciem")
     new = [record for name, record in _logged(run).items() if name not in before]
     run.check(len(new) == 1, "the preview left one file of Logi")
     [record] = new
     run.capture(page, "210-karta-przed-zamknieciem")
 
-    kontrola_ilosci._close(run, page)
-    kontrola_ilosci._start(run, "karta-start-po-zamknieciu")
+    close_centrum(run, page)
+    start_centrum(run, "karta-start-po-zamknieciu")
     _uruchomienia(run, page)
     card = page.get_by_role("region", name="Ostatnie Uruchomienie")
-    note = f"Ostatnie Uruchomienie · {_local(record['started_at'])} · Centrum było od tego czasu zamknięte"
+    note = f"Ostatnie Uruchomienie · {local_time(record['started_at'])} · Centrum było od tego czasu zamknięte"
     expect(card.get_by_text(note, exact=True)).to_be_visible()
     expect(card.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
     for warning in live["result"]["warnings"]:
@@ -161,17 +144,17 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
     history = run.api("/api/metrics", "karta-historia-podgladu")["runs"]
     assert isinstance(history, list)
     [row] = [entry for entry in history if entry["run_id"] == live["run"]["id"]]
-    kontrola_ilosci._close(run, page)
+    close_centrum(run, page)
     [name] = [name for name, logged in _logged(run).items() if logged["run_id"] == live["run"]["id"]]
     aside_logs = run.root / "odlozone" / name
     print("  harness: the preview's file of Logi is moved aside, as if Centrum died after the Historia row", flush=True)
     aside_logs.parent.mkdir(exist_ok=True)
     move(run.root / LOGS / name, aside_logs)
     try:
-        kontrola_ilosci._start(run, "karta-start-bez-logow")
+        start_centrum(run, "karta-start-bez-logow")
         _uruchomienia(run, page)
         card = page.get_by_role("region", name="Ostatnie Uruchomienie")
-        note = f"Ostatnie Uruchomienie · {_local(row['started_at'])} · {WITHOUT_DETAILS}"
+        note = f"Ostatnie Uruchomienie · {local_time(row['started_at'])} · {WITHOUT_DETAILS}"
         expect(card.get_by_text(note, exact=True)).to_be_visible()
         expect(card.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
         for button in ("Uruchom ponownie", "Nowe Uruchomienie procesu", "Napisz do Maksa o tym Uruchomieniu"):
@@ -220,8 +203,8 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
         killed = waiting["run"]
         assert isinstance(killed, dict)
 
-        _kill(run)
-        kontrola_ilosci._start(run, "karta-start-po-zabiciu")
+        kill_centrum(run)
+        start_centrum(run, "karta-start-po-zabiciu")
         _uruchomienia(run, page)
         card = page.get_by_role("region", name="Ostatnie Uruchomienie")
         expect(card.get_by_text(re.compile(r"^Ostatnie Uruchomienie · .* · Centrum zamknęło się w trakcie$"))).to_be_visible()
@@ -263,7 +246,7 @@ def drive_run_card_from_logs(run: Run, page: Page) -> None:
     expect(newest).to_contain_text(needs_check)
     newest.get_by_role("button", name="Karta Uruchomienia", exact=True).click()
     sheet = page.get_by_role("dialog")
-    expect(sheet.get_by_text(f"Uruchomienie z {_local(record['started_at'])}", exact=True)).to_be_visible()
+    expect(sheet.get_by_text(f"Uruchomienie z {local_time(record['started_at'])}", exact=True)).to_be_visible()
     expect(sheet.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
     for name in ("Uruchom ponownie", "Uruchom", "Nowe Uruchomienie procesu", "Folder okresu"):
         expect(sheet.get_by_role("button", name=name, exact=True)).to_have_count(0)

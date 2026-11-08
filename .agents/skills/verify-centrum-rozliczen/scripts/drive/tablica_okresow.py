@@ -10,7 +10,7 @@ import urllib.request
 from playwright.sync_api import Locator, Page, expect
 
 from drive.common import (
-    DAD_TIME_ZONE,
+    dad_tab,
     Run,
     choose_periods_directory,
     error_toasts,
@@ -147,14 +147,7 @@ def drive_period_board(run: Run, page: Page) -> None:
     expect(hint).to_be_visible()
     run.check(True, "Tab reaches the missing file's button and shows the same hint")
     page.keyboard.press("Escape")
-    browser = page.context.browser
-    assert browser is not None
-    touch_context = browser.new_context(
-        viewport={"width": 1440, "height": 1000}, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=True
-    )
-    try:
-        touch = touch_context.new_page()
-        touch.set_default_timeout(10_000)
+    with dad_tab(page, touch=True) as touch:
         touch.goto(run.url + "#/okresy")
         touch_hint = touch.get_by_text("Plik zbiorczy: jeszcze nie ma", exact=True)
         # Playwright taps only enabled elements; the button is aria-disabled on purpose, so the tap is forced.
@@ -164,8 +157,6 @@ def drive_period_board(run: Run, page: Page) -> None:
         touch.get_by_role("heading", name="Okresy", exact=True).tap()
         expect(touch_hint).to_have_count(0)
         run.check(len(run.lines("opened.jsonl")) == opened_before, "a finger tap shows the hint, a tap beside hides it")
-    finally:
-        touch_context.close()
 
     run.step(feature, "tablica-podwojne-klikniecie")
     closed = periods / "22_28_09_2026"

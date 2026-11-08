@@ -4,28 +4,35 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import date, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from fnmatch import fnmatchcase
 import json
 import os
 from pathlib import Path
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
+from typing import Any, NamedTuple, TypeVar
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import FloatRect, Locator, Page, Request, expect
+from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize, expect
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
+SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"
 # Pages of the sidebar menu in its order: contract id (`#/<id>`, `PageId`) and the heading Dad reads.
 PAGES = {"okresy": "Okresy", "uruchomienia": "Uruchomienia", "metryki": "Metryki", "konfiguracja": "Konfiguracja"}
 # Dad's computer runs on Polish time; dates in Centrum are shown in the browser's time zone.
 DAD_TIME_ZONE = ZoneInfo("Europe/Warsaw")
+# Dad's screen: the drive's tab and every other tab it opens unless a feature needs another window.
+DAD_VIEWPORT: ViewportSize = {"width": 1440, "height": 1000}
 # The fixture's last complete period, without a Folder okresu.
 LAST_COMPLETE = "06_12_10_2026"
 # The fixture puts this marker in every synthetic workbook row; it must never reach the Centrum log.
@@ -41,6 +48,41 @@ class DriveFailure(Exception):
     pass
 
 
+class Answer(NamedTuple):
+    """The server's status and JSON body for a request of the drive, kept in ``api/``."""
+
+    status: int
+    body: Any
+
+
+@dataclass(frozen=True)
+class LogEntry:
+    """One line of the Centrum log: ``<moment> <event> key=value …``, a value with a space in quotes (``log.py``).
+
+    ``text`` is the line without its moment, as written.
+    """
+
+    event: str
+    facts: dict[str, str]
+    text: str
+
+
+_FACT = re.compile(r'([^\s=]+)=("[^"]*"|\S*)')
+
+
+def log_entries(path: Path) -> list[LogEntry]:
+    """The entries of the Centrum log at ``path`` in order; no log yet has none."""
+
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    entries = []
+    for line in lines:
+        _, _, text = line.partition(" ")
+        event, _, facts = text.partition(" ")
+        values = {key: value[1:-1] if value.startswith('"') else value for key, value in _FACT.findall(facts)}
+        entries.append(LogEntry(event, values, text))
+    return entries
+
+
 class Run:
     def __init__(self, root: Path, url: str, evidence: Path) -> None:
         self.root = root
@@ -52,6 +94,36 @@ class Run:
         self._number_owners: dict[str, str] = {}
         for name in ("screenshots", "aria", "api", "state"):
             (evidence / name).mkdir(parents=True, exist_ok=True)
+
+    @property
+    def config(self) -> Path:
+        """The run's ``config/`` beside Dad's settings file: the key, the queue and Centrum's state files."""
+
+        return Path(self.fixture["settings"]).parent
+
+    @property
+    def box(self) -> Path:
+        """The scripted skrzynka Zgłoszeń: one ``<number>.json`` per issue (``serve_centrum.py``)."""
+
+        return self.root / "skrzynka-zgloszen"
+
+    @property
+    def queue(self) -> Path:
+        """The queue of the skrzynka Zgłoszeń: one file per post waiting to be sent."""
+
+        return self.config / "zgloszenia" / "kolejka"
+
+    @property
+    def log_path(self) -> Path:
+        return self.root / "logs" / "centrum-rozliczen.log"
+
+    def log(self) -> str:
+        """The Centrum log as written so far; no log yet is an empty one."""
+
+        return self.log_path.read_text(encoding="utf-8") if self.log_path.exists() else ""
+
+    def log_entries(self) -> list[LogEntry]:
+        return log_entries(self.log_path)
 
     def step(self, feature: str, name: str) -> None:
         self.feature = feature
@@ -95,16 +167,29 @@ class Run:
         return body
 
     def refused(self, request: urllib.request.Request, name: str) -> int:
+        """The status of ``request``, which the drive builds itself (a foreign ``Origin`` or ``Host``)."""
+
+        return self._send(request, name).status
+
+    def post(self, path: str, name: str, body: object = None) -> Answer:
+        """A POST of the tab to ``path``, with ``body`` as JSON unless it is ``None``."""
+
+        headers = {"Origin": self.url.rstrip("/")} | ({} if body is None else {"Content-Type": "application/json"})
+        data = b"" if body is None else json.dumps(body).encode()
+        request = urllib.request.Request(self.url.rstrip("/") + path, data=data, method="POST", headers=headers)
+        return self._send(request, name)
+
+    def _send(self, request: urllib.request.Request, name: str) -> Answer:
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 status, body = int(response.status), response.read()
         except urllib.error.HTTPError as error:
             status, body = error.code, error.read()
-        record = {"status": status, "body": json.loads(body or b"null")}
+        answer = Answer(status, json.loads(body or b"null"))
         (self.evidence / "api" / f"{name}.json").write_text(
-            json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            json.dumps(answer._asdict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
-        return status
+        return answer
 
     def answer_picker(self, path: str) -> None:
         (self.root / "picker" / "answer.txt").write_text(path, encoding="utf-8")
@@ -176,18 +261,21 @@ def period_row(page: Page, token: str) -> Locator:
 RETRY_OPEN_S = 10.0
 
 
-def _while_open(action: Callable[[], object]) -> None:
-    """Run ``action`` on a file of the run, retrying while the server holds it open, for at most ``RETRY_OPEN_S``.
+T = TypeVar("T")
 
-    The server reads the run's files from its own threads at any moment (pacing, the scripted GitHub, the queue of
-    the skrzynka Zgłoszeń, the settings, metrics and Wzorce while a page refreshes), and on Windows a file another
-    process has open can be neither deleted nor renamed (``WinError 32``, #921)."""
 
-    deadline = time.monotonic() + RETRY_OPEN_S
+def while_open(action: Callable[[], T], *, limit_s: float = RETRY_OPEN_S) -> T:
+    """Run ``action`` on a file of the run, retrying while the server holds it open, for at most ``limit_s``.
+
+    The server reads and writes the run's files from its own threads at any moment (pacing, the scripted GitHub, the
+    skrzynka Zgłoszeń and its queue, the settings, metrics and Wzorce while a page refreshes), and on Windows a file
+    another process has open can be neither deleted nor renamed (``WinError 32``, #921), nor opened while the server
+    puts it in place (#1087)."""
+
+    deadline = time.monotonic() + limit_s
     while True:
         try:
-            action()
-            return
+            return action()
         except PermissionError:
             if time.monotonic() >= deadline:
                 raise
@@ -195,13 +283,13 @@ def _while_open(action: Callable[[], object]) -> None:
 
 
 def remove(path: Path, *, missing_ok: bool = False) -> None:
-    """Harness: remove a file of the run, even while the server reads it (``_while_open``).
+    """Harness: remove a file of the run, even while the server reads it (``while_open``).
 
     The drive deletes, moves and replaces files and folders only through ``remove``, ``remove_tree``,
     ``remove_empty_folder``, ``move`` and ``replace_file``; ``centrum_self_test.py`` fails on the forms of the table of
     its ``_removals`` anywhere else in ``drive/``."""
 
-    _while_open(lambda: path.unlink(missing_ok=missing_ok))
+    while_open(lambda: path.unlink(missing_ok=missing_ok))
 
 
 def remove_tree(folder: Path, *, missing_ok: bool = False) -> None:
@@ -212,26 +300,26 @@ def remove_tree(folder: Path, *, missing_ok: bool = False) -> None:
 
     if missing_ok and not folder.exists():
         return
-    _while_open(lambda: shutil.rmtree(folder))
+    while_open(lambda: shutil.rmtree(folder))
 
 
 def remove_empty_folder(folder: Path) -> None:
     """Harness: remove an empty folder of the run, even while the server looks into it; fails when it is not empty."""
 
-    _while_open(folder.rmdir)
+    while_open(folder.rmdir)
 
 
 def move(source: Path, target: Path | str) -> None:
-    """Harness: rename a file or folder of the run, even while the server reads it (``_while_open``)."""
+    """Harness: rename a file or folder of the run, even while the server reads it (``while_open``)."""
 
-    _while_open(lambda: Path(source).rename(target))
+    while_open(lambda: Path(source).rename(target))
 
 
 def replace_file(source: Path, target: Path) -> None:
     """Harness: put ``source`` in place of ``target`` at once, like Excel saving a whole file, even while the server
     reads ``target``."""
 
-    _while_open(lambda: os.replace(source, target))
+    while_open(lambda: os.replace(source, target))
 
 
 def edit_issue(box: Path, number: object, **changes: object) -> None:
@@ -258,6 +346,153 @@ def drop_report_key(key_file: Path, *, missing_ok: bool = False) -> None:
     if not missing_ok and not (key_file.is_file() and key_file.read_bytes().strip()):
         raise DriveFailure(f"the harness takes away a key that was never written: {key_file.name} is missing or empty")
     key_file.write_bytes(b"")
+
+
+def read_json(path: Path) -> Any:
+    """A JSON file the server writes from its own threads, read once the server has put it in place (``while_open``)."""
+
+    return json.loads(while_open(lambda: path.read_text(encoding="utf-8")))
+
+
+def box_issues(run: Run, label: str) -> list[dict[str, Any]]:
+    """The issues of the skrzynka Zgłoszeń labelled only ``label``, by number; other features' issues take numbers too."""
+
+    issues = [read_json(path) for path in run.box.glob("*.json")]
+    return sorted((issue for issue in issues if issue["labels"] == [label]), key=lambda issue: int(str(issue["number"])))
+
+
+def queued(run: Run, label: str, run_id: str | None = None) -> list[Path]:
+    """The files waiting in the queue of the skrzynka with ``label``, oldest first; with ``run_id``, only those of that
+    Uruchomienie (a file's name ends with the first 8 characters of its id)."""
+
+    return sorted(run.queue.glob(f"*-{label}-{'*' if run_id is None else run_id[:8]}.json"))
+
+
+def queued_posts(run: Run, label: str, run_id: str | None = None) -> list[dict[str, Any]]:
+    """The posts of ``queued``; a file the queue delivers and removes meanwhile no longer waits, so it is left out."""
+
+    posts = []
+    for path in queued(run, label, run_id):
+        try:
+            posts.append(read_json(path))
+        except FileNotFoundError:
+            continue
+    return posts
+
+
+def advance_clock(run: Run, minutes: float, why: str) -> None:
+    """Harness: Centrum's clock moves ``minutes`` on (``<root>/zegar/przesuniecie-min.txt``), so ``why``."""
+
+    moved = run.root / "zegar" / "przesuniecie-min.txt"
+    moved.parent.mkdir(exist_ok=True)
+    before = float(moved.read_text(encoding="utf-8")) if moved.exists() else 0.0
+    moved.write_text(str(before + minutes), encoding="utf-8")
+    print(f"  harness: Centrum's clock moves {minutes:g} min on, so {why}", flush=True)
+
+
+def answers(url: str) -> bool:
+    """Whether a Centrum serves ``url`` now: its ``/api/health`` answers within 2 s."""
+
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/health", timeout=2):
+            return True
+    except OSError:
+        return False
+
+
+def close_centrum(run: Run, page: Page) -> None:
+    """Dad closes Centrum from the sidebar in the evening, as in features/start-i-zamykanie.md."""
+
+    page.goto(run.url)
+    page.get_by_role("button", name="Zamknij Centrum rozliczeń", exact=True).click()
+    page.get_by_role("button", name="Zamknij Centrum", exact=True).click()
+    expect(page.get_by_role("heading", name="Centrum rozliczeń jest zamknięte", exact=True)).to_be_visible()
+    run.wait_for(lambda: not answers(run.url), "Centrum stops serving")
+
+
+def start_centrum(run: Run, name: str) -> None:
+    """The next morning Dad clicks the shortcut.
+
+    Harness: the shortcut's launcher would start Dad's own Centrum, so the drive starts this run's scripted Centrum
+    on the same port (``serve_centrum.py``, as the restart guardian's shim does after an update), its console in
+    ``api/<name>-server.txt``. Cleanup stops it through ``server.json``.
+    """
+
+    port = json.loads((run.root / "server.json").read_text(encoding="utf-8"))["port"]
+    print("  harness: Dad starts Centrum again (this run's scripted Centrum on the same port)", flush=True)
+    with (run.evidence / "api" / f"{name}-server.txt").open("wb") as console:
+        subprocess.Popen(
+            [sys.executable, str(SERVE), "--root", str(run.root), "--port", str(port)],
+            cwd=REPO_ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=console,
+            stderr=subprocess.STDOUT,
+        )
+    run.wait_for(lambda: answers(run.url), "Centrum answers again after the start", timeout_s=30)
+
+
+def kill_centrum(run: Run) -> None:
+    """Centrum dies with its process mid-work, like a closed console window or a power cut.
+
+    Harness: the drive kills this run's server through the pid in ``server.json`` (on Windows ``TerminateProcess``).
+    """
+
+    pid = int(json.loads((run.root / "server.json").read_text(encoding="utf-8"))["pid"])
+    print("  harness: Centrum dies mid-run (its process is killed)", flush=True)
+    if sys.platform == "win32":
+        os.kill(pid, signal.SIGTERM)
+    else:
+        os.kill(pid, signal.SIGKILL)
+    run.wait_for(lambda: not answers(run.url), "Centrum stops serving")
+
+
+def local_time(moment: str) -> str:
+    """The UI's date text of an ISO ``moment`` in Dad's time zone (``06.10.2026, 08:21``)."""
+
+    return datetime.fromisoformat(moment).astimezone(DAD_TIME_ZONE).strftime("%d.%m.%Y, %H:%M")
+
+
+def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False) -> BrowserContext:
+    """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``."""
+
+    return browser.new_context(viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch)
+
+
+@contextmanager
+def dad_tab(
+    page: Page, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False, cpu: int = 1, timeout_ms: int = 10_000
+) -> Iterator[Page]:
+    """A second window of the drive's browser (``dad_context``), its processor ``cpu`` times slower; closed after."""
+
+    browser = page.context.browser
+    assert browser is not None
+    context = dad_context(browser, viewport=viewport, touch=touch)
+    try:
+        tab = context.new_page()
+        tab.set_default_timeout(timeout_ms)
+        if cpu != 1:
+            context.new_cdp_session(tab).send("Emulation.setCPUThrottlingRate", {"rate": cpu})
+        yield tab
+    finally:
+        context.close()
+
+
+def reload_with_answer(run: Run, page: Page, path: str, name: str) -> Any:
+    """Reloads ``page`` and returns the server's answer to its read of ``path`` (GET), the one it shows, in ``api/``.
+
+    A page shows what it read only after the server answered, and the server may take seconds (#1091: Konfiguracja
+    reads the Wzorce and asks GitHub and the skrzynka), so the drive waits for that answer, not for a guessed time."""
+
+    def read(response: Response) -> bool:
+        return response.request.method == "GET" and urlsplit(response.url).path == path
+
+    with page.expect_response(read) as answer:
+        page.reload()
+    body = answer.value.json()
+    (run.evidence / "api" / f"{name}.json").write_text(
+        json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return body
 
 
 # The Wycena w efenix metrics file of the run (`serve_centrum.py`): its Historia, from which the Droga okresu counts it.
@@ -336,7 +571,7 @@ def period_files(run: Run) -> list[Path]:
     ]
 
 
-def current_run(run: Run, name: str) -> dict[str, object]:
+def current_run(run: Run, name: str) -> dict[str, Any]:
     view = run.api("/api/runs/current", name)
     assert isinstance(view, dict)
     return view
@@ -349,19 +584,63 @@ def ended_run_shown(view: dict[str, object]) -> bool:
     return view["state"] == "finished" or (view["state"] == "idle" and view["previous"] is not None)
 
 
-def finished_result(run: Run, name: str) -> dict[str, object]:
+def finished_view(run: Run, name: str, *, replacing: str | None = None) -> dict[str, Any]:
+    """The current Uruchomienie once it finished, the one answer kept in ``api/<name>.json``.
+
+    ``replacing`` is the id of the Uruchomienie the drive just started again (`Uruchom ponownie`): a click does not wait
+    for the tab's request, so the server can still show the one before it as finished, and only another id is the new
+    Uruchomienie."""
+
     # One answer for both the state and the result: a second read could already see the next Uruchomienie.
-    seen: dict[str, object] = {}
+    seen: dict[str, Any] = {}
 
     def finished() -> bool:
         seen.clear()
         seen.update(current_run(run, name))
-        return seen["state"] == "finished"
+        return bool(seen["state"] == "finished" and seen["run"]["id"] != replacing)
 
     run.wait_for(finished, "the Uruchomienie procesu finished")
-    result = seen["result"]
+    return seen
+
+
+def finished_result(run: Run, name: str, *, replacing: str | None = None) -> dict[str, Any]:
+    """The result of ``finished_view``."""
+
+    result = finished_view(run, name, replacing=replacing)["result"]
     assert isinstance(result, dict)
     return result
+
+
+def result_of_start(run: Run, name: str, start: Callable[[], object]) -> dict[str, Any]:
+    """The result of the Uruchomienie that ``start`` (Dad's click) starts, once it finished.
+
+    The Uruchomienie shown before the click (``api/<name>-przed.json``) is not the new one, however soon it is read."""
+
+    before = current_run(run, f"{name}-przed")
+    start()
+    return finished_result(run, name, replacing=before["run"]["id"] if "run" in before else None)
+
+
+def run_again(run: Run, outcome: Locator, name: str) -> dict[str, Any]:
+    """Dad clicks `Uruchom ponownie` in ``outcome`` (the stop banner or the result); the new Uruchomienie's result."""
+
+    return result_of_start(run, name, outcome.get_by_role("button", name="Uruchom ponownie", exact=True).click)
+
+
+def open_setup(run: Run, page: Page, process: str, name: str, *, period: tuple[str, str] | None = None) -> None:
+    """Dad's way to the start card of ``process`` after a reload of Uruchomienia: `Nowe Uruchomienie procesu` when an
+    ended Uruchomienie is shown (``ended_run_shown``, read as ``api/<name>-przed.json``), the process and, when given,
+    the period ``(token, Status okresu)`` in the combobox ``Okres``."""
+
+    page.goto(run.url + "#/uruchomienia")
+    page.reload()
+    expect(page.get_by_role("heading", name="Uruchomienia", exact=True)).to_be_visible()
+    if ended_run_shown(current_run(run, f"{name}-przed")):
+        page.get_by_role("button", name="Nowe Uruchomienie procesu", exact=True).click()
+    page.get_by_role("radio", name=process).click()
+    if period is not None:
+        page.get_by_role("combobox", name="Okres").click()
+        page.get_by_role("option", name=period_choice(*period), exact=True).click()
 
 
 def figure(shown: object, label: str) -> int:
@@ -444,20 +723,13 @@ def start_card_warns_while_open(
     run.capture(page, shots[1])
 
 
-def diagnosis_answer(run: Run, run_id: str, name: str) -> dict[str, object]:
+def diagnosis_answer(run: Run, run_id: str, name: str) -> dict[str, Any]:
     """The server's Diagnoza for ``run_id`` as the browser gets it, kept in ``api/``."""
 
-    request = urllib.request.Request(
-        run.url.rstrip("/") + f"/api/runs/{run_id}/diagnosis",
-        data=b"",
-        method="POST",
-        headers={"Origin": run.url.rstrip("/")},
-    )
-    run.check(run.refused(request, name) == 200, "the server answers the Diagnoza")
-    record = json.loads((run.evidence / "api" / f"{name}.json").read_text(encoding="utf-8"))
-    body = record["body"]
-    assert isinstance(body, dict)
-    return body
+    answer = run.post(f"/api/runs/{run_id}/diagnosis", name)
+    run.check(answer.status == 200, "the server answers the Diagnoza")
+    assert isinstance(answer.body, dict)
+    return answer.body
 
 
 @contextmanager

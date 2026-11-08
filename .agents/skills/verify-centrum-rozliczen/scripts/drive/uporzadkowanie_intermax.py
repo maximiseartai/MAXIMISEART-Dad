@@ -10,7 +10,7 @@ from typing import Any
 from playwright.sync_api import Locator, Page, expect
 import yaml
 
-from drive.common import DAD_TIME_ZONE, Run, current_run, ended_run_shown, finished_result, remove, stop_banner
+from drive.common import Run, current_run, dad_tab, ended_run_shown, remove, result_of_start, run_again, stop_banner
 
 FEATURE = "uporzadkowanie-intermax"
 CARD = "Uporządkuj INTERMAX"
@@ -162,8 +162,7 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
     expect(_card(page).get_by_role("listitem", name=_day_name("pon 26.10", True), exact=True)).to_be_visible()
     run.check(True, "after the Uporządkowanie the card shows the pasted day as ordered")
     run.capture(page, "238-intermax-dni-po-uporzadkowaniu")
-    _button(page).click()
-    result = finished_result(run, "intermax-nic-do-uporzadkowania")
+    result = result_of_start(run, "intermax-nic-do-uporzadkowania", _button(page).click)
     banner = stop_banner(page)
     expect(banner).to_contain_text(NOTHING_TO_ORDER)
     expect(banner).to_contain_text("Do poprawy")
@@ -171,8 +170,7 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
     expect(banner.get_by_role("button", name="Otwórz Rejestr zleceń", exact=True)).to_have_count(0)
     run.check(result["stop_kind"] == "for_tata", "the INTERMAX ordered before stops „dla taty”: nothing left to order")
     run.check(True, "the stop offers „Otwórz INTERMAX”, the card's one name of the file")
-    banner.get_by_role("button", name="Uruchom ponownie", exact=True).click()
-    repeated = finished_result(run, "intermax-powtorka")
+    repeated = run_again(run, banner, "intermax-powtorka")
     expect(stop_banner(page).get_by_role("button", name="Diagnoza", exact=True)).to_be_visible()
     run.check(repeated["stop_kind"] == "repeated", "the same stop again offers Diagnoza")
     run.capture(page, "234-intermax-zatrzymanie-dla-taty")
@@ -182,8 +180,7 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
     _choose(run, page, fixture["with_formula"])
     page.reload()
     _to_card(run, page)
-    _button(page).click()
-    stopped = finished_result(run, "intermax-do-maksa")
+    stopped = result_of_start(run, "intermax-do-maksa", _button(page).click)
     expect(stop_banner(page)).to_contain_text("Błąd")
     run.check(stopped["stop_kind"] == "for_maks", "pasted rows with a formula stop „do Maksa”")
     with page.expect_response(lambda response: response.url.endswith("/diagnosis")) as answered:
@@ -251,18 +248,9 @@ def drive_intermax_ordering(run: Run, page: Page) -> None:
 def _order_by_touch(run: Run, page: Page, register: Path, original: bytes, fixture: Json) -> None:
     """Dad taps the button with his finger on a laptop as slow as his (CPU 4×) and reads the result card."""
 
-    browser = page.context.browser
-    assert browser is not None
-    context = browser.new_context(
-        viewport={"width": 1440, "height": 1000}, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=True
-    )
-    try:
-        touch = context.new_page()
-        touch.set_default_timeout(20_000)
-        context.new_cdp_session(touch).send("Emulation.setCPUThrottlingRate", {"rate": DAD_CPU})
+    with dad_tab(page, touch=True, cpu=DAD_CPU, timeout_ms=20_000) as touch:
         _to_card(run, touch)
-        _button(touch).tap()
-        result: Json = finished_result(run, "intermax-wynik")
+        result: Json = result_of_start(run, "intermax-wynik", _button(touch).tap)
         live = touch.get_by_role("region", name="Podgląd na żywo")
         expect(live.get_by_label("Wynik")).to_contain_text(DONE)
         copy = result["summary"]["intermax_copy"]
@@ -285,5 +273,3 @@ def _order_by_touch(run: Run, page: Page, register: Path, original: bytes, fixtu
         live.get_by_role("button", name="Otwórz INTERMAX", exact=True).tap()
         run.wait_for(lambda: len(run.lines("opened.jsonl")) > opened, "INTERMAX opens in Excel")
         run.check(run.lines("opened.jsonl")[-1]["path"] == str(register), "the result opens Dad's INTERMAX")
-    finally:
-        context.close()

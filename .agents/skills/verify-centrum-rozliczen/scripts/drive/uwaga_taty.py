@@ -15,20 +15,26 @@ import urllib.request
 from playwright.sync_api import FloatRect, Locator, Page, Request, ViewportSize, expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from drive import kontrola_ilosci
 from drive.common import (
     PAGES,
     Run,
+    box_issues,
+    close_centrum,
     current_run,
     drop_report_key,
     ended_run_shown,
     ensure_files_set,
     error_toasts,
     finished_result,
+    finished_view,
     history_rows,
+    local_time,
+    queued,
+    queued_posts,
+    read_json,
     remove,
+    start_centrum,
 )
-from drive.metryki import _local
 
 FEATURE = "uwaga-taty"
 LABEL = "uwaga-taty"
@@ -184,26 +190,10 @@ def _shows(run: Run, figure: Locator, draft: dict[str, str], message: str) -> No
     run.wait_for(lambda: _shown(figure) == expected, message)
 
 
-def _queued(config: Path) -> list[dict[str, object]]:
-    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted((config / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))]
-
-
 def _notes(config: Path) -> list[dict[str, object]]:
     path = config / "sprawy-taty.json"
-    cases = json.loads(path.read_text(encoding="utf-8"))["sprawy"] if path.exists() else []
+    cases = read_json(path)["sprawy"] if path.exists() else []
     return [case for case in cases if case["kind"] == "uwaga"]
-
-
-def _issues(box: Path) -> list[dict[str, object]]:
-    """Uwagi taty in the skrzynka by number; Kontrole ilości and Zgłoszenia of earlier features take numbers too."""
-
-    issues = [json.loads(path.read_text(encoding="utf-8")) for path in box.glob("*.json")]
-    return sorted((issue for issue in issues if issue["labels"] == [LABEL]), key=lambda issue: int(str(issue["number"])))
-
-
-def _log(run: Run) -> str:
-    path = run.root / "logs" / "centrum-rozliczen.log"
-    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def _open(page: Page) -> Locator:
@@ -449,14 +439,14 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
 
 
 def drive_dad_note(run: Run, page: Page) -> None:
-    config = Path(run.fixture["settings"]).parent
+    config = run.config
     key_file = config / "zgloszenia-klucz.txt"
-    box = run.root / "skrzynka-zgloszen"
+    box = run.box
     pacing = run.root / "pacing" / "skrzynka-ms.txt"
     drop_report_key(key_file, missing_ok=True)
     notes_before = len(_notes(config))
-    issues_before = len(_issues(box))
-    run.check(_queued(config) == [], "the skrzynka queue is empty before the first Uwaga")
+    issues_before = len(box_issues(run, LABEL))
+    run.check(queued_posts(run, LABEL) == [], "the skrzynka queue is empty before the first Uwaga")
 
     run.step(FEATURE, "uwaga-ikona")
     for page_id, heading in PAGES.items():
@@ -580,7 +570,7 @@ def drive_dad_note(run: Run, page: Page) -> None:
     expect(page.get_by_role("alert")).to_have_count(0)
     expect(error_toasts(page)).to_have_count(0)
     run.capture(page, "174-uwaga-token-nie-dziala")
-    [waiting] = _queued(config)
+    [waiting] = queued_posts(run, LABEL)
     run.check(
         waiting["target"] == {"kind": "new_issue", "label": LABEL, "title": first["title"]}
         and waiting["parts"] == [first["body"]],
@@ -592,10 +582,10 @@ def drive_dad_note(run: Run, page: Page) -> None:
         "config/sprawy-taty.json keeps the Uwaga's title without an issue number",
     )
     run.check(
-        f"skrzynka-czeka etykieta={LABEL} okres=bez-okresu przyczyna=brak-klucza" in _log(run),
+        f"skrzynka-czeka etykieta={LABEL} okres=bez-okresu przyczyna=brak-klucza" in run.log(),
         "without a key the Centrum log says the Uwaga waits",
     )
-    run.check(len(_issues(box)) == issues_before, "nothing reached the skrzynka")
+    run.check(len(box_issues(run, LABEL)) == issues_before, "nothing reached the skrzynka")
     _close(dialog)
 
     run.step(FEATURE, "uwaga-wyslana")
@@ -622,7 +612,7 @@ def drive_dad_note(run: Run, page: Page) -> None:
     finally:
         remove(pacing, missing_ok=True)
     run.capture(page, "176-uwaga-wyslana")
-    issues = _issues(box)
+    issues = box_issues(run, LABEL)
     (run.evidence / "api" / "uwaga-skrzynka.json").write_text(
         json.dumps(
             [{key: issue[key] for key in ("number", "title", "body", "labels")} for issue in issues[issues_before:]],
@@ -637,13 +627,13 @@ def drive_dad_note(run: Run, page: Page) -> None:
         == [(first["title"], first["body"]), (second["title"], second["body"])],
         "the skrzynka has both Uwagi as uwaga-taty issues, each exactly as its figure showed it",
     )
-    run.wait_for(lambda: _queued(config) == [], "the waiting Uwaga left the queue in the same pass")
+    run.wait_for(lambda: queued_posts(run, LABEL) == [], "the waiting Uwaga left the queue in the same pass")
     notes = _notes(config)
     run.check(
         [note["number"] for note in notes[notes_before:]] == [issue["number"] for issue in issues[issues_before:]],
         "config/sprawy-taty.json has both issue numbers",
     )
-    log = _log(run)
+    log = run.log()
     run.check(
         all(text not in log for text in (KEY, FIRST[0], FIRST[1].splitlines()[0], SECOND[0])),
         "the Centrum log has neither the key nor the text of an Uwaga",
@@ -675,7 +665,7 @@ def _drive_refused(run: Run, page: Page, config: Path, box: Path) -> list[Path]:
         dialog = _open(page)
         _write(dialog, *REFUSED)
         _shows(run, dialog.get_by_role("figure", name="Co dostanie Maks", exact=True), _draft(run, *REFUSED, "uwaga-szkic-odrzucona"), "„Maks dostanie” shows the draft")
-        issues_before = len(_issues(box))
+        issues_before = len(box_issues(run, LABEL))
         answer = _send(page, dialog.get_by_role("button", name="Wyślij", exact=True))
         run.check(answer == {"state": "rejected"}, f"the server says the skrzynka rejected the Uwaga ({answer})")
         status = dialog.get_by_role("status")
@@ -684,11 +674,10 @@ def _drive_refused(run: Run, page: Page, config: Path, box: Path) -> list[Path]:
         expect(error_toasts(page)).to_have_count(0)
         run.capture(page, "174b-uwaga-odrzucona", full_page=False)
         waiting = [
-            path for path in sorted((config / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))
-            if json.loads(path.read_text(encoding="utf-8"))["target"].get("title") == REFUSED[0]
+            path for path in queued(run, LABEL) if read_json(path)["target"].get("title") == REFUSED[0]
         ]
         run.check(len(waiting) == 1, "the rejected Uwaga stays in the queue")
-        run.check(len(_issues(box)) == issues_before, "the skrzynka got no new Uwaga")
+        run.check(len(box_issues(run, LABEL)) == issues_before, "the skrzynka got no new Uwaga")
         _close(dialog)
         page.locator("header").get_by_role("button", name="Powiadomienia", exact=False).click()
         row = page.get_by_role("list", name="Powiadomienia").get_by_role("listitem", name=f"Uwaga: {REFUSED[0]}")
@@ -723,7 +712,7 @@ def _offers(run: Run, choices: Locator, offered: list[dict[str, Any]], checked: 
     run.check(
         all(
             entry["process_label"] in text
-            and f"{entry['period']} · {MODES[entry['mode']]} · {_local(entry['started_at'])}" in text
+            and f"{entry['period']} · {MODES[entry['mode']]} · {local_time(entry['started_at'])}" in text
             and _result_word(entry) in text
             for entry, text in zip(offered, texts, strict=True)
         ),
@@ -738,13 +727,11 @@ def _offers(run: Run, choices: Locator, offered: list[dict[str, Any]], checked: 
     )
 
 
-def _logs_comment(box: Path, run_id: str) -> str | None:
-    for path in sorted(box.glob("*.json")):
-        thread = json.loads(path.read_text(encoding="utf-8"))
-        if thread["labels"] == [LOGS_LABEL]:
-            for index, comment in enumerate(thread.get("comments", []), start=1):
-                if f"- Uruchomienie: {run_id}," in comment:
-                    return f"skrzynka-zgloszen/{path.name}#komentarz-{index}"
+def _logs_comment(run: Run, run_id: str) -> str | None:
+    for thread in box_issues(run, LOGS_LABEL):
+        for index, comment in enumerate(thread.get("comments", []), start=1):
+            if f"- Uruchomienie: {run_id}," in comment:
+                return f"skrzynka-zgloszen/{thread['number']}.json#komentarz-{index}"
     return None
 
 
@@ -791,8 +778,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     expect(page.get_by_role("combobox", name="Okres")).to_contain_text(period)
     page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
     expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
-    finished_result(run, "uwaga-podglad")
-    view = json.loads((run.evidence / "api" / "uwaga-podglad.json").read_text(encoding="utf-8"))
+    view = finished_view(run, "uwaga-podglad")
     run_id = str(view["run"]["id"])
     card = page.get_by_role("region", name="Podgląd na żywo")
     about = card.get_by_role("button", name=ABOUT_RUN, exact=True)
@@ -806,7 +792,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     about.hover()
     expect(page.get_by_text(ABOUT_RUN, exact=True)).to_be_visible()
     run.wait_for(
-        lambda: _logs_comment(box, run_id) is not None,
+        lambda: _logs_comment(run, run_id) is not None,
         "with the key the preview's Logi reached the skrzynka at the end of the Uruchomienie",
         timeout_s=60,
     )
@@ -830,7 +816,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
         f" · wersja narzędzia " in pinned["body"],
         "the pinned Uwaga carries process, period, mode, result and date of the preview",
     )
-    logs = _logs_comment(box, run_id)
+    logs = _logs_comment(run, run_id)
     run.check(
         LOGS_LINK.findall(pinned["body"]) == [logs],
         "the pinned Uwaga links [Logi Uruchomienia] to the first comment of the preview's Logi in the skrzynka",
@@ -858,11 +844,11 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     _shows(run, figure, pinned, "back to Do Uruchomienia the same Uruchomienie is checked and the figure pinned again")
 
     run.step(FEATURE, "uwaga-przypieta-wyslana")
-    issues_before = len(_issues(box))
+    issues_before = len(box_issues(run, LABEL))
     send.click()
     expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=15_000)
     expect(error_toasts(page)).to_have_count(0)
-    new = _issues(box)[issues_before:]
+    new = box_issues(run, LABEL)[issues_before:]
     (run.evidence / "api" / "uwaga-przypieta-skrzynka.json").write_text(
         json.dumps(
             [{key: issue[key] for key in ("number", "title", "body", "labels")} for issue in new],
@@ -1011,10 +997,6 @@ def _waiting_logs(run_id: str) -> str:
     return f"Logi Uruchomienia: w drodze (Uruchomienie {run_id})"
 
 
-def _queue_files(config: Path, label: str, run_id: str) -> list[Path]:
-    return sorted((config / "zgloszenia" / "kolejka").glob(f"*-{label}-{run_id[:8]}.json"))
-
-
 def _preview(run: Run, page: Page, period: str, name: str) -> str:
     """A new `Podgląd bez zapisu` of Przebieg rozliczeń from tab Uruchomienie; its run id."""
 
@@ -1026,8 +1008,7 @@ def _preview(run: Run, page: Page, period: str, name: str) -> str:
     expect(page.get_by_role("combobox", name="Okres")).to_contain_text(period)
     page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
     expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
-    finished_result(run, name)
-    return str(json.loads((run.evidence / "api" / f"{name}.json").read_text(encoding="utf-8"))["run"]["id"])
+    return str(finished_view(run, name)["run"]["id"])
 
 
 def _send_pinned(run: Run, page: Page, box: Path, run_id: str, note: tuple[str, str], name: str) -> tuple[str, dict[str, Any]]:
@@ -1039,11 +1020,11 @@ def _send_pinned(run: Run, page: Page, box: Path, run_id: str, note: tuple[str, 
     draft = _draft(run, *note, f"uwaga-szkic-{name}", run_id=run_id)
     _shows(run, dialog.get_by_role("figure", name="Co dostanie Maks", exact=True), draft, "„Maks dostanie” shows the draft pinned to the preview")
     run.check(draft["body"].endswith("\n" + _waiting_logs(run_id)), "the draft says the preview's Logi are on their way")
-    issues_before = len(_issues(box))
+    issues_before = len(box_issues(run, LABEL))
     dialog.get_by_role("button", name="Wyślij", exact=True).click()
     expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=15_000)
     expect(error_toasts(page)).to_have_count(0)
-    new = _issues(box)[issues_before:]
+    new = box_issues(run, LABEL)[issues_before:]
     run.check(
         [issue["title"] for issue in new] == [draft["title"]], "the skrzynka has the pinned Uwaga as one new uwaga-taty issue"
     )
@@ -1052,7 +1033,7 @@ def _send_pinned(run: Run, page: Page, box: Path, run_id: str, note: tuple[str, 
 
 
 def _issue(box: Path, number: object) -> dict[str, Any]:
-    issue = json.loads((box / f"{number}.json").read_text(encoding="utf-8"))
+    issue = read_json(box / f"{number}.json")
     assert isinstance(issue, dict)
     return issue
 
@@ -1083,15 +1064,15 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     run.step(FEATURE, "uwaga-logi-odrzucone")
     rejecting = box / f"odrzuca-{LOGS_LABEL}"
     rejection = f"skrzynka-czeka etykieta={LOGS_LABEL} okres={period} przyczyna=odmowa-tresci"
-    rejections = _log(run).count(rejection)
+    rejections = run.log().count(rejection)
     print("  harness: the skrzynka rejects the content of Logi Uruchomienia, as GitHub rejects a body too long", flush=True)
     rejecting.touch()
     try:
         run_id = _preview(run, page, period, "uwaga-podglad-logi-odrzucone")
         run.wait_for(
-            lambda: _log(run).count(rejection) == rejections + 1, "the Centrum log says the skrzynka rejected the preview's Logi"
+            lambda: run.log().count(rejection) == rejections + 1, "the Centrum log says the skrzynka rejected the preview's Logi"
         )
-        run.check(len(_queue_files(config, LOGS_LABEL, run_id)) == 1, "the rejected Logi wait in the queue")
+        run.check(len(queued(run, LOGS_LABEL, run_id)) == 1, "the rejected Logi wait in the queue")
         body, issue = _send_pinned(run, page, box, run_id, REJECTED, "logi-odrzucone")
         rejected_line = (
             f"Logi Uruchomienia: nie dotarły, Skrzynka odrzuciła ich treść (Uruchomienie {run_id}). "
@@ -1102,9 +1083,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
             "the sent Uwaga says its Logi did not arrive because the skrzynka rejected them, with the Uruchomienie's id",
         )
         run.wait_for(
-            lambda: [
-                json.loads(path.read_text(encoding="utf-8"))["target"] for path in _queue_files(config, LABEL, run_id)
-            ]
+            lambda: [post["target"] for post in queued_posts(run, LABEL, run_id)]
             == [{"kind": "known_issue", "label": LABEL, "number": issue["number"]}],
             "a comment to the Uwaga's issue waits in the queue for the rejected Logi",
         )
@@ -1115,20 +1094,20 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     refused = _drive_refused(run, page, config, box)
 
     run.step(FEATURE, "uwaga-logi-dotarly")
-    kontrola_ilosci._close(run, page)
-    kontrola_ilosci._start(run, "uwaga-start-logi")
+    close_centrum(run, page)
+    start_centrum(run, "uwaga-start-logi")
     run.wait_for(
-        lambda: _queue_files(config, LOGS_LABEL, run_id) == _queue_files(config, LABEL, run_id) == [],
+        lambda: queued(run, LOGS_LABEL, run_id) == queued(run, LABEL, run_id) == [],
         "at the start the skrzynka took the Logi and then the comment",
         timeout_s=30,
     )
     run.wait_for(lambda: not any(path.exists() for path in refused), "at the start the queue tried the rejected Uwaga again", timeout_s=30)
     run.check(
-        [(issue["title"], issue["body"]) for issue in _issues(box) if issue["title"] == REFUSED[0]]
+        [(issue["title"], issue["body"]) for issue in box_issues(run, LABEL) if issue["title"] == REFUSED[0]]
         == [(REFUSED[0], json.loads((run.evidence / "api" / "uwaga-szkic-odrzucona.json").read_text(encoding="utf-8"))["body"])],
         "once the skrzynka takes it, the rejected Uwaga is one issue, exactly as its figure showed it",
     )
-    logs = _logs_comment(box, run_id)
+    logs = _logs_comment(run, run_id)
     run.check(logs is not None, "the preview's Logi reached the skrzynka after the start")
     sent = _issue(box, issue["number"])
     run.check(
@@ -1145,11 +1124,11 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     try:
         page.reload()
         missing = _preview(run, page, period, "uwaga-podglad-bez-logow")
-        run.wait_for(lambda: len(_queue_files(config, LOGS_LABEL, missing)) == 1, "the preview's Logi wait in the queue")
+        run.wait_for(lambda: len(queued(run, LOGS_LABEL, missing)) == 1, "the preview's Logi wait in the queue")
     finally:
         key_file.write_text(key, encoding="utf-8")
     print("  harness: Maks writes the key again; the Logi file leaves the queue, as when Centrum could not write it", flush=True)
-    [logs_file] = _queue_files(config, LOGS_LABEL, missing)
+    [logs_file] = queued(run, LOGS_LABEL, missing)
     logs_text = logs_file.read_bytes()
     remove(logs_file)
     try:
@@ -1160,7 +1139,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
             + f"Logi Uruchomienia: nie powstały albo nie da się ich wysłać (Uruchomienie {missing})",
             "the sent Uwaga says its Logi were not made or cannot be sent, with the Uruchomienie's id",
         )
-        run.wait_for(lambda: _queue_files(config, LABEL, missing) == [], "nothing of the Uwaga waits in the queue")
+        run.wait_for(lambda: queued(run, LABEL, missing) == [], "nothing of the Uwaga waits in the queue")
         run.check(_issue(box, issue["number"]).get("comments", []) == [], "an Uwaga whose Logi were never queued gets no comment")
         _as_maks_sees(run, page, issue, "200-uwaga-logi-nie-powstaly")
     finally:

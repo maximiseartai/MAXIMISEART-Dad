@@ -13,12 +13,16 @@ from drive.common import (
     current_run,
     diagnosis_answer,
     drop_report_key,
-    ended_run_shown,
     ensure_files_set,
     finished_result,
     move,
+    open_setup,
     period_choice,
+    queued,
+    queued_posts,
+    read_json,
     remove,
+    run_again,
     stop_banner,
     unreadable,
 )
@@ -84,13 +88,7 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     page.goto(run.url)
     ensure_files_set(run, page)
     lock.touch()
-    page.goto(run.url + "#/uruchomienia")
-    page.reload()
-    if ended_run_shown(current_run(run, "diagnoza-przed")):
-        page.get_by_role("button", name="Nowe Uruchomienie procesu").click()
-    page.get_by_role("radio", name="Przygotowanie pliku zbiorczego").click()
-    page.get_by_role("combobox", name="Okres").click()
-    page.get_by_role("option", name=period_choice(PERIOD, "Brak plików okresu"), exact=True).click()
+    open_setup(run, page, "Przygotowanie pliku zbiorczego", "diagnoza", period=(PERIOD, "Brak plików okresu"))
     page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
     expect(stop_banner(page)).to_contain_text(REGISTER_OPEN)
     result = finished_result(run, "diagnoza-dla-taty")
@@ -119,11 +117,8 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "diagnoza-powtorka")
-    stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True).click()
-    run.wait_for(
-        lambda: finished_result(run, "diagnoza-powtorka").get("stop_kind") == "repeated",
-        "the same Komunikat after Uruchom ponownie is a repetition",
-    )
+    repeated = run_again(run, stop_banner(page), "diagnoza-powtorka")
+    run.check(repeated["stop_kind"] == "repeated", "the same Komunikat after Uruchom ponownie is a repetition")
     current = run.api("/api/runs/current", "diagnoza-powtorka")
     run_info = current["run"]
     assert isinstance(run_info, dict)
@@ -169,9 +164,8 @@ def drive_diagnosis(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "diagnoza-inny-komunikat")
     remove(lock)
-    stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True).click()
+    result = run_again(run, stop_banner(page), "diagnoza-inny-komunikat")
     expect(stop_banner(page)).to_contain_text(NO_ORDERS)
-    result = finished_result(run, "diagnoza-inny-komunikat")
     run.check(result["stop_kind"] == "for_tata", "a different Komunikat after the fix is not a repetition")
     expect(stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True)).to_be_visible()
     expect(diagnosis).to_have_count(0)
@@ -180,9 +174,8 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     run.step(FEATURE, "diagnoza-do-maksa")
     aside = internal_template.with_name(f"{internal_template.name}.odlozony")
     move(internal_template, aside)
-    stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True).click()
+    result = run_again(run, stop_banner(page), "diagnoza-do-maksa")
     expect(stop_banner(page)).to_contain_text(TEMPLATE_MISSING)
-    result = finished_result(run, "diagnoza-do-maksa")
     run.check(
         (result["stop_kind"], result["headline"], result["opens"]) == ("for_maks", "Błąd", None),
         "a stop that tells Dad to pass it on is „do Maksa”, an error",
@@ -250,7 +243,7 @@ def drive_diagnosis(run: Run, page: Page) -> None:
     diagnosis.get_by_role("button", name=f"Sprawdzono ({len(CHECKS)})", exact=True).click()
     expect(key_item).to_contain_text(f"{KEY_CHECK} · {NO_KEY}")
     run.check(_snapshot(untouched) == before, "the Rejestr zleceń, the Wzorce and the konfiguracja wykonawców are unchanged")
-    log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+    log = run.log()
     run.check(
         f"diagnoza proces=preparation okres={PERIOD} przyczyna=NIE_ZNALEZIONO_PRZYCZYNY" in log,
         "the Centrum log records each Diagnoza with its cause code only",
@@ -267,12 +260,11 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         and [{part: check[part] for part in ("label", "state", "detail")} for check in logged["checks"]] == results,
         "the file of Logi of this Uruchomienie holds its last Diagnoza: the cause code and every check as Dad sees it",
     )
-    queue = Path(run.fixture["settings"]).parent / "zgloszenia" / "kolejka"
-    queued = sorted(queue.glob(f"*-logi-uruchomienia-{run_id[:8]}.json"))
-    first, newest = (json.loads(path.read_text(encoding="utf-8")) for path in (queued[0], queued[-1]))
+    logs_queued = queued(run, "logi-uruchomienia", run_id)
+    first, newest = (read_json(path) for path in (logs_queued[0], logs_queued[-1]))
     [comment] = newest["parts"]
     run.check(
-        len(queued) >= 2
+        len(logs_queued) >= 2
         and (newest["target"], newest["run_id"]) == (first["target"], first["run_id"])
         and "\n- Diagnoza: " in comment
         and (newest["archive"]["name"], newest["archive"]["text"].encode("utf-8")) == (logs.name, data),
@@ -309,7 +301,7 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         expect(register_check).to_contain_text(f"Rejestr zleceń · {NOT_CHECKED_UNEXPECTED}")
         expect(register_check.get_by_label("nie sprawdzono")).to_be_visible()
         run.check(True, "the same failure in the Diagnoza leaves only the Rejestr zleceń unchecked; every check is listed")
-        log = (run.root / "logs" / "centrum-rozliczen.log").read_text(encoding="utf-8")
+        log = run.log()
         run.check(
             UNEXPECTED_IN_DIAGNOSIS in log and "synthetic unexpected failure" not in log,
             "the Centrum log names the exception type and the check, never the text of the exception",
@@ -329,11 +321,9 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         run.step(FEATURE, "diagnoza-bez-powtorki")
         unexpected = current_run(run, "diagnoza-bez-powtorki")["run"]
         assert isinstance(unexpected, dict)
-        its_logs = f"*-logi-uruchomienia-{str(unexpected['id'])[:8]}.json"
-        queued = sorted(queue.glob(its_logs))
-        log_path = run.root / "logs" / "centrum-rozliczen.log"
+        its_logs = queued(run, "logi-uruchomienia", str(unexpected["id"]))
         diagnosed = f" diagnoza proces=preparation okres={PERIOD} "
-        diagnoses = log_path.read_text(encoding="utf-8").count(diagnosed)
+        diagnoses = run.log().count(diagnosed)
         page.reload()
         expect(diagnosis.get_by_label("Wyjaśnienie Diagnozy")).to_contain_text(NOT_FOUND)
         page.get_by_role("link", name="Okresy", exact=True).click()
@@ -341,11 +331,11 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         page.get_by_role("link", name="Uruchomienia", exact=True).click()
         expect(diagnosis.get_by_label("Wyjaśnienie Diagnozy")).to_contain_text(NOT_FOUND)
         run.wait_for(
-            lambda: log_path.read_text(encoding="utf-8").count(diagnosed) == diagnoses + 2,
+            lambda: run.log().count(diagnosed) == diagnoses + 2,
             "a reload and Okresy → Uruchomienia each start the automatic Diagnoza again",
         )
         run.check(
-            len(queued) == 2 and sorted(queue.glob(its_logs)) == queued,
+            len(its_logs) == 2 and queued(run, "logi-uruchomienia", str(unexpected["id"])) == its_logs,
             "the same result queues no more Logi: one version for the Uruchomienie and one for its first Diagnoza",
         )
         diagnosis.get_by_role("button", name="Co zostanie wysłane", exact=True).click()
@@ -354,16 +344,12 @@ def drive_diagnosis(run: Run, page: Page) -> None:
         remove(fault)
 
     run.step(FEATURE, "diagnoza-nieoczekiwany-wyjatek-zgloszenie")
-    config = Path(run.fixture["settings"]).parent
+    config = run.config
     key_file = config / "zgloszenia-klucz.txt"
     drop_report_key(key_file, missing_ok=True)  # no key before features/zgloszenie.md
     diagnosis.get_by_role("button", name="Wyślij do Maksa", exact=True).click()
     expect(diagnosis.get_by_role("status").filter(has_text=FOR_KEY)).to_be_visible()
-    [queued_report] = [
-        post
-        for post in (json.loads(path.read_text(encoding="utf-8")) for path in queue.glob("*-zgloszenie-*.json"))
-        if post["target"]["title"] == title
-    ]
+    [queued_report] = [post for post in queued_posts(run, "zgloszenie") if post["target"]["title"] == title]
     run.check(
         "".join(queued_report["parts"]) == body,
         "Wyślij do Maksa works after the nieoczekiwany wyjątek: without a key the preview waits in the queue",

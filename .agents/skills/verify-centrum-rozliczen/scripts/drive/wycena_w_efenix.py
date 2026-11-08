@@ -15,11 +15,12 @@ from drive.common import (
     Run,
     choose_periods_directory,
     current_run,
-    ended_run_shown,
     finished_result,
     last_opened_is,
+    open_setup,
     period_choice,
     remove_tree,
+    result_of_start,
     stop_banner,
 )
 
@@ -108,14 +109,7 @@ def drive_efenix_pricing(run: Run, page: Page) -> None:
 
 def _price(run: Run, page: Page, source: Path) -> None:
     logs_before = len(_logs(run))
-    page.goto(run.url + "#/uruchomienia")
-    page.reload()
-    expect(page.get_by_role("heading", name="Uruchomienia", exact=True)).to_be_visible()
-    if ended_run_shown(current_run(run, "efenix-przed-karta")):
-        page.get_by_role("button", name="Nowe Uruchomienie procesu", exact=True).click()
-    page.get_by_role("radio", name=PROCESS).click()
-    page.get_by_role("combobox", name="Okres").click()
-    page.get_by_role("option", name=period_choice(PERIOD, "Plik zbiorczy przygotowany")).click()
+    open_setup(run, page, PROCESS, "efenix-karta", period=(PERIOD, "Plik zbiorczy przygotowany"))
     expect(page.get_by_role("combobox", name="Okres")).to_contain_text(PERIOD)
     expect(page.get_by_role("group", name="Plik zbiorczy")).to_contain_text(COLLECTIVE_FILE)
     expect(page.get_by_role("button", name="Podgląd bez zapisu")).to_have_count(0)
@@ -158,19 +152,17 @@ def _price(run: Run, page: Page, source: Path) -> None:
     waiting = current_run(run, "efenix-logowanie")
     progress = waiting["progress"]
     assert isinstance(progress, dict)
-    other = urllib.request.Request(
-        run.url.rstrip("/") + "/api/runs",
-        data=json.dumps({"process": "settlement", "period": PERIOD, "dry_run": True}).encode(),
-        method="POST",
-        headers={"Origin": run.url.rstrip("/"), "Content-Type": "application/json"},
-    )
     started = waiting["run"]
     assert isinstance(started, dict)
     run.check(
         waiting["state"] == "running" and progress["step"]["label"] == LOGIN and started["pricing"] == "bez Przekazania",
         "the Uruchomienie without Przekazanie waits for Dad's login in the efenix window and says so on the card",
     )
-    run.check(run.refused(other, "efenix-drugie-uruchomienie") == 409, "no other Uruchomienie starts while it waits")
+    other = {"process": "settlement", "period": PERIOD, "dry_run": True}
+    run.check(
+        run.post("/api/runs", "efenix-drugie-uruchomienie", other).status == 409,
+        "no other Uruchomienie starts while it waits",
+    )
     run.capture(page, "261-efenix-logowanie", live=True)
     _log_in(run)
 
@@ -472,8 +464,8 @@ def _rerun_after_stop(run: Run, page: Page, source: Path) -> None:
     page.get_by_role("combobox", name="Okres").click()
     page.get_by_role("option", name=period_choice(PERIOD, "Plik zbiorczy przygotowany")).click()
     page.get_by_role("button", name=FILL, exact=True).click()
-    page.get_by_role("alertdialog", name="Uzupełnić bez zapisu?").get_by_role("button", name=FILL, exact=True).click()
-    result = finished_result(run, "efenix-zatrzymanie")
+    confirm = page.get_by_role("alertdialog", name="Uzupełnić bez zapisu?").get_by_role("button", name=FILL, exact=True)
+    result = result_of_start(run, "efenix-zatrzymanie", confirm.click)
     stopped = current_run(run, "efenix-zatrzymanie-karta")["run"]
     assert isinstance(stopped, dict)
     rerun = stop_banner(page).get_by_role("button", name="Uruchom ponownie", exact=True)
