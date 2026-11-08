@@ -393,7 +393,7 @@ class GitHubProxy:
             return exchange.status or 599, exchange.link, _served_body(exchange.body)
 
     def _forward(self, path: str, headers: Mapping[str, str]) -> tuple[int, str | None, bytes]:
-        sent = {name: value for name, value in headers.items() if name.lower() in {"accept", "user-agent"}}
+        sent = {name: value for name, value in headers.items() if name.lower() in {"accept", "user-agent", "x-github-api-version"}}
         if self._token is not None:
             sent["Authorization"] = f"Bearer {self._token}"
         request = urllib.request.Request(API + path, headers=sent)
