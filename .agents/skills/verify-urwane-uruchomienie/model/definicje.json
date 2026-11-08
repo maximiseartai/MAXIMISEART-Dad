@@ -1,10 +1,10 @@
 {
   "src/rozliczenia/centrum/run_logs.py": {
     "RunLog.interrupted": "33aac1b5b5a48abd",
-    "LoggedEnding": "8ec4ecd3bd0ce997"
+    "LoggedEnding": "f7ebf8e1ca3bb563"
   },
   "src/rozliczenia/centrum/run_logs_guard.py": {
-    "_guarded": "17cc5e8be6f63955",
+    "_guarded": "bc88e1516be7306e",
     "guard_logs": "220c4b2868ecc3fc",
     "GuardedLogs": "5fdd32a040cfba44"
   },
@@ -18,7 +18,7 @@
     "journal_after": "55d9aebdc4621587",
     "post_of": "88fdd0c735e40e29",
     "Drop": "c76b417cfc198b48",
-    "close": "d5ad83be91678da8"
+    "close": "2fb53784e5141828"
   },
   "src/rozliczenia/centrum/run_comments.py": {
     "RunComments.run_started": "a62533064f9e0d87",
@@ -47,7 +47,7 @@
     "LogsOnDisk.started": "27bed62b161c2a3b",
     "LogsOnDisk.left_behind": "6575679b81ab383e",
     "LogsOnDisk.remove_journal": "68bae958d9af8c30",
-    "LogsOnDisk.write": "f23ef6e67da698d9",
+    "LogsOnDisk.write": "06579a5e26974e34",
     "name_of": "d7dce93561713660"
   },
   "src/rozliczenia/centrum/app.py": {
