@@ -9,6 +9,7 @@ pilnuje:
   - src/rozliczenia/centrum/tool_updates.py
   - src/rozliczenia/centrum/intermax_run.py
   - tools/lib/rozjazd_modelu.py
+  - tools/lib/eksplorator.py
 ci: .agents/skills/verify-jedno-uruchomienie-naraz/scripts/explore_runs.py
 ---
 
@@ -124,6 +125,7 @@ script checks the worktree's own `src`.
 | `URUCHOMIENIA OK` | 0 | All four rules hold in every schedule. |
 | `URUCHOMIENIA OK, ZNANE USTALENIA: n` | 0 | Only the known findings below, each printed with its counterexample. |
 | `URUCHOMIENIA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or a scope never reached a behaviour it must reach (`BRAK_ZAMKNIECIA`, `BRAK_ODMOWY_ZAMKNIECIA`, `BRAK_WYNIKU`, `BRAK_ODMOWY_STARTU`, `BRAK_DRUGIEGO_WYNIKU`), so the check would prove nothing. |
+| `URUCHOMIENIA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding did not show in a scope of its `after` that ran to the end. If a change fixed it, narrow or delete it in `KNOWN_FINDINGS` and below. |
 | `URUCHOMIENIA: ROZJAZD MODELU Z KODEM` | 1 | Only in CI, before the check: a part modelled by hand differs from its digest in `model/definicje.json` (see „Bring the model in line”). |
 | `URUCHOMIENIA: LUKA MODELU (n)` | 2 | `runs.py` or `shutdown.py` uses `threading` in a way the model does not cover (for example `RLock`, `Condition`, `wait(timeout=...)`), or a modelled thread waits on something outside the model. No verdict on the rules. |
 
@@ -203,10 +205,13 @@ None. The two earlier ones (a „Uruchom” between the refusal check and the
 accepted shutdown, and a „Uruchom” after it) went away when `shutdown_refusal`
 started closing `RunHost` to new Uruchomienia and Aktualizacje under its lock.
 A finding the user accepts goes into `KNOWN_FINDINGS` in `explore_runs.py` and
-here, as an entry with a `name`, one line naming the decision and a `shape`: a
-dataclass whose fields are the parts of its story, not the printed signature.
-The mutation script then needs `BOUNDARIES` with a broken variant just outside
-each part (`tests/test_mutacje_skilli.py`, #920).
+here, as an `Excuse` of `tools/lib/eksplorator.py`: its `name`, the rule, one
+line naming the decision, a `shape` (a dataclass whose fields are the parts of
+its story and whose `holds` judges the violation's signature) and in `after` the
+scopes after which it always shows; a scope of `after` that runs to the end
+without it ends the check with `ZNALEZISKO ZNIKNĘŁO`. The mutation script then
+needs `BOUNDARIES` with a broken variant just outside each part
+(`tests/test_mutacje_skilli.py`, #920).
 
 ## When the check fails
 
