@@ -486,21 +486,26 @@ QUOTES_OUTSIDE_UI: Final = {
 def _ui_text(text: str) -> re.Pattern[str]:
     """Napis w jednej z form, w których plik TSX pokazuje go tacie jako napis przycisku.
 
-    Formy: tekst dziecka elementu JSX (``<Button>…Kontynuuj</Button>``, także po ikonie ``{…}`` i złamany w linii),
-    prop ``label="…"`` albo ``label={"…"}`` (nie ``aria-label``), właściwość ``label: "…"`` obiektu napisów i druga
-    gałąź warunku w dziecku JSX (``{checking ? "Sprawdzam…" : "Diagnoza"}``), zawsze w podwójnym cudzysłowie i cały.
-    Granica: napis w innej formie (pierwsza gałąź warunku, pojedynczy cudzysłów, szablon z ``${…}``, sklejony z kawałków,
-    stała z innego modułu, warunek w atrybucie) test odrzuca, więc taki przycisk czerwieni go; to, czy element z napisem
-    jest przyciskiem, a nie nagłówkiem, i przykład JSX w komentarzu pliku łapie tylko przegląd.
+    Formy, które test uznaje za napis (zawsze w podwójnym cudzysłowie i cały): tekst dziecka elementu JSX
+    (``<Button>…Kontynuuj</Button>``, także po ikonie ``{…}`` i złamany w linii), prop ``label="…"`` albo
+    ``label={"…"}`` (nie ``aria-label``), właściwość ``label: "…"`` obiektu napisów i druga gałąź warunku stojącego jako
+    dziecko JSX, czyli zaraz po ``>`` albo ``}`` (``{checking ? "Sprawdzam…" : "Diagnoza"}``; w warunku wolno ``?.`` i
+    ``??``).
+    Każda inna postać nie jest napisem, więc przycisk z napisem tylko w niej czerwieni test: pierwsza gałąź warunku,
+    warunek zagnieżdżony, warunek w atrybucie albo funkcji pomocniczej, pojedynczy cudzysłów, szablon z ``${…}``, napis
+    sklejony z kawałków i stała z innego modułu.
+    Granica (tylko przegląd): to, czy element z napisem jest przyciskiem, a nie nagłówkiem, i przykład JSX w komentarzu
+    pliku.
     """
 
     words = r"\s+".join(re.escape(word) for word in text.split())
     literal = f'"{words}"'
+    condition = r"(?:[^{}?:]|\?\?|\?\.)*"
     forms = (
         rf"[>}}]\s*{words}\s*[<{{]",
         rf"(?<![\w-])label=\{{?{literal}\}}?",
         rf"(?<![\w-])label:\s*{literal}",
-        rf"(?<!=)\{{[^{{}}?:]*\?[^{{}}?:]*:\s*{literal}\s*\}}",
+        rf"[>}}]\s*\{{{condition}\?{condition}:\s*{literal}\s*\}}",
     )
     return re.compile("|".join(forms))
 
