@@ -18,10 +18,10 @@ import pytest
 from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Sent, Unreachable
 
+from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
     REPORT_KEY,
     TOOL_COMMIT,
-    FakeIssue,
     FakeReportBox,
     ToolDirectory,
     finished_view,
@@ -160,7 +160,7 @@ def queued(centrum: SettlingCentrum) -> list[Path]:
     return sorted(centrum.tool.queue.glob(f"*-{LABEL}-*.json"))
 
 
-def sent_check(centrum: SettlingCentrum) -> FakeIssue:
+def sent_check(centrum: SettlingCentrum) -> BoxIssue:
     assert box(centrum).wait_until(lambda fake: bool(fake.issues_with(LABEL))), "Kontrola ilości nie dotarła"
     [issue] = box(centrum).issues_with(LABEL)
     return issue
@@ -418,10 +418,10 @@ def test_gdy_maks_zamknal_issue_okresu_powtorzony_przebieg_zaklada_nowe(tmp_path
 def test_kontrola_ilosci_nie_trafia_do_issue_innego_okresu_ani_innej_etykiety(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     foreign = [
-        FakeIssue(1, LABEL, "Kontrola ilości 01_07_09_2026: bez różnic", "- Kontrola ilości okresu: 01_07_09_2026\n"),
-        FakeIssue(2, LABEL, f"Kontrola ilości {PERIOD}0", f"- Kontrola ilości okresu: {PERIOD}0\n"),
-        FakeIssue(3, "zgloszenie", "BRAK_WZORCA: Nie znaleziono wzorca.", f"## Komunikat\n\n{LINE}\n"),
-        FakeIssue(4, "logi-uruchomienia", f"Logi {PERIOD}", f"{LINE}\n"),
+        BoxIssue(1, LABEL, "Kontrola ilości 01_07_09_2026: bez różnic", "- Kontrola ilości okresu: 01_07_09_2026\n"),
+        BoxIssue(2, LABEL, f"Kontrola ilości {PERIOD}0", f"- Kontrola ilości okresu: {PERIOD}0\n"),
+        BoxIssue(3, "zgloszenie", "BRAK_WZORCA: Nie znaleziono wzorca.", f"## Komunikat\n\n{LINE}\n"),
+        BoxIssue(4, "logi-uruchomienia", f"Logi {PERIOD}", f"{LINE}\n"),
     ]
     box(centrum).issues.extend(foreign)
 

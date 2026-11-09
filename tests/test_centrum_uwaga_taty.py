@@ -16,12 +16,12 @@ from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, RETRY_S
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Unreachable
 
+from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
     QUEUED_FOR_INTERNET,
     SENT,
     TOOL_COMMIT,
     Centrum,
-    FakeIssue,
     ToolDirectory,
     case_states,
     centrum,
@@ -54,7 +54,7 @@ def queued(tmp_path: Path) -> list[Path]:
     return sorted(ToolDirectory(tmp_path).queue.glob("*.json"))
 
 
-def dad_note_issues(started: Centrum) -> list[FakeIssue]:
+def dad_note_issues(started: Centrum) -> list[BoxIssue]:
     return started.report_box.issues_with("uwaga-taty")
 
 

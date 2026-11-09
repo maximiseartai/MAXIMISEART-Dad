@@ -30,7 +30,8 @@ from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
 
-from tests.fixtures.centrum import FakeIssue, FakeReportBox
+from atrapy.skrzynka import BoxIssue
+from tests.fixtures.centrum import FakeReportBox
 from tests.fixtures.clock import ManualClock
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
@@ -106,7 +107,7 @@ ANSWERS: dict[str, tuple[Callable[[], FakeReportBox], Callable[[Skrzynka], objec
         Rejected(),
     ),
     "komentarz": (
-        lambda: FakeReportBox(issues=[FakeIssue(7, "uwaga-taty", "tytuł", "treść")]),
+        lambda: FakeReportBox(issues=[BoxIssue(7, "uwaga-taty", "tytuł", "treść")]),
         lambda s: s.keyed.comment(7, "treść"),
         Commented(1, "https://github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/7#issuecomment-1"),
     ),

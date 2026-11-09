@@ -14,6 +14,7 @@ pilnuje:
   - tools/lib/atrapy/intermax.py
   - tools/lib/atrapy/model_efenix.py
   - tools/lib/atrapy/pliki_taty.py
+  - tools/lib/atrapy/skrzynka.py
   - tools/lib/atrapy/widok_skrzynki.py
   - tools/lib/atrapy/workbooks.py
 ci: .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature all

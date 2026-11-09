@@ -40,12 +40,12 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
 )
 
+from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
     REPORT_KEY,
     ToolDirectory,
     write_report_key,
     RUN_LOGS_IN_BACKGROUND,
-    FakeIssue,
     FakeReportBox,
     centrum,
 )
@@ -541,8 +541,8 @@ REJECTED_LOGS = (
 )
 LOGS_GONE = f"Logi Uruchomienia nie dotrą: Centrum przestało je wysyłać (Uruchomienie {PINNED_RUN})."
 LOGS: frozenset[Label] = RUN_LOGS_IN_BACKGROUND
-ZGLOSZENIE_3 = FakeIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
-UWAGA_12 = FakeIssue(12, "uwaga-taty", "Brakuje ilości przy montażu", "Uwaga")
+ZGLOSZENIE_3 = BoxIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
+UWAGA_12 = BoxIssue(12, "uwaga-taty", "Brakuje ilości przy montażu", "Uwaga")
 
 
 class Skrzynka:
@@ -663,7 +663,7 @@ def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zg
 
     stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     stored.add(Case(REPORT, "3f0c1b2a9d8e7f60", "Nie znaleziono wzorca.", None, at(25, 8), None))
-    open_report = FakeIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
+    open_report = BoxIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[open_report]))
     queued = FIXTURES / "kolejka-v3-zgloszenie.json"
     shutil.copy(queued, skrzynka.directory / "20261107T101500000000Z-0001-zgloszenie-a1b2c3d4.json")

@@ -161,13 +161,11 @@ from rozliczenia.centrum.report_box import (
     CommentOutcome,
     CommentsOutcome,
     Commented,
-    Issue,
     IssuesOutcome,
     Label,
     OpenArchiveOutcome,
     Refused,
     Rejected,
-    Removed,
     RemoveOutcome,
     SendOutcome,
     Sent,
@@ -188,6 +186,7 @@ from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
 from harness import Pace, register_fault
 from atrapy.atrapa_efenix import atrapa_efenix
+from atrapy.skrzynka import ArchivedFile, Archives, BoxArchive, BoxIssue, Issues
 from atrapy.widok_skrzynki import shown
 from atrapy.efenix import write_collective_file
 from atrapy.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
@@ -240,7 +239,11 @@ class ScriptedPlatform:
 
 
 class FileReportBox:
-    """The skrzynka Zgłoszeń as a directory of ``<number>.json`` files (see the module doc)."""
+    """The skrzynka Zgłoszeń as a directory of ``<number>.json`` files (see the module doc).
+
+    Each step reads the state from the files into the model of the fakes (``atrapy.skrzynka``), which owns GitHub's
+    rules, and writes back what the step changed; the scripted refusals and the unreachable network come first.
+    """
 
     def __init__(self, directory: Path) -> None:
         self._directory = directory
@@ -253,57 +256,46 @@ class FileReportBox:
         if refused is not None:
             return refused
         with self._lock:
-            found = next((entry for entry in self._listed() if entry["tag"] == tag), None)
-        if found is None:
-            return None
-        return Archive(found["id"], tuple(Asset(asset["id"], asset["name"], asset["label"], True) for asset in found["assets"]))
+            return self._archive_state().archive(tag)
 
     def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
         refused = self._archive_refused()
         if refused is not None:
             return refused
         with self._lock:
-            listed = self._listed()
-            if any(entry["tag"] == tag for entry in listed):
-                return Rejected()
-            archive_id = len(listed) + 1
-            self._list([*listed, {"id": archive_id, "tag": tag, "title": title, "description": description, "assets": []}])
-        return Archive(archive_id, ())
+            state = self._archive_state()
+            outcome = state.open_archive(tag, title, description)
+            if isinstance(outcome, Archive):
+                self._save_archives(state)
+        return outcome
 
     def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
         refused = self._archive_refused()
         if refused is not None:
             return refused
         with self._lock:
-            listed = self._listed()
-            found = next((entry for entry in listed if entry["id"] == archive_id), None)
-            if found is None:
-                return Refused()
-            if any(asset["name"] == name for asset in found["assets"]):
-                return Rejected()
-            last = self._archives / "ostatni-plik.txt"
-            asset_id = 1 + (int(last.read_text(encoding="utf-8")) if last.is_file() else 0)
-            (self._archives / found["tag"]).mkdir(parents=True, exist_ok=True)
-            last.write_text(str(asset_id), encoding="utf-8")
-            (self._archives / found["tag"] / name).write_bytes(data)
-            found["assets"].append({"id": asset_id, "name": name, "label": label})
-            self._list(listed)
-        return Asset(asset_id, name, label, True)
+            state = self._archive_state()
+            outcome = state.upload(archive_id, name, label, data)
+            if isinstance(outcome, Asset):
+                [archive] = [each for each in state.archives if each.id == archive_id]
+                (self._archives / archive.tag).mkdir(parents=True, exist_ok=True)
+                (self._archives / archive.tag / name).write_bytes(data)
+                self._save_archives(state)
+        return outcome
 
     def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
         refused = self._archive_refused()
         if refused is not None:
             return refused
         with self._lock:
-            listed = self._listed()
-            for entry in listed:
-                for asset in entry["assets"]:
-                    if asset["id"] == asset_id:
-                        entry["assets"].remove(asset)
-                        (self._archives / entry["tag"] / asset["name"]).unlink()
-                        self._list(listed)
-                        return Removed()
-        return Refused()
+            state = self._archive_state()
+            found = state.file(asset_id)
+            outcome = state.remove(asset_id)
+            if found is not None:
+                archive, asset = found
+                (self._archives / archive.tag / asset.name).unlink()
+                self._save_archives(state)
+        return outcome
 
     def _archive_refused(self) -> Refused | Unreachable | None:
         if (self._directory / "brak-sieci").exists():
@@ -312,12 +304,45 @@ class FileReportBox:
             return Refused()
         return None
 
-    def _listed(self) -> list[dict[str, Any]]:
-        path = self._archives / "archiwa.json"
-        return list(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else []
+    def _archive_state(self) -> Archives:
+        """``archiwa.json`` with each file's bytes from ``<tag>/<name>`` and the last file id from ``ostatni-plik.txt``."""
 
-    def _list(self, archives: list[dict[str, Any]]) -> None:
-        _save(self._archives / "archiwa.json", archives)
+        listed = self._archives / "archiwa.json"
+        last = self._archives / "ostatni-plik.txt"
+        entries = json.loads(listed.read_text(encoding="utf-8")) if listed.is_file() else []
+        return Archives(
+            [
+                BoxArchive(
+                    entry["id"],
+                    entry["tag"],
+                    entry["title"],
+                    entry["description"],
+                    [
+                        ArchivedFile(asset["id"], asset["name"], asset["label"], (self._archives / entry["tag"] / asset["name"]).read_bytes())
+                        for asset in entry["assets"]
+                    ],
+                )
+                for entry in entries
+            ],
+            last_file_id=int(last.read_text(encoding="utf-8")) if last.is_file() else 0,
+        )
+
+    def _save_archives(self, state: Archives) -> None:
+        self._archives.mkdir(parents=True, exist_ok=True)
+        (self._archives / "ostatni-plik.txt").write_text(str(state.last_file_id), encoding="utf-8")
+        _save(
+            self._archives / "archiwa.json",
+            [
+                {
+                    "id": archive.id,
+                    "tag": archive.tag,
+                    "title": archive.title,
+                    "description": archive.description,
+                    "assets": [{"id": asset.id, "name": asset.name, "label": asset.label} for asset in archive.assets],
+                }
+                for archive in state.archives
+            ],
+        )
 
     def open_issue(self, label: Label, title: str, body: str, *, key: str) -> SendOutcome:
         Pace.REPORT_BOX.wait(self._root)
@@ -329,17 +354,17 @@ class FileReportBox:
             return Rejected()
         with self._lock:
             self._directory.mkdir(parents=True, exist_ok=True)
-            number = len(list(self._directory.glob("*.json"))) + 1
+            opened = self._issues(*self._directory.glob("*.json")).open(label, title, body)
             issue = {
-                "number": number,
+                "number": opened.number,
                 "title": title,
                 "body": shown(body),
                 "raw_body": body,
                 "labels": [label],
                 "state": "open",
             }
-            _save(self._directory / f"{number}.json", issue)
-        return Sent(number)
+            _save(self._directory / f"{opened.number}.json", issue)
+        return Sent(opened.number)
 
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
         """The comment goes into the issue's own file, so numbering by ``*.json`` stays the issue count.
@@ -348,52 +373,71 @@ class FileReportBox:
         Zgłoszenie holds no full path. Comment ``k`` of issue ``n`` has the id ``n * 1000 + k``.
         """
 
-        return self._write_comment(number, None, body)
+        if (blocked := self._blocked()) is not None:
+            return blocked
+        with self._lock:
+            found = self._issues(*self._issue_file(number)).comment(number, body)
+            if isinstance(found, Refused):
+                return found
+            issue, comment_id = found
+            if self._rejects(issue.label):
+                return Rejected()
+            self._save_comments(issue)
+        return Commented(comment_id, _comment_address(issue, comment_id))
 
     def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
-        number, position = divmod(comment_id, 1000)
-        return self._write_comment(number, position, body)
+        if (blocked := self._blocked()) is not None:
+            return blocked
+        with self._lock:
+            found = self._issues(*self._issue_file(comment_id // _COMMENT_BASE)).edit_comment(comment_id, body)
+            if isinstance(found, Refused):
+                return found
+            if self._rejects(found.label):
+                return Rejected()
+            self._save_comments(found)
+        return Commented(comment_id, _comment_address(found, comment_id))
 
     def comments(self, number: int, *, key: str) -> CommentsOutcome:
-        if (self._directory / "brak-sieci").exists():
-            return Unreachable()
-        if self._refuses_key():
-            return Refused()
-        path = self._directory / f"{number}.json"
+        if (blocked := self._blocked()) is not None:
+            return blocked
         with self._lock:
-            if not path.is_file():
-                return Refused()
-            texts = _raw_comments(json.loads(_read_put_in_place(path)))
+            found = self._issues(*self._issue_file(number)).comments(number)
+        if isinstance(found, Refused):
+            return found
         return tuple(
-            Comment(number * 1000 + position, f"skrzynka-zgloszen/{number}.json#komentarz-{position}", text)
-            for position, text in enumerate(texts, start=1)
+            Comment(comment_id, _comment_address(found, comment_id), text)
+            for comment_id, text in zip(found.comment_ids, found.comment_texts, strict=True)
         )
 
-    def _write_comment(self, number: int, position: int | None, body: str) -> CommentOutcome:
-        """A new comment (``position`` ``None``) or new text of comment ``position`` of issue ``number``."""
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+        if include_closed:
+            with self._lock, self._directory.with_name(f"{self._directory.name}-zapytania.jsonl").open("a") as asked:
+                asked.write(json.dumps({"label": label}) + "\n")
+        if (blocked := self._blocked()) is not None:
+            return blocked
+        with self._lock:
+            return self._issues(*self._directory.glob("*.json")).listed(label, include_closed=include_closed)
 
+    def _blocked(self) -> Refused | Unreachable | None:
         if (self._directory / "brak-sieci").exists():
             return Unreachable()
         if self._refuses_key():
             return Refused()
+        return None
+
+    def _issue_file(self, number: int) -> tuple[Path, ...]:
         path = self._directory / f"{number}.json"
-        with self._lock:
-            if not path.is_file():
-                return Refused()
-            issue = json.loads(_read_put_in_place(path))
-            if self._rejects(issue["labels"][0]):
-                return Rejected()
-            texts = _raw_comments(issue)
-            if position is None:
-                texts.append(body)
-                position = len(texts)
-            elif not 0 < position <= len(texts):
-                return Refused()
-            else:
-                texts[position - 1] = body
-            issue["raw_comments"], issue["comments"] = texts, [shown(text) for text in texts]
-            _save(path, issue)
-        return Commented(number * 1000 + position, f"skrzynka-zgloszen/{number}.json#komentarz-{position}")
+        return (path,) if path.is_file() else ()
+
+    def _issues(self, *paths: Path) -> Issues:
+        documents = (json.loads(_read_put_in_place(path)) for path in paths)
+        return Issues(sorted(map(_box_issue, documents), key=lambda issue: issue.number), comment_base=_COMMENT_BASE)
+
+    def _save_comments(self, issue: BoxIssue) -> None:
+        path = self._directory / f"{issue.number}.json"
+        document = json.loads(_read_put_in_place(path))
+        document["raw_comments"], document["comments"] = issue.comment_texts, issue.comments
+        _save(path, document)
 
     def _rejects(self, label: str) -> bool:
         return (self._directory / f"odrzuca-{label}").exists()
@@ -401,21 +445,24 @@ class FileReportBox:
     def _refuses_key(self) -> bool:
         return (self._directory / "odmawia-klucza").exists()
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
-        if include_closed:
-            with self._lock, self._directory.with_name(f"{self._directory.name}-zapytania.jsonl").open("a") as asked:
-                asked.write(json.dumps({"label": label}) + "\n")
-        if (self._directory / "brak-sieci").exists():
-            return Unreachable()
-        if self._refuses_key():
-            return Refused()
-        with self._lock:
-            issues = [json.loads(_read_put_in_place(path)) for path in self._directory.glob("*.json")]
-        return tuple(
-            Issue(issue["number"], issue.get("raw_body", issue["body"]), _closure(issue))
-            for issue in issues
-            if issue["labels"] == [label] and (include_closed or issue["state"] == "open")
-        )
+
+# Comment ``k`` of issue ``n`` has the id ``n * 1000 + k`` (``FileReportBox.comment``).
+_COMMENT_BASE = 1000
+
+
+def _box_issue(issue: dict[str, Any]) -> BoxIssue:
+    """``issue`` as Centrum wrote it (``raw_body``, ``raw_comments``); an issue the drive wrote itself has only ``body``
+    and ``comments``, and its ``state_reason`` and ``closed_at`` are Maks's closing as GitHub gives it."""
+
+    number = issue["number"]
+    texts = list(issue.get("raw_comments", issue.get("comments", [])))
+    ids = [number * _COMMENT_BASE + position for position in range(1, len(texts) + 1)]
+    body = issue.get("raw_body", issue["body"])
+    return BoxIssue(number, issue["labels"][0], issue.get("title", ""), body, texts, ids, _closure(issue))
+
+
+def _comment_address(issue: BoxIssue, comment_id: int) -> str:
+    return f"skrzynka-zgloszen/{issue.number}.json#komentarz-{issue.position(comment_id)}"
 
 
 def _save(path: Path, content: object) -> None:
@@ -423,12 +470,6 @@ def _save(path: Path, content: object) -> None:
     never an empty or cut one (module doc, #963)."""
 
     replace_atomically(path, json.dumps(content, ensure_ascii=False, indent=2) + "\n")
-
-
-def _raw_comments(issue: dict[str, Any]) -> list[str]:
-    """Comments of ``issue`` as Centrum wrote them; an issue the drive wrote itself has only ``comments``."""
-
-    return list(issue.get("raw_comments", issue.get("comments", [])))
 
 
 def _closure(issue: dict[str, Any]) -> Closure | None:
@@ -552,10 +593,10 @@ def _pace_worker_templates(root: Path, worker_template: Path) -> None:
     create = TemplateFile.create
     worker_template = worker_template.resolve()
 
-    def paced(template: TemplateFile, target: Path, rows: Sequence[DataRow] | Sequence[RegisterRow]) -> Route:
-        if template.path == worker_template:
+    def paced(self: TemplateFile, target: Path, rows: Sequence[DataRow] | Sequence[RegisterRow]) -> Route:
+        if self.path == worker_template:
             Pace.TEMPLATES.wait(root)
-        return create(template, target, rows)
+        return create(self, target, rows)
 
     TemplateFile.create = paced  # type: ignore[method-assign]
 
