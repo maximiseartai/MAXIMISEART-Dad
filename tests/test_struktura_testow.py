@@ -15,8 +15,13 @@ import sys
 
 import pytest
 
+from rozliczenia import tool_files
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
+from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
+
 from tests.fixtures.skladnia import dotted, imports
 
 TESTS = Path(__file__).resolve().parent
@@ -56,6 +61,48 @@ def test_moduly_testow_importuja_pomocniki_tylko_z_fixtures() -> None:
     }
 
     assert imports == set(), "przenieś pomocnik do tests/fixtures i importuj go stamtąd; moduł testu niczego nie eksportuje"
+
+
+# Pliki, w których nazwa pliku narzędzia albo stanu Centrum zostaje literałem, z powodem.
+OWNED_NAMES_AS_LITERALS = {
+    "test_opiekun_ponownego_startu.py": "test kontraktu nazw tool_files i scenariusze repozytorium Git opiekuna",
+    "test_uszkodzone_wejscia.py": "test kontraktu miejsc plików stanu Centrum",
+    "test_aktualizacja_narzedzia.py": "scenariusze repozytorium Git: historia, .gitignore i git status klonu taty",
+    "test_przerwana_aktualizacja_narzedzia.py": "scenariusz repozytorium Git: plik taty, który nowa wersja przestaje śledzić",
+    "fixtures/tool_clone.py": "pierwsza wersja repozytorium narzędzia w historii Git",
+}
+
+
+def test_nazwy_plikow_narzedzia_i_stanu_centrum_biora_testy_od_wlasciciela() -> None:
+    """Nazwę pliku z ``tool_files`` albo pliku stanu Centrum test i atrapa biorą od właściciela, a literałem stoi ona tylko
+    w plikach ``OWNED_NAMES_AS_LITERALS``: test kontraktu przypina ją raz, a zmiana nazwy w ``src`` nie zostawia testów
+    na starym pliku.
+
+    Łapie stałą tekstową (także część f-stringu) równą nazwie albo ścieżkę, która się nią kończy, w ``tests/**/*.py`` i
+    ``tools/lib/atrapy/**/*.py``. Nie łapie nazwy w dłuższym zdaniu (tekst Komunikatu, który czyta tata, zostaje
+    literałem jak w ``tests/expected``), nazwy sklejonej z części, słów ogólnych (``config``, ``logs``, ``kolejka``,
+    ``uruchomienia``), nazwy dziennika Centrum (``CentrumLog`` w teście jednostki dostaje dowolną ścieżkę) ani nazw
+    plików okresu, które niosą token okresu.
+    """
+
+    names = {
+        *(path.name for path in (tool_files.WORKER_CONFIG, tool_files.SETTINGS)),
+        *(path.name for path in (tool_files.WORKER_TEMPLATE, tool_files.COLLECTIVE_TEMPLATE, tool_files.INTERNAL_TEMPLATE)),
+        REPORT_KEY_FILE,
+        DAD_CASES_FILE,
+        LAST_STARTED_FILE,
+    }
+    found = sorted(
+        f"{name}:{node.lineno}: {node.value!r}"
+        for path, name in _scanned()
+        if name not in OWNED_NAMES_AS_LITERALS
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and any(node.value == owned or node.value.endswith((f"/{owned}", f"\\{owned}")) for owned in names)
+    )
+
+    assert found == [], "weź nazwę od właściciela (tool_files, ToolDirectory w tests/fixtures/centrum.py, stała modułu Centrum)"
 
 
 def _scanned() -> list[tuple[Path, str]]:
