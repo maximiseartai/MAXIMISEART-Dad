@@ -674,6 +674,8 @@ def make_layout() -> Layout:
 
 
 def short_names(run_count: int) -> list[tuple[str, str]]:
+    # Przedrostek z src tylko skraca ścieżki w opisie śladu przeplotu: żadne sprawdzenie nie zależy od tej nazwy,
+    # więc to nie kopia wyroczni (docs/agents/skille.md); zła nazwa w src dałaby tylko dłuższy opis.
     staging = f"Rozliczenia/{staged_publication.staging_prefix(PERIOD)}"
     names = [(f"Rozliczenia/{PERIOD}", "Folder okresu")]
     for index in range(1, run_count + 1):

@@ -50,6 +50,11 @@
     "LogsOnDisk.write": "06579a5e26974e34",
     "name_of": "d7dce93561713660"
   },
+  "src/rozliczenia/file_state.py": {
+    "_ABSENT": "f8f2224054693ffa",
+    "folder_entries": "c94f2b5cbadaec16",
+    "remove_file": "09898070a34c3c70"
+  },
   "src/rozliczenia/centrum/app.py": {
     "create_app.lifespan": "38bbdc7aefce4c9c",
     "create_app.app": "e785cecd149b3fec",
