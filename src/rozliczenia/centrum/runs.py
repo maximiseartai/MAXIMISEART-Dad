@@ -52,6 +52,8 @@ from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 _STREAM_POLL_SECONDS: Final = 0.05
 _KEEPALIVE_SECONDS: Final = 15.0
 _RECONNECT_MS: Final = 1000
+RUN_THREAD_PREFIX: Final = "uruchomienie-"
+"""Początek nazwy wątku Uruchomienia procesu; reszta to identyfikator Uruchomienia."""
 CONTINUE_HINT: Final = "przy decyzji wybierz „Kontynuuj”"
 """Jak w Centrum wyraża się zgodę w Decyzji taty (``Conversation.continue_hint``); ten sam tekst ma Komunikat po
 odmowie w Uruchomieniu odtworzonym z Logów (``tools/odtworz_uruchomienie.py``)."""
@@ -387,7 +389,7 @@ class RunHost:
             self._run_started(run.info, run.started_at)
         except Exception as failure:  # zapis startu na dysku nie może zmienić Uruchomienia
             self._log.unexpected_failure(failure, where="start Uruchomienia procesu")
-        self._threads.Thread(target=run.work, name=f"uruchomienie-{run.info.id}", daemon=True).start()
+        self._threads.Thread(target=run.work, name=f"{RUN_THREAD_PREFIX}{run.info.id}", daemon=True).start()
         return view
 
     def decide(self, run_id: str, answer: contract.DecisionAnswer) -> contract.RunView:

@@ -16,6 +16,7 @@ import pytest
 from rozliczenia import preparation_process
 from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.centrum import contract, run_view
+from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
 
 from tests.fixtures.centrum import centrum as bare_centrum, finished_view, phase_states, run_events, views_until
 from atrapy.preparation import (
@@ -286,7 +287,7 @@ def test_wynik_trafia_na_karte_gdy_druga_karta_klika_uruchom_zaraz_po_koncu(
         """Widok wyniku, którego budowa w wątku pierwszego Uruchomienia czeka na kliknięcie drugiej karty."""
 
         def __init__(self, **data: Any) -> None:
-            if threading.current_thread().name.startswith("uruchomienie-") and not go.is_set():
+            if threading.current_thread().name.startswith(RUN_THREAD_PREFIX) and not go.is_set():
                 building.set()
                 assert go.wait(30)
             super().__init__(**data)
