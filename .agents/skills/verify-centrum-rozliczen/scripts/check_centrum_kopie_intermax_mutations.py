@@ -31,7 +31,13 @@ MUTATIONS = (
     ),
     Mutation(
         "lista bez Kopii „przed przywróceniem”",
-        (Edit(INTERMAX_COPIES, "przed (uporządkowaniem|przywróceniem) (", "przed (uporządkowaniem) ("),),
+        (
+            Edit(
+                INTERMAX_COPIES,
+                "'|'.join(map(re.escape, _BEFORE.values()))",
+                "re.escape(_BEFORE['ordering'])",
+            ),
+        ),
         KOPIE,
         "po przywróceniu tata nie widzi Kopii stanu sprzed niego, więc nie cofnie przywrócenia",
     ),

@@ -21,11 +21,15 @@ from .tool_files import TOOL_ROOT
 
 KEPT: Final = 10
 Before = Literal["ordering", "restore"]
-_PREFIXES: Final[Mapping[Before, str]] = {
-    "ordering": "INTERMAX przed uporządkowaniem ",
-    "restore": "INTERMAX przed przywróceniem ",
+# Słowa z nazwy Kopii, które karta Kopii pokazuje tacie; nazwy Kopii u taty z nich powstały, więc się nie zmieniają.
+_BEFORE: Final[Mapping[Before, str]] = {
+    "ordering": "przed uporządkowaniem",
+    "restore": "przed przywróceniem",
 }
-_NAME: Final = re.compile(r"INTERMAX przed (uporządkowaniem|przywróceniem) (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})\.xlsx")
+_BEFORE_OF_WORDS: Final = {words: before for before, words in _BEFORE.items()}
+_NAME: Final = re.compile(
+    rf"INTERMAX ({'|'.join(map(re.escape, _BEFORE.values()))}) (\d{{4}}-\d{{2}}-\d{{2}} \d{{2}}-\d{{2}}-\d{{2}})\.xlsx"
+)
 _MOMENT: Final = "%Y-%m-%d %H-%M-%S"
 
 
@@ -36,6 +40,12 @@ class Copy:
     path: Path
     moment: datetime
     before: Before
+
+    @property
+    def before_label(self) -> str:
+        """To, przed czym powstała, słowami z nazwy Kopii."""
+
+        return _BEFORE[self.before]
 
 
 def default_directory() -> Path:
@@ -50,7 +60,7 @@ def _copy(path: Path) -> Copy | None:
         moment = datetime.strptime(found[2], _MOMENT).astimezone()
     except ValueError:  # nazwa z nieistniejącą datą albo godziną nie pochodzi od narzędzia
         return None
-    return Copy(path, moment, "ordering" if found[1] == "uporządkowaniem" else "restore")
+    return Copy(path, moment, _BEFORE_OF_WORDS[found[1]])
 
 
 def listed(directory: Path) -> list[Copy]:
@@ -68,8 +78,8 @@ def named(directory: Path, before: Before, moment: datetime) -> Copy:
     """Kopia INTERMAX w ``directory``, którą podmiana zrobi przed ``before`` w chwili ``moment``, tak jak ją wymieni
     ``listed``."""
 
-    copy = _copy(directory / f"{_PREFIXES[before]}{moment:{_MOMENT}}.xlsx")
-    assert copy is not None, "nazwa z _PREFIXES i _MOMENT pasuje do _NAME"
+    copy = _copy(directory / f"INTERMAX {_BEFORE[before]} {moment:{_MOMENT}}.xlsx")
+    assert copy is not None, "nazwa z _BEFORE i _MOMENT pasuje do _NAME"
     return copy
 
 

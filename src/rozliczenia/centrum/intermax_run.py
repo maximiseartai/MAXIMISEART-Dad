@@ -153,7 +153,10 @@ class IntermaxEntry:
 
 def _copy(copy: Copy) -> intermax_contract.IntermaxCopy:
     return intermax_contract.IntermaxCopy(
-        name=copy.path.name, taken_at=copy.moment.astimezone(timezone.utc), before=copy.before
+        name=copy.path.name,
+        taken_at=copy.moment.astimezone(timezone.utc),
+        before=copy.before,
+        before_label=copy.before_label,
     )
 
 

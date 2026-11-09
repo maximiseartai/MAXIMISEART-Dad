@@ -246,12 +246,14 @@ export const zHealth = z.object({
 /**
  * IntermaxCopy
  *
- * Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała.
+ * Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała, także słowami z nazwy
+ * (``before_label``), które karta Kopii pokazuje.
  */
 export const zIntermaxCopy = z.object({
     name: z.string(),
     taken_at: z.iso.datetime(),
-    before: z.enum(['ordering', 'restore'])
+    before: z.enum(['ordering', 'restore']),
+    before_label: z.string()
 });
 
 /**

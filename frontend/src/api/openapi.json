@@ -2736,6 +2736,10 @@
               "restore"
             ],
             "title": "Before"
+          },
+          "before_label": {
+            "type": "string",
+            "title": "Before Label"
           }
         },
         "additionalProperties": false,
@@ -2743,10 +2747,11 @@
         "required": [
           "name",
           "taken_at",
-          "before"
+          "before",
+          "before_label"
         ],
         "title": "IntermaxCopy",
-        "description": "Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała."
+        "description": "Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała, także słowami z nazwy\n(``before_label``), które karta Kopii pokazuje."
       },
       "IntermaxDay": {
         "properties": {
