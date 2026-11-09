@@ -322,15 +322,17 @@ def _apply_template_layout(sheet: Worksheet, header_row: int, columns: int, *, r
             sheet.row_dimensions[row].font = Font(name=TEMPLATE_FONT_NAME, size=TEMPLATE_FONT_SIZE)
 
 
-def write_internal_template(path: Path, *, row_style: bool = False, view: View = TEMPLATE_VIEW) -> Path:
-    """Wzorzec rozliczenia wewnętrznego: nagłówki w wierszu 1, bez zleceń."""
+def write_internal_template(
+    path: Path, *, row_style: bool = False, view: View = TEMPLATE_VIEW, headers: tuple[str, ...] = INTERNAL_HEADERS
+) -> Path:
+    """Wzorzec rozliczenia wewnętrznego: nagłówki w wierszu 1 (domyślnie w kolejności taty), bez zleceń."""
 
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Arkusz1"
-    for column, header in enumerate(INTERNAL_HEADERS, start=1):
+    for column, header in enumerate(headers, start=1):
         sheet.cell(1, column).value = header
-    _apply_template_layout(sheet, 1, len(INTERNAL_HEADERS), row_style=row_style, view=view)
+    _apply_template_layout(sheet, 1, len(headers), row_style=row_style, view=view)
     workbook.save(path)
     return path
 

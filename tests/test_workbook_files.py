@@ -1067,24 +1067,24 @@ def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu
     ]
 
 
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
 def test_rozliczenie_wewnetrzne_wpisuje_kazda_wartosc_pod_jej_naglowkiem_w_kolejnosci_innej_niz_u_taty(
-    tmp_path: Path,
+    tmp_path: Path, copied: bool
 ) -> None:
-    """Atrapy mają kolejność kolumn taty, więc tylko ten Wzorzec dowodzi, że wartość idzie za nagłówkiem, nie za
-    miejscem w tabeli taty."""
+    """Atrapy mają kolejność kolumn taty, więc ten Wzorzec (nagłówki docelowe od ``DATA``, w A:K jak u taty) dowodzi na
+    obu drogach zapisu, że wartość idzie za nagłówkiem, nie za miejscem w tabeli taty."""
 
-    template_path = tmp_path / tool_files.INTERNAL_TEMPLATE.name
-    workbook = Workbook()
-    headers = tuple(reversed(INTERNAL_HEADERS))
-    for column, header in enumerate(headers, start=1):
-        active_worksheet(workbook).cell(1, column).value = header
-    workbook.save(template_path)
+    headers = (*TARGET_HEADERS, *INTERNAL_HEADERS[len(TARGET_HEADERS) :])
+    assert headers != INTERNAL_HEADERS and set(headers) == set(INTERNAL_HEADERS)
+    template_path = write_internal_template(tmp_path / tool_files.INTERNAL_TEMPLATE.name, headers=headers)
+    (marked_for_copy if copied else refused_by_copy)(template_path)
     target = tmp_path / "Rozliczenie wewnętrzne.xlsx"
 
-    TemplateFile.internal_settlement(template_path).create(target, [_register_row()])
+    route = TemplateFile.internal_settlement(template_path).create(target, [_register_row()])
 
     sheet = active_worksheet(load_workbook(target))
     written = {header: sheet.cell(2, column).value for column, header in enumerate(headers, start=1)}
+    assert route is (Route.COPY if copied else Route.OPENPYXL)
     assert {header: written[header] for header in TARGET_HEADERS} == {
         header: f"syntetyczne {header}" for header in TARGET_HEADERS
     }
