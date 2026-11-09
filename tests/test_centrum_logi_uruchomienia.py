@@ -43,7 +43,7 @@ from rozliczenia.centrum.outbox import RETRY_S, Outbox, Post
 from rozliczenia.centrum.logs_disk import EndEntry, Journal, LogsOnDisk, name_of
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
-from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, LoggedOrder, LoggedStep, RunLog, StartFacts, Tool
+from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, LoggedOrder, LoggedStep, ProcessLogs, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
@@ -474,11 +474,14 @@ def test_logi_przebiegu_rozliczen_maja_liczbe_ilosci_tylko_dla_inea_w_kazdej_kol
     assert [record["inea_only_cleared"] for record in records(centrum)] == [{"AP": 1, "AK": 2}] * 2
 
 
-def test_logi_przygotowania_nie_maja_liczby_ilosci_tylko_dla_inea(tmp_path: Path) -> None:
+def test_logi_przygotowania_nie_maja_dodatkow_innych_procesow(tmp_path: Path) -> None:
+    """Przygotowanie nie ma własnych dodatków Logów, więc każde pole dodatku innego procesu to ``null``: puste
+    ``efenix_orders`` karta z Logów liczyłaby jako zlecenia Uruchomienia (przegląd #1164 r1)."""
+
     centrum, _ = _preparation(tmp_path, dry_run=True)
 
     [record] = records(centrum)
-    assert record["inea_only_cleared"] is None
+    assert {field: record[field] for field in ProcessLogs.model_fields} == dict.fromkeys(ProcessLogs.model_fields)
 
 
 def test_karta_wraca_z_logow_sprzed_liczby_ilosci_tylko_dla_inea(tmp_path: Path) -> None:

@@ -38,6 +38,7 @@ from rozliczenia.centrum.reports import (
     UpdateReport,
     report_target,
 )
+from rozliczenia.centrum.stops import plain
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.efenix_window import PagePart
 from rozliczenia.process_run import Stop
@@ -217,6 +218,18 @@ def stop_report(entries: tuple[str, ...]) -> StopReport:
     message = preparation_messages.unexpected_failure()
     stop = Stop("unexpected", message, trace=CallTrace("KeyError", LONG_FRAMES))
     return StopReport(run, stop, ProblemFingerprint.of("preparation", message), Diagnosis((), entries), logs=None)
+
+
+def test_ten_sam_komunikat_zatrzymania_w_dwoch_procesach_to_dwa_problemy() -> None:
+    """Kody Komunikatów są unikalne tylko w katalogu procesu, więc Zatrzymanie z tym samym Komunikatem w innym procesie
+    ma inny odcisk problemu, czyli osobne Zgłoszenie (przegląd #1114 r1, Drobne 2)."""
+
+    report = stop_report(SHORT_ENTRIES)
+    other = report.run.model_copy(update={"process": "settlement", "title": "Przebieg rozliczeń"})
+
+    fingerprints = {plain(run, report.stop).fingerprint.digest for run in (report.run, other)}
+
+    assert len(fingerprints) == 2
 
 
 def sent_alone(computer: Computer, report: StopReport | UpdateReport) -> str:

@@ -386,6 +386,27 @@ def test_wybor_okresu_to_okresy_z_przygotowanym_plikiem_zbiorczym(tmp_path: Path
     ]
 
 
+def test_karta_przebiegu_proponuje_ostatni_pelny_okres_przed_nowszym_i_zaznacza_okres_z_udanym_podgladem(
+    tmp_path: Path,
+) -> None:
+    """Bieżący tydzień też ma Plik zbiorczy, a ostatni pełny okres ma udany Podgląd bez zapisu: karta proponuje ostatni
+    pełny okres, choć nowszy stoi wyżej, i zaznacza Podgląd tylko przy nim (przegląd #1134 r1, Drobne 2)."""
+
+    centrum = settling_centrum(tmp_path)
+    newer = centrum.periods_directory / "15_21_09_2026"
+    newer.mkdir()
+    (newer / "Rozliczenie 15_21_09_2026 - zbiorcze.xlsx").touch()
+    run_to_end(centrum, dry_run=True)
+
+    setup = settlement_setup(centrum.client)
+
+    assert setup["preselected_period"] == PERIOD
+    assert [(choice["token"], choice["previewed"]) for choice in setup["periods"]] == [
+        ("15_21_09_2026", False),
+        (PERIOD, True),
+    ]
+
+
 def test_karta_startu_mowi_ktore_pliki_przebiegu_sa_otwarte_w_excelu_az_do_ich_zamkniecia(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path, dad_layout=True)
     older = centrum.period_parent / "01_07_09_2026"

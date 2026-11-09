@@ -123,8 +123,9 @@ PROGRESS_S: Final = 300.0
 """Odstęp między postępami jednej Wyceny w efenix na zegarze Centrum (#846: „najwyżej co 5 minut”)."""
 
 _AFTER_RUN: Final = "po wyniku Uruchomienia procesu"
-_LEFT_BEHIND: Final = "wysyłka wersji zastępczych przy starcie"
 """Miejsce błędu kroku końca Uruchomienia w dzienniku Centrum: to samo co błąd działania po wyniku w ``RunHost.after``."""
+_LEFT_BEHIND: Final = "wysyłka wersji zastępczych przy starcie"
+"""Miejsce błędu wysyłki jednej wersji zastępczej w kroku startu serwera (``RunComments.send_left_behind``)."""
 
 _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
 """Miejsce zamaskowanej wartości w uwadze technicznej postępu."""

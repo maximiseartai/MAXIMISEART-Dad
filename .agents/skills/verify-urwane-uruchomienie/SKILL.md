@@ -425,7 +425,7 @@ Left out: a glob of `logs/dzienniki-wyceny/` that fails (it skips every journal,
 Logs file that cannot be parsed (truncated by hand, a schema from a newer version after a rollback: `close` sends the
 result without Logi, `"nieczytelne"`), a torn entry in the middle of a journal (counted in `omitted`), a failed write
 that left a torn first line (`run_ended` removes it like a whole one, and a start removes a journal without a start), the
-Historia (no step of this path reads it), exceptions other than `OSError` in `close_left_behind` or `send_left_behind`, and in `run_ended` an exception
+Historia (no step of this path reads it), exceptions other than `OSError` in `close_left_behind`, and in `run_ended` an exception
 outside a write (one in `_own` leaves the Logi with the result out of the queue, like `post` False: the journal stays
 for the stand-in version), the text of the progress and of the result without Logi, the Diagnoza (a newer version of the Logi
 with the result, of their rank and Centrum work), Dad's actions in the Logs (`DadActionJournal.take`), and the karta after
