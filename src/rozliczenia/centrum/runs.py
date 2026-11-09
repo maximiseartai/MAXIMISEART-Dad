@@ -218,6 +218,14 @@ class AfterRun(Protocol):
         ...
 
 
+class RunLogsKeeper(AfterRun, Protocol):
+    """Logi Uruchomienia (``run_comments.RunComments``): start każdego Uruchomienia i pierwsze działanie po wyniku."""
+
+    def run_started(self, info: contract.RunInfo, started_at: datetime) -> None:
+        """Start Uruchomienia, zanim ruszy jego wątek; wyjątek ``RunHost.start`` zapisuje tylko w dzienniku."""
+        ...
+
+
 # Odmowa w trakcie Aktualizacji narzędzia: uruchomienia procesu, zamknięcia Centrum albo innej aktualizacji.
 _UPDATING = "Trwa aktualizacja narzędzia. Poczekaj na jej wynik, potem {then}."
 # Odmowa po przyjętym zamknięciu: wątek, który teraz by wystartował, zginąłby z końcem serwera.
@@ -241,11 +249,13 @@ class RunHost:
     Uruchomienia z Centrum do ``CentrumRuns``. Zatrzymanie zakończonego Uruchomienia
     przejmuje jego właściciel (``stops``); Diagnoza i „Wyślij do Maksa” idą tylko do
     Zatrzymania bieżącego Uruchomienia, a nowy stan Zgłoszenia trafia na jego kartę.
-    Działania po wyniku (``after_run``) biegną przed końcem Uruchomienia, więc
-    przyjęte zamknięcie Centrum albo Aktualizacja narzędzia ich nie przerwie.
-    Pierwszy widok niesie ``previous``, ostatnie Uruchomienie sprzed startu Centrum,
-    a każdy start idzie do ``run_started`` (plik startu na dysku), zanim ruszy jego wątek;
-    nieudany zapis startu trafia tylko do dziennika. Uruchomienie kończy się (``end``) pod tą
+    Działania po wyniku biegną przed końcem Uruchomienia, więc przyjęte zamknięcie
+    Centrum albo Aktualizacja narzędzia ich nie przerwie: najpierw Logi Uruchomienia
+    (``logs``: wpis końca dziennika Wyceny w efenix, Logi z wynikiem i dziennik po ich
+    przyjęciu przez kolejkę, #871), potem ``after_run``. Pierwszy widok niesie
+    ``previous``, ostatnie Uruchomienie sprzed startu Centrum, a każdy start idzie do
+    ``logs.run_started`` (plik startu na dysku), zanim ruszy jego wątek; nieudany zapis
+    startu trafia tylko do dziennika. Uruchomienie kończy się (``end``) pod tą
     samą blokadą co publikacja jego wyniku, a start następnego zostawia ten wynik w widokach,
     więc karta, która czyta strumień co chwilę, dostaje wynik każdego Uruchomienia.
 
@@ -262,7 +272,7 @@ class RunHost:
         stops: Stops,
         *,
         previous: contract.PastRun | None,
-        run_started: Callable[[contract.RunInfo, datetime], None],
+        logs: RunLogsKeeper,
         after_run: Sequence[AfterRun],
         threads: Threading = threading,
         created: Callable[[Run, contract.RunEvent], None] = lambda _run, _last: None,
@@ -270,8 +280,8 @@ class RunHost:
         self._log = log
         self._centrum_runs = centrum_runs
         self._stops = stops
-        self._run_started = run_started
-        self._after_run = tuple(after_run)
+        self._run_started = logs.run_started
+        self._after_run = (logs, *after_run)
         self._threads = threads
         self._created = created
         self._lock = threads.Lock()

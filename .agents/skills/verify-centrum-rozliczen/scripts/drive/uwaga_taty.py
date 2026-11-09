@@ -391,7 +391,8 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
     run.step(FEATURE, "uwaga-pelne-okno-lista")
     # Centrum zapamiętuje Uruchomienia z Centrum we własnym pliku obok ustawień: napęd dopisuje je przez właściciela
     # pliku (run_origins), więc zmiana jego formatu nie zostawia Centrum pliku, którego ono nie przeczyta.
-    registry = Path(run.fixture["settings"]).parent / CENTRUM_RUNS_FILE
+    config = Path(run.fixture["settings"]).parent
+    registry = config / CENTRUM_RUNS_FILE
     before = read_bytes(registry) if registry.exists() else None
     processes: tuple[tuple[ProcessKey, Process[Any, Any, Any]], ...] = (
         ("settlement", SETTLEMENT),
@@ -402,7 +403,7 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
     newest = sorted(started, reverse=True)[:FULL_LIST_RUNS]
     run.check(len(newest) == FULL_LIST_RUNS, f"the fixture's metrics files hold at least {FULL_LIST_RUNS} runs ({len(newest)})")
     try:
-        origins = CentrumRuns(registry)
+        origins = CentrumRuns(config)
         for number, (at, key) in enumerate(newest):
             moment = datetime.fromisoformat(at)
             origins.remember(key, f"uwaga-lista-{number}", metrics[key], moment, moment)

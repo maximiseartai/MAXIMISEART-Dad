@@ -16,7 +16,6 @@ Typy pól, które strażnik zostawia bez maski (``TOOL_FIELDS``), sprawdza tu te
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable, Iterator, Mapping, Sequence
 import copy
 import dataclasses
@@ -84,6 +83,7 @@ from rozliczenia.efenix_pricing import OrderKind
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
+from tests.fixtures.praca_centrum import centrum_work
 
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
 STOP = {"kind": "stop", "code": "ZLA_KONFIGURACJA_WYKONAWCOW", "what": "Co.", "where": "Gdzie.", "action": "Zrób."}
@@ -689,10 +689,10 @@ class PowerCut:
 
 
 def _started(comments: RunComments) -> None:
-    """Start Centrum od budowy aplikacji do pierwszego zapytania API: zamknięcie dzienników, potem ich wysyłka."""
+    """Start Centrum od budowy aplikacji do końca startu serwera: zamknięcie dzienników, potem ich wysyłka."""
 
     comments.close_left_behind()
-    asyncio.run(comments.send_left_behind())
+    comments.send_left_behind()
 
 
 def _comments(
@@ -700,22 +700,15 @@ def _comments(
 ) -> RunComments:
     """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu i bez plików procesu."""
 
-    log = CentrumLog(directory / "centrum-rozliczen.log")
+    work = centrum_work(directory, CentrumLog(directory / "centrum-rozliczen.log"), clock)
     records = RecordMaker(
         commit=lambda: None,
         wydanie=lambda commit: None,
         files=lambda process, period: [],
         cloud_files=CloudFiles(None),
-        dad_actions=DadActionJournal(directory / "dzialania-taty.jsonl", log),
+        dad_actions=DadActionJournal(work),
     )
-    return RunComments(
-        disk or _logs_on_disk(directory),
-        queue,
-        forbidden=ForbiddenValues(),
-        clock=clock or ManualClock(),
-        log=log,
-        records=records,
-    )
+    return RunComments(work, disk or _logs_on_disk(directory), queue, records)
 
 
 def _urwane(directory: Path) -> Path:
@@ -733,7 +726,7 @@ def test_centrum_zgaszone_przy_zamykaniu_dziennika_wyceny_wysyla_logi_urwanego_u
 ) -> None:
     """Start Centrum, który zgasł przed zapisem pliku Logów Urwanego Uruchomienia albo przed ich wysyłką, zostawia
     dziennik i niczego nie wysyła; następny start wysyła je raz, w stopniu wersji zastępczej, z plikiem w Archiwum o
-    bajtach pliku Logów, dopiero przy pierwszym zapytaniu (po ``Outbox.resume``), i dopiero wtedy usuwa dziennik
+    bajtach pliku Logów, dopiero w starcie serwera (po ``Outbox.resume``), i dopiero wtedy usuwa dziennik
     (obietnice DziennikPoKolejce, TeSameZnaki, NicPrzedWznowieniem i Zbieganie)."""
 
     journal = _urwane(tmp_path)
@@ -745,7 +738,7 @@ def test_centrum_zgaszone_przy_zamykaniu_dziennika_wyceny_wysyla_logi_urwanego_u
     restarted = _comments(tmp_path, queue)
     restarted.close_left_behind()
     before_request = list(queue.posts)
-    asyncio.run(restarted.send_left_behind())
+    restarted.send_left_behind()
 
     [post] = queue.posts
     [logs_file] = (tmp_path / "uruchomienia").glob(f"*-{RUN_ID}.json")
@@ -764,7 +757,7 @@ def test_katalog_logow_ktory_nie_przyjal_pliku_przy_starcie_nie_zatrzymuje_logow
     tmp_path: Path,
 ) -> None:
     """Na miejscu katalogu Logów stoi plik, więc start Centrum nie zapisze pliku Logów Urwanego Uruchomienia: jedna linia
-    dziennika Centrum, a te Logi i tak idą do Skrzynki przy pierwszym zapytaniu i dziennik znika (przegląd #1043,
+    dziennika Centrum, a te Logi i tak idą do Skrzynki w starcie serwera i dziennik znika (przegląd #1043,
     Drobne 1)."""
 
     journal = _urwane(tmp_path)
@@ -773,7 +766,7 @@ def test_katalog_logow_ktory_nie_przyjal_pliku_przy_starcie_nie_zatrzymuje_logow
     comments = _comments(tmp_path, queue)
 
     comments.close_left_behind()
-    asyncio.run(comments.send_left_behind())
+    comments.send_left_behind()
 
     [post] = queue.posts
     lines = (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines()
@@ -803,22 +796,6 @@ def test_logi_sprzed_schematu_3_przy_dzienniku_wyceny_zostaja_w_swoim_schemacie_
     [post] = queue.posts
     assert post.archive is not None
     assert json.loads(path.read_text(encoding="utf-8")) == json.loads(gzip.decompress(post.archive.packed())) == old
-
-
-def test_wersja_zastepcza_idzie_do_kolejki_raz_choc_kazde_zapytanie_api_pyta_o_wysylke(tmp_path: Path) -> None:
-    """Wysyłka wersji zastępczej jest zależnością każdej trasy API, a idzie tylko przy pierwszym zapytaniu: następne nie
-    wysyłają jej znowu ani nie usuwają dziennika drugi raz (przegląd #1043, Drobne 2)."""
-
-    _urwane(tmp_path)
-    queue = RecordingQueue()
-    comments = _comments(tmp_path, queue)
-    comments.close_left_behind()
-
-    for _ in range(3):
-        asyncio.run(comments.send_left_behind())
-
-    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
-    assert not (tmp_path / "centrum-rozliczen.log").exists()
 
 
 PRICING = RunInfo(

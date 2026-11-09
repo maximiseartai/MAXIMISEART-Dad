@@ -1,5 +1,5 @@
-"""Serwer Centrum rozliczeń: ``start`` i ``stop`` w dzienniku, póki Centrum trzyma port, i port, który zamknięte Centrum
-zwalnia od razu, także gdy jego kolejka Skrzynki Zgłoszeń jeszcze wysyła, oraz zatrzymanie Centrum w teście, które
+"""Serwer Centrum rozliczeń: ``start`` i ``stop`` w dzienniku, póki Centrum trzyma port, wysyłka Logów Urwanego
+Uruchomienia po wpisie ``start``, której wyjątek nie zatrzymuje startu, i port, który zamknięte Centrum zwalnia od razu, także gdy jego kolejka Skrzynki Zgłoszeń jeszcze wysyła, oraz zatrzymanie Centrum w teście, które
 czeka na koniec każdego jego wątku, także każdego Centrum, którego test nie zatrzymał, zanim reguła prywatności czyta
 dziennik, i klient testowy, który nie otwiera pętli zdarzeń na każde żądanie (#975)."""
 
@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio.base_events
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from datetime import datetime
+import http.client
 import os
 from pathlib import Path
 import subprocess
@@ -21,9 +23,11 @@ from fastapi.testclient import TestClient
 import pytest
 
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.outbox import QUEUE_DIRECTORY, PeriodThread, Post
-from rozliczenia.centrum.reports import UNSENT_DIRECTORY
+from rozliczenia.centrum.outbox import QUEUE_DIRECTORY, Outbox, PeriodThread, Post
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
+from rozliczenia.centrum.run_logs import StartFacts
 from rozliczenia.centrum.server import serve
+from rozliczenia.domain import RunMode
 from rozliczenia.tool_files import listen_locally
 from rozliczenia.centrum.shutdown import Shutdown
 
@@ -36,6 +40,7 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.dziennik_wyceny import begun_line, journal_path, left_journal
 from tests.fixtures.linie_watkow import PYTEST_TIMEOUT_THREAD, new_line, threads_since
 
 KONTROLA = Post.of(
@@ -125,6 +130,105 @@ def test_nieudany_start_nie_zapisuje_ani_startu_ani_stopu(tmp_path: Path) -> Non
 
     assert _events(path) == []
     listen_locally(port).close()
+
+
+# Wycena w efenix, którą zgaszone Centrum urwało: jej dziennik w katalogu Logów czeka na następny start.
+URWANA_WYCENA = StartFacts(
+    run_id="627b45fe219e4274b722953c34d4af54",
+    process="efenix",
+    mode=RunMode.RUN,
+    period="08_14_09_2026",
+    started_at=datetime(2026, 9, 10, 8, 0),
+)
+
+
+def _left_pricing(tool: ToolDirectory) -> Path:
+    """Dziennik Urwanej Wyceny w efenix, z którego start Centrum robi wersję zastępczą Logów; jego ścieżka."""
+
+    return left_journal(
+        tool.log_path.parent, URWANA_WYCENA, begun_line(datetime(2026, 9, 10, 8, 1), row=19, place=1, total=2)
+    )
+
+
+def _served_once(tool: ToolDirectory) -> tuple[int, list[str]]:
+    """Centrum na ``serve`` jak u taty: start, jedno zapytanie karty i zamknięcie; status zapytania i wpisy dziennika,
+    które Diagnoza i Zgłoszenia biorą jako wpisy tej pracy Centrum (``CentrumLog.recent``), bez czasu."""
+
+    log = CentrumLog(tool.log_path)
+    shutdown = Shutdown(log)
+    app = centrum_app(tool, log=log, shutdown=shutdown)
+    ready = threading.Event()
+    listener = listen_locally(0)
+    port = int(listener.getsockname()[1])
+    kwargs = {"listener": listener, "on_ready": lambda _url: ready.set(), "shutdown": shutdown, "log": log}
+    since = new_line()
+    served = threading.Thread(target=serve, args=(app,), kwargs=kwargs, name="centrum-test", daemon=True)
+    served.start()
+    try:
+        assert ready.wait(30), "Centrum nie wystartowało"
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        connection.request("GET", "/api/runs/current", headers={"Host": f"127.0.0.1:{port}"})
+        status = connection.getresponse().status
+        connection.close()
+        recent = [line.split(" ", 1)[1] for line in log.recent(50)]
+    finally:
+        shutdown.request()
+        served.join(30)
+        join_threads_since(since)
+    return status, recent
+
+
+@pytest.mark.parametrize(
+    ("queue_blocked", "sent_line"),
+    [
+        pytest.param(False, "skrzynka-w-kolejce etykieta=logi-uruchomienia okres=08_14_09_2026", id="kolejka-przyjela"),
+        pytest.param(
+            True,
+            'nieoczekiwany-wyjatek typ=FileExistsError miejsce="zapis wysyłki do Skrzynki Zgłoszeń"',
+            id="kolejka-nie-przyjela",
+        ),
+    ],
+)
+def test_wysylka_logow_urwanego_uruchomienia_przy_starcie_jest_we_wpisach_tej_pracy_centrum_dla_diagnozy_i_zgloszen(
+    tmp_path: Path, queue_blocked: bool, sent_line: str
+) -> None:
+    """Wpisy dziennika o Logach Urwanego Uruchomienia, które start Centrum kładzie w Kolejce wysyłki (albo których kolejka
+    nie przyjęła), stoją po wpisie ``start`` tej pracy Centrum, więc Diagnoza („Dziennik Centrum rozliczeń”), treść
+    Zgłoszenia i Zgłoszenie Aktualizacji je widzą."""
+
+    tool = ToolDirectory(tmp_path)
+    _left_pricing(tool)
+    if queue_blocked:  # na miejscu Kolejki wysyłki stoi plik, więc kolejka nie zapisze wersji zastępczej
+        queue = tool.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
+        queue.parent.mkdir(parents=True, exist_ok=True)
+        queue.write_text("", encoding="utf-8")
+
+    status, recent = _served_once(tool)
+
+    assert status == 200
+    assert recent[0].startswith("start ")
+    assert recent.count(sent_line) == 1
+
+
+def test_wyjatek_wysylki_logow_urwanego_uruchomienia_nie_zatrzymuje_startu_centrum_a_dziennik_wyceny_czeka(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nieoczekiwany wyjątek przy wysyłce wersji zastępczej na starcie trafia do dziennika Centrum (typ), Centrum
+    odpowiada, a dziennik Urwanej Wyceny zostaje na dysku na następny start."""
+
+    def failing(_outbox: Outbox, _sent: Post) -> bool:
+        raise RuntimeError("nieprzewidziany błąd kolejki")
+
+    monkeypatch.setattr(Outbox, "post", failing)
+    tool = ToolDirectory(tmp_path)
+    journal = _left_pricing(tool)
+
+    status, recent = _served_once(tool)
+
+    assert status == 200
+    assert 'nieoczekiwany-wyjatek typ=RuntimeError miejsce="wysyłka wersji zastępczych przy starcie"' in recent
+    assert journal == journal_path(tool.log_path.parent, URWANA_WYCENA)
+    assert journal.exists()
 
 
 def test_zamkniete_centrum_zwalnia_port_od_razu_takze_gdy_kolejka_czeka_na_skrzynke(tmp_path: Path) -> None:

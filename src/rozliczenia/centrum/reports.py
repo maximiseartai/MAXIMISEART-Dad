@@ -54,10 +54,10 @@ from rozliczenia.centrum.report_issue import RETURNED_HEADING, fingerprint_line
 from rozliczenia.centrum.report_box import FindOutcome
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import UpdateResult
+from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.message import Message
 from rozliczenia.process_run import Stop
 
-UNSENT_DIRECTORY: Final = "zgloszenia"
 # Podgląd Zgłoszenia czeka w tle na odpowiedź skrzynki o otwarte Zgłoszenie najwyżej tyle, co Diagnoza na commit `main`.
 SEARCH_DEADLINE_S: Final = 3.0
 # Nazwa wątku, w którym Zgłoszenie pyta skrzynkę i czeka na swoją wysyłkę.
@@ -494,16 +494,16 @@ class Reports:
 
     def __init__(
         self,
+        work: CentrumWork,
         box: KeyedBox,
         outbox: Outbox,
         commit: CommitSource,
         cases: DadCases,
         *,
         search_deadline_s: float,
-        forbidden: ForbiddenValues,
     ) -> None:
         self._commit = commit
-        self._forbidden = forbidden
+        self._forbidden = work.forbidden
         self._search_deadline_s = search_deadline_s
         self._cases = cases
         self._queue_directory = outbox.directory

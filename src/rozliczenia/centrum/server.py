@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import logging
 import socket
 import threading
@@ -18,6 +18,9 @@ from rozliczenia.centrum.version import tool_commit, version_label
 from rozliczenia.tool_files import HOST
 
 _GRACEFUL_SHUTDOWN_S = 5  # otwarte połączenia (np. strumień postępu) nie wstrzymują zamknięcia dłużej
+# Klucz stanu ``lifespan`` aplikacji (ASGI ``state``): krok, który serwer robi zaraz po wpisie ``start``, przed pierwszym
+# zapytaniem, więc jego wpisy w dzienniku należą do tej pracy Centrum (``CentrumLog.recent`` liczy je od ``start``).
+AFTER_START = "po_starcie"
 
 
 def serve(
@@ -43,8 +46,9 @@ def serve(
         log_config=LOGGING_CONFIG if console else None,
     )
 
-    def started() -> None:
+    def started(state: Mapping[str, object]) -> None:
         log.started(port=port, version=version_label(tool_commit()), console=console)
+        after_start(state)
         threading.Thread(target=on_ready, args=(url,), name="centrum-gotowosc", daemon=True).start()
 
     server = _Server(config, started=started, stopping=lambda: log.stopped(port=port))
@@ -64,6 +68,14 @@ def serve(
     return 0 if server.started else 1
 
 
+def after_start(state: Mapping[str, object]) -> None:
+    """Krok po starcie ze stanu ``lifespan`` aplikacji (``AFTER_START``), jeśli go podała."""
+
+    step = state.get(AFTER_START)
+    if callable(step):
+        step()
+
+
 class _Server(uvicorn.Server):
     """Uvicorn, który zgłasza start zaraz po zajęciu portu, a zamykanie, zanim go zwolni.
 
@@ -72,7 +84,13 @@ class _Server(uvicorn.Server):
     tylko po udanym starcie.
     """
 
-    def __init__(self, config: uvicorn.Config, *, started: Callable[[], None], stopping: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        config: uvicorn.Config,
+        *,
+        started: Callable[[Mapping[str, object]], None],
+        stopping: Callable[[], None],
+    ) -> None:
         super().__init__(config)
         self._started = started
         self._stopping = stopping
@@ -80,7 +98,7 @@ class _Server(uvicorn.Server):
     async def startup(self, sockets: list[socket.socket] | None = None) -> None:
         await super().startup(sockets=sockets)
         if self.started:
-            self._started()
+            self._started(self.lifespan.state)
 
     async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
         self._stopping()

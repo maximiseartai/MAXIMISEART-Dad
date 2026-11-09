@@ -30,6 +30,7 @@ from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, Outbox
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.version import version_label
+from rozliczenia.centrum.work import CentrumWork
 
 RECENT_RUNS: Final = 6
 _NOT_QUEUED: Final = "Uwaga się nie zapisała i nie pójdzie do Maksa. Spróbuj wysłać ją jeszcze raz."
@@ -39,7 +40,7 @@ _UNKNOWN_RUN: Final = (
 _NO_HISTORY: Final = "Nie udało się odczytać historii Uruchomień. Odśwież kartę albo wyślij Uwagę ogólną."
 
 History = Callable[[], list[contract.ProcessRun]]
-"""Uruchomienia procesu z plików metryk od najnowszego (``metrics.read_runs``); ``OSError``: pliki nieczytelne."""
+"""Uruchomienia procesu z plików metryk od najnowszego (``metrics.History.runs``); ``OSError``: pliki nieczytelne."""
 LogsAddress = Callable[[str], str | None]
 """Adres pierwszego komentarza Logów Uruchomienia o tym identyfikatorze w Skrzynce; ``None``: jeszcze ich tam nie ma."""
 
@@ -158,14 +159,15 @@ def send(
 
 
 def dad_notes_router(
+    work: CentrumWork,
     cases: DadCases,
     outbox: Outbox,
     box: KeyedBox,
     commit: CommitSource,
     history: History,
     logs: LogsAddress,
-    forbidden: ForbiddenValues,
 ) -> APIRouter:
+    forbidden = work.forbidden
     router = APIRouter(prefix="/api/dad-notes", tags=["uwagi-taty"])
     refusals: dict[int | str, dict[str, object]] = {status: {"model": contract.Problem} for status in (404, 500)}
 

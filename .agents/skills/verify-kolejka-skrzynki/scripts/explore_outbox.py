@@ -134,7 +134,7 @@ class Crash(BaseException):
 class _NotesInMemory:
     """``OPENING_FILE`` of one schedule in memory: the ``path`` and ``replace`` of ``NotesFile`` that ``KeyedBox`` gets.
 
-    ``create_app`` hands ``KeyedBox`` the file through ``NotesFile`` with ``replace_atomically``; the checker hands it
+    ``KeyedBox.of_work`` hands ``KeyedBox`` the file through ``NotesFile`` with ``replace_atomically``; the checker hands it
     this object as both, so every Centrum of a schedule reads what the last one wrote, as from Dad's ``config``
     folder, and the file is missing (``FileNotFoundError``) until the first write. The checker never fails the read or
     the write of this file (SKILL.md), so the disk added nothing but time: since #897 the file took about 40% of a scope

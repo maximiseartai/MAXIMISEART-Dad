@@ -61,6 +61,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal, TypeVar
 
+from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.github import ANSWER_KEPT_S, NO_ANSWER_KEPT_S, sendable
 from rozliczenia.centrum.report_box import (
     Archive,
@@ -85,6 +86,7 @@ from rozliczenia.centrum.report_box import (
     newest_with_line,
 )
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
+from rozliczenia.centrum.work import CentrumWork
 
 REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
 # Ostatni zapis każdego rodzaju, którego skutek widać tylko na liście (``KeyedBox._ready``), obok klucza; poza
@@ -114,7 +116,7 @@ def _unnoticed(failure: OSError) -> None:
 
 @dataclass(frozen=True)
 class NotesFile:
-    """Plik zapisów ``KeyedBox`` (opis modułu) i jego zamiana: u taty ``atomic_file.replace_atomically`` (``create_app``),
+    """Plik zapisów ``KeyedBox`` (opis modułu) i jego zamiana: u taty ``atomic_file.replace_atomically`` (``KeyedBox.of_work``),
     która czeka na plik, który ktoś na chwilę trzyma, jak przy innych plikach Centrum, i nie zostawia urwanego pliku.
     ``unavailable`` dostaje pierwszy błąd odczytu albo zapisu pliku w tej pracy Centrum (u taty dziennik Centrum)."""
 
@@ -247,6 +249,18 @@ class KeyedBox:
         self._lists = threading.local()  # listed_at: chwila ostatniego pytania wątku o listę, na które przyszła
         self._unavailable_noted = False  # pierwszy błąd pliku ``opening`` w tej pracy Centrum już w ``unavailable``
         self._names: dict[int, str] = {}  # id pliku Archiwum z ostatnich odpowiedzi ``archive``: jego nazwa
+
+    @classmethod
+    def of_work(cls, box: ReportBox, work: CentrumWork) -> KeyedBox:
+        """Skrzynka pracy Centrum ``work``: klucz z pliku w ``work.config``, plik zapisów obok niego, a jego pierwszy błąd w
+        dzienniku Centrum."""
+
+        return cls(
+            box,
+            lambda: read_report_key(work.config),
+            clock=work.clock,
+            opening=NotesFile(work.config / OPENING_FILE, replace_atomically, work.log.box_notes_unavailable),
+        )
 
     def state(self) -> BoxState:
         """Zapisy, od których zależą następne odpowiedzi (``BoxState``), w chwili ``clock`` i dla list tego wątku;

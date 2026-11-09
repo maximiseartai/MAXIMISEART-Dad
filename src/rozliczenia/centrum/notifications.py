@@ -35,14 +35,12 @@ import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime
-from pathlib import Path
 from typing import Final
 
 from fastapi import APIRouter
 
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_box import Closure
 from rozliczenia.centrum.run_cards import LoggedRun
@@ -52,6 +50,7 @@ from rozliczenia.centrum.notification_messages import unavailable
 from rozliczenia.centrum.release_notes import parse, whats_new
 from rozliczenia.centrum.tool_freshness import PublishedRelease, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.tool_update import Release
+from rozliczenia.centrum.work import CentrumWork
 
 NOTIFICATIONS_FILE: Final = "powiadomienia.json"
 SCHEMA_VERSION: Final = 1
@@ -73,8 +72,10 @@ class ReadNotifications:
     niedostępny (``StateFile``): przeczytane czekają w pamięci na następne oznaczenie albo odczyt Powiadomień.
     """
 
-    def __init__(self, path: Path, log: CentrumLog, *, pause: Callable[[float], None]) -> None:
-        self.file = StateFile(path, log, where="stan przeczytanych Powiadomień", pause=pause)
+    def __init__(self, work: CentrumWork) -> None:
+        self.file = StateFile(
+            work.config / NOTIFICATIONS_FILE, work.log, where="stan przeczytanych Powiadomień", pause=work.pause
+        )
         self._lock = threading.Lock()
         self._read = self._load()
 
@@ -122,29 +123,26 @@ class Notifications:
 
     def __init__(
         self,
+        work: CentrumWork,
         cases: DadCases,
-        read: ReadNotifications,
         box: KeyedBox,
         freshness: ToolFreshness,
         release: ReleaseSource,
-        log: CentrumLog,
         pricings: Callable[[], Iterable[LoggedRun]],
-        *,
-        clock: Callable[[], float],
     ) -> None:
         self._cases = cases
         self._pricings = pricings
-        self._read = read
+        self._read = ReadNotifications(work)
         self._box = box
         self._freshness = freshness
         self._release = release
-        self._log = log
-        self._clock = clock
+        self._log = work.log
+        self._clock = work.clock
         self._lock = threading.Lock()
         self._asked_at: float | None = None  # od startu Centrum nie było jeszcze pytania
         self._check: threading.Thread | None = None
         self._releases = _Releases()
-        self._files = (cases.file, read.file)
+        self._files = (cases.file, self._read.file)
 
     def view(self) -> contract.Notifications:
         """Powiadomienia od najnowszego po próbie zapisu plików stanu, które czekają.

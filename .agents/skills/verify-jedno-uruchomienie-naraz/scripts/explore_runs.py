@@ -394,11 +394,16 @@ class LogSteps:
         return entry
 
 
-class AfterRunSteps:
-    """``AfterRun``: the actions after the result (Kontrola ilości into its queue file) are one step; nothing is written."""
+class RunLogsSteps:
+    """``RunLogsKeeper`` of ``RunHost`` (``logs``): the start file of each Uruchomienie is one step, and the actions after
+    the result (the Logi Uruchomienia, then ``after_run``: Kontrola ilości into its queue file) are one step; nothing is
+    written."""
 
     def __init__(self, scheduler: Scheduler) -> None:
         self._scheduler = scheduler
+
+    def run_started(self, *_: object) -> None:
+        self._scheduler.step("run_started: plik startu Uruchomienia")
 
     def run_ended(self, _run: object) -> None:
         self._scheduler.step("po wyniku: działania po wyniku Uruchomienia (plik kolejki)")
@@ -415,16 +420,6 @@ class CentrumRunsSteps:
 
     def remember(self, *_: object) -> None:
         self._scheduler.step("CentrumRuns.remember: rekord metryk Uruchomienia z Centrum")
-
-
-class StartFileSteps:
-    """``run_started`` of ``RunHost``: the start file of each Uruchomienie is one step; nothing is written."""
-
-    def __init__(self, scheduler: Scheduler) -> None:
-        self._scheduler = scheduler
-
-    def run_started(self, *_: object) -> None:
-        self._scheduler.step("run_started: plik startu Uruchomienia")
 
 
 # --- Harness ------------------------------------------------------------------------------------------
@@ -623,8 +618,8 @@ def wire(scheduler: Scheduler) -> World:
         CentrumRunsSteps(scheduler),  # type: ignore[arg-type]
         NoStops(),  # type: ignore[arg-type]
         previous=None,
-        run_started=StartFileSteps(scheduler).run_started,
-        after_run=[AfterRunSteps(scheduler)],
+        logs=RunLogsSteps(scheduler),
+        after_run=[],
         threads=host_threads,
         created=track,
     )

@@ -15,6 +15,7 @@ from typing import Any, Final
 
 import pytest
 
+from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Sent, Unreachable
 
 from tests.fixtures.centrum import (
@@ -323,6 +324,29 @@ def test_wynik_przebiegu_jest_ten_sam_przy_kazdej_odpowiedzi_skrzynki(
     [expected_record] = reference.metric_records()
     assert without_times(record) == without_times(expected_record)
     assert list((tmp_path / "config" / "zgloszenia").glob("Zgłoszenie *.md")) == []
+
+
+def test_logi_uruchomienia_ida_do_kolejki_wysylki_przed_kontrola_ilosci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Po wyniku Przebiegu rozliczeń z zapisem Kolejka wysyłki dostaje najpierw Logi Uruchomienia, a dopiero po nich
+    Kontrolę ilości: działanie po wyniku, które zawiedzie albo przy którym Centrum zgaśnie, nie zabiera Uruchomieniu jego
+    Logów (#871)."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    queued: list[str] = []
+    post = Outbox.post
+
+    def queueing(outbox: Outbox, sent: Post) -> bool:
+        queued.append(sent.target.label)
+        return post(outbox, sent)
+
+    monkeypatch.setattr(Outbox, "post", queueing)
+
+    run_to_end(centrum, dry_run=False)
+    sent_check(centrum)
+
+    assert queued == ["logi-uruchomienia", LABEL]
 
 
 def test_wysylka_w_tle_nie_trzyma_miejsca_uruchomienia_ani_zamkniecia_centrum(tmp_path: Path) -> None:

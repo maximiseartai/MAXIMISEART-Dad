@@ -15,20 +15,20 @@ from __future__ import annotations
 from typing import Final
 
 from rozliczenia import quantity_check
-from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.outbox import Outbox, PeriodThread, Post
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
+from rozliczenia.centrum.work import CentrumWork
 
 LABEL: Final = "kontrola-ilosci"
 
 
 class QuantityCheckAfterRun:
-    def __init__(self, outbox: Outbox, commit: CommitSource, forbidden: ForbiddenValues) -> None:
+    def __init__(self, work: CentrumWork, outbox: Outbox, commit: CommitSource) -> None:
         self._outbox = outbox
         self._commit = commit
-        self._forbidden = forbidden
+        self._forbidden = work.forbidden
 
     def run_ended(self, run: EndedRun) -> None:
         orders = declaration_of(run.info.process).quantity_check

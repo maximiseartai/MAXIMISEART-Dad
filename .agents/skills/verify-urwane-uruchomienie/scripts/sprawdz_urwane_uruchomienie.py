@@ -27,7 +27,7 @@ _STEPS = {
     "ZapiszLogi": "close_left_behind zapisuje plik Logów Wyceny {k} po strażniku (LogsOnDisk.write)",
     "UsunDziennik": "close_left_behind usuwa dziennik Wyceny {k} (_remove)",
     "Wznow": "lifespan: Outbox.resume",
-    "PierwszeZapytanie": "pierwsze zapytanie API: send_interrupted bierze wersje zastępcze z _pending",
+    "WysylkaStartu": "serve po wpisie start, krok AFTER_START z lifespan po Outbox.resume: send_left_behind bierze wersje zastępcze z _pending",
     "Wyslij": "send_left_behind: Outbox.post wersji zastępczej ({h}) Wyceny {w}, Rank.STAND_IN",
     "UsunPoWysylce": "send_left_behind usuwa dziennik Wyceny {w} po przyjęciu przez kolejkę",
     "StartWyceny": "tata uruchamia Wycenę {b2} (LogsOnDisk.started)",

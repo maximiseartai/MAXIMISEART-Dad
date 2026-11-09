@@ -35,7 +35,6 @@ from typing import Final, Literal
 from rozliczenia.centrum import contract
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.report_box import (
     Closure,
@@ -46,6 +45,7 @@ from rozliczenia.centrum.report_box import (
     close_reason,
     read_moment,
 )
+from rozliczenia.centrum.work import CentrumWork
 
 DAD_CASES_FILE: Final = "sprawy-taty.json"
 SCHEMA_VERSION: Final = 1
@@ -142,10 +142,10 @@ Watcher = Callable[[CaseNews], None]
 class DadCases:
     """Sprawy taty z tego komputera w pliku stanu obok Ustawień taty."""
 
-    def __init__(self, config_directory: Path, log: CentrumLog, *, pause: Callable[[float], None]) -> None:
-        self.file = StateFile(config_directory / DAD_CASES_FILE, log, where="stan Spraw taty", pause=pause)
+    def __init__(self, work: CentrumWork) -> None:
+        self.file = StateFile(work.config / DAD_CASES_FILE, work.log, where="stan Spraw taty", pause=work.pause)
         self._lock = threading.Lock()
-        self._cases = _load(config_directory)
+        self._cases = _load(work.config)
         self._rejected: set[str] = set()  # ``id`` spraw, których treść Skrzynka odrzuciła w tej pracy Centrum
         self._watchers: dict[CaseKind, list[Watcher]] = {}
 

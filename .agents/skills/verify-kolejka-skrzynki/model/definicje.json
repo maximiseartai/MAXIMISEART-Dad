@@ -3,7 +3,7 @@
     "cały plik": "1dc76f7976076eef"
   },
   "src/rozliczenia/centrum/keyed_box.py": {
-    "cały plik": "593f07b992323517"
+    "cały plik": "7a8583419ab31230"
   },
   "src/rozliczenia/centrum/report_box.py": {
     "cały plik": "4724c02a3c888be2"
@@ -12,7 +12,7 @@
     "cały plik": "a122e1f21af87a88"
   },
   "src/rozliczenia/centrum/app.py": {
-    "create_app.lifespan": "283ef526303aa497"
+    "create_app.lifespan": "38bbdc7aefce4c9c"
   },
   "src/rozliczenia/centrum/launcher.py": {
     "_listen_when_released": "70f8e77fe38bca44"
@@ -23,7 +23,7 @@
   },
   "src/rozliczenia/centrum/server.py": {
     "_GRACEFUL_SHUTDOWN_S": "06931a36054ed6bc",
-    "serve": "166d385bd885dbde",
-    "_Server": "824c1ae115236182"
+    "serve": "270772876700de0c",
+    "_Server": "8ceb23258608b3c4"
   }
 }
