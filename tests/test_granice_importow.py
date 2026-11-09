@@ -169,6 +169,7 @@ STDLIB_ONLY = {
     "rozliczenia/efenix_window.py": "seam okna efenix: okno w procesie bierze z niego typy bez kodu Wyceny, a okna i Wycena nie tworzą cyklu",
     "rozliczenia/text.py": "reguła danych i warstwa skoroszytu normalizują tekst bez zależności od Konfiguracji wykonawców",
     "rozliczenia/register_columns.py": "Przebieg, Wycena i reguła danych biorą kolumny Rejestru bez czytnika Przygotowania",
+    "rozliczenia/row_positions.py": "uchwyt plików taty i Kopia wejścia biorą położenie wiersza bez reguł Surowych zleceń INTERMAX",
 }
 WITHOUT_WORKBOOK = {
     "rozliczenia/domain.py": "protokół postępu, który zna każdy proces, Centrum i Skrypt dla maszyn",

@@ -26,7 +26,7 @@ Kopia wejścia Uruchomienia z Centrum (#841, #842) dostaje bajty Rejestru z chwi
 odczycie, a z każdego obszaru wklejania nagłówki i wklejenie (``raw_orders.pasted_rows``): te same fakty wierszy, które
 rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które Uporządkowanie przenosi
 do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz, bez zakazanych kolumn
-(``input_copy.SheetCopy.row``). Wiersz z siatki (``raw_orders.RowPositions.uncertain``) ma w Kopii tylko komórki
+(``input_copy.SheetCopy.row``). Wiersz z siatki (``row_positions.RowPositions.uncertain``) ma w Kopii tylko komórki
 dozwolone w obu położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wiersz ze śladem przesunięcia arkusz ma w
 faktach wklejenia (``input_copy.PasteFacts.traced_rows``). Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie
 ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty niesie części adresu ze słowami sklejonymi ``_``, których
@@ -62,9 +62,10 @@ from . import client_data, raw_orders, workbook_files
 from .dad_files import DadFiles, ReadFile, SheetMemory
 from .highlights import LookReader
 from .hyperlinks import read_sheet_hyperlinks
-from .raw_orders import SHIFT, CellFacts, OrderColumns, RowFacts, RowLook, RowPositions
+from .raw_orders import SHIFT, CellFacts, OrderColumns, RowFacts, RowLook
 from .register_columns import ACTIVITIES, COLUMNS, CONTRACT_NUMBER, DATE, DAY_FILL, DEVICES, TARGET_HEADERS, WORKER, Column
 from .row_look import GENERAL
+from .row_positions import RowPositions
 from .settlement_period import SettlementPeriod
 from .text import normalize_text
 from .workbook_files import DataCell, RegisterRow, header_columns, is_blank
