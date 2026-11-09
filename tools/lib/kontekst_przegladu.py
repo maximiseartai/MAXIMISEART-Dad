@@ -3,8 +3,10 @@ kontekst przeglądu: pełny SHA HEAD PR, bazę i merge-base z nią, ``git diff -
 wynik ``tools/skille_dla_zmiany.py`` z HEAD PR liczony od merge-base (w kopii commitu HEAD, więc ``pilnuje:`` skilli
 jest z PR) i poprzednie werdykty PR w kolejności utworzenia, każdy z datą, autorem, dwiema pierwszymi liniami i tym,
 czy dotyczy HEAD (``PASS`` poza regułami ``--werdykt`` z dopiskiem). Gdy ostatni werdykt jest dla innego commitu,
-linia ``RUNDA`` podaje polecenie diffu od niego do HEAD. Linia ``CI`` podaje stan ``Required CI status`` na HEAD
-z rollupu checków: ``success`` znaczy, że polecenia z linii ``LICZY CI`` przeszły (``tools/plan_ci.py``), więc ich
+linia ``RUNDA`` podaje polecenie diffu od niego do HEAD. Linia ``CI`` podaje stan najnowszego ``Required CI status``
+na HEAD z rollupu checków, tego samego, który liczy ``scal_pr`` (``stan_pr.latest_required``), a zadania jego
+workflow bierze tylko z jego runu, więc padłe zadania starszego runu, na przykład sprzed zamknięcia i otwarcia PR, się
+nie liczą: ``success`` znaczy, że polecenia z linii ``LICZY CI`` przeszły (``tools/plan_ci.py``), więc ich
 logów nie trzeba czytać, a zadania innych workflowów, które jeszcze biegną albo padły, wymienia osobno, bo gotowość
 czeka i na nie; ``pending``, gdy Required jeszcze się nie skończył, a któreś zadanie biegnie, także zanim Required się
 zacznie; ``failure`` z padłymi zadaniami runu Required i poleceniem ``gh run view <run> --log-failed``; ``brak``, gdy
@@ -40,8 +42,15 @@ def _run_id(check: dict[str, str | None]) -> str | None:
 
 def _ci_line(rollup: list[dict[str, str | None]], head: str) -> str:
     where = f"CI | {github.REQUIRED}"
-    required = stan_pr.required(rollup)
-    actions = [check for check in rollup if check.get("workflowName") and check.get("name") != github.REQUIRED]
+    latest = stan_pr.latest_required(rollup)
+    required = [latest] if latest else []
+    actions = [
+        check
+        for check in rollup
+        if check.get("workflowName")
+        and check.get("name") != github.REQUIRED
+        and (latest is None or check.get("workflowName") != latest.get("workflowName") or _run_id(check) == _run_id(latest))
+    ]
     red = [check for check in required if check.get("status") == "COMPLETED" and check.get("conclusion") != "SUCCESS"]
     runs = {run for check in red if (run := _run_id(check))}
     failed = sorted(

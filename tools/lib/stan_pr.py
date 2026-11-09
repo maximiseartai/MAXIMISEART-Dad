@@ -7,6 +7,8 @@ import json
 
 import github
 
+_NOT_STARTED = "0001-01-01"  # ``gh`` zapisuje brak ``startedAt`` jako zerową datę Go
+
 
 @dataclass(frozen=True)
 class Pull:
@@ -54,7 +56,20 @@ def pull(number: int) -> Pull:
     )
 
 
-def required(checks: tuple[dict[str, str | None], ...] | list[dict[str, str | None]]) -> list[dict[str, str | None]]:
-    """Checki ``Required CI status`` z GitHub Actions (CheckRun z workflow), nie status commitu, który ustawi każdy z prawem zapisu."""
+def latest_required(checks: tuple[dict[str, str | None], ...] | list[dict[str, str | None]]) -> dict[str, str | None] | None:
+    """Najnowszy check ``Required CI status`` z GitHub Actions (CheckRun z workflow, nie status commitu, który ustawi
+    każdy z prawem zapisu) albo ``None``, gdy go nie ma.
 
-    return [check for check in checks if check.get("name") == github.REQUIRED and check.get("workflowName")]
+    Rollup ma jeden taki check na każdy przebieg workflow na HEAD (ponowione zadanie zastępuje swój check w przebiegu),
+    więc po zamknięciu i otwarciu PR stoją w nim checki starych przebiegów obok nowego, a liczy się tylko najnowszy.
+    Najnowszy to ten z najpóźniejszym ``startedAt``; check, który jeszcze nie wystartował (``startedAt`` puste albo
+    zerowa data, którą ``gh`` podaje za brak), jest nowszy od każdego, który wystartował.
+    """
+
+    found = [check for check in checks if check.get("name") == github.REQUIRED and check.get("workflowName")]
+    return max(found, key=_start, default=None)
+
+
+def _start(check: dict[str, str | None]) -> tuple[bool, str]:
+    started = check.get("startedAt") or ""
+    return started == "" or started.startswith(_NOT_STARTED), started

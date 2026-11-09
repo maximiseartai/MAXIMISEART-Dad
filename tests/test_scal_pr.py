@@ -117,9 +117,16 @@ URL = "https://github.com/o/r/actions/runs/4077/job/1"
 
 
 def _check_run(
-    status: str, conclusion: str | None, *, workflow: str = "CI", name: str = "Required CI status", url: str = URL
+    status: str,
+    conclusion: str | None,
+    *,
+    workflow: str = "CI",
+    name: str = "Required CI status",
+    url: str = URL,
+    started: str | None = None,
 ) -> dict[str, str | None]:
-    return {"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion, "workflowName": workflow, "detailsUrl": url}
+    check = {"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion, "workflowName": workflow, "detailsUrl": url}
+    return check if started is None else {**check, "startedAt": started}
 
 
 GREEN = [
@@ -311,11 +318,6 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
             [(PASS, "OWNER")],
             "CI: „Required CI status” IN_PROGRESS",
         ),
-        (
-            [_check_run("COMPLETED", "FAILURE"), _check_run("COMPLETED", "SUCCESS")],
-            [(PASS, "OWNER")],
-            "CI: „Required CI status” FAILURE",
-        ),
         (GREEN[:1], [(PASS, "OWNER")], NOT_ACTIONS),
         ([COMMIT_STATUS], [(PASS, "OWNER")], NOT_ACTIONS),
         ([_check_run("COMPLETED", "SUCCESS", workflow="")], [(PASS, "OWNER")], NOT_ACTIONS),
@@ -338,7 +340,6 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     ids=[
         "ci-czerwone",
         "ci-trwa",
-        "ci-czerwone-w-jednym-z-dwoch-przebiegow",
         "ci-bez-wymaganego-checku",
         "ci-tylko-status-commitu",
         "ci-check-spoza-github-actions",
@@ -375,6 +376,55 @@ def test_bez_zielonego_ci_albo_werdyktu_pass_dla_head_pr_nie_jest_scalany(
 
     assert answered.returncode == 1, answered.stdout + answered.stderr
     assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | {reason.format(short=head[:7], head=head)}"
+    assert github.merges() == []
+
+
+OLD = "2026-11-09T21:21:54Z"
+NEW = "2026-11-09T22:01:27Z"
+GH_NOT_STARTED = "0001-01-01T00:00:00Z"
+
+
+@pytest.mark.parametrize(
+    ("required", "outcome"),
+    [
+        ([("COMPLETED", "FAILURE", OLD), ("COMPLETED", "FAILURE", "2026-11-09T21:57:21Z"), ("COMPLETED", "SUCCESS", NEW)], None),
+        ([("COMPLETED", "SUCCESS", NEW), ("COMPLETED", "FAILURE", OLD)], None),
+        ([("COMPLETED", "SUCCESS", OLD), ("COMPLETED", "FAILURE", NEW)], "FAILURE"),
+        ([("COMPLETED", "FAILURE", NEW), ("COMPLETED", "SUCCESS", OLD)], "FAILURE"),
+        ([("COMPLETED", "FAILURE", OLD), ("IN_PROGRESS", None, NEW)], "IN_PROGRESS"),
+        ([("QUEUED", None, GH_NOT_STARTED), ("COMPLETED", "SUCCESS", OLD)], "QUEUED"),
+        ([("COMPLETED", "SUCCESS", OLD), ("QUEUED", None, None)], "QUEUED"),
+    ],
+    ids=[
+        "stare-czerwone-po-zamknieciu-i-otwarciu-nowe-zielone-jak-1238",
+        "nowe-zielone-przed-starym-czerwonym-w-rollupie",
+        "stare-zielone-nowe-czerwone",
+        "nowe-czerwone-przed-starym-zielonym-w-rollupie",
+        "stare-czerwone-nowe-w-toku",
+        "nowe-w-kolejce-z-zerowa-data-startu-od-gh",
+        "nowe-w-kolejce-bez-daty-startu",
+    ],
+)
+def test_gotowosc_ci_liczy_tylko_najnowszy_required_ci_status_na_head(
+    tmp_path: Path, required: list[tuple[str, str | None, str | None]], outcome: str | None
+) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    runs = [f"https://github.com/o/r/actions/runs/{4000 + run}/job/{run}" for run in range(len(required))]
+    github.update(
+        1,
+        statusCheckRollup=[_check_run(status, conclusion, started=started, url=url) for (status, conclusion, started), url in zip(required, runs, strict=True)],
+    )
+    github.comment(1, PASS.format(head=head))
+
+    answered = github.run("1", "--bez-merge")
+
+    if outcome is None:
+        assert answered.returncode == 0, answered.stdout + answered.stderr
+        assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a z main")
+    else:
+        assert answered.returncode == 1, answered.stdout + answered.stderr
+        assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | CI: „Required CI status” {outcome}"
     assert github.merges() == []
 
 
@@ -1142,6 +1192,33 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
             f"failure na HEAD {{head}} | bez padłego zadania, przyczynę podaje log „Required CI status” | {UNPROVEN}",
         ),
         ([COMMIT_STATUS], "brak na HEAD {head} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"),
+        (
+            [
+                _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)", url=OTHER_RUN, started=OLD),
+                _check_run("COMPLETED", "FAILURE", url=OTHER_RUN, started=OLD),
+                _check_run("COMPLETED", "SUCCESS", name="pytest (Python 3.11, 1/2)", started=NEW),
+                _check_run("COMPLETED", "SUCCESS", started=NEW),
+            ],
+            f"success na HEAD {{head}} | {PASSED}",
+        ),
+        (
+            [
+                _check_run("COMPLETED", "SUCCESS", name="Ruff, mypy", url=OTHER_RUN, started=OLD),
+                _check_run("COMPLETED", "SUCCESS", url=OTHER_RUN, started=OLD),
+                _check_run("COMPLETED", "FAILURE", name="Ruff, mypy", started=NEW),
+                _check_run("COMPLETED", "FAILURE", started=NEW),
+            ],
+            f"failure na HEAD {{head}} | padłe zadania: Ruff, mypy | {UNPROVEN}",
+        ),
+        (
+            [
+                _check_run("COMPLETED", "FAILURE", name="Plan CI", url=OTHER_RUN, started=OLD),
+                _check_run("COMPLETED", "FAILURE", url=OTHER_RUN, started=OLD),
+                _check_run("IN_PROGRESS", None, name="Plan CI", started=NEW),
+                _check_run("QUEUED", None, started=GH_NOT_STARTED),
+            ],
+            "pending na HEAD {head} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+        ),
     ],
     ids=[
         "zielony",
@@ -1152,6 +1229,9 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
         "czerwony-z-padlymi-zadaniami-jego-runu",
         "czerwony-bez-padlego-zadania",
         "tylko-status-commitu",
+        "stary-run-czerwony-nowy-zielony",
+        "stary-run-zielony-nowy-czerwony",
+        "stary-run-czerwony-nowy-w-toku",
     ],
 )
 def test_przeglad_podaje_stan_required_ci_status_na_head_i_padle_zadania_jego_runu(

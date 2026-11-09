@@ -48,7 +48,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 
 - Dziecko `delegate_task` kończy zadanie na pushu i utworzeniu PR, a zwraca URL PR i pełny SHA HEAD. Rodzic wywołuje `watch_pull_request` i kończy turę, a T3 budzi go po końcu CI.
 - Przegląd PR zlecaj zaraz po pushu, równolegle z CI.
-- PR jest gotowy do merge'a, gdy na HEAD PR zielony jest `Required CI status` (i każdy inny workflow niż `CI`, który biegnie na PR), przeszły skille `verify-*` z linii `SKILLE VERIFY` narzędzia `tools/skille_dla_zmiany.py` i jest `PASS` niezależnego recenzenta.
+- PR jest gotowy do merge'a, gdy na HEAD PR zielony jest najnowszy `Required CI status` (i każdy inny workflow niż `CI`, który biegnie na PR), przeszły skille `verify-*` z linii `SKILLE VERIFY` narzędzia `tools/skille_dla_zmiany.py` i jest `PASS` niezależnego recenzenta.
   Skille `verify-*` przeszły, gdy ich polecenia z linii `LICZY CI` przechodzą w zielonym CI, a resztę ich workflow agent wykonał i skończył bez FAIL.
   Skryptów z linii `LICZY NOC` agent nie uruchamia: liczy je noc na `main` po merge'u, a ich porażka trafia do issue PR-u (ADR 0021).
   `SZYBKO OK` i `CI LOKALNIE OK` gotowości nie dają.

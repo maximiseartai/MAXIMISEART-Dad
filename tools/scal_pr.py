@@ -5,8 +5,10 @@ Jedyna droga merge'a PR przez agenta: ``gh pr merge`` tylko po sprawdzeniu gotow
 Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 
 1. PR jest otwarty, nie jest szkicem i nie pochodzi z forka (z forka ruff i mypy biegłyby na obcym kodzie);
-2. check ``Required CI status`` z GitHub Actions na HEAD PR skończył się sukcesem (jak w rulesecie ``main``:
-   CheckRun z workflow, nie status commitu, który może ustawić każdy z prawem zapisu);
+2. najnowszy check ``Required CI status`` z GitHub Actions na HEAD PR skończył się sukcesem (jak w rulesecie ``main``:
+   CheckRun z workflow, nie status commitu, który może ustawić każdy z prawem zapisu); checki starszych przebiegów CI
+   na tym HEAD, na przykład sprzed zamknięcia i otwarcia PR, się nie liczą, a najnowszy w toku to brak gotowości
+   (``stan_pr.latest_required``);
 3. najnowszy werdykt dla HEAD PR to ``PASS`` w postaci, którą publikuje ``--werdykt`` (niżej);
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje;
@@ -71,11 +73,11 @@ class _Refused(Exception):
 
 
 def _ci_problem(rollup: tuple[dict[str, str | None], ...]) -> str | None:
-    results = [(check.get("conclusion") if check.get("status") == "COMPLETED" else check.get("status")) or "?" for check in stan_pr.required(rollup)]
-    if not results:
+    check = stan_pr.latest_required(rollup)
+    if check is None:
         return f"CI: brak „{github.REQUIRED}” z GitHub Actions na HEAD"
-    failed = [result for result in results if result != "SUCCESS"]
-    return f"CI: „{github.REQUIRED}” {', '.join(failed)}" if failed else None
+    result = (check.get("conclusion") if check.get("status") == "COMPLETED" else check.get("status")) or "?"
+    return None if result == "SUCCESS" else f"CI: „{github.REQUIRED}” {result}"
 
 
 def _body_problem(body: str) -> str | None:
