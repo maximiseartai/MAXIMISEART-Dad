@@ -1,4 +1,4 @@
-"""Maszyna pomiarów w testach: ``tools/quiet_machine.py`` na zegarze testu.
+"""Zegar testu dla maszyny pomiarów ``tools/quiet_machine.py``.
 
 Zegar testu przesuwa się tylko wtedy, gdy maszyna śpi między sprawdzeniami, więc minuty
 czekania mijają od razu, a o zadanej minucie dzieje się to, co test zaplanował.
@@ -6,17 +6,9 @@ czekania mijają od razu, a o zadanej minucie dzieje się to, co test zaplanowa�
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
-
-import quiet_machine  # noqa: E402
-from quiet_machine import MachineBusy, QuietMachine  # noqa: E402
-
-__all__ = ["MachineBusy", "QuietMachine", "ZegarTestu", "quiet_machine"]
+__all__ = ["ZegarTestu"]
 
 
 class ZegarTestu:

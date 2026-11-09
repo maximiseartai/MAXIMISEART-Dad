@@ -19,13 +19,14 @@ import sys
 
 import pytest
 
-from tests.fixtures.model_tlc import model_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
+from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
+import model_tlc
+import rozjazd_modelu
+
+from jednostka import ZMIENNA_CZESCI
+import kroki_skilli
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-
-from jednostka import ZMIENNA_CZESCI  # noqa: E402
-import kroki_skilli  # noqa: E402
 
 SCRIPT = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_model_kolejki.py"
 BASELINE = ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_kolejke.py"

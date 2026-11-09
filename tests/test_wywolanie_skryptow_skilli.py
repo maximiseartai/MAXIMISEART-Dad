@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from tests.fixtures.skrypty_skilli import skrypt_skilla
+import skrypt_skilla
 
 REPO = Path(__file__).resolve().parents[1]
 SKILLS = REPO / ".agents" / "skills"

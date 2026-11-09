@@ -10,21 +10,18 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 import re
-import sys
 
 import pytest
 import yaml
 
 from tests.fixtures.git_repo import repository
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
+from jednostka import Klucz
+import kroki_skilli
+from wplyw_zmiany import STRUCTURE, Repository
+from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres
 
-from jednostka import Klucz  # noqa: E402
-import kroki_skilli  # noqa: E402
-from wplyw_zmiany import STRUCTURE, Repository  # noqa: E402
-from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
 CHECKED = "src/pakiet/sprawdzany.py"

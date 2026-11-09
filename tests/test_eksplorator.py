@@ -12,14 +12,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
-import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
+from eksplorator import Choices, Excuse, Interleaving, Thread, excuse_line, excused, gone_lines, schedules, verdict
 
-from eksplorator import Choices, Excuse, Interleaving, Thread, excuse_line, excused, gone_lines, schedules, verdict  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _leaves(execute: Callable[[Choices], tuple[int, ...]], budget: dict[str, int] | None = None) -> list[tuple[int, ...]]:

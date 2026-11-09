@@ -19,12 +19,11 @@ import pytest
 from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_tools
 from tests.fixtures.git_repo import commit, copy_files, git, repository
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
+from jednostka import Czesc
+from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected
+import pokrycie_procesu
 
-from jednostka import Czesc  # noqa: E402
-from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected  # noqa: E402
-import pokrycie_procesu  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 MODULE = "src/rozliczenia/warunek.py"
 BASE = 'def oba(a: bool, b: bool) -> bool:\n    return a\n'

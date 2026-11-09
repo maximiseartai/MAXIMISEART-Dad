@@ -15,14 +15,12 @@ import pytest
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git, repository
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
+import czasy_ci
+import rozjazd_modelu
+import szybko
+from wplyw_zmiany import STRUCTURE
 
-import czasy_ci  # noqa: E402
-import rozjazd_modelu  # noqa: E402
-import szybko  # noqa: E402
-from wplyw_zmiany import STRUCTURE  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 BY_CHANGE_ONLY = {
     "tests/test_brama_pre_push.py": "sprawdza zachowanie bramy pushem w repozytorium testu, a nie całe repozytorium",

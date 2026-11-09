@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 from tests.fixtures.expect import assert_expected
-from tests.fixtures.rownowaznosc import rownowaznosc
+import rownowaznosc
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "uruchom_proces.py"

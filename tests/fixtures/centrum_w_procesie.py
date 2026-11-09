@@ -25,7 +25,8 @@ import urllib.request
 import uvicorn
 
 from tests.fixtures.centrum_processes import Surroundings, settling_app
-from tests.fixtures.potomne import potomne, wait_for
+from tests.fixtures.potomne import wait_for
+import potomne
 from tests.fixtures.tool_clone import free_port
 
 ROOT = Path(__file__).resolve().parents[2]

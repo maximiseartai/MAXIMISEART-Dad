@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.fixtures.model_tlc import model_tlc, skrypt_modelu, wyjscie_tlc
+from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
+import model_tlc
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py"

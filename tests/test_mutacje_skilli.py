@@ -27,12 +27,11 @@ from tests.fixtures.git_repo import copy_files, git
 from tests.fixtures.granice_ksztaltow import GAPS
 from tests.fixtures.potomne import beating, wait_for
 
+from jednostka import Klucz
+import rozjazd_modelu
+
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
-sys.path.insert(0, str(TOOLS / "lib"))
-
-from jednostka import Klucz  # noqa: E402
-import rozjazd_modelu  # noqa: E402
 
 STEPS = TOOLS / "lib" / "kroki_skilli.py"
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'

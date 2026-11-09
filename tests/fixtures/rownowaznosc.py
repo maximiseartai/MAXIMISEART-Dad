@@ -1,4 +1,4 @@
-"""Weryfikacja różnicowa w testach: moduł ``tools/rownowaznosc.py`` i drzewa ze skryptem dla maszyn na niby.
+"""Drzewa ze skryptem dla maszyn na niby do testów weryfikacji różnicowej ``tools/rownowaznosc.py``.
 
 Drzewo na niby ma tylko ``tools/uruchom_proces.py``, który drukuje podany JSON, zapisuje podane pliki w folderze
 scenariusza i kończy się podanym kodem, więc test porównania nie zależy od procesów. ``METRICS`` w JSON staje się
@@ -10,18 +10,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import sys
 
 from openpyxl import Workbook
 
 from atrapy.workbooks import active_worksheet
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
-
-import rownowaznosc  # noqa: E402
-
-__all__ = ["METRICS", "rownowaznosc", "stub_tree", "write_workbook"]
+__all__ = ["METRICS", "stub_tree", "write_workbook"]
 
 METRICS = "<METRYKI>"
 

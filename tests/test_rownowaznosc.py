@@ -19,8 +19,9 @@ from rozliczenia.settlement_period import parse_period_token
 from tests.fixtures.git_repo import commit, git
 from atrapy.intermax import ORDER_SHEET, YELLOW
 from atrapy.pliki_taty import REGISTER_NAME as REGISTER
-from tests.fixtures.potomne import potomne
-from tests.fixtures.rownowaznosc import METRICS, rownowaznosc, stub_tree, write_workbook
+import potomne
+from tests.fixtures.rownowaznosc import METRICS, stub_tree, write_workbook
+import rownowaznosc
 from atrapy.workbooks import rewrite_parts
 
 ROOT = Path(__file__).resolve().parents[1]

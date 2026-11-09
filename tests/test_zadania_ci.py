@@ -22,12 +22,11 @@ import yaml
 
 from tests.fixtures.ci_workflow import CHROMIUM, WORKFLOW, action, chromium, combinations, jobs
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
+import plan_ci
+import plan_runu
+from zakres_runu import Zdarzenie
 
-import plan_ci  # noqa: E402
-import plan_runu  # noqa: E402
-from zakres_runu import Zdarzenie  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED = "required"
 # Zadanie, którego macierz albo start ustala plan, i wyrażenie ci.yml, które czyta wyjście planu.

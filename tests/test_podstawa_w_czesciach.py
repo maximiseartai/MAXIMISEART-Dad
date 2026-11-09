@@ -18,14 +18,11 @@ from typing import Any
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
+from jednostka import ZMIENNA_CZESCI
+import kroki_skilli
+import skrypt_skilla
 
-from jednostka import ZMIENNA_CZESCI  # noqa: E402
-import kroki_skilli  # noqa: E402
-import skrypt_skilla  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 CENTRUM = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen"
 

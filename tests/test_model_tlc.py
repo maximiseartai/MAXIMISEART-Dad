@@ -27,8 +27,11 @@ import pytest
 import yaml
 
 from tests.fixtures.ci_workflow import action
-from tests.fixtures.model_tlc import model_tlc, narzedzia_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
-from tests.fixtures.potomne import potomne
+from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
+import model_tlc
+import narzedzia_tlc
+import rozjazd_modelu
+import potomne
 
 ROOT = Path(__file__).resolve().parents[1]
 ZAPIS = ROOT / "tools" / "ci" / "zapis_narzedzi_tlc.py"

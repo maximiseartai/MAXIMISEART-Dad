@@ -13,30 +13,26 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 import tomllib
 
 import pytest
 
 from tests.fixtures.git_repo import commit, git, repository
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
+import czasy_ci
+import kroki_skilli
+from jednostka import Czesc
+from mutacje import NearLimit
+from ostatnie_linie import MUTACJE_OK
+import niestabilne_testy
+import plan_ci
+import plan_runu
+import werdykt_required
+import wykonaj_zadanie
+import zapis_czasow
+from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, pliki_testow, zakres
 
-import czasy_ci  # noqa: E402
-import kroki_skilli  # noqa: E402
-from jednostka import Czesc  # noqa: E402
-from mutacje import NearLimit  # noqa: E402
-from ostatnie_linie import MUTACJE_OK  # noqa: E402
-import niestabilne_testy  # noqa: E402
-import plan_ci  # noqa: E402
-import plan_runu  # noqa: E402
-import werdykt_required  # noqa: E402
-import wykonaj_zadanie  # noqa: E402
-import zapis_czasow  # noqa: E402
-from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, pliki_testow, zakres  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 FILES = [f"tests/test_{index:02}.py" for index in range(40)]
 # Plik dłuższy niż zadanie, jak test_uszkodzone_wejscia: 1100 s testów na Windows.
