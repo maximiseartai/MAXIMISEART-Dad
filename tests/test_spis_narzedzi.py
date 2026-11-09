@@ -14,6 +14,8 @@ Blok między ``START`` i ``END`` zapisuje ten test z ``ZAPISZ_EXPECT=1``, jak pl
 
 Zależności idą w jedną stronę: narzędzia z ``tools/``, biblioteki z ``tools/lib/`` i hooki nie importują skryptów
 z ``tools/ci/`` ani nie dodają tego katalogu do ``sys.path``, bo zmiana skryptu workflow nie może łamać narzędzi agenta.
+Biblioteka z ``tools/lib/`` nie importuje też narzędzia z ``tools/``, bo narzędzie zmienia się razem ze swoim wywołaniem,
+a z biblioteki biorą narzędzia, skille i testy (``_library_reaches_tools`` wylicza, co strażnik widzi).
 Skrypt, który workflow uruchamia systemowym ``python3`` runnera (bez zależności projektu), razem ze wszystkim, co
 importuje z ``tools/``, używa tylko biblioteki standardowej.
 
@@ -356,6 +358,56 @@ def test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci() -> None:
     assert found == [], "\n".join(
         [*found, f"{CI_TOOLS} to skrypty workflow (ADR 0022): wspólny kod przenieś do tools/lib/, a narzędzie importuje go stamtąd."]
     )
+
+
+def _library_reaches_tools(root: Path = ROOT) -> list[str]:
+    """``plik: …`` dla każdego modułu ``tools/lib/**/*.py`` w ``root``, który sięga do narzędzia z ``tools/*.py``.
+
+    Łapie dokładnie te postacie: ``import X``, ``import X.y`` i ``from X import …`` (także w funkcji i pod ``if``), gdzie
+    ``X`` to nazwa pliku ``tools/*.py`` bez ``.py``, oraz ``sys.path.insert`` i ``sys.path.append`` (pełną nazwą) ze
+    stałym napisem w argumencie, który kończy się na ``tools``. Import względny (``from . import x``) zostaje w
+    ``tools/lib``, więc go nie liczy. Nie widzi importu przez ``importlib``, ``__import__``, ``runpy`` i
+    ``spec_from_file_location``, ścieżki składanej w czasie biegu bez takiego napisu ani ``sys.path`` pod inną nazwą;
+    uruchomienie narzędzia jako procesu (``SCRIPT`` w ``tools/lib/benchmark``) nie jest importem i przechodzi."""
+
+    tools = {path.stem for path in (root / "tools").glob("*.py")}
+    found = []
+    for path in sorted((root / "tools" / "lib").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        name = path.relative_to(root).as_posix()
+        found += [f"{name}: sys.path z {text!r}" for text in _adds_to_sys_path(tree) if text.rstrip("/").endswith("tools")]
+        found += [f"{name}: import {module}" for module in _imports(tree) if module in tools]
+    return found
+
+
+def test_biblioteka_narzedzi_nie_importuje_narzedzia_z_tools() -> None:
+    found = _library_reaches_tools()
+
+    assert found == [], "\n".join(
+        [*found, "tools/lib/ to biblioteki narzędzi (ADR 0022): kod, którego potrzebuje biblioteka, przenieś z narzędzia do tools/lib/, a narzędzie zostaw cienkie."]
+    )
+
+
+def test_straznik_biblioteki_widzi_kazda_postac_importu_narzedzia_z_docstringu(tmp_path: Path) -> None:
+    (tmp_path / "tools" / "lib" / "pakiet").mkdir(parents=True)
+    (tmp_path / "tools" / "narzedzie.py").write_text("", encoding="utf-8")
+    (tmp_path / "tools" / "lib" / "obok.py").write_text("", encoding="utf-8")
+    sasiedzi = "from . import obok\nimport obok\nimport json\n"
+    siegniecia = (
+        "import narzedzie\n"
+        "import narzedzie.czesc\n"
+        "def f() -> None:\n    from narzedzie import x\n"
+        "import sys\nsys.path.insert(0, 'repo/tools')\nsys.path.append('repo/tools/')\nsys.path.insert(0, 'repo/tools/lib')\n"
+    )
+    (tmp_path / "tools" / "lib" / "pakiet" / "modul.py").write_text(sasiedzi + siegniecia, encoding="utf-8")
+
+    assert _library_reaches_tools(tmp_path) == [
+        "tools/lib/pakiet/modul.py: sys.path z 'repo/tools'",
+        "tools/lib/pakiet/modul.py: sys.path z 'repo/tools/'",
+        "tools/lib/pakiet/modul.py: import narzedzie",
+        "tools/lib/pakiet/modul.py: import narzedzie",
+        "tools/lib/pakiet/modul.py: import narzedzie",
+    ]
 
 
 def _system_python_scripts() -> set[Path]:

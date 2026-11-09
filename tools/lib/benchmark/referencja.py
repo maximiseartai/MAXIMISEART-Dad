@@ -18,7 +18,7 @@ from benchmark.lustro import worker_settlements_folder
 from benchmark.uruchomienie import Przebieg, remove_worker_settlements, run_przebieg
 from repo import ROOT
 import repo
-from porownanie_rozliczen import CATEGORIES, compare_worker_settlements
+from porownanie_znaczeniowe import CATEGORIES, compare_worker_settlements
 from potomne import commit_copy
 
 

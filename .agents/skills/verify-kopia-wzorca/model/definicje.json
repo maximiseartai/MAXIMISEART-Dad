@@ -68,8 +68,8 @@
     "template_content": "f58a16c2f50d0702",
     "open_workbook": "f7fcbcdad1b51acf"
   },
-  "tools/porownanie_rozliczen.py": {
-    "cały plik": "663fbd5d8e4fb4f9"
+  "tools/lib/porownanie_znaczeniowe.py": {
+    "cały plik": "ae1d58e00e00de4f"
   },
   "tools/lib/atrapy/wzorce.py": {
     "cały plik": "ff4b0119c7eef7d7"

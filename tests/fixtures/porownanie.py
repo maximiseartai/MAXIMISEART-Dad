@@ -1,6 +1,6 @@
-"""Pary syntetycznych Folderów rozliczeń pracowników do testów porównania ``tools/porownanie_rozliczen.py``.
+"""Pary syntetycznych Folderów rozliczeń pracowników do testów porównania ``tools/lib/porownanie_znaczeniowe.py``.
 
-Moduł porównania służy tylko benchmarkowi, więc leży w ``tools/``, poza pakietem ``rozliczenia``.
+Moduł porównania służy tylko benchmarkowi i wyroczniom, więc leży w ``tools/lib/``, poza pakietem ``rozliczenia``.
 """
 
 from __future__ import annotations

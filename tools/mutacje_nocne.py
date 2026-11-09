@@ -98,6 +98,7 @@ NA_CZESC = 6 * mutacje_zmiany.WORKERS
 # Zadania części biegną najwyżej po 20 naraz (max-parallel w mutacje-nocne.yml), bo 60 zadań organizacji dzielą też
 # runy CI PR-ów, więc noc to najwyżej dwie fale części.
 CZESCI_NA_NOC = 40
+GITHUB = GhApi()
 OKNO = timedelta(hours=24)
 ETYKIETY = ("ready-for-agent", "przezyte-mutacje")
 # Artefakt części k w mutacje-nocne.yml: ``mutacje-nocne-<k>`` z plikiem ``--zapis`` narzędzia mutacji.
@@ -163,16 +164,19 @@ def macierz(noc: mutacje_zmiany.ZakresMutacji, n: int, repository: Repository) -
     return wpisy
 
 
-def zaplanuj(github: GitHub, od: str, zakres: Path | None) -> int:
-    """Plan nocy: baza, koniec jej zakresu i macierz części w ``GITHUB_OUTPUT``, a z ``zakres`` plik artefaktu ``zakres-nocy``."""
+def zaplanuj(
+    github: GitHub, root: Path, od: str, zakres: Path | None, *, na_czesc: int = NA_CZESC, czesci_na_noc: int = CZESCI_NA_NOC
+) -> int:
+    """Plan nocy w ``root``: baza, koniec jej zakresu i macierz części po najwyżej ``na_czesc`` mutacji, najwyżej
+    ``czesci_na_noc`` części, w ``GITHUB_OUTPUT``, a z ``zakres`` plik artefaktu ``zakres-nocy``."""
 
-    od_sha, skad = baza(github, ROOT, od, datetime.now(UTC))
-    caly = mutacje_zmiany.ZakresMutacji.od(od_sha, ROOT)
+    od_sha, skad = baza(github, root, od, datetime.now(UTC))
+    caly = mutacje_zmiany.ZakresMutacji.od(od_sha, root)
     if caly.zly_wyjatek is not None:
         print(f"MUTACJE NOCNE | {caly.zly_wyjatek}; część mutacji to zgłosi")
-    do_sha = caly.najdalszy_koniec(NA_CZESC * CZESCI_NA_NOC)
+    do_sha = caly.najdalszy_koniec(na_czesc * czesci_na_noc)
     noc = caly.do(do_sha)
-    wpisy = macierz(noc, noc.liczba_czesci(NA_CZESC), Repository.scan(ROOT))
+    wpisy = macierz(noc, noc.liczba_czesci(na_czesc), Repository.scan(root))
     z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
     if zalegle := len(caly.mutanty) - len(noc.mutanty):
         print(f"MUTACJE NOCNE | zaległość: {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
@@ -536,7 +540,9 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = GITHUB) -> int:
+    """``root`` to checkout ``main``, którego zmiany noc mutuje, a ``github`` daje runy nocy i issue przeżytych mutacji."""
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     plan = polecenia.add_parser("plan", help="Baza i koniec zakresu nocy, liczba mutacji i części (GITHUB_OUTPUT).")
@@ -554,9 +560,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.polecenie == "plan":
             if args.od and args.baza and args.od != args.baza:
                 plan.error(f"dwie różne bazy: --od {args.od} i --baza {args.baza}")
-            return zaplanuj(GhApi(), args.od or args.baza or "", args.zakres)
+            return zaplanuj(github, root, args.od or args.baza or "", args.zakres)
         plan_skilli = None if args.plan_skilli is None else plan_runu.Plan.z_json(args.plan_skilli.read_text(encoding="utf-8"))
-        return zglos(GhApi(), ROOT, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
+        return zglos(github, root, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
     except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile) as blad:
         szczegol = blad.stderr.strip() if isinstance(blad, subprocess.CalledProcessError) else blad
         print(f"MUTACJE NOCNE FAIL | {szczegol}")

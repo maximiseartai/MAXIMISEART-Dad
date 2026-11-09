@@ -40,7 +40,7 @@ from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import read_data_rows
 from rozliczenia.run_context import RunContext
 from tests.fixtures.benchmark import WORKER_TEMPLATE, write_synthetic_templates
-from porownanie_rozliczen import compare_worker_settlements
+from porownanie_znaczeniowe import compare_worker_settlements
 from atrapy.workbooks import (
     TEMPLATE_VIEW,
     View,

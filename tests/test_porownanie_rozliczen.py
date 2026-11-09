@@ -24,7 +24,7 @@ from tests.fixtures.porownanie import (
     share_formulas_in_row_13,
     write_settlement,
 )
-from porownanie_rozliczen import CATEGORIES, compare_worker_settlements
+from porownanie_znaczeniowe import CATEGORIES, compare_worker_settlements
 from atrapy.workbooks import rewrite_parts
 
 NO_DIFFERENCES = dict.fromkeys(CATEGORIES, 0)

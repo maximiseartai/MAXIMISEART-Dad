@@ -1,6 +1,6 @@
 ---
 name: verify-kopia-wzorca
-description: Check with generated Wiersze danych that every Rozliczenie pracownika written by the template copy (ADR 0008, `template_copy.py`) is the file the old openpyxl path would write, keeps the rest of the Wzorzec byte for byte, and has the shape Excel needs. Use when a change touches `src/rozliczenia/template_copy.py`, `src/rozliczenia/workbook_parts.py`, `src/rozliczenia/highlights.py`, `src/rozliczenia/row_look.py`, `src/rozliczenia/hyperlinks.py`, `src/rozliczenia/template_file.py`, `src/rozliczenia/write_routes.py`, `src/rozliczenia/workbook_save.py`, `src/rozliczenia/workbook_files.py`, `src/rozliczenia/collective_layout.py`, `tools/porownanie_rozliczen.py`, the synthetic Wzorce in `tools/lib/atrapy/` (`wzorce.py`, `settlement.py`, `workbooks.py`, `pliki_taty.py`), or when `tests/test_kopia_wzorca.py` fails.
+description: Check with generated Wiersze danych that every Rozliczenie pracownika written by the template copy (ADR 0008, `template_copy.py`) is the file the old openpyxl path would write, keeps the rest of the Wzorzec byte for byte, and has the shape Excel needs. Use when a change touches `src/rozliczenia/template_copy.py`, `src/rozliczenia/workbook_parts.py`, `src/rozliczenia/highlights.py`, `src/rozliczenia/row_look.py`, `src/rozliczenia/hyperlinks.py`, `src/rozliczenia/template_file.py`, `src/rozliczenia/write_routes.py`, `src/rozliczenia/workbook_save.py`, `src/rozliczenia/workbook_files.py`, `src/rozliczenia/collective_layout.py`, `tools/lib/porownanie_znaczeniowe.py`, the synthetic Wzorce in `tools/lib/atrapy/` (`wzorce.py`, `settlement.py`, `workbooks.py`, `pliki_taty.py`), or when `tests/test_kopia_wzorca.py` fails.
 pilnuje:
   - src/rozliczenia/template_copy.py
   - src/rozliczenia/workbook_parts.py
@@ -12,7 +12,7 @@ pilnuje:
   - src/rozliczenia/template_file.py
   - src/rozliczenia/write_routes.py
   - src/rozliczenia/workbook_save.py
-  - tools/porownanie_rozliczen.py
+  - tools/lib/porownanie_znaczeniowe.py
   - tools/lib/atrapy/wzorce.py
   - tools/lib/atrapy/settlement.py
   - tools/lib/atrapy/workbooks.py
@@ -41,7 +41,7 @@ The check holds that copy to five rules, for any Wiersze danych:
 
 - **WIERNA_KOPIA**: the Rozliczenie pracownika from the copy matches the file the old openpyxl path
   writes (`TemplateFile.create` on a twin of the Wzorzec the copy refuses) in everything Dad sees in Excel, as judged by
-  the benchmark's correctness gate `tools/porownanie_rozliczen.py`: values, formulas, resolved
+  the benchmark's correctness gate `tools/lib/porownanie_znaczeniowe.py`: values, formulas, resolved
   styles (with the Wyróżnienia: fill, font color, bold, italic), Hiperłącza (address and location of every cell's
   hyperlink, not its relationship id), merges, row and column dimensions, defined names, external links,
   recalculation flags.
@@ -91,7 +91,7 @@ The check covers this code. Its definitions have digests in `model/definicje.jso
 | `src/rozliczenia/hyperlinks.py` (`Hyperlink`) | the Hiperłącze both paths write; its reader `read_sheet_hyperlinks` is covered by pytest (`tests/test_hiperlacza_pliku_zbiorczego.py`), not here |
 | `src/rozliczenia/template_file.py`: `TemplateFile` (`worker_settlement`, `check`, `create`, `_read`, `_template_copy`), `_in_columns` (a `DataRow` cell in its own column), `_package_writer`; `src/rozliczenia/write_routes.py`: `Route`; `src/rozliczenia/workbook_files.py`: `DataCell`, `DataRow`, `check_worker_header`, `template_content`; `src/rozliczenia/workbook_save.py`: `write_atomically` | the real entry point; which path it takes (`create` returns it) |
 | `src/rozliczenia/template_file.py`: `TemplateFile._create_with_openpyxl`, `_write_rows`, `_ensure_unmerged`, `_request_recalculation`; `src/rozliczenia/workbook_save.py`: `save_from_template`, `_restore_external_link_parts` | the reference (old openpyxl path) |
-| `tools/porownanie_rozliczen.py` (`compare_worker_settlements` and its per-cell helpers, `_hyperlink` among them) | the judge for WIERNA_KOPIA |
+| `tools/lib/porownanie_znaczeniowe.py` (`compare_worker_settlements` and its per-cell helpers, `_hyperlink` among them) | the judge for WIERNA_KOPIA |
 | `tools/lib/atrapy/wzorce.py` (`write_settlement_template`), `tools/lib/atrapy/settlement.py` (`write_template`), `tools/lib/atrapy/workbooks.py` (`add_external_link_fixture`, `refused_by_copy`) | the Wzorce under test and the twin the copy refuses |
 
 The checker and the synthetic Wzorce take Dad's layout (header row 17, first Wiersz danych 18, A:L, A:AT, F) from
