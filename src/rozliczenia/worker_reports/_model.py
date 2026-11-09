@@ -11,7 +11,6 @@ from datetime import date, datetime
 from email.utils import parseaddr
 from enum import Enum, auto
 import hashlib
-from itertools import pairwise
 from typing import ClassVar, Final, NewType, assert_never
 
 from ..report_cells import CellChange, OrderRow, ReportColumn
@@ -49,7 +48,8 @@ class SenderAddress:
 
     Nie jest ``str``, więc pole tekstowe Logów go nie przyjmie: ``str()`` i f-string zgłaszają ``TypeError``, a ``repr``
     nie pokazuje adresu. Adres daje tylko ``shown()``, które woła jedynie zapis wyniku dla widoku Raporty (ADR 0028).
-    Równość i skrót idą po adresie, bo adres jest kluczem ``WorkerAddresses``.
+    Równość i skrót idą po adresie, bo adres jest kluczem ``WorkerAddresses``, a kolejność po adresie odróżnia w
+    ``problem_order`` dwa problemy ``UnknownSender`` z jednym Message-ID.
     """
 
     __slots__ = ("_address",)
@@ -74,6 +74,9 @@ class SenderAddress:
 
     def __hash__(self) -> int:
         return hash(self._address)
+
+    def __lt__(self, other: SenderAddress) -> bool:
+        return self._address < other._address
 
     def __repr__(self) -> str:
         return "SenderAddress(…)"
@@ -409,32 +412,29 @@ class ReportsOutcome:
     mails: tuple[MailRead, ...]
     memory: OwnEntries
 
-    def __post_init__(self) -> None:
-        places = [problem_order(problem) for problem in self.problems]
-        if any(later <= earlier for earlier, later in pairwise(places)):
-            raise ValueError("Problemy wyniku rdzenia raportów nie są w kolejności problem_order albo się powtarzają.")
 
-
-def problem_order(problem: ReportProblem) -> tuple[date, str, str, str, str]:
-    """Miejsce problemu w widoku Raporty: dzień, Wykonawca, numer, rodzaj i pole, które odróżnia dwa problemy jednego
-    zlecenia albo maila. Dwa różne problemy, które mogą wyjść z jednych wejść, nigdy nie mają równego miejsca, więc
-    kolejność nie zależy od kolejności maili ani od ``PYTHONHASHSEED``."""
+def problem_order(
+    problem: ReportProblem,
+) -> tuple[date, str, str, str, tuple[str | SenderAddress | datetime, ...]]:
+    """Miejsce problemu w widoku Raporty: dzień, Wykonawca, numer, rodzaj i pozostałe pola problemu. Klucz bierze
+    każde pole problemu, więc dwa różne problemy nigdy nie mają równego miejsca, a kolejność nie zależy od kolejności
+    maili ani od ``PYTHONHASHSEED``."""
 
     kind = type(problem).__name__
     match problem:
         case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault):
-            return arrived.date(), worker, "", kind, f"{mail.digest} {fault.name}"
-        case UnknownSender(mail=mail, day=day):
-            return day, "", "", kind, mail.digest
+            return arrived.date(), worker, "", kind, (mail.digest, fault.name, arrived)
+        case UnknownSender(mail=mail, sender=sender, day=day):
+            return day, "", "", kind, (mail.digest, sender)
         case MissingVerdict(fault=fault):
-            return problem.day, problem.worker, problem.number, kind, fault.name
+            return problem.day, problem.worker, problem.number, kind, (fault.name,)
         case ForeignOrder(owner=owner):
-            return problem.day, problem.worker, problem.number, kind, owner
+            return problem.day, problem.worker, problem.number, kind, (owner,)
         case OtherDay(order_days=order_days):
-            return problem.day, problem.worker, problem.number, kind, " ".join(map(date.isoformat, order_days))
+            return problem.day, problem.worker, problem.number, kind, tuple(map(date.isoformat, order_days))
         case UnknownNumber() | RepeatedOrder():
-            return problem.day, problem.worker, problem.number, kind, ""
-        case ManualDifference(key=key, column=column):
-            return key.day, key.worker, key.number, kind, column.value
+            return problem.day, problem.worker, problem.number, kind, ()
+        case ManualDifference(key=key, column=column, manual=manual, reported=reported):
+            return key.day, key.worker, key.number, kind, (column.value, manual, reported)
         case _:
             assert_never(problem)

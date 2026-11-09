@@ -65,10 +65,13 @@ SUBJECT = "Raport 08.11.2026"
 TEXT = "40000001 tak wymiana routera"
 
 
-def _mail(sender: str, subject: str, text: str, arrived: datetime = EVENING) -> ReportMail:
+def _mail(
+    sender: str, subject: str, text: str, arrived: datetime = EVENING, message_id: str | None = None
+) -> ReportMail:
     address = SenderAddress.of(sender)
     assert address is not None
-    return ReportMail(MailId.of(f"<{subject}|{text}|{arrived.isoformat()}@{sender}>"), address, subject, text, arrived)
+    mail = MailId.of(message_id or f"<{subject}|{text}|{arrived.isoformat()}@{sender}>")
+    return ReportMail(mail, address, subject, text, arrived)
 
 
 def _order(
@@ -268,20 +271,76 @@ def test_przy_dwoch_wpisach_zlecenia_wygrywa_pozniejszy_mail_w_kazdej_kolejnosci
     assert [read.mail for read in outcome.mails] == [earlier.id, later.id]
 
 
-def test_problemy_sa_bez_powtorzen_i_w_tej_samej_kolejnosci_dla_kazdej_kolejnosci_maili() -> None:
-    ewa = _mail(EWA, "Raport 07.11.2026", "40000009 tak montaż")
-    stranger = _mail("obcy@przyklad.invalid", SUBJECT, TEXT)
-    twice = [_mail(JAN, SUBJECT, "12345678 tak a"), _mail(JAN, SUBJECT, "12345678 tak b")]
-    mails = [*twice, stranger, ewa]
+@pytest.mark.parametrize(
+    "senders",
+    [
+        pytest.param(["a@obcy.invalid", "b@inny.invalid"], id="sonda-recenzenta-dwa-adresy"),
+        pytest.param(["d@obcy.invalid", "b@obcy.invalid", "c@inny.invalid", "a@inny.invalid"], id="cztery-adresy"),
+    ],
+)
+def test_obce_maile_z_jednym_message_id_daja_po_problemie_nieznanego_nadawcy_po_adresie(senders: list[str]) -> None:
+    """Message-ID ustawia nadawca, więc dwa obce maile mogą go dzielić: każdy daje swój ``UnknownSender``, w kolejności
+    adresów dla każdej kolejności maili, a reszta kliknięcia biegnie dalej."""
 
-    forward = enter_reports(_inputs(mails, [], rollout=date(2026, 11, 7)))
-    backward = enter_reports(_inputs(mails[::-1], [], rollout=date(2026, 11, 7)))
+    mails = [
+        _mail(sender, SUBJECT, TEXT, EVENING + timedelta(minutes=index), "<1@obcy.invalid>")
+        for index, sender in enumerate(senders)
+    ]
+    expected = tuple(
+        UnknownSender(mail.id, mail.sender, DAY) for mail in sorted(mails, key=lambda mail: mail.sender.shown())
+    )
 
-    assert forward == backward
-    assert forward.problems == (
+    for order in itertools.permutations([*mails, _mail(JAN, SUBJECT, TEXT)]):
+        outcome = enter_reports(_inputs(order, [_order()]))
+
+        assert outcome.problems == expected
+        assert [change.column for change in outcome.changes] == [ReportColumn.SUCCESSFUL, ReportColumn.COMPLETED]
+
+
+@pytest.mark.parametrize("count", [2, 5])
+def test_obce_maile_z_jednego_adresu_i_dnia_daja_po_problemie_nieznanego_nadawcy_po_mailu(count: int) -> None:
+    mails = [
+        _mail("obcy@przyklad.invalid", SUBJECT, f"4000000{index} tak", EVENING + timedelta(minutes=index))
+        for index in range(count)
+    ]
+
+    outcome = enter_reports(_inputs(mails[::-1], []))
+
+    assert outcome.problems == tuple(
+        UnknownSender(mail.id, mail.sender, DAY) for mail in sorted(mails, key=lambda mail: mail.id)
+    )
+
+
+def test_problemy_sa_bez_powtorzen_i_ten_sam_wynik_dla_kazdej_kolejnosci_maili() -> None:
+    """Problemy z każdego rodzaju, który rdzeń dziś daje, w tym dwa obce adresy z jednym Message-ID."""
+
+    ewa = _mail(EWA, "Raport 07.11.2026", "40000009 tak montaż", EVENING + timedelta(minutes=1))
+    first = _mail("obcy@przyklad.invalid", SUBJECT, TEXT, EVENING + timedelta(minutes=2), "<1@obcy.invalid>")
+    second = _mail("inny@przyklad.invalid", SUBJECT, TEXT, EVENING + timedelta(minutes=3), "<1@obcy.invalid>")
+    twice = [
+        _mail(JAN, SUBJECT, "12345678 tak a", EVENING + timedelta(minutes=4)),
+        _mail(JAN, SUBJECT, "12345678 tak b", EVENING + timedelta(minutes=5)),
+    ]
+    repeated = _mail(JAN, SUBJECT, "40000002 tak", EVENING + timedelta(minutes=6))
+    entered = _mail(JAN, SUBJECT, TEXT, EVENING + timedelta(minutes=7))
+    mails = [ewa, first, second, *twice, repeated, entered]
+    orders = [
+        _order(),
+        _order(OrderRow("Zlecenia", 121), number="40000002"),
+        _order(OrderRow("Zlecenia", 122), number="40000002"),
+    ]
+
+    outcomes = [
+        enter_reports(_inputs(order, orders, rollout=date(2026, 11, 7))) for order in itertools.permutations(mails)
+    ]
+
+    assert all(outcome == outcomes[0] for outcome in outcomes)
+    assert outcomes[0].problems == (
         UnknownNumber(Login("ewa.probna"), date(2026, 11, 7), OrderNumber("40000009")),
-        UnknownSender(stranger.id, stranger.sender, DAY),
+        UnknownSender(second.id, second.sender, DAY),
+        UnknownSender(first.id, first.sender, DAY),
         UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("12345678")),
+        RepeatedOrder(Login("jan.testowy"), DAY, OrderNumber("40000002")),
     )
 
 
@@ -404,31 +463,6 @@ def _every_problem() -> list[ReportProblem]:
         RepeatedOrder(jan, DAY, number),
         *(ManualDifference(_key(), column, "ręcznie", "z raportu") for column in ReportColumn),
     ]
-
-
-def test_wynik_przyjmuje_dwa_rozne_problemy_tylko_w_jednej_kolejnosci() -> None:
-    """Kolejność problemów nie zależy od kolejności maili ani od ``PYTHONHASHSEED`` także dla problemów jednego
-    zlecenia, które dadzą #1228 i #1229: dwa braki ``tak``/``nie`` z innym powodem, dwóch właścicieli, inne dni."""
-
-    jan, number = Login("jan.testowy"), OrderNumber("40000001")
-    problems = [
-        *_every_problem(),
-        ForeignOrder(jan, DAY, number, Login("adam.inny")),
-        OtherDay(jan, DAY, number, (date(2026, 11, 5),)),
-    ]
-
-    for first, second in itertools.combinations(problems, 2):
-        accepted = [pair for pair in [(first, second), (second, first)] if _outcome_accepts(pair)]
-        assert len(accepted) == 1, (first, second)
-    assert not _outcome_accepts((problems[0], problems[0]))
-
-
-def _outcome_accepts(problems: tuple[ReportProblem, ...]) -> bool:
-    try:
-        ReportsOutcome((), problems, (), (), OwnEntries.EMPTY)
-    except ValueError:
-        return False
-    return True
 
 
 def test_powod_dla_taty_kazdego_rodzaju_problemu() -> None:
