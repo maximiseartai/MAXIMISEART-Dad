@@ -1023,15 +1023,21 @@ def test_rejestr_with_other_date_notation_gives_same_period_files(
         assert sheet_rows(path, min_row=1, max_col=13) == sheet_rows(expected_path, min_row=1, max_col=13)
 
 
-def test_shared_formula_from_register_history_reaches_period_order(tmp_path: Path) -> None:
+def _shared_formula_from_history(tmp_path: Path) -> PreparationFixture:
+    """Rejestr z 10 zleceniami historii w wierszach 2–11, dwoma zleceniami okresu w wierszach 12–13, w których M to
+    wspólna formuła z formułą główną w wierszu 2 historii, jak zapisuje ją Excel, i dwoma zleceniami po okresie w
+    wierszach 14–15 z własną wspólną formułą M z formułą główną w wierszu 14."""
+
     rows: list[RegisterRow] = [
         *earlier_orders(10, 100),
         register_order(2, datetime(2026, 9, 8, 8, 0)),
         register_order(3, datetime(2026, 9, 10, 8, 0)),
+        register_order(4, datetime(2026, 9, 17, 8, 0)),
+        register_order(5, datetime(2026, 9, 18, 8, 0)),
     ]
     fixture = make_preparation_fixture(tmp_path, rows)
     workbook = load_workbook(fixture.register_path)
-    for row in (2, 12, 13):
+    for row in (2, 12, 13, 14, 15):
         workbook["ZLECENIA"].cell(row, 13).value = f"=N{row}"
     workbook.save(fixture.register_path)
     workbook.close()
@@ -1041,13 +1047,35 @@ def test_shared_formula_from_register_history_reaches_period_order(tmp_path: Pat
             return data
         # Jak Excel: formuła główna w wierszu 2, w wierszach okresu tylko odwołanie do niej.
         data = data.replace(b"<f>N2</f>", b'<f t="shared" ref="M2:M13" si="0">N2</f>')
-        return data.replace(b"<f>N12</f>", b'<f t="shared" si="0"/>').replace(b"<f>N13</f>", b'<f t="shared" si="0"/>')
+        data = data.replace(b"<f>N12</f>", b'<f t="shared" si="0"/>').replace(b"<f>N13</f>", b'<f t="shared" si="0"/>')
+        return data.replace(b"<f>N14</f>", b'<f t="shared" ref="M14:M15" si="1">N14</f>').replace(b"<f>N15</f>", b'<f t="shared" si="1"/>')
 
     rewrite_parts(fixture.register_path, share)
+    return fixture
+
+
+def test_shared_formula_from_register_history_reaches_period_order(tmp_path: Path) -> None:
+    fixture = _shared_formula_from_history(tmp_path)
 
     run_preparation(fixture)
 
     assert [row[10] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == ["=N12", "=N13"]
+
+
+def test_kopia_wejscia_rejestru_ma_tylko_wiersze_okresu_bez_wiersza_historii_z_formula_glowna(tmp_path: Path) -> None:
+    """Przygotowanie czyta z Rejestru zleceń tylko wiersze od pierwszego do ostatniego, którego data może leżeć w
+    okresie (``OrderSheets.period_rows``): wiersz historii z formułą główną wspólnej formuły wierszy okresu i wiersz za
+    ostatnim zleceniem okresu nie trafiają do Kopii wejścia ani jako wiersz, ani jako pusty wiersz."""
+
+    fixture = _shared_formula_from_history(tmp_path)
+    files = DadFiles().for_run()
+
+    run_preparation(fixture, files=files)
+
+    assert files.copy is not None
+    [register] = [copied for copied in files.copy.files() if copied.name == fixture.register_path.name]
+    [orders] = [sheet for sheet in register.sheets if sheet.name == "ZLECENIA"]
+    assert ([row.number for row in orders.rows], orders.empty_rows) == ([12, 13], ())
 
 
 def test_period_without_orders_stops(tmp_path: Path) -> None:
@@ -1331,8 +1359,7 @@ def test_decyzja_taty_about_incomplete_period_comes_after_planowanie_and_before_
     summary = run_preparation(fixture, observer=recorded.append, conversation=tata)
 
     [decision] = tata.decisions
-    assert (decision.title, decision.message.code, decision.question) == (
-        "Ostrzeżenie: niepełny okres",
+    assert (decision.message.code, decision.question) == (
         "NIEPELNY_OKRES",
         "Kontynuować mimo niepełnego okresu?",
     )

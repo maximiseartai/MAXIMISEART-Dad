@@ -87,7 +87,6 @@ CLOSE_TAB = "karta Zamknij"
 WITH_DECISION = "z Decyzją taty"
 NEW_VERSION = "nowa wersja, opiekun ponownego startu wystartował"
 DECISION = Decision(
-    title="Decyzja",
     message=Message(code="MODEL", what="Pytanie modelu.", where="silnik", action="Odpowiedz."),
     counts_title="Liczby",
     counts=(("Wiersze danych", 1),),

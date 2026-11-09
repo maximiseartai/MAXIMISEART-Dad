@@ -198,6 +198,18 @@ def _row_xml(path: Path, number: int) -> bytes:
     return found.group(0)
 
 
+def test_rekord_metryk_uporzadkowania_liczy_zlecenia_i_wykonawcow_dnia(tmp_path: Path) -> None:
+    """Liczniki rekordu metryk Uporządkowania INTERMAX: zlecenia dnia i różni Wykonawcy wśród nich (6 zleceń, 3
+    Wykonawców wklejenia ``Intermax()``)."""
+
+    _register(tmp_path)
+
+    outcome = _run(tmp_path)
+
+    assert isinstance(outcome.ending, Finished), outcome.ending
+    assert outcome.ending.counters == {"orders": 6, "workers": 3}
+
+
 def test_dzien_staje_pod_zoltym_wierszem_w_segmentach_wykonawcow_alfabetycznie_i_po_godzinie(tmp_path: Path) -> None:
     path, layout = _register(tmp_path)
     anna_10, anna_10_later, anna_16 = layout.raw[1], layout.raw[4], layout.raw[2]

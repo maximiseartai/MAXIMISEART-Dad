@@ -37,7 +37,7 @@ import time
 import traceback
 import warnings
 import weakref
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 import zipfile
@@ -46,7 +46,7 @@ from atrapy.model_efenix import Action, StanEfenix
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
-from playwright.sync_api import Browser, Error as PlaywrightError, Page, Request as PlaywrightRequest, Route
+from playwright.sync_api import Browser, Error as PlaywrightError, Locator, Page, Request as PlaywrightRequest, Route
 from playwright.sync_api import Response as PlaywrightResponse, TimeoutError as PlaywrightTimeoutError
 import pytest
 
@@ -3279,55 +3279,66 @@ def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_cze
 
 
 @pytest.mark.parametrize(
-    ("last_answer", "stop"),
+    ("unanswered", "stop", "questions"),
     [
-        pytest.param(898.0, LoggedOut, id="jedno-zerwanie-tuz-przed-limitem"),
-        pytest.param(840.5, LoggedOut, id="cisza-krotsza-niz-dwa-czasy-okna"),
-        pytest.param(840.0, EfenixUnreachable, id="cisza-przez-dwa-czasy-okna"),
+        pytest.param((898.0,), LoggedOut, 2, id="jedno-zerwanie-tuz-przed-limitem"),
+        pytest.param((840.5,), LoggedOut, 2, id="cisza-krotsza-niz-dwa-czasy-okna"),
+        pytest.param((840.0,), EfenixUnreachable, 2, id="cisza-przez-dwa-czasy-okna"),
+        pytest.param((850.0, 882.0, 914.0), EfenixUnreachable, 3, id="efenix-wisi-a-ostatnie-pytanie-konczy-sie-po-limicie"),
     ],
 )
 def test_po_limicie_czekania_na_logowanie_niedostepny_efenix_tylko_gdy_efenix_milczal_przez_dwa_czasy_okna(
-    page: Page, last_answer: float, stop: type[Exception]
+    page: Page, unanswered: tuple[float, ...], stop: type[Exception], questions: int
 ) -> None:
-    """Tata się nie loguje, a efenix odpowiada na pytania o sesję do ``last_answer`` sekundy z 900 sekund limitu, potem
-    sieć znika: po limicie to efenix bez odpowiedzi tylko wtedy, gdy milczał przez dwa czasy okna (dwa razy 30 sekund),
-    a jedno zerwane połączenie po odpowiedziach dalej mówi tacie o logowaniu. Zegar okna: start w 0, pytanie z
-    odpowiedzią w ``last_answer`` (sieć znika po nim) i pytanie bez odpowiedzi na końcu limitu."""
+    """Tata się nie loguje, a efenix odpowiada na pytania o sesję do pierwszej chwili ``unanswered`` z 900 sekund limitu,
+    potem sieć znika: po limicie to efenix bez odpowiedzi tylko wtedy, gdy milczał przez dwa czasy okna (dwa razy 30
+    sekund) do końca ostatniego pytania, a jedno zerwane połączenie po odpowiedziach dalej mówi tacie o logowaniu. Zegar
+    okna: start w 0, pytanie z odpowiedzią w pierwszej chwili ``unanswered`` (sieć znika po nim), a potem pytania bez
+    odpowiedzi kończą się w kolejnych chwilach i na końcu limitu. Gdy efenix wisi, pytanie bez odpowiedzi trwa czas okna,
+    więc ostatnie kończy się po limicie (914 s), a cisza od 850 s to dwa pełne pytania, choć do limitu jest jej 50 s."""
 
     with atrapa_efenix([]) as atrapa:
         atrapa.expire_session()
-        readings = iter([0.0, last_answer])
+        readings = iter([0.0, *unanswered])
 
         def clock() -> float:
             reading = next(readings, efenix_browser.LOGIN_TIMEOUT_MS / 1000)
-            if reading == last_answer:
+            if reading == unanswered[0]:
                 atrapa.outage = Outage.CUT
             return reading
 
         with pytest.raises(stop), efenix_browser.window(page, atrapa.url, login=nullcontext, clock=clock):
             pass
-        questions = _session_questions(atrapa)
+        asked = _session_questions(atrapa)
 
-    assert questions == 2
+    assert asked == questions
 
 
 def test_przegladarka_zamknieta_przed_pytaniem_o_sesje_na_granicy_limitu_to_zamkniete_okno(page: Page) -> None:
     """Tata zamyka przeglądarkę, gdy okno czeka na jego logowanie, tuż przed pytaniem o sesję na granicy limitu, a
-    ``Page.is_closed`` jeszcze o tym nie wie (#878): pytanie, które padło przez zamknięcie, to zamknięte okno, nie efenix
-    bez odpowiedzi ani brak logowania. Zegar okna: start w 0, a pierwsze pytanie już po limicie."""
+    ``Page.is_closed`` wie o tym dopiero po odpowiedzi karty na pytanie o jej dokument (``:root``, #878, #886): pytanie,
+    które padło przez zamknięcie, to zamknięte okno, nie efenix bez odpowiedzi ani brak logowania. Zegar okna: start w
+    0, a pierwsze pytanie już po limicie."""
 
     with atrapa_efenix([]) as atrapa:
         atrapa.expire_session()
         waiting = False
-        is_closed = page.is_closed
+        closed_by_tata = asked_document = False
+        is_closed, locator = page.is_closed, page.locator
 
         def closing_unnoticed() -> bool:
-            nonlocal waiting
-            closed = is_closed()
+            nonlocal waiting, closed_by_tata
             if waiting:
                 waiting = False
                 page.context.close()
-            return closed
+                closed_by_tata = True
+                return False
+            return is_closed() and (asked_document or not closed_by_tata)
+
+        def asking(selector: str, **options: Any) -> Locator:
+            nonlocal asked_document
+            asked_document = asked_document or (closed_by_tata and selector == ":root")
+            return locator(selector, **options)
 
         readings = iter([0.0])
 
@@ -3339,6 +3350,7 @@ def test_przegladarka_zamknieta_przed_pytaniem_o_sesje_na_granicy_limitu_to_zamk
             return reading
 
         page.is_closed = closing_unnoticed  # type: ignore[method-assign]
+        page.locator = asking  # type: ignore[method-assign]
         with pytest.raises(WindowClosed) as stopped, efenix_browser.window(page, atrapa.url, login=nullcontext, clock=clock):
             pass
 
@@ -3357,8 +3369,10 @@ def test_siec_ktora_znika_w_czasie_czekania_na_logowanie_daje_po_limicie_niedost
 ) -> None:
     """Sieć znika, gdy okno czeka na logowanie taty: Komunikat po limicie czekania mówi tacie o efenix, który nie
     odpowiada, a nie o logowaniu (spis #27); pytanie bez odpowiedzi nie kończy czekania, więc gdy sieć wróciła, a tata
-    się nie zalogował, to Zatrzymanie jak bez logowania. Rozstrzyga ostatnie pytanie. Zegar okna: start w 0, pierwsze
-    pytanie w 1. sekundzie (sieć wraca po nim albo nie), drugie po limicie 15 minut."""
+    się nie zalogował, to Zatrzymanie jak bez logowania. Rozstrzyga ostatnie pytanie razem z ciszą efenix: ostatnie
+    pytanie bez odpowiedzi po co najmniej dwóch czasach okna ciszy to efenix bez odpowiedzi, a z odpowiedzią brak
+    logowania. Zegar okna: start w 0, pierwsze pytanie w 1. sekundzie (sieć wraca po nim albo nie), drugie po limicie
+    15 minut."""
 
     orders = [Order("#5701", cells={"O": 1}, amount=_au({"012": 1}))]
     with atrapa_efenix([orders[0].in_efenix("571")]) as atrapa:

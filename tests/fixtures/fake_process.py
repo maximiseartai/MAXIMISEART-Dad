@@ -82,7 +82,6 @@ def records(metrics_path: Path) -> list[dict[str, Any]]:
 
 
 QUESTION = Decision(
-    title="Ostrzeżenie: pytanie",
     message=Message("PYTANIE", "Dane mogą być niepełne.", "Proces testowy", "Sprawdź liczby."),
     counts_title="Elementy",
     counts=[("pierwszy", 1)],

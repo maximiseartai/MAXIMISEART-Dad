@@ -418,6 +418,7 @@ def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_
         sheet = active_worksheet(workbook)
         sheet.insert_rows(19)  # pusty wiersz między Wierszami danych nie jest Wierszem danych
         sheet["L22"] = "poza A:K"  # wiersz bez wartości w A:K nie jest Wierszem danych
+        sheet["K23"] = "tylko K"  # wartość w ostatniej kolumnie A:K wystarcza
         sheet["AT18"] = "uwagi"
         sheet["AU18"] = "poza A:AT"
         workbook.save(path)
@@ -431,6 +432,7 @@ def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_
         (18, "adrian.testowy"),
         (20, "dariusz.fikcyjny2"),
         (21, "adrian.testowy"),
+        (23, None),
     ]
     assert all(len(row.cells) == 46 for row in rows)
     assert (rows[0].value("A"), rows[0].value("B")) == ("POZNAŃ", "syntetyczny adres 1")

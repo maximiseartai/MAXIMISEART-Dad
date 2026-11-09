@@ -268,7 +268,8 @@ są puste albo znane), a masek w Kopii jest tyle samo. Po N5b-2 (jedne kolumny
 wyglądu) na tej samej kopii Rejestru pierwszych wierszy bloków w Diagnozie jest
 6, tyle co w Uporządkowaniu tego pliku, a w 41 okresach 1, każdy w obu
 położeniach. Odpadły 4 wiersze z Calibri 8 tylko w `AKCJE`, `ZWROT` albo
-`UWAGI`; masek i uwag o złamanym fakcie domeny jest tyle samo (0).
+`UWAGI`; uwag o złamanym fakcie domeny jest tyle samo (0), masek w Kopii też
+(2 w Diagnozie całego Rejestru, 0 w 41 okresach).
 
 ## Pewniki i granica dziedziny (decyzja Maksa z 6.11.2026)
 

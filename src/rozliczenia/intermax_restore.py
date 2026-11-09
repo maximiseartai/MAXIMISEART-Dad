@@ -26,10 +26,9 @@ from .workbook_parts import office_document, package_parts
 
 @dataclass(frozen=True)
 class Restored:
-    """Przywrócona Kopia, Kopia stanu sprzed przywrócenia i ostrzeżenia (starsze Kopie zostały)."""
+    """Przywrócona Kopia i ostrzeżenia (starsze Kopie zostały)."""
 
     restored: Copy
-    previous: Copy
     warnings: list[Message]
 
 
@@ -98,5 +97,5 @@ def restore(
     if isinstance(outcome, Refusal):
         raise StopError(messages.refused(outcome, register, directory, messages.RESTORE))
     warnings = [messages.old_copies_kept(directory, messages.RESTORE)] if outcome.old_copies_kept else []
-    return Restored(chosen, outcome.copy, warnings)
+    return Restored(chosen, warnings)
 
