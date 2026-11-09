@@ -9,7 +9,7 @@ same ``TemplateFile.create()`` on a twin of the Wzorzec that the copy refuses (a
 data, which openpyxl skips). It checks five rules:
 
 - WIERNA_KOPIA: the two files are the same for what Dad sees in Excel, as judged by the benchmark's
-  correctness gate (``tools/porownanie_rozliczen.py``): values, formulas, resolved styles with Wyróżnienia,
+  correctness gate (``tools/lib/porownanie_znaczeniowe.py``): values, formulas, resolved styles with Wyróżnienia,
   Hiperłącza, merges, dimensions, defined names, external links and recalculation flags.
 - TA_SAMA_ODMOWA: the copy refuses a value exactly when the openpyxl path refuses it, and a refusal
   leaves no file.
@@ -54,7 +54,6 @@ from unittest import mock
 from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from hypothesis import HealthCheck, Phase, example, given, seed, settings
@@ -70,7 +69,7 @@ from openpyxl.styles import Color, Font, GradientFill, PatternFill
 from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
-import porownanie_rozliczen as gate
+import porownanie_znaczeniowe as gate
 from rozliczenia import workbook_files
 from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.hyperlinks import Hyperlink

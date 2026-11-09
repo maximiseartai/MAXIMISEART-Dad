@@ -76,7 +76,7 @@ from atrapy.preparation import (
     write_register,
 )
 from tests.fixtures.porownanie import renumber_cell_styles
-from porownanie_rozliczen import compare_worker_settlements
+from porownanie_znaczeniowe import compare_worker_settlements
 from atrapy.workbooks import (
     active_worksheet,
     add_external_link_fixture,
