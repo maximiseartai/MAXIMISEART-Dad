@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+import shutil
+import sys
 from urllib.parse import urlsplit
 
 from playwright.sync_api import Page, Request, Route, expect
 
-from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory, move, sent_requests, settle, unreadable
+from drive.common import (
+    REPEAT_SETTLE_MS,
+    Run,
+    choose_periods_directory,
+    move,
+    remove_tree,
+    sent_requests,
+    settle,
+    unreadable,
+)
 from harness import Log
 
 
@@ -172,6 +185,16 @@ def drive(run: Run, page: Page) -> None:
     page.reload()
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
 
+    run.step(feature, "ustawienia-niedostepna-sciezka")
+    with _without_access(run, page) as (register_path, periods_path):
+        page.reload()
+        for group, path in ((register, register_path), (periods, periods_path)):
+            expect(group.get_by_text(f"Nie da się teraz odczytać: {path.name}", exact=True)).to_be_visible()
+        run.capture(page, "276-ustawienia-niedostepna-sciezka")
+    page.reload()
+    expect(register.get_by_text(register_name, exact=True)).to_be_visible()
+    expect(periods.get_by_text(Path(run.fixture["periods_directory"]).name, exact=True)).to_be_visible()
+
     run.step(feature, "ustawienia-motyw")
     page.get_by_role("button", name="Włącz motyw jasny").click()
     expect(page.locator("html")).not_to_have_class("dark")
@@ -183,3 +206,56 @@ def drive(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Włącz motyw ciemny").click()
     expect(page.locator("html")).to_have_class("dark")
     run.wait_for(lambda: run.remembered("motyw") == "dark", "the dark theme is remembered again")
+
+
+@contextmanager
+def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
+    """Harness: Dad's Rejestr zleceń and folder okresów lie in a folder he cannot open now (OneDrive not running,
+    access taken away); yields their paths and leaves the fixture's paths pointed again.
+
+    chmod on Windows does not take away access to a folder (``NO_ACCESS_ON_WINDOWS`` in the tests), so there the page
+    gets the server's answer for such a folder from ``page.route``; elsewhere the folder really has no permissions and
+    ``GET /api/settings`` must report both paths ``inaccessible``.
+    """
+
+    if sys.platform == "win32":
+        register = Path(run.fixture["order_register"])
+        periods = Path(run.fixture["periods_directory"])
+        answer = run.api("/api/settings", "ustawienia-przed-niedostepna-sciezka")
+        answer["order_register"] = {"state": "inaccessible", "path": str(register), "name": register.name}
+        answer["periods_directory"] = {"state": "inaccessible", "path": str(periods), "name": periods.name}
+        print("  harness: the page gets the answer for a folder without access (page.route)", flush=True)
+        page.route("**/api/settings", lambda route: route.fulfill(json=answer))
+        try:
+            yield register, periods
+        finally:
+            page.unroute("**/api/settings")
+        return
+    onedrive = run.root / "OneDrive"
+    onedrive.mkdir()
+    register = onedrive / Path(run.fixture["order_register"]).name
+    shutil.copyfile(run.fixture["order_register"], register)
+    periods = onedrive / Path(run.fixture["periods_directory"]).name
+    periods.mkdir()
+    print(f"  harness: a copy of the Rejestr zleceń and an empty folder okresów in {onedrive.name}", flush=True)
+    _point(run, page, "Zmień Rejestr zleceń", "rejestr_zlecen", str(register))
+    _point(run, page, "Zmień Folder okresów", "folder_okresow", str(periods))
+    with unreadable(onedrive):
+        yield register, periods
+        settings = run.api("/api/settings", "ustawienia-niedostepna-sciezka")
+        run.check(
+            settings["order_register"] == {"state": "inaccessible", "path": str(register), "name": register.name}
+            and settings["periods_directory"] == {"state": "inaccessible", "path": str(periods), "name": periods.name},
+            "a Rejestr zleceń and a folder okresów in a folder without access are reported as inaccessible, not missing",
+        )
+    _point(run, page, "Zmień Rejestr zleceń", "rejestr_zlecen", run.fixture["order_register"])
+    _point(run, page, "Zmień Folder okresów", "folder_okresow", run.fixture["periods_directory"])
+    remove_tree(onedrive)
+
+
+def _point(run: Run, page: Page, button: str, key: str, path: str) -> None:
+    """Dad points ``path`` with the picker behind ``button`` on the settings card, until the settings file has it."""
+
+    run.answer_picker(path)
+    page.get_by_role("button", name=button, exact=True).click()
+    run.wait_for(lambda: run.remembered(key) == path, f"the settings file remembers {Path(path).name} ({key})")
