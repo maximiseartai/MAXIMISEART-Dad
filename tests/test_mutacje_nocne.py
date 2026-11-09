@@ -761,7 +761,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
         "tests/test_b.py": test_b,
     }
     repo = repository(tmp_path / "repo", pliki)
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
     monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
@@ -817,7 +817,7 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
     for sciezka, tresc in pliki.items():
         (repo / sciezka).parent.mkdir(parents=True, exist_ok=True)
         (repo / sciezka).write_text(tresc, encoding="utf-8")
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
     wspolny = commit(repo, "baza")
     git(repo, "checkout", "--quiet", "-b", "boczna")
     (repo / "src" / "rozliczenia" / "b.py").write_text("def b(x: int) -> bool:\n    return x < 5 and x > 0\n", encoding="utf-8")
@@ -960,7 +960,7 @@ def test_czesc_konczy_sie_w_limicie_czasu_z_najdrozszymi_zmierzonymi_mutacjami_k
         "tests/test_warunek.py": PRZEBIEGI_TESTY.format(folder=str(folder), workers=mutacje_zmiany.WORKERS),
     }
     repo = repository(tmp_path / "repo", pliki)
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
     baza = commit(repo, "baza")
     (repo / "src" / "rozliczenia" / "warunek.py").write_text(PRZEBIEGI_BAZA.replace("return 0", "return 1"), encoding="utf-8")
 

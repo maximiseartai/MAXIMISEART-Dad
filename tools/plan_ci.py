@@ -53,14 +53,15 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import czasy_ci
+from github import GitHub
 import jednostka
 from jednostka import Klucz, Rodzaj
 from plan_runu import Plan, Zadanie
 from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
-from zakres_runu import KROKI, MUTACJE, TORY, KrokSkilla, Tor, ZakresRunu, Zdarzenie, zakres
+from zakres_runu import KROKI, MUTACJE, RDZENIE_RUNNERA, TORY, KrokSkilla, Tor, ZakresRunu, Zdarzenie, zakres
 
-WORKERY = 4  # pytest -n auto na runnerze 4 vCPU
+WORKERY = RDZENIE_RUNNERA  # pytest -n auto
 # W symulacji 60 PR (29.10) cel 60, 75 i 90 s daje bramce ten sam p50 i p90, bo ścianę trzyma jednostka, której plan
 # nie dzieli (część podstawy skilla, krok E2E, długi test), a 90 s najmniej zadań: stały koszt zadania pytest to ok. 40 s.
 CEL_S = 90.0
@@ -266,12 +267,12 @@ def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
     print(f"PLAN CI DIGEST | {plan.digest}")
 
 
-def _plan(args: argparse.Namespace) -> int:
-    katalog = args.czasy or czasy_ci.katalog_checkoutu(ROOT)
-    czasy = czasy_ci.z_mainu(katalog, odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S)
+def _plan(args: argparse.Namespace, root: Path, github: GitHub) -> int:
+    katalog = args.czasy or czasy_ci.katalog_checkoutu(root)
+    czasy = czasy_ci.z_mainu(katalog, odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S, github=github)
     if czasy.blad:
         print(f"CZASY CI | {czasy.blad}; plan waży pracę bez pomiaru domyślnie")
-    praca = zakres(args.zdarzenie, frozenset() if args.zdarzenie is Zdarzenie.PUSH else changed_since(ROOT, args.baza), ROOT)
+    praca = zakres(args.zdarzenie, frozenset() if args.zdarzenie is Zdarzenie.PUSH else changed_since(root, args.baza), root)
     wyceny = [*(wycen(tor, praca.pliki, czasy, praca.przegladarka) for tor in praca.tory), wycen_mutacje(praca.wybrane, czasy)]
     plan = rozplanuj(wyceny, args.zdarzenie, czasy.runy, tuple(f"{nazwa}: {powod}" for nazwa, powod in praca.bledy))
     _wypisz(plan, praca, wyceny)
@@ -285,7 +286,9 @@ def _plan(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = czasy_ci.GITHUB) -> int:
+    """``root`` to checkout, którego zmianę i skille plan wycenia, a ``github`` daje czasy z runów main."""
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     plan = polecenia.add_parser("plan", help="Plan runu: zadania pytest i Mutation checks (zadanie plan albo lokalnie).")
@@ -297,7 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     plan.add_argument("--czasy", type=Path, help="Katalog artefaktów czasy-ci, pobieranych od nowa (domyślnie .git/czasy-ci).")
     plan.add_argument("--wyjscie", type=Path)
-    return _plan(parser.parse_args(argv))
+    return _plan(parser.parse_args(argv), root, github)
 
 
 if __name__ == "__main__":

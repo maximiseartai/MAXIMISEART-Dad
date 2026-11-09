@@ -137,6 +137,9 @@ class Tor:
     zadanie: str  # nazwa zadania w runie, jak przed planem: "pytest (Python 3.14, Linux, 1/3)"
 
 
+# vCPU runnera GitHuba każdego toru (``ubuntu-latest``, ``windows-latest``): tyle workerów xdist bierze ``pytest -n auto``
+# zadania i tyle mutacji naraz biegnie w części nocy.
+RDZENIE_RUNNERA = 4
 TORY = (
     Tor("windows-3.11", "pytest", "windows-3.11", "windows-latest", "3.11", ("e2e",), "pytest (Python 3.11, {numer}/{liczba})"),
     Tor("windows-3.14", "pytest", "windows-3.14", "windows-latest", "3.14", ("e2e", "timing"), "pytest (Python 3.14, {numer}/{liczba})"),

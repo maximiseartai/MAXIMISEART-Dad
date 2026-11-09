@@ -49,7 +49,7 @@ def _repo(
     if other:
         files["src/rozliczenia/inny.py"] = other
     repo = repository(tmp_path, files)
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
     commit(repo, "baza")
     git(repo, "branch", "--quiet", "baza")
     (repo / MODULE).write_text(changed, encoding="utf-8")
