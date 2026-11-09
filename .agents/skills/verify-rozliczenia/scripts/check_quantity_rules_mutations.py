@@ -1,6 +1,6 @@
 """Show that the Reguły ilości conformance test fails on each single broken rule.
 
-Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must make
+Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must make
 ``quantity_rules_conformance.py`` fail. A mutation whose anchor text is no longer in
 ``quantity_rules.py`` exactly once is reported as NIEAKTUALNA: update it to the new code.
 """
@@ -11,9 +11,9 @@ import argparse
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 RULES = Path("src/rozliczenia/quantity_rules.py")
 CHECKER = (".agents/skills/verify-rozliczenia/scripts/quantity_rules_conformance.py",)

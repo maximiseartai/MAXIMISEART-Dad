@@ -10,9 +10,11 @@ import sys
 
 import pytest
 
-from tests.fixtures.git_repo import commit, copy_files, git, repository
+from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
 
 ROOT = Path(__file__).resolve().parents[1]
+# Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
+MUTACJE_ZMIANY = ("tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py")
 SCRIPT = "import pathlib\nprint(pathlib.Path('src/dane.txt').read_text().strip(), '{}')\n"
 
 
@@ -129,7 +131,7 @@ def test_mutacje_zmiany_biegna_na_commicie_takze_poza_ci(tmp_path: Path) -> None
     """Próba narzędzia na scalonym commicie to nie sprawdzenie przed pushem, więc strażnik ciężkiego CI ją przepuszcza."""
 
     repo, _ = _repo(tmp_path)
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, with_imports(MUTACJE_ZMIANY))
     outside_ci = {name: value for name, value in os.environ.items() if name not in ("GITHUB_ACTIONS", "MAXIMISEART_NA_SCALONYCH_PR")}
 
     done = _run(repo, "--commit", "HEAD", "--", "tools/mutacje_zmiany.py", "--baza", "HEAD^1", env=outside_ci)

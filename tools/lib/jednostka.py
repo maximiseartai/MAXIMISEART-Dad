@@ -4,7 +4,7 @@ z częścią ``#k/n`` albo bez) i część ``k/n``, także ta, którą krok skil
 Klucz składa i rozbiera tylko ``Klucz``: plan (``tools/plan_ci.py``, ``tools/lib/plan_runu.py``), zadanie
 (``tools/ci/wykonaj_zadanie.py``), werdykt Required, zapis czasów i noc trzymają w JSON jego napis. Część ma dwa
 znaczenia, każde swoją metodą: ``co_nta`` (k-ta, potem co n-ta pozycja listy w ustalonej kolejności: mutacje skryptu
-mutacji w ``tools/mutacje.py`` i testy udziału pliku w ``tools/lib/pytest_czesc.py``) i ``kawalek`` (k-ty z n kolejnych
+mutacji w ``tools/lib/silnik_mutacji.py`` i testy udziału pliku w ``tools/lib/pytest_czesc.py``) i ``kawalek`` (k-ty z n kolejnych
 kawałków: jednostki podstawy skilla w ``tools/lib/skrypt_skilla.py`` i mutacje części nocy w ``tools/mutacje_zmiany.py``).
 Moduł używa tylko biblioteki standardowej, bo plan i werdykt biegną systemowym ``python3`` runnera.
 """

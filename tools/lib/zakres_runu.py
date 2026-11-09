@@ -26,12 +26,13 @@ zmieniony jest plik z ``pilnuje`` albo plik w folderze skilla, i skrypt mutacji 
 jego mutacja psuje plik w folderze ``model/`` skilla), gdy zmieniony jest plik w tym folderze, sam skrypt, sprawdzenie,
 które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (silnik ``tools/lib/model_tlc.py``); inne
 skrypty mutacji biegną nocą (ADR 0021). Nocą biegnie skrypt mutacji, gdy zmieniony jest plik w folderze skilla,
-runner mutacji (``RUNNER``) albo sprawdzenie, które uruchamiają jego mutacje, i podstawa z ``ci-czesci`` przy tej samej
+moduł, który skrypt importuje (silnik ``tools/lib/silnik_mutacji.py`` i jego zależności), uruchamiacz kroku
+(``LAUNCHER``) albo sprawdzenie, które uruchamiają jego mutacje, i podstawa z ``ci-czesci`` przy tej samej
 zmianie co na pull request, każdą częścią każdej liczby części od 1 do ``ci-czesci`` (``KrokSkilla.czesci``), bo pull
 request uruchamia części jednej liczby, którą plan wybiera z celu ściany.
 Zmiana ścieżki z ``Context.SKILL_STEPS`` uruchamia każdy krok swojego rodzaju, a skill bez klucza ``pilnuje`` albo z
-kluczem, którego nie da się odczytać, biegnie zawsze. Poza importami sprawdzeń skryptu mutacji modelu importów ani
-plików, które krok czyta, wybór nie liczy: każdy krok uruchamia pełne CI ``main``. Podstawa, którą wybrany skrypt
+kluczem, którego nie da się odczytać, biegnie zawsze. Poza importami samego skryptu mutacji i importami sprawdzeń
+skryptu mutacji modelu importów ani plików, które krok czyta, wybór nie liczy: każdy krok uruchamia pełne CI ``main``. Podstawa, którą wybrany skrypt
 mutacji jej skilla i tak uruchamia bez mutacji (podstawa ``check_all``), nie biegnie drugi raz.
 
 Polecenia skilla, które CI liczy, to wybrane kroki skilla i wywołania jego skryptów w krokach CI torów runu; nic więcej
@@ -263,7 +264,7 @@ def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str], reposito
             return _podstawa(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana, repository)
         case Zdarzenie.NOC:
             if step.verdict is not None:
-                return _skrypt(step, zmiana)
+                return _skrypt(step, zmiana, repository)
             return _podstawa(step.skill, zmiana) if step.parts > 1 else (False, ON_PULL_REQUEST, frozenset())
 
 
@@ -295,9 +296,9 @@ def _podstawa(skill: Path, zmiana: frozenset[str]) -> Powod:
     return False, "zmiany nie trafiają w pilnuje ani w folder skilla", files
 
 
-def _skrypt(step: Step, zmiana: frozenset[str]) -> Powod:
+def _skrypt(step: Step, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:
     try:
-        paths = watched(step)
+        paths = watched(step, lambda path: repository().imported(path))
     except Exception as error:  # noqa: BLE001 - skrypt, którego tabeli nie da się wczytać, biegnie i pokazuje swój błąd
         unreadable = f"nie da się wczytać tabeli mutacji: {error}"
         paths = (_folder(step.skill),)
@@ -309,7 +310,7 @@ def _skrypt(step: Step, zmiana: frozenset[str]) -> Powod:
         return True, reason, files
     if touched:
         return True, _changes(touched), files
-    return False, "zmiany nie dotykają folderu skilla, runnera mutacji ani sprawdzeń, które uruchamiają mutacje skryptu", files
+    return False, "zmiany nie dotykają folderu skilla, importów skryptu, uruchamiacza kroku ani sprawdzeń, które uruchamiają mutacje skryptu", files
 
 
 def _skrypt_modelu(step: Step, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:

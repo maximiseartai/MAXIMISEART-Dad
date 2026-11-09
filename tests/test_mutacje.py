@@ -29,6 +29,7 @@ import potomne
 import ciezkie_ci
 import mutacje
 import plan_runu
+import silnik_mutacji
 from zakres_runu import Zdarzenie
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -127,7 +128,7 @@ def test_czerwona_podstawa_pokazuje_pod_swoja_linia_koniec_stdout_i_stderr(end: 
     stderr ze stdout, więc stoi tam pod linią ``PODSTAWA CZERWONA``; z dłuższego stdout zostaje jego koniec, nie początek.
     """
 
-    steps = mutacje.BASE_TAIL + 5
+    steps = silnik_mutacji.BASE_TAIL + 5
     base = (
         f"import sys, threading; print(*(f'STEP krok-{{n}}' for n in range({steps})), sep=chr(10)); "
         f"print('DRIVE FAIL | przyczyna', file=sys.stderr); print('CLEANUP OK', flush=True); {end}"
@@ -147,7 +148,7 @@ def test_czerwona_podstawa_pokazuje_pod_swoja_linia_koniec_stdout_i_stderr(end: 
     merged, split = answered(subprocess.STDOUT), answered(subprocess.PIPE)
 
     lines = merged.stdout.splitlines()
-    tail = [f"  stdout | STEP krok-{number}" for number in range(steps - mutacje.BASE_TAIL + 1, steps)]
+    tail = [f"  stdout | STEP krok-{number}" for number in range(steps - silnik_mutacji.BASE_TAIL + 1, steps)]
     end_lines = [*tail, "  stdout | CLEANUP OK", "  stderr | DRIVE FAIL | przyczyna"]
     refused = "MUTACJE: polecenie bez mutacji pada albo daje wynik mutacji, więc wynik po mutacji niczego nie dowodzi"
     assert (merged.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[0].endswith(f"→ {last}")) == (2, True, True), merged.stdout
@@ -270,7 +271,7 @@ def test_podstawa_z_conftest_ktorego_nie_da_sie_zaimportowac_nie_jest_nazwana_bl
 
 def test_pusta_lista_mutacji_niczego_nie_dowodzi() -> None:
     answered = subprocess.run(
-        [sys.executable, "-c", "import sys\nsys.path.insert(0, 'tools')\nfrom mutacje import check_all\nraise SystemExit(check_all(()))"],
+        [sys.executable, "-c", "import sys\nsys.path.insert(0, 'tools/lib')\nfrom silnik_mutacji import check_all\nraise SystemExit(check_all(()))"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -292,7 +293,7 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
     script = ".agents/skills/verify-x/scripts/check_x_mutations.py"
     (repo / script).parent.mkdir(parents=True)
     (repo / script).write_text(
-        "import sys\nfrom pathlib import Path\nsys.path.insert(0, 'tools')\nfrom mutacje import Edit, Mutation, check_all\n\n"
+        "import sys\nfrom pathlib import Path\nsys.path.insert(0, 'tools/lib')\nfrom silnik_mutacji import Edit, Mutation, check_all\n\n"
         "slow = ('-c', 'import time, rozliczenia\\nif rozliczenia.WARTOSC == 1:\\n    time.sleep(3.5)\\nraise SystemExit(rozliczenia.WARTOSC)')\n"
         "MUTATIONS = (\n"
         f"    Mutation('wolna', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), slow),\n"
@@ -319,7 +320,7 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
     # Wolna śpi 3,5 s więcej niż szybka, a żadna nie biegnie dłużej niż cały skrypt na zegarze testu.
     assert (3 <= int(slow[1]) <= round(took), int(fast[1]) < int(slow[1]), warned[1] == slow[1]) == (True, True, True), shown
     # Z linii ostrzeżenia noc odtwarza skrypt, część, mutację, czas i limit, które zgłasza w issue PR-u (#935).
-    assert mutacje.near_limits(answered) == [mutacje.NearLimit(script, "1/1", "wolna", int(slow[1]), 6)], shown
+    assert silnik_mutacji.near_limits(answered) == [silnik_mutacji.NearLimit(script, "1/1", "wolna", int(slow[1]), 6)], shown
 
 
 def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polecen_swoich_mutacji(tmp_path: Path) -> None:
@@ -705,7 +706,7 @@ def test_skrypt_mutacji_skilla_daje_zagniezdzonemu_pytest_n_auto_jednego_workera
 
     workers = "import os, rozliczenia; print('workery', os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS', 'brak')); raise SystemExit(rozliczenia.WARTOSC)"
     script = (
-        "import sys\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nfrom mutacje import Edit, Mutation, check_all\n"
+        "import sys\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nfrom silnik_mutacji import Edit, Mutation, check_all\n"
         f"mutation = Mutation('m', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), ('-c', {workers!r}))\n"
         "raise SystemExit(check_all([mutation]))\n"
     )
@@ -775,7 +776,7 @@ def _skill_check(tmp_path: Path, anchor: str, replacement: str, *, hang_s: int, 
     commit(repo, "baza")
     command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_wisi.py")
     script = (
-        "import sys\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nimport mutacje\nfrom mutacje import Edit, Mutation, check_all\n"
+        "import sys\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nimport silnik_mutacji\nfrom silnik_mutacji import Edit, Mutation, check_all\n"
         f"{FAKE_GATE}\nmutation = Mutation('m', (Edit(Path({PACKAGE!r}), {anchor!r}, {replacement!r}),), {command!r})\n"
         f"raise SystemExit(check_all([mutation], limit_s={limit_s}, gate=brama))\n"
     )
@@ -1069,7 +1070,7 @@ def _check_all(repo: Path, anchor: str, replacement: str) -> subprocess.Complete
     tylko go importuje."""
 
     script = (
-        "import sys\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nimport mutacje\nfrom mutacje import Edit, Mutation, check_all\n"
+        "import sys\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nimport silnik_mutacji\nfrom silnik_mutacji import Edit, Mutation, check_all\n"
         f"{FAKE_GATE}\nmutation = Mutation('m', (Edit(Path({PACKAGE!r}), {anchor!r}, {replacement!r}),), {IMPORT!r})\n"
         "raise SystemExit(check_all([mutation], gate=brama))\n"
     )
@@ -1120,7 +1121,7 @@ def test_przeglad_z_wiersza_polecen_nie_liczy_bramy_typow_jako_wykrycia(tmp_path
 
     if skill:
         script = (
-            "import sys\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nfrom mutacje import Edit, Mutation, check_all\n"
+            "import sys\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nfrom silnik_mutacji import Edit, Mutation, check_all\n"
             f"raise SystemExit(check_all([Mutation('m', (Edit(Path({PACKAGE!r}), *{mutated!r}),), {IMPORT!r})]))\n"
         )
         answered = subprocess.run([sys.executable, "-c", script], cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
@@ -1137,10 +1138,10 @@ def test_brama_typow_bez_wyniku_przed_koncem_czasu_wywolujacego_daje_bez_werdykt
     repo = repository(tmp_path / "repo", {PACKAGE: "NIC = 0\n"})
     commit(repo, "baza")
     script = (
-        "import sys, time\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nimport mutacje\n"
-        f"mutation = mutacje.Mutation('m', (mutacje.Edit(Path({PACKAGE!r}), 'NIC = 0', 'NIC = 1'),), {IMPORT!r})\n"
-        "found = [(mutacje.Verdict.SURVIVED, 'kod wyjścia 0'), (mutacje.Verdict.CAUGHT, 'kod wyjścia 1')]\n"
-        "for verdict, last in mutacje.type_gate([mutation, mutation], found, workers=1, deadline=time.monotonic()):\n"
+        "import sys, time\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nimport silnik_mutacji\n"
+        f"mutation = silnik_mutacji.Mutation('m', (silnik_mutacji.Edit(Path({PACKAGE!r}), 'NIC = 0', 'NIC = 1'),), {IMPORT!r})\n"
+        "found = [(silnik_mutacji.Verdict.SURVIVED, 'kod wyjścia 0'), (silnik_mutacji.Verdict.CAUGHT, 'kod wyjścia 1')]\n"
+        "for verdict, last in silnik_mutacji.type_gate([mutation, mutation], found, workers=1, deadline=time.monotonic()):\n"
         "    print(f'{verdict}: {last}')\n"
     )
 
@@ -1157,9 +1158,9 @@ def _type_gate(repo: Path, gate: str, found: str, *, deadline: str = "None") -> 
     ``NIC = 1``; drukuje werdykt po bramie."""
 
     script = (
-        "import sys, time\nsys.path.insert(0, 'tools')\nfrom pathlib import Path\nimport mutacje\n"
-        f"{gate}\nmutation = mutacje.Mutation('m', (mutacje.Edit(Path({PACKAGE!r}), 'NIC = 0', 'NIC = 1'),), {IMPORT!r})\n"
-        f"for verdict, last in mutacje.type_gate([mutation], {found}, workers=1, deadline={deadline}, gate=brama):\n"
+        "import sys, time\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nimport silnik_mutacji\n"
+        f"{gate}\nmutation = silnik_mutacji.Mutation('m', (silnik_mutacji.Edit(Path({PACKAGE!r}), 'NIC = 0', 'NIC = 1'),), {IMPORT!r})\n"
+        f"for verdict, last in silnik_mutacji.type_gate([mutation], {found}, workers=1, deadline={deadline}, gate=brama):\n"
         "    print(f'{verdict}: {last}')\n"
     )
     repo = repository(repo, {PACKAGE: "NIC = 0\n"})
@@ -1170,9 +1171,9 @@ def _type_gate(repo: Path, gate: str, found: str, *, deadline: str = "None") -> 
 def test_brama_typow_nie_biegnie_gdy_polecenie_zlapalo_kazda_mutacje(tmp_path: Path) -> None:
     """Brama to ruff i mypy obu systemów na kopii checkoutu, więc biegnie tylko dla mutacji, którą polecenie przepuściło."""
 
-    gate = "def brama(copy, **_):\n    print('brama biegła')\n    return mutacje.Checked((mutacje.Finding('ruff', 'ruff', 'F821', 'x'),))\n"
+    gate = "def brama(copy, **_):\n    print('brama biegła')\n    return silnik_mutacji.Checked((silnik_mutacji.Finding('ruff', 'ruff', 'F821', 'x'),))\n"
 
-    answered = _type_gate(tmp_path / "repo", gate, "[(mutacje.Verdict.CAUGHT, 'kod wyjścia 1')]")
+    answered = _type_gate(tmp_path / "repo", gate, "[(silnik_mutacji.Verdict.CAUGHT, 'kod wyjścia 1')]")
 
     assert (answered.stdout.splitlines(), answered.stderr) == (["WYKRYTA: kod wyjścia 1"], "")
 
@@ -1182,14 +1183,14 @@ def test_kopia_mutacji_dostaje_cache_mypy_bramy_z_kopii_bez_mutacji(tmp_path: Pa
 
     gate = (
         "def brama(copy, **_):\n"
-        "    cache = copy / mutacje.MYPY_CACHE / 'z-kopii-bez-mutacji'\n"
+        "    cache = copy / silnik_mutacji.MYPY_CACHE / 'z-kopii-bez-mutacji'\n"
         f"    if 'NIC = 0' in (copy / {PACKAGE!r}).read_text(encoding='utf-8'):\n"
         "        cache.mkdir(parents=True)\n"
-        "        return mutacje.Checked()\n"
-        "    return mutacje.Checked((mutacje.Finding('mypy', 'mypy', 'misc', f'cache bez mutacji: {cache.is_dir()}'),))\n"
+        "        return silnik_mutacji.Checked()\n"
+        "    return silnik_mutacji.Checked((silnik_mutacji.Finding('mypy', 'mypy', 'misc', f'cache bez mutacji: {cache.is_dir()}'),))\n"
     )
 
-    answered = _type_gate(tmp_path / "repo", gate, "[(mutacje.Verdict.SURVIVED, 'kod wyjścia 0')]")
+    answered = _type_gate(tmp_path / "repo", gate, "[(silnik_mutacji.Verdict.SURVIVED, 'kod wyjścia 0')]")
 
     assert answered.stdout.splitlines() == ["WYKRYTA PRZEZ BRAMĘ TYPÓW: mypy: cache bez mutacji: True"], answered.stderr
 
@@ -1201,10 +1202,10 @@ def test_brama_typow_kopii_z_mutacja_konczy_sie_z_czasem_wywolujacego(tmp_path: 
         "def brama(copy, *, deadline, **_):\n"
         f"    needed = 30 if 'NIC = 1' in (copy / {PACKAGE!r}).read_text(encoding='utf-8') else 0\n"
         "    late = deadline is not None and deadline - time.monotonic() < needed\n"
-        "    return mutacje.Checked((), 'mypy: brak wyniku przed końcem czasu' if late else None)\n"
+        "    return silnik_mutacji.Checked((), 'mypy: brak wyniku przed końcem czasu' if late else None)\n"
     )
 
-    answered = _type_gate(tmp_path / "repo", gate, "[(mutacje.Verdict.SURVIVED, 'kod wyjścia 0')]", deadline="time.monotonic() + 10")
+    answered = _type_gate(tmp_path / "repo", gate, "[(silnik_mutacji.Verdict.SURVIVED, 'kod wyjścia 0')]", deadline="time.monotonic() + 10")
 
     assert answered.stdout.splitlines() == ["BEZ WERDYKTU: brama typów, mypy: brak wyniku przed końcem czasu"], answered.stderr
 
@@ -1280,9 +1281,9 @@ def test_brama_typow_czyta_diagnostyki_ruff_i_mypy_z_json(
         code, stdout, stderr = answer(tmp_path)
         (tmp_path / f"{name}.json").write_text(json.dumps({"code": code, "stdout": stdout, "stderr": stderr}), encoding="utf-8")
 
-    checked = mutacje.static_gate(tmp_path, limit_s=60, stop=threading.Event(), deadline=None)
+    checked = silnik_mutacji.static_gate(tmp_path, limit_s=60, stop=threading.Event(), deadline=None)
 
-    assert checked == mutacje.Checked(tuple(mutacje.Finding(*finding) for finding in findings))
+    assert checked == silnik_mutacji.Checked(tuple(silnik_mutacji.Finding(*finding) for finding in findings))
 
 
 def test_krok_bramy_typow_bez_wyniku_w_limicie_daje_kopie_bez_werdyktu(tmp_path: Path) -> None:
@@ -1293,9 +1294,9 @@ def test_krok_bramy_typow_bez_wyniku_w_limicie_daje_kopie_bez_werdyktu(tmp_path:
     (tmp_path / "ruff" / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "ruff" / "__main__.py").write_text("import time\ntime.sleep(60)\n", encoding="utf-8")
 
-    checked = mutacje.static_gate(tmp_path, limit_s=1, stop=threading.Event(), deadline=None)
+    checked = silnik_mutacji.static_gate(tmp_path, limit_s=1, stop=threading.Event(), deadline=None)
 
-    assert checked == mutacje.Checked((), "ruff: brak wyniku po 1 s")
+    assert checked == silnik_mutacji.Checked((), "ruff: brak wyniku po 1 s")
 
 
 def test_przerwanie_narzedzia_konczy_krok_bramy_typow_bez_czekania_na_limit(tmp_path: Path) -> None:
@@ -1306,4 +1307,4 @@ def test_przerwanie_narzedzia_konczy_krok_bramy_typow_bez_czekania_na_limit(tmp_
     stop.set()
 
     with pytest.raises(potomne.Stopped):
-        mutacje.static_gate(tmp_path, limit_s=20, stop=stop, deadline=None)
+        silnik_mutacji.static_gate(tmp_path, limit_s=20, stop=stop, deadline=None)

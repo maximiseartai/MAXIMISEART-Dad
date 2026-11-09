@@ -3,7 +3,7 @@
 Each mutation removes from ``model/UrwaneUruchomienie.tla`` one guard or step whose counterpart in
 ``src/rozliczenia/centrum/run_comments.py``, ``comment_versions.py``, ``logs_disk.py``, ``run_logs_guard.py``, ``app.py``,
 ``src/rozliczenia/efenix_pricing.py`` or ``process_run.py``
-the mutation names, runs on its own copy of the checkout (``tools/mutacje.py``) and must end the check with
+the mutation names, runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must end the check with
 ``URWANE URUCHOMIENIE: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as
 NIEAKTUALNA: update it to the new model.
 
@@ -16,11 +16,10 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from model_tlc import narzedzia_dla_kopii
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 ROOT = Path(__file__).resolve().parents[4]
 MODEL = Path(".agents/skills/verify-urwane-uruchomienie/model/UrwaneUruchomienie.tla")

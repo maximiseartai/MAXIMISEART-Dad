@@ -16,7 +16,7 @@ krok skilla bez pomiaru waży medianę zmierzonych jednostek tego rodzaju na tor
 narzut i start też są z pomiarów. Plan dzieli każdy tor na najmniej zadań o ścianie najwyżej ``cel_s`` (LPT: najdłuższa jednostka do
 zadania o najmniejszej sumie). Plik dłuższy niż zadanie dzieli się na k udziałów o tej samej wadze: udział k biegnie
 z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei). Skrypt mutacji dłuższy niż zadanie dzieli się tak samo na
-najwyżej tyle części, ile ma mutacji: część biegnie z ``MUTACJE_CZESC=k/n`` (``tools/mutacje.py``), z podstawą
+najwyżej tyle części, ile ma mutacji: część biegnie z ``MUTACJE_CZESC=k/n`` (``tools/lib/silnik_mutacji.py``), z podstawą
 poleceń swoich mutacji. Podstawa ``ci:`` z ``ci-czesci: <n>`` dzieli się tak samo na najwyżej n części (część k
 skrypt bierze z ``MUTACJE_CZESC=k/n``, ``tools/lib/skrypt_skilla.py``), a bez niego nie. Plan drukuje najdłuższą jednostkę
 każdego toru po podziale: poniżej niej ściana zadania nie zejdzie.

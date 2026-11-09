@@ -7,17 +7,19 @@ Testy zachowania budują własne repozytorium z kopią narzędzia. Testy struktu
 from __future__ import annotations
 
 from collections.abc import Iterator
-import importlib.util
 from pathlib import Path
 import re
 import subprocess
 import sys
-from types import ModuleType
 
 import pytest
 import yaml
 
-from tests.fixtures.git_repo import commit, copy_files, git
+from tests.fixtures.git_repo import commit, copy_files, git, with_imports
+
+import kroki_skilli
+import wplyw_zmiany
+import zakres_runu
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
@@ -39,19 +41,15 @@ REPO = {
 }
 
 
-TOOLS_FOR_CHANGE = (
-    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/plan_ci.py", "tools/lib/plan_runu.py", "tools/lib/niestabilne_testy.py", "tools/lib/wyniki_testow.py",
-    "tools/mutacje_zmiany.py", "tools/lib/pokrycie_procesu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/kroki_lokalne.py",
-    "tools/lib/czasy_ci.py", "tools/lib/github.py", "tools/lib/ciezkie_ci.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
-    "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py",
-)
+# Narzędzie i silnik mutacji, który importują tabele mutacji skilli repozytorium testu.
+TOOLS_FOR_CHANGE = ("tools/skille_dla_zmiany.py", "tools/lib/silnik_mutacji.py")
 
 
 def _repo(root: Path, files: dict[str, str] = REPO) -> str:
     for name, text in files.items():
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_text(text, encoding="utf-8")
-    copy_files(root, TOOLS_FOR_CHANGE)
+    copy_files(root, with_imports(TOOLS_FOR_CHANGE))
     git(root, "init", "--quiet")
     return commit(root, "baza")
 
@@ -219,8 +217,8 @@ def test_liczy_ci_i_liczy_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_
 
 
 MODEL_SCRIPT = (
-    "from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'tools'))\n"
-    "from mutacje import Edit, Mutation  # noqa: E402\n\n"
+    "from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'tools/lib'))\n"
+    "from silnik_mutacji import Edit, Mutation  # noqa: E402\n\n"
     "MUTATIONS = (Mutation('m', (Edit(Path('.agents/skills/verify-a/model/M.tla'), 'X', 'Y'),), "
     "('.agents/skills/verify-a/scripts/sprawdz_a.py',)),)\n"
     "if __name__ == '__main__':\n    print('MUTACJE OK')\n"
@@ -256,11 +254,11 @@ def test_skrypt_mutacji_modelu_przy_zmianie_modelu_stoi_w_liczy_ci_a_nie_w_liczy
     ]
 
 
-def test_zmiana_runnera_mutacji_nie_wskazuje_skilla_choc_noc_uruchamia_jego_skrypt_mutacji(tmp_path: Path) -> None:
+def test_zmiana_silnika_mutacji_nie_wskazuje_skilla_choc_noc_uruchamia_jego_skrypt_mutacji(tmp_path: Path) -> None:
     base = _repo(tmp_path, AGREEING)
-    with (tmp_path / "tools" / "mutacje.py").open("a", encoding="utf-8") as file:
+    with (tmp_path / "tools" / "lib" / "silnik_mutacji.py").open("a", encoding="utf-8") as file:
         file.write("# zmiana\n")
-    commit(tmp_path, "zmiana runnera")
+    commit(tmp_path, "zmiana silnika mutacji")
 
     # Linie LICZY dostaje tylko skill, który obowiązuje; skrypt nocy uruchamia zakres (tests/test_zakres_runu.py).
     assert _run(tmp_path, base).stdout.splitlines() == [f"{VERDICT}brak"]
@@ -291,21 +289,10 @@ def test_baza_z_opcja_baza_i_pozycyjna_daje_ten_sam_wynik_a_dwie_rozne_to_blad_u
     assert f"dwie różne bazy: --baza {base} i HEAD" in conflict.stderr
 
 
-def _load_tool(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    monkeypatch.syspath_prepend(str(TOOLS))
-    spec = importlib.util.spec_from_file_location("skille_dla_zmiany", TOOLS / "skille_dla_zmiany.py")
-    assert spec is not None and spec.loader is not None
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
-    return tool
-
-
-def test_kazdy_skill_verify_deklaruje_pilnuje(monkeypatch: pytest.MonkeyPatch) -> None:
-    _load_tool(monkeypatch)
-    ci = importlib.import_module("kroki_skilli")
+def test_kazdy_skill_verify_deklaruje_pilnuje() -> None:
     skills = sorted(SKILLS.glob("verify-*/SKILL.md"))
 
-    without = [md.parent.name for md in skills if ci.guarded(md) is None]
+    without = [md.parent.name for md in skills if kroki_skilli.guarded(md) is None]
 
     assert skills
     assert without == [], "dopisz do frontmattera SKILL.md klucz pilnuje: z globami ścieżek, przy których zmianie skill obowiązuje"
@@ -324,14 +311,14 @@ def test_frontmatter_kazdego_skilla_jest_poprawnym_yaml() -> None:
     assert broken == {}, "harness czyta frontmatter jako YAML: wartość bez cudzysłowu nie może mieć „: ”"
 
 
-def test_workflow_skilla_windows_biegnie_dla_tych_samych_sciezek_co_jego_pilnuje(monkeypatch: pytest.MonkeyPatch) -> None:
-    _load_tool(monkeypatch)
-    ci = importlib.import_module("kroki_skilli")
+def test_workflow_skilla_windows_biegnie_dla_tych_samych_sciezek_co_jego_pilnuje() -> None:
     skill = SKILLS / "verify-centrum-na-windowsie"
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / f"{skill.name}.yml").read_text(encoding="utf-8"))
     triggers = workflow[True]  # YAML 1.1 czyta klucz „on” jako True
 
-    expected = sorted([*ci.guarded(skill / "SKILL.md"), f"{skill.relative_to(ROOT).as_posix()}/**"])
+    guarded = kroki_skilli.guarded(skill / "SKILL.md")
+    assert guarded is not None
+    expected = sorted([*guarded, f"{skill.relative_to(ROOT).as_posix()}/**"])
 
     assert {event: sorted(triggers[event]["paths"]) for event in ("pull_request", "push")} == {
         "pull_request": expected,
@@ -340,15 +327,14 @@ def test_workflow_skilla_windows_biegnie_dla_tych_samych_sciezek_co_jego_pilnuje
 
 
 @pytest.mark.parametrize("skill", ["verify-centrum-rozliczen", "verify-centrum-na-windowsie"])
-def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(monkeypatch: pytest.MonkeyPatch, skill: str) -> None:
+def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(skill: str) -> None:
     """Atrapa, do której skrypty skilla Centrum dochodzą importem, trafia w jego ``pilnuje:``, bo wybór importów nie
     liczy, a workflow Windows nie biegnie w pełnym CI ``main``: zmiana kopii w ``atrapy/pliki_taty.py`` nie uruchamiała
     ani podstawy Centrum, ani Windows (przegląd #1177 r3, wcześniej #1121 i #1125). Pakiet bez kodu (``__init__.py``)
     się nie liczy. Atrapy innych skilli łapie pełne CI ``main`` (``docs/agents/skille.md``). Ścieżki skilli stoją
     literałem, żeby graf wybierał test przy zmianie ich skryptów i ``SKILL.md``."""
 
-    tool = _load_tool(monkeypatch)
-    repository = importlib.import_module("wplyw_zmiany").Repository.scan(ROOT)
+    repository = wplyw_zmiany.Repository.scan(ROOT)
     centrum = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen"
     windows = ROOT / ".agents" / "skills" / "verify-centrum-na-windowsie"
     folder, scripts = {
@@ -363,7 +349,7 @@ def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(
     }
 
     assert "tools/lib/atrapy/pliki_taty.py" in atrapy
-    assert sorted(atrapy - tool.hits(folder, atrapy).files.keys()) == [], f"dopisz te atrapy do pilnuje: {skill}"
+    assert sorted(atrapy - kroki_skilli.hits(folder, atrapy).files.keys()) == [], f"dopisz te atrapy do pilnuje: {skill}"
 
 # Zdanie, które każe uruchomić coś przed oddaniem pracy albo pushem.
 BEFORE_PUSH = re.compile(r"before (handing|you hand|pushing|you push|opening|you open)|przed (pushem|oddaniem)", re.IGNORECASE)
@@ -379,8 +365,8 @@ def _ci_commands(skill: Path) -> set[tuple[str, ...]]:
     skrypty mutacji) i wywołania jego skryptów w krokach CI planu; skrypt mutacji bez argumentów obejmuje każde swoje
     wywołanie."""
 
-    steps = importlib.import_module("kroki_skilli").Katalog.skanuj(ROOT).kroki
-    ci_steps = importlib.import_module("zakres_runu").KROKI.values()
+    steps = kroki_skilli.Katalog.skanuj(ROOT).kroki
+    ci_steps = zakres_runu.KROKI.values()
     runs = {(Path(step.command[0]).name, *step.command[1:]) for step in steps if step.skill == skill}
     return runs | {run for ci_step in ci_steps for run in ci_step.wywolania(skill.name)}
 
@@ -418,14 +404,13 @@ def _mandates(text: str, commands: set[tuple[str, ...]]) -> list[str]:
     return found
 
 
-def test_skill_nie_kaze_uruchamiac_przed_pushem_tego_co_liczy_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_skill_nie_kaze_uruchamiac_przed_pushem_tego_co_liczy_ci() -> None:
     """Akapit ze zdaniem „before handing/pushing…” albo „przed pushem” nie wymienia polecenia, które liczy CI.
 
     Polecenie liczy się także w bloku kodu pod akapitem, z ``--run-dir``/``--root`` albo bez części argumentów.
     Granica: nakaz innymi słowami („after every change”, „always run”, „it must end with”) łapie tylko przegląd.
     """
 
-    _load_tool(monkeypatch)
     commands = {run for md in SKILLS.glob("*/SKILL.md") for run in _ci_commands(md.parent)}
 
     found = {md.parent.name: _mandates(md.read_text(encoding="utf-8"), commands) for md in sorted(SKILLS.glob("*/SKILL.md"))}
@@ -436,10 +421,9 @@ def test_skill_nie_kaze_uruchamiac_przed_pushem_tego_co_liczy_ci(monkeypatch: py
     )
 
 
-def test_skill_z_poleceniami_w_ci_mowi_co_liczy_ci_a_co_zostaje_lokalnie(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_skill_z_poleceniami_w_ci_mowi_co_liczy_ci_a_co_zostaje_lokalnie() -> None:
     """Granica: czy sekcja trafnie nazywa osąd, który zostaje lokalnie, łapie tylko przegląd."""
 
-    _load_tool(monkeypatch)
     skills = [md for md in sorted(SKILLS.glob("verify-*/SKILL.md")) if _ci_commands(md.parent)]
 
     without = [md.parent.name for md in skills if CI_AND_LOCAL not in md.read_text(encoding="utf-8").splitlines()]

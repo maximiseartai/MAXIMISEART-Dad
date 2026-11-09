@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from functools import cache
 import importlib.util
@@ -40,8 +41,9 @@ PATTERN = "check_*_mutations.py"
 # Wywołanie skryptu mutacji w SKILL.md; ścieżka bez ``.agents`` na początku liczy się od folderu skilla.
 MENTION = re.compile(r"[\w.\\/-]*scripts[\\/]check_\w+_mutations\.py")
 BASELINE = "PODSTAWA"
-# Runner mutacji: jego zmiana może zmienić werdykt każdego skryptu mutacji (uruchomienie kroku, jego polecenie i części).
-RUNNER = ("tools/mutacje.py", "tools/ci/wykonaj_zadanie.py", "tools/lib/kroki_skilli.py")
+# Uruchamiacz kroku: proces skryptu mutacji, jego polecenie, części i limit czasu; zmiana każdego z nich może zmienić
+# werdykt każdego skryptu. Silnik, który skrypt importuje, wchodzi do ``watched`` z domknięcia importów skryptu.
+LAUNCHER = ("tools/ci/wykonaj_zadanie.py", "tools/lib/kroki_skilli.py")
 # Powód w ``Hits`` dla pliku w folderze skilla.
 FOLDER = "folder skilla"
 # Folder modelu TLA+ w skillu: skrypt mutacji, który psuje tylko pliki w nim, biegnie też na pull request (ADR 0021).
@@ -262,12 +264,13 @@ def _steps(root: Path, failed: dict[str, str]) -> list[Step]:
     return found
 
 
-def watched(step: Step) -> tuple[str, ...]:
-    """Ścieżki, których zmiana uruchamia skrypt mutacji ``step``: folder skilla (z ``/`` na końcu), ``RUNNER`` i
-    sprawdzenia, które uruchamiają jego mutacje; tabela, której nie da się wczytać, to wyjątek z ``exec_module``."""
+def watched(step: Step, imported: Callable[[str], Iterable[str]]) -> tuple[str, ...]:
+    """Ścieżki, których zmiana uruchamia skrypt mutacji ``step``: folder skilla (z ``/`` na końcu), pliki, które skrypt
+    importuje (``imported``, ``Repository.imported``: silnik mutacji i jego zależności), ``LAUNCHER`` i sprawdzenia,
+    które uruchamiają jego mutacje; tabela, której nie da się wczytać, to wyjątek z ``exec_module``."""
 
     checkers = sorted({mutation.command[0] for mutation in _mutations(step.root / step.command[0])})
-    return (step.folder, *RUNNER, *checkers)
+    return (step.folder, *sorted(imported(step.command[0])), *LAUNCHER, *checkers)
 
 
 def model_watched(step: Step, imported: Callable[[str], Iterable[str]]) -> tuple[str, ...] | None:
@@ -297,10 +300,10 @@ def repeats(step: Step, chosen: Iterable[Step]) -> bool:
         return False
 
 
-class Katalog(NamedTuple):
+@dataclass(frozen=True)
+class Katalog:
     """Kroki skilli checkoutu ``root`` i FAIL-e ich znalezienia, jak ``Repository.scan`` w ``tools/lib/wplyw_zmiany.py``.
 
-    Krotka nazwana, nie dataclass: testy wczytują moduł bez wpisu w ``sys.modules``, którego dataclass potrzebuje.
     ``kroki``: podstawa każdego skilla z kluczem ``ci`` przed jego skryptami mutacji, skille po nazwie. ``bledy``: FAIL
     po nazwie: zgubione skrypty mutacji, zły klucz ``ci:`` albo ``ci-czesci:`` i brak jakiegokolwiek skryptu mutacji.
     """

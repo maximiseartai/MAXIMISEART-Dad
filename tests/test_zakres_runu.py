@@ -30,8 +30,8 @@ GUARDED = "---\nname: verify-x\npilnuje:\n  - src/pakiet/rout*.py\n---\n"
 WITH_TABLE = f"""from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
-from mutacje import Edit, Mutation  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+from silnik_mutacji import Edit, Mutation  # noqa: E402
 
 MUTATIONS = (
     Mutation("m", (Edit(Path("{CHECKED}"), "X", "Y"), Edit(Path("{ANCHORS}"), "X", "Y")), (".agents/skills/verify-a/scripts/sprawdz_a.py",)),
@@ -177,18 +177,22 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         (CHECKED, False),
         (ANCHORS, False),
         ("src/pakiet/pomocnik.py", False),
-        ("tools/lib/potomne.py", False),
-        # Polityka zakresu nie zmienia werdyktu skryptu, a runner mutacji tak.
+        # Polityka zakresu i samo narzędzie z wiersza poleceń (z jego odmową ciężkiego CI) nie biegną w procesie skryptu.
         ("tools/lib/zakres_runu.py", False),
+        ("tools/mutacje.py", False),
+        ("tools/lib/ciezkie_ci.py", False),
         (".agents/skills/verify-a/scripts/sprawdz_a.py", True),
         (".agents/skills/verify-a/SKILL.md", True),
         ("requirements.txt", True),
+        # Uruchamiacz kroku i silnik mutacji, który skrypt importuje, z każdym modułem, do którego silnik dochodzi.
         ("tools/ci/wykonaj_zadanie.py", True),
         ("tools/lib/kroki_skilli.py", True),
-        ("tools/mutacje.py", True),
+        ("tools/lib/silnik_mutacji.py", True),
+        ("tools/lib/potomne.py", True),
+        ("tools/lib/repo.py", True),
     ],
 )
-def test_noca_skrypt_mutacji_biegnie_przy_zmianie_folderu_skilla_albo_runnera(tmp_path: Path, changed: str, runs: bool) -> None:
+def test_noca_skrypt_mutacji_biegnie_przy_zmianie_folderu_skilla_jego_importow_albo_uruchamiacza(tmp_path: Path, changed: str, runs: bool) -> None:
     repo = repository(tmp_path / "repo", SKILLS)
 
     praca = zakres(Zdarzenie.NOC, frozenset({changed}), repo)
@@ -347,7 +351,15 @@ def test_reguly_kroku_skilla_licza_od_korzenia_checkoutu_skilla(tmp_path: Path) 
     found = kroki_skilli.hits(skill, {".agents/skills/verify-a/opis.md", "src/pakiet/routing.py", "docs/opis.md"})
 
     assert found == kroki_skilli.Hits({".agents/skills/verify-a/opis.md": kroki_skilli.FOLDER, "src/pakiet/routing.py": "src/pakiet/rout*.py"}, None)
-    assert kroki_skilli.watched(katalog.krok(Klucz.z_tekstu(f"skill:{SCRIPT_A}"))) == (".agents/skills/verify-a/", *kroki_skilli.RUNNER, BASELINE_K)
+    imported = {SCRIPT_K: ("tools/lib/z.py", "tools/lib/a.py")}.get
+
+    assert kroki_skilli.watched(katalog.krok(Klucz.z_tekstu(f"skill:{SCRIPT_A}")), lambda path: imported(path, ())) == (
+        ".agents/skills/verify-a/",
+        "tools/lib/a.py",
+        "tools/lib/z.py",
+        *kroki_skilli.LAUNCHER,
+        BASELINE_K,
+    )
     assert kroki_skilli.ci_command(skill / "SKILL.md") == (BASELINE_K,)
 
 
@@ -390,12 +402,12 @@ def _model_skill(name: str, edited: tuple[str, ...]) -> dict[str, str]:
         (MODEL_ENGINE, True),
         ("tools/lib/tlc_modelu.py", True),
         ("tools/lib/obok.py", False),
-        # Folder skilla poza modelem i runner mutacji uruchamiają skrypt tylko nocą.
+        # Folder skilla poza modelem i silnik mutacji uruchamiają skrypt tylko nocą.
         (".agents/skills/verify-m/SKILL.md", False),
         # Sąsiad folderu modelu, którego nazwa zaczyna się od „model”, nie jest modelem.
         (".agents/skills/verify-m/model-notatki.md", False),
         (".agents/skills/verify-m/modele/M.tla", False),
-        ("tools/mutacje.py", False),
+        ("tools/lib/silnik_mutacji.py", False),
         ("requirements.txt", False),
         ("src/pakiet/routing.py", False),
     ],
@@ -541,7 +553,7 @@ def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_reques
     assert all(w.czesci == () for w in praca.wybrane if w.krok.verdict is not None)
 
 
-ROUTING, RUNNER, LIBRARIES = "src/pakiet/routing.py", "tools/mutacje.py", "requirements.txt"
+ROUTING, ENGINE, LIBRARIES = "src/pakiet/routing.py", "tools/lib/silnik_mutacji.py", "requirements.txt"
 FOLDER_C = ".agents/skills/verify-c/scripts/check_c_mutations.py"
 # Podstawa w częściach skilla bez pilnuje.
 BASELINE_E = ".agents/skills/verify-e/scripts/sprawdz_e.py"
@@ -551,12 +563,12 @@ BASELINE_E = ".agents/skills/verify-e/scripts/sprawdz_e.py"
     ("changed", "files"),
     [
         (
-            {ROUTING, RUNNER, "docs/opis.md"},
+            {ROUTING, ENGINE, "docs/opis.md"},
             {
                 "verify-d/ci": {ROUTING},
                 "verify-e/ci": set(),
-                SCRIPT_A: {RUNNER},
-                "verify-b/check_b_mutations.py": {RUNNER},
+                SCRIPT_A: {ENGINE},
+                "verify-b/check_b_mutations.py": {ENGINE},
                 "verify-c/check_c_mutations.py": set(),
             },
         ),

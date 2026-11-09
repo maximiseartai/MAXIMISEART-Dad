@@ -45,7 +45,7 @@ Najpierw biegną raz testy dotknięte zmianą, wybrane jak w ``tools/szybko.py``
 plików, także w procesach Pythona uruchomionych przez test, oraz linie wykonane dla wielu testów naraz: przy imporcie
 modułu i w fixture o zasięgu szerszym niż test. Testy muszą przejść, inaczej wynik mutacji niczego nie dowodzi.
 
-Potem każda mutacja biegnie przez silnik ``tools/mutacje.py`` (własna kopia checkoutu), najpierw z testami, które
+Potem każda mutacja biegnie przez silnik ``tools/lib/silnik_mutacji.py`` (własna kopia checkoutu), najpierw z testami, które
 wykonały jej linie. Pokrycie tylko przyspiesza wykrycie: mutacja, która je przeżyła, biegnie drugi raz, po jednej
 naraz z ``--rownolegle`` workerami xdist, i dopiero ta porażka daje ``NIEWYKRYTA``. Drugi raz biegną testy, które
 wykonały jakikolwiek kod jej pliku albo uruchomiły proces i dochodzą do pliku importem albo nazwą pliku, katalogu
@@ -61,13 +61,13 @@ tymczasowym. Wtedy mutację tej linii od razu sprawdzają te same testy. Test, k
 Kod, który biegnie tylko w takim procesie z ``-I`` uruchomionym przez inne narzędzie, dostaje więc ``NIEWYKRYTA``,
 nawet gdy test tamtego narzędzia by go wykrył: potrzebuje testu, który sam nazywa jego plik.
 Mutacja, po której pytest-timeout kończy test (``ZAWIESZENIE``), liczy się jak wykryta z dopiskiem ``liczona jako
-wykryta: pytest-timeout czerwieni test w CI`` (``mutacje.in_ci``) i nie biegnie z szerszymi testami. Mutacja, po której
+wykryta: pytest-timeout czerwieni test w CI`` (``silnik_mutacji.in_ci``) i nie biegnie z szerszymi testami. Mutacja, po której
 testy nie kończą się w ``--limit-s`` (``PRZEKROCZONY CZAS``), biegnie dalej jak przeżyta, bo test tylko wolniejszy CI
 przechodzi.
 Mutację, która przeżyła ostatni przebieg testów albo nie ma żadnego testu, sprawdza jeszcze brama typów
-(``mutacje.type_gate``): ruff i mypy obu systemów, kroki bramy pre-push. Mutacja, po której któryś zgłasza, że kod jest
+(``silnik_mutacji.type_gate``): ruff i mypy obu systemów, kroki bramy pre-push. Mutacja, po której któryś zgłasza, że kod jest
 błędny (niezdefiniowana nazwa, błąd składni, błąd typów), to ``WYKRYTA PRZEZ BRAMĘ TYPÓW`` z nazwą kroku i tym błędem, i
-nie trafia do zapisu ani do issue (``mutacje.wrong``). Cofnięcia fragmentu do bazy (``Mutant.revert``) brama nie
+nie trafia do zapisu ani do issue (``silnik_mutacji.wrong``). Cofnięcia fragmentu do bazy (``Mutant.revert``) brama nie
 sprawdza: przywraca ono kod, który przeszedł bramę, więc jej błąd na nim powstaje tylko z niezgodności z niecofniętymi
 fragmentami tej samej zmiany (import, adnotacja, typ w innym miejscu). Pełne cofnięcie zmiany przeszłoby bramę, a testy
 by go nie złapały, więc takie cofnięcie przeżywa i trafia do issue; gdy zmiana była tylko typów, agent odpowiada
@@ -143,15 +143,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
 from jednostka import Czesc
-import mutacje
 import pokrycie_procesu
 import potomne
 from repo import BASE, ROOT
 import repo
+import silnik_mutacji
 import wplyw_zmiany
 from zakres_runu import RDZENIE_RUNNERA
 
-# Mutacji naraz i workerów xdist pokrycia: vCPU runnera nocy. Stała, a nie ``mutacje.PARALLEL`` (rdzenie komputera), bo
+# Mutacji naraz i workerów xdist pokrycia: vCPU runnera nocy. Stała, a nie ``silnik_mutacji.PARALLEL`` (rdzenie komputera), bo
 # z niej plan nocy liczy rozmiar części (``mutacje_nocne.NA_CZESC``, ADR 0021), który nie może zależeć od komputera, na
 # którym plan biegnie.
 WORKERS = RDZENIE_RUNNERA
@@ -779,8 +779,8 @@ def _part(text: str) -> Czesc:
         raise argparse.ArgumentTypeError(f"część {error}") from None
 
 
-def main(argv: list[str] | None = None, *, gate: mutacje.Gate = mutacje.static_gate) -> int:
-    """Kod wyjścia narzędzia; ``gate`` to brama typów przeżytych mutacji (``mutacje.type_gate``)."""
+def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mutacji.static_gate) -> int:
+    """Kod wyjścia narzędzia; ``gate`` to brama typów przeżytych mutacji (``silnik_mutacji.type_gate``)."""
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, od której liczy się zmiana (domyślnie {BASE}).")
@@ -923,7 +923,7 @@ class ZakresMutacji:
 
 
 def _mutate(
-    args: argparse.Namespace, survived: list[tuple[Mutant, str]], unchecked: list[tuple[Mutant, str]], gate: mutacje.Gate
+    args: argparse.Namespace, survived: list[tuple[Mutant, str]], unchecked: list[tuple[Mutant, str]], gate: silnik_mutacji.Gate
 ) -> tuple[int, str]:
     """Kod wyjścia i ostatnia linia; przeżyte mutacje z treścią ich pliku przed mutacją dopisuje do ``survived``, a mutacje
     bez werdyktu po limicie czasu części do ``unchecked``."""
@@ -965,9 +965,9 @@ def _mutate(
             return 2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
         print(f"Pokrycie: {len(coverage.lines)} testów wykonało zmienione linie, {len(coverage.spawners)} uruchomiło proces.", flush=True)
     today = datetime.datetime.now(datetime.UTC).date()
-    narrow: list[tuple[Mutant, mutacje.Mutation, list[list[str]]]] = []  # i testy dalszych przebiegów, gdy pierwszy przeżyje
+    narrow: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []  # i testy dalszych przebiegów, gdy pierwszy przeżyje
     # Mutacje, które przeżyły testy, z werdyktem, jego linią i dopiskiem przebiegu; sprawdza je jeszcze brama typów.
-    passed: list[tuple[Mutant, mutacje.Mutation, mutacje.Verdict, str, str]] = []
+    passed: list[tuple[Mutant, silnik_mutacji.Mutation, silnik_mutacji.Verdict, str, str]] = []
     excused = other_system = 0
     for mutant in found:
         name = _name(mutant)
@@ -980,9 +980,9 @@ def _mutate(
             other_system += 1
             print(f"POMINIĘTA: {name} → kod innego systemu niż {sys.platform}")
             continue
-        edit = mutacje.Edit(Path(mutant.path), texts[mutant.path], mutant.source)
+        edit = silnik_mutacji.Edit(Path(mutant.path), texts[mutant.path], mutant.source)
         if not by_file[mutant.path]:
-            passed.append((mutant, mutacje.Mutation(name, (edit,), ()), mutacje.Verdict.SURVIVED, f"żaden test nie zależy od {mutant.path}", ""))
+            passed.append((mutant, silnik_mutacji.Mutation(name, (edit,), ()), silnik_mutacji.Verdict.SURVIVED, f"żaden test nie zależy od {mutant.path}", ""))
             continue
         # Kod, którego wynik dostają też testy, które go nie wykonały (import, fixture szersza niż test, ``@cache``),
         # sprawdzają wszystkie testy pliku; inny kod testy, które wykonały jakikolwiek kod jego pliku. Taki kod czytają
@@ -993,26 +993,26 @@ def _mutate(
         covering = coverage.covering(mutant)
         steps = [covering, touching, by_file[mutant.path]] if shared else [covering, touching or by_file[mutant.path]]
         first, *later = [list(tests) for tests in dict.fromkeys(map(tuple, steps)) if tests]
-        narrow.append((mutant, mutacje.Mutation(name, (edit,), _command(first)), later))
+        narrow.append((mutant, silnik_mutacji.Mutation(name, (edit,), _command(first)), later))
     clock.append(time.monotonic())
     # Pokrycie tylko przyspiesza: mutacja, która przeżyła testy swoich linii, biegnie z coraz większym zbiorem testów.
     # Przebieg przed ostatnim biegnie po kilka mutacji naraz jak pierwszy. Ostatni ma testy pliku, często tysiące, a
     # takich mutacji jest kilka, więc biegną po jednej, każda z workerami xdist.
-    wide: list[tuple[Mutant, mutacje.Mutation]] = []
+    wide: list[tuple[Mutant, silnik_mutacji.Mutation]] = []
     middle = 0
     queued, label = narrow, ""
     while queued:
-        verdicts = mutacje.verdicts([m for _, m, _ in queued], workers=args.rownolegle, limit_s=args.limit_s, deadline=deadline)
-        further: list[tuple[Mutant, mutacje.Mutation, list[list[str]]]] = []
+        verdicts = silnik_mutacji.verdicts([m for _, m, _ in queued], workers=args.rownolegle, limit_s=args.limit_s, deadline=deadline)
+        further: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []
         for (mutant, mutation, remaining), (verdict, shown) in zip(queued, verdicts, strict=True):
             # ZAWIESZENIE (pytest-timeout) czerwieni CI, więc kończy mutację jak WYKRYTA, bez szerszych testów.
-            caught, last = mutacje.in_ci(verdict, shown)
-            if verdict == mutacje.Verdict.NO_VERDICT:
+            caught, last = silnik_mutacji.in_ci(verdict, shown)
+            if verdict == silnik_mutacji.Verdict.NO_VERDICT:
                 unchecked.append((mutant, texts[mutant.path]))
             elif not caught and not remaining:
                 passed.append((mutant, mutation, verdict, shown, label))
                 continue
-            if caught or verdict == mutacje.Verdict.NO_VERDICT or not remaining:
+            if caught or verdict == silnik_mutacji.Verdict.NO_VERDICT or not remaining:
                 print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
             elif remaining[1:]:
                 further.append((mutant, replace(mutation, command=_command(remaining[0])), remaining[1:]))
@@ -1021,26 +1021,26 @@ def _mutate(
         middle += len(further)
         queued, label = further, " (testy kodu pliku)"
     clock.append(time.monotonic())
-    for (mutant, mutation), (verdict, shown) in zip(wide, mutacje.verdicts([m for _, m in wide], workers=1, limit_s=args.limit_s, deadline=deadline), strict=True):
-        caught, last = mutacje.in_ci(verdict, shown)
-        if not caught and verdict != mutacje.Verdict.NO_VERDICT:
+    for (mutant, mutation), (verdict, shown) in zip(wide, silnik_mutacji.verdicts([m for _, m in wide], workers=1, limit_s=args.limit_s, deadline=deadline), strict=True):
+        caught, last = silnik_mutacji.in_ci(verdict, shown)
+        if not caught and verdict != silnik_mutacji.Verdict.NO_VERDICT:
             passed.append((mutant, mutation, verdict, shown, " (testy pliku)"))
             continue
-        if verdict == mutacje.Verdict.NO_VERDICT:
+        if verdict == silnik_mutacji.Verdict.NO_VERDICT:
             unchecked.append((mutant, texts[mutant.path]))
         print(f"{verdict}: {mutation.name} → {last} (testy pliku)", flush=True)
     clock.append(time.monotonic())
     # Cofnięcie do bazy przywraca kod, który przeszedł bramę, więc jej błąd mówi tylko o niezgodności z resztą zmiany.
     checked = [(mutation, (verdict, shown)) for mutant, mutation, verdict, shown, _ in passed if not mutant.revert]
     gated = iter(
-        mutacje.type_gate(
+        silnik_mutacji.type_gate(
             [mutation for mutation, _ in checked], [found for _, found in checked], workers=args.rownolegle, limit_s=args.limit_s, deadline=deadline, gate=gate
         )
     )
     for mutant, mutation, tests_verdict, tests_shown, label in passed:
         verdict, shown = (tests_verdict, tests_shown) if mutant.revert else next(gated)
-        caught, last = mutacje.in_ci(verdict, shown)
-        if verdict == mutacje.Verdict.NO_VERDICT:
+        caught, last = silnik_mutacji.in_ci(verdict, shown)
+        if verdict == silnik_mutacji.Verdict.NO_VERDICT:
             unchecked.append((mutant, texts[mutant.path]))
         elif not caught:
             survived.append((mutant, texts[mutant.path]))

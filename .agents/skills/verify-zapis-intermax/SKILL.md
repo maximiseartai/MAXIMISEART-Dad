@@ -278,7 +278,7 @@ Never shrink a bound or a rule to make a real counterexample go away.
 CI proves the check can still fail. The night on `main` runs
 `.agents/skills/verify-zapis-intermax/scripts/check_intermax_mutations.py`
 after a change of this skill's folder. It applies each broken variant to a
-temporary copy of the checkout (`tools/mutacje.py`) and must end with
+temporary copy of the checkout (`tools/lib/silnik_mutacji.py`) and must end with
 `MUTACJE OK`. Each of these gives `INTERMAX: NOWE NARUSZENIE`:
 
 - a replace without a Kopia;

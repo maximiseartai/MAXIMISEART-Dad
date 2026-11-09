@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 from datetime import datetime
-import importlib.util
 import itertools
 import json
 import os
@@ -14,7 +13,6 @@ import re
 import shutil
 import subprocess
 import sys
-from types import ModuleType
 from typing import Any, get_args, get_type_hints
 
 import pytest
@@ -72,6 +70,8 @@ from atrapy.efenix import write_collective_file
 from atrapy.intermax import Intermax
 from atrapy.workbooks import hyperlinks
 
+import uruchom_proces
+
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "uruchom_proces.py"
 WORKER_SETTLEMENTS = worker_settlements_name_with(PERIOD)
 DETACHED_VIEW_NOTICE = "Podgląd postępu przestał się aktualizować; wynik nie zależy od tego."
@@ -97,18 +97,9 @@ def _run(*arguments: str | Path, script: Path = SCRIPT) -> tuple[int, dict[str, 
     return completed.returncode, json.loads(completed.stdout)
 
 
-def _script(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    spec = importlib.util.spec_from_file_location("uruchom_proces", SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(sys.modules, spec.name, module)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_skrypt_dla_maszyn_i_karta_centrum_znaja_kazde_zatrzymanie_rdzenia(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_skrypt_dla_maszyn_i_karta_centrum_znaja_kazde_zatrzymanie_rdzenia() -> None:
     core = set(get_args(get_type_hints(Stop)["kind"]))
-    script = set(get_args(_script(monkeypatch).StopResult.model_fields["kind"].annotation))
+    script = set(get_args(uruchom_proces.StopResult.model_fields["kind"].annotation))
     card = set(get_args(runs_contract.RunOutcome.model_fields["ending"].annotation)) - {"finished"}
 
     assert core == script == card == {"stop", "declined", "unexpected", "after_engine"}
@@ -266,7 +257,7 @@ def test_awaria_podgladu_postepu_odlacza_go_bez_tekstu_wyjatku_i_bez_zmiany_wyni
 
     monkeypatch.setattr(run_view.ProcessView, "progress", broken_after_good_views)
 
-    exit_code = _script(monkeypatch).main(_settlement_arguments(tmp_path, source, config))
+    exit_code = uruchom_proces.main(_settlement_arguments(tmp_path, source, config))
     stdout, stderr = capsys.readouterr()
     result = json.loads(stdout)
 
@@ -295,7 +286,7 @@ def test_plan_ktorego_nie_da_sie_pokazac_to_zatrzymanie_po_silniku_z_tym_samym_w
 
     monkeypatch.setattr(run_view.ProcessView, "shown", broken_view)
 
-    exit_code = _script(monkeypatch).main(_settlement_arguments(tmp_path, source, config, "--dry-run"))
+    exit_code = uruchom_proces.main(_settlement_arguments(tmp_path, source, config, "--dry-run"))
     stdout, stderr = capsys.readouterr()
     result = json.loads(stdout)
 
@@ -620,10 +611,8 @@ _FLAGS = {
 }
 
 
-def test_kazdy_proces_ma_te_same_flagi_wymagalnosc_domyslne_i_pomoc_co_przed_katalogiem_procesow(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    parser = _script(monkeypatch)._parser()
+def test_kazdy_proces_ma_te_same_flagi_wymagalnosc_domyslne_i_pomoc_co_przed_katalogiem_procesow() -> None:
+    parser = uruchom_proces._parser()
     processes = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction))
 
     flags = {

@@ -13,7 +13,7 @@ import sys
 import pytest
 
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.git_repo import commit, git, repository
+from tests.fixtures.git_repo import TOOLS, commit, git, repository
 
 import czasy_ci
 import rozjazd_modelu
@@ -196,13 +196,12 @@ def _repo(tmp_path: Path, structure: str = "pass") -> Path:
     # Zadanie pytest na Windows w CI instaluje tylko requirements.txt; szybko biegnie tam w zadaniu na Linuksie.
     for static_check in ("ruff", "mypy"):
         pytest.importorskip(static_check, reason="szybko uruchamia ruff i mypy z dodatku dev")
-    repo = repository(tmp_path / "repo", {**BASE_FILES, **_structure_stubs(structure)})
+    repo = repository(tmp_path / "repo", {**BASE_FILES, **_structure_stubs(structure)}, (*TOOLS, "tools/szybko.py"))
     # Krok najstarszego Pythona sprawdzają osobne testy; tu requires-python to Python, którym biegnie szybko.
     pyproject = (repo / "pyproject.toml").read_text(encoding="utf-8")
     current = f'requires-python = ">={sys.version_info[0]}.{sys.version_info[1]}"'
     (repo / "pyproject.toml").write_text(re.sub(r"requires-python = .*", current, pyproject), encoding="utf-8")
-    for name in (".gitignore", "tools/szybko.py", "tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/lib/rozjazd_modelu.py", "tools/lib/wyniki_testow.py"):
-        shutil.copy2(ROOT / name, repo / name)
+    shutil.copy2(ROOT / ".gitignore", repo / ".gitignore")
     commit(repo, "baza")
     git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
     return repo

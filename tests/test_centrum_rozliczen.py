@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import shutil
@@ -43,6 +42,8 @@ from tests.fixtures.centrum import (
     centrum,
     without_access,
 )
+
+import export_openapi
 
 
 def test_health_przedstawia_centrum_rozliczen_ze_skroconym_commitem_i_identyfikatorem_startu(tmp_path: Path) -> None:
@@ -91,12 +92,8 @@ def test_po_aktualizacji_narzedzia_przegladarka_dostaje_nowy_pakiet_pod_ta_sama_
 def _exported_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Kontrakt OpenAPI, który eksportuje ``tools/ci/export_openapi.py`` z bieżącego kodu serwera."""
 
-    spec = importlib.util.spec_from_file_location("export_openapi", ROOT / "tools" / "ci" / "export_openapi.py")
-    assert spec is not None and spec.loader is not None
-    export = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(export)
-    monkeypatch.setattr(export, "OUTPUT", tmp_path / "openapi.json")
-    assert export.main() == 0
+    monkeypatch.setattr(export_openapi, "OUTPUT", tmp_path / "openapi.json")
+    assert export_openapi.main() == 0
     return dict(json.loads((tmp_path / "openapi.json").read_text(encoding="utf-8")))
 
 

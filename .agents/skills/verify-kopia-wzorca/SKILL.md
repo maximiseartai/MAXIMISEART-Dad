@@ -254,7 +254,7 @@ Never loosen a rule or drop a value or Wzorzec to make a real counterexample dis
 CI proves the check can still fail: the night on `main` runs the script below after a change of this
 skill's folder. Run it locally only to reproduce a red Mutation checks step or the night's issue, or after
 you rewrite a mutation.
-It applies broken variants to a temporary copy of the checkout (`tools/mutacje.py`), never to the checkout:
+It applies broken variants to a temporary copy of the checkout (`tools/lib/silnik_mutacji.py`), never to the checkout:
 
 ```powershell
 py -3 .agents\skills\verify-kopia-wzorca\scripts\check_copy_mutations.py

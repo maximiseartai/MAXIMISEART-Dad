@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from tests.fixtures.git_repo import commit, copy_files, git, repository
+from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
 
 # Atrapa na Windows to ``.cmd``, a ta nie zastępuje programu w dwóch miejscach. CreateProcess dopisuje do nazwy bez
 # rozszerzenia tylko ``.exe``, więc ``subprocess.run(["gh", ...])`` jej nie znajdzie (znajdzie ją ``shutil.which``, jak
@@ -47,7 +47,7 @@ def fake_cli(folder: Path, name: str, script: str) -> Path:
 class FakeGitHub:
     """Checkout na ``main`` z repozytorium bare jako ``origin`` (PR-y w ``refs/pull/N/head`` jak na GitHubie) i atrapa ``gh``.
 
-    ``files`` i kopie plików checkoutu ``tool`` (narzędzie, które uruchamia ``run``) i ``copies`` są w commicie ``start``.
+    ``files`` i kopia narzędzia checkoutu ``tool`` (to, które uruchamia ``run``) z jego importami są w commicie ``start``.
     Atrapa ``gh`` wykonuje kod ``gh`` i trzyma swój stan w katalogu ``bin``, który ``environment`` stawia na początku
     ``PATH``.
     """
@@ -58,7 +58,6 @@ class FakeGitHub:
         files: dict[str, str],
         *,
         tool: str,
-        copies: tuple[str, ...] = (),
         gh: str,
     ) -> None:
         self.tool = tool
@@ -72,7 +71,7 @@ class FakeGitHub:
             str(self.origin),
         )
         self.checkout = repository(tmp_path / "checkout", files)
-        copy_files(self.checkout, (tool, *copies))
+        copy_files(self.checkout, with_imports((tool,)))
         git(self.checkout, "checkout", "--quiet", "-b", "main")
         self.start = commit(self.checkout, "start")
         git(self.checkout, "remote", "add", "origin", str(self.origin))

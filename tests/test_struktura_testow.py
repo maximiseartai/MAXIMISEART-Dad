@@ -63,21 +63,39 @@ def test_moduly_testow_importuja_pomocniki_tylko_z_fixtures() -> None:
 
 CONFTEST = TESTS / "conftest.py"
 PATH_CHANGES = frozenset({"sys.path.insert", "sys.path.append"})
+# Ostatnia część nazwy wywołania (z każdym odbiorcą: ``monkeypatch.``, ``importlib.util.``, ``util.``, i bez niego), miejsce
+# argumentu ścieżki i jego nazwa.
+PREPEND = ("syspath_prepend", 0, "path")
+LOAD = ("spec_from_file_location", 1, "location")
+# Katalogi, które conftest kładzie na ``sys.path``, względem ``tools``.
+ON_PATH = frozenset({(), ("lib",), ("ci",)})
 
 
 def _tools_on_path(tree: ast.Module) -> list[int]:
-    """Linie ``sys.path.insert`` i ``sys.path.append``, których ścieżka ma część ``tools``: ``tests/conftest.py`` już
-    kładzie ``tools``, ``tools/lib`` i ``tools/ci`` na ``sys.path`` każdego testu, więc druga wstawka w module testu albo
-    fixture tylko to powtarza, a fixture, który przez nią importuje narzędzie, kusi, żeby je re-eksportować.
+    """Linie wstawek na ``sys.path`` ścieżki z częścią ``tools`` i wczytań pliku z ``tools``, ``tools/lib`` albo
+    ``tools/ci``: ``tests/conftest.py`` już kładzie te katalogi na ``sys.path`` każdego testu, więc druga wstawka w module
+    testu albo fixture tylko to powtarza, fixture, który przez nią importuje narzędzie, kusi, żeby je re-eksportować, a
+    moduł wczytany z pliku bez wpisu w ``sys.modules`` jest drugą kopią narzędzia, w której dataclass nie działa (K2 F15,
+    7 testów do 9.11.2026).
 
-    Łapie wywołanie na poziomie modułu i w funkcji, ze ścieżką ze stałych napisów (``ROOT / "tools" / "lib"``,
-    ``".../tools/ci"``, ``"C:\\repo\\tools"``) i z nazw, które moduł przypisuje na swoim poziomie (``TOOLS = ROOT /
-    "tools"`` albo ``TOOLS: Final = …``, potem ``TOOLS / "lib"``).
-    Katalog ``scripts`` skilla przechodzi, bo conftest go nie kładzie.
+    Łapie dokładnie te postaci, na poziomie modułu i w funkcji:
 
-    Granica (tylko przegląd): wstawka w napisie kodu podprocesu (ten proces nie ma conftest, więc jej potrzebuje),
-    ścieżka złożona w trakcie działania (argument funkcji, ``sys.argv``, atrybut), ``monkeypatch.syspath_prepend``
-    i ``sys.path`` zmienione inaczej niż ``insert`` i ``append``."""
+    - ``sys.path.insert`` i ``sys.path.append`` tą pełną nazwą;
+    - wywołanie, którego nazwa kończy się na ``syspath_prepend`` (``monkeypatch.``, inna nazwa fixture), ze ścieżką
+      pierwszym argumentem albo ``path=``;
+    - wywołanie, którego nazwa kończy się na ``spec_from_file_location`` (``importlib.util.``, ``util.`` po ``from
+      importlib import util``, sama nazwa), z plikiem ``.py`` drugim argumentem albo ``location=``.
+
+    Ścieżkę czyta ze stałych napisów (``ROOT / "tools" / "lib"``, ``".../tools/ci"``, ``"C:\\repo\\tools"``), z nazw, które
+    moduł przypisuje na swoim poziomie (``TOOLS = ROOT / "tools"`` albo ``TOOLS: Final = …``, potem ``TOOLS / "lib"``), i
+    z argumentów pozycyjnych wywołań (``str(…)``).
+    Katalog ``scripts`` skilla i plik z ``tools/hooks`` przechodzą, bo conftest ich nie kładzie.
+
+    Każda inna postać to tylko przegląd, m.in.: wstawka w napisie kodu podprocesu (ten proces nie ma conftest, więc jej
+    potrzebuje), ścieżka złożona w trakcie działania (argument funkcji, ``sys.argv``, atrybut), ``sys.path`` pod inną
+    nazwą (``from sys import path``) albo zmienione inaczej niż ``insert`` i ``append``, wywołanie przez zmienną
+    (``f = monkeypatch.syspath_prepend``) oraz narzędzie wczytane inaczej niż ``spec_from_file_location`` (``runpy``,
+    ``exec``, ``SourceFileLoader``)."""
 
     assigned = {
         target.id: node.value
@@ -98,13 +116,41 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
             elif isinstance(part, ast.Name) and part.id in assigned and part.id not in seen:
                 yield from texts(assigned[part.id], seen | {part.id})
 
-    return sorted(
-        node.lineno
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and ast.unparse(node.func) in PATH_CHANGES
-        and any("tools" in PureWindowsPath(text).parts for argument in node.args for text in texts(argument, frozenset()))
-    )
+    def parts(node: ast.AST, seen: frozenset[str]) -> list[str]:
+        """Części ścieżki w kolejności zapisu: ze stałych napisów, ``/`` między nimi, nazw modułu i argumentów wywołań."""
+
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return list(PureWindowsPath(node.value).parts)
+        if isinstance(node, ast.Name) and node.id in assigned and node.id not in seen:
+            return parts(assigned[node.id], seen | {node.id})
+        if isinstance(node, ast.BinOp):
+            return parts(node.left, seen) + parts(node.right, seen)
+        if isinstance(node, ast.Call):
+            return [part for argument in node.args for part in parts(argument, seen)]
+        return []
+
+    def a_tool(path: list[str]) -> bool:
+        return any(part == "tools" and tuple(path[index + 1 : -1]) in ON_PATH for index, part in enumerate(path[:-1])) and path[-1].endswith(".py")
+
+    def called(node: ast.Call) -> str:
+        return node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id if isinstance(node.func, ast.Name) else ""
+
+    def path_of(node: ast.Call, call: tuple[str, int, str]) -> ast.expr | None:
+        name, position, keyword = call
+        if called(node) != name:
+            return None
+        if len(node.args) > position:
+            return node.args[position]
+        return next((argument.value for argument in node.keywords if argument.arg == keyword), None)
+
+    def has_tools(node: ast.AST) -> bool:
+        return any("tools" in PureWindowsPath(text).parts for text in texts(node, frozenset()))
+
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    inserts = [node.lineno for node in calls if ast.unparse(node.func) in PATH_CHANGES and any(has_tools(argument) for argument in node.args)]
+    prepends = [node.lineno for node in calls if (path := path_of(node, PREPEND)) is not None and has_tools(path)]
+    loads = [node.lineno for node in calls if (path := path_of(node, LOAD)) is not None and a_tool(parts(path, frozenset()))]
+    return sorted([*inserts, *prepends, *loads])
 
 
 def test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow() -> None:
@@ -134,6 +180,15 @@ TOOLS_ON_PATH = {
     "nazwa-z-adnotacja": 'import sys\nTOOLS: Final = ROOT / "tools"\nsys.path.insert(0, str(TOOLS / "lib"))',
     "nazwa-przez-nazwe": 'import sys\nREPO = ROOT\nTOOLS = REPO / "tools"\nLIB = TOOLS / "lib"\nsys.path.insert(0, str(LIB))',
     "w-funkcji": 'import sys\ndef f() -> None:\n    sys.path.insert(0, str(ROOT / "tools"))',
+    "monkeypatch": 'TOOLS = ROOT / "tools"\ndef f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend(str(TOOLS))',
+    "plik-narzedzia": 'import importlib.util\nSCRIPT = ROOT / "tools" / "uruchom_proces.py"\nimportlib.util.spec_from_file_location("x", SCRIPT)',
+    "plik-biblioteki": 'from importlib.util import spec_from_file_location\nTOOLS = ROOT / "tools"\nspec_from_file_location("x", TOOLS / "lib" / "kroki_skilli.py")',
+    "plik-ci-napisem": 'import importlib.util\nimportlib.util.spec_from_file_location("x", Path(__file__).parents[1] / "tools/ci/export_openapi.py")',
+    "plik-w-wywolaniu": 'import importlib.util\nimportlib.util.spec_from_file_location("x", str(ROOT / "tools" / "mutacje.py"))',
+    "plik-nazwanymi-argumentami": 'import importlib.util\nimportlib.util.spec_from_file_location(name="x", location=ROOT / "tools" / "mutacje.py")',
+    "plik-przez-alias-modulu": 'from importlib import util\nutil.spec_from_file_location("x", ROOT / "tools" / "mutacje.py")',
+    "monkeypatch-nazwanym-argumentem": 'def f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend(path=str(ROOT / "tools"))',
+    "monkeypatch-inna-nazwa": 'def f(mp) -> None:\n    mp.syspath_prepend(str(ROOT / "tools" / "lib"))',
 }
 
 
@@ -151,6 +206,11 @@ def test_sprawdzenie_sys_path_przepuszcza_skrypty_skilli_i_kod_podprocesu() -> N
         'sys.path.insert(0, "my_tools")\n'
         'KOD = "import sys\\nsys.path.insert(0, \'tools\')\\nimport mutacje\\n"\n'
         'LISTA = [str(ROOT / "tools")]\n'
+        'HOOK = ROOT / "tools" / "hooks" / "czekanie.py"\n'
+        'importlib.util.spec_from_file_location("czekanie", HOOK)\n'
+        'importlib.util.spec_from_file_location("x", ROOT / ".agents" / "skills" / "verify-x" / "scripts" / "x.py")\n'
+        'importlib.util.spec_from_file_location("x", ROOT / "tools" / "lib" / "atrapy" / "x.py")\n'
+        'importlib.util.spec_from_file_location("lib", ROOT / "tools" / "lib")\n'
     )
 
     assert _tools_on_path(ast.parse(code)) == []

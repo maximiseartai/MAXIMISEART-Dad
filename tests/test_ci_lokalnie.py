@@ -7,13 +7,11 @@ wskazuje każdy commit gałęzi, na którym krok pada, także gdy HEAD przechodz
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -22,6 +20,9 @@ import yaml
 from tests.fixtures.ci_workflow import action
 from tests.fixtures.git_repo import commit, git, repository
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
+
+import ci_lokalnie
+from kroki_lokalne import Step
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "ci_lokalnie.py"
@@ -79,34 +80,23 @@ def test_kazde_polecenie_odtwarzanych_zadan_ma_krok_i_odwrotnie() -> None:
     assert without_command == []
 
 
-def _load_tool(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    monkeypatch.syspath_prepend(str(TOOL.parent))
-    spec = importlib.util.spec_from_file_location("ci_lokalnie", TOOL)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 @pytest.mark.parametrize("fail_fast", [False, True])
 def test_do_pierwszego_bledu_pomija_kroki_po_pierwszym_nieudanym(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], fail_fast: bool
 ) -> None:
-    tool = _load_tool(monkeypatch)
     # Pełny przebieg kończy się nakładaniami z praca_w_toku.py; prawdziwe pytają GitHub i git o wszystkie worktree.
     (tmp_path / "tools").mkdir()
     stub = tmp_path / "tools" / "praca_w_toku.py"
     stub.write_text("from pathlib import Path\nPath(__file__).with_suffix('.uruchomiona').touch()\n", encoding="utf-8")
-    monkeypatch.setattr(tool, "ROOT", tmp_path)
+    monkeypatch.setattr(ci_lokalnie, "ROOT", tmp_path)
     second_ran = tmp_path / "drugi-krok"
     steps = [
-        tool.Step("pierwszy", "ruff", (sys.executable, "-c", "raise SystemExit(1)"), tmp_path),
-        tool.Step("drugi", "mypy", (sys.executable, "-c", f"open({str(second_ran)!r}, 'w')"), tmp_path),
+        Step("pierwszy", "ruff", (sys.executable, "-c", "raise SystemExit(1)"), tmp_path),
+        Step("drugi", "mypy", (sys.executable, "-c", f"open({str(second_ran)!r}, 'w')"), tmp_path),
     ]
-    monkeypatch.setattr(tool, "_steps", lambda root: steps)
+    monkeypatch.setattr(ci_lokalnie, "_steps", lambda root: steps)
 
-    returned = tool.main(["--do-pierwszego-bledu"] if fail_fast else [])
+    returned = ci_lokalnie.main(["--do-pierwszego-bledu"] if fail_fast else [])
 
     assert returned == 1
     assert "CI LOKALNIE FAIL | pierwszy" in capsys.readouterr().out

@@ -1,6 +1,6 @@
 """Show that explore_outbox.py fails on broken variants of the Kolejka Skrzynki Zgłoszeń.
 
-Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must end the checker's report with the
+Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must end the checker's report with the
 expected line. A mutation whose anchor text is no longer in ``outbox.py`` (or ``report_box.py``, whose reading of
 GitHub's answers the checker takes from the real adapter, or ``keyed_box.py``, whose list after its own writes covers
 the lag of GitHub's issue list) is reported as NIEAKTUALNA: update it to the new code.
@@ -11,9 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 VERIFIED = Path("src/rozliczenia/centrum/outbox.py")
 REPORT_BOX = Path("src/rozliczenia/centrum/report_box.py")

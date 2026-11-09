@@ -19,7 +19,7 @@ import pytest
 
 from tests.fixtures import opisy_pr
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
-from tests.fixtures.git_repo import commit, git
+from tests.fixtures.git_repo import commit, git, with_imports
 
 import czasy_ci
 import naprawia
@@ -27,8 +27,6 @@ import naprawia
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
-# Moduły, na które scal_pr dzieli swoje powody zmiany.
-LIB = ("stan_pr", "werdykt_pr", "naprawia", "testy_scalenia", "kontekst_przegladu")
 TEMPLATE = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "pr" / "SKILL.md"
 BODY = opisy_pr.wzor("Cel.")
 SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
@@ -147,7 +145,6 @@ class MergeGitHub(FakeGitHub):
                 **files,
             },
             tool="tools/scal_pr.py",
-            copies=(*(f"tools/lib/{module}.py" for module in LIB), "tools/lib/werdykt_scalenia.py", "tools/lib/github.py", "tools/lib/wplyw_zmiany.py", "tools/lib/wyniki_testow.py"),
             gh=FAKE_GH,
         )
         _empty_state(self.bin)
@@ -1183,15 +1180,12 @@ def test_przeglad_oznacza_pass_dla_head_poza_regulami_werdyktu(tmp_path: Path) -
     ]
 
 
-REAL_SKILLS_FOR_CHANGE = (
-    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/plan_ci.py", "tools/lib/plan_runu.py", "tools/lib/niestabilne_testy.py", "tools/lib/wyniki_testow.py", "tools/mutacje_zmiany.py",
-    "tools/lib/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/kroki_lokalne.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
-)
+REAL_SKILLS_FOR_CHANGE = "tools/skille_dla_zmiany.py"
 
 
 def test_przeglad_z_prawdziwym_skille_dla_zmiany_z_head_pr_podaje_skille_zmiany_od_merge_base(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, ".agents/skills/verify-kod/SKILL.md": "---\nname: verify-kod\ndescription: kod\npilnuje:\n  - kod/*\n---\n"})
-    github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", **{name: (TOOLS.parent / name).read_text(encoding="utf-8") for name in REAL_SKILLS_FOR_CHANGE}})
+    github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", **{name: (TOOLS.parent / name).read_text(encoding="utf-8") for name in with_imports((REAL_SKILLS_FOR_CHANGE,))}})
 
     answered = github.run("1", "--przeglad")
 

@@ -17,18 +17,14 @@ import sys
 import pytest
 
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.git_repo import commit, copy_files, repository
+from tests.fixtures.git_repo import commit, copy_files, repository, with_imports
 from tests.fixtures.potomne import wait_for
 
 import repo
 
 HOOK = Path(__file__).resolve().parents[1] / "tools" / "hooks" / "pre-push"
 WORK_IN_PROGRESS = HOOK.parents[1] / "praca_w_toku.py"
-SKILLS_FOR_CHANGE = (
-    "tools/skille_dla_zmiany.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/plan_ci.py", "tools/lib/plan_runu.py", "tools/lib/niestabilne_testy.py", "tools/lib/wyniki_testow.py", "tools/mutacje_zmiany.py",
-    "tools/lib/pokrycie_procesu.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/kroki_lokalne.py", "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py",
-    "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py",
-)
+SKILLS_FOR_CHANGE = "tools/skille_dla_zmiany.py"
 SKILL = "---\nname: verify-kod\ndescription: kod\npilnuje:\n  - kod/*\n---\n"
 BRANCH = "refs/heads/zmiana"
 AGENT_MARKERS = ("AI_AGENT", "CLAUDECODE")
@@ -240,7 +236,7 @@ def test_nieudany_werdykt_aktualizacji_nie_zmienia_wyniku_pushu(checkout: Path, 
 def _with_skills_for_change(checkout: Path, *, main: bool) -> None:
     """Narzędzie skilli i skill ``verify-kod`` pilnujący ``kod/*`` w checkoucie, z ``main``: ``origin/main`` na tym commicie."""
 
-    copy_files(checkout, SKILLS_FOR_CHANGE)
+    copy_files(checkout, with_imports((SKILLS_FOR_CHANGE,)))
     (checkout / ".agents" / "skills" / "verify-kod").mkdir(parents=True)
     (checkout / ".agents" / "skills" / "verify-kod" / "SKILL.md").write_text(SKILL, encoding="utf-8")
     commit(checkout, "skill")

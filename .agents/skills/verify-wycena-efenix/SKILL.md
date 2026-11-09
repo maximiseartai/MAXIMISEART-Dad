@@ -228,7 +228,7 @@ Zatrzymanie or result. Then sort it:
 
 CI proves the check can still fail. The night on `main` runs
 `.agents/skills/verify-wycena-efenix/scripts/check_wycena_efenix_mutations.py` after a change of this skill's folder; it
-applies each broken variant to a temporary copy of the checkout (`tools/mutacje.py`) and must end with `MUTACJE OK`.
+applies each broken variant to a temporary copy of the checkout (`tools/lib/silnik_mutacji.py`) and must end with `MUTACJE OK`.
 Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
 
 - #808: an HTTP error page instead of the order page read as a page shape; the page reloaded after Emmett read

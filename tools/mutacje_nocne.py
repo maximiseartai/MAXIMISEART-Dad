@@ -38,12 +38,12 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   zapisu, więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji. Zgłoszone mutacje się nie powtórzą, także gdy PR z
   następnego dnia przesunie ich linie, bo klucz nie ma numerów linii.
 - Skrypty mutacji skilli nocy planuje ``tools/plan_ci.py plan --zdarzenie noc --baza <baza>`` (skrypty skilli, których
-  folder, runner mutacji albo sprawdzenie zmieniło się od bazy, i części każdego n podstaw z ``ci-czesci``), a zadanie
+  folder, import (silnik mutacji i jego zależności), uruchamiacz kroku albo sprawdzenie zmieniło się od bazy, i części każdego n podstaw z ``ci-czesci``), a zadanie
   planu wgrywa swój zapis wykonania jako artefakt ``mutacje-skilli-<id zadania>``. ``zglos --plan-skilli`` daje każdy
   skrypt, który padł, linią ``SKRYPT <skrypt>`` do issue ``Przeżyte mutacje skilli z #N`` PR-u, który ostatni zmienił
   plik zmieniony od bazy, który uruchomił krok w zakresie nocy (``KrokSkilla.pliki``): najpierw plik w folderze skilla,
   potem inny, a bez takiego pliku ostatni PR nocy; linii, którą issue już ma, nie dostaje drugi raz. Do tego samego issue idzie każde
-  ostrzeżenie ``CZAS BLISKO LIMITU`` z zapisu zadania (``blisko_limitu``, ``NearLimit`` z ``tools/mutacje.py``): mutacja skryptu, której
+  ostrzeżenie ``CZAS BLISKO LIMITU`` z zapisu zadania (``blisko_limitu``, ``NearLimit`` z ``tools/lib/silnik_mutacji.py``): mutacja skryptu, której
   polecenie trwało ponad połowę limitu, linią ``CZAS BLISKO LIMITU <skrypt> | <mutacja> | <czas> z limitu …``. Czas
   zmienia się co noc, więc issue, które ma już linię z tym skryptem i mutacją, nie dostaje jej drugi raz (#935).
   Zadanie bez zapisu tego planu albo bez wyniku jednostki czerwieni run, tak jak skrypt, który padł, albo ostrzeżenie w
@@ -77,11 +77,11 @@ from github import wykonaj as wykonaj_akcje
 from kroki_skilli import Katalog, Step
 from jednostka import ZMIENNA_CZESCI, Czesc, Klucz
 import jednostka
-from mutacje import NearLimit
 import mutacje_zmiany
 import plan_runu
 from repo import ROOT
 import repo
+from silnik_mutacji import NearLimit
 from wplyw_zmiany import Repository, changed_since
 from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
 
