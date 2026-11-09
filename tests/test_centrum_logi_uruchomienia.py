@@ -33,7 +33,9 @@ import pytest
 
 from rozliczenia import settlement_messages, workbook_files
 from rozliczenia.domain import RunMode
-from rozliczenia.centrum import app, contract
+from rozliczenia.centrum import app
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, MAX_ENTRIES
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
@@ -43,7 +45,7 @@ from rozliczenia.centrum.outbox import RETRY_S, Outbox, Post
 from rozliczenia.centrum.logs_disk import EndEntry, Journal, LogsOnDisk, name_of
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
-from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, LoggedOrder, LoggedStep, RunLog, StartFacts, Tool
+from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, LoggedOrder, LoggedStep, ProcessLogs, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
@@ -219,16 +221,16 @@ def _adapter_net(
 ) -> Callable[[Path, pytest.MonkeyPatch], Ran]:
     def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ran:
         steered = centrum(tmp_path)
-        run_outcome = contract.RunOutcome
+        run_outcome = runs_contract.RunOutcome
         built: list[str] = []
 
-        def broken_once(**fields: Any) -> contract.RunOutcome:
+        def broken_once(**fields: Any) -> runs_contract.RunOutcome:
             built.append(fields["ending"])
             if len(built) == 1:
                 raise ValueError("synthetic contract failure SYN-001")
             return run_outcome(**fields)
 
-        monkeypatch.setattr(contract, "RunOutcome", broken_once)
+        monkeypatch.setattr(runs_contract, "RunOutcome", broken_once)
         return steered, run_to_end(steered, dry_run=dry_run)
 
     return run
@@ -474,11 +476,14 @@ def test_logi_przebiegu_rozliczen_maja_liczbe_ilosci_tylko_dla_inea_w_kazdej_kol
     assert [record["inea_only_cleared"] for record in records(centrum)] == [{"AP": 1, "AK": 2}] * 2
 
 
-def test_logi_przygotowania_nie_maja_liczby_ilosci_tylko_dla_inea(tmp_path: Path) -> None:
+def test_logi_przygotowania_nie_maja_dodatkow_innych_procesow(tmp_path: Path) -> None:
+    """Przygotowanie nie ma własnych dodatków Logów, więc każde pole dodatku innego procesu to ``null``: puste
+    ``efenix_orders`` karta z Logów liczyłaby jako zlecenia Uruchomienia (przegląd #1164 r1)."""
+
     centrum, _ = _preparation(tmp_path, dry_run=True)
 
     [record] = records(centrum)
-    assert record["inea_only_cleared"] is None
+    assert {field: record[field] for field in ProcessLogs.model_fields} == dict.fromkeys(ProcessLogs.model_fields)
 
 
 def test_karta_wraca_z_logow_sprzed_liczby_ilosci_tylko_dla_inea(tmp_path: Path) -> None:
@@ -2465,7 +2470,7 @@ def journals_at_result(monkeypatch: pytest.MonkeyPatch, directory: Path) -> dict
     kept: dict[Path, str] = {}
     ended = Journal.end
 
-    def keeping(journal: Journal, run_id: str, result: contract.RunResult) -> None:
+    def keeping(journal: Journal, run_id: str, result: RunResult) -> None:
         kept.update({path: path.read_text(encoding="utf-8") for path in directory.glob("*.jsonl")})
         ended(journal, run_id, result)
 

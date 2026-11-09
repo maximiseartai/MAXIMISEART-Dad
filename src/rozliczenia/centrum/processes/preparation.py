@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 from rozliczenia import preparation_messages, preparation_process
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import (
     PERIODS_DIRECTORY,
     TAIL,
@@ -24,26 +24,26 @@ from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.tool_files import PREPARATION_METRICS
 
 
-def _figures(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
+def _figures(snapshot: ProgressSnapshot, _dry_run: bool) -> list[runs_contract.Figure]:
     return [count_figure("Ostrzeżenia", snapshot.issue_count), elapsed_figure(snapshot)]
 
 
-def _summary(summary: PreparationSummary, _dry_run: bool) -> contract.RunSummary:
-    return contract.RunSummary(
+def _summary(summary: PreparationSummary, _dry_run: bool) -> runs_contract.RunSummary:
+    return runs_contract.RunSummary(
         figures=[
             count_figure("Zlecenia okresu", summary.period_order_count),
             count_figure("Zlecenia skuteczne", summary.successful_order_count),
             count_figure("Pominięte puste wiersze", summary.skipped_empty_rows),
         ],
-        counts=contract.CountGroup(
+        counts=runs_contract.CountGroup(
             title="Zlecenia na dzień",
             counts=[
-                contract.Count(label=label, count=count) for label, count in summary.labeled_orders_per_day()
+                runs_contract.Count(label=label, count=count) for label, count in summary.labeled_orders_per_day()
             ],
         ),
         files=[
-            contract.PeriodFile(name=summary.internal_settlement_file.name, kind="internal_settlement"),
-            contract.PeriodFile(name=summary.collective_file.name, kind="collective_file"),
+            runs_contract.PeriodFile(name=summary.internal_settlement_file.name, kind="internal_settlement"),
+            runs_contract.PeriodFile(name=summary.collective_file.name, kind="collective_file"),
         ],
         worker_settlements=None,
     )

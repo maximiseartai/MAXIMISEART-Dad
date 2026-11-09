@@ -1146,8 +1146,8 @@ def test_odmowa_przekazania_w_oknie_informacji_ze_spinnerem_i_skonczona_animacja
     tmp_path: Path, page: Page
 ) -> None:
     """Okno zamyka okno dialogowe po końcu jego animacji pokazania, ale nie czeka na animację, która nie kończy się nigdy
-    (spinner w oknie informacji), ani na skończoną, która zostaje na elemencie (``fill: forwards``), bo czekałoby do końca
-    czasu okna: odmowa Przekazania to dalej błąd zlecenia."""
+    (spinner w oknie informacji), na skończoną, która zostaje na elemencie (``fill: forwards``), ani na wstrzymaną
+    (``paused``), bo czekałoby do końca czasu okna: odmowa Przekazania to dalej błąd zlecenia."""
 
     order = Order("#8391", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
     source = write_collective_file(tmp_path, [order])

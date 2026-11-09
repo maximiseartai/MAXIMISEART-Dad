@@ -26,6 +26,9 @@ from __future__ import annotations
 import ast
 from collections.abc import Mapping
 from pathlib import Path
+import sys
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -273,6 +276,26 @@ def test_test_podstawia_bajty_plikow_taty_przez_readers_source_a_nie_latajac_mod
             "silnika przez RunContext(files=DadFiles(source=...)).",
         ]
     )
+
+
+def test_sprawdzenie_latania_zglasza_latanie_w_atrapie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Łatanie modułu skoroszytu w atrapie obok pustego katalogu testów: strażnik je zgłasza, więc czyta atrapy, a nie
+    tylko ``tests/`` (przegląd #1170 r2, Drobne 1)."""
+
+    atrapy = tmp_path / "tools" / "lib" / "atrapy"
+    atrapy.mkdir(parents=True)
+    (atrapy / "naruszenie.py").write_text(
+        'from unittest import mock\nmock.patch("rozliczenia.workbook_files.file_bytes", lambda path: b"")\n', encoding="utf-8"
+    )
+    (tmp_path / "tests").mkdir()
+    module = sys.modules[__name__]
+    for name, path in (("ROOT", tmp_path), ("TESTS", tmp_path / "tests"), ("ATRAPY", atrapy)):
+        monkeypatch.setattr(module, name, path)
+
+    with pytest.raises(AssertionError) as raised:
+        test_test_podstawia_bajty_plikow_taty_przez_readers_source_a_nie_latajac_modul_skoroszytu()
+
+    assert "tools/lib/atrapy/naruszenie.py:2: mock.patch(" in str(raised.value)
 
 
 def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_inny_modul_nie() -> (

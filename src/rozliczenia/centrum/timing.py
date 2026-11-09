@@ -17,18 +17,18 @@ import time
 
 from fastapi import APIRouter, Request, Response
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import timing as timing_contract
 from rozliczenia.centrum.log import CentrumLog
 
 SERVER_TIMING_METRIC = "centrum"
-_VIEW_NAMES: Final[dict[contract.ViewKind, str]] = {"cold_start": "zimny-start", "navigation": "przejscie-w-menu"}
+_VIEW_NAMES: Final[dict[timing_contract.ViewKind, str]] = {"cold_start": "zimny-start", "navigation": "przejscie-w-menu"}
 
 
 def timing_router(log: CentrumLog) -> APIRouter:
     router = APIRouter(prefix="/api/view-timings", tags=["centrum"])
 
     @router.post("", operation_id="recordViewTiming", status_code=204)
-    def record(timing: contract.ViewTiming) -> None:
+    def record(timing: timing_contract.ViewTiming) -> None:
         log.view_timed(
             view=_VIEW_NAMES[timing.kind],
             page=timing.page,

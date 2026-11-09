@@ -32,7 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Final, Literal
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import notifications as notifications_contract
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
@@ -76,11 +76,11 @@ KINDS: Final = (REPORT, NOTE)
 _BY_KEY: Final[Mapping[str, CaseKind]] = {kind.key: kind for kind in KINDS}
 
 Hold = Literal["internet", "key", "rejected"]
-"""Na co czeka sprawa w Kolejce wysyłki: ``contract.WaitsFor`` albo ``rejected``, gdy Skrzynka odrzuciła jej treść."""
+"""Na co czeka sprawa w Kolejce wysyłki: ``WaitsFor`` z kontraktu (``contract.common``) albo ``rejected``, gdy Skrzynka odrzuciła jej treść."""
 
 # (na co czeka w kolejce, issue zamknięte, state_reason) → stan sprawy; ``None``: sprawa ma numer issue. GitHub zamyka
 # issue bez powodu jako ``completed``, a duplikat to sprawa przeczytana bez zmian.
-_STATES: Final[Mapping[tuple[Hold | None, bool, CloseReason | None], contract.CaseState]] = {
+_STATES: Final[Mapping[tuple[Hold | None, bool, CloseReason | None], notifications_contract.CaseState]] = {
     ("internet", False, None): "czeka_na_internet",
     ("key", False, None): "czeka_na_token",
     ("rejected", False, None): "odrzucona",
@@ -235,7 +235,7 @@ class DadCases:
                 return "rejected"
         return "key" if box.judge(wait_s=0) in ("missing", "refused") else "internet"
 
-    def state(self, case: Case, box: KeyedBox) -> contract.CaseState:
+    def state(self, case: Case, box: KeyedBox) -> notifications_contract.CaseState:
         """Stan sprawy w Powiadomieniu, a sprawy bez numeru issue z tym, na co czeka w Kolejce wysyłki."""
 
         hold = None if case.number is not None else self.hold(case.id, box)

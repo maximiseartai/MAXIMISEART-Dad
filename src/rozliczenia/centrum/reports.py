@@ -43,7 +43,10 @@ from typing import Final, Literal
 
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.call_trace import CallTrace
-from rozliczenia.centrum import contract, report_messages
+from rozliczenia.centrum import report_messages
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_cases import REPORT, Case, CaseNews, CaseNumbered, CaseRejected, DadCases
 from rozliczenia.centrum.deadline import within
 from rozliczenia.centrum.diagnosis import Diagnosis
@@ -87,14 +90,14 @@ class ProblemFingerprint:
     Kody są unikalne tylko w katalogu procesu, więc odcisk zawiera proces.
     """
 
-    process: contract.ProcessKey | Literal["tool_update"]
+    process: common_contract.ProcessKey | Literal["tool_update"]
     code: str
     what: str
     where: str
     action: str
 
     @classmethod
-    def of(cls, process: contract.ProcessKey, message: Message) -> ProblemFingerprint:
+    def of(cls, process: common_contract.ProcessKey, message: Message) -> ProblemFingerprint:
         return cls(process, message.code, message.what, message.where, message.action)
 
     @classmethod
@@ -119,7 +122,7 @@ class StopReport:
     podglądem, który widział tata.
     """
 
-    run: contract.RunInfo
+    run: runs_contract.RunInfo
     stop: Stop
     fingerprint: ProblemFingerprint
     diagnosis: Diagnosis
@@ -336,11 +339,11 @@ class _Preview:
     period: str | None
 
     @property
-    def view(self) -> contract.ReportDraft:
-        return contract.ReportDraft(title=self.report.title, body=self.report.body)
+    def view(self) -> diagnosis_contract.ReportDraft:
+        return diagnosis_contract.ReportDraft(title=self.report.title, body=self.report.body)
 
 
-ReportShown = Callable[[contract.ReportState], None]
+ReportShown = Callable[[diagnosis_contract.ReportState], None]
 """Właściciel Zgłoszenia, który pokazuje każdy jego nowy stan (np. karta Uruchomienia przez ``RunHost``)."""
 
 
@@ -375,13 +378,13 @@ class ReportHandle:
         self._returned = False  # powrót problemu już poszedł do kolejki: drugi z tego uchwytu by go dublował
 
     @property
-    def state(self) -> contract.ReportState:
+    def state(self) -> diagnosis_contract.ReportState:
         """Ostatni znany stan: gotowe do wysłania, wysłane, czeka na naprawę, czeka w kolejce albo niezapisane."""
 
         with self._changed:
             return self._state
 
-    def prepare(self, source: StopReport | UpdateReport) -> contract.ReportDraft:
+    def prepare(self, source: StopReport | UpdateReport) -> diagnosis_contract.ReportDraft:
         """Nowy podgląd ``source``, który wyśle ``send``; nie czeka na skrzynkę i niczego nie zapisuje.
 
         Gdy ten problem był już zgłoszony z tego komputera, Zgłoszenie ma odnośnik do ostatniego z nich. Podgląd
@@ -415,7 +418,7 @@ class ReportHandle:
             if sends != self._sends:
                 return
             self._show(self._state if self._done else self._reports._state_of(self._fingerprint))
-            if comeback is None or self._returned or not isinstance(self._state, contract.ReportWaiting):
+            if comeback is None or self._returned or not isinstance(self._state, diagnosis_contract.ReportWaiting):
                 return
             self._returned = self._sending = True
         try:
@@ -425,7 +428,7 @@ class ReportHandle:
                 self._sending = False
                 self._changed.notify_all()
 
-    def send(self) -> contract.ReportState:
+    def send(self) -> diagnosis_contract.ReportState:
         """Kładzie ostatni podgląd w kolejce Skrzynki i czeka na nią chwilę, chyba że już wysłany albo czeka w kolejce.
 
         ``NoPreview``, gdy podglądu nie ma.
@@ -451,8 +454,8 @@ class ReportHandle:
         with self._changed:
             self._sending = False
             # Dostarczenie mogło przyjść tuż po końcu czekania, zanim uchwyt pokazał „czeka w kolejce”.
-            if isinstance(state, contract.ReportQueued) and not self._reports._pending(self._fingerprint):
-                state = contract.ReportSent(state="sent")
+            if isinstance(state, diagnosis_contract.ReportQueued) and not self._reports._pending(self._fingerprint):
+                state = diagnosis_contract.ReportSent(state="sent")
             self._show(state)
             self._changed.notify_all()
             return state
@@ -461,20 +464,20 @@ class ReportHandle:
         """Skrzynka odrzuciła treść Zgłoszenia tego problemu, które czeka w kolejce: uchwyt pokazuje „odrzucone”."""
 
         with self._changed:
-            self._show(contract.ReportRejected(state="rejected"))
+            self._show(diagnosis_contract.ReportRejected(state="rejected"))
 
     def _delivered(self) -> None:
         """Kolejka dostarczyła Zgłoszenie tego problemu: „czeka w kolejce” zmienia się w „wysłane”."""
 
         with self._changed:
-            if isinstance(self._state, contract.ReportQueued):
-                self._show(contract.ReportSent(state="sent"))
+            if isinstance(self._state, diagnosis_contract.ReportQueued):
+                self._show(diagnosis_contract.ReportSent(state="sent"))
 
     @property
     def _done(self) -> bool:
-        return isinstance(self._state, contract.ReportSent | contract.ReportQueued)
+        return isinstance(self._state, diagnosis_contract.ReportSent | diagnosis_contract.ReportQueued)
 
-    def _show(self, state: contract.ReportState) -> None:
+    def _show(self, state: diagnosis_contract.ReportState) -> None:
         self._state = state
         if self._shown is not None:
             self._shown(state)
@@ -550,7 +553,7 @@ class Reports:
         previous = next((number for number in reversed(sent) if number is not None), None)
         return _Preview(_guarded(source.report(commit=self._commit(), previous=previous), self._forbidden), source.period)
 
-    def _queue(self, preview: _Preview) -> contract.ReportState:
+    def _queue(self, preview: _Preview) -> diagnosis_contract.ReportState:
         """Zapisuje sprawę i kładzie ``preview`` w kolejce Skrzynki, chyba że ten problem już w niej czeka."""
 
         fingerprint = preview.report.fingerprint
@@ -574,18 +577,18 @@ class Reports:
                 self._cases.withdraw(case)
         if not queued:
             message = report_messages.not_queued(self._queue_directory)
-            return contract.ReportNotQueued(state="not_queued", message=contract.Message.of(message))
+            return diagnosis_contract.ReportNotQueued(state="not_queued", message=common_contract.Message.of(message))
         if self._outbox.wait_delivered(post.run_id, REPORT.label, timeout_s=DELIVERY_WAIT_S):
-            return contract.ReportSent(state="sent")
+            return diagnosis_contract.ReportSent(state="sent")
         return self._queued(fingerprint)
 
-    def _queued(self, fingerprint: str) -> contract.ReportQueued | contract.ReportRejected:
+    def _queued(self, fingerprint: str) -> diagnosis_contract.ReportQueued | diagnosis_contract.ReportRejected:
         """Zgłoszenie w kolejce: odrzucone przez Skrzynkę albo czeka na to, czego brakuje (``DadCases.hold``)."""
 
         hold = self._cases.hold(fingerprint, self._box)
         if hold == "rejected":
-            return contract.ReportRejected(state="rejected")
-        return contract.ReportQueued(state="queued", waits_for=hold)
+            return diagnosis_contract.ReportRejected(state="rejected")
+        return diagnosis_contract.ReportQueued(state="queued", waits_for=hold)
 
     def _pending(self, fingerprint: str) -> bool:
         latest = self._cases.find(REPORT, fingerprint)
@@ -613,7 +616,7 @@ class Reports:
     def _find_open(self, fingerprint: str) -> FindOutcome | NoKey:
         return self._box.find_issue(REPORT.label, fingerprint_line(fingerprint), include_closed=False)
 
-    def _state_of(self, fingerprint: str) -> contract.ReportState:
+    def _state_of(self, fingerprint: str) -> diagnosis_contract.ReportState:
         """Sprawa czekająca w kolejce, potem odpowiedź skrzynki z tej pracy Centrum, a bez niej ostatnia wysłana sprawa.
 
         Zgłoszenie, o którym wiadomo, że Maks je zamknął, nie czeka na naprawę.
@@ -627,4 +630,4 @@ class Reports:
             waiting = self._open.get(fingerprint) is not None
         if not known:
             waiting = latest is not None and latest.closure is None
-        return contract.ReportWaiting(state="waiting") if waiting else contract.ReportReady(state="ready")
+        return diagnosis_contract.ReportWaiting(state="waiting") if waiting else diagnosis_contract.ReportReady(state="ready")

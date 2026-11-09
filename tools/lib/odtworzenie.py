@@ -55,7 +55,7 @@ from openpyxl.utils import column_index_from_string
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import collective_layout, intermax_copies
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.catalog import CATALOG, declaration_of
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.logs_disk import name_of
@@ -732,7 +732,7 @@ def _efenix_limits(record: RunLog) -> list[Limit]:
     return limits
 
 
-def _rebuild(key: contract.ProcessKey) -> _Rebuild:
+def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:
     """Odtworzenie procesu ``key``; nowy proces bez swojej gałęzi pada w mypy."""
 
     match key:

@@ -19,7 +19,8 @@ from typing import Final, Literal, NamedTuple, assert_never
 from fastapi import APIRouter
 
 from rozliczenia import input_checks, workbook_files
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import configuration as configuration_contract
 from rozliczenia.centrum.process_kind import ConfigurationNeed, TemplateRole
 from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.tool_freshness import Judgement, ReleaseSource, ToolFreshness, offers_update
@@ -126,7 +127,7 @@ def open_in_excel(workbooks: Iterable[InputWorkbook]) -> list[str]:
     ]
 
 
-_Problem = tuple[contract.TemplateProblemKind, Message]
+_Problem = tuple[configuration_contract.TemplateProblemKind, Message]
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,7 @@ class Template:
         return None if found is None else found.message
 
 
-def _kind(problem: Problem) -> contract.TemplateProblemKind:
+def _kind(problem: Problem) -> configuration_contract.TemplateProblemKind:
     match problem:
         case Problem.MISSING:
             return "missing"
@@ -178,11 +179,11 @@ def configuration_router(
     checked = _CheckedTemplates(readers)
 
     @router.get("", operation_id="getConfiguration")
-    def configuration() -> contract.Configuration:
+    def configuration() -> configuration_contract.Configuration:
         commit = freshness.local()
         judgement = freshness.judge(release)
-        return contract.Configuration(
-            version=None if commit is None else contract.ToolVersion(commit=short_commit(commit), since=freshness.since()),
+        return configuration_contract.Configuration(
+            version=None if commit is None else configuration_contract.ToolVersion(commit=short_commit(commit), since=freshness.since()),
             freshness=_STATE[judgement],
             update_offered=offers_update(judgement),
             templates=[checked.status(template) for template in files.templates()],
@@ -194,7 +195,7 @@ def configuration_router(
 
 
 # Konfiguracja nie odróżnia powodu, dla którego nie sprawdzono; Diagnoza go nazywa.
-_STATE: Final[Mapping[Judgement, contract.ToolFreshnessState]] = {
+_STATE: Final[Mapping[Judgement, configuration_contract.ToolFreshnessState]] = {
     "current": "current",
     "newer": "newer",
     "no_release": "not_checked",
@@ -204,7 +205,7 @@ _STATE: Final[Mapping[Judgement, contract.ToolFreshnessState]] = {
 
 
 # Konfiguracja nie odróżnia klucza przyjętego od jeszcze niesprawdzonego (np. bez sieci); Diagnoza je nazywa.
-_KEY_STATE: Final[Mapping[KeyJudgement, contract.ReportKeyState]] = {
+_KEY_STATE: Final[Mapping[KeyJudgement, configuration_contract.ReportKeyState]] = {
     "accepted": "ready",
     "unchecked": "ready",
     "refused": "refused_key",
@@ -232,14 +233,14 @@ class _CheckedTemplates:
         self._readers = readers
         self._results: dict[Path, tuple[tuple[int, int, bool], _Problem | None]] = {}
 
-    def status(self, template: Template) -> contract.TemplateStatus:
+    def status(self, template: Template) -> configuration_contract.TemplateStatus:
         label, path = template.label, template.path
         found = self._problem(template)
         if found is None:
-            return contract.TemplateReady(state="ready", label=label, file_name=path.name)
+            return configuration_contract.TemplateReady(state="ready", label=label, file_name=path.name)
         problem, message = found
-        return contract.TemplateProblem(
-            state="problem", label=label, file_name=path.name, problem=problem, message=contract.Message.of(message)
+        return configuration_contract.TemplateProblem(
+            state="problem", label=label, file_name=path.name, problem=problem, message=common_contract.Message.of(message)
         )
 
     def _problem(self, template: Template) -> _Problem | None:
@@ -268,10 +269,10 @@ def workers_problem(config_path: Path) -> Message | None:
     return workers if isinstance(workers, Message) else None
 
 
-def _workers(config_path: Path) -> contract.Workers:
+def _workers(config_path: Path) -> configuration_contract.Workers:
     """Wykonawcy wczytani tak jak w obu procesach, w kolejności z konfiguracji wykonawców."""
 
     workers = input_checks.workers(config_path)
     if isinstance(workers, Message):
-        return contract.WorkersUnreadable(state="unreadable", message=contract.Message.of(workers))
-    return contract.WorkersReady(state="ready", names=list(workers.values()))
+        return configuration_contract.WorkersUnreadable(state="unreadable", message=common_contract.Message.of(workers))
+    return configuration_contract.WorkersReady(state="ready", names=list(workers.values()))

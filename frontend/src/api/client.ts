@@ -56,7 +56,7 @@ function serverMs(response: Response): number | null {
  * Poza `call` idą tylko dwa wyjątki z `@/api/centrum`: strumień Uruchomień (`watchRunEvents`, EventSource,
  * każde zdarzenie parsowane schematem) i sam pomiar widoku (`recordViewTiming`: odpowiedź 204 bez treści,
  * więc nie ma czego parsować, a wysyłka po pomiarze nie wlicza się do żadnego widoku). Trasy poza pomiarem
- * wymienia z powodem `OUTSIDE_TIMING` w `tools/ci/export_openapi.py`.
+ * wymienia z powodem `OUTSIDE_TIMING` w `tests/test_centrum_rozliczen.py`.
  */
 export async function call<T>(
   schema: z.ZodType<T>,

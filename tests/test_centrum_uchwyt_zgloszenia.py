@@ -19,7 +19,8 @@ from pydantic import BaseModel
 from rozliczenia import efenix_messages, preparation_messages
 from rozliczenia.call_trace import CallCause, CallFrame, CallTrace
 from rozliczenia.domain import RunMode
-from rozliczenia.centrum import contract, update_messages
+from rozliczenia.centrum import update_messages
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
 from rozliczenia.centrum.log import CentrumLog
@@ -38,6 +39,7 @@ from rozliczenia.centrum.reports import (
     UpdateReport,
     report_target,
 )
+from rozliczenia.centrum.stops import plain
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.efenix_window import PagePart
 from rozliczenia.process_run import Stop
@@ -204,7 +206,7 @@ SHORT_ENTRIES = tuple(f"2026-11-02T10:{minute:02d}:00+01:00 wpis-{minute:02d}" f
 def stop_report(entries: tuple[str, ...]) -> StopReport:
     """Zgłoszenie Zatrzymania po nieoczekiwanym wyjątku z bardzo długim śladem wywołań i dziennikiem ``entries``."""
 
-    run = contract.RunInfo(
+    run = runs_contract.RunInfo(
         id="3f2a9c1b8e7d4f0a",
         process="preparation",
         title="Przygotowanie pliku zbiorczego",
@@ -217,6 +219,18 @@ def stop_report(entries: tuple[str, ...]) -> StopReport:
     message = preparation_messages.unexpected_failure()
     stop = Stop("unexpected", message, trace=CallTrace("KeyError", LONG_FRAMES))
     return StopReport(run, stop, ProblemFingerprint.of("preparation", message), Diagnosis((), entries), logs=None)
+
+
+def test_ten_sam_komunikat_zatrzymania_w_dwoch_procesach_to_dwa_problemy() -> None:
+    """Kody Komunikatów są unikalne tylko w katalogu procesu, więc Zatrzymanie z tym samym Komunikatem w innym procesie
+    ma inny odcisk problemu, czyli osobne Zgłoszenie (przegląd #1114 r1, Drobne 2)."""
+
+    report = stop_report(SHORT_ENTRIES)
+    other = report.run.model_copy(update={"process": "settlement", "title": "Przebieg rozliczeń"})
+
+    fingerprints = {plain(run, report.stop).fingerprint.digest for run in (report.run, other)}
+
+    assert len(fingerprints) == 2
 
 
 def sent_alone(computer: Computer, report: StopReport | UpdateReport) -> str:
@@ -260,7 +274,7 @@ def test_zgloszenie_zatrzymania_do_maksa_z_przyczyna_w_wyjatku_ma_typ_kazdej_prz
     """Zatrzymanie okna efenix „do Maksa” ma ślad wywołań z łańcuchem przyczyn; Zgłoszenie podaje typ każdej przyczyny
     po kolei, bez treści wyjątków, a ich ramki zostawia Logom Uruchomienia."""
 
-    run = contract.RunInfo(
+    run = runs_contract.RunInfo(
         id="5c1d7e2a9b0f4e36",
         process="efenix",
         title="Wycena w efenix",

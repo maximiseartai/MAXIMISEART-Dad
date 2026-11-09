@@ -19,13 +19,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from wynik_uruchomienia import (
     check_metrics,
-    contract,
     external_link_parts,
     figures,
     finish,
     hyperlinks,
     load_result,
     look_mismatches,
+    runs_contract,
 )
 from skrypt_skilla import Parser
 
@@ -55,16 +55,16 @@ EXPECTED_WARNINGS = [
     ("KOLUMNY_Z_OPISU", f"plik {COLLECTIVE_FILE_NAME}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
 ]
 EXPECTED_RESULT = {"DRY-RUN": "OK", "RUN": "WYMAGA_SPRAWDZENIA"}
-EXPECTED_SUMMARY = contract.RunSummary(
+EXPECTED_SUMMARY = runs_contract.RunSummary(
     figures=[
-        contract.Figure(label="Zlecenia okresu", value=7, unit="count"),
-        contract.Figure(label="Zlecenia skuteczne", value=6, unit="count"),
-        contract.Figure(label="Pominięte puste wiersze", value=4, unit="count"),
+        runs_contract.Figure(label="Zlecenia okresu", value=7, unit="count"),
+        runs_contract.Figure(label="Zlecenia skuteczne", value=6, unit="count"),
+        runs_contract.Figure(label="Pominięte puste wiersze", value=4, unit="count"),
     ],
-    counts=contract.CountGroup(
+    counts=runs_contract.CountGroup(
         title="Zlecenia na dzień",
         counts=[
-            contract.Count(label=label, count=count)
+            runs_contract.Count(label=label, count=count)
             for label, count in (
                 ("wt 08.09.2026", 2),
                 ("śr 09.09.2026", 1),
@@ -77,8 +77,8 @@ EXPECTED_SUMMARY = contract.RunSummary(
         ],
     ),
     files=[
-        contract.PeriodFile(name=INTERNAL_SETTLEMENT_NAME, kind="internal_settlement"),
-        contract.PeriodFile(name=COLLECTIVE_FILE_NAME, kind="collective_file"),
+        runs_contract.PeriodFile(name=INTERNAL_SETTLEMENT_NAME, kind="internal_settlement"),
+        runs_contract.PeriodFile(name=COLLECTIVE_FILE_NAME, kind="collective_file"),
     ],
     worker_settlements=None,
 )

@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Final
 
 from rozliczenia import efenix_messages, efenix_process
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import (
     PERIODS_DIRECTORY,
     TAIL,
@@ -31,18 +31,18 @@ from rozliczenia.tool_files import EFENIX_METRICS
 _NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.FORWARDED, OrderKind.SETTLED)
 
 
-def _summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSummary:
-    return contract.RunSummary(
+def _summary(summary: PricingSummary, _dry_run: bool) -> runs_contract.RunSummary:
+    return runs_contract.RunSummary(
         figures=[
             count_figure("Zlecenia w zakresie", len(summary.results)),
             *(count_figure(order_label(kind), summary.count(kind)) for kind in OrderKind),
         ],
-        counts=contract.CountGroup(
+        counts=runs_contract.CountGroup(
             title="Pominięte",
             counts=[
-                contract.Count(label="Ze zdjęciami", count=summary.with_photos),
-                contract.Count(label="Usterki", count=summary.defects),
-                contract.Count(label="Nieznalezione w efenix", count=summary.not_found),
+                runs_contract.Count(label="Ze zdjęciami", count=summary.with_photos),
+                runs_contract.Count(label="Usterki", count=summary.defects),
+                runs_contract.Count(label="Nieznalezione w efenix", count=summary.not_found),
             ],
             zero_warns=False,
         ),
@@ -51,13 +51,13 @@ def _summary(summary: PricingSummary, _dry_run: bool) -> contract.RunSummary:
     )
 
 
-def _notes(summary: PricingSummary) -> list[contract.OrderNotes]:
+def _notes(summary: PricingSummary) -> list[runs_contract.OrderNotes]:
     return [
-        contract.OrderNotes(
+        runs_contract.OrderNotes(
             title=order_label(kind),
             done=not kind.left_for_tata,
             notes=[
-                contract.OrderNote(
+                runs_contract.OrderNote(
                     row=result.order.row,
                     order=result.order.number,
                     worker=result.order.worker,

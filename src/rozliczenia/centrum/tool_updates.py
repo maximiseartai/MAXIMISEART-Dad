@@ -30,7 +30,11 @@ from typing import Final
 
 from fastapi import APIRouter, Request
 
-from rozliczenia.centrum import contract, restart_guardian, update_messages
+from rozliczenia.centrum import restart_guardian, update_messages
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
+from rozliczenia.centrum.contract import tool_update as tool_update_contract
+from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.reports import ReportHandle, Reports, UpdateReport
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.runs import RunHost
@@ -100,23 +104,23 @@ class ToolUpdates:
         self._result_file = work.config / RESULT_FILE
         self._release = release
         self._lock = threading.Lock()
-        self._view: contract.ToolUpdate | _Failed = contract.ToolUpdateIdle(state="idle")
+        self._view: tool_update_contract.ToolUpdate | _Failed = tool_update_contract.ToolUpdateIdle(state="idle")
         self._up_to_date_with: GitHubReleases | None = None
         self._after_restart()
 
-    def current(self) -> contract.ToolUpdate:
+    def current(self) -> tool_update_contract.ToolUpdate:
         with self._lock:
             view, judged = self._view, self._up_to_date_with
-        if isinstance(view, contract.ToolUpdateUpToDate):
+        if isinstance(view, tool_update_contract.ToolUpdateUpToDate):
             newest = self._release()
             with self._lock:
                 if newest is not None and newest != judged and self._view is view:
-                    self._view = contract.ToolUpdateIdle(state="idle")
+                    self._view = tool_update_contract.ToolUpdateIdle(state="idle")
                 view = self._view
         return view.view if isinstance(view, _Failed) else view
 
-    def start(self, port: int) -> contract.ToolUpdate:
-        """Zaczyna aktualizację w tle i od razu zwraca jej pierwszy krok; ``contract.Refusal``, gdy coś trwa.
+    def start(self, port: int) -> tool_update_contract.ToolUpdate:
+        """Zaczyna aktualizację w tle i od razu zwraca jej pierwszy krok; ``Refusal``, gdy coś trwa.
 
         ``port`` to port tego Centrum: na nim opiekun startuje nową wersję.
         """
@@ -125,7 +129,7 @@ class ToolUpdates:
         self._runs.begin_update()
         before = self._commit()
         self._log.update_started(before=before)
-        first = contract.ToolUpdateRunning(state="running", step="fetching")
+        first = tool_update_contract.ToolUpdateRunning(state="running", step="fetching")
         with self._lock:
             self._view = first
         threading.Thread(target=self._update, args=(clone, before, port), name=UPDATE_THREAD, daemon=True).start()
@@ -167,7 +171,7 @@ class ToolUpdates:
     def _update(self, clone: ToolClone, before: str | None, port: int) -> None:
         work = Path(tempfile.mkdtemp(prefix="centrum-aktualizacja-"))
         restarting = False
-        view: contract.ToolUpdate | _Failed | None = None
+        view: tool_update_contract.ToolUpdate | _Failed | None = None
         newest: GitHubReleases | None = None
         try:
             result, guardian = self._result(clone, before, work)
@@ -186,7 +190,7 @@ class ToolUpdates:
             if not restarting:
                 self._finished(result)
                 view = _view_of(result)
-                if isinstance(view, contract.ToolUpdateUpToDate):
+                if isinstance(view, tool_update_contract.ToolUpdateUpToDate):
                     newest = self._release()
                 if view is None:
                     failed = self._failed(result, after_restart=False)
@@ -218,7 +222,7 @@ class ToolUpdates:
         try:
             with clone.leased_to_guardian():
                 with self._lock:
-                    self._view = contract.ToolUpdateRunning(state="running", step="restarting")
+                    self._view = tool_update_contract.ToolUpdateRunning(state="running", step="restarting")
                 self._guardian(guardian, restart)
         except Exception as failure:
             self._log.unexpected_failure(failure, where="ponowny start po aktualizacji")
@@ -251,40 +255,40 @@ class ToolUpdates:
         source = UpdateReport.of(result, failure.message, self._log)
         report = self._reports.handle(source.fingerprint)
         return _Failed(
-            contract.Message.of(failure.message),
+            common_contract.Message.of(failure.message),
             failure.next_action,
             report,
             report.prepare(source),
             after_restart,
         )
 
-    def send_report(self) -> contract.ReportState:
-        """„Wyślij do Maksa” przy nieudanej aktualizacji; ``contract.Refusal``, gdy ostatnia aktualizacja nie zawiodła."""
+    def send_report(self) -> diagnosis_contract.ReportState:
+        """„Wyślij do Maksa” przy nieudanej aktualizacji; ``Refusal``, gdy ostatnia aktualizacja nie zawiodła."""
 
         with self._lock:
             failed = self._view
         if not isinstance(failed, _Failed):
-            raise contract.Refusal(409, _NO_FAILED_UPDATE)
+            raise Refusal(409, _NO_FAILED_UPDATE)
         return failed.report.send()
 
     def _show_step(self, step: Step) -> None:
         with self._lock:
-            self._view = contract.ToolUpdateRunning(state="running", step=step)
+            self._view = tool_update_contract.ToolUpdateRunning(state="running", step=step)
 
 
 @dataclass(frozen=True)
 class _Failed:
     """Nieudana Aktualizacja narzędzia: Komunikat, co dalej i jej Zgłoszenie z zamrożonym podglądem ``draft``."""
 
-    message: contract.Message
+    message: common_contract.Message
     next_action: update_messages.NextAction
     report: ReportHandle
-    draft: contract.ReportDraft
+    draft: diagnosis_contract.ReportDraft
     after_restart: bool
 
     @property
-    def view(self) -> contract.ToolUpdateFailed:
-        return contract.ToolUpdateFailed(
+    def view(self) -> tool_update_contract.ToolUpdateFailed:
+        return tool_update_contract.ToolUpdateFailed(
             state="failed",
             message=self.message,
             next_action=self.next_action,
@@ -294,30 +298,30 @@ class _Failed:
         )
 
 
-def _view_of(result: UpdateResult) -> contract.ToolUpdate | None:
+def _view_of(result: UpdateResult) -> tool_update_contract.ToolUpdate | None:
     """Widok udanej aktualizacji albo ``None`` przy porażce."""
 
     if result.code == UPDATED:
-        return contract.ToolUpdateUpdated(state="updated")
+        return tool_update_contract.ToolUpdateUpdated(state="updated")
     if result.code == UP_TO_DATE:
-        return contract.ToolUpdateUpToDate(state="up_to_date")
+        return tool_update_contract.ToolUpdateUpToDate(state="up_to_date")
     return None
 
 
 def tool_update_router(updates: ToolUpdates) -> APIRouter:
     router = APIRouter(prefix="/api/tool-update", tags=["aktualizacja"])
 
-    @router.post("", operation_id="startToolUpdate", status_code=202, responses={409: {"model": contract.Problem}})
-    def start(request: Request) -> contract.ToolUpdate:
+    @router.post("", operation_id="startToolUpdate", status_code=202, responses={409: {"model": common_contract.Problem}})
+    def start(request: Request) -> tool_update_contract.ToolUpdate:
         server = request.scope.get("server")
         return updates.start(int(server[1]) if server else 0)
 
     @router.get("", operation_id="getToolUpdate")
-    def current() -> contract.ToolUpdate:
+    def current() -> tool_update_contract.ToolUpdate:
         return updates.current()
 
-    @router.post("/report", operation_id="reportToolUpdate", responses={409: {"model": contract.Problem}})
-    def send_report() -> contract.ReportState:
+    @router.post("/report", operation_id="reportToolUpdate", responses={409: {"model": common_contract.Problem}})
+    def send_report() -> diagnosis_contract.ReportState:
         return updates.send_report()
 
     return router

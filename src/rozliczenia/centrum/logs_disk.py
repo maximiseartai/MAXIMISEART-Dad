@@ -58,7 +58,8 @@ from typing import Annotated, Final, Generic, Literal, TypeVar, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
@@ -73,7 +74,7 @@ _JOURNAL_SUFFIX: Final = ".jsonl"
 _RUN_ID: Final = re.compile(r"[0-9a-f]{32}")
 # Nazwa pliku Logów (``name_of``).
 _NAME: Final = re.compile(
-    rf"(?P<second>\d{{8}}T\d{{6}}Z)-(?P<process>{'|'.join(get_args(contract.ProcessKey))})-(?P<run_id>{_RUN_ID.pattern})\.json"
+    rf"(?P<second>\d{{8}}T\d{{6}}Z)-(?P<process>{'|'.join(get_args(common_contract.ProcessKey))})-(?P<run_id>{_RUN_ID.pattern})\.json"
 )
 
 T = TypeVar("T")
@@ -91,7 +92,7 @@ class _Name:
     """Nazwa pliku Logów rozłożona na części (``name_of`` w drugą stronę)."""
 
     second: str
-    process: contract.ProcessKey
+    process: common_contract.ProcessKey
     run_id: str
 
 
@@ -101,7 +102,7 @@ def _parsed(name: str) -> _Name | None:
     match = _NAME.fullmatch(name)
     if match is None:
         return None
-    process = next(key for key in get_args(contract.ProcessKey) if key == match["process"])
+    process = next(key for key in get_args(common_contract.ProcessKey) if key == match["process"])
     return _Name(second=match["second"], process=process, run_id=match["run_id"])
 
 
@@ -176,7 +177,7 @@ class _RunEnded(_JournalRecord):
 
     at: datetime
     entry: Literal["koniec Uruchomienia"]
-    result: contract.RunResult | None = None
+    result: RunResult | None = None
 
 
 _JournalEntry = Annotated[_JournalStarted | _OrderBegun | _OrderEnded | _RunEnded, Field(discriminator="entry")]
@@ -198,7 +199,7 @@ class Journal:
     """Dziennik bieżącej Wyceny w efenix (Uruchomienia procesu ``process``) w katalogu ``directory``
     (``efenix_pricing.OrderJournal`` w Centrum). Pierwszą linię pisze start Uruchomienia (``LogsOnDisk.started``)."""
 
-    def __init__(self, directory: Path, log: CentrumLog, *, process: contract.ProcessKey) -> None:
+    def __init__(self, directory: Path, log: CentrumLog, *, process: common_contract.ProcessKey) -> None:
         self.process: Final = process
         self._directory = directory
         self._log = log
@@ -241,7 +242,7 @@ class Journal:
     def ended(self, result: OrderResult) -> None:
         self._write(_OrderEnded(at=_utc_now(), entry="zlecenie skończone", order=LoggedOrder.of(result)))
 
-    def end(self, run_id: str, result: contract.RunResult) -> None:
+    def end(self, run_id: str, result: RunResult) -> None:
         """Wpis końca z wynikiem ``result`` w dzienniku Uruchomienia ``run_id``, który ma pierwszą linię na dysku. Dziennik
         bez niej (``_header``) usuwa, bo postęp do niego nie poszedł, a nieudany zapis mógł zostawić na dysku całą
         pierwszą linię (``flush`` albo ``fsync`` rzuca po ``write``), którą start wziąłby za Urwane Uruchomienie. Wpis
@@ -314,7 +315,7 @@ class Journal:
 class EndEntry:
     """Wpis końca dziennika: Uruchomienie doszło do wyniku ``result`` (``None``: wpis sprzed #910, bez wyniku)."""
 
-    result: contract.RunResult | None
+    result: RunResult | None
 
 
 @dataclass(frozen=True)
@@ -416,7 +417,7 @@ class LogsOnDisk:
     """Pliki Logów Uruchomienia, plik ostatniego startu i dzienniki Wyceny w efenix w katalogu Logów ``log.directory``;
     dziennik pisze Uruchomienie procesu ``journaled`` (``journal``)."""
 
-    def __init__(self, log: CentrumLog, *, journaled: contract.ProcessKey) -> None:
+    def __init__(self, log: CentrumLog, *, journaled: common_contract.ProcessKey) -> None:
         self._logs = log.directory / RUN_LOGS_DIRECTORY
         self._last_started = log.directory / LAST_STARTED_FILE
         self._journals = log.directory / _JOURNALS
@@ -471,7 +472,7 @@ class LogsOnDisk:
         name = next((name for name, parsed in names if parsed.run_id == run_id), None)
         return Missing() if name is None else _read_logs(self._logs / name)
 
-    def newest(self, process: contract.ProcessKey) -> RunLog | None:
+    def newest(self, process: common_contract.ProcessKey) -> RunLog | None:
         """Najnowsze Logi procesu ``process``: z plików najnowszej sekundy startu w nazwie te z późniejszym startem w
         Logach. ``None``: żadnych albo żadnych czytelnych w tej sekundzie, bo starsze nie są najnowszymi."""
 
@@ -530,7 +531,7 @@ class ViewedLogs(Generic[T]):
         # go pomija.
         self._known: dict[str, tuple[tuple[int, int], T | None]] = {}
 
-    def of(self, process: contract.ProcessKey) -> list[T]:
+    def of(self, process: common_contract.ProcessKey) -> list[T]:
         """Widoki Logów procesu ``process`` od najnowszych; pliki, których nie da się odczytać, pomija, a bez wylistowania
         katalogu Logów nie ma żadnych."""
 

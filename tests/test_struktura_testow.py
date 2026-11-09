@@ -7,13 +7,16 @@ Wspólne dane i pomocniki są w ``tests.fixtures``.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from itertools import pairwise
 from pathlib import Path
 import re
+import sys
 
 import pytest
 
+from rozliczenia.centrum.outbox import QUEUE_THREAD
+from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
 from tests.fixtures.skladnia import dotted, imports
 
 TESTS = Path(__file__).resolve().parent
@@ -372,3 +375,117 @@ def test_zmierzony_czas_nie_jest_ograniczony_stala_liczba() -> None:
 )
 def test_czas_przypisany_nazwie_bez_slowa_czasu_jest_zmierzonym_czasem(module: str) -> None:
     assert [ast.unparse(compare) for compare, _ in _constant_time_bounds(ast.parse(module))] == ["took < 2"]
+
+
+@pytest.mark.parametrize(
+    ("guard", "atrapa", "reported"),
+    [
+        (
+            test_testy_czekaja_na_stan_a_nie_stala_liczbe_sekund,
+            "import time\ntime.sleep(0.5)\n",
+            "tools/lib/atrapy/naruszenie.py:2: time.sleep(0.5) czeka stałą liczbą sekund",
+        ),
+        (
+            test_zmierzony_czas_nie_jest_ograniczony_stala_liczba,
+            "import time\nstarted = time.monotonic()\nassert time.monotonic() - started < 2\n",
+            "tools/lib/atrapy/naruszenie.py:3: time.monotonic() - started < 2 ogranicza zmierzony czas stałą liczbą",
+        ),
+    ],
+    ids=["sen", "limit-czasu"],
+)
+def test_straznik_czekania_i_limitow_czasu_zglasza_naruszenie_w_atrapie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard: Callable[[], None], atrapa: str, reported: str
+) -> None:
+    """Naruszenie w atrapie obok pustego katalogu testów: strażnik je zgłasza, więc czyta atrapy, a nie tylko ``tests/``
+    (przegląd #1170 r2, Drobne 1)."""
+
+    atrapy = tmp_path / "tools" / "lib" / "atrapy"
+    atrapy.mkdir(parents=True)
+    (atrapy / "naruszenie.py").write_text(atrapa, encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    monkeypatch.setattr(sys.modules[__name__], "TESTS", tmp_path / "tests")
+    monkeypatch.setattr(sys.modules[__name__], "ATRAPY", atrapy)
+
+    with pytest.raises(AssertionError) as raised:
+        guard()
+
+    assert reported in str(raised.value)
+
+
+SRC = TESTS.parent / "src"
+THREAD_CONSTANT = re.compile(r"[A-Z_]+_THREAD(?:_PREFIX)?")
+# Napisy równe nazwie wątku, które nie nazywają wątku, z funkcją (``<moduł>`` poza funkcją) i powodem.
+NOT_THREADS = {
+    "test_instrukcja_taty.py::<moduł>::aktualizacja-narzedzia": "funkcja Instrukcji taty o tej samej nazwie co wątek",
+    "test_centrum_przygotowanie.py::test_dziennik_centrum_ma_poczatek_i_koniec_uruchomienia_z_wynikiem_bez_danych_klientow"
+    "::uruchomienie-": "początek nazw wpisów dziennika Centrum o Uruchomieniu, nie wątku",
+}
+
+
+def _thread_names(tree: ast.Module) -> set[str]:
+    """Nazwy wątków modułu ``src/``: wartości stałych modułu ``*_THREAD`` i ``*_THREAD_PREFIX`` oraz napisy ``name=`` w
+    wywołaniu ``…Thread(...)``."""
+
+    names = set()
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            target, value = statement.targets[0], statement.value
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            target, value = statement.target, statement.value
+        else:
+            continue
+        if isinstance(target, ast.Name) and THREAD_CONSTANT.fullmatch(target.id) and isinstance(value, ast.Constant):
+            names.add(value.value)
+    for call in ast.walk(tree):
+        if isinstance(call, ast.Call) and ast.unparse(call.func).endswith("Thread"):
+            names |= {
+                keyword.value.value
+                for keyword in call.keywords
+                if keyword.arg == "name" and isinstance(keyword.value, ast.Constant)
+            }
+    return {name for name in names if isinstance(name, str)}
+
+
+def _texts(tree: ast.Module) -> Iterator[tuple[str, int, str]]:
+    """Napisy modułu z nazwą funkcji, w której stoją, poza docstringami (napis jako całe wyrażenie-instrukcja) i
+    kawałkami f-stringów."""
+
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        if isinstance(parents.get(node), (ast.Expr, ast.JoinedStr)):
+            continue
+        enclosing: ast.AST = node
+        while enclosing in parents and not isinstance(enclosing, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            enclosing = parents[enclosing]
+        function = enclosing.name if isinstance(enclosing, (ast.FunctionDef, ast.AsyncFunctionDef)) else "<moduł>"
+        yield node.value, node.lineno, function
+
+
+def test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy() -> None:
+    """Granica: napis równy całej nazwie wątku albo jej początkowi (``*_THREAD_PREFIX``) poza docstringami; nazwę
+    złożoną w trakcie działania, kawałek f-stringu i kawałek nazwy widzi tylko przegląd. Napis, który nie nazywa wątku,
+    trafia do ``NOT_THREADS`` pod kluczem z nawiasu."""
+
+    names = set().union(*(_thread_names(ast.parse(path.read_text(encoding="utf-8"))) for path in sorted(SRC.rglob("*.py"))))
+    found, excepted = [], set()
+    for path, name in _scanned():
+        for text, line, function in _texts(ast.parse(path.read_text(encoding="utf-8"))):
+            if text not in names:
+                continue
+            key = f"{name}::{function}::{text}"
+            if key in NOT_THREADS:
+                excepted.add(key)
+            else:
+                found.append(f"{_shown(path)}:{line}: {text!r} to kopia nazwy wątku z src/ ({key})")
+    found += [f"NOT_THREADS: {key} nie ma już tego napisu, usuń wpis" for key in sorted(NOT_THREADS.keys() - excepted)]
+
+    assert {QUEUE_THREAD, RUN_THREAD_PREFIX} <= names
+    assert not found, "\n".join(
+        [
+            *found,
+            "Importuj stałą nazwy wątku z src/ (np. QUEUE_THREAD), żeby zmiana jej tekstu nie zostawiła testu bez czekania; "
+            "napis, który nie nazywa wątku, wpisz do NOT_THREADS pod kluczem z nawiasu, z powodem.",
+        ]
+    )

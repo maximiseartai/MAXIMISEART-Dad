@@ -94,7 +94,7 @@ MUTATIONS = (
         (
             Edit(
                 FILLING,
-                '    except WorkbookError:\n        return contract.WithoutQuantityUnread(state="unread")\n',
+                '    except WorkbookError:\n        return filling_contract.WithoutQuantityUnread(state="unread")\n',
                 "    except WorkbookError:\n        raise\n",
             ),
         ),

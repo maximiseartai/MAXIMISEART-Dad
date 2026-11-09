@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Final
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.telemetry import MetricsStore
 
 CENTRUM_RUNS_FILE: Final = "centrum-uruchomienia.jsonl"
@@ -36,7 +36,7 @@ class CentrumRuns:
         self._lock = threading.Lock()
 
     def remember(
-        self, process: contract.ProcessKey, run_id: str, metrics: MetricsStore, since: datetime, until: datetime
+        self, process: common_contract.ProcessKey, run_id: str, metrics: MetricsStore, since: datetime, until: datetime
     ) -> None:
         """Zapamiętuje rekordy metryk ``process`` ze startem od ``since`` do ``until`` (UTC) jako Uruchomienie ``run_id``.
 

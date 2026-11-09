@@ -4,7 +4,7 @@
 
 # odznaka .cmd oznacza stare Uruchomienia z dawnych launcherów i CLI (ADR 0011, „Historia bez zmian”)
 README.md	Mają odznakę `.cmd`: to stare Uruchomienia z dawnych launcherów i CLI oraz
-src/rozliczenia/centrum/contract.py	rekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.
+src/rozliczenia/centrum/contract/metrics.py	rekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.
 src/rozliczenia/centrum/run_origins.py	``.cmd``: stare Uruchomienia taty z dawnych launcherów i CLI oraz rekordy ze
 
 # Git biegnie bez terminala

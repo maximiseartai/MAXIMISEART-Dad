@@ -33,7 +33,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Literal, assert_never
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank
 from rozliczenia.centrum.report_box import Label
@@ -65,7 +66,7 @@ class ResultWithoutLogs:
     (``result``; ``None``: dziennik go nie ma) i zlecenia z dziennika (``journal``)."""
 
     journal: PricingProgress
-    result: contract.RunResult | None
+    result: RunResult | None
     logs: LogsMissing
 
 
@@ -378,7 +379,7 @@ def _result(record: RunLog) -> str:
             assert_never(record.ending)
 
 
-def _stop(kind: contract.StopKind | None) -> str:
+def _stop(kind: runs_contract.StopKind | None) -> str:
     match kind:
         case "for_tata":
             return "Zatrzymanie dla taty"

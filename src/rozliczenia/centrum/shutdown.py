@@ -14,7 +14,9 @@ import threading
 
 from fastapi import APIRouter
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import centrum as centrum_contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.threads import Threading
 
@@ -39,7 +41,7 @@ class Shutdown:
     def request(self) -> None:
         message = self._blocker()
         if message is not None:
-            raise contract.Refusal(409, message)
+            raise Refusal(409, message)
         self._log.shutdown_requested()
         self._requested.set()
 
@@ -56,9 +58,9 @@ class Shutdown:
 def shutdown_router(shutdown: Shutdown) -> APIRouter:
     router = APIRouter(prefix="/api/shutdown", tags=["centrum"])
 
-    @router.post("", operation_id="closeCentrum", status_code=202, responses={409: {"model": contract.Problem}})
-    def close() -> contract.Closing:
+    @router.post("", operation_id="closeCentrum", status_code=202, responses={409: {"model": common_contract.Problem}})
+    def close() -> centrum_contract.Closing:
         shutdown.request()
-        return contract.Closing(state="closing")
+        return centrum_contract.Closing(state="closing")
 
     return router

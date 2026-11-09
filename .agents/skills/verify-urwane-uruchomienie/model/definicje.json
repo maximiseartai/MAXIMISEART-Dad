@@ -9,7 +9,7 @@
     "GuardedLogs": "5fdd32a040cfba44"
   },
   "src/rozliczenia/centrum/comment_versions.py": {
-    "ResultWithoutLogs": "c9fd2e89c92a9fe7",
+    "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
     "ProgressVersion": "5e04bea635fa9033",
     "OwnLogs": "d74da43b6f1f0893",
     "StandInLogs": "9f9d00d7a8b7553b",
@@ -21,7 +21,7 @@
     "close": "2fb53784e5141828"
   },
   "src/rozliczenia/centrum/run_comments.py": {
-    "RunComments.run_started": "a62533064f9e0d87",
+    "RunComments.run_started": "e57474fcf6e1ef4b",
     "RunComments._progress": "c036f0ad50a24420",
     "RunComments.run_ended": "bff8def4448bc94c",
     "RunComments._own": "aa97e6fad8ca97d3",
@@ -35,12 +35,12 @@
     "LogsOnDisk.logs": "09cb03e3fedd9628",
     "_read_logs": "42f7c04a89d9683f",
     "_names": "d703673e4771ad93",
-    "_NAME": "191666e2ace14a7c",
+    "_NAME": "7e5bf69553e4b18c",
     "_RUN_ID": "38b226cc6aeae33a",
     "LogsRead": "2dfbc7e2c338f6b7",
-    "Journal": "70096bab4e9680c7",
+    "Journal": "aac657169aeb12c0",
     "_first_line": "f9a16b6e76575975",
-    "_RunEnded": "242ccffd41c0ef05",
+    "_RunEnded": "de0df1f225b6c810",
     "JournalRead": "0e4cbc86128d9c88",
     "_read_journal": "0566cf4fcc730794",
     "_remove": "56e443ad89f7a91e",
@@ -59,11 +59,11 @@
     "create_app.runs": "1ff32ac319f54834"
   },
   "src/rozliczenia/centrum/runs.py": {
-    "Run.work": "e63c1a3152d105ab",
-    "RunHost.__init__": "ad12d1a2c69b280c",
+    "Run.work": "0f5b17bc2e7efeb6",
+    "RunHost.__init__": "5847fd718edb1804",
     "RunHost.after": "3b394aacf6701175",
     "RunHost.shutdown_refusal": "7b2f8610fb13f295",
-    "RunHost.start": "f1a3bb66892ff369"
+    "RunHost.start": "18955e89bf097917"
   },
   "src/rozliczenia/centrum/process_kind.py": {
     "PreparedRun.conduct": "a3e1e3cad04aa266"

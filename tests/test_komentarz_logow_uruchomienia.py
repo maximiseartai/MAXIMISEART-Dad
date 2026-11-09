@@ -54,7 +54,9 @@ from rozliczenia.centrum.comment_versions import (
     summary_markdown,
     without_logs_markdown,
 )
-from rozliczenia.centrum.contract import Progress, RunInfo, RunResult
+from rozliczenia.centrum.contract.runs import Progress
+from rozliczenia.centrum.contract.runs import RunInfo
+from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.log import CentrumLog
@@ -775,6 +777,44 @@ def test_katalog_logow_ktory_nie_przyjal_pliku_przy_starcie_nie_zatrzymuje_logow
     assert lines[0].endswith("miejsce=start")
 
 
+def test_wyjatek_wysylki_jednej_wersji_zastepczej_przy_starcie_nie_zatrzymuje_nastepnych(tmp_path: Path) -> None:
+    """Dwa dzienniki Urwanych Uruchomień, a kolejka rzuca nieoczekiwany wyjątek przy pierwszej wersji zastępczej: ta
+    wersja to jedna linia dziennika Centrum i jej dziennik czeka na następny start, a druga idzie do Kolejki wysyłki i jej
+    dziennik znika (przegląd #1166 r2, Drobne 1)."""
+
+    other = "9f0e7c2b5a8d4e1f8c3b6a9d2e5f8a1b"
+    first, second = (
+        left_journal(
+            tmp_path,
+            StartFacts(
+                run_id=run_id,
+                process="efenix",
+                mode=RunMode.RUN,
+                period="08_14_09_2026",
+                started_at=datetime(2026, 9, 10, 8, minute),
+            ),
+        )
+        for minute, run_id in ((0, RUN_ID), (30, other))
+    )
+
+    class FailingFirst(RecordingQueue):
+        def post(self, post: Post) -> bool:
+            if post.run_id == RUN_ID:
+                raise RuntimeError("nieprzewidziany błąd kolejki")
+            return super().post(post)
+
+    queue = FailingFirst()
+
+    _started(_comments(tmp_path, queue))
+
+    lines = (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines()
+    assert [post.run_id for post in queue.posts] == [other]
+    assert (first.exists(), second.exists()) == (True, False)
+    assert [line.split(" ", 1)[1] for line in lines] == [
+        'nieoczekiwany-wyjatek typ=RuntimeError miejsce="wysyłka wersji zastępczych przy starcie"'
+    ]
+
+
 def test_logi_sprzed_schematu_3_przy_dzienniku_wyceny_zostaja_w_swoim_schemacie_ze_slowem_trybu(tmp_path: Path) -> None:
     """Start Centrum zastaje dziennik Wyceny i plik Logów schematu 2, który zapisało Centrum sprzed schematu 3 (Logi,
     których przyjęcia przez kolejkę nikt nie zapisał): plik Logów i plik w Archiwum Logów okresu mają te Logi w ich
@@ -1478,7 +1518,6 @@ TOOL_TEXT: Final = {
     "CallCause.exception_type": "typ wyjątku z modułem, bez treści wyjątku (call_trace.exception_type)",
     "CallFrame.file": "plik kodu narzędzia względem katalogu narzędzia, bez bibliotek (call_trace._tool_file)",
     "CallFrame.function": "nazwa funkcji kodu narzędzia z traceback",
-    "ButtonPressed.operation": "operation_id trasy API z kontraktu, bez treści zapytania (dad_actions._pressed)",
     "Environment.system": "platform.platform(), bez nazwy komputera",
     "Environment.python": "platform.python_version()",
 }

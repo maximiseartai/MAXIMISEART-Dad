@@ -11,7 +11,7 @@ import sys
 from collections.abc import Sequence
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from fastapi.testclient import TestClient
 import pytest
@@ -19,6 +19,7 @@ import pytest
 from rozliczenia import efenix_process
 from rozliczenia.centrum import app
 from rozliczenia.centrum.app import STATIC_DIRECTORY
+from rozliczenia.centrum.contract import timing as timing_contract
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
@@ -102,6 +103,30 @@ def test_frontend_parsuje_odpowiedzi_kontraktem_ktory_serwer_naprawde_eksportuje
     committed = json.loads((ROOT / "frontend" / "src" / "api" / "openapi.json").read_text(encoding="utf-8"))
 
     assert _exported_contract(tmp_path, monkeypatch) == committed
+
+
+# Trasy, których przeglądarka nie mierzy przez `call` (frontend/src/api/client.ts), każda z powodem.
+OUTSIDE_TIMING = {
+    "streamRunEvents": "strumień SSE (EventSource) otwarty przez całe życie karty, nie zapytanie z odpowiedzią",
+    "recordViewTiming": "sam pomiar widoku, wysyłany po pomiarze; odpowiedź 204 bez treści",
+    "getCurrentRun": "przeglądarka bierze bieżące Uruchomienie ze strumienia; trasę czytają testy i weryfikacja",
+}
+
+
+def test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiarem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``ApiOperation`` to dokładnie trasy API poza ``OUTSIDE_TIMING``; dziennik działań taty zapisuje przycisk tylko
+    pod operacją z ``ApiOperation``, więc jedyna trasa poza nią, która coś zmienia, to sam pomiar widoku."""
+
+    paths = _exported_contract(tmp_path, monkeypatch)["paths"].values()
+    methods = {operation["operationId"]: method for path in paths for method, operation in path.items()}
+    listed = get_args(timing_contract.ApiOperation)
+
+    assert sorted(listed) == sorted(methods.keys() - OUTSIDE_TIMING.keys())
+    assert len(set(listed)) == len(listed)
+    assert OUTSIDE_TIMING.keys() <= methods.keys()
+    assert {name for name in OUTSIDE_TIMING if methods[name] != "get"} == {"recordViewTiming"}
 
 
 def test_zadanie_z_obcym_naglowkiem_host_jest_odrzucone(tmp_path: Path) -> None:

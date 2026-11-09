@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 from rozliczenia import settlement_messages, settlement_process
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import (
     PERIODS_DIRECTORY,
     TAIL,
@@ -31,7 +31,7 @@ _WRITTEN: Final = "Zapisane szablony"
 _EMPTY: Final = "Puste szablony"
 
 
-def _figures(snapshot: ProgressSnapshot, dry_run: bool) -> list[contract.Figure]:
+def _figures(snapshot: ProgressSnapshot, dry_run: bool) -> list[runs_contract.Figure]:
     counters = snapshot.metric_counters()
     return [
         count_figure(_ROWS, snapshot.rows),
@@ -41,7 +41,7 @@ def _figures(snapshot: ProgressSnapshot, dry_run: bool) -> list[contract.Figure]
     ]
 
 
-def _summary(summary: SettlementSummary, dry_run: bool) -> contract.RunSummary:
+def _summary(summary: SettlementSummary, dry_run: bool) -> runs_contract.RunSummary:
     figures = (
         [
             count_figure(_ROWS, summary.total_rows),
@@ -54,12 +54,12 @@ def _summary(summary: SettlementSummary, dry_run: bool) -> contract.RunSummary:
             count_figure(_EMPTY, summary.empty_count),
         ]
     )
-    return contract.RunSummary(
+    return runs_contract.RunSummary(
         figures=figures,
         counts=None,
         files=[],
         worker_settlements=[
-            contract.WorkerSettlement(
+            runs_contract.WorkerSettlement(
                 worker=result.worker_name,
                 file=result.output_file.name,
                 orders=result.rows,

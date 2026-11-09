@@ -90,7 +90,8 @@ import platform
 import threading
 from typing import Final, Protocol, TypeVar, assert_never
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.comment_versions import (
     LABEL,
@@ -123,15 +124,16 @@ PROGRESS_S: Final = 300.0
 """Odstęp między postępami jednej Wyceny w efenix na zegarze Centrum (#846: „najwyżej co 5 minut”)."""
 
 _AFTER_RUN: Final = "po wyniku Uruchomienia procesu"
-_LEFT_BEHIND: Final = "wysyłka wersji zastępczych przy starcie"
 """Miejsce błędu kroku końca Uruchomienia w dzienniku Centrum: to samo co błąd działania po wyniku w ``RunHost.after``."""
+_LEFT_BEHIND: Final = "wysyłka wersji zastępczych przy starcie"
+"""Miejsce błędu wysyłki jednej wersji zastępczej w kroku startu serwera (``RunComments.send_left_behind``)."""
 
 _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
 """Miejsce zamaskowanej wartości w uwadze technicznej postępu."""
 
 T = TypeVar("T")
 
-ProcessFiles = Callable[[contract.ProcessKey, str], Sequence[Path]]
+ProcessFiles = Callable[[common_contract.ProcessKey, str], Sequence[Path]]
 """Pliki taty Uruchomienia procesu dla tokenu okresu, z Ustawieniami taty z chwili końca Uruchomienia."""
 
 
@@ -201,7 +203,7 @@ class RecordMaker:
         release = None if commit is None else self._wydanie(commit)
         return Tool(wydanie=None if release is None else release.version, commit=commit)
 
-    def _environment(self, process: contract.ProcessKey, period: str) -> Environment:
+    def _environment(self, process: common_contract.ProcessKey, period: str) -> Environment:
         try:
             paths = self._files(process, period)
         except (OSError, PeriodFolderInaccessible):
@@ -256,7 +258,7 @@ class RunComments:
         # wersje zastępcze do wysłania i ich dzienniki
         self._pending: list[tuple[JournalKey, StandInVersion]] = []
 
-    def run_started(self, info: contract.RunInfo, started_at: datetime) -> None:
+    def run_started(self, info: runs_contract.RunInfo, started_at: datetime) -> None:
         """Start Uruchomienia z Centrum, zanim ruszy jego wątek: pierwsza linia dziennika i plik ostatniego startu
         (``LogsOnDisk.started``; ``OSError`` pliku startu wychodzi do ``RunHost.start``), potem komentarz postępu Wyceny
         bez zleceń i budzik pierwszego odświeżenia."""

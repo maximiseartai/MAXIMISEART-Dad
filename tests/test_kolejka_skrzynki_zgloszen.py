@@ -14,7 +14,9 @@ import itertools
 import json
 from pathlib import Path
 import shutil
+import sys
 import threading
+import time
 
 import pytest
 
@@ -77,7 +79,7 @@ class Queue:
     """Kolejka na folderze w ``tmp_path`` ze skrzynką ``box`` i kluczem ``key`` (``None``: bez klucza).
 
     ``delivered`` to Uruchomienie i numer issue każdej wysyłki, którą przyjęła skrzynka (``listener``), a ``now`` to
-    zegar ścienny komputera.
+    zegar ścienny komputera (``None``: domyślny zegar kolejki).
     """
 
     def __init__(
@@ -86,7 +88,7 @@ class Queue:
         box: FakeReportBox,
         key: str | None = KEY,
         listener: QueueListener | None = None,
-        now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         self.directory = tmp_path / "config" / "zgloszenia" / "kolejka"
         self.opening = tmp_path / "config" / OPENING_FILE
@@ -105,14 +107,9 @@ class Queue:
         log = CentrumLog(self.log_path)
         notes = NotesFile(self.opening, replace_atomically, log.box_notes_unavailable)
         keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock, opening=notes)
-        return Outbox(
-            self.directory,
-            keyed,
-            log,
-            clock=self.clock,
-            listener=self.listener,
-            now=self.now,
-        )
+        if self.now is None:
+            return Outbox(self.directory, keyed, log, clock=self.clock, listener=self.listener)
+        return Outbox(self.directory, keyed, log, clock=self.clock, listener=self.listener, now=self.now)
 
     def passed(self) -> None:
         """Czeka, aż przejście kolejki, które właśnie ruszyło (``resume``, ``send_in_background``), się skończy."""
@@ -928,9 +925,33 @@ def test_logi_z_diagnoza_po_cofnieciu_zegara_komputera_zmieniaja_komentarz_uruch
     queue.outbox.post(run_logs("z Diagnozą", 2))
     queue.passed()
 
+    assert next(moments, None) is None, "kolejka wzięła obie chwile z podanego zegara"
     assert queue.files() == []
     [issue] = queue.box.issues_with(LOGS.label)
     assert issue.comments == list(run_logs("z Diagnozą", 2).parts)
+
+
+def test_chwila_w_nazwie_pliku_kolejki_jest_w_utc_takze_na_komputerze_w_strefie_taty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nazwa pliku kolejki kończy chwilę literą „Z”, a kolejność wersji po nazwach przetrwa zmianę czasu letniego.
+    if sys.platform == "win32":
+        pytest.skip("time.tzset jest tylko w systemach POSIX")
+    monkeypatch.setenv("TZ", "Europe/Warsaw")
+    time.tzset()
+    try:
+        queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()))
+        before = datetime.now(timezone.utc)
+        queue.outbox.post(run_logs("bez sieci", 1))
+        after = datetime.now(timezone.utc)
+        queue.passed()
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    [name] = queue.files()
+    moment = datetime.strptime(name.split("-", 1)[0], "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc)
+    assert before <= moment <= after
 
 
 def test_wersja_zastepcza_z_nastepnego_startu_nie_zmienia_logow_z_wynikiem_ktore_skrzynka_juz_ma(tmp_path: Path) -> None:

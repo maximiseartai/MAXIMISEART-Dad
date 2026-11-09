@@ -4,7 +4,7 @@ Każda grupa zasobów ma własny router (``settings_router``, ``periods_router``
 ``runs_router``, ``intermax_router``, ``intermax_copies_router``, ``notifications_router``, ``dad_notes_router``,
 ``metrics_router``, ``configuration_router``, ``tool_update_router``, ``shutdown_router``, ``timing_router``);
 ``create_app`` składa je, pilnuje nagłówków ``Host`` i ``Origin`` (ADR 0004),
-zamienia odmowy (``contract.Refusal``) i folder okresów, którego nie da się odczytać, na bezpieczne
+zamienia odmowy (``Refusal``) i folder okresów, którego nie da się odczytać, na bezpieczne
 odpowiedzi ``Problem``,
 nieoczekiwany wyjątek na wpis w dzienniku Centrum i odpowiedź bez treści wyjątku,
 a każdej odpowiedzi API dodaje czas obsługi w ``Server-Timing`` (``timing``).
@@ -31,7 +31,9 @@ from rozliczenia.centrum.clock import SYSTEM_CLOCK, Clock
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import CONFIGURATION_WAIT_S, ConfigurationFiles, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.contract import Health, Problem, Refusal
+from rozliczenia.centrum.contract.centrum import Health
+from rozliczenia.centrum.contract.common import Problem
+from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router

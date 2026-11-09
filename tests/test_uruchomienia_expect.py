@@ -5,7 +5,7 @@ samą maską czasów, chwil i folderów co tam, skryptem dla maszyn ``tools/uruc
 scenariusz: wynik, etapy postępu w kolejności, liczby postępu i podsumowania, ostrzeżenia, Zatrzymanie z kodem i
 trzema częściami Komunikatu, uwagi techniczne oraz pliki, które Uruchomienie utworzyło albo zmieniło (nazwy względne).
 Zmiana zachowania procesu zmienia ten plik w tym samym PR, więc diff PR pokazuje ją obok zmiany kodu. Nowe pole wyniku,
-także w obiekcie zagnieżdżonym (Zatrzymanie, Komunikat, ``contract.Progress``), daje porażkę, dopóki nie trafi do
+także w obiekcie zagnieżdżonym (Zatrzymanie, Komunikat, ``runs_contract.Progress``), daje porażkę, dopóki nie trafi do
 ``SHOWN`` i pliku albo do ``HIDDEN``. Treść skoroszytów porównuje ``tools/rownowaznosc.py`` i testy zapisu, nie ten
 plik.
 """

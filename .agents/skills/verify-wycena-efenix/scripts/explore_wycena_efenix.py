@@ -88,7 +88,7 @@ from awarie_efenix import (
 )
 from rozliczenia import efenix_browser, efenix_process
 from rozliczenia.domain import RunMode
-from rozliczenia.centrum.contract import DEFAULT_PRICING
+from rozliczenia.centrum.contract.runs import DEFAULT_PRICING
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LogsOnDisk
 from rozliczenia.centrum.run_logs import LoggedMessage, LoggedOrder, LoggedWindowStop, StartFacts

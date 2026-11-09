@@ -25,11 +25,13 @@ from pathlib import Path
 from typing import Any, Final, Generic, Literal, Protocol, TypeGuard, TypeVar, get_args
 
 from rozliczenia import preparation_messages
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum.refusal import Refusal
+from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.settings import Settings
-from rozliczenia.domain import RunMode
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
 from rozliczenia.efenix_window import OpenEfenix
@@ -88,7 +90,7 @@ class Start:
     paths: Mapping[PathNeed, Path]
     period: str | None
     dry_run: bool
-    pricing: contract.Pricing | None = None
+    pricing: runs_contract.Pricing | None = None
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]
@@ -239,7 +241,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     bez Kontroli ilości.
     """
 
-    key: contract.ProcessKey
+    key: common_contract.ProcessKey
     short_title: str
     view: ProcessView[InputsT, SummaryT]
     core: Process[InputsT, SummaryT, RunContext]
@@ -255,7 +257,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     def __post_init__(self) -> None:
         modes = self.view.pricing_modes
         # Logi sprzed trybów nie mają trybu, a Wycena biegła wtedy bez Przekazania (ADR 0027): pierwszy tryb to ten.
-        assert not modes or modes[0] == contract.DEFAULT_PRICING, f"{self.key}: pierwszy tryb to {contract.DEFAULT_PRICING}"
+        assert not modes or modes[0] == runs_contract.DEFAULT_PRICING, f"{self.key}: pierwszy tryb to {runs_contract.DEFAULT_PRICING}"
 
     @property
     def title(self) -> str:
@@ -299,7 +301,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
 
         return any(setting.field == "periods_directory" for setting in self.settings)
 
-    def pricing_of(self, chosen: contract.Pricing | None) -> contract.Pricing | None:
+    def pricing_of(self, chosen: runs_contract.Pricing | None) -> runs_contract.Pricing | None:
         """Tryb Wyceny w efenix Uruchomienia, jedna reguła na żywo, w Skrypcie dla maszyn i dla Logów.
 
         Proces bez trybów nie ma trybu. ``chosen`` ``None`` w procesie z trybami (Logi sprzed trybów, Skrypt bez
@@ -313,11 +315,11 @@ class ProcessKind(Generic[InputsT, SummaryT]):
         return None if not modes else modes[0] if chosen is None else chosen
 
     def run_info(
-        self, *, run_id: str, period: str, mode: contract.RunMode, pricing: contract.Pricing | None
-    ) -> contract.RunInfo:
+        self, *, run_id: str, period: str, mode: RunMode, pricing: runs_contract.Pricing | None
+    ) -> runs_contract.RunInfo:
         """Uruchomienie procesu na karcie: ta sama reguła na żywo i dla karty z Logów Uruchomienia."""
 
-        return contract.RunInfo(
+        return runs_contract.RunInfo(
             id=run_id,
             process=self.key,
             title=self.title,
@@ -335,11 +337,11 @@ class ProcessKind(Generic[InputsT, SummaryT]):
         return first_choose(missing) if missing else None
 
     def required_paths(self, settings: Settings) -> Mapping[SettingField, Path]:
-        """Wskazane ścieżki Ustawień procesu; ``contract.Refusal`` ze zdaniem ``settings_blocker``, gdy czegoś brakuje."""
+        """Wskazane ścieżki Ustawień procesu; ``Refusal`` ze zdaniem ``settings_blocker``, gdy czegoś brakuje."""
 
         blocker = self.settings_blocker(settings)
         if blocker is not None:
-            raise contract.Refusal(409, blocker)
+            raise Refusal(409, blocker)
         return {setting.field: path for setting in self.settings if (path := setting.chosen(settings)) is not None}
 
 
@@ -350,7 +352,7 @@ class PeriodProcessKind(ProcessKind[InputsT, SummaryT]):
     Podgląd bez zapisu ma proces, którego widok to ``run_view.PeriodProcessView`` (Wycena w efenix go nie ma).
     """
 
-    key: contract.PeriodProcessKey
+    key: common_contract.PeriodProcessKey
     start: PeriodStart
 
     def __post_init__(self) -> None:
@@ -389,7 +391,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     inputs: InputsT
     context: RunContext
     metrics: MetricsStore
-    pricing: contract.Pricing | None = None
+    pricing: runs_contract.Pricing | None = None
     engine: Engine = run_process
 
     @property
@@ -402,7 +404,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
 
         return self.context.files.copy
 
-    def info(self, run_id: str) -> contract.RunInfo:
+    def info(self, run_id: str) -> runs_contract.RunInfo:
         """Uruchomienie ``run_id`` na karcie: na żywo w Centrum i w Logach odtworzenia ta sama reguła wpisu procesu."""
 
         return self.kind.run_info(
@@ -421,5 +423,5 @@ class PreparedRun(Generic[InputsT, SummaryT]):
             context=self.context,
         )
 
-    def progress_view(self, snapshot: ProgressSnapshot) -> contract.Progress:
+    def progress_view(self, snapshot: ProgressSnapshot) -> runs_contract.Progress:
         return self.kind.view.progress(snapshot, dry_run=self.dry_run)
