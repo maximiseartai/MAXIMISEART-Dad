@@ -25,8 +25,10 @@ import zipfile
 import pytest
 
 from tests.fixtures.ci_workflow import jobs
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 
 import czasy_ci
+from github import GhApi
 import niestabilne_testy
 import plan_runu
 import wykonaj_zadanie
@@ -537,6 +539,32 @@ def test_bez_githuba_czasy_biora_kopie_a_bez_kopii_sa_puste_i_mowia_dlaczego(tmp
 
     assert (empty.runy, empty.tory, empty.blad) == ((), {}, "pobranie czasy-ci z GitHuba: error connecting to api.github.com")
     assert (cached.runy, cached.pliki("windows-3.14"), cached.blad) == ((2,), {"tests/test_x.py": 2}, empty.blad)
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+@pytest.mark.parametrize(
+    ("gh", "reason"),
+    [
+        ("import sys\nsys.exit('HTTP 404: Not Found')\n", "pobranie czasy-ci z GitHuba: HTTP 404: Not Found"),
+        ("import time\ntime.sleep(60)\n", "timed out after 0.5 seconds"),
+    ],
+    ids=["gh pada", "gh nie odpowiada"],
+)
+def test_gh_ktory_pada_albo_nie_odpowiada_w_limicie_daje_przyczyne_z_jego_bledu_a_czasy_biora_kopie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, gh: str, reason: str
+) -> None:
+    """Prawdziwy ``GhApi`` na atrapie ``gh``: przyczyna to sam błąd ``gh`` bez polecenia (linie ``CZASY CI |`` i ``SZYBKO |
+    bez czasów CI``), a ``gh``, który wisi, przerywa limit jednego zapytania, więc plan nie czeka na sieć."""
+
+    fake_cli(tmp_path / "bin", "gh", gh)
+    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}")
+    (tmp_path / "kopia").mkdir()
+    (tmp_path / "kopia" / "2.json").write_text(json.dumps(_artifact(2, A={"pytest:tests/test_x.py": 2})), encoding="utf-8")
+
+    czasy = czasy_ci.z_mainu(tmp_path / "kopia", github=GhApi(limit_s=0.5))
+
+    assert (czasy.runy, czasy.pliki("windows-3.14")) == ((2,), {"tests/test_x.py": 2})
+    assert czasy.blad is not None and czasy.blad.startswith("pobranie czasy-ci z GitHuba: ") and czasy.blad.endswith(reason), czasy.blad
 
 
 def test_po_nieudanym_pobraniu_nastepny_odczyt_pobiera_znowu_a_po_udanym_czeka_dobe(tmp_path: Path) -> None:

@@ -127,6 +127,14 @@ def test_kazdy_plik_testow_biegnie_raz_na_kazdym_torze_a_udzialy_dlugiego_pliku_
     assert [job.id for job in plan.zadania if "krok:timing" in job.jednostki] != [] == [job for job in plan.zadania if "krok:timing" in job.jednostki and job.tor != "windows-3.14"]
 
 
+def test_sciana_pliku_testow_w_planie_to_jego_czas_na_czterech_vcpu_runnera_githuba() -> None:
+    """Runner GitHuba publicznego repozytorium (``ubuntu-latest``, ``windows-latest``) ma 4 vCPU, a ``pytest -n auto``
+    zadania bierze tyle workerów, więc plik testów, który zajął 60 s pracy, trwa w zadaniu 15 s."""
+
+    for lane in TORY:
+        assert plan_ci.wycen(lane, [FILES[0]], _times(60.0)).podzielne == {f"pytest:{FILES[0]}": 15.0}, lane
+
+
 @pytest.mark.parametrize(("skills", "event", "limit"), [(False, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN"), (True, Zdarzenie.NOC, "ZADANIA_RUNU_MAIN")])
 def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(skills: bool, event: Zdarzenie, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
     czasy = _with_skill_times(_times(per_file_s=150.0))
@@ -795,18 +803,30 @@ def test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmi
 MODEL_SKILL = {
     ".agents/skills/verify-m/SKILL.md": "---\nname: verify-m\npilnuje:\n  - src/pakiet/a.py\nci: .agents/skills/verify-m/scripts/sprawdz_m.py\n---\n",
     ".agents/skills/verify-m/scripts/sprawdz_m.py": "import pathlib\npathlib.Path('podstawa-biegla').touch()\n",
+    ".agents/skills/verify-m/scripts/check_m_mutations.py": (
+        f"MUTATIONS = ()\nif __name__ == '__main__':\n    import pathlib\n    pathlib.Path('skrypt-biegl').touch()\n    print({MUTACJE_OK!r})\n"
+    ),
     f".agents/skills/verify-m/{rozjazd_modelu.DEFINICJE}": json.dumps({"src/pakiet/a.py": {"a": ""}}),
+}
+# Krok skilla verify-m, który plan zdarzenia wybiera przy zmianie kodu opisanego modelem, i plik, który zostawia krok, gdy
+# ruszył: na pull request podstawa ``ci:``, a na pushu ``main`` (i nocą) tylko skrypt mutacji (ADR 0021).
+MODEL_SKILL_STEPS = {
+    "pull_request": ("skill:verify-m/ci", "podstawa-biegla"),
+    "push": ("skill:verify-m/check_m_mutations.py", "skrypt-biegl"),
 }
 
 
+@pytest.mark.parametrize("event", MODEL_SKILL_STEPS)
 @pytest.mark.parametrize("model_in_line", [False, True], ids=["kod bez modelu", "model przesunięty"])
-def test_zmiana_kodu_opisanego_modelem_skilla_bez_modelu_czerwieni_jego_podstawe_w_mutation_checks_zanim_ruszy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], model_in_line: bool
+def test_zmiana_kodu_opisanego_modelem_skilla_bez_modelu_czerwieni_jego_krok_w_mutation_checks_zanim_ruszy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], model_in_line: bool, event: str
 ) -> None:
     """Zmiana kodu z ``model/definicje.json`` skilla wybiera na pull request jego podstawę (ten sam wybór, którym pyta krok
-    ``rozjazd modelu`` w ``tools/szybko.py``), a wykonanie zadania kończy ją porażką rozjazdu z krokami naprawy, zanim
-    skrypt ruszy, także dla skilla, którego skrypt rozjazdu nie sprawdza (#1194 r1)."""
+    ``rozjazd modelu`` w ``tools/szybko.py``), a na pushu ``main`` jego skrypt mutacji, a wykonanie zadania kończy każdy
+    z tych kroków porażką rozjazdu z krokami naprawy, zanim skrypt ruszy, także dla skilla, którego skrypt rozjazdu nie
+    sprawdza (#1194 r1, #1201 r1)."""
 
+    step, started = MODEL_SKILL_STEPS[event]
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n", **MODEL_SKILL})
     rozjazd_modelu.przesun(repo / ".agents/skills/verify-m", repo)
     commit(repo, "baza")
@@ -815,24 +835,26 @@ def test_zmiana_kodu_opisanego_modelem_skilla_bez_modelu_czerwieni_jego_podstawe
     if model_in_line:
         rozjazd_modelu.przesun(repo / ".agents/skills/verify-m", repo)
     commit(repo, "zmiana")
-    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
     monkeypatch.chdir(repo)
-    plan_ci.main(["plan", "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")], root=repo, github=BEZ_LOGOWANIA)
-    output = dict(line.split("=", 1) for line in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
-    [job] = json.loads(output["mutations"])
+    plan_ci.main(
+        ["plan", "--zdarzenie", event, "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")],
+        root=repo,
+        github=BEZ_LOGOWANIA,
+    )
+    [job] = [job for job in plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8")).zadania if step in job.jednostki]
     capsys.readouterr()
 
-    code = wykonaj_zadanie.main(["--plan", str(tmp_path / "plan.json"), "--zadanie", job["id"]], root=repo)
+    code = wykonaj_zadanie.main(["--plan", str(tmp_path / "plan.json"), "--zadanie", job.id], root=repo)
 
     out = capsys.readouterr().out
     if model_in_line:
-        assert (code, (repo / "podstawa-biegla").exists(), out.splitlines()[-1]) == (0, True, "WYKONANIE OK | Mutation checks (1/1)"), out
+        assert (code, (repo / started).exists(), out.splitlines()[-1]) == (0, True, f"WYKONANIE OK | {job.nazwa}"), out
         return
     drift = (
         f"{rozjazd_modelu.ROZJAZD} | verify-m: kod opisany modelem zmienił się: src/pakiet/a.py a. Wykonaj kroki „{rozjazd_modelu.KROKI}”"
         " z .agents/skills/verify-m/SKILL.md, a skróty przelicz (tools/przesun_model.py verify-m) dopiero, gdy model opisuje kod."
     )
-    assert (code, (repo / "podstawa-biegla").exists(), out.splitlines()[-1]) == (1, False, "WYKONANIE FAIL | skill:verify-m/ci"), out
+    assert (code, (repo / started).exists(), out.splitlines()[-1]) == (1, False, f"WYKONANIE FAIL | {step}"), out
     assert drift in out.splitlines(), out
 
 

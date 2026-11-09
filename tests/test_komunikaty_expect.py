@@ -469,7 +469,8 @@ UI_TEXTS: Final = {
     "Uzupełnij bez zapisu": "frontend/src/lib/pricing.tsx",
     "Kontynuuj": "frontend/src/pages/runs/run-dialogs.tsx",
 }
-# Cytaty Komunikatów, które nie są napisami UI Centrum rozliczeń; każdy z powodem.
+# Cytaty Komunikatów, których test nie szuka w pliku frontendu, każdy z powodem: tekst spoza UI Centrum rozliczeń
+# albo napis UI w postaci, której ``_ui_text`` nie czyta.
 QUOTES_OUTSIDE_UI: Final = {
     "Centrum rozliczeń": "skrót na pulpicie taty, nie napis w UI",
     "Zawsze zachowuj na tym urządzeniu": "polecenie OneDrive w menu Eksploratora plików",
