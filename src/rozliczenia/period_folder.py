@@ -37,8 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from .settlement_period import PERIOD_TOKEN_PATTERN, SettlementPeriod, parse_period_token
-from .telemetry import UNKNOWN_PERIOD
+from .settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD, SettlementPeriod, parse_period_token
 
 from .file_state import folder_entries
 

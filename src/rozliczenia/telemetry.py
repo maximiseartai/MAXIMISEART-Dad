@@ -12,7 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal, TypedDict, get_args
 
 from .domain import PHASES, ProgressPhase, RunMode, StopKind
-from .settlement_period import PERIOD_TOKEN_PATTERN
+from .settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD
 from .write_routes import Route, RouteCounts, TemplateKind
 
 
@@ -22,8 +22,6 @@ METRICS_SCHEMA_VERSION = 3
 MINIMUM_STATISTIC_SAMPLES = 5
 METRIC_MODES = frozenset(RunMode)
 METRIC_RESULTS = frozenset({"OK", "WYMAGA_SPRAWDZENIA", "BLAD_KRYTYCZNY"})
-# Okres w rekordzie, gdy tokenu nie udało się ustalić.
-UNKNOWN_PERIOD = "nieznany"
 PERIOD_PATTERN = re.compile(rf"^(?:{PERIOD_TOKEN_PATTERN}|{UNKNOWN_PERIOD})$")
 STOP_KINDS = frozenset(get_args(StopKind))
 # Kod Komunikatu, nigdy jego treść (ADR 0004): wielkie litery, cyfry i podkreślenia, bez ścieżek i danych klientów.
