@@ -90,8 +90,6 @@ def test_po_aktualizacji_narzedzia_przegladarka_dostaje_nowy_pakiet_pod_ta_sama_
 
 
 def _exported_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Kontrakt OpenAPI, który eksportuje ``tools/ci/export_openapi.py`` z bieżącego kodu serwera."""
-
     monkeypatch.setattr(export_openapi, "OUTPUT", tmp_path / "openapi.json")
     assert export_openapi.main() == 0
     return dict(json.loads((tmp_path / "openapi.json").read_text(encoding="utf-8")))
@@ -392,8 +390,6 @@ def write_worker_settlements(period_folder: Path, token: str, workers: Sequence[
 
 
 def period_files(row: dict[str, object]) -> dict[str, dict[str, Any]]:
-    """Pliki okresu ``row`` z Tablicy okresów po miejscu (``target``)."""
-
     files = row["files"]
     assert isinstance(files, list)
     return {file["target"]: file for file in files}

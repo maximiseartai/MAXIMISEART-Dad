@@ -1,14 +1,11 @@
 """Aktualizacja narzędzia z Centrum rozliczeń: akcja karty, krok i wynik dla przeglądarki (ADR 0009).
 
-Samą aktualizację robi ``tool_update.ToolClone.update``; ten moduł prowadzi ją
-w Centrum. Zajmuje miejsce „jedno naraz” w ``RunHost`` (odmowy 409 w trakcie
-Uruchomienia procesu albo innej aktualizacji), odpowiada od razu i prowadzi
-aktualizację w osobnym wątku, a karta odczytuje krok i wynik. Dziennik Centrum
-dostaje start i koniec z commitem przed i po, bez ścieżek i bez wyjścia Gita.
-Po udanej aktualizacji Centrum zamyka się, a opiekun ponownego startu
-(``restart_guardian``) uruchamia nową wersję; koniec aktualizacji zapisuje
-wtedy w dzienniku nowe Centrum, z pliku wyniku od opiekuna. Gdy opiekun nie
-wystartuje, klon wraca do wersji sprzed kliknięcia, a Centrum działa dalej.
+Samą aktualizację robi ``tool_update.ToolClone.update``, a nową wersję
+uruchamia opiekun (zob. ``restart_guardian``); ten moduł prowadzi ją w Centrum.
+Zajmuje miejsce „jedno naraz” w ``RunHost`` (odmowy 409 w trakcie Uruchomienia
+procesu albo innej aktualizacji) i odpowiada od razu, a karta odczytuje krok i
+wynik. Dziennik Centrum dostaje start i koniec z commitem przed i po, bez
+ścieżek i bez wyjścia Gita.
 Każdą porażkę, której ``tool_update`` nie przewidział, karta widzi jako Komunikat
 nieoczekiwanej porażki, a dziennik tylko nazwę typu wyjątku. Przy każdej
 porażce karta dostaje też Zgłoszenie do Maksa z faktami dziennika, a jego stan
@@ -53,12 +50,11 @@ from rozliczenia.centrum.tool_update import (
 )
 from rozliczenia.centrum.work import CentrumWork
 
-# Nazwa wątku Aktualizacji narzędzia (``ToolUpdates.start``); po udanej kończy się, gdy opiekun wystartował i Centrum
-# się zamknęło.
+# Po udanej Aktualizacji narzędzia wątek kończy się, gdy opiekun wystartował i Centrum się zamknęło.
 UPDATE_THREAD: Final = "aktualizacja-narzedzia"
 
 GuardianLauncher = Callable[[Path, Restart], object]
-"""Uruchamia opiekuna ponownego startu z kopii (``restart_guardian.launch``); w testach podstawiany."""
+"""Uruchamia opiekuna ponownego startu z kopii (``restart_guardian.launch``)."""
 
 
 class ToolUpdates:
@@ -75,9 +71,8 @@ class ToolUpdates:
 
     Po udanej aktualizacji Centrum uruchamia opiekuna ponownego startu
     (``guardian``) i zamyka się (``shutdown``); miejsca „jedno naraz” już nie
-    zwalnia. Opiekun zostawia wynik w ``result_file``, a nowe Centrum odczytuje
-    go raz przy starcie: zapisuje koniec aktualizacji w dzienniku, usuwa plik i
-    pokazuje wynik karcie.
+    zwalnia. Opiekun zostawia wynik w pliku wyniku, a nowe Centrum odczytuje go
+    raz przy starcie (``_after_restart``).
     """
 
     def __init__(
@@ -215,8 +210,6 @@ class ToolUpdates:
             return UpdateResult(UNEXPECTED, before, None), None
 
     def _restart(self, clone: ToolClone, restart: Restart, guardian: Path) -> bool:
-        """Uruchamia opiekuna i zamyka Centrum; ``False``, gdy opiekun nie wystartował (Centrum działa dalej)."""
-
         try:
             with clone.leased_to_guardian():
                 with self._lock:
@@ -229,10 +222,7 @@ class ToolUpdates:
         return True
 
     def _moved_back(self, clone: ToolClone, result: UpdateResult) -> UpdateResult:
-        """Bez opiekuna nowa wersja nie wystartuje, a stary kod działałby na nowych plikach: klon wraca sprzed kliknięcia.
-
-        Wynik to porażka nieoczekiwana, a gdy nie uda się cofnięcie, porażka cofnięcia.
-        """
+        """Bez opiekuna nowa wersja nie wystartuje, a stary kod działałby na nowych plikach: klon wraca sprzed kliknięcia."""
 
         try:
             clone.roll_back()
@@ -261,7 +251,7 @@ class ToolUpdates:
         )
 
     def send_report(self) -> diagnosis_contract.ReportState:
-        """„Wyślij do Maksa” przy nieudanej aktualizacji; ``Refusal``, gdy ostatnia aktualizacja nie zawiodła."""
+        """„Wyślij do Maksa” przy nieudanej aktualizacji."""
 
         with self._lock:
             failed = self._view
@@ -276,7 +266,7 @@ class ToolUpdates:
 
 @dataclass(frozen=True)
 class _Failed:
-    """Nieudana Aktualizacja narzędzia: Komunikat, co dalej i jej Zgłoszenie z zamrożonym podglądem ``draft``."""
+    """Nieudana Aktualizacja narzędzia; ``draft`` to podgląd jej Zgłoszenia zamrożony w chwili porażki."""
 
     message: common_contract.Message
     next_action: update_messages.NextAction
@@ -297,8 +287,6 @@ class _Failed:
 
 
 def _view_of(result: UpdateResult) -> tool_update_contract.ToolUpdate | None:
-    """Widok udanej aktualizacji albo ``None`` przy porażce."""
-
     if result.code == UPDATED:
         return tool_update_contract.ToolUpdateUpdated(state="updated")
     if result.code == UP_TO_DATE:

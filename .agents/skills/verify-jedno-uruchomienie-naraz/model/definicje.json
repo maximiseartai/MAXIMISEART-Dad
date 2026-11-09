@@ -2,7 +2,7 @@
   "src/rozliczenia/centrum/tool_updates.py": {
     "ToolUpdates.start": "0532ba161f3b54b2",
     "ToolUpdates._update": "14bf3a1e6a0ce716",
-    "ToolUpdates._restart": "6f65317658f357ec"
+    "ToolUpdates._restart": "6e32987dfb385d7a"
   },
   "src/rozliczenia/centrum/intermax_run.py": {
     "intermax_copies_router": "27525b1bf37001ee"

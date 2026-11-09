@@ -1348,8 +1348,6 @@ def _pricing_setup(centrum: SettlingCentrum) -> dict[str, Any]:
 
 
 def _with_collective_file(centrum: SettlingCentrum, token: str) -> str:
-    """Folder okresu ``token`` z (pustym) Plikiem zbiorczym; zwraca nazwę Pliku zbiorczego."""
-
     name = collective_file_name_with(token)
     folder = centrum.periods_directory / token
     folder.mkdir()
@@ -1551,14 +1549,10 @@ def test_zlecenie_do_akceptacji_w_efenix_ma_na_karcie_i_w_logach_wynik_przekazan
     assert traced == [(18, "gotowe", None, ["szukanie", "otwarcie zlecenia"]), (19, "przekazane", None, ["szukanie"])]
 
 def _order_lists(result: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    """Listy zleceń Wyceny w efenix na karcie bieżącego Uruchomienia po nazwie wyniku."""
-
     return {group["title"]: group["notes"] for group in result["order_notes"]}
 
 
 def _priced(notification: dict[str, Any]) -> list[tuple[str, int]]:
-    """Liczby zleceń Powiadomienia o Wycenie w efenix z nazwami wyników, po kolei."""
-
     return [(count["label"], count["count"]) for count in notification["orders"]]
 
 
@@ -1781,8 +1775,6 @@ EXPLORER_LIMIT_S = 200
 
 
 def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None = None) -> tuple[int | None, list[str]]:
-    """Kod wyjścia skryptu skilla z ``arguments`` we własnym procesie (``None`` po limicie) i jego linie."""
-
     import subprocess
 
     try:
@@ -2288,8 +2280,6 @@ def logged_record(centrum: SettlingCentrum, run_id: str) -> tuple[str, dict[str,
 
 
 def dad_actions(record: dict[str, Any]) -> list[tuple[str, ...]]:
-    """Działania bez godzin: rodzaj, a przy widoku strona i rodzaj widoku, przy przycisku operacja, proces i tryb."""
-
     def facts(action: dict[str, Any]) -> tuple[str, ...]:
         rest = [action[key] for key in ("page", "kind", "operation", "process", "mode") if action.get(key) is not None]
         return (action["action"], *rest)
@@ -2329,8 +2319,6 @@ def logs_file(fake: FakeReportBox, comment: str) -> bytes:
 
 
 def logs_text(fake: FakeReportBox, comment: str) -> str:
-    """Pełne Logi z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów (``logs_file``), jako tekst."""
-
     return logs_file(fake, comment).decode("utf-8")
 
 
@@ -2476,8 +2464,6 @@ def journals_at_result(monkeypatch: pytest.MonkeyPatch, directory: Path) -> dict
 
 
 def logs_json(fake: FakeReportBox, comment: str) -> dict[str, Any]:
-    """Logi JSON z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów."""
-
     loaded: dict[str, Any] = json.loads(logs_text(fake, comment))
     return loaded
 
@@ -2998,8 +2984,6 @@ def comment_histories(centrum: SettlingCentrum, count: int) -> list[tuple[int, l
 
 
 def comment_history(centrum: SettlingCentrum) -> tuple[int, list[str]]:
-    """Jedyny komentarz issue Logów okresu (``comment_histories``)."""
-
     [history] = comment_histories(centrum, 1)
     return history
 
@@ -3016,8 +3000,6 @@ def done_of(text: str) -> int | None:
 
 
 def archived_logs(centrum: SettlingCentrum, comment: str) -> dict[str, Any]:
-    """Pełne Logi z pliku w Archiwum Logów okresu, do którego prowadzi odnośnik podsumowania."""
-
     link = SUMMARY_LINK.fullmatch(comment.splitlines()[-1])
     assert link is not None, comment
     assert link["tag"] == PROGRESS_ARCHIVE
@@ -3718,8 +3700,6 @@ def test_logi_uruchomienia_zatrzymanego_na_braku_wykonawcy_w_h17_maja_odcisk_i_n
 
 
 def cells_row(copied: dict[str, Any]) -> int:
-    """Miejsce (od 0) przeczytanego wiersza z zamaskowanym wolnym tekstem w jedynym arkuszu Kopii."""
-
     [sheet] = copied["sheets"]
     return next(index for index, row in enumerate(sheet["rows"]) if MASKED in row["cells"].values())
 
