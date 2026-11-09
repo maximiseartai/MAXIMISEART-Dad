@@ -274,6 +274,27 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
     )
 
 
+@NO_ACCESS_ON_WINDOWS
+@pytest.mark.parametrize("choice", ["register/choose", "periods-directory/choose"])
+def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewskazanych_sciezek(
+    tmp_path: Path, choice: str
+) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.platform.chosen_files.append(None)
+    app.platform.chosen_folders.append(None)
+
+    app.settings_path.chmod(0)
+    try:
+        response = app.client.post(f"/api/settings/{choice}")
+    finally:
+        app.settings_path.chmod(0o644)
+
+    assert (response.status_code, response.json()["settings"]) == (
+        200,
+        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark"},
+    )
+
+
 @pytest.mark.parametrize(
     "local_file",
     [
