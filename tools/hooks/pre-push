@@ -57,8 +57,6 @@ DIRTY = Decision(
 
 @dataclass(frozen=True)
 class Note:
-    """Linia narzędzia, którą brama drukuje przed krokami: ostatnia linia wyjścia, gdy zaczyna się od ``prefix``."""
-
     command: tuple[str, ...]
     prefix: str
     unknown: str

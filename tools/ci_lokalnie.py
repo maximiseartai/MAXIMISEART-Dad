@@ -113,8 +113,6 @@ def _run(step: Step, root: Path) -> tuple[bool, str]:
 
 
 def _check(root: Path, jobs: set[str], *, fail_fast: bool = False) -> list[str]:
-    """Uruchamia kroki wybranych zadań w ``root``; zwraca nazwy kroków, które padły."""
-
     failed: list[str] = []
     for step in _steps(root):
         if failed and fail_fast:

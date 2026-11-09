@@ -59,8 +59,6 @@ def _unlock(handle: BinaryIO) -> None:
 
 
 def measurement_lock(references: Path) -> Path:
-    """Plik blokady pomiarów obok folderu wyników referencyjnych (``reference`` → ``reference.lock``)."""
-
     return references.with_name(f"{references.name}.lock")
 
 
@@ -92,8 +90,6 @@ def measure(
     machine: str,
     reference: Reference | None = None,
 ) -> dict[str, Any]:
-    """Rekord dziennika z ``RUNS`` uruchomień Przebiegu rozliczeń na lustrze i bramki poprawności ostatniego z nich."""
-
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     sha = repo.commit(ROOT, "HEAD")
     try:

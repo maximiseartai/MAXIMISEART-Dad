@@ -268,8 +268,7 @@ class _Ran:
 def _run(
     copy: Path, command: Sequence[str], limit_s: float, stop: threading.Event | None = None, *, concurrent: bool = False
 ) -> _Ran:
-    """Uruchamia polecenie w kopii; zwraca kod wyjścia, ostatnią linię, linię pytest-timeout, jeśli była, czas i koniec
-    obu strumieni, także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
+    """Przebieg polecenia w kopii, także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
 
     started = time.monotonic()
     try:
@@ -285,14 +284,10 @@ def _run(
 
 
 def _tail(stdout: str, stderr: str) -> tuple[str, ...]:
-    """Ostatnie ``BASE_TAIL`` linii stdout, potem tyle samo stderr, każda z nazwą swojego strumienia."""
-
     return tuple(f"{name} | {line}" for name, text in (("stdout", stdout), ("stderr", stderr)) for line in text.splitlines()[-BASE_TAIL:])
 
 
 def _without_test(command: Sequence[str], ran: _Ran) -> bool:
-    """Czy polecenie to pytest, który nie uruchomił żadnego testu (kod 4 albo 5)."""
-
     return ("-m", "pytest") in pairwise(command) and ran.code in {PYTEST_EXIT_USAGE_ERROR, PYTEST_EXIT_NO_TESTS_COLLECTED}
 
 
@@ -437,7 +432,7 @@ class Gate(Protocol):
 
 
 # Kody ruff, które mówią, że kod jest błędny: nazwa, której nie ma (także w ``__all__`` i przed przypisaniem), i błąd
-# składni. Inne reguły ruff mówią o stylu albo o czymś nieużytym (F401, F841), czyli o artefakcie mutacji jednej linii.
+# składni; dlaczego tylko one, mówi ``wrong``.
 RUFF_WRONG = frozenset({"F821", "F822", "F823", "invalid-syntax"})
 # Kody mypy, które mówią o pozostałości po zmienionym kodzie albo o typie, którego mypy nie zna, a nie o błędzie typów:
 # ``unused-ignore``, ``redundant-cast`` i ``no-any-return`` ze ``strict``, ``unreachable`` z ``warn_unreachable``,
@@ -632,7 +627,6 @@ def _against_base(
         print(f"MERGE-BASE: brak merge-base HEAD z {base}, więc REGRES niesprawdzony, a NIEWYKRYTA bez porównania ({error.stderr.strip()})", file=sys.stderr, flush=True)
         return list(found)
     if commit == repo.commit(ROOT, "HEAD") and not repo.uncommitted(ROOT):
-        # Merge-base to sam checkout, więc drugi przebieg dałby te same werdykty.
         return list(found)
     red = _baseline([mutations[index] for index in survived], limit_s, commit)
     compared = [index for index in survived if mutations[index].command not in red]
@@ -753,8 +747,6 @@ def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: s
 
 
 def _environment_part() -> str:
-    """Część ``K/N`` z ``MUTACJE_CZESC`` w środowisku procesu; pusta bez niej."""
-
     return os.environ.get(ZMIENNA_CZESCI, "")
 
 
@@ -791,8 +783,6 @@ class NearLimit:
 
     @classmethod
     def from_record(cls, entry: dict[str, Any]) -> tuple[str, NearLimit]:
-        """Klucz kroku i ostrzeżenie z wpisu ``record``."""
-
         fields = dict(entry)
         key = str(fields.pop("klucz"))
         return key, cls(**fields)

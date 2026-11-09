@@ -262,10 +262,7 @@ SCENARIOS: tuple[Scenario, ...] = (
 
 
 def masked(value: object, folders: Sequence[Path]) -> object:
-    """JSON wyniku bez pól, które zmieniają się z uruchomienia na uruchomienie: czasów, chwil zegara i ścieżek strony.
-
-    ``folders`` od najgłębszego: folder scenariusza przed folderem strony, który go zawiera.
-    """
+    """``folders`` od najgłębszego: folder scenariusza przed folderem strony, który go zawiera."""
 
     if isinstance(value, dict):
         hidden = {key for key in value if key.endswith("_ms")} | ({"value"} if value.get("unit") == "ms" else set())
@@ -325,8 +322,6 @@ def _workbook_difference(base: Path, head: Path) -> str | None:
 
 
 def file_differences(base: Path, head: Path) -> list[str]:
-    """Różnice plików dwóch folderów scenariusza po uruchomieniu: nazwy i części, bez treści."""
-
     base_files, head_files = files(base), files(head)
     found = []
     for side, names in (("bazie", base_files.keys() - head_files.keys()), ("HEAD", head_files.keys() - base_files.keys())):
@@ -375,15 +370,11 @@ def _relative(argument: str | Path, folder: Path) -> str:
 
 
 def built(scenario: Scenario, folder: Path) -> list[str]:
-    """Buduje wejścia scenariusza w nowym folderze ``folder`` i zwraca argumenty procesu ze ścieżkami względnymi."""
-
     folder.mkdir(parents=True)
     return [_relative(argument, folder) for argument in scenario.build(folder)]
 
 
 def run(tree: Path, scenario: Scenario, arguments: Sequence[str], inputs: Path, side: Path) -> Outcome:
-    """Uruchamia scenariusz skryptem dla maszyn drzewa ``tree`` na kopii wejść ``inputs`` w folderze strony ``side``."""
-
     folder = side / scenario.name
     shutil.copytree(inputs, folder)
     metrics = side / f"{scenario.name}-metryki.jsonl"
@@ -397,8 +388,6 @@ def run(tree: Path, scenario: Scenario, arguments: Sequence[str], inputs: Path, 
 
 
 def equivalence(base_tree: Path, head_tree: Path, scenarios: Sequence[Scenario], work: Path) -> int:
-    """Drukuje linię każdego scenariusza i ostatnią linię wyniku; zwraca kod wyjścia."""
-
     arguments: dict[str, list[str]] = {}
     for scenario in scenarios:
         try:
@@ -428,8 +417,6 @@ def equivalence(base_tree: Path, head_tree: Path, scenarios: Sequence[Scenario],
 
 
 def default_base(repository: Path, head: str | None) -> str:
-    """Merge-base ``head`` (bez niego HEAD checkoutu) z ``BASE``."""
-
     return repo.merge_base(repository, head or "HEAD", BASE)
 
 

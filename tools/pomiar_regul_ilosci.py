@@ -1,7 +1,5 @@
 """Mierzy Reguły ilości na Plikach zbiorczych wypełnionych przez tatę (spec #268); tylko na Macu Maksa, przed zmianą Reguł ilości.
 
-Pomiar Reguł ilości na Plikach zbiorczych wypełnionych przez tatę (spec #268). Tylko na Macu Maksa, poza CI.
-
 Dla każdego Pliku zbiorczego z argumentów liczy to, co Kontrola ilości, tymi samymi częściami: jeden odczyt
 (``collective_file.read_data_rows``), treść po filtrze prywatności (``order_facts``) i kolumny porównania
 (``quantity_check.compared_columns``). Własne są tylko zestawienia: zgodność całych wierszy i kolumn oraz klasy

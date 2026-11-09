@@ -482,7 +482,5 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
 
 
 def is_test_file(path: str) -> bool:
-    """Plik testów: plik pod ``tests/``, którego nazwa pasuje do ``TEST_FILES``."""
-
     pure = PurePosixPath(path)
     return pure.parts[0] == "tests" and any(fnmatchcase(pure.name, pattern) for pattern in TEST_FILES)

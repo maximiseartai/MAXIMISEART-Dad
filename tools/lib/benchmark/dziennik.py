@@ -93,8 +93,6 @@ def _commit_text(record: Mapping[str, Any] | None) -> str:
 
 
 def oracle_text(oracle: object) -> str:
-    """Wynik bramki w jednej komórce tabeli: werdykt i łączna liczba różnic."""
-
     if not isinstance(oracle, Mapping):
         return "nie sprawdzono"
     total = sum(oracle["roznice"].values())
@@ -102,8 +100,6 @@ def oracle_text(oracle: object) -> str:
 
 
 def _oracle_section(record: Mapping[str, Any]) -> list[str]:
-    """Bramka poprawności scenariusza: werdykt, wynik referencyjny i liczba różnic w każdej kategorii."""
-
     oracle = record.get("oracle")
     if not isinstance(oracle, Mapping):
         return [f"### {_heading(record)}", "", "Nie sprawdzono: brak zamrożonego wyniku referencyjnego.", ""]

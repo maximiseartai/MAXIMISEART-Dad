@@ -96,7 +96,7 @@ class Refused(Exception):
 
 @dataclass(frozen=True)
 class MergedPR:
-    """PR scalony do `main` od poprzedniego Wydania: numer, tytuł i czy zmienia pliki, które działają u taty."""
+    """PR scalony do `main` od poprzedniego Wydania; ``for_dad``: czy zmienia pliki, które działają u taty."""
 
     number: int
     title: str
@@ -241,7 +241,7 @@ def ci_state(root: Path, commit: str) -> CiState:
 
 
 def _has_quarantine(root: Path, commit: str) -> bool:
-    """Czy ``KWARANTANNA`` w drzewie commitu ma wpisy; plik czyta z Gita, bez checkoutu."""
+    """Czy ``KWARANTANNA`` w drzewie commitu ma wpisy."""
 
     listed = repo.run_git(root, "ls-tree", "--name-only", commit, "--", niestabilne_testy.PLIK_KWARANTANNY, timeout=60)
     if listed.returncode != 0:

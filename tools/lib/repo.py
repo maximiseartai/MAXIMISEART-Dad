@@ -90,8 +90,6 @@ def git(root: Path, *arguments: str, timeout: float | None = TIMEOUT_S) -> str:
 
 
 def succeeds(root: Path, *arguments: str) -> bool:
-    """Czy szybkie, lokalne polecenie gita w ``root`` kończy się kodem 0."""
-
     done = subprocess.run(
         ["git", "-c", "core.quotePath=false", *arguments], cwd=root, env=_environment(), capture_output=True, timeout=TIMEOUT_S, check=False
     )
@@ -159,8 +157,6 @@ def uncommitted(root: Path, paths: Iterable[str] = ()) -> frozenset[str]:
 
 
 def toplevel(cwd: Path) -> Path:
-    """Korzeń checkoutu, w którym leży ``cwd``."""
-
     return Path(git(cwd, "rev-parse", "--show-toplevel").strip()).resolve()
 
 

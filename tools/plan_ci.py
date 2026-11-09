@@ -175,8 +175,6 @@ def wycen_mutacje(kroki: Sequence[KrokSkilla], czasy: czasy_ci.Czasy) -> Wycena:
 
 
 def _lpt(jednostki: Iterable[Jednostka], n: int) -> list[list[Jednostka]]:
-    """Najdłuższa jednostka do zadania o najmniejszej sumie, remis po kluczu i numerze zadania."""
-
     zadania: list[list[Jednostka]] = [[] for _ in range(n)]
     sumy = [0.0] * n
     for praca in sorted(jednostki, key=lambda j: (-j.s, j.klucz)):
@@ -251,7 +249,6 @@ def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
     zrodlo = ", ".join(map(str, plan.runy)) or "brak (wagi domyślne)"
     print(f"PLAN CI | {plan.zdarzenie} | {praca.zrodlo} | cel {plan.cel_s:.0f} s | {run} zadań runu (limit {_limit_runu(plan.zdarzenie)}) | czasy z runów main: {zrodlo}")
     for wycena in wyceny:
-        # Najdłuższa jednostka po podziale to dolna granica ściany zadania toru: celu poniżej niej plan nie osiągnie.
         najdluzsza = max(wycena.jednostki(_pojemnosc(wycena, plan.cel_s)), key=lambda j: (j.s, j.klucz), default=None)
         dopisek = f", najdłuższa jednostka {najdluzsza.klucz} {najdluzsza.s:.0f} s" if najdluzsza else ""
         print(f"{wycena.tor.nazwa}: narzut {wycena.narzut_s:.0f} s, start {wycena.start_s:.0f} s{dopisek}")

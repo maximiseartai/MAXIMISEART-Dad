@@ -124,12 +124,8 @@ class Plan:
 
 
 def tory_systemu(windows: bool) -> list[str]:
-    """Tory pytest systemu Windows (``windows``) albo pozostałych systemów, w kolejności ``TORY``."""
-
     return [tor.nazwa for tor in TORY if tor.os.startswith("windows") == windows]
 
 
 def limit_pytest_s(zadanie: Zadanie) -> float:
-    """Limit kroku pytest zadania: ``ZAPAS_PYTEST`` × jego ściana z planu, najmniej ``LIMIT_PYTEST_MIN_S``."""
-
     return max(LIMIT_PYTEST_MIN_S, ZAPAS_PYTEST * zadanie.sciana_s)

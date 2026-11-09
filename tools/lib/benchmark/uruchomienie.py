@@ -40,11 +40,6 @@ def _process_metrics(path: Path) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class Przebieg:
-    """Jedno uruchomienie Przebiegu rozliczeń na lustrze.
-
-    ``start_ms``: od uruchomienia procesu do startu silnika (``started_at`` rekordu metryk).
-    """
-
     wall_ms: int
     start_ms: int
     metrics: dict[str, Any]
@@ -52,14 +47,10 @@ class Przebieg:
 
     @property
     def finish_ms(self) -> int:
-        """Zakończenie procesu: czas ściany po starcie procesu i po ``Czas uruchomienia``."""
-
         return self.wall_ms - self.start_ms - int(self.metrics["total_duration_ms"])
 
 
 def run_przebieg(checkout: Path, mirror: Path, config: Path, worker_template: Path, scratch: Path) -> Przebieg:
-    """Przebieg rozliczeń checkoutu ``checkout`` na lustrze, tym samym rdzeniem co Centrum rozliczeń."""
-
     source = period_directory(mirror) / collective_file_name(PERIOD)
     remove_worker_settlements(PeriodFolder.from_collective_file(source).worker_settlements)
     metrics_path = Path(tempfile.mkdtemp(prefix="uruchomienie-", dir=scratch)) / "metrics.jsonl"

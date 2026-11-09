@@ -44,8 +44,6 @@ def static_steps(root: Path) -> list[Step]:
 
 
 def pytest_step(root: Path, name: str = "pytest", arguments: tuple[str, ...] = ()) -> Step:
-    """Krok pytest w ``root`` z ``arguments`` po opcjach, które ma każdy przebieg."""
-
     return Step(name, "pytest", (sys.executable, "-m", "pytest", "-q", "-n", "auto", *arguments), root)
 
 

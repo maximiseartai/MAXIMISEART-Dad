@@ -233,7 +233,6 @@ def _steps(root: Path, tests: Iterable[str], junit: Path) -> list[Step]:
 
 
 def _environment(root: Path) -> dict[str, str]:
-    # Gołe ``-n auto`` bierze wszystkie rdzenie Maca, na którym pracuje naraz kilku agentów.
     return {"PYTEST_XDIST_AUTO_NUM_WORKERS": str(czasy_ci.WORKERY_LOKALNE), **environment(root), "PYTHON": sys.executable}
 
 

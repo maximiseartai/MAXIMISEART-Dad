@@ -35,7 +35,6 @@ from typing import Any, NamedTuple
 from jednostka import Klucz, Rodzaj
 from ostatnie_linie import MUTACJE_OK
 
-# Folder skilli od korzenia checkoutu.
 FOLDER_SKILLI = (".agents", "skills")
 PATTERN = "check_*_mutations.py"
 # Wywołanie skryptu mutacji w SKILL.md; ścieżka bez ``.agents`` na początku liczy się od folderu skilla.
@@ -184,8 +183,6 @@ class Step(NamedTuple):
 
     @property
     def root(self) -> Path:
-        """Korzeń checkoutu skilla: skill leży zawsze w ``<root>/.agents/skills/<skill>``."""
-
         return _root(self.skill)
 
     @property
@@ -314,8 +311,6 @@ class Katalog(NamedTuple):
 
     @classmethod
     def skanuj(cls, root: Path) -> Katalog:
-        """Katalog skilli z ``SKILL.md`` i skryptów w ``<root>/.agents/skills``."""
-
         scripts = sorted(root.joinpath(*FOLDER_SKILLI).glob(f"*/scripts/{PATTERN}"))
         failed = _lost(root, scripts)
         found = _steps(root, failed)
@@ -329,6 +324,4 @@ class Katalog(NamedTuple):
         return {Klucz(Rodzaj.SKILL, step.key): step for step in self.kroki}[klucz.calosc]
 
     def skille(self, wzorzec: str = "*") -> list[Path]:
-        """Foldery skilli z ``SKILL.md``, których nazwa pasuje do ``wzorzec`` (glob), po nazwie."""
-
         return sorted(skill_md.parent for skill_md in self.root.joinpath(*FOLDER_SKILLI).glob(f"{wzorzec}/SKILL.md"))

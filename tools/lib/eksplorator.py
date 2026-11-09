@@ -232,8 +232,6 @@ def _named(entry: Excuse[Any]) -> str:
 
 
 def excuse_line(kind: Kind, entry: Excuse[Any]) -> str:
-    """Linia raportu o naruszeniu, które wpis wybacza."""
-
     return f"{_LABELS[kind]} {_named(entry)}: {entry.story}"
 
 

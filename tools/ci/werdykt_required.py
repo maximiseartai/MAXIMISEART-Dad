@@ -54,7 +54,6 @@ def werdykt(plan: Plan | None, wyniki_zadan: Mapping[str, str], zapisy: Sequence
         if (ostatni := ostatnie.get(zadanie.id)) is None:
             przyczyny.append(f"{zadanie.nazwa}: brak zapisu czasów z tego planu, więc nic nie dowodzi, że jego jednostki biegły")
             continue
-        # Udział pliku i węzeł testu zapis czasów zgłasza jako cały plik (junit zna tylko plik testu).
         zaplanowane = {str(klucz.zgloszony) for klucz in zadanie.klucze}
         if brak := sorted(zaplanowane - {jednostka.klucz for jednostka in ostatni.jednostki}):
             przyczyny.append(f"{zadanie.nazwa}: jednostki bez wyniku: {', '.join(brak)}")

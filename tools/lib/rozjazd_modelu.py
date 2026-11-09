@@ -38,8 +38,6 @@ Skroty = dict[str, dict[str, str]]
 
 
 def skille(root: Path) -> list[Path]:
-    """Foldery skilli z plikiem ``DEFINICJE``, posortowane."""
-
     return sorted(path.parents[1] for path in (root / ".agents" / "skills").glob(f"*/{DEFINICJE}"))
 
 
@@ -167,8 +165,6 @@ def _bindings(scope: ast.AST, name: str) -> list[ast.stmt]:
 
 
 def _body(node: ast.AST) -> list[ast.stmt]:
-    """Instrukcje bezpośrednio w ``node``: jego ciało i gałęzie (``orelse``, ``finalbody``, ``except``, ``case``)."""
-
     children: list[ast.stmt] = []
     for field in ("body", "orelse", "finalbody", "handlers", "cases"):
         for child in getattr(node, field, None) or []:

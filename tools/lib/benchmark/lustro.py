@@ -114,8 +114,6 @@ def _main_checkout_config() -> Path | None:
 
 
 def _config_with(name: str) -> Path:
-    """``config/`` tego checkoutu, gdy ma plik ``name``, inaczej ``config/`` głównego checkoutu (jeśli go ma)."""
-
     local = ROOT / "config"
     if (local / name).is_file():
         return local
@@ -124,8 +122,6 @@ def _config_with(name: str) -> Path:
 
 
 def default_templates_directory() -> Path:
-    """``config/`` tego checkoutu, gdy ma Wzorce, inaczej ``config/`` głównego checkoutu."""
-
     return _config_with(WORKER_TEMPLATE)
 
 
@@ -157,8 +153,6 @@ def _worker_ids(config: Path) -> list[str]:
 
 
 def _fingerprint(scenario_name: str, config: Path, templates: Mapping[str, Path]) -> str:
-    """Odcisk wejść lustra: inne Wzorce, Konfiguracja albo scenariusz dają inne lustro."""
-
     digest = hashlib.sha256(f"{GENERATOR_VERSION}|{SEED}|{scenario_name}|{SCENARIOS[scenario_name]}".encode())
     for path in (config, templates[INTERNAL_TEMPLATE], templates[COLLECTIVE_TEMPLATE]):
         digest.update(path.read_bytes())
@@ -216,8 +210,6 @@ def _write_register(path: Path, rows: Iterable[Mapping[str, object]]) -> None:
 
 
 def _entries(rng: random.Random, number: int) -> dict[int, int | float | str]:
-    """Wpisy taty w jednym Wierszu danych: 1–3 ilości w ``N:AP``, czasem obciążenie i uwagi w ``AQ:AT``."""
-
     entries: dict[int, int | float | str] = {
         column: rng.randint(1, 4) for column in rng.sample(QUANTITY_COLUMNS, rng.randint(1, 3))
     }
@@ -260,10 +252,7 @@ class _ChildRun:
 
 
 def run_quietly(arguments: Sequence[str | Path], failure_log: Path) -> _ChildRun:
-    """Uruchamia skrypt Pythona bez stdin i mierzy czas ściany procesu.
-
-    Wyjście procesu zawiera nazwy Wykonawców, więc nie trafia na ekran, tylko do lokalnego logu przy błędzie.
-    """
+    """Wyjście procesu zawiera nazwy Wykonawców, więc nie trafia na ekran, tylko do lokalnego logu przy błędzie."""
 
     spawned_at = datetime.now(UTC)
     started = time.perf_counter()

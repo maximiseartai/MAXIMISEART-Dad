@@ -149,8 +149,6 @@ from playwright.sync_api import APIRequestContext, Browser, Page, ProxySettings,
 from playwright.sync_api import Error as PlaywrightError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-# ``tools/lib`` dla Atrapy efenix, z której narzędzie bierze ścieżki i pola szukania, i modelu efenix z kodami pozycji i
-# zleceniem.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from rozliczenia import workbook_files
@@ -443,8 +441,6 @@ class _Efenix:
         return urljoin(self.url, name + (f"?{urlencode(query)}" if query else ""))
 
     def name(self, url: str) -> str:
-        """Ścieżka adresu względem katalogu efenix (adres innego hosta: sam host), bez zapytania."""
-
         address, efenix = urlparse(url), urlparse(self.url)
         if address.netloc != efenix.netloc:
             return address.netloc
@@ -498,8 +494,6 @@ def template_costs(path: Path) -> dict[str, Decimal | None]:
 
 
 def check(signed_in: _Efenix, signed_out: _Efenix, page: Page, costs: Mapping[str, Decimal | None], *, number: str = "") -> Report:
-    """Sprawdza efenix odczytami ``signed_in`` (sesja taty) i ``signed_out`` (bez ciasteczek); HTML składa w ``page``."""
-
     report = Report()
     _check_signed_in(signed_in, page, costs, report, number=number)
     _check_signed_out(signed_out, page, report)
@@ -836,9 +830,6 @@ def _check_signed_out(efenix: _Efenix, page: Page, report: Report) -> None:
 
 
 def measure_proposal(browser: Browser, efenix_url: str, report: Report, *, timeout_ms: int) -> None:
-    """Pomiar propozycji Emmetta z ``--emmett``: prosi Maksa o kliknięcie Emmetta, po jego Enter czyta okno Emmetta
-    w karcie strony zlecenia efenix i porównuje drzewo propozycji z drzewem z okna Emmetta Atrapy efenix."""
-
     report.proposal_by_hand = False
     print(ASK_EMMETT, file=sys.stderr, flush=True)
     if not sys.stdin.readline():
@@ -863,8 +854,6 @@ def measure_proposal(browser: Browser, efenix_url: str, report: Report, *, timeo
 
 
 def order_tab(url: str, efenix_url: str) -> bool:
-    """Czy karta pod ``url`` to strona zlecenia efenix: ``ORDER_PAGE`` w katalogu ``efenix_url``, na jego hoście."""
-
     address = urlparse(url)
     return f"{address.scheme}://{address.netloc}{address.path}" == urljoin(efenix_url, ORDER_PAGE)
 

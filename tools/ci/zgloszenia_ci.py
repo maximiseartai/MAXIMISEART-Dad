@@ -70,10 +70,10 @@ OKNO_ZDERZEN = timedelta(days=7)
 _ZNACZNIK = re.compile(r"<!-- czerwony-main (?P<sha>[0-9a-f]{40}) -->")
 _RUN = re.compile(r"/actions/runs/(?P<run>[0-9]+)")
 _PLIK_PYTEST = re.compile(rf"{Rodzaj.PYTEST.value}:(tests/[\w/]+\.py)")
-# Linia podsumowania pytest w logu zadania, po znaczniku czasu GitHuba i kolorach terminala.
 # Numer kawałka toru w nazwie zadania pytest (``pytest (Python 3.11, 2/3)``): plan dzieli tor na inną liczbę zadań w
 # każdym runie, więc zadanie bez linii pytest porównuje się z rodzicem po torze.
 _KAWALEK = re.compile(r", \d+/\d+(?=\)$)")
+# Linia podsumowania pytest w logu zadania, po znaczniku czasu GitHuba i kolorach terminala.
 _PORAZKA = re.compile(r"(?:\S+Z )?(?:FAILED|ERROR) (?P<test>tests/[^\s\[]+(?:\[.*?\])?)(?: - .*)?")
 _KOLOR = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -183,8 +183,6 @@ def wykonaj(github: GitHub, wykonane: Sequence[Akcja], *, bez_zapisu: bool) -> l
 
 
 def _artefakty(github: GitHub, run_id: int, poczatek: str) -> list[tuple[str, bytes]]:
-    """Pliki JSON z niewygasłych artefaktów runu, których nazwa zaczyna się od ``poczatek``."""
-
     znalezione = github.json(f"{REPO}/actions/runs/{run_id}/artifacts?per_page=100")["artifacts"]
     pliki = []
     for artefakt in znalezione:
@@ -311,8 +309,6 @@ def _porazki(github: GitHub, run_id: int) -> frozenset[str]:
 
 
 def _required(github: GitHub, commit: str) -> dict[str, Any] | None:
-    """Ostatni ``Required CI status`` commitu."""
-
     znalezione = github.json(f"{REPO}/commits/{commit}/check-runs?check_name={urllib.parse.quote(REQUIRED)}&per_page=100")["check_runs"]
     return max(znalezione, key=lambda check: check.get("started_at") or "", default=None)
 

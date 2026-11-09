@@ -112,8 +112,6 @@ _RECORDER: Recorder | None = None
 
 
 def recorder() -> Recorder:
-    """Zapis tego procesu, włączony przy pierwszym wywołaniu."""
-
     global _RECORDER
     if _RECORDER is None:
         settings = json.loads(os.environ[VARIABLE])

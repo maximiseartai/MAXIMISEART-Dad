@@ -74,8 +74,6 @@ _QUOTED_SHEET: Final = re.compile(r"'((?:[^']|'')+)'!")
 
 
 def compare_worker_settlements(reference: Path, candidate: Path) -> dict[str, int]:
-    """Liczba różnic w każdej kategorii między Folderem referencyjnym a Folderem kandydata."""
-
     reference_files = _file_names(reference)
     candidate_files = _file_names(candidate)
     differences = Counter({"pliki": len(reference_files ^ candidate_files)})
@@ -177,8 +175,6 @@ def _external_links(parts: dict[str, bytes]) -> dict[str, bytes]:
 
 
 def _mapping_difference(reference: Mapping[Any, object], candidate: Mapping[Any, object]) -> int:
-    """Klucze, których wartość jest inna albo jest tylko po jednej stronie."""
-
     return sum(reference.get(key) != candidate.get(key) for key in reference.keys() | candidate.keys())
 
 

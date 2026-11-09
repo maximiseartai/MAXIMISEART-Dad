@@ -72,8 +72,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _gate_pushes() -> None:
-    """Ustawia ``core.hooksPath`` na bramę pre-push i ostrzega o hookach, które przestają działać."""
-
     try:
         configured = repo.git(ROOT, "config", "--get", "core.hooksPath").strip()
     except subprocess.CalledProcessError:

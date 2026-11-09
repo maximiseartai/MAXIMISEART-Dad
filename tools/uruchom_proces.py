@@ -160,8 +160,6 @@ class _Flag:
 
 
 def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag:
-    """Flaga Skryptu dla maszyn dla potrzeby ``need`` procesu ``kind``; domyślne pliki to te z Centrum."""
-
     match need:
         case "collective_file":
             return _Flag("--source", "Plik zbiorczy.")
@@ -224,8 +222,6 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> Start:
-    """Start z flag procesu ``kind``: flaga potrzeby ma ``dest`` potrzeby, a przełącznika, którego proces nie ma, nie ma."""
-
     values = vars(args)
     return Start(
         {need: values[need] for need in kind.path_needs},
