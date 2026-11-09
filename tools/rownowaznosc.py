@@ -65,7 +65,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import potomne
 from repo import BASE, ROOT
 import repo
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.period_folder import PeriodFolder
 import syntetyczne_wzorce
 
@@ -82,7 +82,7 @@ _FIELDS = 5
 Process = Literal["settlement", "preparation", "intermax"]
 """Proces ze scenariuszami: klucz procesu katalogu bez Wyceny w efenix, która potrzebuje Atrapy efenix w Chromium, a
 scenariusz to tylko pliki w folderze."""
-assert set(get_args(Process)) < set(get_args(contract.ProcessKey)), "proces scenariusza to klucz procesu katalogu"
+assert set(get_args(Process)) < set(get_args(common_contract.ProcessKey)), "proces scenariusza to klucz procesu katalogu"
 
 
 @dataclass(frozen=True)

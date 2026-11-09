@@ -17,7 +17,10 @@ from typing import Final, Literal
 
 from fastapi import APIRouter
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import periods as periods_contract
+from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal
+from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
@@ -40,11 +43,11 @@ from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
 
 def _process_step(
-    action: contract.StepAction, process: contract.PeriodProcessKey, label: str, hint: str
-) -> contract.ProcessStep:
+    action: periods_contract.StepAction, process: common_contract.PeriodProcessKey, label: str, hint: str
+) -> periods_contract.ProcessStep:
     """Krok okresu, który robi proces ``process``, z podpowiedzią podglądu z jego wpisu w katalogu procesów."""
 
-    return contract.ProcessStep(
+    return periods_contract.ProcessStep(
         action=action, process=process, label=label, hint=hint, preview_hint=declaration_of(process).preview_hint
     )
 
@@ -58,7 +61,7 @@ _PREPARE: Final = _process_step(
 _PRICE: Final = _process_step(
     "price_in_efenix", "efenix", "Wyceń w efenix", "Najpierw uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij."
 )
-_FILL: Final = contract.FillStep(
+_FILL: Final = periods_contract.FillStep(
     action="fill_collective_file",
     label="Uzupełnij plik zbiorczy",
     hint="Uzupełnij Plik zbiorczy w Excelu, zapisz go i zamknij.",
@@ -76,7 +79,7 @@ _SETTLE: Final = _process_step(
 _SETTLE_BEFORE_PRICING: Final = _SETTLE.model_copy(
     update={"hint": "Możesz je utworzyć także bez Wyceny w efenix, na przykład gdy efenix nie działa."}
 )
-_CLOSED: Final = contract.ClosedStep(
+_CLOSED: Final = periods_contract.ClosedStep(
     action="none",
     label="Okres zamknięty",
     hint="Rozliczenia pracowników są w Folderze okresu.",
@@ -87,13 +90,13 @@ Pricing = Literal["not_run", "unfinished", "ok"]
 """Wycena w efenix okresu: bez Uruchomienia, ostatnie bez wyniku OK (Wymaga sprawdzenia, Zatrzymanie) albo zaliczona."""
 
 
-def _pricing(result: contract.RunResult | None) -> Pricing:
+def _pricing(result: RunResult | None) -> Pricing:
     if result is None:
         return "not_run"
     return "ok" if result == "OK" else "unfinished"
 
 
-def _path(status: PeriodStatus, pricing: Pricing) -> list[contract.PathStep]:
+def _path(status: PeriodStatus, pricing: Pricing) -> list[periods_contract.PathStep]:
     """Krok jest zrobiony po kolei; Uzupełnienie w Excelu kończy Gotowość, którą potwierdza skończone Uruchomienie
     Wyceny w efenix okresu w Historii albo Rozliczenia pracowników."""
 
@@ -105,14 +108,14 @@ def _path(status: PeriodStatus, pricing: Pricing) -> list[contract.PathStep]:
         settled,
     )
     if settled:
-        stages: list[contract.PathStage] = ["done" if step else "not_done" for step in done]
+        stages: list[periods_contract.PathStage] = ["done" if step else "not_done" for step in done]
     else:
         now = done.index(False)
         stages = ["done" if index < now else "now" if index == now else "later" for index in range(len(done))]
-    return [contract.PathStep(label=label, stage=stage) for label, stage in zip(_PATH, stages, strict=True)]
+    return [periods_contract.PathStep(label=label, stage=stage) for label, stage in zip(_PATH, stages, strict=True)]
 
 
-def _steps(status: PeriodStatus, pricing: Pricing) -> tuple[contract.NextStep, contract.ProcessStep | None]:
+def _steps(status: PeriodStatus, pricing: Pricing) -> tuple[periods_contract.NextStep, periods_contract.ProcessStep | None]:
     """Następny krok okresu, czyli bieżący krok Drogi okresu, i krok obok niego: Przebieg rozliczeń nie czeka na Wycenę
     w efenix, tylko po niej stoi."""
 
@@ -131,12 +134,12 @@ def _steps(status: PeriodStatus, pricing: Pricing) -> tuple[contract.NextStep, c
                     return _SETTLE, None
 
 
-def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> contract.PeriodRow:
+def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> periods_contract.PeriodRow:
     period = folder.period
     observation = folder.observe()
     status = observation.status
     next_step, secondary_step = _steps(status, pricing)
-    return contract.PeriodRow(
+    return periods_contract.PeriodRow(
         token=period.token,
         tuesday=period.tuesday,
         monday=period.monday,
@@ -155,13 +158,13 @@ def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> cont
     )
 
 
-def read_board(periods_directory: Path | None, today: date, catalog: Catalog) -> contract.PeriodBoard:
+def read_board(periods_directory: Path | None, today: date, catalog: Catalog) -> periods_contract.PeriodBoard:
     """Tablica okresów z folderu okresów; ``catalog`` daje Historię Wyceny w efenix (jej plik metryk)."""
 
     if periods_directory is None:
-        return contract.BoardNotSet(state="not_set")
+        return periods_contract.BoardNotSet(state="not_set")
     if not periods_directory.is_dir():
-        return contract.BoardMissing(state="missing", name=periods_directory.name)
+        return periods_contract.BoardMissing(state="missing", name=periods_directory.name)
     last_complete = last_complete_period(today)
     folders = {folder.period: folder for folder in scan_period_folders(periods_directory).found()}
     folders.setdefault(last_complete, PeriodFolder(periods_directory, last_complete))
@@ -171,7 +174,7 @@ def read_board(periods_directory: Path | None, today: date, catalog: Catalog) ->
         _row(folder, last_complete=folder.period == last_complete, pricing=_pricing(priced.get(folder.period.token)))
         for folder in newest_first
     ]
-    return contract.BoardReady(
+    return periods_contract.BoardReady(
         state="ready",
         periods=rows,
         last_prepared_period=next((row.token for row in rows if row.collective_file_exists), None),
@@ -198,7 +201,7 @@ def requested_period(token: str) -> SettlementPeriod:
     try:
         return parse_period_token(token)
     except ValueError:
-        raise contract.Refusal(404, "Nie ma takiego okresu.") from None
+        raise Refusal(404, "Nie ma takiego okresu.") from None
 
 
 def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> PeriodFolder:
@@ -209,11 +212,11 @@ def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> 
     except PeriodFolderLookupError as error:
         token = period.token
         if not error.locations:
-            raise contract.Refusal(
+            raise Refusal(
                 404, f"Nie ma folderu {token} w żadnym folderze miesiąca. Załóż go w folderze INEA właściwego miesiąca."
             ) from None
         months = ", ".join(month_folder_label(error.periods_directory, location) for location in error.locations)
-        raise contract.Refusal(
+        raise Refusal(
             409, f"Folder {token} jest w więcej niż jednym folderze miesiąca ({months}). Zostaw go tylko w jednym."
         ) from None
 
@@ -223,7 +226,7 @@ def requested_folder(store: SettingsStore, token: str) -> PeriodFolder:
 
     periods_directory = PERIODS_DIRECTORY.existing(store.load())
     if periods_directory is None:
-        raise contract.Refusal(409, first_choose((PERIODS_DIRECTORY,)))
+        raise Refusal(409, first_choose((PERIODS_DIRECTORY,)))
     return located_period_folder(periods_directory, requested_period(token))
 
 
@@ -233,26 +236,26 @@ def periods_router(
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 
     @router.get("", operation_id="getPeriodBoard")
-    def board() -> contract.PeriodBoard:
+    def board() -> periods_contract.PeriodBoard:
         return read_board(store.load().periods_directory, today(), catalog)
 
-    @router.post("/{token}/open", operation_id="openPeriodPath", responses=contract.NOT_FOUND_OR_CONFLICT)
-    def open_period_path(token: str, request: contract.OpenRequest) -> contract.Opened:
+    @router.post("/{token}/open", operation_id="openPeriodPath", responses=NOT_FOUND_OR_CONFLICT)
+    def open_period_path(token: str, request: periods_contract.OpenRequest) -> common_contract.Opened:
         folder = requested_folder(store, token)
         path = folder.path_of(request.target)
         with reading(folder.directory):
             exists = path.exists()
         if not exists:
-            raise contract.Refusal(404, f"{period_place_label(request.target)} okresu {token} jeszcze nie istnieje.")
+            raise Refusal(404, f"{period_place_label(request.target)} okresu {token} jeszcze nie istnieje.")
         platform.open_path(path)
-        return contract.Opened(name=path.name)
+        return common_contract.Opened(name=path.name)
 
     @router.post(
         "/{token}/worker-settlements/open",
         operation_id="openWorkerSettlement",
-        responses=contract.NOT_FOUND_OR_CONFLICT,
+        responses=NOT_FOUND_OR_CONFLICT,
     )
-    def open_worker_settlement(token: str, request: contract.WorkerSettlementRequest) -> contract.Opened:
+    def open_worker_settlement(token: str, request: periods_contract.WorkerSettlementRequest) -> common_contract.Opened:
         folder = requested_folder(store, token)
         path = folder.worker_settlement(request.worker)
         # Nazwa Wykonawcy z „/”, „\” albo „..” wyprowadziłaby ścieżkę poza Folder rozliczeń pracowników.
@@ -260,8 +263,8 @@ def periods_router(
         with reading(folder.directory):
             exists = inside and path.is_file()
         if not exists:
-            raise contract.Refusal(404, f"Rozliczenia pracownika {request.worker} nie ma w okresie {token}.")
+            raise Refusal(404, f"Rozliczenia pracownika {request.worker} nie ma w okresie {token}.")
         platform.open_path(path)
-        return contract.Opened(name=path.name)
+        return common_contract.Opened(name=path.name)
 
     return router

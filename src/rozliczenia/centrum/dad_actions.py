@@ -15,9 +15,11 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import timing as timing_contract
+from rozliczenia.domain import RunMode
 
-StoredRunMode = Annotated[contract.RunMode, BeforeValidator(contract.RunMode.stored)]
+StoredRunMode = Annotated[RunMode, BeforeValidator(RunMode.stored)]
 """Tryb Uruchomienia w pliku na dysku taty (dziennik działań taty, Logi Uruchomienia, plik ostatniego startu, dziennik
 Wyceny w efenix): wartość ``RunMode``, a w plikach sprzed schematu Logów 3 jego słowo."""
 
@@ -38,8 +40,8 @@ class ViewOpened(_Record):
 
     at: datetime
     action: Literal["widok"]
-    page: contract.PageId
-    kind: contract.ViewKind
+    page: timing_contract.PageId
+    kind: timing_contract.ViewKind
 
 
 class ButtonPressed(_Record):
@@ -48,7 +50,7 @@ class ButtonPressed(_Record):
     at: datetime
     action: Literal["przycisk"]
     operation: str
-    process: contract.ProcessKey | None = None
+    process: common_contract.ProcessKey | None = None
     mode: StoredRunMode | None = None
 
 

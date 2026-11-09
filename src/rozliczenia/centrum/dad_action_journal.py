@@ -27,7 +27,8 @@ from typing import Final
 from fastapi import Request
 from pydantic import RootModel, ValidationError
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum.contract import timing as timing_contract
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.dad_actions import ButtonPressed, CentrumStarted, DadAction, DadActions, ViewOpened
 from rozliczenia.centrum.work import CentrumWork
@@ -69,7 +70,7 @@ class DadActionJournal:
         at = _utc_now()
         if operation == "recordViewTiming":
             try:
-                timing = contract.ViewTiming.model_validate_json(await request.body())
+                timing = timing_contract.ViewTiming.model_validate_json(await request.body())
             except ValidationError:
                 return  # pomiar, którego kontrakt nie przyjmie, trasa i tak odrzuci
             self._add(ViewOpened(at=at, action="widok", page=timing.page, kind=timing.kind))
@@ -119,7 +120,7 @@ def _pressed(at: datetime, operation: str, body: bytes) -> ButtonPressed:
 
     if operation == "startRun":
         try:
-            request = contract.RunRequest.model_validate_json(body)
+            request = runs_contract.RunRequest.model_validate_json(body)
         except ValidationError:
             pass
         else:

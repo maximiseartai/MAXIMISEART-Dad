@@ -9,7 +9,7 @@ from functools import partial
 from typing import Final
 
 from rozliczenia import intermax_messages, intermax_process
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import TAIL, HostParts, NeededSetting, ProcessKind, Start
 from rozliczenia.centrum.run_logs import LoggedEntries, ProcessLogs
 from rozliczenia.centrum.run_view import ProcessView, count_figure, elapsed_only
@@ -18,12 +18,12 @@ from rozliczenia.text import day_label
 from rozliczenia.tool_files import INTERMAX_METRICS
 
 
-def _summary(summary: OrderingSummary, _dry_run: bool) -> contract.RunSummary:
-    return contract.RunSummary(
+def _summary(summary: OrderingSummary, _dry_run: bool) -> runs_contract.RunSummary:
+    return runs_contract.RunSummary(
         figures=[count_figure("Zlecenia", summary.order_count), count_figure("Wykonawcy", summary.worker_count)],
-        counts=contract.CountGroup(
+        counts=runs_contract.CountGroup(
             title="Uporządkowany dzień",
-            counts=[contract.Count(label=day_label(summary.day), count=summary.order_count)],
+            counts=[runs_contract.Count(label=day_label(summary.day), count=summary.order_count)],
         ),
         files=[],
         worker_settlements=None,

@@ -45,11 +45,11 @@ MUTATIONS = (
         "Zgłoszenie odrzucone przez Skrzynkę czeka na internet",
         # Obie drogi do „odrzucone”: odpowiedź na „Wyślij do Maksa” i odrzucenie, które kolejka zgłasza później.
         (
-            Edit(REPORTS, '        if hold == "rejected":\n            return contract.ReportRejected', "        if False:\n            return contract.ReportRejected"),
+            Edit(REPORTS, '        if hold == "rejected":\n            return diagnosis_contract.ReportRejected', "        if False:\n            return diagnosis_contract.ReportRejected"),
             Edit(
                 REPORTS,
-                'self._show(contract.ReportRejected(state="rejected"))',
-                'self._show(contract.ReportQueued(state="queued", waits_for="internet"))',
+                'self._show(diagnosis_contract.ReportRejected(state="rejected"))',
+                'self._show(diagnosis_contract.ReportQueued(state="queued", waits_for="internet"))',
             ),
         ),
         ZGLOSZENIE,
@@ -60,7 +60,7 @@ MUTATIONS = (
         (
             Edit(
                 REPORTS,
-                "            if comeback is None or self._returned or not isinstance(self._state, contract.ReportWaiting):\n",
+                "            if comeback is None or self._returned or not isinstance(self._state, diagnosis_contract.ReportWaiting):\n",
                 "            if True:\n",
             ),
         ),

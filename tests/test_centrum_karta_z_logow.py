@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from rozliczenia.centrum.contract import ProcessKey
+from rozliczenia.centrum.contract.common import ProcessKey
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog

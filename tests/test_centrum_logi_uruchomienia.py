@@ -33,7 +33,9 @@ import pytest
 
 from rozliczenia import settlement_messages, workbook_files
 from rozliczenia.domain import RunMode
-from rozliczenia.centrum import app, contract
+from rozliczenia.centrum import app
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, MAX_ENTRIES
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
@@ -219,16 +221,16 @@ def _adapter_net(
 ) -> Callable[[Path, pytest.MonkeyPatch], Ran]:
     def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ran:
         steered = centrum(tmp_path)
-        run_outcome = contract.RunOutcome
+        run_outcome = runs_contract.RunOutcome
         built: list[str] = []
 
-        def broken_once(**fields: Any) -> contract.RunOutcome:
+        def broken_once(**fields: Any) -> runs_contract.RunOutcome:
             built.append(fields["ending"])
             if len(built) == 1:
                 raise ValueError("synthetic contract failure SYN-001")
             return run_outcome(**fields)
 
-        monkeypatch.setattr(contract, "RunOutcome", broken_once)
+        monkeypatch.setattr(runs_contract, "RunOutcome", broken_once)
         return steered, run_to_end(steered, dry_run=dry_run)
 
     return run
@@ -2468,7 +2470,7 @@ def journals_at_result(monkeypatch: pytest.MonkeyPatch, directory: Path) -> dict
     kept: dict[Path, str] = {}
     ended = Journal.end
 
-    def keeping(journal: Journal, run_id: str, result: contract.RunResult) -> None:
+    def keeping(journal: Journal, run_id: str, result: RunResult) -> None:
         kept.update({path: path.read_text(encoding="utf-8") for path in directory.glob("*.jsonl")})
         ended(journal, run_id, result)
 

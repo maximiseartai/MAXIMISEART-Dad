@@ -39,7 +39,8 @@ from typing import Final
 
 from fastapi import APIRouter
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import notifications as notifications_contract
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_box import Closure
@@ -62,7 +63,7 @@ CHECK_WAIT_S: Final = 3.0
 CHECK_THREAD: Final = "powiadomienia-sprawdzanie"
 
 # Stany, które dał Maks: tylko one są nowe dla taty, dopóki ich nie zobaczy.
-_NEWS: Final[frozenset[contract.CaseState]] = frozenset({"rozwiazana", "przeczytana"})
+_NEWS: Final[frozenset[notifications_contract.CaseState]] = frozenset({"rozwiazana", "przeczytana"})
 
 
 class ReadNotifications:
@@ -144,7 +145,7 @@ class Notifications:
         self._releases = _Releases()
         self._files = (cases.file, self._read.file)
 
-    def view(self) -> contract.Notifications:
+    def view(self) -> notifications_contract.Notifications:
         """Powiadomienia od najnowszego po próbie zapisu plików stanu, które czekają.
 
         Gdy pora, najpierw pyta skrzynkę i GitHub (czeka najwyżej ``CHECK_WAIT_S``).
@@ -157,7 +158,7 @@ class Notifications:
             check.join(CHECK_WAIT_S)
         return self._notifications()
 
-    def mark_read(self, ids: Iterable[str]) -> contract.Notifications:
+    def mark_read(self, ids: Iterable[str]) -> notifications_contract.Notifications:
         """Zapamiętuje Powiadomienia, które tata zobaczył; nie pyta skrzynki."""
 
         self._read.add(ids)
@@ -207,36 +208,36 @@ class Notifications:
         except Exception as failure:
             self._log.unexpected_failure(failure, where="stan spraw w Powiadomieniach")
 
-    def _notifications(self) -> contract.Notifications:
+    def _notifications(self) -> notifications_contract.Notifications:
         """Powiadomienia z Komunikatem, gdy plik stanu Spraw taty albo przeczytanych czeka na zapis."""
 
         waiting = [file.path for file in self._files if file.unavailable]
         cases = self._cases.all()
         items: list[
-            contract.DadNoteNotification
-            | contract.ReportNotification
-            | contract.ReleaseNotification
-            | contract.PricingNotification
+            notifications_contract.DadNoteNotification
+            | notifications_contract.ReportNotification
+            | notifications_contract.ReleaseNotification
+            | notifications_contract.PricingNotification
         ] = [
             *(notification for notification in map(self._case, cases) if notification is not None),
             *self._new_versions(cases),
             *map(self._pricing, self._pricings()),
         ]
         items.sort(key=lambda item: item.at, reverse=True)
-        return contract.Notifications(
+        return notifications_contract.Notifications(
             unread=sum(item.unread for item in items),
             items=items,
-            message=contract.Message.of(unavailable(waiting)) if waiting else None,
+            message=common_contract.Message.of(unavailable(waiting)) if waiting else None,
         )
 
-    def _new_versions(self, cases: list[Case]) -> list[contract.ReleaseNotification]:
+    def _new_versions(self, cases: list[Case]) -> list[notifications_contract.ReleaseNotification]:
         """Opublikowane Wydania nie wyższe od najnowszego na `main`; przycisk ma tylko najnowsze.
 
         Sprawę z notki Wydania Powiadomienie nazywa tak, jak zna ją tata; sprawy wysłanej z innego komputera nie ma.
         """
 
-        sent: dict[tuple[str, int | None], contract.SolvedCase] = {
-            (case.kind.label, case.number): contract.SolvedCase(kind=case.kind.key, title=case.title)
+        sent: dict[tuple[str, int | None], notifications_contract.SolvedCase] = {
+            (case.kind.label, case.number): notifications_contract.SolvedCase(kind=case.kind.key, title=case.title)
             for case in cases
             if case.title is not None
         }
@@ -254,7 +255,7 @@ class Notifications:
             notification_id = f"wydanie-{release.tag}"
             offered = known.offered and release == newest
             versions.append(
-                contract.ReleaseNotification(
+                notifications_contract.ReleaseNotification(
                     kind="nowa_wersja",
                     id=notification_id,
                     at=published.at,
@@ -268,7 +269,7 @@ class Notifications:
             )
         return versions
 
-    def _case(self, case: Case) -> contract.DadNoteNotification | contract.ReportNotification | None:
+    def _case(self, case: Case) -> notifications_contract.DadNoteNotification | notifications_contract.ReportNotification | None:
         """Powiadomienie o sprawie; wpis Zgłoszenia sprzed Powiadomień (bez „Co się stało”) go nie daje."""
 
         if case.title is None or case.sent_at is None:
@@ -277,21 +278,21 @@ class Notifications:
         if case.kind == NOTE:
             notification_id = f"uwaga-{case.id}-{state}"
             unread = self._unread(notification_id, state)
-            return contract.DadNoteNotification(
+            return notifications_contract.DadNoteNotification(
                 kind="uwaga", id=notification_id, at=at, unread=unread, title=case.title, state=state
             )
         # Zgłoszenie w kolejce nie ma jeszcze numeru; jego odcisk wystarcza, bo problem czeka w kolejce najwyżej raz.
         notification_id = f"zgloszenie-{case.id if case.number is None else case.number}-{state}"
         unread = self._unread(notification_id, state)
-        return contract.ReportNotification(
+        return notifications_contract.ReportNotification(
             kind="zgloszenie", id=notification_id, at=at, unread=unread, what=case.title, state=state
         )
 
-    def _pricing(self, ended: LoggedRun) -> contract.PricingNotification:
+    def _pricing(self, ended: LoggedRun) -> notifications_contract.PricingNotification:
         card = ended.card
         notification_id = f"wycena-{card.run.id}"
         orders = ended.orders
-        return contract.PricingNotification(
+        return notifications_contract.PricingNotification(
             kind="wycena_w_efenix",
             id=notification_id,
             at=ended.ended_at,
@@ -304,7 +305,7 @@ class Notifications:
             stopped=card.result.stops[0].what if card.result.stops else None,
         )
 
-    def _unread(self, notification_id: str, state: contract.CaseState) -> bool:
+    def _unread(self, notification_id: str, state: notifications_contract.CaseState) -> bool:
         return state in _NEWS and notification_id not in self._read
 
 
@@ -318,11 +319,11 @@ def notifications_router(notifications: Notifications) -> APIRouter:
     router = APIRouter(prefix="/api/notifications", tags=["powiadomienia"])
 
     @router.get("", operation_id="getNotifications")
-    def get_notifications() -> contract.Notifications:
+    def get_notifications() -> notifications_contract.Notifications:
         return notifications.view()
 
     @router.post("/read", operation_id="markNotificationsRead")
-    def mark_read(read: contract.NotificationsRead) -> contract.Notifications:
+    def mark_read(read: notifications_contract.NotificationsRead) -> notifications_contract.Notifications:
         return notifications.mark_read(read.ids)
 
     return router

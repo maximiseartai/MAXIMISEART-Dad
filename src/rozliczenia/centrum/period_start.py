@@ -15,7 +15,10 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Final, assert_never
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import periods as periods_contract
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook, open_in_excel
 from rozliczenia.centrum.metrics import previewed_periods
@@ -36,7 +39,7 @@ from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
 # Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
-_TILES: Final[tuple[contract.PeriodProcessKey, ...]] = ("preparation", "efenix", "settlement")
+_TILES: Final[tuple[common_contract.PeriodProcessKey, ...]] = ("preparation", "efenix", "settlement")
 _PRICING_ONLY: Final = "{title} nie ma trybu z Przekazaniem do akceptacji."
 
 
@@ -55,19 +58,19 @@ class PeriodStarts:
     contexts: RunContexts
     parts: HostParts
 
-    def setup(self) -> contract.RunSetup:
+    def setup(self) -> runs_contract.RunSetup:
         settings = self.store.load()
-        return contract.RunSetup(processes=[self._setup(self.catalog.period_kind(key), settings) for key in _TILES])
+        return runs_contract.RunSetup(processes=[self._setup(self.catalog.period_kind(key), settings) for key in _TILES])
 
-    def prepare(self, request: contract.RunRequest) -> PreparedRun[Any, Any]:
-        """Uruchomienie z karty: ``contract.Refusal``, gdy tata czegoś jeszcze nie wskazał albo wybrał coś, czego nie ma."""
+    def prepare(self, request: runs_contract.RunRequest) -> PreparedRun[Any, Any]:
+        """Uruchomienie z karty: ``Refusal``, gdy tata czegoś jeszcze nie wskazał albo wybrał coś, czego nie ma."""
 
         kind = self.catalog.period_kind(request.process)
-        if request.pricing not in (kind.view.pricing_modes or (contract.DEFAULT_PRICING,)):
-            raise contract.Refusal(409, _PRICING_ONLY.format(title=kind.title))
+        if request.pricing not in (kind.view.pricing_modes or (runs_contract.DEFAULT_PRICING,)):
+            raise Refusal(409, _PRICING_ONLY.format(title=kind.title))
         chosen = kind.required_paths(self.store.load())
         if request.mode.dry_run and kind.start.no_preview is not None:
-            raise contract.Refusal(409, kind.start.no_preview)
+            raise Refusal(409, kind.start.no_preview)
         period = requested_period(request.period)
         start = Start(
             {need: self._path(need, chosen, period) for need in kind.path_needs},
@@ -92,7 +95,7 @@ class PeriodStarts:
             case _:
                 assert_never(need)
 
-    def _setup(self, kind: PeriodProcessKind[Any, Any], settings: Settings) -> contract.ProcessSetup:
+    def _setup(self, kind: PeriodProcessKind[Any, Any], settings: Settings) -> runs_contract.ProcessSetup:
         view = kind.view
         open_templates = open_in_excel(self.configuration.template_inputs(kind.templates))
         previewed = previewed_periods(self.catalog.metrics(kind.key)) if kind.preview_hint is not None else frozenset()
@@ -130,7 +133,7 @@ class PeriodStarts:
                 blocker = None
             case _:
                 assert_never(chooser)
-        return contract.ProcessSetup(
+        return runs_contract.ProcessSetup(
             process=kind.key,
             title=kind.title,
             creates=kind.start.creates,
@@ -145,7 +148,7 @@ class PeriodStarts:
         )
 
 
-def _collective_files(periods_directory: Path | None, rows: list[contract.PeriodRow]) -> dict[str, Path]:
+def _collective_files(periods_directory: Path | None, rows: list[periods_contract.PeriodRow]) -> dict[str, Path]:
     """Plik zbiorczy każdego okresu do wyboru, w tym Folderze okresu, który pokazuje Tablica okresów."""
 
     if periods_directory is None:
@@ -156,13 +159,13 @@ def _collective_files(periods_directory: Path | None, rows: list[contract.Period
 
 def _board_choice(
     kind: PeriodProcessKind[Any, Any],
-    row: contract.PeriodRow,
+    row: periods_contract.PeriodRow,
     collective_file: Path,
     previewed: bool,
     open_templates: list[str],
-) -> contract.PeriodChoice:
+) -> runs_contract.PeriodChoice:
     open_collective = open_in_excel([InputWorkbook("Plik zbiorczy", collective_file, "data_file")])
-    return contract.PeriodChoice(
+    return runs_contract.PeriodChoice(
         token=row.token,
         tuesday=row.tuesday,
         monday=row.monday,
@@ -175,7 +178,7 @@ def _board_choice(
     )
 
 
-def _board_blocker(board: contract.PeriodBoard, rows: list[contract.PeriodRow], chooser: ByStatus) -> str | None:
+def _board_blocker(board: periods_contract.PeriodBoard, rows: list[periods_contract.PeriodRow], chooser: ByStatus) -> str | None:
     """Czego brakuje w folderze okresów, który Ustawienia taty już wskazują."""
 
     if board.state == "missing":
@@ -193,9 +196,9 @@ def _recent_choice(
     previewed: bool,
     open_files: list[str],
     reminder: str | None,
-) -> contract.PeriodChoice:
+) -> runs_contract.PeriodChoice:
     status = observed_period_folder(folders, period).observe().status if folders is not None else "no_period_files"
-    return contract.PeriodChoice(
+    return runs_contract.PeriodChoice(
         token=period.token,
         tuesday=period.tuesday,
         monday=period.monday,

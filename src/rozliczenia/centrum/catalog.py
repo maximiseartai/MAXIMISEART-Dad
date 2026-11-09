@@ -22,7 +22,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.process_kind import Engine, HostParts, PeriodProcessKind, PreparedRun, ProcessKind, Start
 from rozliczenia.centrum.processes import efenix, intermax, preparation, settlement
 from rozliczenia.process_run import Process, run_process
@@ -32,7 +32,7 @@ from rozliczenia.telemetry import MetricsStore
 KINDS: Final[tuple[ProcessKind[Any, Any], ...]] = (preparation.KIND, settlement.KIND, efenix.KIND, intermax.KIND)
 """Kolejność statystyk w Metrykach."""
 
-_BY_KEY: Final[Mapping[contract.ProcessKey, ProcessKind[Any, Any]]] = {kind.key: kind for kind in KINDS}
+_BY_KEY: Final[Mapping[common_contract.ProcessKey, ProcessKind[Any, Any]]] = {kind.key: kind for kind in KINDS}
 assert sum(kind.journaled for kind in KINDS) == 1, "dziennik Wyceny w efenix w katalogu Logów pisze jeden proces"
 
 
@@ -42,7 +42,7 @@ class Catalog:
     każde Uruchomienie (``engine``)."""
 
     kinds: tuple[ProcessKind[Any, Any], ...]
-    metrics_paths: Mapping[contract.ProcessKey, Path]
+    metrics_paths: Mapping[common_contract.ProcessKey, Path]
     engine: Engine = run_process
 
     @classmethod
@@ -51,30 +51,30 @@ class Catalog:
 
         return cls(KINDS, {kind.key: kind.default_metrics for kind in KINDS})
 
-    def kind(self, key: contract.ProcessKey) -> ProcessKind[Any, Any]:
+    def kind(self, key: common_contract.ProcessKey) -> ProcessKind[Any, Any]:
         """Wpis procesu ``key`` z rdzeniem tego katalogu."""
 
         return next(kind for kind in self.kinds if kind.key == key)
 
-    def period_kind(self, key: contract.PeriodProcessKey) -> PeriodProcessKind[Any, Any]:
+    def period_kind(self, key: common_contract.PeriodProcessKey) -> PeriodProcessKind[Any, Any]:
         """Wpis procesu z okresem ``key`` z rdzeniem tego katalogu."""
 
         kind = self.kind(key)
-        assert isinstance(kind, PeriodProcessKind), f"{key} to proces z okresem (contract.PeriodProcessKey)"
+        assert isinstance(kind, PeriodProcessKind), f"{key} to proces z okresem (common_contract.PeriodProcessKey)"
         return kind
 
     @property
-    def journaled(self) -> contract.ProcessKey:
+    def journaled(self) -> common_contract.ProcessKey:
         """Proces, który pisze dziennik Wyceny w efenix w katalogu Logów."""
 
         return next(kind.key for kind in self.kinds if kind.journaled)
 
-    def metrics(self, key: contract.ProcessKey) -> MetricsStore:
+    def metrics(self, key: common_contract.ProcessKey) -> MetricsStore:
         """Historia metryk procesu ``key``: plik metryk tego katalogu z licznikami rdzenia procesu."""
 
         return MetricsStore(self.metrics_paths[key], self.kind(key).core.counter_names)
 
-    def with_metrics(self, paths: Mapping[contract.ProcessKey, Path]) -> Catalog:
+    def with_metrics(self, paths: Mapping[common_contract.ProcessKey, Path]) -> Catalog:
         """Ten katalog z plikami metryk ``paths`` w miejscu plików procesów, które wymienia."""
 
         return replace(self, metrics_paths={**self.metrics_paths, **paths})
@@ -91,7 +91,7 @@ class Catalog:
         return replace(self, engine=engine)
 
     def prepared(
-        self, key: contract.ProcessKey, start: Start, parts: HostParts, context: RunContext
+        self, key: common_contract.ProcessKey, start: Start, parts: HostParts, context: RunContext
     ) -> PreparedRun[Any, Any]:
         """Uruchomienie procesu ``key`` gotowe do startu ``start`` z zależnościami gospodarza ``parts`` i Kontekstem
         Uruchomienia ``context``: rdzeń i historia metryk procesu z tego katalogu.
@@ -120,7 +120,7 @@ class Catalog:
 CATALOG: Final = Catalog.default()
 
 
-def declaration_of(key: contract.ProcessKey) -> ProcessKind[Any, Any]:
+def declaration_of(key: common_contract.ProcessKey) -> ProcessKind[Any, Any]:
     """Wpis procesu ``key`` z prawdziwym rdzeniem; klucz z dysku (Logi, plik ostatniego startu) zwalidował już kontrakt."""
 
     return _BY_KEY[key]

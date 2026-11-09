@@ -34,7 +34,9 @@ from typing import Final
 
 from fastapi import APIRouter
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import metrics as metrics_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable
 from rozliczenia.centrum.run_comments import LeftBehindClosed
@@ -48,7 +50,7 @@ _ORDERS_TITLE: Final = "Zlecenia przed zamknięciem Centrum"
 _PREVIEW_ADVICE: Final = "Podgląd niczego nie zapisał. Uruchom go ponownie."
 _WRITE_ADVICE: Final = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."
 
-History = Callable[[], Iterable[contract.ProcessRun]]
+History = Callable[[], Iterable[metrics_contract.ProcessRun]]
 """Wiersze Historii z plików metryk; ``OSError``: plików nie da się odczytać."""
 
 
@@ -57,7 +59,7 @@ class LoggedRun:
     """Zakończone Uruchomienie z jego Logów: karta, koniec i liczba zleceń Wyceny w efenix z każdym wynikiem (``None``:
     inny proces albo Wycena bez podsumowania, np. po Zatrzymaniu przed pierwszym zleceniem)."""
 
-    card: contract.RunRestored
+    card: runs_contract.RunRestored
     ended_at: datetime
     orders: Counter[OrderKind] | None
 
@@ -71,7 +73,7 @@ class RunCards:
         self._history = history
         self._ended = disk.viewed(self._ended_of)
 
-    def last(self, closed: LeftBehindClosed) -> contract.PastRun | None:
+    def last(self, closed: LeftBehindClosed) -> runs_contract.PastRun | None:
         """Ostatnie Uruchomienie sprzed tego startu Centrum; ``None``: żadnego albo nie da się go odczytać. ``closed``:
         start Centrum zamknął już dzienniki Wyceny, więc Urwana Wycena ma tu swoje Logi Urwanego Uruchomienia."""
 
@@ -89,7 +91,7 @@ class RunCards:
             case Found(logs=record):
                 return self._restored(record)
 
-    def card(self, run_id: str) -> contract.RunCard:
+    def card(self, run_id: str) -> runs_contract.RunCard:
         """Karta Uruchomienia ``run_id`` z jego Logów; ``missing`` bez pliku Logów, z plikiem, którego nie da się odczytać,
         i z Logami Urwanego Uruchomienia, które nie ma wiersza Historii."""
 
@@ -97,16 +99,16 @@ class RunCards:
             case Found(logs=record) if record.ending != "interrupted":
                 return self._restored(record)
             case _:
-                return contract.RunCardMissing(state="missing")
+                return runs_contract.RunCardMissing(state="missing")
 
-    def latest(self, process: contract.ProcessKey) -> contract.RunRestored | None:
+    def latest(self, process: common_contract.ProcessKey) -> runs_contract.RunRestored | None:
         """Karta ostatniego Uruchomienia procesu ``process`` z Logów (``LogsOnDisk.newest``); ``None``: żadnego, nie da się
         go odczytać albo to Logi Urwanego Uruchomienia, które nie mają karty wyniku."""
 
         record = self._disk.newest(process)
         return None if record is None or record.ending == "interrupted" else self._restored(record)
 
-    def ended(self, process: contract.ProcessKey) -> list[LoggedRun]:
+    def ended(self, process: common_contract.ProcessKey) -> list[LoggedRun]:
         """Zakończone Uruchomienia procesu ``process`` z Logów, od najnowszego; pliki, których nie da się odczytać, pomija."""
 
         return self._ended.of(process)
@@ -124,7 +126,7 @@ class RunCards:
         )
         return LoggedRun(card=self._restored(record), ended_at=record.ended_at, orders=orders)
 
-    def _restored(self, record: RunLog) -> contract.RunRestored:
+    def _restored(self, record: RunLog) -> runs_contract.RunRestored:
         """Karta z Logów Uruchomienia, które doszło do wyniku (każdy sposób zakończenia poza ``interrupted``)."""
 
         ending, result = record.ending, record.result
@@ -142,18 +144,18 @@ class RunCards:
         )
         messages = {
             kind: [
-                contract.Message(what=message.what, where=message.where, action=message.action)
+                common_contract.Message(what=message.what, where=message.where, action=message.action)
                 for message in record.messages
                 if message.kind == kind
             ]
             for kind in ("stop", "warning")
         }
-        return contract.RunRestored(
+        return runs_contract.RunRestored(
             state="restored",
             run=info,
             started_at=record.started_at,
             phases=[phase.progress for phase in record.phases],
-            result=contract.LoggedOutcome(
+            result=runs_contract.LoggedOutcome(
                 result=result,
                 headline=headline,
                 ending=ending,
@@ -169,7 +171,7 @@ class RunCards:
             ),
         )
 
-    def _recorded(self, started: StartFacts) -> contract.RunRecorded | None:
+    def _recorded(self, started: StartFacts) -> runs_contract.RunRecorded | None:
         """Karta z wiersza Historii Uruchomienia bez Logów; ``None``: Historia go nie ma albo jej nie da się odczytać.
 
         Wiersz Uruchomienia to najwcześniejszy wiersz tego procesu ze startem od startu Uruchomienia (reguła
@@ -195,7 +197,7 @@ class RunCards:
             dry_run=info.mode.dry_run,
             view=declaration.view,
         )
-        return contract.RunRecorded(
+        return runs_contract.RunRecorded(
             state="recorded",
             run=info,
             started_at=row.started_at,
@@ -204,7 +206,7 @@ class RunCards:
             next_action=next_action,
         )
 
-    def _row(self, process: contract.ProcessKey, started_at: datetime) -> contract.ProcessRun | None:
+    def _row(self, process: common_contract.ProcessKey, started_at: datetime) -> metrics_contract.ProcessRun | None:
         """Wiersz Historii Uruchomienia ze startem ``started_at``: najwcześniejszy wiersz procesu od tej chwili; ``None``,
         gdy go nie ma albo Historii nie da się odczytać."""
 
@@ -215,23 +217,23 @@ class RunCards:
         return min(rows, key=lambda run: run.started_at, default=None)
 
 
-def _orders(record: RunLog) -> contract.CountGroup | None:
+def _orders(record: RunLog) -> runs_contract.CountGroup | None:
     """Liczba zleceń Wyceny w efenix z Logów Urwanego Uruchomienia z każdym wynikiem; ``None`` bez śladu zleceń."""
 
     if record.efenix_orders is None:
         return None
-    return contract.CountGroup(
+    return runs_contract.CountGroup(
         title=_ORDERS_TITLE,
         counts=order_counts(Counter(order.outcome for order in record.efenix_orders)),
         zero_warns=False,
     )
 
 
-def _interrupted(started: StartFacts, orders: contract.CountGroup | None) -> contract.RunInterrupted:
+def _interrupted(started: StartFacts, orders: runs_contract.CountGroup | None) -> runs_contract.RunInterrupted:
     info = declaration_of(started.process).run_info(
         run_id=started.run_id, period=started.period, mode=started.mode, pricing=started.pricing
     )
-    return contract.RunInterrupted(
+    return runs_contract.RunInterrupted(
         state="interrupted",
         run=info,
         started_at=started.started_at,
@@ -240,10 +242,10 @@ def _interrupted(started: StartFacts, orders: contract.CountGroup | None) -> con
     )
 
 
-def _interrupted_advice(title: str, period: str, *, dry_run: bool) -> contract.Message:
+def _interrupted_advice(title: str, period: str, *, dry_run: bool) -> common_contract.Message:
     """Komunikat karty Urwanego Uruchomienia procesu ``title`` w okresie ``period``, bez kodu."""
 
-    return contract.Message(
+    return common_contract.Message(
         what=_INTERRUPTED,
         where=f"{title}, okres {period}",
         action=_PREVIEW_ADVICE if dry_run else _WRITE_ADVICE,
@@ -255,7 +257,7 @@ def run_cards_router(cards: RunCards) -> APIRouter:
 
     # Brak karty to zwykła odpowiedź, nie 404: przeglądarka nie odróżniłaby go od porażki odczytu.
     @router.get("/{run_id}/card", operation_id="getRunCard")
-    def card(run_id: str) -> contract.RunCard:
+    def card(run_id: str) -> runs_contract.RunCard:
         return cards.card(run_id)
 
     return router

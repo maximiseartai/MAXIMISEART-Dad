@@ -13,7 +13,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Generic, Protocol, TypeVar
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.domain import RunMode
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.message import Message
 from rozliczenia.process_run import ProcessInputs, ProcessSummary
@@ -40,10 +41,10 @@ class Shown(Generic[SummaryT]):
     Uruchomienia.
     """
 
-    summary: contract.RunSummary
+    summary: runs_contract.RunSummary
     warnings: tuple[Message, ...]
     engine_summary: SummaryT
-    notes: list[contract.OrderNotes] | None = None
+    notes: list[runs_contract.OrderNotes] | None = None
 
 
 @dataclass(frozen=True)
@@ -54,19 +55,19 @@ class ResultView(Generic[InputsT, SummaryT]):
     nie mają.
     """
 
-    _figures: Callable[[ProgressSnapshot, bool], list[contract.Figure]]
-    _summary: Callable[[SummaryT, bool], contract.RunSummary]
-    _notes: Callable[[SummaryT], list[contract.OrderNotes] | None] = lambda _summary: None
+    _figures: Callable[[ProgressSnapshot, bool], list[runs_contract.Figure]]
+    _summary: Callable[[SummaryT, bool], runs_contract.RunSummary]
+    _notes: Callable[[SummaryT], list[runs_contract.OrderNotes] | None] = lambda _summary: None
 
-    def progress(self, snapshot: ProgressSnapshot, *, dry_run: bool) -> contract.Progress:
+    def progress(self, snapshot: ProgressSnapshot, *, dry_run: bool) -> runs_contract.Progress:
         """Etapy, postęp Szablonów pracowników, krok Zapisywania i liczby na żywo z jednego snapshotu projekcji."""
 
         step = snapshot.step
 
-        return contract.Progress(
+        return runs_contract.Progress(
             phases=[
-                contract.PhaseProgress(
-                    phase=phase.value, state=state.value, duration_ms=snapshot.phase_durations_ms.get(phase, 0)
+                runs_contract.PhaseProgress(
+                    phase=phase, state=state.value, duration_ms=snapshot.phase_durations_ms.get(phase, 0)
                 )
                 for phase, state in snapshot.phase_states.items()
             ],
@@ -76,7 +77,7 @@ class ResultView(Generic[InputsT, SummaryT]):
             figures=self._figures(snapshot, dry_run),
             step=None
             if step is None
-            else contract.ProgressStep(label=step.label, worker=step.worker, done=step.done, total=step.total),
+            else runs_contract.ProgressStep(label=step.label, worker=step.worker, done=step.done, total=step.total),
         )
 
     def shown(self, inputs: InputsT, summary: SummaryT) -> Shown[SummaryT]:
@@ -101,20 +102,20 @@ class ProcessView(ResultView[InputsT, SummaryT]):
     reminder: str
     confirms_readiness: bool
     done: str
-    result_action: contract.ResultAction
+    result_action: runs_contract.ResultAction
     register_name: str = "Rejestr zleceń"
-    pricing_modes: tuple[contract.Pricing, ...] = ()
+    pricing_modes: tuple[runs_contract.Pricing, ...] = ()
     prepares_collective_file: bool = False
 
     @property
-    def modes(self) -> tuple[contract.RunMode, ...]:
+    def modes(self) -> tuple[RunMode, ...]:
         """Tryby Uruchomienia procesu: bez Podglądu bez zapisu tylko zapis."""
 
-        return (contract.RunMode.RUN,)
+        return (RunMode.RUN,)
 
-    def collective_file_prepared(self, *, ending: contract.Ending, dry_run: bool) -> bool:
+    def collective_file_prepared(self, *, ending: runs_contract.Ending, dry_run: bool) -> bool:
         """Wynik przygotował Plik zbiorczy okresu: proces go przygotowuje i skończył się z zapisem bez Zatrzymania; jedna
-        reguła dla karty na żywo i karty z Logów (``contract.LoggedOutcome.collective_file_prepared``)."""
+        reguła dla karty na żywo i karty z Logów (``runs_contract.LoggedOutcome.collective_file_prepared``)."""
 
         return self.prepares_collective_file and ending == "finished" and not dry_run
 
@@ -134,21 +135,21 @@ class PeriodProcessView(ProcessView[InputsT, SummaryT]):
     preview_hint: str
 
     @property
-    def modes(self) -> tuple[contract.RunMode, ...]:
-        return (contract.RunMode.RUN, contract.RunMode.DRY_RUN)
+    def modes(self) -> tuple[RunMode, ...]:
+        return (RunMode.RUN, RunMode.DRY_RUN)
 
 
-def count_figure(label: str, value: int) -> contract.Figure:
+def count_figure(label: str, value: int) -> runs_contract.Figure:
     """Liczba na karcie Uruchomienia pod nazwą ``label``."""
 
-    return contract.Figure(label=label, value=value, unit="count")
+    return runs_contract.Figure(label=label, value=value, unit="count")
 
 
-def elapsed_figure(snapshot: ProgressSnapshot) -> contract.Figure:
-    return contract.Figure(label="Czas uruchomienia", value=snapshot.total_elapsed_ms, unit="ms")
+def elapsed_figure(snapshot: ProgressSnapshot) -> runs_contract.Figure:
+    return runs_contract.Figure(label="Czas uruchomienia", value=snapshot.total_elapsed_ms, unit="ms")
 
 
-def elapsed_only(snapshot: ProgressSnapshot, _dry_run: bool) -> list[contract.Figure]:
+def elapsed_only(snapshot: ProgressSnapshot, _dry_run: bool) -> list[runs_contract.Figure]:
     """Liczby na żywo procesu, który pokazuje w trakcie tylko czas uruchomienia."""
 
     return [elapsed_figure(snapshot)]
@@ -171,7 +172,7 @@ def order_label(kind: OrderKind) -> str:
             return "Ostrzeżenia Emmetta"
 
 
-def order_counts(counted: Counter[OrderKind]) -> list[contract.Count]:
+def order_counts(counted: Counter[OrderKind]) -> list[runs_contract.Count]:
     """Liczba zleceń z każdym wynikiem pod jego nazwą, w kolejności ``OrderKind``."""
 
-    return [contract.Count(label=order_label(kind), count=counted[kind]) for kind in OrderKind]
+    return [runs_contract.Count(label=order_label(kind), count=counted[kind]) for kind in OrderKind]

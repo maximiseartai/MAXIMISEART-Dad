@@ -17,7 +17,7 @@ from typing import Any, get_args
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from rozliczenia.centrum.app import create_app
-from rozliczenia.centrum.contract import ApiOperation
+from rozliczenia.centrum.contract.timing import ApiOperation
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import FileTypes
 from rozliczenia.centrum.shutdown import Shutdown

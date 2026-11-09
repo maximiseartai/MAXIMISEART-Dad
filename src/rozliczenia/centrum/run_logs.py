@@ -52,7 +52,9 @@ from typing import Annotated, Any, Final, Literal, assert_never
 from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model_serializer
 
 from rozliczenia.call_trace import CallTrace
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_actions import ButtonPressed, DadActions, StoredRunMode
 from rozliczenia.domain import ProgressPhase, WorkerStatus
 from rozliczenia.efenix_checks import ListedRead
@@ -73,7 +75,7 @@ from rozliczenia.efenix_trace import TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
-from rozliczenia.process_run import StopEnding
+from rozliczenia.process_run import RunResult, StopEnding
 from rozliczenia.progress import ProgressSnapshot
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
@@ -94,16 +96,16 @@ class StartFacts(_Record):
     ``pricing``: tryb Wyceny w efenix (``None``: inne procesy i zapisy sprzed trybów)."""
 
     run_id: str
-    process: contract.ProcessKey
+    process: common_contract.ProcessKey
     mode: StoredRunMode
     period: str
     started_at: datetime
-    pricing: contract.Pricing | None = None
+    pricing: runs_contract.Pricing | None = None
     """Tryb Wyceny w efenix (ADR 0027). ``None``: inne procesy i Logi sprzed trybów, w których Wycena biegła bez
     Przekazania."""
 
     @classmethod
-    def of_run(cls, info: contract.RunInfo, started_at: datetime) -> StartFacts:
+    def of_run(cls, info: runs_contract.RunInfo, started_at: datetime) -> StartFacts:
         """Fakty startu Uruchomienia ``info``, które Centrum startuje teraz (``RunHost.start`` → ``run_started``)."""
 
         return cls(
@@ -155,15 +157,15 @@ class LoggedPhase(_Record):
     odłączony podgląd postępu). Oba ``None`` także w plikach schematu 1.
     """
 
-    phase: contract.PhaseName
+    phase: runs_contract.PhaseName
     state: Literal["pending", "running", "completed", "failed"]
     duration_ms: int
     started_at: datetime | None = None
     ended_at: datetime | None = None
 
     @classmethod
-    def all_of(cls, phases: Sequence[contract.PhaseProgress], snapshot: ProgressSnapshot | None) -> list[LoggedPhase]:
-        def moment(moments: Mapping[ProgressPhase, datetime] | None, phase: contract.PhaseName) -> datetime | None:
+    def all_of(cls, phases: Sequence[runs_contract.PhaseProgress], snapshot: ProgressSnapshot | None) -> list[LoggedPhase]:
+        def moment(moments: Mapping[ProgressPhase, datetime] | None, phase: runs_contract.PhaseName) -> datetime | None:
             return None if moments is None else moments.get(ProgressPhase(phase))
 
         started = None if snapshot is None else snapshot.phase_started_at
@@ -180,10 +182,10 @@ class LoggedPhase(_Record):
         ]
 
     @property
-    def progress(self) -> contract.PhaseProgress:
+    def progress(self) -> runs_contract.PhaseProgress:
         """Etap tak, jak go pokazuje karta Uruchomienia."""
 
-        return contract.PhaseProgress(phase=self.phase, state=self.state, duration_ms=self.duration_ms)
+        return runs_contract.PhaseProgress(phase=self.phase, state=self.state, duration_ms=self.duration_ms)
 
 
 class LoggedTemplate(_Record):
@@ -229,12 +231,12 @@ class LoggedCheck(_Record):
     """Sprawdzenie Diagnozy jak na liście „Sprawdzono” taty; ``code`` to kod Komunikatu sprawdzenia, które nie przeszło."""
 
     label: str
-    state: contract.CheckState
+    state: diagnosis_contract.CheckState
     detail: str
     code: str | None
 
     @property
-    def result(self) -> tuple[str, contract.CheckState, str | None, str | None]:
+    def result(self) -> tuple[str, diagnosis_contract.CheckState, str | None, str | None]:
         """Sprawdzenie bez okoliczności: ``detail`` sprawdzenia, które przeszło, to fakt chwili (liczba wpisów dziennika
         rośnie z każdą Diagnozą), a przy ``failed`` i ``not_checked`` sam wynik: treść Komunikatu albo powód."""
 
@@ -246,7 +248,7 @@ class LoggedDiagnosis(_Record):
 
     diagnosed_at: datetime
     explanation: Explanation
-    next_action: contract.DiagnosisNextAction
+    next_action: diagnosis_contract.DiagnosisNextAction
     checks: list[LoggedCheck]
 
     def same_result(self, other: LoggedDiagnosis) -> bool:
@@ -599,13 +601,13 @@ class RunLog(StartFacts):
     ended_at: datetime
     duration_ms: int | None
     tool: Tool
-    result: contract.RunResult | None
+    result: RunResult | None
     ending: LoggedEnding
-    stop_kind: contract.StopKind | None
+    stop_kind: runs_contract.StopKind | None
     issue_count: int | None
     messages: list[LoggedMessage]
     technical_notes: list[str]
-    summary: contract.RunSummary | None
+    summary: runs_contract.RunSummary | None
     phases: list[LoggedPhase]
     templates: list[LoggedTemplate]
     inea_only_cleared: dict[str, int] | None = None

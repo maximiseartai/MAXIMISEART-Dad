@@ -41,7 +41,7 @@ from drive.common import (
     toggle_theme,
 )
 from drive.teksty import FOR_KEY, MODES, WRITE
-from rozliczenia.centrum.contract import ProcessKey
+from rozliczenia.centrum.contract.common import ProcessKey
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
 from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Process

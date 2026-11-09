@@ -31,7 +31,7 @@ from typing import get_args
 
 import pytest
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
 
 from tests.fixtures.expect import assert_expected
 
@@ -69,7 +69,7 @@ def _required_subcommands(path: Path) -> list[str]:
 
     Czyta każde ``add_parser("<nazwa>")`` ze stałą nazwą w pliku, bez rozróżniania grup, bo pierwsze zdanie ma wymienić
     którąkolwiek z nich, a podkomenda na każdy wpis katalogu procesów (``add_parser(kind.key)`` w pętli
-    ``for kind in CATALOG.kinds``, Skrypt dla maszyn) to każdy klucz procesu (``contract.ProcessKey``). Podkomendy dodane
+    ``for kind in CATALOG.kinds``, Skrypt dla maszyn) to każdy klucz procesu (``common_contract.ProcessKey``). Podkomendy dodane
     inaczej (ze zmiennej, w innej pętli) obok tych nie są sprawdzane. Narzędzie z ``required=True``, z którego nie da się
     odczytać żadnej nazwy, to ``ValueError``, bo pusta lista przepuściłaby je bez sprawdzenia.
     """
@@ -99,7 +99,7 @@ def _required_subcommands(path: Path) -> list[str]:
         if isinstance(name, ast.Constant) and isinstance(name.value, str):
             names.append(name.value)
         elif isinstance(name, ast.Attribute) and name.attr == "key" and isinstance(name.value, ast.Name) and name.value.id in kinds:
-            names += get_args(contract.ProcessKey)
+            names += get_args(common_contract.ProcessKey)
     if not names:
         raise ValueError(
             f"{path.name}: add_subparsers(required=True), a żadnej podkomendy nie da się odczytać ze stałej w "

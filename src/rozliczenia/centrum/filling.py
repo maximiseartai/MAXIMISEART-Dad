@@ -20,7 +20,10 @@ from pathlib import Path
 from fastapi import APIRouter
 
 from rozliczenia import collective_file
-from rozliczenia.centrum import contract, fill_messages
+from rozliczenia.centrum import fill_messages
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import filling as filling_contract
+from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.live_file import GoodRead, LastGoodReads, saved_version
 from rozliczenia.centrum.log import CentrumLog
@@ -60,7 +63,7 @@ class FillingReads:
 def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFiles, filling: FillingReads) -> APIRouter:
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 
-    def read(token: str, path: Path) -> GoodRead[NumberedOrders] | contract.QuantitiesToFillProblem:
+    def read(token: str, path: Path) -> GoodRead[NumberedOrders] | filling_contract.QuantitiesToFillProblem:
         reads = filling.reads
         attempt = reads.attempt(path)
         found = _attempt(path, cloud_files, filling.files)
@@ -74,30 +77,30 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
         if failing.kept is not None:
             return failing.kept
         # ``os.path.isfile``, bo ``Path.is_file`` w folderze bez dostępu rzuca PermissionError zamiast odpowiedzieć „nie”.
-        return contract.QuantitiesToFillProblem(
+        return filling_contract.QuantitiesToFillProblem(
             state="problem",
-            message=contract.Message.of(found.message),
+            message=common_contract.Message.of(found.message),
             version=attempt.version,
             collective_file_exists=os.path.isfile(path),
         )
 
     @router.get(
-        "/{token}/quantities-to-fill", operation_id="getQuantitiesToFill", responses=contract.NOT_FOUND_OR_CONFLICT
+        "/{token}/quantities-to-fill", operation_id="getQuantitiesToFill", responses=NOT_FOUND_OR_CONFLICT
     )
-    def quantities(token: str) -> contract.QuantitiesToFill:
+    def quantities(token: str) -> filling_contract.QuantitiesToFill:
         folder = requested_folder(store, token)
         found = read(token, folder.collective_file)
-        if isinstance(found, contract.QuantitiesToFillProblem):
+        if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
         return _ready(found, settled=_settled(folder))
 
     @router.get(
-        "/{token}/quantities-to-fill/{kind}", operation_id="getKindTable", responses=contract.NOT_FOUND_OR_CONFLICT
+        "/{token}/quantities-to-fill/{kind}", operation_id="getKindTable", responses=NOT_FOUND_OR_CONFLICT
     )
-    def kind_table(token: str, kind: FillKind) -> contract.KindTable:
+    def kind_table(token: str, kind: FillKind) -> filling_contract.KindTable:
         folder = requested_folder(store, token)
         found = read(token, folder.collective_file)
-        if isinstance(found, contract.QuantitiesToFillProblem):
+        if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
         settled = _settled(folder)
         [listed] = (
@@ -108,15 +111,15 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
     @router.get(
         "/{token}/collective-file-version",
         operation_id="getCollectiveFileVersion",
-        responses=contract.NOT_FOUND_OR_CONFLICT,
+        responses=NOT_FOUND_OR_CONFLICT,
     )
-    def collective_file_version(token: str) -> contract.CollectiveFileVersion:
+    def collective_file_version(token: str) -> filling_contract.CollectiveFileVersion:
         """Znacznik zapisu Pliku zbiorczego bez otwierania skoroszytu: strona porównuje go z ``read.version``."""
 
-        return contract.CollectiveFileVersion(version=saved_version(requested_folder(store, token).collective_file))
+        return filling_contract.CollectiveFileVersion(version=saved_version(requested_folder(store, token).collective_file))
 
-    @router.get("/{token}/without-quantity", operation_id="getWithoutQuantity", responses=contract.NOT_FOUND_OR_CONFLICT)
-    def rows_without_quantity(token: str) -> contract.WithoutQuantity:
+    @router.get("/{token}/without-quantity", operation_id="getWithoutQuantity", responses=NOT_FOUND_OR_CONFLICT)
+    def rows_without_quantity(token: str) -> filling_contract.WithoutQuantity:
         """Wiersze bez ilości dla okna „Uruchomić z zapisem?” Przebiegu rozliczeń tego okresu.
 
         Tylko na żądanie wybranego okresu, bo odczyt trwa u taty ponad sekundę. Nieudany odczyt nie blokuje startu;
@@ -137,64 +140,64 @@ def without_quantity_sentence(rows: Sequence[int]) -> str | None:
     return f"{count} {plural(count, 'wiersz', 'wiersze', 'wierszy')} bez ilości: {', '.join(map(str, rows))}"
 
 
-def _without_quantity(folder: PeriodFolder, files: DadFiles) -> contract.WithoutQuantity:
+def _without_quantity(folder: PeriodFolder, files: DadFiles) -> filling_contract.WithoutQuantity:
     try:
         found = collective_file.read_numbered_orders(folder.collective_file, files)
     except WorkbookError:
-        return contract.WithoutQuantityUnread(state="unread")
+        return filling_contract.WithoutQuantityUnread(state="unread")
     if isinstance(found, MissingHeaders):
-        return contract.WithoutQuantityUnread(state="unread")
+        return filling_contract.WithoutQuantityUnread(state="unread")
     rows = list(quantities_to_fill(found.rows, settled=_settled(folder)).without_quantity)
-    return contract.WithoutQuantityRead(state="read", sentence=without_quantity_sentence(rows))
+    return filling_contract.WithoutQuantityRead(state="read", sentence=without_quantity_sentence(rows))
 
 
 def _settled(folder: PeriodFolder) -> bool:
     return folder.observe().status == "worker_settlements_ready"
 
 
-def _ready(read: GoodRead[NumberedOrders], *, settled: bool) -> contract.QuantitiesToFillReady:
+def _ready(read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract.QuantitiesToFillReady:
     found = quantities_to_fill(read.value.rows, settled=settled)
-    return contract.QuantitiesToFillReady(
+    return filling_contract.QuantitiesToFillReady(
         state="ready",
         read=_stamp(read),
         settled=settled,
         kinds=[
-            contract.KindToFill(
+            filling_contract.KindToFill(
                 kind=kind.kind,
-                rows=[contract.RowToFill(row=row.number, state=row.state) for row in kind.rows],
+                rows=[filling_contract.RowToFill(row=row.number, state=row.state) for row in kind.rows],
                 done=kind.done,
             )
             for kind in found.kinds
         ],
         description_columns=[
-            contract.DescriptionColumn(column=column, rows=rows) for column, rows in found.description_filled.items()
+            filling_contract.DescriptionColumn(column=column, rows=rows) for column, rows in found.description_filled.items()
         ],
     )
 
 
-def _table(listed: KindToFill, read: GoodRead[NumberedOrders], *, settled: bool) -> contract.KindTableReady:
-    return contract.KindTableReady(
+def _table(listed: KindToFill, read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract.KindTableReady:
+    return filling_contract.KindTableReady(
         state="ready",
         read=_stamp(read),
         settled=settled,
-        columns=[contract.PriceListItem(column=column, name=name) for column, name in read.value.price_list.items()],
+        columns=[filling_contract.PriceListItem(column=column, name=name) for column, name in read.value.price_list.items()],
         rows=[
-            contract.KindTableRow(
+            filling_contract.KindTableRow(
                 row=row.number,
                 state=row.state,
                 worker=row.texts.worker,
                 devices=row.texts.devices,
                 activities=row.texts.activities,
                 completed=row.texts.completed,
-                cells=[contract.KindTableCell(source=cell.source, value=cell.value) for cell in row.cells],
+                cells=[filling_contract.KindTableCell(source=cell.source, value=cell.value) for cell in row.cells],
             )
             for row in listed.rows
         ],
     )
 
 
-def _stamp(read: GoodRead[NumberedOrders]) -> contract.CollectiveFileRead:
-    return contract.CollectiveFileRead(version=read.version, read_at=read.read_at, retrying=read.retrying)
+def _stamp(read: GoodRead[NumberedOrders]) -> filling_contract.CollectiveFileRead:
+    return filling_contract.CollectiveFileRead(version=read.version, read_at=read.read_at, retrying=read.retrying)
 
 
 @dataclass(frozen=True)

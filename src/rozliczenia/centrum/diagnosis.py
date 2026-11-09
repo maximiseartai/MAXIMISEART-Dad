@@ -32,7 +32,9 @@ from pathlib import Path
 from typing import Any, Final
 
 from rozliczenia import intermax_ordering, preparation_messages, preparation_register, workbook_files
-from rozliczenia.centrum import contract, diagnosis_messages
+from rozliczenia.centrum import diagnosis_messages
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles, Template, workers_problem
@@ -66,7 +68,7 @@ class CheckResult:
     """
 
     label: str
-    state: contract.CheckState
+    state: diagnosis_contract.CheckState
     detail: str
     message: Message | None = None
     fixed_by_update: bool = False
@@ -126,7 +128,7 @@ class Diagnosis:
         return newer and explaining is not None and not explaining.fixed_by_update
 
     @property
-    def next_action(self) -> contract.DiagnosisNextAction:
+    def next_action(self) -> diagnosis_contract.DiagnosisNextAction:
         """Co tata robi po wyjaśnieniu: aktualizuje narzędzie, sam usuwa przyczynę i uruchamia ponownie albo wysyła do Maksa."""
 
         explaining = self._explaining
@@ -135,14 +137,14 @@ class Diagnosis:
         cause = self.cause
         return "report" if cause is None or cause.reports_to_maintainer else "rerun"
 
-    def view(self, stop: Message, report: contract.ReportDraft) -> contract.Diagnosis:
+    def view(self, stop: Message, report: diagnosis_contract.ReportDraft) -> diagnosis_contract.Diagnosis:
         explanation = self.explanation
-        return contract.Diagnosis(
-            explanation=contract.Message.of(explanation),
+        return diagnosis_contract.Diagnosis(
+            explanation=common_contract.Message.of(explanation),
             confirms_stop=explanation == stop,
             next_action=self.next_action,
             update_proposal=self.proposes_update,
-            checks=[contract.DiagnosisCheck(label=check.label, state=check.state, detail=check.detail) for check in self.checks],
+            checks=[diagnosis_contract.DiagnosisCheck(label=check.label, state=check.state, detail=check.detail) for check in self.checks],
             report=report,
         )
 
@@ -205,7 +207,7 @@ class _ProcessFiles:
 
 
 def files_of_process(
-    process: contract.ProcessKey, period: str, *, settings: Settings, configuration: ConfigurationFiles
+    process: common_contract.ProcessKey, period: str, *, settings: Settings, configuration: ConfigurationFiles
 ) -> list[Path]:
     """Pliki taty Uruchomienia procesu ``process`` dla tokenu okresu ``period``, ta sama lista co w sprawdzeniu OneDrive.
 
@@ -469,7 +471,7 @@ def _check_of(step: CheckStep) -> _Check:
 
 
 def diagnose(
-    process: contract.ProcessKey,
+    process: common_contract.ProcessKey,
     period: str,
     *,
     settings: Settings,

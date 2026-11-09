@@ -32,13 +32,13 @@ Na stdout trafia jeden obiekt JSON (UTF-8, ``ProcessResult``):
 
 - ``result``: ``OK``, ``WYMAGA_SPRAWDZENIA`` albo ``BLAD_KRYTYCZNY``;
 - ``summary``: podsumowanie albo plan (DRY-RUN) z widoku Uruchomienia
-  (``contract.RunSummary``), ``null`` przy Zatrzymaniu;
+  (``runs_contract.RunSummary``), ``null`` przy Zatrzymaniu;
 - ``warnings``: ostrzeżenia procesu w zakończonym procesie, każde z kodem i
   trzema częściami Komunikatu;
 - ``stop``: przy Zatrzymaniu sposób zakończenia (``process_run.StopEnding``: ``stop``,
   ``declined``, ``unexpected``, ``after_engine``) i Komunikat z kodem i trzema częściami,
   inaczej ``null``;
-- ``progress``: ostatni stan postępu w kształcie kontraktu (``contract.Progress``);
+- ``progress``: ostatni stan postępu w kształcie kontraktu (``runs_contract.Progress``);
   po awarii widoku ostatni zbudowany przed nią, a gdy żaden nie powstał, pusty (bez etapów);
 - ``total_duration_ms``: ``Czas uruchomienia``;
 - ``technical_notes``: uwagi techniczne rdzenia (niezapisane metryki, odłączony podgląd);
@@ -65,7 +65,9 @@ from pydantic import BaseModel, ConfigDict
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import intermax_copies
-from rozliczenia.centrum import contract, run_view
+from rozliczenia.centrum import run_view
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.efenix_chrome import atrapa_opening
@@ -73,7 +75,7 @@ from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start
 from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
 from rozliczenia.message import Message
-from rozliczenia.process_run import Finished, Outcome, StopEnding
+from rozliczenia.process_run import Finished, Outcome, RunResult, StopEnding
 from rozliczenia.run_context import RunContext
 from rozliczenia.progress import ProgressSnapshot
 
@@ -91,7 +93,7 @@ class CodedMessage(_Model):
 
     @classmethod
     def of(cls, message: Message) -> CodedMessage:
-        return cls(code=message.code, **contract.Message.of(message).model_dump())
+        return cls(code=message.code, **common_contract.Message.of(message).model_dump())
 
 
 class StopResult(_Model):
@@ -100,17 +102,17 @@ class StopResult(_Model):
 
 
 class ProcessResult(_Model):
-    result: contract.RunResult
-    summary: contract.RunSummary | None
+    result: RunResult
+    summary: runs_contract.RunSummary | None
     warnings: list[CodedMessage]
     stop: StopResult | None
-    progress: contract.Progress
+    progress: runs_contract.Progress
     total_duration_ms: int
     technical_notes: list[str]
     metrics_saved: bool
 
     @classmethod
-    def of(cls, outcome: Outcome[run_view.Shown[Any]], progress: contract.Progress) -> ProcessResult:
+    def of(cls, outcome: Outcome[run_view.Shown[Any]], progress: runs_contract.Progress) -> ProcessResult:
         shown = outcome.view
         ending = outcome.ending
         return cls(
@@ -128,9 +130,9 @@ class ProcessResult(_Model):
 class _Unattended:
     continue_hint = f"uruchom proces w Centrum rozliczeń i {CONTINUE_HINT}"
 
-    def __init__(self, progress_view: Callable[[ProgressSnapshot], contract.Progress]) -> None:
+    def __init__(self, progress_view: Callable[[ProgressSnapshot], runs_contract.Progress]) -> None:
         self._progress_view = progress_view
-        self.progress = contract.Progress(
+        self.progress = runs_contract.Progress(
             phases=[], template_total=0, templates_completed=0, current_worker=None, figures=[]
         )
 

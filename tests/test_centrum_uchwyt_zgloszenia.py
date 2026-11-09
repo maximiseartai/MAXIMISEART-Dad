@@ -19,7 +19,8 @@ from pydantic import BaseModel
 from rozliczenia import efenix_messages, preparation_messages
 from rozliczenia.call_trace import CallCause, CallFrame, CallTrace
 from rozliczenia.domain import RunMode
-from rozliczenia.centrum import contract, update_messages
+from rozliczenia.centrum import update_messages
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
 from rozliczenia.centrum.log import CentrumLog
@@ -205,7 +206,7 @@ SHORT_ENTRIES = tuple(f"2026-11-02T10:{minute:02d}:00+01:00 wpis-{minute:02d}" f
 def stop_report(entries: tuple[str, ...]) -> StopReport:
     """Zgłoszenie Zatrzymania po nieoczekiwanym wyjątku z bardzo długim śladem wywołań i dziennikiem ``entries``."""
 
-    run = contract.RunInfo(
+    run = runs_contract.RunInfo(
         id="3f2a9c1b8e7d4f0a",
         process="preparation",
         title="Przygotowanie pliku zbiorczego",
@@ -273,7 +274,7 @@ def test_zgloszenie_zatrzymania_do_maksa_z_przyczyna_w_wyjatku_ma_typ_kazdej_prz
     """Zatrzymanie okna efenix „do Maksa” ma ślad wywołań z łańcuchem przyczyn; Zgłoszenie podaje typ każdej przyczyny
     po kolei, bez treści wyjątków, a ich ramki zostawia Logom Uruchomienia."""
 
-    run = contract.RunInfo(
+    run = runs_contract.RunInfo(
         id="5c1d7e2a9b0f4e36",
         process="efenix",
         title="Wycena w efenix",

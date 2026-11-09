@@ -25,7 +25,10 @@ from typing import Any, Final
 
 from fastapi import APIRouter
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import intermax as intermax_contract
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
@@ -78,15 +81,15 @@ class IntermaxEntry:
     _last_days: _LastDaysRead = field(default_factory=_LastDaysRead, compare=False, repr=False)
 
     @property
-    def key(self) -> contract.ProcessKey:
+    def key(self) -> common_contract.ProcessKey:
         return "intermax"
 
-    def setup(self, last: contract.RunRestored | None) -> contract.IntermaxSetup:
+    def setup(self, last: runs_contract.RunRestored | None) -> intermax_contract.IntermaxSetup:
         """Karta przed startem z ostatnim Uporządkowaniem INTERMAX ``last`` z Logów Uruchomienia."""
 
         settings = self.store.load()
         register = settings.register
-        return contract.IntermaxSetup(
+        return intermax_contract.IntermaxSetup(
             title=_KIND.title,
             reminder=_VIEW.reminder,
             blocker=_KIND.settings_blocker(settings),
@@ -94,12 +97,12 @@ class IntermaxEntry:
             last=last,
         )
 
-    def days(self) -> contract.IntermaxDays:
+    def days(self) -> intermax_contract.IntermaxDays:
         """Dni INTERMAX z Ustawień taty ze stanem; bez wskazanego Rejestru zleceń żadnych dni i żadnego Komunikatu."""
 
         register = self.store.load().register
         if register is None:
-            return contract.IntermaxDays(days=[], problem=None)
+            return intermax_contract.IntermaxDays(days=[], problem=None)
         today = self.parts.now().date()
         version = saved_version(register)
         last = self._last_days.read
@@ -111,27 +114,27 @@ class IntermaxEntry:
                 self._last_days.read = _DaysRead(register, version, today, found)
         if isinstance(found, Message):
             problem = file_only_in_cloud(register) if self.cloud_files.online_only(register) else found
-            return contract.IntermaxDays(days=[], problem=contract.Message.of(problem))
-        return contract.IntermaxDays(days=[_day(day, today) for day in found], problem=None)
+            return intermax_contract.IntermaxDays(days=[], problem=common_contract.Message.of(problem))
+        return intermax_contract.IntermaxDays(days=[_day(day, today) for day in found], problem=None)
 
     def prepare(self) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień taty; ``contract.Refusal``, gdy Rejestr zleceń nie jest wskazany."""
+        """Wejście procesu z Ustawień taty; ``Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
         register = _register(self.store.load())
         start = Start({"register": register, "copies_directory": self.copies_directory}, period=None, dry_run=False)
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
-    def copies(self) -> contract.IntermaxCopies:
+    def copies(self) -> intermax_contract.IntermaxCopies:
         """Kopie INTERMAX od najnowszej albo Komunikat, gdy folderu Kopii nie da się odczytać."""
 
         try:
             listed = intermax_restore.copies(self.copies_directory)
         except StopError as error:
-            return contract.IntermaxCopies(copies=[], problem=contract.Message.of(error.message))
-        return contract.IntermaxCopies(copies=[_copy(copy) for copy in listed], problem=None)
+            return intermax_contract.IntermaxCopies(copies=[], problem=common_contract.Message.of(error.message))
+        return intermax_contract.IntermaxCopies(copies=[_copy(copy) for copy in listed], problem=None)
 
-    def restore(self, name: str) -> contract.IntermaxRestore:
-        """Przywraca Kopię INTERMAX ``name`` do INTERMAX z Ustawień taty; ``contract.Refusal``, gdy go nie wskazano."""
+    def restore(self, name: str) -> intermax_contract.IntermaxRestore:
+        """Przywraca Kopię INTERMAX ``name`` do INTERMAX z Ustawień taty; ``Refusal``, gdy go nie wskazano."""
 
         register = _register(self.store.load())
         try:
@@ -140,23 +143,23 @@ class IntermaxEntry:
                 name, register, self.copies_directory, now=parts.now, waiting=parts.waiting, disk=parts.disk
             )
         except StopError as stop:
-            return contract.IntermaxRestoreRefused(state="refused", message=contract.Message.of(stop.message))
-        return contract.IntermaxRestored(
+            return intermax_contract.IntermaxRestoreRefused(state="refused", message=common_contract.Message.of(stop.message))
+        return intermax_contract.IntermaxRestored(
             state="restored",
             restored=_copy(restored.restored),
-            warnings=[contract.Message.of(warning) for warning in restored.warnings],
+            warnings=[common_contract.Message.of(warning) for warning in restored.warnings],
         )
 
 
-def _copy(copy: Copy) -> contract.IntermaxCopy:
-    return contract.IntermaxCopy(
+def _copy(copy: Copy) -> intermax_contract.IntermaxCopy:
+    return intermax_contract.IntermaxCopy(
         name=copy.path.name, taken_at=copy.moment.astimezone(timezone.utc), before=copy.before
     )
 
 
-def _day(day: intermax_ordering.RegisterDay, today: date) -> contract.IntermaxDay:
+def _day(day: intermax_ordering.RegisterDay, today: date) -> intermax_contract.IntermaxDay:
     label = short_day_label(day.day)
-    return contract.IntermaxDay(day=day.day, label=label, today=day.day == today, ordered=day.ordered)
+    return intermax_contract.IntermaxDay(day=day.day, label=label, today=day.day == today, ordered=day.ordered)
 
 
 def _register(settings: Settings) -> Path:
@@ -164,20 +167,20 @@ def _register(settings: Settings) -> Path:
 
 
 def intermax_router(
-    host: RunHost, entry: IntermaxEntry, last: Callable[[], contract.RunRestored | None]
+    host: RunHost, entry: IntermaxEntry, last: Callable[[], runs_contract.RunRestored | None]
 ) -> APIRouter:
     router = APIRouter(prefix="/api/intermax", tags=["uruchomienia"])
 
     @router.get("", operation_id="getIntermaxSetup")
-    def setup() -> contract.IntermaxSetup:
+    def setup() -> intermax_contract.IntermaxSetup:
         return entry.setup(last())
 
     @router.get("/days", operation_id="getIntermaxDays")
-    def days() -> contract.IntermaxDays:
+    def days() -> intermax_contract.IntermaxDays:
         return entry.days()
 
-    @router.post("/run", operation_id="startIntermax", responses=contract.NOT_FOUND_OR_CONFLICT)
-    def start() -> contract.RunView:
+    @router.post("/run", operation_id="startIntermax", responses=NOT_FOUND_OR_CONFLICT)
+    def start() -> runs_contract.RunView:
         return host.start(entry.prepare())
 
     return router
@@ -189,11 +192,11 @@ def intermax_copies_router(host: RunHost, entry: IntermaxEntry) -> APIRouter:
     router = APIRouter(prefix="/api/intermax/copies", tags=["konfiguracja"])
 
     @router.get("", operation_id="getIntermaxCopies")
-    def copies() -> contract.IntermaxCopies:
+    def copies() -> intermax_contract.IntermaxCopies:
         return entry.copies()
 
-    @router.post("/restore", operation_id="restoreIntermaxCopy", responses={409: {"model": contract.Problem}})
-    def restore(request: contract.IntermaxRestoreRequest) -> contract.IntermaxRestore:
+    @router.post("/restore", operation_id="restoreIntermaxCopy", responses={409: {"model": common_contract.Problem}})
+    def restore(request: intermax_contract.IntermaxRestoreRequest) -> intermax_contract.IntermaxRestore:
         host.begin_restore()
         try:
             return entry.restore(request.name)

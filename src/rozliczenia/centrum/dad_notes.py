@@ -23,7 +23,10 @@ from typing import Final, assert_never
 from fastapi import APIRouter
 
 from rozliczenia.client_data import ForbiddenValues
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import dad_notes as dad_notes_contract
+from rozliczenia.centrum.contract import metrics as metrics_contract
+from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.case_delivery import logs_line, note_post
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
@@ -39,7 +42,7 @@ _UNKNOWN_RUN: Final = (
 )
 _NO_HISTORY: Final = "Nie udało się odczytać historii Uruchomień. Odśwież kartę albo wyślij Uwagę ogólną."
 
-History = Callable[[], list[contract.ProcessRun]]
+History = Callable[[], list[metrics_contract.ProcessRun]]
 """Uruchomienia procesu z plików metryk od najnowszego (``metrics.History.runs``); ``OSError``: pliki nieczytelne."""
 LogsAddress = Callable[[str], str | None]
 """Adres pierwszego komentarza Logów Uruchomienia o tym identyfikatorze w Skrzynce; ``None``: jeszcze ich tam nie ma."""
@@ -52,13 +55,13 @@ class PinnedRun:
     ``logs`` ``None``: Logi Uruchomienia jeszcze nie doszły do Skrzynki Zgłoszeń.
     """
 
-    run: contract.PinnableRun
+    run: dad_notes_contract.PinnableRun
     logs: str | None
 
 
 def note_issue(
     title: str, body: str, commit: str | None, pinned: PinnedRun | None, forbidden: ForbiddenValues
-) -> contract.DadNoteDraft:
+) -> dad_notes_contract.DadNoteDraft:
     """Issue Uwagi taty: jej tytuł, a w treści jej tekst i stopka (bez tekstu sama stopka).
 
     Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów. Tytuł i
@@ -72,7 +75,7 @@ def note_issue(
     body_guarded = forbidden.guard(body, "treść Uwagi taty")
     notes = "".join(f"\n{note}" for note in (*title_guarded.notes, *body_guarded.notes))
     text = f"{body_guarded.text}{notes}".strip("\n")
-    return contract.DadNoteDraft(title=title_guarded.text, body=f"{text}\n\n{footer}" if text else footer)
+    return dad_notes_contract.DadNoteDraft(title=title_guarded.text, body=f"{text}\n\n{footer}" if text else footer)
 
 
 def _pinned_footer(pinned: PinnedRun, version: str) -> str:
@@ -82,7 +85,7 @@ def _pinned_footer(pinned: PinnedRun, version: str) -> str:
     return f"Uruchomienie: {' · '.join((*facts, version))}\n{logs_line(run.run_id, pinned.logs)}"
 
 
-def _result_word(run: contract.PinnableRun) -> str:
+def _result_word(run: dad_notes_contract.PinnableRun) -> str:
     """Wynik słowem jak na karcie Uruchomienia (``RunResultBadge``): błąd to tylko Zatrzymanie „do Maksa”."""
 
     match run.result:
@@ -96,17 +99,17 @@ def _result_word(run: contract.PinnableRun) -> str:
             assert_never(run.result)
 
 
-def _pinnable(history: History) -> list[contract.PinnableRun]:
+def _pinnable(history: History) -> list[dad_notes_contract.PinnableRun]:
     """Uruchomienia z Centrum z historii, od najnowszego; Uruchomienie bez identyfikatora nie ma czego przypiąć."""
 
     try:
         runs = history()
     except OSError:
-        raise contract.Refusal(500, _NO_HISTORY) from None
-    return [contract.PinnableRun.model_validate(run, from_attributes=True) for run in runs if run.run_id is not None]
+        raise Refusal(500, _NO_HISTORY) from None
+    return [dad_notes_contract.PinnableRun.model_validate(run, from_attributes=True) for run in runs if run.run_id is not None]
 
 
-def _pickable(own: list[contract.PinnableRun], selected: str | None) -> list[contract.PinnableRun]:
+def _pickable(own: list[dad_notes_contract.PinnableRun], selected: str | None) -> list[dad_notes_contract.PinnableRun]:
     """Uruchomienia do wyboru w oknie Uwagi: ``RECENT_RUNS`` najnowszych i starsze ``selected``.
 
     ``selected`` to Uruchomienie z karty, z której tata otworzył okno; nieznane jest pomijane.
@@ -122,19 +125,19 @@ def _pinned(run_id: str | None, history: History, logs: LogsAddress) -> PinnedRu
         return None
     run = next((run for run in _pinnable(history) if run.run_id == run_id), None)
     if run is None:
-        raise contract.Refusal(404, _UNKNOWN_RUN)
+        raise Refusal(404, _UNKNOWN_RUN)
     return PinnedRun(run, logs(run_id))
 
 
 def send(
-    request: contract.DadNoteRequest,
+    request: dad_notes_contract.DadNoteRequest,
     cases: DadCases,
     outbox: Outbox,
     box: KeyedBox,
     commit: str | None,
     pinned: PinnedRun | None,
     forbidden: ForbiddenValues,
-) -> contract.DadNoteState:
+) -> dad_notes_contract.DadNoteState:
     """Zapisuje Uwagę, kładzie ją w kolejce i mówi, czy skrzynka przyjęła ją w ``DELIVERY_WAIT_S``, a jeśli nie, na
     co czeka albo że skrzynka odrzuciła jej treść.
 
@@ -149,13 +152,13 @@ def send(
     queued = outbox.post(note_post(note.id, issue.title, issue.body, logs_on_the_way=logs_on_the_way))
     if not queued:
         cases.forget(NOTE, note.id)
-        raise contract.Refusal(500, _NOT_QUEUED)
+        raise Refusal(500, _NOT_QUEUED)
     if outbox.wait_delivered(note.id, NOTE.label, timeout_s=DELIVERY_WAIT_S):
-        return contract.DadNoteSent(state="sent")
+        return dad_notes_contract.DadNoteSent(state="sent")
     hold = cases.hold(note.id, box)
     if hold == "rejected":
-        return contract.DadNoteRejected(state="rejected")
-    return contract.DadNoteWaiting(state="waiting", waits_for=hold)
+        return dad_notes_contract.DadNoteRejected(state="rejected")
+    return dad_notes_contract.DadNoteWaiting(state="waiting", waits_for=hold)
 
 
 def dad_notes_router(
@@ -169,18 +172,18 @@ def dad_notes_router(
 ) -> APIRouter:
     forbidden = work.forbidden
     router = APIRouter(prefix="/api/dad-notes", tags=["uwagi-taty"])
-    refusals: dict[int | str, dict[str, object]] = {status: {"model": contract.Problem} for status in (404, 500)}
+    refusals: dict[int | str, dict[str, object]] = {status: {"model": common_contract.Problem} for status in (404, 500)}
 
-    @router.get("/runs", operation_id="getDadNoteRuns", responses={500: {"model": contract.Problem}})
-    def runs(selected: str | None = None) -> list[contract.PinnableRun]:
+    @router.get("/runs", operation_id="getDadNoteRuns", responses={500: {"model": common_contract.Problem}})
+    def runs(selected: str | None = None) -> list[dad_notes_contract.PinnableRun]:
         return _pickable(_pinnable(history), selected)
 
     @router.post("/draft", operation_id="draftDadNote", responses=refusals)
-    def draft(text: contract.DadNoteText) -> contract.DadNoteDraft:
+    def draft(text: dad_notes_contract.DadNoteText) -> dad_notes_contract.DadNoteDraft:
         return note_issue(text.title, text.body, commit(), _pinned(text.run_id, history, logs), forbidden)
 
     @router.post("", operation_id="sendDadNote", responses=refusals)
-    def send_note(request: contract.DadNoteRequest) -> contract.DadNoteState:
+    def send_note(request: dad_notes_contract.DadNoteRequest) -> dad_notes_contract.DadNoteState:
         return send(request, cases, outbox, box, commit(), _pinned(request.run_id, history, logs), forbidden)
 
     return router
