@@ -8,7 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, get_args
@@ -31,7 +31,18 @@ from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import LOG_PATH, SETTINGS
-from tests.fixtures.centrum import CENTRUM, TOOL_COMMIT, Centrum, ROOT, centrum
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.settings import Settings, SettingsStore
+from tests.fixtures.centrum import (
+    CENTRUM,
+    NO_ACCESS_ON_WINDOWS,
+    PATH_CHECKS,
+    TOOL_COMMIT,
+    Centrum,
+    ROOT,
+    centrum,
+    without_access,
+)
 
 
 def test_health_przedstawia_centrum_rozliczen_ze_skroconym_commitem_i_identyfikatorem_startu(tmp_path: Path) -> None:
@@ -262,6 +273,78 @@ def test_motyw_jasny_jest_zapamietany(tmp_path: Path) -> None:
     response = centrum(tmp_path).client.get("/api/settings")
 
     assert response.json()["theme"] == "light"
+
+
+SETTINGS_NOT_SAVED = (
+    "Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, "
+    "nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie."
+)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "schema_version: 2\nrejestr_zlecen: Rejestr.xlsx\nfolder_okresow: INEA\n".encode(),
+        "rejestr: [nie zamknięta lista\n".encode(),
+        b"schema_version: 1\nmotyw: \xff\n",
+    ],
+    ids=["nowszy-schemat", "uszkodzony-yaml", "nie-utf-8"],
+)
+def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tmp_path: Path, content: bytes) -> None:
+    """Tata po cofnięciu Aktualizacji albo z uszkodzonym plikiem wskazuje Ustawienia jeszcze raz i pracuje dalej."""
+
+    app = centrum(tmp_path)
+    app.settings_path.parent.mkdir(parents=True)
+    app.settings_path.write_bytes(content)
+
+    changed = app.client.put("/api/settings/theme", json={"theme": "light"})
+
+    assert changed.status_code == 200
+    assert app.client.get("/api/settings").json() == {
+        "order_register": NOT_SET,
+        "periods_directory": NOT_SET,
+        "theme": "light",
+    }
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_zmiana_motywu_przy_niedostepnym_pliku_ustawien_nie_wymazuje_folderu_okresow(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    saved = app.settings_path.read_text(encoding="utf-8")
+
+    app.settings_path.chmod(0)
+    try:
+        refused = app.client.put("/api/settings/theme", json={"theme": "light"})
+    finally:
+        app.settings_path.chmod(0o644)
+    kept = app.settings_path.read_text(encoding="utf-8")
+    again = app.client.put("/api/settings/theme", json={"theme": "light"})
+
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert kept == saved
+    assert "ustawienia-bez-zapisu przyczyna=dostep" in app.log_path.read_text(encoding="utf-8")
+    assert (again.json()["theme"], again.json()["periods_directory"]["path"]) == ("light", str(periods))
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_plik_ustawien_niedostepny_na_chwile_przyjmuje_zmiane_po_ponowieniu(tmp_path: Path) -> None:
+    path = tmp_path / "config" / "ustawienia.yaml"
+    pauses: list[float] = []
+
+    def access_back(seconds: float) -> None:
+        pauses.append(seconds)
+        path.chmod(0o644)
+
+    store = SettingsStore(path, log=CentrumLog(tmp_path / "dziennik.log"), pause=access_back)
+    store.update(periods_directory=tmp_path / "INEA")
+    path.chmod(0)
+    try:
+        updated = store.update(theme="light")
+    finally:
+        path.chmod(0o644)
+
+    assert updated == store.load() == Settings(periods_directory=tmp_path / "INEA", theme="light")
+    assert len(pauses) == 1
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:
@@ -809,6 +892,57 @@ def test_otwierane_sa_tylko_sciezki_wyliczone_z_folderu_okresow(tmp_path: Path) 
     ]
 
     assert all(400 <= attempt.status_code < 500 for attempt in attempts)
+    assert app.platform.opened == []
+
+
+def unreadable_folder(name: str) -> dict[str, str]:
+    return {
+        "message": f"Nie udało się odczytać folderu {name}. Sprawdź, czy folder otwiera się w Eksploratorze plików i "
+        "czy OneDrive działa, potem odśwież kartę."
+    }
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_plik_okresu_w_folderze_okresu_bez_dostepu_jest_nieczytelny_a_nie_brakujacy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    period_folder = write_period_files(periods, "22_28_09_2026")
+    write_worker_settlements(period_folder, "22_28_09_2026", ["Anna Testowa"])
+    path_checks(monkeypatch)
+
+    with without_access(period_folder):
+        responses = [
+            app.client.post("/api/periods/22_28_09_2026/open", json={"target": "collective_file"}),
+            app.client.post("/api/periods/22_28_09_2026/open", json={"target": "worker_settlements_folder"}),
+            app.client.post("/api/periods/22_28_09_2026/worker-settlements/open", json={"worker": "Anna Testowa"}),
+        ]
+
+    assert [(response.status_code, response.json()) for response in responses] == [
+        (500, unreadable_folder("22_28_09_2026"))
+    ] * 3
+    assert app.platform.opened == []
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_folder_okresow_w_folderze_bez_dostepu_jest_nieczytelny_a_nie_niewskazany(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    onedrive = tmp_path / "OneDrive"
+    periods = onedrive / "INEA"
+    periods.mkdir(parents=True)
+    app = centrum(tmp_path)
+    app.platform.chosen_folders.append(periods)
+    app.client.post("/api/settings/periods-directory/choose")
+    write_period_files(periods, "22_28_09_2026")
+    path_checks(monkeypatch)
+
+    with without_access(onedrive):
+        response = app.client.post("/api/periods/22_28_09_2026/open", json={"target": "collective_file"})
+
+    assert (response.status_code, response.json()) == (500, unreadable_folder("INEA"))
     assert app.platform.opened == []
 
 

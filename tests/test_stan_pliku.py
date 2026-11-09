@@ -18,7 +18,7 @@ import sys
 
 import pytest
 
-from rozliczenia.file_state import file_state, folder_entries, remove_file
+from rozliczenia.file_state import file_state, folder_entries, path_state, remove_file
 
 ABSENT = [
     pytest.param(FileNotFoundError(errno.ENOENT, "Nie można odnaleźć pliku"), id="brak"),
@@ -49,6 +49,16 @@ def test_plik_jest_plikiem_a_folder_brak_pliku_i_plik_zamiast_folderu_to_brak(tm
     assert file_state(tmp_path / "Folder.xlsx") == "missing"
     assert file_state(tmp_path / "brak.xlsx") == "missing"
     assert file_state(tmp_path / "plik" / "Skoroszyt.xlsx") == "missing"
+
+
+def test_sciezka_jest_plikiem_albo_folderem_a_brak_i_plik_zamiast_folderu_to_brak(tmp_path: Path) -> None:
+    (tmp_path / "Folder okresu").mkdir()
+    (tmp_path / "plik").write_bytes(b"")
+
+    assert path_state(tmp_path / "plik") == "file"
+    assert path_state(tmp_path / "Folder okresu") == "folder"
+    assert path_state(tmp_path / "brak") == "missing"
+    assert path_state(tmp_path / "plik" / "Folder okresu") == "missing"
 
 
 @pytest.mark.parametrize("error", ABSENT)
@@ -106,12 +116,13 @@ def test_plik_i_folder_w_folderze_bez_dostepu_sa_niedostepne_a_nie_brakujace(tmp
     folder.chmod(0)
     try:
         state = file_state(folder / "Skoroszyt.xlsx")
+        folder_state = path_state(folder / "Folder okresu")
         with pytest.raises(PermissionError, match="Permission denied"):
             folder_entries(folder / "Folder okresu")
     finally:
         folder.chmod(0o755)
 
-    assert state == "inaccessible"
+    assert state == folder_state == "inaccessible"
 
 
 def test_usuniecie_pliku_ktorego_nie_ma_nie_jest_bledem(tmp_path: Path) -> None:

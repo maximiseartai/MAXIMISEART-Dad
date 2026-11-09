@@ -16,7 +16,7 @@ from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.settings import Settings, SettingsStore, Theme
+from rozliczenia.centrum.settings import Settings, SettingsStore, SettingsUnreadable, Theme
 from rozliczenia.file_state import file_state
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
@@ -70,11 +70,12 @@ def settings_router(store: SettingsStore, platform: Platform) -> APIRouter:
 def _saved(
     store: SettingsStore, *, register: Path | None = None, periods_directory: Path | None = None, theme: Theme | None = None
 ) -> settings_contract.Settings:
-    """Ustawienia po zapisie zmiany; folder config, do którego nie da się pisać, to odmowa z własnym tekstem."""
+    """Ustawienia po zapisie zmiany; plik Ustawień, którego nie da się przeczytać albo zapisać, to odmowa z własnym
+    tekstem."""
 
     try:
         return describe(store.update(register=register, periods_directory=periods_directory, theme=theme))
-    except OSError:
+    except (OSError, SettingsUnreadable):
         raise refusal.settings_not_saved() from None
 
 

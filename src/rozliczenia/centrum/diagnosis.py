@@ -44,6 +44,7 @@ from rozliczenia.centrum.process_kind import CheckStep, NeededSetting, PeriodFol
 from rozliczenia.centrum.tool_freshness import RateLimited, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.dad_files import DadFiles
+from rozliczenia.file_state import file_state
 from rozliczenia.input_checks import Readers
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
@@ -170,9 +171,10 @@ class _ProcessFiles:
 
     @cached_property
     def period_folder(self) -> PeriodFolder | PeriodFolderLookupError | None:
-        """Folder okresu odszukany jak w procesie; ``None`` bez folderu okresów."""
+        """Folder okresu odszukany jak w procesie; ``None`` bez folderu okresów, a ``PeriodFolderInaccessible``, gdy
+        folderu okresów nie da się odczytać."""
 
-        periods_directory = self.settings.existing_periods_directory
+        periods_directory = self.settings.periods_directory_to_read
         if periods_directory is None:
             return None
         try:
@@ -200,7 +202,7 @@ class _ProcessFiles:
         """Rejestr zleceń, gdy proces go czyta, Wzorce procesu i pliki Folderu okresu, gdy proces należy do okresu;
         ścieżki mogą nie istnieć."""
 
-        register = self.settings.existing_register
+        register = self.settings.register_to_read
         files = [register] if self.declaration.reads_register and register is not None else []
         files += [template.path for template in self.templates]
         return files + list(self.period_files) if self.declaration.reads_period_folder else files
@@ -301,7 +303,10 @@ _NOT_CHECKED_FRESHNESS: Final = {
 
 @_check("Ustawienia taty")
 def _tata_settings(computer: _Computer, label: str) -> list[CheckResult]:
-    """Ustawienia taty z wpisu procesu po kolei: pierwsze niewskazane albo brakujące wyjaśnia Komunikatem procesu."""
+    """Ustawienia taty z wpisu procesu po kolei: pierwsze brakujące wyjaśnia Komunikatem procesu.
+
+    Niedostępnego nie wyjaśnia: Komunikat o nim daje odczyt w sprawdzeniu, które go czyta.
+    """
 
     settings = computer.settings
     needed: Sequence[NeededSetting] = computer.declaration.settings
@@ -309,15 +314,18 @@ def _tata_settings(computer: _Computer, label: str) -> list[CheckResult]:
         chosen = setting.chosen(settings)
         if chosen is None:
             return [CheckResult.not_checked(label, f"Nie wskazano: {setting.name}.")]
-        if setting.existing(settings) is None:
+        state = setting.state(settings)
+        if state == "missing":
             return [CheckResult.failed(label, setting.missing(chosen))]
+        if state == "inaccessible":
+            return [CheckResult.not_checked(label, f"Nie da się teraz odczytać: {setting.name}.")]
     names = " i ".join(setting.name for setting in needed)
     return [CheckResult.passed(label, f"{names[:1].upper()}{names[1:]} {'są' if len(needed) > 1 else 'jest'} na miejscu.")]
 
 
 @_check("Rejestr zleceń")
 def _register(computer: _Computer, label: str) -> list[CheckResult]:
-    register = computer.settings.existing_register
+    register = computer.settings.register_to_read
     if register is None:
         return [CheckResult.not_checked(label, "Rejestru zleceń nie ma na miejscu.")]
     problem = preparation_register.register_problem(register, computer.dad_files)
@@ -328,7 +336,7 @@ def _register(computer: _Computer, label: str) -> list[CheckResult]:
 
 @_check("INTERMAX")
 def _intermax(computer: _Computer, label: str) -> list[CheckResult]:
-    register = computer.settings.existing_register
+    register = computer.settings.register_to_read
     if register is None:
         return [CheckResult.not_checked(label, "INTERMAX nie ma na miejscu.")]
     problem = intermax_ordering.register_problem(register, computer.dad_files)
@@ -408,10 +416,15 @@ def _files_in_onedrive(computer: _Computer, label: str) -> list[CheckResult]:
     cloud = computer.surroundings.cloud_files
     if not cloud.checked:
         return [CheckResult.not_checked(label, "Nie sprawdzono: tylko w Windows.")]
-    files = [path for path in computer.files if path.is_file()]
+    states = [(path, file_state(path)) for path in computer.files]
+    files = [path for path, state in states if state == "file"]
     for path in files:
         if cloud.online_only(path):
             return [CheckResult.failed(label, diagnosis_messages.file_only_in_cloud(path))]
+    unreadable = sum(state == "inaccessible" for _, state in states)
+    if unreadable:
+        detail = f"Nie da się teraz odczytać plików: {unreadable}. Pozostałe są na tym komputerze: {len(files)}."
+        return [CheckResult.not_checked(label, detail)]
     return [CheckResult.passed(label, f"Sprawdzone pliki są na tym komputerze: {len(files)}.")]
 
 
