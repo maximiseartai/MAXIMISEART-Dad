@@ -158,6 +158,7 @@ def test_localhost_jest_dozwolonym_naglowkiem_host(tmp_path: Path) -> None:
 
 
 NOT_SET = {"state": "not_set"}
+UNREADABLE = {"state": "unreadable"}
 
 
 def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
@@ -225,6 +226,56 @@ def test_nieistniejacy_zapamietany_folder_okresow_jest_wyraznie_oznaczony(tmp_pa
     response = app.client.get("/api/settings")
 
     assert response.json()["periods_directory"] == {"state": "missing", "path": str(periods), "name": "INEA"}
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a_nie_brakujace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    """Ustawienia taty mówią o nich to, co Diagnoza („Nie da się teraz odczytać”), a nie „Nie ma już” ani błąd."""
+
+    onedrive = tmp_path / "OneDrive"
+    register = onedrive / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
+    periods = onedrive / "INEA"
+    periods.mkdir(parents=True)
+    register.touch()
+    app = centrum(tmp_path)
+    app.platform.chosen_files.append(register)
+    app.platform.chosen_folders.append(periods)
+    app.client.post("/api/settings/register/choose")
+    app.client.post("/api/settings/periods-directory/choose")
+    path_checks(monkeypatch)
+
+    with without_access(onedrive):
+        response = app.client.get("/api/settings")
+
+    assert (response.status_code, response.json()) == (
+        200,
+        {
+            "order_register": {"state": "inaccessible", "path": str(register), "name": register.name},
+            "periods_directory": {"state": "inaccessible", "path": str(periods), "name": "INEA"},
+            "theme": "dark",
+        },
+    )
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Path) -> None:
+    """Plik Ustawień taty trzymany np. przez antywirus: wskazanych ścieżek nie widać, ale nie są „nie wskazano”."""
+
+    app, _ = with_periods_directory(tmp_path)
+
+    app.settings_path.chmod(0)
+    try:
+        response = app.client.get("/api/settings")
+    finally:
+        app.settings_path.chmod(0o644)
+
+    assert (response.status_code, response.json()) == (
+        200,
+        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark"},
+    )
 
 
 @pytest.mark.parametrize(

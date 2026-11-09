@@ -536,6 +536,26 @@ export type Health = {
 };
 
 /**
+ * InaccessiblePath
+ *
+ * Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa).
+ */
+export type InaccessiblePath = {
+    /**
+     * State
+     */
+    state: 'inaccessible';
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * IntermaxCopies
  *
  * Kopie INTERMAX w Konfiguracji, od najnowszej.
@@ -940,7 +960,7 @@ export type ModeStatistics = {
 /**
  * NotSetPath
  *
- * Ścieżka jeszcze niewskazana albo plik ustawień nieczytelny.
+ * Ścieżka jeszcze niewskazana.
  */
 export type NotSetPath = {
     /**
@@ -2350,6 +2370,10 @@ export type Settings = {
     } & NotSetPath) | ({
         state: 'missing';
     } & MissingPath) | ({
+        state: 'inaccessible';
+    } & InaccessiblePath) | ({
+        state: 'unreadable';
+    } & UnreadablePath) | ({
         state: 'ready';
     } & ReadyPath);
     /**
@@ -2360,6 +2384,10 @@ export type Settings = {
     } & NotSetPath) | ({
         state: 'missing';
     } & MissingPath) | ({
+        state: 'inaccessible';
+    } & InaccessiblePath) | ({
+        state: 'unreadable';
+    } & UnreadablePath) | ({
         state: 'ready';
     } & ReadyPath);
     /**
@@ -2554,6 +2582,18 @@ export type ToolVersion = {
      * Since
      */
     since: string | null;
+};
+
+/**
+ * UnreadablePath
+ *
+ * Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
+ */
+export type UnreadablePath = {
+    /**
+     * State
+     */
+    state: 'unreadable';
 };
 
 /**

@@ -10,7 +10,7 @@ from rozliczenia.centrum.contract.common import Model
 
 
 class NotSetPath(Model):
-    """Ścieżka jeszcze niewskazana albo plik ustawień nieczytelny."""
+    """Ścieżka jeszcze niewskazana."""
 
     state: Literal["not_set"]
 
@@ -23,13 +23,29 @@ class MissingPath(Model):
     name: str
 
 
+class InaccessiblePath(Model):
+    """Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa)."""
+
+    state: Literal["inaccessible"]
+    path: str
+    name: str
+
+
+class UnreadablePath(Model):
+    """Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano."""
+
+    state: Literal["unreadable"]
+
+
 class ReadyPath(Model):
     state: Literal["ready"]
     path: str
     name: str
 
 
-PathSetting = Annotated[NotSetPath | MissingPath | ReadyPath, Field(discriminator="state")]
+PathSetting = Annotated[
+    NotSetPath | MissingPath | InaccessiblePath | UnreadablePath | ReadyPath, Field(discriminator="state")
+]
 
 
 Theme = Literal["dark", "light"]

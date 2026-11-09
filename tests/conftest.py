@@ -298,7 +298,7 @@ def _strings_shown_to_browser(value: object, *, echoed_request: bool) -> Iterato
         for item in value:
             yield from _strings_shown_to_browser(item, echoed_request=echoed_request)
     elif isinstance(value, dict):
-        chosen_by_tata = set(value) == {"state", "path", "name"} and value["state"] in {"ready", "missing"}
+        chosen_by_tata = set(value) == {"state", "path", "name"} and value["state"] in {"ready", "missing", "inaccessible"}
         for key, item in value.items():
             if (chosen_by_tata and key == "path") or (echoed_request and key == "input"):
                 continue

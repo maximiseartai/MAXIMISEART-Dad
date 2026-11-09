@@ -6,7 +6,6 @@ Plik Ustawień taty i jego zapis należą do ``settings``; tu są tylko żądani
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -16,7 +15,7 @@ from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.settings import Settings, SettingsStore, SettingsUnreadable, Theme
+from rozliczenia.centrum.settings import Settings, SettingState, SettingsStore, SettingsUnreadable, Theme
 from rozliczenia.file_state import file_state
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
@@ -29,13 +28,13 @@ def settings_router(store: SettingsStore, platform: Platform) -> APIRouter:
 
     @router.get("", operation_id="getSettings")
     def read() -> settings_contract.Settings:
-        return describe(store.load())
+        return describe(store.read())
 
     @router.post("/register/choose", operation_id="chooseRegister")
     def choose_register() -> settings_contract.Choice:
         chosen = platform.choose_file(_REGISTER_DIALOG, _REGISTER_FILETYPES)
         if chosen is None:
-            return settings_contract.Choice(settings=describe(store.load()))
+            return settings_contract.Choice(settings=describe(store.read()))
         return settings_contract.Choice(settings=_saved(store, register=chosen))
 
     @router.post("/register/open", operation_id="openRegister", responses=NOT_FOUND_OR_CONFLICT)
@@ -57,7 +56,7 @@ def settings_router(store: SettingsStore, platform: Platform) -> APIRouter:
     def choose_periods_directory() -> settings_contract.Choice:
         chosen = platform.choose_folder(_PERIODS_DIALOG)
         if chosen is None:
-            return settings_contract.Choice(settings=describe(store.load()))
+            return settings_contract.Choice(settings=describe(store.read()))
         return settings_contract.Choice(settings=_saved(store, periods_directory=chosen))
 
     @router.put("/theme", operation_id="changeTheme")
@@ -79,17 +78,28 @@ def _saved(
         raise refusal.settings_not_saved() from None
 
 
-def describe(settings: Settings) -> settings_contract.Settings:
+def describe(settings: Settings | None) -> settings_contract.Settings:
+    """Ustawienia taty dla przeglądarki; ``None`` to plik Ustawień, którego nie da się teraz przeczytać."""
+
+    if settings is None:
+        unreadable = settings_contract.UnreadablePath(state="unreadable")
+        return settings_contract.Settings(order_register=unreadable, periods_directory=unreadable, theme="dark")
     return settings_contract.Settings(
-        order_register=_describe_path(settings.register, exists=Path.is_file),
-        periods_directory=_describe_path(settings.periods_directory, exists=Path.is_dir),
+        order_register=_describe_path(settings.register, settings.register_state),
+        periods_directory=_describe_path(settings.periods_directory, settings.periods_directory_state),
         theme=settings.theme,
     )
 
 
-def _describe_path(path: Path | None, *, exists: Callable[[Path], bool]) -> settings_contract.PathSetting:
+def _describe_path(path: Path | None, state: SettingState) -> settings_contract.PathSetting:
     if path is None:
         return settings_contract.NotSetPath(state="not_set")
-    if exists(path):
-        return settings_contract.ReadyPath(state="ready", path=str(path), name=path.name)
-    return settings_contract.MissingPath(state="missing", path=str(path), name=path.name)
+    match state:
+        case "present":
+            return settings_contract.ReadyPath(state="ready", path=str(path), name=path.name)
+        case "missing":
+            return settings_contract.MissingPath(state="missing", path=str(path), name=path.name)
+        case "inaccessible":
+            return settings_contract.InaccessiblePath(state="inaccessible", path=str(path), name=path.name)
+        case "not_set":
+            return settings_contract.NotSetPath(state="not_set")

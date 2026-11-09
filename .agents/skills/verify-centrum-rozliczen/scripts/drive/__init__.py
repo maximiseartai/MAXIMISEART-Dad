@@ -44,6 +44,7 @@ FEATURES = (
             "03-ustawienia-rejestr-zlecen",
             "18-ustawienia-braki-do-startu",
             "04-ustawienia-brak-rejestru",
+            "275-ustawienia-nieczytelny-plik",
             "05-ustawienia-motyw-jasny",
         ),
     ),

@@ -61,11 +61,13 @@ export function SettingPath({ label, icon, path }: { label: string; icon: React.
       <span className="text-muted-foreground [&_svg]:size-4" aria-hidden>
         {icon}
       </span>
-      {setting.state === "not_set" ? (
-        <span className="text-muted-foreground">{label}: nie wskazano</span>
+      {setting.state === "not_set" || setting.state === "unreadable" ? (
+        <span className="text-muted-foreground">
+          {label}: {setting.state === "not_set" ? "nie wskazano" : "nie da się teraz odczytać"}
+        </span>
       ) : (
         <PathName className="truncate" hint={<>{label}: {setting.path}</>}>
-          {setting.state === "missing" ? `Nie ma już: ${setting.name}` : setting.name}
+          {pathText(setting)}
         </PathName>
       )}
       <Button
@@ -110,15 +112,39 @@ export function SettingPathItem({ label, icon, path }: { label: string; icon: Re
   )
 }
 
+type ChosenPath = Extract<PathSetting, { path: string }>
+
+function pathText(setting: ChosenPath) {
+  switch (setting.state) {
+    case "missing":
+      return `Nie ma już: ${setting.name}`
+    case "inaccessible":
+      return `Nie da się teraz odczytać: ${setting.name}`
+    case "ready":
+      return setting.name
+    default: {
+      const unhandled: never = setting
+
+      return unhandled
+    }
+  }
+}
+
 function PathDescription({ setting }: { setting: PathSetting }) {
   switch (setting.state) {
     case "not_set":
       return <span>Nie wskazano</span>
+    case "unreadable":
+      return <span>Nie da się teraz odczytać Ustawień taty</span>
     case "missing":
+    case "inaccessible":
       return (
-        <PathName className="inline-flex items-center gap-1.5 text-foreground" hint={<>Brak pod ścieżką: {setting.path}</>}>
+        <PathName
+          className="inline-flex items-center gap-1.5 text-foreground"
+          hint={setting.state === "missing" ? <>Brak pod ścieżką: {setting.path}</> : setting.path}
+        >
           <TriangleAlertIcon className="size-4 text-warning" aria-hidden />
-          Nie ma już: {setting.name}
+          {pathText(setting)}
         </PathName>
       )
     case "ready":
