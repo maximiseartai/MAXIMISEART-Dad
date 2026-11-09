@@ -588,13 +588,10 @@ def reload_with_answer(run: Run, page: Page, path: str, name: str) -> Any:
     return body
 
 
-# The Wycena w efenix metrics file of the run (`serve_centrum.py`): its Historia, from which the Droga okresu counts it.
-EFENIX_METRICS = ".wycena-efenix-metrics.jsonl"
-
-
 @contextmanager
 def priced_in_efenix(run: Run, token: str, result: str = "OK") -> Iterator[None]:
-    """Harness: a Wycena w efenix of ``token`` with ``result`` (OK or WYMAGA_SPRAWDZENIA) in the run's Historia (one
+    """Harness: a Wycena w efenix of ``token`` with ``result`` (OK or WYMAGA_SPRAWDZENIA) in the run's Historia, the
+    Wycena metrics file ``metrics.efenix`` of fixture.json, from which the Droga okresu counts it (one
     record of metrics schema 2, which the reader still takes), and the file's content as it was afterwards, so later
     features count the same history.
 
@@ -602,7 +599,7 @@ def priced_in_efenix(run: Run, token: str, result: str = "OK") -> Iterator[None]
     file another process has open cannot be deleted (``WinError 32``, part 2/4 of #863), while it can be rewritten,
     as Python opens files sharing read and write. The metrics reader takes an empty file as no history."""
 
-    path = run.root / EFENIX_METRICS
+    path = Path(run.fixture["metrics"]["efenix"])
     before = read_bytes(path) if path.exists() else b""
     counters = dict.fromkeys(("orders", "ready", "errors", "emmett_warnings", "with_photos", "defects"), 0)
     record = {

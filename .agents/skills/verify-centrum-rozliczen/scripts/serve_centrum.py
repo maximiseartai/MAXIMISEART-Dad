@@ -2,7 +2,7 @@
 
 This is the production app (``create_app`` + ``serve`` from ``rozliczenia.centrum``)
 with run-local inputs: the settings file, the configuration directory
-(konfiguracja wykonawców and the three Wzorce), and both metrics files live in
+(konfiguracja wykonawców and the three Wzorce), and the metrics files of the processes live in
 the run root (never Dad's files next to the tool), and the platform adapter,
 the production boundary for Dad's computer, is scripted:
 
@@ -609,7 +609,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         {
             "preparation": Path(metrics["preparation"]),
             "settlement": Path(metrics["settlement"]),
-            "efenix": root / ".wycena-efenix-metrics.jsonl",
+            "efenix": Path(metrics["efenix"]),
             "intermax": Path(metrics["intermax"]),
         }
     )
