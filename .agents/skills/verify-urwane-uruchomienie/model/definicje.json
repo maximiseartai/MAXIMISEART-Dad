@@ -71,7 +71,7 @@
     "RunHost.start": "08dd69ac2bb960a7"
   },
   "src/rozliczenia/centrum/process_kind.py": {
-    "PreparedRun.conduct": "a3e1e3cad04aa266"
+    "PreparedRun.conduct": "78bfedf1f975d4a1"
   },
   "src/rozliczenia/centrum/outbox.py": {
     "Outbox.post": "7de488e97083c425",
@@ -98,6 +98,6 @@
     "price_orders.save": "944904a2f85b713b"
   },
   "src/rozliczenia/process_run.py": {
-    "run_process": "38a0bddd94005209"
+    "run_process": "b1cbe3d6afe02cd9"
   }
 }
