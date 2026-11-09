@@ -285,6 +285,17 @@ class PeriodFolderObservation:
     worker_settlements_folder_exists: bool
     worker_settlement_count: int
 
+    def exists(self, place: PeriodPlace) -> bool:
+        match place:
+            case "internal_settlement":
+                return self.internal_settlement_exists
+            case "collective_file":
+                return self.collective_file_exists
+            case "period_folder":
+                return self.period_folder_exists
+            case "worker_settlements_folder":
+                return self.worker_settlements_folder_exists
+
     @property
     def status(self) -> PeriodStatus:
         if self.worker_settlements_folder_exists:

@@ -1343,6 +1343,9 @@ running #3 [HTTP 409]
 update_in_progress [HTTP 409]
   Trwa już aktualizacja narzędzia. Poczekaj na jej wynik.
 
+update_without_port [HTTP 500]
+  Centrum rozliczeń nie zna swojego portu, więc nie zaktualizuje narzędzia. Zamknij Centrum rozliczeń i kliknij skrót „Centrum rozliczeń” na pulpicie.
+
 run_in_progress [HTTP 409]
   Trwa już Uruchomienie procesu: Przebieg rozliczeń, okres 08_14_09_2026. Poczekaj na jego wynik w Uruchomieniach.
 

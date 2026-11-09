@@ -21,8 +21,8 @@ from .dad_files import DadFiles
 from .efenix_mark import without_efenix_mark
 from .inea_only_quantities import Cleared, without_inea_only
 from .order_facts import CollectiveOrders, MissingHeaders, collective_orders
-from .register_columns import ACTIVITIES, COMPLETED, DEVICES, Column
-from .quantities_to_fill import NumberedOrder, RowTexts
+from .register_columns import WORKER, Column
+from .quantities_to_fill import TEXT_COLUMNS, NumberedOrder, RowTexts
 from .workbook_files import DataRow
 from .text import normalize_text
 
@@ -86,4 +86,4 @@ def _texts(header: Mapping[str, int], row: DataRow) -> RowTexts:
         position = header.get(normalize_text(column.target_header))
         return "" if position is None else text(row.cells[position - 1].value)
 
-    return RowTexts(text(row.worker), under(DEVICES), under(ACTIVITIES), under(COMPLETED))
+    return tuple(text(row.worker) if column is WORKER else under(column) for column in TEXT_COLUMNS)

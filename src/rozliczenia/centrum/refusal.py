@@ -163,6 +163,16 @@ def update_in_progress() -> Refusal:
     return Refusal(409, "Trwa już aktualizacja narzędzia. Poczekaj na jej wynik.")
 
 
+def update_without_port() -> Refusal:
+    """Serwer nie podał portu tego Centrum, a na nim opiekun ponownego startu uruchamia nową wersję."""
+
+    return Refusal(
+        500,
+        "Centrum rozliczeń nie zna swojego portu, więc nie zaktualizuje narzędzia. "
+        "Zamknij Centrum rozliczeń i kliknij skrót „Centrum rozliczeń” na pulpicie.",
+    )
+
+
 def run_in_progress(process: str, period: str) -> Refusal:
     """Drugi start, gdy trwa Uruchomienie procesu o tytule ``process`` dla okresu ``period``."""
 

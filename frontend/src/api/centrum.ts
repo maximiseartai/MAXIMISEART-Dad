@@ -67,7 +67,7 @@ export type OpenTarget = OpenRequest["target"]
 /** Powiadomienia od najnowszego i liczba nowych (kropka na dzwonku). */
 export type Notifications = GetNotificationsResponse
 
-/** Jedno Powiadomienie: Uwaga taty albo Zgłoszenie (unia z kontraktu po `kind`). */
+/** Jedno Powiadomienie (unia z kontraktu po `kind`). */
 export type Notification = Notifications["items"][number]
 
 /** Uwaga taty po „Wyślij”: skrzynka ją przyjęła albo czeka w kolejce (unia z kontraktu). */

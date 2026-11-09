@@ -169,6 +169,7 @@ FEATURES = (
             "255-uzupelnienie-wynik-na-zywo",
             "256-uzupelnienie-wynik-po-przebiegu",
             "257-uzupelnienie-wynik-bez-odpowiedzi",
+            "258-uzupelnienie-wynik-bez-centrum",
             "252-uzupelnienie-wynik-po-starcie",
             "251-uzupelnienie-tablica",
             "220-uzupelnienie-karta",

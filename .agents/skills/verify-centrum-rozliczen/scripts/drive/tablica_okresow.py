@@ -24,6 +24,15 @@ from drive.common import (
 from atrapy.scenariusz_centrum import NEEDS_CHECK
 
 
+def _worker_settlement_count(row: dict[str, object]) -> int:
+    """Rozliczenia pracownika on the period's Folder rozliczeń pracowników button; 0 without that folder."""
+
+    files = row["files"]
+    assert isinstance(files, list)
+    [count] = [file["count"] for file in files if file["target"] == "worker_settlements_folder"]
+    return int(count or 0)
+
+
 def drive(run: Run, page: Page) -> None:
     feature = "tablica-okresow"
     periods = Path(run.fixture["periods_directory"])
@@ -37,7 +46,7 @@ def drive(run: Run, page: Page) -> None:
     assert isinstance(rows, list)
     expected = run.fixture["board"]
     run.check(
-        [[row["token"], row["status"], row["worker_settlement_count"], row["last_complete"]] for row in rows]
+        [[row["token"], row["status"], _worker_settlement_count(row), row["last_complete"]] for row in rows]
         == expected,
         "the server lists every Folder okresu newest first with its Status okresu",
     )
@@ -113,7 +122,7 @@ def drive(run: Run, page: Page) -> None:
         (f"Plik zbiorczy, okres {NEEDS_CHECK}", periods / NEEDS_CHECK / f"Rozliczenie {NEEDS_CHECK} - zbiorcze.xlsx"),
         ("Rozliczenie wewnętrzne, okres 22_28_09_2026", periods / "22_28_09_2026" / "Rozliczenie wew. 22_28_09_2026.xlsx"),
         ("Folder okresu, okres 15_21_09_2026", periods / "15_21_09_2026"),
-        ("Rozliczenia pracowników: 3, okres 22_28_09_2026",
+        ("Folder rozliczeń pracowników: 3, okres 22_28_09_2026",
          periods / "22_28_09_2026" / "Rozliczenie pracowników 22_28_09_2026"),
     ]
     for name, path in clicks:
@@ -204,7 +213,7 @@ def drive(run: Run, page: Page) -> None:
     added.write_bytes(b"")
     try:
         page.get_by_role("link", name="Okresy", exact=True).click()
-        expect(page.get_by_role("button", name="Rozliczenia pracowników: 1, okres 15_21_09_2026", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Folder rozliczeń pracowników: 1, okres 15_21_09_2026", exact=True)).to_be_visible()
         run.check(True, "back on Okresy from the menu, the board is read again: a Rozliczenie pracownika added meanwhile counts")
     finally:
         remove(added)

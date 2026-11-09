@@ -14,7 +14,8 @@ export type LiveFileView =
 
 /**
  * Następne pytanie strony: `compare` porównuje znacznik zapisu z tym, z którego jest widok, i czyta plik dopiero
- * po zmianie; `retry` czyta od razu, bo ostatni odczyt się nie udał; `wait` czeka na pierwszy odczyt.
+ * po zmianie albo gdy pytanie o znacznik się nie udało, więc nieudany odczyt pokaże stronie porażkę zamiast starego
+ * widoku; `retry` czyta od razu, bo ostatni odczyt się nie udał; `wait` czeka na pierwszy odczyt.
  */
 type Watch = { next: "compare"; version: string | null } | { next: "retry" } | { next: "wait" }
 
@@ -52,7 +53,7 @@ async function shouldRead(token: string, watch: Watch): Promise<boolean> {
       try {
         return (await getCollectiveFileVersion(token)).version !== watch.version
       } catch {
-        return false
+        return true
       }
 
     default: {

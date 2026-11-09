@@ -65,19 +65,21 @@ def _shown(row: dict[str, Any]) -> dict[str, tuple[str, int | str]]:
     }
 
 
+def _texts(table: dict[str, Any], row: dict[str, Any]) -> dict[str, str]:
+    """Teksty wiersza ``row`` pod nagłówkami kolumn Pliku zbiorczego tabeli ``table``."""
+
+    return dict(zip(table["text_columns"], row["texts"], strict=True))
+
+
 def test_tabela_wierszy_bez_reguly_ma_teksty_wierszy_i_szare_wartosci_narzedzia(tmp_path: Path) -> None:
     table = _table(_prepared(tmp_path), "without_rule")
 
     assert table["state"] == "ready"
+    assert table["hint"] == "Dopisz ilości poza V, T i N."
     assert [row["row"] for row in table["rows"]] == [19, 22]
     first = table["rows"][0]
-    assert (first["state"], first["worker"], first["devices"], first["activities"], first["completed"]) == (
-        "to_fill",
-        WORKER,
-        "przeniesienie",
-        "instalacja",
-        _completed(19),
-    )
+    assert table["text_columns"] == ["WYKONAWCA", "URZĄDZENIA", "CZYNNOŚCI", "CZYNNOŚCI ZREALIZOWANE"]
+    assert (first["state"], first["texts"]) == ("to_fill", [WORKER, "przeniesienie", "instalacja", _completed(19)])
     # Dojazd w V i drukowanie umowy „u” w T; usterki po godzinach nie ma, więc N narzędzia to 0.
     assert _shown(first) == {"N": ("tool", 0), "T": ("tool", 1), "V": ("tool", 1)}
 
@@ -131,7 +133,7 @@ def test_wiersz_z_opisu_nie_ma_wartosci_narzedzia_a_tekst_taty_jest_nieliczbowy(
     assert list(rows) == [20, 21]
     assert (rows[20]["state"], _shown(rows[20])) == ("done", {"N": ("tata", 45)})
     assert (rows[21]["state"], _shown(rows[21])) == ("done", {"AB": ("tata", "nieliczbowa")})
-    assert rows[21]["devices"] == ""
+    assert _texts(table, rows[21])["URZĄDZENIA"] == ""
 
 
 def test_plik_bez_odczytu_daje_komunikat_na_stronie_rodzaju(tmp_path: Path) -> None:
@@ -191,9 +193,10 @@ def test_tekst_wiersza_jest_bez_spacji_na_brzegach(tmp_path: Path) -> None:
     centrum = _prepared(tmp_path)
     _write(centrum, {"K19": "  wymiana gniazdka  "})
 
-    [first, _] = _table(centrum, "without_rule")["rows"]
+    table = _table(centrum, "without_rule")
+    [first, _] = table["rows"]
 
-    assert first["completed"] == "wymiana gniazdka"
+    assert _texts(table, first)["CZYNNOŚCI ZREALIZOWANE"] == "wymiana gniazdka"
 
 
 def test_bez_naglowka_czynnosci_zrealizowane_tabela_ma_pusty_opis(tmp_path: Path) -> None:
@@ -203,7 +206,9 @@ def test_bez_naglowka_czynnosci_zrealizowane_tabela_ma_pusty_opis(tmp_path: Path
     table = _table(centrum, "without_rule")
 
     assert table["state"] == "ready"
-    assert [(row["row"], row["completed"], row["devices"]) for row in table["rows"]] == [
+    assert [
+        (row["row"], _texts(table, row)["CZYNNOŚCI ZREALIZOWANE"], _texts(table, row)["URZĄDZENIA"]) for row in table["rows"]
+    ] == [
         (19, "", "przeniesienie"),
         (22, "", "router x9"),
     ]

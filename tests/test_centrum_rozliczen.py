@@ -311,6 +311,21 @@ def write_worker_settlements(period_folder: Path, token: str, workers: Sequence[
     return folder.worker_settlements
 
 
+def period_files(row: dict[str, object]) -> dict[str, dict[str, Any]]:
+    """Pliki okresu ``row`` z Tablicy okresów po miejscu (``target``)."""
+
+    files = row["files"]
+    assert isinstance(files, list)
+    return {file["target"]: file for file in files}
+
+
+def worker_settlement_count(row: dict[str, object]) -> int | None:
+    """Liczba Rozliczeń pracownika na przycisku Folderu rozliczeń pracowników okresu ``row``."""
+
+    count: int | None = period_files(row)["worker_settlements_folder"]["count"]
+    return count
+
+
 def board_rows(app: Centrum) -> list[dict[str, object]]:
     response = app.client.get("/api/periods")
     assert response.status_code == 200
@@ -352,11 +367,11 @@ def test_tablica_okresow_pokazuje_status_okresu_kazdego_folderu_okresu_od_najnow
 
     rows = board_rows(app)
 
-    assert [(row["token"], row["status"], row["worker_settlement_count"]) for row in rows] == [
-        ("06_12_10_2026", "no_period_files", 0),
-        ("29_05_10_2026", "collective_file_prepared", 0),
+    assert [(row["token"], row["status"], worker_settlement_count(row)) for row in rows] == [
+        ("06_12_10_2026", "no_period_files", None),
+        ("29_05_10_2026", "collective_file_prepared", None),
         ("22_28_09_2026", "worker_settlements_ready", 2),
-        ("15_21_09_2026", "no_period_files", 0),
+        ("15_21_09_2026", "no_period_files", None),
     ]
     assert [row["status_label"] for row in rows[1:]] == [
         "Plik zbiorczy przygotowany",
@@ -610,11 +625,12 @@ def test_ostatni_pelny_okres_jest_wyrozniony_takze_bez_folderu_okresu(tmp_path: 
         "monday": "2026-10-12",
         "status": "no_period_files",
         "status_label": "Brak plików okresu",
-        "period_folder_exists": False,
-        "internal_settlement_exists": False,
-        "collective_file_exists": False,
-        "worker_settlements_folder_exists": False,
-        "worker_settlement_count": 0,
+        "files": [
+            {"target": "internal_settlement", "label": "Rozliczenie wewnętrzne", "exists": False, "count": None},
+            {"target": "collective_file", "label": "Plik zbiorczy", "exists": False, "count": None},
+            {"target": "period_folder", "label": "Folder okresu", "exists": False, "count": None},
+            {"target": "worker_settlements_folder", "label": "Folder rozliczeń pracowników", "exists": False, "count": None},
+        ],
         "last_complete": True,
         "fillable": False,
         "path": [
@@ -684,8 +700,13 @@ def test_status_okresu_odzwierciedla_zmiany_na_dysku_przy_kazdym_odczycie(tmp_pa
         "collective_file_prepared",
         "worker_settlements_ready",
     )
-    assert prepared["internal_settlement_exists"] is True
-    assert ready["worker_settlement_count"] == 1
+    assert {target: (file["exists"], file["count"]) for target, file in period_files(prepared).items()} == {
+        "internal_settlement": (True, None),
+        "collective_file": (True, None),
+        "period_folder": (True, None),
+        "worker_settlements_folder": (False, None),
+    }
+    assert worker_settlement_count(ready) == 1
 
 
 def test_odczyt_tablicy_okresow_nie_sprawdza_osobno_kazdego_rozliczenia_pracownika(
@@ -710,7 +731,7 @@ def test_odczyt_tablicy_okresow_nie_sprawdza_osobno_kazdego_rozliczenia_pracowni
 
     def checks_and_count() -> tuple[int, object]:
         checked.clear()
-        count = next(row for row in board_rows(app) if row["token"] == "29_05_10_2026")["worker_settlement_count"]
+        count = worker_settlement_count(next(row for row in board_rows(app) if row["token"] == "29_05_10_2026"))
         return len(checked), count
 
     checks_and_count()  # pierwsze żądanie dokańcza leniwe importy

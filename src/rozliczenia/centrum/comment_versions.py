@@ -23,8 +23,8 @@ Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wyb
 ``match``, ze strażnikiem w środku, więc start Centrum (``run_comments.RunComments``) dostaje tylko wersję po strażniku.
 
 Strażnika i typy po nim bierze z ``run_logs_guard``, typy schematu Logów (``run_logs``) i postępu Wyceny tylko do
-adnotacji, a typy odczytu dysku i nazwę pliku Logów (``name_of``) z ``logs_disk`` importem w funkcji: przy wczytaniu
-moduł bierze tylko nazwy bez I/O (``tests/test_granice_importow.py``).
+adnotacji, a z ``logs_disk`` tylko typy wyniku odczytu dysku i nazwę pliku Logów (``name_of``), bez metod, które czytają
+pliki (``tests/test_granice_importow.py``).
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Final, Literal, assert_never
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.catalog import declaration_of
+from rozliczenia.centrum.logs_disk import Found, JournalRead, LeftJournal, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, guard_logs, guard_text
@@ -44,7 +45,6 @@ from rozliczenia.centrum.version import short_commit
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from rozliczenia.centrum.logs_disk import JournalRead, LeftJournal
     from rozliczenia.centrum.pricing_progress import PricingProgress
     from rozliczenia.centrum.run_logs import LoggedDiagnosis, LoggedMessage, RunLog, StartFacts
     from rozliczenia.client_data import ForbiddenValues
@@ -192,8 +192,6 @@ def close(left: LeftJournal, forbidden: ForbiddenValues, interrupted: Callable[[
     (``logs_disk.Refused``), rzuca jego ``OSError``: nie wiadomo, czy Logi są, więc dziennik zostaje następnemu startowi.
     """
 
-    from rozliczenia.centrum.logs_disk import Found, Missing, Refused, Unreadable
-
     read = left.journal
     if read is None:
         return Drop()
@@ -317,8 +315,6 @@ def _orders_done(progress: PricingProgress) -> str | None:
 
 def _archive_file(record: RunLog) -> ArchiveFile:
     """Pełne Logi w Archiwum Logów okresu: Release z tagiem ``logi-<okres>``, plik o nazwie i treści pliku Logów."""
-
-    from rozliczenia.centrum.logs_disk import name_of
 
     period = record.period
     return ArchiveFile(

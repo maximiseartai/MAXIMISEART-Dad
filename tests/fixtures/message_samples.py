@@ -424,6 +424,7 @@ REFUSALS: RefusalSamples = {
     "restoring": [partial(refusal.restoring, then) for then in _RETRIES],
     "running": [partial(refusal.running, "Przebieg rozliczeń", PERIOD, then) for then in _RETRIES if then != "start"],
     "update_in_progress": [refusal.update_in_progress],
+    "update_without_port": [refusal.update_without_port],
     "run_in_progress": [partial(refusal.run_in_progress, "Przebieg rozliczeń", PERIOD)],
     "unknown_run": [refusal.unknown_run],
     "not_awaiting_decision": [refusal.not_awaiting_decision],

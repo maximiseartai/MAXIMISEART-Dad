@@ -385,12 +385,8 @@ def _period_folder(
     observed = folder.observe()
     if collective_file_missing is not None and not observed.collective_file_exists:
         return [CheckResult.failed(label, collective_file_missing(folder.collective_file))]
-    places: tuple[tuple[PeriodPlace, bool], ...] = (
-        ("internal_settlement", observed.internal_settlement_exists),
-        ("collective_file", observed.collective_file_exists),
-        ("worker_settlements_folder", observed.worker_settlements_folder_exists),
-    )
-    present = [period_place_label(place) for place, exists in places if exists]
+    places: tuple[PeriodPlace, ...] = ("internal_settlement", "collective_file", "worker_settlements_folder")
+    present = [period_place_label(place) for place in places if observed.exists(place)]
     if not observed.period_folder_exists:
         return [CheckResult.passed(label, f"Folderu {computer.period.token} jeszcze nie ma.")]
     return [CheckResult.passed(label, f"Pliki okresu: {', '.join(present) if present else 'brak'}.")]

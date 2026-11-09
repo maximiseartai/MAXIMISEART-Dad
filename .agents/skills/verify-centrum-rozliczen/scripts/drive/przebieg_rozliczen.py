@@ -410,7 +410,8 @@ def drive(run: Run, page: Page) -> None:
     assert isinstance(board, list)
     [row] = [row for row in board if row["token"] == LAST_COMPLETE]
     run.check(
-        row["status"] == "worker_settlements_ready" and row["worker_settlement_count"] == len(workers),
+        row["status"] == "worker_settlements_ready"
+        and [file["count"] for file in row["files"] if file["target"] == "worker_settlements_folder"] == [len(workers)],
         "the Status okresu is Rozliczenia pracowników gotowe with a Rozliczenie pracownika per Wykonawca",
     )
     run.capture(page, "45-przebieg-status-okresu")

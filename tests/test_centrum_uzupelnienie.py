@@ -77,6 +77,10 @@ def test_po_przygotowaniu_wiersze_bez_reguly_i_z_opisu_czekaja_na_tate(tmp_path:
         "from_description": [(20, False), (21, False)],
     }
     assert _kind_done(view) == {"without_rule": False, "from_description": False}
+    assert {kind["kind"]: kind["hint"] for kind in view["kinds"]} == {
+        "without_rule": "Dopisz ilości poza V, T i N.",
+        "from_description": "Wpisz ilości według opisu technika.",
+    }
     assert _description(view) == dict.fromkeys(DESCRIPTION, 0)
 
 

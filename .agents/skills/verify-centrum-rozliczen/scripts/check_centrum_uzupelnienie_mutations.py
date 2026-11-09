@@ -66,8 +66,14 @@ MUTATIONS = (
         "każdy zapis Excela albo synchronizacja OneDrive miga tacie Komunikatem zamiast ostatniego stanu",
     ),
     Mutation(
+        "nieudane pytanie o znacznik zapisu zostawia stary widok",
+        (Edit(BUILD, "version!==t.version}catch{return!0}", "version!==t.version}catch{return!1}"),),
+        UZUPELNIENIE,
+        "gdy Centrum nie odpowiada, strona Uzupełnienia pokazuje stare ilości jak na żywo, a tata wpisuje w Excelu i nic się nie zmienia",
+    ),
+    Mutation(
         "strona rodzaju gubi CZYNNOŚCI ZREALIZOWANE",
-        (Edit(FILLING, "                completed=row.texts.completed,\n", '                completed="",\n'),),
+        (Edit(FILLING, "                texts=list(row.texts),\n", '                texts=[*row.texts[:-1], ""],\n'),),
         UZUPELNIENIE,
         "tata nie rozpozna zlecenia po opisie technika i musi szukać wiersza w Excelu",
     ),

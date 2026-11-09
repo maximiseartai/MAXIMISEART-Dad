@@ -1,9 +1,9 @@
 import type { FillKind, RowState } from "@/api/generated"
 
-/** Rodzaj Ilości do uzupełnienia: tytuł i podpowiedź, te same w podsumowaniu i w tabeli rodzaju. */
-export const KINDS: Record<FillKind, { title: string; hint: string }> = {
-  without_rule: { title: "Wiersze bez reguły", hint: "Dopisz ilości poza V, T i N." },
-  from_description: { title: "Wiersze z opisu", hint: "Wpisz ilości według opisu technika." },
+/** Tytuł rodzaju Ilości do uzupełnienia, ten sam w podsumowaniu i w tabeli rodzaju; podpowiedź daje serwer. */
+export const KIND_TITLES: Record<FillKind, string> = {
+  without_rule: "Wiersze bez reguły",
+  from_description: "Wiersze z opisu",
 }
 
 /**

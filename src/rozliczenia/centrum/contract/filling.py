@@ -19,9 +19,13 @@ class RowToFill(Model):
 
 
 class KindToFill(Model):
-    """Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma."""
+    """Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma.
+
+    ``hint``: co tata wpisuje w wierszach rodzaju, z reguły, która robi wiersz zrobionym.
+    """
 
     kind: FillKind
+    hint: str
     rows: list[RowToFill]
     done: bool
 
@@ -108,15 +112,13 @@ class KindTableCell(Model):
 class KindTableRow(Model):
     """Wiersz strony rodzaju: numer wiersza Pliku zbiorczego, teksty, po których tata go rozpoznaje, i komórki N:AP.
 
-    Nigdy adres, numer zlecenia ani ``UMOWA`` (ADR 0016).
+    ``texts`` idą po kolei jak ``KindTableReady.text_columns``, a ``cells`` jak ``KindTableReady.columns``. Nigdy adres,
+    numer zlecenia ani ``UMOWA`` (ADR 0016).
     """
 
     row: int
     state: RowState
-    worker: str
-    devices: str
-    activities: str
-    completed: str
+    texts: list[str]
     cells: list[KindTableCell]
 
 
@@ -128,14 +130,17 @@ class PriceListItem(Model):
 
 
 class KindTableReady(Model):
-    """Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei.
+    """Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a
+    ``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.
 
-    ``settled`` jak w ``QuantitiesToFillReady``.
+    ``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``.
     """
 
     state: Literal["ready"]
     read: CollectiveFileRead
     settled: bool
+    hint: str
+    text_columns: list[str]
     columns: list[PriceListItem]
     rows: list[KindTableRow]
 

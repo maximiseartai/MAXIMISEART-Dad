@@ -74,7 +74,9 @@ def drive(run: Run, page: Page) -> None:
     stats = page.get_by_role("group", name="Najważniejsze liczby")
     board = run.api("/api/periods", "metryki-tablica")["periods"]
     assert isinstance(board, list)
-    prepared = next(period for period in board if period["collective_file_exists"])
+    prepared = next(
+        period for period in board if any(file["target"] == "collective_file" and file["exists"] for file in period["files"])
+    )
     expect(stats.get_by_role("group", name="Ostatni przygotowany okres")).to_contain_text(prepared["token"])
     latest = runs[0]
     latest_card = stats.get_by_role("group", name="Ostatnie uruchomienie")

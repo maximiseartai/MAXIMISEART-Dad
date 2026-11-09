@@ -25,6 +25,7 @@ from .collective_layout import QUANTITY_LETTERS
 from .order_facts import OrderFacts, TataValue
 from .quantity_check import QuantityCheck, check, compared_columns
 from .quantity_rules import DESCRIPTION_COLUMNS, FromDescription, RuleResult, WithoutRule, evaluate
+from .register_columns import ACTIVITIES, COMPLETED, DEVICES, WORKER, Column
 
 
 class FillKind(StrEnum):
@@ -42,19 +43,25 @@ _KINDS: Final[Mapping[type[RuleResult], FillKind]] = {
 }
 
 
-@dataclass(frozen=True)
-class RowTexts:
-    """Teksty Wiersza danych, po których tata rozpoznaje zlecenie na stronie rodzaju (ADR 0016).
+def fill_hint(kind: FillKind) -> str:
+    """Podpowiedź dla taty, co wpisuje w wierszach rodzaju ``kind``: te same kolumny, które robią wiersz zrobionym."""
 
-    Trafiają tylko do przeglądarki taty, nigdy do ``OrderFacts``, więc nie wychodzą z komputera: ani w Kontroli
-    ilości, ani w Logach Uruchomienia. Pusta komórka to ``""``.
-    """
+    match kind:
+        case FillKind.WITHOUT_RULE:
+            return "Dopisz ilości poza V, T i N."
+        case FillKind.FROM_DESCRIPTION:
+            return "Wpisz ilości według opisu technika."
 
-    worker: str
-    devices: str
-    activities: str
-    completed: str
-    """``CZYNNOŚCI ZREALIZOWANE``: opis technika."""
+
+TEXT_COLUMNS: Final[tuple[Column, ...]] = (WORKER, DEVICES, ACTIVITIES, COMPLETED)
+"""Kolumny Pliku zbiorczego, po których tata rozpoznaje zlecenie na stronie rodzaju (ADR 0016), w kolejności strony;
+``CZYNNOŚCI ZREALIZOWANE`` to opis technika."""
+
+RowTexts = tuple[str, ...]
+"""Teksty Wiersza danych w kolumnach ``TEXT_COLUMNS`` po kolei; pusta komórka to ``""``.
+
+Trafiają tylko do przeglądarki taty, nigdy do ``OrderFacts``, więc nie wychodzą z komputera: ani w Kontroli ilości, ani
+w Logach Uruchomienia."""
 
 
 @dataclass(frozen=True)

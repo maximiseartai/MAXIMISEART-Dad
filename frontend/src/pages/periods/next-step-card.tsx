@@ -35,7 +35,7 @@ export function NextStepCard({ period }: { period: PeriodRow }) {
           <span className="tabular-nums">
             wt {fullDate(period.tuesday)} – pon {fullDate(period.monday)}
           </span>
-          {period.period_folder_exists ? null : (
+          {period.files.some((file) => file.target === "period_folder" && file.exists) ? null : (
             <span className="flex items-center gap-1.5">
               <FolderXIcon aria-hidden />
               Brak Folderu okresu

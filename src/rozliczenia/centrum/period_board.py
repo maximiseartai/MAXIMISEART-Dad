@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final, Literal, get_args
 
 from fastapi import APIRouter
 
@@ -30,9 +30,12 @@ from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import (
     PeriodFolder,
     PeriodFolderLookupError,
+    PeriodFolderObservation,
     PeriodFolders,
+    PeriodPlace,
     PeriodStatus,
     locate_period_folder,
+    period_place_label,
     period_status_label,
     reading,
     scan_period_folders,
@@ -144,17 +147,28 @@ def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> peri
         monday=period.monday,
         status=status,
         status_label=period_status_label(status),
-        period_folder_exists=observation.period_folder_exists,
-        internal_settlement_exists=observation.internal_settlement_exists,
-        collective_file_exists=observation.collective_file_exists,
-        worker_settlements_folder_exists=observation.worker_settlements_folder_exists,
-        worker_settlement_count=observation.worker_settlement_count,
+        files=[_file(observation, place) for place in get_args(PeriodPlace)],
         last_complete=last_complete,
         fillable=status == "collective_file_prepared",
         path=_path(status, pricing),
         next_step=next_step,
         secondary_step=secondary_step,
     )
+
+
+def _file(observation: PeriodFolderObservation, place: PeriodPlace) -> periods_contract.BoardFile:
+    exists = observation.exists(place)
+    counted = place == "worker_settlements_folder" and exists
+    return periods_contract.BoardFile(
+        target=place,
+        label=period_place_label(place),
+        exists=exists,
+        count=observation.worker_settlement_count if counted else None,
+    )
+
+
+def _has_collective_file(row: periods_contract.PeriodRow) -> bool:
+    return any(file.target == "collective_file" and file.exists for file in row.files)
 
 
 def read_board(periods_directory: Path | None, today: date, catalog: Catalog) -> periods_contract.PeriodBoard:
@@ -176,7 +190,7 @@ def read_board(periods_directory: Path | None, today: date, catalog: Catalog) ->
     return periods_contract.BoardReady(
         state="ready",
         periods=rows,
-        last_prepared_period=next((row.token for row in rows if row.collective_file_exists), None),
+        last_prepared_period=next((row.token for row in rows if _has_collective_file(row)), None),
     )
 
 
