@@ -21,6 +21,7 @@ from rozliczenia.intermax_copies import KEPT, Before
 from rozliczenia.intermax_replace import LOCAL_DISK, Refusal, Replaced, Waiting, WriteMismatch, replace_register
 from rozliczenia.workbook_files import Problem, WorkbookError
 
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace, no_space, partial_copy, writing
 
@@ -321,6 +322,28 @@ def test_folder_kopii_ktorego_nie_da_sie_przeszukac_to_kopia_nieudana(folders: F
 
     with _unchanged(folders):
         assert folders.replace(before, FaultyDisk(exists=unsearchable)) is Refusal.COPY_FAILED
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_folder_kopii_bez_dostepu_to_kopia_nieudana_bez_proby_zapisu_kopii_na_kazdym_pythonie(
+    folders: Folders, before: Before, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    folders.copies.mkdir()
+    attempts: list[Path] = []
+
+    def create(path: Path, content: bytes) -> None:
+        attempts.append(path)
+        LOCAL_DISK.create(path, content)
+
+    state = folders.state()
+    path_checks(monkeypatch)
+
+    with without_access(folders.copies):
+        outcome = folders.replace(before, FaultyDisk(create=create))
+
+    assert (outcome, attempts) == (Refusal.COPY_FAILED, [])
+    assert folders.state() == state
 
 
 def test_niepelna_kopia_nie_zostaje(folders: Folders, before: Before) -> None:
