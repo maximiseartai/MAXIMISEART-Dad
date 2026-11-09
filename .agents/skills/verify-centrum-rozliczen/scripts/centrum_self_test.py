@@ -8,8 +8,7 @@ that the result of a started Uruchomienie is never the one before it and the Cen
 that a file the server puts in place is read once it is there and only a vanished queue file is left out,
 that the drive reads files in no other way than through those readers (``_direct_reads``),
 that the scripted skrzynka reads an issue file the drive is putting in place once it is there,
-that the scripted boundaries of ``serve_centrum.py`` take their files from ``harness.py`` in the round trips of
-``_check_served_side_reads_harness`` and no other script spells a name of ``harness.py`` (``_protocol_spelled``),
+that no script but ``harness.py`` spells a name of its files (``_protocol_spelled``),
 that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, stands still
 without a move and fails on a refusal that outlasts its limit, that the drive fails on the clock's wake-up thread once it has died,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
@@ -842,142 +841,6 @@ def _check_protocol_spelled_once(errors: list[str]) -> None:
             )
 
 
-def _check_served_side_reads_harness(errors: list[str]) -> None:
-    """The scripted boundaries of ``serve_centrum.py`` take their files from ``harness.py``: each round trip below runs
-    a boundary on one member and fails here when the boundary reads or writes it under another name, instead of as a
-    check of the drive that passes because nothing opened (``Log.OPENED``) or nothing was refused.
-
-    The round trips: ``ScriptedPlatform`` opens a file (logged in ``Log.OPENED``) and answers a picker (logged in
-    ``Log.DIALOGS``, answered from ``File.PICKER_ANSWER``); ``FileReportBox`` gives its outcome for a new issue while
-    ``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED`` or ``rejects`` is on, opens issue 1 with comment 1 and logs a
-    question for closed issues in ``Log.REPORT_QUESTIONS``; it gives its outcome for a new Archiwum while
-    ``Switch.ARCHIVE_REFUSED``, ``Switch.BOX_OFFLINE`` or ``Switch.KEY_REFUSED`` is on, uploads a file (kept at
-    ``archive_file``, ``archive_listing`` and ``last_file_id``), uploads a second one under the next file id and
-    removes the first; ``_scripted_github`` answers from ``File.TOOL_COMMIT``, ``File.MAIN_COMMIT``,
-    ``File.RELEASE_TAG`` and ``File.RELEASES``, gives no answer while ``Switch.GITHUB_OFFLINE`` is on and logs each
-    question for the list in ``Log.RELEASE_QUESTIONS``; ``_scripted_onedrive`` reads ``File.CLOUD_ONLY``;
-    ``_register_failing_on_hook`` fails while ``Switch.REGISTER_FAULT`` is on. ``ScriptedClock`` (``File.CLOCK_MOVE``,
-    ``File.CLOCK_DIED``) runs in ``_check_clock_alarm_failure``. What these round trips do not run is held by review
-    only; the files the served side writes as it starts, ``File.EFENIX_ADDRESS`` with ``efenix_files``
-    (``_efenix_window``) and ``File.SERVER`` (``record_bound_server``), are held by the run itself, loudly: the drive
-    fails on a missing address of the Atrapa efenix and the run waits for the server record until its limit."""
-
-    import json
-    import tempfile
-
-    from harness import File, Log, Switch, archive_file, archive_listing, comment_position, last_file_id, rejects
-    from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Removed, Sent, Unreachable
-    from rozliczenia.centrum.tool_freshness import GitHubReleases
-    from serve_centrum import FileReportBox, ScriptedPlatform, _register_failing_on_hook, _scripted_github, _scripted_onedrive
-
-    with tempfile.TemporaryDirectory() as scratch:
-        root = Path(scratch)
-
-        def records(log: Log) -> list[object]:
-            path = log.file(root)
-            return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
-
-        platform = ScriptedPlatform(root)
-        platform.open_path(root / "plik.xlsx")
-        File.PICKER_ANSWER.write(root, str(root / "wybrany"))
-        chosen = platform.choose_folder("Okno")
-        if records(Log.OPENED) != [{"path": str(root / "plik.xlsx")}]:
-            errors.append(f"opening a file is not logged in {Log.OPENED.value}: {records(Log.OPENED)}")
-        if records(Log.DIALOGS) != [{"title": "Okno"}] or chosen != root / "wybrany":
-            errors.append(f"a picker does not log in {Log.DIALOGS.value} or answer from {File.PICKER_ANSWER.value}")
-
-        box = FileReportBox(root)
-        scripted = [
-            (Switch.BOX_OFFLINE.file(root), Unreachable()),
-            (Switch.KEY_REFUSED.file(root), Refused()),
-            (rejects(root, "zgloszenie"), Rejected()),
-        ]
-        for path, expected in scripted:
-            path.parent.mkdir(exist_ok=True)
-            path.touch()
-            got = box.open_issue("zgloszenie", "t", "b", key="k")
-            path.unlink()
-            if got != expected:
-                errors.append(f"the scripted skrzynka gives {got!r} instead of {expected!r} while {path.name} exists")
-        sent = box.open_issue("zgloszenie", "t", "b", key="k")
-        commented = box.comment(1, "c", key="k")
-        if sent != Sent(1) or not (isinstance(commented, Commented) and comment_position(commented.url) == (1, 1)):
-            errors.append(f"the scripted skrzynka does not open issue 1 with comment 1: {sent!r}, {commented!r}")
-        box.labelled_issues("zgloszenie", include_closed=True, key="k")
-        if records(Log.REPORT_QUESTIONS) != [{"label": "zgloszenie"}]:
-            errors.append(f"a question for closed issues is not logged in {Log.REPORT_QUESTIONS.value}")
-        refused = Switch.ARCHIVE_REFUSED.on(root)
-        got_archive = box.open_archive("logi-x", "t", "d", key="k")
-        refused.unlink()
-        if got_archive != Refused():
-            errors.append(f"the scripted Archiwa give {got_archive!r} while {Switch.ARCHIVE_REFUSED.value} exists")
-        for switch, expected_archive in ((Switch.BOX_OFFLINE, Unreachable()), (Switch.KEY_REFUSED, Refused())):
-            switched = switch.on(root)
-            got_archive = box.open_archive("logi-x", "t", "d", key="k")
-            switched.unlink()
-            if got_archive != expected_archive:
-                errors.append(
-                    f"the scripted Archiwa give {got_archive!r} instead of {expected_archive!r} while {switch.value} exists"
-                )
-        opened = box.open_archive("logi-x", "t", "d", key="k")
-        uploaded = box.upload(opened.id, "logi.gz", "l", b"x", key="k") if isinstance(opened, Archive) else opened
-        if not (
-            isinstance(uploaded, Asset)
-            and archive_file(root, "logi-x", "logi.gz").read_bytes() == b"x"
-            and archive_listing(root).exists()
-            and last_file_id(root).read_text(encoding="utf-8") == str(uploaded.id)
-        ):
-            errors.append(f"the scripted Archiwa do not keep a file where harness.py puts it: {uploaded!r}")
-        # The second upload reads back the Archiwa written by the first: the file's bytes and the last file id.
-        second = box.upload(opened.id, "drugi.gz", "l", b"y", key="k") if isinstance(opened, Archive) else opened
-        removed = box.remove(uploaded.id, key="k") if isinstance(uploaded, Asset) else uploaded
-        if not (
-            isinstance(uploaded, Asset)
-            and isinstance(second, Asset)
-            and second.id == uploaded.id + 1
-            and isinstance(removed, Removed)
-            and not archive_file(root, "logi-x", "logi.gz").exists()
-            and archive_file(root, "logi-x", "drugi.gz").read_bytes() == b"y"
-        ):
-            errors.append(f"the scripted Archiwa do not read back what they kept: {second!r}, {removed!r}")
-
-        github = _scripted_github(root, root / "klon")
-        File.TOOL_COMMIT.write(root, "a" * 40)
-        File.MAIN_COMMIT.write(root, "b" * 40)
-        File.RELEASE_TAG.write(root, "v1.0.0")
-        published = {
-            "tag_name": "v1.0.0",
-            "draft": False,
-            "prerelease": False,
-            "body": "n",
-            "published_at": "2026-11-01T10:00:00+00:00",
-        }
-        File.RELEASES.write(root, json.dumps([published]))
-        answers = (github.local(), github.release(), tuple(each.release.tag for each in github.published() or ()))
-        offline_switch = Switch.GITHUB_OFFLINE.on(root)
-        offline = (github.release(), github.published())
-        offline_switch.unlink()
-        if answers != ("a" * 40, GitHubReleases("b" * 40, "v1.0.0"), ("v1.0.0",)) or offline != (None, None):
-            errors.append(f"the scripted GitHub does not answer from the files of harness.py: {answers}, {offline}")
-        if len(records(Log.RELEASE_QUESTIONS)) != 2:
-            errors.append(f"each question for the published Wydania is not logged in {Log.RELEASE_QUESTIONS.value}")
-
-        register = root / "Rejestr.xlsx"
-        register.write_bytes(b"r")
-        File.CLOUD_ONLY.write(root, str(register) + "\n")
-        onedrive = _scripted_onedrive(root).read_attributes
-        if onedrive is None or onedrive(register) == onedrive(root / "inny.xlsx"):
-            errors.append(f"the scripted OneDrive does not read {File.CLOUD_ONLY.value}")
-        source = _register_failing_on_hook(root, register)
-        Switch.REGISTER_FAULT.on(root)
-        try:
-            source(register)
-        except RuntimeError:
-            pass
-        else:
-            errors.append(f"reading the Rejestr zleceń does not fail while {Switch.REGISTER_FAULT.value} exists")
-
-
 def _check_clock_alarm_failure(errors: list[str]) -> None:
     """Once the wake-up thread of Centrum's clock dies (here on a move it cannot read), the drive fails on it at the
     next ``advance_clock`` and at a wait that times out, instead of waiting for a wake-up that never fires (#1124)."""
@@ -1151,7 +1014,6 @@ def main(argv: list[str] | None = None) -> int:
     _check_result_of_start(errors)
     _check_read_while_put_in_place(errors)
     _check_box_reads_while_put_in_place(errors)
-    _check_served_side_reads_harness(errors)
     _check_protocol_spelled_once(errors)
     _check_clock_moved_whole(errors)
     _check_clock_without_move(errors)

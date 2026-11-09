@@ -4,9 +4,7 @@ The drive (``drive/``) writes and reads them in the run root, and ``serve_centru
 ``create_centrum_fixture.py``) reads and writes them, so both sides take the names from here: a name changed on one side
 only would leave the drive writing a file no one reads, or reading a log no one writes, and a check that nothing opens
 would pass without a failure. ``centrum_self_test.py`` holds both sides to it: no other script spells a name of this
-module, and the scripted boundaries of the served side take their files from here in the round trips its docstring
-lists (``File.EFENIX_ADDRESS`` and ``File.SERVER``, which the served side writes as it starts, only the run itself
-holds, loudly).
+module.
 These are the harness's own names, not files of Dad's: the drive spells a name of the product (a Komunikat, a fact of the
 Logi) itself, as an oracle (``docs/agents/skille.md``).
 Only the standard library: the restart shim imports it before it runs ``serve_centrum.py``.
