@@ -32,15 +32,13 @@ from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, m
 from rozliczenia.tool_files import LOG_PATH, SETTINGS
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.settings import Settings, SettingsStore
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
     CENTRUM,
-    NO_ACCESS_ON_WINDOWS,
-    PATH_CHECKS,
     TOOL_COMMIT,
     Centrum,
     ROOT,
     centrum,
-    without_access,
 )
 
 import export_openapi
