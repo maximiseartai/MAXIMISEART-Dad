@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from tests.fixtures.git_repo import commit, git, repository
 
 import setup_worktree
@@ -24,18 +22,11 @@ def _write(repo: Path, text: str) -> None:
         (repo / name).write_bytes(text.encode())
 
 
-def _set_up_merge_driver(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(setup_worktree, "ROOT", repo)
-    setup_worktree._merge_generated()
-
-
-def test_scalenie_dwoch_galezi_zostawia_w_plikach_generowanych_wersje_head_bez_konfliktu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scalenie_dwoch_galezi_zostawia_w_plikach_generowanych_wersje_head_bez_konfliktu(tmp_path: Path) -> None:
     repo = repository(tmp_path / "repo", {".gitattributes": (ROOT / ".gitattributes").read_text(encoding="utf-8")})
     _write(repo, "baza\n")
     commit(repo, "baza")
-    _set_up_merge_driver(repo, monkeypatch)
+    setup_worktree._merge_generated(repo)
     git(repo, "checkout", "--quiet", "-b", "druga")
     _write(repo, "druga\n")
     commit(repo, "druga gałąź")

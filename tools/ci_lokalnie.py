@@ -132,22 +132,22 @@ def _check(root: Path, jobs: set[str], *, fail_fast: bool = False) -> list[str]:
     return failed
 
 
-def _check_every_commit(base: str, jobs: set[str], *, fail_fast: bool) -> int:
-    if repo.commit(ROOT, base) is None:
+def _check_every_commit(root: Path, base: str, jobs: set[str], *, fail_fast: bool) -> int:
+    if repo.commit(root, base) is None:
         print(f"COMMITY FAIL | nieznana baza {base}")
         return 1
-    commits = repo.git(ROOT, "rev-list", "--reverse", f"{base}..HEAD").split()
+    commits = repo.git(root, "rev-list", "--reverse", f"{base}..HEAD").split()
     if not commits:
         print(f"COMMITY FAIL | brak commitów między {base} a HEAD")
         return 1
-    if repo.git(ROOT, "status", "--porcelain", "--untracked-files=no").strip():
+    if repo.git(root, "status", "--porcelain", "--untracked-files=no").strip():
         print("UWAGA: niezacommitowane zmiany nie są sprawdzane", flush=True)
     failed = []
     for commit in commits:
-        print(f"== {repo.git(ROOT, 'log', '-1', '--format=%h %s', commit).strip()}", flush=True)
-        if repo.changed(ROOT, commit, "HEAD", paths=("pyproject.toml", "requirements.txt")):
+        print(f"== {repo.git(root, 'log', '-1', '--format=%h %s', commit).strip()}", flush=True)
+        if repo.changed(root, commit, "HEAD", paths=("pyproject.toml", "requirements.txt")):
             print("UWAGA: zależności różnią się od HEAD, a .venv jest zainstalowane z HEAD", flush=True)
-        with potomne.commit_copy(ROOT, commit) as tree:
+        with potomne.commit_copy(root, commit) as tree:
             if steps := _check(tree, jobs, fail_fast=fail_fast):
                 failed.append(f"{commit[:7]} ({', '.join(steps)})")
     if failed:
@@ -157,7 +157,7 @@ def _check_every_commit(base: str, jobs: set[str], *, fail_fast: bool) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--kroki-ci", action="store_true", help="Wypisz JSON: odtwarzane zadania CI i ich polecenia.")
     parser.add_argument(
@@ -175,27 +175,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     ciezkie_ci.argument(parser)
     args = parser.parse_args(argv)
-    steps = _steps(ROOT)
+    steps = _steps(root)
     known = {step.job for step in steps}
     if args.kroki_ci:
         reproduced = sorted({CI_JOB.get(job, job) for job in known})
         elsewhere = {"zadania": JOBS_ELSEWHERE, "polecenia": COMMANDS_ELSEWHERE}
-        print(json.dumps({"lokalnie": reproduced, "gdzie_indziej": elsewhere, "fragmenty": [ci for ci, _ in _reproduced(ROOT)]}))
+        print(json.dumps({"lokalnie": reproduced, "gdzie_indziej": elsewhere, "fragmenty": [ci for ci, _ in _reproduced(root)]}))
         return 0
     jobs = set(args.tylko.split(",")) if args.tylko else set(EVERY_COMMIT_JOBS if args.kazdy_commit else known)
     if unknown := jobs - known:
         parser.error(f"nieznane zadania: {', '.join(sorted(unknown))}; znane: {', '.join(sorted(known))}")
-    if refusal := ciezkie_ci.refusal(jobs, args.odtwarzam, root=ROOT):
+    if refusal := ciezkie_ci.refusal(jobs, args.odtwarzam, root=root):
         print(refusal)
         return 2
     if args.kazdy_commit:
-        return _check_every_commit(args.kazdy_commit, jobs, fail_fast=args.do_pierwszego_bledu)
+        return _check_every_commit(root, args.kazdy_commit, jobs, fail_fast=args.do_pierwszego_bledu)
     complete = jobs == known
-    failed = _check(ROOT, jobs, fail_fast=args.do_pierwszego_bledu)
+    failed = _check(root, jobs, fail_fast=args.do_pierwszego_bledu)
     if complete:
         try:
-            overlaps = (sys.executable, str(ROOT / "tools" / "praca_w_toku.py"), "--nakladania")
-            potomne.run(overlaps, cwd=ROOT, timeout=120, echo=True)
+            overlaps = (sys.executable, str(root / "tools" / "praca_w_toku.py"), "--nakladania")
+            potomne.run(overlaps, cwd=root, timeout=120, echo=True)
         except (OSError, subprocess.TimeoutExpired) as error:
             print(f"NAKŁADANIA POMINIĘTE | {error}", flush=True)
     if failed:
