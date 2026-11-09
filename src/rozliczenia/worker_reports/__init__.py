@@ -1,103 +1,115 @@
 """Rdzeń raportów Wpisania raportów (ADR 0028): Raporty wykonawców bez Excela i bez IMAP.
 
-Na razie pakiet ma typy maila, które oddaje port Skrzynki raportów (``worker_report_inbox``), i adresy Wykonawców,
-które buduje ``worker_addresses.load``. Rozpoznanie Raportu wykonawcy, Wpisów raportu i reguły komórek dojdą tu jako
-jedna operacja rdzenia (#1227). Pakiet bierze tylko bibliotekę standardową, bo przejdzie bez zmian do Centrum w chmurze
-(#1161).
+Jedyna operacja to ``enter_reports``: maile ze Skrzynki raportów (``worker_report_inbox``), adresy Wykonawców
+(``worker_addresses.load``), uporządkowane zlecenia INTERMAX, dni otwarte i pamięć własnych wpisów na wejściu, a zmiany
+komórek, problemy, liczby dla widoku Raporty i nowa pamięć na wyjściu. Zdanie dla taty o problemie daje
+``reasons.reason``. Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń i reguły komórek w
+pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
+oraz ``report_cells``, ``settlement_period`` i ``text``, bo przejdzie bez zmian do Centrum w chmurze (#1161).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import datetime
-from email.utils import parseaddr
-import hashlib
-from typing import Final, NewType
+from . import _cells, _entries, _figures, _matching, _subject
+from ._model import (
+    SUBJECT_WORD,
+    ForeignOrder,
+    Kept,
+    Login,
+    MailId,
+    MailRead,
+    ManualDifference,
+    MissingVerdict,
+    OrderKey,
+    OrderNumber,
+    OtherDay,
+    OwnEntries,
+    OwnEntry,
+    ReadReport,
+    ReadStranger,
+    ReadUnreadable,
+    RegisterOrder,
+    RepeatedOrder,
+    ReportEntry,
+    ReportInputs,
+    ReportMail,
+    ReportProblem,
+    ReportsOutcome,
+    SenderAddress,
+    SubjectFault,
+    UnknownNumber,
+    UnknownSender,
+    UnreadableSubject,
+    Verdict,
+    VerdictFault,
+    Window,
+    WorkerAddresses,
+    WorkerDay,
+    problem_order,
+)
 
-__all__ = ["SUBJECT_WORD", "Login", "MailId", "ReportMail", "SenderAddress", "WorkerAddresses"]
+__all__ = [
+    "SUBJECT_WORD",
+    "ForeignOrder",
+    "Kept",
+    "Login",
+    "MailId",
+    "MailRead",
+    "ManualDifference",
+    "MissingVerdict",
+    "OrderKey",
+    "OrderNumber",
+    "OtherDay",
+    "OwnEntries",
+    "OwnEntry",
+    "ReadReport",
+    "ReadStranger",
+    "ReadUnreadable",
+    "RegisterOrder",
+    "RepeatedOrder",
+    "ReportEntry",
+    "ReportInputs",
+    "ReportMail",
+    "ReportProblem",
+    "ReportsOutcome",
+    "SenderAddress",
+    "SubjectFault",
+    "UnknownNumber",
+    "UnknownSender",
+    "UnreadableSubject",
+    "Verdict",
+    "VerdictFault",
+    "Window",
+    "WorkerAddresses",
+    "WorkerDay",
+    "enter_reports",
+]
 
-SUBJECT_WORD: Final = "raport"
-"""Słowo tematu Raportu wykonawcy bez względu na wielkość liter: port bierze ze skrzynki tylko maile z nim w temacie,
-a rdzeń rozstrzyga resztę tematu."""
 
-Login = NewType("Login", str)
-"""Identyfikator Wykonawcy z ``WYKONAWCA`` po ``normalize_text``: klucz Konfiguracji wykonawców i pliku adresów."""
+def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
+    """Jedyna operacja rdzenia: ten sam wynik dla tych samych wejść, w dowolnej kolejności maili.
 
-_DIGEST_LETTERS: Final = 16
-_LETTERS: Final = str.maketrans("0123456789abcdef", "abcdefghijklmnop")
-
-
-@dataclass(frozen=True, order=True)
-class MailId:
-    """Mail ze Skrzynki raportów: 16 liter a–p ze skrótu SHA-256 jego Message-ID.
-
-    Same litery, żeby strażnik reguły danych nie wziął skrótu za numer telefonu. Sam Message-ID do rdzenia nie wchodzi.
+    Liczy się tylko mail z tematem ``Raport dd.mm.rrrr`` z dniem otwartym w ``inputs.window``; inne maile rdzeń pomija
+    po cichu. Wpis trafia tylko do zlecenia nadawcy z dnia z tematu i tylko do pustej komórki, a przy kilku Wpisach
+    jednego zlecenia wygrywa najpóźniejszy mail.
     """
 
-    digest: str
-
-    @classmethod
-    def of(cls, message_id: str) -> MailId:
-        hexdigest = hashlib.sha256(message_id.encode("utf-8", "surrogateescape")).hexdigest()
-        return cls(hexdigest[:_DIGEST_LETTERS].translate(_LETTERS))
-
-
-class SenderAddress:
-    """Adres nadawcy Raportu wykonawcy: addr-spec po ``casefold``.
-
-    Nie jest ``str``, więc pole tekstowe Logów go nie przyjmie: ``str()`` i f-string zgłaszają ``TypeError``, a ``repr``
-    nie pokazuje adresu. Adres daje tylko ``shown()``, które woła jedynie zapis wyniku dla widoku Raporty (ADR 0028).
-    Równość i skrót idą po adresie, bo adres jest kluczem ``WorkerAddresses``.
-    """
-
-    __slots__ = ("_address",)
-
-    def __init__(self, address: str) -> None:
-        self._address = address
-
-    @classmethod
-    def of(cls, header: str) -> SenderAddress | None:
-        """Adres z nagłówka ``From`` albo z linii pliku; ``None``, gdy nie ma w nim jednego adresu ``lokalna@domena``."""
-
-        local, at, domain = parseaddr(header)[1].casefold().partition("@")
-        if not (local and at and domain) or "@" in domain or any(character.isspace() for character in local + domain):
-            return None
-        return cls(f"{local}@{domain}")
-
-    def shown(self) -> str:
-        return self._address
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, SenderAddress) and other._address == self._address
-
-    def __hash__(self) -> int:
-        return hash(self._address)
-
-    def __repr__(self) -> str:
-        return "SenderAddress(…)"
-
-    def __str__(self) -> str:
-        raise TypeError("Adres nadawcy nie jest tekstem: daje go tylko SenderAddress.shown() dla widoku Raporty.")
-
-    def __format__(self, spec: str) -> str:
-        raise TypeError("Adres nadawcy nie jest tekstem: daje go tylko SenderAddress.shown() dla widoku Raporty.")
-
-
-@dataclass(frozen=True)
-class ReportMail:
-    """Mail ze Skrzynki raportów ze słowem ``SUBJECT_WORD`` w temacie: temat i treść jako tekst, ``arrived`` ze strefą
-    taty. Od ``arrived`` zależy, który Wpis raportu jest poprawką wcześniejszego."""
-
-    id: MailId
-    sender: SenderAddress
-    subject: str
-    text: str
-    arrived: datetime
-
-
-@dataclass(frozen=True)
-class WorkerAddresses:
-    """Adres nadawcy → login Wykonawcy; buduje go tylko ``worker_addresses.load`` z pliku adresów Maksa."""
-
-    logins: Mapping[SenderAddress, Login]
+    orders = tuple(order for order in inputs.orders if inputs.window.opens(order.key.day))
+    read: list[MailRead] = []
+    problems: list[ReportProblem] = []
+    for mail in inputs.mails:
+        day = _subject.day_of(mail.subject)
+        if day is None or not inputs.window.opens(day):
+            continue
+        worker = inputs.addresses.logins.get(mail.sender)
+        if worker is None:
+            read.append(ReadStranger(mail.id, mail.arrived, day))
+            problems.append(UnknownSender(mail.id, mail.sender, day))
+        else:
+            read.append(ReadReport(mail.id, mail.arrived, worker, day, _entries.entries(mail.text)))
+    mails = tuple(sorted(read, key=lambda found: (found.arrived, found.mail)))
+    reports = [found for found in mails if isinstance(found, ReadReport)]
+    targets, unmatched = _matching.match(reports, orders)
+    changes, memory = _cells.reconcile(targets, orders, inputs.memory)
+    found = tuple(sorted({*problems, *unmatched}, key=problem_order))
+    return ReportsOutcome(changes, found, _figures.worker_days(orders, reports, found, changes), mails, memory)
