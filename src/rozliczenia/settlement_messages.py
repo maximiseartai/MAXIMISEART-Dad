@@ -1,7 +1,6 @@
-"""Katalog Komunikatów Przebiegu rozliczeń: zatrzymania i ostrzeżenia podsumowania dla taty.
+"""Katalog Komunikatów Przebiegu rozliczeń: zatrzymania i ostrzeżenia podsumowania dla taty (zasady treści: zob.
+``message``).
 
-Każda fabryka zwraca Komunikat (``message.Message``) w trzech częściach: co się
-stało, gdzie, co zrobić. Zatrzymanie to ``raise StopError(fabryka(...))``.
 Części nie zawierają pełnych ścieżek ani treści wierszy: wskazują tylko nazwę
 pliku, folder okresu, kolumnę, numer wiersza albo Wykonawcę z konfiguracji wykonawców.
 Wyjątek (ADR 0015): ``unmapped_worker`` i ``unmapped_worker_warning`` podają w „co się

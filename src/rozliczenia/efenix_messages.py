@@ -1,8 +1,7 @@
-"""Katalog Komunikatów Wyceny w efenix dla taty.
+"""Katalog Komunikatów Wyceny w efenix dla taty (zasady treści: zob. ``message``).
 
-Każda fabryka zwraca Komunikat (``message.Message``) w trzech częściach: co się stało, gdzie, co zrobić. Zatrzymanie to
-``raise StopError(fabryka(...))``. Komunikaty wskazują Plik zbiorczy i numer wiersza, bez numerów zleceń, adresów,
-loginów Wykonawców i treści stron efenix, bo trafiają też do Logów Uruchomienia.
+Komunikaty wskazują Plik zbiorczy i numer wiersza, bez numerów zleceń, adresów, loginów Wykonawców i treści stron efenix,
+bo trafiają też do Logów Uruchomienia.
 """
 
 from __future__ import annotations

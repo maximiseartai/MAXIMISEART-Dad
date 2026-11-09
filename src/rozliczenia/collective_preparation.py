@@ -1,7 +1,6 @@
 """Przygotowanie pliku zbiorczego: z Rejestru zleceń do Rozliczenia wewnętrznego i Pliku zbiorczego.
 
-Jedyną operacją publiczną jest ``prepare_collective_file()``. Silnik nie
-proponuje okresu; pyta tylko o Decyzję taty o niepełnym okresie, przez
+Silnik nie proponuje okresu; pyta tylko o Decyzję taty o niepełnym okresie, przez
 rozmowę od rdzenia Uruchomienia procesu (``decision.Conversation``), i sam
 zatrzymuje się po odmowie. Zatrzymania zgłasza jako ``StopError`` z
 Komunikatem dla taty, a wynik nie zawiera danych klientów.
@@ -9,9 +8,6 @@ Komunikatem dla taty, a wynik nie zawiera danych klientów.
 Ten moduł sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty planu na ostrzeżenia i Decyzję taty o niepełnym
 okresie, o którą pyta między Planowaniem a Zapisywaniem, a fakt Sprawdzania o Surowych zleceniach w okresie na
 Zatrzymanie przed odczytem i zapisem.
-Sprawdzanie i odczyt Rejestru zleceń przez czytniki są w ``input_checks``, wybór zleceń okresu i reguły zleceń w ``preparation_plan``,
-Ilości usług zleceń w ``quantity_rules`` (wyznaczane w Planowaniu, więc podgląd bez zapisu ma te same ostrzeżenia
-ilości co zapis), a wzorce i zapis plików okresu w ``preparation_files``.
 """
 
 from __future__ import annotations
@@ -94,8 +90,6 @@ def _incomplete_period_warning(register_path: Path, plan: Plan, incomplete: Inco
 def _plan_warnings(
     register_path: Path, files: preparation_files.PeriodFiles, plan: Plan, collective: CollectiveFilePlan
 ) -> list[Message]:
-    """Ostrzeżenia z faktów planu: najpierw o Rejestrze zleceń, potem o wierszach Pliku zbiorczego."""
-
     collective_filename = files.folder.collective_file.name
     warnings: list[Message] = []
     if plan.incomplete_period is not None:
@@ -118,8 +112,6 @@ def _plan_warnings(
 
 
 def _incomplete_period_decision(register_path: Path, plan: Plan, summary: PreparationSummary) -> Decision | None:
-    """Decyzja taty o niepełnym okresie, gdy plan ma taki fakt."""
-
     if plan.incomplete_period is None:
         return None
     return Decision(
@@ -147,10 +139,8 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
     Planowaniu, a przed Zapisywaniem pyta przez nią o Decyzję taty; odmowa to
     ``Declined`` bez zapisu, z podpowiedzią zgody tego rozmówcy. Czas
     czekania na Decyzję wstrzymuje zegar Uruchomienia, więc nie wlicza się do czasów etapów. Bez rozmówcy
-    (``run_context.UNASKED``) Przygotowanie o nic nie pyta. ``context.readers`` sprawdzają wzorce w Sprawdzaniu, a
-    Rejestr zleceń czyta raz w Sprawdzaniu uchwyt plików taty ``context.files``, więc strażnik Surowych zleceń i Odczyt
-    danych decydują na tych samych bajtach: komórki zakazanych kolumn zna
-    pamięć reguły danych (ADR 0025), a wiersze Rejestru z Odczytu danych Kopia wejścia Uruchomienia (#841).
+    (``run_context.UNASKED``) Przygotowanie o nic nie pyta. Rejestr zleceń czyta raz w Sprawdzaniu uchwyt plików taty
+    ``context.files`` (zob. ``preparation_register``).
     """
 
     phases = PhaseRunner(context.observer, clock=context.clock.now)
