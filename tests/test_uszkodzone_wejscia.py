@@ -43,6 +43,7 @@ from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.tool_update import RESULT_FILE
 
 from tests.fixtures.centrum import (
+    QUEUED_FOR_INTERNET,
     CentrumClient,
     FakePlatform,
     ToolDirectory,
@@ -283,7 +284,7 @@ def _build(root: Path) -> None:
         json.dumps({"schema_version": 1, "przeczytane": [READ_NOTIFICATION]}) + "\n", encoding="utf-8"
     )
     client = _remembering_choices(world)
-    assert client.post("/api/dad-notes", json=DAD_NOTE).json() == {"state": "waiting", "waits_for": "internet"}
+    assert client.post("/api/dad-notes", json=DAD_NOTE).json() == QUEUED_FOR_INTERNET
     assert client.get(f"/api/periods/{SETTLEMENT_PERIOD}/quantities-to-fill").json()["state"] == "ready"
     for process, period in (("preparation", PERIOD), ("settlement", SETTLEMENT_PERIOD)):
         started = client.post("/api/runs", json={"process": process, "period": period, "mode": "DRY-RUN"})
@@ -565,7 +566,7 @@ def test_centrum_swiata_bez_sieci_nie_zostawia_po_tescie_wysylki_ani_budzika_skr
     sent = _remembering_choices(world).post("/api/dad-notes", json=DAD_NOTE).json()
     join_threads_since(since, named=QUEUE_THREAD)
 
-    assert sent == {"state": "waiting", "waits_for": "internet"}
+    assert sent == QUEUED_FOR_INTERNET
     assert [thread.name for thread in threads_since(since) if thread.name in (ALARM_THREAD, QUEUE_THREAD)] == []
 
 

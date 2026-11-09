@@ -3,20 +3,16 @@ import { cn } from "cn"
 import {
   CheckIcon,
   CircleArrowUpIcon,
-  CircleCheckIcon,
-  ClockIcon,
-  EyeIcon,
   LifeBuoyIcon,
   MessageSquareTextIcon,
   ReceiptTextIcon,
-  SendIcon,
   type LucideIcon,
 } from "lucide-react"
 
 import type { Notification } from "@/api/centrum"
+import { CaseStateLine } from "@/components/case-state"
 import { LoadFailure } from "@/components/load-failure"
 import { PageHeader } from "@/components/page-header"
-import { SendProblem, type SendCause } from "@/components/send-problem"
 import { ThreePartMessage } from "@/components/three-part-message"
 import { ToolUpdateButton, ToolUpdateStatus } from "@/components/tool-update"
 import { Card } from "@/components/ui/card"
@@ -33,10 +29,6 @@ type Release = Extract<Notification, { kind: "nowa_wersja" }>
 
 type Pricing = Extract<Notification, { kind: "wycena_w_efenix" }>
 
-type Case = Exclude<Notification, Release | Pricing>
-
-type CaseState = Case["state"]
-
 const KINDS: Record<Kind, { tag: string; color: string; icon: LucideIcon }> = {
   nowa_wersja: { tag: "Nowa wersja", color: "var(--chart-3)", icon: CircleArrowUpIcon },
   uwaga: { tag: "Uwaga", color: "var(--chart-1)", icon: MessageSquareTextIcon },
@@ -45,42 +37,6 @@ const KINDS: Record<Kind, { tag: string; color: string; icon: LucideIcon }> = {
 }
 
 const SOLVED: Record<Release["solved"][number]["kind"], string> = { uwaga: "Uwaga", zgloszenie: "Zgłoszenie" }
-
-// Stany, przy których tata musi skontaktować się z Maksem, mówi wspólny `SendProblem`.
-const PROBLEMS = { czeka_na_token: "key", odrzucona: "rejected" } as const satisfies Partial<Record<CaseState, SendCause>>
-
-type ProblemState = keyof typeof PROBLEMS
-
-function isProblem(state: CaseState): state is ProblemState {
-  return state in PROBLEMS
-}
-
-// Uwaga jest rodzaju żeńskiego, Zgłoszenie nijakiego.
-const STATES: Record<
-  Exclude<CaseState, ProblemState>,
-  { text: Record<Case["kind"], string>; icon: LucideIcon; tone: string }
-> = {
-  wyslana: {
-    text: { uwaga: "Wysłana do Maksa.", zgloszenie: "Wysłane do Maksa." },
-    icon: SendIcon,
-    tone: "text-muted-foreground",
-  },
-  czeka_na_internet: {
-    text: { uwaga: "Wyślę do Maksa, gdy będzie internet.", zgloszenie: "Wyślę do Maksa, gdy będzie internet." },
-    icon: ClockIcon,
-    tone: "text-muted-foreground",
-  },
-  rozwiazana: {
-    text: { uwaga: "Rozwiązana. Będzie w następnej wersji.", zgloszenie: "Rozwiązane. Będzie w następnej wersji." },
-    icon: CircleCheckIcon,
-    tone: "text-success",
-  },
-  przeczytana: {
-    text: { uwaga: "Maks przeczytał.", zgloszenie: "Maks przeczytał." },
-    icon: EyeIcon,
-    tone: "text-muted-foreground",
-  },
-}
 
 /**
  * Widok Powiadomienia, otwierany dzwonkiem. Wejście oznacza wszystkie jako przeczytane, więc kropka na dzwonku
@@ -210,7 +166,14 @@ function Body({ notification }: { notification: Notification }) {
     case "wycena_w_efenix":
       return <PricingBody pricing={notification} />
     default:
-      return <CaseState notification={notification} />
+      return (
+        <CaseStateLine
+          state={notification.state}
+          kind={notification.kind}
+          className="gap-1.5 text-muted-foreground"
+          iconClassName="size-3.5"
+        />
+      )
   }
 }
 
@@ -237,23 +200,6 @@ function PricingBody({ pricing }: { pricing: Pricing }) {
       {pricing.stopped === null ? null : <p className="text-sm text-pretty break-words">{pricing.stopped}</p>}
       <RunCardLink runId={pricing.run_id} title={KINDS.wycena_w_efenix.tag} period={pricing.period} />
     </div>
-  )
-}
-
-function CaseState({ notification }: { notification: Case }) {
-  const shown = notification.state
-
-  if (isProblem(shown)) {
-    return <SendProblem cause={PROBLEMS[shown]} kind={notification.kind} className="gap-1.5" iconClassName="size-3.5" />
-  }
-
-  const state = STATES[shown]
-
-  return (
-    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-      <state.icon className={`size-3.5 shrink-0 ${state.tone}`} aria-hidden />
-      {state.text[notification.kind]}
-    </p>
   )
 }
 

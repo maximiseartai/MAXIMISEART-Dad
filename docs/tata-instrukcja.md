@@ -156,9 +156,8 @@ wyśle je samo, bez klikania. W miejscu przycisku zobaczysz, dlaczego czeka.
 W Powiadomieniach przy Zgłoszeniu zobaczysz to samo: na co czeka albo że
 trzeba skontaktować się z Maksem.
 
-- `Zgłoszenie czeka na internet. Wyśle się samo.` Niczego nie musisz robić.
-  Zgłoszenie wyjdzie najpóźniej minutę po powrocie internetu. W
-  Powiadomieniach: `Wyślę do Maksa, gdy będzie internet.`
+- `Wyślę do Maksa, gdy będzie internet.` Niczego nie musisz robić.
+  Zgłoszenie wyjdzie najpóźniej minutę po powrocie internetu.
 - `Token do Zgłoszeń nie działa. Skontaktuj się z Maksem.` (z czerwoną ikoną)
   Na komputerze nie ma Tokenu do Zgłoszeń albo przestał działać. Powiedz
   Maksowi. Gdy go naprawi, Zgłoszenie wyjdzie samo.
@@ -198,7 +197,8 @@ Skontaktuj się z Maksem.` znaczy, że Skrzynka Zgłoszeń jej nie przyjęła.
 
 Dzwonek w prawym górnym rogu, obok ikony „Napisz do Maksa”, otwiera
 Powiadomienia. Widać tam Twoje Uwagi i Zgłoszenia, od najnowszych, i co się z
-nimi stało: `Wysłana do Maksa.`, `Wyślę do Maksa, gdy będzie internet.`,
+nimi stało: `Uwaga wysłana do Maksa.` (przy Zgłoszeniu `Zgłoszenie wysłane do Maksa.
+Poczekaj na naprawę.`), `Wyślę do Maksa, gdy będzie internet.`,
 `Token do Zgłoszeń nie działa. Skontaktuj się z Maksem.`, `Tej Uwagi nie da
 się wysłać. Skontaktuj się z Maksem.` (przy Zgłoszeniu `Tego Zgłoszenia`),
 `Rozwiązana. Będzie w następnej wersji.` albo `Maks przeczytał.`.

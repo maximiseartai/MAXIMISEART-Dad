@@ -226,6 +226,9 @@ export type CountGroup = {
  * DadNoteDraft
  *
  * Dokładnie to, co dostanie Maks: tytuł i treść issue Uwagi taty w Skrzynce Zgłoszeń.
+ *
+ * ``shown_body`` to ta treść tak, jak pokazuje ją tacie „Maks dostanie”: odnośnik do Logów Uruchomienia jako sam
+ * napis, jak na GitHubie, bez adresu prywatnej Skrzynki, którego tata i tak nie otworzy.
  */
 export type DadNoteDraft = {
     /**
@@ -236,6 +239,10 @@ export type DadNoteDraft = {
      * Body
      */
     body: string;
+    /**
+     * Shown Body
+     */
+    shown_body: string;
 };
 
 /**
@@ -267,19 +274,17 @@ export type DadNoteNotification = {
     /**
      * State
      */
-    state: 'wyslana' | 'czeka_na_internet' | 'czeka_na_token' | 'odrzucona' | 'rozwiazana' | 'przeczytana';
-};
-
-/**
- * DadNoteRejected
- *
- * Skrzynka Zgłoszeń odrzuciła treść Uwagi taty; jak ``ReportRejected``, Centrum niczego nie obiecuje.
- */
-export type DadNoteRejected = {
-    /**
-     * State
-     */
-    state: 'rejected';
+    state: ({
+        state: 'sent';
+    } & Sent) | ({
+        state: 'queued';
+    } & Queued) | ({
+        state: 'rejected';
+    } & Rejected) | ({
+        state: 'resolved';
+    } & Resolved) | ({
+        state: 'read';
+    } & ReadByMaks);
 };
 
 /**
@@ -305,18 +310,6 @@ export type DadNoteRequest = {
 };
 
 /**
- * DadNoteSent
- *
- * Skrzynka Zgłoszeń przyjęła Uwagę taty.
- */
-export type DadNoteSent = {
-    /**
-     * State
-     */
-    state: 'sent';
-};
-
-/**
  * DadNoteText
  *
  * Tytuł i treść Uwagi taty w trakcie pisania, do podglądu „Maks dostanie”; tytuł może być jeszcze pusty.
@@ -336,22 +329,6 @@ export type DadNoteText = {
      * Run Id
      */
     run_id?: string | null;
-};
-
-/**
- * DadNoteWaiting
- *
- * Uwaga taty czeka w Kolejce wysyłki i wyjdzie sama, także po następnym starcie, gdy będzie to, na co czeka.
- */
-export type DadNoteWaiting = {
-    /**
-     * State
-     */
-    state: 'waiting';
-    /**
-     * Waits For
-     */
-    waits_for: 'internet' | 'key';
 };
 
 /**
@@ -1633,6 +1610,35 @@ export type QuantitiesToFillReady = {
 };
 
 /**
+ * Queued
+ *
+ * Wysyłka taty czeka w Kolejce wysyłki na tym komputerze i wyjdzie sama, także po następnym starcie, gdy będzie
+ * to, na co czeka.
+ */
+export type Queued = {
+    /**
+     * State
+     */
+    state: 'queued';
+    /**
+     * Waits For
+     */
+    waits_for: 'internet' | 'key';
+};
+
+/**
+ * ReadByMaks
+ *
+ * Maks zamknął issue sprawy jako ``not_planned`` albo duplikat: przeczytał, bez zmian.
+ */
+export type ReadByMaks = {
+    /**
+     * State
+     */
+    state: 'read';
+};
+
+/**
  * ReadyPath
  */
 export type ReadyPath = {
@@ -1661,6 +1667,21 @@ export type RecentResults = {
      */
     weeks: number;
     results: ResultCounts;
+};
+
+/**
+ * Rejected
+ *
+ * Skrzynka Zgłoszeń odrzuciła treść wysyłki taty: ani internet, ani Token do Zgłoszeń tego nie naprawią.
+ *
+ * Plik zostaje w Kolejce wysyłki, która spróbuje go dopiero przy następnym starcie Centrum, więc Centrum niczego nie
+ * obiecuje, tylko każe skontaktować się z Maksem.
+ */
+export type Rejected = {
+    /**
+     * State
+     */
+    state: 'rejected';
 };
 
 /**
@@ -1767,23 +1788,17 @@ export type ReportNotification = {
     /**
      * State
      */
-    state: 'wyslana' | 'czeka_na_internet' | 'czeka_na_token' | 'odrzucona' | 'rozwiazana' | 'przeczytana';
-};
-
-/**
- * ReportQueued
- *
- * Zgłoszenie czeka w Kolejce wysyłki na tym komputerze i wyjdzie samo, gdy będzie to, na co czeka.
- */
-export type ReportQueued = {
-    /**
-     * State
-     */
-    state: 'queued';
-    /**
-     * Waits For
-     */
-    waits_for: 'internet' | 'key';
+    state: ({
+        state: 'sent';
+    } & Sent) | ({
+        state: 'queued';
+    } & Queued) | ({
+        state: 'rejected';
+    } & Rejected) | ({
+        state: 'resolved';
+    } & Resolved) | ({
+        state: 'read';
+    } & ReadByMaks);
 };
 
 /**
@@ -1799,33 +1814,6 @@ export type ReportReady = {
 };
 
 /**
- * ReportRejected
- *
- * Skrzynka Zgłoszeń odrzuciła treść tego Zgłoszenia: ani internet, ani Token do Zgłoszeń tego nie naprawią.
- *
- * Plik zostaje w Kolejce wysyłki, która spróbuje go dopiero przy następnym starcie Centrum, więc Centrum niczego nie
- * obiecuje, tylko każe skontaktować się z Maksem.
- */
-export type ReportRejected = {
-    /**
-     * State
-     */
-    state: 'rejected';
-};
-
-/**
- * ReportSent
- *
- * Zgłoszenie tego problemu wysłano z tego uchwytu (albo kolejka dostarczyła je później); czeka na naprawę.
- */
-export type ReportSent = {
-    /**
-     * State
-     */
-    state: 'sent';
-};
-
-/**
  * ReportWaiting
  *
  * Zgłoszenie tego problemu wysłano wcześniej i jest otwarte: czeka na naprawę, drugie nie powstaje.
@@ -1835,6 +1823,18 @@ export type ReportWaiting = {
      * State
      */
     state: 'waiting';
+};
+
+/**
+ * Resolved
+ *
+ * Maks zamknął issue sprawy jako ``completed`` albo bez powodu: będzie w następnej wersji.
+ */
+export type Resolved = {
+    /**
+     * State
+     */
+    state: 'resolved';
 };
 
 /**
@@ -2110,16 +2110,16 @@ export type RunOutcome = {
     report: ({
         state: 'ready';
     } & ReportReady) | ({
-        state: 'sent';
-    } & ReportSent) | ({
         state: 'waiting';
     } & ReportWaiting) | ({
-        state: 'queued';
-    } & ReportQueued) | ({
-        state: 'rejected';
-    } & ReportRejected) | ({
         state: 'not_queued';
-    } & ReportNotQueued) | null;
+    } & ReportNotQueued) | ({
+        state: 'sent';
+    } & Sent) | ({
+        state: 'queued';
+    } & Queued) | ({
+        state: 'rejected';
+    } & Rejected) | null;
     /**
      * Files Unchanged
      */
@@ -2271,6 +2271,18 @@ export type RunSummary = {
 };
 
 /**
+ * Sent
+ *
+ * Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później.
+ */
+export type Sent = {
+    /**
+     * State
+     */
+    state: 'sent';
+};
+
+/**
  * Settings
  */
 export type Settings = {
@@ -2398,16 +2410,16 @@ export type ToolUpdateFailed = {
     report: ({
         state: 'ready';
     } & ReportReady) | ({
-        state: 'sent';
-    } & ReportSent) | ({
         state: 'waiting';
     } & ReportWaiting) | ({
-        state: 'queued';
-    } & ReportQueued) | ({
-        state: 'rejected';
-    } & ReportRejected) | ({
         state: 'not_queued';
-    } & ReportNotQueued);
+    } & ReportNotQueued) | ({
+        state: 'sent';
+    } & Sent) | ({
+        state: 'queued';
+    } & Queued) | ({
+        state: 'rejected';
+    } & Rejected);
     draft: ReportDraft;
     /**
      * After Restart
@@ -2720,11 +2732,11 @@ export type SendDadNoteResponses = {
      */
     200: ({
         state: 'sent';
-    } & DadNoteSent) | ({
-        state: 'waiting';
-    } & DadNoteWaiting) | ({
+    } & Sent) | ({
+        state: 'queued';
+    } & Queued) | ({
         state: 'rejected';
-    } & DadNoteRejected);
+    } & Rejected);
 };
 
 export type SendDadNoteResponse = SendDadNoteResponses[keyof SendDadNoteResponses];
@@ -3534,16 +3546,16 @@ export type ReportRunResponses = {
     200: ({
         state: 'ready';
     } & ReportReady) | ({
-        state: 'sent';
-    } & ReportSent) | ({
         state: 'waiting';
     } & ReportWaiting) | ({
-        state: 'queued';
-    } & ReportQueued) | ({
-        state: 'rejected';
-    } & ReportRejected) | ({
         state: 'not_queued';
-    } & ReportNotQueued);
+    } & ReportNotQueued) | ({
+        state: 'sent';
+    } & Sent) | ({
+        state: 'queued';
+    } & Queued) | ({
+        state: 'rejected';
+    } & Rejected);
 };
 
 export type ReportRunResponse = ReportRunResponses[keyof ReportRunResponses];
@@ -3765,16 +3777,16 @@ export type ReportToolUpdateResponses = {
     200: ({
         state: 'ready';
     } & ReportReady) | ({
-        state: 'sent';
-    } & ReportSent) | ({
         state: 'waiting';
     } & ReportWaiting) | ({
-        state: 'queued';
-    } & ReportQueued) | ({
-        state: 'rejected';
-    } & ReportRejected) | ({
         state: 'not_queued';
-    } & ReportNotQueued);
+    } & ReportNotQueued) | ({
+        state: 'sent';
+    } & Sent) | ({
+        state: 'queued';
+    } & Queued) | ({
+        state: 'rejected';
+    } & Rejected);
 };
 
 export type ReportToolUpdateResponse = ReportToolUpdateResponses[keyof ReportToolUpdateResponses];

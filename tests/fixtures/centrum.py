@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as day_time, timezone
 from pathlib import Path
-from typing import Any, Self, TypeVar
+from typing import Any, Final, Self, TypeVar
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -749,7 +749,16 @@ class Centrum:
         return self.tool.log_path
 
 
-def case_states(client: TestClient, kind: str) -> list[str]:
+# Stany Spraw taty w Powiadomieniach i stany wysyłki w odpowiedzi na „Wyślij” (``SendState`` kontraktu).
+SENT: Final = {"state": "sent"}
+QUEUED_FOR_INTERNET: Final = {"state": "queued", "waits_for": "internet"}
+QUEUED_FOR_KEY: Final = {"state": "queued", "waits_for": "key"}
+REJECTED: Final = {"state": "rejected"}
+RESOLVED: Final = {"state": "resolved"}
+READ_BY_MAKS: Final = {"state": "read"}
+
+
+def case_states(client: TestClient, kind: str) -> list[dict[str, str]]:
     """Stany Spraw taty rodzaju ``kind`` (``uwaga``, ``zgloszenie``) w Powiadomieniach.
 
     Na nie czeka test, a nie na plik stanu: Centrum podaje sprawy pod blokadą, która trzyma też zapis pliku, a na

@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from rozliczenia.centrum.contract.common import Message, Model, WaitsFor
+from rozliczenia.centrum.contract.common import Message, Model, Sending
 
 
 class ReportDraft(Model):
@@ -22,33 +22,10 @@ class ReportReady(Model):
     state: Literal["ready"]
 
 
-class ReportSent(Model):
-    """Zgłoszenie tego problemu wysłano z tego uchwytu (albo kolejka dostarczyła je później); czeka na naprawę."""
-
-    state: Literal["sent"]
-
-
 class ReportWaiting(Model):
     """Zgłoszenie tego problemu wysłano wcześniej i jest otwarte: czeka na naprawę, drugie nie powstaje."""
 
     state: Literal["waiting"]
-
-
-class ReportQueued(Model):
-    """Zgłoszenie czeka w Kolejce wysyłki na tym komputerze i wyjdzie samo, gdy będzie to, na co czeka."""
-
-    state: Literal["queued"]
-    waits_for: WaitsFor
-
-
-class ReportRejected(Model):
-    """Skrzynka Zgłoszeń odrzuciła treść tego Zgłoszenia: ani internet, ani Token do Zgłoszeń tego nie naprawią.
-
-    Plik zostaje w Kolejce wysyłki, która spróbuje go dopiero przy następnym starcie Centrum, więc Centrum niczego nie
-    obiecuje, tylko każe skontaktować się z Maksem.
-    """
-
-    state: Literal["rejected"]
 
 
 class ReportNotQueued(Model):
@@ -58,10 +35,9 @@ class ReportNotQueued(Model):
     message: Message
 
 
-ReportState = Annotated[
-    ReportReady | ReportSent | ReportWaiting | ReportQueued | ReportRejected | ReportNotQueued,
-    Field(discriminator="state"),
-]
+# Stan Zgłoszenia tego problemu: przed wysłaniem, wysłane wcześniej i otwarte, niezapisane w kolejce albo stan jego
+# wysyłki (``SendState``).
+ReportState = Annotated[ReportReady | ReportWaiting | ReportNotQueued | Sending, Field(discriminator="state")]
 
 
 CheckState = Literal["passed", "failed", "not_checked"]

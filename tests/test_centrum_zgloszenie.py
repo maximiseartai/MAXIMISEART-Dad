@@ -22,7 +22,11 @@ from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.centrum.reports import REPORT_THREAD, SEARCH_DEADLINE_S
 
 from tests.fixtures.centrum import (
+    QUEUED_FOR_INTERNET,
+    QUEUED_FOR_KEY,
     REPORT_KEY,
+    RESOLVED,
+    SENT,
     TOOL_COMMIT,
     CentrumClient,
     FakeGitHub,
@@ -293,10 +297,6 @@ def cases(centrum: PreparingCentrum) -> list[dict[str, Any]]:
     return dad_cases(centrum.tmp_path / "config", "zgloszenie")
 
 
-FOR_KEY = {"state": "queued", "waits_for": "key"}
-FOR_INTERNET = {"state": "queued", "waits_for": "internet"}
-
-
 def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu_bez_pliku_md(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     run_id = stopped_for_maks(centrum)
@@ -304,7 +304,7 @@ def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu_be
 
     queued = send(centrum, run_id)
 
-    assert queued == FOR_KEY
+    assert queued == QUEUED_FOR_KEY
     [post] = queued_reports(centrum)
     assert (post["target"]["title"], "".join(post["parts"]), post["period"]) == (preview["title"], preview["body"], PERIOD)
     assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
@@ -326,7 +326,7 @@ def test_zgloszenie_zatrzymania_bez_sieci_wysyla_sie_samo_po_powrocie_sieci(tmp_
     box.search_failure = None
     centrum.surroundings.clock.advance(RETRY_S)
 
-    assert queued == FOR_INTERNET
+    assert queued == QUEUED_FOR_INTERNET
     assert box.wait_until(lambda box: len(box.sent) == 1)
     assert [{"title": report.title, "body": report.body} for report in box.sent] == [preview]
     assert report_becomes(centrum, {"state": "sent"}) == {"state": "sent"}
@@ -337,13 +337,13 @@ def test_zgloszenie_z_kolejki_wychodzi_po_restarcie_centrum_z_numerem_w_stanie_w
     centrum = preparing_centrum(tmp_path)
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)
-    assert send(centrum, run_id) == FOR_KEY
+    assert send(centrum, run_id) == QUEUED_FOR_KEY
     write_report_key(centrum.tool)
 
     centrum.restart()
     with centrum.client:
         assert centrum.surroundings.report_box.wait_until(lambda box: len(box.sent) == 1)
-        assert wait_for(lambda: case_states(centrum.client, "zgloszenie") == ["wyslana"])
+        assert wait_for(lambda: case_states(centrum.client, "zgloszenie") == [SENT])
     centrum.client.stop()
 
     assert [case["number"] for case in cases(centrum)] == [1]
@@ -356,18 +356,18 @@ def test_numer_zgloszenia_z_kolejki_zostaje_po_restarcie_gdy_windows_na_chwile_b
     centrum = preparing_centrum(tmp_path)
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)
-    assert send(centrum, run_id) == FOR_KEY
+    assert send(centrum, run_id) == QUEUED_FOR_KEY
     write_report_key(centrum.tool)
     lock_file(monkeypatch, DAD_CASES_FILE, failures=2)
 
     centrum.restart()
     with centrum.client:
         assert centrum.surroundings.report_box.wait_until(lambda box: len(box.sent) == 1)
-        assert wait_for(lambda: case_states(centrum.client, "zgloszenie") == ["wyslana"])
+        assert wait_for(lambda: case_states(centrum.client, "zgloszenie") == [SENT])
     centrum.client.stop()
     centrum.restart()
 
-    assert case_states(centrum.client, "zgloszenie") == ["wyslana"]
+    assert case_states(centrum.client, "zgloszenie") == [SENT]
     assert [case["number"] for case in cases(centrum)] == [1]
     assert queued_reports(centrum) == []
 
@@ -402,7 +402,7 @@ def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_
     diagnose(centrum, first)
     send(centrum, first)
     centrum.surroundings.report_box.close(1)
-    assert [item["state"] for item in centrum.client.get("/api/notifications").json()["items"]] == ["rozwiazana"]
+    assert [item["state"] for item in centrum.client.get("/api/notifications").json()["items"]] == [RESOLVED]
     centrum.restart()
     again = stopped_for_maks(centrum)
     diagnose(centrum, again)
@@ -416,7 +416,7 @@ def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_
     assert state["state"] == "not_queued"
     assert "- Poprzednie Zgłoszenie: #1" in diagnose(centrum, again)["report"]["body"].splitlines()
     items = centrum.client.get("/api/notifications").json()["items"]
-    assert [(item["kind"], item["state"]) for item in items] == [("zgloszenie", "rozwiazana")]
+    assert [(item["kind"], item["state"]) for item in items] == [("zgloszenie", RESOLVED)]
     assert [case["number"] for case in cases(centrum)] == [1]
 
 
@@ -460,7 +460,7 @@ def test_ponowny_start_centrum_zaczyna_sie_po_koncu_przejscia_kolejki_poprzednie
 
     centrum.restart()
 
-    assert (queued, len(box.sent)) == (FOR_INTERNET, 1)
+    assert (queued, len(box.sent)) == (QUEUED_FOR_INTERNET, 1)
 
 
 @pytest.mark.parametrize("started", [preparing_centrum, settling_centrum], ids=["przygotowanie", "przebieg"])
@@ -689,7 +689,7 @@ def test_odmowa_przy_wysylce_uwagi_odrzuca_klucz_w_konfiguracji_bez_osobnego_pyt
 
     sent = centrum.client.post("/api/dad-notes", json={"title": "Excel myśli minutę"})
 
-    assert sent.json() == {"state": "waiting", "waits_for": "key"}
+    assert sent.json() == QUEUED_FOR_KEY
     assert key_state(centrum) == "refused_key"
     assert box.listed == [("uwaga-taty", True)]  # kolejka szuka issue tej Uwagi, a Konfiguracja nie pyta o klucz osobno
 
@@ -778,7 +778,7 @@ def test_zgloszenie_zamkniete_wedlug_powiadomien_nie_czeka_juz_po_restarcie(tmp_
     diagnose(centrum, first)
     send(centrum, first)
     box.close(1)
-    assert [item["state"] for item in centrum.client.get("/api/notifications").json()["items"]] == ["rozwiazana"]
+    assert [item["state"] for item in centrum.client.get("/api/notifications").json()["items"]] == [RESOLVED]
     centrum.restart()
 
     again = stopped_for_maks(centrum)
@@ -818,6 +818,6 @@ def test_dwa_klikniecia_w_trakcie_wysylki_daja_jedno_zgloszenie_a_centrum_odpowi
         answers = [click.result(timeout=10) for click in clicks]
 
     notifications = during_send.json()
-    assert (notifications["unread"], [item["state"] for item in notifications["items"]]) == (0, ["czeka_na_internet"])
+    assert (notifications["unread"], [item["state"] for item in notifications["items"]]) == (0, [QUEUED_FOR_INTERNET])
     assert answers == [{"state": "sent"}, {"state": "sent"}]
     assert len(box.sent) == 1
