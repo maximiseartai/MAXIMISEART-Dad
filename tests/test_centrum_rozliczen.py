@@ -281,17 +281,30 @@ SETTINGS_NOT_SAVED = (
 )
 
 
-def test_zmiana_motywu_nie_nadpisuje_ustawien_zapisanych_przez_nowsza_wersje_narzedzia(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "content",
+    [
+        "schema_version: 2\nrejestr_zlecen: Rejestr.xlsx\nfolder_okresow: INEA\n".encode(),
+        "rejestr: [nie zamknięta lista\n".encode(),
+        b"schema_version: 1\nmotyw: \xff\n",
+    ],
+    ids=["nowszy-schemat", "uszkodzony-yaml", "nie-utf-8"],
+)
+def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tmp_path: Path, content: bytes) -> None:
+    """Tata po cofnięciu Aktualizacji albo z uszkodzonym plikiem wskazuje Ustawienia jeszcze raz i pracuje dalej."""
+
     app = centrum(tmp_path)
     app.settings_path.parent.mkdir(parents=True)
-    newer = "schema_version: 2\nrejestr_zlecen: Rejestr.xlsx\nfolder_okresow: INEA\n"
-    app.settings_path.write_text(newer, encoding="utf-8")
+    app.settings_path.write_bytes(content)
 
-    response = app.client.put("/api/settings/theme", json={"theme": "light"})
+    changed = app.client.put("/api/settings/theme", json={"theme": "light"})
 
-    assert (response.status_code, response.json()) == (500, {"message": SETTINGS_NOT_SAVED})
-    assert app.settings_path.read_text(encoding="utf-8") == newer
-    assert "ustawienia-bez-zapisu przyczyna=nowszy-schemat" in app.log_path.read_text(encoding="utf-8")
+    assert changed.status_code == 200
+    assert app.client.get("/api/settings").json() == {
+        "order_register": NOT_SET,
+        "periods_directory": NOT_SET,
+        "theme": "light",
+    }
 
 
 @NO_ACCESS_ON_WINDOWS

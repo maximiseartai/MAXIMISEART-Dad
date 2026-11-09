@@ -4,9 +4,8 @@ Centrum czyta je, wskazuje Rejestr zleceń i folder okresów oknem wyboru i zmie
 taty otwiera się też z karty wyniku, gdy Zatrzymanie każe go poprawić. Brak albo uszkodzenie pliku znaczy „nie
 ustawiono”, nigdy błąd startu. Zapis podmienia plik atomowo, więc przerwany zapis zostawia poprzednie ustawienia.
 
-Zmiana nie zapisuje się na Ustawieniach, których nie dało się przeczytać: plik chwilowo niedostępny (na Windows
-trzyma go np. antywirus) albo plik nowszego schematu (po cofnięciu Aktualizacji) zostaje, a zmiana jest odmową.
-Uszkodzoną treść zmiana nadpisuje, bo tej treści i tak nie da się już odczytać.
+Zmiana nie zapisuje się na Ustawieniach, których nie dało się przeczytać: plik niedostępny (na Windows trzyma go np.
+antywirus) zostaje, a zmiana jest odmową. Uszkodzoną treść i plik innego schematu zmiana nadpisuje.
 
 Moduł nie wczytuje FastAPI: Ustawienia taty czytają też katalog procesów i gospodarze Uruchomień bez serwera, a ich
 interfejs HTTP jest w ``settings_router``.
@@ -126,8 +125,8 @@ class SettingsStore:
         raise SettingsUnreadable(read)
 
     def _read(self) -> Settings | SettingsUnreadableCause:
-        """Ustawienia z pliku; brak pliku i treść uszkodzona to ``Settings()``, a plik, który jest, ale nie da się go
-        przeczytać albo ma nowszy schemat, to przyczyna."""
+        """Ustawienia z pliku; brak pliku, treść uszkodzona i inny schemat to ``Settings()``, a plik, który jest, ale nie
+        da się go przeczytać, to ``"dostep"``."""
 
         try:
             text = self._path.read_text(encoding="utf-8")
@@ -141,10 +140,7 @@ class SettingsStore:
             return Settings()
         if not isinstance(document, dict):
             return Settings()
-        version = document.get("schema_version")
-        if isinstance(version, int) and version > _SCHEMA_VERSION:
-            return "nowszy-schemat"
-        if version != _SCHEMA_VERSION:
+        if document.get("schema_version") != _SCHEMA_VERSION:
             return Settings()
         theme = document.get("motyw")
         return Settings(
