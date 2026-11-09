@@ -1,9 +1,11 @@
-"""Podmiana INTERMAX (``intermax_replace``): reguły, które Uporządkowanie INTERMAX i przywrócenie Kopii dzielą (#716).
+"""Podmiana INTERMAX (``intermax_replace``): reguły, które Uporządkowanie INTERMAX, przywrócenie Kopii i Wpisanie
+raportów dzielą (#716, #1226).
 
-Każda reguła biegnie dla obu rodzajów Kopii INTERMAX (``ordering``, ``restore``): przy tym samym błędzie podmiany oba
-procesy zostawiają INTERMAX, folder obok niego i Kopie tak samo. Podmiana czyta i porównuje tylko bajty, więc INTERMAX
-to tu bajty, nie skoroszyt; ustawienia taty i treść dnia sprawdzają testy obu procesów. Usterki idą przez
-``FaultyDisk``, a Excel to prawdziwy plik blokady ``~$`` obok INTERMAX.
+Reguła Kopii biegnie dla obu rodzajów Kopii INTERMAX (``ordering``, ``restore``), a reguła samej podmiany także dla
+Wpisania raportów, które podmienia bez Kopii (``variant`` ``None``, ADR 0028): przy tym samym błędzie podmiany każdy
+proces zostawia INTERMAX, folder obok niego i Kopie tak samo i dostaje ten sam fakt. Podmiana czyta i porównuje tylko
+bajty, więc INTERMAX to tu bajty, nie skoroszyt; ustawienia taty i treść zapisu sprawdzają testy procesów. Usterki idą
+przez ``FaultyDisk``, a Excel to prawdziwy plik blokady ``~$`` obok INTERMAX.
 """
 
 from __future__ import annotations
@@ -18,7 +20,15 @@ from pathlib import Path
 import pytest
 
 from rozliczenia.intermax_copies import KEPT, Before
-from rozliczenia.intermax_replace import LOCAL_DISK, Refusal, Replaced, Waiting, WriteMismatch, replace_register
+from rozliczenia.intermax_replace import (
+    LOCAL_DISK,
+    Refusal,
+    Replaced,
+    Waiting,
+    WriteMismatch,
+    replace_register,
+    replace_without_copy,
+)
 from rozliczenia.workbook_files import Problem, WorkbookError
 
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
@@ -40,6 +50,20 @@ def before(request: pytest.FixtureRequest) -> Before:
     return kind
 
 
+@pytest.fixture(params=["ordering", "restore", None], ids=["Uporządkowanie", "przywrócenie Kopii", "Wpisanie raportów"])
+def variant(request: pytest.FixtureRequest) -> Before | None:
+    """Rodzaj Kopii INTERMAX podmiany albo ``None``: podmiana Wpisania raportów bez Kopii."""
+
+    kind: Before | None = request.param
+    return kind
+
+
+def _copies_after(variant: Before | None) -> dict[str, bytes]:
+    """Kopie INTERMAX po udanej podmianie w pustym folderze Kopii."""
+
+    return {} if variant is None else {NAMES[variant]: ORIGINAL}
+
+
 @dataclass
 class Folders:
     register: Path
@@ -58,16 +82,24 @@ class Folders:
 
     def replace(
         self,
-        before: Before,
+        before: Before | None,
         disk: FaultyDisk | None = None,
         *,
         check: Callable[[bytes], None] | None = None,
         content: bytes = NEW,
-    ) -> Replaced | Refusal:
+    ) -> Replaced | Refusal | None:
+        """Podmiana z Kopią ``before`` albo, dla ``None``, bez Kopii (``None`` wyniku: INTERMAX podmieniony)."""
+
         def same_as_content(written: bytes) -> None:
             if written != content:
                 raise WriteMismatch("treść")
 
+        waiting = Waiting(self.clock, self.clock.pause)
+        steps = (disk or FaultyDisk()).disk()
+        if before is None:
+            return replace_without_copy(
+                self.register, ORIGINAL, content, check or same_as_content, waiting=waiting, disk=steps
+            )
         return replace_register(
             self.register,
             ORIGINAL,
@@ -76,8 +108,8 @@ class Folders:
             before=before,
             copies=self.copies,
             now=lambda: NOW,
-            waiting=Waiting(self.clock, self.clock.pause),
-            disk=(disk or FaultyDisk()).disk(),
+            waiting=waiting,
+            disk=steps,
         )
 
 
@@ -113,6 +145,17 @@ def test_udana_podmiana_zostawia_nowe_bajty_i_kopie_bajtow_sprzed_podmiany(folde
     assert (outcome.copy.path.name, outcome.copy.before, outcome.copy.moment) == (NAMES[before], before, NOW.astimezone())
     assert outcome.old_copies_kept is False
     assert folders.state() == (NEW, [folders.register.name], {NAMES[before]: ORIGINAL})
+
+
+def test_podmiana_wpisania_raportow_nie_robi_kopii_i_nie_usuwa_starszych(folders: Folders) -> None:
+    older = _older_copies(folders, KEPT + 2)
+    kept = folders.state()[2]
+
+    outcome = folders.replace(None)
+
+    assert outcome is None
+    assert folders.state() == (NEW, [folders.register.name], kept)
+    assert sorted(kept) == sorted(older)
 
 
 def test_po_udanej_podmianie_zostaje_10_najnowszych_kopii(folders: Folders, before: Before) -> None:
@@ -164,48 +207,50 @@ def test_kopia_powstaje_tuz_przed_podmiana(folders: Folders, before: Before) -> 
     assert seen == [ORIGINAL]
 
 
-def test_intermax_otwarty_w_excelu_przed_kopia_to_excel_bez_kopii(folders: Folders, before: Before) -> None:
+def test_intermax_otwarty_w_excelu_przed_podmiana_to_excel_bez_kopii(folders: Folders, variant: Before | None) -> None:
     folders.lock.write_bytes(b"")
 
     with _unchanged(folders):
-        assert folders.replace(before) is Refusal.EXCEL_HOLDS
+        assert folders.replace(variant) is Refusal.EXCEL_HOLDS
 
 
-def test_odmowa_podmiany_przy_otwartym_excelu_to_excel_bez_czekania_i_bez_kopii(folders: Folders, before: Before) -> None:
+def test_odmowa_podmiany_przy_otwartym_excelu_to_excel_bez_czekania_i_bez_kopii(
+    folders: Folders, variant: Before | None
+) -> None:
     replace, attempts = failing_replace(denied, before=lambda: folders.lock.write_bytes(b""))
 
     with _unchanged(folders):
-        outcome = folders.replace(before, FaultyDisk(replace=replace))
+        outcome = folders.replace(variant, FaultyDisk(replace=replace))
         folders.lock.unlink()
 
     assert outcome is Refusal.EXCEL_HOLDS
     assert (len(attempts), folders.clock.seconds) == (1, 4000.0)
 
 
-def test_odmowa_podmiany_bez_excela_po_5_sekundach_to_onedrive_bez_kopii(folders: Folders, before: Before) -> None:
+def test_odmowa_podmiany_bez_excela_po_5_sekundach_to_onedrive_bez_kopii(folders: Folders, variant: Before | None) -> None:
     replace, attempts = failing_replace(denied)
 
     with _unchanged(folders):
-        assert folders.replace(before, FaultyDisk(replace=replace)) is Refusal.ONEDRIVE_HOLDS
+        assert folders.replace(variant, FaultyDisk(replace=replace)) is Refusal.ONEDRIVE_HOLDS
 
     assert (len(attempts), folders.clock.seconds) == (11, 4005.0)
 
 
-def test_podmiana_po_chwilowej_odmowie_onedrive_sie_udaje(folders: Folders, before: Before) -> None:
+def test_podmiana_po_chwilowej_odmowie_onedrive_sie_udaje(folders: Folders, variant: Before | None) -> None:
     replace, attempts = failing_replace(denied, times=2)
 
-    outcome = folders.replace(before, FaultyDisk(replace=replace))
+    outcome = folders.replace(variant, FaultyDisk(replace=replace))
 
-    assert isinstance(outcome, Replaced)
+    assert outcome is None if variant is None else isinstance(outcome, Replaced)
     assert (len(attempts), folders.clock.seconds) == (3, 4001.0)
-    assert folders.state() == (NEW, [folders.register.name], {NAMES[before]: ORIGINAL})
+    assert folders.state() == (NEW, [folders.register.name], _copies_after(variant))
 
 
-def test_wersja_wgrana_przez_onedrive_w_przerwie_zostaje_a_kopia_znika(folders: Folders, before: Before) -> None:
+def test_wersja_wgrana_przez_onedrive_w_przerwie_zostaje_a_kopia_znika(folders: Folders, variant: Before | None) -> None:
     worker = b"INTERMAX z poprawka pracownika"
     replace, attempts = failing_replace(denied, before=lambda: folders.register.write_bytes(worker))
 
-    outcome = folders.replace(before, FaultyDisk(replace=replace))
+    outcome = folders.replace(variant, FaultyDisk(replace=replace))
 
     assert outcome is Refusal.ONEDRIVE_HOLDS
     assert len(attempts) == 1
@@ -218,7 +263,7 @@ def test_wersja_wgrana_przez_onedrive_w_przerwie_zostaje_a_kopia_znika(folders: 
     ids=["tata otwiera INTERMAX w Excelu", "INTERMAX niedostępny"],
 )
 def test_intermax_nieczytelny_w_przerwie_przed_ponowna_proba_to_odmowa_bez_kopii(
-    folders: Folders, before: Before, problem: Problem, refusal: Refusal
+    folders: Folders, variant: Before | None, problem: Problem, refusal: Refusal
 ) -> None:
     replace, attempts = failing_replace(denied)
 
@@ -228,39 +273,41 @@ def test_intermax_nieczytelny_w_przerwie_przed_ponowna_proba_to_odmowa_bez_kopii
         return path.read_bytes()
 
     with _unchanged(folders):
-        assert folders.replace(before, FaultyDisk(read=read, replace=replace)) is refusal
+        assert folders.replace(variant, FaultyDisk(read=read, replace=replace)) is refusal
 
     assert len(attempts) == 1
 
 
-def test_inny_blad_podmiany_niz_odmowa_to_zapis_nieudany_bez_czekania_i_bez_kopii(folders: Folders, before: Before) -> None:
+def test_inny_blad_podmiany_niz_odmowa_to_zapis_nieudany_bez_czekania_i_bez_kopii(
+    folders: Folders, variant: Before | None
+) -> None:
     # Excel otwiera INTERMAX tuż przed podmianą, a ta kończy się brakiem miejsca: Excel nie zmienia tej prawdy.
     replace, attempts = failing_replace(no_space, before=lambda: folders.lock.write_bytes(b""))
 
     with _unchanged(folders):
-        outcome = folders.replace(before, FaultyDisk(replace=replace))
+        outcome = folders.replace(variant, FaultyDisk(replace=replace))
         folders.lock.unlink()
 
     assert outcome is Refusal.WRITE_FAILED
     assert (len(attempts), folders.clock.seconds) == (1, 4000.0)
 
 
-def test_nieudany_zapis_pliku_tymczasowego_to_zapis_nieudany_bez_kopii(folders: Folders, before: Before) -> None:
+def test_nieudany_zapis_pliku_tymczasowego_to_zapis_nieudany_bez_kopii(folders: Folders, variant: Before | None) -> None:
     def full(path: Path, content: bytes) -> None:
         raise no_space()
 
     with _unchanged(folders):
-        assert folders.replace(before, FaultyDisk(write=full)) is Refusal.WRITE_FAILED
+        assert folders.replace(variant, FaultyDisk(write=full)) is Refusal.WRITE_FAILED
 
 
-def test_plik_tymczasowy_ktorego_nie_da_sie_utworzyc_to_zapis_nieudany(tmp_path: Path, before: Before) -> None:
+def test_plik_tymczasowy_ktorego_nie_da_sie_utworzyc_to_zapis_nieudany(tmp_path: Path, variant: Before | None) -> None:
     folders = Folders(tmp_path / "brak folderu" / "INTERMAX.xlsx", tmp_path / "Kopie INTERMAX", ManualClock())
 
-    assert folders.replace(before) is Refusal.WRITE_FAILED
+    assert folders.replace(variant) is Refusal.WRITE_FAILED
     assert list(tmp_path.iterdir()) == []
 
 
-def test_niezgodny_zapis_to_zapis_niezgodny_a_kopia_nawet_nie_powstaje(folders: Folders, before: Before) -> None:
+def test_niezgodny_zapis_to_zapis_niezgodny_a_kopia_nawet_nie_powstaje(folders: Folders, variant: Before | None) -> None:
     created: list[Path] = []
 
     def create(path: Path, content: bytes) -> None:
@@ -270,17 +317,17 @@ def test_niezgodny_zapis_to_zapis_niezgodny_a_kopia_nawet_nie_powstaje(folders: 
     disk = FaultyDisk(write=writing(lambda data: data[:-1]), create=create)
 
     with _unchanged(folders):
-        assert folders.replace(before, disk) is Refusal.WRITE_MISMATCH
+        assert folders.replace(variant, disk) is Refusal.WRITE_MISMATCH
 
     assert created == []
 
 
-def test_nieczytelny_plik_tymczasowy_to_zapis_niezgodny_bez_kopii(folders: Folders, before: Before) -> None:
+def test_nieczytelny_plik_tymczasowy_to_zapis_niezgodny_bez_kopii(folders: Folders, variant: Before | None) -> None:
     def unreadable(written: bytes) -> None:
         raise KeyError("xl/workbook.xml")  # openpyxl nie znajduje części skoroszytu
 
     with _unchanged(folders):
-        assert folders.replace(before, check=unreadable) is Refusal.WRITE_MISMATCH
+        assert folders.replace(variant, check=unreadable) is Refusal.WRITE_MISMATCH
 
 
 def test_kopia_o_tej_samej_nazwie_zostaje_nietknieta(folders: Folders, before: Before) -> None:
@@ -359,14 +406,14 @@ def test_plik_w_miejscu_folderu_kopii_to_kopia_nieudana(folders: Folders, before
 
 
 @pytest.mark.parametrize("failure", [RuntimeError("błąd w kodzie"), KeyboardInterrupt()], ids=["wyjatek", "przerwanie"])
-def test_wyjatek_po_kopii_zostawia_intermax_i_kopie_jak_byly(
-    folders: Folders, before: Before, failure: BaseException
+def test_wyjatek_przy_podmianie_zostawia_intermax_i_kopie_jak_byly(
+    folders: Folders, variant: Before | None, failure: BaseException
 ) -> None:
     def broken(source: Path, target: Path) -> None:
         raise failure
 
     with _unchanged(folders), pytest.raises(type(failure)):
-        folders.replace(before, FaultyDisk(replace=broken))
+        folders.replace(variant, FaultyDisk(replace=broken))
 
 
 def test_kopia_ktorej_nie_da_sie_usunac_nie_zaslania_faktu(folders: Folders, before: Before) -> None:

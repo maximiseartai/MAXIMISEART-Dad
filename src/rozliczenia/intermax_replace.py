@@ -1,21 +1,25 @@
-"""Podmiana INTERMAX: jedyna droga, którą Uporządkowanie INTERMAX i przywrócenie Kopii INTERMAX zastępują Rejestr zleceń.
+"""Podmiana INTERMAX: jedyna droga, którą Uporządkowanie INTERMAX, przywrócenie Kopii INTERMAX i Wpisanie raportów
+zastępują Rejestr zleceń.
 
-``replace_register`` dostaje to, czym oba procesy się różnią: nowe bajty INTERMAX, sprawdzenie zapisanego pliku i
-rodzaj Kopii INTERMAX (``Before``). Ukrywa resztę (ADR 0019):
+``replace_register`` (Uporządkowanie i przywrócenie Kopii) i ``replace_without_copy`` (Wpisanie raportów, bez Kopii
+INTERMAX, ADR 0028) dostają to, czym procesy się różnią: nowe bajty INTERMAX i sprawdzenie zapisanego pliku, a
+``replace_register`` także rodzaj Kopii INTERMAX (``Before``). Obie przechodzą przez jedną sekwencję
+(``_replacement``) i różnią się tylko tym, czy robią Kopię. Ukrywają resztę (ADR 0019):
 
 1. nowe bajty trafiają do pliku tymczasowego obok INTERMAX (``workbook_save.write_atomically``), który zostaje
    odczytany jeszcze raz i sprawdzony;
-2. dopiero po zgodnym sprawdzeniu: INTERMAX otwarty w Excelu (plik blokady) zatrzymuje podmianę, a inaczej powstaje
-   Kopia INTERMAX z bajtami sprzed podmiany, z nazwą z chwili ``now()``;
+2. dopiero po zgodnym sprawdzeniu: INTERMAX otwarty w Excelu (plik blokady) zatrzymuje podmianę, a inaczej
+   ``replace_register`` robi Kopię INTERMAX z bajtami sprzed podmiany, z nazwą z chwili ``now()``;
 3. atomowa podmiana; odmowę bez pliku blokady Excela (OneDrive synchronizuje INTERMAX) ponawia przez ``RETRY_S``
    sekund zegara ``Waiting``, a przed każdą ponowną próbą czyta INTERMAX jeszcze raz i podmienia tylko INTERMAX o
    bajtach sprzed podmiany;
-4. po udanej podmianie zostaje ``intermax_copies.KEPT`` najnowszych Kopii obu nazw.
+4. po udanej podmianie ``replace_register`` zostawia ``intermax_copies.KEPT`` najnowszych Kopii obu nazw.
 
-Zwraca fakt, nie Komunikat: ``Replaced`` albo jedną ``Refusal``. Katalog każdego procesu tylko ją nazywa. Po każdej
-``Refusal`` i po każdym innym wyjątku INTERMAX, folder obok niego i folder Kopii są takie, jak były: Kopia, która
-już powstała, znika (jedna polityka dla obu procesów), a plik tymczasowy nie zostaje. Nieudane usunięcie starszych
-Kopii to ``Replaced.old_copies_kept``, bo INTERMAX jest już podmieniony.
+Zwraca fakt, nie Komunikat: podmianę albo jedną ``Refusal``, tę samą dla każdego procesu. Katalog każdego procesu tylko
+ją nazywa. Po każdej ``Refusal`` i po każdym innym wyjątku INTERMAX, folder obok niego i folder Kopii są takie, jak
+były: Kopia, która już powstała, znika (jedna polityka dla obu procesów z Kopią), a plik tymczasowy nie zostaje.
+Nieudane usunięcie starszych Kopii to ``Replaced.old_copies_kept``, bo INTERMAX jest już podmieniony.
+``replace_without_copy`` folderu Kopii nie dotyka wcale.
 """
 
 from __future__ import annotations
@@ -37,7 +41,16 @@ from .intermax_copies import Before, Copy
 from .workbook_files import Problem, WorkbookError
 from .workbook_save import WorkbookSaveError, write_atomically
 
-__all__ = ["LOCAL_DISK", "Disk", "Refusal", "Replaced", "Waiting", "WriteMismatch", "replace_register"]
+__all__ = [
+    "LOCAL_DISK",
+    "Disk",
+    "Refusal",
+    "Replaced",
+    "Waiting",
+    "WriteMismatch",
+    "replace_register",
+    "replace_without_copy",
+]
 
 RETRY_S: Final = 5.0
 """Tyle sekund podmiana ponawia zastąpienie INTERMAX, którego system odmawia, choć Excel go nie trzyma."""
@@ -138,6 +151,80 @@ class _Refused(Exception):
         self.refusal = refusal
 
 
+@dataclass
+class _Replacing:
+    """Czy atomowa podmiana INTERMAX już się udała; ``finally`` procesu z Kopią wie z tego, czy Kopia zostaje."""
+
+    replaced: bool = False
+
+
+def _replacement(
+    register: Path,
+    current: bytes,
+    content: bytes,
+    check: Callable[[bytes], None],
+    *,
+    prepare: Callable[[], Callable[[], None]],
+    waiting: Waiting,
+    disk: Disk,
+    state: _Replacing,
+) -> Refusal | None:
+    """Jedna sekwencja podmiany obu wariantów; ``None``: INTERMAX podmieniony.
+
+    ``prepare`` biegnie po zgodnym sprawdzeniu zapisu, przed kontrolą blokady Excela (chwila Kopii z zegara procesu),
+    i oddaje krok, który biegnie po tej kontroli, tuż przed podmianą (Kopia INTERMAX albo nic); oba zgłaszają swoją
+    odmowę jako ``_Refused``.
+    """
+
+    def write(temporary: Path) -> None:
+        try:
+            disk.write(temporary, content)
+        except OSError as error:
+            raise _Refused(Refusal.WRITE_FAILED) from error
+        try:
+            written = disk.read(temporary)
+            with workbook_files.unreadable_as_error(temporary):
+                check(written)
+        except (WorkbookError, WriteMismatch) as error:
+            raise _Refused(Refusal.WRITE_MISMATCH) from error
+        ready = prepare()
+        if workbook_files.is_open_in_excel(register):
+            raise _Refused(Refusal.EXCEL_HOLDS)
+        ready()
+
+    def replace(temporary: Path, target: Path) -> None:
+        deadline = waiting.clock() + RETRY_S
+        while True:
+            try:
+                disk.replace(temporary, target)
+            except PermissionError as error:
+                if workbook_files.is_open_in_excel(target):
+                    raise _Refused(Refusal.EXCEL_HOLDS) from error
+                if waiting.clock() >= deadline:
+                    raise _Refused(Refusal.ONEDRIVE_HOLDS) from error
+            except OSError as error:
+                raise _Refused(Refusal.WRITE_FAILED) from error
+            else:
+                state.replaced = True
+                return
+            waiting.pause(_PAUSE_S)
+            try:
+                unchanged = disk.read(target) == current
+            except WorkbookError as error:
+                excel = error.problem is Problem.OPEN_IN_EXCEL
+                raise _Refused(Refusal.EXCEL_HOLDS if excel else Refusal.ONEDRIVE_HOLDS) from error
+            if not unchanged:
+                raise _Refused(Refusal.ONEDRIVE_HOLDS)
+
+    try:
+        write_atomically(register, write, replace=replace)
+    except _Refused as refused:
+        return refused.refusal
+    except WorkbookSaveError:  # pliku tymczasowego nie da się utworzyć; podmiana nie przepuszcza ``OSError``
+        return Refusal.WRITE_FAILED
+    return None
+
+
 def replace_register(
     register: Path,
     current: bytes,
@@ -158,74 +245,60 @@ def replace_register(
     """
 
     made: list[Copy] = []
-    replaced = False
+    state = _Replacing()
 
-    def write(temporary: Path) -> None:
-        try:
-            disk.write(temporary, content)
-        except OSError as error:
-            raise _Refused(Refusal.WRITE_FAILED) from error
-        try:
-            written = disk.read(temporary)
-            with workbook_files.unreadable_as_error(temporary):
-                check(written)
-        except (WorkbookError, WriteMismatch) as error:
-            raise _Refused(Refusal.WRITE_MISMATCH) from error
-        moment = now()
-        if workbook_files.is_open_in_excel(register):
-            raise _Refused(Refusal.EXCEL_HOLDS)
-        copy = intermax_copies.named(copies, before, moment)
-        try:
-            taken = disk.exists(copy.path)  # Kopia o tej nazwie, która już jest, zostaje nietknięta
-        except OSError as error:  # folderu Kopii nie da się przeszukać
-            raise _Refused(Refusal.COPY_FAILED) from error
-        try:
-            disk.create(copy.path, current)
-        except FileExistsError as error:  # także Kopia, którą ktoś zapisał po sprawdzeniu nazwy
-            taken = True
-            raise _Refused(Refusal.COPY_EXISTS) from error
-        except OSError as error:
-            raise _Refused(Refusal.COPY_EXISTS if taken else Refusal.COPY_FAILED) from error
-        finally:
-            if not taken:
-                made.append(copy)  # cała albo jej część, której zapis się nie udał
+    def prepare_copy() -> Callable[[], None]:
+        copy = intermax_copies.named(copies, before, now())
 
-    def replace(temporary: Path, target: Path) -> None:
-        nonlocal replaced
-        deadline = waiting.clock() + RETRY_S
-        while True:
+        def make_copy() -> None:
             try:
-                disk.replace(temporary, target)
-            except PermissionError as error:
-                if workbook_files.is_open_in_excel(target):
-                    raise _Refused(Refusal.EXCEL_HOLDS) from error
-                if waiting.clock() >= deadline:
-                    raise _Refused(Refusal.ONEDRIVE_HOLDS) from error
+                taken = disk.exists(copy.path)  # Kopia o tej nazwie, która już jest, zostaje nietknięta
+            except OSError as error:  # folderu Kopii nie da się przeszukać
+                raise _Refused(Refusal.COPY_FAILED) from error
+            try:
+                disk.create(copy.path, current)
+            except FileExistsError as error:  # także Kopia, którą ktoś zapisał po sprawdzeniu nazwy
+                taken = True
+                raise _Refused(Refusal.COPY_EXISTS) from error
             except OSError as error:
-                raise _Refused(Refusal.WRITE_FAILED) from error
-            else:
-                replaced = True
-                return
-            waiting.pause(_PAUSE_S)
-            try:
-                unchanged = disk.read(target) == current
-            except WorkbookError as error:
-                excel = error.problem is Problem.OPEN_IN_EXCEL
-                raise _Refused(Refusal.EXCEL_HOLDS if excel else Refusal.ONEDRIVE_HOLDS) from error
-            if not unchanged:
-                raise _Refused(Refusal.ONEDRIVE_HOLDS)
+                raise _Refused(Refusal.COPY_EXISTS if taken else Refusal.COPY_FAILED) from error
+            finally:
+                if not taken:
+                    made.append(copy)  # cała albo jej część, której zapis się nie udał
+
+        return make_copy
 
     try:
-        write_atomically(register, write, replace=replace)
-    except _Refused as refused:
-        return refused.refusal
-    except WorkbookSaveError:  # pliku tymczasowego nie da się utworzyć; podmiana nie przepuszcza ``OSError``
-        return Refusal.WRITE_FAILED
+        refusal = _replacement(
+            register, current, content, check, prepare=prepare_copy, waiting=waiting, disk=disk, state=state
+        )
     finally:
-        if not replaced:
+        if not state.replaced:
             for copy in made:
                 _forget(copy.path, disk)
+    if refusal is not None:
+        return refusal
     return Replaced(made[0], not _pruned(copies, disk))
+
+
+def replace_without_copy(
+    register: Path,
+    current: bytes,
+    content: bytes,
+    check: Callable[[bytes], None],
+    *,
+    waiting: Waiting,
+    disk: Disk = LOCAL_DISK,
+) -> Refusal | None:
+    """Zastępuje INTERMAX ``register`` o bajtach ``current`` bajtami ``content`` bez Kopii INTERMAX (Wpisanie raportów,
+    ADR 0028); ``None``: INTERMAX podmieniony.
+
+    Ta sama sekwencja i te same ``Refusal`` co ``replace_register``, bez kroków Kopii; folderu Kopii nie dotyka.
+    """
+
+    return _replacement(
+        register, current, content, check, prepare=lambda: lambda: None, waiting=waiting, disk=disk, state=_Replacing()
+    )
 
 
 def _forget(path: Path, disk: Disk) -> None:

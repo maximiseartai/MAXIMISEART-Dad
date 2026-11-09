@@ -33,6 +33,7 @@ pilnuje:
   - src/rozliczenia/raw_orders.py
   - src/rozliczenia/register_columns.py
   - src/rozliczenia/register_file.py
+  - src/rozliczenia/report_cells.py
   - src/rozliczenia/row_look.py
   - src/rozliczenia/row_positions.py
   - src/rozliczenia/run_clock.py
