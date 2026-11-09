@@ -24,8 +24,8 @@ Katalog procesów (``centrum/catalog.py``), wpis procesu (``centrum/process_kind
 nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy okresów ani okna efenix, także przez inne
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
 komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
-katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``dataclasses.replace`` z ``metrics=`` albo
-z Uruchomienia, którego nazwa mówi ``prepared``) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
+katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``replace`` z ``metrics=`` albo
+z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
 plik metryk i silnik procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``,
 ``Catalog.steered``, ``Catalog.with_engine``). Eksplorator Uruchomień daje swój silnik przez ``Catalog.with_engine``, więc
 prawdziwe ``PreparedRun.conduct`` biegnie w każdym harmonogramie (przegląd #1127: podklasa z własnym ``conduct`` je
@@ -68,7 +68,7 @@ Test czyta AST importów, także względnych, importów w funkcji i pakietów na
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
 (``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod nazwą
 przypisaną poza importem albo jako ``type(prepared)``, kopia ``PreparedRun`` przez ``replace`` przypisane innej nazwie
-poza importem albo z innym rdzeniem (``kind=``) z wartości, której nazwa nie mówi ``prepared``, moduł ``comment_versions`` przypisany innej
+poza importem albo z wyrażenia bez ``prepared`` w tekście z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…), moduł ``comment_versions`` przypisany innej
 nazwie poza importem, wysyłka Logów zmieniona w słuchaczu kolejki bez nazwania etykiety (np. po ``run_id``) albo
 zbudowana z etykietą wziętą z innej wysyłki (``post.target.label``) oraz celowe obejście strażnika bez nazwy jego typów
 (``object.__new__(type(logs))``, zmiana ``__class__``).
@@ -424,11 +424,11 @@ _COPYING_MODULES: typing.Final = frozenset({"dataclasses", "copy"})
 def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
     """Miejsca w ``tree``, które składają ``PreparedRun`` obok ``Catalog.prepared``: jego konstruktor (nazwa albo
     atrybut ``PreparedRun``), podklasa (składa się sama, ``cls(...)``) i kopia przez ``replace`` z ``dataclasses`` albo
-    ``copy`` albo przez ``__replace__``, z innym plikiem metryk (``metrics=``) albo z Uruchomienia, którego nazwa mówi
-    ``prepared``. Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
+    ``copy`` albo przez ``__replace__``, z innym plikiem metryk (``metrics=``) albo z wyrażenia, którego tekst ma
+    ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
 
-    Kopię z innym rdzeniem (``kind=``) test rozpoznaje tylko po nazwie kopiowanej wartości, bo pole ``kind`` mają też
-    inne dataclassy (``stops.StopShown``).
+    Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
+    wyrażenia, bo te pola mają też inne dataclassy (``stops.StopShown``).
     """
 
     builds = {"PreparedRun"}
