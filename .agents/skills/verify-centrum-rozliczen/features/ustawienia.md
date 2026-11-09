@@ -16,6 +16,7 @@ longer exists.
 - `ustawienia-anulowanie`: a cancelled picker changes nothing.
 - `ustawienia-nieistniejaca-sciezka`: a remembered Rejestr zleceń that is gone shows `Nie ma już: <name>`.
 - `ustawienia-nieczytelny-plik`: while the settings file cannot be read, both paths show `Nie da się teraz odczytać Ustawień taty`, not `Nie wskazano`.
+- `ustawienia-niedostepna-sciezka`: a Rejestr zleceń and a folder okresów in a folder Dad cannot open now show `Nie da się teraz odczytać: <name>`, not `Nie ma już`.
 - `ustawienia-motyw`: the theme icon switches to light, and the choice survives a reload.
 
 ## How to get to it (user POV)
@@ -39,8 +40,9 @@ Preconditions:
 - **Cancel.** With no answer file, click button `Zmień Rejestr zleceń`. `dialogs.jsonl` gains one line, the button becomes enabled again, and the settings file is byte-identical.
 - **Path gone.** Rename the Rejestr file, then reload. Group `Rejestr zleceń` shows `Nie ma już: ZLECENIA SYNTETYCZNE OD 01_01_2026.xlsx`, and `GET /api/settings` reports `order_register.state` = `missing` (`api/ustawienia-brak-rejestru.json`). Rename it back.
 - **Settings file unreadable.** Harness: the system refuses to read the settings file (chmod 0; on Windows a byte-range lock, as when an antivirus holds it). Reload. Groups `Rejestr zleceń` and `Folder okresów` show `Nie da się teraz odczytać Ustawień taty`, and `GET /api/settings` reports both paths `unreadable` (`api/ustawienia-nieczytelny-plik.json`); capture `275`. Harness: access back, reload, the Rejestr name is shown again.
+- **Path without access.** Harness: folder `OneDrive` in the run root with a copy of the Rejestr zleceń and an empty `INEA`. Point both with `Zmień Rejestr zleceń` and `Zmień Folder okresów` until the settings file has them. Harness: `OneDrive` has no permissions (chmod 0). Reload. Group `Rejestr zleceń` shows `Nie da się teraz odczytać: ZLECENIA SYNTETYCZNE OD 01_01_2026.xlsx` and group `Folder okresów` shows `Nie da się teraz odczytać: INEA`; capture `276`. `GET /api/settings` reports both `inaccessible` with their paths (`api/ustawienia-niedostepna-sciezka.json`). Harness: access back, point the fixture's Rejestr zleceń and `INEA` again, remove `OneDrive`, reload. On Windows chmod does not take away access to a folder (`NO_ACCESS_ON_WINDOWS` in the tests), so there the harness gives the page, through `page.route`, the answer of `GET /api/settings` for the fixture's paths in such a folder (`api/ustawienia-przed-niedostepna-sciezka.json` is the real answer it changes), and the drive checks the two texts and capture `276` only.
 - **Theme.** Click button `Włącz motyw jasny`. `<html>` loses class `dark` and the settings file gets `motyw: light`. After a reload the page is still light and the button reads `Włącz motyw ciemny`. Click it to return to dark.
-- **Proof.** Screenshots `01`–`05`, `18`, `19`, and `275`, and `state/centrum-ustawienia.yaml`.
+- **Proof.** Screenshots `01`–`05`, `18`, `19`, `275`, and `276`, and `state/centrum-ustawienia.yaml`.
 
 ## Gotchas
 

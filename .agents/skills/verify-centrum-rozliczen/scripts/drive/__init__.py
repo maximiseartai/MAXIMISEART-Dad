@@ -45,6 +45,7 @@ FEATURES = (
             "18-ustawienia-braki-do-startu",
             "04-ustawienia-brak-rejestru",
             "275-ustawienia-nieczytelny-plik",
+            "276-ustawienia-niedostepna-sciezka",
             "05-ustawienia-motyw-jasny",
         ),
     ),

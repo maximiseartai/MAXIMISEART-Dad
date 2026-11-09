@@ -15,7 +15,7 @@ from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.settings import Settings, SettingState, SettingsStore, SettingsUnreadable, Theme
+from rozliczenia.centrum.settings import DEFAULT_THEME, Settings, SettingState, SettingsStore, SettingsUnreadable, Theme
 from rozliczenia.file_state import file_state
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
@@ -83,7 +83,7 @@ def describe(settings: Settings | None) -> settings_contract.Settings:
 
     if settings is None:
         unreadable = settings_contract.UnreadablePath(state="unreadable")
-        return settings_contract.Settings(order_register=unreadable, periods_directory=unreadable, theme="dark")
+        return settings_contract.Settings(order_register=unreadable, periods_directory=unreadable, theme=DEFAULT_THEME)
     return settings_contract.Settings(
         order_register=_describe_path(settings.register, settings.register_state),
         periods_directory=_describe_path(settings.periods_directory, settings.periods_directory_state),
