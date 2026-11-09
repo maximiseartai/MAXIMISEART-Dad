@@ -3118,6 +3118,17 @@
             ],
             "title": "Stop Kind"
           },
+          "stop_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Note"
+          },
           "stops": {
             "items": {
               "$ref": "#/components/schemas/Message"
@@ -3152,6 +3163,18 @@
           "collective_file_prepared": {
             "type": "boolean",
             "title": "Collective File Prepared"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "needs_review",
+              "stopped",
+              "failed"
+            ],
+            "title": "Tone",
+            "description": "Ton wyniku (``result_tone``): czerwony baner Zatrzymania tylko przy ``failed``.",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -3162,14 +3185,16 @@
           "ending",
           "next_action",
           "stop_kind",
+          "stop_note",
           "stops",
           "warnings",
           "technical_notes",
           "summary",
-          "collective_file_prepared"
+          "collective_file_prepared",
+          "tone"
         ],
         "title": "LoggedOutcome",
-        "description": "Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.\n\nZatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się\nskończyło (``Ending``).\n``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba\nwylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez\nZatrzymania). ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim\nUzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``)."
+        "description": "Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.\n\nZatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się\nskończyło (``Ending``).\n``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba\nwylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez\nZatrzymania), a ``stop_note`` zdanie pod tytułem Zatrzymania (``runs.stop_note``; ``None``: bez niego).\n``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim\nUzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``)."
       },
       "Message": {
         "properties": {
@@ -3919,6 +3944,18 @@
             "title": "Mode Word",
             "description": "Słowo trybu w wierszu okna Uwagi, to samo co w Uwadze taty (``RunMode.word``).",
             "readOnly": true
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "needs_review",
+              "stopped",
+              "failed"
+            ],
+            "title": "Tone",
+            "description": "Ton wyniku (``runs.result_tone``): plakietka w wierszu okna Uwagi i słowo wyniku w stopce Uwagi.",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -3931,7 +3968,8 @@
           "period",
           "result",
           "stop_kind",
-          "mode_word"
+          "mode_word",
+          "tone"
         ],
         "title": "PinnableRun",
         "description": "Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.\n\nPola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć."
@@ -4168,6 +4206,24 @@
               }
             ],
             "title": "Run Id"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "needs_review",
+              "stopped",
+              "failed"
+            ],
+            "title": "Tone",
+            "description": "Ton wyniku (``runs.result_tone``): plakietka w Historii i kolor przerwanego w Metrykach.",
+            "readOnly": true
+          },
+          "result_word": {
+            "type": "string",
+            "title": "Result Word",
+            "description": "Wynik słowem małą literą (``runs.result_word``), np. „zatrzymano” przy przerwanym w Metrykach.",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -4183,7 +4239,9 @@
           "phase_durations",
           "origin",
           "stop_kind",
-          "run_id"
+          "run_id",
+          "tone",
+          "result_word"
         ],
         "title": "ProcessRun",
         "description": "Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.\n\n``origin`` mówi, skąd wystartowało: ``centrum`` to Centrum rozliczeń, ``cmd`` każde inne źródło\nrekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.\n``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego\nrekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego\nLogach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy\nUruchomieniu z Centrum sprzed #322, które identyfikatora nie zapamiętało."
@@ -4859,7 +4917,7 @@
           "failed"
         ],
         "title": "ResultCounts",
-        "description": "Wyniki Uruchomień procesu; przerwane dzielą się na ``stopped`` i ``failed``.\n\n``stopped``: Zatrzymania „dla taty” i przerwane ze starych rekordów bez rodzaju. ``failed``: Zatrzymania\n„do Maksa”, także nieoczekiwany wyjątek."
+        "description": "Liczba Uruchomień procesu z każdym tonem wyniku (``runs.result_tone``)."
       },
       "RowState": {
         "type": "string",
@@ -5222,6 +5280,17 @@
             ],
             "title": "Stop Kind"
           },
+          "stop_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Note"
+          },
           "stops": {
             "items": {
               "$ref": "#/components/schemas/Message"
@@ -5345,6 +5414,18 @@
               }
             ],
             "title": "Order Notes"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "needs_review",
+              "stopped",
+              "failed"
+            ],
+            "title": "Tone",
+            "description": "Ton wyniku (``result_tone``): czerwony baner Zatrzymania tylko przy ``failed``.",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -5355,6 +5436,7 @@
           "ending",
           "next_action",
           "stop_kind",
+          "stop_note",
           "stops",
           "warnings",
           "technical_notes",
@@ -5363,7 +5445,8 @@
           "diagnosis",
           "report",
           "files_unchanged",
-          "opens"
+          "opens",
+          "tone"
         ],
         "title": "RunOutcome",
         "description": "Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.\n\n``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla\ntaty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).\n``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed\nZapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka\nZatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które\nzostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w\ntrzech częściach (``None``: inny proces albo wynik bez podsumowania)."
@@ -5735,6 +5818,16 @@
           },
           "message": {
             "$ref": "#/components/schemas/Message"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "warning"
+            ],
+            "title": "Level",
+            "description": "Jak karta Wzorców pokazuje Komunikat: Wzorzec otwarty w Excelu ostrzega (wystarczy go zamknąć), brak Wzorca i\nporażka Sprawdzania to Zatrzymanie.",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -5744,7 +5837,8 @@
           "label",
           "file_name",
           "problem",
-          "message"
+          "message",
+          "level"
         ],
         "title": "TemplateProblem",
         "description": "Wzorca nie ma, jest otwarty w Excelu albo nie przechodzi Sprawdzania."

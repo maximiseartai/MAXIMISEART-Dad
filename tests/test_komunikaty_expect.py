@@ -7,6 +7,7 @@ co tata zobaczy inaczej, obok zmiany kodu.
 Katalog to moduł fabryk Komunikatów: ma wpis w ``CATALOGS``, a każda jego publiczna funkcja ma próbkę.
 Moduł ``src/``, który tworzy Komunikat poza katalogiem, ma w ``OUTSIDE_CATALOGS`` próbkę każdej funkcji i stałej,
 która go tworzy (co liczy się jako utworzenie, mówi ``_creating``), więc i jego tekst trafia do pliku.
+Zdanie dla taty, które karta pokazuje przy Komunikacie (dopisek bez kodu i trzech części), ma próbkę w ``SENTENCES``.
 Błąd, który fabryka tłumaczy na Komunikat, niesie fakty, a nie zdanie dla taty, więc i jego tekst pisze katalog.
 Odmowę żądania API Centrum rozliczeń (``Refusal``) tworzy tylko katalog odmów ``centrum/refusal.py``, a każda jego
 publiczna funkcja ma próbkę w ``REFUSALS``, więc i zdanie odmowy trafia do pliku, z kodem HTTP zamiast kodu Komunikatu.
@@ -102,6 +103,12 @@ OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[],
             ]
         },
     ),
+}
+
+
+# Zdania dla taty poza Komunikatem: dopisek, który karta pokazuje przy Komunikacie, bez kodu i trzech części.
+SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | None]]]]] = {
+    "Wynik Uruchomienia (zdania)": (runs, {"stop_note": [lambda: runs.stop_note("for_maks")]}),
 }
 
 
@@ -248,6 +255,12 @@ def _rendered() -> str:
             for number, sample in enumerate(factory_samples, start=1):
                 variant = f" #{number}" if len(factory_samples) > 1 else ""
                 lines += ["", *_entry(f"{factory}{variant}", sample())]
+    for catalog, (module, sentences) in SENTENCES.items():
+        lines += ["", f"=== {catalog} ({_source(module)}) ==="]
+        for factory, sentence_samples in sentences.items():
+            for number, sentence in enumerate(sentence_samples, start=1):
+                variant = f" #{number}" if len(sentence_samples) > 1 else ""
+                lines += ["", f"{factory}{variant} [zdanie]", f"  {sentence()}"]
     lines += ["", f"=== {REFUSAL_CATALOG} ({_source(refusal)}) ==="]
     for factory, refusal_samples in REFUSALS.items():
         for number, refusal_sample in enumerate(refusal_samples, start=1):

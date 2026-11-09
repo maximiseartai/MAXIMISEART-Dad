@@ -1229,6 +1229,11 @@ _interrupted_advice #2 [bez kodu]
   Gdzie: Przygotowanie pliku zbiorczego, okres 08_14_09_2026
   Co zrobić: Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić.
 
+=== Wynik Uruchomienia (zdania) (src/rozliczenia/centrum/runs.py) ===
+
+stop_note [zdanie]
+  To nie wynika z Twoich plików.
+
 === Odmowy Centrum rozliczeń (src/rozliczenia/centrum/refusal.py) ===
 
 not_local_address [HTTP 403]

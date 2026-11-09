@@ -2,7 +2,7 @@ import * as React from "react"
 
 import type { ProcessRun } from "@/api/generated"
 import { dateTime, dayMonth, seconds } from "@/lib/format"
-import { isStopped, phaseDuration, stopWord } from "@/pages/metrics/process-runs"
+import { isStopped, phaseDuration } from "@/pages/metrics/process-runs"
 
 // Cztery sloty palety wykresu sprawdzone w prototypie (#95), po jednym na etap.
 const PHASE_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
@@ -282,7 +282,7 @@ function dateLabel(run: ProcessRun): string {
 }
 
 function barTitle(run: ProcessRun): string {
-  return `${dateTime(run.started_at)} · okres ${run.period}${isStopped(run) ? ` · ${stopWord(run)}` : ""}`
+  return `${dateTime(run.started_at)} · okres ${run.period}${isStopped(run) ? ` · ${run.result_word}` : ""}`
 }
 
 function barName(run: ProcessRun, shown: ReadonlyArray<string>): string {

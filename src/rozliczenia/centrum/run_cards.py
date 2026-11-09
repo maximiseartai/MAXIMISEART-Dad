@@ -42,7 +42,7 @@ from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, U
 from rozliczenia.centrum.run_comments import LeftBehindClosed
 from rozliczenia.centrum.run_logs import RunLog, StartFacts
 from rozliczenia.centrum.run_view import order_counts
-from rozliczenia.centrum.runs import verdict
+from rozliczenia.centrum.runs import stop_note, verdict
 from rozliczenia.efenix_pricing import OrderKind
 
 _INTERRUPTED: Final = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
@@ -161,6 +161,7 @@ class RunCards:
                 ending=ending,
                 next_action=next_action,
                 stop_kind=record.stop_kind,
+                stop_note=stop_note(record.stop_kind),
                 stops=messages["stop"],
                 warnings=messages["warning"],
                 technical_notes=record.technical_notes,

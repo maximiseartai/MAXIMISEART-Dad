@@ -126,6 +126,8 @@ def test_historia_obejmuje_uruchomienia_procesu_obu_procesow_od_najnowszego(tmp_
             "origin": "cmd",
             "stop_kind": None,
             "run_id": None,
+            "tone": "ok",
+            "result_word": "OK",
         },
         {
             "process": "preparation",
@@ -144,6 +146,8 @@ def test_historia_obejmuje_uruchomienia_procesu_obu_procesow_od_najnowszego(tmp_
             "origin": "cmd",
             "stop_kind": None,
             "run_id": None,
+            "tone": "ok",
+            "result_word": "OK",
         },
         {
             "process": "settlement",
@@ -162,6 +166,8 @@ def test_historia_obejmuje_uruchomienia_procesu_obu_procesow_od_najnowszego(tmp_
             "origin": "cmd",
             "stop_kind": None,
             "run_id": None,
+            "tone": "needs_review",
+            "result_word": "do sprawdzenia",
         },
     ]
 
@@ -240,18 +246,20 @@ def test_zatrzymanie_dla_taty_i_stary_rekord_bez_rodzaju_to_zatrzymane_a_do_maks
         old(preparation("2026-10-06T08:00:00+00:00", stop=FOR_TATA)),
         preparation("2026-10-07T08:00:00+00:00", stop=FOR_TATA),
         preparation("2026-10-08T08:00:00+00:00", stop={"kind": "for_maks", "code": "BLAD_NIEOCZEKIWANY"}),
-        preparation("2026-10-09T08:00:00+00:00"),
+        preparation("2026-10-09T08:00:00+00:00", result="WYMAGA_SPRAWDZENIA"),
+        preparation("2026-10-10T08:00:00+00:00"),
     )
 
     body = metrics(app)
 
-    assert [(run["result"], run["stop_kind"]) for run in runs_of(body)] == [
-        ("OK", None),
-        ("BLAD_KRYTYCZNY", "for_maks"),
-        ("BLAD_KRYTYCZNY", "for_tata"),
-        ("BLAD_KRYTYCZNY", None),
+    assert [(run["result"], run["stop_kind"], run["tone"], run["result_word"]) for run in runs_of(body)] == [
+        ("OK", None, "ok", "OK"),
+        ("WYMAGA_SPRAWDZENIA", None, "needs_review", "do sprawdzenia"),
+        ("BLAD_KRYTYCZNY", "for_maks", "failed", "błąd"),
+        ("BLAD_KRYTYCZNY", "for_tata", "stopped", "zatrzymano"),
+        ("BLAD_KRYTYCZNY", None, "stopped", "zatrzymano"),
     ]
-    expected = {"ok": 1, "needs_review": 0, "stopped": 2, "failed": 1}
+    expected = {"ok": 1, "needs_review": 1, "stopped": 2, "failed": 1}
     assert statistics(body, "preparation", "RUN")["results"] == expected
     assert body["recent"] == {"weeks": 8, "results": expected}
 

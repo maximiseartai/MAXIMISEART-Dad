@@ -413,7 +413,8 @@ function OutcomeBody({
       ) : (
         <RunStop
           stop={stop}
-          kind={result.stop_kind}
+          look={stopLook(result.tone, result.stop_kind)}
+          note={result.stop_note}
           headline={result.headline}
           run={run}
           action={action}
@@ -493,12 +494,15 @@ function useNextAction(run: RunInfo, action: NextAction, reminder: string) {
 
 const FILES_UNCHANGED = "Nic nie zapisano, Twoje pliki są bez zmian."
 
-// Zatrzymanie według Rodzaju Zatrzymania, spójnie z plakietką w Historii: czerwony błąd tylko „do Maksa”.
-const STOPS: Record<StopKind, { kind: "stop" | "to_fix" | "declined"; note: string | null }> = {
-  for_tata: { kind: "to_fix", note: null },
-  repeated: { kind: "to_fix", note: null },
-  for_maks: { kind: "stop", note: "To nie wynika z Twoich plików." },
-  declined: { kind: "declined", note: null },
+type StopLook = "stop" | "to_fix" | "declined"
+
+/** Baner Zatrzymania: czerwony przy błędzie (ton wyniku z serwera), własny po odmowie w Decyzji taty, inaczej do poprawy. */
+function stopLook(tone: LoggedOutcome["tone"], kind: StopKind): StopLook {
+  if (tone === "failed") {
+    return "stop"
+  }
+
+  return kind === "declined" ? "declined" : "to_fix"
 }
 
 type DadFileLook = "default" | "outline"
@@ -518,27 +522,28 @@ const DAD_FILES: Record<DadFile, (run: RunInfo, look: DadFileLook) => React.Reac
 /** Zatrzymanie na karcie wyniku: obok akcji z serwera przycisk pliku taty, w którym jest poprawka. */
 function RunStop({
   stop,
-  kind,
+  look,
+  note,
   headline,
   run,
   action,
   live,
 }: {
   stop: Message
-  kind: StopKind
+  look: StopLook
+  note: string | null
   headline: string
   run: RunInfo
   action: React.ReactNode
   live: LiveStop | null
 }) {
-  const look = STOPS[kind]
-  const notes = [live?.filesUnchanged ? FILES_UNCHANGED : null, look.note].filter((note) => note !== null)
+  const notes = [live?.filesUnchanged ? FILES_UNCHANGED : null, note].filter((shown) => shown !== null)
   const file = live?.opens == null ? null : DAD_FILES[live.opens]
 
   return (
     <StopMessage
       message={stop}
-      kind={look.kind}
+      kind={look}
       title={headline}
       notes={notes}
       actions={

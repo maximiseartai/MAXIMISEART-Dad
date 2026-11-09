@@ -759,7 +759,8 @@ export type KindToFill = {
  * skończyło (``Ending``).
  * ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
  * wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
- * Zatrzymania). ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
+ * Zatrzymania), a ``stop_note`` zdanie pod tytułem Zatrzymania (``runs.stop_note``; ``None``: bez niego).
+ * ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
  * Uzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``).
  */
 export type LoggedOutcome = {
@@ -784,6 +785,10 @@ export type LoggedOutcome = {
      */
     stop_kind: 'for_tata' | 'for_maks' | 'repeated' | 'declined' | null;
     /**
+     * Stop Note
+     */
+    stop_note: string | null;
+    /**
      * Stops
      */
     stops: Array<Message>;
@@ -800,6 +805,12 @@ export type LoggedOutcome = {
      * Collective File Prepared
      */
     collective_file_prepared: boolean;
+    /**
+     * Tone
+     *
+     * Ton wyniku (``result_tone``): czerwony baner Zatrzymania tylko przy ``failed``.
+     */
+    readonly tone: 'ok' | 'needs_review' | 'stopped' | 'failed';
 };
 
 /**
@@ -1262,6 +1273,12 @@ export type PinnableRun = {
      * Słowo trybu w wierszu okna Uwagi, to samo co w Uwadze taty (``RunMode.word``).
      */
     readonly mode_word: string;
+    /**
+     * Tone
+     *
+     * Ton wyniku (``runs.result_tone``): plakietka w wierszu okna Uwagi i słowo wyniku w stopce Uwagi.
+     */
+    readonly tone: 'ok' | 'needs_review' | 'stopped' | 'failed';
 };
 
 /**
@@ -1412,6 +1429,18 @@ export type ProcessRun = {
      * Run Id
      */
     run_id: string | null;
+    /**
+     * Tone
+     *
+     * Ton wyniku (``runs.result_tone``): plakietka w Historii i kolor przerwanego w Metrykach.
+     */
+    readonly tone: 'ok' | 'needs_review' | 'stopped' | 'failed';
+    /**
+     * Result Word
+     *
+     * Wynik słowem małą literą (``runs.result_word``), np. „zatrzymano” przy przerwanym w Metrykach.
+     */
+    readonly result_word: string;
 };
 
 /**
@@ -1840,10 +1869,7 @@ export type Resolved = {
 /**
  * ResultCounts
  *
- * Wyniki Uruchomień procesu; przerwane dzielą się na ``stopped`` i ``failed``.
- *
- * ``stopped``: Zatrzymania „dla taty” i przerwane ze starych rekordów bez rodzaju. ``failed``: Zatrzymania
- * „do Maksa”, także nieoczekiwany wyjątek.
+ * Liczba Uruchomień procesu z każdym tonem wyniku (``runs.result_tone``).
  */
 export type ResultCounts = {
     /**
@@ -2084,6 +2110,10 @@ export type RunOutcome = {
      */
     stop_kind: 'for_tata' | 'for_maks' | 'repeated' | 'declined' | null;
     /**
+     * Stop Note
+     */
+    stop_note: string | null;
+    /**
      * Stops
      */
     stops: Array<Message>;
@@ -2132,6 +2162,12 @@ export type RunOutcome = {
      * Order Notes
      */
     order_notes?: Array<OrderNotes> | null;
+    /**
+     * Tone
+     *
+     * Ton wyniku (``result_tone``): czerwony baner Zatrzymania tylko przy ``failed``.
+     */
+    readonly tone: 'ok' | 'needs_review' | 'stopped' | 'failed';
 };
 
 /**
@@ -2352,6 +2388,13 @@ export type TemplateProblem = {
      */
     problem: 'missing' | 'open_in_excel' | 'unreadable';
     message: Message;
+    /**
+     * Level
+     *
+     * Jak karta Wzorców pokazuje Komunikat: Wzorzec otwarty w Excelu ostrzega (wystarczy go zamknąć), brak Wzorca i
+     * porażka Sprawdzania to Zatrzymanie.
+     */
+    readonly level: 'stop' | 'warning';
 };
 
 /**
@@ -2650,6 +2693,160 @@ export type WorkersUnreadable = {
 };
 
 /**
+ * Configuration
+ *
+ * Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.
+ *
+ * ``version`` jest ``None``, gdy narzędzie nie leży w klonie Gita; ``freshness`` to Aktualność tej wersji
+ * względem najnowszego Wydania na GitHubie (ADR 0014), sprawdzana jak w Diagnozie. ``update_offered`` mówi,
+ * czy Konfiguracja proponuje Aktualizację narzędzia: tylko przy nowszym Wydaniu (``tool_freshness.offers_update``).
+ */
+export type ConfigurationWritable = {
+    version: ToolVersion | null;
+    /**
+     * Freshness
+     */
+    freshness: 'current' | 'newer' | 'not_checked';
+    /**
+     * Update Offered
+     */
+    update_offered: boolean;
+    /**
+     * Templates
+     */
+    templates: Array<TemplateReady | TemplateProblemWritable>;
+    /**
+     * Workers
+     */
+    workers: ({
+        state: 'ready';
+    } & WorkersReady) | ({
+        state: 'unreadable';
+    } & WorkersUnreadable);
+    /**
+     * Reports
+     */
+    reports: 'ready' | 'missing_key' | 'refused_key';
+};
+
+/**
+ * IntermaxSetup
+ *
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ *
+ * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania
+ * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ */
+export type IntermaxSetupWritable = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Reminder
+     */
+    reminder: string;
+    /**
+     * Blocker
+     */
+    blocker: string | null;
+    /**
+     * Open In Excel
+     */
+    open_in_excel: Array<string>;
+    last: RunRestoredWritable | null;
+};
+
+/**
+ * LoggedOutcome
+ *
+ * Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.
+ *
+ * Zatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się
+ * skończyło (``Ending``).
+ * ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
+ * wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
+ * Zatrzymania), a ``stop_note`` zdanie pod tytułem Zatrzymania (``runs.stop_note``; ``None``: bez niego).
+ * ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
+ * Uzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``).
+ */
+export type LoggedOutcomeWritable = {
+    /**
+     * Result
+     */
+    result: 'OK' | 'WYMAGA_SPRAWDZENIA' | 'BLAD_KRYTYCZNY';
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Ending
+     */
+    ending: 'finished' | 'stop' | 'declined' | 'unexpected' | 'after_engine';
+    /**
+     * Next Action
+     */
+    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register';
+    /**
+     * Stop Kind
+     */
+    stop_kind: 'for_tata' | 'for_maks' | 'repeated' | 'declined' | null;
+    /**
+     * Stop Note
+     */
+    stop_note: string | null;
+    /**
+     * Stops
+     */
+    stops: Array<Message>;
+    /**
+     * Warnings
+     */
+    warnings: Array<Message>;
+    /**
+     * Technical Notes
+     */
+    technical_notes: Array<string>;
+    summary: RunSummary | null;
+    /**
+     * Collective File Prepared
+     */
+    collective_file_prepared: boolean;
+};
+
+/**
+ * Metrics
+ *
+ * Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego.
+ *
+ * ``processes``: procesy w kolejności statystyk; pierwszy jest wybrany w filtrze.
+ */
+export type MetricsWritable = {
+    /**
+     * Processes
+     */
+    processes: Array<ProcessFacts>;
+    /**
+     * Phases
+     */
+    phases: Array<string>;
+    /**
+     * Minimum Completed Runs
+     */
+    minimum_completed_runs: number;
+    /**
+     * Runs
+     */
+    runs: Array<ProcessRunWritable>;
+    /**
+     * Statistics
+     */
+    statistics: Array<ModeStatistics>;
+    recent: RecentResults;
+};
+
+/**
  * PinnableRun
  *
  * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
@@ -2682,6 +2879,268 @@ export type PinnableRunWritable = {
      * Stop Kind
      */
     stop_kind: 'for_tata' | 'for_maks' | null;
+};
+
+/**
+ * ProcessRun
+ *
+ * Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.
+ *
+ * ``origin`` mówi, skąd wystartowało: ``centrum`` to Centrum rozliczeń, ``cmd`` każde inne źródło
+ * rekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.
+ * ``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego
+ * rekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego
+ * Logach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy
+ * Uruchomieniu z Centrum sprzed #322, które identyfikatora nie zapamiętało.
+ */
+export type ProcessRunWritable = {
+    /**
+     * Process
+     */
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
+    /**
+     * Process Label
+     */
+    process_label: string;
+    /**
+     * Started At
+     */
+    started_at: string;
+    mode: RunMode;
+    /**
+     * Period
+     */
+    period: string;
+    /**
+     * Result
+     */
+    result: 'OK' | 'WYMAGA_SPRAWDZENIA' | 'BLAD_KRYTYCZNY';
+    /**
+     * Total Duration Ms
+     */
+    total_duration_ms: number;
+    /**
+     * Phase Durations
+     */
+    phase_durations: Array<PhaseDuration>;
+    /**
+     * Origin
+     */
+    origin: 'cmd' | 'centrum';
+    /**
+     * Stop Kind
+     */
+    stop_kind: 'for_tata' | 'for_maks' | null;
+    /**
+     * Run Id
+     */
+    run_id: string | null;
+};
+
+/**
+ * RunEvent
+ *
+ * Jedno zdarzenie strumienia SSE: kolejny numer i pełny widok bieżącego Uruchomienia procesu.
+ */
+export type RunEventWritable = {
+    /**
+     * Sequence
+     */
+    sequence: number;
+    /**
+     * View
+     */
+    view: ({
+        state: 'idle';
+    } & RunIdleWritable) | ({
+        state: 'running';
+    } & RunRunning) | ({
+        state: 'awaiting_decision';
+    } & RunAwaitingDecision) | ({
+        state: 'finished';
+    } & RunFinishedWritable);
+};
+
+/**
+ * RunFinished
+ */
+export type RunFinishedWritable = {
+    /**
+     * State
+     */
+    state: 'finished';
+    run: RunInfo;
+    progress: Progress;
+    /**
+     * Progress Stale
+     */
+    progress_stale: boolean;
+    result: RunOutcomeWritable;
+};
+
+/**
+ * RunIdle
+ *
+ * W tej pracy Centrum nie było jeszcze Uruchomienia procesu.
+ *
+ * ``previous`` to ostatnie Uruchomienie przed tym startem Centrum; ``None``: nie było żadnego albo jego plików nie
+ * da się odczytać.
+ */
+export type RunIdleWritable = {
+    /**
+     * State
+     */
+    state: 'idle';
+    /**
+     * Previous
+     */
+    previous: ({
+        state: 'restored';
+    } & RunRestoredWritable) | ({
+        state: 'recorded';
+    } & RunRecorded) | ({
+        state: 'interrupted';
+    } & RunInterrupted) | null;
+};
+
+/**
+ * RunOutcome
+ *
+ * Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.
+ *
+ * ``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla
+ * taty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).
+ * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
+ * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
+ * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
+ * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+ * trzech częściach (``None``: inny proces albo wynik bez podsumowania).
+ */
+export type RunOutcomeWritable = {
+    /**
+     * Result
+     */
+    result: 'OK' | 'WYMAGA_SPRAWDZENIA' | 'BLAD_KRYTYCZNY';
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Ending
+     */
+    ending: 'finished' | 'stop' | 'declined' | 'unexpected' | 'after_engine';
+    /**
+     * Next Action
+     */
+    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register';
+    /**
+     * Stop Kind
+     */
+    stop_kind: 'for_tata' | 'for_maks' | 'repeated' | 'declined' | null;
+    /**
+     * Stop Note
+     */
+    stop_note: string | null;
+    /**
+     * Stops
+     */
+    stops: Array<Message>;
+    /**
+     * Warnings
+     */
+    warnings: Array<Message>;
+    /**
+     * Technical Notes
+     */
+    technical_notes: Array<string>;
+    summary: RunSummary | null;
+    /**
+     * Collective File Prepared
+     */
+    collective_file_prepared: boolean;
+    /**
+     * Diagnosis
+     */
+    diagnosis: 'on_request' | 'automatic' | null;
+    /**
+     * Report
+     */
+    report: ({
+        state: 'ready';
+    } & ReportReady) | ({
+        state: 'waiting';
+    } & ReportWaiting) | ({
+        state: 'not_queued';
+    } & ReportNotQueued) | ({
+        state: 'sent';
+    } & Sent) | ({
+        state: 'queued';
+    } & Queued) | ({
+        state: 'rejected';
+    } & Rejected) | null;
+    /**
+     * Files Unchanged
+     */
+    files_unchanged: boolean;
+    /**
+     * Opens
+     */
+    opens: 'order_register' | 'collective_file' | null;
+    /**
+     * Order Notes
+     */
+    order_notes?: Array<OrderNotes> | null;
+};
+
+/**
+ * RunRestored
+ *
+ * Karta zakończonego Uruchomienia z jego Logów Uruchomienia: nic, czego w nich nie ma.
+ *
+ * ``run`` ma tytuł procesu i ``confirms_readiness`` z deklaracji procesu, jak przy starcie, a ``started_at`` to
+ * start z Logów, ten sam co data wiersza Historii. Diagnozy i Zgłoszenia nie ma: żyją tylko przy Zatrzymaniu
+ * bieżącego Uruchomienia tej pracy Centrum.
+ */
+export type RunRestoredWritable = {
+    /**
+     * State
+     */
+    state: 'restored';
+    run: RunInfo;
+    /**
+     * Started At
+     */
+    started_at: string;
+    /**
+     * Phases
+     */
+    phases: Array<PhaseProgress>;
+    result: LoggedOutcomeWritable;
+};
+
+/**
+ * TemplateProblem
+ *
+ * Wzorca nie ma, jest otwarty w Excelu albo nie przechodzi Sprawdzania.
+ */
+export type TemplateProblemWritable = {
+    /**
+     * State
+     */
+    state: 'problem';
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * File Name
+     */
+    file_name: string;
+    /**
+     * Problem
+     */
+    problem: 'missing' | 'open_in_excel' | 'unreadable';
+    message: Message;
 };
 
 export type GetConfigurationData = {

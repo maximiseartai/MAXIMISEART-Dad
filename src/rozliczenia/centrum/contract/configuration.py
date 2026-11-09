@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from rozliczenia.centrum.contract.common import Message, Model
 
@@ -29,6 +29,14 @@ class TemplateProblem(Model):
     file_name: str
     problem: TemplateProblemKind
     message: Message
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def level(self) -> Literal["stop", "warning"]:
+        """Jak karta Wzorców pokazuje Komunikat: Wzorzec otwarty w Excelu ostrzega (wystarczy go zamknąć), brak Wzorca i
+        porażka Sprawdzania to Zatrzymanie."""
+
+        return "warning" if self.problem == "open_in_excel" else "stop"
 
 
 TemplateStatus = Annotated[TemplateReady | TemplateProblem, Field(discriminator="state")]
