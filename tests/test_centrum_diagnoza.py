@@ -601,20 +601,27 @@ def test_nieoczekiwany_wyjatek_ktory_wraca_w_diagnozie_zostawia_sprawdzenie_nies
     assert (report.status_code, report.json()["state"]) == (200, "queued")
 
 
-def test_nieoczekiwany_wyjatek_czytnika_wzorca_w_przebiegu_wraca_w_jego_diagnozie(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("make_centrum", "template"),
+    [(settling_centrum, "Wzorzec rozliczenia pracownika"), (preparing_centrum, "Wzorzec rozliczenia wewnętrznego")],
+    ids=["Przebieg rozliczeń", "Przygotowanie pliku zbiorczego"],
+)
+def test_nieoczekiwany_wyjatek_czytnika_wzorca_w_uruchomieniu_wraca_w_jego_diagnozie(
+    tmp_path: Path, make_centrum: Callable[..., Any], template: str
+) -> None:
+    """Uruchomienie procesu i Diagnoza sprawdzają Wzorzec tym samym ``template_check`` Centrum, więc usterka czytnika
+    zatrzymuje Uruchomienie i wraca w jego Diagnozie (#1192 r1: Przygotowanie sprawdzało Wzorzec na dysku bez testu)."""
+
     def fail_unexpectedly(template: TemplateFile) -> NoReturn:
         raise RuntimeError("nieprzewidziany błąd przy SYN-001")
 
-    centrum = settling_centrum(tmp_path, surroundings=Surroundings(template_check=fail_unexpectedly))
+    centrum = make_centrum(tmp_path, surroundings=Surroundings(template_check=fail_unexpectedly))
     stopped = run_to_end(centrum, dry_run=True)
 
     diagnosis = diagnose(centrum, stopped["run"]["id"])
 
     assert (stopped["result"]["ending"], phase_states(stopped)["Sprawdzanie"]) == ("unexpected", "failed")
-    assert check(diagnosis, "Wzorzec rozliczenia pracownika") == (
-        "not_checked",
-        "Nie udało się sprawdzić: nieoczekiwany błąd.",
-    )
+    assert check(diagnosis, template) == ("not_checked", "Nie udało się sprawdzić: nieoczekiwany błąd.")
 
 
 def test_wyjatek_przy_sprawdzaniu_jednego_wzorca_nie_ukrywa_wyniku_drugiego(tmp_path: Path) -> None:
