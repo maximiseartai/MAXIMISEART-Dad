@@ -11,6 +11,8 @@ Zdanie dla taty, które karta pokazuje przy Komunikacie (dopisek bez kodu i trze
 Błąd, który fabryka tłumaczy na Komunikat, niesie fakty, a nie zdanie dla taty, więc i jego tekst pisze katalog.
 Odmowę żądania API Centrum rozliczeń (``Refusal``) tworzy tylko katalog odmów ``centrum/refusal.py``, a każda jego
 publiczna funkcja ma próbkę w ``REFUSALS``, więc i zdanie odmowy trafia do pliku, z kodem HTTP zamiast kodu Komunikatu.
+Napis przycisku, który próbka cytuje w „…”, ma wpis w ``UI_TEXTS`` i stoi w jego pliku frontendu, a cytat spoza UI
+Centrum rozliczeń ma powód w ``QUOTES_OUTSIDE_UI``.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import importlib
 import inspect
 from pathlib import Path
 import pkgutil
+import re
 from types import ModuleType
 import typing
 from typing import Final
@@ -28,7 +31,7 @@ from typing import Final
 import pytest
 
 import rozliczenia
-from rozliczenia import efenix_messages, intermax_messages, settlement_messages, workbook_messages, worker_config_messages
+from rozliczenia import efenix_messages, intermax_messages, settlement_messages, tool_files, workbook_messages, worker_config_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
     diagnosis_messages,
@@ -453,3 +456,68 @@ def test_blad_ktory_proces_tlumaczy_na_komunikat_niesie_fakty_a_nie_tekst() -> N
 
 def test_komunikaty_ktore_widzi_tata_odpowiadaja_plikowi_expect() -> None:
     assert_expected(_rendered(), ROOT / "tests" / "expected" / "komunikaty.txt")
+
+
+# Napisy UI Centrum rozliczeń, które Komunikaty cytują w „…”, każdy z plikiem frontendu, w którym tata go widzi.
+UI_TEXTS: Final = {
+    "Wyślij do Maksa": "frontend/src/components/report-to-maks.tsx",
+    "Spróbuj ponownie": "frontend/src/components/report-to-maks.tsx",
+    "Co zostanie wysłane": "frontend/src/components/report-to-maks.tsx",
+    "Zaktualizuj narzędzie": "frontend/src/components/tool-update.tsx",
+    "Zamknij Centrum rozliczeń": "frontend/src/components/close-centrum.tsx",
+    "Uzupełnij i zapisz": "frontend/src/lib/pricing.tsx",
+    "Uzupełnij bez zapisu": "frontend/src/lib/pricing.tsx",
+    "Kontynuuj": "frontend/src/pages/runs/run-dialogs.tsx",
+}
+# Cytaty Komunikatów, które nie są napisami UI Centrum rozliczeń; każdy z powodem.
+QUOTES_OUTSIDE_UI: Final = {
+    "Centrum rozliczeń": "skrót na pulpicie taty, nie napis w UI",
+    "Zawsze zachowuj na tym urządzeniu": "polecenie OneDrive w menu Eksploratora plików",
+    "Do wyceny": "status zlecenia w efenix",
+    "Do akceptacji": "status zlecenia w efenix",
+    "???": "wartość komórki z próbki",
+    "tsk": "wartość komórki z próbki",
+    ".08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
+    ".Rozliczenie pracowników 08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
+    tool_files.WORKER_TEMPLATE.name: "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
+    "Diagnoza": "napis przycisku w drugiej gałęzi warunku (pages/runs/diagnosis.tsx), postaci, której test nie czyta; sprawdza przegląd",
+}
+
+
+def _ui_text(text: str) -> re.Pattern[str]:
+    """Napis w jednej z form, w których plik TSX pokazuje go tacie jako napis przycisku.
+
+    Test szuka napisu w tych postaciach: tekst dziecka elementu JSX (``<Button>…Kontynuuj</Button>``, także po ikonie
+    ``{…}`` i złamany w linii), prop ``label="…"`` albo ``label={"…"}`` (nie ``aria-label``) i właściwość
+    ``label: "…"`` obiektu napisów; w propie i właściwości napis stoi w podwójnym cudzysłowie i cały.
+    Gdy napisu nie ma w pliku w żadnej z tych postaci, test czerwieni: przycisk zmienił brzmienie albo zniknął.
+    Napis przycisku w innej postaci (np. w gałęzi warunku) ma powód w ``QUOTES_OUTSIDE_UI``.
+    Granica (tylko przegląd): czy dopasowanie to naprawdę napis przycisku, który tata widzi; pasuje też nagłówek i
+    przykład JSX w komentarzu, więc przycisk przemianowany przy takim starym napisie obok przechodzi.
+    """
+
+    words = r"\s+".join(re.escape(word) for word in text.split())
+    literal = f'"{words}"'
+    forms = (
+        rf"[>}}]\s*{words}\s*[<{{]",
+        rf"(?<![\w-])label=\{{?{literal}\}}?",
+        rf"(?<![\w-])label:\s*{literal}",
+    )
+    return re.compile("|".join(forms))
+
+
+def test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum() -> None:
+    """Komunikat, który każe kliknąć „Napis”, nie rozjeżdża się z przyciskiem, który tata widzi w Centrum rozliczeń.
+
+    Cytaty są z próbek wszystkich katalogów (``_rendered``), więc zmiana cytatu w Pythonie albo napisu w pliku TSX
+    czerwieni ten test; nowy cytat dostaje wpis w ``UI_TEXTS`` albo powód w ``QUOTES_OUTSIDE_UI``.
+    """
+
+    quoted = set(re.findall(r"„([^”]*)”", _rendered()))
+    missing_in_ui = {
+        text: path for text, path in UI_TEXTS.items() if not _ui_text(text).search((ROOT / path).read_text(encoding="utf-8"))
+    }
+
+    assert quoted - UI_TEXTS.keys() - QUOTES_OUTSIDE_UI.keys() == set(), "dopisz cytat do UI_TEXTS albo QUOTES_OUTSIDE_UI"
+    assert (UI_TEXTS.keys() | QUOTES_OUTSIDE_UI.keys()) - quoted == set(), "żaden Komunikat nie cytuje już tego napisu"
+    assert missing_in_ui == {}, "Komunikat cytuje napis, którego plik UI nie pokazuje jako napisu przycisku"
