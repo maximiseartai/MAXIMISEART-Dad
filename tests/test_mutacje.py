@@ -21,7 +21,7 @@ import time
 import pytest
 
 from tests.fixtures.brama_typow import FAKE_GATE
-from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git, repository
 from tests.fixtures.potomne import beating, wait_for
 import potomne
@@ -957,9 +957,14 @@ PLAN = [
     _job("mutacje", "Mutation checks (1/1)", "skill:verify-x/ci"),
 ]
 CHANGE = ("--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1")
+# Run próbny 42584543040 (9.11.2026) na windows-latest: atrapę ``gh.cmd`` narzędzie znajduje (``tools/lib/github.py``),
+# ale na Windows ``--jak-ci`` wybiera zadania toru windows-3.11, a nie toru linux-3.14 tych planów.
+ODTWARZA_TOR_LINUX = pytest.mark.skipif(
+    sys.platform == "win32", reason="--jak-ci odtwarza zadanie toru systemu, na którym biegnie, a te plany sprawdzają tor Linux"
+)
 
 
-@ONLY_FOUND_BY_NAME_ON_POSIX
+@ODTWARZA_TOR_LINUX
 def test_jak_ci_uruchamia_mutacje_z_plikami_zadania_runu_w_ktorym_stoi_zmieniony_test(tmp_path: Path) -> None:
     """Sąsiad z zadania runu wykrywa mutację, której sam zmieniony test nie widzi; inne zadania i tor Windows nie biegną."""
 
@@ -975,7 +980,7 @@ def test_jak_ci_uruchamia_mutacje_z_plikami_zadania_runu_w_ktorym_stoi_zmieniony
     assert lines[2].startswith(f"WYKRYTA: mutacja [{LINUX_1}] → 1 failed, 1 passed"), answered.stdout
 
 
-@ONLY_FOUND_BY_NAME_ON_POSIX
+@ODTWARZA_TOR_LINUX
 def test_jak_ci_uruchamia_kazda_mutacje_w_kazdym_zadaniu_runu_ze_zmienionym_testem(tmp_path: Path) -> None:
     """Zmieniony test stoi w dwóch zadaniach, a mutację wykrywa tylko sąsiad z drugiego, więc biegną oba; krok CI
     zadania nie jest plikiem testów."""
@@ -998,7 +1003,7 @@ def test_jak_ci_uruchamia_kazda_mutacje_w_kazdym_zadaniu_runu_ze_zmienionym_test
     assert [line.partition(" → ")[0] for line in lines[2:]] == [f"NIEWYKRYTA: mutacja [{LINUX_1}]", f"WYKRYTA: mutacja [{second}]", "MUTACJE: 1 bez oczekiwanego wyniku"], answered.stdout
 
 
-@ONLY_FOUND_BY_NAME_ON_POSIX
+@ODTWARZA_TOR_LINUX
 @pytest.mark.parametrize("tracked", [True, False], ids=["galaz-sledzona", "galaz-bez-sledzonej"])
 def test_jak_ci_bez_numeru_bierze_ostatni_run_ci_galezi(tmp_path: Path, tracked: bool) -> None:
     repo, env, calls = _ci_repository(tmp_path, {"456": PLAN}, [456])
@@ -1015,7 +1020,7 @@ def test_jak_ci_bez_numeru_bierze_ostatni_run_ci_galezi(tmp_path: Path, tracked:
     assert asked == [f"run list --workflow ci.yml --branch {branch} --limit 1 --json databaseId", "run download 456 --name plan"]
 
 
-@ONLY_FOUND_BY_NAME_ON_POSIX
+@ODTWARZA_TOR_LINUX
 @pytest.mark.parametrize(
     ("arguments", "runs", "detached", "error"),
     [

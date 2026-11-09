@@ -111,6 +111,9 @@ def _one_loop_portal(self: TestClient) -> Iterator[Any]:
     Starlette poza ``with`` otwiera na każde żądanie nową pętlę z parą gniazd TCP (``socket.socketpair()``). Że ich
     porty w TIME_WAIT wyczerpywały na Windows pulę portów efemerycznych (``WinError 10055``), to hipoteza #975, której
     pomiar z #981 nie potwierdził; pomiary i powód wspólnej pętli opisuje fixture ``jedna_petla_testclient``.
+    Gdy Starlette przestanie wołać ``_portal_factory``, pada
+    ``test_klient_testowy_bez_with_nie_otwiera_nowej_petli_zdarzen_na_zadanie`` (``tests/test_centrum_serwer.py``),
+    a gdy usunie ten atrybut, mypy (``attr-defined`` przy podmianie).
     """
 
     if self.portal is not None:
