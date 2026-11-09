@@ -41,8 +41,6 @@ def begun_line(at: datetime, *, row: int, place: int, total: int) -> Line:
 
 
 def ended_line(at: datetime, order: LoggedOrder) -> Line:
-    """„Zlecenie skończone” ze śladem zlecenia ``order``."""
-
     return {"at": at.isoformat(), "entry": ENDED, "order": order.model_dump(mode="json")}
 
 
@@ -53,8 +51,6 @@ def end_line(at: datetime) -> Line:
 
 
 def _text(*lines: Line) -> str:
-    """Treść dziennika: jedna linia JSON na wpis."""
-
     return "".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines)
 
 
@@ -69,8 +65,6 @@ def journal_path(logs: Path, start: StartFacts) -> Path:
 
 
 def left_journal(logs: Path, start: StartFacts, *entries: Line) -> Path:
-    """Dziennik Uruchomienia ``start`` w katalogu Logów ``logs`` z pierwszą linią i ``entries``."""
-
     path = journal_path(logs, start)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_text(start_line(start), *entries), encoding="utf-8")

@@ -114,8 +114,6 @@ class Layout:
 
 @dataclass
 class Intermax:
-    """Opis syntetycznego INTERMAX do zapisania przez ``write``."""
-
     ordered: Sequence[Order] = field(
         default_factory=lambda: (
             Order(datetime(2026, 10, 19, 9), "anna.kowalska", 1),
@@ -153,13 +151,13 @@ class Intermax:
     """Indeksy zleceń ``raw``, nad którymi w wklejeniu stoi pusty wiersz taty."""
     epoch_1904: bool = False
     excel: bool = True
+    """Zapis jak w Excelu (teksty wspólne, liczby bez ``t``); bez tego teksty wbudowane z openpyxl."""
     raw_date_format: str = APP_DATE_FORMAT
     """Format daty Surowych zleceń: własny format aplikacji albo wbudowany format Excela."""
     active_sheet: str = ORDER_SHEET
     """Arkusz, który tata zostawił aktywny i zaznaczony przy ostatnim zapisie."""
     frozen: bool = True
     """Zamrożony nagłówek arkusza zleceń, jak u taty; bez niego widok bez panelu."""
-    """Zapis jak w Excelu (teksty wspólne, liczby bez ``t``); bez tego teksty wbudowane z openpyxl."""
 
     def write(self, path: Path) -> Layout:
         workbook = Workbook()
@@ -209,9 +207,6 @@ class Intermax:
         return Layout(last_ordered, yellow, first_raw, tuple(self.raw), raw_rows, older_raw_rows)
 
     def _paste(self, sheet: Worksheet, raw: Sequence[Order], first: int, blank_before: frozenset[int]) -> tuple[int, ...]:
-        """Wklejenie ``raw`` od wiersza ``first`` z wyglądem z aplikacji, z pustym wierszem nad zleceniami
-        ``blank_before``; wiersz każdego zlecenia."""
-
         rows: list[int] = []
         number = first
         for index, order in enumerate(raw):
@@ -284,8 +279,6 @@ def like_excel(path: Path) -> None:
 
 
 def rewrite_parts(path: Path, change: Callable[[str, bytes], bytes], added: dict[str, bytes] | None = None) -> None:
-    """Skoroszyt ``path`` z częściami zmienionymi przez ``change(nazwa, bajty)`` i ``added`` dopisanymi na końcu."""
-
     with zipfile.ZipFile(path) as source:
         entries = [(info, change(info.filename, source.read(info))) for info in source.infolist()]
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
@@ -308,8 +301,6 @@ def _order_sheet(workbook: Workbook, title: str, *, frozen: bool = True) -> Work
 
 
 def _grid_row(sheet: Worksheet, number: int) -> None:
-    """Wiersz z wyglądem taty: styl wiersza Calibri 8 z ramką i białym tłem."""
-
     look = sheet.row_dimensions[number]
     look.font, look.border, look.fill = Font(name="Calibri", sz=8), _BORDER, _WHITE
     look.height = BLANK_HEIGHT
@@ -342,8 +333,6 @@ def _ordered_days(sheet: Worksheet, ordered: Sequence[Order]) -> int:
 
 
 def parts(path: Path) -> dict[str, bytes]:
-    """Części zip skoroszytu po nazwie, rozpakowane."""
-
     with zipfile.ZipFile(path) as archive:
         return {name: archive.read(name) for name in archive.namelist()}
 

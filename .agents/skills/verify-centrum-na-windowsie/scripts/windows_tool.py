@@ -51,10 +51,7 @@ _NOT_STARTING = 'raise ImportError("verify-centrum-na-windowsie: ta wersja Centr
 
 
 def git(directory: Path, *args: str, machine: bool = False) -> str:
-    """Git of the harness, with a synthetic author and without the machine's configuration.
-
-    ``machine`` is Git as Maks and Centrum run it on this computer, with its own configuration.
-    """
+    """``machine`` is Git as Maks and Centrum run it on this computer, with its own configuration."""
 
     environment = os.environ if machine else os.environ | {
         "GIT_CONFIG_GLOBAL": os.devnull,

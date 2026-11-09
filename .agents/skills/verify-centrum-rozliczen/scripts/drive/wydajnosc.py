@@ -1,13 +1,4 @@
-"""Drive features/wydajnosc.md: measure Centrum on Dad's year of work in his computer's CPU profiles.
-
-Every scenario runs ``repeats`` times per CPU profile in a fresh browser context
-(no HTTP or V8 code cache, except for reopening the tab). The median of each
-scenario is compared with the baseline in ``wydajnosc-baseline.json`` and its
-budget; a median over budget is measured once more and fails only if it stays
-over. The API requests of every repetition must match the baseline's count
-exactly, and the bundle must fit its budget. The report goes to
-``<evidence>/wydajnosc/``.
-"""
+"""Drive features/wydajnosc.md: measure Centrum on Dad's year of work in his computer's CPU profiles."""
 
 from __future__ import annotations
 
@@ -125,7 +116,7 @@ INIT = r"""
 
 @dataclass
 class Measured:
-    """Samples of every scenario: values in ms per CPU profile, API requests per repetition, details."""
+    """Samples of every scenario; ``values`` in ms."""
 
     values: dict[str, dict[int, list[float]]] = field(default_factory=dict)
     requests: dict[str, list[dict[str, int]]] = field(default_factory=dict)
@@ -199,8 +190,6 @@ def ready(page: Page, title: str) -> float:
 
 
 def skeleton_ms(page: Page, start: float, end: float) -> float:
-    """How long a skeleton was visible between ``start`` and ``end``."""
-
     changes: list[list[Any]] = page.evaluate("() => window.__wydajnosc.skeleton")
     total, since = 0.0, None
     for at, visible in changes:
@@ -513,9 +502,6 @@ def remeasure(
 
 
 def _routine(scenario: str) -> str:
-    """The routine that measures ``scenario``: one page's cold start or reopened tab, the menu laps, the live
-    Uzupełnienie, or the interactions."""
-
     first, _, rest = scenario.partition("/")
     if rest in ("zimny-start", "ponowne-otwarcie"):
         return f"{rest}:{first}"
@@ -523,8 +509,6 @@ def _routine(scenario: str) -> str:
 
 
 def budget(baseline_ms: float, margin: dict[str, float]) -> float:
-    """Baseline plus the noise margin: relative, but never less than ``minimalny_ms``."""
-
     return max(baseline_ms * (1 + margin["wzgledny"]), baseline_ms + margin["minimalny_ms"])
 
 

@@ -113,8 +113,6 @@ def gh_token() -> str:
 
 
 def trim(value: object) -> object:
-    """Ciało odpowiedzi do nagrania: tylko pola ``KEPT``, długi tekst jako jego długość i skrót."""
-
     if isinstance(value, dict):
         return {key: trim(item) for key, item in value.items() if key in KEPT}
     if isinstance(value, list):

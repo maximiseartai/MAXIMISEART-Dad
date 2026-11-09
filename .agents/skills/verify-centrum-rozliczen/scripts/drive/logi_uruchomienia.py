@@ -30,7 +30,7 @@ from atrapy.pliki_taty import REPORT_KEY_FILE
 
 FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"
-# Synthetic key Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
+# A synthetic key of its own; see ``common.REPORT_KEY``.
 KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ_LOGOW"
 # The last line of a comment: the link to the file of its full Logi in the Archiwum Logów okresu (a GitHub Release).
 LINK = re.compile(r"- Pełne Logi: \[(?P<name>[^\]]+)\]\(https://github\.com/[^/]+/[^/]+/releases/download/(?P<tag>[^/]+)/(?P=name)\)")

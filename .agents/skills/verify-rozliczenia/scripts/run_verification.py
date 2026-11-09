@@ -242,8 +242,6 @@ def _main_checkout_config() -> Path | None:
 
 
 def _default_templates_directory() -> Path:
-    """This checkout's ``config/`` when it holds real Wzorce, otherwise the main checkout's."""
-
     local = config_dir(REPO_ROOT)
     candidates = [local]
     main_config = _main_checkout_config()
@@ -264,7 +262,7 @@ def _run_workflow(variant: str, run_root: Path, evidence_root: Path, templates_d
 def _run_settlement_workflow(
     variant_config: WorkflowVariant, run_root: Path, evidence_root: Path, templates_directory: Path | None
 ) -> None:
-    """Przebieg rozliczeń on a synthetic Plik zbiorczy: dry-run, the variant's setup, then the real write."""
+    """Przebieg rozliczeń on a synthetic Plik zbiorczy."""
 
     environment = _utf8_environment()
     version = _version()
@@ -392,7 +390,7 @@ def _run_preparation_stage(
 def _run_preparation_workflow(
     variant_config: WorkflowVariant, run_root: Path, evidence_root: Path, templates_directory: Path | None
 ) -> None:
-    """Przygotowanie pliku zbiorczego: synthetic Rejestr, dry-run, then the real write.
+    """Przygotowanie pliku zbiorczego on a synthetic Rejestr.
 
     With ``templates_directory`` the fixture copies the real Wzorce instead of building synthetic ones.
     """

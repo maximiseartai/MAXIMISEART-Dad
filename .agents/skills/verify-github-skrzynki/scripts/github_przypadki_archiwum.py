@@ -161,8 +161,6 @@ def packed_name(run: str, index: int) -> str:
 
 
 def _file(facts: Facts, text_key: str) -> ArchiveFile:
-    """Plik Kolejki wysyłki z faktów: tag, tytuł i opis Archiwum, nazwa pliku Logów przed spakowaniem i jego tekst."""
-
     return ArchiveFile(
         str(facts["tag"]),
         str(facts["tytul"]),
@@ -312,8 +310,6 @@ def _prepare_upload(live: ArchiwumLive, earlier: Facts) -> Facts:
 
 
 def _send(client: Client, facts: Facts, text_key: str, label_key: str) -> tuple[object, object]:
-    """Wysyłka pliku Kolejki wysyłki z faktów do Archiwum i Archiwum po niej."""
-
     packed = archived(_file(facts, text_key))
     archive_id = int(cast(int, facts["archiwum"]))
     sent = client.box.upload(archive_id, str(facts["nazwa"]), str(facts[label_key]), packed, key=client.key)

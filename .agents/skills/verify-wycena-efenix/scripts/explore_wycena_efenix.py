@@ -226,13 +226,13 @@ def priced(order: AtrapaOrder) -> Priced:
 
 
 INITIAL: Final = tuple(priced(order) for order in efenix_orders())
-"""Domain expectation of one run without a fault (``GLOSSARY.md``, Wycena w efenix, ADR 0026): order 1 gets the date,
-Emmett and the file's quantity in each position where Emmett has less; order 2 gets the date and Emmett, whose T stays
-above the file, and nothing more, because its other position equals the file."""
 REFERENCE_FINAL: Final = (
     Priced(tuple(sorted(FILE[0].items())), DAYS[0], 1, "Do wyceny", 0),
     Priced(tuple(sorted(EMMETT[1].items())), DAYS[1], 1, "Do wyceny", 0),
 )
+"""Domain expectation of one run without a fault (``GLOSSARY.md``, Wycena w efenix, ADR 0026): order 1 gets the date,
+Emmett and the file's quantity in each position where Emmett has less; order 2 gets the date and Emmett, whose T stays
+above the file, and nothing more, because its other position equals the file."""
 REFERENCE_OUTCOMES: Final = ("gotowe", "ostrzeżenie Emmetta")
 
 

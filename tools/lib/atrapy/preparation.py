@@ -25,8 +25,7 @@ PERIOD = "08_14_09_2026"
 INTERNAL_SETTLEMENT_NAME = pliki_taty.internal_settlement_name(PERIOD)
 COLLECTIVE_FILE_NAME = pliki_taty.collective_file_name(PERIOD)
 
-# Układ nowego Rejestru taty: pusta kolumna A, AKCJE w B, ZWROT i UWAGI na końcu.
-# AKCJE, ZWROT i UWAGI nie są przenoszone; kolumny są przesunięte względem wzorców.
+# Nowy Rejestr taty od B (``pliki_taty.REGISTER_HEADERS``): kolumny są przesunięte względem wzorców.
 REGISTER_HEADERS: tuple[str, ...] = ("", *pliki_taty.REGISTER_HEADERS)
 # Starsza kopia Rejestru: inna kolejność, stare zapisy nagłówków, bez AKCJE, ZWROT i UWAGI,
 # za to z kolumną "STATUS APLIKACJI", która nie jest przenoszona.
@@ -157,11 +156,7 @@ def register_order(
 
 
 def in_old_layout(rows: list[RegisterRow]) -> list[RegisterRow]:
-    """Te same zlecenia w układzie starszej kopii Rejestru: każdy wiersz ma dokładnie ``OLD_REGISTER_HEADERS``.
-
-    Nagłówki dostają stary zapis, kolumn, których starsza kopia nie ma, w wierszu nie ma, a kolumny, które ma
-    tylko ona, dostają ``OLD_REGISTER_ONLY_VALUES``.
-    """
+    """Te same zlecenia w układzie starszej kopii Rejestru: każdy wiersz ma dokładnie ``OLD_REGISTER_HEADERS``."""
 
     def old_row(row: Mapping[str, object]) -> dict[str, object]:
         values = {OLD_REGISTER_SPELLINGS.get(header, header): value for header, value in row.items()}
@@ -196,10 +191,7 @@ def write_register(
     *,
     headers: tuple[str, ...] = REGISTER_HEADERS,
 ) -> Path:
-    """Zapisuje Rejestr zleceń: arkusz-wabik ``lista`` i arkusz danych ``ZLECENIA`` (``write_register_sheet``).
-
-    Bez jawnych ``rows`` stosowane są ``DEFAULT_REGISTER_HIGHLIGHTS``.
-    """
+    """Zapisuje Rejestr zleceń: arkusz-wabik ``lista`` i arkusz danych ``ZLECENIA``."""
 
     workbook = Workbook()
     decoy = active_worksheet(workbook)
@@ -225,8 +217,7 @@ def write_register_sheet(
 ) -> None:
     """Zapisuje arkusz Rejestru: nagłówki w wierszu 1, zlecenia od wiersza 2 (``None`` to pusty wiersz).
 
-    Pusty nagłówek oznacza całkowicie pustą kolumnę. Komórki danych mają czcionkę Rejestru, a ``DATA GODZ. POCZ.``
-    jego format daty.
+    Pusty nagłówek oznacza całkowicie pustą kolumnę.
     """
 
     if highlights is None:
@@ -333,11 +324,7 @@ def link_register_order_numbers(path: Path, address: str) -> dict[int, str]:
 
 
 def _apply_template_layout(sheet: Worksheet, header_row: int, columns: int, *, row_style: bool, view: View) -> None:
-    """Szerokości kolumn, czcionka kolumn, wysokości wierszy, pogrubiony nagłówek, blokada nagłówka i widok.
-
-    Autofiltr wzorca celowo obejmuje zły zakres, który Przygotowanie ma zignorować.
-    Z ``row_style`` wiersze danych mają styl wiersza z czcionką wzorca, a kolumny większą czcionkę.
-    """
+    """Autofiltr wzorca celowo obejmuje zły zakres, który Przygotowanie ma zignorować."""
 
     column_font_size = TEMPLATE_COLUMN_FONT_SIZE if row_style else TEMPLATE_FONT_SIZE
     for column in range(1, columns + 1):
@@ -369,10 +356,7 @@ def write_internal_template(path: Path, *, row_style: bool = False, view: View =
 
 
 def write_collective_template(path: Path, *, row_style: bool = False, view: View = TEMPLATE_VIEW) -> Path:
-    """Wzorzec pliku zbiorczego: stawki w wierszach 1–16, nagłówki w 17, zera i formuły, link zewnętrzny.
-
-    Z ``row_style`` komórki A:K wierszy danych nie mają własnego stylu, tylko styl wiersza.
-    """
+    """Wzorzec pliku zbiorczego: stawki w wierszach 1–16, nagłówki w 17, zera i formuły, link zewnętrzny."""
 
     workbook = Workbook()
     sheet = active_worksheet(workbook)
@@ -516,7 +500,5 @@ def incomplete_period_rows() -> list[RegisterRow]:
 
 
 def incomplete_period_fixture(tmp_path: Path) -> PreparationFixture:
-    """Okres 08_14_09_2026, w którym ostatnie zlecenie jest z soboty."""
-
     return make_preparation_fixture(tmp_path, incomplete_period_rows())
 

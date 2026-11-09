@@ -11,8 +11,6 @@ from rozliczenia.progress import ProgressSnapshot
 
 @dataclass
 class Tata:
-    """Rozmówca w teście: zapisuje każdą Decyzję, robi ``before_answer`` i odpowiada ``consent``."""
-
     consent: bool = True
     continue_hint: str = "przy decyzji wybierz „Kontynuuj”"
     before_answer: Callable[[], None] = lambda: None

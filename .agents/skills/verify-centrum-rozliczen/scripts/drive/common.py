@@ -61,8 +61,6 @@ class DriveFailure(Exception):
 
 
 class Answer(NamedTuple):
-    """The server's status and JSON body for a request of the drive, kept in ``api/``."""
-
     status: int
     body: Any
 
@@ -187,8 +185,6 @@ class Run:
         return self._send(request, name).status
 
     def post(self, path: str, name: str, body: object = None) -> Answer:
-        """A POST of the tab to ``path``, with ``body`` as JSON unless it is ``None``."""
-
         headers = {"Origin": self.url.rstrip("/")} | ({} if body is None else {"Content-Type": "application/json"})
         data = b"" if body is None else json.dumps(body).encode()
         request = urllib.request.Request(self.url.rstrip("/") + path, data=data, method="POST", headers=headers)
@@ -284,9 +280,8 @@ def period_row(page: Page, token: str) -> Locator:
     return page.get_by_role("table", name="Tablica okresów").get_by_role("row").filter(has_text=token)
 
 
-# How long every helper below (`remove`, `remove_tree`, `remove_empty_folder`, `move`, `replace_file`, `read_text`,
-# `read_bytes`, `read_json`) retries a file the server holds open on Windows; the server reads the harness's files in milliseconds, so this only bounds a change
-# that will never succeed.
+# How long the file helpers below retry a file the server holds open on Windows; the server reads the harness's
+# files in milliseconds, so this only bounds a change that will never succeed.
 RETRY_OPEN_S = 10.0
 
 
@@ -470,8 +465,6 @@ def advance_clock(run: Run, minutes: float, why: str) -> None:
 
 
 def answers(url: str) -> bool:
-    """Whether a Centrum serves ``url`` now: its ``/api/health`` answers within 2 s."""
-
     try:
         with urllib.request.urlopen(url.rstrip("/") + "/api/health", timeout=2):
             return True
@@ -704,8 +697,6 @@ def finished_view(run: Run, name: str, *, replacing: str | None = None) -> dict[
 
 
 def finished_result(run: Run, name: str, *, replacing: str | None = None) -> dict[str, Any]:
-    """The result of ``finished_view``."""
-
     result = finished_view(run, name, replacing=replacing)["result"]
     assert isinstance(result, dict)
     return result

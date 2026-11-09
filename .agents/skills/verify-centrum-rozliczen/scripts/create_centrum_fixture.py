@@ -148,8 +148,6 @@ EXPECTED_PREPARATION = {
 
 
 def _register(path: Path) -> None:
-    """A Rejestr zleceń with one data sheet; every order cell with content carries the row marker."""
-
     workbook = Workbook()
     sheet = workbook.active
     assert isinstance(sheet, Worksheet)
@@ -217,8 +215,6 @@ def _period_files(periods: Path, token: str) -> Path:
 
 
 def _collective_file(path: Path, workers: tuple[str, ...]) -> None:
-    """A Plik zbiorczy in the engine's layout: headers in row 17, one Wiersz danych per worker id from row 18."""
-
     workbook = Workbook()
     sheet = workbook.active
     assert isinstance(sheet, Worksheet)
@@ -254,8 +250,6 @@ def _metric_record(run: MetricRun, counters: dict[str, int]) -> dict[str, object
 
 
 def _intermax(root: Path) -> dict[str, object]:
-    """INTERMAX with Surowe zlecenia to order and one whose pasted rows Uporządkowanie INTERMAX stops „do Maksa”."""
-
     folder = root / "INTERMAX"
     folder.mkdir()
     register = folder / "ZLECENIA INTERMAX OD 08_11_2021-NOWA WERSJA.xlsx"
@@ -456,7 +450,6 @@ def _publish(publisher: Path, version: int, message: str, *, untrack: tuple[str,
     return _git(publisher, "rev-parse", "HEAD")
 
 
-# The synthetic tool's Centrum: the run's scripted Centrum, so a restarted Centrum keeps the run-local boundaries.
 _CENTRUM_SHIM = """\
 \"\"\"Centrum of the run's synthetic tool: the run's scripted Centrum on the port the restart guardian gives.\"\"\"
 

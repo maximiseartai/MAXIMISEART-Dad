@@ -65,8 +65,6 @@ def driven(feature: str, environment: Mapping[str, str] = os.environ) -> tuple[s
 
 
 def drive_timeout_s(features: Sequence[str]) -> int:
-    """How long the drive of ``features`` may run before it counts as hung."""
-
     if any(feature(name).measurement for name in features):
         return PERFORMANCE_TIMEOUT_SECONDS
     return max(STEP_TIMEOUT_SECONDS, DRIVE_SECONDS_PER_FEATURE * len(features))
@@ -135,8 +133,6 @@ def _launch(run_root: Path, evidence: Path) -> tuple[subprocess.Popen[bytes], st
 
 
 def _stop(process: subprocess.Popen[bytes]) -> None:
-    """Stop exactly the server process this run started."""
-
     if process.poll() is None:
         process.terminate()
         try:

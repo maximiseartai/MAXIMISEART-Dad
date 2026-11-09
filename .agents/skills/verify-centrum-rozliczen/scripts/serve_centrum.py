@@ -503,8 +503,8 @@ class ScriptedClock:
             self._wakes.append((self() + seconds, wake))
 
     def _fire_due(self) -> None:
-        """Fires each wake-up within 0.2 s of its moment. A failure ends the thread and every later wake-up, so it
-        leaves its traceback in ``<root>/zegar/budzik-padl.txt``, where the drive finds it (``check_clock_alarm``)."""
+        """A failure ends every later wake-up, so it leaves its traceback where the drive finds it
+        (``check_clock_alarm``)."""
 
         try:
             while True:
@@ -533,8 +533,6 @@ def _scripted_onedrive(root: Path) -> CloudFiles:
 
 
 def _paced_git(root: Path) -> Callable[[], Path | None]:
-    """Git for Aktualizacja narzędzia, found after a wait while ``<root>/pacing/aktualizacja-ms.txt`` exists."""
-
     def found() -> Path | None:
         pacing = root / "pacing" / "aktualizacja-ms.txt"
         if pacing.exists():
@@ -545,8 +543,6 @@ def _paced_git(root: Path) -> Callable[[], Path | None]:
 
 
 def _paced_install(root: Path) -> Callable[[Path], bool]:
-    """Pip for the libraries of a new version, started after a wait while ``<root>/pacing/instalacja-ms.txt`` exists."""
-
     def install(requirements: Path) -> bool:
         pacing = root / "pacing" / "instalacja-ms.txt"
         if pacing.exists():
@@ -557,8 +553,6 @@ def _paced_install(root: Path) -> Callable[[Path], bool]:
 
 
 def _pace_worker_templates(root: Path, worker_template: Path) -> None:
-    """Slow each written Szablon pracownika while ``<root>/pacing/szablony-ms.txt`` exists (see the module doc)."""
-
     create = TemplateFile.create
     worker_template = worker_template.resolve()
 
@@ -572,9 +566,6 @@ def _pace_worker_templates(root: Path, worker_template: Path) -> None:
 
 
 def _register_failing_on_hook(root: Path, register: Path) -> Readers:
-    """Readers whose byte source raises on the fixture's Rejestr ``register`` while ``<root>/awaria/odczyt-rejestru``
-    exists (see the module doc)."""
-
     def source(path: Path) -> bytes:
         if (root / "awaria" / "odczyt-rejestru").exists() and path.name == register.name:
             raise RuntimeError("synthetic unexpected failure")
@@ -585,8 +576,6 @@ def _register_failing_on_hook(root: Path, register: Path) -> Readers:
 
 @contextmanager
 def _efenix_window(root: Path) -> Iterator[EfenixWindow]:
-    """Centrum's efenix window on the Atrapa efenix that serves ``EFENIX_ORDERS`` while Centrum runs (module doc)."""
-
     directory = root / "efenix"
     if not directory.exists():
         write_collective_file(directory, EFENIX_ORDERS)

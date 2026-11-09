@@ -94,7 +94,7 @@ def _write_register(path: Path) -> None:
 
 
 def _apply_template_layout(sheet: Worksheet, header_row: int, columns: int) -> None:
-    """Template look: widths, Calibri 10, bold header, frozen header, and a stale autofilter."""
+    """Look of a Wzorzec, with a stale autofilter."""
 
     for column in range(1, columns + 1):
         dimension = sheet.column_dimensions[get_column_letter(column)]

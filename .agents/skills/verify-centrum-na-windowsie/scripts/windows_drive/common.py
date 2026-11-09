@@ -73,8 +73,6 @@ class Run:
         )
 
     def health(self, *, timeout_s: float = 60) -> dict[str, Any]:
-        """``GET /api/health`` once Centrum answers on Dad's port."""
-
         def answer() -> dict[str, Any] | None:
             try:
                 body = self.get("/api/health")

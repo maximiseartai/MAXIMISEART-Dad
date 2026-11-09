@@ -458,8 +458,6 @@ class _Capture:
                 step()
 
     def _wrap(self, transport: Any, node: str) -> Callable[[], None]:
-        """Zapis każdej odpowiedzi transportu-atrapy ``transport`` (klasy z ``__call__``) w teście ``node``."""
-
         original_call = transport.__call__
 
         def call(scripted: Any, request: Any) -> Any:

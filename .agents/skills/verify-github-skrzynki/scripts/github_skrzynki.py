@@ -427,8 +427,6 @@ def doctor(key: str, admin: Admin, *, features: Sequence[str], freshness_with_ke
 
 
 def _box_baseline(admin: Admin) -> list[str]:
-    """Repozytorium próbne Skrzynki bez etykiet Skrzynki: run zakłada je sam."""
-
     _, labels = admin.request("GET", f"/repos/{TRIAL}/labels?per_page=100")
     names = {entry.get("name") for entry in labels} if isinstance(labels, list) else set()
     present = sorted(names & {*skrzynka.LABELS_MADE, skrzynka.ABSENT_LABEL})

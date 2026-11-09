@@ -22,8 +22,6 @@ from atrapy.pliki_taty import SERVICE
 
 
 def diagnose(root: Path) -> str:
-    """The doctor's verdict line; it only reads."""
-
     if sys.platform != "win32":
         return "DOCTOR FAIL | this skill drives Windows only"
     if not (root / windows_tool.FACTS).is_file():

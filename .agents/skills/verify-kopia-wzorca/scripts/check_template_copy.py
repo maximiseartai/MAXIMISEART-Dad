@@ -169,8 +169,6 @@ _ROW_HEIGHT = re.compile(rb'\s(?:ht|customHeight)="[^"]*"')
 
 @dataclass(frozen=True)
 class Template:
-    """A Wzorzec rozliczenia pracownika under test, with what the checker needs to know about its sheet."""
-
     name: str
     description: str
     path: Path
@@ -215,8 +213,6 @@ SYNTHETIC_TEMPLATES = ("syntetyczny", "maly")
 
 
 def build_templates(directory: Path, real_template: Path | None, names: Sequence[str] = SYNTHETIC_TEMPLATES) -> list[Template]:
-    """The synthetic Wzorce in ``names``, or only Dad's real Wzorzec when it is given."""
-
     if real_template is not None:
         copied = directory / "wzorzec-taty.xlsx"
         shutil.copyfile(real_template, copied)
@@ -371,7 +367,7 @@ def colors() -> st.SearchStrategy[Color]:
 
 
 def highlights() -> st.SearchStrategy[Highlights]:
-    """Wyróżnienia of one cell as reading a Plik zbiorczy gives them: ``Highlights.of`` over its font and fill."""
+    """Wyróżnienia of one cell as reading a Plik zbiorczy gives them."""
 
     fills = st.one_of(
         st.none(),
@@ -415,10 +411,7 @@ def _data_row(
     links: dict[int, str] | None = None,
     number_formats: tuple[str, ...] | None = None,
 ) -> DataRow:
-    """A Wiersz danych of 46 values (A:AT); cells missing from ``marked`` have no Wyróżnienia, ``links`` maps index → address.
-
-    ``number_formats`` covers the look columns A:L; the cells right of them carry the general format.
-    """
+    """A Wiersz danych of 46 values (A:AT); ``links`` maps column index → address, ``number_formats`` covers A:L."""
 
     look_formats = number_formats or _source_formats(values)
     return DataRow(
@@ -1106,7 +1099,6 @@ def run_check(
         failures: list[Violation] = []
         errors: list[str] = []
         for template in templates:
-            # Each Wzorzec gets its own Hypothesis run with the full budget of examples.
             explicit = [Case(template, (_value_rows(),)), _longest_example(template), *_carriage_return_examples(template)]
             missing_cells = _missing_cells_example(template)
             if missing_cells is not None:

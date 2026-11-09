@@ -33,8 +33,6 @@ def check_windowless(run: Run, process: windows_desktop.Process, *, by_guardian:
 
 
 def start_dialogs() -> list[windows_desktop.Window]:
-    """Native windows titled like Centrum's start problems (``start_problems.TITLE``)."""
-
     return [
         window
         for window in windows_desktop.visible_windows()

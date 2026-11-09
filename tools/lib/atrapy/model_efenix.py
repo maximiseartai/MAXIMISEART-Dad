@@ -2,10 +2,8 @@
 
 Model trzyma to, co w efenix trzyma serwer: zlecenia z wyceną, datą wykonania, statusem i propozycją Emmetta, jedną
 sesję i decyzje serwera o każdym działaniu okna (``Action``): szukanie, strona zlecenia, zapis daty wykonania,
-propozycja Emmetta, „Załaduj do zlecenia” z odmowami, zapis ilości i zmiana statusu. Atrapa efenix
-(``tools/lib/atrapy/atrapa_efenix.py``) tłumaczy żądanie okna na działanie ``SerwerEfenix``, a jego wynik na odpowiedź
-HTTP; budowa stron, skrypty stron, ścieżki i awarie sieci zostają w niej. Test widzi stan po przebiegu przez
-``StanEfenix``.
+propozycja Emmetta, „Załaduj do zlecenia” z odmowami, zapis ilości i zmiana statusu. HTTP i strony gra nad nim
+Atrapa efenix (``tools/lib/atrapy/atrapa_efenix.py``). Test widzi stan po przebiegu przez ``StanEfenix``.
 
 Moduł importuje tylko bibliotekę standardową (``tests/test_granice_importow.py``), więc model, z którym test porównuje
 Wycenę w efenix, nie bierze niczego z kodu pod testem (``src``).
@@ -167,16 +165,13 @@ class EfenixOrder:
 
     @property
     def page_changed(self) -> bool:
-        """Strona zlecenia jest już zmieniona: od początku, od zapisu daty wykonania (``after_date``) albo od Wyceny
-        Emmetta (``after_emmett``)."""
-
         if self.after_emmett:
             return self.emmett_loads > 0
         return not self.after_date or self.execution_date is not None
 
     @property
     def positions(self) -> tuple[Position, ...]:
-        """Pozycje ``CATALOG``, których karty ma strona zlecenia: bez ``without``, gdy strona jest już zmieniona."""
+        """Pozycje ``CATALOG``, których karty ma strona zlecenia."""
 
         return tuple(position for position in CATALOG if not (position.code in self.without and self.page_changed))
 
@@ -305,8 +300,6 @@ class SerwerEfenix(Generic[OrderT]):
             return tuple(copy.deepcopy(order) for order in self._state.orders if number in order.number)
 
     def page(self, order_id: str) -> OrderT | NoOrder | NoSession:
-        """Zlecenie na swojej stronie."""
-
         with self._state.lock:
             if not self._state.session_after(Action.OPEN):
                 return NoSession.NO_SESSION

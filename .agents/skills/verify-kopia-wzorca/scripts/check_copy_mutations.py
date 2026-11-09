@@ -2,8 +2,8 @@
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the
 checker, without shrinking, and must end with ``KOPIA WZORCA: NOWE NARUSZENIE``. A
-mutation whose anchor text is no longer in ``template_copy.py`` exactly once is
-reported as NIEAKTUALNA: update it to the new code.
+mutation whose anchor text is no longer in its file exactly once is reported as
+NIEAKTUALNA: update it to the new code.
 """
 
 from __future__ import annotations

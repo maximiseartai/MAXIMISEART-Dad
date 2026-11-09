@@ -67,7 +67,7 @@ MONTH_FOLDER = "10_Październik_2026"
 
 REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 # Kody wyjścia Skryptu dla maszyn, po których Plik zbiorczy lustra powstał: OK i wynik wymagający sprawdzenia, którym
-# Przygotowanie kończy zapis tylko z powodu ostrzeżeń ilości (preparation_process._finished).
+# Przygotowanie zawsze kończy zapis (preparation_process._result).
 _PREPARED_EXITS = (0, 2)
 
 

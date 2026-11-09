@@ -169,8 +169,6 @@ def _environment() -> dict[str, str]:
 def _python(
     run: Run, name: str, arguments: list[str], *, json_output: bool = False, accepted_exits: tuple[int, ...] = (0,)
 ) -> object:
-    """Run a helper or the process script with this Python; record its output and exit code as evidence."""
-
     completed = subprocess.run(
         [sys.executable, *arguments], cwd=REPO_ROOT, env=_environment(), stdin=subprocess.DEVNULL,
         capture_output=True, text=True, encoding="utf-8", timeout=300, check=False,
@@ -256,7 +254,7 @@ def preparation(run: Run) -> None:
     )
     expect(isinstance(result, dict), "Przygotowanie printed no result")
     assert isinstance(result, dict)
-    # Przygotowanie ends a write Wymaga sprawdzenia only for the Ilości usług warnings (preparation_process._finished).
+    # Przygotowanie's write ends Wymaga sprawdzenia: Dad still fills in the Ilości usług (preparation_process._result).
     expect(
         result["result"] == "WYMAGA_SPRAWDZENIA", "Przygotowanie did not end Wymaga sprawdzenia for the Ilości usług warnings"
     )
@@ -324,8 +322,6 @@ def _reference(run: Run, name: str) -> tuple[list[str], list[str]]:
 
 
 def _check_formulas(path: Path, rows: dict[str, int], reference: list[str], *, label: str) -> None:
-    """Every Wiersz danych keeps the Wzorzec's formulas, and Excel shows no error in its amounts."""
-
     for row in rows.values():
         expect(excel.formulas_r1c1(path, FORMULAS.format(row=row)) == reference, f"{label}: row {row} formulas differ from the Wzorzec")
         errors = excel.error_cells(path, CALCULATED.format(row=row))
