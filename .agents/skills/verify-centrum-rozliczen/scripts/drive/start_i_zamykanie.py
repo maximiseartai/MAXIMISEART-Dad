@@ -13,7 +13,7 @@ import urllib.parse
 from playwright.sync_api import Page, Request, Response, expect
 
 from drive.common import REPO_ROOT, Run, answers, log_entries, read_text, served_version
-from atrapy.pliki_taty import LOG_FILE
+from atrapy.pliki_taty import LOG_FILE, SERVICE
 
 # Every click on the shortcut opens one more tab; the browser keeps at most 6 connections to Centrum for all tabs.
 _SHORTCUT_TABS = 7
@@ -105,7 +105,7 @@ def drive(run: Run, page: Page) -> None:
     commit, _ = served_version(run)
     run.check(
         health.keys() == {"service", "commit", "instance"}
-        and (health["service"], health["commit"]) == ("centrum-rozliczen", commit[:7])
+        and (health["service"], health["commit"]) == (SERVICE, commit[:7])
         and bool(health["instance"]),
         "health names Centrum rozliczeń, the tool's commit it runs, and this start",
     )

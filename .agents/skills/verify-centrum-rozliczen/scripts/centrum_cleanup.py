@@ -20,12 +20,13 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser, remove_run_root, require_run_root
+from atrapy.pliki_taty import SERVICE
 
 
 def _answers_as_centrum(url: str) -> bool:
     try:
         with urllib.request.urlopen(url + "api/health", timeout=2) as response:
-            return bool(json.load(response).get("service") == "centrum-rozliczen")
+            return bool(json.load(response).get("service") == SERVICE)
     except (OSError, ValueError):
         return False
 

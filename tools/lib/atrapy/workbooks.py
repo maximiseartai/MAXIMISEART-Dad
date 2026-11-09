@@ -10,6 +10,7 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font
@@ -24,6 +25,10 @@ LEFTOVER_DATE_FORMAT = "yyyy-mm-dd h:mm:ss"
 LEFTOVER_ROW_HEIGHT = 30.0
 
 
+# Początek nazwy pliku blokady, który desktopowy Excel kładzie obok otwartego skoroszytu (kopia celowa, ``excel_lock``).
+EXCEL_LOCK_PREFIX: Final = "~$"
+
+
 def excel_lock(workbook: Path) -> Path:
     """Plik blokady, który desktopowy Excel taty kładzie obok otwartego skoroszytu ``workbook``.
 
@@ -31,7 +36,7 @@ def excel_lock(workbook: Path) -> Path:
     blokadę kładzie Excel, więc napęd, który ją kładzie, gra Excela, a zła konwencja nazwy w ``src`` ma go wywrócić.
     """
 
-    return workbook.with_name(f"~${workbook.name}")
+    return workbook.with_name(f"{EXCEL_LOCK_PREFIX}{workbook.name}")
 
 
 def active_worksheet(workbook: Workbook) -> Worksheet:

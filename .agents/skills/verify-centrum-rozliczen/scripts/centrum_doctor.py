@@ -21,6 +21,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser
+from atrapy.pliki_taty import SERVICE
 
 
 def _get(url: str) -> tuple[int, bytes]:
@@ -41,7 +42,7 @@ def check(root: Path) -> list[str]:
         _, health_body = _get(url + "api/health")
         health = json.loads(health_body)
         fixture = json.loads((root / "fixture.json").read_text(encoding="utf-8"))
-        identity = {"service": "centrum-rozliczen", "commit": fixture["tool"]["first"][:7]}
+        identity = {"service": SERVICE, "commit": fixture["tool"]["first"][:7]}
         if {key: health.get(key) for key in identity} != identity or not health.get("instance"):
             problems.append(f"unexpected health answer: {health}")
         _, page = _get(url)

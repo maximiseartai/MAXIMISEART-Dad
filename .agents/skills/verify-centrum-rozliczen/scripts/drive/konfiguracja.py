@@ -11,7 +11,7 @@ from playwright.sync_api import Locator, Page, expect
 
 from drive.common import Run, move, read_bytes, remove, served_version, unreadable, version_line
 from drive.teksty import UPDATE_BUTTON, WRITE
-from atrapy.workbooks import excel_lock
+from atrapy.workbooks import EXCEL_LOCK_PREFIX, excel_lock
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
 REPORT_TO_MAINTAINER = "Przekaż ten komunikat osobie utrzymującej narzędzie."
@@ -25,7 +25,7 @@ def _configuration_snapshot(files: dict[str, Path]) -> dict[str, tuple[bytes, in
     """Bytes and modification time of the konfiguracja wykonawców and the three Wzorce, plus every lock file."""
 
     config = next(iter(files.values())).parent
-    paths = [*files.values(), *config.glob("~$*")]
+    paths = [*files.values(), *config.glob(f"{EXCEL_LOCK_PREFIX}*")]
     return {path.name: (read_bytes(path), path.stat().st_mtime_ns) for path in sorted(paths)}
 
 
