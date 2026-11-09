@@ -411,7 +411,7 @@ def test_nieoczekiwany_wyjatek_pokazuje_trzy_czesci_bez_tekstu_wyjatku_i_danych_
     def fail_unexpectedly(path: Path) -> NoReturn:
         raise RuntimeError("nieprzewidziany błąd przy SYN-001")
 
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=on_register_read(fail_unexpectedly)))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(source=on_register_read(fail_unexpectedly)))
 
     centrum.start(dry_run=False)
     view = finished_view(centrum.client)

@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
 
 from .dad_files import DadFiles
 from .decision import Conversation, Decision
 from .domain import ProgressObserver
-from .input_checks import FILE_READERS, Readers
 from .run_clock import RunClock
+
+if TYPE_CHECKING:
+    from .template_file import TemplateFile
+
+TemplateCheck = Callable[["TemplateFile"], None]
+"""Sprawdzanie Wzorca: ``WorkbookError``, gdy Wzorzec nie może posłużyć jako wzór. Ten sam dostają Uruchomienie procesu,
+Diagnoza i Konfiguracja, więc usterka, którą podstawia test albo weryfikacja, trafia do wszystkich trzech."""
+
+
+def check_on_disk(template: TemplateFile) -> None:
+    """Sprawdzanie Wzorca na dysku taty (``TemplateFile.check``)."""
+
+    template.check()
 
 
 class _Unasked:
@@ -28,14 +42,14 @@ class RunContext:
     """Kontekst Uruchomienia: jedyny argument silnika poza jego wejściem.
 
     Niesie tylko to, co gospodarz daje każdemu Uruchomieniu każdego procesu; zależność jednego procesu (okno efenix,
-    folder Kopii INTERMAX) jest polem jego wejścia. ``files``: jedyna droga do wartości plików taty (pamięć reguły
-    danych zawsze, Kopia wejścia tylko w Uruchomieniu z Logami). ``readers``: Sprawdzanie Wzorców i Rejestru zleceń; test
-    podstawia czytnik, który się psuje. ``observer`` i ``conversation``
-    dokłada rdzeń tuż przed silnikiem (``process_run.run_process``); test silnika podaje je sam albo zostawia domyślne.
+    folder Kopii INTERMAX) jest polem jego wejścia. ``files``: jedyna droga do bajtów i wartości plików taty (pamięć
+    reguły danych zawsze, Kopia wejścia tylko w Uruchomieniu z Logami). ``template_check``: Sprawdzanie Wzorców.
+    ``observer`` i ``conversation`` dokłada rdzeń tuż przed silnikiem (``process_run.run_process``); test silnika podaje
+    je sam albo zostawia domyślne.
     """
 
     files: DadFiles = field(default_factory=DadFiles, compare=False)
-    readers: Readers = FILE_READERS
+    template_check: TemplateCheck = check_on_disk
     clock: RunClock = field(default_factory=RunClock, compare=False)
     observer: ProgressObserver | None = None
     conversation: Conversation = UNASKED
@@ -46,14 +60,14 @@ class RunContext:
 
 @dataclass(frozen=True)
 class RunContexts:
-    """Gospodarz Uruchomień z Logami: uchwyt plików taty i czytniki jego pracy.
+    """Gospodarz Uruchomień z Logami: uchwyt plików taty i Sprawdzanie Wzorców jego pracy.
 
     ``new()`` daje kontekst jednego Uruchomienia z uchwytem ``DadFiles.for_run`` i nowym zegarem. Gospodarz bez Logów
     (Skrypt dla maszyn) bierze ``RunContext()`` bez Kopii.
     """
 
     files: DadFiles = field(default_factory=DadFiles)
-    readers: Readers = FILE_READERS
+    template_check: TemplateCheck = check_on_disk
 
     def new(self) -> RunContext:
-        return RunContext(files=self.files.for_run(), readers=self.readers)
+        return RunContext(files=self.files.for_run(), template_check=self.template_check)

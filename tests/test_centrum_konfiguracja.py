@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, NoReturn
@@ -15,7 +15,7 @@ from rozliczenia import tool_files
 from rozliczenia.centrum import tool_freshness
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.input_checks import FILE_READERS, Readers
+from rozliczenia.run_context import TemplateCheck, check_on_disk
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import Problem, WorkbookError
 from tests.fixtures.centrum import TOOL_COMMIT, CentrumClient, FakeGitHub, ToolDirectory, centrum_app, write_report_key
@@ -42,12 +42,14 @@ class Configured:
     files: ConfigurationFiles
 
 
-def configured(tmp_path: Path, github: FakeGitHub | None = None, readers: Readers = FILE_READERS) -> Configured:
+def configured(
+    tmp_path: Path, github: FakeGitHub | None = None, template_check: TemplateCheck = check_on_disk
+) -> Configured:
     """Centrum z syntetycznym katalogiem konfiguracji: wszystkie trzy Wzorce i konfiguracja wykonawców."""
 
     tool = ToolDirectory(tmp_path)
     files = write_configuration(tool)
-    app = centrum_app(tool, tool_freshness=(github or FakeGitHub()).freshness(), readers=readers)
+    app = centrum_app(tool, tool_freshness=(github or FakeGitHub()).freshness(), template_check=template_check)
     return Configured(CentrumClient(app), files)
 
 
@@ -69,7 +71,7 @@ def test_wzorce_sprawdza_czytnik_wzorcow_procesu(tmp_path: Path) -> None:
     def open_in_excel(template: TemplateFile) -> NoReturn:
         raise WorkbookError(template.path, Problem.OPEN_IN_EXCEL)
 
-    app = configured(tmp_path, readers=replace(FILE_READERS, template=open_in_excel))
+    app = configured(tmp_path, template_check=open_in_excel)
 
     templates = templates_by_file(read_configuration(app))
     assert {name: (template["problem"], template["level"]) for name, template in templates.items()} == {
@@ -84,9 +86,9 @@ def test_niezmieniony_wzorzec_jest_sprawdzany_raz_a_brakujacy_przy_kazdym_odczyc
 
     def counting(template: TemplateFile) -> None:
         checked.append(template.path.name)
-        FILE_READERS.template(template)
+        template.check()
 
-    app = configured(tmp_path, readers=replace(FILE_READERS, template=counting))
+    app = configured(tmp_path, template_check=counting)
     app.files.worker_template.unlink()
 
     read_configuration(app)
@@ -103,7 +105,7 @@ def test_niezmieniony_wzorzec_z_problemem_tresci_jest_sprawdzany_raz(tmp_path: P
         checked.append(template.path.name)
         raise WorkbookError(template.path, problem)
 
-    app = configured(tmp_path, readers=replace(FILE_READERS, template=damaged))
+    app = configured(tmp_path, template_check=damaged)
 
     first = read_configuration(app)
     second = read_configuration(app)
@@ -133,9 +135,9 @@ def test_wzorzec_niedostepny_jest_gotowy_bez_restartu_gdy_dostep_wraca(
     def blocking(template: TemplateFile) -> None:
         if template.path.name in blocked:
             raise WorkbookError(template.path, Problem.INACCESSIBLE)
-        FILE_READERS.template(template)
+        template.check()
 
-    app = configured(tmp_path, readers=replace(FILE_READERS, template=blocking))
+    app = configured(tmp_path, template_check=blocking)
     path = tmp_path / "config" / file_name
     signature = (path.stat().st_mtime_ns, path.stat().st_size)
     while_blocked = templates_by_file(read_configuration(app))[file_name]

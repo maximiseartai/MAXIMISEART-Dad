@@ -61,7 +61,7 @@ def _inputs(start: Start, _parts: HostParts) -> PreparationInputs:
     )
 
 
-_VIEW: Final[PeriodProcessView[PreparationInputs, PreparationSummary]] = PeriodProcessView(
+_VIEW: Final[PeriodProcessView[PreparationSummary]] = PeriodProcessView(
     reminder="Zapisz i zamknij Rejestr zleceń w Excelu",
     confirms_readiness=False,
     preview_hint="Nic nie zostanie zapisane. Zobaczysz plan i nazwy obu plików.",

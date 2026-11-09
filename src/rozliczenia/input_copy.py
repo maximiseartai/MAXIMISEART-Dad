@@ -2,7 +2,7 @@
 
 Uruchomienie z Centrum ma swoją Kopię wejścia (``InputCopy``) w uchwycie plików taty (``dad_files.DadFiles``), a
 czytnik, który czyta dla niego plik taty, oddaje jej przez ten uchwyt bajty, z których czytał plik, zakazane kolumny
-każdego arkusza i każdy przeczytany wiersz z jego położeniami (``raw_orders.RowPositions``): Rejestr zleceń w
+każdego arkusza i każdy przeczytany wiersz z jego położeniami (``row_positions.RowPositions``): Rejestr zleceń w
 Przygotowaniu pliku zbiorczego (``register_file.OrderSheets.period_rows``), Plik zbiorczy w Przebiegu rozliczeń
 (``workbook_files.read_data_rows``), w Wycenie w efenix (``workbook_files.read_computed_rows``) i INTERMAX w
 Uporządkowaniu INTERMAX (``register_file.PasteArea.copy_paste``, #842). Zakazane kolumny to te, których komórki ten sam czytnik
@@ -32,7 +32,7 @@ from typing import Literal
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
-from .raw_orders import UNDER_HEADER, AbovePaste, RowPositions
+from .row_positions import UNDER_HEADER, AbovePaste, RowPositions
 
 TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
@@ -75,7 +75,7 @@ class PasteFacts:
 
     ``shifted_row``: wiersz, którego komórki czytnik czyta o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
     (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
-    ``uncertain_rows``: wiersze wklejenia INTERMAX w obu położeniach (``raw_orders.RowPositions.uncertain``), które mają
+    ``uncertain_rows``: wiersze wklejenia INTERMAX w obu położeniach (``row_positions.RowPositions.uncertain``), które mają
     w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu i datę z godziną spod ``DATA GODZ. POCZ.``, więc
     brak komórki nie znaczy w nich pustej. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty wiersz nad
     wklejeniem INTERMAX (``raw_orders.above_paste``); ``None``: bez takiego wiersza. ``traced_rows``: wiersze ze śladem

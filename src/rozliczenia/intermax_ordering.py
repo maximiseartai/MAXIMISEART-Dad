@@ -82,10 +82,6 @@ class OrderingInputs:
     def __post_init__(self) -> None:
         object.__setattr__(self, "period", period_of(self.now().date()).token)
 
-    @property
-    def dry_run(self) -> bool:
-        return False
-
 
 @dataclass
 class OrderingSummary:

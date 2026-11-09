@@ -45,7 +45,6 @@ from rozliczenia.centrum.tool_freshness import RateLimited, ToolFreshness, offer
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.file_state import file_state
-from rozliczenia.input_checks import Readers
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
     PeriodFolder,
@@ -56,6 +55,7 @@ from rozliczenia.period_folder import (
     period_place_label,
 )
 from rozliczenia.centrum.settings import Settings
+from rozliczenia.run_context import TemplateCheck
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 
 _LOG_ENTRIES: Final = 20
@@ -221,13 +221,13 @@ def files_of_process(
 
 @dataclass(frozen=True)
 class _Computer(_ProcessFiles):
-    """Komputer taty w chwili Diagnozy: pliki procesu Zatrzymania, dziennik, granice poza plikami taty, czytniki procesu
-    i uchwyt plików taty pracy Centrum, którego pamięć reguły danych poznaje komórki zakazanych kolumn przeczytanego
+    """Komputer taty w chwili Diagnozy: pliki procesu Zatrzymania, dziennik, granice poza plikami taty, Sprawdzanie
+    Wzorców i uchwyt plików taty pracy Centrum, którego pamięć reguły danych poznaje komórki zakazanych kolumn przeczytanego
     Rejestru zleceń."""
 
     log: CentrumLog
     surroundings: Surroundings
-    readers: Readers
+    template_check: TemplateCheck
     dad_files: DadFiles
 
     @cached_property
@@ -362,7 +362,7 @@ def _templates(computer: _Computer, label: str) -> list[CheckResult]:
 
 def _template_check(template: Template) -> _CheckRun:
     def check(computer: _Computer, label: str) -> list[CheckResult]:
-        problem = template.problem(computer.readers)
+        problem = template.problem(computer.template_check)
         if problem is None:
             return [CheckResult.passed(label, f"{template.path.name} przechodzi Sprawdzanie.")]
         return [CheckResult.failed(label, problem)]
@@ -487,17 +487,18 @@ def diagnose(
     configuration: ConfigurationFiles,
     log: CentrumLog,
     surroundings: Surroundings,
-    readers: Readers,
+    template_check: TemplateCheck,
     files: DadFiles,
 ) -> Diagnosis:
-    """Wszystkie sprawdzenia procesu ``process`` dla tokenu okresu ``period``, tylko do odczytu, czytnikami procesu.
+    """Wszystkie sprawdzenia procesu ``process`` dla tokenu okresu ``period``, tylko do odczytu, Sprawdzaniem Wzorców
+    ``template_check``.
 
     Pliki taty czyta uchwyt ``files``, którego pamięć poznaje komórki zakazanych kolumn przeczytanego Rejestru zleceń
     (reguła danych, ADR 0025).
     """
 
     declaration = declaration_of(process)
-    computer = _Computer(declaration, parse_period_token(period), settings, configuration, log, surroundings, readers, files)
+    computer = _Computer(declaration, parse_period_token(period), settings, configuration, log, surroundings, template_check, files)
     checks: list[CheckResult] = []
     for step in declaration.checks:
         checks.extend(_check_of(step).results(computer))

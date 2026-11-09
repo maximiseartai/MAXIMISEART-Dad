@@ -4,7 +4,7 @@
   },
   "src/rozliczenia/intermax_ordering.py": {
     "order_register": "fa46fe38e00302f6",
-    "OrderingInputs": "7ac3ca06a826174f",
+    "OrderingInputs": "69ee189c8690cc65",
     "_stops_unusable": "7397a36c0f4e5e99"
   },
   "src/rozliczenia/intermax_restore.py": {
@@ -33,6 +33,7 @@
   },
   "src/rozliczenia/file_state.py": {
     "_ABSENT": "f8f2224054693ffa",
-    "file_state": "9896792e360d91ad"
+    "file_state": "6da9a6f109e4fbeb",
+    "path_state": "5306d4107433a5bd"
   }
 }

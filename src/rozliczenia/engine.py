@@ -171,13 +171,13 @@ def run_settlements(inputs: SettlementInputs, context: RunContext) -> Settlement
     """Uruchamia pełny proces z ochroną przed błędną lokalizacją i duplikacją."""
 
     phases = PhaseRunner(context.observer, clock=context.clock.now)
-    files, readers, dry_run = context.files, context.readers, inputs.dry_run
+    files, dry_run = context.files, inputs.dry_run
     source_path = inputs.source.expanduser().resolve()
     config_path = inputs.config_path.expanduser().resolve()
     worker_template_path = inputs.worker_template_path.expanduser().resolve()
 
     folder, mapping, worker_template = phases.check(
-        lambda: input_checks.check_settlement(source_path, config_path, worker_template_path, readers)
+        lambda: input_checks.check_settlement(source_path, config_path, worker_template_path, context.template_check)
     )
     target_directory = folder.worker_settlements
     worker_names = list(mapping.values())

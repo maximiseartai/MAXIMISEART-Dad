@@ -238,7 +238,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
 
     key: common_contract.ProcessKey
     short_title: str
-    view: ProcessView[InputsT, SummaryT]
+    view: ProcessView[SummaryT]
     core: Process[InputsT, SummaryT, RunContext]
     default_metrics: Path
     needs: tuple[Need, ...]
@@ -395,7 +395,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
 
     @property
     def dry_run(self) -> bool:
-        return self.inputs.dry_run
+        return self.kind.core.dry_run(self.inputs)
 
     @property
     def input_copy(self) -> InputCopy | None:
@@ -417,7 +417,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
             self.kind.core,
             self.inputs,
             interlocutor,
-            view=self.kind.view.shown,
+            view=lambda _inputs, summary: self.kind.view.shown(summary, dry_run=self.dry_run),
             metrics_path=self.metrics.path,
             context=self.context,
         )

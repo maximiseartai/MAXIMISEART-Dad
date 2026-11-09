@@ -57,6 +57,7 @@ from types import MappingProxyType
 from typing import Final, TypeVar
 
 from .register_columns import ORDERED_FONT, ORDERED_SIZE
+from .row_positions import AbovePaste, RowPositions
 from .text import normalize_text
 
 SHIFT: Final = 2
@@ -349,47 +350,12 @@ def pasted_rows(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> 
     return tuple(_bottom(iter(rows_from_bottom), columns)[0])
 
 
-@dataclass(frozen=True)
-class AbovePaste:
-    """Wiersze nad wklejeniem, od których ``recognize`` liczy wiersz dnia (``RawBlock.anchor``): ostatni uporządkowany
-    wiersz (``None``: bez niego dzień staje pod nagłówkiem) i żółty wiersz między nim a wklejeniem (``None``: bez
-    żółtego wiersza)."""
-
-    last_ordered: int | None
-    yellow: int | None
-
-
 def above_paste(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> AbovePaste:
     """Ostatni uporządkowany i żółty wiersz z tego samego rozpoznania dołu arkusza co ``recognize``, same numery
     wierszy: Kopia wejścia niesie je, żeby odtworzenie Uruchomienia postawiło dzień w tych samych wierszach (#847)."""
 
     _, yellow, _, ordered = _bottom(iter(rows_from_bottom), columns)
     return AbovePaste(None if ordered is None else ordered.number, yellow)
-
-
-@dataclass(frozen=True)
-class RowPositions:
-    """Położenia wiersza arkusza zleceń (ADR 0025 „Położenie wiersza”) z jednej reguły (``row_positions``).
-
-    ``read``: o tyle kolumn na lewo od swojego nagłówka proces czyta komórki wiersza (``SHIFT`` w przesuniętym pierwszym
-    wierszu bloku Surowych zleceń, inaczej 0). ``known``: przesunięcia, przy których pamięć reguły danych zna jego
-    zakazane komórki, a Kopia wejścia ma tylko komórki dozwolone przy każdym z nich. ``traced``: wiersz, który nie jest
-    pierwszym wierszem bloku wklejenia, ma ślad przesunięcia, więc Logi mówią, że fakt domeny jest złamany.
-    """
-
-    read: int = 0
-    known: tuple[int, ...] = (0,)
-    traced: bool = False
-
-    @property
-    def uncertain(self) -> bool:
-        """Wiersz z siatki: pamięć zna go w obu położeniach (``both_positions``)."""
-
-        return len(self.known) > 1
-
-
-UNDER_HEADER: Final = RowPositions()
-"""Wiersz pod swoimi nagłówkami: każdy wiersz Pliku zbiorczego i Rejestru w Przygotowaniu."""
 
 
 def row_positions(*, first: bool, left_of_date: object, date: object, read: int = 0) -> RowPositions:

@@ -8,9 +8,10 @@ skoroszyt w openpyxl tylko z bajtów. Odczyt z dysku poza nimi trafia w klasyfik
 ``DadFiles.read`` bierze chwilę zmiany pliku przed jego bajtami, więc odcisk w Kopii wejścia ma chwilę przeczytanej
 wersji. Bajty z ``file_bytes``, ``workbook_content`` albo ``template_content`` i skoroszyt z ``open_workbook`` mają
 tylko miejsca z ``ONLY`` i ``EXCEPTIONS``, więc nowy czytnik nie czyta wartości pliku taty obok uchwytu, bez sprawdzenia
-dostępności, ``Readers.source``, pamięci i Kopii. Pamięć reguły danych i Kopię wejścia pisze tylko świadek arkusza
-(``dad_files.WitnessedSheet``), więc Kopia nie ma wiersza, którego nie zna pamięć (ADR 0025). Test i atrapa wspólna z
-testami (``tools/lib/atrapy``) podstawiają bajty przez ``input_checks.Readers.source``, a nie łatają modułu skoroszytu.
+dostępności, źródła bajtów uchwytu (``DadFiles.source``), pamięci i Kopii. Pamięć reguły danych i Kopię wejścia pisze
+tylko świadek arkusza (``dad_files.WitnessedSheet``), więc Kopia nie ma wiersza, którego nie zna pamięć (ADR 0025). Test
+i atrapa wspólna z testami (``tools/lib/atrapy``) podstawiają bajty przez źródło bajtów uchwytu (``DadFiles.source``, w
+Centrum ``create_app(source=...)``), a nie łatają modułu skoroszytu.
 
 Granica: strażnik widzi wywołanie po nazwie funkcji (także z aliasem importu ``from … import … as …``) i łatanie modułu
 ``workbook_files`` przez ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w
@@ -260,7 +261,7 @@ def test_sprawdzenie_latania_czyta_testy_i_atrapy() -> None:
     assert {"tests/test_jeden_odczyt_skoroszytu.py", "tools/lib/atrapy/workbooks.py"} <= read
 
 
-def test_test_podstawia_bajty_plikow_taty_przez_readers_source_a_nie_latajac_modul_skoroszytu() -> (
+def test_test_podstawia_bajty_plikow_taty_przez_zrodlo_uchwytu_a_nie_latajac_modul_skoroszytu() -> (
     None
 ):
     found = [
@@ -272,8 +273,8 @@ def test_test_podstawia_bajty_plikow_taty_przez_readers_source_a_nie_latajac_mod
     assert not found, "\n".join(
         [
             *found,
-            "Bajty plików taty podstawiaj przez replace(FILE_READERS, source=...) w Surroundings(readers=...), a w teście "
-            "silnika przez RunContext(files=DadFiles(source=...)).",
+            "Bajty plików taty podstawiaj przez Surroundings(source=...) albo centrum_app(source=...) w teście Centrum, "
+            "a w teście silnika przez RunContext(files=DadFiles(source=...)).",
         ]
     )
 
@@ -293,7 +294,7 @@ def test_sprawdzenie_latania_zglasza_latanie_w_atrapie(tmp_path: Path, monkeypat
         monkeypatch.setattr(module, name, path)
 
     with pytest.raises(AssertionError) as raised:
-        test_test_podstawia_bajty_plikow_taty_przez_readers_source_a_nie_latajac_modul_skoroszytu()
+        test_test_podstawia_bajty_plikow_taty_przez_zrodlo_uchwytu_a_nie_latajac_modul_skoroszytu()
 
     assert "tools/lib/atrapy/naruszenie.py:2: mock.patch(" in str(raised.value)
 
@@ -318,7 +319,7 @@ def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_
         "        pass\n"
         "    with mock.patch.multiple(target=wf, file_bytes=None):\n"
         "        pass\n"
-        "    monkeypatch.setattr(input_checks, 'FILE_READERS', None)\n"
+        "    monkeypatch.setattr(input_checks, 'ProcessTemplate', None)\n"
         "    monkeypatch.setattr(wf_bytes, '__doc__', '')\n"
         "    mock.patch.object(sys, 'stdin')\n"
         "    mock.patch('rozliczenia.input_checks.check_preparation')\n"

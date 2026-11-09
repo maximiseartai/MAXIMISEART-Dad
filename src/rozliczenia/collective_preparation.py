@@ -144,7 +144,7 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
     """
 
     phases = PhaseRunner(context.observer, clock=context.clock.now)
-    dad_files, readers, conversation = context.files, context.readers, context.conversation
+    dad_files, conversation = context.files, context.conversation
     period, dry_run = inputs.period, inputs.dry_run
     register_path = inputs.register_path.expanduser().resolve()
     periods_directory = inputs.periods_directory.expanduser().resolve()
@@ -160,7 +160,7 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
             config_path,
             internal_template=internal_template,
             collective_template=collective_template,
-            readers=readers,
+            template_check=context.template_check,
         )
         register = preparation_register.read(register_path, dad_files)
         raw = preparation_register.raw_orders_in_period(register, files.folder.period)

@@ -67,7 +67,7 @@ def fake_process(**overrides: Any) -> Process[Inputs, Summary, RunContext]:
         "name": "Proces testowy",
         "counters": (Counter("items", lambda _summary: 1),),
         "result": lambda _inputs, _summary: "OK",
-        "preview": Preview(ENDINGS["plan_not_shown"]),
+        "preview": Preview(ENDINGS["plan_not_shown"], dry_run=lambda inputs: inputs.dry_run),
         "metrics_failure_tail": "Proces testowy zakończył się niezależnie.",
         "execute": execute,
         "unexpected_failure": ENDINGS["unexpected_failure"],

@@ -317,10 +317,6 @@ class EfenixInputs:
     def period(self) -> str:
         return collective_period_token(self.source)
 
-    @property
-    def dry_run(self) -> bool:
-        return False
-
 
 # Kroki Zapisywania na karcie Uruchomienia.
 _LOGIN: Final = "Zaloguj się w oknie efenix"

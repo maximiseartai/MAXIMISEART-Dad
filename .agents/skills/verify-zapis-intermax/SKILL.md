@@ -103,8 +103,8 @@ Covered files: `src/rozliczenia/intermax_replace.py` (`replace_register`,
 `src/rozliczenia/intermax_file.py` (`check`),
 `src/rozliczenia/workbook_save.py` (`write_atomically`), and
 `src/rozliczenia/workbook_files.py` (`workbook_content`, `ensure_available`,
-`is_open_in_excel`, `excel_lock_file`) and `src/rozliczenia/file_state.py` (`file_state`, `_ABSENT`: missing versus
-inaccessible behind `ensure_available`).
+`is_open_in_excel`, `excel_lock_file`) and `src/rozliczenia/file_state.py` (`file_state`, `path_state`, `_ABSENT`: missing
+versus inaccessible behind `ensure_available`).
 
 The steps the points stand for have digests in `model/definicje.json`: `intermax_replace.py` and
 `intermax_copies.py` whole, and the read, the save phase of `order_register`, `restore` and the Excel lock check of the

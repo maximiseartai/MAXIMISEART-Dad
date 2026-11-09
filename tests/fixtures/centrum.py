@@ -68,9 +68,10 @@ from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease,
 from rozliczenia.centrum.tool_update import Release, ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher
 from rozliczenia.efenix_pace import Pace
-from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.intermax_copies import default_directory as default_intermax_copies
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk
+from rozliczenia.run_context import TemplateCheck, check_on_disk
+from rozliczenia.workbook_files import ByteSource, file_bytes
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, stop_after_test, threads_since
@@ -628,7 +629,8 @@ def centrum_app(
     report_search_deadline_s: float = SEARCH_DEADLINE_S,
     tool_update: ToolClone | None = None,
     guardian: GuardianLauncher | None = None,
-    readers: Readers = FILE_READERS,
+    source: ByteSource = file_bytes,
+    template_check: TemplateCheck = check_on_disk,
     intermax_copies: Path | None | Fake = FAKE,
     intermax_disk: Disk = LOCAL_DISK,
     window: EfenixWindow | None | Fake = FAKE,
@@ -666,7 +668,8 @@ def centrum_app(
         report_search_deadline_s=report_search_deadline_s,
         tool_update=tool_update,
         guardian=guardian,
-        readers=readers,
+        source=source,
+        template_check=template_check,
         intermax_copies=_or_fake(intermax_copies, lambda: tool.intermax_copies),
         intermax_disk=intermax_disk,
         now=now,

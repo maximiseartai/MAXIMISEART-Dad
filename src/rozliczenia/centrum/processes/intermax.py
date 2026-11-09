@@ -41,7 +41,7 @@ def _inputs(start: Start, parts: HostParts) -> OrderingInputs:
     )
 
 
-_VIEW: Final[ProcessView[OrderingInputs, OrderingSummary]] = ProcessView(
+_VIEW: Final[ProcessView[OrderingSummary]] = ProcessView(
     reminder="Zapisz i zamknij INTERMAX w Excelu",
     confirms_readiness=False,
     done="INTERMAX uporządkowany",
