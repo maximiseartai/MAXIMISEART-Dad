@@ -69,8 +69,6 @@ def serve(
 
 
 def after_start(state: Mapping[str, object]) -> None:
-    """Krok po starcie ze stanu ``lifespan`` aplikacji (``AFTER_START``), jeśli go podała."""
-
     step = state.get(AFTER_START)
     if callable(step):
         step()

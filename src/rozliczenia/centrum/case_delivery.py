@@ -81,8 +81,8 @@ def _logs_on_the_way_line(run_id: str) -> str:
 
 
 def note_post(note_id: str, title: str, body: str, *, logs_on_the_way: bool) -> Post:
-    """Wysyłka Uwagi taty ``note_id``: nowe issue z jej tytułem i treścią. ``logs_on_the_way``: stopka ma linię Logów
-    w drodze (``logs_line`` bez adresu), którą słuchacz wymieni tuż przed wysłaniem."""
+    """``logs_on_the_way``: stopka ma linię Logów w drodze (``logs_line`` bez adresu), którą słuchacz wymieni tuż przed
+    wysłaniem."""
 
     state = _LOGS_ON_THE_WAY if logs_on_the_way else None
     return Post(NewIssue(NOTE.label, title), period=None, run_id=note_id, header=None, parts=(body,), state=state)

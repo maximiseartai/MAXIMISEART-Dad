@@ -11,8 +11,8 @@ zmianie znacznika zapisu (``live_file.saved_version``) albo dnia; inaczej oddaje
 jak ``live_file.LastGoodReads``: OneDrive po pobraniu pliku nie zmienia jego znacznika. Uporządkowanie INTERMAX
 zmienia ten znacznik, więc dni po nim są świeże.
 
-Konfiguracja wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``). Przywrócenie
-zajmuje w ``RunHost`` miejsce „jedno naraz”, bo podmienia INTERMAX, więc nie biegnie obok Uporządkowania INTERMAX.
+Konfiguracja wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``) w miejscu
+„jedno naraz” ``RunHost``.
 """
 
 from __future__ import annotations
@@ -49,8 +49,6 @@ _VIEW: Final = _KIND.view
 
 @dataclass
 class _DaysRead:
-    """Ostatni udany odczyt dni: INTERMAX, jego znacznik zapisu, dzień zegara i dni z silnika."""
-
     register: Path
     version: str
     today: date

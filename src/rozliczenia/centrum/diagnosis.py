@@ -107,8 +107,6 @@ class Diagnosis:
 
     @property
     def _explaining(self) -> CheckResult | None:
-        """Sprawdzenie, którego Komunikat jest wyjaśnieniem: pierwsze z przyczyną."""
-
         return next((check for check in self.checks if check.message is not None), None)
 
     @property
@@ -184,8 +182,6 @@ class _ProcessFiles:
 
     @cached_property
     def period_files(self) -> tuple[Path, ...]:
-        """Pliki okresu w odszukanym Folderze okresu: oba pliki okresu i Rozliczenia pracownika."""
-
         folder = self.period_folder
         if not isinstance(folder, PeriodFolder):
             return ()
@@ -193,8 +189,6 @@ class _ProcessFiles:
 
     @cached_property
     def templates(self) -> tuple[Template, ...]:
-        """Wzorce, które czyta proces."""
-
         return tuple(template for template in self.configuration.templates() if template.role in self.declaration.templates)
 
     @property
@@ -213,7 +207,7 @@ def files_of_process(
 ) -> list[Path]:
     """Pliki taty Uruchomienia procesu ``process`` dla tokenu okresu ``period``, ta sama lista co w sprawdzeniu OneDrive.
 
-    Folder okresu czyta przez ``reading``: ``PeriodFolderInaccessible``, gdy się nie da.
+    ``PeriodFolderInaccessible``, gdy folderu okresów albo Folderu okresu nie da się odczytać.
     """
 
     return _ProcessFiles(declaration_of(process), parse_period_token(period), settings, configuration).files
@@ -221,9 +215,7 @@ def files_of_process(
 
 @dataclass(frozen=True)
 class _Computer(_ProcessFiles):
-    """Komputer taty w chwili Diagnozy: pliki procesu Zatrzymania, dziennik, granice poza plikami taty, Sprawdzanie
-    Wzorców i uchwyt plików taty pracy Centrum, którego pamięć reguły danych poznaje komórki zakazanych kolumn przeczytanego
-    Rejestru zleceń."""
+    """Komputer taty w chwili Diagnozy."""
 
     log: CentrumLog
     surroundings: Surroundings
@@ -247,9 +239,7 @@ class _Check:
     run: _CheckRun
 
     def results(self, computer: _Computer) -> list[CheckResult]:
-        """Wyniki sprawdzenia; gdy samo się nie uda, „nie sprawdzono” pod jego nazwą, bez treści wyjątku.
-
-        Folder, którego nie da się odczytać, nie jest porażką sprawdzenia, tylko przyczyną: oba procesy
+        """Folder, którego nie da się odczytać, nie jest porażką sprawdzenia, tylko przyczyną: oba procesy
         wyjaśniają ją Komunikatem Przygotowania, jak odszukanie Folderu okresu.
 
         Typ wyjątku trafia do dziennika Centrum od razu, więc ostatnie wpisy dziennika w Diagnozie i
@@ -266,8 +256,6 @@ class _Check:
 
 
 def _check(label: str) -> Callable[[_CheckRun], _Check]:
-    """Funkcja sprawdzenia jako ``_Check`` pod nazwą ``label``."""
-
     def named(run: _CheckRun) -> _Check:
         return _Check(label, run)
 
@@ -490,8 +478,7 @@ def diagnose(
     template_check: TemplateCheck,
     files: DadFiles,
 ) -> Diagnosis:
-    """Wszystkie sprawdzenia procesu ``process`` dla tokenu okresu ``period``, tylko do odczytu, Sprawdzaniem Wzorców
-    ``template_check``.
+    """Wszystkie sprawdzenia procesu ``process``, tylko do odczytu.
 
     Pliki taty czyta uchwyt ``files``, którego pamięć poznaje komórki zakazanych kolumn przeczytanego Rejestru zleceń
     (reguła danych, ADR 0025).

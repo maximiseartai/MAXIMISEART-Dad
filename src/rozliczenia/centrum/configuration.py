@@ -52,8 +52,6 @@ class ConfigurationFiles:
 
     @classmethod
     def in_folder(cls, folder: Path) -> ConfigurationFiles:
-        """Konfiguracja wykonawców i Wzorce w folderze ``folder`` pod nazwami z ``config/`` narzędzia."""
-
         return cls(
             worker_config=folder / WORKER_CONFIG.name,
             internal_template=folder / INTERNAL_TEMPLATE.name,
@@ -62,8 +60,6 @@ class ConfigurationFiles:
         )
 
     def path(self, need: ConfigurationNeed) -> Path:
-        """Plik Konfiguracji, którego wejście procesu potrzebuje jako ``need``."""
-
         match need:
             case "worker_config":
                 return self.worker_config

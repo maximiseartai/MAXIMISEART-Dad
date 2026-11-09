@@ -6,12 +6,8 @@ pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z 
 Dodatki Logów procesu (``ProcessLogs``) daje jego wpis w katalogu procesów: z podsumowania silnika Przebiegu rozliczeń
 liczba wyczyszczonych Ilości tylko dla INEA, której karta nie pokazuje (ADR 0018), a z podsumowania Uporządkowania
 INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy. Z
-podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``):
-wiersz Pliku zbiorczego, wynik z kodem Komunikatu, ilości z pliku po kodach pozycji, ``Kwota`` (AU) i działania okna efenix
-z czasami i odczytem strony po każdym (``LoggedStep``, #843): przy szukaniu każdy wiersz listy ze statusem, loginem
-realizatora, zgodnością numeru i nazwami części adresu, którymi różni się od ``ADRES`` (``LoggedResult``), przy otwarciu
-zlecenia jego status i realizator, a ze strony zlecenia data wykonania, kwota i ilości wszystkich pozycji. Bez numeru
-zlecenia i bez danych adresowych z pliku i z efenix.
+podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``) z działaniami okna efenix i odczytem strony po
+każdym (``LoggedStep``, #843), bez numeru zlecenia i bez danych adresowych z pliku i z efenix.
 Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
 przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
 nie udało; a każde Zatrzymanie z przyczyną w wyjątku, także dla taty, ma ślad wywołań z łańcuchem przyczyn, więc
@@ -92,8 +88,7 @@ class _Record(BaseModel):
 
 class StartFacts(_Record):
     """Bezpieczne fakty startu jednego Uruchomienia, jedyny ich kształt: nagłówek Logów (``RunLog``), plik ostatniego
-    startu i pierwsza linia dziennika Wyceny w efenix (``logs_disk``) to te pola z polami swojego pliku.
-    ``pricing``: tryb Wyceny w efenix (``None``: inne procesy i zapisy sprzed trybów)."""
+    startu i pierwsza linia dziennika Wyceny w efenix (``logs_disk``) to te pola z polami swojego pliku."""
 
     run_id: str
     process: common_contract.ProcessKey
@@ -106,8 +101,6 @@ class StartFacts(_Record):
 
     @classmethod
     def of_run(cls, info: runs_contract.RunInfo, started_at: datetime) -> StartFacts:
-        """Fakty startu Uruchomienia ``info``, które Centrum startuje teraz (``RunHost.start`` → ``run_started``)."""
-
         return cls(
             run_id=info.id,
             process=info.process,
@@ -189,8 +182,7 @@ class LoggedPhase(_Record):
 
 
 class LoggedTemplate(_Record):
-    """Przetworzenie Szablonu pracownika: Wykonawca, wynik, Wiersze danych, czas oraz chwile rozpoczęcia i końca (UTC;
-    ``None`` w plikach schematu 1)."""
+    """Przetworzenie Szablonu pracownika; chwile rozpoczęcia i końca w UTC, ``None`` w plikach schematu 1."""
 
     wykonawca: str
     outcome: WorkerStatus | Literal["failed"]
@@ -244,7 +236,7 @@ class LoggedCheck(_Record):
 
 
 class LoggedDiagnosis(_Record):
-    """Ostatnia Diagnoza Uruchomienia: wyjaśnienie z kodem, co tata robi dalej i każde sprawdzenie po kolei."""
+    """Ostatnia Diagnoza Uruchomienia; sprawdzenia po kolei."""
 
     diagnosed_at: datetime
     explanation: Explanation
@@ -360,8 +352,6 @@ class LoggedOrder(_Record):
 
     @classmethod
     def all_of(cls, summary: PricingSummary) -> list[LoggedOrder]:
-        """Ślad każdego zlecenia po kolei."""
-
         return [cls.of(result) for result in summary.results]
 
     @classmethod

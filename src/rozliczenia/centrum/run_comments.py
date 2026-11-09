@@ -49,17 +49,9 @@ pamięci zostają tylko jego Logi; Diagnoza, w której trakcie skończyło się 
 Wyceny albo po wyniku, a przed Logami, Logi nie powstały albo kolejka odmówiła. Start zamyka każdy taki dziennik przy budowie
 aplikacji, przed kartą ostatniego Uruchomienia (``RunComments.close_left_behind``, ``run_cards.RunCards.last`` bierze jego
 dowód ``LeftBehindClosed``), a wersję zastępczą bierze z tego, co zastaje na dysku taty (macierz
-``comment_versions.close``, ze strażnikiem reguły danych tej pracy Centrum w środku):
-
-- dziennik z czytelnym plikiem Logów wysyła te Logi: Logi z wynikiem, których przyjęcia przez kolejkę nikt nie zapisał,
-  albo Logi Urwanego Uruchomienia, które poprzedni start zapisał, a nie wysłał;
-- dziennik bez pliku Logów i bez wpisu końca, czyli Urwanego Uruchomienia (ADR 0017), zamyka jako Logi Urwanego
-  Uruchomienia (``RecordMaker.interrupted``): zlecenia skończone przed zgaśnięciem, zlecenie zaczęte bez wyniku i liczbę
-  wpisów, których nie dało się odczytać; karta po starcie pokazuje te zlecenia z tych Logów;
-- dziennik bez pliku Logów, a z wpisem końca, i dziennik z plikiem Logów, którego nie da się odczytać, wysyła wynik bez
-  Logów (``comment_versions.ResultWithoutLogs``): wynik z wpisu końca, zlecenia z dziennika i dlaczego pełnych Logów nie ma;
-- dziennik bez pierwszej linii (urwany pierwszy zapis, przed którym w efenix nic się nie zmieniło i do którego żaden
-  postęp nie poszedł) usuwa.
+``comment_versions.close``, ze strażnikiem reguły danych tej pracy Centrum w środku). Dziennik Urwanego Uruchomienia
+(ADR 0017) zamyka jako Logi Urwanego Uruchomienia (``RecordMaker.interrupted``), a karta po starcie pokazuje zlecenia z
+tych Logów.
 
 Logi, nowe i te z pliku, start zapisuje w pliku Logów takie, jakie pójdą do Skrzynki (``LogsOnDisk.write``), więc plik i
 komentarz mają te same znaki także po Logach, które zapisała praca Centrum sprzed strażnika. Plik, którego nie dało się
@@ -74,9 +66,6 @@ Centrum. Dziennik znika, gdy kolejka ją przyjęła
 najmniej raz, jak w całej kolejce. Wersja zastępcza ma stopień wyższy od każdego postępu i niższy od Logów z wynikiem
 (``comment_versions.rank_of``), więc zamienia postęp w podsumowanie także po cofnięciu zegara komputera, a Logów z wynikiem,
 które kolejka mogła już przyjąć, nie zastępuje ani w kolejce, ani w Skrzynce.
-
-``RecordMaker`` składa Logi z dzisiejszym narzędziem, środowiskiem i działaniami taty, które czekają na Logi: Logi z wynikiem
-i Logi Urwanego Uruchomienia.
 """
 
 from __future__ import annotations
@@ -179,8 +168,6 @@ class RecordMaker:
         self._dad_actions = dad_actions
 
     def of(self, run: EndedRun) -> RunLog:
-        """Logi Uruchomienia ``run``, które doszło do działań po wyniku (``logs_of_run.logs_of``)."""
-
         environment = self._environment(run.info.process, run.info.period)
         return logs_of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
 
@@ -240,8 +227,7 @@ class _Watched:
 
 
 class RunComments:
-    """Komentarz Uruchomienia każdego Uruchomienia procesu z Centrum (docstring modułu) na Logach na dysku ``disk``, w
-    kolejce ``queue``, po strażniku ``forbidden``, z postępem na zegarze ``clock``; Logi składa ``records``."""
+    """Komentarz Uruchomienia każdego Uruchomienia procesu z Centrum (docstring modułu)."""
 
     def __init__(self, work: CentrumWork, disk: LogsOnDisk, queue: CommentQueue, records: RecordMaker) -> None:
         self._disk = disk
@@ -255,13 +241,11 @@ class RunComments:
         self._lock = threading.Lock()
         self._watched: _Watched | None = None
         self._last: GuardedLogs | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
-        # wersje zastępcze do wysłania i ich dzienniki
         self._pending: list[tuple[JournalKey, StandInVersion]] = []
 
     def run_started(self, info: runs_contract.RunInfo, started_at: datetime) -> None:
-        """Start Uruchomienia z Centrum, zanim ruszy jego wątek: pierwsza linia dziennika i plik ostatniego startu
-        (``LogsOnDisk.started``; ``OSError`` pliku startu wychodzi do ``RunHost.start``), potem komentarz postępu Wyceny
-        bez zleceń i budzik pierwszego odświeżenia."""
+        """Start Uruchomienia z Centrum, zanim ruszy jego wątek (docstring modułu); ``OSError`` pliku startu wychodzi do
+        ``RunHost.start``."""
 
         self._disk.started(StartFacts.of_run(info, started_at))
         if info.process != self._disk.journal.process:
@@ -280,11 +264,10 @@ class RunComments:
         self._clock.after(PROGRESS_S, partial(self._refresh, run_id))
 
     def _progress(self, watched: _Watched) -> bool:
-        """Postęp ``watched`` z dziennika do Kolejki wysyłki (``ProgressVersion``). Dziennik bez pierwszej linii na dysku
-        nie daje postępu, więc nic nie idzie. ``False``: Uruchomienie doszło do działań po wyniku (``run_ended``), więc jego
-        postęp się skończył i nic nie idzie, bo postęp po Logach byłby ich nowszą wersją i cofnąłby podsumowanie. Postęp,
-        którego kolejka nie przyjęła, daje ``True``: typ błędu jest w dzienniku Centrum, a następne odświeżenie spróbuje
-        znowu."""
+        """Postęp ``watched`` z dziennika do Kolejki wysyłki (``ProgressVersion``). ``False``: Uruchomienie doszło do
+        działań po wyniku (``run_ended``), więc jego postęp się skończył i nic nie idzie, bo postęp po Logach byłby ich
+        nowszą wersją i cofnąłby podsumowanie. Postęp, którego kolejka nie przyjęła, daje ``True``: typ błędu jest w
+        dzienniku Centrum, a następne odświeżenie spróbuje znowu."""
 
         progress = self._disk.journal.progress(watched.run_id)
         elapsed_s = self._clock() - watched.since
@@ -315,17 +298,12 @@ class RunComments:
             self._step(lambda: self._disk.journal.remove(run_id))
 
     def _own(self, run: EndedRun) -> GuardedLogs:
-        """Logi z wynikiem ``run`` po strażniku reguły danych; zostają w pamięci do Diagnozy."""
-
         logs = guard_logs(self._records.of(run), self._forbidden)
         with self._lock:
             self._last = logs
         return logs
 
     def _step(self, step: Callable[[], T]) -> T | None:
-        """Krok końca Uruchomienia: jego błąd trafia do dziennika Centrum (typ) i nie pomija następnych kroków; ``None``:
-        krok rzucił."""
-
         try:
             return step()
         except Exception as failure:  # krok końca nie może zmienić wyniku ani pominąć następnych
@@ -339,18 +317,11 @@ class RunComments:
         return self._queue.delivered(run_id, LABEL)
 
     def diagnosed(self, run_id: str, diagnosis: Diagnosis) -> None:
-        """Dopisuje Diagnozę do Logów Uruchomienia ``run_id``: do pliku, do pliku w Archiwum Logów okresu i do komentarza
-        Uruchomienia w issue okresu (``stops.DiagnosedLogs``).
+        """Dopisuje Diagnozę do Logów Uruchomienia ``run_id`` (docstring modułu, ``stops.DiagnosedLogs``); Logi, które
+        jeszcze czekają w kolejce, Logi z Diagnozą zastępują (``outbox._superseded``).
 
-        Logi z Diagnozą to nowsza wersja tej samej wysyłki, więc kolejka podmienia plik w Archiwum i zmienia komentarz, które
-        już są w Skrzynce. Logi, które jeszcze czekają w kolejce, nowsza wersja zastępuje (``outbox._superseded``):
-        przejście kolejki, które zastaje obie, oznacza starsze bez wysyłania i wysyła tylko Logi z Diagnozą, jednym
-        komentarzem bez edycji. Gdy przejście przeczytało Logi, zanim przyszła Diagnoza, wysyła je, a plik w Archiwum i
-        komentarz zmienia następne przejście.
-
-        Uruchomienie, którego Logi nie powstały w tej pracy Centrum, nie dostaje niczego, a Diagnoza z tym samym wynikiem
-        co ostatnio dopisana też nie. Plik Logów, którego nie dało się zapisać, wychodzi po wysyłce jako błąd, a następna
-        Diagnoza próbuje znowu: plik i komentarz.
+        Plik Logów, którego nie dało się zapisać, wychodzi po wysyłce jako błąd, a następna Diagnoza próbuje znowu: plik
+        i komentarz.
         """
 
         with self._lock:

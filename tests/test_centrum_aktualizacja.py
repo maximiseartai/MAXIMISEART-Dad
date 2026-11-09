@@ -85,8 +85,6 @@ UPDATE_WAIT_S = 30
 
 
 def update_until_done(centrum: PreparingCentrum) -> dict[str, Any]:
-    """Klika „Zaktualizuj narzędzie” i czeka na wynik albo na zamknięcie Centrum do ponownego startu."""
-
     started = centrum.client.post("/api/tool-update")
     assert started.status_code == 202, started.json()
     assert started.json() == {"state": "running", "step": "fetching"}
@@ -214,8 +212,6 @@ def test_nowe_centrum_po_aktualizacji_zapisuje_wynik_od_opiekuna_w_dzienniku_i_p
 
 
 def run_logs_wydanie(centrum: PreparingCentrum) -> list[str | None]:
-    """Wydanie z Logów każdego Uruchomienia tego Centrum, po kolei."""
-
     paths = centrum.tool.run_logs.glob("*.json")
     logs = sorted((json.loads(path.read_text(encoding="utf-8")) for path in paths), key=lambda log: log["started_at"])
     return [log["tool"]["wydanie"] for log in logs]
@@ -854,7 +850,7 @@ def test_stara_wersja_po_cofnieciu_pokazuje_komunikat_bez_czekania_na_skrzynke_z
 
 
 def guardian_finishes(centrum: PreparingCentrum, code: str, *, rolled_back: bool = False) -> None:
-    """Opiekun ponownego startu po ostatnim kliknięciu: kończy aktualizację albo cofa klon, potem zapisuje wynik."""
+    """Opiekun ponownego startu po ostatnim kliknięciu."""
 
     assert centrum.surroundings.restarts, (
         f"Aktualizacja skończyła się bez ponownego startu: {centrum.client.get('/api/tool-update').json()}, "
@@ -1143,7 +1139,7 @@ def test_ok_przy_starej_wersji_gdy_dysk_nie_usuwa_wyniku_zglasza_porazke_raz(
 
 
 class _AnsweringCentrum:
-    """Proces nowego Centrum od opiekuna, który działa (``poll`` zwraca ``None``)."""
+    """Proces nowego Centrum od opiekuna, który działa."""
 
     def poll(self) -> None:
         return None

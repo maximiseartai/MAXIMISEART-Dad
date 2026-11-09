@@ -13,8 +13,7 @@ w pamięci serwera, więc restart Centrum ją zeruje.
 Przy Zatrzymaniu „do Maksa” i Powtórce Centrum proponuje Diagnozę; przy
 nieoczekiwanym wyjątku zaczyna ją od razu. Takie Zatrzymanie ma od swojego końca
 uchwyt Zgłoszenia (``reports.ReportHandle``). ``Stops`` prowadzi Diagnozę
-Zatrzymania (Diagnoza, wpis w dzienniku, Diagnoza w Logach Uruchomienia, nowy
-podgląd Zgłoszenia) i wysyłkę Zgłoszenia, a każdy nowy stan Zgłoszenia uchwyt
+Zatrzymania i wysyłkę Zgłoszenia, a każdy nowy stan Zgłoszenia uchwyt
 sam oddaje ``RunHost``, który pokazuje go na karcie Uruchomienia.
 """
 
@@ -103,8 +102,6 @@ class Stops:
         return diagnosis.view(stopped.stop.message, draft)
 
     def _log_diagnosis(self, run_id: str, diagnosis: Diagnosis) -> None:
-        """Diagnoza w Logach Uruchomienia; ich błąd nie zmienia Diagnozy ani Zgłoszenia, tylko trafia do dziennika."""
-
         try:
             self._logs.diagnosed(run_id, diagnosis)
         except Exception as failure:  # Logi nie mogą zmienić Diagnozy: typ wyjątku trafia do dziennika Centrum

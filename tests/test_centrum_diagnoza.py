@@ -769,10 +769,8 @@ def test_diagnoza_niczego_nie_zmienia_w_plikach_taty(tmp_path: Path) -> None:
 
 
 def files_of(root: Path) -> dict[str, bytes]:
-    """Każdy plik taty pod ``root`` z treścią.
-
-    Bez dziennika Centrum i Logów Uruchomienia (``logs``) oraz kolejki Skrzynki Zgłoszeń: Centrum dopisuje do nich Diagnozę.
-    """
+    """Pliki taty bez dziennika Centrum i Logów Uruchomienia (``logs``) oraz kolejki Skrzynki Zgłoszeń, bo Centrum
+    dopisuje do nich Diagnozę."""
 
     return {
         path.relative_to(root).as_posix(): path.read_bytes()

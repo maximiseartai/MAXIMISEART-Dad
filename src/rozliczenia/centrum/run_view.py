@@ -48,19 +48,13 @@ class Shown(Generic[SummaryT]):
 
 @dataclass(frozen=True)
 class ResultView(Generic[SummaryT]):
-    """Liczby na żywo i wynik jednego procesu w kształcie kontraktu, te same w Skrypcie dla maszyn i na karcie.
-
-    ``_notes``: zlecenia z podsumowania, które zostały tacie, Zlecenia przekazane i rozliczone (Wycena w efenix); inne procesy ich
-    nie mają.
-    """
+    """Liczby na żywo i wynik jednego procesu w kształcie kontraktu, te same w Skrypcie dla maszyn i na karcie."""
 
     _figures: Callable[[ProgressSnapshot, bool], list[runs_contract.Figure]]
     _summary: Callable[[SummaryT, bool], runs_contract.RunSummary]
     _notes: Callable[[SummaryT], list[runs_contract.OrderNotes] | None] = lambda _summary: None
 
     def progress(self, snapshot: ProgressSnapshot, *, dry_run: bool) -> runs_contract.Progress:
-        """Etapy, postęp Szablonów pracowników, krok Zapisywania i liczby na żywo z jednego snapshotu projekcji."""
-
         step = snapshot.step
 
         return runs_contract.Progress(
@@ -108,8 +102,6 @@ class ProcessView(ResultView[SummaryT]):
 
     @property
     def modes(self) -> tuple[RunMode, ...]:
-        """Tryby Uruchomienia procesu: bez Podglądu bez zapisu tylko zapis."""
-
         return (RunMode.RUN,)
 
     def collective_file_prepared(self, *, ending: runs_contract.Ending, dry_run: bool) -> bool:
@@ -139,8 +131,6 @@ class PeriodProcessView(ProcessView[SummaryT]):
 
 
 def count_figure(label: str, value: int) -> runs_contract.Figure:
-    """Liczba na karcie Uruchomienia pod nazwą ``label``."""
-
     return runs_contract.Figure(label=label, value=value, unit="count")
 
 
@@ -149,8 +139,6 @@ def elapsed_figure(snapshot: ProgressSnapshot) -> runs_contract.Figure:
 
 
 def elapsed_only(snapshot: ProgressSnapshot, _dry_run: bool) -> list[runs_contract.Figure]:
-    """Liczby na żywo procesu, który pokazuje w trakcie tylko czas uruchomienia."""
-
     return [elapsed_figure(snapshot)]
 
 
@@ -172,6 +160,4 @@ def order_label(kind: OrderKind) -> str:
 
 
 def order_counts(counted: Counter[OrderKind]) -> list[runs_contract.Count]:
-    """Liczba zleceń z każdym wynikiem pod jego nazwą, w kolejności ``OrderKind``."""
-
     return [runs_contract.Count(label=order_label(kind), count=counted[kind]) for kind in OrderKind]

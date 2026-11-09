@@ -1,8 +1,7 @@
 """Schemat działań taty w Centrum w Logach Uruchomienia: co tata robił w Centrum od poprzedniego Uruchomienia.
 
-Wpisy to start Centrum, otwarty widok i wciśnięty przycisk, każdy z chwilą (UTC). Przycisk to zapytanie API, które coś
-zmienia, nazwane operacją API z kontraktu, a start Uruchomienia procesu ma też proces i tryb (``RunMode``). Wpis nie ma
-treści zapytania. Wpisy zbiera dziennik (``dad_action_journal``), a Logi Uruchomienia niosą je jako ``DadActions``.
+Wpisy to start Centrum, otwarty widok i wciśnięty przycisk, każdy z chwilą (UTC). Wpisy zbiera dziennik
+(``dad_action_journal``, który mówi też, co jest przyciskiem), a Logi Uruchomienia niosą je jako ``DadActions``.
 
 Moduł nie wczytuje FastAPI (dziennik tak, bo jest zależnością tras), więc schemat Logów bierze go bez serwera, także
 w katalogu procesów (``tests/test_granice_importow.py``).
@@ -58,8 +57,8 @@ DadAction = Annotated[CentrumStarted | ViewOpened | ButtonPressed, Field(discrim
 
 
 class DadActions(_Record):
-    """Działania taty w Logach Uruchomienia, po kolei; ``omitted``: wpisy starsze od ``dad_action_journal.MAX_ENTRIES`` najnowszych albo
-    nieczytelne."""
+    """Działania taty w Logach Uruchomienia, po kolei; ``omitted``: wpisy starsze od ``dad_action_journal.MAX_ENTRIES``
+    najnowszych albo nieczytelne."""
 
     entries: list[DadAction]
     omitted: int

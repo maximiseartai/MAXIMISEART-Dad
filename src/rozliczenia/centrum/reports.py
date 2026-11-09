@@ -63,7 +63,6 @@ from rozliczenia.process_run import Stop
 
 # Podgląd Zgłoszenia czeka w tle na odpowiedź skrzynki o otwarte Zgłoszenie najwyżej tyle, co Diagnoza na commit `main`.
 SEARCH_DEADLINE_S: Final = 3.0
-# Nazwa wątku, w którym Zgłoszenie pyta skrzynkę i czeka na swoją wysyłkę.
 REPORT_THREAD: Final = "zgloszenie-skrzynka"
 
 # Zgłoszenie nieudanej Aktualizacji narzędzia ma tyle ostatnich wpisów dziennika co Zgłoszenie z Diagnozy.
@@ -205,8 +204,6 @@ class UpdateReport:
 
 
 def _message_lines(message: Message) -> list[str]:
-    """Początek każdego Zgłoszenia: Komunikat z kodem i trzema częściami."""
-
     return [
         "Zgłoszenie z Centrum rozliczeń.",
         "",
@@ -234,8 +231,6 @@ def _tool_lines(fingerprint: str, previous: int | None, *, commit: str | None = 
 
 
 def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
-    """Zgłoszenie z tytułem z kodu i „Co się stało” Komunikatu."""
-
     return Report(title=f"{message.code}: {message.what}", body=_body(lines), fingerprint=fingerprint, what=message.what)
 
 
@@ -300,8 +295,6 @@ def _trace_lines(trace: CallTrace | None, dropped: int) -> list[str]:
 
 
 def _log_lines(entries: Sequence[str], dropped: int) -> list[str]:
-    """Sekcja dziennika Centrum bez ``dropped`` najstarszych wpisów, z dopiskiem, ile ich pominięto."""
-
     return [
         "## Dziennik Centrum rozliczeń",
         "",
@@ -379,8 +372,6 @@ class ReportHandle:
 
     @property
     def state(self) -> diagnosis_contract.ReportState:
-        """Ostatni znany stan: gotowe do wysłania, wysłane, czeka na naprawę, czeka w kolejce albo niezapisane."""
-
         with self._changed:
             return self._state
 
@@ -461,14 +452,10 @@ class ReportHandle:
             return state
 
     def _rejected(self) -> None:
-        """Skrzynka odrzuciła treść Zgłoszenia tego problemu, które czeka w kolejce: uchwyt pokazuje „odrzucone”."""
-
         with self._changed:
             self._show(common_contract.Rejected(state="rejected"))
 
     def _delivered(self) -> None:
-        """Kolejka dostarczyła Zgłoszenie tego problemu: „czeka w kolejce” zmienia się w „wysłane”."""
-
         with self._changed:
             if isinstance(self._state, common_contract.Queued):
                 self._show(common_contract.Sent(state="sent"))
@@ -533,8 +520,6 @@ class Reports:
         return handle
 
     def _heard(self, news: CaseNews) -> None:
-        """Sprawa Zgłoszenia dostała numer issue albo skrzynka odrzuciła jej treść: uchwyty tego problemu to pokazują."""
-
         with self._lock:
             if isinstance(news, CaseNumbered):
                 self._open[news.case_id] = news.number
@@ -554,8 +539,6 @@ class Reports:
         return _Preview(_guarded(source.report(commit=self._commit(), previous=previous), self._forbidden), source.period)
 
     def _queue(self, preview: _Preview) -> diagnosis_contract.ReportState:
-        """Zapisuje sprawę i kładzie ``preview`` w kolejce Skrzynki, chyba że ten problem już w niej czeka."""
-
         fingerprint = preview.report.fingerprint
         if self._pending(fingerprint):
             return self._cases.queued(fingerprint, self._box)

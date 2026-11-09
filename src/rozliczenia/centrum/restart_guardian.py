@@ -142,8 +142,7 @@ def main(argv: Sequence[str], *, show_problem: Callable[[str, str], None] = show
     Wszystko albo nic: gdy nowa wersja nie odpowie (albo stare Centrum nie
     zwolni portu), klon wraca do commitu sprzed aktualizacji, a plik wyniku
     mówi, co się stało naprawdę, albo go nie ma, gdy dysk go nie przyjmie.
-    ``show_problem`` pokazuje natywne okienko
-    (tytuł, treść); w testach podstawiane.
+    ``show_problem`` pokazuje natywne okienko (tytuł, treść).
     """
 
     restart = Restart.of_arguments(argv)
@@ -237,8 +236,6 @@ def _detached(command: list[str], cwd: Path) -> subprocess.Popen[bytes]:
 
 
 def _port_released(port: int) -> bool:
-    """Czy stare Centrum zwolniło port w ``PORT_TIMEOUT_S``."""
-
     deadline = time.monotonic() + PORT_TIMEOUT_S
     while True:
         if port_free(port):
@@ -249,11 +246,6 @@ def _port_released(port: int) -> bool:
 
 
 def _answers(centrum: subprocess.Popen[bytes], port: int, commit: str) -> bool:
-    """Czy nowe Centrum odpowiada w ``START_TIMEOUT_S`` jako Centrum rozliczeń w commicie ``commit``.
-
-    Tę samą wersję rozpoznaje tak samo jak launcher (``RunningCentrum.runs``).
-    """
-
     deadline = time.monotonic() + START_TIMEOUT_S
     while centrum.poll() is None and time.monotonic() < deadline:
         if _runs(port, commit):
@@ -263,7 +255,5 @@ def _answers(centrum: subprocess.Popen[bytes], port: int, commit: str) -> bool:
 
 
 def _runs(port: int, commit: str) -> bool:
-    """Czy na porcie odpowiada teraz Centrum rozliczeń w commicie ``commit``."""
-
     running = running_centrum(port, timeout_s=2)
     return running is not None and running.runs(commit)

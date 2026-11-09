@@ -33,8 +33,7 @@ from rozliczenia.input_copy import CopiedFile
 
 
 def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
-    """Logi Uruchomienia ``run`` z narzędziem ``tool``, środowiskiem ``environment`` i działaniami taty ``dad_actions``,
-    bez Diagnozy."""
+    """Logi Uruchomienia ``run`` bez Diagnozy."""
 
     info, stopped, snapshot = run.info, run.stopped, run.snapshot
     process_logs = declaration_of(info.process).logs(
@@ -80,8 +79,6 @@ def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions:
 
 
 def logged_diagnosis(diagnosis: Diagnosis, *, diagnosed_at: datetime) -> LoggedDiagnosis:
-    """Diagnoza ``diagnosis`` z chwili ``diagnosed_at`` w postaci pola ``RunLog.diagnosis``."""
-
     explanation = diagnosis.explanation
     return LoggedDiagnosis(
         diagnosed_at=diagnosed_at,

@@ -17,12 +17,11 @@ nowej wersji czyta stąd też opublikowane Wydania z ich notkami
 Pytania do API GitHuba idą z Tokenem do Zgłoszeń, gdy jest plik klucza: daje go
 ``KeyedBox.github_key``, a token daje limit konta (5000 pytań na godzinę) zamiast
 60 na godzinę wspólnych dla całego adresu IP. Nagłówek ``Authorization`` dostaje
-tylko host API, a ``github.send`` nie przenosi go na adres przekierowania. Odmowa pytania
+tylko host API (przekierowania: zob. ``github``). Odmowa pytania
 z tokenem (401, 403 bez wyczerpanego limitu) to jedno ponowienie tego pytania
 bez tokenu, a reszta sprawdzenia idzie już bez niego: stary albo zły token nie
 zabiera tacie aktualizacji. 404 z tokenem to ponowienie tylko tego pytania bez
-tokenu, bo 404 bywa prawdziwą odpowiedzią wyszukiwania. Klucza, którego nie da
-się wysłać w nagłówku, ``KeyedBox.github_key`` nie daje. Odmowa z powodu wyczerpanego limitu pytania
+tokenu, bo 404 bywa prawdziwą odpowiedzią wyszukiwania. Odmowa z powodu wyczerpanego limitu pytania
 z tokenem też daje jedno ponowienie bez tokenu, bo limit konta (wspólny z agentami
 Maksa) i limit adresu IP to dwie osobne pule. Odmowa z powodu limitu pytania bez
 tokenu to ``RateLimited`` z chwilą, od której limit znów jest pełny; Diagnoza ją nazywa.
@@ -505,8 +504,6 @@ class Asking:
 
 
 def _tag_commit(tag: object) -> tuple[str, str] | None:
-    """Nazwa tagu i jego commit z jednego wpisu listy tagów; ``None`` dla wpisu w innym kształcie."""
-
     if not isinstance(tag, dict):
         return None
     name, commit = tag.get("name"), tag.get("commit")

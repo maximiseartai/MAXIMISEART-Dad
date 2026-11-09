@@ -42,8 +42,6 @@ def timing_router(log: CentrumLog) -> APIRouter:
 
 
 async def server_timing(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-    """Middleware HTTP: odpowiedź spod ``/api`` dostaje czas obsługi w milisekundach, bez opisu wartości."""
-
     started = time.perf_counter()
     response = await call_next(request)
     if request.url.path.startswith("/api/"):

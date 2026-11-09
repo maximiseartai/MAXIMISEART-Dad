@@ -10,22 +10,22 @@
   },
   "src/rozliczenia/centrum/comment_versions.py": {
     "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
-    "ProgressVersion": "5e04bea635fa9033",
+    "ProgressVersion": "06a0c6e965a7edc9",
     "OwnLogs": "d74da43b6f1f0893",
     "StandInLogs": "9f9d00d7a8b7553b",
     "WithoutLogsVersion": "92868149b99a61ae",
-    "rank_of": "801ae38cd3dd02d0",
+    "rank_of": "29dce38c5ecbe640",
     "journal_after": "55d9aebdc4621587",
-    "post_of": "88fdd0c735e40e29",
+    "post_of": "a36fd9bae5e7e3cf",
     "Drop": "c76b417cfc198b48",
     "close": "c1bbc66f5758bbfc"
   },
   "src/rozliczenia/centrum/run_comments.py": {
-    "RunComments.run_started": "e57474fcf6e1ef4b",
-    "RunComments._progress": "c036f0ad50a24420",
+    "RunComments.run_started": "b346c9d4e6608164",
+    "RunComments._progress": "5c4dcf5d41886d17",
     "RunComments.run_ended": "bff8def4448bc94c",
-    "RunComments._own": "aa97e6fad8ca97d3",
-    "RunComments._step": "642d6f0503f516a5",
+    "RunComments._own": "8c275a8725769ba2",
+    "RunComments._step": "499fe01a51a07cc6",
     "RunComments._keep": "f103fc7564914779",
     "RunComments.close_left_behind": "e2478851c6d9d2c8",
     "RunComments.send_left_behind": "c525813f4ae4f058",
@@ -66,28 +66,28 @@
   "src/rozliczenia/centrum/runs.py": {
     "Run.work": "0f5b17bc2e7efeb6",
     "RunHost.__init__": "5847fd718edb1804",
-    "RunHost.after": "3b394aacf6701175",
+    "RunHost.after": "ef0aefab73842450",
     "RunHost.shutdown_refusal": "28c8f086b7300aed",
     "RunHost.start": "08dd69ac2bb960a7"
   },
   "src/rozliczenia/centrum/process_kind.py": {
-    "PreparedRun.conduct": "78bfedf1f975d4a1"
+    "PreparedRun.conduct": "86381b107023395e"
   },
   "src/rozliczenia/centrum/outbox.py": {
     "Outbox.post": "7de488e97083c425",
     "Outbox.resume": "2a67b7d7c8f5622c",
     "Rank": "d27ac44226b11a48",
     "Version": "b20196684cf428b5",
-    "_version_of": "c10f0e62f09470ed",
+    "_version_of": "34ae931f25c75815",
     "_superseded": "563aa9a41628837b"
   },
   "src/rozliczenia/centrum/launcher.py": {
     "_start": "b14a179937a29521",
-    "_listen_when_released": "70f8e77fe38bca44"
+    "_listen_when_released": "f8e942c859e06ae0"
   },
   "src/rozliczenia/centrum/server.py": {
     "AFTER_START": "c0a7e2b361f39be2",
-    "after_start": "057b04ef0807809f",
+    "after_start": "dda17dfeee9413a2",
     "serve": "270772876700de0c",
     "_Server": "8ceb23258608b3c4"
   },

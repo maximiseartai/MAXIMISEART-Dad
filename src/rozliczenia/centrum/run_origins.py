@@ -30,8 +30,6 @@ CENTRUM_RUNS_FILE: Final = "centrum-uruchomienia.jsonl"
 
 class CentrumRuns:
     def __init__(self, config: Path) -> None:
-        """Plik Uruchomień z Centrum w katalogu ``config`` obok Ustawień taty."""
-
         self._path = config / CENTRUM_RUNS_FILE
         self._lock = threading.Lock()
 

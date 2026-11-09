@@ -110,16 +110,12 @@ def thread_with(centrum: SettlingCentrum, comments: int) -> BoxIssue:
 
 
 def diagnosed_comment(centrum: SettlingCentrum, edits: int) -> str:
-    """Jedyny komentarz issue Logów okresu, gdy Skrzynka zmieniła już ``edits`` komentarzy, a kolejka Logów jest pusta."""
-
     assert box(centrum).wait_until(lambda fake: len(fake.edited) == edits), f"Skrzynka nie ma {edits} poprawek"
     [comment] = thread_with(centrum, comments=1).comments
     return comment
 
 
 def diagnosed_logs(centrum: SettlingCentrum, edits: int) -> dict[str, Any]:
-    """Logi z pliku w Archiwum, do którego prowadzi komentarz po ``edits`` poprawkach (``diagnosed_comment``)."""
-
     logs: dict[str, Any] = json.loads(archived(centrum, diagnosed_comment(centrum, edits)))
     return logs
 
@@ -720,8 +716,6 @@ def test_odtworzenie_porownuje_kazde_pole_logow_poza_faktami_startu_i_okolicznos
 
 
 def _replayed(capsys: pytest.CaptureFixture[str], *arguments: str | Path) -> tuple[int, list[str]]:
-    """Kod wyjścia narzędzia i linie jego raportu."""
-
     code = odtworz_uruchomienie.main([str(argument) for argument in arguments])
     return code, capsys.readouterr().out.splitlines()
 
@@ -757,8 +751,6 @@ def _settlement(tmp_path: Path) -> Produced:
 
 
 def _preparation(tmp_path: Path, paste: Callable[[Path], object] | None = None) -> Produced:
-    """Logi zapisu Przygotowania; ``paste`` zmienia przedtem Rejestr zleceń."""
-
     tmp_path.mkdir()
     centrum = preparing_centrum(tmp_path)
     if paste is not None:

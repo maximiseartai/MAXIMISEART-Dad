@@ -66,8 +66,6 @@ def _shown(row: dict[str, Any]) -> dict[str, tuple[str, int | str]]:
 
 
 def _texts(table: dict[str, Any], row: dict[str, Any]) -> dict[str, str]:
-    """Teksty wiersza ``row`` pod nagłówkami kolumn Pliku zbiorczego tabeli ``table``."""
-
     return dict(zip(table["text_columns"], row["texts"], strict=True))
 
 

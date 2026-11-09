@@ -2,8 +2,9 @@
 zakończone Wyceny w efenix.
 
 Sprawa taty to Uwaga taty albo Zgłoszenie (``DadCases``); bez numeru issue czeka w kolejce Skrzynki, a jej stan w
-Powiadomieniu to ``DadCases.state``, przy sprawie w kolejce z tym, na co czeka. Powiadomienie to sprawa w jednym stanie, więc nowy stan to nowe Powiadomienie. Nowe są tylko stany, które dał Maks (rozwiązana, przeczytana); wysłanie i czekanie w kolejce
-to czynność taty i kropki na dzwonku nie zapala.
+Powiadomieniu to ``DadCases.state``, przy sprawie w kolejce z tym, na co czeka. Powiadomienie to sprawa w jednym
+stanie, więc nowy stan to nowe Powiadomienie. Nowe są tylko stany, które dał Maks (rozwiązana, przeczytana); wysłanie i
+czekanie w kolejce to czynność taty i kropki na dzwonku nie zapala.
 
 Powiadomienie o nowej wersji to opublikowane Wydanie (GitHub Release) o numerze nie wyższym od najnowszego Wydania na
 `main`, które wybiera Aktualność narzędzia (ADR 0014): wyższe spoza `main` się nie liczy. Niższego Centrum nie
@@ -16,8 +17,9 @@ tylko Wydanie z przyciskiem, czyli nowsze od wersji taty; starsze Wydania to his
 Centrum pyta przy starcie, w tle, i przy odczycie Powiadomień, gdy od ostatniego pytania minęło ``CHECK_INTERVAL_S``:
 GitHub o Wydania zawsze, Skrzynkę Zgłoszeń o zamknięcie otwartych spraw tylko przy otwartych sprawach i kluczu.
 Najnowsze Wydanie na `main` daje ta sama pamiętana odpowiedź GitHuba co w Konfiguracji, więc obie nie pytają o nie dwa
-razy; ta odpowiedź może mieć do 10 minut, więc nowe Wydanie pojawia się najpóźniej po 20 minutach. Odczyt czeka na trwające pytanie najwyżej ``CHECK_WAIT_S`` i odpowiada ostatnim znanym stanem, a spóźniona
-odpowiedź i tak zapisuje stan. Brak sieci albo odmowa przechodzą po cichu, bez Komunikatu, z ostatnią znaną
+razy; ta odpowiedź może mieć do 10 minut, więc nowe Wydanie pojawia się najpóźniej po 20 minutach. Odczyt czeka na
+trwające pytanie najwyżej ``CHECK_WAIT_S`` i odpowiada ostatnim znanym stanem, a spóźniona odpowiedź i tak zapisuje
+stan. Brak sieci albo odmowa przechodzą po cichu, bez Komunikatu, z ostatnią znaną
 odpowiedzią. Przeczytane Powiadomienia (ich ``id``) leżą w ``config/powiadomienia.json`` poza Gitem i przetrwają
 restart Centrum. Gdy ten plik albo plik Spraw taty jest niedostępny, każdy odczyt Powiadomień próbuje zapisać je
 znowu, a dopóki się nie da, Powiadomienia mają Komunikat, który nazywa te pliki.
@@ -55,11 +57,8 @@ from rozliczenia.centrum.work import CentrumWork
 
 NOTIFICATIONS_FILE: Final = "powiadomienia.json"
 SCHEMA_VERSION: Final = 1
-# Skrzynkę Zgłoszeń o stan spraw taty i GitHub o Wydania Centrum pyta najwyżej raz na 10 minut.
 CHECK_INTERVAL_S: Final = 10 * 60
-# Tyle odczyt Powiadomień czeka na trwające pytanie skrzynki i GitHuba, zanim odpowie ostatnim znanym stanem.
 CHECK_WAIT_S: Final = 3.0
-# Nazwa wątku pytania skrzynki i GitHuba o Powiadomienia.
 CHECK_THREAD: Final = "powiadomienia-sprawdzanie"
 
 
@@ -144,11 +143,6 @@ class Notifications:
         self._files = (cases.file, self._read.file)
 
     def view(self) -> notifications_contract.Notifications:
-        """Powiadomienia od najnowszego po próbie zapisu plików stanu, które czekają.
-
-        Gdy pora, najpierw pyta skrzynkę i GitHub (czeka najwyżej ``CHECK_WAIT_S``).
-        """
-
         for file in self._files:
             file.retry()
         check = self._start_check_if_due()
@@ -207,8 +201,6 @@ class Notifications:
             self._log.unexpected_failure(failure, where="stan spraw w Powiadomieniach")
 
     def _notifications(self) -> notifications_contract.Notifications:
-        """Powiadomienia z Komunikatem, gdy plik stanu Spraw taty albo przeczytanych czeka na zapis."""
-
         waiting = [file.path for file in self._files if file.unavailable]
         cases = self._cases.all()
         items: list[
@@ -304,8 +296,6 @@ class Notifications:
         )
 
     def _unread(self, notification_id: str, state: notifications_contract.CaseState) -> bool:
-        """Nowe dla taty, dopóki ich nie zobaczy, są tylko stany, które dał Maks."""
-
         news = isinstance(state, notifications_contract.Resolved | notifications_contract.ReadByMaks)
         return news and notification_id not in self._read
 

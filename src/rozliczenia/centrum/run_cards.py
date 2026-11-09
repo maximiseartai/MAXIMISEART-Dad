@@ -1,13 +1,13 @@
 """Karty Uruchomień z Logów Uruchomienia (ADR 0017): ostatnie Uruchomienie po starcie Centrum i karta wiersza Historii.
 
 Karty czytają pliki z dysku tylko przez Logi na dysku (``logs_disk``): plik ostatniego startu, w którym Centrum przy
-każdym starcie Uruchomienia zapisuje jego bezpieczne fakty (identyfikator, proces, tryb, okres, start), i pliki Logów
-Uruchomienia. Po starcie Centrum ostatnie Uruchomienie to ten start: gdy ma plik Logów, jego karta wraca z Logów.
-Gdy go nie ma, a Historia ma jego wiersz (pierwszy wiersz procesu od jego startu, także jeszcze bez identyfikatora),
-Centrum zamknęło się po zapisie rekordu metryk, a przed zapisem Logów, więc karta pokazuje wynik z Historii. Gdy nie
-ma ani Logów, ani wiersza Historii, to Urwane Uruchomienie (Centrum zamknęło się w jego trakcie), bo Logi powstają
-przed końcem każdego Uruchomienia, także przy Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje,
-więc nie ma kolejności względem działań po wyniku.
+każdym starcie Uruchomienia zapisuje jego bezpieczne fakty, i pliki Logów Uruchomienia. Po starcie Centrum ostatnie
+Uruchomienie to ten start: gdy ma plik Logów, jego karta wraca z Logów. Gdy go nie ma, a Historia ma jego wiersz
+(pierwszy wiersz procesu od jego startu, także jeszcze bez identyfikatora), Centrum zamknęło się po zapisie rekordu
+metryk, a przed zapisem Logów, więc karta pokazuje wynik z Historii. Gdy nie ma ani Logów, ani wiersza Historii, to
+Urwane Uruchomienie (Centrum zamknęło się w jego trakcie), bo Logi powstają przed końcem każdego Uruchomienia, także
+przy Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje, więc nie ma kolejności względem działań po
+wyniku.
 
 Urwana Wycena w efenix ma Logi Urwanego Uruchomienia, które start Centrum zamknął z jej dziennika (``run_comments``,
 #845), zanim karta ostatniego Uruchomienia przeczyta Logi (``LeftBehindClosed``): jej karta po starcie to dalej karta
@@ -15,13 +15,9 @@ Urwanego Uruchomienia, z liczbą zleceń skończonych przed zamknięciem Centrum
 zakończonego Uruchomienia, z której powstaje Powiadomienie, ani karty ostatniego Uporządkowania INTERMAX.
 
 Karta z Logów niesie tylko to, co w nich jest: Komunikaty w trzech częściach, podsumowanie, etapy, sposób
-zakończenia i Rodzaj Zatrzymania. Tytuł i akcję wylicza ta sama reguła co na żywo (``runs.verdict``), a tytuł
-procesu i Gotowość jego wpis w katalogu procesów, tak jak przy starcie. Diagnozy i Zgłoszenia nie ma: żyją tylko przy Zatrzymaniu bieżącego
+zakończenia i Rodzaj Zatrzymania. Diagnozy i Zgłoszenia nie ma: żyją tylko przy Zatrzymaniu bieżącego
 Uruchomienia tej pracy Centrum. Plik startu ma te same fakty co linia ``uruchomienie-start`` dziennika Centrum i
 identyfikator Uruchomienia, więc reguła prywatności Logów obowiązuje bez zmian.
-
-Zakończone Uruchomienia procesu (``RunCards.ended``) to karty z Logów wszystkich jego Uruchomień, od najnowszego, z
-końcem i liczbą zleceń Wyceny w efenix z każdym wynikiem; z nich powstaje Powiadomienie o zakończonej Wycenie w efenix.
 """
 
 from __future__ import annotations
@@ -65,9 +61,6 @@ class LoggedRun:
 
 
 class RunCards:
-    """Karty Uruchomień z Logów na dysku ``disk``: ostatnie Uruchomienie sprzed startu Centrum i karta po
-    identyfikatorze; ``history`` to wiersze Historii."""
-
     def __init__(self, disk: LogsOnDisk, history: History) -> None:
         self._disk = disk
         self._history = history
@@ -114,8 +107,6 @@ class RunCards:
         return self._ended.of(process)
 
     def _ended_of(self, record: RunLog) -> LoggedRun | None:
-        """Zakończone Uruchomienie z Logów ``record``; ``None``: Logi Urwanego Uruchomienia."""
-
         if record.ending == "interrupted":
             return None
         # Po Zatrzymaniu Logi mają zlecenia sprzed niego, ale Powiadomienie liczy tylko Wycenę z podsumowaniem.
@@ -127,8 +118,6 @@ class RunCards:
         return LoggedRun(card=self._restored(record), ended_at=record.ended_at, orders=orders)
 
     def _restored(self, record: RunLog) -> runs_contract.RunRestored:
-        """Karta z Logów Uruchomienia, które doszło do wyniku (każdy sposób zakończenia poza ``interrupted``)."""
-
         ending, result = record.ending, record.result
         assert ending != "interrupted" and result is not None, "Logi Urwanego Uruchomienia nie mają karty wyniku"
         declaration = declaration_of(record.process)
@@ -208,9 +197,6 @@ class RunCards:
         )
 
     def _row(self, process: common_contract.ProcessKey, started_at: datetime) -> metrics_contract.ProcessRun | None:
-        """Wiersz Historii Uruchomienia ze startem ``started_at``: najwcześniejszy wiersz procesu od tej chwili; ``None``,
-        gdy go nie ma albo Historii nie da się odczytać."""
-
         try:
             rows = [run for run in self._history() if run.process == process and run.started_at >= started_at]
         except OSError:
@@ -244,8 +230,6 @@ def _interrupted(started: StartFacts, orders: runs_contract.CountGroup | None) -
 
 
 def _interrupted_advice(title: str, period: str, *, dry_run: bool) -> common_contract.Message:
-    """Komunikat karty Urwanego Uruchomienia procesu ``title`` w okresie ``period``, bez kodu."""
-
     return common_contract.Message(
         what=_INTERRUPTED,
         where=f"{title}, okres {period}",

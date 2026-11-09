@@ -116,13 +116,9 @@ class LastGoodReads(Generic[T]):
         self._files: dict[Path, _File[T]] = {}
 
     def attempt(self, path: Path) -> Attempt:
-        """Początek próby odczytu ``path``: jego znacznik zapisu i chwila, od której liczy się przerwa w próbach."""
-
         return Attempt(saved_version(path), self._clock())
 
     def succeeded(self, path: Path, value: T, attempt: Attempt) -> GoodRead[T]:
-        """Dobry odczyt ``path`` z próby ``attempt`` kończy serię nieudanych prób."""
-
         with self._lock:
             file = self._files.setdefault(path, _File())
             file.last = GoodRead(value, attempt.version, datetime.now(timezone.utc))

@@ -24,7 +24,6 @@ from rozliczenia.period_folder import period_status_label
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.tool_files import SETTLEMENT_METRICS
 
-# Etykiety Przebiegu rozliczeń wspólne dla liczb na żywo i wyniku.
 _ROWS: Final = "Wiersze danych"
 _PLANNED: Final = "Planowane szablony"
 _WRITTEN: Final = "Zapisane szablony"

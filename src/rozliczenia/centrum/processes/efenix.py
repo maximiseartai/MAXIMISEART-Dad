@@ -1,9 +1,8 @@
 """Wycena w efenix w katalogu procesów: wpis i widok Uruchomienia.
 
-Wycena czyta Plik zbiorczy okresu i wycenia jego zlecenia w efenix w oknie efenix gospodarza; nie ma Podglądu bez
-zapisu ani Wzorców. Do wyboru są okresy, które mają Plik zbiorczy, a Status okresu się nie zmienia. Tryb Wyceny
-(ADR 0027) tata wybiera przy każdym starcie jednym z dwóch przycisków i Centrum go nie pamięta. Wejście ma dziennik
-Wyceny w efenix gospodarza (w Centrum ``logs_disk.Journal``), który przeżywa nagłe zgaśnięcie Centrum.
+Wycena wycenia zlecenia Pliku zbiorczego okresu w efenix w oknie efenix gospodarza, a Status okresu się nie zmienia.
+Tryb Wyceny (ADR 0027) tata wybiera przy każdym starcie jednym z dwóch przycisków i Centrum go nie pamięta. Wejście ma
+dziennik Wyceny w efenix gospodarza (w Centrum ``logs_disk.Journal``), który przeżywa nagłe zgaśnięcie Centrum.
 """
 
 from __future__ import annotations

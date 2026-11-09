@@ -27,12 +27,10 @@ _RECENT_WEEKS = 8
 
 
 CentrumStarted = Mapping[tuple[str, str], str | None]
-"""Identyfikator Uruchomienia z Centrum po parze (proces, ``started_at``) z ``CentrumRuns.started``."""
 
 
 class History:
-    """Historia: Uruchomienia procesu każdego procesu z katalogu ``catalog`` z jego plików metryk, z pochodzeniem z
-    Centrum z ``centrum_runs``. Jedyne źródło Historii dla kart Uruchomień, Uwag taty i Metryk."""
+    """Jedyne źródło Historii dla kart Uruchomień, Uwag taty i Metryk."""
 
     def __init__(self, catalog: Catalog, centrum_runs: CentrumRuns) -> None:
         self._catalog = catalog
@@ -44,8 +42,6 @@ class History:
         return _runs(self._catalog, _records(self._catalog), self._centrum_runs.started())
 
     def metrics(self, today: date) -> metrics_contract.Metrics:
-        """Metryki procesów katalogu; statystyki każdego procesu tylko w trybach jego widoku."""
-
         return _metrics(self._catalog, today, self._centrum_runs.started())
 
 

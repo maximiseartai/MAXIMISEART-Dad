@@ -93,8 +93,6 @@ def _centrum(tmp_path: Path, box: FakeReportBox, log: CentrumLog, clock: ManualC
 
 
 def _serving(app: FastAPI, shutdown: Shutdown, log: CentrumLog) -> tuple[threading.Thread, int]:
-    """``serve`` na wolnym porcie w osobnym wątku, do zamknięcia przez ``shutdown``, i ten port."""
-
     listener = listen_locally(0)
     kwargs = {"listener": listener, "on_ready": lambda _url: None, "shutdown": shutdown, "log": log}
     thread = threading.Thread(target=serve, args=(app,), kwargs=kwargs, name="centrum-test", daemon=True)

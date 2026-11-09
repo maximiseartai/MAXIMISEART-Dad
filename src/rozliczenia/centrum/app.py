@@ -1,13 +1,9 @@
 """Aplikacja HTTP Centrum rozliczeń: API pod ``/api`` i zbudowany frontend pod ``/``.
 
-Każda grupa zasobów ma własny router (``settings_router``, ``periods_router``, ``filling_router``,
-``runs_router``, ``intermax_router``, ``intermax_copies_router``, ``notifications_router``, ``dad_notes_router``,
-``metrics_router``, ``configuration_router``, ``tool_update_router``, ``shutdown_router``, ``timing_router``);
-``create_app`` składa je, pilnuje nagłówków ``Host`` i ``Origin`` (ADR 0004),
-zamienia odmowy (``Refusal``) i folder okresów, którego nie da się odczytać, na bezpieczne
-odpowiedzi ``Problem``,
-nieoczekiwany wyjątek na wpis w dzienniku Centrum i odpowiedź bez treści wyjątku,
-a każdej odpowiedzi API dodaje czas obsługi w ``Server-Timing`` (``timing``).
+Każda grupa zasobów ma własny router; ``create_app`` składa je, pilnuje nagłówków ``Host`` i ``Origin`` (ADR 0004),
+zamienia odmowy (``Refusal``) i folder okresów, którego nie da się odczytać, na bezpieczne odpowiedzi ``Problem``,
+nieoczekiwany wyjątek na wpis w dzienniku Centrum i odpowiedź bez treści wyjątku, a każdej odpowiedzi API dodaje czas
+obsługi w ``Server-Timing`` (``timing``).
 """
 
 from __future__ import annotations

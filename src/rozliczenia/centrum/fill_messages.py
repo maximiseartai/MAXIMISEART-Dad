@@ -19,8 +19,6 @@ _REFRESH: Final = "odśwież stronę"
 
 
 def collective_file_unusable(error: WorkbookError) -> Message:
-    """Plik zbiorczy, którego nie da się odczytać; ``error`` mówi dlaczego."""
-
     return workbook_messages.unusable(
         error,
         WorkbookMessages(
@@ -63,8 +61,6 @@ def _inaccessible(source: Path) -> Message:
 
 
 def _damaged(source: Path) -> Message:
-    """Plik zbiorczy nie daje się odczytać jako skoroszyt .xlsx."""
-
     return Message(
         code="USZKODZONY_PLIK_ZBIORCZY",
         what="Plik zbiorczy jest uszkodzony albo nie jest skoroszytem Excela.",

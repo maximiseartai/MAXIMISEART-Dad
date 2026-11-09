@@ -9,8 +9,7 @@ Zgłoszenia), słyszy o nich przez ``watch``.
 Stan sprawy (``DadCases.state``) to stan wysyłki, gdy sprawa czeka w Kolejce wysyłki (``DadCases.queued``): na
 internet, na Token do Zgłoszeń (brak albo odmowa Skrzynki) albo na nic, bo Skrzynka odrzuciła jej treść; potem
 „wysłana”, a po zamknięciu issue to, co z nią zrobił Maks (tabela ``_ANSWERS``). Odrzuconą treść kolejka ponawia dopiero przy następnym starcie Centrum, więc Sprawy taty
-pamiętają ją tylko w pamięci tej pracy Centrum. ``ask_box`` pyta skrzynkę o zamknięcie otwartych spraw, raz na
-rodzaj, który je ma.
+pamiętają ją tylko w pamięci tej pracy Centrum.
 
 Stan leży w ``config/sprawy-taty.json`` poza Gitem. Dopóki tego pliku nie ma, Sprawy taty czytają pliki sprzed
 jednego magazynu (``OLD_REPORTS_FILE``, ``OLD_NOTES_FILE``), które mogą leżeć u taty, a pierwszy zapis przenosi ich
@@ -88,7 +87,7 @@ _ANSWERS: Final[Mapping[CloseReason | None, notifications_contract.Resolved | no
 
 @dataclass(frozen=True)
 class Case:
-    """Sprawa taty: rodzaj, identyfikator, tytuł, commit narzędzia, czas wysłania, numer issue i zamknięcie.
+    """Sprawa taty.
 
     ``id`` Uwagi to identyfikator jej wysyłki w kolejce, a Zgłoszenia odcisk problemu: problem, który wraca po
     zamknięciu, ma kolejne Zgłoszenie z tym samym odciskiem. ``title`` to tytuł Uwagi albo „Co się stało”
@@ -108,8 +107,6 @@ class Case:
 
     @property
     def open(self) -> bool:
-        """Wysłana, a Maks jeszcze jej nie zamknął."""
-
         return self.number is not None and self.closure is None
 
 

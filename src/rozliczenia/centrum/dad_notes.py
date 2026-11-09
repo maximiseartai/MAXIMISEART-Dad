@@ -1,10 +1,11 @@
 """Uwaga taty (ADR 0015): treść issue, wysyłka przez kolejkę Skrzynki Zgłoszeń i stan Uwag na tym komputerze.
 
-Treść issue powstaje tylko w ``note_issue``: podgląd „Maks dostanie” i wysyłka wołają tę samą funkcję, więc tata
-widzi dokładnie to, co dostanie Maks. „Wyślij” zapisuje Uwagę bez numeru issue jako sprawę taty (``DadCases``),
-kładzie ją w kolejce Skrzynki Zgłoszeń jako osobne issue z etykietą ``uwaga-taty`` i czeka na skrzynkę najwyżej
-``DELIVERY_WAIT_S``, a gdy jej nie przyjęła, mówi, na co Uwaga czeka (``DadCases.queued``). Numer issue dopisuje wątek kolejki, także po następnym starcie Centrum, a zamknięcie issue przez
-Maksa sprawdzanie Powiadomień. Sprawa ma tylko tytuł Uwagi i przypięte Uruchomienie, bez treści.
+Treść issue powstaje tylko w ``note_issue``: podgląd „Maks dostanie” i wysyłka wołają tę samą funkcję, więc tata widzi
+dokładnie to, co dostanie Maks. „Wyślij” zapisuje Uwagę bez numeru issue jako sprawę taty (``DadCases``), kładzie ją w
+kolejce Skrzynki Zgłoszeń jako osobne issue z etykietą ``uwaga-taty`` i czeka na skrzynkę najwyżej ``DELIVERY_WAIT_S``,
+a gdy jej nie przyjęła, mówi, na co Uwaga czeka (``DadCases.queued``). Numer issue dopisuje wątek kolejki, także po
+następnym starcie Centrum, a zamknięcie issue przez Maksa sprawdzanie Powiadomień. Sprawa ma tylko tytuł Uwagi i
+przypięte Uruchomienie, bez treści.
 
 Uwaga przypięta do Uruchomienia procesu z Centrum niesie w stopce jego proces, okres, tryb, wynik i datę oraz
 odnośnik do jego Logów Uruchomienia w Skrzynce. Uruchomienia do wyboru i do przypięcia pochodzą z historii metryk
@@ -61,8 +62,9 @@ def note_issue(
     """Issue Uwagi taty: jej tytuł, a w treści jej tekst i stopka (bez tekstu sama stopka).
 
     Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów. Tytuł i
-    tekst przechodzą przez strażnika reguły danych pracy Centrum (ADR 0025), a uwaga techniczna o zamaskowanej wartości staje pod
-    tekstem, więc tata widzi w podglądzie dokładnie to, co dostanie Maks, z odnośnikiem do Logów jako samym napisem.
+    tekst przechodzą przez strażnika reguły danych pracy Centrum (ADR 0025), a uwaga techniczna o zamaskowanej wartości
+    staje pod tekstem, więc tata widzi w podglądzie dokładnie to, co dostanie Maks, z odnośnikiem do Logów jako samym
+    napisem.
     """
 
     version = f"wersja narzędzia {version_label(commit)}"
@@ -107,7 +109,7 @@ def _pickable(own: list[dad_notes_contract.PinnableRun], selected: str | None) -
 
 
 def _pinned(run_id: str | None, history: History, logs: LogsAddress) -> PinnedRun | None:
-    """Uruchomienie z historii o tym identyfikatorze i adres jego Logów; nieznane to odmowa 404."""
+    """Uruchomienie spoza historii to odmowa 404."""
 
     if run_id is None:
         return None
@@ -126,11 +128,7 @@ def send(
     pinned: PinnedRun | None,
     forbidden: ForbiddenValues,
 ) -> common_contract.SendState:
-    """Zapisuje Uwagę, kładzie ją w kolejce i mówi, czy skrzynka przyjęła ją w ``DELIVERY_WAIT_S``, a jeśli nie, na
-    co czeka albo że skrzynka odrzuciła jej treść.
-
-    Uwaga, której kolejka nie zapisała, to odmowa: inaczej tekst taty przepadłby po cichu.
-    """
+    """Uwaga, której kolejka nie zapisała, to odmowa: inaczej tekst taty przepadłby po cichu."""
 
     issue = note_issue(request.title, request.body, commit, pinned, forbidden)
     run_id = None if pinned is None else pinned.run.run_id

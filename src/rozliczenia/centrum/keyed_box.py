@@ -92,7 +92,6 @@ REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
 # Ostatni zapis każdego rodzaju, którego skutek widać tylko na liście (``KeyedBox._ready``), obok klucza; poza
 # ``config/zgloszenia``, w którym weryfikacja Kontroli ilości widzi tylko kolejkę.
 OPENING_FILE: Final = "skrzynka-zakladanie.txt"
-# Nazwa wątku sprawdzenia Tokenu do Zgłoszeń (``KeyedBox.judge``).
 KEY_CHECK_THREAD: Final = "skrzynka-klucz"
 # Przyjęty klucz Centrum pamięta jak każdą odpowiedź GitHuba, a brak odpowiedzi o kluczu jak każdy brak odpowiedzi.
 ACCEPTED_KEPT_S: Final = ANSWER_KEPT_S
@@ -116,8 +115,7 @@ def _unnoticed(failure: OSError) -> None:
 
 @dataclass(frozen=True)
 class NotesFile:
-    """Plik zapisów ``KeyedBox`` (opis modułu) i jego zamiana: u taty ``atomic_file.replace_atomically`` (``KeyedBox.of_work``),
-    która czeka na plik, który ktoś na chwilę trzyma, jak przy innych plikach Centrum, i nie zostawia urwanego pliku.
+    """Plik zapisów ``KeyedBox`` (opis modułu) i jego zamiana (u taty ``atomic_file.replace_atomically``).
     ``unavailable`` dostaje pierwszy błąd odczytu albo zapisu pliku w tej pracy Centrum (u taty dziennik Centrum)."""
 
     path: Path
@@ -229,9 +227,8 @@ def _digest(key: str) -> str:
 class KeyedBox:
     """Skrzynka Zgłoszeń z kluczem taty i werdyktem o nim (opis modułu).
 
-    Te same operacje co ``ReportBox`` (także Archiwum okresu) bez ``key=`` i z kolejną porażką ``NoKey``, plus ``find_issue``,
-    ``judge`` (stan klucza w ograniczonym czasie) i ``check_in_background`` (sprawdzenie przy starcie Centrum).
-    Blokada chroni tylko werdykt i sprawdzenie w tle; zapytania do Skrzynki idą bez niej.
+    Te same operacje co ``ReportBox`` (także Archiwum okresu) bez ``key=`` i z kolejną porażką ``NoKey``. Blokada chroni
+    werdykt, sprawdzenie w tle, zapisy pliku ``opening`` i nazwy plików Archiwum; zapytania do Skrzynki idą bez niej.
     """
 
     def __init__(
@@ -252,9 +249,6 @@ class KeyedBox:
 
     @classmethod
     def of_work(cls, box: ReportBox, work: CentrumWork) -> KeyedBox:
-        """Skrzynka pracy Centrum ``work``: klucz z pliku w ``work.config``, plik zapisów obok niego, a jego pierwszy błąd w
-        dzienniku Centrum."""
-
         return cls(
             box,
             lambda: read_report_key(work.config),
@@ -701,8 +695,6 @@ _FILES_LIST: Final = "pliki archiwum"
 
 
 def _file_kind(name: str) -> str:
-    """Rodzaj zapisu pliku Archiwum o nazwie ``name`` w pliku ``opening``."""
-
     return f"{_FILE_PREFIX}{name}"
 
 

@@ -306,16 +306,12 @@ class PreparingCentrum:
         return self.client.post("/api/runs", json={"process": "preparation", "period": period, "mode": RunMode.of(dry_run=dry_run)})
 
     def view(self, url: str) -> dict[str, Any]:
-        """Widok ``GET url`` Centrum, który odpowiedział 200."""
-
         response = self.client.get(url)
         assert response.status_code == 200, response.text
         found: dict[str, Any] = response.json()
         return found
 
     def log_lines(self, event: str) -> list[str]:
-        """Linie dziennika Centrum ze zdarzeniem ``event``."""
-
         if not self.log_path.exists():
             return []
         return [line for line in self.log_path.read_text(encoding="utf-8").splitlines() if event in line]
@@ -470,11 +466,7 @@ class SettlingCentrum:
     def restart(self) -> None:
         """Nowe Centrum na tych samych plikach i Ustawieniach taty, gdy skończy się przejście kolejki poprzedniego.
 
-        Jak w nowym procesie kolejka poprzedniego Centrum już nic nie robi: kolejka, która zastałaby jej przejście na
-        tym samym folderze, oddałaby jej swoje (``outbox._claimed``), więc ponowny start czeka na koniec tego
-        przejścia, a budziki poprzedniego Centrum (ponowienie kolejki za ``RETRY_S``) już nie dzwonią, choć czas
-        ``surroundings.clock`` biegnie dalej. Inne wątki poprzedniego Centrum mogą dalej żyć, np. Uruchomienie, które
-        test trzyma (``HeldRegister``): puszczone kończy się w poprzednim Centrum i jego Logi idą jego kolejką.
+        Powód czekania na kolejkę opisuje ``PreparingCentrum.restart``.
         """
 
         join_threads_since(self.client.since, named=QUEUE_THREAD)
@@ -532,8 +524,6 @@ def settling_centrum(
 
 
 def write_configuration(tool: ToolDirectory) -> ConfigurationFiles:
-    """Trzy syntetyczne Wzorce i Konfiguracja wykonawców w folderze ``config`` katalogu narzędzia ``tool``."""
-
     files = tool.configuration
     tool.config.mkdir(parents=True, exist_ok=True)
     write_mapping(files.worker_config)
@@ -565,7 +555,7 @@ def run_to_end(centrum: _Starting, *, dry_run: bool) -> dict[str, Any]:
 
 
 def stopped_for_maks(centrum: PreparingCentrum | SettlingCentrum) -> str:
-    """Zatrzymanie „do Maksa” bez zmiany plików: podgląd, którego planu nie da się pokazać; zwraca id Uruchomienia."""
+    """Zatrzymanie „do Maksa” bez zmiany plików: podgląd, którego planu nie da się pokazać."""
 
     centrum.engines.fail_summary = True
     try:

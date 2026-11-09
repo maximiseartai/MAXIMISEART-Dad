@@ -157,7 +157,7 @@ def test_centrum_zamkniete_po_zapisie_wyniku_w_historii_daje_karte_z_wynikiem_z_
 
 
 def append_record(path: Path, counter_names: frozenset[str], record: dict[str, Any], started_at: datetime) -> None:
-    """Rekord metryk spoza Centrum (np. ze skryptu dla maszyn) jak ``record``, z wynikiem OK i startem ``started_at``."""
+    """Rekord metryk spoza Centrum (np. ze skryptu dla maszyn) jak ``record``."""
 
     counters = dict.fromkeys(counter_names, 0)
     other = {**record, "started_at": started_at.isoformat(), "result": "OK", "stop": None, "counters": counters}
@@ -315,8 +315,6 @@ def test_diagnoza_karty_z_logow_jest_odrzucona(tmp_path: Path) -> None:
 
 
 def history_cards(centrum: SettlingCentrum) -> dict[str, Any]:
-    """Karta każdego wiersza Historii z identyfikatorem Uruchomienia, tak jak otwiera ją przeglądarka."""
-
     runs = centrum.client.get("/api/metrics").json()["runs"]
     return {run["run_id"]: centrum.client.get(f"/api/runs/{run['run_id']}/card").json() for run in runs}
 
@@ -430,14 +428,10 @@ def interrupted_logs(started: StartFacts) -> RunLog:
 
 
 def on_disk(directory: Path) -> LogsOnDisk:
-    """Logi na dysku w katalogu ``directory`` dziennika Centrum."""
-
     return LogsOnDisk(CentrumLog(directory / "centrum.log"), journaled="efenix")
 
 
 def written(directory: Path, record: RunLog, name: str | None = None) -> Path:
-    """Plik Logów ``record`` w katalogu Logów pod nazwą z jego startu albo pod ``name``."""
-
     path = directory / RUN_LOGS_DIRECTORY / (name or name_of(record.start))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(record.text, encoding="utf-8")
