@@ -178,8 +178,8 @@ class Changed(enum.Enum):
     NUMBER_FIELD_GONE = "lista po wpisaniu numeru nie ma już pola Numer"
     SECOND_EMMETT_DIALOG = "strona zlecenia dopisuje drugie okno Emmetta, zanim przeglądarka pokaże pierwsze"
     OTHER_ANIMATIONS_IN_INFO = (
-        "okno informacji ma spinner, którego animacja nie kończy się nigdy, i etykietę, której skończona animacja zostaje "
-        "na niej (fill: forwards)"
+        "okno informacji ma spinner, którego animacja nie kończy się nigdy, etykietę, której skończona animacja zostaje "
+        "na niej (fill: forwards), i ikonę, której animację strona wstrzymała (paused)"
     )
 
 
@@ -786,7 +786,8 @@ new MutationObserver((_zmiany, obserwator) => {
 
 # Spinner w oknie informacji, który kręci się bez końca od pokazania okna, jak ``.spinner-border`` strony zlecenia efenix
 # (tam poza oknami dialogowymi), i etykieta, której krótka animacja wejścia zostaje po końcu na etykiecie
-# (``animation-fill-mode: forwards``, jak w animate.css i MDB), więc ``getAnimations`` dalej ją oddaje.
+# (``animation-fill-mode: forwards``, jak w animate.css i MDB), więc ``getAnimations`` dalej ją oddaje, oraz ikona,
+# której animację strona wstrzymała (``animation-play-state: paused``), więc zostaje w ``getAnimations`` bez końca.
 _OTHER_ANIMATIONS_IN_INFO_SCRIPT = """
 document.getElementById('button_forward_to_accept').addEventListener('click', () => {
   const body = document.querySelector('#dialog_info .modal-body');
@@ -794,9 +795,11 @@ document.getElementById('button_forward_to_accept').addEventListener('click', ()
   spinner.className = 'spinner-border';
   const label = document.createElement('label');
   label.textContent = 'Informacja';
-  body.append(spinner, label);
+  const icon = document.createElement('i');
+  body.append(spinner, label, icon);
   spinner.animate([{transform: 'rotate(0deg)'}, {transform: 'rotate(360deg)'}], {duration: 750, iterations: Infinity});
   label.animate([{opacity: 0}, {opacity: 1}], {duration: 50, fill: 'forwards'});
+  icon.animate([{opacity: 0}, {opacity: 1}], {duration: 750}).pause();
 });
 """
 
