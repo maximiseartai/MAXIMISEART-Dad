@@ -53,7 +53,8 @@ const PINNED = [NUMBER, ...TEXTS]
 
 const PINNED_WIDTH = PINNED.reduce((sum, { width }) => sum + width, 0)
 
-// Kolumna N:AP w rem.
+// Kolumna N:AP w rem. Tabela ma stały układ (`table-fixed`), więc długie słowo nie poszerza kolumny ani nie
+// przesuwa przypiętych kolumn.
 const QUANTITY_WIDTH = 3.125
 
 function pinnedStyle({ width, left }: Pinned): React.CSSProperties {
