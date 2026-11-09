@@ -1,12 +1,8 @@
 import * as React from "react"
 import { ArchiveRestoreIcon, CircleCheckIcon, HistoryIcon } from "lucide-react"
 
-import {
-  getIntermaxCopies,
-  restoreIntermaxCopy,
-  type IntermaxCopy,
-  type IntermaxRestore,
-} from "@/api/centrum"
+import { getIntermaxCopies, restoreIntermaxCopy, type IntermaxRestore } from "@/api/centrum"
+import type { IntermaxCopy } from "@/api/generated"
 import { failureMessage } from "@/api/client"
 import { LoadFailure } from "@/components/load-failure"
 import { ThreePartMessage } from "@/components/three-part-message"

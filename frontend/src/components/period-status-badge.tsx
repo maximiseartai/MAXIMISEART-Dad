@@ -1,6 +1,6 @@
 import { CircleCheckIcon, CircleDashedIcon, FileSpreadsheetIcon } from "lucide-react"
 
-import type { PeriodRow } from "@/api/centrum"
+import type { PeriodRow } from "@/api/generated"
 import { Badge } from "@/components/ui/badge"
 
 // Status okresu zawsze z ikoną i nazwą z serwera, nigdy samym kolorem.

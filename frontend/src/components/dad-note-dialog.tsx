@@ -3,15 +3,8 @@ import { cn } from "cn"
 import { SendIcon } from "lucide-react"
 
 import { failureMessage } from "@/api/client"
-import {
-  draftDadNote,
-  getDadNoteRuns,
-  sendDadNote,
-  type DadNoteDraft,
-  type DadNoteRequest,
-  type DadNoteState,
-  type PinnableRun,
-} from "@/api/centrum"
+import { draftDadNote, getDadNoteRuns, sendDadNote, type DadNoteState } from "@/api/centrum"
+import type { DadNoteDraft, DadNoteRequest, PinnableRun } from "@/api/generated"
 import { zDadNoteRequest } from "@/api/generated/zod.gen"
 import { CaseStateLine } from "@/components/case-state"
 import { DadNoteRuns } from "@/components/dad-note-runs"

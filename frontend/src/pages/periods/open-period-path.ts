@@ -1,10 +1,5 @@
-import {
-  openOrderRegister,
-  openPeriodPath,
-  openWorkerSettlement,
-  type OpenRequest,
-  type WorkerSettlementRequest,
-} from "@/api/centrum"
+import { openOrderRegister, openPeriodPath, openWorkerSettlement } from "@/api/centrum"
+import type { OpenRequest, WorkerSettlementRequest } from "@/api/generated"
 import { toast } from "@/components/ui/toast"
 import { showFailure } from "@/lib/action"
 

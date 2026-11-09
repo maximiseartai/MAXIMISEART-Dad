@@ -1,6 +1,6 @@
 import { TimerOffIcon } from "lucide-react"
 
-import type { Percentiles, ProcessRun } from "@/api/centrum"
+import type { Percentiles, ProcessRun } from "@/api/generated"
 import { isFailure } from "@/components/run-result-badge"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"

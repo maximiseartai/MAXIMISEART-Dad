@@ -1,13 +1,8 @@
 import { cn } from "cn"
 import { CheckIcon, FileSpreadsheetIcon, HistoryIcon, InfoIcon, ListOrderedIcon } from "lucide-react"
 
-import {
-  getIntermaxDays,
-  getIntermaxSetup,
-  type IntermaxDays,
-  type IntermaxSetup,
-  type RunRestored,
-} from "@/api/centrum"
+import { getIntermaxDays, getIntermaxSetup, type IntermaxDays, type IntermaxSetup } from "@/api/centrum"
+import type { RunRestored } from "@/api/generated"
 import { LoadFailure } from "@/components/load-failure"
 import { SettingPath } from "@/components/setting-path"
 import { ThreePartMessage } from "@/components/three-part-message"

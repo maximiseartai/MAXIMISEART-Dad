@@ -7,7 +7,8 @@ import {
   UserIcon,
 } from "lucide-react"
 
-import { getConfiguration, type Configuration, type TemplateProblem } from "@/api/centrum"
+import { getConfiguration } from "@/api/centrum"
+import type { Configuration, TemplateProblem } from "@/api/generated"
 import { PageHeader } from "@/components/page-header"
 import { LoadFailure } from "@/components/load-failure"
 import { ThreePartMessage, type MessageKind } from "@/components/three-part-message"

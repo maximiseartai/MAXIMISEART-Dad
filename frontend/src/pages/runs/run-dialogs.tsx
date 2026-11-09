@@ -1,7 +1,8 @@
 import * as React from "react"
 import { CircleCheckIcon, InfoIcon, PlayIcon, TriangleAlertIcon } from "lucide-react"
 
-import { getWithoutQuantity, type Decision, type DecisionAnswer, type Pricing, type WithoutQuantity } from "@/api/centrum"
+import { getWithoutQuantity, type Pricing, type WithoutQuantity } from "@/api/centrum"
+import type { Decision, DecisionAnswer } from "@/api/generated"
 import { Disclosure } from "@/components/disclosure"
 import { WhereAndAction } from "@/components/three-part-message"
 import {

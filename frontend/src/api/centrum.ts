@@ -1,4 +1,4 @@
-import { call } from "@/api/client"
+import { call, jsonRequest } from "@/api/client"
 import type {
   DadNoteRequest,
   DadNoteText,
@@ -7,16 +7,13 @@ import type {
   GetCurrentRunResponse,
   GetIntermaxDaysResponse,
   GetIntermaxSetupResponse,
-  IntermaxRestoreRequest,
   GetNotificationsResponse,
   GetPeriodBoardResponse,
   GetQuantitiesToFillResponse,
   GetKindTableResponse,
   GetWithoutQuantityResponse,
   GetToolUpdateResponse,
-  NotificationsRead,
   OpenRequest,
-  WorkerSettlementRequest,
   RunEvent,
   RunInfo,
   RunOutcome,
@@ -26,98 +23,9 @@ import type {
   ThemeChange,
   ViewTiming,
 } from "@/api/generated"
-import {
-  zChangeThemeResponse,
-  zCloseCentrumResponse,
-  zChoosePeriodsDirectoryResponse,
-  zChooseRegisterResponse,
-  zDecideRunResponse,
-  zDiagnoseRunResponse,
-  zDraftDadNoteResponse,
-  zGetDadNoteRunsResponse,
-  zGetConfigurationResponse,
-  zGetHealthResponse,
-  zGetIntermaxCopiesResponse,
-  zGetIntermaxDaysResponse,
-  zGetIntermaxSetupResponse,
-  zGetMetricsResponse,
-  zGetNotificationsResponse,
-  zGetPeriodBoardResponse,
-  zGetQuantitiesToFillResponse,
-  zGetCollectiveFileVersionResponse,
-  zGetKindTableResponse,
-  zGetRunCardResponse,
-  zGetWithoutQuantityResponse,
-  zGetRunSetupResponse,
-  zGetSettingsResponse,
-  zGetToolUpdateResponse,
-  zMarkNotificationsReadResponse,
-  zOpenPeriodPathResponse,
-  zOpenRegisterResponse,
-  zOpenWorkerSettlementResponse,
-  zReportRunResponse,
-  zReportToolUpdateResponse,
-  zRestoreIntermaxCopyResponse,
-  zRunEvent,
-  zSendDadNoteResponse,
-  zStartIntermaxResponse,
-  zStartRunResponse,
-  zStartToolUpdateResponse,
-} from "@/api/generated/zod.gen"
+import { operations } from "@/api/generated/operations.gen"
+import { zRunEvent } from "@/api/generated/zod.gen"
 
-export type {
-  Choice,
-  CollectiveFileRead,
-  Configuration,
-  Count,
-  DadNoteDraft,
-  DadNoteRequest,
-  Decision,
-  DecisionAnswer,
-  Diagnosis,
-  DescriptionColumn,
-  DiagnosisCheck,
-  Figure,
-  FillKind,
-  IntermaxCopy,
-  KindToFill,
-  QuantitiesToFillReady,
-  KindTableCell,
-  KindTableRow,
-  PriceListItem,
-  LoggedOutcome,
-  Message,
-  Metrics,
-  OrderNote,
-  OrderNotes,
-  Percentiles,
-  OpenRequest,
-  PeriodChoice,
-  PeriodRow,
-  PeriodFile,
-  PhaseProgress,
-  PinnableRun,
-  ProcessRun,
-  ProcessStep,
-  FillStep,
-  ProcessSetup,
-  Progress,
-  ProgressStep,
-  ReportDraft,
-  ResultCounts,
-  RunEvent,
-  RunInfo,
-  RunInterrupted,
-  RunMode,
-  RunOutcome,
-  RunRequest,
-  RunRestored,
-  RunSummary,
-  Settings,
-  TemplateProblem,
-  WorkerSettlement,
-  WorkerSettlementRequest,
-} from "@/api/generated"
 
 export type PeriodBoard = GetPeriodBoardResponse
 
@@ -174,169 +82,111 @@ export type PastRun = NonNullable<Extract<RunView, { state: "idle" }>["previous"
 /** Akcja, którą Centrum proponuje po wyniku Uruchomienia. */
 export type NextAction = RunOutcome["next_action"]
 
-function send(
-  method: "POST" | "PUT",
-  body?:
-    | OpenRequest
-    | WorkerSettlementRequest
-    | ThemeChange
-    | RunRequest
-    | DecisionAnswer
-    | ViewTiming
-    | DadNoteText
-    | DadNoteRequest
-    | NotificationsRead
-    | IntermaxRestoreRequest
-): RequestInit {
-  return {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  }
-}
-
 export function getSettings() {
-  return call(zGetSettingsResponse, "getSettings", "/api/settings")
+  return call("getSettings")
 }
 
 /** Otwiera natywne okno wyboru na komputerze taty i zapamiętuje wybrany Rejestr zleceń. */
 export function chooseOrderRegister() {
-  return call(zChooseRegisterResponse, "chooseRegister", "/api/settings/register/choose", send("POST"))
+  return call("chooseRegister")
 }
 
 /** Otwiera w Excelu Rejestr zleceń, który tata wybrał w Ustawieniach; ścieżkę bierze serwer. */
 export function openOrderRegister() {
-  return call(zOpenRegisterResponse, "openRegister", "/api/settings/register/open", send("POST"))
+  return call("openRegister")
 }
 
 /** Otwiera natywne okno wyboru folderu i zapamiętuje folder okresów. */
 export function choosePeriodsDirectory() {
-  return call(
-    zChoosePeriodsDirectoryResponse,
-    "choosePeriodsDirectory",
-    "/api/settings/periods-directory/choose",
-    send("POST")
-  )
+  return call("choosePeriodsDirectory")
 }
 
 export function changeTheme(theme: Theme) {
-  return call(zChangeThemeResponse, "changeTheme", "/api/settings/theme", send("PUT", { theme }))
+  return call("changeTheme", { body: { theme } })
 }
 
 export function getPeriodBoard() {
-  return call(zGetPeriodBoardResponse, "getPeriodBoard", "/api/periods")
+  return call("getPeriodBoard")
 }
 
 /** Serwer sam wylicza ścieżkę z folderu okresów; przeglądarka podaje tylko okres i rodzaj pliku. */
 export function openPeriodPath(token: string, target: OpenTarget) {
-  return call(
-    zOpenPeriodPathResponse,
-    "openPeriodPath",
-    `/api/periods/${encodeURIComponent(token)}/open`,
-    send("POST", { target })
-  )
+  return call("openPeriodPath", { path: { token }, body: { target } })
 }
 
 /** Ilości do uzupełnienia okresu: serwer przelicza je przy każdym odczycie z zapisanego Pliku zbiorczego. */
 export function getQuantitiesToFill(token: string) {
-  return call(
-    zGetQuantitiesToFillResponse,
-    "getQuantitiesToFill",
-    `/api/periods/${encodeURIComponent(token)}/quantities-to-fill`
-  )
+  return call("getQuantitiesToFill", { path: { token } })
 }
 
 /** Znacznik zapisu Pliku zbiorczego okresu: serwer odpowiada z `stat`, bez otwierania skoroszytu. */
 export function getCollectiveFileVersion(token: string) {
-  return call(
-    zGetCollectiveFileVersionResponse,
-    "getCollectiveFileVersion",
-    `/api/periods/${encodeURIComponent(token)}/collective-file-version`
-  )
+  return call("getCollectiveFileVersion", { path: { token } })
 }
 
 /** Tabela jednego rodzaju Ilości do uzupełnienia, przeliczana przy każdym odczycie z zapisanego Pliku zbiorczego. */
 export function getKindTable(token: string, kind: FillKind) {
-  return call(zGetKindTableResponse, "getKindTable", `/api/periods/${encodeURIComponent(token)}/quantities-to-fill/${kind}`)
+  return call("getKindTable", { path: { token, kind } })
 }
 
 /** Wiersze bez ilości okresu dla okna „Uruchomić z zapisem?” Przebiegu rozliczeń, z zapisanego Pliku zbiorczego. */
 export function getWithoutQuantity(token: string) {
-  return call(
-    zGetWithoutQuantityResponse,
-    "getWithoutQuantity",
-    `/api/periods/${encodeURIComponent(token)}/without-quantity`
-  )
+  return call("getWithoutQuantity", { path: { token } })
 }
 
 /** Rozliczenie pracownika jednego Wykonawcy; ścieżkę wylicza serwer z Folderu okresu, przeglądarka podaje Wykonawcę. */
 export function openWorkerSettlement(token: string, worker: string) {
-  return call(
-    zOpenWorkerSettlementResponse,
-    "openWorkerSettlement",
-    `/api/periods/${encodeURIComponent(token)}/worker-settlements/open`,
-    send("POST", { worker })
-  )
+  return call("openWorkerSettlement", { path: { token }, body: { worker } })
 }
 
 /** Co tata wybiera przed Uruchomieniem procesu: procesy, okresy z preselekcją, przypomnienie, brakujące ustawienia. */
 export function getRunSetup() {
-  return call(zGetRunSetupResponse, "getRunSetup", "/api/runs/setup")
+  return call("getRunSetup")
 }
 
 /** Start Uruchomienia procesu; gdy trwa już inne, serwer odmawia z bezpiecznym komunikatem. */
 export function startRun(request: RunRequest) {
-  return call(zStartRunResponse, "startRun", "/api/runs", send("POST", request))
+  return call("startRun", { body: request })
 }
 
 /** Karta „Uporządkuj INTERMAX”: przypomnienie, czego brakuje w Ustawieniach taty, i ostatnie Uporządkowanie z Logów. */
 export function getIntermaxSetup() {
-  return call(zGetIntermaxSetupResponse, "getIntermaxSetup", "/api/intermax")
+  return call("getIntermaxSetup")
 }
 
 /** Dziś, 6 dni wstecz i późniejsze Dni uporządkowane INTERMAX ze stanem; serwer czyta INTERMAX tylko po jego zmianie. */
 export function getIntermaxDays() {
-  return call(zGetIntermaxDaysResponse, "getIntermaxDays", "/api/intermax/days")
+  return call("getIntermaxDays")
 }
 
 /** Start Uporządkowania INTERMAX z Rejestrem zleceń z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */
 export function startIntermax() {
-  return call(zStartIntermaxResponse, "startIntermax", "/api/intermax/run", send("POST"))
+  return call("startIntermax")
 }
 
 /** Kopie INTERMAX w Konfiguracji, od najnowszej. */
 export function getIntermaxCopies() {
-  return call(zGetIntermaxCopiesResponse, "getIntermaxCopies", "/api/intermax/copies")
+  return call("getIntermaxCopies")
 }
 
 /** Przywrócenie Kopii INTERMAX `name`; gdy trwa Uruchomienie albo aktualizacja, serwer odmawia. */
 export function restoreIntermaxCopy(name: string) {
-  return call(
-    zRestoreIntermaxCopyResponse,
-    "restoreIntermaxCopy",
-    "/api/intermax/copies/restore",
-    send("POST", { name })
-  )
+  return call("restoreIntermaxCopy", { body: { name } })
 }
 
 /** Decyzja taty o niepełnym okresie dla Uruchomienia `runId`. */
 export function decideRun(runId: string, answer: DecisionAnswer["answer"]) {
-  return call(
-    zDecideRunResponse,
-    "decideRun",
-    `/api/runs/${encodeURIComponent(runId)}/decision`,
-    send("POST", { answer })
-  )
+  return call("decideRun", { path: { run_id: runId }, body: { answer } })
 }
 
 /** Diagnoza Zatrzymania Uruchomienia `runId`: wyjaśnienie i sprawdzenia; serwer tylko czyta pliki taty. */
 export function diagnoseRun(runId: string) {
-  return call(zDiagnoseRunResponse, "diagnoseRun", `/api/runs/${encodeURIComponent(runId)}/diagnosis`, send("POST"))
+  return call("diagnoseRun", { path: { run_id: runId } })
 }
 
 /** „Wyślij do Maksa”: serwer wysyła podgląd Zgłoszenia z ostatniej Diagnozy Uruchomienia `runId`. */
 export function reportRun(runId: string) {
-  return call(zReportRunResponse, "reportRun", `/api/runs/${encodeURIComponent(runId)}/report`, send("POST"))
+  return call("reportRun", { path: { run_id: runId } })
 }
 
 /**
@@ -355,7 +205,7 @@ export function watchRunEvents(
   let source: EventSource | null = null
 
   const connect = () => {
-    const stream = new EventSource("/api/runs/events")
+    const stream = new EventSource(operations.streamRunEvents.url)
 
     stream.addEventListener("open", () => onConnection(true))
     stream.addEventListener("error", () => onConnection(false))
@@ -402,52 +252,47 @@ export function watchRunEvents(
 
 /** Karta Uruchomienia `runId` z jego Logów Uruchomienia (wiersz Historii); `missing`, gdy karty nie ma. */
 export function getRunCard(runId: string) {
-  return call(zGetRunCardResponse, "getRunCard", `/api/runs/${encodeURIComponent(runId)}/card`)
+  return call("getRunCard", { path: { run_id: runId } })
 }
 
 /** Historia Uruchomień procesu z obu plików metryk, z P50/P95 i rozkładem wyników; serwer czyta pliki przy każdym odczycie. */
 export function getMetrics() {
-  return call(zGetMetricsResponse, "getMetrics", "/api/metrics")
+  return call("getMetrics")
 }
 
 /** Konfiguracja tylko do odczytu: Wzorce, Wykonawcy i wersja narzędzia. */
 export function getConfiguration() {
-  return call(zGetConfigurationResponse, "getConfiguration", "/api/configuration")
+  return call("getConfiguration")
 }
 
 /** Aktualizacja narzędzia: serwer odpowiada od razu pierwszym krokiem i aktualizuje w tle; odmawia, gdy coś trwa. */
 export function startToolUpdate() {
-  return call(zStartToolUpdateResponse, "startToolUpdate", "/api/tool-update", send("POST"))
+  return call("startToolUpdate")
 }
 
 /** Tożsamość Centrum; `instance` jest inny po każdym starcie, więc karta rozpozna po nim Centrum po aktualizacji. */
 export function getHealth() {
-  return call(zGetHealthResponse, "getHealth", "/api/health")
+  return call("getHealth")
 }
 
 /** Krok trwającej Aktualizacji narzędzia albo jej wynik od startu Centrum. */
 export function getToolUpdate() {
-  return call(zGetToolUpdateResponse, "getToolUpdate", "/api/tool-update")
+  return call("getToolUpdate")
 }
 
 /** „Wyślij do Maksa” przy nieudanej Aktualizacji narzędzia: serwer wysyła podgląd Zgłoszenia z jej faktami. */
 export function reportToolUpdate() {
-  return call(zReportToolUpdateResponse, "reportToolUpdate", "/api/tool-update/report", send("POST"))
+  return call("reportToolUpdate")
 }
 
 /** Powiadomienia o Uwagach taty i Zgłoszeniach; serwer pyta skrzynkę najwyżej raz na 10 minut, bez sieci po cichu. */
 export function getNotifications() {
-  return call(zGetNotificationsResponse, "getNotifications", "/api/notifications")
+  return call("getNotifications")
 }
 
 /** Tata zobaczył te Powiadomienia (ich `id`); serwer pamięta to także po ponownym starcie Centrum. */
 export function markNotificationsRead(ids: ReadonlyArray<string>) {
-  return call(
-    zMarkNotificationsReadResponse,
-    "markNotificationsRead",
-    "/api/notifications/read",
-    send("POST", { ids: [...ids] })
-  )
+  return call("markNotificationsRead", { body: { ids: [...ids] } })
 }
 
 /**
@@ -455,24 +300,22 @@ export function markNotificationsRead(ids: ReadonlyArray<string>) {
  * tata otworzył okno) serwer dokłada na jego miejsce w kolejności, gdy jest starsze od ostatnich.
  */
 export function getDadNoteRuns(selected: string | null) {
-  const query = selected === null ? "" : `?${new URLSearchParams({ selected }).toString()}`
-
-  return call(zGetDadNoteRunsResponse, "getDadNoteRuns", `/api/dad-notes/runs${query}`)
+  return call("getDadNoteRuns", { query: { selected } })
 }
 
 /** Dokładnie to, co dostanie Maks z Uwagi taty: tytuł i treść issue składa serwer, przeglądarka je tylko pokazuje. */
 export function draftDadNote(text: DadNoteText) {
-  return call(zDraftDadNoteResponse, "draftDadNote", "/api/dad-notes/draft", send("POST", text))
+  return call("draftDadNote", { body: text })
 }
 
 /** „Wyślij” Uwagi taty; odmawia (`CentrumError`) tylko wtedy, gdy Uwaga nie zapisała się w kolejce. */
 export function sendDadNote(note: DadNoteRequest) {
-  return call(zSendDadNoteResponse, "sendDadNote", "/api/dad-notes", send("POST", note))
+  return call("sendDadNote", { body: note })
 }
 
 /** Serwer kończy pracę po odpowiedzi; odmawia (`CentrumError`), gdy zamknięcie jest teraz zablokowane. */
 export function closeCentrum() {
-  return call(zCloseCentrumResponse, "closeCentrum", "/api/shutdown", send("POST"))
+  return call("closeCentrum")
 }
 
 /**
@@ -480,5 +323,5 @@ export function closeCentrum() {
  * wysyłki (także odmowa serwera) przechodzi po cichu: pomiar nigdy nie zmienia UI.
  */
 export function recordViewTiming(timing: ViewTiming) {
-  fetch("/api/view-timings", { ...send("POST", timing), keepalive: true }).catch(() => undefined)
+  fetch(operations.recordViewTiming.url, { ...jsonRequest(operations.recordViewTiming.method, timing), keepalive: true }).catch(() => undefined)
 }

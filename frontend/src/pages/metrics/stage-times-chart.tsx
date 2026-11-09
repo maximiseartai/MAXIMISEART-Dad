@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import type { ProcessRun } from "@/api/centrum"
+import type { ProcessRun } from "@/api/generated"
 import { dateTime, dayMonth, seconds } from "@/lib/format"
 import { isStopped, phaseDuration, stopWord } from "@/pages/metrics/process-runs"
 

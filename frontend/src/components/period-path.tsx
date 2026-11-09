@@ -1,7 +1,7 @@
 import { CheckIcon, MinusIcon } from "lucide-react"
 import { cn } from "cn"
 
-import type { PeriodRow } from "@/api/centrum"
+import type { PeriodRow } from "@/api/generated"
 
 /**
  * Droga okresu w krokach i stanach z serwera: ikona stanu zamiast zdań. Krok, którego okres zamknięty nie zrobił

@@ -1,7 +1,8 @@
 import { cn } from "cn"
 import { FolderSearchIcon, FolderXIcon } from "lucide-react"
 
-import { getMetrics, getPeriodBoard, type Metrics, type PeriodBoard } from "@/api/centrum"
+import { getMetrics, getPeriodBoard, type PeriodBoard } from "@/api/centrum"
+import type { Metrics } from "@/api/generated"
 import { PageHeader } from "@/components/page-header"
 import { LoadFailure } from "@/components/load-failure"
 import { ChoosingLabel } from "@/components/setting-path"

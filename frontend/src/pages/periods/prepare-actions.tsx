@@ -1,6 +1,6 @@
 import { ArrowRightIcon, EyeIcon, PlayIcon } from "lucide-react"
 
-import type { FillStep, PeriodRow, ProcessStep } from "@/api/centrum"
+import type { FillStep, PeriodRow, ProcessStep } from "@/api/generated"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { href } from "@/lib/address"

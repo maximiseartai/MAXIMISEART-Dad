@@ -1,7 +1,7 @@
 import * as React from "react"
 import { ClockIcon, RotateCcwIcon, SendIcon } from "lucide-react"
 
-import type { ReportDraft, RunOutcome } from "@/api/centrum"
+import type { ReportDraft, RunOutcome } from "@/api/generated"
 import { CaseStateLine } from "@/components/case-state"
 import { Disclosure } from "@/components/disclosure"
 import { Button } from "@/components/ui/button"

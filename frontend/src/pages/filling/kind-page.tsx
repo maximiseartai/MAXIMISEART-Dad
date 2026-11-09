@@ -2,16 +2,8 @@ import { cn } from "cn"
 import { CalendarRangeIcon } from "lucide-react"
 import type * as React from "react"
 
-import {
-  getKindTable,
-  type FillKind,
-  type KindTable,
-  type KindTableCell,
-  type KindTableRow,
-  type PriceListItem,
-  type QuantitiesToFill,
-} from "@/api/centrum"
-import type { RowState } from "@/api/generated"
+import { getKindTable, type KindTable, type QuantitiesToFill } from "@/api/centrum"
+import type { FillKind, KindTableCell, KindTableRow, PriceListItem, RowState } from "@/api/generated"
 import { LoadFailure } from "@/components/load-failure"
 import { PageHeader } from "@/components/page-header"
 import { ThreePartMessage } from "@/components/three-part-message"

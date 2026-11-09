@@ -1,7 +1,7 @@
 import { cn } from "cn"
 import { EyeIcon } from "lucide-react"
 
-import type { PinnableRun } from "@/api/centrum"
+import type { PinnableRun } from "@/api/generated"
 import { LoadFailure } from "@/components/load-failure"
 import { RunResultBadge } from "@/components/run-result-badge"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"

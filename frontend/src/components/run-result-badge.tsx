@@ -1,6 +1,6 @@
 import { CircleCheckIcon, CircleStopIcon, OctagonXIcon, TriangleAlertIcon } from "lucide-react"
 
-import type { ProcessRun, ResultCounts } from "@/api/centrum"
+import type { ProcessRun, ResultCounts } from "@/api/generated"
 import { Badge } from "@/components/ui/badge"
 import { plural } from "@/lib/format"
 

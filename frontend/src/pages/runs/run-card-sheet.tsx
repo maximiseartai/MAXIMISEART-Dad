@@ -1,7 +1,8 @@
 import * as React from "react"
 import { FileClockIcon } from "lucide-react"
 
-import { getRunCard, type ProcessRun, type RunRestored } from "@/api/centrum"
+import { getRunCard } from "@/api/centrum"
+import type { ProcessRun, RunRestored } from "@/api/generated"
 import { LoadFailure } from "@/components/load-failure"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"

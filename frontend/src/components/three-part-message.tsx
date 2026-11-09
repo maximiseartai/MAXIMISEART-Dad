@@ -11,7 +11,7 @@ import {
   WrenchIcon,
 } from "lucide-react"
 
-import type { Message } from "@/api/centrum"
+import type { Message } from "@/api/generated"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 /**

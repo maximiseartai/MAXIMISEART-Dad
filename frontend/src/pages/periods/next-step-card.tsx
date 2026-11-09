@@ -1,6 +1,6 @@
 import { CalendarRangeIcon, CircleCheckIcon, FolderXIcon } from "lucide-react"
 
-import type { FillStep, PeriodRow, ProcessStep } from "@/api/centrum"
+import type { FillStep, PeriodRow, ProcessStep } from "@/api/generated"
 import { PeriodPath } from "@/components/period-path"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"

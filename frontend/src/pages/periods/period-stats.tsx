@@ -1,7 +1,7 @@
 import type * as React from "react"
 import { ClockIcon, FileSpreadsheetIcon, ListChecksIcon } from "lucide-react"
 
-import type { Metrics, PeriodRow } from "@/api/centrum"
+import type { Metrics, PeriodRow } from "@/api/generated"
 import { otherResults, RunResultBadge } from "@/components/run-result-badge"
 import { StatStrip, type Stat } from "@/components/stat-strip"
 import { Skeleton } from "@/components/ui/skeleton"

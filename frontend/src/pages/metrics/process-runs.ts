@@ -1,4 +1,5 @@
-import type { Metrics, Process, ProcessRun } from "@/api/centrum"
+import type { Process } from "@/api/centrum"
+import type { Metrics, ProcessRun } from "@/api/generated"
 import { isFailure } from "@/components/run-result-badge"
 import type { FilterOption } from "@/components/segmented-filter"
 

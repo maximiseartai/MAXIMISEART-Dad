@@ -1,7 +1,8 @@
 import * as React from "react"
 import { EyeIcon, FileSpreadsheetIcon, FolderIcon, InfoIcon, ReceiptTextIcon, TriangleAlertIcon, UsersIcon } from "lucide-react"
 
-import type { PeriodChoice, PeriodProcess, Pricing, ProcessSetup, RunRequest } from "@/api/centrum"
+import type { PeriodProcess, Pricing } from "@/api/centrum"
+import type { PeriodChoice, ProcessSetup, RunRequest } from "@/api/generated"
 import { SettingPath } from "@/components/setting-path"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"

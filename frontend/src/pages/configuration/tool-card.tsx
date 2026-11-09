@@ -1,7 +1,7 @@
 import * as React from "react"
 import { CircleArrowUpIcon, CircleCheckIcon, CircleDashedIcon } from "lucide-react"
 
-import type { Configuration } from "@/api/centrum"
+import type { Configuration } from "@/api/generated"
 import { ToolUpdateButton, ToolUpdateStatus } from "@/components/tool-update"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
