@@ -334,6 +334,7 @@ POZA_VERIFY_ROZLICZENIA: dict[str, str] = {
     "src/rozliczenia/worker_reports/_cells.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
     "src/rozliczenia/worker_reports/_entries.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
     "src/rozliczenia/worker_reports/_figures.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/_model.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
     "src/rozliczenia/worker_reports/_matching.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
     "src/rozliczenia/worker_reports/_subject.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
     "src/rozliczenia/worker_reports/reasons.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",

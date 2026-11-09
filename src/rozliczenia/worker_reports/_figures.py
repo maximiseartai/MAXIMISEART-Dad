@@ -8,7 +8,7 @@ from datetime import date
 
 from ..report_cells import CellChange, OrderRow, ReportColumn
 from ..text import normalize_text
-from . import (
+from ._model import (
     ForeignOrder,
     Login,
     ManualDifference,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 
-from . import OrderKey, ReadReport, RegisterOrder, RepeatedOrder, ReportEntry, ReportProblem, UnknownNumber
+from ._model import OrderKey, ReadReport, RegisterOrder, RepeatedOrder, ReportEntry, ReportProblem, UnknownNumber
 
 
 def match(

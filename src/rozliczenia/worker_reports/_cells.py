@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 
 from ..report_cells import CellChange, ReportColumn
-from . import OrderKey, OwnEntries, OwnEntry, RegisterOrder, ReportEntry
+from ._model import OrderKey, OwnEntries, OwnEntry, RegisterOrder, ReportEntry
 
 _COLUMNS = tuple(ReportColumn)
 

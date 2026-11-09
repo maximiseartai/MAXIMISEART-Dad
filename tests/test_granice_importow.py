@@ -174,6 +174,7 @@ STDLIB_ONLY = {
     "rozliczenia/register_columns.py": "Przebieg, Wycena i reguła danych biorą kolumny Rejestru bez czytnika Przygotowania",
     "rozliczenia/row_positions.py": "uchwyt plików taty i Kopia wejścia biorą położenie wiersza bez reguł Surowych zleceń INTERMAX",
     "rozliczenia/worker_reports/__init__.py": "rdzeń raportów przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/_model.py": "typy rdzenia raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_subject.py": "temat Raportu wykonawcy w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_entries.py": "Wpisy raportu w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_matching.py": "dopasowanie Wpisów do zleceń w rdzeniu raportów (ADR 0028, #1161)",

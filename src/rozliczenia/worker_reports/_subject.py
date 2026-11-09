@@ -6,7 +6,7 @@ from datetime import date
 import re
 from typing import Final
 
-from . import SUBJECT_WORD
+from ._model import SUBJECT_WORD
 
 _SUBJECT: Final = re.compile(rf"{re.escape(SUBJECT_WORD.capitalize())} ([0-9]{{2}})\.([0-9]{{2}})\.([0-9]{{4}})")
 

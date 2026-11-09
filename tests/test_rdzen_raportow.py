@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta, timezone
+import itertools
 from pathlib import Path
 from typing import get_args
 
@@ -187,8 +188,18 @@ def test_wpis_bez_opisu_wpisuje_tylko_skuteczne() -> None:
     assert outcome.changes == (CellChange(ROW, ReportColumn.SUCCESSFUL, "nie"),)
 
 
-def test_tresc_bez_wpisu_raportu_nie_zmienia_komorek() -> None:
-    mail = _mail(JAN, SUBJECT, "Dzień dobry, raport wyślę jutro.")
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("Dzień dobry, raport wyślę jutro.", id="bez-numeru"),
+        pytest.param("40000001 nieobecny", id="slowo-od-nie-to-nie-werdykt"),
+        pytest.param("40000001 tak wymiana routera\nPozdrawiam", id="druga-linia"),
+    ],
+)
+def test_tresc_bez_wpisu_raportu_nie_zmienia_komorek(text: str) -> None:
+    """Wpis w dokładnym formacie #1227 to cała treść w jednej linii, a ``tak``/``nie`` to całe słowo."""
+
+    mail = _mail(JAN, SUBJECT, text)
 
     outcome = enter_reports(_inputs([mail], [_order()]))
 
@@ -201,6 +212,36 @@ def test_numer_spoza_zlecen_wykonawcy_z_dnia_jest_problemem_bez_zmian() -> None:
 
     assert outcome.changes == ()
     assert outcome.problems == (UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("12345678")),)
+
+
+@pytest.mark.parametrize(
+    ("sender", "subject", "rollout", "problem"),
+    [
+        pytest.param(
+            EWA,
+            SUBJECT,
+            None,
+            UnknownNumber(Login("ewa.probna"), DAY, OrderNumber("40000001")),
+            id="numer-zlecenia-innego-wykonawcy-z-tego-dnia",
+        ),
+        pytest.param(
+            JAN,
+            "Raport 07.11.2026",
+            date(2026, 11, 7),
+            UnknownNumber(Login("jan.testowy"), date(2026, 11, 7), OrderNumber("40000001")),
+            id="numer-zlecenia-wykonawcy-z-innego-dnia",
+        ),
+    ],
+)
+def test_wpis_trafia_tylko_do_zlecenia_nadawcy_z_dnia_z_tematu(
+    sender: str, subject: str, rollout: date | None, problem: UnknownNumber
+) -> None:
+    """Zlecenie ``40000001`` jest Jana z 08.11. Do #1229 cudze zlecenie i inny dzień to ``UnknownNumber``."""
+
+    outcome = enter_reports(_inputs([_mail(sender, subject, TEXT)], [_order()], rollout=rollout))
+
+    assert outcome.changes == ()
+    assert outcome.problems == (problem,)
 
 
 def test_ten_sam_numer_dwa_razy_w_dniu_wykonawcy_nie_daje_zmian() -> None:
@@ -363,6 +404,31 @@ def _every_problem() -> list[ReportProblem]:
         RepeatedOrder(jan, DAY, number),
         *(ManualDifference(_key(), column, "ręcznie", "z raportu") for column in ReportColumn),
     ]
+
+
+def test_wynik_przyjmuje_dwa_rozne_problemy_tylko_w_jednej_kolejnosci() -> None:
+    """Kolejność problemów nie zależy od kolejności maili ani od ``PYTHONHASHSEED`` także dla problemów jednego
+    zlecenia, które dadzą #1228 i #1229: dwa braki ``tak``/``nie`` z innym powodem, dwóch właścicieli, inne dni."""
+
+    jan, number = Login("jan.testowy"), OrderNumber("40000001")
+    problems = [
+        *_every_problem(),
+        ForeignOrder(jan, DAY, number, Login("adam.inny")),
+        OtherDay(jan, DAY, number, (date(2026, 11, 5),)),
+    ]
+
+    for first, second in itertools.combinations(problems, 2):
+        accepted = [pair for pair in [(first, second), (second, first)] if _outcome_accepts(pair)]
+        assert len(accepted) == 1, (first, second)
+    assert not _outcome_accepts((problems[0], problems[0]))
+
+
+def _outcome_accepts(problems: tuple[ReportProblem, ...]) -> bool:
+    try:
+        ReportsOutcome((), problems, (), (), OwnEntries.EMPTY)
+    except ValueError:
+        return False
+    return True
 
 
 def test_powod_dla_taty_kazdego_rodzaju_problemu() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Final
 
-from . import OrderNumber, ReportEntry, Verdict
+from ._model import OrderNumber, ReportEntry, Verdict
 
 _ENTRY: Final = re.compile(r"([0-9]+) (tak|nie)(?: (\S.*))?")
 
