@@ -23,7 +23,7 @@ from typing import Final
 
 from .collective_layout import QUANTITY_LETTERS
 from .order_facts import OrderFacts, TataValue
-from .quantity_check import QuantityCheck, check, compared_columns
+from .quantity_check import WITHOUT_RULE_COLUMNS, QuantityCheck, check, compared_columns
 from .quantity_rules import DESCRIPTION_COLUMNS, FromDescription, RuleResult, WithoutRule, evaluate
 from .register_columns import ACTIVITIES, COMPLETED, DEVICES, WORKER, Column
 
@@ -48,7 +48,8 @@ def fill_hint(kind: FillKind) -> str:
 
     match kind:
         case FillKind.WITHOUT_RULE:
-            return "Dopisz ilości poza V, T i N."
+            *first, last = WITHOUT_RULE_COLUMNS
+            return f"Dopisz ilości poza {', '.join(first)} i {last}."
         case FillKind.FROM_DESCRIPTION:
             return "Wpisz ilości według opisu technika."
 

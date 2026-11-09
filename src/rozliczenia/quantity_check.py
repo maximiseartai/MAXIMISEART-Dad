@@ -36,7 +36,8 @@ from .quantity_rules import (
 
 _RULE_COLUMNS: Final = frozenset(QuantityColumn)
 _SHARED: Final = frozenset({QuantityColumn.AK, QuantityColumn.AM})
-_WITHOUT_RULE_COLUMNS: Final = (QuantityColumn.N, QuantityColumn.T, QuantityColumn.V)
+WITHOUT_RULE_COLUMNS: Final = (QuantityColumn.V, QuantityColumn.T, QuantityColumn.N)
+"""Kolumny, w których Kontrola porównuje wiersz bez reguły (decyzja 10), w kolejności podpowiedzi dla taty."""
 _OTHER_COLUMNS: Final = tuple(column for column in QUANTITY_LETTERS if column not in _RULE_COLUMNS and column not in DESCRIPTION_COLUMNS)
 
 
@@ -130,7 +131,7 @@ def compared_columns(rule: RuleResult) -> tuple[QuantityColumn, ...]:
     if isinstance(rule, FromDescription):
         return ()
     if isinstance(rule, WithoutRule):
-        return _WITHOUT_RULE_COLUMNS
+        return WITHOUT_RULE_COLUMNS
     return tuple(column for column in QuantityColumn if column not in _SHARED or rule.quantities.get(column, 0))
 
 

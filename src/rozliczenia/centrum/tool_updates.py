@@ -309,7 +309,12 @@ def _view_of(result: UpdateResult) -> tool_update_contract.ToolUpdate | None:
 def tool_update_router(updates: ToolUpdates) -> APIRouter:
     router = APIRouter(prefix="/api/tool-update", tags=["aktualizacja"])
 
-    @router.post("", operation_id="startToolUpdate", status_code=202, responses={409: {"model": common_contract.Problem}})
+    @router.post(
+        "",
+        operation_id="startToolUpdate",
+        status_code=202,
+        responses={409: {"model": common_contract.Problem}, 500: {"model": common_contract.Problem}},
+    )
     def start(request: Request) -> tool_update_contract.ToolUpdate:
         # ASGI daje ``server`` opcjonalnie, a gniazdo bez portu TCP jako ``(ścieżka, None)``.
         match request.scope.get("server"):
