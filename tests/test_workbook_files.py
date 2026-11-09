@@ -1067,6 +1067,29 @@ def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu
     ]
 
 
+def test_rozliczenie_wewnetrzne_wpisuje_kazda_wartosc_pod_jej_naglowkiem_w_kolejnosci_innej_niz_u_taty(
+    tmp_path: Path,
+) -> None:
+    """Atrapy mają kolejność kolumn taty, więc tylko ten Wzorzec dowodzi, że wartość idzie za nagłówkiem, nie za
+    miejscem w tabeli taty."""
+
+    template_path = tmp_path / tool_files.INTERNAL_TEMPLATE.name
+    workbook = Workbook()
+    headers = tuple(reversed(INTERNAL_HEADERS))
+    for column, header in enumerate(headers, start=1):
+        active_worksheet(workbook).cell(1, column).value = header
+    workbook.save(template_path)
+    target = tmp_path / "Rozliczenie wewnętrzne.xlsx"
+
+    TemplateFile.internal_settlement(template_path).create(target, [_register_row()])
+
+    sheet = active_worksheet(load_workbook(target))
+    written = {header: sheet.cell(2, column).value for column, header in enumerate(headers, start=1)}
+    assert {header: written[header] for header in TARGET_HEADERS} == {
+        header: f"syntetyczne {header}" for header in TARGET_HEADERS
+    }
+
+
 @pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
 def test_rozliczenie_wewnetrzne_przelicza_formuly_przy_otwarciu_bez_wymuszonego_przeliczania(
     tmp_path: Path, copied: bool
