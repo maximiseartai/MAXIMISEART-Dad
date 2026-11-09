@@ -9,7 +9,7 @@ w swojej osłonie, więc jego awaria to błąd po silniku z Komunikatem z katalo
 procesu, ten sam wynik co w metrykach. Zatrzymania, ostrzeżenia i decyzja taty
 przechodzą jako Komunikaty w trzech częściach.
 
-Każda zmiana stanu to nowy niemutowalny widok (``contract.RunView``) z kolejnym
+Każda zmiana stanu to nowy niemutowalny widok (``runs_contract.RunView``) z kolejnym
 numerem. Strumień SSE wysyła najpierw bieżący widok, potem każdy kolejny, więc
 ponowne podłączenie (odświeżenie, nowa karta) zaczyna od bieżącego stanu.
 Decyzja taty czeka w stanie ``awaiting_decision``, aż przyjdzie przez API.
@@ -34,7 +34,10 @@ import anyio
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.process_kind import PreparedRun
@@ -46,7 +49,7 @@ from rozliczenia.call_trace import CallTrace
 from rozliczenia.decision import Decision
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
-from rozliczenia.process_run import Finished, Outcome, Stop
+from rozliczenia.process_run import Finished, Outcome, RunResult, Stop
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 
 _STREAM_POLL_SECONDS: Final = 0.05
@@ -66,24 +69,24 @@ _RESULT_NOT_SHOWN: Final = Message.to_maintainer(
 )
 
 # Tytuł wyniku przy Zatrzymaniu: tata poprawia sam, błąd do Maksa albo jego własna odmowa w Decyzji taty.
-_STOP_HEADLINES: Final[Mapping[contract.StopKind, str]] = {
+_STOP_HEADLINES: Final[Mapping[runs_contract.StopKind, str]] = {
     "for_tata": "Do poprawy",
     "repeated": "Do poprawy",
     "for_maks": "Błąd",
     "declined": "Przerwano",
 }
 
-Ending = contract.Ending
+Ending = runs_contract.Ending
 
 
 def verdict(
     *,
     ending: Ending,
-    stop_kind: contract.StopKind | None,
-    result: contract.RunResult,
+    stop_kind: runs_contract.StopKind | None,
+    result: RunResult,
     dry_run: bool,
     view: ProcessView[Any, Any],
-) -> tuple[str, contract.NextAction]:
+) -> tuple[str, runs_contract.NextAction]:
     """Tytuł wyniku i jedyna akcja po nim: jedna reguła dla karty na żywo i karty z Logów Uruchomienia.
 
     Tytuł Zatrzymania zależy od Rodzaju Zatrzymania (``stop_kind``, ``None`` bez Zatrzymania). Deklaracja
@@ -106,7 +109,7 @@ def verdict(
 class EndedRun:
     """Zakończone Uruchomienie procesu z Centrum, każdą drogą: fakty wyliczone raz, z których czyta karta i działania po wyniku."""
 
-    info: contract.RunInfo
+    info: runs_contract.RunInfo
     core: Outcome[Shown[Any]] | None
     """Wynik rdzenia tak, jak go pokazuje Centrum; ``None``, gdy rdzeń nie oddał wyniku.
 
@@ -115,7 +118,7 @@ class EndedRun:
     """
     stopped: StoppedRun | None
     """Zatrzymanie, także ostatniej siatki adaptera; ``None``, gdy proces się zakończył."""
-    progress: contract.Progress
+    progress: runs_contract.Progress
     """Postęp z karty: ostatni widok projekcji, który dostała przeglądarka."""
     started_at: datetime
     ended_at: datetime
@@ -128,9 +131,9 @@ class EndedRun:
         prepared: PreparedRun[Any, Any],
         core: Outcome[Shown[Any]] | None,
         *,
-        info: contract.RunInfo,
+        info: runs_contract.RunInfo,
         stopped: StoppedRun | None,
-        progress: contract.Progress,
+        progress: runs_contract.Progress,
         started_at: datetime,
     ) -> EndedRun:
         """Koniec Uruchomienia ``prepared`` w tej chwili, z jego Kopią wejścia: w Centrum (``Run``) i w odtworzeniu."""
@@ -138,7 +141,7 @@ class EndedRun:
         return cls(info, core, stopped, progress, started_at, datetime.now(timezone.utc), prepared.input_copy)
 
     @property
-    def result(self) -> contract.RunResult:
+    def result(self) -> RunResult:
         return "BLAD_KRYTYCZNY" if self.core is None else self.core.result
 
     @property
@@ -181,7 +184,7 @@ class EndedRun:
     def warnings(self) -> tuple[Message, ...]:
         return () if self.shown is None else self.shown.warnings
 
-    def card(self, view: ProcessView[Any, Any]) -> contract.RunOutcome:
+    def card(self, view: ProcessView[Any, Any]) -> runs_contract.RunOutcome:
         """Wynik na karcie Uruchomienia z deklaracji procesu ``view`` (``verdict``)."""
 
         stopped = self.stopped
@@ -192,7 +195,7 @@ class EndedRun:
             dry_run=self.info.mode.dry_run,
             view=view,
         )
-        return contract.RunOutcome(
+        return runs_contract.RunOutcome(
             result=self.result,
             headline=headline,
             ending=self.ending,
@@ -200,8 +203,8 @@ class EndedRun:
             stop_kind=None if stopped is None else stopped.kind,
             diagnosis=None if stopped is None else stopped.offer,
             report=None if stopped is None or stopped.report is None else stopped.report.state,
-            stops=[contract.Message.of(message) for message in self.stops],
-            warnings=[contract.Message.of(message) for message in self.warnings],
+            stops=[common_contract.Message.of(message) for message in self.stops],
+            warnings=[common_contract.Message.of(message) for message in self.warnings],
             technical_notes=list(self.technical_notes),
             summary=None if self.shown is None else self.shown.summary,
             files_unchanged=self.files_unchanged,
@@ -223,7 +226,7 @@ class AfterRun(Protocol):
 class RunLogsKeeper(AfterRun, Protocol):
     """Logi Uruchomienia (``run_comments.RunComments``): start każdego Uruchomienia i pierwsze działanie po wyniku."""
 
-    def run_started(self, info: contract.RunInfo, started_at: datetime) -> None:
+    def run_started(self, info: runs_contract.RunInfo, started_at: datetime) -> None:
         """Start Uruchomienia, zanim ruszy jego wątek; wyjątek ``RunHost.start`` zapisuje tylko w dzienniku."""
         ...
 
@@ -273,11 +276,11 @@ class RunHost:
         centrum_runs: CentrumRuns,
         stops: Stops,
         *,
-        previous: contract.PastRun | None,
+        previous: runs_contract.PastRun | None,
         logs: RunLogsKeeper,
         after_run: Sequence[AfterRun],
         threads: Threading = threading,
-        created: Callable[[Run, contract.RunEvent], None] = lambda _run, _last: None,
+        created: Callable[[Run, runs_contract.RunEvent], None] = lambda _run, _last: None,
     ) -> None:
         self._log = log
         self._centrum_runs = centrum_runs
@@ -288,8 +291,8 @@ class RunHost:
         self._created = created
         self._lock = threads.Lock()
         self._sequence = 0
-        first = contract.RunIdle(state="idle", previous=previous)
-        self._events: list[contract.RunEvent] = [contract.RunEvent(sequence=0, view=first)]
+        first = runs_contract.RunIdle(state="idle", previous=previous)
+        self._events: list[runs_contract.RunEvent] = [runs_contract.RunEvent(sequence=0, view=first)]
         self._run: Run | None = None
         self._updating = False
         self._restoring = False
@@ -308,16 +311,16 @@ class RunHost:
             return busy
 
     def begin_update(self) -> None:
-        """Zajmuje miejsce „jedno naraz” na Aktualizację narzędzia; ``contract.Refusal``, gdy jest zajęte."""
+        """Zajmuje miejsce „jedno naraz” na Aktualizację narzędzia; ``Refusal``, gdy jest zajęte."""
 
         with self._lock:
             if self._closing:
-                raise contract.Refusal(409, _CLOSING.format(then="zaktualizuj narzędzie"))
+                raise Refusal(409, _CLOSING.format(then="zaktualizuj narzędzie"))
             if self._updating:
-                raise contract.Refusal(409, "Trwa już aktualizacja narzędzia. Poczekaj na jej wynik.")
+                raise Refusal(409, "Trwa już aktualizacja narzędzia. Poczekaj na jej wynik.")
             busy = self._busy_locked("zaktualizuj narzędzie")
             if busy is not None:
-                raise contract.Refusal(409, busy)
+                raise Refusal(409, busy)
             self._updating = True
 
     def end_update(self) -> None:
@@ -325,14 +328,14 @@ class RunHost:
             self._updating = False
 
     def begin_restore(self) -> None:
-        """Zajmuje miejsce „jedno naraz” na przywrócenie Kopii INTERMAX; ``contract.Refusal``, gdy jest zajęte."""
+        """Zajmuje miejsce „jedno naraz” na przywrócenie Kopii INTERMAX; ``Refusal``, gdy jest zajęte."""
 
         with self._lock:
             if self._closing:
-                raise contract.Refusal(409, _CLOSING.format(then=_RESTORE))
+                raise Refusal(409, _CLOSING.format(then=_RESTORE))
             busy = self._busy_locked(_RESTORE)
             if busy is not None:
-                raise contract.Refusal(409, busy)
+                raise Refusal(409, busy)
             self._restoring = True
 
     def end_restore(self) -> None:
@@ -354,25 +357,25 @@ class RunHost:
             f"Poczekaj na jego wynik w Uruchomieniach, potem {then}."
         )
 
-    def current(self) -> contract.RunEvent:
+    def current(self) -> runs_contract.RunEvent:
         with self._lock:
             return self._events[-1]
 
-    def events_after(self, sequence: int) -> list[contract.RunEvent]:
+    def events_after(self, sequence: int) -> list[runs_contract.RunEvent]:
         with self._lock:
             return [event for event in self._events if event.sequence > sequence]
 
-    def start(self, prepared: PreparedRun[Any, Any]) -> contract.RunView:
+    def start(self, prepared: PreparedRun[Any, Any]) -> runs_contract.RunView:
         with self._lock:
             if self._closing:
-                raise contract.Refusal(409, _CLOSING.format(then="uruchom proces"))
+                raise Refusal(409, _CLOSING.format(then="uruchom proces"))
             if self._updating:
-                raise contract.Refusal(409, _UPDATING.format(then="uruchom proces"))
+                raise Refusal(409, _UPDATING.format(then="uruchom proces"))
             if self._restoring:
-                raise contract.Refusal(409, _RESTORING.format(then="uruchom proces"))
+                raise Refusal(409, _RESTORING.format(then="uruchom proces"))
             if self._run is not None and not self._run.ended:
                 running = self._run.info
-                raise contract.Refusal(
+                raise Refusal(
                     409,
                     f"Trwa już Uruchomienie procesu: {running.title}, okres {running.period}. "
                     "Poczekaj na jego wynik w Uruchomieniach.",
@@ -392,31 +395,31 @@ class RunHost:
         self._threads.Thread(target=run.work, name=f"{RUN_THREAD_PREFIX}{run.info.id}", daemon=True).start()
         return view
 
-    def decide(self, run_id: str, answer: contract.DecisionAnswer) -> contract.RunView:
+    def decide(self, run_id: str, answer: runs_contract.DecisionAnswer) -> runs_contract.RunView:
         with self._lock:
             run = self._run
             if run is None or run.info.id != run_id:
-                raise contract.Refusal(404, "Nie ma takiego Uruchomienia procesu.")
+                raise Refusal(404, "Nie ma takiego Uruchomienia procesu.")
             if not run.awaiting_decision:
-                raise contract.Refusal(409, "To Uruchomienie procesu nie czeka na decyzję.")
+                raise Refusal(409, "To Uruchomienie procesu nie czeka na decyzję.")
             run.answer(answer.answer == "continue")
             self._publish_locked(run.running_view())
             return self._events[-1].view
 
-    def diagnose(self, run_id: str) -> contract.Diagnosis:
+    def diagnose(self, run_id: str) -> diagnosis_contract.Diagnosis:
         return self._stops.diagnose(self._stopped(run_id))
 
-    def send_report(self, run_id: str) -> contract.ReportState:
+    def send_report(self, run_id: str) -> diagnosis_contract.ReportState:
         return self._stops.send(self._stopped(run_id))
 
     def _stopped(self, run_id: str) -> StoppedRun:
         with self._lock:
             run = self._run
             if run is None or run.info.id != run_id:
-                raise contract.Refusal(404, "Nie ma takiego Uruchomienia procesu.")
+                raise Refusal(404, "Nie ma takiego Uruchomienia procesu.")
             stopped = run.stopped
         if not run.ended or stopped is None:
-            raise contract.Refusal(409, NO_DIAGNOSIS)
+            raise Refusal(409, NO_DIAGNOSIS)
         return stopped
 
     def remember(self, prepared: PreparedRun[Any, Any], run_id: str, since: datetime) -> None:
@@ -429,12 +432,12 @@ class RunHost:
 
         self._log.unexpected_failure(failure, where="wynik Uruchomienia procesu")
 
-    def show_report(self, run_id: str, state: contract.ReportState) -> None:
+    def show_report(self, run_id: str, state: diagnosis_contract.ReportState) -> None:
         """Nowy stan Zgłoszenia w wyniku zakończonego Uruchomienia ``run_id`` dla każdej karty Centrum."""
 
         with self._lock:
             view = self._events[-1].view
-            if isinstance(view, contract.RunFinished) and view.run.id == run_id:
+            if isinstance(view, runs_contract.RunFinished) and view.run.id == run_id:
                 result = view.result.model_copy(update={"report": state})
                 self._publish_locked(view.model_copy(update={"result": result}))
 
@@ -457,7 +460,7 @@ class RunHost:
             ending=run.ending,
         )
 
-    def end(self, run: Run, result: contract.RunFinished) -> None:
+    def end(self, run: Run, result: runs_contract.RunFinished) -> None:
         """Wynik Uruchomienia ``run`` na kartę i koniec Uruchomienia pod jedną blokadą.
 
         Start z drugiej karty, który czeka na koniec Uruchomienia, nie wejdzie między wynik a koniec (#723).
@@ -467,14 +470,14 @@ class RunHost:
             self._publish_locked(result)
             run.ended = True
 
-    def publish(self, run: Run, view: contract.RunView) -> None:
+    def publish(self, run: Run, view: runs_contract.RunView) -> None:
         with self._lock:
             if self._run is run:
                 self._publish_locked(view)
 
-    def _publish_locked(self, view: contract.RunView) -> None:
+    def _publish_locked(self, view: runs_contract.RunView) -> None:
         self._sequence += 1
-        self._events.append(contract.RunEvent(sequence=self._sequence, view=view))
+        self._events.append(runs_contract.RunEvent(sequence=self._sequence, view=view))
 
 
 class Run:
@@ -499,8 +502,8 @@ class Run:
         self.ended = False
         self.stopped: StoppedRun | None = None
 
-    def running_view(self) -> contract.RunRunning:
-        return contract.RunRunning(
+    def running_view(self) -> runs_contract.RunRunning:
+        return runs_contract.RunRunning(
             state="running",
             run=self.info,
             progress=self._progress,
@@ -527,7 +530,7 @@ class Run:
         self._host.finished(ended)
         self._host.end(
             self,
-            contract.RunFinished(
+            runs_contract.RunFinished(
                 state="finished", run=self.info, progress=self._progress, progress_stale=self._stale, result=result
             ),
         )
@@ -542,7 +545,7 @@ class Run:
             started_at=since,
         )
 
-    def _show_report(self, state: contract.ReportState) -> None:
+    def _show_report(self, state: diagnosis_contract.ReportState) -> None:
         self._host.show_report(self.info.id, state)
 
     def answer(self, consent: bool) -> None:
@@ -563,7 +566,7 @@ class Run:
         self.awaiting_decision = True
         self._host.publish(
             self,
-            contract.RunAwaitingDecision(
+            runs_contract.RunAwaitingDecision(
                 state="awaiting_decision", run=self.info, progress=self._progress, decision=_decision_view(decision)
             ),
         )
@@ -585,18 +588,18 @@ class Run:
             self._host.publish(self, self.running_view())
 
 
-def _decision_view(decision: Decision) -> contract.Decision:
-    return contract.Decision(
+def _decision_view(decision: Decision) -> runs_contract.Decision:
+    return runs_contract.Decision(
         question=decision.question,
-        message=contract.Message.of(decision.message),
-        counts=contract.CountGroup(
+        message=common_contract.Message.of(decision.message),
+        counts=runs_contract.CountGroup(
             title=decision.counts_title,
-            counts=[contract.Count(label=label, count=count) for label, count in decision.counts],
+            counts=[runs_contract.Count(label=label, count=count) for label, count in decision.counts],
         ),
     )
 
 
-def _sse(event: contract.RunEvent) -> str:
+def _sse(event: runs_contract.RunEvent) -> str:
     return f"id: {event.sequence}\ndata: {event.model_dump_json()}\n\n"
 
 
@@ -618,7 +621,7 @@ async def _event_stream(host: RunHost) -> AsyncIterator[str]:
 
 
 _STREAM_RESPONSES: dict[int | str, dict[str, Any]] = {
-    200: {"description": "Strumień SSE; każde pole `data` to `RunEvent` (JSON).", "model": contract.RunEvent},
+    200: {"description": "Strumień SSE; każde pole `data` to `RunEvent` (JSON).", "model": runs_contract.RunEvent},
 }
 
 
@@ -626,19 +629,19 @@ def runs_router(host: RunHost, starts: PeriodStarts) -> APIRouter:
     router = APIRouter(prefix="/api/runs", tags=["uruchomienia"])
 
     @router.get("/setup", operation_id="getRunSetup")
-    def setup() -> contract.RunSetup:
+    def setup() -> runs_contract.RunSetup:
         return starts.setup()
 
-    @router.post("", operation_id="startRun", responses=contract.NOT_FOUND_OR_CONFLICT)
-    def start(request: contract.RunRequest) -> contract.RunView:
+    @router.post("", operation_id="startRun", responses=NOT_FOUND_OR_CONFLICT)
+    def start(request: runs_contract.RunRequest) -> runs_contract.RunView:
         return host.start(starts.prepare(request))
 
     @router.get("/current", operation_id="getCurrentRun")
-    def current() -> contract.RunView:
+    def current() -> runs_contract.RunView:
         return host.current().view
 
-    @router.post("/{run_id}/decision", operation_id="decideRun", responses=contract.NOT_FOUND_OR_CONFLICT)
-    def decide(run_id: str, answer: contract.DecisionAnswer) -> contract.RunView:
+    @router.post("/{run_id}/decision", operation_id="decideRun", responses=NOT_FOUND_OR_CONFLICT)
+    def decide(run_id: str, answer: runs_contract.DecisionAnswer) -> runs_contract.RunView:
         return host.decide(run_id, answer)
 
     @router.get("/events", operation_id="streamRunEvents", response_class=StreamingResponse, responses=_STREAM_RESPONSES)
@@ -649,12 +652,12 @@ def runs_router(host: RunHost, starts: PeriodStarts) -> APIRouter:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    @router.post("/{run_id}/diagnosis", operation_id="diagnoseRun", responses=contract.NOT_FOUND_OR_CONFLICT)
-    def run_diagnosis(run_id: str) -> contract.Diagnosis:
+    @router.post("/{run_id}/diagnosis", operation_id="diagnoseRun", responses=NOT_FOUND_OR_CONFLICT)
+    def run_diagnosis(run_id: str) -> diagnosis_contract.Diagnosis:
         return host.diagnose(run_id)
 
-    @router.post("/{run_id}/report", operation_id="reportRun", responses=contract.NOT_FOUND_OR_CONFLICT)
-    def send_report(run_id: str) -> contract.ReportState:
+    @router.post("/{run_id}/report", operation_id="reportRun", responses=NOT_FOUND_OR_CONFLICT)
+    def send_report(run_id: str) -> diagnosis_contract.ReportState:
         return host.send_report(run_id)
 
     return router

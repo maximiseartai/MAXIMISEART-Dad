@@ -15,7 +15,8 @@ import pytest
 
 from rozliczenia import preparation_process
 from rozliczenia.telemetry import MetricsStore, metric_record
-from rozliczenia.centrum import contract, run_view
+from rozliczenia.centrum import run_view
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
 
 from tests.fixtures.centrum import centrum as bare_centrum, finished_view, phase_states, run_events, views_until
@@ -283,7 +284,7 @@ def test_wynik_trafia_na_karte_gdy_druga_karta_klika_uruchom_zaraz_po_koncu(
     building = threading.Event()
     go = threading.Event()
 
-    class HeldResult(contract.RunFinished):
+    class HeldResult(runs_contract.RunFinished):
         """Widok wyniku, którego budowa w wątku pierwszego Uruchomienia czeka na kliknięcie drugiej karty."""
 
         def __init__(self, **data: Any) -> None:
@@ -292,7 +293,7 @@ def test_wynik_trafia_na_karte_gdy_druga_karta_klika_uruchom_zaraz_po_koncu(
                 assert go.wait(30)
             super().__init__(**data)
 
-    monkeypatch.setattr(contract, "RunFinished", HeldResult)
+    monkeypatch.setattr(runs_contract, "RunFinished", HeldResult)
     first = centrum.start(dry_run=True).json()["run"]["id"]
     seen: list[tuple[str, str]] = []
     reading = threading.Event()
@@ -523,16 +524,16 @@ def test_awaria_adaptera_po_rdzeniu_trafia_do_dziennika_bez_tekstu_wyjatku(
     """Ostatnia siatka Centrum: rdzeń skończył i zapisał metryki, ale adapter nie zbudował wyniku dla przeglądarki."""
 
     centrum = preparing_centrum(tmp_path)
-    run_outcome = contract.RunOutcome
+    run_outcome = runs_contract.RunOutcome
     built: list[str] = []
 
-    def broken_once(**fields: Any) -> contract.RunOutcome:
+    def broken_once(**fields: Any) -> runs_contract.RunOutcome:
         built.append(fields["ending"])
         if len(built) == 1:
             raise ValueError("synthetic contract failure SYN-001")
         return run_outcome(**fields)
 
-    monkeypatch.setattr(contract, "RunOutcome", broken_once)
+    monkeypatch.setattr(runs_contract, "RunOutcome", broken_once)
 
     centrum.start(dry_run=True)
     result = finished_view(centrum.client)["result"]

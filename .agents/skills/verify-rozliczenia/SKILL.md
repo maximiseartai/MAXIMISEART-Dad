@@ -5,7 +5,8 @@ pilnuje:
   - src/rozliczenia/__init__.py
   - src/rozliczenia/call_trace.py
   - src/rozliczenia/client_data.py
-  - src/rozliczenia/centrum/contract.py
+  - src/rozliczenia/centrum/contract/common.py
+  - src/rozliczenia/centrum/contract/runs.py
   - src/rozliczenia/centrum/processes/*.py
   - src/rozliczenia/centrum/run_view.py
   - src/rozliczenia/collective_*.py

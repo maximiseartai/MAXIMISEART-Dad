@@ -41,6 +41,10 @@ BY_CHANGE_ONLY = {
     "tests/test_publikacja_plikow_okresu.py::test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_sprawdzeniem": (
         "sprawdza skrypt skilla z podmienionym rozjazdem, a nie całe repozytorium; graf wybiera go przy zmianie skilla"
     ),
+    "tests/test_centrum_rozliczen.py::test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiarem": (
+        "sprawdza trasy aplikacji Centrum, a nie całe repozytorium; graf wybiera go przy zmianie każdego modułu Centrum, "
+        "bo eksporter kontraktu, który test wczytuje literalną ścieżką, importuje create_app"
+    ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples) i pliku tests/expected/komunikaty.txt (literał)"

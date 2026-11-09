@@ -134,6 +134,10 @@ class Stop:
         return "for_maks" if not own or self.message.reports_to_maintainer else "for_tata"
 
 
+RunResult = Literal[CompletedResult, "BLAD_KRYTYCZNY"]
+"""Wynik Uruchomienia procesu: wynik zakończonego procesu albo ``BLAD_KRYTYCZNY`` po Zatrzymaniu."""
+
+
 @dataclass(frozen=True)
 class Finished:
     """Fakty zakończonego procesu, te same w metrykach: wynik, liczniki, czasy etapów i drogi zapisu.
@@ -230,7 +234,7 @@ class Outcome(Generic[ViewT]):
     files_unchanged: bool
 
     @property
-    def result(self) -> Literal["OK", "WYMAGA_SPRAWDZENIA", "BLAD_KRYTYCZNY"]:
+    def result(self) -> RunResult:
         return self.ending.result if isinstance(self.ending, Finished) else "BLAD_KRYTYCZNY"
 
 

@@ -27,18 +27,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 
 from uruchom_proces import ProcessResult
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import runs as runs_contract
 
 __all__ = [
     "Link",
     "ProcessResult",
     "check_metrics",
-    "contract",
     "external_link_parts",
     "figures",
     "finish",
     "hyperlinks",
     "load_result",
+    "runs_contract",
 ]
 
 Link = tuple[object, object]
@@ -79,7 +79,7 @@ def load_result(
     return result
 
 
-def figures(items: Sequence[contract.Figure]) -> list[tuple[str, int]]:
+def figures(items: Sequence[runs_contract.Figure]) -> list[tuple[str, int]]:
     return [(figure.label, figure.value) for figure in items]
 
 

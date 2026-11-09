@@ -14,7 +14,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from wynik_uruchomienia import Link, ProcessResult, check_metrics, contract, figures, finish, hyperlinks, load_result
+from wynik_uruchomienia import Link, ProcessResult, check_metrics, figures, finish, hyperlinks, load_result, runs_contract
 from skrypt_skilla import Parser
 
 from atrapy.scenariusz_rozliczen import (
@@ -32,7 +32,7 @@ from atrapy.settlement import PERIOD, SOURCE_NAME, WORKERS
 WORKER_NAMES = tuple(WORKERS.values())
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
 WORKER_SETTLEMENTS = [
-    contract.WorkerSettlement(worker=worker, file=worker_settlement_name(worker), orders=orders, empty=orders == 0)
+    runs_contract.WorkerSettlement(worker=worker, file=worker_settlement_name(worker), orders=orders, empty=orders == 0)
     for worker, orders in zip(WORKER_NAMES, (2, 1, 0), strict=True)
 ]
 ORDER_COLUMN = 6  # F
@@ -162,7 +162,7 @@ def _check_stop_metrics(root: Path, expected_stop: str, errors: list[str]) -> No
         errors.append(f"stopped run's metrics record is not {expected}")
 
 
-def _check_progress(progress: contract.Progress, errors: list[str]) -> None:
+def _check_progress(progress: runs_contract.Progress, errors: list[str]) -> None:
     if [(phase.phase, phase.state) for phase in progress.phases] != [(phase, "completed") for phase in PHASES]:
         errors.append("run progress does not complete the four stages in order")
     if (progress.template_total, progress.templates_completed) != (3, 3) or figures(progress.figures) != [
@@ -193,11 +193,11 @@ def _assert_dry_run(root: Path, result_path: Path | None) -> int:
         errors.append("dry-run created the target directory")
     unmapped = bool(manifest.get("include_unmapped"))
     result = load_result(result_path, _ROW_CONTENT, errors, naming=_NAMING_UNMAPPED if unmapped else ())
-    expected_summary = contract.RunSummary(
+    expected_summary = runs_contract.RunSummary(
         figures=[
-            contract.Figure(label="Wiersze danych", value=3, unit="count"),
-            contract.Figure(label="Planowane szablony", value=2, unit="count"),
-            contract.Figure(label="Puste szablony", value=1, unit="count"),
+            runs_contract.Figure(label="Wiersze danych", value=3, unit="count"),
+            runs_contract.Figure(label="Planowane szablony", value=2, unit="count"),
+            runs_contract.Figure(label="Puste szablony", value=1, unit="count"),
         ],
         counts=None,
         files=[],
@@ -266,10 +266,10 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
         errors.append("one or more published workbooks cannot be read")
 
     result = load_result(result_path, _ROW_CONTENT, errors)
-    expected_summary = contract.RunSummary(
+    expected_summary = runs_contract.RunSummary(
         figures=[
-            contract.Figure(label="Zapisane szablony", value=2, unit="count"),
-            contract.Figure(label="Puste szablony", value=1, unit="count"),
+            runs_contract.Figure(label="Zapisane szablony", value=2, unit="count"),
+            runs_contract.Figure(label="Puste szablony", value=1, unit="count"),
         ],
         counts=None,
         files=[],

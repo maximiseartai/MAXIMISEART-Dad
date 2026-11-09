@@ -93,7 +93,7 @@ MUTATIONS = (
     ),
     Mutation(
         "begin_update bez odmowy po przyjętym zamknięciu",
-        (Edit(RUNS, "            if self._closing:\n                raise contract.Refusal(409, _CLOSING.format(then=\"zaktualizuj narzędzie\"))\n", ""),),
+        (Edit(RUNS, "            if self._closing:\n                raise Refusal(409, _CLOSING.format(then=\"zaktualizuj narzędzie\"))\n", ""),),
         (EXPLORER, "--scope", "aktualizacja"),
         "aktualizacja startuje po „Zamknij” i ginie w trakcie Gita albo pip",
         NEW,
@@ -107,7 +107,7 @@ MUTATIONS = (
     ),
     Mutation(
         "RunHost.start bez odmowy w trakcie aktualizacji",
-        (Edit(RUNS, "            if self._updating:\n                raise contract.Refusal(409, _UPDATING.format(then=\"uruchom proces\"))\n", ""),),
+        (Edit(RUNS, "            if self._updating:\n                raise Refusal(409, _UPDATING.format(then=\"uruchom proces\"))\n", ""),),
         (EXPLORER, "--scope", "aktualizacja"),
         "Uruchomienie startuje, gdy aktualizacja zmienia kod i biblioteki narzędzia",
         NEW,
@@ -121,7 +121,7 @@ MUTATIONS = (
     ),
     Mutation(
         "RunHost.start bez odmowy w trakcie przywracania",
-        (Edit(RUNS, "            if self._restoring:\n                raise contract.Refusal(409, _RESTORING.format(then=\"uruchom proces\"))\n", ""),),
+        (Edit(RUNS, "            if self._restoring:\n                raise Refusal(409, _RESTORING.format(then=\"uruchom proces\"))\n", ""),),
         (EXPLORER, "--scope", "przywracanie"),
         "Uporządkowanie INTERMAX startuje, gdy przywrócenie podmienia INTERMAX",
         NEW,
@@ -180,8 +180,8 @@ MUTATIONS = (
             Edit(RUNS, "import uuid\n", "import uuid\n\n_REAL = __import__('_thread').allocate_lock()\n"),
             Edit(
                 RUNS,
-                "    def start(self, prepared: PreparedRun[Any, Any]) -> contract.RunView:\n        with self._lock:\n",
-                "    def start(self, prepared: PreparedRun[Any, Any]) -> contract.RunView:\n        with _REAL, self._lock:\n",
+                "    def start(self, prepared: PreparedRun[Any, Any]) -> runs_contract.RunView:\n        with self._lock:\n",
+                "    def start(self, prepared: PreparedRun[Any, Any]) -> runs_contract.RunView:\n        with _REAL, self._lock:\n",
             ),
         ),
         (EXPLORER, "--scope", "dwie-karty"),

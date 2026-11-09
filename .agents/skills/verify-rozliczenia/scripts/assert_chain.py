@@ -26,13 +26,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 from wynik_uruchomienia import (
     Link,
     check_metrics,
-    contract,
     external_link_parts,
     figures,
     finish,
     hyperlinks,
     load_result,
     look_mismatches,
+    runs_contract,
 )
 from skrypt_skilla import Parser
 
@@ -72,7 +72,7 @@ REGISTER_ROWS_OF_ORDERS = {order_number(number): ORDERS[number].row for number i
 EXPECTED_ROWS = sum(len(orders) for orders in EXPECTED_WORKER_ORDERS.values())
 TEMPLATES = len(EXPECTED_WORKER_ORDERS)
 WORKER_SETTLEMENTS = [
-    contract.WorkerSettlement(
+    runs_contract.WorkerSettlement(
         worker=name, file=worker_settlement_name(name), orders=len(orders), empty=not orders
     )
     for name, orders in EXPECTED_WORKER_ORDERS.items()
@@ -151,11 +151,11 @@ def _assert_dry_run(root: Path, result_path: Path | None) -> int:
     if result is not None:
         if result.result != "OK" or result.stop is not None or result.warnings != []:
             errors.append("dry-run result is not OK without warnings")
-        if result.summary != contract.RunSummary(
+        if result.summary != runs_contract.RunSummary(
             figures=[
-                contract.Figure(label="Wiersze danych", value=EXPECTED_ROWS, unit="count"),
-                contract.Figure(label="Planowane szablony", value=TEMPLATES, unit="count"),
-                contract.Figure(label="Puste szablony", value=0, unit="count"),
+                runs_contract.Figure(label="Wiersze danych", value=EXPECTED_ROWS, unit="count"),
+                runs_contract.Figure(label="Planowane szablony", value=TEMPLATES, unit="count"),
+                runs_contract.Figure(label="Puste szablony", value=0, unit="count"),
             ],
             counts=None,
             files=[],
@@ -420,10 +420,10 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
             or result.stop is not None
             or result.warnings != []
             or result.summary
-            != contract.RunSummary(
+            != runs_contract.RunSummary(
                 figures=[
-                    contract.Figure(label="Zapisane szablony", value=TEMPLATES, unit="count"),
-                    contract.Figure(label="Puste szablony", value=0, unit="count"),
+                    runs_contract.Figure(label="Zapisane szablony", value=TEMPLATES, unit="count"),
+                    runs_contract.Figure(label="Puste szablony", value=0, unit="count"),
                 ],
                 counts=None,
                 files=[],

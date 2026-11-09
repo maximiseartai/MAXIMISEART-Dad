@@ -21,7 +21,9 @@ import pytest
 
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import settlement_messages
-from rozliczenia.centrum import contract, run_view
+from rozliczenia.centrum import run_view
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Stop
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
@@ -101,7 +103,7 @@ def _script(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 def test_skrypt_dla_maszyn_i_karta_centrum_znaja_kazde_zatrzymanie_rdzenia(monkeypatch: pytest.MonkeyPatch) -> None:
     core = set(get_args(get_type_hints(Stop)["kind"]))
     script = set(get_args(_script(monkeypatch).StopResult.model_fields["kind"].annotation))
-    card = set(get_args(contract.RunOutcome.model_fields["ending"].annotation)) - {"finished"}
+    card = set(get_args(runs_contract.RunOutcome.model_fields["ending"].annotation)) - {"finished"}
 
     assert core == script == card == {"stop", "declined", "unexpected", "after_engine"}
 
@@ -451,7 +453,7 @@ def test_uporzadkowanie_intermax_ze_skryptu_dla_maszyn_oddaje_karte_uruchomienia
     }
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     assert len(list(copies.iterdir())) == 1
-    assert "intermax" in get_args(contract.ProcessKey)
+    assert "intermax" in get_args(common_contract.ProcessKey)
     assert "jan.nowak" not in json.dumps(result) and "jan.nowak" not in metrics.read_text(encoding="utf-8")
 
 

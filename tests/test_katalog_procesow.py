@@ -14,7 +14,8 @@ from typing import Any, Final, get_args
 from fastapi.testclient import TestClient
 import pytest
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.efenix_chrome import atrapa_opening
 from rozliczenia.centrum.process_kind import HostParts, PathNeed, PeriodProcessKind, ProcessKind, Start
@@ -33,15 +34,15 @@ def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
     keys = [kind.key for kind in CATALOG.kinds]
     period_keys = [kind.key for kind in CATALOG.kinds if isinstance(kind, PeriodProcessKind)]
 
-    assert sorted(keys) == sorted(get_args(contract.ProcessKey))
-    assert sorted(period_keys) == sorted(get_args(contract.PeriodProcessKey))
+    assert sorted(keys) == sorted(get_args(common_contract.ProcessKey))
+    assert sorted(period_keys) == sorted(get_args(common_contract.PeriodProcessKey))
 
 
 def test_tryb_z_karty_to_tryb_silnika_wyceny_w_efenix_pod_ta_sama_nazwa() -> None:
-    """Tryb Wyceny, który tata wybiera przyciskiem (``contract.Pricing``), silnik zna pod tą samą nazwą (ADR 0027): inny
+    """Tryb Wyceny, który tata wybiera przyciskiem (``runs_contract.Pricing``), silnik zna pod tą samą nazwą (ADR 0027): inny
     tryb na karcie wywróciłby start Wyceny w trakcie budowy wejścia."""
 
-    assert {mode.value for mode in PricingMode} == set(get_args(contract.Pricing))
+    assert {mode.value for mode in PricingMode} == set(get_args(runs_contract.Pricing))
 
 
 _SETTLEMENT_FILES: Final[dict[PathNeed, Path]] = {
@@ -83,7 +84,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
     ids=["bez-pliku", "bez-okresu", "bez-okna-efenix", "podglad-bez-podgladu", "tryb-spoza-procesu"],
 )
 def test_start_bez_potrzeby_procesu_to_blad_gospodarza_a_nie_uruchomienie(
-    key: contract.ProcessKey, start: Start, parts: HostParts, error: str
+    key: common_contract.ProcessKey, start: Start, parts: HostParts, error: str
 ) -> None:
     """Odmowy dla taty daje karta startu; start, któremu brakuje potrzeby wpisu procesu, to błąd gospodarza (Centrum,
     Skryptu dla maszyn albo odtworzenia), który katalog zgłasza, zanim zbuduje wejście procesu."""
@@ -94,7 +95,7 @@ def test_start_bez_potrzeby_procesu_to_blad_gospodarza_a_nie_uruchomienie(
 
 @pytest.mark.parametrize(("chosen", "expected"), [(None, "bez Przekazania"), ("z Przekazaniem", "z Przekazaniem")])
 def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
-    chosen: contract.Pricing | None, expected: contract.Pricing
+    chosen: runs_contract.Pricing | None, expected: runs_contract.Pricing
 ) -> None:
     """Skrypt dla maszyn bez ``--z-przekazaniem`` i Logi sprzed trybów nie wybierają trybu, a Wycena biegnie wtedy bez
     Przekazania (ADR 0027): ten sam tryb w wejściu silnika i w Uruchomieniu na karcie."""
@@ -130,7 +131,7 @@ def _intermax_setup(client: TestClient) -> tuple[str | None, Any]:
 
 
 # Karta przed startem i start każdego procesu tak, jak je woła przeglądarka; nowy wpis katalogu potrzebuje tu swojej.
-_SETUP_AND_START: dict[contract.ProcessKey, Callable[[TestClient], tuple[str | None, Any]]] = {
+_SETUP_AND_START: dict[common_contract.ProcessKey, Callable[[TestClient], tuple[str | None, Any]]] = {
     "preparation": _period_setup("preparation"),
     "settlement": _period_setup("settlement"),
     "efenix": _period_setup("efenix"),
@@ -177,7 +178,7 @@ def _stopped_intermax(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
 
 
 # Zatrzymanie „do Maksa” bez zmiany plików taty: silnik kończy pracę, a jego podsumowania nie da się pokazać.
-_STOPPED: dict[contract.ProcessKey, Callable[[Path], tuple[TestClient, dict[str, Any]]]] = {
+_STOPPED: dict[common_contract.ProcessKey, Callable[[Path], tuple[TestClient, dict[str, Any]]]] = {
     "preparation": _stopped_preparation,
     "settlement": _stopped_settlement,
     "efenix": _stopped_efenix,

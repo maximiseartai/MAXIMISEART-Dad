@@ -13,10 +13,13 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from rozliczenia.centrum import contract
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import metrics as metrics_contract
+from rozliczenia.centrum.refusal import Refusal
+from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.run_origins import CentrumRuns
-from rozliczenia.domain import PHASES
+from rozliczenia.domain import PHASES, RunMode
 from rozliczenia.telemetry import MINIMUM_STATISTIC_SAMPLES, MetricsStore, comparable_records, statistics_for
 
 _RECENT_WEEKS = 8
@@ -34,23 +37,23 @@ class History:
         self._catalog = catalog
         self._centrum_runs = centrum_runs
 
-    def runs(self) -> list[contract.ProcessRun]:
+    def runs(self) -> list[metrics_contract.ProcessRun]:
         """Uruchomienia procesu od najnowszego; ``OSError``: plików metryk nie da się odczytać."""
 
         return _runs(self._catalog, _records(self._catalog), self._centrum_runs.started())
 
-    def metrics(self, today: date) -> contract.Metrics:
+    def metrics(self, today: date) -> metrics_contract.Metrics:
         """Metryki procesów katalogu; statystyki każdego procesu tylko w trybach jego widoku."""
 
         return _metrics(self._catalog, today, self._centrum_runs.started())
 
 
-def _metrics(catalog: Catalog, today: date, centrum_started: CentrumStarted) -> contract.Metrics:
+def _metrics(catalog: Catalog, today: date, centrum_started: CentrumStarted) -> metrics_contract.Metrics:
     records = _records(catalog)
     runs = _runs(catalog, records, centrum_started)
     since = today - timedelta(weeks=_RECENT_WEEKS)
-    return contract.Metrics(
-        processes=[contract.ProcessFacts(process=kind.key, label=kind.short_title) for kind in catalog.kinds],
+    return metrics_contract.Metrics(
+        processes=[metrics_contract.ProcessFacts(process=kind.key, label=kind.short_title) for kind in catalog.kinds],
         phases=list(PHASES),
         minimum_completed_runs=MINIMUM_STATISTIC_SAMPLES,
         runs=runs,
@@ -59,22 +62,22 @@ def _metrics(catalog: Catalog, today: date, centrum_started: CentrumStarted) -> 
             for kind in catalog.kinds
             for mode in kind.view.modes
         ],
-        recent=contract.RecentResults(
+        recent=metrics_contract.RecentResults(
             weeks=_RECENT_WEEKS,
             results=_results(run for run in runs if run.started_at.astimezone().date() >= since),
         ),
     )
 
 
-def _records(catalog: Catalog) -> dict[contract.ProcessKey, list[dict[str, Any]]]:
+def _records(catalog: Catalog) -> dict[common_contract.ProcessKey, list[dict[str, Any]]]:
     return {kind.key: catalog.metrics(kind.key).read() for kind in catalog.kinds}
 
 
 def _runs(
     catalog: Catalog,
-    records: Mapping[contract.ProcessKey, list[dict[str, Any]]],
+    records: Mapping[common_contract.ProcessKey, list[dict[str, Any]]],
     centrum_started: CentrumStarted,
-) -> list[contract.ProcessRun]:
+) -> list[metrics_contract.ProcessRun]:
     return sorted(
         (
             _run(process, catalog.kind(process).title, record, centrum_started)
@@ -87,10 +90,10 @@ def _runs(
 
 
 def _run(
-    process: contract.ProcessKey, label: str, record: dict[str, Any], centrum_started: CentrumStarted
-) -> contract.ProcessRun:
+    process: common_contract.ProcessKey, label: str, record: dict[str, Any], centrum_started: CentrumStarted
+) -> metrics_contract.ProcessRun:
     started = (process, record["started_at"])
-    return contract.ProcessRun(
+    return metrics_contract.ProcessRun(
         process=process,
         process_label=label,
         started_at=datetime.fromisoformat(record["started_at"]).astimezone(timezone.utc),
@@ -99,7 +102,7 @@ def _run(
         result=record["result"],
         total_duration_ms=record["total_duration_ms"],
         phase_durations=[
-            contract.PhaseDuration(phase=phase, duration_ms=record["phase_durations_ms"][phase]) for phase in PHASES
+            metrics_contract.PhaseDuration(phase=phase, duration_ms=record["phase_durations_ms"][phase]) for phase in PHASES
         ],
         # Rekord metryk nie mówi, skąd wystartował (schemat bez zmian); Centrum pamięta swoje Uruchomienia samo.
         origin="centrum" if started in centrum_started else "cmd",
@@ -110,24 +113,24 @@ def _run(
 
 
 def _statistics(
-    process: contract.ProcessKey,
-    mode: contract.RunMode,
+    process: common_contract.ProcessKey,
+    mode: RunMode,
     counter_names: frozenset[str],
     records: list[dict[str, Any]],
-    runs: list[contract.ProcessRun],
-) -> contract.ModeStatistics:
+    runs: list[metrics_contract.ProcessRun],
+) -> metrics_contract.ModeStatistics:
     statistics = statistics_for(records, mode, counter_names)
-    return contract.ModeStatistics(
+    return metrics_contract.ModeStatistics(
         process=process,
         mode=mode,
         completed_runs=len(comparable_records(records, mode, counter_names)),
         percentiles=None
         if statistics is None
-        else contract.Percentiles(
+        else metrics_contract.Percentiles(
             p50_ms=statistics["total"][0],
             p95_ms=statistics["total"][1],
             phases=[
-                contract.PhasePercentiles(phase=phase, p50_ms=statistics[phase][0], p95_ms=statistics[phase][1])
+                metrics_contract.PhasePercentiles(phase=phase, p50_ms=statistics[phase][0], p95_ms=statistics[phase][1])
                 for phase in PHASES
             ],
         ),
@@ -135,13 +138,13 @@ def _statistics(
     )
 
 
-def _results(runs: Iterable[contract.ProcessRun]) -> contract.ResultCounts:
+def _results(runs: Iterable[metrics_contract.ProcessRun]) -> metrics_contract.ResultCounts:
     """Przerwane bez rodzaju (stary rekord) liczą się jako zatrzymane, nie jako błąd."""
 
     counted = list(runs)
     results = [run.result for run in counted]
     failed = sum(run.stop_kind == "for_maks" for run in counted)
-    return contract.ResultCounts(
+    return metrics_contract.ResultCounts(
         ok=results.count("OK"),
         needs_review=results.count("WYMAGA_SPRAWDZENIA"),
         stopped=results.count("BLAD_KRYTYCZNY") - failed,
@@ -162,7 +165,7 @@ def previewed_periods(store: MetricsStore) -> frozenset[str]:
     return frozenset(record["period"] for record in records if (record["mode"], record["result"]) == ("DRY-RUN", "OK"))
 
 
-def last_results(store: MetricsStore) -> dict[str, contract.RunResult]:
+def last_results(store: MetricsStore) -> dict[str, RunResult]:
     """Wynik ostatniego Uruchomienia procesu (najpóźniejszy start) każdego okresu z historii metryk.
 
     Nieczytelny plik metryk oznacza „nie było Uruchomień”.
@@ -187,11 +190,11 @@ def _started(record: Mapping[str, Any]) -> datetime:
 def metrics_router(history: History, today: Callable[[], date]) -> APIRouter:
     router = APIRouter(prefix="/api/metrics", tags=["metryki"])
 
-    @router.get("", operation_id="getMetrics", responses={500: {"model": contract.Problem}})
-    def metrics() -> contract.Metrics:
+    @router.get("", operation_id="getMetrics", responses={500: {"model": common_contract.Problem}})
+    def metrics() -> metrics_contract.Metrics:
         try:
             return history.metrics(today())
         except OSError:
-            raise contract.Refusal(500, "Nie udało się odczytać plików metryk. Odśwież kartę.") from None
+            raise Refusal(500, "Nie udało się odczytać plików metryk. Odśwież kartę.") from None
 
     return router

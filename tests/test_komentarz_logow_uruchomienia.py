@@ -54,7 +54,9 @@ from rozliczenia.centrum.comment_versions import (
     summary_markdown,
     without_logs_markdown,
 )
-from rozliczenia.centrum.contract import Progress, RunInfo, RunResult
+from rozliczenia.centrum.contract.runs import Progress
+from rozliczenia.centrum.contract.runs import RunInfo
+from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.log import CentrumLog
@@ -1516,7 +1518,6 @@ TOOL_TEXT: Final = {
     "CallCause.exception_type": "typ wyjątku z modułem, bez treści wyjątku (call_trace.exception_type)",
     "CallFrame.file": "plik kodu narzędzia względem katalogu narzędzia, bez bibliotek (call_trace._tool_file)",
     "CallFrame.function": "nazwa funkcji kodu narzędzia z traceback",
-    "ButtonPressed.operation": "operation_id trasy API z kontraktu, bez treści zapytania (dad_actions._pressed)",
     "Environment.system": "platform.platform(), bez nazwy komputera",
     "Environment.python": "platform.python_version()",
 }

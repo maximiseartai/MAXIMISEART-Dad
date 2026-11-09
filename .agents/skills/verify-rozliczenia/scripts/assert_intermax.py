@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from create_intermax_fixture import COPIES_DIRECTORY, MANIFEST_NAME, ROW_MARKERS
 from skrypt_skilla import Parser
-from wynik_uruchomienia import check_metrics, contract, finish, load_result
+from wynik_uruchomienia import check_metrics, finish, load_result, runs_contract
 
 from atrapy.intermax import FIRST, LAST, NUMBER, ORDER_SHEET
 from atrapy.scenariusz_rozliczen import REGISTER_NAME
@@ -48,14 +48,14 @@ def _period_token(day: date) -> str:
     return f"{tuesday:%d}_{monday:%d}_{monday:%m}_{monday:%Y}"
 
 
-def _expected_summary(copy_name: str | None) -> contract.RunSummary:
-    return contract.RunSummary(
+def _expected_summary(copy_name: str | None) -> runs_contract.RunSummary:
+    return runs_contract.RunSummary(
         figures=[
-            contract.Figure(label="Zlecenia", value=EXPECTED_ORDERS, unit="count"),
-            contract.Figure(label="Wykonawcy", value=EXPECTED_WORKERS, unit="count"),
+            runs_contract.Figure(label="Zlecenia", value=EXPECTED_ORDERS, unit="count"),
+            runs_contract.Figure(label="Wykonawcy", value=EXPECTED_WORKERS, unit="count"),
         ],
-        counts=contract.CountGroup(
-            title="Uporządkowany dzień", counts=[contract.Count(label=EXPECTED_DAY, count=EXPECTED_ORDERS)]
+        counts=runs_contract.CountGroup(
+            title="Uporządkowany dzień", counts=[runs_contract.Count(label=EXPECTED_DAY, count=EXPECTED_ORDERS)]
         ),
         files=[],
         worker_settlements=None,

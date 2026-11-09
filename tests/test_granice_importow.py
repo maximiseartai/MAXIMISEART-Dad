@@ -102,7 +102,7 @@ WINDOW_SEAM = frozenset({"rozliczenia.efenix_window"})
 COMMENT_VERSIONS = "rozliczenia/centrum/comment_versions.py"
 PURE_STDLIB = frozenset({"__future__", "collections", "collections.abc", "dataclasses", "typing"})
 PURE_VERSIONS = {
-    "rozliczenia.centrum": frozenset({"contract"}),
+    "rozliczenia.centrum.contract": frozenset({"runs"}),
     "rozliczenia.centrum.catalog": frozenset({"declaration_of"}),
     "rozliczenia.centrum.outbox": frozenset({"ArchiveFile", "PeriodThread", "Post", "Rank"}),
     "rozliczenia.centrum.report_box": frozenset({"Label"}),
@@ -117,6 +117,7 @@ PURE_VERSIONS = {
         {"Found", "JournalRead", "LeftJournal", "Missing", "Refused", "Unreadable", "name_of"}
     ),
     "rozliczenia.client_data": frozenset({"ForbiddenValues"}),
+    "rozliczenia.process_run": frozenset({"RunResult"}),
 }
 RUN_LOGS_GUARD = "rozliczenia/centrum/run_logs_guard.py"
 # Moduły Logów Uruchomienia, które czytają karta z Logów, plik Logów i odtworzenie, i moduły, których nie wczytują:

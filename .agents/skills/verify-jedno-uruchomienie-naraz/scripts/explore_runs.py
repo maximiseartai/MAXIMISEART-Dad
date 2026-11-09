@@ -68,7 +68,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from rozliczenia import process_run
-from rozliczenia.centrum import contract, process_kind, runs, shutdown
+from rozliczenia.centrum import process_kind, runs, shutdown
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.decision import Decision
 from rozliczenia.message import Message
@@ -590,7 +592,7 @@ def wire(scheduler: Scheduler) -> World:
     def tracked(run: object) -> Tracked | None:
         return next((known for known in created if known.run is run), None)
 
-    def track(run: runs.Run, last: contract.RunEvent) -> None:
+    def track(run: runs.Run, last: runs_contract.RunEvent) -> None:
         created.append(
             Tracked(
                 run,
@@ -650,7 +652,7 @@ def _start_tab(world: World, number: int) -> Callable[[], None]:
             if any(not run.thread_started for run in world.created if run.creator == tab):
                 raise ModelGap("RunHost.start uruchomił wątek Uruchomienia spoza threads.Thread")
             scheduler.note(f"odpowiedź 200: {view.state}")
-        except contract.Refusal as refusal:
+        except Refusal as refusal:
             world.starts_refused += 1
             scheduler.note(f"odpowiedź {refusal.status_code}: {refusal.message}")
         _current_actor().in_flight = False
@@ -666,7 +668,7 @@ def _close_tab(world: World, clicks: int) -> Callable[[], None]:
             _current_actor().in_flight = True
             try:
                 world.shutdown.request()
-            except contract.Refusal as refusal:
+            except Refusal as refusal:
                 world.closes_refused += 1
                 scheduler.note(f"odpowiedź {refusal.status_code}: {refusal.message}")
                 _current_actor().in_flight = False
@@ -687,7 +689,7 @@ def _update_tab(world: World, number: int) -> Callable[[], None]:
         _current_actor().in_flight = True
         try:
             world.host.begin_update()
-        except contract.Refusal as refusal:
+        except Refusal as refusal:
             world.updates_refused += 1
             scheduler.note(f"odpowiedź {refusal.status_code}: {refusal.message}")
             _current_actor().in_flight = False
@@ -732,7 +734,7 @@ def _restore_tab(world: World, number: int) -> Callable[[], None]:
         _current_actor().in_flight = True
         try:
             world.host.begin_restore()
-        except contract.Refusal as refusal:
+        except Refusal as refusal:
             world.restores_refused += 1
             scheduler.note(f"odpowiedź {refusal.status_code}: {refusal.message}")
             _current_actor().in_flight = False
@@ -767,10 +769,10 @@ def _decision_tab(world: World, decisions: int) -> Callable[[], None]:
             try:
                 world.host.decide(
                     run.info.id if run is not None else "",
-                    contract.DecisionAnswer(answer="continue"),
+                    runs_contract.DecisionAnswer(answer="continue"),
                 )
                 scheduler.note("odpowiedź 200: Decyzja przyjęta")
-            except contract.Refusal as refusal:
+            except Refusal as refusal:
                 scheduler.note(f"odpowiedź {refusal.status_code}: {refusal.message}")
             _current_actor().in_flight = False
 
@@ -989,7 +991,7 @@ def _check_results_on_card(world: World) -> None:
         if not run.returned:
             continue
         readable = [event.view for event in world.host.events_after(run.card_seen)]
-        if not any(isinstance(view, contract.RunFinished) and view.run.id == run.run.info.id for view in readable):
+        if not any(isinstance(view, runs_contract.RunFinished) and view.run.id == run.run.info.id for view in readable):
             world.violations.append(
                 Violation(
                     "WYNIK_NA_KARCIE",

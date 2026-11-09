@@ -130,13 +130,13 @@ MUTATIONS = (
     ),
     Mutation(
         "Uwaga bez Tokenu do Zgłoszeń czeka na internet",
-        (Edit(DAD_NOTES, 'contract.DadNoteWaiting(state="waiting", waits_for=hold)', 'contract.DadNoteWaiting(state="waiting", waits_for="internet")'),),
+        (Edit(DAD_NOTES, 'dad_notes_contract.DadNoteWaiting(state="waiting", waits_for=hold)', 'dad_notes_contract.DadNoteWaiting(state="waiting", waits_for="internet")'),),
         UWAGA,
         "bez tokenu tata czyta, że Uwaga wyjdzie, gdy będzie internet, zamiast skontaktować się z Maksem (Q17)",
     ),
     Mutation(
         "Uwaga odrzucona przez Skrzynkę czeka",
-        (Edit(DAD_NOTES, '    if hold == "rejected":\n        return contract.DadNoteRejected', "    if False:\n        return contract.DadNoteRejected"),),
+        (Edit(DAD_NOTES, '    if hold == "rejected":\n        return dad_notes_contract.DadNoteRejected', "    if False:\n        return dad_notes_contract.DadNoteRejected"),),
         UWAGA,
         "tata czyta, że Uwaga czeka, choć Skrzynka odrzuciła jej treść (Q17)",
     ),

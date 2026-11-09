@@ -27,7 +27,6 @@ import rozliczenia
 from rozliczenia import efenix_messages, intermax_messages, settlement_messages, workbook_messages, worker_config_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
-    contract,
     diagnosis_messages,
     fill_messages,
     notification_messages,
@@ -37,6 +36,7 @@ from rozliczenia.centrum import (
     start_problems,
     update_messages,
 )
+from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.message import Message, StopError
 from rozliczenia.period_folder import PeriodFolderError, PeriodFolderInaccessible, PeriodFolderLookupError
 from rozliczenia.workbook_files import WorkbookError
@@ -76,10 +76,10 @@ CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
     "Uporządkowanie INTERMAX": (intermax_messages, INTERMAX_SAMPLES),
     "Wycena w efenix": (efenix_messages, EFENIX_SAMPLES),
 }
-# Komunikat karty Urwanego Uruchomienia (contract.Message) nie ma kodu; tytuł procesu jest syntetyczny.
+# Komunikat karty Urwanego Uruchomienia (common_contract.Message) nie ma kodu; tytuł procesu jest syntetyczny.
 # Zdania wspólne o pliku taty dostają od katalogu kod, plik, ogon i zwrot ponowienia; tu syntetyczne.
 _DAD_WORKBOOK = workbook_messages.DadWorkbook("Plik taty", "Pliku taty", "order_register", "Nic się nie zmieniło.", "ponów")
-OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], Message | contract.Message]]]]] = {
+OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], Message | common_contract.Message]]]]] = {
     "Plik taty (zdania wspólne)": (
         workbook_messages,
         {
@@ -170,13 +170,13 @@ def _creating(path: Path) -> set[str]:
     """Miejsca modułu (``_places``), które tworzą Komunikat.
 
     Tworzy go wywołanie, którego nazwa po rozwiązaniu importów (``Message as M``) albo atrybut (``message.Message``,
-    ``contract.Message``) kończy się na ``Message``, konstruktor tej klasy (``Message.to_maintainer(…)``), budowa
-    modelu z danych (``contract.Message.model_validate(…)``, ``model_construct``) i kopia z nowym tekstem części
+    ``common_contract.Message``) kończy się na ``Message``, konstruktor tej klasy (``Message.to_maintainer(…)``), budowa
+    modelu z danych (``common_contract.Message.model_validate(…)``, ``model_construct``) i kopia z nowym tekstem części
     (``_rewrites``). Wywołanie, które tylko przepisuje pola innego
     Komunikatu (``_copies``), nowego tekstu nie tworzy.
 
     Granica: ``model_copy`` ze słownikiem ``update`` spoza literału (``update=zmiany``, ``update=dict(...)``),
-    ``replace`` z rozpakowaną zmienną (``**zmiany``), budowa modelu przez zmienną klasy (``typ = contract.Message``)
+    ``replace`` z rozpakowaną zmienną (``**zmiany``), budowa modelu przez zmienną klasy (``typ = common_contract.Message``)
     i przepisanie pól obiektu z tekstem, który powstał w funkcji (``t = SimpleNamespace(what="…")``), łapie tylko
     przegląd.
     """
@@ -222,7 +222,7 @@ def _creating(path: Path) -> set[str]:
     return {name for name, statement in _places(tree.body) if any(creates(node) for node in ast.walk(statement))}
 
 
-def _entry(name: str, message: Message | contract.Message) -> list[str]:
+def _entry(name: str, message: Message | common_contract.Message) -> list[str]:
     if isinstance(message, Message):
         return [f"{name} [{message.code}]", *(f"  {line}" for line in message.text.splitlines())]
     return [f"{name} [bez kodu]", f"  Co się stało: {message.what}", f"  Gdzie: {message.where}", f"  Co zrobić: {message.action}"]
