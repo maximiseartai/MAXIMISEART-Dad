@@ -287,11 +287,12 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     """Klasa ``Refusal`` jako wartość stoi tylko w ``centrum/refusal.py``, więc tylko katalog tworzy odmowę.
 
     Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
-    odwołanie stoi tylko w typie: adnotacji, nawiasach typu (``Callable[[], Refusal | None]``), unii ``|``, ``except``,
-    drugim argumencie ``isinstance``/``issubclass`` i argumencie ``exception_handler``. Każde inne jest wartością i
-    pada: wywołanie, argument wywołania (``partial(Refusal, 500)``, ``map(Refusal, …)``), przypisanie do nazwy
-    (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa i każde odwołanie wewnątrz wywołania albo
-    lambdy, także w miejscu typu (``CACHE[Refusal(500, "x")]``). Granica: ``getattr`` z napisem (``"Refusal"``), import
+    odwołanie stoi tylko w typie: adnotacji, nawiasach typu (``Callable[[], Refusal | None]``) i unii ``|`` poza
+    wywołaniem i lambdą, ``except``, drugim argumencie ``isinstance``/``issubclass`` i argumencie ``exception_handler``.
+    Każde inne jest wartością i pada: wywołanie, argument wywołania (``partial(Refusal, 500)``, ``map(Refusal, …)``),
+    przypisanie do nazwy (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa i każde odwołanie wewnątrz
+    wywołania albo lambdy, także w nawiasach typu albo unii (``CACHE[Refusal(500, "x")]``,
+    ``get_args(Refusal | None)[0](…)``, ``list[Refusal].__args__[0](…)``). Granica: ``getattr`` z napisem (``"Refusal"``), import
     wewnątrz funkcji, ``type(odmowa)(…)`` oraz ``copy``/``replace`` gotowej odmowy łapie tylko przegląd.
     """
 
@@ -319,6 +320,13 @@ def _type_nodes(root: ast.AST) -> Iterator[ast.AST]:
 def _type_positions(tree: ast.AST) -> Iterator[ast.expr]:
     """Wyrażenia, w których klasa stoi jako typ, a nie wartość (lista w docstringu strażnika katalogu odmów)."""
 
+    called = {
+        id(inner)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call | ast.Lambda)
+        for inner in ast.walk(node)
+        if inner is not node
+    }
     for node in ast.walk(tree):
         match node:
             case ast.FunctionDef(args=args, returns=returns) | ast.AsyncFunctionDef(args=args, returns=returns):
@@ -328,9 +336,9 @@ def _type_positions(tree: ast.AST) -> Iterator[ast.expr]:
                     yield returns
             case ast.AnnAssign(annotation=annotation):
                 yield annotation
-            case ast.Subscript(slice=inner):
+            case ast.Subscript(slice=inner) if id(node) not in called:
                 yield inner
-            case ast.BinOp(left=left, op=ast.BitOr(), right=right):
+            case ast.BinOp(left=left, op=ast.BitOr(), right=right) if id(node) not in called:
                 yield from (left, right)
             case ast.ExceptHandler(type=kind) if kind is not None:
                 yield kind
