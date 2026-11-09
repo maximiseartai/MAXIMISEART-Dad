@@ -301,6 +301,25 @@ def test_diagnoza_folderu_okresow_w_folderze_bez_dostepu_wyjasnia_niedostepnosc_
     assert diagnosis["explanation"] == explanation_of(preparation_messages.folder_inaccessible(periods))
 
 
+@NO_ACCESS_ON_WINDOWS
+def test_diagnoza_brakujacego_folderu_okresow_wyjasnia_brak_jak_przygotowanie_choc_inny_miesiac_jest_bez_dostepu(
+    tmp_path: Path,
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    year = tmp_path / "Załączniki" / "Rozliczenia 2026"
+    (year / "10_Październik_2026" / "INEA").mkdir(parents=True)
+    periods = year / "11_Listopad_2026" / "INEA"
+    SettingsStore(centrum.tool.settings, log=CentrumLog(centrum.log_path), pause=lambda _: None).update(
+        periods_directory=periods
+    )
+
+    with without_access(year / "10_Październik_2026"):
+        diagnosis = diagnose(centrum, run_id)
+
+    assert diagnosis["explanation"] == explanation_of(preparation_messages.periods_directory_missing(periods))
+
+
 def test_diagnoza_dla_zatrzymania_dla_taty_jest_odrzucona(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     lock(centrum.fixture.register_path)

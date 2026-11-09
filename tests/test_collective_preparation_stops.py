@@ -899,6 +899,19 @@ def test_missing_folder_okresow_stops_without_creating_it(tmp_path: Path) -> Non
 
 
 @NO_ACCESS_ON_WINDOWS
+def test_brak_folderu_okresow_zatrzymuje_brakiem_choc_folder_innego_miesiaca_jest_bez_dostepu(tmp_path: Path) -> None:
+    fixture = make_dad_layout_fixture(tmp_path)
+    year = fixture.periods_directory / "Rozliczenia 2026"
+    periods = year / "12_Grudzień_2026" / "INEA"
+
+    with without_access(year / "08_Sierpień_2026"), pytest.raises(StopError) as raised:
+        run_preparation(replace(fixture, periods_directory=periods))
+
+    assert raised.value.message == preparation_messages.periods_directory_missing(periods)
+    assert not periods.parent.exists()
+
+
+@NO_ACCESS_ON_WINDOWS
 @PATH_CHECKS
 def test_folder_okresow_w_folderze_bez_dostepu_zatrzymuje_niedostepnoscia_a_nie_brakiem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
