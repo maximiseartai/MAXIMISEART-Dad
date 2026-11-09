@@ -30,7 +30,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import SettlingCentrum, run_to_end, settling_centrum
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.settlement import MARKED, CellValue, PERIOD, write_quantity_source
+from atrapy.settlement import MARKED, CellValue, PERIOD, write_quantity_source
 
 LABEL: Final = "kontrola-ilosci"
 LINE = f"- Kontrola ilości okresu: {PERIOD}"

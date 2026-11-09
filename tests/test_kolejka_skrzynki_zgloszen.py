@@ -42,8 +42,8 @@ from rozliczenia.centrum.reports import report_target
 from tests.fixtures.centrum import FakeIssue, FakeReportBox
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.sluchacz_kolejki import QueueListener
-from tests.fixtures.widok_skrzynki import shown
+from atrapy.sluchacz_kolejki import QueueListener
+from atrapy.widok_skrzynki import shown
 from tests.fixtures.stare_centrum import SharedBox, killed_after_comment, old_centrum, queue_on
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"

@@ -46,8 +46,8 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import Engines
 from tests.fixtures.linie_watkow import new_line, threads_since
-from tests.fixtures.preparation import PERIOD, write_collective_template, write_internal_template, write_register
-from tests.fixtures.settlement import CellValue, write_quantity_source, write_template
+from atrapy.preparation import PERIOD, write_collective_template, write_internal_template, write_register
+from atrapy.settlement import CellValue, write_quantity_source, write_template
 
 TODAY = date(2026, 9, 16)
 NOW = datetime(2026, 9, 16, 8, 30)

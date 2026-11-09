@@ -66,7 +66,6 @@ from pathlib import Path
 from typing import Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from playwright.sync_api import Browser, Page, Request, Route, sync_playwright
@@ -134,10 +133,10 @@ from atrapy.atrapa_efenix import (
     amount_of,
     atrapa_efenix,
 )
-from tests.fixtures.dziennik_wyceny import begun_rows, ended_outcomes, journal_path
-from tests.fixtures.efenix import Order, write_collective_file
-from tests.fixtures.interlocutor import Tata
-from tests.fixtures.settlement import PERIOD
+from atrapy.dziennik_wyceny import begun_rows, ended_outcomes, journal_path
+from atrapy.efenix import Order, write_collective_file
+from atrapy.interlocutor import Tata
+from atrapy.settlement import PERIOD
 
 VERDICT: Final = "WYCENA EFENIX"
 START: Final = StartFacts(

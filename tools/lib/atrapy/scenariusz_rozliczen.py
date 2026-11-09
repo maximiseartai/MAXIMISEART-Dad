@@ -2,9 +2,9 @@
 
 Generatory skilla verify-rozliczenia (``create_fixture.py``, ``create_preparation_fixture.py``) budują z tych danych pliki, a wyrocznie obu skilli (``assert_*.py``,
 ``fill_readiness.py``, ``self_test.py``, ``run_excel_verification.py``, ``excel_doctor.py``) biorą stąd te same
-wartości wejścia. Okres, konfiguracja wykonawców, nazwy plików okresu i nagłówki Wzorców biorą z testów, gdzie już są
-(``PERIOD``, ``SOURCE_NAME`` i ``WORKERS`` z ``tests/fixtures/settlement.py``, ``INTERNAL_SETTLEMENT_NAME``,
-``COLLECTIVE_FILE_NAME`` i nagłówki z ``tests/fixtures/preparation.py``).
+wartości wejścia. Okres, konfiguracja wykonawców, nazwy plików okresu i nagłówki Wzorców biorą z atrap plików taty, gdzie już są
+(``PERIOD``, ``SOURCE_NAME`` i ``WORKERS`` z ``tools/lib/atrapy/settlement.py``, ``INTERNAL_SETTLEMENT_NAME``,
+``COLLECTIVE_FILE_NAME`` i nagłówki z ``tools/lib/atrapy/preparation.py``).
 
 Tu stoją fakty wejścia i dwa oczekiwania, które wyrocznie obu skilli sprawdzają tak samo, napisane ręcznie, a nie
 wyliczone z ``ORDERS``: Ilości usług z Reguł ilości taty (``QUANTITIES``) i Wiersze danych Rozliczenia pracownika
@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from tests.fixtures.settlement import PERIOD
+from atrapy.settlement import PERIOD
 
 REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 PERIODS_DIRECTORY = "INEA"

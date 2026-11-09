@@ -22,7 +22,7 @@ from tests.fixtures.benchmark import (
     zip_part,
     zip_part_names,
 )
-from tests.fixtures.workbooks import TEMPLATE_VIEW, active_worksheet, opening_view, view_of
+from atrapy.workbooks import TEMPLATE_VIEW, active_worksheet, opening_view, view_of
 
 LAST_ROW = 17 + SMALL_DATA_ROWS
 # Wzorzec taty: AU:AY w każdym Wierszu danych oraz wspólne formuły N:AP i SUBTOTAL w wierszach 13 i 15.

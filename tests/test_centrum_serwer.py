@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from atrapy.dziennik_wyceny import begun_line, journal_path, left_journal
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY, Outbox, PeriodThread, Post
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
@@ -40,7 +41,6 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from tests.fixtures.clock import ManualClock
-from tests.fixtures.dziennik_wyceny import begun_line, journal_path, left_journal
 from tests.fixtures.linie_watkow import PYTEST_TIMEOUT_THREAD, new_line, threads_since
 
 KONTROLA = Post.of(

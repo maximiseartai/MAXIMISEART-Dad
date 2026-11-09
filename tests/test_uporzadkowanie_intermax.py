@@ -42,7 +42,7 @@ from rozliczenia.tool_files import TOOL_ROOT
 from rozliczenia.workbook_files import Problem, WorkbookError
 
 from tests.fixtures.clock import ManualClock
-from tests.fixtures.intermax import (
+from atrapy.intermax import (
     ACTIVITIES,
     APP_LAST,
     BLANK_HEIGHT,
@@ -65,9 +65,9 @@ from tests.fixtures.intermax import (
     parts,
     rewrite_parts,
 )
-from tests.fixtures.interlocutor import Tata
+from atrapy.interlocutor import Tata
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace, no_space, partial_copy, writing
-from tests.fixtures.workbooks import without_sheet
+from atrapy.workbooks import without_sheet
 
 NOW = datetime(2026, 10, 25, 21, 5, 7)
 COPY_NAME = "INTERMAX przed uporządkowaniem 2026-10-25 21-05-07.xlsx"

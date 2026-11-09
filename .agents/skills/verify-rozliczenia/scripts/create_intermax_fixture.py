@@ -1,6 +1,6 @@
 """Create a disposable synthetic INTERMAX (Rejestr zleceń) with one day of Surowe zlecenia for Uporządkowanie INTERMAX.
 
-The workbook comes from the INTERMAX fixture of the tests (``tests/fixtures/intermax.py``), shaped like Dad's
+The workbook comes from the INTERMAX fixture of the tests (``tools/lib/atrapy/intermax.py``), shaped like Dad's
 file: ordered days in Calibri 8, his yellow row, and below it one pasted day of Surowe zlecenia with the look from
 the company app, the first row shifted two columns left. The empty ``Kopie INTERMAX`` folder sits next to it. The
 manifest keeps the INTERMAX bytes' hash, its last ordered row and the moment the fixture was written, for
@@ -17,12 +17,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import Parser, create_run_root
 
-from tests.fixtures.intermax import Intermax, Order
-from tests.fixtures.scenariusz_rozliczen import REGISTER_NAME
+from atrapy.intermax import Intermax, Order
+from atrapy.scenariusz_rozliczen import REGISTER_NAME
 
 COPIES_DIRECTORY = "Kopie INTERMAX"
 MANIFEST_NAME = "intermax_manifest.json"

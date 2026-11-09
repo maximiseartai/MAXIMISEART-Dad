@@ -62,7 +62,6 @@ from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.github import HttpResponse
@@ -105,7 +104,7 @@ from rozliczenia.centrum.report_box import (
 )
 from rozliczenia.centrum.reports import report_target
 from eksplorator import Choices, Excuse, Kind, Shape, excuse_line, excused, gone_lines, schedules, verdict
-from tests.fixtures.sluchacz_kolejki import QueueListener
+from atrapy.sluchacz_kolejki import QueueListener
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 # GitHub's answers to a step of the Archiwum it refuses until Maks changes something: a key without the permission to

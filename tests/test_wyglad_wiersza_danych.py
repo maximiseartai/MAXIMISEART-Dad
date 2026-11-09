@@ -23,15 +23,15 @@ from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.row_look import GENERAL, RowLook
 from rozliczenia.run_context import RunContext
 
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     PERIOD,
     REGISTER_DATE_FORMAT,
     default_register_rows,
     make_preparation_fixture,
-    run_preparation,
 )
-from tests.fixtures.settlement import write_template
-from tests.fixtures.workbooks import LEFTOVER_DATE_FORMAT, LEFTOVER_ROW_HEIGHT, active_worksheet, leave_data_row_leftovers
+from tests.fixtures.operacje import run_preparation
+from atrapy.settlement import write_template
+from atrapy.workbooks import LEFTOVER_DATE_FORMAT, LEFTOVER_ROW_HEIGHT, active_worksheet, leave_data_row_leftovers
 
 RED = "FFFF0000"
 # Zlecenie 2 (wiersz 4 Rejestru) jest skuteczne, ma czerwony ADRES i koniec linii w CZYNNOŚCI ZREALIZOWANE; trafia do

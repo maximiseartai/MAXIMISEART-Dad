@@ -9,8 +9,9 @@ import sys
 
 from openpyxl import load_workbook
 
-from tests.fixtures.preparation import make_preparation_fixture, register_order, run_preparation
-from tests.fixtures.workbooks import active_worksheet
+from atrapy.preparation import make_preparation_fixture, register_order
+from tests.fixtures.operacje import run_preparation
+from atrapy.workbooks import active_worksheet
 
 ROOT = Path(__file__).resolve().parents[1]
 TUESDAY = datetime(2026, 9, 8, 9, 0)

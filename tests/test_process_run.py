@@ -40,7 +40,7 @@ from tests.fixtures.fake_process import (
     records,
     stop_error,
 )
-from tests.fixtures.interlocutor import Tata
+from atrapy.interlocutor import Tata
 
 
 def durations_view(_inputs: Inputs, summary: Summary) -> Durations:

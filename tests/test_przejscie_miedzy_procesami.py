@@ -9,9 +9,10 @@ from rozliczenia import quantity_check
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.run_context import RunContext
 
-from tests.fixtures.preparation import PERIOD, make_preparation_fixture
-from tests.fixtures.preparation import cell_values, collective_row, register_order, run_preparation
-from tests.fixtures.settlement import write_template
+from atrapy.preparation import PERIOD, make_preparation_fixture
+from atrapy.preparation import cell_values, collective_row, register_order
+from tests.fixtures.operacje import run_preparation
+from atrapy.settlement import write_template
 
 
 def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zleceniami_skutecznymi(

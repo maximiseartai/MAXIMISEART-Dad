@@ -44,7 +44,7 @@ Dad sends, or a Kontrola ilości Centrum sends by itself) becomes
 drive may edit it to ``closed`` with ``state_reason`` and ``closed_at`` as GitHub
 gives them, which Centrum reads as Maks closing the Zgłoszenie or Uwaga taty).
 ``body`` and ``comments`` are what Maks sees on GitHub, without the hidden line of the
-queue's delivery mark (``tests/fixtures/widok_skrzynki.py``); ``raw_body`` and
+queue's delivery mark (``tools/lib/atrapy/widok_skrzynki.py``); ``raw_body`` and
 ``raw_comments`` hold the text as Centrum wrote it, which Centrum reads back, and
 Centrum may change a comment (``edit_comment``) in place.
 Asked for the issues with a label, the skrzynka lists the files
@@ -118,7 +118,7 @@ Wycena w efenix never reaches efenix.pl (ADR 0024): this script serves the Atrap
 (``tools/lib/atrapy/atrapa_efenix.py``) on a free local port for as long as Centrum runs, writes its address to
 ``<root>/efenix/adres.txt``, and gives Centrum an efenix window in Playwright's headless Chromium with its profile in
 ``<root>/przegladarka-efenix`` and no human pace, like the
-tests of the process (Dad's window pauses about 20 s per order). The Atrapa holds ``EFENIX_ORDERS`` of ``tests/fixtures/scenariusz_centrum.py`` (made-up numbers, addresses and logins), starts
+tests of the process (Dad's window pauses about 20 s per order). The Atrapa holds ``EFENIX_ORDERS`` of ``tools/lib/atrapy/scenariusz_centrum.py`` (made-up numbers, addresses and logins), starts
 logged out, so the window waits for Dad's login, and answers each search after ``EFENIX_SEARCH_DELAY_S``, so the
 live progress can be seen; a form posted to its ``page_login.php`` logs in. At its first start for a run root the
 script also writes the Plik zbiorczy of those orders, with the Kwota (AU) Excel computed, to
@@ -144,7 +144,6 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.catalog import CATALOG
@@ -188,9 +187,9 @@ from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
 from atrapy.atrapa_efenix import atrapa_efenix
-from tests.fixtures.widok_skrzynki import shown
-from tests.fixtures.efenix import write_collective_file
-from tests.fixtures.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
+from atrapy.widok_skrzynki import shown
+from atrapy.efenix import write_collective_file
+from atrapy.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
 
 EFENIX_SEARCH_DELAY_S = 1.0
 # How long a file the drive is putting in place is tried again (``_read_put_in_place``).

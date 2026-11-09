@@ -22,20 +22,19 @@ from datetime import datetime
 
 from openpyxl.utils import get_column_letter
 
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     COLLECTIVE_TEMPLATE_ZERO_ROWS,
     INTERNAL_TEMPLATE_HEADERS,
     PreparationFixture,
     link_register_order_numbers,
     make_dad_layout_fixture,
     make_preparation_fixture,
-    other_warnings,
     register_order,
-    run_preparation,
     write_collective_template,
     write_internal_template,
 )
-from tests.fixtures.workbooks import (
+from tests.fixtures.operacje import other_warnings, run_preparation
+from atrapy.workbooks import (
     active_worksheet,
     external_link_parts,
     has_xml_comment,

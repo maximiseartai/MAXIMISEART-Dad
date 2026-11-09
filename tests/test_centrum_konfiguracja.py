@@ -20,8 +20,8 @@ from rozliczenia.workbook_files import Problem, WorkbookError
 from tests.fixtures.centrum import TOOL_COMMIT, CentrumClient, FakeGitHub, ToolDirectory, centrum_app, write_report_key
 from tests.fixtures.github_api import github_api, newest_on_main
 from tests.fixtures.centrum_processes import write_configuration
-from tests.fixtures.workbooks import cut_sheet_after_data_rows
-from tests.fixtures.settlement import write_template
+from atrapy.workbooks import cut_sheet_after_data_rows
+from atrapy.settlement import write_template
 
 INTERNAL = "Wzorzec rozliczenia wewnętrznego.xlsx"
 COLLECTIVE = "Wzorzec pliku zbiorczego.xlsx"

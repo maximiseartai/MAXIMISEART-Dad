@@ -31,7 +31,7 @@ from drive.common import (
     stop_banner,
 )
 from drive.teksty import FOR_KEY, NOT_FOUND, TEMPLATE_MISSING
-from tests.fixtures.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
+from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 
 FEATURE = "zgloszenie"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.

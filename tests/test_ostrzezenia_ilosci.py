@@ -13,14 +13,14 @@ from rozliczenia.message import Message
 
 from tests.fixtures.centrum import finished_view
 from tests.fixtures.centrum_processes import preparing_centrum
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
     PERIOD,
     RegisterRow,
     make_preparation_fixture,
     register_order,
-    run_preparation,
 )
+from tests.fixtures.operacje import run_preparation
 
 TUESDAY = datetime(2026, 9, 8, 8, 0)
 MONDAY = datetime(2026, 9, 14, 9, 0)

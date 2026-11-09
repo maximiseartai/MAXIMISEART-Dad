@@ -24,7 +24,7 @@ from drive.common import (
     start_centrum,
 )
 from drive.teksty import ABOUT_LOGS
-from tests.fixtures.scenariusz_centrum import LAST_COMPLETE
+from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 FEATURE = "karta-z-logow"
 LAST_STARTED = "logs/ostatnie-uruchomienie.json"

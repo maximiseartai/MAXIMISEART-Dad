@@ -56,11 +56,10 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from skrypt_skilla import Parser, create_run_root
-from tests.fixtures.intermax import ORDER_SHEET, Intermax
-from tests.fixtures.scenariusz_centrum import (
+from atrapy.intermax import ORDER_SHEET, Intermax
+from atrapy.scenariusz_centrum import (
     COLLECTIVE_FILE_ROWS,
     COLLECTIVE_HEADERS,
     COMPLETED,
@@ -78,7 +77,7 @@ from tests.fixtures.scenariusz_centrum import (
     WORKER_IDS,
     WORKERS,
 )
-from tests.fixtures.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
+from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
 
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
 PREPARATION_COUNTERS = {"period_orders": 9, "successful_orders": 8, "skipped_empty_rows": 1, "warnings": 0}

@@ -8,7 +8,7 @@ axis and a request role (`--rola`) to check one place while you work on it; CI r
 
 - `.venv` of the checkout with the `dev` extra and Playwright's Chromium (`python -m playwright install chromium`).
 - `explore_wycena_efenix.py --doctor` prints `DOCTOR OK`.
-- No real efenix and no Dad's files: the Plik zbiorczy and the orders are synthetic (`tests/fixtures/efenix.py`).
+- No real efenix and no Dad's files: the Plik zbiorczy and the orders are synthetic (`tools/lib/atrapy/efenix.py`).
 
 ## Driving conventions
 

@@ -25,7 +25,7 @@ from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult,
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
 from rozliczenia.run_context import RunContext
 from tests.fixtures.formy_telefonu import MASKED, PHONE
-from tests.fixtures.settlement import CellValue, make_fixture, write_quantity_source
+from atrapy.settlement import CellValue, make_fixture, write_quantity_source
 
 PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples=100)
 

@@ -22,7 +22,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from wynik_uruchomienia import (
     Link,
@@ -37,8 +36,8 @@ from wynik_uruchomienia import (
 )
 from skrypt_skilla import Parser
 
-from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
     INTERNAL_TEMPLATE_NAME,
     ORDER_LINK,
@@ -53,7 +52,7 @@ from tests.fixtures.scenariusz_rozliczen import (
     order_number,
     worker_settlement_name,
 )
-from tests.fixtures.settlement import PERIOD, WORKERS
+from atrapy.settlement import PERIOD, WORKERS
 
 HEADER_ROW = 17
 FIRST_DATA_ROW = 18

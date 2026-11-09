@@ -13,12 +13,11 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from wynik_uruchomienia import Link, ProcessResult, check_metrics, contract, figures, finish, hyperlinks, load_result
 from skrypt_skilla import Parser
 
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.scenariusz_rozliczen import (
     SETTLEMENT_CITY,
     SETTLEMENT_ORDER_LINK,
     SETTLEMENT_ROWS,
@@ -28,7 +27,7 @@ from tests.fixtures.scenariusz_rozliczen import (
     WORKER_TEMPLATE_NAME,
     worker_settlement_name,
 )
-from tests.fixtures.settlement import PERIOD, SOURCE_NAME, WORKERS
+from atrapy.settlement import PERIOD, SOURCE_NAME, WORKERS
 
 WORKER_NAMES = tuple(WORKERS.values())
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")

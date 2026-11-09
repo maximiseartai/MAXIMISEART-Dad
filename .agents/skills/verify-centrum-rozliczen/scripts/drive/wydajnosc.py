@@ -29,7 +29,7 @@ from playwright.sync_api import Browser, BrowserContext, CDPSession, Page, Reque
 
 from drive import DEFAULT_REPEATS
 from drive.common import PAGES, DriveFailure, Run, dad_context, ensure_files_set, read_json, read_text, replace_file
-from tests.fixtures.scenariusz_centrum import COLLECTIVE_HEADERS, LAST_COMPLETE
+from atrapy.scenariusz_centrum import COLLECTIVE_HEADERS, LAST_COMPLETE
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 BASELINE = SKILL_ROOT / "wydajnosc-baseline.json"

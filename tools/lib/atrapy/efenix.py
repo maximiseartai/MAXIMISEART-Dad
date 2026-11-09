@@ -19,8 +19,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Border, Font, PatternFill, Protection, Side
 
 from atrapy.atrapa_efenix import AtrapaOrder
-from tests.fixtures.settlement import COLLECTIVE_HEADERS, PERIOD, CellValue
-from tests.fixtures.workbooks import active_worksheet, add_external_link_fixture
+from atrapy.settlement import COLLECTIVE_HEADERS, PERIOD, CellValue
+from atrapy.workbooks import active_worksheet, add_external_link_fixture
 
 SOURCE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 DAY = date(2026, 9, 9)

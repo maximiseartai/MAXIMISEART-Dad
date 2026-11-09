@@ -16,7 +16,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from wynik_uruchomienia import (
     check_metrics,
@@ -31,8 +30,8 @@ from wynik_uruchomienia import (
 from skrypt_skilla import Parser
 
 from rozliczenia.collective_layout import QUANTITY_COLUMNS
-from tests.fixtures.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
-from tests.fixtures.scenariusz_rozliczen import (
+from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
+from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
     INTERNAL_TEMPLATE_NAME,
     ORDER_LINK,
@@ -45,7 +44,7 @@ from tests.fixtures.scenariusz_rozliczen import (
     order_number,
     register_values,
 )
-from tests.fixtures.settlement import PERIOD
+from atrapy.settlement import PERIOD
 
 EXPECTED_COUNTERS = {"period_orders": 7, "successful_orders": 6, "skipped_empty_rows": 4, "warnings": 3}
 # Ilości usług Dad completes: Plik zbiorczy rows 20 (order 7, prewencja) and 21 (order 6, unknown device), and

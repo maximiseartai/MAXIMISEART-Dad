@@ -29,7 +29,7 @@ from tests.fixtures.benchmark import (
     write_templates,
 )
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.settlement import write_mapping
+from atrapy.settlement import write_mapping
 
 RECORD_FIELDS = {
     "started_at",

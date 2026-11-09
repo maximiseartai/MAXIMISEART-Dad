@@ -26,7 +26,7 @@ from drive.common import (
 )
 from drive.teksty import ABOUT_LOGS
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
-from tests.fixtures.scenariusz_centrum import ROW_MARKER
+from atrapy.scenariusz_centrum import ROW_MARKER
 
 FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"

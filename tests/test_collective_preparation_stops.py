@@ -22,7 +22,7 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.preparation_register import register_problem
 from rozliczenia.message import StopError
 
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
     INTERNAL_SETTLEMENT_NAME,
     PERIOD,
@@ -35,12 +35,12 @@ from tests.fixtures.preparation import (
     month_periods_folder,
     paste_raw_orders,
     register_order,
-    run_preparation,
     write_register,
     write_register_sheet,
 )
+from tests.fixtures.operacje import run_preparation
 from tests.fixtures.clock import ManualClock
-from tests.fixtures.workbooks import (
+from atrapy.workbooks import (
     break_row_far_below_data_rows,
     cut_sheet_after_data_rows,
     rewrite_parts,

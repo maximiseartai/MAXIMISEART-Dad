@@ -67,7 +67,7 @@ from tests.fixtures.benchmark import (
     write_synthetic_templates,
     zip_part,
 )
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     INTERNAL_TEMPLATE_HEADERS,
     register_order,
     write_collective_template,
@@ -75,7 +75,7 @@ from tests.fixtures.preparation import (
     write_register,
 )
 from tests.fixtures.porownanie import compare_worker_settlements, renumber_cell_styles
-from tests.fixtures.workbooks import (
+from atrapy.workbooks import (
     active_worksheet,
     add_external_link_fixture,
     break_empty_data_row,
@@ -94,9 +94,9 @@ from tests.fixtures.workbooks import (
     without_styles,
 )
 from tests.fixtures.data_rows import data_row, register_row
-from tests.fixtures.intermax import like_excel
+from atrapy.intermax import like_excel
 from tests.fixtures.locked_file import lock_file
-from tests.fixtures.settlement import COLLECTIVE_HEADERS, write_source, write_template
+from atrapy.settlement import COLLECTIVE_HEADERS, write_source, write_template
 
 
 def not_a_zip(path: Path) -> None:

@@ -53,7 +53,7 @@ from typing import Any
 from unittest import mock
 from xml.etree import ElementTree
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
@@ -78,8 +78,8 @@ from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataCell, DataRow, ExcelRow
 from syntetyczne_wzorce import write_settlement_template
-from tests.fixtures.settlement import write_template
-from tests.fixtures.workbooks import add_external_link_fixture, refused_by_copy
+from atrapy.settlement import write_template
+from atrapy.workbooks import add_external_link_fixture, refused_by_copy
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SOURCE_ROOT = REPO_ROOT / "src"

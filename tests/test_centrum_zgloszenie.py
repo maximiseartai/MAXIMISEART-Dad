@@ -49,8 +49,8 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.potomne import wait_for, wait_for_value
-from tests.fixtures.preparation import PERIOD
-from tests.fixtures.settlement import write_quantity_source
+from atrapy.preparation import PERIOD
+from atrapy.settlement import write_quantity_source
 
 
 def diagnose(centrum: PreparingCentrum | SettlingCentrum, run_id: str) -> dict[str, Any]:

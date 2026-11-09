@@ -16,8 +16,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from tests.fixtures.centrum import finished_view
 from tests.fixtures.centrum_processes import WORKER_SETTLEMENTS, PreparingCentrum, preparing_centrum, run_to_end
-from tests.fixtures.preparation import PERIOD, register_order
-from tests.fixtures.settlement import write_template
+from atrapy.preparation import PERIOD, register_order
+from atrapy.settlement import write_template
 
 TUE = datetime(2026, 9, 8, 10, 0)
 MON = datetime(2026, 9, 14, 9, 0)

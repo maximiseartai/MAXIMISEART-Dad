@@ -22,7 +22,7 @@ from drive.common import (
     move,
     read_text,
 )
-from tests.fixtures.scenariusz_centrum import LAST_COMPLETE
+from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 # The chart shows the newest Uruchomienia procesu of the chosen process and mode; older ones are in the history.
 CHART_RUNS = 12

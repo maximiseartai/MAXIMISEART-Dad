@@ -27,7 +27,7 @@ from drive.common import (
     unreadable,
 )
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
-from tests.fixtures.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
+from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 
 FEATURE = "diagnoza"
 # A period without a Folder okresu that no feature prepares; the Rejestr zleceń has no orders in it, so no

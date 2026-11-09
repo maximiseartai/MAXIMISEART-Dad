@@ -14,7 +14,7 @@ import sys
 
 from openpyxl import Workbook
 
-from tests.fixtures.workbooks import active_worksheet
+from atrapy.workbooks import active_worksheet
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))

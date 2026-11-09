@@ -93,13 +93,13 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.centrum_w_procesie import centrum_process
-from tests.fixtures.dziennik_wyceny import begun_line, end_line, ended_line, left_journal
-from tests.fixtures.efenix import DAY, Order, write_collective_file
+from atrapy.dziennik_wyceny import begun_line, end_line, ended_line, left_journal
+from atrapy.efenix import DAY, Order, write_collective_file
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     OLD_REGISTER_HEADERS,
     PERIOD,
     RAW_ORDER_FONT,
@@ -113,10 +113,10 @@ from tests.fixtures.preparation import (
     write_register,
 )
 from tests.fixtures.run_cards import first_view, restored, unlisted
-from tests.fixtures.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue, write_quantity_source
+from atrapy.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue, write_quantity_source
 from tests.fixtures.tool_clone import ToolRepository, git_failing_on, tool_repository
-from tests.fixtures.widok_skrzynki import shown
-from tests.fixtures.workbooks import active_worksheet, rewrite_parts
+from atrapy.widok_skrzynki import shown
+from atrapy.workbooks import active_worksheet, rewrite_parts
 
 AnyCentrum = PreparingCentrum | SettlingCentrum
 KEYS = {

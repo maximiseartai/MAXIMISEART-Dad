@@ -2,7 +2,7 @@
 
 The checker runs the real ``intermax_ordering.order_register()`` and the real ``intermax_restore.restore()`` (#472),
 which both replace INTERMAX through ``intermax_replace.replace_register`` (#716), on a synthetic INTERMAX
-(``tests/fixtures/intermax.py``) in a real folder, next to a Kopie folder that already holds ``KEPT`` older Kopie of
+(``tools/lib/atrapy/intermax.py``) in a real folder, next to a Kopie folder that already holds ``KEPT`` older Kopie of
 both names, so that their order by name differs from their order in time. The restore brings back the oldest of them, a
 real workbook. A second restore starts as one in the same second as an earlier restore: the Kopie folder also holds the
 Kopia that the replace would name, so its ``Disk.create`` raises ``FileExistsError``. Nine steps of the code are
@@ -64,7 +64,6 @@ from typing import Any, Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from rozliczenia import intermax_copies, intermax_file, intermax_replace, intermax_restore, register_file, workbook_files
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
@@ -73,7 +72,7 @@ from rozliczenia.message import StopError
 from rozliczenia.run_context import RunContext
 from eksplorator import Choices, Excuse, Kind, excuse_line, excused, gone_lines, schedules, verdict
 
-from tests.fixtures.intermax import Intermax, Order
+from atrapy.intermax import Intermax, Order
 
 NOW = datetime(2026, 10, 25, 20, 0, 0)
 NAME = "INTERMAX.xlsx"

@@ -23,7 +23,7 @@ from rozliczenia.input_checks import FILE_READERS
 from tests.fixtures.centrum import FakeOneDrive
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end
-from tests.fixtures.preparation import PERIOD, register_order
+from atrapy.preparation import PERIOD, register_order
 
 TUE = datetime(2026, 9, 8, 10, 0)
 MON = datetime(2026, 9, 14, 9, 0)

@@ -18,17 +18,17 @@ from openpyxl.utils import get_column_letter
 from rozliczenia.collective_layout import QUANTITY_COLUMNS
 
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     REGISTER_HEADERS,
     Highlight,
     PreparationFixture,
     cell_values,
     make_preparation_fixture,
     register_order,
-    run_preparation,
     write_register_sheet,
 )
-from tests.fixtures.workbooks import active_worksheet, refused_by_copy, replace_cells, rewrite_parts
+from tests.fixtures.operacje import run_preparation
+from atrapy.workbooks import active_worksheet, refused_by_copy, replace_cells, rewrite_parts
 
 QUANTITY_LETTERS = [get_column_letter(column) for column in QUANTITY_COLUMNS]
 

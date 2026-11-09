@@ -11,12 +11,11 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from create_intermax_fixture import ROW_MARKERS as INTERMAX_ROW_MARKERS
 from skrypt_skilla import Parser, create_run_root, new_run
 
-from tests.fixtures.scenariusz_rozliczen import ROW_CONTENT_MARKERS as SCENARIO_ROW_MARKERS
+from atrapy.scenariusz_rozliczen import ROW_CONTENT_MARKERS as SCENARIO_ROW_MARKERS
 
 SCRIPT = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT.parents[1]

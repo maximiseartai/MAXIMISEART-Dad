@@ -18,7 +18,7 @@ from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.centrum import contract, run_view
 
 from tests.fixtures.centrum import centrum as bare_centrum, finished_view, phase_states, run_events, views_until
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
     INTERNAL_SETTLEMENT_NAME,
     PERIOD,

@@ -42,10 +42,10 @@ pilnuje:
   - src/rozliczenia/workbook_*.py
   - src/rozliczenia/worker_config*.py
   - src/rozliczenia/write_routes.py
-  - tests/fixtures/intermax.py
-  - tests/fixtures/preparation.py
-  - tests/fixtures/scenariusz_rozliczen.py
-  - tests/fixtures/settlement.py
+  - tools/lib/atrapy/intermax.py
+  - tools/lib/atrapy/preparation.py
+  - tools/lib/atrapy/scenariusz_rozliczen.py
+  - tools/lib/atrapy/settlement.py
   - tools/uruchom_proces.py
 ci: .agents/skills/verify-rozliczenia/scripts/quantity_rules_conformance.py
 ---
@@ -68,7 +68,7 @@ and never uses a real customer workbook; the only exceptions are the local
 the real Wzorce from `config/`.
 The facts of the synthetic scenario (period, Wykonawcy, file names, orders,
 Hiperłącza, row markers, the Ilości usług the Reguły ilości give, the rows
-Gotowość fills) live once in `tests/fixtures/scenariusz_rozliczen.py`, beside
+Gotowość fills) live once in `tools/lib/atrapy/scenariusz_rozliczen.py`, beside
 the period, konfiguracja wykonawców and Wzorzec headers of the tests: the
 `create_*` scripts build the files from them and the `assert_*` scripts,
 `fill_readiness.py` and `self_test.py` read the same values. Two expectations

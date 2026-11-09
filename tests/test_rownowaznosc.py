@@ -13,10 +13,10 @@ from openpyxl import load_workbook
 import pytest
 
 from tests.fixtures.git_repo import commit, git
-from tests.fixtures.intermax import ORDER_SHEET, YELLOW
+from atrapy.intermax import ORDER_SHEET, YELLOW
 from tests.fixtures.potomne import potomne
 from tests.fixtures.rownowaznosc import METRICS, rownowaznosc, stub_tree, write_workbook
-from tests.fixtures.workbooks import rewrite_parts
+from atrapy.workbooks import rewrite_parts
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "rownowaznosc.py"
@@ -338,7 +338,7 @@ def test_strona_bez_json_daje_roznica(tmp_path: Path, capsys: pytest.CaptureFixt
 
 def test_scenariusz_bez_fixture_w_checkoucie_ma_linie_bez_fixture_i_nie_liczy_sie(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     def missing(folder: Path) -> list[str | Path]:
-        raise ModuleNotFoundError("No module named 'tests.fixtures.nieznany'", name="tests.fixtures.nieznany")
+        raise ModuleNotFoundError("No module named 'atrapy.nieznany'", name="atrapy.nieznany")
 
     tree = stub_tree(tmp_path / "drzewo", {"result": "OK"})
 
@@ -346,19 +346,19 @@ def test_scenariusz_bez_fixture_w_checkoucie_ma_linie_bez_fixture_i_nie_liczy_si
 
     assert (code, capsys.readouterr().out.splitlines()) == (
         0,
-        ["stary | BEZ FIXTURE | tests.fixtures.nieznany", "na-niby | TAK SAMO | kod 0, OK", "RÓWNOWAŻNOŚĆ OK | 1 scenariuszy"],
+        ["stary | BEZ FIXTURE | atrapy.nieznany", "na-niby | TAK SAMO | kod 0, OK", "RÓWNOWAŻNOŚĆ OK | 1 scenariuszy"],
     )
 
 
 def test_bez_zadnego_porownanego_scenariusza_wynik_jest_niesprawdzony_z_kodem_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     def missing(folder: Path) -> list[str | Path]:
-        raise ModuleNotFoundError("No module named 'tests.fixtures.intermax'", name="tests.fixtures.intermax")
+        raise ModuleNotFoundError("No module named 'atrapy.intermax'", name="atrapy.intermax")
 
     tree = stub_tree(tmp_path / "drzewo", {"result": "OK"})
 
     code = _equivalence(tmp_path, tree, tree, rownowaznosc.Scenario("stary", "intermax", missing))
 
-    assert (code, capsys.readouterr().out.splitlines()) == (2, ["stary | BEZ FIXTURE | tests.fixtures.intermax", "RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 scenariuszy"])
+    assert (code, capsys.readouterr().out.splitlines()) == (2, ["stary | BEZ FIXTURE | atrapy.intermax", "RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 scenariuszy"])
 
 
 @pytest.mark.parametrize("module", ["openpyxl_nowy", None])

@@ -39,7 +39,7 @@ from rozliczenia.tool_files import (
 )
 
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
-from tests.fixtures.preparation import (
+from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
     INTERNAL_SETTLEMENT_NAME,
     PreparationFixture,
@@ -49,7 +49,7 @@ from tests.fixtures.preparation import (
 )
 from rozliczenia.preparation_register import period_sheets, read
 from rozliczenia.workbook_files import read_data_rows
-from tests.fixtures.settlement import (
+from atrapy.settlement import (
     PERIOD,
     SOURCE_NAME,
     link_order_numbers,
@@ -59,10 +59,10 @@ from tests.fixtures.settlement import (
     write_template,
 )
 from atrapy.atrapa_efenix import amount_of, atrapa_efenix
-from tests.fixtures.efenix import Order as EfenixOrder
-from tests.fixtures.efenix import write_collective_file
-from tests.fixtures.intermax import Intermax
-from tests.fixtures.workbooks import hyperlinks
+from atrapy.efenix import Order as EfenixOrder
+from atrapy.efenix import write_collective_file
+from atrapy.intermax import Intermax
+from atrapy.workbooks import hyperlinks
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "uruchom_proces.py"
 WORKER_SETTLEMENTS = f"Rozliczenie pracowników {PERIOD}"

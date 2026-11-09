@@ -9,7 +9,7 @@ import pytest
 
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.workbook_files import read_data_rows
-from tests.fixtures.settlement import write_source
+from atrapy.settlement import write_source
 
 SHEET = "xl/worksheets/sheet1.xml"
 SHEET_RELS = "xl/worksheets/_rels/sheet1.xml.rels"

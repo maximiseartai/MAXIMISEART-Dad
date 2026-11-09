@@ -48,7 +48,7 @@ from rozliczenia.centrum.tool_update import (
 from tests.fixtures.centrum import NO_RELEASE, join_threads_since, views_until, write_report_key
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end, stopped_for_maks
 from tests.fixtures.potomne import wait_for, wait_for_value
-from tests.fixtures.preparation import PERIOD, incomplete_period_rows
+from atrapy.preparation import PERIOD, incomplete_period_rows
 from tests.fixtures.tool_clone import (
     NEW_REQUIREMENTS,
     FakeInstaller,

@@ -22,13 +22,13 @@ pilnuje:
   - frontend/src/lib/tool-update.tsx
   - requirements.txt
   - .github/workflows/verify-centrum-na-windowsie.yml
-  - tests/fixtures/scenariusz_centrum.py
-  - tests/fixtures/preparation.py
-  - tests/fixtures/settlement.py
-  - tests/fixtures/scenariusz_rozliczen.py
-  - tests/fixtures/efenix.py
+  - tools/lib/atrapy/scenariusz_centrum.py
+  - tools/lib/atrapy/preparation.py
+  - tools/lib/atrapy/settlement.py
+  - tools/lib/atrapy/scenariusz_rozliczen.py
+  - tools/lib/atrapy/efenix.py
   - tools/lib/atrapy/atrapa_efenix.py
-  - tests/fixtures/intermax.py
+  - tools/lib/atrapy/intermax.py
   - .agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py
 ---
 

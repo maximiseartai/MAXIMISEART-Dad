@@ -8,7 +8,7 @@ Użycie (z katalogu repozytorium):
 
 Całego zachowania procesów nie opisze żaden test, ale da się sprawdzić, że zmiana nic w nim nie zmienia. Narzędzie
 buduje raz scenariusze syntetyczne trzech procesów (Przebieg rozliczeń, Przygotowanie pliku zbiorczego,
-Uporządkowanie INTERMAX) z fixtures ``tests/fixtures`` i Wzorców z ``tools/syntetyczne_wzorce.py``, także z
+Uporządkowanie INTERMAX) z atrap plików taty ``tools/lib/atrapy`` i Wzorców z ``tools/syntetyczne_wzorce.py``, także z
 Zatrzymaniem i z plikiem uszkodzonym, i uruchamia każdy skryptem dla maszyn ``tools/uruchom_proces.py`` obu stron:
 
 - baza: kopia commitu ``--baza`` (``potomne.commit_copy``), domyślnie merge-base HEAD z ``origin/main``;
@@ -60,9 +60,6 @@ from typing import Literal, get_args
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-# Korzeń repozytorium dla fixtures ``tests.fixtures``, z których powstają scenariusze.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import potomne
@@ -110,7 +107,7 @@ class Outcome:
 
 def _settlement(change: Callable[[Path], None] | None = None, *, preview: bool = False, unmapped: bool = False) -> Callable[[Path], list[str | Path]]:
     def build(folder: Path) -> list[str | Path]:
-        from tests.fixtures.settlement import make_fixture, make_preview_fixture
+        from atrapy.settlement import make_fixture, make_preview_fixture
 
         source, _, config = (make_preview_fixture if unmapped else make_fixture)(folder)
         if change is not None:
@@ -122,7 +119,7 @@ def _settlement(change: Callable[[Path], None] | None = None, *, preview: bool =
 
 
 def _quantities(source: Path) -> None:
-    from tests.fixtures.settlement import MARKED, write_quantity_source
+    from atrapy.settlement import MARKED, write_quantity_source
 
     write_quantity_source(source, [MARKED, {"N": 2, "H": "dariusz.fikcyjny2"}, {"J": "nie", "X": 1}])
 
@@ -143,7 +140,7 @@ def _not_a_workbook(path: Path) -> None:
 
 def _cut(sheet_part: str) -> Callable[[Path], None]:
     def change(path: Path) -> None:
-        from tests.fixtures.workbooks import cut_sheet_after_data_rows
+        from atrapy.workbooks import cut_sheet_after_data_rows
 
         cut_sheet_after_data_rows(path, sheet_part)
 
@@ -156,7 +153,7 @@ def _undefined_number_format(cell: str) -> Callable[[Path], None]:
     def change(path: Path) -> None:
         from openpyxl import load_workbook
 
-        from tests.fixtures.workbooks import active_worksheet, rewrite_parts
+        from atrapy.workbooks import active_worksheet, rewrite_parts
 
         workbook = load_workbook(path)
         active_worksheet(workbook)[cell].number_format = "0.000"
@@ -188,7 +185,7 @@ def _preparation(
     existing_file: bool = False,
 ) -> Callable[[Path], list[str | Path]]:
     def build(folder: Path) -> list[str | Path]:
-        from tests.fixtures.preparation import (
+        from atrapy.preparation import (
             COLLECTIVE_FILE_NAME,
             PERIOD,
             incomplete_period_fixture,
@@ -220,7 +217,7 @@ def _preparation(
 
 def _intermax(change: Callable[[Path], None] | None = None, **register: object) -> Callable[[Path], list[str | Path]]:
     def build(folder: Path) -> list[str | Path]:
-        from tests.fixtures.intermax import Intermax
+        from atrapy.intermax import Intermax
 
         path = folder / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
         Intermax(**register).write(path)  # type: ignore[arg-type]
@@ -407,7 +404,7 @@ def equivalence(base_tree: Path, head_tree: Path, scenarios: Sequence[Scenario],
         try:
             arguments[scenario.name] = built(scenario, work / "wejscia" / scenario.name)
         except ModuleNotFoundError as error:
-            if not (error.name or "").startswith("tests.fixtures."):
+            if not (error.name or "").startswith("atrapy."):
                 raise
             print(f"{scenario.name} | BEZ FIXTURE | {error.name}", flush=True)
     chosen = [scenario for scenario in scenarios if scenario.name in arguments]

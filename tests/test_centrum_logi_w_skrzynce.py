@@ -49,10 +49,10 @@ from tests.fixtures.centrum import (
 )
 from atrapy.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum_intermax import Clock, ordering_centrum
-from tests.fixtures.efenix import Order as EfenixOrder
-from tests.fixtures.efenix import write_collective_file
+from atrapy.efenix import Order as EfenixOrder
+from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.intermax import ADDRESS, CONTRACT_NUMBER, Intermax, Order
+from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, Intermax, Order
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
     SettlingCentrum,
@@ -64,8 +64,8 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
-from tests.fixtures.settlement import PERIOD
+from atrapy.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
+from atrapy.settlement import PERIOD
 
 LABEL: Final = "logi-uruchomienia"
 LINE = f"- Logi Uruchomienia okresu: {PERIOD}"

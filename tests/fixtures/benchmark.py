@@ -18,9 +18,9 @@ from openpyxl import load_workbook
 
 from rozliczenia import tool_files
 from rozliczenia.collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, QUANTITY_COLUMNS
-from tests.fixtures.preparation import write_collective_template, write_internal_template
-from tests.fixtures.settlement import write_template
-from tests.fixtures.workbooks import active_worksheet
+from atrapy.preparation import write_collective_template, write_internal_template
+from atrapy.settlement import write_template
+from atrapy.workbooks import active_worksheet
 
 ROOT = Path(__file__).resolve().parents[2]
 BENCHMARK = ROOT / "tools" / "benchmark_przebiegu.py"
