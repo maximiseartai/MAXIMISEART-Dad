@@ -4,6 +4,7 @@ import errno
 import os
 import re
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 import time
@@ -1182,6 +1183,27 @@ def test_brak_wzorca_rozliczenia_pracownika_podpowiada_zmiane_nazwy_tylko_pliku_
     assert raised.value.message.what == (
         f"{UNUSABLE_WORKER_TEMPLATE_PREFIX} "
         f"Nie znaleziono Wzorca rozliczenia pracownika: Wzorzec rozliczenia pracownika.xlsx.{hint}"
+    )
+    assert not target_directory.exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="chmod w Windows nie odbiera prawa odczytu")
+def test_wzorzec_rozliczenia_pracownika_w_folderze_bez_dostepu_zatrzymuje_komunikatem(tmp_path: Path) -> None:
+    source_path, target_directory, config_path = make_fixture(tmp_path)
+    template_folder = tmp_path / "config"
+    template_folder.mkdir()
+    worker_template_path = (tmp_path / tool_files.WORKER_TEMPLATE.name).rename(
+        template_folder / tool_files.WORKER_TEMPLATE.name
+    )
+    template_folder.chmod(0)
+    try:
+        with pytest.raises(StopError) as raised:
+            run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    finally:
+        template_folder.chmod(0o755)
+
+    assert raised.value.message.what == (
+        f"{UNUSABLE_WORKER_TEMPLATE_PREFIX} Nie można odczytać Wzorca rozliczenia pracownika."
     )
     assert not target_directory.exists()
 

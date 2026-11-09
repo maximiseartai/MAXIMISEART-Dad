@@ -61,8 +61,20 @@ def _worker_template_unusable(error: WorkbookError) -> Message:
     """Komunikat o Wzorcu rozliczenia pracownika z podpowiedzią zmiany nazwy, gdy brakuje go, a obok leży plik pod
     dawną nazwą."""
 
+    return settlement_messages.worker_template_unusable(error, _old_worker_template_beside(error))
+
+
+def _old_worker_template_beside(error: WorkbookError) -> str | None:
+    """Dawna nazwa Wzorca, gdy Wzorca brakuje, a plik o niej leży obok.
+
+    Dysk pyta tylko przy brakującym Wzorcu: przy innym problemie folder Wzorca może być bez dostępu, a ``Path.is_file``
+    na Pythonie do 3.13 rzuca wtedy ``PermissionError``.
+    """
+
+    if error.problem is not Problem.MISSING:
+        return None
     old = error.path.with_name(_OLD_WORKER_TEMPLATE_NAME)
-    return settlement_messages.worker_template_unusable(error, old.name if old.is_file() else None)
+    return old.name if old.is_file() else None
 
 
 @dataclass(frozen=True)
