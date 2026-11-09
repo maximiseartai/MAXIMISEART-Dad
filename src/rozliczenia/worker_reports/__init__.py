@@ -193,8 +193,6 @@ class RegisterOrder:
 
 
 def _order_number(value: object) -> OrderNumber | None:
-    if isinstance(value, bool):
-        return None
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     if isinstance(value, int):
