@@ -65,6 +65,10 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
         "rozliczenia/centrum/keyed_box.py::read_report_key",
     ): "klucz Zgłoszeń to plik tekstowy; bez dostępu jest brakiem klucza",
     (
+        "read_bytes",
+        "rozliczenia/worker_report_inbox.py::_read_access",
+    ): "plik dostępu do Skrzynki raportów to plik tekstowy Maksa w config, nie plik taty",
+    (
         "workbook_content",
         "rozliczenia/intermax_replace.py::_read",
     ): "bajty Rejestru do podmiany pliku, nie jego wartości",

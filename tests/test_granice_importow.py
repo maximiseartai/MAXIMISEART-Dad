@@ -35,6 +35,9 @@ Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O:
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
 plików i wątków.
 
+``imaplib`` importuje w ``src/`` tylko port Skrzynki raportów (``worker_report_inbox.py``), który otwiera skrzynkę
+taty tylko do odczytu (ADR 0028): inny moduł z własnym połączeniem IMAP mógłby wysłać ``SELECT`` albo ``STORE``.
+
 Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły danych albo przerobił gotową wysyłkę Logów
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to
 zostaje przeglądowi.
@@ -170,7 +173,10 @@ STDLIB_ONLY = {
     "rozliczenia/text.py": "reguła danych i warstwa skoroszytu normalizują tekst bez zależności od Konfiguracji wykonawców",
     "rozliczenia/register_columns.py": "Przebieg, Wycena i reguła danych biorą kolumny Rejestru bez czytnika Przygotowania",
     "rozliczenia/row_positions.py": "uchwyt plików taty i Kopia wejścia biorą położenie wiersza bez reguł Surowych zleceń INTERMAX",
+    "rozliczenia/worker_reports/__init__.py": "rdzeń raportów przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161)",
 }
+# Jedyny moduł src, który rozmawia z serwerem IMAP: Skrzynka raportów otwiera skrzynkę tylko do odczytu (ADR 0028).
+IMAP_PORT = "rozliczenia/worker_report_inbox.py"
 WITHOUT_WORKBOOK = {
     "rozliczenia/domain.py": "protokół postępu, który zna każdy proces, Centrum i Skrypt dla maszyn",
     "rozliczenia/telemetry.py": "rekord metryk Uruchomienia wspólny dla wszystkich procesów",
@@ -298,6 +304,25 @@ def test_moduly_bez_zaleznosci_wczytuja_tylko_biblioteke_standardowa() -> None:
             "Moduły z STDLIB_ONLY (tests/test_granice_importow.py, powód przy każdym) przy wczytaniu importują tylko "
             "bibliotekę standardową i siebie nawzajem. Przenieś import do funkcji, która go używa, albo dopisz "
             "moduł bez zależności do STDLIB_ONLY z powodem.",
+        ]
+    )
+
+
+def test_imap_importuje_tylko_port_skrzynki_raportow() -> None:
+    found = {
+        str(found)
+        for path in sorted((SRC / "rozliczenia").rglob("*.py"))
+        if path.relative_to(SRC).as_posix() != IMAP_PORT
+        for found in _imports(path.relative_to(SRC).as_posix())
+        if found.module == "imaplib"
+    }
+
+    assert (SRC / IMAP_PORT).is_file()
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            f"Skrzynkę raportów czyta tylko {IMAP_PORT}, który otwiera ją tylko do odczytu (ADR 0028): "
+            "weź z niego ImapInbox albo WorkerReportInbox zamiast imaplib.",
         ]
     )
 

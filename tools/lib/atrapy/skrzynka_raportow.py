@@ -1,0 +1,210 @@
+"""Atrapy Skrzynki raportów taty w Gmailu: ``FakeInbox`` dla testów procesu i ``AtrapaImap`` dla testu portu IMAP.
+
+``FakeInbox`` oddaje gotowy wynik ``mails_since`` i zapisuje dzień każdego wywołania. ``AtrapaImap`` to lokalny serwer
+IMAP na ``127.0.0.1`` z wolnym portem, z którym prawdziwy ``imaplib`` portu (``ImapInbox``) rozmawia jak z Gmailem: te
+same postacie odpowiedzi (literał ``{n}`` w FETCH, ``[READ-ONLY]`` po ``EXAMINE``, ``AUTHENTICATIONFAILED`` przy złym
+haśle, folder ``\\All`` w cudzysłowie). Zapisuje polecenia klienta (``LOGIN`` bez argumentów, bo niesie hasło) i
+odmawia każdego polecenia, które zmienia skrzynkę: ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE``, ``APPEND``.
+Wierności Gmailowi atrapa nie dowodzi: prawdziwą skrzynkę sprawdza próba IMAP z #1234.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import date, datetime
+import re
+import socketserver
+import threading
+from types import TracebackType
+from typing import Final, Literal
+
+from rozliczenia.worker_report_inbox import InboxAccess, InboxOutcome, InboxUnreachable, Mails, PasswordRejected
+from rozliczenia.worker_reports import ReportMail
+
+__all__ = ["AtrapaImap", "AtrapaMail", "FakeInbox"]
+
+_MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+_WRITES: Final = frozenset({"SELECT", "STORE", "COPY", "MOVE", "EXPUNGE", "APPEND"})
+_HEADER_ITEM: Final = "BODY.PEEK[HEADER.FIELDS (SUBJECT)]"
+_ALL: Final = "[Gmail]/Wszystkie wiadomo&AVs-ci"
+# Co tyle ``serve_forever`` sprawdza prośbę o zatrzymanie: tyle najwyżej trwa wyjście z bloku ``with``.
+_POLL_S: Final = 0.02
+
+
+@dataclass
+class FakeInbox:
+    """Skrzynka raportów testu: ``outcome`` to maile albo wynik porażki, ``state`` stan pliku dostępu, a ``days``
+    dzień każdego ``mails_since``."""
+
+    outcome: Sequence[ReportMail] | PasswordRejected | InboxUnreachable = ()
+    state: InboxAccess = "ready"
+    days: list[date] = field(default_factory=list)
+
+    def access(self) -> InboxAccess:
+        return self.state
+
+    def mails_since(self, day: date) -> InboxOutcome:
+        self.days.append(day)
+        if isinstance(self.outcome, (PasswordRejected, InboxUnreachable)):
+            return self.outcome
+        return Mails(tuple(self.outcome))
+
+
+@dataclass(frozen=True)
+class AtrapaMail:
+    """Mail w atrapie: UID, chwila przyjęcia przez skrzynkę (``INTERNALDATE``, ze strefą) i bajty MIME."""
+
+    uid: int
+    arrived: datetime
+    raw: bytes
+
+
+class AtrapaImap:
+    """Serwer IMAP jednej skrzynki na czas bloku ``with``; ``port`` to jego port, ``commands`` polecenia klienta.
+
+    Skrzynka ma ``INBOX`` i, gdy ``all_folder``, folder ``\\All`` z nazwą w modified UTF-7 i spacją; oba pokazują te
+    same maile. ``cut="greeting"`` zrywa każde połączenie przed powitaniem, jak sieć, która zgubiła Gmaila.
+    """
+
+    def __init__(
+        self,
+        *,
+        address: str,
+        password: str,
+        mails: Sequence[AtrapaMail] = (),
+        all_folder: bool = True,
+        cut: Literal["greeting"] | None = None,
+    ) -> None:
+        self.address = address
+        self.password = password
+        self.mails = tuple(mails)
+        self.all_folder = all_folder
+        self.cut = cut
+        self.commands: list[str] = []
+        self._server = _Server(self)
+        self._thread = threading.Thread(target=self._server.serve_forever, args=(_POLL_S,), name="atrapa-imap")
+
+    @property
+    def port(self) -> int:
+        return int(self._server.server_address[1])
+
+    def __enter__(self) -> AtrapaImap:
+        self._thread.start()
+        return self
+
+    def __exit__(
+        self, kind: type[BaseException] | None, error: BaseException | None, trace: TracebackType | None
+    ) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join()
+
+
+class _Server(socketserver.TCPServer):
+    allow_reuse_address = False
+
+    def __init__(self, atrapa: AtrapaImap) -> None:
+        self.atrapa = atrapa
+        super().__init__(("127.0.0.1", 0), _Session)
+
+
+class _Session(socketserver.StreamRequestHandler):
+    server: _Server
+
+    def handle(self) -> None:
+        atrapa = self.server.atrapa
+        if atrapa.cut == "greeting":
+            return
+        self._send(b"* OK [CAPABILITY IMAP4rev1] AtrapaImap gotowa")
+        while line := self.rfile.readline():
+            tag, _, rest = line.decode("utf-8").rstrip("\r\n").partition(" ")
+            command, _, arguments = rest.partition(" ")
+            command = command.upper()
+            if command == "UID":
+                inner, _, arguments = arguments.partition(" ")
+                command = f"UID {inner.upper()}"
+            atrapa.commands.append(command if command == "LOGIN" else f"{command} {arguments}".rstrip())
+            if not self._answer(tag, command, arguments):
+                return
+
+    def _answer(self, tag: str, command: str, arguments: str) -> bool:
+        atrapa = self.server.atrapa
+        done = f"{tag} OK {command} gotowe".encode()
+        if command == "CAPABILITY":
+            self._send(b"* CAPABILITY IMAP4rev1", done)
+        elif command == "LOGIN":
+            user, password = _strings(arguments)
+            if (user, password) != (atrapa.address, atrapa.password):
+                self._send(f"{tag} NO [AUTHENTICATIONFAILED] Invalid credentials (Failure)".encode())
+            else:
+                self._send(done)
+        elif command == "LIST":
+            folders = [b'* LIST (\\HasNoChildren) "/" "INBOX"']
+            if atrapa.all_folder:
+                folders.append(f'* LIST (\\All \\HasNoChildren) "/" "{_ALL}"'.encode())
+            self._send(*folders, done)
+        elif command == "EXAMINE":
+            known = _strings(arguments) in (["INBOX"], *([[_ALL]] if atrapa.all_folder else []))
+            exists = f"* {len(atrapa.mails)} EXISTS".encode()
+            self._send(*((exists, f"{tag} OK [READ-ONLY] EXAMINE gotowe".encode()) if known else (f"{tag} NO brak folderu".encode(),)))
+        elif command == "UID SEARCH":
+            self._send(f"* SEARCH {' '.join(str(mail.uid) for mail in _since(atrapa.mails, arguments))}".rstrip().encode(), done)
+        elif command == "UID FETCH":
+            uids, _, items = arguments.partition(" ")
+            for number, mail in enumerate(atrapa.mails, start=1):
+                if str(mail.uid) in uids.split(","):
+                    self._fetch(number, mail, items)
+            self._send(done)
+        elif command == "LOGOUT":
+            self._send(b"* BYE AtrapaImap", done)
+            return False
+        elif command.removeprefix("UID ") in _WRITES:
+            self._send(f"{tag} NO [CANNOT] AtrapaImap jest tylko do odczytu".encode())
+        else:
+            self._send(f"{tag} BAD nieznane polecenie".encode())
+        return True
+
+    def _fetch(self, number: int, mail: AtrapaMail, items: str) -> None:
+        if _HEADER_ITEM in items:
+            name, literal = "BODY[HEADER.FIELDS (SUBJECT)]", _subject_header(mail.raw)
+        else:
+            name, literal = "BODY[]", mail.raw
+        moment = mail.arrived
+        internal = f"{moment.day:02d}-{_MONTHS[moment.month - 1]}-{moment.year} {moment:%H:%M:%S %z}"
+        head = f'* {number} FETCH (UID {mail.uid} INTERNALDATE "{internal}" {name} {{{len(literal)}}}\r\n'
+        self.wfile.write(head.encode() + literal + b")\r\n")
+
+    def _send(self, *lines: bytes) -> None:
+        self.wfile.write(b"".join(line + b"\r\n" for line in lines))
+
+
+def _strings(arguments: str) -> list[str]:
+    """Argumenty polecenia: napisy w cudzysłowie i atomy, jak je wysyła ``imaplib``."""
+
+    return [
+        re.sub(r"\\(.)", r"\1", quoted) if quoted or atom == "" else atom
+        for quoted, atom in re.findall(r'"((?:[^"\\]|\\.)*)"|(\S+)', arguments)
+    ]
+
+
+def _since(mails: Sequence[AtrapaMail], arguments: str) -> list[AtrapaMail]:
+    """``SINCE dd-Mon-yyyy``: maile z dnia przyjęcia od tego dnia, bez godziny i strefy (RFC 3501)."""
+
+    found = re.fullmatch(r"SINCE (\d{2})-([A-Z][a-z]{2})-(\d{4})", arguments)
+    if found is None:
+        return []
+    day = date(int(found[3]), _MONTHS.index(found[2]) + 1, int(found[1]))
+    return [mail for mail in mails if mail.arrived.date() >= day]
+
+
+def _subject_header(raw: bytes) -> bytes:
+    """Linie nagłówka ``Subject`` z kontynuacjami i pusta linia, jak ``BODY[HEADER.FIELDS (SUBJECT)]``."""
+
+    header = re.split(rb"\r?\n\r?\n", raw, maxsplit=1)[0]
+    kept, inside = [], False
+    for line in re.split(rb"\r?\n", header):
+        inside = (line[:1] in (b" ", b"\t") and inside) or line.lower().startswith(b"subject:")
+        if inside:
+            kept.append(line + b"\r\n")
+    return b"".join(kept) + b"\r\n"
