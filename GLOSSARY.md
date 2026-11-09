@@ -19,7 +19,9 @@ zlecenia skopiowane z aplikacji firmowej. Tata nazywa go też INTERMAX; obie
 nazwy znaczą to samo. Jest jedynym źródłem prawdy o zleceniach wszystkich
 okresów. Zawiera między zleceniami całkowicie puste wiersze. Procesy go
 czytają. Uporządkowanie INTERMAX zmienia w nim tylko Surowe zlecenia i widok
-po otwarciu, a przywrócenie Kopii INTERMAX zastępuje go w całości tą kopią.
+po otwarciu, Wpisanie raportów tylko `SKUTECZNE` i `CZYNNOŚCI ZREALIZOWANE`
+uporządkowanych zleceń, a przywrócenie Kopii INTERMAX zastępuje go w całości tą
+kopią. Edytują go tata na swoim komputerze i jeden jego pracownik na swoim.
 
 ## Aplikacja firmowa
 
@@ -233,6 +235,40 @@ Zlecenie, którego wartość `SKUTECZNE` to `nie`, bez względu na wielkość li
 otaczające spacje. Każde zlecenie okresu jest skuteczne albo nieskuteczne.
 Puste `SKUTECZNE` albo inna wartość, na przykład `???` czy `tsk`, to brak w
 Rejestrze, który tata uzupełnia, a nie trzeci stan zlecenia.
+
+## Raport wykonawcy
+
+Mail, który Wykonawca wysyła ze swojego adresu na skrzynkę raportów taty, z
+tematem `Raport` i datą dnia zleceń (dzień, miesiąc, rok rozdzielone `.`, `_`
+albo `/`), bez względu na wielkość liter, bez `Re:` ani `Fwd:` w temacie. Ma
+jeden albo więcej Wpisów raportu, niekoniecznie każdy w osobnej linii. Inne maile w tej skrzynce, także od
+Wykonawców, nie są Raportami wykonawcy.
+_Avoid_: mail, raport (bez dopowiedzenia), sprawozdanie
+
+## Wpis raportu
+
+Część Raportu wykonawcy o jednym zleceniu: numer z `NUMER ZL.`, `tak` albo
+`nie` jak w `SKUTECZNE` i wykonane czynności albo powód nieskuteczności, słowa
+rozdzielone spacją, bez względu na wielkość liter. Dotyczy zlecenia tego
+Wykonawcy z dnia z tematu raportu. Późniejszy Wpis raportu tego samego
+zlecenia od tego samego Wykonawcy jest poprawką wcześniejszego.
+_Avoid_: linia raportu, Wpis urządzenia i czynności INTERMAX (to wpis
+Uporządkowania)
+
+## Wpisanie raportów
+
+Proces, który tata uruchamia na żądanie i który przenosi Wpisy raportu do
+uporządkowanych zleceń w Rejestrze zleceń: `tak` albo `nie` do `SKUTECZNE`, a
+czynności albo powód nieskuteczności do `CZYNNOŚCI ZREALIZOWANE`. Wpisuje
+tylko do pustej komórki albo do komórki z własnym wcześniejszym wpisem, której
+od tamtej pory nikt nie zmienił; ręczna wartość taty albo pracownika zawsze
+wygrywa. Pisze tylko do zamkniętego Rejestru zleceń. Za każdym razem czyta
+wszystkie Raporty wykonawców z dni od jego wdrożenia w okresach, które nie
+mają jeszcze Pliku zbiorczego; okres z Plikiem zbiorczym jest dla niego
+zamknięty. Dzień zleceń jest
+uporządkowany, zanim Wykonawcy wyślą jego raporty, bo Uporządkowanie INTERMAX
+przygotowuje im dzień do pracy.
+_Avoid_: import maili, synchronizacja
 
 ## Rozliczenie wewnętrzne
 
@@ -871,7 +907,8 @@ _Avoid_: restart, reboot
 
 Jeśli folder lub pliki docelowe nowego okresu już istnieją, proces zatrzymuje
 się bez ich nadpisywania. Wzorce również pozostają niezmienione, a Rejestr
-zleceń zmieniają tylko Uporządkowanie INTERMAX i przywrócenie Kopii INTERMAX.
+zleceń zmieniają tylko Uporządkowanie INTERMAX, Wpisanie raportów i
+przywrócenie Kopii INTERMAX.
 Istniejący Plik zbiorczy zmienia tylko Wycena w efenix i tylko Znacznikiem
 efenix w `ADRES` gotowych zleceń i Znacznikiem przekazania w `ADRES` Zleceń
 przekazanych.

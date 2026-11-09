@@ -36,6 +36,11 @@ samym rdzeniem Uruchomienia procesu.
 [ADR 0013](0013-kontrola-ilosci-wysylana-automatycznie.md) dopuszcza treść
 wybranych kolumn Wiersza danych tylko w Kontroli ilości, wysyłanej do Skrzynki
 Zgłoszeń; przeglądarka jej nie dostaje.
+[ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md) pozwala
+Centrum czytać skrzynkę raportów taty w Gmailu przez IMAP, zmienia regułę
+prywatności dla widoku Raporty (wybrane pola zleceń i Wpisów raportu) i dodaje
+własne pliki Wpisania raportów, z których pamięć własnych wpisów rozstrzyga o
+wyniku procesu.
 
 ## Decyzja
 
