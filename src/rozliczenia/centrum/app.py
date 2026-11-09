@@ -171,7 +171,7 @@ def create_app(
     def health() -> Health:
         return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
 
-    store = SettingsStore(settings_path)
+    store = SettingsStore(settings_path, log=log, pause=pause)
     app.include_router(settings_router(store, platform))
     configuration = configuration_files or ConfigurationFiles.default()
     app.include_router(periods_router(store, platform, today, catalog))

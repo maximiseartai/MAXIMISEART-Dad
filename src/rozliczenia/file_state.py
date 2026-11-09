@@ -14,15 +14,16 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
-__all__ = ["FileState", "file_state", "folder_entries", "remove_file"]
+__all__ = ["FileState", "PathState", "file_state", "folder_entries", "path_state", "remove_file"]
 
+PathState = Literal["file", "folder", "missing", "inaccessible"]
 FileState = Literal["file", "missing", "inaccessible"]
 
 _ABSENT = (FileNotFoundError, NotADirectoryError)
 
 
-def file_state(path: Path) -> FileState:
-    """Czy ``path`` jest plikiem, nie ma go (także gdy na jego miejscu jest folder) albo jest niedostępny."""
+def path_state(path: Path) -> PathState:
+    """Czy ``path`` jest plikiem, folderem, nie ma go (także gdy jest czymś innym) albo jest niedostępny."""
 
     try:
         status = path.stat()
@@ -30,7 +31,16 @@ def file_state(path: Path) -> FileState:
         return "missing"
     except OSError:
         return "inaccessible"
-    return "file" if stat.S_ISREG(status.st_mode) else "missing"
+    if stat.S_ISREG(status.st_mode):
+        return "file"
+    return "folder" if stat.S_ISDIR(status.st_mode) else "missing"
+
+
+def file_state(path: Path) -> FileState:
+    """Czy ``path`` jest plikiem, nie ma go (także gdy na jego miejscu jest folder) albo jest niedostępny."""
+
+    state = path_state(path)
+    return "missing" if state == "folder" else state
 
 
 def folder_entries(directory: Path) -> list[os.DirEntry[str]] | None:

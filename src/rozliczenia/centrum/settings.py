@@ -4,24 +4,34 @@ Centrum czyta je, wskazuje Rejestr zleceń i folder okresów oknem wyboru i zmie
 taty otwiera się też z karty wyniku, gdy Zatrzymanie każe go poprawić. Brak albo uszkodzenie pliku znaczy „nie
 ustawiono”, nigdy błąd startu. Zapis podmienia plik atomowo, więc przerwany zapis zostawia poprzednie ustawienia.
 
+Zmiana nie zapisuje się na Ustawieniach, których nie dało się przeczytać: plik chwilowo niedostępny (na Windows
+trzyma go np. antywirus) albo plik nowszego schematu (po cofnięciu Aktualizacji) zostaje, a zmiana jest odmową.
+Uszkodzoną treść zmiana nadpisuje, bo tej treści i tak nie da się już odczytać.
+
 Moduł nie wczytuje FastAPI: Ustawienia taty czytają też katalog procesów i gospodarze Uruchomień bez serwera, a ich
 interfejs HTTP jest w ``settings_router``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-import os
 from pathlib import Path
-import tempfile
 import threading
 from typing import Literal
 
 import yaml
 
+from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
+from rozliczenia.centrum.log import CentrumLog, SettingsUnreadableCause
+from rozliczenia.file_state import PathState, file_state, path_state
+
 Theme = Literal["dark", "light"]
 _THEMES: tuple[Theme, ...] = ("dark", "light")
 _SCHEMA_VERSION = 1
+
+SettingState = Literal["not_set", "present", "missing", "inaccessible"]
+"""Ścieżka z Ustawień taty: niewskazana, jest, nie ma jej albo jest niedostępna (np. folder bez dostępu)."""
 
 
 @dataclass(frozen=True)
@@ -31,32 +41,54 @@ class Settings:
     theme: Theme = "dark"
 
     @property
-    def existing_register(self) -> Path | None:
-        return self.register if self.register is not None and self.register.is_file() else None
+    def register_state(self) -> SettingState:
+        return _setting_state(self.register, "file")
 
     @property
-    def existing_periods_directory(self) -> Path | None:
-        return self.periods_directory if self.periods_directory is not None and self.periods_directory.is_dir() else None
+    def periods_directory_state(self) -> SettingState:
+        return _setting_state(self.periods_directory, "folder")
+
+    @property
+    def register_to_read(self) -> Path | None:
+        """Wskazany Rejestr zleceń, którego nie brakuje; niedostępny też, bo o niedostępności mówi dopiero jego odczyt."""
+
+        return self.register if self.register_state in _TO_READ else None
+
+    @property
+    def periods_directory_to_read(self) -> Path | None:
+        """Wskazany folder okresów, którego nie brakuje; niedostępny też, bo o niedostępności mówi dopiero jego odczyt."""
+
+        return self.periods_directory if self.periods_directory_state in _TO_READ else None
+
+
+_TO_READ: tuple[SettingState, ...] = ("present", "inaccessible")
+
+
+def _setting_state(path: Path | None, kind: Literal["file", "folder"]) -> SettingState:
+    if path is None:
+        return "not_set"
+    state: PathState = path_state(path)
+    if state == "inaccessible":
+        return "inaccessible"
+    return "present" if state == kind else "missing"
+
+
+class SettingsUnreadable(Exception):
+    """Pliku Ustawień taty nie dało się przeczytać przed zmianą, więc zmiany nie zapisano."""
 
 
 class SettingsStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, log: CentrumLog, pause: Callable[[float], None]) -> None:
+        """Ustawienia w pliku ``path``; ``pause`` czeka przed kolejną próbą odczytu albo zamiany pliku niedostępnego."""
+
         self._path = path
+        self._log = log
+        self._pause = pause
         self._lock = threading.Lock()
 
     def load(self) -> Settings:
-        try:
-            document = yaml.safe_load(self._path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, yaml.YAMLError):
-            return Settings()
-        if not isinstance(document, dict) or document.get("schema_version") != _SCHEMA_VERSION:
-            return Settings()
-        theme = document.get("motyw")
-        return Settings(
-            register=_path_or_none(document.get("rejestr_zlecen")),
-            periods_directory=_path_or_none(document.get("folder_okresow")),
-            theme=theme if theme in _THEMES else "dark",
-        )
+        read = self._read()
+        return read if isinstance(read, Settings) else Settings()
 
     def update(
         self,
@@ -65,8 +97,11 @@ class SettingsStore:
         periods_directory: Path | None = None,
         theme: Theme | None = None,
     ) -> Settings:
+        """Ustawienia po zmianie zapisane w pliku; ``SettingsUnreadable``, gdy pliku nie dało się przeczytać, a
+        ``OSError``, gdy nie dało się go zapisać."""
+
         with self._lock:
-            current = self.load()
+            current = self._current()
             updated = replace(
                 current,
                 register=register or current.register,
@@ -76,6 +111,48 @@ class SettingsStore:
             self._write(updated)
             return updated
 
+    def _current(self) -> Settings:
+        """Ustawienia przed zmianą; plik niedostępny czyta ponownie po kolejnych przerwach, jak zamiana pliku."""
+
+        read = self._read()
+        for seconds in RETRY_PAUSES_S:
+            if read != "dostep":
+                break
+            self._pause(seconds)
+            read = self._read()
+        if isinstance(read, Settings):
+            return read
+        self._log.settings_unreadable(cause=read)
+        raise SettingsUnreadable(read)
+
+    def _read(self) -> Settings | SettingsUnreadableCause:
+        """Ustawienia z pliku; brak pliku i treść uszkodzona to ``Settings()``, a plik, który jest, ale nie da się go
+        przeczytać albo ma nowszy schemat, to przyczyna."""
+
+        try:
+            text = self._path.read_text(encoding="utf-8")
+        except UnicodeError:
+            return Settings()
+        except OSError:
+            return Settings() if file_state(self._path) == "missing" else "dostep"
+        try:
+            document = yaml.safe_load(text)
+        except yaml.YAMLError:
+            return Settings()
+        if not isinstance(document, dict):
+            return Settings()
+        version = document.get("schema_version")
+        if isinstance(version, int) and version > _SCHEMA_VERSION:
+            return "nowszy-schemat"
+        if version != _SCHEMA_VERSION:
+            return Settings()
+        theme = document.get("motyw")
+        return Settings(
+            register=_path_or_none(document.get("rejestr_zlecen")),
+            periods_directory=_path_or_none(document.get("folder_okresow")),
+            theme=theme if theme in _THEMES else "dark",
+        )
+
     def _write(self, settings: Settings) -> None:
         document = {
             "schema_version": _SCHEMA_VERSION,
@@ -83,15 +160,8 @@ class SettingsStore:
             "folder_okresow": None if settings.periods_directory is None else str(settings.periods_directory),
             "motyw": settings.theme,
         }
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(prefix=f".{self._path.name}.", dir=self._path.parent)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-                yaml.safe_dump(document, file, allow_unicode=True, sort_keys=False, width=1_000_000)
-            os.replace(temporary, self._path)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
+        text = yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=1_000_000)
+        replace_atomically(self._path, text, pause=self._pause)
 
 
 def _path_or_none(value: object) -> Path | None:

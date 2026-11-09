@@ -33,6 +33,8 @@ _NO_PERIOD = "bez-okresu"
 # Dlaczego wysyłka w tle czeka w kolejce Skrzynki Zgłoszeń; ``odmowa-tresci`` i ``odmowa-archiwum`` (Archiwum okresu
 # nie przyjęło pliku wysyłki, której części już doszły) dotyczą tylko jednego pliku kolejki.
 WaitingCause = Literal["brak-klucza", "brak-sieci", "odmowa", "odmowa-tresci", "odmowa-archiwum"]
+# Dlaczego zmiany Ustawień taty nie zapisano: plik jest, ale system nie daje go czytać, albo ma nowszy schemat.
+SettingsUnreadableCause = Literal["dostep", "nowszy-schemat"]
 
 
 class CentrumLog:
@@ -153,6 +155,11 @@ class CentrumLog:
         przy starcie Centrum (``start``); tylko typ błędu."""
 
         self._write("dziennik-wyceny-niedostepny", typ=type(failure).__name__, miejsce=where)
+
+    def settings_unreadable(self, *, cause: SettingsUnreadableCause) -> None:
+        """Zmiany Ustawień taty nie zapisano, bo ich pliku nie dało się przeczytać; plik zostaje bez zmian."""
+
+        self._write("ustawienia-bez-zapisu", przyczyna=cause)
 
     def unexpected_failure(self, failure: BaseException, *, where: str) -> None:
         """Nieoczekiwany wyjątek: tylko nazwa typu i miejsce (np. trasa API), bez tekstu wyjątku."""

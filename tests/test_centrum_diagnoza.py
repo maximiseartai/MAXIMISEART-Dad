@@ -12,13 +12,19 @@ from typing import Any, NoReturn
 
 import pytest
 
+from rozliczenia import preparation_messages
+from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
+from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.input_checks import FILE_READERS
+from rozliczenia.message import Message
 from rozliczenia.template_file import TemplateFile
 
 from tests.fixtures.centrum import (
+    NO_ACCESS_ON_WINDOWS,
     NO_RELEASE,
+    PATH_CHECKS,
     ToolDirectory,
     FakeGitHub,
     FakeReportBox,
@@ -26,6 +32,7 @@ from tests.fixtures.centrum import (
     phase_states,
     view_timing,
     views_until,
+    without_access,
     write_report_key,
 )
 from tests.fixtures.centrum_processes import (
@@ -245,6 +252,57 @@ def test_diagnoza_bez_przyczyny_na_komputerze_kaze_wyslac_do_maksa(tmp_path: Pat
 
     assert (diagnosis["explanation"], diagnosis["next_action"], diagnosis["confirms_stop"]) == (NOT_FOUND, "report", False)
     assert set(check_states(diagnosis).values()) == {"passed"}
+
+
+def explanation_of(message: Message) -> dict[str, str]:
+    return {"what": message.what, "where": message.where, "action": message.action}
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_diagnoza_rejestru_w_folderze_bez_dostepu_wyjasnia_niedostepnosc_a_nie_brak_rejestru(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    folder = tmp_path / "Rejestr"
+    folder.mkdir()
+    register = centrum.fixture.register_path.rename(folder / centrum.fixture.register_path.name)
+    SettingsStore(centrum.tool.settings, log=CentrumLog(centrum.log_path), pause=lambda _: None).update(register=register)
+    path_checks(monkeypatch)
+
+    with without_access(folder):
+        diagnosis = diagnose(centrum, run_id)
+
+    assert check(diagnosis, "Ustawienia taty") == ("not_checked", "Nie da się teraz odczytać: Rejestr zleceń.")
+    assert check(diagnosis, "Pliki w OneDrive") == (
+        "not_checked",
+        "Nie da się teraz odczytać plików: 1. Pozostałe są na tym komputerze: 2.",
+    )
+    assert check(diagnosis, "Rejestr zleceń")[0] == "failed"
+    assert diagnosis["explanation"]["what"].startswith("Nie można teraz odczytać Rejestru zleceń.")
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_diagnoza_folderu_okresow_w_folderze_bez_dostepu_wyjasnia_niedostepnosc_a_nie_brak_folderu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    onedrive = tmp_path / "OneDrive"
+    onedrive.mkdir()
+    periods = centrum.fixture.periods_directory.rename(onedrive / centrum.fixture.periods_directory.name)
+    SettingsStore(centrum.tool.settings, log=CentrumLog(centrum.log_path), pause=lambda _: None).update(
+        periods_directory=periods
+    )
+    path_checks(monkeypatch)
+
+    with without_access(onedrive):
+        diagnosis = diagnose(centrum, run_id)
+
+    assert check(diagnosis, "Ustawienia taty") == ("not_checked", "Nie da się teraz odczytać: folder okresów.")
+    assert diagnosis["explanation"] == explanation_of(preparation_messages.folder_inaccessible(periods))
 
 
 def test_diagnoza_dla_zatrzymania_dla_taty_jest_odrzucona(tmp_path: Path) -> None:

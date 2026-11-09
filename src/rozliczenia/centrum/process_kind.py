@@ -32,7 +32,7 @@ from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
-from rozliczenia.centrum.settings import Settings
+from rozliczenia.centrum.settings import Settings, SettingState
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
 from rozliczenia.efenix_window import OpenEfenix
@@ -152,12 +152,12 @@ class NeededSetting:
             case "periods_directory":
                 return settings.periods_directory
 
-    def existing(self, settings: Settings) -> Path | None:
+    def state(self, settings: Settings) -> SettingState:
         match self.field:
             case "register":
-                return settings.existing_register
+                return settings.register_state
             case "periods_directory":
-                return settings.existing_periods_directory
+                return settings.periods_directory_state
 
 
 # Sprawdzenia Diagnozy jako dane: Diagnoza zamienia każdy krok na swoje sprawdzenie, a jego treść zostaje w niej.

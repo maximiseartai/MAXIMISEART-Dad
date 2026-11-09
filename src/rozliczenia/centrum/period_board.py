@@ -27,14 +27,15 @@ from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY
 from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.file_state import file_state, path_state
 from rozliczenia.period_folder import (
     PeriodFolder,
+    PeriodFolderInaccessible,
     PeriodFolderLookupError,
     PeriodFolders,
     PeriodStatus,
     locate_period_folder,
     period_status_label,
-    reading,
     scan_period_folders,
 )
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period, parse_period_token
@@ -213,9 +214,10 @@ def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> 
 
 
 def requested_folder(store: SettingsStore, token: str) -> PeriodFolder:
-    """Folder okresu z tokenu żądania przeglądarki; bez folderu okresów na miejscu odmowa „Najpierw wskaż …”."""
+    """Folder okresu z tokenu żądania przeglądarki; bez folderu okresów na miejscu odmowa „Najpierw wskaż …”, a folder
+    okresów, którego nie da się odczytać, to ``PeriodFolderInaccessible`` z jego odszukania."""
 
-    periods_directory = PERIODS_DIRECTORY.existing(store.load())
+    periods_directory = store.load().periods_directory_to_read
     if periods_directory is None:
         raise refusal.first_choose((PERIODS_DIRECTORY.name,))
     return located_period_folder(periods_directory, requested_period(token))
@@ -234,10 +236,13 @@ def periods_router(
     def open_period_path(token: str, request: periods_contract.OpenRequest) -> common_contract.Opened:
         folder = requested_folder(store, token)
         path = folder.path_of(request.target)
-        with reading(folder.directory):
-            exists = path.exists()
-        if not exists:
-            raise refusal.place_missing(request.target, token)
+        match path_state(path):
+            case "inaccessible":
+                raise PeriodFolderInaccessible(folder.directory)
+            case "missing":
+                raise refusal.place_missing(request.target, token)
+            case "file" | "folder":
+                pass
         platform.open_path(path)
         return common_contract.Opened(name=path.name)
 
@@ -251,10 +256,13 @@ def periods_router(
         path = folder.worker_settlement(request.worker)
         # Nazwa Wykonawcy z „/”, „\” albo „..” wyprowadziłaby ścieżkę poza Folder rozliczeń pracowników.
         inside = path.parent == folder.worker_settlements
-        with reading(folder.directory):
-            exists = inside and path.is_file()
-        if not exists:
-            raise refusal.worker_settlement_missing(request.worker, token)
+        match file_state(path) if inside else "missing":
+            case "inaccessible":
+                raise PeriodFolderInaccessible(folder.directory)
+            case "missing":
+                raise refusal.worker_settlement_missing(request.worker, token)
+            case "file":
+                pass
         platform.open_path(path)
         return common_contract.Opened(name=path.name)
 
