@@ -1339,10 +1339,6 @@ AXES: Final[Mapping[str, tuple[Fault, ...]]] = {
 """Fault axes, the ``--variant`` names; second runs with Dad's changes follow every axis."""
 
 
-class Hang(Exception):
-    """A run took longer than ``CASE_LIMIT_S``."""
-
-
 def in_pool(tasks: Sequence[Callable[[Browser], object]], workers: int, label: Callable[[int], str]) -> list[object]:
     """Each task with a browser of one of ``workers`` threads, each with its own Playwright; a task that takes longer
     than ``CASE_LIMIT_S`` ends the checker with a violation (the browser of a hung run cannot be taken back)."""

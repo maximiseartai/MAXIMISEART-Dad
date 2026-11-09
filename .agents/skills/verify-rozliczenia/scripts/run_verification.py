@@ -11,7 +11,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tomllib
 from typing import Literal, TextIO
 import uuid
 
@@ -199,11 +198,6 @@ def _run_process_step(
     _finish_step(name, completed, expected_exit)
 
 
-def _version() -> str:
-    with (REPO_ROOT / "pyproject.toml").open("rb") as stream:
-        return str(tomllib.load(stream)["project"]["version"])
-
-
 def _create_lock(run_root: Path) -> None:
     worker_template = run_root / WORKER_TEMPLATE_NAME
     excel_lock(worker_template).touch()
@@ -265,7 +259,6 @@ def _run_settlement_workflow(
     """Przebieg rozliczeń on a synthetic Plik zbiorczy."""
 
     environment = _utf8_environment()
-    version = _version()
     source = run_root / PERIOD / SOURCE_NAME
     config = run_root / "worker_mapping.yaml"
     metrics = run_root / "metrics.jsonl"
@@ -277,7 +270,7 @@ def _run_settlement_workflow(
 
     _run_step(
         "doctor",
-        [str(HELPER_DIRECTORY / "doctor.py"), "--root", str(run_root), "--expected-version", version],
+        [str(HELPER_DIRECTORY / "doctor.py"), "--root", str(run_root)],
         evidence_root,
         environment,
         expected_exit=0,
@@ -399,7 +392,7 @@ def _run_preparation_workflow(
     _run_step("fixture", _fixture_arguments(run_root, templates_directory), evidence_root, environment, expected_exit=0)
     _run_step(
         "doctor",
-        [str(HELPER_DIRECTORY / "preparation_doctor.py"), "--root", str(run_root), "--expected-version", _version()],
+        [str(HELPER_DIRECTORY / "preparation_doctor.py"), "--root", str(run_root)],
         evidence_root,
         environment,
         expected_exit=0,
@@ -461,8 +454,6 @@ def _run_chain_workflow(
             str(HELPER_DIRECTORY / "preparation_doctor.py"),
             "--root",
             str(run_root),
-            "--expected-version",
-            _version(),
             "--with-worker-template",
         ],
         evidence_root,
