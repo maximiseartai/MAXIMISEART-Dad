@@ -973,9 +973,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--strict", action="store_true", help="report known findings and accepted risks as violations too")
     arguments = parser.parse_args(argv)
     drift = rozjazd_modelu.rozjazd(Path(__file__).resolve().parents[1], REPO_ROOT)
-    if (failure := rozjazd_modelu.porazka_w_ci(drift, VERDICT)) is not None:
-        print(failure)
-        return 1
     problems = probe_interception()
     if problems:
         print("\n".join(f"LUKA MODELU: {problem}" for problem in problems))

@@ -311,33 +311,23 @@ def _without_drift_or_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(narzedzia_tlc, "jar", unavailable)
 
 
-def test_w_ci_rozjazd_konczy_sprawdzenie_porazka_przed_tlc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_rozjazd_takze_w_ci_tylko_ostrzega_a_java_i_jar_ze_zmiennych_zastepuja_narzedzia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """W CI krok skilla z rozjazdem zatrzymuje wykonanie zadania (``tools/ci/wykonaj_zadanie.py``), a nie skrypt, więc
+    kopia checkoutu mutacji z opisanym kodem zmutowanym sprawdza model. Kopia nie ma katalogu podręcznego z Javą i jarem,
+    więc bierze je z ``TLC_JAVA`` i ``TLC_JAR``."""
+
     model = _model(tmp_path, {"f": _config()})
-    moved = "kod opisany modelem zmienił się: src/rozliczenia/centrum/app.py create_app.lifespan."
     asked: list[tuple[Path, Path]] = []
 
     def drift(skill: Path, root: Path) -> str:
         asked.append((skill, root))
-        return moved
+        return "pokryty kod zmienił się"
 
     _without_drift_or_tools(monkeypatch)
     monkeypatch.setattr(rozjazd_modelu, "rozjazd", drift)
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
-
-    assert model_tlc.main(model, []) == 1
-    assert capsys.readouterr().out.splitlines() == [f"UWAGA: {moved}", "", "MODEL M: ROZJAZD MODELU Z KODEM"]
-    assert asked == [(model.skill, tmp_path)]
-
-
-def test_poza_ci_rozjazd_tylko_ostrzega_a_java_i_jar_ze_zmiennych_zastepuja_narzedzia(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Kopia checkoutu mutacji nie ma katalogu podręcznego z Javą i jarem, więc bierze je z ``TLC_JAVA`` i ``TLC_JAR``."""
-
-    model = _model(tmp_path, {"f": _config()})
-    _without_drift_or_tools(monkeypatch)
-    monkeypatch.setattr(rozjazd_modelu, "rozjazd", lambda skill, root: "pokryty kod zmienił się")
-    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setenv(model_tlc.JAVA, "java-z-kopii")
     monkeypatch.setenv(model_tlc.JAR, str(tmp_path / "tla2tools.jar"))
     calls: list[tuple[str, Path, Path, str]] = []
@@ -351,6 +341,7 @@ def test_poza_ci_rozjazd_tylko_ostrzega_a_java_i_jar_ze_zmiennych_zastepuja_narz
     assert model_tlc.main(model, []) == 0
     assert calls == [("java-z-kopii", tmp_path / "tla2tools.jar", model.skill / "model" / "M.tla", "f")]
     assert capsys.readouterr().out.splitlines()[-3:] == ["UWAGA: pokryty kod zmienił się", "", "MODEL M OK"]
+    assert asked == [(model.skill, tmp_path)]
 
 
 @pytest.mark.parametrize(("argv", "returncode"), [([], 0), (["--strict"], 1)], ids=["bez-strict", "strict"])

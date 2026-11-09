@@ -33,10 +33,10 @@ BY_CHANGE_ONLY = {
     "tests/test_git_w_testach.py": (
         "sprawdza gita sesji testów, a nie całe repozytorium"
     ),
-    "tests/test_jedno_uruchomienie_naraz.py::test_rozjazd_czesci_modelowanej_recznie_konczy_sprawdzenie_przeplotow_porazka_w_ci_przed_sprawdzeniem": (
+    "tests/test_jedno_uruchomienie_naraz.py::test_rozjazd_czesci_modelowanej_recznie_sprawdzenie_przeplotow_tylko_ostrzega_takze_w_ci": (
         "sprawdza skrypt skilla z podmienionym rozjazdem we własnym procesie, a nie całe repozytorium; graf wybiera go przy zmianie skilla"
     ),
-    "tests/test_publikacja_plikow_okresu.py::test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_sprawdzeniem": (
+    "tests/test_publikacja_plikow_okresu.py::test_rozjazd_kroku_zapisu_skoroszytu_sprawdzenie_tylko_ostrzega_takze_w_ci": (
         "sprawdza skrypt skilla z podmienionym rozjazdem, a nie całe repozytorium; graf wybiera go przy zmianie skilla"
     ),
     "tests/test_centrum_rozliczen.py::test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiarem": (

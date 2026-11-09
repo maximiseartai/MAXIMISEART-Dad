@@ -2,8 +2,8 @@
 
 Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
 opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu
-z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: w CI (``GITHUB_ACTIONS=true``) rozjazd kończy się od
-razu linią ``WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM`` i kodem 1, bez TLC.
+z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko
+ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
 
     .venv/bin/python .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wyceny.py
     py -3 .agents\\skills\\verify-wznowienie-wyceny-efenix\\scripts\\sprawdz_wznowienie_wyceny.py

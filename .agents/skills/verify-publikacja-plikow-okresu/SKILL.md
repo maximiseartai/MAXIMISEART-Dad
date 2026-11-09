@@ -53,10 +53,10 @@ as `_create_file` returns it for the metrics record (`RouteCounts`).
 The parts modelled by hand are the defaults of `preparation_files.Disk` that the
 check's `period_disk()` replaces: `_create_file` of `preparation_files.py`, and
 `_make_staging` and `_remove_staging` of `staged_publication.py` (its `Disk`), whose digests are in
-`model/definicje.json`. When one of them changes, `explore_publication.py` fails in CI with
-`PUBLIKACJA: ROZJAZD MODELU Z KODEM` before the check, and prints the drift as an
-`UWAGA:` line above the verdict elsewhere; `tools/szybko.py` fails on the same
-drift before you push (step `rozjazd modelu`).
+`model/definicje.json`. When one of them changes, CI fails the step before it starts
+(`tools/ci/wykonaj_zadanie.py`, line `ROZJAZD MODELU Z KODEM | verify-publikacja-plikow-okresu: …`), and
+`explore_publication.py` run by hand prints the drift as an `UWAGA:` line above the verdict; `tools/szybko.py` fails
+on the same drift before you push (step `rozjazd modelu`).
 
 ## Bring the model in line
 
@@ -97,7 +97,6 @@ The last line is the verdict:
 | `PUBLIKACJA OK, ZNANE USTALENIA: n, ZAAKCEPTOWANE RYZYKA: m` | 0 | Only the known findings and accepted risks below, each printed with its counterexample. A count of zero is left out. |
 | `PUBLIKACJA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or `BRAK_PUBLIKACJI`: with no errors, kills, or Dad actions, nothing was ever published. |
 | `PUBLIKACJA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding or accepted risk did not show in a scope of its `after`. If a change fixed it, narrow or delete it in `KNOWN_FINDINGS` or `ACCEPTED_RISKS` and below. |
-| `PUBLIKACJA: ROZJAZD MODELU Z KODEM` | 1 | Only in CI, before the check: `_make_staging`, `_create_file` or `_remove_staging` differs from its digest in `model/definicje.json` (see „Bring the model in line”). |
 | `PUBLIKACJA: LUKA MODELU (n)` | 2 | The code made a filesystem call the in-memory disk does not model. No verdict on the rules. |
 
 `--scope jedno-uruchomienie` or `--scope dwa-uruchomienia` runs one scope.

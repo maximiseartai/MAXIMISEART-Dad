@@ -33,9 +33,8 @@ scopes of the issue okresu about 26 s, the third unit about 39 s, the other scop
 about 65 s, so with three parts the first runs the scopes of the Archiwum, the second the next two units and the third
 the rest and the model. On Windows CI the same units took about 7 times as long before #911 (1163 s, 304 s, 505 s and
 355 s in run 41993938633 against 145 s, 40 s, 69 s and 57 s on the Mac). A
-pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`. The model unit
-fails with `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` when covered code differs from its digests in `model/definicje.json`,
-but it cannot tell whether a change to the model is right.
+pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
+In CI the step does not start while covered code differs from its digests in `model/definicje.json`: `tools/ci/wykonaj_zadanie.py` fails it with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether a change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_outbox_mutations.py` and
 `check_model_kolejki_mutations.py` run in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`)
@@ -652,7 +651,6 @@ makes known findings exit 1.
 | `MODEL KOLEJKI: NOWE NARUSZENIE (n)` | 1 | A promise breaks in a way no known finding explains: another promise than the finding's, or its promise without its cause in `slady`. The counterexample is printed. |
 | `MODEL KOLEJKI: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding no longer happens. If a change fixed it, remove it from `znane` of its configuration in `model/konfiguracje.json` and below. |
 | `MODEL KOLEJKI: BŁĄD MODELU (n)` | 2 | TLC gave no verdict (a syntax error), an invariant outside the promises such as `TypeOK` broke, or `model/konfiguracje.json` has another shape. Nothing is known about the promise. |
-| `MODEL KOLEJKI: ROZJAZD MODELU Z KODEM` | 1 | Only in CI: covered code differs from its digests in `model/definicje.json`. Outside CI the same is a `UWAGA:` line above the verdict, and the verdict means nothing until you bring the model in line. |
 
 Each known finding in `znane` of its configuration in `model/konfiguracje.json`
 names the promise it breaks (`obietnica`) and its cause (`przyczyna`), a mark

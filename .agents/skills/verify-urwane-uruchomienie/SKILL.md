@@ -29,8 +29,7 @@ ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomieni
 
 CI runs `sprawdz_urwane_uruchomienie.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
-step. It fails with `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` when a definition the model describes
-(`model/definicje.json`) differs from its digest there, but it cannot tell whether your change to the model is right.
+step. In CI the step does not start while covered code differs from its digests in `model/definicje.json`: `tools/ci/wykonaj_zadanie.py` fails it with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_urwanego_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_urwane_uruchomienie.py`, and in full CI and nightly on `main` after a change of this skill's folder.
@@ -187,9 +186,8 @@ The last line is the verdict:
 - `URWANE URUCHOMIENIE: BŁĄD MODELU (n)`: TLC gave no verdict (a syntax error, a deadlock), an invariant outside the
   promises such as `TypeOK` broke, `model/konfiguracje.json` has another shape, or the counterexample's story in the
   script does not know every action of `Next`. Exit 2.
-- `URWANE URUCHOMIENIE: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` differs from its
-  digest there.
-  Outside CI the same is a `UWAGA:` line above the verdict.
+- `UWAGA: kod opisany modelem zmienił się: …` above the verdict: a definition in `model/definicje.json` differs from its
+  digest there, and the verdict means nothing until you bring the model in line. CI does not run the check then.
 
 Each counterexample is told as numbered steps in the code's words, a failure named after its step („odczyt dziennika
 Wyceny 1 rzuca OSError”), and ends with the journals, Logs files, Historia rows and the queue.

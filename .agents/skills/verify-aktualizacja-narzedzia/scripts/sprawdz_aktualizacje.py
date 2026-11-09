@@ -3,8 +3,8 @@
 Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
 opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC (przypięte
 ``jdk4py`` i ``tla2tools.jar`` w ``.verification/formal-aktualizacja``, ignorowanym przez Gita) i rozjazd modelu z kodem
-z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: w CI (``GITHUB_ACTIONS=true``) rozjazd kończy się od razu
-linią ``AKTUALIZACJA: ROZJAZD MODELU Z KODEM`` i kodem 1, bez TLC.
+z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko
+ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
 
     .venv/bin/python .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
     py -3 .agents\\skills\\verify-aktualizacja-narzedzia\\scripts\\sprawdz_aktualizacje.py
