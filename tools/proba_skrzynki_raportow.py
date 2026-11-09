@@ -84,7 +84,7 @@ DAYS_BACK: Final = 14
 OK: Final = "PROBA IMAP OK"
 FAIL: Final = "PROBA IMAP FAIL"
 _POLISH: Final = re.compile("[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]")
-_BROKEN: Final = re.compile("[�ÃÄÅĂĹ]")
+_BROKEN: Final = re.compile("[\ufffdÃÄÅĂĹ]")
 
 
 class ProbeFailed(Exception):

@@ -45,6 +45,7 @@ TRESCI = [
     "40000004",
     "gniazdka",
     "odmówił",
+    "zleceń",
 ]
 
 
@@ -69,8 +70,9 @@ def mail(
 
 
 def skrzynka_z_raportami() -> list[AtrapaMail]:
-    """Sześć maili z dni okna: dwa Raporty Wykonawcy (jeden tylko w folderze wszystkich maili), Raport obcego nadawcy,
-    mail bez dnia w temacie, mail ze słowem ``raport`` bez nadawcy i faktura bez tego słowa."""
+    """Siedem maili z dni okna: dwa Raporty Wykonawcy z Wpisem (jeden tylko w folderze wszystkich maili) i jeden bez
+    Wpisu, Raport obcego nadawcy, mail bez dnia w temacie, mail ze słowem ``raport`` bez nadawcy i faktura bez tego
+    słowa."""
 
     return [
         mail(1, temat="Raport 08.11.2026", flagi=("\\Seen",)),
@@ -79,6 +81,7 @@ def skrzynka_z_raportami() -> list[AtrapaMail]:
         mail(4, temat="Faktura", tresc="do zapłaty", flagi=("\\Seen", "$Etykieta")),
         mail(5, temat="Raport 09.11.2026", tresc="40000004 nie klient odmówił", charset="iso-8859-2", w_odebranych=False),
         mail(6, temat="Raport 09.11.2026", od=None),
+        mail(7, temat="Raport 09.11.2026", tresc="dzień bez zleceń"),
     ]
 
 
@@ -114,11 +117,11 @@ def test_proba_na_skrzynce_z_raportami_drukuje_same_liczby_i_ostatnia_linie_ok_b
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
     assert lines == [
-        "SKRZYNKA | folder_wszystkich=5 | odebrane=4 | poza_odebranymi=1",
-        "MAILE | przeczytane=4 | pominiete=1 | raporty=3 | wpisy=2 | polskie_znaki=2 | zepsute_znaki=0",
+        "SKRZYNKA | folder_wszystkich=6 | odebrane=5 | poza_odebranymi=1",
+        "MAILE | przeczytane=5 | pominiete=1 | raporty=4 | wpisy=2 | polskie_znaki=3 | zepsute_znaki=0",
         "PROBLEMY | UnknownNumber=2 | UnknownSender=1",
-        "FLAGI | sprawdzone=6 | zmienione=0",
-        "PROBA IMAP OK | maile=4 | flagi bez zmian",
+        "FLAGI | sprawdzone=7 | zmienione=0",
+        "PROBA IMAP OK | maile=5 | flagi bez zmian",
     ]
     assert code == 0
     names = {command.split(" ")[0] if not command.startswith("UID ") else command.split(" ")[1] for command in atrapa.commands}
@@ -133,8 +136,8 @@ def test_proba_zglasza_flage_zmieniona_miedzy_odczytami(tmp_path: Path, capsys: 
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
     assert lines[-2:] == [
-        "FLAGI | sprawdzone=6 | zmienione=4",
-        "PROBA IMAP FAIL | flagi zmienione w 4 mailach",
+        "FLAGI | sprawdzone=7 | zmienione=5",
+        "PROBA IMAP FAIL | flagi zmienione w 5 mailach",
     ]
     assert code == 1
 
