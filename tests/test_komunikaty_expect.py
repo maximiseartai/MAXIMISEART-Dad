@@ -31,7 +31,7 @@ from typing import Final
 import pytest
 
 import rozliczenia
-from rozliczenia import efenix_messages, intermax_messages, settlement_messages, workbook_messages, worker_config_messages
+from rozliczenia import efenix_messages, intermax_messages, settlement_messages, tool_files, workbook_messages, worker_config_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
     diagnosis_messages,
@@ -480,7 +480,7 @@ QUOTES_OUTSIDE_UI: Final = {
     "tsk": "wartość komórki z próbki",
     ".08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
     ".Rozliczenie pracowników 08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
-    "Wzorzec rozliczenia pracownika.xlsx": "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
+    tool_files.WORKER_TEMPLATE.name: "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
 }
 
 
