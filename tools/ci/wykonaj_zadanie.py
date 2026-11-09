@@ -88,15 +88,15 @@ def _polecenia(krok: Krok) -> list[tuple[tuple[str, ...], float]]:
     return [(tuple(map(wstaw, polecenie.split())), limit) for polecenie, limit in zip(krok.polecenia, krok.limity_s, strict=True)]
 
 
-def _uruchom(nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], float]], po_limicie: str = "") -> dict[str, object]:
-    """Polecenia po kolei do pierwszej porażki; wyjście na bieżąco, a drzewo procesów ginie z limitem z linią ``LIMIT``
+def _uruchom(root: Path, nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], float]], po_limicie: str = "") -> dict[str, object]:
+    """Polecenia po kolei w ``root`` do pierwszej porażki; wyjście na bieżąco, a drzewo procesów ginie z limitem z linią ``LIMIT``
     i dopiskiem ``po_limicie``."""
 
     print(f"== {nazwa}", flush=True)
     start, status = time.monotonic(), "ok"
     for polecenie, limit in polecenia:
         try:
-            kod = potomne.run(polecenie, cwd=ROOT, timeout=limit, echo=True).returncode
+            kod = potomne.run(polecenie, cwd=root, timeout=limit, echo=True).returncode
         except subprocess.TimeoutExpired:
             program = " ".join(polecenie[1:3]) if polecenie[1] == "-m" else polecenie[1]
             print(f"LIMIT | {nazwa}: {program} przerwany po limicie {limit:.0f} s{po_limicie}", flush=True)
@@ -159,31 +159,31 @@ def _krok_skilla(klucz: Klucz, katalog: Katalog) -> tuple[dict[str, object], lis
     return {"klucz": nazwa, "s": s, "status": "ok" if wynik.powod is None else "fail"}, blisko
 
 
-def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[Czesc]]) -> dict[str, object]:
+def _krok_pytest(root: Path, plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[Czesc]]) -> dict[str, object]:
     start, limit = time.monotonic(), plan_runu.limit_pytest_s(zadanie)
     po_limicie = (
         f" ({plan_runu.ZAPAS_PYTEST:.0f} × ściana zadania {zadanie.sciana_s:.0f} s z planu, najmniej {plan_runu.LIMIT_PYTEST_MIN_S} s): to nie porażka testu, tylko"
         " test albo proces, który się zawiesił; test, który wisiał ponad faulthandler_timeout z pyproject.toml, zostawił wyżej"
         " stosy swoich wątków, a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia"
     )
-    status = _uruchom(jednostka.krok("pytest"), [(_pytest(pliki), limit)], po_limicie)["status"]
+    status = _uruchom(root, jednostka.krok("pytest"), [(_pytest(pliki), limit)], po_limicie)["status"]
     if status != "ok" and plan.zdarzenie is Zdarzenie.PULL_REQUEST and (testy := niestabilne_testy.padniete(JUNIT)):
         if len(testy) > PONOWIENIE_NAJWIECEJ:
             print(f"PONOWIENIE | bez ponowienia: padło {len(testy)} testów, a flaky testy to najwyżej {PONOWIENIE_NAJWIECEJ}", flush=True)
         elif obce := [test for test in testy if not niestabilne_testy.zgloszalny(test)]:
             print(f"PONOWIENIE | bez ponowienia: id testu, którego nie da się zgłosić w issue: {', '.join(obce)}", flush=True)
-        elif _ponow(zadanie, testy):
+        elif _ponow(root, zadanie, testy):
             status = "ok"
     sha, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
     niestabilne_testy.zapisz_kwarantanne(ZapisKwarantanny(zadanie.id, proba, sha, niestabilne_testy.wyniki_kwarantanny(JUNIT)))
     return {"klucz": jednostka.krok("pytest"), "s": round(time.monotonic() - start, 1), "status": status}
 
 
-def _ponow(zadanie: Zadanie, testy: Sequence[str]) -> bool:
+def _ponow(root: Path, zadanie: Zadanie, testy: Sequence[str]) -> bool:
     """Testy, które padły, raz jeszcze w jednym procesie; przejście każdego to flaky test w ``niestabilne_testy.FLAKY_TESTY``."""
 
     polecenie = (sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *testy, "--junitxml", str(PONOWIENIE))
-    if _uruchom("ponowienie", [(polecenie, plan_runu.PONOWIENIE_LIMIT_S)])["status"] != "ok" or not niestabilne_testy.po_ponowieniu(JUNIT, PONOWIENIE, testy):
+    if _uruchom(root, "ponowienie", [(polecenie, plan_runu.PONOWIENIE_LIMIT_S)])["status"] != "ok" or not niestabilne_testy.po_ponowieniu(JUNIT, PONOWIENIE, testy):
         return False
     print(f"FLAKY TESTY | przeszły po ponowieniu: {', '.join(testy)}", flush=True)
     sha, run, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ID", "0")), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
@@ -191,8 +191,9 @@ def _ponow(zadanie: Zadanie, testy: Sequence[str]) -> bool:
     return True
 
 
-def wykonaj(plan: Plan, zadanie_id: str, bledy: Sequence[str] = ()) -> int:
-    """``bledy`` to nazwy kroków, których nie dało się znaleźć, a padają razem z jednostkami."""
+def wykonaj(plan: Plan, zadanie_id: str, bledy: Sequence[str] = (), *, root: Path = ROOT) -> int:
+    """Jednostki zadania w checkoucie ``root``; ``bledy`` to nazwy kroków, których nie dało się znaleźć, a padają razem
+    z jednostkami."""
 
     zadanie = next((z for z in plan.zadania if z.id == zadanie_id), None)
     if zadanie is None:
@@ -209,12 +210,12 @@ def wykonaj(plan: Plan, zadanie_id: str, bledy: Sequence[str] = ()) -> int:
                 skille.append(klucz)
             case Rodzaj.KROK | Rodzaj.NARZUT:
                 kroki.append(KROKI[klucz.nazwa])
-    wyniki = [_krok_pytest(plan, zadanie, pliki)] if pliki else []
-    wyniki += [_uruchom(jednostka.krok(krok.nazwa), _polecenia(krok)) for krok in kroki]
+    wyniki = [_krok_pytest(root, plan, zadanie, pliki)] if pliki else []
+    wyniki += [_uruchom(root, jednostka.krok(krok.nazwa), _polecenia(krok)) for krok in kroki]
     blisko: list[dict[str, object]] = []
     if skille:
         # Po kolei: mutacje kilku skilli naraz na czterech rdzeniach runnera przekraczają swoje limity czasu.
-        katalog = Katalog.skanuj(ROOT)
+        katalog = Katalog.skanuj(root)
         for klucz in skille:
             wynik, ostrzezenia = _krok_skilla(klucz, katalog)
             wyniki.append(wynik)
@@ -227,16 +228,16 @@ def wykonaj(plan: Plan, zadanie_id: str, bledy: Sequence[str] = ()) -> int:
     return 1 if padly else 0
 
 
-def _kroki_pushu() -> int:
-    praca = zakres(Zdarzenie.PUSH, frozenset(), ROOT)
+def _kroki_pushu(root: Path) -> int:
+    praca = zakres(Zdarzenie.PUSH, frozenset(), root)
     for nazwa, powod in praca.bledy:
         print(f"FAIL {nazwa}: {powod}", flush=True)
     klucze = tuple(jednostka.skill(wybrany.krok.key) for wybrany in praca.wybrane)
     plan = Plan(Zdarzenie.PUSH, 0.0, (), (Zadanie(KROKI_PUSHU, MUTACJE.nazwa, "kroki skilli pushu", klucze, 0.0),))
-    return wykonaj(plan, KROKI_PUSHU, [nazwa for nazwa, _ in praca.bledy])
+    return wykonaj(plan, KROKI_PUSHU, [nazwa for nazwa, _ in praca.bledy], root=root)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, root: Path = ROOT) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     jak = parser.add_mutually_exclusive_group(required=True)
     jak.add_argument("--plan", type=Path)
@@ -244,7 +245,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--zadanie")
     args = parser.parse_args(argv)
     if args.kroki_pushu:
-        return _kroki_pushu()
+        return _kroki_pushu(root)
     if args.zadanie is None:
         parser.error("--plan wymaga --zadanie")
     try:
@@ -252,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"WYKONANIE FAIL | plan {args.plan.as_posix()}: {error}")
         return 1
-    return wykonaj(wczytany, args.zadanie)
+    return wykonaj(wczytany, args.zadanie, root=root)
 
 
 if __name__ == "__main__":

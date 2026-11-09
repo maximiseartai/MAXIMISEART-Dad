@@ -7,8 +7,9 @@ pomiaru zostaje.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,8 @@ import sys
 import threading
 import time
 import tomllib
+from typing import NoReturn
+import zipfile
 
 import pytest
 
@@ -427,23 +430,47 @@ def _artifact(run: int, **jobs: dict[str, float]) -> dict[str, object]:
     return {"wersja": 1, "runy": [{"run": run, "proba": 1, "sha": f"sha{run}", "zdarzenie": "push"}], "tory": {"windows-3.14": keys}}
 
 
-class _Gh:
-    """``gh`` z zielonymi runami main i ich artefaktami ``czasy-ci``; zapamiętuje wywołania."""
+class _GitHub:
+    """GitHub z zielonymi runami main i ich artefaktami ``czasy-ci`` (id artefaktu to numer runu + 1000), z których
+    ``expired`` wygasły; zapamiętuje listy, o które pytano, i runy, których artefakt pobrano."""
 
-    def __init__(self, green: list[int], artifacts: dict[int, dict[str, object]]) -> None:
-        self.green, self.artifacts = green, artifacts
-        self.calls: list[tuple[str, ...]] = []
+    def __init__(self, green: list[int], artifacts: dict[int, dict[str, object]], expired: frozenset[int] = frozenset()) -> None:
+        self.green, self.artifacts, self.expired = green, artifacts, expired
+        self.listed: list[str] = []
+        self.downloaded: list[int] = []
 
-    def __call__(self, *arguments: str) -> str:
-        self.calls.append(arguments)
-        if arguments[0] == "api":
-            listed = self.green if "/runs?" in arguments[1] else list(self.artifacts)
-            return "\n".join(map(str, listed)) + "\n"
-        assert arguments[:2] == ("run", "download"), arguments
-        folder = Path(arguments[arguments.index("--dir") + 1])
-        folder.mkdir(parents=True)
-        (folder / "czasy-ci.json").write_text(json.dumps(self.artifacts[int(arguments[2])]), encoding="utf-8")
-        return ""
+    def json(self, sciezka: str) -> dict[str, object]:
+        self.listed.append(sciezka)
+        if sciezka.startswith("repos/{owner}/{repo}/actions/workflows/ci.yml/runs?"):
+            return {"workflow_runs": [{"id": run} for run in self.green]}
+        assert sciezka.startswith("repos/{owner}/{repo}/actions/artifacts?name=czasy-ci&"), sciezka
+        return {"artifacts": [{"id": run + 1000, "expired": run in self.expired, "workflow_run": {"id": run}} for run in self.artifacts]}
+
+    def bajty(self, sciezka: str) -> bytes:
+        artifact = sciezka.removeprefix("repos/{owner}/{repo}/actions/artifacts/").removesuffix("/zip")
+        run = int(artifact) - 1000
+        self.downloaded.append(run)
+        packed = io.BytesIO()
+        with zipfile.ZipFile(packed, "w") as archive:
+            if self.artifacts[run]:
+                archive.writestr("czasy-ci.json", json.dumps(self.artifacts[run]))
+        return packed.getvalue()
+
+    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> NoReturn:
+        raise AssertionError(f"odczyt czasów nie pisze do GitHuba: {metoda} {sciezka}")
+
+
+class _Offline:
+    """GitHub bez sieci: każde zapytanie pada tak, jak ``GhApi``, gdy ``gh`` nie łączy się z API."""
+
+    def json(self, sciezka: str) -> NoReturn:
+        raise RuntimeError("error connecting to api.github.com")
+
+    def bajty(self, sciezka: str) -> NoReturn:
+        raise RuntimeError("error connecting to api.github.com")
+
+    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> NoReturn:
+        raise RuntimeError("error connecting to api.github.com")
 
 
 def _seconds(run: int) -> dict[str, dict[str, float]]:
@@ -456,18 +483,15 @@ def _seconds(run: int) -> dict[str, dict[str, float]]:
     }
 
 
-def test_czasy_z_main_to_mediana_trzech_najnowszych_zielonych_runow_z_artefaktem_i_ostatniej_proby_zadania(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_czasy_z_main_to_mediana_trzech_najnowszych_zielonych_runow_z_artefaktem_i_ostatniej_proby_zadania(tmp_path: Path) -> None:
     # Runy 11 i 6 anulowano: Required wysłał częściowy artefakt, ale lista zielonych runów main ich nie ma.
-    gh = _Gh([10, 9, 8, 7, 5], {run: _artifact(run, **_seconds(run)) for run in (11, 10, 9, 8, 7, 6)})
-    monkeypatch.setattr(czasy_ci, "_gh", gh)
+    github = _GitHub([10, 9, 8, 7, 5], {run: _artifact(run, **_seconds(run)) for run in (11, 10, 9, 8, 7, 6)})
     (tmp_path / "5.json").write_text(json.dumps(_artifact(5, A={"pytest:tests/test_x.py": 9000})), encoding="utf-8")
 
-    czasy = czasy_ci.z_mainu(tmp_path)
+    czasy = czasy_ci.z_mainu(tmp_path, github=github)
 
     assert (czasy.runy, czasy.blad) == ((8, 9, 10), None)
-    assert sorted(call[2] for call in gh.calls if call[0] == "run") == ["10", "8", "9"]
+    assert sorted(github.downloaded) == [8, 9, 10]
     assert sorted(path.name for path in tmp_path.iterdir()) == ["10.json", "8.json", "9.json", "pobrane"]
     assert czasy.praca("windows-3.14", "pytest:tests/test_x.py") == 27
     assert czasy.pliki("windows-3.14") == {"tests/test_x.py": 27}
@@ -475,44 +499,50 @@ def test_czasy_z_main_to_mediana_trzech_najnowszych_zielonych_runow_z_artefaktem
     assert czasy.zadania("windows-3.14")[:2] == [{"pytest:tests/test_x.py": 8, "narzut:pytest": 10}, {"pytest:tests/test_x.py": 16, "narzut:pytest": 20}]
 
 
-def test_swieze_czasy_nie_pytaja_githuba_a_starsze_niz_doba_odswiezaja(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    gh = _Gh([3], {3: _artifact(3, A={"pytest:tests/test_x.py": 4})})
-    monkeypatch.setattr(czasy_ci, "_gh", gh)
+def test_wygasly_artefakt_zielonego_runu_nie_liczy_sie_do_trzech_najnowszych(tmp_path: Path) -> None:
+    github = _GitHub([10, 9, 8, 7], {run: _artifact(run, A={"pytest:tests/test_x.py": run}) for run in (10, 9, 8, 7)}, expired=frozenset({9}))
+
+    czasy = czasy_ci.z_mainu(tmp_path, github=github)
+
+    assert (czasy.runy, sorted(github.downloaded)) == ((7, 8, 10), [7, 8, 10])
+
+
+def test_artefakt_bez_pliku_czasow_to_przyczyna_a_czasy_biora_kopie(tmp_path: Path) -> None:
+    (tmp_path / "2.json").write_text(json.dumps(_artifact(2, A={"pytest:tests/test_x.py": 2})), encoding="utf-8")
+
+    czasy = czasy_ci.z_mainu(tmp_path, github=_GitHub([3, 2], {3: {}, 2: _artifact(2)}))
+
+    assert (czasy.runy, czasy.pliki("windows-3.14")) == ((2,), {"tests/test_x.py": 2})
+    assert czasy.blad == "pobranie czasy-ci z GitHuba: \"There is no item named 'czasy-ci.json' in the archive\""
+
+
+def test_swieze_czasy_nie_pytaja_githuba_a_starsze_niz_doba_odswiezaja(tmp_path: Path) -> None:
+    github = _GitHub([3], {3: _artifact(3, A={"pytest:tests/test_x.py": 4})})
     (tmp_path / "2.json").write_text(json.dumps(_artifact(2, A={"pytest:tests/test_x.py": 2})), encoding="utf-8")
     (tmp_path / "pobrane").touch()
 
-    fresh = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S)
+    fresh = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=github)
     os.utime(tmp_path / "pobrane", (time.time() - czasy_ci.ODSWIEZ_S - 1,) * 2)
-    refreshed = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S)
+    refreshed = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=github)
 
     assert (fresh.runy, refreshed.runy) == ((2,), (3,))
-    assert len([call for call in gh.calls if call[0] == "api"]) == 2
+    assert len(github.listed) == 2
 
 
-def test_bez_githuba_czasy_biora_kopie_a_bez_kopii_sa_puste_i_mowia_dlaczego(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def offline(*arguments: str) -> str:
-        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="error connecting to api.github.com")
-
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
-    empty = czasy_ci.z_mainu(tmp_path / "pusty")
+def test_bez_githuba_czasy_biora_kopie_a_bez_kopii_sa_puste_i_mowia_dlaczego(tmp_path: Path) -> None:
+    empty = czasy_ci.z_mainu(tmp_path / "pusty", github=_Offline())
     (tmp_path / "kopia").mkdir()
     (tmp_path / "kopia" / "2.json").write_text(json.dumps(_artifact(2, A={"pytest:tests/test_x.py": 2})), encoding="utf-8")
-    cached = czasy_ci.z_mainu(tmp_path / "kopia")
+    cached = czasy_ci.z_mainu(tmp_path / "kopia", github=_Offline())
 
     assert (empty.runy, empty.tory, empty.blad) == ((), {}, "pobranie czasy-ci z GitHuba: error connecting to api.github.com")
     assert (cached.runy, cached.pliki("windows-3.14"), cached.blad) == ((2,), {"tests/test_x.py": 2}, empty.blad)
 
 
-def test_po_nieudanym_pobraniu_nastepny_odczyt_pobiera_znowu_a_po_udanym_czeka_dobe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def offline(*arguments: str) -> str:
-        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="error connecting to api.github.com")
-
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
-    failed = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S)
-    monkeypatch.setattr(czasy_ci, "_gh", _Gh([3], {3: _artifact(3, A={"pytest:tests/test_x.py": 4})}))
-    retried = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S)
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
-    cached = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S)
+def test_po_nieudanym_pobraniu_nastepny_odczyt_pobiera_znowu_a_po_udanym_czeka_dobe(tmp_path: Path) -> None:
+    failed = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=_Offline())
+    retried = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=_GitHub([3], {3: _artifact(3, A={"pytest:tests/test_x.py": 4})}))
+    cached = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=_Offline())
 
     assert (failed.runy, failed.blad) == ((), "pobranie czasy-ci z GitHuba: error connecting to api.github.com")
     assert (retried.runy, retried.blad) == ((3,), None)
@@ -527,13 +557,12 @@ def test_po_nieudanym_pobraniu_nastepny_odczyt_pobiera_znowu_a_po_udanym_czeka_d
         ('{"wersja": 1, "runy": [], "tory": {"windows-3.14": {"k": [{"run": 2}]}}}', "czasy-ci w innym kształcie: KeyError('zadanie')"),
     ],
 )
-def test_brak_albo_zepsuty_artefakt_daje_puste_czasy_z_przyczyna(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str | None, error: str) -> None:
-    monkeypatch.setattr(czasy_ci, "_gh", _Gh([], {}))
+def test_brak_albo_zepsuty_artefakt_daje_puste_czasy_z_przyczyna(tmp_path: Path, content: str | None, error: str) -> None:
     if content is not None:
         (tmp_path / "2.json").write_text(content, encoding="utf-8")
     (tmp_path / "pobrane").touch()
 
-    czasy = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S)
+    czasy = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=_GitHub([], {}))
 
     assert (czasy.runy, czasy.tory) == ((), {})
     assert czasy.blad is not None and czasy.blad.startswith(error), czasy.blad
