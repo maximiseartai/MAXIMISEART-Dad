@@ -5,7 +5,8 @@ taty otwiera się też z karty wyniku, gdy Zatrzymanie każe go poprawić. Brak 
 ustawiono”, nigdy błąd startu. Zapis podmienia plik atomowo, więc przerwany zapis zostawia poprzednie ustawienia.
 
 Zmiana nie zapisuje się na Ustawieniach, których nie dało się przeczytać: plik niedostępny (na Windows trzyma go np.
-antywirus) zostaje, a zmiana jest odmową. Uszkodzoną treść i plik innego schematu zmiana nadpisuje.
+antywirus) zostaje, a zmiana jest odmową. Uszkodzoną treść i plik innego schematu zmiana nadpisuje. Taki plik
+przeglądarka dostaje jako nieczytelny (``read``), a procesy jako nieustawiony (``load``).
 
 Moduł nie wczytuje FastAPI: Ustawienia taty czytają też katalog procesów i gospodarze Uruchomień bez serwera, a ich
 interfejs HTTP jest w ``settings_router``.
@@ -86,8 +87,16 @@ class SettingsStore:
         self._lock = threading.Lock()
 
     def load(self) -> Settings:
+        """Ustawienia z pliku; plik, którego nie da się teraz przeczytać, to ``Settings()``."""
+
+        read = self.read()
+        return Settings() if read is None else read
+
+    def read(self) -> Settings | None:
+        """Ustawienia z pliku; ``None``, gdy plik jest, ale nie da się go teraz przeczytać."""
+
         read = self._read()
-        return read if isinstance(read, Settings) else Settings()
+        return read if isinstance(read, Settings) else None
 
     def update(
         self,

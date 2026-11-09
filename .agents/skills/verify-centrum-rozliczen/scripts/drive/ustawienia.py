@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Page, Request, Route, expect
 
-from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory, move, sent_requests, settle
+from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory, move, sent_requests, settle, unreadable
 
 
 def drive(run: Run, page: Page) -> None:
@@ -153,6 +153,21 @@ def drive(run: Run, page: Page) -> None:
         run.capture(page, "04-ustawienia-brak-rejestru")
     finally:
         move(moved, run.fixture["order_register"])
+    page.reload()
+    expect(register.get_by_text(register_name, exact=True)).to_be_visible()
+
+    run.step(feature, "ustawienia-nieczytelny-plik")
+    periods = page.get_by_role("group", name="Folder okresów")
+    with unreadable(Path(run.fixture["settings"])):
+        page.reload()
+        for group in (register, periods):
+            expect(group.get_by_text("Nie da się teraz odczytać Ustawień taty", exact=True)).to_be_visible()
+        settings = run.api("/api/settings", "ustawienia-nieczytelny-plik")
+        run.check(
+            settings["order_register"] == settings["periods_directory"] == {"state": "unreadable"},
+            "a settings file that cannot be read now is reported as unreadable, not as nothing chosen",
+        )
+        run.capture(page, "275-ustawienia-nieczytelny-plik")
     page.reload()
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
 

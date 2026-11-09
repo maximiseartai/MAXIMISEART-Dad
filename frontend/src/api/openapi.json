@@ -2742,6 +2742,32 @@
         "title": "Health",
         "description": "Tożsamość działającego Centrum.\n\n``commit`` to skrócony commit narzędzia, z którego Centrum wystartowało, jak na Konfiguracji (``None`` poza\nklonem Gita); po nim launcher i opiekun ponownego startu rozpoznają wersję działającego Centrum, a karta\npokazuje go w „Zaktualizowano”. ``instance`` to losowy identyfikator tego startu Centrum: po ponownym starcie\njest inny, także gdy commit się nie zmienił."
       },
+      "InaccessiblePath": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "inaccessible",
+            "title": "State"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "path",
+          "name"
+        ],
+        "title": "InaccessiblePath",
+        "description": "Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa)."
+      },
       "IntermaxCopies": {
         "properties": {
           "copies": {
@@ -3421,7 +3447,7 @@
           "state"
         ],
         "title": "NotSetPath",
-        "description": "Ścieżka jeszcze niewskazana albo plik ustawień nieczytelny."
+        "description": "Ścieżka jeszcze niewskazana."
       },
       "Notifications": {
         "properties": {
@@ -5762,6 +5788,12 @@
                 "$ref": "#/components/schemas/MissingPath"
               },
               {
+                "$ref": "#/components/schemas/InaccessiblePath"
+              },
+              {
+                "$ref": "#/components/schemas/UnreadablePath"
+              },
+              {
                 "$ref": "#/components/schemas/ReadyPath"
               }
             ],
@@ -5769,9 +5801,11 @@
             "discriminator": {
               "propertyName": "state",
               "mapping": {
+                "inaccessible": "#/components/schemas/InaccessiblePath",
                 "missing": "#/components/schemas/MissingPath",
                 "not_set": "#/components/schemas/NotSetPath",
-                "ready": "#/components/schemas/ReadyPath"
+                "ready": "#/components/schemas/ReadyPath",
+                "unreadable": "#/components/schemas/UnreadablePath"
               }
             }
           },
@@ -5784,6 +5818,12 @@
                 "$ref": "#/components/schemas/MissingPath"
               },
               {
+                "$ref": "#/components/schemas/InaccessiblePath"
+              },
+              {
+                "$ref": "#/components/schemas/UnreadablePath"
+              },
+              {
                 "$ref": "#/components/schemas/ReadyPath"
               }
             ],
@@ -5791,9 +5831,11 @@
             "discriminator": {
               "propertyName": "state",
               "mapping": {
+                "inaccessible": "#/components/schemas/InaccessiblePath",
                 "missing": "#/components/schemas/MissingPath",
                 "not_set": "#/components/schemas/NotSetPath",
-                "ready": "#/components/schemas/ReadyPath"
+                "ready": "#/components/schemas/ReadyPath",
+                "unreadable": "#/components/schemas/UnreadablePath"
               }
             }
           },
@@ -6107,6 +6149,22 @@
         ],
         "title": "ToolVersion",
         "description": "Wersja narzędzia, z której działa Centrum: skrót commitu i dzień, od którego narzędzie jest na tym commicie."
+      },
+      "UnreadablePath": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "unreadable",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "UnreadablePath",
+        "description": "Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano."
       },
       "ValidationError": {
         "properties": {

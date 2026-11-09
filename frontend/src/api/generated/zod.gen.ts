@@ -262,6 +262,17 @@ export const zHealth = z.object({
 });
 
 /**
+ * InaccessiblePath
+ *
+ * Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa).
+ */
+export const zInaccessiblePath = z.object({
+    state: z.literal('inaccessible'),
+    path: z.string(),
+    name: z.string()
+});
+
+/**
  * IntermaxCopy
  *
  * Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała, także słowami z nazwy
@@ -392,7 +403,7 @@ export const zMissingPath = z.object({
 /**
  * NotSetPath
  *
- * Ścieżka jeszcze niewskazana albo plik ustawień nieczytelny.
+ * Ścieżka jeszcze niewskazana.
  */
 export const zNotSetPath = z.object({
     state: z.literal('not_set')
@@ -1259,32 +1270,6 @@ export const zReportNotification = z.object({
 });
 
 /**
- * Settings
- */
-export const zSettings = z.object({
-    order_register: z.discriminatedUnion('state', [
-        zNotSetPath,
-        zMissingPath,
-        zReadyPath
-    ]),
-    periods_directory: z.discriminatedUnion('state', [
-        zNotSetPath,
-        zMissingPath,
-        zReadyPath
-    ]),
-    theme: z.enum(['dark', 'light'])
-});
-
-/**
- * Choice
- *
- * Ustawienia po natywnym oknie wyboru: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
- */
-export const zChoice = z.object({
-    settings: zSettings
-});
-
-/**
  * SolvedCase
  *
  * Sprawa wysłana z tego komputera, którą Wydanie rozwiązuje: Uwaga taty nazwana tytułem, Zgłoszenie jego
@@ -1440,6 +1425,45 @@ export const zToolUpdateUpdated = z.object({
 export const zToolVersion = z.object({
     commit: z.string(),
     since: z.iso.date().nullable()
+});
+
+/**
+ * UnreadablePath
+ *
+ * Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
+ */
+export const zUnreadablePath = z.object({
+    state: z.literal('unreadable')
+});
+
+/**
+ * Settings
+ */
+export const zSettings = z.object({
+    order_register: z.discriminatedUnion('state', [
+        zNotSetPath,
+        zMissingPath,
+        zInaccessiblePath,
+        zUnreadablePath,
+        zReadyPath
+    ]),
+    periods_directory: z.discriminatedUnion('state', [
+        zNotSetPath,
+        zMissingPath,
+        zInaccessiblePath,
+        zUnreadablePath,
+        zReadyPath
+    ]),
+    theme: z.enum(['dark', 'light'])
+});
+
+/**
+ * Choice
+ *
+ * Ustawienia po natywnym oknie wyboru: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
+ */
+export const zChoice = z.object({
+    settings: zSettings
 });
 
 /**
