@@ -14,11 +14,13 @@ import hashlib
 import imaplib
 from pathlib import Path
 import quopri
+from typing import Literal
 
 import pydantic
 import pytest
 
 from rozliczenia.worker_report_inbox import (
+    FETCH_BATCH,
     INBOX_ACCESS_FILE,
     ImapInbox,
     InboxOutcome,
@@ -101,7 +103,6 @@ def test_skrzynka_raportow_otwiera_folder_wszystkich_maili_tylko_do_odczytu_i_po
 
     assert [(mail.subject, mail.text) for mail in maile(outcome)] == [("Raport 08.11.2026", "40000001 tak wymiana routera")]
     assert 'EXAMINE "[Gmail]/Wszystkie wiadomo&AVs-ci"' in atrapa.commands
-    assert "UID SEARCH SINCE 08-Nov-2026" in atrapa.commands
     assert not WRITES & {name.removeprefix("UID ") for name in polecenia(atrapa)}
     fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
     assert any("BODY.PEEK[]" in command for command in fetches)
@@ -117,7 +118,7 @@ def test_skrzynka_bez_folderu_wszystkich_maili_otwiera_odebrane_tylko_do_odczytu
     assert 'EXAMINE "INBOX"' in atrapa.commands
 
 
-def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_maili_samej_skrzynki(
+def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_maili_samej_skrzynki_i_liczy_maile_bez_nadawcy(
     tmp_path: Path,
 ) -> None:
     w_dniu = w_skrzynce(1, surowy(message_id=b"<a@x.invalid>"))
@@ -125,13 +126,17 @@ def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_m
         2, surowy(temat=b"RAPORT 09.11.2026", message_id=b"<b@x.invalid>"), datetime(2026, 11, 9, 7, 0, tzinfo=TATA)
     )
     bez_slowa = w_skrzynce(3, surowy(temat=b"Faktura za listopad", message_id=b"<c@x.invalid>"))
-    dzien_wczesniej = w_skrzynce(4, surowy(message_id=b"<d@x.invalid>"), datetime(2026, 11, 7, 23, 30, tzinfo=TATA))
+    dwa_dni_wczesniej = w_skrzynce(4, surowy(message_id=b"<d@x.invalid>"), datetime(2026, 11, 6, 23, 30, tzinfo=TATA))
     od_skrzynki = w_skrzynce(5, surowy(od=f"Tata <{SKRZYNKA.upper()}>".encode(), message_id=b"<e@x.invalid>"))
     bez_nadawcy = w_skrzynce(6, surowy(od=None, message_id=b"<f@x.invalid>"))
-    mails = [w_dniu, duze_litery, bez_slowa, dzien_wczesniej, od_skrzynki, bez_nadawcy]
+    mails = [w_dniu, duze_litery, bez_slowa, dwa_dni_wczesniej, od_skrzynki, bez_nadawcy]
 
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
-        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+        outcome = port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8))
+
+    assert isinstance(outcome, Mails), outcome
+    assert outcome.skipped == 1
+    found = outcome.mails
 
     assert [(mail.subject, mail.sender, mail.arrived) for mail in found] == [
         ("Raport 08.11.2026", SenderAddress.of(WYKONAWCA), datetime(2026, 11, 8, 18, 5, tzinfo=TATA)),
@@ -140,6 +145,29 @@ def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_m
     assert [mail.id for mail in found] == [MailId.of("<a@x.invalid>"), MailId.of("<b@x.invalid>")]
     assert all(len(mail.id.digest) == 16 and set(mail.id.digest) <= set("abcdefghijklmnop") for mail in found)
     assert found[0].arrived.utcoffset() == datetime(2026, 11, 8, 18, 5).astimezone().utcoffset()
+
+
+def test_skrzynka_szuka_od_dnia_przed_wskazanym_bo_gmail_liczy_dzien_przyjecia_w_swojej_strefie(tmp_path: Path) -> None:
+    # 23:30 UTC 7 listopada to 00:30 8 listopada u taty: Gmail zalicza taki mail do 7 listopada.
+    po_polnocy_u_taty = w_skrzynce(1, surowy(), datetime(2026, 11, 7, 23, 30, tzinfo=timezone.utc))
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[po_polnocy_u_taty]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [command for command in atrapa.commands if command.startswith("UID SEARCH")] == ["UID SEARCH SINCE 07-Nov-2026"]
+    assert [mail.arrived for mail in found] == [datetime(2026, 11, 8, 0, 30, tzinfo=TATA)]
+
+
+def test_skrzynka_z_wiecej_maili_niz_paczka_pobierania_oddaje_kazdy_mail(tmp_path: Path) -> None:
+    count = 2 * FETCH_BATCH + 1
+    mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in range(1, count + 1)]
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [mail.id for mail in found] == [MailId.of(f"<{uid}@x.invalid>") for uid in range(1, count + 1)]
+    fetched = [command.split(" ")[2].split(",") for command in atrapa.commands if command.startswith("UID FETCH")]
+    assert fetched and max(len(uids) for uids in fetched) <= FETCH_BATCH
 
 
 TEMAT = "Raport 08.11.2026 żółć"
@@ -173,6 +201,55 @@ HTML = (
     "<p>40000001 tak wymiana&nbsp;routera</p><div>40000002   nie\nbrak klienta</div>"
     "<table><tr><td>40000003 tak</td></tr></table><ul><li>montaż</li></ul>Pozdrawiam<br>Jan</body></html>"
 )
+
+
+TEMAT_RAPORTU = b"Subject: Raport 08.11.2026\r\n"
+ZEPSUTE = {
+    "zestaw-znakow-z-bajtem-zerowym": b"From: ola@przyklad.invalid\r\n" + TEMAT_RAPORTU
+    + b"Content-Type: text/plain; charset=u\x00f-8\r\n\r\n40000002 nie\r\n",
+    "nadawca-jako-grupa": b"From: undiscloFrom: sed-;recipient:;\r\n" + TEMAT_RAPORTU + b"\r\nx\r\n",
+    "zestaw-znakow-rfc2231-zawiniety": b"From: ola@przyklad.invalid\r\n" + TEMAT_RAPORTU
+    + b"Content-Type: text/plain; charset*\n=''\r\n\r\nabc\r\n",
+    "nadawca-z-nawiasem-kwadratowym-i-zla-granica": b"From: a@[b.invalid\r\n" + TEMAT_RAPORTU
+    + b'Content-Type: multipart/mixed; boundary="x":\r\n\r\n--x\r\nContent-Type: application/pdf\r\n'
+    + b"Content-Disposition: attachment; filename=a.pdf\r\n\r\nAAAA\r\n--x-\r\n -",
+    "czesc-multipart-bez-granicy": b"From: ola@przyklad.invalid\r\n" + TEMAT_RAPORTU
+    + b'Content-Type: multipart/alternative; boundary="x"\r\n\r\n--x\r\nContent-Type: multipart/related\r\n\r\n-x--',
+    "nadawca-z-niezamknietym-cudzyslowem": b'From: "\n' + TEMAT_RAPORTU + b"\r\nx\r\n",
+    "nadawca-z-niezamknietym-nawiasem": b"From: <\r\n" + TEMAT_RAPORTU + b"\r\nx\r\n",
+    "message-id-z-nawiasami": b"From: ola@przyklad.invalid\r\n" + TEMAT_RAPORTU + b"Message-ID: <<<\r\n\r\nx\r\n",
+    "zalacznik-rfc822-z-zla-granica": b"From: a@\rb.invalid\r\n" + TEMAT_RAPORTU
+    + b'Content-Type: multipart/mixed; boundary="\xffx"\r\n\r\n--x\r\nContent-yp: mess]age/rfc822\r\n\r\n'
+    + b"From: c@d.pFrom: l\r\nSubject: s\r\n\r\nbody\r\n--x--",
+}
+
+
+@pytest.mark.parametrize("zepsuty", ZEPSUTE.values(), ids=ZEPSUTE.keys())
+def test_zepsuty_mail_z_raportem_w_temacie_nie_wywraca_odczytu_skrzynki_tylko_liczy_sie_jako_pominiety(
+    tmp_path: Path, zepsuty: bytes
+) -> None:
+    """Maile, na których pakiet ``email`` Pythona 3.11, 3.12 albo 3.14 zgłaszał wyjątek (fuzz recenzenta #1236).
+
+    Który mail parser umie rozebrać, zależy od wersji, więc test żąda tylko, żeby każdy mail był przeczytany albo
+    policzony jako pominięty, a poprawny Raport obok doszedł.
+    """
+
+    mails = [w_skrzynce(1, surowy()), w_skrzynce(2, zepsuty)]
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
+        outcome = port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8))
+
+    assert isinstance(outcome, Mails), outcome
+    assert (outcome.mails[0].subject, outcome.mails[0].text) == ("Raport 08.11.2026", "40000001 tak wymiana routera")
+    assert len(outcome.mails) + outcome.skipped == len(mails)
+    assert polecenia(atrapa)[-1] == "LOGOUT"
+
+
+def test_mail_z_zestawem_znakow_z_bajtem_zerowym_czyta_tresc_jako_utf8() -> None:
+    mail = mail_of(ZEPSUTE["zestaw-znakow-z-bajtem-zerowym"], datetime(2026, 11, 8, 18, 5, tzinfo=TATA))
+
+    assert mail is not None
+    assert mail.text.strip() == "40000002 nie"
 
 
 def test_mail_tylko_z_html_daje_tekst_z_linia_na_akapit_bez_stylow_i_skryptow() -> None:
@@ -268,6 +345,39 @@ def test_zerwane_polaczenie_i_brak_sieci_daja_wynik_niedostepnej_skrzynki_z_sama
     assert ImapInbox(config, connect=no_network).mails_since(date(2026, 11, 8)) == InboxUnreachable("ConnectionRefusedError")
 
 
+@pytest.mark.parametrize(
+    ("zerwanie", "odmowa", "przyczyna", "do_serwera"),
+    [
+        (None, "login", "IMAP4.error", ["LOGIN", "LOGOUT"]),
+        ("after_login", None, "TimeoutError", ["LOGIN", "LIST", "LOGOUT"]),
+        (None, "examine", "UnexpectedReply", ["LOGIN", "LIST", "EXAMINE", "LOGOUT"]),
+    ],
+    ids=["chwilowa-odmowa-logowania-bez-zlego-hasla", "gmail-milknie-po-zalogowaniu", "odmowa-otwarcia-folderu"],
+)
+def test_awaria_gmaila_w_trakcie_sesji_daje_wynik_niedostepnej_skrzynki_a_nie_odrzuconego_hasla(
+    tmp_path: Path,
+    zerwanie: Literal["after_login"] | None,
+    odmowa: Literal["login", "examine"] | None,
+    przyczyna: str,
+    do_serwera: list[str],
+) -> None:
+    class LimitCzasuPoZalogowaniu(imaplib.IMAP4):
+        """Połączenie, któremu limit czasu (w porcie ``TIMEOUT_S``) mija od razu po zalogowaniu, a nie wcześniej."""
+
+        def login(self, user: str, password: str) -> tuple[Literal["OK"], list[bytes]]:
+            reply = super().login(user, password)
+            self.sock.settimeout(0.01)
+            return reply
+
+    mails = [w_skrzynce(1, surowy())]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails, cut=zerwanie, refuse=odmowa) as atrapa:
+        inbox = ImapInbox(dostep(tmp_path), connect=lambda: LimitCzasuPoZalogowaniu("127.0.0.1", atrapa.port))
+        outcome = inbox.mails_since(date(2026, 11, 8))
+
+    assert outcome == InboxUnreachable(przyczyna)
+    assert polecenia(atrapa) == do_serwera
+
+
 def _zlap_wynik(config: Path, scenariusz: str) -> tuple[ImapInbox, InboxOutcome]:
     if scenariusz == "brak-sieci":
 
@@ -325,6 +435,6 @@ def test_atrapa_skrzynki_raportow_procesu_oddaje_swoj_wynik_i_zapisuje_dzien_kaz
     rejected = FakeInbox(PasswordRejected(), state="unreadable")
     inboxes: list[WorkerReportInbox] = [with_mails, rejected]
 
-    assert [inbox.mails_since(date(2026, 11, 8)) for inbox in inboxes] == [Mails((mail,)), PasswordRejected()]
+    assert [inbox.mails_since(date(2026, 11, 8)) for inbox in inboxes] == [Mails((mail,), skipped=0), PasswordRejected()]
     assert [inbox.access() for inbox in inboxes] == ["ready", "unreadable"]
     assert with_mails.days == rejected.days == [date(2026, 11, 8)]

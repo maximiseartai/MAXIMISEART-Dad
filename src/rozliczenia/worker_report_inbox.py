@@ -3,7 +3,8 @@
 Port niczego w skrzynce nie zmienia: otwiera folder przez ``EXAMINE`` i pobiera maile przez ``BODY.PEEK``, więc nie
 oznacza ich jako przeczytanych, i nie wysyła ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE`` ani ``APPEND``.
 Oddaje maile ze słowem ``SUBJECT_WORD`` w temacie, od każdego nadawcy oprócz samej skrzynki: Raport wykonawcy od
-adresu spoza pliku adresów rozpoznaje i pokazuje tacie rdzeń raportów, więc port nie filtruje po nadawcy.
+adresu spoza pliku adresów rozpoznaje i pokazuje tacie rdzeń raportów, więc port nie filtruje po nadawcy. Mail, którego
+nie umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki.
 
 Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło),
 który Maks pisze Notatnikiem albo PowerShellem, więc odczyt przyjmuje BOM UTF-8 i UTF-16. Hasło nie wychodzi z modułu:
@@ -16,7 +17,7 @@ import codecs
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import email
 from email.message import MIMEPart
 import email.policy
@@ -32,6 +33,7 @@ from typing import Final, Literal, Protocol
 from .worker_reports import SUBJECT_WORD, MailId, ReportMail, SenderAddress
 
 __all__ = [
+    "FETCH_BATCH",
     "INBOX_ACCESS_FILE",
     "ImapInbox",
     "InboxAccess",
@@ -47,7 +49,8 @@ INBOX_ACCESS_FILE: Final = "skrzynka-raportow.txt"
 GMAIL_HOST: Final = "imap.gmail.com"
 GMAIL_PORT: Final = 993
 TIMEOUT_S: Final = 30
-_BATCH: Final = 100
+FETCH_BATCH: Final = 100
+"""Najwięcej UID w jednym ``UID FETCH``, żeby polecenie miało ograniczoną długość przy każdej liczbie maili."""
 _MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _LIST_LINE: Final = re.compile(rb'\((?P<flags>[^)]*)\) (?:"(?:[^"\\]|\\.)*"|NIL) "(?P<name>(?:[^"\\]|\\.)*)"')
 _UID: Final = re.compile(rb"\bUID (\d+)\b")
@@ -58,9 +61,12 @@ InboxAccess = Literal["ready", "missing", "unreadable"]
 
 @dataclass(frozen=True)
 class Mails:
-    """Maile ze słowem ``SUBJECT_WORD`` w temacie z dni od wskazanego, w kolejności skrzynki."""
+    """Maile ze słowem ``SUBJECT_WORD`` w temacie z dni od dnia przed wskazanym, w kolejności skrzynki. ``skipped`` to
+    liczba maili ze słowem w temacie, których port nie przeczytał (bez adresu nadawcy albo takich, których pakiet
+    ``email`` nie umie rozebrać), bez ich treści, adresów i tematów."""
 
     mails: tuple[ReportMail, ...]
+    skipped: int
 
 
 @dataclass(frozen=True)
@@ -86,7 +92,11 @@ class WorkerReportInbox(Protocol):
         ...
 
     def mails_since(self, day: date) -> InboxOutcome:
-        """Maile ze słowem ``SUBJECT_WORD`` w temacie z dni od ``day``; skrzynka zostaje bez zmian."""
+        """Maile ze słowem ``SUBJECT_WORD`` w temacie z dni od dnia przed ``day``; skrzynka zostaje bez zmian.
+
+        Dzień wcześniej, bo Gmail liczy ``SINCE`` po dniu przyjęcia w swojej strefie, a nie w strefie taty, a o dniu
+        Raportu i tak rozstrzyga rdzeń raportów z tematu.
+        """
         ...
 
 
@@ -178,21 +188,24 @@ def _ok(reply: tuple[str, Sequence[object]]) -> Sequence[object]:
 def _read(imap: imaplib.IMAP4, access: _Access, day: date) -> Mails:
     imap.login(_quoted(access.address.shown()), access.password)
     _ok(imap.select(_quoted(_folder(imap)), readonly=True))
-    since = f"{day.day:02d}-{_MONTHS[day.month - 1]}-{day.year}"
+    first = day - timedelta(days=1)
+    since = f"{first.day:02d}-{_MONTHS[first.month - 1]}-{first.year}"
     found = _ok(imap.uid("SEARCH", "SINCE", since))
     uids = [uid.decode("ascii") for line in found if isinstance(line, bytes) for uid in line.split()]
     subjects = _fetched(imap, uids, "(UID BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
     chosen = [uid for uid, (_, header) in subjects.items() if SUBJECT_WORD in _subject(header).casefold()]
-    mails = []
+    mails, skipped = [], 0
     for prefix, raw in _fetched(imap, chosen, "(UID INTERNALDATE BODY.PEEK[])").values():
         moment = imaplib.Internaldate2tuple(prefix)
         if moment is None:
             raise UnexpectedReply
         arrived = datetime.fromtimestamp(time.mktime(moment), tz=timezone.utc).astimezone()
         mail = mail_of(raw, arrived)
-        if mail is not None and mail.sender != access.address:
+        if mail is None:
+            skipped += 1
+        elif mail.sender != access.address:
             mails.append(mail)
-    return Mails(tuple(mails))
+    return Mails(tuple(mails), skipped)
 
 
 def _folder(imap: imaplib.IMAP4) -> str:
@@ -206,11 +219,11 @@ def _folder(imap: imaplib.IMAP4) -> str:
 
 
 def _fetched(imap: imaplib.IMAP4, uids: list[str], items: str) -> dict[str, tuple[bytes, bytes]]:
-    """UID → (początek odpowiedzi FETCH, literał) dla ``uids`` w paczkach po ``_BATCH``."""
+    """UID → (początek odpowiedzi FETCH, literał) dla ``uids`` w paczkach po ``FETCH_BATCH``."""
 
     fetched = {}
-    for start in range(0, len(uids), _BATCH):
-        for part in _ok(imap.uid("FETCH", ",".join(uids[start : start + _BATCH]), items)):
+    for start in range(0, len(uids), FETCH_BATCH):
+        for part in _ok(imap.uid("FETCH", ",".join(uids[start : start + FETCH_BATCH]), items)):
             if not isinstance(part, tuple):
                 continue
             prefix, literal = part
@@ -237,8 +250,16 @@ def _close(imap: imaplib.IMAP4) -> None:
 
 def mail_of(raw: bytes, arrived: datetime) -> ReportMail | None:
     """Mail MIME jako ``ReportMail``: temat po RFC 2047, treść z ``text/plain``, a bez niego tekst z ``text/html``;
-    ``None``, gdy nagłówek ``From`` nie ma adresu."""
+    ``None``, gdy nagłówek ``From`` nie ma adresu albo pakiet ``email`` nie umie maila rozebrać."""
 
+    # Pakiet email zgłasza na zepsutym mailu AttributeError, IndexError, ValueError i inne, zależnie od wersji Pythona.
+    try:
+        return _report_mail(raw, arrived)
+    except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: pominięty mail liczy Mails.skipped
+        return None
+
+
+def _report_mail(raw: bytes, arrived: datetime) -> ReportMail | None:
     message = email.message_from_bytes(raw, policy=email.policy.default)
     sender = SenderAddress.of(str(message["From"] or ""))
     if sender is None:
@@ -253,14 +274,15 @@ def mail_of(raw: bytes, arrived: datetime) -> ReportMail | None:
 
 
 def _decoded(part: MIMEPart) -> str:
-    """Treść części po quoted-printable albo base64 w jej zestawie znaków; nieznany zestaw czyta jako UTF-8."""
+    """Treść części po quoted-printable albo base64 w jej zestawie znaków; nieznany albo zepsuty zestaw (z bajtem
+    zerowym) czyta jako UTF-8."""
 
     payload = part.get_payload(decode=True)
     content = payload if isinstance(payload, bytes) else b""
     charset = part.get_content_charset() or "utf-8"
     try:
         return content.decode(charset, errors="replace")
-    except LookupError:
+    except (LookupError, ValueError):
         return content.decode("utf-8", errors="replace")
 
 

@@ -48,7 +48,7 @@ class FakeInbox:
         self.days.append(day)
         if isinstance(self.outcome, (PasswordRejected, InboxUnreachable)):
             return self.outcome
-        return Mails(tuple(self.outcome))
+        return Mails(tuple(self.outcome), skipped=0)
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,11 @@ class AtrapaImap:
     """Serwer IMAP jednej skrzynki na czas bloku ``with``; ``port`` to jego port, ``commands`` polecenia klienta.
 
     Skrzynka ma ``INBOX`` i, gdy ``all_folder``, folder ``\\All`` z nazwą w modified UTF-7 i spacją; oba pokazują te
-    same maile. ``cut="greeting"`` zrywa każde połączenie przed powitaniem, jak sieć, która zgubiła Gmaila.
+    same maile. ``cut="greeting"`` zrywa każde połączenie przed powitaniem, jak sieć, która zgubiła Gmaila, a
+    ``cut="after_login"`` po udanym ``LOGIN`` czyta polecenia, ale odpowiada już tylko na ``CAPABILITY``, o które
+    ``imaplib`` 3.14 pyta sam po ``LOGIN``, jak Gmail, który zamilkł w trakcie sesji: klient z limitem czasu dostaje
+    wtedy ``TimeoutError``. ``refuse="login"`` odmawia ``LOGIN`` jak Gmail w chwilowej awarii (``NO [UNAVAILABLE]``, bez
+    ``AUTHENTICATIONFAILED``), a ``refuse="examine"`` odmawia otwarcia folderu.
     """
 
     def __init__(
@@ -74,13 +78,15 @@ class AtrapaImap:
         password: str,
         mails: Sequence[AtrapaMail] = (),
         all_folder: bool = True,
-        cut: Literal["greeting"] | None = None,
+        cut: Literal["greeting", "after_login"] | None = None,
+        refuse: Literal["login", "examine"] | None = None,
     ) -> None:
         self.address = address
         self.password = password
         self.mails = tuple(mails)
         self.all_folder = all_folder
         self.cut = cut
+        self.refuse = refuse
         self.commands: list[str] = []
         self._server = _Server(self)
         self._thread = threading.Thread(target=self._server.serve_forever, args=(_POLL_S,), name="atrapa-imap")
@@ -117,6 +123,7 @@ class _Session(socketserver.StreamRequestHandler):
         if atrapa.cut == "greeting":
             return
         self._send(b"* OK [CAPABILITY IMAP4rev1] AtrapaImap gotowa")
+        logged_in = False
         while line := self.rfile.readline():
             tag, _, rest = line.decode("utf-8").rstrip("\r\n").partition(" ")
             command, _, arguments = rest.partition(" ")
@@ -125,8 +132,11 @@ class _Session(socketserver.StreamRequestHandler):
                 inner, _, arguments = arguments.partition(" ")
                 command = f"UID {inner.upper()}"
             atrapa.commands.append(command if command == "LOGIN" else f"{command} {arguments}".rstrip())
+            if logged_in and atrapa.cut == "after_login" and command != "CAPABILITY":
+                continue
             if not self._answer(tag, command, arguments):
                 return
+            logged_in = logged_in or (command == "LOGIN" and self._logs_in(arguments))
 
     def _answer(self, tag: str, command: str, arguments: str) -> bool:
         atrapa = self.server.atrapa
@@ -134,8 +144,9 @@ class _Session(socketserver.StreamRequestHandler):
         if command == "CAPABILITY":
             self._send(b"* CAPABILITY IMAP4rev1", done)
         elif command == "LOGIN":
-            user, password = _strings(arguments)
-            if (user, password) != (atrapa.address, atrapa.password):
+            if atrapa.refuse == "login":
+                self._send(f"{tag} NO [UNAVAILABLE] Temporary System Problem. Try again later".encode())
+            elif not self._logs_in(arguments):
                 self._send(f"{tag} NO [AUTHENTICATIONFAILED] Invalid credentials (Failure)".encode())
             else:
                 self._send(done)
@@ -145,7 +156,7 @@ class _Session(socketserver.StreamRequestHandler):
                 folders.append(f'* LIST (\\All \\HasNoChildren) "/" "{_ALL}"'.encode())
             self._send(*folders, done)
         elif command == "EXAMINE":
-            known = _strings(arguments) in (["INBOX"], *([[_ALL]] if atrapa.all_folder else []))
+            known = atrapa.refuse != "examine" and _strings(arguments) in (["INBOX"], *([[_ALL]] if atrapa.all_folder else []))
             exists = f"* {len(atrapa.mails)} EXISTS".encode()
             self._send(*((exists, f"{tag} OK [READ-ONLY] EXAMINE gotowe".encode()) if known else (f"{tag} NO brak folderu".encode(),)))
         elif command == "UID SEARCH":
@@ -174,6 +185,10 @@ class _Session(socketserver.StreamRequestHandler):
         internal = f"{moment.day:02d}-{_MONTHS[moment.month - 1]}-{moment.year} {moment:%H:%M:%S %z}"
         head = f'* {number} FETCH (UID {mail.uid} INTERNALDATE "{internal}" {name} {{{len(literal)}}}\r\n'
         self.wfile.write(head.encode() + literal + b")\r\n")
+
+    def _logs_in(self, arguments: str) -> bool:
+        atrapa = self.server.atrapa
+        return atrapa.refuse != "login" and _strings(arguments) == [atrapa.address, atrapa.password]
 
     def _send(self, *lines: bytes) -> None:
         self.wfile.write(b"".join(line + b"\r\n" for line in lines))
