@@ -19,6 +19,7 @@ import pytest
 from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
+from rozliczenia import tool_files
 from rozliczenia import client_data
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult, WithoutRule, evaluate
@@ -173,7 +174,7 @@ def test_ilosci_tylko_dla_inea_przy_slowie_w_dowolnym_miejscu_urzadzen_bez_wzgle
     tmp_path: Path,
 ) -> None:
     source_path, _, config_path = make_fixture(tmp_path)
-    template_path = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
 
     @settings(PROPERTY, max_examples=12)
     @given(st.lists(_inea_row(), min_size=1, max_size=10))

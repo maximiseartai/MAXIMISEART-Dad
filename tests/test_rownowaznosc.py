@@ -12,8 +12,13 @@ import zipfile
 from openpyxl import load_workbook
 import pytest
 
+from rozliczenia import tool_files
+from rozliczenia.period_folder import PeriodFolder
+from rozliczenia.settlement_period import parse_period_token
+
 from tests.fixtures.git_repo import commit, git
 from atrapy.intermax import ORDER_SHEET, YELLOW
+from atrapy.preparation import REGISTER_NAME as REGISTER
 from tests.fixtures.potomne import potomne
 from tests.fixtures.rownowaznosc import METRICS, rownowaznosc, stub_tree, write_workbook
 from atrapy.workbooks import rewrite_parts
@@ -21,7 +26,8 @@ from atrapy.workbooks import rewrite_parts
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "rownowaznosc.py"
 TIME, MOMENT, FOLDER = rownowaznosc.TIME, rownowaznosc.MOMENT, rownowaznosc.FOLDER
-SETTLEMENTS = "Rozliczenie pracowników 08_14_09_2026"
+PERIOD_FOLDER = PeriodFolder(Path(), parse_period_token("08_14_09_2026"))
+SETTLEMENTS = PERIOD_FOLDER.worker_settlements.name
 
 # Kod wyjścia, wynik i kod Komunikatu Zatrzymania każdego scenariusza na kodzie tego checkoutu.
 EXPECTED = {
@@ -56,12 +62,12 @@ EXPECTED = {
 BASES = {"settlement": "przebieg", "preparation": "przygotowanie", "intermax": "intermax"}
 # Scenariusze, które różnią się od bazowego argumentami procesu, a nie samymi wejściami.
 OWN_ARGUMENTS = {"przebieg-podglad", "przebieg-podglad-nieznany-wykonawca", "przygotowanie-podglad", "przygotowanie-uklad-folderow-taty"}
-COLLECTIVE = "08_14_09_2026/Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"
-REGISTER = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
+COLLECTIVE = PERIOD_FOLDER.collective_file.as_posix()
+CONFIG = tool_files.config_dir(Path())
 # Wejścia, które każdy pozostały scenariusz zmienia wobec bazowego swojego procesu, przy tych samych argumentach.
 VARIANTS = {
     "przebieg-ilosci": {COLLECTIVE},
-    "przebieg-wzorzec-syntetyczny": {"Wzorzec rozliczenia pracownika.xlsx"},
+    "przebieg-wzorzec-syntetyczny": {tool_files.WORKER_TEMPLATE.name},
     "przebieg-nieznany-wykonawca": {COLLECTIVE},
     "przebieg-folder-rozliczen-istnieje": {f"08_14_09_2026/{SETTLEMENTS}/zostaje.txt"},
     "przebieg-plik-zbiorczy-nie-skoroszyt": {COLLECTIVE},
@@ -69,9 +75,12 @@ VARIANTS = {
     "przebieg-format-bez-definicji-L18": {COLLECTIVE},
     "przebieg-format-bez-definicji-M18": {COLLECTIVE},
     "przebieg-format-bez-definicji-AT18": {COLLECTIVE},
-    "przygotowanie-wzorce-syntetyczne": {"config/Wzorzec pliku zbiorczego.xlsx", "config/Wzorzec rozliczenia wewnętrznego.xlsx"},
+    "przygotowanie-wzorce-syntetyczne": {
+        (CONFIG / tool_files.COLLECTIVE_TEMPLATE.name).as_posix(),
+        (CONFIG / tool_files.INTERNAL_TEMPLATE.name).as_posix(),
+    },
     "przygotowanie-niepelny-okres": {REGISTER},
-    "przygotowanie-plik-zbiorczy-istnieje": {"INEA/08_14_09_2026/Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"},
+    "przygotowanie-plik-zbiorczy-istnieje": {f"INEA/{COLLECTIVE}"},
     "przygotowanie-rejestr-nie-skoroszyt": {REGISTER},
     "przygotowanie-rejestr-uciety": {REGISTER},
     "intermax-starszy-arkusz-zolte-komorki": {REGISTER},

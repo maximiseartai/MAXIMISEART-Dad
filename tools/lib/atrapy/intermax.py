@@ -27,23 +27,11 @@ from openpyxl.styles import Border, Font, PatternFill, Side
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 from openpyxl.worksheet.worksheet import Worksheet
 
+from rozliczenia.register_columns import COLUMNS
+
 ORDER_SHEET = "ZLECENIA OD 06_2025"
-HEADERS = (
-    "AKCJE",
-    "DATA GODZ. POCZ.",
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "WYKONAWCA",
-    "NUMER UMOWY",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-    "ZWROT",
-    "UWAGI",
-)
+# Nagłówki nowego Rejestru taty od B: AKCJE, kolumny, które narzędzie przenosi, w ich kolejności, ZWROT i UWAGI.
+HEADERS = ("AKCJE", *(column.register_header for column in COLUMNS), "ZWROT", "UWAGI")
 FIRST = 2  # B: AKCJE
 DATE = 3  # C
 ADDRESS = 5  # E: ADRES

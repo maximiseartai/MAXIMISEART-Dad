@@ -19,11 +19,15 @@ from typing import Any, get_args, get_type_hints
 
 import pytest
 
+from rozliczenia import tool_files
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import settlement_messages
 from rozliczenia.centrum import run_view
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
+from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
+from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Stop
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
@@ -40,6 +44,7 @@ from rozliczenia.tool_files import (
     WORKER_TEMPLATE,
 )
 
+from tests.fixtures.centrum import ToolDirectory
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
 from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
@@ -53,6 +58,7 @@ from rozliczenia.preparation_register import period_sheets, read
 from rozliczenia.workbook_files import read_data_rows
 from atrapy.settlement import (
     PERIOD,
+    PERIOD_FOLDER,
     SOURCE_NAME,
     link_order_numbers,
     make_fixture,
@@ -67,7 +73,7 @@ from atrapy.intermax import Intermax
 from atrapy.workbooks import hyperlinks
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "uruchom_proces.py"
-WORKER_SETTLEMENTS = f"Rozliczenie pracowników {PERIOD}"
+WORKER_SETTLEMENTS = PERIOD_FOLDER.worker_settlements.name
 DETACHED_VIEW_NOTICE = "Podgląd postępu przestał się aktualizować; wynik nie zależy od tego."
 
 
@@ -116,7 +122,7 @@ def _settlement_arguments(tmp_path: Path, source: Path, config: Path, *extra: st
         "--config",
         str(config),
         "--worker-template",
-        str(tmp_path / "Wzorzec rozliczenia pracownika.xlsx"),
+        str(tmp_path / tool_files.WORKER_TEMPLATE.name),
         "--metrics",
         str(tmp_path / "metrics.jsonl"),
         *extra,
@@ -155,7 +161,7 @@ def _preparation_arguments(fixture: PreparationFixture, *extra: str) -> list[str
 def _run_logs() -> set[str]:
     """Logi Uruchomienia w katalogu Logów narzędzia, gdzie leżą u taty."""
 
-    directory = TOOL_ROOT / "logs" / "uruchomienia"
+    directory = ToolDirectory(TOOL_ROOT).run_logs
     return {path.name for path in directory.iterdir()} if directory.is_dir() else set()
 
 
@@ -171,7 +177,7 @@ def test_przebieg_ze_skryptu_dla_maszyn_nie_tworzy_kontroli_ilosci_ani_logow_uru
     completed = _completed(*_settlement_arguments(tmp_path, source, config))
 
     assert completed.returncode == 0, completed.stderr
-    assert [path for path in tmp_path.rglob("*") if path.name in ("zgloszenia", "kolejka", "uruchomienia")] == []
+    assert [path for path in tmp_path.rglob("*") if path.name in (UNSENT_DIRECTORY, QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY)] == []
     assert _run_logs() == logs_before
     printed = completed.stdout + completed.stderr + (tmp_path / "metrics.jsonl").read_text(encoding="utf-8")
     assert [marker for marker in ("ZNACZNIK-UMOWA", "ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI") if marker in printed] == []
@@ -659,7 +665,7 @@ def test_bez_podanych_plikow_oba_procesy_czytaja_konfiguracje_wykonawcow_i_wzorc
     script = _tool_copy(tmp_path)
     tool = script.parents[1]
     preparation = make_preparation_fixture(tool)  # w config/ Konfiguracja wykonawców i oba Wzorce Przygotowania
-    write_template(tool / "config" / "Wzorzec rozliczenia pracownika.xlsx")
+    write_template(tool_files.config_dir(tool) / tool_files.WORKER_TEMPLATE.name)
     source, _target, _config = make_fixture(tmp_path / "okresy")
 
     settled = _run("settlement", "--source", source, "--dry-run", script=script)

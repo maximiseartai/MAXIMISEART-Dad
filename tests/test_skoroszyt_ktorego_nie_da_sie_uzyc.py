@@ -13,6 +13,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 import pytest
 
+from rozliczenia import tool_files
 from rozliczenia.domain import PhaseStarted, ProgressEvent, ProgressPhase, WorkerStarted
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.message import StopError
@@ -47,7 +48,7 @@ def test_przebieg_bez_pliku_zbiorczego_zatrzymuje_sprawdzanie_brakiem_pliku_zbio
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / "Wzorzec rozliczenia pracownika.xlsx"),
+            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -58,7 +59,7 @@ def test_przebieg_bez_wzorca_rozliczenia_pracownika_w_zapisywaniu_nie_tworzy_sko
     tmp_path: Path,
 ) -> None:
     source_path, target_directory, config_path = make_fixture(tmp_path)
-    worker_template_path = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    worker_template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
 
     def remove_before_first_file(event: ProgressEvent) -> None:
         if isinstance(event, WorkerStarted) and event.template_index == 1:
@@ -77,9 +78,9 @@ def test_przebieg_bez_wzorca_rozliczenia_pracownika_w_zapisywaniu_nie_tworzy_sko
     assert not target_directory.exists()
 
 
-INTERNAL = "Wzorzec rozliczenia wewnętrznego.xlsx"
-COLLECTIVE = "Wzorzec pliku zbiorczego.xlsx"
-WORKER = "Wzorzec rozliczenia pracownika.xlsx"
+INTERNAL = tool_files.INTERNAL_TEMPLATE.name
+COLLECTIVE = tool_files.COLLECTIVE_TEMPLATE.name
+WORKER = tool_files.WORKER_TEMPLATE.name
 
 
 def inaccessible(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

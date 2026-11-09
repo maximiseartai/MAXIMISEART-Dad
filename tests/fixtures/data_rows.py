@@ -6,20 +6,18 @@ from collections.abc import Mapping
 from datetime import date, time
 from types import MappingProxyType
 
+from rozliczenia.collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, LOOK_COLUMNS
 from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.hyperlinks import Hyperlink
 from rozliczenia.register_columns import TARGET_HEADERS
 from rozliczenia.workbook_files import DataCell, DataRow, ExcelRow, RegisterRow
-
-DATA_ROW_COLUMNS = 46  # A:AT
-LOOK_COLUMNS = 12  # A:L
 
 
 def data_row(
     values: ExcelRow,
     highlights: Mapping[int, Highlights] | None = None,
     *,
-    number: int = 18,
+    number: int = FIRST_DATA_ROW,
     links: Mapping[int, str] | None = None,
 ) -> DataRow:
     """Wiersz danych A:AT z ``values`` od A; ``highlights`` i ``links`` po kolumnie od 1, reszta komórek bez nich.
@@ -27,14 +25,14 @@ def data_row(
     Format liczby to format daty przy dacie w kolumnach wyglądu A:L, a poza tym ogólny.
     """
 
-    padded = tuple(values) + (None,) * (DATA_ROW_COLUMNS - len(values))
+    padded = tuple(values) + (None,) * (len(DATA_ROW_COLUMNS) - len(values))
     return DataRow(
         number,
         tuple(
             DataCell(
                 value,
                 (highlights or {}).get(column, PLAIN),
-                "m/d/yy h:mm" if column <= LOOK_COLUMNS and isinstance(value, (date, time)) else "General",
+                "m/d/yy h:mm" if column in LOOK_COLUMNS and isinstance(value, (date, time)) else "General",
                 Hyperlink((links or {})[column]) if column in (links or {}) else None,
             )
             for column, value in enumerate(padded, start=1)

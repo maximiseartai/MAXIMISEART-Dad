@@ -35,10 +35,10 @@ SMALL_DATA_ROWS = 150
 
 # Pliki repozytorium, których benchmark nie może zmienić: Ustawienia taty i historie metryk procesów.
 PROTECTED_REPOSITORY_FILES = (
-    ROOT / "config" / "centrum-ustawienia.yaml",
-    ROOT / "config" / "worker_mapping.yaml",
-    ROOT / ".rozliczenia-metrics.jsonl",
-    ROOT / ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
+    tool_files.SETTINGS,
+    tool_files.WORKER_CONFIG,
+    tool_files.SETTLEMENT_METRICS,
+    tool_files.PREPARATION_METRICS,
 )
 
 # Kolumny Pliku zbiorczego, które identyfikują klienta albo zlecenie: ADRES, UMOWA, NUMER ZL., NUMER UMOWY.

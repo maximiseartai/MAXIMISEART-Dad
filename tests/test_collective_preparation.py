@@ -15,6 +15,7 @@ from openpyxl.utils import column_index_from_string
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 import pytest
 
+from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.domain import (
     IssueCountReady,
@@ -41,6 +42,7 @@ from atrapy.preparation import (
     NOT_TRANSFERRED_PREFIXES,
     OLD_REGISTER_HEADERS,
     PERIOD,
+    REGISTER_HEADERS,
     TEMPLATE_NARROW_COLUMN_WIDTHS,
     RAW_ORDER_FONT,
     PreparationFixture,
@@ -106,6 +108,28 @@ def internal_row(number: int, started: datetime, successful: str, worker: str) -
         "montaż",
         None,
         None,
+    )
+
+
+def test_syntetyczny_rejestr_ma_naglowki_nowego_rejestru_taty() -> None:
+    # Atrapy biorą nagłówki przenoszonych kolumn z register_columns, więc tylko ten literał pilnuje, że narzędzie szuka
+    # w Rejestrze dokładnie nagłówków z pliku taty.
+    assert REGISTER_HEADERS == (
+        "",
+        "AKCJE",
+        "DATA GODZ. POCZ.",
+        "MIASTO",
+        "ADRES",
+        "UMOWA",
+        "URZĄDZENIA",
+        "CZYNNOŚCI",
+        "NUMER ZL.",
+        "WYKONAWCA",
+        "NUMER UMOWY",
+        "SKUTECZNE",
+        "CZYNNOŚCI ZREALIZOWANE",
+        "ZWROT",
+        "UWAGI",
     )
 
 
@@ -396,7 +420,7 @@ def test_period_crossing_month_or_year_takes_month_and_year_of_monday(
 
     assert summary.period_order_count == 2
     assert next(iter(summary.orders_per_day)) == tuesday.date()
-    assert (fixture.periods_directory / token / f"Rozliczenie wew. {token}.xlsx").is_file()
+    assert PeriodFolder(fixture.periods_directory, parse_period_token(token)).internal_settlement.is_file()
 
 
 EXPECTED_ORDERS_PER_DAY = {

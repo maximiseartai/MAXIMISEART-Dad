@@ -195,7 +195,7 @@ def test_po_odczycie_strony_rodzaju_teksty_wierszy_nie_wychodza_z_komputera(tmp_
     assert diagnosis.status_code == 200, diagnosis.text
     draft = diagnosis.json()["report"]
 
-    run_logs = sorted((centrum.tmp_path / "logs" / "uruchomienia").glob("*"))
+    run_logs = sorted(centrum.tool.run_logs.glob("*"))
     assert run_logs, "Uruchomienia mają Logi Uruchomienia"
     log = centrum.log_path.read_text(encoding="utf-8")
     assert "getKindTable:310/280" in log

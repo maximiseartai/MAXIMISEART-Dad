@@ -28,6 +28,7 @@ from typing import Any, Final
 import pytest
 
 from odtworzenie import COMPARED, NOT_COMPARED
+from rozliczenia import tool_files
 from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG
@@ -124,7 +125,7 @@ def diagnosed_logs(centrum: SettlingCentrum, edits: int) -> dict[str, Any]:
 
 
 def local_path(centrum: SettlingCentrum, run_id: str) -> Path:
-    [path] = (centrum.log_path.parent / "uruchomienia").glob(f"*-{run_id}.json")
+    [path] = centrum.tool.run_logs.glob(f"*-{run_id}.json")
     return path
 
 
@@ -150,7 +151,7 @@ def queued_logs(centrum: SettlingCentrum) -> list[Path]:
     """Pliki kolejki z Logami Uruchomienia, bez ``.json.tmp``, który kolejka zostawia na chwilę przepisania pliku
     (``replace_atomically``, na Windows z ponowieniami zamiany; #885)."""
 
-    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))
+    return sorted(centrum.tool.queue.glob(f"*-{LABEL}-*.json"))
 
 
 def test_pierwsze_uruchomienie_okresu_zaklada_issue_i_archiwum_logow_a_kolejne_dopisuja_komentarze_i_pliki_takze_po_zamknieciu(
@@ -310,7 +311,7 @@ def test_logi_bez_skrzynki_czekaja_w_kolejce_bez_komunikatu_a_nastepny_start_je_
     assert (view["result"]["result"], view["result"]["stops"], view["result"]["warnings"]) == ("OK", [], [])
     assert view["result"]["technical_notes"] == []
     [queued] = queued_logs(centrum)
-    assert [path.name for path in (tmp_path / "config" / "zgloszenia").iterdir()] == ["kolejka"]
+    assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
     assert (box(centrum).issues, box(centrum).archives) == ([], [])
 
     box(centrum).search_failure = None
@@ -506,7 +507,7 @@ def test_plik_logow_ktory_nie_powstal_przy_diagnozie_powstaje_przy_nastepnej_z_t
     centrum = watched_centrum(tmp_path)
     run_id = unexpected_exception(centrum)
     thread_with(centrum, comments=1)
-    [path] = (centrum.log_path.parent / "uruchomienia").glob(f"*-{run_id}.json")
+    [path] = centrum.tool.run_logs.glob(f"*-{run_id}.json")
     blocked = path.with_name(path.name + ".tmp")
     blocked.mkdir()
     diagnose(centrum, run_id)
@@ -584,7 +585,7 @@ def test_katalog_logow_bez_prawa_zapisu_nie_zmienia_diagnozy_ani_zgloszenia_a_di
     tmp_path: Path,
 ) -> None:
     centrum = watched_centrum(tmp_path)
-    blocked = centrum.log_path.parent / "uruchomienia"
+    blocked = centrum.tool.run_logs
     blocked.parent.mkdir(parents=True, exist_ok=True)
     blocked.write_text("", encoding="utf-8")
     run_id = stopped_for_maks(centrum)
@@ -950,7 +951,7 @@ def _other_cell(record: dict[str, Any]) -> None:
 
 
 def _other_config_size(record: dict[str, Any]) -> None:
-    record["environment"]["files"] = [{"name": "worker_mapping.yaml", "size": 1, "online_only": None}]
+    record["environment"]["files"] = [{"name": tool_files.WORKER_CONFIG.name, "size": 1, "online_only": None}]
 
 
 # Granica Logów: zmiana pliku Logów Przebiegu, folder Konfiguracji (``None``: folder Centrum taty), kod wyjścia i linia
@@ -1011,8 +1012,8 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
         granice = lines[lines.index("Granice:") + 1 :]
         assert [line for line in granice if line.startswith(expected)], granice
     if case == "inny_rozmiar_konfiguracji":
-        size = (configuration / "worker_mapping.yaml").stat().st_size
-        assert any(line.endswith(f"inny rozmiar niż u taty: worker_mapping.yaml: u taty 1 B, tu {size} B") for line in lines)
+        size = (configuration / tool_files.WORKER_CONFIG.name).stat().st_size
+        assert any(line.endswith(f"inny rozmiar niż u taty: {tool_files.WORKER_CONFIG.name}: u taty 1 B, tu {size} B") for line in lines)
 
 
 def test_powtorka_zatrzymania_porownuje_sie_jak_zatrzymanie_dla_taty(
@@ -1340,7 +1341,7 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_intermax_nie_wypuszcza_adresu_ani
 
     code, lines = _replayed(capsys, archived, "--na-tym-drzewie")
 
-    files = [path.read_text(encoding="utf-8") for path in (root / "logs" / "uruchomienia").glob("*")]
+    files = [path.read_text(encoding="utf-8") for path in ToolDirectory(root).run_logs.glob("*")]
     assert _leaked([*files, gzip.decompress(archived.read_bytes()).decode("utf-8"), note]) == []
     assert [row["cells"]["G"] for row in sheet["rows"]] == [order.kind for order in raw]
     assert (sheet["shifted_row"], sheet["uncertain_rows"]) == (sheet["rows"][0]["row"], [])
@@ -1370,7 +1371,7 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_rejestru_nie_wypuszcza_adresu_ani
 
     code, lines = _replayed(capsys, archived, "--na-tym-drzewie", "--konfiguracja", root / "config")
 
-    files = [path.read_text(encoding="utf-8") for path in (root / "logs" / "uruchomienia").glob("*")]
+    files = [path.read_text(encoding="utf-8") for path in ToolDirectory(root).run_logs.glob("*")]
     assert _leaked([*files, gzip.decompress(archived.read_bytes()).decode("utf-8"), note]) == []
     assert [row["cells"][devices] for row in sheet["rows"] if devices in row["cells"]][-1] == "dekoder"
     assert not any("[" in str(row["cells"].get(devices, "")) for row in sheet["rows"])

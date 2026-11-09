@@ -16,6 +16,18 @@ from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
+from rozliczenia import tool_files
+from rozliczenia.collective_layout import (
+    ADDRESS_COLUMN,
+    AMOUNT_COLUMN,
+    FIRST_DATA_ROW,
+    HEADER_ROW,
+    QUANTITY_COLUMNS,
+    WORKER_COLUMN,
+    column,
+)
+from rozliczenia.period_folder import PeriodFolder, collective_file_name_with, worker_settlements_name_with
+from rozliczenia.settlement_period import parse_period_token
 from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, set_view
 
 PERIOD = "08_14_09_2026"
@@ -24,7 +36,9 @@ PERIOD = "08_14_09_2026"
 NOT_A_PERIOD = "09_15_09_2026"  # wygląda jak token okresu, ale 9 września 2026 to środa
 
 
-SOURCE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
+PERIOD_FOLDER = PeriodFolder(Path(), parse_period_token(PERIOD))
+"""Folder okresu ``PERIOD`` względem folderu okresów: nazwy Pliku zbiorczego i Folderu rozliczeń pracowników."""
+SOURCE_NAME = PERIOD_FOLDER.collective_file.name
 
 
 # Konfiguracja wykonawców: identyfikator Wykonawcy z pliku -> nazwa w Rozliczeniu pracownika.
@@ -67,14 +81,13 @@ def write_template(path: Path, *, view: View = TEMPLATE_VIEW) -> None:
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
     set_view(sheet, view)
-    for column, width in WORKER_TEMPLATE_COLUMN_WIDTHS.items():
-        sheet.column_dimensions[get_column_letter(column)].width = width
-    sheet.cell(17, 8).value = "WYKONAWCA"
-    sheet["A17"].fill = PatternFill(fill_type="solid", fgColor="00AA55")
-    sheet.cell(18, 47).value = "=N18"
-    sheet.cell(19, 47).value = "=N19"
-    sheet.cell(18, 14).value = 0
-    sheet.cell(19, 14).value = 0
+    for number, width in WORKER_TEMPLATE_COLUMN_WIDTHS.items():
+        sheet.column_dimensions[get_column_letter(number)].width = width
+    sheet.cell(HEADER_ROW, WORKER_COLUMN).value = "WYKONAWCA"
+    sheet.cell(HEADER_ROW, 1).fill = PatternFill(fill_type="solid", fgColor="00AA55")
+    for row in (FIRST_DATA_ROW, FIRST_DATA_ROW + 1):
+        sheet.cell(row, AMOUNT_COLUMN).value = f"=N{row}"
+        sheet.cell(row, QUANTITY_COLUMNS.start).value = 0
     rates = workbook.create_sheet("Rates")
     rates["A1"] = "synthetic rate"
     rates["B1"] = 17.5
@@ -85,7 +98,7 @@ def write_source(path: Path, *, include_unmapped: bool = True) -> None:
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
-    sheet.cell(17, 8).value = "WYKONAWCA"
+    sheet.cell(HEADER_ROW, WORKER_COLUMN).value = "WYKONAWCA"
     rows = [
         ("POZNAŃ", "syntetyczny adres 1", "adrian.testowy", "#1"),
         ("POZNAŃ", "syntetyczny adres 2", "dariusz.fikcyjny2", "#2"),
@@ -93,12 +106,12 @@ def write_source(path: Path, *, include_unmapped: bool = True) -> None:
     ]
     if include_unmapped:
         rows.append(("POZNAŃ", "syntetyczny adres 4", "andrzej.nieznany2", "#4"))
-    for row_number, (city, address, worker, order_number) in enumerate(rows, start=18):
-        sheet.cell(row_number, 1).value = city
-        sheet.cell(row_number, 2).value = address
-        sheet.cell(row_number, 6).value = order_number
-        sheet.cell(row_number, 8).value = worker
-        sheet.cell(row_number, 14).value = row_number - 17
+    for row_number, (city, address, worker, order_number) in enumerate(rows, start=FIRST_DATA_ROW):
+        sheet.cell(row_number, column("A")).value = city
+        sheet.cell(row_number, ADDRESS_COLUMN).value = address
+        sheet.cell(row_number, column("F")).value = order_number
+        sheet.cell(row_number, WORKER_COLUMN).value = worker
+        sheet.cell(row_number, QUANTITY_COLUMNS.start).value = row_number - HEADER_ROW
     workbook.save(path)
 
 
@@ -152,9 +165,9 @@ def write_quantity_source(path: Path, rows: Sequence[Mapping[str, CellValue]]) -
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
-    for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
-        sheet.cell(17, column).value = header
-    for number, cells in enumerate(rows, start=18):
+    for number, header in enumerate(COLLECTIVE_HEADERS, start=1):
+        sheet.cell(HEADER_ROW, number).value = header
+    for number, cells in enumerate(rows, start=FIRST_DATA_ROW):
         defaults: dict[str, CellValue] = {"A": "POZNAŃ", "B": f"syntetyczny adres {number}", "F": f"#{number}", "H": "adrian.testowy", "J": "tak"}
         for letter, value in {**defaults, **cells}.items():
             sheet[f"{letter}{number}"] = value
@@ -170,9 +183,13 @@ def link_order_numbers(path: Path, address: str) -> dict[int, str]:
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
-        links = {row: f"{address}{row}" for row in range(18, sheet.max_row + 1) if sheet.cell(row, 6).value is not None}
+        links = {
+            row: f"{address}{row}"
+            for row in range(FIRST_DATA_ROW, sheet.max_row + 1)
+            if sheet.cell(row, column("F")).value is not None
+        }
         for row, link in links.items():
-            sheet.cell(row, 6).hyperlink = link
+            sheet.cell(row, column("F")).hyperlink = link
         workbook.save(path)
     finally:
         workbook.close()
@@ -182,11 +199,11 @@ def link_order_numbers(path: Path, address: str) -> dict[int, str]:
 def make_fixture(tmp_path: Path, period: str = PERIOD) -> tuple[Path, Path, Path]:
     period_directory = tmp_path / period
     period_directory.mkdir(parents=True)
-    target_directory = period_directory / f"Rozliczenie pracowników {period}"
-    source_path = period_directory / f"Rozliczenie {period} - zbiorcze.xlsx"
+    target_directory = period_directory / worker_settlements_name_with(period)
+    source_path = period_directory / collective_file_name_with(period)
     write_source(source_path, include_unmapped=False)
-    config_path = write_mapping(tmp_path / "worker_mapping.yaml")
-    write_template(tmp_path / "Wzorzec rozliczenia pracownika.xlsx")
+    config_path = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
+    write_template(tmp_path / tool_files.WORKER_TEMPLATE.name)
     return source_path, target_directory, config_path
 
 

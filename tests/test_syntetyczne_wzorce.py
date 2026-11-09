@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
+from rozliczenia import tool_files
 from rozliczenia.worker_config import load_worker_mapping
 from tests.fixtures.benchmark import (
     COLLECTIVE_TEMPLATE,
@@ -158,7 +159,7 @@ def test_syntetyczne_wzorce_otwieraja_sie_w_lewym_gornym_rogu_w_75_procentach(tm
 def test_syntetyczne_wzorce_maja_konfiguracje_dwudziestu_wykonawcow(tmp_path: Path) -> None:
     directory = write_synthetic_templates(tmp_path / "wzorce")
 
-    assert len(load_worker_mapping(directory / "worker_mapping.yaml")) == 20
+    assert len(load_worker_mapping(directory / tool_files.WORKER_CONFIG.name)) == 20
 
 
 def test_generator_tworzy_te_same_bajty_za_kazdym_razem(tmp_path: Path) -> None:

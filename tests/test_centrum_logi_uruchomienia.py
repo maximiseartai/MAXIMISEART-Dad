@@ -42,7 +42,7 @@ from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S, Outbox, Post
-from rozliczenia.centrum.logs_disk import EndEntry, Journal, LogsOnDisk, name_of
+from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, EndEntry, Journal, LogsOnDisk, name_of
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, LoggedOrder, LoggedStep, ProcessLogs, RunLog, StartFacts, Tool
@@ -57,7 +57,7 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.preparation_register import period_sheets, read, register_problem
-from rozliczenia.period_folder import PeriodFolderInaccessible
+from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible, collective_file_name_with
 from rozliczenia.register_file import OrderSheets
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.telemetry import MetricsStore
@@ -130,7 +130,7 @@ KEYS = {
 
 
 def log_files(centrum: AnyCentrum) -> list[Path]:
-    return sorted((centrum.log_path.parent / "uruchomienia").glob("*"))
+    return sorted(centrum.tool.run_logs.glob("*"))
 
 
 def records(centrum: AnyCentrum) -> list[dict[str, Any]]:
@@ -540,11 +540,11 @@ def test_srodowisko_ma_system_python_i_pliki_procesu_z_rozmiarem_i_onedrive(tmp_
     assert environment["system"] and environment["python"]
     assert environment["files"] == [
         {
-            "name": "Wzorzec rozliczenia pracownika.xlsx",
+            "name": centrum.configuration.worker_template.name,
             "size": centrum.configuration.worker_template.stat().st_size,
             "online_only": False,
         },
-        {"name": f"Rozliczenie wew. {PERIOD}.xlsx", "size": None, "online_only": None},
+        {"name": PeriodFolder.from_collective_file(centrum.collective_file).internal_settlement.name, "size": None, "online_only": None},
         {"name": SOURCE_NAME, "size": centrum.collective_file.stat().st_size, "online_only": True},
     ]
 
@@ -1128,7 +1128,7 @@ def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_
 
 def test_katalog_logow_bez_prawa_zapisu_daje_ten_sam_wynik_bez_komunikatu(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    blocked = centrum.log_path.parent / "uruchomienia"
+    blocked = centrum.tool.run_logs
     blocked.parent.mkdir(parents=True, exist_ok=True)
     blocked.write_text("", encoding="utf-8")
 
@@ -1141,7 +1141,7 @@ def test_katalog_logow_bez_prawa_zapisu_daje_ten_sam_wynik_bez_komunikatu(tmp_pa
     assert blocked.read_text(encoding="utf-8") == ""
     log = centrum.log_path.read_text(encoding="utf-8")
     assert 'nieoczekiwany-wyjatek typ=FileExistsError miejsce="po wyniku Uruchomienia procesu"' in log
-    queue = (tmp_path / "config" / "zgloszenia" / "kolejka").glob("*.json")
+    queue = ToolDirectory(tmp_path).queue.glob("*.json")
     labels = sorted(re.sub(r"^\w+-\d{4}-(.+)-\w{8}\.json$", r"\1", path.name) for path in queue)
     assert labels == ["kontrola-ilosci", "logi-uruchomienia"], "Kontrola ilości i Logi w kolejce"
     [record] = centrum.metric_records()
@@ -1349,7 +1349,7 @@ def _pricing_setup(centrum: SettlingCentrum) -> dict[str, Any]:
 def _with_collective_file(centrum: SettlingCentrum, token: str) -> str:
     """Folder okresu ``token`` z (pustym) Plikiem zbiorczym; zwraca nazwę Pliku zbiorczego."""
 
-    name = f"Rozliczenie {token} - zbiorcze.xlsx"
+    name = collective_file_name_with(token)
     folder = centrum.periods_directory / token
     folder.mkdir()
     (folder / name).touch()
@@ -1660,7 +1660,7 @@ def _previous_after_restart(
         for path, text in journaled.items():
             path.write_text(text, encoding="utf-8")
     if before_modes:
-        for path in [*log_files(centrum), centrum.log_path.parent / "ostatnie-uruchomienie.json"]:
+        for path in [*log_files(centrum), centrum.tool.last_started]:
             path.write_text(json.dumps(_without_pricing(json.loads(path.read_text(encoding="utf-8")))), encoding="utf-8")
         for path in journaled if kept == "dziennik" else []:
             first, *rest = path.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -2285,7 +2285,7 @@ NOTE_BODY = "Treść Uwagi SYNTETYCZNA-TREŚĆ"
 
 
 def logged_record(centrum: SettlingCentrum, run_id: str) -> tuple[str, dict[str, Any]]:
-    [path] = (centrum.log_path.parent / "uruchomienia").glob(f"*-{run_id}.json")
+    [path] = centrum.tool.run_logs.glob(f"*-{run_id}.json")
     text = path.read_text(encoding="utf-8")
     return text, json.loads(text)
 
@@ -2625,7 +2625,7 @@ def _pricing_cut_before_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     centrum.engines.metrics.efenix.unlink()
     for path, text in kept.items():
         path.write_text(text, encoding="utf-8")
-    queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+    queue = ToolDirectory(tmp_path).queue
     shutil.rmtree(queue)
     write_report_key(ToolDirectory(tmp_path))
     return centrum, run_id, queue
@@ -2783,7 +2783,7 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
     ended_at = utc("2026-09-16T10:16:00+00:00")
     left_journal(centrum.log_path.parent, started, ended_line(ended_at, order))
     if unsent:
-        logs = centrum.log_path.parent / "uruchomienia" / name_of(started)
+        logs = centrum.tool.run_logs / name_of(started)
         logs.parent.mkdir(parents=True)
         written = RunLog.interrupted(
             started,
@@ -2844,7 +2844,7 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_do_nastep
         started_at=utc("2026-09-16T10:15:00+00:00"),
     )
     journal = left_journal(centrum.log_path.parent, started)
-    (centrum.log_path.parent / "uruchomienia" / name_of(started)).mkdir(parents=True)
+    (centrum.tool.run_logs / name_of(started)).mkdir(parents=True)
 
     centrum.restart()
     centrum.client.get("/api/runs/current")
@@ -2884,7 +2884,7 @@ def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_b
         environment=Environment(system="Windows-11", python="3.12.7", files=None),
         dad_actions=DadActions(entries=[], omitted=0),
     ).model_copy(update={"technical_notes": ["Logi z pliku"]})
-    path = centrum.log_path.parent / "uruchomienia" / name
+    path = centrum.tool.run_logs / name
     path.parent.mkdir(parents=True)
     path.write_text(logs.text, encoding="utf-8", newline="")
     written = path.read_bytes()
@@ -2967,7 +2967,7 @@ def pricing(
 
     surroundings = Surroundings()
     surroundings.report_box.background = frozenset()
-    minutes = EfenixMinutes(surroundings, tmp_path / "config" / "zgloszenia" / "kolejka", offline_until)
+    minutes = EfenixMinutes(surroundings, ToolDirectory(tmp_path).queue, offline_until)
     with atrapa_efenix(IN_EFENIX, clock=minutes) as atrapa:
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
@@ -2994,7 +2994,7 @@ def comment_histories(centrum: SettlingCentrum, count: int) -> list[tuple[int, l
 
     box = centrum.surroundings.report_box
     assert box.wait_until(lambda fake: summarized(fake) == count), box.issues
-    assert wait_for(lambda: queued_logs(centrum.tmp_path / "config" / "zgloszenia" / "kolejka") == [])
+    assert wait_for(lambda: queued_logs(centrum.tool.queue) == [])
     [issue] = box.issues_with(PROGRESS_LABEL)
     assert len(issue.comment_ids) == count, issue.comments
     return [(comment_id, [shown(text) for written, text in box.written if written == comment_id]) for comment_id in issue.comment_ids]
@@ -3056,7 +3056,7 @@ def test_wycena_w_efenix_ma_w_issue_okresu_jeden_komentarz_z_rosnacym_postepem_c
         finished = finished_view(centrum.client)
     comment_id, texts = comment_history(centrum)
     centrum.surroundings.clock.advance(minutes=15)
-    assert wait_for(lambda: queued_logs(centrum.tmp_path / "config" / "zgloszenia" / "kolejka") == [])
+    assert wait_for(lambda: queued_logs(centrum.tool.queue) == [])
     assert comment_history(centrum) == (comment_id, texts), "postęp po podsumowaniu"
     assert centrum.surroundings.clock.wakes == 0, "budzik postępu po końcu Wyceny"
     *progress, summary = texts
@@ -3198,10 +3198,10 @@ def test_komentarz_postepu_urwanej_wyceny_w_efenix_zamienia_w_podsumowanie_naste
         atrapa.log_in()
         finished_view(centrum.client)
     centrum.client.stop()
-    [logs] = (tmp_path / "logs" / "uruchomienia").glob("*.json")
+    [logs] = ToolDirectory(tmp_path).run_logs.glob("*.json")
     logs.unlink()
     centrum.engines.metrics.efenix.unlink()
-    shutil.rmtree(tmp_path / "config" / "zgloszenia" / "kolejka")
+    shutil.rmtree(ToolDirectory(tmp_path).queue)
     for path, text in kept.items():
         path.write_text(text, encoding="utf-8")
     box.search_failure = None
@@ -3227,7 +3227,7 @@ def test_centrum_zgaszone_w_trakcie_logowania_taty_w_efenix_zamienia_komentarz_p
     Uruchomienia bez zleceń: jedyny komentarz Uruchomienia w issue okresu kończy się ich podsumowaniem, a nie postępem,
     który mówi, że Uruchomienie trwa, a karta po starcie pokazuje zero zleceń przed zamknięciem Centrum."""
 
-    queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+    queue = ToolDirectory(tmp_path).queue
     surroundings = Surroundings()
     surroundings.report_box.background = frozenset()
     with atrapa_efenix(IN_EFENIX) as atrapa:
@@ -3274,7 +3274,7 @@ def test_druga_wycena_w_efenix_w_tej_samej_pracy_centrum_ma_swoj_komentarz_z_pos
     histories = comment_histories(centrum, 2)
     clock = centrum.surroundings.clock
     clock.advance(minutes=15)
-    assert wait_for(lambda: queued_logs(centrum.tmp_path / "config" / "zgloszenia" / "kolejka") == [])
+    assert wait_for(lambda: queued_logs(centrum.tool.queue) == [])
     assert (comment_histories(centrum, 2), clock.wakes) == (histories, 0), "postęp po podsumowaniu"
     summaries = [archived_logs(centrum, texts[-1]) for _, texts in histories]
 
@@ -3551,7 +3551,7 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
         for column in ("ADRES", "NUMER UMOWY/ZLECENIA ORANGE")
     ]
     assert record["technical_notes"] == result["technical_notes"], "uwagi techniczne karty"
-    texts = [path.read_text(encoding="utf-8") for path in sorted((centrum.log_path.parent / "uruchomienia").glob("*"))]
+    texts = [path.read_text(encoding="utf-8") for path in sorted(centrum.tool.run_logs.glob("*"))]
     sent = in_box(box) + [part for issue in box.issues for part in (issue.title, issue.body, *issue.comments)]
     assert any(MASKED in part for part in sent), "Kopia wejścia w pliku Logów w Archiwum"
     texts += sent
@@ -3908,7 +3908,7 @@ def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomien
     nieczytelny przy starcie albo rekord metryk się nie zapisał (pełny dysk). Dziennik ma wpis końca, więc start go usuwa
     bez Logów Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
 
-    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")  # plik zamiast katalogu Logów: LogsOnDisk.write rzuca OSError
 
@@ -3947,7 +3947,7 @@ def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z
     wpisu końca znika za nimi (``RunComments.run_ended``), z jedną linią dziennika Centrum, a następny start nie robi z Wyceny
     Urwanego Uruchomienia i w Skrzynce zostają Logi z wynikiem."""
 
-    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
     with atrapa_efenix(IN_EFENIX) as atrapa:
@@ -4009,7 +4009,7 @@ def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierw
     wynikiem idą do Skrzynki tylko z kolejki. Wycena usuwa dziennik sama, z jedną linią dziennika Centrum, więc następny
     start nie robi z niej Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
 
-    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
     opened = Path.open
@@ -4102,9 +4102,9 @@ def test_plik_ostatniego_startu_ktorego_nie_da_sie_zapisac_nie_zabiera_wycenie_d
 
     log = CentrumLog(tmp_path / "centrum.log")
     disk = LogsOnDisk(log, journaled="efenix")
-    (tmp_path / "ostatnie-uruchomienie.json.tmp").mkdir()
+    (tmp_path / f"{LAST_STARTED_FILE}.tmp").mkdir()
 
-    with pytest.raises(OSError, match="ostatnie-uruchomienie"):
+    with pytest.raises(OSError, match=LAST_STARTED_FILE):
         disk.started(PRICING_START)
     [left] = disk.left_behind()
 
@@ -4219,7 +4219,7 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
     niższy stopień wersji niż Logi z wynikiem: jedyny komentarz Uruchomienia w Skrzynce zostaje Logami z wynikiem z
     odnośnikiem do ich pliku w Archiwum, bez żadnej zmiany, a dziennik znika (#871, #910)."""
 
-    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
     reached, released = held_before_removal(monkeypatch)
@@ -4236,7 +4236,7 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
         centrum.restart()
         centrum.client.start()
         assert centrum.client.get("/api/runs/current").status_code == 200
-        queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+        queue = ToolDirectory(tmp_path).queue
         settled = wait_for(lambda: queued_logs(queue) == [], 10)
         after = (records(centrum), journals(centrum), box.edited == edited)
         released.set()
@@ -4257,10 +4257,10 @@ def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_p
     powrocie sieci wynik bez Logów znika bez wysłania, a jedyny komentarz Uruchomienia w issue okresu to Logi z wynikiem z
     odnośnikiem do ich pliku w Archiwum Logów okresu (#871, #910)."""
 
-    blocked = tmp_path / "logs" / "uruchomienia"
+    blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
-    queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+    queue = ToolDirectory(tmp_path).queue
     reached, released = held_before_removal(monkeypatch)
     surroundings = Surroundings()
     box = surroundings.report_box
@@ -4367,7 +4367,7 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     left_journal(centrum.log_path.parent, started, begun, ended)
     progress = PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, None)
     text = guard_text(progress_markdown(progress, elapsed_s=600), "postęp Wyceny w efenix", ForbiddenValues())
-    queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+    queue = ToolDirectory(tmp_path).queue
     queue.mkdir(parents=True)
     # Poprzednia praca Centrum zapisała postęp, zanim zegar się cofnął: chwila w nazwie jest „w przyszłości”.
     (queue / f"20991231T235959000000Z-0007-{PROGRESS_LABEL}-{started.run_id[:8]}.json").write_text(

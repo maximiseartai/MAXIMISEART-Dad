@@ -186,7 +186,7 @@ def test_nowe_centrum_po_aktualizacji_zapisuje_wynik_od_opiekuna_w_dzienniku_i_p
 def run_logs_wydanie(centrum: PreparingCentrum) -> list[str | None]:
     """Wydanie z Logów każdego Uruchomienia tego Centrum, po kolei."""
 
-    paths = (centrum.log_path.parent / "uruchomienia").glob("*.json")
+    paths = centrum.tool.run_logs.glob("*.json")
     logs = sorted((json.loads(path.read_text(encoding="utf-8")) for path in paths), key=lambda log: log["started_at"])
     return [log["tool"]["wydanie"] for log in logs]
 

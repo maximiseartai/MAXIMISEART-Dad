@@ -44,6 +44,7 @@ from playwright.sync_api import Browser, Page, sync_playwright
 import pytest
 import zgodnosc_efenix
 
+from rozliczenia import tool_files
 from rozliczenia.efenix_browser import launch_options
 from rozliczenia.efenix_page import EmmettWindow, emmett_window, read_results
 from rozliczenia.efenix_positions import POSITION_OF_COLUMN
@@ -682,7 +683,7 @@ def _checked(
 ) -> tuple[Checked, AtrapaEfenix]:
     """Wynik narzędzia na Atrapie ``variant``; Atrapa ma po nim ten sam stan i sesję, a Chrome te same karty."""
 
-    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", variant.costs)
+    template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, variant.costs)
     with atrapa_efenix(variant.orders, changed=variant.changed, cookie_session=variant.cookie_session) as atrapa:
         before(atrapa)
         state, pages = atrapa.state(), _pages(endpoint)
@@ -806,7 +807,7 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chrome: str, tmp_path: Pa
 def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odczytem(
     chromium: Chromium, tmp_path: Path, variant: Emmett
 ) -> None:
-    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+    template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
     with atrapa_efenix(variant.orders, cookie_session=True) as atrapa, _in_front(atrapa, variant.rewrites) as url:
         before: list[Page] = chromium.do(lambda browser: list(browser.contexts[0].pages))
         try:
@@ -858,7 +859,7 @@ def _tabs(browser: Browser, before: Sequence[Page]) -> list[tuple[str, list[bool
 def test_bez_sesji_taty_narzedzie_konczy_sie_bledem_bez_wyniku(
     chrome: str, tmp_path: Path, before: Callable[[AtrapaEfenix], None], expire_after: tuple[str, int] | None, error: str
 ) -> None:
-    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+    template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
     with atrapa_efenix(ORDERS, cookie_session=True, expire_after=expire_after) as atrapa:
         before(atrapa)
         checked = _run(chrome, atrapa.url, template)
@@ -869,7 +870,7 @@ def test_bez_sesji_taty_narzedzie_konczy_sie_bledem_bez_wyniku(
 
 def test_bez_chrome_pod_adresem_zdalnego_debugowania_narzedzie_konczy_sie_bledem(tmp_path: Path) -> None:
     endpoint = _dead_endpoint()
-    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+    template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
     with atrapa_efenix(ORDERS) as atrapa:
         checked = _run(endpoint, atrapa.url, template)
 
@@ -879,7 +880,7 @@ def test_bez_chrome_pod_adresem_zdalnego_debugowania_narzedzie_konczy_sie_bledem
 
 
 def test_bez_wzorca_pliku_zbiorczego_narzedzie_konczy_sie_bledem_przed_efenix(chrome: str, tmp_path: Path) -> None:
-    missing = tmp_path / "Wzorzec pliku zbiorczego.xlsx"
+    missing = tmp_path / tool_files.COLLECTIVE_TEMPLATE.name
     with atrapa_efenix(ORDERS, cookie_session=True) as atrapa:
         checked = _run(chrome, atrapa.url, missing)
 
@@ -990,7 +991,7 @@ def test_karta_strony_zlecenia_to_strona_zlecenia_w_katalogu_i_na_hoscie_adresu_
 
 
 def test_efenix_bez_odpowiedzi_w_limicie_konczy_narzedzie_bledem(chrome: str, tmp_path: Path) -> None:
-    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+    template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
     # Szukanie odpowiada po 5 s, a limit czekania to 1 s; domyślny limit Playwrighta (30 s) doczekałby się odpowiedzi.
     with atrapa_efenix(ORDERS, cookie_session=True, answer_delay_s=5) as atrapa:
         checked = _run(chrome, atrapa.url, template, limit_ms=1000)
@@ -1014,7 +1015,7 @@ def test_zadanie_spoza_listy_dozwolonych_nie_wychodzi_do_efenix() -> None:
 
 
 def test_wzorzec_bez_kolumn_kosztow_daje_koszty_bez_liczby(tmp_path: Path) -> None:
-    path = tmp_path / "Wzorzec pliku zbiorczego.xlsx"
+    path = tmp_path / tool_files.COLLECTIVE_TEMPLATE.name
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     # Arkusz kończy się na kolumnie N, tuż przed O, pierwszą kolumną przypisania kolumn.
@@ -1025,7 +1026,7 @@ def test_wzorzec_bez_kolumn_kosztow_daje_koszty_bez_liczby(tmp_path: Path) -> No
 
 
 def test_wzorzec_z_logiczna_wartoscia_kosztu_daje_koszt_bez_liczby(tmp_path: Path) -> None:
-    path = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", {**COSTS, "O": True, "P": 12.5})
+    path = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, {**COSTS, "O": True, "P": 12.5})
 
     costs = zgodnosc_efenix.template_costs(path)
 
@@ -1036,7 +1037,7 @@ def test_wzorzec_z_logiczna_wartoscia_kosztu_daje_koszt_bez_liczby(tmp_path: Pat
 def test_adres_efenix_inny_niz_lista_zlecen_konczy_narzedzie_bledem_przed_efenix(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], url: str
 ) -> None:
-    template = write_template_costs(tmp_path / "Wzorzec pliku zbiorczego.xlsx", COSTS)
+    template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
 
     code = zgodnosc_efenix.main(["--efenix-url", url, "--wzorzec", str(template), "--cdp", _dead_endpoint()])
 
@@ -1055,7 +1056,7 @@ def test_bez_wzorca_w_poleceniu_narzedzie_czyta_wzorzec_z_konfiguracji(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Wzorzec z konfiguracji to plik ``config/`` checkoutu, u Maksa prawdziwy plik taty, więc test wskazuje inny.
-    configured = tmp_path / "config" / "Wzorzec pliku zbiorczego.xlsx"
+    configured = tool_files.config_dir(tmp_path) / tool_files.COLLECTIVE_TEMPLATE.name
     monkeypatch.setattr(zgodnosc_efenix, "COLLECTIVE_TEMPLATE", configured)
 
     code = zgodnosc_efenix.main(["--efenix-url", "https://efenix.example/app/index.php", "--cdp", _dead_endpoint()])

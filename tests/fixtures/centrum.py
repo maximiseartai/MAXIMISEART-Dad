@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from rozliczenia import tool_files
 from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.catalog import CATALOG, Catalog
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.configuration import ConfigurationFiles
@@ -28,6 +29,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, REPORT
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE
+from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.report_box import (
     REPOSITORY,
@@ -526,6 +528,12 @@ class ToolDirectory:
     @property
     def report_key(self) -> Path:
         return self.config / REPORT_KEY_FILE
+
+    @property
+    def queue(self) -> Path:
+        """Kolejka Skrzynki Zgłoszeń: pliki, które czekają na wysłanie."""
+
+        return self.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
 
     @property
     def log_path(self) -> Path:

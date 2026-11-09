@@ -50,6 +50,8 @@ from playwright.sync_api import Browser, Error as PlaywrightError, Locator, Page
 from playwright.sync_api import Response as PlaywrightResponse, TimeoutError as PlaywrightTimeoutError
 import pytest
 
+from rozliczenia.period_folder import PeriodFolder
+from rozliczenia import tool_files
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import efenix_browser, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
@@ -3465,17 +3467,17 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
     source = write_collective_file(tmp_path, orders)
     with atrapa_efenix(_marking_efenix(orders)) as atrapa:
         _run(source, page, atrapa.url)
-    template = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    template = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(template)
     assert _marked(source) == [18, 19]
 
     summary = run_settlements(
-        SettlementInputs(source, write_mapping(tmp_path / "worker_mapping.yaml"), template),
+        SettlementInputs(source, write_mapping(tmp_path / tool_files.WORKER_CONFIG.name), template),
         RunContext(),
     )
 
     assert summary.written_count == 1
-    written = source.parent / f"Rozliczenie pracowników {PERIOD}" / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"
+    written = PeriodFolder.from_collective_file(source).worker_settlement("Adrian Testowy")
     workbook = load_workbook(written)
     try:
         sheet = active_worksheet(workbook)

@@ -58,12 +58,12 @@ from atrapy.preparation import (
     write_collective_template,
     write_internal_template,
 )
-from atrapy.settlement import SOURCE_NAME, write_mapping, write_source, write_template
+from atrapy.settlement import PERIOD_FOLDER, SOURCE_NAME, write_mapping, write_source, write_template
 from tests.fixtures.tool_clone import FakeInstaller, ToolRepository
 
 # Środa po okresie 08_14_09_2026, więc to on jest ostatnim pełnym okresem.
 TODAY = date(2026, 9, 16)
-WORKER_SETTLEMENTS = f"Rozliczenie pracowników {PERIOD}"
+WORKER_SETTLEMENTS = PERIOD_FOLDER.worker_settlements.name
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=ProcessSummary)

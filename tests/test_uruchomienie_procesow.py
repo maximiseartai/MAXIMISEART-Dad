@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from rozliczenia import tool_files
 from rozliczenia import preparation_process, settlement_process
 from rozliczenia.collective_preparation import PreparationInputs, PreparationSummary
 from rozliczenia.engine import SettlementInputs
@@ -42,7 +43,7 @@ class ProcessCase:
 
 def settlement(tmp_path: Path, *, period: str = PERIOD) -> ProcessCase:
     source, target_directory, config = make_fixture(tmp_path, period=period)
-    worker_template = config.parent / "Wzorzec rozliczenia pracownika.xlsx"
+    worker_template = config.parent / tool_files.WORKER_TEMPLATE.name
     return ProcessCase(
         process=settlement_process.PROCESS,
         inputs=lambda dry_run: SettlementInputs(source, config, worker_template, dry_run),
@@ -226,7 +227,7 @@ def test_problem_przebiegu_rozliczen_i_ostrzezenie_przygotowania_sa_licznikami_r
     (tmp_path / "przebieg").mkdir()
     (tmp_path / "przygotowanie").mkdir()
     source, _target_directory, config = make_preview_fixture(tmp_path / "przebieg")
-    worker_template = config.parent / "Wzorzec rozliczenia pracownika.xlsx"
+    worker_template = config.parent / tool_files.WORKER_TEMPLATE.name
     settled = run_process(
         settlement_process.PROCESS,
         SettlementInputs(source, config, worker_template, dry_run=True),

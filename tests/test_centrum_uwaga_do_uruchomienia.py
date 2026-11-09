@@ -35,7 +35,7 @@ def box(centrum: SettlingCentrum) -> FakeReportBox:
 
 def queued(centrum: SettlingCentrum, label: str | None = None) -> list[Path]:
     pattern = "*.json" if label is None else f"*-{label}-*.json"
-    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(pattern))
+    return sorted(centrum.tool.queue.glob(pattern))
 
 
 def run_line(centrum: SettlingCentrum, mode: str, result: str) -> str:

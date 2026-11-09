@@ -157,7 +157,7 @@ def queued(centrum: SettlingCentrum) -> list[Path]:
     """Kontrole ilości w kolejce, bez ``.json.tmp``, który kolejka zostawia na chwilę przepisania pliku
     (``replace_atomically``, na Windows z ponowieniami zamiany; #885); Logi Uruchomienia mają w niej własne pliki."""
 
-    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{LABEL}-*.json"))
+    return sorted(centrum.tool.queue.glob(f"*-{LABEL}-*.json"))
 
 
 def sent_check(centrum: SettlingCentrum) -> FakeIssue:
@@ -323,7 +323,7 @@ def test_wynik_przebiegu_jest_ten_sam_przy_kazdej_odpowiedzi_skrzynki(
     [record] = centrum.metric_records()
     [expected_record] = reference.metric_records()
     assert without_times(record) == without_times(expected_record)
-    assert list((tmp_path / "config" / "zgloszenia").glob("Zgłoszenie *.md")) == []
+    assert list(ToolDirectory(tmp_path).queue.parent.glob("Zgłoszenie *.md")) == []
 
 
 def test_logi_uruchomienia_ida_do_kolejki_wysylki_przed_kontrola_ilosci(
@@ -449,7 +449,7 @@ def test_kontrola_ilosci_bez_sieci_czeka_w_kolejce_i_wychodzi_przy_nastepnym_sta
     assert view["result"]["result"] == "OK"
     assert view["result"]["technical_notes"] == [] and view["result"]["warnings"] == []
     [waiting] = queued(centrum)
-    assert [path.name for path in (tmp_path / "config" / "zgloszenia").iterdir()] == ["kolejka"]
+    assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
 
     before_start = waiting_for_network(centrum)
     centrum.restart()
@@ -466,7 +466,7 @@ def test_kontrola_ilosci_bez_sieci_czeka_w_kolejce_i_wychodzi_przy_nastepnym_sta
 
     assert issue.body == expected_body(view["run"]["id"])
     assert wait_for(lambda: queued(centrum) == [])
-    assert list((tmp_path / "config" / "zgloszenia").glob("Zgłoszenie *.md")) == []
+    assert list(ToolDirectory(tmp_path).queue.parent.glob("Zgłoszenie *.md")) == []
 
 
 def test_logi_i_kontrola_ilosci_jednego_przebiegu_czekaja_razem_i_przy_starcie_wychodza_obie(tmp_path: Path) -> None:
@@ -477,7 +477,7 @@ def test_logi_i_kontrola_ilosci_jednego_przebiegu_czekaja_razem_i_przy_starcie_w
     centrum = centrum_with(tmp_path, TATA_ROWS)
     box(centrum).background = frozenset()  # Logi też bez sieci, a nie w ruchu w tle, który zawsze dochodzi
     box(centrum).search_failure = Unreachable()
-    folder = tmp_path / "config" / "zgloszenia" / "kolejka"
+    folder = ToolDirectory(tmp_path).queue
 
     view = run_to_end(centrum, dry_run=False)
 

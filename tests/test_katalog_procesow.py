@@ -24,7 +24,7 @@ from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.run_context import RunContext
 from rozliczenia.tool_files import TOOL_ROOT
-from tests.fixtures.centrum import centrum, finished_view
+from tests.fixtures.centrum import ToolDirectory, centrum, finished_view
 from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum
 from atrapy.preparation import PERIOD
@@ -194,7 +194,7 @@ def test_uruchomienie_procesu_ma_te_same_fakty_wpisu_na_karcie_w_logach_historii
     run = view["run"]
 
     card = client.get(f"/api/runs/{run['id']}/card").json()
-    (log_file,) = (tmp_path / "logs" / "uruchomienia").glob(f"*-{run['id']}.json")
+    (log_file,) = ToolDirectory(tmp_path).run_logs.glob(f"*-{run['id']}.json")
     metrics = client.get("/api/metrics").json()
 
     assert (run["process"], run["title"]) == (declaration.key, declaration.title)

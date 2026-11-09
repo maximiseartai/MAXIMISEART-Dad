@@ -77,7 +77,7 @@ from rozliczenia.centrum.logs_disk import (
 from rozliczenia.centrum.outbox import PeriodThread, Post, Rank
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
-from rozliczenia.centrum.run_logs import READ_VALUES, LoggedInterruption, RunLog, StartFacts
+from rozliczenia.centrum.run_logs import READ_VALUES, RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
@@ -743,7 +743,7 @@ def test_centrum_zgaszone_przy_zamykaniu_dziennika_wyceny_wysyla_logi_urwanego_u
     restarted.send_left_behind()
 
     [post] = queue.posts
-    [logs_file] = (tmp_path / "uruchomienia").glob(f"*-{RUN_ID}.json")
+    [logs_file] = (tmp_path / RUN_LOGS_DIRECTORY).glob(f"*-{RUN_ID}.json")
     sent = RunLog.model_validate_json(logs_file.read_text(encoding="utf-8"))
     assert (after_cut, before_request) == ((True, []), [])
     assert (post.rank, sent.ending, sent.interruption) == (
@@ -763,7 +763,7 @@ def test_katalog_logow_ktory_nie_przyjal_pliku_przy_starcie_nie_zatrzymuje_logow
     Drobne 1)."""
 
     journal = _urwane(tmp_path)
-    (tmp_path / "uruchomienia").write_text("", encoding="utf-8")
+    (tmp_path / RUN_LOGS_DIRECTORY).write_text("", encoding="utf-8")
     queue = RecordingQueue()
     comments = _comments(tmp_path, queue)
 
@@ -826,7 +826,7 @@ def test_logi_sprzed_schematu_3_przy_dzienniku_wyceny_zostaja_w_swoim_schemacie_
     old |= {"schema_version": 2, "mode": logs.mode.word, "dad_actions": old["dad_actions"] | {"entries": entries}}
     assert "zapis" in [entry.get("mode") for entry in entries], "przycisk startu ze słowem trybu"
     left_journal(tmp_path, logs.start)
-    path = tmp_path / "uruchomienia" / name_of(logs.start)
+    path = tmp_path / RUN_LOGS_DIRECTORY / name_of(logs.start)
     path.parent.mkdir()
     path.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")
     queue = RecordingQueue()
@@ -897,7 +897,7 @@ def test_centrum_zgaszone_przed_kazdym_krokiem_konca_wyceny_daje_nastepnemu_star
     disk = cut.disk(tmp_path)
     comments = _comments(tmp_path, cut.queue(queue), disk)
     if blocked:
-        (tmp_path / "uruchomienia").write_text("", encoding="utf-8")
+        (tmp_path / RUN_LOGS_DIRECTORY).write_text("", encoding="utf-8")
     _priced(comments, disk)
 
     if before is None:
@@ -909,7 +909,7 @@ def test_centrum_zgaszone_przed_kazdym_krokiem_konca_wyceny_daje_nastepnemu_star
         [json.loads(line)["entry"] for line in path.read_text(encoding="utf-8").splitlines()]
         for path in (tmp_path / "dzienniki-wyceny").glob("*.jsonl")
     ]
-    logs_files = list((tmp_path / "uruchomienia").glob(f"*-{RUN_ID}.json"))
+    logs_files = list((tmp_path / RUN_LOGS_DIRECTORY).glob(f"*-{RUN_ID}.json"))
     ranks = [post.rank for post in queue.posts]
     restarted = _comments(tmp_path, queue)
     _started(restarted)
@@ -971,7 +971,7 @@ def test_blad_wpisu_konca_nie_zatrzymuje_logow_z_wynikiem_a_blad_pliku_logow_ich
     disk = BrokenEndDisk(log, journaled="efenix")
     comments = _comments(tmp_path, queue, disk)
     _priced(comments, disk)
-    (tmp_path / "uruchomienia").write_text("", encoding="utf-8")
+    (tmp_path / RUN_LOGS_DIRECTORY).write_text("", encoding="utf-8")
 
     comments.run_ended(_ended())
 
@@ -1070,7 +1070,7 @@ def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp
     for _ in range(2):
         comments.diagnosed(RUN_ID, diagnosis)
 
-    [file] = (tmp_path / "uruchomienia").glob(f"*-{RUN_ID}.json")
+    [file] = (tmp_path / RUN_LOGS_DIRECTORY).glob(f"*-{RUN_ID}.json")
     first, diagnosed = queue.posts
     assert other == 1
     assert (first.run_id, diagnosed.run_id, diagnosed.rank) == (RUN_ID, RUN_ID, Rank.OWN)

@@ -21,6 +21,8 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 import pytest
 
+from rozliczenia.settlement_period import parse_period_token
+from rozliczenia.period_folder import PeriodFolder
 from rozliczenia import input_checks, intermax_copies, preparation_register, workbook_files
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.dad_files import DadFiles
@@ -534,7 +536,7 @@ def test_diagnoza_odczytuje_intermax_i_wskazuje_ten_ktorego_nie_da_sie_uporzadko
 
 def test_diagnoza_intermax_sprawdza_w_onedrive_tylko_intermax_a_nie_pliki_okresu(tmp_path: Path) -> None:
     periods = tmp_path / "INEA"
-    collective = periods / PERIOD / f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
+    collective = PeriodFolder(periods, parse_period_token(PERIOD)).collective_file
     collective.parent.mkdir(parents=True)
     collective.write_bytes(b"tylko w chmurze")
     centrum = ordering_centrum(tmp_path, periods_directory=periods)
@@ -607,7 +609,7 @@ def _logs_like(centrum: OrderingCentrum, like: str, later: timedelta, **changes:
     Start trafia do nazwy pliku i do Logów; ``changes`` zmienia inne pola Logów.
     """
 
-    [path] = (centrum.tmp_path / "logs" / "uruchomienia").glob(f"*-{like}.json")
+    [path] = centrum.tool.run_logs.glob(f"*-{like}.json")
     record = RunLog.model_validate_json(path.read_text(encoding="utf-8"))
     started_at = record.started_at.replace(microsecond=0) + later
     times = {"started_at": started_at, "ended_at": started_at + (record.ended_at - record.started_at)}
@@ -637,7 +639,7 @@ def test_bez_logow_uporzadkowania_karta_nie_ma_ostatniego_choc_sa_logi_innego_pr
     centrum = ordering_centrum(tmp_path)
     ordered = centrum.run_to_end()["run"]["id"]
     _logs_like(centrum, ordered, timedelta(hours=1), process="preparation")
-    [intermax_logs] = (centrum.tmp_path / "logs" / "uruchomienia").glob(f"*-{ordered}.json")
+    [intermax_logs] = centrum.tool.run_logs.glob(f"*-{ordered}.json")
     intermax_logs.unlink()
     centrum.restart()
 
@@ -677,7 +679,7 @@ def test_nieczytelne_najnowsze_logi_uporzadkowania_to_karta_bez_ostatniego_a_nie
 def test_nieczytelne_najnowsze_logi_to_karta_bez_ostatniego_takze_gdy_starsze_sa_z_tej_samej_minuty(tmp_path: Path) -> None:
     centrum = ordering_centrum(tmp_path)
     ordered = centrum.run_to_end()["run"]["id"]
-    [path] = (centrum.tmp_path / "logs" / "uruchomienia").glob(f"*-{ordered}.json")
+    [path] = centrum.tool.run_logs.glob(f"*-{ordered}.json")
     second = RunLog.model_validate_json(path.read_text(encoding="utf-8")).started_at.second
     # Godzinę później: czytelne Logi w pełnej minucie, a nieczytelne najnowsze pół minuty po nich.
     _logs_like(centrum, ordered, timedelta(hours=1, seconds=-second))
@@ -716,7 +718,7 @@ def test_logi_uporzadkowania_maja_wiersze_wpisow_na_operatora_i_instalacje_hurt_
         "rows": {"P4": [day + 2, day + 4], "TMOBILE": [day + 3]},
         "without_entry": [{"row": day + 5, "operator": "INEA S.A."}, {"row": day + 6, "operator": None}],
     }
-    [path] = (tmp_path / "logs" / "uruchomienia").glob("*.json")
+    [path] = ToolDirectory(tmp_path).run_logs.glob("*.json")
     text = path.read_text(encoding="utf-8")
     for order in raw:
         for column, value in order.values().items():
@@ -728,7 +730,7 @@ def test_logi_uporzadkowania_maja_wiersze_wpisow_na_operatora_i_instalacje_hurt_
 def test_karta_wraca_z_logow_uporzadkowania_sprzed_wpisow_intermax(tmp_path: Path) -> None:
     centrum = ordering_centrum(tmp_path)
     ordered = centrum.run_to_end()["run"]["id"]
-    [path] = (tmp_path / "logs" / "uruchomienia").glob(f"*-{ordered}.json")
+    [path] = ToolDirectory(tmp_path).run_logs.glob(f"*-{ordered}.json")
     record = json.loads(path.read_text(encoding="utf-8"))
     del record["intermax_entries"]
     path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
@@ -898,7 +900,7 @@ def test_adres_i_numer_umowy_z_wklejenia_intermax_nie_wychodza_do_logow_ani_skrz
         note.format("NUMER UMOWY/ZLECENIA ORANGE", 1),
     ]
     assert any(MASKED in part for part in sent), "Kopia wejścia w pliku Logów w Archiwum"
-    texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))] + sent
+    texts = [path.read_text(encoding="utf-8") for path in sorted(ToolDirectory(tmp_path).run_logs.glob("*"))] + sent
     leaked = (ADDRESS_VALUE, OTHER_ADDRESS, ORANGE_VALUE, PHONE, STREET, str(PHONE_WITH_PREFIX))
     assert [value for value in leaked if any(value in text for text in texts)] == []
 
@@ -928,7 +930,7 @@ def test_arkusz_zlecen_ktorego_wierszy_nie_da_sie_rozdzielic_zatrzymuje_uporzadk
     assert copied["fingerprint"]["sha256"] == hashlib.sha256(content).hexdigest()
     [sheet] = copied["sheets"]
     assert (sheet["sheet"], [row["cells"]["M"] for row in sheet["rows"] if "M" in row["cells"]]) == (ORDER_SHEET, ["montaż [adres]"])
-    [path] = (tmp_path / "logs" / "uruchomienia").glob("*.json")
+    [path] = ToolDirectory(tmp_path).run_logs.glob("*.json")
     assert ADDRESS_VALUE not in path.read_text(encoding="utf-8")
 
 
@@ -1242,7 +1244,7 @@ def test_adres_i_numer_orange_wklejonego_wiersza_nie_wychodza_w_zadnym_polozeniu
     assert [message["code"] for message in logs["messages"] if message["kind"] == "stop"] == (
         [] if position.stop is None else [position.stop]
     ), result
-    texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))] + sent
+    texts = [path.read_text(encoding="utf-8") for path in sorted(ToolDirectory(tmp_path).run_logs.glob("*"))] + sent
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in [*texts, note])] == []
     [copied] = logs["input_copy"]
     sheets = {sheet["sheet"]: sheet for sheet in copied["sheets"]}
@@ -1380,7 +1382,7 @@ def test_wpis_taty_w_calibri_8_we_wklejonym_wierszu_nie_wypuszcza_adresu_ani_num
     centrum.run_to_end()
     note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": ECHO}).json()["body"]
 
-    texts = [path.read_text(encoding="utf-8") for path in sorted((tmp_path / "logs" / "uruchomienia").glob("*"))]
+    texts = [path.read_text(encoding="utf-8") for path in sorted(ToolDirectory(tmp_path).run_logs.glob("*"))]
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in [*texts, *_sent(centrum), note])] == []
     [logs] = centrum.run_logs()
     assert [note for note in logs["input_copy_notes"] if note.startswith("Fakt domeny złamany")] == []

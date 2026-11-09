@@ -17,32 +17,19 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from atrapy.settlement import write_mapping
+from rozliczenia import tool_files
+from rozliczenia.collective_layout import AMOUNT_COLUMN, FIRST_DATA_ROW, HEADER_ROW, QUANTITY_COLUMNS
+from atrapy.intermax import HEADERS as DAD_REGISTER_HEADERS
+from atrapy.settlement import PERIOD_FOLDER, write_mapping
 from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, add_external_link_fixture, set_view
 
 PERIOD = "08_14_09_2026"
-INTERNAL_SETTLEMENT_NAME = f"Rozliczenie wew. {PERIOD}.xlsx"
-COLLECTIVE_FILE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
+INTERNAL_SETTLEMENT_NAME = PERIOD_FOLDER.internal_settlement.name
+COLLECTIVE_FILE_NAME = PERIOD_FOLDER.collective_file.name
 
 # Układ nowego Rejestru taty: pusta kolumna A, AKCJE w B, ZWROT i UWAGI na końcu.
 # AKCJE, ZWROT i UWAGI nie są przenoszone; kolumny są przesunięte względem wzorców.
-REGISTER_HEADERS: tuple[str, ...] = (
-    "",
-    "AKCJE",
-    "DATA GODZ. POCZ.",
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "WYKONAWCA",
-    "NUMER UMOWY",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-    "ZWROT",
-    "UWAGI",
-)
+REGISTER_HEADERS: tuple[str, ...] = ("", *DAD_REGISTER_HEADERS)
 # Starsza kopia Rejestru: inna kolejność, stare zapisy nagłówków, bez AKCJE, ZWROT i UWAGI,
 # za to z kolumną "STATUS APLIKACJI", która nie jest przenoszona.
 OLD_REGISTER_HEADERS: tuple[str, ...] = (
@@ -396,24 +383,24 @@ def write_collective_template(path: Path, *, row_style: bool = False, view: View
     sheet["N1"] = 17.5
     sheet["O1"] = 30
     sheet["N16"] = "=SUM(N18:N40)"
-    sheet["A17"].fill = PatternFill(fill_type="solid", fgColor="00AA55")
+    sheet.cell(HEADER_ROW, 1).fill = PatternFill(fill_type="solid", fgColor="00AA55")
     for column, header in enumerate(COLLECTIVE_TEMPLATE_HEADERS, start=1):
-        sheet.cell(17, column).value = header
-    sheet["N17"] = "instalacja"
-    sheet["AP17"] = "demontaż"
-    _apply_template_layout(sheet, 17, len(COLLECTIVE_TEMPLATE_HEADERS), row_style=row_style, view=view)
+        sheet.cell(HEADER_ROW, column).value = header
+    sheet.cell(HEADER_ROW, QUANTITY_COLUMNS.start).value = "instalacja"
+    sheet.cell(HEADER_ROW, QUANTITY_COLUMNS[-1]).value = "demontaż"
+    _apply_template_layout(sheet, HEADER_ROW, len(COLLECTIVE_TEMPLATE_HEADERS), row_style=row_style, view=view)
     styled_data_columns = 0 if row_style else len(COLLECTIVE_TEMPLATE_HEADERS)
-    for row in range(18, 18 + COLLECTIVE_TEMPLATE_ZERO_ROWS):
+    for row in range(FIRST_DATA_ROW, FIRST_DATA_ROW + COLLECTIVE_TEMPLATE_ZERO_ROWS):
         for column in range(1, styled_data_columns + 1):  # A:K, przygotowane we wzorcu
             cell = sheet.cell(row, column)
             cell.font = Font(name=TEMPLATE_FONT_NAME, size=TEMPLATE_FONT_SIZE)
             cell.fill = COLLECTIVE_TEMPLATE_DATA_FILL
-        for column in range(14, 43):  # N:AP
+        for column in QUANTITY_COLUMNS:
             cell = sheet.cell(row, column)
             cell.value = 0
             cell.fill = COLLECTIVE_TEMPLATE_QUANTITY_FILL
             cell.number_format = "0"
-        sheet.cell(row, 47).value = f"=N{row}*$N$1"  # AU
+        sheet.cell(row, AMOUNT_COLUMN).value = f"=N{row}*$N$1"
     rates = workbook.create_sheet("Rates")
     rates["A1"] = "synthetic rate"
     rates["B1"] = 17.5
@@ -461,12 +448,12 @@ def make_preparation_fixture(tmp_path: Path, rows: list[RegisterRow] | None = No
     return PreparationFixture(
         register_path=write_register(tmp_path / REGISTER_NAME, rows),
         periods_directory=periods_directory,
-        config_path=write_mapping(config_directory / "worker_mapping.yaml"),
+        config_path=write_mapping(config_directory / tool_files.WORKER_CONFIG.name),
         internal_template_path=write_internal_template(
-            config_directory / "Wzorzec rozliczenia wewnętrznego.xlsx"
+            config_directory / tool_files.INTERNAL_TEMPLATE.name
         ),
         collective_template_path=write_collective_template(
-            config_directory / "Wzorzec pliku zbiorczego.xlsx"
+            config_directory / tool_files.COLLECTIVE_TEMPLATE.name
         ),
     )
 

@@ -12,6 +12,7 @@ from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 import pytest
 
+from rozliczenia import tool_files
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.quantity_rules import QuantityColumn
 from rozliczenia.run_context import RunContext
@@ -64,7 +65,7 @@ def test_rozliczenie_pracownika_nie_ma_ilosci_tylko_dla_inea_a_plik_zbiorczy_i_k
     tmp_path: Path, route: str
 ) -> None:
     source_path, target_directory, config_path = make_fixture(tmp_path)
-    template_path = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
     if route == "kopia":
         marked_for_copy(template_path)
     else:
@@ -108,7 +109,7 @@ def test_bez_naglowka_urzadzenia_rozliczenie_pracownika_ma_ilosci_jak_plik_zbior
         workbook.close()
 
     summary = run_settlements(
-        SettlementInputs(source_path, config_path, tmp_path / "Wzorzec rozliczenia pracownika.xlsx"),
+        SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
         RunContext(),
     )
 

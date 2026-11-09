@@ -25,8 +25,8 @@ from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT, Case, DadCases
-from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.outbox import PART_LIMIT, QUEUE_THREAD, RETRY_S, Outbox, Post
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY, case_outbox
+from rozliczenia.centrum.outbox import PART_LIMIT, QUEUE_DIRECTORY, QUEUE_THREAD, RETRY_S, Outbox, Post
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.report_box import IssuesOutcome, Label, Refused, Unreachable
 from rozliczenia.centrum.reports import (
@@ -140,7 +140,7 @@ class Computer:
         return [case.number for case in self.stored.all() if case.kind == REPORT]
 
     def queued(self) -> list[Path]:
-        return sorted((self.config / "zgloszenia" / "kolejka").glob("*.json"))
+        return sorted((self.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY).glob("*.json"))
 
 
 @pytest.fixture
@@ -369,8 +369,8 @@ def test_bez_klucza_albo_z_odrzuconym_zgloszenie_czeka_na_klucz_i_wychodzi_samo_
 def test_zgloszenie_ktorego_kolejka_nie_zapisala_daje_komunikat_i_nie_zostawia_sprawy(computer: Computer) -> None:
     computer.with_key()
     handle, _, _ = prepared(computer.reports(), computer)
-    (computer.config / "zgloszenia").mkdir()
-    blocker = computer.config / "zgloszenia" / "kolejka"
+    (computer.config / UNSENT_DIRECTORY).mkdir()
+    blocker = computer.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
     blocker.write_text("plik zamiast folderu", encoding="utf-8")
 
     state = dump(handle.send())
