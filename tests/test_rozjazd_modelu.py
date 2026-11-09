@@ -278,16 +278,6 @@ def test_plik_ktory_sie_nie_parsuje_zmienil_kazda_swoja_definicje(tmp_path: Path
     assert found == f"kod opisany modelem zmienił się: {CODE} zapisz, {CODE} Dziennik.zamknij, {CODE} utworz.kolejka, {CODE} STALA, {CODE} galezie.wynik. {STEPS}"
 
 
-@pytest.mark.parametrize(("ci", "failure"), [("true", True), ("", False)], ids=["w-ci", "poza-ci"])
-def test_rozjazd_konczy_skrypt_skilla_porazka_tylko_w_ci(monkeypatch: pytest.MonkeyPatch, ci: str, failure: bool) -> None:
-    monkeypatch.setenv("GITHUB_ACTIONS", ci)
-
-    found = rozjazd_modelu.porazka_w_ci("kod opisany modelem zmienił się: a.py f.", "MODEL M")
-
-    assert found == ("UWAGA: kod opisany modelem zmienił się: a.py f.\n\nMODEL M: ROZJAZD MODELU Z KODEM" if failure else None)
-    assert rozjazd_modelu.porazka_w_ci(None, "MODEL M") is None
-
-
 def test_narzedzie_przelicza_skroty_skilla_i_drukuje_przeliczone(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     skill = _skill(tmp_path)
     _edit(tmp_path, CODE, "        return 3\n", "        return 30\n")

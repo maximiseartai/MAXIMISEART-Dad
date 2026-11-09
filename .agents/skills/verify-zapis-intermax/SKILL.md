@@ -108,8 +108,9 @@ inaccessible behind `ensure_available`).
 
 The steps the points stand for have digests in `model/definicje.json`: `intermax_replace.py` and
 `intermax_copies.py` whole, and the read, the save phase of `order_register`, `restore` and the Excel lock check of the
-files above. When one of them changes, `tools/szybko.py` fails before you push (step `rozjazd modelu`) until you have
-done „Bring the model in line”. `intermax_file.check` has no digest: what it compares does not matter here, and a
+files above. When one of them changes, `tools/szybko.py` fails before you push (step `rozjazd modelu`), and this
+skill's Mutation checks step fails before it starts (line `ROZJAZD MODELU Z KODEM`), until you have done
+„Bring the model in line”. `intermax_file.check` has no digest: what it compares does not matter here, and a
 change to how it is called ends the check with BEZ_WYJATKU.
 
 ## Bring the model in line

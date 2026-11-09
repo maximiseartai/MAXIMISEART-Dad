@@ -20,8 +20,7 @@ ci: .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wy
 
 CI runs `sprawdz_wznowienie_wyceny.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
-step. It fails with `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` when a definition the model describes
-(`model/definicje.json`) differs from its digest there, but it cannot tell whether your change to the model is right.
+step. In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_wznowienia_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_wznowienie_wyceny.py`, and in full CI and nightly on `main` after a change of this skill's folder.
@@ -139,7 +138,8 @@ The last line is the verdict:
 - `WZNOWIENIE WYCENY: BŁĄD MODELU (n)`: TLC gave no verdict, an invariant outside the promises such as `TypeOK` broke,
   `model/konfiguracje.json` has another shape, or the counterexample's story in the script does not know every action
   of `Next`. Exit 2.
-- `WZNOWIENIE WYCENY: ROZJAZD MODELU Z KODEM` (CI only): a definition in `model/definicje.json` differs from its digest there.
+- `UWAGA: kod opisany modelem zmienił się: …` above the verdict: a definition in `model/definicje.json` differs from its
+  digest there, and the verdict means nothing until you bring the model in line. CI does not run the check then.
 
 Each counterexample is told as numbered steps in the code's words, with the quantities in efenix
 (`[A |-> …, B |-> …, C |-> …]` per order) and the result of each order in this Uruchomienie.

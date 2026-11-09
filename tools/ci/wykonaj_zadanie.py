@@ -3,8 +3,10 @@
 Zadanie wykonuje tylko plan, którego treść zgadza się z jego ``digest``. Pytest biegnie z plikami i udziałami zadania:
 udział k dużego pliku z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei), a krok skilla z częścią
 ``#k/n`` z tą częścią w ``jednostka.ZMIENNA_CZESCI``. Kroki skilli biegną po kolei, także po porażce, każdy w checkoucie
-swojego skilla, z limitem ``LIMIT_S`` i echem wyjścia. Podstawa ``ci:`` przechodzi z kodem 0, a skrypt mutacji kończy się
-linią ``MUTACJE OK``; ostrzeżenia ``CZAS BLISKO LIMITU`` z wyjścia skryptu (``tools/mutacje.py``) idą do zapisu
+swojego skilla, z limitem ``LIMIT_S`` i echem wyjścia. Krok skilla z modelem kodu (``model/definicje.json``), którego
+kod zmienił się od skrótów modelu (``tools/lib/rozjazd_modelu.py``), nie biegnie: pada z linią ``ROZJAZD MODELU Z KODEM``
+i krokami naprawy, tak jak krok ``rozjazd modelu`` w ``tools/szybko.py``. Podstawa ``ci:`` przechodzi z kodem 0, a skrypt
+mutacji kończy się linią ``MUTACJE OK``; ostrzeżenia ``CZAS BLISKO LIMITU`` z wyjścia skryptu (``tools/mutacje.py``) idą do zapisu
 wykonania. Krok biegnie przez ``tools/lib/potomne.py``: jego procesy potomne giną po jego końcu i po limicie, a cały krok
 ginie razem z zadaniem, choćby zabitym przez SIGKILL.
 
@@ -53,6 +55,7 @@ import plan_runu
 from plan_runu import Plan, Zadanie
 import potomne
 from repo import ROOT
+import rozjazd_modelu
 from zakres_runu import KROKI, MUTACJE, Krok, Zdarzenie, zakres
 
 JUNIT = Path(".ci-czasy", "junit.xml")
@@ -118,9 +121,12 @@ class Wynik:
 
 
 def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = None) -> Wynik:
-    """Krok skilla z echem wyjścia i zmiennymi ``env`` w checkoucie jego skilla (``Step.root``). Krok po limicie nie
-    oddaje ostrzeżeń, bo jego wyjścia już nie ma."""
+    """Krok skilla z echem wyjścia i zmiennymi ``env`` w checkoucie jego skilla (``Step.root``); krok skilla, którego
+    model rozjechał się z kodem, nie biegnie. Krok po limicie nie oddaje ostrzeżeń, bo jego wyjścia już nie ma."""
 
+    if (step.skill / rozjazd_modelu.DEFINICJE).is_file() and (drift := rozjazd_modelu.rozjazd(step.skill, step.root)) is not None:
+        print(f"{rozjazd_modelu.ROZJAZD} | {step.skill.name}: {drift}", flush=True)
+        return Wynik(rozjazd_modelu.ROZJAZD)
     command = step.command
     try:
         done = potomne.run(

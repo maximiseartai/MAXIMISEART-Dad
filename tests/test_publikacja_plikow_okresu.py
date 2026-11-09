@@ -188,26 +188,20 @@ def test_drzewo_harmonogramow_nie_zalezy_od_tego_czym_pathlib_pyta_o_plik(monkey
     assert trees["3.11 i 3.12"] == trees["3.14"], trees
 
 
-@pytest.mark.parametrize(
-    ("ci", "code", "last"),
-    [("true", 1, "PUBLIKACJA: ROZJAZD MODELU Z KODEM"), ("false", 0, "PUBLIKACJA OK, ZAAKCEPTOWANE RYZYKA: 2")],
-)
-def test_rozjazd_kroku_zapisu_skoroszytu_konczy_sprawdzenie_porazka_w_ci_przed_sprawdzeniem(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], ci: str, code: int, last: str
-) -> None:
+def test_rozjazd_kroku_zapisu_skoroszytu_sprawdzenie_tylko_ostrzega_takze_w_ci(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """Kroki dysku Zapisywania (domyślne ``preparation_files.Disk``) sprawdzenie zastępuje własnymi, więc ich zmiana
-    nie wywraca go sama: w CI rozjazd z ``model/definicje.json`` kończy je porażką, zanim ruszy, a poza CI tylko
-    ostrzega."""
+    nie wywraca go sama: rozjazd z ``model/definicje.json`` skrypt tylko ostrzega, a w CI krok z rozjazdem zatrzymuje
+    wykonanie zadania (``tools/ci/wykonaj_zadanie.py``), zanim skrypt ruszy."""
 
     explorer = _load_explorer()
-    monkeypatch.setenv("GITHUB_ACTIONS", ci)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setattr(explorer.rozjazd_modelu, "rozjazd", lambda skill, root: f"kod opisany modelem zmienił się: {skill.name}.")
     monkeypatch.setattr(explorer, "SCOPES", {"jedno-uruchomienie": explorer.SCOPES["jedno-uruchomienie"]})
 
     exited = explorer.main([])
 
     lines = capsys.readouterr().out.splitlines()
-    assert (exited, lines[0], lines[-1]) == (code, "UWAGA: kod opisany modelem zmienił się: verify-publikacja-plikow-okresu.", last)
+    assert (exited, lines[0], lines[-1]) == (0, "UWAGA: kod opisany modelem zmienił się: verify-publikacja-plikow-okresu.", "PUBLIKACJA OK, ZAAKCEPTOWANE RYZYKA: 2")
 
 
 def test_przyjete_ryzyko_ktorego_nie_pokazal_zakres_z_jego_after_wywraca_werdykt() -> None:

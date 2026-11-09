@@ -32,8 +32,9 @@ Szybko nie pobiera ``origin``, więc merge jest z bazą z ostatniego ``git fetch
 
 Krok ``rozjazd modelu`` pyta ``tools/lib/rozjazd_modelu.py`` o każdy skill z ``model/definicje.json``, którego podstawę
 ``ci:`` zmiana uruchomiłaby na pull request (``tools/lib/zakres_runu.py``): czy kod opisany jego modelem zmienił się od
-skrótów z tego pliku. To samo pytanie skrypt skilla zadaje w CI przed sprawdzeniem i tam pada, więc szybko pada też,
-bez TLC, z nazwą skilla, pliku i definicji i krokami „Bring the model in line” ze ``SKILL.md`` skilla.
+skrótów z tego pliku. To samo pytanie w CI zadaje wykonanie zadania (``tools/ci/wykonaj_zadanie.py``) przed krokiem
+skilla i kończy go porażką, więc szybko pada też, bez TLC, z nazwą skilla, pliku i definicji i krokami „Bring the model
+in line” ze ``SKILL.md`` skilla.
 
 Kończy się ``SZYBKO OK`` albo ``SZYBKO FAIL | <kroki>``, z dopiskiem `` | pytest przerwany``, gdy szybko przerwał
 krok pytest.
@@ -286,8 +287,8 @@ def _run_all(steps: list[Step], interruptible: Step | None = None) -> tuple[list
 
 
 def _model_drift(root: Path, changed: frozenset[str]) -> list[str]:
-    """Rozjazdy modelu skilli, których podstawę ``ci:`` zmiana ``changed`` uruchomiłaby na pull request: skrypt modelu w
-    niej pada na nich przed sprawdzeniem."""
+    """Rozjazdy modelu skilli, których podstawę ``ci:`` zmiana ``changed`` uruchomiłaby na pull request: w CI ta podstawa
+    pada na nich, zanim ruszy."""
 
     return [
         f"{skill.name}: {found}"

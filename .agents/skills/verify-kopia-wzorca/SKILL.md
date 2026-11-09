@@ -79,7 +79,8 @@ The check holds that copy to five rules, for any Wiersze danych:
 ## Does the change touch it?
 
 The check covers this code. Its definitions have digests in `model/definicje.json`: when one of them changes,
-`tools/szybko.py` fails before you push (step `rozjazd modelu`) until you have done „Bring the model in line”.
+`tools/szybko.py` fails before you push (step `rozjazd modelu`), and this skill's Mutation checks step fails before it starts
+(line `ROZJAZD MODELU Z KODEM`), until you have done „Bring the model in line”.
 
 | Code | What the check covers |
 | --- | --- |

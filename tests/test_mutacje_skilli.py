@@ -82,7 +82,7 @@ def _tool(root: Path) -> list[str]:
     names = (
         "tools/ci/wykonaj_zadanie.py", "tools/lib/niestabilne_testy.py", "tools/lib/wyniki_testow.py", "tools/lib/plan_runu.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/ciezkie_ci.py",
         "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/kroki_lokalne.py", "tools/lib/czasy_ci.py", "tools/lib/github.py",
-        "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py",
+        "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py", "tools/lib/rozjazd_modelu.py",
     )
     copy_files(root, [name for name in names if not (root / name).exists()])
     return [sys.executable, str(root / "tools" / "ci" / "wykonaj_zadanie.py"), "--kroki-pushu"]
@@ -360,8 +360,8 @@ def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wy
 
 
 def test_kazdy_skill_z_modelem_wskazuje_kod_modelu_w_pilnuje_i_kroki_naprawy_rozjazdu_bez_sync_commit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Rozjazd modelu z kodem (``tools/lib/rozjazd_modelu.py``) sprawdza skrypt skilla w CI i ``tools/szybko.py`` tylko dla
-    skilla z ``model/definicje.json``, więc ma go każdy skill z modelem TLA+ (``model/*.tla``) i eksplorator z częściami
+    """Rozjazd modelu z kodem (``tools/lib/rozjazd_modelu.py``) sprawdza wykonanie kroku skilla w CI i ``tools/szybko.py``
+    tylko dla skilla z ``model/definicje.json``, więc ma go każdy skill z modelem TLA+ (``model/*.tla``) i eksplorator z częściami
     modelowanymi ręcznie. Każdy plik z ``definicje.json`` leży w ``pilnuje:`` skilla, żeby jego zmiana uruchamiała
     podstawę i krok szybko, a ``SKILL.md`` ma sekcję z krokami, którymi rozjazd każe go naprawić, i nie ma Sync commit:
     model potwierdzają skróty w ``definicje.json``, a SHA w ``SKILL.md`` przepisuje każdy rebase (#1060)."""

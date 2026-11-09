@@ -23,9 +23,9 @@ ci: .agents/skills/verify-jedno-uruchomienie-naraz/scripts/explore_runs.py
 CI runs `explore_runs.py` whole (the `ci:` key) and `tests/test_jedno_uruchomienie_naraz.py` whenever
 a change touches this skill, and `check_runs_mutations.py` in full CI on `main` and nightly on `main`
 (`mutacje-nocne.yml`). Run them locally only to reproduce a red CI step or the night's issue, or one
-`--scope` while you work on it. `explore_runs.py` fails with `URUCHOMIENIA: ROZJAZD MODELU Z KODEM` in CI, before it
-explores, when a part modelled by hand (`model/definicje.json`) differs from its digest there; outside CI the same is a
-`UWAGA:` line above the verdict. `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`), and
+`--scope` while you work on it. When a part modelled by hand (`model/definicje.json`) differs from its digest there,
+the Mutation checks step fails before it explores (line `ROZJAZD MODELU Z KODEM | verify-jedno-uruchomienie-naraz: …`),
+and `explore_runs.py` run by hand prints the drift as an `UWAGA:` line above the verdict. `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`), and
 one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both. What stays with you on every change
 to the covered code is „Does the change touch it?”: read the diff since the digests against the
 table, above all the parts modelled by hand, whose change the check cannot see.
@@ -129,7 +129,6 @@ script checks the worktree's own `src`.
 | `URUCHOMIENIA OK, ZNANE USTALENIA: n` | 0 | Only the known findings below, each printed with its counterexample. |
 | `URUCHOMIENIA: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or a scope never reached a behaviour it must reach (`BRAK_ZAMKNIECIA`, `BRAK_ODMOWY_ZAMKNIECIA`, `BRAK_WYNIKU`, `BRAK_ODMOWY_STARTU`, `BRAK_DRUGIEGO_WYNIKU`), so the check would prove nothing. |
 | `URUCHOMIENIA: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding did not show in a scope of its `after` that ran to the end. If a change fixed it, narrow or delete it in `KNOWN_FINDINGS` and below. |
-| `URUCHOMIENIA: ROZJAZD MODELU Z KODEM` | 1 | Only in CI, before the check: a part modelled by hand differs from its digest in `model/definicje.json` (see „Bring the model in line”). |
 | `URUCHOMIENIA: LUKA MODELU (n)` | 2 | `RunHost`, `Run` or `Shutdown` uses its `threads` seam in a way the model does not cover (for example `RLock`, `Condition`, `wait(timeout=...)`), `RunHost` takes no lock from it, or a modelled thread waits on something outside the model. No verdict on the rules. |
 
 A modelled thread that waits on a real lock or Event, or on `time.sleep`, outside the model ends the check about

@@ -1,8 +1,8 @@
 """Rozjazd modelu skilla z kodem: czy kod, który opisuje model skilla, zmienił się od chwili, gdy ktoś potwierdził model.
 
-Jedyne miejsce tej decyzji. Skrypt sprawdzenia skilla pyta ``rozjazd`` przed sprawdzeniem (w CI rozjazd kończy go
-porażką, ``porazka_w_ci``), a ``tools/szybko.py`` pyta to samo dla skilli, których podstawę ``ci:`` zmiana uruchomiłaby
-na pull request.
+Jedyne miejsce tej decyzji. W CI pyta ``rozjazd`` wykonanie zadania (``tools/ci/wykonaj_zadanie.py``) przed każdym
+krokiem skilla z modelem i przy rozjeździe kończy krok porażką ``ROZJAZD`` bez uruchamiania; ``tools/szybko.py`` pyta to
+samo dla skilli, których podstawę ``ci:`` zmiana uruchomiłaby na pull request, a skrypt sprawdzenia skilla tylko ostrzega.
 
 Skill z modelem kodu ma plik ``DEFINICJE`` (``model/definicje.json``): ścieżka pliku od korzenia → nazwa definicji →
 jej skrót z chwili, gdy model ją opisywał. Nazwa ``CALY_PLIK`` to cały plik (jego tekst z ujednoliconymi końcami linii),
@@ -21,10 +21,9 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
-import os
 from pathlib import Path
 
-__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "definicje", "porazka_w_ci", "przesun", "rozjazd", "skille", "skroty"]
+__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "definicje", "przesun", "rozjazd", "skille", "skroty"]
 
 DEFINICJE = "model/definicje.json"
 CALY_PLIK = "cały plik"
@@ -50,15 +49,6 @@ def rozjazd(skill: Path, root: Path) -> str | None:
         return None
     steps = (skill / "SKILL.md").relative_to(root).as_posix()
     return f"{found} Wykonaj kroki „{KROKI}” z {steps}, a skróty przelicz (tools/przesun_model.py {skill.name}) dopiero, gdy model opisuje kod."
-
-
-def porazka_w_ci(drift: str | None, werdykt: str) -> str | None:
-    """Tekst, którym skrypt skilla kończy się porażką w CI (``GITHUB_ACTIONS=true``) przy rozjeździe ``drift``; ``None``
-    bez rozjazdu albo poza CI, gdzie skrypt sprawdza dalej i tylko ostrzega."""
-
-    if drift is None or os.environ.get("GITHUB_ACTIONS") != "true":
-        return None
-    return f"UWAGA: {drift}\n\n{werdykt}: {ROZJAZD}"
 
 
 def _found(skill: Path, root: Path) -> str | None:

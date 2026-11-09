@@ -19,8 +19,8 @@ ci: .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
 
 CI runs `sprawdz_aktualizacje.py` (the `ci:` key) in Mutation checks on Windows whenever a change
 touches this skill, so run it locally only while you bring the model in line or to reproduce a red
-Mutation checks step. It fails with `AKTUALIZACJA: ROZJAZD MODELU Z KODEM` when covered code differs from its
-digests in `model/definicje.json`, but it cannot tell whether your change to the model is right.
+Mutation checks step. In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
+Run by hand, the script prints the same drift as an `UWAGA:` line above the verdict.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 What stays with you on every change to the covered code is „Bring the model in
 line, then run”: read the diff against the table, change the model, break a new path in it, and run
@@ -401,9 +401,11 @@ Assumed, and not checked:
   merge or reset that finishes later, after `_put_back` or during the next
   click's rollback, is not modelled. That rollback most likely fails on Git's
   `index.lock` and keeps the journal (a guess, not checked).
-- The old version starts with any libraries, because `requirements.txt` has
-  only lower bounds. Pip killed between uninstalling and installing a library
-  could break this, so the `wylaczenie` model is optimistic.
+- The old version starts with any libraries, because in `requirements.txt`
+  the libraries Centrum imports have only lower bounds; the one exact pin is a
+  test library (`hypothesis`) that Centrum does not import. Pip killed between
+  uninstalling and installing a library could break this, so the `wylaczenie`
+  model is optimistic.
 - Dad has one file in `config/`. His untracked files (Wzorce, Ustawienia taty,
   the Zgłoszenia key, the log, metrics, period files, and in `config/` the
   read Powiadomienia, the Sprawy taty and the outbox addresses) are not
