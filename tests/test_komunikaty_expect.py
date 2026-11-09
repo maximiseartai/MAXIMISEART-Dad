@@ -487,25 +487,23 @@ QUOTES_OUTSIDE_UI: Final = {
 def _ui_text(text: str) -> re.Pattern[str]:
     """Napis w jednej z form, w których plik TSX pokazuje go tacie jako napis przycisku.
 
-    Test szuka napisu (w podwójnym cudzysłowie i całego) w tych postaciach: tekst dziecka elementu JSX
-    (``<Button>…Kontynuuj</Button>``, także po ikonie ``{…}`` i złamany w linii), prop ``label="…"`` albo
-    ``label={"…"}`` (nie ``aria-label``), właściwość ``label: "…"`` obiektu napisów i druga gałąź warunku, którego
-    ``{`` stoi zaraz po ``>`` (nie ``=>``) albo ``}`` (``{checking ? "Sprawdzam…" : "Diagnoza"}``; w warunku wolno
-    ``?.`` i ``??``).
+    Test szuka napisu w tych postaciach: tekst dziecka elementu JSX (``<Button>…Kontynuuj</Button>``, także po ikonie
+    ``{…}`` i złamany w linii), prop ``label="…"`` albo ``label={"…"}`` (nie ``aria-label``), właściwość
+    ``label: "…"`` obiektu napisów i druga gałąź wyrażenia warunkowego zamknięta ``}``
+    (``{checking ? <Spinner /> : "Diagnoza"}``); poza dzieckiem JSX napis stoi w podwójnym cudzysłowie i cały.
     Gdy napisu nie ma w pliku w żadnej z tych postaci, test czerwieni: przycisk zmienił brzmienie albo zniknął.
     Granica (tylko przegląd): czy dopasowanie to naprawdę napis przycisku, który tata widzi; pasuje też nagłówek,
-    przykład JSX w komentarzu i blok funkcji albo typu, którego ``{`` stoi po ``>`` lub ``}``, więc przycisk przemianowany
-    przy takim starym napisie obok przechodzi.
+    przykład JSX w komentarzu i warunek poza JSX (funkcja pomocnicza, atrybut), więc przycisk przemianowany przy takim
+    starym napisie obok przechodzi.
     """
 
     words = r"\s+".join(re.escape(word) for word in text.split())
     literal = f'"{words}"'
-    condition = r"(?:[^{}?:]|\?\?|\?\.)*"
     forms = (
         rf"[>}}]\s*{words}\s*[<{{]",
         rf"(?<![\w-])label=\{{?{literal}\}}?",
         rf"(?<![\w-])label:\s*{literal}",
-        rf"(?<!=)[>}}]\s*\{{{condition}\?{condition}:\s*{literal}\s*\}}",
+        rf"\?[^;]*?:\s*{literal}\s*\}}",
     )
     return re.compile("|".join(forms))
 
