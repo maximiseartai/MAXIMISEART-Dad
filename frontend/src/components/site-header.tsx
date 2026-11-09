@@ -9,8 +9,7 @@ import { WriteToMaks } from "@/components/write-to-maks"
 import { useSettings } from "@/lib/settings"
 import { NOTIFICATIONS_PAGE, useCurrentPage } from "@/pages"
 
-// Nagłówek bez tytułu (tytuł jest w treści strony): menu, link do trwającego Uruchomienia, „Napisz do Maksa”,
-// dzwonek Powiadomień i ikona motywu.
+// Nagłówek bez tytułu: tytuł jest w treści strony (`PageHeader`).
 export function SiteHeader() {
   const { theme, toggleTheme } = useSettings()
   const page = useCurrentPage()

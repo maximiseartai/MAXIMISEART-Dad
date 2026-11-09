@@ -211,7 +211,6 @@ function QuantitiesTable({
   )
 }
 
-/** Litera kolumny i skrócona nazwa pozycji cennika; pełna nazwa po dotknięciu. */
 function ColumnHeader({ column }: { column: PriceListItem }) {
   const content = (
     <>
@@ -283,7 +282,6 @@ function Row({ row }: { row: KindTableRow }) {
   )
 }
 
-/** Tekst w jednej linii; cały po dotknięciu. */
 function FullText({ text, label }: { text: string; label: string }) {
   if (text === "") {
     return null
@@ -305,7 +303,6 @@ function FullText({ text, label }: { text: string; label: string }) {
   )
 }
 
-/** Komórka N:AP: kolumna narzędzia szara, wpis taty na zielono, pusta i 0 bez niczego. */
 function QuantityCell({ cell, tint }: { cell: KindTableCell; tint: string }) {
   const shown = cell.value === 0 ? "" : cell.value === "nieliczbowa" ? "?" : String(cell.value)
 

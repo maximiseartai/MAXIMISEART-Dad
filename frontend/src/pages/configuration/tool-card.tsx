@@ -21,10 +21,8 @@ const FRESHNESS: Record<Freshness, { label: string; icon: React.ReactNode }> = {
 
 /**
  * Wersja narzędzia z Aktualnością i przyciskiem `Zaktualizuj narzędzie`, gdy Konfiguracja proponuje aktualizację
- * (`offered`: tylko przy nowszym Wydaniu, regułę ma serwer). Po aktualizacji strona czyta
- * Konfigurację od nowa (`onFinished`), więc wersja i Aktualność pochodzą z serwera, nie z wyniku. Udana
- * aktualizacja kończy się ponownym startem Centrum i przeładowaniem karty: nową wersję widać w commicie. Po
- * porażce głównym przyciskiem jest to, co każe Komunikat: ponowna aktualizacja albo „Wyślij do Maksa”.
+ * (`offered`: tylko przy nowszym Wydaniu, regułę ma serwer). Po aktualizacji strona czyta Konfigurację od nowa
+ * (`onFinished`), więc wersja i Aktualność pochodzą z serwera, nie z wyniku.
  */
 export function ToolCard({
   version,

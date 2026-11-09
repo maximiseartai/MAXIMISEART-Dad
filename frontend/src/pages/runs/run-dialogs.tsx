@@ -125,7 +125,7 @@ function useWithoutQuantity(period: string | null): WithoutQuantity | null {
   return resource.state === "ready" ? resource.data : null
 }
 
-/** Wiersze bez ilości okresu; Plik zbiorczy bez odczytu też jest wymieniony, żeby cisza nie znaczyła „nic nie zostało”. */
+/** Plik zbiorczy bez odczytu też jest wymieniony, żeby cisza nie znaczyła „nic nie zostało”. */
 function WithoutQuantityLine({ withoutQuantity }: { withoutQuantity: WithoutQuantity | null }) {
   if (withoutQuantity === null || (withoutQuantity.state === "read" && withoutQuantity.sentence === null)) {
     return null

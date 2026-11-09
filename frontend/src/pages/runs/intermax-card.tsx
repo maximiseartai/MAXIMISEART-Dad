@@ -22,9 +22,7 @@ import { RestoredCardButton } from "@/pages/runs/run-card-sheet"
 
 /**
  * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty, tu pod nazwą, którą zna tata,
- * więc jest tylko jeden przycisk. INTERMAX otwarty w Excelu albo niewskazany wyłącza go, a zdanie nad nim mówi, co zrobić. Pod plikiem
- * stoi 7 ostatnich dni INTERMAX i późniejsze Dni uporządkowane z ikoną Dnia uporządkowanego, a pod nimi ostatnie Uporządkowanie z Logów
- * Uruchomienia, którego pełna karta otwiera się z boku.
+ * więc jest tylko jeden przycisk.
  */
 export function IntermaxCard() {
   const { resource: setup, reload } = useResource(getIntermaxSetup, [])
@@ -132,7 +130,6 @@ function DayRow({ days }: { days: IntermaxDays }) {
   )
 }
 
-/** Ostatnie Uporządkowanie INTERMAX jednym cichym zdaniem: kiedy, wynik i uporządkowany dzień. */
 function LastOrdering({ last }: { last: RunRestored }) {
   const day = last.result.summary?.counts?.counts[0]?.label
 

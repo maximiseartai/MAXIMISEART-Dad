@@ -115,7 +115,6 @@ export function IntermaxCopiesCard() {
   )
 }
 
-/** Jedno zdanie ostrzeżenia przed przywróceniem: zmiany wprowadzone po godzinie Kopii znikną. */
 function ConfirmRestoreDialog({
   copy,
   onOpenChange,

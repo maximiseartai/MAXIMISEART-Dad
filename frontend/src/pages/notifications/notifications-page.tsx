@@ -37,7 +37,6 @@ type Case = Exclude<Notification, Release | Pricing>
 
 type CaseState = Case["state"]
 
-// Kolor rodzaju z palety motywu: zielony nowa wersja, niebieski Uwaga, pomarańczowy Zgłoszenie, żółty Wycena w efenix.
 const KINDS: Record<Kind, { tag: string; color: string; icon: LucideIcon }> = {
   nowa_wersja: { tag: "Nowa wersja", color: "var(--chart-3)", icon: CircleArrowUpIcon },
   uwaga: { tag: "Uwaga", color: "var(--chart-1)", icon: MessageSquareTextIcon },
@@ -95,7 +94,6 @@ export function NotificationsPage() {
   const data = notifications.state === "ready" ? notifications.data : null
   const unread = React.useMemo(() => data?.items.filter((item) => item.unread).map((item) => item.id) ?? [], [data])
 
-  // Nowe w tej wizycie: każde Powiadomienie, które przyszło nieprzeczytane, zostaje oznaczone do wyjścia z widoku.
   const [visit, setVisit] = React.useState<{ unread: ReadonlyArray<string>; fresh: ReadonlySet<string> }>({
     unread: [],
     fresh: new Set(),
@@ -216,10 +214,7 @@ function Body({ notification }: { notification: Notification }) {
   }
 }
 
-/**
- * Wynik Wyceny w efenix, która skończyła się, gdy tata patrzył na okno efenix albo odszedł od komputera: okres, tryb,
- * liczby zleceń, „Co się stało” Zatrzymania i karta Uruchomienia z błędami i ostrzeżeniami.
- */
+/** Wynik Wyceny w efenix, która skończyła się, gdy tata patrzył na okno efenix albo odszedł od komputera. */
 function PricingBody({ pricing }: { pricing: Pricing }) {
   const orders = pricing.orders
 
@@ -263,9 +258,8 @@ function CaseState({ notification }: { notification: Case }) {
 }
 
 /**
- * Notka „Co nowego” (zdanie wstępu i punkty jeden pod drugim, jak okienko aktualizacji), sprawy taty, które Wydanie
- * rozwiązuje, i przycisk aktualizacji, gdy Centrum go proponuje (`update_offered`, ta sama reguła co w Konfiguracji)
- * ze stanem aktualizacji pod nim.
+ * Notka „Co nowego” ma zdanie wstępu i punkty jeden pod drugim, jak okienko aktualizacji. Przycisk aktualizacji stoi
+ * tylko wtedy, gdy Centrum go proponuje (`update_offered`, ta sama reguła co w Konfiguracji).
  */
 function ReleaseBody({ release }: { release: Release }) {
   return (

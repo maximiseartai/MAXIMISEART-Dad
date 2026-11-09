@@ -24,7 +24,7 @@ function showRuns() {
 /**
  * Akcja karty „Następny krok”: podgląd bez zapisu procesu następnego kroku od razu, a w trakcie Uruchomienia
  * przejście do podglądu na żywo; proces bez podglądu (Wycena w efenix) otwiera nowe Uruchomienie z tym okresem.
- * Podpowiedź podglądu przychodzi z krokiem. Główna, chyba że karta ma inną akcję główną (`secondary`).
+ * Główna, chyba że karta ma inną akcję główną (`secondary`).
  */
 export function StepAction({
   period,
@@ -44,7 +44,6 @@ export function StepAction({
   )
 }
 
-/** „Uzupełnij” w karcie „Następny krok”: podsumowanie Uzupełnienia pliku zbiorczego okresu. */
 export function FillAction({ period, secondary }: { period: PeriodRow; secondary: boolean }) {
   return <FillLink token={period.token} {...(secondary ? SECONDARY_LOOK : PRIMARY_LOOK)} />
 }
@@ -81,7 +80,6 @@ function PreviewAction({ period, step, hint, look }: { period: PeriodRow; step: 
   )
 }
 
-/** Przycisk kroku, który otwiera nowe Uruchomienie z procesem kroku i tym okresem do wybrania. */
 function DraftButton({
   period,
   step,
@@ -119,10 +117,7 @@ function DraftButton({
   )
 }
 
-/**
- * Krok w wierszu Tablicy okresów: przejście do Uruchomień z tym procesem i okresem do wybrania. Krok obok
- * następnego (`secondary`) jest stonowany i bez strzałki.
- */
+/** Krok w wierszu Tablicy okresów; `secondary` to krok obok następnego. */
 export function PrepareLink({ period, step, secondary }: { period: PeriodRow; step: ProcessStep; secondary: boolean }) {
   return (
     <DraftButton
@@ -135,10 +130,6 @@ export function PrepareLink({ period, step, secondary }: { period: PeriodRow; st
   )
 }
 
-/**
- * Uzupełnienie w Excelu w wierszu Tablicy okresów: „Uzupełnij” jak przycisk główny karty „Następny krok”, przejście na
- * podsumowanie Uzupełnienia pliku zbiorczego okresu.
- */
 export function FillStepLink({ period, step }: { period: PeriodRow; step: FillStep }) {
   return (
     <Tooltip>

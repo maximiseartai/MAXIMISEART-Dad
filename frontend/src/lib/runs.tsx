@@ -21,7 +21,6 @@ export type RunDraft = Pick<RunRequest, "process" | "period">
 /** Start Uruchomienia: proces z okresem albo Uporządkowanie INTERMAX, które bierze tylko Ustawienia taty. */
 export type RunStart = RunRequest | { process: "intermax" }
 
-/** Ten sam proces jeszcze raz: z okresem i trybem `mode`, a Uporządkowanie INTERMAX z Ustawień taty. */
 export function rerunOf(run: RunInfo, mode: RunMode): RunStart {
   return run.process === "intermax" ? { process: "intermax" } : { process: run.process, period: run.period, mode }
 }
@@ -53,7 +52,6 @@ type RunsContextValue = {
 
 const RunsContext = React.createContext<RunsContextValue | null>(null)
 
-/** Widok, na który czeka akcja: start albo decyzja kończy się dopiero, gdy strumień go pokaże. */
 type Awaited = { shows: (view: RunView) => boolean; resolve: () => void }
 
 function shownRun(view: RunView | null): string | null {
@@ -207,10 +205,8 @@ export function useRuns() {
   return context
 }
 
-/** Uruchomienie, które trwa albo czeka na Decyzję taty. */
 export type ActiveRunView = Extract<RunView, { state: "running" | "awaiting_decision" }>
 
-/** Uruchomienie trwa (także gdy czeka na decyzję taty). */
 export function isActive(view: RunView | null): view is ActiveRunView {
   return view !== null && (view.state === "running" || view.state === "awaiting_decision")
 }

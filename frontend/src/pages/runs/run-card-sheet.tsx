@@ -95,7 +95,6 @@ function CardSheet({
   )
 }
 
-/** Odczyt karty przy każdym otwarciu panelu (panel montuje treść tylko otwarty). */
 function RunCardBody({ runId }: { runId: string }) {
   const { resource: card, reload } = useResource(getRunCard, [runId], { fresh: true })
 

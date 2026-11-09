@@ -18,7 +18,6 @@ import { NotificationsPage } from "@/pages/notifications/notifications-page"
 import { PeriodsPage } from "@/pages/periods/periods-page"
 import { RunsPage } from "@/pages/runs/runs-page"
 
-// Widok Powiadomienia, do którego prowadzi dzwonek w nagłówku; bez pozycji w menu.
 export const NOTIFICATIONS_PAGE = {
   id: "powiadomienia",
   title: "Powiadomienia",
@@ -65,7 +64,6 @@ function pageOf(hash: string): Page {
   return PAGES.find((page) => page.id === id) ?? PAGES[0]
 }
 
-/** Pozycja menu podświetlona na stronie `page`: ona sama albo, dla strony spoza menu, jej `inMenu`. */
 export function menuPageId(page: Page): Page["id"] {
   return "inMenu" in page ? page.inMenu : page.id
 }

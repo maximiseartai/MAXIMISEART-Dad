@@ -21,7 +21,6 @@ import { StageTimesChart } from "@/pages/metrics/stage-times-chart"
 // Ostatnie Uruchomienia procesu na wykresie; starsze są w historii.
 const CHART_RUNS = 12
 
-/** Czasy etapów kolejnych Uruchomień procesu wybranego procesu i trybu: wykres albo tabela z P50/P95. */
 export function StageTimesCard({
   phases,
   runs,

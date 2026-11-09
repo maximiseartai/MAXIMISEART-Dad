@@ -6,9 +6,8 @@ import type { Page } from "@/pages"
 /** Bieżąca strona z adresu; daje ją `App`, a tytuł strony bierze się z jej wpisu w `PAGES`. */
 export const CurrentPage = React.createContext<Page | null>(null)
 
-// Duży tytuł strony, obok najwyżej jedna odznaka, po prawej najwyżej jedna akcja. Bez akapitu pod spodem; tylko po
-// ponownym starcie zakończonym porażką pod tytułem każdej strony jest Komunikat Aktualizacji narzędzia.
-// `data-page` mówi pomiarowi widoku, że stoi nagłówek tej strony.
+// Duży tytuł strony, obok najwyżej jedna odznaka, po prawej najwyżej jedna akcja. Bez akapitu pod spodem poza
+// `ToolUpdateAfterRestart`. `data-page` mówi pomiarowi widoku, że stoi nagłówek tej strony.
 export function PageHeader({ badge, action }: { badge?: React.ReactNode; action?: React.ReactNode }) {
   const page = React.useContext(CurrentPage)
 

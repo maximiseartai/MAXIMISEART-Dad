@@ -60,7 +60,6 @@ export function DadNoteForm({ openedFrom, close }: { openedFrom: string | null; 
   const [scope, setScope] = React.useState<Scope>(openedFrom === null ? "general" : "run")
   const [checked, setChecked] = React.useState(openedFrom)
   const [answer, setAnswer] = React.useState<DadNoteState | null>(null)
-  // Uruchomienia do wyboru, z Uruchomieniem, z którego tata otworzył okno; każde otwarcie czyta je od nowa.
   const { resource: runs, reload: reloadRuns } = useResource(getDadNoteRuns, [openedFrom], { fresh: true })
   const sending = useAction((sendable: DadNoteRequest) => sendDadNote(sendable).then(setAnswer))
   const note = React.useMemo(() => noteFor(title, body, scope, runs, checked), [title, body, scope, runs, checked])

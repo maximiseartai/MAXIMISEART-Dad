@@ -19,7 +19,6 @@ import { openAndConfirm } from "@/pages/periods/open-period-path"
 import { FillLink } from "@/pages/filling/fill-link"
 import { FillStepLink, PrepareLink } from "@/pages/periods/prepare-actions"
 
-/** Tablica okresów: od najnowszego, ostatni pełny okres wyróżniony tłem. */
 export function PeriodBoardTable({
   periods,
   onStale,

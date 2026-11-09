@@ -19,11 +19,7 @@ import { IntermaxCard } from "@/pages/runs/intermax-card"
 import { RunSetupCard } from "@/pages/runs/run-setup-card"
 import { UnreadableStream } from "@/pages/runs/unreadable-stream"
 
-/**
- * Uruchomienia: zakładka „Uruchomienie” z nowym Uruchomieniem procesu albo podglądem na żywo bieżącego
- * (wynik, decyzja taty) i zakładka „Historia” z tą samą tabelą co w Metrykach. Stan Uruchomienia pochodzi
- * wyłącznie ze strumienia serwera, więc przetrwa odświeżenie i ponowne otwarcie karty.
- */
+/** Stan Uruchomienia pochodzi wyłącznie ze strumienia serwera, więc przetrwa odświeżenie i ponowne otwarcie karty. */
 export function RunsPage() {
   const { settings } = useSettings()
   const { view } = useRuns()
@@ -121,10 +117,8 @@ function RunsContent() {
 }
 
 /**
- * Karta nowego Uruchomienia procesu z kartą „Uporządkuj INTERMAX” pod nią, podgląd na żywo albo ostatnie
- * Uruchomienie sprzed startu Centrum. Zamiana
- * jednej na drugą na oczach taty (start, „Nowe Uruchomienie procesu”) wchodzi `wejscie`; karta zastana po
- * wejściu na stronę nie.
+ * Zamiana karty nowego Uruchomienia, podglądu na żywo i ostatniego Uruchomienia sprzed startu Centrum na oczach taty
+ * (start, „Nowe Uruchomienie procesu”) wchodzi `wejscie`; karta zastana po wejściu na stronę nie.
  */
 function RunOrSetup({
   view,

@@ -8,10 +8,8 @@ import { fullDate } from "@/lib/format"
 import { FillAction, StepAction } from "@/pages/periods/prepare-actions"
 
 /**
- * „Następny krok” zawsze dla ostatniego pełnego okresu: tytuł bieżącego kroku Drogi okresu, fakty z ikonami i Droga
- * okresu. Gdy okres ma następny krok, jedyną akcją główną strony jest akcja tego kroku: „Uzupełnij” (podsumowanie
- * Uzupełnienia pliku zbiorczego) z Wyceną w efenix obok jako drugą, „Podgląd bez zapisu” procesu albo, dla Wyceny
- * w efenix bez podglądu, nowe Uruchomienie z tym okresem.
+ * „Następny krok” zawsze dla ostatniego pełnego okresu. Gdy okres ma następny krok, jedyną akcją główną strony jest
+ * akcja tego kroku.
  */
 export function NextStepCard({ period }: { period: PeriodRow }) {
   const step = period.next_step

@@ -18,7 +18,7 @@ import { useAction } from "@/lib/action"
 import { ReportToMaks } from "@/components/report-to-maks"
 
 type StopDiagnosis = {
-  /** Akcja przy banerze Zatrzymania: „Diagnoza”, a po niej „Uruchom ponownie”, gdy Diagnoza potwierdza Komunikat. */
+  /** Akcja przy banerze Zatrzymania. */
   action: React.ReactNode
   /** Wynik Diagnozy i Zgłoszenie do Maksa pod banerem. */
   result: React.ReactNode
@@ -117,7 +117,6 @@ function UpdateProposal() {
   )
 }
 
-/** Przycisk „Diagnoza” przy Zatrzymaniu; w trakcie sprawdzania pokazuje, że trwa. */
 function DiagnoseButton({ checking, onDiagnose }: { checking: boolean; onDiagnose: () => void }) {
   return (
     <Button size="sm" onClick={onDiagnose} disabled={checking}>

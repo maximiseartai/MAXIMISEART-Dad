@@ -12,12 +12,8 @@ import { useAction } from "@/lib/action"
 type ReportState = NonNullable<RunOutcome["report"]>
 
 /**
- * Zgłoszenie do Maksa (przy Zatrzymaniu albo nieudanej Aktualizacji narzędzia): podgląd i „Wyślij do Maksa”,
- * potwierdzenie po wysłaniu, „czeka na internet”, gdy Zgłoszenie jest w kolejce i wyjdzie samo, „skontaktuj się z
- * Maksem”, gdy nie działa Token do Zgłoszeń albo Skrzynka odrzuciła treść, albo Komunikat z „Spróbuj ponownie”, gdy
- * nie dało się go zapisać. Gdy ten problem ma już otwarte Zgłoszenie, zamiast
- * przycisku jest „już wysłane i czeka na naprawę”. Stan liczy serwer, a `send` prosi go o wysyłkę; `draft` przy
- * Zatrzymaniu jest dopiero po Diagnozie, więc przed nią widać tylko stan.
+ * Zgłoszenie do Maksa (przy Zatrzymaniu albo nieudanej Aktualizacji narzędzia). Stan liczy serwer, a `send` prosi go
+ * o wysyłkę; `draft` przy Zatrzymaniu jest dopiero po Diagnozie, więc przed nią widać tylko stan.
  */
 export function ReportToMaks({
   send: sendReport,

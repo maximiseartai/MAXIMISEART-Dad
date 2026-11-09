@@ -9,10 +9,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSettings, type PickedPath } from "@/lib/settings"
 
-/**
- * Plik taty z Ustawień taty i jego okno wyboru. Niewskazany plik się „Wskaż”, wskazany „Zmień”; dopóki jakieś okno
- * wyboru jest otwarte, żaden przycisk nie otwiera drugiego.
- */
+/** Plik taty z Ustawień taty i jego okno wyboru: niewskazany plik się „Wskaż”, wskazany „Zmień”. */
 function useSettingPath(path: PickedPath) {
   const { settings, picker, choose } = useSettings()
   const setting = settings.state === "ready" ? settings.data[path] : null

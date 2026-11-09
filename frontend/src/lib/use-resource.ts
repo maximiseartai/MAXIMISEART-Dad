@@ -13,7 +13,6 @@ type ReadArgument = string | null
 
 type LastRead = { data: unknown; read: number }
 
-/** Funkcja odczytu z `@/api/centrum`: pod nią pamięć trzyma ostatnie dane jej odczytów. */
 type Read<Args extends ReadonlyArray<ReadArgument>, T> = (...args: Args) => Promise<T>
 
 /**
@@ -22,9 +21,8 @@ type Read<Args extends ReadonlyArray<ReadArgument>, T> = (...args: Args) => Prom
  */
 export const DadFilesVersion = React.createContext(0)
 
-// Ostatnie dane każdego odczytu, pod funkcją odczytu z `@/api/centrum` i kluczem z argumentów i numeru plików taty.
-// To tylko kopia ostatniej odpowiedzi serwera w pamięci karty (odświeżenie karty ją czyści); źródłem Statusu okresu
-// nadal jest serwer (ADR 0004).
+// Kopia ostatniej odpowiedzi serwera w pamięci karty (odświeżenie karty ją czyści); źródłem Statusu okresu nadal jest
+// serwer (ADR 0004).
 const lastReads = new Map<Read<never, unknown>, Map<string, LastRead>>()
 
 // Numer każdego odczytu i każdej podmiany: kopię nadpisuje tylko nowszy, także z innej strony.
