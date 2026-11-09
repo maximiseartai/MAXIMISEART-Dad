@@ -40,6 +40,7 @@ from drive.common import (
     switch_theme,
     toggle_theme,
 )
+from harness import Pace
 from drive.teksty import FOR_KEY, MODES, WRITE
 from rozliczenia.centrum.contract.common import ProcessKey
 from rozliczenia.centrum.run_origins import CentrumRuns
@@ -456,7 +457,6 @@ def drive(run: Run, page: Page) -> None:
     config = run.config
     key_file = config / REPORT_KEY_FILE
     box = run.box
-    pacing = run.root / "pacing" / "skrzynka-ms.txt"
     drop_report_key(key_file, missing_ok=True)
     notes_before = len(_notes(config))
     issues_before = len(box_issues(run, LABEL))
@@ -605,8 +605,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "uwaga-wyslana")
     print("  harness: Maks writes the key; the skrzynka answers each issue after a pause", flush=True)
     key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
-    pacing.parent.mkdir(exist_ok=True)
-    pacing.write_text(str(BOX_PACING_MS), encoding="utf-8")
+    pacing = Pace.REPORT_BOX.set(run.root, BOX_PACING_MS)
     try:
         dialog = _open(page)
         figure = dialog.get_by_role("figure", name="Co dostanie Maks", exact=True)

@@ -26,6 +26,7 @@ from drive.common import (
     stop_banner,
     unreadable,
 )
+from harness import register_fault
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 from atrapy.pliki_taty import REPORT_KEY_FILE
@@ -273,7 +274,7 @@ def drive(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "diagnoza-nieoczekiwany-wyjatek")
-    fault = run.root / "awaria" / "odczyt-rejestru"
+    fault = register_fault(run.root)
     fault.parent.mkdir(exist_ok=True)
     fault.touch()
     try:

@@ -23,6 +23,7 @@ from drive.common import (
     served_version,
     version_line,
 )
+from harness import Pace
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
 from atrapy.pliki_taty import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
 from rozliczenia.centrum.tool_update import RESULT_FILE
@@ -229,9 +230,8 @@ def drive(run: Run, page: Page) -> None:
     github = run.root / "github"
     github.mkdir(exist_ok=True)
     main_commit = github / "main-commit.txt"
-    pacing = run.root / "pacing" / "aktualizacja-ms.txt"
-    pacing.parent.mkdir(exist_ok=True)
-    restart_pacing = run.root / "pacing" / "ponowny-start-ms.txt"
+    pacing = Pace.UPDATE.file(run.root)
+    restart_pacing = Pace.RESTART.file(run.root)
 
     run.step(FEATURE, "aktualizacja-jest-nowsza")
     print("  harness: the newest Wydanie on the scripted GitHub is the local origin's newest commit", flush=True)
@@ -268,9 +268,9 @@ def drive(run: Run, page: Page) -> None:
         expect(card).to_contain_text("Jest nowsza wersja")
         expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_enabled()
         print(f"  harness: each Aktualizacja narzędzia waits {UPDATE_PACING_MS} ms before it looks for Git", flush=True)
-        pacing.write_text(str(UPDATE_PACING_MS), encoding="utf-8")
+        Pace.UPDATE.set(run.root, UPDATE_PACING_MS)
         print(f"  harness: the restarted Centrum waits {RESTART_PACING_MS} ms before it starts", flush=True)
-        restart_pacing.write_text(str(RESTART_PACING_MS), encoding="utf-8")
+        Pace.RESTART.set(run.root, RESTART_PACING_MS)
         before_health = run.api("/api/health", "aktualizacja-health-przed")
         page.evaluate("window.przedPonownymStartem = true")
         card.get_by_role("button", name=UPDATE_BUTTON, exact=True).dblclick()
@@ -403,7 +403,7 @@ def drive(run: Run, page: Page) -> None:
         )
     finally:
         remove(main_commit, missing_ok=True)
-        remove(pacing.with_name("instalacja-ms.txt"), missing_ok=True)
+        remove(Pace.INSTALL.file(run.root), missing_ok=True)
         release_only(origin, newest)
 
 
@@ -422,7 +422,7 @@ def _drive_failed_installation(
     release_only(origin, libraries)
     _github_main(run, libraries)
     print(f"  harness: each installation of libraries waits {PACING_MS} ms before pip starts", flush=True)
-    (run.root / "pacing" / "instalacja-ms.txt").write_text(str(PACING_MS), encoding="utf-8")
+    installation_pacing = Pace.INSTALL.set(run.root, PACING_MS)
     page.reload()
     card = _tool_card(page)
     expect(card).to_contain_text("Jest nowsza wersja")
@@ -437,7 +437,7 @@ def _drive_failed_installation(
     view = run.api("/api/tool-update", "aktualizacja-instalowanie")
     run.check(view == {"state": "running", "step": "installing"}, "the server reports the step `installing`")
     run.capture(page, "130-aktualizacja-instalowanie", live=True)
-    remove(run.root / "pacing" / "instalacja-ms.txt")
+    remove(installation_pacing)
 
     run.step(FEATURE, "aktualizacja-instalacja-nieudana")
     message = card.get_by_role("alert").filter(has_text=LIBRARIES_FAILED)
@@ -485,7 +485,7 @@ def _drive_new_version_not_starting(
     release_only(origin, not_starting)
     _github_main(run, not_starting)
     print(f"  harness: the old version, started again, waits {RESTART_PACING_MS} ms before it starts", flush=True)
-    (run.root / "pacing" / "ponowny-start-ms.txt").write_text(str(RESTART_PACING_MS), encoding="utf-8")
+    restart_pacing = Pace.RESTART.set(run.root, RESTART_PACING_MS)
     page.reload()
     card = _tool_card(page)
     expect(card).to_contain_text("Jest nowsza wersja")
@@ -500,7 +500,7 @@ def _drive_new_version_not_starting(
     print("  Dad goes to Uruchomienia while Centrum restarts", flush=True)
     page.get_by_role("link", name="Uruchomienia", exact=True).click()
     expect(page.get_by_role("heading", name="Uruchomienia", exact=True)).to_be_visible()
-    remove(run.root / "pacing" / "ponowny-start-ms.txt")
+    remove(restart_pacing)
 
     run.step(FEATURE, "aktualizacja-nie-wystartowala")
     message = page.get_by_role("alert").filter(has_text=NEW_VERSION_FAILED)
@@ -579,7 +579,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     result = run.config / UPDATE_RESULT_FILE
     run.step(FEATURE, "aktualizacja-ok-przy-starej-wersji")
     print(f"  harness: the old version, started again, waits {OK_ON_OLD_VERSION_PACING_MS} ms before it starts", flush=True)
-    (run.root / "pacing" / "ponowny-start-ms.txt").write_text(str(OK_ON_OLD_VERSION_PACING_MS), encoding="utf-8")
+    restart_pacing = Pace.RESTART.set(run.root, OK_ON_OLD_VERSION_PACING_MS)
     page.reload()
     card = _tool_card(page)
     expect(card).to_contain_text("Jest nowsza wersja")
@@ -599,7 +599,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
         json.dumps({"wynik": "ok", "przed": newest, "po": not_starting, "biblioteki": False}) + "\n", encoding="utf-8"
     )
     run.check(not answers(run.url), "the harness put „ok” back before the old version started")
-    remove(run.root / "pacing" / "ponowny-start-ms.txt")
+    remove(restart_pacing)
 
     message = page.get_by_role("alert").filter(has_text=UNEXPECTED)
     expect(message).to_be_visible(timeout=RESTART_TIMEOUT_MS)

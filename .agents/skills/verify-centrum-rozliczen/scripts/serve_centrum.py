@@ -186,6 +186,7 @@ from rozliczenia.tool_files import listen_locally, log_path
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
+from harness import Pace, register_fault
 from atrapy.atrapa_efenix import atrapa_efenix
 from atrapy.widok_skrzynki import shown
 from atrapy.efenix import write_collective_file
@@ -244,7 +245,7 @@ class FileReportBox:
     def __init__(self, directory: Path) -> None:
         self._directory = directory
         self._archives = directory.with_name("skrzynka-archiwum")
-        self._pacing = directory.parent / "pacing" / "skrzynka-ms.txt"
+        self._root = directory.parent
         self._lock = threading.Lock()
 
     def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
@@ -319,8 +320,7 @@ class FileReportBox:
         _save(self._archives / "archiwa.json", archives)
 
     def open_issue(self, label: Label, title: str, body: str, *, key: str) -> SendOutcome:
-        if self._pacing.exists():
-            time.sleep(int(self._pacing.read_text(encoding="utf-8")) / 1000)
+        Pace.REPORT_BOX.wait(self._root)
         if (self._directory / "brak-sieci").exists():
             return Unreachable()
         if self._refuses_key():
@@ -534,9 +534,7 @@ def _scripted_onedrive(root: Path) -> CloudFiles:
 
 def _paced_git(root: Path) -> Callable[[], Path | None]:
     def found() -> Path | None:
-        pacing = root / "pacing" / "aktualizacja-ms.txt"
-        if pacing.exists():
-            time.sleep(int(pacing.read_text(encoding="utf-8")) / 1000)
+        Pace.UPDATE.wait(root)
         return find_git()
 
     return found
@@ -544,9 +542,7 @@ def _paced_git(root: Path) -> Callable[[], Path | None]:
 
 def _paced_install(root: Path) -> Callable[[Path], bool]:
     def install(requirements: Path) -> bool:
-        pacing = root / "pacing" / "instalacja-ms.txt"
-        if pacing.exists():
-            time.sleep(int(pacing.read_text(encoding="utf-8")) / 1000)
+        Pace.INSTALL.wait(root)
         return pip_install(requirements)
 
     return install
@@ -557,17 +553,16 @@ def _pace_worker_templates(root: Path, worker_template: Path) -> None:
     worker_template = worker_template.resolve()
 
     def paced(template: TemplateFile, target: Path, rows: Sequence[DataRow] | Sequence[RegisterRow]) -> Route:
-        pacing = root / "pacing" / "szablony-ms.txt"
-        if template.path == worker_template and pacing.exists():
-            time.sleep(int(pacing.read_text(encoding="utf-8")) / 1000)
+        if template.path == worker_template:
+            Pace.TEMPLATES.wait(root)
         return create(template, target, rows)
 
-    setattr(TemplateFile, "create", paced)
+    TemplateFile.create = paced  # type: ignore[method-assign]
 
 
 def _register_failing_on_hook(root: Path, register: Path) -> Readers:
     def source(path: Path) -> bytes:
-        if (root / "awaria" / "odczyt-rejestru").exists() and path.name == register.name:
+        if register_fault(root).exists() and path.name == register.name:
             raise RuntimeError("synthetic unexpected failure")
         return FILE_READERS.source(path)
 

@@ -29,6 +29,7 @@ from drive.common import (
     start_card_warns_while_open,
     stop_banner,
 )
+from harness import Pace
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 from atrapy.workbooks import excel_lock
 
@@ -264,9 +265,7 @@ def drive(run: Run, page: Page) -> None:
         f"dialog lists the rows without quantity: {sentence}",
     )
     run.capture(page, "42-przebieg-potwierdzenie")
-    pacing = run.root / "pacing" / "szablony-ms.txt"
-    pacing.parent.mkdir(exist_ok=True)
-    pacing.write_text(str(TEMPLATE_PACING_MS), encoding="utf-8")
+    pacing = Pace.TEMPLATES.set(run.root, TEMPLATE_PACING_MS)
     confirm.get_by_role("button", name="Uruchom", exact=True).click()
 
     run.step(feature, "przebieg-na-zywo")
