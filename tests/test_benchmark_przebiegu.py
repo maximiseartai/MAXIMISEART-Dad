@@ -381,8 +381,6 @@ def journal_record(sha: str, machine: str, started_at: str, wall: dict[str, int]
 
 
 def measurement_sections(comment: str) -> dict[str, str]:
-    """Sekcje ``### ...`` części Pomiar komentarza, kluczem jest nagłówek."""
-
     measurement = comment.split("## Pomiar", 1)[1].split("## Bramka poprawności", 1)[0]
     return {section.splitlines()[0].strip(): section for section in measurement.split("### ")[1:]}
 

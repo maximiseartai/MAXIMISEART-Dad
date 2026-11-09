@@ -1,9 +1,10 @@
-"""Run ``ci.yml`` mieści się w limicie zadań konta, a ``Required CI status`` czerwienieje, gdy którekolwiek zadanie bramki nie przeszło.
+"""Run ``ci.yml`` mieści się w limicie zadań organizacji, a ``Required CI status`` czerwienieje, gdy którekolwiek zadanie bramki nie przeszło.
 
-Konto GitHub (plan Free) uruchamia naraz najwyżej 20 zadań ze wszystkich workflowów, więc run, który sam zajmuje
-prawie cały limit, każe kolejnym pushom czekać w kolejce. Liczbę zadań pytest i Mutation checks ustala plan
-(``tools/plan_ci.py``), więc ci.yml i plan muszą się zgadzać co do zadań o stałej liczbie. Zadanie, którego nie ma w
-``needs`` Required, nie blokowałoby merge'a, choćby padło, więc Required czeka na każde zadanie runu.
+Organizacja GitHub uruchamia naraz ograniczoną liczbę zadań ze wszystkich workflowów, a zadanie ponad limit czeka w
+kolejce; limit i jego podział między run pull request i run ``main`` opisuje komentarz przy ``ZADANIA_RUNU`` w
+``tools/plan_ci.py``. Liczbę zadań pytest i Mutation checks ustala plan, więc ci.yml i plan muszą się zgadzać co do
+zadań o stałej liczbie. Zadanie, którego nie ma w ``needs`` Required, nie blokowałoby merge'a, choćby padło, więc
+Required czeka na każde zadanie runu.
 """
 
 from __future__ import annotations

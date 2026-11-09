@@ -41,8 +41,6 @@ def stub_tree(path: Path, result: object, *, code: int = 0, files: dict[str, str
 
 
 def write_workbook(path: Path, value: str | int) -> Path:
-    """Skoroszyt z jedną wartością w A1."""
-
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook = Workbook()
     active_worksheet(workbook)["A1"] = value

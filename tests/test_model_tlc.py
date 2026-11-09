@@ -296,8 +296,6 @@ def test_kazdy_skill_z_modelem_ma_konfiguracje_a_jego_opowiesc_zna_kazda_akcje_n
     ids=["prawda", "falsz", "zero", "liczba", "napis-z-cyframi", "napis"],
 )
 def test_stala_konfiguracji_trafia_do_cfg_jako_wartosc_tla(tmp_path: Path, value: bool | int | str, written: str) -> None:
-    """``TRUE``/``FALSE`` z wartości logicznej, liczba bez cudzysłowu, napis w cudzysłowie, także napis z samych cyfr."""
-
     model = _model(tmp_path, {"f": {"opis": "Opis.", "stale": {"Stala": value}}})
     [config] = model_tlc.konfiguracje(model)
 

@@ -38,8 +38,6 @@ STARTED = datetime(2026, 9, 17, 13, 45, 21)
 
 
 def _marked_row() -> list[object]:
-    """Wiersz A:AT ze znacznikiem w każdej komórce, z prawdziwą datą w G."""
-
     row: list[object] = [f"ZNACZNIK-{get_column_letter(column)}" for column in range(1, 47)]
     row[6] = STARTED
     return row

@@ -33,8 +33,6 @@ def save_command(test: str, *, windows: bool) -> str:
 
 
 def assert_expected(actual: str, path: Path) -> None:
-    """Porównuje ``actual`` z plikiem ``path``; z ``ZAPISZ_EXPECT=1`` poza CI zapisuje ``actual`` do pliku."""
-
     name = path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else str(path)
     if os.environ.get(SAVE) == "1":
         if os.environ.get("CI"):

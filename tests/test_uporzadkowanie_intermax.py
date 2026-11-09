@@ -199,8 +199,7 @@ def _row_xml(path: Path, number: int) -> bytes:
 
 
 def test_rekord_metryk_uporzadkowania_liczy_zlecenia_i_wykonawcow_dnia(tmp_path: Path) -> None:
-    """Liczniki rekordu metryk Uporządkowania INTERMAX: zlecenia dnia i różni Wykonawcy wśród nich (6 zleceń, 3
-    Wykonawców wklejenia ``Intermax()``)."""
+    """Wklejenie ``Intermax()`` ma 6 zleceń i 3 różnych Wykonawców."""
 
     _register(tmp_path)
 

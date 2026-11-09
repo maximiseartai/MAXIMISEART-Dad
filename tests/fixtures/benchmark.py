@@ -46,8 +46,6 @@ _IDENTIFYING_COLUMNS = (2, 3, 6, 9)
 
 
 def write_templates(directory: Path) -> Path:
-    """Folder z trzema syntetycznymi Wzorcami pod nazwami, pod którymi leżą w ``config``."""
-
     directory.mkdir(parents=True)
     write_template(directory / WORKER_TEMPLATE)
     write_internal_template(directory / INTERNAL_TEMPLATE)

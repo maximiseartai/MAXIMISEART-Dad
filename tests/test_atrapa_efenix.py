@@ -168,7 +168,6 @@ def _order() -> EfenixOrder:
     return EfenixOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", quantities={"019": 2}, emmett={"012": 1})
 
 
-# Jedno działanie okna każdego rodzaju na zleceniu ``_order``.
 _ACTS: dict[Action, Callable[[SerwerEfenix[EfenixOrder]], object]] = {
     Action.SEARCH: lambda serwer: serwer.search("9301"),
     Action.OPEN: lambda serwer: serwer.page("901"),

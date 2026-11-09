@@ -728,8 +728,6 @@ def test_data_column_keeps_date_format_from_rejestr(tmp_path: Path) -> None:
 
 @dataclass(frozen=True)
 class SheetLayout:
-    """Szerokości kolumn, wysokości wierszy, nagłówek z formatowaniem i blokada wierszy."""
-
     widths: list[float | None]
     heights: list[float | None]
     header: list[tuple[object, ...]]
@@ -855,8 +853,6 @@ REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 
 
 def stop_message(fixture: PreparationFixture) -> StopError:
-    """Uruchamia Przygotowanie, oczekuje zatrzymania i sprawdza, że nic nie powstało."""
-
     with pytest.raises(StopError) as raised:
         run_preparation(fixture)
     assert list(fixture.periods_directory.iterdir()) == []

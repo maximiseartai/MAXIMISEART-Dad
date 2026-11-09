@@ -1,4 +1,4 @@
-"""Sztuczny proces w pamięci: trzeci adapter seamu ``Process`` obok obu procesów taty."""
+"""Sztuczny proces w pamięci: adapter seamu ``Process`` obok procesów taty."""
 
 from __future__ import annotations
 
