@@ -41,6 +41,8 @@ from rozliczenia.centrum.keyed_box import OPENING_FILE
 from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.tool_update import RESULT_FILE
+from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
 from tests.fixtures.centrum import (
     QUEUED_FOR_INTERNET,
@@ -595,6 +597,8 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "zapisy_zakladania_skrzynki": TOOL.config / OPENING_FILE,
         "wynik_aktualizacji": TOOL.config / RESULT_FILE,
         "dzialania_taty": TOOL.log_path.parent / DAD_ACTIONS_FILE,
+        "dostep_skrzynki_raportow": TOOL.config / INBOX_ACCESS_FILE,
+        "adresy_wykonawcow": TOOL.config / WORKER_ADDRESSES_FILE,
     }
 
     assert state | {name: path.as_posix() for name, path in others.items()} == {
@@ -612,6 +616,8 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "zapisy_zakladania_skrzynki": "config/skrzynka-zakladanie.txt",
         "wynik_aktualizacji": "config/centrum-aktualizacja.json",
         "dzialania_taty": "logs/dzialania-taty.jsonl",
+        "dostep_skrzynki_raportow": "config/skrzynka-raportow.txt",
+        "adresy_wykonawcow": "config/adresy-wykonawcow.yaml",
     }
 
 

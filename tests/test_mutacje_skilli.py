@@ -327,7 +327,11 @@ def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium() -> None:
     assert dead == []
 
 
-POZA_VERIFY_ROZLICZENIA: dict[str, str] = {}
+POZA_VERIFY_ROZLICZENIA: dict[str, str] = {
+    "src/rozliczenia/worker_addresses.py": "plik adresów Wpisania raportów; żaden proces go jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_report_inbox.py": "Skrzynka raportów Wpisania raportów; żaden proces jej jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/__init__.py": "typy maila rdzenia raportów; żaden proces ich jeszcze nie woła (#1227)",
+}
 
 
 def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen() -> None:

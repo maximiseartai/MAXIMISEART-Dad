@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+import imaplib
 import json
 from pathlib import Path
 import sys
@@ -113,6 +114,22 @@ def bez_githuba(monkeypatch: pytest.MonkeyPatch) -> None:
         return asked
 
     monkeypatch.setattr(tool_freshness, "github_releases", github_in_test)
+
+
+@pytest.fixture(autouse=True)
+def bez_gmaila(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Żaden test nie łączy się ze Skrzynką raportów w Gmailu: ``ImapInbox`` bez podstawionego ``connect`` wywraca test.
+
+    Port łapie tylko błędy sieci i IMAP, więc ``AssertionError`` dochodzi do testu.
+    """
+
+    def gmail_in_test(*args: object, **kwargs: object) -> NoReturn:
+        raise AssertionError(
+            "Test łączy się ze Skrzynką raportów w Gmailu; podstaw connect w ImapInbox (AtrapaImap) albo FakeInbox "
+            "(tools/lib/atrapy/skrzynka_raportow.py)."
+        )
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", gmail_in_test)
 
 
 @pytest.fixture(autouse=True)
