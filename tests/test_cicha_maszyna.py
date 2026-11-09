@@ -18,7 +18,8 @@ import quiet_machine
 from quiet_machine import MachineBusy, QuietMachine
 from tests.fixtures.potomne import wait_for
 
-# Pomiar wydajnosc trwa około 5 minut (features/wydajnosc.md); agent ma 10 minut na jedno polecenie.
+# Pomiar wydajnosc trwa około 5 minut (features/wydajnosc.md skilla verify-centrum-rozliczen); agent ma 10 minut
+# na jedno polecenie.
 POMIAR_S = 5 * 60
 LIMIT_POLECENIA_S = 10 * 60
 

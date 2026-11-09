@@ -45,7 +45,6 @@ FIRST_VERSION: Mapping[str, str] = {
     "config/worker_mapping.example.yaml": "schema_version: 1\nworkers:\n  przyklad: Przykładowy Wykonawca\n",
     "src/narzedzie.py": "WERSJA = 1\n",
 }
-# Wymagania nowej wersji: jedna biblioteka więcej.
 NEW_REQUIREMENTS = "openpyxl>=3.1.5\nfastapi>=0.115\n"
 _IDENTITY = {
     "GIT_AUTHOR_NAME": "Maks Testowy",

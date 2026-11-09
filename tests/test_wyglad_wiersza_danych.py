@@ -43,8 +43,6 @@ LEFTOVER_ROWS = 6
 
 @dataclass(frozen=True)
 class WrittenFile:
-    """Zapisany plik, jego Wzorzec, wiersz nagłówka, zapisane Wiersze danych i liczba kolumn wyglądu."""
-
     path: Path
     template: Path
     header_row: int

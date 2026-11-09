@@ -80,8 +80,6 @@ POINTS = ("Plik zbiorczy ma kolumnę z kilometrami.", "Rozliczenia pracowników 
     ids=["wstep-i-punkty", "same-punkty", "notka-v0.3.1", "poprawiona-recznie", "punkt-zlamany-w-linii"],
 )
 def test_co_nowego_z_punktami_to_wstep_i_punkty_po_drodze_przez_notke(summary: str, shown: WhatsNew) -> None:
-    """To, co napisze narzędzie Wydań, karta Nowej wersji pokaże jako zdanie wstępu i punkty jeden pod drugim."""
-
     assert whats_new(parse(render(ReleaseNotes(summary, CASES))).summary) == shown
 
 

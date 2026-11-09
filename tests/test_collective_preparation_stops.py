@@ -56,8 +56,6 @@ def input_snapshot(fixture: PreparationFixture) -> dict[Path, bytes]:
 
 
 def stop_preparation(fixture: PreparationFixture, *, dry_run: bool = False) -> StopError:
-    """Uruchamia proces, oczekuje zatrzymania i sprawdza, że nic nie powstało ani nie zmieniło się."""
-
     inputs_before = input_snapshot(fixture)
     periods_before = sorted(path.name for path in fixture.periods_directory.iterdir())
 

@@ -210,7 +210,7 @@ def rendered() -> dict[str, str]:
 
 
 def bodies() -> list[str]:
-    """Opisy, których HTML muszą mieć testy: ``PRZYPADKI``, ``SCALENIE`` i ``PRAWDZIWE`` z ``opisy_pr.json``."""
+    """Opisy, których HTML muszą mieć testy."""
 
     return [*(body for _, body, _ in PRZYPADKI), *SCALENIE.values(), *map(real_body, PRAWDZIWE)]
 

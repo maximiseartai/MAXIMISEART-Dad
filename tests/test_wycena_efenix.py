@@ -267,8 +267,6 @@ def _next_tab(page: Page) -> Page:
 
 
 def _figures(outcome: Priced) -> dict[str, int]:
-    """Liczby podsumowania: zlecenia w zakresie, gotowe, przekazane, rozliczone, błędy, ostrzeżenia Emmetta i pominięte."""
-
     assert isinstance(outcome.ending, Finished), _ending(outcome)
     assert outcome.view is not None
     summary = outcome.view
@@ -306,8 +304,6 @@ def _what(outcome: Priced) -> list[str]:
 
 
 def _pricing(efenix: AtrapaEfenix | StanEfenix[AtrapaOrder]) -> dict[str, tuple[dict[str, int], date | None, int]]:
-    """Stan wyceny każdego zlecenia w efenix: ilości, data wykonania i liczba załadowań Wyceny Emmetta."""
-
     orders, _logged_in = efenix.state()
     return {order.number: (order.quantities, order.execution_date, order.emmett_loads) for order in orders}
 
@@ -2223,8 +2219,6 @@ def _address_style_past_cell_xfs(parts: dict[str, bytes]) -> dict[str, bytes]:
 
 
 def _shaped(tmp_path: Path, order: Order, shape: Callable[[dict[str, bytes]], dict[str, bytes]]) -> Path:
-    """Plik zbiorczy z jednym zleceniem ``order`` w kształcie ``shape``."""
-
     source = write_collective_file(tmp_path, [order])
     changed = shape(dict(_parts(source)))
     rewrite_parts(source, lambda name, data: changed.get(name, data))
@@ -3028,7 +3022,7 @@ def test_okno_na_stronie_logowania_czeka_az_tata_sie_zaloguje_a_czas_czekania_ni
     metryk mają tylko te 2 s każdego kroku, czas uruchomienia na żywo przy każdym kroku postępu też nie liczy logowania, a
     postęp idzie po Wykonawcach alfabetycznie, potem Znaczniki efenix."""
 
-    # Zegar, który przesuwa tylko tata z testu (ManualClock z tests/fixtures/clock.py wciągnąłby ten plik do bramki C).
+    # Zegar, który przesuwa tylko tata z testu (bez ``ManualClock``: zob. ``_FakeTime``).
     now = [0.0]
     orders = [
         Order("#5402", worker="beata.testowa", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),

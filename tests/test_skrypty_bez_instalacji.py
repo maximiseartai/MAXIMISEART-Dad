@@ -192,7 +192,6 @@ def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
     ],
 )
 def test_adres_api_w_kodzie_skryptu_lapie_straznik(code: str) -> None:
-    # 5.11.2026 adres fałszywego API tylko w środowisku procesu przegrał z hubem z ustawień użytkownika (#956).
     assert list(_claude_launches(ast.parse(code))) == [(1, f"nazywa {BASE_URL}")]
 
 

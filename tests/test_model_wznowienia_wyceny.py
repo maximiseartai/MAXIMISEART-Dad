@@ -31,9 +31,6 @@ COVERED = (
 
 
 def _drift_after(root: Path, anchor: str, replacement: str) -> str | None:
-    """Kod opisany modelem ze skrótami przeliczonymi na nim, potem zmiana ``anchor`` w ``efenix_pricing.py``; zwraca
-    rozjazd."""
-
     for path in (DEFINITIONS, *(ROOT / name for name in COVERED)):
         copy = root / path.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)

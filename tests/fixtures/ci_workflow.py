@@ -26,8 +26,6 @@ def action(uses: str) -> dict[str, Any]:
 
 
 def chromium(job: dict[str, Any]) -> list[dict[str, Any]]:
-    """Kroki zadania, które wołają akcję ``CHROMIUM``."""
-
     return [step for step in job.get("steps", []) if step.get("uses") == CHROMIUM]
 
 

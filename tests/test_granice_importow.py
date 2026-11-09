@@ -429,7 +429,7 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
     ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
 
     Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
-    wyrażenia, bo te pola mają też inne dataclassy (``stops.StopShown``).
+    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``).
     """
 
     builds = {"PreparedRun"}

@@ -540,8 +540,6 @@ def test_brak_albo_zepsuty_artefakt_daje_puste_czasy_z_przyczyna(tmp_path: Path,
 
 
 def _recorded(job: str, option: str) -> str:
-    """Ścieżka, którą krok zapisu zadania ``job`` w ``ci.yml`` podaje opcją ``option``."""
-
     recorded = [step["run"] for step in jobs()[job]["steps"] if "tools/ci/zapis_czasow.py zadanie" in step.get("run", "")]
     assert len(recorded) == 1, job
     arguments = shlex.split(recorded[0])
