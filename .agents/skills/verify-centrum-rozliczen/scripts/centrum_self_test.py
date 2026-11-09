@@ -847,14 +847,18 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
     the served side reads under another member's name, or a name it spells itself, fails here and not as a check of
     the drive that passes because nothing opened (``Log.OPENED``) or nothing was refused.
 
-    Held here: ``ScriptedPlatform`` (``Log.OPENED``, ``Log.DIALOGS``, ``File.PICKER_ANSWER``), ``FileReportBox`` (its
-    ``Switch`` members, ``rejects``, ``Log.REPORT_QUESTIONS``, the Archiwa files), ``_scripted_github`` (``File``
-    members of GitHub, ``Switch.GITHUB_OFFLINE``, ``Log.RELEASE_QUESTIONS``), ``_scripted_onedrive``
-    (``File.CLOUD_ONLY``) and ``_register_failing_on_hook`` (``Switch.REGISTER_FAULT``); ``ScriptedClock``
-    (``File.CLOCK_MOVE``, ``File.CLOCK_DIED``) is held by ``_check_clock_alarm_failure``. Not held: the files the
-    served side writes as it starts, ``File.EFENIX_ADDRESS`` with ``efenix_files`` (``_efenix_window``) and
-    ``File.SERVER`` (``record_bound_server``); a wrong one stops the run loudly, the drive failing on a missing
-    address of the Atrapa efenix and the run waiting for the server record until its limit."""
+    Held here, each read where it is listed: ``ScriptedPlatform`` (``Log.OPENED``, ``Log.DIALOGS``,
+    ``File.PICKER_ANSWER``); ``FileReportBox``, for issues (``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED``, ``rejects``,
+    ``Log.REPORT_QUESTIONS``) and for the Archiwa (``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED``,
+    ``Switch.ARCHIVE_REFUSED``, ``archive_file``, ``archive_listing``, ``last_file_id``); ``_scripted_github``
+    (``File.TOOL_COMMIT``, ``File.MAIN_COMMIT``, ``File.RELEASE_TAG``, ``File.RELEASES``, ``Switch.GITHUB_OFFLINE`` for
+    the newest Wydanie and for the list, ``Log.RELEASE_QUESTIONS``); ``_scripted_onedrive`` (``File.CLOUD_ONLY``) and
+    ``_register_failing_on_hook`` (``Switch.REGISTER_FAULT``). ``ScriptedClock`` (``File.CLOCK_MOVE``,
+    ``File.CLOCK_DIED``) is held by ``_check_clock_alarm_failure``. Every other read is held by review only, and
+    these are not held at all: the files the served side writes as it starts, ``File.EFENIX_ADDRESS`` with
+    ``efenix_files`` (``_efenix_window``) and ``File.SERVER`` (``record_bound_server``); a wrong one stops the run
+    loudly, the drive failing on a missing address of the Atrapa efenix and the run waiting for the server record
+    until its limit."""
 
     import json
     import tempfile
@@ -905,6 +909,14 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
         refused.unlink()
         if got_archive != Refused():
             errors.append(f"the scripted Archiwa give {got_archive!r} while {Switch.ARCHIVE_REFUSED.value} exists")
+        for switch, expected_archive in ((Switch.BOX_OFFLINE, Unreachable()), (Switch.KEY_REFUSED, Refused())):
+            switched = switch.on(root)
+            got_archive = box.open_archive("logi-x", "t", "d", key="k")
+            switched.unlink()
+            if got_archive != expected_archive:
+                errors.append(
+                    f"the scripted Archiwa give {got_archive!r} instead of {expected_archive!r} while {switch.value} exists"
+                )
         opened = box.open_archive("logi-x", "t", "d", key="k")
         uploaded = box.upload(opened.id, "logi.gz", "l", b"x", key="k") if isinstance(opened, Archive) else opened
         if not (
@@ -919,12 +931,19 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
         File.TOOL_COMMIT.write(root, "a" * 40)
         File.MAIN_COMMIT.write(root, "b" * 40)
         File.RELEASE_TAG.write(root, "v1.0.0")
-        File.RELEASES.write(root, "[]")
-        answers = (github.local(), github.release(), github.published())
+        published = {
+            "tag_name": "v1.0.0",
+            "draft": False,
+            "prerelease": False,
+            "body": "n",
+            "published_at": "2026-11-01T10:00:00+00:00",
+        }
+        File.RELEASES.write(root, json.dumps([published]))
+        answers = (github.local(), github.release(), tuple(each.release.tag for each in github.published() or ()))
         offline_switch = Switch.GITHUB_OFFLINE.on(root)
         offline = (github.release(), github.published())
         offline_switch.unlink()
-        if answers != ("a" * 40, GitHubReleases("b" * 40, "v1.0.0"), ()) or offline != (None, None):
+        if answers != ("a" * 40, GitHubReleases("b" * 40, "v1.0.0"), ("v1.0.0",)) or offline != (None, None):
             errors.append(f"the scripted GitHub does not answer from the files of harness.py: {answers}, {offline}")
         if len(records(Log.RELEASE_QUESTIONS)) != 2:
             errors.append(f"each question for the published Wydania is not logged in {Log.RELEASE_QUESTIONS.value}")
