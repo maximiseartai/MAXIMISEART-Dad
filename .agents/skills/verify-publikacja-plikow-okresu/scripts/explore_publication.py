@@ -16,7 +16,7 @@ re-running the code once per schedule, and checks two rules:
 
 Nothing in the code is replaced: the checker gives ``write_period_files`` its own
 ``preparation_files.Disk``, whose workbook writing is a step that creates the staged
-file and whose staging directory (made and removed) is a directory on the in-memory
+file and whose staging directory (``staged_publication.Disk``, made and removed) is a directory on the in-memory
 disk whose removal is one step that may fail, as when OneDrive holds the folder. A filesystem call that the in-memory disk does not model
 stops the check as LUKA MODELU instead of passing silently.
 
@@ -47,7 +47,7 @@ from typing import Any, Literal
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from rozliczenia import preparation_files
+from rozliczenia import preparation_files, staged_publication
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.template_file import TemplateFile
@@ -460,7 +460,8 @@ def intercepted(disk: VirtualDisk, scheduler: Scheduler) -> Iterator[None]:
 
 
 def period_disk(disk: VirtualDisk, scheduler: Scheduler) -> preparation_files.Disk:
-    """The steps of ``preparation_files.Disk`` on the in-memory disk: the staging directory and workbook writing.
+    """The steps of ``preparation_files.Disk`` on the in-memory disk: workbook writing and the staging directory of
+    ``staged_publication.Disk``.
 
     Workbook writing is one step that creates the staged file and returns its route, as ``_create_file`` returns it for
     the metrics record (``RouteCounts``). A killed process leaves the staging directory behind: the removal of a run
@@ -498,7 +499,10 @@ def period_disk(disk: VirtualDisk, scheduler: Scheduler) -> preparation_files.Di
                 killable=False,
             )
 
-    return preparation_files.Disk(make_staging=make_staging, create_file=create_file, remove_staging=remove_staging)
+    return preparation_files.Disk(
+        create_file=create_file,
+        staging=staged_publication.Disk(make_staging=make_staging, remove_staging=remove_staging),
+    )
 
 
 def probe_interception() -> list[str]:
@@ -670,7 +674,7 @@ def make_layout() -> Layout:
 
 
 def short_names(run_count: int) -> list[tuple[str, str]]:
-    staging = f"Rozliczenia/.{PERIOD}.staging-"
+    staging = f"Rozliczenia/{staged_publication.staging_prefix(PERIOD)}"
     names = [(f"Rozliczenia/{PERIOD}", "Folder okresu")]
     for index in range(1, run_count + 1):
         names.append((f"{staging}u{index}/{PERIOD}", f"katalog tymczasowy u{index}"))

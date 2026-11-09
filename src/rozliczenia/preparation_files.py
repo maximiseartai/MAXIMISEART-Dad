@@ -10,8 +10,6 @@ zatrzymują się ``StopError``. Moduł wewnętrzny Przygotowania pliku zbiorczeg
 from __future__ import annotations
 
 import os
-import shutil
-import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -20,6 +18,7 @@ from pathlib import Path
 from typing import Final
 
 from . import preparation_messages as messages
+from . import staged_publication
 from .message import StopError
 from .period_folder import PeriodFolder
 from .preparation_plan import CollectiveRow, PeriodOrder
@@ -101,16 +100,8 @@ def plan_period_files(
     )
 
 
-def _make_staging(prefix: str, directory: Path) -> Path:
-    return Path(tempfile.mkdtemp(prefix=prefix, dir=directory))
-
-
 def _create_file(template: TemplateFile, target: Path, rows: Sequence[RegisterRow]) -> Route:
     return template.create(target, rows)
-
-
-def _remove_staging(staging: Path) -> None:
-    shutil.rmtree(staging, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -118,14 +109,12 @@ class Disk:
     """Kroki Zapisywania poza publikacją; ``LOCAL_DISK`` to prawdziwe, a sprawdzenie ``verify-publikacja-plikow-okresu``
     podaje własne, żeby prowadzić je na dysku w pamięci bez łatania modułu.
 
-    ``make_staging``: nowy folder tymczasowy o początku nazwy ``prefix`` w folderze ``directory`` (``OSError``).
     ``create_file``: plik okresu ``target`` z Wzorca z Wierszami danych i jego droga zapisu (ADR 0008).
-    ``remove_staging``: usunięcie folderu tymczasowego, którego może się nie dać usunąć; nigdy nie zgłasza błędu.
+    ``staging``: kroki folderu tymczasowego (``staged_publication.Disk``).
     """
 
-    make_staging: Callable[[str, Path], Path] = _make_staging
     create_file: Callable[[TemplateFile, Path, Sequence[RegisterRow]], Route] = _create_file
-    remove_staging: Callable[[Path], None] = _remove_staging
+    staging: staged_publication.Disk = staged_publication.LOCAL_DISK
 
 
 LOCAL_DISK: Final = Disk()
@@ -148,23 +137,22 @@ def write_period_files(
     """
 
     folder = files.folder
-    staging_prefix = f".{folder.period.token}.staging-"
-    try:
-        staging = disk.make_staging(staging_prefix, folder.periods_directory)
-    except OSError as exc:
-        raise StopError(messages.write_failed(folder.directory)) from exc
-    try:
+    failed = messages.write_failed(folder.directory)
+
+    def publish(staging: Path) -> RouteCounts:
         try:
-            routes = _write_and_publish(staging, files, orders, collective_rows, disk)
-        except (OSError, WorkbookSaveError) as exc:
-            raise StopError(messages.write_failed(folder.directory)) from exc
-    except BaseException as error:
-        disk.remove_staging(staging)
-        if isinstance(error, StopError) and staging.exists():
-            raise StopError(messages.staging_left(error.message, folder.periods_directory, staging_prefix)) from error
-        raise
-    disk.remove_staging(staging)
-    return routes
+            return _write_and_publish(staging, files, orders, collective_rows, disk)
+        except WorkbookSaveError as exc:
+            raise StopError(failed) from exc
+
+    return staged_publication.publish_staged(
+        folder.periods_directory,
+        folder.period.token,
+        publish,
+        failed=failed,
+        left=lambda message, prefix: messages.staging_left(message, folder.periods_directory, prefix),
+        disk=disk.staging,
+    )
 
 
 def _write_and_publish(

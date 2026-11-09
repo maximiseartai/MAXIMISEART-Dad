@@ -37,6 +37,7 @@ pilnuje:
   - src/rozliczenia/run_clock.py
   - src/rozliczenia/run_context.py
   - src/rozliczenia/settlement_*.py
+  - src/rozliczenia/staged_publication.py
   - src/rozliczenia/telemetry.py
   - src/rozliczenia/text.py
   - src/rozliczenia/template_*.py

@@ -3,7 +3,7 @@ of each accepted risk of the explorer on a broken variant just outside it (``BOU
 
 Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must
 end the checker's report with the expected line. A mutation whose anchor text is no
-longer in ``preparation_files.py`` is reported as NIEAKTUALNA: update it to the new code.
+longer in ``preparation_files.py`` or ``staged_publication.py`` is reported as NIEAKTUALNA: update it to the new code.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 from mutacje import Edit, Mutation, check_all
 
 VERIFIED = Path("src/rozliczenia/preparation_files.py")
+STAGED = Path("src/rozliczenia/staged_publication.py")
 EXPLORER = (".agents/skills/verify-publikacja-plikow-okresu/scripts/explore_publication.py",)
 NEW = "PUBLIKACJA: NOWE NARUSZENIE"
 
@@ -94,7 +95,7 @@ MUTATIONS = (
     ),
     Mutation(
         "błąd sprzątania katalogu tymczasowego po publikacji jako zatrzymanie",
-        (Edit(VERIFIED, "    disk.remove_staging(staging)\n    return routes\n", "    disk.remove_staging(staging)\n    if staging.exists():\n        raise OSError(staging)\n    return routes\n"),),
+        (Edit(STAGED, "    disk.remove_staging(staging)\n    return result\n", "    disk.remove_staging(staging)\n    if staging.exists():\n        raise OSError(staging)\n    return result\n"),),
         EXPLORER,
         "oba pliki okresu są w Folderze okresu, a komunikat mówi, że nie utworzono żadnego pliku",
         NEW,
