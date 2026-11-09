@@ -24,12 +24,10 @@ from drive.common import (
     version_line,
 )
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
+from atrapy.scenariusz_centrum import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
 from rozliczenia.centrum.tool_update import RESULT_FILE
 
 FEATURE = "aktualizacja"
-# Dad's konfiguracja wykonawców in the clone, as Git names it: a deliberate copy (docs/agents/skille.md, „Co wyrocznia
-# bierze z src”), because the next Wydanie must find it where Dad's tool keeps it.
-WORKER_MAPPING = "config/worker_mapping.yaml"
 UPDATED = "Zaktualizowano"
 RESTARTING = "Ponowne uruchamianie Centrum…"
 NO_CONNECTION = "Nie zaktualizowano narzędzia: brak połączenia z GitHubem."
@@ -578,7 +576,7 @@ def _drive_start_from_shortcut(run: Run, page: Page) -> None:
 def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     tool = run.fixture["tool"]
     clone, newest = Path(tool["clone"]), tool["newest"]
-    result = run.config / RESULT_FILE
+    result = run.config / UPDATE_RESULT_FILE
     run.step(FEATURE, "aktualizacja-ok-przy-starej-wersji")
     print(f"  harness: the old version, started again, waits {OK_ON_OLD_VERSION_PACING_MS} ms before it starts", flush=True)
     (run.root / "pacing" / "ponowny-start-ms.txt").write_text(str(OK_ON_OLD_VERSION_PACING_MS), encoding="utf-8")

@@ -103,8 +103,8 @@ def _plan(feature: str) -> tuple[list[str], list[str]]:
 def _keep_state(run: Run) -> None:
     state = run.evidence / "state"
     for source, name in (
-        (run.log, "centrum-rozliczen.log"),
-        (run.tool / "config" / "centrum-ustawienia.yaml", "centrum-ustawienia.yaml"),
+        (run.log, run.log.name),
+        (run.settings, run.settings.name),
         (Path(run.facts["opened"]), "otwarte-adresy.txt"),
         (run.root / windows_tool.FACTS, windows_tool.FACTS),
     ):

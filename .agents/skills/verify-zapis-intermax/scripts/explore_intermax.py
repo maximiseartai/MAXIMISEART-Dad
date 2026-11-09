@@ -73,6 +73,7 @@ from rozliczenia.run_context import RunContext
 from eksplorator import Choices, Excuse, Kind, excuse_line, excused, gone_lines, schedules, verdict
 
 from atrapy.intermax import Intermax, Order
+from atrapy.workbooks import excel_lock
 
 NOW = datetime(2026, 10, 25, 20, 0, 0)
 NAME = "INTERMAX.xlsx"
@@ -206,7 +207,9 @@ class World:
 
     @property
     def lock(self) -> Path:
-        return workbook_files.excel_lock_file(self.register)
+        """The lock Dad's Excel lays beside the open INTERMAX: the world's name, not the product's."""
+
+        return excel_lock(self.register)
 
     def kopie(self) -> dict[str, bytes]:
         return (

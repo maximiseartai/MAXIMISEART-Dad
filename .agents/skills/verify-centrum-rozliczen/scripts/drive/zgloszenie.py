@@ -80,10 +80,11 @@ def reports(run: Run) -> list[dict[str, Any]]:
     return [issue for issue in box_issues(run, "zgloszenie") if str(issue["title"]).startswith("BRAK_WZORCA:")]
 
 
-def _queued_reports(run: Run) -> list[dict[str, Any]]:
-    """Zgłoszenia waiting in the queue of the skrzynka, oldest first (the Logi of each Uruchomienie wait beside them)."""
+def _queued_reports(run: Run, *, leaving: bool = False) -> list[dict[str, Any]]:
+    """Zgłoszenia waiting in the queue of the skrzynka, oldest first (the Logi of each Uruchomienie wait beside them);
+    ``leaving`` as in ``queued``."""
 
-    return [post for post in queued_posts(run, "zgloszenie") if str(post["target"]["title"]).startswith("BRAK_WZORCA:")]
+    return [post for post in queued_posts(run, "zgloszenie", leaving=leaving) if str(post["target"]["title"]).startswith("BRAK_WZORCA:")]
 
 
 def _queued_text(post: dict[str, object]) -> tuple[object, str]:
@@ -202,7 +203,7 @@ def drive(run: Run, page: Page) -> None:
     advance_clock(run, 1, "the queue of the skrzynka tries again past its retry")
     expect(page.get_by_role("status").filter(has_text=SENT)).to_be_visible()
     expect(page.get_by_role("button", name="Wyślij do Maksa", exact=True)).to_have_count(0)
-    run.wait_for(lambda: _queued_reports(run) == [], "the delivered Zgłoszenie leaves the queue")
+    run.wait_for(lambda: _queued_reports(run, leaving=True) == [], "the delivered Zgłoszenie leaves the queue")
     [issue] = reports(run)
     number = issue["number"]
     (run.evidence / "api" / "zgloszenie-skrzynka.json").write_text(
@@ -276,7 +277,7 @@ def _logs_sent(run: Run, run_id: str) -> None:
     """Waits until the Logi of Uruchomienie ``run_id`` left the queue, so the next Diagnoza links their comment."""
 
     run.wait_for(
-        lambda: not queued(run, "logi-uruchomienia", run_id),
+        lambda: not queued(run, "logi-uruchomienia", run_id, leaving=True),
         "with the key the Logi of this Uruchomienie reach the skrzynka",
         timeout_s=60,
     )
@@ -432,7 +433,7 @@ def _rejected_report(run: Run, page: Page, box: Path, config: Path) -> None:
     run.step(FEATURE, "zgloszenie-odrzucone-po-starcie")
     close_centrum(run, page)
     start_centrum(run, "zgloszenie-start-po-odrzuceniu")
-    run.wait_for(lambda: _queued_reports(run) == [], "at the next start the queue tries the rejected Zgłoszenie again", timeout_s=30)
+    run.wait_for(lambda: _queued_reports(run, leaving=True) == [], "at the next start the queue tries the rejected Zgłoszenie again", timeout_s=30)
     issues = reports(run)
     run.check(
         len(issues) == 4 and (issues[-1]["title"], issues[-1]["body"]) == (title, body),

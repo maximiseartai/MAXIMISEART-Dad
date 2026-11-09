@@ -20,13 +20,23 @@ from atrapy.efenix import ADDRESS, Order as EfenixOrder
 from atrapy.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, OLD_REGISTER_HEADERS
 from atrapy.settlement import PERIOD
 
-# Names of Dad's files that the next Wydanie reads where the previous one left them (Maks writes the key by hand,
-# README, ADR 0007), and the health name by which a new Centrum recognises a running older one. A deliberate copy
-# (docs/agents/skille.md, „Co wyrocznia bierze z src”): a rename in src must break the drive, not follow it.
+# The layout of the tool's folder on Dad's computer: files the next Wydanie reads where the previous one left them
+# (ADR 0015), files Maks writes by hand (the key, README, ADR 0007), the log Dad hands Maks, and the health name by
+# which a new Centrum recognises a running older one. A deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze
+# z src”): a rename in src must break the drive, not follow it. Paths are relative to the tool's folder; the bare
+# names lie in CONFIG_DIRECTORY, beside LOG_FILE (LAST_STARTED_FILE, RUN_LOGS_DIRECTORY) or as said.
+CONFIG_DIRECTORY = "config"
+SETTINGS_FILE = f"{CONFIG_DIRECTORY}/centrum-ustawienia.yaml"
+WORKER_MAPPING_FILE = f"{CONFIG_DIRECTORY}/worker_mapping.yaml"
+LOG_FILE = "logs/centrum-rozliczen.log"
 REPORT_KEY_FILE = "zgloszenia-klucz.txt"
 DAD_CASES_FILE = "sprawy-taty.json"
 NOTIFICATIONS_FILE = "powiadomienia.json"
+CENTRUM_RUNS_FILE = "centrum-uruchomienia.jsonl"
+UPDATE_RESULT_FILE = "centrum-aktualizacja.json"
+QUEUE_DIRECTORY = "zgloszenia/kolejka"
 LAST_STARTED_FILE = "ostatnie-uruchomienie.json"
+RUN_LOGS_DIRECTORY = "uruchomienia"
 SERVICE = "centrum-rozliczen"
 
 # Dad's "today" for the run: Monday 19.10.2026, so the last complete period is 06_12_10_2026,

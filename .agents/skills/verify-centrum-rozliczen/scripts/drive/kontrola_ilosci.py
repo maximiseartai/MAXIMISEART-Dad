@@ -136,7 +136,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(
         f"- Uruchomienie: {document['run_id']}" in body.splitlines(), "it is the Kontrola of the RUN from the queue"
     )
-    run.wait_for(lambda: queued(run, LABEL) == [], "the sent Kontrola file is removed")
+    run.wait_for(lambda: queued(run, LABEL, leaving=True) == [], "the sent Kontrola file is removed")
     log = run.log()
     run.check(REPORT_KEY not in log and ROW_MARKER not in log, "the Centrum log has neither the key nor workbook content")
     run.check(REPORT_KEY not in body, "the key is not in the Kontrola")

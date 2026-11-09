@@ -63,6 +63,7 @@ from atrapy.scenariusz_centrum import (
     COLLECTIVE_FILE_ROWS,
     COLLECTIVE_HEADERS,
     COMPLETED,
+    CONFIG_DIRECTORY,
     DEVICES,
     EMPTY_WORKER,
     INTERNAL_HEADERS,
@@ -73,9 +74,11 @@ from atrapy.scenariusz_centrum import (
     REGISTER_HEADERS,
     REPORT_KEY_FILE,
     ROW_MARKER,
+    SETTINGS_FILE,
     TODAY,
     UNKNOWN_WORKER,
     WORKER_IDS,
+    WORKER_MAPPING_FILE,
     WORKERS,
 )
 from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
@@ -485,17 +488,15 @@ import biblioteka_ktorej_nie_ma  # noqa: F401
 """
 
 
-# The tool's konfiguracja wykonawców: tracked in the first version with an example, untracked by the newest (#161).
-WORKER_MAPPING = "config/worker_mapping.yaml"
 # A library no index has: with pip offline (PIP_NO_INDEX in serve_centrum.py) its installation always fails.
 UNINSTALLABLE_REQUIREMENTS = "biblioteka-syntetyczna-nie-do-zainstalowania>=1.0\n"
 # Dad's files in the clone's config/ after the first version: his konfiguracja wykonawców with synthetic
 # "real" names (a local change) and files Git never tracks (Ustawienia taty, the key to Zgłoszenia, a Wzorzec).
 DAD_FILES = {
-    WORKER_MAPPING: "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n",
-    "config/centrum-ustawienia.yaml": "folder_okresow: INEA\n",
-    f"config/{REPORT_KEY_FILE}": "klucz-syntetyczny\n",
-    f"config/{WORKER_TEMPLATE_NAME}": "wzorzec syntetyczny\n",
+    WORKER_MAPPING_FILE: "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n",
+    SETTINGS_FILE: "folder_okresow: INEA\n",
+    f"{CONFIG_DIRECTORY}/{REPORT_KEY_FILE}": "klucz-syntetyczny\n",
+    f"{CONFIG_DIRECTORY}/{WORKER_TEMPLATE_NAME}": "wzorzec syntetyczny\n",
 }
 
 
@@ -510,19 +511,19 @@ def _tool_clone(root: Path) -> dict[str, object]:
 
     tool = root / "aktualizacja"
     publisher, origin, clone = tool / "wydawca", tool / "origin.git", tool / "klon"
-    (publisher / "config").mkdir(parents=True)
+    (publisher / CONFIG_DIRECTORY).mkdir(parents=True)
     _git(publisher, "init", "--quiet", "--initial-branch", "main")
     shim = _CENTRUM_SHIM.format(serve=str(Path(__file__).resolve().with_name("serve_centrum.py")), root=str(root))
     (publisher / "run_centrum.py").write_text(shim, encoding="utf-8")
-    (publisher / WORKER_MAPPING).write_text("schema_version: 1\nworkers:\n  przyklad: Przykład\n", encoding="utf-8")
+    (publisher / WORKER_MAPPING_FILE).write_text("schema_version: 1\nworkers:\n  przyklad: Przykład\n", encoding="utf-8")
     first = _publish(publisher, 1, "Pierwsza wersja narzędzia")
     _git(publisher, "tag", "--annotate", "--message", "Wydanie v0.0.1", "v0.0.1")
     _git(tool, "clone", "--quiet", "--bare", str(publisher), str(origin))
     _git(tool, "clone", "--quiet", str(origin), str(clone))
     for name, content in DAD_FILES.items():
         (clone / name).write_text(content, encoding="utf-8")
-    (publisher / ".gitignore").write_text(f"{WORKER_MAPPING}\n", encoding="utf-8")
-    newest = _publish(publisher, 2, "Nowa wersja narzędzia", untrack=(WORKER_MAPPING,))
+    (publisher / ".gitignore").write_text(f"{WORKER_MAPPING_FILE}\n", encoding="utf-8")
+    newest = _publish(publisher, 2, "Nowa wersja narzędzia", untrack=(WORKER_MAPPING_FILE,))
     _git(publisher, "push", "--quiet", str(origin), "main")
     _git(origin, "tag", "v0.1.0", newest)
     (publisher / "requirements.txt").write_text(UNINSTALLABLE_REQUIREMENTS, encoding="utf-8")

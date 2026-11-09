@@ -26,10 +26,9 @@ from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Pag
 import yaml
 
 from drive import feature
-from atrapy.scenariusz_centrum import LAST_COMPLETE
+from atrapy.scenariusz_centrum import LAST_COMPLETE, QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.case_delivery import queue_directory
 from rozliczenia.centrum.outbox import queue_file_pattern
-from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.tool_files import log_path
 from atrapy.workbooks import excel_lock
 
@@ -119,9 +118,9 @@ class Run:
 
     @property
     def queue(self) -> Path:
-        """The queue of the skrzynka Zgłoszeń: one file per post waiting to be sent."""
+        """The queue of the skrzynka Zgłoszeń: one file per post waiting to be sent, which the next Wydanie sends."""
 
-        return queue_directory(self.config)
+        return self.config / QUEUE_DIRECTORY
 
     @property
     def run_logs_dir(self) -> Path:
@@ -413,18 +412,23 @@ def box_issues(run: Run, label: str) -> list[dict[str, Any]]:
     return sorted((issue for issue in issues if issue["labels"] == [label]), key=lambda issue: int(str(issue["number"])))
 
 
-def queued(run: Run, label: str, run_id: str | None = None) -> list[Path]:
+def queued(run: Run, label: str, run_id: str | None = None, *, leaving: bool = False) -> list[Path]:
     """The files waiting in the queue of the skrzynka with ``label``, oldest first; with ``run_id``, only those of that
-    Uruchomienie (a file's name ends with the first 8 characters of its id)."""
+    Uruchomienie (a file's name ends with the first 8 characters of its id).
 
-    return sorted(run.queue.glob(queue_file_pattern(label) if run_id is None else queue_file_pattern(label, run_id)))
+    A check that a file waits reads ``Run.queue``, the deliberate copy. A check that files left the queue passes
+    ``leaving`` and reads the queue where src puts them: on the copy, a queue renamed in src would look empty at once.
+    """
+
+    queue = queue_directory(run.config) if leaving else run.queue
+    return sorted(queue.glob(queue_file_pattern(label) if run_id is None else queue_file_pattern(label, run_id)))
 
 
-def queued_posts(run: Run, label: str, run_id: str | None = None) -> list[dict[str, Any]]:
+def queued_posts(run: Run, label: str, run_id: str | None = None, *, leaving: bool = False) -> list[dict[str, Any]]:
     """The posts of ``queued``; a file the queue delivers and removes meanwhile no longer waits, so it is left out."""
 
     posts = []
-    for path in queued(run, label, run_id):
+    for path in queued(run, label, run_id, leaving=leaving):
         try:
             posts.append(read_json(path))
         except FileNotFoundError:

@@ -13,6 +13,7 @@ import urllib.parse
 from playwright.sync_api import Page, Request, Response, expect
 
 from drive.common import REPO_ROOT, Run, answers, log_entries, read_text, served_version
+from atrapy.scenariusz_centrum import LOG_FILE
 
 # Every click on the shortcut opens one more tab; the browser keeps at most 6 connections to Centrum for all tabs.
 _SHORTCUT_TABS = 7
@@ -96,9 +97,8 @@ def drive(run: Run, page: Page) -> None:
     feature = "start-i-zamykanie"
     port = int(urllib.parse.urlsplit(run.url).port or 0)
     served_log = run.log_path
-    # The log the start script writes in its default place, which Dad hands Maks (docs/tata-instrukcja.md): a
-    # deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z src”).
-    tool_log = run.root / "narzedzie" / "logs" / "centrum-rozliczen.log"
+    # The log the start script writes in its default place, which Dad hands Maks (docs/tata-instrukcja.md).
+    tool_log = run.root / "narzedzie" / LOG_FILE
 
     run.step(feature, "start-gotowosc")
     health = run.api("/api/health", "start-health")
