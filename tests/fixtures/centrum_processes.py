@@ -28,6 +28,7 @@ from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.tool_update import ToolClone, find_git
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.input_checks import FILE_READERS, Readers
+from rozliczenia.period_folder import worker_settlements_name_with
 from rozliczenia.process_run import Outcome, Process, ProcessInputs, ProcessSummary, run_process
 from rozliczenia.telemetry import CompletedResult
 from rozliczenia.run_context import RunContext
@@ -49,21 +50,21 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
+from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.preparation import (
     PERIOD,
-    REGISTER_NAME,
     PreparationFixture,
     RegisterRow,
     make_preparation_fixture,
     write_collective_template,
     write_internal_template,
 )
-from atrapy.settlement import PERIOD_FOLDER, SOURCE_NAME, write_mapping, write_source, write_template
+from atrapy.settlement import PERIOD as SETTLEMENT_PERIOD, SOURCE_NAME, write_mapping, write_source, write_template
 from tests.fixtures.tool_clone import FakeInstaller, ToolRepository
 
 # Środa po okresie 08_14_09_2026, więc to on jest ostatnim pełnym okresem.
 TODAY = date(2026, 9, 16)
-WORKER_SETTLEMENTS = PERIOD_FOLDER.worker_settlements.name
+WORKER_SETTLEMENTS = worker_settlements_name_with(SETTLEMENT_PERIOD)
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=ProcessSummary)

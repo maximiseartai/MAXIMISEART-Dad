@@ -101,11 +101,11 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
+from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.preparation import (
     OLD_REGISTER_HEADERS,
     PERIOD,
     RAW_ORDER_FONT,
-    REGISTER_NAME,
     default_register_rows,
     in_old_layout,
     incomplete_period_rows,

@@ -111,26 +111,9 @@ def internal_row(number: int, started: datetime, successful: str, worker: str) -
     )
 
 
-def test_syntetyczny_rejestr_ma_naglowki_nowego_rejestru_taty() -> None:
-    # Atrapy biorą nagłówki przenoszonych kolumn z register_columns, więc tylko ten literał pilnuje, że narzędzie szuka
-    # w Rejestrze dokładnie nagłówków z pliku taty.
-    assert REGISTER_HEADERS == (
-        "",
-        "AKCJE",
-        "DATA GODZ. POCZ.",
-        "MIASTO",
-        "ADRES",
-        "UMOWA",
-        "URZĄDZENIA",
-        "CZYNNOŚCI",
-        "NUMER ZL.",
-        "WYKONAWCA",
-        "NUMER UMOWY",
-        "SKUTECZNE",
-        "CZYNNOŚCI ZREALIZOWANE",
-        "ZWROT",
-        "UWAGI",
-    )
+def test_narzedzie_szuka_w_rejestrze_naglowkow_z_pliku_taty() -> None:
+    # Atrapy budują Rejestr z kopii nagłówków pliku taty, więc ten test pokazuje rozjazd z register_columns wprost.
+    assert ("", "AKCJE", *(column.register_header for column in COLUMNS), "ZWROT", "UWAGI") == REGISTER_HEADERS
 
 
 def test_rozliczenie_wewnetrzne_contains_exactly_period_orders_in_register_order(tmp_path: Path) -> None:

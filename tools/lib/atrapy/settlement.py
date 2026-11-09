@@ -16,18 +16,17 @@ from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
-from rozliczenia import tool_files
-from rozliczenia.collective_layout import (
+from atrapy import pliki_taty
+from atrapy.pliki_taty import (
     ADDRESS_COLUMN,
     AMOUNT_COLUMN,
+    CITY_COLUMN,
     FIRST_DATA_ROW,
     HEADER_ROW,
+    ORDER_COLUMN,
     QUANTITY_COLUMNS,
     WORKER_COLUMN,
-    column,
 )
-from rozliczenia.period_folder import PeriodFolder, collective_file_name_with, worker_settlements_name_with
-from rozliczenia.settlement_period import parse_period_token
 from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, set_view
 
 PERIOD = "08_14_09_2026"
@@ -36,9 +35,7 @@ PERIOD = "08_14_09_2026"
 NOT_A_PERIOD = "09_15_09_2026"  # wygląda jak token okresu, ale 9 września 2026 to środa
 
 
-PERIOD_FOLDER = PeriodFolder(Path(), parse_period_token(PERIOD))
-"""Folder okresu ``PERIOD`` względem folderu okresów: nazwy Pliku zbiorczego i Folderu rozliczeń pracowników."""
-SOURCE_NAME = PERIOD_FOLDER.collective_file.name
+SOURCE_NAME = pliki_taty.collective_file_name(PERIOD)
 
 
 # Konfiguracja wykonawców: identyfikator Wykonawcy z pliku -> nazwa w Rozliczeniu pracownika.
@@ -107,9 +104,9 @@ def write_source(path: Path, *, include_unmapped: bool = True) -> None:
     if include_unmapped:
         rows.append(("POZNAŃ", "syntetyczny adres 4", "andrzej.nieznany2", "#4"))
     for row_number, (city, address, worker, order_number) in enumerate(rows, start=FIRST_DATA_ROW):
-        sheet.cell(row_number, column("A")).value = city
+        sheet.cell(row_number, CITY_COLUMN).value = city
         sheet.cell(row_number, ADDRESS_COLUMN).value = address
-        sheet.cell(row_number, column("F")).value = order_number
+        sheet.cell(row_number, ORDER_COLUMN).value = order_number
         sheet.cell(row_number, WORKER_COLUMN).value = worker
         sheet.cell(row_number, QUANTITY_COLUMNS.start).value = row_number - HEADER_ROW
     workbook.save(path)
@@ -186,10 +183,10 @@ def link_order_numbers(path: Path, address: str) -> dict[int, str]:
         links = {
             row: f"{address}{row}"
             for row in range(FIRST_DATA_ROW, sheet.max_row + 1)
-            if sheet.cell(row, column("F")).value is not None
+            if sheet.cell(row, ORDER_COLUMN).value is not None
         }
         for row, link in links.items():
-            sheet.cell(row, column("F")).hyperlink = link
+            sheet.cell(row, ORDER_COLUMN).hyperlink = link
         workbook.save(path)
     finally:
         workbook.close()
@@ -199,11 +196,11 @@ def link_order_numbers(path: Path, address: str) -> dict[int, str]:
 def make_fixture(tmp_path: Path, period: str = PERIOD) -> tuple[Path, Path, Path]:
     period_directory = tmp_path / period
     period_directory.mkdir(parents=True)
-    target_directory = period_directory / worker_settlements_name_with(period)
-    source_path = period_directory / collective_file_name_with(period)
+    target_directory = period_directory / pliki_taty.worker_settlements_name(period)
+    source_path = period_directory / pliki_taty.collective_file_name(period)
     write_source(source_path, include_unmapped=False)
-    config_path = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
-    write_template(tmp_path / tool_files.WORKER_TEMPLATE.name)
+    config_path = write_mapping(tmp_path / pliki_taty.WORKER_CONFIG_NAME)
+    write_template(tmp_path / pliki_taty.WORKER_TEMPLATE_NAME)
     return source_path, target_directory, config_path
 
 

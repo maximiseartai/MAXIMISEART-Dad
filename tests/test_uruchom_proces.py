@@ -54,11 +54,11 @@ from atrapy.preparation import (
     link_register_order_numbers,
     make_preparation_fixture,
 )
+from rozliczenia.period_folder import worker_settlements_name_with
 from rozliczenia.preparation_register import period_sheets, read
 from rozliczenia.workbook_files import read_data_rows
 from atrapy.settlement import (
     PERIOD,
-    PERIOD_FOLDER,
     SOURCE_NAME,
     link_order_numbers,
     make_fixture,
@@ -73,7 +73,7 @@ from atrapy.intermax import Intermax
 from atrapy.workbooks import hyperlinks
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "uruchom_proces.py"
-WORKER_SETTLEMENTS = PERIOD_FOLDER.worker_settlements.name
+WORKER_SETTLEMENTS = worker_settlements_name_with(PERIOD)
 DETACHED_VIEW_NOTICE = "Podgląd postępu przestał się aktualizować; wynik nie zależy od tego."
 
 
@@ -655,7 +655,7 @@ def test_wycena_w_efenix_bez_podanych_plikow_zapisuje_metryki_w_katalogu_narzedz
         exit_code, result = _run("efenix", "--source", source, "--efenix-url", atrapa.url, script=script)
 
     assert (exit_code, result["stop"], result["metrics_saved"]) == (0, None, True)
-    assert len((tool / ".wycena-efenix-metrics.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+    assert len((tool / tool_files.EFENIX_METRICS.name).read_text(encoding="utf-8").splitlines()) == 1
     assert not (tool / "config").exists()
 
 

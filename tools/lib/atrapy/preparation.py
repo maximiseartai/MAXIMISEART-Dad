@@ -10,26 +10,24 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Final
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia import tool_files
-from rozliczenia.collective_layout import AMOUNT_COLUMN, FIRST_DATA_ROW, HEADER_ROW, QUANTITY_COLUMNS
-from atrapy.intermax import HEADERS as DAD_REGISTER_HEADERS
-from atrapy.settlement import PERIOD_FOLDER, write_mapping
+from atrapy import pliki_taty
+from atrapy.pliki_taty import AMOUNT_COLUMN, FIRST_DATA_ROW, HEADER_ROW, QUANTITY_COLUMNS, REGISTER_NAME
+from atrapy.settlement import write_mapping
 from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, add_external_link_fixture, set_view
 
 PERIOD = "08_14_09_2026"
-INTERNAL_SETTLEMENT_NAME = PERIOD_FOLDER.internal_settlement.name
-COLLECTIVE_FILE_NAME = PERIOD_FOLDER.collective_file.name
+INTERNAL_SETTLEMENT_NAME = pliki_taty.internal_settlement_name(PERIOD)
+COLLECTIVE_FILE_NAME = pliki_taty.collective_file_name(PERIOD)
 
 # Układ nowego Rejestru taty: pusta kolumna A, AKCJE w B, ZWROT i UWAGI na końcu.
 # AKCJE, ZWROT i UWAGI nie są przenoszone; kolumny są przesunięte względem wzorców.
-REGISTER_HEADERS: tuple[str, ...] = ("", *DAD_REGISTER_HEADERS)
+REGISTER_HEADERS: tuple[str, ...] = ("", *pliki_taty.REGISTER_HEADERS)
 # Starsza kopia Rejestru: inna kolejność, stare zapisy nagłówków, bez AKCJE, ZWROT i UWAGI,
 # za to z kolumną "STATUS APLIKACJI", która nie jest przenoszona.
 OLD_REGISTER_HEADERS: tuple[str, ...] = (
@@ -434,10 +432,6 @@ class PreparationFixture:
         return self.period_directory / COLLECTIVE_FILE_NAME
 
 
-REGISTER_NAME: Final = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
-"""Nazwa Rejestru zleceń fixture Przygotowania (``make_preparation_fixture``)."""
-
-
 def make_preparation_fixture(tmp_path: Path, rows: list[RegisterRow] | None = None) -> PreparationFixture:
     """Rejestr, folder okresów ``INEA``, konfiguracja wykonawców i oba wzorce w ``tmp_path``."""
 
@@ -448,12 +442,12 @@ def make_preparation_fixture(tmp_path: Path, rows: list[RegisterRow] | None = No
     return PreparationFixture(
         register_path=write_register(tmp_path / REGISTER_NAME, rows),
         periods_directory=periods_directory,
-        config_path=write_mapping(config_directory / tool_files.WORKER_CONFIG.name),
+        config_path=write_mapping(config_directory / pliki_taty.WORKER_CONFIG_NAME),
         internal_template_path=write_internal_template(
-            config_directory / tool_files.INTERNAL_TEMPLATE.name
+            config_directory / pliki_taty.INTERNAL_TEMPLATE_NAME
         ),
         collective_template_path=write_collective_template(
-            config_directory / tool_files.COLLECTIVE_TEMPLATE.name
+            config_directory / pliki_taty.COLLECTIVE_TEMPLATE_NAME
         ),
     )
 
