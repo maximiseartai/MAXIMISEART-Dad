@@ -62,8 +62,8 @@
     "Run.work": "0f5b17bc2e7efeb6",
     "RunHost.__init__": "5847fd718edb1804",
     "RunHost.after": "3b394aacf6701175",
-    "RunHost.shutdown_refusal": "7b2f8610fb13f295",
-    "RunHost.start": "18955e89bf097917"
+    "RunHost.shutdown_refusal": "28c8f086b7300aed",
+    "RunHost.start": "08dd69ac2bb960a7"
   },
   "src/rozliczenia/centrum/process_kind.py": {
     "PreparedRun.conduct": "a3e1e3cad04aa266"
