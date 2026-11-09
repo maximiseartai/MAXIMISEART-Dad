@@ -1447,6 +1447,9 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
     )
     assert (setup["title"], setup["preview_hint"], [period["token"] for period in setup["periods"]]) == ("Wycena w efenix", None, [PERIOD])
     assert (preview.status_code, busy.status_code, waiting["state"]) == (409, 409, "running")
+    assert preview.json()["message"] == (
+        "Wycena w efenix nie ma podglądu bez zapisu. Uruchom ją przyciskiem „Uzupełnij bez zapisu” albo „Uzupełnij i zapisz”."
+    )
     assert busy.json()["message"].startswith(f"Trwa już Uruchomienie procesu: Wycena w efenix, okres {PERIOD}.")
     assert (result["result"], result["headline"], result["next_action"], result["collective_file_prepared"]) == (
         "WYMAGA_SPRAWDZENIA",

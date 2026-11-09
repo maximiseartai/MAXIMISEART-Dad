@@ -113,7 +113,8 @@ def period_folder_lookup(error: PeriodFolderLookupError) -> Refusal:
 
 
 def place_missing(place: PeriodPlace, period: str) -> Refusal:
-    return Refusal(404, f"{period_place_label(place)} okresu {period} jeszcze nie istnieje.")
+    named = "Folder okresu" if place == "period_folder" else f"{period_place_label(place)} okresu"
+    return Refusal(404, f"{named} {period} jeszcze nie istnieje.")
 
 
 def worker_settlement_missing(worker: str, period: str) -> Refusal:

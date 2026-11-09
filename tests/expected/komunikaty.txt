@@ -1277,7 +1277,7 @@ place_missing #2 [HTTP 404]
   Plik zbiorczy okresu 08_14_09_2026 jeszcze nie istnieje.
 
 place_missing #3 [HTTP 404]
-  Folder okresu okresu 08_14_09_2026 jeszcze nie istnieje.
+  Folder okresu 08_14_09_2026 jeszcze nie istnieje.
 
 place_missing #4 [HTTP 404]
   Folder rozliczeń pracowników okresu 08_14_09_2026 jeszcze nie istnieje.
