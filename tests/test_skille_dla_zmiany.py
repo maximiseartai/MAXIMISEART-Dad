@@ -344,20 +344,26 @@ def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(
     """Atrapa, do której skrypty skilla Centrum dochodzą importem, trafia w jego ``pilnuje:``, bo wybór importów nie
     liczy, a workflow Windows nie biegnie w pełnym CI ``main``: zmiana kopii w ``atrapy/pliki_taty.py`` nie uruchamiała
     ani podstawy Centrum, ani Windows (przegląd #1177 r3, wcześniej #1121 i #1125). Pakiet bez kodu (``__init__.py``)
-    się nie liczy. Atrapy innych skilli łapie pełne CI ``main`` (``docs/agents/skille.md``)."""
+    się nie liczy. Atrapy innych skilli łapie pełne CI ``main`` (``docs/agents/skille.md``). Ścieżki skilli stoją
+    literałem, żeby graf wybierał test przy zmianie ich skryptów i ``SKILL.md``."""
 
     tool = _load_tool(monkeypatch)
     repository = importlib.import_module("wplyw_zmiany").Repository.scan(ROOT)
-    scripts = [path.relative_to(ROOT).as_posix() for path in (SKILLS / skill / "scripts").rglob("*.py")]
+    centrum = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen"
+    windows = ROOT / ".agents" / "skills" / "verify-centrum-na-windowsie"
+    folder, scripts = {
+        "verify-centrum-rozliczen": (centrum, (centrum / "scripts").rglob("*.py")),
+        "verify-centrum-na-windowsie": (windows, (windows / "scripts").rglob("*.py")),
+    }[skill]
     atrapy = {
         name
         for script in scripts
-        for name in repository.imported(script)
+        for name in repository.imported(script.relative_to(ROOT).as_posix())
         if name.startswith("tools/lib/atrapy/") and not name.endswith("/__init__.py")
     }
 
     assert "tools/lib/atrapy/pliki_taty.py" in atrapy
-    assert sorted(atrapy - tool.hits(SKILLS / skill, atrapy).files.keys()) == [], f"dopisz te atrapy do pilnuje: {skill}"
+    assert sorted(atrapy - tool.hits(folder, atrapy).files.keys()) == [], f"dopisz te atrapy do pilnuje: {skill}"
 
 # Zdanie, które każe uruchomić coś przed oddaniem pracy albo pushem.
 BEFORE_PUSH = re.compile(r"before (handing|you hand|pushing|you push|opening|you open)|przed (pushem|oddaniem)", re.IGNORECASE)
