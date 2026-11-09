@@ -12,7 +12,8 @@ dependencies = [
     "PyYAML>=6.0",
     "fastapi>=0.146",
     # Wycena w efenix prowadzi okno przeglądarki taty (spec #741); Aktualizacja narzędzia instaluje requirements.txt.
-    "playwright>=1.64",
+    # Playwright 1.65 uruchamia okno efenix bez --disable-features, więc zostajemy na 1.64.x do decyzji w #1242.
+    "playwright>=1.64,<1.65",
     "uvicorn>=0.54",
 ]
 
