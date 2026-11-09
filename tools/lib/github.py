@@ -100,8 +100,6 @@ class GhApi:
 
 
 def strony(github: GitHub, sciezka: str) -> Iterator[dict[str, Any]]:
-    """Każdy wpis listy API ``sciezka``, strona po stronie, do pierwszej niepełnej."""
-
     laczenie = "&" if "?" in sciezka else "?"
     for strona in itertools.count(1):
         partia = github.json(f"{sciezka}{laczenie}per_page={STRONA}&page={strona}")

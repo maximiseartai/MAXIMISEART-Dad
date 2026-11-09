@@ -39,7 +39,6 @@ import jednostka
 from jednostka import Rodzaj
 import wyniki_testow
 
-# Krok zadania, który właśnie się skończył, API pokazuje przez około sekundę bez wyniku (conclusion: null).
 ODCZYTY_API = 5
 CZEKANIE_API_S = 1.0
 LIMIT_API_S = 20.0

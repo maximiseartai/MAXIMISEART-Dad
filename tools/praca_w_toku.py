@@ -378,8 +378,6 @@ def _base_note(root: Path) -> str:
 
 
 def _files(root: Path, ref: str, since: str = BASE) -> frozenset[str]:
-    """Pliki, które ``ref`` zmienia od bazy scalenia z ``since``."""
-
     return repo.changed(root, repo.merge_base(root, since, ref), ref)
 
 

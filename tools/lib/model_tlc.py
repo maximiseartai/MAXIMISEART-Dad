@@ -146,8 +146,6 @@ class Model:
 
 
 def main(model: Model, argv: list[str] | None = None, *, opis: str | None = None) -> int:
-    """Sprawdzenie modelu skilla z wiersza poleceń: ``--config`` (powtarzalne) i ``--strict``."""
-
     parser = argparse.ArgumentParser(description=opis)
     parser.add_argument("--config", action="append", help=f"Tylko ta konfiguracja (nazwa z {KONFIGURACJE}).")
     parser.add_argument("--strict", action="store_true", help="Znane znaleziska też kończą się kodem 1.")

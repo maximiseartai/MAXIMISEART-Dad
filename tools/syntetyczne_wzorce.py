@@ -725,8 +725,6 @@ def write_worker_config(path: Path) -> None:
 
 
 def write_synthetic_templates(directory: Path, data_rows: int = FULL_DATA_ROWS) -> None:
-    """Trzy Wzorce pod nazwami z ``config`` i Konfiguracja wykonawców w ``directory``."""
-
     write_settlement_template(directory / WORKER_TEMPLATE, "GODZINA", data_rows, comments=True)
     write_settlement_template(directory / COLLECTIVE_TEMPLATE, "MIASTO", data_rows)
     write_internal_template(directory / INTERNAL_TEMPLATE)

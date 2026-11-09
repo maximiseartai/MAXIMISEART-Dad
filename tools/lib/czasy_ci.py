@@ -111,13 +111,11 @@ class Obserwacja:
 
 @dataclass(frozen=True)
 class KosztyPlikow:
-    """Sekundy pracy plików testów toru: plik zmierzony waży swój pomiar, a plik bez pomiaru medianę zmierzonych."""
+    """Sekundy pracy plików testów toru."""
 
     zmierzone: Mapping[str, float]
 
     def typowy(self, bez_pomiarow: float = 0.0) -> float:
-        """Mediana zmierzonych plików, a bez żadnego pomiaru ``bez_pomiarow``."""
-
         return statistics.median(self.zmierzone.values()) if self.zmierzone else bez_pomiarow
 
     def s(self, plik: str, bez_pomiarow: float = 0.0) -> float:
@@ -141,8 +139,6 @@ class Czasy:
         return statistics.median(w_runie.values()) if w_runie else None
 
     def pliki(self, tor: str) -> dict[str, float]:
-        """Koszt każdego zmierzonego pliku testów toru: ``praca`` jego klucza rodzaju ``Rodzaj.PYTEST``."""
-
         return {
             Klucz.z_tekstu(klucz).nazwa: s
             for klucz in self.tory.get(tor, {})

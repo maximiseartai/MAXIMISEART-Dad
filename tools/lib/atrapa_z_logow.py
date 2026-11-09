@@ -88,8 +88,6 @@ def unread(orders: Sequence[LoggedOrder]) -> list[str]:
 
 
 def fed(orders: Sequence[LoggedOrder], scoped: Sequence[ScopedOrder]) -> Fed:
-    """Zlecenia Atrapy dla śladu ``orders`` z Logów i zakresu ``scoped`` odtworzonego Pliku zbiorczego."""
-
     by_row = {order.row: order for order in scoped}
     atrapa: list[EfenixOrder] = []
     limits: list[tuple[str, bool]] = []
@@ -129,8 +127,6 @@ def fed(orders: Sequence[LoggedOrder], scoped: Sequence[ScopedOrder]) -> Fed:
 
 @contextmanager
 def started(fed: Fed, today: date) -> Iterator[AtrapaEfenix]:
-    """Atrapa efenix ze zleceniami i cenami ``fed`` i dzisiejszym dniem kalendarza ``today`` na czas bloku."""
-
     with atrapa_efenix(fed.orders, today=today, prices=fed.prices) as atrapa:
         yield atrapa
 

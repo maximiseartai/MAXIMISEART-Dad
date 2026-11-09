@@ -99,9 +99,7 @@ from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 import atrapa_z_logow
 
 SYNTHETIC_ADDRESS: Final = atrapa_z_logow.SYNTHETIC_ADDRESS
-"""``ADRES`` wiersza w odtworzonym pliku: ulica z numerem wiersza, którą reguła adresu efenix rozbiera."""
 SYNTHETIC_ORANGE: Final = "ORANGE-ODTWORZENIE-{row}"
-"""Numer Orange wiersza w odtworzonym pliku."""
 
 _SYNTHETIC: Final = {ForbiddenColumn.ADDRESS: SYNTHETIC_ADDRESS, ForbiddenColumn.ORANGE: SYNTHETIC_ORANGE}
 _COLLECTIVE_FORBIDDEN: Final = {collective_layout.letter(column): forbidden for forbidden, column in FORBIDDEN_POSITIONS}
@@ -320,8 +318,6 @@ def _guard_limits(record: RunLog) -> list[Limit]:
 
 
 def _replay_input(cut: GuardCut) -> bool:
-    """Czy miejsce cięcia ``cut`` to wejście odtworzenia: Kopia wejścia poza odciskiem pliku albo ślad zleceń efenix."""
-
     return cut.field == "efenix_orders" or (cut.field == "input_copy" and ".fingerprint" not in cut.place)
 
 
@@ -406,15 +402,11 @@ class _Work:
     stack: ExitStack
 
     def path(self, *parts: str) -> Path:
-        """Plik ``parts`` w katalogu roboczym; jego folder już jest."""
-
         path = self.directory.joinpath(*parts)
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 
     def folder(self, *parts: str) -> Path:
-        """Folder ``parts`` w katalogu roboczym, już założony."""
-
         folder = self.directory.joinpath(*parts)
         folder.mkdir(parents=True, exist_ok=True)
         return folder
@@ -439,9 +431,6 @@ class _Rebuild:
 
 
 def _cell(value: LoggedCell) -> _Written:
-    """Wartość komórki do zapisu w pliku: tekst, liczba i prawda/fałsz jak w Kopii, a data, godzina i czas trwania z
-    zapisu w Kopii (``input_copy.Typed``)."""
-
     if not isinstance(value, LoggedTyped):
         return value
     match value.type:
@@ -579,8 +568,6 @@ def _forbidden_places(sheet: LoggedSheet) -> dict[int, str]:
 
 
 def _above_paste(created: Worksheet, sheet: LoggedSheet) -> None:
-    """Ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX w kolumnach zlecenia arkusza ``sheet``."""
-
     columns = sorted(column_index_from_string(letter) for letter in sheet.columns)
     if not columns:
         return
@@ -900,8 +887,6 @@ inne pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.p
 
 
 def first_difference(logged: RunLog, replayed: RunLog) -> Difference | None:
-    """Pierwsza różnica Logów odtworzenia ``replayed`` od Logów ``logged`` w porównanych częściach (``COMPARED``)."""
-
     left, right = logged.model_dump(), replayed.model_dump()
     for part in COMPARED:
         found = _walk(part.view(left[part.key]), part.view(right[part.key]), f"{part.name} ({part.key})")

@@ -121,8 +121,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _logs_file(source: str, temporary: Path) -> Path:
-    """Plik Logów z dysku albo pobrany z Archiwum Logów okresu (``gh release download``) do ``temporary``."""
-
     parts = urllib.parse.urlsplit(source)
     if parts.scheme not in ("http", "https"):
         path = Path(source)
@@ -163,8 +161,6 @@ def _logs_file(source: str, temporary: Path) -> Path:
 
 
 def _text(path: Path) -> str:
-    """Tekst pliku Logów; plik ``.gz`` z Archiwum Logów okresu po rozpakowaniu."""
-
     try:
         data = path.read_bytes()
         return (gzip.decompress(data) if path.suffix == ".gz" else data).decode("utf-8")
@@ -199,8 +195,6 @@ def _impossible(reason: str) -> int:
 
 
 def _at_commit(logs: Path, text: str, args: argparse.Namespace) -> int:
-    """Odtworzenie na kopii commitu z Logów jej własnym narzędziem odtwarzania; jego raport i kod wyjścia."""
-
     commit = _commit_of(text)
     if commit is None:
         return _impossible("Logi nie mają commitu narzędzia; odtwórz na kodzie tego checkoutu (--na-tym-drzewie)")
@@ -241,8 +235,6 @@ def _at_commit(logs: Path, text: str, args: argparse.Namespace) -> int:
 
 
 def _here(text: str, args: argparse.Namespace, temporary: Path) -> int:
-    """Odtworzenie na kodzie tego drzewa; raport na stdout i kod wyjścia wyniku."""
-
     import rozliczenia
     from pydantic import ValidationError
 

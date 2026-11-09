@@ -57,14 +57,10 @@ KATALOG = Path(".verification") / "formal-aktualizacja"
 
 
 def jar_tla(katalog: Path) -> Path:
-    """Miejsce ``tla2tools.jar`` przypiętej wersji w katalogu podręcznym ``katalog``."""
-
     return katalog / f"tla2tools-{TLA_WERSJA}.jar"
 
 
 def ma_przypieta_sume(plik: Path) -> bool:
-    """Czy ``plik`` istnieje i ma przypiętą sumę SHA-256 ``tla2tools.jar``."""
-
     return plik.is_file() and hashlib.sha256(plik.read_bytes()).hexdigest() == TLA_SHA256
 
 
@@ -73,11 +69,6 @@ class ChwilowaAwaria(Exception):
 
 
 def z_ponowieniem(narzedzie: str, proba: Callable[[], None]) -> None:
-    """Wykonuje ``proba`` pobrania ``narzedzie`` i ponawia ją po ``ChwilowaAwaria`` po każdej z przerw ``PRZERWY_S``.
-
-    Po ostatniej próbie kończy proces linią z ``BLAD_POBIERANIA``, liczbą prób i powodem ostatniej awarii.
-    """
-
     for przerwa in (*PRZERWY_S, None):
         try:
             proba()
@@ -93,8 +84,6 @@ def z_ponowieniem(narzedzie: str, proba: Callable[[], None]) -> None:
 
 
 def pobierz(url: str, cel: Path) -> None:
-    """Zapisuje treść spod ``url`` w ``cel``, z ponowieniem chwilowej awarii; inny błąd HTTP kończy proces od razu."""
-
     def proba() -> None:
         try:
             with urllib.request.urlopen(url, timeout=120) as odpowiedz, cel.open("wb") as plik:
@@ -110,8 +99,6 @@ def pobierz(url: str, cel: Path) -> None:
 
 
 def java(katalog: Path) -> str:
-    """Java z przypiętego ``jdk4py`` w katalogu podręcznym ``katalog``; instaluje je za pierwszym razem."""
-
     target = katalog / "jdk"
     if not (target / "jdk4py").is_dir():
         command = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--quiet"]
@@ -136,9 +123,6 @@ def java(katalog: Path) -> str:
 
 
 def jar(katalog: Path) -> Path:
-    """``tla2tools.jar`` przypiętej wersji w katalogu podręcznym ``katalog``, sprawdzony sumą SHA-256; pobiera go, gdy go
-    nie ma albo ma inną sumę."""
-
     found = jar_tla(katalog)
     if not ma_przypieta_sume(found):
         katalog.mkdir(parents=True, exist_ok=True)

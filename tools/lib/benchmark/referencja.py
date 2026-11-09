@@ -30,8 +30,6 @@ REFERENCE_RESULT = "wynik.json"
 
 @dataclass(frozen=True)
 class Reference:
-    """Zamrożony wynik referencyjny scenariusza z jednego commita."""
-
     folder: Path
     counters: dict[str, Any]
     result: dict[str, Any]
@@ -52,8 +50,6 @@ def reference_folder(references: Path, mirror: Path, worker_template: Path) -> P
 def freeze_reference(
     references: Path, mirror: Path, commit: str, config: Path, worker_template: Path
 ) -> Path:
-    """Wynik referencyjny lustra z commita ``commit``: jego Przebieg rozliczeń w tymczasowej kopii commitu."""
-
     sha = repo.commit(ROOT, commit)
     if sha is None:
         raise BenchmarkError(f"Nie ma commita {commit}.")

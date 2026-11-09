@@ -344,11 +344,7 @@ def _ends(body: list[ast.stmt]) -> bool:
 
 
 def _other_system(tree: ast.AST, platform: str) -> set[int]:
-    """Węzły kodu, który na systemie ``platform`` nie biegnie, bo strzeże go ``sys.platform ==``/``!=`` literał.
-
-    To gałąź ``if`` i wyrażenia ``… if … else …`` dla innego systemu, kod po ``if`` z takim warunkiem, którego ciało
-    kończy się ``return``/``raise`` na tym systemie, i sam warunek.
-    """
+    """Węzły kodu, który na systemie ``platform`` nie biegnie, bo strzeże go ``sys.platform ==``/``!=`` literał."""
 
     other: set[int] = set()
 
@@ -381,8 +377,6 @@ _CACHES = frozenset({"cache", "lru_cache", "cached_property"})
 
 
 def _cached_lines(tree: ast.AST) -> set[int]:
-    """Linie funkcji z ``@cache``, ``@lru_cache`` albo ``@cached_property``."""
-
     found: set[int] = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -919,8 +913,6 @@ class ZakresMutacji:
         return max(len(self.mutanty), 1) if self.zly_wyjatek is not None else len(self.mutanty)
 
     def liczba_czesci(self, na_czesc: int) -> int:
-        """Ile części po najwyżej ``na_czesc`` mutacji potrzebuje ``liczba_mutacji``."""
-
         return math.ceil(self.liczba_mutacji / na_czesc)
 
     def czesc(self, czesc: Czesc) -> Sequence[Mutant]:

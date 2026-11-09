@@ -156,8 +156,6 @@ def _guard(journal: Path, budget_ms: int, summary_path: Path | None) -> int:
 
 
 def _measure_or_freeze(args: argparse.Namespace, references: Path) -> dict[str, Any] | None:
-    """Lustro scenariusza, a na nim zamrożenie wyniku referencyjnego albo pomiar dopisany do dziennika."""
-
     templates = template_paths((args.templates_dir or default_templates_directory()).expanduser().resolve())
     config = (args.config or default_worker_config()).expanduser().resolve()
     mirror, built = ensure_mirror(args.mirror_dir.expanduser().resolve(), args.scenario, config, templates)

@@ -177,7 +177,7 @@ def po_ponowieniu(junit: Path, ponowienie: Path, testy: Sequence[str]) -> bool:
 
 
 def wyniki_kwarantanny(junit: Path) -> dict[str, Wynik]:
-    """Wynik każdego testu z kwarantanny w junit; jego xfail to porażka, a xpass przejście."""
+    """Wynik każdego testu z kwarantanny w junit (``_wynik``)."""
 
     try:
         testy = wyniki_testow.testy(junit)

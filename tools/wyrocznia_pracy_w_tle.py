@@ -79,8 +79,6 @@ class _Api:
 
 
 def answer(body: dict[str, object]) -> bytes:
-    """Odpowiedź API na zapytanie ``body``; liczy odmowy hooka i zapamiętuje wynik Basha w stanie ``_Api``."""
-
     api = _Api
     found = body.get("messages")
     messages = found if isinstance(found, list) else []

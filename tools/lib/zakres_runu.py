@@ -253,8 +253,6 @@ Powod = tuple[bool, str, frozenset[str]]
 
 
 def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:
-    """Czy krok skilla biegnie w runie ``zdarzenie`` przy zmianie ``zmiana``, dlaczego i które zmienione pliki go uruchamiają."""
-
     match zdarzenie:
         case Zdarzenie.PUSH:
             return True, "", frozenset()
@@ -312,8 +310,6 @@ def _skrypt(step: Step, zmiana: frozenset[str]) -> Powod:
 
 
 def _skrypt_modelu(step: Step, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:
-    """Na pull request biegnie tylko skrypt mutacji modelu, przy zmianie ścieżki z ``model_watched``."""
-
     try:
         paths = model_watched(step, lambda path: repository().imported(path))
     except Exception as error:  # noqa: BLE001 - zmieniony skrypt, którego tabeli nie da się wczytać, biegnie i pokazuje swój błąd
@@ -333,14 +329,10 @@ def _folder(skill: Path) -> str:
 
 
 def _uruchamiaja(zmiana: frozenset[str], trafione: Iterable[str]) -> frozenset[str]:
-    """Pliki ``trafione`` przez regułę kroku i ścieżki ``zmiana`` z ``Context.SKILL_STEPS``: każdy sam uruchamia krok."""
-
     return frozenset({*trafione, *run_all(zmiana, Context.SKILL_STEPS)})
 
 
 def _touched(zmiana: frozenset[str], paths: tuple[str, ...]) -> set[str]:
-    """Zmienione ścieżki pod folderem ``paths[0]`` albo równe jednej z reszty ``paths``."""
-
     return {name for name in zmiana if name.startswith(paths[0]) or name in paths[1:]}
 
 

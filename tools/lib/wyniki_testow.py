@@ -45,8 +45,6 @@ def testy(junit: Path) -> list[Test]:
 
 
 def bez_porazek(junit: Path, ids: Collection[str]) -> None:
-    """Zdejmuje w pliku ``junit`` porażki i błędy testów o id z ``ids``."""
-
     drzewo = _drzewo(junit)
     for element in drzewo.iter("testcase"):
         if _id(element) in ids:

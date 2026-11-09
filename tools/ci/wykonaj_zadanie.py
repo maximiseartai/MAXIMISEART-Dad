@@ -160,11 +160,7 @@ def _krok_skilla(klucz: Klucz, katalog: Katalog) -> tuple[dict[str, object], lis
 
 
 def _krok_pytest(plan: Plan, zadanie: Zadanie, pliki: Mapping[str, list[Czesc]]) -> dict[str, object]:
-    """Pytest zadania z limitem ``plan_runu.limit_pytest_s``; na pull request po porażce raz same testy, które padły. Potem wynik
-    testów z kwarantanny."""
-
     start, limit = time.monotonic(), plan_runu.limit_pytest_s(zadanie)
-    # Linia limitu mówi, że krok przerwał limit, a nie porażka testu, i gdzie szukać miejsca zawieszenia.
     po_limicie = (
         f" ({plan_runu.ZAPAS_PYTEST:.0f} × ściana zadania {zadanie.sciana_s:.0f} s z planu, najmniej {plan_runu.LIMIT_PYTEST_MIN_S} s): to nie porażka testu, tylko"
         " test albo proces, który się zawiesił; test, który wisiał ponad faulthandler_timeout z pyproject.toml, zostawił wyżej"
@@ -196,8 +192,7 @@ def _ponow(zadanie: Zadanie, testy: Sequence[str]) -> bool:
 
 
 def wykonaj(plan: Plan, zadanie_id: str, bledy: Sequence[str] = ()) -> int:
-    """Pytest z plikami i udziałami zadania, potem jego kroki CI i kroki skilli po kolei, także po porażce; ``bledy`` to
-    nazwy kroków, których nie dało się znaleźć, a padają razem z jednostkami."""
+    """``bledy`` to nazwy kroków, których nie dało się znaleźć, a padają razem z jednostkami."""
 
     zadanie = next((z for z in plan.zadania if z.id == zadanie_id), None)
     if zadanie is None:
@@ -233,8 +228,6 @@ def wykonaj(plan: Plan, zadanie_id: str, bledy: Sequence[str] = ()) -> int:
 
 
 def _kroki_pushu() -> int:
-    """Każdy krok skilli zakresu pushu jednym zadaniem, a FAIL-e znalezienia kroków jako porażki."""
-
     praca = zakres(Zdarzenie.PUSH, frozenset(), ROOT)
     for nazwa, powod in praca.bledy:
         print(f"FAIL {nazwa}: {powod}", flush=True)
