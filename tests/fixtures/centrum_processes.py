@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import date
+from datetime import date, datetime
 import json
 from pathlib import Path
 import shutil
@@ -56,6 +56,7 @@ from atrapy.preparation import (
     PreparationFixture,
     RegisterRow,
     make_preparation_fixture,
+    register_order,
     write_collective_template,
     write_internal_template,
 )
@@ -301,6 +302,21 @@ class PreparingCentrum:
     def start(self, *, dry_run: bool, period: str = PERIOD) -> Any:
         return self.client.post("/api/runs", json={"process": "preparation", "period": period, "mode": RunMode.of(dry_run=dry_run)})
 
+    def view(self, url: str) -> dict[str, Any]:
+        """Widok ``GET url`` Centrum, który odpowiedział 200."""
+
+        response = self.client.get(url)
+        assert response.status_code == 200, response.text
+        found: dict[str, Any] = response.json()
+        return found
+
+    def log_lines(self, event: str) -> list[str]:
+        """Linie dziennika Centrum ze zdarzeniem ``event``."""
+
+        if not self.log_path.exists():
+            return []
+        return [line for line in self.log_path.read_text(encoding="utf-8").splitlines() if event in line]
+
     def metric_records(self) -> list[dict[str, Any]]:
         text = self.metrics_path.read_text(encoding="utf-8")
         return [json.loads(line) for line in text.splitlines()]
@@ -368,6 +384,49 @@ def preparing_centrum(
         surroundings,
         engines,
     )
+
+
+
+# Wtorek i poniedziałek okresu ``PERIOD``: okres z ostatnim zleceniem w poniedziałek jest pełny, więc jego
+# Przygotowanie nie czeka na Decyzję taty.
+PERIOD_TUESDAY = datetime(2026, 9, 8, 10, 0)
+PERIOD_MONDAY = datetime(2026, 9, 14, 9, 0)
+# Zlecenia skuteczne okresu po kolei, więc w Pliku zbiorczym od wiersza 18: wiersz → URZĄDZENIA.
+FILLING_DEVICES = {
+    18: "nokia zte",  # Reguły ilości znają każdy składnik
+    19: "przeniesienie",  # nieznane URZĄDZENIA: wiersz bez reguły
+    20: "prewencja",  # wiersz z opisu
+    21: "",  # puste URZĄDZENIA: wiersz z opisu
+    22: "router x9",  # nieznane URZĄDZENIA: wiersz bez reguły
+}
+
+
+def _no_columns(_index: int, _row: int) -> dict[str, object]:
+    return {}
+
+
+def filling_centrum(
+    tmp_path: Path,
+    devices: dict[int, str] = FILLING_DEVICES,
+    *,
+    columns: Callable[[int, int], dict[str, object]] = _no_columns,
+    surroundings: Surroundings | None = None,
+) -> PreparingCentrum:
+    """Centrum z Plikiem zbiorczym okresu przygotowanym z zapisem, którego wiersz ``row`` ma URZĄDZENIA ``devices[row]``.
+
+    Zlecenie ``index`` (od 1) Rejestru zleceń trafia do wiersza ``row`` z kolumnami ``columns(index, row)``. Zlecenia
+    biegną co godzinę od wtorku, a ostatnie jest w poniedziałek, więc Przygotowanie kończy się bez Decyzji taty
+    wynikiem WYMAGA_SPRAWDZENIA: wiersze bez ilości czekają na Uzupełnienie pliku zbiorczego.
+    """
+
+    starts = [PERIOD_TUESDAY.replace(hour=8 + index) for index in range(len(devices) - 1)] + [PERIOD_MONDAY]
+    rows: list[RegisterRow] = [
+        {**register_order(index, started), "URZĄDZENIA": text, **columns(index, row)}
+        for index, ((row, text), started) in enumerate(zip(devices.items(), starts, strict=True), start=1)
+    ]
+    centrum = preparing_centrum(tmp_path, rows, surroundings=surroundings)
+    assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
+    return centrum
 
 
 @dataclass

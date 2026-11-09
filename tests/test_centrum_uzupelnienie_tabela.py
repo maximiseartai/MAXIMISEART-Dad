@@ -6,7 +6,6 @@ Excelu (openpyxl) i pyta Centrum o tabelę jednego rodzaju Ilości do uzupełnie
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any
@@ -15,24 +14,14 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from tests.fixtures.centrum import view_timing
-from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, run_logs_handled, run_to_end
-from atrapy.preparation import PERIOD, register_order
+from tests.fixtures.centrum_processes import PreparingCentrum, filling_centrum, run_logs_handled, run_to_end
+from atrapy.preparation import PERIOD
 
-TUE = datetime(2026, 9, 8, 10, 0)
-MON = datetime(2026, 9, 14, 9, 0)
 URL = f"/api/periods/{PERIOD}/quantities-to-fill"
 N_AP = (
     *("N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"),
     *("AA", "AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI", "AJ", "AK", "AL", "AM", "AN", "AO", "AP"),
 )
-# Zlecenia skuteczne okresu po kolei, więc w Pliku zbiorczym od wiersza 18: wiersz → URZĄDZENIA.
-DEVICES = {
-    18: "nokia zte",  # Reguły ilości znają każdy składnik
-    19: "przeniesienie",  # nieznane URZĄDZENIA: wiersz bez reguły
-    20: "prewencja",  # wiersz z opisu
-    21: "",  # puste URZĄDZENIA: wiersz z opisu
-    22: "router x9",  # nieznane URZĄDZENIA: wiersz bez reguły
-}
 WORKER = "adrian.testowy"
 
 
@@ -41,27 +30,18 @@ def _completed(row: int) -> str:
 
 
 def _prepared(tmp_path: Path) -> PreparingCentrum:
-    # Ostatnie zlecenie w poniedziałek: okres jest pełny, więc Przygotowanie nie czeka na Decyzję taty.
-    starts = [TUE.replace(hour=8 + index) for index in range(len(DEVICES) - 1)] + [MON]
-    rows = [
-        {
-            **register_order(index, started, worker=WORKER),
-            "URZĄDZENIA": text,
+    return filling_centrum(
+        tmp_path,
+        columns=lambda index, row: {
+            "WYKONAWCA": WORKER,
             "UMOWA": f"u UM-SYN-{index:03d}",
             "CZYNNOŚCI ZREALIZOWANE": _completed(row),
-        }
-        for index, ((row, text), started) in enumerate(zip(DEVICES.items(), starts, strict=True), start=1)
-    ]
-    centrum = preparing_centrum(tmp_path, list(rows))
-    assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
-    return centrum
+        },
+    )
 
 
 def _table(centrum: PreparingCentrum, kind: str) -> dict[str, Any]:
-    response = centrum.client.get(f"{URL}/{kind}")
-    assert response.status_code == 200, response.text
-    found: dict[str, Any] = response.json()
-    return found
+    return centrum.view(f"{URL}/{kind}")
 
 
 def _write(centrum: PreparingCentrum, cells: dict[str, int | str | None]) -> None:
