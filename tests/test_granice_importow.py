@@ -174,6 +174,14 @@ STDLIB_ONLY = {
     "rozliczenia/register_columns.py": "Przebieg, Wycena i reguła danych biorą kolumny Rejestru bez czytnika Przygotowania",
     "rozliczenia/row_positions.py": "uchwyt plików taty i Kopia wejścia biorą położenie wiersza bez reguł Surowych zleceń INTERMAX",
     "rozliczenia/worker_reports/__init__.py": "rdzeń raportów przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/_subject.py": "temat Raportu wykonawcy w rdzeniu raportów (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/_entries.py": "Wpisy raportu w rdzeniu raportów (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/_matching.py": "dopasowanie Wpisów do zleceń w rdzeniu raportów (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/_cells.py": "Nienadpisywanie komórek w rdzeniu raportów (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/_figures.py": "liczby widoku Raporty w rdzeniu raportów (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/reasons.py": "zdania o problemach rdzenia raportów (ADR 0028, #1161)",
+    "rozliczenia/report_cells.py": "rdzeń raportów zwraca zmiany komórek bez Excela (ADR 0028, #1161)",
+    "rozliczenia/settlement_period.py": "rdzeń raportów liczy dni okresów zamkniętych bez zależności (ADR 0028, #1161)",
 }
 # Jedyny moduł src, który rozmawia z serwerem IMAP: Skrzynka raportów otwiera skrzynkę tylko do odczytu (ADR 0028).
 IMAP_PORT = "rozliczenia/worker_report_inbox.py"
@@ -326,6 +334,136 @@ def test_imap_importuje_tylko_port_skrzynki_raportow() -> None:
             "weź z niego ImapInbox albo WorkerReportInbox zamiast imaplib.",
         ]
     )
+
+
+# Rdzeń raportów przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161): spoza biblioteki standardowej bierze tylko
+# te moduły silnika, a jego moduły prywatne ``_*.py`` importuje tylko on sam.
+REPORT_CORE: typing.Final = "rozliczenia/worker_reports"
+REPORT_CORE_PACKAGE: typing.Final = "rozliczenia.worker_reports"
+REPORT_CORE_ENGINE: typing.Final = frozenset(
+    {"rozliczenia", "rozliczenia.report_cells", "rozliczenia.settlement_period", "rozliczenia.text"}
+)
+# Kod, który mógłby sięgnąć do modułów prywatnych rdzenia raportów, i po jednym jego pliku z każdej części.
+REPORT_CORE_READERS: typing.Final = ("src/**/*.py", "tools/**/*.py", "tests/**/*.py", ".agents/skills/*/scripts/**/*.py")
+REPORT_CORE_READ_PARTS: typing.Final = (
+    "src/rozliczenia/worker_report_inbox.py",
+    "tools/uruchom_proces.py",
+    "tests/test_rdzen_raportow.py",
+    ".agents/skills/verify-rozliczenia/scripts/doctor.py",
+)
+
+
+def _in_report_core(module: str) -> bool:
+    return module == REPORT_CORE_PACKAGE or module.startswith(f"{REPORT_CORE_PACKAGE}.")
+
+
+def _report_core_private(tree: ast.Module, file: str | None) -> list[tuple[int, str]]:
+    """Moduły prywatne rdzenia raportów (``rozliczenia.worker_reports._…``), których sięga plik ``file`` (``rozliczenia/…``
+    w ``src``, ``None`` poza nim): ``import`` (też ``as``), ``from … import`` z modułu prywatnego albo jego nazwy z
+    pakietu, w ``src`` także względny, oba także w funkcji, i atrybut ``_…`` nazwy ``worker_reports``
+    (``worker_reports._cells``, ``rozliczenia.worker_reports._cells``).
+
+    Granica (tylko przegląd): import względny poza ``src``, nazwa złożona w trakcie działania (``importlib`` z napisem,
+    ``getattr``) i pakiet przypisany innej nazwie."""
+
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [(node.lineno, alias.name) for alias in node.names if alias.name.startswith(f"{REPORT_CORE_PACKAGE}._")]
+        elif isinstance(node, ast.ImportFrom) and (file is not None or not node.level):
+            base = _from_module(node, file) if file is not None else node.module or ""
+            if base.startswith(f"{REPORT_CORE_PACKAGE}._"):
+                found.append((node.lineno, base))
+            elif base == REPORT_CORE_PACKAGE:
+                found += [(node.lineno, f"{base}.{alias.name}") for alias in node.names if alias.name.startswith("_")]
+        elif (
+            isinstance(node, ast.Attribute)
+            and node.attr.startswith("_")
+            and ast.unparse(node.value).rpartition(".")[2] == "worker_reports"
+        ):
+            found.append((node.lineno, f"{REPORT_CORE_PACKAGE}.{node.attr}"))
+    return sorted(set(found))
+
+
+def test_rdzen_raportow_bierze_spoza_biblioteki_standardowej_tylko_komorki_okres_i_tekst() -> None:
+    files = sorted(path.relative_to(SRC).as_posix() for path in (SRC / REPORT_CORE).rglob("*.py"))
+    found = {
+        str(found)
+        for file in files
+        for found in _imports(file)
+        if not (_is_stdlib(found.module) or found.module in REPORT_CORE_ENGINE or _in_report_core(found.module))
+    }
+
+    assert {f"{REPORT_CORE}/__init__.py", f"{REPORT_CORE}/reasons.py"} <= set(files)
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            f"Rdzeń raportów ({REPORT_CORE}) przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161), więc bierze "
+            "spoza biblioteki standardowej tylko report_cells, settlement_period i text, także w funkcji: plik, Excel "
+            "i IMAP zostają w procesie (report_entering), który podaje rdzeniowi gotowe dane.",
+        ]
+    )
+
+
+def test_moduly_prywatne_rdzenia_raportow_importuje_tylko_jego_pakiet() -> None:
+    paths = sorted({path for pattern in REPORT_CORE_READERS for path in ROOT.glob(pattern) if path.is_file()})
+    found = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {module}"
+        for path in paths
+        if not path.is_relative_to(SRC / REPORT_CORE)
+        for line, module in _report_core_private(
+            ast.parse(path.read_text(encoding="utf-8")),
+            path.relative_to(SRC).as_posix() if path.is_relative_to(SRC) else None,
+        )
+    ]
+
+    assert {path.relative_to(ROOT).as_posix() for path in paths} >= set(REPORT_CORE_READ_PARTS)
+    assert found == [], "\n".join(
+        [
+            *found,
+            f"Moduły {REPORT_CORE}/_*.py importuje tylko pakiet rdzenia raportów: weź enter_reports i typy z "
+            f"{REPORT_CORE_PACKAGE}, a zdanie o problemie z {REPORT_CORE_PACKAGE}.reasons.",
+        ]
+    )
+
+
+# Każda postać sięgnięcia do modułu prywatnego rdzenia raportów, którą zna sprawdzenie: kod, plik w src (None poza nim)
+# i moduł, który z niej czyta.
+REPORT_CORE_PRIVATE: typing.Final = {
+    "import": ("import rozliczenia.worker_reports._cells", None, "rozliczenia.worker_reports._cells"),
+    "import-as": ("import rozliczenia.worker_reports._cells as cells", None, "rozliczenia.worker_reports._cells"),
+    "from-modulu": ("from rozliczenia.worker_reports._cells import reconcile", None, "rozliczenia.worker_reports._cells"),
+    "from-pakietu": ("from rozliczenia.worker_reports import enter_reports, _cells", None, "rozliczenia.worker_reports._cells"),
+    "wzgledny-z-silnika": ("from .worker_reports import _cells", "rozliczenia/report_entering.py", "rozliczenia.worker_reports._cells"),
+    "wzgledny-modul": ("from .worker_reports._matching import match", "rozliczenia/report_entering.py", "rozliczenia.worker_reports._matching"),
+    "wzgledny-z-centrum": ("from ..worker_reports import _figures", "rozliczenia/centrum/report_entering_run.py", "rozliczenia.worker_reports._figures"),
+    "w-funkcji": ("def f() -> None:\n    from rozliczenia.worker_reports import _subject", None, "rozliczenia.worker_reports._subject"),
+    "atrybut": ("from rozliczenia import worker_reports\nworker_reports._cells.reconcile", None, "rozliczenia.worker_reports._cells"),
+    "atrybut-pelnej-sciezki": ("import rozliczenia.worker_reports\nrozliczenia.worker_reports._entries", None, "rozliczenia.worker_reports._entries"),
+}
+
+
+@pytest.mark.parametrize(("code", "file", "module"), REPORT_CORE_PRIVATE.values(), ids=REPORT_CORE_PRIVATE.keys())
+def test_sprawdzenie_rdzenia_raportow_lapie_kazda_wyliczona_postac_siegniecia_do_modulu_prywatnego(
+    code: str, file: str | None, module: str
+) -> None:
+    assert [found for _, found in _report_core_private(ast.parse(code), file)] == [module]
+
+
+def test_sprawdzenie_rdzenia_raportow_przepuszcza_publiczne_nazwy_pakietu_i_prywatne_moduly_spoza_niego() -> None:
+    code = (
+        "import rozliczenia.report_cells\n"
+        "from rozliczenia import worker_reports\n"
+        "from rozliczenia.worker_reports import ReportInputs, enter_reports\n"
+        "from rozliczenia.worker_reports.reasons import reason\n"
+        "from rozliczenia.centrum import _private\n"
+        "from ._cells import reconcile\n"
+        "outcome = worker_reports.enter_reports(inputs)\n"
+        "value = other._cells\n"
+    )
+
+    assert _report_core_private(ast.parse(code), "rozliczenia/report_entering.py") == []
+    assert _report_core_private(ast.parse("from ._cells import reconcile"), None) == []
 
 
 def _is_workbook(module: str) -> bool:

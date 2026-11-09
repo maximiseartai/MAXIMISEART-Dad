@@ -1,0 +1,26 @@
+UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale nie ma w nim daty dnia zleceń, więc Centrum go nie wpisało.
+UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie ma roku, więc Centrum go nie wpisało.
+UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie jest prawdziwym dniem, więc Centrum go nie wpisało.
+UnknownSender
+  Raport wykonawcy z 08.11.2026 przyszedł z adresu spoza listy adresów Wykonawców, więc Centrum go nie wpisało. Powiedz Maksowi, czyj to adres.
+MissingVerdict
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 nie ma „tak” ani „nie”, więc Centrum go nie wpisało.
+MissingVerdict
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma samą literę zamiast „tak” albo „nie”, więc Centrum go nie wpisało.
+MissingVerdict
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma inne słowo zamiast „tak” albo „nie”, więc Centrum go nie wpisało.
+UnknownNumber
+  Numer 12345678 nie jest zleceniem jan.testowy z 08.11.2026.
+ForeignOrder
+  Zlecenie 40000001 z 08.11.2026 jest zleceniem ewa.probna, a Wpis przysłał jan.testowy, więc Centrum go nie wpisało.
+OtherDay
+  Zlecenie 40000001 od jan.testowy jest z 06.11.2026, 07.11.2026, a temat Raportu wykonawcy ma 08.11.2026, więc Centrum go nie wpisało.
+RepeatedOrder
+  Zlecenie 40000001 jest dwa razy w dniu 08.11.2026 u jan.testowy, więc Centrum niczego do niego nie wpisało.
+ManualDifference
+  Zlecenie 40000001 od jan.testowy z 08.11.2026 ma w SKUTECZNE ręczną wartość „ręcznie”, a Wpis raportu mówi „z raportu”. Ręczna wartość zostaje.
+ManualDifference
+  Zlecenie 40000001 od jan.testowy z 08.11.2026 ma w CZYNNOŚCI ZREALIZOWANE ręczną wartość „ręcznie”, a Wpis raportu mówi „z raportu”. Ręczna wartość zostaje.
