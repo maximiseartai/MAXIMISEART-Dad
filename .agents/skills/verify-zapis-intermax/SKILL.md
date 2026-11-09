@@ -8,6 +8,7 @@ pilnuje:
   - src/rozliczenia/intermax_copies.py
   - src/rozliczenia/intermax_file.py
   - src/rozliczenia/register_file.py
+  - src/rozliczenia/dad_files.py
   - src/rozliczenia/register_columns.py
   - src/rozliczenia/workbook_save.py
   - src/rozliczenia/workbook_files.py
@@ -94,34 +95,35 @@ leaves out), Dad may open INTERMAX in Excel (the `~$` lock file), the step may
 fail, or the process may die.
 
 Covered files: `src/rozliczenia/intermax_replace.py` (`replace_register`,
-`Disk`, `LOCAL_DISK`, `Waiting`), `src/rozliczenia/intermax_ordering.py`,
+`Disk`, `LOCAL_DISK`, `Waiting`), `src/rozliczenia/intermax_ordering.py` (`order_register`),
 `src/rozliczenia/intermax_restore.py` (`restore`),
 `src/rozliczenia/intermax_copies.py` (`named`, `listed`, `outdated`),
-`src/rozliczenia/register_file.py` (`read`), `src/rozliczenia/intermax_file.py` (`check`),
+`src/rozliczenia/register_file.py` (`read`) and `src/rozliczenia/dad_files.py` (`DadFiles.read`),
+`src/rozliczenia/intermax_file.py` (`check`),
 `src/rozliczenia/workbook_save.py` (`write_atomically`), and
 `src/rozliczenia/workbook_files.py` (`workbook_content`, `ensure_available`,
 `is_open_in_excel`, `excel_lock_file`).
 
-**Sync commit: `b4df65fbb`** (2026-11-08, N5a). At this commit the checker was
-confirmed to describe the code above. Since the previous sync commit `95df8f2a9` (#716) the read of INTERMAX moved from
-`intermax_file.Register.read` to `register_file.read`, and the write check from `Register.check` to
-`intermax_file.check`; the checker's read and write-check points moved with them. The steps between the read and the
-replace, the Kopia and the removal of older Kopie are unchanged, and the run reaches the same verdict
-(`INTERMAX OK, ZNANE USTALENIA: 2`). To see whether it needs another look:
+The steps the points stand for have digests in `model/definicje.json`: `intermax_replace.py` and
+`intermax_copies.py` whole, and the read, the save phase of `order_register`, `restore` and the Excel lock check of the
+files above. When one of them changes, `tools/szybko.py` fails before you push (step `rozjazd modelu`) until you have
+done „Bring the model in line”. `intermax_file.check` has no digest: what it compares does not matter here, and a
+change to how it is called ends the check with BEZ_WYJATKU.
 
-```bash
-git log --oneline b4df65fbb..HEAD -- src/rozliczenia/intermax_replace.py src/rozliczenia/intermax_ordering.py src/rozliczenia/intermax_restore.py src/rozliczenia/intermax_copies.py src/rozliczenia/intermax_file.py src/rozliczenia/register_file.py src/rozliczenia/workbook_save.py src/rozliczenia/workbook_files.py
-```
+## Bring the model in line
 
-Read each listed commit against the table. A change matters when it adds,
-removes or reorders a step between the read and the replace, changes what the
-Kopia is made from or when it or older Kopie disappear, adds another writer of
-INTERMAX or of the Kopie folder, or catches different exceptions. Changes to
-recognising and ordering the Surowe zlecenia (`raw_orders`,
-`intermax_file.ordered`, what `intermax_file.check` compares, how `register_file` recognises
-the order sheets) and to Komunikaty do not
-matter here. Move the sync commit forward only after the checker matches the
-code at the new commit and the check and its mutations pass there.
+When `tools/szybko.py` names a changed definition of `model/definicje.json`:
+
+1. Read the diff against the table above. It matters when it adds, removes or reorders a step between the read and
+   the replace, changes what the Kopia is made from or when it or older Kopie disappear, adds another writer of
+   INTERMAX or of the Kopie folder, or catches different exceptions. Changes to recognising and ordering the Surowe
+   zlecenia (`raw_orders`, `intermax_file.ordered`, what `intermax_file.check` compares, how `register_file`
+   recognises the order sheets) and to Komunikaty do not matter here.
+2. If it matters, change `_points`, `World` or `act` in `explore_intermax.py` and the table above so that each point
+   stands before the step it names, and add a definition the steps now go through to `model/definicje.json`.
+3. Run the check (below). A new violation is a finding: replay it on the code before you call it a bug.
+4. Run `tools/przesun_model.py verify-zapis-intermax` only after the checker describes the code, and write in the
+   commit message what changed in the checker and why.
 
 ## Run
 

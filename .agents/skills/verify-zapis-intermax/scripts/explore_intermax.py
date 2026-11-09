@@ -9,7 +9,8 @@ Kopia that the replace would name, so its ``Disk.create`` raises ``FileExistsErr
 points where the checker picks what happens first:
 
 - after ``register_file.read`` has read INTERMAX (in the restore: after ``workbook_content`` has read it);
-- ``workbook_files.is_open_in_excel`` on INTERMAX (in ``check``, in ``register_file.read`` and before the Kopia);
+- ``workbook_files.is_open_in_excel`` on INTERMAX (in ``check``, in ``register_file.read``, in the restore's
+  ``workbook_content``, before the Kopia and after a refused replace);
 - ``Disk.write`` of the temporary file next to INTERMAX, which may raise ``OSError``;
 - the check of that file (``intermax_file.check``), which may find it does not match (``WriteMismatch``); the restore
   compares bytes and has no such point;

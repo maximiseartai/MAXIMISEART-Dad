@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import sys
+import tomllib
 import warnings
 from pathlib import Path
 from types import ModuleType
@@ -122,3 +123,19 @@ def test_czesci_kopii_wzorca_porownuja_razem_kazde_rozliczenie_pracownika_raz_i_
     assert sorted(rows for found, _ in parts for rows in found) == whole
     assert all(len(found) < len(whole) for found, _ in parts)
     assert [lines for _, lines in parts] == [coverage] * 3
+
+
+def test_hypothesis_ma_te_sama_wersje_w_requirements_i_w_dodatku_dev() -> None:
+    """Sprawdzenie sięga do ``hypothesis.internal`` (wyłącza losowanie z literałów modułów obok, #288), którego Hypothesis
+    nie obiecuje między wersjami. Zadania CI z samym ``requirements.txt`` (pytest Windows, Mutation checks) i z dodatkiem
+    ``dev`` mają więc dostać tę samą, dokładnie przypiętą wersję."""
+
+    root = Path(__file__).resolve().parents[1]
+    requirements = (root / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    dev = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["optional-dependencies"]["dev"]
+
+    def pins(specifications: list[str]) -> list[str]:
+        return [spec.replace(" ", "") for spec in specifications if re.match(r"hypothesis\b", spec)]
+
+    assert pins(requirements) == pins(dev)
+    assert len(pins(dev)) == 1 and "==" in pins(dev)[0]

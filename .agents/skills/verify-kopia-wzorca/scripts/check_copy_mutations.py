@@ -17,6 +17,7 @@ from mutacje import Edit, Mutation, check_all
 
 VERIFIED = Path("src/rozliczenia/template_copy.py")
 ROW_LOOK = Path("src/rozliczenia/row_look.py")
+LAYOUT = Path("src/rozliczenia/collective_layout.py")
 CHECKER = (".agents/skills/verify-kopia-wzorca/scripts/check_template_copy.py", "--no-shrink")
 EXPECTED = "KOPIA WZORCA: NOWE NARUSZENIE"
 
@@ -164,6 +165,22 @@ MUTATIONS = (
         (Edit(VERIFIED, "html.escape(text, quote=True)", "text"),),
         CHECKER,
         "relacje arkusza są niepoprawnym XML i plik się nie otwiera",
+        EXPECTED,
+    ),
+    # The checker and the synthetic Wzorce take Dad's layout from tools/lib/atrapy/pliki_taty.py, so a wrong constant in
+    # src misses the Wzorzec; with the layout from src both moved with it and the check passed.
+    Mutation(
+        "pierwszy Wiersz danych o wiersz niżej w układzie src",
+        (Edit(LAYOUT, "FIRST_DATA_ROW: Final = 18", "FIRST_DATA_ROW: Final = 19"),),
+        CHECKER,
+        "Rozliczenie pracownika zaczyna Wiersze danych pod pierwszym sformatowanym wierszem Wzorca taty",
+        EXPECTED,
+    ),
+    Mutation(
+        "Wygląd Wiersza danych bez kolumny L w układzie src",
+        (Edit(LAYOUT, 'LOOK_COLUMNS: Final = _span("A", "L")', 'LOOK_COLUMNS: Final = _span("A", "K")'),),
+        CHECKER,
+        "kolumna L Wierszy danych zostaje z formatowaniem Wzorca zamiast Wyglądu Wiersza danych",
         EXPECTED,
     ),
 )

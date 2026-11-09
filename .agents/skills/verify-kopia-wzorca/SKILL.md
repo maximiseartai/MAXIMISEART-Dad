@@ -1,6 +1,6 @@
 ---
 name: verify-kopia-wzorca
-description: Check with generated Wiersze danych that every Rozliczenie pracownika written by the template copy (ADR 0008, `template_copy.py`) is the file the old openpyxl path would write, keeps the rest of the Wzorzec byte for byte, and has the shape Excel needs. Use when a change touches `src/rozliczenia/template_copy.py`, `src/rozliczenia/workbook_parts.py`, `src/rozliczenia/highlights.py`, `src/rozliczenia/row_look.py`, `src/rozliczenia/hyperlinks.py`, `src/rozliczenia/template_file.py`, `src/rozliczenia/workbook_save.py`, `tools/porownanie_rozliczen.py`, or when `tests/test_kopia_wzorca.py` fails.
+description: Check with generated Wiersze danych that every Rozliczenie pracownika written by the template copy (ADR 0008, `template_copy.py`) is the file the old openpyxl path would write, keeps the rest of the Wzorzec byte for byte, and has the shape Excel needs. Use when a change touches `src/rozliczenia/template_copy.py`, `src/rozliczenia/workbook_parts.py`, `src/rozliczenia/highlights.py`, `src/rozliczenia/row_look.py`, `src/rozliczenia/hyperlinks.py`, `src/rozliczenia/template_file.py`, `src/rozliczenia/write_routes.py`, `src/rozliczenia/workbook_save.py`, `src/rozliczenia/workbook_files.py`, `src/rozliczenia/collective_layout.py`, `tools/porownanie_rozliczen.py`, the synthetic Wzorce in `tools/lib/atrapy/` (`wzorce.py`, `settlement.py`, `workbooks.py`, `pliki_taty.py`), or when `tests/test_kopia_wzorca.py` fails.
 pilnuje:
   - src/rozliczenia/template_copy.py
   - src/rozliczenia/workbook_parts.py
@@ -13,6 +13,10 @@ pilnuje:
   - src/rozliczenia/write_routes.py
   - src/rozliczenia/workbook_save.py
   - tools/porownanie_rozliczen.py
+  - tools/lib/atrapy/wzorce.py
+  - tools/lib/atrapy/settlement.py
+  - tools/lib/atrapy/workbooks.py
+  - tools/lib/atrapy/pliki_taty.py
 ci: .agents/skills/verify-kopia-wzorca/scripts/check_template_copy.py --no-shrink
 ---
 
@@ -74,38 +78,41 @@ The check holds that copy to five rules, for any Wiersze danych:
 
 ## Does the change touch it?
 
-Coverage, confirmed at **sync commit `054308111`** (2026-10-31, `main` after #710). From the previous
-sync commit `11588db1`, `template_copy.py` did not change. `WorkbookSaveError` carries its target and
-`SaveProblem` instead of a sentence (`b41bf175e`), which the checker never reads (a refusal is its
-exception type); `TemplateFile` knows its `TemplateKind` (`c4d0ffc1b`); `write_atomically` takes an
-optional `replace`, which only INTERMAX passes (`7d848832e`); the synthetic Wzorce open at A1 in 75%
-(`1bbca36e0`, the sheet view only). The openpyxl path now also refuses a Wzorzec rozliczenia pracownika
-whose written Wiersze danych are merged (`_ensure_unmerged`, `6aa0f6e21`, `e411c8df5`), as the copy
-already sent such a Wzorzec down the old path; no Wzorzec here has merged Wiersze danych, so the check
-does not reach that refusal. No rule changed.
-The coverage at this commit:
+The check covers this code. Its definitions have digests in `model/definicje.json`: when one of them changes,
+`tools/szybko.py` fails before you push (step `rozjazd modelu`) until you have done „Bring the model in line”.
 
 | Code | What the check covers |
 | --- | --- |
-| `src/rozliczenia/template_copy.py` (all of it but the Plik zbiorczy branch, `SheetLayout.period_file`, which pytest covers in `tests/test_plik_zbiorczy_kopia_wzorca.py`) | the code under verification |
-| `src/rozliczenia/workbook_parts.py` (`SheetData`, `relationships`, `office_document`, `relationships_part`, `active_sheet`, `style_list`, `appended`, `with_style_attribute`) | row index the copy splices on, the parts it finds by relationship, the sheet it writes (`workbook.active` of openpyxl) and the styles it appends |
-| `src/rozliczenia/highlights.py` (`Highlights.of`, `font_over`, `fill_over`) | Wyróżnienia both paths lay over the Wzorzec's font and fill |
+| `src/rozliczenia/template_copy.py` (all of it but what only the period files reach, `SheetLayout.period_file`: the Plik zbiorczy and the Rozliczenie wewnętrzne, with their `autoFilter`, `_require_known_styles`, zero rows and target headers; `tests/test_plik_zbiorczy_kopia_wzorca.py` covers them) | the code under verification |
+| `src/rozliczenia/workbook_parts.py` (`SheetData`, `SheetRow`, `relationships`, `office_document`, `relationships_part`, `active_sheet`, `style_list`, `appended`, `with_style_attribute`; `UnsupportedShape`; `IrregularSheetData`, `_sheet_rows`, `_raise_irregular`) | row index the copy splices on, the parts it finds by relationship, the sheet it writes (`workbook.active` of openpyxl), the styles it appends, the Wzorce it sends down the old path and the XML comment that makes it refuse the twin |
+| `src/rozliczenia/highlights.py` (`Highlights`: `of`, `font_over`, `fill_over`; `LookReader`) | Wyróżnienia both paths lay over the Wzorzec's font and fill |
 | `src/rozliczenia/row_look.py` (`RowLook`, `CellLook`, `wraps`) | Wygląd Wiersza danych both paths give A:L; judged by WYGLAD_WIERSZA |
 | `src/rozliczenia/hyperlinks.py` (`Hyperlink`) | the Hiperłącze both paths write; its reader `read_sheet_hyperlinks` is covered by pytest (`tests/test_hiperlacza_pliku_zbiorczego.py`), not here |
-| `src/rozliczenia/template_file.py`: `TemplateFile` (`check`, `create`, `_read`, `_template_copy`, `_create_with_openpyxl`), `_in_columns` (a `DataRow` cell in its own column), `_package_writer`; `src/rozliczenia/write_routes.py`: `Route`; `src/rozliczenia/workbook_save.py`: `write_atomically` | the real entry point; which path it takes (`create` returns it) |
-| `src/rozliczenia/template_file.py`: `TemplateFile._create_with_openpyxl`, `_write_rows`, `_request_recalculation`; `src/rozliczenia/workbook_save.py`: `save_from_template`, `_restore_external_link_parts` | the reference (old openpyxl path) |
+| `src/rozliczenia/template_file.py`: `TemplateFile` (`worker_settlement`, `check`, `create`, `_read`, `_template_copy`), `_in_columns` (a `DataRow` cell in its own column), `_package_writer`; `src/rozliczenia/write_routes.py`: `Route`; `src/rozliczenia/workbook_files.py`: `DataCell`, `DataRow`, `check_worker_header`, `template_content`; `src/rozliczenia/workbook_save.py`: `write_atomically` | the real entry point; which path it takes (`create` returns it) |
+| `src/rozliczenia/template_file.py`: `TemplateFile._create_with_openpyxl`, `_write_rows`, `_ensure_unmerged`, `_request_recalculation`; `src/rozliczenia/workbook_save.py`: `save_from_template`, `_restore_external_link_parts` | the reference (old openpyxl path) |
 | `tools/porownanie_rozliczen.py` (`compare_worker_settlements` and its per-cell helpers, `_hyperlink` among them) | the judge for WIERNA_KOPIA |
-| `tools/syntetyczne_wzorce.py` (`write_settlement_template`), `tools/lib/atrapy/settlement.py` (`write_template`), `tools/lib/atrapy/workbooks.py` (`add_external_link_fixture`, `refused_by_copy`) | the Wzorce under test and the twin the copy refuses |
+| `tools/lib/atrapy/wzorce.py` (`write_settlement_template`), `tools/lib/atrapy/settlement.py` (`write_template`), `tools/lib/atrapy/workbooks.py` (`add_external_link_fixture`, `refused_by_copy`) | the Wzorce under test and the twin the copy refuses |
 
-Run the check when a diff touches any of these. To see whether the covered code moved since the
-sync commit:
-
-```bash
-git diff --stat 054308111 -- src/rozliczenia/template_copy.py src/rozliczenia/workbook_parts.py src/rozliczenia/highlights.py src/rozliczenia/row_look.py src/rozliczenia/hyperlinks.py src/rozliczenia/workbook_files.py src/rozliczenia/template_file.py src/rozliczenia/write_routes.py src/rozliczenia/workbook_save.py tools/porownanie_rozliczen.py tools/syntetyczne_wzorce.py tests/fixtures/settlement.py tests/fixtures/workbooks.py tools/lib/atrapy/settlement.py tools/lib/atrapy/workbooks.py
-```
-
+The checker and the synthetic Wzorce take Dad's layout (header row 17, first Wiersz danych 18, A:L, A:AT, F) from
+`tools/lib/atrapy/pliki_taty.py`, not from `src/rozliczenia/collective_layout.py`, so a wrong layout constant in `src`
+misses the Wzorzec and the check fails, with no digest; two mutations below hold that.
 Changes elsewhere (reading the Plik zbiorczy, `engine.py`, publication of the Folder rozliczeń
 pracowników) do not matter here.
+
+## Bring the model in line
+
+When `tools/szybko.py` names a changed definition of `model/definicje.json`:
+
+1. Read the diff of that definition and sort it: does it change what a rule above promises (ADR 0008), the shape of
+   a Wzorzec in the table under „How it works and what it covers”, the path a Wzorzec or a value takes (copy, old path,
+   refusal), or the names in the coverage table?
+2. If it does, change this file and `check_template_copy.py` so that they describe the code: the rules, the
+   coverage table, the Wzorce, `build_templates`, and `VERIFIED` and the mutations in `check_copy_mutations.py` when
+   code moves to another file. A new definition the copy now calls goes into `model/definicje.json`.
+3. Run the check, after a larger change to `template_copy.py` also a few `--seed` runs (both under „Run”). A new
+   violation is a finding: sort it as „When the check fails” says before you call it a bug.
+4. Run `tools/przesun_model.py verify-kopia-wzorca` only after this file describes the code, and write in the commit
+   message what changed in the description and why.
 
 ## Run
 
@@ -114,7 +121,8 @@ py -3 .agents\skills\verify-kopia-wzorca\scripts\check_template_copy.py
 ```
 
 On macOS or Linux use `.venv/bin/python` instead of `py -3`. It needs the repo's test
-dependencies (`hypothesis` is in `requirements.txt` and the `dev` extra), takes about
+dependencies (`hypothesis`, pinned to the same version in `requirements.txt` and the `dev` extra, because the checker
+reaches into `hypothesis.internal`; `tests/test_kopia_wzorca.py` holds the pins equal), takes about
 85 s on a Mac M4 Max when it passes and runs in CI as `tests/test_kopia_wzorca.py`. Most of that
 is the openpyxl reference, which copies the font and fill of every written cell. A failing run
 spends up to a minute more shrinking the counterexample (`SHRINK_SECONDS`). In a worktree,
@@ -162,7 +170,7 @@ pracownika is written by the real `TemplateFile.create()` and, separately, by th
 
 | Wzorzec | Shape | Wiersze danych per Rozliczenie pracownika |
 | --- | --- | --- |
-| `syntetyczny` | Dad's Wzorzec in small, from `tools/syntetyczne_wzorce.py` with 200 Wiersze danych: Excel-written XML, shared formulas every 64 rows, `calcChain`, external link, `sharedStrings`, a comment in H17 with Dad's sheet relationships (`rId1` VML drawing, `rId2` comments, `<legacyDrawing>` after `pageMargins`, so new ids must start at `rId3`), rows of zeros in N:V and X, date formats, no cells in A and B from row 139 (Dad: from row 609) | 0–260, so writes reach past the last formatted row and the trailing row 269; compression chunks start at rows 18, 82, 146, 210 |
+| `syntetyczny` | Dad's Wzorzec in small, from `tools/lib/atrapy/wzorce.py` with 200 Wiersze danych: Excel-written XML, shared formulas every 64 rows, `calcChain`, external link, `sharedStrings`, a comment in H17 with Dad's sheet relationships (`rId1` VML drawing, `rId2` comments, `<legacyDrawing>` after `pageMargins`, so new ids must start at `rId3`), rows of zeros in N:V and X, date formats, the first Wiersz danych without a cell in A in row 139 (Dad: 609) | 0–260, so writes reach past the last formatted row and the trailing row 269; compression chunks start at rows 18, 82, 146, 210 |
 | `maly` | openpyxl-written workbook with two formatted Wiersze danych, a second sheet, an external link, namespace prefixes in `workbook.xml`, no sheet relationships (a copy with Hiperłącza adds the part) | 0–80 |
 | `wzorzec-taty` (only with `--wzorzec`, then the only one) | Dad's real Wzorzec | 0–700, chunks from rows 18, 82, …, 658 |
 
@@ -251,22 +259,20 @@ It applies broken variants to a temporary copy of the checkout (`tools/mutacje.p
 py -3 .agents\skills\verify-kopia-wzorca\scripts\check_copy_mutations.py
 ```
 
-It must end with `MUTACJE OK`: each of the twenty mutations (sheet CRC over the head only, chunks
+It must end with `MUTACJE OK`: each of the twenty-two mutations (sheet CRC over the head only, chunks
 from one shared compressor without a full flush, so each reaches back into the one before, a dropped chunk, `dimension` not extended, a date without a date format, an
 empty value keeping the Wzorzec's zero, Wyróżnienia without the fill, the Wzorzec's border left in
 A:L, the Wzorzec's number format left in A:L, the Wzorzec's row height kept, three in `row_look.py`
 that change both paths at once (every text wrapped, text with `\r` but no `\n` not wrapped, a font
 size not from the header), 15 significant digits, `xml:space` only for leading spaces, `&` not
 escaped, `<hyperlinks>` placed after `pageMargins`, a reused Wzorzec `rId`, a Hiperłącze one row off,
-`&` not escaped in a Hiperłącze address) must give `KOPIA WZORCA: NOWE NARUSZENIE`.
+`&` not escaped in a Hiperłącze address, and two in `collective_layout.py` that the Wzorce and the checker no longer
+follow: the first Wiersz danych one row lower, A:K instead of A:L for the Wygląd Wiersza danych) must give
+`KOPIA WZORCA: NOWE NARUSZENIE`.
 The mutations run side by side; it takes about 15 s. CI runs it in the `mutations` job. A
-mutation reported as `NIEAKTUALNA` no longer finds its `anchor` exactly once in `template_copy.py` or
-`row_look.py`: rewrite its `anchor` and `replacement` in `check_copy_mutations.py` against the new code
+mutation reported as `NIEAKTUALNA` no longer finds its `anchor` exactly once in `template_copy.py`,
+`row_look.py` or `collective_layout.py`: rewrite its `anchor` and `replacement` in `check_copy_mutations.py` against the new code
 so that it breaks the same rule again.
 
-When the copy changes on purpose, also confirm that the checker still describes it: the rules
-still state what ADR 0008 promises, the Wzorce still have the shapes in the table above, and the
-coverage table names the current functions. Then run the check, a few `--seed` runs and the
-mutations. Only after that, move the sync commit in "Does the change touch it?" to the commit you
-checked. If the copy moves to another file, update `VERIFIED` in `check_copy_mutations.py`, the
-coverage table and this skill's description.
+When the copy changes on purpose, follow „Bring the model in line”; if the copy moves to another file, also update
+this skill's description.

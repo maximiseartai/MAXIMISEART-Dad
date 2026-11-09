@@ -1,6 +1,6 @@
 """Syntetyczne Wzorce do benchmarku i CI mają kształt Wzorców taty, bez ich danych.
 
-Generator leży w ``tools/``; testy uruchamiają jego CLI w małej odmianie (kilkaset wierszy
+Generator leży w ``tools/lib/atrapy/wzorce.py``; testy uruchamiają jego CLI ``tools/syntetyczne_wzorce.py`` w małej odmianie (kilkaset wierszy
 zamiast ~10 tys.), żeby pytest był szybki. Kształt części zip jest ten sam w każdym rozmiarze.
 """
 
