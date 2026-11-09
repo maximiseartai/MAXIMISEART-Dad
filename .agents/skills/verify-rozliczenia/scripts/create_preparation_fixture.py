@@ -27,7 +27,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from skrypt_skilla import Parser, create_run_root
 
-from atrapy.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, REGISTER_HEADERS
+from atrapy.pliki_taty import (
+    AMOUNT_COLUMN,
+    COLLECTIVE_HEADERS,
+    FIRST_DATA_ROW,
+    HEADER_ROW,
+    INTERNAL_HEADERS,
+    QUANTITY_COLUMNS,
+)
+from atrapy.preparation import REGISTER_HEADERS
 from atrapy.scenariusz_rozliczen import (
     ARCHIVED_NUMBER,
     ARCHIVED_ORDER,
@@ -109,9 +117,9 @@ def _write_internal_template(path: Path) -> None:
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Arkusz1"
-    for column, header in enumerate(INTERNAL_TEMPLATE_HEADERS, start=1):
+    for column, header in enumerate(INTERNAL_HEADERS, start=1):
         sheet.cell(1, column).value = header
-    _apply_template_layout(sheet, 1, len(INTERNAL_TEMPLATE_HEADERS))
+    _apply_template_layout(sheet, 1, len(INTERNAL_HEADERS))
     workbook.save(path)
     workbook.close()
 
@@ -132,17 +140,17 @@ def _write_collective_layout(path: Path, *, rate: float) -> None:
     sheet.title = "Sheet1"
     sheet["A1"] = "STAWKI"
     sheet["N1"] = rate
-    sheet["N16"] = "=SUM(N18:N40)"
-    sheet["A17"].fill = PatternFill(fill_type="solid", fgColor="00AA55")
-    for column, header in enumerate(COLLECTIVE_TEMPLATE_HEADERS, start=1):
-        sheet.cell(17, column).value = header
-    sheet["N17"] = "instalacja"
-    sheet["AP17"] = "demontaż"
-    _apply_template_layout(sheet, 17, len(COLLECTIVE_TEMPLATE_HEADERS))
-    for row in range(18, 18 + COLLECTIVE_ZERO_ROWS):
-        for column in range(14, 43):  # N:AP
+    sheet["N16"] = f"=SUM(N{FIRST_DATA_ROW}:N40)"
+    sheet.cell(HEADER_ROW, 1).fill = PatternFill(fill_type="solid", fgColor="00AA55")
+    for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
+        sheet.cell(HEADER_ROW, column).value = header
+    sheet.cell(HEADER_ROW, QUANTITY_COLUMNS.start).value = "instalacja"
+    sheet.cell(HEADER_ROW, QUANTITY_COLUMNS[-1]).value = "demontaż"
+    _apply_template_layout(sheet, HEADER_ROW, len(COLLECTIVE_HEADERS))
+    for row in range(FIRST_DATA_ROW, FIRST_DATA_ROW + COLLECTIVE_ZERO_ROWS):
+        for column in QUANTITY_COLUMNS:
             sheet.cell(row, column).value = 0
-        sheet.cell(row, 47).value = f"=N{row}*$N$1"  # AU
+        sheet.cell(row, AMOUNT_COLUMN).value = f"=N{row}*$N$1"
     rates = workbook.create_sheet("Rates")
     rates["A1"] = "synthetic rate"
     rates["B1"] = rate

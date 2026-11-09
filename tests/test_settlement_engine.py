@@ -57,8 +57,8 @@ from atrapy.workbooks import (
     without_sheet,
     written_by_copy,
 )
+from atrapy.pliki_taty import COLLECTIVE_HEADERS
 from atrapy.settlement import (
-    COLLECTIVE_HEADERS,
     NOT_A_PERIOD,
     PERIOD,
     SOURCE_NAME,

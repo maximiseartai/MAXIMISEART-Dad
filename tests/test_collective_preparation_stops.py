@@ -695,7 +695,7 @@ def test_damaged_wzorzec_stops_before_reading_rejestr(
 @pytest.mark.parametrize(
     ("template_name", "header_cell", "header", "sheet", "row"),
     [
-        (tool_files.INTERNAL_TEMPLATE.name, "G1", "NUMER ZL.", "Arkusz1", 1),
+        (tool_files.INTERNAL_TEMPLATE.name, "F1", "NUMER ZL.", "Arkusz1", 1),
         (tool_files.COLLECTIVE_TEMPLATE.name, "H17", "WYKONAWCA", "Sheet1", 17),
     ],
 )
@@ -748,8 +748,8 @@ def test_wzorzec_pliku_zbiorczego_with_wykonawca_outside_h_stops_before_reading_
 @pytest.mark.parametrize(
     ("template_name", "header_cell", "register_header", "header", "sheet", "row"),
     [
-        (tool_files.INTERNAL_TEMPLATE.name, "G1", "nr zlecenia", "NUMER ZL.", "Arkusz1", 1),
-        (tool_files.INTERNAL_TEMPLATE.name, "A1", "DATA GODZ. POCZ.", "DATA", "Arkusz1", 1),
+        (tool_files.INTERNAL_TEMPLATE.name, "F1", "nr zlecenia", "NUMER ZL.", "Arkusz1", 1),
+        (tool_files.INTERNAL_TEMPLATE.name, "G1", "DATA GODZ. POCZ.", "DATA", "Arkusz1", 1),
         (tool_files.COLLECTIVE_TEMPLATE.name, "F17", "nr zlecenia", "NUMER ZL.", "Sheet1", 17),
     ],
 )

@@ -34,11 +34,11 @@ from rozliczenia.register_columns import COLUMNS
 from rozliczenia.workbook_files import DataCell
 from rozliczenia.settlement_period import parse_period_token
 
+from atrapy.pliki_taty import INTERNAL_HEADERS
 from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
     COLLECTIVE_TEMPLATE_ZERO_ROWS,
     INTERNAL_SETTLEMENT_NAME,
-    INTERNAL_TEMPLATE_HEADERS,
     NOT_TRANSFERRED_PREFIXES,
     OLD_REGISTER_HEADERS,
     PERIOD,
@@ -94,21 +94,7 @@ def sheet_rows(path: Path, *, min_row: int, max_col: int) -> list[tuple[object, 
 
 
 def internal_row(number: int, started: datetime, successful: str, worker: str) -> tuple[object, ...]:
-    return (
-        started,
-        "POZNAŃ",
-        f"syntetyczny adres SYN-{number:03d}",
-        f"UM-SYN-{number:03d}",
-        "dekoder",
-        "instalacja",
-        f"ZL-SYN-{number:03d}",
-        worker,
-        f"OR-SYN-{number:03d}",
-        successful,
-        "montaż",
-        None,
-        None,
-    )
+    return (*collective_row(number, started, successful, worker), None, None)
 
 
 def test_narzedzie_szuka_w_rejestrze_naglowkow_z_pliku_taty() -> None:
@@ -121,7 +107,7 @@ def test_rozliczenie_wewnetrzne_contains_exactly_period_orders_in_register_order
 
     run_preparation(fixture)
 
-    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_TEMPLATE_HEADERS)) == [
+    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_HEADERS)) == [
         internal_row(2, datetime(2026, 9, 8, 0, 0), "tak", "adrian.testowy"),
         internal_row(3, datetime(2026, 9, 9, 10, 30), "NIE", "dariusz.fikcyjny2"),
         internal_row(4, datetime(2026, 9, 12, 12, 0), " Tak ", "kamil.syntetyczny"),
@@ -168,7 +154,7 @@ def test_rejestr_in_old_layout_still_fills_both_period_files(tmp_path: Path) -> 
 
     run_preparation(fixture)
 
-    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_TEMPLATE_HEADERS)) == [
+    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_HEADERS)) == [
         internal_row(2, datetime(2026, 9, 8, 0, 0), "tak", "adrian.testowy"),
         internal_row(3, datetime(2026, 9, 9, 10, 30), "NIE", "dariusz.fikcyjny2"),
         internal_row(4, datetime(2026, 9, 12, 12, 0), " Tak ", "kamil.syntetyczny"),
@@ -641,13 +627,13 @@ def test_highlights_from_rejestr_reach_both_files_and_plain_cells_get_none(tmp_p
 
     # Zlecenie 2: ADRES żółty, pogrubiony, czerwoną czcionką; zlecenie 4: ADRES niebieski, WYKONAWCA kursywą;
     # zlecenie 6 i reszta bez wyróżnień.
-    assert cell_formats(fixture.internal_settlement_path, ["C2", "C4", "H4", "B2", "C3", "C5", "H2"]) == {
-        "C2": ("FFFFFF00", "FFC00000", True, False),
-        "C4": ("FF00B0F0", None, False, False),
+    assert cell_formats(fixture.internal_settlement_path, ["B2", "B4", "H4", "A2", "B3", "B5", "H2"]) == {
+        "B2": ("FFFFFF00", "FFC00000", True, False),
+        "B4": ("FF00B0F0", None, False, False),
         "H4": (None, None, False, True),
-        "B2": (None, None, False, False),
-        "C3": (None, None, False, False),
-        "C5": (None, None, False, False),
+        "A2": (None, None, False, False),
+        "B3": (None, None, False, False),
+        "B5": (None, None, False, False),
         "H2": (None, None, False, False),
     }
     assert cell_formats(fixture.collective_file_path, ["B18", "B19", "H19", "A18", "B20", "H18"]) == {
@@ -666,12 +652,12 @@ def test_numer_zlecenia_w_obu_plikach_okresu_ma_hiperlacze_z_rejestru_bez_zmiany
 
     run_preparation(fixture)
 
-    # Zlecenia okresu: wiersze Rejestru 4, 6, 9 i 13; skuteczne: 4, 9 i 13. NUMER ZL. jest w I, G i F.
+    # Zlecenia okresu: wiersze Rejestru 4, 6, 9 i 13; skuteczne: 4, 9 i 13. NUMER ZL. jest w I Rejestru i w F obu plików.
     assert hyperlinks(fixture.internal_settlement_path) == {
-        "G2": links[4],
-        "G3": links[6],
-        "G4": links[9],
-        "G5": links[13],
+        "F2": links[4],
+        "F3": links[6],
+        "F4": links[9],
+        "F5": links[13],
     }
     assert hyperlinks(fixture.collective_file_path) == {"F18": links[4], "F19": links[9], "F20": links[13]}
     assert cell_formats(fixture.collective_file_path, ["F18"]) == {"F18": (None, None, False, False)}
@@ -716,7 +702,7 @@ def test_data_column_keeps_date_format_from_rejestr(tmp_path: Path) -> None:
     internal = load_workbook(fixture.internal_settlement_path)
     collective = load_workbook(fixture.collective_file_path)
     try:
-        internal_dates = [active_worksheet(internal).cell(row, 1) for row in range(2, 6)]
+        internal_dates = [active_worksheet(internal).cell(row, 7) for row in range(2, 6)]
         collective_dates = [active_worksheet(collective).cell(row, 7) for row in range(18, 21)]
         assert {
             (type(cell.value), cell.number_format) for cell in internal_dates + collective_dates
@@ -974,16 +960,16 @@ def test_period_orders_after_register_history_keep_values_highlights_and_hyperli
 
     # Wiersze Rejestru: historia 2–31, zlecenia okresu 32, 34 i 40 (ADRES w E, NUMER ZL. w I).
     assert (summary.period_order_count, summary.successful_order_count, summary.skipped_empty_rows) == (3, 2, 1)
-    assert [row[6] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == [
+    assert [row[5] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == [
         "ZL-SYN-002",
         "ZL-SYN-003",
         "ZL-SYN-004",
     ]
     assert hyperlinks(fixture.collective_file_path) == {"F18": links[32], "F19": links[40]}
-    assert cell_formats(fixture.internal_settlement_path, ["C2", "C3", "C4"]) == {
-        "C2": (None, None, False, False),
-        "C3": (None, None, False, False),
-        "C4": ("FFFFFF00", None, False, False),
+    assert cell_formats(fixture.internal_settlement_path, ["B2", "B3", "B4"]) == {
+        "B2": (None, None, False, False),
+        "B3": (None, None, False, False),
+        "B4": ("FFFFFF00", None, False, False),
     }
 
 
@@ -1509,7 +1495,7 @@ def test_formula_glowna_wspolnej_formuly_w_wierszu_okresu_daje_jedno_zlecenie_te
 _SECOND_PERIOD_ORDER = internal_row(3, datetime(2026, 9, 10, 8, 0), "NIE", "dariusz.fikcyjny2")
 _PERIOD_ORDERS_AFTER_HISTORY = (
     internal_row(2, datetime(2026, 9, 8, 8, 0), "tak", "adrian.testowy"),
-    (*_SECOND_PERIOD_ORDER[:3], 7, *_SECOND_PERIOD_ORDER[4:]),
+    (*_SECOND_PERIOD_ORDER[:2], 7, *_SECOND_PERIOD_ORDER[3:]),
     internal_row(4, datetime(2026, 9, 14, 18, 0), "tak", "kamil.syntetyczny"),
 )
 
@@ -1547,7 +1533,7 @@ def test_teksty_zlecen_okresu_z_konca_tabeli_tekstow_wspolnych_rejestru_trafiaja
     summary = run_preparation(fixture)
 
     assert (summary.period_order_count, summary.successful_order_count) == (3, 2)
-    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_TEMPLATE_HEADERS)) == list(
+    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_HEADERS)) == list(
         _PERIOD_ORDERS_AFTER_HISTORY
     )
 
@@ -1600,7 +1586,7 @@ def test_rejestr_w_ksztalcie_ktorego_zawezenie_tekstow_wspolnych_nie_zna_daje_te
 
     run_preparation(fixture)
 
-    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_TEMPLATE_HEADERS)) == list(
+    assert sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=len(INTERNAL_HEADERS)) == list(
         _PERIOD_ORDERS_AFTER_HISTORY
     )
 

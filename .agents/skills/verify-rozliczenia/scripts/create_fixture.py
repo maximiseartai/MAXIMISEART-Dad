@@ -7,9 +7,6 @@ import json
 from pathlib import Path
 import sys
 
-from openpyxl import Workbook
-from openpyxl.styles import PatternFill
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
@@ -22,41 +19,23 @@ from atrapy.scenariusz_rozliczen import (
     UNMAPPED_ROW,
     WORKER_TEMPLATE_NAME,
 )
-from atrapy.settlement import PERIOD, SOURCE_NAME, WORKERS, write_mapping
-from atrapy.workbooks import active_worksheet
-
-
-def _write_template(path: Path) -> None:
-    workbook = Workbook()
-    sheet = active_worksheet(workbook)
-    sheet.title = "Sheet1"
-    sheet.cell(17, 8).value = "WYKONAWCA"
-    sheet["A17"].fill = PatternFill(fill_type="solid", fgColor="00AA55")
-    sheet.cell(18, 47).value = "=N18"
-    sheet.cell(19, 47).value = "=N19"
-    sheet.cell(18, 14).value = 0
-    sheet.cell(19, 14).value = 0
-    rates = workbook.create_sheet("Rates")
-    rates["A1"] = "synthetic rate"
-    rates["B1"] = 17.5
-    workbook.save(path)
-    workbook.close()
+from atrapy.pliki_taty import WORKER_CONFIG_NAME
+from atrapy.settlement import (
+    PERIOD,
+    SOURCE_NAME,
+    WORKERS,
+    SourceRow,
+    link_order_numbers,
+    write_mapping,
+    write_source_rows,
+    write_template,
+)
 
 
 def _write_source(path: Path, *, include_unmapped: bool) -> None:
-    workbook = Workbook()
-    sheet = active_worksheet(workbook)
-    sheet.title = "Sheet1"
-    sheet.cell(17, 8).value = "WYKONAWCA"
     rows = [*SETTLEMENT_ROWS, UNMAPPED_ROW] if include_unmapped else SETTLEMENT_ROWS
-    for row_number, (worker, marker) in enumerate(rows, start=18):
-        sheet.cell(row_number, 1).value = SETTLEMENT_CITY
-        sheet.cell(row_number, 6).value = marker
-        sheet.cell(row_number, 6).hyperlink = f"{SETTLEMENT_ORDER_LINK}{row_number}"
-        sheet.cell(row_number, 8).value = worker
-        sheet.cell(row_number, 14).value = row_number - 17
-    workbook.save(path)
-    workbook.close()
+    write_source_rows(path, [SourceRow(SETTLEMENT_CITY, None, worker, marker) for worker, marker in rows])
+    link_order_numbers(path, SETTLEMENT_ORDER_LINK)
 
 
 def _write_fixture(root: Path, *, include_unmapped: bool) -> None:
@@ -65,8 +44,8 @@ def _write_fixture(root: Path, *, include_unmapped: bool) -> None:
     source = period_directory / SOURCE_NAME
     worker_template = root / WORKER_TEMPLATE_NAME
     _write_source(source, include_unmapped=include_unmapped)
-    write_mapping(root / "worker_mapping.yaml")
-    _write_template(worker_template)
+    write_mapping(root / WORKER_CONFIG_NAME)
+    write_template(worker_template, view=None, column_widths={})
     manifest = {
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "worker_template_sha256": hashlib.sha256(worker_template.read_bytes()).hexdigest(),

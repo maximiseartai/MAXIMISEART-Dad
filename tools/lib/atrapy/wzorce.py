@@ -19,11 +19,13 @@ from openpyxl.utils import get_column_letter
 
 from atrapy.pliki_taty import (
     AMOUNT_COLUMN,
+    COLLECTIVE_HEADERS,
     COLLECTIVE_TEMPLATE_NAME,
     COST_ROW,
     DATA_ROW_COLUMNS,
     FIRST_DATA_ROW,
     HEADER_ROW,
+    INTERNAL_HEADERS,
     INTERNAL_TEMPLATE_NAME,
     QUANTITY_COLUMNS,
     WORKER_CONFIG_NAME,
@@ -52,18 +54,6 @@ _COLUMN = {index: get_column_letter(index) for index in range(1, 54)}
 _N, _AP, _AT, _AU = QUANTITY_COLUMNS[0], QUANTITY_COLUMNS[-1], DATA_ROW_COLUMNS[-1], AMOUNT_COLUMN
 _V, _W, _X, _AY, _BA = 22, 23, 24, 51, 53
 
-_INPUT_HEADERS = (
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "DATA",
-    "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-)
 _SUMMARY_HEADERS = (
     "Obciążenie klienta - opis",
     "Obciążenie klienta - kwota",
@@ -76,7 +66,6 @@ _SUMMARY_HEADERS = (
     "Obszar",
 )
 _SERVICE_HEADERS = tuple(f"Usługa syntetyczna {number:02d}" for number in range(1, _AP - _N + 2))
-_INTERNAL_HEADERS = ("MIASTO", *_INPUT_HEADERS, "zwrot", "UWAGI")
 
 
 # --- style ------------------------------------------------------------------------------------
@@ -331,7 +320,7 @@ class _TemplateSheet:
         row_16 += [self._cell(column, 16, "block-service") for column in range(_N + 1, _AU + 1)]
         rows.append(self._row(16, row_16, ' spans="1:50" ht="19.5" thickBot="1"'))
         header = [self._text(1, HEADER_ROW, "header-input", self._first_header)]
-        header += [self._text(column, HEADER_ROW, "header-input", label) for column, label in enumerate(_INPUT_HEADERS, start=2)]
+        header += [self._text(column, HEADER_ROW, "header-input", label) for column, label in enumerate(COLLECTIVE_HEADERS[1:], start=2)]
         header += [self._cell(12, HEADER_ROW, "header"), self._cell(13, HEADER_ROW, "header")]
         header += [self._text(column, HEADER_ROW, "header-service", label) for column, label in enumerate(_SERVICE_HEADERS, start=_N)]
         header += [self._text(column, HEADER_ROW, "header-summary", label) for column, label in enumerate(_SUMMARY_HEADERS, start=_AP + 1)]
@@ -652,7 +641,7 @@ def write_internal_template(path: Path) -> None:
     last = 263
     rows = [
         '<row r="1" spans="1:13" ht="30" customHeight="1">'
-        + "".join(strings.cell(f"{_COLUMN[column]}1", label, header) for column, label in enumerate(_INTERNAL_HEADERS, start=1))
+        + "".join(strings.cell(f"{_COLUMN[column]}1", label, header) for column, label in enumerate(INTERNAL_HEADERS, start=1))
         + "</row>"
     ]
     column_styles = [plain, wide, plain, plain, plain, plain, date, plain, plain, plain, wide, plain, wide]
@@ -708,6 +697,6 @@ def write_worker_config(path: Path) -> None:
 
 def write_synthetic_templates(directory: Path, data_rows: int = FULL_DATA_ROWS) -> None:
     write_settlement_template(directory / WORKER_TEMPLATE_NAME, "GODZINA", data_rows, comments=True)
-    write_settlement_template(directory / COLLECTIVE_TEMPLATE_NAME, "MIASTO", data_rows)
+    write_settlement_template(directory / COLLECTIVE_TEMPLATE_NAME, COLLECTIVE_HEADERS[0], data_rows)
     write_internal_template(directory / INTERNAL_TEMPLATE_NAME)
     write_worker_config(directory / WORKER_CONFIG_NAME)
