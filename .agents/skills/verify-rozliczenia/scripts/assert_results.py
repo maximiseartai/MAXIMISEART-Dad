@@ -18,6 +18,7 @@ from wynik_uruchomienia import Link, ProcessResult, check_metrics, figures, fini
 from skrypt_skilla import Parser
 
 from atrapy.scenariusz_rozliczen import (
+    SETTLEMENT_ADDRESS,
     SETTLEMENT_CITY,
     SETTLEMENT_ORDER_LINK,
     SETTLEMENT_ROWS,
@@ -97,13 +98,13 @@ def _order_links(rows: dict[int, int]) -> dict[tuple[int, int], Link]:
 
 
 def _expected_source_row(source_row: int) -> tuple[object, ...]:
-    """A:AT of the Plik zbiorczy Wiersz danych ``source_row``: MIASTO, NUMER ZL., WYKONAWCA and the quantity in N."""
+    """A:AT of the Plik zbiorczy Wiersz danych ``source_row``: MIASTO, ADRES, NUMER ZL., WYKONAWCA and the quantity in N."""
 
     worker_id, marker = SETTLEMENT_ROWS[source_row - 18]
     quantity = source_row - 17
     return (
         SETTLEMENT_CITY,
-        None,
+        SETTLEMENT_ADDRESS,
         None,
         None,
         None,
@@ -133,7 +134,7 @@ def _unchanged_inputs(root: Path, manifest: dict[str, object]) -> list[str]:
 
 
 _UNMAPPED = UNMAPPED_WORKER
-_ROW_CONTENT = (SETTLEMENT_CITY, *(marker for _, marker in (*SETTLEMENT_ROWS, UNMAPPED_ROW)), _UNMAPPED)
+_ROW_CONTENT = (SETTLEMENT_CITY, SETTLEMENT_ADDRESS, *(marker for _, marker in (*SETTLEMENT_ROWS, UNMAPPED_ROW)), _UNMAPPED)
 _UNMAPPED_WARNING = f"Nieznany identyfikator WYKONAWCA: {_UNMAPPED}. Nie ma go w konfiguracji wykonawców."
 _UNMAPPED_STOP = f"W Pliku zbiorczym jest WYKONAWCA spoza konfiguracji wykonawców: {_UNMAPPED}."
 _NAMING_UNMAPPED = (_UNMAPPED_WARNING, _UNMAPPED_STOP)

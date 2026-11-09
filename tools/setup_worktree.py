@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     # Na Windows `#!/usr/bin/env python3` w sh z Git for Windows trafia zwykle na alias Microsoft Store.
     if sys.platform != "win32":
         _gate_pushes()
-    _merge_generated()
+    _merge_generated(ROOT)
 
     imported = _imported_package_directory()
     expected = ROOT / "src" / "rozliczenia"
@@ -86,9 +86,9 @@ def _gate_pushes() -> None:
     print(f"OK: push sprawdza {HOOKS}/pre-push.")
 
 
-def _merge_generated() -> None:
-    repo.git(ROOT, "config", "merge.wygenerowane.name", "plik generowany: wersja bieżącego HEAD, potem npm run regen")
-    repo.git(ROOT, "config", "merge.wygenerowane.driver", "true")
+def _merge_generated(root: Path) -> None:
+    repo.git(root, "config", "merge.wygenerowane.name", "plik generowany: wersja bieżącego HEAD, potem npm run regen")
+    repo.git(root, "config", "merge.wygenerowane.driver", "true")
 
 
 def _venv_python() -> Path:

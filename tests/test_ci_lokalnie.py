@@ -88,7 +88,6 @@ def test_do_pierwszego_bledu_pomija_kroki_po_pierwszym_nieudanym(
     (tmp_path / "tools").mkdir()
     stub = tmp_path / "tools" / "praca_w_toku.py"
     stub.write_text("from pathlib import Path\nPath(__file__).with_suffix('.uruchomiona').touch()\n", encoding="utf-8")
-    monkeypatch.setattr(ci_lokalnie, "ROOT", tmp_path)
     second_ran = tmp_path / "drugi-krok"
     steps = [
         Step("pierwszy", "ruff", (sys.executable, "-c", "raise SystemExit(1)"), tmp_path),
@@ -96,7 +95,7 @@ def test_do_pierwszego_bledu_pomija_kroki_po_pierwszym_nieudanym(
     ]
     monkeypatch.setattr(ci_lokalnie, "_steps", lambda root: steps)
 
-    returned = ci_lokalnie.main(["--do-pierwszego-bledu"] if fail_fast else [])
+    returned = ci_lokalnie.main(["--do-pierwszego-bledu"] if fail_fast else [], root=tmp_path)
 
     assert returned == 1
     assert "CI LOKALNIE FAIL | pierwszy" in capsys.readouterr().out

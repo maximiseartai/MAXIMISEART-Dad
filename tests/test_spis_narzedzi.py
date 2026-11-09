@@ -366,7 +366,8 @@ def _library_reaches_tools(root: Path = ROOT) -> list[str]:
     Łapie dokładnie te postacie: ``import X``, ``import X.y`` i ``from X import …`` (także w funkcji i pod ``if``), gdzie
     ``X`` to nazwa pliku ``tools/*.py`` bez ``.py``, oraz ``sys.path.insert`` i ``sys.path.append`` (pełną nazwą) ze
     stałym napisem w argumencie, który kończy się na ``tools``. Import względny (``from . import x``) zostaje w
-    ``tools/lib``, więc go nie liczy. Nie widzi importu przez ``importlib``, ``__import__``, ``runpy`` i
+    ``tools/lib``, więc go nie liczy. Nie widzi importu narzędzia przez pakiet ``tools`` (``import tools.X``,
+    ``from tools import X``, ``from tools.X import …``), importu przez ``importlib``, ``__import__``, ``runpy`` i
     ``spec_from_file_location``, ścieżki składanej w czasie biegu bez takiego napisu ani ``sys.path`` pod inną nazwą;
     uruchomienie narzędzia jako procesu (``SCRIPT`` w ``tools/lib/benchmark``) nie jest importem i przechodzi."""
 
