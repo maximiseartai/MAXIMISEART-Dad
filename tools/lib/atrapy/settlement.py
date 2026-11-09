@@ -7,6 +7,7 @@ budowane w katalogu tymczasowym. Nie zawierają prawdziwych danych klientów.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
@@ -73,12 +74,17 @@ WORKER_TEMPLATE_COLUMN_WIDTHS: dict[int, float] = {
 }
 
 
-def write_template(path: Path, *, view: View = TEMPLATE_VIEW) -> None:
+def write_template(
+    path: Path, *, view: View | None = TEMPLATE_VIEW, column_widths: Mapping[int, float] = WORKER_TEMPLATE_COLUMN_WIDTHS
+) -> None:
+    """Wzorzec rozliczenia pracownika; bez ``view`` arkusz ma widok domyślny openpyxl."""
+
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
-    set_view(sheet, view)
-    for number, width in WORKER_TEMPLATE_COLUMN_WIDTHS.items():
+    if view is not None:
+        set_view(sheet, view)
+    for number, width in column_widths.items():
         sheet.column_dimensions[get_column_letter(number)].width = width
     sheet.cell(HEADER_ROW, WORKER_COLUMN).value = "WYKONAWCA"
     sheet.cell(HEADER_ROW, 1).fill = PatternFill(fill_type="solid", fgColor="00AA55")
@@ -91,44 +97,46 @@ def write_template(path: Path, *, view: View = TEMPLATE_VIEW) -> None:
     workbook.save(path)
 
 
+@dataclass(frozen=True)
+class SourceRow:
+    """Wiersz danych Pliku zbiorczego Przebiegu: MIASTO, ADRES (``None``: pusty), Wykonawca i NUMER ZL."""
+
+    city: str
+    address: str | None
+    worker: str
+    order_number: str
+
+
+SOURCE_ROWS = (
+    SourceRow("POZNAŃ", "syntetyczny adres 1", "adrian.testowy", "#1"),
+    SourceRow("POZNAŃ", "syntetyczny adres 2", "dariusz.fikcyjny2", "#2"),
+    SourceRow("POZNAŃ", "syntetyczny adres 3", "adrian.testowy", "#3"),
+)
+UNMAPPED_SOURCE_ROW = SourceRow("POZNAŃ", "syntetyczny adres 4", "andrzej.nieznany2", "#4")
+
+
 def write_source(path: Path, *, include_unmapped: bool = True) -> None:
+    write_source_rows(path, [*SOURCE_ROWS, UNMAPPED_SOURCE_ROW] if include_unmapped else SOURCE_ROWS)
+
+
+def write_source_rows(path: Path, rows: Sequence[SourceRow]) -> None:
+    """Plik zbiorczy z nagłówkiem WYKONAWCA i ``rows`` od pierwszego Wiersza danych; ilość w N to numer w kolejności."""
+
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
     sheet.cell(HEADER_ROW, WORKER_COLUMN).value = "WYKONAWCA"
-    rows = [
-        ("POZNAŃ", "syntetyczny adres 1", "adrian.testowy", "#1"),
-        ("POZNAŃ", "syntetyczny adres 2", "dariusz.fikcyjny2", "#2"),
-        ("POZNAŃ", "syntetyczny adres 3", "adrian.testowy", "#3"),
-    ]
-    if include_unmapped:
-        rows.append(("POZNAŃ", "syntetyczny adres 4", "andrzej.nieznany2", "#4"))
-    for row_number, (city, address, worker, order_number) in enumerate(rows, start=FIRST_DATA_ROW):
-        sheet.cell(row_number, CITY_COLUMN).value = city
-        sheet.cell(row_number, ADDRESS_COLUMN).value = address
-        sheet.cell(row_number, ORDER_COLUMN).value = order_number
-        sheet.cell(row_number, WORKER_COLUMN).value = worker
+    for row_number, row in enumerate(rows, start=FIRST_DATA_ROW):
+        sheet.cell(row_number, CITY_COLUMN).value = row.city
+        if row.address is not None:
+            sheet.cell(row_number, ADDRESS_COLUMN).value = row.address
+        sheet.cell(row_number, ORDER_COLUMN).value = row.order_number
+        sheet.cell(row_number, WORKER_COLUMN).value = row.worker
         sheet.cell(row_number, QUANTITY_COLUMNS.start).value = row_number - HEADER_ROW
     workbook.save(path)
 
 
 CellValue = str | int | float | datetime | date | time | timedelta | ArrayFormula | None
-
-# Nagłówki A17:K17 Wzorca pliku zbiorczego taty, pod którymi Przygotowanie zapisuje kolumny wejścia.
-COLLECTIVE_HEADERS = (
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "DATA",
-    "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-)
-
 
 # Wiersz danych ze znacznikiem w każdej kolumnie z treścią zlecenia (MIASTO, ADRES, UMOWA, URZĄDZENIA, CZYNNOŚCI,
 # NUMER ZL., NUMER UMOWY, CZYNNOŚCI ZREALIZOWANE, AQ:AT i ilość w V), w środę 09.09.2026 o 13:45 i z Wykonawcą
@@ -162,7 +170,7 @@ def write_quantity_source(path: Path, rows: Sequence[Mapping[str, CellValue]]) -
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
-    for number, header in enumerate(COLLECTIVE_HEADERS, start=1):
+    for number, header in enumerate(pliki_taty.COLLECTIVE_HEADERS, start=1):
         sheet.cell(HEADER_ROW, number).value = header
     for number, cells in enumerate(rows, start=FIRST_DATA_ROW):
         defaults: dict[str, CellValue] = {"A": "POZNAŃ", "B": f"syntetyczny adres {number}", "F": f"#{number}", "H": "adrian.testowy", "J": "tak"}

@@ -19,8 +19,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Border, Font, PatternFill, Protection, Side
 
 from atrapy.atrapa_efenix import AtrapaOrder
-from atrapy.pliki_taty import AMOUNT_COLUMN, COST_ROW, FIRST_DATA_ROW, HEADER_ROW
-from atrapy.settlement import COLLECTIVE_HEADERS, PERIOD, CellValue
+from atrapy.pliki_taty import AMOUNT_COLUMN, COLLECTIVE_HEADERS, COST_ROW, FIRST_DATA_ROW, HEADER_ROW
+from atrapy.settlement import PERIOD, CellValue
 from atrapy.settlement import SOURCE_NAME as SOURCE_NAME
 from atrapy.workbooks import active_worksheet, add_external_link_fixture
 

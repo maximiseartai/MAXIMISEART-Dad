@@ -77,7 +77,19 @@ from atrapy.scenariusz_centrum import (
     WORKER_IDS,
     WORKERS,
 )
-from atrapy.pliki_taty import CONFIG_DIRECTORY, REPORT_KEY_FILE, SETTINGS_FILE, WORKER_MAPPING_FILE
+from atrapy.pliki_taty import (
+    CONFIG_DIRECTORY,
+    FIRST_DATA_ROW,
+    HEADER_ROW,
+    QUANTITY_COLUMNS,
+    REPORT_KEY_FILE,
+    SETTINGS_FILE,
+    WORKER_MAPPING_FILE,
+    collective_file_name,
+    internal_settlement_name,
+    worker_settlement_name,
+    worker_settlements_name,
+)
 from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
 from rozliczenia.tool_files import WORKER_CONFIG, config_dir, settings_file
 
@@ -167,7 +179,7 @@ def _workbook(path: Path) -> None:
     workbook = Workbook()
     sheet = workbook.active
     assert sheet is not None
-    sheet["A18"] = ROW_MARKER
+    sheet[f"A{FIRST_DATA_ROW}"] = ROW_MARKER
     workbook.save(path)
 
 
@@ -179,7 +191,7 @@ def _template(path: Path, header_row: int, headers: tuple[str, ...], price_list:
     assert isinstance(sheet, Worksheet)
     for column, header in enumerate(headers, start=1):
         sheet.cell(header_row, column).value = header
-    for column, name in enumerate(price_list, start=14):  # N:AP
+    for column, name in enumerate(price_list, start=QUANTITY_COLUMNS.start):
         sheet.cell(header_row, column).value = name
     workbook.create_sheet("Stawki")["A1"] = ROW_MARKER
     workbook.save(path)
@@ -196,8 +208,8 @@ def _configuration(config: Path) -> dict[str, str]:
         encoding="utf-8",
     )
     _template(config / INTERNAL_TEMPLATE_NAME, 1, INTERNAL_HEADERS)
-    _template(config / COLLECTIVE_TEMPLATE_NAME, 17, COLLECTIVE_HEADERS, PRICE_LIST)
-    _template(config / WORKER_TEMPLATE_NAME, 17, COLLECTIVE_HEADERS)
+    _template(config / COLLECTIVE_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS, PRICE_LIST)
+    _template(config / WORKER_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS)
     return {
         "worker_config": str(worker_config),
         "internal_template": str(config / INTERNAL_TEMPLATE_NAME),
@@ -209,8 +221,8 @@ def _configuration(config: Path) -> dict[str, str]:
 def _period_files(periods: Path, token: str) -> Path:
     period_folder = periods / token
     period_folder.mkdir()
-    _workbook(period_folder / f"Rozliczenie wew. {token}.xlsx")
-    _workbook(period_folder / f"Rozliczenie {token} - zbiorcze.xlsx")
+    _workbook(period_folder / internal_settlement_name(token))
+    _workbook(period_folder / collective_file_name(token))
     return period_folder
 
 
@@ -219,9 +231,9 @@ def _collective_file(path: Path, workers: tuple[str, ...]) -> None:
     sheet = workbook.active
     assert isinstance(sheet, Worksheet)
     for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
-        sheet.cell(17, column).value = header
+        sheet.cell(HEADER_ROW, column).value = header
     worker_column = COLLECTIVE_HEADERS.index("WYKONAWCA") + 1
-    for row, worker in enumerate(workers, start=18):
+    for row, worker in enumerate(workers, start=FIRST_DATA_ROW):
         for column in range(1, len(COLLECTIVE_HEADERS) + 1):
             sheet.cell(row, column).value = f"{ROW_MARKER}-{row:03d}"
         sheet.cell(row, worker_column).value = worker
@@ -339,7 +351,7 @@ def _dad_layout(root: Path) -> dict[str, object]:
     (november / "27_02_11_2026").mkdir()
     return {
         "periods_directory": str(attachments),
-        "opened": str(prepared / f"Rozliczenie {LAST_COMPLETE} - zbiorcze.xlsx"),
+        "opened": str(prepared / collective_file_name(LAST_COMPLETE)),
         # token, Status okresu, last complete period
         "board": [
             ["27_02_11_2026", "no_period_files", False],
@@ -394,13 +406,13 @@ def _year_of_work(root: Path, metrics: dict[str, object]) -> dict[str, object]:
         month = f"{monday.month:02d}_{MONTHS[monday.month - 1]}_{monday.year}"
         folder = attachments / f"Rozliczenia {monday.year}" / month / "INEA" / token
         folder.mkdir(parents=True)
-        shutil.copyfile(sample, folder / f"Rozliczenie wew. {token}.xlsx")
-        shutil.copyfile(sample, folder / f"Rozliczenie {token} - zbiorcze.xlsx")
+        shutil.copyfile(sample, folder / internal_settlement_name(token))
+        shutil.copyfile(sample, folder / collective_file_name(token))
         if weeks_back > 0:
-            workers = folder / f"Rozliczenie pracowników {token}"
+            workers = folder / worker_settlements_name(token)
             workers.mkdir()
             for worker in YEAR_WORKERS:
-                shutil.copyfile(sample, workers / f"Rozliczenie {token} - {worker}.xlsx")
+                shutil.copyfile(sample, workers / worker_settlement_name(token, worker))
         week_preparation, week_settlement = _year_metric_runs(rnd, token, monday)
         preparation += week_preparation
         settlement += week_settlement if weeks_back > 0 else []
@@ -547,13 +559,14 @@ def dad_files(root: Path) -> dict[str, object]:
     periods = root / "INEA"
     periods.mkdir()
 
-    ready = _period_files(periods, "22_28_09_2026")
-    workers = ready / "Rozliczenie pracowników 22_28_09_2026"
+    ready_token = "22_28_09_2026"
+    ready = _period_files(periods, ready_token)
+    workers = ready / worker_settlements_name(ready_token)
     workers.mkdir()
     for worker in WORKERS:
-        _workbook(workers / f"Rozliczenie 22_28_09_2026 - {worker}.xlsx")
+        _workbook(workers / worker_settlement_name(ready_token, worker))
     needs_check = _period_files(periods, NEEDS_CHECK)
-    _collective_file(needs_check / f"Rozliczenie {NEEDS_CHECK} - zbiorcze.xlsx", ("wykonawca.a", UNKNOWN_WORKER))
+    _collective_file(needs_check / collective_file_name(NEEDS_CHECK), ("wykonawca.a", UNKNOWN_WORKER))
     (periods / "15_21_09_2026").mkdir()
     (periods / "Archiwum").mkdir()
 

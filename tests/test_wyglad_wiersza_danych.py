@@ -171,13 +171,13 @@ def test_zapisane_wiersze_danych_nie_maja_zapisanej_wysokosci_a_pozostale_wiersz
 def test_adres_ma_wypelnienie_adresu_tego_zlecenia_w_rejestrze_we_wszystkich_trzech_plikach(tmp_path: Path) -> None:
     chain = _chain(tmp_path)
 
-    # ADRES: kolumna C Rozliczenia wewnętrznego, B Pliku zbiorczego i Rozliczenia pracownika. W Rejestrze czerwony
-    # jest tylko ADRES zlecenia 2; skuteczne zlecenia 4 i 6 trafiają do wierszy 19 i 20 Pliku zbiorczego.
-    internal = {cell.coordinate: _fill(cell) for cell in _cells(chain.internal) if cell.column == 3}
+    # ADRES: kolumna B we wszystkich trzech plikach. W Rejestrze czerwony jest tylko ADRES zlecenia 2; skuteczne
+    # zlecenia 4 i 6 trafiają do wierszy 19 i 20 Pliku zbiorczego.
+    internal = {cell.coordinate: _fill(cell) for cell in _cells(chain.internal) if cell.column == 2}
     collective = {cell.coordinate: _fill(cell) for cell in _cells(chain.collective) if cell.column == 2}
     worker = {cell.coordinate: _fill(cell) for cell in _cells(chain.worker) if cell.column == 2}
 
-    assert internal == {"C2": RED, "C3": None, "C4": None, "C5": None}
+    assert internal == {"B2": RED, "B3": None, "B4": None, "B5": None}
     assert collective == {"B18": RED, "B19": None, "B20": None}
     assert worker == {"B18": RED}
 
@@ -185,10 +185,10 @@ def test_adres_ma_wypelnienie_adresu_tego_zlecenia_w_rejestrze_we_wszystkich_trz
 def test_format_liczby_jest_z_komorki_zrodlowej_a_data_pracownika_ma_format_pliku_zbiorczego(tmp_path: Path) -> None:
     chain = _chain(tmp_path)
 
-    # DATA: kolumna A Rozliczenia wewnętrznego, G Pliku zbiorczego i Rozliczenia pracownika; Wzorce mają tam
-    # LEFTOVER_DATE_FORMAT, a pozostałe komórki Rejestru format ogólny.
-    for written, date_column in ((chain.internal, 1), (chain.collective, 7), (chain.worker, 7)):
-        formats = {(cell.column == date_column, cell.number_format) for cell in _cells(written)}
+    # DATA: kolumna G we wszystkich trzech plikach; Wzorce mają tam LEFTOVER_DATE_FORMAT, a pozostałe komórki Rejestru
+    # format ogólny.
+    for written in (chain.internal, chain.collective, chain.worker):
+        formats = {(cell.column == 7, cell.number_format) for cell in _cells(written)}
         assert formats == {(True, REGISTER_DATE_FORMAT), (False, "General")}, written.path.name
     assert REGISTER_DATE_FORMAT != LEFTOVER_DATE_FORMAT
 

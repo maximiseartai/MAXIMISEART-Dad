@@ -17,7 +17,16 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from atrapy import pliki_taty
-from atrapy.pliki_taty import AMOUNT_COLUMN, FIRST_DATA_ROW, HEADER_ROW, PASTE_SHIFT, QUANTITY_COLUMNS, REGISTER_NAME
+from atrapy.pliki_taty import (
+    AMOUNT_COLUMN,
+    COLLECTIVE_HEADERS,
+    FIRST_DATA_ROW,
+    HEADER_ROW,
+    INTERNAL_HEADERS,
+    PASTE_SHIFT,
+    QUANTITY_COLUMNS,
+    REGISTER_NAME,
+)
 from atrapy.settlement import write_mapping
 from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, add_external_link_fixture, set_view
 
@@ -49,35 +58,6 @@ OLD_REGISTER_SPELLINGS = {"ADRES": "adres", "NUMER ZL.": "nr zlecenia", "NUMER U
 OLD_REGISTER_ONLY_VALUES: dict[str, object] = {"STATUS APLIKACJI": "zamknięte"}
 # Początki wartości kolumn nowego Rejestru, które nie trafiają do plików okresu.
 NOT_TRANSFERRED_PREFIXES: dict[str, str] = {"AKCJE": "akcja SYN-", "ZWROT": "zwrot SYN-", "UWAGI": "uwaga SYN-"}
-INTERNAL_TEMPLATE_HEADERS: tuple[str, ...] = (
-    "DATA",
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-    "zwrot",
-    "UWAGI",
-)
-# Nagłówki A:K w wierszu 17 Wzorca pliku zbiorczego; WYKONAWCA w H jak w Przebiegu rozliczeń.
-COLLECTIVE_TEMPLATE_HEADERS: tuple[str, ...] = (
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "DATA",
-    "WYKONAWCA",
-    "NUMER UMOWY/ZLECENIA ORANGE",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-)
 # Wiersze Wzorca pliku zbiorczego przygotowane zerami w N:AP.
 COLLECTIVE_TEMPLATE_ZERO_ROWS = 6
 # Formatowanie przygotowanych wierszy Wzorca pliku zbiorczego: A:K i kolumny ilości.
@@ -348,9 +328,9 @@ def write_internal_template(path: Path, *, row_style: bool = False, view: View =
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Arkusz1"
-    for column, header in enumerate(INTERNAL_TEMPLATE_HEADERS, start=1):
+    for column, header in enumerate(INTERNAL_HEADERS, start=1):
         sheet.cell(1, column).value = header
-    _apply_template_layout(sheet, 1, len(INTERNAL_TEMPLATE_HEADERS), row_style=row_style, view=view)
+    _apply_template_layout(sheet, 1, len(INTERNAL_HEADERS), row_style=row_style, view=view)
     workbook.save(path)
     return path
 
@@ -366,12 +346,12 @@ def write_collective_template(path: Path, *, row_style: bool = False, view: View
     sheet["O1"] = 30
     sheet["N16"] = "=SUM(N18:N40)"
     sheet.cell(HEADER_ROW, 1).fill = PatternFill(fill_type="solid", fgColor="00AA55")
-    for column, header in enumerate(COLLECTIVE_TEMPLATE_HEADERS, start=1):
+    for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
         sheet.cell(HEADER_ROW, column).value = header
     sheet.cell(HEADER_ROW, QUANTITY_COLUMNS.start).value = "instalacja"
     sheet.cell(HEADER_ROW, QUANTITY_COLUMNS[-1]).value = "demontaż"
-    _apply_template_layout(sheet, HEADER_ROW, len(COLLECTIVE_TEMPLATE_HEADERS), row_style=row_style, view=view)
-    styled_data_columns = 0 if row_style else len(COLLECTIVE_TEMPLATE_HEADERS)
+    _apply_template_layout(sheet, HEADER_ROW, len(COLLECTIVE_HEADERS), row_style=row_style, view=view)
+    styled_data_columns = 0 if row_style else len(COLLECTIVE_HEADERS)
     for row in range(FIRST_DATA_ROW, FIRST_DATA_ROW + COLLECTIVE_TEMPLATE_ZERO_ROWS):
         for column in range(1, styled_data_columns + 1):  # A:K, przygotowane we wzorcu
             cell = sheet.cell(row, column)

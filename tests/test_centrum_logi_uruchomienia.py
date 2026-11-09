@@ -100,7 +100,7 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
-from atrapy.pliki_taty import REGISTER_NAME
+from atrapy.pliki_taty import COLLECTIVE_HEADERS, REGISTER_NAME
 from atrapy.preparation import (
     OLD_REGISTER_HEADERS,
     PERIOD,
@@ -114,7 +114,7 @@ from atrapy.preparation import (
     write_register,
 )
 from tests.fixtures.run_cards import first_view, restored, unlisted
-from atrapy.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue, write_quantity_source
+from atrapy.settlement import MARKED, SOURCE_NAME, CellValue, write_quantity_source
 from tests.fixtures.tool_clone import ToolRepository, git_failing_on, tool_repository
 from atrapy.widok_skrzynki import shown
 from atrapy.workbooks import active_worksheet, rewrite_parts

@@ -101,22 +101,9 @@ TARGET_HEADERS = (
 )
 
 
-# Rejestr header of every column of the Rozliczenie wewnętrzne (A:K) and of the Plik zbiorczy (A:K); zwrot and UWAGI
-# of the Rozliczenie wewnętrzne stay empty.
-INTERNAL_SOURCES = (
-    "DATA GODZ. POCZ.",
-    "MIASTO",
-    "ADRES",
-    "UMOWA",
-    "URZĄDZENIA",
-    "CZYNNOŚCI",
-    "NUMER ZL.",
-    "WYKONAWCA",
-    "NUMER UMOWY",
-    "SKUTECZNE",
-    "CZYNNOŚCI ZREALIZOWANE",
-)
-COLLECTIVE_SOURCES = (
+# Rejestr header of every column A:K of the Rozliczenie wewnętrzne and of the Plik zbiorczy, in the order of Dad's
+# Wzorce; zwrot and UWAGI of the Rozliczenie wewnętrzne stay empty.
+SOURCES = (
     "MIASTO",
     "ADRES",
     "UMOWA",
@@ -134,15 +121,14 @@ COLLECTIVE_SOURCES = (
 def _internal_row(number: int) -> tuple[object, ...]:
     """Expected A:M of the Rozliczenie wewnętrzne for order ``number``."""
 
-    values = register_values(number, ORDERS[number])
-    return (*(values[header] for header in INTERNAL_SOURCES), None, None)
+    return (*_collective_row(number), None, None)
 
 
 def _collective_row(number: int) -> tuple[object, ...]:
     """Expected A:K of the Plik zbiorczy for order ``number`` in the Wzorzec header order."""
 
     values = register_values(number, ORDERS[number])
-    return tuple(values[header] for header in COLLECTIVE_SOURCES)
+    return tuple(values[header] for header in SOURCES)
 
 
 # Period orders in Rejestr order: 2, 3 (NIE), 4, 7 (after the next-period order), the late order 6, then 8 and 9;
@@ -227,7 +213,7 @@ def _check_internal_settlement(path: Path, errors: list[str]) -> None:
         sheet = _sheet(workbook.active)
         if _rows(sheet, 2, 2 + len(EXPECTED_INTERNAL_ROWS), 13) != [*EXPECTED_INTERNAL_ROWS, (None,) * 13]:
             errors.append("Rozliczenie wewnętrzne does not hold exactly the period orders in Rejestr order")
-        highlighted = sheet["C2"]
+        highlighted = sheet["B2"]
         if (
             highlighted.fill.fgColor.rgb != "FFFFFF00"
             or highlighted.font.color is None
@@ -236,7 +222,7 @@ def _check_internal_settlement(path: Path, errors: list[str]) -> None:
             or (highlighted.font.name, highlighted.font.sz) != ("Calibri", 10)
         ):
             errors.append("Rozliczenie wewnętrzne lost a Rejestr highlight or the Wzorzec font")
-        if not sheet["H4"].font.i or sheet["A2"].number_format != "dd.mm.yyyy hh:mm":
+        if not sheet["H4"].font.i or sheet["G2"].number_format != "dd.mm.yyyy hh:mm":
             errors.append("Rozliczenie wewnętrzne lost italic or the Rejestr date format")
         if sheet.auto_filter.ref != f"A1:M{1 + len(EXPECTED_INTERNAL_ROWS)}" or sheet.freeze_panes != "A2" or sheet.column_dimensions["A"].width != 10:
             errors.append("Rozliczenie wewnętrzne autofilter or Wzorzec layout is wrong")

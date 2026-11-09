@@ -68,8 +68,8 @@ from tests.fixtures.benchmark import (
     write_synthetic_templates,
     zip_part,
 )
+from atrapy.pliki_taty import COLLECTIVE_HEADERS, INTERNAL_HEADERS
 from atrapy.preparation import (
-    INTERNAL_TEMPLATE_HEADERS,
     register_order,
     write_collective_template,
     write_internal_template,
@@ -98,7 +98,7 @@ from atrapy.workbooks import (
 from tests.fixtures.data_rows import data_row, register_row
 from atrapy.intermax import like_excel
 from tests.fixtures.locked_file import lock_file
-from atrapy.settlement import COLLECTIVE_HEADERS, write_source, write_template
+from atrapy.settlement import write_source, write_template
 
 
 def not_a_zip(path: Path) -> None:
@@ -1052,7 +1052,7 @@ def test_naglowek_docelowy_pliku_zbiorczego_jest_szukany_tylko_w_a_k(tmp_path: P
 def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu_1(tmp_path: Path) -> None:
     template_path = tmp_path / tool_files.INTERNAL_TEMPLATE.name
     workbook = Workbook()
-    for column, header in enumerate(("LP", *INTERNAL_TEMPLATE_HEADERS), start=1):
+    for column, header in enumerate(("LP", *INTERNAL_HEADERS), start=1):
         active_worksheet(workbook).cell(1, column).value = header
     workbook.save(template_path)
     target = tmp_path / "Rozliczenie wewnętrzne.xlsx"
@@ -1062,7 +1062,7 @@ def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu
     sheet = active_worksheet(load_workbook(target))
     assert [sheet.cell(2, column).value for column in (1, 2, 12)] == [
         None,
-        "syntetyczne DATA",
+        "syntetyczne MIASTO",
         "syntetyczne CZYNNOŚCI ZREALIZOWANE",
     ]
 

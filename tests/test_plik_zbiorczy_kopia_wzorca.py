@@ -22,9 +22,9 @@ from datetime import datetime
 
 from openpyxl.utils import get_column_letter
 
+from atrapy.pliki_taty import INTERNAL_HEADERS
 from atrapy.preparation import (
     COLLECTIVE_TEMPLATE_ZERO_ROWS,
-    INTERNAL_TEMPLATE_HEADERS,
     PreparationFixture,
     link_register_order_numbers,
     make_dad_layout_fixture,
@@ -83,7 +83,7 @@ def _internal_header_after_k(tmp_path: Path) -> PreparationFixture:
     active_worksheet(workbook).insert_cols(1)
     active_worksheet(workbook)["A1"] = "LP"
     workbook.save(fixture.internal_template_path)
-    assert active_worksheet(load_workbook(fixture.internal_template_path))["L1"].value == INTERNAL_TEMPLATE_HEADERS[10]
+    assert active_worksheet(load_workbook(fixture.internal_template_path))["L1"].value == INTERNAL_HEADERS[10]
     return fixture
 
 
@@ -92,7 +92,7 @@ def _internal_header_repeated_after_k(tmp_path: Path) -> PreparationFixture:
 
     fixture = make_preparation_fixture(tmp_path)
     workbook = load_workbook(write_internal_template(fixture.internal_template_path))
-    active_worksheet(workbook)["N1"] = INTERNAL_TEMPLATE_HEADERS[1]
+    active_worksheet(workbook)["N1"] = INTERNAL_HEADERS[1]
     workbook.save(fixture.internal_template_path)
     return fixture
 

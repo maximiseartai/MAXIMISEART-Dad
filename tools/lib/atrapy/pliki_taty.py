@@ -24,6 +24,25 @@ LOOK_COLUMNS: Final = range(1, 13)  # A:L, Wygląd Wiersza danych
 QUANTITY_COLUMNS: Final = range(14, 43)  # N:AP, Ilości usług
 AMOUNT_COLUMN: Final = 47  # AU
 
+# register_columns: nagłówki A17:K17 Wzorca pliku zbiorczego taty, pod którymi Przygotowanie zapisuje kolumny wejścia;
+# Wzorzec rozliczenia pracownika ma je w B17:K17 (w A17 GODZINA).
+COLLECTIVE_HEADERS: Final = (
+    "MIASTO",
+    "ADRES",
+    "UMOWA",
+    "URZĄDZENIA",
+    "CZYNNOŚCI",
+    "NUMER ZL.",
+    "DATA",
+    "WYKONAWCA",
+    "NUMER UMOWY/ZLECENIA ORANGE",
+    "SKUTECZNE",
+    "CZYNNOŚCI ZREALIZOWANE",
+)
+# Nagłówki wiersza 1 Wzorca rozliczenia wewnętrznego taty: te same kolumny wejścia, potem zwrot i UWAGI, których
+# narzędzie nie wypełnia.
+INTERNAL_HEADERS: Final = (*COLLECTIVE_HEADERS, "zwrot", "UWAGI")
+
 # register_columns: nagłówki nowego Rejestru taty od B; AKCJE, ZWROT i UWAGI narzędzie pomija.
 REGISTER_HEADERS: Final = (
     "AKCJE",
