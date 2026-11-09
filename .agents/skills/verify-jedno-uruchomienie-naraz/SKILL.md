@@ -24,7 +24,7 @@ CI runs `explore_runs.py` whole (the `ci:` key) and `tests/test_jedno_uruchomien
 a change touches this skill, and `check_runs_mutations.py` in full CI on `main` and nightly on `main`
 (`mutacje-nocne.yml`). Run them locally only to reproduce a red CI step or the night's issue, or one
 `--scope` while you work on it. When a part modelled by hand (`model/definicje.json`) differs from its digest there,
-CI fails the step before it explores (`tools/ci/wykonaj_zadanie.py`, line `ROZJAZD MODELU Z KODEM | verify-jedno-uruchomienie-naraz: …`),
+the Mutation checks step fails before it explores (line `ROZJAZD MODELU Z KODEM | verify-jedno-uruchomienie-naraz: …`),
 and `explore_runs.py` run by hand prints the drift as an `UWAGA:` line above the verdict. `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`), and
 one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both. What stays with you on every change
 to the covered code is „Does the change touch it?”: read the diff since the digests against the

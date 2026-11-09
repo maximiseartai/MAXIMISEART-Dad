@@ -34,7 +34,7 @@ about 65 s, so with three parts the first runs the scopes of the Archiwum, the s
 the rest and the model. On Windows CI the same units took about 7 times as long before #911 (1163 s, 304 s, 505 s and
 355 s in run 41993938633 against 145 s, 40 s, 69 s and 57 s on the Mac). A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
-In CI the step does not start while covered code differs from its digests in `model/definicje.json`: `tools/ci/wykonaj_zadanie.py` fails it with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether a change to the model is right.
+In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether a change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_outbox_mutations.py` and
 `check_model_kolejki_mutations.py` run in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`)

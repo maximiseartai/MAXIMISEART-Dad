@@ -53,8 +53,8 @@ as `_create_file` returns it for the metrics record (`RouteCounts`).
 The parts modelled by hand are the defaults of `preparation_files.Disk` that the
 check's `period_disk()` replaces: `_create_file` of `preparation_files.py`, and
 `_make_staging` and `_remove_staging` of `staged_publication.py` (its `Disk`), whose digests are in
-`model/definicje.json`. When one of them changes, CI fails the step before it starts
-(`tools/ci/wykonaj_zadanie.py`, line `ROZJAZD MODELU Z KODEM | verify-publikacja-plikow-okresu: …`), and
+`model/definicje.json`. When one of them changes, the Mutation checks step fails before it starts
+(line `ROZJAZD MODELU Z KODEM | verify-publikacja-plikow-okresu: …`), and
 `explore_publication.py` run by hand prints the drift as an `UWAGA:` line above the verdict; `tools/szybko.py` fails
 on the same drift before you push (step `rozjazd modelu`).
 
