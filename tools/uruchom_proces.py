@@ -1,4 +1,4 @@
-"""Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix) z wynikiem JSON; użyj w E2E, benchmarku i skillach zamiast Centrum rozliczeń.
+"""Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix, report_entering) z wynikiem JSON; użyj w E2E, benchmarku i skillach.
 
 Skrypt dla maszyn: jedno Uruchomienie procesu, wynik jako JSON.
 
@@ -10,6 +10,8 @@ Użycie (z katalogu repozytorium):
         [--dry-run] [--config PLIK] [--internal-template PLIK] [--collective-template PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py intermax --register REJESTR [--copies FOLDER] [--metrics PLIK]
     python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--z-przekazaniem] [--metrics PLIK]
+    python tools/uruchom_proces.py report_entering --register REJESTR --maile FOLDER [--config PLIK]
+        [--adresy-wykonawcow PLIK] [--metrics PLIK]
 
 ``settlement`` to Przebieg rozliczeń, ``preparation`` Przygotowanie pliku
 zbiorczego, ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
@@ -18,7 +20,9 @@ listę zleceń pod ``--efenix-url`` w nowym Chromium Playwrighta bez okna i
 uzupełnia w nim wyceny zleceń (data wykonania, Wycena Emmetta, pola „Ilość”)
 bez tempa ludzkiego, bo to zawsze adres Atrapy efenix, nigdy efenix.pl (ADR 0024). Bez ``--z-przekazaniem`` biegnie w
 trybie bez Przekazania (gotowe zlecenia dostają Znacznik efenix), a z nim gotowe zlecenia przekazuje do akceptacji
-(ADR 0027). Uporządkowanie nie ma okresu ani
+(ADR 0027). ``report_entering`` to Wpisanie raportów (ADR 0028): maile czyta z plików ``.eml`` folderu ``--maile``,
+nigdy z Gmaila, a pamięć własnych wpisów ma tylko na czas Uruchomienia, więc okno dni zaczyna się dziś.
+Uporządkowanie nie ma okresu ani
 podglądu bez zapisu: zawsze
 zapisuje, a Kopia INTERMAX trafia do ``--copies`` (bez parametru folder Kopii
 narzędzia), z nazwą z zegara komputera. Proces prowadzi ten
@@ -63,6 +67,7 @@ from typing import Any, Final, NoReturn, assert_never
 from pydantic import BaseModel, ConfigDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from rozliczenia import intermax_copies
 from rozliczenia.centrum import run_view
@@ -78,6 +83,9 @@ from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, RunResult, StopEnding
 from rozliczenia.run_context import RunContext
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
+
+from atrapy.skrzynka_raportow import FolderInbox
 
 _EXIT_CODES = {"OK": 0, "WYMAGA_SPRAWDZENIA": 2, "BLAD_KRYTYCZNY": 1}
 
@@ -182,6 +190,10 @@ def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag:
             return _Flag("--copies", "Folder Kopii INTERMAX.", intermax_copies.default_directory())
         case "efenix_window":
             return _Flag("--efenix-url", "Adres listy zleceń efenix (w testach Atrapy efenix).", path=False)
+        case "worker_addresses":
+            return _Flag("--adresy-wykonawcow", "Plik adresów Wykonawców.", _CONFIGURATION.path(need))
+        case "worker_report_inbox":
+            return _Flag("--maile", "Folder maili .eml w miejscu Skrzynki raportów.")
         case _:
             assert_never(need)
 
@@ -233,7 +245,11 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> Start:
 
 def _parts(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> HostParts:
     # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
-    return HostParts(efenix=atrapa_opening(args.efenix_window)) if "efenix_window" in kind.needs else HostParts()
+    efenix = atrapa_opening(args.efenix_window) if "efenix_window" in kind.needs else None
+    # Maile z folderu .eml, nigdy z Gmaila, i pamięć własnych wpisów tylko na czas tego Uruchomienia.
+    inbox = "worker_report_inbox" in kind.needs
+    reports = ReportEnteringParts(FolderInbox(args.worker_report_inbox), ReportStateInMemory()) if inbox else None
+    return HostParts(efenix=efenix, reports=reports)
 
 
 def main(argv: list[str] | None = None) -> int:

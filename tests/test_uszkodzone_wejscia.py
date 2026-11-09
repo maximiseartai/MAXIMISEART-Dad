@@ -85,6 +85,7 @@ TOOL = ToolDirectory(Path())
 FILES: dict[str, tuple[str, str]] = {
     "ustawienia": (TOOL.settings.as_posix(), TEXT),
     "konfiguracja_wykonawcow": (TOOL.configuration.worker_config.as_posix(), TEXT),
+    "adresy_wykonawcow": (TOOL.configuration.worker_addresses.as_posix(), TEXT),
     "klucz_zgloszen": (TOOL.report_key.as_posix(), TEXT),
     "sprawy_taty": ((TOOL.config / DAD_CASES_FILE).as_posix(), TEXT),
     "wyslane_zgloszenia": ((TOOL.config / OLD_REPORTS_FILE).as_posix(), TEXT),
@@ -276,6 +277,9 @@ def _build(root: Path) -> None:
         "  adrian.testowy: Adrian Testowy\n  dariusz.fikcyjny2: Darek Fikcyjny\n  kamil.syntetyczny: Kamil Syntetyczny\n",
         encoding="utf-8",
     )
+    world.path("adresy_wykonawcow").write_text(
+        "schema_version: 1\nwykonawcy:\n  adrian.testowy: [adrian@przyklad.invalid]\n", encoding="utf-8"
+    )
     world.path("klucz_zgloszen").write_text("github_pat_SYNTETYCZNY123\n", encoding="utf-8")
     # „Wyślij” Uwagi poniżej przenosi sprawy z obu starych plików do pliku Spraw taty.
     world.path("wyslane_zgloszenia").write_text(json.dumps([SENT_REPORT], ensure_ascii=False) + "\n", encoding="utf-8")
@@ -345,15 +349,18 @@ def _route(operation: str, method: str, path: str, body: object = None) -> Entry
 
 
 def _start(client: TestClient, process: str, period: str, *, dry_run: bool) -> Any:
-    """Start Uruchomienia: proces z okresem przez ``startRun``, Uporządkowanie INTERMAX przez ``startIntermax``."""
+    """Start Uruchomienia: proces z okresem przez ``startRun``, Uporządkowanie INTERMAX przez ``startIntermax``, a
+    Wpisanie raportów przez ``startReportEntering``."""
 
     if process == "intermax":
         return client.post("/api/intermax/run")
+    if process == "report_entering":
+        return client.post("/api/report-entering/run")
     return client.post("/api/runs", json={"process": process, "period": period, "mode": RunMode.of(dry_run=dry_run)})
 
 
 def _start_operation(process: str) -> str:
-    return "startIntermax" if process == "intermax" else "startRun"
+    return {"intermax": "startIntermax", "report_entering": "startReportEntering"}.get(process, "startRun")
 
 
 def _process_run(process: str, period: str, *, saving: bool = False) -> Entry:
@@ -470,6 +477,7 @@ ENTRIES: dict[str, Entry] = {
     "getIntermaxSetup": _route("getIntermaxSetup", "GET", "/api/intermax"),
     "getIntermaxDays": _route("getIntermaxDays", "GET", "/api/intermax/days"),
     "getIntermaxCopies": _route("getIntermaxCopies", "GET", "/api/intermax/copies"),
+    "getReportEnteringSetup": _route("getReportEnteringSetup", "GET", "/api/report-entering"),
     "restoreIntermaxCopy": _route(
         "restoreIntermaxCopy", "POST", "/api/intermax/copies/restore", {"name": INTERMAX_COPY}
     ),
@@ -488,6 +496,7 @@ ENTRIES: dict[str, Entry] = {
     "podglad[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD),
     "zapis[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD, saving=True),
     "zapis[uporzadkowanie]": _process_run("intermax", "", saving=True),
+    "zapis[wpisanie]": _process_run("report_entering", "", saving=True),
     "diagnoza[przygotowanie]": _diagnosis("preparation", PERIOD, report=True),
     "diagnoza[przebieg]": _diagnosis("settlement", SETTLEMENT_PERIOD, report=False),
     "diagnoza[uporzadkowanie]": _diagnosis("intermax", "", report=True),

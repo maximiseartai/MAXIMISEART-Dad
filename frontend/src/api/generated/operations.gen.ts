@@ -2,8 +2,8 @@
 
 import type * as z from "zod"
 
-import type { ChangeThemeData, ChoosePeriodsDirectoryData, ChooseRegisterData, CloseCentrumData, DecideRunData, DiagnoseRunData, DraftDadNoteData, GetCollectiveFileVersionData, GetConfigurationData, GetCurrentRunData, GetDadNoteRunsData, GetHealthData, GetIntermaxCopiesData, GetIntermaxDaysData, GetIntermaxSetupData, GetKindTableData, GetMetricsData, GetNotificationsData, GetPeriodBoardData, GetQuantitiesToFillData, GetRunCardData, GetRunSetupData, GetSettingsData, GetToolUpdateData, GetWithoutQuantityData, MarkNotificationsReadData, OpenPeriodPathData, OpenRegisterData, OpenWorkerSettlementData, RecordViewTimingData, ReportRunData, ReportToolUpdateData, RestoreIntermaxCopyData, SendDadNoteData, StartIntermaxData, StartRunData, StartToolUpdateData, StreamRunEventsData } from "./types.gen"
-import { zChangeThemeResponse, zChoosePeriodsDirectoryResponse, zChooseRegisterResponse, zCloseCentrumResponse, zDecideRunResponse, zDiagnoseRunResponse, zDraftDadNoteResponse, zGetCollectiveFileVersionResponse, zGetConfigurationResponse, zGetCurrentRunResponse, zGetDadNoteRunsResponse, zGetHealthResponse, zGetIntermaxCopiesResponse, zGetIntermaxDaysResponse, zGetIntermaxSetupResponse, zGetKindTableResponse, zGetMetricsResponse, zGetNotificationsResponse, zGetPeriodBoardResponse, zGetQuantitiesToFillResponse, zGetRunCardResponse, zGetRunSetupResponse, zGetSettingsResponse, zGetToolUpdateResponse, zGetWithoutQuantityResponse, zMarkNotificationsReadResponse, zOpenPeriodPathResponse, zOpenRegisterResponse, zOpenWorkerSettlementResponse, zRecordViewTimingResponse, zReportRunResponse, zReportToolUpdateResponse, zRestoreIntermaxCopyResponse, zSendDadNoteResponse, zStartIntermaxResponse, zStartRunResponse, zStartToolUpdateResponse, zStreamRunEventsResponse } from "./zod.gen"
+import type { ChangeThemeData, ChoosePeriodsDirectoryData, ChooseRegisterData, CloseCentrumData, DecideRunData, DiagnoseRunData, DraftDadNoteData, GetCollectiveFileVersionData, GetConfigurationData, GetCurrentRunData, GetDadNoteRunsData, GetHealthData, GetIntermaxCopiesData, GetIntermaxDaysData, GetIntermaxSetupData, GetKindTableData, GetMetricsData, GetNotificationsData, GetPeriodBoardData, GetQuantitiesToFillData, GetReportEnteringSetupData, GetRunCardData, GetRunSetupData, GetSettingsData, GetToolUpdateData, GetWithoutQuantityData, MarkNotificationsReadData, OpenPeriodPathData, OpenRegisterData, OpenWorkerSettlementData, RecordViewTimingData, ReportRunData, ReportToolUpdateData, RestoreIntermaxCopyData, SendDadNoteData, StartIntermaxData, StartReportEnteringData, StartRunData, StartToolUpdateData, StreamRunEventsData } from "./types.gen"
+import { zChangeThemeResponse, zChoosePeriodsDirectoryResponse, zChooseRegisterResponse, zCloseCentrumResponse, zDecideRunResponse, zDiagnoseRunResponse, zDraftDadNoteResponse, zGetCollectiveFileVersionResponse, zGetConfigurationResponse, zGetCurrentRunResponse, zGetDadNoteRunsResponse, zGetHealthResponse, zGetIntermaxCopiesResponse, zGetIntermaxDaysResponse, zGetIntermaxSetupResponse, zGetKindTableResponse, zGetMetricsResponse, zGetNotificationsResponse, zGetPeriodBoardResponse, zGetQuantitiesToFillResponse, zGetReportEnteringSetupResponse, zGetRunCardResponse, zGetRunSetupResponse, zGetSettingsResponse, zGetToolUpdateResponse, zGetWithoutQuantityResponse, zMarkNotificationsReadResponse, zOpenPeriodPathResponse, zOpenRegisterResponse, zOpenWorkerSettlementResponse, zRecordViewTimingResponse, zReportRunResponse, zReportToolUpdateResponse, zRestoreIntermaxCopyResponse, zSendDadNoteResponse, zStartIntermaxResponse, zStartReportEnteringResponse, zStartRunResponse, zStartToolUpdateResponse, zStreamRunEventsResponse } from "./zod.gen"
 
 export type OperationData = {
   changeTheme: ChangeThemeData
@@ -26,6 +26,7 @@ export type OperationData = {
   getNotifications: GetNotificationsData
   getPeriodBoard: GetPeriodBoardData
   getQuantitiesToFill: GetQuantitiesToFillData
+  getReportEnteringSetup: GetReportEnteringSetupData
   getRunCard: GetRunCardData
   getRunSetup: GetRunSetupData
   getSettings: GetSettingsData
@@ -41,6 +42,7 @@ export type OperationData = {
   restoreIntermaxCopy: RestoreIntermaxCopyData
   sendDadNote: SendDadNoteData
   startIntermax: StartIntermaxData
+  startReportEntering: StartReportEnteringData
   startRun: StartRunData
   startToolUpdate: StartToolUpdateData
   streamRunEvents: StreamRunEventsData
@@ -67,6 +69,7 @@ export const operations = {
   getNotifications: { method: "GET", url: "/api/notifications", response: zGetNotificationsResponse },
   getPeriodBoard: { method: "GET", url: "/api/periods", response: zGetPeriodBoardResponse },
   getQuantitiesToFill: { method: "GET", url: "/api/periods/{token}/quantities-to-fill", response: zGetQuantitiesToFillResponse },
+  getReportEnteringSetup: { method: "GET", url: "/api/report-entering", response: zGetReportEnteringSetupResponse },
   getRunCard: { method: "GET", url: "/api/runs/{run_id}/card", response: zGetRunCardResponse },
   getRunSetup: { method: "GET", url: "/api/runs/setup", response: zGetRunSetupResponse },
   getSettings: { method: "GET", url: "/api/settings", response: zGetSettingsResponse },
@@ -82,6 +85,7 @@ export const operations = {
   restoreIntermaxCopy: { method: "POST", url: "/api/intermax/copies/restore", response: zRestoreIntermaxCopyResponse },
   sendDadNote: { method: "POST", url: "/api/dad-notes", response: zSendDadNoteResponse },
   startIntermax: { method: "POST", url: "/api/intermax/run", response: zStartIntermaxResponse },
+  startReportEntering: { method: "POST", url: "/api/report-entering/run", response: zStartReportEnteringResponse },
   startRun: { method: "POST", url: "/api/runs", response: zStartRunResponse },
   startToolUpdate: { method: "POST", url: "/api/tool-update", response: zStartToolUpdateResponse },
   streamRunEvents: { method: "GET", url: "/api/runs/events", response: zStreamRunEventsResponse },

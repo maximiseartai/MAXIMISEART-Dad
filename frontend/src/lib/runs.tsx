@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { decideRun, startIntermax, startRun, watchRunEvents, type RunView } from "@/api/centrum"
+import { decideRun, startIntermax, startReportEntering, startRun, watchRunEvents, type RunView } from "@/api/centrum"
 import type { DecisionAnswer, RunEvent, RunInfo, RunMode, RunRequest } from "@/api/generated"
 import { toast } from "@/components/ui/toast"
 import { useAction } from "@/lib/action"
@@ -8,11 +8,24 @@ import { useAction } from "@/lib/action"
 /** Okres i proces wybrane w innym miejscu (np. w Tablicy okresów) do formularza nowego Uruchomienia. */
 export type RunDraft = Pick<RunRequest, "process" | "period">
 
-/** Start Uruchomienia: proces z okresem albo Uporządkowanie INTERMAX, które bierze tylko Ustawienia taty. */
-export type RunStart = RunRequest | { process: "intermax" }
+/** Proces bez okresu, który bierze tylko Ustawienia taty i startuje własną operacją kontraktu. */
+type ProcessWithoutPeriod = "intermax" | "report_entering"
+
+/** Start Uruchomienia: proces z okresem albo proces bez okresu (Uporządkowanie INTERMAX, Wpisanie raportów). */
+export type RunStart = RunRequest | { process: ProcessWithoutPeriod }
 
 export function rerunOf(run: RunInfo, mode: RunMode): RunStart {
-  return run.process === "intermax" ? { process: "intermax" } : { process: run.process, period: run.period, mode }
+  switch (run.process) {
+    case "intermax":
+    case "report_entering":
+      return { process: run.process }
+    default:
+      return { process: run.process, period: run.period, mode }
+  }
+}
+
+function startWithoutPeriod(process: ProcessWithoutPeriod) {
+  return process === "intermax" ? startIntermax() : startReportEntering()
 }
 
 type RunsContextValue = {
@@ -123,7 +136,7 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
   // zapisu mógłby się nawet wykonać. Odmowa pierwszego kliknięcia (np. Uruchomienie z innej karty) pokazuje się jak dotąd.
   const starting = useAction(async (request: RunStart) => {
     const before = shownRun(latest.current)
-    const accepted = shownRun(await ("period" in request ? startRun(request) : startIntermax()))
+    const accepted = shownRun(await ("period" in request ? startRun(request) : startWithoutPeriod(request.process)))
 
     setDraft(null)
 
@@ -168,7 +181,7 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
       starting: starting.running !== null,
       start,
       rerun: (run) => {
-        if (run.pricing !== null && run.process !== "intermax") {
+        if (run.pricing !== null && run.process !== "intermax" && run.process !== "report_entering") {
           setDraft({ process: run.process, period: run.period })
 
           return

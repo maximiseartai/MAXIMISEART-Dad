@@ -32,15 +32,18 @@ from rozliczenia.settlement_process import PROCESS as SETTLEMENT
 from rozliczenia.telemetry import MetricsStore
 from rozliczenia.tool_files import (
     COLLECTIVE_TEMPLATE,
+    CONFIG_DIR,
     EFENIX_METRICS,
     INTERMAX_METRICS,
     INTERNAL_TEMPLATE,
     PREPARATION_METRICS,
+    REPORT_ENTERING_METRICS,
     SETTLEMENT_METRICS,
     TOOL_ROOT,
     WORKER_CONFIG,
     WORKER_TEMPLATE,
 )
+from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 
 from tests.fixtures.centrum import ToolDirectory
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
@@ -571,7 +574,7 @@ def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa_w_kolejnosci_katalogu_pr
     processes = completed.stdout.split("PROCES\n", 1)[1].split("\n\n", 1)[0].split()
     assert " ".join(processes) == (
         "preparation Przygotowanie pliku zbiorczego settlement Przebieg rozliczeń "
-        "efenix Wycena w efenix intermax Uporządkowanie INTERMAX"
+        "efenix Wycena w efenix intermax Uporządkowanie INTERMAX report_entering Wpisanie raportów"
     )
 
 
@@ -608,6 +611,13 @@ _FLAGS = {
         ("--z-przekazaniem", False, False, "Gotowe zlecenia przekaż do akceptacji (tryb z Przekazaniem)."),
         ("--metrics", False, EFENIX_METRICS, _METRICS),
     ],
+    "report_entering": [
+        ("--register", True, None, "Rejestr zleceń (INTERMAX)."),
+        ("--config", False, WORKER_CONFIG, "Konfiguracja wykonawców."),
+        ("--adresy-wykonawcow", False, CONFIG_DIR / WORKER_ADDRESSES_FILE, "Plik adresów Wykonawców."),
+        ("--maile", True, None, "Folder maili .eml w miejscu Skrzynki raportów."),
+        ("--metrics", False, REPORT_ENTERING_METRICS, _METRICS),
+    ],
 }
 
 
@@ -630,8 +640,10 @@ def _tool_copy(tmp_path: Path) -> Path:
     """Skrypt dla maszyn w kopii narzędzia pod ``tmp_path / "narzedzie"``, żeby domyślne pliki nie trafiały do repozytorium."""
 
     tool = tmp_path / "narzedzie"
-    shutil.copytree(SCRIPT.parents[1] / "src", tool / "src", ignore=shutil.ignore_patterns("__pycache__"))
-    (tool / "tools").mkdir()
+    ignored = shutil.ignore_patterns("__pycache__")
+    shutil.copytree(SCRIPT.parents[1] / "src", tool / "src", ignore=ignored)
+    # Skrzynka raportów z folderu .eml (``atrapy.skrzynka_raportow.FolderInbox``) leży w tools/lib klonu narzędzia.
+    shutil.copytree(SCRIPT.parent / "lib" / "atrapy", tool / "tools" / "lib" / "atrapy", ignore=ignored)
     return Path(shutil.copy(SCRIPT, tool / "tools"))
 
 

@@ -8,6 +8,7 @@ import type {
   GetIntermaxDaysResponse,
   GetIntermaxSetupResponse,
   GetNotificationsResponse,
+  GetReportEnteringSetupResponse,
   GetPeriodBoardResponse,
   GetQuantitiesToFillResponse,
   GetKindTableResponse,
@@ -47,7 +48,7 @@ export type Theme = ThemeChange["theme"]
 
 export type Process = RunInfo["process"]
 
-/** Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX ma własną kartę. */
+/** Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX i Wpisanie raportów mają własne karty. */
 export type PeriodProcess = RunRequest["process"]
 
 /** Tryb Wyceny w efenix (ADR 0027): bez Przekazania do akceptacji gotowych zleceń albo z nim. */
@@ -58,6 +59,9 @@ export type IntermaxSetup = GetIntermaxSetupResponse
 
 /** Dni na karcie „Uporządkuj INTERMAX”, każdy z tym, czy jest uporządkowany. */
 export type IntermaxDays = GetIntermaxDaysResponse
+
+/** Karta „Wpisz raporty z maili” poza okresami (ADR 0028). */
+export type ReportEnteringSetup = GetReportEnteringSetupResponse
 
 /** Wynik przywrócenia Kopii INTERMAX: przywrócona albo odmowa z Komunikatem (unia z kontraktu po `state`). */
 export type IntermaxRestore = Awaited<ReturnType<typeof restoreIntermaxCopy>>
@@ -162,6 +166,16 @@ export function getIntermaxDays() {
 /** Start Uporządkowania INTERMAX z Rejestrem zleceń z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */
 export function startIntermax() {
   return call("startIntermax")
+}
+
+/** Karta „Wpisz raporty z maili”: przypomnienie, czego brakuje w Ustawieniach taty, i ostatnie Wpisanie raportów. */
+export function getReportEnteringSetup() {
+  return call("getReportEnteringSetup")
+}
+
+/** Start Wpisania raportów z INTERMAX z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */
+export function startReportEntering() {
+  return call("startReportEntering")
 }
 
 /** Kopie INTERMAX w Konfiguracji, od najnowszej. */

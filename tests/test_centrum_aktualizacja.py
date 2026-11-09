@@ -489,6 +489,7 @@ def test_w_trakcie_aktualizacji_uruchomienie_druga_aktualizacja_i_zamkniecie_sa_
     assert centrum.client.post("/api/tool-update").status_code == 202
 
     run = centrum.start(dry_run=True)
+    entering = centrum.client.post("/api/report-entering/run")
     second = centrum.client.post("/api/tool-update")
     closing = centrum.client.post("/api/shutdown")
     hold.set()
@@ -499,6 +500,7 @@ def test_w_trakcie_aktualizacji_uruchomienie_druga_aktualizacja_i_zamkniecie_sa_
         409,
         {"message": "Trwa aktualizacja narzędzia. Poczekaj na jej wynik, potem uruchom proces."},
     )
+    assert (entering.status_code, entering.json()) == (run.status_code, run.json()), "Wpisanie raportów też czeka"
     assert (second.status_code, second.json()) == (
         409,
         {"message": "Trwa już aktualizacja narzędzia. Poczekaj na jej wynik."},

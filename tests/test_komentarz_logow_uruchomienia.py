@@ -1319,6 +1319,71 @@ FULL_LOGS: Final[dict[str, Any]] = {
         "omitted": 0,
     },
     "interruption": {"row": 20, "place": 3, "total": 4, "omitted": 1},
+    "report_entering": {
+        "today": "2026-11-09",
+        "rollout_before": "2026-11-02",
+        "rollout": "2026-11-02",
+        "skipped": 1,
+        "mails": [
+            {
+                "kind": "report",
+                "mail": "abcdefghijklmnop",
+                "arrived": "2026-11-09T17:00:00.100000Z",
+                "worker": "wykonawca.syntetyczny",
+                "day": "2026-11-09",
+                "entries": [{"number": "40000001", "verdict": "tak", "fault": "letter", "activities": "Czynność syntetyczna"}],
+            },
+            {
+                "kind": "unreadable",
+                "mail": "bcdefghijklmnopa",
+                "arrived": "2026-11-09T17:10:00.200000Z",
+                "worker": "wykonawca.syntetyczny",
+                "fault": "no_year",
+            },
+            {"kind": "stranger", "mail": "cdefghijklmnopab", "arrived": "2026-11-09T17:20:00.300000Z", "day": "2026-11-08"},
+        ],
+        "problems": [
+            {
+                "kind": "other_day",
+                "worker": "wykonawca.syntetyczny",
+                "day": "2026-11-09",
+                "number": "40000002",
+                "fault": "word",
+                "owner": "wykonawca.inny",
+                "order_days": ["2026-11-07"],
+            },
+            {
+                "kind": "unreadable_subject",
+                "mail": "bcdefghijklmnopa",
+                "worker": "wykonawca.syntetyczny",
+                "arrived": "2026-11-09T17:10:00.200000Z",
+                "fault": "not_a_day",
+            },
+            {"kind": "unknown_sender", "mail": "cdefghijklmnopab", "day": "2026-11-08"},
+            {
+                "kind": "manual_difference",
+                "cell": {
+                    "number": 40000003,
+                    "day": "2026-11-06",
+                    "worker": "wykonawca.syntetyczny",
+                    "column": "CZYNNOŚCI ZREALIZOWANE",
+                    "value": "Wpis syntetyczny",
+                },
+                "manual": "Wartość ręczna syntetyczna",
+            },
+        ],
+        "changes": [{"sheet": "Arkusz zleceń syntetyczny", "row": 31, "column": "SKUTECZNE", "value": "tak"}],
+        "memory_before": [
+            {
+                "number": 40000004,
+                "day": "2026-11-05",
+                "worker": "wykonawca.syntetyczny",
+                "column": "SKUTECZNE",
+                "value": "nie",
+            }
+        ],
+        "written": 1,
+    },
     "input_copy": [
         {
             "name": "Plik zbiorczy taty.xlsx",

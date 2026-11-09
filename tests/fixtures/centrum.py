@@ -61,10 +61,13 @@ from rozliczenia.intermax_copies import default_directory as default_intermax_co
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk
 from rozliczenia.run_context import TemplateCheck, check_on_disk
 from rozliczenia.workbook_files import ByteSource, file_bytes
+from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.worker_report_inbox import WorkerReportInbox
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, stop_after_test, threads_since
 from atrapy.skrzynka import Archives, BoxArchive, BoxIssue, Issues
+from atrapy.skrzynka_raportow import FakeInbox
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -405,12 +408,13 @@ class FakeOneDrive:
 
 @dataclass(frozen=True)
 class MetricsPaths:
-    """Pliki metryk czterech procesów w Centrum testu zamiast historii z katalogu narzędzia."""
+    """Pliki metryk procesów w Centrum testu zamiast historii z katalogu narzędzia."""
 
     preparation: Path
     settlement: Path
     efenix: Path
     intermax: Path
+    report_entering: Path
 
     def catalog(self) -> Catalog:
         return CATALOG.with_metrics(
@@ -419,6 +423,7 @@ class MetricsPaths:
                 "settlement": self.settlement,
                 "efenix": self.efenix,
                 "intermax": self.intermax,
+                "report_entering": self.report_entering,
             }
         )
 
@@ -470,6 +475,7 @@ class ToolDirectory:
     def configuration(self) -> ConfigurationFiles:
         return ConfigurationFiles(
             worker_config=self._moved(tool_files.WORKER_CONFIG),
+            worker_addresses=self.config / WORKER_ADDRESSES_FILE,
             internal_template=self._moved(tool_files.INTERNAL_TEMPLATE),
             collective_template=self._moved(tool_files.COLLECTIVE_TEMPLATE),
             worker_template=self._moved(tool_files.WORKER_TEMPLATE),
@@ -482,6 +488,7 @@ class ToolDirectory:
             settlement=self._moved(tool_files.SETTLEMENT_METRICS),
             efenix=self._moved(tool_files.EFENIX_METRICS),
             intermax=self._moved(tool_files.INTERMAX_METRICS),
+            report_entering=self._moved(tool_files.REPORT_ENTERING_METRICS),
         )
 
     @property
@@ -546,13 +553,15 @@ def centrum_app(
     intermax_copies: Path | None | Fake = FAKE,
     intermax_disk: Disk = LOCAL_DISK,
     window: EfenixWindow | None | Fake = FAKE,
+    worker_report_inbox: WorkerReportInbox | Fake = FAKE,
 ) -> FastAPI:
     """Jedyna aplikacja Centrum w testach: na plikach katalogu narzędzia ``tool`` i z podróbkami świata taty.
 
     Parametr pominięty daje podróbkę testu, nigdy domyślną wartość produkcyjną ``create_app``: komputer taty
     (``FakePlatform``), metryki i Konfiguracja w ``tool``, GitHub (``FakeGitHub``), OneDrive (``FakeOneDrive``),
     skrzynka Zgłoszeń z Logami Uruchomienia w tle, zegar, który stoi (``ManualClock``, a jego ``pause`` tylko
-    przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool`` i okno efenix pod martwym adresem.
+    przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool``, okno efenix pod martwym adresem i
+    Skrzynka raportów bez maili (``FakeInbox``); prawdziwego Gmaila test nie dostaje nigdy.
     ``None`` daje domyślną wartość produkcyjną tylko testowi, który ją sprawdza (np. Kopie INTERMAX w folderze
     narzędzia albo prawdziwy odczyt atrybutów OneDrive). Bez ``tool_update`` i ``guardian`` Aktualizacja narzędzia i
     opiekun ponownego startu wywracają test (``tests/conftest.py``).
@@ -586,6 +595,7 @@ def centrum_app(
         intermax_disk=intermax_disk,
         now=now,
         efenix_window=_or_fake(window, lambda: efenix_window(tool)),
+        worker_report_inbox=FakeInbox() if isinstance(worker_report_inbox, Fake) else worker_report_inbox,
     )
 
 

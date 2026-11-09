@@ -2,7 +2,7 @@
 
 Operacją procesu jest ``order_register()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty
 rozpoznania, planu dnia i zapisu na Komunikaty: Sprawdzanie (INTERMAX jest i nie jest otwarty w Excelu), Odczyt
-danych (``register_file.read`` i obszary wklejania z rozpoznania arkuszy zleceń, ``_paste_areas``), Planowanie
+danych (``register_file.read`` i obszary wklejania z rozpoznania arkuszy zleceń, ``paste_areas``), Planowanie
 (``raw_orders.recognize`` w każdym obszarze wklejania, odmowa dnia, który już jest Dniem uporządkowanym
 (``_ordered_days``), i ``raw_orders.plan_day`` z widokiem na dzisiejszy dzień z ``now``) i Zapisywanie (bajty dnia z
 ``intermax_file.ordered`` przez podmianę INTERMAX ``intermax_replace`` z Kopią INTERMAX). Nie ma podglądu bez zapisu
@@ -12,7 +12,7 @@ Obok procesu, tylko do odczytu: ``register_problem`` dla Diagnozy i ``register_d
 Uporządkowania INTERMAX w Centrum rozliczeń. Dzień uporządkowany Planowanie i karta rozpoznają jedną regułą
 (``_ordered_days``): w każdym obszarze wklejania, przeglądem z granicą 6 dni przed dzisiejszym dniem, a dla wklejonego
 dnia sprzed niej w tym dniu. Rozpoznanie arkuszy zleceń proces, Diagnoza i karta tłumaczą na Komunikaty w jednym
-miejscu (``_paste_areas``).
+miejscu (``paste_areas``).
 """
 
 from __future__ import annotations
@@ -49,7 +49,15 @@ from .workbook_parts import UnsupportedShape
 from .run_context import RunContext
 from .settlement_period import period_of
 
-__all__ = ["OrderingInputs", "OrderingSummary", "RegisterDay", "local_now", "order_register", "register_days"]
+__all__ = [
+    "OrderingInputs",
+    "OrderingSummary",
+    "RegisterDay",
+    "local_now",
+    "order_register",
+    "paste_areas",
+    "register_days",
+]
 
 # Karta Uporządkowania INTERMAX pokazuje dziś i 6 dni przed nim oraz późniejsze Dni uporządkowane; tyle dni wstecz
 # sięga też przegląd Dni uporządkowanych, więc obejmuje cały okres rozliczeniowy dzisiejszego dnia (7 dni).
@@ -139,7 +147,7 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
             register = register_file.read(register_path, files)
         except WorkbookError as error:
             raise StopError(messages.register_unusable(error, messages.ORDERING)) from error
-        areas = _paste_areas(register)
+        areas = paste_areas(register)
         if files.copy is not None:
             for area in areas:
                 area.copy_paste()
@@ -218,9 +226,9 @@ def _stops_unusable() -> Iterator[None]:
         raise StopError(messages.register_unusable(error, messages.ORDERING)) from error
 
 
-def _paste_areas(register: RegisterFile) -> tuple[PasteArea, ...]:
+def paste_areas(register: RegisterFile) -> tuple[PasteArea, ...]:
     """Obszary wklejania arkuszy zleceń Rejestru albo ``StopError`` z Komunikatem, którym Odczyt danych mówi, że ich
-    nie ma: jedno tłumaczenie rozpoznania dla procesu, Diagnozy i karty."""
+    nie ma: jedno tłumaczenie rozpoznania dla procesu, Diagnozy i karty, a także dla Odczytu danych Wpisania raportów."""
 
     match register.order_sheets:
         case DuplicatedHeaders(sheet, labels):
@@ -254,7 +262,7 @@ def register_problem(register_path: Path, files: DadFiles) -> Message | None:
     """
 
     try:
-        _paste_areas(register_file.read(register_path, files))
+        paste_areas(register_file.read(register_path, files))
     except WorkbookError as error:
         return messages.register_unusable(error, messages.ORDERING)
     except StopError as stop:
@@ -285,7 +293,7 @@ def register_days(register_path: Path, today: date, files: DadFiles) -> tuple[Re
         return messages.register_unusable(error, messages.ORDERING)
     since = _earliest_shown(today)
     try:
-        ordered = _ordered_days(register.path, _paste_areas(register), since)
+        ordered = _ordered_days(register.path, paste_areas(register), since)
     except StopError as stop:
         return stop.message
     shown = ordered | {since + timedelta(days=offset) for offset in range(_SHOWN_DAYS)}

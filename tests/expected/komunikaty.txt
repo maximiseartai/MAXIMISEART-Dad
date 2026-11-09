@@ -771,6 +771,36 @@ register_unusable #12 [PRZYWRACANIE_NIEDOSTEPNY_INTERMAX]
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
   Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i przywróć kopię jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
+register_unusable #13 [RAPORTY_BRAK_INTERMAX]
+  Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX, potem uruchom ponownie.
+
+register_unusable #14 [RAPORTY_INTERMAX_OTWARTY]
+  Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i uruchom ponownie.
+
+register_unusable #15 [RAPORTY_NIEDOSTEPNY_INTERMAX]
+  Co się stało: Nie można teraz odczytać INTERMAX. Plik może być zajęty przez inny program albo czekać na pobranie z OneDrive. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+register_unusable #16 [RAPORTY_NIECZYTELNY_INTERMAX]
+  Co się stało: Nie można odczytać INTERMAX jako skoroszytu Excela. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Otwórz INTERMAX w Excelu i sprawdź, czy się otwiera. Jeśli tak, zapisz go, zamknij i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+register_unusable #17 [RAPORTY_NIECZYTELNY_INTERMAX]
+  Co się stało: Nie można odczytać INTERMAX jako skoroszytu Excela. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Otwórz INTERMAX w Excelu i sprawdź, czy się otwiera. Jeśli tak, zapisz go, zamknij i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+register_unusable #18 [RAPORTY_NIECZYTELNY_INTERMAX]
+  Co się stało: Nie można odczytać INTERMAX jako skoroszytu Excela. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Otwórz INTERMAX w Excelu i sprawdź, czy się otwiera. Jeśli tak, zapisz go, zamknij i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
 register_missing #1 [BRAK_INTERMAX]
   Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
@@ -780,6 +810,11 @@ register_missing #2 [PRZYWRACANIE_BRAK_INTERMAX]
   Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
   Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX, potem przywróć kopię jeszcze raz.
+
+register_missing #3 [RAPORTY_BRAK_INTERMAX]
+  Co się stało: Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Wybierz w Ustawieniach właściwy plik INTERMAX, potem uruchom ponownie.
 
 no_order_sheet [BRAK_ARKUSZA_ZLECEN]
   Co się stało: W INTERMAX nie ma arkusza zleceń z nagłówkami od AKCJE do UWAGI w wierszu 1. INTERMAX nie został zmieniony.
@@ -905,6 +940,26 @@ refused #12 [PRZYWRACANIE_PRZED_CHWILA]
   Co się stało: Przed chwilą przywrócono już kopię INTERMAX, więc ta kopia nie została przywrócona.
   Gdzie: folder Narzedzie\Kopie INTERMAX
   Co zrobić: Odśwież Konfigurację i sprawdź listę kopii. Jeśli nadal trzeba, przywróć kopię jeszcze raz.
+
+refused #13 [RAPORTY_INTERMAX_OTWARTY]
+  Co się stało: INTERMAX jest otwarty w Excelu. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Zapisz i zamknij INTERMAX w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i uruchom ponownie.
+
+refused #14 [RAPORTY_INTERMAX_SYNCHRONIZOWANY]
+  Co się stało: OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację, potem uruchom ponownie.
+
+refused #15 [RAPORTY_ZAPIS_INTERMAX_NIEUDANY]
+  Co się stało: Nie udało się zapisać INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Sprawdź, czy na dysku jest wolne miejsce, potem uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+refused #16 [RAPORTY_ZAPIS_INTERMAX_NIEZGODNY]
+  Co się stało: Sprawdzenie zapisu wykazało różnicę, więc zapis został odrzucony. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 old_copies_kept #1 [STARE_KOPIE_INTERMAX]
   Co się stało: INTERMAX został uporządkowany, ale nie udało się usunąć starszych Kopii INTERMAX.
@@ -1202,6 +1257,103 @@ summary_not_shown [EFENIX_PODSUMOWANIE_NIEPOKAZANE]
   Co się stało: Wycena w efenix skończyła się, ale nie udało się pokazać wyniku.
   Gdzie: Wycena w efenix
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+=== Wpisanie raportów (src/rozliczenia/report_entering_messages.py) ===
+
+inbox_access_missing [RAPORTY_BRAK_DOSTEPU_DO_SKRZYNKI]
+  Co się stało: Skrzynka raportów nie jest jeszcze ustawiona, więc maili nie przeczytano. INTERMAX nie został zmieniony.
+  Gdzie: plik skrzynka-raportow.txt, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+inbox_access_unreadable [RAPORTY_NIECZYTELNY_DOSTEP_DO_SKRZYNKI]
+  Co się stało: Nie można odczytać ustawień skrzynki raportów, więc maili nie przeczytano. INTERMAX nie został zmieniony.
+  Gdzie: plik skrzynka-raportow.txt, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+password_rejected [RAPORTY_HASLO_ODRZUCONE]
+  Co się stało: Gmail nie przyjął hasła do skrzynki raportów, więc maili nie przeczytano. INTERMAX nie został zmieniony.
+  Gdzie: skrzynka raportów w Gmailu
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+inbox_unreachable [RAPORTY_SKRZYNKA_NIEDOSTEPNA]
+  Co się stało: Nie udało się połączyć ze skrzynką raportów. INTERMAX nie został zmieniony.
+  Gdzie: skrzynka raportów w Gmailu
+  Co zrobić: Sprawdź połączenie z internetem i spróbuj za chwilę: kliknij jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #1 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: nie ma pliku. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #2 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: system nie oddał pliku. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #3 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: plik nie jest zapisany w UTF-8. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #4 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: plik nie jest poprawnym YAML-em. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #5 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: plik nie ma schema_version: 1. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #6 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: plik nie ma Wykonawców. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #7 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: któryś Wykonawca nie ma listy adresów albo wpis nie jest adresem. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #8 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: ten sam adres stoi dwa razy. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+addresses_unusable #9 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
+  Co się stało: Nie można użyć adresów Wykonawców: któryś Wykonawca nie jest w konfiguracji wykonawców. INTERMAX nie został zmieniony.
+  Gdzie: plik adresy-wykonawcow.yaml, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+state_unreadable [RAPORTY_NIECZYTELNA_PAMIEC]
+  Co się stało: Nie można odczytać pamięci wpisanych raportów. INTERMAX nie został zmieniony.
+  Gdzie: plik wpisanie-raportow-stan.json, folder config
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+cells_rejected [RAPORTY_ZMIANY_ODRZUCONE]
+  Co się stało: Zapis odrzucił komórki, które narzędzie chciało wpisać. INTERMAX nie został zmieniony.
+  Gdzie: Wpisanie raportów
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+unsupported_shape [RAPORTY_NIEOBSLUGIWANY_UKLAD_INTERMAX]
+  Co się stało: Zlecenia mają układ, do którego narzędzie nie wpisuje raportów. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
+memory_not_saved [RAPORTY_PAMIEC_NIEZAPISANA]
+  Co się stało: Raporty zostały wpisane, ale nie udało się zapisać pamięci wpisanych raportów.
+  Gdzie: plik wpisanie-raportow-stan.json, folder config
+  Co zrobić: Nie musisz nic robić teraz: narzędzie zapisze ją przy następnym kliknięciu. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+unexpected_failure [BLAD_NIEOCZEKIWANY]
+  Co się stało: Wystąpił nieoczekiwany błąd. INTERMAX nie został zmieniony.
+  Gdzie: Wpisanie raportów
+  Co zrobić: Kliknij jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+summary_not_shown [BLAD_PODSUMOWANIA]
+  Co się stało: Raporty zostały wpisane, ale nie udało się pokazać podsumowania.
+  Gdzie: Wpisanie raportów
+  Co zrobić: Sprawdź INTERMAX i przekaż ten komunikat osobie utrzymującej narzędzie.
 
 === Plik taty (zdania wspólne) (src/rozliczenia/workbook_messages.py) ===
 

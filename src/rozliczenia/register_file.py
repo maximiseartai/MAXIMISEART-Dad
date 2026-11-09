@@ -31,7 +31,9 @@ dozwolone w obu położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wi
 faktach wklejenia (``input_copy.PasteFacts.traced_rows``). Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie
 ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty niesie części adresu ze słowami sklejonymi ``_``, których
 strażnik nie rozpozna jako wartości ``ADRES``. Nad wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego
-wiersza (``raw_orders.above_paste``), od których Planowanie liczy wiersz dnia, bez ich treści (#847).
+wiersza (``raw_orders.above_paste``), od których Planowanie liczy wiersz dnia, bez ich treści (#847). Wpisanie raportów
+daje Kopii zamiast wklejenia uporządkowane wiersze, które przeczytało (``PasteArea.copy_rows``), w tych samych kolumnach
+i bez zakazanych kolumn.
 
 Części paczki (``RegisterPackage``) czyta tylko pisarz dnia Uporządkowania (``intermax_file``), który przepisuje je
 w zapisie.
@@ -448,6 +450,24 @@ class PasteArea:
         )
         for facts in pasted:
             sheet.row(facts.number, _values(facts), self._positions(facts, facts is pasted[0], shifted))
+
+    def copy_rows(self, rows: Sequence[RowFacts]) -> None:
+        """Arkusz w Kopii wejścia uchwytu z nagłówkami i wierszami ``rows`` (uporządkowanymi wierszami, które
+        przeczytało Wpisanie raportów), w kolumnach od A do ``UWAGI`` bez zakazanych kolumn (ADR 0025)."""
+
+        columns = self.columns
+        copied = range(1, columns.last + 1)
+        header = self._header
+        sheet = self._file.sheet(
+            self.sheet,
+            1,
+            {column: header[column - 1] for column in copied if column <= len(header)},
+            self._forbidden_columns,
+            copied_columns=copied,
+            date_column=columns.date,
+        )
+        for facts in rows:
+            sheet.row(facts.number, _values(facts), self._positions(facts, False, None))
 
     def _positions(self, facts: RowFacts, first: bool, shifted: int | None) -> RowPositions:
         """Położenia wiersza ``facts`` (``raw_orders.row_positions``); ``first``: pierwszy wiersz bloku wklejenia,

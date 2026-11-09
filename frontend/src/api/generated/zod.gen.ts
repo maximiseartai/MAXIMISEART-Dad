@@ -29,6 +29,8 @@ export const zApiTiming = z.object({
         'startIntermax',
         'getIntermaxCopies',
         'restoreIntermaxCopy',
+        'getReportEnteringSetup',
+        'startReportEntering',
         'decideRun',
         'diagnoseRun',
         'reportRun',
@@ -606,7 +608,8 @@ export const zProcessFacts = z.object({
         'preparation',
         'settlement',
         'efenix',
-        'intermax'
+        'intermax',
+        'report_entering'
     ]),
     label: z.string()
 });
@@ -1008,7 +1011,8 @@ export const zModeStatistics = z.object({
         'preparation',
         'settlement',
         'efenix',
-        'intermax'
+        'intermax',
+        'report_entering'
     ]),
     mode: zRunMode,
     completed_runs: z.int(),
@@ -1061,7 +1065,8 @@ export const zProcessRun = z.object({
         'preparation',
         'settlement',
         'efenix',
-        'intermax'
+        'intermax',
+        'report_entering'
     ]),
     process_label: z.string(),
     started_at: z.iso.datetime(),
@@ -1117,7 +1122,8 @@ export const zRunInfo = z.object({
         'preparation',
         'settlement',
         'efenix',
-        'intermax'
+        'intermax',
+        'report_entering'
     ]),
     title: z.string(),
     period: z.string(),
@@ -1723,6 +1729,23 @@ export const zIntermaxSetup = z.object({
 });
 
 /**
+ * ReportEnteringSetup
+ *
+ * Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ *
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania raportów z jego
+ * Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ */
+export const zReportEnteringSetup = z.object({
+    title: z.string(),
+    reminder: z.string(),
+    blocker: z.string().nullable(),
+    open_in_excel: z.array(z.string()),
+    last: zRunRestored.nullable()
+});
+
+/**
  * RunIdle
  *
  * W tej pracy Centrum nie było jeszcze Uruchomienia procesu.
@@ -1896,7 +1919,8 @@ export const zProcessRunWritable = z.object({
         'preparation',
         'settlement',
         'efenix',
-        'intermax'
+        'intermax',
+        'report_entering'
     ]),
     process_label: z.string(),
     started_at: z.iso.datetime(),
@@ -2028,6 +2052,23 @@ export const zRunRestoredWritable = z.object({
  * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
 export const zIntermaxSetupWritable = z.object({
+    title: z.string(),
+    reminder: z.string(),
+    blocker: z.string().nullable(),
+    open_in_excel: z.array(z.string()),
+    last: zRunRestoredWritable.nullable()
+});
+
+/**
+ * ReportEnteringSetup
+ *
+ * Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ *
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania raportów z jego
+ * Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ */
+export const zReportEnteringSetupWritable = z.object({
     title: z.string(),
     reminder: z.string(),
     blocker: z.string().nullable(),
@@ -2294,6 +2335,23 @@ export const zOpenWorkerSettlementPath = z.object({
  * Successful Response
  */
 export const zOpenWorkerSettlementResponse = zOpened;
+
+/**
+ * Successful Response
+ */
+export const zGetReportEnteringSetupResponse = zReportEnteringSetup;
+
+/**
+ * Response Startreportentering
+ *
+ * Successful Response
+ */
+export const zStartReportEnteringResponse = z.discriminatedUnion('state', [
+    zRunIdle,
+    zRunRunning,
+    zRunAwaitingDecision,
+    zRunFinished
+]);
 
 export const zStartRunBody = zRunRequest;
 

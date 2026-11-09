@@ -99,7 +99,13 @@ MUTATIONS = (
     ),
     Mutation(
         "„Uruchom ponownie” Wyceny startuje ją od razu",
-        (Edit(BUILD, "rerun:e=>{e.pricing!==null&&e.process!==`intermax`?", "rerun:e=>{false?"),),
+        (
+            Edit(
+                BUILD,
+                "rerun:e=>{e.pricing!==null&&e.process!==`intermax`&&e.process!==`report_entering`?",
+                "rerun:e=>{false?",
+            ),
+        ),
         WYCENA,
         "Centrum powtarza Wycenę po Zatrzymaniu, choć tata wybiera tryb przy każdym starcie (ADR 0027)",
     ),

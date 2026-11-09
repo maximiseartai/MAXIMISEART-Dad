@@ -31,7 +31,15 @@ from typing import Final
 import pytest
 
 import rozliczenia
-from rozliczenia import efenix_messages, intermax_messages, settlement_messages, tool_files, workbook_messages, worker_config_messages
+from rozliczenia import (
+    efenix_messages,
+    intermax_messages,
+    report_entering_messages,
+    settlement_messages,
+    tool_files,
+    workbook_messages,
+    worker_config_messages,
+)
 from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
     diagnosis_messages,
@@ -63,6 +71,7 @@ from tests.fixtures.message_samples import (
     PREPARATION_SAMPLES,
     REFUSALS,
     REGISTER,
+    REPORT_ENTERING_SAMPLES,
     REPORT_SAMPLES,
     SETTLEMENT_SAMPLES,
     START_SAMPLES,
@@ -84,6 +93,7 @@ CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
     "Aktualizacja narzędzia": (update_messages, UPDATE_SAMPLES),
     "Uporządkowanie INTERMAX": (intermax_messages, INTERMAX_SAMPLES),
     "Wycena w efenix": (efenix_messages, EFENIX_SAMPLES),
+    "Wpisanie raportów": (report_entering_messages, REPORT_ENTERING_SAMPLES),
 }
 # Komunikat karty Urwanego Uruchomienia (common_contract.Message) nie ma kodu; tytuł procesu jest syntetyczny.
 # Zdania wspólne o pliku taty dostają od katalogu kod, plik, ogon i zwrot ponowienia; tu syntetyczne.

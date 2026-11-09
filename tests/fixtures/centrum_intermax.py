@@ -1,4 +1,5 @@
-"""Centrum rozliczeń w testach z syntetycznym INTERMAX we wskazanym Rejestrze zleceń i zegarem procesu.
+"""Centrum rozliczeń w testach z syntetycznym INTERMAX we wskazanym Rejestrze zleceń i zegarem procesu: Uporządkowanie
+INTERMAX i Wpisanie raportów z atrapą Skrzynki raportów (``entering_centrum``).
 
 ``restart()`` to nowa aplikacja Centrum na tych samych plikach i Ustawieniach taty, jak po zamknięciu i ponownym
 otwarciu Centrum na komputerze taty.
@@ -6,6 +7,7 @@ otwarciu Centrum na komputerze taty.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
@@ -14,6 +16,8 @@ from typing import Any
 
 from rozliczenia import intermax_copies
 from rozliczenia.centrum.outbox import QUEUE_THREAD
+from rozliczenia.worker_report_inbox import InboxAccess, InboxUnreachable, PasswordRejected, WorkerReportInbox
+from rozliczenia.worker_reports import MailId, ReportMail, SenderAddress
 
 from tests.fixtures.centrum import (
     CentrumClient,
@@ -25,6 +29,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import Engines, Surroundings
 from atrapy.intermax import Intermax, Layout
+from atrapy.skrzynka_raportow import FakeInbox
 from tests.fixtures.intermax_disk import FaultyDisk
 
 REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021-NOWA WERSJA.xlsx"
@@ -186,3 +191,104 @@ def open_in_excel(register: Path) -> Path:
     lock = register.with_name(f"~${register.name}")
     lock.write_bytes(b"\x00" * 165)
     return lock
+
+
+# --- Wpisanie raportów ------------------------------------------------------------------------------------------------
+
+# Poniedziałek, w który tata klika „Wpisz raporty z maili” po raz pierwszy: okno dni to sam ten dzień (ADR 0028).
+ENTERING_NOW = datetime(2026, 11, 9, 18, 30)
+ENTERING_PERIOD = "03_09_11_2026"
+WORKERS = {"jan.testowy": "Jan Testowy", "anna.kowalska": "Anna Kowalska"}
+SENDERS = {"jan.testowy": "jan@przyklad.invalid", "anna.kowalska": "anna@przyklad.invalid"}
+
+
+def report(sender: str, subject: str, text: str, *, at: datetime = ENTERING_NOW, message_id: str | None = None) -> ReportMail:
+    """Raport wykonawcy w Skrzynce raportów: mail od ``sender`` z tematem i treścią, przyjęty o ``at``."""
+
+    address = SenderAddress.of(sender)
+    assert address is not None, sender
+    return ReportMail(MailId.of(message_id or f"<{subject}-{text}@przyklad.invalid>"), address, subject, text, at.astimezone())
+
+
+@dataclass
+class EnteringCentrum:
+    """Centrum z syntetycznym INTERMAX, Konfiguracją wykonawców, plikiem adresów i atrapą Skrzynki raportów."""
+
+    client: CentrumClient
+    register: Path
+    layout: Layout
+    tmp_path: Path
+    inbox: WorkerReportInbox
+    engines: Engines
+
+    @property
+    def tool(self) -> ToolDirectory:
+        return ToolDirectory(self.tmp_path)
+
+    def setup(self) -> dict[str, Any]:
+        response = self.client.get("/api/report-entering")
+        assert response.status_code == 200, response.json()
+        return dict(response.json())
+
+    def start(self) -> Any:
+        return self.client.post("/api/report-entering/run")
+
+    def run_to_end(self) -> dict[str, Any]:
+        started = self.start()
+        assert started.status_code == 200, started.json()
+        return finished_view(self.client)
+
+    def run_logs(self) -> list[dict[str, Any]]:
+        return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(self.tool.run_logs.glob("*.json"))]
+
+
+def entering_centrum(
+    tmp_path: Path,
+    intermax: Intermax,
+    mails: Sequence[ReportMail] | PasswordRejected | InboxUnreachable = (),
+    *,
+    chosen: bool = True,
+    surroundings: Surroundings | None = None,
+    access: InboxAccess = "ready",
+    addresses: Mapping[str, Sequence[str]] | None = None,
+    inbox: WorkerReportInbox | None = None,
+) -> EnteringCentrum:
+    """Centrum po wskazaniu INTERMAX ``intermax`` z Wykonawcami ``WORKERS`` i adresami ``SENDERS`` (``addresses``: inna
+    treść pliku adresów); Skrzynka raportów to ``inbox``, a bez niej atrapa, która oddaje ``mails`` i ma plik dostępu w
+    stanie ``access``."""
+
+    register = tmp_path / "OneDrive" / REGISTER_NAME
+    register.parent.mkdir(parents=True)
+    layout = intermax.write(register)
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True, exist_ok=True)
+    tool.configuration.worker_config.write_text(
+        json.dumps({"schema_version": 1, "workers": WORKERS}, ensure_ascii=False), encoding="utf-8"
+    )
+    listed = {login: [address] for login, address in SENDERS.items()} if addresses is None else addresses
+    tool.configuration.worker_addresses.write_text(
+        json.dumps({"schema_version": 1, "wykonawcy": listed}, ensure_ascii=False), encoding="utf-8"
+    )
+    surroundings = surroundings or Surroundings()
+    engines = Engines(tool.metrics)
+    inbox = inbox or FakeInbox(mails, access)
+    onedrive = surroundings.onedrive
+    app = centrum_app(
+        tool,
+        platform=FakePlatform(chosen_files=[register]),
+        today=ENTERING_NOW.date(),
+        catalog=engines.catalog(),
+        tool_freshness=surroundings.tool_freshness(),
+        cloud_files=None if onedrive is None else onedrive.cloud_files(),
+        report_box=surroundings.report_box,
+        clock=surroundings.started_clock(),
+        pause=surroundings.clock.pause,
+        source=surroundings.source,
+        template_check=surroundings.template_check,
+        now=lambda: ENTERING_NOW.astimezone(),
+        worker_report_inbox=inbox,
+    )
+    client = CentrumClient(app)
+    if chosen:
+        assert client.post("/api/settings/register/choose").status_code == 200
+    return EnteringCentrum(client, register, layout, tmp_path, inbox, engines)

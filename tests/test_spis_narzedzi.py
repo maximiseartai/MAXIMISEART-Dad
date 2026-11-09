@@ -241,7 +241,7 @@ def test_podkomenda_na_kazdy_wpis_katalogu_procesow_to_kazdy_klucz_procesu(tmp_p
         encoding="utf-8",
     )
 
-    assert _required_subcommands(tool) == ["preparation", "settlement", "efenix", "intermax"]
+    assert _required_subcommands(tool) == ["preparation", "settlement", "efenix", "intermax", "report_entering"]
 
 
 def test_podkomendy_sa_obowiazkowe_tylko_z_required_true(tmp_path: Path) -> None:
