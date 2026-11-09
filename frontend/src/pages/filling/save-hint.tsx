@@ -1,7 +1,7 @@
 import type { CollectiveFileRead } from "@/api/centrum"
 import { hourMinute } from "@/lib/format"
 
-/** Wskazówka pod treścią stron Uzupełnienia; po nieudanym odczycie najpierw godzina pokazanego stanu. */
+/** Wskazówka pod treścią stron Uzupełnienia. */
 export function SaveHint({ read }: { read: CollectiveFileRead }) {
   return (
     <p className="px-1 text-sm text-muted-foreground">

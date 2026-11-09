@@ -7,8 +7,7 @@ import { isStopped, phaseDuration, stopWord } from "@/pages/metrics/process-runs
 // Cztery sloty palety wykresu sprawdzone w prototypie (#95), po jednym na etap.
 const PHASE_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
 
-// Układ w pikselach: pole słupków, pod nim podpisy dat. Szerokość dzielą słupki po równo (w procentach),
-// więc wykres nie mierzy kontenera i rysuje się od pierwszego renderu.
+// Układ w pikselach: pole słupków, pod nim podpisy dat.
 const PLOT_TOP = 8
 
 const PLOT_HEIGHT = 238
@@ -231,7 +230,6 @@ function BarDetails({
 
 type Segment = { phase: string; top: number; bottom: number; rounded: boolean }
 
-/** Odcinki słupka od dołu, tylko etapy, które trwały; górny ma zaokrąglone górne rogi. */
 function segmentsOf(run: ProcessRun, shown: ReadonlyArray<string>, yOf: (durationMs: number) => number): Segment[] {
   const lasting = shown.filter((phase) => phaseDuration(run, phase) > 0)
   let below = 0
@@ -260,7 +258,6 @@ function axisTicks(maxMs: number): number[] {
   }
 }
 
-/** Słupek, na który przechodzi fokus po klawiszu strzałki, Home albo End; poza wykres nie wychodzi. */
 function movedTo(key: string, index: number, last: number): number | undefined {
   switch (key) {
     case "ArrowLeft":

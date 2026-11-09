@@ -31,10 +31,7 @@ import { useRuns, type RunDraft } from "@/lib/runs"
 import { useSettings } from "@/lib/settings"
 import { ConfirmRunDialog } from "@/pages/runs/run-dialogs"
 
-/**
- * Okres w wyborze: dni od wtorku do poniedziałku i Status okresu, a ciszej token, którym nazywa się Folder okresu.
- * Okres zawsze zaczyna się we wtorek i kończy w poniedziałek, więc dni tygodnia są stałe.
- */
+/** Okres zawsze zaczyna się we wtorek i kończy w poniedziałek, więc dni tygodnia są stałe. */
 function PeriodLabel({ choice }: { choice: PeriodChoice }) {
   return (
     <>

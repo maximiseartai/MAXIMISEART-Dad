@@ -154,22 +154,21 @@
 }
 
 @layer components {
-  /* Element, który pojawia się po zmianie stanu (komunikat, baner): przezroczystość i 6 px w górę,
-     200 ms ease-out. Przejście, nie keyframes, więc da się je przerwać. */
+  /* Element, który pojawia się po zmianie stanu (komunikat, baner). Przejście, nie keyframes, więc da się je
+     przerwać. */
   .wejscie {
     transition:
       opacity 200ms var(--ease-out),
       translate 200ms var(--ease-out);
   }
-  /* Ikona stanu po zmianie: przezroczystość i skala od 0,9, 200 ms ease-out. Skala siedzi na obudowie ikony,
-     więc nie walczy z obrotem spinnera. Każdy stan to nowy element (`key`), więc druga zmiana w ciągu 200 ms
-     zaczyna wejście od nowa. */
+  /* Ikona stanu po zmianie. Skala siedzi na obudowie ikony, więc nie walczy z obrotem spinnera. Każdy stan to nowy
+     element (`key`), więc druga zmiana w ciągu 200 ms zaczyna wejście od nowa. */
   .podmiana {
     transition:
       opacity 200ms var(--ease-out),
       scale 200ms var(--ease-out);
   }
-  /* Treść po szkielecie: sama przezroczystość, 150 ms. */
+  /* Treść po szkielecie. */
   .pojawienie {
     transition: opacity 150ms var(--ease-out);
   }

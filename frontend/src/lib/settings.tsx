@@ -19,7 +19,6 @@ export type PickedPath = { [Key in keyof Settings]: Settings[Key] extends PathSe
 
 type SettingsContextValue = {
   settings: Resource<Settings>
-  /** Odczyt Ustawień taty od nowa, np. po „Spróbuj ponownie”. */
   reload: () => Promise<void>
   theme: Theme
   /** Plik, którego okno wyboru jest teraz otwarte; dopóki jest, żaden przycisk nie otwiera drugiego. */
@@ -52,10 +51,7 @@ function applyTheme(theme: Theme) {
   requestAnimationFrame(() => requestAnimationFrame(() => freeze.remove()))
 }
 
-/**
- * Tożsamość plików taty, z których serwer czyta strony: folder okresów i Rejestr zleceń, bez motywu.
- * Inna tożsamość to nowy odczyt stron; zmiana motywu niczego nie czyta ponownie.
- */
+/** Tożsamość plików taty, z których serwer czyta strony; inna tożsamość to nowy odczyt stron (`DadFilesVersion`). */
 function files(settings: Resource<Settings>): string | null {
   return settings.state === "ready" ? JSON.stringify([settings.data.periods_directory, settings.data.order_register]) : null
 }

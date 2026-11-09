@@ -46,11 +46,7 @@ const LOOKS: Record<MessageKind, Look> = {
   notice: { label: "Komunikat", icon: <InfoIcon className="text-muted-foreground!" />, variant: "default" },
 }
 
-/**
- * Komunikat w trzech częściach jako baner: „Co się stało” jest tytułem,
- * „Gdzie” i „Co zrobić” to dwa wiersze z ikonami. Opis jest spokojny, nie cały czerwony. Rodzaje różnią się
- * ikoną i kolorem (`LOOKS`); `action` to akcja przy banerze.
- */
+/** Komunikat w trzech częściach jako baner; opis jest spokojny, nie cały czerwony. */
 export function ThreePartMessage({
   message,
   kind,
@@ -73,10 +69,7 @@ export function ThreePartMessage({
   )
 }
 
-/**
- * Zatrzymanie na karcie wyniku: tytuł z serwera, potem krótkie zdania o plikach taty (`notes`), trzy części
- * Komunikatu i akcje w jednym rzędzie pod nimi, bo przy pliku do otwarcia są dwie.
- */
+/** Zatrzymanie na karcie wyniku; akcje stoją w jednym rzędzie pod Komunikatem, bo przy pliku do otwarcia są dwie. */
 export function StopMessage({
   message,
   kind,
@@ -118,7 +111,6 @@ function Banner({ kind, children }: { kind: MessageKind; children: React.ReactNo
   )
 }
 
-/** „Gdzie” i „Co zrobić” Komunikatu: dwa wiersze z ikonami pod tym, co się stało. */
 export function WhereAndAction({ message }: { message: Message }) {
   return (
     <>

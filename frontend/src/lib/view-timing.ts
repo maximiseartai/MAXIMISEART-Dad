@@ -15,7 +15,6 @@ window.addEventListener("hashchange", () => {
   viewStart = { kind: "navigation", at: performance.now() }
 })
 
-// Gotowa treść: nagłówek bieżącej strony, a nigdzie szkieletu ani odczytu w toku.
 const LOADING = "[data-slot=skeleton], [aria-busy=true]"
 
 /**
@@ -53,9 +52,7 @@ function visibleSkeleton() {
   document.addEventListener("animationstart", reveal, true)
 
   return {
-    /** Po zmianie DOM: szkielet, którego już nie ma, przestaje być widoczny. */
     track,
-    /** Milisekundy widocznego szkieletu do `now`. */
     ms: (now: number) => Math.round(total + (since === null ? 0 : now - since)),
     stop: () => document.removeEventListener("animationstart", reveal, true),
   }

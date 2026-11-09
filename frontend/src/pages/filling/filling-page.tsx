@@ -123,10 +123,6 @@ export function FillingSummary({ token, found }: { token: string; found: Quantit
   )
 }
 
-/**
- * Rodzaj z listą: licznik „x z y” i numery wierszy; zrobiony rodzaj (także bez wierszy) jest spokojnie odhaczony,
- * a po Przebiegu rozliczeń niezrobiony jest szary „bez ilości”.
- */
 function KindSection({ token, kind, settled }: { token: string; kind: KindToFill; settled: boolean }) {
   const { title, hint } = KINDS[kind.kind]
   const doneRows = kind.rows.filter((row) => row.state === "done").length
@@ -141,7 +137,6 @@ function KindSection({ token, kind, settled }: { token: string; kind: KindToFill
         <CircleDashedIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-label="Do uzupełnienia" />
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {/* Rodzaj z wierszami prowadzi do swojej tabeli; bez wierszy nie ma czego otwierać. */}
         <a
           href={kind.rows.length === 0 ? undefined : href("uzupelnienie", token, kind.kind)}
           className="-mx-2 -my-1 flex items-center gap-3 rounded-md px-2 py-1 transition-[background-color,scale] duration-150 ease-out [&[href]]:active:scale-[0.99] [&[href]]:active:bg-muted"

@@ -12,7 +12,6 @@ type NotificationsValue = {
    * po niej przynosi to, co odpowiedź skrzynki mogła zmienić w międzyczasie (zastąpiony odczyt przepada).
    */
   markRead: (ids: ReadonlyArray<string>) => void
-  /** Odczyt od nowa, np. po „Spróbuj ponownie”. */
   reload: () => Promise<void>
 }
 
@@ -21,8 +20,7 @@ const NotificationsContext = React.createContext<NotificationsValue | null>(null
 /**
  * Powiadomienia wspólne dla dzwonka w nagłówku i widoku Powiadomienia. Karta czyta je przy starcie, po powrocie
  * do karty, przy każdej zmianie strony i po końcu Uruchomienia procesu widzianego na żywo (Powiadomienie o Wycenie
- * w efenix); serwer sam decyduje, kiedy zapytać Skrzynkę Zgłoszeń (najwyżej raz na 10 minut). `page` to identyfikator
- * bieżącej strony.
+ * w efenix); serwer sam decyduje, kiedy zapytać Skrzynkę Zgłoszeń (najwyżej raz na 10 minut).
  */
 export function NotificationsProvider({ page, children }: { page: string; children: React.ReactNode }) {
   const { resource, reload, replace } = useResource(getNotifications, [], { fromDadFiles: false })

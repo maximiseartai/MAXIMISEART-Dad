@@ -52,7 +52,6 @@ async function shouldRead(token: string, watch: Watch): Promise<boolean> {
       try {
         return (await getCollectiveFileVersion(token)).version !== watch.version
       } catch {
-        // Bez odpowiedzi nie ma czego porównać; zapyta znów za POLL_MS.
         return false
       }
 

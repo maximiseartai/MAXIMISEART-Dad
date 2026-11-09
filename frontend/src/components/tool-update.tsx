@@ -43,10 +43,9 @@ export function ToolUpdateButton({ primary, size }: { primary: boolean; size?: "
 }
 
 /**
- * Stan Aktualizacji narzędzia przy przycisku: krok w trakcie, Komunikat porażki z „Wyślij do Maksa”, „Masz
- * najnowszą wersję.” albo nieudany odczyt stanu. Każde miejsce z przyciskiem ma ten stan, więc to on odczytuje aktualizację przy wejściu na
- * stronę. Udana aktualizacja kończy się przeładowaniem karty i powiadomieniem, a porażka ponownego startu
- * Komunikatem pod tytułem strony (`ToolUpdateAfterRestart`), więc tu ich nie ma.
+ * Stan Aktualizacji narzędzia przy przycisku. Każde miejsce z przyciskiem ma ten stan, więc to on odczytuje
+ * aktualizację przy wejściu na stronę. Udana aktualizacja kończy się przeładowaniem karty i powiadomieniem, a porażka
+ * ponownego startu Komunikatem pod tytułem strony (`ToolUpdateAfterRestart`), więc tu ich nie ma.
  */
 export function ToolUpdateStatus() {
   const { update, readFailure, restarted, read } = useToolUpdate()

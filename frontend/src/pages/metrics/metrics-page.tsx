@@ -31,7 +31,6 @@ export function MetricsPage() {
   const [mode, setMode] = React.useState<Mode>("RUN")
   const hasRuns = metrics.state === "ready" && metrics.data.runs.length > 0
   const processes = metrics.state === "ready" ? processOptions(metrics.data.processes) : []
-  // Dopóki tata nie wybierze, filtr stoi na pierwszym procesie z serwera.
   const process = chosen ?? processes[0]?.value ?? null
   const entrance = useContentEntrance(metrics.state === "loading")
 

@@ -16,7 +16,7 @@ import {
 import { dateTime, seconds } from "@/lib/format"
 import { isStopped, measuredPhases, phaseDuration } from "@/pages/metrics/process-runs"
 
-/** Przerwane Uruchomienia procesu obu procesów z czasami etapów zmierzonymi do przerwania. */
+/** Przerwane Uruchomienia procesu wszystkich procesów z czasami etapów zmierzonymi do przerwania. */
 export function InterruptedRunsCard({
   phases,
   runs,

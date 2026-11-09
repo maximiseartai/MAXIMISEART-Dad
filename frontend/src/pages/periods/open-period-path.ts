@@ -8,9 +8,9 @@ import {
 import { toast } from "@/components/ui/toast"
 import { showFailure } from "@/lib/action"
 
-// Tata klika dwa razy z przyzwyczajenia i stuka dwa razy w ekran dotykowy, a Excel i Eksplorator otwierają się
-// dopiero po chwili, także po odpowiedzi serwera: powtórne kliknięcie tego samego pliku do tego czasu, z dowolnego
-// przycisku, to ta sama prośba, nie drugie okno. Dlatego nie `useAction`, które trzyma jeden przycisk do odpowiedzi.
+// Excel i Eksplorator otwierają się dopiero po chwili, także po odpowiedzi serwera: powtórne kliknięcie tego samego
+// pliku do tego czasu, z dowolnego przycisku, to ta sama prośba, nie drugie okno. Dlatego nie `useAction`, które
+// trzyma jeden przycisk do odpowiedzi.
 const REPEAT_IGNORED_MS = 1500
 
 /** Plik albo folder okresu z jego rodzaju albo Rozliczenie pracownika jednego Wykonawcy: treść żądania do serwera. */

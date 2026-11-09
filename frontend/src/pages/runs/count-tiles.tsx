@@ -51,11 +51,6 @@ function CountLabel({ label }: { label: string }) {
   )
 }
 
-/**
- * Pasek kilku liczb z serwera w jednej karcie z separatorami, w równych kolumnach; czas w sekundach. Etykieta stoi
- * w jednym wierszu, bo liczba nie jest węższa niż jej treść (`min-w-fit`), a gdy kolumny się nie mieszczą (np. w panelu
- * z boku), liczby przechodzą do następnego wiersza paska. Ujemny margines kładzie lewą i górną kreskę liczby na kresce sąsiada, a brzeg paska ucina te przy krawędzi.
- */
 export function NumberStrip({ figures, name }: { figures: ReadonlyArray<Figure>; name?: string }) {
   return (
     <dl className="flex flex-wrap overflow-hidden rounded-lg border" aria-label={name}>

@@ -5,10 +5,8 @@ import { getHealth, getToolUpdate, startToolUpdate, type ToolUpdate } from "@/ap
 import { toast } from "@/components/ui/toast"
 import { useAction } from "@/lib/action"
 
-// Krok trwającej aktualizacji karta czyta co pół sekundy; poza aktualizacją nie pyta wcale.
 const POLL_MS = 500
 
-// Znacznik w karcie przeglądarki: tę stronę przeładowała sama karta, bo wystartowało nowe Centrum.
 const RELOADED_AFTER_UPDATE = "centrum-po-aktualizacji"
 
 type ToolUpdateContextValue = {
@@ -20,7 +18,7 @@ type ToolUpdateContextValue = {
   busy: boolean
   /**
    * Aktualizacja zawiodła przy ponownym starcie Centrum, a tata od wejścia na stronę nie kliknął aktualizacji.
-   * Komunikat porażki jest wtedy pod tytułem każdej strony, nie przy przycisku, także po starcie ze skrótu.
+   * Komunikat porażki pokazuje wtedy `ToolUpdateAfterRestart`, nie przycisk.
    */
   restarted: boolean
   start: () => void
@@ -61,8 +59,8 @@ export function ToolUpdateProvider({ children }: { children: React.ReactNode }) 
     getToolUpdate().then(show, failRead)
   }, [show, failRead])
 
-  // Porażkę ponownego startu widać na każdej stronie, także na tej, na którą tata trafia ze skrótu, więc stan
-  // aktualizacji karta czyta przy każdym wejściu.
+  // Porażkę ponownego startu widać na każdej stronie (`ToolUpdateAfterRestart`), więc stan aktualizacji karta czyta
+  // przy każdym wejściu.
   React.useEffect(() => {
     const reloaded = sessionStorage.getItem(RELOADED_AFTER_UPDATE) !== null
 
@@ -77,8 +75,8 @@ export function ToolUpdateProvider({ children }: { children: React.ReactNode }) 
     }, failRead)
   }, [show, failRead])
 
-  // Każda odpowiedź w trakcie aktualizacji to nowy obiekt `update`, więc po niej idzie kolejne pytanie. Centrum nie
-  // odpowiada w trakcie aktualizacji tylko wtedy, gdy zamknęło się przed ponownym startem: karta pokazuje ten krok.
+  // Centrum nie odpowiada w trakcie aktualizacji tylko wtedy, gdy zamknęło się przed ponownym startem: karta pokazuje
+  // ten krok.
   React.useEffect(() => {
     if (update?.state !== "running") {
       return
@@ -128,7 +126,6 @@ export function ToolUpdateProvider({ children }: { children: React.ReactNode }) 
   return <ToolUpdateContext.Provider value={value}>{children}</ToolUpdateContext.Provider>
 }
 
-/** Aktualizacja narzędzia wspólna dla całego Centrum; odczytuje ją przy wejściu miejsce, które pokazuje jej stan. */
 export function useToolUpdate() {
   const context = React.useContext(ToolUpdateContext)
 
