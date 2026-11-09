@@ -51,6 +51,32 @@ class Readers:
 
 FILE_READERS: Final = Readers()
 
+# Dawna nazwa Wzorca rozliczenia pracownika, zmieniona 18.10.2026 przed pierwszym Wydaniem (v0.1.0). Usuń ją razem z
+# ``_worker_template_unusable``, gdy Log Uruchomienia taty pokaże Przebieg rozliczeń, którego Sprawdzanie przeszło
+# Wzorzec pod obecną nazwą: podpowiedź pomaga tylko temu, komu Wzorca pod obecną nazwą brakuje (D3 rozplątania 7.11).
+_OLD_WORKER_TEMPLATE_NAME: Final = "placeholder.xlsx"
+
+
+def _worker_template_unusable(error: WorkbookError) -> Message:
+    """Komunikat o Wzorcu rozliczenia pracownika z podpowiedzią zmiany nazwy, gdy brakuje go, a obok leży plik pod
+    dawną nazwą."""
+
+    return settlement_messages.worker_template_unusable(error, _old_worker_template_beside(error))
+
+
+def _old_worker_template_beside(error: WorkbookError) -> str | None:
+    """Dawna nazwa Wzorca, gdy Wzorca brakuje, a plik o niej leży obok.
+
+    Dysk pyta tylko przy brakującym Wzorcu: przy innym problemie folder Wzorca może być bez dostępu, a ``Path.is_file``
+    na Pythonie do 3.13 rzuca wtedy ``PermissionError``.
+    """
+
+    if error.problem is not Problem.MISSING:
+        return None
+    old = error.path.with_name(_OLD_WORKER_TEMPLATE_NAME)
+    return old.name if old.is_file() else None
+
+
 @dataclass(frozen=True)
 class TemplateProblem:
     """Wzorzec nie przechodzi Sprawdzania."""
@@ -76,7 +102,7 @@ class ProcessTemplate:
 
     @classmethod
     def worker(cls, path: Path) -> ProcessTemplate:
-        return cls(TemplateFile.worker_settlement(path), settlement_messages.worker_template_unusable)
+        return cls(TemplateFile.worker_settlement(path), _worker_template_unusable)
 
     def problem(self, readers: Readers) -> TemplateProblem | None:
         """``None``, gdy Wzorzec przechodzi Sprawdzanie."""

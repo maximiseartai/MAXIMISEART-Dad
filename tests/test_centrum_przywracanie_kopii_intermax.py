@@ -80,7 +80,7 @@ def test_bez_kopii_intermax_konfiguracja_ma_pusta_liste(tmp_path: Path) -> None:
     assert _listed(centrum) == {"copies": [], "problem": None}
 
 
-def test_konfiguracja_wymienia_kopie_obu_nazw_od_najnowszej_z_chwila_z_nazwy(tmp_path: Path) -> None:
+def test_konfiguracja_wymienia_kopie_obu_nazw_od_najnowszej_z_chwila_i_slowami_z_nazwy(tmp_path: Path) -> None:
     centrum = ordering_centrum(tmp_path)
     earlier = datetime(2026, 10, 20, 9, 0, 0)
     _copies_like_tool(
@@ -99,11 +99,11 @@ def test_konfiguracja_wymienia_kopie_obu_nazw_od_najnowszej_z_chwila_z_nazwy(tmp
     listed = _listed(centrum)
 
     assert listed["problem"] is None
-    assert [(copy["name"], copy["before"]) for copy in listed["copies"]] == [
-        (_name("uporządkowaniem", NOW), "ordering"),
-        (_name("przywróceniem", NOW), "restore"),
-        (_name("przywróceniem", earlier + timedelta(days=3)), "restore"),
-        (_name("uporządkowaniem", earlier), "ordering"),
+    assert [(copy["name"], copy["before"], copy["before_label"]) for copy in listed["copies"]] == [
+        (_name("uporządkowaniem", NOW), "ordering", "przed uporządkowaniem"),
+        (_name("przywróceniem", NOW), "restore", "przed przywróceniem"),
+        (_name("przywróceniem", earlier + timedelta(days=3)), "restore", "przed przywróceniem"),
+        (_name("uporządkowaniem", earlier), "ordering", "przed uporządkowaniem"),
     ]
     assert [datetime.fromisoformat(copy["taken_at"]) for copy in listed["copies"]] == [
         NOW.astimezone(),

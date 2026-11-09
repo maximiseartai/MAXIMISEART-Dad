@@ -290,7 +290,7 @@ def _intermax(root: Path) -> dict[str, object]:
 def _metrics(root: Path) -> dict[str, object]:
     """Both metrics files with a valid history and one record each that the metrics reader skips.
 
-    Uporządkowanie INTERMAX has its own metrics file, absent until its first Uruchomienie.
+    Uporządkowanie INTERMAX and Wycena w efenix have their own metrics files, absent until their first Uruchomienie.
     """
 
     metrics = root / "metrics"
@@ -309,6 +309,7 @@ def _metrics(root: Path) -> dict[str, object]:
         "preparation": str(preparation),
         "settlement": str(settlement),
         "intermax": str(metrics / "uporzadkowanie-intermax-metrics.jsonl"),
+        "efenix": str(metrics / "wycena-efenix-metrics.jsonl"),
         "runs": len(PREPARATION_RUNS) + len(SETTLEMENT_RUNS),
         "oldest": min(run[0] for run in (*PREPARATION_RUNS, *SETTLEMENT_RUNS)),
         # period, then the measured phase times until the interruption

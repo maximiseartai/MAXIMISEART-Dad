@@ -25,11 +25,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { dateTime, hourMinute } from "@/lib/format"
 import { useResource } from "@/lib/use-resource"
 
-const BEFORE: Record<IntermaxCopy["before"], string> = {
-  ordering: "przed uporządkowaniem",
-  restore: "przed przywróceniem",
-}
-
 /** Wynik ostatniego „Przywróć tę kopię” na karcie albo odmowa serwera, gdy coś innego trwa. */
 type Outcome = IntermaxRestore | { state: "failed"; message: string }
 
@@ -83,7 +78,7 @@ export function IntermaxCopiesCard() {
                 <Item variant="muted" size="sm" role="group" aria-label={`Kopia z ${dateTime(copy.taken_at)}`}>
                   <ItemContent>
                     <ItemTitle className="tabular-nums">{dateTime(copy.taken_at)}</ItemTitle>
-                    <ItemDescription>{BEFORE[copy.before]}</ItemDescription>
+                    <ItemDescription>{copy.before_label}</ItemDescription>
                   </ItemContent>
                   <ItemActions>
                     <Button

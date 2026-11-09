@@ -528,7 +528,8 @@ export type IntermaxCopies = {
 /**
  * IntermaxCopy
  *
- * Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała.
+ * Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała, także słowami z nazwy
+ * (``before_label``), które karta Kopii pokazuje.
  */
 export type IntermaxCopy = {
     /**
@@ -543,6 +544,10 @@ export type IntermaxCopy = {
      * Before
      */
     before: 'ordering' | 'restore';
+    /**
+     * Before Label
+     */
+    before_label: string;
 };
 
 /**

@@ -51,11 +51,13 @@ IntermaxCopyBefore = Literal["ordering", "restore"]
 
 
 class IntermaxCopy(Model):
-    """Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała."""
+    """Kopia INTERMAX w folderze Kopii: nazwa pliku, chwila z nazwy i to, przed czym powstała, także słowami z nazwy
+    (``before_label``), które karta Kopii pokazuje."""
 
     name: str
     taken_at: datetime
     before: IntermaxCopyBefore
+    before_label: str
 
 
 class IntermaxCopies(Model):
