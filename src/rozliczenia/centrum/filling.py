@@ -34,7 +34,7 @@ from rozliczenia.collective_file import NumberedOrders
 from rozliczenia.message import Message
 from rozliczenia.order_facts import MissingHeaders
 from rozliczenia.period_folder import PeriodFolder
-from rozliczenia.quantities_to_fill import FillKind, KindToFill, quantities_to_fill
+from rozliczenia.quantities_to_fill import TEXT_COLUMNS, FillKind, KindToFill, fill_hint, quantities_to_fill
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.text import plural
@@ -164,6 +164,7 @@ def _ready(read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract
         kinds=[
             filling_contract.KindToFill(
                 kind=kind.kind,
+                hint=fill_hint(kind.kind),
                 rows=[filling_contract.RowToFill(row=row.number, state=row.state) for row in kind.rows],
                 done=kind.done,
             )
@@ -180,15 +181,14 @@ def _table(listed: KindToFill, read: GoodRead[NumberedOrders], *, settled: bool)
         state="ready",
         read=_stamp(read),
         settled=settled,
+        hint=fill_hint(listed.kind),
+        text_columns=[column.target_header for column in TEXT_COLUMNS],
         columns=[filling_contract.PriceListItem(column=column, name=name) for column, name in read.value.price_list.items()],
         rows=[
             filling_contract.KindTableRow(
                 row=row.number,
                 state=row.state,
-                worker=row.texts.worker,
-                devices=row.texts.devices,
-                activities=row.texts.activities,
-                completed=row.texts.completed,
+                texts=list(row.texts),
                 cells=[filling_contract.KindTableCell(source=cell.source, value=cell.value) for cell in row.cells],
             )
             for row in listed.rows

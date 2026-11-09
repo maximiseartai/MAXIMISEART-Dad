@@ -1950,6 +1950,49 @@
         "title": "ApiTiming",
         "description": "Jedno zapytanie API widoku: czas w przeglądarce i czas serwera z ``Server-Timing`` (``None``: brak nagłówka)."
       },
+      "BoardFile": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "internal_settlement",
+              "collective_file",
+              "period_folder",
+              "worker_settlements_folder"
+            ],
+            "title": "Target"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target",
+          "label",
+          "exists",
+          "count"
+        ],
+        "title": "BoardFile",
+        "description": "Plik albo folder okresu, który Tablica okresów otwiera: ``label`` to jego nazwa z GLOSSARY, a ``count`` liczba\nRozliczeń pracownika w istniejącym Folderze rozliczeń pracowników (``None`` przy innym miejscu i bez folderu)."
+      },
       "BoardMissing": {
         "properties": {
           "state": {
@@ -2968,6 +3011,17 @@
             "type": "boolean",
             "title": "Settled"
           },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          },
+          "text_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Text Columns"
+          },
           "columns": {
             "items": {
               "$ref": "#/components/schemas/PriceListItem"
@@ -2989,11 +3043,13 @@
           "state",
           "read",
           "settled",
+          "hint",
+          "text_columns",
           "columns",
           "rows"
         ],
         "title": "KindTableReady",
-        "description": "Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei.\n\n``settled`` jak w ``QuantitiesToFillReady``."
+        "description": "Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a\n``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.\n\n``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``."
       },
       "KindTableRow": {
         "properties": {
@@ -3004,21 +3060,12 @@
           "state": {
             "$ref": "#/components/schemas/RowState"
           },
-          "worker": {
-            "type": "string",
-            "title": "Worker"
-          },
-          "devices": {
-            "type": "string",
-            "title": "Devices"
-          },
-          "activities": {
-            "type": "string",
-            "title": "Activities"
-          },
-          "completed": {
-            "type": "string",
-            "title": "Completed"
+          "texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Texts"
           },
           "cells": {
             "items": {
@@ -3033,19 +3080,20 @@
         "required": [
           "row",
           "state",
-          "worker",
-          "devices",
-          "activities",
-          "completed",
+          "texts",
           "cells"
         ],
         "title": "KindTableRow",
-        "description": "Wiersz strony rodzaju: numer wiersza Pliku zbiorczego, teksty, po których tata go rozpoznaje, i komórki N:AP.\n\nNigdy adres, numer zlecenia ani ``UMOWA`` (ADR 0016)."
+        "description": "Wiersz strony rodzaju: numer wiersza Pliku zbiorczego, teksty, po których tata go rozpoznaje, i komórki N:AP.\n\n``texts`` idą po kolei jak ``KindTableReady.text_columns``, a ``cells`` jak ``KindTableReady.columns``. Nigdy adres,\nnumer zlecenia ani ``UMOWA`` (ADR 0016)."
       },
       "KindToFill": {
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/FillKind"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
           },
           "rows": {
             "items": {
@@ -3063,11 +3111,12 @@
         "type": "object",
         "required": [
           "kind",
+          "hint",
           "rows",
           "done"
         ],
         "title": "KindToFill",
-        "description": "Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma."
+        "description": "Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma.\n\n``hint``: co tata wpisuje w wierszach rodzaju, z reguły, która robi wiersz zrobionym."
       },
       "LoggedOutcome": {
         "properties": {
@@ -3727,25 +3776,12 @@
             "type": "string",
             "title": "Status Label"
           },
-          "period_folder_exists": {
-            "type": "boolean",
-            "title": "Period Folder Exists"
-          },
-          "internal_settlement_exists": {
-            "type": "boolean",
-            "title": "Internal Settlement Exists"
-          },
-          "collective_file_exists": {
-            "type": "boolean",
-            "title": "Collective File Exists"
-          },
-          "worker_settlements_folder_exists": {
-            "type": "boolean",
-            "title": "Worker Settlements Folder Exists"
-          },
-          "worker_settlement_count": {
-            "type": "integer",
-            "title": "Worker Settlement Count"
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/BoardFile"
+            },
+            "type": "array",
+            "title": "Files"
           },
           "last_complete": {
             "type": "boolean",
@@ -3805,11 +3841,7 @@
           "monday",
           "status",
           "status_label",
-          "period_folder_exists",
-          "internal_settlement_exists",
-          "collective_file_exists",
-          "worker_settlements_folder_exists",
-          "worker_settlement_count",
+          "files",
           "last_complete",
           "fillable",
           "path",
@@ -3817,7 +3849,7 @@
           "secondary_step"
         ],
         "title": "PeriodRow",
-        "description": "Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix."
+        "description": "Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.\n\n``files``: każde miejsce okresu (``PeriodPlace``) po kolei."
       },
       "PhaseDuration": {
         "properties": {

@@ -20,6 +20,8 @@ import time
 from typing import Any
 
 import pytest
+from starlette.testclient import TestClient
+from starlette.types import Receive, Scope, Send
 
 from rozliczenia.centrum import restart_guardian
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
@@ -45,7 +47,7 @@ from rozliczenia.centrum.tool_update import (
     write_result,
 )
 
-from tests.fixtures.centrum import NO_RELEASE, join_threads_since, views_until, write_report_key
+from tests.fixtures.centrum import CENTRUM, NO_RELEASE, join_threads_since, views_until, write_report_key
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end, stopped_for_maks
 from tests.fixtures.potomne import wait_for, wait_for_value
 from atrapy.preparation import PERIOD, incomplete_period_rows
@@ -156,6 +158,34 @@ def test_po_aktualizacji_centrum_zamyka_sie_i_prosi_opiekuna_o_start_nowej_wersj
         409,
         {"message": "Trwa aktualizacja narzędzia. Poczekaj na jej wynik, potem uruchom proces."},
     )
+
+
+@pytest.mark.parametrize("server", [None, ("/tmp/centrum.sock", None)], ids=["bez-server", "gniazdo-bez-portu"])
+def test_aktualizacja_bez_portu_centrum_odmawia_i_nie_zaczyna_sie(
+    tmp_path: Path, server: tuple[str, None] | None
+) -> None:
+    centrum, repository = updating_centrum(tmp_path)
+    before = repository.head()
+    repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    app = centrum.client.app
+
+    async def without_port(scope: Scope, receive: Receive, send: Send) -> None:
+        changed = {key: value for key, value in scope.items() if key != "server"}
+        if server is not None:
+            changed["server"] = server
+        await app(changed, receive, send)
+
+    answer = TestClient(without_port, base_url=CENTRUM, headers={"Origin": CENTRUM}).post("/api/tool-update")
+
+    assert (answer.status_code, answer.json()) == (
+        500,
+        {
+            "message": "Centrum rozliczeń nie zna swojego portu, więc nie zaktualizuje narzędzia. "
+            "Zamknij Centrum rozliczeń i kliknij skrót „Centrum rozliczeń” na pulpicie."
+        },
+    )
+    assert centrum.client.get("/api/tool-update").json() == {"state": "idle"}
+    assert (repository.head(), centrum.surroundings.restarts) == (before, [])
 
 
 def test_nowe_centrum_po_aktualizacji_zapisuje_wynik_od_opiekuna_w_dzienniku_i_pokazuje_go_karcie(

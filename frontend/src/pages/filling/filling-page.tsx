@@ -16,7 +16,7 @@ import type { Resource } from "@/lib/use-resource"
 import { AfterSettlement, afterSettlementHint } from "@/pages/filling/after-settlement"
 import { BackLink } from "@/pages/filling/back-link"
 import { FillingHeader, KindPage } from "@/pages/filling/kind-page"
-import { KINDS, ROW_STATES } from "@/pages/filling/labels"
+import { KIND_TITLES, ROW_STATES } from "@/pages/filling/labels"
 import { ReadyForSettlement } from "@/pages/filling/ready-for-settlement"
 import { SaveHint } from "@/pages/filling/save-hint"
 
@@ -118,7 +118,7 @@ export function FillingSummary({ token, found }: { token: string; found: Quantit
 }
 
 function KindSection({ token, kind, settled }: { token: string; kind: KindToFill; settled: boolean }) {
-  const { title, hint } = KINDS[kind.kind]
+  const title = KIND_TITLES[kind.kind]
   const doneRows = kind.rows.filter((row) => row.state === "done").length
 
   return (
@@ -138,7 +138,7 @@ function KindSection({ token, kind, settled }: { token: string; kind: KindToFill
           <div className="flex flex-col gap-0.5">
             <h2 className="font-medium">{title}</h2>
             <p className="text-sm text-muted-foreground">
-              {kind.rows.length === 0 ? "Nie ma takich wierszy." : settled ? afterSettlementHint(kind.rows) : hint}
+              {kind.rows.length === 0 ? "Nie ma takich wierszy." : settled ? afterSettlementHint(kind.rows) : kind.hint}
             </p>
           </div>
           {kind.rows.length === 0 ? null : (

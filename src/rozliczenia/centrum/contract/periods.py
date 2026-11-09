@@ -58,19 +58,28 @@ class PathStep(Model):
     stage: PathStage
 
 
+class BoardFile(Model):
+    """Plik albo folder okresu, który Tablica okresów otwiera: ``label`` to jego nazwa z GLOSSARY, a ``count`` liczba
+    Rozliczeń pracownika w istniejącym Folderze rozliczeń pracowników (``None`` przy innym miejscu i bez folderu)."""
+
+    target: PeriodPlace
+    label: str
+    exists: bool
+    count: int | None
+
+
 class PeriodRow(Model):
-    """Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix."""
+    """Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.
+
+    ``files``: każde miejsce okresu (``PeriodPlace``) po kolei.
+    """
 
     token: str
     tuesday: date
     monday: date
     status: PeriodStatus
     status_label: str
-    period_folder_exists: bool
-    internal_settlement_exists: bool
-    collective_file_exists: bool
-    worker_settlements_folder_exists: bool
-    worker_settlement_count: int
+    files: list[BoardFile]
     last_complete: bool
     fillable: bool
     """Plik zbiorczy jest przygotowany, więc „Uzupełnij” prowadzi na podsumowanie jego Uzupełnienia."""

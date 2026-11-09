@@ -2,7 +2,7 @@ import * as React from "react"
 import { FileSpreadsheetIcon, FileTextIcon, FolderOpenIcon, UsersIcon } from "lucide-react"
 
 import type { OpenTarget } from "@/api/centrum"
-import type { PeriodRow } from "@/api/generated"
+import type { BoardFile, PeriodRow } from "@/api/generated"
 import { PeriodStatusBadge } from "@/components/period-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -108,40 +108,25 @@ function PeriodBoardRow({ period, onStale }: { period: PeriodRow; onStale: () =>
   )
 }
 
-function PeriodFiles({ period, onStale }: { period: PeriodRow; onStale: () => void }) {
-  const open = (target: OpenTarget) => openAndConfirm(period.token, { target }, onStale)
+const FILE_ICONS: Record<OpenTarget, React.ReactNode> = {
+  internal_settlement: <FileTextIcon />,
+  collective_file: <FileSpreadsheetIcon />,
+  period_folder: <FolderOpenIcon />,
+  worker_settlements_folder: <UsersIcon data-icon="inline-start" />,
+}
 
+/** Przyciski plików okresu w kolejności i z nazwami z serwera. */
+function PeriodFiles({ period, onStale }: { period: PeriodRow; onStale: () => void }) {
   return (
     <div className="flex items-center gap-0.5">
-      <FileButton
-        label="Rozliczenie wewnętrzne"
-        token={period.token}
-        icon={<FileTextIcon />}
-        exists={period.internal_settlement_exists}
-        onOpen={() => open("internal_settlement")}
-      />
-      <FileButton
-        label="Plik zbiorczy"
-        token={period.token}
-        icon={<FileSpreadsheetIcon />}
-        exists={period.collective_file_exists}
-        onOpen={() => open("collective_file")}
-      />
-      <FileButton
-        label="Folder okresu"
-        token={period.token}
-        icon={<FolderOpenIcon />}
-        exists={period.period_folder_exists}
-        onOpen={() => open("period_folder")}
-      />
-      <FileButton
-        label="Rozliczenia pracowników"
-        token={period.token}
-        icon={<UsersIcon data-icon="inline-start" />}
-        exists={period.worker_settlements_folder_exists}
-        count={period.worker_settlements_folder_exists ? period.worker_settlement_count : undefined}
-        onOpen={() => open("worker_settlements_folder")}
-      />
+      {period.files.map((file) => (
+        <FileButton
+          key={file.target}
+          file={file}
+          token={period.token}
+          onOpen={() => openAndConfirm(period.token, { target: file.target }, onStale)}
+        />
+      ))}
     </div>
   )
 }
@@ -151,23 +136,10 @@ function PeriodFiles({ period, onStale }: { period: PeriodRow; onStale: () => vo
  * klawiatury i palca (`aria-disabled` zamiast `disabled`), żeby podpowiedź „jeszcze nie ma” dało się zobaczyć:
  * kliknięcie albo stuknięcie w niego pokazuje ją jak najechanie.
  */
-function FileButton({
-  label,
-  token,
-  icon,
-  exists,
-  count,
-  onOpen,
-}: {
-  label: string
-  token: string
-  icon: React.ReactNode
-  exists: boolean
-  count?: number
-  onOpen: () => void
-}) {
+function FileButton({ file, token, onOpen }: { file: BoardFile; token: string; onOpen: () => void }) {
+  const { label, exists, count } = file
   const [hinted, setHinted] = React.useState(false)
-  const description = count === undefined ? label : `${label}: ${count}`
+  const description = count === null ? label : `${label}: ${count}`
 
   return (
     <Tooltip
@@ -183,7 +155,7 @@ function FileButton({
         render={
           <Button
             variant="ghost"
-            size={count === undefined ? "icon-sm" : "sm"}
+            size={count === null ? "icon-sm" : "sm"}
             aria-disabled={!exists}
             aria-label={`${description}, okres ${token}`}
             className="aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:active:scale-100"
@@ -191,8 +163,8 @@ function FileButton({
           />
         }
       >
-        {icon}
-        {count === undefined ? null : <span className="tabular-nums">{count}</span>}
+        {FILE_ICONS[file.target]}
+        {count === null ? null : <span className="tabular-nums">{count}</span>}
       </TooltipTrigger>
       <TooltipContent>{exists ? description : `${label}: jeszcze nie ma`}</TooltipContent>
     </Tooltip>

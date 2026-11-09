@@ -500,7 +500,8 @@ def test_diagnoza_sprawdza_w_excelu_te_rozliczenia_pracownika_ktore_liczy_status
     diagnosis = diagnose(centrum, run_id)
     [row] = [row for row in centrum.client.get("/api/periods").json()["periods"] if row["token"] == centrum.period_directory.name]
 
-    assert (check(diagnosis, "Pliki okresu w Excelu")[0], row["worker_settlement_count"]) == ("passed", 1)
+    [folder] = [file for file in row["files"] if file["target"] == "worker_settlements_folder"]
+    assert (check(diagnosis, "Pliki okresu w Excelu")[0], folder["count"]) == ("passed", 1)
 
 
 UNEXPECTED_LOG_ENTRY = "2026-09-16T10:00:00+02:00 nieoczekiwany-wyjatek typ=KeyError miejsce=\"GET /api/periods\"\n"

@@ -47,9 +47,9 @@ KIND_TITLES = {"without_rule": "Wiersze bez reguły", "from_description": "Wiers
 # Dad's value goes into a column from the technician's description: it is outside V, T and N, so it also makes
 # its row without rule done, and it moves that column's counter.
 DAD_COLUMN = "Y"
-# The pinned column headers of a kind's table, the row texts the browser gets, and each row state's words.
+# The pinned column headers of a kind's table (the row number, then the Plik zbiorczy columns of the row texts the
+# server names in ``text_columns``) and each row state's words.
 PINNED = ("Nr", "WYKONAWCA", "URZĄDZENIA", "CZYNNOŚCI", "CZYNNOŚCI ZREALIZOWANE")
-ROW_TEXTS = ("worker", "devices", "activities", "completed")
 ROW_LABELS = {"to_fill": "do uzupełnienia", "done": "zrobiony", "without_quantity": "bez ilości"}
 # A row number on the summary reads its state's words after the number; a row to fill reads none.
 CHIP_LABELS = {"to_fill": "", "done": " zrobiony", "without_quantity": " bez ilości"}
@@ -169,9 +169,10 @@ def drive_result_card(run: Run, page: Page) -> None:
     collective_file = period_files(run)[1]
     original = read_bytes(collective_file)
     # The summary asks for the file's version every 3 s and would read the new file into its copy before Wstecz.
-    page.route(f"**{VERSION_API}", lambda route: route.abort())
+    before = run.api(VERSION_API, "uzupelnienie-wynik-znacznik-przed-wpisem")["version"]
+    page.route(f"**{VERSION_API}", lambda route: route.fulfill(json={"version": before}))
     try:
-        run.check(True, "harness: the summary's version checks get no answer, so its copy stays the one read before")
+        run.check(True, "harness: the summary's version checks answer the version from before, so its copy stays the one read before")
         _write_dad_value(collective_file, _expected_rows(run)["without_rule"][0])
         run.check(True, f"harness: one value typed into column {DAD_COLUMN} of row 18 while the summary is open")
         page.evaluate(WATCH_RESULT_SUMMARY)
@@ -198,6 +199,9 @@ def drive_result_card(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "uzupelnienie-wynik-bez-odpowiedzi")
     _unanswered_result_card(run, page, filling)
+
+    run.step(FEATURE, "uzupelnienie-wynik-bez-centrum")
+    _silent_result_card(run, page, filling)
 
     run.step(FEATURE, "uzupelnienie-wynik-po-starcie")
     close_centrum(run, page)
@@ -323,6 +327,27 @@ def _unanswered_result_card(run: Run, page: Page, filling: Locator) -> None:
     run.check(True, "once the server answers again the card shows the summary by itself")
 
 
+def _silent_result_card(run: Run, page: Page, filling: Locator) -> None:
+    """Centrum stops answering while the card is open: after one version check the card says it could not read the
+    Plik zbiorczy instead of showing the old summary as live, then recovers."""
+
+    for path in (VERSION_API, API):
+        page.route(f"**{path}", lambda route: route.abort())
+    try:
+        run.check(True, "harness: neither the version checks nor the reads of the Plik zbiorczy get an answer")
+        failure = filling.get_by_role("alert")
+        expect(failure).to_contain_text("Nie udało się odczytać Pliku zbiorczego", timeout=LIVE_TIMEOUT_MS)
+        run.check(True, "a version check without an answer reads the file, so the card shows the failure, not old data")
+        run.capture(page, "258-uzupelnienie-wynik-bez-centrum")
+    finally:
+        for path in (VERSION_API, API):
+            page.unroute(f"**{path}")
+    section = filling.get_by_role("region", name=KIND_TITLES["without_rule"], exact=True)
+    expect(section).to_contain_text("0 z 2", timeout=LIVE_TIMEOUT_MS)
+    expect(filling.get_by_role("alert")).to_have_count(0)
+    run.check(True, "once Centrum answers again the card shows the summary by itself")
+
+
 def _drive_entries(run: Run, page: Page) -> None:
     """Entries from Okresy: the Tablica okresów row and Droga okresu of the card Następny krok."""
 
@@ -382,8 +407,15 @@ def _without_texts(answer: dict[str, object]) -> dict[str, object]:
 
     rows = answer["rows"]
     assert isinstance(rows, list)
-    hidden = dict.fromkeys(ROW_TEXTS, "<tekst wiersza>")
-    return {**answer, "rows": [{**row, **hidden} for row in rows]}
+    return {**answer, "rows": [{**row, "texts": ["<tekst wiersza>" for _ in row["texts"]]} for row in rows]}
+
+
+def _completed(answer: dict[str, object], row: dict[str, object]) -> str:
+    """The row's CZYNNOŚCI ZREALIZOWANE: its text under that header of ``text_columns``."""
+
+    headers, texts = answer["text_columns"], row["texts"]
+    assert isinstance(headers, list) and isinstance(texts, list)
+    return str(dict(zip(headers, texts, strict=True))["CZYNNOŚCI ZREALIZOWANE"])
 
 
 def _kind_answer(run: Run, kind: str, name: str | None = None) -> dict[str, object]:
@@ -407,9 +439,9 @@ def _capture(run: Run, page: Page, name: str, answer: dict[str, object]) -> None
     snapshot = run.evidence / "aria" / f"{name}.txt"
     text = read_text(snapshot)
     for row in rows:
-        for field in ROW_TEXTS:
-            if row[field]:
-                text = text.replace(row[field], "<tekst wiersza>")
+        for value in row["texts"]:
+            if value:
+                text = text.replace(value, "<tekst wiersza>")
     snapshot.write_text(text, encoding="utf-8")
 
 
@@ -443,8 +475,13 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
         f"{title}: the server lists only this kind's rows, ascending",
     )
     run.check(
-        ROW_MARKER not in json.dumps(_without_texts(answer), ensure_ascii=False) and all(ROW_MARKER in row["completed"] for row in rows),
+        ROW_MARKER not in json.dumps(_without_texts(answer), ensure_ascii=False)
+        and all(ROW_MARKER in _completed(answer, row) for row in rows),
         f"{title}: the answer carries the row texts and no address, order number or UMOWA",
+    )
+    run.check(
+        answer["text_columns"] == list(PINNED[1:]),
+        f"{title}: the server names the row texts by their Plik zbiorczy headers",
     )
     run.check(
         [column["name"] for column in columns] == list(PRICE_LIST),
@@ -469,7 +506,7 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
     expect(page.locator("[data-slot=popover-content]")).to_contain_text(first["name"])
     page.keyboard.press("Escape")
     expect(page.locator("[data-slot=popover-content]")).to_have_count(0)
-    completed = rows[0]["completed"]
+    completed = _completed(answer, rows[0])
     table.get_by_role("button", name=f"CZYNNOŚCI ZREALIZOWANE: {completed}", exact=True).click()
     expect(page.locator("[data-slot=popover-content]")).to_contain_text(completed)
     run.check(True, f"{title}: a tap on a column header or on CZYNNOŚCI ZREALIZOWANE shows the full text")

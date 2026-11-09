@@ -50,6 +50,24 @@ export const zApiTiming = z.object({
 });
 
 /**
+ * BoardFile
+ *
+ * Plik albo folder okresu, który Tablica okresów otwiera: ``label`` to jego nazwa z GLOSSARY, a ``count`` liczba
+ * Rozliczeń pracownika w istniejącym Folderze rozliczeń pracowników (``None`` przy innym miejscu i bez folderu).
+ */
+export const zBoardFile = z.object({
+    target: z.enum([
+        'internal_settlement',
+        'collective_file',
+        'period_folder',
+        'worker_settlements_folder'
+    ]),
+    label: z.string(),
+    exists: z.boolean(),
+    count: z.int().nullable()
+});
+
+/**
  * BoardMissing
  */
 export const zBoardMissing = z.object({
@@ -650,6 +668,8 @@ export const zFillStep = z.object({
  * PeriodRow
  *
  * Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.
+ *
+ * ``files``: każde miejsce okresu (``PeriodPlace``) po kolei.
  */
 export const zPeriodRow = z.object({
     token: z.string(),
@@ -661,11 +681,7 @@ export const zPeriodRow = z.object({
         'worker_settlements_ready'
     ]),
     status_label: z.string(),
-    period_folder_exists: z.boolean(),
-    internal_settlement_exists: z.boolean(),
-    collective_file_exists: z.boolean(),
-    worker_settlements_folder_exists: z.boolean(),
-    worker_settlement_count: z.int(),
+    files: z.array(zBoardFile),
     last_complete: z.boolean(),
     fillable: z.boolean(),
     path: z.array(zPathStep),
@@ -885,29 +901,30 @@ export const zRowState = z.enum([
  *
  * Wiersz strony rodzaju: numer wiersza Pliku zbiorczego, teksty, po których tata go rozpoznaje, i komórki N:AP.
  *
- * Nigdy adres, numer zlecenia ani ``UMOWA`` (ADR 0016).
+ * ``texts`` idą po kolei jak ``KindTableReady.text_columns``, a ``cells`` jak ``KindTableReady.columns``. Nigdy adres,
+ * numer zlecenia ani ``UMOWA`` (ADR 0016).
  */
 export const zKindTableRow = z.object({
     row: z.int(),
     state: zRowState,
-    worker: z.string(),
-    devices: z.string(),
-    activities: z.string(),
-    completed: z.string(),
+    texts: z.array(z.string()),
     cells: z.array(zKindTableCell)
 });
 
 /**
  * KindTableReady
  *
- * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei.
+ * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a
+ * ``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.
  *
- * ``settled`` jak w ``QuantitiesToFillReady``.
+ * ``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``.
  */
 export const zKindTableReady = z.object({
     state: z.literal('ready'),
     read: zCollectiveFileRead,
     settled: z.boolean(),
+    hint: z.string(),
+    text_columns: z.array(z.string()),
     columns: z.array(zPriceListItem),
     rows: z.array(zKindTableRow)
 });
@@ -926,9 +943,12 @@ export const zRowToFill = z.object({
  * KindToFill
  *
  * Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma.
+ *
+ * ``hint``: co tata wpisuje w wierszach rodzaju, z reguły, która robi wiersz zrobionym.
  */
 export const zKindToFill = z.object({
     kind: zFillKind,
+    hint: z.string(),
     rows: z.array(zRowToFill),
     done: z.boolean()
 });

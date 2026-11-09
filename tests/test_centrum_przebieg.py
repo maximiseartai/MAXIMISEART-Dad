@@ -87,7 +87,8 @@ def test_uruchom_publikuje_folder_rozliczen_pracownikow_i_zmienia_status_okresu(
         file["file"] for file in WORKER_SETTLEMENT_ROWS
     ]
     [row] = [row for row in board["periods"] if row["token"] == PERIOD]
-    assert (row["status_label"], row["worker_settlement_count"]) == ("Rozliczenia pracowników gotowe", 3)
+    [folder] = [file for file in row["files"] if file["target"] == "worker_settlements_folder"]
+    assert (row["status_label"], folder["count"]) == ("Rozliczenia pracowników gotowe", 3)
     [record] = centrum.metric_records()
     assert (record["mode"], record["result"], record["counters"]["written"]) == ("RUN", "OK", 2)
 

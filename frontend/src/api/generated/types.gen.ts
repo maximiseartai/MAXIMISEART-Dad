@@ -25,6 +25,31 @@ export type ApiTiming = {
 };
 
 /**
+ * BoardFile
+ *
+ * Plik albo folder okresu, który Tablica okresów otwiera: ``label`` to jego nazwa z GLOSSARY, a ``count`` liczba
+ * Rozliczeń pracownika w istniejącym Folderze rozliczeń pracowników (``None`` przy innym miejscu i bez folderu).
+ */
+export type BoardFile = {
+    /**
+     * Target
+     */
+    target: 'internal_settlement' | 'collective_file' | 'period_folder' | 'worker_settlements_folder';
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Exists
+     */
+    exists: boolean;
+    /**
+     * Count
+     */
+    count: number | null;
+};
+
+/**
  * BoardMissing
  */
 export type BoardMissing = {
@@ -679,9 +704,10 @@ export type KindTableCell = {
 /**
  * KindTableReady
  *
- * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei.
+ * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a
+ * ``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.
  *
- * ``settled`` jak w ``QuantitiesToFillReady``.
+ * ``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``.
  */
 export type KindTableReady = {
     /**
@@ -693,6 +719,14 @@ export type KindTableReady = {
      * Settled
      */
     settled: boolean;
+    /**
+     * Hint
+     */
+    hint: string;
+    /**
+     * Text Columns
+     */
+    text_columns: Array<string>;
     /**
      * Columns
      */
@@ -708,7 +742,8 @@ export type KindTableReady = {
  *
  * Wiersz strony rodzaju: numer wiersza Pliku zbiorczego, teksty, po których tata go rozpoznaje, i komórki N:AP.
  *
- * Nigdy adres, numer zlecenia ani ``UMOWA`` (ADR 0016).
+ * ``texts`` idą po kolei jak ``KindTableReady.text_columns``, a ``cells`` jak ``KindTableReady.columns``. Nigdy adres,
+ * numer zlecenia ani ``UMOWA`` (ADR 0016).
  */
 export type KindTableRow = {
     /**
@@ -717,21 +752,9 @@ export type KindTableRow = {
     row: number;
     state: RowState;
     /**
-     * Worker
+     * Texts
      */
-    worker: string;
-    /**
-     * Devices
-     */
-    devices: string;
-    /**
-     * Activities
-     */
-    activities: string;
-    /**
-     * Completed
-     */
-    completed: string;
+    texts: Array<string>;
     /**
      * Cells
      */
@@ -742,9 +765,15 @@ export type KindTableRow = {
  * KindToFill
  *
  * Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma.
+ *
+ * ``hint``: co tata wpisuje w wierszach rodzaju, z reguły, która robi wiersz zrobionym.
  */
 export type KindToFill = {
     kind: FillKind;
+    /**
+     * Hint
+     */
+    hint: string;
     /**
      * Rows
      */
@@ -1122,6 +1151,8 @@ export type PeriodFile = {
  * PeriodRow
  *
  * Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.
+ *
+ * ``files``: każde miejsce okresu (``PeriodPlace``) po kolei.
  */
 export type PeriodRow = {
     /**
@@ -1145,25 +1176,9 @@ export type PeriodRow = {
      */
     status_label: string;
     /**
-     * Period Folder Exists
+     * Files
      */
-    period_folder_exists: boolean;
-    /**
-     * Internal Settlement Exists
-     */
-    internal_settlement_exists: boolean;
-    /**
-     * Collective File Exists
-     */
-    collective_file_exists: boolean;
-    /**
-     * Worker Settlements Folder Exists
-     */
-    worker_settlements_folder_exists: boolean;
-    /**
-     * Worker Settlement Count
-     */
-    worker_settlement_count: number;
+    files: Array<BoardFile>;
     /**
      * Last Complete
      */

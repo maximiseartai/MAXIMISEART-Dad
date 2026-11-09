@@ -17,7 +17,7 @@ import { useLiveFile } from "@/lib/use-live-file"
 import type { Resource } from "@/lib/use-resource"
 import { AfterSettlement, afterSettlementHint } from "@/pages/filling/after-settlement"
 import { BackLink } from "@/pages/filling/back-link"
-import { KINDS, ROW_STATES } from "@/pages/filling/labels"
+import { KIND_TITLES, ROW_STATES } from "@/pages/filling/labels"
 import { SaveHint } from "@/pages/filling/save-hint"
 import { OpenCollectiveFileButton } from "@/pages/periods/open-collective-file"
 
@@ -30,20 +30,29 @@ const TINTS: Record<RowState, string> = {
 
 type Pinned = { title: string; width: number; left: number }
 
-// Przypięte kolumny w rem: `left` to suma szerokości kolumn przed nią. Razem 22 rem, więc na laptopie taty
-// (1280 px z menu) obok mieści się 10 kolumn N:AP.
+// Przypięte kolumny w rem: numer wiersza, a po nim kolumny tekstów wiersza z serwera, każda o szerokości ze swojego
+// miejsca. Razem 22 rem, więc na laptopie taty (1280 px z menu) obok mieści się 10 kolumn N:AP.
 const NUMBER: Pinned = { title: "Nr", width: 3.5, left: 0 }
 
-const TEXTS: ReadonlyArray<Pinned> = [
-  { title: "WYKONAWCA", width: 4.25, left: 3.5 },
-  { title: "URZĄDZENIA", width: 4.5, left: 7.75 },
-  { title: "CZYNNOŚCI", width: 4.25, left: 12.25 },
-  { title: "CZYNNOŚCI ZREALIZOWANE", width: 5.5, left: 16.5 },
-]
+const TEXT_WIDTHS: ReadonlyArray<number> = [4.25, 4.5, 4.25, 5.5]
 
-const PINNED = [NUMBER, ...TEXTS]
+// Szerokość kolumny tekstu, której miejsce nie ma szerokości w `TEXT_WIDTHS`.
+const TEXT_WIDTH = 4.5
 
-const PINNED_WIDTH = PINNED.reduce((sum, { width }) => sum + width, 0)
+/** Przypięte kolumny tekstów wiersza za numerem: `left` to suma szerokości kolumn przed nią. */
+function pinnedTexts(textColumns: ReadonlyArray<string>): ReadonlyArray<Pinned> {
+  const texts: Array<Pinned> = []
+  let left = NUMBER.width
+
+  for (const [index, title] of textColumns.entries()) {
+    const width = TEXT_WIDTHS[index] ?? TEXT_WIDTH
+
+    texts.push({ title, width, left })
+    left += width
+  }
+
+  return texts
+}
 
 // Kolumna N:AP w rem. Tabela ma stały układ (`table-fixed`), więc długie słowo nie poszerza kolumny ani nie
 // przesuwa przypiętych kolumn.
@@ -81,7 +90,7 @@ export function KindPage({ token, kind }: { token: string; kind: FillKind }) {
     <>
       <BackLink to={href("uzupelnienie", token)}>Podsumowanie</BackLink>
       <FillingHeader token={token} resource={resource} />
-      <KindState resource={resource} reload={reload} heading={KINDS[kind].title} hint={KINDS[kind].hint} />
+      <KindState resource={resource} reload={reload} heading={KIND_TITLES[kind]} />
     </>
   )
 }
@@ -90,12 +99,10 @@ function KindState({
   resource,
   reload,
   heading,
-  hint,
 }: {
   resource: Resource<KindTable>
   reload: () => Promise<void>
   heading: string
-  hint: string
 }) {
   const entrance = useContentEntrance(resource.state === "loading")
 
@@ -126,7 +133,7 @@ function KindState({
             <div className="flex flex-col gap-0.5">
               <h2 className="font-medium">{heading}</h2>
               <p className="text-sm text-muted-foreground">
-                {table.rows.length === 0 ? "Nie ma takich wierszy." : table.settled ? afterSettlementHint(table.rows) : hint}
+                {table.rows.length === 0 ? "Nie ma takich wierszy." : table.settled ? afterSettlementHint(table.rows) : table.hint}
               </p>
             </div>
             {table.rows.length === 0 ? null : (
@@ -135,7 +142,7 @@ function KindState({
               </span>
             )}
           </div>
-          {table.rows.length === 0 ? null : <QuantitiesTable columns={table.columns} rows={table.rows} />}
+          {table.rows.length === 0 ? null : <QuantitiesTable textColumns={table.text_columns} columns={table.columns} rows={table.rows} />}
           {table.settled ? null : <SaveHint read={table.read} />}
         </div>
       )
@@ -151,30 +158,36 @@ function KindState({
 
 /** Tabela jak w Excelu: numer wiersza i teksty przypięte z lewej, wszystkie kolumny N:AP przewijane w bok. */
 function QuantitiesTable({
+  textColumns,
   columns,
   rows,
 }: {
+  textColumns: ReadonlyArray<string>
   columns: ReadonlyArray<PriceListItem>
   rows: ReadonlyArray<KindTableRow>
 }) {
+  const texts = pinnedTexts(textColumns)
+  const pinned = [NUMBER, ...texts]
+  const pinnedWidth = pinned.reduce((sum, { width }) => sum + width, 0)
+
   return (
     <Card className="overflow-hidden py-0">
       <div className="overflow-x-auto overscroll-x-contain">
         <table
           aria-label="Wiersze Pliku zbiorczego"
           className="table-fixed border-separate border-spacing-0 text-sm"
-          style={{ width: `${PINNED_WIDTH + columns.length * QUANTITY_WIDTH}rem` }}
+          style={{ width: `${pinnedWidth + columns.length * QUANTITY_WIDTH}rem` }}
         >
           <thead>
             <tr>
-              {PINNED.map((column, index) => (
+              {pinned.map((column, index) => (
                 <th
                   key={column.title}
                   scope="col"
                   style={pinnedStyle(column)}
                   className={cn(
                     "sticky z-20 overflow-hidden border-b bg-muted px-1.5 py-2 text-left align-bottom text-[0.625rem] leading-tight font-medium text-muted-foreground",
-                    index === PINNED.length - 1 && "border-r"
+                    index === pinned.length - 1 && "border-r"
                   )}
                 >
                   <span className="line-clamp-2 break-words hyphens-auto">{column.title}</span>
@@ -194,7 +207,7 @@ function QuantitiesTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <Row key={row.row} row={row} />
+              <Row key={row.row} row={row} texts={texts} />
             ))}
           </tbody>
         </table>
@@ -233,10 +246,9 @@ function ColumnHeader({ column }: { column: PriceListItem }) {
   )
 }
 
-function Row({ row }: { row: KindTableRow }) {
+function Row({ row, texts }: { row: KindTableRow; texts: ReadonlyArray<Pinned> }) {
   const tint = TINTS[row.state]
   const { label, shown } = ROW_STATES[row.state]
-  const texts = [row.worker, row.devices, row.activities, row.completed]
 
   return (
     <tr data-state={row.state}>
@@ -257,13 +269,14 @@ function Row({ row }: { row: KindTableRow }) {
           </>
         )}
       </th>
-      {TEXTS.map((column, index) => (
+      {texts.map((column, index) => (
+        // Teksty wiersza idą po kolei jak kolumny tekstów nagłówka (`text_columns`).
         <td
           key={column.title}
           style={pinnedStyle(column)}
-          className={cn("sticky z-10 h-10 border-b p-0", tint, index === TEXTS.length - 1 && "border-r")}
+          className={cn("sticky z-10 h-10 border-b p-0", tint, index === texts.length - 1 && "border-r")}
         >
-          <FullText text={texts[index] ?? ""} label={column.title} />
+          <FullText text={row.texts[index] ?? ""} label={column.title} />
         </td>
       ))}
       {row.cells.map((cell, index) => (
