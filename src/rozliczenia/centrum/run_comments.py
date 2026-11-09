@@ -66,9 +66,10 @@ komentarz mają te same znaki także po Logach, które zapisała praca Centrum s
 zapisać, nie zatrzymuje Logów w drodze do Maksa. Dziennika, którego nie da się odczytać, ani dziennika, którego pliku Logów
 system nie daje odczytać (``logs_disk.Refused``), start nie rusza: spróbuje następny.
 
-Wersja zastępcza idzie do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero w starcie serwera (``lifespan``), po
-``Outbox.resume`` (``RunComments.send_left_behind``), więc kolejka nie dostaje wysyłki przed swoim startem (model
-``verify-kolejka-skrzynki``). Dziennik znika, gdy kolejka ją przyjęła
+Wersja zastępcza idzie do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero w starcie serwera, po ``Outbox.resume`` w
+``lifespan`` i po wpisie ``start`` (``RunComments.send_left_behind``, krok ``server.AFTER_START``), więc kolejka nie
+dostaje wysyłki przed swoim startem (model ``verify-kolejka-skrzynki``), a wpisy wysyłki należą w dzienniku do tej pracy
+Centrum. Dziennik znika, gdy kolejka ją przyjęła
 (``comment_versions.journal_after``), a Centrum zgaszone przed tym wysyła ją przy następnym starcie, więc wysyłka jest co
 najmniej raz, jak w całej kolejce. Wersja zastępcza ma stopień wyższy od każdego postępu i niższy od Logów z wynikiem
 (``comment_versions.rank_of``), więc zamienia postęp w podsumowanie także po cofnięciu zegara komputera, a Logów z wynikiem,
@@ -122,6 +123,7 @@ PROGRESS_S: Final = 300.0
 """Odstęp między postępami jednej Wyceny w efenix na zegarze Centrum (#846: „najwyżej co 5 minut”)."""
 
 _AFTER_RUN: Final = "po wyniku Uruchomienia procesu"
+_LEFT_BEHIND: Final = "wysyłka wersji zastępczych przy starcie"
 """Miejsce błędu kroku końca Uruchomienia w dzienniku Centrum: to samo co błąd działania po wyniku w ``RunHost.after``."""
 
 _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
@@ -400,12 +402,16 @@ class RunComments:
         return LeftBehindClosed()
 
     def send_left_behind(self) -> None:
-        """Krok startu serwera po ``Outbox.resume``, przed pierwszym zapytaniem: wersje zastępcze z zamkniętych dzienników
-        idą do Kolejki wysyłki, a dziennik, którego wersję kolejka przyjęła, znika (``journal_after``); dziennik wersji,
-        której kolejka nie przyjęła, czeka na następny start."""
+        """Krok startu serwera po wpisie ``start`` i po ``Outbox.resume``, przed pierwszym zapytaniem: wersje zastępcze z
+        zamkniętych dzienników idą do Kolejki wysyłki, a dziennik, którego wersję kolejka przyjęła, znika
+        (``journal_after``); dziennik wersji, której kolejka nie przyjęła, czeka na następny start. Błąd jednej wersji
+        trafia do dziennika Centrum (typ) i nie zatrzymuje startu Centrum ani następnych wersji."""
 
         with self._lock:
             pending, self._pending = self._pending, []
         for key, version in pending:
-            if journal_after(version, accepted=self._queue.post(post_of(version))) == "usuń":
-                self._disk.remove_journal(key)
+            try:
+                if journal_after(version, accepted=self._queue.post(post_of(version))) == "usuń":
+                    self._disk.remove_journal(key)
+            except Exception as failure:  # dziennik zostaje na dysku, więc wersja idzie przy następnym starcie
+                self._log.unexpected_failure(failure, where=_LEFT_BEHIND)

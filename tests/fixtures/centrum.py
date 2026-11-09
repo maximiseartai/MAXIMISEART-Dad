@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as day_time, timezone
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Self, TypeVar
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -56,6 +56,7 @@ from rozliczenia.centrum.report_box import (
 )
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
+from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, RateLimited, ReleaseAnswer, ToolFreshness
 from rozliczenia.centrum.tool_update import Release, ToolClone
@@ -694,8 +695,16 @@ class CentrumClient(TestClient):
 
         return threads_since(self.since)
 
+    def __enter__(self) -> Self:
+        """Start serwera jak u taty: ``lifespan``, a po nim krok po starcie (``server.after_start``), jak w ``serve`` po
+        wpisie ``start``."""
+
+        entered = super().__enter__()
+        after_start(self.app_state)
+        return entered
+
     def start(self) -> None:
-        """Start serwera jak u taty (``lifespan``): Kolejka wysyłki wznawia wysyłki, a po niej idą wersje zastępcze z
+        """Start serwera jak u taty (``__enter__``): Kolejka wysyłki wznawia wysyłki, a po niej idą wersje zastępcze z
         dzienników Wyceny w efenix. Bez niego klient tylko obsługuje zapytania aplikacji."""
 
         self.__enter__()

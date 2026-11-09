@@ -55,6 +55,7 @@ from rozliczenia.centrum.run_comments import RecordMaker, RunComments
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.process_kind import HostParts
 from rozliczenia.centrum.runs import RunHost, runs_router
+from rozliczenia.centrum.server import AFTER_START
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.centrum.settings_router import settings_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
@@ -105,16 +106,15 @@ def create_app(
     work = CentrumWork(config=settings_path.parent, log=log, clock=clock, pause=pause)
 
     @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:
         # Powiadomienia: pierwsze pytanie skrzynki o stan spraw taty przy starcie, nie dopiero przy odczycie.
         notifications.check_in_background()
         # Klucz do Zgłoszeń: pierwsze sprawdzenie w tle, żeby Konfiguracja nie czekała na Skrzynkę.
         box.check_in_background()
-        # Wysyłki, których poprzednia praca Centrum nie wysłała, a po nich wersje zastępcze z jej dzienników Wyceny w
-        # efenix: kolejka nie dostaje wysyłki przed swoim startem.
+        # Wysyłki, których poprzednia praca Centrum nie wysłała, a po nich, już po wpisie ``start``, wersje zastępcze z
+        # jej dzienników Wyceny w efenix: kolejka nie dostaje wysyłki przed swoim startem.
         outbox.resume()
-        comments.send_left_behind()
-        yield
+        yield {AFTER_START: comments.send_left_behind}
 
     dad_actions = DadActionJournal(work)
     # Bez /docs i /openapi.json: kontrakt eksportuje tools/ci/export_openapi.py, a Swagger ładowałby skrypty z sieci.
