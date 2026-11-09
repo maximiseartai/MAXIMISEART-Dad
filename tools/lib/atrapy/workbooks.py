@@ -238,16 +238,21 @@ def break_row_far_below_data_rows(path: Path) -> None:
     rewrite_parts(path, change)
 
 
-def rewrite_parts(path: Path, change: Callable[[str, bytes], bytes | None]) -> None:
-    """Przepisuje części archiwum .xlsx; ``None`` usuwa część."""
+def rewrite_parts(
+    path: Path, change: Callable[[str, bytes], bytes | None], added: dict[str, bytes] | None = None
+) -> None:
+    """Przepisuje części archiwum .xlsx (każda z kompresją, którą miała); ``None`` usuwa część, a ``added`` to nowe
+    części, skompresowane."""
 
     with zipfile.ZipFile(path) as source:
         members = [(info, source.read(info.filename)) for info in source.infolist()]
-    with zipfile.ZipFile(path, "w") as target:
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
         for info, data in members:
             changed = change(info.filename, data)
             if changed is not None:
                 target.writestr(info, changed)
+        for name, data in (added or {}).items():
+            target.writestr(name, data)
 
 
 def break_empty_data_row(path: Path) -> None:

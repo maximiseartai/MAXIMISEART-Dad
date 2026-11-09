@@ -50,8 +50,8 @@ from atrapy.intermax import (
     ORDER_SHEET,
     Intermax,
     Order,
-    rewrite_parts,
 )
+from atrapy.workbooks import rewrite_parts
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.intermax_disk import denied, failing_replace
 

@@ -41,6 +41,8 @@ REGISTER_HEADERS: Final = (
     "ZWROT",
     "UWAGI",
 )
+# raw_orders.SHIFT: pierwszy wiersz każdego wklejenia z aplikacji INTERMAX stoi o tyle kolumn na lewo od nagłówków.
+PASTE_SHIFT: Final = 2
 # Nazwa Rejestru zleceń, którą wybrał tata; src jej nie zna.
 REGISTER_NAME: Final = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 
