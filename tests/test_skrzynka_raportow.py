@@ -79,9 +79,13 @@ def port(config: Path, atrapa: AtrapaImap) -> ImapInbox:
 
 
 def polecenia(atrapa: AtrapaImap) -> list[str]:
-    """Nazwy poleceń, które dostał serwer (``UID FETCH`` jako jedna nazwa)."""
+    """Nazwy poleceń, które dostał serwer (``UID FETCH`` jako jedna nazwa), bez ``CAPABILITY``.
 
-    return [" ".join(command.split(" ")[:2 if command.startswith("UID ") else 1]) for command in atrapa.commands]
+    ``imaplib`` z Pythona 3.14 bierze możliwości serwera z powitania, a 3.11 pyta o nie osobno: to nie decyzja portu.
+    """
+
+    names = [" ".join(command.split(" ")[:2 if command.startswith("UID ") else 1]) for command in atrapa.commands]
+    return [name for name in names if name != "CAPABILITY"]
 
 
 def maile(outcome: InboxOutcome) -> tuple[ReportMail, ...]:
@@ -248,7 +252,7 @@ def test_odrzucone_haslo_aplikacji_daje_wynik_odrzuconego_hasla_bez_otwarcia_skr
         outcome = port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8))
 
     assert outcome == PasswordRejected()
-    assert polecenia(atrapa) == ["CAPABILITY", "LOGIN", "LOGOUT"]
+    assert polecenia(atrapa) == ["LOGIN", "LOGOUT"]
 
 
 def test_zerwane_polaczenie_i_brak_sieci_daja_wynik_niedostepnej_skrzynki_z_sama_nazwa_bledu(tmp_path: Path) -> None:
