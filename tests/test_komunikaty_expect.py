@@ -487,17 +487,15 @@ QUOTES_OUTSIDE_UI: Final = {
 def _ui_text(text: str) -> re.Pattern[str]:
     """Napis w jednej z form, w których plik TSX pokazuje go tacie jako napis przycisku.
 
-    Formy, które test uznaje za napis (zawsze w podwójnym cudzysłowie i cały): tekst dziecka elementu JSX
+    Test szuka napisu (w podwójnym cudzysłowie i całego) w tych postaciach: tekst dziecka elementu JSX
     (``<Button>…Kontynuuj</Button>``, także po ikonie ``{…}`` i złamany w linii), prop ``label="…"`` albo
-    ``label={"…"}`` (nie ``aria-label``), właściwość ``label: "…"`` obiektu napisów i druga gałąź warunku stojącego jako
-    dziecko JSX, czyli zaraz po ``>`` (nie ``=>``) albo ``}`` (``{checking ? "Sprawdzam…" : "Diagnoza"}``; w warunku wolno ``?.`` i
-    ``??``).
-    Każda inna postać nie jest napisem, więc przycisk z napisem tylko w niej czerwieni test: pierwsza gałąź warunku,
-    warunek zagnieżdżony, warunek w atrybucie, w funkcji-strzałce (``=> {``) albo w funkcji pomocniczej bez typu zwrotu
-    zakończonego ``>``, pojedynczy cudzysłów, szablon z ``${…}``, napis sklejony z kawałków i stała z innego modułu.
-    Granica (tylko przegląd): to, czy element z napisem jest przyciskiem, a nie nagłówkiem, przykład JSX w komentarzu
-    pliku i warunek w funkcji pomocniczej, której typ zwrotu kończy się ``>`` (``): Promise<string> {``), bo jej blok
-    test widzi jak dziecko JSX.
+    ``label={"…"}`` (nie ``aria-label``), właściwość ``label: "…"`` obiektu napisów i druga gałąź warunku, którego
+    ``{`` stoi zaraz po ``>`` (nie ``=>``) albo ``}`` (``{checking ? "Sprawdzam…" : "Diagnoza"}``; w warunku wolno
+    ``?.`` i ``??``).
+    Gdy napisu nie ma w pliku w żadnej z tych postaci, test czerwieni: przycisk zmienił brzmienie albo zniknął.
+    Granica (tylko przegląd): czy dopasowanie to naprawdę napis przycisku, który tata widzi; pasuje też nagłówek,
+    przykład JSX w komentarzu i blok funkcji albo typu, którego ``{`` stoi po ``>`` lub ``}``, więc przycisk przemianowany
+    przy takim starym napisie obok przechodzi.
     """
 
     words = r"\s+".join(re.escape(word) for word in text.split())
