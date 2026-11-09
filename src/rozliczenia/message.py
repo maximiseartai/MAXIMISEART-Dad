@@ -36,6 +36,17 @@ KEEP_ON_DEVICE: Final = (
 """Jak tata pobiera plik, który OneDrive trzyma tylko w chmurze; Komunikat kończy to zdanie swoim „i …”."""
 
 
+def explorer_check(folder: str, then: str, *, read_only: bool = False) -> str:
+    """Zdanie o folderze, którego nie da się odczytać albo zapisać: Eksplorator plików i OneDrive, potem ``then``.
+
+    ``folder``: jak zdanie nazywa folder („folder”, „jego folder”); ``read_only``: też „nie jest tylko do odczytu”,
+    gdy w folderze trzeba zapisać.
+    """
+
+    writable = ", nie jest tylko do odczytu" if read_only else ""
+    return f"Sprawdź, czy {folder} otwiera się w Eksploratorze plików{writable} i czy OneDrive działa, potem {then}."
+
+
 @dataclass(frozen=True)
 class Message:
     """Komunikat: co się stało, gdzie, co zrobić, z kodem unikalnym w katalogu procesu.

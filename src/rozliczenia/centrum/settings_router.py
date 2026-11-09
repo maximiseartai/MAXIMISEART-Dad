@@ -14,17 +14,14 @@ from fastapi import APIRouter
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import settings as settings_contract
-from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal
+from rozliczenia.centrum import refusal
+from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.settings import Settings, SettingsStore, Theme
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
 _PERIODS_DIALOG = "Wybierz folder okresów (np. Załączniki albo INEA)"
-_NOT_SAVED = (
-    "Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze "
-    "plików, nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie."
-)
 
 
 def settings_router(store: SettingsStore, platform: Platform) -> APIRouter:
@@ -45,21 +42,15 @@ def settings_router(store: SettingsStore, platform: Platform) -> APIRouter:
     def open_register() -> common_contract.Opened:
         register = store.load().register
         if register is None:
-            raise Refusal(409, "Najpierw wybierz Rejestr zleceń w Ustawieniach.")
+            raise refusal.register_not_chosen()
         try:
             found = stat.S_ISREG(register.stat().st_mode)
         except (FileNotFoundError, NotADirectoryError):
             found = False
         except OSError:
-            raise Refusal(
-                409,
-                f"Rejestr zleceń {register.name} jest teraz niedostępny. Sprawdź, czy jego folder otwiera się "
-                "w Eksploratorze plików i czy OneDrive działa, potem spróbuj ponownie.",
-            ) from None
+            raise refusal.register_unavailable(register.name) from None
         if not found:
-            raise Refusal(
-                404, f"Nie ma Rejestru zleceń {register.name}. Wybierz właściwy plik w Ustawieniach."
-            )
+            raise refusal.register_missing(register.name)
         platform.open_path(register)
         return common_contract.Opened(name=register.name)
 
@@ -85,7 +76,7 @@ def _saved(
     try:
         return describe(store.update(register=register, periods_directory=periods_directory, theme=theme))
     except OSError:
-        raise Refusal(500, _NOT_SAVED) from None
+        raise refusal.settings_not_saved() from None
 
 
 def describe(settings: Settings) -> settings_contract.Settings:

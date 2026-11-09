@@ -15,7 +15,7 @@ from fastapi import APIRouter
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import metrics as metrics_contract
-from rozliczenia.centrum.refusal import Refusal
+from rozliczenia.centrum import refusal
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.run_origins import CentrumRuns
@@ -195,6 +195,6 @@ def metrics_router(history: History, today: Callable[[], date]) -> APIRouter:
         try:
             return history.metrics(today())
         except OSError:
-            raise Refusal(500, "Nie udało się odczytać plików metryk. Odśwież kartę.") from None
+            raise refusal.metrics_unreadable() from None
 
     return router

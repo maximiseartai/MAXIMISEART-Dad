@@ -8,6 +8,8 @@ Katalog to moduł fabryk Komunikatów: ma wpis w ``CATALOGS``, a każda jego pub
 Moduł ``src/``, który tworzy Komunikat poza katalogiem, ma w ``OUTSIDE_CATALOGS`` próbkę każdej funkcji i stałej,
 która go tworzy (co liczy się jako utworzenie, mówi ``_creating``), więc i jego tekst trafia do pliku.
 Błąd, który fabryka tłumaczy na Komunikat, niesie fakty, a nie zdanie dla taty, więc i jego tekst pisze katalog.
+Odmowę żądania API Centrum rozliczeń (``Refusal``) tworzy tylko katalog odmów ``centrum/refusal.py``, a każda jego
+publiczna funkcja ma próbkę w ``REFUSALS``, więc i zdanie odmowy trafia do pliku, z kodem HTTP zamiast kodu Komunikatu.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from pathlib import Path
 import pkgutil
 from types import ModuleType
 import typing
+from typing import Final
 
 import pytest
 
@@ -30,6 +33,7 @@ from rozliczenia.centrum import (
     diagnosis_messages,
     fill_messages,
     notification_messages,
+    refusal,
     report_messages,
     run_cards,
     runs,
@@ -53,6 +57,7 @@ from tests.fixtures.message_samples import (
     NOTIFICATION_SAMPLES,
     PERIOD,
     PREPARATION_SAMPLES,
+    REFUSALS,
     REGISTER,
     REPORT_SAMPLES,
     SETTLEMENT_SAMPLES,
@@ -98,6 +103,10 @@ OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[],
         },
     ),
 }
+
+
+# Katalog odmów jest osobno: odmowa to kod HTTP i jedno zdanie, a nie Komunikat z kodem i trzema częściami.
+REFUSAL_CATALOG: Final = "Odmowy Centrum rozliczeń"
 
 
 def _source(module: ModuleType) -> str:
@@ -239,6 +248,12 @@ def _rendered() -> str:
             for number, sample in enumerate(factory_samples, start=1):
                 variant = f" #{number}" if len(factory_samples) > 1 else ""
                 lines += ["", *_entry(f"{factory}{variant}", sample())]
+    lines += ["", f"=== {REFUSAL_CATALOG} ({_source(refusal)}) ==="]
+    for factory, refusal_samples in REFUSALS.items():
+        for number, refusal_sample in enumerate(refusal_samples, start=1):
+            variant = f" #{number}" if len(refusal_samples) > 1 else ""
+            refused = refusal_sample()
+            lines += ["", f"{factory}{variant} [HTTP {refused.status_code}]", f"  {refused.message}"]
     return "\n".join(lines) + "\n"
 
 
@@ -250,9 +265,9 @@ def test_kazde_miejsce_tworzace_komunikat_ma_probke_w_pliku_expect() -> None:
     assert {path: creating[path] for path in outside} == outside
 
 
-@pytest.mark.parametrize("catalog", CATALOGS)
+@pytest.mark.parametrize("catalog", [*CATALOGS, REFUSAL_CATALOG])
 def test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu(catalog: str) -> None:
-    module, samples = CATALOGS[catalog]
+    module, samples = CATALOGS[catalog] if catalog in CATALOGS else (refusal, REFUSALS)
     public = {
         name
         for name, function in inspect.getmembers(module, inspect.isfunction)
@@ -266,6 +281,81 @@ def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:
     sample_sets = {name for name, value in vars(message_samples).items() if name.endswith("_SAMPLES")}
 
     assert {id(getattr(message_samples, name)) for name in sample_sets} == {id(samples) for _, samples in CATALOGS.values()}
+
+
+def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
+    """Klasa ``Refusal`` jako wartość stoi tylko w ``centrum/refusal.py``, więc tylko katalog tworzy odmowę.
+
+    Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
+    odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu albo pola, w nawiasach typu i unii ``|`` w
+    instrukcji modułu albo klasy poza wywołaniem i lambdą (alias ``Callable[[], Refusal | None]``), w ``except``, w
+    drugim argumencie ``isinstance``/``issubclass`` i w argumencie ``exception_handler``.
+    Każde inne odwołanie pada, w tym wywołanie, argument wywołania (``partial(Refusal, 500)``), przypisanie do nazwy
+    (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa, odwołanie wewnątrz wywołania albo lambdy i
+    nawiasy typu albo unia w ciele funkcji (``make = Refusal | Refusal``, ``list[Refusal].__args__[0](…)``).
+    Granica (tylko przegląd): ``getattr`` z napisem (``"Refusal"``), import wewnątrz funkcji, ``type(odmowa)(…)``,
+    ``copy``/``replace`` gotowej odmowy i klasa wyjęta z aliasu typu modułu bez odwołania do ``Refusal`` w tym miejscu
+    (``ShutdownBlocker.__args__…``).
+    """
+
+    def outside_type(module: ModuleType) -> bool:
+        tree = ast.parse(Path(str(module.__file__)).read_text(encoding="utf-8"))
+        typed = {id(inner) for root in _type_positions(tree) for inner in _type_nodes(root)}
+        return any(
+            isinstance(node, ast.Name | ast.Attribute) and id(node) not in typed and _resolved(module, node) is refusal.Refusal
+            for node in ast.walk(tree)
+        )
+
+    assert {module.__name__ for module in _engine_modules() if outside_type(module)} == {refusal.__name__}
+
+
+def _type_nodes(root: ast.AST) -> Iterator[ast.AST]:
+    """Węzły typu w ``root`` bez wnętrza wywołań i lambd, więc ``CACHE[Refusal(500, "x")]`` nie jest typem."""
+
+    if isinstance(root, ast.Call | ast.Lambda):
+        return
+    yield root
+    for child in ast.iter_child_nodes(root):
+        yield from _type_nodes(child)
+
+
+def _type_positions(tree: ast.AST) -> Iterator[ast.expr]:
+    """Wyrażenia, w których klasa stoi jako typ, a nie wartość (lista w docstringu strażnika katalogu odmów)."""
+
+    called = {
+        id(inner)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call | ast.Lambda)
+        for inner in ast.walk(node)
+        if inner is not node
+    } | {
+        id(inner)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        for statement in node.body
+        for inner in ast.walk(statement)
+    }
+    for node in ast.walk(tree):
+        match node:
+            case ast.FunctionDef(args=args, returns=returns) | ast.AsyncFunctionDef(args=args, returns=returns):
+                parameters = [*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg]
+                yield from (parameter.annotation for parameter in parameters if parameter and parameter.annotation)
+                if returns is not None:
+                    yield returns
+            case ast.AnnAssign(annotation=annotation):
+                yield annotation
+            case ast.Subscript(slice=inner) if id(node) not in called:
+                yield inner
+            case ast.BinOp(left=left, op=ast.BitOr(), right=right) if id(node) not in called:
+                yield from (left, right)
+            case ast.ExceptHandler(type=kind) if kind is not None:
+                yield kind
+            case ast.Call(func=ast.Name(id="isinstance" | "issubclass"), args=[_, kind]):
+                yield kind
+            case ast.Call(func=ast.Attribute(attr="exception_handler"), args=handled):
+                yield from handled
+            case _:
+                pass
 
 
 def _engine_modules() -> list[ModuleType]:

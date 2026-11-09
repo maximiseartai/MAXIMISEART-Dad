@@ -37,13 +37,14 @@ from fastapi.responses import StreamingResponse
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.contract import runs as runs_contract
-from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal
+from rozliczenia.centrum import refusal
+from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal, Retry
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.process_kind import PreparedRun
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.run_view import ProcessView, Shown
-from rozliczenia.centrum.stops import NO_DIAGNOSIS, StoppedRun, Stops
+from rozliczenia.centrum.stops import StoppedRun, Stops
 from rozliczenia.centrum.threads import Signal, Threading
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.decision import Decision
@@ -231,15 +232,6 @@ class RunLogsKeeper(AfterRun, Protocol):
         ...
 
 
-# Odmowa w trakcie Aktualizacji narzędzia: uruchomienia procesu, zamknięcia Centrum albo innej aktualizacji.
-_UPDATING = "Trwa aktualizacja narzędzia. Poczekaj na jej wynik, potem {then}."
-# Odmowa po przyjętym zamknięciu: wątek, który teraz by wystartował, zginąłby z końcem serwera.
-_CLOSING = "Centrum rozliczeń się zamyka. Kliknij skrót „Centrum rozliczeń” na pulpicie, potem {then}."
-# Odmowa w trakcie przywracania Kopii INTERMAX: uruchomienia procesu, aktualizacji, zamknięcia albo drugiego przywrócenia.
-_RESTORING = "Trwa przywracanie Kopii INTERMAX. Poczekaj na jego wynik, potem {then}."
-_RESTORE = "przywróć kopię jeszcze raz"
-
-
 class RunHost:
     """Jedno Uruchomienie procesu naraz w obrębie serwera i jego widoki dla przeglądarki.
 
@@ -298,14 +290,14 @@ class RunHost:
         self._restoring = False
         self._closing = False
 
-    def shutdown_refusal(self) -> str | None:
+    def shutdown_refusal(self) -> Refusal | None:
         """Dlaczego teraz nie można zamknąć Centrum (``Shutdown.refuse_while``); ``None``, gdy nic nie trwa.
 
         ``None`` przyjmuje zamknięcie w tej samej blokadzie: kolejne Uruchomienie ani aktualizacja już nie wystartują.
         """
 
         with self._lock:
-            busy = self._busy_locked("zamknij Centrum rozliczeń")
+            busy = self._busy_locked("shutdown")
             if busy is None:
                 self._closing = True
             return busy
@@ -315,12 +307,12 @@ class RunHost:
 
         with self._lock:
             if self._closing:
-                raise Refusal(409, _CLOSING.format(then="zaktualizuj narzędzie"))
+                raise refusal.closing("update")
             if self._updating:
-                raise Refusal(409, "Trwa już aktualizacja narzędzia. Poczekaj na jej wynik.")
-            busy = self._busy_locked("zaktualizuj narzędzie")
+                raise refusal.update_in_progress()
+            busy = self._busy_locked("update")
             if busy is not None:
-                raise Refusal(409, busy)
+                raise busy
             self._updating = True
 
     def end_update(self) -> None:
@@ -332,30 +324,27 @@ class RunHost:
 
         with self._lock:
             if self._closing:
-                raise Refusal(409, _CLOSING.format(then=_RESTORE))
-            busy = self._busy_locked(_RESTORE)
+                raise refusal.closing("restore")
+            busy = self._busy_locked("restore")
             if busy is not None:
-                raise Refusal(409, busy)
+                raise busy
             self._restoring = True
 
     def end_restore(self) -> None:
         with self._lock:
             self._restoring = False
 
-    def _busy_locked(self, then: str) -> str | None:
-        """Co teraz trwa, z prośbą, żeby poczekać i ``then``; ``None``, gdy nic."""
+    def _busy_locked(self, then: Retry) -> Refusal | None:
+        """Odmowa z tym, co teraz trwa, i prośbą, żeby poczekać i ``then``; ``None``, gdy nic."""
 
         if self._updating:
-            return _UPDATING.format(then=then)
+            return refusal.updating(then)
         if self._restoring:
-            return _RESTORING.format(then=then)
+            return refusal.restoring(then)
         run = self._run
         if run is None or run.ended:
             return None
-        return (
-            f"Trwa Uruchomienie procesu: {run.info.title}, okres {run.info.period}. "
-            f"Poczekaj na jego wynik w Uruchomieniach, potem {then}."
-        )
+        return refusal.running(run.info.title, run.info.period, then)
 
     def current(self) -> runs_contract.RunEvent:
         with self._lock:
@@ -368,18 +357,14 @@ class RunHost:
     def start(self, prepared: PreparedRun[Any, Any]) -> runs_contract.RunView:
         with self._lock:
             if self._closing:
-                raise Refusal(409, _CLOSING.format(then="uruchom proces"))
+                raise refusal.closing("start")
             if self._updating:
-                raise Refusal(409, _UPDATING.format(then="uruchom proces"))
+                raise refusal.updating("start")
             if self._restoring:
-                raise Refusal(409, _RESTORING.format(then="uruchom proces"))
+                raise refusal.restoring("start")
             if self._run is not None and not self._run.ended:
                 running = self._run.info
-                raise Refusal(
-                    409,
-                    f"Trwa już Uruchomienie procesu: {running.title}, okres {running.period}. "
-                    "Poczekaj na jego wynik w Uruchomieniach.",
-                )
+                raise refusal.run_in_progress(running.title, running.period)
             run = Run(self, prepared, self._stops, self._threads)
             self._created(run, self._events[-1])
             self._run = run
@@ -399,9 +384,9 @@ class RunHost:
         with self._lock:
             run = self._run
             if run is None or run.info.id != run_id:
-                raise Refusal(404, "Nie ma takiego Uruchomienia procesu.")
+                raise refusal.unknown_run()
             if not run.awaiting_decision:
-                raise Refusal(409, "To Uruchomienie procesu nie czeka na decyzję.")
+                raise refusal.not_awaiting_decision()
             run.answer(answer.answer == "continue")
             self._publish_locked(run.running_view())
             return self._events[-1].view
@@ -416,10 +401,10 @@ class RunHost:
         with self._lock:
             run = self._run
             if run is None or run.info.id != run_id:
-                raise Refusal(404, "Nie ma takiego Uruchomienia procesu.")
+                raise refusal.unknown_run()
             stopped = run.stopped
         if not run.ended or stopped is None:
-            raise Refusal(409, NO_DIAGNOSIS)
+            raise refusal.no_diagnosis()
         return stopped
 
     def remember(self, prepared: PreparedRun[Any, Any], run_id: str, since: datetime) -> None:

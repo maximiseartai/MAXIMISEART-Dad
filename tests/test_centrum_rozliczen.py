@@ -750,10 +750,10 @@ def test_pliki_i_foldery_okresu_otwieraja_sie_jednym_kliknieciem(tmp_path: Path)
 @pytest.mark.parametrize(
     ("target", "name"),
     [
-        ("internal_settlement", "Rozliczenie wewnętrzne"),
-        ("collective_file", "Plik zbiorczy"),
+        ("internal_settlement", "Rozliczenie wewnętrzne okresu"),
+        ("collective_file", "Plik zbiorczy okresu"),
         ("period_folder", "Folder okresu"),
-        ("worker_settlements_folder", "Folder rozliczeń pracowników"),
+        ("worker_settlements_folder", "Folder rozliczeń pracowników okresu"),
     ],
 )
 def test_nieistniejacy_plik_okresu_nie_jest_otwierany_a_odmowa_nazywa_go_jak_glossary(
@@ -765,7 +765,7 @@ def test_nieistniejacy_plik_okresu_nie_jest_otwierany_a_odmowa_nazywa_go_jak_glo
 
     response = app.client.post("/api/periods/22_28_09_2026/open", json={"target": target})
 
-    assert (response.status_code, response.json()) == (404, {"message": f"{name} okresu 22_28_09_2026 jeszcze nie istnieje."})
+    assert (response.status_code, response.json()) == (404, {"message": f"{name} 22_28_09_2026 jeszcze nie istnieje."})
     assert app.platform.opened == []
 
 

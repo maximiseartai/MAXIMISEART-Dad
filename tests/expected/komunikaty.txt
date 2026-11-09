@@ -1228,3 +1228,137 @@ _interrupted_advice #2 [bez kodu]
   Co się stało: Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku.
   Gdzie: Przygotowanie pliku zbiorczego, okres 08_14_09_2026
   Co zrobić: Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić.
+
+=== Odmowy Centrum rozliczeń (src/rozliczenia/centrum/refusal.py) ===
+
+not_local_address [HTTP 403]
+  Centrum rozliczeń odpowiada tylko na adres tego komputera.
+
+not_from_centrum_card [HTTP 403]
+  Tę akcję można wykonać tylko z karty Centrum rozliczeń.
+
+unexpected_failure [HTTP 500]
+  W Centrum rozliczeń wystąpił nieoczekiwany błąd. Odśwież kartę i spróbuj ponownie.
+
+period_folder_unreadable [HTTP 500]
+  Nie udało się odczytać folderu 08_14_09_2026. Sprawdź, czy folder otwiera się w Eksploratorze plików i czy OneDrive działa, potem odśwież kartę.
+
+first_choose #1 [HTTP 409]
+  Najpierw wskaż folder okresów.
+
+first_choose #2 [HTTP 409]
+  Najpierw wskaż Rejestr zleceń i folder okresów.
+
+register_not_chosen [HTTP 409]
+  Najpierw wybierz Rejestr zleceń w Ustawieniach.
+
+register_unavailable [HTTP 409]
+  Rejestr zleceń ZLECENIA INTERMAX OD 08_11_2021.xlsx jest teraz niedostępny. Sprawdź, czy jego folder otwiera się w Eksploratorze plików i czy OneDrive działa, potem spróbuj ponownie.
+
+register_missing [HTTP 404]
+  Nie ma Rejestru zleceń ZLECENIA INTERMAX OD 08_11_2021.xlsx. Wybierz właściwy plik w Ustawieniach.
+
+settings_not_saved [HTTP 500]
+  Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie.
+
+unknown_period [HTTP 404]
+  Nie ma takiego okresu.
+
+period_folder_lookup #1 [HTTP 404]
+  Nie ma folderu 08_14_09_2026 w żadnym folderze miesiąca. Załóż go w folderze INEA właściwego miesiąca.
+
+period_folder_lookup #2 [HTTP 409]
+  Folder 08_14_09_2026 jest w więcej niż jednym folderze miesiąca (Rozliczenia 2026\06_Czerwiec_2026\INEA, Rozliczenia 2026\07_Lipiec_2026\INEA). Zostaw go tylko w jednym.
+
+place_missing #1 [HTTP 404]
+  Rozliczenie wewnętrzne okresu 08_14_09_2026 jeszcze nie istnieje.
+
+place_missing #2 [HTTP 404]
+  Plik zbiorczy okresu 08_14_09_2026 jeszcze nie istnieje.
+
+place_missing #3 [HTTP 404]
+  Folder okresu 08_14_09_2026 jeszcze nie istnieje.
+
+place_missing #4 [HTTP 404]
+  Folder rozliczeń pracowników okresu 08_14_09_2026 jeszcze nie istnieje.
+
+worker_settlement_missing [HTTP 404]
+  Rozliczenia pracownika Jan Testowy nie ma w okresie 08_14_09_2026.
+
+no_forwarding [HTTP 409]
+  Przygotowanie pliku zbiorczego nie ma trybu z Przekazaniem do akceptacji.
+
+pricing_without_preview [HTTP 409]
+  Wycena w efenix nie ma podglądu bez zapisu. Uruchom ją przyciskiem „Uzupełnij bez zapisu” albo „Uzupełnij i zapisz”.
+
+closing #1 [HTTP 409]
+  Centrum rozliczeń się zamyka. Kliknij skrót „Centrum rozliczeń” na pulpicie, potem uruchom proces.
+
+closing #2 [HTTP 409]
+  Centrum rozliczeń się zamyka. Kliknij skrót „Centrum rozliczeń” na pulpicie, potem zaktualizuj narzędzie.
+
+closing #3 [HTTP 409]
+  Centrum rozliczeń się zamyka. Kliknij skrót „Centrum rozliczeń” na pulpicie, potem przywróć kopię jeszcze raz.
+
+updating #1 [HTTP 409]
+  Trwa aktualizacja narzędzia. Poczekaj na jej wynik, potem uruchom proces.
+
+updating #2 [HTTP 409]
+  Trwa aktualizacja narzędzia. Poczekaj na jej wynik, potem przywróć kopię jeszcze raz.
+
+updating #3 [HTTP 409]
+  Trwa aktualizacja narzędzia. Poczekaj na jej wynik, potem zamknij Centrum rozliczeń.
+
+restoring #1 [HTTP 409]
+  Trwa przywracanie Kopii INTERMAX. Poczekaj na jego wynik, potem uruchom proces.
+
+restoring #2 [HTTP 409]
+  Trwa przywracanie Kopii INTERMAX. Poczekaj na jego wynik, potem zaktualizuj narzędzie.
+
+restoring #3 [HTTP 409]
+  Trwa przywracanie Kopii INTERMAX. Poczekaj na jego wynik, potem przywróć kopię jeszcze raz.
+
+restoring #4 [HTTP 409]
+  Trwa przywracanie Kopii INTERMAX. Poczekaj na jego wynik, potem zamknij Centrum rozliczeń.
+
+running #1 [HTTP 409]
+  Trwa Uruchomienie procesu: Przebieg rozliczeń, okres 08_14_09_2026. Poczekaj na jego wynik w Uruchomieniach, potem zaktualizuj narzędzie.
+
+running #2 [HTTP 409]
+  Trwa Uruchomienie procesu: Przebieg rozliczeń, okres 08_14_09_2026. Poczekaj na jego wynik w Uruchomieniach, potem przywróć kopię jeszcze raz.
+
+running #3 [HTTP 409]
+  Trwa Uruchomienie procesu: Przebieg rozliczeń, okres 08_14_09_2026. Poczekaj na jego wynik w Uruchomieniach, potem zamknij Centrum rozliczeń.
+
+update_in_progress [HTTP 409]
+  Trwa już aktualizacja narzędzia. Poczekaj na jej wynik.
+
+run_in_progress [HTTP 409]
+  Trwa już Uruchomienie procesu: Przebieg rozliczeń, okres 08_14_09_2026. Poczekaj na jego wynik w Uruchomieniach.
+
+unknown_run [HTTP 404]
+  Nie ma takiego Uruchomienia procesu.
+
+not_awaiting_decision [HTTP 409]
+  To Uruchomienie procesu nie czeka na decyzję.
+
+no_diagnosis [HTTP 409]
+  Diagnoza jest przy Zatrzymaniu do Maksa albo przy powtórce tego samego Komunikatu.
+
+no_report_draft [HTTP 409]
+  Zgłoszenie powstaje z Diagnozy. Najpierw kliknij „Diagnoza”.
+
+no_failed_update [HTTP 409]
+  Zgłoszenie powstaje po nieudanej aktualizacji narzędzia.
+
+metrics_unreadable [HTTP 500]
+  Nie udało się odczytać plików metryk. Odśwież kartę.
+
+history_unreadable [HTTP 500]
+  Nie udało się odczytać historii Uruchomień. Odśwież kartę albo wyślij Uwagę ogólną.
+
+run_not_in_history [HTTP 404]
+  Tego Uruchomienia nie ma już w historii Centrum rozliczeń. Wybierz inne Uruchomienie albo wyślij Uwagę ogólną.
+
+note_not_queued [HTTP 500]
+  Uwaga się nie zapisała i nie pójdzie do Maksa. Spróbuj wysłać ją jeszcze raz.

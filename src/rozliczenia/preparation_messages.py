@@ -14,7 +14,7 @@ from itertools import groupby
 from pathlib import Path
 from typing import Final, assert_never
 
-from .message import IF_ERROR_RETURNS, Message, file_label, folder_label, refer_if
+from .message import IF_ERROR_RETURNS, Message, explorer_check, file_label, folder_label, refer_if
 from .period_folder import PeriodFolderLookupError, month_folder_label
 from .text import plural, row_range
 from . import workbook_messages
@@ -329,7 +329,7 @@ def folder_inaccessible(folder: Path) -> Message:
         code="NIEDOSTEPNY_FOLDER",
         what=f"Nie można teraz odczytać folderu. {_NOTHING_CREATED}",
         where=folder_label(folder),
-        action="Sprawdź, czy folder otwiera się w Eksploratorze plików i czy OneDrive działa, potem uruchom ponownie.",
+        action=explorer_check("folder", "uruchom ponownie"),
     )
 
 
