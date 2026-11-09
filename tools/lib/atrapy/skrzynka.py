@@ -21,8 +21,8 @@ w całej skrzynce, rosnący jak na GitHubie, a z nim ``numer issue * comment_bas
 Wierność tych reguł GitHubowi sprawdzają z nagraniami prawdziwego GitHuba skilla ``verify-github-skrzynki`` dwa testy
 ``tests/test_github_skrzynki.py``: ``test_atrapa_skrzynki_daje_w_issue_te_skutki_ktore_nagral_prawdziwy_github`` i
 ``test_atrapa_skrzynki_daje_w_archiwach_te_skutki_ktore_nagral_prawdziwy_github``. Model nie ma odmowy treści issue ani
-komentarza (422 GitHuba ponad limit): daje ją atrapa, zanim zapyta model, więc odrzucone issue numeru nie zabiera, jak
-na GitHubie. Nie ma też kolejności listy issue (GitHub daje najnowsze pierwsze), bo Centrum wybiera issue po numerze,
+komentarza (422 GitHuba ponad limit): daje ją atrapa, przy issue zanim zapyta model, więc odrzucone issue numeru nie
+zabiera, jak na GitHubie, a przy komentarzu po odpowiedzi modelu, bez zapisu, więc odrzucony komentarz nie zostaje. Nie ma też kolejności listy issue (GitHub daje najnowsze pierwsze), bo Centrum wybiera issue po numerze,
 ani usuniętego issue.
 """
 

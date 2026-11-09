@@ -8,8 +8,8 @@ that the result of a started Uruchomienie is never the one before it and the Cen
 that a file the server puts in place is read once it is there and only a vanished queue file is left out,
 that the drive reads files in no other way than through those readers (``_direct_reads``),
 that the scripted skrzynka reads an issue file the drive is putting in place once it is there,
-that the scripted boundaries of ``serve_centrum.py`` write and read each file where ``harness.py`` puts it and no other
-script spells a name of ``harness.py`` (``_protocol_spelled``),
+that the scripted boundaries of ``serve_centrum.py`` (its platform, skrzynka, GitHub, OneDrive, Rejestr and clock) write
+and read each file where ``harness.py`` puts it and no other script spells a name of ``harness.py`` (``_protocol_spelled``),
 that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, stands still
 without a move and fails on a refusal that outlasts its limit, that the drive fails on the clock's wake-up thread once it has died,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
@@ -845,7 +845,16 @@ def _check_protocol_spelled_once(errors: list[str]) -> None:
 def _check_served_side_reads_harness(errors: list[str]) -> None:
     """The scripted boundaries of ``serve_centrum.py`` write and read each file where ``harness.py`` puts it: a member
     the served side reads under another member's name, or a name it spells itself, fails here and not as a check of
-    the drive that passes because nothing opened (``Log.OPENED``) or nothing was refused."""
+    the drive that passes because nothing opened (``Log.OPENED``) or nothing was refused.
+
+    Held here: ``ScriptedPlatform`` (``Log.OPENED``, ``Log.DIALOGS``, ``File.PICKER_ANSWER``), ``FileReportBox`` (its
+    ``Switch`` members, ``rejects``, ``Log.REPORT_QUESTIONS``, the Archiwa files), ``_scripted_github`` (``File``
+    members of GitHub, ``Switch.GITHUB_OFFLINE``, ``Log.RELEASE_QUESTIONS``), ``_scripted_onedrive``
+    (``File.CLOUD_ONLY``) and ``_register_failing_on_hook`` (``Switch.REGISTER_FAULT``); ``ScriptedClock``
+    (``File.CLOCK_MOVE``, ``File.CLOCK_DIED``) is held by ``_check_clock_alarm_failure``. Not held: the files the
+    served side writes as it starts, ``File.EFENIX_ADDRESS`` with ``efenix_files`` (``_efenix_window``) and
+    ``File.SERVER`` (``record_bound_server``); a wrong one stops the run loudly, the drive failing on a missing
+    address of the Atrapa efenix and the run waiting for the server record until its limit."""
 
     import json
     import tempfile
