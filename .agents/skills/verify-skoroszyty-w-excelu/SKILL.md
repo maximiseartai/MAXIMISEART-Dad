@@ -22,6 +22,8 @@ pilnuje:
   - src/rozliczenia/period_folder.py
   - tools/lib/atrapy/scenariusz_rozliczen.py
   - tools/syntetyczne_wzorce.py
+  - tools/lib/atrapy/wzorce.py
+  - tools/lib/atrapy/pliki_taty.py
   - requirements.txt
 ---
 

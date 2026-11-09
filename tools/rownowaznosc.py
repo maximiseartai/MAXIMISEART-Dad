@@ -8,7 +8,7 @@ Użycie (z katalogu repozytorium):
 
 Całego zachowania procesów nie opisze żaden test, ale da się sprawdzić, że zmiana nic w nim nie zmienia. Narzędzie
 buduje raz scenariusze syntetyczne trzech procesów (Przebieg rozliczeń, Przygotowanie pliku zbiorczego,
-Uporządkowanie INTERMAX) z atrap plików taty ``tools/lib/atrapy`` i Wzorców z ``tools/syntetyczne_wzorce.py``, także z
+Uporządkowanie INTERMAX) z atrap plików taty ``tools/lib/atrapy`` i Wzorców z ``tools/lib/atrapy/wzorce.py``, także z
 Zatrzymaniem i z plikiem uszkodzonym, i uruchamia każdy skryptem dla maszyn ``tools/uruchom_proces.py`` obu stron:
 
 - baza: kopia commitu ``--baza`` (``potomne.commit_copy``), domyślnie merge-base HEAD z ``origin/main``;
@@ -63,11 +63,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import potomne
+from atrapy import wzorce
+from atrapy.pliki_taty import WORKER_TEMPLATE_NAME
 from repo import BASE, ROOT
 import repo
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.period_folder import PeriodFolder
-import syntetyczne_wzorce
 
 PARALLEL = 3
 TIMEOUT = 600
@@ -112,7 +113,7 @@ def _settlement(change: Callable[[Path], None] | None = None, *, preview: bool =
         source, _, config = (make_preview_fixture if unmapped else make_fixture)(folder)
         if change is not None:
             change(source)
-        arguments: list[str | Path] = ["--source", source, "--config", config, "--worker-template", folder / "Wzorzec rozliczenia pracownika.xlsx"]
+        arguments: list[str | Path] = ["--source", source, "--config", config, "--worker-template", folder / WORKER_TEMPLATE_NAME]
         return [*arguments, "--dry-run"] if preview else arguments
 
     return build
@@ -125,7 +126,7 @@ def _quantities(source: Path) -> None:
 
 
 def _synthetic_worker_template(source: Path) -> None:
-    syntetyczne_wzorce.write_settlement_template(source.parents[1] / "Wzorzec rozliczenia pracownika.xlsx", "GODZINA", 128, comments=True)
+    wzorce.write_settlement_template(source.parents[1] / WORKER_TEMPLATE_NAME, "GODZINA", 128, comments=True)
 
 
 def _existing_settlements(source: Path) -> None:
@@ -195,8 +196,8 @@ def _preparation(
 
         made = {"plain": make_preparation_fixture, "dad_layout": make_dad_layout_fixture, "incomplete": incomplete_period_fixture}[fixture](folder)
         if synthetic_templates:
-            syntetyczne_wzorce.write_internal_template(made.internal_template_path)
-            syntetyczne_wzorce.write_settlement_template(made.collective_template_path, "MIASTO", 128)
+            wzorce.write_internal_template(made.internal_template_path)
+            wzorce.write_settlement_template(made.collective_template_path, "MIASTO", 128)
         if existing_file:
             made.period_directory.mkdir()
             shutil.copy2(made.collective_template_path, made.period_directory / COLLECTIVE_FILE_NAME)

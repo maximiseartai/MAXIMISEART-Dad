@@ -71,14 +71,15 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.worksheet.formula import ArrayFormula
 
 import porownanie_rozliczen as gate
-from rozliczenia import collective_layout, workbook_files
+from rozliczenia import workbook_files
 from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.hyperlinks import Hyperlink
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataCell, DataRow, ExcelRow
-from syntetyczne_wzorce import write_settlement_template
+from atrapy import pliki_taty
 from atrapy.settlement import write_template
+from atrapy.wzorce import write_settlement_template
 from atrapy.workbooks import add_external_link_fixture, refused_by_copy
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -90,11 +91,13 @@ WORKBOOK = "xl/workbook.xml"
 STYLES = "xl/styles.xml"
 SHEET_RELS = "xl/worksheets/_rels/sheet1.xml.rels"
 CONTENT_TYPES = "[Content_Types].xml"
-ORDER_NUMBER = 6  # F, NUMER ZL.: the column whose Hiperłącza Dad clicks
-FIRST_DATA_ROW = collective_layout.FIRST_DATA_ROW
-HEADER_ROW = collective_layout.HEADER_ROW
-DATA_COLUMNS = collective_layout.DATA_ROW_COLUMNS[-1]  # AT
-LOOK_COLUMNS = collective_layout.LOOK_COLUMNS[-1]  # L: the columns with the Wygląd Wiersza danych
+# Dad's layout from the deliberate copy, not from src: a wrong constant in src then misses the Wzorzec instead of moving
+# with the check (docs/agents/skille.md, „Co wyrocznia bierze z src”).
+ORDER_NUMBER = pliki_taty.ORDER_COLUMN  # F, NUMER ZL.: the column whose Hiperłącza Dad clicks
+FIRST_DATA_ROW = pliki_taty.FIRST_DATA_ROW
+HEADER_ROW = pliki_taty.HEADER_ROW
+DATA_COLUMNS = pliki_taty.DATA_ROW_COLUMNS[-1]  # AT
+LOOK_COLUMNS = pliki_taty.LOOK_COLUMNS[-1]  # L: the columns with the Wygląd Wiersza danych
 ROWS_PER_CHUNK = 64  # Excel's shared-formula block and the copy's compression chunk (``_ROWS_PER_CHUNK``)
 DEFAULT_EXAMPLES = 60
 # Hypothesis shrinks a counterexample for up to 300 s; a minute gives a short story here and keeps a failing run cheap.
@@ -224,7 +227,7 @@ def build_templates(directory: Path, real_template: Path | None, names: Sequence
         templates.append(
             Template.of(
                 "syntetyczny",
-                "kształt Wzorca taty z tools/syntetyczne_wzorce.py, 200 Wierszy danych: wspólne formuły, calcChain, "
+                "kształt Wzorca taty z tools/lib/atrapy/wzorce.py, 200 Wierszy danych: wspólne formuły, calcChain, "
                 "link zewnętrzny, komentarz z relacjami arkusza rId1 i rId2, wiersze zer w N:V i X, A i B bez komórek od wiersza 139",
                 synthetic,
                 max_rows=260,

@@ -19,6 +19,8 @@ CITY_COLUMN: Final = 1  # A
 ADDRESS_COLUMN: Final = 2  # B
 ORDER_COLUMN: Final = 6  # F: NUMER ZLECENIA
 WORKER_COLUMN: Final = 8  # H
+DATA_ROW_COLUMNS: Final = range(1, 47)  # A:AT, Wiersz danych
+LOOK_COLUMNS: Final = range(1, 13)  # A:L, Wygląd Wiersza danych
 QUANTITY_COLUMNS: Final = range(14, 43)  # N:AP, Ilości usług
 AMOUNT_COLUMN: Final = 47  # AU
 

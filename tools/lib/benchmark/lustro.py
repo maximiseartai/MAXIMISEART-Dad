@@ -35,7 +35,7 @@ from rozliczenia.collective_layout import CHARGE_AMOUNT, CHARGE_DESCRIPTION, QUA
 from rozliczenia.workbook_files import read_data_rows
 from rozliczenia.workbook_save import save_workbook
 from rozliczenia.worker_config import WorkerConfigError, load_worker_mapping
-from syntetyczne_wzorce import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
+from atrapy.pliki_taty import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_CONFIG_NAME, WORKER_TEMPLATE_NAME
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,7 @@ SCENARIOS = {
 }
 
 
-TEMPLATE_NAMES = (WORKER_TEMPLATE, INTERNAL_TEMPLATE, COLLECTIVE_TEMPLATE)
+TEMPLATE_NAMES = (WORKER_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, COLLECTIVE_TEMPLATE_NAME)
 
 
 PERIOD = parse_period_token("06_12_10_2026")
@@ -122,13 +122,13 @@ def _config_with(name: str) -> Path:
 
 
 def default_templates_directory() -> Path:
-    return _config_with(WORKER_TEMPLATE)
+    return _config_with(WORKER_TEMPLATE_NAME)
 
 
 def default_worker_config() -> Path:
     """Prawdziwa Konfiguracja wykonawców spoza gita: z ``config/`` tego checkoutu albo głównego checkoutu."""
 
-    return _config_with(WORKER_CONFIG) / WORKER_CONFIG
+    return _config_with(WORKER_CONFIG_NAME) / WORKER_CONFIG_NAME
 
 
 def template_paths(directory: Path) -> dict[str, Path]:
@@ -154,7 +154,7 @@ def _worker_ids(config: Path) -> list[str]:
 
 def _fingerprint(scenario_name: str, config: Path, templates: Mapping[str, Path]) -> str:
     digest = hashlib.sha256(f"{GENERATOR_VERSION}|{SEED}|{scenario_name}|{SCENARIOS[scenario_name]}".encode())
-    for path in (config, templates[INTERNAL_TEMPLATE], templates[COLLECTIVE_TEMPLATE]):
+    for path in (config, templates[INTERNAL_TEMPLATE_NAME], templates[COLLECTIVE_TEMPLATE_NAME]):
         digest.update(path.read_bytes())
     return digest.hexdigest()[:12]
 
@@ -292,9 +292,9 @@ def ensure_mirror(
                     "--config",
                     config,
                     "--internal-template",
-                    templates[INTERNAL_TEMPLATE],
+                    templates[INTERNAL_TEMPLATE_NAME],
                     "--collective-template",
-                    templates[COLLECTIVE_TEMPLATE],
+                    templates[COLLECTIVE_TEMPLATE_NAME],
                     "--metrics",
                     Path(scratch) / "metrics.jsonl",
                 ],

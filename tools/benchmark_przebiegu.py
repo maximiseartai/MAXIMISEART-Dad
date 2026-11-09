@@ -83,6 +83,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+from atrapy.pliki_taty import WORKER_TEMPLATE_NAME
 from benchmark import DEFAULT_DIRECTORY, BenchmarkError
 from benchmark.dziennik import (
     WALL_PARTS,
@@ -97,7 +98,6 @@ from benchmark.lustro import SCENARIOS, default_templates_directory, default_wor
 from benchmark.pomiar import RUNS, exclusive_measurement, measure, measurement_lock
 from benchmark.referencja import find_reference, freeze_reference, reference_folder
 from quiet_machine import MachineBusy, QuietMachine
-from syntetyczne_wzorce import WORKER_TEMPLATE
 
 
 def _default_machine() -> str:
@@ -161,17 +161,17 @@ def _measure_or_freeze(args: argparse.Namespace, references: Path) -> dict[str, 
     mirror, built = ensure_mirror(args.mirror_dir.expanduser().resolve(), args.scenario, config, templates)
     print(f"Lustro {'zbudowane' if built else 'istniejące'}: {mirror}", flush=True)
     if args.command == "freeze":
-        frozen = freeze_reference(references, mirror, args.commit, config, templates[WORKER_TEMPLATE])
+        frozen = freeze_reference(references, mirror, args.commit, config, templates[WORKER_TEMPLATE_NAME])
         print(f"Wynik referencyjny {args.scenario} z commita {frozen.name[:7]}: {frozen}")
         return None
-    reference = find_reference(references, mirror, templates[WORKER_TEMPLATE], args.reference)
+    reference = find_reference(references, mirror, templates[WORKER_TEMPLATE_NAME], args.reference)
     if reference is None:
-        folder = reference_folder(references, mirror, templates[WORKER_TEMPLATE])
+        folder = reference_folder(references, mirror, templates[WORKER_TEMPLATE_NAME])
         print(
             f"Brak wyniku referencyjnego dla tego lustra i Wzorca rozliczenia pracownika w {folder}; "
             "bramka poprawności nie sprawdzona."
         )
-    record = measure(mirror, args.scenario, config, templates[WORKER_TEMPLATE], args.machine, reference)
+    record = measure(mirror, args.scenario, config, templates[WORKER_TEMPLATE_NAME], args.machine, reference)
     append_record(args.journal, record)
     return record
 
