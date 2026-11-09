@@ -1,7 +1,8 @@
 """``tools/lib/potomne.py``: drzewo procesów polecenia i kopia commitu nie przeżywają wyniku ani narzędzia.
 
 Macierz przypadków biegnie raz, na interfejsie modułu i na prawdziwych procesach. Narzędzia, które go
-używają, mają po jednym teście, że ich procesy giną razem z nimi.
+używają, mają po jednym teście, że ich procesy giną razem z nimi. Tu biegnie też macierz drogi narzędzi do gita
+(``tools/lib/repo.py``): scalenie bez worktree.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
 import potomne
+import repo
 from tests.fixtures.skladnia import dotted, imports
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
@@ -278,6 +280,34 @@ def test_kopia_commitu_ma_jego_drzewo_i_znika_z_blokiem(tmp_path: Path, ending: 
 
     assert seen == ("w commicie\n", 2)
     assert (copy.exists(), len(worktrees(repo))) == (False, 1)
+
+
+@pytest.mark.parametrize("change", ["inny plik", "ta sama linia"])
+def test_scalenie_bez_worktree_daje_drzewo_scalenia_i_pliki_z_konfliktem(tmp_path: Path, change: str) -> None:
+    path = _repository(tmp_path / "repo")
+    commit(path, "stan checkoutu")
+    git(path, "checkout", "--quiet", "-b", "druga")
+    (path / ("inny.txt" if change == "inny plik" else "plik.txt")).write_text("z drugiej\n", encoding="utf-8")
+    commit(path, "druga")
+    git(path, "checkout", "--quiet", "-")
+    (path / "plik.txt").write_text("z pierwszej\n", encoding="utf-8")
+    commit(path, "pierwsza")
+
+    merged = repo.merge_tree(path, "HEAD", "druga")
+
+    files = sorted(git(path, "ls-tree", "--name-only", merged.tree).split())
+    assert (merged.conflicts, files) == (((), ["inny.txt", "plik.txt"]) if change == "inny plik" else (("plik.txt",), ["plik.txt"]))
+
+
+def test_scalenie_historii_bez_wspolnej_bazy_to_blad_gita_a_nie_konflikt(tmp_path: Path) -> None:
+    path = _repository(tmp_path / "repo")
+    git(path, "checkout", "--quiet", "--orphan", "obca")
+    commit(path, "bez wspólnej historii")
+
+    with pytest.raises(subprocess.CalledProcessError, match=r"merge-tree") as raised:
+        repo.merge_tree(path, "obca", "main")
+
+    assert raised.value.returncode not in (0, 1) and "unrelated histories" in raised.value.stderr
 
 
 def test_nieudana_kopia_commitu_niesie_komunikat_gita(tmp_path: Path) -> None:

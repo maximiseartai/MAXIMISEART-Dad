@@ -25,7 +25,8 @@ jako „zostawione CI”, więc ``SZYBKO OK`` znaczy, że przeszły uruchomione 
 Testy ``STRUCTURE`` modułu wpływu zmiany (reguły z tabel w ``AGENTS.md``, ``CODING_STANDARDS.md`` i ``docs/agents/`` oraz testy całego
 repozytorium) biegną przy każdej zmianie, a gdy ``--baza`` poszła dalej niż HEAD, także na mergu z nią (to drzewo
 sprawdza CI PR-u; numer ADR zajęty równolegle pada dopiero tam). Na mergu biegną tylko one, bez mypy, testów
-dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami.
+dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami. Merge z konfliktem szybko pomija z linią ``UWAGA``,
+a merge, którego git nie policzy (``git merge-tree`` z kodem innym niż konflikt), wywraca ten krok z powodem.
 Szybko nie pobiera ``origin``, więc merge jest z bazą z ostatniego ``git fetch``. Nie uruchamia zadań CI
 ``mutations`` (skrypty mutacji skilli), ``Frontend``, E2E ani Timing guard.
 
@@ -183,18 +184,26 @@ def _passed(junit: Path, ran: Iterable[str]) -> set[str]:
     return {str(plik) for plik in passed}
 
 
-def _merge_with(base: str) -> str | None:
+def _merge_steps(base: str, copies: ExitStack) -> list[Step]:
+    """Krok testów struktury na mergu HEAD z ``base``; bez kroku, gdy ``base`` jest w HEAD albo merge ma konflikt, a krok,
+    który pada z powodem, gdy git nie umie policzyć mergu."""
+
     if repo.is_ancestor(ROOT, base, "HEAD"):
-        return None
+        return []
+    name = f"testy struktury po mergu z {base}"
     try:
-        merged = repo.git(ROOT, "merge-tree", "--write-tree", "--name-only", "HEAD", base)
-    except subprocess.CalledProcessError as conflict:
-        conflicts = conflict.stdout.split("\n\n", 1)[0].splitlines()[1:]
-        print(f"UWAGA: merge z {base} ma konflikt w {', '.join(conflicts)}; testy struktury po mergu pominięte", flush=True)
-        return None
-    tree = merged.split("\n\n", 1)[0].splitlines()[0]
+        merged = repo.merge_tree(ROOT, "HEAD", base)
+    except subprocess.CalledProcessError as error:
+        reason = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
+        return [_failing(ROOT, name, f"git merge-tree z {base}: {reason}")]
+    if merged.conflicts:
+        print(f"UWAGA: merge z {base} ma konflikt w {', '.join(merged.conflicts)}; testy struktury po mergu pominięte", flush=True)
+        return []
     author = ("-c", "user.name=szybko", "-c", "user.email=szybko@localhost")
-    return repo.git(ROOT, *author, "commit-tree", tree, "-p", "HEAD", "-p", base, "-m", f"szybko: HEAD z {base}").strip()
+    merge = repo.git(ROOT, *author, "commit-tree", merged.tree, "-p", "HEAD", "-p", base, "-m", f"szybko: HEAD z {base}").strip()
+    copy = copies.enter_context(potomne.commit_copy(ROOT, merge))
+    # Biegnie razem z krokiem pytest, więc bez workerów xdist nie podwaja liczby rdzeni szybko.
+    return [pytest_step(copy, name, (*STRUCTURE, "-n", "0"))]
 
 
 def _pytest_arguments(tests: Iterable[str], junit: Path) -> tuple[str, ...]:
@@ -320,10 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     junit = memory.path.with_name(f"szybko-junit-{os.getpid()}.xml")
     steps = _steps(ROOT, chosen.run, junit)
     with ExitStack() as copies:
-        if merge := _merge_with(args.baza):
-            copy = copies.enter_context(potomne.commit_copy(ROOT, merge))
-            # Biegnie razem z krokiem pytest, więc bez workerów xdist nie podwaja liczby rdzeni szybko.
-            steps.append(pytest_step(copy, f"testy struktury po mergu z {args.baza}", (*STRUCTURE, "-n", "0")))
+        steps += _merge_steps(args.baza, copies)
         failed, interrupted = _run_all(steps, next(step for step in steps if step.name == "pytest"))
     failed = (["rozjazd modelu"] if drift else []) + failed
     memory.remember(selection, junit, chosen.run)

@@ -236,10 +236,10 @@ def _in_base(root: Path, head: str) -> bool:
     if repo.is_ancestor(root, head, BASE):
         return True
     try:
-        merged = repo.git(root, "merge-tree", "--write-tree", BASE, head).splitlines()[0]
-        return merged == repo.git(root, "rev-parse", f"{BASE}^{{tree}}").strip()
-    except (subprocess.CalledProcessError, IndexError):
-        return False  # konflikt albo historie bez wspólnej bazy
+        merged = repo.merge_tree(root, BASE, head)
+    except subprocess.CalledProcessError:
+        return False  # historie bez wspólnej bazy
+    return not merged.conflicts and merged.tree == repo.git(root, "rev-parse", f"{BASE}^{{tree}}").strip()
 
 
 def _fresh_without_own_work(cwd: Path, ref: str, head: str) -> bool:

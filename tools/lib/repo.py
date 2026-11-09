@@ -45,6 +45,7 @@ __all__ = [
     "REMOTE",
     "ROOT",
     "TIMEOUT_S",
+    "Merged",
     "Worktree",
     "changed",
     "command",
@@ -55,6 +56,7 @@ __all__ = [
     "is_ancestor",
     "main_checkout",
     "merge_base",
+    "merge_tree",
     "run_git",
     "succeeds",
     "toplevel",
@@ -135,6 +137,29 @@ def merge_base(root: Path, first: str, second: str, *, timeout: float | None = T
     """Najlepszy wspólny przodek; bez niego (nieznana rewizja, rozłączne historie) ``subprocess.CalledProcessError``."""
 
     return git(root, "merge-base", first, second, timeout=timeout).strip()
+
+
+@dataclass(frozen=True)
+class Merged:
+    """Scalenie dwóch commitów zapisane jako drzewo, bez worktree: ``conflicts`` to pliki z konfliktem (puste bez
+    konfliktu), a drzewo ma w nich znaczniki konfliktu."""
+
+    tree: str
+    conflicts: tuple[str, ...]
+
+
+def merge_tree(root: Path, first: str, second: str) -> Merged:
+    """Scalenie ``first`` z ``second`` (``git merge-tree --write-tree``). Kod 1 to konflikt; każdy inny kod różny od zera
+    (rozłączne historie, brak obiektu, nieznana rewizja) to ``subprocess.CalledProcessError``, a nie konflikt."""
+
+    try:
+        written = git(root, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", first, second)
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 1:
+            raise
+        written = error.stdout
+    tree, *conflicts = written.split("\0")
+    return Merged(tree, tuple(dict.fromkeys(path for path in conflicts if path)))
 
 
 def changed(
