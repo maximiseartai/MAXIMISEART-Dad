@@ -462,7 +462,7 @@ Never shrink a bound, a scope or a rule to make a real counterexample go away.
 CI proves the check can still fail: the night on `main` runs
 `.agents/skills/verify-kolejka-skrzynki/scripts/check_outbox_mutations.py`
 after a change of this skill's folder. It applies each broken variant of
-`outbox.py` to a temporary copy of the checkout (`tools/mutacje.py`) and must end
+`outbox.py` to a temporary copy of the checkout (`tools/lib/silnik_mutacji.py`) and must end
 with `MUTACJE OK`. Each mutation runs one scope with `--stop-at-new`, because it needs only the verdict, while
 its base, the same command without the mutation, still explores every schedule of the scope. Run to the end, a
 mutation explored every schedule after its violation: the one of `archiwum-diagnoza` 23 787 after a violation in
@@ -816,7 +816,7 @@ CI proves the model can still fail: the night on `main` runs
 `.agents/skills/verify-kolejka-skrzynki/scripts/check_model_kolejki_mutations.py`
 after a change of this skill's folder. Each mutation removes from the model
 one guard or step whose code it names, on a copy of the checkout
-(`tools/mutacje.py`), and must end with `MODEL KOLEJKI: NOWE NARUSZENIE`:
+(`tools/lib/silnik_mutacji.py`), and must end with `MODEL KOLEJKI: NOWE NARUSZENIE`:
 
 - JednoIssue: an issue okresu opened without looking for it; an Archiwum opened
   without looking for it (`archiwum`; GitHub refuses the second with 422, so it

@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Iterable
+from functools import cache
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 
+from wplyw_zmiany import Repository
+
 ROOT = Path(__file__).resolve().parents[2]
+# Narzędzia, z którymi działa repozytorium testu (``repository``), każde z modułami ``tools/``, które importuje.
+TOOLS = ("tools/ci_lokalnie.py", "tools/mutacje.py")
 AUTHOR = {name: value for role in ("AUTHOR", "COMMITTER") for name, value in ((f"GIT_{role}_NAME", "test"), (f"GIT_{role}_EMAIL", "test@example.com"))}
 
-__all__ = ["built_once", "commit", "copy_files", "git", "repository"]
+__all__ = ["TOOLS", "built_once", "commit", "copy_files", "git", "repository", "with_imports"]
 
 
 def git(repo: Path, *arguments: str) -> str:
@@ -42,13 +47,25 @@ def copy_files(path: Path, names: Iterable[str]) -> None:
         shutil.copy2(ROOT / name, path / name)
 
 
-def repository(path: Path, files: dict[str, str]) -> Path:
-    """Repozytorium z ``pyproject.toml`` i narzędziami checkoutu oraz ``files``, bez commitu."""
+def with_imports(names: Iterable[str]) -> list[str]:
+    """``names`` (ścieżki od korzenia checkoutu) i pliki ``tools/``, do których dochodzą importem, wprost albo przez inny
+    moduł (``Repository.imported``), więc kopia narzędzia ma każdy swój moduł bez listy, która się rozjeżdża."""
 
-    copy_files(
-        path,
-        ("pyproject.toml", "tools/ci_lokalnie.py", "tools/lib/kroki_lokalne.py", "tools/lib/ciezkie_ci.py", "tools/lib/czasy_ci.py", "tools/lib/github.py", "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py", "tools/mutacje.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/sciezki_w_kodzie.py"),
-    )
+    names = tuple(names)
+    reached = {found for name in names for found in _checkout().imported(name) if found.startswith("tools/")}
+    return sorted({*names, *reached})
+
+
+@cache
+def _checkout() -> Repository:
+    return Repository.scan(ROOT)
+
+
+def repository(path: Path, files: dict[str, str], tools: Iterable[str] = TOOLS) -> Path:
+    """Repozytorium z ``pyproject.toml``, narzędziami ``tools`` checkoutu z ich importami (``with_imports``) oraz ``files``,
+    bez commitu."""
+
+    copy_files(path, ("pyproject.toml", *with_imports(tools)))
     for name, text in files.items():
         (path / name).parent.mkdir(parents=True, exist_ok=True)
         (path / name).write_text(text, encoding="utf-8")

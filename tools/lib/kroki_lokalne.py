@@ -1,7 +1,7 @@
 """Kroki sprawdzeń, które biegną lokalnie tak jak w CI (ruff, mypy obu systemów, pytest), i środowisko kodu drzewa.
 
 Kroki ruff i mypy (``static_steps``) to brama pre-push i zadanie CI „Ruff, mypy”: biegną nimi ``tools/ci_lokalnie.py``,
-``tools/szybko.py`` i brama typów mutacji (``tools/mutacje.py``). Krok pytest (``pytest_step``) to ten sam pytest, który
+``tools/szybko.py`` i brama typów mutacji (``tools/lib/silnik_mutacji.py``). Krok pytest (``pytest_step``) to ten sam pytest, który
 ``tools/ci_lokalnie.py`` uruchamia w całości, a ``tools/szybko.py`` z wybranymi testami.
 
 ``environment`` to środowisko procesu, który uruchamia kod drzewa ``root`` (checkoutu albo jego kopii): edytowalna

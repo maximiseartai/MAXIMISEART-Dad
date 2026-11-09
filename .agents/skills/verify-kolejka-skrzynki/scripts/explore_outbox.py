@@ -139,7 +139,7 @@ class _NotesInMemory:
     this object as both, so every Centrum of a schedule reads what the last one wrote, as from Dad's ``config``
     folder, and the file is missing (``FileNotFoundError``) until the first write. The checker never fails the read or
     the write of this file (SKILL.md), so the disk added nothing but time: since #897 the file took about 40% of a scope
-    (#911), and on Windows CI ``archiwum-diagnoza`` ran past the 600 s limit of ``tools/mutacje.py``.
+    (#911), and on Windows CI ``archiwum-diagnoza`` ran past the 600 s limit of the mutation engine (``tools/lib/silnik_mutacji.py``).
     """
 
     def __init__(self) -> None:

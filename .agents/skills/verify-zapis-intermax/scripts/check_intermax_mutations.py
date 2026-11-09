@@ -1,7 +1,7 @@
 """Show that explore_intermax.py fails on broken variants of the INTERMAX save, and for each part of the shape of each
 known finding of the explorer on a broken variant just outside it (``BOUNDARIES``).
 
-Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must end the checker's report with the
+Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must end the checker's report with the
 expected line. A mutation whose anchor text is no longer in its file is reported as NIEAKTUALNA: update it to the new
 code.
 """
@@ -13,9 +13,9 @@ from pathlib import Path
 import sys
 from typing import Final
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 REPLACE = Path("src/rozliczenia/intermax_replace.py")
 RESTORE = Path("src/rozliczenia/intermax_restore.py")

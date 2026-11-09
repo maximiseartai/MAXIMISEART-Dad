@@ -335,7 +335,7 @@ When a definition from `model/definicje.json` changes:
 ## After changing the model
 
 `.venv/bin/python .agents/skills/verify-urwane-uruchomienie/scripts/check_model_urwanego_mutations.py` applies each
-broken variant of the model to a copy of the checkout (`tools/mutacje.py`) and must end with `MUTACJE OK`; run it only
+broken variant of the model to a copy of the checkout (`tools/lib/silnik_mutacji.py`) and must end with `MUTACJE OK`; run it only
 to reproduce a red Mutation checks step or while you change the model. Each mutation removes a guard the code has, and
 each gives `URWANE URUCHOMIENIE: NOWE NARUSZENIE`:
 

@@ -31,7 +31,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 ## Change mutations
 
 - Biegną raz na dobę (workflow `mutacje-nocne.yml`, ADR 0021) na `main`, na liniach plików `src/**/*.py` i `tools/**/*.py` zmienionych od commitu, do którego doszedł ostatni udany przebieg, a bez niego od 24 h wstecz.
-  W tym samym przebiegu biegną skrypty mutacji skilli, których folder, runner mutacji albo sprawdzenie zmieniło się od tej bazy, w zadaniach z planu `tools/plan_ci.py plan --zdarzenie noc`.
+  W tym samym przebiegu biegną skrypty mutacji skilli, których folder, moduł, który skrypt importuje (silnik mutacji i jego zależności), uruchamiacz kroku albo sprawdzenie zmieniło się od tej bazy, w zadaniach z planu `tools/plan_ci.py plan --zdarzenie noc`.
   Biegnie w nim też każda część każdego n od 1 do `ci-czesci` podstawy z `ci-czesci:`, którą zmiana od bazy wybrałaby na pull request, bo pull request uruchamia jej części tylko jednego n.
   Ręczne uruchomienie workflow przyjmuje `od`, czyli commit, od którego liczyć zmiany.
 - `tools/mutacje_nocne.py` dzieli mutacje na części po najwyżej 24, a noc ma najwyżej 40 części.

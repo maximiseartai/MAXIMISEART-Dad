@@ -216,7 +216,7 @@ def _explored_without_queue_thread(*arguments: str) -> tuple[int, list[str]]:
 def test_przebieg_mutacji_konczy_sie_na_pierwszym_harmonogramie_z_nowym_naruszeniem() -> None:
     """``--stop-at-new`` (#963, #967): mutacji wystarczy werdykt, więc eksplorator kończy na pierwszym harmonogramie z
     nowym naruszeniem i nie zaczyna następnego zakresu. Bez flagi ten sam zepsuty kod przechodzi każdy harmonogram
-    każdego zakresu, a pełny przebieg mutacji przekroczył w CI limit 600 s ``tools/mutacje.py``."""
+    każdego zakresu, a pełny przebieg mutacji przekroczył w CI limit 600 s silnika mutacji (``tools/lib/silnik_mutacji.py``)."""
 
     full_code, full = _explored_without_queue_thread()
     stopped_code, stopped = _explored_without_queue_thread("--stop-at-new")

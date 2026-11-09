@@ -1,6 +1,6 @@
 """Show that the replay of ``verify-github-skrzynki`` fails on broken variants of the GitHub clients and test fakes.
 
-Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must end the replay (``github_skrzynki.py
+Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must end the replay (``github_skrzynki.py
 odtworz``, offline, on the committed recordings) with ``VERIFY FAIL``. A mutation whose anchor text is no longer in its
 file is reported as NIEAKTUALNA: update it to the new code.
 """
@@ -10,9 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 BOX = Path("src/rozliczenia/centrum/report_box.py")
 KEYED = Path("src/rozliczenia/centrum/keyed_box.py")

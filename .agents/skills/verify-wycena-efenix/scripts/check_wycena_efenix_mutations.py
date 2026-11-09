@@ -5,7 +5,7 @@ upwards of #960 (ADR 0026), also on the way of a torn answer, after which efenix
 each part of the shape of each accepted risk of the explorer a broken variant just outside it (``BOUNDARIES``, none
 today).
 
-Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with the axes and request roles that reach it,
+Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) with the axes and request roles that reach it,
 one browser at a time, and must end the checker's report with the expected line. A mutation whose anchor text is no
 longer in its file is reported as NIEAKTUALNA: update it to the new code.
 """
@@ -17,9 +17,9 @@ from pathlib import Path
 import sys
 from typing import Final
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 BROWSER = Path("src/rozliczenia/efenix_browser.py")
 PRICING = Path("src/rozliczenia/efenix_pricing.py")

@@ -1,6 +1,6 @@
 """Show that explore_runs.py fails on broken variants of RunHost, Shutdown and PreparedRun.conduct.
 
-Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) and must
+Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must
 end the checker's report with the expected line. A mutation whose anchor text is no
 longer in its file is reported as NIEAKTUALNA: update it to the new code.
 """
@@ -10,9 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 RUNS = Path("src/rozliczenia/centrum/runs.py")
 SHUTDOWN = Path("src/rozliczenia/centrum/shutdown.py")

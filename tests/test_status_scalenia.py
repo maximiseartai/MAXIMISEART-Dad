@@ -54,7 +54,6 @@ class StatusGitHub(FakeGitHub):
                 **files,
             },
             tool="tools/ci/status_scalenia.py",
-            copies=("tools/lib/werdykt_scalenia.py", "tools/lib/github.py"),
             gh=FAKE_GH,
         )
         (self.bin / "odrzucane").write_text("", encoding="utf-8")

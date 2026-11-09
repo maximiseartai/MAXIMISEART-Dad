@@ -1,4 +1,4 @@
-"""Brama typów mutacji (``mutacje.type_gate``) w testach: atrapa dla logiki i konfiguracja prawdziwego ruff i mypy."""
+"""Brama typów mutacji (``silnik_mutacji.type_gate``) w testach: atrapa dla logiki i konfiguracja prawdziwego ruff i mypy."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 
 __all__ = ["FAKE_GATE", "TYPE_GATE_ON_SRC", "real_static_tools"]
 
-# Źródło atrapy bramy ``brama(copy, **_)`` dla skryptu, który już zaimportował ``mutacje``: każda linia ``src`` kopii z
+# Źródło atrapy bramy ``brama(copy, **_)`` dla skryptu, który już zaimportował ``silnik_mutacji``: każda linia ``src`` kopii z
 # komentarzem ``# brama: <narzędzie> <kod>`` daje diagnostykę tego narzędzia z tym kodem (``-``: bez kodu, jak wyjście,
 # którego brama nie umie przeczytać; ``późno``: krok bez wyniku w czasie). Komentarz ``# brama gdy <tekst>: …`` daje ją
 # tylko, gdy kod linii przed nim ma ``<tekst>``, czyli po mutacji operatora (``return 1`` → ``return None``), a nie bez
@@ -29,8 +29,8 @@ def brama(copy, **_):
                     late = f"{marker[2]}: brak wyniku po 1 s"
                     continue
                 code = None if marker[3] == "-" else marker[3]
-                found.append(mutacje.Finding(marker[2], marker[2], code, f"{where}: {marker[3]}"))
-    return mutacje.Checked(tuple(found), late)
+                found.append(silnik_mutacji.Finding(marker[2], marker[2], code, f"{where}: {marker[3]}"))
+    return silnik_mutacji.Checked(tuple(found), late)
 '''
 
 # ``pyproject.toml`` repozytorium testu, w którym prawdziwe kroki ruff i mypy bramy (``kroki_lokalne.static_steps``)

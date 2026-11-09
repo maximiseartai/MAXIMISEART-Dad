@@ -22,12 +22,12 @@ from tests.fixtures.git_repo import commit, git, repository
 import czasy_ci
 import kroki_skilli
 from jednostka import Czesc
-from mutacje import NearLimit
 from ostatnie_linie import MUTACJE_OK
 import niestabilne_testy
 import plan_ci
 import plan_runu
 import rozjazd_modelu
+from silnik_mutacji import NearLimit
 import werdykt_required
 import wykonaj_zadanie
 import zapis_czasow

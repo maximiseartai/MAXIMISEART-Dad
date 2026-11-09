@@ -1,7 +1,7 @@
 """Show that sprawdz_model_kolejki.py fails when the TLA+ model of the Kolejka Skrzynki loses a guard the code has.
 
 Each mutation removes from ``model/KolejkaSkrzynki.tla`` one guard or step whose counterpart in
-``src/rozliczenia/centrum/outbox.py`` the mutation names, runs on its own copy of the checkout (``tools/mutacje.py``)
+``src/rozliczenia/centrum/outbox.py`` the mutation names, runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``)
 and must end TLC's report with the expected line. A mutation whose anchor text is no longer in the model is reported
 as NIEAKTUALNA: update it to the new model.
 
@@ -14,11 +14,10 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from model_tlc import narzedzia_dla_kopii
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 ROOT = Path(__file__).resolve().parents[4]
 MODEL = Path(".agents/skills/verify-kolejka-skrzynki/model/KolejkaSkrzynki.tla")

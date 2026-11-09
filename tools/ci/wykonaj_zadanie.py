@@ -6,7 +6,7 @@ udział k dużego pliku z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane
 swojego skilla, z limitem ``LIMIT_S`` i echem wyjścia. Krok skilla z modelem kodu (``model/definicje.json``), którego
 kod zmienił się od skrótów modelu (``tools/lib/rozjazd_modelu.py``), nie biegnie: pada z linią ``ROZJAZD MODELU Z KODEM``
 i krokami naprawy, tak jak krok ``rozjazd modelu`` w ``tools/szybko.py``. Podstawa ``ci:`` przechodzi z kodem 0, a skrypt
-mutacji kończy się linią ``MUTACJE OK``; ostrzeżenia ``CZAS BLISKO LIMITU`` z wyjścia skryptu (``tools/mutacje.py``) idą do zapisu
+mutacji kończy się linią ``MUTACJE OK``; ostrzeżenia ``CZAS BLISKO LIMITU`` z wyjścia skryptu (``tools/lib/silnik_mutacji.py``) idą do zapisu
 wykonania. Krok biegnie przez ``tools/lib/potomne.py``: jego procesy potomne giną po jego końcu i po limicie, a cały krok
 ginie razem z zadaniem, choćby zabitym przez SIGKILL.
 
@@ -42,13 +42,11 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import jednostka
 from jednostka import Czesc, Klucz, Rodzaj
 from kroki_skilli import Katalog, Step
-import mutacje
 import niestabilne_testy
 from niestabilne_testy import FlakyTest, ZapisKwarantanny
 import plan_runu
@@ -56,6 +54,7 @@ from plan_runu import Plan, Zadanie
 import potomne
 from repo import ROOT
 import rozjazd_modelu
+import silnik_mutacji
 from zakres_runu import KROKI, MUTACJE, Krok, Zdarzenie, zakres
 
 JUNIT = Path(".ci-czasy", "junit.xml")
@@ -117,7 +116,7 @@ class Wynik:
     """Powód porażki kroku skilla (``None``: przeszedł) i ostrzeżenia ``CZAS BLISKO LIMITU`` z wyjścia jego ``check_all``."""
 
     powod: str | None
-    blisko_limitu: tuple[mutacje.NearLimit, ...] = ()
+    blisko_limitu: tuple[silnik_mutacji.NearLimit, ...] = ()
 
 
 def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = None) -> Wynik:
@@ -138,7 +137,7 @@ def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = No
         )
     except subprocess.TimeoutExpired:
         return Wynik(f"przekroczył limit {limit_s:.0f} s")
-    near = tuple(mutacje.near_limits(done))
+    near = tuple(silnik_mutacji.near_limits(done))
     if done.returncode != 0:
         return Wynik(f"kod wyjścia {done.returncode}", near)
     if step.verdict is not None and [line.strip() for line in done.stdout.splitlines() if line.strip()][-1:] != [step.verdict]:
@@ -148,7 +147,7 @@ def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = No
 
 def _krok_skilla(klucz: Klucz, katalog: Katalog) -> tuple[dict[str, object], list[dict[str, object]]]:
     """Krok skilla albo jego część ``#k/n``; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów,
-    a obok jego ostrzeżenia ``CZAS BLISKO LIMITU`` (``mutacje.NearLimit``) pod tym samym kluczem."""
+    a obok jego ostrzeżenia ``CZAS BLISKO LIMITU`` (``silnik_mutacji.NearLimit``) pod tym samym kluczem."""
 
     nazwa = str(klucz.zgloszony)
     print(f"== {klucz}", flush=True)

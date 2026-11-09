@@ -20,7 +20,7 @@ import pytest
 import yaml
 
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.git_repo import commit, copy_files, git, repository
+from tests.fixtures.git_repo import TOOLS, commit, git, repository
 
 from ciezkie_ci import HEAVY, NIGHTLY, mutations_refusal, refusal
 from zakres_runu import MUTACJE, TORY
@@ -36,8 +36,9 @@ RED_MUTATIONS: Jobs = [{"name": "Change mutations (2/3)", "conclusion": "failure
 def _repo(tmp_path: Path) -> Path:
     """Repozytorium z narzędziami na gałęzi ``praca``, odbitej od ``main`` z jednym commitem."""
 
-    repo = repository(tmp_path / "repo", {".gitignore": "__pycache__/\n", "src/rozliczenia/__init__.py": ""})
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    files = {".gitignore": "__pycache__/\n", "src/rozliczenia/__init__.py": ""}
+    # Plugin pokrycia mutacje zmian ładują w pytest po nazwie, nie importem.
+    repo = repository(tmp_path / "repo", files, (*TOOLS, "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py"))
     git(repo, "checkout", "--quiet", "-b", "main")
     commit(repo, "baza")
     git(repo, "checkout", "--quiet", "-b", "praca")
@@ -317,8 +318,8 @@ def test_skrypt_mutacji_skilla_liczy_dluga_liste_poza_ci_bez_limitu(tmp_path: Pa
     script.write_text(
         "from pathlib import Path\n"
         "import sys\n\n"
-        'sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))\n\n'
-        "from mutacje import Edit, Mutation, check_all\n\n"
+        'sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))\n\n'
+        "from silnik_mutacji import Edit, Mutation, check_all\n\n"
         'EDIT = Edit(Path("src/rozliczenia/__init__.py"), "", "X = 1\\n")\n'
         f'MUTATIONS = [Mutation(f"m{{number}}", (EDIT,), {RED_BASELINE[1:]!r}) for number in range(101)]\n'
         "raise SystemExit(check_all(MUTATIONS))\n",

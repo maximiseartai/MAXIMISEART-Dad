@@ -1,6 +1,6 @@
 """Show that the cleanup tests fail when a run of this skill again leaves workbooks or a growing Excel behind (#390).
 
-Each mutation runs on its own copy of the checkout (``tools/mutacje.py``) with
+Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) with
 ``tests/test_sprzatanie_excela.py``, which fakes Excel's AppleScript, so it also runs on
 Windows in CI. A mutation whose anchor text is no longer in its file exactly once is reported
 as NIEAKTUALNA: update it to the new code.
@@ -11,9 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from mutacje import Edit, Mutation, check_all
+from silnik_mutacji import Edit, Mutation, check_all
 
 EXCEL = Path(".agents/skills/verify-skoroszyty-w-excelu/scripts/excel.py")
 RUNNER = Path(".agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py")

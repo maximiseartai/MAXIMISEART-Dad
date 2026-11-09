@@ -17,13 +17,15 @@ import sys
 import pytest
 
 from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_tools
-from tests.fixtures.git_repo import commit, copy_files, git, repository
+from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
 
 from jednostka import Czesc
 from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected
 import pokrycie_procesu
 
 ROOT = Path(__file__).resolve().parents[1]
+# Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
+MUTACJE_ZMIANY = ("tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py")
 
 MODULE = "src/rozliczenia/warunek.py"
 BASE = 'def oba(a: bool, b: bool) -> bool:\n    return a\n'
@@ -49,7 +51,7 @@ def _repo(
     if other:
         files["src/rozliczenia/inny.py"] = other
     repo = repository(tmp_path, files)
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, with_imports(MUTACJE_ZMIANY))
     commit(repo, "baza")
     git(repo, "branch", "--quiet", "baza")
     (repo / MODULE).write_text(changed, encoding="utf-8")
@@ -57,7 +59,7 @@ def _repo(
 
 
 # Narzędzie z atrapą bramy typów (``FAKE_GATE``) zamiast kroków ruff i mypy; argumenty z wiersza poleceń.
-FAKE_GATE_TOOL = f"import sys\nsys.path.insert(0, 'tools')\nimport mutacje\nimport mutacje_zmiany\n{FAKE_GATE}\nraise SystemExit(mutacje_zmiany.main(gate=brama))\n"
+FAKE_GATE_TOOL = f"import sys\nsys.path[:0] = ['tools', 'tools/lib']\nimport mutacje_zmiany\nimport silnik_mutacji\n{FAKE_GATE}\nraise SystemExit(mutacje_zmiany.main(gate=brama))\n"
 
 
 def _run(
@@ -275,7 +277,7 @@ GATE_TEST = MATCH_TEST.replace("import Kolor, nazwa", "import Kolor, nazwa, pier
 
 @real_static_tools
 def test_brama_typow_z_ruff_i_mypy_liczy_blad_mutacji_operatora_a_cofniecie_do_bazy_przezywa(tmp_path: Path) -> None:
-    """Jedyny test z prawdziwymi ruff i mypy: ich JSON i kody, które brama liczy (``mutacje.wrong``).
+    """Jedyny test z prawdziwymi ruff i mypy: ich JSON i kody, które brama liczy (``silnik_mutacji.wrong``).
 
     Cofnięcia, na których brama by padła (F821 jak #671, ``exhaustive-match`` jak #674, F401), przeżywają, bo brama ich
     nie sprawdza; ``return JEDEN`` → ``return None`` w funkcji ``-> int``, której nie sprawdza test, łapie tylko mypy.

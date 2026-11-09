@@ -11,7 +11,6 @@ from __future__ import annotations
 import contextlib
 import fnmatch
 import json
-import importlib.util
 from pathlib import Path
 import os
 import re
@@ -19,21 +18,22 @@ import shutil
 import signal
 import subprocess
 import sys
-from types import ModuleType
 
 import pytest
 
-from tests.fixtures.git_repo import copy_files, git
+from tests.fixtures.git_repo import copy_files, git, with_imports
 from tests.fixtures.granice_ksztaltow import GAPS
 from tests.fixtures.potomne import beating, wait_for
 
 from jednostka import Klucz
+import kroki_skilli
 import rozjazd_modelu
+import silnik_mutacji
+import wykonaj_zadanie
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 
-STEPS = TOOLS / "lib" / "kroki_skilli.py"
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
 OK_LINE = "WYKONANIE OK | kroki skilli pushu"
 CHECKED = "src/pakiet/sprawdzany.py"
@@ -44,8 +44,8 @@ SYNC_COMMIT = re.compile(r"Sync commit: `[0-9a-f]{7,40}`")
 WITH_TABLE = f"""from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
-from mutacje import Edit, Mutation  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+from silnik_mutacji import Edit, Mutation  # noqa: E402
 
 MUTATIONS = (
     Mutation("m", (Edit(Path("{CHECKED}"), "X", "Y"), Edit(Path("{ANCHORS}"), "X", "Y")), (".agents/skills/verify-a/scripts/sprawdz_a.py",)),
@@ -77,14 +77,9 @@ def _skill(root: Path, name: str, scripts: dict[str, str], skill_md: str = "") -
 
 
 def _tool(root: Path) -> list[str]:
-    """Kopia narzędzia w ``root``; kopii, która już jest, nie nadpisuje, bo test może ją zmieniać."""
+    """Kopia wykonania zadań CI i ``ci_lokalnie`` w ``root``; kopii, która już jest, nie nadpisuje, bo test może ją zmieniać."""
 
-    names = (
-        "tools/ci/wykonaj_zadanie.py", "tools/lib/niestabilne_testy.py", "tools/lib/wyniki_testow.py", "tools/lib/plan_runu.py", "tools/lib/kroki_skilli.py", "tools/lib/zakres_runu.py", "tools/lib/potomne.py", "tools/lib/repo.py", "tools/lib/ciezkie_ci.py",
-        "tools/mutacje.py", "tools/lib/sciezki_w_kodzie.py", "tools/lib/wplyw_zmiany.py", "tools/ci_lokalnie.py", "tools/lib/kroki_lokalne.py", "tools/lib/czasy_ci.py", "tools/lib/github.py",
-        "tools/lib/jednostka.py", "tools/lib/ostatnie_linie.py", "tools/lib/rozjazd_modelu.py",
-    )
-    copy_files(root, [name for name in names if not (root / name).exists()])
+    copy_files(root, [name for name in with_imports(("tools/ci/wykonaj_zadanie.py", "tools/ci_lokalnie.py")) if not (root / name).exists()])
     return [sys.executable, str(root / "tools" / "ci" / "wykonaj_zadanie.py"), "--kroki-pushu"]
 
 
@@ -322,20 +317,10 @@ def test_zabity_runner_nie_zostawia_skryptu_mutacji(tmp_path: Path) -> None:
                 os.kill(int(ready.read_text()), signal.SIGTERM)
 
 
-def _load_tool(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    monkeypatch.syspath_prepend(str(TOOLS))
-    spec = importlib.util.spec_from_file_location("kroki_skilli", STEPS)
-    assert spec is not None and spec.loader is not None
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
-    return tool
-
-
-def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium(monkeypatch: pytest.MonkeyPatch) -> None:
-    tool = _load_tool(monkeypatch)
+def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium() -> None:
     tracked = git(ROOT, "ls-files").splitlines()
 
-    guarded = {md.parent.name: tool.guarded(md) for md in sorted((ROOT / ".agents" / "skills").glob("*/SKILL.md"))}
+    guarded = {md.parent.name: kroki_skilli.guarded(md) for md in sorted((ROOT / ".agents" / "skills").glob("*/SKILL.md"))}
     dead = [f"{skill}: {glob}" for skill, globs in guarded.items() for glob in globs or () if not any(fnmatch.fnmatchcase(name, glob) for name in tracked)]
 
     assert any(guarded.values())
@@ -345,12 +330,13 @@ def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium(monkeypatch: pytest.Monke
 POZA_VERIFY_ROZLICZENIA: dict[str, str] = {}
 
 
-def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen() -> None:
     """Glob ``pilnuje:`` ``verify-rozliczenia`` wymienia moduły silnika z nazwy, więc nowy moduł musi trafić do globu albo
     do ``POZA_VERIFY_ROZLICZENIA``; inaczej jego zmiana na PR nie uruchamia podstawy skilla. Plik spoza gita też się
     liczy, bo nowy moduł istnieje przed commitem."""
 
-    globs = _load_tool(monkeypatch).guarded(ROOT / ".agents" / "skills" / "verify-rozliczenia" / "SKILL.md")
+    globs = kroki_skilli.guarded(ROOT / ".agents" / "skills" / "verify-rozliczenia" / "SKILL.md")
+    assert globs is not None
     engine = (ROOT / "src" / "rozliczenia").rglob("*.py")
     modules = {name for path in engine if "centrum" not in (name := path.relative_to(ROOT).as_posix()).split("/")}
     covered = {name for name in modules if any(fnmatch.fnmatchcase(name, glob) for glob in globs)}
@@ -359,19 +345,18 @@ def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wy
     assert sorted(POZA_VERIFY_ROZLICZENIA.keys() - (modules - covered)) == [], "usuń z POZA_VERIFY_ROZLICZENIA moduł, którego nie ma albo który glob obejmuje"
 
 
-def test_kazdy_skill_z_modelem_wskazuje_kod_modelu_w_pilnuje_i_kroki_naprawy_rozjazdu_bez_sync_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_kazdy_skill_z_modelem_wskazuje_kod_modelu_w_pilnuje_i_kroki_naprawy_rozjazdu_bez_sync_commit() -> None:
     """Rozjazd modelu z kodem (``tools/lib/rozjazd_modelu.py``) sprawdza wykonanie kroku skilla w CI i ``tools/szybko.py``
     tylko dla skilla z ``model/definicje.json``, więc ma go każdy skill z modelem TLA+ (``model/*.tla``) i eksplorator z częściami
     modelowanymi ręcznie. Każdy plik z ``definicje.json`` leży w ``pilnuje:`` skilla, żeby jego zmiana uruchamiała
     podstawę i krok szybko, a ``SKILL.md`` ma sekcję z krokami, którymi rozjazd każe go naprawić, i nie ma Sync commit:
     model potwierdzają skróty w ``definicje.json``, a SHA w ``SKILL.md`` przepisuje każdy rebase (#1060)."""
 
-    tool = _load_tool(monkeypatch)
     models = {path.parents[1] for path in (ROOT / ".agents" / "skills").glob("*/model/*.tla")}
     problems = []
     for skill in rozjazd_modelu.skille(ROOT):
         definitions = rozjazd_modelu.definicje(skill)
-        unguarded = sorted(name for name in definitions if tool.hits(skill, {name}).files.keys() != {name})
+        unguarded = sorted(name for name in definitions if kroki_skilli.hits(skill, {name}).files.keys() != {name})
         problems += [f"{skill.name}: {name} poza pilnuje:" for name in unguarded]
         text = (skill / "SKILL.md").read_text(encoding="utf-8")
         if SYNC_COMMIT.search(text) is not None:
@@ -384,42 +369,38 @@ def test_kazdy_skill_z_modelem_wskazuje_kod_modelu_w_pilnuje_i_kroki_naprawy_roz
     assert problems == []
 
 
-def test_polecenie_ci_kazdego_skilla_to_skrypt_z_repozytorium(monkeypatch: pytest.MonkeyPatch) -> None:
-    tool = _load_tool(monkeypatch)
+def test_polecenie_ci_kazdego_skilla_to_skrypt_z_repozytorium() -> None:
 
-    commands = {md.parent.name: tool.ci_command(md) for md in sorted((ROOT / ".agents" / "skills").glob("*/SKILL.md"))}
+    commands = {md.parent.name: kroki_skilli.ci_command(md) for md in sorted((ROOT / ".agents" / "skills").glob("*/SKILL.md"))}
 
     assert {"verify-centrum-rozliczen", "verify-aktualizacja-narzedzia"} <= {skill for skill, command in commands.items() if command}
 
 
-def test_nazwy_mutacji_w_tabeli_kazdego_skryptu_skilla_sa_rozne(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_nazwy_mutacji_w_tabeli_kazdego_skryptu_skilla_sa_rozne() -> None:
     """Część ``MUTACJE_CZESC`` układa mutacje po nazwie; przy dwóch równych nazwach decydowałoby ``repr`` ścieżek."""
 
-    tool = _load_tool(monkeypatch)
-    scripts = sorted((ROOT / ".agents" / "skills").glob(f"*/scripts/{tool.PATTERN}"))
-    names = {script.name: [mutation.name for mutation in tool._mutations(script)] for script in scripts}
+    scripts = sorted((ROOT / ".agents" / "skills").glob(f"*/scripts/{kroki_skilli.PATTERN}"))
+    names = {script.name: [mutation.name for mutation in kroki_skilli._mutations(script)] for script in scripts}
 
     assert scripts
     assert {script: sorted(set(found)) for script, found in names.items()} == {script: sorted(found) for script, found in names.items()}
 
 
-def test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz(tmp_path: Path) -> None:
     """Skrypty mutacji skilli poza modelem nie biegną na pull request, więc zmiana kodu, po której mutacja jest NIEAKTUALNA, czerwieni
     dopiero ``main`` (#667 i #669 zmieniły warunek budzenia w ``outbox.py``). Test nanosi zmiany każdej mutacji tym samym
-    ``_apply`` co ``tools/mutacje.py``, na kopii plików, które ona zmienia, bez uruchamiania jej polecenia."""
+    ``_apply`` co silnik mutacji (``tools/lib/silnik_mutacji.py``), na kopii plików, które ona zmienia, bez uruchamiania jej polecenia."""
 
-    tool = _load_tool(monkeypatch)
-    engine = importlib.import_module("mutacje")
-    scripts = sorted((ROOT / ".agents" / "skills").glob(f"*/scripts/{tool.PATTERN}"))
+    scripts = sorted((ROOT / ".agents" / "skills").glob(f"*/scripts/{kroki_skilli.PATTERN}"))
     stale = []
     for script in scripts:
-        for number, mutation in enumerate(tool._mutations(script)):
+        for number, mutation in enumerate(kroki_skilli._mutations(script)):
             copy = tmp_path / script.parents[1].name / script.stem / str(number)
             for edit in mutation.edits:
                 if (ROOT / edit.file).is_file() and not (copy / edit.file).exists():
                     (copy / edit.file).parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(ROOT / edit.file, copy / edit.file)
-            if found := engine._apply(copy, mutation.edits):
+            if found := silnik_mutacji._apply(copy, mutation.edits):
                 stale.append(f"{script.relative_to(ROOT).as_posix()}: {mutation.name} → {found}")
 
     assert scripts
@@ -427,19 +408,18 @@ def test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz(tmp_path
 
 
 def test_krok_skilla_ktorego_skrypty_importuja_playwright_potrzebuje_przegladarki_a_skrypt_ma_tyle_czesci_ile_mutacji(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path
 ) -> None:
     table = (
-        "from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'tools'))\n"
-        "from mutacje import Edit, Mutation  # noqa: E402\n\n"
+        "from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'tools/lib'))\n"
+        "from silnik_mutacji import Edit, Mutation  # noqa: E402\n\n"
         "MUTATIONS = tuple(Mutation(f'm{numer}', (Edit(Path('a.txt'), 'X', 'Y'),), ('a.py',)) for numer in range({count}))\n"
     )
     drive = ".agents/skills/verify-a/scripts/drive/przegladarka.py"
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": table.replace("{count}", "3"), "drive/przegladarka.py": "from playwright.sync_api import sync_playwright\n"}, _with_ci("verify-a", drive))
     _skill(tmp_path, "verify-b", {"check_b_mutations.py": table.replace("{count}", "0"), "opis.py": "TEKST = 'import playwright'\n"})
-    tool = _load_tool(monkeypatch)
 
-    katalog = tool.Katalog.skanuj(tmp_path)
+    katalog = kroki_skilli.Katalog.skanuj(tmp_path)
 
     assert [(step.key, step.parts, step.browser) for step in katalog.kroki] == [
         ("verify-a/ci", 1, True),
@@ -486,13 +466,12 @@ def test_czerwona_podstawa_ci_daje_fail_takze_w_skillu_bez_skryptu_mutacji(tmp_p
 
 
 @pytest.mark.parametrize(("parts", "chosen"), [("", 1), ("ci-czesci: 1\n", 1), ("ci-czesci: 4\n", 4)], ids=["bez klucza", "jedna", "cztery"])
-def test_podstawa_dzieli_sie_najwyzej_na_tyle_czesci_ile_mowi_ci_czesci(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, parts: str, chosen: int) -> None:
+def test_podstawa_dzieli_sie_najwyzej_na_tyle_czesci_ile_mowi_ci_czesci(tmp_path: Path, parts: str, chosen: int) -> None:
     command = ".agents/skills/verify-d/scripts/sprawdz_d.py --feature all"
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": "MUTATIONS = ()\n"})
     _skill(tmp_path, "verify-d", {"sprawdz_d.py": CHECKED_IN_CI.format(code=0)}, _with_ci("verify-d", command).replace(f"ci: {command}\n", f"ci: {command}\n{parts}"))
-    tool = _load_tool(monkeypatch)
 
-    katalog = tool.Katalog.skanuj(tmp_path)
+    katalog = kroki_skilli.Katalog.skanuj(tmp_path)
 
     assert [(step.key, step.parts) for step in katalog.kroki] == [("verify-a/check_a_mutations.py", 1), ("verify-d/ci", chosen)]
     assert katalog.bledy == {}
@@ -538,10 +517,8 @@ def test_krok_skilla_biegnie_w_checkoucie_swojego_skilla_a_nie_w_katalogu_biezac
     )
     _skill(checkout, "verify-a", {"check_a_mutations.py": script})
     monkeypatch.chdir(tmp_path)
-    monkeypatch.syspath_prepend(str(TOOLS / "ci"))
-    import wykonaj_zadanie
 
-    krok = _load_tool(monkeypatch).Katalog.skanuj(checkout).krok(Klucz.z_tekstu("skill:verify-a/check_a_mutations.py"))
+    krok = kroki_skilli.Katalog.skanuj(checkout).krok(Klucz.z_tekstu("skill:verify-a/check_a_mutations.py"))
 
     assert wykonaj_zadanie.run(krok, limit_s=60).powod is None
     assert Path((checkout / ".agents/skills/verify-a/scripts/katalog.txt").read_text(encoding="utf-8")).resolve() == checkout.resolve()
@@ -609,7 +586,7 @@ KNOWN_FINDINGS = (Excuse("ustalenie", "R", "historia", Ksztalt(frozenset({"zapis
 '''
 _TABLE = '''from pathlib import Path
 
-from mutacje import Edit, Mutation
+from silnik_mutacji import Edit, Mutation
 
 
 def m(name, expected="X: NOWE NARUSZENIE", explorer="explore_x.py"):

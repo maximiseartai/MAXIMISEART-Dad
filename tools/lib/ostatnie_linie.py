@@ -5,7 +5,7 @@ go z innego commitu (``tools/scal_pr.py --przeglad`` z HEAD PR), więc prefiks m
 standardowej i działa pod Pythonem 3.9 macOS (``per-file-target-version`` w ``pyproject.toml``).
 """
 
-# ``tools/mutacje.py`` (``check_all``) kończy nią każdy skrypt mutacji skilla, który przeszedł; czyta
+# ``tools/lib/silnik_mutacji.py`` (``check_all``) kończy nią każdy skrypt mutacji skilla, który przeszedł; czyta
 # ``tools/ci/wykonaj_zadanie.py``.
 MUTACJE_OK = "MUTACJE OK"
 # ``tools/skille_dla_zmiany.py``; czytają ``tools/lib/kontekst_przegladu.py`` (``scal_pr.py --przeglad``) i brama ``tools/hooks/pre-push``.

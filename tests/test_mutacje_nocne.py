@@ -32,16 +32,18 @@ import yaml
 
 from tests.fixtures.ci_workflow import chromium, jobs
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.git_repo import commit, copy_files, git, repository
+from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
 
 from jednostka import Czesc
-from mutacje import NearLimit
 import mutacje_nocne
 import mutacje_zmiany
 import plan_runu
+from silnik_mutacji import NearLimit
 from zakres_runu import Zdarzenie
 
 ROOT = Path(__file__).resolve().parents[1]
+# Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
+MUTACJE_ZMIANY = ("tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py")
 
 REPO = "repos/{owner}/{repo}"
 RUNY = f"{REPO}/actions/workflows/mutacje-nocne.yml/runs?branch=main&status=success&per_page=1"
@@ -761,7 +763,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
         "tests/test_b.py": test_b,
     }
     repo = repository(tmp_path / "repo", pliki)
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, with_imports(MUTACJE_ZMIANY))
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
     monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
@@ -817,7 +819,7 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
     for sciezka, tresc in pliki.items():
         (repo / sciezka).parent.mkdir(parents=True, exist_ok=True)
         (repo / sciezka).write_text(tresc, encoding="utf-8")
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, with_imports(MUTACJE_ZMIANY))
     wspolny = commit(repo, "baza")
     git(repo, "checkout", "--quiet", "-b", "boczna")
     (repo / "src" / "rozliczenia" / "b.py").write_text("def b(x: int) -> bool:\n    return x < 5 and x > 0\n", encoding="utf-8")
@@ -960,7 +962,7 @@ def test_czesc_konczy_sie_w_limicie_czasu_z_najdrozszymi_zmierzonymi_mutacjami_k
         "tests/test_warunek.py": PRZEBIEGI_TESTY.format(folder=str(folder), workers=mutacje_zmiany.WORKERS),
     }
     repo = repository(tmp_path / "repo", pliki)
-    copy_files(repo, ("tools/lib/wplyw_zmiany.py", "tools/lib/zakres_runu.py", "tools/lib/kroki_skilli.py", "tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py", "tools/lib/pokrycie_procesu.py"))
+    copy_files(repo, with_imports(MUTACJE_ZMIANY))
     baza = commit(repo, "baza")
     (repo / "src" / "rozliczenia" / "warunek.py").write_text(PRZEBIEGI_BAZA.replace("return 0", "return 1"), encoding="utf-8")
 
@@ -1081,7 +1083,7 @@ def test_czesc_oznaczona_przez_plan_instaluje_chromium_tym_samym_krokiem_co_zada
 
 def _historia_skilli(tmp_path: Path) -> tuple[Path, str]:
     """``main`` ze skillami verify-a i verify-b oraz verify-c z podstawą w częściach (pilnuje ``src/*``): folder verify-a
-    zmienił PR #21 (merge), potem src PR #22 i runner mutacji PR #23 (squash); zwraca repozytorium i bazę nocy sprzed
+    zmienił PR #21 (merge), potem src PR #22 i uruchamiacz kroku skilla PR #23 (squash); zwraca repozytorium i bazę nocy sprzed
     tych zmian."""
 
     skille = {
@@ -1093,7 +1095,7 @@ def _historia_skilli(tmp_path: Path) -> tuple[Path, str]:
         ".agents/skills/verify-c/SKILL.md": f"---\nname: verify-c\npilnuje:\n  - src/*\nci: {PODSTAWA_C}\nci-czesci: 2\n---\n",
         PODSTAWA_C: "",
     }
-    repo = repository(tmp_path / "repo", {**skille, **podstawa, "src/a.py": "a = 1\n", "tools/mutacje.py": "X = 1\n"})
+    repo = repository(tmp_path / "repo", {**skille, **podstawa, "src/a.py": "a = 1\n", "tools/ci/wykonaj_zadanie.py": "X = 1\n"})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza nocy")
     git(repo, "checkout", "--quiet", "-b", "feat/skill")
@@ -1103,8 +1105,8 @@ def _historia_skilli(tmp_path: Path) -> tuple[Path, str]:
     _scal(repo, "feat/skill", "Merge pull request #21 from org/feat/skill")
     (repo / "src" / "a.py").write_text("a = 2\n", encoding="utf-8")
     commit(repo, "Zmień a (#22)")
-    (repo / "tools" / "mutacje.py").write_text("X = 2\n", encoding="utf-8")
-    commit(repo, "Zmień runner mutacji (#23)")
+    (repo / "tools" / "ci" / "wykonaj_zadanie.py").write_text("X = 2\n", encoding="utf-8")
+    commit(repo, "Zmień uruchamiacz kroku skilla (#23)")
     return repo, baza
 
 
@@ -1158,7 +1160,7 @@ def test_skrypt_mutacji_skilla_ktory_padl_noca_trafia_do_issue_pr_ktory_ostatni_
 
     tresci = {issue["title"]: issue["body"] for issue in github.issues}
     assert (pierwszy, drugi) == (0, 0), wyjscie
-    # Folder verify-b nie zmienił się od bazy, więc jego skrypt uruchomił runner mutacji z PR #23.
+    # Folder verify-b nie zmienił się od bazy, więc jego skrypt uruchomił uruchamiacz kroku skilla z PR #23.
     assert sorted(tresci) == ["Przeżyte mutacje skilli z #21", "Przeżyte mutacje skilli z #23"]
     assert "SKRYPT .agents/skills/verify-a/scripts/check_a_mutations.py\n" in tresci["Przeżyte mutacje skilli z #21"]
     assert "SKRYPT .agents/skills/verify-b/scripts/check_b_mutations.py\n" in tresci["Przeżyte mutacje skilli z #23"]
