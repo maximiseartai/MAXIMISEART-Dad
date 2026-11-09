@@ -23,6 +23,7 @@ from rozliczenia.centrum import (
     notification_messages,
     refusal,
     report_messages,
+    runs,
     start_problems,
     update_messages,
 )
@@ -176,7 +177,7 @@ PREPARATION_SAMPLES: Samples = {
         lambda: messages.incomplete_period_refused(
             PERIOD, "uruchom proces w Centrum rozliczeń i przy decyzji wybierz „Kontynuuj”"
         ),
-        lambda: messages.incomplete_period_refused(PERIOD, "przy decyzji wybierz „Kontynuuj”"),
+        lambda: messages.incomplete_period_refused(PERIOD, runs.CONTINUE_HINT),
     ],
     "write_failed": [lambda: messages.write_failed(PERIOD_DIRECTORY)],
     "write_failed_with_file_left": [

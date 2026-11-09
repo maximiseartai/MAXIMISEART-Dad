@@ -45,7 +45,7 @@ BY_CHANGE_ONLY = {
     ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
-        "src/, katalogu (import message_samples) i pliku tests/expected/komunikaty.txt (literał)"
+        "src/, katalogu (import message_samples), pliku tests/expected/komunikaty.txt i plików frontendu z UI_TEXTS (literały)"
     ),
     "tests/test_mutacje_skilli.py::test_kazdy_skill_z_modelem_wskazuje_kod_modelu_w_pilnuje_i_kroki_naprawy_rozjazdu_bez_sync_commit": (
         "graf wybiera go przy zmianie SKILL.md i pliku model/ skilla, także nowego modelu .tla albo definicje.json, i tools/lib/rozjazd_modelu.py, "
