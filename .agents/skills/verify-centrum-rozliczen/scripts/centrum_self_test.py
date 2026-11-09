@@ -8,8 +8,8 @@ that the result of a started Uruchomienie is never the one before it and the Cen
 that a file the server puts in place is read once it is there and only a vanished queue file is left out,
 that the drive reads files in no other way than through those readers (``_direct_reads``),
 that the scripted skrzynka reads an issue file the drive is putting in place once it is there,
-that the scripted boundaries of ``serve_centrum.py`` (its platform, skrzynka, GitHub, OneDrive, Rejestr and clock) write
-and read each file where ``harness.py`` puts it and no other script spells a name of ``harness.py`` (``_protocol_spelled``),
+that the scripted boundaries of ``serve_centrum.py`` take their files from ``harness.py`` in the round trips of
+``_check_served_side_reads_harness`` and no other script spells a name of ``harness.py`` (``_protocol_spelled``),
 that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, stands still
 without a move and fails on a refusal that outlasts its limit, that the drive fails on the clock's wake-up thread once it has died,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
@@ -843,28 +843,30 @@ def _check_protocol_spelled_once(errors: list[str]) -> None:
 
 
 def _check_served_side_reads_harness(errors: list[str]) -> None:
-    """The scripted boundaries of ``serve_centrum.py`` write and read each file where ``harness.py`` puts it: a member
-    the served side reads under another member's name, or a name it spells itself, fails here and not as a check of
-    the drive that passes because nothing opened (``Log.OPENED``) or nothing was refused.
+    """The scripted boundaries of ``serve_centrum.py`` take their files from ``harness.py``: each round trip below runs
+    a boundary on one member and fails here when the boundary reads or writes it under another name, instead of as a
+    check of the drive that passes because nothing opened (``Log.OPENED``) or nothing was refused.
 
-    Held here, each read where it is listed: ``ScriptedPlatform`` (``Log.OPENED``, ``Log.DIALOGS``,
-    ``File.PICKER_ANSWER``); ``FileReportBox``, for issues (``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED``, ``rejects``,
-    ``Log.REPORT_QUESTIONS``) and for the Archiwa (``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED``,
-    ``Switch.ARCHIVE_REFUSED``, ``archive_file``, ``archive_listing``, ``last_file_id``); ``_scripted_github``
-    (``File.TOOL_COMMIT``, ``File.MAIN_COMMIT``, ``File.RELEASE_TAG``, ``File.RELEASES``, ``Switch.GITHUB_OFFLINE`` for
-    the newest Wydanie and for the list, ``Log.RELEASE_QUESTIONS``); ``_scripted_onedrive`` (``File.CLOUD_ONLY``) and
-    ``_register_failing_on_hook`` (``Switch.REGISTER_FAULT``). ``ScriptedClock`` (``File.CLOCK_MOVE``,
-    ``File.CLOCK_DIED``) is held by ``_check_clock_alarm_failure``. Every other read is held by review only, and
-    these are not held at all: the files the served side writes as it starts, ``File.EFENIX_ADDRESS`` with
-    ``efenix_files`` (``_efenix_window``) and ``File.SERVER`` (``record_bound_server``); a wrong one stops the run
-    loudly, the drive failing on a missing address of the Atrapa efenix and the run waiting for the server record
-    until its limit."""
+    The round trips: ``ScriptedPlatform`` opens a file (logged in ``Log.OPENED``) and answers a picker (logged in
+    ``Log.DIALOGS``, answered from ``File.PICKER_ANSWER``); ``FileReportBox`` gives its outcome for a new issue while
+    ``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED`` or ``rejects`` is on, opens issue 1 with comment 1 and logs a
+    question for closed issues in ``Log.REPORT_QUESTIONS``; it gives its outcome for a new Archiwum while
+    ``Switch.ARCHIVE_REFUSED``, ``Switch.BOX_OFFLINE`` or ``Switch.KEY_REFUSED`` is on, uploads a file (kept at
+    ``archive_file``, ``archive_listing`` and ``last_file_id``), uploads a second one under the next file id and
+    removes the first; ``_scripted_github`` answers from ``File.TOOL_COMMIT``, ``File.MAIN_COMMIT``,
+    ``File.RELEASE_TAG`` and ``File.RELEASES``, gives no answer while ``Switch.GITHUB_OFFLINE`` is on and logs each
+    question for the list in ``Log.RELEASE_QUESTIONS``; ``_scripted_onedrive`` reads ``File.CLOUD_ONLY``;
+    ``_register_failing_on_hook`` fails while ``Switch.REGISTER_FAULT`` is on. ``ScriptedClock`` (``File.CLOCK_MOVE``,
+    ``File.CLOCK_DIED``) runs in ``_check_clock_alarm_failure``. What these round trips do not run is held by review
+    only; the files the served side writes as it starts, ``File.EFENIX_ADDRESS`` with ``efenix_files``
+    (``_efenix_window``) and ``File.SERVER`` (``record_bound_server``), are held by the run itself, loudly: the drive
+    fails on a missing address of the Atrapa efenix and the run waits for the server record until its limit."""
 
     import json
     import tempfile
 
     from harness import File, Log, Switch, archive_file, archive_listing, comment_position, last_file_id, rejects
-    from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
+    from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Removed, Sent, Unreachable
     from rozliczenia.centrum.tool_freshness import GitHubReleases
     from serve_centrum import FileReportBox, ScriptedPlatform, _register_failing_on_hook, _scripted_github, _scripted_onedrive
 
@@ -926,6 +928,18 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
             and last_file_id(root).read_text(encoding="utf-8") == str(uploaded.id)
         ):
             errors.append(f"the scripted Archiwa do not keep a file where harness.py puts it: {uploaded!r}")
+        # The second upload reads back the Archiwa written by the first: the file's bytes and the last file id.
+        second = box.upload(opened.id, "drugi.gz", "l", b"y", key="k") if isinstance(opened, Archive) else opened
+        removed = box.remove(uploaded.id, key="k") if isinstance(uploaded, Asset) else uploaded
+        if not (
+            isinstance(uploaded, Asset)
+            and isinstance(second, Asset)
+            and second.id == uploaded.id + 1
+            and isinstance(removed, Removed)
+            and not archive_file(root, "logi-x", "logi.gz").exists()
+            and archive_file(root, "logi-x", "drugi.gz").read_bytes() == b"y"
+        ):
+            errors.append(f"the scripted Archiwa do not read back what they kept: {second!r}, {removed!r}")
 
         github = _scripted_github(root, root / "klon")
         File.TOOL_COMMIT.write(root, "a" * 40)
