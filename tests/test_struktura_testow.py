@@ -72,7 +72,8 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
 
     Łapie wywołanie na poziomie modułu i w funkcji, ze ścieżką ze stałych napisów (``ROOT / "tools" / "lib"``,
     ``".../tools/ci"``, ``"C:\\repo\\tools"``) i z nazw, które moduł przypisuje na swoim poziomie (``TOOLS = ROOT /
-    "tools"``, potem ``TOOLS / "lib"``). Katalog ``scripts`` skilla przechodzi, bo conftest go nie kładzie.
+    "tools"`` albo ``TOOLS: Final = …``, potem ``TOOLS / "lib"``).
+    Katalog ``scripts`` skilla przechodzi, bo conftest go nie kładzie.
 
     Granica (tylko przegląd): wstawka w napisie kodu podprocesu (ten proces nie ma conftest, więc jej potrzebuje),
     ścieżka złożona w trakcie działania (argument funkcji, ``sys.argv``, atrybut), ``monkeypatch.syspath_prepend``
@@ -84,6 +85,10 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
         if isinstance(node, ast.Assign)
         for target in node.targets
         if isinstance(target, ast.Name)
+    } | {
+        node.target.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None
     }
 
     def texts(node: ast.AST, seen: frozenset[str]) -> Iterator[str]:
@@ -126,6 +131,7 @@ TOOLS_ON_PATH = {
     "napis": 'import sys\nsys.path.append(str(Path(__file__).resolve().parents[1] / "tools/ci"))',
     "windows": 'import sys\nsys.path.append("C:\\\\repo\\\\tools")',
     "nazwa-modulu": 'import sys\nTOOLS = ROOT / "tools"\nsys.path.insert(0, str(TOOLS / "lib"))',
+    "nazwa-z-adnotacja": 'import sys\nTOOLS: Final = ROOT / "tools"\nsys.path.insert(0, str(TOOLS / "lib"))',
     "nazwa-przez-nazwe": 'import sys\nREPO = ROOT\nTOOLS = REPO / "tools"\nLIB = TOOLS / "lib"\nsys.path.insert(0, str(LIB))',
     "w-funkcji": 'import sys\ndef f() -> None:\n    sys.path.insert(0, str(ROOT / "tools"))',
 }
