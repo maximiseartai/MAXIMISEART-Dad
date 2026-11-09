@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 import os
 from pathlib import Path
+import re
 
 from playwright.sync_api import Locator, Page, expect
 
@@ -48,6 +49,14 @@ def _template_group(page: Page, label: str) -> Locator:
 
 def _shown_as_ready(page: Page, label: str) -> None:
     expect(_template_group(page, label).get_by_role("img", name="Na miejscu i czytelny")).to_be_visible()
+
+
+def _expect_badge_icon(page: Page, label: str, color: str) -> None:
+    """The badge icon of a Wzorzec with a problem: ``text-warning`` for one Dad clears himself (open in Excel),
+    ``text-destructive`` for a stop."""
+
+    icon = _template_group(page, label).locator("[data-slot=badge] svg")
+    expect(icon).to_have_class(re.compile(rf"(^|\s){color}(\s|$)"))
 
 
 def _template_answer(run: Run, name: str, label: str) -> dict[str, object]:
@@ -122,6 +131,7 @@ def drive(run: Run, page: Page) -> None:
     try:
         page.reload()
         expect(_template_group(page, "Wzorzec pliku zbiorczego")).to_contain_text("Otwarty w Excelu")
+        _expect_badge_icon(page, "Wzorzec pliku zbiorczego", "text-warning")
         message = page.get_by_role("alert", name="Ostrzeżenie", exact=True).filter(has_text="Wzorzec jest otwarty w Excelu.")
         expect(message).to_contain_text(f"plik {collective.name}, folder config")
         expect(message).to_contain_text(f"usuń z tego samego folderu pozostawiony plik ~${collective.name}")
@@ -168,6 +178,7 @@ def drive(run: Run, page: Page) -> None:
     try:
         page.reload()
         expect(_template_group(page, "Wzorzec rozliczenia pracownika")).to_contain_text("Brak pliku")
+        _expect_badge_icon(page, "Wzorzec rozliczenia pracownika", "text-destructive")
         message = page.get_by_role("alert", name="Zatrzymanie", exact=True).filter(
             has_text=f"Nie znaleziono Wzorca rozliczenia pracownika: {worker_template.name}."
         )
