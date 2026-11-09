@@ -1,7 +1,10 @@
-"""Exhaustively check how Uporządkowanie INTERMAX and Przywracanie Kopii INTERMAX replace the Rejestr zleceń.
+"""Exhaustively check how Uporządkowanie INTERMAX, Przywracanie Kopii INTERMAX and Wpisanie raportów replace the
+Rejestr zleceń.
 
 The checker runs the real ``intermax_ordering.order_register()`` and the real ``intermax_restore.restore()`` (#472),
-which both replace INTERMAX through ``intermax_replace.replace_register`` (#716), on a synthetic INTERMAX
+which both replace INTERMAX through ``intermax_replace.replace_register`` (#716), and the real
+``intermax_cells.write_cells()`` of Wpisanie raportów (#1226, ADR 0028), which replaces it through the same sequence
+without a Kopia (``intermax_replace.replace_without_copy``) after ``register_file.read``, on a synthetic INTERMAX
 (``tools/lib/atrapy/intermax.py``) in a real folder, next to a Kopie folder that already holds ``KEPT`` older Kopie of
 both names, so that their order by name differs from their order in time. The restore brings back the oldest of them, a
 real workbook. A second restore starts as one in the same second as an earlier restore: the Kopie folder also holds the
@@ -11,9 +14,10 @@ points where the checker picks what happens first:
 - after ``register_file.read`` has read INTERMAX (in the restore: after ``workbook_content`` has read it);
 - ``workbook_files.is_open_in_excel`` on INTERMAX (in ``check``, in ``register_file.read``, in the restore's
   ``workbook_content``, before the Kopia and after a refused replace);
-- ``Disk.write`` of the temporary file next to INTERMAX, which may raise ``OSError``;
-- the check of that file (``intermax_file.check``), which may find it does not match (``WriteMismatch``); the restore
-  compares bytes and has no such point;
+- ``Disk.write`` of the temporary file next to INTERMAX, which may raise ``OSError``, and in Wpisanie raportów may
+  write only part of the bytes (a torn write that only the write check sees);
+- the check of that file (``intermax_file.check``, in Wpisanie raportów ``intermax_file.check_cells``), which may find
+  it does not match (``WriteMismatch``); the restore compares bytes and has no such point;
 - ``Disk.exists`` of the Kopia's name, which may raise ``OSError`` (a Kopie folder it cannot search);
 - ``Disk.create`` of the Kopia (in the restore: the Kopia of the current state), which may raise ``OSError``;
 - ``Disk.replace`` of the temporary file over INTERMAX (the ``replace`` that ``replace_register`` gives
@@ -29,18 +33,25 @@ bounds and checks:
 
 - BEZ_UTRATY_ZMIAN: when the run replaces INTERMAX, it replaces the bytes it read. ADR 0019: the run „zmienia tylko
   Surowe zlecenia”, and every other part and row „zostają bajt w bajt”.
-- KOPIA_ZASTAPIONEGO: when the run replaces INTERMAX, a Kopia INTERMAX holds exactly the bytes it replaced
-  (ADR 0019: „Przed każdą podmianą powstaje Kopia INTERMAX”).
+- KOPIA_ZASTAPIONEGO: when Uporządkowanie or the restore replaces INTERMAX, a Kopia INTERMAX holds exactly the bytes
+  it replaced (ADR 0019: „Przed każdą podmianą powstaje Kopia INTERMAX”).
 - ZATRZYMANIE_BEZ_SLADU: a run that stops (``StopError``), or raises any other exception before the replace, leaves
   INTERMAX as it was, no temporary file next to it, and
   the Kopie folder with the same Kopie, names and bytes, as before (docstring of ``order_register``).
 - SUKCES: a run that returns a summary has replaced INTERMAX and left no temporary file.
 - PRZYWROCONA_KOPIA: a restore that returns has replaced INTERMAX with exactly the bytes of the chosen Kopia.
-- KOPIE_NAJNOWSZE: after a summary, the Kopie folder holds the ``KEPT`` newest Kopie of both names by the moment in
+- KOPIE_NAJNOWSZE: after a summary of Uporządkowanie or the restore, the Kopie folder holds the ``KEPT`` newest Kopie of both names by the moment in
   their name, the new one among them, unless removing older ones failed, which the code turns into a warning, and
   every Kopia from before the run that is still there has the same bytes as before (``Disk.create`` makes the Kopia only
   as a new file, ``O_EXCL``), also after such a warning.
-- BEZ_WYJATKU: the run ends with a summary or a ``StopError``, or the process dies; nothing else escapes.
+- DOKLADNIE_WPISANE: when Wpisanie raportów replaces INTERMAX, it holds the bytes it read with exactly the written
+  cells changed: every cell value as read but those cells, which hold their text (openpyxl reads both), and every part
+  but the order sheet and the styles byte for byte (#1226: „INTERMAX jest nietknięty albo ma dokładnie wpisane
+  komórki”).
+- BEZ_KOPII: Wpisanie raportów leaves the Kopie folder with the same Kopie, names and bytes, however it ends
+  (ADR 0028: „Bez Kopii INTERMAX”).
+- BEZ_WYJATKU: the run ends with a summary or a ``StopError`` (in Wpisanie raportów: a fact of ``write_cells`` or a
+  ``WorkbookError`` of the read), or the process dies; nothing else escapes.
 
 Nothing in the product code is replaced; the checker only wraps the steps to pick at their points, and gives both runs
 its own ``Disk`` and ``Waiting`` whose steps are the real ones behind a point. A killed process
@@ -52,10 +63,12 @@ from __future__ import annotations
 import argparse
 import enum
 import errno
+import io
 import os
 import shutil
 import sys
 import tempfile
+import zipfile
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -66,14 +79,19 @@ from typing import Any, Literal
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-from rozliczenia import intermax_copies, intermax_file, intermax_replace, intermax_restore, register_file, workbook_files
+from openpyxl import load_workbook
+
+from rozliczenia import intermax_cells, intermax_copies, intermax_file, intermax_replace, intermax_restore, register_file, workbook_files
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting, WriteMismatch
 from rozliczenia.message import StopError
+from rozliczenia.report_cells import CellChange, OrderRow, ReportColumn
 from rozliczenia.run_context import RunContext
+from rozliczenia.workbook_files import WorkbookError
 from eksplorator import Choices, Excuse, Kind, excuse_line, excused, gone_lines, schedules, verdict
 
-from atrapy.intermax import Intermax, Order
+from atrapy.intermax import FIRST, HEADERS, ORDER_SHEET, Intermax, Order
 from atrapy.workbooks import excel_lock
 
 NOW = datetime(2026, 10, 25, 20, 0, 0)
@@ -84,19 +102,34 @@ READ = "po odczycie INTERMAX"
 EXCEL = "is_open_in_excel(INTERMAX)"
 WRITE = "zapis pliku tymczasowego obok INTERMAX"
 CHECK = "intermax_file.check sprawdza plik tymczasowy"
+CHECK_CELLS = "intermax_file.check_cells sprawdza plik tymczasowy"
 EXISTS = "Disk.exists (nazwa Kopii INTERMAX)"
 CREATE = "Disk.create (Kopia INTERMAX)"
 REPLACE = "os.replace pliku tymczasowego na INTERMAX"
 PAUSE = "przerwa przed ponowną próbą podmiany"
 PRUNE = "usunięcie starszej Kopii (KEPT)"
-Mode = Literal["Uporządkowanie", "przywrócenie Kopii", "drugie przywrócenie w tej samej sekundzie"]
+Mode = Literal["Uporządkowanie", "przywrócenie Kopii", "drugie przywrócenie w tej samej sekundzie", "Wpisanie raportów"]
 ORDERING: Mode = "Uporządkowanie"
 RESTORE: Mode = "przywrócenie Kopii"
 SAME_SECOND: Mode = "drugie przywrócenie w tej samej sekundzie"
 """A restore in the second of an earlier one: the Kopie folder already holds the Kopia that the replace would name."""
+REPORTS: Mode = "Wpisanie raportów"
+"""Two cells of ordered orders written without a Kopia (``intermax_cells.write_cells``)."""
+RESTORES: tuple[Mode, ...] = (RESTORE, SAME_SECOND)
+WITH_COPY: tuple[Mode, ...] = (ORDERING, *RESTORES)
+CHANGES = (
+    CellChange(OrderRow(ORDER_SHEET, 2), ReportColumn.SUCCESSFUL, "tak"),
+    CellChange(OrderRow(ORDER_SHEET, 5), ReportColumn.COMPLETED, "wymiana gniazda, stb2"),
+)
+"""What Wpisanie raportów writes: rows 2 and 5 are ordered orders in the original and in the worker's version."""
+WRITTEN_CELLS = {
+    (change.order.sheet, change.order.row, FIRST + HEADERS.index(change.column.value)): change.value
+    for change in CHANGES
+}
+"""The same cells as the checker's oracle reads them (sheet, row, column from 1), from the synthetic file's headers."""
 
 Actor = Literal["pracownik", "excel"]
-Choice = Literal["ok", "pracownik", "excel", "oserror", "niezgodny", "kill", "onedrive", "dluga"]
+Choice = Literal["ok", "pracownik", "excel", "oserror", "niezgodny", "kill", "onedrive", "dluga", "obciety"]
 
 
 class Crash(BaseException):
@@ -112,6 +145,7 @@ class Bounds:
     kills: int = 1
     refusals: int = 2
     long_pauses: int = 1
+    torn: int = 1
 
     def budget(self) -> dict[str, int]:
         """How many times each choice that is not ``ok`` may be picked in a schedule (``eksplorator.Choices``)."""
@@ -124,6 +158,7 @@ class Bounds:
             "kill": self.kills,
             "onedrive": self.refusals,
             "dluga": self.long_pauses,
+            "obciety": self.torn,
         }
 
 
@@ -226,6 +261,7 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
     real_read = register_file.read
     real_content = workbook_files.workbook_content
     real_check = intermax_file.check
+    real_check_cells = intermax_file.check_cells
     real_open = workbook_files.is_open_in_excel
 
     def read(path: Path, *arguments: Any, **options: Any) -> register_file.RegisterFile:
@@ -239,7 +275,7 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
 
     def content(path: Path) -> bytes:
         read = real_content(path)
-        if world.mode != ORDERING and path == world.register and world.read is None:
+        if world.mode in RESTORES and path == world.register and world.read is None:
             world.read = read
             scheduler.say("restore czyta INTERMAX (workbook_content)")
             scheduler.point(READ)
@@ -249,6 +285,10 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
         scheduler.point(CHECK, fails="niezgodny")
         real_check(register, written, area, block, plan)
 
+    def check_cells(register: register_file.RegisterFile, written: bytes, cells: Any) -> None:
+        scheduler.point(CHECK_CELLS, fails="niezgodny")
+        real_check_cells(register, written, cells)
+
     def is_open(path: Path) -> bool:
         if path == world.register:
             scheduler.point(EXCEL)
@@ -256,6 +296,7 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
 
     register_file.read = read
     intermax_file.check = check
+    intermax_file.check_cells = check_cells
     workbook_files.is_open_in_excel = is_open
     workbook_files.workbook_content = content
     try:
@@ -263,6 +304,7 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
     finally:
         register_file.read = real_read
         intermax_file.check = real_check
+        intermax_file.check_cells = real_check_cells
         workbook_files.is_open_in_excel = real_open
         workbook_files.workbook_content = real_content
 
@@ -271,7 +313,10 @@ def _disk(world: World, scheduler: Scheduler) -> Disk:
     """The replace's steps on the disk: the real ones (``LOCAL_DISK``), each behind its point."""
 
     def write(path: Path, data: bytes) -> None:
-        scheduler.point(WRITE, fails="oserror")
+        torn: tuple[Choice, ...] = ("obciety",) if world.mode == REPORTS else ()
+        if scheduler.point(WRITE, fails="oserror", extra=torn) == "obciety":
+            scheduler.say("zapis pliku tymczasowego urywa się w połowie (obcięty plik)")
+            data = data[: len(data) // 2]
         LOCAL_DISK.write(path, data)
 
     def exists(path: Path) -> bool:
@@ -370,6 +415,44 @@ def _newest(names: set[str]) -> list[str]:
 
 Outcome = Literal["podsumowanie", "zatrzymanie", "zginal", "wyjatek"]
 
+_SEEN: dict[bytes, tuple[dict[str, bytes], dict[tuple[str, int, int], object]] | None] = {}
+"""Parts and cell values of each INTERMAX the oracle has read; ``None``: not a workbook openpyxl reads."""
+
+
+def _seen(content: bytes) -> tuple[dict[str, bytes], dict[tuple[str, int, int], object]] | None:
+    """The oracle of DOKLADNIE_WPISANE: the parts of ``content`` and every cell value openpyxl reads in it, independent
+    of the product's writer and of its write check."""
+
+    if content not in _SEEN:
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                parts = {name: archive.read(name) for name in archive.namelist()}
+            workbook = load_workbook(io.BytesIO(content))
+        except Exception:  # noqa: BLE001 - every unreadable INTERMAX is not the exactly written one
+            _SEEN[content] = None
+        else:
+            values: dict[tuple[str, int, int], object] = {
+                (sheet.title, cell.row, cell.column): cell.value
+                for sheet in workbook.worksheets
+                for row in sheet.iter_rows()
+                for cell in row
+                if cell.value is not None
+            }
+            _SEEN[content] = parts, values
+    return _SEEN[content]
+
+
+def _exactly_written(read: bytes, written: bytes) -> bool:
+    """``written`` is ``read`` with exactly ``WRITTEN_CELLS``: the same values elsewhere, the same parts but the order
+    sheet and the styles."""
+
+    before, after = _seen(read), _seen(written)
+    if before is None or after is None:
+        return False
+    (old_parts, old_values), (new_parts, new_values) = before, after
+    changed = {name for name in old_parts.keys() | new_parts.keys() if old_parts.get(name) != new_parts.get(name)}
+    return changed <= {"xl/worksheets/sheet2.xml", "xl/styles.xml"} and new_values == {**old_values, **WRITTEN_CELLS}
+
 
 @dataclass(frozen=True)
 class Violation:
@@ -388,6 +471,7 @@ def _check(world: World, outcome: Outcome, failure: str) -> list[tuple[str, str]
         if path.name not in (NAME, world.lock.name)
     )
     kopie = world.kopie()
+    copying = world.mode in WITH_COPY
     if world.replaced is not None:
         if world.replaced != world.read:
             broken.append(
@@ -396,7 +480,7 @@ def _check(world: World, outcome: Outcome, failure: str) -> list[tuple[str, str]
                     "podmiana zastąpiła INTERMAX z cudzą zmianą, której run nie czytał",
                 )
             )
-        if world.replaced not in kopie.values():
+        if copying and world.replaced not in kopie.values():
             broken.append(
                 (
                     "KOPIA_ZASTAPIONEGO",
@@ -429,10 +513,10 @@ def _check(world: World, outcome: Outcome, failure: str) -> list[tuple[str, str]
         if left:
             broken.append(("SUKCES", f"po wyniku zostają pliki obok INTERMAX: {left}"))
         # What the replace put in place: a worker's change that OneDrive brings in after it is not the restore's.
-        if world.mode != ORDERING and world.written != world.old_copies[world.chosen]:
+        if world.mode in RESTORES and world.written != world.old_copies[world.chosen]:
             broken.append(("PRZYWROCONA_KOPIA", "podmiana przywrócenia nie dała INTERMAX bajtów wybranej Kopii"))
         expected = _newest({*world.old_copies, *kopie})
-        if not world.keep_failed and sorted(kopie) != expected:
+        if copying and not world.keep_failed and sorted(kopie) != expected:
             broken.append(
                 (
                     "KOPIE_NAJNOWSZE",
@@ -442,6 +526,11 @@ def _check(world: World, outcome: Outcome, failure: str) -> list[tuple[str, str]
         rewritten = sorted(name for name, content in world.old_copies.items() if kopie.get(name, content) != content)
         if rewritten:
             broken.append(("KOPIE_NAJNOWSZE", f"po wyniku Kopie sprzed runu mają inne bajty: {rewritten}"))
+    if world.mode == REPORTS:
+        if world.written is not None and world.read is not None and not _exactly_written(world.read, world.written):
+            broken.append(("DOKLADNIE_WPISANE", "podmiana dała INTERMAX inny niż przeczytany z dokładnie wpisanymi komórkami"))
+        if kopie != world.old_copies:
+            broken.append(("BEZ_KOPII", f"Wpisanie raportów zmienia Kopie INTERMAX: {sorted(set(kopie) ^ set(world.old_copies))}"))
     if outcome == "wyjatek":
         broken.append(
             ("BEZ_WYJATKU", f"{world.mode} kończy się wyjątkiem: {failure}")
@@ -531,12 +620,13 @@ class FindingShape:
 
 
 CHANGE_AFTER_READ = FindingShape(
-    came_before=frozenset({READ, EXCEL, WRITE, CHECK, EXISTS, CREATE, REPLACE}),
+    came_before=frozenset({READ, EXCEL, WRITE, CHECK, CHECK_CELLS, EXISTS, CREATE, REPLACE}),
     refusals_after=0,
     lost=frozenset({(Version.ORIGINAL, Version.WORKER)}),
     copy=frozenset(Copy),
 )
-"""Uporządkowanie and the restore do not check right before os.replace whether INTERMAX still has the bytes they read:
+"""Uporządkowanie, the restore and Wpisanie raportów do not check right before os.replace whether INTERMAX still has the
+bytes they read:
 a worker's change that comes after the read of the original, and after which the run neither paused nor was refused, is
 lost under the run's file."""
 
@@ -545,11 +635,11 @@ KNOWN_FINDINGS: tuple[Excuse[FindingShape], ...] = (
     Excuse(
         "BEZ_UTRATY_ZMIAN",
         "BEZ_UTRATY_ZMIAN",
-        "Uporządkowanie i przywrócenie Kopii nie sprawdzają tuż przed os.replace, czy INTERMAX ma wciąż bajty, które "
-        "przeczytały (przed pierwszą próbą wcale, przed ponowną po przerwie): zmiana pracownika z innego komputera, "
-        "którą OneDrive wgrał w trakcie, przepada",
+        "Uporządkowanie, przywrócenie Kopii i Wpisanie raportów nie sprawdzają tuż przed os.replace, czy INTERMAX ma "
+        "wciąż bajty, które przeczytały (przed pierwszą próbą wcale, przed ponowną po przerwie): zmiana pracownika z "
+        "innego komputera, którą OneDrive wgrał w trakcie, przepada",
         CHANGE_AFTER_READ,
-        after=(ORDERING, RESTORE),
+        after=(ORDERING, RESTORE, REPORTS),
     ),
     Excuse(
         "KOPIA_ZASTAPIONEGO",
@@ -560,6 +650,23 @@ KNOWN_FINDINGS: tuple[Excuse[FindingShape], ...] = (
         after=(ORDERING, RESTORE),
     ),
 )
+
+
+class _Stopped(Exception):
+    """Wpisanie raportów stops with a fact: ``write_cells`` did not write, or the read refused INTERMAX. Its process
+    (#1227) turns it into a Zatrzymanie; this checker only needs that it stopped."""
+
+
+def _write_reports(world: World, waiting: Waiting, disk: Disk) -> None:
+    """Wpisanie raportów as its process does it: ``register_file.read`` of INTERMAX, then ``write_cells``."""
+
+    try:
+        register = register_file.read(world.register, DadFiles())
+    except WorkbookError as error:
+        raise _Stopped(f"odczyt INTERMAX: {error.problem.name}") from error
+    written = intermax_cells.write_cells(register, CHANGES, waiting=waiting, disk=disk)
+    if not isinstance(written, intermax_cells.CellsWritten):
+        raise _Stopped(str(written))
 
 
 def execute(mode: Mode, choices: Choices, work: Path, versions: tuple[bytes, bytes, bytes]) -> list[Violation]:
@@ -596,7 +703,7 @@ def execute(mode: Mode, choices: Choices, work: Path, versions: tuple[bytes, byt
     scheduler = Scheduler(choices, act, world.lock.exists)
     outcome: Outcome = "podsumowanie"
     failure = ""
-    scheduler.say(mode if mode == ORDERING else f"{mode} {world.chosen}")
+    scheduler.say(f"{mode} {world.chosen}" if mode in RESTORES else mode)
     with _points(world, scheduler):
         try:
             waiting, disk = _waiting(world, scheduler), _disk(world, scheduler)
@@ -605,6 +712,8 @@ def execute(mode: Mode, choices: Choices, work: Path, versions: tuple[bytes, byt
                     OrderingInputs(world.register, world.copies, now=lambda: NOW, waiting=waiting, disk=disk),
                     RunContext(),
                 )
+            elif mode == REPORTS:
+                _write_reports(world, waiting, disk)
             else:
                 intermax_restore.restore(
                     world.chosen, world.register, world.copies, now=lambda: NOW, waiting=waiting, disk=disk
@@ -613,6 +722,9 @@ def execute(mode: Mode, choices: Choices, work: Path, versions: tuple[bytes, byt
         except StopError as stop:
             outcome = "zatrzymanie"
             scheduler.say(f"Zatrzymanie: {stop.message.code}")
+        except _Stopped as stop:
+            outcome = "zatrzymanie"
+            scheduler.say(f"Zatrzymanie: {stop}")
         except Crash:
             outcome = "zginal"
         except Exception as error:  # noqa: BLE001 - BEZ_WYJATKU: every other exception is a finding
@@ -627,7 +739,7 @@ def execute(mode: Mode, choices: Choices, work: Path, versions: tuple[bytes, byt
     return violations
 
 
-MODES: tuple[Mode, ...] = (ORDERING, RESTORE, SAME_SECOND)
+MODES: tuple[Mode, ...] = (ORDERING, RESTORE, SAME_SECOND, REPORTS)
 
 
 @dataclass

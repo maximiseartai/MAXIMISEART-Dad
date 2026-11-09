@@ -2,9 +2,10 @@
 
 ``template_file`` zapisuje openpyxl, ``template_copy`` kopiuje Wzorzec, ``row_look`` daje obu ten sam
 Wygląd Wiersza danych, ``workbook_save`` zapisuje plik atomowo, ``efenix_marking`` stawia Znaczniki efenix w Pliku zbiorczym
-podmianą stylu komórek XML, ``intermax_file`` daje bajty dnia Uporządkowania INTERMAX z podmianą wierszy XML, a
-``intermax_replace`` zastępuje nimi albo bajtami Kopii INTERMAX Rejestr zleceń. Reszta
-``src`` przekazuje im Wiersze danych, ale sama nie pisze do komórek ani plików.
+podmianą stylu komórek XML, ``intermax_file`` daje bajty dnia Uporządkowania INTERMAX z podmianą wierszy XML i bajty
+komórek Wpisania raportów z podmianą komórek XML, a ``intermax_replace`` zastępuje nimi (z Kopią INTERMAX albo, we
+Wpisaniu raportów, bez niej) albo bajtami Kopii INTERMAX Rejestr zleceń. Reszta ``src`` przekazuje im Wiersze danych i
+zmiany komórek (``intermax_cells``), ale sama nie pisze do komórek ani plików.
 """
 
 from __future__ import annotations

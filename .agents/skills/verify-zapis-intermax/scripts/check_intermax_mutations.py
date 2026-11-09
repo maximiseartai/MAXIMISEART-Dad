@@ -21,6 +21,7 @@ REPLACE = Path("src/rozliczenia/intermax_replace.py")
 RESTORE = Path("src/rozliczenia/intermax_restore.py")
 COPIES = Path("src/rozliczenia/intermax_copies.py")
 SAVE = Path("src/rozliczenia/workbook_save.py")
+CELLS = Path("src/rozliczenia/intermax_cells.py")
 EXPLORER = (".agents/skills/verify-zapis-intermax/scripts/explore_intermax.py",)
 NEW = "INTERMAX: NOWE NARUSZENIE"
 
@@ -79,8 +80,8 @@ COPY_OF_NEW = Mutation(
     (
         Edit(
             REPLACE,
-            "            disk.create(copy.path, current)\n",
-            "            disk.create(copy.path, current if register.read_bytes() == current else content)\n",
+            "                disk.create(copy.path, current)\n",
+            "                disk.create(copy.path, current if register.read_bytes() == current else content)\n",
         ),
     ),
     EXPLORER,
@@ -106,14 +107,14 @@ rules; only KOPIA_ZASTAPIONEGO has a part for the Kopia."""
 MUTATIONS = (
     Mutation(
         "podmiana bez Kopii INTERMAX",
-        (Edit(REPLACE, "            disk.create(copy.path, current)\n", "            pass\n"),),
+        (Edit(REPLACE, "                disk.create(copy.path, current)\n", "                pass\n"),),
         EXPLORER,
         "INTERMAX zmieniony bez Kopii, z której tata by go przywrócił",
         NEW,
     ),
     Mutation(
         "Kopia z innych bajtów niż przeczytane",
-        (Edit(REPLACE, "            disk.create(copy.path, current)\n", '            disk.create(copy.path, b"")\n'),),
+        (Edit(REPLACE, "                disk.create(copy.path, current)\n", '                disk.create(copy.path, b"")\n'),),
         EXPLORER,
         "Kopia INTERMAX nie przywraca stanu sprzed podmiany",
         NEW,
@@ -123,7 +124,7 @@ MUTATIONS = (
         (
             Edit(
                 REPLACE,
-                "        if not replaced:\n            for copy in made:\n                _forget(copy.path, disk)\n",
+                "        if not state.replaced:\n            for copy in made:\n                _forget(copy.path, disk)\n",
                 "        pass\n",
             ),
         ),
@@ -134,7 +135,7 @@ MUTATIONS = (
     ),
     Mutation(
         "Kopia o zajętej nazwie usuwana po błędzie jej zapisu",
-        (Edit(REPLACE, "            if not taken:\n                made.append(copy)", "            if True:\n                made.append(copy)"),),
+        (Edit(REPLACE, "                if not taken:\n                    made.append(copy)", "                if True:\n                    made.append(copy)"),),
         EXPLORER,
         "drugie przywrócenie w tej samej sekundzie usuwa Kopię stanu sprzed pierwszego",
         NEW,
@@ -144,8 +145,8 @@ MUTATIONS = (
         (
             Edit(
                 REPLACE,
-                "        try:\n            taken = disk.exists(copy.path)",
-                "        taken = disk.exists(copy.path)\n        try:\n            pass",
+                "            try:\n                taken = disk.exists(copy.path)",
+                "            taken = disk.exists(copy.path)\n            try:\n                pass",
             ),
         ),
         EXPLORER,
@@ -225,7 +226,7 @@ MUTATIONS = (
         "Kopia nadpisuje Kopię o tej samej nazwie, a zajęta nazwa nie zatrzymuje",
         (
             Edit(REPLACE, "os.O_WRONLY | os.O_CREAT | os.O_EXCL", "os.O_WRONLY | os.O_CREAT | os.O_TRUNC"),
-            Edit(REPLACE, "            taken = disk.exists(copy.path)  #", "            taken = disk.exists(copy.path) and False  #"),
+            Edit(REPLACE, "                taken = disk.exists(copy.path)  #", "                taken = disk.exists(copy.path) and False  #"),
         ),
         EXPLORER,
         "udane drugie przywrócenie w tej samej sekundzie nadpisuje Kopię stanu sprzed pierwszego",
@@ -255,6 +256,19 @@ MUTATIONS = (
         ),
         EXPLORER,
         "Zatrzymanie przy INTERMAX otwartym w Excelu usuwa wcześniejsze Kopie taty",
+        NEW,
+    ),
+    Mutation(
+        "Wpisanie raportów bez odczytu kontrolnego zapisu",
+        (
+            Edit(
+                CELLS,
+                "register.path, register.content, content, written_as_planned, waiting=waiting",
+                "register.path, register.content, content, lambda _written: None, waiting=waiting",
+            ),
+        ),
+        EXPLORER,
+        "obcięty zapis pliku tymczasowego trafia do INTERMAX zamiast odmowy, a tata ma uszkodzony INTERMAX",
         NEW,
     ),
     *dict.fromkeys(mutation for parts in BOUNDARIES.values() for mutations in parts.values() for mutation in mutations),
