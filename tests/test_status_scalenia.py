@@ -71,6 +71,16 @@ class StatusGitHub(FakeGitHub):
         (self.bin / "pulls.json").write_text(json.dumps(self.pulls), encoding="utf-8")
         return head
 
+    def open_unrelated_pull(self, number: int) -> str:
+        """HEAD nowego PR bez wspólnego przodka z bazą (commit bez rodzica z drzewem ``start``), którego scalenia Git
+        nie policzy."""
+
+        head = git(self.checkout, "commit-tree", f"{self.start}^{{tree}}", "-m", f"PR {number} bez wspólnej historii")
+        self.push_head(number, head)
+        self.pulls.append({"number": number, "title": f"PR {number}", "headRefOid": head, "baseRefName": "main", "isCrossRepository": False})
+        (self.bin / "pulls.json").write_text(json.dumps(self.pulls), encoding="utf-8")
+        return head
+
     def reject_statuses_for(self, head: str) -> None:
         (self.bin / "odrzucane").write_text(head, encoding="utf-8")
 
@@ -96,6 +106,7 @@ def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) 
     conflicts_in_many_files = github.open_pull(5, dict.fromkeys(LONG_NAMES, "z PR\n"))
     from_fork = github.open_pull(6, {"kod/forka.py": "FORK: int = 1\n"}, fork=True)
     stacked = github.open_pull(7, {"kod/stos.py": "STOS: int = 1\n"}, base="inna")
+    unrelated = github.open_unrelated_pull(8)
     main = github.push_main(
         {"kod/__init__.py": SUM_OF_THREE, "kod/nazwa.py": 'NAZWA = "z main"\n', **dict.fromkeys(LONG_NAMES, "z main\n")}
     )
@@ -105,7 +116,7 @@ def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) 
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     sent = github.statuses_by_head()
-    assert set(sent) == {agrees, collides, collides_on_windows, conflicts, conflicts_in_many_files}
+    assert set(sent) == {agrees, collides, collides_on_windows, conflicts, conflicts_in_many_files, unrelated}
     assert from_fork not in sent and stacked not in sent
     final = {}
     for head, statuses in sent.items():
@@ -122,6 +133,9 @@ def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) 
     assert final[conflicts]["description"].endswith(": kod/nazwa.py")
     assert final[conflicts_in_many_files]["state"] == "failure"
     assert final[conflicts_in_many_files]["description"].endswith("…")
+    # Git, który nie policzy scalenia, to błąd narzędzia, a nie konflikt PR.
+    assert final[unrelated]["state"] == "error"
+    assert "git merge-tree z main" in final[unrelated]["description"], final[unrelated]
     assert git(github.checkout, "rev-parse", "HEAD") == head_before
     assert git(github.checkout, "status", "--porcelain") == ""
     assert len(worktrees(github.checkout)) == 1

@@ -4206,6 +4206,10 @@ export type StartToolUpdateErrors = {
      * Conflict
      */
     409: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
 };
 
 export type StartToolUpdateError = StartToolUpdateErrors[keyof StartToolUpdateErrors];

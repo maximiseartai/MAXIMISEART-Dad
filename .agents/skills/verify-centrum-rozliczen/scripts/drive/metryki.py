@@ -174,6 +174,7 @@ def drive(run: Run, page: Page) -> None:
     )
     expect(interrupted).to_contain_text(f"do przerwania {_seconds(sum(phase_times))}")
     run.check(True, "an interrupted Uruchomienie procesu shows its phase times until the interruption")
+    _check_interrupted_icons(run, interrupted, runs)
 
     run.step(feature, "metryki-historia")
     rows = history_rows(page)
@@ -305,6 +306,24 @@ def _drive_stop_kinds(run: Run, page: Page, runs: list[dict[str, Any]]) -> None:
         expect(row.locator("[data-slot=badge]", has_text=word)).to_have_attribute("data-variant", variant)
     run.check(True, "Historia: „Zatrzymano” outlined for „dla taty” and the old record, „Błąd” red for „do Maksa”")
     run.capture(page, "2b-metryki-rodzaj-zatrzymania")
+
+
+def _check_interrupted_icons(run: Run, interrupted: Locator, runs: list[dict[str, Any]]) -> None:
+    """Przerwane: the server's ``tone`` picks the icon, a red one for a stop „do Maksa” (``failed``) and a calm one for
+    every other stop, also the old one without a kind."""
+
+    stops = [entry for entry in runs if entry["result"] == "BLAD_KRYTYCZNY"]
+    run.check({entry["tone"] for entry in stops} == {"failed", "stopped"}, "the fixture's interrupted runs have both tones")
+    expect(interrupted.locator("[data-slot=item]")).to_have_count(len(stops))
+    red = re.compile(r"(^|\s)text-destructive(\s|$)")
+    for entry in stops:
+        icon = interrupted.locator("[data-slot=item]", has_text=entry["period"]).filter(has_text=local_time(entry["started_at"]))
+        icon = icon.locator("[data-slot=item-media] svg")
+        if entry["tone"] == "failed":
+            expect(icon).to_have_class(red)
+        else:
+            expect(icon).not_to_have_class(red)
+    run.check(True, "Przerwane: a red icon only for the stop „do Maksa”, a calm one for „dla taty” and the old record")
 
 
 def _bar_name(entry: dict[str, Any], measured: list[str]) -> str:
