@@ -64,8 +64,6 @@ def write_atomically(
 ) -> None:
     """``write`` zapisuje skoroszyt do pliku tymczasowego obok ``target``; dopiero potem ``target`` jest podmieniany.
 
-    Podmienia ``replace``, a bez niego ``os.replace``.
-
     Nieudany zapis to ``WorkbookSaveError`` (albo błąd zapisu zgłoszony przez ``write`` albo inny niż ``OSError``
     błąd ``replace``); plik tymczasowy nigdy nie zostaje, a ``target`` zmienia się tylko po udanym zapisie całości.
     """
@@ -89,11 +87,7 @@ def write_atomically(
 
 
 def save_workbook(workbook: Workbook, target: Path) -> None:
-    """Atomowo zapisuje skoroszyt pod istniejący ``target``, zachowując 1:1 jego odwołania zewnętrzne.
-
-    openpyxl nie zapisuje wiernie części ``xl/externalLinks/*``, więc są one kopiowane bajtowo z
-    ``target``. ``target`` zmienia się dopiero po udanym zapisie całości.
-    """
+    """Atomowo zapisuje skoroszyt pod istniejący ``target``, zachowując 1:1 jego odwołania zewnętrzne."""
 
     _save_atomically(workbook, target, _read_external_link_parts(target, target))
 
@@ -112,8 +106,6 @@ def _read_external_link_parts(source: Path | IO[bytes], target: Path) -> _Extern
 
 
 def _save_atomically(workbook: Workbook, target: Path, parts: _ExternalLinkParts) -> None:
-    """Atomowo zapisuje skoroszyt openpyxl pod ``target`` i przywraca w nim ``parts``."""
-
     def write(path: Path) -> None:
         try:
             workbook.save(path)
@@ -128,8 +120,6 @@ def _save_atomically(workbook: Workbook, target: Path, parts: _ExternalLinkParts
 
 
 def _external_link_parts(source: Path | IO[bytes]) -> _ExternalLinkParts:
-    """Pobiera oryginalne relacje zewnętrzne, których openpyxl nie zapisuje 1:1."""
-
     with zipfile.ZipFile(source, "r") as archive:
         return {
             info.filename: (info, archive.read(info.filename))
@@ -139,8 +129,6 @@ def _external_link_parts(source: Path | IO[bytes]) -> _ExternalLinkParts:
 
 
 def _restore_external_link_parts(path: Path, parts: _ExternalLinkParts) -> None:
-    """Przywraca cały fragment externalLinks bez zmiany arkuszy i danych."""
-
     if not parts:
         return
     file_descriptor, temporary_name = tempfile.mkstemp(

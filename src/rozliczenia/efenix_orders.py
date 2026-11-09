@@ -1,12 +1,12 @@
 """Zakres Wyceny w efenix: zlecenia Pliku zbiorczego, które proces sprawdza w efenix, w kolejności taty.
 
-Jedyną operacją jest ``read_scope()``: jeden odczyt Pliku zbiorczego z wartościami, które policzył Excel
-(``workbook_files.read_computed_rows``), i czysta reguła zakresu (``scope``). W zakresie jest każdy Wiersz danych z
-Wykonawcą, który nie jest Zleceniem ze zdjęciami (AB, AC, AD, AE, AF, AJ–AP, AS) ani usterką (AI); wartość 0 i pusta
-komórka znaczą to samo, a każda inna treść, także tekst, czyni wiersz Zleceniem ze zdjęciami albo usterką. Wiersz, który
-jest jednym i drugim, liczy się jako Zlecenie ze zdjęciami. Kolejność to Wykonawcy alfabetycznie, a w każdym ``DATA`` od
-najstarszej (wiersz bez daty na końcu Wykonawcy, remis po numerze wiersza). Plik zbiorczy jest tylko czytany, a zakres
-niesie jego bajty z tego odczytu i kolumnę ``ADRES``, w których Wycena w efenix stawia Znaczniki efenix (``efenix_marking``).
+Plik zbiorczy jest czytany raz, z wartościami, które policzył Excel (``workbook_files.read_computed_rows``). W zakresie
+jest każdy Wiersz danych z Wykonawcą, który nie jest Zleceniem ze zdjęciami (AB, AC, AD, AE, AF, AJ–AP, AS) ani usterką
+(AI); wartość 0 i pusta komórka znaczą to samo, a każda inna treść, także tekst, czyni wiersz Zleceniem ze zdjęciami
+albo usterką. Wiersz, który jest jednym i drugim, liczy się jako Zlecenie ze zdjęciami. Kolejność to Wykonawcy
+alfabetycznie, a w każdym ``DATA`` od najstarszej (wiersz bez daty na końcu Wykonawcy, remis po numerze wiersza). Plik
+zbiorczy jest tylko czytany, a zakres niesie jego bajty z tego odczytu i kolumnę ``ADRES``, w których Wycena w efenix
+stawia Znaczniki efenix (``efenix_marking``).
 """
 
 from __future__ import annotations
@@ -87,8 +87,7 @@ class MissingColumns:
 
 
 def read_scope(path: Path, files: DadFiles) -> PricingScope | AmountsNotComputed | MissingColumns:
-    """Zakres Wyceny w efenix z Pliku zbiorczego ``path`` przeczytanego uchwytem plików taty ``files``; ``WorkbookError``,
-    gdy pliku nie da się odczytać albo jest otwarty w Excelu."""
+    """``WorkbookError``, gdy pliku nie da się odczytać albo jest otwarty w Excelu."""
 
     read = workbook_files.read_computed_rows(path, files)
     return scope(read.header, read.rows, read.content)

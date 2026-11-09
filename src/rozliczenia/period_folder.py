@@ -184,8 +184,6 @@ class PeriodFolder:
                 return self.worker_settlements
 
     def worker_settlement(self, worker_name: str) -> Path:
-        """Rozliczenie pracownika Wykonawcy ``worker_name`` w Folderze rozliczeń pracowników."""
-
         return self.worker_settlements / _WORKER_SETTLEMENT.format(token=self.period.token, worker=worker_name)
 
     def observe(self) -> PeriodFolderObservation:

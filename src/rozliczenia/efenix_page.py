@@ -170,7 +170,6 @@ SHOWS_ANYTHING: Final = "(element) => element.childElementCount > 0 || element.t
 znaki); funkcja JavaScript elementu. Narzędzie zgodności (``tools/zgodnosc_efenix.py``) mierzy nią propozycję Emmetta
 w efenix i w Atrapie efenix (#908, #953)."""
 
-# Czy wśród znalezionych elementów jest dokładnie jeden i coś pokazuje (``SHOWS_ANYTHING``); bez czekania.
 _ONLY_ONE_SHOWS: Final = f"(found) => found.length === 1 && ({SHOWS_ANYTHING})(found[0])"
 
 
@@ -192,8 +191,6 @@ class PageElement:
     clicked: bool = False
 
     def fits(self, count: int) -> bool:
-        """Element jest na stronie ``count`` razy, tyle, ile deklaruje."""
-
         return count == 1 or (self.many and count > 1)
 
 
@@ -301,8 +298,7 @@ class EmmettWindow:
 
 
 def emmett_window(page: Page) -> EmmettWindow:
-    """Okno Emmetta na stronie ``page`` teraz, bez czekania: okna i propozycje liczone lokatorem (jak ``single``, także w
-    shadow DOM), potem reguła ``SHOWS_ANYTHING`` dla jedynej propozycji. Tylko czyta."""
+    """Okno Emmetta na stronie ``page`` teraz, bez czekania. Tylko czyta."""
 
     proposals = page.locator(Element.PROPOSAL.selector)
     return EmmettWindow(
@@ -336,7 +332,7 @@ class Cell:
 
 @dataclass(frozen=True)
 class ResultsTable:
-    """Tabela wyników z odpowiedzi szukania: teksty nagłówków i komórki wierszy."""
+    """Tabela wyników z odpowiedzi szukania."""
 
     headers: tuple[str, ...]
     rows: tuple[tuple[Cell, ...], ...]
@@ -518,8 +514,6 @@ def read_order(page: Page) -> tuple[OrderPricing, Mapping[str, str]]:
 
 
 def login_form(page: Page) -> bool:
-    """Strona ``page`` ma formularz logowania efenix."""
-
     return page.locator(LOGIN_FORM).count() > 0
 
 

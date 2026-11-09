@@ -102,8 +102,7 @@ _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
 
 @dataclass(frozen=True)
 class _WriteStyles:
-    """Style komórek z ``xl/styles.xml``, do których zapis dopisuje wygląd dnia: formaty liczb stylów i listy czcionek,
-    wypełnień, obramowań i stylów komórek."""
+    """Style komórek z ``xl/styles.xml``, do których zapis dopisuje wygląd dnia."""
 
     number_formats: tuple[int, ...]
     fonts: tuple[Font, ...]
@@ -351,9 +350,6 @@ def _order_row(
     color: OperatorColor,
     entry: Mapping[int, SheetCell],
 ) -> bytes:
-    """Wiersz zlecenia ``number`` z komórek Surowego zlecenia od A do ``UWAGI``, w kolumnach ``entry`` z komórkami
-    Wpisu, z Kolorem operatora ``color`` i wyglądem ``row_look``."""
-
     fills = {columns.activities: color.activities, columns.contract_number: color.contract_number, columns.devices: color.devices}
     written: dict[int, bytes] = {}
     for source in sheet_cells(row_xml):
@@ -372,9 +368,6 @@ def _order_row(
 
 
 def _entry_cells(entry: IntermaxEntry | None, columns: OrderColumns) -> dict[int, SheetCell]:
-    """Komórki Wpisu urządzenia i czynności INTERMAX po kolumnie: tekst w ``URZĄDZENIA`` i ``CZYNNOŚCI``; bez Wpisu
-    żadnych."""
-
     if entry is None:
         return {}
     return {
@@ -384,8 +377,6 @@ def _entry_cells(entry: IntermaxEntry | None, columns: OrderColumns) -> dict[int
 
 
 def _with_dimension(head: bytes, last_row: int, last_column: int) -> bytes:
-    """Nagłówek arkusza z ``<dimension>`` sięgającym co najmniej ``last_row`` i ``last_column``."""
-
     found = _DIMENSION.search(head)
     if found is None:
         return head

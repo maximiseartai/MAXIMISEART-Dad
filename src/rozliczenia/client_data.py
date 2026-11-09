@@ -155,8 +155,6 @@ class ForbiddenValues:
         return None
 
     def _masked(self, text: str) -> tuple[str, set[ForbiddenColumn]]:
-        """Tekst z maską w miejscu każdej zapamiętanej wartości i kolumny tych wartości."""
-
         words = list(_WORD.finditer(text))
         folded = [word.group(0).casefold() for word in words]
         pieces: list[str] = []

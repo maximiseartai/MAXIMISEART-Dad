@@ -1,6 +1,6 @@
 """Znaczniki Wyceny w efenix w Pliku zbiorczym: jedyny zapis, którym Wycena w efenix zmienia Plik zbiorczy.
 
-Jedyną operacją jest ``mark_orders()``. Dostaje bajty Pliku zbiorczego z odczytu zakresu, kolumnę ``ADRES`` i Znacznik
+``mark_orders()`` dostaje bajty Pliku zbiorczego z odczytu zakresu, kolumnę ``ADRES`` i Znacznik
 (``efenix_mark.Mark``) każdego wiersza: Znacznik efenix gotowego zlecenia albo Znacznik przekazania zlecenia przekazanego.
 Komórka ``ADRES`` każdego z tych wierszy, której Znacznik ``Mark.replaces`` dotychczasowy, dostaje styl, który od jej
 dotychczasowego różni się tylko wypełnieniem: jednolitym w kolorze swojego Znacznika. Zmieniają się tylko:
@@ -110,8 +110,6 @@ def mark_orders(path: Path, content: bytes, column: str, marks: Mapping[int, Mar
 
 
 def _marked(content: bytes, column: str, marks: Mapping[int, Mark]) -> bytes:
-    """Bajty skoroszytu ``content`` ze Znacznikiem z ``marks`` w komórce ``column`` jego wiersza."""
-
     if not marks:
         return content
     with zipfile.ZipFile(BytesIO(content)) as archive:
@@ -194,8 +192,6 @@ class _Styles:
         return known.index(xf)
 
     def _mark_fill(self, mark: Mark) -> int:
-        """Pierwsze wypełnienie Znacznika ``mark`` w pliku albo nowe na końcu listy ``fills``."""
-
         known = [index for index, each in self._marks.items() if each is mark]
         if known:
             return min(known)

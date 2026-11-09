@@ -30,14 +30,10 @@ _PHASE_ORDER = tuple(ProgressPhase)
 
 
 def _zero(result: object) -> int:
-    """Liczba domyślna, gdy etap nie podaje żadnej wartości."""
-
     return 0
 
 
 def _no_templates(result: object) -> Sequence[str]:
-    """Etap bez Szablonów pracownika."""
-
     return ()
 
 
@@ -92,8 +88,6 @@ class PhaseRunner:
         self._durations_ms: dict[ProgressPhase, int] = {}
 
     def check(self, operation: Callable[[], ResultT]) -> ResultT:
-        """Sprawdzanie."""
-
         return self._run_phase(ProgressPhase.CHECKING, operation)
 
     def read(
@@ -102,8 +96,6 @@ class PhaseRunner:
         *,
         issue_count: Callable[[ResultT], int] = _zero,
     ) -> ResultT:
-        """Odczyt danych, a po nim ``IssueCountReady``."""
-
         def record_counts(result: ResultT) -> None:
             self._record_issue_count(issue_count(result))
 
@@ -118,7 +110,7 @@ class PhaseRunner:
         templates: Callable[[ResultT], Sequence[str]] = _no_templates,
         issue_count: Callable[[ResultT], int],
     ) -> ResultT:
-        """Planowanie, a po nim ``PlanReady``; ``templates`` to Wykonawcy Szablonów pracownika po kolei."""
+        """``templates``: Wykonawcy Szablonów pracownika po kolei."""
 
         def record_counts(result: ResultT) -> None:
             self._record_issue_count(issue_count(result))
@@ -218,8 +210,6 @@ class PhaseRunner:
         operation: Callable[[], ResultT],
         record_counts: Callable[[ResultT], None] | None = None,
     ) -> ResultT:
-        """Wykonuje etap; ``record_counts`` zapisuje liczby z wyniku przed END."""
-
         self._enter(phase)
         self._phase_started = self._clock()
         self._worker_failure_reported = False

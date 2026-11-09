@@ -1,12 +1,9 @@
 """Rejestr zleceń w Przygotowaniu pliku zbiorczego: jeden odczyt na Uruchomienie i Komunikaty Przygotowania o nim.
 
 Rejestr czyta raz ``register_file.read`` uchwytem plików taty (``dad_files.DadFiles``) w Sprawdzaniu, a strażnik Surowych
-zleceń (``raw_orders_in_period``) i Odczyt danych (``period_sheets``) decydują na tych samych bajtach. Arkusze ze
-zleceniami rozpoznaje komplet wymaganych nagłówków w wierszu 1 (``register_file.recognize``), a Odczyt danych daje ich
-komórki z wartościami, Wyróżnieniami i Hiperłączami pod nagłówkiem docelowym każdej kolumny ``register_columns.COLUMNS``,
-z okresem tylko od pierwszego do ostatniego wiersza, którego data może leżeć w okresie. Moduł tłumaczy błąd odczytu
-(``WorkbookError``) i problem nagłówków (``register_file.HeadersProblem``) na Komunikaty Przygotowania; Diagnoza pyta o
-ten sam Komunikat (``register_problem``).
+zleceń (``raw_orders_in_period``) i Odczyt danych (``period_sheets``) decydują na tych samych bajtach. Moduł tłumaczy
+błąd odczytu (``WorkbookError``) i problem nagłówków (``register_file.HeadersProblem``) na Komunikaty Przygotowania;
+Diagnoza pyta o ten sam Komunikat (``register_problem``).
 """
 
 from __future__ import annotations
@@ -31,8 +28,6 @@ if TYPE_CHECKING:
 
 
 def cell_value(row: RegisterRow, column: Column) -> object:
-    """Wartość komórki Rejestru pod nagłówkiem ``column`` w wierszu ``row``."""
-
     return row.cells[column.target_header].value
 
 
@@ -61,8 +56,7 @@ def raw_orders_in_period(register: RegisterFile, period: SettlementPeriod) -> Ra
     Uporządkowanie INTERMAX mówi, co poprawić. Wiersz z wyglądem z aplikacji nad uporządkowanymi bez bloku na dole nie
     jest Surowym zleceniem i Przygotowania nie zatrzymuje. Zatrzymanie przy nieczytelnym Rejestrze.
 
-    Surowych zleceń szuka tylko w obszarach wklejania: arkusz zleceń starszego układu, bez ``AKCJE`` i ``UWAGI``, nie
-    ma obszaru, bo aplikacja firmowa do niego nie wkleja (``register_file.OrderSheet.paste``). Rejestr bez arkusza
+    Surowych zleceń szuka tylko w obszarach wklejania (zob. ``register_file.OrderSheet.paste``). Rejestr bez arkusza
     zleceń to ``None``: Zatrzymanie o jego nagłówkach daje Odczyt danych.
     """
 

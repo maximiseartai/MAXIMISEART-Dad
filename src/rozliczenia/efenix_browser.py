@@ -421,8 +421,6 @@ class BrowserEfenix:
 
     @_action(PagePart.RESULTS)
     def search(self, number: str) -> Sequence[ListedOrder]:
-        """Wiersze tabeli wyników po szukaniu ``number`` w polu ``Numer`` listy zleceń."""
-
         if urlparse(self._page.url).path != urlparse(self._url).path:
             self.open_list()
         field = self._page.locator(Element.NUMBER.selector)
@@ -440,8 +438,6 @@ class BrowserEfenix:
 
     @_action(PagePart.ORDER)
     def open_order(self, order: ListedOrder) -> OrderPricing:
-        """Otwiera stronę zlecenia ``order`` i czyta datę wykonania, kwotę końcową i ilości pozycji."""
-
         self._order_id = order.order_id
         with _doing(Operation.OPEN):
             response = self._page.goto(
@@ -451,11 +447,6 @@ class BrowserEfenix:
 
     @_action(PagePart.DATE)
     def set_execution_date(self, day: date) -> bool:
-        """Wybiera ``day`` w kalendarzu okna „Wybierz datę wykonania” i potwierdza go, gdy kalendarz go przyjął.
-
-        ``False``: kalendarz efenix zamienił dzień na inny, więc okno zamknęło kalendarz bez „Potwierdź”.
-        """
-
         self._click(self._element(Element.DATE_BUTTON, PagePart.DATE))
         self._shown(Element.DATE_DIALOG, PagePart.DATE)
         field = self._element(Element.DATE_FIELD, PagePart.DATE)
@@ -510,8 +501,6 @@ class BrowserEfenix:
 
     @_action(PagePart.QUANTITY)
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
-        """Wpisuje ``quantity`` w pole „Ilość” pozycji ``position`` i zwraca kwotę końcową z odpowiedzi efenix."""
-
         field_id = self._positions.get(position)
         if field_id is None:
             raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))
@@ -685,9 +674,6 @@ class BrowserEfenix:
             return answer.text()
 
     def _close(self, dialog: Element, dismiss: Element, part: PagePart) -> None:
-        """Zamyka okno dialogowe ``dialog`` pierwszym jego przyciskiem zamknięcia ``dismiss``, bez „Potwierdź”, po końcu
-        animacji okna (``_SETTLED``), i czeka, aż zniknie."""
-
         located = self._element(dialog, part)
         with _doing(Operation.ELEMENT):
             self._page.wait_for_function(_SETTLED, arg=dialog.selector, timeout=self._timeout_ms)

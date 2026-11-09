@@ -1,49 +1,39 @@
 """Wycena w efenix: wycena każdego zlecenia z zakresu Pliku zbiorczego uzupełniona w efenix, w sesji, którą otworzył tata.
 
-Jedyną operacją publiczną jest ``price_orders()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty na
-Komunikaty: Sprawdzanie (Plik zbiorczy jest, nie trzyma go Excel i daje się otworzyć okno efenix z listą zleceń), Odczyt
-danych (zakres z ``efenix_orders``), Planowanie (Zatrzymanie, gdy Plik zbiorczy nie ma kwot AU policzonych przez Excel) i
-Zapisywanie, w którym idzie przez zlecenia z zakresu po kolei, a na końcu raz oznacza gotowe Znacznikiem efenix. Najpierw to, co widać bez efenix: numer, data i ilości, które da się
-przepisać (``efenix_positions``). Potem zlecenie znajduje po ``Numer dokumentu`` równym ``NUMER ZL.`` i sprawdza:
-dokładnie jedno trafienie, status „Do wyceny”, realizator równy ``WYKONAWCA``, ``Dane adresowe`` równe ``ADRES``
-(``efenix_address``) i datę wykonania (``date_problem``). Pierwsza niezgodność to błąd zlecenia, w efenix
-nic się nie zmienia i proces idzie dalej. Zlecenie o statusie „Rozliczone” z realizatorem i adresem z pliku to Zlecenie
-rozliczone (``Settled``): proces go nie otwiera, nie oznacza i nie zostawia tacie jako błędu. Zlecenie o statusie „Do
-akceptacji” z realizatorem i adresem z pliku to Zlecenie przekazane (``Forwarded``): proces go nie otwiera, a w Pliku
-zbiorczym dostaje Znacznik przekazania, w obu trybach. Każdy odczyt strony zlecenia (otwarcie, ponowne otwarcie po dacie wykonania i
-strona po Wycenie Emmetta) musi mieć pozycje, w których plik ma ilość: strona bez którejś z nich to błąd zlecenia z
-kodami pozycji i ich kolumnami (``missing_positions``), a strona bez pozycji z 0 w pliku to zwykła strona efenix.
+Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty na Komunikaty: Sprawdzanie (Plik zbiorczy jest, nie
+trzyma go Excel i daje się otworzyć okno efenix z listą zleceń), Odczyt danych (zakres z ``efenix_orders``), Planowanie
+(Zatrzymanie, gdy Plik zbiorczy nie ma kwot AU policzonych przez Excel) i Zapisywanie, w którym idzie przez zlecenia z
+zakresu po kolei, a na końcu raz oznacza gotowe Znacznikiem efenix. Najpierw to, co widać bez efenix: numer, data i
+ilości, które da się przepisać (``efenix_positions``). Potem zlecenie znajduje po ``Numer dokumentu`` równym
+``NUMER ZL.`` i sprawdza je z listą efenix (``efenix_checks``). Pierwsza niezgodność to błąd zlecenia, w efenix nic się
+nie zmienia i proces idzie dalej. Zlecenia rozliczonego (``Settled``) ani Zlecenia przekazanego (``Forwarded``) proces
+nie otwiera, a Zlecenie przekazane dostaje w Pliku zbiorczym Znacznik przekazania w obu trybach. Każdy odczyt strony
+zlecenia musi mieć pozycje, w których plik ma ilość (``missing_positions``).
 
 Wycenę zlecenia proces dokańcza do Pliku zbiorczego tylko w górę (ADR 0026, ``completion``). Najpierw, z ilościami na
 stronie albo bez, ustawia datę wykonania z ``DATA``, gdy jest pusta, i sprawdza ją na ponownie otwartej stronie (dzień,
 którego kalendarz efenix nie przyjął albo którego efenix nie zapisał, to błąd zlecenia ``DateRefused`` bez Emmetta i bez
-zmian ilości), żeby gotowe zlecenie nie zostało bez daty wykonania. Strona bez żadnej ilości nie ma wyceny: proces ładuje
-do niej Wycenę Emmetta, a czy efenix ją załadował, rozstrzyga z obserwacji okna (``EmmettLoad``): strona po
+zmian ilości), żeby gotowe zlecenie nie zostało bez daty wykonania. Strona bez żadnej ilości nie ma wyceny: proces
+ładuje do niej Wycenę Emmetta, a czy efenix ją załadował, rozstrzyga z obserwacji okna (``EmmettLoad``): strona po
 przeładowaniu bez żadnej ilości to odmowa „Załaduj do zlecenia” i Zatrzymanie, chyba że Emmett nic nie zaproponował
-(``_emmett``). Strona z ilościami ma już wycenę, zaczętą przez proces, przez tatę albo samą
-Wycenę Emmetta: proces nie ładuje do niej Wyceny Emmetta, bo „Załaduj do zlecenia” czyści wycenę. Potem w obu
-przypadkach proces wpisuje ilość z pliku w każdej pozycji, w której strona ma mniej niż plik,
-także w miejsce ilości Emmetta. Pozycji, w której strona ma więcej niż plik, nie
-obniża i nie czyści: zlecenie z taką pozycją to Ostrzeżenie Emmetta z pozycją i obiema ilościami, choć resztę ilości
-proces i tak wpisał. Zlecenie bez takiej pozycji jest gotowe, gdy kwota końcowa, którą odesłał efenix, jest równa
-``Kwota`` (AU), a w przeciwnym razie to błąd z obiema kwotami. Ponowne uruchomienie dokańcza więc każde zlecenie, które
-przerwało Zatrzymanie albo zgaśnięcie Centrum, tak samo jak zlecenie zaczęte przez tatę.
+(``_emmett``). Strona z ilościami ma już wycenę, zaczętą przez proces, przez tatę albo samą Wycenę Emmetta: proces nie
+ładuje do niej Wyceny Emmetta, bo „Załaduj do zlecenia” czyści wycenę. Potem w obu przypadkach proces dokańcza wycenę
+(``completion``): zlecenie z pozycją, w której strona ma więcej niż plik, to Ostrzeżenie Emmetta z pozycją i obiema
+ilościami, choć resztę ilości proces i tak wpisał. Zlecenie bez takiej pozycji jest gotowe, gdy kwota końcowa, którą
+odesłał efenix, jest równa ``Kwota`` (AU), a w przeciwnym razie to błąd z obiema kwotami. Ponowne uruchomienie dokańcza
+więc każde zlecenie, które przerwało Zatrzymanie albo zgaśnięcie Centrum, tak samo jak zlecenie zaczęte przez tatę.
 
 Tryb Wyceny (``PricingMode``, domyślnie ``FILL``) rozstrzyga, co dzieje się z gotowym zleceniem. W trybie bez
 Przekazania (``FILL``) dostaje Znacznik efenix, a Przekazanie do akceptacji zostaje tacie. W trybie z Przekazaniem
 (``FORWARD``) proces przekazuje je do akceptacji (``Efenix.forward_to_accept``) i szuka go ponownie: lista ze statusem
 „Do akceptacji” (``listing``) daje Zlecenie przekazane, a każda inna lista błąd ``OrderProblem.NOT_FORWARDED`` bez
 Znacznika. Odmowa efenix przy Przekazaniu (``ForwardRefusal``) to błąd zlecenia bez Znacznika i bez ponownego szukania,
-a proces idzie do następnego zlecenia. Błędu ani Ostrzeżenia Emmetta proces nie przekazuje w żadnym trybie. Okno efenix (``efenix_window.Efenix``)
-nie ma działania, które anuluje zlecenie albo zmienia jego status na inny niż „Do akceptacji”. Strona logowania, efenix, którego okno nie otworzyło, zamknięte okno
-efenix i działanie okna, którego okno nie dokończyło, to Zatrzymanie (``LoggedOut``, ``EfenixUnreachable``,
-``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi, czy przed nim proces zmienił już coś w efenix:
-rozstrzyga to Wycena ze śladu zleceń i z działania, przy którym okno stanęło (``_kept``), a nie okno.
-Niedokończone działanie okna to Zatrzymanie „do Maksa” z częścią strony, bez treści strony i bez zgadywania przyczyny
-(zerwane połączenie, wolny albo zmieniony efenix): tata uruchamia ponownie, a Maks ustala przyczynę z Logów Uruchomienia. Każdy wyjątek okna niesie przyczynę techniczną z zamkniętej listy
-(``efenix_window.WindowCause``), a Zatrzymanie z okna niesie w ``StopError.facts`` (``PricingStopped``) tę przyczynę, wynik każdego
-zlecenia sprzed niego i zlecenie, przy którym okno stanęło (``StoppedOrder``: wiersz, miejsce w przebiegu, udane
-działania okna i to, które się nie udało). Komunikat taty przyczyny nie pokazuje.
+a proces idzie do następnego zlecenia. Błędu ani Ostrzeżenia Emmetta proces nie przekazuje w żadnym trybie. Strona
+logowania, efenix, którego okno nie otworzyło, zamknięte okno efenix i działanie okna, którego okno nie dokończyło, to
+Zatrzymanie (``LoggedOut``, ``EfenixUnreachable``, ``WindowClosed``, ``UnexpectedPage``), a Komunikat Zatrzymania mówi,
+czy przed nim proces zmienił już coś w efenix: rozstrzyga to Wycena ze śladu zleceń i z działania, przy którym okno
+stanęło (``_kept``), a nie okno. Zatrzymanie z okna niesie w ``StopError.facts`` fakty dla Logów Uruchomienia
+(``PricingStopped``).
 Okno, które czeka, aż tata się zaloguje, robi to w ``Login`` od silnika, który na ten czas wstrzymuje zegar
 Uruchomienia: czas logowania nie wlicza się do czasów etapów ani do ``Czas uruchomienia``. Postęp Zapisywania to kroki (``PhaseRunner.step``):
 logowanie, zlecenia z Wykonawcą i liczbą sprawdzonych z wszystkich, na końcu Znaczniki efenix; ślad działań okna przy
@@ -51,13 +41,13 @@ każdym zleceniu (``efenix_trace``) trafia do jego wyniku, a stamtąd do Logów 
 (``OrderJournal``, w Centrum ``centrum.logs_disk.Journal``) dostaje wpis o każdym zleceniu przed pierwszym działaniem okna przy
 nim, więc przed każdym zapisem w efenix, i wpis z wynikiem zaraz po nim, zanim proces przejdzie do następnego zlecenia.
 
-Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka ``ADRES``
-każdego gotowego zlecenia dostaje Znacznik efenix, a każdego Zlecenia przekazanego Znacznik przekazania, który zastępuje
-Znacznik efenix (``efenix_mark.Mark``), a reszta pliku zostaje bajt w bajt. Gdy zapis się nie udaje (Excel trzyma
-plik, plik zmienił się od odczytu, zapis nieudany), przebieg kończy się Zatrzymaniem z prośbą o ponowne uruchomienie, a
-wycena w efenix zostaje; przy Zatrzymaniu z efenix zostaje jego Komunikat, bo ponowne uruchomienie i tak jest potrzebne.
-Ponowne uruchomienie dokańcza oznaczanie: gotowe zlecenia mają już wycenę zgodną z plikiem, więc proces je tylko czyta. Wynik nie zawiera
-numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku zbiorczego.
+Po ostatnim zleceniu, a także przy Zatrzymaniu w trakcie, ``efenix_marking`` raz zapisuje Plik zbiorczy: komórka
+``ADRES`` każdego gotowego zlecenia dostaje Znacznik efenix, a każdego Zlecenia przekazanego Znacznik przekazania. Gdy
+zapis się nie udaje (Excel trzyma plik, plik zmienił się od odczytu, zapis nieudany), przebieg kończy się Zatrzymaniem z
+prośbą o ponowne uruchomienie, a wycena w efenix zostaje; przy Zatrzymaniu z efenix zostaje jego Komunikat, bo ponowne
+uruchomienie i tak jest potrzebne. Ponowne uruchomienie dokańcza oznaczanie: gotowe zlecenia mają już wycenę zgodną z
+plikiem, więc proces je tylko czyta. Wynik nie zawiera numerów zleceń, adresów ani loginów, tylko numery wierszy Pliku
+zbiorczego.
 """
 
 from __future__ import annotations
@@ -240,8 +230,6 @@ class PricingSummary:
         return [result.message for result in self.results if result.message is not None]
 
     def count(self, kind: OrderKind) -> int:
-        """Ile zleceń ma wynik ``kind``."""
-
         return sum(result.kind is kind for result in self.results)
 
     @property
@@ -434,8 +422,6 @@ def price_orders(inputs: EfenixInputs, context: RunContext) -> PricingSummary:
 
 
 def _mark(source: Path, scope: PricingScope, results: Sequence[OrderResult]) -> Refusal | None:
-    """Znacznik efenix w ``ADRES`` każdego gotowego zlecenia z ``results`` i Znacznik przekazania każdego przekazanego."""
-
     marks: dict[int, Mark] = {}
     for result in results:
         match result.outcome:
@@ -451,8 +437,6 @@ def _mark(source: Path, scope: PricingScope, results: Sequence[OrderResult]) -> 
 def _result(
     source: Path, order: CollectiveOrder, outcome: Outcome, steps: tuple[TraceStep, ...], file: FileQuantities
 ) -> OrderResult:
-    """Wynik zlecenia ``order`` z Komunikatem zlecenia, które zostało tacie, i ilościami pliku ``file``."""
-
     message: Message | None
     match outcome:
         case Ready() | Settled() | Forwarded():
@@ -468,8 +452,7 @@ def _result(
 def _efenix_stops(
     changed: Callable[[WindowStop], bool], stopped: Callable[[PagePart | None, WindowCause], PricingStopped]
 ) -> Iterator[None]:
-    """Strona logowania, niedokończone działanie okna, zamknięte okno i efenix, którego okno nie otworzyło, to Zatrzymanie
-    z Komunikatem procesu, a fakty Zatrzymania dla Logów Uruchomienia daje ``stopped`` z częścią strony i przyczyną.
+    """Wyjątek okna to Zatrzymanie z Komunikatem procesu, a fakty Zatrzymania dla Logów Uruchomienia daje ``stopped``.
 
     ``changed``: czy przed Zatrzymaniem z wyjątku okna proces zmienił już coś w efenix.
     """
@@ -502,10 +485,6 @@ def _kept(results: Sequence[OrderResult], current: OrderTrace | None, error: Win
 def _outcome(
     order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues, mode: PricingMode
 ) -> Outcome:
-    """Wynik zlecenia ``order`` z ilościami pliku ``file`` w oknie ``efenix``: sprawdzenia, data wykonania z ``DATA``,
-    gdy jest pusta, Wycena Emmetta przy stronie bez ilości, dokończenie do Pliku zbiorczego tylko w górę, a w trybie
-    ``FORWARD`` Przekazanie do akceptacji gotowego zlecenia."""
-
     outcome = _priced_outcome(order, file, efenix, forbidden)
     if mode is PricingMode.FORWARD and isinstance(outcome, Ready):
         return _forwarded(order, outcome.listed, efenix, forbidden)
@@ -535,8 +514,6 @@ def _searched(efenix: Efenix, number: str, forbidden: ForbiddenValues) -> Sequen
 def _priced_outcome(
     order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues
 ) -> Outcome:
-    """Wynik zlecenia bez Przekazania do akceptacji: sprawdzenia, data wykonania, Wycena Emmetta i dokończenie."""
-
     searched = searched_number(order)
     if isinstance(searched, OrderProblem):
         return OrderError(searched)
@@ -615,9 +592,6 @@ def _dated(hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], day: date)
 def _completed(
     order: CollectiveOrder, hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], on_page: OrderPricing
 ) -> Ready | OrderError | EmmettWarning:
-    """Ilości pliku wpisane w pozycjach, w których strona ``on_page`` ma mniej niż plik (``completion``); pozycja, w której
-    ma więcej, to Ostrzeżenie Emmetta, a bez niej kwota końcowa porównana z ``Kwota`` (AU)."""
-
     plan = completion(file, on_page.quantities)
     amount = on_page.amount
     for position, quantity in plan.to_enter.items():

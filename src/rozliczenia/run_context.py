@@ -30,7 +30,7 @@ class RunContext:
     Niesie tylko to, co gospodarz daje każdemu Uruchomieniu każdego procesu; zależność jednego procesu (okno efenix,
     folder Kopii INTERMAX) jest polem jego wejścia. ``files``: jedyna droga do wartości plików taty (pamięć reguły
     danych zawsze, Kopia wejścia tylko w Uruchomieniu z Logami). ``readers``: Sprawdzanie Wzorców i Rejestru zleceń; test
-    podstawia czytnik, który się psuje. ``clock``: zegar Uruchomienia z jedyną pauzą. ``observer`` i ``conversation``
+    podstawia czytnik, który się psuje. ``observer`` i ``conversation``
     dokłada rdzeń tuż przed silnikiem (``process_run.run_process``); test silnika podaje je sam albo zostawia domyślne.
     """
 
@@ -41,8 +41,6 @@ class RunContext:
     conversation: Conversation = UNASKED
 
     def engaged(self, observer: ProgressObserver, conversation: Conversation) -> RunContext:
-        """Ten kontekst z obserwatorem postępu i rozmową rdzenia (``process_run.EngineContext``)."""
-
         return replace(self, observer=observer, conversation=conversation)
 
 
@@ -50,8 +48,8 @@ class RunContext:
 class RunContexts:
     """Gospodarz Uruchomień z Logami: uchwyt plików taty i czytniki jego pracy.
 
-    ``new()`` daje kontekst jednego Uruchomienia: ten sam uchwyt (ta sama pamięć reguły danych pracy) z nową Kopią
-    wejścia i nowy zegar. Gospodarz bez Logów (Skrypt dla maszyn) bierze ``RunContext()`` bez Kopii.
+    ``new()`` daje kontekst jednego Uruchomienia z uchwytem ``DadFiles.for_run`` i nowym zegarem. Gospodarz bez Logów
+    (Skrypt dla maszyn) bierze ``RunContext()`` bez Kopii.
     """
 
     files: DadFiles = field(default_factory=DadFiles)

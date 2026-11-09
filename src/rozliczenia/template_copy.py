@@ -1,14 +1,11 @@
 """Kopia skoroszytu Wzorca z podmienionymi Wierszami danych, bez wczytywania przez openpyxl (ADR 0008).
 
 Moduł jest szczegółem ``template_file.TemplateFile`` i nikt poza nim go nie używa.
-``TemplateCopy.of`` czyta bajty Wzorca raz: rozpakowuje części zip,
-sprawdza, że każda część XML jest poprawnym XML-em, indeksuje wiersze XML
-aktywnego arkusza i liczy kontrole Szablonu pracownika (nagłówek, dane w
-Wierszach danych), a we Wzorcu pliku okresu jego scalenia i wiersze z zerami w
-kolumnach Ilości usług; na tym opiera się Sprawdzanie i Planowanie Wzorca, więc
-Wzorzec jest parsowany raz na Uruchomienie. Arkusz jest kompresowany
-raz, w kawałkach od granic wierszy, przy pierwszej kopii. ``TemplateCopy.with_rows``
-składa z tego jedną kopię:
+``TemplateCopy.of`` czyta bajty Wzorca raz i liczy z nich kontrole Szablonu pracownika
+(nagłówek, dane w Wierszach danych), a we Wzorcu pliku okresu jego scalenia i wiersze z
+zerami w kolumnach Ilości usług; na tym opiera się Sprawdzanie i Planowanie Wzorca. Arkusz
+jest kompresowany raz, w kawałkach od granic wierszy, przy pierwszej kopii.
+``TemplateCopy.with_rows`` składa z tego jedną kopię:
 
 - każda część zip poza arkuszem, ``xl/workbook.xml`` i ``xl/styles.xml`` jest
   przepisana bajt w bajt razem ze skompresowaną treścią, w tym
@@ -182,8 +179,6 @@ _BEFORE_HYPERLINKS: Final = frozenset(
 
 @dataclass(frozen=True)
 class _Part:
-    """Część zip gotowa do przepisania: nagłówek i skompresowana treść."""
-
     name: bytes
     flags: int
     method: int
@@ -199,8 +194,6 @@ class _Part:
 
 
 class Package:
-    """Gotowe Rozliczenie pracownika: części zip do zapisania jednym przebiegiem."""
-
     def __init__(self, parts: Sequence[_Part]) -> None:
         self._parts = parts
 
@@ -535,8 +528,6 @@ def _encoded_name(name: str) -> tuple[bytes, int]:
 
 
 def _raw_part(content: bytes, info: zipfile.ZipInfo) -> _Part:
-    """Część przepisana razem ze skompresowaną treścią z zip Wzorca."""
-
     header = struct.unpack("<IHHHHHIIIHH", content[info.header_offset : info.header_offset + 30])
     if header[0] != 0x04034B50:
         raise UnsupportedShape("local header")
@@ -1176,10 +1167,7 @@ _BORDER_ID: Final = re.compile(rb'\sborderId="(\d+)"')
 
 
 class _Styles:
-    """``xl/styles.xml`` Wzorca: style komórek z ich formatami liczb, czcionkami, wypełnieniami i obramowaniami.
-
-    Czcionki i wypełnienia z nałożonymi Wyróżnieniami są liczone raz na Wzorzec, wspólnie dla wszystkich kopii.
-    """
+    """``xl/styles.xml`` Wzorca: style komórek z ich formatami liczb, czcionkami, wypełnieniami i obramowaniami."""
 
     def __init__(self, info: zipfile.ZipInfo, index: int, xml: bytes, unchanged: _Part) -> None:
         self._info = info

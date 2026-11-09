@@ -69,7 +69,7 @@ class SavedWorkerResult:
 
 
 WorkerResult = PlannedWorkerResult | SavedWorkerResult
-"""Wynik Przetworzenia Szablonu pracownika; tylko zapisany ma drogę zapisu, a ``status`` wynika z liczby wierszy."""
+"""Wynik Przetworzenia Szablonu pracownika."""
 
 
 @dataclass
@@ -124,10 +124,7 @@ class SettlementSummary:
 def _read_source_rows(
     source_path: Path, files: DadFiles
 ) -> tuple[dict[str, list[DataRow]], list[int], CollectiveOrders, Cleared]:
-    """Czyta Wiersze danych Pliku zbiorczego z ich Wyróżnieniami i grupuje je po identyfikatorze WYKONAWCA.
-
-    Wiersze danych bez Wykonawcy nie trafiają do grup; zostają ich numery. W grupach nie ma Ilości tylko dla INEA.
-    """
+    """Wiersze danych bez Wykonawcy nie trafiają do grup; zostają ich numery. W grupach nie ma Ilości tylko dla INEA."""
 
     try:
         read = collective_file.read_data_rows(source_path, files)
@@ -141,8 +138,6 @@ def _read_source_rows(
 
 @dataclass(frozen=True)
 class _Plan:
-    """Wiersze danych pod nazwą z Konfiguracji wykonawców i fakty o Wierszach danych bez Szablonu pracownika."""
-
     rows_by_target: dict[str, list[DataRow]]
     unmapped_workers: tuple[str, ...]
     """Identyfikatory WYKONAWCA spoza Konfiguracji wykonawców, każdy raz, w pisowni i kolejności Pliku zbiorczego."""
@@ -150,8 +145,6 @@ class _Plan:
 
 
 def _plan_rows(mapping: dict[str, str], rows_by_worker: dict[str, list[DataRow]], without_worker: list[int]) -> _Plan:
-    """Przypisuje Wiersze danych do nazw z Konfiguracji wykonawców."""
-
     rows_by_target: defaultdict[str, list[DataRow]] = defaultdict(list)
     unmapped: list[str] = []
     for source_worker, rows in rows_by_worker.items():
@@ -164,8 +157,6 @@ def _plan_rows(mapping: dict[str, str], rows_by_worker: dict[str, list[DataRow]]
 
 
 def _plan_warnings(source_path: Path, plan: _Plan, *, dry_run: bool) -> list[Message]:
-    """Przy zapisie każdy fakt planu zatrzymuje Przebieg; Podgląd bez zapisu pokazuje je jako ostrzeżenia."""
-
     if not dry_run and plan.unmapped_workers:
         raise StopError(settlement_messages.unmapped_worker(source_path, plan.unmapped_workers))
     if not dry_run and plan.rows_without_worker:
@@ -177,16 +168,7 @@ def _plan_warnings(source_path: Path, plan: _Plan, *, dry_run: bool) -> list[Mes
 
 
 def run_settlements(inputs: SettlementInputs, context: RunContext) -> SettlementSummary:
-    """Uruchamia pełny proces z ochroną przed błędną lokalizacją i duplikacją.
-
-    Ten moduł tylko sekwencjonuje cztery etapy i rozlicza Szablon pracownika
-    jednego Wykonawcy; pętlę po nich ze zdarzeniami Wykonawców prowadzi
-    sekwencer etapów. Konfiguracja wykonawców jest w
-    ``worker_config``, a folder tymczasowy, Nienadpisywanie i publikacja
-    Folderu rozliczeń pracowników w ``settlement_files``, a Sprawdzanie Wzorca czytnikami ``context.readers``
-    w ``input_checks``. Plik zbiorczy czyta uchwyt plików taty ``context.files``: komórki jego zakazanych kolumn zna
-    pamięć reguły danych (ADR 0025), a odczyt Kopia wejścia Uruchomienia (#841).
-    """
+    """Uruchamia pełny proces z ochroną przed błędną lokalizacją i duplikacją."""
 
     phases = PhaseRunner(context.observer, clock=context.clock.now)
     files, readers, dry_run = context.files, context.readers, inputs.dry_run

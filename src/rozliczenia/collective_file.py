@@ -7,8 +7,7 @@ Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli il
 Wykonawcą stracą Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018) i Znacznik efenix (``efenix_mark``).
 Ten sam odczyt i filtr dają Ilości do uzupełnienia (``read_numbered_orders``), także z pliku otwartego w Excelu, a
 obok filtra teksty wiersza i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
-Plik czyta uchwyt plików taty (``dad_files.DadFiles``): komórki zakazanych kolumn odczytu zna jego pamięć reguły danych
-(ADR 0025), a odczyt Przebiegu rozliczeń Kopia wejścia jego Uruchomienia (#841).
+Plik czyta uchwyt plików taty (zob. ``dad_files.DadFiles``).
 """
 
 from __future__ import annotations

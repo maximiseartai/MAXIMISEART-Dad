@@ -44,8 +44,7 @@ def write_worker_settlements(target_directory: Path, write: Callable[[Path], Res
     """Publikuje Rozliczenia pracowników zapisane przez ``write`` w folderze tymczasowym.
 
     ``write`` dostaje folder tymczasowy, a jego wynik wraca bez zmian po publikacji Folderu rozliczeń pracowników.
-    Błąd zapisu zatrzymuje Przebieg rozliczeń Komunikatem bez publikacji. Gdy
-    folderu tymczasowego nie da się potem usunąć, Komunikat podaje początek jego nazwy.
+    Błąd zapisu zatrzymuje Przebieg rozliczeń Komunikatem bez publikacji.
     """
 
     prefix = staging_prefix(target_directory)

@@ -1,18 +1,14 @@
 """Ślad zlecenia Wyceny w efenix dla Logów Uruchomienia: każde działanie okna efenix z czasem i tym, co odpowiedział efenix.
 
-Jedyną operacją jest ``traced()``: okno efenix (``efenix_window.Efenix``) przy jednym zleceniu Pliku zbiorczego, które
-przekazuje każde działanie oknu pod spodem i zapisuje je w ``OrderTrace`` z chwilą rozpoczęcia (UTC), więc przerwy tempa
-ludzkiego między działaniami widać bez symulacji. Każde działanie niesie odczyt strony efenix po nim (#843), bez numeru
-zlecenia i bez danych adresowych (reguła danych, ADR 0025): z szukania liczbę trafień i każdy wiersz listy
-(``efenix_checks.ListedRead``: czy ``Numer dokumentu`` to ``NUMER ZL.`` z pliku, status, login realizatora i nazwy
-części adresu, którymi ``Dane adresowe`` różnią się od ``ADRES``), z otwarcia zlecenia status i login realizatora wiersza
-listy, który okno otworzyło (okno nie czyta ich ze strony zlecenia), oraz ze strony zlecenia po otwarciu i po Wycenie
-Emmetta datę wykonania, kwotę i ilości wszystkich pozycji po kodach, z daty wykonania wybrany dzień i to, czy kalendarz
-go przyjął, z pola „Ilość” kod pozycji, wpisaną ilość i kwotę końcową, którą odesłał efenix, a z Przekazania do akceptacji
-odmowę efenix z zamkniętej listy (``ForwardRefusal``, bez tekstu okna informacji) albo sam rodzaj i czas (status po nim
-pokazuje następne szukanie). Działanie, które się nie udało (wyjątek okna, np.
-``UnexpectedPage``, także Zatrzymanie z werdyktu Wyceny o Wycenie Emmetta, który biegnie w działaniu okna), nie trafia do udanych działań śladu, tylko do ``OrderTrace.failed`` z rodzajem i czasem do
-wyjątku, bo przebieg kończy się wtedy Zatrzymaniem, a Logi Uruchomienia mówią, przy którym działaniu.
+Okno ``traced()`` przy jednym zleceniu Pliku zbiorczego przekazuje każde działanie oknu pod spodem i zapisuje je w
+``OrderTrace`` z chwilą rozpoczęcia (UTC), więc przerwy tempa ludzkiego między działaniami widać bez symulacji. Każde
+działanie niesie odczyt strony efenix po nim (#843, ``TraceStep``), bez numeru zlecenia i bez danych adresowych (reguła
+danych, ADR 0025). Status i login realizatora przy otwarciu zlecenia pochodzą z wiersza listy, bo okno nie czyta ich ze
+strony zlecenia, a Przekazanie do akceptacji niesie odmowę efenix z zamkniętej listy (``ForwardRefusal``, bez tekstu
+okna informacji) albo sam rodzaj i czas (status po nim pokazuje następne szukanie). Działanie, które się nie udało
+(wyjątek okna, np. ``UnexpectedPage``, także Zatrzymanie z werdyktu Wyceny o Wycenie Emmetta, który biegnie w działaniu
+okna), nie trafia do udanych działań śladu, tylko do ``OrderTrace.failed`` z rodzajem i czasem do wyjątku, bo przebieg
+kończy się wtedy Zatrzymaniem, a Logi Uruchomienia mówią, przy którym działaniu.
 """
 
 from __future__ import annotations
@@ -60,9 +56,7 @@ class TraceStep:
 
     @property
     def sent(self) -> bool:
-        """Działanie wysłało do efenix zmianę zlecenia (``WindowAction.writes``): data wykonania tylko wtedy, gdy kalendarz
-        przyjął dzień, bo inaczej okno zamyka kalendarz bez „Potwierdź”, a Przekazanie do akceptacji tylko wtedy, gdy
-        efenix go nie odmówił, bo okno zamyka wtedy okno informacji bez „Tak”."""
+        """Działanie wysłało do efenix zmianę zlecenia (zob. ``WindowAction.writes``)."""
 
         return self.action.writes and self.accepted is not False and self.refusal is None
 
@@ -79,9 +73,6 @@ _T = TypeVar("_T")
 
 
 class _Traced:
-    """Okno efenix przy zleceniu ``order``, które zapisuje każde udane działanie okna ``efenix`` w ``trace`` z czasem z
-    zegara ``clock`` i chwilą rozpoczęcia z zegara ściennego ``now``."""
-
     def __init__(
         self, efenix: Efenix, order: CollectiveOrder, trace: OrderTrace, clock: Callable[[], float], now: Callable[[], datetime]
     ) -> None:
@@ -123,9 +114,6 @@ class _Traced:
         return refusal
 
     def _done(self, action: WindowAction, act: Callable[[], _T]) -> tuple[_T, datetime, int]:
-        """Wynik działania ``act``, chwila jego rozpoczęcia i czas; działanie, które zgłosiło wyjątek, trafia do
-        ``OrderTrace.failed``."""
-
         at = self._now()
         started = self._clock()
         try:

@@ -57,8 +57,6 @@ class Message:
 
     @classmethod
     def to_maintainer(cls, code: str, what: str, where: str, *, before: str = "", check: str = "") -> Message:
-        """Komunikat „do Maksa”: „Co zrobić” to ``before``, potem „Sprawdź {check} i przekaż” albo samo „Przekaż”."""
-
         refer = f"Sprawdź {check} i przekaż" if check else "Przekaż"
         action = f"{refer} ten komunikat {_MAINTAINER}."
         return cls(code, what, where, f"{before} {action}" if before else action, reports_to_maintainer=True)

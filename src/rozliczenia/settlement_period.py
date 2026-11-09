@@ -40,8 +40,6 @@ class SettlementPeriod:
 
     @property
     def start(self) -> datetime:
-        """Wtorek 00:00."""
-
         return datetime(self.tuesday.year, self.tuesday.month, self.tuesday.day)
 
     @property
@@ -51,8 +49,6 @@ class SettlementPeriod:
         return self.start + timedelta(days=7)
 
     def contains(self, moment: date) -> bool:
-        """Czy dzień ``moment`` (przy ``datetime`` jego dzień) leży w okresie."""
-
         day = moment.date() if isinstance(moment, datetime) else moment
         return self.tuesday <= day <= self.monday
 
@@ -73,8 +69,6 @@ def parse_period_token(token: str) -> SettlementPeriod:
 
 
 def period_of(day: date) -> SettlementPeriod:
-    """Okres, w którym leży ``day``."""
-
     return SettlementPeriod(day - timedelta(days=(day.weekday() - _TUESDAY) % 7))
 
 

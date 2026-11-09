@@ -1,15 +1,14 @@
 """Wycena w efenix dla Uruchomienia procesu: silnik i fakty zakończenia.
 
-Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, Komunikaty i rekord metryk są te same.
-Wynik to OK, gdy żadne zlecenie nie zostało tacie (każde jest gotowe, Zleceniem rozliczonym albo Zleceniem
-przekazanym). Zlecenia rozliczone i przekazane liczą się w rekordzie metryk tylko do ``orders``: zestaw liczników jest
-stały, bo rekord z innym zestawem Historia odrzuca, a z niej Droga okresu liczy Wycenę w efenix.
-Okno efenix daje rozmówca (``EfenixInputs.open_efenix``): Centrum rozliczeń otwiera widoczne okno Google Chrome w profilu
-narzędzia i czeka w nim na logowanie taty (``efenix_browser.chrome``), Skrypt dla maszyn otwiera Chromium Playwrighta
-(``efenix_browser.chromium``), a testy okno na Atrapie efenix. Czas czekania na logowanie wstrzymuje zegar
-Uruchomienia, tak jak Decyzja taty. Tempo ludzkie okna (``efenix_pace``) wybiera każdy rozmówca:
-Centrum taty bierze je z okna taty (``centrum.efenix_chrome.EfenixWindow.of_tata``), a testy, weryfikacja i Skrypt dla
-maszyn na Atrapie efenix wyłączają je (``None``).
+Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, Komunikaty i rekord metryk są te same. Wynik
+to OK, gdy żadne zlecenie nie zostało tacie (każde jest gotowe, Zleceniem rozliczonym albo Zleceniem przekazanym).
+Zlecenia rozliczone i przekazane liczą się w rekordzie metryk tylko do ``orders``: zestaw liczników jest stały, bo
+rekord z innym zestawem Historia odrzuca, a z niej Droga okresu liczy Wycenę w efenix. Okno efenix daje rozmówca
+(``EfenixInputs.open_efenix``): Centrum rozliczeń otwiera widoczne okno Google Chrome w profilu narzędzia i czeka w nim
+na logowanie taty (``efenix_browser.chrome``), Skrypt dla maszyn otwiera Chromium Playwrighta
+(``efenix_browser.chromium``), a testy okno na Atrapie efenix. Tempo ludzkie okna (``efenix_pace``) wybiera każdy
+rozmówca: Centrum taty bierze je z okna taty (``centrum.efenix_chrome.EfenixWindow.of_tata``), a testy, weryfikacja i
+Skrypt dla maszyn na Atrapie efenix wyłączają je (``None``).
 """
 
 from __future__ import annotations

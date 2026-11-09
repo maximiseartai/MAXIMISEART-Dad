@@ -1,8 +1,8 @@
 """Pozycje wyceny efenix: przypisanie kolumn Ilości usług do kodów pozycji i czyste reguły porównania ilości i kwot.
 
 Przypisanie (``POSITION_OF_COLUMN``) to konfiguracja narzędzia ze specyfikacji #741, wersjonowana z narzędziem, nie
-dane taty: kolumna Pliku zbiorczego → kod pozycji efenix (``NNN`` z ``INDEKS_NNN``). Kolumny Ilości usług bez pary to
-``UNPAIRED_COLUMNS``. Pozycja efenix bez kolumny ma w Pliku zbiorczym ilość 0. Reguły biorą ilości pliku po kodach
+dane taty: kolumna Pliku zbiorczego → kod pozycji efenix (``NNN`` z ``INDEKS_NNN``). Pozycja efenix bez kolumny ma w
+Pliku zbiorczym ilość 0. Reguły biorą ilości pliku po kodach
 (``file_quantities``) i ilości ze strony zlecenia (kod → ilość, pole puste to 0).
 Wycenę zlecenia proces dokańcza do Pliku zbiorczego tylko w górę (ADR 0026, ``completion``): w każdej pozycji, w której
 strona ma mniej niż plik, wpisuje ilość z pliku, także w miejsce ilości Emmetta, a pozycji, w której strona ma więcej niż

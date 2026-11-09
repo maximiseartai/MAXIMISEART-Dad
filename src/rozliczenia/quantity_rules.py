@@ -185,8 +185,6 @@ _PRINTING_CONTRACT = "u"
 
 
 def evaluate(order: OrderContent) -> RuleResult:
-    """Ilości usług zlecenia według Reguł ilości taty."""
-
     words = _words(order.devices)
     if not words or " ".join(words) in _FROM_DESCRIPTION:
         return FromDescription()

@@ -23,14 +23,10 @@ class RunClock:
         self._holds = 0
 
     def now(self) -> float:
-        """Czas surowy minus każde wstrzymanie; w trakcie ``hold()`` chwila jego początku."""
-
         return (self._held_at if self._holds else self._raw()) - self._held_s
 
     @contextmanager
     def hold(self) -> Iterator[None]:
-        """Zegar stoi do końca bloku."""
-
         if not self._holds:
             self._held_at = self._raw()
         self._holds += 1

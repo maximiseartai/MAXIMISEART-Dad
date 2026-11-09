@@ -34,8 +34,7 @@ from .write_routes import Route, RouteCounts, TemplateKind
 class PeriodFiles:
     """Oba wzorce po Sprawdzaniu i Folder okresu, w którym powstają oba pliki okresu.
 
-    Planowanie i Zapisywanie używają tych samych Wzorców, które przeszły Sprawdzanie. ``PeriodFolder`` wymaga
-    sprawdzonego okresu, więc wartość powstaje dopiero po sprawdzeniu tokenu.
+    Planowanie i Zapisywanie używają tych samych Wzorców, które przeszły Sprawdzanie.
     """
 
     internal_template: TemplateFile
@@ -200,8 +199,6 @@ def _write_and_publish(
 
 @contextmanager
 def _template_stops() -> Iterator[None]:
-    """Wzorzec, którego nie da się użyć, to zatrzymanie z Komunikatem Przygotowania."""
-
     try:
         yield
     except WorkbookError as error:
@@ -218,8 +215,6 @@ def _write_period_file(
 
 
 def _with_quantities(row: CollectiveRow) -> RegisterRow:
-    """Wiersz Rejestru z Ilościami usług zlecenia z Planowania."""
-
     return replace(row.order.register_row, quantities=row.rule_result.quantities)
 
 

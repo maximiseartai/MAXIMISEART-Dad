@@ -39,8 +39,6 @@ _COLLECTIVE_FILE = DadWorkbook("Plik zbiorczy", "Pliku zbiorczego", "collective_
 
 
 def source_unusable(error: WorkbookError) -> Message:
-    """Plik zbiorczy, którego nie da się użyć; ``error`` mówi dlaczego."""
-
     return workbook_messages.unusable(
         error,
         WorkbookMessages(
@@ -89,8 +87,6 @@ def _source_unreadable(source: Path) -> Message:
 
 
 def missing_columns(source: Path, headers: Sequence[str]) -> Message:
-    """W wierszu 17 Pliku zbiorczego brakuje nagłówków kolumn, które Wycena w efenix porównuje z efenix."""
-
     listed = ", ".join(headers)
     return Message(
         code="EFENIX_BRAK_NAGLOWKOW",
@@ -169,8 +165,6 @@ def efenix_unreachable(*, kept: bool) -> Message:
 
 
 def browser_not_started() -> Message:
-    """Przeglądarka okna efenix nie wystartowała, więc proces nie otworzył efenix."""
-
     return Message(
         code="EFENIX_BRAK_PRZEGLADARKI",
         what=f"Nie udało się otworzyć przeglądarki Google Chrome z oknem efenix. {_UNCHANGED}",
@@ -187,8 +181,6 @@ def _after_stop(*, kept: bool) -> str:
 
 
 def marks_not_saved(source: Path, refusal: Refusal) -> Message:
-    """Gotowe zlecenia nie dostały Znacznika efenix, bo Plik zbiorczy się nie zmienił z powodu ``refusal``."""
-
     match refusal:
         case Refusal.OPEN_IN_EXCEL:
             code, why, action = (
@@ -244,9 +236,6 @@ def order_error(source: Path, row: int, problem: OrderFault, *, changed: bool) -
 
 
 def emmett_warning(source: Path, row: int, excess: Sequence[Excess]) -> Message:
-    """Ostrzeżenie Emmetta: efenix ma w zleceniu z wiersza ``row`` w pozycjach ``excess`` więcej niż Plik zbiorczy, więc
-    proces ich nie obniżył, a pozostałe ilości z pliku wpisał."""
-
     listed = "; ".join(f"{_position(more.position)}: efenix {more.efenix}, plik {more.file}" for more in excess)
     return Message(
         code="EFENIX_WIECEJ_NIZ_PLIK",
@@ -392,8 +381,6 @@ def _order_error(problem: OrderFault) -> tuple[str, str, str]:
 
 
 def unexpected_failure() -> Message:
-    """Nieoczekiwany błąd przed końcem procesu."""
-
     return Message.to_maintainer(
         code="EFENIX_BLAD_NIEOCZEKIWANY",
         what=f"{_PROCESS} zatrzymała się przez nieoczekiwany błąd. Część zleceń mogła zostać już wyceniona w efenix.",
@@ -402,8 +389,6 @@ def unexpected_failure() -> Message:
 
 
 def summary_not_shown() -> Message:
-    """Proces skończył się, ale nie udało się zbudować podsumowania."""
-
     return Message.to_maintainer(
         code="EFENIX_PODSUMOWANIE_NIEPOKAZANE",
         what=f"{_PROCESS} skończyła się, ale nie udało się pokazać wyniku.",

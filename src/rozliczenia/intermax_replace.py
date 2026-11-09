@@ -16,10 +16,6 @@ Zwraca fakt, nie Komunikat: ``Replaced`` albo jedną ``Refusal``. Katalog każde
 ``Refusal`` i po każdym innym wyjątku INTERMAX, folder obok niego i folder Kopii są takie, jak były: Kopia, która
 już powstała, znika (jedna polityka dla obu procesów), a plik tymczasowy nie zostaje. Nieudane usunięcie starszych
 Kopii to ``Replaced.old_copies_kept``, bo INTERMAX jest już podmieniony.
-
-Kroki, którymi podmiana zmienia dysk, czyta INTERMAX w trakcie albo sprawdza, czy nazwa Kopii jest zajęta, idą przez
-``Disk``; testy i sprawdzenie ``verify-zapis-intermax`` podają własne, żeby zepsuć jeden krok bez łatania ``os`` i
-``Path``.
 """
 
 from __future__ import annotations

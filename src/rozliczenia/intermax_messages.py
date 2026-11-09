@@ -1,8 +1,6 @@
-"""Katalog Komunikatów Uporządkowania INTERMAX dla taty.
+"""Katalog Komunikatów Uporządkowania INTERMAX i przywrócenia Kopii INTERMAX dla taty (zasady treści: zob. ``message``).
 
-Każda fabryka zwraca Komunikat (``message.Message``) w trzech częściach: co się stało, gdzie, co zrobić.
-Zatrzymanie to ``raise StopError(fabryka(...))``. Komunikaty wskazują tylko plik, folder i arkusz, bez adresów,
-numerów zleceń, numerów umów i loginów Wykonawców.
+Komunikaty nie zawierają adresów, numerów zleceń, numerów umów ani loginów Wykonawców.
 """
 
 from __future__ import annotations

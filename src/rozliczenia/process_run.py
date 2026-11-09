@@ -150,7 +150,7 @@ class Finished:
 
 @dataclass(frozen=True)
 class Counter(Generic[SummaryT]):
-    """Licznik rekordu metryk procesu: nazwa i jego wartość z podsumowania silnika."""
+    """Licznik rekordu metryk procesu z wartością z podsumowania silnika."""
 
     name: str
     count: Callable[[SummaryT], int]
@@ -308,8 +308,6 @@ def _run_engine(
     context: ContextT,
     view: Callable[[InputsT, SummaryT], ViewT],
 ) -> _DeferredSummary[ViewT] | Stop:
-    """Silnik z kontekstem rdzenia; po sukcesie zwraca odroczoną budowę podsumowania i widoku."""
-
     try:
         summary = process.execute(inputs, context)
     except Exception as error:  # noqa: BLE001 - granica procesu: _stop_from rozróżnia błąd typowany od nieoczekiwanego
@@ -320,8 +318,6 @@ def _run_engine(
 def _build_summary(
     engine_outcome: _DeferredSummary[ViewT] | Stop, *, not_shown: Message
 ) -> tuple[Finished | Stop, ViewT | None]:
-    """Buduje odroczone podsumowanie i widok; błąd to zatrzymanie ``after_engine`` z Komunikatem ``not_shown``."""
-
     if isinstance(engine_outcome, Stop):
         return engine_outcome, None
     try:
