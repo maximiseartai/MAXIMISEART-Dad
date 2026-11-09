@@ -480,6 +480,7 @@ QUOTES_OUTSIDE_UI: Final = {
     "tsk": "wartość komórki z próbki",
     ".08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
     ".Rozliczenie pracowników 08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
+    "Wzorzec rozliczenia pracownika.xlsx": "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
 }
 
 
