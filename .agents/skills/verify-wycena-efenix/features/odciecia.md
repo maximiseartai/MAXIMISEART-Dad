@@ -1,6 +1,6 @@
 # Odcięcia
 
-From one request of the run on, the network fails until the checker reconnects it: the connection is cut before the
+From one request of the run on, the network fails until the end of the run: the connection is cut before the
 request runs (`CUT`), the answer is torn in the middle (`TORN`), it stops in the middle (`STALLED`), or efenix runs the
 request and answers only after the window gave up (`SLOW`).
 

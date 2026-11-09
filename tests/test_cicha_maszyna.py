@@ -106,6 +106,7 @@ def test_pomiar_czeka_na_trwajacy_przebieg_i_na_inny_pomiar(tmp_path: Path, zega
 def test_przebieg_nie_czeka_na_pytest(tmp_path: Path, zegar: ZegarTestu) -> None:
     with maszyna(tmp_path, ["pytest"]).run() as waited:
         assert waited == 0
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_pomiar_przejmuje_blokade_i_rejestracje_procesu_ktory_umarl(tmp_path: Path, zegar: ZegarTestu) -> None:
