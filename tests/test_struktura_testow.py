@@ -1,5 +1,5 @@
-"""Struktura testów: moduły niczego nie eksportują, a test czeka na stan przez ``wait_for`` i mierzy czas bez stałej
-liczby sekund.
+"""Struktura testów: moduły niczego nie eksportują, narzędzia na ``sys.path`` kładzie tylko ``conftest.py``, a test
+czeka na stan przez ``wait_for`` i mierzy czas bez stałej liczby sekund.
 
 Wspólne dane i pomocniki są w ``tests.fixtures``.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Callable, Iterator
 from itertools import pairwise
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import sys
 
@@ -59,6 +59,101 @@ def test_moduly_testow_importuja_pomocniki_tylko_z_fixtures() -> None:
     }
 
     assert imports == set(), "przenieś pomocnik do tests/fixtures i importuj go stamtąd; moduł testu niczego nie eksportuje"
+
+
+CONFTEST = TESTS / "conftest.py"
+PATH_CHANGES = frozenset({"sys.path.insert", "sys.path.append"})
+
+
+def _tools_on_path(tree: ast.Module) -> list[int]:
+    """Linie ``sys.path.insert`` i ``sys.path.append``, których ścieżka ma część ``tools``: ``tests/conftest.py`` już
+    kładzie ``tools``, ``tools/lib`` i ``tools/ci`` na ``sys.path`` każdego testu, więc druga wstawka w module testu albo
+    fixture tylko to powtarza, a fixture, który przez nią importuje narzędzie, kusi, żeby je re-eksportować.
+
+    Łapie wywołanie na poziomie modułu i w funkcji, ze ścieżką ze stałych napisów (``ROOT / "tools" / "lib"``,
+    ``".../tools/ci"``, ``"C:\\repo\\tools"``) i z nazw, które moduł przypisuje na swoim poziomie (``TOOLS = ROOT /
+    "tools"`` albo ``TOOLS: Final = …``, potem ``TOOLS / "lib"``).
+    Katalog ``scripts`` skilla przechodzi, bo conftest go nie kładzie.
+
+    Granica (tylko przegląd): wstawka w napisie kodu podprocesu (ten proces nie ma conftest, więc jej potrzebuje),
+    ścieżka złożona w trakcie działania (argument funkcji, ``sys.argv``, atrybut), ``monkeypatch.syspath_prepend``
+    i ``sys.path`` zmienione inaczej niż ``insert`` i ``append``."""
+
+    assigned = {
+        target.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    } | {
+        node.target.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None
+    }
+
+    def texts(node: ast.AST, seen: frozenset[str]) -> Iterator[str]:
+        for part in ast.walk(node):
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                yield part.value
+            elif isinstance(part, ast.Name) and part.id in assigned and part.id not in seen:
+                yield from texts(assigned[part.id], seen | {part.id})
+
+    return sorted(
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) in PATH_CHANGES
+        and any("tools" in PureWindowsPath(text).parts for argument in node.args for text in texts(argument, frozenset()))
+    )
+
+
+def test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow() -> None:
+    found = [
+        f"{path.relative_to(TESTS.parent).as_posix()}:{line}"
+        for path in sorted(TESTS.rglob("*.py"))
+        if path != CONFTEST
+        for line in _tools_on_path(ast.parse(path.read_text(encoding="utf-8")))
+    ]
+
+    assert found == [], "\n".join(
+        [
+            *found,
+            "tests/conftest.py kładzie tools, tools/lib i tools/ci na sys.path każdego testu: usuń wstawkę i importuj "
+            "narzędzie wprost z jego modułu (import potomne), nie przez fixture, który je re-eksportuje.",
+        ]
+    )
+
+
+# Każda postać wstawki katalogu narzędzi, którą zna sprawdzenie.
+TOOLS_ON_PATH = {
+    "katalog": 'import sys\nsys.path.insert(0, str(ROOT / "tools"))',
+    "podkatalog": 'import sys\nsys.path.insert(0, str(ROOT / "tools" / "lib"))',
+    "napis": 'import sys\nsys.path.append(str(Path(__file__).resolve().parents[1] / "tools/ci"))',
+    "windows": 'import sys\nsys.path.append("C:\\\\repo\\\\tools")',
+    "nazwa-modulu": 'import sys\nTOOLS = ROOT / "tools"\nsys.path.insert(0, str(TOOLS / "lib"))',
+    "nazwa-z-adnotacja": 'import sys\nTOOLS: Final = ROOT / "tools"\nsys.path.insert(0, str(TOOLS / "lib"))',
+    "nazwa-przez-nazwe": 'import sys\nREPO = ROOT\nTOOLS = REPO / "tools"\nLIB = TOOLS / "lib"\nsys.path.insert(0, str(LIB))',
+    "w-funkcji": 'import sys\ndef f() -> None:\n    sys.path.insert(0, str(ROOT / "tools"))',
+}
+
+
+@pytest.mark.parametrize("code", TOOLS_ON_PATH.values(), ids=TOOLS_ON_PATH.keys())
+def test_sprawdzenie_sys_path_lapie_kazda_wyliczona_postac_wstawki_narzedzi(code: str) -> None:
+    assert len(_tools_on_path(ast.parse(code))) == 1
+
+
+def test_sprawdzenie_sys_path_przepuszcza_skrypty_skilli_i_kod_podprocesu() -> None:
+    code = (
+        "import sys\n"
+        'SKILL = ROOT / ".agents" / "skills" / "verify-x"\n'
+        'sys.path.insert(0, str(SKILL / "scripts"))\n'
+        "sys.path.insert(0, sys.argv[1])\n"
+        'sys.path.insert(0, "my_tools")\n'
+        'KOD = "import sys\\nsys.path.insert(0, \'tools\')\\nimport mutacje\\n"\n'
+        'LISTA = [str(ROOT / "tools")]\n'
+    )
+
+    assert _tools_on_path(ast.parse(code)) == []
 
 
 # Pliki, w których nazwa pliku narzędzia albo stanu Centrum zostaje literałem, z powodem.

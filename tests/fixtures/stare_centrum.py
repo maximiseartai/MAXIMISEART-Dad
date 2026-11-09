@@ -155,7 +155,7 @@ def killed_after_comment(directory: Path, box: Path, log: Path) -> None:
     """Centrum, którego przejście kolejki ``directory`` kończy się razem z procesem zaraz po tym, jak skrzynka ``box``
     przyjęła pierwszy komentarz, przed znacznikiem dostarczenia; czeka na koniec procesu."""
 
-    environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
     command = [sys.executable, "-m", "tests.fixtures.stare_centrum", str(directory), str(box), str(log), _COMMENT]
     done = subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, timeout=60, check=False)
     assert done.returncode == 0, f"proces Centrum nie zginął przy komentarzu: {done.stderr.decode('utf-8', 'replace')}"
@@ -164,7 +164,7 @@ def killed_after_comment(directory: Path, box: Path, log: Path) -> None:
 def old_centrum(directory: Path, box: Path, log: Path) -> OldCentrum:
     """Stare Centrum, którego przejście kolejki ``directory`` stoi w ``open_issue`` skrzynki ``box``."""
 
-    environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
     command = [sys.executable, "-m", "tests.fixtures.stare_centrum", str(directory), str(box), str(log), _OPENING]
     process = subprocess.Popen(
         command, cwd=ROOT, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE

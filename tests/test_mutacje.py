@@ -23,15 +23,15 @@ import pytest
 from tests.fixtures.brama_typow import FAKE_GATE
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, git, repository
-from tests.fixtures.potomne import beating, potomne, wait_for
+from tests.fixtures.potomne import beating, wait_for
+import potomne
+
+import ciezkie_ci
+import mutacje
+import plan_runu
+from zakres_runu import Zdarzenie
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-
-import ciezkie_ci  # noqa: E402
-import mutacje  # noqa: E402
-import plan_runu  # noqa: E402
-from zakres_runu import Zdarzenie  # noqa: E402
 
 TOOL = ROOT / "tools" / "mutacje.py"
 PACKAGE = "src/rozliczenia/__init__.py"

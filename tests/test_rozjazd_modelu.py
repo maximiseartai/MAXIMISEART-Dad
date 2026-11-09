@@ -12,18 +12,15 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-import sys
 
 import pytest
 
 from tests.fixtures.git_repo import commit, git
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
-sys.path.insert(0, str(ROOT / "tools"))
+import przesun_model
+import rozjazd_modelu
 
-import przesun_model  # noqa: E402
-import rozjazd_modelu  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 SKILL = ".agents/skills/verify-model"
 CODE = "src/pakiet/kod.py"

@@ -13,7 +13,9 @@ import shutil
 
 import pytest
 
-from tests.fixtures.model_tlc import model_tlc, rozjazd_modelu, skrypt_modelu, wyjscie_tlc
+from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
+import model_tlc
+import rozjazd_modelu
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "scripts" / "sprawdz_wznowienie_wyceny.py"

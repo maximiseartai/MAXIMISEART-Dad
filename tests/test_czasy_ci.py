@@ -23,18 +23,16 @@ import pytest
 
 from tests.fixtures.ci_workflow import jobs
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
+import czasy_ci
+import niestabilne_testy
+import plan_runu
+import wykonaj_zadanie
+import wyniki_testow
+import zapis_czasow
+from zakres_runu import MUTACJE, TORY
+from zapis_czasow import KROKI, main
 
-import czasy_ci  # noqa: E402
-import niestabilne_testy  # noqa: E402
-import plan_runu  # noqa: E402
-import wykonaj_zadanie  # noqa: E402
-import wyniki_testow  # noqa: E402
-import zapis_czasow  # noqa: E402
-from zakres_runu import MUTACJE, TORY  # noqa: E402
-from zapis_czasow import KROKI, main  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 RUNNER = "GitHub Actions 1000012606"
 ENV = {

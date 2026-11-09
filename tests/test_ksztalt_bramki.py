@@ -17,16 +17,14 @@ from dataclasses import dataclass
 import math
 from pathlib import Path
 import shutil
-import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
+import czasy_ci
+import plan_ci
+from zakres_runu import Zdarzenie, zakres
 
-import czasy_ci  # noqa: E402
-import plan_ci  # noqa: E402
-from zakres_runu import Zdarzenie, zakres  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 PRZYPADKI = ROOT / "tests" / "fixtures" / "ksztalt_bramki"
 

@@ -21,10 +21,9 @@ import pytest
 from tests.fixtures import ustawienia_claude
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
+import falszywe_api
 
-import falszywe_api  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 FAKE_CLAUDE = '''import json, os, sys, time, urllib.request
 sys.path.insert(0, {fixtures!r})

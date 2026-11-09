@@ -24,9 +24,6 @@ from tests.fixtures.ci_workflow import jobs
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
-
 import niestabilne_testy
 import zgloszenia_ci
 from github import REPO, REQUIRED, STRONA, Skomentuj, Zaloz, Zamknij

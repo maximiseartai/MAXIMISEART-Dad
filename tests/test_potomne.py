@@ -25,9 +25,11 @@ import pytest
 
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git
-from tests.fixtures.potomne import TOOLS, beating, potomne, wait_for, with_grandchild, worktrees
+from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
+import potomne
 from tests.fixtures.skladnia import dotted, imports
 
+TOOLS = Path(__file__).resolve().parents[1] / "tools"
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="sesje, grupy procesów i sygnały są tylko na POSIX")
 OWN_TREE_OR_COPY = re.compile(
     r"killpg|taskkill|start_new_session|process_group|setsid|setpgid|setpgrp|CreateJobObject|CREATE_NEW_PROCESS_GROUP"

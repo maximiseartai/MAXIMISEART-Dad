@@ -23,10 +23,9 @@ import pytest
 from tests import conftest
 from tests.fixtures.kwarantanna import KWARANTANNA, Kwarantanna
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
+import niestabilne_testy
 
-import niestabilne_testy  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 NAJDLUZEJ = timedelta(days=7)
 

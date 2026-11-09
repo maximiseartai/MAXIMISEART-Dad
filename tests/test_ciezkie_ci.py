@@ -22,12 +22,10 @@ import yaml
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, repository
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
+from ciezkie_ci import HEAVY, NIGHTLY, mutations_refusal, refusal
+from zakres_runu import MUTACJE, TORY
 
-from ciezkie_ci import HEAVY, NIGHTLY, mutations_refusal, refusal  # noqa: E402
-from zakres_runu import MUTACJE, TORY  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 PASSES = ("GITHUB_ACTIONS", "MAXIMISEART_NA_SCALONYCH_PR")
 OUTSIDE_CI = {name: value for name, value in os.environ.items() if name not in PASSES}

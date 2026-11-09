@@ -22,7 +22,6 @@ from tests.fixtures.git_repo import commit, copy_files, git
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 SKILLS = ROOT / ".agents" / "skills"
-sys.path.insert(0, str(TOOLS / "lib"))
 
 
 VERDICT = "SKILLE VERIFY: "

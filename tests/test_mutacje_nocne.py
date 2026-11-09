@@ -34,15 +34,14 @@ from tests.fixtures.ci_workflow import chromium, jobs
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, repository
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "ci"))
+from jednostka import Czesc
+from mutacje import NearLimit
+import mutacje_nocne
+import mutacje_zmiany
+import plan_runu
+from zakres_runu import Zdarzenie
 
-from jednostka import Czesc  # noqa: E402
-from mutacje import NearLimit  # noqa: E402
-import mutacje_nocne  # noqa: E402
-import mutacje_zmiany  # noqa: E402
-import plan_runu  # noqa: E402
-from zakres_runu import Zdarzenie  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 REPO = "repos/{owner}/{repo}"
 RUNY = f"{REPO}/actions/workflows/mutacje-nocne.yml/runs?branch=main&status=success&per_page=1"

@@ -13,7 +13,9 @@ import uuid
 
 import pytest
 
-from tests.fixtures.cicha_maszyna import MachineBusy, QuietMachine, ZegarTestu, quiet_machine
+from tests.fixtures.cicha_maszyna import ZegarTestu
+import quiet_machine
+from quiet_machine import MachineBusy, QuietMachine
 from tests.fixtures.potomne import wait_for
 
 # Pomiar wydajnosc trwa około 5 minut (features/wydajnosc.md); agent ma 10 minut na jedno polecenie.

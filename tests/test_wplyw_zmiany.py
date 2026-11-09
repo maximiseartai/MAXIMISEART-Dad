@@ -5,16 +5,14 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
-import sys
 
 import pytest
 
 from tests.fixtures.git_repo import commit, git
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
+from wplyw_zmiany import Context, Repository, changed_since, run_all
 
-from wplyw_zmiany import Context, Repository, changed_since, run_all  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 # Moduł ``pakiet`` w ``src``: ``posredni`` importuje ``a``, a test importuje ``posredni``.
 GRAPH = {

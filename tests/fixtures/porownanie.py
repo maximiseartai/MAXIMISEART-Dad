@@ -1,14 +1,12 @@
-"""Porównanie Folderów rozliczeń pracowników w testach: moduł z ``tools/`` i pary syntetycznych skoroszytów.
+"""Pary syntetycznych Folderów rozliczeń pracowników do testów porównania ``tools/porownanie_rozliczen.py``.
 
-Moduł porównania służy tylko benchmarkowi, więc leży w ``tools/``, poza pakietem
-``rozliczenia``. Testy importują go stąd, tak jak benchmark: z folderu ``tools``.
+Moduł porównania służy tylko benchmarkowi, więc leży w ``tools/``, poza pakietem ``rozliczenia``.
 """
 
 from __future__ import annotations
 
 import re
 import shutil
-import sys
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -20,20 +18,13 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from atrapy.workbooks import active_worksheet, add_external_link_fixture, rewrite_parts
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
-
-from porownanie_rozliczen import CATEGORIES, compare_worker_settlements  # noqa: E402
-
 __all__ = [
-    "CATEGORIES",
     "SETTLEMENT_NAME",
     "add_calc_chain",
     "formulas_in_row_13",
     "renumber_cell_styles",
     "share_formulas_in_row_13",
     "SECRET_VALUES",
-    "compare_worker_settlements",
     "settlement_folders",
     "write_settlement",
 ]

@@ -13,13 +13,7 @@ from typing import TypeVar
 
 from tests.fixtures.git_repo import git
 
-ROOT = Path(__file__).resolve().parents[2]
-TOOLS = ROOT / "tools"
-sys.path.insert(0, str(TOOLS / "lib"))
-
-import potomne  # noqa: E402
-
-__all__ = ["TOOLS", "beating", "potomne", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
+__all__ = ["beating", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
 
 T = TypeVar("T")
 

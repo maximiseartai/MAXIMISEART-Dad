@@ -1,21 +1,12 @@
-"""Sprawdzenie modeli TLA+ skilli w testach: ``tools/lib/model_tlc.py`` (leży poza pakietem), skrypty modeli i atrapa
-wyjścia TLC."""
+"""Skrypty modeli TLA+ skilli i atrapa wyjścia TLC do testów ``tools/lib/model_tlc.py``."""
 
 from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-import sys
 from types import ModuleType
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools" / "lib"))
-
-import model_tlc  # noqa: E402
-import narzedzia_tlc  # noqa: E402
-import rozjazd_modelu  # noqa: E402
-
-__all__ = ["model_tlc", "narzedzia_tlc", "rozjazd_modelu", "skrypt_modelu", "wyjscie_tlc"]
+__all__ = ["skrypt_modelu", "wyjscie_tlc"]
 
 
 def skrypt_modelu(path: Path) -> ModuleType:
