@@ -143,6 +143,7 @@ STRUCTURE = (
     "tests/test_mutacje_skilli.py::test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz",
     "tests/test_skille_dla_zmiany.py::test_frontmatter_kazdego_skilla_jest_poprawnym_yaml",
     "tests/test_skille_dla_zmiany.py::test_workflow_skilla_windows_biegnie_dla_tych_samych_sciezek_co_jego_pilnuje",
+    "tests/test_skille_dla_zmiany.py::test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill",
     # Plan bramki liczy graf zależności całego repozytorium, więc test, który zaczyna zależeć od wszystkiego, rośnie
     # bramkę bez zmiany kodu CI.
     "tests/test_ksztalt_bramki.py",
