@@ -1,9 +1,8 @@
 """Uzupełnienie pliku zbiorczego w Centrum: Ilości do uzupełnienia okresu jako zasób tylko do odczytu (ADR 0016).
 
 Każde żądanie czyta zapisany Plik zbiorczy jedynym odczytem skoroszytu, także gdy trzyma go Excel, i przelicza
-Ilości do uzupełnienia w silniku (``quantities_to_fill``); Centrum nigdy nie zmienia pliku. Na żywo (``live_file``):
-tani znacznik zapisu, a podczas nieudanych prób przez minutę ostatni dobry odczyt z godziną, ale nie sprzed
-Uruchomienia, które zmieniło pliki okresu (``FillingReads``).
+Ilości do uzupełnienia w silniku (``quantities_to_fill``); Centrum nigdy nie zmienia pliku. Na żywo: tani znacznik
+zapisu i ostatni dobry odczyt (``live_file``, ``FillingReads``).
 Podsumowanie dostaje tylko numery wierszy, stan „zrobione” i liczniki kolumn, a strona rodzaju też teksty
 wiersza, komórki N:AP i nazwy pozycji cennika, nigdy adres, numer zlecenia ani UMOWA. Nieudany odczyt to
 Komunikat, który nazywa Plik zbiorczy, i wpis w dzienniku Centrum z przyczyną, bez treści wierszy. Czy Przebieg

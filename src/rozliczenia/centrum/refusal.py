@@ -66,8 +66,6 @@ def period_folder_unreadable(folder: str) -> Refusal:
 
 
 def first_choose(settings: Sequence[str]) -> Refusal:
-    """„Najpierw wskaż …” z nazwami niewskazanych Ustawień ``settings``."""
-
     return Refusal(409, f"Najpierw wskaż {' i '.join(settings)}.")
 
 
@@ -101,8 +99,6 @@ def unknown_period() -> Refusal:
 
 
 def period_folder_lookup(error: PeriodFolderLookupError) -> Refusal:
-    """Folderu okresu nie ma w żadnym folderze miesiąca albo jest w kilku."""
-
     token = error.period.token
     if not error.locations:
         return Refusal(

@@ -15,9 +15,8 @@ wersja to ta sama wysyłka (Uruchomienie i etykieta), więc kolejka zmienia ten 
 Wersja końcowa zamienia więc postęp w podsumowanie także po cofnięciu zegara komputera, a wersja zastępcza nie zastępuje
 Logów z wynikiem, które kolejka już przyjęła. Każda wersja niesie tylko tekst po strażniku reguły danych pracy Centrum
 (``run_logs_guard.GuardedLogs``, ``run_logs_guard.GuardedText``, ADR 0025), więc wysyłka (``post_of``) strażnika nie
-potrzebuje, a wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``), ``TypeError`` w konstruktorze wersji. Dziennik Wyceny znika tylko po wersji końcowej,
-którą kolejka przyjęła (``journal_after``), bo do tej chwili jest śladem komentarza, który może jeszcze mówić, że
-Uruchomienie trwa.
+potrzebuje, a wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``), ``TypeError`` w
+konstruktorze wersji. Dziennik Wyceny znika tylko po wersji końcowej, którą kolejka przyjęła (``journal_after``).
 
 Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wybiera ``close``: cała macierz startu w jednym
 ``match``, ze strażnikiem w środku, więc start Centrum (``run_comments.RunComments``) dostaje tylko wersję po strażniku.
@@ -72,8 +71,6 @@ class ResultWithoutLogs:
 
 @dataclass(frozen=True)
 class ProgressVersion:
-    """Postęp Wyceny w efenix ``progress`` z tekstem komentarza po strażniku (``text``)."""
-
     progress: PricingProgress
     text: GuardedText
 
@@ -139,8 +136,6 @@ JournalAction = Literal["zostaw", "usuń"]
 
 
 def rank_of(version: CommentVersion) -> Rank:
-    """Stopień wersji (#910): postęp najniższy, wersja zastępcza środkowy, Logi z pracy Centrum Uruchomienia najwyższy."""
-
     match version:
         case ProgressVersion():
             return Rank.DRAFT
@@ -218,12 +213,7 @@ _WITHOUT_LOGS_PLACE: Final = "wynik Wyceny w efenix bez Logów"
 
 def post_of(version: CommentVersion) -> Post:
     """Wysyłka wersji ``version``: jeden komentarz Uruchomienia w issue Logów okresu, a przy Logach także ich pełny plik w
-    Archiwum Logów okresu, w stopniu ``rank_of``.
-
-    Identyfikator wysyłki to Uruchomienie (``run_id``) i etykieta ``LABEL``, te same w każdej wersji, więc Logi z
-    Diagnozą podmieniają plik w Archiwum i zmieniają komentarz swojego Uruchomienia, a Logi na końcu Wyceny zamieniają jej
-    komentarz postępu w podsumowanie (``outbox``).
-    """
+    Archiwum Logów okresu, w stopniu ``rank_of``."""
 
     start: StartFacts
     match version:
@@ -257,9 +247,6 @@ def post_of(version: CommentVersion) -> Post:
 
 
 def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
-    """Komentarz postępu: proces, tryb, okres, zlecenia skończone z wszystkich i ich wyniki, ostatnie skończone,
-    zlecenie w trakcie, czas od startu (``elapsed_s``) i Uruchomienie; odnośnik do pełnych Logów przychodzi z końcem."""
-
     started = progress.started
     done = progress.done
     orders = _orders_done(progress) or "dziennik Wyceny nie ma jeszcze żadnego zlecenia"
@@ -279,9 +266,6 @@ def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
 
 
 def without_logs_markdown(final: ResultWithoutLogs) -> str:
-    """Wynik bez Logów: proces, tryb, okres, wynik z wpisu końca dziennika, zlecenia skończone z dziennika i ich wyniki,
-    zlecenie zaczęte bez wyniku, Uruchomienie i dlaczego pełnych Logów nie ma."""
-
     journal = final.journal
     started = journal.started
     result = "nieznany, dziennik Wyceny go nie ma" if final.result is None else final.result
@@ -304,8 +288,7 @@ def _run_line(run: StartFacts | RunLog) -> str:
 
 
 def _orders_done(progress: PricingProgress) -> str | None:
-    """Ile zleceń skończonych z wszystkich i ile każdego wyniku (``PricingProgress.outcomes``); ``None`` przed pierwszym
-    wpisem „zaczynam zlecenie”."""
+    """``None`` przed pierwszym wpisem „zaczynam zlecenie”."""
 
     if progress.total is None:
         return None
@@ -314,8 +297,6 @@ def _orders_done(progress: PricingProgress) -> str | None:
 
 
 def _archive_file(record: RunLog) -> ArchiveFile:
-    """Pełne Logi w Archiwum Logów okresu: Release z tagiem ``logi-<okres>``, plik o nazwie i treści pliku Logów."""
-
     period = record.period
     return ArchiveFile(
         tag=f"logi-{period}",
@@ -330,9 +311,6 @@ def _archive_file(record: RunLog) -> ArchiveFile:
 
 
 def summary_markdown(record: RunLog) -> str:
-    """Komentarz Logów: proces, tryb, okres, wynik, czas, kody Komunikatów, Diagnoza, Wydanie i odnośnik do pełnych Logów
-    w Archiwum Logów okresu."""
-
     commit = "nieznany" if record.tool.commit is None else short_commit(record.tool.commit)
     diagnosis = "" if record.diagnosis is None else f"- Diagnoza: {_diagnosis(record.diagnosis)}\n"
     archive = _archive_file(record)
@@ -349,8 +327,6 @@ def summary_markdown(record: RunLog) -> str:
 
 
 def _diagnosis(diagnosis: LoggedDiagnosis) -> str:
-    """Kod wyjaśnienia, a po nim sprawdzenia, które nie przeszły albo których nie sprawdzono."""
-
     groups = [f"`{diagnosis.explanation.code}`"]
     for state, name in (("failed", "nie przeszło"), ("not_checked", "nie sprawdzono")):
         labels = [check.label for check in diagnosis.checks if check.state == state]

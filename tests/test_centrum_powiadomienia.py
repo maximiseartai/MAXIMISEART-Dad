@@ -75,8 +75,6 @@ def notifications(centrum: PreparingCentrum) -> dict[str, Any]:
 
 
 def rows(centrum: PreparingCentrum) -> list[tuple[str, str, dict[str, str], bool]]:
-    """Powiadomienia jak w widoku: rodzaj, nazwa, stan i czy nowe."""
-
     return [
         (item["kind"], item["title"] if item["kind"] == "uwaga" else item["what"], item["state"], item["unread"])
         for item in notifications(centrum)["items"]
@@ -202,8 +200,6 @@ def test_przeczytane_sa_tylko_powiadomienia_ktore_tata_zobaczyl(tmp_path: Path) 
 
 
 def unavailable(where: str) -> dict[str, str]:
-    """Komunikat Powiadomień o pliku stanu, którego Centrum nie może zapisać."""
-
     return {
         "what": "Centrum nie może teraz zapisać Powiadomień na tym komputerze, bo plik jest niedostępny.",
         "where": f"plik {where} w folderze config",
@@ -629,7 +625,7 @@ def test_zgloszenie_wyslane_przed_kolejka_zostaje_przeczytane(tmp_path: Path) ->
 
 
 def queued_case(fingerprint: str, what: str) -> dict[str, object]:
-    """Zgłoszenie w pliku Spraw taty, które czeka w kolejce Skrzynki: bez numeru issue."""
+    """Zgłoszenie w pliku Spraw taty, które czeka w kolejce Skrzynki."""
 
     return {
         "kind": "zgloszenie",

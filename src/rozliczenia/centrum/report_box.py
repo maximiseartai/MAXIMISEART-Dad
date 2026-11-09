@@ -64,22 +64,18 @@ COMMENT_LIMIT: Final = 65_536
 
 @dataclass(frozen=True)
 class Sent:
-    """Skrzynka założyła issue o numerze ``number``."""
-
     number: int
 
 
 @dataclass(frozen=True)
 class Commented:
-    """Skrzynka przyjęła komentarz: ``id`` z API i ``url`` do niego."""
-
     id: int
     url: str
 
 
 @dataclass(frozen=True)
 class Comment:
-    """Komentarz issue w skrzynce: ``id`` z API, ``url`` do niego i treść (pusta, gdy komentarz jej nie ma)."""
+    """Komentarz issue w skrzynce; treść pusta, gdy komentarz jej nie ma."""
 
     id: int
     url: str
@@ -137,7 +133,7 @@ class Asset:
 
 @dataclass(frozen=True)
 class Archive:
-    """Archiwum okresu (GitHub Release z tagiem) w Skrzynce: ``id`` z API i jego pliki."""
+    """Archiwum okresu (GitHub Release z tagiem) w Skrzynce."""
 
     id: int
     assets: tuple[Asset, ...]
@@ -365,18 +361,13 @@ class GitHubReportBox:
     def _submit(
         self, method: str, url: str, body: bytes, content_type: str, key: str
     ) -> HttpResponse | Refused | Rejected | Unreachable:
-        """Wysyłka treści ``body``; odpowiedź na samą treść (``_REJECTIONS``) to ``Rejected``."""
-
         answer = self._exchange(
             HttpRequest(method=method, url=url, headers={**headers(key), "Content-Type": content_type}, body=body)
         )
         return Rejected() if isinstance(answer, HttpResponse) and answer.status in _REJECTIONS else answer
 
     def _exchange(self, request: HttpRequest) -> HttpResponse | Refused | Unreachable:
-        """Odpowiedź skrzynki na ``request``; brak sieci to ``Unreachable``, odmowa autoryzacji ``Refused``.
-
-        Limit zapytań GitHuba to ``Unreachable``: klucz działa, a skrzynka każe poczekać jak bez sieci.
-        """
+        """Limit zapytań GitHuba to ``Unreachable``: klucz działa, a skrzynka każe poczekać jak bez sieci."""
 
         transport = self._transport or urllib_transport  # odczyt przy każdym żądaniu: testy blokują go w conftest
         try:
@@ -417,8 +408,6 @@ def _tag(entry: object) -> object:
 
 
 def _asset(entry: object) -> Asset | None:
-    """Plik Release z odpowiedzi GitHuba; wpis bez identyfikatora albo nazwy to ``None``."""
-
     if not isinstance(entry, dict) or not isinstance(entry.get("id"), int) or not isinstance(entry.get("name"), str):
         return None
     label = entry.get("label")
@@ -434,8 +423,6 @@ def _issue(entry: object) -> Issue | None:
 
 
 def _closure(entry: dict[str, object]) -> Closure:
-    """Zamknięcie z ``state_reason`` i ``closed_at``; nieznany powód albo nieczytelny czas to ``None``."""
-
     return Closure(close_reason(entry.get("state_reason")), read_moment(entry.get("closed_at")))
 
 

@@ -234,8 +234,6 @@ def test_ten_sam_komunikat_zatrzymania_w_dwoch_procesach_to_dwa_problemy() -> No
 
 
 def sent_alone(computer: Computer, report: StopReport | UpdateReport) -> str:
-    """Wysyła Zgłoszenie ``report`` i oddaje treść podglądu, którą skrzynka dostała w jednym issue bez komentarzy."""
-
     computer.with_key()
     handle = computer.reports().handle(report.fingerprint)
     body = handle.prepare(report).body

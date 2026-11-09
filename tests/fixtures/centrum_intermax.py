@@ -177,13 +177,11 @@ def ordering_centrum(
 
 
 def copies(centrum: OrderingCentrum) -> list[str]:
-    """Nazwy Kopii INTERMAX w folderze Kopii; bez folderu żadnych."""
-
     return sorted(path.name for path in centrum.copies.iterdir()) if centrum.copies.is_dir() else []
 
 
 def open_in_excel(register: Path) -> Path:
-    """Plik blokady Excela obok INTERMAX, jak przy pliku otwartym u taty; zwraca jego ścieżkę."""
+    """Plik blokady Excela obok INTERMAX, jak przy pliku otwartym u taty."""
 
     lock = register.with_name(f"~${register.name}")
     lock.write_bytes(b"\x00" * 165)

@@ -84,8 +84,6 @@ class StateFile:
             self._save(text)
 
     def retry(self) -> None:
-        """Zapisuje treść, która czeka; bez niej nic nie robi."""
-
         with self._lock:
             if self._waiting is not None:
                 self._save(self._waiting)

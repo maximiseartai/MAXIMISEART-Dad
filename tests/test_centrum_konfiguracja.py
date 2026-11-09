@@ -45,8 +45,6 @@ class Configured:
 def configured(
     tmp_path: Path, github: FakeGitHub | None = None, template_check: TemplateCheck = check_on_disk
 ) -> Configured:
-    """Centrum z syntetycznym katalogiem konfiguracji: wszystkie trzy Wzorce i konfiguracja wykonawców."""
-
     tool = ToolDirectory(tmp_path)
     files = write_configuration(tool)
     app = centrum_app(tool, tool_freshness=(github or FakeGitHub()).freshness(), template_check=template_check)

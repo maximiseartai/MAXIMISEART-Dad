@@ -215,7 +215,7 @@ class UpdateResult:
 
 
 def write_result(path: Path, result: UpdateResult) -> None:
-    """Zapisuje wynik aktualizacji w całości albo wcale (plik tymczasowy obok, potem podmiana)."""
+    """Zapisuje wynik aktualizacji w całości albo wcale."""
 
     record = {"wynik": result.code, "przed": result.before, "po": result.after, "biblioteki": result.installed}
     temporary = path.with_name(path.name + ".tmp")
@@ -268,8 +268,6 @@ def find_git(
 
 
 def _registered_git_for_windows(hive: str) -> str | None:
-    """Wartość ``InstallPath`` klucza ``SOFTWARE\\GitForWindows`` w ``HKLM`` albo ``HKCU``; poza Windows ``None``."""
-
     if sys.platform != "win32":
         return None
     import winreg
@@ -490,8 +488,6 @@ def _roll_back(git: _Git, journal: _Journal) -> None:
 
 
 def _moved_back(git: _Git, journal: _Journal) -> bool:
-    """``_roll_back``, który mówi, czy się udało, zamiast rzucać."""
-
     try:
         _roll_back(git, journal)
     except (GitFailed, OSError, subprocess.SubprocessError, JournalKept):
@@ -500,8 +496,6 @@ def _moved_back(git: _Git, journal: _Journal) -> bool:
 
 
 def _put_back(root: Path, backup: Path, names: Iterable[str]) -> None:
-    """Wgrywa do klonu w ``root`` kopie plików taty ``names`` z ``backup`` z dokładnie ich treścią."""
-
     for name in names:
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -634,7 +628,7 @@ class _Journal:
         return InterruptedUpdate(before, after, until)
 
     def begin(self, root: Path, names: Iterable[str], before: str, after: str) -> None:
-        """Kopia plików taty ``names`` z klonu ``root``, potem ``stan.json``; trwająca aktualizacja to ``JournalKept``."""
+        """Trwająca aktualizacja to ``JournalKept``."""
 
         if self._state.exists():
             raise JournalKept("poprzednia aktualizacja w toku")
@@ -757,8 +751,6 @@ class _Git:
         return self.output(*args).strip()
 
     def entries(self, *args: str) -> list[str]:
-        """Wpisy wyjścia rozdzielone znakiem NUL (``-z``), bez ostatniego pustego."""
-
         return [entry for entry in self.output(*args).split("\0") if entry]
 
     def branch(self) -> str | None:
@@ -910,8 +902,6 @@ if sys.platform == "win32":
             _kernel32.CloseHandle(job)
 
     def _join(job: wintypes.HANDLE, pid: int) -> None:
-        """Przypisuje wstrzymany proces ``pid`` do zadania ``job`` i go wznawia."""
-
         handle = wintypes.HANDLE(_kernel32.OpenProcess(_TERMINATE_SET_QUOTA_AND_RESUME, False, pid))
         if not handle.value:
             raise ctypes.WinError(ctypes.get_last_error())

@@ -1,19 +1,15 @@
 """Wpis procesu w katalogu procesów i Uruchomienie procesu gotowe do startu, to samo dla każdego gospodarza.
 
-Wpis (``ProcessKind``) deklaruje wszystko, o co gospodarze pytają proces: klucz procesu, widok Uruchomienia, rdzeń
-procesu i jego domyślny plik metryk, czego wejście procesu potrzebuje (``needs``) i jak je zbudować (``inputs``),
-Ustawienia taty, bez których proces nie startuje, sprawdzenia Diagnozy w kolejności wyjaśniania, tryby Wyceny w efenix,
-dziennik Wyceny, dodatki Logów procesu i Zlecenia Kontroli ilości. Proces z okresem (``PeriodProcessKind``) ma też politykę karty startu (``PeriodStart``). Diagnoza,
-Logi Uruchomienia, karty z Logów, Metryki, Konfiguracja i start pytają wpis zamiast rozgałęziać się po kluczu procesu.
-Wpisy zbiera katalog (``catalog``).
+Wpis (``ProcessKind``) deklaruje wszystko, o co gospodarze pytają proces, więc Diagnoza, Logi Uruchomienia, karty
+z Logów, Metryki, Konfiguracja i start pytają wpis zamiast rozgałęziać się po kluczu procesu. Wpisy zbiera katalog
+(``catalog``).
 
 Centrum rozliczeń (``period_start``, ``intermax_run``), Skrypt dla maszyn (``tools/uruchom_proces.py``) i odtworzenie
 z Logów (``tools/lib/odtworzenie.py``) mówią, co mają, w języku potrzeb (``Start``, ``HostParts``), dostają
 ``PreparedRun`` z katalogu (``Catalog.prepared``) i prowadzą je przez ``PreparedRun.conduct``: to samo wejście, rdzeń,
 widok, plik metryk i Kontekst Uruchomienia. Gospodarz daje tylko rozmówcę.
 
-Moduł nie wczytuje ``runs``, Diagnozy, Konfiguracji, Tablicy okresów, okna efenix ani FastAPI, także przez inne moduły
-(``tests/test_granice_importow.py``): każdy moduł Centrum i gospodarze bez serwera biorą go bez cyklu.
+Granicę importów modułu opisuje i sprawdza ``tests/test_granice_importow.py``.
 """
 
 from __future__ import annotations
@@ -97,8 +93,6 @@ class Start:
         return self.paths[need]
 
     def token(self) -> str:
-        """Token okresu procesu z potrzebą ``period``; ``Catalog.prepared`` już sprawdził, że jest."""
-
         assert self.period is not None, "Catalog.prepared sprawdza potrzebę period"
         return self.period
 
@@ -127,8 +121,6 @@ class HostParts:
     disk: Disk = LOCAL_DISK
 
     def window(self) -> EfenixOpening:
-        """Okno efenix; ``Catalog.prepared`` już sprawdził, że jest, gdy proces go potrzebuje."""
-
         assert self.efenix is not None, "Catalog.prepared sprawdza potrzebę efenix_window"
         return self.efenix
 
@@ -212,8 +204,7 @@ class RecentWeeks:
 @dataclass(frozen=True)
 class PeriodStart:
     """Karta startu procesu, który tata uruchamia z okresem: co powstaje (``creates``), jak wybrać okresy
-    (``chooser``) i odmowa startu bez zapisu (``no_preview``), która jest wtedy i tylko wtedy, gdy rdzeń nie ma Podglądu
-    bez zapisu."""
+    (``chooser``) i odmowa startu bez zapisu (``no_preview``)."""
 
     creates: str
     chooser: ByStatus | RecentWeeks
@@ -274,20 +265,14 @@ class ProcessKind(Generic[InputsT, SummaryT]):
 
     @property
     def configuration_needs(self) -> tuple[ConfigurationNeed, ...]:
-        """Pliki Konfiguracji, które proces czyta: Konfiguracja wykonawców i Wzorce z jego potrzeb."""
-
         return tuple(need for need in self.needs if _is_configuration(need))
 
     @property
     def templates(self) -> tuple[TemplateRole, ...]:
-        """Wzorce, które proces czyta, z jego potrzeb."""
-
         return tuple(role for need, role in _TEMPLATE_ROLES.items() if need in self.needs)
 
     @property
     def reads_register(self) -> bool:
-        """Rejestr zleceń jest plikiem procesu: proces go czyta."""
-
         return any(setting.field == "register" for setting in self.settings)
 
     @property
@@ -404,15 +389,11 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         return self.context.files.copy
 
     def info(self, run_id: str) -> runs_contract.RunInfo:
-        """Uruchomienie ``run_id`` na karcie: na żywo w Centrum i w Logach odtworzenia ta sama reguła wpisu procesu."""
-
         return self.kind.run_info(
             run_id=run_id, period=self.period, mode=RunMode.of(dry_run=self.dry_run), pricing=self.pricing
         )
 
     def conduct(self, interlocutor: Interlocutor) -> Outcome[Shown[SummaryT]]:
-        """Uruchomienie przez rdzeń z rozmówcą ``interlocutor`` i plikiem metryk procesu."""
-
         return self.engine(
             self.kind.core,
             self.inputs,

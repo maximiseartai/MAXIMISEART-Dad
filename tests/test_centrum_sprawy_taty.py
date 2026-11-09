@@ -583,8 +583,6 @@ class Skrzynka:
         assert all(self.outbox.delivered(run_id, "logi-uruchomienia") is not None for run_id in run_ids)
 
     def texts(self) -> list[str]:
-        """Treści i komentarze wszystkich issue skrzynki, także Logów."""
-
         return [text for issue in (*self.box.issues, *self.box.background_issues) for text in (issue.body, *issue.comments)]
 
 

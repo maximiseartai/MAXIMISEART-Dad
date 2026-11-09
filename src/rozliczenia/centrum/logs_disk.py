@@ -425,8 +425,6 @@ class LogsOnDisk:
 
     @property
     def journal(self) -> Journal:
-        """Dziennik bieżącej Wyceny w efenix (``efenix_pricing.OrderJournal`` w Centrum)."""
-
         return self._journal
 
     def started(self, start: StartFacts) -> None:

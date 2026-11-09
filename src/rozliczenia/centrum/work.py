@@ -18,9 +18,8 @@ from rozliczenia.client_data import ForbiddenValues
 
 @dataclass(frozen=True)
 class CentrumWork:
-    """Jedna praca Centrum: katalog ``config`` jej plików stanu, dziennik ``log``, zegar ``clock`` z jego ``pause``
-    (testy przesuwają czas zamiast czekać) i pamięć reguły danych ``forbidden`` (ADR 0025): zakazane wartości z każdego
-    pliku taty, który ta praca przeczytała, dla strażnika każdej wysyłki do Skrzynki, tylko w pamięci."""
+    """Jedna praca Centrum; ``forbidden`` to pamięć reguły danych (ADR 0025): zakazane wartości z każdego pliku taty,
+    który ta praca przeczytała, dla strażnika każdej wysyłki do Skrzynki, tylko w pamięci."""
 
     config: Path
     log: CentrumLog

@@ -7,8 +7,7 @@ z menu, którą przeglądarka zgłasza pomiarem gotowego widoku (``recordViewTim
 wpisu nie ma. Przycisk to każde zapytanie API, które coś zmienia (wszystko poza ``GET``), nazwane operacją API z
 kontraktu (``operation_id``): start Uruchomienia procesu z procesem i trybem, Decyzja taty, Diagnoza, Aktualizacja
 narzędzia, zamknięcie Centrum, wysłanie Uwagi taty i każdy inny. Wpis nie ma treści zapytania, więc nie ma tytułu ani
-treści Uwagi taty, ścieżek, adresu zapytania ani tokenu okresu. Szkic Uwagi taty (``draftDadNote``) nie jest
-przyciskiem: okno pyta o niego samo przy pisaniu.
+treści Uwagi taty, ścieżek, adresu zapytania ani tokenu okresu.
 
 Wpisy leżą w jednym pliku obok Logów Uruchomienia, dopisywane linia po linii, więc przeżywają zamknięcie Centrum i
 trafiają do Logów pierwszego Uruchomienia po ponownym starcie. Logi Uruchomienia zabierają przy swoim powstaniu
@@ -49,7 +48,7 @@ def _utc_now() -> datetime:
 
 
 class DadActionJournal:
-    """Plik ``path`` z działaniami taty, które czekają na Logi następnego Uruchomienia."""
+    """Plik ``DAD_ACTIONS_FILE`` w katalogu Logów z działaniami taty, które czekają na Logi następnego Uruchomienia."""
 
     def __init__(self, work: CentrumWork) -> None:
         self._path = work.log.directory / DAD_ACTIONS_FILE

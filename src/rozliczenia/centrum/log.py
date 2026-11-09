@@ -23,7 +23,6 @@ UNEXPECTED_FAILURE_EVENT = "nieoczekiwany-wyjatek"
 # Pomiar przychodzi po każdym widoku, więc na jedno uruchomienie Centrum dziennik przyjmuje ich najwyżej
 # tyle (spec #164, US29); kolejne przepadają po cichu, a wpisy o pracy serwera są zapisywane dalej.
 MAX_VIEW_TIMINGS = 200
-# Wpisy o Aktualizacji narzędzia i jej Zgłoszeniach mówią, skąd są, tym samym słowem.
 _UPDATE = "aktualizacja"
 # Zdarzenia, które piszą ``update_started`` i ``update_finished``, dla ``update_awaits``.
 _UPDATE_STARTED = "aktualizacja-start"
@@ -233,7 +232,6 @@ class CentrumLog:
 
         Każde zapytanie API to ``operacja:przeglądarka/serwer`` w milisekundach,
         a ``-`` zamiast czasu serwera, gdy odpowiedź nie miała ``Server-Timing``.
-        Ponad ``MAX_VIEW_TIMINGS`` pomiarów tego dziennika nic nie zapisuje.
         """
 
         with self._lock:
@@ -301,6 +299,4 @@ def _quoted(value: str | int) -> str:
 
 
 def _period(period: str | None) -> str:
-    """Token okresu wysyłki w tle; Uruchomienie bez ustalonego okresu ma ``bez-okresu``."""
-
     return period or _NO_PERIOD

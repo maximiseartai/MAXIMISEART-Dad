@@ -22,7 +22,6 @@ class Clock(Protocol):
         ...
 
 
-# Nazwa wątku budzika ``SystemClock.after``.
 ALARM_THREAD: Final = "budzik"
 
 

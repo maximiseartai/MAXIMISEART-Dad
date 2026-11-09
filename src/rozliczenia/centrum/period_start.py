@@ -1,10 +1,9 @@
 """Karta przed startem i start procesu z okresem w Centrum rozliczeń: jedna mechanika, polityka z wpisu procesu.
 
-Każdy proces z okresem (``catalog.PeriodProcessKind``) ma na karcie Uruchomień kafelek z okresami do wyboru, a start z
-okresem przechodzi przez te same odmowy dla taty w tej samej kolejności: tryb Wyceny w efenix, Ustawienia taty,
-Podgląd bez zapisu procesu bez niego, okres, Folder okresu. Co różni procesy (co powstaje, jak wybrać okresy, odmowa
-podglądu), mówi ``PeriodStart`` wpisu. Pliki wejścia biorą się z Ustawień taty, Folderu okresu i Konfiguracji; tata
-nie wskazuje ich przy starcie.
+Każdy proces z okresem (``process_kind.PeriodProcessKind``) ma na karcie Uruchomień kafelek z okresami do wyboru, a
+start z okresem przechodzi przez te same odmowy dla taty w tej samej kolejności. Co różni procesy (co powstaje, jak
+wybrać okresy, odmowa podglądu), mówi ``PeriodStart`` wpisu. Pliki wejścia biorą się z Ustawień taty, Folderu okresu i
+Konfiguracji; tata nie wskazuje ich przy starcie.
 """
 
 from __future__ import annotations
@@ -44,12 +43,6 @@ _TILES: Final[tuple[common_contract.PeriodProcessKey, ...]] = ("preparation", "e
 
 @dataclass(frozen=True)
 class PeriodStarts:
-    """Karta przed startem i start każdego procesu z okresem z katalogu ``catalog``.
-
-    ``contexts``: Kontekst Uruchomienia pracy Centrum, ``parts``: zależności procesów od Centrum (okno efenix taty,
-    dziennik Wyceny w efenix).
-    """
-
     store: SettingsStore
     configuration: ConfigurationFiles
     catalog: Catalog
@@ -80,8 +73,6 @@ class PeriodStarts:
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())
 
     def _path(self, need: PathNeed, chosen: Mapping[SettingField, Path], period: SettlementPeriod) -> Path:
-        """Skąd Centrum bierze plik wejścia: Ustawienia taty, Folder okresu albo Konfiguracja."""
-
         match need:
             case "register" | "periods_directory":
                 return chosen[need]

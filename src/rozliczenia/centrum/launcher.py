@@ -159,8 +159,6 @@ def _start(
 
 
 def _listen_when_released(port: int, *, wait_s: float) -> socket.socket:
-    """``listen_locally`` ponawiane przez ``wait_s``; ``OSError``, gdy port jest dalej zajęty."""
-
     deadline = time.monotonic() + wait_s
     while True:
         try:
@@ -183,8 +181,6 @@ def _roll_back(interrupted: InterruptedUpdate) -> None:
 
 
 def _refuse(problem: Message, *, port: int, log: CentrumLog, dialog: bool) -> int:
-    """Komunikat startu w konsoli albo, bez konsoli, w natywnym okienku (``dialog``); fakt zawsze w dzienniku."""
-
     log.start_failed(problem.code, port=port)
     if has_console():
         print(problem.text, flush=True)

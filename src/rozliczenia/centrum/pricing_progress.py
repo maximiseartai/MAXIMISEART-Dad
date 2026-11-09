@@ -39,7 +39,5 @@ class PricingProgress:
     current: int | None
 
     def outcomes(self) -> tuple[tuple[OrderKind, int], ...]:
-        """Ile zleceń skończonych ma każdy wynik, w kolejności ``OrderKind``, bez wyników, których nie ma żadne."""
-
         counted = Counter(order.outcome for order in self.done)
         return tuple((kind, counted[kind]) for kind in OrderKind if counted[kind])

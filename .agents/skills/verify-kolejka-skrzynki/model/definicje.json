@@ -1,21 +1,21 @@
 {
   "src/rozliczenia/centrum/outbox.py": {
-    "cały plik": "a6cb706f7a475299"
+    "cały plik": "00ff9d01722fce12"
   },
   "src/rozliczenia/centrum/keyed_box.py": {
-    "cały plik": "7a8583419ab31230"
+    "cały plik": "a1cbe0e0691946ce"
   },
   "src/rozliczenia/centrum/report_box.py": {
-    "cały plik": "4724c02a3c888be2"
+    "cały plik": "9a1d1178fbe909c0"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
-    "cały plik": "a122e1f21af87a88"
+    "cały plik": "34b16b7246ae121e"
   },
   "src/rozliczenia/centrum/app.py": {
     "create_app.lifespan": "38bbdc7aefce4c9c"
   },
   "src/rozliczenia/centrum/launcher.py": {
-    "_listen_when_released": "70f8e77fe38bca44"
+    "_listen_when_released": "f8e942c859e06ae0"
   },
   "src/rozliczenia/tool_files.py": {
     "listen_locally": "447af6975944743e",

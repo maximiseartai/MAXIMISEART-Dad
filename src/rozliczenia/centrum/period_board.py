@@ -48,8 +48,6 @@ from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 def _process_step(
     action: periods_contract.StepAction, process: common_contract.PeriodProcessKey, label: str, hint: str
 ) -> periods_contract.ProcessStep:
-    """Krok okresu, który robi proces ``process``, z podpowiedzią podglądu z jego wpisu w katalogu procesów."""
-
     return periods_contract.ProcessStep(
         action=action, process=process, label=label, hint=hint, preview_hint=declaration_of(process).preview_hint
     )

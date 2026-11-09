@@ -76,8 +76,6 @@ Transport = Callable[[HttpRequest], HttpResponse]
 
 
 def headers(key: str | None = None) -> dict[str, str]:
-    """Nagłówki każdego żądania Centrum do API GitHuba; z ``key`` także klucz w ``Authorization``."""
-
     sent = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",

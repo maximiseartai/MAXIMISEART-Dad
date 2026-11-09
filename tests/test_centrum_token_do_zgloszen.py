@@ -35,8 +35,6 @@ def queued(tmp_path: Path, label: str) -> list[Path]:
 
 
 def note_states(started: Centrum) -> dict[str, dict[str, str]]:
-    """Stan każdej Uwagi taty w Powiadomieniach, po jej tytule."""
-
     items = started.client.get("/api/notifications").json()["items"]
     return {item["title"]: item["state"] for item in items if item["kind"] == "uwaga"}
 

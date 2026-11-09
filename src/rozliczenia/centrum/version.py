@@ -66,8 +66,6 @@ def running_centrum(port: int, *, timeout_s: float) -> RunningCentrum | None:
 
 
 def is_commit(text: str) -> bool:
-    """Czy ``text`` to pełny commit Gita (40 znaków szesnastkowych)."""
-
     return _COMMIT.fullmatch(text) is not None
 
 
