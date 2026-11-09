@@ -330,7 +330,13 @@ def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium() -> None:
 POZA_VERIFY_ROZLICZENIA: dict[str, str] = {
     "src/rozliczenia/worker_addresses.py": "plik adresów Wpisania raportów; żaden proces go jeszcze nie woła (#1227)",
     "src/rozliczenia/worker_report_inbox.py": "Skrzynka raportów Wpisania raportów; żaden proces jej jeszcze nie woła (#1227)",
-    "src/rozliczenia/worker_reports/__init__.py": "typy maila rdzenia raportów; żaden proces ich jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/__init__.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/_cells.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/_entries.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/_figures.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/_matching.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/_subject.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
+    "src/rozliczenia/worker_reports/reasons.py": "rdzeń raportów; żaden proces go jeszcze nie woła (#1227)",
 }
 
 
