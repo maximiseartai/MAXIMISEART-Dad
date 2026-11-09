@@ -285,7 +285,7 @@ def test_powtorka_zatrzymania_dla_taty_z_przyczyna_w_wyjatku_ma_w_zgloszeniu_sla
 def queued_reports(centrum: PreparingCentrum) -> list[dict[str, Any]]:
     """Pliki Zgłoszeń w kolejce Skrzynki (bez Logów Uruchomienia, które czekają obok)."""
 
-    directory = centrum.tmp_path / "config" / "zgloszenia" / "kolejka"
+    directory = centrum.tool.queue
     return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("*-zgloszenie-*.json"))]
 
 
@@ -307,7 +307,7 @@ def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu_be
     assert queued == FOR_KEY
     [post] = queued_reports(centrum)
     assert (post["target"]["title"], "".join(post["parts"]), post["period"]) == (preview["title"], preview["body"], PERIOD)
-    assert [path.name for path in (tmp_path / "config" / "zgloszenia").iterdir()] == ["kolejka"]
+    assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
     assert centrum.surroundings.report_box.sent == []
     assert [case["number"] for case in cases(centrum)] == [None]
     assert f"skrzynka-w-kolejce etykieta=zgloszenie okres={PERIOD}" in centrum.log_path.read_text(encoding="utf-8")
@@ -377,7 +377,7 @@ def test_zgloszenie_ktorego_nie_da_sie_zapisac_w_kolejce_daje_komunikat(tmp_path
     run_id = stopped_for_maks(centrum)
     diagnose(centrum, run_id)
     centrum.client.stop()
-    queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+    queue = ToolDirectory(tmp_path).queue
     shutil.rmtree(queue)  # Logi Uruchomienia w kolejce
     queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
 
@@ -407,7 +407,7 @@ def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_
     again = stopped_for_maks(centrum)
     diagnose(centrum, again)
     centrum.client.stop()
-    queue = tmp_path / "config" / "zgloszenia" / "kolejka"
+    queue = ToolDirectory(tmp_path).queue
     shutil.rmtree(queue)
     queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
 

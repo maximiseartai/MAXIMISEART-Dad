@@ -23,7 +23,7 @@ FOR_KEY = {"state": "queued", "waits_for": "key"}
 
 
 def queued(tmp_path: Path, label: str) -> list[Path]:
-    return sorted((tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{label}-*.json"))
+    return sorted(ToolDirectory(tmp_path).queue.glob(f"*-{label}-*.json"))
 
 
 def note_states(started: Centrum) -> dict[str, str]:

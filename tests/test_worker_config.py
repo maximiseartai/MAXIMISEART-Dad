@@ -15,6 +15,7 @@ from typing import get_args
 import pytest
 import yaml
 
+from rozliczenia import tool_files
 from rozliczenia.text import normalize_text
 from rozliczenia.worker_config import (
     SameWorkerFile,
@@ -25,7 +26,7 @@ from rozliczenia.worker_config import (
 
 
 def write_config(tmp_path: Path, content: str) -> Path:
-    config_path = tmp_path / "worker_mapping.yaml"
+    config_path = tmp_path / tool_files.WORKER_CONFIG.name
     config_path.write_text(content, encoding="utf-8")
     return config_path
 
@@ -55,11 +56,11 @@ def test_identyfikator_wykonawcy_jest_porownywany_bez_wielkosci_liter_i_nadmiaro
 
 @pytest.mark.parametrize(
     "missing",
-    [Path("brak.yaml"), Path("worker_mapping.yaml"), Path("plik") / "worker_mapping.yaml"],
+    [Path("brak.yaml"), Path(tool_files.WORKER_CONFIG.name), Path("plik") / tool_files.WORKER_CONFIG.name],
     ids=["brak-pliku", "folder-zamiast-pliku", "plik-zamiast-folderu"],
 )
 def test_brak_pliku_konfiguracji_wykonawcow(tmp_path: Path, missing: Path) -> None:
-    (tmp_path / "worker_mapping.yaml").mkdir()
+    (tmp_path / tool_files.WORKER_CONFIG.name).mkdir()
     (tmp_path / "plik").write_text("", encoding="utf-8")
 
     with pytest.raises(WorkerConfigError) as raised:
@@ -125,7 +126,7 @@ def test_typ_powodu_wymienia_dokladnie_powody_ktore_daje_wczytanie_konfiguracji(
 
 @pytest.mark.parametrize("encoding", ["cp1250", "utf-16"], ids=["ansi-notatnik", "powershell-5"])
 def test_konfiguracja_wykonawcow_zapisana_poza_utf8(tmp_path: Path, encoding: str) -> None:
-    config_path = tmp_path / "worker_mapping.yaml"
+    config_path = tmp_path / tool_files.WORKER_CONFIG.name
     config_path.write_text("schema_version: 1\nworkers:\n  łukasz: Łukasz Testowy\n", encoding=encoding)
 
     with pytest.raises(WorkerConfigError) as raised:

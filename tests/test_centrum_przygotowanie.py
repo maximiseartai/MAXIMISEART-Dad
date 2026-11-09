@@ -13,6 +13,7 @@ from typing import Any, NoReturn
 
 import pytest
 
+from rozliczenia import tool_files
 from rozliczenia import preparation_process
 from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.centrum import run_view
@@ -556,7 +557,7 @@ def test_awaria_adaptera_po_rdzeniu_trafia_do_dziennika_bez_tekstu_wyjatku(
 def test_karta_startu_mowi_ktore_pliki_przygotowania_sa_otwarte_w_excelu_az_do_ich_zamkniecia(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     fixture = centrum.fixture
-    worker_template = tmp_path / "config" / "Wzorzec rozliczenia pracownika.xlsx"
+    worker_template = tool_files.config_dir(tmp_path) / tool_files.WORKER_TEMPLATE.name
     workbooks = (fixture.register_path, fixture.internal_template_path, fixture.collective_template_path, worker_template)
     locks = [path.with_name(f"~${path.name}") for path in workbooks]
 

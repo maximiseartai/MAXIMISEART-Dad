@@ -49,7 +49,7 @@ def notes(tmp_path: Path) -> list[dict[str, Any]]:
 
 
 def queued(tmp_path: Path) -> list[Path]:
-    return sorted((tmp_path / "config" / "zgloszenia" / "kolejka").glob("*.json"))
+    return sorted(ToolDirectory(tmp_path).queue.glob("*.json"))
 
 
 def dad_note_issues(started: Centrum) -> list[FakeIssue]:
@@ -339,8 +339,8 @@ def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_ce
 
 def test_uwaga_ktorej_kolejka_nie_zapisala_jest_odmowa_bez_sladu_w_stanie_uwag(tmp_path: Path) -> None:
     started = centrum_with_key(tmp_path)
-    (tmp_path / "config" / "zgloszenia").mkdir()
-    (tmp_path / "config" / "zgloszenia" / "kolejka").write_text("plik zamiast folderu", encoding="utf-8")
+    ToolDirectory(tmp_path).queue.parent.mkdir()
+    ToolDirectory(tmp_path).queue.write_text("plik zamiast folderu", encoding="utf-8")
 
     response = started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY})
 

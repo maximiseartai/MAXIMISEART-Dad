@@ -4,7 +4,8 @@ Generatory skilla verify-rozliczenia (``create_fixture.py``, ``create_preparatio
 ``fill_readiness.py``, ``self_test.py``, ``run_excel_verification.py``, ``excel_doctor.py``) biorą stąd te same
 wartości wejścia. Okres, konfiguracja wykonawców, nazwy plików okresu i nagłówki Wzorców biorą z atrap plików taty, gdzie już są
 (``PERIOD``, ``SOURCE_NAME`` i ``WORKERS`` z ``tools/lib/atrapy/settlement.py``, ``INTERNAL_SETTLEMENT_NAME``,
-``COLLECTIVE_FILE_NAME`` i nagłówki z ``tools/lib/atrapy/preparation.py``).
+``COLLECTIVE_FILE_NAME`` i nagłówki z ``tools/lib/atrapy/preparation.py``), a nazwy Rejestru, Wzorców, folderu
+``config`` i plików okresu z kopii świata taty w ``tools/lib/atrapy/pliki_taty.py``.
 
 Tu stoją fakty wejścia i dwa oczekiwania, które wyrocznie obu skilli sprawdzają tak samo, napisane ręcznie, a nie
 wyliczone z ``ORDERS``: Ilości usług z Reguł ilości taty (``QUANTITIES``) i Wiersze danych Rozliczenia pracownika
@@ -18,21 +19,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from atrapy import pliki_taty
+from atrapy.pliki_taty import REGISTER_NAME as REGISTER_NAME
 from atrapy.settlement import PERIOD
 
-REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 PERIODS_DIRECTORY = "INEA"
-TEMPLATES_DIRECTORY = "config"
-INTERNAL_TEMPLATE_NAME = "Wzorzec rozliczenia wewnętrznego.xlsx"
-COLLECTIVE_TEMPLATE_NAME = "Wzorzec pliku zbiorczego.xlsx"
-WORKER_TEMPLATE_NAME = "Wzorzec rozliczenia pracownika.xlsx"
-WORKER_SETTLEMENTS_DIRECTORY = f"Rozliczenie pracowników {PERIOD}"
+TEMPLATES_DIRECTORY = pliki_taty.CONFIG_DIRECTORY
+INTERNAL_TEMPLATE_NAME = pliki_taty.INTERNAL_TEMPLATE_NAME
+COLLECTIVE_TEMPLATE_NAME = pliki_taty.COLLECTIVE_TEMPLATE_NAME
+WORKER_TEMPLATE_NAME = pliki_taty.WORKER_TEMPLATE_NAME
+WORKER_SETTLEMENTS_DIRECTORY = pliki_taty.worker_settlements_name(PERIOD)
 
 
 def worker_settlement_name(worker: str) -> str:
     """Nazwa Rozliczenia pracownika ``worker`` (nazwa z konfiguracji wykonawców) w okresie scenariusza."""
 
-    return f"Rozliczenie {PERIOD} - {worker}.xlsx"
+    return pliki_taty.worker_settlement_name(PERIOD, worker)
 
 
 # Przebieg rozliczeń na gotowym Pliku zbiorczym (create_fixture.py): Wiersze danych od 18, ilość w N = numer - 17.

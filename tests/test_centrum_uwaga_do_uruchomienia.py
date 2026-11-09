@@ -14,9 +14,10 @@ from rozliczenia import settlement_process
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Rejected, Unreachable
+from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.telemetry import MetricsStore
 
-from tests.fixtures.centrum import FakeReportBox, write_report_key
+from tests.fixtures.centrum import FakeReportBox, ToolDirectory, write_report_key
 from tests.fixtures.centrum_processes import SettlingCentrum, run_logs_handled, run_to_end, settling_centrum
 from tests.fixtures.potomne import wait_for
 from atrapy.settlement import PERIOD
@@ -35,7 +36,7 @@ def box(centrum: SettlingCentrum) -> FakeReportBox:
 
 def queued(centrum: SettlingCentrum, label: str | None = None) -> list[Path]:
     pattern = "*.json" if label is None else f"*-{label}-*.json"
-    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(pattern))
+    return sorted(centrum.tool.queue.glob(pattern))
 
 
 def run_line(centrum: SettlingCentrum, mode: str, result: str) -> str:
@@ -189,7 +190,7 @@ def test_okno_uwagi_pokazuje_szesc_najnowszych_uruchomien_z_centrum_i_starsze_za
     store = MetricsStore(centrum.metrics_path, settlement_process.PROCESS.counter_names)
     [record] = store.read()
     started = datetime.fromisoformat(record["started_at"])
-    remembered = tmp_path / "config" / "centrum-uruchomienia.jsonl"
+    remembered = ToolDirectory(tmp_path).config / CENTRUM_RUNS_FILE
 
     def earlier(minutes: int, centrum_line: dict[str, str] | None = None) -> None:
         at = (started - timedelta(minutes=minutes)).isoformat()

@@ -9,12 +9,13 @@ import sys
 import pytest
 
 from rozliczenia.centrum.atomic_file import StateFile, replace_atomically
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.log import CentrumLog
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.locked_file import lock_file
 
-NAME = "sprawy-taty.json"
+NAME = DAD_CASES_FILE
 PAUSES = (0.05, 0.1, 0.2, 0.4)
 WHERE = "stan Spraw taty"
 

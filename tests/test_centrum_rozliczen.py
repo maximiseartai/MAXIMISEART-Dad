@@ -16,6 +16,9 @@ from typing import Any, get_args
 from fastapi.testclient import TestClient
 import pytest
 
+from rozliczenia.settlement_period import parse_period_token
+from rozliczenia.period_folder import collective_file_name_with
+from rozliczenia.period_folder import PeriodFolder
 from rozliczenia import efenix_process
 from rozliczenia.centrum import app
 from rozliczenia.centrum.app import STATIC_DIRECTORY
@@ -293,19 +296,19 @@ def with_periods_directory(tmp_path: Path, *, today: date = date(2026, 10, 19)) 
 
 
 def write_period_files(periods: Path, token: str) -> Path:
-    period_folder = periods / token
-    period_folder.mkdir()
-    (period_folder / f"Rozliczenie wew. {token}.xlsx").touch()
-    (period_folder / f"Rozliczenie {token} - zbiorcze.xlsx").touch()
-    return period_folder
+    folder = PeriodFolder(periods, parse_period_token(token))
+    folder.directory.mkdir()
+    folder.internal_settlement.touch()
+    folder.collective_file.touch()
+    return folder.directory
 
 
 def write_worker_settlements(period_folder: Path, token: str, workers: Sequence[str]) -> Path:
-    worker_folder = period_folder / f"Rozliczenie pracowników {token}"
-    worker_folder.mkdir()
+    folder = PeriodFolder(period_folder.parent, parse_period_token(token))
+    folder.worker_settlements.mkdir()
     for worker in workers:
-        (worker_folder / f"Rozliczenie {token} - {worker}.xlsx").touch()
-    return worker_folder
+        folder.worker_settlement(worker).touch()
+    return folder.worker_settlements
 
 
 def board_rows(app: Centrum) -> list[dict[str, object]]:
@@ -451,8 +454,8 @@ def test_w_ukladzie_folderow_taty_pliki_okresu_otwieraja_sie_z_folderu_miesiaca(
 
     response = app.client.post("/api/periods/06_12_10_2026/open", json={"target": "collective_file"})
 
-    assert response.json() == {"name": "Rozliczenie 06_12_10_2026 - zbiorcze.xlsx"}
-    assert app.platform.opened == [period_folder / "Rozliczenie 06_12_10_2026 - zbiorcze.xlsx"]
+    assert response.json() == {"name": collective_file_name_with("06_12_10_2026")}
+    assert app.platform.opened == [period_folder / collective_file_name_with("06_12_10_2026")]
 
 
 @pytest.mark.parametrize("chosen_month", [None, "10_Październik_2026"], ids=["zalaczniki", "inea-pazdziernika"])

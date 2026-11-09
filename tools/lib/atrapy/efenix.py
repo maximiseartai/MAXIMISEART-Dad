@@ -19,16 +19,17 @@ from openpyxl import Workbook
 from openpyxl.styles import Border, Font, PatternFill, Protection, Side
 
 from atrapy.atrapa_efenix import AtrapaOrder
+from atrapy.pliki_taty import AMOUNT_COLUMN, COST_ROW, FIRST_DATA_ROW, HEADER_ROW
 from atrapy.settlement import COLLECTIVE_HEADERS, PERIOD, CellValue
+from atrapy.settlement import SOURCE_NAME as SOURCE_NAME
 from atrapy.workbooks import active_worksheet, add_external_link_fixture
 
-SOURCE_NAME = f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
 DAY = date(2026, 9, 9)
 ADDRESS = "UL. TESTOWA 12/3"
 """``ADRES`` zlecenia w Pliku zbiorczym, domyślny ``Order.address``."""
 EFENIX_ADDRESS = "Miasto-Dzielnica ul.Testowa 12 Lokal 3"
 """Dane adresowe tego samego zlecenia w Atrapie efenix, domyślny ``Order.efenix_address``."""
-FIRST_ROW = 18
+FIRST_ROW = FIRST_DATA_ROW
 """Wiersz danych pierwszego zlecenia ``write_collective_file``; każde następne stoi wiersz niżej."""
 _THIN = Side(style="thin")
 
@@ -92,10 +93,10 @@ def write_collective_file(
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
     for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
-        sheet.cell(17, column).value = header
-    sheet["AU17"] = "Kwota"
+        sheet.cell(HEADER_ROW, column).value = header
+    sheet.cell(HEADER_ROW, AMOUNT_COLUMN).value = "Kwota"
     for letter, changed in (headers or {}).items():
-        sheet[f"{letter}17"] = changed
+        sheet[f"{letter}{HEADER_ROW}"] = changed
     sheet.column_dimensions["B"].width = 31.5
     sheet.column_dimensions["F"].width = 12.25
     computed: dict[int, float] = {}
@@ -125,7 +126,7 @@ def write_collective_file(
     sheet_part = "xl/worksheets/sheet1.xml"
     if notes_sheet_first:
         notes = workbook.create_sheet("Notatki", 0)
-        for number in range(17, 18 + len(orders)):
+        for number in range(HEADER_ROW, FIRST_DATA_ROW + len(orders)):
             notes[f"B{number}"] = "notatka"
         workbook.active = 1
         sheet_part = "xl/worksheets/sheet2.xml"
@@ -159,10 +160,10 @@ def write_template_costs(path: Path, costs: Mapping[str, CellValue]) -> Path:
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
-    sheet["M14"] = "Koszt"
+    sheet[f"M{COST_ROW}"] = "Koszt"
     for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
-        sheet.cell(17, column).value = header
+        sheet.cell(HEADER_ROW, column).value = header
     for letter, value in costs.items():
-        sheet[f"{letter}14"] = value
+        sheet[f"{letter}{COST_ROW}"] = value
     workbook.save(path)
     return path

@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font
 import pytest
 
+from rozliczenia import tool_files
 from rozliczenia.domain import PhaseFailed, PhaseStarted, ProgressEvent, ProgressPhase
 from rozliczenia.intermax_replace import Waiting
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
@@ -621,7 +622,7 @@ def test_zepsuty_znacznik_w_wierszu_wczesniejszego_okresu_nie_zatrzymuje_przygot
 
 WZORCE = pytest.mark.parametrize(
     "template_name",
-    ["Wzorzec rozliczenia wewnętrznego.xlsx", "Wzorzec pliku zbiorczego.xlsx"],
+    [tool_files.INTERNAL_TEMPLATE.name, tool_files.COLLECTIVE_TEMPLATE.name],
 )
 
 
@@ -693,8 +694,8 @@ def test_damaged_wzorzec_stops_before_reading_rejestr(
 @pytest.mark.parametrize(
     ("template_name", "header_cell", "header", "sheet", "row"),
     [
-        ("Wzorzec rozliczenia wewnętrznego.xlsx", "G1", "NUMER ZL.", "Arkusz1", 1),
-        ("Wzorzec pliku zbiorczego.xlsx", "H17", "WYKONAWCA", "Sheet1", 17),
+        (tool_files.INTERNAL_TEMPLATE.name, "G1", "NUMER ZL.", "Arkusz1", 1),
+        (tool_files.COLLECTIVE_TEMPLATE.name, "H17", "WYKONAWCA", "Sheet1", 17),
     ],
 )
 @pytest.mark.parametrize("dry_run", [False, True])
@@ -746,9 +747,9 @@ def test_wzorzec_pliku_zbiorczego_with_wykonawca_outside_h_stops_before_reading_
 @pytest.mark.parametrize(
     ("template_name", "header_cell", "register_header", "header", "sheet", "row"),
     [
-        ("Wzorzec rozliczenia wewnętrznego.xlsx", "G1", "nr zlecenia", "NUMER ZL.", "Arkusz1", 1),
-        ("Wzorzec rozliczenia wewnętrznego.xlsx", "A1", "DATA GODZ. POCZ.", "DATA", "Arkusz1", 1),
-        ("Wzorzec pliku zbiorczego.xlsx", "F17", "nr zlecenia", "NUMER ZL.", "Sheet1", 17),
+        (tool_files.INTERNAL_TEMPLATE.name, "G1", "nr zlecenia", "NUMER ZL.", "Arkusz1", 1),
+        (tool_files.INTERNAL_TEMPLATE.name, "A1", "DATA GODZ. POCZ.", "DATA", "Arkusz1", 1),
+        (tool_files.COLLECTIVE_TEMPLATE.name, "F17", "nr zlecenia", "NUMER ZL.", "Sheet1", 17),
     ],
 )
 @pytest.mark.parametrize("dry_run", [False, True])
@@ -779,9 +780,9 @@ def test_wzorzec_with_rejestr_header_instead_of_its_own_stops(
 @pytest.mark.parametrize(
     ("template_name", "merged_range", "sheet"),
     [
-        ("Wzorzec rozliczenia wewnętrznego.xlsx", "C5:D5", "Arkusz1"),  # 4. zlecenie okresu
-        ("Wzorzec pliku zbiorczego.xlsx", "B19:C20", "Sheet1"),  # 2. i 3. Zlecenie skuteczne
-        ("Wzorzec pliku zbiorczego.xlsx", "U19:V19", "Sheet1"),  # Ilości usług 2. Zlecenia skutecznego
+        (tool_files.INTERNAL_TEMPLATE.name, "C5:D5", "Arkusz1"),  # 4. zlecenie okresu
+        (tool_files.COLLECTIVE_TEMPLATE.name, "B19:C20", "Sheet1"),  # 2. i 3. Zlecenie skuteczne
+        (tool_files.COLLECTIVE_TEMPLATE.name, "U19:V19", "Sheet1"),  # Ilości usług 2. Zlecenia skutecznego
     ],
 )
 @pytest.mark.parametrize("dry_run", [False, True])

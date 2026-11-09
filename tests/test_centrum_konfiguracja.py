@@ -11,6 +11,7 @@ from typing import Any, NoReturn
 import pytest
 from openpyxl import load_workbook
 
+from rozliczenia import tool_files
 from rozliczenia.centrum import tool_freshness
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
@@ -23,9 +24,9 @@ from tests.fixtures.centrum_processes import write_configuration
 from atrapy.workbooks import cut_sheet_after_data_rows
 from atrapy.settlement import write_template
 
-INTERNAL = "Wzorzec rozliczenia wewnętrznego.xlsx"
-COLLECTIVE = "Wzorzec pliku zbiorczego.xlsx"
-WORKER = "Wzorzec rozliczenia pracownika.xlsx"
+INTERNAL = tool_files.INTERNAL_TEMPLATE.name
+COLLECTIVE = tool_files.COLLECTIVE_TEMPLATE.name
+WORKER = tool_files.WORKER_TEMPLATE.name
 REPORT_TO_MAINTAINER = "Przekaż ten komunikat osobie utrzymującej narzędzie."
 # Wzorzec rozliczenia pracownika ma ten sam komunikat, którym zatrzymałby się Przebieg rozliczeń.
 WORKER_TEMPLATE_STOP = "Nie można użyć Wzorca rozliczenia pracownika."
