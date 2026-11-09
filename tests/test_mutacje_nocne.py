@@ -368,16 +368,14 @@ def test_krok_czesci_przechodzi_dokladnie_z_kodami_wyjscia_ktorych_zapis_niesie_
     ids=["nieznane-od", "nieznana-baza", "ta-sama-od-i-baza", "bez-commitu-sprzed-24-h", "zapis-bez-pliku-mutacji"],
 )
 def test_noc_bez_bazy_albo_z_zapisem_bez_pliku_mutacji_konczy_sie_fail_z_przyczyna(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], polecenie: list[str], przyczyna: str
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], polecenie: list[str], przyczyna: str
 ) -> None:
     # Historia ma same dzisiejsze commity, a GitHub nie ma udanego przebiegu nocy.
     repo, baza = _historia(tmp_path)
     wpis = {"linia": 1, "opis": "stała", "linie": [1], "klucz": _klucz("bez pliku")}
     zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [wpis])})
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
-    monkeypatch.setattr(mutacje_nocne, "GhApi", GitHubWPamieci)
 
-    kod = mutacje_nocne.main([argument.format(baza=baza, zapisy=zapisy) for argument in polecenie])
+    kod = mutacje_nocne.main([argument.format(baza=baza, zapisy=zapisy) for argument in polecenie], root=repo, github=GitHubWPamieci())
 
     assert (kod, capsys.readouterr().out.splitlines()[-1]) == (1, f"MUTACJE NOCNE FAIL | {przyczyna.format(wpis=wpis)}")
 
@@ -533,10 +531,9 @@ def test_reczna_noc_z_od_bez_wspolnego_przodka_z_head_konczy_sie_fail_z_przyczyn
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, shas = _repo_z_datami(tmp_path, monkeypatch)
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
-    kod = mutacje_nocne.main(["plan", "--od", shas["obcy"]])
+    kod = mutacje_nocne.main(["plan", "--od", shas["obcy"]], root=repo, github=GitHubWPamieci())
 
     assert (kod, capsys.readouterr().out.splitlines()[-1]) == (1, f"MUTACJE NOCNE FAIL | --od {shas['obcy']} nie ma wspólnego przodka z HEAD")
     assert not (tmp_path / "output").exists()
@@ -570,11 +567,9 @@ def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
         with (repo / "src" / "pakiet" / "a.py").open("a", encoding="utf-8") as plik:
             plik.write(dopisane)
         commit(repo, "zmiana")
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
-    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", na_czesc)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
-    kod = mutacje_nocne.main(["plan", "--od", baza])
+    kod = mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=na_czesc)
 
     wyjscie = capsys.readouterr().out.splitlines()
     assert kod == 0, wyjscie
@@ -611,11 +606,9 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
     for sciezka, funkcja in (("src/pakiet/a.py", "a"), ("src/pakiet/okno.py", "b")):
         (repo / sciezka).write_text(f"def {funkcja}(x: int) -> bool:\n    return x > 2\n", encoding="utf-8")
     commit(repo, "zmiana")
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
-    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
-    kod = mutacje_nocne.main(["plan", "--od", baza])
+    kod = mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=2)
 
     output = dict(linia.split("=", 1) for linia in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
     assert (kod, capsys.readouterr().out.splitlines()[-1].rpartition(" | ")[2]) == (0, "z Chromium 1")
@@ -625,17 +618,13 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
 FUNKCJA = "def a(x: int) -> bool:\n    return x > 1\n"
 
 
-def _main_z_zalegloscia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plikow: int) -> tuple[Path, str]:
+def _main_z_zalegloscia(tmp_path: Path, plikow: int) -> tuple[Path, str]:
     """``main`` z bazą nocy i plikami ``src/pakiet/m<k>.py``, w którym noc mutuje tylko commity PR-ów dopisujących funkcję
-    (``_dopisz``), z częściami po 2 mutacje i najwyżej 2 częściami na noc."""
+    (``_dopisz``); jego noce planują testy z częściami po 2 mutacje i najwyżej 2 częściami na noc."""
 
     repo = repository(tmp_path / "repo", {f"src/pakiet/m{numer}.py": FUNKCJA for numer in range(1, plikow + 1)})
     git(repo, "checkout", "--quiet", "-b", "main")
-    baza = commit(repo, "baza")
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
-    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
-    monkeypatch.setattr(mutacje_nocne, "CZESCI_NA_NOC", 2)
-    return repo, baza
+    return repo, commit(repo, "baza")
 
 
 def _dopisz(repo: Path, numer: int, *pliki: int) -> str:
@@ -648,14 +637,23 @@ def _dopisz(repo: Path, numer: int, *pliki: int) -> str:
 
 
 def _plan_nocy(
-    github: GitHubWPamieci, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], noc: int, od: str = ""
+    github: GitHubWPamieci,
+    repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    noc: int,
+    od: str = "",
+    *,
+    na_czesc: int = mutacje_nocne.NA_CZESC,
+    czesci_na_noc: int = mutacje_nocne.CZESCI_NA_NOC,
 ) -> dict[str, str]:
-    """``baza``, ``do``, ``liczba`` części i ``mutacje`` z planu nocy (z ``od`` ręcznego runu), ``linia`` planu oraz
+    """``baza``, ``do``, ``liczba`` części i ``mutacje`` z planu nocy ``repo`` (z ``od`` ręcznego runu), ``linia`` planu oraz
     ``zakres``, plik artefaktu ``zakres-nocy``."""
 
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / f"output-{noc}"))
     zakres = tmp_path / f"zakres-{noc}.json"
-    assert mutacje_nocne.zaplanuj(github, od, zakres) == 0
+    assert mutacje_nocne.zaplanuj(github, repo, od, zakres, na_czesc=na_czesc, czesci_na_noc=czesci_na_noc) == 0
     plan = capsys.readouterr().out.splitlines()[-1]
     output = dict(linia.split("=", 1) for linia in (tmp_path / f"output-{noc}").read_text(encoding="utf-8").splitlines())
     return {**output, "mutacje": plan.split(" | mutacje ")[1].split(" |")[0], "zakres": str(zakres), "linia": plan}
@@ -667,14 +665,14 @@ def test_noc_z_zalegloscia_mutuje_najwyzej_limit_a_kolejne_noce_przerabiaja_ja_d
     """Zaległość 5 PR-ów po 2 mutacje przy limicie nocy 4 (2 części po 2), a każdej nocy po pierwszej dochodzi PR.
     Noc 2 jest czerwona, więc noc 3 zaczyna od tej samej bazy z tym samym limitem, zamiast dostać jej pracę do swojej."""
 
-    repo, baza = _main_z_zalegloscia(tmp_path, monkeypatch, 8)
+    repo, baza = _main_z_zalegloscia(tmp_path, 8)
     pr = {numer: _dopisz(repo, numer) for numer in range(1, 6)}
     github = GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}])
     noce = []
     for noc, (nowy, udana) in enumerate([(None, True), (6, False), (7, True), (8, True), (None, True)], start=2):
         if nowy:
             pr[nowy] = _dopisz(repo, nowy)
-        noce.append(_plan_nocy(github, tmp_path, monkeypatch, capsys, noc))
+        noce.append(_plan_nocy(github, repo, tmp_path, monkeypatch, capsys, noc, na_czesc=2, czesci_na_noc=2))
         if udana:
             github.runy = [{"id": noc, "head_sha": git(repo, "rev-parse", "HEAD")}]
             github.zakresy[noc] = Path(noce[-1]["zakres"]).read_bytes()
@@ -693,11 +691,11 @@ def test_noc_z_zalegloscia_mutuje_najwyzej_limit_a_kolejne_noce_przerabiaja_ja_d
 def test_pierwszy_pr_z_wieksza_liczba_mutacji_niz_limit_nocy_dostaje_noc_w_calosci(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo, baza = _main_z_zalegloscia(tmp_path, monkeypatch, 3)
+    repo, baza = _main_z_zalegloscia(tmp_path, 3)
     duzy = _dopisz(repo, 1, 1, 2, 3)
     _dopisz(repo, 2)
 
-    plan = _plan_nocy(GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}]), tmp_path, monkeypatch, capsys, 2)
+    plan = _plan_nocy(GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}]), repo, tmp_path, monkeypatch, capsys, 2, na_czesc=2, czesci_na_noc=2)
 
     assert (plan["do"], plan["mutacje"], plan["liczba"]) == (duzy, "6", "3")
 
@@ -712,16 +710,13 @@ def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_za
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "src/pakiet/b.py": b})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
-    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 3)
-    monkeypatch.setattr(mutacje_nocne, "CZESCI_NA_NOC", 1)
     commity: list[str] = []
     for plik, stare, nowe in (("a", "x > 1", "x > 2"), ("b", "c = x > 1", "c = x > 2"), ("b", "d = y > 1", "d = y > 2")):
         sciezka = repo / "src" / "pakiet" / f"{plik}.py"
         sciezka.write_text(sciezka.read_text(encoding="utf-8").replace(stare, nowe), encoding="utf-8")
         commity.append(commit(repo, f"Zmień {plik} (#{len(commity) + 1})"))
 
-    plan = _plan_nocy(GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}]), tmp_path, monkeypatch, capsys, 2)
+    plan = _plan_nocy(GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}]), repo, tmp_path, monkeypatch, capsys, 2, na_czesc=3, czesci_na_noc=1)
 
     assert (plan["do"], plan["mutacje"]) == (commity[0], "2")
 
@@ -766,14 +761,12 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     copy_files(repo, with_imports(MUTACJE_ZMIANY))
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
-    monkeypatch.setattr(mutacje_nocne, "NA_CZESC", 2)
     for numer, plik in enumerate(("a", "b"), start=1):
         sciezka = repo / "src" / "rozliczenia" / f"{plik}.py"
         sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("x > 1", "x > 2"), encoding="utf-8")
         commit(repo, f"Zmień {plik} (#{numer})")
     github = GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}])
-    plan = _plan_nocy(github, tmp_path, monkeypatch, capsys, 2)
+    plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 2, na_czesc=2)
     zapisy = tmp_path / "zapisy"
 
     czesci = [_czesc(repo, plan, numer, zapisy) for numer in range(1, int(plan["liczba"]) + 1)]
@@ -794,7 +787,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     with (repo / "src" / "rozliczenia" / "a.py").open("a", encoding="utf-8") as kod_a:
         kod_a.write(NOWA_FUNKCJA)
     commit(repo, "Dopisz b (#3)")
-    nastepna = _plan_nocy(github, tmp_path, monkeypatch, capsys, 3)
+    nastepna = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 3, na_czesc=2)
     assert (nastepna["baza"], nastepna["mutacje"]) == (plan["do"], "2")
 
 
@@ -827,9 +820,8 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
     git(repo, "checkout", "--quiet", "main")
     (repo / "src" / "rozliczenia" / "a.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
     head = commit(repo, "Zmień a (#1)")
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
 
-    plan = _plan_nocy(GitHubWPamieci(), tmp_path, monkeypatch, capsys, 2, od=boczny)
+    plan = _plan_nocy(GitHubWPamieci(), repo, tmp_path, monkeypatch, capsys, 2, od=boczny)
     czesci = [_czesc(repo, plan, numer, tmp_path / "zapisy") for numer in range(1, int(plan["liczba"]) + 1)]
 
     assert (plan["mutacje"], [czesc.stdout.splitlines()[-1] for czesc in czesci]) == ("2", ["MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0"])
@@ -885,10 +877,10 @@ def test_plan_i_czesci_licza_te_same_mutacje(
     jak ``tools/mutacje_zmiany.py --baza --do --czesc``: części razem mutują dokładnie tyle mutacji, ile policzył plan,
     a żadna nie zostaje pusta. Limit nocy to 2 części po 2 mutacje, a PR dopisuje funkcję, czyli 2 mutacje."""
 
-    repo, baza = _main_z_zalegloscia(tmp_path, monkeypatch, 5)
+    repo, baza = _main_z_zalegloscia(tmp_path, 5)
     od = historia(repo, baza)
 
-    plan = _plan_nocy(GitHubWPamieci(), tmp_path, monkeypatch, capsys, 2, od=od)
+    plan = _plan_nocy(GitHubWPamieci(), repo, tmp_path, monkeypatch, capsys, 2, od=od, na_czesc=2, czesci_na_noc=2)
     noc = mutacje_zmiany.ZakresMutacji.od(plan["baza"], repo).do(plan["do"])
     czesci = [noc.czesc(czesc) for czesc in Czesc.calosc(int(plan["liczba"]))]
 
@@ -1322,13 +1314,11 @@ def test_czesc_podstawy_skilla_bez_pilnuje_ktorego_folder_sie_nie_zmienil_trafia
 
 
 def test_skrypt_skilla_ktory_padl_albo_ostrzegl_o_czasie_w_nocy_bez_commitow_czerwieni_przebieg_bo_nie_ma_pr_ktory_by_go_dostal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Skill bez pilnuje biegnie każdej nocy, także takiej, w której main nie dostał commitu od bazy.
     repo, _ = _historia_skilli(tmp_path)
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     github = GitHubWPamieci()
-    monkeypatch.setattr(mutacje_nocne, "GhApi", lambda: github)
     podstawa = ".agents/skills/verify-d/scripts/sprawdz_d.py"
     (repo / podstawa).parent.mkdir(parents=True)
     (repo / podstawa).write_text("", encoding="utf-8")
@@ -1340,7 +1330,7 @@ def test_skrypt_skilla_ktory_padl_albo_ostrzegl_o_czasie_w_nocy_bez_commitow_cze
     zapisy = _wykonania(tmp_path / "zapisy", {"mutacje-1": (plan.digest, {klucz: "fail"})}, {"mutacje-1": [(klucz, blisko)]})
     (tmp_path / "plan.json").write_text(plan.do_json(), encoding="utf-8")
 
-    kod = mutacje_nocne.main(["zglos", "--baza", baza, "--zapisy", str(zapisy), "--czesci", "0", "--run", RUN, "--plan-skilli", str(tmp_path / "plan.json")])
+    kod = mutacje_nocne.main(["zglos", "--baza", baza, "--zapisy", str(zapisy), "--czesci", "0", "--run", RUN, "--plan-skilli", str(tmp_path / "plan.json")], root=repo, github=github)
 
     wyjscie = capsys.readouterr().out.splitlines()
     assert kod == 1, wyjscie
@@ -1372,19 +1362,17 @@ def test_zadanie_skilli_bez_zapisu_tego_planu_albo_bez_wyniku_jednostki_czerwien
 
 @pytest.mark.parametrize("ze_skryptami", [False, True], ids=["mutacje-zmiany", "z-planem-skilli"])
 def test_zgloszenie_z_polecenia_workflow_zaklada_issue_i_konczy_sie_ok(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], ze_skryptami: bool
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], ze_skryptami: bool
 ) -> None:
     repo, baza = _historia_skilli(tmp_path)
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
     github = GitHubWPamieci()
-    monkeypatch.setattr(mutacje_nocne, "GhApi", lambda: github)
     zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [_przezyta("src/a.py:1 stała")])})
     _wykonania(zapisy, {"mutacje-1": (PLAN_SKILLI.digest, {SKRYPT_A: "fail"}), "mutacje-2": (PLAN_SKILLI.digest, {SKRYPT_A: "ok", SKRYPT_B: "ok"})})
     plan = tmp_path / "plan-skilli" / "plan.json"
     plan.parent.mkdir()
     plan.write_text(PLAN_SKILLI.do_json(), encoding="utf-8")
 
-    kod = mutacje_nocne.main(["zglos", "--baza", baza, "--zapisy", str(zapisy), "--czesci", "1", "--run", RUN, *(["--plan-skilli", str(plan)] if ze_skryptami else [])])
+    kod = mutacje_nocne.main(["zglos", "--baza", baza, "--zapisy", str(zapisy), "--czesci", "1", "--run", RUN, *(["--plan-skilli", str(plan)] if ze_skryptami else [])], root=repo, github=github)
 
     wyjscie = capsys.readouterr().out.splitlines()
     assert kod == 0, wyjscie
@@ -1394,16 +1382,14 @@ def test_zgloszenie_z_polecenia_workflow_zaklada_issue_i_konczy_sie_ok(
 
 @pytest.mark.parametrize("brak", ["polecenie", "--baza", "--zapisy", "--czesci", "--run"])
 def test_zgloszenie_bez_argumentu_z_planu_nocy_konczy_sie_bledem_uzycia(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], brak: str
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], brak: str
 ) -> None:
     repo, baza = _historia(tmp_path)
-    monkeypatch.setattr(mutacje_nocne, "ROOT", repo)
-    monkeypatch.setattr(mutacje_nocne, "GhApi", GitHubWPamieci)
     argumenty = {"--baza": baza, "--zapisy": str(_zapisy(tmp_path / "zapisy", {1: (OK, [])})), "--czesci": "1", "--run": RUN}
     polecenie = [] if brak == "polecenie" else ["zglos", *(czesc for nazwa, wartosc in argumenty.items() if nazwa != brak for czesc in (nazwa, wartosc))]
 
     with pytest.raises(SystemExit) as wyjscie:
-        mutacje_nocne.main(polecenie)
+        mutacje_nocne.main(polecenie, root=repo, github=GitHubWPamieci())
 
     assert wyjscie.value.code == 2
     assert capsys.readouterr().err.endswith(f"error: the following arguments are required: {brak}\n")
