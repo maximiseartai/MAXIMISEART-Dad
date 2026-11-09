@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 from . import preparation_files, settlement_files, settlement_messages, workbook_files
 from . import worker_config_messages
@@ -33,7 +34,6 @@ from .workbook_files import Problem, WorkbookError
 from .worker_config import WorkerConfigError, load_worker_mapping
 
 
-@dataclass(frozen=True)
 # Dawna nazwa Wzorca rozliczenia pracownika, zmieniona 18.10.2026 przed pierwszym Wydaniem (v0.1.0). Usuń ją razem z
 # ``_worker_template_unusable``, gdy Log Uruchomienia taty pokaże Przebieg rozliczeń, którego Sprawdzanie przeszło
 # Wzorzec pod obecną nazwą: podpowiedź pomaga tylko temu, komu Wzorca pod obecną nazwą brakuje (D3 rozplątania 7.11).
