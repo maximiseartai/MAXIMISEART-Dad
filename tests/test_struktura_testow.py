@@ -88,7 +88,7 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
 
     Ścieżkę czyta ze stałych napisów (``ROOT / "tools" / "lib"``, ``".../tools/ci"``, ``"C:\\repo\\tools"``), z nazw, które
     moduł przypisuje na swoim poziomie (``TOOLS = ROOT / "tools"`` albo ``TOOLS: Final = …``, potem ``TOOLS / "lib"``), i
-    z argumentów wywołań (``str(…)``).
+    z argumentów pozycyjnych wywołań (``str(…)``).
     Katalog ``scripts`` skilla i plik z ``tools/hooks`` przechodzą, bo conftest ich nie kładzie.
 
     Każda inna postać to tylko przegląd, m.in.: wstawka w napisie kodu podprocesu (ten proces nie ma conftest, więc jej
