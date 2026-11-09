@@ -1,6 +1,7 @@
 import type * as z from "zod"
 
 import type { ApiTiming } from "@/api/generated"
+import { type OperationData, operations } from "@/api/generated/operations.gen"
 import { zProblem, zViewTiming } from "@/api/generated/zod.gen"
 
 /** Odmowa albo awaria z komunikatem, który można pokazać tacie (bez treści błędu technicznego). */
@@ -17,6 +18,40 @@ export function failureMessage(failure: Error): string {
 }
 
 type Operation = ApiTiming["operation"]
+
+type Reply<O extends Operation> = z.output<(typeof operations)[O]["response"]>
+
+/** Parametry adresu, zapytanie i ciało operacji z jej `…Data`; operacja bez nich nie bierze drugiego argumentu. */
+type Request<O extends Operation> = Omit<OperationData[O], "url">
+
+type RequestArgument<O extends Operation> = object extends Request<O> ? [request?: Request<O>] : [request: Request<O>]
+
+/** Ciało zapytania którejkolwiek operacji kontraktu. */
+type Body = NonNullable<OperationData[keyof OperationData]["body"]>
+
+type RequestParts = {
+  path?: Record<string, string>
+  query?: Record<string, string | null | undefined>
+  body?: Body
+}
+
+/** Zapytanie z ciałem JSON (POST, PUT); bez `body` samo zapytanie bez treści. */
+export function jsonRequest(method: string, body?: Body): RequestInit {
+  return {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }
+}
+
+/** Adres operacji z kontraktu: `{parametr}` z `path`, a z `query` tylko wartości, które są. */
+function address(url: string, { path, query }: RequestParts): string {
+  const filled = url.replaceAll(/\{(\w+)\}/g, (_, name: string) => encodeURIComponent(path?.[name] ?? ""))
+  const given = Object.entries(query ?? {}).filter((entry): entry is [string, string] => entry[1] != null)
+  const search = new URLSearchParams(given).toString()
+
+  return search === "" ? filled : `${filled}?${search}`
+}
 
 /** Zakończone zapytanie API z czasami do pomiaru widoku (`performance.now()` w milisekundach). */
 type TimedRequest = ApiTiming & { started: number; ended: number }
@@ -49,8 +84,9 @@ function serverMs(response: Response): number | null {
 }
 
 /**
- * Droga do serwera każdego zapytania, którego odpowiedź trafia do UI: odpowiedź jest parsowana schematem
- * wygenerowanym z kontraktu. Odmowa serwera (`Problem`) staje się `CentrumError` z jego komunikatem.
+ * Droga do serwera każdego zapytania, którego odpowiedź trafia do UI: metoda, adres i schemat odpowiedzi
+ * operacji `operation` z tablicy wygenerowanej z kontraktu (`operations.gen.ts`), a `request` niesie jej
+ * parametry adresu, zapytanie i ciało. Odmowa serwera (`Problem`) staje się `CentrumError` z jego komunikatem.
  * Czas każdego zapytania trafia do pomiaru widoku pod nazwą `operation` z kontraktu, nie pod adresem.
  *
  * Poza `call` idą tylko dwa wyjątki z `@/api/centrum`: strumień Uruchomień (`watchRunEvents`, EventSource,
@@ -58,12 +94,11 @@ function serverMs(response: Response): number | null {
  * więc nie ma czego parsować, a wysyłka po pomiarze nie wlicza się do żadnego widoku). Trasy poza pomiarem
  * wymienia z powodem `OUTSIDE_TIMING` w `tests/test_centrum_rozliczen.py`.
  */
-export async function call<T>(
-  schema: z.ZodType<T>,
-  operation: Operation,
-  path: string,
-  init?: RequestInit
-): Promise<T> {
+export async function call<O extends Operation>(operation: O, ...[request]: RequestArgument<O>): Promise<Reply<O>> {
+  const { method, url } = operations[operation]
+  const schema: z.ZodType = operations[operation].response
+  const parts: RequestParts = request ?? {}
+  const init = method === "GET" ? undefined : jsonRequest(method, parts.body)
   let response: Response
   // `Headers` przyjmuje każdą postać nagłówków z `RequestInit`; rozpakowanie `...` gubi obiekt `Headers`.
   const headers = new Headers(init?.headers)
@@ -72,7 +107,7 @@ export async function call<T>(
   headers.set("Accept", "application/json")
 
   try {
-    response = await fetch(path, { ...init, headers })
+    response = await fetch(address(url, parts), { ...init, headers })
   } catch {
     throw new CentrumError(UNREACHABLE)
   }
@@ -104,5 +139,6 @@ export async function call<T>(
     throw new CentrumError(UNEXPECTED)
   }
 
-  return parsed.data
+  // SAFETY: `schema` to `operations[operation].response`, więc jego wynik ma typ odpowiedzi operacji `operation`.
+  return parsed.data as Reply<O>
 }

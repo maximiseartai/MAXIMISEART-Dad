@@ -7,8 +7,9 @@
 //    wywraca regułę. Granica: destrukturyzację (`const { parse } = JSON`), `JSON["parse"]`, `Reflect.get`,
 //    `Response.json()` i to, czy plik z NETWORK_FILES parsuje odpowiedź schematem, łapie tylko przegląd.
 // 4. Przeglądarka woła przez `call` (src/api/client.ts) dokładnie operacje pomiaru widoku (`ApiTiming.operation`
-//    kontraktu): każdą z nich i żadnej innej, a nazwa operacji to literał drugiego argumentu `call`. Granica: `call`
-//    pod inną nazwą (alias importu, `const f = call`) reguła pomija; to łapie tylko przegląd.
+//    kontraktu): każdą z nich i żadnej innej, a nazwa operacji to literał pierwszego argumentu `call`; metodę, adres
+//    i schemat odpowiedzi `call` bierze z wygenerowanej tablicy operacji. Granica: `call` pod inną nazwą (alias
+//    importu, `const f = call`) reguła pomija; to łapie tylko przegląd.
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import ts from "typescript"
@@ -98,13 +99,13 @@ function timedOperations(contract) {
   return new Set(contract.components.schemas.ApiTiming.properties.operation.enum)
 }
 
-// `call(schemat, "operacja", …)`: nazwa operacji albo `null`, gdy drugi argument nie jest literałem.
+// `call("operacja", …)`: nazwa operacji albo `null`, gdy pierwszy argument nie jest literałem.
 function calledOperation(node) {
   if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== "call") {
     return undefined
   }
 
-  const operation = node.arguments[1]
+  const operation = node.arguments[0]
 
   return operation !== undefined && ts.isStringLiteralLike(operation) ? operation.text : null
 }
@@ -295,7 +296,7 @@ const problems = [
       : [],
   ),
   ...operationCalls.flatMap(({ place, operation }) =>
-    operation === null ? [`\`call\` bez literału nazwy operacji w drugim argumencie: ${place}`] : [],
+    operation === null ? [`\`call\` bez literału nazwy operacji w pierwszym argumencie: ${place}`] : [],
   ),
 ]
 
