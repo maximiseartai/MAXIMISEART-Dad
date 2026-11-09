@@ -83,7 +83,7 @@ VARIABLES
     najnowsza,       \* najnowsza wersja komentarza Uruchomienia r, którą przyjęła kolejka (Wersje): ją ma w końcu
                      \* Skrzynka, bo kolejka zastępuje starszą (_superseded), a Skrzynka nie bierze starszej (_settle)
     \* Pamięć jednej pracy Centrum: znika ze zgaśnięciem i zamknięciem.
-    centrum,         \* "stoi" | "zamyka" (create_app: close, potem lifespan) | "wysyla" (lifespan: send) |
+    centrum,         \* "stoi" | "zamyka" (create_app: close, potem lifespan) | "wysyla" (po starcie: send) |
                      \* "dziala"
     wznowiona,       \* lifespan tej pracy Centrum wywołał już Outbox.resume
     kursor,          \* który dziennik z sorted(glob) czyta close
@@ -357,8 +357,9 @@ Wznow ==
     /\ UNCHANGED <<dysk, centrum, kursor, krokZamykania, rekord, oczekujace, doWyslania, krokWysylki, bieg, faza,
                    zlecenie, naglowekCzeka, wKolejce, liczniki, duchy, zdarzenia>>
 
-(* app.py lifespan po outbox.resume(): RunComments.send_left_behind bierze całe _pending pod blokadą                  *)
-(* (pending, self._pending = self._pending, []), przed pierwszym zapytaniem HTTP.                                   *)
+(* server.py serve po wpisie start (krok AFTER_START, który lifespan podał po outbox.resume()):                     *)
+(* RunComments.send_left_behind bierze całe _pending pod blokadą (pending, self._pending = self._pending, []),     *)
+(* przed pierwszym zapytaniem HTTP (_Server.startup woła go, zanim pętla zdarzeń przyjmie zapytanie).            *)
 WysylkaStartu ==
     /\ centrum = "zamyka" /\ kursor > Wyceny
     /\ wznowiona
@@ -404,7 +405,7 @@ UsunPoWysylce ==
 (* Tata uruchamia Wycenę w efenix: RunHost.start -> RunComments.run_started -> LogsOnDisk.started ->               *)
 (* Journal._run_started (start w pamięci,                                                                           *)
 (* _header), zanim ruszy wątek; pierwsza linia idzie na dysk w tym samym wywołaniu (ZapiszStart). Zapytanie startu   *)
-(* przychodzi po lifespan, a więc po wysyłce wersji zastępczych.                                                   *)
+(* przychodzi po starcie serwera, a więc po wysyłce wersji zastępczych.                                            *)
 StartWyceny ==
     /\ centrum = "dziala" /\ bieg = 0 /\ nastepny <= Wyceny
     /\ bieg' = nastepny /\ nastepny' = nastepny + 1 /\ faza' = "start" /\ zlecenie' = 1 /\ naglowekCzeka' = TRUE
@@ -641,7 +642,7 @@ Zgasniecie ==
                    inneZnaki, bezStrazy, przedWznowieniem, wyparty>>
 
 (* Tata zamyka Centrum („Zamknij Centrum rozliczeń”): Shutdown przyjmuje je tylko, gdy żadne Uruchomienie nie trwa  *)
-(* (runs.shutdown_refusal), a samo zapytanie przyszło po lifespan.                                                *)
+(* (runs.shutdown_refusal), a samo zapytanie przyszło po starcie serwera.                                         *)
 Zamkniecie ==
     /\ centrum = "dziala" /\ bieg = 0
     /\ centrum' = "stoi"

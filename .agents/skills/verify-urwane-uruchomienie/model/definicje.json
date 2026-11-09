@@ -28,7 +28,7 @@
     "RunComments._step": "642d6f0503f516a5",
     "RunComments._keep": "f103fc7564914779",
     "RunComments.close_left_behind": "e2478851c6d9d2c8",
-    "RunComments.send_left_behind": "25f80fb57236d9dc",
+    "RunComments.send_left_behind": "c525813f4ae4f058",
     "RecordMaker.interrupted": "de53a5143d62971d"
   },
   "src/rozliczenia/centrum/logs_disk.py": {
@@ -51,7 +51,7 @@
     "name_of": "d7dce93561713660"
   },
   "src/rozliczenia/centrum/app.py": {
-    "create_app.lifespan": "ad0390132bef9a41",
+    "create_app.lifespan": "38bbdc7aefce4c9c",
     "create_app.app": "e785cecd149b3fec",
     "create_app.disk": "07384769816122dd",
     "create_app.comments": "f11aeb98dc5cead7",
@@ -79,6 +79,12 @@
   "src/rozliczenia/centrum/launcher.py": {
     "_start": "b14a179937a29521",
     "_listen_when_released": "70f8e77fe38bca44"
+  },
+  "src/rozliczenia/centrum/server.py": {
+    "AFTER_START": "c0a7e2b361f39be2",
+    "after_start": "057b04ef0807809f",
+    "serve": "270772876700de0c",
+    "_Server": "8ceb23258608b3c4"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
     "replace_atomically": "9e12247e22fdd059"
