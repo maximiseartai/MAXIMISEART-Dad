@@ -489,7 +489,7 @@ def _ui_text(text: str) -> re.Pattern[str]:
     Formy, które test uznaje za napis (zawsze w podwójnym cudzysłowie i cały): tekst dziecka elementu JSX
     (``<Button>…Kontynuuj</Button>``, także po ikonie ``{…}`` i złamany w linii), prop ``label="…"`` albo
     ``label={"…"}`` (nie ``aria-label``), właściwość ``label: "…"`` obiektu napisów i druga gałąź warunku stojącego jako
-    dziecko JSX, czyli zaraz po ``>`` albo ``}`` (``{checking ? "Sprawdzam…" : "Diagnoza"}``; w warunku wolno ``?.`` i
+    dziecko JSX, czyli zaraz po ``>`` (nie ``=>``) albo ``}`` (``{checking ? "Sprawdzam…" : "Diagnoza"}``; w warunku wolno ``?.`` i
     ``??``).
     Każda inna postać nie jest napisem, więc przycisk z napisem tylko w niej czerwieni test: pierwsza gałąź warunku,
     warunek zagnieżdżony, warunek w atrybucie albo funkcji pomocniczej, pojedynczy cudzysłów, szablon z ``${…}``, napis
@@ -505,7 +505,7 @@ def _ui_text(text: str) -> re.Pattern[str]:
         rf"[>}}]\s*{words}\s*[<{{]",
         rf"(?<![\w-])label=\{{?{literal}\}}?",
         rf"(?<![\w-])label:\s*{literal}",
-        rf"[>}}]\s*\{{{condition}\?{condition}:\s*{literal}\s*\}}",
+        rf"(?<!=)[>}}]\s*\{{{condition}\?{condition}:\s*{literal}\s*\}}",
     )
     return re.compile("|".join(forms))
 
