@@ -1,0 +1,35 @@
+{
+  "src/rozliczenia/intermax_replace.py": {
+    "cały plik": "93930efed77672e2"
+  },
+  "src/rozliczenia/intermax_ordering.py": {
+    "order_register": "fa46fe38e00302f6",
+    "OrderingInputs": "7ac3ca06a826174f",
+    "_stops_unusable": "7397a36c0f4e5e99"
+  },
+  "src/rozliczenia/intermax_restore.py": {
+    "restore": "f9554b08fd8a2a3d"
+  },
+  "src/rozliczenia/intermax_copies.py": {
+    "cały plik": "27addf93269475c2"
+  },
+  "src/rozliczenia/register_file.py": {
+    "read": "d629a1debf6308ef",
+    "RegisterFile": "d1b97755195581e4"
+  },
+  "src/rozliczenia/dad_files.py": {
+    "DadFiles.read": "cb459940915004bd"
+  },
+  "src/rozliczenia/workbook_save.py": {
+    "write_atomically": "7c4a69cada0c1787"
+  },
+  "src/rozliczenia/workbook_files.py": {
+    "workbook_content": "f0d5aac3aa904193",
+    "ensure_available": "693396f5774aa459",
+    "is_open_in_excel": "c7c3a02ce0376fb6",
+    "excel_lock_file": "8b99b688550753a1",
+    "_status": "c7dd88e1f93646c5",
+    "file_bytes": "74b76f71ea2cab19",
+    "unreadable_as_error": "21475619b90b4105"
+  }
+}
