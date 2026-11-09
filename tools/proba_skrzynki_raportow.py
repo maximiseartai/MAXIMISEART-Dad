@@ -15,10 +15,10 @@ Po kolei:
    drugim odczycie, to mail ze zmienionymi flagami.
 
 Skrzynki nie zmienia: port otwiera folder przez ``EXAMINE`` i pobiera tematy, treści i flagi przez ``BODY.PEEK`` i
-``FETCH (FLAGS)``, bez ``SELECT`` i ``STORE``. Mail, który przyszedł w trakcie próby, porównanie pomija, bo nie ma go
-w pierwszym odczycie.
+``FETCH (FLAGS)``, bez ``SELECT`` i ``STORE``.
 
-Wynik (stdout) to same liczby, bez treści maili, tematów, adresów, loginów i numerów zleceń:
+Wynik (stdout) to same liczby, bez treści maili, tematów, adresów, loginów i numerów zleceń, i same znaki ASCII (polskie
+słowa bez polskich liter), bo konsola Windows przy przekierowaniu wyjścia koduje w cp1252, który nie ma ``ł`` ani ``ż``:
 
     SKRZYNKA | folder_wszystkich=<n> | odebrane=<n> | poza_odebranymi=<n>
     MAILE | przeczytane=<n> | pominiete=<n> | raporty=<n> | wpisy=<n> | polskie_znaki=<n> | zepsute_znaki=<n>
@@ -100,19 +100,19 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date) -> list[str]
 
     match inbox.access():
         case "missing":
-            raise ProbeFailed(f"brak pliku dostępu config/{INBOX_ACCESS_FILE} albo jego adresu lub hasła")
+            raise ProbeFailed(f"brak pliku dostepu config/{INBOX_ACCESS_FILE} albo jego adresu lub hasla")
         case "unreadable":
-            raise ProbeFailed(f"nieczytelny plik dostępu config/{INBOX_ACCESS_FILE}")
+            raise ProbeFailed(f"nieczytelny plik dostepu config/{INBOX_ACCESS_FILE}")
         case "ready":
             pass
     try:
         workers = load_worker_mapping(config / tool_files.WORKER_CONFIG.name)
     except WorkerConfigError as error:
-        raise ProbeFailed(f"Konfiguracja wykonawców: {_problem(error.reason)}") from None
+        raise ProbeFailed(f"Konfiguracja wykonawcow: {_problem(error.reason)}") from None
     try:
         addresses = load_addresses(config / WORKER_ADDRESSES_FILE, workers=workers)
     except AddressesError as error:
-        raise ProbeFailed(f"plik adresów Wykonawców: {_problem(error.problem)}") from None
+        raise ProbeFailed(f"plik adresow Wykonawcow: {_problem(error.problem)}") from None
 
     before = _survey(inbox, since, "pierwszym odczycie flag")
     read = inbox.mails_since(since)
@@ -133,7 +133,7 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date) -> list[str]
         f"FLAGI | sprawdzone={len(before.flags)} | zmienione={changed}",
     ]
     reasons = [
-        *([f"żaden mail z Raportem od {since.isoformat()}, podaj wcześniejsze --od"] if not mails else []),
+        *([f"zaden mail z Raportem od {since.isoformat()}, podaj wczesniejsze --od"] if not mails else []),
         *([f"zepsute polskie znaki w {broken} mailach"] if (broken := _count(mails, _BROKEN)) else []),
         *([f"flagi zmienione w {changed} mailach"] if changed else []),
     ]
@@ -151,9 +151,9 @@ def _survey(inbox: ImapInbox, since: date, when: str) -> InboxSurvey:
 def _unreachable(found: PasswordRejected | InboxUnreachable, when: str) -> str:
     match found:
         case PasswordRejected():
-            return f"Gmail odrzucił hasło aplikacji przy {when}"
+            return f"Gmail odrzucil haslo aplikacji przy {when}"
         case InboxUnreachable(cause):
-            return f"skrzynka niedostępna przy {when}: {cause}"
+            return f"skrzynka niedostepna przy {when}: {cause}"
 
 
 def _problem(problem: object) -> str:

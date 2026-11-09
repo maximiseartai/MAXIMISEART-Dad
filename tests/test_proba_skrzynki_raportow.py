@@ -105,6 +105,7 @@ def proba(capsys: pytest.CaptureFixture[str], folder: Path, connect: Callable[[]
     code = proba_skrzynki_raportow.main(["--config", str(folder), "--od", "2026-11-01"], connect=connect)
     out, err = capsys.readouterr()
     assert not err
+    assert out.isascii()
     for tresc in TRESCI:
         assert tresc not in out
     return code, out.splitlines()
@@ -146,7 +147,7 @@ def test_proba_bez_maili_z_raportem_nie_przechodzi(tmp_path: Path, capsys: pytes
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(4, temat="Faktura")]) as atrapa:
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
-    assert lines[-1] == "PROBA IMAP FAIL | żaden mail z Raportem od 2026-11-01, podaj wcześniejsze --od"
+    assert lines[-1] == "PROBA IMAP FAIL | zaden mail z Raportem od 2026-11-01, podaj wczesniejsze --od"
     assert code == 1
 
 
@@ -176,8 +177,8 @@ def test_proba_z_odrzuconym_haslem_albo_bez_sieci_konczy_sie_linia_fail_z_powode
 
     bez_sieci = proba(capsys, folder, lokalnie(port))
 
-    assert odrzucone == (1, ["PROBA IMAP FAIL | Gmail odrzucił hasło aplikacji przy pierwszym odczycie flag"])
-    assert bez_sieci == (1, ["PROBA IMAP FAIL | skrzynka niedostępna przy pierwszym odczycie flag: ConnectionRefusedError"])
+    assert odrzucone == (1, ["PROBA IMAP FAIL | Gmail odrzucil haslo aplikacji przy pierwszym odczycie flag"])
+    assert bez_sieci == (1, ["PROBA IMAP FAIL | skrzynka niedostepna przy pierwszym odczycie flag: ConnectionRefusedError"])
     assert "LOGIN" in atrapa.commands
     assert "abcd efgh ijkl mnop" not in "".join(atrapa.commands)
 
@@ -186,5 +187,5 @@ def test_proba_bez_pliku_adresow_nie_laczy_sie_ze_skrzynka(tmp_path: Path, capsy
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=skrzynka_z_raportami()) as atrapa:
         code, lines = proba(capsys, config(tmp_path, adresy=False), lokalnie(atrapa.port))
 
-    assert (code, lines) == (1, ["PROBA IMAP FAIL | plik adresów Wykonawców: missing"])
+    assert (code, lines) == (1, ["PROBA IMAP FAIL | plik adresow Wykonawcow: missing"])
     assert atrapa.commands == []
