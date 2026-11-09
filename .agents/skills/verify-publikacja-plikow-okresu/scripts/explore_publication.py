@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from rozliczenia import preparation_files, staged_publication
+from rozliczenia.file_state import path_state, path_taken
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.template_file import TemplateFile
@@ -427,7 +428,7 @@ def intercepted(disk: VirtualDisk, scheduler: Scheduler) -> Iterator[None]:
         entry = disk.entry(path)
         return entry is not None and not entry.is_dir
 
-    # Path.exists/is_symlink/rename/unlink/mkdir reach these on Python 3.11 to 3.14, on Windows and elsewhere.
+    # Path.exists/rename/unlink/mkdir and file_state reach these on Python 3.11 to 3.14, on Windows and elsewhere.
     patch(os, "stat", read_call("os.stat", os.stat, disk.stat))
     patch(os, "lstat", read_call("os.lstat", os.lstat, disk.stat))
     patch(os.path, "exists", read_call("os.path.exists", os.path.exists, exists))
@@ -506,7 +507,8 @@ def period_disk(disk: VirtualDisk, scheduler: Scheduler) -> preparation_files.Di
 
 
 def probe_interception() -> list[str]:
-    """Problems if the pathlib calls used by preparation_files.py bypass the in-memory disk on this Python."""
+    """Problems if the filesystem calls used by preparation_files.py and staged_publication.py bypass the in-memory disk
+    on this Python."""
 
     layout = make_layout()
     disk = VirtualDisk(layout.disk_root, short_names(0))
@@ -557,9 +559,11 @@ def probe_interception() -> list[str]:
     with intercepted(disk, scheduler):
         native_copy_is_a_gap()
         expect("Path.exists dla brakującego folderu", lambda: not folder.exists())
+        expect("path_taken dla brakującego folderu", lambda: not path_taken(folder))
         expect("Path.mkdir", make_folder)
         expect("Path.exists dla istniejącego folderu", folder.exists)
-        expect("Path.is_symlink", lambda: not folder.is_symlink())
+        expect("path_taken dla istniejącego folderu", lambda: path_taken(folder))
+        expect("path_state dla istniejącego folderu", lambda: path_state(folder) == "folder")
         expect("Path.rename", rename_folder)
         expect("os.rename", rename_file)
         expect("Path.unlink", unlink_file)

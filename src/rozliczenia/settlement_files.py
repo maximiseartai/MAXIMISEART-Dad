@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from . import settlement_messages, staged_publication
+from .file_state import path_taken
 from .message import StopError
 
 ResultT = TypeVar("ResultT")
@@ -20,10 +21,14 @@ __all__ = ["ensure_worker_settlements_absent", "write_worker_settlements"]
 
 
 def ensure_worker_settlements_absent(target_directory: Path) -> None:
-    """Nienadpisywanie: zatrzymuje Przebieg rozliczeń, jeśli Folder rozliczeń pracowników już istnieje."""
+    """Nienadpisywanie: zatrzymuje Przebieg rozliczeń, jeśli Folder rozliczeń pracowników już istnieje albo nie da się
+    tego sprawdzić."""
 
-    if target_directory.exists() or target_directory.is_symlink():
-        raise StopError(settlement_messages.worker_settlements_exist(target_directory))
+    try:
+        if path_taken(target_directory):
+            raise StopError(settlement_messages.worker_settlements_exist(target_directory))
+    except OSError as exc:
+        raise StopError(settlement_messages.write_failed(target_directory)) from exc
 
 
 def write_worker_settlements(target_directory: Path, write: Callable[[Path], ResultT]) -> ResultT:

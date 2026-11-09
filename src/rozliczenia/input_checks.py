@@ -24,7 +24,7 @@ from .period_folder import (
     PeriodFolderError,
     PeriodFolderInaccessible,
     PeriodFolderLookupError,
-    locate_period_folder,
+    scan_period_folders,
 )
 from .preparation_files import PeriodFiles
 from .run_context import TemplateCheck
@@ -122,8 +122,6 @@ def check_preparation(
         workbook_files.ensure_available(register)
     internal = ProcessTemplate.internal(internal_template).checked(template_check)
     collective = ProcessTemplate.collective(collective_template).checked(template_check)
-    if not periods_directory.is_dir():
-        raise StopError(messages.periods_directory_missing(periods_directory))
     files = PeriodFiles(internal, collective, _locate_period_folder(periods_directory, settlement_period))
     preparation_files.ensure_period_files_absent(files)
     return files, _worker_mapping(config)
@@ -178,7 +176,10 @@ def _parse_period(token: str) -> SettlementPeriod:
 
 def _locate_period_folder(periods_directory: Path, period: SettlementPeriod) -> PeriodFolder:
     try:
-        return locate_period_folder(periods_directory, period)
+        folders = scan_period_folders(periods_directory)
+        if folders.periods_directory_missing:
+            raise StopError(messages.periods_directory_missing(periods_directory))
+        return folders.locate(period)
     except PeriodFolderLookupError as error:
         raise StopError(messages.period_folder_lookup_problem(error)) from error
     except PeriodFolderInaccessible as error:

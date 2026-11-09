@@ -14,7 +14,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
-__all__ = ["FileState", "PathState", "file_state", "folder_entries", "path_state", "remove_file"]
+__all__ = ["FileState", "PathState", "file_state", "folder_entries", "path_state", "path_taken", "remove_file"]
 
 PathState = Literal["file", "folder", "missing", "inaccessible"]
 FileState = Literal["file", "missing", "inaccessible"]
@@ -41,6 +41,17 @@ def file_state(path: Path) -> FileState:
 
     state = path_state(path)
     return "missing" if state == "folder" else state
+
+
+def path_taken(path: Path) -> bool:
+    """Czy na miejscu ``path`` coś jest, także skrót do pliku, którego nie ma; ``OSError``, gdy nie da się tego
+    sprawdzić (miejsce niedostępne nie jest wolne)."""
+
+    try:
+        os.lstat(path)
+    except _ABSENT:
+        return False
+    return True
 
 
 def folder_entries(directory: Path) -> list[os.DirEntry[str]] | None:
