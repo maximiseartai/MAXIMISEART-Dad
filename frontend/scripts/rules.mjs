@@ -286,15 +286,17 @@ const problems = [
   ...comparisons.map((place) => `Porównanie nazwy procesu w przeglądarce: ${place}`),
   ...network.map(({ place, kind }) => `Sieć albo JSON.parse poza NETWORK_FILES: ${place}. ${REPAIRS[kind]}`),
   ...staleNetworkFiles.map((key) => `Wyjątek ${key} w NETWORK_FILES jest zbędny: plik nie łączy się z serwerem.`),
-  ...[...timed]
-    .filter((operation) => !called.has(operation))
-    .map((operation) => `Operacji ${operation} z ApiTiming.operation przeglądarka nie woła przez \`call\`.`),
-  ...operationCalls
-    .filter(({ operation }) => operation !== null && !timed.has(operation))
-    .map(({ place, operation }) => `\`call\` z operacją ${operation} spoza ApiTiming.operation: ${place}`),
-  ...operationCalls
-    .filter(({ operation }) => operation === null)
-    .map(({ place }) => `\`call\` bez literału nazwy operacji w drugim argumencie: ${place}`),
+  ...[...timed].flatMap((operation) =>
+    called.has(operation) ? [] : [`Operacji ${operation} z ApiTiming.operation przeglądarka nie woła przez \`call\`.`],
+  ),
+  ...operationCalls.flatMap(({ place, operation }) =>
+    operation !== null && !timed.has(operation)
+      ? [`\`call\` z operacją ${operation} spoza ApiTiming.operation: ${place}`]
+      : [],
+  ),
+  ...operationCalls.flatMap(({ place, operation }) =>
+    operation === null ? [`\`call\` bez literału nazwy operacji w drugim argumencie: ${place}`] : [],
+  ),
 ]
 
 for (const problem of problems) {
