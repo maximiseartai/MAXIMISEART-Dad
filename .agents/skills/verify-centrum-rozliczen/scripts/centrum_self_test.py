@@ -53,6 +53,8 @@ REQUIRED_FEATURE_HEADINGS = (
     "## Gotchas",
 )
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+# How long a read of Centrum's clock may take in the self-test before it counts as one that never answers.
+CLOCK_ANSWER_S = 5.0
 # Deleting, moving or replacing a file or folder fails on Windows while another process holds it open (WinError 32,
 # #921), so the drive does it only through the retrying helpers of ``drive/common.py`` (``DRIVE_HELPERS``). The forms
 # the guard ``_removals`` catches and its boundary are the tables of its docstring and of features/README.md.
@@ -656,7 +658,9 @@ def _check_clock_moved_whole(errors: list[str]) -> None:
 
 def _check_clock_without_move(errors: list[str]) -> None:
     """Centrum's clock without a move of the drive stands still at once, as only a refusal is tried again
-    (``_read_put_in_place``), and a refusal that outlasts ``READ_RETRY_S`` fails the clock instead of moving it by 0."""
+    (``_read_put_in_place``), and a refusal that outlasts the clock's limit fails the clock instead of moving it by 0.
+    Each read gets ``CLOCK_ANSWER_S``, so a clock that tries again without end fails this check, not the whole
+    self-test at the step's time limit (review of #1169)."""
 
     import contextlib
     import io
@@ -664,40 +668,39 @@ def _check_clock_without_move(errors: list[str]) -> None:
     import threading
     import time
 
-    import serve_centrum
     from drive.common import unreadable
+    from serve_centrum import ScriptedClock
 
-    # The clock's wake-up thread reads the same move every 0.2 s and may die on the refusal for good: its traceback
-    # and its zegar/budzik-padl.txt are none of this check's business.
-    hook = threading.excepthook
-    threading.excepthook = lambda failure: None
-    limit = serve_centrum.READ_RETRY_S
-    try:
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
-            root = Path(scratch) / "run"
-            (root / "zegar").mkdir(parents=True)
-            clock = serve_centrum.ScriptedClock(root)
-            started = time.monotonic()
+    def read(clock: ScriptedClock) -> object:
+        answer: list[object] = []
+
+        def call() -> None:
             try:
-                moved: object = clock() - time.monotonic()
+                answer.append(clock() - time.monotonic())
             except OSError as failure:
-                moved = failure
-            if not (isinstance(moved, float) and abs(moved) < 1 and time.monotonic() - started < 1):
-                errors.append(f"Centrum's clock without a move of the drive does not stand still at once: {moved!r}")
+                answer.append(failure)
 
-            move = root / "zegar" / "przesuniecie-min.txt"
-            move.write_text("5", encoding="utf-8")
-            serve_centrum.READ_RETRY_S = 0.2  # a refusal for good, without waiting the whole limit
-            with contextlib.redirect_stdout(io.StringIO()), unreadable(move):
-                try:
-                    refused: object = clock() - time.monotonic()
-                except PermissionError as failure:
-                    refused = failure
-            if not isinstance(refused, PermissionError):
-                errors.append(f"Centrum's clock goes on past a refused read of a move that outlasts its limit: {refused!r}")
-    finally:
-        serve_centrum.READ_RETRY_S = limit
-        threading.excepthook = hook
+        reader = threading.Thread(target=call, daemon=True)
+        reader.start()
+        reader.join(CLOCK_ANSWER_S)
+        return answer[0] if answer else f"no answer within {CLOCK_ANSWER_S} s"
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
+        root = Path(scratch) / "run"
+        (root / "zegar").mkdir(parents=True)
+        # A refusal for good, without waiting the whole limit; no wake-up thread, which would read the same move.
+        clock = ScriptedClock(root, retry_s=0.2, alarm=False)
+        started = time.monotonic()
+        moved = read(clock)
+        if not (isinstance(moved, float) and abs(moved) < 1 and time.monotonic() - started < 1):
+            errors.append(f"Centrum's clock without a move of the drive does not stand still at once: {moved!r}")
+
+        move = root / "zegar" / "przesuniecie-min.txt"
+        move.write_text("5", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()), unreadable(move):
+            refused = read(clock)
+        if not isinstance(refused, PermissionError):
+            errors.append(f"Centrum's clock goes on past a refused read of a move that outlasts its limit: {refused!r}")
 
 
 def _check_box_reads_while_put_in_place(errors: list[str]) -> None:

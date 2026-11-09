@@ -196,11 +196,11 @@ EFENIX_SEARCH_DELAY_S = 1.0
 READ_RETRY_S = 10.0
 
 
-def _read_put_in_place(path: Path) -> str:
+def _read_put_in_place(path: Path, retry_s: float = READ_RETRY_S) -> str:
     """``path`` once the drive has put it in place whole (``put_text`` of ``drive/common.py``): Windows refuses a read
-    for that moment (#1087), so a refused read is tried again for at most ``READ_RETRY_S``, then the refusal is raised."""
+    for that moment (#1087), so a refused read is tried again for at most ``retry_s``, then the refusal is raised."""
 
-    deadline = time.monotonic() + READ_RETRY_S
+    deadline = time.monotonic() + retry_s
     while True:
         try:
             return path.read_text(encoding="utf-8")
@@ -475,12 +475,17 @@ def _scripted_github(root: Path, clone: Path) -> ToolFreshness:
 class ScriptedClock:
     """Centrum's clock: monotonic time moved forward by ``<root>/zegar/przesuniecie-min.txt`` (see the module doc)."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, retry_s: float = READ_RETRY_S, alarm: bool = True) -> None:
+        """``retry_s`` limits a refused read of the move (``_read_put_in_place``); without ``alarm`` no wake-up thread
+        fires what ``after`` schedules, as the self-test needs for a clock it only reads."""
+
         self._moved = root / "zegar" / "przesuniecie-min.txt"
         self._died = root / "zegar" / "budzik-padl.txt"
+        self._retry_s = retry_s
         self._lock = threading.Lock()
         self._wakes: list[tuple[float, Callable[[], None]]] = []
-        threading.Thread(target=self._fire_due, name="zegar-budzik", daemon=True).start()
+        if alarm:
+            threading.Thread(target=self._fire_due, name="zegar-budzik", daemon=True).start()
 
     def __call__(self) -> float:
         return time.monotonic() + self._moved_s()
@@ -489,7 +494,7 @@ class ScriptedClock:
         """The move in seconds, which the drive puts in place whole (``_read_put_in_place``)."""
 
         try:
-            return float(_read_put_in_place(self._moved)) * 60
+            return float(_read_put_in_place(self._moved, self._retry_s)) * 60
         except FileNotFoundError:
             return 0.0
 
