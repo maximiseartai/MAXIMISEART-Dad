@@ -1028,6 +1028,27 @@ def test_tablica_okresow_z_folderem_okresow_w_folderze_bez_dostepu_jest_nieczyte
     assert (response.status_code, response.json()) == (500, unreadable_folder("INEA"))
 
 
+@NO_ACCESS_ON_WINDOWS
+def test_tablica_okresow_bez_folderu_okresow_mowi_o_braku_choc_folder_innego_miesiaca_jest_bez_dostepu(
+    tmp_path: Path,
+) -> None:
+    year = tmp_path / "Załączniki" / "Rozliczenia 2026"
+    (year / "10_Październik_2026" / "INEA").mkdir(parents=True)
+    periods = year / "11_Listopad_2026" / "INEA"
+    periods.mkdir(parents=True)
+    app = centrum(tmp_path)
+    app.platform.chosen_folders.append(periods)
+    app.client.post("/api/settings/periods-directory/choose")
+    periods.rmdir()
+
+    with without_access(year / "10_Październik_2026"):
+        board = app.client.get("/api/periods")
+        settings = app.client.get("/api/settings")
+
+    assert (board.status_code, board.json()) == (200, {"state": "missing", "name": "INEA"})
+    assert settings.json()["periods_directory"]["state"] == "missing"
+
+
 def test_otwieranie_bez_wskazanego_folderu_okresow_prosi_o_jego_wskazanie(tmp_path: Path) -> None:
     app = centrum(tmp_path)
 

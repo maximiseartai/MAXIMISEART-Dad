@@ -1,6 +1,6 @@
 {
   "src/rozliczenia/intermax_replace.py": {
-    "cały plik": "93930efed77672e2"
+    "cały plik": "999edf330f5110b6"
   },
   "src/rozliczenia/intermax_ordering.py": {
     "order_register": "fa46fe38e00302f6",
@@ -34,6 +34,7 @@
   "src/rozliczenia/file_state.py": {
     "_ABSENT": "f8f2224054693ffa",
     "file_state": "6da9a6f109e4fbeb",
-    "path_state": "5306d4107433a5bd"
+    "path_state": "5306d4107433a5bd",
+    "path_taken": "b0aa1279aa4295ff"
   }
 }

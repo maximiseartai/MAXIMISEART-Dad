@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Final
 
 from . import intermax_copies, workbook_files
+from .file_state import path_taken
 from .intermax_copies import Before, Copy
 from .workbook_files import Problem, WorkbookError
 from .workbook_save import WorkbookSaveError, write_atomically
@@ -91,10 +92,6 @@ def _read(path: Path) -> bytes:
     return workbook_files.workbook_content(path)
 
 
-def _exists(path: Path) -> bool:
-    return path.exists()
-
-
 def _create(path: Path, content: bytes) -> None:
     try:
         path.parent.mkdir(exist_ok=True)
@@ -126,7 +123,7 @@ class Disk:
 
     write: Callable[[Path, bytes], None] = _write
     read: Callable[[Path], bytes] = _read
-    exists: Callable[[Path], bool] = _exists
+    exists: Callable[[Path], bool] = path_taken
     create: Callable[[Path, bytes], None] = _create
     replace: Callable[[Path, Path], None] = _replace
     remove: Callable[[Path], None] = _remove

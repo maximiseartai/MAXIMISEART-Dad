@@ -215,7 +215,7 @@ def _publish(staged_directory: Path, files: PeriodFiles) -> None:
 
     ensure_period_files_absent(files)
     period_directory = files.folder.directory
-    if not period_directory.exists():
+    if not path_taken(period_directory):
         staged_directory.rename(period_directory)
         return
     published: list[Path] = []

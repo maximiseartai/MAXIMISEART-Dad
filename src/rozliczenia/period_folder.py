@@ -416,10 +416,16 @@ class PeriodFolders:
 
 
 def scan_period_folders(periods_directory: Path) -> PeriodFolders:
-    """Foldery okresu w folderze okresów: tylko foldery, których nazwa jest tokenem okresu."""
+    """Foldery okresu w folderze okresów: tylko foldery, których nazwa jest tokenem okresu.
+
+    Brak folderu okresów rozstrzyga jego pierwsze listowanie, zanim cokolwiek innego jest listowane, więc folder bez
+    dostępu gdzie indziej w ``Rozliczenia {rok}`` nie zmienia braku w niedostępność.
+    """
 
     entries = _listing(periods_directory)
-    layout_root, month_folders = _layout(periods_directory, entries or ())
+    if entries is None:
+        return PeriodFolders(periods_directory, periods_directory, False, {}, periods_directory_missing=True)
+    layout_root, month_folders = _layout(periods_directory, entries)
     locations: dict[SettlementPeriod, list[Path]] = {}
     for parent in (layout_root, *month_folders):
         for entry in _listing(parent) or ():
@@ -435,7 +441,7 @@ def scan_period_folders(periods_directory: Path) -> PeriodFolders:
         layout_root,
         bool(month_folders),
         {period: tuple(parents) for period, parents in locations.items()},
-        periods_directory_missing=entries is None,
+        periods_directory_missing=False,
     )
 
 
