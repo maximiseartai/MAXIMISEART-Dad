@@ -112,21 +112,12 @@ def _required_subcommands(path: Path) -> list[str]:
 
 
 def _calls_with_key_of(kind: str, body: list[ast.stmt]) -> Iterator[ast.Call]:
-    """Wywołania ``….add_parser(<kind>.key)`` w ``body`` pętli po ``kind``, poza zagnieżdżoną pętlą, która wiąże ``kind``
-    na nowo."""
+    """Wywołania ``….add_parser(<kind>.key)`` w ``body`` pętli po ``kind``."""
 
-    for node in body:
-        yield from _calls_in(kind, node)
-
-
-def _calls_in(kind: str, node: ast.AST) -> Iterator[ast.Call]:
-    if isinstance(node, ast.For) and isinstance(node.target, ast.Name) and node.target.id == kind:
-        return
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_parser" and node.args:
-        if ast.unparse(node.args[0]) == f"{kind}.key":
-            yield node
-    for child in ast.iter_child_nodes(node):
-        yield from _calls_in(kind, child)
+    for node in (node for statement in body for node in ast.walk(statement)):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_parser" and node.args:
+            if ast.unparse(node.args[0]) == f"{kind}.key":
+                yield node
 
 
 def _names_subcommand_in_brackets(sentence: str, subcommands: list[str]) -> bool:
