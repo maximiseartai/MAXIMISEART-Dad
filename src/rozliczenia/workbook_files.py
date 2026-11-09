@@ -1,18 +1,13 @@
 """Skoroszyty na dysku: otwarcie z jedną klasyfikacją uszkodzeń, sprawdzenie układu arkusza i odczyt Wierszy danych.
 
-Każde otwarcie skoroszytu w obu procesach przechodzi przez ten moduł: Plik
-zbiorczy (``read_data_rows``) daje Wiersze danych z komórkami po kolumnie (``DataRow``), a Rejestr zleceń
-(``register_file``) wiersze z komórkami pod nagłówkiem docelowym (``RegisterRow``); komórka niesie wartość,
-Wyróżnienia, format liczby i Hiperłącze (``DataCell``). Wzorce czyta przez ``open_workbook`` plik z Wzorca
-(``template_file``). Otwarcie
-sprawdza dostępność i klasyfikuje każde uszkodzenie, a problem zgłasza jako
-``WorkbookError`` z powodem, przy złym układzie z jego miejscem. Moduł nie zna
-Komunikatów: proces tłumaczy powód na Komunikat ze swojego katalogu.
+Każde otwarcie skoroszytu w obu procesach przechodzi przez ten moduł: Plik zbiorczy (``read_data_rows``) daje Wiersze
+danych z komórkami po kolumnie (``DataRow``), a Rejestr zleceń (``register_file``) wiersze z komórkami pod nagłówkiem
+docelowym (``RegisterRow``). Wzorce czyta przez ``open_workbook`` plik z Wzorca (``template_file``). Otwarcie
+sprawdza dostępność i klasyfikuje każde uszkodzenie, a problem zgłasza jako ``WorkbookError`` z powodem, przy złym
+układzie z jego miejscem. Moduł nie zna Komunikatów: proces tłumaczy powód na Komunikat ze swojego katalogu.
 
-Układ arkusza Pliku zbiorczego bierze z ``collective_layout``: nagłówek w wierszu 17 z WYKONAWCA w H, Wiersze danych od
-18, dane wejściowe A:K, kolumny wyglądu A:L (``row_look``), ilości N:AP, kolumny Wiersza danych A:AT i ``Kwota`` w AU,
-którą Wycena w efenix czyta tak, jak policzył ją Excel (``read_computed_rows``). Publiczne są etykieta komórki nagłówka
-``WORKER_HEADER`` do treści Komunikatów i zakazane kolumny reguły danych w układzie (``FORBIDDEN_POSITIONS``).
+Układ arkusza Pliku zbiorczego bierze z ``collective_layout``. Wycena w efenix czyta ``Kwota`` w AU tak, jak policzył ją
+Excel (``read_computed_rows``).
 """
 
 from __future__ import annotations
@@ -356,8 +351,6 @@ def cell_datetime(value: object) -> datetime | None:
 
 
 def header_columns(values: Sequence[object]) -> dict[str, int]:
-    """Mapuje znormalizowane nagłówki na numery kolumn (od 1)."""
-
     return {normalize_text(value): column for column, value in enumerate(values, start=1) if not is_blank(value)}
 
 
@@ -390,9 +383,7 @@ def _collective_sheet(
 ) -> Iterator[_Collective]:
     """Jedyny ciąg kroków odczytu Pliku zbiorczego, wspólny dla obu obiektywów (wyglądu i wartości policzonych).
 
-    Kroki w stałej kolejności: plik z uchwytu ``files``, ``rows_with_input``, openpyxl tylko do odczytu (``computed``:
-    wartości policzone przez Excel), nagłówek A17:AP17, arkusz u świadka (``ReadFile.sheet``), sprawdzenie
-    ``WYKONAWCA`` w H17 i Wiersze danych. Arkusz wchodzi do Kopii wejścia przed sprawdzeniem nagłówka, więc Logi
+    ``computed``: wartości policzone przez Excel. Arkusz wchodzi do Kopii wejścia przed sprawdzeniem nagłówka, więc Logi
     Uruchomienia zatrzymanego na złym układzie mają odcisk pliku i jego nagłówek. Każdy Wiersz danych przechodzi przez
     świadka (pamięć reguły danych i Kopia), zanim dostanie go obiektyw.
 

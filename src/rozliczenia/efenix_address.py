@@ -1,7 +1,6 @@
 """Reguła adresu Wyceny w efenix: czy ``Dane adresowe`` zlecenia w efenix to ten sam adres co ``ADRES`` w Pliku zbiorczym.
 
-Operacją jest ``address_differences()``: części adresu, którymi oba adresy się różnią (``AddressPart``), a
-``same_address()`` to adresy bez różnicy. Obie strony przechodzą przez jeden rozbiór (``_readings``): bez wielkości liter,
+Obie strony przechodzą przez jeden rozbiór (``_readings``): bez wielkości liter,
 zbędnych spacji i interpunkcji, rodzaj (``ul``, ``os``, ``al``, ``pl``), zbiór słów nazwy ulicy w dowolnej kolejności,
 numer budynku i lokal. Numer budynku to jedna część (``12A``) albo dwie po ``/`` (``13/14``), każda od cyfry.
 Lokal to słowo po ``Lokal`` zaraz za numerem (``12A Lokal 24``, ``13/14 Lokal 16``, ``8B Lokal 27/3``, zapis efenix)
@@ -98,7 +97,6 @@ def _readings(text: str) -> tuple[_Address, ...]:
     words = words[kinds[0] :]
     kind, rest = words[0], words[1:]
     flat: str | None = None
-    # ``Lokal`` zaraz za numerem to lokal, a w każdym innym miejscu słowo nazwy ulicy (``ul.Lokal 1``).
     if len(rest) >= 3 and rest[-2] == _FLAT_WORD and rest[-3][:1].isdigit():
         rest, flat = rest[:-2], rest[-1]
     if len(rest) < 2:

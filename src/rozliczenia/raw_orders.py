@@ -593,8 +593,6 @@ def _view_row(
 
 
 def _dated(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, anchor: int) -> Iterator[tuple[int, datetime]]:
-    """Wiersze nad ``anchor`` z datą z godziną, od dołu: numer i data."""
-
     for row in rows_from_bottom:
         when = row.value(columns.date)
         if row.number <= anchor and isinstance(when, datetime):

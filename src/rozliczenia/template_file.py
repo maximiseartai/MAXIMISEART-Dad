@@ -1,11 +1,9 @@
 """Plik z Wzorca: Sprawdzanie, Planowanie i zapis Wierszy danych w kopii Wzorca jednego z trzech plików (ADR 0008).
 
-Rozliczenie pracownika, Plik zbiorczy i Rozliczenie wewnętrzne powstają z Wzorca przez ``TemplateFile``, którego
-konstruktor wybiera plik: ``check`` to Sprawdzanie, ``plan`` to Planowanie, a ``create`` zapisuje plik atomowo
-(``workbook_save``). Układ arkusza Wzorca opisuje jeden ``SheetLayout``, z którego czytają obie drogi zapisu: kopia
-bajtów Wzorca (``template_copy``), gdy przyjmuje kształt Wzorca i wierszy, a inaczej openpyxl; obie dają ten sam
-plik. Wzorzec czyta moduł skoroszytu (``workbook_files``) z jego klasyfikacją uszkodzeń, a zły układ to
-``WorkbookError`` z miejscem.
+Układ arkusza Wzorca opisuje jeden ``SheetLayout``, z którego czytają obie drogi zapisu: kopia bajtów Wzorca
+(``template_copy``), gdy przyjmuje kształt Wzorca i wierszy, a inaczej openpyxl; obie dają ten sam plik. Wzorzec
+czyta moduł skoroszytu (``workbook_files``) z jego klasyfikacją uszkodzeń, a zły układ to ``WorkbookError`` z
+miejscem.
 """
 
 from __future__ import annotations
@@ -173,11 +171,9 @@ class TemplateFile:
 
     Powstaje dla jednego z trzech plików: ``worker_settlement`` z Wierszy danych Pliku zbiorczego (``DataRow``),
     ``collective_file`` albo ``internal_settlement`` z wierszy Rejestru zleceń (``RegisterRow``), których komórki
-    stają pod nagłówkami docelowymi pliku okresu. Utworzenie nie czyta dysku. Plik powstaje kopią bajtów Wzorca,
-    gdy kopia przyjmuje kształt Wzorca i wierszy, a inaczej przez openpyxl; obie drogi dają ten sam plik.
-    Pierwszy plik czyta bajty Wzorca ponownie: Wzorzec zmieniony albo otwarty w Excelu po Sprawdzaniu działa tak,
-    jakby był czytany dopiero wtedy, a kolejne pliki powstają z tych samych bajtów. Wzorzec na dysku pozostaje
-    niezmieniony.
+    stają pod nagłówkami docelowymi pliku okresu. Utworzenie nie czyta dysku. Pierwszy plik czyta bajty Wzorca
+    ponownie: Wzorzec zmieniony albo otwarty w Excelu po Sprawdzaniu działa tak, jakby był czytany dopiero wtedy, a
+    kolejne pliki powstają z tych samych bajtów. Wzorzec na dysku pozostaje niezmieniony.
     """
 
     def __init__(self, path: Path, rules: _Rules) -> None:
@@ -278,8 +274,6 @@ class TemplateFile:
         return Route.OPENPYXL
 
     def _read(self) -> None:
-        """Czyta bajty Wzorca; wczytany Wzorzec zostaje, jeśli plik się nie zmienił."""
-
         content = template_content(self.path)
         if content != self._content:
             self._content = content
@@ -291,8 +285,7 @@ class TemplateFile:
         """Wzorzec pliku okresu do Sprawdzania i Planowania z bajtów czytanych od nowa; niczego nie zapisuje.
 
         Zarys pochodzi z tego samego odczytu co kopia (``TemplateCopy``), więc Wzorzec jest parsowany raz na
-        Uruchomienie, a zmieniony po Sprawdzaniu jest czytany od nowa. Wzorzec, którego kształtu kopia nie przyjmuje,
-        czyta pełne wczytanie przez openpyxl z jego klasyfikacją uszkodzeń.
+        Uruchomienie, a zmieniony po Sprawdzaniu jest czytany od nowa.
         """
 
         self._read()
@@ -360,8 +353,6 @@ class TemplateFile:
             save_from_template(workbook, target, self._loaded())
 
     def _header(self, sheet: Worksheet) -> list[object]:
-        """Wartości wiersza nagłówka od kolumny A."""
-
         last_column = self._rules.last_header_column or sheet.max_column
         return [sheet.cell(self._rules.sheet.header_row, column).value for column in range(1, last_column + 1)]
 
@@ -374,8 +365,6 @@ class TemplateFile:
         return False
 
     def _check_settlement_template(self, sheet: str, header: Sequence[object], has_input_data: bool) -> None:
-        """Kontrole Szablonu pracownika na Wzorcu: WYKONAWCA w H17, potem brak wartości w Wierszach danych."""
-
         check_worker_header(self.path, sheet, header)
         if has_input_data:
             raise WorkbookError(self.path, Problem.HAS_DATA)

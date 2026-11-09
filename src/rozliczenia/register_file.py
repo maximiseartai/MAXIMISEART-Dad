@@ -1,10 +1,8 @@
 """Rejestr zleceń (INTERMAX) czytany raz: rozpoznanie arkuszy zleceń i dwa obiektywy tych samych bajtów, fakty wierszy
 od dołu bez openpyxl i wiersze okresu w openpyxl.
 
-``read`` czyta Rejestr uchwytem plików taty (``dad_files.DadFiles``): części zip, style, teksty wspólne i system dat, a z
-wiersza 1 każdego arkusza rozpoznanie arkuszy zleceń. Skoroszyt bez dokumentu skoroszytu, bez części stylów albo bez
-arkusza jest nieczytelny (``WorkbookError``), jak zepsuty zip albo XML: Excel takiego nie zapisuje, a openpyxl go nie
-otwiera.
+Skoroszyt bez dokumentu skoroszytu, bez części stylów albo bez arkusza jest nieczytelny (``WorkbookError``), jak zepsuty
+zip albo XML: Excel takiego nie zapisuje, a openpyxl go nie otwiera.
 
 Arkusz zleceń rozpoznaje jedna reguła dla obu procesów (``recognize``): komplet nagłówków ``COLUMNS`` w wierszu 1
 (każdy w którymś przyjmowanym zapisie) i żaden z nich więcej niż raz. Wynik to wartość, a nie wyjątek: arkusze zleceń
@@ -13,12 +11,11 @@ zleceń z ``AKCJE`` i ``UWAGI`` ma obszar wklejania (``PasteArea``), do którego
 i który porządkuje Uporządkowanie INTERMAX. Arkusz starszego układu, bez tych kolumn, obszaru nie ma
 (``OrderSheet.paste`` to ``None``): aplikacja do niego nie wkleja, więc Surowych zleceń nikt w nim nie szuka.
 
-Obszar wklejania daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``): ~42 tys. wierszy taty to dziesiątki
-MB XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje
-pamięć reguły danych uchwytu (ADR 0025) w jego położeniach (``raw_orders.row_positions``): pierwszy wiersz bloku
-wklejenia dwie kolumny na lewo od nagłówka, każdy inny pod nim, a wiersz z siatki (``raw_orders.both_positions``) w
-obu. Zakazane kolumny to te z nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX
-nie ma stałego układu kolumn, więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
+Obszar wklejania daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``): ~42 tys. wierszy taty to dziesiątki MB
+XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje
+pamięć reguły danych uchwytu (ADR 0025) w jego położeniach (``raw_orders.row_positions``). Zakazane kolumny to te z
+nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu kolumn,
+więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
 
 Wiersze okresu (``OrderSheets.period_rows``) czyta openpyxl ze skoroszytu zawężonego do okresu po kolumnach daty z
 rozpoznania (``workbook_parts.rows_dated_between``), bo wartości, Wyróżnienia, formaty i Hiperłącza tych wierszy
@@ -26,15 +23,15 @@ Przygotowanie pliku zbiorczego przenosi do plików okresu. Ich pamięć i Kopię
 pierwszy wiersz bloku daje ``raw_orders.first_in_block`` na wierszach okna od dołu.
 
 Kopia wejścia Uruchomienia z Centrum (#841, #842) dostaje bajty Rejestru z chwilą zmiany sprzed odczytu zaraz po
-odczycie, a z każdego obszaru wklejania nagłówki i wklejenie (``raw_orders.pasted_rows``): te
-same fakty wierszy, które rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te,
-które Uporządkowanie przenosi do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy
-wiersz, bez zakazanych kolumn (``input_copy.SheetCopy.row``). Wiersz z siatki (``raw_orders.RowPositions.uncertain``)
-ma w Kopii tylko komórki dozwolone w obu położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wiersz ze śladem
-przesunięcia arkusz ma w faktach wklejenia (``input_copy.PasteFacts.traced_rows``). Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie ich nie
-zapisuje, nie mają nagłówka, a jedna z nich u taty niesie części adresu ze słowami sklejonymi ``_``, których strażnik
-nie rozpozna jako wartości ``ADRES``. Nad wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego wiersza
-(``raw_orders.above_paste``), od których Planowanie liczy wiersz dnia, bez ich treści (#847).
+odczycie, a z każdego obszaru wklejania nagłówki i wklejenie (``raw_orders.pasted_rows``): te same fakty wierszy, które
+rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które Uporządkowanie przenosi
+do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz, bez zakazanych kolumn
+(``input_copy.SheetCopy.row``). Wiersz z siatki (``raw_orders.RowPositions.uncertain``) ma w Kopii tylko komórki
+dozwolone w obu położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wiersz ze śladem przesunięcia arkusz ma w
+faktach wklejenia (``input_copy.PasteFacts.traced_rows``). Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie
+ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty niesie części adresu ze słowami sklejonymi ``_``, których
+strażnik nie rozpozna jako wartości ``ADRES``. Nad wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego
+wiersza (``raw_orders.above_paste``), od których Planowanie liczy wiersz dnia, bez ich treści (#847).
 
 Części paczki (``RegisterPackage``) czyta tylko pisarz dnia Uporządkowania (``intermax_file``), który przepisuje je
 w zapisie.
@@ -183,8 +180,6 @@ def _position(column: Column, header: Mapping[str, int]) -> int | None:
 
 
 def _duplicated(values: Sequence[object]) -> tuple[str, ...]:
-    """Kolumny ``COLUMNS``, których nagłówek, w dowolnym przyjmowanym zapisie, występuje więcej niż raz."""
-
     normalized = [normalize_text(value) for value in values if not is_blank(value)]
     return tuple(
         column.label
@@ -238,22 +233,20 @@ class OrderSheets:
     _epoch: datetime = field(repr=False)
 
     def paste_areas(self) -> tuple[PasteArea, ...]:
-        """Obszary wklejania arkuszy zleceń; arkusz starszego układu żadnego nie ma."""
-
         return tuple(sheet.paste for sheet in self.sheets if sheet.paste is not None)
 
     def period_rows(self, period: SettlementPeriod | None) -> tuple[RegisterSheet, ...]:
         """Arkusze zleceń z wierszami od pierwszego do ostatniego, którego data może leżeć w ``period``; bez ``period``
         z każdym wierszem od 2. ``WorkbookError``, gdy openpyxl nie przeczyta skoroszytu albo wiersza.
 
-        Każdy wiersz z danymi zna pamięć reguły danych uchwytu w położeniach z ``raw_orders.row_positions``: pierwszy
-        wiersz bloku wklejenia (``raw_orders.first_in_block`` na wierszach odczytu od dołu, więc wiersz na górze odczytu
-        bez wiersza nad nim jest pierwszy) dwie kolumny na lewo od nagłówka, gdy jego przesunięcie widać, każdy inny pod
-        nagłówkiem, a wiersz z siatki w obu. Kopia wejścia ma nagłówki wiersza 1 kolumn wklejenia od A do ``UWAGI`` (w
-        starszym układzie do ostatniej kolumny ``COLUMNS``) i każdy wiersz z danymi z komórkami kolumn ``COLUMNS``
-        według jego położeń (``input_copy.SheetCopy.row``): komórka wiersza z siatki albo przesuniętego pierwszego
-        wiersza jest w Kopii, gdy w każdym jego położeniu stoi w kolumnie wklejenia, tak jak w Uporządkowaniu, a nie pod
-        zakazaną kolumną. Kopia ma też puste wiersze odczytanego zakresu i wiersze ze śladem przesunięcia.
+        Każdy wiersz z danymi zna pamięć reguły danych uchwytu w położeniach z ``raw_orders.row_positions``, z pierwszym
+        wierszem bloku wklejenia z ``raw_orders.first_in_block`` na wierszach odczytu od dołu, więc wiersz na górze
+        odczytu bez wiersza nad nim jest pierwszy. Kopia wejścia ma nagłówki wiersza 1 kolumn wklejenia od A do
+        ``UWAGI`` (w starszym układzie do ostatniej kolumny ``COLUMNS``) i każdy wiersz z danymi z komórkami kolumn
+        ``COLUMNS`` według jego położeń (``input_copy.SheetCopy.row``): komórka wiersza z siatki albo przesuniętego
+        pierwszego wiersza jest w Kopii, gdy w każdym jego położeniu stoi w kolumnie wklejenia, tak jak w
+        Uporządkowaniu, a nie pod zakazaną kolumną. Kopia ma też puste wiersze odczytanego zakresu i wiersze ze śladem
+        przesunięcia.
         """
 
         file = self._file
@@ -394,7 +387,7 @@ class PasteArea:
 
     @cached_property
     def sheet_xml(self) -> RowsFromBottom:
-        """XML arkusza z wierszami od dołu, dzielonymi raz; ``UnsupportedShape``, gdy ``<sheetData>`` jest nie jeden."""
+        """XML arkusza z wierszami od dołu; ``UnsupportedShape``, gdy ``<sheetData>`` jest nie jeden."""
 
         try:
             return RowsFromBottom(self._xml)
@@ -416,9 +409,8 @@ class PasteArea:
     def rows_from_bottom(self) -> Iterator[RowFacts]:
         """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń.
 
-        Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje pamięć reguły danych uchwytu w położeniach
-        z ``raw_orders.row_positions``: pierwszy wiersz każdego bloku wklejenia (``raw_orders.first_in_block``, także
-        nad uporządkowanymi) o ``SHIFT`` kolumn na lewo od nagłówka, każdy inny pod nim, a wiersz z siatki w obu.
+        Pamięć reguły danych uchwytu zna każdy oddany wiersz w położeniach z ``raw_orders.row_positions``, z pierwszym
+        wierszem każdego bloku wklejenia z ``raw_orders.first_in_block``, także nad uporządkowanymi.
         ``UnsupportedShape``, gdy przeczytanych wierszy nie da się rozdzielić.
         """
 
@@ -428,10 +420,8 @@ class PasteArea:
             yield facts
 
     def copy_paste(self) -> None:
-        """Arkusz w Kopii wejścia uchwytu: nagłówki i wklejone wiersze z komórkami od A do ``UWAGI``, tymi, które
-        Uporządkowanie przenosi do dnia, bez zakazanych kolumn (``input_copy.SheetCopy.row``). Z dołu arkusza Kopia
-        dostaje też numery ostatniego uporządkowanego i żółtego wiersza (``raw_orders.above_paste``), bez ich treści
-        (#847).
+        """Arkusz w Kopii wejścia uchwytu: nagłówki, wklejone wiersze i numery wierszy nad wklejeniem (zob. docstring
+        modułu).
 
         Arkusza, którego wierszy nie da się rozdzielić (``UnsupportedShape``), Kopia nie dostaje wcale: Komunikat o nim
         daje Planowanie, więc Kopia nie zmienia Zatrzymania.

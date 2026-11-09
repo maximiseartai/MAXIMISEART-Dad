@@ -1,7 +1,6 @@
-"""Katalog Komunikatów Przebiegu rozliczeń: zatrzymania i ostrzeżenia podsumowania dla taty.
+"""Katalog Komunikatów Przebiegu rozliczeń: zatrzymania i ostrzeżenia podsumowania dla taty (zasady treści: zob.
+``message``).
 
-Każda fabryka zwraca Komunikat (``message.Message``) w trzech częściach: co się
-stało, gdzie, co zrobić. Zatrzymanie to ``raise StopError(fabryka(...))``.
 Części nie zawierają pełnych ścieżek ani treści wierszy: wskazują tylko nazwę
 pliku, folder okresu, kolumnę, numer wiersza albo Wykonawcę z konfiguracji wykonawców.
 Wyjątek (ADR 0015): ``unmapped_worker`` i ``unmapped_worker_warning`` podają w „co się
@@ -34,8 +33,6 @@ _LEGACY_WORKER_TEMPLATE_NAME: Final = "placeholder.xlsx"
 
 
 def collective_file_unusable(error: WorkbookError) -> Message:
-    """Plik zbiorczy, którego nie da się użyć; ``error`` mówi dlaczego."""
-
     return workbook_messages.unusable(error, _COLLECTIVE_FILE_MESSAGES)
 
 
@@ -52,7 +49,7 @@ def collective_file_missing(source: Path) -> Message:
 
 
 def collective_file_invalid(source: Path, error: PeriodFolderError) -> Message:
-    """Nazwa albo folder Pliku zbiorczego nie pasują do Folderu okresu; ``error`` mówi, co jest nie tak."""
+    """Nazwa albo folder Pliku zbiorczego nie pasują do Folderu okresu."""
 
     match error.problem:
         case "internal_settlement":
@@ -70,8 +67,6 @@ def collective_file_invalid(source: Path, error: PeriodFolderError) -> Message:
 
 
 def _collective_file_unfit(source: Path, detail: str) -> Message:
-    """Nazwa, folder albo układ Pliku zbiorczego; ``detail`` mówi, co jest nie tak."""
-
     return Message(
         code="ZLY_PLIK_ZBIORCZY",
         dad_file="collective_file",
@@ -82,8 +77,6 @@ def _collective_file_unfit(source: Path, detail: str) -> Message:
 
 
 def _collective_file_unreadable(source: Path) -> Message:
-    """Plik zbiorczy nie daje się odczytać jako skoroszyt .xlsx."""
-
     return _collective_file_unfit(
         source,
         f"Nie można odczytać Pliku zbiorczego {source.name}. Sprawdź, czy plik otwiera się w Excelu i nie jest uszkodzony.",
@@ -91,8 +84,6 @@ def _collective_file_unreadable(source: Path) -> Message:
 
 
 def _collective_file_without_worker_header(source: Path) -> Message:
-    """Plik zbiorczy nie ma nagłówka WYKONAWCA w H17, skąd Przebieg rozliczeń czyta Wykonawcę."""
-
     return _collective_file_unfit(
         source, f"W wierszu {WORKER_HEADER.row} nie znaleziono nagłówka WYKONAWCA w kolumnie {WORKER_HEADER.column}."
     )
@@ -129,8 +120,6 @@ def worker_template_unusable(error: WorkbookError) -> Message:
 
 
 def _worker_template_unusable(template_path: Path, detail: str, otherwise: str = OTHERWISE_REFER) -> Message:
-    """Jeden Komunikat o Wzorcu rozliczenia pracownika; ``detail`` mówi, co jest nie tak."""
-
     return Message(
         code="ZLY_WZORZEC_PRACOWNIKA",
         what=f"Nie można użyć Wzorca rozliczenia pracownika. {detail}",
@@ -302,8 +291,6 @@ def unexpected_failure() -> Message:
 
 
 def summary_not_shown() -> Message:
-    """Folder rozliczeń pracowników powstał, ale podsumowania nie dało się pokazać."""
-
     return Message.to_maintainer(
         code="BLAD_PODSUMOWANIA",
         what="Rozliczenia pracowników powstały, ale nie udało się pokazać podsumowania.",

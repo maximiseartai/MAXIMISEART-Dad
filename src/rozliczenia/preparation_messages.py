@@ -1,13 +1,8 @@
-"""Katalog Komunikatów Przygotowania pliku zbiorczego dla taty.
+"""Katalog Komunikatów Przygotowania pliku zbiorczego dla taty (zasady treści i wyjątek
+``invalid_successful_values``: zob. ``message``).
 
-Każda fabryka zwraca Komunikat (``message.Message``) w trzech częściach: co się
-stało, gdzie, co zrobić. Zatrzymanie to ``raise StopError(fabryka(...))``.
-Komunikaty są po polsku, bez żargonu i treści wyjątków oraz bez adresów
-klientów, numerów zleceń i treści wierszy. Wskazują wyłącznie plik, arkusz, nagłówek,
-numer wiersza albo adres komórki. Jedynym wyjątkiem jest
-``invalid_successful_values``, który pokazuje dokładną zawartość komórki
-``SKUTECZNE`` innej niż ``tak`` i ``nie``. Obok fabryk katalog ma napisy
-Decyzji taty o niepełnym okresie i etykiety liczb zleceń na dzień.
+Komunikaty są po polsku, bez żargonu i numerów zleceń, i wskazują wyłącznie plik, arkusz, nagłówek, numer wiersza albo
+adres komórki.
 """
 
 from __future__ import annotations
@@ -64,14 +59,10 @@ def invalid_period_token(token: str) -> Message:
 
 
 def template_unusable(error: WorkbookError) -> Message:
-    """Wzorzec rozliczenia wewnętrznego albo Wzorzec pliku zbiorczego, którego nie da się użyć; ``error`` mówi dlaczego."""
-
     return workbook_messages.unusable(error, _TEMPLATE)
 
 
 def _template_missing(template_path: Path) -> Message:
-    """Wzorzec rozliczenia wewnętrznego albo Wzorzec pliku zbiorczego nie istnieje."""
-
     return Message.to_maintainer(
         code="BRAK_WZORCA",
         what=f"Nie znaleziono wzorca, z którego powstają pliki okresu. {_NOTHING_CREATED}",
@@ -109,8 +100,6 @@ def _template_inaccessible(template_path: Path) -> Message:
 
 
 def _template_unreadable(template_path: Path) -> Message:
-    """Wzorzec nie daje się odczytać jako skoroszyt .xlsx."""
-
     return Message.to_maintainer(
         code="USZKODZONY_WZORZEC",
         what=(
@@ -189,14 +178,10 @@ _TEMPLATE = WorkbookMessages(
 
 
 def register_unusable(error: WorkbookError) -> Message:
-    """Rejestr zleceń, którego nie da się użyć; ``error`` mówi dlaczego."""
-
     return workbook_messages.unusable(error, _REGISTER_MESSAGES)
 
 
 def register_missing(register_path: Path) -> Message:
-    """Rejestr zleceń nie istnieje pod wskazaną ścieżką."""
-
     return Message(
         code="BRAK_REJESTRU",
         what=f"Nie znaleziono Rejestru zleceń. {_NOTHING_CREATED}",
@@ -206,8 +191,6 @@ def register_missing(register_path: Path) -> Message:
 
 
 def _register_unreadable(register_path: Path) -> Message:
-    """Rejestr zleceń nie daje się odczytać jako skoroszyt .xlsx."""
-
     return Message(
         code="USZKODZONY_REJESTR",
         dad_file="order_register",

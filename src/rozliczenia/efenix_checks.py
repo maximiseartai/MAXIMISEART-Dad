@@ -8,8 +8,7 @@ najwyżej o ``DATE_TOLERANCE`` w którąkolwiek stronę (``date_problem``; tata,
 tolerancji proces zostawia w efenix bez zmian. Zlecenie „Rozliczone” zgodne z plikiem nie jest niezgodnością, tylko Zleceniem rozliczonym
 (``Settled``), a zlecenie „Do akceptacji” zgodne z plikiem Zleceniem przekazanym (``Forwarded``); żadnego z nich proces
 nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie
-przyjął, to ``DateRefused``. Każdy wiersz listy po szukaniu ma też odczyt dla Logów Uruchomienia (``read_listed``):
-te same porównania numeru i adresu, ale z nazwami różniących się części adresu zamiast danych adresowych.
+przyjął, to ``DateRefused``. Odczyt wiersza listy dla Logów Uruchomienia to ``ListedRead``.
 """
 
 from __future__ import annotations
@@ -85,8 +84,6 @@ class ListedRead:
 
 
 def read_listed(order: CollectiveOrder, listed: ListedOrder) -> ListedRead:
-    """Odczyt wiersza ``listed`` listy po szukaniu zlecenia ``order`` dla Logów Uruchomienia."""
-
     return ListedRead(
         same_number=listed.number == order.number,
         status=listed.status,
@@ -151,8 +148,6 @@ def listing(order: CollectiveOrder, listed: Sequence[ListedOrder]) -> ListedOrde
 
 
 def _is_status(hit: ListedOrder, status: str) -> bool:
-    """Status zlecenia listy to ``status`` bez wielkości liter i z dowolnymi odstępami między słowami."""
-
     return hit.status.casefold().split() == status.casefold().split()
 
 

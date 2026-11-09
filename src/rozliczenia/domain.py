@@ -34,8 +34,6 @@ class RunMode(StrEnum):
 
     @property
     def word(self) -> str:
-        """Słowo trybu dla taty: „podgląd” albo „zapis”."""
-
         return "podgląd" if self.dry_run else "zapis"
 
 
@@ -43,8 +41,6 @@ _BY_OLD_WORD: Final = {mode.word: mode for mode in RunMode}
 
 
 class ProgressPhase(StrEnum):
-    """Typed phase values while retaining the existing Polish strings."""
-
     CHECKING = "Sprawdzanie"
     READING = "Odczyt danych"
     PLANNING = "Planowanie"
@@ -76,16 +72,12 @@ StopKind = Literal["for_tata", "for_maks"]
 
 @dataclass(frozen=True)
 class PhaseStarted:
-    """Etap się rozpoczął."""
-
     phase: ProgressPhase
     elapsed_ms: int
 
 
 @dataclass(frozen=True)
 class PhaseEnded:
-    """Etap się zakończył."""
-
     phase: ProgressPhase
     elapsed_ms: int
     phase_elapsed_ms: int
@@ -102,8 +94,6 @@ class PhaseFailed:
 
 @dataclass(frozen=True)
 class IssueCountReady:
-    """Liczba problemów po Odczycie danych."""
-
     elapsed_ms: int
     issue_count: int
     phase: ClassVar[ProgressPhase] = ProgressPhase.READING

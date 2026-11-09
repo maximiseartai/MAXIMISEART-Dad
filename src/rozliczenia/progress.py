@@ -30,8 +30,6 @@ ValueT = TypeVar("ValueT")
 
 
 class PhaseState(StrEnum):
-    """Presentation-neutral state of a settlement phase."""
-
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -58,7 +56,7 @@ class TemplateProcessing:
 
 @dataclass(frozen=True)
 class SavingStep:
-    """Ostatni krok Zapisywania procesu bez Szablonów pracownika (``StepReached``): etykieta, Wykonawca, ile z ilu."""
+    """Ostatni krok Zapisywania procesu bez Szablonów pracownika (``StepReached``)."""
 
     label: str
     worker: str | None

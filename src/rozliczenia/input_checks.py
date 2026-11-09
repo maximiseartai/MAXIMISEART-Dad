@@ -53,7 +53,7 @@ FILE_READERS: Final = Readers()
 
 @dataclass(frozen=True)
 class TemplateProblem:
-    """Wzorzec nie przechodzi Sprawdzania: rodzaj problemu i Komunikat procesu, który z niego tworzy pliki."""
+    """Wzorzec nie przechodzi Sprawdzania."""
 
     problem: Problem
     message: Message

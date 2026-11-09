@@ -225,7 +225,7 @@ class MetricsStore:
 
 
 def percentile(values: list[float], proportion: float) -> float:
-    """Zwraca interpolowany percentyl dla niepustej, posortowanej próby."""
+    """Interpolowany percentyl niepustej próby."""
 
     ordered = sorted(values)
     position = (len(ordered) - 1) * proportion

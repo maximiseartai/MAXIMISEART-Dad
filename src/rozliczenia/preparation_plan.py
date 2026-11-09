@@ -136,8 +136,6 @@ def _in_period(row: RegisterRow, period: SettlementPeriod) -> bool:
 
 
 def _check_successful_values(register_path: Path, register: RegisterSheet, orders: Sequence[PeriodOrder]) -> None:
-    """Zatrzymanie, gdy zlecenie okresu nie ma ``tak`` ani ``nie`` w ``SKUTECZNE``: puste komórki i inne wartości."""
-
     empty_rows: list[int] = []
     other_values: list[messages.CellContent] = []
     for order in orders:

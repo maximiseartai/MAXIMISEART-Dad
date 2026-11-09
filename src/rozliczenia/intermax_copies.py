@@ -39,8 +39,6 @@ class Copy:
 
 
 def default_directory() -> Path:
-    """Folder Kopii INTERMAX w katalogu narzędzia na dysku lokalnym."""
-
     return TOOL_ROOT / "Kopie INTERMAX"
 
 

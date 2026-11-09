@@ -1,6 +1,5 @@
 """Uporządkowanie INTERMAX dla Uruchomienia procesu: silnik i fakty zakończenia.
 
-Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby, Komunikaty i rekord metryk są te same.
 Proces nie należy do okresu; jego Uruchomienie ma okres dzisiejszej daty z zegara procesu (ADR 0019).
 """
 

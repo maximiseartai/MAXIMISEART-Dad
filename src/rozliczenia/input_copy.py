@@ -13,8 +13,8 @@ W trakcie odczytu Kopia trzyma tylko odwołania do bajtów i wartości, które c
 którą uchwyt bierze przed odczytem bajtów (``dad_files.DadFiles.read``). Plik po regule danych (``files``) powstaje po
 końcu procesu, zanim karta pokaże wynik: odcisk (rozmiar, chwila zmiany i skrót SHA-256 przeczytanych bajtów) i arkusze
 z kolumnami po nagłówku i wierszami po numerze, bez zakazanych kolumn i bez pustych komórek. Komórki wiersza liczy jedna
-reguła (``SheetCopy.row``). Wolny tekst i wartości zakazanych kolumn w innych komórkach, także liczby, maskuje
-strażnik Logów (``run_logs_guard.guard_logs``), jak w każdym innym polu Logów.
+reguła (``SheetCopy._cells``). Wolny tekst i wartości zakazanych kolumn w innych komórkach, także liczby, maskuje
+strażnik Logów (``centrum.run_logs_guard.guard_logs``), jak w każdym innym polu Logów.
 
 Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Komunikaty i ślad. Wygląd komórek
 (Wyróżnienia, format liczby, Hiperłącza) proces tylko przenosi do plików, które tworzy, więc go nie ma.
@@ -142,8 +142,6 @@ class SheetCopy:
     _empty: list[int] = field(default_factory=list)
 
     def row(self, number: int, values: Values, positions: RowPositions = UNDER_HEADER) -> None:
-        """Wiersz ``number`` przeczytany z wartościami ``values`` w położeniach ``positions``; komórki liczy ``copied``."""
-
         self._rows.append((number, values, positions))
 
     def empty_rows(self, numbers: Sequence[int]) -> None:

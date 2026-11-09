@@ -1,11 +1,8 @@
 """Ślad wywołań wyjątku w kodzie narzędzia, bez treści wyjątku.
 
-Ślad to typ wyjątku i ramki kodu narzędzia: plik względem katalogu narzędzia,
-linia i funkcja, a po nich każda przyczyna z łańcucha ``__cause__`` z jej typem
-i ramkami. Treść wyjątku może mieć dane z Rejestru zleceń, a pełna ścieżka
-nazwę konta, więc ślad nie ma ani jednego, ani drugiego. Ramki bibliotek i
-biblioteki standardowej są pomijane. Ślad niesie tylko Zatrzymanie; pokazują
-go Zgłoszenie do Maksa (ADR 0007) i Logi Uruchomienia.
+Treść wyjątku może mieć dane z Rejestru zleceń, a pełna ścieżka nazwę konta, więc ślad nie ma ani jednego, ani
+drugiego. Ramki bibliotek i biblioteki standardowej są pomijane. Ślad niesie tylko Zatrzymanie; pokazują go Zgłoszenie
+do Maksa (ADR 0007) i Logi Uruchomienia.
 """
 
 from __future__ import annotations
@@ -62,8 +59,6 @@ _MAX_CAUSES: Final = 10
 
 
 def exception_type(error: BaseException) -> str:
-    """Typ wyjątku z modułem (bez modułu dla wbudowanych), bez jego treści."""
-
     kind = type(error)
     return kind.__qualname__ if kind.__module__ == "builtins" else f"{kind.__module__}.{kind.__qualname__}"
 

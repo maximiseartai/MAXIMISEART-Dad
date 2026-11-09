@@ -109,7 +109,7 @@ def package_parts(content: bytes) -> Iterator[Mapping[str, bytes]]:
         yield _ZipParts(archive)
 
 
-# Przygotowanie czyta ten sam Rejestr zleceń w Sprawdzaniu (Surowe zlecenia, ``intermax_file.Register``) i w Odczycie
+# Przygotowanie czyta ten sam Rejestr zleceń w Sprawdzaniu (Surowe zlecenia, ``register_file.read``) i w Odczycie
 # danych (zawężenie): jego arkusz to dziesiątki MB XML, więc drugie rozpakowanie zip kosztuje tyle co reszta zawężenia.
 @lru_cache(maxsize=1)
 def unpacked(content: bytes) -> tuple[tuple[zipfile.ZipInfo, ...], Mapping[str, bytes]]:
@@ -154,15 +154,11 @@ class Relationship:
 
 
 def relationships_part(part: str) -> str:
-    """Nazwa części z relacjami części ``part``."""
-
     folder, name = posixpath.split(part)
     return posixpath.join(folder, "_rels", f"{name}.rels")
 
 
 def relationships(parts: Mapping[str, bytes], part: str) -> dict[str, Relationship]:
-    """Relacje części ``part`` po identyfikatorze; bez części relacji żadnych."""
-
     rels = relationships_part(part)
     if rels not in parts:
         return {}
@@ -345,8 +341,7 @@ def style_list(xml: bytes, tag: bytes) -> re.Match[bytes]:
 
 
 def appended(xml: bytes, tag: bytes, entries: Sequence[bytes], existing: int) -> bytes:
-    """``xl/styles.xml`` z ``entries`` na końcu listy ``tag`` (``existing`` wpisów) i licznikiem ``count`` jako pierwszym
-    atrybutem; bez wpisów ``xml`` bez zmian."""
+    """``xl/styles.xml`` z ``entries`` na końcu listy ``tag``, która ma ``existing`` wpisów."""
 
     if not entries:
         return xml
@@ -497,8 +492,6 @@ def _sheet_rows(xml: bytes, start: int, end: int) -> list[SheetRow]:
 
 
 def _raise_irregular(xml: bytes, start: int, end: int, otherwise: str = "") -> NoReturn:
-    """Pierwszy niespełniony warunek kształtu w kolejności: komentarz albo CDATA, ``r`` jako pierwszy atrybut, ``otherwise``."""
-
     if xml.find(b"<!", start, end) >= 0:
         raise IrregularSheetData("komentarz albo CDATA")
     if _WITHOUT_LEADING_R.search(xml, start, end):
@@ -535,26 +528,18 @@ class SheetCell:
 
     @property
     def unstyled(self) -> bytes:
-        """Atrybuty bez stylu ``s``."""
-
         return _XML_CELL_STYLE.sub(b"", self.attributes)
 
     @property
     def value(self) -> bytes | None:
-        """Tekst elementu ``<v>``; ``None`` bez niego."""
-
         found = _XML_CELL_VALUE.search(self.content or b"")
         return None if found is None else found.group(1)
 
     @property
     def valued(self) -> bool:
-        """Komórka ma wartość: ``<v>`` albo tekst wbudowany ``<is>``."""
-
         return self.value is not None or b"<is>" in (self.content or b"")
 
     def xml(self, column: int, row: int, attributes: bytes | None = None) -> bytes:
-        """Element komórki w kolumnie ``column`` wiersza ``row`` z jej treścią i atrybutami (``None``: jej własne)."""
-
         reference = get_column_letter(column).encode("ascii") + b"%d" % row
         attributes = self.attributes if attributes is None else attributes
         if self.content is None:
@@ -563,8 +548,6 @@ class SheetCell:
 
 
 def sheet_cells(row_xml: bytes) -> list[SheetCell]:
-    """Komórki XML wiersza po kolei."""
-
     return [
         SheetCell(column_index_from_string(found.group(1).decode("ascii")), found.group(3), found.group(4))
         for found in _XML_CELL.finditer(row_xml)
@@ -572,14 +555,10 @@ def sheet_cells(row_xml: bytes) -> list[SheetCell]:
 
 
 def row_tag(xml: bytes, row: SheetRow) -> bytes:
-    """Znacznik otwierający ``<row …>`` wiersza ``row`` z XML arkusza ``xml``."""
-
     return xml[row.start : xml.index(b">", row.start) + 1]
 
 
 def row_attributes(tag: bytes) -> dict[bytes, bytes]:
-    """Atrybuty znacznika ``<row …>`` po nazwie."""
-
     return dict(_ROW_ATTRIBUTE.findall(tag))
 
 
@@ -825,7 +804,7 @@ def _used_strings_only(parts: Mapping[str, bytes]) -> dict[str, bytes]:
     return replaced
 
 
-# Przygotowanie czyta tę samą tabelę w Sprawdzaniu (``intermax_file.Register``) i w Odczycie danych (zawężenie), z tych
+# Przygotowanie czyta tę samą tabelę w Sprawdzaniu (``register_file.read``) i w Odczycie danych (zawężenie), z tych
 # samych bajtów z ``unpacked``: tabela Rejestru zleceń ma dziesiątki tysięcy tekstów.
 @lru_cache(maxsize=1)
 def shared_string_spans(table: bytes) -> tuple[tuple[int, int], ...]:

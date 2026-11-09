@@ -10,10 +10,8 @@ kilkanaście sekund podtrzymuje sesję efenix. Samo sprawdzenie zlecenia bez zmi
 rozliczone, błąd zlecenia) to tylko szukanie i otwarcie, które idą bez przerwy, tak samo jak szukanie po takim zleceniu i
 pierwsze szukanie przebiegu. Ponowne uruchomienie po Zatrzymaniu nie czeka więc na zleceniach, które już są gotowe.
 
-Czas mierzy i odczekuje ``Pace`` (``clock`` i ``sleep``), więc test sprawdza przerwy na udawanym zegarze. Silnik owija
-tempem okno zlecenia, które zapisuje ślad działań do Logów Uruchomienia (``efenix_trace``), więc czas działania w Logach
-nie liczy przerwy przed nim. Chwilę szukania poprzedniego zlecenia z zapisem pamięta ``Pacing`` jednego przebiegu, a nie
-okno, bo szukanie następnego zlecenia jest już w jego własnym oknie.
+Silnik owija tempem okno zlecenia, które zapisuje ślad działań do Logów Uruchomienia (``efenix_trace``), więc czas
+działania w Logach nie liczy przerwy przed nim.
 """
 
 from __future__ import annotations
@@ -53,8 +51,7 @@ class Pace:
 
 
 class Pacing:
-    """Tempo ludzkie ``pace`` jednego przebiegu: okno każdego zlecenia (``window``) robi przerwy przed zapisami, a przerwa
-    przed szukaniem liczy się od szukania poprzedniego zlecenia, jeśli coś w nim zapisało."""
+    """Tempo ludzkie ``pace`` jednego przebiegu."""
 
     def __init__(self, pace: Pace) -> None:
         self._pace = pace
@@ -63,8 +60,6 @@ class Pacing:
         self._written_search: float | None = None
 
     def window(self, efenix: Efenix) -> Efenix:
-        """Okno ``efenix`` z przerwami tempa przed zapisami i przed szukaniem po zleceniu z zapisem."""
-
         return _PacedEfenix(efenix, self)
 
     def before_search(self) -> float:
@@ -110,8 +105,6 @@ class _PacedEfenix:
         return self._paced(WindowAction.FORWARD, self._efenix.forward_to_accept)
 
     def _paced(self, action: WindowAction, act: Callable[[], _T]) -> _T:
-        """Działanie ``act`` po przerwie: przed zapisem (``WindowAction.writes``) i przed pierwszym szukaniem zlecenia."""
-
         if action.writes:
             self._pacing.before_write(self._searched)
         elif action is WindowAction.SEARCH and self._searched is None:

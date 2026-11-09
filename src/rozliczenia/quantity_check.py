@@ -98,8 +98,6 @@ CheckResult = QuantityCheck | NotCompared
 
 
 def check(orders: CollectiveOrders) -> CheckResult:
-    """Porównanie Ilości usług z Reguł ilości z Ilościami usług taty w każdym Wierszu danych."""
-
     if isinstance(orders, MissingHeaders):
         return NotCompared(orders.headers)
     result = QuantityCheck()
@@ -127,11 +125,7 @@ def check(orders: CollectiveOrders) -> CheckResult:
 
 
 def compared_columns(rule: RuleResult) -> tuple[QuantityColumn, ...]:
-    """Kolumny Reguł ilości, w których Kontrola porównuje wynik reguł z wpisami taty (decyzje 9 i 10).
-
-    Wiersz z regułą: wszystkie, AK i AM tylko z wartością reguły różną od zera. Wiersz bez reguły: V, T i N.
-    Wiersz rozliczany z opisu: żadna.
-    """
+    """Kolumny Reguł ilości, w których Kontrola porównuje wynik reguł z wpisami taty (decyzje 9 i 10)."""
 
     if isinstance(rule, FromDescription):
         return ()
@@ -170,8 +164,6 @@ def _differences(
 
 
 def title(period: str, result: CheckResult) -> str:
-    """Tytuł issue: token okresu i liczba różnic, także „bez różnic” i „bez porównania”."""
-
     if isinstance(result, NotCompared):
         return f"Kontrola ilości {period}: bez porównania"
     count = result.difference_count

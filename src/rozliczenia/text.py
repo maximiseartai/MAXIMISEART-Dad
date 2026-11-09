@@ -32,8 +32,6 @@ def plural(count: int, one: str, few: str, many: str) -> str:
 
 
 def row_range(first: int, last: int) -> str:
-    """Kolejne wiersze arkusza: „wiersz 18” albo „wiersze 18–20”."""
-
     return f"wiersz {first}" if first == last else f"wiersze {first}–{last}"
 
 

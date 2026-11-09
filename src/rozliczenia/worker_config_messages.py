@@ -55,8 +55,6 @@ def _content(problem: ContentProblem) -> str:
 
 
 def _inaccessible(config_path: Path) -> Message:
-    """System nie oddał konfiguracji wykonawców (np. plik zajęty przez inny program albo bez dostępu); to nie zła treść."""
-
     return Message.to_maintainer(
         code="NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW",
         what="Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.",

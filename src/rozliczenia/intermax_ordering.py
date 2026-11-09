@@ -84,8 +84,6 @@ class OrderingInputs:
 
     @property
     def dry_run(self) -> bool:
-        """Uporządkowanie INTERMAX nie ma podglądu bez zapisu."""
-
         return False
 
 

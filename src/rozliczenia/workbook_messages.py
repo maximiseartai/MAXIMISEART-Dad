@@ -37,8 +37,6 @@ class WorkbookMessages:
 
 
 def unusable(error: WorkbookError, messages: WorkbookMessages) -> Message:
-    """Komunikat z ``messages`` dla skoroszytu ``error.path``, którego nie da się użyć z powodu ``error.problem``."""
-
     path = error.path
     match error.problem:
         case Problem.MISSING:
@@ -82,8 +80,6 @@ def lock_hint(path: Path, again: str) -> str:
 
 
 def open_in_excel(code: str, path: Path, workbook: DadWorkbook) -> Message:
-    """Plik taty ``path`` jest otwarty w Excelu: tata go zapisuje, zamyka i ponawia."""
-
     return Message(
         code=code,
         dad_file=workbook.dad_file,

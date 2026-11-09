@@ -82,7 +82,7 @@ class ReadFile:
             self._copied = self._copy.workbook(self.path, self.content, self.modified_at)
 
     def memory(self, forbidden: ForbiddenPositions) -> SheetMemory:
-        """Pamięć arkusza bez Kopii; ``forbidden``: zakazane kolumny arkusza."""
+        """Pamięć arkusza bez Kopii."""
 
         return SheetMemory(self._forbidden, tuple(forbidden))
 
@@ -138,8 +138,6 @@ class WitnessedSheet(SheetMemory):
     _copied: SheetCopy | None = None
 
     def row(self, number: int, values: Values, positions: RowPositions = UNDER_HEADER) -> None:
-        """Wiersz ``number`` z wartościami ``values`` w położeniach ``positions`` w pamięci i w Kopii."""
-
         self.remember(values, positions)
         if self._copied is not None:
             self._copied.row(number, values, positions)

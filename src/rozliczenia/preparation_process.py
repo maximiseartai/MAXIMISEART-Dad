@@ -1,8 +1,4 @@
-"""Przygotowanie pliku zbiorczego dla Uruchomienia procesu: silnik i fakty zakończenia.
-
-Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby,
-ostrzeżenia, Komunikaty i rekord metryk są te same.
-"""
+"""Przygotowanie pliku zbiorczego dla Uruchomienia procesu: silnik i fakty zakończenia."""
 
 from __future__ import annotations
 
