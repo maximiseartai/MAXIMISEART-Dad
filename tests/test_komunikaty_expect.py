@@ -493,10 +493,11 @@ def _ui_text(text: str) -> re.Pattern[str]:
     dziecko JSX, czyli zaraz po ``>`` (nie ``=>``) albo ``}`` (``{checking ? "Sprawdzam…" : "Diagnoza"}``; w warunku wolno ``?.`` i
     ``??``).
     Każda inna postać nie jest napisem, więc przycisk z napisem tylko w niej czerwieni test: pierwsza gałąź warunku,
-    warunek zagnieżdżony, warunek w atrybucie albo funkcji pomocniczej, pojedynczy cudzysłów, szablon z ``${…}``, napis
-    sklejony z kawałków i stała z innego modułu.
-    Granica (tylko przegląd): to, czy element z napisem jest przyciskiem, a nie nagłówkiem, i przykład JSX w komentarzu
-    pliku.
+    warunek zagnieżdżony, warunek w atrybucie, w funkcji-strzałce (``=> {``) albo w funkcji pomocniczej bez typu zwrotu
+    zakończonego ``>``, pojedynczy cudzysłów, szablon z ``${…}``, napis sklejony z kawałków i stała z innego modułu.
+    Granica (tylko przegląd): to, czy element z napisem jest przyciskiem, a nie nagłówkiem, przykład JSX w komentarzu
+    pliku i warunek w funkcji pomocniczej, której typ zwrotu kończy się ``>`` (``): Promise<string> {``), bo jej blok
+    test widzi jak dziecko JSX.
     """
 
     words = r"\s+".join(re.escape(word) for word in text.split())
