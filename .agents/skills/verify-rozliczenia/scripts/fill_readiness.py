@@ -26,16 +26,13 @@ from skrypt_skilla import Parser, require_run_root
 from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
 from atrapy.scenariusz_rozliczen import FILLED_ORDERS, PERIODS_DIRECTORY, order_number
 from atrapy.settlement import PERIOD
-from rozliczenia.collective_layout import (
-    CHARGE_AMOUNT,
-    CHARGE_DESCRIPTION,
-    FIRST_DATA_ROW,
-    HEADER_ROW,
-    QUANTITY_COLUMNS,
-    REMARKS,
-    REMARKS_AMOUNT,
-)
 
+# Where Dad types in his Plik zbiorczy: a deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z src”) and not
+# rozliczenia.collective_layout, because this script plays Dad, so a moved column in src must break the check.
+HEADER_ROW = 17
+FIRST_DATA_ROW = 18
+QUANTITY_COLUMNS = range(14, 43)  # N:AP
+CHARGE_DESCRIPTION, CHARGE_AMOUNT, REMARKS_AMOUNT, REMARKS = 43, 44, 45, 46  # AQ, AR, AS, AT
 
 
 def _sheet(workbook: Workbook) -> Worksheet:

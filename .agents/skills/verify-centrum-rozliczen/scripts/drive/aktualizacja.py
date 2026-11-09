@@ -24,12 +24,12 @@ from drive.common import (
     version_line,
 )
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
-from rozliczenia.tool_files import TOOL_ROOT, WORKER_CONFIG
 from rozliczenia.centrum.tool_update import RESULT_FILE
 
 FEATURE = "aktualizacja"
-# The konfiguracja wykonawców in the clone, as Git names it.
-WORKER_MAPPING = WORKER_CONFIG.relative_to(TOOL_ROOT).as_posix()
+# Dad's konfiguracja wykonawców in the clone, as Git names it: a deliberate copy (docs/agents/skille.md, „Co wyrocznia
+# bierze z src”), because the next Wydanie must find it where Dad's tool keeps it.
+WORKER_MAPPING = "config/worker_mapping.yaml"
 UPDATED = "Zaktualizowano"
 RESTARTING = "Ponowne uruchamianie Centrum…"
 NO_CONNECTION = "Nie zaktualizowano narzędzia: brak połączenia z GitHubem."

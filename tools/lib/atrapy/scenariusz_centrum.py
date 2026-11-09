@@ -20,6 +20,15 @@ from atrapy.efenix import ADDRESS, Order as EfenixOrder
 from atrapy.preparation import COLLECTIVE_TEMPLATE_HEADERS, INTERNAL_TEMPLATE_HEADERS, OLD_REGISTER_HEADERS
 from atrapy.settlement import PERIOD
 
+# Names of Dad's files that the next Wydanie reads where the previous one left them (Maks writes the key by hand,
+# README, ADR 0007), and the health name by which a new Centrum recognises a running older one. A deliberate copy
+# (docs/agents/skille.md, „Co wyrocznia bierze z src”): a rename in src must break the drive, not follow it.
+REPORT_KEY_FILE = "zgloszenia-klucz.txt"
+DAD_CASES_FILE = "sprawy-taty.json"
+NOTIFICATIONS_FILE = "powiadomienia.json"
+LAST_STARTED_FILE = "ostatnie-uruchomienie.json"
+SERVICE = "centrum-rozliczen"
+
 # Dad's "today" for the run: Monday 19.10.2026, so the last complete period is 06_12_10_2026,
 # whose Folder okresu deliberately does not exist.
 TODAY = "2026-10-19"

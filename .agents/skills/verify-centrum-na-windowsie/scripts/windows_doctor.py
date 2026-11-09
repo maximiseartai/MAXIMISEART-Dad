@@ -18,7 +18,7 @@ import windows_tool
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser
-from rozliczenia.centrum.version import SERVICE
+from atrapy.scenariusz_centrum import SERVICE
 
 
 def diagnose(root: Path) -> str:

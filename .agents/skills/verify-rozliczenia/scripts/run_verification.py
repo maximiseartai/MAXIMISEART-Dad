@@ -30,7 +30,7 @@ from atrapy.scenariusz_rozliczen import (
 )
 from atrapy.settlement import PERIOD, SOURCE_NAME
 from rozliczenia.tool_files import config_dir
-from rozliczenia.workbook_files import excel_lock_file
+from atrapy.workbooks import excel_lock
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
@@ -239,7 +239,7 @@ def _version() -> str:
 
 def _create_lock(run_root: Path) -> None:
     worker_template = run_root / WORKER_TEMPLATE_NAME
-    excel_lock_file(worker_template).touch()
+    excel_lock(worker_template).touch()
 
 
 def _create_existing_output(run_root: Path) -> None:

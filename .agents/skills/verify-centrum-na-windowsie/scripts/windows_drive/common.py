@@ -14,7 +14,6 @@ from playwright.sync_api import Page
 
 import windows_desktop
 import windows_tool
-from rozliczenia.tool_files import config_dir, log_path
 
 T = TypeVar("T")
 
@@ -86,7 +85,9 @@ class Run:
 
     @property
     def log(self) -> Path:
-        return log_path(self.tool)
+        # A deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z src”), like the Ustawienia path in
+        # wskazanie_folderow.py: Dad hands Maks this file of the installed tool (docs/tata-instrukcja.md).
+        return self.tool / "logs" / "centrum-rozliczen.log"
 
     def log_lines(self) -> list[str]:
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.is_file() else []
@@ -116,7 +117,7 @@ class Run:
     def config_bytes(self) -> dict[str, str]:
         """Every file in the tool's ``config/`` (Dad's files and Centrum's own) by its SHA-256."""
 
-        config = config_dir(self.tool)
+        config = self.tool / "config"
         return {
             path.relative_to(config).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted(config.rglob("*"))

@@ -41,6 +41,7 @@
   Mechanika to stan w pamięci, przerwy ponowień, ścieżki modułów, miejsca w dzienniku Centrum i kroki, w których wyrocznia wstrzykuje awarię.
   Prywatna nazwa (`moduł._x`), `vars(moduł)` i podmiana globali modułu wiążą wyrocznię z wnętrzem, które autor zmienia bez patrzenia na skille, a wyrocznia, która je podmienia, po takiej zmianie po cichu przestaje wstrzykiwać awarię.
 - Dane o świecie zewnętrznym i oczekiwane wyniki wyrocznia kopiuje celowo: tekst Komunikatu, który tata czyta, dopisek w Skrzynce Zgłoszeń, który czyta Maks, nazwę pliku w folderze taty (Kopia INTERMAX, Wzorce), nagłówki plików taty i format, który czyta następne Wydanie (nazwa pliku kolejki, znacznik wysyłki).
+  Tak samo kopiuje to, co tworzy świat zewnętrzny (blokada `~$` Excela), także gdy skrypt sam to tworzy, grając Excela albo tatę: generator świata bierze z `src` tylko to, czego tata nie widzi, czego nie czyta inna wersja narzędzia z plików taty i czego nie tworzy świat.
   Wyrocznia, która importuje sprawdzany kod, nie wykryje jego błędu: zmieniony w `src` tekst albo format przeszedłby z nim razem.
   Kopię, która wygląda na mechanikę, opatrz komentarzem z powodem i odsyłaczem do tej sekcji.
 

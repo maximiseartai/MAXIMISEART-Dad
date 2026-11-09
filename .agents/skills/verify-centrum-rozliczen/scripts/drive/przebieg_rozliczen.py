@@ -30,13 +30,15 @@ from drive.common import (
     stop_banner,
 )
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
-from rozliczenia.workbook_files import excel_lock_file
-from rozliczenia.collective_layout import FIRST_DATA_ROW, QUANTITY_COLUMNS, WORKER_COLUMN
+from atrapy.workbooks import excel_lock
 
 SETTLEMENT = "przebieg-rozliczen"
 WORKER_SETTLEMENTS = f"Rozliczenie pracowników {LAST_COMPLETE}"
 # serve_centrum.py waits this long before each Szablon pracownika while the pacing file exists.
 TEMPLATE_PACING_MS = 2500
+# Where Dad types quantities in his Plik zbiorczy: a deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z
+# src”) and not rozliczenia.collective_layout, because the drive plays Dad and the fixture builds his files by hand.
+WORKER_COLUMN, QUANTITY_COLUMN, FIRST_DATA_ROW = 8, 14, 18  # H (WYKONAWCA), N (first quantity), row 18
 UNMAPPED_WORKER_ACTION = (
     "Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy do konfiguracji "
     "wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie."
@@ -71,7 +73,7 @@ def _fill_readiness(collective_file: Path) -> int:
     filled = 0
     for row in range(FIRST_DATA_ROW, sheet.max_row + 1):
         if sheet.cell(row, WORKER_COLUMN).value:
-            sheet.cell(row, QUANTITY_COLUMNS.start).value = 1
+            sheet.cell(row, QUANTITY_COLUMN).value = 1
             filled += 1
     workbook.save(collective_file)
     return filled
@@ -94,7 +96,7 @@ def _template_lock_left_behind(run: Run, page: Page) -> None:
     """
 
     template = Path(run.fixture["configuration"]["worker_template"])
-    lock = excel_lock_file(template)
+    lock = excel_lock(template)
     warning = (
         "Wzorzec rozliczenia pracownika jest otwarty w Excelu. Zamknij go bez zapisywania zmian. Jeśli Excel jest "
         f"zamknięty, usuń z tego samego folderu pozostawiony plik {lock.name}."
@@ -157,7 +159,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "przebieg-gotowosc")
     filled = _fill_readiness(collective_file)
     run.check(
-        filled == len(workers) - 1 and not excel_lock_file(collective_file).exists(),
+        filled == len(workers) - 1 and not excel_lock(collective_file).exists(),
         "Gotowość (Excel simulated by the harness): quantities typed into every Wiersz danych, saved and closed",
     )
 

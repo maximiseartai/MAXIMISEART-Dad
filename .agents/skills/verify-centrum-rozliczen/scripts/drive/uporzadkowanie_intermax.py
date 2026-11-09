@@ -22,7 +22,7 @@ from drive.common import (
     run_logs,
     stop_banner,
 )
-from rozliczenia.workbook_files import excel_lock_file
+from atrapy.workbooks import excel_lock
 
 FEATURE = "uporzadkowanie-intermax"
 CARD = "Uporządkuj INTERMAX"
@@ -143,7 +143,7 @@ def drive(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "otwarty")
-    lock = excel_lock_file(register)
+    lock = excel_lock(register)
     lock.write_bytes(b"\x00" * 165)
     try:
         page.reload()

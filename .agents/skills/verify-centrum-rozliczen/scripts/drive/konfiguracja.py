@@ -11,7 +11,7 @@ from playwright.sync_api import Locator, Page, expect
 
 from drive.common import Run, move, read_bytes, remove, served_version, unreadable, version_line
 from drive.teksty import UPDATE_BUTTON, WRITE
-from rozliczenia.workbook_files import excel_lock_file
+from atrapy.workbooks import excel_lock
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
 REPORT_TO_MAINTAINER = "Przekaż ten komunikat osobie utrzymującej narzędzie."
@@ -117,7 +117,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "konfiguracja-wzorzec-otwarty")
     collective = files["collective_template"]
-    lock = excel_lock_file(collective)
+    lock = excel_lock(collective)
     lock.write_bytes(b"")
     try:
         page.reload()

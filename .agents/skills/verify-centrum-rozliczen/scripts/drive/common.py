@@ -31,7 +31,7 @@ from rozliczenia.centrum.case_delivery import queue_directory
 from rozliczenia.centrum.outbox import queue_file_pattern
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.tool_files import log_path
-from rozliczenia.workbook_files import excel_lock_file
+from atrapy.workbooks import excel_lock
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"
@@ -779,7 +779,7 @@ def start_card_warns_while_open(
     and removes its lock file ``~$<name>``, then fires ``focus`` as Dad's return to the window does.
     """
 
-    lock = excel_lock_file(workbook)
+    lock = excel_lock(workbook)
     warned = page.get_by_role("alert").filter(has_text=warning)
     start = page.get_by_role("button", name="Uruchom", exact=True)
     preview = page.get_by_role("button", name="Podgląd bez zapisu", exact=True)

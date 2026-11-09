@@ -28,9 +28,7 @@ from drive.common import (
     toggle_theme,
 )
 from drive.teksty import BELL_FRESH, UPDATE_BUTTON, UP_TO_DATE, WRITE
-from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
-from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
-from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
+from atrapy.scenariusz_centrum import DAD_CASES_FILE, REPORT_KEY_FILE, NOTIFICATIONS_FILE
 
 FEATURE = "powiadomienia"
 BELL = "Powiadomienia"

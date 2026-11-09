@@ -13,7 +13,7 @@ from playwright.sync_api import Page, expect
 from windows_drive.common import Run, same_path, wait_for
 import windows_desktop
 from rozliczenia.centrum import start_problems
-from rozliczenia.centrum.version import SERVICE
+from atrapy.scenariusz_centrum import SERVICE
 
 FEATURE = "start-skrotem"
 

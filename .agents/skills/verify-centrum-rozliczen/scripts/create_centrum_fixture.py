@@ -71,6 +71,7 @@ from atrapy.scenariusz_centrum import (
     ORDERS,
     PRICE_LIST,
     REGISTER_HEADERS,
+    REPORT_KEY_FILE,
     ROW_MARKER,
     TODAY,
     UNKNOWN_WORKER,
@@ -78,11 +79,7 @@ from atrapy.scenariusz_centrum import (
     WORKERS,
 )
 from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
-from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
-from rozliczenia.collective_layout import FIRST_DATA_ROW, HEADER_ROW, QUANTITY_COLUMNS
-from rozliczenia.period_folder import PeriodFolder
-from rozliczenia.settlement_period import parse_period_token
-from rozliczenia.tool_files import TOOL_ROOT, WORKER_CONFIG, config_dir, settings_file
+from rozliczenia.tool_files import WORKER_CONFIG, config_dir, settings_file
 
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
 PREPARATION_COUNTERS = {"period_orders": 9, "successful_orders": 8, "skipped_empty_rows": 1, "warnings": 0}
@@ -172,7 +169,7 @@ def _workbook(path: Path) -> None:
     workbook = Workbook()
     sheet = workbook.active
     assert sheet is not None
-    sheet.cell(FIRST_DATA_ROW, 1).value = ROW_MARKER
+    sheet["A18"] = ROW_MARKER
     workbook.save(path)
 
 
@@ -184,7 +181,7 @@ def _template(path: Path, header_row: int, headers: tuple[str, ...], price_list:
     assert isinstance(sheet, Worksheet)
     for column, header in enumerate(headers, start=1):
         sheet.cell(header_row, column).value = header
-    for column, name in enumerate(price_list, start=QUANTITY_COLUMNS.start):
+    for column, name in enumerate(price_list, start=14):  # N:AP
         sheet.cell(header_row, column).value = name
     workbook.create_sheet("Stawki")["A1"] = ROW_MARKER
     workbook.save(path)
@@ -201,8 +198,8 @@ def _configuration(config: Path) -> dict[str, str]:
         encoding="utf-8",
     )
     _template(config / INTERNAL_TEMPLATE_NAME, 1, INTERNAL_HEADERS)
-    _template(config / COLLECTIVE_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS, PRICE_LIST)
-    _template(config / WORKER_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS)
+    _template(config / COLLECTIVE_TEMPLATE_NAME, 17, COLLECTIVE_HEADERS, PRICE_LIST)
+    _template(config / WORKER_TEMPLATE_NAME, 17, COLLECTIVE_HEADERS)
     return {
         "worker_config": str(worker_config),
         "internal_template": str(config / INTERNAL_TEMPLATE_NAME),
@@ -211,11 +208,11 @@ def _configuration(config: Path) -> dict[str, str]:
     }
 
 
-def _period_files(periods: Path, token: str) -> PeriodFolder:
-    period_folder = PeriodFolder(periods, parse_period_token(token))
-    period_folder.directory.mkdir()
-    _workbook(period_folder.internal_settlement)
-    _workbook(period_folder.collective_file)
+def _period_files(periods: Path, token: str) -> Path:
+    period_folder = periods / token
+    period_folder.mkdir()
+    _workbook(period_folder / f"Rozliczenie wew. {token}.xlsx")
+    _workbook(period_folder / f"Rozliczenie {token} - zbiorcze.xlsx")
     return period_folder
 
 
@@ -226,9 +223,9 @@ def _collective_file(path: Path, workers: tuple[str, ...]) -> None:
     sheet = workbook.active
     assert isinstance(sheet, Worksheet)
     for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
-        sheet.cell(HEADER_ROW, column).value = header
+        sheet.cell(17, column).value = header
     worker_column = COLLECTIVE_HEADERS.index("WYKONAWCA") + 1
-    for row, worker in enumerate(workers, start=FIRST_DATA_ROW):
+    for row, worker in enumerate(workers, start=18):
         for column in range(1, len(COLLECTIVE_HEADERS) + 1):
             sheet.cell(row, column).value = f"{ROW_MARKER}-{row:03d}"
         sheet.cell(row, worker_column).value = worker
@@ -347,7 +344,7 @@ def _dad_layout(root: Path) -> dict[str, object]:
     (november / "27_02_11_2026").mkdir()
     return {
         "periods_directory": str(attachments),
-        "opened": str(prepared.collective_file),
+        "opened": str(prepared / f"Rozliczenie {LAST_COMPLETE} - zbiorcze.xlsx"),
         # token, Status okresu, last complete period
         "board": [
             ["27_02_11_2026", "no_period_files", False],
@@ -400,14 +397,15 @@ def _year_of_work(root: Path, metrics: dict[str, object]) -> dict[str, object]:
         monday = tuesday + timedelta(days=6)
         token = f"{tuesday.day:02d}_{monday.day:02d}_{monday.month:02d}_{monday.year}"
         month = f"{monday.month:02d}_{MONTHS[monday.month - 1]}_{monday.year}"
-        folder = PeriodFolder(attachments / f"Rozliczenia {monday.year}" / month / "INEA", parse_period_token(token))
-        folder.directory.mkdir(parents=True)
-        shutil.copyfile(sample, folder.internal_settlement)
-        shutil.copyfile(sample, folder.collective_file)
+        folder = attachments / f"Rozliczenia {monday.year}" / month / "INEA" / token
+        folder.mkdir(parents=True)
+        shutil.copyfile(sample, folder / f"Rozliczenie wew. {token}.xlsx")
+        shutil.copyfile(sample, folder / f"Rozliczenie {token} - zbiorcze.xlsx")
         if weeks_back > 0:
-            folder.worker_settlements.mkdir()
+            workers = folder / f"Rozliczenie pracowników {token}"
+            workers.mkdir()
             for worker in YEAR_WORKERS:
-                shutil.copyfile(sample, folder.worker_settlement(worker))
+                shutil.copyfile(sample, workers / f"Rozliczenie {token} - {worker}.xlsx")
         week_preparation, week_settlement = _year_metric_runs(rnd, token, monday)
         preparation += week_preparation
         settlement += week_settlement if weeks_back > 0 else []
@@ -488,16 +486,16 @@ import biblioteka_ktorej_nie_ma  # noqa: F401
 
 
 # The tool's konfiguracja wykonawców: tracked in the first version with an example, untracked by the newest (#161).
-WORKER_MAPPING = WORKER_CONFIG.relative_to(TOOL_ROOT).as_posix()
+WORKER_MAPPING = "config/worker_mapping.yaml"
 # A library no index has: with pip offline (PIP_NO_INDEX in serve_centrum.py) its installation always fails.
 UNINSTALLABLE_REQUIREMENTS = "biblioteka-syntetyczna-nie-do-zainstalowania>=1.0\n"
 # Dad's files in the clone's config/ after the first version: his konfiguracja wykonawców with synthetic
 # "real" names (a local change) and files Git never tracks (Ustawienia taty, the key to Zgłoszenia, a Wzorzec).
 DAD_FILES = {
     WORKER_MAPPING: "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n",
-    settings_file(Path()).as_posix(): "folder_okresow: INEA\n",
-    (config_dir(Path()) / REPORT_KEY_FILE).as_posix(): "klucz-syntetyczny\n",
-    (config_dir(Path()) / WORKER_TEMPLATE_NAME).as_posix(): "wzorzec syntetyczny\n",
+    "config/centrum-ustawienia.yaml": "folder_okresow: INEA\n",
+    f"config/{REPORT_KEY_FILE}": "klucz-syntetyczny\n",
+    f"config/{WORKER_TEMPLATE_NAME}": "wzorzec syntetyczny\n",
 }
 
 
@@ -558,11 +556,12 @@ def dad_files(root: Path) -> dict[str, object]:
     periods.mkdir()
 
     ready = _period_files(periods, "22_28_09_2026")
-    ready.worker_settlements.mkdir()
+    workers = ready / "Rozliczenie pracowników 22_28_09_2026"
+    workers.mkdir()
     for worker in WORKERS:
-        _workbook(ready.worker_settlement(worker))
+        _workbook(workers / f"Rozliczenie 22_28_09_2026 - {worker}.xlsx")
     needs_check = _period_files(periods, NEEDS_CHECK)
-    _collective_file(needs_check.collective_file, ("wykonawca.a", UNKNOWN_WORKER))
+    _collective_file(needs_check / f"Rozliczenie {NEEDS_CHECK} - zbiorcze.xlsx", ("wykonawca.a", UNKNOWN_WORKER))
     (periods / "15_21_09_2026").mkdir()
     (periods / "Archiwum").mkdir()
 

@@ -10,7 +10,7 @@ from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
 from drive.common import DAD_TIME_ZONE, Run, dad_tab, read_bytes, remove
-from rozliczenia.workbook_files import excel_lock_file
+from atrapy.workbooks import excel_lock
 
 FEATURE = "kopie-intermax"
 CARD = "Kopie INTERMAX"
@@ -86,7 +86,7 @@ def drive(run: Run, page: Page) -> None:
         for name in set(_kopie(folder)) - set(kopie_before):
             remove(folder / name)
         register.write_bytes(original)
-        lock = excel_lock_file(register)
+        lock = excel_lock(register)
         remove(lock, missing_ok=True)
         if saved is None:
             remove(settings, missing_ok=True)
@@ -140,7 +140,7 @@ def _drive(
     )
 
     run.step(FEATURE, "otwarty")
-    lock = excel_lock_file(register)
+    lock = excel_lock(register)
     lock.write_bytes(b"\x00" * 165)
     try:
         kopie = _kopie(folder)
