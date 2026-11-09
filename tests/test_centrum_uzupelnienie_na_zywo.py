@@ -7,7 +7,7 @@ zegar Centrum testu, nigdy uśpienie.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 import shutil
 from typing import Any
@@ -18,7 +18,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import workbook_files
 from rozliczenia.centrum.live_file import LastGoodReads
-from rozliczenia.input_checks import FILE_READERS
 from tests.fixtures.centrum import FakeOneDrive
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, filling_centrum, run_to_end
@@ -85,7 +84,7 @@ def test_sprawdzenie_zapisu_bez_zmian_nie_otwiera_skoroszytu(tmp_path: Path) -> 
         opened.append(path)
         return workbook_files.file_bytes(path)
 
-    centrum = _prepared(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, source=counted)))
+    centrum = _prepared(tmp_path, surroundings=Surroundings(source=counted))
     shown = centrum.view(VIEW)["read"]["version"]
     opened.clear()
 

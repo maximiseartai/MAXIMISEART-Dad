@@ -71,12 +71,12 @@ from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool
 from rozliczenia.centrum.version import SERVICE, short_commit
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
-from rozliczenia.run_context import RunContexts
-from rozliczenia.input_checks import FILE_READERS, Readers
+from rozliczenia.run_context import RunContexts, TemplateCheck, check_on_disk
 from rozliczenia.intermax_copies import default_directory as default_intermax_copies
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
+from rozliczenia.workbook_files import ByteSource, file_bytes
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 _LOCAL_HOSTNAMES = frozenset({HOST, "localhost"})
@@ -100,7 +100,8 @@ def create_app(
     report_search_deadline_s: float = SEARCH_DEADLINE_S,
     tool_update: ToolClone | None = None,
     guardian: GuardianLauncher | None = None,
-    readers: Readers = FILE_READERS,
+    source: ByteSource = file_bytes,
+    template_check: TemplateCheck = check_on_disk,
     intermax_copies: Path | None = None,
     intermax_disk: Disk = LOCAL_DISK,
     now: Callable[[], datetime] = lambda: datetime.now().astimezone(),
@@ -190,9 +191,9 @@ def create_app(
         cloud_files or CloudFiles.of_system(),
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
-    # Uchwyt plików taty tej pracy: Diagnoza, Uzupełnienie i dni INTERMAX czytają nim pliki taty ze źródłem bajtów
-    # czytników, a jego pamięć to pamięć reguły danych pracy.
-    files = DadFiles(source=readers.source, forbidden=work.forbidden)
+    # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie i dni INTERMAX czytają nim pliki taty ze źródła
+    # bajtów ``source``, a jego pamięć to pamięć reguły danych pracy.
+    files = DadFiles(source=source, forbidden=work.forbidden)
     filling = FillingReads(work, files)
     app.include_router(filling_router(store, log, surroundings.cloud_files, filling))
     outbox = case_outbox(work, box, cases)
@@ -219,13 +220,13 @@ def create_app(
             configuration=configuration,
             log=log,
             surroundings=surroundings,
-            readers=readers,
+            template_check=template_check,
             files=files,
         ),
         log,
         comments,
     )
-    contexts = RunContexts(files=files, readers=readers)
+    contexts = RunContexts(files=files, template_check=template_check)
     # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
     parts = HostParts(
         efenix=(efenix_window or EfenixWindow.of_tata()).opening(),
@@ -273,7 +274,7 @@ def create_app(
     app.include_router(metrics_router(history, today))
     app.include_router(
         configuration_router(
-            configuration, surroundings.tool_freshness, release, lambda: box.judge(wait_s=CONFIGURATION_WAIT_S), readers
+            configuration, surroundings.tool_freshness, release, lambda: box.judge(wait_s=CONFIGURATION_WAIT_S), template_check
         )
     )
     app.include_router(tool_update_router(updates))

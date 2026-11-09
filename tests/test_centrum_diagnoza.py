@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -17,7 +16,6 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.centrum.report_box import Refused, Unreachable
-from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.message import Message
 from rozliczenia.template_file import TemplateFile
 
@@ -590,7 +588,7 @@ def test_nieoczekiwany_wyjatek_ktory_wraca_w_diagnozie_zostawia_sprawdzenie_nies
     def fail_unexpectedly(path: Path) -> NoReturn:
         raise RuntimeError("nieprzewidziany błąd przy SYN-001")
 
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=on_register_read(fail_unexpectedly)))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(source=on_register_read(fail_unexpectedly)))
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
 
     diagnosis = diagnose(centrum, run_id)
@@ -607,7 +605,7 @@ def test_nieoczekiwany_wyjatek_czytnika_wzorca_w_przebiegu_wraca_w_jego_diagnozi
     def fail_unexpectedly(template: TemplateFile) -> NoReturn:
         raise RuntimeError("nieprzewidziany błąd przy SYN-001")
 
-    centrum = settling_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, template=fail_unexpectedly)))
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(template_check=fail_unexpectedly))
     stopped = run_to_end(centrum, dry_run=True)
 
     diagnosis = diagnose(centrum, stopped["run"]["id"])
@@ -625,9 +623,9 @@ def test_wyjatek_przy_sprawdzaniu_jednego_wzorca_nie_ukrywa_wyniku_drugiego(tmp_
     def check_template(template: TemplateFile) -> None:
         if internal_template_failing and template.path == centrum.fixture.internal_template_path:
             raise RuntimeError("nieprzewidziany błąd przy SYN-001")
-        FILE_READERS.template(template)
+        template.check()
 
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, template=check_template)))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(template_check=check_template))
     run_id = stopped_for_maks(centrum)
     internal_template_failing = True
     centrum.fixture.collective_template_path.unlink()

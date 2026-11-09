@@ -231,7 +231,7 @@ def trace_section(body: str) -> list[str]:
 
 
 def test_nieoczekiwany_wyjatek_daje_w_zgloszeniu_typ_i_ramki_kodu_narzedzia_bez_tresci_wyjatku(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=on_register_read(raise_with_marker)))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(source=on_register_read(raise_with_marker)))
     write_report_key(centrum.tool)
     stopped = run_to_end(centrum, dry_run=True)
     run_id = stopped["run"]["id"]

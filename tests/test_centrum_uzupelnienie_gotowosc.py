@@ -6,7 +6,6 @@ Każdy test przygotowuje Plik zbiorczy z syntetycznego Rejestru zleceń w Centru
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -15,7 +14,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import workbook_files
 from rozliczenia.centrum.filling import without_quantity_sentence
-from rozliczenia.input_checks import FILE_READERS
 from tests.fixtures.centrum_processes import Surroundings, filling_centrum
 from atrapy.preparation import PERIOD
 
@@ -96,7 +94,7 @@ def test_ustawienie_przebiegu_nie_otwiera_zadnego_pliku_zbiorczego(tmp_path: Pat
         opened.append(path)
         return workbook_files.file_bytes(path)
 
-    centrum = filling_centrum(tmp_path, surroundings=Surroundings(readers=replace(FILE_READERS, source=spy)))
+    centrum = filling_centrum(tmp_path, surroundings=Surroundings(source=spy))
     opened.clear()
     response = centrum.client.get("/api/runs/setup")
     assert response.status_code == 200, response.text

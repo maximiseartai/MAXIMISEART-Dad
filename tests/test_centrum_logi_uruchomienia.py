@@ -55,7 +55,7 @@ from rozliczenia.efenix_window import ForwardRefusal, WindowAction
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_copy import InputCopy
-from rozliczenia.input_checks import FILE_READERS, Readers
+from rozliczenia.workbook_files import ByteSource
 from rozliczenia.preparation_register import period_sheets, read, register_problem
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible, collective_file_name_with
 from rozliczenia.register_file import OrderSheets
@@ -3505,12 +3505,12 @@ def _copy_settlement(tmp_path: Path, _: ExitStack) -> PreparingCentrum | Settlin
 
 
 def _copy_pricing(
-    tmp_path: Path, stack: ExitStack, readers: Readers = FILE_READERS
+    tmp_path: Path, stack: ExitStack, source: ByteSource = workbook_files.file_bytes
 ) -> PreparingCentrum | SettlingCentrum:
     """Zlecenie, którego efenix nie zna: Wycena czyta cały wiersz i kończy się wynikiem bez zapisu w efenix."""
 
     atrapa = stack.enter_context(atrapa_efenix([]))
-    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, readers=readers))
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, source=source))
     order = Order("#ZLKW03", address=ADDRESS_VALUE, cells={"I": ORANGE_VALUE, "K": FREE_TEXT}, amount=0.0)
     write_collective_file(centrum.period_parent, [order])
     return centrum
@@ -3620,14 +3620,13 @@ def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy
     content: list[bytes] = []
 
     def read_then_changed(path: Path) -> bytes:
-        read = FILE_READERS.source(path)
+        read = workbook_files.file_bytes(path)
         if path.name == REGISTER_NAME:
             content.append(read)
             after_reading(path)
         return read
 
-    readers = replace(FILE_READERS, source=read_then_changed)
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=readers))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(source=read_then_changed))
     _saved_at(centrum.fixture.register_path, READ_AT)
 
     view = run_to_end(centrum, dry_run=True)
@@ -3655,12 +3654,11 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
             saved_again.append(path)
         return content
 
-    readers = replace(FILE_READERS, source=read_then_saved)
     with ExitStack() as stack:
         if process == "efenix":
-            centrum = _copy_pricing(tmp_path, stack, readers)
+            centrum = _copy_pricing(tmp_path, stack, read_then_saved)
         else:
-            centrum = settling_centrum(tmp_path, surroundings=Surroundings(readers=readers))
+            centrum = settling_centrum(tmp_path, surroundings=Surroundings(source=read_then_saved))
         assert isinstance(centrum, SettlingCentrum)
         _saved_at(centrum.collective_file, READ_AT)
         started = centrum.client.post("/api/runs", json={"process": process, "period": PERIOD, "mode": "DRY-RUN" if process != "efenix" else "RUN"})

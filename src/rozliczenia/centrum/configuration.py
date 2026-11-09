@@ -25,8 +25,9 @@ from rozliczenia.centrum.process_kind import ConfigurationNeed, TemplateRole
 from rozliczenia.centrum.keyed_box import KeyJudgement
 from rozliczenia.centrum.tool_freshness import Judgement, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
-from rozliczenia.input_checks import ProcessTemplate, Readers
+from rozliczenia.input_checks import ProcessTemplate
 from rozliczenia.message import Message
+from rozliczenia.run_context import TemplateCheck
 from rozliczenia.workbook_files import Problem
 from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
 
@@ -142,10 +143,10 @@ class Template:
     def path(self) -> Path:
         return self.template.file.path
 
-    def problem(self, readers: Readers) -> Message | None:
-        """Komunikat, którym zatrzymałby się proces używający Wzorca; ``None``, gdy przechodzi Sprawdzanie."""
+    def problem(self, check: TemplateCheck) -> Message | None:
+        """Komunikat, którym zatrzymałby się proces używający Wzorca; ``None``, gdy przechodzi Sprawdzanie ``check``."""
 
-        found = self.template.problem(readers)
+        found = self.template.problem(check)
         return None if found is None else found.message
 
 
@@ -166,7 +167,7 @@ def configuration_router(
     freshness: ToolFreshness,
     release: ReleaseSource,
     key_judgement: Callable[[], KeyJudgement],
-    readers: Readers,
+    template_check: TemplateCheck,
 ) -> APIRouter:
     """Konfiguracja; ``key_judgement`` mówi, co wiadomo o kluczu do Zgłoszeń (bez jego wartości) i czeka na Skrzynkę
     najwyżej ``CONFIGURATION_WAIT_S``.
@@ -176,7 +177,7 @@ def configuration_router(
     """
 
     router = APIRouter(prefix="/api/configuration", tags=["konfiguracja"])
-    checked = _CheckedTemplates(readers)
+    checked = _CheckedTemplates(template_check)
 
     @router.get("", operation_id="getConfiguration")
     def configuration() -> configuration_contract.Configuration:
@@ -229,8 +230,8 @@ class _CheckedTemplates:
     zmieniają daty ani rozmiaru) są sprawdzane zawsze od nowa.
     """
 
-    def __init__(self, readers: Readers) -> None:
-        self._readers = readers
+    def __init__(self, check: TemplateCheck) -> None:
+        self._check = check
         self._results: dict[Path, tuple[tuple[int, int, bool], _Problem | None]] = {}
 
     def status(self, template: Template) -> configuration_contract.TemplateStatus:
@@ -254,7 +255,7 @@ class _CheckedTemplates:
             cached = self._results.get(path)
             if cached is not None and cached[0] == signature:
                 return cached[1]
-        found = template.template.problem(self._readers)
+        found = template.template.problem(self._check)
         result = None if found is None else (_kind(found.problem), found.message)
         if signature is not None:
             if found is None or found.problem in _CONTENT_PROBLEMS:

@@ -279,7 +279,7 @@ def file_bytes(path: Path) -> bytes:
 
 ByteSource: TypeAlias = Callable[[Path], bytes]
 """Źródło bajtów skoroszytu (``dad_files.DadFiles.source``): produkcyjne to ``file_bytes``, a test podstawia źródło,
-które się psuje, liczy odczyty albo zapisuje plik zaraz po odczycie (``input_checks.Readers.source``)."""
+które się psuje, liczy odczyty albo zapisuje plik zaraz po odczycie."""
 
 
 def classified(path: Path, items: Iterator[_T]) -> Iterator[_T]:

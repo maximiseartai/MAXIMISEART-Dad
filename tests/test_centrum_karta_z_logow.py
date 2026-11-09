@@ -81,7 +81,7 @@ def test_uruchomienie_przerwane_zamknieciem_centrum_jest_nazwane_po_starcie(
     tmp_path: Path, dry_run: bool, action: str
 ) -> None:
     held = HeldRegister()
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=held.readers()))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(source=held.source()))
     running = centrum.start(dry_run=dry_run).json()
     assert wait_for(held.reading.is_set)
     closed = centrum.client
@@ -265,7 +265,7 @@ def test_nieczytelna_historia_bez_logow_daje_urwane_uruchomienie(tmp_path: Path,
 
 def test_karta_po_starcie_to_ostatni_start_takze_po_przerwanym(tmp_path: Path) -> None:
     held = HeldRegister()
-    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(readers=held.readers()))
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(source=held.source()))
     centrum.start(dry_run=True)
     assert wait_for(held.reading.is_set)
     closed = centrum.client

@@ -23,7 +23,7 @@ import pytest
 
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import PeriodFolder
-from rozliczenia import input_checks, intermax_copies, preparation_register, workbook_files
+from rozliczenia import intermax_copies, preparation_register, workbook_files
 from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.centrum.logs_disk import name_of
@@ -827,7 +827,7 @@ def test_logi_uporzadkowania_maja_wklejone_wiersze_bez_adresu_i_numeru_umowy_ora
     centrum = ordering_centrum(
         tmp_path,
         Intermax(older_sheet=True, raw=pasted),
-        surroundings=Surroundings(readers=replace(input_checks.FILE_READERS, source=read_then_saved)),
+        surroundings=Surroundings(source=read_then_saved),
     )
     os.utime(centrum.register, (READ_AT.timestamp(), READ_AT.timestamp()))
     content = centrum.register.read_bytes()

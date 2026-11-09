@@ -1,7 +1,7 @@
 """Sprawdzanie plików taty w obu procesach, to samo w Diagnozie i Konfiguracji Centrum rozliczeń.
 
-Wzorce sprawdza czytnik (``Readers.template``), a bajty plików taty daje źródło (``Readers.source``), które proces i
-Centrum dostają jako zależność. Błąd czytnika (``WorkbookError``, ``PeriodFolderError``, ``WorkerConfigError``) moduł
+Wzorce sprawdza Sprawdzanie Wzorca (``run_context.TemplateCheck``), które proces i Centrum dostają jako zależność, a
+bajty plików taty czyta uchwyt plików taty (``dad_files.DadFiles``). Błąd czytnika (``WorkbookError``, ``PeriodFolderError``, ``WorkerConfigError``) moduł
 sam tłumaczy na Komunikat procesu, który z tego pliku korzysta: proces zatrzymuje się nim (``StopError``), a Diagnoza i
 Konfiguracja pokazują go jako przyczynę albo problem pliku. Rejestr zleceń Przygotowania czyta i tłumaczy jego widok
 Rejestru (``preparation_register``), a tu Sprawdzanie sprawdza tylko, że Rejestr jest dostępny.
@@ -13,7 +13,6 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
 
 from . import preparation_files, settlement_files, settlement_messages, workbook_files
 from . import worker_config_messages
@@ -27,30 +26,14 @@ from .period_folder import (
     locate_period_folder,
 )
 from .preparation_files import PeriodFiles
+from .run_context import TemplateCheck
 from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
-from .workbook_files import ByteSource, Problem, WorkbookError
+from .workbook_files import Problem, WorkbookError
 from .worker_config import WorkerConfigError, load_worker_mapping
 
 
 @dataclass(frozen=True)
-class Readers:
-    """Czytnik Wzorców i źródło bajtów plików taty; błąd pliku zgłaszają jako ``WorkbookError``.
-
-    Produkcyjne czytają pliki (``FILE_READERS``), a test i weryfikacja podstawiają czytnik Wzorca, który się psuje, albo
-    źródło bajtów, które się psuje, czeka, liczy odczyty albo zapisuje plik zaraz po odczycie. Ten sam obiekt dostają
-    Uruchomienie procesu i Diagnoza, więc usterka czytnika trafia do obu.
-    """
-
-    template: Callable[[TemplateFile], None] = TemplateFile.check
-    """Sprawdzanie Wzorca: istnieje, nie jest otwarty, daje się odczytać i ma układ swojego pliku."""
-    source: ByteSource = workbook_files.file_bytes
-    """Bajty plików taty, które czyta uchwyt plików taty (``dad_files.DadFiles.source``): Rejestru zleceń i INTERMAX w
-    procesach, Diagnozie i na karcie dni i Pliku zbiorczego w Przebiegu rozliczeń, Wycenie w efenix i Uzupełnieniu."""
-
-
-FILE_READERS: Final = Readers()
-
 # Dawna nazwa Wzorca rozliczenia pracownika, zmieniona 18.10.2026 przed pierwszym Wydaniem (v0.1.0). Usuń ją razem z
 # ``_worker_template_unusable``, gdy Log Uruchomienia taty pokaże Przebieg rozliczeń, którego Sprawdzanie przeszło
 # Wzorzec pod obecną nazwą: podpowiedź pomaga tylko temu, komu Wzorca pod obecną nazwą brakuje (D3 rozplątania 7.11).
@@ -104,19 +87,19 @@ class ProcessTemplate:
     def worker(cls, path: Path) -> ProcessTemplate:
         return cls(TemplateFile.worker_settlement(path), _worker_template_unusable)
 
-    def problem(self, readers: Readers) -> TemplateProblem | None:
-        """``None``, gdy Wzorzec przechodzi Sprawdzanie."""
+    def problem(self, check: TemplateCheck) -> TemplateProblem | None:
+        """``None``, gdy Wzorzec przechodzi Sprawdzanie ``check``."""
 
         try:
-            readers.template(self.file)
+            check(self.file)
         except WorkbookError as error:
             return TemplateProblem(error.problem, self._explain(error))
         return None
 
-    def checked(self, readers: Readers) -> TemplateFile:
-        """Wzorzec po Sprawdzaniu, z którego Zapisywanie tworzy pliki; zatrzymanie, gdy go nie przechodzi."""
+    def checked(self, check: TemplateCheck) -> TemplateFile:
+        """Wzorzec po Sprawdzaniu ``check``, z którego Zapisywanie tworzy pliki; zatrzymanie, gdy go nie przechodzi."""
 
-        found = self.problem(readers)
+        found = self.problem(check)
         if found is not None:
             raise StopError(found.message)
         return self.file
@@ -130,15 +113,15 @@ def check_preparation(
     *,
     internal_template: Path,
     collective_template: Path,
-    readers: Readers,
+    template_check: TemplateCheck,
 ) -> tuple[PeriodFiles, dict[str, str]]:
     """Sprawdzanie Przygotowania pliku zbiorczego: pliki okresu i Wykonawcy albo zatrzymanie."""
 
     settlement_period = _parse_period(period)
     with _stops(messages.register_unusable):
         workbook_files.ensure_available(register)
-    internal = ProcessTemplate.internal(internal_template).checked(readers)
-    collective = ProcessTemplate.collective(collective_template).checked(readers)
+    internal = ProcessTemplate.internal(internal_template).checked(template_check)
+    collective = ProcessTemplate.collective(collective_template).checked(template_check)
     if not periods_directory.is_dir():
         raise StopError(messages.periods_directory_missing(periods_directory))
     files = PeriodFiles(internal, collective, _locate_period_folder(periods_directory, settlement_period))
@@ -147,7 +130,7 @@ def check_preparation(
 
 
 def check_settlement(
-    source: Path, config: Path, worker_template: Path, readers: Readers
+    source: Path, config: Path, worker_template: Path, template_check: TemplateCheck
 ) -> tuple[PeriodFolder, dict[str, str], TemplateFile]:
     """Sprawdzanie Przebiegu rozliczeń: Folder okresu Pliku zbiorczego, Wykonawcy i sprawdzony Wzorzec albo zatrzymanie."""
 
@@ -159,7 +142,7 @@ def check_settlement(
         raise StopError(settlement_messages.collective_file_invalid(source, error)) from error
     settlement_files.ensure_worker_settlements_absent(folder.worker_settlements)
     mapping = _worker_mapping(config)
-    return folder, mapping, ProcessTemplate.worker(worker_template).checked(readers)
+    return folder, mapping, ProcessTemplate.worker(worker_template).checked(template_check)
 
 
 def workers(config: Path) -> dict[str, str] | Message:

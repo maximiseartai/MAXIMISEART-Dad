@@ -27,11 +27,11 @@ from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.tool_update import ToolClone, find_git
 from rozliczenia.efenix_pace import Pace
-from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.period_folder import worker_settlements_name_with
 from rozliczenia.process_run import Outcome, Process, ProcessInputs, ProcessSummary, run_process
 from rozliczenia.telemetry import CompletedResult
-from rozliczenia.run_context import RunContext
+from rozliczenia.run_context import RunContext, TemplateCheck, check_on_disk
+from rozliczenia.workbook_files import ByteSource, file_bytes
 
 from tests.fixtures.centrum import (
     NO_EFENIX,
@@ -146,7 +146,8 @@ class Surroundings:
     ``guardian_failure`` opiekun nie wystartuje: wywołuje ją i rzuca ``OSError``.
     ``report_search_deadline_s`` to limit, po którym Diagnoza przestaje czekać na skrzynkę Zgłoszeń.
     ``release_unanswered`` to GitHub, który przy ``tool`` nie odpowiada o najnowsze Wydanie, chociaż klon dalej
-    pobiera z „origin”. ``readers`` czytają Rejestr zleceń i Wzorce w Uruchomieniu procesu, Diagnozie i Konfiguracji.
+    pobiera z „origin”. ``source`` daje bajty plików taty (Rejestru zleceń, Pliku zbiorczego), a ``template_check``
+    sprawdza Wzorce, oba w Uruchomieniu procesu, Diagnozie i Konfiguracji.
     ``find_git`` znajduje Gita, którego przy ``tool`` używa Centrum (``None``: Gita nie ma). ``efenix_url`` to lista zleceń
     okna efenix Wyceny w efenix w Chromium Playwrighta bez okna: domyślnie adres, pod którym nic nie odpowiada, a w testach
     Wyceny adres Atrapy efenix, nigdy efenix.pl; ``efenix_arguments`` to dodatkowe argumenty tej przeglądarki (np. port
@@ -164,7 +165,8 @@ class Surroundings:
     guardian_failure: Callable[[], None] | None = None
     report_search_deadline_s: float = SEARCH_DEADLINE_S
     release_unanswered: bool = False
-    readers: Readers = FILE_READERS
+    source: ByteSource = file_bytes
+    template_check: TemplateCheck = check_on_disk
     find_git: Callable[[], Path | None] = find_git
     efenix_url: str = NO_EFENIX
     efenix_arguments: tuple[str, ...] = ()
@@ -223,7 +225,7 @@ class HeldRegister:
     reading: threading.Event = field(default_factory=threading.Event)
     released: threading.Event = field(default_factory=threading.Event)
 
-    def readers(self) -> Readers:
+    def source(self) -> ByteSource:
         def held(path: Path) -> None:
             if not self.reading.is_set():
                 self.reading.set()
@@ -232,16 +234,16 @@ class HeldRegister:
         return on_register_read(held)
 
 
-def on_register_read(before: Callable[[Path], None]) -> Readers:
-    """Czytniki plików, których źródło bajtów woła ``before`` przed każdym odczytem Rejestru zleceń fixture Przygotowania
+def on_register_read(before: Callable[[Path], None]) -> ByteSource:
+    """Źródło bajtów plików taty, które woła ``before`` przed każdym odczytem Rejestru zleceń fixture Przygotowania
     (``REGISTER_NAME``): usterka, czekanie albo zapis pliku trafia do Uruchomienia procesu i do Diagnozy."""
 
     def source(path: Path) -> bytes:
         if path.name == REGISTER_NAME:
             before(path)
-        return FILE_READERS.source(path)
+        return file_bytes(path)
 
-    return replace(FILE_READERS, source=source)
+    return source
 
 
 def _client(
@@ -278,7 +280,8 @@ def _app(
         report_search_deadline_s=surroundings.report_search_deadline_s,
         tool_update=surroundings.tool_update(),
         guardian=surroundings.guardian,
-        readers=surroundings.readers,
+        source=surroundings.source,
+        template_check=surroundings.template_check,
         window=efenix_window(
             tool, surroundings.efenix_url, arguments=surroundings.efenix_arguments, pace=surroundings.efenix_pace
         ),
