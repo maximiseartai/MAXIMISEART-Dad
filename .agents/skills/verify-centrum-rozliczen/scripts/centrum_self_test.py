@@ -161,6 +161,7 @@ PROTOCOL_SAMPLES = (
     'f"skrzynka-zgloszen/{number}.json#komentarz-{index}"',
     'Path(root, "github", "main-commit.txt")',
     'root / "pacing" / name',
+    'root / "fixture.json"',
 )
 # Strings beside those names, which the guard leaves alone.
 PROTOCOL_LOOKALIKES = (
@@ -518,7 +519,7 @@ def _check_result_of_start(errors: list[str]) -> None:
             with tempfile.TemporaryDirectory() as scratch:
                 root = Path(scratch) / "run"
                 root.mkdir()
-                (root / "fixture.json").write_text("{}", encoding="utf-8")
+                File.FIXTURE.write(root, "{}")
                 run = Run(root, f"http://127.0.0.1:{server.server_port}/", Path(scratch) / "evidence")
                 with contextlib.redirect_stdout(io.StringIO()):
                     result: object = result_of_start(run, "powtorka", lambda: since_click.append(0))
@@ -577,7 +578,7 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
         root = Path(scratch) / "run"
         root.mkdir()
         settings = settings_file(root)
-        (root / "fixture.json").write_text(json.dumps({"settings": str(settings)}), encoding="utf-8")
+        File.FIXTURE.write(root, json.dumps({"settings": str(settings)}))
         run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
         run.run_logs_dir.mkdir(parents=True)
         logs = run.run_logs_dir / "20261019T060000Z-preparation-aaaaaaaa.json"
@@ -638,7 +639,7 @@ def _check_clock_moved_whole(errors: list[str]) -> None:
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch) / "run"
         root.mkdir()
-        (root / "fixture.json").write_text(json.dumps({"settings": str(root / "config" / "s.yaml")}), encoding="utf-8")
+        File.FIXTURE.write(root, json.dumps({"settings": str(root / "config" / "s.yaml")}))
         run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
         clock = ScriptedClock(root)
         failures: list[BaseException] = []
@@ -852,7 +853,8 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
 
     The round trips: ``ScriptedPlatform`` opens a file (logged in ``Log.OPENED``) and answers a picker (logged in
     ``Log.DIALOGS``, answered from ``File.PICKER_ANSWER``); ``FileReportBox`` gives its outcome for a new issue while
-    ``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED`` or ``rejects`` is on, opens issue 1 with comment 1 and logs a
+    ``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED`` or ``rejects`` is on, opens issue 1 with comment 1 and reads the
+    comment back from ``issue_file``, and logs a
     question for closed issues in ``Log.REPORT_QUESTIONS``; it gives its outcome for a new Archiwum while
     ``Switch.ARCHIVE_REFUSED``, ``Switch.BOX_OFFLINE`` or ``Switch.KEY_REFUSED`` is on, uploads a file (kept at
     ``archive_file``, ``archive_listing`` and ``last_file_id``), uploads a second one under the next file id and
@@ -862,13 +864,15 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
     ``_register_failing_on_hook`` fails while ``Switch.REGISTER_FAULT`` is on. ``ScriptedClock`` (``File.CLOCK_MOVE``,
     ``File.CLOCK_DIED``) runs in ``_check_clock_alarm_failure``. What these round trips do not run is held by review
     only; the files the served side writes as it starts, ``File.EFENIX_ADDRESS`` with ``efenix_files``
-    (``_efenix_window``) and ``File.SERVER`` (``record_bound_server``), are held by the run itself, loudly: the drive
-    fails on a missing address of the Atrapa efenix and the run waits for the server record until its limit."""
+    (``_efenix_window``) and ``File.SERVER`` (``record_bound_server``), and the one it reads as it starts,
+    ``File.FIXTURE`` (``_serve``), are held by the run itself, loudly: the drive fails on a missing address of the
+    Atrapa efenix, the run waits for the server record until its limit, and the served side does not start without
+    the fixture."""
 
     import json
     import tempfile
 
-    from harness import File, Log, Switch, archive_file, archive_listing, comment_position, last_file_id, rejects
+    from harness import File, Log, Switch, archive_file, archive_listing, comment_position, issue_file, last_file_id, rejects
     from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Removed, Sent, Unreachable
     from rozliczenia.centrum.tool_freshness import GitHubReleases
     from serve_centrum import FileReportBox, ScriptedPlatform, _register_failing_on_hook, _scripted_github, _scripted_onedrive
@@ -906,6 +910,10 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
         commented = box.comment(1, "c", key="k")
         if sent != Sent(1) or not (isinstance(commented, Commented) and comment_position(commented.url) == (1, 1)):
             errors.append(f"the scripted skrzynka does not open issue 1 with comment 1: {sent!r}, {commented!r}")
+        # The answer to the comment comes before any write, so the comment is read back from ``issue_file``.
+        kept = box.comments(1, key="k")
+        if not isinstance(kept, tuple) or [(comment_position(each.url), each.body) for each in kept] != [((1, 1), "c")]:
+            errors.append(f"the scripted skrzynka does not keep comment 1 in {issue_file(root, 1).name}: {kept!r}")
         box.labelled_issues("zgloszenie", include_closed=True, key="k")
         if records(Log.REPORT_QUESTIONS) != [{"label": "zgloszenie"}]:
             errors.append(f"a question for closed issues is not logged in {Log.REPORT_QUESTIONS.value}")
@@ -1001,7 +1009,7 @@ def _check_clock_alarm_failure(errors: list[str]) -> None:
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch) / "run"
             File.CLOCK_MOVE.file(root).parent.mkdir(parents=True)
-            (root / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
+            File.FIXTURE.write(root, json.dumps({}))
             File.CLOCK_MOVE.write(root, "jedna minuta")
             run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
             ScriptedClock(root)

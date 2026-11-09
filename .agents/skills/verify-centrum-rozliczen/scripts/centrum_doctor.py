@@ -42,7 +42,7 @@ def check(root: Path) -> list[str]:
     try:
         _, health_body = _get(url + "api/health")
         health = json.loads(health_body)
-        fixture = json.loads((root / "fixture.json").read_text(encoding="utf-8"))
+        fixture = json.loads(File.FIXTURE.file(root).read_text(encoding="utf-8"))
         identity = {"service": SERVICE, "commit": fixture["tool"]["first"][:7]}
         if {key: health.get(key) for key in identity} != identity or not health.get("instance"):
             problems.append(f"unexpected health answer: {health}")

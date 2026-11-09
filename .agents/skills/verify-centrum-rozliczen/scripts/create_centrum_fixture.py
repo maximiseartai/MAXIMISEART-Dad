@@ -58,6 +58,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from skrypt_skilla import Parser, create_run_root
+from harness import File
 from atrapy.intermax import ORDER_SHEET, Intermax
 from atrapy.scenariusz_centrum import (
     COLLECTIVE_FILE_ROWS,
@@ -65,7 +66,6 @@ from atrapy.scenariusz_centrum import (
     COMPLETED,
     DEVICES,
     EMPTY_WORKER,
-    INTERNAL_HEADERS,
     LAST_COMPLETE,
     NEEDS_CHECK,
     ORDERS,
@@ -81,6 +81,7 @@ from atrapy.pliki_taty import (
     CONFIG_DIRECTORY,
     FIRST_DATA_ROW,
     HEADER_ROW,
+    INTERNAL_HEADERS,
     QUANTITY_COLUMNS,
     REPORT_KEY_FILE,
     SETTINGS_FILE,
@@ -619,7 +620,7 @@ def create(root: Path, variant: str | None = None) -> dict[str, object]:
         metrics["oldest"] = year["oldest"]
         # Dad's year for wydajnosc: its folder okresów replaces the flat INEA in the measured Centrum
         fixture["year_of_work"] = year
-    (root / "fixture.json").write_text(json.dumps(fixture, ensure_ascii=False, indent=2), encoding="utf-8")
+    File.FIXTURE.write(root, json.dumps(fixture, ensure_ascii=False, indent=2))
     return fixture
 
 

@@ -3,44 +3,41 @@
 This is the production app (``create_app`` + ``serve`` from ``rozliczenia.centrum``)
 with run-local inputs: the settings file, the configuration directory
 (konfiguracja wykonawców and the three Wzorce), and the metrics files of the processes live in
-the run root (never Dad's files next to the tool), and the platform adapter,
-the production boundary for Dad's computer, is scripted:
+the run root and ``File.FIXTURE`` names them (never Dad's files next to the tool), and the platform adapter,
+the production boundary for Dad's computer, is scripted.
+Every file of the run root named below by a member of ``harness.py`` is the file of that member; without it the
+boundary answers as the sentence says.
 
-- the native file and folder pickers answer with the path written to
-  ``<root>/picker/answer.txt`` (consumed by the next picker; no file = Dad
-  cancelled) and log each dialog title to ``<root>/dialogs.jsonl``;
-- opening a file in Excel or a folder in Explorer appends the path to
-  ``<root>/opened.jsonl`` instead of launching an application.
+- the native file and folder pickers answer with the path in ``File.PICKER_ANSWER``
+  (consumed by the next picker; no file = Dad cancelled) and log each dialog title in ``Log.DIALOGS``;
+- opening a file in Excel or a folder in Explorer is logged in ``Log.OPENED`` instead of launching an application.
 
 The Diagnoza's two boundaries beyond Dad's files are scripted too, so the
 verification never reaches GitHub and checks OneDrive on every system:
 
 - the commit of the newest Wydanie on GitHub is the tool's own commit (up to date) unless
-  ``<root>/github/main-commit.txt`` names another one, and its tag is the one in
-  ``<root>/github/wydanie.txt`` (none without it); the published Wydania
-  (GitHub Releases with their notes) are ``<root>/github/wydania.json`` in the
-  shape of GitHub's list (none without it); while
-  ``<root>/github/brak-sieci`` exists there is no network. The tool is the
-  run's synthetic clone ``<root>/aktualizacja/klon``: its own commit is the
-  clone's ``HEAD`` (``tool_commit``) unless ``<root>/github/tool-commit.txt``
-  names another one (Dad updated the tool), the day it is on that commit
-  comes from the clone's ``HEAD`` reflog (``commit_since``), and its Wydanie
+  ``File.MAIN_COMMIT`` names another one, and its tag is the one in ``File.RELEASE_TAG`` (none without it);
+  the published Wydania (GitHub Releases with their notes) are ``File.RELEASES`` in the
+  shape of GitHub's list (none without it); while ``Switch.GITHUB_OFFLINE`` is on there is no network.
+  The tool is the run's synthetic clone (``tool.clone`` of ``File.FIXTURE``): its own commit is the
+  clone's ``HEAD`` (``tool_commit``) unless ``File.TOOL_COMMIT`` names another one (Dad updated the tool),
+  the day it is on that commit comes from the clone's ``HEAD`` reflog (``commit_since``), and its Wydanie
   from the clone's tags on that commit (``release_at``), as in production;
-- a file whose full path is a line of ``<root>/onedrive/tylko-w-chmurze.txt``
-  has the Windows attribute of a OneDrive file „tylko online”.
+- a file whose full path is a line of ``File.CLOUD_ONLY`` has the Windows attribute of a OneDrive file
+  „tylko online”.
 
 Aktualizacja narzędzia moves that clone with real Git, fetching from the
-run's local "origin" ``<root>/aktualizacja/origin.git`` instead of GitHub, so no
+run's local "origin" (``tool.origin``) instead of GitHub, so no
 Centrum of a verification run ever updates the checkout it runs from. After a
 successful update this Centrum closes itself and the real restart guardian runs
 the clone's ``run_centrum.py``, a fixture shim that runs this script again with
-the same run root and port: the restarted Centrum keeps every scripted boundary
-and rewrites ``server.json`` with its own pid.
+the same run root and port after ``Pace.RESTART``: the restarted Centrum keeps every scripted boundary
+and rewrites ``File.SERVER`` with its own pid.
 
 The skrzynka Zgłoszeń (Maks's private repository on GitHub at Dad's) is a
-directory, ``<root>/skrzynka-zgloszen/``: each issue Centrum opens (a Zgłoszenie
-Dad sends, or a Kontrola ilości Centrum sends by itself) becomes
-``<number>.json`` with its title, body, label, comments, and ``state`` (``open``; the
+directory, ``report_box``: each issue Centrum opens (a Zgłoszenie
+Dad sends, or a Kontrola ilości Centrum sends by itself) becomes its
+``issue_file`` with its title, body, label, comments, and ``state`` (``open``; the
 drive may edit it to ``closed`` with ``state_reason`` and ``closed_at`` as GitHub
 gives them, which Centrum reads as Maks closing the Zgłoszenie or Uwaga taty).
 ``body`` and ``comments`` are what Maks sees on GitHub, without the hidden line of the
@@ -52,48 +49,46 @@ with that label, only the ``open`` ones unless closed issues are asked for too;
 Centrum takes the newest one whose body has its exact line (the fingerprint
 line of a Zgłoszenie's problem, or the period line of a Kontrola ilości, which
 then goes into that file's ``comments``). The key is never written
-there. The skrzynka puts each issue file and ``archiwa.json`` in place at once (``replace_atomically``), as GitHub
+there. The skrzynka puts each issue file and the ``archive_listing`` in place at once (``replace_atomically``), as GitHub
 never shows half an issue: the drive reads them from its own process, and on Windows a plain write leaves the file
 empty for a moment (#963). The drive edits an issue file the same way (``edit_issue``), so the skrzynka reads an issue
-file once it is in place (``_read_put_in_place``). While
-``<root>/skrzynka-zgloszen/brak-sieci`` exists the skrzynka is unreachable, while
-``<root>/skrzynka-zgloszen/odmawia-klucza`` exists it refuses the key for every question
+file once it is in place (``_read_put_in_place``). While ``Switch.BOX_OFFLINE`` is on the skrzynka is unreachable,
+while ``Switch.KEY_REFUSED`` is on it refuses the key for every question
 (``Refused``, like GitHub's 401 for an expired token), and while
-``<root>/skrzynka-zgloszen/odrzuca-<label>`` exists it rejects the content of every new
+``rejects`` of a label is on it rejects the content of every new
 issue with that label and of every comment to one (``Rejected``, like GitHub's 422).
-The Archiwa Logów okresu (GitHub Releases of that repository) are ``<root>/skrzynka-archiwum/``: ``archiwa.json`` lists
-each Archiwum (id, tag, title, description) and its files (id, name, label), and ``<tag>/<name>`` holds the bytes of each
+The Archiwa Logów okresu (GitHub Releases of that repository) live beside it: ``archive_listing`` lists
+each Archiwum (id, tag, title, description) and its files (id, name, label), and ``archive_file`` holds the bytes of each
 file as Centrum uploaded them (gzip). A second file of one name in one Archiwum is ``Rejected``, as on GitHub, a file
-gets an id no file had before, also one removed (``ostatni-plik.txt`` keeps the last id), as on GitHub, where
+gets an id no file had before, also one removed (``last_file_id`` keeps the last id), as on GitHub, where
 ``KeyedBox`` tells a removed file from its new version by the id, and while
-``<root>/skrzynka-zgloszen/odmawia-archiwum`` exists every step of the Archiwum is ``Refused``, like GitHub's 403 for a
+``Switch.ARCHIVE_REFUSED`` is on every step of the Archiwum is ``Refused``, like GitHub's 403 for a
 Token without the permission to write the repository's contents.
 GitHub's rate limit (a 403 that is no refusal) only pytest covers, on the GitHub adapter.
 Each question for the issues with a label, closed ones included (how
-Powiadomienia ask about Dad's sent Zgłoszenia and Uwagi), appends its label to
-``<root>/skrzynka-zgloszen-zapytania.jsonl``. While ``<root>/pacing/skrzynka-ms.txt``
-exists, the skrzynka waits that many milliseconds before it opens an issue, like
+Powiadomienia ask about Dad's sent Zgłoszenia and Uwagi), logs its label in ``Log.REPORT_QUESTIONS``.
+While ``Pace.REPORT_BOX`` is on, the skrzynka waits that many milliseconds before it opens an issue, like
 GitHub over a slow connection, so the drive can see that Centrum starts without
 waiting for the Kontrole ilości it sends again at start.
 
 Centrum asks the skrzynka for the state of Dad's sent cases, and GitHub for the
 Wydania, at most once per 10 minutes of its monotonic clock; each question for the
-published Wydania appends a line to ``<root>/github/zapytania-wydan.jsonl``; ``<root>/zegar/przesuniecie-min.txt`` moves that
+published Wydania is logged in ``Log.RELEASE_QUESTIONS``; ``File.CLOCK_MOVE`` moves that
 clock forward by the given minutes, so the drive need not wait. Wake-ups on that clock (the queue's retry a minute
 after a failure) fire within 0.2 s of their moment, so moving the clock wakes the queue at once. A failure of that
-wake-up thread leaves its traceback in ``<root>/zegar/budzik-padl.txt``, as no wake-up fires after it.
+wake-up thread leaves its traceback in ``File.CLOCK_DIED``, as no wake-up fires after it.
 
-One harness-only pacing hook: while ``<root>/pacing/szablony-ms.txt`` exists,
+One harness-only pacing hook: while ``Pace.TEMPLATES`` is on,
 each Szablon pracownika of a Przebieg rozliczeń RUN waits that many
 milliseconds before it is written. The synthetic Szablony take milliseconds,
 so without it the live Szablony pracowników progress and the refused closing
 during the Uruchomienie could not be observed. Results are unchanged.
 
-One more pacing hook: while ``<root>/pacing/aktualizacja-ms.txt`` exists, each
+One more pacing hook: while ``Pace.UPDATE`` is on, each
 Aktualizacja narzędzia waits that many milliseconds before it looks for Git.
 Fetching from the local "origin" takes milliseconds, so without it the progress
 and the refusals during an update could not be observed. Results are unchanged.
-Likewise, while ``<root>/pacing/instalacja-ms.txt`` exists, each installation of
+Likewise, while ``Pace.INSTALL`` is on, each installation of
 libraries waits that many milliseconds before it starts.
 
 Libraries are installed by the production installer (``pip_install``: this
@@ -102,7 +97,7 @@ process, so an installation never reaches PyPI and fails when it needs a library
 that is not installed. The run's virtual environment may have no pip at all;
 then the installation fails the same way.
 
-One harness-only fault hook: while ``<root>/awaria/odczyt-rejestru`` exists,
+One harness-only fault hook: while ``Switch.REGISTER_FAULT`` is on,
 reading the Rejestr zleceń raises an exception the process does not expect, so
 the drive can show Dad's path after a nieoczekiwany wyjątek. The hook is the
 byte source of Dad's files this Centrum gets (``create_app(source=...)``, ``DadFiles.source``), which the
@@ -110,19 +105,19 @@ Uruchomienie procesu and its Diagnoza both read the Rejestr with, so the fault r
 Diagnoza too, as a real one that does not go away would. No synthetic file causes one,
 because every known problem has its own Komunikat.
 
-Once the port is bound, ``<root>/server.json`` records this process and URL.
-The Centrum log goes to ``<root>/logs/centrum-rozliczen.log``, and the button
+Once the port is bound, ``File.SERVER`` records this process and URL.
+The Centrum log goes where the tool keeps it in the run root (``log_path``), and the button
 „Zamknij Centrum rozliczeń” stops this process the way it stops Dad's.
 
 Wycena w efenix never reaches efenix.pl (ADR 0024): this script serves the Atrapa efenix of the tests
 (``tools/lib/atrapy/atrapa_efenix.py``) on a free local port for as long as Centrum runs, writes its address to
-``<root>/efenix/adres.txt``, and gives Centrum an efenix window in Playwright's headless Chromium with its profile in
-``<root>/przegladarka-efenix`` and no human pace, like the
+``File.EFENIX_ADDRESS``, and gives Centrum an efenix window in Playwright's headless Chromium with its profile in
+the run root and no human pace, like the
 tests of the process (Dad's window pauses about 20 s per order). The Atrapa holds ``EFENIX_ORDERS`` of ``tools/lib/atrapy/scenariusz_centrum.py`` (made-up numbers, addresses and logins), starts
 logged out, so the window waits for Dad's login, and answers each search after ``EFENIX_SEARCH_DELAY_S``, so the
 live progress can be seen; a form posted to its ``page_login.php`` logs in. At its first start for a run root the
-script also writes the Plik zbiorczy of those orders, with the Kwota (AU) Excel computed, to
-``<root>/efenix/08_14_09_2026/`` (outside the folder okresów, so the drive puts it in place when it needs it).
+script also writes the Plik zbiorczy of those orders, with the Kwota (AU) Excel computed, to its period folder in
+``efenix_files`` (outside the folder okresów, so the drive puts it in place when it needs it).
 """
 
 from __future__ import annotations
@@ -520,7 +515,7 @@ def _scripted_github(root: Path, clone: Path) -> ToolFreshness:
 
 
 class ScriptedClock:
-    """Centrum's clock: monotonic time moved forward by ``<root>/zegar/przesuniecie-min.txt`` (see the module doc)."""
+    """Centrum's clock: monotonic time moved forward by ``File.CLOCK_MOVE`` (see the module doc)."""
 
     def __init__(self, root: Path, *, retry_s: float = READ_RETRY_S, alarm: bool = True) -> None:
         """``retry_s`` limits a refused read of the move (``_read_put_in_place``); without ``alarm`` no wake-up thread
@@ -644,7 +639,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     root = args.root
-    fixture = json.loads((root / "fixture.json").read_text(encoding="utf-8"))
+    fixture = json.loads(File.FIXTURE.file(root).read_text(encoding="utf-8"))
     today = date.fromisoformat(fixture["today"])
     metrics = fixture["metrics"]
     catalog = CATALOG.with_metrics(
