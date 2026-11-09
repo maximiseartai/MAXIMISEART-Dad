@@ -1,30 +1,22 @@
 """Zapisywanie Przebiegu rozliczeń: Folder rozliczeń pracowników powstaje cały albo wcale.
 
-Rozliczenia pracowników powstają w folderze tymczasowym obok Pliku zbiorczego,
-w Folderze okresu. Gotowy folder tymczasowy staje się Folderem rozliczeń
-pracowników jedną zmianą nazwy. Nienadpisywanie jest sprawdzane przed startem
-Przebiegu rozliczeń i ponownie tuż przed publikacją. Po nieudanym zapisie nie
-zostaje niepełny Folder rozliczeń pracowników. Folder tymczasowy, którego nie da
-się usunąć (np. trzyma jego pliki OneDrive), zostaje, a Komunikat podaje początek
-jego nazwy.
-
-Publikacja Przygotowania pliku zbiorczego jest osobna (``preparation_files``).
+Rozliczenia pracowników powstają w folderze tymczasowym obok Folderu rozliczeń pracowników, w Folderze okresu
+(``staged_publication``). Gotowy folder tymczasowy staje się Folderem rozliczeń pracowników jedną zmianą nazwy.
+Nienadpisywanie jest sprawdzane przed startem Przebiegu rozliczeń i ponownie tuż przed publikacją.
 """
 
 from __future__ import annotations
 
-import shutil
-import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
-from . import settlement_messages
+from . import settlement_messages, staged_publication
 from .message import StopError
 
 ResultT = TypeVar("ResultT")
 
-__all__ = ["ensure_worker_settlements_absent", "staging_prefix", "write_worker_settlements"]
+__all__ = ["ensure_worker_settlements_absent", "write_worker_settlements"]
 
 
 def ensure_worker_settlements_absent(target_directory: Path) -> None:
@@ -34,12 +26,6 @@ def ensure_worker_settlements_absent(target_directory: Path) -> None:
         raise StopError(settlement_messages.worker_settlements_exist(target_directory))
 
 
-def staging_prefix(target_directory: Path) -> str:
-    """Początek nazwy folderu tymczasowego, w którym powstaje Folder rozliczeń pracowników ``target_directory``."""
-
-    return f".{target_directory.name}.staging-"
-
-
 def write_worker_settlements(target_directory: Path, write: Callable[[Path], ResultT]) -> ResultT:
     """Publikuje Rozliczenia pracowników zapisane przez ``write`` w folderze tymczasowym.
 
@@ -47,24 +33,19 @@ def write_worker_settlements(target_directory: Path, write: Callable[[Path], Res
     Błąd zapisu zatrzymuje Przebieg rozliczeń Komunikatem bez publikacji.
     """
 
-    prefix = staging_prefix(target_directory)
-    try:
-        staging_directory = Path(tempfile.mkdtemp(prefix=prefix, dir=target_directory.parent))
-    except OSError as exc:
-        raise StopError(settlement_messages.write_failed(target_directory)) from exc
-    try:
+    def publish(staging: Path) -> ResultT:
+        results = write(staging)
+        ensure_worker_settlements_absent(target_directory)
         try:
-            results = write(staging_directory)
-            ensure_worker_settlements_absent(target_directory)
-        except OSError as exc:
-            raise StopError(settlement_messages.write_failed(target_directory)) from exc
-        try:
-            staging_directory.rename(target_directory)
+            staging.rename(target_directory)
         except OSError as exc:
             raise StopError(settlement_messages.publish_failed(target_directory)) from exc
-    except BaseException as error:
-        shutil.rmtree(staging_directory, ignore_errors=True)
-        if isinstance(error, StopError) and staging_directory.exists():
-            raise StopError(settlement_messages.staging_left(error.message, prefix)) from error
-        raise
-    return results
+        return results
+
+    return staged_publication.publish_staged(
+        target_directory.parent,
+        target_directory.name,
+        publish,
+        failed=settlement_messages.write_failed(target_directory),
+        left=settlement_messages.staging_left,
+    )

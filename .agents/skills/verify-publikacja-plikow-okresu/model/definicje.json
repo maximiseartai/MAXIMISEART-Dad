@@ -1,7 +1,9 @@
 {
   "src/rozliczenia/preparation_files.py": {
+    "_create_file": "e83cc846e39fa032"
+  },
+  "src/rozliczenia/staged_publication.py": {
     "_make_staging": "401b0a810e3d3acb",
-    "_create_file": "e83cc846e39fa032",
     "_remove_staging": "79330a117a1cd3e6"
   }
 }

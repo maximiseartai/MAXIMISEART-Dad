@@ -66,6 +66,7 @@ from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, LoggedOrder, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import GuardedLogs
 from rozliczenia.efenix_pricing import OrderResult
+from rozliczenia.file_state import folder_entries, remove_file
 
 LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
 _JOURNALS: Final = "dzienniki-wyceny"
@@ -406,9 +407,7 @@ def _remove(path: Path, log: CentrumLog, *, where: Literal["wpis", "start"]) -> 
     miejscu katalogu dzienników stoi plik (``NotADirectoryError``, a w Windows ``FileNotFoundError``)."""
 
     try:
-        path.unlink()
-    except (FileNotFoundError, NotADirectoryError):
-        pass
+        remove_file(path)
     except OSError as failure:
         log.pricing_journal_unavailable(failure, where=where)
 
@@ -563,11 +562,8 @@ def _names(logs: Path) -> list[tuple[str, _Name]]:
     """Pliki Logów Uruchomienia w katalogu ``logs`` z częściami nazwy; bez katalogu żadnych. ``OSError``: katalog jest,
     ale system nie daje go wylistować, więc nie wiadomo, jakie pliki w nim są."""
 
-    try:
-        names = [path.name for path in logs.iterdir()]
-    except (FileNotFoundError, NotADirectoryError):
-        return []
-    return [(name, parsed) for name in names if (parsed := _parsed(name)) is not None]
+    entries = folder_entries(logs) or []
+    return [(entry.name, parsed) for entry in entries if (parsed := _parsed(entry.name)) is not None]
 
 
 def _read_logs(path: Path) -> LogsRead:

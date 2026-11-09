@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-import stat
 
 from fastapi import APIRouter
 
@@ -18,6 +17,7 @@ from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.settings import Settings, SettingsStore, Theme
+from rozliczenia.file_state import file_state
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
@@ -43,14 +43,13 @@ def settings_router(store: SettingsStore, platform: Platform) -> APIRouter:
         register = store.load().register
         if register is None:
             raise refusal.register_not_chosen()
-        try:
-            found = stat.S_ISREG(register.stat().st_mode)
-        except (FileNotFoundError, NotADirectoryError):
-            found = False
-        except OSError:
-            raise refusal.register_unavailable(register.name) from None
-        if not found:
-            raise refusal.register_missing(register.name)
+        match file_state(register):
+            case "inaccessible":
+                raise refusal.register_unavailable(register.name)
+            case "missing":
+                raise refusal.register_missing(register.name)
+            case "file":
+                pass
         platform.open_path(register)
         return common_contract.Opened(name=register.name)
 

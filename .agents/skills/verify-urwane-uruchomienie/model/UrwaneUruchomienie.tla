@@ -240,7 +240,7 @@ PoPoscie(h) ==
     /\ bezZlecenia' = Zdarz(bezZlecenia, h.rodzaj = "urwane" /\ ~Pokrywa(h.bieg, h.tresc),
                             PoWpisach(h.bieg, Niepokryte(h.bieg, h.tresc)))
 
-(* logs_disk._remove: path.unlink(); FileNotFoundError nic nie robi, OSError zostawia dziennik (linia                *)
+(* logs_disk._remove: file_state.remove_file (unlink); brak pliku nic nie robi, OSError zostawia dziennik (linia     *)
 (* dziennika Centrum). Dziennik Urwanego Uruchomienia (pierwsza linia, bez wyniku), którego Logi nie są najnowszą     *)
 (* wersją w kolejce, znika: zdarzenie obietnicy DziennikPoKolejce z przyczyną decyzji. Dziennik Wyceny, która mogła   *)
 (* wysłać postęp, a której najnowsza wersja w kolejce nie jest końcowa, znika: zdarzenie obietnicy WersjaKoncowa.     *)

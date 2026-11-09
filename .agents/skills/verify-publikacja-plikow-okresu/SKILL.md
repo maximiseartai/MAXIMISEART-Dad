@@ -1,9 +1,10 @@
 ---
 name: verify-publikacja-plikow-okresu
-description: Exhaustively check that Przygotowanie pliku zbiorczego publishes Rozliczenie wewnętrzne and Plik zbiorczy together or not at all, and never overwrites another file, under every order of a second run, Dad's actions, filesystem errors, and a killed process. Use when a change touches `write_period_files`, `_publish`, `ensure_period_files_absent` in `src/rozliczenia/preparation_files.py`, or `test_publikacja_plikow_okresu` fails.
+description: Exhaustively check that Przygotowanie pliku zbiorczego publishes Rozliczenie wewnętrzne and Plik zbiorczy together or not at all, and never overwrites another file, under every order of a second run, Dad's actions, filesystem errors, and a killed process. Use when a change touches `write_period_files`, `_publish`, `ensure_period_files_absent` in `src/rozliczenia/preparation_files.py`, `publish_staged` in `src/rozliczenia/staged_publication.py`, or `test_publikacja_plikow_okresu` fails.
 pilnuje:
   - src/rozliczenia/preparation_files.py
   - src/rozliczenia/collective_preparation.py
+  - src/rozliczenia/staged_publication.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/eksplorator.py
 ci: .agents/skills/verify-publikacja-plikow-okresu/scripts/explore_publication.py
@@ -39,9 +40,10 @@ says.
 ## Does the change touch it?
 
 The check covers `preparation_files.write_period_files()` from the staging
-directory onwards: `staged_directory.mkdir()`, both staged writes,
+directory onwards: the staging directory of `staged_publication.publish_staged()`
+(made, removed, and the stop that names it when it stays), `staged_directory.mkdir()`, both staged writes,
 `_publish()`, `ensure_period_files_absent()` and the rollback. Run it when a diff
-touches any of these, or the exception mapping in `write_period_files`, or makes
+touches any of these, or the exception mapping in `write_period_files` or `publish_staged`, or makes
 `prepare_collective_file()` publish without going through `write_period_files`.
 Changes to workbook content (`_create_file`, styles, Rejestr reading) do
 not matter here: the check gives `write_period_files` its own `preparation_files.Disk`,
@@ -49,8 +51,8 @@ whose workbook writing is one step that creates the staged file and returns a ro
 as `_create_file` returns it for the metrics record (`RouteCounts`).
 
 The parts modelled by hand are the defaults of `preparation_files.Disk` that the
-check's `period_disk()` replaces: `_make_staging`, `_create_file` and
-`_remove_staging` of `preparation_files.py`, whose digests are in
+check's `period_disk()` replaces: `_create_file` of `preparation_files.py`, and
+`_make_staging` and `_remove_staging` of `staged_publication.py` (its `Disk`), whose digests are in
 `model/definicje.json`. When one of them changes, `explore_publication.py` fails in CI with
 `PUBLIKACJA: ROZJAZD MODELU Z KODEM` before the check, and prints the drift as an
 `UWAGA:` line above the verdict elsewhere; `tools/szybko.py` fails on the same
@@ -142,7 +144,8 @@ Planowanie), workbook content, POSIX rename semantics (macOS and Linux replace
 an existing target, so there only the re-check in `_publish` guards, with a race
 window after it), symlinks,
 network drives whose rename is not atomic, more than two runs or the bounds
-above, and Przebieg rozliczeń's own folder publication in `settlement_files.py`.
+above, and Przebieg rozliczeń's own folder publication in `settlement_files.py`: it goes through the same
+`publish_staged`, but its rename of the staging directory and its stops are not explored.
 
 ## Known findings
 
@@ -225,7 +228,7 @@ left, outside `left`), a rollback that retries a failed `os.unlink`
 rollback reported as plain `BLAD_ZAPISU`, recording a file
 for rollback before it is moved, and a failed staging cleanup after publication
 raised as a stop all give `NOWE NARUSZENIE`. `shutil.move` gives `LUKA MODELU`. A mutation reported as
-`NIEAKTUALNA` no longer matches `preparation_files.py`. Rewrite its `anchor` and
+`NIEAKTUALNA` no longer matches `preparation_files.py` or `staged_publication.py`. Rewrite its `anchor` and
 `replacement` in `check_publication_mutations.py` against the new code so it breaks the same
 rule again. If the publication code moves to another file, update
 `VERIFIED_FILE` and the harness in `explore_publication.py`, and update this

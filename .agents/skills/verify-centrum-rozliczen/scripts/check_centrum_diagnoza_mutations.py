@@ -28,8 +28,8 @@ MUTATIONS = (
         (
             Edit(
                 WORKER_CONFIG,
-                "        missing = not stat.S_ISREG(config_path.stat().st_mode)\n",
-                "        missing = True\n",
+                '    return WorkerConfigError("missing" if file_state(config_path) == "missing" else "inaccessible")\n',
+                '    return WorkerConfigError("missing")\n',
             ),
         ),
         DIAGNOZA,

@@ -7,6 +7,7 @@ pilnuje:
   - src/rozliczenia/centrum/comment_versions.py
   - src/rozliczenia/centrum/run_comments.py
   - src/rozliczenia/centrum/logs_disk.py
+  - src/rozliczenia/file_state.py
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/runs.py
   - src/rozliczenia/centrum/process_kind.py
@@ -135,6 +136,7 @@ path from the module, `Class.method` a method and `create_app.runs` an assignmen
 `post_of`, `Drop`, `close` in `comment_versions.py`; `RunComments.run_started`, `_progress`, `run_ended`, `_own`,
 `_step`, `_keep`, `close_left_behind`, `send_left_behind`, `RecordMaker.interrupted` in `run_comments.py`; `LogsOnDisk.logs`, `_read_logs`, `_names`, `_NAME`, `_RUN_ID`, `LogsRead`, `Journal`, `_first_line`, `_RunEnded`,
 `JournalRead`, `_read_journal`, `_remove`, `LogsOnDisk.started`, `left_behind`, `remove_journal`, `write`, `name_of` in `logs_disk.py`;
+`_ABSENT`, `folder_entries` and `remove_file` in `file_state.py` (the listing of the Logs folder behind `_names` and the removal behind `_remove`);
 `create_app.lifespan`, the assignments `create_app.app`, `create_app.disk`,
 `create_app.comments`, `create_app.closed` and `create_app.runs` (its `logs` is `comments` and its `previous` is
 `cards.last(closed)`) in `app.py`; `Run.work`, `RunHost.__init__`, `RunHost.start`, `RunHost.after`, `RunHost.shutdown_refusal` in `runs.py`; `PreparedRun.conduct` in `process_kind.py`;

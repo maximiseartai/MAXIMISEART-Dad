@@ -28,6 +28,7 @@ from atrapy.scenariusz_rozliczen import (
     worker_settlement_name,
 )
 from atrapy.settlement import PERIOD, SOURCE_NAME, WORKERS
+from rozliczenia.staged_publication import staging_prefix
 
 WORKER_NAMES = tuple(WORKERS.values())
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
@@ -301,7 +302,9 @@ def _assert_no_publish(root: Path, result_path: Path | None, expected_stop: str,
     errors = _unchanged_inputs(root, manifest)
     if target_directory.exists():
         errors.append("failed run published the target directory")
-    if list(period_directory.glob(f".{target_directory.name}.staging-*")):
+    # Sprawdzenie, że folderu tymczasowego nie ma, bierze początek jego nazwy z src (docs/agents/skille.md, „Co wyrocznia
+    # bierze z src”, przypadek a): na kopii przeszłoby po cichu, gdy src zmieni nazwę.
+    if list(period_directory.glob(f"{staging_prefix(target_directory.name)}*")):
         errors.append("failed run left a staging directory")
     naming = _NAMING_UNMAPPED if manifest.get("include_unmapped") else ()
     _check_stop(load_result(result_path, _ROW_CONTENT, errors, naming=naming), expected_stop, expected_what, errors)

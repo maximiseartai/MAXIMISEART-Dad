@@ -40,6 +40,8 @@ from typing import Literal
 from .settlement_period import PERIOD_TOKEN_PATTERN, SettlementPeriod, parse_period_token
 from .telemetry import UNKNOWN_PERIOD
 
+from .file_state import folder_entries
+
 # ``{token}`` to token okresu, ``{worker}`` nazwa Wykonawcy.
 _INTERNAL_SETTLEMENT = "Rozliczenie wew. {token}.xlsx"
 _COLLECTIVE_FILE = "Rozliczenie {token} - zbiorcze.xlsx"
@@ -229,11 +231,7 @@ def _listing(directory: Path) -> list[os.DirEntry[str]] | None:
     """
 
     with reading(directory):
-        try:
-            with os.scandir(directory) as entries:
-                return list(entries)
-        except (FileNotFoundError, NotADirectoryError):
-            return None
+        return folder_entries(directory)
 
 
 def _exists(listed: Mapping[str, os.DirEntry[str]], path: Path, *, directory: bool) -> bool:

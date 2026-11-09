@@ -15,6 +15,7 @@ pilnuje:
   - src/rozliczenia/domain.py
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/engine.py
+  - src/rozliczenia/file_state.py
   - src/rozliczenia/highlights.py
   - src/rozliczenia/hyperlinks.py
   - src/rozliczenia/inea_only_quantities.py
@@ -36,6 +37,7 @@ pilnuje:
   - src/rozliczenia/run_clock.py
   - src/rozliczenia/run_context.py
   - src/rozliczenia/settlement_*.py
+  - src/rozliczenia/staged_publication.py
   - src/rozliczenia/telemetry.py
   - src/rozliczenia/text.py
   - src/rozliczenia/template_*.py
