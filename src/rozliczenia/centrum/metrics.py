@@ -7,6 +7,7 @@ niepoprawnych i reguły P50/P95 daje ``telemetry``; Centrum ich nie powtarza.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -139,16 +140,9 @@ def _statistics(
 
 
 def _results(runs: Iterable[metrics_contract.ProcessRun]) -> metrics_contract.ResultCounts:
-    """Przerwane bez rodzaju (stary rekord) liczą się jako zatrzymane, nie jako błąd."""
-
-    counted = list(runs)
-    results = [run.result for run in counted]
-    failed = sum(run.stop_kind == "for_maks" for run in counted)
+    tones = Counter(run.tone for run in runs)
     return metrics_contract.ResultCounts(
-        ok=results.count("OK"),
-        needs_review=results.count("WYMAGA_SPRAWDZENIA"),
-        stopped=results.count("BLAD_KRYTYCZNY") - failed,
-        failed=failed,
+        ok=tones["ok"], needs_review=tones["needs_review"], stopped=tones["stopped"], failed=tones["failed"]
     )
 
 

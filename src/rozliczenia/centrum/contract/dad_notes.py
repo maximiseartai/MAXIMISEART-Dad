@@ -9,6 +9,7 @@ from pydantic import StringConstraints, computed_field
 
 from rozliczenia import domain
 from rozliczenia.centrum.contract.common import Model
+from rozliczenia.centrum.contract.runs import ResultTone, result_tone
 from rozliczenia.domain import RunMode
 from rozliczenia.process_run import RunResult
 
@@ -33,6 +34,13 @@ class PinnableRun(Model):
         """Słowo trybu w wierszu okna Uwagi, to samo co w Uwadze taty (``RunMode.word``)."""
 
         return self.mode.word
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def tone(self) -> ResultTone:
+        """Ton wyniku (``runs.result_tone``): plakietka w wierszu okna Uwagi i słowo wyniku w stopce Uwagi."""
+
+        return result_tone(self.result, self.stop_kind)
 
 
 DAD_NOTE_TITLE_MAX_LENGTH = 120

@@ -11,7 +11,7 @@ import { getConfiguration } from "@/api/centrum"
 import type { Configuration, TemplateProblem } from "@/api/generated"
 import { PageHeader } from "@/components/page-header"
 import { LoadFailure } from "@/components/load-failure"
-import { ThreePartMessage, type MessageKind } from "@/components/three-part-message"
+import { ThreePartMessage } from "@/components/three-part-message"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item"
@@ -86,12 +86,6 @@ const PROBLEM_LABELS: Record<TemplateProblem["problem"], string> = {
   unreadable: "Nie przechodzi sprawdzenia",
 }
 
-const PROBLEM_KINDS: Record<TemplateProblem["problem"], MessageKind> = {
-  missing: "stop",
-  open_in_excel: "warning",
-  unreadable: "stop",
-}
-
 function TemplatesCard({ templates }: { templates: Configuration["templates"] }) {
   const ready = templates.filter((template) => template.state === "ready").length
   const allReady = ready === templates.length
@@ -145,7 +139,7 @@ function TemplatesCard({ templates }: { templates: Configuration["templates"] })
                     <Badge variant="outline">
                       <TriangleAlertIcon
                         data-icon="inline-start"
-                        className={PROBLEM_KINDS[template.problem] === "warning" ? "text-warning" : "text-destructive"}
+                        className={template.level === "warning" ? "text-warning" : "text-destructive"}
                       />
                       {PROBLEM_LABELS[template.problem]}
                     </Badge>
@@ -153,10 +147,7 @@ function TemplatesCard({ templates }: { templates: Configuration["templates"] })
                 </ItemActions>
               </Item>
               {template.state === "problem" ? (
-                <ThreePartMessage
-                  message={template.message}
-                  kind={PROBLEM_KINDS[template.problem]}
-                />
+                <ThreePartMessage message={template.message} kind={template.level} />
               ) : null}
             </li>
           ))}

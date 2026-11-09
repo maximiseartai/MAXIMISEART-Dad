@@ -850,10 +850,7 @@ export const zResolved = z.object({
 /**
  * ResultCounts
  *
- * Wyniki Uruchomień procesu; przerwane dzielą się na ``stopped`` i ``failed``.
- *
- * ``stopped``: Zatrzymania „dla taty” i przerwane ze starych rekordów bez rodzaju. ``failed``: Zatrzymania
- * „do Maksa”, także nieoczekiwany wyjątek.
+ * Liczba Uruchomień procesu z każdym tonem wyniku (``runs.result_tone``).
  */
 export const zResultCounts = z.object({
     ok: z.int(),
@@ -1005,7 +1002,13 @@ export const zPinnableRun = z.object({
         'BLAD_KRYTYCZNY'
     ]),
     stop_kind: z.enum(['for_tata', 'for_maks']).nullable(),
-    mode_word: z.string().readonly()
+    mode_word: z.string().readonly(),
+    tone: z.enum([
+        'ok',
+        'needs_review',
+        'stopped',
+        'failed'
+    ]).readonly()
 });
 
 /**
@@ -1040,7 +1043,14 @@ export const zProcessRun = z.object({
     phase_durations: z.array(zPhaseDuration),
     origin: z.enum(['cmd', 'centrum']),
     stop_kind: z.enum(['for_tata', 'for_maks']).nullable(),
-    run_id: z.string().nullable()
+    run_id: z.string().nullable(),
+    tone: z.enum([
+        'ok',
+        'needs_review',
+        'stopped',
+        'failed'
+    ]).readonly(),
+    result_word: z.string().readonly()
 });
 
 /**
@@ -1313,7 +1323,8 @@ export const zTemplateProblem = z.object({
         'open_in_excel',
         'unreadable'
     ]),
-    message: zMessage
+    message: zMessage,
+    level: z.enum(['stop', 'warning']).readonly()
 });
 
 /**
@@ -1509,7 +1520,8 @@ export const zRunSummary = z.object({
  * skończyło (``Ending``).
  * ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
  * wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
- * Zatrzymania). ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
+ * Zatrzymania), a ``stop_note`` zdanie pod tytułem Zatrzymania (``runs.stop_note``; ``None``: bez niego).
+ * ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
  * Uzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``).
  */
 export const zLoggedOutcome = z.object({
@@ -1539,11 +1551,18 @@ export const zLoggedOutcome = z.object({
         'repeated',
         'declined'
     ]).nullable(),
+    stop_note: z.string().nullable(),
     stops: z.array(zMessage),
     warnings: z.array(zMessage),
     technical_notes: z.array(z.string()),
     summary: zRunSummary.nullable(),
-    collective_file_prepared: z.boolean()
+    collective_file_prepared: z.boolean(),
+    tone: z.enum([
+        'ok',
+        'needs_review',
+        'stopped',
+        'failed'
+    ]).readonly()
 });
 
 /**
@@ -1586,6 +1605,7 @@ export const zRunOutcome = z.object({
         'repeated',
         'declined'
     ]).nullable(),
+    stop_note: z.string().nullable(),
     stops: z.array(zMessage),
     warnings: z.array(zMessage),
     technical_notes: z.array(z.string()),
@@ -1602,7 +1622,13 @@ export const zRunOutcome = z.object({
     ]).nullable(),
     files_unchanged: z.boolean(),
     opens: z.enum(['order_register', 'collective_file']).nullable(),
-    order_notes: z.array(zOrderNotes).nullish()
+    order_notes: z.array(zOrderNotes).nullish(),
+    tone: z.enum([
+        'ok',
+        'needs_review',
+        'stopped',
+        'failed'
+    ]).readonly()
 });
 
 /**
@@ -1739,6 +1765,54 @@ export const zConfiguration = z.object({
 });
 
 /**
+ * LoggedOutcome
+ *
+ * Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.
+ *
+ * Zatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się
+ * skończyło (``Ending``).
+ * ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
+ * wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
+ * Zatrzymania), a ``stop_note`` zdanie pod tytułem Zatrzymania (``runs.stop_note``; ``None``: bez niego).
+ * ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
+ * Uzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``).
+ */
+export const zLoggedOutcomeWritable = z.object({
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    headline: z.string(),
+    ending: z.enum([
+        'finished',
+        'stop',
+        'declined',
+        'unexpected',
+        'after_engine'
+    ]),
+    next_action: z.enum([
+        'run',
+        'rerun',
+        'open_collective_file',
+        'open_worker_settlements_folder',
+        'open_order_register'
+    ]),
+    stop_kind: z.enum([
+        'for_tata',
+        'for_maks',
+        'repeated',
+        'declined'
+    ]).nullable(),
+    stop_note: z.string().nullable(),
+    stops: z.array(zMessage),
+    warnings: z.array(zMessage),
+    technical_notes: z.array(z.string()),
+    summary: zRunSummary.nullable(),
+    collective_file_prepared: z.boolean()
+});
+
+/**
  * PinnableRun
  *
  * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
@@ -1757,6 +1831,240 @@ export const zPinnableRunWritable = z.object({
         'BLAD_KRYTYCZNY'
     ]),
     stop_kind: z.enum(['for_tata', 'for_maks']).nullable()
+});
+
+/**
+ * ProcessRun
+ *
+ * Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.
+ *
+ * ``origin`` mówi, skąd wystartowało: ``centrum`` to Centrum rozliczeń, ``cmd`` każde inne źródło
+ * rekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.
+ * ``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego
+ * rekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego
+ * Logach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy
+ * Uruchomieniu z Centrum sprzed #322, które identyfikatora nie zapamiętało.
+ */
+export const zProcessRunWritable = z.object({
+    process: z.enum([
+        'preparation',
+        'settlement',
+        'efenix',
+        'intermax'
+    ]),
+    process_label: z.string(),
+    started_at: z.iso.datetime(),
+    mode: zRunMode,
+    period: z.string(),
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    total_duration_ms: z.int(),
+    phase_durations: z.array(zPhaseDuration),
+    origin: z.enum(['cmd', 'centrum']),
+    stop_kind: z.enum(['for_tata', 'for_maks']).nullable(),
+    run_id: z.string().nullable()
+});
+
+/**
+ * Metrics
+ *
+ * Historia Uruchomień procesu z obu plików metryk, czytanych przy każdym odczycie, od najnowszego.
+ *
+ * ``processes``: procesy w kolejności statystyk; pierwszy jest wybrany w filtrze.
+ */
+export const zMetricsWritable = z.object({
+    processes: z.array(zProcessFacts),
+    phases: z.array(z.string()),
+    minimum_completed_runs: z.int(),
+    runs: z.array(zProcessRunWritable),
+    statistics: z.array(zModeStatistics),
+    recent: zRecentResults
+});
+
+/**
+ * RunOutcome
+ *
+ * Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.
+ *
+ * ``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla
+ * taty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).
+ * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
+ * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
+ * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
+ * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+ * trzech częściach (``None``: inny proces albo wynik bez podsumowania).
+ */
+export const zRunOutcomeWritable = z.object({
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    headline: z.string(),
+    ending: z.enum([
+        'finished',
+        'stop',
+        'declined',
+        'unexpected',
+        'after_engine'
+    ]),
+    next_action: z.enum([
+        'run',
+        'rerun',
+        'open_collective_file',
+        'open_worker_settlements_folder',
+        'open_order_register'
+    ]),
+    stop_kind: z.enum([
+        'for_tata',
+        'for_maks',
+        'repeated',
+        'declined'
+    ]).nullable(),
+    stop_note: z.string().nullable(),
+    stops: z.array(zMessage),
+    warnings: z.array(zMessage),
+    technical_notes: z.array(z.string()),
+    summary: zRunSummary.nullable(),
+    collective_file_prepared: z.boolean(),
+    diagnosis: z.enum(['on_request', 'automatic']).nullable(),
+    report: z.discriminatedUnion('state', [
+        zReportReady,
+        zReportWaiting,
+        zReportNotQueued,
+        zSent,
+        zQueued,
+        zRejected
+    ]).nullable(),
+    files_unchanged: z.boolean(),
+    opens: z.enum(['order_register', 'collective_file']).nullable(),
+    order_notes: z.array(zOrderNotes).nullish()
+});
+
+/**
+ * RunFinished
+ */
+export const zRunFinishedWritable = z.object({
+    state: z.literal('finished'),
+    run: zRunInfo,
+    progress: zProgress,
+    progress_stale: z.boolean(),
+    result: zRunOutcomeWritable
+});
+
+/**
+ * RunRestored
+ *
+ * Karta zakończonego Uruchomienia z jego Logów Uruchomienia: nic, czego w nich nie ma.
+ *
+ * ``run`` ma tytuł procesu i ``confirms_readiness`` z deklaracji procesu, jak przy starcie, a ``started_at`` to
+ * start z Logów, ten sam co data wiersza Historii. Diagnozy i Zgłoszenia nie ma: żyją tylko przy Zatrzymaniu
+ * bieżącego Uruchomienia tej pracy Centrum.
+ */
+export const zRunRestoredWritable = z.object({
+    state: z.literal('restored'),
+    run: zRunInfo,
+    started_at: z.iso.datetime(),
+    phases: z.array(zPhaseProgress),
+    result: zLoggedOutcomeWritable
+});
+
+/**
+ * IntermaxSetup
+ *
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ *
+ * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania
+ * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ */
+export const zIntermaxSetupWritable = z.object({
+    title: z.string(),
+    reminder: z.string(),
+    blocker: z.string().nullable(),
+    open_in_excel: z.array(z.string()),
+    last: zRunRestoredWritable.nullable()
+});
+
+/**
+ * RunIdle
+ *
+ * W tej pracy Centrum nie było jeszcze Uruchomienia procesu.
+ *
+ * ``previous`` to ostatnie Uruchomienie przed tym startem Centrum; ``None``: nie było żadnego albo jego plików nie
+ * da się odczytać.
+ */
+export const zRunIdleWritable = z.object({
+    state: z.literal('idle'),
+    previous: z.discriminatedUnion('state', [
+        zRunRestoredWritable,
+        zRunRecorded,
+        zRunInterrupted
+    ]).nullable()
+});
+
+/**
+ * RunEvent
+ *
+ * Jedno zdarzenie strumienia SSE: kolejny numer i pełny widok bieżącego Uruchomienia procesu.
+ */
+export const zRunEventWritable = z.object({
+    sequence: z.int(),
+    view: z.discriminatedUnion('state', [
+        zRunIdleWritable,
+        zRunRunning,
+        zRunAwaitingDecision,
+        zRunFinishedWritable
+    ])
+});
+
+/**
+ * TemplateProblem
+ *
+ * Wzorca nie ma, jest otwarty w Excelu albo nie przechodzi Sprawdzania.
+ */
+export const zTemplateProblemWritable = z.object({
+    state: z.literal('problem'),
+    label: z.string(),
+    file_name: z.string(),
+    problem: z.enum([
+        'missing',
+        'open_in_excel',
+        'unreadable'
+    ]),
+    message: zMessage
+});
+
+/**
+ * Configuration
+ *
+ * Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.
+ *
+ * ``version`` jest ``None``, gdy narzędzie nie leży w klonie Gita; ``freshness`` to Aktualność tej wersji
+ * względem najnowszego Wydania na GitHubie (ADR 0014), sprawdzana jak w Diagnozie. ``update_offered`` mówi,
+ * czy Konfiguracja proponuje Aktualizację narzędzia: tylko przy nowszym Wydaniu (``tool_freshness.offers_update``).
+ */
+export const zConfigurationWritable = z.object({
+    version: zToolVersion.nullable(),
+    freshness: z.enum([
+        'current',
+        'newer',
+        'not_checked'
+    ]),
+    update_offered: z.boolean(),
+    templates: z.array(z.union([zTemplateReady, zTemplateProblemWritable])),
+    workers: z.discriminatedUnion('state', [
+        zWorkersReady,
+        zWorkersUnreadable
+    ]),
+    reports: z.enum([
+        'ready',
+        'missing_key',
+        'refused_key'
+    ])
 });
 
 /**

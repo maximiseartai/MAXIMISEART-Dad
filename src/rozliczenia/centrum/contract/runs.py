@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated, Final, Literal
+from typing import Annotated, Final, Literal, assert_never
 
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from rozliczenia import domain
 from rozliczenia.centrum.contract.common import Message, Model, PeriodProcessKey, ProcessKey
@@ -202,6 +202,39 @@ class RunSummary(Model):
 StopKind = Literal[domain.StopKind, "repeated", "declined"]
 
 
+ResultTone = Literal["ok", "needs_review", "stopped", "failed"]
+"""Ton wyniku Uruchomienia procesu, w którym Centrum go pokazuje: plakietka, baner Zatrzymania, Metryki i stopka Uwagi."""
+
+
+def result_tone(result: RunResult, stop_kind: StopKind | None) -> ResultTone:
+    """Błąd (``failed``) to tylko Zatrzymanie „do Maksa”, także nieoczekiwany wyjątek; każde inne przerwane, także bez
+    rodzaju ze starego rekordu metryk, jest zatrzymane (``stopped``)."""
+
+    match result:
+        case "OK":
+            return "ok"
+        case "WYMAGA_SPRAWDZENIA":
+            return "needs_review"
+        case "BLAD_KRYTYCZNY":
+            return "failed" if stop_kind == "for_maks" else "stopped"
+        case _:
+            assert_never(result)
+
+
+_RESULT_WORDS: Final[dict[ResultTone, str]] = {
+    "ok": "OK",
+    "needs_review": "do sprawdzenia",
+    "stopped": "zatrzymano",
+    "failed": "błąd",
+}
+
+
+def result_word(tone: ResultTone) -> str:
+    """Wynik słowem małą literą, jak w stopce Uwagi taty i w Metrykach: „OK”, „do sprawdzenia”, „zatrzymano”, „błąd”."""
+
+    return _RESULT_WORDS[tone]
+
+
 # Diagnoza przy Zatrzymaniu: ``on_request`` to przycisk „Diagnoza” zamiast następnej akcji, ``automatic`` to
 # nieoczekiwany wyjątek, przy którym przeglądarka zaczyna Diagnozę od razu po pokazaniu wyniku.
 DiagnosisOffer = Literal["on_request", "automatic"]
@@ -225,7 +258,8 @@ class LoggedOutcome(Model):
     skończyło (``Ending``).
     ``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba
     wylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez
-    Zatrzymania). ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
+    Zatrzymania), a ``stop_note`` zdanie pod tytułem Zatrzymania (``runs.stop_note``; ``None``: bez niego).
+    ``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim
     Uzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``).
     """
 
@@ -234,11 +268,19 @@ class LoggedOutcome(Model):
     ending: Ending
     next_action: NextAction
     stop_kind: StopKind | None
+    stop_note: str | None
     stops: list[Message]
     warnings: list[Message]
     technical_notes: list[str]
     summary: RunSummary | None
     collective_file_prepared: bool
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def tone(self) -> ResultTone:
+        """Ton wyniku (``result_tone``): czerwony baner Zatrzymania tylko przy ``failed``."""
+
+        return result_tone(self.result, self.stop_kind)
 
 
 class OrderNote(Model):

@@ -18,7 +18,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Final, assert_never
+from typing import Final
 
 from fastapi import APIRouter
 
@@ -26,6 +26,7 @@ from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import dad_notes as dad_notes_contract
 from rozliczenia.centrum.contract import metrics as metrics_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.case_delivery import logs_line, note_post, shown_logs_line
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
@@ -82,22 +83,8 @@ def note_issue(
 def _pinned_footer(pinned: PinnedRun, version: str, logs: Callable[[str, str | None], str]) -> str:
     run = pinned.run
     started = run.started_at.astimezone()
-    facts = (run.process_label, run.period, run.mode.word, _result_word(run), f"{started:%d.%m.%Y, %H:%M}")
+    facts = (run.process_label, run.period, run.mode.word, runs_contract.result_word(run.tone), f"{started:%d.%m.%Y, %H:%M}")
     return f"Uruchomienie: {' · '.join((*facts, version))}\n{logs(run.run_id, pinned.logs)}"
-
-
-def _result_word(run: dad_notes_contract.PinnableRun) -> str:
-    """Wynik słowem jak na karcie Uruchomienia (``RunResultBadge``): błąd to tylko Zatrzymanie „do Maksa”."""
-
-    match run.result:
-        case "OK":
-            return "OK"
-        case "WYMAGA_SPRAWDZENIA":
-            return "do sprawdzenia"
-        case "BLAD_KRYTYCZNY":
-            return "błąd" if run.stop_kind == "for_maks" else "zatrzymano"
-        case _:
-            assert_never(run.result)
 
 
 def _pinnable(history: History) -> list[dad_notes_contract.PinnableRun]:

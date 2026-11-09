@@ -77,6 +77,14 @@ _STOP_HEADLINES: Final[Mapping[runs_contract.StopKind, str]] = {
     "declined": "Przerwano",
 }
 
+_NOT_YOUR_FILES: Final = "To nie wynika z Twoich plików."
+
+
+def stop_note(kind: runs_contract.StopKind | None) -> str | None:
+    """Zdanie pod tytułem Zatrzymania: przy Zatrzymaniu „do Maksa” mówi tacie, że to nie wynika z jego plików."""
+
+    return _NOT_YOUR_FILES if kind == "for_maks" else None
+
 Ending = runs_contract.Ending
 
 
@@ -189,9 +197,10 @@ class EndedRun:
         """Wynik na karcie Uruchomienia z deklaracji procesu ``view`` (``verdict``)."""
 
         stopped = self.stopped
+        kind = None if stopped is None else stopped.kind
         headline, next_action = verdict(
             ending=self.ending,
-            stop_kind=None if stopped is None else stopped.kind,
+            stop_kind=kind,
             result=self.result,
             dry_run=self.info.mode.dry_run,
             view=view,
@@ -201,7 +210,8 @@ class EndedRun:
             headline=headline,
             ending=self.ending,
             next_action=next_action,
-            stop_kind=None if stopped is None else stopped.kind,
+            stop_kind=kind,
+            stop_note=stop_note(kind),
             diagnosis=None if stopped is None else stopped.offer,
             report=None if stopped is None or stopped.report is None else stopped.report.state,
             stops=[common_contract.Message.of(message) for message in self.stops],

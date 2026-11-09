@@ -72,10 +72,10 @@ def test_wzorce_sprawdza_czytnik_wzorcow_procesu(tmp_path: Path) -> None:
     app = configured(tmp_path, readers=replace(FILE_READERS, template=open_in_excel))
 
     templates = templates_by_file(read_configuration(app))
-    assert {name: template["problem"] for name, template in templates.items()} == {
-        INTERNAL: "open_in_excel",
-        COLLECTIVE: "open_in_excel",
-        WORKER: "open_in_excel",
+    assert {name: (template["problem"], template["level"]) for name, template in templates.items()} == {
+        INTERNAL: ("open_in_excel", "warning"),
+        COLLECTIVE: ("open_in_excel", "warning"),
+        WORKER: ("open_in_excel", "warning"),
     }
 
 
@@ -188,7 +188,7 @@ def test_brak_wzorca_jest_komunikatem_w_trzech_czesciach(
     templates = templates_by_file(read_configuration(app))
 
     assert templates[file_name]["state"] == "problem"
-    assert templates[file_name]["problem"] == "missing"
+    assert (templates[file_name]["problem"], templates[file_name]["level"]) == ("missing", "stop")
     assert templates[file_name]["message"] == {
         "what": what,
         "where": f"plik {file_name}, folder config",
@@ -264,7 +264,7 @@ def test_nieczytelny_wzorzec_trzeba_przekazac_osobie_utrzymujacej_narzedzie(
 
     template = templates_by_file(read_configuration(app))[file_name]
 
-    assert template["problem"] == "unreadable"
+    assert (template["problem"], template["level"]) == ("unreadable", "stop")
     assert template["message"] == {
         "what": what,
         "where": f"plik {file_name}, folder config",

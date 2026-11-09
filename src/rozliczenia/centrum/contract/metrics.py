@@ -5,9 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
+from pydantic import computed_field
 
 from rozliczenia import domain
 from rozliczenia.centrum.contract.common import Model, ProcessKey
+from rozliczenia.centrum.contract.runs import ResultTone, result_tone, result_word
 from rozliczenia.domain import RunMode
 from rozliczenia.process_run import RunResult
 
@@ -40,6 +42,20 @@ class ProcessRun(Model):
     stop_kind: domain.StopKind | None
     run_id: str | None
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def tone(self) -> ResultTone:
+        """Ton wyniku (``runs.result_tone``): plakietka w Historii i kolor przerwanego w Metrykach."""
+
+        return result_tone(self.result, self.stop_kind)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def result_word(self) -> str:
+        """Wynik słowem małą literą (``runs.result_word``), np. „zatrzymano” przy przerwanym w Metrykach."""
+
+        return result_word(self.tone)
+
 
 class PhasePercentiles(Model):
     phase: str
@@ -56,11 +72,7 @@ class Percentiles(Model):
 
 
 class ResultCounts(Model):
-    """Wyniki Uruchomień procesu; przerwane dzielą się na ``stopped`` i ``failed``.
-
-    ``stopped``: Zatrzymania „dla taty” i przerwane ze starych rekordów bez rodzaju. ``failed``: Zatrzymania
-    „do Maksa”, także nieoczekiwany wyjątek.
-    """
+    """Liczba Uruchomień procesu z każdym tonem wyniku (``runs.result_tone``)."""
 
     ok: int
     needs_review: int

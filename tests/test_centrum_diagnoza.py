@@ -185,6 +185,27 @@ def test_odmowa_w_decyzji_taty_przerywa_powtorke(tmp_path: Path) -> None:
     assert again["stop_kind"] == "for_tata"
 
 
+NOT_YOUR_FILES = "To nie wynika z Twoich plików."
+
+
+def test_tylko_zatrzymanie_do_maksa_ma_ton_bledu_i_zdanie_ze_to_nie_wynika_z_plikow_taty(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path, incomplete_period_rows())
+    register_lock = lock(centrum.fixture.register_path)
+    for_tata, repeated = stop_of(centrum), stop_of(centrum)
+    register_lock.unlink()
+    declined_view = declined(centrum)
+    centrum.fixture.internal_template_path.unlink()
+    for_maks = stop_of(centrum)
+
+    results = [for_tata, repeated, declined_view["result"], for_maks]
+    assert [(result["stop_kind"], result["tone"], result["stop_note"]) for result in results] == [
+        ("for_tata", "stopped", None),
+        ("repeated", "stopped", None),
+        ("declined", "stopped", None),
+        ("for_maks", "failed", NOT_YOUR_FILES),
+    ]
+
+
 def test_restart_centrum_zeruje_pamiec_powtorki(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     lock(centrum.fixture.register_path)
