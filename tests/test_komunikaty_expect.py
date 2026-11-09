@@ -468,7 +468,6 @@ UI_TEXTS: Final = {
     "Uzupełnij i zapisz": "frontend/src/lib/pricing.tsx",
     "Uzupełnij bez zapisu": "frontend/src/lib/pricing.tsx",
     "Kontynuuj": "frontend/src/pages/runs/run-dialogs.tsx",
-    "Diagnoza": "frontend/src/pages/runs/diagnosis.tsx",
 }
 # Cytaty Komunikatów, które nie są napisami UI Centrum rozliczeń; każdy z powodem.
 QUOTES_OUTSIDE_UI: Final = {
@@ -481,6 +480,7 @@ QUOTES_OUTSIDE_UI: Final = {
     ".08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
     ".Rozliczenie pracowników 08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
     tool_files.WORKER_TEMPLATE.name: "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
+    "Diagnoza": "napis przycisku w drugiej gałęzi warunku (pages/runs/diagnosis.tsx), postaci, której test nie czyta; sprawdza przegląd",
 }
 
 
@@ -488,13 +488,12 @@ def _ui_text(text: str) -> re.Pattern[str]:
     """Napis w jednej z form, w których plik TSX pokazuje go tacie jako napis przycisku.
 
     Test szuka napisu w tych postaciach: tekst dziecka elementu JSX (``<Button>…Kontynuuj</Button>``, także po ikonie
-    ``{…}`` i złamany w linii), prop ``label="…"`` albo ``label={"…"}`` (nie ``aria-label``), właściwość
-    ``label: "…"`` obiektu napisów i druga gałąź wyrażenia warunkowego zamknięta ``}``
-    (``{checking ? <Spinner /> : "Diagnoza"}``); poza dzieckiem JSX napis stoi w podwójnym cudzysłowie i cały.
+    ``{…}`` i złamany w linii), prop ``label="…"`` albo ``label={"…"}`` (nie ``aria-label``) i właściwość
+    ``label: "…"`` obiektu napisów; w propie i właściwości napis stoi w podwójnym cudzysłowie i cały.
     Gdy napisu nie ma w pliku w żadnej z tych postaci, test czerwieni: przycisk zmienił brzmienie albo zniknął.
-    Granica (tylko przegląd): czy dopasowanie to naprawdę napis przycisku, który tata widzi; pasuje też nagłówek,
-    przykład JSX w komentarzu i warunek poza JSX (funkcja pomocnicza, atrybut), więc przycisk przemianowany przy takim
-    starym napisie obok przechodzi.
+    Napis przycisku w innej postaci (np. w gałęzi warunku) ma powód w ``QUOTES_OUTSIDE_UI``.
+    Granica (tylko przegląd): czy dopasowanie to naprawdę napis przycisku, który tata widzi; pasuje też nagłówek i
+    przykład JSX w komentarzu, więc przycisk przemianowany przy takim starym napisie obok przechodzi.
     """
 
     words = r"\s+".join(re.escape(word) for word in text.split())
@@ -503,7 +502,6 @@ def _ui_text(text: str) -> re.Pattern[str]:
         rf"[>}}]\s*{words}\s*[<{{]",
         rf"(?<![\w-])label=\{{?{literal}\}}?",
         rf"(?<![\w-])label:\s*{literal}",
-        rf"\?[^;]*?:\s*{literal}\s*\}}",
     )
     return re.compile("|".join(forms))
 
