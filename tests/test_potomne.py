@@ -2,7 +2,7 @@
 
 Macierz przypadków biegnie raz, na interfejsie modułu i na prawdziwych procesach. Narzędzia, które go
 używają, mają po jednym teście, że ich procesy giną razem z nimi. Tu biegnie też macierz drogi narzędzi do gita
-(``tools/lib/repo.py``): scalenie bez worktree.
+(``tools/lib/repo.py``): scalenie bez worktree i git bez konserwacji w tle, która usuwa kopie commitów (#312).
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import ast
 from collections.abc import Callable, Iterator, Sequence
 import contextlib
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import re
@@ -25,6 +26,7 @@ from typing import Any
 import pytest
 
 from tests.fixtures.fake_cli import fake_cli
+from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.git_repo import commit, git
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
 import potomne
@@ -308,6 +310,24 @@ def test_scalenie_historii_bez_wspolnej_bazy_to_blad_gita_a_nie_konflikt(tmp_pat
         repo.merge_tree(path, "obca", "main")
 
     assert raised.value.returncode not in (0, 1) and "unrelated histories" in raised.value.stderr
+
+
+def test_git_narzedzia_nie_uruchamia_konserwacji_w_tle_takze_gdy_komputer_ja_wlacza(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = _repository(tmp_path / "repo")
+    trace = tmp_path / "trace2.json"
+    config = computer_git_config(tmp_path / "gitconfig", "[maintenance]\n\tauto = true\n\tautoDetach = false\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    # Wpis konfiguracji wołającego zostaje obok wyłączonej konserwacji.
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "user.name")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "z wołającego")
+    monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
+
+    repo.git(path, "commit", "--quiet", "--allow-empty", "--message", "x")
+
+    events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
+    started = [event["argv"] for event in events if event["event"] == "child_start" and "maintenance" in event["argv"]]
+    assert (started, git(path, "log", "-1", "--format=%an")) == ([], "z wołającego")
 
 
 def test_nieudana_kopia_commitu_niesie_komunikat_gita(tmp_path: Path) -> None:

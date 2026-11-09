@@ -6,6 +6,9 @@ Narzędzie pyta gita tylko przez ten moduł, a ``tests/test_potomne.py`` odrzuca
 - ścieżki spoza ASCII bez cytowania (``core.quotePath=false``), a wyjście w UTF-8 z ``errors="replace"`` i bez
   zamiany samotnego ``\\r`` z treści pliku na koniec linii, więc linie są takie, jak liczy je git;
 - bez odświeżania indeksu (``GIT_OPTIONAL_LOCKS=0``): raport o cudzym worktree niczego w nim nie zapisuje;
+- bez konserwacji w tle (``maintenance.auto=false``): od Gita 2.54 ``fetch`` i ``commit`` uruchamiają odłączone
+  ``git maintenance run --auto``, którego ``git worktree prune`` usuwa kopię zakładaną właśnie przez
+  ``potomne.commit_copy`` (#312);
 - z limitem czasu ``TIMEOUT_S``, więc zawieszony git kończy się ``subprocess.TimeoutExpired``.
 
 ``git`` i ``succeeds`` to szybkie, lokalne podpolecenia (``FAST_GIT`` w ``tests/test_potomne.py``). Polecenie, które
@@ -225,7 +228,13 @@ def worktrees(root: Path) -> list[Worktree]:
 
 
 def _environment() -> dict[str, str]:
-    return {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+    environment = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+    # Za wpisami ``GIT_CONFIG_*`` wołającego, bo ``GIT_CONFIG_COUNT`` liczy je wszystkie.
+    index = int(environment.get("GIT_CONFIG_COUNT") or 0)
+    environment.update(
+        {"GIT_CONFIG_COUNT": str(index + 1), f"GIT_CONFIG_KEY_{index}": "maintenance.auto", f"GIT_CONFIG_VALUE_{index}": "false"}
+    )
+    return environment
 
 
 def _text(output: bytes) -> str:
