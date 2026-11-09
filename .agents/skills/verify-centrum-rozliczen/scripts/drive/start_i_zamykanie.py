@@ -13,7 +13,7 @@ import urllib.parse
 from playwright.sync_api import Page, Request, Response, expect
 
 from drive.common import REPO_ROOT, Run, answers, log_entries, read_text, served_version
-from atrapy.scenariusz_centrum import LOG_FILE
+from atrapy.pliki_taty import LOG_FILE
 
 # Every click on the shortcut opens one more tab; the browser keeps at most 6 connections to Centrum for all tabs.
 _SHORTCUT_TABS = 7

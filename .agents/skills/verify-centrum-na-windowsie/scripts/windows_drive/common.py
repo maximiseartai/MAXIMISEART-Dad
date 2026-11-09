@@ -14,7 +14,7 @@ from playwright.sync_api import Page
 
 import windows_desktop
 import windows_tool
-from atrapy.scenariusz_centrum import CONFIG_DIRECTORY, LOG_FILE, SETTINGS_FILE
+from atrapy.pliki_taty import CONFIG_DIRECTORY, LOG_FILE, SETTINGS_FILE
 
 T = TypeVar("T")
 

@@ -28,7 +28,7 @@ from drive.common import (
     toggle_theme,
 )
 from drive.teksty import BELL_FRESH, UPDATE_BUTTON, UP_TO_DATE, WRITE
-from atrapy.scenariusz_centrum import DAD_CASES_FILE, REPORT_KEY_FILE, NOTIFICATIONS_FILE
+from atrapy.pliki_taty import DAD_CASES_FILE, NOTIFICATIONS_FILE, REPORT_KEY_FILE
 
 FEATURE = "powiadomienia"
 BELL = "Powiadomienia"

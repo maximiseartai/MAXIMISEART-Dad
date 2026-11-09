@@ -24,7 +24,8 @@ from drive.common import (
     start_centrum,
 )
 from drive.teksty import ABOUT_LOGS
-from atrapy.scenariusz_centrum import LAST_COMPLETE, LAST_STARTED_FILE
+from atrapy.scenariusz_centrum import LAST_COMPLETE
+from atrapy.pliki_taty import LAST_STARTED_FILE
 
 FEATURE = "karta-z-logow"
 # What the live card has and the Logi do not hold: order_notes carry the order numbers and Wykonawcy of Wycena w efenix.

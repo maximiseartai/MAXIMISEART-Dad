@@ -63,7 +63,6 @@ from atrapy.scenariusz_centrum import (
     COLLECTIVE_FILE_ROWS,
     COLLECTIVE_HEADERS,
     COMPLETED,
-    CONFIG_DIRECTORY,
     DEVICES,
     EMPTY_WORKER,
     INTERNAL_HEADERS,
@@ -72,15 +71,13 @@ from atrapy.scenariusz_centrum import (
     ORDERS,
     PRICE_LIST,
     REGISTER_HEADERS,
-    REPORT_KEY_FILE,
     ROW_MARKER,
-    SETTINGS_FILE,
     TODAY,
     UNKNOWN_WORKER,
     WORKER_IDS,
-    WORKER_MAPPING_FILE,
     WORKERS,
 )
+from atrapy.pliki_taty import CONFIG_DIRECTORY, REPORT_KEY_FILE, SETTINGS_FILE, WORKER_MAPPING_FILE
 from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
 from rozliczenia.tool_files import WORKER_CONFIG, config_dir, settings_file
 

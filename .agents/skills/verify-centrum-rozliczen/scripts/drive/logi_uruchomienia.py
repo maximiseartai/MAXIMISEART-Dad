@@ -25,7 +25,8 @@ from drive.common import (
 )
 from drive.teksty import ABOUT_LOGS
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
-from atrapy.scenariusz_centrum import ROW_MARKER, REPORT_KEY_FILE
+from atrapy.scenariusz_centrum import ROW_MARKER
+from atrapy.pliki_taty import REPORT_KEY_FILE
 
 FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"

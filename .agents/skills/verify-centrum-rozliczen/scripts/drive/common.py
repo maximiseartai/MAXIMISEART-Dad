@@ -26,7 +26,8 @@ from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Pag
 import yaml
 
 from drive import feature
-from atrapy.scenariusz_centrum import LAST_COMPLETE, QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
+from atrapy.scenariusz_centrum import LAST_COMPLETE
+from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.case_delivery import queue_directory
 from rozliczenia.centrum.outbox import queue_file_pattern
 from rozliczenia.tool_files import log_path

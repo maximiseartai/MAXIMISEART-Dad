@@ -24,7 +24,7 @@ from drive.common import (
     version_line,
 )
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
-from atrapy.scenariusz_centrum import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
+from atrapy.pliki_taty import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
 from rozliczenia.centrum.tool_update import RESULT_FILE
 
 FEATURE = "aktualizacja"

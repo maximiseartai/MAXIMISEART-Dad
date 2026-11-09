@@ -18,7 +18,8 @@ from drive.common import (
     Run,
     start_centrum,
 )
-from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER, REPORT_KEY_FILE
+from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
+from atrapy.pliki_taty import REPORT_KEY_FILE
 
 FEATURE = "kontrola-ilosci"
 LABEL = "kontrola-ilosci"

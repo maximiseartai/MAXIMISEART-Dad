@@ -47,7 +47,7 @@ from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Process
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
 from rozliczenia.telemetry import MetricsStore
-from atrapy.scenariusz_centrum import CENTRUM_RUNS_FILE, DAD_CASES_FILE, REPORT_KEY_FILE
+from atrapy.pliki_taty import CENTRUM_RUNS_FILE, DAD_CASES_FILE, REPORT_KEY_FILE
 
 FEATURE = "uwaga-taty"
 LABEL = "uwaga-taty"

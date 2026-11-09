@@ -27,7 +27,8 @@ from drive.common import (
     unreadable,
 )
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
-from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER, REPORT_KEY_FILE
+from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
+from atrapy.pliki_taty import REPORT_KEY_FILE
 from atrapy.workbooks import excel_lock
 
 FEATURE = "diagnoza"

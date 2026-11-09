@@ -42,7 +42,7 @@
   Prywatna nazwa (`moduł._x`), `vars(moduł)` i podmiana globali modułu wiążą wyrocznię z wnętrzem, które autor zmienia bez patrzenia na skille, a wyrocznia, która je podmienia, po takiej zmianie po cichu przestaje wstrzykiwać awarię.
 - Dane o świecie zewnętrznym i oczekiwane wyniki wyrocznia kopiuje celowo: tekst Komunikatu, który tata czyta, dopisek w Skrzynce Zgłoszeń, który czyta Maks, nazwę pliku w folderze taty (Kopia INTERMAX, Wzorce), nagłówki plików taty i format, który czyta następne Wydanie (nazwa pliku kolejki, znacznik wysyłki).
   Tak samo kopiuje to, co tworzy świat zewnętrzny (blokada `~$` Excela), także gdy skrypt sam to tworzy, grając Excela albo tatę: generator świata bierze z `src` tylko to, czego tata nie widzi, czego nie czyta inna wersja narzędzia z plików taty i czego nie tworzy świat.
-  Nazwy plików i folderów narzędzia u taty (`config/`, Ustawienia, dziennik, Logi, kolejka, pliki stanu, wynik Aktualizacji) mają jedną kopię, w `tools/lib/atrapy/scenariusz_centrum.py`.
+  Nazwy plików i folderów narzędzia u taty (`config/`, Ustawienia, dziennik, Logi, kolejka, pliki stanu, wynik Aktualizacji) mają jedną kopię, w `tools/lib/atrapy/pliki_taty.py`.
   Taką nazwę skrypt bierze z `src` tylko w trzech przypadkach.
   (a) Sprawdzenie, że pliku nie ma, na przykład czekanie, aż plik zniknie z kolejki: na kopii przeszłoby po cichu, gdy `src` zmieni nazwę, bo pod starą nazwą pliku nie ma od początku.
   (b) Ścieżka, którą harness sam wybiera i podaje produktowi jako parametr (Ustawienia, dziennik i konfiguracja serwera w `fixture.json`, folder Wzorców, adres przekierowany na repozytorium próbne).
