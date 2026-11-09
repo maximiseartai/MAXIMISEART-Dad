@@ -14,7 +14,7 @@ import pytest
 from rozliczenia.centrum.notifications import CHECK_WAIT_S, NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes, render
-from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_REPORTS_FILE, REPORT
 from rozliczenia.centrum.report_box import CloseReason, Refused, Unreachable
 from rozliczenia.centrum.tool_freshness import PublishedRelease
 from rozliczenia.centrum.tool_update import Release
@@ -597,8 +597,8 @@ def test_wydanie_rozwiazuje_zgloszenie_wyslane_z_kolejki(tmp_path: Path) -> None
 
 def test_zgloszenie_wyslane_przed_kolejka_zostaje_przeczytane(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
-    config = tmp_path / "config"
-    (config / "zgloszenia-wyslane.json").write_text(
+    config = ToolDirectory(tmp_path).config
+    (config / OLD_REPORTS_FILE).write_text(
         json.dumps(
             [
                 {
@@ -613,7 +613,7 @@ def test_zgloszenie_wyslane_przed_kolejka_zostaje_przeczytane(tmp_path: Path) ->
         ),
         encoding="utf-8",
     )
-    (config / "powiadomienia.json").write_text(
+    (config / NOTIFICATIONS_FILE).write_text(
         json.dumps({"schema_version": 1, "przeczytane": ["zgloszenie-12-rozwiazana"]}), encoding="utf-8"
     )
     centrum.restart()

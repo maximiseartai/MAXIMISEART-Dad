@@ -1013,7 +1013,7 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
         assert [line for line in granice if line.startswith(expected)], granice
     if case == "inny_rozmiar_konfiguracji":
         size = (configuration / tool_files.WORKER_CONFIG.name).stat().st_size
-        assert any(line.endswith(f"inny rozmiar niż u taty: {tool_files.WORKER_CONFIG.name}: u taty 1 B, tu {size} B") for line in lines)
+        assert any(line.endswith(f"inny rozmiar niż u taty: worker_mapping.yaml: u taty 1 B, tu {size} B") for line in lines)
 
 
 def test_powtorka_zatrzymania_porownuje_sie_jak_zatrzymanie_dla_taty(

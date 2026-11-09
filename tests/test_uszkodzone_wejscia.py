@@ -31,13 +31,16 @@ from fastapi.testclient import TestClient
 
 from rozliczenia import period_folder
 from rozliczenia.centrum.clock import ALARM_THREAD
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.github import HttpRequest, HttpResponse
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_THREAD
+from rozliczenia.centrum.keyed_box import OPENING_FILE
 from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
+from rozliczenia.centrum.tool_update import RESULT_FILE
 
 from tests.fixtures.centrum import (
     CentrumClient,
@@ -49,7 +52,8 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import Engines
 from tests.fixtures.linie_watkow import new_line, threads_since
-from atrapy.preparation import PERIOD, REGISTER_NAME, write_collective_template, write_internal_template, write_register
+from atrapy.pliki_taty import REGISTER_NAME
+from atrapy.preparation import PERIOD, write_collective_template, write_internal_template, write_register
 from atrapy.settlement import CellValue, write_quantity_source, write_template
 
 TODAY = date(2026, 9, 16)
@@ -584,7 +588,15 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         )
     }
 
-    assert state | {"kolejka_zgloszen": TOOL.queue.as_posix(), "ostatni_start": TOOL.last_started.as_posix()} == {
+    others = {
+        "kolejka_zgloszen": TOOL.queue,
+        "ostatni_start": TOOL.last_started,
+        "zapisy_zakladania_skrzynki": TOOL.config / OPENING_FILE,
+        "wynik_aktualizacji": TOOL.config / RESULT_FILE,
+        "dzialania_taty": TOOL.log_path.parent / DAD_ACTIONS_FILE,
+    }
+
+    assert state | {name: path.as_posix() for name, path in others.items()} == {
         "klucz_zgloszen": "config/zgloszenia-klucz.txt",
         "sprawy_taty": "config/sprawy-taty.json",
         "wyslane_zgloszenia": "config/zgloszenia-wyslane.json",
@@ -596,6 +608,9 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "folder_kopii_intermax": "Kopie INTERMAX",
         "kolejka_zgloszen": "config/zgloszenia/kolejka",
         "ostatni_start": "logs/ostatnie-uruchomienie.json",
+        "zapisy_zakladania_skrzynki": "config/skrzynka-zakladanie.txt",
+        "wynik_aktualizacji": "config/centrum-aktualizacja.json",
+        "dzialania_taty": "logs/dzialania-taty.jsonl",
     }
 
 

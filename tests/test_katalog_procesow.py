@@ -23,7 +23,7 @@ from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.run_context import RunContext
-from rozliczenia.tool_files import TOOL_ROOT
+from rozliczenia import tool_files
 from tests.fixtures.centrum import ToolDirectory, centrum, finished_view
 from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum
@@ -108,13 +108,12 @@ def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
 
 
 def test_kazdy_proces_ma_wlasna_historie_metryk_w_katalogu_narzedzia() -> None:
-    """Nazwy plików metryk są te same na dysku taty od pierwszego Wydania: Historia i Metryki czytają je po zmianie."""
-
+    # Nazwy plików metryk przypina test_opiekun_ponownego_startu.py.
     assert CATALOG.metrics_paths == {
-        "preparation": TOOL_ROOT / ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
-        "settlement": TOOL_ROOT / ".rozliczenia-metrics.jsonl",
-        "efenix": TOOL_ROOT / ".wycena-efenix-metrics.jsonl",
-        "intermax": TOOL_ROOT / ".uporzadkowanie-intermax-metrics.jsonl",
+        "preparation": tool_files.PREPARATION_METRICS,
+        "settlement": tool_files.SETTLEMENT_METRICS,
+        "efenix": tool_files.EFENIX_METRICS,
+        "intermax": tool_files.INTERMAX_METRICS,
     }
 
 
