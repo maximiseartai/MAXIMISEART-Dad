@@ -129,10 +129,7 @@ def _check_run(
     return check if started is None else {**check, "startedAt": started}
 
 
-GREEN = [
-    {"__typename": "CheckRun", "name": "Ruff", "status": "COMPLETED", "conclusion": "SUCCESS", "workflowName": "CI"},
-    _check_run("COMPLETED", "SUCCESS"),
-]
+GREEN = [_check_run("COMPLETED", "SUCCESS", name="Ruff"), _check_run("COMPLETED", "SUCCESS")]
 COMMIT_STATUS = {"__typename": "StatusContext", "context": "Required CI status", "state": "SUCCESS"}
 NOT_ACTIONS = "CI: brak „Required CI status” z GitHub Actions na HEAD"
 PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)"
@@ -318,7 +315,7 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
             [(PASS, "OWNER")],
             "CI: „Required CI status” IN_PROGRESS",
         ),
-        (GREEN[:1], [(PASS, "OWNER")], NOT_ACTIONS),
+        (GREEN[:1], [(PASS, "OWNER")], "CI: run CI 4077 jeszcze trwa"),
         ([COMMIT_STATUS], [(PASS, "OWNER")], NOT_ACTIONS),
         ([_check_run("COMPLETED", "SUCCESS", workflow="")], [(PASS, "OWNER")], NOT_ACTIONS),
         (GREEN, [], NO_PASS),
@@ -340,7 +337,7 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     ids=[
         "ci-czerwone",
         "ci-trwa",
-        "ci-bez-wymaganego-checku",
+        "ci-run-bez-wymaganego-checku-jeszcze-trwa",
         "ci-tylko-status-commitu",
         "ci-check-spoza-github-actions",
         "bez-werdyktu",
@@ -379,42 +376,70 @@ def test_bez_zielonego_ci_albo_werdyktu_pass_dla_head_pr_nie_jest_scalany(
     assert github.merges() == []
 
 
-OLD = "2026-11-09T21:21:54Z"
-NEW = "2026-11-09T22:01:27Z"
-GH_NOT_STARTED = "0001-01-01T00:00:00Z"
+SAME_START = "2026-11-09T22:01:27Z"
+REQUIRED_DONE = ("Required CI status", "COMPLETED", "SUCCESS")
+GREEN_RUN = (("Plan CI", "COMPLETED", "SUCCESS"), ("pytest (Python 3.11, 15/22)", "COMPLETED", "SUCCESS"), REQUIRED_DONE)
+RED_RUN = (
+    ("Plan CI", "COMPLETED", "SUCCESS"),
+    ("pytest (Python 3.11, 15/22)", "COMPLETED", "FAILURE"),
+    ("Required CI status", "COMPLETED", "FAILURE"),
+)
+# Prawdziwy kształt trwającego runu (run ``main`` 42709423144): część zadań skończona, część w toku, a check
+# ``Required CI status`` jeszcze nie istnieje, bo GitHub tworzy go dopiero po zadaniach z jego ``needs:``.
+RUNNING_RUN = (("Plan CI", "COMPLETED", "SUCCESS"), ("pytest (Python 3.11, 15/22)", "IN_PROGRESS", None), ("Frontend", "QUEUED", None))
+
+
+def _run(run: int, *jobs: tuple[str, str, str | None], started: str = SAME_START) -> list[dict[str, str | None]]:
+    """Checki jednego runu workflow ``CI`` w rollupie: ``detailsUrl`` każdego niesie identyfikator runu i zadania."""
+
+    return [
+        _check_run(status, conclusion, name=name, url=f"https://github.com/o/r/actions/runs/{run}/job/{run}{index}", started=started)
+        for index, (name, status, conclusion) in enumerate(jobs)
+    ]
 
 
 @pytest.mark.parametrize(
-    ("required", "outcome"),
+    ("rollup", "outcome"),
     [
-        ([("COMPLETED", "FAILURE", OLD), ("COMPLETED", "FAILURE", "2026-11-09T21:57:21Z"), ("COMPLETED", "SUCCESS", NEW)], None),
-        ([("COMPLETED", "SUCCESS", NEW), ("COMPLETED", "FAILURE", OLD)], None),
-        ([("COMPLETED", "SUCCESS", OLD), ("COMPLETED", "FAILURE", NEW)], "FAILURE"),
-        ([("COMPLETED", "FAILURE", NEW), ("COMPLETED", "SUCCESS", OLD)], "FAILURE"),
-        ([("COMPLETED", "FAILURE", OLD), ("IN_PROGRESS", None, NEW)], "IN_PROGRESS"),
-        ([("QUEUED", None, GH_NOT_STARTED), ("COMPLETED", "SUCCESS", OLD)], "QUEUED"),
-        ([("COMPLETED", "SUCCESS", OLD), ("QUEUED", None, None)], "QUEUED"),
+        ([*_run(42701212234, *RED_RUN), *_run(42706832032, *RED_RUN), *_run(42707489817, *GREEN_RUN)], None),
+        ([*_run(42707489817, *GREEN_RUN), *_run(42706832032, *RED_RUN), *_run(42701212234, *RED_RUN)], None),
+        ([*_run(42701212234, *GREEN_RUN), *_run(42706832032, *RED_RUN)], "„Required CI status” FAILURE"),
+        ([*_run(42706832032, *RED_RUN), *_run(42701212234, *GREEN_RUN)], "„Required CI status” FAILURE"),
+        ([*_run(9999, *RED_RUN), *_run(10000, *GREEN_RUN)], None),
+        ([*_run(42707489817, *GREEN_RUN, started="2026-11-09T22:30:00Z"), *_run(42709423144, *RUNNING_RUN)], "run CI 42709423144 jeszcze trwa"),
+        (
+            [*_run(42701212234, *RED_RUN), *_run(42707489817, *GREEN_RUN), *_run(42709423144, *RUNNING_RUN, started="2026-11-09T21:00:00Z")],
+            "run CI 42709423144 jeszcze trwa",
+        ),
+        ([*_run(42707489817, *GREEN_RUN), *_run(42709423144, ("Plan CI", "COMPLETED", "SUCCESS"), ("Required CI status", "IN_PROGRESS", None))], "„Required CI status” IN_PROGRESS"),
+        ([*_run(42707489817, ("pytest (Python 3.11, 15/22)", "IN_PROGRESS", None), REQUIRED_DONE)], "run CI 42707489817 jeszcze trwa"),
+        (
+            [*_run(42707489817, *GREEN_RUN), _check_run("COMPLETED", "SUCCESS", name="Frontend", url="https://github.com/o/r/runs/129482655837")],
+            "check „Frontend” workflow „CI” bez identyfikatora runu w detailsUrl https://github.com/o/r/runs/129482655837",
+        ),
+        (
+            [*_run(42707489817, *GREEN_RUN), _check_run("COMPLETED", "FAILURE", name="Lint skilli", workflow="Skille", url="https://example.com/x")],
+            None,
+        ),
     ],
     ids=[
         "stare-czerwone-po-zamknieciu-i-otwarciu-nowe-zielone-jak-1238",
-        "nowe-zielone-przed-starym-czerwonym-w-rollupie",
-        "stare-zielone-nowe-czerwone",
-        "nowe-czerwone-przed-starym-zielonym-w-rollupie",
-        "stare-czerwone-nowe-w-toku",
-        "nowe-w-kolejce-z-zerowa-data-startu-od-gh",
-        "nowe-w-kolejce-bez-daty-startu",
+        "nowy-zielony-run-przed-starymi-czerwonymi-w-rollupie",
+        "stary-zielony-run-nowy-czerwony",
+        "nowy-czerwony-run-przed-starym-zielonym-w-rollupie",
+        "identyfikator-runu-porownany-jako-liczba-nie-napis",
+        "nowy-run-w-toku-bez-required-po-zielonym-o-tym-samym-starcie",
+        "nowy-run-w-toku-bez-required-po-czerwonym-i-zielonym-jak-1238-po-ponownym-otwarciu",
+        "nowy-run-z-required-w-toku-po-zielonym",
+        "ponowione-zadanie-najnowszego-runu-w-toku-obok-jego-zielonego-required",
+        "check-ci-bez-identyfikatora-runu",
+        "inny-workflow-nie-jest-runem-ci",
     ],
 )
-def test_gotowosc_ci_liczy_tylko_najnowszy_required_ci_status_na_head(
-    tmp_path: Path, required: list[tuple[str, str | None, str | None]], outcome: str | None
-) -> None:
+def test_gotowosc_ci_liczy_tylko_najnowszy_run_ci_na_head(tmp_path: Path, rollup: list[dict[str, str | None]], outcome: str | None) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    runs = [f"https://github.com/o/r/actions/runs/{4000 + run}/job/{run}" for run in range(len(required))]
-    github.update(
-        1,
-        statusCheckRollup=[_check_run(status, conclusion, started=started, url=url) for (status, conclusion, started), url in zip(required, runs, strict=True)],
-    )
+    github.update(1, statusCheckRollup=rollup)
     github.comment(1, PASS.format(head=head))
 
     answered = github.run("1", "--bez-merge")
@@ -424,7 +449,7 @@ def test_gotowosc_ci_liczy_tylko_najnowszy_required_ci_status_na_head(
         assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a z main")
     else:
         assert answered.returncode == 1, answered.stdout + answered.stderr
-        assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | CI: „Required CI status” {outcome}"
+        assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | CI: {outcome}"
     assert github.merges() == []
 
 
@@ -1059,7 +1084,7 @@ def test_sprzatanie_po_czasie_nie_odwoluje_scalenia(tmp_path: Path) -> None:
     "mutations",
     [
         [],
-        [_check_run("IN_PROGRESS", None, name="Change mutations (1/3)")],
+        [_check_run("IN_PROGRESS", None, name="Change mutations (1/3)", workflow="Mutacje nocne", url="https://github.com/o/r/actions/runs/4100/job/3")],
         [_check_run("COMPLETED", "FAILURE", name="Change mutations (1/3)")],
     ],
     ids=["bez-checku", "w-toku", "przezyte"],
@@ -1146,7 +1171,7 @@ def test_przeglad_po_pass_dla_head_mowi_ze_werdykt_dotyczy_tego_head_a_rundy_z_f
     assert _lines(answered, "RUNDA |") == [f"RUNDA | rund z FAIL: 1, ostatni werdykt PASS dla {head[:7]}, czyli dla tego HEAD"]
 
 
-OTHER_RUN = "https://github.com/o/r/actions/runs/5000/job/2"
+OTHER_RUN = "https://github.com/o/r/actions/runs/4000/job/2"
 PASSED = "polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj"
 UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi padłych zadań: gh run view 4077 --log-failed"
 
@@ -1193,31 +1218,33 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
         ),
         ([COMMIT_STATUS], "brak na HEAD {head} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"),
         (
-            [
-                _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)", url=OTHER_RUN, started=OLD),
-                _check_run("COMPLETED", "FAILURE", url=OTHER_RUN, started=OLD),
-                _check_run("COMPLETED", "SUCCESS", name="pytest (Python 3.11, 1/2)", started=NEW),
-                _check_run("COMPLETED", "SUCCESS", started=NEW),
-            ],
+            [*_run(4000, ("pytest (Python 3.11, 1/2)", "COMPLETED", "FAILURE"), RED_RUN[-1]), *_run(4077, ("pytest (Python 3.11, 1/2)", "COMPLETED", "SUCCESS"), REQUIRED_DONE)],
             f"success na HEAD {{head}} | {PASSED}",
         ),
         (
-            [
-                _check_run("COMPLETED", "SUCCESS", name="Ruff, mypy", url=OTHER_RUN, started=OLD),
-                _check_run("COMPLETED", "SUCCESS", url=OTHER_RUN, started=OLD),
-                _check_run("COMPLETED", "FAILURE", name="Ruff, mypy", started=NEW),
-                _check_run("COMPLETED", "FAILURE", started=NEW),
-            ],
+            [*_run(4000, ("Ruff, mypy", "COMPLETED", "SUCCESS"), REQUIRED_DONE), *_run(4077, ("Ruff, mypy", "COMPLETED", "FAILURE"), RED_RUN[-1])],
             f"failure na HEAD {{head}} | padłe zadania: Ruff, mypy | {UNPROVEN}",
         ),
         (
-            [
-                _check_run("COMPLETED", "FAILURE", name="Plan CI", url=OTHER_RUN, started=OLD),
-                _check_run("COMPLETED", "FAILURE", url=OTHER_RUN, started=OLD),
-                _check_run("IN_PROGRESS", None, name="Plan CI", started=NEW),
-                _check_run("QUEUED", None, started=GH_NOT_STARTED),
-            ],
+            [*_run(4000, ("Plan CI", "COMPLETED", "FAILURE"), RED_RUN[-1]), *_run(4077, *RUNNING_RUN)],
             "pending na HEAD {head} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+        ),
+        (
+            [*_run(3000, *RED_RUN), *_run(4000, *GREEN_RUN), *_run(4077, *RUNNING_RUN)],
+            "pending na HEAD {head} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+        ),
+        (
+            _run(4077, ("Plan CI", "COMPLETED", "SUCCESS"), ("Frontend", "COMPLETED", "SUCCESS")),
+            "pending na HEAD {head} (w toku: 0) | polecenia z linii LICZY CI jeszcze bez wyniku",
+        ),
+        (
+            [*_run(4077, ("Frontend", "IN_PROGRESS", None), REQUIRED_DONE)],
+            "pending na HEAD {head} (w toku: 1) | polecenia z linii LICZY CI jeszcze bez wyniku",
+        ),
+        (
+            [*GREEN, _check_run("COMPLETED", "SUCCESS", name="Frontend", url="https://github.com/o/r/runs/129482655837")],
+            "nieznany na HEAD {head} | check „Frontend” workflow „CI” bez identyfikatora runu w detailsUrl "
+            "https://github.com/o/r/runs/129482655837 | polecenia z linii LICZY CI nie są dowiedzione",
         ),
     ],
     ids=[
@@ -1231,7 +1258,11 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
         "tylko-status-commitu",
         "stary-run-czerwony-nowy-zielony",
         "stary-run-zielony-nowy-czerwony",
-        "stary-run-czerwony-nowy-w-toku",
+        "stary-run-czerwony-nowy-w-toku-bez-required",
+        "stare-runy-czerwony-i-zielony-nowy-w-toku-bez-required-jak-1238-po-ponownym-otwarciu",
+        "run-po-skonczonych-zadaniach-jeszcze-bez-required",
+        "ponowione-zadanie-najnowszego-runu-w-toku-obok-jego-zielonego-required",
+        "check-ci-bez-identyfikatora-runu",
     ],
 )
 def test_przeglad_podaje_stan_required_ci_status_na_head_i_padle_zadania_jego_runu(

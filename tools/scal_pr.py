@@ -5,10 +5,12 @@ Jedyna droga merge'a PR przez agenta: ``gh pr merge`` tylko po sprawdzeniu gotow
 Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 
 1. PR jest otwarty, nie jest szkicem i nie pochodzi z forka (z forka ruff i mypy biegłyby na obcym kodzie);
-2. najnowszy check ``Required CI status`` z GitHub Actions na HEAD PR skończył się sukcesem (jak w rulesecie ``main``:
-   CheckRun z workflow, nie status commitu, który może ustawić każdy z prawem zapisu); checki starszych przebiegów CI
-   na tym HEAD, na przykład sprzed zamknięcia i otwarcia PR, się nie liczą, a najnowszy w toku to brak gotowości
-   (``stan_pr.latest_required``);
+2. najnowszy run workflow ``CI`` na HEAD PR (największy identyfikator runu z ``detailsUrl`` jego checków) skończył
+   się, a jego check ``Required CI status`` sukcesem (jak w rulesecie ``main``: CheckRun z workflow, nie status
+   commitu, który może ustawić każdy z prawem zapisu); run bez tego checku jeszcze trwa, bo GitHub tworzy go po
+   zadaniach z jego ``needs:``, run z zadaniem w toku też (ponowienie), a checki starszych runów na tym HEAD, na
+   przykład sprzed zamknięcia i otwarcia PR, się nie liczą, ani czerwone, ani zielone (``stan_pr.latest_ci_run``);
+   check workflow ``CI`` bez identyfikatora runu w ``detailsUrl`` to odmowa;
 3. najnowszy werdykt dla HEAD PR to ``PASS`` w postaci, którą publikuje ``--werdykt`` (niżej);
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje;
@@ -73,11 +75,19 @@ class _Refused(Exception):
 
 
 def _ci_problem(rollup: tuple[dict[str, str | None], ...]) -> str | None:
-    check = stan_pr.latest_required(rollup)
-    if check is None:
+    try:
+        run = stan_pr.latest_ci_run(rollup)
+    except stan_pr.UnknownRun as unknown:
+        return f"CI: check „{unknown.name}” workflow „{github.CI_WORKFLOW}” bez identyfikatora runu w detailsUrl {unknown.url}"
+    if run is None:
         return f"CI: brak „{github.REQUIRED}” z GitHub Actions na HEAD"
+    check = run.required
+    if check is None:
+        return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa"
     result = (check.get("conclusion") if check.get("status") == "COMPLETED" else check.get("status")) or "?"
-    return None if result == "SUCCESS" else f"CI: „{github.REQUIRED}” {result}"
+    if result != "SUCCESS":
+        return f"CI: „{github.REQUIRED}” {result}"
+    return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa" if run.running else None
 
 
 def _body_problem(body: str) -> str | None:

@@ -3,20 +3,20 @@ kontekst przeglądu: pełny SHA HEAD PR, bazę i merge-base z nią, ``git diff -
 wynik ``tools/skille_dla_zmiany.py`` z HEAD PR liczony od merge-base (w kopii commitu HEAD, więc ``pilnuje:`` skilli
 jest z PR) i poprzednie werdykty PR w kolejności utworzenia, każdy z datą, autorem, dwiema pierwszymi liniami i tym,
 czy dotyczy HEAD (``PASS`` poza regułami ``--werdykt`` z dopiskiem). Gdy ostatni werdykt jest dla innego commitu,
-linia ``RUNDA`` podaje polecenie diffu od niego do HEAD. Linia ``CI`` podaje stan najnowszego ``Required CI status``
-na HEAD z rollupu checków, tego samego, który liczy ``scal_pr`` (``stan_pr.latest_required``), a zadania jego
-workflow bierze tylko z jego runu, więc padłe zadania starszego runu, na przykład sprzed zamknięcia i otwarcia PR, się
-nie liczą: ``success`` znaczy, że polecenia z linii ``LICZY CI`` przeszły (``tools/plan_ci.py``), więc ich
-logów nie trzeba czytać, a zadania innych workflowów, które jeszcze biegną albo padły, wymienia osobno, bo gotowość
-czeka i na nie; ``pending``, gdy Required jeszcze się nie skończył, a któreś zadanie biegnie, także zanim Required się
-zacznie; ``failure`` z padłymi zadaniami runu Required i poleceniem ``gh run view <run> --log-failed``; ``brak``, gdy
-CI na HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``.
+linia ``RUNDA`` podaje polecenie diffu od niego do HEAD. Linia ``CI`` podaje stan najnowszego runu workflow ``CI``
+na HEAD z rollupu checków, tego samego, który liczy ``scal_pr`` (``stan_pr.latest_ci_run``), a jego zadania i
+``Required CI status`` bierze tylko z tego runu, więc zadania starszych runów, na przykład sprzed zamknięcia i otwarcia
+PR, się nie liczą: ``success``, gdy run się skończył, a jego Required przeszedł, znaczy, że polecenia z linii
+``LICZY CI`` przeszły (``tools/plan_ci.py``), więc ich logów nie trzeba czytać, a zadania innych workflowów, które
+jeszcze biegną albo padły, wymienia osobno, bo gotowość czeka i na nie; ``pending``, gdy run trwa (nie ma jeszcze
+checku Required, bo GitHub tworzy go po zadaniach z jego ``needs:``, albo któreś jego zadanie biegnie); ``failure``
+z padłymi zadaniami runu i poleceniem ``gh run view <run> --log-failed``; ``nieznany``, gdy check workflow ``CI``
+nie ma identyfikatora runu w ``detailsUrl``; ``brak``, gdy CI na HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-import re
 import subprocess
 import sys
 
@@ -29,54 +29,46 @@ import stan_pr
 import werdykt_pr
 import werdykt_scalenia
 
-RUN_ID = re.compile(r"/actions/runs/(\d+)/")
 JOB_NOT_FAILED = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
 SKILLS_FOR_CHANGE = Path("tools") / "skille_dla_zmiany.py"
 SKILLS_TIMEOUT_S = 300
 
 
-def _run_id(check: dict[str, str | None]) -> str | None:
-    found = RUN_ID.search(check.get("detailsUrl") or "")
-    return found[1] if found else None
-
-
 def _ci_line(rollup: list[dict[str, str | None]], head: str) -> str:
     where = f"CI | {github.REQUIRED}"
-    latest = stan_pr.latest_required(rollup)
-    required = [latest] if latest else []
-    actions = [
-        check
-        for check in rollup
-        if check.get("workflowName")
-        and check.get("name") != github.REQUIRED
-        and (latest is None or check.get("workflowName") != latest.get("workflowName") or _run_id(check) == _run_id(latest))
-    ]
-    red = [check for check in required if check.get("status") == "COMPLETED" and check.get("conclusion") != "SUCCESS"]
-    runs = {run for check in red if (run := _run_id(check))}
+    others = [check for check in rollup if check.get("workflowName") and check.get("workflowName") != github.CI_WORKFLOW]
+    try:
+        run = stan_pr.latest_ci_run(rollup)
+    except stan_pr.UnknownRun as unknown:
+        return (
+            f"{where} nieznany na HEAD {head} | check „{unknown.name}” workflow „{github.CI_WORKFLOW}” bez identyfikatora "
+            f"runu w detailsUrl {unknown.url} | polecenia z linii LICZY CI nie są dowiedzione"
+        )
+    if run is None:
+        return f"{where} brak na HEAD {head} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"
+    required = run.required
     failed = sorted(
         {
             str(check.get("name"))
-            for check in actions
-            if check.get("status") == "COMPLETED" and check.get("conclusion") not in JOB_NOT_FAILED and (not red or _run_id(check) in runs)
+            for check in run.checks
+            if check.get("name") != github.REQUIRED and check.get("status") == "COMPLETED" and check.get("conclusion") not in JOB_NOT_FAILED
         }
     )
     jobs = f"padłe zadania: {', '.join(failed)}" if failed else ""
-    logs = f"logi padłych zadań: gh run view {' '.join(sorted(runs))} --log-failed" if runs else "logi padłych zadań"
-    if red:
+    if required is not None and required.get("status") == "COMPLETED" and required.get("conclusion") != "SUCCESS":
         why = jobs or f"bez padłego zadania, przyczynę podaje log „{github.REQUIRED}”"
+        logs = f"logi padłych zadań: gh run view {run.id} --log-failed"
         return f"{where} failure na HEAD {head} | {why} | polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko {logs}"
-    if required and all(check.get("status") == "COMPLETED" for check in required):
-        running_others = sorted({str(check.get("name")) for check in actions if check.get("status") != "COMPLETED"})
+    if required is not None and not run.running:
+        running_others = sorted({str(check.get("name")) for check in others if check.get("status") != "COMPLETED"})
         failed_others = sorted(
-            {str(check.get("name")) for check in actions if check.get("status") == "COMPLETED" and check.get("conclusion") not in JOB_NOT_FAILED}
+            {str(check.get("name")) for check in others if check.get("status") == "COMPLETED" and check.get("conclusion") not in JOB_NOT_FAILED}
         )
         states = [f"{state}: {', '.join(names)}" for state, names in (("w toku", running_others), ("padłe", failed_others)) if names]
         rest = f" | inne workflowy, na które czeka gotowość: {'; '.join(states)}" if states else ""
         return f"{where} success na HEAD {head} | polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj{rest}"
-    running = [check for check in [*required, *actions] if check.get("status") != "COMPLETED"]
-    if running:
-        return f"{where} pending na HEAD {head} (w toku: {len(running)}{f'; {jobs}' if jobs else ''}) | polecenia z linii LICZY CI jeszcze bez wyniku"
-    return f"{where} brak na HEAD {head} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"
+    running = [*run.running, *(check for check in others if check.get("status") != "COMPLETED")]
+    return f"{where} pending na HEAD {head} (w toku: {len(running)}{f'; {jobs}' if jobs else ''}) | polecenia z linii LICZY CI jeszcze bez wyniku"
 
 
 def _skills_for_change(head: str, fork: str) -> list[str]:

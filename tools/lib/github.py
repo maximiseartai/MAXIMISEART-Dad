@@ -29,6 +29,8 @@ from repo import ROOT
 REPO = "repos/{owner}/{repo}"
 # Zadanie ``required`` w ``.github/workflows/ci.yml``: jedyny check, który ruleset ``main`` wymaga.
 REQUIRED = "Required CI status"
+# ``name:`` workflow ``.github/workflows/ci.yml``, który tworzy check ``REQUIRED``.
+CI_WORKFLOW = "CI"
 # Temat commitu scalenia PR na GitHubie: merge commit albo squash.
 MERGE = re.compile(r"Merge pull request #(?P<numer>[1-9][0-9]*) from \S+")
 SQUASH = re.compile(r"(?P<tytul>.+) \(#(?P<numer>[1-9][0-9]*)\)")

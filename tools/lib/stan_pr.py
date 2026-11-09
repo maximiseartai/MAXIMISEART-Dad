@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 
 import github
 
-_NOT_STARTED = "0001-01-01"  # ``gh`` zapisuje brak ``startedAt`` jako zerową datę Go
+_JOB_URL = re.compile(r"https://github\.com/[^/]+/[^/]+/actions/runs/(?P<run>[0-9]+)/job/[0-9]+")
 
 
 @dataclass(frozen=True)
@@ -56,20 +57,56 @@ def pull(number: int) -> Pull:
     )
 
 
-def latest_required(checks: tuple[dict[str, str | None], ...] | list[dict[str, str | None]]) -> dict[str, str | None] | None:
-    """Najnowszy check ``Required CI status`` z GitHub Actions (CheckRun z workflow, nie status commitu, który ustawi
-    każdy z prawem zapisu) albo ``None``, gdy go nie ma.
+@dataclass(frozen=True)
+class CiRun:
+    """Run workflow ``CI`` na HEAD: identyfikator runu i jego checki z rollupu."""
 
-    Rollup ma jeden taki check na każdy przebieg workflow na HEAD (ponowione zadanie zastępuje swój check w przebiegu),
-    więc po zamknięciu i otwarciu PR stoją w nim checki starych przebiegów obok nowego, a liczy się tylko najnowszy.
-    Najnowszy to ten z najpóźniejszym ``startedAt``; check, który jeszcze nie wystartował (``startedAt`` puste albo
-    zerowa data, którą ``gh`` podaje za brak), jest nowszy od każdego, który wystartował.
+    id: int
+    checks: tuple[dict[str, str | None], ...]
+
+    @property
+    def required(self) -> dict[str, str | None] | None:
+        """Check ``Required CI status`` tego runu; ``None``, gdy run jeszcze trwa, bo GitHub tworzy ten check dopiero
+        po zadaniach z jego ``needs:`` (``.github/workflows/ci.yml``)."""
+
+        return next((check for check in self.checks if check.get("name") == github.REQUIRED), None)
+
+    @property
+    def running(self) -> list[dict[str, str | None]]:
+        """Checki runu, które się jeszcze nie skończyły, na przykład zadania ponowione w tym samym runie."""
+
+        return [check for check in self.checks if check.get("status") != "COMPLETED"]
+
+
+class UnknownRun(Exception):
+    """Check workflow ``CI``, którego ``detailsUrl`` nie ma postaci ``…/actions/runs/<run>/job/<zadanie>``."""
+
+    def __init__(self, name: str, url: str) -> None:
+        super().__init__(name, url)
+        self.name = name
+        self.url = url
+
+
+def latest_ci_run(checks: tuple[dict[str, str | None], ...] | list[dict[str, str | None]]) -> CiRun | None:
+    """Najnowszy run workflow ``CI`` na HEAD albo ``None``, gdy rollup nie ma żadnego checku tego workflow.
+
+    Po zamknięciu i otwarciu PR rollup ma obok siebie checki kilku runów CI na tym samym HEAD, a liczy się tylko
+    najnowszy: ten o największym identyfikatorze runu z ``detailsUrl`` checku, bo GitHub nadaje identyfikatory rosnąco
+    (porównanie liczb, nie napisów i nie ``startedAt``). Checki starszych runów nic nie znaczą. Check workflow ``CI``
+    z ``detailsUrl`` innej postaci daje ``UnknownRun``, zamiast zgadywać jego run. Checki innych workflowów i statusy
+    commitu (bez ``workflowName``, ustawi je każdy z prawem zapisu) do żadnego runu CI nie należą.
     """
 
-    found = [check for check in checks if check.get("name") == github.REQUIRED and check.get("workflowName")]
-    return max(found, key=_start, default=None)
-
-
-def _start(check: dict[str, str | None]) -> tuple[bool, str]:
-    started = check.get("startedAt") or ""
-    return started == "" or started.startswith(_NOT_STARTED), started
+    runs: dict[int, list[dict[str, str | None]]] = {}
+    for check in checks:
+        if check.get("workflowName") != github.CI_WORKFLOW:
+            continue
+        url = check.get("detailsUrl") or ""
+        found = _JOB_URL.fullmatch(url)
+        if found is None:
+            raise UnknownRun(str(check.get("name")), url)
+        runs.setdefault(int(found["run"]), []).append(check)
+    if not runs:
+        return None
+    latest = max(runs)
+    return CiRun(latest, tuple(runs[latest]))
