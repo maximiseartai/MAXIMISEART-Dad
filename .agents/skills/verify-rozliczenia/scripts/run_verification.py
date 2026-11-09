@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 import shlex
 import shutil
@@ -17,7 +16,8 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from skrypt_skilla import SKIPPED, Parser, new_run
+import repo
+from skrypt_skilla import SKIPPED, Parser, child_environment, new_run
 
 from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
@@ -209,36 +209,10 @@ def _create_existing_output(run_root: Path) -> None:
     (target_directory / "existing-synthetic.txt").write_text("preserve", encoding="utf-8")
 
 
-def _utf8_environment() -> dict[str, str]:
-    environment = os.environ.copy()
-    environment["PYTHONUTF8"] = "1"
-    environment["PYTHONIOENCODING"] = "utf-8"
-    # A stale .pyc from an earlier mutation must never stand in for the current source.
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    return environment
-
-
-def _main_checkout_config() -> Path | None:
-    """``config/`` of the main checkout; a worktree shares its git directory but not its git-ignored Wzorce."""
-
-    try:
-        common_directory = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return config_dir((REPO_ROOT / common_directory).resolve().parent)
-
-
 def _default_templates_directory() -> Path:
     local = config_dir(REPO_ROOT)
     candidates = [local]
-    main_config = _main_checkout_config()
+    main_config = repo.main_config(REPO_ROOT)
     if main_config is not None and main_config != local.resolve():
         candidates.append(main_config)
     for directory in candidates:
@@ -258,7 +232,7 @@ def _run_settlement_workflow(
 ) -> None:
     """Przebieg rozliczeń on a synthetic Plik zbiorczy."""
 
-    environment = _utf8_environment()
+    environment = child_environment()
     source = run_root / PERIOD / SOURCE_NAME
     config = run_root / "worker_mapping.yaml"
     metrics = run_root / "metrics.jsonl"
@@ -388,7 +362,7 @@ def _run_preparation_workflow(
     With ``templates_directory`` the fixture copies the real Wzorce instead of building synthetic ones.
     """
 
-    environment = _utf8_environment()
+    environment = child_environment()
     _run_step("fixture", _fixture_arguments(run_root, templates_directory), evidence_root, environment, expected_exit=0)
     _run_step(
         "doctor",
@@ -416,7 +390,7 @@ def _run_chain_workflow(
     With ``templates_directory`` all three Wzorce are byte copies of the real ones.
     """
 
-    environment = _utf8_environment()
+    environment = child_environment()
     config_directory = run_root / TEMPLATES_DIRECTORY
     settlement_metrics = run_root / "settlement-metrics.jsonl"
     templates: Literal["synthetic", "config"] = "synthetic" if templates_directory is None else "config"
@@ -510,7 +484,7 @@ def _run_intermax_workflow(
     The process always saves, after a Kopia INTERMAX in ``--copies``, so every path stays inside the run root.
     """
 
-    environment = _utf8_environment()
+    environment = child_environment()
     _run_step(
         "fixture",
         [str(HELPER_DIRECTORY / "create_intermax_fixture.py"), "--root", str(run_root)],
@@ -656,9 +630,6 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
     except Exception as exc:  # noqa: BLE001 - granica weryfikacji: błąd trafia do VERIFY FAIL po sprzątaniu
         failure = exc
     finally:
-        cleanup_environment = os.environ.copy()
-        cleanup_environment["PYTHONUTF8"] = "1"
-        cleanup_environment["PYTHONIOENCODING"] = "utf-8"
         try:
             _run_step(
                 "cleanup",
@@ -668,7 +639,7 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
                     str(run_root),
                 ],
                 evidence_root,
-                cleanup_environment,
+                child_environment(),
                 expected_exit=0,
             )
         except (VerificationFailure, OSError) as exc:
@@ -688,9 +659,6 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
         print(f"VERIFY FAIL | missing evidence: {', '.join(missing)}", file=sys.stderr)
         return 1
 
-    self_test_environment = os.environ.copy()
-    self_test_environment["PYTHONUTF8"] = "1"
-    self_test_environment["PYTHONIOENCODING"] = "utf-8"
     try:
         _run_step(
             "self-test",
@@ -702,7 +670,7 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
                 str(run_dir),
             ],
             evidence_root,
-            self_test_environment,
+            child_environment(),
             expected_exit=0,
         )
     except (VerificationFailure, OSError) as exc:

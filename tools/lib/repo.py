@@ -58,6 +58,7 @@ __all__ = [
     "git_dir",
     "is_ancestor",
     "main_checkout",
+    "main_config",
     "merge_base",
     "merge_tree",
     "run_git",
@@ -204,6 +205,18 @@ def main_checkout(root: Path) -> Path:
     """Główny checkout repozytorium, także gdy ``root`` to inny worktree: tam leżą pliki spoza gita (``config/``)."""
 
     return common_dir(root).parent
+
+
+def main_config(root: Path) -> Path | None:
+    """``config/`` głównego checkoutu z Wzorcami i Konfiguracją wykonawców Maksa spoza gita, których worktree nie ma;
+    ``None``, gdy go nie ma albo git nie wskaże głównego checkoutu (kopia bez gita)."""
+
+    try:
+        # Nazwa folderu narzędzia (atrapy.pliki_taty.CONFIG_DIRECTORY), tu literałem: repo biegnie systemowym python3.
+        folder = main_checkout(root) / "config"
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return folder if folder.is_dir() else None
 
 
 def worktrees(root: Path) -> list[Worktree]:
