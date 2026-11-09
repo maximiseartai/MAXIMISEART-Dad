@@ -18,7 +18,7 @@ import sys
 
 import pytest
 
-from rozliczenia.file_state import file_state, folder_entries, path_state, remove_file
+from rozliczenia.file_state import file_state, folder_entries, path_state, path_taken, remove_file
 
 ABSENT = [
     pytest.param(FileNotFoundError(errno.ENOENT, "Nie można odnaleźć pliku"), id="brak"),
@@ -108,6 +108,34 @@ def test_inny_blad_przy_listowaniu_zglasza_folder_niedostepny(
     assert raised.value is error
 
 
+def test_miejsce_zajmuje_plik_i_folder_a_brak_i_plik_zamiast_folderu_zostawiaja_je_wolne(tmp_path: Path) -> None:
+    (tmp_path / "Folder rozliczeń").mkdir()
+    (tmp_path / "plik").write_bytes(b"")
+
+    assert path_taken(tmp_path / "plik")
+    assert path_taken(tmp_path / "Folder rozliczeń")
+    assert not path_taken(tmp_path / "brak")
+    assert not path_taken(tmp_path / "plik" / "Folder rozliczeń")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="dowiązanie w Windows wymaga uprawnień administratora")
+def test_miejsce_zajmuje_takze_zepsuty_skrot(tmp_path: Path) -> None:
+    (tmp_path / "skrót").symlink_to(tmp_path / "brak")
+
+    assert path_taken(tmp_path / "skrót")
+
+
+@pytest.mark.parametrize("error", INACCESSIBLE)
+def test_miejsca_niedostepnego_nie_uznaje_za_wolne(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError) -> None:
+    path = tmp_path / "Folder rozliczeń"
+    monkeypatch.setattr(os, "lstat", failing_for(path, os.lstat, error))
+
+    with pytest.raises(type(error)) as raised:
+        path_taken(path)
+
+    assert raised.value is error
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="chmod w Windows nie odbiera prawa odczytu")
 def test_plik_i_folder_w_folderze_bez_dostepu_sa_niedostepne_a_nie_brakujace(tmp_path: Path) -> None:
     folder = tmp_path / "bez dostępu"
@@ -119,6 +147,8 @@ def test_plik_i_folder_w_folderze_bez_dostepu_sa_niedostepne_a_nie_brakujace(tmp
         folder_state = path_state(folder / "Folder okresu")
         with pytest.raises(PermissionError, match="Permission denied"):
             folder_entries(folder / "Folder okresu")
+        with pytest.raises(PermissionError, match="Permission denied"):
+            path_taken(folder / "Folder okresu")
     finally:
         folder.chmod(0o755)
 

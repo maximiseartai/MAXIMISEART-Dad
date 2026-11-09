@@ -19,10 +19,9 @@ from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.message import Message
 from rozliczenia.template_file import TemplateFile
 
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
-    NO_ACCESS_ON_WINDOWS,
     NO_RELEASE,
-    PATH_CHECKS,
     ToolDirectory,
     FakeGitHub,
     FakeReportBox,
@@ -30,7 +29,6 @@ from tests.fixtures.centrum import (
     phase_states,
     view_timing,
     views_until,
-    without_access,
     write_report_key,
 )
 from tests.fixtures.centrum_processes import (

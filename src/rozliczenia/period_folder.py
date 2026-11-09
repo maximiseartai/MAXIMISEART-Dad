@@ -25,13 +25,15 @@ okresu nie powstaje w złym miesiącu.
 
 Folder, którego nie da się odczytać (brak dostępu, OneDrive nie działa), to
 ``PeriodFolderInaccessible`` z tym folderem, a nie wyjątek systemu plików.
+Brak folderu okresów (``PeriodFolders.periods_directory_missing``) i jego
+niedostępność rozstrzyga to samo listowanie, więc nie zależą od wersji Pythona.
 """
 
 from __future__ import annotations
 
 import os
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -329,18 +331,14 @@ def period_place_label(place: PeriodPlace) -> str:
             return "Folder rozliczeń pracowników"
 
 
-def _month_periods_folders(periods_directory: Path) -> list[Path]:
-    """Foldery ``INEA`` miesięcy w ``Rozliczenia {rok}``, w kolejności lat i miesięcy.
+def _month_periods_folders(entries: Iterable[os.DirEntry[str]]) -> list[Path]:
+    """Foldery ``INEA`` miesięcy w ``Rozliczenia {rok}`` spośród wpisów ``entries`` jednego folderu, w kolejności lat
+    i miesięcy.
 
-    Puste w układzie płaskim i gdy folderu okresów nie ma. Folder miesiąca bez
-    dostępu to ``PeriodFolderInaccessible`` z tym folderem.
+    Puste w układzie płaskim. Folder miesiąca bez dostępu to ``PeriodFolderInaccessible`` z tym folderem.
     """
 
-    years = sorted(
-        Path(entry.path)
-        for entry in _listing(periods_directory) or ()
-        if entry.is_dir() and _YEAR_FOLDER.fullmatch(entry.name)
-    )
+    years = sorted(Path(entry.path) for entry in entries if entry.is_dir() and _YEAR_FOLDER.fullmatch(entry.name))
     return [
         month / _MONTH_PERIODS_FOLDER
         for year in years
@@ -351,18 +349,21 @@ def _month_periods_folders(periods_directory: Path) -> list[Path]:
     ]
 
 
-def _layout(periods_directory: Path) -> tuple[Path, list[Path]]:
-    """Folder, od którego liczy się układ folderów okresów, i jego foldery ``INEA`` miesięcy.
+def _layout(periods_directory: Path, entries: Iterable[os.DirEntry[str]]) -> tuple[Path, list[Path]]:
+    """Folder, od którego liczy się układ folderów okresów, i jego foldery ``INEA`` miesięcy; ``entries`` to wpisy
+    folderu okresów.
 
     Folder okresów wewnątrz ``Rozliczenia {rok}`` (np. ``INEA`` jednego miesiąca)
     oznacza folder nad ``Rozliczenia {rok}``, gdy ten ma foldery ``INEA``
     miesięcy. Inaczej to sam folder okresów.
     """
 
-    if month_folders := _month_periods_folders(periods_directory):
+    if month_folders := _month_periods_folders(entries):
         return periods_directory, month_folders
     for directory in (periods_directory, *periods_directory.parents):
-        if _YEAR_FOLDER.fullmatch(directory.name) and (month_folders := _month_periods_folders(directory.parent)):
+        if _YEAR_FOLDER.fullmatch(directory.name) and (
+            month_folders := _month_periods_folders(_listing(directory.parent) or ())
+        ):
             return directory.parent, month_folders
     return periods_directory, []
 
@@ -383,12 +384,15 @@ class PeriodFolders:
     ``layout_root`` to folder, od którego liczy się układ (``_layout``).
     ``locations`` podaje dla okresu foldery, w których leży jego Folder okresu:
     najpierw ``layout_root``, potem foldery ``INEA`` w kolejności lat i miesięcy.
+    ``periods_directory_missing``: folderu okresów nie ma (także gdy na jego
+    miejscu jest plik).
     """
 
     periods_directory: Path
     layout_root: Path
     has_month_folders: bool
     locations: Mapping[SettlementPeriod, tuple[Path, ...]]
+    periods_directory_missing: bool
 
     def locate(self, period: SettlementPeriod) -> PeriodFolder:
         """Folder okresu ``period``.
@@ -414,7 +418,8 @@ class PeriodFolders:
 def scan_period_folders(periods_directory: Path) -> PeriodFolders:
     """Foldery okresu w folderze okresów: tylko foldery, których nazwa jest tokenem okresu."""
 
-    layout_root, month_folders = _layout(periods_directory)
+    entries = _listing(periods_directory)
+    layout_root, month_folders = _layout(periods_directory, entries or ())
     locations: dict[SettlementPeriod, list[Path]] = {}
     for parent in (layout_root, *month_folders):
         for entry in _listing(parent) or ():
@@ -430,6 +435,7 @@ def scan_period_folders(periods_directory: Path) -> PeriodFolders:
         layout_root,
         bool(month_folders),
         {period: tuple(parents) for period, parents in locations.items()},
+        periods_directory_missing=entries is None,
     )
 
 

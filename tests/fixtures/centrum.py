@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import enum
 import json
-import os
-import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as day_time, timezone
 from pathlib import Path
@@ -17,7 +14,6 @@ from typing import Any, Final, Self, TypeVar
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-import pytest
 
 from rozliczenia import tool_files
 from rozliczenia.centrum.app import create_app
@@ -775,40 +771,3 @@ def phase_states(view: dict[str, Any]) -> dict[str, str]:
     return {phase["phase"]: phase["state"] for phase in view["progress"]["phases"]}
 
 
-@contextmanager
-def without_access(folder: Path) -> Iterator[None]:
-    """Folder ``folder`` bez dostępu (np. odebrane uprawnienia albo OneDrive, który nie działa) do końca bloku.
-
-    ``chmod`` w Windows nie odbiera prawa odczytu, więc test z nim pomija Windows.
-    """
-
-    folder.chmod(0)
-    try:
-        yield
-    finally:
-        folder.chmod(0o755)
-
-
-def path_checks_up_to_python_313(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``Path.exists``, ``is_file`` i ``is_dir`` bez zmian: do Pythona 3.13 brak dostępu do folderu rzuca ``OSError``."""
-
-
-def path_checks_from_python_314(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``Path.exists``, ``is_file`` i ``is_dir`` jak od Pythona 3.14: ``False`` przy każdym ``OSError``.
-
-    Tak działają ``os.path.exists``, ``isfile`` i ``isdir`` na każdej wersji, więc test na starszym Pythonie widzi,
-    czy kod pomyliłby folder bez dostępu z brakiem pliku.
-    """
-
-    monkeypatch.setattr(Path, "exists", lambda path, **_: os.path.exists(path))
-    monkeypatch.setattr(Path, "is_file", lambda path, **_: os.path.isfile(path))
-    monkeypatch.setattr(Path, "is_dir", lambda path, **_: os.path.isdir(path))
-
-
-# Każdy test folderu bez dostępu biegnie z ``Path`` obu wersji Pythona.
-PATH_CHECKS: Final = pytest.mark.parametrize(
-    "path_checks",
-    [path_checks_up_to_python_313, path_checks_from_python_314],
-    ids=["path-do-3.13", "path-od-3.14"],
-)
-NO_ACCESS_ON_WINDOWS: Final = pytest.mark.skipif(sys.platform == "win32", reason="chmod w Windows nie odbiera prawa odczytu")

@@ -175,10 +175,11 @@ def read_board(periods_directory: Path | None, today: date, catalog: Catalog) ->
 
     if periods_directory is None:
         return periods_contract.BoardNotSet(state="not_set")
-    if not periods_directory.is_dir():
+    scanned = scan_period_folders(periods_directory)
+    if scanned.periods_directory_missing:
         return periods_contract.BoardMissing(state="missing", name=periods_directory.name)
     last_complete = last_complete_period(today)
-    folders = {folder.period: folder for folder in scan_period_folders(periods_directory).found()}
+    folders = {folder.period: folder for folder in scanned.found()}
     folders.setdefault(last_complete, PeriodFolder(periods_directory, last_complete))
     newest_first = sorted(folders.values(), key=lambda folder: folder.period.tuesday, reverse=True)
     priced = last_results(catalog.metrics("efenix"))

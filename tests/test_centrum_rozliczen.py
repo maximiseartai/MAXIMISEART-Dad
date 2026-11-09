@@ -32,15 +32,13 @@ from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, m
 from rozliczenia.tool_files import LOG_PATH, SETTINGS
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.settings import Settings, SettingsStore
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
     CENTRUM,
-    NO_ACCESS_ON_WINDOWS,
-    PATH_CHECKS,
     TOOL_COMMIT,
     Centrum,
     ROOT,
     centrum,
-    without_access,
 )
 
 import export_openapi
@@ -988,6 +986,25 @@ def test_folder_okresow_w_folderze_bez_dostepu_jest_nieczytelny_a_nie_niewskazan
 
     assert (response.status_code, response.json()) == (500, unreadable_folder("INEA"))
     assert app.platform.opened == []
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_tablica_okresow_z_folderem_okresow_w_folderze_bez_dostepu_jest_nieczytelna_a_nie_brakujaca(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    onedrive = tmp_path / "OneDrive"
+    periods = onedrive / "INEA"
+    periods.mkdir(parents=True)
+    app = centrum(tmp_path)
+    app.platform.chosen_folders.append(periods)
+    app.client.post("/api/settings/periods-directory/choose")
+    path_checks(monkeypatch)
+
+    with without_access(onedrive):
+        response = app.client.get("/api/periods")
+
+    assert (response.status_code, response.json()) == (500, unreadable_folder("INEA"))
 
 
 def test_otwieranie_bez_wskazanego_folderu_okresow_prosi_o_jego_wskazanie(tmp_path: Path) -> None:

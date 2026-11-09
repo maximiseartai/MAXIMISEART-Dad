@@ -19,6 +19,7 @@ from typing import Final
 
 from . import preparation_messages as messages
 from . import staged_publication
+from .file_state import path_taken
 from .message import StopError
 from .period_folder import PeriodFolder
 from .preparation_plan import CollectiveRow, PeriodOrder
@@ -53,7 +54,7 @@ def ensure_period_files_absent(files: PeriodFiles) -> None:
     folder = files.folder
     try:
         for target in (folder.internal_settlement, folder.collective_file):
-            if target.exists() or target.is_symlink():
+            if path_taken(target):
                 raise StopError(messages.period_file_exists(folder.directory, target.name))
     except OSError as exc:
         raise StopError(messages.folder_inaccessible(folder.directory)) from exc

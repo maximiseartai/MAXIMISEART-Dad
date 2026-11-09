@@ -20,11 +20,12 @@ from types import ModuleType
 
 import pytest
 
-# Harmonogramy i różne stany każdego zakresu zmierzone na c5d8bb3d, te same na Pythonie 3.11, 3.12 i 3.14. Drzewo
+# Harmonogramy i różne stany każdego zakresu zmierzone na c5d8bb3d, a `dwa-uruchomienia` ponownie po Nienadpisywaniu
+# jednym krokiem ``os.lstat`` (``file_state.path_taken``), te same na Pythonie 3.11, 3.12 i 3.14. Drzewo
 # mniejsze niż to gubi wybory kroków, a sprawdzenie dalej kończy się OK: sprzątanie po Zatrzymaniu bez wyboru kroku
 # daje w ``dwa-uruchomienia`` 4718 harmonogramów i przestaje łapać wycofanie, które usuwa plik taty. Granica schodzi
 # tylko ze zmianą modelu, która naprawdę zmniejsza drzewo.
-SMALLEST_TREE = {"jedno-uruchomienie": (377, 231), "dwa-uruchomienia": (9798, 7015)}
+SMALLEST_TREE = {"jedno-uruchomienie": (377, 231), "dwa-uruchomienia": (8278, 5818)}
 
 EXPLORER = (
     Path(__file__).resolve().parents[1]

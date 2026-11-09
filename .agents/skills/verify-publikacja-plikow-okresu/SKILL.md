@@ -5,6 +5,7 @@ pilnuje:
   - src/rozliczenia/preparation_files.py
   - src/rozliczenia/collective_preparation.py
   - src/rozliczenia/staged_publication.py
+  - src/rozliczenia/file_state.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/eksplorator.py
 ci: .agents/skills/verify-publikacja-plikow-okresu/scripts/explore_publication.py
@@ -116,10 +117,10 @@ file), or the process is killed (Dad closes the console window). Schedules that
 reach a state already seen are cut short. This is sound because the code is
 deterministic: a state means the disk, what each run has observed so far, and
 the bounds left. A read observes whether its path holds nothing, a file or a folder,
-not the answer of the `os` call that asked: `Path.is_symlink` asks `os.lstat` on Python
-3.11 and 3.12 but `os.path.islink` on 3.14, and with the answer in the state 3.14
-explored 6640 schedules of `dwa-uruchomienia` instead of 9798. The tree is the same
-on every Python.
+not the answer of the `os` call that asked: `Path.exists` asks `os.stat` on Python
+3.11 and 3.12 but `os.path.exists` on 3.14, and with the answer in the state 3.14
+merged states that 3.12 kept apart (on 7 November 2026, 6640 schedules of
+`dwa-uruchomienia` instead of 9798). The tree is the same on every Python.
 
 | Scope | Runs at once | Initial Folder okresu | Dad's actions | Failed calls | Kills |
 | --- | --- | --- | --- | --- | --- |
@@ -130,8 +131,8 @@ Dad's actions are: create the Folder okresu, or save his own file under a
 period file's name. Failures are injected only into calls that change the
 disk. Removing the staging directory is one such call, so it can fail
 as when OneDrive holds the folder; the process is not killed right before it,
-because the run's outcome is already decided then. Before exploring, a probe confirms that `Path.exists`, `is_symlink`,
-`mkdir`, `rename`, `unlink` and `os.rename` reach the in-memory disk on the
+because the run's outcome is already decided then. Before exploring, a probe confirms that `Path.exists`, `path_taken`
+and `path_state` (`file_state`), `mkdir`, `rename`, `unlink` and `os.rename` reach the in-memory disk on the
 running Python. CI runs the probe on 3.11 and 3.14. Native fast paths that skip
 the patched `os` functions, such as `_winapi.CopyFile2` inside `shutil.copyfile`
 on Windows with Python 3.14, still raise an audit event. A `sys.addaudithook`

@@ -17,7 +17,7 @@ from openpyxl.styles import Border, Color, Font, PatternFill, Side
 from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
-from rozliczenia import tool_files
+from rozliczenia import settlement_messages, tool_files
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.domain import (
     IssueCountReady,
@@ -728,6 +728,26 @@ def test_istniejacy_folder_rozliczen_pracownikow_nie_jest_nadpisywany(complete_r
 
     assert raised.value.message.code == "FOLDER_ROZLICZEN_ISTNIEJE"
     assert sentinel.read_text(encoding="utf-8") == "zachowaj"
+
+
+def test_folder_rozliczen_pracownikow_ktorego_nie_da_sie_sprawdzic_zatrzymuje_zanim_cos_powstanie(
+    complete_run: tuple[Path, Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_path, target_directory, config_path, worker_template_path = complete_run
+    real_lstat = os.lstat
+
+    def lstat_without_access(path: str | os.PathLike[str], *args: object, **kwargs: object) -> os.stat_result:
+        if Path(path) == target_directory:
+            raise PermissionError(errno.EACCES, "wymuszony: Folder okresu bez dostępu")
+        return real_lstat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "lstat", lstat_without_access)
+
+    with pytest.raises(StopError) as raised:
+        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+
+    assert raised.value.message == settlement_messages.write_failed(target_directory)
+    assert sorted(path.name for path in target_directory.parent.iterdir()) == [source_path.name]
 
 
 def lock_in_excel(path: Path) -> None:

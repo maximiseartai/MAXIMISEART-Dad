@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, TypeVar
 
+from .file_state import path_state
 from .message import Message, StopError
 
 ResultT = TypeVar("ResultT")
@@ -64,8 +65,8 @@ def publish_staged(
     """Wynik ``publish``, które zapisuje i publikuje pliki z nowego folderu tymczasowego w folderze ``directory``.
 
     ``OSError`` przy zakładaniu folderu tymczasowego albo w ``publish`` zatrzymuje Uruchomienie Komunikatem ``failed``.
-    Zatrzymanie, po którym folder tymczasowy został, dostaje zamiast swojego Komunikatu ``left`` z jego Komunikatem i
-    początkiem nazwy folderu tymczasowego.
+    Zatrzymanie, po którym folder tymczasowy został albo nie da się sprawdzić, czy został, dostaje zamiast swojego
+    Komunikatu ``left`` z jego Komunikatem i początkiem nazwy folderu tymczasowego.
     """
 
     prefix = staging_prefix(name)
@@ -80,7 +81,7 @@ def publish_staged(
             raise StopError(failed) from exc
     except BaseException as error:
         disk.remove_staging(staging)
-        if isinstance(error, StopError) and staging.exists():
+        if isinstance(error, StopError) and path_state(staging) != "missing":
             raise StopError(left(error.message, prefix)) from error
         raise
     disk.remove_staging(staging)

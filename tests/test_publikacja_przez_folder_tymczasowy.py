@@ -16,6 +16,7 @@ import pytest
 from rozliczenia import settlement_messages
 from rozliczenia.message import Message, StopError
 from rozliczenia.staged_publication import LOCAL_DISK, Disk, publish_staged
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS
 
 NAME = "Rozliczenia pracowników"
 # Celowa kopia początku nazwy folderu tymczasowego: tata czyta go w Komunikacie i szuka folderu po nim.
@@ -124,6 +125,31 @@ def test_zatrzymanie_z_folderem_tymczasowym_ktorego_nie_da_sie_usunac_podaje_poc
     original = error.message if isinstance(error, StopError) else failed(tmp_path)
     assert raised.value.message == settlement_messages.staging_left(original, PREFIX)
     assert len(left_behind(tmp_path)) == 1
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_zatrzymanie_z_folderem_tymczasowym_w_folderze_bez_dostepu_podaje_poczatek_jego_nazwy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    """OneDrive odbiera dostęp do folderu, zanim folder tymczasowy zniknie: tata dalej dostaje jego początek nazwy."""
+
+    directory = tmp_path / "Folder okresu"
+    directory.mkdir()
+    stop = settlement_messages.publish_failed(directory / NAME)
+
+    def publish(staging: Path) -> None:
+        raise StopError(stop)
+
+    path_checks(monkeypatch)
+    try:
+        with pytest.raises(StopError) as raised:
+            published(directory, publish, Disk(remove_staging=lambda staging: directory.chmod(0)))
+    finally:
+        directory.chmod(0o755)
+
+    assert raised.value.message == settlement_messages.staging_left(stop, PREFIX)
+    assert len(left_behind(directory)) == 1
 
 
 def test_inny_wyjatek_przechodzi_bez_zmian_a_folder_tymczasowy_jest_sprzatany(tmp_path: Path) -> None:

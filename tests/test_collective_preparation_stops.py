@@ -20,7 +20,9 @@ from rozliczenia.intermax_replace import Waiting
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.run_context import RunContext
 from rozliczenia.dad_files import DadFiles
+from rozliczenia import preparation_messages
 from rozliczenia.preparation_register import register_problem
+from rozliczenia.staged_publication import staging_prefix
 from rozliczenia.message import StopError
 
 from atrapy.preparation import (
@@ -39,6 +41,7 @@ from atrapy.preparation import (
     write_register,
     write_register_sheet,
 )
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.operacje import run_preparation
 from tests.fixtures.clock import ManualClock
 from atrapy.workbooks import (
@@ -895,6 +898,39 @@ def test_missing_folder_okresow_stops_without_creating_it(tmp_path: Path) -> Non
     assert not fixture.periods_directory.exists()
 
 
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_folder_okresow_w_folderze_bez_dostepu_zatrzymuje_niedostepnoscia_a_nie_brakiem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    fixture = make_preparation_fixture(tmp_path)
+    onedrive = tmp_path / "OneDrive"
+    onedrive.mkdir()
+    periods = fixture.periods_directory.rename(onedrive / fixture.periods_directory.name)
+    path_checks(monkeypatch)
+
+    with without_access(onedrive), pytest.raises(StopError) as raised:
+        run_preparation(replace(fixture, periods_directory=periods))
+
+    assert raised.value.message == preparation_messages.folder_inaccessible(periods)
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_nienadpisywanie_w_folderze_okresu_bez_dostepu_zatrzymuje_niedostepnoscia_a_nie_zapisuje(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    fixture = make_preparation_fixture(tmp_path)
+    fixture.period_directory.mkdir()
+    path_checks(monkeypatch)
+
+    with without_access(fixture.period_directory), pytest.raises(StopError) as raised:
+        run_preparation(fixture)
+
+    assert raised.value.message == preparation_messages.folder_inaccessible(fixture.period_directory)
+    assert [path.name for path in fixture.periods_directory.iterdir()] == [PERIOD]
+
+
 def test_zlamana_regula_konfiguracji_wykonawcow_zatrzymuje_przygotowanie_ze_szczegolem(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(tmp_path)
     fixture.config_path.write_text("schema_version: 1\nworkers:\n  a: Ten Sam\n  b: ten sam\n", encoding="utf-8")
@@ -1017,7 +1053,7 @@ def test_staging_folder_that_cannot_be_removed_after_publication_does_not_stop_t
     real_rmdir = os.rmdir
 
     def rmdir_fails_for_staging_folder(path: str | os.PathLike[str], **kwargs: object) -> None:
-        if Path(path).name.startswith(f".{PERIOD}.staging-"):
+        if Path(path).name.startswith(staging_prefix(PERIOD)):
             raise PermissionError("wymuszony: folder trzyma OneDrive")
         real_rmdir(path, **kwargs)  # type: ignore[arg-type]
 
@@ -1038,7 +1074,7 @@ def test_zatrzymanie_przy_zapisie_wskazuje_folder_tymczasowy_trzymany_przez_oned
     if period_directory_exists:
         fixture.period_directory.mkdir()
     real_rename, real_unlink = os.rename, os.unlink
-    staging_prefix = f".{PERIOD}.staging-"
+    prefix = staging_prefix(PERIOD)
 
     def first_publication_fails(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
         if Path(target) in (fixture.period_directory, fixture.internal_settlement_path):
@@ -1056,13 +1092,13 @@ def test_zatrzymanie_przy_zapisie_wskazuje_folder_tymczasowy_trzymany_przez_oned
     with pytest.raises(StopError) as raised:
         run_preparation(fixture)
 
-    staging_left = [path for path in fixture.periods_directory.iterdir() if path.name.startswith(staging_prefix)]
+    staging_left = [path for path in fixture.periods_directory.iterdir() if path.name.startswith(prefix)]
     assert len(staging_left) == 1
     assert raised.value.message.text == (
         "Co się stało: Nie udało się zapisać plików okresu. "
         "Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć.\n"
         f"Gdzie: folder INEA\\{PERIOD}\n"
-        f"Co zrobić: Usuń z folderu INEA każdy folder, którego nazwa zaczyna się od „{staging_prefix}”. "
+        f"Co zrobić: Usuń z folderu INEA każdy folder, którego nazwa zaczyna się od „{prefix}”. "
         "To foldery tymczasowe, nie Folder okresu. Jeśli któregoś nie daje się usunąć, odczekaj chwilę. "
         "Sprawdź, czy folder jest dostępny i czy pliki okresu nie są otwarte, i uruchom ponownie. "
         "Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
