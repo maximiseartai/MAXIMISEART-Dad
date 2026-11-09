@@ -74,17 +74,12 @@ WORKER_TEMPLATE_COLUMN_WIDTHS: dict[int, float] = {
 }
 
 
-def write_template(
-    path: Path, *, view: View | None = TEMPLATE_VIEW, column_widths: Mapping[int, float] = WORKER_TEMPLATE_COLUMN_WIDTHS
-) -> None:
-    """Wzorzec rozliczenia pracownika; bez ``view`` arkusz ma widok domyślny openpyxl."""
-
+def write_template(path: Path, *, view: View = TEMPLATE_VIEW) -> None:
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
-    if view is not None:
-        set_view(sheet, view)
-    for number, width in column_widths.items():
+    set_view(sheet, view)
+    for number, width in WORKER_TEMPLATE_COLUMN_WIDTHS.items():
         sheet.column_dimensions[get_column_letter(number)].width = width
     sheet.cell(HEADER_ROW, WORKER_COLUMN).value = "WYKONAWCA"
     sheet.cell(HEADER_ROW, 1).fill = PatternFill(fill_type="solid", fgColor="00AA55")
@@ -99,10 +94,10 @@ def write_template(
 
 @dataclass(frozen=True)
 class SourceRow:
-    """Wiersz danych Pliku zbiorczego Przebiegu: MIASTO, ADRES (``None``: pusty), Wykonawca i NUMER ZL."""
+    """Wiersz danych Pliku zbiorczego Przebiegu: MIASTO, ADRES, Wykonawca i NUMER ZL."""
 
     city: str
-    address: str | None
+    address: str
     worker: str
     order_number: str
 
@@ -128,8 +123,7 @@ def write_source_rows(path: Path, rows: Sequence[SourceRow]) -> None:
     sheet.cell(HEADER_ROW, WORKER_COLUMN).value = "WYKONAWCA"
     for row_number, row in enumerate(rows, start=FIRST_DATA_ROW):
         sheet.cell(row_number, CITY_COLUMN).value = row.city
-        if row.address is not None:
-            sheet.cell(row_number, ADDRESS_COLUMN).value = row.address
+        sheet.cell(row_number, ADDRESS_COLUMN).value = row.address
         sheet.cell(row_number, ORDER_COLUMN).value = row.order_number
         sheet.cell(row_number, WORKER_COLUMN).value = row.worker
         sheet.cell(row_number, QUANTITY_COLUMNS.start).value = row_number - HEADER_ROW

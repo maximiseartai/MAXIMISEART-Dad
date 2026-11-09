@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 from skrypt_skilla import Parser, create_run_root
 
 from atrapy.scenariusz_rozliczen import (
+    SETTLEMENT_ADDRESS,
     SETTLEMENT_CITY,
     SETTLEMENT_ORDER_LINK,
     SETTLEMENT_ROWS,
@@ -34,7 +35,7 @@ from atrapy.settlement import (
 
 def _write_source(path: Path, *, include_unmapped: bool) -> None:
     rows = [*SETTLEMENT_ROWS, UNMAPPED_ROW] if include_unmapped else SETTLEMENT_ROWS
-    write_source_rows(path, [SourceRow(SETTLEMENT_CITY, None, worker, marker) for worker, marker in rows])
+    write_source_rows(path, [SourceRow(SETTLEMENT_CITY, SETTLEMENT_ADDRESS, worker, marker) for worker, marker in rows])
     link_order_numbers(path, SETTLEMENT_ORDER_LINK)
 
 
@@ -45,7 +46,7 @@ def _write_fixture(root: Path, *, include_unmapped: bool) -> None:
     worker_template = root / WORKER_TEMPLATE_NAME
     _write_source(source, include_unmapped=include_unmapped)
     write_mapping(root / WORKER_CONFIG_NAME)
-    write_template(worker_template, view=None, column_widths={})
+    write_template(worker_template)
     manifest = {
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "worker_template_sha256": hashlib.sha256(worker_template.read_bytes()).hexdigest(),

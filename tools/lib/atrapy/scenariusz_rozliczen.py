@@ -39,6 +39,7 @@ def worker_settlement_name(worker: str) -> str:
 
 # Przebieg rozliczeń na gotowym Pliku zbiorczym (create_fixture.py): Wiersze danych od 18, ilość w N = numer - 17.
 SETTLEMENT_CITY = "TEST-CITY"
+SETTLEMENT_ADDRESS = "TEST-ADDRESS"
 # Hiperłącze w NUMER ZL. (F) każdego Wiersza danych, jak do zlecenia w aplikacji firmowej; numer wiersza na końcu.
 SETTLEMENT_ORDER_LINK = "https://przyklad.invalid/zlecenie?caseId=SYNTHETIC-LINK&tw=1&wiersz="
 # (Wykonawca, NUMER ZL.) Wierszy danych 18, 19 i 20.
