@@ -168,6 +168,7 @@ FILLED_ORDERS = (2, 7, 6)
 # Uporządkowania INTERMAX ma ``create_intermax_fixture.ROW_MARKERS``).
 ROW_CONTENT_MARKERS = (
     SETTLEMENT_CITY,
+    SETTLEMENT_ADDRESS,
     *(marker for _, marker in (*SETTLEMENT_ROWS, UNMAPPED_ROW)),
     "SYNTHETIC-LINK",
     ROW_MARKER,
