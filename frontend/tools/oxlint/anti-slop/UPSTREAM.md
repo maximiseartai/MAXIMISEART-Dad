@@ -1,7 +1,8 @@
 # anti-slop (vendored Oxlint plugin)
 
-- Source: https://github.com/MAXIMISEART-AI/maximiseart-agent-skills, path `skills/install-anti-slop/assets/anti-slop`.
-- Snapshot: the `install-anti-slop` skill bundle at tree `13b1bea990583b37dca0bb7af20c4c8252e859d3` (from the skill's `github-tree-sha` metadata), copied unchanged with `scripts/install.mjs` on 2026-10-19. The copy was byte-identical to the bundle at install time.
+- Source: https://github.com/dmmulroy/anti-slop, path `skills/install-anti-slop/assets/anti-slop`.
+- Snapshot: upstream commit `13909c9e07590f5a85d93c62712259fe14a883f7` (2026-10-14), merged on 2026-11-09 by the skill's `references/update.md` procedure. Base of that merge: upstream commit `c44ef22ca1`, byte-identical to the first install of 2026-10-19 (the `install-anti-slop` bundle at tree `13b1bea990583b37dca0bb7af20c4c8252e859d3` of https://github.com/MAXIMISEART-AI/maximiseart-agent-skills).
+- Adopted from `13909c9e07`: `require-readable-spacing` keeps consecutive single-line bindings grouped at any scope, and a binding with its own leading comment starts a new group (upstream d2a9aea); the vendored padding engine accepts the caller-defined statement types this needs.
 - Installed paths: `frontend/tools/oxlint/anti-slop/` (generic plugin `index.ts`, `rules/`, `shared/`, `vendor/`).
 - Registered in `frontend/.oxlintrc.json` with every generic rule at `error` and the native companion `oxc/no-accumulating-spread`.
 - Intentional deviations: the opt-in Effect plugin (`effect/`) is removed, because the frontend does not depend on `effect` and the plugin was never registered; re-copy it from the snapshot if the frontend adopts Effect. The verification paragraph of `vendor/eslint-stylistic/UPSTREAM.md` names this repository's check instead of the source repository's commands and tests. No other changes in the plugin source. Lint configuration ignores the registry-owned shadcn code (`src/components/ui/**`, `src/hooks/use-mobile.ts`) and the generated contract (`src/api/generated/**`), which are updated by their tools, not edited by hand.
