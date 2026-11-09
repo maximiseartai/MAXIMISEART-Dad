@@ -9,9 +9,21 @@ import threading
 
 from windows_drive.common import Run, wait_for
 import windows_desktop
-from rozliczenia.centrum import start_problems
 
 FEATURE = "komunikat-startu"
+# What Dad reads in the window and what the Centrum log he hands Maks says, copied on purpose (docs/agents/skille.md,
+# „Co wyrocznia bierze z src”): with ``start_problems`` imported, a changed wording would pass with it.
+TITLE = "Centrum rozliczeń"
+CODE = "PORT_ZAJETY"
+
+
+def _port_taken(port: int) -> str:
+    return (
+        f"Co się stało: Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program.\n"
+        f"Gdzie: adres http://127.0.0.1:{port}/ na tym komputerze\n"
+        "Co zrobić: Uruchom ponownie komputer i kliknij skrót „Centrum rozliczeń”. "
+        "Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie."
+    )
 
 
 @contextmanager
@@ -43,7 +55,6 @@ def _other_program(port: int) -> Iterator[None]:
 
 def drive(run: Run) -> None:
     port = run.facts["port"]
-    problem = start_problems.port_taken(port)
     run.check(windows_desktop.port_owner(port) is None, f"nothing listens on port {port} yet")
     log_before = len(run.log_lines())
 
@@ -54,11 +65,11 @@ def drive(run: Run) -> None:
 
         def message_box() -> windows_desktop.Window | None:
             for window in windows_desktop.visible_windows():
-                if window.cls == windows_desktop.DIALOG and window.title == start_problems.TITLE:
+                if window.cls == windows_desktop.DIALOG and window.title == TITLE:
                     return window
             return None
 
-        box = wait_for(message_box, timeout_s=60, what=f"the native window {start_problems.TITLE!r}")
+        box = wait_for(message_box, timeout_s=60, what=f"the native window {TITLE!r}")
         owners = [process for process in windows_desktop.processes() if process.pid == box.pid]
         run.check(
             len(owners) == 1 and owners[0].name.lower() == "pythonw.exe" and str(run.run_centrum).casefold() in owners[0].command_line.casefold(),
@@ -67,7 +78,7 @@ def drive(run: Run) -> None:
         texts = [control.title for control in windows_desktop.controls(box) if control.cls == "Static" and control.title]
         shown = max(texts, key=len, default="").replace("\r\n", "\n")
         print(f"  okienko: {shown!r}", flush=True)
-        run.check(shown == problem.text, "the window shows the three-part Komunikat about the taken port")
+        run.check(shown == _port_taken(port), "the window shows the three-part Komunikat about the taken port")
         others = [window for window in windows_desktop.visible_windows([box.pid]) if window.handle != box.handle]
         run.check(others == [], "the shortcut's process shows no console or other window")
         run.desktop("komunikat-zajety-port")
@@ -83,8 +94,8 @@ def drive(run: Run) -> None:
         print(f"  ok: the shortcut's process {box.pid} ended", flush=True)
         entries = run.log_lines()[log_before:]
         run.check(
-            any(f" blad-startu kod={problem.code} port={port}" in line for line in entries),
-            f"the Centrum log has blad-startu kod={problem.code}",
+            any(f" blad-startu kod={CODE} port={port}" in line for line in entries),
+            f"the Centrum log has blad-startu kod={CODE}",
         )
         run.check(windows_desktop.port_owner(port) not in (None, box.pid), "the other program still holds the port")
     run.check(windows_desktop.port_owner(port) is None, f"port {port} is free again")
