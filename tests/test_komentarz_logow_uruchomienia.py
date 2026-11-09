@@ -1518,7 +1518,6 @@ TOOL_TEXT: Final = {
     "CallCause.exception_type": "typ wyjątku z modułem, bez treści wyjątku (call_trace.exception_type)",
     "CallFrame.file": "plik kodu narzędzia względem katalogu narzędzia, bez bibliotek (call_trace._tool_file)",
     "CallFrame.function": "nazwa funkcji kodu narzędzia z traceback",
-    "ButtonPressed.operation": "operation_id trasy API z kontraktu, bez treści zapytania (dad_actions._pressed)",
     "Environment.system": "platform.platform(), bez nazwy komputera",
     "Environment.python": "platform.python_version()",
 }

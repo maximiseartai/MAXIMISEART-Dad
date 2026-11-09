@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import threading
-from typing import Final
+from typing import Final, TypeGuard, get_args
 
 from fastapi import Request
 from pydantic import RootModel, ValidationError
@@ -35,8 +35,9 @@ from rozliczenia.centrum.work import CentrumWork
 
 DAD_ACTIONS_FILE: Final = "dzialania-taty.jsonl"
 MAX_ENTRIES: Final = 1000
-# Zapytania, które nie są przyciskiem taty: szkic Uwagi okno wysyła samo przy pisaniu, a pomiar widoku jest widokiem.
-_NOT_PRESSED: Final = frozenset({"draftDadNote", "recordViewTiming"})
+_API_OPERATIONS: Final[frozenset[str]] = frozenset(get_args(timing_contract.ApiOperation))
+# Zapytanie, które nie jest przyciskiem taty: szkic Uwagi okno wysyła samo przy pisaniu.
+_NOT_PRESSED: Final[frozenset[timing_contract.ApiOperation]] = frozenset({"draftDadNote"})
 
 
 class _Line(RootModel[DadAction]):
@@ -74,7 +75,7 @@ class DadActionJournal:
             except ValidationError:
                 return  # pomiar, którego kontrakt nie przyjmie, trasa i tak odrzuci
             self._add(ViewOpened(at=at, action="widok", page=timing.page, kind=timing.kind))
-        elif operation not in _NOT_PRESSED:
+        elif _is_api_operation(operation) and operation not in _NOT_PRESSED:
             self._add(_pressed(at, operation, await request.body()))
 
     def take(self) -> DadActions:
@@ -115,7 +116,14 @@ class DadActionJournal:
             self._log.dad_actions_unavailable(failure)
 
 
-def _pressed(at: datetime, operation: str, body: bytes) -> ButtonPressed:
+def _is_api_operation(operation: str) -> TypeGuard[timing_contract.ApiOperation]:
+    """Operacja trasy, która jest operacją API z kontraktu (``ApiOperation``); poza nią tylko pomiar widoku i trasy
+    ``GET`` (``tests/test_centrum_rozliczen.py``)."""
+
+    return operation in _API_OPERATIONS
+
+
+def _pressed(at: datetime, operation: timing_contract.ApiOperation, body: bytes) -> ButtonPressed:
     """Przycisk bez treści zapytania; ze startu Uruchomienia procesu (``RunRequest``) tylko proces i tryb."""
 
     if operation == "startRun":

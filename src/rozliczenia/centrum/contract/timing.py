@@ -18,7 +18,8 @@ ViewKind = Literal["cold_start", "navigation"]
 
 
 # Operacje API, które przeglądarka mierzy: nazwy (`operation_id`) zamiast adresu z tokenem okresu. Trasy spoza
-# tej listy, każda z powodem, wymienia `OUTSIDE_TIMING` w tools/ci/export_openapi.py, który pilnuje obu stron.
+# tej listy, każda z powodem, wymienia `OUTSIDE_TIMING` w tests/test_centrum_rozliczen.py, który wiąże listę z trasami;
+# że przeglądarka woła każdą przez `call`, pilnuje reguła 4 w frontend/scripts/rules.mjs.
 ApiOperation = Literal[
     "getHealth",
     "getSettings",

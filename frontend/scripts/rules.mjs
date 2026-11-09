@@ -6,6 +6,9 @@
 //    które parsują każdą odpowiedź serwera schematem z kontraktu. Wpis w NETWORK_FILES ma powód, a zbędny wpis
 //    wywraca regułę. Granica: destrukturyzację (`const { parse } = JSON`), `JSON["parse"]`, `Reflect.get`,
 //    `Response.json()` i to, czy plik z NETWORK_FILES parsuje odpowiedź schematem, łapie tylko przegląd.
+// 4. Przeglądarka woła przez `call` (src/api/client.ts) dokładnie operacje pomiaru widoku (`ApiTiming.operation`
+//    kontraktu): każdą z nich i żadnej innej, a nazwa operacji to literał drugiego argumentu `call`. Granica: `call`
+//    pod inną nazwą (alias importu, `const f = call`) reguła pomija; to łapie tylko przegląd.
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import ts from "typescript"
@@ -89,6 +92,21 @@ function contractFields(contract) {
 
 function fieldName(key) {
   return key.split(".")[1]
+}
+
+function timedOperations(contract) {
+  return new Set(contract.components.schemas.ApiTiming.properties.operation.enum)
+}
+
+// `call(schemat, "operacja", …)`: nazwa operacji albo `null`, gdy drugi argument nie jest literałem.
+function calledOperation(node) {
+  if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== "call") {
+    return undefined
+  }
+
+  const operation = node.arguments[1]
+
+  return operation !== undefined && ts.isStringLiteralLike(operation) ? operation.text : null
 }
 
 function processNames(contract) {
@@ -194,7 +212,7 @@ function location(file, path, node) {
 }
 
 // Nazwy użyte w kodzie: identyfikatory (także dostęp do właściwości i destrukturyzacja) i teksty literałów.
-function inspect(path, names, used, comparisons, network) {
+function inspect(path, names, used, comparisons, network, calls) {
   const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)
 
   function visit(node) {
@@ -204,6 +222,12 @@ function inspect(path, names, used, comparisons, network) {
 
     if (isProcessComparison(node, names)) {
       comparisons.push(location(file, path, node))
+    }
+
+    const operation = calledOperation(node)
+
+    if (operation !== undefined) {
+      calls.push({ place: location(file, path, node.expression), operation })
     }
 
     const kind = networkKind(node)
@@ -230,10 +254,12 @@ const network = []
 
 const connectedFiles = new Set()
 
+const operationCalls = []
+
 for (const path of sourceFiles(source)) {
   const key = relative(root, path).replaceAll("\\", "/")
   const calls = []
-  inspect(path, names, used, PROCESS_COMPARISON_FILES.has(key) ? [] : comparisons, calls)
+  inspect(path, names, used, PROCESS_COMPARISON_FILES.has(key) ? [] : comparisons, calls, operationCalls)
 
   if (calls.length > 0) {
     connectedFiles.add(key)
@@ -250,12 +276,25 @@ const staleExceptions = [...FIELDS_OUTSIDE_UI.keys()].filter((key) => used.has(f
 
 const staleNetworkFiles = [...NETWORK_FILES.keys()].filter((key) => !connectedFiles.has(key))
 
+const timed = timedOperations(contract)
+
+const called = new Set(operationCalls.map(({ operation }) => operation))
+
 const problems = [
   ...unused.map((key) => `Pole kontraktu ${key} nie jest użyte w src: pokaż je w UI albo usuń z kontraktu.`),
   ...staleExceptions.map((key) => `Wyjątek ${key} jest zbędny: pole jest już użyte w src.`),
   ...comparisons.map((place) => `Porównanie nazwy procesu w przeglądarce: ${place}`),
   ...network.map(({ place, kind }) => `Sieć albo JSON.parse poza NETWORK_FILES: ${place}. ${REPAIRS[kind]}`),
   ...staleNetworkFiles.map((key) => `Wyjątek ${key} w NETWORK_FILES jest zbędny: plik nie łączy się z serwerem.`),
+  ...[...timed]
+    .filter((operation) => !called.has(operation))
+    .map((operation) => `Operacji ${operation} z ApiTiming.operation przeglądarka nie woła przez \`call\`.`),
+  ...operationCalls
+    .filter(({ operation }) => operation !== null && !timed.has(operation))
+    .map(({ place, operation }) => `\`call\` z operacją ${operation} spoza ApiTiming.operation: ${place}`),
+  ...operationCalls
+    .filter(({ operation }) => operation === null)
+    .map(({ place }) => `\`call\` bez literału nazwy operacji w drugim argumencie: ${place}`),
 ]
 
 for (const problem of problems) {

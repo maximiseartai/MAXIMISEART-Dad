@@ -49,7 +49,7 @@ class ButtonPressed(_Record):
 
     at: datetime
     action: Literal["przycisk"]
-    operation: str
+    operation: timing_contract.ApiOperation
     process: common_contract.ProcessKey | None = None
     mode: StoredRunMode | None = None
 
