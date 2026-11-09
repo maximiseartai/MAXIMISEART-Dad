@@ -14,6 +14,8 @@ from typing import Generic, TypeVar
 
 import pytest
 
+from rozliczenia.period_folder import worker_settlements_name_with
+from rozliczenia import tool_files
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.message import Message, StopError
 from rozliczenia.run_context import RunContext
@@ -57,7 +59,7 @@ class Settlement:
     @classmethod
     def create(cls, root: Path) -> Settlement:
         source, _target, config = make_fixture(root)
-        return cls(source, config, root / "Wzorzec rozliczenia pracownika.xlsx")
+        return cls(source, config, root / tool_files.WORKER_TEMPLATE.name)
 
     def stop(self) -> Message:
         with pytest.raises(StopError) as raised:
@@ -113,7 +115,7 @@ def _period_folder_misnamed(world: Settlement) -> None:
 
 
 def _worker_settlements_exist(world: Settlement) -> None:
-    (world.source.parent / f"Rozliczenie pracowników {PERIOD}").mkdir()
+    (world.source.parent / worker_settlements_name_with(PERIOD)).mkdir()
 
 
 PREPARATION: Sequence[Fault[Preparation]] = (

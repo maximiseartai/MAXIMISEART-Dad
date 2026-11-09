@@ -14,6 +14,7 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from rozliczenia import tool_files
 from tests.fixtures.centrum import finished_view
 from tests.fixtures.centrum_processes import WORKER_SETTLEMENTS, PreparingCentrum, preparing_centrum, run_to_end
 from atrapy.preparation import PERIOD, register_order
@@ -42,7 +43,7 @@ def _prepared(tmp_path: Path) -> PreparingCentrum:
     ]
     centrum = preparing_centrum(tmp_path, list(rows))
     assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
-    write_template(tmp_path / "config" / "Wzorzec rozliczenia pracownika.xlsx")
+    write_template(tool_files.config_dir(tmp_path) / tool_files.WORKER_TEMPLATE.name)
     # Tata uzupełnia tylko wiersz 19 i zapisuje Plik zbiorczy.
     path = centrum.fixture.collective_file_path
     workbook = load_workbook(path)

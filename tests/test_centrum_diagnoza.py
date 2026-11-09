@@ -12,12 +12,14 @@ from typing import Any, NoReturn
 
 import pytest
 
+from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.input_checks import FILE_READERS
 from rozliczenia.template_file import TemplateFile
 
 from tests.fixtures.centrum import (
     NO_RELEASE,
+    ToolDirectory,
     FakeGitHub,
     FakeReportBox,
     finished_view,
@@ -690,7 +692,7 @@ def files_of(root: Path) -> dict[str, bytes]:
     return {
         path.relative_to(root).as_posix(): path.read_bytes()
         for path in sorted(root.rglob("*"))
-        if path.is_file() and not {"logs", "kolejka"} & set(path.relative_to(root).parts)
+        if path.is_file() and not {ToolDirectory(root).log_path.parent.name, QUEUE_DIRECTORY} & set(path.relative_to(root).parts)
     }
 
 

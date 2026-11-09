@@ -37,7 +37,7 @@ FEATURE = "zgloszenie"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.
 PERIOD = PERIOD_WITHOUT_FILES
 TITLE = f"BRAK_WZORCA: {TEMPLATE_MISSING} Nie utworzono żadnego pliku."
-FOR_INTERNET = "Zgłoszenie czeka na internet. Wyśle się samo."
+FOR_INTERNET = "Wyślę do Maksa, gdy będzie internet."
 REJECTED = "Tego Zgłoszenia nie da się wysłać. Skontaktuj się z Maksem."
 SENT = "Zgłoszenie wysłane do Maksa. Poczekaj na naprawę."
 WAITING = "Zgłoszenie tego problemu już jest wysłane i czeka na naprawę."

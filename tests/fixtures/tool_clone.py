@@ -28,6 +28,7 @@ import socket
 import subprocess
 import threading
 
+from rozliczenia import tool_files
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease
 from rozliczenia.centrum.tool_update import Release, newest_on_main
 
@@ -193,7 +194,7 @@ def copy_centrum_runtime(destination: Path) -> Path:
         shutil.copy2(REPOSITORY_ROOT / name, destination)
     shutil.copytree(REPOSITORY_ROOT / "src", destination / "src", ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copytree(
-        REPOSITORY_ROOT / "config", destination / "config", ignore=shutil.ignore_patterns("centrum-ustawienia.yaml")
+        REPOSITORY_ROOT / "config", destination / "config", ignore=shutil.ignore_patterns(tool_files.SETTINGS.name)
     )
     return destination
 

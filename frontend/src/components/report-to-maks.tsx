@@ -1,9 +1,9 @@
 import * as React from "react"
-import { CircleCheckIcon, ClockIcon, HourglassIcon, RotateCcwIcon, SendIcon } from "lucide-react"
+import { ClockIcon, RotateCcwIcon, SendIcon } from "lucide-react"
 
 import type { ReportDraft, RunOutcome } from "@/api/centrum"
+import { CaseStateLine } from "@/components/case-state"
 import { Disclosure } from "@/components/disclosure"
-import { SendProblem } from "@/components/send-problem"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { ThreePartMessage } from "@/components/three-part-message"
@@ -36,12 +36,7 @@ export function ReportToMaks({
   const send = () => void sendAction.run()
 
   if (state.state === "sent") {
-    return (
-      <p role="status" className="wejscie flex items-center gap-2 text-sm">
-        <CircleCheckIcon className="size-4 text-success" aria-hidden />
-        Zgłoszenie wysłane do Maksa. Poczekaj na naprawę.
-      </p>
-    )
+    return <CaseStateLine role="status" className="wejscie" state={state} kind="zgloszenie" />
   }
 
   if (state.state === "waiting") {
@@ -56,19 +51,7 @@ export function ReportToMaks({
   if (state.state === "queued" || state.state === "rejected") {
     return (
       <div className="flex flex-col items-start gap-1">
-        {state.state === "queued" && state.waits_for === "internet" ? (
-          <p role="status" className="wejscie flex items-center gap-2 text-sm">
-            <HourglassIcon className="size-4 text-muted-foreground" aria-hidden />
-            Zgłoszenie czeka na internet. Wyśle się samo.
-          </p>
-        ) : (
-          <SendProblem
-            role="status"
-            className="wejscie"
-            cause={state.state === "rejected" ? "rejected" : "key"}
-            kind="zgloszenie"
-          />
-        )}
+        <CaseStateLine role="status" className="wejscie" state={state} kind="zgloszenie" />
         {draft === null ? null : <Preview draft={draft} />}
       </div>
     )

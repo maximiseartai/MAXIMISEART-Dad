@@ -54,6 +54,9 @@ from tests.fixtures.praca_centrum import centrum_work
 from tests.fixtures.locked_file import lock_file
 
 FIXTURES = Path(__file__).parent / "fixtures"
+# Stare pliki Zgłoszeń i Uwag taty z wpisami po Powiadomieniach; obok nich leżą wersje sprzed Powiadomień.
+REPORTS_SAMPLE = "zgloszenia-wyslane-z-powiadomieniami.json"
+NOTES_SAMPLE = "uwagi-taty-z-powiadomieniami.json"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 QUEUED_NOTE = "ffeeddccbbaa49988776655443322110"
 
@@ -110,7 +113,7 @@ def log(tmp_path: Path) -> CentrumLog:
     return CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
 
 
-def old_files(tmp_path: Path, reports: str = "zgloszenia-wyslane.json", notes: str = "uwagi-taty.json") -> Path:
+def old_files(tmp_path: Path, reports: str = REPORTS_SAMPLE, notes: str = NOTES_SAMPLE) -> Path:
     config = tmp_path / "config"
     config.mkdir()
     shutil.copy(FIXTURES / reports, config / OLD_REPORTS_FILE)
@@ -152,7 +155,7 @@ def test_pierwszy_zapis_przenosi_stare_sprawy_do_pliku_spraw_taty_a_stare_pliki_
     for name in old:
         (config / name).unlink()
 
-    assert {name: (FIXTURES / name).read_bytes() for name in old} == old
+    assert {OLD_REPORTS_FILE: (FIXTURES / REPORTS_SAMPLE).read_bytes(), OLD_NOTES_FILE: (FIXTURES / NOTES_SAMPLE).read_bytes()} == old
     assert restarted == cases(tmp_path) == [*OLD_CASES, NEW]
 
 
@@ -183,7 +186,7 @@ def test_uszkodzony_stary_plik_nie_zabiera_spraw_z_drugiego(tmp_path: Path, dama
     "document",
     [
         {"schema_version": 1},
-        {"schema_version": 2, "uwagi": json.loads((FIXTURES / "uwagi-taty.json").read_text(encoding="utf-8"))["uwagi"]},
+        {"schema_version": 2, "uwagi": json.loads((FIXTURES / NOTES_SAMPLE).read_text(encoding="utf-8"))["uwagi"]},
         [],
     ],
     ids=["bez-uwag", "nieznany-schemat", "lista"],

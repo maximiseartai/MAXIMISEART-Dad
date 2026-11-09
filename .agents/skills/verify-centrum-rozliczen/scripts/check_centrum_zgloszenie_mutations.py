@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import BUILD, KEYED_BOX, OUTBOX, REPORTS, ZGLOSZENIE
+from cele_mutacji_centrum import BUILD, DAD_CASES, KEYED_BOX, OUTBOX, REPORTS, ZGLOSZENIE
 from mutacje import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -45,11 +45,15 @@ MUTATIONS = (
         "Zgłoszenie odrzucone przez Skrzynkę czeka na internet",
         # Obie drogi do „odrzucone”: odpowiedź na „Wyślij do Maksa” i odrzucenie, które kolejka zgłasza później.
         (
-            Edit(REPORTS, '        if hold == "rejected":\n            return diagnosis_contract.ReportRejected', "        if False:\n            return diagnosis_contract.ReportRejected"),
+            Edit(
+                DAD_CASES,
+                'return common_contract.Rejected(state="rejected")',
+                'return common_contract.Queued(state="queued", waits_for="internet")',
+            ),
             Edit(
                 REPORTS,
-                'self._show(diagnosis_contract.ReportRejected(state="rejected"))',
-                'self._show(diagnosis_contract.ReportQueued(state="queued", waits_for="internet"))',
+                'self._show(common_contract.Rejected(state="rejected"))',
+                'self._show(common_contract.Queued(state="queued", waits_for="internet"))',
             ),
         ),
         ZGLOSZENIE,

@@ -15,6 +15,7 @@ from openpyxl.utils import column_index_from_string
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 import pytest
 
+from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.domain import (
     IssueCountReady,
@@ -41,6 +42,7 @@ from atrapy.preparation import (
     NOT_TRANSFERRED_PREFIXES,
     OLD_REGISTER_HEADERS,
     PERIOD,
+    REGISTER_HEADERS,
     TEMPLATE_NARROW_COLUMN_WIDTHS,
     RAW_ORDER_FONT,
     PreparationFixture,
@@ -107,6 +109,11 @@ def internal_row(number: int, started: datetime, successful: str, worker: str) -
         None,
         None,
     )
+
+
+def test_narzedzie_szuka_w_rejestrze_naglowkow_z_pliku_taty() -> None:
+    # Atrapy budują Rejestr z kopii nagłówków pliku taty, więc ten test pokazuje rozjazd z register_columns wprost.
+    assert ("", "AKCJE", *(column.register_header for column in COLUMNS), "ZWROT", "UWAGI") == REGISTER_HEADERS
 
 
 def test_rozliczenie_wewnetrzne_contains_exactly_period_orders_in_register_order(tmp_path: Path) -> None:
@@ -396,7 +403,7 @@ def test_period_crossing_month_or_year_takes_month_and_year_of_monday(
 
     assert summary.period_order_count == 2
     assert next(iter(summary.orders_per_day)) == tuesday.date()
-    assert (fixture.periods_directory / token / f"Rozliczenie wew. {token}.xlsx").is_file()
+    assert PeriodFolder(fixture.periods_directory, parse_period_token(token)).internal_settlement.is_file()
 
 
 EXPECTED_ORDERS_PER_DAY = {

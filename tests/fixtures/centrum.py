@@ -12,13 +12,14 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as day_time, timezone
 from pathlib import Path
-from typing import Any, Self, TypeVar
+from typing import Any, Final, Self, TypeVar
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia import tool_files
 from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.catalog import CATALOG, Catalog
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.configuration import ConfigurationFiles
@@ -28,6 +29,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, REPORT
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE
+from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.report_box import (
     REPOSITORY,
@@ -528,6 +530,12 @@ class ToolDirectory:
         return self.config / REPORT_KEY_FILE
 
     @property
+    def queue(self) -> Path:
+        """Kolejka Skrzynki Zgłoszeń: pliki, które czekają na wysłanie."""
+
+        return self.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
+
+    @property
     def log_path(self) -> Path:
         """Dziennik Centrum w katalogu Logów."""
 
@@ -741,7 +749,16 @@ class Centrum:
         return self.tool.log_path
 
 
-def case_states(client: TestClient, kind: str) -> list[str]:
+# Stany Spraw taty w Powiadomieniach i stany wysyłki w odpowiedzi na „Wyślij” (``SendState`` kontraktu).
+SENT: Final = {"state": "sent"}
+QUEUED_FOR_INTERNET: Final = {"state": "queued", "waits_for": "internet"}
+QUEUED_FOR_KEY: Final = {"state": "queued", "waits_for": "key"}
+REJECTED: Final = {"state": "rejected"}
+RESOLVED: Final = {"state": "resolved"}
+READ_BY_MAKS: Final = {"state": "read"}
+
+
+def case_states(client: TestClient, kind: str) -> list[dict[str, str]]:
     """Stany Spraw taty rodzaju ``kind`` (``uwaga``, ``zgloszenie``) w Powiadomieniach.
 
     Na nie czeka test, a nie na plik stanu: Centrum podaje sprawy pod blokadą, która trzyma też zapis pliku, a na

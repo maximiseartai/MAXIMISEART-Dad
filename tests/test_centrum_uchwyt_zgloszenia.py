@@ -25,8 +25,8 @@ from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, read_report_key
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT, Case, DadCases
-from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.outbox import PART_LIMIT, QUEUE_THREAD, RETRY_S, Outbox, Post
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY, case_outbox
+from rozliczenia.centrum.outbox import PART_LIMIT, QUEUE_DIRECTORY, QUEUE_THREAD, RETRY_S, Outbox, Post
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.report_box import IssuesOutcome, Label, Refused, Unreachable
 from rozliczenia.centrum.reports import (
@@ -45,7 +45,10 @@ from rozliczenia.efenix_window import PagePart
 from rozliczenia.process_run import Stop
 
 from tests.fixtures.centrum import (
+    QUEUED_FOR_INTERNET,
+    QUEUED_FOR_KEY,
     REPORT_KEY,
+    SENT,
     TOOL_COMMIT,
     FakeReportBox,
     ToolDirectory,
@@ -59,10 +62,7 @@ from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.potomne import wait_for
 
 READY = {"state": "ready"}
-SENT = {"state": "sent"}
 WAITING = {"state": "waiting"}
-FOR_INTERNET = {"state": "queued", "waits_for": "internet"}
-FOR_KEY = {"state": "queued", "waits_for": "key"}
 
 
 class Owner:
@@ -140,7 +140,7 @@ class Computer:
         return [case.number for case in self.stored.all() if case.kind == REPORT]
 
     def queued(self) -> list[Path]:
-        return sorted((self.config / "zgloszenia" / "kolejka").glob("*.json"))
+        return sorted((self.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY).glob("*.json"))
 
 
 @pytest.fixture
@@ -339,8 +339,8 @@ def test_bez_sieci_zgloszenie_czeka_w_kolejce_i_dostaje_numer_po_dostarczeniu(co
     computer.box.search_failure = None
     computer.clock.advance(RETRY_S)
 
-    assert (queued, pending["number"]) == (FOR_INTERNET, None)
-    assert owner.wait_for(3) == [READY, FOR_INTERNET, SENT]
+    assert (queued, pending["number"]) == (QUEUED_FOR_INTERNET, None)
+    assert owner.wait_for(3) == [READY, QUEUED_FOR_INTERNET, SENT]
     assert [issue.body for issue in computer.box.sent] == [body]
     assert wait_for(lambda: computer.numbers() == [1])
     assert computer.cases() == [{**pending, "number": 1}]
@@ -361,7 +361,7 @@ def test_bez_klucza_albo_z_odrzuconym_zgloszenie_czeka_na_klucz_i_wychodzi_samo_
     write_report_key(computer.tool, REPORT_KEY + "_NOWY")
     computer.clock.advance(RETRY_S)
 
-    assert queued == FOR_KEY
+    assert queued == QUEUED_FOR_KEY
     assert owner.wait_for(3)[-1] == SENT
     assert len(computer.box.sent) == 1
 
@@ -369,8 +369,8 @@ def test_bez_klucza_albo_z_odrzuconym_zgloszenie_czeka_na_klucz_i_wychodzi_samo_
 def test_zgloszenie_ktorego_kolejka_nie_zapisala_daje_komunikat_i_nie_zostawia_sprawy(computer: Computer) -> None:
     computer.with_key()
     handle, _, _ = prepared(computer.reports(), computer)
-    (computer.config / "zgloszenia").mkdir()
-    blocker = computer.config / "zgloszenia" / "kolejka"
+    (computer.config / UNSENT_DIRECTORY).mkdir()
+    blocker = computer.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
     blocker.write_text("plik zamiast folderu", encoding="utf-8")
 
     state = dump(handle.send())
@@ -397,7 +397,7 @@ def test_drugi_uchwyt_tego_problemu_widzi_zgloszenie_w_kolejce_i_nie_wysyla_drug
 
     second, owner, _ = prepared(reports, computer)
 
-    assert (owner.states, dump(second.send())) == ([FOR_KEY], FOR_KEY)
+    assert (owner.states, dump(second.send())) == ([QUEUED_FOR_KEY], QUEUED_FOR_KEY)
     assert (len(computer.queued()), len(computer.cases())) == (1, 1)
 
 
@@ -407,7 +407,7 @@ def test_uchwyt_z_podgladem_sprzed_wysylki_tego_problemu_nie_wysyla_drugiego(com
     second, _, _ = prepared(reports, computer)
     first.send()
 
-    assert dump(second.send()) == FOR_KEY
+    assert dump(second.send()) == QUEUED_FOR_KEY
     assert (len(computer.queued()), len(computer.cases())) == (1, 1)
 
 
@@ -415,7 +415,7 @@ def test_dwa_problemy_z_kolejki_dostaja_kazdy_numer_swojego_issue(computer: Comp
     reports = computer.reports()
     for code in (NO_CONNECTION, OTHER_BRANCH):
         handle, _, _ = prepared(reports, computer, code)
-        assert dump(handle.send()) == FOR_KEY
+        assert dump(handle.send()) == QUEUED_FOR_KEY
 
     computer.with_key()
     computer.clock.advance(RETRY_S)
@@ -436,8 +436,8 @@ def test_dostarczenie_z_kolejki_zmienia_stan_kazdego_uchwytu_tego_problemu_na_wy
     computer.with_key()
     computer.clock.advance(RETRY_S)
 
-    assert first_owner.wait_for(3) == [READY, FOR_KEY, SENT]
-    assert second_owner.wait_for(2) == [FOR_KEY, SENT]
+    assert first_owner.wait_for(3) == [READY, QUEUED_FOR_KEY, SENT]
+    assert second_owner.wait_for(2) == [QUEUED_FOR_KEY, SENT]
     assert (dump(other.state), other_owner.states) == (READY, [READY])
 
 
@@ -488,7 +488,7 @@ def test_poprzednie_zgloszenie_w_podgladzie_pomija_czekajace(computer: Computer)
     computer.box.close(1)
     computer.box.search_failure = Unreachable()
     queued, _, _ = prepared(reports, computer)
-    assert dump(queued.send()) == FOR_INTERNET
+    assert dump(queued.send()) == QUEUED_FOR_INTERNET
 
     _, _, body = prepared(reports, computer)
 
@@ -607,7 +607,7 @@ def test_kolejny_start_zaczyna_sie_po_koncu_przejscia_kolejki_poprzedniego_jak_n
 
     computer.reports()
 
-    assert (queued, len(computer.box.sent)) == (FOR_INTERNET, 1)
+    assert (queued, len(computer.box.sent)) == (QUEUED_FOR_INTERNET, 1)
 
 
 def test_inny_problem_wysyla_sie_osobno_obok_otwartego_zgloszenia(computer: Computer) -> None:
@@ -671,7 +671,7 @@ def test_gdy_skrzynka_nie_odpowiada_zgloszenie_czeka_w_kolejce_bez_zakladania_is
     computer.box.search_failure = Unreachable()
     handle, _, _ = prepared(computer.reports(), computer)
 
-    assert dump(handle.send()) == FOR_INTERNET
+    assert dump(handle.send()) == QUEUED_FOR_INTERNET
     assert (computer.box.keys, len(computer.queued())) == ([], 1)
 
 
@@ -730,7 +730,7 @@ def test_odpowiedz_skrzynki_na_pytanie_sprzed_wysylki_nie_zmienia_wyniku_wysylki
         box.first_search.set()
     handle.wait_for_box()
 
-    assert queued == FOR_INTERNET
+    assert queued == QUEUED_FOR_INTERNET
     assert (owner.states, dump(handle.state)) == ([queued], queued)
 
 

@@ -18,13 +18,14 @@ from openpyxl.cell.cell import Cell, MergedCell
 from openpyxl.styles import Font, PatternFill, Protection
 from openpyxl.worksheet.worksheet import Worksheet
 
+from rozliczenia.period_folder import PeriodFolder
+from rozliczenia import tool_files
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.highlights import PLAIN, Highlights
 from rozliczenia.row_look import GENERAL, RowLook
 from rozliczenia.run_context import RunContext
 
 from atrapy.preparation import (
-    PERIOD,
     REGISTER_DATE_FORMAT,
     default_register_rows,
     make_preparation_fixture,
@@ -67,14 +68,14 @@ def _chain(tmp_path: Path) -> Chain:
     _paint_register_address(fixture.register_path, row=4, color=RED)
     leave_data_row_leftovers(fixture.internal_template_path, first_row=2, rows=LEFTOVER_ROWS, columns=13)
     leave_data_row_leftovers(fixture.collective_template_path, first_row=18, rows=LEFTOVER_ROWS, columns=12)
-    worker_template = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    worker_template = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(worker_template)
     leave_data_row_leftovers(worker_template, first_row=18, rows=LEFTOVER_ROWS, columns=12)
 
     run_preparation(fixture)
     run_settlements(SettlementInputs(fixture.collective_file_path, fixture.config_path, worker_template), RunContext())
 
-    worker = fixture.period_directory / f"Rozliczenie pracowników {PERIOD}" / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"
+    worker = PeriodFolder.from_collective_file(fixture.collective_file_path).worker_settlement("Adrian Testowy")
     return Chain(
         internal=WrittenFile(fixture.internal_settlement_path, fixture.internal_template_path, 1, range(2, 6), 13),
         collective=WrittenFile(fixture.collective_file_path, fixture.collective_template_path, 17, range(18, 21), 12),

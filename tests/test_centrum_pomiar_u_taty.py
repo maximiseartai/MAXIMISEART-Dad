@@ -7,6 +7,8 @@ import re
 
 import pytest
 
+from rozliczenia.settlement_period import parse_period_token
+from rozliczenia.period_folder import PeriodFolder
 from tests.fixtures.centrum import Centrum, centrum, view_timing
 
 SERVER_TIMING = re.compile(r"centrum;dur=\d+(\.\d+)?")
@@ -119,7 +121,7 @@ def test_pomiar_z_nieznana_nazwa_albo_wartoscia_poza_zakresem_jest_odrzucony(
 def test_token_okresu_ani_sciezka_przyslane_przez_przegladarke_nie_trafiaja_do_dziennika(tmp_path: Path) -> None:
     app = centrum(tmp_path)
     token = "22_28_09_2026"
-    path = str(tmp_path / "INEA" / token / f"Rozliczenie {token} - zbiorcze.xlsx")
+    path = str(PeriodFolder(tmp_path / "INEA", parse_period_token(token)).collective_file)
     request = {"operation": "getPeriodBoard", "browser_ms": 5, "server_ms": 1}
 
     responses = [

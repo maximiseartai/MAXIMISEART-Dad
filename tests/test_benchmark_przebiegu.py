@@ -16,6 +16,8 @@ from typing import Any
 import pytest
 from openpyxl import load_workbook
 
+from rozliczenia.period_folder import collective_file_name_with
+from rozliczenia import tool_files
 from rozliczenia.worker_config import load_worker_mapping
 from tests.fixtures.benchmark import (
     data_row_entries,
@@ -78,7 +80,7 @@ def maszyna_pomiarow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_benchmark_mierzy_przebieg_rozliczen_na_lustrze_i_opisuje_pomiar_bez_danych_wykonawcow(
     tmp_path: Path,
 ) -> None:
-    config = write_mapping(tmp_path / "worker_mapping.yaml")
+    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
     journal = tmp_path / "dziennik.jsonl"
     mirror = tmp_path / "lustro"
     arguments = [
@@ -99,7 +101,7 @@ def test_benchmark_mierzy_przebieg_rozliczen_na_lustrze_i_opisuje_pomiar_bez_dan
     repository_before = protected_repository_files()
 
     first = run_benchmark(*arguments)
-    (collective_file,) = mirror.rglob("Rozliczenie * - zbiorcze.xlsx")
+    (collective_file,) = mirror.rglob(collective_file_name_with("*"))
     built_at = collective_file.stat().st_mtime_ns
     second = run_benchmark(*arguments)
 
@@ -227,7 +229,7 @@ def test_straz_czasu_opisuje_ostatni_pomiar_i_pada_tylko_powyzej_budzetu(
 
 
 def test_benchmark_porownuje_pomiar_z_wynikiem_referencyjnym_zamrozonym_z_commita(tmp_path: Path) -> None:
-    config = write_mapping(tmp_path / "worker_mapping.yaml")
+    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     common = [
@@ -284,7 +286,7 @@ def test_benchmark_porownuje_pomiar_z_wynikiem_referencyjnym_zamrozonym_z_commit
 def test_pomiar_czeka_az_skonczy_sie_inny_pomiar_z_tymi_samymi_wynikami_referencyjnymi(
     tmp_path: Path, command: list[str]
 ) -> None:
-    config = write_mapping(tmp_path / "worker_mapping.yaml")
+    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
     references = tmp_path / "referencje"
     mirror = tmp_path / "lustro"
     arguments = [
@@ -333,7 +335,7 @@ def test_pomiar_czeka_az_inny_pomiar_zwolni_maszyne(tmp_path: Path, maszyna_pomi
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
         "--config",
-        str(write_mapping(tmp_path / "worker_mapping.yaml")),
+        str(write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)),
         "--mirror-dir",
         str(mirror),
         "--reference-dir",
@@ -441,7 +443,7 @@ def test_komentarz_pokazuje_start_procesu_takze_obok_pomiaru_sprzed_jego_mierzen
 
 
 def test_pomiar_z_niepoprawna_konfiguracja_wykonawcow_konczy_sie_przyczyna_z_katalogu_przebiegu(tmp_path: Path) -> None:
-    config = tmp_path / "worker_mapping.yaml"
+    config = tmp_path / tool_files.WORKER_CONFIG.name
     config.write_text("schema_version: 2\nworkers:\n  a: A\n", encoding="utf-8")
     journal = tmp_path / "dziennik.jsonl"
 
@@ -470,7 +472,7 @@ def test_pomiar_z_niepoprawna_konfiguracja_wykonawcow_konczy_sie_przyczyna_z_kat
 
 
 def test_pomiar_z_innym_wzorcem_rozliczenia_pracownika_nie_ma_pasujacego_wyniku_referencyjnego(tmp_path: Path) -> None:
-    config = write_mapping(tmp_path / "worker_mapping.yaml")
+    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     templates = write_templates(tmp_path / "wzorce")
@@ -526,7 +528,7 @@ def changed_summary_figure(result: dict[str, Any]) -> None:
 def test_bramka_poprawnosci_jest_niezgodna_przy_innych_licznikach_komunikatach_albo_podsumowaniu(
     tmp_path: Path, change: Callable[[dict[str, Any]], None], category: str
 ) -> None:
-    config = write_mapping(tmp_path / "worker_mapping.yaml")
+    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     common = [
@@ -560,7 +562,7 @@ def test_bramka_poprawnosci_jest_niezgodna_przy_innych_licznikach_komunikatach_a
 def test_pomiar_z_wynikiem_referencyjnym_w_formacie_terminala_konczy_sie_poleceniem_ponownego_zamrozenia(
     tmp_path: Path,
 ) -> None:
-    config = write_mapping(tmp_path / "worker_mapping.yaml")
+    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     common = [
@@ -609,7 +611,7 @@ def test_zabity_benchmark_nie_zostawia_wstrzymanego_przebiegu_ani_kopii_commitu(
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
         "--config",
-        str(write_mapping(tmp_path / "worker_mapping.yaml")),
+        str(write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)),
         "--mirror-dir",
         str(mirror),
         "--reference-dir",

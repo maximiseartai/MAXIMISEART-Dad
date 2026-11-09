@@ -23,7 +23,7 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
-from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, RunLog, StartFacts, Tool
+from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, Environment, LoggedInterruption, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.telemetry import MetricsStore
 from tests.fixtures.centrum import finished_view, without_times
@@ -48,7 +48,7 @@ WRITE_ADVICE = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Cent
 
 
 def log_paths(centrum: PreparingCentrum | SettlingCentrum) -> list[Path]:
-    return sorted((centrum.log_path.parent / "uruchomienia").glob("*.json"))
+    return sorted(centrum.tool.run_logs.glob("*.json"))
 
 
 def logged(centrum: PreparingCentrum | SettlingCentrum) -> list[dict[str, Any]]:
@@ -176,7 +176,7 @@ def test_centrum_zamkniete_przed_zapamietaniem_uruchomienia_daje_karte_z_wynikie
     assert wait_for(reached.is_set)
     closed = centrum.client
     [record] = centrum.metric_records()
-    start_file = json.loads((centrum.log_path.parent / "ostatnie-uruchomienie.json").read_text(encoding="utf-8"))
+    start_file = json.loads(centrum.tool.last_started.read_text(encoding="utf-8"))
     started_at = datetime.fromisoformat(start_file["started_at"])
     catalog = centrum.engines.catalog()
     preparation, settlement = catalog.metrics("preparation").counter_names, catalog.metrics("settlement").counter_names
@@ -293,7 +293,7 @@ def test_nieczytelne_logi_ostatniego_uruchomienia_daja_start_bez_karty(tmp_path:
 
 def test_nieudany_zapis_startu_nie_zmienia_uruchomienia(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    (centrum.log_path.parent / "ostatnie-uruchomienie.json").mkdir(parents=True)
+    centrum.tool.last_started.mkdir(parents=True)
 
     view = run_to_end(centrum, dry_run=False)
 
@@ -375,7 +375,7 @@ def test_karta_po_starcie_i_wiersz_historii_otwieraja_logi_kazdego_schematu(
     if schema is not None:
         for run_id, path in paths.items():
             path.write_text(json.dumps(schema(records[run_id]), ensure_ascii=False), encoding="utf-8")
-        start_file = centrum.log_path.parent / "ostatnie-uruchomienie.json"
+        start_file = centrum.tool.last_started
         started = json.loads(start_file.read_text(encoding="utf-8"))
         assert (started["schema_version"], started["mode"]) == (2, "RUN")
         start_file.write_text(
@@ -438,7 +438,7 @@ def on_disk(directory: Path) -> LogsOnDisk:
 def written(directory: Path, record: RunLog, name: str | None = None) -> Path:
     """Plik Logów ``record`` w katalogu Logów pod nazwą z jego startu albo pod ``name``."""
 
-    path = directory / "uruchomienia" / (name or name_of(record.start))
+    path = directory / RUN_LOGS_DIRECTORY / (name or name_of(record.start))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(record.text, encoding="utf-8")
     return path
@@ -467,7 +467,7 @@ def test_nazwa_pliku_logow_to_sekunda_startu_w_utc_proces_i_identyfikator_a_dysk
 )
 def test_logi_uruchomienia_bez_pliku_albo_nieczytelne(tmp_path: Path, content: bytes | None, read: object) -> None:
     if content is not None:
-        path = tmp_path / "uruchomienia" / name_of(start())
+        path = tmp_path / RUN_LOGS_DIRECTORY / name_of(start())
         path.parent.mkdir()
         path.write_bytes(content)
 
@@ -475,7 +475,7 @@ def test_logi_uruchomienia_bez_pliku_albo_nieczytelne(tmp_path: Path, content: b
 
 
 def test_logi_ktorych_system_nie_daje_odczytac_to_odmowa_a_nie_nieczytelne(tmp_path: Path) -> None:
-    (tmp_path / "uruchomienia" / name_of(start())).mkdir(parents=True)
+    (tmp_path / RUN_LOGS_DIRECTORY / name_of(start())).mkdir(parents=True)
 
     assert isinstance(on_disk(tmp_path).logs(RUN_ID), Refused)
 
@@ -494,7 +494,7 @@ def test_identyfikator_spoza_centrum_nie_ma_logow_bez_zagladania_do_katalogu_log
     """Identyfikator z adresu karty, którego Centrum nie nadaje (np. ``../``), nie dochodzi do dysku: przy katalogu Logów,
     którego system nie daje wylistować, jest dalej bez Logów, a nie odmową."""
 
-    directory = tmp_path / "uruchomienia"
+    directory = tmp_path / RUN_LOGS_DIRECTORY
     directory.mkdir()
     disk = on_disk(tmp_path)
 
@@ -533,7 +533,7 @@ def test_plik_w_miejscu_katalogu_logow_to_brak_logow_a_nie_odmowa(tmp_path: Path
     """Plik w miejscu katalogu Logów się nie zmieni, więc to brak Logów, jak bez katalogu: start Centrum zamyka dziennik
     Wyceny jego Uruchomienia wersją zastępczą, zamiast zostawiać go na zawsze jak przy odmowie."""
 
-    (tmp_path / "uruchomienia").write_text("", encoding="utf-8")
+    (tmp_path / RUN_LOGS_DIRECTORY).write_text("", encoding="utf-8")
     left_journal(tmp_path, start())
     disk = on_disk(tmp_path)
 
@@ -555,7 +555,7 @@ def test_katalog_logow_ktorego_system_nie_daje_wylistowac_to_odmowa_a_nie_brak_l
     viewed = disk.viewed(lambda logs: logs.run_id)
 
     listed = (disk.logs(RUN_ID), cards.last(LeftBehindClosed()) is None, disk.newest("intermax"), viewed.of("intermax"))
-    with unlisted(monkeypatch, tmp_path / "uruchomienia"):
+    with unlisted(monkeypatch, tmp_path / RUN_LOGS_DIRECTORY):
         read = disk.logs(RUN_ID)
         refused = (cards.last(LeftBehindClosed()), disk.newest("intermax"), viewed.of("intermax"))
     assert listed == (Missing(), False, record, ["f" * 32])
@@ -608,6 +608,6 @@ def test_logi_ostatniego_startu_ktorych_system_nie_daje_odczytac_to_start_bez_ka
 
     disk = on_disk(tmp_path)
     disk.started(start(process="settlement"))
-    (tmp_path / "uruchomienia" / name_of(start(process="settlement"))).mkdir(parents=True)
+    (tmp_path / RUN_LOGS_DIRECTORY / name_of(start(process="settlement"))).mkdir(parents=True)
 
     assert RunCards(disk, list).last(LeftBehindClosed()) is None

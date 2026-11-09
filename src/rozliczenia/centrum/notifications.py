@@ -62,8 +62,6 @@ CHECK_WAIT_S: Final = 3.0
 # Nazwa wątku pytania skrzynki i GitHuba o Powiadomienia.
 CHECK_THREAD: Final = "powiadomienia-sprawdzanie"
 
-# Stany, które dał Maks: tylko one są nowe dla taty, dopóki ich nie zobaczy.
-_NEWS: Final[frozenset[notifications_contract.CaseState]] = frozenset({"rozwiazana", "przeczytana"})
 
 
 class ReadNotifications:
@@ -276,13 +274,13 @@ class Notifications:
             return None
         state, at = self._cases.state(case, self._box), _moment(case.closure, case.sent_at)
         if case.kind == NOTE:
-            notification_id = f"uwaga-{case.id}-{state}"
+            notification_id = f"uwaga-{case.id}-{_id_word(state)}"
             unread = self._unread(notification_id, state)
             return notifications_contract.DadNoteNotification(
                 kind="uwaga", id=notification_id, at=at, unread=unread, title=case.title, state=state
             )
         # Zgłoszenie w kolejce nie ma jeszcze numeru; jego odcisk wystarcza, bo problem czeka w kolejce najwyżej raz.
-        notification_id = f"zgloszenie-{case.id if case.number is None else case.number}-{state}"
+        notification_id = f"zgloszenie-{case.id if case.number is None else case.number}-{_id_word(state)}"
         unread = self._unread(notification_id, state)
         return notifications_contract.ReportNotification(
             kind="zgloszenie", id=notification_id, at=at, unread=unread, what=case.title, state=state
@@ -306,7 +304,31 @@ class Notifications:
         )
 
     def _unread(self, notification_id: str, state: notifications_contract.CaseState) -> bool:
-        return state in _NEWS and notification_id not in self._read
+        """Nowe dla taty, dopóki ich nie zobaczy, są tylko stany, które dał Maks."""
+
+        news = isinstance(state, notifications_contract.Resolved | notifications_contract.ReadByMaks)
+        return news and notification_id not in self._read
+
+
+def _id_word(state: notifications_contract.CaseState) -> str:
+    """Stan sprawy w ``id`` jej Powiadomienia. Przeczytane ``id`` leżą w ``config/powiadomienia.json`` u taty, więc
+    słowo stanu się nie zmienia: inne słowo zrobiłoby z przeczytanego Powiadomienia nowe."""
+
+    match state:
+        case common_contract.Sent():
+            return "wyslana"
+        case common_contract.Queued(waits_for=waits_for):
+            match waits_for:
+                case "internet":
+                    return "czeka_na_internet"
+                case "key":
+                    return "czeka_na_token"
+        case common_contract.Rejected():
+            return "odrzucona"
+        case notifications_contract.Resolved():
+            return "rozwiazana"
+        case notifications_contract.ReadByMaks():
+            return "przeczytana"
 
 
 def _moment(closure: Closure | None, sent_at: datetime) -> datetime:

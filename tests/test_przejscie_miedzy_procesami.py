@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from rozliczenia.period_folder import PeriodFolder
+from rozliczenia import tool_files
 from rozliczenia import quantity_check
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.run_context import RunContext
@@ -19,7 +21,7 @@ def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zlecen
     tmp_path: Path,
 ) -> None:
     fixture = make_preparation_fixture(tmp_path)
-    worker_template = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    worker_template = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(worker_template)
 
     preparation = run_preparation(fixture)
@@ -34,7 +36,7 @@ def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zlecen
         ("Darek Fikcyjny", "ZAPISANO", 1),
         ("Kamil Syntetyczny", "ZAPISANO", 1),
     ]
-    target_directory = fixture.period_directory / f"Rozliczenie pracowników {PERIOD}"
+    target_directory = PeriodFolder.from_collective_file(fixture.collective_file_path).worker_settlements
     expected_rows = {
         "Adrian Testowy": collective_row(2, datetime(2026, 9, 8, 0, 0), "tak", "adrian.testowy"),
         "Darek Fikcyjny": collective_row(6, datetime(2026, 9, 14, 18, 30), "TAK", "dariusz.fikcyjny2"),
@@ -90,7 +92,7 @@ def test_swiezo_przygotowany_plik_zbiorczy_daje_kontrole_ilosci_bez_roznic(tmp_p
         for number, content in enumerate(ORDER_CONTENTS, start=1)
     ]
     fixture = make_preparation_fixture(tmp_path, rows)
-    worker_template = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    worker_template = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(worker_template)
 
     preparation = run_preparation(fixture)

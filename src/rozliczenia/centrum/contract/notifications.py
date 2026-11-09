@@ -7,14 +7,29 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from rozliczenia.centrum.contract.common import Message, Model
+from rozliczenia.centrum.contract.common import Message, Model, Sending
 from rozliczenia.centrum.contract.runs import Count, Pricing
 
 
-# Stan sprawy taty (Uwagi albo Zgłoszenia) w Powiadomieniu: wysłana, czeka w Kolejce wysyłki na internet albo na
-# Token do Zgłoszeń, odrzucona (Skrzynka odrzuciła jej treść), rozwiązana (Maks zamknął issue jako ``completed``:
-# będzie w następnej wersji) albo przeczytana (``not_planned``: bez zmian).
-CaseState = Literal["wyslana", "czeka_na_internet", "czeka_na_token", "odrzucona", "rozwiazana", "przeczytana"]
+# Rodzaj sprawy taty: Uwaga taty albo Zgłoszenie.
+CaseKey = Literal["uwaga", "zgloszenie"]
+
+
+class Resolved(Model):
+    """Maks zamknął issue sprawy jako ``completed`` albo bez powodu: będzie w następnej wersji."""
+
+    state: Literal["resolved"]
+
+
+class ReadByMaks(Model):
+    """Maks zamknął issue sprawy jako ``not_planned`` albo duplikat: przeczytał, bez zmian."""
+
+    state: Literal["read"]
+
+
+# Stan sprawy taty (Uwagi albo Zgłoszenia) w Powiadomieniu: stan jej wysyłki (``SendState``), a po wysłaniu to, co
+# zrobił z nią Maks.
+CaseState = Annotated[Sending | Resolved | ReadByMaks, Field(discriminator="state")]
 
 
 class _Notification(Model):
@@ -47,7 +62,7 @@ class SolvedCase(Model):
     """Sprawa wysłana z tego komputera, którą Wydanie rozwiązuje: Uwaga taty nazwana tytułem, Zgłoszenie jego
     „Co się stało”."""
 
-    kind: Literal["uwaga", "zgloszenie"]
+    kind: CaseKey
     title: str
 
 

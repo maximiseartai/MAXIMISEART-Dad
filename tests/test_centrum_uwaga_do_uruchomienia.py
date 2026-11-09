@@ -14,9 +14,10 @@ from rozliczenia import settlement_process
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Rejected, Unreachable
+from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.telemetry import MetricsStore
 
-from tests.fixtures.centrum import FakeReportBox, write_report_key
+from tests.fixtures.centrum import QUEUED_FOR_KEY, FakeReportBox, ToolDirectory, write_report_key
 from tests.fixtures.centrum_processes import SettlingCentrum, run_logs_handled, run_to_end, settling_centrum
 from tests.fixtures.potomne import wait_for
 from atrapy.settlement import PERIOD
@@ -35,7 +36,7 @@ def box(centrum: SettlingCentrum) -> FakeReportBox:
 
 def queued(centrum: SettlingCentrum, label: str | None = None) -> list[Path]:
     pattern = "*.json" if label is None else f"*-{label}-*.json"
-    return sorted((centrum.tmp_path / "config" / "zgloszenia" / "kolejka").glob(pattern))
+    return sorted(centrum.tool.queue.glob(pattern))
 
 
 def run_line(centrum: SettlingCentrum, mode: str, result: str) -> str:
@@ -95,7 +96,9 @@ def test_uwaga_przypieta_do_uruchomienia_niesie_jego_linie_i_odnosnik_do_komenta
     [issue] = box(centrum).issues_with("uwaga-taty")
     expected = f"{BODY}\n\n{run_line(centrum, 'podgląd', 'OK')}\n[Logi Uruchomienia]({logs})"
     assert (issue.title, issue.body) == (TITLE, expected)
-    assert draft.json() == {"title": TITLE, "body": expected}
+    # „Maks dostanie” pokazuje tacie odnośnik jako sam napis, jak GitHub Maksowi, bez adresu prywatnej Skrzynki.
+    shown = f"{BODY}\n\n{run_line(centrum, 'podgląd', 'OK')}\nLogi Uruchomienia"
+    assert draft.json() == {"title": TITLE, "body": expected, "shown_body": shown}
 
 
 def _as_is(centrum: SettlingCentrum) -> None:
@@ -156,9 +159,9 @@ def test_uwaga_do_uruchomienia_z_logami_w_kolejce_czeka_i_wychodzi_po_logach_z_o
     draft = centrum.client.post("/api/dad-notes/draft", json=note(run_id)).json()
     sent = centrum.client.post("/api/dad-notes", json=note(run_id))
 
-    assert sent.json() == {"state": "waiting", "waits_for": "key"}
+    assert sent.json() == QUEUED_FOR_KEY
     waiting = f"{run_line(centrum, 'podgląd', 'OK')}\nLogi Uruchomienia: w drodze (Uruchomienie {run_id})"
-    assert draft["body"] == f"{BODY}\n\n{waiting}"
+    assert draft["body"] == draft["shown_body"] == f"{BODY}\n\n{waiting}"
     assert box(centrum).issues == []
 
     write_report_key(centrum.tool)
@@ -189,7 +192,7 @@ def test_okno_uwagi_pokazuje_szesc_najnowszych_uruchomien_z_centrum_i_starsze_za
     store = MetricsStore(centrum.metrics_path, settlement_process.PROCESS.counter_names)
     [record] = store.read()
     started = datetime.fromisoformat(record["started_at"])
-    remembered = tmp_path / "config" / "centrum-uruchomienia.jsonl"
+    remembered = ToolDirectory(tmp_path).config / CENTRUM_RUNS_FILE
 
     def earlier(minutes: int, centrum_line: dict[str, str] | None = None) -> None:
         at = (started - timedelta(minutes=minutes)).isoformat()
@@ -242,7 +245,7 @@ def test_dwie_uwagi_przypiete_do_roznych_uruchomien_dostaja_odnosniki_do_swoich_
     assert wait_for(lambda: len(queued(centrum, "logi-uruchomienia")) == 2)
     for run_id in (first, second):
         sent = centrum.client.post("/api/dad-notes", json={"title": run_id, "run_id": run_id})
-        assert sent.json() == {"state": "waiting", "waits_for": "key"}
+        assert sent.json() == QUEUED_FOR_KEY
 
     write_report_key(centrum.tool)
     centrum.restart()
@@ -321,7 +324,7 @@ def test_komentarz_do_usunietego_issue_uwagi_kolejka_porzuca_raz_i_wiecej_o_nie_
     assert centrum.client.post("/api/dad-notes", json={"title": "Inna Uwaga"}).json() == {"state": "sent"}
     centrum.tool.report_key.unlink()
     behind = centrum.client.post("/api/dad-notes", json={"title": "Uwaga za komentarzem"})
-    assert behind.json() == {"state": "waiting", "waits_for": "key"}
+    assert behind.json() == QUEUED_FOR_KEY
     # Maks usuwa issue Uwagi, gdy lista issue już je pokazuje: usunięte w LIST_LAG_S po założeniu lista issue z etykietą
     # pokazuje z zapisów KeyedBox, więc kolejka porzuca komentarz do niego dopiero po budzeniu (#879).
     centrum.surroundings.clock.pause(LIST_LAG_S)

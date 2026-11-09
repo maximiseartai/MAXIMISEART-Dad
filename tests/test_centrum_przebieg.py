@@ -12,6 +12,8 @@ from typing import Any, NoReturn
 from fastapi.testclient import TestClient
 import pytest
 
+from rozliczenia.settlement_period import parse_period_token
+from rozliczenia.period_folder import PeriodFolder, collective_file_name_with
 from rozliczenia import settlement_process
 from rozliczenia.centrum import run_view
 from rozliczenia.telemetry import MetricsStore
@@ -368,8 +370,8 @@ def test_wybor_okresu_to_okresy_z_przygotowanym_plikiem_zbiorczym(tmp_path: Path
     centrum = settling_centrum(tmp_path)
     older = centrum.periods_directory / "01_07_09_2026"
     older.mkdir()
-    (older / "Rozliczenie 01_07_09_2026 - zbiorcze.xlsx").touch()
-    (centrum.periods_directory / "25_31_08_2026" / "Rozliczenie pracowników 25_31_08_2026").mkdir(parents=True)
+    (older / collective_file_name_with("01_07_09_2026")).touch()
+    PeriodFolder(centrum.periods_directory, parse_period_token("25_31_08_2026")).worker_settlements.mkdir(parents=True)
 
     setup = settlement_setup(centrum.client)
 
@@ -382,7 +384,7 @@ def test_wybor_okresu_to_okresy_z_przygotowanym_plikiem_zbiorczym(tmp_path: Path
     assert setup["preselected_period"] == PERIOD
     assert [(choice["token"], choice["last_complete"], choice["collective_file"]) for choice in setup["periods"]] == [
         (PERIOD, True, SOURCE_NAME),
-        ("01_07_09_2026", False, "Rozliczenie 01_07_09_2026 - zbiorcze.xlsx"),
+        ("01_07_09_2026", False, collective_file_name_with("01_07_09_2026")),
     ]
 
 
@@ -395,7 +397,7 @@ def test_karta_przebiegu_proponuje_ostatni_pelny_okres_przed_nowszym_i_zaznacza_
     centrum = settling_centrum(tmp_path)
     newer = centrum.periods_directory / "15_21_09_2026"
     newer.mkdir()
-    (newer / "Rozliczenie 15_21_09_2026 - zbiorcze.xlsx").touch()
+    (newer / collective_file_name_with("15_21_09_2026")).touch()
     run_to_end(centrum, dry_run=True)
 
     setup = settlement_setup(centrum.client)
@@ -411,7 +413,7 @@ def test_karta_startu_mowi_ktore_pliki_przebiegu_sa_otwarte_w_excelu_az_do_ich_z
     centrum = settling_centrum(tmp_path, dad_layout=True)
     older = centrum.period_parent / "01_07_09_2026"
     older.mkdir()
-    (older / "Rozliczenie 01_07_09_2026 - zbiorcze.xlsx").touch()
+    (older / collective_file_name_with("01_07_09_2026")).touch()
     configuration = centrum.configuration
     workbooks = (
         centrum.collective_file,

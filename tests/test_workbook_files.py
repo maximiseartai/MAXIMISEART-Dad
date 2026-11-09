@@ -27,6 +27,7 @@ from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH
 
+from rozliczenia import tool_files
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
 from rozliczenia.highlights import Highlights
@@ -283,7 +284,7 @@ def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(
 
 
 def test_planowanie_czyta_wzorzec_pliku_zbiorczego_zmieniony_po_sprawdzaniu(tmp_path: Path) -> None:
-    path = write_collective_template(tmp_path / "Wzorzec pliku zbiorczego.xlsx")
+    path = write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
     template = TemplateFile.collective_file(path)
     template.check()
     workbook = load_workbook(path, keep_links=True)
@@ -889,7 +890,7 @@ def test_znak_niedozwolony_w_xml_przerywa_zapis_rozliczenia_pracownika_bez_pliku
 
 
 def test_znak_niedozwolony_w_xml_przerywa_zapis_rozliczenia_wewnetrznego_bez_pliku(tmp_path: Path) -> None:
-    template_path = write_internal_template(tmp_path / "Wzorzec rozliczenia wewnętrznego.xlsx")
+    template_path = write_internal_template(tmp_path / tool_files.INTERNAL_TEMPLATE.name)
     output_directory = tmp_path / "okres"
     output_directory.mkdir()
     row = register_row({"DATA": "syntetyczny\x01znak"})
@@ -1032,7 +1033,7 @@ def _register_row() -> RegisterRow:
 
 @pytest.mark.parametrize("by_copy", [True, False], ids=["kopia", "openpyxl"])
 def test_naglowek_docelowy_pliku_zbiorczego_jest_szukany_tylko_w_a_k(tmp_path: Path, by_copy: bool) -> None:
-    template_path = write_collective_template(tmp_path / "Wzorzec pliku zbiorczego.xlsx")
+    template_path = write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
     workbook = load_workbook(template_path, keep_links=True)
     active_worksheet(workbook)["AV17"] = "ADRES"
     workbook.save(template_path)
@@ -1048,7 +1049,7 @@ def test_naglowek_docelowy_pliku_zbiorczego_jest_szukany_tylko_w_a_k(tmp_path: P
 
 
 def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu_1(tmp_path: Path) -> None:
-    template_path = tmp_path / "Wzorzec rozliczenia wewnętrznego.xlsx"
+    template_path = tmp_path / tool_files.INTERNAL_TEMPLATE.name
     workbook = Workbook()
     for column, header in enumerate(("LP", *INTERNAL_TEMPLATE_HEADERS), start=1):
         active_worksheet(workbook).cell(1, column).value = header
@@ -1069,7 +1070,7 @@ def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu
 def test_rozliczenie_wewnetrzne_przelicza_formuly_przy_otwarciu_bez_wymuszonego_przeliczania(
     tmp_path: Path, copied: bool
 ) -> None:
-    template_path = marked_for_copy(write_internal_template(tmp_path / "Wzorzec rozliczenia wewnętrznego.xlsx"))
+    template_path = marked_for_copy(write_internal_template(tmp_path / tool_files.INTERNAL_TEMPLATE.name))
     rewrite_parts(  # ``calcPr`` jak we Wzorcu taty, bez żadnej flagi przeliczania
         template_path,
         lambda name, data: re.sub(rb"<calcPr\b[^>]*/>", b'<calcPr calcId="191029"/>', data) if name == "xl/workbook.xml" else data,
@@ -1085,7 +1086,7 @@ def test_rozliczenie_wewnetrzne_przelicza_formuly_przy_otwarciu_bez_wymuszonego_
 
 
 def test_plik_zbiorczy_z_kopii_ma_wymiar_arkusza_z_wpisanymi_iloscami_uslug(tmp_path: Path) -> None:
-    template_path = write_collective_template(tmp_path / "Wzorzec pliku zbiorczego.xlsx")
+    template_path = write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
     rewrite_parts(
         template_path,
         lambda name, data: re.sub(rb'<dimension ref="[^"]*"', b'<dimension ref="A1:K17"', data)
@@ -1105,7 +1106,7 @@ def test_plik_zbiorczy_z_kopii_ma_wymiar_arkusza_z_wpisanymi_iloscami_uslug(tmp_
 def test_wzorzec_rozliczenia_pracownika_z_wartoscia_w_wierszu_danych_nie_daje_pliku_na_zadnej_drodze(
     tmp_path: Path, copied: bool
 ) -> None:
-    template_path = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(template_path)
     workbook = load_workbook(template_path)
     try:
@@ -1124,7 +1125,7 @@ def test_wzorzec_rozliczenia_pracownika_z_wartoscia_w_wierszu_danych_nie_daje_pl
 
 
 def _worker_template_with_merge(tmp_path: Path, merged: str, *, copied: bool) -> Path:
-    template_path = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(template_path)
     workbook = load_workbook(template_path)
     try:
@@ -1269,7 +1270,7 @@ def test_wzorzec_z_ukrytym_aktywnym_arkuszem_idzie_dawna_droga_i_wiersze_trafiaj
     """Kopia Wzorca nie pisze w ukrytym arkuszu ``workbook.active``: Rozliczenie pracownika powstaje dawną drogą openpyxl,
     która pisze Wiersze danych w tym samym arkuszu."""
 
-    template_path = tmp_path / "Wzorzec rozliczenia pracownika.xlsx"
+    template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(template_path)
     if hidden:
         rewrite_parts(template_path, _workbook_xml(_once(b'name="Sheet1" sheetId="1" state="visible"', b'name="Sheet1" sheetId="1" state="hidden"')))

@@ -12,6 +12,7 @@ from decimal import Decimal
 from functools import partial
 from pathlib import Path
 
+from rozliczenia import tool_files
 from rozliczenia import efenix_messages, intermax_messages, intermax_replace
 from rozliczenia import preparation_messages as messages
 from rozliczenia import settlement_messages, worker_config_messages
@@ -23,6 +24,8 @@ from rozliczenia.centrum import (
     start_problems,
     update_messages,
 )
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_window import ForwardRefusal, PagePart
 from rozliczenia.efenix_marking import Refusal
@@ -37,6 +40,7 @@ from rozliczenia.efenix_positions import (
 )
 from rozliczenia.message import Message
 from rozliczenia.period_folder import (
+    PeriodFolder,
     FolderNotNamedAfterPeriod,
     NotPeriodToken,
     PeriodFolderError,
@@ -54,13 +58,14 @@ DAD_PERIODS = Path("C:/Users/tata/OneDrive/Załączniki")
 JUNE = DAD_PERIODS / "Rozliczenia 2026" / "06_Czerwiec_2026" / "INEA"
 JULY = DAD_PERIODS / "Rozliczenia 2026" / "07_Lipiec_2026" / "INEA"
 PARSED_PERIOD = parse_period_token("08_14_09_2026")
-TEMPLATE = Path("C:/Narzedzie/config/Wzorzec pliku zbiorczego.xlsx")
-CONFIG = Path("//nas/Wspolne/Narzedzie/config/worker_mapping.yaml")
+TEMPLATE = tool_files.config_dir(Path("C:/Narzedzie")) / tool_files.COLLECTIVE_TEMPLATE.name
+CONFIG = tool_files.config_dir(Path("//nas/Wspolne/Narzedzie")) / tool_files.WORKER_CONFIG.name
 SHEET = "ZLECENIA"
 PERIOD = "08_14_09_2026"
-SOURCE = PERIOD_DIRECTORY / f"Rozliczenie {PERIOD} - zbiorcze.xlsx"
-WORKER_SETTLEMENTS = PERIOD_DIRECTORY / f"Rozliczenie pracowników {PERIOD}"
-WORKER_TEMPLATE = Path("C:/Narzedzie/config/Wzorzec rozliczenia pracownika.xlsx")
+SOURCE = PeriodFolder(PERIODS, PARSED_PERIOD).collective_file
+WORKER_SETTLEMENTS = PeriodFolder(PERIODS, PARSED_PERIOD).worker_settlements
+INTERNAL_SETTLEMENT = PeriodFolder(PERIODS, PARSED_PERIOD).internal_settlement
+WORKER_TEMPLATE = tool_files.config_dir(Path("C:/Narzedzie")) / tool_files.WORKER_TEMPLATE.name
 MISSING_CONFIG = WorkerConfigError("missing")
 INACCESSIBLE_CONFIG = WorkerConfigError("inaccessible")
 CONFIG_NOT_UTF8 = WorkerConfigError("not_utf8")
@@ -97,7 +102,7 @@ WORKER_CONFIG_SAMPLES: Samples = {
 }
 PREPARATION_SAMPLES: Samples = {
     "invalid_period_token": [lambda: messages.invalid_period_token("08_14_9_2026")],
-    "period_file_exists": [lambda: messages.period_file_exists(PERIOD_DIRECTORY, f"Rozliczenie wew. {PERIOD}.xlsx")],
+    "period_file_exists": [lambda: messages.period_file_exists(PERIOD_DIRECTORY, INTERNAL_SETTLEMENT.name)],
     "template_unusable": [
         *(partial(messages.template_unusable, WorkbookError(TEMPLATE, problem)) for problem in Problem),
         partial(messages.template_unusable, WorkbookError(TEMPLATE, Problem.LAYOUT, MissingHeader("Sheet1", 17, "WYKONAWCA"))),
@@ -149,18 +154,18 @@ PREPARATION_SAMPLES: Samples = {
     ],
     "no_period_orders": [lambda: messages.no_period_orders(REGISTER, SHEET, PERIOD)],
     "too_few_zero_rows": [
-        lambda: messages.too_few_zero_rows(f"Rozliczenie {PERIOD} - zbiorcze.xlsx", 7, 6, 24),
-        lambda: messages.too_few_zero_rows(f"Rozliczenie {PERIOD} - zbiorcze.xlsx", 9, 6, 24),
+        lambda: messages.too_few_zero_rows(SOURCE.name, 7, 6, 24),
+        lambda: messages.too_few_zero_rows(SOURCE.name, 9, 6, 24),
     ],
     "unknown_devices": [
-        lambda: messages.unknown_devices(f"Rozliczenie {PERIOD} - zbiorcze.xlsx", [19]),
-        lambda: messages.unknown_devices(f"Rozliczenie {PERIOD} - zbiorcze.xlsx", list(range(18, 30))),
+        lambda: messages.unknown_devices(SOURCE.name, [19]),
+        lambda: messages.unknown_devices(SOURCE.name, list(range(18, 30))),
     ],
     "rows_from_description": [
-        lambda: messages.rows_from_description(f"Rozliczenie {PERIOD} - zbiorcze.xlsx", [20]),
-        lambda: messages.rows_from_description(f"Rozliczenie {PERIOD} - zbiorcze.xlsx", [20, 21, 23]),
+        lambda: messages.rows_from_description(SOURCE.name, [20]),
+        lambda: messages.rows_from_description(SOURCE.name, [20, 21, 23]),
     ],
-    "columns_from_description": [lambda: messages.columns_from_description(f"Rozliczenie {PERIOD} - zbiorcze.xlsx", DESCRIPTION_COLUMNS)],
+    "columns_from_description": [lambda: messages.columns_from_description(SOURCE.name, DESCRIPTION_COLUMNS)],
     "incomplete_period": [
         lambda: messages.incomplete_period(REGISTER, SHEET, PERIOD, date(2026, 9, 12), date(2026, 9, 14))
     ],
@@ -172,12 +177,12 @@ PREPARATION_SAMPLES: Samples = {
     ],
     "write_failed": [lambda: messages.write_failed(PERIOD_DIRECTORY)],
     "write_failed_with_file_left": [
-        lambda: messages.write_failed_with_file_left(PERIOD_DIRECTORY, f"Rozliczenie wew. {PERIOD}.xlsx")
+        lambda: messages.write_failed_with_file_left(PERIOD_DIRECTORY, INTERNAL_SETTLEMENT.name)
     ],
     "staging_left": [
         lambda: messages.staging_left(messages.write_failed(PERIOD_DIRECTORY), PERIODS, f".{PERIOD}.staging-"),
         lambda: messages.staging_left(
-            messages.write_failed_with_file_left(PERIOD_DIRECTORY, f"Rozliczenie wew. {PERIOD}.xlsx"),
+            messages.write_failed_with_file_left(PERIOD_DIRECTORY, INTERNAL_SETTLEMENT.name),
             PERIODS,
             f".{PERIOD}.staging-",
         ),
@@ -255,7 +260,7 @@ DIAGNOSIS_SAMPLES: Samples = {
     "cause_not_found": [diagnosis_messages.cause_not_found],
     "newer_tool_version": [diagnosis_messages.newer_tool_version],
     "file_only_in_cloud": [lambda: diagnosis_messages.file_only_in_cloud(SOURCE)],
-    "period_file_open": [lambda: diagnosis_messages.period_file_open(PERIOD_DIRECTORY / f"Rozliczenie wew. {PERIOD}.xlsx")],
+    "period_file_open": [lambda: diagnosis_messages.period_file_open(PERIOD_DIRECTORY / INTERNAL_SETTLEMENT.name)],
 }
 
 FILL_SAMPLES: Samples = {
@@ -275,8 +280,8 @@ REPORT_SAMPLES: Samples = {
     "not_queued": [lambda: report_messages.not_queued(REPORT_QUEUE)],
 }
 
-DAD_CASES_STATE = Path("//nas/Wspolne/Narzedzie/config/sprawy-taty.json")
-READ_NOTIFICATIONS_STATE = DAD_CASES_STATE.with_name("powiadomienia.json")
+DAD_CASES_STATE = tool_files.config_dir(Path("//nas/Wspolne/Narzedzie")) / DAD_CASES_FILE
+READ_NOTIFICATIONS_STATE = DAD_CASES_STATE.with_name(NOTIFICATIONS_FILE)
 NOTIFICATION_SAMPLES: Samples = {
     "unavailable": [
         lambda: notification_messages.unavailable([DAD_CASES_STATE]),

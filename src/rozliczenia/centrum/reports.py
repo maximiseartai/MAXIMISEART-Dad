@@ -26,7 +26,7 @@ najwyżej raz na uchwyt. Powrót problemu, którego Zgłoszenie jest otwarte, id
 do kolejki sam po Diagnozie Zatrzymania, bez kliknięcia (#820). Bez sieci albo Tokenu do Zgłoszeń Zgłoszenie czeka w
 kolejce i wychodzi samo; Komunikat jest tylko wtedy, gdy nie da się zapisać
 pliku kolejki. Zgłoszenie, którego treść Skrzynka odrzuciła, nie czeka na nic,
-co mógłby naprawić tata albo internet (``ReportRejected``).
+co mógłby naprawić tata albo internet (``Rejected``).
 """
 
 from __future__ import annotations
@@ -454,8 +454,8 @@ class ReportHandle:
         with self._changed:
             self._sending = False
             # Dostarczenie mogło przyjść tuż po końcu czekania, zanim uchwyt pokazał „czeka w kolejce”.
-            if isinstance(state, diagnosis_contract.ReportQueued) and not self._reports._pending(self._fingerprint):
-                state = diagnosis_contract.ReportSent(state="sent")
+            if isinstance(state, common_contract.Queued) and not self._reports._pending(self._fingerprint):
+                state = common_contract.Sent(state="sent")
             self._show(state)
             self._changed.notify_all()
             return state
@@ -464,18 +464,18 @@ class ReportHandle:
         """Skrzynka odrzuciła treść Zgłoszenia tego problemu, które czeka w kolejce: uchwyt pokazuje „odrzucone”."""
 
         with self._changed:
-            self._show(diagnosis_contract.ReportRejected(state="rejected"))
+            self._show(common_contract.Rejected(state="rejected"))
 
     def _delivered(self) -> None:
         """Kolejka dostarczyła Zgłoszenie tego problemu: „czeka w kolejce” zmienia się w „wysłane”."""
 
         with self._changed:
-            if isinstance(self._state, diagnosis_contract.ReportQueued):
-                self._show(diagnosis_contract.ReportSent(state="sent"))
+            if isinstance(self._state, common_contract.Queued):
+                self._show(common_contract.Sent(state="sent"))
 
     @property
     def _done(self) -> bool:
-        return isinstance(self._state, diagnosis_contract.ReportSent | diagnosis_contract.ReportQueued)
+        return isinstance(self._state, common_contract.Sent | common_contract.Queued)
 
     def _show(self, state: diagnosis_contract.ReportState) -> None:
         self._state = state
@@ -558,7 +558,7 @@ class Reports:
 
         fingerprint = preview.report.fingerprint
         if self._pending(fingerprint):
-            return self._queued(fingerprint)
+            return self._cases.queued(fingerprint, self._box)
         case = Case(REPORT, fingerprint, preview.report.what, self._commit(), datetime.now(timezone.utc), number=None)
         # Własny identyfikator wysyłki: odcisk wraca po zamknięciu, a kolejka czeka na dostarczenie po identyfikatorze.
         post = Post.of(
@@ -579,16 +579,9 @@ class Reports:
             message = report_messages.not_queued(self._queue_directory)
             return diagnosis_contract.ReportNotQueued(state="not_queued", message=common_contract.Message.of(message))
         if self._outbox.wait_delivered(post.run_id, REPORT.label, timeout_s=DELIVERY_WAIT_S):
-            return diagnosis_contract.ReportSent(state="sent")
-        return self._queued(fingerprint)
+            return common_contract.Sent(state="sent")
+        return self._cases.queued(fingerprint, self._box)
 
-    def _queued(self, fingerprint: str) -> diagnosis_contract.ReportQueued | diagnosis_contract.ReportRejected:
-        """Zgłoszenie w kolejce: odrzucone przez Skrzynkę albo czeka na to, czego brakuje (``DadCases.hold``)."""
-
-        hold = self._cases.hold(fingerprint, self._box)
-        if hold == "rejected":
-            return diagnosis_contract.ReportRejected(state="rejected")
-        return diagnosis_contract.ReportQueued(state="queued", waits_for=hold)
 
     def _pending(self, fingerprint: str) -> bool:
         latest = self._cases.find(REPORT, fingerprint)
@@ -624,7 +617,7 @@ class Reports:
 
         latest = self._cases.find(REPORT, fingerprint)
         if latest is not None and latest.number is None:
-            return self._queued(fingerprint)
+            return self._cases.queued(fingerprint, self._box)
         with self._lock:
             known = fingerprint in self._open
             waiting = self._open.get(fingerprint) is not None

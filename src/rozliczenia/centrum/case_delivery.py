@@ -30,6 +30,8 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY, Deliveri
 from rozliczenia.centrum.report_issue import fingerprint_of
 from rozliczenia.centrum.work import CentrumWork
 
+# Napis linii Logów przypiętej Uwagi, a w niej odnośnika do nich.
+_LOGS: Final = "Logi Uruchomienia"
 # Katalog Zgłoszeń i Uwag taty, których Skrzynka jeszcze nie dostała, w ``config``; w nim Kolejka wysyłki.
 UNSENT_DIRECTORY: Final = "zgloszenia"
 # Stan wysyłki Uwagi (``Post.state``): stopka mówi, że Logi przypiętego Uruchomienia są w drodze.
@@ -61,11 +63,21 @@ def case_outbox(work: CentrumWork, box: KeyedBox, cases: DadCases) -> Outbox:
 def logs_line(run_id: str, logs: str | None) -> str:
     """Linia Logów przypiętej Uwagi: odnośnik albo „w drodze”, którą słuchacz kolejki zamienia tuż przed wysłaniem.
 
-    Odnośnik to link Markdown: GitHub pokazuje Maksowi sam napis, a „Maks dostanie” pokazuje tacie ten sam napis
-    bez adresu prywatnej Skrzynki, którego tata i tak nie otworzy.
+    Odnośnik to link Markdown, z którego GitHub pokazuje Maksowi sam napis (``shown_logs_line``).
     """
 
-    return f"[Logi Uruchomienia]({logs})" if logs is not None else f"Logi Uruchomienia: w drodze (Uruchomienie {run_id})"
+    return f"[{_LOGS}]({logs})" if logs is not None else _logs_on_the_way_line(run_id)
+
+
+def shown_logs_line(run_id: str, logs: str | None) -> str:
+    """``logs_line`` tak, jak pokazuje ją tacie „Maks dostanie”: odnośnik jako sam napis, jak na GitHubie, bez adresu
+    prywatnej Skrzynki, którego tata i tak nie otworzy."""
+
+    return _LOGS if logs is not None else _logs_on_the_way_line(run_id)
+
+
+def _logs_on_the_way_line(run_id: str) -> str:
+    return f"{_LOGS}: w drodze (Uruchomienie {run_id})"
 
 
 def note_post(note_id: str, title: str, body: str, *, logs_on_the_way: bool) -> Post:

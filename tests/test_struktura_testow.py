@@ -15,8 +15,11 @@ import sys
 
 import pytest
 
+from rozliczenia import tool_files
+from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
+
 from tests.fixtures.skladnia import dotted, imports
 
 TESTS = Path(__file__).resolve().parent
@@ -56,6 +59,87 @@ def test_moduly_testow_importuja_pomocniki_tylko_z_fixtures() -> None:
     }
 
     assert imports == set(), "przenieś pomocnik do tests/fixtures i importuj go stamtąd; moduł testu niczego nie eksportuje"
+
+
+# Pliki, w których nazwa pliku narzędzia albo stanu Centrum zostaje literałem, z powodem.
+OWNED_NAMES_AS_LITERALS = {
+    "test_opiekun_ponownego_startu.py": "test kontraktu nazw tool_files i scenariusze repozytorium Git opiekuna",
+    "test_uszkodzone_wejscia.py": "test kontraktu miejsc plików stanu Centrum",
+    "test_aktualizacja_narzedzia.py": "scenariusze repozytorium Git: historia, .gitignore i git status klonu taty",
+    "test_przerwana_aktualizacja_narzedzia.py": "scenariusz repozytorium Git: plik taty, który nowa wersja przestaje śledzić",
+    "fixtures/tool_clone.py": "pierwsza wersja repozytorium narzędzia w historii Git",
+    "tools/lib/atrapy/pliki_taty.py": "kopia celowa świata taty: atrapy budują pliki taty niezależnie od src",
+}
+# Testy kontraktu: każda nazwa właściciela stoi w jednym z nich literałem.
+CONTRACTS = ("test_opiekun_ponownego_startu.py", "test_uszkodzone_wejscia.py")
+SRC = TESTS.parent / "src" / "rozliczenia"
+
+
+def test_nazwy_plikow_narzedzia_i_stanu_centrum_biora_testy_od_wlasciciela() -> None:
+    """Nazwę pliku narzędzia albo stanu Centrum test i atrapa biorą od właściciela, a literałem stoi ona tylko w plikach
+    ``OWNED_NAMES_AS_LITERALS``: test kontraktu przypina ją raz, a zmiana nazwy w ``src`` nie zostawia testów na starym
+    pliku.
+
+    Nazwy wylicza ``_owned_names`` z ``src``, więc nowy plik stanu nie potrzebuje wpisu tutaj: nazwa każdej ścieżki z
+    suffiksem w ``tool_files`` (Konfiguracja wykonawców, Wzorce, Ustawienia, pliki metryk) poza ``LOG_PATH`` i każda
+    stała tekstowa bez ``{`` przypisana na poziomie modułu ``src/rozliczenia`` do nazwy kończącej się na ``_FILE``
+    (``REPORT_KEY_FILE``, ``DAD_CASES_FILE``, ``NOTIFICATIONS_FILE``, ``CENTRUM_RUNS_FILE``…). Każda z nich musi też
+    stać literałem w jednym z ``CONTRACTS``.
+
+    Łapie stałą tekstową (także część f-stringu) równą nazwie albo ścieżkę, która się nią kończy po ``/`` albo ``\\``, w
+    ``tests/**/*.py`` i ``tools/lib/atrapy/**/*.py``. Każdą inną postać i nazwę sprawdza tylko przegląd: nazwę w dłuższym
+    zdaniu (tekst Komunikatu, który czyta tata, zostaje literałem jak w ``tests/expected``), nazwę sklejoną z części,
+    foldery (``config``, ``logs``, ``kolejka``, ``uruchomienia``: słowa ogólne, także nazwy stron), nazwę dziennika
+    Centrum (``LOG_PATH``: ``CentrumLog`` w teście jednostki dostaje dowolną ścieżkę), stałe spoza tej reguły nazw
+    (``RUN_LOGS_DIRECTORY``, ``PROFILE_DIRECTORY``) i pliki okresu, które niosą token okresu.
+    """
+
+    names = _owned_names()
+    found = sorted(
+        f"{name}:{node.lineno}: {node.value!r}"
+        for path, name in _scanned()
+        if name not in OWNED_NAMES_AS_LITERALS
+        for node in _owned_literals(path, names)
+    )
+    pinned = {owned for name in CONTRACTS for node in _owned_literals(TESTS / name, names) for owned in names if _ends_with(str(node.value), owned)}
+
+    assert {tool_files.WORKER_CONFIG.name, REPORT_KEY_FILE} <= names, "_owned_names nie widzi już tool_files albo stałych *_FILE"
+    assert found == [], "weź nazwę od właściciela (tool_files, ToolDirectory w tests/fixtures/centrum.py, stała modułu Centrum)"
+    assert sorted(names - pinned) == [], "przypnij nazwę literałem w teście kontraktu z CONTRACTS"
+
+
+def _owned_names() -> set[str]:
+    """Nazwy plików, które znają właściciele w ``src``; regułę opisuje docstring strażnika."""
+
+    names = {
+        path.name
+        for path in vars(tool_files).values()
+        if isinstance(path, Path) and path.suffix and path != tool_files.LOG_PATH
+    }
+    for module in sorted(SRC.rglob("*.py")):
+        for node in ast.parse(module.read_text(encoding="utf-8")).body:
+            target = node.targets[0] if isinstance(node, ast.Assign) and len(node.targets) == 1 else getattr(node, "target", None)
+            value = getattr(node, "value", None)
+            if (
+                isinstance(node, (ast.Assign, ast.AnnAssign))
+                and isinstance(target, ast.Name)
+                and target.id.endswith("_FILE")
+                and isinstance(value, ast.Constant)
+                and isinstance(value.value, str)
+                and "{" not in value.value
+            ):
+                names.add(value.value)
+    return names
+
+
+def _owned_literals(path: Path, names: set[str]) -> Iterator[ast.Constant]:
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and any(_ends_with(node.value, owned) for owned in names):
+            yield node
+
+
+def _ends_with(value: str, owned: str) -> bool:
+    return value == owned or value.endswith((f"/{owned}", f"\\{owned}"))
 
 
 def _scanned() -> list[tuple[Path, str]]:

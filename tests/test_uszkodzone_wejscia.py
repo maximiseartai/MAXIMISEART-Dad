@@ -31,12 +31,19 @@ from fastapi.testclient import TestClient
 
 from rozliczenia import period_folder
 from rozliczenia.centrum.clock import ALARM_THREAD
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.github import HttpRequest, HttpResponse
-from rozliczenia.centrum.outbox import QUEUE_THREAD
+from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
+from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_THREAD
+from rozliczenia.centrum.keyed_box import OPENING_FILE
 from rozliczenia.centrum.report_box import GitHubReportBox
+from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
+from rozliczenia.centrum.tool_update import RESULT_FILE
 
 from tests.fixtures.centrum import (
+    QUEUED_FOR_INTERNET,
     CentrumClient,
     FakePlatform,
     ToolDirectory,
@@ -46,6 +53,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import Engines
 from tests.fixtures.linie_watkow import new_line, threads_since
+from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.preparation import PERIOD, write_collective_template, write_internal_template, write_register
 from atrapy.settlement import CellValue, write_quantity_source, write_template
 
@@ -70,33 +78,38 @@ TEXT, LINES, XLSX, FOLDER = "tekst", "wiersze", "xlsx", "folder"
 INTERMAX_COPY = "INTERMAX przed uporządkowaniem 2026-09-15 08-00-00.xlsx"
 # Układ folderów taty: Foldery okresu obu procesów w folderze INEA miesiąca.
 MONTH = "Załączniki/Rozliczenia 2026/09_Wrzesien_2026"
+# Miejsca plików w katalogu narzędzia, względem niego; przypina je test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca.
+TOOL = ToolDirectory(Path())
 FILES: dict[str, tuple[str, str]] = {
-    "ustawienia": ("config/centrum-ustawienia.yaml", TEXT),
-    "konfiguracja_wykonawcow": ("config/worker_mapping.yaml", TEXT),
-    "klucz_zgloszen": ("config/zgloszenia-klucz.txt", TEXT),
-    "sprawy_taty": ("config/sprawy-taty.json", TEXT),
-    "wyslane_zgloszenia": ("config/zgloszenia-wyslane.json", TEXT),
-    "uwagi_taty": ("config/uwagi-taty.json", TEXT),
-    "przeczytane_powiadomienia": ("config/powiadomienia.json", TEXT),
-    "uruchomienia_centrum": ("config/centrum-uruchomienia.jsonl", LINES),
-    "adresy_skrzynki": ("config/skrzynka-adresy.jsonl", LINES),
-    "dziennik_centrum": ("logs/centrum-rozliczen.log", LINES),
-    "logi_uruchomien": ("logs/uruchomienia", FOLDER),
-    "metryki_przygotowania": (".przygotowanie-pliku-zbiorczego-metrics.jsonl", LINES),
-    "metryki_przebiegu": (".rozliczenia-metrics.jsonl", LINES),
-    "metryki_uporzadkowania": (".uporzadkowanie-intermax-metrics.jsonl", LINES),
-    "rejestr": ("ZLECENIA INTERMAX OD 08_11_2021.xlsx", XLSX),
-    "kopia_intermax": (f"Kopie INTERMAX/{INTERMAX_COPY}", XLSX),
-    "folder_kopii_intermax": ("Kopie INTERMAX", FOLDER),
-    "wzorzec_wewnetrzny": ("config/Wzorzec rozliczenia wewnętrznego.xlsx", XLSX),
-    "wzorzec_zbiorczy": ("config/Wzorzec pliku zbiorczego.xlsx", XLSX),
-    "wzorzec_pracownika": ("config/Wzorzec rozliczenia pracownika.xlsx", XLSX),
-    "plik_zbiorczy": (f"{MONTH}/INEA/{SETTLEMENT_PERIOD}/Rozliczenie {SETTLEMENT_PERIOD} - zbiorcze.xlsx", XLSX),
+    "ustawienia": (TOOL.settings.as_posix(), TEXT),
+    "konfiguracja_wykonawcow": (TOOL.configuration.worker_config.as_posix(), TEXT),
+    "klucz_zgloszen": (TOOL.report_key.as_posix(), TEXT),
+    "sprawy_taty": ((TOOL.config / DAD_CASES_FILE).as_posix(), TEXT),
+    "wyslane_zgloszenia": ((TOOL.config / OLD_REPORTS_FILE).as_posix(), TEXT),
+    "uwagi_taty": ((TOOL.config / OLD_NOTES_FILE).as_posix(), TEXT),
+    "przeczytane_powiadomienia": ((TOOL.config / NOTIFICATIONS_FILE).as_posix(), TEXT),
+    "uruchomienia_centrum": ((TOOL.config / CENTRUM_RUNS_FILE).as_posix(), LINES),
+    "adresy_skrzynki": ((TOOL.config / ADDRESSES_FILE).as_posix(), LINES),
+    "dziennik_centrum": (TOOL.log_path.as_posix(), LINES),
+    "logi_uruchomien": (TOOL.run_logs.as_posix(), FOLDER),
+    "metryki_przygotowania": (TOOL.metrics.preparation.as_posix(), LINES),
+    "metryki_przebiegu": (TOOL.metrics.settlement.as_posix(), LINES),
+    "metryki_uporzadkowania": (TOOL.metrics.intermax.as_posix(), LINES),
+    "rejestr": (REGISTER_NAME, XLSX),
+    "kopia_intermax": ((TOOL.intermax_copies / INTERMAX_COPY).as_posix(), XLSX),
+    "folder_kopii_intermax": (TOOL.intermax_copies.as_posix(), FOLDER),
+    "wzorzec_wewnetrzny": (TOOL.configuration.internal_template.as_posix(), XLSX),
+    "wzorzec_zbiorczy": (TOOL.configuration.collective_template.as_posix(), XLSX),
+    "wzorzec_pracownika": (TOOL.configuration.worker_template.as_posix(), XLSX),
+    "plik_zbiorczy": (
+        f"{MONTH}/INEA/{SETTLEMENT_PERIOD}/{period_folder.collective_file_name_with(SETTLEMENT_PERIOD)}",
+        XLSX,
+    ),
     "folder_okresow": ("Załączniki", FOLDER),
     "folder_miesiaca": (MONTH, FOLDER),
     "folder_okresu": (f"{MONTH}/INEA/{SETTLEMENT_PERIOD}", FOLDER),
     "folder_okresu_przygotowania": (f"{MONTH}/INEA/{PERIOD}", FOLDER),
-    "folder_zgloszen": ("config/zgloszenia", FOLDER),
+    "folder_zgloszen": (TOOL.queue.parent.as_posix(), FOLDER),
 }
 # Pliki sprzed Spraw taty: Centrum czyta je tylko przy starcie bez pliku Spraw taty, czyli przy pierwszym starcie
 # u taty po aktualizacji.
@@ -271,7 +284,7 @@ def _build(root: Path) -> None:
         json.dumps({"schema_version": 1, "przeczytane": [READ_NOTIFICATION]}) + "\n", encoding="utf-8"
     )
     client = _remembering_choices(world)
-    assert client.post("/api/dad-notes", json=DAD_NOTE).json() == {"state": "waiting", "waits_for": "internet"}
+    assert client.post("/api/dad-notes", json=DAD_NOTE).json() == QUEUED_FOR_INTERNET
     assert client.get(f"/api/periods/{SETTLEMENT_PERIOD}/quantities-to-fill").json()["state"] == "ready"
     for process, period in (("preparation", PERIOD), ("settlement", SETTLEMENT_PERIOD)):
         started = client.post("/api/runs", json={"process": process, "period": period, "mode": "DRY-RUN"})
@@ -553,8 +566,53 @@ def test_centrum_swiata_bez_sieci_nie_zostawia_po_tescie_wysylki_ani_budzika_skr
     sent = _remembering_choices(world).post("/api/dad-notes", json=DAD_NOTE).json()
     join_threads_since(since, named=QUEUE_THREAD)
 
-    assert sent == {"state": "waiting", "waits_for": "internet"}
+    assert sent == QUEUED_FOR_INTERNET
     assert [thread.name for thread in threads_since(since) if thread.name in (ALARM_THREAD, QUEUE_THREAD)] == []
+
+
+def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
+    # Cofnięcie Aktualizacji startuje starą wersję na plikach, które zostawiła nowa (ADR 0009), a kolejkę Skrzynki
+    # wysyła następna wersja, więc miejsca przypina literał, a nie stałe z src, które zmieniłyby się razem z nimi.
+    # Nazwy plików narzędzia (Wzorce, Ustawienia, dziennik, metryki) przypina test_opiekun_ponownego_startu.py.
+    state = {
+        name: FILES[name][0]
+        for name in (
+            "klucz_zgloszen",
+            "sprawy_taty",
+            "wyslane_zgloszenia",
+            "uwagi_taty",
+            "przeczytane_powiadomienia",
+            "uruchomienia_centrum",
+            "adresy_skrzynki",
+            "logi_uruchomien",
+            "folder_kopii_intermax",
+        )
+    }
+
+    others = {
+        "kolejka_zgloszen": TOOL.queue,
+        "ostatni_start": TOOL.last_started,
+        "zapisy_zakladania_skrzynki": TOOL.config / OPENING_FILE,
+        "wynik_aktualizacji": TOOL.config / RESULT_FILE,
+        "dzialania_taty": TOOL.log_path.parent / DAD_ACTIONS_FILE,
+    }
+
+    assert state | {name: path.as_posix() for name, path in others.items()} == {
+        "klucz_zgloszen": "config/zgloszenia-klucz.txt",
+        "sprawy_taty": "config/sprawy-taty.json",
+        "wyslane_zgloszenia": "config/zgloszenia-wyslane.json",
+        "uwagi_taty": "config/uwagi-taty.json",
+        "przeczytane_powiadomienia": "config/powiadomienia.json",
+        "uruchomienia_centrum": "config/centrum-uruchomienia.jsonl",
+        "adresy_skrzynki": "config/skrzynka-adresy.jsonl",
+        "logi_uruchomien": "logs/uruchomienia",
+        "folder_kopii_intermax": "Kopie INTERMAX",
+        "kolejka_zgloszen": "config/zgloszenia/kolejka",
+        "ostatni_start": "logs/ostatnie-uruchomienie.json",
+        "zapisy_zakladania_skrzynki": "config/skrzynka-zakladanie.txt",
+        "wynik_aktualizacji": "config/centrum-aktualizacja.json",
+        "dzialania_taty": "logs/dzialania-taty.jsonl",
+    }
 
 
 def test_macierz_obejmuje_kazda_operacje_kontraktu_centrum(tmp_path: Path) -> None:

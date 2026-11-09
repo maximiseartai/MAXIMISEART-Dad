@@ -170,7 +170,7 @@ class PeriodFolder:
     def worker_settlements(self) -> Path:
         """Folder rozliczeń pracowników."""
 
-        return self.directory / _WORKER_SETTLEMENTS.format(token=self.period.token)
+        return self.directory / worker_settlements_name_with(self.period.token)
 
     def path_of(self, place: PeriodPlace) -> Path:
         match place:
@@ -269,6 +269,12 @@ def collective_file_name_with(token: str) -> str:
     """Nazwa Pliku zbiorczego z ``token`` w miejscu tokenu okresu, np. ze wzorem tokenu w Komunikacie."""
 
     return _COLLECTIVE_FILE.format(token=token)
+
+
+def worker_settlements_name_with(token: str) -> str:
+    """Nazwa Folderu rozliczeń pracowników z ``token`` w miejscu tokenu okresu, także z tokenem, który nie jest okresem."""
+
+    return _WORKER_SETTLEMENTS.format(token=token)
 
 
 @dataclass(frozen=True)

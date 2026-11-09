@@ -13,20 +13,28 @@ from typing import Any
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Rejected, Unreachable
 
-from tests.fixtures.centrum import Centrum, ToolDirectory, case_states, centrum, write_report_key
+from tests.fixtures.centrum import (
+    QUEUED_FOR_INTERNET,
+    QUEUED_FOR_KEY,
+    REJECTED,
+    SENT,
+    Centrum,
+    ToolDirectory,
+    case_states,
+    centrum,
+    write_report_key,
+)
 from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, stopped_for_maks
 from tests.fixtures.potomne import wait_for
 
 KEY = "github_pat_SYNTETYCZNY_TOKEN_DO_ZGLOSZEN"
-REJECTED = {"state": "rejected"}
-FOR_KEY = {"state": "queued", "waits_for": "key"}
 
 
 def queued(tmp_path: Path, label: str) -> list[Path]:
-    return sorted((tmp_path / "config" / "zgloszenia" / "kolejka").glob(f"*-{label}-*.json"))
+    return sorted(ToolDirectory(tmp_path).queue.glob(f"*-{label}-*.json"))
 
 
-def note_states(started: Centrum) -> dict[str, str]:
+def note_states(started: Centrum) -> dict[str, dict[str, str]]:
     """Stan każdej Uwagi taty w Powiadomieniach, po jej tytule."""
 
     items = started.client.get("/api/notifications").json()["items"]
@@ -44,9 +52,9 @@ def test_uwaga_odrzucona_przez_skrzynke_nie_czeka_na_internet_a_nastepna_wychodz
     tmp_path: Path,
 ) -> None:
     started = centrum(tmp_path)
-    assert send_note(started, "Pierwsza") == {"state": "waiting", "waits_for": "key"}
-    assert send_note(started, "Druga") == {"state": "waiting", "waits_for": "key"}
-    assert note_states(started) == {"Pierwsza": "czeka_na_token", "Druga": "czeka_na_token"}
+    assert send_note(started, "Pierwsza") == QUEUED_FOR_KEY
+    assert send_note(started, "Druga") == QUEUED_FOR_KEY
+    assert note_states(started) == {"Pierwsza": QUEUED_FOR_KEY, "Druga": QUEUED_FOR_KEY}
 
     write_report_key(ToolDirectory(tmp_path), KEY)
     started.report_box.outcomes.append(Rejected())
@@ -55,7 +63,7 @@ def test_uwaga_odrzucona_przez_skrzynke_nie_czeka_na_internet_a_nastepna_wychodz
     assert started.report_box.wait_until(lambda box: len(box.issues_with("uwaga-taty")) == 1)
     [sent] = started.report_box.issues_with("uwaga-taty")
     assert sent.title == "Druga"
-    assert wait_for(lambda: note_states(started) == {"Pierwsza": "odrzucona", "Druga": "wyslana"})
+    assert wait_for(lambda: note_states(started) == {"Pierwsza": REJECTED, "Druga": SENT})
     # Kolejka usuwa plik dostarczonej Uwagi po zapisaniu jej stanu, a na Windows chwilę później.
     assert wait_for(lambda: len(queued(tmp_path, "uwaga-taty")) == 1)
     assert "przyczyna=odmowa-tresci" in started.log_path.read_text(encoding="utf-8")
@@ -69,13 +77,13 @@ def test_uwaga_odrzucona_przy_wyslij_mowi_o_tym_od_razu_a_po_starcie_centrum_kol
     started.report_box.outcomes.append(Rejected())
 
     assert send_note(started, "Odrzucona") == REJECTED
-    assert note_states(started) == {"Odrzucona": "odrzucona"}
+    assert note_states(started) == {"Odrzucona": REJECTED}
     assert started.report_box.issues == []
 
     restarted = centrum(tmp_path)
     with restarted.client:
         assert restarted.report_box.wait_until(lambda box: len(box.issues_with("uwaga-taty")) == 1)
-        assert wait_for(lambda: note_states(restarted) == {"Odrzucona": "wyslana"})
+        assert wait_for(lambda: note_states(restarted) == {"Odrzucona": SENT})
 
 
 def test_uwaga_z_tokenem_bez_sieci_czeka_na_internet_takze_w_powiadomieniach(tmp_path: Path) -> None:
@@ -85,8 +93,8 @@ def test_uwaga_z_tokenem_bez_sieci_czeka_na_internet_takze_w_powiadomieniach(tmp
     started.report_box.search_failure = Unreachable()
     started.report_box.outcomes.append(Unreachable())
 
-    assert send_note(started, "Bez sieci") == {"state": "waiting", "waits_for": "internet"}
-    assert note_states(started) == {"Bez sieci": "czeka_na_internet"}
+    assert send_note(started, "Bez sieci") == QUEUED_FOR_INTERNET
+    assert note_states(started) == {"Bez sieci": QUEUED_FOR_INTERNET}
 
 
 def report(centrum: PreparingCentrum, run_id: str) -> dict[str, Any]:
@@ -115,7 +123,7 @@ def test_zgloszenie_odrzucone_przez_skrzynke_kaze_skontaktowac_sie_z_maksem_zami
     assert report(centrum, run_id) == REJECTED
     assert centrum.client.post(f"/api/runs/{run_id}/report").json() == REJECTED
     assert current_report(centrum) == REJECTED
-    assert case_states(centrum.client, "zgloszenie") == ["odrzucona"]
+    assert case_states(centrum.client, "zgloszenie") == [REJECTED]
     assert box.sent == []
     assert len(queued(tmp_path, "zgloszenie")) == 1
 
@@ -130,15 +138,15 @@ def test_zgloszenie_czekajace_na_token_staje_sie_odrzucone_gdy_skrzynka_odrzuci_
     centrum = preparing_centrum(tmp_path)
     box = centrum.surroundings.report_box
     run_id = stopped_for_maks(centrum)
-    assert report(centrum, run_id) == FOR_KEY
-    assert case_states(centrum.client, "zgloszenie") == ["czeka_na_token"]
+    assert report(centrum, run_id) == QUEUED_FOR_KEY
+    assert case_states(centrum.client, "zgloszenie") == [QUEUED_FOR_KEY]
 
     write_report_key(ToolDirectory(tmp_path), KEY)
     box.outcomes.append(Rejected())
     centrum.surroundings.clock.advance(RETRY_S)
 
     assert wait_for(lambda: current_report(centrum) == REJECTED)
-    assert case_states(centrum.client, "zgloszenie") == ["odrzucona"]
+    assert case_states(centrum.client, "zgloszenie") == [REJECTED]
     assert box.sent == []
 
 
@@ -155,4 +163,4 @@ def test_odrzucona_tresc_zostaje_odrzucona_takze_gdy_potem_token_przestaje_dzial
     ToolDirectory(tmp_path).report_key.unlink()
 
     assert current_report(centrum) == REJECTED
-    assert case_states(centrum.client, "zgloszenie") == ["odrzucona"]
+    assert case_states(centrum.client, "zgloszenie") == [REJECTED]

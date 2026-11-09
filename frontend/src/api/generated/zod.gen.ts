@@ -141,40 +141,14 @@ export const zCountGroup = z.object({
  * DadNoteDraft
  *
  * Dokładnie to, co dostanie Maks: tytuł i treść issue Uwagi taty w Skrzynce Zgłoszeń.
+ *
+ * ``shown_body`` to ta treść tak, jak pokazuje ją tacie „Maks dostanie”: odnośnik do Logów Uruchomienia jako sam
+ * napis, jak na GitHubie, bez adresu prywatnej Skrzynki, którego tata i tak nie otworzy.
  */
 export const zDadNoteDraft = z.object({
     title: z.string(),
-    body: z.string()
-});
-
-/**
- * DadNoteNotification
- *
- * Powiadomienie o Uwadze taty, nazwanej jej tytułem.
- */
-export const zDadNoteNotification = z.object({
-    id: z.string(),
-    at: z.iso.datetime(),
-    unread: z.boolean(),
-    kind: z.literal('uwaga'),
-    title: z.string(),
-    state: z.enum([
-        'wyslana',
-        'czeka_na_internet',
-        'czeka_na_token',
-        'odrzucona',
-        'rozwiazana',
-        'przeczytana'
-    ])
-});
-
-/**
- * DadNoteRejected
- *
- * Skrzynka Zgłoszeń odrzuciła treść Uwagi taty; jak ``ReportRejected``, Centrum niczego nie obiecuje.
- */
-export const zDadNoteRejected = z.object({
-    state: z.literal('rejected')
+    body: z.string(),
+    shown_body: z.string()
 });
 
 /**
@@ -191,15 +165,6 @@ export const zDadNoteRequest = z.object({
 });
 
 /**
- * DadNoteSent
- *
- * Skrzynka Zgłoszeń przyjęła Uwagę taty.
- */
-export const zDadNoteSent = z.object({
-    state: z.literal('sent')
-});
-
-/**
  * DadNoteText
  *
  * Tytuł i treść Uwagi taty w trakcie pisania, do podglądu „Maks dostanie”; tytuł może być jeszcze pusty.
@@ -210,16 +175,6 @@ export const zDadNoteText = z.object({
     title: z.string().max(120).regex(/^[^\r\n]*$/),
     body: z.string().max(10000).optional().default(''),
     run_id: z.string().nullish()
-});
-
-/**
- * DadNoteWaiting
- *
- * Uwaga taty czeka w Kolejce wysyłki i wyjdzie sama, także po następnym starcie, gdy będzie to, na co czeka.
- */
-export const zDadNoteWaiting = z.object({
-    state: z.literal('waiting'),
-    waits_for: z.enum(['internet', 'key'])
 });
 
 /**
@@ -778,12 +733,44 @@ export const zQuantitiesToFillProblem = z.object({
 });
 
 /**
+ * Queued
+ *
+ * Wysyłka taty czeka w Kolejce wysyłki na tym komputerze i wyjdzie sama, także po następnym starcie, gdy będzie
+ * to, na co czeka.
+ */
+export const zQueued = z.object({
+    state: z.literal('queued'),
+    waits_for: z.enum(['internet', 'key'])
+});
+
+/**
+ * ReadByMaks
+ *
+ * Maks zamknął issue sprawy jako ``not_planned`` albo duplikat: przeczytał, bez zmian.
+ */
+export const zReadByMaks = z.object({
+    state: z.literal('read')
+});
+
+/**
  * ReadyPath
  */
 export const zReadyPath = z.object({
     state: z.literal('ready'),
     path: z.string(),
     name: z.string()
+});
+
+/**
+ * Rejected
+ *
+ * Skrzynka Zgłoszeń odrzuciła treść wysyłki taty: ani internet, ani Token do Zgłoszeń tego nie naprawią.
+ *
+ * Plik zostaje w Kolejce wysyłki, która spróbuje go dopiero przy następnym starcie Centrum, więc Centrum niczego nie
+ * obiecuje, tylko każe skontaktować się z Maksem.
+ */
+export const zRejected = z.object({
+    state: z.literal('rejected')
 });
 
 /**
@@ -834,37 +821,6 @@ export const zReportNotQueued = z.object({
 });
 
 /**
- * ReportNotification
- *
- * Powiadomienie o Zgłoszeniu, nazwanym „Co się stało” jego Komunikatu, bez kodu.
- */
-export const zReportNotification = z.object({
-    id: z.string(),
-    at: z.iso.datetime(),
-    unread: z.boolean(),
-    kind: z.literal('zgloszenie'),
-    what: z.string(),
-    state: z.enum([
-        'wyslana',
-        'czeka_na_internet',
-        'czeka_na_token',
-        'odrzucona',
-        'rozwiazana',
-        'przeczytana'
-    ])
-});
-
-/**
- * ReportQueued
- *
- * Zgłoszenie czeka w Kolejce wysyłki na tym komputerze i wyjdzie samo, gdy będzie to, na co czeka.
- */
-export const zReportQueued = z.object({
-    state: z.literal('queued'),
-    waits_for: z.enum(['internet', 'key'])
-});
-
-/**
  * ReportReady
  *
  * Zgłoszenia tego problemu jeszcze nie wysłano; „Wyślij do Maksa” wyśle podgląd z Diagnozy.
@@ -874,33 +830,21 @@ export const zReportReady = z.object({
 });
 
 /**
- * ReportRejected
- *
- * Skrzynka Zgłoszeń odrzuciła treść tego Zgłoszenia: ani internet, ani Token do Zgłoszeń tego nie naprawią.
- *
- * Plik zostaje w Kolejce wysyłki, która spróbuje go dopiero przy następnym starcie Centrum, więc Centrum niczego nie
- * obiecuje, tylko każe skontaktować się z Maksem.
- */
-export const zReportRejected = z.object({
-    state: z.literal('rejected')
-});
-
-/**
- * ReportSent
- *
- * Zgłoszenie tego problemu wysłano z tego uchwytu (albo kolejka dostarczyła je później); czeka na naprawę.
- */
-export const zReportSent = z.object({
-    state: z.literal('sent')
-});
-
-/**
  * ReportWaiting
  *
  * Zgłoszenie tego problemu wysłano wcześniej i jest otwarte: czeka na naprawę, drugie nie powstaje.
  */
 export const zReportWaiting = z.object({
     state: z.literal('waiting')
+});
+
+/**
+ * Resolved
+ *
+ * Maks zamknął issue sprawy jako ``completed`` albo bez powodu: będzie w następnej wersji.
+ */
+export const zResolved = z.object({
+    state: z.literal('resolved')
 });
 
 /**
@@ -1234,6 +1178,55 @@ export const zRunSetup = z.object({
 });
 
 /**
+ * Sent
+ *
+ * Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później.
+ */
+export const zSent = z.object({
+    state: z.literal('sent')
+});
+
+/**
+ * DadNoteNotification
+ *
+ * Powiadomienie o Uwadze taty, nazwanej jej tytułem.
+ */
+export const zDadNoteNotification = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    unread: z.boolean(),
+    kind: z.literal('uwaga'),
+    title: z.string(),
+    state: z.discriminatedUnion('state', [
+        zSent,
+        zQueued,
+        zRejected,
+        zResolved,
+        zReadByMaks
+    ])
+});
+
+/**
+ * ReportNotification
+ *
+ * Powiadomienie o Zgłoszeniu, nazwanym „Co się stało” jego Komunikatu, bez kodu.
+ */
+export const zReportNotification = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    unread: z.boolean(),
+    kind: z.literal('zgloszenie'),
+    what: z.string(),
+    state: z.discriminatedUnion('state', [
+        zSent,
+        zQueued,
+        zRejected,
+        zResolved,
+        zReadByMaks
+    ])
+});
+
+/**
  * Settings
  */
 export const zSettings = z.object({
@@ -1357,11 +1350,11 @@ export const zToolUpdateFailed = z.object({
     next_action: z.enum(['retry', 'report']),
     report: z.discriminatedUnion('state', [
         zReportReady,
-        zReportSent,
         zReportWaiting,
-        zReportQueued,
-        zReportRejected,
-        zReportNotQueued
+        zReportNotQueued,
+        zSent,
+        zQueued,
+        zRejected
     ]),
     draft: zReportDraft,
     after_restart: z.boolean()
@@ -1601,11 +1594,11 @@ export const zRunOutcome = z.object({
     diagnosis: z.enum(['on_request', 'automatic']).nullable(),
     report: z.discriminatedUnion('state', [
         zReportReady,
-        zReportSent,
         zReportWaiting,
-        zReportQueued,
-        zReportRejected,
-        zReportNotQueued
+        zReportNotQueued,
+        zSent,
+        zQueued,
+        zRejected
     ]).nullable(),
     files_unchanged: z.boolean(),
     opens: z.enum(['order_register', 'collective_file']).nullable(),
@@ -1779,9 +1772,9 @@ export const zSendDadNoteBody = zDadNoteRequest;
  * Successful Response
  */
 export const zSendDadNoteResponse = z.discriminatedUnion('state', [
-    zDadNoteSent,
-    zDadNoteWaiting,
-    zDadNoteRejected
+    zSent,
+    zQueued,
+    zRejected
 ]);
 
 export const zDraftDadNoteBody = zDadNoteText;
@@ -2036,11 +2029,11 @@ export const zReportRunPath = z.object({
  */
 export const zReportRunResponse = z.discriminatedUnion('state', [
     zReportReady,
-    zReportSent,
     zReportWaiting,
-    zReportQueued,
-    zReportRejected,
-    zReportNotQueued
+    zReportNotQueued,
+    zSent,
+    zQueued,
+    zRejected
 ]);
 
 /**
@@ -2108,11 +2101,11 @@ export const zStartToolUpdateResponse = z.discriminatedUnion('state', [
  */
 export const zReportToolUpdateResponse = z.discriminatedUnion('state', [
     zReportReady,
-    zReportSent,
     zReportWaiting,
-    zReportQueued,
-    zReportRejected,
-    zReportNotQueued
+    zReportNotQueued,
+    zSent,
+    zQueued,
+    zRejected
 ]);
 
 export const zRecordViewTimingBody = zViewTiming;
