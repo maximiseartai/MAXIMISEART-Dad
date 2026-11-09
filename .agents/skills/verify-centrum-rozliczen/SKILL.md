@@ -233,8 +233,8 @@ Then confirm the evidence directory still exists.
   the Playwright drive.
 - `scripts/centrum_cleanup.py --root "$runRoot"`: stop and remove one run.
 - `scripts/centrum_self_test.py --evidence-root "$evidenceRoot"`: skill package
-  check (with the `wydajnosc` gate on made-up numbers and the machine lock in a
-  scratch directory) and evidence hygiene check.
+  check (with the `wydajnosc` gate on made-up numbers) and evidence hygiene check;
+  the machine lock is tested in `tests/test_cicha_maszyna.py`.
 - `scripts/check_centrum_<feature>_mutations.py`, one script per feature: shows the drive of
   that feature fails on broken variants of Centrum, each mutation on its own copy of the checkout;
   each ends with `MUTACJE OK`, and CI runs them in its Mutation checks jobs (full CI on `main` and

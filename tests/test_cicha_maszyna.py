@@ -94,6 +94,31 @@ def test_pomiar_ustepuje_przebiegowi_ktory_zarejestrowal_sie_gdy_pomiar_bral_blo
     assert not (tmp_path / "pomiar.lock").exists()
 
 
+@pytest.mark.parametrize("trwa", ["przebieg", "pomiar"])
+def test_pomiar_czeka_na_trwajacy_przebieg_i_na_inny_pomiar(tmp_path: Path, zegar: ZegarTestu, trwa: str) -> None:
+    holder = maszyna(tmp_path)
+    with holder.run() if trwa == "przebieg" else holder.measurement():
+        with pytest.raises(MachineBusy, match=rf"{trwa} \(pid {os.getpid()}\)"):
+            with maszyna(tmp_path).measurement():
+                pass
+
+
+def test_przebieg_nie_czeka_na_pytest(tmp_path: Path, zegar: ZegarTestu) -> None:
+    with maszyna(tmp_path, ["pytest"]).run() as waited:
+        assert waited == 0
+
+
+def test_pomiar_przejmuje_blokade_i_rejestracje_procesu_ktory_umarl(tmp_path: Path, zegar: ZegarTestu) -> None:
+    # Ponad pid_max Linuksa (2**22) i macOS (99 999), a nieparzysty, więc nie jest też pid procesu Windows.
+    dead = 2**22 + 12345
+    (tmp_path / "pomiar.lock").write_text(str(dead), encoding="utf-8")
+    (tmp_path / f"run-{dead}.pid").write_text(str(dead), encoding="utf-8")
+
+    with maszyna(tmp_path).measurement() as waited:
+        assert waited == 0
+    assert list(tmp_path.iterdir()) == []
+
+
 @contextmanager
 def proces(argv: list[str], fragment: str, executable: str | None = None) -> Iterator[None]:
     """Działa, dopóki trwa blok; ``ps`` widzi już jego własną linię poleceń z ``fragment``, a nie rodzica sprzed exec."""
