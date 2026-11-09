@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 
 import github
+
+_JOB_URL = re.compile(r"https://github\.com/[^/]+/[^/]+/actions/runs/(?P<run>[0-9]+)/job/[0-9]+")
 
 
 @dataclass(frozen=True)
@@ -54,7 +57,56 @@ def pull(number: int) -> Pull:
     )
 
 
-def required(checks: tuple[dict[str, str | None], ...] | list[dict[str, str | None]]) -> list[dict[str, str | None]]:
-    """Checki ``Required CI status`` z GitHub Actions (CheckRun z workflow), nie status commitu, który ustawi każdy z prawem zapisu."""
+@dataclass(frozen=True)
+class CiRun:
+    """Run workflow ``CI`` na HEAD: identyfikator runu i jego checki z rollupu."""
 
-    return [check for check in checks if check.get("name") == github.REQUIRED and check.get("workflowName")]
+    id: int
+    checks: tuple[dict[str, str | None], ...]
+
+    @property
+    def required(self) -> dict[str, str | None] | None:
+        """Check ``Required CI status`` tego runu; ``None``, gdy run jeszcze trwa, bo GitHub tworzy ten check dopiero
+        po zadaniach z jego ``needs:`` (``.github/workflows/ci.yml``)."""
+
+        return next((check for check in self.checks if check.get("name") == github.REQUIRED), None)
+
+    @property
+    def running(self) -> list[dict[str, str | None]]:
+        """Checki runu, które się jeszcze nie skończyły, na przykład zadania ponowione w tym samym runie."""
+
+        return [check for check in self.checks if check.get("status") != "COMPLETED"]
+
+
+class UnknownRun(Exception):
+    """Check workflow ``CI``, którego ``detailsUrl`` nie ma postaci ``…/actions/runs/<run>/job/<zadanie>``."""
+
+    def __init__(self, name: str, url: str) -> None:
+        super().__init__(name, url)
+        self.name = name
+        self.url = url
+
+
+def latest_ci_run(checks: tuple[dict[str, str | None], ...] | list[dict[str, str | None]]) -> CiRun | None:
+    """Najnowszy run workflow ``CI`` na HEAD albo ``None``, gdy rollup nie ma żadnego checku tego workflow.
+
+    Po zamknięciu i otwarciu PR rollup ma obok siebie checki kilku runów CI na tym samym HEAD, a liczy się tylko
+    najnowszy: ten o największym identyfikatorze runu z ``detailsUrl`` checku, bo GitHub nadaje identyfikatory rosnąco
+    (porównanie liczb, nie napisów i nie ``startedAt``). Checki starszych runów nic nie znaczą. Check workflow ``CI``
+    z ``detailsUrl`` innej postaci daje ``UnknownRun``, zamiast zgadywać jego run. Checki innych workflowów i statusy
+    commitu (bez ``workflowName``, ustawi je każdy z prawem zapisu) do żadnego runu CI nie należą.
+    """
+
+    runs: dict[int, list[dict[str, str | None]]] = {}
+    for check in checks:
+        if check.get("workflowName") != github.CI_WORKFLOW:
+            continue
+        url = check.get("detailsUrl") or ""
+        found = _JOB_URL.fullmatch(url)
+        if found is None:
+            raise UnknownRun(str(check.get("name")), url)
+        runs.setdefault(int(found["run"]), []).append(check)
+    if not runs:
+        return None
+    latest = max(runs)
+    return CiRun(latest, tuple(runs[latest]))
