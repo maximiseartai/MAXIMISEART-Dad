@@ -5,15 +5,15 @@ zadanie zgłosiło każdą swoją jednostkę."""
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 import dataclasses
 import json
 import math
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import tomllib
+from typing import NoReturn
 
 import pytest
 
@@ -37,6 +37,22 @@ ROOT = Path(__file__).resolve().parents[1]
 FILES = [f"tests/test_{index:02}.py" for index in range(40)]
 # Plik dłuższy niż zadanie, jak test_uszkodzone_wejscia: 1100 s testów na Windows.
 LONG = "tests/test_dlugi.py"
+
+
+class _BezLogowania:
+    """GitHub, którego każde zapytanie pada tak, jak ``GhApi`` z ``gh`` bez logowania."""
+
+    def json(self, sciezka: str) -> NoReturn:
+        raise RuntimeError("gh: not logged in")
+
+    def bajty(self, sciezka: str) -> NoReturn:
+        raise RuntimeError("gh: not logged in")
+
+    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> NoReturn:
+        raise RuntimeError("gh: not logged in")
+
+
+BEZ_LOGOWANIA = _BezLogowania()
 
 
 def _times(per_file_s: float = 60.0) -> czasy_ci.Czasy:
@@ -370,14 +386,10 @@ def test_plan_zmieniony_po_digest_nie_wykonuje_sie_a_required_nie_bierze_zapisow
 def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def offline(*arguments: str) -> str:
-        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="gh: not logged in")
-
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
     # Baza HEAD nie ma zmian, więc tylko push, który bazę pomija, wybiera każdy krok (ADR 0014).
-    code = plan_ci.main(["plan", "--zdarzenie", "push", "--baza", "HEAD", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
+    code = plan_ci.main(["plan", "--zdarzenie", "push", "--baza", "HEAD", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")], github=BEZ_LOGOWANIA)
     out = capsys.readouterr().out.splitlines()
     plan = plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
     output = dict(line.split("=", 1) for line in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
@@ -416,7 +428,6 @@ def mini_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]
     cases = "\n".join(f"def test_{index:02}() -> None:\n    assert {index % 10 != 7}\n" for index in range(30))
     (tmp_path / "tests" / "test_mini.py").write_text(cases, encoding="utf-8")
     (tmp_path / "pytest.ini").write_text("[pytest]\njunit_family = xunit1\n", encoding="utf-8")
-    monkeypatch.setattr(wykonaj_zadanie, "ROOT", tmp_path)
     monkeypatch.chdir(tmp_path)
     # ``wykonaj`` uruchamia pytest z ``-n auto``: tu jeden worker, bo test sam biegnie w workerze xdist.
     monkeypatch.setenv("PYTEST_XDIST_AUTO_NUM_WORKERS", "1")
@@ -453,7 +464,7 @@ def test_udzialy_pliku_dziela_go_miedzy_zadania_bez_luk_i_powtorzen_a_kazdy_ma_t
     ran = []
     for share in range(1, shares + 1):
         monkeypatch.setenv("PYTHONHASHSEED", ("0", "1", "random")[share % 3])
-        wykonaj_zadanie.wykonaj(plan, f"linux-3.14-{share}")
+        wykonaj_zadanie.wykonaj(plan, f"linux-3.14-{share}", root=mini_repo)
         ran.append(_junit_tests())
 
     assert Counter(name for names in ran for name in names) == Counter(f"test_{index:02}" for index in range(tests))
@@ -474,7 +485,7 @@ def test_zadanie_wykonuje_kroki_po_czerwonym_pytest_przerywa_krok_po_limicie_i_z
     plan = plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,))
     (mini_repo / "plan.json").write_text(plan.do_json(), encoding="utf-8")
 
-    code = wykonaj_zadanie.main(["--plan", str(mini_repo / "plan.json"), "--zadanie", job.id])
+    code = wykonaj_zadanie.main(["--plan", str(mini_repo / "plan.json"), "--zadanie", job.id], root=mini_repo)
     result = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))
 
     assert code == 1
@@ -493,7 +504,7 @@ def test_zawieszony_test_konczy_krok_pytest_po_limicie_z_linia_limitu_a_nie_po_g
     monkeypatch.setattr(plan_runu, "LIMIT_PYTEST_MIN_S", 3)
     job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_wisi.py",), 0.9)
 
-    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)), job.id)
+    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo)
     out = capsys.readouterr().out
     result = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))
 
@@ -534,7 +545,7 @@ def test_polecenie_pytest_kroku_drukuje_stosy_testu_ktory_wisi_dluzej_niz_faulth
     (mini_repo / "tests" / "test_wisi.py").write_text("import time\n\n\ndef test_wisi() -> None:\n    time.sleep(4)\n", encoding="utf-8")
     job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_wisi.py",), 1.0)
 
-    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id)
+    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo)
     out = capsys.readouterr().out
 
     assert code == 0, out
@@ -566,7 +577,7 @@ def test_bramka_ponawia_raz_test_ktory_padl_a_przejscie_po_ponowieniu_to_flaky_t
     monkeypatch.setenv("GITHUB_RUN_ID", "40380584486")
     job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    result = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id)
+    result = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo)
     records = zapis_czasow._junit(wykonaj_zadanie.JUNIT)
 
     assert result == code
@@ -581,7 +592,7 @@ def test_push_nie_ponawia_testu_ktory_padl(mini_repo: Path) -> None:
     (mini_repo / "tests" / "test_flaky.py").write_text(FLAKY.format(always=True, second="return"), encoding="utf-8")
     job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id) == 1
+    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo) == 1
     assert not niestabilne_testy.FLAKY_TESTY.exists()
 
 
@@ -600,7 +611,7 @@ def test_zadanie_zapisuje_wynik_testow_z_kwarantanny_xfail_to_porazka_a_xpass_pr
     )
     job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id)
+    wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo)
     record = niestabilne_testy.kwarantanna_z_json(niestabilne_testy.KWARANTANNA.read_text(encoding="utf-8"))
 
     assert record.zadanie == job.id
@@ -643,7 +654,7 @@ def test_bramka_ponawia_najwyzej_piec_testow_bo_wiecej_porazek_to_nie_flaky_test
     (mini_repo / "tests" / "test_flaky.py").write_text(_padajace_raz(padniete), encoding="utf-8")
     job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
-    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id) == code
+    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo) == code
     flaky_testy = [] if code else niestabilne_testy.flaky_testy_z_json(niestabilne_testy.FLAKY_TESTY.read_text(encoding="utf-8"))[0]
     assert [flaky.test for flaky in flaky_testy] == ([] if code else [f"tests/test_flaky.py::test_pada_raz_{numer}" for numer in range(5)])
     wyjscie = capsys.readouterr().out
@@ -659,7 +670,7 @@ def test_bramka_nie_ponawia_testu_ktorego_id_nie_da_sie_zglosic_wiec_zostaje_cze
     unit = "pytest:tests/z-myslnikiem/test_flaky.py"
     job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", (unit,), 1.0)
 
-    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id) == 1
+    assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo) == 1
     assert "PONOWIENIE | bez ponowienia: id testu, którego nie da się zgłosić w issue: tests/z-myslnikiem/test_flaky.py::test_pada_raz_0" in capsys.readouterr().out
     assert not niestabilne_testy.FLAKY_TESTY.exists()
 
@@ -679,7 +690,6 @@ def test_zadanie_mutation_checks_uruchamia_po_kolei_swoje_kroki_skilli_a_czesc_s
     for name, text in files.items():
         (tmp_path / ".agents" / "skills" / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / ".agents" / "skills" / name).write_text(text, encoding="utf-8")
-    monkeypatch.setattr(wykonaj_zadanie, "ROOT", tmp_path)
     monkeypatch.chdir(tmp_path)
     script = "skill:verify-a/check_a_mutations.py"
     # Krok z planu, którego zadanie nie znajduje wśród kroków skilli (plan i zadanie policzyły je inaczej), nie biegł.
@@ -693,7 +703,7 @@ def test_zadanie_mutation_checks_uruchamia_po_kolei_swoje_kroki_skilli_a_czesc_s
     plan = plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), jobs)
     results = []
     for job in jobs:
-        code = wykonaj_zadanie.wykonaj(plan, job.id)
+        code = wykonaj_zadanie.wykonaj(plan, job.id, root=tmp_path)
         units = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))["jednostki"]
         results.append((code, [(unit["klucz"], unit["status"]) for unit in units], capsys.readouterr().out.splitlines()[-1]))
 
@@ -726,12 +736,11 @@ def test_zapis_zadania_mutation_checks_ma_ostrzezenia_czas_blisko_limitu_skryptu
     (tmp_path / ".agents" / "skills" / "verify-a" / "scripts").mkdir(parents=True)
     (tmp_path / ".agents" / "skills" / "verify-a" / "SKILL.md").write_text("", encoding="utf-8")
     (tmp_path / ".agents" / "skills" / "verify-a" / "scripts" / "check_a_mutations.py").write_text(script, encoding="utf-8")
-    monkeypatch.setattr(wykonaj_zadanie, "ROOT", tmp_path)
     monkeypatch.chdir(tmp_path)
     step = "skill:verify-a/check_a_mutations.py"
     job = plan_runu.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", (f"{step}#1/2",), 1.0)
 
-    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.NOC, plan_ci.CEL_S, (), (job,)), job.id)
+    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.NOC, plan_ci.CEL_S, (), (job,)), job.id, root=tmp_path)
 
     record = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))
     assert (code, [(unit["klucz"], unit["status"]) for unit in record["jednostki"]]) == (0, [(step, "ok")]), capsys.readouterr().out
@@ -760,20 +769,15 @@ SKILL_SCRIPT = ".agents/skills/verify-a/scripts/check_a_mutations.py"
 def test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmiany(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str, changed: str, reported: list[str]
 ) -> None:
-    def offline(*arguments: str) -> str:
-        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="gh: not logged in")
-
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n", "tests/test_a.py": "def test_a() -> None:\n    pass\n", **SKILL})
     commit(repo, "baza")
     git(repo, "branch", "baza")
     with (repo / changed).open("a", encoding="utf-8") as file:
         file.write("\n\ndef b(x: int) -> bool:\n    return x < 3\n")
     commit(repo, "zmiana")
-    monkeypatch.setattr(plan_ci, "ROOT", repo)
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
-    code = plan_ci.main(["plan", "--zdarzenie", event, "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
+    code = plan_ci.main(["plan", "--zdarzenie", event, "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")], root=repo, github=BEZ_LOGOWANIA)
     out = capsys.readouterr().out
     output = dict(line.split("=", 1) for line in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
 
@@ -799,19 +803,14 @@ def test_plan_pull_requestu_i_nocy_startuje_mutation_checks_tylko_z_praca_od_zmi
 def test_plan_bez_zdarzenia_to_plan_pull_requestu_a_plan_pushu_nie_czyta_bazy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], arguments: list[str], plan_line: str
 ) -> None:
-    def offline(*arguments: str) -> str:
-        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="gh: not logged in")
-
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "A = 1\n", "tests/test_a.py": "def test_a() -> None:\n    pass\n", **SKILL})
     commit(repo, "baza")
     git(repo, "branch", "baza")
     (repo / "tests" / "test_a.py").write_text("def test_a() -> None:\n    assert True\n", encoding="utf-8")
     commit(repo, "zmiana")
-    monkeypatch.setattr(plan_ci, "ROOT", repo)
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
-    code = plan_ci.main(["plan", *arguments, "--czasy", str(tmp_path / "czasy")])
+    code = plan_ci.main(["plan", *arguments, "--czasy", str(tmp_path / "czasy")], root=repo, github=BEZ_LOGOWANIA)
     out = capsys.readouterr().out
 
     assert code == 0, out
@@ -855,9 +854,6 @@ def test_plan_biegnie_kazda_czescia_ustalona_przez_zakres_a_bez_nich_czesciami_j
 def test_zgubiony_skrypt_mutacji_albo_zly_klucz_ci_trafia_z_wyboru_do_planu_i_czerwieni_required(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], files: dict[str, str], failure: str
 ) -> None:
-    def offline(*arguments: str) -> str:
-        raise subprocess.CalledProcessError(1, ["gh", *arguments], stderr="gh: not logged in")
-
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n", **SKILL})
     commit(repo, "baza")
     git(repo, "branch", "baza")
@@ -865,10 +861,8 @@ def test_zgubiony_skrypt_mutacji_albo_zly_klucz_ci_trafia_z_wyboru_do_planu_i_cz
         (repo / name).parent.mkdir(parents=True, exist_ok=True)
         (repo / name).write_text(text, encoding="utf-8")
     commit(repo, "zmiana")
-    monkeypatch.setattr(plan_ci, "ROOT", repo)
-    monkeypatch.setattr(czasy_ci, "_gh", offline)
 
-    code = plan_ci.main(["plan", "--zdarzenie", "pull_request", "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")])
+    code = plan_ci.main(["plan", "--zdarzenie", "pull_request", "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")], root=repo, github=BEZ_LOGOWANIA)
     plan = plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
     every_job_green = {"plan": "success", "pytest": "success", "mutations": "success"}
     complete = [_record(plan, job, _reported(job)) for job in plan.zadania]

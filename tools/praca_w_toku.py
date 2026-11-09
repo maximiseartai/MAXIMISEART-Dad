@@ -325,14 +325,12 @@ def _update_verdict(root: Path, branch: str | None) -> str:
 
     ref = f"refs/heads/{branch}" if branch is not None else _before_rebase(root) or "HEAD"
     try:
-        merged = repo.git(root, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ref, BASE)
-    except subprocess.CalledProcessError as conflict:
-        if conflict.returncode != 1:
-            reason = (conflict.stderr.strip().splitlines() or [f"kod {conflict.returncode}"])[0]
-            return f"{AKTUALIZACJA}nieznana (git merge-tree: {reason}){_base_note(root)}"
-        merged = conflict.stdout
-    if conflicts := sorted(set(merged.split("\0")[1:]) - {""}):
-        verdict = f"potrzebna (konflikt w: {', '.join(conflicts)})"
+        merged = repo.merge_tree(root, ref, BASE)
+    except subprocess.CalledProcessError as error:
+        reason = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
+        return f"{AKTUALIZACJA}nieznana (git merge-tree: {reason}){_base_note(root)}"
+    if merged.conflicts:
+        verdict = f"potrzebna (konflikt w: {', '.join(sorted(merged.conflicts))})"
     elif shared := sorted(_files(root, ref) & _files(root, BASE, since=ref)):
         verdict = f"potrzebna (bez konfliktu, wspólne pliki: {', '.join(shared)})"
     else:

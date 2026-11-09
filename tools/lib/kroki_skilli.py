@@ -71,8 +71,8 @@ def _mutations(script: Path) -> tuple[Any, ...]:
 def _front(skill_md: Path) -> list[str]:
     """Linie frontmattera ``SKILL.md``.
 
-    Czytniki kluczy nie parsują frontmattera jako YAML, bo opisy skilli mają w tekście dwukropki, których YAML nie
-    przyjmuje.
+    Czytniki kluczy nie parsują frontmattera jako YAML, bo plan CI biegnie systemowym ``python3`` runnera bez PyYAML
+    (``test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standardowa``).
     """
 
     lines = skill_md.read_text(encoding="utf-8").splitlines() if skill_md.is_file() else []

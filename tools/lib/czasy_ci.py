@@ -50,15 +50,16 @@ from collections import defaultdict
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import io
 import json
 from pathlib import Path
-import shutil
 import statistics
 import subprocess
 import time
 from typing import Any, Literal
+import zipfile
 
-import github
+from github import REPO, GhApi, GitHub
 import jednostka
 from jednostka import Klucz, Rodzaj
 import repo
@@ -77,6 +78,11 @@ WORKERY_LOKALNE = 4
 # Tyle najnowszych artefaktów ``czasy-ci`` przegląda odczyt, szukając ``ILE_RUNOW`` z zielonych runów.
 SZUKANE_ARTEFAKTY = 30
 LIMIT_GH_S = 30.0
+# GitHub odczytu czasów: repozytorium checkoutu, a każde zapytanie najwyżej ``LIMIT_GH_S``.
+GITHUB = GhApi(limit_s=LIMIT_GH_S)
+# Błędy pobrania, po których odczyt bierze kopię z katalogu: sieć i ``gh`` (``BladApi`` z ``GhApi``, limit czasu),
+# odpowiedź API w innym kształcie i artefakt bez pliku.
+_BLEDY_POBRANIA = (OSError, subprocess.SubprocessError, RuntimeError, ValueError, KeyError, TypeError, zipfile.BadZipFile)
 
 
 @dataclass(frozen=True)
@@ -165,11 +171,7 @@ def wczytaj(plik: Path) -> Zapis:
     return Zapis(**{**dane, "jednostki": tuple(Jednostka(**jednostka) for jednostka in dane["jednostki"])})
 
 
-def _gh(*argumenty: str) -> str:
-    return github.gh(*argumenty, limit_s=LIMIT_GH_S)
-
-
-def _pobierz(katalog: Path) -> None:
+def _pobierz(katalog: Path, github: GitHub) -> None:
     """Artefakty ``czasy-ci`` ``ILE_RUNOW`` najnowszych zielonych runów main do ``<run>.json``; starsze usuwa.
 
     Zapytania idą równolegle, bo Plan CI czeka na nie na ścieżce krytycznej runu. Zielony run main ma swój artefakt, więc
@@ -177,16 +179,22 @@ def _pobierz(katalog: Path) -> None:
     """
 
     def pobierz(run: int) -> None:
-        pobrany = katalog / f"{run}.pobieranie"
-        shutil.rmtree(pobrany, ignore_errors=True)
-        _gh("run", "download", str(run), "--name", ARTEFAKT, "--dir", str(pobrany))
-        (pobrany / f"{ARTEFAKT}.json").replace(katalog / f"{run}.json")
-        shutil.rmtree(pobrany)
+        with zipfile.ZipFile(io.BytesIO(github.bajty(f"{REPO}/actions/artifacts/{artefakt_runu[run]}/zip"))) as archiwum:
+            tresc = archiwum.read(f"{ARTEFAKT}.json")
+        pobrany = katalog / f"{run}.json.pobieranie"
+        pobrany.write_bytes(tresc)
+        pobrany.replace(katalog / f"{run}.json")
 
     with ThreadPoolExecutor() as pula:
-        zielone = pula.submit(_gh, "api", f"repos/{{owner}}/{{repo}}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page={SZUKANE_ARTEFAKTY}", "--jq", ".workflow_runs[].id")
-        artefakty = pula.submit(_gh, "api", f"repos/{{owner}}/{{repo}}/actions/artifacts?name={ARTEFAKT}&per_page={SZUKANE_ARTEFAKTY}", "--jq", ".artifacts[] | select(.expired | not) | .workflow_run.id")
-        runy = sorted({int(run) for run in artefakty.result().split() if run in set(zielone.result().split())}, reverse=True)[:ILE_RUNOW]
+        zielone = pula.submit(github.json, f"{REPO}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page={SZUKANE_ARTEFAKTY}")
+        artefakty = pula.submit(github.json, f"{REPO}/actions/artifacts?name={ARTEFAKT}&per_page={SZUKANE_ARTEFAKTY}")
+        id_zielonych = {int(run["id"]) for run in zielone.result()["workflow_runs"]}
+        artefakt_runu = {
+            run: int(artefakt["id"])
+            for artefakt in artefakty.result()["artifacts"]
+            if not artefakt["expired"] and (run := int(artefakt["workflow_run"]["id"])) in id_zielonych
+        }
+        runy = sorted(artefakt_runu, reverse=True)[:ILE_RUNOW]
         list(pula.map(pobierz, [run for run in runy if not (katalog / f"{run}.json").is_file()]))
     for plik in katalog.glob("*.json"):
         if plik.stem.isdigit() and int(plik.stem) not in runy:
@@ -217,19 +225,19 @@ def katalog_checkoutu(root: Path) -> Path:
     return repo.common_dir(root) / ARTEFAKT
 
 
-def z_mainu(katalog: Path, *, odswiez_po_s: float = 0) -> Czasy:
-    """``Czasy`` z artefaktów w ``katalog``, który najpierw odświeża z GitHuba, gdy ostatnie udane pobranie jest starsze
-    niż ``odswiez_po_s``. Błąd sieci, ``gh`` albo pliku nie przerywa: ``Czasy`` mają wtedy to, co się dało, i ``blad``,
-    a następny odczyt próbuje pobrać znowu."""
+def z_mainu(katalog: Path, *, odswiez_po_s: float = 0, github: GitHub = GITHUB) -> Czasy:
+    """``Czasy`` z artefaktów w ``katalog``, który najpierw odświeża z ``github``, gdy ostatnie udane pobranie jest
+    starsze niż ``odswiez_po_s``. Błąd sieci, ``gh`` albo pliku nie przerywa: ``Czasy`` mają wtedy to, co się dało, i
+    ``blad``, a następny odczyt próbuje pobrać znowu."""
 
     blad = None
     pobrane = katalog / "pobrane"
     if not pobrane.is_file() or time.time() - pobrane.stat().st_mtime >= odswiez_po_s:
         katalog.mkdir(parents=True, exist_ok=True)
         try:
-            _pobierz(katalog)
+            _pobierz(katalog, github)
             pobrane.touch()
-        except (OSError, subprocess.SubprocessError) as error:
+        except _BLEDY_POBRANIA as error:
             blad = f"pobranie {ARTEFAKT} z GitHuba: {getattr(error, 'stderr', None) or error}".strip()
     dokumenty = []
     for plik in sorted((plik for plik in katalog.glob("*.json") if plik.stem.isdigit()), key=lambda plik: int(plik.stem))[-ILE_RUNOW:]:

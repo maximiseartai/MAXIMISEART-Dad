@@ -79,14 +79,26 @@ class GitHub(Protocol):
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any: ...
 
 
+class BladApi(RuntimeError):
+    """Porażka ``gh api``: komunikat z poleceniem i błędem ``gh``, a ``stderr`` to sam błąd ``gh``."""
+
+    def __init__(self, polecenie: str, stderr: str) -> None:
+        super().__init__(f"{polecenie}: {stderr}")
+        self.stderr = stderr
+
+
+@dataclass(frozen=True)
 class GhApi:
-    """``gh api`` z ``{owner}/{repo}`` repozytorium checkoutu; porażka to ``RuntimeError`` z błędem ``gh``."""
+    """``gh api`` z ``{owner}/{repo}`` repozytorium checkoutu i limitem czasu ``limit_s`` jednego zapytania; porażka to
+    ``BladApi`` z błędem ``gh``, a limit ``subprocess.TimeoutExpired``."""
+
+    limit_s: float = 120
 
     def _api(self, *argumenty: str, wejscie: bytes | None = None) -> bytes:
         try:
-            return gh_bajty("api", *argumenty, wejscie=wejscie, limit_s=120)
+            return gh_bajty("api", *argumenty, wejscie=wejscie, limit_s=self.limit_s)
         except subprocess.CalledProcessError as blad:
-            raise RuntimeError(f"gh api {' '.join(argumenty)}: {blad.stderr.decode('utf-8', errors='replace').strip()}") from None
+            raise BladApi(f"gh api {' '.join(argumenty)}", blad.stderr.decode("utf-8", errors="replace").strip()) from None
 
     def json(self, sciezka: str) -> Any:
         return json.loads(self._api(sciezka))

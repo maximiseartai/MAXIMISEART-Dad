@@ -572,6 +572,23 @@ def test_konflikt_z_baza_jest_uwaga_a_nie_porazka(tmp_path: Path) -> None:
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
 
 
+def test_merge_z_baza_ktorego_git_nie_policzy_wywraca_krok_struktury_a_nie_jest_konfliktem(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    lines = [f"linia {number}\n" for number in range(5)]
+    _write(repo, "docs/wspolny.md", "".join(lines))
+    commit(repo, "wspólny plik")
+    _base_moved_on(repo, ("docs/wspolny.md", "".join(["z main\n", *lines[1:]])), ("docs/wspolny.md", "".join([*lines[:4], "z gałęzi\n"])))
+    # Scalenie treści pliku zmienionego po obu stronach czyta jego wersję z main, której obiektu już nie ma.
+    blob = git(repo, "rev-parse", "origin/main:docs/wspolny.md")
+    (repo / ".git" / "objects" / blob[:2] / blob[2:]).unlink()
+
+    answered = _szybko(repo)
+
+    assert re.search(r"^FAIL testy struktury po mergu z origin/main .*git merge-tree z origin/main: ", answered.stdout, re.MULTILINE | re.DOTALL), answered.stdout
+    assert "UWAGA: merge z origin/main ma konflikt" not in answered.stdout
+    assert _verdict(answered) == "SZYBKO FAIL | testy struktury po mergu z origin/main", answered.stdout
+
+
 def test_blad_typu_tylko_na_windows_wywraca_szybkie_sprawdzenie(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     _write(repo, "src/pakiet/system.py", "import os\n\n\ndef zakoncz(grupa: int) -> None:\n    os.killpg(grupa, 9)\n")

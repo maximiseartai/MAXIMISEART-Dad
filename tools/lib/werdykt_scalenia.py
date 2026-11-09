@@ -75,12 +75,12 @@ def base_problem(copy: Path, where: str) -> str | None:
 
 def merge_verdict(copy: Path, where: str, base: str, base_problem: str | None, pull: PullRequest) -> Verdict:
     try:
-        tree = repo.git(ROOT, "merge-tree", "--write-tree", "--name-only", "--no-messages", base, pull.head).splitlines()[0]
-    except subprocess.CalledProcessError as unmerged:
-        if unmerged.returncode == 1:
-            return Verdict("failure", f"Konflikt z {where}: {', '.join(unmerged.stdout.splitlines()[1:])}")
-        return Verdict("error", f"git merge-tree z {where}: {unmerged.stderr.strip()}")
-    repo.run_git(copy, "read-tree", "-u", "--reset", tree).check_returncode()
+        merged = repo.merge_tree(ROOT, base, pull.head)
+    except subprocess.CalledProcessError as error:
+        return Verdict("error", f"git merge-tree z {where}: {error.stderr.strip()}")
+    if merged.conflicts:
+        return Verdict("failure", f"Konflikt z {where}: {', '.join(merged.conflicts)}")
+    repo.run_git(copy, "read-tree", "-u", "--reset", merged.tree).check_returncode()
     try:
         failed = _failed_checks(copy)
     except _NoCheckResult as error:
