@@ -1162,20 +1162,26 @@ def test_folder_rozliczen_pracownikow_utworzony_w_trakcie_zapisywania_nie_jest_n
     assert not list(target_directory.parent.glob(f".{target_directory.name}.staging-*"))
 
 
-def test_brak_wzorca_rozliczenia_pracownika_podpowiada_zmiane_nazwy_starego_pliku(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("moved_to", "hint"),
+    [
+        ("placeholder.xlsx", " Zmień nazwę pliku placeholder.xlsx w tym samym folderze na „Wzorzec rozliczenia pracownika.xlsx”."),
+        ("inny.xlsx", ""),
+    ],
+)
+def test_brak_wzorca_rozliczenia_pracownika_podpowiada_zmiane_nazwy_tylko_pliku_pod_dawna_nazwa(
+    tmp_path: Path, moved_to: str, hint: str
 ) -> None:
     source_path, target_directory, config_path = make_fixture(tmp_path)
     worker_template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
-    worker_template_path.rename(tmp_path / "placeholder.xlsx")
+    worker_template_path.rename(tmp_path / moved_to)
 
     with pytest.raises(StopError) as raised:
         run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
 
     assert raised.value.message.what == (
         f"{UNUSABLE_WORKER_TEMPLATE_PREFIX} "
-        "Nie znaleziono Wzorca rozliczenia pracownika: Wzorzec rozliczenia pracownika.xlsx. "
-        "Zmień nazwę pliku placeholder.xlsx w tym samym folderze na „Wzorzec rozliczenia pracownika.xlsx”."
+        f"Nie znaleziono Wzorca rozliczenia pracownika: Wzorzec rozliczenia pracownika.xlsx.{hint}"
     )
     assert not target_directory.exists()
 

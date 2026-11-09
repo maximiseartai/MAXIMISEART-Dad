@@ -210,8 +210,11 @@ SETTLEMENT_SAMPLES: Samples = {
     ],
     "worker_settlements_exist": [lambda: settlement_messages.worker_settlements_exist(WORKER_SETTLEMENTS)],
     "worker_template_unusable": [
-        partial(settlement_messages.worker_template_unusable, WorkbookError(WORKER_TEMPLATE, problem))
-        for problem in Problem
+        *(
+            partial(settlement_messages.worker_template_unusable, WorkbookError(WORKER_TEMPLATE, problem))
+            for problem in Problem
+        ),
+        partial(settlement_messages.worker_template_unusable, WorkbookError(WORKER_TEMPLATE, Problem.MISSING), "placeholder.xlsx"),
     ],
     "worker_template_unusable_in_saving": [
         partial(

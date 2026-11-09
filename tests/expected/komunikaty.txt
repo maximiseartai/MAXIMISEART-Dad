@@ -370,6 +370,11 @@ worker_template_unusable #6 [ZLY_WZORZEC_PRACOWNIKA]
   Gdzie: plik Wzorzec rozliczenia pracownika.xlsx, folder config
   Co zrobić: Jeśli Wzorzec jest otwarty w Excelu, zamknij go bez zapisywania zmian i uruchom ponownie. W innym wypadku przekaż ten komunikat osobie utrzymującej narzędzie.
 
+worker_template_unusable #7 [ZLY_WZORZEC_PRACOWNIKA]
+  Co się stało: Nie można użyć Wzorca rozliczenia pracownika. Nie znaleziono Wzorca rozliczenia pracownika: Wzorzec rozliczenia pracownika.xlsx. Zmień nazwę pliku placeholder.xlsx w tym samym folderze na „Wzorzec rozliczenia pracownika.xlsx”.
+  Gdzie: plik Wzorzec rozliczenia pracownika.xlsx, folder config
+  Co zrobić: Jeśli Wzorzec jest otwarty w Excelu, zamknij go bez zapisywania zmian i uruchom ponownie. W innym wypadku przekaż ten komunikat osobie utrzymującej narzędzie.
+
 worker_template_unusable_in_saving #1 [BLAD_KOPII_WZORCA]
   Co się stało: Nie można utworzyć skoroszytów z Wzorca rozliczenia pracownika. Nie utworzono żadnego pliku pracownika.
   Gdzie: plik Wzorzec rozliczenia pracownika.xlsx, folder config

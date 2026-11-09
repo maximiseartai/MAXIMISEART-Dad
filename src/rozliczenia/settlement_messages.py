@@ -29,7 +29,6 @@ _FIX_UNMAPPED_WORKER: Final = (
     f"Popraw WYKONAWCĘ w kolumnie {WORKER_HEADER.column} albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy "
     "do konfiguracji wykonawców."
 )
-_LEGACY_WORKER_TEMPLATE_NAME: Final = "placeholder.xlsx"
 
 
 def collective_file_unusable(error: WorkbookError) -> Message:
@@ -113,10 +112,13 @@ def worker_settlements_exist(target_directory: Path) -> Message:
     )
 
 
-def worker_template_unusable(error: WorkbookError) -> Message:
-    """Wzorzec rozliczenia pracownika nie przeszedł Sprawdzania; ``error`` mówi dlaczego."""
+def worker_template_unusable(error: WorkbookError, old_name: str | None = None) -> Message:
+    """Wzorzec rozliczenia pracownika nie przeszedł Sprawdzania; ``error`` mówi dlaczego, a ``old_name`` to dawna
+    nazwa Wzorca, gdy plik o niej leży obok brakującego Wzorca."""
 
-    return workbook_messages.unusable(error, _WORKER_TEMPLATE_MESSAGES)
+    return workbook_messages.unusable(
+        error, replace(_WORKER_TEMPLATE_MESSAGES, missing=lambda path: _worker_template_missing(path, old_name))
+    )
 
 
 def _worker_template_unusable(template_path: Path, detail: str, otherwise: str = OTHERWISE_REFER) -> Message:
@@ -128,12 +130,12 @@ def _worker_template_unusable(template_path: Path, detail: str, otherwise: str =
     )
 
 
-def _worker_template_missing(template_path: Path) -> Message:
-    """Wzorca rozliczenia pracownika nie ma; obok może leżeć jego dawna nazwa ``placeholder.xlsx``."""
+def _worker_template_missing(template_path: Path, old_name: str | None = None) -> Message:
+    """Wzorca rozliczenia pracownika nie ma; obok może leżeć plik pod jego dawną nazwą ``old_name``."""
 
     detail = f"Nie znaleziono Wzorca rozliczenia pracownika: {template_path.name}."
-    if template_path.with_name(_LEGACY_WORKER_TEMPLATE_NAME).is_file():
-        detail += f" Zmień nazwę pliku {_LEGACY_WORKER_TEMPLATE_NAME} w tym samym folderze na „{template_path.name}”."
+    if old_name is not None:
+        detail += f" Zmień nazwę pliku {old_name} w tym samym folderze na „{template_path.name}”."
     return _worker_template_unusable(template_path, detail)
 
 
