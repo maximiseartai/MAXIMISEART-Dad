@@ -16,7 +16,7 @@ from __future__ import annotations
 import html
 import re
 import zipfile
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -27,7 +27,8 @@ from openpyxl.styles import Border, Font, PatternFill, Side
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 from openpyxl.worksheet.worksheet import Worksheet
 
-from atrapy.pliki_taty import REGISTER_HEADERS
+from atrapy.pliki_taty import PASTE_SHIFT, REGISTER_HEADERS
+from atrapy.workbooks import rewrite_parts
 
 ORDER_SHEET = "ZLECENIA OD 06_2025"
 HEADERS = REGISTER_HEADERS
@@ -212,7 +213,7 @@ class Intermax:
         for index, order in enumerate(raw):
             if index in blank_before:
                 number += 1
-            shift = 2 if (self.shifted and index == 0) or order.shifted else 0
+            shift = PASTE_SHIFT if (self.shifted and index == 0) or order.shifted else 0
             for column in range(1, APP_LAST + 1):
                 cell = sheet.cell(number, column)
                 cell.font = _APP_FONT
@@ -278,16 +279,6 @@ def like_excel(path: Path) -> None:
     )
 
 
-def rewrite_parts(path: Path, change: Callable[[str, bytes], bytes], added: dict[str, bytes] | None = None) -> None:
-    with zipfile.ZipFile(path) as source:
-        entries = [(info, change(info.filename, source.read(info))) for info in source.infolist()]
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
-        for info, data in entries:
-            target.writestr(info, data)
-        for name, data in (added or {}).items():
-            target.writestr(name, data)
-
-
 def _order_sheet(workbook: Workbook, title: str, *, frozen: bool = True) -> Worksheet:
     sheet = workbook.create_sheet(title)
     assert isinstance(sheet, Worksheet)
@@ -320,7 +311,7 @@ def _ordered_days(sheet: Worksheet, ordered: Sequence[Order]) -> int:
         _grid_row(sheet, row)
         sheet.row_dimensions[row].height = ORDER_HEIGHT
         for column, value in order.values().items():
-            cell = sheet.cell(row, column - (2 if order.shifted else 0), value)
+            cell = sheet.cell(row, column - (PASTE_SHIFT if order.shifted else 0), value)
             if column <= LAST:
                 cell.font = _APP_FONT if order.app_look else Font(name="Calibri", sz=9 if column == WORKER else 8)
                 cell.border = _BORDER

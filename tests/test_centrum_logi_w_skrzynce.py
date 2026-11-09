@@ -39,9 +39,9 @@ from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 from rozliczenia.domain import RunMode
 
+from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
-    FakeIssue,
     FakeReportBox,
     ToolDirectory,
     finished_view,
@@ -89,11 +89,11 @@ def box(centrum: SettlingCentrum) -> FakeReportBox:
     return centrum.surroundings.report_box
 
 
-def threads(fake: FakeReportBox) -> list[FakeIssue]:
+def threads(fake: FakeReportBox) -> list[BoxIssue]:
     return [issue for issue in fake.issues_with(LABEL) if issue.title == f"Logi Uruchomienia {PERIOD}"]
 
 
-def thread_with(centrum: SettlingCentrum, comments: int) -> FakeIssue:
+def thread_with(centrum: SettlingCentrum, comments: int) -> BoxIssue:
     """Jedyne issue Logów okresu, gdy ma już ``comments`` komentarzy, a kolejka Logów jest pusta.
 
     Skrzynka dostaje komentarz, zanim Outbox zapamięta jego adres dla Zgłoszenia i usunie plik kolejki.
@@ -159,9 +159,9 @@ def test_pierwsze_uruchomienie_okresu_zaklada_issue_i_archiwum_logow_a_kolejne_d
 ) -> None:
     centrum = watched_centrum(tmp_path)
     foreign = [
-        FakeIssue(1, LABEL, "Logi Uruchomienia 01_07_09_2026", "- Logi Uruchomienia okresu: 01_07_09_2026\n"),
-        FakeIssue(2, LABEL, f"Logi Uruchomienia {PERIOD}0", f"- Logi Uruchomienia okresu: {PERIOD}0\n"),
-        FakeIssue(3, "zgloszenie", "BRAK_WZORCA: Nie znaleziono wzorca.", f"## Komunikat\n\n{LINE}\n"),
+        BoxIssue(1, LABEL, "Logi Uruchomienia 01_07_09_2026", "- Logi Uruchomienia okresu: 01_07_09_2026\n"),
+        BoxIssue(2, LABEL, f"Logi Uruchomienia {PERIOD}0", f"- Logi Uruchomienia okresu: {PERIOD}0\n"),
+        BoxIssue(3, "zgloszenie", "BRAK_WZORCA: Nie znaleziono wzorca.", f"## Komunikat\n\n{LINE}\n"),
     ]
     box(centrum).issues.extend(foreign)
 

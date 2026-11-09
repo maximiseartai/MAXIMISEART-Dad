@@ -457,14 +457,14 @@ _CENTRUM_SHIM = """\
 from pathlib import Path
 import runpy
 import sys
-import time
 
 SERVE = {serve!r}
 ROOT = Path({root!r})
 
-pacing = ROOT / "pacing" / "ponowny-start-ms.txt"
-if pacing.exists():
-    time.sleep(int(pacing.read_text(encoding="utf-8")) / 1000)
+sys.path.insert(0, str(Path(SERVE).parent))
+from harness import Pace
+
+Pace.RESTART.wait(ROOT)
 port = sys.argv[sys.argv.index("--port") + 1]
 sys.argv = [SERVE, "--root", str(ROOT), "--port", port]
 runpy.run_path(SERVE, run_name="__main__")

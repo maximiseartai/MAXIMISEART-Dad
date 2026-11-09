@@ -17,7 +17,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from atrapy import pliki_taty
-from atrapy.pliki_taty import AMOUNT_COLUMN, FIRST_DATA_ROW, HEADER_ROW, QUANTITY_COLUMNS, REGISTER_NAME
+from atrapy.pliki_taty import AMOUNT_COLUMN, FIRST_DATA_ROW, HEADER_ROW, PASTE_SHIFT, QUANTITY_COLUMNS, REGISTER_NAME
 from atrapy.settlement import write_mapping
 from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, add_external_link_fixture, set_view
 
@@ -277,7 +277,7 @@ def paste_raw_orders(
             sheet.cell(first + index, columns["AKCJE"]).value = None
             for header, value in order.items():
                 if header != "AKCJE":
-                    shift = 2 if index == 0 and columns[header] < in_place else 0
+                    shift = PASTE_SHIFT if index == 0 and columns[header] < in_place else 0
                     cell = sheet.cell(first + index, columns[header] - shift)
                     cell.value = value  # type: ignore[assignment]  # syntetyczne zlecenia mają tekst i daty
                     cell.font = RAW_ORDER_FONT

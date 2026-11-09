@@ -21,6 +21,7 @@ from drive.common import (
     settle,
     stop_banner,
 )
+from harness import Pace
 from drive.teksty import FETCHING, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON, UP_TO_DATE
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES
 
@@ -217,12 +218,10 @@ def _drive_update_in_progress(run: Run, page: Page, update: Locator) -> None:
     tool = run.fixture["tool"]
     origin, clone = Path(tool["origin"]), Path(tool["clone"])
     head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
-    pacing = run.root / "pacing" / "aktualizacja-ms.txt"
-    pacing.parent.mkdir(exist_ok=True)
     print("  harness: the local origin's only Wydanie is the clone's own commit, so the update changes nothing", flush=True)
     release_only(origin, head.stdout.strip())
     print(f"  harness: the Aktualizacja narzędzia waits {UPDATE_PACING_MS} ms before it looks for Git", flush=True)
-    pacing.write_text(str(UPDATE_PACING_MS), encoding="utf-8")
+    pacing = Pace.UPDATE.set(run.root, UPDATE_PACING_MS)
     started = len(_update_entries(run))
     diagnosis = page.get_by_role("region", name="Diagnoza")
     try:

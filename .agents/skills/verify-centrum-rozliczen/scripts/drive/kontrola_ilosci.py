@@ -18,6 +18,7 @@ from drive.common import (
     Run,
     start_centrum,
 )
+from harness import Pace
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 from atrapy.pliki_taty import REPORT_KEY_FILE
 
@@ -45,7 +46,6 @@ def drive(run: Run, page: Page) -> None:
     config = run.config
     key_file = config / REPORT_KEY_FILE
     offline = run.box / "brak-sieci"
-    pacing = run.root / "pacing" / "skrzynka-ms.txt"
     checks_before = len(box_issues(run, LABEL))
 
     run.step(FEATURE, "kontrola-w-kolejce")
@@ -95,8 +95,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "kontrola-wyslana-po-starcie")
     print(f"  harness: the internet is back; the skrzynka answers after {BOX_PACING_MS} ms", flush=True)
     remove(offline)
-    pacing.parent.mkdir(exist_ok=True)
-    pacing.write_text(str(BOX_PACING_MS), encoding="utf-8")
+    pacing = Pace.REPORT_BOX.set(run.root, BOX_PACING_MS)
     try:
         close_centrum(run, page)
         sent_before = run.log().count(f"skrzynka-wyslano etykieta={LABEL}")

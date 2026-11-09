@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, broken_rules, feature
 from quiet_machine import MachineBusy, QuietMachine
-from skrypt_skilla import Parser, new_run, part
+from skrypt_skilla import Parser, child_environment, new_run, part
 
 SCRIPTS = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS.parents[3]
@@ -49,14 +49,6 @@ class VerificationFailure(Exception):
     pass
 
 
-def _environment() -> dict[str, str]:
-    environment = os.environ.copy()
-    environment["PYTHONUTF8"] = "1"
-    environment["PYTHONIOENCODING"] = "utf-8"
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    return environment
-
-
 def driven(feature: str, environment: Mapping[str, str] = os.environ) -> tuple[str, ...]:
     """The features a run of ``--feature feature`` drives, in order: ``all`` is every feature but a measurement,
     or in CI the part ``MUTACJE_CZESC=k/n`` of them (``skrypt_skilla.part``)."""
@@ -76,7 +68,7 @@ def _run_step(name: str, arguments: list[str], evidence: Path, timeout: int = ST
         completed = subprocess.run(
             command,
             cwd=REPO_ROOT,
-            env=_environment(),
+            env=child_environment(),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
@@ -110,7 +102,7 @@ def _launch(run_root: Path, evidence: Path) -> tuple[subprocess.Popen[bytes], st
     process = subprocess.Popen(
         [sys.executable, str(SCRIPTS / "serve_centrum.py"), "--root", str(run_root), "--port", str(_free_port())],
         cwd=REPO_ROOT,
-        env=_environment(),
+        env=child_environment(),
         stdin=subprocess.DEVNULL,
         stdout=log,
         stderr=subprocess.STDOUT,

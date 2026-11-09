@@ -172,7 +172,7 @@ def _worktree(tmp_path: Path, name: str) -> Path:
     root = tmp_path / name
     shutil.copytree(SKILL_SCRIPTS, root / ".agents" / "skills" / "verify-skoroszyty-w-excelu" / "scripts")
     (root / "tools" / "lib").mkdir(parents=True)
-    for module in ("skrypt_skilla.py", "jednostka.py"):
+    for module in ("skrypt_skilla.py", "jednostka.py", "repo.py"):
         shutil.copy(SKILL_SCRIPTS.parents[3] / "tools" / "lib" / module, root / "tools" / "lib")
     shutil.copytree(SKILL_SCRIPTS.parents[3] / "tools" / "lib" / "atrapy", root / "tools" / "lib" / "atrapy")
     return root

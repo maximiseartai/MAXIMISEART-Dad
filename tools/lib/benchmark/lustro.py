@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import random
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -104,20 +103,11 @@ ACTIVITIES = ("instalacja", "serwis", "demontaż")
 
 
 
-def _main_checkout_config() -> Path | None:
-    """``config/`` głównego checkoutu: worktree dzieli z nim katalog gita, ale nie Wzorce spoza gita."""
-
-    try:
-        return repo.main_checkout(ROOT) / "config"
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-
 def _config_with(name: str) -> Path:
     local = ROOT / "config"
     if (local / name).is_file():
         return local
-    main_config = _main_checkout_config()
+    main_config = repo.main_config(ROOT)
     return main_config if main_config is not None and (main_config / name).is_file() else local
 
 

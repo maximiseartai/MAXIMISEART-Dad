@@ -16,7 +16,6 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 import hashlib
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -34,7 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from rozliczenia.collective_layout import FIRST_DATA_ROW as FIRST_ROW, HEADER_ROW, QUANTITY_COLUMNS, REMARKS
-from skrypt_skilla import SKIPPED, Parser, create_run_root, new_run
+import repo
+from skrypt_skilla import SKIPPED, Parser, child_environment, create_run_root, new_run
 from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
 from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
@@ -153,17 +153,11 @@ def expect(condition: bool, message: str) -> None:
         raise VerificationFailure(message)
 
 
-def _environment() -> dict[str, str]:
-    environment = os.environ.copy()
-    environment.update({"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"})
-    return environment
-
-
 def _python(
     run: Run, name: str, arguments: list[str], *, json_output: bool = False, accepted_exits: tuple[int, ...] = (0,)
 ) -> object:
     completed = subprocess.run(
-        [sys.executable, *arguments], cwd=REPO_ROOT, env=_environment(), stdin=subprocess.DEVNULL,
+        [sys.executable, *arguments], cwd=REPO_ROOT, env=child_environment(), stdin=subprocess.DEVNULL,
         capture_output=True, text=True, encoding="utf-8", timeout=300, check=False,
     )
     record: dict[str, object] = {"script": Path(arguments[0]).name, "exit_code": completed.returncode}
@@ -183,20 +177,10 @@ def _python(
     return record.get("result")
 
 
-def _main_checkout_config() -> Path | None:
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return (REPO_ROOT / common).resolve().parent / "config"
-
-
 def _real_templates(explicit: Path | None) -> Path | None:
     """``--templates-dir``, else this checkout's ``config/``, else the main checkout's (worktrees lack the Wzorce)."""
 
-    candidates = [explicit] if explicit else [REPO_ROOT / "config", _main_checkout_config()]
+    candidates = [explicit] if explicit else [REPO_ROOT / "config", repo.main_config(REPO_ROOT)]
     for directory in candidates:
         if directory is not None and all((directory / name).is_file() for name in TEMPLATE_NAMES):
             return directory

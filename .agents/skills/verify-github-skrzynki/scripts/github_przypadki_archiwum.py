@@ -37,6 +37,7 @@ from rozliczenia.centrum.report_box import (
 
 from github_przypadki_skrzynki import BAD_KEY, Client, archive_tag, marker
 from github_wymiana import (
+    CAUGHT_UP,
     TRIAL_ARCHIVE,
     Admin,
     Case,
@@ -243,7 +244,7 @@ def _prepare_reopen(live: ArchiwumLive, earlier: Facts) -> Facts:
     return {
         **_base(live),
         "archiwum": opened.id,
-        "nadazylo_po_s": waited,
+        CAUGHT_UP: waited,
         "najnowsze_status": status,
         "najnowsze_id": latest.get("id") if isinstance(latest, dict) else None,
     }
@@ -274,7 +275,7 @@ def _prepare_find(live: ArchiwumLive, earlier: Facts) -> Facts:
         "archiwum": first.id,
         "tag_drugiego": tag,
         "drugie": other.id,
-        "nadazylo_po_s": live.settle_releases({first.id, other.id}),
+        CAUGHT_UP: live.settle_releases({first.id, other.id}),
     }
 
 

@@ -128,6 +128,13 @@ class Run:
     evidence: Path
 
 
+def child_environment() -> dict[str, str]:
+    """Środowisko procesu kroku skilla: wyjście w UTF-8 także w konsoli Windows (cp1252) i bez plików ``.pyc``, bo
+    stary ``.pyc`` z poprzedniej mutacji nie może zastąpić bieżącego źródła."""
+
+    return {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}
+
+
 def new_run(run_dir: Path, name: str) -> Run:
     evidence = run_dir / "evidence" / name
     evidence.mkdir(parents=True)

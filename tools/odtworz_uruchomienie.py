@@ -43,7 +43,6 @@ import gzip
 import json
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
 from typing import NoReturn
@@ -81,7 +80,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--konfiguracja",
         type=Path,
-        default=_main_configuration(),
+        default=repo.main_config(ROOT),
         help="Folder z Konfiguracją wykonawców i Wzorcami; domyślnie config/ głównego checkoutu.",
     )
     parser.add_argument(
@@ -166,16 +165,6 @@ def _text(path: Path) -> str:
         return (gzip.decompress(data) if path.suffix == ".gz" else data).decode("utf-8")
     except (OSError, EOFError, UnicodeDecodeError) as error:  # gzip.BadGzipFile to też OSError
         raise _Failure(f"nie da się odczytać pliku Logów {path.name}: {type(error).__name__}") from error
-
-
-def _main_configuration() -> Path | None:
-    """``config/`` głównego checkoutu (z Wzorcami Maksa), wspólnego dla każdego worktree tego repozytorium."""
-
-    try:
-        folder = repo.main_checkout(ROOT) / "config"
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return folder if folder.is_dir() else None
 
 
 def _commit_of(text: str) -> str | None:

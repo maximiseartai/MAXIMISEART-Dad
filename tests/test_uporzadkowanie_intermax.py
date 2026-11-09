@@ -63,11 +63,10 @@ from atrapy.intermax import (
     Order,
     order_rows,
     parts,
-    rewrite_parts,
 )
 from atrapy.interlocutor import Tata
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace, no_space, partial_copy, writing
-from atrapy.workbooks import without_sheet
+from atrapy.workbooks import rewrite_parts, without_sheet
 
 NOW = datetime(2026, 10, 25, 21, 5, 7)
 COPY_NAME = "INTERMAX przed uporządkowaniem 2026-10-25 21-05-07.xlsx"

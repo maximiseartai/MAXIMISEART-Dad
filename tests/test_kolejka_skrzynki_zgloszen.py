@@ -41,7 +41,8 @@ from rozliczenia.centrum.outbox import (
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Sent, Unreachable
 from rozliczenia.centrum.reports import report_target
 
-from tests.fixtures.centrum import FakeIssue, FakeReportBox
+from atrapy.skrzynka import BoxIssue
+from tests.fixtures.centrum import FakeReportBox
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
 from atrapy.sluchacz_kolejki import QueueListener
@@ -244,7 +245,7 @@ LOGS = PeriodThread(
 
 
 def test_watek_ktory_zostaje_po_zamknieciu_dostaje_czesci_jako_komentarze_w_zamknietym_issue(tmp_path: Path) -> None:
-    closed = FakeIssue(7, LOGS.label, LOGS.title, f"{LOGS.line}\n\nLogi Uruchomień tego okresu.\n")
+    closed = BoxIssue(7, LOGS.label, LOGS.title, f"{LOGS.line}\n\nLogi Uruchomień tego okresu.\n")
     box = FakeReportBox(issues=[closed])
     box.close(7)
     queue = Queue(tmp_path, box)
@@ -1074,8 +1075,8 @@ FIRST_REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n- Logi: pierwsze Uruc
 
 
 def test_zgloszenie_z_odciskiem_otwartego_zgloszenia_jest_w_nim_komentarzem_z_cala_trescia(tmp_path: Path) -> None:
-    other = FakeIssue(3, "zgloszenie", "inny problem", "- Odcisk problemu: fedcba9876543210\n")
-    open_report = FakeIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
+    other = BoxIssue(3, "zgloszenie", "inny problem", "- Odcisk problemu: fedcba9876543210\n")
+    open_report = BoxIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
     queue = Queue(tmp_path, FakeReportBox(issues=[other, open_report]))
 
     queue.outbox.post(report())
@@ -1089,7 +1090,7 @@ def test_zgloszenie_z_odciskiem_otwartego_zgloszenia_jest_w_nim_komentarzem_z_ca
 
 
 def test_zgloszenie_ktore_wrocilo_po_urwanej_odpowiedzi_na_komentarz_przychodzi_raz(tmp_path: Path) -> None:
-    open_report = FakeIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
+    open_report = BoxIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
     queue = Queue(tmp_path, FakeReportBox(issues=[open_report], lost_comment_answers=1))
 
     queue.outbox.post(report())
@@ -1103,7 +1104,7 @@ def test_zgloszenie_ktore_wrocilo_po_urwanej_odpowiedzi_na_komentarz_przychodzi_
 
 
 def test_zamkniete_zgloszenie_tego_odcisku_nie_jest_przejete(tmp_path: Path) -> None:
-    closed = FakeIssue(7, "zgloszenie", REPORT.title, REPORT_BODY)
+    closed = BoxIssue(7, "zgloszenie", REPORT.title, REPORT_BODY)
     box = FakeReportBox(issues=[closed])
     box.close(7)
     queue = Queue(tmp_path, box)
@@ -1173,7 +1174,7 @@ def report_file(line: str) -> str:
 
 
 def test_plik_zgloszenia_z_wierszem_odcisku_trafia_do_otwartego_zgloszenia_tego_odcisku(tmp_path: Path) -> None:
-    open_report = FakeIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
+    open_report = BoxIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
     queue = Queue(tmp_path, FakeReportBox(issues=[open_report]))
     queue.directory.mkdir(parents=True)
     (queue.directory / "20261023T101500000000Z-0001-zgloszenie-3f2a9c1b.json").write_text(

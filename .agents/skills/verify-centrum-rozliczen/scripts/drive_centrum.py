@@ -71,14 +71,17 @@ def main(argv: list[str] | None = None) -> int:
                 page.set_default_timeout(10_000)
                 for name in selected:
                     drive(run, page, name, driven, options)
-            except Exception:
+            except Exception as exc:
                 if "page" in locals():
-                    page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
+                    try:
+                        page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
+                    except PlaywrightError as shot:
+                        exc.add_note(f"zz-failure.png not taken: {shot.message}")
                 raise
             finally:
                 browser.close()
     except (DriveFailure, AssertionError, PlaywrightError) as exc:
-        print(f"DRIVE FAIL | {exc}", file=sys.stderr)
+        print(f"DRIVE FAIL | {exc}" + "".join(f" | {note}" for note in getattr(exc, "__notes__", ())), file=sys.stderr)
         return 1
     finally:
         for source in (run.root / "opened.jsonl", run.root / "dialogs.jsonl", settings_file(run.root), run.log_path):

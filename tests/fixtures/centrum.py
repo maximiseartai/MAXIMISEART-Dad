@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import enum
-import gzip
-import itertools
 import json
 import os
 import sys
@@ -37,22 +35,17 @@ from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.report_box import (
     REPOSITORY,
-    Archive,
     ArchiveOutcome,
-    Asset,
     CloseReason,
     Closure,
     Comment,
     CommentOutcome,
     CommentsOutcome,
     Commented,
-    Issue,
     IssuesOutcome,
     Label,
     OpenArchiveOutcome,
     Refused,
-    Rejected,
-    Removed,
     RemoveOutcome,
     ReportBox,
     SendOutcome,
@@ -75,7 +68,7 @@ from rozliczenia.workbook_files import ByteSource, file_bytes
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, stop_after_test, threads_since
-from atrapy.widok_skrzynki import shown
+from atrapy.skrzynka import Archives, BoxArchive, BoxIssue, Issues
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -128,68 +121,14 @@ class FakePlatform:
 
 
 @dataclass
-class FakeIssue:
-    """Issue fałszywej skrzynki: etykieta, tytuł, treść i komentarze tak, jak je zapisało Centrum (``text``,
-    ``comment_texts`` z identyfikatorami ``comment_ids``), a ``body`` i ``comments`` tak, jak Maks je widzi (``shown``).
-    """
-
-    number: int
-    label: Label
-    title: str
-    text: str
-    comment_texts: list[str] = field(default_factory=list)
-    comment_ids: list[int] = field(default_factory=list)
-
-    @property
-    def body(self) -> str:
-        return shown(self.text)
-
-    @property
-    def comments(self) -> list[str]:
-        return [shown(text) for text in self.comment_texts]
-
-
-@dataclass
-class FakeAsset:
-    """Plik w Archiwum okresu fałszywej skrzynki: identyfikator, nazwa, etykieta i bajty, jak je wysłało Centrum."""
-
-    id: int
-    name: str
-    label: str
-    data: bytes
-
-    @property
-    def unpacked(self) -> bytes:
-        """Plik rozpakowany gzipem, bajt w bajt, jak go dostaje Maks po ``gh release download`` i ``gunzip``."""
-
-        return gzip.decompress(self.data)
-
-    @property
-    def text(self) -> str:
-        """Plik rozpakowany (``unpacked``) jako tekst UTF-8."""
-
-        return self.unpacked.decode("utf-8")
-
-
-@dataclass
-class FakeArchive:
-    """Archiwum okresu fałszywej skrzynki (GitHub Release): identyfikator, tag, tytuł, opis i pliki po kolei."""
-
-    id: int
-    tag: str
-    title: str
-    description: str
-    assets: list[FakeAsset] = field(default_factory=list)
-
-
-@dataclass
 class FakeReportBox:
-    """Skrzynka Zgłoszeń zastąpiona zapisem założonych issue i przygotowanymi wynikami.
+    """Skrzynka Zgłoszeń zastąpiona stanem atrap (``atrapy.skrzynka``: reguły GitHuba) i przygotowanymi wynikami.
 
     Bez przygotowanego wyniku (``outcomes``, po jednym na każde zakładane issue) każde
     issue dostaje kolejny numer i jest otwarte, dopóki Maks nie zamknie jego numeru
-    (``close``, z powodem); komentarz do issue, którego nie ma, to odmowa jak 404 GitHuba. ``sent`` to Zgłoszenia
-    (etykieta ``zgloszenie``), a ``issues_with`` issue innej etykiety. ``search_failure`` to odmowa albo brak
+    (``close``, z powodem); komentarz do issue, którego nie ma, to odmowa jak 404 GitHuba. ``issues`` to issue po
+    kolei, ``sent`` to Zgłoszenia (etykieta ``zgloszenie``), a ``issues_with`` issue innej etykiety.
+    ``search_failure`` to odmowa albo brak
     połączenia przy każdym pytaniu o issue z etykietą, a ``listed`` to etykieta i ``include_closed`` każdego pytania.
     ``search_hold`` to skrzynka, która na pytanie o issue z etykietą odpowiada
     dopiero, gdy test ją puści (``set``), jak GitHub bez sieci; ``searching``
@@ -204,8 +143,7 @@ class FakeReportBox:
     nie puści (``list_caught_up``), jak lista GitHuba, która nadąża za nowym issue po kilku sekundach (#879); tak samo
     lista Archiwów (GitHub Releases) i ich plików, która nadąża za nowym Archiwum (``verify-github-skrzynki``, #887).
 
-    ``archives`` to Archiwa okresów (GitHub Release) z plikami; plik o nazwie, która w Archiwum już jest, i drugie
-    Archiwum tego samego tagu skrzynka odrzuca (``Rejected``) jak GitHub. ``archive_failure`` to odmowa albo brak sieci
+    ``archives`` to Archiwa okresów (GitHub Release) z plikami. ``archive_failure`` to odmowa albo brak sieci
     przy każdym kroku Archiwum (np. Token do Zgłoszeń bez uprawnienia do zapisu treści repozytorium), a
     ``archive_requests`` liczy kroki Archiwum, które doszły do skrzynki, także te z odmową.
 
@@ -216,9 +154,8 @@ class FakeReportBox:
     """
 
     outcomes: list[SendOutcome] = field(default_factory=list)
-    issues: list[FakeIssue] = field(default_factory=list)
+    issues: list[BoxIssue] = field(default_factory=list)
     keys: list[str] = field(default_factory=list)
-    closed: dict[int, Closure] = field(default_factory=dict)
     search_failure: Refused | Unreachable | None = None
     listed: list[tuple[Label, bool]] = field(default_factory=list)
     search_hold: threading.Event | None = None
@@ -233,16 +170,23 @@ class FakeReportBox:
     lost_edit_answers: frozenset[int] = frozenset()
     written: list[tuple[int, str]] = field(default_factory=list)
     background: frozenset[Label] = frozenset()
-    background_issues: list[FakeIssue] = field(default_factory=list)
+    background_issues: list[BoxIssue] = field(default_factory=list)
     background_comment_outcomes: list[CommentOutcome] = field(default_factory=list)
-    archives: list[FakeArchive] = field(default_factory=list)
+    archives: list[BoxArchive] = field(default_factory=list)
     archive_failure: Refused | Unreachable | None = None
     archive_requests: int = 0
     list_lag: bool = False
-    unlisted: set[int] = field(default_factory=set)
-    unlisted_archives: set[int] = field(default_factory=set)
+    _box: Issues = field(init=False)
+    _background_box: Issues = field(init=False)
+    _archive_box: Archives = field(init=False)
     _changed: threading.Condition = field(default_factory=threading.Condition)
-    _asset_ids: Iterator[int] = field(default_factory=lambda: itertools.count(1))
+
+    def __post_init__(self) -> None:
+        self._box = Issues(self.issues, lag=self.list_lag)
+        self._background_box = Issues(
+            self.background_issues, first_number=BACKGROUND_NUMBERS, comment_base=BACKGROUND_NUMBERS
+        )
+        self._archive_box = Archives(self.archives, lag=self.list_lag)
 
     def wait_until(self, condition: Callable[[FakeReportBox], bool], seconds: float = 30) -> bool:
         """Czeka, aż skrzynka dostanie to, czego test oczekuje (wysyłka w tle); ``False`` po ``seconds``."""
@@ -251,30 +195,27 @@ class FakeReportBox:
             return self._changed.wait_for(lambda: condition(self), seconds)
 
     @property
-    def sent(self) -> list[FakeIssue]:
+    def sent(self) -> list[BoxIssue]:
         return self.issues_with(REPORT.label)
 
-    def issues_with(self, label: Label) -> list[FakeIssue]:
+    def issues_with(self, label: Label) -> list[BoxIssue]:
         with self._changed:
             return [issue for issue in self.issues if issue.label == label]
 
     def open_issue(self, label: Label, title: str, body: str, *, key: str) -> SendOutcome:
         if label in self.background:
             with self._changed:
-                number = BACKGROUND_NUMBERS + len(self.background_issues)
-                self.background_issues.append(FakeIssue(number, label, title, body))
+                opened = self._background_box.open(label, title, body)
                 self._changed.notify_all()
-            return Sent(number)
+            return Sent(opened.number)
         self.opening.set()
         if self.open_hold is not None:
             self.open_hold.wait()
         with self._changed:
             self.keys.append(key)
-            outcome = self.outcomes.pop(0) if self.outcomes else Sent(number=len(self.issues) + 1)
-            if isinstance(outcome, Sent):
-                self.issues.append(FakeIssue(outcome.number, label, title, body))
-                if self.list_lag:
-                    self.unlisted.add(outcome.number)
+            outcome = self.outcomes.pop(0) if self.outcomes else None
+            if outcome is None or isinstance(outcome, Sent):
+                outcome = Sent(self._box.open(label, title, body, None if outcome is None else outcome.number).number)
                 if self.lost_answers:
                     self.lost_answers -= 1
                     outcome = Unreachable()
@@ -283,68 +224,64 @@ class FakeReportBox:
 
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
         with self._changed:
-            behind = next((issue for issue in self.background_issues if issue.number == number), None)
-            if behind is not None:
+            if self._background_box.find(number) is not None:
                 if self.background_comment_outcomes:
                     return self.background_comment_outcomes.pop(0)
-                position = len(behind.comment_texts) + 1
-                behind.comment_texts.append(body)
-                behind.comment_ids.append(number * BACKGROUND_NUMBERS + position)
+                behind = self._background_box.comment(number, body)
+                assert not isinstance(behind, Refused)
                 self._changed.notify_all()
-                return Commented(behind.comment_ids[-1], _comment_url(number, position))
+                issue, comment_id = behind
+                return Commented(comment_id, self._url_of(issue, comment_id))
             self.keys.append(key)
             self._changed.notify_all()
             if self.comment_outcomes:
                 return self.comment_outcomes.pop(0)
-            issue = next((issue for issue in self.issues if issue.number == number), None)
-            if issue is None:
-                return Refused()
-            comment_id = sum(len(issue.comment_texts) for issue in self.issues) + 1
-            issue.comment_texts.append(body)
-            issue.comment_ids.append(comment_id)
+            found = self._box.comment(number, body)
+            if isinstance(found, Refused):
+                return found
+            issue, comment_id = found
             self.written.append((comment_id, body))
             lost = self.lost_comment_answers > 0
             self.lost_comment_answers -= lost
         self.after_comment()
-        return Unreachable() if lost else Commented(comment_id, _comment_url(number, comment_id))
+        return Unreachable() if lost else Commented(comment_id, self._url_of(issue, comment_id))
 
     def comments(self, number: int, *, key: str) -> CommentsOutcome:
         with self._changed:
-            issue = next((issue for issue in (*self.issues, *self.background_issues) if issue.number == number), None)
-            if issue is None:
-                return Refused()
+            found = self._box.comments(number)
+            if isinstance(found, Refused):
+                found = self._background_box.comments(number)
+            if isinstance(found, Refused):
+                return found
             return tuple(
-                Comment(comment_id, self._url_of(issue, comment_id), text)
-                for comment_id, text in zip(issue.comment_ids, issue.comment_texts, strict=True)
+                Comment(comment_id, self._url_of(found, comment_id), text)
+                for comment_id, text in zip(found.comment_ids, found.comment_texts, strict=True)
             )
 
     def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
         with self._changed:
-            for issue in (*self.issues, *self.background_issues):
-                if comment_id in issue.comment_ids:
-                    issue.comment_texts[issue.comment_ids.index(comment_id)] = body
-                    self.edited.append(comment_id)
-                    self.written.append((comment_id, body))
-                    self._changed.notify_all()
-                    if len(self.edited) in self.lost_edit_answers:
-                        return Unreachable()
-                    return Commented(comment_id, self._url_of(issue, comment_id))
-        return Refused()
+            found = self._box.edit_comment(comment_id, body)
+            if isinstance(found, Refused):
+                found = self._background_box.edit_comment(comment_id, body)
+            if isinstance(found, Refused):
+                return found
+            self.edited.append(comment_id)
+            self.written.append((comment_id, body))
+            self._changed.notify_all()
+            if len(self.edited) in self.lost_edit_answers:
+                return Unreachable()
+            return Commented(comment_id, self._url_of(found, comment_id))
 
-    def _url_of(self, issue: FakeIssue, comment_id: int) -> str:
+    def _url_of(self, issue: BoxIssue, comment_id: int) -> str:
         """Adres komentarza: w ruchu w tle z jego miejscem w issue, inaczej z identyfikatorem."""
 
         behind = issue in self.background_issues
-        return _comment_url(issue.number, issue.comment_ids.index(comment_id) + 1 if behind else comment_id)
+        return _comment_url(issue.number, issue.position(comment_id) if behind else comment_id)
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         if label in self.background:
             with self._changed:
-                return tuple(
-                    Issue(issue.number, issue.text, self.closed.get(issue.number))
-                    for issue in self.background_issues
-                    if include_closed or issue.number not in self.closed
-                )
+                return self._background_box.listed(label, include_closed=include_closed)
         self.listed.append((label, include_closed))
         assert key, "skrzynka pytana bez klucza"
         self.searching.set()
@@ -352,23 +289,23 @@ class FakeReportBox:
             self.search_hold.wait()
         if self.search_failure is not None:
             return self.search_failure
-        return tuple(
-            Issue(issue.number, issue.text, self.closed.get(issue.number))
-            for issue in self.issues_with(label)
-            if (include_closed or issue.number not in self.closed) and issue.number not in self.unlisted
-        )
+        with self._changed:
+            return self._box.listed(label, include_closed=include_closed)
 
     def list_caught_up(self) -> None:
-        """Lista issue nadąża: widzi każde issue, które skrzynka założyła."""
+        """Lista issue i lista Archiwów nadążają: widzą każde issue i Archiwum, które skrzynka założyła."""
 
         with self._changed:
-            self.unlisted.clear()
-            self.unlisted_archives.clear()
+            self._box.caught_up()
+            self._archive_box.caught_up()
 
     def close(self, number: int, reason: CloseReason | None = "completed", at: datetime | None = None) -> None:
         """Maks zamyka issue ``number`` z powodem ``reason`` (``state_reason`` GitHuba) w chwili ``at``."""
 
-        self.closed[number] = Closure(reason, at or datetime.now(timezone.utc))
+        with self._changed:
+            issue = self._box.find(number) or self._background_box.find(number)
+            assert issue is not None, f"Maks zamyka issue {number}, którego skrzynka nie ma"
+            issue.closure = Closure(reason, at or datetime.now(timezone.utc))
 
     def archived(self, tag: str) -> dict[str, bytes]:
         """Pliki Archiwum z tagiem ``tag`` po nazwie, rozpakowane bajt w bajt; bez takiego Archiwum pusto."""
@@ -381,55 +318,34 @@ class FakeReportBox:
             self.archive_requests += 1
             if self.archive_failure is not None:
                 return self.archive_failure
-            found = next(
-                (archive for archive in self.archives if archive.tag == tag and archive.id not in self.unlisted_archives),
-                None,
-            )
-            if found is None:
-                return None
-            return Archive(found.id, tuple(Asset(asset.id, asset.name, asset.label, True) for asset in found.assets))
+            return self._archive_box.archive(tag)
 
     def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
         with self._changed:
             self.archive_requests += 1
             if self.archive_failure is not None:
                 return self.archive_failure
-            if any(archive.tag == tag for archive in self.archives):
-                return Rejected()
-            opened = FakeArchive(len(self.archives) + 1, tag, title, description)
-            self.archives.append(opened)
-            if self.list_lag:
-                self.unlisted_archives.add(opened.id)
+            outcome = self._archive_box.open_archive(tag, title, description)
             self._changed.notify_all()
-            return Archive(opened.id, ())
+            return outcome
 
     def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
         with self._changed:
             self.archive_requests += 1
             if self.archive_failure is not None:
                 return self.archive_failure
-            archive = next((archive for archive in self.archives if archive.id == archive_id), None)
-            if archive is None:
-                return Refused()
-            if any(asset.name == name for asset in archive.assets):
-                return Rejected()
-            sent = FakeAsset(next(self._asset_ids), name, label, data)
-            archive.assets.append(sent)
+            outcome = self._archive_box.upload(archive_id, name, label, data)
             self._changed.notify_all()
-            return Asset(sent.id, name, label, True)
+            return outcome
 
     def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
         with self._changed:
             self.archive_requests += 1
             if self.archive_failure is not None:
                 return self.archive_failure
-            for archive in self.archives:
-                for asset in archive.assets:
-                    if asset.id == asset_id:
-                        archive.assets.remove(asset)
-                        self._changed.notify_all()
-                        return Removed()
-            return Refused()
+            outcome = self._archive_box.remove(asset_id)
+            self._changed.notify_all()
+            return outcome
 
 
 def _comment_url(number: int, comment: int) -> str:

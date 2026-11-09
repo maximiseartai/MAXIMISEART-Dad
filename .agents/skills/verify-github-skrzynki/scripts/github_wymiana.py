@@ -62,6 +62,9 @@ WRITE_GAP_S: Final = 1.0
 
 
 Facts = dict[str, object]
+# Fakt przypadku: po ilu sekundach lista GitHuba (issue z etykietą, Release'y) pokazała to, co przygotowanie założyło;
+# ``github_skrzynki`` porównuje go z ``keyed_box.LIST_LAG_S``, na którym Centrum polega.
+CAUGHT_UP: Final = "nadazylo_po_s"
 Live = TypeVar("Live")
 Client = TypeVar("Client")
 
