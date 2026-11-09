@@ -32,11 +32,11 @@ _EMPTY: Final = "Puste szablony"
 
 
 def _figures(snapshot: ProgressSnapshot, dry_run: bool) -> list[runs_contract.Figure]:
-    counters = snapshot.metric_counters()
+    counts = snapshot.operation_counts
     return [
         count_figure(_ROWS, snapshot.rows),
-        count_figure(_PLANNED, counters["planned"]) if dry_run else count_figure(_WRITTEN, counters["written"]),
-        count_figure(_EMPTY, counters["empty"]),
+        count_figure(_PLANNED, counts.get("PLAN", 0)) if dry_run else count_figure(_WRITTEN, counts.get("ZAPISANO", 0)),
+        count_figure(_EMPTY, counts.get("PUSTY_SZABLON", 0)),
         count_figure("Problemy", snapshot.issue_count),
     ]
 

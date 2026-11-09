@@ -77,7 +77,8 @@ class ProgressSnapshot:
     template_total: int
     templates_completed: int
     rows: int
-    operation_counts: Mapping[str, int]
+    operation_counts: Mapping[WorkerStatus, int]
+    """Zakończone Przetworzenia Szablonów pracownika według wyniku."""
     current_worker: str | None
     total_elapsed_ms: int
     issue_count: int
@@ -85,16 +86,6 @@ class ProgressSnapshot:
     """Zakończone Przetworzenia Szablonów pracownika po kolei; rozpoczęte bez końca (odłączony podgląd) ich nie mają."""
     step: SavingStep | None = None
     """Ostatni krok Zapisywania procesu bez Szablonów pracownika; ``None`` przed pierwszym i w innych procesach."""
-
-    def metric_counters(self) -> dict[str, int]:
-        return {
-            "templates_total": self.template_total,
-            "templates_completed": self.templates_completed,
-            "rows": self.rows,
-            "written": self.operation_counts.get("ZAPISANO", 0),
-            "empty": self.operation_counts.get("PUSTY_SZABLON", 0),
-            "planned": self.operation_counts.get("PLAN", 0),
-        }
 
 
 def _immutable_mapping(values: Mapping[KeyT, ValueT]) -> Mapping[KeyT, ValueT]:
@@ -122,7 +113,7 @@ class ProgressProjection:
         self._template_total = 0
         self._templates_completed = 0
         self._rows = 0
-        self._operation_counts: dict[str, int] = {}
+        self._operation_counts: dict[WorkerStatus, int] = {}
         self._current_worker: str | None = None
         self._total_elapsed_ms = 0
         self._issue_count = 0
