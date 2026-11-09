@@ -34,7 +34,7 @@ from rozliczenia.centrum import restart_guardian, update_messages
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.contract import tool_update as tool_update_contract
-from rozliczenia.centrum.refusal import Refusal
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.reports import ReportHandle, Reports, UpdateReport
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.runs import RunHost
@@ -56,8 +56,6 @@ from rozliczenia.centrum.work import CentrumWork
 # Nazwa wątku Aktualizacji narzędzia (``ToolUpdates.start``); po udanej kończy się, gdy opiekun wystartował i Centrum
 # się zamknęło.
 UPDATE_THREAD: Final = "aktualizacja-narzedzia"
-# Odmowa „Wyślij do Maksa”, gdy ostatnia Aktualizacja narzędzia nie zawiodła.
-_NO_FAILED_UPDATE: Final = "Zgłoszenie powstaje po nieudanej aktualizacji narzędzia."
 
 GuardianLauncher = Callable[[Path, Restart], object]
 """Uruchamia opiekuna ponownego startu z kopii (``restart_guardian.launch``); w testach podstawiany."""
@@ -268,7 +266,7 @@ class ToolUpdates:
         with self._lock:
             failed = self._view
         if not isinstance(failed, _Failed):
-            raise Refusal(409, _NO_FAILED_UPDATE)
+            raise refusal.no_failed_update()
         return failed.report.send()
 
     def _show_step(self, step: Step) -> None:

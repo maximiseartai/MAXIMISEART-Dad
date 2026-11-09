@@ -19,21 +19,20 @@ from fastapi import APIRouter
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import periods as periods_contract
-from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal
+from rozliczenia.centrum import refusal
+from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, first_choose
+from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.period_folder import (
     PeriodFolder,
     PeriodFolderLookupError,
     PeriodFolders,
     PeriodStatus,
-    period_place_label,
     locate_period_folder,
-    month_folder_label,
     period_status_label,
     reading,
     scan_period_folders,
@@ -201,7 +200,7 @@ def requested_period(token: str) -> SettlementPeriod:
     try:
         return parse_period_token(token)
     except ValueError:
-        raise Refusal(404, "Nie ma takiego okresu.") from None
+        raise refusal.unknown_period() from None
 
 
 def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> PeriodFolder:
@@ -210,15 +209,7 @@ def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> 
     try:
         return locate_period_folder(periods_directory, period)
     except PeriodFolderLookupError as error:
-        token = period.token
-        if not error.locations:
-            raise Refusal(
-                404, f"Nie ma folderu {token} w żadnym folderze miesiąca. Załóż go w folderze INEA właściwego miesiąca."
-            ) from None
-        months = ", ".join(month_folder_label(error.periods_directory, location) for location in error.locations)
-        raise Refusal(
-            409, f"Folder {token} jest w więcej niż jednym folderze miesiąca ({months}). Zostaw go tylko w jednym."
-        ) from None
+        raise refusal.period_folder_lookup(error) from None
 
 
 def requested_folder(store: SettingsStore, token: str) -> PeriodFolder:
@@ -226,7 +217,7 @@ def requested_folder(store: SettingsStore, token: str) -> PeriodFolder:
 
     periods_directory = PERIODS_DIRECTORY.existing(store.load())
     if periods_directory is None:
-        raise Refusal(409, first_choose((PERIODS_DIRECTORY,)))
+        raise refusal.first_choose((PERIODS_DIRECTORY.name,))
     return located_period_folder(periods_directory, requested_period(token))
 
 
@@ -246,7 +237,7 @@ def periods_router(
         with reading(folder.directory):
             exists = path.exists()
         if not exists:
-            raise Refusal(404, f"{period_place_label(request.target)} okresu {token} jeszcze nie istnieje.")
+            raise refusal.place_missing(request.target, token)
         platform.open_path(path)
         return common_contract.Opened(name=path.name)
 
@@ -263,7 +254,7 @@ def periods_router(
         with reading(folder.directory):
             exists = inside and path.is_file()
         if not exists:
-            raise Refusal(404, f"Rozliczenia pracownika {request.worker} nie ma w okresie {token}.")
+            raise refusal.worker_settlement_missing(request.worker, token)
         platform.open_path(path)
         return common_contract.Opened(name=path.name)
 

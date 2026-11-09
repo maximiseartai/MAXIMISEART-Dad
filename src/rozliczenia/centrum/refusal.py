@@ -1,12 +1,19 @@
-"""Odmowa żądania API Centrum rozliczeń: kod HTTP i zdanie dla taty, które ``create_app`` oddaje jako ``Problem``.
+"""Odmowy żądań API Centrum rozliczeń: kod HTTP i zdanie dla taty, które ``create_app`` oddaje jako ``Problem``.
 
+Katalog odmów: każda odmowa Centrum powstaje z fabryki tego modułu, a każda fabryka ma próbkę w
+``tests/expected/komunikaty.txt`` (``tests/test_komunikaty_expect.py``), więc zmiana zdania odmowy zmienia ten plik.
 Moduł nie wczytuje FastAPI, bo odmawiają też reguły Centrum spoza tras, także katalog procesów
 (``tests/test_granice_importow.py``).
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Literal, assert_never
+
 from rozliczenia.centrum.contract.common import Problem
+from rozliczenia.message import explorer_check
+from rozliczenia.period_folder import PeriodFolderLookupError, PeriodPlace, month_folder_label, period_place_label
 
 
 class Refusal(Exception):
@@ -20,3 +27,187 @@ class Refusal(Exception):
 
 # Odmowy akcji na zasobie w OpenAPI: brak zasobu (404) albo zły stan (409), obie jako ``Problem``.
 NOT_FOUND_OR_CONFLICT: dict[int | str, dict[str, object]] = {404: {"model": Problem}, 409: {"model": Problem}}
+
+Retry = Literal["start", "update", "restore", "shutdown"]
+"""Co tata zrobi, gdy skończy się to, co trwa: uruchomi proces, zaktualizuje narzędzie, przywróci Kopię INTERMAX
+jeszcze raz albo zamknie Centrum rozliczeń."""
+
+
+def _retry(then: Retry) -> str:
+    match then:
+        case "start":
+            return "uruchom proces"
+        case "update":
+            return "zaktualizuj narzędzie"
+        case "restore":
+            return "przywróć kopię jeszcze raz"
+        case "shutdown":
+            return "zamknij Centrum rozliczeń"
+        case _:
+            assert_never(then)
+
+
+def not_local_address() -> Refusal:
+    return Refusal(403, "Centrum rozliczeń odpowiada tylko na adres tego komputera.")
+
+
+def not_from_centrum_card() -> Refusal:
+    return Refusal(403, "Tę akcję można wykonać tylko z karty Centrum rozliczeń.")
+
+
+def unexpected_failure() -> Refusal:
+    return Refusal(500, "W Centrum rozliczeń wystąpił nieoczekiwany błąd. Odśwież kartę i spróbuj ponownie.")
+
+
+def period_folder_unreadable(folder: str) -> Refusal:
+    """Folderu ``folder`` (nazwa) nie da się odczytać, np. brak dostępu albo OneDrive nie działa."""
+
+    return Refusal(500, f"Nie udało się odczytać folderu {folder}. {explorer_check('folder', 'odśwież kartę')}")
+
+
+def first_choose(settings: Sequence[str]) -> Refusal:
+    """„Najpierw wskaż …” z nazwami niewskazanych Ustawień ``settings``."""
+
+    return Refusal(409, f"Najpierw wskaż {' i '.join(settings)}.")
+
+
+def register_not_chosen() -> Refusal:
+    return Refusal(409, "Najpierw wybierz Rejestr zleceń w Ustawieniach.")
+
+
+def register_unavailable(register: str) -> Refusal:
+    """System nie odpowiada o Rejestrze zleceń ``register`` (nazwa pliku), np. OneDrive nie działa."""
+
+    return Refusal(
+        409,
+        f"Rejestr zleceń {register} jest teraz niedostępny. {explorer_check('jego folder', 'spróbuj ponownie')}",
+    )
+
+
+def register_missing(register: str) -> Refusal:
+    return Refusal(404, f"Nie ma Rejestru zleceń {register}. Wybierz właściwy plik w Ustawieniach.")
+
+
+def settings_not_saved() -> Refusal:
+    return Refusal(
+        500,
+        "Nie udało się zapisać Ustawień taty w folderze config. "
+        + explorer_check("folder", "spróbuj ponownie", read_only=True),
+    )
+
+
+def unknown_period() -> Refusal:
+    return Refusal(404, "Nie ma takiego okresu.")
+
+
+def period_folder_lookup(error: PeriodFolderLookupError) -> Refusal:
+    """Folderu okresu nie ma w żadnym folderze miesiąca albo jest w kilku."""
+
+    token = error.period.token
+    if not error.locations:
+        return Refusal(
+            404, f"Nie ma folderu {token} w żadnym folderze miesiąca. Załóż go w folderze INEA właściwego miesiąca."
+        )
+    months = ", ".join(month_folder_label(error.periods_directory, location) for location in error.locations)
+    return Refusal(409, f"Folder {token} jest w więcej niż jednym folderze miesiąca ({months}). Zostaw go tylko w jednym.")
+
+
+def place_missing(place: PeriodPlace, period: str) -> Refusal:
+    return Refusal(404, f"{period_place_label(place)} okresu {period} jeszcze nie istnieje.")
+
+
+def worker_settlement_missing(worker: str, period: str) -> Refusal:
+    return Refusal(404, f"Rozliczenia pracownika {worker} nie ma w okresie {period}.")
+
+
+def no_forwarding(process: str) -> Refusal:
+    """Proces o tytule ``process`` nie ma trybu Wyceny z Przekazaniem do akceptacji."""
+
+    return Refusal(409, f"{process} nie ma trybu z Przekazaniem do akceptacji.")
+
+
+def pricing_without_preview() -> Refusal:
+    return Refusal(
+        409,
+        "Wycena w efenix nie ma podglądu bez zapisu. "
+        "Uruchom ją przyciskiem „Uzupełnij bez zapisu” albo „Uzupełnij i zapisz”.",
+    )
+
+
+def closing(then: Retry) -> Refusal:
+    """Zamknięcie Centrum przyjęte: wątek, który teraz by wystartował, zginąłby z końcem serwera."""
+
+    return Refusal(409, f"Centrum rozliczeń się zamyka. Kliknij skrót „Centrum rozliczeń” na pulpicie, potem {_retry(then)}.")
+
+
+def updating(then: Retry) -> Refusal:
+    return Refusal(409, f"Trwa aktualizacja narzędzia. Poczekaj na jej wynik, potem {_retry(then)}.")
+
+
+def restoring(then: Retry) -> Refusal:
+    return Refusal(409, f"Trwa przywracanie Kopii INTERMAX. Poczekaj na jego wynik, potem {_retry(then)}.")
+
+
+def running(process: str, period: str, then: Retry) -> Refusal:
+    """Trwa Uruchomienie procesu o tytule ``process`` dla okresu ``period``."""
+
+    return Refusal(
+        409,
+        f"Trwa Uruchomienie procesu: {process}, okres {period}. "
+        f"Poczekaj na jego wynik w Uruchomieniach, potem {_retry(then)}.",
+    )
+
+
+def update_in_progress() -> Refusal:
+    return Refusal(409, "Trwa już aktualizacja narzędzia. Poczekaj na jej wynik.")
+
+
+def run_in_progress(process: str, period: str) -> Refusal:
+    """Drugi start, gdy trwa Uruchomienie procesu o tytule ``process`` dla okresu ``period``."""
+
+    return Refusal(
+        409, f"Trwa już Uruchomienie procesu: {process}, okres {period}. Poczekaj na jego wynik w Uruchomieniach."
+    )
+
+
+def unknown_run() -> Refusal:
+    return Refusal(404, "Nie ma takiego Uruchomienia procesu.")
+
+
+def not_awaiting_decision() -> Refusal:
+    return Refusal(409, "To Uruchomienie procesu nie czeka na decyzję.")
+
+
+def no_diagnosis() -> Refusal:
+    return Refusal(409, "Diagnoza jest przy Zatrzymaniu do Maksa albo przy powtórce tego samego Komunikatu.")
+
+
+def no_report_draft() -> Refusal:
+    return Refusal(409, "Zgłoszenie powstaje z Diagnozy. Najpierw kliknij „Diagnoza”.")
+
+
+def no_failed_update() -> Refusal:
+    return Refusal(409, "Zgłoszenie powstaje po nieudanej aktualizacji narzędzia.")
+
+
+def metrics_unreadable() -> Refusal:
+    return Refusal(500, "Nie udało się odczytać plików metryk. Odśwież kartę.")
+
+
+def history_unreadable() -> Refusal:
+    """Uwaga taty: historii Uruchomień nie da się odczytać."""
+
+    return Refusal(500, "Nie udało się odczytać historii Uruchomień. Odśwież kartę albo wyślij Uwagę ogólną.")
+
+
+def run_not_in_history() -> Refusal:
+    """Uwaga taty do Uruchomienia, którego nie ma już w historii."""
+
+    return Refusal(
+        404,
+        "Tego Uruchomienia nie ma już w historii Centrum rozliczeń. Wybierz inne Uruchomienie albo wyślij Uwagę ogólną.",
+    )
+
+
+def note_not_queued() -> Refusal:
+    return Refusal(500, "Uwaga się nie zapisała i nie pójdzie do Maksa. Spróbuj wysłać ją jeszcze raz.")

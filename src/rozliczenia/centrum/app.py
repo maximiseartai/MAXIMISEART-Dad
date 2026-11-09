@@ -33,6 +33,7 @@ from rozliczenia.centrum.configuration import CONFIGURATION_WAIT_S, Configuratio
 from rozliczenia.centrum.case_delivery import case_outbox
 from rozliczenia.centrum.contract.centrum import Health
 from rozliczenia.centrum.contract.common import Problem
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
@@ -136,9 +137,9 @@ def create_app(
     ) -> Response:
         host = request.headers.get("host", "")
         if urlsplit(f"//{host}").hostname not in _LOCAL_HOSTNAMES:
-            return _problem(403, "Centrum rozliczeń odpowiada tylko na adres tego komputera.")
+            return _problem(refusal.not_local_address())
         if request.method not in _SAFE_METHODS and request.headers.get("origin") != f"http://{host}":
-            return _problem(403, "Tę akcję można wykonać tylko z karty Centrum rozliczeń.")
+            return _problem(refusal.not_from_centrum_card())
         return await call_next(request)
 
     @app.middleware("http")
@@ -150,22 +151,18 @@ def create_app(
         except Exception as failure:
             route = request.scope.get("route")
             log.unexpected_failure(failure, where=f"{request.method} {getattr(route, 'path', 'poza API')}")
-            return _problem(500, "W Centrum rozliczeń wystąpił nieoczekiwany błąd. Odśwież kartę i spróbuj ponownie.")
+            return _problem(refusal.unexpected_failure())
 
     # Ostatni dodany middleware jest zewnętrzny: czas obejmuje też odmowy Host/Origin i nieoczekiwane wyjątki.
     app.middleware("http")(server_timing)
 
     @app.exception_handler(Refusal)
-    async def refused(request: Request, refusal: Refusal) -> Response:
-        return _problem(refusal.status_code, refusal.message)
+    async def refused(request: Request, refused: Refusal) -> Response:
+        return _problem(refused)
 
     @app.exception_handler(PeriodFolderInaccessible)
     async def inaccessible_folder(request: Request, inaccessible: PeriodFolderInaccessible) -> Response:
-        return _problem(
-            500,
-            f"Nie udało się odczytać folderu {inaccessible.folder.name}. "
-            "Sprawdź, czy otwiera się w Eksploratorze plików i czy OneDrive działa, potem odśwież kartę.",
-        )
+        return _problem(refusal.period_folder_unreadable(inaccessible.folder.name))
 
     # Każdy start Centrum ma własny identyfikator: karta po aktualizacji rozpozna po nim nowe Centrum.
     instance = uuid.uuid4().hex
@@ -287,8 +284,8 @@ def create_app(
     return app
 
 
-def _problem(status_code: int, message: str) -> Response:
-    return JSONResponse(Problem(message=message).model_dump(), status_code=status_code)
+def _problem(refused: Refusal) -> Response:
+    return JSONResponse(Problem(message=refused.message).model_dump(), status_code=refused.status_code)
 
 
 class _Frontend(StaticFiles):

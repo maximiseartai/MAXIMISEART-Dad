@@ -18,7 +18,7 @@ Moduł nie wczytuje ``runs``, Diagnozy, Konfiguracji, Tablicy okresów, okna efe
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +27,7 @@ from typing import Any, Final, Generic, Literal, Protocol, TypeGuard, TypeVar, g
 from rozliczenia import preparation_messages
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
@@ -184,12 +185,6 @@ class PeriodFolderCheck:
 CheckStep = SimpleCheck | PeriodFolderCheck
 
 
-def first_choose(missing: Sequence[NeededSetting]) -> str:
-    """Zdanie odmowy „Najpierw wskaż …” z nazwami niewskazanych Ustawień ``missing``."""
-
-    return f"Najpierw wskaż {' i '.join(setting.name for setting in missing)}."
-
-
 PERIODS_DIRECTORY: Final = NeededSetting(
     "folder okresów", "periods_directory", preparation_messages.periods_directory_missing
 )
@@ -222,7 +217,7 @@ class PeriodStart:
 
     creates: str
     chooser: ByStatus | RecentWeeks
-    no_preview: str | None = None
+    no_preview: Refusal | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -333,15 +328,19 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     def settings_blocker(self, settings: Settings) -> str | None:
         """„Najpierw wskaż …” z nazwami niewskazanych Ustawień procesu; ``None``, gdy wszystkie są wskazane."""
 
-        missing = [setting for setting in self.settings if setting.chosen(settings) is None]
-        return first_choose(missing) if missing else None
+        unchosen = self._unchosen(settings)
+        return None if unchosen is None else unchosen.message
+
+    def _unchosen(self, settings: Settings) -> Refusal | None:
+        missing = [setting.name for setting in self.settings if setting.chosen(settings) is None]
+        return refusal.first_choose(missing) if missing else None
 
     def required_paths(self, settings: Settings) -> Mapping[SettingField, Path]:
         """Wskazane ścieżki Ustawień procesu; ``Refusal`` ze zdaniem ``settings_blocker``, gdy czegoś brakuje."""
 
-        blocker = self.settings_blocker(settings)
-        if blocker is not None:
-            raise Refusal(409, blocker)
+        unchosen = self._unchosen(settings)
+        if unchosen is not None:
+            raise unchosen
         return {setting.field: path for setting in self.settings if (path := setting.chosen(settings)) is not None}
 
 

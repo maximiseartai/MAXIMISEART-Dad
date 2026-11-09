@@ -20,8 +20,8 @@ from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.threads import Threading
 
-ShutdownBlocker = Callable[[], str | None]
-"""Bezpieczny komunikat, dlaczego teraz nie można zamknąć Centrum, albo ``None``, gdy można."""
+ShutdownBlocker = Callable[[], Refusal | None]
+"""Odmowa z tym, dlaczego teraz nie można zamknąć Centrum, albo ``None``, gdy można."""
 
 
 class Shutdown:
@@ -39,9 +39,9 @@ class Shutdown:
         self._blocker = blocker
 
     def request(self) -> None:
-        message = self._blocker()
-        if message is not None:
-            raise Refusal(409, message)
+        refused = self._blocker()
+        if refused is not None:
+            raise refused
         self._log.shutdown_requested()
         self._requested.set()
 

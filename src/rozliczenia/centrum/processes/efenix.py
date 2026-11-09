@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Final
 
 from rozliczenia import efenix_messages, efenix_process
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import (
     PERIODS_DIRECTORY,
@@ -113,8 +114,7 @@ KIND: Final[PeriodProcessKind[EfenixInputs, PricingSummary]] = PeriodProcessKind
             frozenset({"collective_file_prepared", "worker_settlements_ready"}),
             "Żaden okres nie ma Pliku zbiorczego. Najpierw przygotuj plik zbiorczy.",
         ),
-        no_preview="Wycena w efenix nie ma podglądu bez zapisu. "
-        "Uruchom ją przyciskiem „Uzupełnij bez zapisu” albo „Uzupełnij i zapisz”.",
+        no_preview=refusal.pricing_without_preview(),
     ),
     settings=(PERIODS_DIRECTORY,),
     checks=(

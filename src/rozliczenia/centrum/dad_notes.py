@@ -26,7 +26,7 @@ from rozliczenia.client_data import ForbiddenValues
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import dad_notes as dad_notes_contract
 from rozliczenia.centrum.contract import metrics as metrics_contract
-from rozliczenia.centrum.refusal import Refusal
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.case_delivery import logs_line, note_post, shown_logs_line
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
@@ -36,11 +36,6 @@ from rozliczenia.centrum.version import version_label
 from rozliczenia.centrum.work import CentrumWork
 
 RECENT_RUNS: Final = 6
-_NOT_QUEUED: Final = "Uwaga się nie zapisała i nie pójdzie do Maksa. Spróbuj wysłać ją jeszcze raz."
-_UNKNOWN_RUN: Final = (
-    "Tego Uruchomienia nie ma już w historii Centrum rozliczeń. Wybierz inne Uruchomienie albo wyślij Uwagę ogólną."
-)
-_NO_HISTORY: Final = "Nie udało się odczytać historii Uruchomień. Odśwież kartę albo wyślij Uwagę ogólną."
 
 History = Callable[[], list[metrics_contract.ProcessRun]]
 """Uruchomienia procesu z plików metryk od najnowszego (``metrics.History.runs``); ``OSError``: pliki nieczytelne."""
@@ -111,7 +106,7 @@ def _pinnable(history: History) -> list[dad_notes_contract.PinnableRun]:
     try:
         runs = history()
     except OSError:
-        raise Refusal(500, _NO_HISTORY) from None
+        raise refusal.history_unreadable() from None
     return [dad_notes_contract.PinnableRun.model_validate(run, from_attributes=True) for run in runs if run.run_id is not None]
 
 
@@ -131,7 +126,7 @@ def _pinned(run_id: str | None, history: History, logs: LogsAddress) -> PinnedRu
         return None
     run = next((run for run in _pinnable(history) if run.run_id == run_id), None)
     if run is None:
-        raise Refusal(404, _UNKNOWN_RUN)
+        raise refusal.run_not_in_history()
     return PinnedRun(run, logs(run_id))
 
 
@@ -158,7 +153,7 @@ def send(
     queued = outbox.post(note_post(note.id, issue.title, issue.body, logs_on_the_way=logs_on_the_way))
     if not queued:
         cases.forget(NOTE, note.id)
-        raise Refusal(500, _NOT_QUEUED)
+        raise refusal.note_not_queued()
     if outbox.wait_delivered(note.id, NOTE.label, timeout_s=DELIVERY_WAIT_S):
         return common_contract.Sent(state="sent")
     return cases.queued(note.id, box)

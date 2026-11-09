@@ -23,19 +23,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 import threading
-from typing import Final, Protocol, overload
+from typing import Protocol, overload
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.contract import runs as runs_contract
-from rozliczenia.centrum.refusal import Refusal
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.reports import NoPreview, ProblemFingerprint, ReportHandle, ReportShown, Reports, StopReport
 from rozliczenia.process_run import Stop
-
-NO_DIAGNOSIS: Final = "Diagnoza jest przy Zatrzymaniu do Maksa albo przy powtórce tego samego Komunikatu."
-_NO_DRAFT: Final = "Zgłoszenie powstaje z Diagnozy. Najpierw kliknij „Diagnoza”."
 
 Diagnose = Callable[[common_contract.ProcessKey, str], Diagnosis]
 """Diagnoza procesu dla tokenu okresu Zatrzymania, z Ustawieniami taty z chwili kliknięcia."""
@@ -95,7 +92,7 @@ class Stops:
     def diagnose(self, stopped: StoppedRun) -> diagnosis_contract.Diagnosis:
         report = stopped.report
         if report is None:
-            raise Refusal(409, NO_DIAGNOSIS)
+            raise refusal.no_diagnosis()
         info = stopped.info
         diagnosis = self._diagnosis_of(info.process, info.period)
         self._log.diagnosed(process=info.process, period=info.period, cause=diagnosis.explanation.code)
@@ -116,11 +113,11 @@ class Stops:
     def send(self, stopped: StoppedRun) -> diagnosis_contract.ReportState:
         report = stopped.report
         if report is None:
-            raise Refusal(409, NO_DIAGNOSIS)
+            raise refusal.no_diagnosis()
         try:
             return report.send()
         except NoPreview:
-            raise Refusal(409, _NO_DRAFT) from None
+            raise refusal.no_report_draft() from None
 
 
 @dataclass(frozen=True, eq=False)

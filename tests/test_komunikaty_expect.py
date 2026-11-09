@@ -8,6 +8,8 @@ Katalog to moduł fabryk Komunikatów: ma wpis w ``CATALOGS``, a każda jego pub
 Moduł ``src/``, który tworzy Komunikat poza katalogiem, ma w ``OUTSIDE_CATALOGS`` próbkę każdej funkcji i stałej,
 która go tworzy (co liczy się jako utworzenie, mówi ``_creating``), więc i jego tekst trafia do pliku.
 Błąd, który fabryka tłumaczy na Komunikat, niesie fakty, a nie zdanie dla taty, więc i jego tekst pisze katalog.
+Odmowę żądania API Centrum rozliczeń (``Refusal``) tworzy tylko katalog odmów ``centrum/refusal.py``, a każda jego
+publiczna funkcja ma próbkę w ``REFUSALS``, więc i zdanie odmowy trafia do pliku, z kodem HTTP zamiast kodu Komunikatu.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from pathlib import Path
 import pkgutil
 from types import ModuleType
 import typing
+from typing import Final
 
 import pytest
 
@@ -30,6 +33,7 @@ from rozliczenia.centrum import (
     diagnosis_messages,
     fill_messages,
     notification_messages,
+    refusal,
     report_messages,
     run_cards,
     runs,
@@ -53,6 +57,7 @@ from tests.fixtures.message_samples import (
     NOTIFICATION_SAMPLES,
     PERIOD,
     PREPARATION_SAMPLES,
+    REFUSALS,
     REGISTER,
     REPORT_SAMPLES,
     SETTLEMENT_SAMPLES,
@@ -98,6 +103,10 @@ OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[],
         },
     ),
 }
+
+
+# Katalog odmów jest osobno: odmowa to kod HTTP i jedno zdanie, a nie Komunikat z kodem i trzema częściami.
+REFUSAL_CATALOG: Final = "Odmowy Centrum rozliczeń"
 
 
 def _source(module: ModuleType) -> str:
@@ -239,6 +248,12 @@ def _rendered() -> str:
             for number, sample in enumerate(factory_samples, start=1):
                 variant = f" #{number}" if len(factory_samples) > 1 else ""
                 lines += ["", *_entry(f"{factory}{variant}", sample())]
+    lines += ["", f"=== {REFUSAL_CATALOG} ({_source(refusal)}) ==="]
+    for factory, refusal_samples in REFUSALS.items():
+        for number, refusal_sample in enumerate(refusal_samples, start=1):
+            variant = f" #{number}" if len(refusal_samples) > 1 else ""
+            refused = refusal_sample()
+            lines += ["", f"{factory}{variant} [HTTP {refused.status_code}]", f"  {refused.message}"]
     return "\n".join(lines) + "\n"
 
 
@@ -250,9 +265,9 @@ def test_kazde_miejsce_tworzace_komunikat_ma_probke_w_pliku_expect() -> None:
     assert {path: creating[path] for path in outside} == outside
 
 
-@pytest.mark.parametrize("catalog", CATALOGS)
+@pytest.mark.parametrize("catalog", [*CATALOGS, REFUSAL_CATALOG])
 def test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu(catalog: str) -> None:
-    module, samples = CATALOGS[catalog]
+    module, samples = CATALOGS[catalog] if catalog in CATALOGS else (refusal, REFUSALS)
     public = {
         name
         for name, function in inspect.getmembers(module, inspect.isfunction)
@@ -266,6 +281,22 @@ def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:
     sample_sets = {name for name, value in vars(message_samples).items() if name.endswith("_SAMPLES")}
 
     assert {id(getattr(message_samples, name)) for name in sample_sets} == {id(samples) for _, samples in CATALOGS.values()}
+
+
+def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
+    """Wywołanie ``Refusal(...)`` (po nazwie, aliasie importu albo atrybucie modułu) stoi tylko w ``centrum/refusal.py``.
+
+    Granica: klasa pochodna ``Refusal``, ``Refusal`` w zmiennej lokalnej funkcji i ``copy``/``replace`` gotowej odmowy
+    łapie tylko przegląd.
+    """
+
+    def constructs(module: ModuleType) -> bool:
+        tree = ast.parse(Path(str(module.__file__)).read_text(encoding="utf-8"))
+        return any(
+            isinstance(node, ast.Call) and _resolved(module, node.func) is refusal.Refusal for node in ast.walk(tree)
+        )
+
+    assert {module.__name__ for module in _engine_modules() if constructs(module)} == {refusal.__name__}
 
 
 def _engine_modules() -> list[ModuleType]:

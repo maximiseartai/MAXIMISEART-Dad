@@ -18,7 +18,7 @@ from typing import Any, Final, assert_never
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import periods as periods_contract
 from rozliczenia.centrum.contract import runs as runs_contract
-from rozliczenia.centrum.refusal import Refusal
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook, open_in_excel
 from rozliczenia.centrum.metrics import previewed_periods
@@ -40,7 +40,6 @@ from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
 # Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
 _TILES: Final[tuple[common_contract.PeriodProcessKey, ...]] = ("preparation", "efenix", "settlement")
-_PRICING_ONLY: Final = "{title} nie ma trybu z Przekazaniem do akceptacji."
 
 
 @dataclass(frozen=True)
@@ -67,10 +66,10 @@ class PeriodStarts:
 
         kind = self.catalog.period_kind(request.process)
         if request.pricing not in (kind.view.pricing_modes or (runs_contract.DEFAULT_PRICING,)):
-            raise Refusal(409, _PRICING_ONLY.format(title=kind.title))
+            raise refusal.no_forwarding(kind.title)
         chosen = kind.required_paths(self.store.load())
         if request.mode.dry_run and kind.start.no_preview is not None:
-            raise Refusal(409, kind.start.no_preview)
+            raise kind.start.no_preview
         period = requested_period(request.period)
         start = Start(
             {need: self._path(need, chosen, period) for need in kind.path_needs},

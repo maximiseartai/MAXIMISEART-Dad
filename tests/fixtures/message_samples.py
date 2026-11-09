@@ -11,6 +11,7 @@ from datetime import date
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
+from typing import get_args
 
 from rozliczenia import tool_files
 from rozliczenia import efenix_messages, intermax_messages, intermax_replace
@@ -20,6 +21,7 @@ from rozliczenia.centrum import (
     diagnosis_messages,
     fill_messages,
     notification_messages,
+    refusal,
     report_messages,
     start_problems,
     update_messages,
@@ -45,6 +47,7 @@ from rozliczenia.period_folder import (
     NotPeriodToken,
     PeriodFolderError,
     PeriodFolderLookupError,
+    PeriodPlace,
 )
 from rozliczenia.quantity_rules import DESCRIPTION_COLUMNS
 from rozliczenia.settlement_period import parse_period_token
@@ -383,4 +386,49 @@ INTERMAX_SAMPLES: Samples = {
     "copy_damaged": [lambda: intermax_messages.copy_damaged(COPY)],
     "unexpected_failure": [intermax_messages.unexpected_failure],
     "summary_not_shown": [intermax_messages.summary_not_shown],
+}
+
+RefusalSamples = Mapping[str, Sequence[Callable[[], refusal.Refusal]]]
+_RETRIES: tuple[refusal.Retry, ...] = get_args(refusal.Retry)
+
+# Każda fabryka katalogu odmów Centrum rozliczeń; nazwa bez końcówki ``_SAMPLES``, bo odmowa nie ma kodu Komunikatu.
+REFUSALS: RefusalSamples = {
+    "not_local_address": [refusal.not_local_address],
+    "not_from_centrum_card": [refusal.not_from_centrum_card],
+    "unexpected_failure": [refusal.unexpected_failure],
+    "period_folder_unreadable": [partial(refusal.period_folder_unreadable, PERIOD)],
+    "first_choose": [
+        partial(refusal.first_choose, ["folder okresów"]),
+        partial(refusal.first_choose, ["Rejestr zleceń", "folder okresów"]),
+    ],
+    "register_not_chosen": [refusal.register_not_chosen],
+    "register_unavailable": [partial(refusal.register_unavailable, REGISTER.name)],
+    "register_missing": [partial(refusal.register_missing, REGISTER.name)],
+    "settings_not_saved": [refusal.settings_not_saved],
+    "unknown_period": [refusal.unknown_period],
+    "period_folder_lookup": [
+        lambda: refusal.period_folder_lookup(PeriodFolderLookupError(DAD_PERIODS, PARSED_PERIOD, ())),
+        lambda: refusal.period_folder_lookup(PeriodFolderLookupError(DAD_PERIODS, PARSED_PERIOD, (JUNE, JULY))),
+    ],
+    "place_missing": [partial(refusal.place_missing, place, PERIOD) for place in get_args(PeriodPlace)],
+    "worker_settlement_missing": [partial(refusal.worker_settlement_missing, "Jan Testowy", PERIOD)],
+    "no_forwarding": [partial(refusal.no_forwarding, "Przygotowanie pliku zbiorczego")],
+    "pricing_without_preview": [refusal.pricing_without_preview],
+    # Tylko pary, które daje RunHost: drugie zamknięcie po przyjętym przechodzi, drugą aktualizację odrzuca
+    # ``update_in_progress``, a drugi start ``run_in_progress``.
+    "closing": [partial(refusal.closing, then) for then in _RETRIES if then != "shutdown"],
+    "updating": [partial(refusal.updating, then) for then in _RETRIES if then != "update"],
+    "restoring": [partial(refusal.restoring, then) for then in _RETRIES],
+    "running": [partial(refusal.running, "Przebieg rozliczeń", PERIOD, then) for then in _RETRIES if then != "start"],
+    "update_in_progress": [refusal.update_in_progress],
+    "run_in_progress": [partial(refusal.run_in_progress, "Przebieg rozliczeń", PERIOD)],
+    "unknown_run": [refusal.unknown_run],
+    "not_awaiting_decision": [refusal.not_awaiting_decision],
+    "no_diagnosis": [refusal.no_diagnosis],
+    "no_report_draft": [refusal.no_report_draft],
+    "no_failed_update": [refusal.no_failed_update],
+    "metrics_unreadable": [refusal.metrics_unreadable],
+    "history_unreadable": [refusal.history_unreadable],
+    "run_not_in_history": [refusal.run_not_in_history],
+    "note_not_queued": [refusal.note_not_queued],
 }
