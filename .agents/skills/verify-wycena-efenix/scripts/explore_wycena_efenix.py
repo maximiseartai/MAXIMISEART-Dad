@@ -134,7 +134,7 @@ from atrapy.atrapa_efenix import (
     atrapa_efenix,
 )
 from atrapy.dziennik_wyceny import begun_rows, ended_outcomes, journal_path
-from atrapy.efenix import Order, write_collective_file
+from atrapy.efenix import FIRST_ROW, Order, write_collective_file
 from atrapy.interlocutor import Tata
 from atrapy.settlement import PERIOD
 
@@ -163,7 +163,6 @@ LOGIN_LIMIT_MS: Final = 4_000
 """How long the window waits for Dad's login in the checker (``efenix_browser.LOGIN_TIMEOUT_MS`` at Dad's)."""
 CASE_LIMIT_S: Final = 45.0
 """A run that takes longer hangs: the checker ends with a violation."""
-FIRST_ROW: Final = 18
 
 # --- The scenario: two orders of the Plik zbiorczy and the same orders in the Atrapa efenix -------------------------
 

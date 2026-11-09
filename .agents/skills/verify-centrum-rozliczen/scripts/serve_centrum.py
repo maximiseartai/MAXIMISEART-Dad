@@ -182,7 +182,7 @@ from rozliczenia.centrum.tool_update import ToolClone, find_git, pip_install, re
 from rozliczenia.centrum.version import commit_since, tool_commit
 from rozliczenia.input_checks import FILE_READERS, Readers
 from rozliczenia.template_file import TemplateFile
-from rozliczenia.tool_files import listen_locally
+from rozliczenia.tool_files import listen_locally, log_path
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import DataRow, RegisterRow
 from skrypt_skilla import Parser
@@ -621,7 +621,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     )
     configuration = {name: Path(path) for name, path in fixture["configuration"].items()}
     clone = Path(fixture["tool"]["clone"])
-    log = CentrumLog(root / "logs" / "centrum-rozliczen.log")
+    log = CentrumLog(log_path(root))
     shutdown = Shutdown(log)
     _pace_worker_templates(root, configuration["worker_template"])
     efenix = stack.enter_context(_efenix_window(root))

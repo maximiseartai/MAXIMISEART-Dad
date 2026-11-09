@@ -30,39 +30,13 @@ from atrapy.scenariusz_rozliczen import (
     WORKER_TEMPLATE_NAME,
 )
 from atrapy.settlement import PERIOD
+from rozliczenia import register_columns
+from rozliczenia.collective_layout import HEADER_ROW, INPUT_COLUMNS
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
-REQUIRED_REGISTER_HEADERS = frozenset(
-    {
-        "DATA GODZ. POCZ.",
-        "MIASTO",
-        "ADRES",
-        "UMOWA",
-        "URZĄDZENIA",
-        "CZYNNOŚCI",
-        "NUMER ZL.",
-        "WYKONAWCA",
-        "NUMER UMOWY",
-        "SKUTECZNE",
-        "CZYNNOŚCI ZREALIZOWANE",
-    }
-)
-TARGET_HEADERS = frozenset(
-    {
-        "DATA",
-        "MIASTO",
-        "ADRES",
-        "UMOWA",
-        "URZĄDZENIA",
-        "CZYNNOŚCI",
-        "NUMER ZL.",
-        "WYKONAWCA",
-        "NUMER UMOWY/ZLECENIA ORANGE",
-        "SKUTECZNE",
-        "CZYNNOŚCI ZREALIZOWANE",
-    }
-)
+REQUIRED_REGISTER_HEADERS = frozenset(column.register_header for column in register_columns.COLUMNS)
+TARGET_HEADERS = frozenset(register_columns.TARGET_HEADERS)
 
 
 def _available(path: Path) -> None:
@@ -119,7 +93,7 @@ def _check(root: Path, expected_version: str, *, worker_template: bool) -> tuple
         raise ValueError("Rejestr zleceń has no sheet with the required headers in row 1")
     if not TARGET_HEADERS <= _header_row(internal_template, 1):
         raise ValueError("Wzorzec rozliczenia wewnętrznego lacks expected headers in row 1")
-    if not TARGET_HEADERS <= _header_row(collective_template, 17, 11):
+    if not TARGET_HEADERS <= _header_row(collective_template, HEADER_ROW, INPUT_COLUMNS[-1]):
         raise ValueError("Wzorzec pliku zbiorczego lacks expected headers in A17:K17")
     with zipfile.ZipFile(collective_template) as archive:
         external_parts = [name for name in archive.namelist() if name.startswith("xl/externalLinks/")]

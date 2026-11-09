@@ -28,6 +28,8 @@ from drive.common import (
 )
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
+from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
+from rozliczenia.workbook_files import excel_lock_file
 
 FEATURE = "diagnoza"
 # A period without a Folder okresu that no feature prepares; the Rejestr zleceń has no orders in it, so no
@@ -76,7 +78,7 @@ def drive(run: Run, page: Page) -> None:
     internal_template = Path(configuration["internal_template"])
     untouched = [register, *(Path(configuration[key]) for key in ("internal_template", "collective_template", "worker_config"))]
     before = _snapshot(untouched)
-    lock = register.with_name(f"~${register.name}")
+    lock = excel_lock_file(register)
     diagnosis = page.get_by_role("region", name="Diagnoza")
     proposal = diagnosis.get_by_role("note", name="Propozycja aktualizacji")
     main_commit = run.root / "github" / "main-commit.txt"
@@ -342,7 +344,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "diagnoza-nieoczekiwany-wyjatek-zgloszenie")
     config = run.config
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     drop_report_key(key_file, missing_ok=True)  # no key before features/zgloszenie.md
     diagnosis.get_by_role("button", name="Wyślij do Maksa", exact=True).click()
     expect(diagnosis.get_by_role("status").filter(has_text=FOR_KEY)).to_be_visible()

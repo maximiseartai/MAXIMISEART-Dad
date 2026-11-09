@@ -31,6 +31,7 @@ import windows_desktop
 import windows_doctor
 import windows_tool
 from skrypt_skilla import Parser, new_run
+from rozliczenia.tool_files import settings_file
 
 REPO_ROOT = windows_tool.REPO_ROOT
 STATIC = REPO_ROOT / "src" / "rozliczenia" / "centrum" / "static" / "index.html"
@@ -103,8 +104,8 @@ def _plan(feature: str) -> tuple[list[str], list[str]]:
 def _keep_state(run: Run) -> None:
     state = run.evidence / "state"
     for source, name in (
-        (run.log, "centrum-rozliczen.log"),
-        (run.tool / "config" / "centrum-ustawienia.yaml", "centrum-ustawienia.yaml"),
+        (run.log, run.log.name),
+        (settings_file(run.tool), settings_file(run.tool).name),
         (Path(run.facts["opened"]), "otwarte-adresy.txt"),
         (run.root / windows_tool.FACTS, windows_tool.FACTS),
     ):

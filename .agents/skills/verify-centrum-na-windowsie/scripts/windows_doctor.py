@@ -18,6 +18,7 @@ import windows_tool
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser
+from rozliczenia.centrum.version import SERVICE
 
 
 def diagnose(root: Path) -> str:
@@ -43,7 +44,7 @@ def diagnose(root: Path) -> str:
     except OSError as failure:
         return f"DOCTOR FAIL | /api/health does not answer: {failure}"
     head = windows_tool.git(tool, "rev-parse", "HEAD", machine=True)
-    if health.get("service") != "centrum-rozliczen" or health.get("commit") != head[:7]:
+    if health.get("service") != SERVICE or health.get("commit") != head[:7]:
         return f"DOCTOR FAIL | /api/health {health} is not Centrum on the clone's commit {head[:7]}"
     return f"DOCTOR OK | pid={pid} | commit={head[:7]} | process={found[0].name} | tool={tool}"
 

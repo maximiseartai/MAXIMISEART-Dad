@@ -32,6 +32,8 @@ from drive.common import (
 )
 from drive.teksty import FOR_KEY, NOT_FOUND, TEMPLATE_MISSING
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 
 FEATURE = "zgloszenie"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.
@@ -97,7 +99,7 @@ def _queued_text(post: dict[str, object]) -> tuple[object, str]:
 def _sent(config: Path) -> list[dict[str, object]]:
     """Sent Zgłoszenia from the local state of Dad's cases; the fingerprint is their ``id``."""
 
-    cases = read_json(config / "sprawy-taty.json")["sprawy"]
+    cases = read_json(config / DAD_CASES_FILE)["sprawy"]
     return [case for case in cases if case["kind"] == "zgloszenie"]
 
 
@@ -110,7 +112,7 @@ def _shown_report(page: Page) -> tuple[str, str]:
 
 def drive(run: Run, page: Page) -> None:
     config = run.config
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     box = run.box
     diagnosis = page.get_by_role("region", name="Diagnoza")
     drop_report_key(key_file, missing_ok=True)
@@ -156,7 +158,7 @@ def drive(run: Run, page: Page) -> None:
     [waiting] = _queued_reports(run)
     run.check(_queued_text(waiting) == (title, body), "the queued Zgłoszenie is exactly the preview")
     run.check(
-        [path.name for path in (config / "zgloszenia").iterdir()] == ["kolejka"],
+        [path.name for path in run.queue.parent.iterdir()] == [run.queue.name],
         "the folder zgloszenia holds only the queue, no Markdown file",
     )
     run.check(reports(run) == [], "without a key nothing reaches the skrzynka Zgłoszeń")
@@ -174,7 +176,7 @@ def drive(run: Run, page: Page) -> None:
     page.get_by_role("link", name="Konfiguracja", exact=True).click()
     expect(page.get_by_text("Zgłoszenia: brak tokenu", exact=True)).to_be_visible()
     run.capture(page, "62-zgloszenie-konfiguracja-brak-klucza")
-    print("  harness: Maks writes the key to config/zgloszenia-klucz.txt", flush=True)
+    print(f"  harness: Maks writes the key to config/{REPORT_KEY_FILE}", flush=True)
     key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     configuration = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja")
     expect(page.get_by_text("Zgłoszenia: gotowe", exact=True)).to_be_visible()

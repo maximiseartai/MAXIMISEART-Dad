@@ -20,6 +20,7 @@ każde jej issue dostaje najwyżej jeden taki komentarz, także po ponownym star
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import Final
 
 from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS_LABEL
@@ -37,12 +38,18 @@ _LOGS_ON_THE_WAY: Final = "logi-w-drodze"
 _LOGS_REJECTED: Final = "logi-odrzucone"
 
 
+def queue_directory(config: Path) -> Path:
+    """Kolejka wysyłki Skrzynki Zgłoszeń w ``config`` narzędzia: ``config/zgloszenia/kolejka``."""
+
+    return config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
+
+
 def case_outbox(work: CentrumWork, box: KeyedBox, cases: DadCases) -> Outbox:
     """Kolejka Skrzynki Zgłoszeń pracy Centrum ``work`` w ``config/zgloszenia/kolejka``, z adresami dostarczonych wysyłek
     obok, której doręczenia dają Sprawom taty ``cases`` numer i odnośnik do Logów."""
 
     return Outbox(
-        work.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY,
+        queue_directory(work.config),
         box,
         work.log,
         clock=work.clock,

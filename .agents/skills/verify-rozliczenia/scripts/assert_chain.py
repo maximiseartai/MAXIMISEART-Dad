@@ -53,13 +53,13 @@ from atrapy.scenariusz_rozliczen import (
     worker_settlement_name,
 )
 from atrapy.settlement import PERIOD, WORKERS
+from rozliczenia import collective_layout
+from rozliczenia.collective_layout import FIRST_DATA_ROW, HEADER_ROW
 
-HEADER_ROW = 17
-FIRST_DATA_ROW = 18
-INPUT_COLUMNS = 11  # A:K
-COPIED_COLUMNS = 46  # A:AT
-LOOK_COLUMNS = 12  # A:L: Wygląd Wiersza danych, with the number format of the Plik zbiorczy cell
-READINESS_COLUMNS = range(13, 46)  # N:AT as 0-based tuple indices
+INPUT_COLUMNS = collective_layout.INPUT_COLUMNS[-1]  # A:K
+COPIED_COLUMNS = collective_layout.DATA_ROW_COLUMNS[-1]  # A:AT
+LOOK_COLUMNS = collective_layout.LOOK_COLUMNS[-1]  # A:L: Wygląd Wiersza danych, with the number format of the Plik zbiorczy cell
+READINESS_COLUMNS = range(collective_layout.QUANTITY_COLUMNS.start - 1, collective_layout.REMARKS)  # N:AT, 0-based
 # Ilości tylko dla INEA (ADR 0018): column -> word in URZĄDZENIA (any case, anywhere in the text) at which the cell stays
 # empty in the Rozliczenie pracownika. Written out here, not imported, so a broken rule in the product fails the check.
 INEA_ONLY = {"AP": "gniazdo", "AK": "technicolor"}

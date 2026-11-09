@@ -27,6 +27,11 @@ import yaml
 
 from drive import feature
 from atrapy.scenariusz_centrum import LAST_COMPLETE
+from rozliczenia.centrum.case_delivery import queue_directory
+from rozliczenia.centrum.outbox import queue_file_pattern
+from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
+from rozliczenia.tool_files import log_path
+from rozliczenia.workbook_files import excel_lock_file
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"
@@ -49,8 +54,6 @@ HIDE_TAB = (
 SHOW_TAB = "delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))"
 # Synthetic Token do Zgłoszeń Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
 REPORT_KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
-# The Logi Uruchomienia beside the Centrum log (ADR 0015): one file per Uruchomienie procesu.
-RUN_LOGS = "logs/uruchomienia"
 
 
 class DriveFailure(Exception):
@@ -118,15 +121,17 @@ class Run:
     def queue(self) -> Path:
         """The queue of the skrzynka Zgłoszeń: one file per post waiting to be sent."""
 
-        return self.config / "zgloszenia" / "kolejka"
+        return queue_directory(self.config)
 
     @property
     def run_logs_dir(self) -> Path:
-        return self.root / RUN_LOGS
+        """The Logi Uruchomienia beside the Centrum log (ADR 0015): one file per Uruchomienie procesu."""
+
+        return self.log_path.parent / RUN_LOGS_DIRECTORY
 
     @property
     def log_path(self) -> Path:
-        return self.root / "logs" / "centrum-rozliczen.log"
+        return log_path(self.root)
 
     def log(self) -> str:
         """The Centrum log as written so far; no log yet is an empty one."""
@@ -412,7 +417,7 @@ def queued(run: Run, label: str, run_id: str | None = None) -> list[Path]:
     """The files waiting in the queue of the skrzynka with ``label``, oldest first; with ``run_id``, only those of that
     Uruchomienie (a file's name ends with the first 8 characters of its id)."""
 
-    return sorted(run.queue.glob(f"*-{label}-{'*' if run_id is None else run_id[:8]}.json"))
+    return sorted(run.queue.glob(queue_file_pattern(label) if run_id is None else queue_file_pattern(label, run_id)))
 
 
 def queued_posts(run: Run, label: str, run_id: str | None = None) -> list[dict[str, Any]]:
@@ -774,7 +779,7 @@ def start_card_warns_while_open(
     and removes its lock file ``~$<name>``, then fires ``focus`` as Dad's return to the window does.
     """
 
-    lock = workbook.with_name(f"~${workbook.name}")
+    lock = excel_lock_file(workbook)
     warned = page.get_by_role("alert").filter(has_text=warning)
     start = page.get_by_role("button", name="Uruchom", exact=True)
     preview = page.get_by_role("button", name="Podgląd bez zapisu", exact=True)

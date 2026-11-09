@@ -12,7 +12,7 @@ import sys
 from windows_drive.common import Run, same_path
 import windows_desktop
 from windows_tool import REPO_ROOT
-from rozliczenia.tool_files import REPOSITORY_URL
+from rozliczenia.tool_files import REPOSITORY_URL, config_dir
 
 FEATURE = "instalacja"
 
@@ -83,7 +83,7 @@ def drive(run: Run) -> None:
 
     run.step(FEATURE, "pliki-taty")
     for name in facts["dad_config"]:
-        shutil.copy2(name, run.tool / "config" / Path(name).name)
+        shutil.copy2(name, config_dir(run.tool) / Path(name).name)
     status = run.git("status", "--porcelain", "--untracked-files=all")
     run.check(status == "", "Dad's konfiguracja wykonawców and Wzorce in config/ leave the clone clean for Git")
 

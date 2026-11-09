@@ -469,6 +469,18 @@ class _Queued:
         return self.commented and (self.archived or self.post.archive is None)
 
 
+def queue_file_pattern(label: str, run_id: str = "*") -> str:
+    """Wzorzec ``glob`` plików kolejki z wysyłkami o etykiecie ``label`` Uruchomienia ``run_id`` (``*``: każdego)."""
+
+    return _file_name("*", label, run_id)
+
+
+def _file_name(version: str, label: str, run_id: str) -> str:
+    """Nazwa pliku kolejki: wersja wysyłki (chwila i numer), którą czyta następne Wydanie, etykieta i początek ``run_id``."""
+
+    return f"{version}-{label}-{run_id[:8]}.json"
+
+
 def _queue_text(post: Post, *, delivered_parts: int, archived: bool) -> str:
     archive = post.archive
     return json.dumps(
@@ -1296,7 +1308,7 @@ class Outbox:
             now = self._now()
             moment = now if self._last_moment is None else max(now, self._last_moment + _TICK)
             self._last_moment = moment
-            name = f"{moment:%Y%m%dT%H%M%S%fZ}-{next(self._sequence):04d}-{post.target.label}-{post.run_id[:8]}.json"
+            name = _file_name(f"{moment:%Y%m%dT%H%M%S%fZ}-{next(self._sequence):04d}", post.target.label, post.run_id)
         try:
             self._disk.write(self._directory / name, post.to_json())
         except OSError as failure:

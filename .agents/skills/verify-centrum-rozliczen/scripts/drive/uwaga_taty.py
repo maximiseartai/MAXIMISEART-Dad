@@ -47,6 +47,8 @@ from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Process
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
 from rozliczenia.telemetry import MetricsStore
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 
 FEATURE = "uwaga-taty"
 LABEL = "uwaga-taty"
@@ -197,7 +199,7 @@ def _shows(run: Run, figure: Locator, draft: dict[str, str], message: str) -> No
 
 
 def _notes(config: Path) -> list[dict[str, object]]:
-    path = config / "sprawy-taty.json"
+    path = config / DAD_CASES_FILE
     cases = read_json(path)["sprawy"] if path.exists() else []
     return [case for case in cases if case["kind"] == "uwaga"]
 
@@ -450,7 +452,7 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
 
 def drive(run: Run, page: Page) -> None:
     config = run.config
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     box = run.box
     pacing = run.root / "pacing" / "skrzynka-ms.txt"
     drop_report_key(key_file, missing_ok=True)
@@ -589,7 +591,7 @@ def drive(run: Run, page: Page) -> None:
     notes = _notes(config)
     run.check(
         len(notes) == notes_before + 1 and notes[-1]["title"] == first["title"] and notes[-1]["number"] is None,
-        "config/sprawy-taty.json keeps the Uwaga's title without an issue number",
+        f"config/{DAD_CASES_FILE} keeps the Uwaga's title without an issue number",
     )
     run.check(
         f"skrzynka-czeka etykieta={LABEL} okres=bez-okresu przyczyna=brak-klucza" in run.log(),
@@ -641,7 +643,7 @@ def drive(run: Run, page: Page) -> None:
     notes = _notes(config)
     run.check(
         [note["number"] for note in notes[notes_before:]] == [issue["number"] for issue in issues[issues_before:]],
-        "config/sprawy-taty.json has both issue numbers",
+        f"config/{DAD_CASES_FILE} has both issue numbers",
     )
     log = run.log()
     run.check(
@@ -870,7 +872,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     note = _notes(config)[-1]
     run.check(
         (note["title"], note["number"], note["run_id"]) == (pinned["title"], new[0]["number"], run_id),
-        "config/sprawy-taty.json keeps the issue number and the Uruchomienie of the pinned Uwaga",
+        f"config/{DAD_CASES_FILE} keeps the issue number and the Uruchomienie of the pinned Uwaga",
     )
     _close(dialog)
 
@@ -1118,7 +1120,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     _as_maks_sees(run, page, sent, "199-uwaga-logi-dotarly")
 
     run.step(FEATURE, "uwaga-logi-nie-powstaly")
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     key = read_text(key_file)
     print("  harness: without the key the preview's Logi wait in the queue", flush=True)
     drop_report_key(key_file)

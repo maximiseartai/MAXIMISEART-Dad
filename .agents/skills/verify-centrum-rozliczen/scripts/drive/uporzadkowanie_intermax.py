@@ -22,6 +22,7 @@ from drive.common import (
     run_logs,
     stop_banner,
 )
+from rozliczenia.workbook_files import excel_lock_file
 
 FEATURE = "uporzadkowanie-intermax"
 CARD = "Uporządkuj INTERMAX"
@@ -142,7 +143,7 @@ def drive(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "otwarty")
-    lock = register.with_name(f"~${register.name}")
+    lock = excel_lock_file(register)
     lock.write_bytes(b"\x00" * 165)
     try:
         page.reload()

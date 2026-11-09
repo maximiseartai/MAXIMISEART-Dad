@@ -31,18 +31,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 import create_centrum_fixture
-from rozliczenia.tool_files import DEFAULT_PORT, REPOSITORY_URL
+from rozliczenia.tool_files import DEFAULT_PORT, HOST, REPOSITORY_URL
 from skrypt_skilla import create_run_root
 
 SCRIPTS = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS.parents[3]
 
 PORT = DEFAULT_PORT
-URL = f"http://127.0.0.1:{PORT}/"
+URL = f"http://{HOST}:{PORT}/"
 FACTS = "windows.json"
 # The tool lives on Dad's C: in his user folder, whose name has a space and a Polish letter. ``ó`` is in both Dad's
 # code page (1250) and the English runner's (1252), so the stand-in can write it where Windows uses the code page.
 TOOL_FOLDER = Path("Users") / "Józef Kowalski" / "MAXIMISEART-Dad"
+# A deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z src”): Dad finds Centrum by this name on his
+# desktop, so a change of shortcut.SHORTCUT_NAME must break the drive, not follow it.
 SHORTCUT = "Centrum rozliczeń.lnk"
 _NEW_REQUIREMENT_LINE = "# verify-centrum-na-windowsie: nowa wersja zmienia wymagania\n"
 _NOT_STARTING = 'raise ImportError("verify-centrum-na-windowsie: ta wersja Centrum nie startuje")\n'
