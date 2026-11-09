@@ -287,13 +287,15 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     """Klasa ``Refusal`` jako wartość stoi tylko w ``centrum/refusal.py``, więc tylko katalog tworzy odmowę.
 
     Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
-    odwołanie stoi tylko w typie: adnotacji, nawiasach typu (``Callable[[], Refusal | None]``) i unii ``|`` poza
-    wywołaniem i lambdą, ``except``, drugim argumencie ``isinstance``/``issubclass`` i argumencie ``exception_handler``.
-    Każde inne jest wartością i pada: wywołanie, argument wywołania (``partial(Refusal, 500)``, ``map(Refusal, …)``),
-    przypisanie do nazwy (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa i każde odwołanie wewnątrz
-    wywołania albo lambdy, także w nawiasach typu albo unii (``CACHE[Refusal(500, "x")]``,
-    ``get_args(Refusal | None)[0](…)``, ``list[Refusal].__args__[0](…)``). Granica: ``getattr`` z napisem (``"Refusal"``), import
-    wewnątrz funkcji, ``type(odmowa)(…)`` oraz ``copy``/``replace`` gotowej odmowy łapie tylko przegląd.
+    odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu albo pola, w nawiasach typu i unii ``|`` w
+    instrukcji modułu albo klasy poza wywołaniem i lambdą (alias ``Callable[[], Refusal | None]``), w ``except``, w
+    drugim argumencie ``isinstance``/``issubclass`` i w argumencie ``exception_handler``.
+    Każde inne odwołanie pada, w tym wywołanie, argument wywołania (``partial(Refusal, 500)``), przypisanie do nazwy
+    (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa, odwołanie wewnątrz wywołania albo lambdy i
+    nawiasy typu albo unia w ciele funkcji (``make = Refusal | Refusal``, ``list[Refusal].__args__[0](…)``).
+    Granica (tylko przegląd): ``getattr`` z napisem (``"Refusal"``), import wewnątrz funkcji, ``type(odmowa)(…)``,
+    ``copy``/``replace`` gotowej odmowy i klasa wyjęta z aliasu typu modułu bez odwołania do ``Refusal`` w tym miejscu
+    (``ShutdownBlocker.__args__…``).
     """
 
     def outside_type(module: ModuleType) -> bool:
@@ -326,6 +328,12 @@ def _type_positions(tree: ast.AST) -> Iterator[ast.expr]:
         if isinstance(node, ast.Call | ast.Lambda)
         for inner in ast.walk(node)
         if inner is not node
+    } | {
+        id(inner)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        for statement in node.body
+        for inner in ast.walk(statement)
     }
     for node in ast.walk(tree):
         match node:
