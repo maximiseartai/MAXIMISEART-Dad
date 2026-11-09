@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from rozliczenia.centrum import report_box
 from rozliczenia.centrum.github import API
+from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.tool_files import REPOSITORY as TOOL_REPOSITORY
 
@@ -46,6 +47,7 @@ import github_przypadki_skrzynki as skrzynka
 import github_sprzatanie
 import github_wiernosc
 from github_wymiana import (
+    CAUGHT_UP,
     RUN_MARKER,
     TRIAL,
     TRIAL_ARCHIVE,
@@ -117,6 +119,16 @@ def report_line(feature: str, result: Result) -> str:
     return f"PRZYPADEK {feature}/{result.case} | GitHub: {asked or '-'} | klient: {result.outcome} | oczekiwane: {result.expected} | {verdict}"
 
 
+def _list_lag(facts: Facts) -> list[str]:
+    """Rozjazd, gdy lista GitHuba nadążyła później niż ``LIST_LAG_S``: Centrum zakłada, że po tym czasie lista pokazuje
+    każdy zapis (``keyed_box``), więc dłuższe opóźnienie GitHuba unieważnia to założenie, choć klient odpowiada dobrze."""
+
+    waited = facts.get(CAUGHT_UP)
+    if isinstance(waited, (int, float)) and waited > LIST_LAG_S:
+        return [f"lista GitHuba nadążyła po {waited} s, a Centrum zakłada najwyżej {LIST_LAG_S:.0f} s (keyed_box.LIST_LAG_S)"]
+    return []
+
+
 def _run_case(
     case: Case[Live, Client],
     facts: Facts | None,
@@ -139,7 +151,7 @@ def _run_case(
             case.expected,
             [f"wyjątek klienta: {traceback.format_exc(limit=3)}"],
         ), None
-    problems = [*case.judge(facts, outcome), *problems]
+    problems = [*case.judge(facts, outcome), *_list_lag(facts), *problems]
     return Result(case.id, facts, exchanges, describe(outcome), case.expected, problems), outcome
 
 

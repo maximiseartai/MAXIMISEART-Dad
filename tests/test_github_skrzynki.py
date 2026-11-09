@@ -16,11 +16,13 @@ import sys
 import pytest
 
 from rozliczenia.centrum.github import HttpRequest
+from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import REPOSITORY, GitHubReportBox, Unreachable
 
 SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
 sys.path.insert(0, str(SKILL / "scripts"))
 
+import github_skrzynki  # noqa: E402
 import github_sprzatanie  # noqa: E402
 import github_wymiana  # noqa: E402
 
@@ -141,6 +143,25 @@ def test_nagrania_sa_i_nie_maja_klucza_ani_naglowkow_zadan() -> None:
                 set(exchange) == set(github_wymiana.Exchange("", "", None, None, None, None, None).to_json())
                 for exchange in case["wymiany"]
             ), name
+
+
+@pytest.mark.parametrize("case", ["etykieta-z-githuba", "lista-strony", "lista-zamkniete"])
+def test_przypadek_pada_gdy_lista_githuba_nadazyla_pozniej_niz_zaklada_centrum(case: str) -> None:
+    """Centrum zakłada, że lista GitHuba pokazuje każdy zapis po ``keyed_box.LIST_LAG_S`` (#879), więc przypadek, w
+    którym lista nadążyła później, to rozjazd, choć klient odpowiada dobrze; nagrane opóźnienie przypadek przepuszcza."""
+
+    recording = json.loads((SKILL / "nagrania" / "skrzynka-fine-grained.json").read_text(encoding="utf-8"))
+    facts = recording["przypadki"][case]["fakty"]
+    recorded = {result.case: result.problems for result in github_skrzynki.replay("skrzynka-fine-grained", recording)}
+    facts["nadazylo_po_s"] = LIST_LAG_S + 0.1
+
+    late = {result.case: result.problems for result in github_skrzynki.replay("skrzynka-fine-grained", recording)}
+
+    assert recorded[case] == []
+    assert [problem for problem in late[case] if "LIST_LAG_S" in problem] != [], late[case]
+    assert {name: problems for name, problems in late.items() if name != case} == {
+        name: problems for name, problems in recorded.items() if name != case
+    }
 
 
 def test_odtwarzanie_odmawia_zadania_spoza_nagrania() -> None:

@@ -33,7 +33,7 @@ from rozliczenia.centrum.report_box import (
     Sent,
 )
 
-from github_wymiana import RUN_MARKER, TRIAL, Admin, Case, Facts, LiveTransport
+from github_wymiana import CAUGHT_UP, RUN_MARKER, TRIAL, Admin, Case, Facts, LiveTransport
 
 # Odcisk problemu wszystkich Zgłoszeń runu: tak Centrum znajduje otwarte Zgłoszenie (ADR 0007).
 FINGERPRINT: Final = "0123456789abcdef"
@@ -218,7 +218,7 @@ def _prepare_label_by_github(live: SkrzynkaLive, earlier: Facts) -> Facts:
     return {
         "numer": number,
         "etykieta_zalozona": status == 200,
-        "nadazylo_po_s": waited,
+        CAUGHT_UP: waited,
     }
 
 
@@ -362,7 +362,7 @@ def _prepare_issue_pages(live: SkrzynkaLive, earlier: Facts) -> Facts:
     ]
     return {
         "numery": numbers,
-        "nadazylo_po_s": live.settle("kontrola-ilosci", "open", set(numbers)),
+        CAUGHT_UP: live.settle("kontrola-ilosci", "open", set(numbers)),
     }
 
 
@@ -411,7 +411,7 @@ def _prepare_closed(live: SkrzynkaLive, earlier: Facts) -> Facts:
     return {
         "otwarte": live.number("zalozenie"),
         "tresc_otwartego": text(opened),
-        "nadazylo_po_s": live.settle("zgloszenie", "all", every),
+        CAUGHT_UP: live.settle("zgloszenie", "all", every),
         **numbers,
         "zamknieto_od": closed_from.isoformat(),
     }
