@@ -140,7 +140,14 @@ def drive(run: Run, page: Page) -> None:
     for phase in percentiles["phases"]:
         if any(p["phase"] == phase["phase"] and p["duration_ms"] for e in shown_runs for p in e["phase_durations"]):
             expect(p50_row).to_contain_text(_seconds(phase["p50_ms"]))
-    run.check(True, "the table view lists each run's phase times with per-phase P50/P95 from the server")
+    stopped = [entry for entry in shown_runs if entry["result"] == "BLAD_KRYTYCZNY"]
+    for entry in stopped:
+        row = table.get_by_role("row").filter(has_text=local_time(entry["started_at"]))
+        expect(row).to_contain_text(f"✕ {_stop_word(entry)}")
+    run.check(
+        bool(stopped),
+        f"the table view lists each run's phase times with per-phase P50/P95 from the server, {len(stopped)} stops with their word",
+    )
     run.capture(page, "22-metryki-tabela-etapow")
     page.get_by_role("tab", name="Wykres", exact=True).click()
 

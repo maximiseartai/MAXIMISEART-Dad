@@ -122,7 +122,7 @@ def drive(run: Run, page: Page) -> None:
     try:
         page.reload()
         expect(_template_group(page, "Wzorzec pliku zbiorczego")).to_contain_text("Otwarty w Excelu")
-        message = page.get_by_role("alert").filter(has_text="Wzorzec jest otwarty w Excelu.")
+        message = page.get_by_role("alert", name="Ostrzeżenie", exact=True).filter(has_text="Wzorzec jest otwarty w Excelu.")
         expect(message).to_contain_text(f"plik {collective.name}, folder config")
         expect(message).to_contain_text(f"usuń z tego samego folderu pozostawiony plik ~${collective.name}")
         expect(page.get_by_text("2 z 3", exact=True)).to_be_visible()
@@ -168,7 +168,9 @@ def drive(run: Run, page: Page) -> None:
     try:
         page.reload()
         expect(_template_group(page, "Wzorzec rozliczenia pracownika")).to_contain_text("Brak pliku")
-        message = page.get_by_role("alert").filter(has_text=f"Nie znaleziono Wzorca rozliczenia pracownika: {worker_template.name}.")
+        message = page.get_by_role("alert", name="Zatrzymanie", exact=True).filter(
+            has_text=f"Nie znaleziono Wzorca rozliczenia pracownika: {worker_template.name}."
+        )
         # The same message as the Przebieg rozliczeń stop for this Wzorzec.
         expect(message).to_contain_text("Nie można użyć Wzorca rozliczenia pracownika.")
         expect(message).to_contain_text("W innym wypadku przekaż ten komunikat osobie utrzymującej narzędzie.")
