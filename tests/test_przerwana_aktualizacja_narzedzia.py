@@ -26,8 +26,8 @@ import pytest
 from rozliczenia.centrum import tool_update
 
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum
-from tests.fixtures.potomne import wait_for, wait_for_value
-from tests.fixtures.tool_clone import REPOSITORY_ROOT, FakeInstaller, ToolRepository, centrum_tool_repository, free_port
+from tests.fixtures.potomne import wait_for_value
+from tests.fixtures.tool_clone import REPOSITORY_ROOT, FakeInstaller, ToolRepository, centrum_tool_repository, free_port, centrum_health
 
 DAD_MAPPING = "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n"
 SAMPLE_MAPPING = "schema_version: 1\nworkers:\n  przyklad: Przykładowy Wykonawca\n"
@@ -67,24 +67,6 @@ def _shortcut(clone: Path, port: int) -> Iterator[subprocess.Popen[str]]:
         elif process.poll() is None:
             os.killpg(process.pid, signal.SIGTERM)
         process.communicate(timeout=30)
-
-
-def _health(process: subprocess.Popen[str], port: int) -> dict[str, Any]:
-    answers: list[dict[str, Any]] = []
-
-    def answered() -> bool:
-        try:
-            answers.append(_get(port, "/api/health", timeout_s=1))
-            return True
-        except OSError:
-            pass
-        if process.poll() is not None:
-            output = process.stdout.read() if process.stdout else ""
-            raise AssertionError(f"Centrum ze skrótu zakończyło się kodem {process.returncode}:\n{output}")
-        return False
-
-    assert wait_for(answered, 60, every=0.1), "Centrum ze skrótu nie odpowiedziało na health."
-    return answers[-1]
 
 
 def _refusal(process: subprocess.Popen[str], port: int) -> tuple[int, str]:
@@ -146,7 +128,7 @@ def test_po_wylaczeniu_komputera_w_trakcie_instalacji_bibliotek_skrot_wraca_do_p
     port = free_port()
 
     with _shortcut(repository.clone, port) as shortcut:
-        health = _health(shortcut, port)
+        health = centrum_health(port, process=shortcut)
         view = _get(port, "/api/tool-update")
     clone = (repository.head(), repository.read(MAPPING), repository.in_clone("status", "--porcelain", "--untracked-files=no"))
     # Wyłączony komputer nie kończy instalacji; Centrum testu, które ją zaczęło, kończy ją porażką dopiero po odczycie
@@ -194,7 +176,7 @@ def test_gdy_opiekun_nie_skonczyl_aktualizacji_przed_wylaczeniem_skrot_po_jego_t
     port = free_port()
 
     with _shortcut(repository.clone, port) as shortcut:
-        health = _health(shortcut, port)
+        health = centrum_health(port, process=shortcut)
 
     assert switched_off == newest
     assert health["commit"] == before[:7]
@@ -221,7 +203,7 @@ def test_gdy_dysk_odmowi_skrotowi_zapisu_porazki_po_cofnieciu_nastepny_start_pok
     with _shortcut(repository.clone, port) as shortcut:
         code, console = _refusal(shortcut, port)
     with _shortcut(repository.clone, port) as shortcut:
-        health = _health(shortcut, port)
+        health = centrum_health(port, process=shortcut)
         view = _get(port, "/api/tool-update")
 
     assert code == 1
