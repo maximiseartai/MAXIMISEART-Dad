@@ -172,10 +172,11 @@ def test_proba_z_odrzuconym_haslem_albo_bez_sieci_konczy_sie_linia_fail_z_powode
     folder = config(tmp_path)
     with AtrapaImap(address=SKRZYNKA, password="inne-haslo", mails=skrzynka_z_raportami()) as atrapa:
         odrzucone = proba(capsys, folder, lokalnie(atrapa.port))
-    with AtrapaImap(address=SKRZYNKA, password=HASLO) as zamknieta:
-        port = zamknieta.port
 
-    bez_sieci = proba(capsys, folder, lokalnie(port))
+    def bez_sieci_do_gmaila() -> imaplib.IMAP4:
+        raise ConnectionRefusedError(f"brak sieci przy {SKRZYNKA}")
+
+    bez_sieci = proba(capsys, folder, bez_sieci_do_gmaila)
 
     assert odrzucone == (1, ["PROBA IMAP FAIL | Gmail odrzucil haslo aplikacji przy pierwszym odczycie flag"])
     assert bez_sieci == (1, ["PROBA IMAP FAIL | skrzynka niedostepna przy pierwszym odczycie flag: ConnectionRefusedError"])
