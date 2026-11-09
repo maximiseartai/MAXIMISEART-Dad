@@ -10,7 +10,9 @@ zostają u niego z dokładnie tą treścią, którą miały (``_DadFiles``). Gdy
 wersja zmienia ``requirements.txt``, biblioteki instaluje ten sam Python, w
 którym działa Centrum (``pip_install``); nieudana instalacja cofa klon do
 commitu sprzed aktualizacji (``ToolClone.roll_back``). Bibliotek się nie cofa:
-wymagania mają tylko dolne granice wersji, więc stara wersja dalej je spełnia.
+biblioteki, które Centrum importuje, mają w wymaganiach tylko dolne granice
+wersji, więc stara wersja dalej z nimi startuje; dokładnie przypięta jest tylko
+biblioteka testów (``hypothesis``), której Centrum nie importuje.
 Gdy nie uda się samo cofnięcie, wynik mówi to wprost (``ROLLBACK_FAILED``).
 Gdy kopia pliku taty nie wróci do przesuniętego klonu, klon też się cofa; gdy
 nie wróci ostatecznie, wynikiem jest ``ROLLBACK_FAILED``, a treść taty zostaje

@@ -401,9 +401,11 @@ Assumed, and not checked:
   merge or reset that finishes later, after `_put_back` or during the next
   click's rollback, is not modelled. That rollback most likely fails on Git's
   `index.lock` and keeps the journal (a guess, not checked).
-- The old version starts with any libraries, because `requirements.txt` has
-  only lower bounds. Pip killed between uninstalling and installing a library
-  could break this, so the `wylaczenie` model is optimistic.
+- The old version starts with any libraries, because in `requirements.txt`
+  the libraries Centrum imports have only lower bounds; the one exact pin is a
+  test library (`hypothesis`) that Centrum does not import. Pip killed between
+  uninstalling and installing a library could break this, so the `wylaczenie`
+  model is optimistic.
 - Dad has one file in `config/`. His untracked files (Wzorce, Ustawienia taty,
   the Zgłoszenia key, the log, metrics, period files, and in `config/` the
   read Powiadomienia, the Sprawy taty and the outbox addresses) are not
