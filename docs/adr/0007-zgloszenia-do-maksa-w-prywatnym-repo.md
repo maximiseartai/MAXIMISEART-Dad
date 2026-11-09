@@ -23,9 +23,12 @@ Zdania tego ADR zmieniają później:
 [ADR 0013](0013-kontrola-ilosci-wysylana-automatycznie.md) (Kontrola ilości
 idzie do Skrzynki bez kliknięcia taty i z treścią wybranych kolumn) i
 [ADR 0015](0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md) (Logi
-Uruchomienia, Uwagi taty i lista Wydań) i
+Uruchomienia, Uwagi taty i lista Wydań),
 [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md) (o treści wierszy w
-każdej wysyłce rozstrzyga reguła danych ze strażnikiem przed wysyłką).
+każdej wysyłce rozstrzyga reguła danych ze strażnikiem przed wysyłką) i
+[ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md) (Centrum
+czyta też skrzynkę raportów w Gmailu przez IMAP, a hasło aplikacji to drugi
+sekret w `config/`).
 
 ## Decyzja
 

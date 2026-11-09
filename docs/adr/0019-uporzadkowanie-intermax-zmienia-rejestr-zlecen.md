@@ -8,6 +8,9 @@ zasadę ze słownika, że procesy Rejestr zleceń tylko czytają. Dopełnia
 pliki narzędzia), [ADR 0015](0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md)
 i [ADR 0017](0017-karta-uruchomienia-z-logow.md) (okres Uruchomienia, które nie
 porządkuje okresu).
+[ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md) dodaje
+Wpisanie raportów jako kolejny proces, który zmienia Rejestr zleceń, i to bez
+Kopii INTERMAX.
 
 ## Kontekst
 
