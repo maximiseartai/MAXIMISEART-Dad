@@ -3,8 +3,7 @@
 ``create_centrum_fixture.py`` i ``serve_centrum.py`` budują z tych danych pliki taty i Atrapę efenix, a napęd
 (``drive/*.py``), ``centrum_self_test.py`` i ``windows_tool.py`` skilla verify-centrum-na-windowsie biorą stąd te same
 wartości wejścia. Nagłówki biorą z ``tools/lib/atrapy/pliki_taty.py``, a nazwy Wzorców generator bierze z
-``tools/lib/atrapy/scenariusz_rozliczen.py``; Rejestr ma układ starego Rejestru taty, a Wzorzec rozliczenia
-wewnętrznego nie ma kolumn ``zwrot`` i ``UWAGI``, których żaden proces nie czyta.
+``tools/lib/atrapy/scenariusz_rozliczen.py``; Rejestr ma układ starego Rejestru taty.
 
 Wiersze Pliku zbiorczego, na które trafiają zlecenia okresu (``COLLECTIVE_FILE_ROWS``), stoją tu jawnie, a nie z kodu
 Przygotowania pliku zbiorczego; ``create_centrum_fixture.py`` liczy z nich wiersze bez reguły i z opisu do
@@ -39,8 +38,6 @@ WORKER_IDS = ("wykonawca.a", "wykonawca.b", "wykonawca.c", "wykonawca.d")
 ROW_MARKER = "CENTRUM-SYN-ROW"
 
 REGISTER_HEADERS = OLD_REGISTER_HEADERS
-# Dad's Wzorzec rozliczenia wewnętrznego without zwrot and UWAGI, which no process reads.
-INTERNAL_HEADERS = tuple(header for header in pliki_taty.INTERNAL_HEADERS if header not in {"zwrot", "UWAGI"})
 COLLECTIVE_HEADERS = pliki_taty.COLLECTIVE_HEADERS
 # Synthetic price-list names in N17:AP17 of the Wzorzec pliku zbiorczego, which Przygotowanie copies into the Plik
 # zbiorczy; the kind page of Uzupełnienie shows them over the quantity columns.

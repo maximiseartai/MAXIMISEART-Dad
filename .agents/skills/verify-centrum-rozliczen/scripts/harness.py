@@ -1,12 +1,13 @@
 """Files through which the drive and the served Centrum talk: every name of the harness's protocol in the run root.
 
 The drive (``drive/``) writes and reads them in the run root, and ``serve_centrum.py`` (and the restart shim of
-``create_centrum_fixture.py``) reads and writes them, so both sides take the names from here: a name changed on one side
+``create_centrum_fixture.py``) reads and writes them, as ``create_centrum_fixture.py`` writes ``File.FIXTURE`` for both,
+so every side takes the names from here: a name changed on one side
 only would leave the drive writing a file no one reads, or reading a log no one writes, and a check that nothing opens
 would pass without a failure. ``centrum_self_test.py`` holds both sides to it: no other script spells a name of this
 module, and the scripted boundaries of the served side take their files from here in the round trips its docstring
-lists (``File.EFENIX_ADDRESS`` and ``File.SERVER``, which the served side writes as it starts, only the run itself
-holds, loudly).
+lists (``File.EFENIX_ADDRESS`` and ``File.SERVER``, which the served side writes as it starts, and ``File.FIXTURE``,
+which it reads as it starts, only the run itself holds, loudly).
 These are the harness's own names, not files of Dad's: the drive spells a name of the product (a Komunikat, a fact of the
 Logi) itself, as an oracle (``docs/agents/skille.md``).
 Only the standard library: the restart shim imports it before it runs ``serve_centrum.py``.
@@ -106,7 +107,7 @@ class Log(Enum):
 
 class File(Enum):
     """A file of one side's answer that the other side reads; no file is the default of the module doc of
-    ``serve_centrum.py``."""
+    ``serve_centrum.py``. ``FIXTURE`` alone is there from the start of a run."""
 
     # The drive writes these, the served Centrum reads them.
     PICKER_ANSWER = "picker/answer.txt"  # the path the next picker answers with
@@ -120,6 +121,8 @@ class File(Enum):
     CLOCK_DIED = "zegar/budzik-padl.txt"  # the traceback of the clock's wake-up thread that died
     EFENIX_ADDRESS = f"{_EFENIX}/adres.txt"  # the address of the Atrapa efenix
     SERVER = "server.json"  # the pid and port of the served Centrum
+    # The fixture writes this, both sides read it.
+    FIXTURE = "fixture.json"  # the run's inputs and the values the drive expects (create_centrum_fixture.py)
 
     def file(self, root: Path) -> Path:
         return root / self.value

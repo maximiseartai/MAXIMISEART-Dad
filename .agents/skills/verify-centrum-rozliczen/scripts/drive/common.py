@@ -99,7 +99,7 @@ class Run:
         self.root = root
         self.url = url
         self.evidence = evidence
-        self.fixture = read_json(root / "fixture.json")
+        self.fixture = read_json(File.FIXTURE.file(root))
         self.feature = ""
         for name in ("screenshots", "aria", "api", "state"):
             (evidence / name).mkdir(parents=True, exist_ok=True)
