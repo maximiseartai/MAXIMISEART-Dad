@@ -1071,11 +1071,12 @@ def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu
 def test_rozliczenie_wewnetrzne_wpisuje_kazda_wartosc_pod_jej_naglowkiem_w_kolejnosci_innej_niz_u_taty(
     tmp_path: Path, copied: bool
 ) -> None:
-    """Atrapy mają kolejność kolumn taty, więc ten Wzorzec (nagłówki docelowe od ``DATA``, w A:K jak u taty) dowodzi na
-    obu drogach zapisu, że wartość idzie za nagłówkiem, nie za miejscem w tabeli taty."""
+    """Atrapy mają kolejność kolumn taty, więc ten Wzorzec (nagłówki docelowe odwrócone, w A:K jak u taty) dowodzi na
+    obu drogach zapisu, że wartość idzie za nagłówkiem, nie za miejscem w tabeli taty ani w ``TARGET_HEADERS``."""
 
-    headers = (*TARGET_HEADERS, *INTERNAL_HEADERS[len(TARGET_HEADERS) :])
-    assert headers != INTERNAL_HEADERS and set(headers) == set(INTERNAL_HEADERS)
+    headers = (*reversed(TARGET_HEADERS), *INTERNAL_HEADERS[len(TARGET_HEADERS) :])
+    assert headers != INTERNAL_HEADERS and headers[: len(TARGET_HEADERS)] != TARGET_HEADERS
+    assert set(headers) == set(INTERNAL_HEADERS)
     template_path = write_internal_template(tmp_path / tool_files.INTERNAL_TEMPLATE.name, headers=headers)
     (marked_for_copy if copied else refused_by_copy)(template_path)
     target = tmp_path / "Rozliczenie wewnętrzne.xlsx"
