@@ -13,7 +13,7 @@ ends its session), and it adds to every page it passes on two things the Atrapa 
 A request is a ``Call``: method, path without the query, the kind of search (the window's own or the one the list sends
 by itself after loading) and its occurrence among calls of the same kind, so a fault hits the same request in every run
 whatever the order of requests that the browser sends side by side. ``Fault`` lists what can go wrong with it: the
-network (``CUT``, ``TORN``, ``STALLED``, ``SLOW`` from that request on until ``reconnect``), one answer (HTTP 4xx without
+network (``CUT``, ``TORN``, ``STALLED``, ``SLOW`` from that request on), one answer (HTTP 4xx without
 running the request, HTTP 5xx after running it, a redirect elsewhere, 200 with ``result: nok`` without running it, an
 answer that never comes, an answer just before or just after the window's time limit), efenix logging the window out at
 that request, and two that the browser side and
@@ -67,6 +67,8 @@ _WATCHER: Final = (
 )
 _PAGES: Final = (LIST_PAGE, ORDER_PAGE, LOGIN_PAGE)
 _ELSEWHERE: Final = f"/{LIST_PAGE}?przekierowanie=1"
+LATE_S: Final = 0.6
+"""How long after the window's time limit the answer of ``Fault.LATE_AFTER`` comes."""
 
 
 class Fault(enum.Enum):
@@ -94,7 +96,7 @@ class Fault(enum.Enum):
 
 
 OUTAGES: Final = frozenset({Fault.CUT, Fault.TORN, Fault.STALLED, Fault.SLOW})
-"""Faults of the network: from the faulted request on, until ``Proxy.reconnect``."""
+"""Faults of the network: from the faulted request on, for as long as the proxy runs."""
 DAD_LOGINS: Final = frozenset({Fault.LOGIN_LATER, Fault.LOGIN_CLOSED, Fault.LOGIN_ERROR})
 """Faults where Dad acts on the login page the window waits at: he logs in or closes the tab."""
 LOGOUTS: Final = frozenset({Fault.LOGGED_OUT, *DAD_LOGINS})
@@ -162,13 +164,12 @@ class Seen:
 @dataclass
 class Plan:
     """The fault ``fault`` at call ``target`` (``None``: no fault) and the window's time limit, which places the two
-    late answers: ``early_s`` before it and ``late_s`` after it."""
+    late answers: ``early_s`` before it and ``LATE_S`` after it."""
 
     fault: Fault | None = None
     target: Call | None = None
     limit_s: float = 3.0
     early_s: float = 0.6
-    late_s: float = 0.6
 
 
 @dataclass
@@ -212,13 +213,6 @@ class Proxy:
             self._server.server_close()
         if self._thread is not None:
             self._thread.join()
-
-    def reconnect(self) -> None:
-        """The network is back: no outage from now on (held answers stay held until ``release``)."""
-
-        with self._lock:
-            self._outage = None
-            self.plan = Plan(limit_s=self.plan.limit_s)
 
     def release(self) -> None:
         """Every held answer ends now with its connection closed, as when the window that waited for it is gone."""
@@ -363,7 +357,7 @@ def _handler(proxy: Proxy) -> type[BaseHTTPRequestHandler]:
                     self._send(_error_page(HTTPStatus.INTERNAL_SERVER_ERROR))
                 case Fault.LATE_BEFORE | Fault.LATE_AFTER:
                     plan = proxy.plan
-                    delay = plan.limit_s - plan.early_s if fault is Fault.LATE_BEFORE else plan.limit_s + plan.late_s
+                    delay = plan.limit_s - plan.early_s if fault is Fault.LATE_BEFORE else plan.limit_s + LATE_S
                     proxy._held(delay)
                     if proxy._released.is_set():
                         self.close_connection = True

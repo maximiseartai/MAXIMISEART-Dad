@@ -26,6 +26,7 @@ import uuid
 import zipfile
 
 import openpyxl
+from openpyxl.utils import get_column_letter
 
 import excel
 
@@ -90,14 +91,6 @@ TWO_LINE_ORDER = order_number(2)
 
 class VerificationFailure(RuntimeError):
     """A step did not end in the state Dad would see."""
-
-
-def column_letter(number: int) -> str:
-    letters = ""
-    while number:
-        number, rest = divmod(number - 1, 26)
-        letters = chr(65 + rest) + letters
-    return letters
 
 
 @dataclass
@@ -301,7 +294,7 @@ def _layout(path: Path) -> Layout:
 
 
 def _order_rows(path: Path, layout: Layout) -> dict[str, int]:
-    letter = column_letter(layout.order)
+    letter = get_column_letter(layout.order)
     cells = excel.read(path, f"{letter}{FIRST_ROW}:{letter}{LAST_SCANNED_ROW}")
     return {row[0].text: FIRST_ROW + index for index, row in enumerate(cells) if not row[0].empty}
 
@@ -355,7 +348,7 @@ def _check_highlights(path: Path, rows: dict[str, int], layout: Layout, *, label
     for (order, header), expected in HIGHLIGHTS.items():
         if order not in rows:
             continue
-        address = f"{column_letter(layout.columns[header])}{rows[order]}"
+        address = f"{get_column_letter(layout.columns[header])}{rows[order]}"
         expect(excel.fill(path, address) == expected, f"{label}: Wyróżnienie in {address} is not what the Rejestr has")
         checked += 1
     return checked
@@ -373,14 +366,14 @@ def _check_row_look(path: Path, rows: dict[str, int], layout: Layout, *, label: 
     expect(not tall, f"{label}: rows {', '.join(tall)} with one line are not {standard} pt high")
     if TWO_LINE_ORDER in rows:
         expect(heights[TWO_LINE_ORDER] > standard, f"{label}: row {rows[TWO_LINE_ORDER]} with two lines is not taller")
-    date = column_letter(layout.columns["data"])
+    date = get_column_letter(layout.columns["data"])
     return standard, {order: excel.shown_text(path, f"{date}{row}") for order, row in rows.items()}
 
 
 def _check_quantities(path: Path, rows: dict[str, int], *, label: str) -> int:
     """Excel holds the Ilości usług in N:AP of every order and row 15 sums them; returns the non-zero cells."""
 
-    letters = [column_letter(column) for column in QUANTITY_COLUMNS]
+    letters = [get_column_letter(column) for column in QUANTITY_COLUMNS]
     span = f"{letters[0]}{{row}}:{letters[-1]}{{row}}"
     for order, quantities in QUANTITIES.items():
         cells = excel.read(path, span.format(row=rows[order]))[0]
@@ -453,7 +446,7 @@ def readiness(run: Run, collective: Path, layout: Layout) -> tuple[dict[str, lis
     feature = "gotowosc-w-excelu"
     rows = _order_rows(collective, layout)
     links_before = _hyperlinks(run.collective_file, rows)
-    order_letter = column_letter(layout.order)
+    order_letter = get_column_letter(layout.order)
     unlinked = [str(rows[order]) for order, links in links_before.items() if order_letter not in links]
     expect(not unlinked, f"Przygotowanie left NUMER ZL. without its Rejestr Hiperłącze in rows {', '.join(unlinked)}")
     for index, order in enumerate(FILLED):
@@ -461,7 +454,7 @@ def readiness(run: Run, collective: Path, layout: Layout) -> tuple[dict[str, lis
         excel.type_row(collective, f"N{rows[order]}:AT{rows[order]}", [entries[column] for column in INPUT_COLUMNS])
         typed = excel.read(collective, f"N{rows[order]}:AT{rows[order]}")[0]
         differing = [
-            f"{column_letter(column)}({cell.kind})"
+            f"{get_column_letter(column)}({cell.kind})"
             for column, cell in zip(INPUT_COLUMNS, typed, strict=True)
             if not _matches(cell, entries[column])
         ]
@@ -518,7 +511,7 @@ def worker_files(
                 shown = excel.read(path, f"A{row}:AT{row}")[0]
                 differing = []
                 for column, (left, right) in enumerate(zip(shown, expected[order], strict=True), start=1):
-                    letter = column_letter(column)
+                    letter = get_column_letter(column)
                     if INEA_ONLY.get(order) == letter:
                         expect(not right.empty, f"Plik zbiorczy row of {order} has no Ilość tylko dla INEA in {letter}")
                         if not left.empty:

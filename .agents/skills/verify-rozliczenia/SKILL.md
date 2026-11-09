@@ -220,8 +220,7 @@ The runner executes the read-only doctor before driving the application,
 except in the `intermax` variant: Uporządkowanie INTERMAX has its own
 Sprawdzanie and no preview, so the fixture is driven directly.
 The result is retained in `doctor.txt` under the printed evidence directory.
-`DOCTOR OK` means Python is at least 3.11, the checked-out build reports the
-version in `pyproject.toml`, the source name and period folder agree, the source
+`DOCTOR OK` means Python is at least 3.11, the source name and period folder agree, the source
 has `WYKONAWCA` in `H17`, the local mapping and shared Wzorzec rozliczenia pracownika are readable,
 and the target folder does not yet exist.
 
@@ -236,7 +235,7 @@ For targeted debugging of a fixture that already exists, invoke the primitive
 directly:
 
 ```powershell
-py -3 .agents\skills\verify-rozliczenia\scripts\doctor.py --root "$runRoot" --expected-version "0.1.0"
+py -3 .agents\skills\verify-rozliczenia\scripts\doctor.py --root "$runRoot"
 ```
 
 The doctor reads only; it does not start the app, alter a workbook, or write
@@ -399,8 +398,8 @@ already performs both checks and prints `scratch_removed=true`.
   `py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py`.
 - `scripts/create_fixture.py` creates the isolated synthetic workbooks.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\create_fixture.py --root "$runRoot"`.
-- `scripts/doctor.py` performs the read-only fixture and build check.
-  Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\doctor.py --root "$runRoot" --expected-version "0.1.0"`.
+- `scripts/doctor.py` performs the read-only fixture check.
+  Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\doctor.py --root "$runRoot"`.
 - `scripts/assert_results.py` checks the JSON result of a Przebieg rozliczeń
   step (`--result`) and workbook state after either mode; `--expected-stop`
   names the stop's Komunikat code for `no-publish` and `existing-output`, and
@@ -413,7 +412,7 @@ already performs both checks and prints `scratch_removed=true`.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\create_preparation_fixture.py --root "$runRoot"`.
 - `scripts/preparation_doctor.py` performs the read-only preflight for that fixture;
   `--with-worker-template` also validates the Wzorzec rozliczenia pracownika.
-  Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\preparation_doctor.py --root "$runRoot" --expected-version "0.1.0"`.
+  Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\preparation_doctor.py --root "$runRoot"`.
 - `scripts/assert_preparation.py` checks the Folder okresu, both period files,
   their Hiperłącza, external links, inputs, the JSON result, and metrics; `--templates config` swaps
   the synthetic Wzorzec checks for the generic real-Wzorzec checks, and

@@ -1,10 +1,9 @@
-"""Read-only build and fixture check for the rozliczenia verification skill."""
+"""Read-only fixture check for the rozliczenia verification skill."""
 
 from __future__ import annotations
 
 from pathlib import Path
 import sys
-import tomllib
 
 from openpyxl import load_workbook
 from openpyxl.worksheet._read_only import ReadOnlyWorksheet
@@ -21,18 +20,11 @@ from rozliczenia.workbook_files import WorkbookError
 from atrapy.scenariusz_rozliczen import WORKER_TEMPLATE_NAME
 from atrapy.settlement import PERIOD, SOURCE_NAME, WORKERS
 
-SCRIPT = Path(__file__).resolve()
-REPO_ROOT = SCRIPT.parents[4]
 
-
-def _check(root: Path, expected_version: str) -> tuple[str, int]:
+def _check(root: Path) -> tuple[str, int]:
     root = root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"missing fixture root: {root}")
-    with (REPO_ROOT / "pyproject.toml").open("rb") as stream:
-        version = tomllib.load(stream)["project"]["version"]
-    if version != expected_version:
-        raise ValueError(f"expected version {expected_version}, found {version}")
     if sys.version_info < (3, 11):
         raise ValueError("Python 3.11 or newer is required")
 
@@ -63,15 +55,14 @@ def _check(root: Path, expected_version: str) -> tuple[str, int]:
 def main(argv: list[str] | None = None) -> int:
     parser = Parser(description=__doc__)
     parser.add_root("run root of a settlement fixture")
-    parser.add_argument("--expected-version", default="0.1.0")
     args = parser.parse_args(argv)
     try:
-        period, template_count = _check(args.root, args.expected_version)
+        period, template_count = _check(args.root)
     except (OSError, ValueError, KeyError, TypeError, WorkbookError, PeriodFolderError) as exc:
         print(f"DOCTOR FAIL: {exc}", file=sys.stderr)
         return 1
     print(
-        f"DOCTOR OK | app=MAXIMISEART-Dad | version={args.expected_version} | "
+        f"DOCTOR OK | app=MAXIMISEART-Dad | "
         f"python={sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} | "
         f"period={period} | workers={template_count} | worker_template=valid | target_absent=true"
     )

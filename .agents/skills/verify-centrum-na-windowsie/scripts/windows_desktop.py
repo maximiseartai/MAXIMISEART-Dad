@@ -22,7 +22,6 @@ from typing import Any
 
 DIALOG = "#32770"  # a message box and the Vista file dialog of tkinter
 EXPLORER = "CabinetWClass"
-CONSOLE = "ConsoleWindowClass"
 # Control ids of the file dialog: the box around its file name and the button that confirms it.
 _FILE_NAME_BOX = 1148
 _CONFIRM = 1

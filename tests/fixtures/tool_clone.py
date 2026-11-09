@@ -27,6 +27,7 @@ import shutil
 import socket
 import subprocess
 import threading
+import urllib.request
 
 from rozliczenia import tool_files
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease
@@ -34,6 +35,7 @@ from rozliczenia.centrum.tool_update import Release, newest_on_main
 
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import built_once
+from tests.fixtures.potomne import wait_for
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -251,6 +253,40 @@ def free_port() -> int:
         probe.bind(("127.0.0.1", 0))
         port: int = probe.getsockname()[1]
         return port
+
+
+def centrum_health(
+    port: int, *, commit: str | None = None, process: subprocess.Popen[str] | None = None, timeout_s: float = 60
+) -> dict[str, object]:
+    """``/api/health`` Centrum na porcie; z ``commit`` dopiero odpowiedź Centrum w tym commicie (skróconym).
+
+    Gdy przez ``timeout_s`` nikt nie odpowiedział, rzuca ostatni ``OSError`` połączenia, a gdy odpowiadało Centrum w
+    innym commicie, ``AssertionError`` z jego odpowiedzią. ``process``, który skończył się, zanim Centrum odpowiedziało,
+    to ``AssertionError`` z jego kodem wyjścia i konsolą.
+    """
+
+    answers: list[dict[str, object]] = []
+    failures: list[OSError] = []
+
+    def answered() -> bool:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
+                body = json.load(response)
+        except OSError as failure:
+            failures.append(failure)
+            if process is not None and process.poll() is not None:
+                output = process.stdout.read() if process.stdout else ""
+                raise AssertionError(f"Centrum zakończyło się kodem {process.returncode}:\n{output}") from failure
+            return False
+        assert isinstance(body, dict)
+        answers.append(body)
+        return commit is None or body["commit"] == commit[:7]
+
+    if not wait_for(answered, timeout_s, every=0.1):
+        if answers:
+            raise AssertionError(f"Centrum nie odpowiedziało w commicie {commit}: {answers[-1]}")
+        raise failures[-1]
+    return answers[-1]
 
 
 def unreachable_origin() -> str:

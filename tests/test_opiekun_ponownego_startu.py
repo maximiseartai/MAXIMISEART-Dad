@@ -36,22 +36,17 @@ from rozliczenia import tool_files
 from rozliczenia.tool_files import start_command
 
 from tests.fixtures.centrum import ToolDirectory
-from tests.fixtures.potomne import wait_for, wait_for_value
+from tests.fixtures.potomne import wait_for
 from tests.fixtures.tool_clone import (
     FIRST_VERSION,
     REPOSITORY_ROOT,
     ToolRepository,
     centrum_tool_repository,
+    free_port,
     git,
+    centrum_health,
     tool_repository,
 )
-
-
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port: int = probe.getsockname()[1]
-        return port
 
 
 def _get(port: int, path: str) -> dict[str, object]:
@@ -59,22 +54,6 @@ def _get(port: int, path: str) -> dict[str, object]:
         body = json.load(response)
         assert isinstance(body, dict)
         return body
-
-
-def _health(port: int, *, commit: str | None = None, timeout_s: float = 60) -> dict[str, object]:
-    """``health`` Centrum na porcie; z ``commit`` dopiero wtedy, gdy odpowiada Centrum w tym commicie (skróconym)."""
-
-    def health() -> dict[str, object] | None:
-        try:
-            return _get(port, "/api/health")
-        except OSError:
-            return None
-
-    done, answer = wait_for_value(
-        health, lambda answer: answer is not None and (commit is None or answer["commit"] == commit[:7]), timeout_s, every=0.1
-    )
-    assert done and answer is not None, "Centrum nie odpowiedziało na health."
-    return answer
 
 
 def _close(port: int) -> None:
@@ -170,7 +149,7 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
     repository = centrum_tool_repository(tmp_path / "repozytoria")
     clone = repository.clone
     before = repository.head()
-    port = _free_port()
+    port = free_port()
     old = subprocess.Popen(
         [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
         cwd=clone,
@@ -179,7 +158,7 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
         stderr=subprocess.DEVNULL,
     )
     try:
-        old_health = _health(port)
+        old_health = centrum_health(port)
         newest = repository.publish({"NOWA_WERSJA.txt": "druga wersja narzędzia\n"})
         assert ToolClone(clone, origin=str(repository.origin)).update().code == UPDATED
         before_restart = _shortcut(clone, port)
@@ -199,7 +178,7 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
         )
         _close(port)
         old_exit = old.wait(timeout=30)
-        new_health = _health(port, commit=newest)
+        new_health = centrum_health(port, commit=newest)
         guardian_exit = guardian.wait(timeout=30)
         view = _get(port, "/api/tool-update")
         after_restart = _shortcut(clone, port)
@@ -265,7 +244,7 @@ def test_skrot_klikniety_w_trakcie_ponownego_startu_nie_cofa_nowej_wersji_ktora_
     assert ToolClone(repository.clone, origin=str(repository.origin)).update().code == UPDATED
     work = tmp_path / "praca"
     work.mkdir()
-    port = _free_port()
+    port = free_port()
     dialogs: list[tuple[str, str]] = []
     restart = Restart(port, before, newest, repository.clone, repository.clone / "config" / RESULT_FILE, False, work)
     try:
@@ -277,7 +256,7 @@ def test_skrot_klikniety_w_trakcie_ponownego_startu_nie_cofa_nowej_wersji_ktora_
             shortcut.listen()
             time.sleep(3)
         guardian.join(timeout=90)
-        health = _health(port, timeout_s=5)
+        health = centrum_health(port, timeout_s=5)
     finally:
         _close_if_running(port)
 
@@ -317,7 +296,7 @@ def test_nowa_wersja_ktora_nie_wystartuje_wraca_do_starego_commitu_a_stara_start
     repository = centrum_tool_repository(tmp_path / "repozytoria")
     clone = repository.clone
     before = repository.head()
-    port = _free_port()
+    port = free_port()
     new_version_dialogs = tmp_path / "okienka-nowej-wersji.txt"
     dialogs: list[tuple[str, str]] = []
     old = subprocess.Popen(
@@ -328,7 +307,7 @@ def test_nowa_wersja_ktora_nie_wystartuje_wraca_do_starego_commitu_a_stara_start
         stderr=subprocess.DEVNULL,
     )
     try:
-        old_health = _health(port)
+        old_health = centrum_health(port)
         newest = repository.publish(_broken_version(repository, new_version_dialogs))
         work = tmp_path / "praca"
         work.mkdir()
@@ -338,7 +317,7 @@ def test_nowa_wersja_ktora_nie_wystartuje_wraca_do_starego_commitu_a_stara_start
         _close(port)
         old.wait(timeout=30)
         guardian.join(timeout=90)
-        back_health = _health(port, commit=before)
+        back_health = centrum_health(port, commit=before)
         view = _get(port, "/api/tool-update")
     finally:
         _close_if_running(port)
@@ -397,7 +376,7 @@ def test_gdy_po_cofnieciu_stara_wersja_ze_skrotu_juz_trzyma_port_opiekun_konczy_
     work = tmp_path / "praca"
     work.mkdir()
     assert ToolClone(repository.clone, origin=str(repository.origin)).update().code == UPDATED
-    port = _free_port()
+    port = free_port()
     result = repository.clone / "config" / RESULT_FILE
     dialogs: list[tuple[str, str]] = []
     restart = Restart(port, before, newest, repository.clone, result, False, work)
@@ -412,9 +391,9 @@ def test_gdy_po_cofnieciu_stara_wersja_ze_skrotu_juz_trzyma_port_opiekun_konczy_
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        _health(port, commit=before)
+        centrum_health(port, commit=before)
         guardian.join(timeout=90)
-        health = _health(port, timeout_s=5)
+        health = centrum_health(port, timeout_s=5)
     finally:
         _close_if_running(port)
         if shortcut is not None:
@@ -449,7 +428,7 @@ def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_p
     work = tmp_path / "praca"
     work.mkdir()
     assert ToolClone(clone, origin=str(repository.origin)).update().code == UPDATED
-    port = _free_port()
+    port = free_port()
     dialogs: list[tuple[str, str]] = []
     restart = Restart(port, before, newest, clone, clone / "config" / RESULT_FILE, False, work)
     shortcut: subprocess.Popen[bytes] | None = None
@@ -465,7 +444,7 @@ def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_p
             stderr=subprocess.DEVNULL,
         )
         guardian.join(timeout=90)
-        health = _health(port, timeout_s=5)
+        health = centrum_health(port, timeout_s=5)
         view = _get(port, "/api/tool-update")
         # Stara wersja od opiekuna kończy się sama, gdy po _SHORTCUT_HOLDS_PORT_S zastanie Centrum ze skrótu.
         assert wait_for(
@@ -504,7 +483,7 @@ def test_gdy_nie_startuje_zadna_wersja_opiekun_pokazuje_jedno_okienko_a_klon_sto
     dialogs: list[tuple[str, str]] = []
 
     guardian, exits = _guardian_in_background(
-        Restart(_free_port(), before, newest, repository.clone, result, False, work), dialogs
+        Restart(free_port(), before, newest, repository.clone, result, False, work), dialogs
     )
     guardian.join(timeout=90)
 
@@ -595,7 +574,7 @@ def test_gdy_po_cofnieciu_bez_portu_centrum_ze_skrotu_juz_dziala_opiekun_konczy_
                 stderr=subprocess.DEVNULL,
             )
         )
-        _health(port, commit=before)
+        centrum_health(port, commit=before)
 
     monkeypatch.setattr(ToolClone, "roll_back", shortcut_during_roll_back)
     try:
@@ -603,7 +582,7 @@ def test_gdy_po_cofnieciu_bez_portu_centrum_ze_skrotu_juz_dziala_opiekun_konczy_
             Restart(port, before, newest, clone, result, False, work).arguments(),
             show_problem=lambda title, text: dialogs.append((title, text)),
         )
-        health = _health(port, timeout_s=5)
+        health = centrum_health(port, timeout_s=5)
     finally:
         held.close()
         _close_if_running(port)
@@ -637,7 +616,7 @@ def test_gdy_cofniecie_sie_nie_uda_wynik_nie_mowi_o_poprzedniej_wersji_a_tata_wi
     dialogs: list[tuple[str, str]] = []
 
     guardian, exits = _guardian_in_background(
-        Restart(_free_port(), before, newest, repository.clone, result, False, work), dialogs
+        Restart(free_port(), before, newest, repository.clone, result, False, work), dialogs
     )
     guardian.join(timeout=90)
 
@@ -662,14 +641,14 @@ def test_gdy_dysk_nie_przyjmie_wyniku_ok_opiekun_i_tak_startuje_nowa_wersje(tmp_
     (clone / RESULT_REFUSED).mkdir()
     work = tmp_path / "praca"
     work.mkdir()
-    port = _free_port()
+    port = free_port()
     dialogs: list[tuple[str, str]] = []
     try:
         guardian, exits = _guardian_in_background(
             Restart(port, before, newest, clone, clone / "config" / RESULT_FILE, False, work), dialogs
         )
         guardian.join(timeout=90)
-        health = _health(port, commit=newest, timeout_s=5)
+        health = centrum_health(port, commit=newest, timeout_s=5)
         view = _get(port, "/api/tool-update")
     finally:
         _close_if_running(port)
@@ -694,14 +673,14 @@ def test_gdy_dysk_nie_przyjmie_wyniku_po_cofnieciu_startuje_stara_wersja_a_karta
     assert ToolClone(clone, origin=str(repository.origin)).update().code == UPDATED
     work = tmp_path / "praca"
     work.mkdir()
-    port = _free_port()
+    port = free_port()
     dialogs: list[tuple[str, str]] = []
     try:
         guardian, exits = _guardian_in_background(
             Restart(port, before, newest, clone, clone / "config" / RESULT_FILE, False, work), dialogs
         )
         guardian.join(timeout=90)
-        health = _health(port, commit=before, timeout_s=5)
+        health = centrum_health(port, commit=before, timeout_s=5)
         view = _get(port, "/api/tool-update")
     finally:
         _close_if_running(port)

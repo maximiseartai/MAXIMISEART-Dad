@@ -77,7 +77,6 @@ from atrapy.workbooks import excel_lock
 
 NOW = datetime(2026, 10, 25, 20, 0, 0)
 NAME = "INTERMAX.xlsx"
-TEMPORARY = f".{Path(NAME).stem}."
 AFTER_READ = "pracownik po odczycie, przed podmianą"
 INJECTED = "plik zablokowany"
 READ = "po odczycie INTERMAX"

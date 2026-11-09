@@ -7,7 +7,6 @@ Excelu (openpyxl) i pyta Centrum o Ilości do uzupełnienia okresu.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 import sys
 from typing import Any
@@ -18,42 +17,20 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from tests.fixtures.centrum import FakeOneDrive, view_timing
-from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end
-from atrapy.preparation import COLLECTIVE_FILE_NAME, PERIOD, register_order
+from tests.fixtures.centrum_processes import FILLING_DEVICES, PreparingCentrum, Surroundings, filling_centrum
+from atrapy.preparation import COLLECTIVE_FILE_NAME, PERIOD
 
-TUE = datetime(2026, 9, 8, 10, 0)
-MON = datetime(2026, 9, 14, 9, 0)
 URL = f"/api/periods/{PERIOD}/quantities-to-fill"
 LOG_EVENT = "uzupelnienie-odczyt-nieudany"
-
-# Zlecenia skuteczne okresu po kolei, więc w Pliku zbiorczym od wiersza 18: wiersz → URZĄDZENIA.
-DEVICES = {
-    18: "nokia zte",  # Reguły ilości znają każdy składnik
-    19: "przeniesienie",  # nieznane URZĄDZENIA: wiersz bez reguły
-    20: "prewencja",  # wiersz z opisu
-    21: "",  # puste URZĄDZENIA: wiersz z opisu
-    22: "router x9",  # nieznane URZĄDZENIA: wiersz bez reguły
-}
 DESCRIPTION = ("Y", "AB", "AD", "AJ", "AK", "AL", "AM")
 
 
-def _prepared(tmp_path: Path, devices: dict[int, str] = DEVICES, **options: Any) -> PreparingCentrum:
-    # Ostatnie zlecenie w poniedziałek: okres jest pełny, więc Przygotowanie nie czeka na Decyzję taty.
-    starts = [TUE.replace(hour=8 + index) for index in range(len(devices) - 1)] + [MON]
-    rows = [
-        {**register_order(index, started), "URZĄDZENIA": text, "UMOWA": f"u UM-SYN-{index:03d}"}
-        for index, (text, started) in enumerate(zip(devices.values(), starts, strict=True), start=1)
-    ]
-    centrum = preparing_centrum(tmp_path, list(rows), **options)
-    assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
-    return centrum
-
-
-def _quantities(centrum: PreparingCentrum) -> dict[str, Any]:
-    response = centrum.client.get(URL)
-    assert response.status_code == 200, response.text
-    found: dict[str, Any] = response.json()
-    return found
+def _prepared(
+    tmp_path: Path, devices: dict[int, str] = FILLING_DEVICES, *, surroundings: Surroundings | None = None
+) -> PreparingCentrum:
+    return filling_centrum(
+        tmp_path, devices, columns=lambda index, _row: {"UMOWA": f"u UM-SYN-{index:03d}"}, surroundings=surroundings
+    )
 
 
 def _kinds(view: dict[str, Any]) -> dict[str, list[tuple[int, bool]]]:
@@ -87,18 +64,12 @@ def _write(path: Path, cells: dict[str, int | float | str | None]) -> None:
     _edit(path, change)
 
 
-def _log_lines(centrum: PreparingCentrum) -> list[str]:
-    if not centrum.log_path.exists():
-        return []
-    return [line for line in centrum.log_path.read_text(encoding="utf-8").splitlines() if LOG_EVENT in line]
-
-
 def _collective_file(centrum: PreparingCentrum) -> Path:
     return centrum.fixture.collective_file_path
 
 
 def test_po_przygotowaniu_wiersze_bez_reguly_i_z_opisu_czekaja_na_tate(tmp_path: Path) -> None:
-    view = _quantities(_prepared(tmp_path))
+    view = _prepared(tmp_path).view(URL)
 
     assert view["state"] == "ready"
     assert _kinds(view) == {
@@ -113,7 +84,7 @@ def test_ilosc_taty_poza_v_t_i_n_robi_wiersz_bez_reguly_a_dowolna_w_n_ap_wiersz_
     centrum = _prepared(tmp_path)
     _write(_collective_file(centrum), {"O19": 1, "AP21": 2})
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _kinds(view) == {
         "without_rule": [(19, True), (22, False)],
@@ -125,7 +96,7 @@ def test_v_t_i_n_nie_robia_wiersza_bez_reguly_ale_robia_wiersz_z_opisu(tmp_path:
     centrum = _prepared(tmp_path)
     _write(_collective_file(centrum), {"N19": 45, "T22": 1, "V22": 1, "N20": 45})
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _kinds(view)["without_rule"] == [(19, False), (22, False)]
     assert _kinds(view)["from_description"] == [(20, True), (21, False)]
@@ -135,7 +106,7 @@ def test_zero_i_pusta_komorka_to_to_samo(tmp_path: Path) -> None:
     centrum = _prepared(tmp_path)
     _write(_collective_file(centrum), {"O19": 0, "Y20": "0", "AB21": None, "AE22": 0.0})
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _kinds(view) == {
         "without_rule": [(19, False), (22, False)],
@@ -148,13 +119,13 @@ def test_rodzaj_jest_zrobiony_gdy_kazdy_jego_wiersz_jest_zrobiony(tmp_path: Path
     centrum = _prepared(tmp_path)
     _write(_collective_file(centrum), {"O19": 1, "Z22": "dwa", "Y20": 1})
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _kind_done(view) == {"without_rule": True, "from_description": False}
 
 
 def test_rodzaj_bez_wierszy_jest_zrobiony(tmp_path: Path) -> None:
-    view = _quantities(_prepared(tmp_path, {18: "nokia zte", 19: "gniazdo"}))
+    view = _prepared(tmp_path, {18: "nokia zte", 19: "gniazdo"}).view(URL)
 
     assert _kinds(view) == {"without_rule": [], "from_description": []}
     assert _kind_done(view) == {"without_rule": True, "from_description": True}
@@ -164,7 +135,7 @@ def test_kolumny_z_opisu_licza_wiersze_z_wpisem_taty_w_kazdej_kolumnie(tmp_path:
     centrum = _prepared(tmp_path)
     _write(_collective_file(centrum), {"Y18": 1, "Y19": 2, "Y20": 0, "AB21": 1, "AM22": "dwa", "AK18": 1})
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _description(view) == {"Y": 2, "AB": 1, "AD": 0, "AJ": 0, "AK": 1, "AL": 0, "AM": 1}
 
@@ -173,7 +144,7 @@ def test_ak_wyznaczone_przez_regule_nie_liczy_sie_jak_wpis_taty(tmp_path: Path) 
     centrum = _prepared(tmp_path, {18: "technicolor", 19: "przeniesienie"})
     _write(_collective_file(centrum), {"AK19": 1})
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _description(view)["AK"] == 1
 
@@ -183,7 +154,7 @@ def test_usuniecie_wiersza_w_excelu_przenumerowuje_wiersze(tmp_path: Path) -> No
     _write(_collective_file(centrum), {"O22": 1})
     _edit(_collective_file(centrum), lambda sheet, _header: sheet.delete_rows(19))
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _kinds(view) == {
         "without_rule": [(21, True)],
@@ -200,7 +171,7 @@ def test_wyczyszczony_wiersz_nie_przesuwa_numerow_pozostalych(tmp_path: Path) ->
 
     _edit(_collective_file(centrum), change)
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _kinds(view) == {
         "without_rule": [(22, False)],
@@ -218,7 +189,7 @@ def test_zmiana_urzadzen_przenosi_wiersz_miedzy_rodzajami(tmp_path: Path) -> Non
 
     _edit(_collective_file(centrum), change)
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     # V i T, które Przygotowanie wpisało w wierszu bez reguły, zostają w nim, więc wiersz z opisu jest zrobiony.
     assert _kinds(view) == {
@@ -236,7 +207,7 @@ def test_wiersz_bez_daty_w_data_nie_ma_rodzaju_a_jego_kolumny_z_opisu_sie_licza(
 
     _edit(_collective_file(centrum), change)
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _kinds(view)["without_rule"] == [(22, False)]
     assert _description(view)["Y"] == 1
@@ -248,10 +219,10 @@ def test_plik_otwarty_w_excelu_jest_czytany(tmp_path: Path) -> None:
     _write(path, {"O19": 1})
     path.with_name(f"~${path.name}").write_bytes(b"blokada Excela")
 
-    view = _quantities(centrum)
+    view = centrum.view(URL)
 
     assert _kinds(view)["without_rule"] == [(19, True), (22, False)]
-    assert _log_lines(centrum) == []
+    assert centrum.log_lines(LOG_EVENT) == []
 
 
 def test_odpowiedz_i_dziennik_nie_niosa_tresci_wierszy(tmp_path: Path) -> None:
@@ -260,7 +231,7 @@ def test_odpowiedz_i_dziennik_nie_niosa_tresci_wierszy(tmp_path: Path) -> None:
     path = _collective_file(centrum)
     path.write_bytes(b"")
     centrum.client.get(URL)
-    logged = "\n".join(_log_lines(centrum))
+    logged = "\n".join(centrum.log_lines(LOG_EVENT))
 
     for text in (shown, logged):
         assert "SYN-" not in text
@@ -270,7 +241,7 @@ def test_odpowiedz_i_dziennik_nie_niosa_tresci_wierszy(tmp_path: Path) -> None:
 
 
 def _problem(centrum: PreparingCentrum) -> dict[str, str]:
-    view = _quantities(centrum)
+    view = centrum.view(URL)
     assert view["state"] == "problem"
     message: dict[str, str] = view["message"]
     return message
@@ -286,7 +257,7 @@ def test_uszkodzony_plik_zbiorczy_daje_komunikat_i_wpis_w_dzienniku(tmp_path: Pa
 
     assert message["what"] == "Plik zbiorczy jest uszkodzony albo nie jest skoroszytem Excela."
     assert message["where"] == f"plik {COLLECTIVE_FILE_NAME}, folder {PERIOD}"
-    [line] = _log_lines(centrum)
+    [line] = centrum.log_lines(LOG_EVENT)
     assert f"okres={PERIOD} przyczyna=USZKODZONY_PLIK_ZBIORCZY excel=tak typ=BadZipFile" in line
 
 
@@ -303,7 +274,7 @@ def test_niedostepny_plik_zbiorczy_nie_jest_nazwany_uszkodzonym(tmp_path: Path) 
     assert message["what"].startswith("Nie można teraz odczytać Pliku zbiorczego.")
     assert message["where"] == f"plik {COLLECTIVE_FILE_NAME}, folder {PERIOD}"
     assert "uszkodzon" not in message["what"] + message["action"]
-    [line] = _log_lines(centrum)
+    [line] = centrum.log_lines(LOG_EVENT)
     assert "przyczyna=NIEDOSTEPNY_PLIK_ZBIORCZY excel=nie typ=PermissionError" in line
 
 
@@ -318,7 +289,7 @@ def test_folder_okresu_bez_odczytu_daje_komunikat_bez_stanu_blokady(tmp_path: Pa
         folder.chmod(0o755)
 
     assert message["what"].startswith("Nie można teraz odczytać Pliku zbiorczego.")
-    [line] = _log_lines(centrum)
+    [line] = centrum.log_lines(LOG_EVENT)
     assert "excel=nieznany" in line
 
 
@@ -342,7 +313,7 @@ def test_brak_pliku_zbiorczego_daje_komunikat(tmp_path: Path) -> None:
     message = _problem(centrum)
 
     assert message["what"] == "Nie ma Pliku zbiorczego tego okresu."
-    [line] = _log_lines(centrum)
+    [line] = centrum.log_lines(LOG_EVENT)
     assert "przyczyna=BRAK_PLIKU_ZBIORCZEGO excel=nie typ=-" in line
 
 
@@ -358,7 +329,7 @@ def test_brak_naglowka_urzadzen_nazywa_naglowek(tmp_path: Path) -> None:
     message = _problem(centrum)
 
     assert message["what"] == "Brakuje nagłówka w Pliku zbiorczym: UMOWA i URZĄDZENIA w wierszu 17."
-    [line] = _log_lines(centrum)
+    [line] = centrum.log_lines(LOG_EVENT)
     assert "przyczyna=BRAK_NAGLOWKA_PLIKU_ZBIORCZEGO" in line
 
 

@@ -21,7 +21,7 @@ from rozliczenia.centrum import restart_guardian
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.centrum import ToolDirectory
 from tests.fixtures.potomne import wait_for, wait_for_value
-from tests.fixtures.tool_clone import REPOSITORY_ROOT, copy_centrum_runtime, free_port
+from tests.fixtures.tool_clone import REPOSITORY_ROOT, copy_centrum_runtime, free_port, centrum_health
 
 COMMIT = "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e"
 UPDATED_COMMIT = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
@@ -44,28 +44,6 @@ def _browser_recorder(directory: Path) -> tuple[Path, Path]:
         f"import sys\nwith open({str(record)!r}, 'a', encoding='utf-8') as record:\n    record.write(sys.argv[1] + '\\n')\n",
     )
     return recorder, record
-
-
-def _health(port: int, *, timeout_s: float = 30) -> dict[str, object]:
-    """``health`` Centrum na porcie; ostatni ``OSError``, gdy przez ``timeout_s`` nie odpowiedziało."""
-
-    answers: list[dict[str, object]] = []
-    failures: list[OSError] = []
-
-    def answered() -> bool:
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
-                body = json.load(response)
-        except OSError as failure:
-            failures.append(failure)
-            return False
-        assert isinstance(body, dict)
-        answers.append(body)
-        return True
-
-    if not wait_for(answered, timeout_s, every=0.1):
-        raise failures[-1]
-    return answers[-1]
 
 
 def _wait_for_line(path: Path) -> str:
@@ -149,11 +127,11 @@ def test_ponowne_uruchomienie_tylko_otwiera_karte_dzialajacego_centrum(tmp_path:
     with _started(
         [sys.executable, str(runtime / "run_centrum.py"), "--port", str(port)], runtime, environment
     ) as first:
-        _health(port)
+        centrum_health(port)
         _wait_for_line(opened)
         again = _launch_again(runtime, port, environment)
         addresses = _opened_addresses(opened, 2)
-        still_serving = _health(port, timeout_s=2)
+        still_serving = centrum_health(port, timeout_s=2)
 
     assert again.returncode == 0, again.stdout + again.stderr
     assert f"Centrum rozliczeń już działa: http://127.0.0.1:{port}/" in again.stdout
@@ -173,11 +151,11 @@ def test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wer
     with _started(
         [sys.executable, str(runtime / "run_centrum.py"), "--port", str(port)], runtime, environment
     ):
-        health = _health(port)
+        health = centrum_health(port)
         _wait_for_line(opened)
         _check_out(runtime, UPDATED_COMMIT)
         again = _launch_again(runtime, port, environment)
-        still_serving = _health(port, timeout_s=2)
+        still_serving = centrum_health(port, timeout_s=2)
 
     assert {key: health[key] for key in ("service", "commit")} == {"service": "centrum-rozliczen", "commit": COMMIT[:7]}
     assert again.returncode == 1, again.stdout + again.stderr
@@ -238,7 +216,7 @@ def test_zamkniecie_z_karty_konczy_proces_centrum_i_zostawia_wpis_w_dzienniku(tm
         stderr=subprocess.DEVNULL,
     )
     try:
-        _health(port)
+        centrum_health(port)
         closing = _close(port)
         exit_code = process.wait(timeout=30)
     finally:
@@ -249,7 +227,7 @@ def test_zamkniecie_z_karty_konczy_proces_centrum_i_zostawia_wpis_w_dzienniku(tm
     assert exit_code == 0
     assert _log_events(runtime) == ["start", "zamkniecie", "stop"]
     with pytest.raises(urllib.error.URLError):
-        _health(port, timeout_s=0)
+        centrum_health(port, timeout_s=0)
 
 
 def _windowless(runtime: Path, port: int) -> list[str]:
@@ -270,7 +248,7 @@ def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) ->
     environment = _environment(browser)
     first = subprocess.Popen(_windowless(runtime, port), cwd=runtime, env=environment)
     try:
-        health = _health(port)
+        health = centrum_health(port)
         second = subprocess.run(_windowless(runtime, port), cwd=runtime, env=environment, timeout=60, check=False)
         addresses = _opened_addresses(opened, 2)
         _close(port)
@@ -376,7 +354,7 @@ def test_krok_instalacji_tworzy_skrot_ktory_uruchamia_centrum_przez_pythonw(tmp_
         env=_environment(browser),
     )
     try:
-        health = _health(port)
+        health = centrum_health(port)
         address = _wait_for_line(opened)
         _close(port)
         exit_code = process.wait(timeout=30)

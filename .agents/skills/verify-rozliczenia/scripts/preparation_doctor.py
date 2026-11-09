@@ -1,4 +1,4 @@
-"""Read-only build and fixture check before driving Przygotowanie pliku zbiorczego.
+"""Read-only fixture check before driving Przygotowanie pliku zbiorczego.
 
 ``--with-worker-template`` also checks the Wzorzec rozliczenia pracownika of the Przebieg rozliczeń that follows.
 """
@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-import tomllib
 import zipfile
 
 from openpyxl import load_workbook
@@ -33,8 +32,6 @@ from atrapy.settlement import PERIOD
 from rozliczenia import register_columns
 from rozliczenia.collective_layout import HEADER_ROW, INPUT_COLUMNS
 
-SCRIPT = Path(__file__).resolve()
-REPO_ROOT = SCRIPT.parents[4]
 REQUIRED_REGISTER_HEADERS = frozenset(column.register_header for column in register_columns.COLUMNS)
 TARGET_HEADERS = frozenset(register_columns.TARGET_HEADERS)
 
@@ -70,14 +67,10 @@ def _register_sheets(path: Path) -> int:
         workbook.close()
 
 
-def _check(root: Path, expected_version: str, *, worker_template: bool) -> tuple[str, int, int]:
+def _check(root: Path, *, worker_template: bool) -> tuple[str, int, int]:
     root = root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"missing fixture root: {root}")
-    with (REPO_ROOT / "pyproject.toml").open("rb") as stream:
-        version = tomllib.load(stream)["project"]["version"]
-    if version != expected_version:
-        raise ValueError(f"expected version {expected_version}, found {version}")
     if sys.version_info < (3, 11):
         raise ValueError("Python 3.11 or newer is required")
 
@@ -115,11 +108,10 @@ def _check(root: Path, expected_version: str, *, worker_template: bool) -> tuple
 def main(argv: list[str] | None = None) -> int:
     parser = Parser(description=__doc__)
     parser.add_root("run root of a preparation fixture")
-    parser.add_argument("--expected-version", default="0.1.0")
     parser.add_argument("--with-worker-template", action="store_true", help="also check the Wzorzec rozliczenia pracownika")
     args = parser.parse_args(argv)
     try:
-        period, workers, order_sheets = _check(args.root, args.expected_version, worker_template=args.with_worker_template)
+        period, workers, order_sheets = _check(args.root, worker_template=args.with_worker_template)
     except (
         OSError,
         ValueError,
@@ -134,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"DOCTOR FAIL: {stop.message.code} | {stop.message.what}", file=sys.stderr)
         return 1
     print(
-        f"DOCTOR OK | app=MAXIMISEART-Dad | process=przygotowanie | version={args.expected_version} | "
+        f"DOCTOR OK | app=MAXIMISEART-Dad | process=przygotowanie | "
         f"python={sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} | "
         f"period={period} | workers={workers} | order_sheets={order_sheets} | "
         f"templates=valid | worker_template={'valid' if args.with_worker_template else 'unchecked'} | "

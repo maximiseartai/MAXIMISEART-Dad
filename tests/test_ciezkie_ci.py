@@ -19,7 +19,7 @@ import sys
 import pytest
 import yaml
 
-from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, repository
 
 from ciezkie_ci import HEAVY, NIGHTLY, mutations_refusal, refusal
@@ -155,7 +155,6 @@ def test_odtworzenie_runu_innej_galezi_na_odlaczonym_head_odmawia(tmp_path: Path
     assert refused is not None and "dotyczy gałęzi inna (ffffffff), a nie bieżącej HEAD" in refused
 
 
-@ONLY_FOUND_BY_NAME_ON_POSIX
 def test_odtworzenie_runu_commitu_z_main_odmawia(tmp_path: Path) -> None:
     """Czerwony run scalonego PR-u ma commit w historii HEAD, ale nie jest porażką tej gałęzi."""
 
@@ -273,12 +272,7 @@ def _mutation_list(tmp_path: Path, count: int) -> Path:
     [
         (101, (), "CIĘŻKIE CI ODMOWA | change-mutations "),
         (100, ("--zmiana", "src/rozliczenia/__init__.py", "", "X = 0\n"), "CIĘŻKIE CI ODMOWA | change-mutations "),
-        pytest.param(
-            101,
-            ("--odtwarzam", "123"),
-            "CIĘŻKIE CI ODMOWA | --odtwarzam 123: run dotyczy gałęzi inna",
-            marks=ONLY_FOUND_BY_NAME_ON_POSIX,
-        ),
+        (101, ("--odtwarzam", "123"), "CIĘŻKIE CI ODMOWA | --odtwarzam 123: run dotyczy gałęzi inna"),
     ],
     ids=["101 z pliku", "100 z pliku i jedna z --zmiana", "odtworzenie runu innej galezi"],
 )
@@ -300,7 +294,7 @@ def test_mutacje_z_lista_ponad_100_poza_ci_odmawiaja_zanim_policza_podstawe(
     [
         (100, {}, ()),
         (101, {"GITHUB_ACTIONS": "true"}, ()),
-        pytest.param(101, {}, ("--odtwarzam", "123"), marks=ONLY_FOUND_BY_NAME_ON_POSIX),
+        (101, {}, ("--odtwarzam", "123")),
     ],
     ids=["celowany dowod poza CI", "w CI", "odtworzenie czerwonych mutacji zmiany"],
 )
