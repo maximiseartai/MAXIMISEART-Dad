@@ -9,8 +9,8 @@ skoroszyt w openpyxl tylko z bajtów. Odczyt z dysku poza nimi trafia w klasyfik
 wersji. Bajty z ``file_bytes``, ``workbook_content`` albo ``template_content`` i skoroszyt z ``open_workbook`` mają
 tylko miejsca z ``ONLY`` i ``EXCEPTIONS``, więc nowy czytnik nie czyta wartości pliku taty obok uchwytu, bez sprawdzenia
 dostępności, ``Readers.source``, pamięci i Kopii. Pamięć reguły danych i Kopię wejścia pisze tylko świadek arkusza
-(``dad_files.WitnessedSheet``), więc Kopia nie ma wiersza, którego nie zna pamięć (ADR 0025). Test podstawia bajty przez
-``input_checks.Readers.source``, a nie łata modułu skoroszytu.
+(``dad_files.WitnessedSheet``), więc Kopia nie ma wiersza, którego nie zna pamięć (ADR 0025). Test i atrapa wspólna z
+testami (``tools/lib/atrapy``) podstawiają bajty przez ``input_checks.Readers.source``, a nie łatają modułu skoroszytu.
 
 Granica: strażnik widzi wywołanie po nazwie funkcji (także z aliasem importu ``from … import … as …``) i łatanie modułu
 ``workbook_files`` przez ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w
