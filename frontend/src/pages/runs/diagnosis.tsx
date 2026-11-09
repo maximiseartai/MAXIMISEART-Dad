@@ -8,7 +8,8 @@ import {
   StethoscopeIcon,
 } from "lucide-react"
 
-import { diagnoseRun, reportRun, type Diagnosis, type DiagnosisCheck, type RunOutcome } from "@/api/centrum"
+import { diagnoseRun, reportRun } from "@/api/centrum"
+import type { Diagnosis, DiagnosisCheck, RunOutcome } from "@/api/generated"
 import { Disclosure } from "@/components/disclosure"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"

@@ -1,17 +1,7 @@
 import * as React from "react"
 
-import {
-  decideRun,
-  startIntermax,
-  startRun,
-  watchRunEvents,
-  type DecisionAnswer,
-  type RunEvent,
-  type RunInfo,
-  type RunMode,
-  type RunRequest,
-  type RunView,
-} from "@/api/centrum"
+import { decideRun, startIntermax, startRun, watchRunEvents, type RunView } from "@/api/centrum"
+import type { DecisionAnswer, RunEvent, RunInfo, RunMode, RunRequest } from "@/api/generated"
 import { toast } from "@/components/ui/toast"
 import { useAction } from "@/lib/action"
 

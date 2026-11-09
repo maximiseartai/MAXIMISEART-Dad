@@ -1,6 +1,6 @@
 import { TriangleAlertIcon } from "lucide-react"
 
-import type { Count, Figure } from "@/api/centrum"
+import type { Count, Figure } from "@/api/generated"
 import { seconds } from "@/lib/format"
 
 /** Liczby z etykietami jako kafelki (np. Zlecenia na dzień); zero, które ostrzega, ma ikonę, nie tylko kolor. */

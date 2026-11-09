@@ -5,11 +5,10 @@ import {
   chooseOrderRegister,
   choosePeriodsDirectory,
   getSettings,
-  type Choice,
   type PathSetting,
-  type Settings,
   type Theme,
 } from "@/api/centrum"
+import type { Choice, Settings } from "@/api/generated"
 import { showFailure, useAction } from "@/lib/action"
 import { rememberTheme, showTheme } from "@/lib/theme"
 import { DadFilesVersion, useResource, type Resource } from "@/lib/use-resource"

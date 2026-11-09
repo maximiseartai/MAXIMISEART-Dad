@@ -1,7 +1,8 @@
 import * as React from "react"
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, EyeIcon, HistoryIcon } from "lucide-react"
 
-import type { Metrics, Process, ProcessRun } from "@/api/centrum"
+import type { Process } from "@/api/centrum"
+import type { Metrics, ProcessRun } from "@/api/generated"
 import { RunResultBadge } from "@/components/run-result-badge"
 import { SegmentedFilter, type FilterOption } from "@/components/segmented-filter"
 import { Badge } from "@/components/ui/badge"

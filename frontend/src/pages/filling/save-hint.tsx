@@ -1,4 +1,4 @@
-import type { CollectiveFileRead } from "@/api/centrum"
+import type { CollectiveFileRead } from "@/api/generated"
 import { hourMinute } from "@/lib/format"
 
 /** Wskazówka pod treścią stron Uzupełnienia. */

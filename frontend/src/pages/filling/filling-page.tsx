@@ -1,14 +1,8 @@
 import { cn } from "cn"
 import { ChevronRightIcon, CircleCheckIcon, CircleDashedIcon, CircleMinusIcon } from "lucide-react"
 
-import {
-  getQuantitiesToFill,
-  type DescriptionColumn,
-  type KindToFill,
-  type QuantitiesToFill,
-  type QuantitiesToFillReady,
-} from "@/api/centrum"
-import type { RowState } from "@/api/generated"
+import { getQuantitiesToFill, type QuantitiesToFill } from "@/api/centrum"
+import type { DescriptionColumn, KindToFill, QuantitiesToFillReady, RowState } from "@/api/generated"
 import { zFillKind } from "@/api/generated/zod.gen"
 import { LoadFailure } from "@/components/load-failure"
 import { ThreePartMessage } from "@/components/three-part-message"

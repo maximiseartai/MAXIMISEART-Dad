@@ -1,6 +1,6 @@
 import { CircleStopIcon, OctagonXIcon } from "lucide-react"
 
-import type { ProcessRun } from "@/api/centrum"
+import type { ProcessRun } from "@/api/generated"
 import { isFailure } from "@/components/run-result-badge"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

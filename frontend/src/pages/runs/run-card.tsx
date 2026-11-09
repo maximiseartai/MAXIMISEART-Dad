@@ -18,16 +18,14 @@ import {
   WifiOffIcon,
 } from "lucide-react"
 
+import type { NextAction, PastRun, Pricing, RunView } from "@/api/centrum"
 import type {
   LoggedOutcome,
   Message,
-  NextAction,
   OrderNote,
   OrderNotes,
-  PastRun,
   PeriodFile,
   PhaseProgress,
-  Pricing,
   Progress as RunProgress,
   ProgressStep,
   RunInfo,
@@ -35,9 +33,8 @@ import type {
   RunOutcome,
   RunRestored,
   RunSummary,
-  RunView,
   WorkerSettlement,
-} from "@/api/centrum"
+} from "@/api/generated"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
