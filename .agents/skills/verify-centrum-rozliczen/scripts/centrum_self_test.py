@@ -147,6 +147,7 @@ LOOKALIKE_SAMPLES = (
 SHARED_PARTS = {
     "brak-sieci": "the przyczyna of a skrzynka-czeka line in the Centrum log (src), which the drive checks",
     "efenix": "the name of the process Wycena w efenix, its metrics and its Logi",
+    "skrzynka-archiwum": "the event of the Logi (src) when a send already in the skrzynka reached the Archiwum okresu",
 }
 # A name of harness.py spelled in each of its forms, which the guard ``_protocol_spelled`` reports.
 PROTOCOL_SAMPLES = (
@@ -155,6 +156,7 @@ PROTOCOL_SAMPLES = (
     'box / f"odrzuca-{label}"',
     'box / "brak-sieci"',
     'root / "efenix" / PERIOD',
+    'root / "skrzynka-archiwum" / tag',
     'f"skrzynka-zgloszen/{number}.json#komentarz-{index}"',
     'Path(root, "github", "main-commit.txt")',
     'root / "pacing" / name',
@@ -165,6 +167,7 @@ PROTOCOL_LOOKALIKES = (
     'run.step(FEATURE, "aktualizacja-brak-sieci")',
     'facts.get("przyczyna") == "brak-sieci"',
     'process == "efenix"',
+    'entry.event == "skrzynka-archiwum"',
     'run.capture(page, "77-aktualnosc-brak-sieci")',
 )
 
