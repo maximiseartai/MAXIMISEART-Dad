@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import re
 from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
@@ -33,6 +32,7 @@ from drive.common import (
 from drive.teksty import FOR_KEY, NOT_FOUND, TEMPLATE_MISSING
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 from atrapy.pliki_taty import DAD_CASES_FILE, REPORT_KEY_FILE
+from harness import Switch, comment_position, issue_file, rejects
 
 FEATURE = "zgloszenie"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.
@@ -183,10 +183,8 @@ def drive(run: Run, page: Page) -> None:
     run.check(configuration["reports"] == "ready", "Konfiguracja reports the key as ready")
     run.check(REPORT_KEY not in json.dumps(configuration) and REPORT_KEY not in page.content(), "the key value never reaches the browser")
     run.capture(page, "63-zgloszenie-konfiguracja-gotowe")
-    refusing = box / "odmawia-klucza"
     print("  harness: the skrzynka refuses the key Maks writes next (an expired token)", flush=True)
-    box.mkdir(exist_ok=True)  # run alone, nothing reached the skrzynka yet
-    refusing.touch()
+    refusing = Switch.KEY_REFUSED.on(run.root)
     key_file.write_text(REPORT_KEY + "_WYGASLY\n", encoding="utf-8")
     refused = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja-odrzucony")
     expect(page.get_by_text("Zgłoszenia: token odrzucony", exact=True)).to_be_visible()
@@ -289,14 +287,14 @@ def _check_logs_link(run: Run, box: Path, body: str, run_id: str) -> None:
 
     links = [line.removeprefix("- Logi: ") for line in body.splitlines() if line.startswith("- Logi: ")]
     run.check(
-        len(links) == 1 and re.fullmatch(r"skrzynka-zgloszen/\d+\.json#komentarz-\d+", links[0]) is not None,
+        len(links) == 1 and comment_position(links[0]) is not None,
         f"the Zgłoszenie has one Logi line with the address of a comment in the skrzynka: {links}",
     )
-    thread, _, comment = links[0].removeprefix("skrzynka-zgloszen/").partition(".json#komentarz-")
-    logs = read_json(box / f"{thread}.json")
+    thread, comment = comment_position(links[0]) or (0, 0)
+    logs = read_json(issue_file(run.root, thread))
     run.check(
         logs["labels"] == ["logi-uruchomienia"]
-        and f"- Uruchomienie: {run_id}," in logs["comments"][int(comment) - 1],
+        and f"- Uruchomienie: {run_id}," in logs["comments"][comment - 1],
         f"the Zgłoszenie links the comment of the Logi of its own Uruchomienie ({links[0]})",
     )
 
@@ -310,7 +308,7 @@ def _one_open_report(run: Run, page: Page, box: Path, config: Path) -> None:
     [first] = reports(run)
     number = first["number"]
     print(f"  harness: Maks closes Zgłoszenie {number} in the skrzynka Zgłoszeń", flush=True)
-    edit_issue(box, number, state="closed")
+    edit_issue(run, number, state="closed")
     run_id = _stop_for_maks(run, page, "zgloszenie-zamkniete")
     expect(page.get_by_role("status").filter(has_text=WAITING)).to_be_visible()
     _logs_sent(run, run_id)
@@ -363,9 +361,8 @@ def _one_open_report(run: Run, page: Page, box: Path, config: Path) -> None:
     run.step(FEATURE, "zgloszenie-bez-sieci")
     diagnosis.get_by_role("button", name="Co zostanie wysłane", exact=True).click()
     title, body = _shown_report(page)
-    offline = box / "brak-sieci"
     print("  harness: the network goes down", flush=True)
-    offline.touch()
+    offline = Switch.BOX_OFFLINE.on(run.root)
     try:
         diagnosis.get_by_role("button", name="Wyślij do Maksa", exact=True).click()
         expect(diagnosis.get_by_role("status").filter(has_text=FOR_INTERNET)).to_be_visible()
@@ -403,8 +400,8 @@ def _rejected_report(run: Run, page: Page, box: Path, config: Path) -> None:
     run.step(FEATURE, "zgloszenie-odrzucone")
     newest = reports(run)[-1]
     print(f"  harness: Maks closes Zgłoszenie {newest['number']}; the skrzynka rejects the content of every Zgłoszenie", flush=True)
-    edit_issue(box, newest["number"], state="closed")
-    rejecting = box / "odrzuca-zgloszenie"
+    edit_issue(run, newest["number"], state="closed")
+    rejecting = rejects(run.root, "zgloszenie")
     rejecting.touch()
     try:
         _stop_for_maks(run, page, "zgloszenie-odrzucone", missing="collective_template")

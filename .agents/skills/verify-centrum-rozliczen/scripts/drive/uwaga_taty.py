@@ -40,7 +40,7 @@ from drive.common import (
     switch_theme,
     toggle_theme,
 )
-from harness import Pace
+from harness import Pace, comment_address, issue_file, rejects
 from drive.teksty import FOR_KEY, MODES, WRITE
 from rozliczenia.centrum.contract.common import ProcessKey
 from rozliczenia.centrum.run_origins import CentrumRuns
@@ -671,7 +671,7 @@ def _drive_refused(run: Run, page: Page, config: Path, box: Path) -> list[Path]:
     """The skrzynka rejects an Uwaga's content: Dad is told to contact Maks; the queue files that keep it."""
 
     run.step(FEATURE, "uwaga-odrzucona")
-    rejecting = box / f"odrzuca-{LABEL}"
+    rejecting = rejects(run.root, LABEL)
     print("  harness: the skrzynka rejects the content of every new Uwaga taty", flush=True)
     rejecting.touch()
     try:
@@ -744,7 +744,7 @@ def _logs_comment(run: Run, run_id: str) -> str | None:
     for thread in box_issues(run, LOGS_LABEL):
         for index, comment in enumerate(thread.get("comments", []), start=1):
             if f"- Uruchomienie: {run_id}," in comment:
-                return f"skrzynka-zgloszen/{thread['number']}.json#komentarz-{index}"
+                return comment_address(thread["number"], index)
     return None
 
 
@@ -1036,8 +1036,8 @@ def _send_pinned(run: Run, page: Page, box: Path, run_id: str, note: tuple[str, 
     return draft["body"], new[0]
 
 
-def _issue(box: Path, number: object) -> dict[str, Any]:
-    issue = read_json(box / f"{number}.json")
+def _issue(run: Run, number: int) -> dict[str, Any]:
+    issue = read_json(issue_file(run.root, number))
     assert isinstance(issue, dict)
     return issue
 
@@ -1066,7 +1066,7 @@ def _as_maks_sees(run: Run, page: Page, issue: dict[str, Any], name: str) -> Non
 
 def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: str) -> None:
     run.step(FEATURE, "uwaga-logi-odrzucone")
-    rejecting = box / f"odrzuca-{LOGS_LABEL}"
+    rejecting = rejects(run.root, LOGS_LABEL)
     rejection = f"skrzynka-czeka etykieta={LOGS_LABEL} okres={period} przyczyna=odmowa-tresci"
     rejections = run.log().count(rejection)
     print("  harness: the skrzynka rejects the content of Logi Uruchomienia, as GitHub rejects a body too long", flush=True)
@@ -1091,8 +1091,8 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
             == [{"kind": "known_issue", "label": LABEL, "number": issue["number"]}],
             "a comment to the Uwaga's issue waits in the queue for the rejected Logi",
         )
-        run.check(_issue(box, issue["number"]).get("comments", []) == [], "while the skrzynka rejects the Logi, the Uwaga has no comment")
-        _as_maks_sees(run, page, _issue(box, issue["number"]), "198-uwaga-logi-odrzucone")
+        run.check(_issue(run, issue["number"]).get("comments", []) == [], "while the skrzynka rejects the Logi, the Uwaga has no comment")
+        _as_maks_sees(run, page, _issue(run, issue["number"]), "198-uwaga-logi-odrzucone")
     finally:
         remove(rejecting, missing_ok=True)
     refused = _drive_refused(run, page, config, box)
@@ -1113,7 +1113,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     )
     logs = _logs_comment(run, run_id)
     run.check(logs is not None, "the preview's Logi reached the skrzynka after the start")
-    sent = _issue(box, issue["number"])
+    sent = _issue(run, issue["number"])
     run.check(
         sent.get("comments", []) == [f"[Logi Uruchomienia]({logs}) dotarły do Skrzynki po tej Uwadze (Uruchomienie {run_id})."],
         "the Uwaga's issue got exactly one comment, linking the first comment of the Logi",
@@ -1144,7 +1144,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
             "the sent Uwaga says its Logi were not made or cannot be sent, with the Uruchomienie's id",
         )
         run.wait_for(lambda: queued(run, LABEL, missing, leaving=True) == [], "nothing of the Uwaga waits in the queue")
-        run.check(_issue(box, issue["number"]).get("comments", []) == [], "an Uwaga whose Logi were never queued gets no comment")
+        run.check(_issue(run, issue["number"]).get("comments", []) == [], "an Uwaga whose Logi were never queued gets no comment")
         _as_maks_sees(run, page, issue, "200-uwaga-logi-nie-powstaly")
     finally:
         print("  harness: the Logi file goes back to the queue, so logi-uruchomienia finds every Uruchomienie's Logi in the skrzynka", flush=True)

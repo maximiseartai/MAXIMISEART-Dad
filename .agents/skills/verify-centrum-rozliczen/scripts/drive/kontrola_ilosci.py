@@ -18,7 +18,7 @@ from drive.common import (
     Run,
     start_centrum,
 )
-from harness import Pace
+from harness import Pace, Switch
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 from atrapy.pliki_taty import REPORT_KEY_FILE
 
@@ -45,7 +45,7 @@ def _open_periods(page: Page, run: Run) -> None:
 def drive(run: Run, page: Page) -> None:
     config = run.config
     key_file = config / REPORT_KEY_FILE
-    offline = run.box / "brak-sieci"
+    offline = Switch.BOX_OFFLINE.file(run.root)
     checks_before = len(box_issues(run, LABEL))
 
     run.step(FEATURE, "kontrola-w-kolejce")
@@ -77,8 +77,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "kontrola-bez-sieci-po-starcie")
     print("  harness: Maks writes the key; Dad's internet is down", flush=True)
     key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
-    offline.parent.mkdir(exist_ok=True)
-    offline.touch()
+    Switch.BOX_OFFLINE.on(run.root)
     close_centrum(run, page)
     waited = _offline_waits(run)
     start_centrum(run, "kontrola-start-bez-sieci")

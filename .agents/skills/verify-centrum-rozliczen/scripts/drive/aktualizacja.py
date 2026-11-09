@@ -23,7 +23,7 @@ from drive.common import (
     served_version,
     version_line,
 )
-from harness import Pace
+from harness import File, Pace, Switch
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
 from atrapy.pliki_taty import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
 from rozliczenia.centrum.tool_update import RESULT_FILE
@@ -65,7 +65,7 @@ def _git(clone: Path, *args: str) -> str:
 def _github_main(run: Run, commit: str) -> None:
     """The newest Wydanie on the scripted GitHub is ``commit``; Centrum's clock moves past the time Konfiguracja keeps the old answer."""
 
-    (run.root / "github" / "main-commit.txt").write_text(commit, encoding="utf-8")
+    File.MAIN_COMMIT.write(run.root, commit)
     _forget_github_answer(run)
 
 
@@ -108,12 +108,10 @@ def _without_internet(run: Run) -> Iterator[None]:
 
     origin = Path(run.fixture["tool"]["origin"])
     away = origin.with_name("origin-poza-zasiegiem.git")
-    markers = [run.root / "github" / "brak-sieci", run.root / "skrzynka-zgloszen" / "brak-sieci"]
+    switches = (Switch.GITHUB_OFFLINE, Switch.BOX_OFFLINE)
     print("  harness: no internet (the local origin moved out of reach, GitHub and the skrzynka unreachable)", flush=True)
     move(origin, away)
-    for marker in markers:
-        marker.parent.mkdir(exist_ok=True)
-        marker.touch()
+    markers = [switch.on(run.root) for switch in switches]
     try:
         yield
     finally:
@@ -227,9 +225,7 @@ def drive(run: Run, page: Page) -> None:
     clone, first, newest, dad_files = Path(tool["clone"]), tool["first"], tool["newest"], tool["dad_files"]
     origin, libraries = Path(tool["origin"]), tool["libraries"]
     run_configuration = _contents(run.config)
-    github = run.root / "github"
-    github.mkdir(exist_ok=True)
-    main_commit = github / "main-commit.txt"
+    main_commit = File.MAIN_COMMIT.file(run.root)
     pacing = Pace.UPDATE.file(run.root)
     restart_pacing = Pace.RESTART.file(run.root)
 

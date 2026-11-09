@@ -29,6 +29,7 @@ from drive.common import (
 )
 from drive.teksty import BELL_FRESH, UPDATE_BUTTON, UP_TO_DATE, WRITE
 from atrapy.pliki_taty import DAD_CASES_FILE, NOTIFICATIONS_FILE, REPORT_KEY_FILE
+from harness import File, Log, Switch
 
 FEATURE = "powiadomienia"
 BELL = "Powiadomienia"
@@ -62,20 +63,16 @@ def _release(tag: str, body: str, published_at: str) -> dict[str, object]:
 def _publish(run: Run, newest_tag: str, newest_commit: str | None, releases: list[dict[str, object]]) -> None:
     """The scripted GitHub: the newest Wydanie on `main` (``None``: the tool's own commit) and the list of Releases."""
 
-    github = run.root / "github"
-    github.mkdir(exist_ok=True)
-    (github / "wydanie.txt").write_text(newest_tag, encoding="utf-8")
-    main_commit = github / "main-commit.txt"
+    File.RELEASE_TAG.write(run.root, newest_tag)
     if newest_commit is None:
-        remove(main_commit, missing_ok=True)
+        remove(File.MAIN_COMMIT.file(run.root), missing_ok=True)
     else:
-        main_commit.write_text(newest_commit, encoding="utf-8")
-    (github / "wydania.json").write_text(json.dumps(releases, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        File.MAIN_COMMIT.write(run.root, newest_commit)
+    File.RELEASES.write(run.root, json.dumps(releases, ensure_ascii=False, indent=2) + "\n")
 
 
 def _release_questions(run: Run) -> int:
-    asked = run.root / "github" / "zapytania-wydan.jsonl"
-    return len(read_text(asked).splitlines()) if asked.exists() else 0
+    return len(run.lines(Log.RELEASE_QUESTIONS))
 
 
 def _expect_points(item: Locator) -> None:
@@ -96,15 +93,13 @@ def _versions(run: Run, name: str) -> list[tuple[object, object, object]]:
 def _asked(run: Run) -> list[str]:
     """Labels of every question about Dad's cases, closed ones included; Logi Uruchomienia ask the same way."""
 
-    asked = run.root / "skrzynka-zgloszen-zapytania.jsonl"
-    lines = read_text(asked).splitlines() if asked.exists() else []
-    return [label for label in (json.loads(line)["label"] for line in lines) if label in CASE_LABELS]
+    return [label for label in (record["label"] for record in run.lines(Log.REPORT_QUESTIONS)) if label in CASE_LABELS]
 
 
-def _close_issue(box: Path, number: int, reason: str) -> None:
+def _close_issue(run: Run, number: int, reason: str) -> None:
     """Maks closes issue ``number`` in the skrzynka with GitHub's ``state_reason``."""
 
-    edit_issue(box, number, state="closed", state_reason=reason, closed_at=CLOSED_AT)
+    edit_issue(run, number, state="closed", state_reason=reason, closed_at=CLOSED_AT)
 
 
 def _bell(page: Page) -> Locator:
@@ -160,8 +155,8 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "powiadomienia-zamkniete")
     print(f"  harness: Maks closes Uwaga #{note['number']} as completed and Zgłoszenie #{report['number']} as not planned", flush=True)
-    _close_issue(box, int(str(note["number"])), "completed")
-    _close_issue(box, int(str(report["number"])), "not_planned")
+    _close_issue(run, int(str(note["number"])), "completed")
+    _close_issue(run, int(str(report["number"])), "not_planned")
     advance_clock(run, 10, "the next read may ask the skrzynka again")
     asked = len(_asked(run))
     _enter(page, run, "okresy", "Okresy")
@@ -236,9 +231,9 @@ def drive(run: Run, page: Page) -> None:
     expect(_bell(page)).to_have_accessible_name(BELL)
 
     run.step(FEATURE, "powiadomienia-brak-sieci")
-    (box / "brak-sieci").touch()
+    offline = Switch.BOX_OFFLINE.on(run.root)
     try:
-        _close_issue(box, int(str(notes[0]["number"])), "completed")
+        _close_issue(run, int(str(notes[0]["number"])), "completed")
         advance_clock(run, 10, "the next read may ask the skrzynka again")
         asked = len(_asked(run))
         _enter(page, run, "powiadomienia", BELL)
@@ -249,12 +244,12 @@ def drive(run: Run, page: Page) -> None:
         expect(_bell(page)).to_have_accessible_name(BELL)
         run.capture(page, "184-powiadomienia-brak-sieci")
     finally:
-        remove(box / "brak-sieci", missing_ok=True)
+        remove(offline, missing_ok=True)
     try:
         _drive_new_version(run, page, note, report, report_what)
     finally:
-        for name in ("wydanie.txt", "main-commit.txt", "wydania.json", "brak-sieci"):
-            remove(run.root / "github" / name, missing_ok=True)
+        for scripted in (File.RELEASE_TAG, File.MAIN_COMMIT, File.RELEASES, Switch.GITHUB_OFFLINE):
+            remove(scripted.file(run.root), missing_ok=True)
     _drive_unavailable_files(run, page, config, box)
     log = run.log()
     run.check(REPORT_KEY not in log and REPORT_KEY not in page.content(), "the key is neither in the Centrum log nor in the browser")
@@ -373,7 +368,7 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     run.capture(page, "188-powiadomienia-wydanie-aktualne")
 
     run.step(FEATURE, "powiadomienia-wydania-brak-sieci")
-    (run.root / "github" / "brak-sieci").touch()
+    Switch.GITHUB_OFFLINE.on(run.root)
     advance_clock(run, 10, "the next read may ask the skrzynka again")
     asked = _release_questions(run)
     _enter(page, run, "powiadomienia", BELL)
@@ -425,7 +420,7 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
     files = [config / name for name in STATE_FILES]
     note = next(issue for issue in box_issues(run, uwaga_taty.LABEL) if issue["state"] == "open")
     print(f"  harness: Maks closes Uwaga #{note['number']} while another program holds both state files", flush=True)
-    _close_issue(box, int(str(note["number"])), "completed")
+    _close_issue(run, int(str(note["number"])), "completed")
     advance_clock(run, 10, "the next read may ask the skrzynka again")
     with _locked(files):
         before = [read_text(path) for path in files]

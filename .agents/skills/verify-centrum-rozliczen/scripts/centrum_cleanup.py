@@ -1,6 +1,6 @@
 """Stop the Centrum this verification run started and remove its run root; evidence is never touched.
 
-The server is stopped only when ``<root>/server.json`` names it and its URL
+The server is stopped only when its record (``harness.File.SERVER``) names it and its URL
 still answers with Centrum's identity, so a reused PID or another program is
 never killed. Processes are never killed by name.
 """
@@ -20,6 +20,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser, remove_run_root, require_run_root
+from harness import File
 from atrapy.pliki_taty import SERVICE
 
 
@@ -32,7 +33,7 @@ def _answers_as_centrum(url: str) -> bool:
 
 
 def _stop_server(root: Path) -> str:
-    server_file = root / "server.json"
+    server_file = File.SERVER.file(root)
     if not server_file.exists():
         return "no server recorded"
     server = json.loads(server_file.read_text(encoding="utf-8"))

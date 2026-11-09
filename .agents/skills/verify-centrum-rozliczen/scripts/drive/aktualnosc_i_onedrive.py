@@ -21,7 +21,7 @@ from drive.common import (
     settle,
     stop_banner,
 )
-from harness import Pace
+from harness import File, Pace, Switch
 from drive.teksty import FETCHING, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON, UP_TO_DATE
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES
 
@@ -94,17 +94,11 @@ def _shown_checks(page: Page) -> Locator:
 
 def drive(run: Run, page: Page) -> None:
     register = Path(run.fixture["order_register"])
-    github = run.root / "github"
-    onedrive = run.root / "onedrive"
-    github.mkdir(exist_ok=True)
-    onedrive.mkdir(exist_ok=True)
-    main_commit = github / "main-commit.txt"
-    offline = github / "brak-sieci"
-    only_in_cloud = onedrive / "tylko-w-chmurze.txt"
+    main_commit = File.MAIN_COMMIT.file(run.root)
 
     run.step(FEATURE, "aktualnosc-nowsza-wersja")
     run_id = _stop_without_cause_on_computer(run, page)
-    main_commit.write_text(OTHER_MAIN, encoding="utf-8")
+    File.MAIN_COMMIT.write(run.root, OTHER_MAIN)
     explanation = _diagnose(page)
     expect(explanation).to_contain_text(NEWER)
     expect(explanation).to_contain_text("Kliknij „Zaktualizuj narzędzie”.")
@@ -124,7 +118,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "aktualnosc-brak-sieci")
     remove(main_commit)
-    offline.touch()
+    offline = Switch.GITHUB_OFFLINE.on(run.root)
     explanation = _diagnose(page)
     expect(explanation).to_contain_text(NOT_FOUND)
     shown = _shown_checks(page).filter(has_text=FRESHNESS)
@@ -143,7 +137,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "onedrive-tylko-w-chmurze")
     remove(offline)
     before = (read_bytes(register), register.stat().st_mtime_ns)
-    only_in_cloud.write_text(str(register) + "\n", encoding="utf-8")
+    only_in_cloud = File.CLOUD_ONLY.write(run.root, str(register) + "\n")
     explanation = _diagnose(page)
     expect(explanation).to_contain_text(ONLY_IN_CLOUD)
     expect(explanation).to_contain_text(f"plik {register.name}")
@@ -158,7 +152,7 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "78-onedrive-tylko-w-chmurze")
 
     run.step(FEATURE, "aktualnosc-propozycja")
-    main_commit.write_text(OTHER_MAIN, encoding="utf-8")
+    File.MAIN_COMMIT.write(run.root, OTHER_MAIN)
     explanation = _diagnose(page)
     expect(explanation).to_contain_text(ONLY_IN_CLOUD)
     expect(explanation.get_by_role("button", name="Uruchom ponownie", exact=True)).to_be_visible()

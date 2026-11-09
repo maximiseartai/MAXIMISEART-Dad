@@ -17,9 +17,19 @@ import pytest
 
 from rozliczenia.centrum.github import HttpRequest
 from rozliczenia.centrum.keyed_box import LIST_LAG_S
-from rozliczenia.centrum.report_box import REPOSITORY, Archive, Asset, GitHubReportBox, Rejected, Removed, Unreachable
+from rozliczenia.centrum.report_box import (
+    REPOSITORY,
+    Archive,
+    Asset,
+    Closure,
+    GitHubReportBox,
+    Refused,
+    Rejected,
+    Removed,
+    Unreachable,
+)
 
-from atrapy.skrzynka import Archives
+from atrapy.skrzynka import Archives, Issues
 
 SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
 sys.path.insert(0, str(SKILL / "scripts"))
@@ -190,6 +200,61 @@ def test_atrapa_skrzynki_daje_w_archiwach_te_skutki_ktore_nagral_prawdziwy_githu
     assert archives.remove(sent.id) == Removed()
     again = archives.upload(opened.id, "logi.json.gz", "wersja 2", b"2")
     assert isinstance(again, Asset) and again.id != sent.id
+
+
+def test_atrapa_skrzynki_daje_w_issue_te_skutki_ktore_nagral_prawdziwy_github() -> None:
+    """Model Skrzynki atrap (``atrapy.skrzynka``) odpowiada w issue jak nagrany GitHub: issue dostają kolejne numery w
+    całej skrzynce, bez względu na etykietę, a issue odrzucone (422) numeru nie zabiera; komentarz, lista komentarzy i
+    poprawka komentarza issue albo komentarza, którego nie ma, to 404 (``Refused``); lista z etykietą pokazuje tylko
+    issue tej etykiety, zamknięte tylko na prośbę, a nowe issue dopiero po chwili; identyfikator komentarza rośnie
+    w całej skrzynce. Kolejności listy model nie odtwarza (GitHub daje najnowsze pierwsze), bo wołający wybierają po
+    numerze."""
+
+    cases = json.loads((SKILL / "nagrania" / "skrzynka-fine-grained.json").read_text(encoding="utf-8"))["przypadki"]
+    opened = [int(re.findall(r"Sent\(number=(\d+)\)", cases[case]["wynik"])[0]) for case in OPENED_IN_TURN]
+    missing = {case: ([exchange["status"] for exchange in cases[case]["wymiany"]], cases[case]["wynik"]) for case in MISSING}
+    commented = [int(re.findall(r"Commented\(id=(\d+)", cases[case]["wynik"])[0]) for case in COMMENTED_IN_TURN]
+    open_only, with_closed = (re.findall(r"Issue\((\d+),", part) for part in cases["lista-zamkniete"]["wynik"].split("), (", 1))
+    closed = cases["lista-zamkniete"]["fakty"]
+    assert opened == list(range(opened[0], opened[0] + len(opened)))
+    assert cases["zalozenie-ponad-limit"]["wynik"] == "Rejected()"
+    assert cases["komentarze-strony"]["fakty"]["numer"] == opened[-1] + 1
+    assert missing == {case: ([404], "Refused()") for case in MISSING}
+    assert cases["lista-bez-etykiety"]["wynik"] == "()" and cases["etykieta-z-githuba"]["fakty"]["nadazylo_po_s"] > 0
+    assert commented == sorted(set(commented))
+    assert [int(number) for number in open_only] == [closed["otwarte"]]
+    assert sorted(map(int, with_closed)) == sorted([closed["otwarte"], closed["nie_planowane"], closed["zrobione"]])
+
+    issues = Issues(first_number=opened[0], lag=True)
+    report = issues.open("zgloszenie", "tytuł", "treść")
+    assert issues.listed("uwaga-taty", include_closed=False) == ()
+    note, logs = issues.open("uwaga-taty", "tytuł", "treść"), issues.open("logi-uruchomienia", "tytuł", "treść")
+    assert [report.number, note.number, logs.number] == opened
+    assert issues.listed("uwaga-taty", include_closed=False) == ()
+    issues.caught_up()
+    assert [issue.number for issue in issues.listed("uwaga-taty", include_closed=False)] == [note.number]
+    assert issues.open("kontrola-ilosci", "tytuł", "treść").number == cases["komentarze-strony"]["fakty"]["numer"]
+    comments = [issues.comment(number, "komentarz") for number in (report.number, logs.number, logs.number)]
+    ids = [found[1] for found in comments if isinstance(found, tuple)]
+    assert ids == sorted(set(ids)) and len(ids) == len(comments)
+    absent = max(issue.number for issue in issues.issues) + 1
+    refused = (issues.comment(absent, "komentarz"), issues.comments(absent), issues.edit_comment(max(ids) + 1, "poprawka"))
+    assert refused == (Refused(), Refused(), Refused())
+    not_planned, done = issues.open("zgloszenie", "tytuł", "treść"), issues.open("zgloszenie", "tytuł", "treść")
+    not_planned.closure, done.closure = Closure("not_planned", None), Closure("completed", None)
+    issues.caught_up()
+    assert [issue.number for issue in issues.listed("zgloszenie", include_closed=False)] == [report.number]
+    assert sorted(issue.number for issue in issues.listed("zgloszenie", include_closed=True)) == sorted(
+        [report.number, not_planned.number, done.number]
+    )
+
+
+# Nagrane założenia issue po kolei, każde z inną etykietą.
+OPENED_IN_TURN = ("zalozenie", "zalozenie-bez-etykiety-w-repo", "zalozenie-na-limicie")
+# Nagrane kroki na issue albo komentarzu, którego nie ma.
+MISSING = ("komentarz-brak-issue", "komentarze-brak-issue", "poprawka-brak-komentarza")
+# Nagrane komentarze po kolei w dwóch issue.
+COMMENTED_IN_TURN = ("komentarz", "komentarz-na-limicie", "komentarz-na-limicie-bajtow")
 
 
 def test_odtwarzanie_odmawia_zadania_spoza_nagrania() -> None:
