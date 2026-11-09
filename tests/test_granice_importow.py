@@ -185,6 +185,7 @@ WITHOUT_WORKBOOK = {
     "rozliczenia/write_routes.py": "drogi zapisu, które telemetria liczy bez kodu zapisu Wzorca",
     "rozliczenia/text.py": "reguły tekstu dla taty wspólne dla wszystkich procesów",
     "rozliczenia/register_columns.py": "kolumny Rejestru, które biorą Przebieg, Wycena i reguła danych",
+    "rozliczenia/report_cells.py": "zmiany komórek, które rdzeń Wpisania raportów zwraca bez Excela (#1226, #1161)",
     "rozliczenia/tool_files.py": "układ plików narzędzia, który znają wszystkie procesy, Centrum i launcher",
 }
 WORKBOOK_LAYER = "rozliczenia.template_file"

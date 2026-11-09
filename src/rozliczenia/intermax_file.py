@@ -1,4 +1,9 @@
-"""Pisarz dnia Uporządkowania INTERMAX: bajty Rejestru zleceń (INTERMAX) z uporządkowanym dniem i ich sprawdzenie.
+"""Pisarz INTERMAX: bajty Rejestru zleceń z uporządkowanym dniem (Uporządkowanie INTERMAX) albo z komórkami Wpisania
+raportów i ich sprawdzenie.
+
+Komórki Wpisania raportów (``with_cells``, ``check_cells``) zmieniają tylko tekst wskazanych komórek arkusza zleceń, z
+wyglądem uporządkowanego wiersza (``_Looks.text``), a reszta pliku zostaje bajt w bajt (opis w ``with_cells``). Dalej
+o dniu Uporządkowania.
 
 Rejestr czyta ``register_file``; pisarz bierze z niego części paczki (``RegisterPackage``) i XML obszaru wklejania
 (``PasteArea.sheet_xml``), a style zapisu (czcionki, wypełnienia, obramowanie) czyta sam, dopiero przy zapisie.
@@ -34,7 +39,7 @@ import re
 import struct
 import zipfile
 import zlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
@@ -67,7 +72,7 @@ from .workbook_parts import (
     style_list,
 )
 
-__all__ = ["check", "ordered"]
+__all__ = ["Cells", "check", "check_cells", "ordered", "with_cells"]
 
 _DATE_FORMAT: Final = 22  # m/d/yy h:mm, format daty uporządkowanych dni
 _BLACK: Final = "FF000000"
@@ -84,6 +89,10 @@ _SHEET_VIEW: Final = re.compile(rb"<sheetView\b([^>]*?)(?:/>|>.*?</sheetView>)",
 _PANE: Final = re.compile(rb"<pane\b([^>]*?)\s*/>")
 _TAB_SELECTED: Final = re.compile(rb'(<sheetView\b[^>]*?)\stabSelected="(?:1|true)"')
 _WORKBOOK_VIEW: Final = re.compile(rb"<workbookView\b([^>]*?)(/?>)")
+_CELL: Final = re.compile(rb'<c r="([A-Z]{1,3})\d+"([^>]*?)(?:/>|>.*?</c>)', re.S)
+_STYLE: Final = re.compile(rb'\ss="\d+"')
+_INLINE_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
+_MERGED: Final = re.compile(r'<mergeCell\b[^>]*?\sref="([^"]*)"')
 _COMPRESSION: Final = 1
 """Poziom zlib zapisu: arkusz zleceń taty (dziesiątki MB XML) zajmuje przy nim tyle co po zapisie w Excelu, a domyślny
 poziom 6 kompresuje go kilka razy dłużej i był większością czasu Uporządkowania INTERMAX u taty."""
@@ -130,7 +139,7 @@ def ordered(register: RegisterFile, area: PasteArea, block: RawBlock, plan: DayP
     styles = package.parts[package.styles_part]
     with workbook_files.unreadable_as_error(register.path):
         write_styles = _WriteStyles.of(styles)
-    looks = _Looks(write_styles, area.columns)
+    looks = _Looks(write_styles)
     sheet_xml = _ordered_sheet(area.sheet_xml, area.columns, block, plan, looks)
     parts = {**_tabs(package, area.part), area.part: sheet_xml, package.styles_part: looks.styles(styles)}
     return _archive([(info, parts.get(info.filename, package.parts[info.filename])) for info in package.infos])
@@ -154,6 +163,168 @@ def check(register: RegisterFile, written: bytes, area: PasteArea, block: RawBlo
             raise WriteMismatch(name)
     _check_styles(package.parts[package.styles_part], parts[package.styles_part])
     _check_sheet(area.sheet_xml, parts[area.part], area.columns, block, plan)
+
+
+Cells = Mapping[PasteArea, Mapping[tuple[int, int], str]]
+"""Komórki Wpisania raportów: obszar wklejania arkusza zleceń → (wiersz, kolumna od 1) → tekst."""
+
+
+def with_cells(register: RegisterFile, cells: Cells) -> bytes:
+    """Bajty INTERMAX, w których zmieniają się tylko komórki ``cells`` (Wpisanie raportów, ADR 0028).
+
+    Komórka dostaje tekst wbudowany (``inlineStr``), jak Wpis urządzenia i czynności INTERMAX. Komórka, która jest w
+    pliku, zachowuje swój styl, a komórka, której nie ma, dostaje styl tekstu uporządkowanego wiersza
+    (``_Looks.text``), dopisany do ``xl/styles.xml`` tylko wtedy, gdy go tam nie ma. Każda inna część i każdy inny
+    bajt arkusza zostają, także widok i aktywna karta. ``UnsupportedShape``, gdy komórka ma formułę albo leży w
+    scaleniu, a ``WorkbookError``, gdy stylów nie da się odczytać.
+    """
+
+    package = register.package
+    styles = package.parts[package.styles_part]
+    with workbook_files.unreadable_as_error(register.path):
+        looks = _Looks(_WriteStyles.of(styles))
+    parts = {area.part: _sheet_with_cells(area.sheet_xml, targets, looks) for area, targets in cells.items()}
+    parts[package.styles_part] = looks.styles(styles)
+    return _archive([(info, parts.get(info.filename, package.parts[info.filename])) for info in package.infos])
+
+
+def check_cells(register: RegisterFile, written: bytes, cells: Cells) -> None:
+    """``WriteMismatch``, gdy ``written`` różni się od INTERMAX czymś więcej niż tekstem komórek ``cells`` i stylami
+    dopisanymi na końcu list ``xl/styles.xml``.
+
+    Uszkodzenie ``written`` zgłasza jak odczyt skoroszytu (``workbook_files.unreadable_as_error``).
+    """
+
+    package = register.package
+    with zipfile.ZipFile(BytesIO(written)) as archive:
+        names = [info.filename for info in archive.infolist()]
+        parts = {name: archive.read(name) for name in names}
+    if names != [info.filename for info in package.infos]:
+        raise WriteMismatch("części")
+    changed = {area.part: (area, targets) for area, targets in cells.items()}
+    for name in names:
+        if name not in changed and name != package.styles_part and parts[name] != package.parts[name]:
+            raise WriteMismatch(name)
+    _check_styles(package.parts[package.styles_part], parts[package.styles_part])
+    for name, (area, targets) in changed.items():
+        _check_sheet_cells(area.sheet_xml, parts[name], targets)
+
+
+def _rows_of(targets: Mapping[tuple[int, int], str]) -> dict[int, dict[int, str]]:
+    rows: dict[int, dict[int, str]] = {}
+    for (row, column), text in targets.items():
+        rows.setdefault(row, {})[column] = text
+    return rows
+
+
+def _sheet_with_cells(sheet: RowsFromBottom, targets: Mapping[tuple[int, int], str], looks: _Looks) -> bytes:
+    xml = sheet.xml
+    merged = [range_boundaries(reference) for reference in _MERGED.findall(xml[sheet.end :].decode("utf-8"))]
+
+    def inside(row: int, column: int, left: int | None, top: int | None, right: int | None, bottom: int | None) -> bool:
+        """Komórka w zakresie scalenia; brak granicy to cała kolumna albo cały wiersz."""
+
+        return (left or 1) <= column <= (right or column) and (top or 1) <= row <= (bottom or row)
+
+    def written(row: int, row_xml: bytes, texts: Mapping[int, str]) -> bytes:
+        if any(inside(row, column, *bounds) for column in texts for bounds in merged):
+            raise UnsupportedShape("scalenie")
+        return _row_with_cells(row_xml, row, texts, looks)
+
+    return _rows_changed(sheet, xml, _rows_of(targets), written)
+
+
+def _rows_changed(
+    sheet: RowsFromBottom,
+    xml: bytes,
+    rows: Mapping[int, Mapping[int, str]],
+    change: Callable[[int, bytes, Mapping[int, str]], bytes],
+) -> bytes:
+    """XML arkusza ``xml`` (wiersze w ``sheet``) z każdym wierszem ``rows`` zmienionym przez ``change``; reszta bajt w
+    bajt. ``KeyError``, gdy wiersza nie ma."""
+
+    pieces: list[bytes] = []
+    position = 0
+    for row in sorted((sheet.row(number) for number in rows), key=lambda row: row.start):
+        pieces += [xml[position : row.start], change(row.number, xml[row.start : row.end], rows[row.number])]
+        position = row.end
+    pieces.append(xml[position:])
+    return b"".join(pieces)
+
+
+def _row_with_cells(row_xml: bytes, number: int, texts: Mapping[int, str], looks: _Looks) -> bytes:
+    """Wiersz ``<row>`` z tekstem ``texts`` w ich kolumnach: komórka, która jest, dostaje tekst ze swoim stylem, a
+    brakująca staje przed pierwszą komórką na prawo od niej; reszta wiersza zostaje bajt w bajt."""
+
+    pending = sorted(texts)
+    position = row_xml.index(b">") + 1
+    out = [row_xml[:position]]
+    for found in _CELL.finditer(row_xml, position):
+        column = _column(found)
+        while pending and pending[0] < column:
+            out += [row_xml[position : found.start()], _text_cell(pending[0], number, looks.text(), texts[pending[0]])]
+            position = found.start()
+            pending.pop(0)
+        if pending and pending[0] == column:
+            if _FORMULA.search(found.group(0)):
+                raise UnsupportedShape("formuła")
+            style = _STYLE.search(found.group(2))
+            out += [row_xml[position : found.start()], _text_cell(column, number, style, texts[column])]
+            position = found.end()
+            pending.pop(0)
+    end = row_xml.rindex(b"</row>")
+    out.append(row_xml[position:end])
+    out += [_text_cell(column, number, looks.text(), texts[column]) for column in pending]
+    out.append(row_xml[end:])
+    return b"".join(out)
+
+
+def _text_cell(column: int, row: int, style: int | re.Match[bytes] | None, text: str) -> bytes:
+    """Komórka z tekstem wbudowanym; ``style``: numer stylu nowej komórki, atrybut ``s`` komórki, która była, albo
+    ``None``, gdy ta go nie miała."""
+
+    match style:
+        case int():
+            attributes = b' s="%d"' % style
+        case re.Match():
+            attributes = style.group(0)
+        case None:
+            attributes = b""
+    content = b"<is><t>%s</t></is>" % html.escape(text, quote=False).encode("utf-8")
+    return SheetCell(column, b"", content).xml(column, row, attributes + b' t="inlineStr"')
+
+
+def _check_sheet_cells(original: RowsFromBottom, written: bytes, targets: Mapping[tuple[int, int], str]) -> None:
+    """``WriteMismatch``, gdy arkusz ``written`` bez komórek ``targets`` różni się od oryginału bez nich albo gdy któraś
+    z tych komórek nie ma swojego tekstu wbudowanego."""
+
+    rows = _rows_of(targets)
+
+    def without(_number: int, row_xml: bytes, texts: Mapping[int, str]) -> bytes:
+        return _CELL.sub(lambda found: b"" if _column(found) in texts else found.group(0), row_xml)
+
+    try:
+        data = RowsFromBottom(written)
+        same = _rows_changed(original, original.xml, rows, without) == _rows_changed(data, written, rows, without)
+        cells = {number: sheet_cells(written[data.row(number).start : data.row(number).end]) for number in rows}
+    except (IrregularSheetData, KeyError) as error:
+        raise WriteMismatch("arkusz") from error
+    if not same:
+        raise WriteMismatch("arkusz poza komórkami")
+    for number, texts in rows.items():
+        found = {cell.column: cell for cell in cells[number]}
+        for column, text in texts.items():
+            cell = found.get(column)
+            if cell is None or cell.kind != b"inlineStr" or _inline_text(cell) != text:
+                raise WriteMismatch(f"komórka {get_column_letter(column)}{number}")
+
+
+def _column(found: re.Match[bytes]) -> int:
+    return column_index_from_string(found.group(1).decode("ascii"))
+
+
+def _inline_text(cell: SheetCell) -> str:
+    return html.unescape(b"".join(_INLINE_TEXT.findall(cell.content or b"")).decode("utf-8"))
 
 
 def _tabs(package: RegisterPackage, part: str) -> dict[str, bytes]:
@@ -213,25 +384,32 @@ def _with_view(head: bytes, row: int, column: int) -> bytes:
 class _Looks:
     """Style wyglądu reszty INTERMAX dla kolumn zlecenia, dopisane do ``xl/styles.xml`` tylko raz każdy."""
 
-    def __init__(self, styles: _WriteStyles, columns: OrderColumns) -> None:
+    def __init__(self, styles: _WriteStyles) -> None:
         self._styles = styles
-        self._columns = columns
         self._fonts: list[Font] = []
         self._fills: list[Fill] = []
         self._borders: list[Border] = []
         self._xfs: list[bytes] = []
         self._style_ids: dict[tuple[bool, int, str | None], int] = {}
 
-    def style(self, column: int, number_format: int, fill: str | None) -> int:
-        """Styl komórki kolumny zlecenia ``column``: Calibri 8 (WYKONAWCA pogrubiony Calibri 9), czarna, cienka ramka,
-        do lewej i środka.
+    def style(self, columns: OrderColumns, column: int, number_format: int, fill: str | None) -> int:
+        """Styl komórki kolumny zlecenia ``column`` arkusza o kolumnach ``columns``: Calibri 8 (WYKONAWCA pogrubiony
+        Calibri 9), czarna, cienka ramka, do lewej i środka.
 
         ``fill``: wypełnienie RGB z Koloru operatora, jak to, które nadaje Excel; ``None``: bez wypełnienia.
         """
 
-        if column == self._columns.date:
+        if column == columns.date:
             number_format = _DATE_FORMAT
-        worker = column == self._columns.worker
+        return self._style(column == columns.worker, number_format, fill)
+
+    def text(self) -> int:
+        """Styl komórki tekstu uporządkowanego wiersza poza datą i ``WYKONAWCA``, bez wypełnienia: ten, który
+        Uporządkowanie daje pustej kolumnie zlecenia bez Koloru operatora."""
+
+        return self._style(False, 0, None)
+
+    def _style(self, worker: bool, number_format: int, fill: str | None) -> int:
         key = (worker, number_format, fill)
         if key not in self._style_ids:
             size, bold = (WORKER_SIZE, True) if worker else (ORDERED_SIZE, None)
@@ -357,11 +535,11 @@ def _order_row(
         if column > columns.last:
             continue
         cell = entry.get(column, source)
-        style = looks.style(column, looks.number_format(source.style), fills.get(column))
+        style = looks.style(columns, column, looks.number_format(source.style), fills.get(column))
         written[column] = cell.xml(column, number, cell.unstyled + b' s="%d"' % style)
     for column in range(1, columns.last + 1):
         if column not in written:
-            style = looks.style(column, 0, fills.get(column))
+            style = looks.style(columns, column, 0, fills.get(column))
             written[column] = SheetCell(column, b"", None).xml(column, number, b' s="%d"' % style)
     cells = b"".join(written[column] for column in sorted(written))
     return b'<row r="%d"%s>' % (number, row_look) + cells + b"</row>"
