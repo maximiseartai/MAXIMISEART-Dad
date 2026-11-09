@@ -31,7 +31,7 @@ PROCESS: Process[PreparationInputs, PreparationSummary, RunContext] = Process(
     ),
     result=_result,
     routes=lambda summary: summary.routes,
-    preview=Preview(messages.plan_not_shown()),
+    preview=Preview(messages.plan_not_shown(), dry_run=lambda inputs: inputs.dry_run),
     metrics_failure_tail="Przygotowanie pliku zbiorczego zakończyło się niezależnie.",
     execute=collective_preparation.prepare_collective_file,
     unexpected_failure=messages.unexpected_failure(),

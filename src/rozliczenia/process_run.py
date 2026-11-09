@@ -48,13 +48,10 @@ _DETACHED_OBSERVER_NOTE = "Podgląd postępu przestał się aktualizować; wynik
 
 
 class ProcessInputs(Protocol):
-    """Wejście procesu znane rdzeniowi: okres do metryk i podglądu oraz tryb."""
+    """Wejście procesu znane rdzeniowi: okres do metryk. Tryb daje opis procesu (``Process.dry_run``)."""
 
     @property
     def period(self) -> str: ...
-
-    @property
-    def dry_run(self) -> bool: ...
 
 
 class EngineContext(Protocol):
@@ -161,10 +158,11 @@ class Counter(Generic[SummaryT]):
 
 
 @dataclass(frozen=True)
-class Preview:
-    """Podgląd bez zapisu procesu: Komunikat, gdy planu nie da się pokazać."""
+class Preview(Generic[InputsT]):
+    """Podgląd bez zapisu procesu: Komunikat, gdy planu nie da się pokazać, i czy wejście prosi o podgląd (``dry_run``)."""
 
     plan_not_shown: Message
+    dry_run: Callable[[InputsT], bool]
 
 
 def _no_routes(_summary: object) -> RouteCounts:
@@ -191,7 +189,7 @@ class Process(Generic[InputsT, SummaryT, ContextT]):
     counters: tuple[Counter[SummaryT], ...]
     result: Callable[[InputsT, SummaryT], CompletedResult]
     routes: Callable[[SummaryT], RouteCounts] = _no_routes
-    preview: Preview | None
+    preview: Preview[InputsT] | None
     metrics_failure_tail: str
     execute: Callable[[InputsT, ContextT], SummaryT]
     unexpected_failure: Message
@@ -200,6 +198,11 @@ class Process(Generic[InputsT, SummaryT, ContextT]):
     @property
     def counter_names(self) -> frozenset[str]:
         return frozenset(counter.name for counter in self.counters)
+
+    def dry_run(self, inputs: InputsT) -> bool:
+        """Uruchomienie z wejściem ``inputs`` to Podgląd bez zapisu; proces bez Podglądu zawsze zapisuje."""
+
+        return self.preview is not None and self.preview.dry_run(inputs)
 
     def finished(self, inputs: InputsT, summary: SummaryT) -> Finished:
         return Finished(
@@ -347,9 +350,7 @@ def run_process(
     rozmówcy, a rdzeń liczy ``Czas uruchomienia`` zegarem kontekstu (``context.clock``).
     """
 
-    dry_run = inputs.dry_run
-    if dry_run and process.preview is None:
-        raise ValueError(f"{process.name} has no Podgląd bez zapisu.")
+    dry_run = process.dry_run(inputs)
     mode = RunMode.of(dry_run=dry_run)
     started_at = datetime.now(timezone.utc).isoformat()
     clock = context.clock

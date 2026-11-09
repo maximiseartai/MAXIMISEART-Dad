@@ -17,7 +17,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.domain import RunMode
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.message import Message
-from rozliczenia.process_run import ProcessInputs, ProcessSummary
+from rozliczenia.process_run import ProcessSummary
 from rozliczenia.progress import ProgressSnapshot
 
 
@@ -28,7 +28,6 @@ class WarnedSummary(ProcessSummary, Protocol):
     def warnings(self) -> Sequence[Message]: ...
 
 
-InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
 
 
@@ -48,7 +47,7 @@ class Shown(Generic[SummaryT]):
 
 
 @dataclass(frozen=True)
-class ResultView(Generic[InputsT, SummaryT]):
+class ResultView(Generic[SummaryT]):
     """Liczby na żywo i wynik jednego procesu w kształcie kontraktu, te same w Skrypcie dla maszyn i na karcie.
 
     ``_notes``: zlecenia z podsumowania, które zostały tacie, Zlecenia przekazane i rozliczone (Wycena w efenix); inne procesy ich
@@ -80,14 +79,14 @@ class ResultView(Generic[InputsT, SummaryT]):
             else runs_contract.ProgressStep(label=step.label, worker=step.worker, done=step.done, total=step.total),
         )
 
-    def shown(self, inputs: InputsT, summary: SummaryT) -> Shown[SummaryT]:
+    def shown(self, summary: SummaryT, *, dry_run: bool) -> Shown[SummaryT]:
         """Wynik zakończonego procesu; rdzeń woła go w swojej osłonie (``run_process(view=...)``)."""
 
-        return Shown(self._summary(summary, inputs.dry_run), tuple(summary.warnings), summary, self._notes(summary))
+        return Shown(self._summary(summary, dry_run), tuple(summary.warnings), summary, self._notes(summary))
 
 
 @dataclass(frozen=True, kw_only=True)
-class ProcessView(ResultView[InputsT, SummaryT]):
+class ProcessView(ResultView[SummaryT]):
     """Widok Uruchomienia procesu na karcie Centrum: deklaracja procesu obok liczb i wyniku.
 
     Deklaracja procesu: ``reminder`` to przypomnienie przed uruchomieniem, ``confirms_readiness``
@@ -129,7 +128,7 @@ class ProcessView(ResultView[InputsT, SummaryT]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class PeriodProcessView(ProcessView[InputsT, SummaryT]):
+class PeriodProcessView(ProcessView[SummaryT]):
     """Widok procesu, który tata uruchamia z okresem: ``preview_hint`` to podpowiedź „Podgląd bez zapisu”."""
 
     preview_hint: str

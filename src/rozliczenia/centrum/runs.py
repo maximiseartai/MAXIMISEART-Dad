@@ -94,7 +94,7 @@ def verdict(
     stop_kind: runs_contract.StopKind | None,
     result: RunResult,
     dry_run: bool,
-    view: ProcessView[Any, Any],
+    view: ProcessView[Any],
 ) -> tuple[str, runs_contract.NextAction]:
     """Tytuł wyniku i jedyna akcja po nim: jedna reguła dla karty na żywo i karty z Logów Uruchomienia.
 
@@ -193,7 +193,7 @@ class EndedRun:
     def warnings(self) -> tuple[Message, ...]:
         return () if self.shown is None else self.shown.warnings
 
-    def card(self, view: ProcessView[Any, Any]) -> runs_contract.RunOutcome:
+    def card(self, view: ProcessView[Any]) -> runs_contract.RunOutcome:
         """Wynik na karcie Uruchomienia z deklaracji procesu ``view`` (``verdict``)."""
 
         stopped = self.stopped

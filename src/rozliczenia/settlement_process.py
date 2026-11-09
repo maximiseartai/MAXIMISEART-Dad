@@ -28,7 +28,7 @@ PROCESS: Process[SettlementInputs, SettlementSummary, RunContext] = Process(
     ),
     result=lambda _inputs, summary: "OK" if summary.ok else "WYMAGA_SPRAWDZENIA",
     routes=lambda summary: summary.routes,
-    preview=Preview(settlement_messages.plan_not_shown()),
+    preview=Preview(settlement_messages.plan_not_shown(), dry_run=lambda inputs: inputs.dry_run),
     metrics_failure_tail="proces rozliczeń zakończył się niezależnie.",
     execute=engine.run_settlements,
     unexpected_failure=settlement_messages.unexpected_failure(),

@@ -1108,7 +1108,6 @@ def test_uruchomienie_ma_okres_dzisiejszej_daty_z_zegara_procesu(tmp_path: Path,
     inputs = replace(OrderingInputs(tmp_path / REGISTER_NAME, tmp_path / "Kopie INTERMAX"), now=lambda: now)
 
     assert inputs.period == {25: "20_26_10_2026", 27: "27_02_11_2026"}[now.day]
-    assert inputs.dry_run is False
 
 
 def _first_day_row(path: Path, layout: Layout, order: Order) -> int:

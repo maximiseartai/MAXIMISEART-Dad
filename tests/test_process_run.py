@@ -140,20 +140,6 @@ def test_rekord_metryk_ma_liczniki_w_kolejnosci_ich_definicji_w_procesie_takze_p
     ]
 
 
-def test_podglad_bez_zapisu_procesu_bez_podgladu_to_blad_gospodarza_zanim_ruszy_silnik(tmp_path: Path) -> None:
-    started: list[Inputs] = []
-
-    def engine(inputs: Inputs, context: RunContext) -> Summary:
-        started.append(inputs)
-        return execute(inputs, context)
-
-    with pytest.raises(ValueError, match="has no Podgląd bez zapisu"):
-        run_core(fake_process(preview=None, execute=engine), tmp_path / "metrics.jsonl", dry_run=True)
-
-    assert started == []
-    assert not (tmp_path / "metrics.jsonl").exists()
-
-
 def test_zatrzymanie_zapisuje_rekord_z_okresem_zerowymi_licznikami_i_czasami_etapow_ktore_sie_wykonaly(
     tmp_path: Path,
 ) -> None:
