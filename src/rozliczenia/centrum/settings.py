@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 import threading
-from typing import Literal
+from typing import Final, Literal
 
 import yaml
 
@@ -28,6 +28,7 @@ from rozliczenia.file_state import PathState, file_state, path_state
 
 Theme = Literal["dark", "light"]
 _THEMES: tuple[Theme, ...] = ("dark", "light")
+DEFAULT_THEME: Final[Theme] = "dark"
 _SCHEMA_VERSION = 1
 
 SettingState = Literal["not_set", "present", "missing", "inaccessible"]
@@ -38,7 +39,7 @@ SettingState = Literal["not_set", "present", "missing", "inaccessible"]
 class Settings:
     register: Path | None = None
     periods_directory: Path | None = None
-    theme: Theme = "dark"
+    theme: Theme = DEFAULT_THEME
 
     @property
     def register_state(self) -> SettingState:
@@ -155,7 +156,7 @@ class SettingsStore:
         return Settings(
             register=_path_or_none(document.get("rejestr_zlecen")),
             periods_directory=_path_or_none(document.get("folder_okresow")),
-            theme=theme if theme in _THEMES else "dark",
+            theme=theme if theme in _THEMES else DEFAULT_THEME,
         )
 
     def _write(self, settings: Settings) -> None:
