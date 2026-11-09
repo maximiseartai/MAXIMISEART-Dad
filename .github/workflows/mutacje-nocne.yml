@@ -112,7 +112,8 @@ jobs:
 
       - name: Install dependencies
         # The same as the Linux pytest parts of ci.yml: the tests of tools/ it runs call the real ruff and mypy. The
-        # editable install does not hide a mutation: tools/mutacje.py puts the copy's src first.
+        # editable install does not hide a mutation: the mutation engine (tools/lib/silnik_mutacji.py) puts the copy's
+        # src first.
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
 
       # As in the pytest parts of ci.yml: test files that reach Atrapa efenix drive a real browser, and the part runs them

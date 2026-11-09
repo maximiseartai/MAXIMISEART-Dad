@@ -151,7 +151,7 @@ import silnik_mutacji
 import wplyw_zmiany
 from zakres_runu import RDZENIE_RUNNERA
 
-# Mutacji naraz i workerów xdist pokrycia: vCPU runnera nocy. Stała, a nie ``mutacje.PARALLEL`` (rdzenie komputera), bo
+# Mutacji naraz i workerów xdist pokrycia: vCPU runnera nocy. Stała, a nie ``silnik_mutacji.PARALLEL`` (rdzenie komputera), bo
 # z niej plan nocy liczy rozmiar części (``mutacje_nocne.NA_CZESC``, ADR 0021), który nie może zależeć od komputera, na
 # którym plan biegnie.
 WORKERS = RDZENIE_RUNNERA
