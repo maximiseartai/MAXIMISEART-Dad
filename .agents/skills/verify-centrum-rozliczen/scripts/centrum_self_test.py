@@ -8,6 +8,8 @@ that the result of a started Uruchomienie is never the one before it and the Cen
 that a file the server puts in place is read once it is there and only a vanished queue file is left out,
 that the drive reads files in no other way than through those readers (``_direct_reads``),
 that the scripted skrzynka reads an issue file the drive is putting in place once it is there,
+that the scripted boundaries of ``serve_centrum.py`` write and read each file where ``harness.py`` puts it and no other
+script spells a name of ``harness.py`` (``_protocol_spelled``),
 that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, stands still
 without a move and fails on a refusal that outlasts its limit, that the drive fails on the clock's wake-up thread once it has died,
 that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
@@ -32,6 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from atrapy.scenariusz_centrum import ROW_MARKER
 from rozliczenia.tool_files import settings_file
+
+from harness import File, issue_file
 
 SCRIPT = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT.parents[1]
@@ -137,6 +141,32 @@ LOOKALIKE_SAMPLES = (
     "from .os import remove",
     # One name for two modules, which hung the guard of #925's third round: assignments bind no module here.
     "import os\nimport shutil\nfs = os\nfs.getcwd()\nfs = shutil\nfs.which('python')",
+)
+
+# A path part of a file of harness.py the product names too, so the guard ``_protocol_spelled`` takes it only as an
+# operand of ``/``.
+SHARED_PARTS = {
+    "brak-sieci": "the przyczyna of a skrzynka-czeka line in the Centrum log (src), which the drive checks",
+    "efenix": "the name of the process Wycena w efenix, its metrics and its Logi",
+}
+# A name of harness.py spelled in each of its forms, which the guard ``_protocol_spelled`` reports.
+PROTOCOL_SAMPLES = (
+    'run.lines("opened.jsonl")',
+    'root / "skrzynka-zgloszen" / "odmawia-klucza"',
+    'box / f"odrzuca-{label}"',
+    'box / "brak-sieci"',
+    'root / "efenix" / PERIOD',
+    'f"skrzynka-zgloszen/{number}.json#komentarz-{index}"',
+    'Path(root, "github", "main-commit.txt")',
+    'root / "pacing" / name',
+)
+# Strings beside those names, which the guard leaves alone.
+PROTOCOL_LOOKALIKES = (
+    '"""``<root>/opened.jsonl`` in a docstring."""',
+    'run.step(FEATURE, "aktualizacja-brak-sieci")',
+    'facts.get("przyczyna") == "brak-sieci"',
+    'process == "efenix"',
+    'run.capture(page, "77-aktualnosc-brak-sieci")',
 )
 
 
@@ -636,7 +666,7 @@ def _check_clock_moved_whole(errors: list[str]) -> None:
         refusing = threading.Event()
 
         def put_in_place() -> None:
-            with unreadable(root / "zegar" / "przesuniecie-min.txt"):
+            with unreadable(File.CLOCK_MOVE.file(root)):
                 refusing.set()
                 time.sleep(0.3)
 
@@ -684,7 +714,7 @@ def _check_clock_without_move(errors: list[str]) -> None:
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
         root = Path(scratch) / "run"
-        (root / "zegar").mkdir(parents=True)
+        File.CLOCK_MOVE.file(root).parent.mkdir(parents=True)
         # A refusal for good, without waiting the whole limit; no wake-up thread, which would read the same move.
         clock = ScriptedClock(root, retry_s=0.2, alarm=False)
         started = time.monotonic()
@@ -692,8 +722,7 @@ def _check_clock_without_move(errors: list[str]) -> None:
         if not (isinstance(moved, float) and abs(moved) < 1 and time.monotonic() - started < 1):
             errors.append(f"Centrum's clock without a move of the drive does not stand still at once: {moved!r}")
 
-        move = root / "zegar" / "przesuniecie-min.txt"
-        move.write_text("5", encoding="utf-8")
+        move = File.CLOCK_MOVE.write(root, "5")
         with contextlib.redirect_stdout(io.StringIO()), unreadable(move):
             refused = read(clock)
         if not isinstance(refused, PermissionError):
@@ -710,12 +739,12 @@ def _check_box_reads_while_put_in_place(errors: list[str]) -> None:
     from serve_centrum import FileReportBox
 
     with tempfile.TemporaryDirectory() as scratch:
-        directory = Path(scratch) / "skrzynka-zgloszen"
-        directory.mkdir()
-        issue = directory / "1.json"
+        root = Path(scratch)
+        issue = issue_file(root, 1)
+        issue.parent.mkdir()
         body = {"number": 1, "title": "t", "body": "b", "labels": ["zgloszenie"], "state": "open", "comments": ["c"]}
         issue.write_text(json.dumps(body), encoding="utf-8")
-        box = FileReportBox(directory)
+        box = FileReportBox(root)
 
         def comments() -> object:
             found = box.comments(1, key="k")
@@ -737,6 +766,176 @@ def _check_box_reads_while_put_in_place(errors: list[str]) -> None:
                 errors.append(f"the scripted skrzynka gives up on {what} while the drive puts the issue in place: {got!r}")
 
 
+def _protocol_names() -> tuple[frozenset[str], str]:
+    """The path parts of every file of ``harness.py`` (those also named in the product only beside ``SHARED_PARTS``)
+    and the prefix of a label's rejection, each taken from the module's own answers."""
+
+    import harness
+
+    root = Path("R")
+    paths = [
+        *(each.file(root) for kind in (harness.Pace, harness.Switch, harness.Log, harness.File) for each in kind),
+        harness.issue_file(root, 1),
+        harness.archive_listing(root),
+        harness.archive_file(root, "t", "n"),
+        harness.last_file_id(root),
+        harness.efenix_files(root),
+    ]
+    parts = {part for path in paths for part in path.relative_to(root).parts}
+    parts.update(harness.comment_address(1, 1).split("/")[:-1])
+    rejection = harness.rejects(root, "L")
+    parts.add(rejection.parent.name)
+    return frozenset(parts - {"1.json", "t", "n"}), rejection.name.removesuffix("L")
+
+
+def _protocol_spelled(source: str) -> list[str]:
+    """Each string of ``source`` (a docstring or other bare string aside) with a path part of a file of ``harness.py``
+    or a label's rejection, as ``<line>: <string>``: both sides of the protocol take its names from ``harness.py``, so
+    a name changed there cannot leave one side on the old name. A part the product names too (``SHARED_PARTS``) counts
+    only as an operand of ``/``.
+
+    Its boundary, which review checks: a name put together at run time (``"brak-" + "sieci"``), a part glued to another
+    in one string (``f"{x}-zapytania.jsonl"``), and a shared part that is no operand of ``/``
+    (``Path("efenix", PERIOD)``, ``root / f"efenix/{PERIOD}"``)."""
+
+    names, rejecting = _protocol_names()
+    tree = ast.parse(source)
+    bare = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    }
+    joined = {
+        id(operand)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
+        for operand in (node.left, node.right)
+    }
+    found = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or id(node) in bare:
+            continue
+        parts = set(node.value.replace("#", "/").split("/"))
+        spelled = parts & (names if id(node) in joined else names - SHARED_PARTS.keys())
+        if spelled or any(part.startswith(rejecting) for part in parts):
+            found.append((node.lineno, node.value))
+    return [f"{line}: {text!r}" for line, text in sorted(found)]
+
+
+def _check_protocol_spelled_once(errors: list[str]) -> None:
+    """No script but ``harness.py`` spells a name of its files: the guard reports each sample of ``PROTOCOL_SAMPLES`` and
+    nothing of ``PROTOCOL_LOOKALIKES``, and every script of the skill passes it."""
+
+    for sample in PROTOCOL_SAMPLES:
+        if not _protocol_spelled(sample):
+            errors.append(f"the guard of the harness's names lets {sample!r} through")
+    for sample in PROTOCOL_LOOKALIKES:
+        if found := _protocol_spelled(sample):
+            errors.append(f"the guard of the harness's names takes {sample!r} for a name of harness.py: {found}")
+    for path in sorted(SCRIPTS_ROOT.rglob("*.py")):
+        if path.name == "harness.py":
+            continue
+        for finding in _protocol_spelled(path.read_text(encoding="utf-8")):
+            errors.append(
+                f"{path.relative_to(SCRIPTS_ROOT).as_posix()}:{finding}; take the name from harness.py, which both the "
+                "drive and serve_centrum.py read it from"
+            )
+
+
+def _check_served_side_reads_harness(errors: list[str]) -> None:
+    """The scripted boundaries of ``serve_centrum.py`` write and read each file where ``harness.py`` puts it: a member
+    the served side reads under another member's name, or a name it spells itself, fails here and not as a check of
+    the drive that passes because nothing opened (``Log.OPENED``) or nothing was refused."""
+
+    import json
+    import tempfile
+
+    from harness import File, Log, Switch, archive_file, archive_listing, comment_position, last_file_id, rejects
+    from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
+    from rozliczenia.centrum.tool_freshness import GitHubReleases
+    from serve_centrum import FileReportBox, ScriptedPlatform, _register_failing_on_hook, _scripted_github, _scripted_onedrive
+
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch)
+
+        def records(log: Log) -> list[object]:
+            path = log.file(root)
+            return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+
+        platform = ScriptedPlatform(root)
+        platform.open_path(root / "plik.xlsx")
+        File.PICKER_ANSWER.write(root, str(root / "wybrany"))
+        chosen = platform.choose_folder("Okno")
+        if records(Log.OPENED) != [{"path": str(root / "plik.xlsx")}]:
+            errors.append(f"opening a file is not logged in {Log.OPENED.value}: {records(Log.OPENED)}")
+        if records(Log.DIALOGS) != [{"title": "Okno"}] or chosen != root / "wybrany":
+            errors.append(f"a picker does not log in {Log.DIALOGS.value} or answer from {File.PICKER_ANSWER.value}")
+
+        box = FileReportBox(root)
+        scripted = [
+            (Switch.BOX_OFFLINE.file(root), Unreachable()),
+            (Switch.KEY_REFUSED.file(root), Refused()),
+            (rejects(root, "zgloszenie"), Rejected()),
+        ]
+        for path, expected in scripted:
+            path.parent.mkdir(exist_ok=True)
+            path.touch()
+            got = box.open_issue("zgloszenie", "t", "b", key="k")
+            path.unlink()
+            if got != expected:
+                errors.append(f"the scripted skrzynka gives {got!r} instead of {expected!r} while {path.name} exists")
+        sent = box.open_issue("zgloszenie", "t", "b", key="k")
+        commented = box.comment(1, "c", key="k")
+        if sent != Sent(1) or not (isinstance(commented, Commented) and comment_position(commented.url) == (1, 1)):
+            errors.append(f"the scripted skrzynka does not open issue 1 with comment 1: {sent!r}, {commented!r}")
+        box.labelled_issues("zgloszenie", include_closed=True, key="k")
+        if records(Log.REPORT_QUESTIONS) != [{"label": "zgloszenie"}]:
+            errors.append(f"a question for closed issues is not logged in {Log.REPORT_QUESTIONS.value}")
+        refused = Switch.ARCHIVE_REFUSED.on(root)
+        got_archive = box.open_archive("logi-x", "t", "d", key="k")
+        refused.unlink()
+        if got_archive != Refused():
+            errors.append(f"the scripted Archiwa give {got_archive!r} while {Switch.ARCHIVE_REFUSED.value} exists")
+        opened = box.open_archive("logi-x", "t", "d", key="k")
+        uploaded = box.upload(opened.id, "logi.gz", "l", b"x", key="k") if isinstance(opened, Archive) else opened
+        if not (
+            isinstance(uploaded, Asset)
+            and archive_file(root, "logi-x", "logi.gz").read_bytes() == b"x"
+            and archive_listing(root).exists()
+            and last_file_id(root).read_text(encoding="utf-8") == str(uploaded.id)
+        ):
+            errors.append(f"the scripted Archiwa do not keep a file where harness.py puts it: {uploaded!r}")
+
+        github = _scripted_github(root, root / "klon")
+        File.TOOL_COMMIT.write(root, "a" * 40)
+        File.MAIN_COMMIT.write(root, "b" * 40)
+        File.RELEASE_TAG.write(root, "v1.0.0")
+        File.RELEASES.write(root, "[]")
+        answers = (github.local(), github.release(), github.published())
+        offline_switch = Switch.GITHUB_OFFLINE.on(root)
+        offline = (github.release(), github.published())
+        offline_switch.unlink()
+        if answers != ("a" * 40, GitHubReleases("b" * 40, "v1.0.0"), ()) or offline != (None, None):
+            errors.append(f"the scripted GitHub does not answer from the files of harness.py: {answers}, {offline}")
+        if len(records(Log.RELEASE_QUESTIONS)) != 2:
+            errors.append(f"each question for the published Wydania is not logged in {Log.RELEASE_QUESTIONS.value}")
+
+        register = root / "Rejestr.xlsx"
+        register.write_bytes(b"r")
+        File.CLOUD_ONLY.write(root, str(register) + "\n")
+        onedrive = _scripted_onedrive(root).read_attributes
+        if onedrive is None or onedrive(register) == onedrive(root / "inny.xlsx"):
+            errors.append(f"the scripted OneDrive does not read {File.CLOUD_ONLY.value}")
+        source = _register_failing_on_hook(root, register)
+        Switch.REGISTER_FAULT.on(root)
+        try:
+            source(register)
+        except RuntimeError:
+            pass
+        else:
+            errors.append(f"reading the Rejestr zleceń does not fail while {Switch.REGISTER_FAULT.value} exists")
+
+
 def _check_clock_alarm_failure(errors: list[str]) -> None:
     """Once the wake-up thread of Centrum's clock dies (here on a move it cannot read), the drive fails on it at the
     next ``advance_clock`` and at a wait that times out, instead of waiting for a wake-up that never fires (#1124)."""
@@ -756,17 +955,17 @@ def _check_clock_alarm_failure(errors: list[str]) -> None:
     try:
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch) / "run"
-            (root / "zegar").mkdir(parents=True)
+            File.CLOCK_MOVE.file(root).parent.mkdir(parents=True)
             (root / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
-            (root / "zegar" / "przesuniecie-min.txt").write_text("jedna minuta", encoding="utf-8")
+            File.CLOCK_MOVE.write(root, "jedna minuta")
             run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
             ScriptedClock(root)
-            died = root / "zegar" / "budzik-padl.txt"
+            died = File.CLOCK_DIED.file(root)
             deadline = time.monotonic() + 5
             while not died.exists() and time.monotonic() < deadline:
                 time.sleep(0.05)
             if "could not convert" not in (died.read_text(encoding="utf-8") if died.exists() else ""):
-                errors.append("the wake-up thread of Centrum's clock dies without leaving why in zegar/budzik-padl.txt")
+                errors.append(f"the wake-up thread of Centrum's clock dies without leaving why in {File.CLOCK_DIED.value}")
                 return
             steps: dict[str, Callable[[], None]] = {
                 "advance_clock": lambda: advance_clock(run, 1, "the self-test moves a dead clock"),
@@ -910,6 +1109,8 @@ def main(argv: list[str] | None = None) -> int:
     _check_result_of_start(errors)
     _check_read_while_put_in_place(errors)
     _check_box_reads_while_put_in_place(errors)
+    _check_served_side_reads_harness(errors)
+    _check_protocol_spelled_once(errors)
     _check_clock_moved_whole(errors)
     _check_clock_without_move(errors)
     _check_clock_alarm_failure(errors)
