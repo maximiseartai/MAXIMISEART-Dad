@@ -12,7 +12,6 @@ from datetime import datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
 import errno
 import hashlib
-import importlib.util
 from http import HTTPStatus
 import json
 import os
@@ -119,6 +118,8 @@ from atrapy.settlement import COLLECTIVE_HEADERS, MARKED, SOURCE_NAME, CellValue
 from tests.fixtures.tool_clone import ToolRepository, git_failing_on, tool_repository
 from atrapy.widok_skrzynki import shown
 from atrapy.workbooks import active_worksheet, rewrite_parts
+
+import odtworz_uruchomienie
 
 AnyCentrum = PreparingCentrum | SettlingCentrum
 KEYS = {
@@ -2111,18 +2112,11 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
     assert f"; wyjątki {' ← '.join(chain)}" in shown and shown.endswith(f" w {path.raised}"), shown
 
 
-REPLAY_TOOL = Path(__file__).resolve().parents[1] / "tools" / "odtworz_uruchomienie.py"
-
-
 def _replay_report(capsys: pytest.CaptureFixture[str], logs: Path) -> list[str]:
     """Linie raportu narzędzia odtwarzania (``tools/odtworz_uruchomienie.py``) z pliku Logów ``logs`` na tym drzewie."""
 
-    spec = importlib.util.spec_from_file_location("odtworz_uruchomienie", REPLAY_TOOL)
-    assert spec is not None and spec.loader is not None
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
     capsys.readouterr()
-    tool.main([str(logs), "--na-tym-drzewie", "--efenix-dzis", TODAY.isoformat()])
+    odtworz_uruchomienie.main([str(logs), "--na-tym-drzewie", "--efenix-dzis", TODAY.isoformat()])
     return capsys.readouterr().out.splitlines()
 
 

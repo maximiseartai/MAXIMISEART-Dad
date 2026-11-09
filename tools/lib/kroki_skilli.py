@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from functools import cache
 import importlib.util
@@ -299,10 +300,10 @@ def repeats(step: Step, chosen: Iterable[Step]) -> bool:
         return False
 
 
-class Katalog(NamedTuple):
+@dataclass(frozen=True)
+class Katalog:
     """Kroki skilli checkoutu ``root`` i FAIL-e ich znalezienia, jak ``Repository.scan`` w ``tools/lib/wplyw_zmiany.py``.
 
-    Krotka nazwana, nie dataclass: testy wczytują moduł bez wpisu w ``sys.modules``, którego dataclass potrzebuje.
     ``kroki``: podstawa każdego skilla z kluczem ``ci`` przed jego skryptami mutacji, skille po nazwie. ``bledy``: FAIL
     po nazwie: zgubione skrypty mutacji, zły klucz ``ci:`` albo ``ci-czesci:`` i brak jakiegokolwiek skryptu mutacji.
     """

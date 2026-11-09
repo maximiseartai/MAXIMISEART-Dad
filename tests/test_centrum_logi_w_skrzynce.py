@@ -16,13 +16,11 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 import gzip
-import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
-from types import ModuleType
 from typing import Any, Final
 
 import pytest
@@ -67,6 +65,8 @@ from tests.fixtures.centrum_processes import (
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
 from atrapy.settlement import PERIOD
+
+import odtworz_uruchomienie
 
 LABEL: Final = "logi-uruchomienia"
 LINE = f"- Logi Uruchomienia okresu: {PERIOD}"
@@ -719,18 +719,10 @@ def test_odtworzenie_porownuje_kazde_pole_logow_poza_faktami_startu_i_okolicznos
     assert set(compared) | NOT_COMPARED == set(RunLog.model_fields)
 
 
-def _tool() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("odtworz_uruchomienie", TOOL)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _replayed(capsys: pytest.CaptureFixture[str], *arguments: str | Path) -> tuple[int, list[str]]:
     """Kod wyjścia narzędzia i linie jego raportu."""
 
-    code = _tool().main([str(argument) for argument in arguments])
+    code = odtworz_uruchomienie.main([str(argument) for argument in arguments])
     return code, capsys.readouterr().out.splitlines()
 
 

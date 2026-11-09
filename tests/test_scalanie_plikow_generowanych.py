@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 
 from tests.fixtures.git_repo import commit, git, repository
+
+import setup_worktree
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED = (
@@ -24,13 +25,8 @@ def _write(repo: Path, text: str) -> None:
 
 
 def _set_up_merge_driver(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.syspath_prepend(str(ROOT / "tools"))
-    spec = importlib.util.spec_from_file_location("setup_worktree", ROOT / "tools" / "setup_worktree.py")
-    assert spec is not None and spec.loader is not None
-    setup = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(setup)
-    monkeypatch.setattr(setup, "ROOT", repo)
-    setup._merge_generated()
+    monkeypatch.setattr(setup_worktree, "ROOT", repo)
+    setup_worktree._merge_generated()
 
 
 def test_scalenie_dwoch_galezi_zostawia_w_plikach_generowanych_wersje_head_bez_konfliktu(
