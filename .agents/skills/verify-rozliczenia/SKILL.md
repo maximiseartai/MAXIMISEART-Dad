@@ -15,6 +15,7 @@ pilnuje:
   - src/rozliczenia/domain.py
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/engine.py
+  - src/rozliczenia/file_state.py
   - src/rozliczenia/highlights.py
   - src/rozliczenia/hyperlinks.py
   - src/rozliczenia/inea_only_quantities.py

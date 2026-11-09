@@ -34,7 +34,7 @@
   "src/rozliczenia/centrum/logs_disk.py": {
     "LogsOnDisk.logs": "09cb03e3fedd9628",
     "_read_logs": "42f7c04a89d9683f",
-    "_names": "d703673e4771ad93",
+    "_names": "e0cb74814c580cb5",
     "_NAME": "7e5bf69553e4b18c",
     "_RUN_ID": "38b226cc6aeae33a",
     "LogsRead": "2dfbc7e2c338f6b7",
@@ -43,7 +43,7 @@
     "_RunEnded": "de0df1f225b6c810",
     "JournalRead": "0e4cbc86128d9c88",
     "_read_journal": "0566cf4fcc730794",
-    "_remove": "56e443ad89f7a91e",
+    "_remove": "e246b45d4dad5104",
     "LogsOnDisk.started": "3ccf23d17059de9b",
     "LogsOnDisk.left_behind": "6575679b81ab383e",
     "LogsOnDisk.remove_journal": "68bae958d9af8c30",

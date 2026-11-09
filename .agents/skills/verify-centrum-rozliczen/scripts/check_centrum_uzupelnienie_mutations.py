@@ -43,7 +43,7 @@ MUTATIONS = (
     ),
     Mutation(
         "plik blokady Excela blokuje odczyt Uzupełnienia",
-        (Edit(WORKBOOK_FILES, "    if open_in_excel and not despite_excel_lock:\n", "    if open_in_excel:\n"),),
+        (Edit(WORKBOOK_FILES, "    if is_open_in_excel(path) and not despite_excel_lock:\n", "    if is_open_in_excel(path):\n"),),
         UZUPELNIENIE,
         "tata z Plikiem zbiorczym otwartym w Excelu widzi Komunikat zamiast swoich postępów",
     ),

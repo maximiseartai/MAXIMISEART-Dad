@@ -23,7 +23,6 @@ from decimal import Decimal
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
-import stat
 from types import MappingProxyType
 from typing import IO, TYPE_CHECKING, Final, NamedTuple, Never, TypeAlias, TypeVar, cast
 from xml.etree.ElementTree import ParseError
@@ -51,6 +50,7 @@ from .collective_layout import (
     QUANTITY_COLUMNS,
     WORKER_COLUMN,
 )
+from .file_state import file_state
 from .highlights import Highlights, LookReader
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .quantity_rules import QuantityColumn
@@ -221,18 +221,6 @@ class RegisterRow:
     """
 
 
-def _status(path: Path) -> os.stat_result | None:
-    """``stat`` pliku albo ``None``, gdy go nie ma; folder bez dostępu to ``OSError``.
-
-    ``Path.exists`` i ``Path.is_file`` od Pythona 3.14 dają wtedy ``False``, więc plik bez dostępu byłby brakiem pliku.
-    """
-
-    try:
-        return path.stat()
-    except (FileNotFoundError, NotADirectoryError):
-        return None
-
-
 def excel_lock_file(path: Path) -> Path:
     """Plik blokady ``~$…``, który desktopowy Excel kładzie obok otwartego skoroszytu ``path``."""
 
@@ -255,13 +243,14 @@ def ensure_available(path: Path, *, despite_excel_lock: bool = False) -> None:
     ``despite_excel_lock`` pozwala czytać skoroszyt, który trzyma Excel: jego ostatnią zapisaną wersję (ADR 0016).
     """
 
-    try:
-        status, open_in_excel = _status(path), is_open_in_excel(path)
-    except OSError as exc:
-        raise WorkbookError(path, Problem.INACCESSIBLE) from exc
-    if status is None or not stat.S_ISREG(status.st_mode):
-        raise WorkbookError(path, Problem.MISSING)
-    if open_in_excel and not despite_excel_lock:
+    match file_state(path):
+        case "inaccessible":
+            raise WorkbookError(path, Problem.INACCESSIBLE)
+        case "missing":
+            raise WorkbookError(path, Problem.MISSING)
+        case "file":
+            pass
+    if is_open_in_excel(path) and not despite_excel_lock:
         raise WorkbookError(path, Problem.OPEN_IN_EXCEL)
 
 

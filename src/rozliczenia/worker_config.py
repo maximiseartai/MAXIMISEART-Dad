@@ -9,12 +9,12 @@ procesu.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import stat
 from pathlib import Path
 from typing import Literal
 
 import yaml
 
+from .file_state import file_state
 from .period_folder import check_worker_name
 from .text import normalize_text
 
@@ -115,15 +115,6 @@ def load_worker_mapping(config_path: Path) -> dict[str, str]:
 
 
 def _unread(config_path: Path) -> WorkerConfigError:
-    """Plik, którego nie udało się przeczytać: brak pliku albo plik niedostępny, rozpoznane po ``stat`` jak skoroszyt.
+    """Plik, którego nie udało się przeczytać: brak pliku albo plik niedostępny, także gdy jest, ale odczyt zawiódł."""
 
-    Folder bez dostępu daje ``OSError`` także w ``stat``, więc plik w nim jest niedostępny, a nie brakujący.
-    """
-
-    try:
-        missing = not stat.S_ISREG(config_path.stat().st_mode)
-    except (FileNotFoundError, NotADirectoryError):
-        missing = True
-    except OSError:
-        missing = False
-    return WorkerConfigError("missing" if missing else "inaccessible")
+    return WorkerConfigError("missing" if file_state(config_path) == "missing" else "inaccessible")
