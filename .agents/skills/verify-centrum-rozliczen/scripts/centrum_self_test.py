@@ -277,8 +277,6 @@ def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
 
 
 def _helpers_of(name: str) -> frozenset[str]:
-    """The functions of ``drive/<name>`` that may delete and move: only the retrying helpers of ``common.py``."""
-
     return DRIVE_HELPERS if name == "common.py" else frozenset()
 
 

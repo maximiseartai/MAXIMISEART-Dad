@@ -28,13 +28,10 @@ from drive.common import DriveFailure, Run, dad_context
 from skrypt_skilla import Parser
 from rozliczenia.tool_files import settings_file
 
-# Every feature's module, imported before the drive starts, so a broken one fails it at once.
 MODULES = {each.name: importlib.import_module(each.module) for each in FEATURES}
 
 
 def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str, Any]) -> None:
-    """Drives feature ``name`` after each of its ``needs`` that ``driven`` (this drive so far) lacks."""
-
     for need in feature(name).needs:
         if need not in driven:
             print(f"  harness: {name} needs the state of {need}, which this drive has not driven, so it runs first", flush=True)

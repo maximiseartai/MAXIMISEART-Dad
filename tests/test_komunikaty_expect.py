@@ -287,9 +287,9 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     """Klasa ``Refusal`` jako wartość stoi tylko w ``centrum/refusal.py``, więc tylko katalog tworzy odmowę.
 
     Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
-    odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu albo pola, w nawiasach typu i unii ``|`` w
-    instrukcji modułu albo klasy poza wywołaniem i lambdą (alias ``Callable[[], Refusal | None]``), w ``except``, w
-    drugim argumencie ``isinstance``/``issubclass`` i w argumencie ``exception_handler``.
+    odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu, pola albo zmiennej, w nawiasach typu i unii
+    ``|`` w instrukcji modułu albo klasy poza wywołaniem i lambdą (alias ``Callable[[], Refusal | None]``), w
+    ``except``, w drugim argumencie ``isinstance``/``issubclass`` i w argumencie ``exception_handler``.
     Każde inne odwołanie pada, w tym wywołanie, argument wywołania (``partial(Refusal, 500)``), przypisanie do nazwy
     (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa, odwołanie wewnątrz wywołania albo lambdy i
     nawiasy typu albo unia w ciele funkcji (``make = Refusal | Refusal``, ``list[Refusal].__args__[0](…)``).

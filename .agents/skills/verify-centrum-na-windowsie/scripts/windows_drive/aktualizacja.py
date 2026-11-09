@@ -39,8 +39,6 @@ def _guardian_ended(run: Run, centrum: int) -> None:
 
 
 def _update_entries(run: Run) -> list[str]:
-    """The Centrum log from the last ``aktualizacja-start`` on."""
-
     lines = run.log_lines()
     starts = [index for index, line in enumerate(lines) if " aktualizacja-start " in line]
     return lines[starts[-1] :] if starts else []

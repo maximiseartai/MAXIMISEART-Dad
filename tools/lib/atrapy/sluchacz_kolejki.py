@@ -10,7 +10,7 @@ from rozliczenia.centrum.outbox import Deliveries, Post
 
 @dataclass
 class QueueListener:
-    """Wysyłki idą bez zmian i bez wysyłek następczych; ``numbers`` to Uruchomienie i numer issue każdej przyjętej."""
+    """``numbers``: Uruchomienie i numer issue każdej przyjętej wysyłki."""
 
     numbers: list[tuple[str, int]] = field(default_factory=list)
 

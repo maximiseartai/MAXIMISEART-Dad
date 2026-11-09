@@ -258,8 +258,6 @@ class Proxy:
 
 
 class _Server(ThreadingHTTPServer):
-    """Proxy server on a free port of ``127.0.0.1`` that closes its open connections at the end."""
-
     daemon_threads = True
     request_queue_size = 128
 

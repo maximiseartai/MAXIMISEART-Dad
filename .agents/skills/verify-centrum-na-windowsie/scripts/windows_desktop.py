@@ -20,7 +20,6 @@ import sys
 import time
 from typing import Any
 
-# Window classes the drive looks for.
 DIALOG = "#32770"  # a message box and the Vista file dialog of tkinter
 EXPLORER = "CabinetWClass"
 CONSOLE = "ConsoleWindowClass"
@@ -167,8 +166,6 @@ def close(window: Window) -> None:
 
 
 def _ancestors(handle: int, dialog: int) -> list[tuple[str, int]]:
-    """Class and control id of each window between ``handle`` and ``dialog``."""
-
     user32 = _user32()
     chain = []
     ancestor = user32.GetParent(handle)
@@ -242,8 +239,6 @@ _UTF8 = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false;
 
 
 def processes() -> list[Process]:
-    """Every process with its parent, executable and command line (``Win32_Process``)."""
-
     output = _powershell(
         _UTF8 + "@(Get-CimInstance Win32_Process | ForEach-Object { @{pid=[int]$_.ProcessId; "
         "parent=[int]$_.ParentProcessId; name=[string]$_.Name; executable=[string]$_.ExecutablePath; "
@@ -254,14 +249,12 @@ def processes() -> list[Process]:
 
 
 def processes_mentioning(text: str) -> list[Process]:
-    """Processes whose command line contains ``text`` (case-insensitive), never this process."""
-
     needle = text.lower()
     return [process for process in processes() if needle in process.command_line.lower() and process.pid != os.getpid()]
 
 
 def port_owner(port: int) -> int | None:
-    """The process listening on ``127.0.0.1:port``, or ``None``."""
+    """The pid listening on ``port``, or ``None``."""
 
     output = _powershell(
         f"@(Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | "

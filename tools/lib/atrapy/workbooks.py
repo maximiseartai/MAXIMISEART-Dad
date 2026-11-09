@@ -89,8 +89,6 @@ def view_of(sheet_view: SheetView) -> View:
 
 
 def leave_data_row_leftovers(path: Path, *, first_row: int, rows: int, columns: int) -> None:
-    """Wiersze danych Wzorca od ``first_row`` z resztkami formatowania w kolumnach A..``columns``."""
-
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
@@ -123,8 +121,6 @@ def column_widths(sheet: Worksheet, max_col: int) -> list[float | None]:
 
 
 def add_external_link_fixture(path: Path) -> None:
-    """Dodaje minimalny, prawidłowy link zewnętrzny do syntetycznego XLSX."""
-
     ns_main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     ns_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     ns_pkg_rel = "http://schemas.openxmlformats.org/package/2006/relationships"

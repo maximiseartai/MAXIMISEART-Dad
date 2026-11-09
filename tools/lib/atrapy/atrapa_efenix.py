@@ -216,7 +216,7 @@ class StatusChange(enum.Enum):
 
 
 class Outage(enum.Enum):
-    """Jak Atrapa nie odpowiada na żądania, gdy efenix jest odcięty (``outage_after``)."""
+    """Jak Atrapa nie odpowiada na żądania, gdy efenix jest odcięty (``outage_from``)."""
 
     CUT = "zrywa połączenie każdego żądania bez odpowiedzi i bez wykonania żądania, jak sieć, która zniknęła"
     SLOW = "wykonuje każde żądanie, a odpowiedź wysyła dopiero na końcu bloku, jak efenix wolniejszy niż czas okna"
@@ -264,8 +264,7 @@ class Request:
 
 @dataclass
 class AtrapaEfenix:
-    """Atrapa w bloku ``atrapa_efenix``: stan efenix (``stan``), dziennik żądań i odcięcie; ``url`` to adres listy
-    zleceń."""
+    """Atrapa w bloku ``atrapa_efenix``; ``url`` to adres listy zleceń."""
 
     stan: StanEfenix[AtrapaOrder]
     url: str = ""
@@ -277,8 +276,6 @@ class AtrapaEfenix:
         self.stan.expire_session()
 
     def log_in(self) -> None:
-        """Tata zalogował się w efenix (w tej samej sesji, w której pracuje okno narzędzia)."""
-
         self.stan.log_in()
 
     def reconnect(self) -> None:
@@ -289,8 +286,6 @@ class AtrapaEfenix:
             self.outage = None
 
     def state(self) -> tuple[list[AtrapaOrder], bool]:
-        """Kopia zleceń i sesji do porównania stanu przed przebiegiem i po nim."""
-
         return self.stan.state()
 
     def requested(self) -> list[tuple[str, str]]:
@@ -298,32 +293,22 @@ class AtrapaEfenix:
             return [(request.method, request.path) for request in self.requests]
 
     def searched(self) -> list[str]:
-        """Numery z każdego szukania z pola ``Numer`` po kolei."""
-
         with self._lock:
             return [request.params.get("numer", "") for request in self.requests if request.path == SEARCH and not request.by_list]
 
     def moments(self) -> list[tuple[float, str]]:
-        """Chwila z zegara Atrapy i ścieżka każdego żądania po kolei."""
-
         with self._lock:
             return [(request.at, request.path) for request in self.requests]
 
     def status_changes(self) -> int:
-        """Ile żądań zmiany statusu (Przekazanie do akceptacji, anulowanie) dostała Atrapa."""
-
         with self._lock:
             return sum(request.path == CHANGE_STATUS for request in self.requests)
 
     def status_requests(self) -> list[tuple[str, str]]:
-        """Metoda i nowy status (``xstatus``) każdego żądania zmiany statusu, które dostała Atrapa, po kolei."""
-
         with self._lock:
             return [(request.method, request.params.get("xstatus", "")) for request in self.requests if request.path == CHANGE_STATUS]
 
     def searched_by_list(self) -> list[str]:
-        """Numery z każdego szukania, które lista wysłała sama po wczytaniu, po kolei."""
-
         with self._lock:
             return [request.params.get("numer", "") for request in self.requests if request.by_list]
 
@@ -350,13 +335,12 @@ def atrapa_efenix(
     ``expire_after``: ścieżka działania serwera (``_ACTIONS``) i liczba tych działań narzędzia (bez szukania, które lista
     wysyła sama), po których sesja wygasa raz, jak przy wylogowaniu w trakcie przebiegu; po ponownym zalogowaniu już nie
     wygasa. Liczy się działanie, które doszło do serwera, a nie żądanie odcięte (``outage_from``), z błędem
-    (``error_answer``) albo bez ciasteczka sesji (``StanEfenix.count``). ``today``: dzisiejszy
-    dzień kalendarza daty wykonania. ``refuse_dates``: serwer odpowiada na zapis daty wykonania bez zapisu. ``clock``:
+    (``error_answer``) albo bez ciasteczka sesji (``StanEfenix.count``). ``today``, ``refuse_dates`` i kopia ``orders``:
+    jak w ``StanEfenix``. ``clock``:
     zegar w sekundach, którego chwilę dostaje każde żądanie. ``outage_from``: rodzaj odcięcia i numer żądania (od 0, każde
     żądanie po kolei, jak w ``requests``), od którego efenix jest odcięty raz, do ``reconnect``. ``emmett_reload_ms``: po
     ilu milisekundach od odpowiedzi „Załaduj do zlecenia” i zmiany statusu skrypt strony ją przeładowuje (w efenix po
-    „Załaduj do zlecenia” ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej; po zmianie statusu nikt nie zmierzył). Model pracuje na kopii
-    ``orders``, więc zlecenia testu zostają bez zmian także wtedy, gdy żądanie zmieni ich stan w Atrapie. Zlecenie
+    „Załaduj do zlecenia” ``EFENIX_EMMETT_RELOAD_MS``, domyślnie krócej; po zmianie statusu nikt nie zmierzył). Zlecenie
     modelu (``EfenixOrder``, bez pokręteł ``AtrapaOrder``) ma stronę i odpowiedzi w budowie efenix.
     ``error_answer``: ścieżka, numer jej żądania narzędzia (od 1, bez szukania, które lista wysyła sama) i status błędu
     HTTP: na to jedno żądanie Atrapa odpowiada stroną błędu serwera z tym statusem, bez wykonania żądania.
@@ -472,8 +456,6 @@ def atrapa_efenix(
                 self._redirect(LOGIN_PAGE)
 
         def _act(self, method: str, path: str, params: Mapping[str, str], *, by_list: bool) -> None:
-            """Działanie serwera efenix (``SerwerEfenix``) na żądanie ``path`` i jego wynik jako odpowiedź HTTP."""
-
             order_id = params.get(_ACTION_ROUTES[method, path], "")
             if path == SEARCH:
                 self._search(params, serwer.search(params.get("numer", "").strip(), own=not by_list))
@@ -652,16 +634,12 @@ def atrapa_efenix(
 
 
 def _atrapa_order(order: EfenixOrder) -> AtrapaOrder:
-    """Zlecenie ``order`` w Atrapie: zlecenie modelu dostaje domyślne pokrętła ``AtrapaOrder``, czyli budowę efenix."""
-
     if isinstance(order, AtrapaOrder):
         return order
     return AtrapaOrder(**{each.name: getattr(order, each.name) for each in fields(order)})
 
 
 class _Server(ThreadingHTTPServer):
-    """Serwer Atrapy na wolnym porcie ``127.0.0.1``, który pamięta otwarte połączenia, żeby je zamknąć na końcu bloku."""
-
     daemon_threads = True
     # Kolejka ``listen`` dłuższa niż domyślne 5: Windows odrzuca połączenie ponad kolejkę, a macOS i Linux je trzymają.
     request_queue_size = 128
@@ -718,9 +696,6 @@ _ACTIONS: Mapping[str, Action] = {
 
 
 def _proposal(order: AtrapaOrder) -> str:
-    """Propozycja Emmetta zlecenia w oknie Emmetta: lista ``INDEKS_NNN_078: ilość`` albo pola z ilością w ``value``
-    (``emmett_in_fields``), a gdy Emmett nic nie proponuje, pusta treść."""
-
     if order.emmett_in_fields:
         return "".join(f'<input name="{position_field(escape(code))}" value="{quantity}">' for code, quantity in sorted(order.emmett.items()))
     rows = "".join(f"<li>{position_field(escape(code))}: {quantity}</li>" for code, quantity in sorted(order.emmett.items()))
@@ -766,7 +741,6 @@ document.getElementById('field_numer').addEventListener('input', () => {
 """
 
 
-# Pole Numer znika z listy, gdy okno już wpisało numer, więc Enter nie ma go na stronie ani raz.
 _NUMBER_FIELD_GONE_SCRIPT = """
 document.getElementById('field_numer').addEventListener('input', (event) => event.target.remove());
 """
@@ -1041,7 +1015,6 @@ def _order_page(
     )
 
 
-# Strona zlecenia sama, bez kliknięcia, wysyła zmianę statusu, gdy tylko się wczyta: w tej karcie albo w nowym oknie.
 _STATUS_ON_LOAD_SCRIPT = """
 fetch('action_change_status.php', {method: 'POST', body: new URLSearchParams({order_id: document.getElementById('main_id').value, xstatus: 'Do akceptacji', comment: ''})});
 """
@@ -1071,7 +1044,6 @@ _FORWARD_REQUESTS: Final = {
         ".then(() => post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''}))"
     ),
 }
-"""Żądanie, które „Tak” w Przekazaniu do akceptacji wysyła w wariancie Atrapy, w miejsce żądania efenix."""
 
 
 def _order_script(changed: Changed | Unread | None, today: date, reload_ms: int, status_change: StatusChange | None) -> str:
@@ -1106,15 +1078,10 @@ def position_field(code: str, suffix: str = "078") -> str:
 
 
 def _classes(selector: str) -> str:
-    """Atrybut ``class`` elementu, który wybiera ``selector`` z klas (``input.a.b`` daje ``a b``)."""
-
     return " ".join(selector.split(".")[1:])
 
 
 def _position(order: AtrapaOrder, position: Position, changed: Changed | Unread | None, prices: Mapping[str, Decimal]) -> str:
-    """Karta pozycji jak w efenix: pole Ilość z ceną z ``prices`` w tekście karty albo samo pole ceny wpisywanej, bez
-    ceny w tekście."""
-
     suffix = "079" if changed is Unread.PRICE_LIST and position.code == "005" else "078"
     field_id = position_field(position.code, suffix)
     price = prices[position.code]

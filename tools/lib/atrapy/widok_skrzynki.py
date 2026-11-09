@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from typing import Final
 
-# Linia, którą GitHub przemilcza: sam komentarz HTML.
 _HIDDEN_LINE: Final = re.compile(r"<!--.*-->")
 
 

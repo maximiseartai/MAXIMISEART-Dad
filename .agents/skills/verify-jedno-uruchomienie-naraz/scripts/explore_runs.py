@@ -1134,7 +1134,6 @@ def _explore(report: ScopeReport, progress: Progress) -> None:
         report.restores_done += execution.restore_done
         report.results_shown_twice += execution.results_shown_twice
         for violation in execution.violations:
-            # Keep the shortest counterexample.
             known = report.counterexamples.get(violation.signature)
             if known is None or len(execution.trace) < len(known[1]):
                 report.counterexamples[violation.signature] = (

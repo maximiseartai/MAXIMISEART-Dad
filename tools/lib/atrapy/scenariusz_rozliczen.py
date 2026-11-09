@@ -51,8 +51,9 @@ UNMAPPED_WORKER = "unknown.synthetic"
 # Wiersz danych 21 wariantu z Wykonawcą spoza konfiguracji wykonawców.
 UNMAPPED_ROW = (UNMAPPED_WORKER, "SYNTHETIC-4")
 
-# Przygotowanie pliku zbiorczego i łańcuch (create_preparation_fixture.py): każda wartość tekstowa zlecenia ma
-# znacznik ROW_MARKER, którego nie wolno znaleźć w wyniku ani w dowodach.
+# Przygotowanie pliku zbiorczego i łańcuch (create_preparation_fixture.py): tekstowe wartości zlecenia poza WYKONAWCA,
+# SKUTECZNE, URZĄDZENIA, CZYNNOŚCI i CZYNNOŚCI ZREALIZOWANE mają znacznik ROW_MARKER, którego nie wolno znaleźć w wyniku
+# ani w dowodach.
 ROW_MARKER = "PREP-SYN-"
 # Hiperłącze w NUMER ZL. każdego zlecenia ZLECENIA, jak do zlecenia w aplikacji firmowej; numer wiersza Rejestru
 # kończy adres.
@@ -84,8 +85,6 @@ ORDERS: dict[int, Order] = {
 
 
 def order_number(number: int) -> str:
-    """NUMER ZL. zlecenia ``number``."""
-
     return f"{ROW_MARKER}ZL-{number}"
 
 
@@ -123,8 +122,6 @@ ARCHIVED_ORDER = Order(2, datetime(2025, 9, 9, 9, 0), "kamil.syntetyczny", "tak"
 
 
 def register_values(number: int, order: Order) -> dict[str, object]:
-    """Wartości zlecenia ``number`` po nagłówkach Rejestru; każda wartość tekstowa ma znacznik ``ROW_MARKER``."""
-
     return {
         "AKCJE": f"PREP-SYN-AKCJA-{number}",
         "DATA GODZ. POCZ.": order.started,

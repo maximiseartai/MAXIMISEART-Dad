@@ -30,10 +30,7 @@ def _settings(run: Run) -> dict[str, object]:
 
 
 def _pick(run: Run, title: str, path: Path, name: str) -> None:
-    """Answers Centrum's native dialog ``title`` with ``path``.
-
-    When the first confirm only opened the folder in the dialog, an empty name box confirms the open folder.
-    """
+    """When the first confirm only opened the folder in the dialog, an empty name box confirms the open folder."""
 
     centrum = run.centrum_process().pid
     dialog = wait_for(

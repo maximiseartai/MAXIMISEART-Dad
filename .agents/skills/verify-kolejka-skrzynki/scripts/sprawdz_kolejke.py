@@ -60,8 +60,6 @@ UNITS = (
 
 
 def units(environment: Mapping[str, str] = os.environ) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    """Jednostki tego przebiegu: wszystkie albo w CI kawałek ``MUTACJE_CZESC=k/n`` z ``UNITS``."""
-
     return part(UNITS, environment)
 
 

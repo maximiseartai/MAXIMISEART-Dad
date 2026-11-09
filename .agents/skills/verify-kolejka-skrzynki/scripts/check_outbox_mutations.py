@@ -24,9 +24,8 @@ NEW = "KOLEJKA: NOWE NARUSZENIE"
 
 def _explorer(scope: str) -> tuple[str, ...]:
     """Polecenie mutacji: jeden zakres do pierwszego nowego naruszenia, bo mutacji wystarczy werdykt, a podstawa (to
-    samo polecenie bez mutacji) i tak przechodzi każdy harmonogram zakresu. Pełny przebieg mutacji ``archiwum-diagnoza``
-    po naruszeniu w pierwszym harmonogramie przeszedł jeszcze 23 786 i przy ośmiu mutacjach naraz na Windows CI
-    przekroczył limit 600 s (#963)."""
+    samo polecenie bez mutacji) i tak przechodzi każdy harmonogram zakresu; pomiar przebiegu bez zatrzymania (#963)
+    podaje ``explore_outbox.explore``."""
 
     return (EXPLORER, "--scope", scope, "--stop-at-new")
 

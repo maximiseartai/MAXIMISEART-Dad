@@ -220,7 +220,7 @@ class MemoryBox:
         return self._ids
 
     def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
-        self._removed = None  # any call but upload ends a pair of remove and upload
+        self._removed = None
         chosen = self._scheduler.archive_read(f"archive({tag})")
         if chosen != "ok":
             return Unreachable() if chosen == "unreachable" else _github(NO_PERMISSION).archive(tag, key=key)
@@ -236,7 +236,7 @@ class MemoryBox:
         return Archive(found.id, tuple(Asset(a.id, a.name, a.label, a.uploaded) for a in found.assets))
 
     def open_archive(self, tag: str, title: str, description: str, *, key: str) -> OpenArchiveOutcome:
-        self._removed = None  # any call but upload ends a pair of remove and upload
+        self._removed = None
         chosen = self._scheduler.archive_write(f"open_archive({tag})")
         if chosen in ("unreachable", "partial"):
             return Unreachable()
@@ -296,7 +296,7 @@ class MemoryBox:
     def open_issue(
         self, label: Label, title: str, body: str, *, key: str
     ) -> SendOutcome:
-        self._removed = None  # any call but upload ends a pair of remove and upload
+        self._removed = None
         what = f"open_issue({label}, {_part_name(body)})"
         failure = self._scheduler.box_write(what)
         if failure == "unreachable":
@@ -312,7 +312,7 @@ class MemoryBox:
         return Unreachable() if failure else Sent(number)
 
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
-        self._removed = None  # any call but upload ends a pair of remove and upload
+        self._removed = None
         failure = self._scheduler.box_write(f"comment(#{number}, {_part_name(body)})")
         if failure == "unreachable":
             return Unreachable()
@@ -333,7 +333,7 @@ class MemoryBox:
         )
 
     def edit_comment(self, comment_id: int, body: str, *, key: str) -> CommentOutcome:
-        self._removed = None  # any call but upload ends a pair of remove and upload
+        self._removed = None
         number, issue = next(
             (number, issue) for number, issue in self.issues.items() if comment_id in issue.comment_ids
         )
@@ -353,7 +353,7 @@ class MemoryBox:
         )
 
     def comments(self, number: int, *, key: str) -> CommentsOutcome:
-        self._removed = None  # any call but upload ends a pair of remove and upload
+        self._removed = None
         if self._scheduler.box_read(f"comments(#{number})"):
             return Unreachable()
         issue = self.issues[number]
@@ -366,7 +366,7 @@ class MemoryBox:
     def labelled_issues(
         self, label: Label, *, include_closed: bool, key: str
     ) -> IssuesOutcome:
-        self._removed = None  # any call but upload ends a pair of remove and upload
+        self._removed = None
         if self._scheduler.box_read(f"labelled_issues({label})"):
             return Unreachable()
         found = tuple(
@@ -547,8 +547,6 @@ class Scheduler:
 
 
 def _files(release: _Release) -> str:
-    """The files of a Release in a trace: the version from each label, and whether its upload ended."""
-
     return ", ".join(f"{_version_of(a.label)}{'' if a.uploaded else ' (niepełny)'}" for a in release.assets) or "bez plików"
 
 
@@ -760,7 +758,8 @@ SCOPES = {
 }
 
 Faults = Sequence[tuple[str, str]]
-"""What went wrong in a schedule, in order: (``unreachable``/``lost``/``oserror``/``unreadable``/``kill``/``restart``, the step)."""
+"""What went wrong in a schedule, in order: (the kind, the step), the kind one of ``unreachable``, ``lost``, ``partial``,
+``refused``, ``oserror``, ``unreadable``, ``kill`` and ``restart``."""
 
 
 # An entry's shape judges the faults of its schedule (``Faults``); each names in ``after`` the scopes after which it
