@@ -28,6 +28,7 @@ from drive.common import (
     toggle_theme,
 )
 from drive.teksty import BELL_FRESH, UPDATE_BUTTON, UP_TO_DATE, WRITE
+from atrapy.pliki_taty import DAD_CASES_FILE, NOTIFICATIONS_FILE, REPORT_KEY_FILE
 
 FEATURE = "powiadomienia"
 BELL = "Powiadomienia"
@@ -49,7 +50,7 @@ FIRST_SUMMARY = "Pierwsza wersja z Powiadomieniami. Tutaj zobaczysz, co Maks zro
 DORMANT_RELEASE = "e" * 40
 CASE_LABELS = ("zgloszenie", "uwaga-taty")
 # Centrum's state files in `config/` that Powiadomienia write: Dad's cases and the read Powiadomienia.
-STATE_FILES = ("sprawy-taty.json", "powiadomienia.json")
+STATE_FILES = (DAD_CASES_FILE, NOTIFICATIONS_FILE)
 
 
 def _release(tag: str, body: str, published_at: str) -> dict[str, object]:
@@ -123,7 +124,7 @@ def _enter(page: Page, run: Run, page_id: str, heading: str) -> None:
 
 def drive(run: Run, page: Page) -> None:
     config = run.config
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     box = run.box
     key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     notes = box_issues(run, uwaga_taty.LABEL)
@@ -216,8 +217,8 @@ def drive(run: Run, page: Page) -> None:
         lambda: run.api("/api/notifications", "powiadomienia-przeczytane")["unread"] == 0,
         "entering the view marks every Powiadomienie read",
     )
-    stored = read_json(config / "powiadomienia.json")
-    run.check(stored["schema_version"] == 1 and len(stored["przeczytane"]) >= 2, "config/powiadomienia.json keeps them")
+    stored = read_json(config / NOTIFICATIONS_FILE)
+    run.check(stored["schema_version"] == 1 and len(stored["przeczytane"]) >= 2, f"config/{NOTIFICATIONS_FILE} keeps them")
     expect(page.get_by_role("alert")).to_have_count(0)
     expect(error_toasts(page)).to_have_count(0)
     run.capture(page, "182-powiadomienia-widok")
@@ -467,11 +468,11 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
         run.api("/api/notifications", "powiadomienia-plik-zapisany")["message"] is None,
         "the next read of Powiadomienia saves both files and the Komunikat is gone",
     )
-    stored = read_json(config / "powiadomienia.json")
-    run.check(read_ids <= set(stored["przeczytane"]), "config/powiadomienia.json now keeps the Uwaga read")
-    cases = read_json(config / "sprawy-taty.json")["sprawy"]
+    stored = read_json(config / NOTIFICATIONS_FILE)
+    run.check(read_ids <= set(stored["przeczytane"]), f"config/{NOTIFICATIONS_FILE} now keeps the Uwaga read")
+    cases = read_json(config / DAD_CASES_FILE)["sprawy"]
     run.check(
         any(case["number"] == note["number"] and (case["closure"] or {}).get("reason") == "completed" for case in cases),
-        "config/sprawy-taty.json now keeps Maks's closing of the Uwaga",
+        f"config/{DAD_CASES_FILE} now keeps Maks's closing of the Uwaga",
     )
     run.capture(page, "202-powiadomienia-plik-zapisany")

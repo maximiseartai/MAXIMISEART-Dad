@@ -83,7 +83,7 @@ def drive(run: Run) -> None:
 
     run.step(FEATURE, "pliki-taty")
     for name in facts["dad_config"]:
-        shutil.copy2(name, run.tool / "config" / Path(name).name)
+        shutil.copy2(name, run.config / Path(name).name)
     status = run.git("status", "--porcelain", "--untracked-files=all")
     run.check(status == "", "Dad's konfiguracja wykonawców and Wzorce in config/ leave the clone clean for Git")
 

@@ -45,6 +45,23 @@ REGISTER_NAME: Final = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 # tool_files: folder config klonu narzędzia i jego pliki.
 CONFIG_DIRECTORY: Final = "config"
 WORKER_CONFIG_NAME: Final = "worker_mapping.yaml"
+
+# Układ folderu narzędzia u taty, którego nazwy czyta następne Wydanie tam, gdzie zostawiło je poprzednie (ADR 0015),
+# pisze ręcznie Maks (klucz: README, ADR 0007) albo tata podaje Maksowi (dziennik), i nazwa usługi, po której nowe
+# Centrum rozpoznaje działające starsze. Ścieżki są względem folderu narzędzia; same nazwy leżą w CONFIG_DIRECTORY,
+# obok LOG_FILE (LAST_STARTED_FILE, RUN_LOGS_DIRECTORY) albo jak mówi nazwa.
+SETTINGS_FILE: Final = f"{CONFIG_DIRECTORY}/centrum-ustawienia.yaml"
+WORKER_MAPPING_FILE: Final = f"{CONFIG_DIRECTORY}/{WORKER_CONFIG_NAME}"
+LOG_FILE: Final = "logs/centrum-rozliczen.log"
+REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
+DAD_CASES_FILE: Final = "sprawy-taty.json"
+NOTIFICATIONS_FILE: Final = "powiadomienia.json"
+CENTRUM_RUNS_FILE: Final = "centrum-uruchomienia.jsonl"
+UPDATE_RESULT_FILE: Final = "centrum-aktualizacja.json"
+QUEUE_DIRECTORY: Final = "zgloszenia/kolejka"
+LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
+RUN_LOGS_DIRECTORY: Final = "uruchomienia"
+SERVICE: Final = "centrum-rozliczen"
 WORKER_TEMPLATE_NAME: Final = "Wzorzec rozliczenia pracownika.xlsx"
 COLLECTIVE_TEMPLATE_NAME: Final = "Wzorzec pliku zbiorczego.xlsx"
 INTERNAL_TEMPLATE_NAME: Final = "Wzorzec rozliczenia wewnętrznego.xlsx"

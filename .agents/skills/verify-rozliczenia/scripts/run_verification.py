@@ -29,6 +29,8 @@ from atrapy.scenariusz_rozliczen import (
     WORKER_TEMPLATE_NAME,
 )
 from atrapy.settlement import PERIOD, SOURCE_NAME
+from rozliczenia.tool_files import config_dir
+from atrapy.workbooks import excel_lock
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
@@ -237,7 +239,7 @@ def _version() -> str:
 
 def _create_lock(run_root: Path) -> None:
     worker_template = run_root / WORKER_TEMPLATE_NAME
-    worker_template.with_name(f"~${worker_template.name}").touch()
+    excel_lock(worker_template).touch()
 
 
 def _create_existing_output(run_root: Path) -> None:
@@ -269,13 +271,13 @@ def _main_checkout_config() -> Path | None:
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
-    return (REPO_ROOT / common_directory).resolve().parent / "config"
+    return config_dir((REPO_ROOT / common_directory).resolve().parent)
 
 
 def _default_templates_directory() -> Path:
     """This checkout's ``config/`` when it holds real Wzorce, otherwise the main checkout's."""
 
-    local = REPO_ROOT / "config"
+    local = config_dir(REPO_ROOT)
     candidates = [local]
     main_config = _main_checkout_config()
     if main_config is not None and main_config != local.resolve():

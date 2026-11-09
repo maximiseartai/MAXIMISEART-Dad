@@ -25,9 +25,9 @@ from drive.common import (
 )
 from drive.teksty import ABOUT_LOGS
 from atrapy.scenariusz_centrum import LAST_COMPLETE
+from atrapy.pliki_taty import LAST_STARTED_FILE
 
 FEATURE = "karta-z-logow"
-LAST_STARTED = "logs/ostatnie-uruchomienie.json"
 # What the live card has and the Logi do not hold: order_notes carry the order numbers and Wykonawcy of Wycena w efenix.
 LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
 INTERRUPTED_WHAT = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
@@ -211,7 +211,7 @@ def drive(run: Run, page: Page) -> None:
         interrupted = current_run(run, "karta-przerwana")
         previous = interrupted["previous"]
         assert isinstance(previous, dict)
-        started = read_json(run.root / LAST_STARTED)
+        started = read_json(run.log_path.parent / LAST_STARTED_FILE)
         run.check(
             (interrupted["state"], previous["state"], previous["run"], previous["started_at"])
             == ("idle", "interrupted", killed, started["started_at"]),

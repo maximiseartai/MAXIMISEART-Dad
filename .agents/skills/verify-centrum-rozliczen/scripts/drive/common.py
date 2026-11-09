@@ -27,6 +27,11 @@ import yaml
 
 from drive import feature
 from atrapy.scenariusz_centrum import LAST_COMPLETE
+from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
+from rozliczenia.centrum.case_delivery import queue_directory
+from rozliczenia.centrum.outbox import queue_file_pattern
+from rozliczenia.tool_files import log_path
+from atrapy.workbooks import excel_lock
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"
@@ -49,8 +54,6 @@ HIDE_TAB = (
 SHOW_TAB = "delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))"
 # Synthetic Token do Zgłoszeń Maks would write; it must never reach the skrzynka, the log, an answer, or the browser.
 REPORT_KEY = "github_pat_VERIFY_SYNTETYCZNY_KLUCZ"
-# The Logi Uruchomienia beside the Centrum log (ADR 0015): one file per Uruchomienie procesu.
-RUN_LOGS = "logs/uruchomienia"
 
 
 class DriveFailure(Exception):
@@ -116,17 +119,19 @@ class Run:
 
     @property
     def queue(self) -> Path:
-        """The queue of the skrzynka Zgłoszeń: one file per post waiting to be sent."""
+        """The queue of the skrzynka Zgłoszeń: one file per post waiting to be sent, which the next Wydanie sends."""
 
-        return self.config / "zgloszenia" / "kolejka"
+        return self.config / QUEUE_DIRECTORY
 
     @property
     def run_logs_dir(self) -> Path:
-        return self.root / RUN_LOGS
+        """The Logi Uruchomienia beside the Centrum log (ADR 0015): one file per Uruchomienie procesu."""
+
+        return self.log_path.parent / RUN_LOGS_DIRECTORY
 
     @property
     def log_path(self) -> Path:
-        return self.root / "logs" / "centrum-rozliczen.log"
+        return log_path(self.root)
 
     def log(self) -> str:
         """The Centrum log as written so far; no log yet is an empty one."""
@@ -408,18 +413,23 @@ def box_issues(run: Run, label: str) -> list[dict[str, Any]]:
     return sorted((issue for issue in issues if issue["labels"] == [label]), key=lambda issue: int(str(issue["number"])))
 
 
-def queued(run: Run, label: str, run_id: str | None = None) -> list[Path]:
+def queued(run: Run, label: str, run_id: str | None = None, *, leaving: bool = False) -> list[Path]:
     """The files waiting in the queue of the skrzynka with ``label``, oldest first; with ``run_id``, only those of that
-    Uruchomienie (a file's name ends with the first 8 characters of its id)."""
+    Uruchomienie (a file's name ends with the first 8 characters of its id).
 
-    return sorted(run.queue.glob(f"*-{label}-{'*' if run_id is None else run_id[:8]}.json"))
+    A check that a file waits reads ``Run.queue``, the deliberate copy. A check that files left the queue passes
+    ``leaving`` and reads the queue where src puts them: on the copy, a queue renamed in src would look empty at once.
+    """
+
+    queue = queue_directory(run.config) if leaving else run.queue
+    return sorted(queue.glob(queue_file_pattern(label) if run_id is None else queue_file_pattern(label, run_id)))
 
 
-def queued_posts(run: Run, label: str, run_id: str | None = None) -> list[dict[str, Any]]:
+def queued_posts(run: Run, label: str, run_id: str | None = None, *, leaving: bool = False) -> list[dict[str, Any]]:
     """The posts of ``queued``; a file the queue delivers and removes meanwhile no longer waits, so it is left out."""
 
     posts = []
-    for path in queued(run, label, run_id):
+    for path in queued(run, label, run_id, leaving=leaving):
         try:
             posts.append(read_json(path))
         except FileNotFoundError:
@@ -774,7 +784,7 @@ def start_card_warns_while_open(
     and removes its lock file ``~$<name>``, then fires ``focus`` as Dad's return to the window does.
     """
 
-    lock = workbook.with_name(f"~${workbook.name}")
+    lock = excel_lock(workbook)
     warned = page.get_by_role("alert").filter(has_text=warning)
     start = page.get_by_role("button", name="Uruchom", exact=True)
     preview = page.get_by_role("button", name="Podgląd bez zapisu", exact=True)

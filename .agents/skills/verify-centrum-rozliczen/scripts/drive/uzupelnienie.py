@@ -33,6 +33,7 @@ from drive.common import (
     switch_theme,
 )
 from atrapy.scenariusz_centrum import LAST_COMPLETE, PRICE_LIST, ROW_MARKER
+from atrapy.workbooks import excel_lock
 
 FEATURE = "uzupelnienie"
 SUMMARY = f"#/uzupelnienie/{LAST_COMPLETE}"
@@ -570,7 +571,7 @@ def _write_dad_value(collective_file: Path, row: int, value: int | None = 1) -> 
 def drive(run: Run, page: Page) -> None:
     _, collective_file = period_files(run)
     original = read_bytes(collective_file)
-    lock = collective_file.with_name(f"~${collective_file.name}")
+    lock = excel_lock(collective_file)
     try:
         _drive(run, page, collective_file, lock)
     finally:

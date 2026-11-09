@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from atrapy.scenariusz_centrum import ROW_MARKER
+from rozliczenia.tool_files import settings_file
 
 SCRIPT = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT.parents[1]
@@ -543,7 +544,7 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch) / "run"
         root.mkdir()
-        settings = root / "config" / "centrum-ustawienia.yaml"
+        settings = settings_file(root)
         (root / "fixture.json").write_text(json.dumps({"settings": str(settings)}), encoding="utf-8")
         run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
         run.run_logs_dir.mkdir(parents=True)

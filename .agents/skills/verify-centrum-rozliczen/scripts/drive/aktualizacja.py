@@ -24,6 +24,8 @@ from drive.common import (
     version_line,
 )
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
+from atrapy.pliki_taty import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
+from rozliczenia.centrum.tool_update import RESULT_FILE
 
 FEATURE = "aktualizacja"
 UPDATED = "Zaktualizowano"
@@ -93,10 +95,10 @@ def _dad_files_kept(run: Run, clone: Path, dad_files: dict[str, str], run_config
         "Dad's files in the tool's config/ keep exactly their content, the changed konfiguracja wykonawców too",
     )
     run.check(
-        _git(clone, "ls-files", "--", "config/worker_mapping.yaml") == "",
+        _git(clone, "ls-files", "--", WORKER_MAPPING) == "",
         "the new version no longer tracks the konfiguracja wykonawców that Dad still has",
     )
-    run.check(_contents(run.root / "config") == run_configuration, "the run's configuration directory is untouched")
+    run.check(_contents(run.config) == run_configuration, "the run's configuration directory is untouched")
 
 
 @contextmanager
@@ -155,7 +157,7 @@ def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first
         )
         run.check(_head(clone) == first, "the clone stays on the commit Dad had")
         run.check(
-            _git(clone, "status", "--porcelain", "--", "config/worker_mapping.yaml") == "M config/worker_mapping.yaml",
+            _git(clone, "status", "--porcelain", "--", WORKER_MAPPING) == f"M {WORKER_MAPPING}",
             "Dad's changed konfiguracja wykonawców is still there, still tracked",
         )
         run.check(
@@ -223,7 +225,7 @@ def drive(run: Run, page: Page) -> None:
     tool = run.fixture["tool"]
     clone, first, newest, dad_files = Path(tool["clone"]), tool["first"], tool["newest"], tool["dad_files"]
     origin, libraries = Path(tool["origin"]), tool["libraries"]
-    run_configuration = _contents(run.root / "config")
+    run_configuration = _contents(run.config)
     github = run.root / "github"
     github.mkdir(exist_ok=True)
     main_commit = github / "main-commit.txt"
@@ -237,7 +239,7 @@ def drive(run: Run, page: Page) -> None:
     try:
         run.check(_head(clone) == first, "the run's tool clone stands on the first commit")
         run.check(
-            _git(clone, "status", "--porcelain", "--", "config/worker_mapping.yaml") == "M config/worker_mapping.yaml",
+            _git(clone, "status", "--porcelain", "--", WORKER_MAPPING) == f"M {WORKER_MAPPING}",
             "Dad changed the tracked konfiguracja wykonawców in the clone",
         )
         page.goto(run.url + "#/konfiguracja")
@@ -338,7 +340,7 @@ def drive(run: Run, page: Page) -> None:
             "Konfiguracja reports the new commit as current, since the day of the update, and offers no update",
         )
         run.check(
-            not (run.root / "config" / "centrum-aktualizacja.json").exists(),
+            not (run.config / RESULT_FILE).exists(),
             "the new Centrum read the guardian's result once and removed it",
         )
         entries = _update_entries(run)
@@ -527,7 +529,7 @@ def _drive_new_version_not_starting(
     run.check(_head(clone) == newest, "the guardian moved the clone back to the commit before the click")
     run.check(_git(clone, "status", "--porcelain", "--untracked-files=no") == "", "the clone has no changes left")
     _dad_files_kept(run, clone, dad_files, run_configuration)
-    run.check(not (run.root / "config" / "centrum-aktualizacja.json").exists(), "the old version read the result once")
+    run.check(not (run.config / RESULT_FILE).exists(), "the old version read the result once")
     run.check(
         _update_entries(run)[-2:]
         == [
@@ -574,7 +576,7 @@ def _drive_start_from_shortcut(run: Run, page: Page) -> None:
 def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     tool = run.fixture["tool"]
     clone, newest = Path(tool["clone"]), tool["newest"]
-    result = run.root / "config" / "centrum-aktualizacja.json"
+    result = run.config / UPDATE_RESULT_FILE
     run.step(FEATURE, "aktualizacja-ok-przy-starej-wersji")
     print(f"  harness: the old version, started again, waits {OK_ON_OLD_VERSION_PACING_MS} ms before it starts", flush=True)
     (run.root / "pacing" / "ponowny-start-ms.txt").write_text(str(OK_ON_OLD_VERSION_PACING_MS), encoding="utf-8")

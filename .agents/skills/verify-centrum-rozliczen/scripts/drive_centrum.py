@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
 from drive.common import DriveFailure, Run, dad_context
 from skrypt_skilla import Parser
+from rozliczenia.tool_files import settings_file
 
 # Every feature's module, imported before the drive starts, so a broken one fails it at once.
 MODULES = {each.name: importlib.import_module(each.module) for each in FEATURES}
@@ -83,8 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"DRIVE FAIL | {exc}", file=sys.stderr)
         return 1
     finally:
-        for name in ("opened.jsonl", "dialogs.jsonl", "config/centrum-ustawienia.yaml", "logs/centrum-rozliczen.log"):
-            source = run.root / name
+        for source in (run.root / "opened.jsonl", run.root / "dialogs.jsonl", settings_file(run.root), run.log_path):
             if source.exists():
                 shutil.copy2(source, run.evidence / "state" / source.name)
         logs = run.run_logs_dir

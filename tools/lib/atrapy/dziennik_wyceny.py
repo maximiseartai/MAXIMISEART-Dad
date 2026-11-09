@@ -12,7 +12,6 @@ from datetime import datetime
 import json
 from pathlib import Path
 
-from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.run_logs import LoggedOrder, StartFacts
 
 Line = dict[str, object]
@@ -60,9 +59,13 @@ def _text(*lines: Line) -> str:
 
 
 def journal_path(logs: Path, start: StartFacts) -> Path:
-    """Plik dziennika Uruchomienia ``start`` w katalogu Logów ``logs``, w którym szuka go start Centrum."""
+    """Plik dziennika Uruchomienia ``start`` w katalogu Logów ``logs``, w którym szuka go start Centrum.
 
-    return logs / JOURNALS_DIRECTORY / Path(name_of(start)).with_suffix(".jsonl")
+    Nazwa jak nazwa pliku Logów (``logs_disk.name_of``): sekunda startu w UTC, klucz procesu i identyfikator
+    Uruchomienia. Kopia celowa z tego samego powodu co format linii: plik zostawia poprzednia praca Centrum.
+    """
+
+    return logs / JOURNALS_DIRECTORY / f"{start.started_at:%Y%m%dT%H%M%SZ}-{start.process}-{start.run_id}.jsonl"
 
 
 def left_journal(logs: Path, start: StartFacts, *entries: Line) -> Path:

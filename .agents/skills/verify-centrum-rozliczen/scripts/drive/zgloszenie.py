@@ -32,6 +32,7 @@ from drive.common import (
 )
 from drive.teksty import FOR_KEY, NOT_FOUND, TEMPLATE_MISSING
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
+from atrapy.pliki_taty import DAD_CASES_FILE, REPORT_KEY_FILE
 
 FEATURE = "zgloszenie"
 # The period of features/diagnoza.md: no Folder okresu and no orders, so no Uruchomienie here writes a file.
@@ -80,10 +81,11 @@ def reports(run: Run) -> list[dict[str, Any]]:
     return [issue for issue in box_issues(run, "zgloszenie") if str(issue["title"]).startswith("BRAK_WZORCA:")]
 
 
-def _queued_reports(run: Run) -> list[dict[str, Any]]:
-    """Zgłoszenia waiting in the queue of the skrzynka, oldest first (the Logi of each Uruchomienie wait beside them)."""
+def _queued_reports(run: Run, *, leaving: bool = False) -> list[dict[str, Any]]:
+    """Zgłoszenia waiting in the queue of the skrzynka, oldest first (the Logi of each Uruchomienie wait beside them);
+    ``leaving`` as in ``queued``."""
 
-    return [post for post in queued_posts(run, "zgloszenie") if str(post["target"]["title"]).startswith("BRAK_WZORCA:")]
+    return [post for post in queued_posts(run, "zgloszenie", leaving=leaving) if str(post["target"]["title"]).startswith("BRAK_WZORCA:")]
 
 
 def _queued_text(post: dict[str, object]) -> tuple[object, str]:
@@ -97,7 +99,7 @@ def _queued_text(post: dict[str, object]) -> tuple[object, str]:
 def _sent(config: Path) -> list[dict[str, object]]:
     """Sent Zgłoszenia from the local state of Dad's cases; the fingerprint is their ``id``."""
 
-    cases = read_json(config / "sprawy-taty.json")["sprawy"]
+    cases = read_json(config / DAD_CASES_FILE)["sprawy"]
     return [case for case in cases if case["kind"] == "zgloszenie"]
 
 
@@ -110,7 +112,7 @@ def _shown_report(page: Page) -> tuple[str, str]:
 
 def drive(run: Run, page: Page) -> None:
     config = run.config
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     box = run.box
     diagnosis = page.get_by_role("region", name="Diagnoza")
     drop_report_key(key_file, missing_ok=True)
@@ -156,7 +158,7 @@ def drive(run: Run, page: Page) -> None:
     [waiting] = _queued_reports(run)
     run.check(_queued_text(waiting) == (title, body), "the queued Zgłoszenie is exactly the preview")
     run.check(
-        [path.name for path in (config / "zgloszenia").iterdir()] == ["kolejka"],
+        [path.name for path in run.queue.parent.iterdir()] == [run.queue.name],
         "the folder zgloszenia holds only the queue, no Markdown file",
     )
     run.check(reports(run) == [], "without a key nothing reaches the skrzynka Zgłoszeń")
@@ -174,7 +176,7 @@ def drive(run: Run, page: Page) -> None:
     page.get_by_role("link", name="Konfiguracja", exact=True).click()
     expect(page.get_by_text("Zgłoszenia: brak tokenu", exact=True)).to_be_visible()
     run.capture(page, "62-zgloszenie-konfiguracja-brak-klucza")
-    print("  harness: Maks writes the key to config/zgloszenia-klucz.txt", flush=True)
+    print(f"  harness: Maks writes the key to config/{REPORT_KEY_FILE}", flush=True)
     key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     configuration = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja")
     expect(page.get_by_text("Zgłoszenia: gotowe", exact=True)).to_be_visible()
@@ -202,7 +204,7 @@ def drive(run: Run, page: Page) -> None:
     advance_clock(run, 1, "the queue of the skrzynka tries again past its retry")
     expect(page.get_by_role("status").filter(has_text=SENT)).to_be_visible()
     expect(page.get_by_role("button", name="Wyślij do Maksa", exact=True)).to_have_count(0)
-    run.wait_for(lambda: _queued_reports(run) == [], "the delivered Zgłoszenie leaves the queue")
+    run.wait_for(lambda: _queued_reports(run, leaving=True) == [], "the delivered Zgłoszenie leaves the queue")
     [issue] = reports(run)
     number = issue["number"]
     (run.evidence / "api" / "zgloszenie-skrzynka.json").write_text(
@@ -276,7 +278,7 @@ def _logs_sent(run: Run, run_id: str) -> None:
     """Waits until the Logi of Uruchomienie ``run_id`` left the queue, so the next Diagnoza links their comment."""
 
     run.wait_for(
-        lambda: not queued(run, "logi-uruchomienia", run_id),
+        lambda: not queued(run, "logi-uruchomienia", run_id, leaving=True),
         "with the key the Logi of this Uruchomienie reach the skrzynka",
         timeout_s=60,
     )
@@ -432,7 +434,7 @@ def _rejected_report(run: Run, page: Page, box: Path, config: Path) -> None:
     run.step(FEATURE, "zgloszenie-odrzucone-po-starcie")
     close_centrum(run, page)
     start_centrum(run, "zgloszenie-start-po-odrzuceniu")
-    run.wait_for(lambda: _queued_reports(run) == [], "at the next start the queue tries the rejected Zgłoszenie again", timeout_s=30)
+    run.wait_for(lambda: _queued_reports(run, leaving=True) == [], "at the next start the queue tries the rejected Zgłoszenie again", timeout_s=30)
     issues = reports(run)
     run.check(
         len(issues) == 4 and (issues[-1]["title"], issues[-1]["body"]) == (title, body),

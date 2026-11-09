@@ -16,6 +16,8 @@ from windows_drive.common import Run, wait_for
 from windows_drive.start_skrotem import check_windowless, start_dialogs
 import windows_desktop
 import windows_tool
+from rozliczenia.centrum.tool_update import JOURNAL, RESULT_FILE
+from rozliczenia.tool_files import config_dir
 
 FEATURE = "aktualizacja"
 BUTTON = "Zaktualizuj narzędzie"
@@ -81,7 +83,7 @@ def _clone_as_before(run: Run, commit: str, config: dict[str, str]) -> None:
     run.check(run.git("rev-parse", "HEAD") == commit, f"the clone stands on {commit[:7]}")
     run.check(run.git("status", "--porcelain") == "", "the clone has no changed tracked file")
     run.check(run.config_bytes() == config, "every file in config/ (Dad's and Centrum's) has its bytes from before")
-    leftovers = [name for name in ("centrum-aktualizacja.json", "centrum-aktualizacja-w-toku") if (run.tool / "config" / name).exists()]
+    leftovers = [name for name in (RESULT_FILE, JOURNAL) if (config_dir(run.tool) / name).exists()]
     run.check(leftovers == [], "no update result or journal is left in config/")
 
 

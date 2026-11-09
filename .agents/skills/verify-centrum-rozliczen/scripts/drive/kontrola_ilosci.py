@@ -19,6 +19,7 @@ from drive.common import (
     start_centrum,
 )
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
+from atrapy.pliki_taty import REPORT_KEY_FILE
 
 FEATURE = "kontrola-ilosci"
 LABEL = "kontrola-ilosci"
@@ -42,7 +43,7 @@ def _open_periods(page: Page, run: Run) -> None:
 
 def drive(run: Run, page: Page) -> None:
     config = run.config
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     offline = run.box / "brak-sieci"
     pacing = run.root / "pacing" / "skrzynka-ms.txt"
     checks_before = len(box_issues(run, LABEL))
@@ -63,7 +64,7 @@ def drive(run: Run, page: Page) -> None:
         "without a key the Centrum log says the queue waits (one line per pass, naming its first file), with no content",
     )
     run.check(
-        sorted(path.name for path in (config / "zgloszenia").iterdir()) == ["kolejka"],
+        sorted(path.name for path in run.queue.parent.iterdir()) == [run.queue.name],
         "no Zgłoszenie file for Dad next to the queue: the Kontrola is not an unsent Zgłoszenie",
     )
     page.goto(run.url + "#/uruchomienia")
@@ -136,7 +137,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(
         f"- Uruchomienie: {document['run_id']}" in body.splitlines(), "it is the Kontrola of the RUN from the queue"
     )
-    run.wait_for(lambda: queued(run, LABEL) == [], "the sent Kontrola file is removed")
+    run.wait_for(lambda: queued(run, LABEL, leaving=True) == [], "the sent Kontrola file is removed")
     log = run.log()
     run.check(REPORT_KEY not in log and ROW_MARKER not in log, "the Centrum log has neither the key nor workbook content")
     run.check(REPORT_KEY not in body, "the key is not in the Kontrola")

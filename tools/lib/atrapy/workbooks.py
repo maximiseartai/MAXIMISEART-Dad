@@ -24,6 +24,16 @@ LEFTOVER_DATE_FORMAT = "yyyy-mm-dd h:mm:ss"
 LEFTOVER_ROW_HEIGHT = 30.0
 
 
+def excel_lock(workbook: Path) -> Path:
+    """Plik blokady, który desktopowy Excel taty kładzie obok otwartego skoroszytu ``workbook``.
+
+    Kopia celowa (docs/agents/skille.md, „Co wyrocznia bierze z src”), a nie ``workbook_files.excel_lock_file``:
+    blokadę kładzie Excel, więc napęd, który ją kładzie, gra Excela, a zła konwencja nazwy w ``src`` ma go wywrócić.
+    """
+
+    return workbook.with_name(f"~${workbook.name}")
+
+
 def active_worksheet(workbook: Workbook) -> Worksheet:
     sheet = workbook.active
     assert isinstance(sheet, Worksheet)

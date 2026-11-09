@@ -42,11 +42,12 @@ from drive.common import (
 )
 from drive.teksty import FOR_KEY, MODES, WRITE
 from rozliczenia.centrum.contract.common import ProcessKey
-from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
+from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Process
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
 from rozliczenia.telemetry import MetricsStore
+from atrapy.pliki_taty import CENTRUM_RUNS_FILE, DAD_CASES_FILE, REPORT_KEY_FILE
 
 FEATURE = "uwaga-taty"
 LABEL = "uwaga-taty"
@@ -198,7 +199,7 @@ def _shows(run: Run, figure: Locator, draft: dict[str, str], message: str) -> No
 
 
 def _notes(config: Path) -> list[dict[str, object]]:
-    path = config / "sprawy-taty.json"
+    path = config / DAD_CASES_FILE
     cases = read_json(path)["sprawy"] if path.exists() else []
     return [case for case in cases if case["kind"] == "uwaga"]
 
@@ -391,7 +392,8 @@ def _low_with_list(run: Run, page: Page, dialog: Locator, choices: Locator, what
 def _drive_full_window_list(run: Run, page: Page) -> None:
     run.step(FEATURE, "uwaga-pelne-okno-lista")
     # Centrum zapamiętuje Uruchomienia z Centrum we własnym pliku obok ustawień: napęd dopisuje je przez właściciela
-    # pliku (run_origins), więc zmiana jego formatu nie zostawia Centrum pliku, którego ono nie przeczyta.
+    # pliku (run_origins), więc zmiana jego formatu nie zostawia Centrum pliku, którego ono nie przeczyta. Nazwę pliku
+    # czyta następne Wydanie, więc napęd ma ją z kopii (docs/agents/skille.md, „Co wyrocznia bierze z src”).
     config = Path(run.fixture["settings"]).parent
     registry = config / CENTRUM_RUNS_FILE
     before = read_bytes(registry) if registry.exists() else None
@@ -408,6 +410,7 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
         for number, (at, key) in enumerate(newest):
             moment = datetime.fromisoformat(at)
             origins.remember(key, f"uwaga-lista-{number}", metrics[key], moment, moment)
+        run.check(registry.exists(), f"Centrum keeps its Uruchomienia in config/{CENTRUM_RUNS_FILE}")
         dialog = _open(page)
         _scope(dialog, "Do Uruchomienia").click()
         choices = dialog.get_by_role("radiogroup", name="Uruchomienie", exact=True)
@@ -451,13 +454,13 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
 
 def drive(run: Run, page: Page) -> None:
     config = run.config
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     box = run.box
     pacing = run.root / "pacing" / "skrzynka-ms.txt"
     drop_report_key(key_file, missing_ok=True)
     notes_before = len(_notes(config))
     issues_before = len(box_issues(run, LABEL))
-    run.check(queued_posts(run, LABEL) == [], "the skrzynka queue is empty before the first Uwaga")
+    run.check(queued_posts(run, LABEL, leaving=True) == [], "the skrzynka queue is empty before the first Uwaga")
 
     run.step(FEATURE, "uwaga-ikona")
     for page_id, heading in PAGES.items():
@@ -590,7 +593,7 @@ def drive(run: Run, page: Page) -> None:
     notes = _notes(config)
     run.check(
         len(notes) == notes_before + 1 and notes[-1]["title"] == first["title"] and notes[-1]["number"] is None,
-        "config/sprawy-taty.json keeps the Uwaga's title without an issue number",
+        f"config/{DAD_CASES_FILE} keeps the Uwaga's title without an issue number",
     )
     run.check(
         f"skrzynka-czeka etykieta={LABEL} okres=bez-okresu przyczyna=brak-klucza" in run.log(),
@@ -638,11 +641,11 @@ def drive(run: Run, page: Page) -> None:
         == [(first["title"], first["body"]), (second["title"], second["body"])],
         "the skrzynka has both Uwagi as uwaga-taty issues, each exactly as its figure showed it",
     )
-    run.wait_for(lambda: queued_posts(run, LABEL) == [], "the waiting Uwaga left the queue in the same pass")
+    run.wait_for(lambda: queued_posts(run, LABEL, leaving=True) == [], "the waiting Uwaga left the queue in the same pass")
     notes = _notes(config)
     run.check(
         [note["number"] for note in notes[notes_before:]] == [issue["number"] for issue in issues[issues_before:]],
-        "config/sprawy-taty.json has both issue numbers",
+        f"config/{DAD_CASES_FILE} has both issue numbers",
     )
     log = run.log()
     run.check(
@@ -871,7 +874,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     note = _notes(config)[-1]
     run.check(
         (note["title"], note["number"], note["run_id"]) == (pinned["title"], new[0]["number"], run_id),
-        "config/sprawy-taty.json keeps the issue number and the Uruchomienie of the pinned Uwaga",
+        f"config/{DAD_CASES_FILE} keeps the issue number and the Uruchomienie of the pinned Uwaga",
     )
     _close(dialog)
 
@@ -1099,7 +1102,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     close_centrum(run, page)
     start_centrum(run, "uwaga-start-logi")
     run.wait_for(
-        lambda: queued(run, LOGS_LABEL, run_id) == queued(run, LABEL, run_id) == [],
+        lambda: queued(run, LOGS_LABEL, run_id, leaving=True) == queued(run, LABEL, run_id, leaving=True) == [],
         "at the start the skrzynka took the Logi and then the comment",
         timeout_s=30,
     )
@@ -1119,7 +1122,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     _as_maks_sees(run, page, sent, "199-uwaga-logi-dotarly")
 
     run.step(FEATURE, "uwaga-logi-nie-powstaly")
-    key_file = config / "zgloszenia-klucz.txt"
+    key_file = config / REPORT_KEY_FILE
     key = read_text(key_file)
     print("  harness: without the key the preview's Logi wait in the queue", flush=True)
     drop_report_key(key_file)
@@ -1141,7 +1144,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
             + f"Logi Uruchomienia: nie powstały albo nie da się ich wysłać (Uruchomienie {missing})",
             "the sent Uwaga says its Logi were not made or cannot be sent, with the Uruchomienie's id",
         )
-        run.wait_for(lambda: queued(run, LABEL, missing) == [], "nothing of the Uwaga waits in the queue")
+        run.wait_for(lambda: queued(run, LABEL, missing, leaving=True) == [], "nothing of the Uwaga waits in the queue")
         run.check(_issue(box, issue["number"]).get("comments", []) == [], "an Uwaga whose Logi were never queued gets no comment")
         _as_maks_sees(run, page, issue, "200-uwaga-logi-nie-powstaly")
     finally:

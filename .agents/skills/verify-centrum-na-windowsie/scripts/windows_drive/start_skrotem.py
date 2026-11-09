@@ -13,6 +13,7 @@ from playwright.sync_api import Page, expect
 from windows_drive.common import Run, same_path, wait_for
 import windows_desktop
 from rozliczenia.centrum import start_problems
+from atrapy.pliki_taty import SERVICE
 
 FEATURE = "start-skrotem"
 
@@ -50,7 +51,7 @@ def drive(run: Run, page: Page) -> None:
     windows_desktop.start_shortcut(run.shortcut)
     health = run.health()
     run.record("health-start", health)
-    run.check(health.get("service") == "centrum-rozliczen", "Centrum rozliczeń answers on Dad's port")
+    run.check(health.get("service") == SERVICE, "Centrum rozliczeń answers on Dad's port")
     run.check(health.get("commit") == facts["versions"]["first"][:7], "Centrum runs the tool's commit")
     process = run.centrum_process()
     (run.evidence / "state" / "proces-start.json").write_text(json.dumps(asdict(process), ensure_ascii=False, indent=2), encoding="utf-8")

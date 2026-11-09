@@ -30,11 +30,14 @@ from drive.common import (
     stop_banner,
 )
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
+from atrapy.workbooks import excel_lock
 
 SETTLEMENT = "przebieg-rozliczen"
 WORKER_SETTLEMENTS = f"Rozliczenie pracowników {LAST_COMPLETE}"
 # serve_centrum.py waits this long before each Szablon pracownika while the pacing file exists.
 TEMPLATE_PACING_MS = 2500
+# Where Dad types quantities in his Plik zbiorczy: a deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z
+# src”) and not rozliczenia.collective_layout, because the drive plays Dad and the fixture builds his files by hand.
 WORKER_COLUMN, QUANTITY_COLUMN, FIRST_DATA_ROW = 8, 14, 18  # H (WYKONAWCA), N (first quantity), row 18
 UNMAPPED_WORKER_ACTION = (
     "Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy do konfiguracji "
@@ -93,7 +96,7 @@ def _template_lock_left_behind(run: Run, page: Page) -> None:
     """
 
     template = Path(run.fixture["configuration"]["worker_template"])
-    lock = template.with_name(f"~${template.name}")
+    lock = excel_lock(template)
     warning = (
         "Wzorzec rozliczenia pracownika jest otwarty w Excelu. Zamknij go bez zapisywania zmian. Jeśli Excel jest "
         f"zamknięty, usuń z tego samego folderu pozostawiony plik {lock.name}."
@@ -156,7 +159,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "przebieg-gotowosc")
     filled = _fill_readiness(collective_file)
     run.check(
-        filled == len(workers) - 1 and not collective_file.with_name(f"~${collective_file.name}").exists(),
+        filled == len(workers) - 1 and not excel_lock(collective_file).exists(),
         "Gotowość (Excel simulated by the harness): quantities typed into every Wiersz danych, saved and closed",
     )
 

@@ -23,19 +23,31 @@ def config_dir(root: Path) -> Path:
     return root / "config"
 
 
+def settings_file(root: Path) -> Path:
+    """Ustawienia taty (folder okresów, Rejestr zleceń) w ``config`` klonu narzędzia w ``root``."""
+
+    return config_dir(root) / "centrum-ustawienia.yaml"
+
+
+def log_path(root: Path) -> Path:
+    """Dziennik Centrum rozliczeń klonu narzędzia w ``root``; obok niego w ``logs`` leżą Logi Uruchomienia."""
+
+    return root / "logs" / "centrum-rozliczen.log"
+
+
 CONFIG_DIR: Final = config_dir(TOOL_ROOT)
 WORKER_CONFIG: Final = CONFIG_DIR / "worker_mapping.yaml"
 WORKER_TEMPLATE: Final = CONFIG_DIR / "Wzorzec rozliczenia pracownika.xlsx"
 COLLECTIVE_TEMPLATE: Final = CONFIG_DIR / "Wzorzec pliku zbiorczego.xlsx"
 INTERNAL_TEMPLATE: Final = CONFIG_DIR / "Wzorzec rozliczenia wewnętrznego.xlsx"
-SETTINGS: Final = CONFIG_DIR / "centrum-ustawienia.yaml"
+SETTINGS: Final = settings_file(TOOL_ROOT)
 
 SETTLEMENT_METRICS: Final = TOOL_ROOT / ".rozliczenia-metrics.jsonl"
 PREPARATION_METRICS: Final = TOOL_ROOT / ".przygotowanie-pliku-zbiorczego-metrics.jsonl"
 INTERMAX_METRICS: Final = TOOL_ROOT / ".uporzadkowanie-intermax-metrics.jsonl"
 EFENIX_METRICS: Final = TOOL_ROOT / ".wycena-efenix-metrics.jsonl"
 
-LOG_PATH: Final = TOOL_ROOT / "logs" / "centrum-rozliczen.log"
+LOG_PATH: Final = log_path(TOOL_ROOT)
 
 HOST: Final = "127.0.0.1"  # wyłącznie ten komputer (ADR 0004)
 DEFAULT_PORT: Final = 47811

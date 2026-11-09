@@ -41,8 +41,9 @@ ORDERS = {
     row: (order.number.removeprefix("#"), order.worker) for row, order in enumerate(EFENIX_ORDERS, start=FIRST_ROW)
 }
 # Znacznik efenix, the light purple of ADRES in a ready order's row, and the Znacznik przekazania, the darker purple of
-# an order the Wycena with Przekazanie forwarded to acceptance: the colours of ADR 0027, written here and not taken from
-# rozliczenia.efenix_mark, because the tests take them from there and this drive is what checks them.
+# an order the Wycena with Przekazanie forwarded to acceptance: the colours of ADR 0027, a deliberate copy
+# (docs/agents/skille.md, „Co wyrocznia bierze z src”) and not taken from rozliczenia.efenix_mark, because the tests take
+# them from there and this drive is what checks them.
 MARK_RGB = "E0CCFF"
 FORWARDED_RGB = "B48AFF"
 # The two buttons of the setup card in Dad's words, „zapis” being the green „Zapisz” in efenix, with their captions.

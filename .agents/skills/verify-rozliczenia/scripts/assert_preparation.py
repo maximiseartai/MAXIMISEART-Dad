@@ -84,7 +84,8 @@ EXPECTED_SUMMARY = runs_contract.RunSummary(
 )
 INTERNAL_TEMPLATE = Path(TEMPLATES_DIRECTORY) / INTERNAL_TEMPLATE_NAME
 COLLECTIVE_TEMPLATE = Path(TEMPLATES_DIRECTORY) / COLLECTIVE_TEMPLATE_NAME
-# Target headers the process fills; a real Wzorzec may order them differently.
+# Target headers the process fills; a real Wzorzec may order them differently. A deliberate copy (docs/agents/skille.md,
+# „Co wyrocznia bierze z src”): Dad's Wzorce carry these headers, so a change of ``register_columns`` must break this.
 TARGET_HEADERS = (
     "DATA",
     "MIASTO",

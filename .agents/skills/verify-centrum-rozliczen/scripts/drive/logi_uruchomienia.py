@@ -12,7 +12,6 @@ from typing import Any
 from playwright.sync_api import Page, expect
 
 from drive.common import (
-    RUN_LOGS,
     Run,
     box_issues,
     drop_report_key,
@@ -27,6 +26,7 @@ from drive.common import (
 from drive.teksty import ABOUT_LOGS
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
 from atrapy.scenariusz_centrum import ROW_MARKER
+from atrapy.pliki_taty import REPORT_KEY_FILE
 
 FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"
@@ -49,7 +49,7 @@ def _card(run: Run, name: str) -> Json:
 
 def _one_new(run: Run, before: set[str], what: str) -> Json:
     new = {name: record for name, record in run_logs(run).items() if name not in before}
-    run.check(len(new) == 1, f"{what}: exactly one new file in {RUN_LOGS} ({', '.join(sorted(new))})")
+    run.check(len(new) == 1, f"{what}: exactly one new file in {run.run_logs_dir.relative_to(run.root).as_posix()} ({', '.join(sorted(new))})")
     [record] = new.values()
     return record
 
@@ -219,14 +219,14 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "logi-w-skrzynce")
     print("  harness: Maks writes the key; the next Uruchomienie wakes the queue", flush=True)
-    key_file = run.config / "zgloszenia-klucz.txt"
+    key_file = run.config / REPORT_KEY_FILE
     key_file.write_text(KEY + "\n", encoding="utf-8")
     try:
         _new_settlement(run, page, needs_check)
         page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
         expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
         woke = _card(run, "logi-skrzynka-podglad")
-        run.wait_for(lambda: queued(run, LABEL) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=60)
+        run.wait_for(lambda: queued(run, LABEL, leaving=True) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=60)
     finally:
         drop_report_key(key_file)
     # Bytes, not text: reading text turns the \r\n of a file written in text mode on Windows back into \n.

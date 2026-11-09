@@ -105,6 +105,8 @@ from rozliczenia.centrum.report_box import (
 from rozliczenia.centrum.reports import report_target
 from eksplorator import Choices, Excuse, Kind, Shape, excuse_line, excused, gone_lines, schedules, verdict
 from atrapy.sluchacz_kolejki import QueueListener
+from rozliczenia.centrum.case_delivery import queue_directory
+from rozliczenia.tool_files import config_dir
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 # GitHub's answers to a step of the Archiwum it refuses until Maks changes something: a key without the permission to
@@ -1129,7 +1131,7 @@ def execute(name: str, choices: Choices, work: Path, visited: set[object]) -> li
 
     scope = SCOPES[name]
     _emptied(work)
-    queue = work / "config" / "zgloszenia" / "kolejka"
+    queue = queue_directory(config_dir(work))
     scheduler = Scheduler(choices)
     clock = _Clock()
     box = MemoryBox(scheduler, clock, empty_repository=scope.empty_repository, list_lag=scope.list_lag)

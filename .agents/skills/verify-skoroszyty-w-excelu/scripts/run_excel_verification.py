@@ -32,7 +32,7 @@ import excel
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from rozliczenia.collective_layout import QUANTITY_COLUMNS
+from rozliczenia.collective_layout import FIRST_DATA_ROW as FIRST_ROW, HEADER_ROW, QUANTITY_COLUMNS, REMARKS
 from skrypt_skilla import SKIPPED, Parser, create_run_root, new_run
 from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
 from atrapy.scenariusz_rozliczen import (
@@ -60,10 +60,8 @@ PROCESS_SCRIPT = REPO_ROOT / "tools" / "uruchom_proces.py"
 # Exit code of the machine script for Wymaga sprawdzenia.
 NEEDS_REVIEW_EXIT = 2
 TEMPLATE_NAMES = (INTERNAL_TEMPLATE_NAME, COLLECTIVE_TEMPLATE_NAME, WORKER_TEMPLATE_NAME)
-HEADER_ROW = 17
-FIRST_ROW = 18
 LAST_SCANNED_ROW = 60
-INPUT_COLUMNS = range(14, 47)  # N:AT, what Dad types
+INPUT_COLUMNS = range(QUANTITY_COLUMNS.start, REMARKS + 1)  # N:AT, what Dad types
 CALCULATED = "AU{row}:AX{row}"  # amounts; AY looks up the Słownik, which is #N/D without the Słownik itself
 FORMULAS = "AU{row}:AY{row}"
 FILLED = tuple(order_number(number) for number in FILLED_ORDERS)

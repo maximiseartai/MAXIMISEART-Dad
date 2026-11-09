@@ -14,6 +14,7 @@ from playwright.sync_api import Page
 
 import windows_desktop
 import windows_tool
+from atrapy.pliki_taty import CONFIG_DIRECTORY, LOG_FILE, SETTINGS_FILE
 
 T = TypeVar("T")
 
@@ -85,7 +86,21 @@ class Run:
 
     @property
     def log(self) -> Path:
-        return self.tool / "logs" / "centrum-rozliczen.log"
+        """The Centrum log of the installed tool, which Dad hands Maks (docs/tata-instrukcja.md)."""
+
+        return self.tool / LOG_FILE
+
+    @property
+    def config(self) -> Path:
+        """The tool's ``config/``, where Maks puts Dad's files and Centrum keeps its own across Wydania."""
+
+        return self.tool / CONFIG_DIRECTORY
+
+    @property
+    def settings(self) -> Path:
+        """Ustawienia taty in the tool's ``config/``, by the name README gives them."""
+
+        return self.tool / SETTINGS_FILE
 
     def log_lines(self) -> list[str]:
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.is_file() else []
@@ -115,7 +130,7 @@ class Run:
     def config_bytes(self) -> dict[str, str]:
         """Every file in the tool's ``config/`` (Dad's files and Centrum's own) by its SHA-256."""
 
-        config = self.tool / "config"
+        config = self.config
         return {
             path.relative_to(config).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted(config.rglob("*"))
