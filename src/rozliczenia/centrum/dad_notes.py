@@ -3,7 +3,7 @@
 Treść issue powstaje tylko w ``note_issue``: podgląd „Maks dostanie” i wysyłka wołają tę samą funkcję, więc tata
 widzi dokładnie to, co dostanie Maks. „Wyślij” zapisuje Uwagę bez numeru issue jako sprawę taty (``DadCases``),
 kładzie ją w kolejce Skrzynki Zgłoszeń jako osobne issue z etykietą ``uwaga-taty`` i czeka na skrzynkę najwyżej
-``DELIVERY_WAIT_S``, a gdy jej nie przyjęła, mówi, na co Uwaga czeka (``DadCases.hold``). Numer issue dopisuje wątek kolejki, także po następnym starcie Centrum, a zamknięcie issue przez
+``DELIVERY_WAIT_S``, a gdy jej nie przyjęła, mówi, na co Uwaga czeka (``DadCases.queued``). Numer issue dopisuje wątek kolejki, także po następnym starcie Centrum, a zamknięcie issue przez
 Maksa sprawdzanie Powiadomień. Sprawa ma tylko tytuł Uwagi i przypięte Uruchomienie, bez treści.
 
 Uwaga przypięta do Uruchomienia procesu z Centrum niesie w stopce jego proces, okres, tryb, wynik i datę oraz
@@ -27,7 +27,7 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import dad_notes as dad_notes_contract
 from rozliczenia.centrum.contract import metrics as metrics_contract
 from rozliczenia.centrum.refusal import Refusal
-from rozliczenia.centrum.case_delivery import logs_line, note_post
+from rozliczenia.centrum.case_delivery import logs_line, note_post, shown_logs_line
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, Outbox
@@ -66,23 +66,29 @@ def note_issue(
 
     Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów. Tytuł i
     tekst przechodzą przez strażnika reguły danych pracy Centrum (ADR 0025), a uwaga techniczna o zamaskowanej wartości staje pod
-    tekstem, więc tata widzi w podglądzie dokładnie to, co dostanie Maks.
+    tekstem, więc tata widzi w podglądzie dokładnie to, co dostanie Maks, z odnośnikiem do Logów jako samym napisem.
     """
 
     version = f"wersja narzędzia {version_label(commit)}"
-    footer = f"Uwaga ogólna · {version}" if pinned is None else _pinned_footer(pinned, version)
     title_guarded = forbidden.guard(title, "tytuł Uwagi taty")
     body_guarded = forbidden.guard(body, "treść Uwagi taty")
     notes = "".join(f"\n{note}" for note in (*title_guarded.notes, *body_guarded.notes))
     text = f"{body_guarded.text}{notes}".strip("\n")
-    return dad_notes_contract.DadNoteDraft(title=title_guarded.text, body=f"{text}\n\n{footer}" if text else footer)
+
+    def with_footer(logs: Callable[[str, str | None], str]) -> str:
+        footer = f"Uwaga ogólna · {version}" if pinned is None else _pinned_footer(pinned, version, logs)
+        return f"{text}\n\n{footer}" if text else footer
+
+    return dad_notes_contract.DadNoteDraft(
+        title=title_guarded.text, body=with_footer(logs_line), shown_body=with_footer(shown_logs_line)
+    )
 
 
-def _pinned_footer(pinned: PinnedRun, version: str) -> str:
+def _pinned_footer(pinned: PinnedRun, version: str, logs: Callable[[str, str | None], str]) -> str:
     run = pinned.run
     started = run.started_at.astimezone()
     facts = (run.process_label, run.period, run.mode.word, _result_word(run), f"{started:%d.%m.%Y, %H:%M}")
-    return f"Uruchomienie: {' · '.join((*facts, version))}\n{logs_line(run.run_id, pinned.logs)}"
+    return f"Uruchomienie: {' · '.join((*facts, version))}\n{logs(run.run_id, pinned.logs)}"
 
 
 def _result_word(run: dad_notes_contract.PinnableRun) -> str:
@@ -137,7 +143,7 @@ def send(
     commit: str | None,
     pinned: PinnedRun | None,
     forbidden: ForbiddenValues,
-) -> dad_notes_contract.DadNoteState:
+) -> common_contract.SendState:
     """Zapisuje Uwagę, kładzie ją w kolejce i mówi, czy skrzynka przyjęła ją w ``DELIVERY_WAIT_S``, a jeśli nie, na
     co czeka albo że skrzynka odrzuciła jej treść.
 
@@ -154,11 +160,8 @@ def send(
         cases.forget(NOTE, note.id)
         raise Refusal(500, _NOT_QUEUED)
     if outbox.wait_delivered(note.id, NOTE.label, timeout_s=DELIVERY_WAIT_S):
-        return dad_notes_contract.DadNoteSent(state="sent")
-    hold = cases.hold(note.id, box)
-    if hold == "rejected":
-        return dad_notes_contract.DadNoteRejected(state="rejected")
-    return dad_notes_contract.DadNoteWaiting(state="waiting", waits_for=hold)
+        return common_contract.Sent(state="sent")
+    return cases.queued(note.id, box)
 
 
 def dad_notes_router(
@@ -183,7 +186,7 @@ def dad_notes_router(
         return note_issue(text.title, text.body, commit(), _pinned(text.run_id, history, logs), forbidden)
 
     @router.post("", operation_id="sendDadNote", responses=refusals)
-    def send_note(request: dad_notes_contract.DadNoteRequest) -> dad_notes_contract.DadNoteState:
+    def send_note(request: dad_notes_contract.DadNoteRequest) -> common_contract.SendState:
         return send(request, cases, outbox, box, commit(), _pinned(request.run_id, history, logs), forbidden)
 
     return router

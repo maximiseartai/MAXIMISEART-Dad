@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from rozliczenia.message import Message as ProcessMessage
 
@@ -46,3 +46,35 @@ class Message(Model):
 # Na co czeka wysyłka taty w Kolejce wysyłki: ``internet`` albo ``key``, czyli Token do Zgłoszeń od Maksa (brak
 # tokenu albo token, którego Skrzynka Zgłoszeń odmówiła).
 WaitsFor = Literal["internet", "key"]
+
+
+class Sent(Model):
+    """Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później."""
+
+    state: Literal["sent"]
+
+
+class Queued(Model):
+    """Wysyłka taty czeka w Kolejce wysyłki na tym komputerze i wyjdzie sama, także po następnym starcie, gdy będzie
+    to, na co czeka."""
+
+    state: Literal["queued"]
+    waits_for: WaitsFor
+
+
+class Rejected(Model):
+    """Skrzynka Zgłoszeń odrzuciła treść wysyłki taty: ani internet, ani Token do Zgłoszeń tego nie naprawią.
+
+    Plik zostaje w Kolejce wysyłki, która spróbuje go dopiero przy następnym starcie Centrum, więc Centrum niczego nie
+    obiecuje, tylko każe skontaktować się z Maksem.
+    """
+
+    state: Literal["rejected"]
+
+
+# Stan wysyłki taty (Zgłoszenia albo Uwagi taty) w Kolejce wysyłki, ten sam w odpowiedzi na „Wyślij”, w stanie
+# Zgłoszenia i w Powiadomieniu.
+Sending = Sent | Queued | Rejected
+
+
+SendState = Annotated[Sending, Field(discriminator="state")]

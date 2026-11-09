@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
-from pydantic import Field, StringConstraints, computed_field
+from pydantic import StringConstraints, computed_field
 
 from rozliczenia import domain
-from rozliczenia.centrum.contract.common import Model, WaitsFor
+from rozliczenia.centrum.contract.common import Model
 from rozliczenia.domain import RunMode
 from rozliczenia.process_run import RunResult
 
@@ -73,29 +73,12 @@ class DadNoteRequest(Model):
 
 
 class DadNoteDraft(Model):
-    """Dokładnie to, co dostanie Maks: tytuł i treść issue Uwagi taty w Skrzynce Zgłoszeń."""
+    """Dokładnie to, co dostanie Maks: tytuł i treść issue Uwagi taty w Skrzynce Zgłoszeń.
+
+    ``shown_body`` to ta treść tak, jak pokazuje ją tacie „Maks dostanie”: odnośnik do Logów Uruchomienia jako sam
+    napis, jak na GitHubie, bez adresu prywatnej Skrzynki, którego tata i tak nie otworzy.
+    """
 
     title: str
     body: str
-
-
-class DadNoteSent(Model):
-    """Skrzynka Zgłoszeń przyjęła Uwagę taty."""
-
-    state: Literal["sent"]
-
-
-class DadNoteWaiting(Model):
-    """Uwaga taty czeka w Kolejce wysyłki i wyjdzie sama, także po następnym starcie, gdy będzie to, na co czeka."""
-
-    state: Literal["waiting"]
-    waits_for: WaitsFor
-
-
-class DadNoteRejected(Model):
-    """Skrzynka Zgłoszeń odrzuciła treść Uwagi taty; jak ``ReportRejected``, Centrum niczego nie obiecuje."""
-
-    state: Literal["rejected"]
-
-
-DadNoteState = Annotated[DadNoteSent | DadNoteWaiting | DadNoteRejected, Field(discriminator="state")]
+    shown_body: str

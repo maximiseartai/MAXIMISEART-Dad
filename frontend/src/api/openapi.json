@@ -51,22 +51,22 @@
                 "schema": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/DadNoteSent"
+                      "$ref": "#/components/schemas/Sent"
                     },
                     {
-                      "$ref": "#/components/schemas/DadNoteWaiting"
+                      "$ref": "#/components/schemas/Queued"
                     },
                     {
-                      "$ref": "#/components/schemas/DadNoteRejected"
+                      "$ref": "#/components/schemas/Rejected"
                     }
                   ],
                   "title": "Response Senddadnote",
                   "discriminator": {
                     "propertyName": "state",
                     "mapping": {
-                      "sent": "#/components/schemas/DadNoteSent",
-                      "waiting": "#/components/schemas/DadNoteWaiting",
-                      "rejected": "#/components/schemas/DadNoteRejected"
+                      "sent": "#/components/schemas/Sent",
+                      "queued": "#/components/schemas/Queued",
+                      "rejected": "#/components/schemas/Rejected"
                     }
                   }
                 }
@@ -1434,30 +1434,30 @@
                       "$ref": "#/components/schemas/ReportReady"
                     },
                     {
-                      "$ref": "#/components/schemas/ReportSent"
-                    },
-                    {
                       "$ref": "#/components/schemas/ReportWaiting"
                     },
                     {
-                      "$ref": "#/components/schemas/ReportQueued"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ReportRejected"
-                    },
-                    {
                       "$ref": "#/components/schemas/ReportNotQueued"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Sent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Queued"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
                     }
                   ],
                   "discriminator": {
                     "propertyName": "state",
                     "mapping": {
                       "ready": "#/components/schemas/ReportReady",
-                      "sent": "#/components/schemas/ReportSent",
                       "waiting": "#/components/schemas/ReportWaiting",
-                      "queued": "#/components/schemas/ReportQueued",
-                      "rejected": "#/components/schemas/ReportRejected",
-                      "not_queued": "#/components/schemas/ReportNotQueued"
+                      "not_queued": "#/components/schemas/ReportNotQueued",
+                      "sent": "#/components/schemas/Sent",
+                      "queued": "#/components/schemas/Queued",
+                      "rejected": "#/components/schemas/Rejected"
                     }
                   },
                   "title": "Response Reportrun"
@@ -1796,19 +1796,19 @@
                       "$ref": "#/components/schemas/ReportReady"
                     },
                     {
-                      "$ref": "#/components/schemas/ReportSent"
-                    },
-                    {
                       "$ref": "#/components/schemas/ReportWaiting"
                     },
                     {
-                      "$ref": "#/components/schemas/ReportQueued"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ReportRejected"
-                    },
-                    {
                       "$ref": "#/components/schemas/ReportNotQueued"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Sent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Queued"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
                     }
                   ],
                   "title": "Response Reporttoolupdate",
@@ -1816,11 +1816,11 @@
                     "propertyName": "state",
                     "mapping": {
                       "ready": "#/components/schemas/ReportReady",
-                      "sent": "#/components/schemas/ReportSent",
                       "waiting": "#/components/schemas/ReportWaiting",
-                      "queued": "#/components/schemas/ReportQueued",
-                      "rejected": "#/components/schemas/ReportRejected",
-                      "not_queued": "#/components/schemas/ReportNotQueued"
+                      "not_queued": "#/components/schemas/ReportNotQueued",
+                      "sent": "#/components/schemas/Sent",
+                      "queued": "#/components/schemas/Queued",
+                      "rejected": "#/components/schemas/Rejected"
                     }
                   }
                 }
@@ -2285,16 +2285,21 @@
           "body": {
             "type": "string",
             "title": "Body"
+          },
+          "shown_body": {
+            "type": "string",
+            "title": "Shown Body"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "title",
-          "body"
+          "body",
+          "shown_body"
         ],
         "title": "DadNoteDraft",
-        "description": "Dokładnie to, co dostanie Maks: tytuł i treść issue Uwagi taty w Skrzynce Zgłoszeń."
+        "description": "Dokładnie to, co dostanie Maks: tytuł i treść issue Uwagi taty w Skrzynce Zgłoszeń.\n\n``shown_body`` to ta treść tak, jak pokazuje ją tacie „Maks dostanie”: odnośnik do Logów Uruchomienia jako sam\nnapis, jak na GitHubie, bez adresu prywatnej Skrzynki, którego tata i tak nie otworzy."
       },
       "DadNoteNotification": {
         "properties": {
@@ -2321,16 +2326,34 @@
             "title": "Title"
           },
           "state": {
-            "type": "string",
-            "enum": [
-              "wyslana",
-              "czeka_na_internet",
-              "czeka_na_token",
-              "odrzucona",
-              "rozwiazana",
-              "przeczytana"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Sent"
+              },
+              {
+                "$ref": "#/components/schemas/Queued"
+              },
+              {
+                "$ref": "#/components/schemas/Rejected"
+              },
+              {
+                "$ref": "#/components/schemas/Resolved"
+              },
+              {
+                "$ref": "#/components/schemas/ReadByMaks"
+              }
             ],
-            "title": "State"
+            "title": "State",
+            "discriminator": {
+              "propertyName": "state",
+              "mapping": {
+                "queued": "#/components/schemas/Queued",
+                "read": "#/components/schemas/ReadByMaks",
+                "rejected": "#/components/schemas/Rejected",
+                "resolved": "#/components/schemas/Resolved",
+                "sent": "#/components/schemas/Sent"
+              }
+            }
           }
         },
         "additionalProperties": false,
@@ -2345,22 +2368,6 @@
         ],
         "title": "DadNoteNotification",
         "description": "Powiadomienie o Uwadze taty, nazwanej jej tytułem."
-      },
-      "DadNoteRejected": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "rejected",
-            "title": "State"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state"
-        ],
-        "title": "DadNoteRejected",
-        "description": "Skrzynka Zgłoszeń odrzuciła treść Uwagi taty; jak ``ReportRejected``, Centrum niczego nie obiecuje."
       },
       "DadNoteRequest": {
         "properties": {
@@ -2397,22 +2404,6 @@
         "title": "DadNoteRequest",
         "description": "Uwaga taty do wysłania: tytuł wymagany, treść nie jest konieczna; białe znaki na brzegach znikają.\n\n``run_id`` jak w ``DadNoteText``: Uruchomienie, do którego Uwaga jest przypięta; ``None``: ogólna."
       },
-      "DadNoteSent": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "sent",
-            "title": "State"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state"
-        ],
-        "title": "DadNoteSent",
-        "description": "Skrzynka Zgłoszeń przyjęła Uwagę taty."
-      },
       "DadNoteText": {
         "properties": {
           "title": {
@@ -2446,31 +2437,6 @@
         ],
         "title": "DadNoteText",
         "description": "Tytuł i treść Uwagi taty w trakcie pisania, do podglądu „Maks dostanie”; tytuł może być jeszcze pusty.\n\n``run_id`` to Uruchomienie z Centrum (``ProcessRun.run_id``), do którego tata przypina Uwagę; ``None``: ogólna."
-      },
-      "DadNoteWaiting": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "waiting",
-            "title": "State"
-          },
-          "waits_for": {
-            "type": "string",
-            "enum": [
-              "internet",
-              "key"
-            ],
-            "title": "Waits For"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state",
-          "waits_for"
-        ],
-        "title": "DadNoteWaiting",
-        "description": "Uwaga taty czeka w Kolejce wysyłki i wyjdzie sama, także po następnym starcie, gdy będzie to, na co czeka."
       },
       "Decision": {
         "properties": {
@@ -4545,6 +4511,47 @@
         "title": "QuantitiesToFillReady",
         "description": "Ilości do uzupełnienia okresu przeliczone z zapisanego Pliku zbiorczego; ``kinds`` ma każdy rodzaj z listą.\n\n``settled``: Przebieg rozliczeń okresu się odbył (Status okresu Rozliczenia pracowników gotowe), więc strona jest\npodglądem bez „Gotowe, rozlicz pracowników”, a wiersz bez wpisu taty jest „bez ilości”."
       },
+      "Queued": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "queued",
+            "title": "State"
+          },
+          "waits_for": {
+            "type": "string",
+            "enum": [
+              "internet",
+              "key"
+            ],
+            "title": "Waits For"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "waits_for"
+        ],
+        "title": "Queued",
+        "description": "Wysyłka taty czeka w Kolejce wysyłki na tym komputerze i wyjdzie sama, także po następnym starcie, gdy będzie\nto, na co czeka."
+      },
+      "ReadByMaks": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "read",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "ReadByMaks",
+        "description": "Maks zamknął issue sprawy jako ``not_planned`` albo duplikat: przeczytał, bez zmian."
+      },
       "ReadyPath": {
         "properties": {
           "state": {
@@ -4588,6 +4595,22 @@
         ],
         "title": "RecentResults",
         "description": "Wyniki Uruchomień procesu obu procesów z ostatnich ``weeks`` tygodni."
+      },
+      "Rejected": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "rejected",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "Rejected",
+        "description": "Skrzynka Zgłoszeń odrzuciła treść wysyłki taty: ani internet, ani Token do Zgłoszeń tego nie naprawią.\n\nPlik zostaje w Kolejce wysyłki, która spróbuje go dopiero przy następnym starcie Centrum, więc Centrum niczego nie\nobiecuje, tylko każe skontaktować się z Maksem."
       },
       "ReleaseNotification": {
         "properties": {
@@ -4717,16 +4740,34 @@
             "title": "What"
           },
           "state": {
-            "type": "string",
-            "enum": [
-              "wyslana",
-              "czeka_na_internet",
-              "czeka_na_token",
-              "odrzucona",
-              "rozwiazana",
-              "przeczytana"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Sent"
+              },
+              {
+                "$ref": "#/components/schemas/Queued"
+              },
+              {
+                "$ref": "#/components/schemas/Rejected"
+              },
+              {
+                "$ref": "#/components/schemas/Resolved"
+              },
+              {
+                "$ref": "#/components/schemas/ReadByMaks"
+              }
             ],
-            "title": "State"
+            "title": "State",
+            "discriminator": {
+              "propertyName": "state",
+              "mapping": {
+                "queued": "#/components/schemas/Queued",
+                "read": "#/components/schemas/ReadByMaks",
+                "rejected": "#/components/schemas/Rejected",
+                "resolved": "#/components/schemas/Resolved",
+                "sent": "#/components/schemas/Sent"
+              }
+            }
           }
         },
         "additionalProperties": false,
@@ -4741,31 +4782,6 @@
         ],
         "title": "ReportNotification",
         "description": "Powiadomienie o Zgłoszeniu, nazwanym „Co się stało” jego Komunikatu, bez kodu."
-      },
-      "ReportQueued": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "queued",
-            "title": "State"
-          },
-          "waits_for": {
-            "type": "string",
-            "enum": [
-              "internet",
-              "key"
-            ],
-            "title": "Waits For"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state",
-          "waits_for"
-        ],
-        "title": "ReportQueued",
-        "description": "Zgłoszenie czeka w Kolejce wysyłki na tym komputerze i wyjdzie samo, gdy będzie to, na co czeka."
       },
       "ReportReady": {
         "properties": {
@@ -4783,38 +4799,6 @@
         "title": "ReportReady",
         "description": "Zgłoszenia tego problemu jeszcze nie wysłano; „Wyślij do Maksa” wyśle podgląd z Diagnozy."
       },
-      "ReportRejected": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "rejected",
-            "title": "State"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state"
-        ],
-        "title": "ReportRejected",
-        "description": "Skrzynka Zgłoszeń odrzuciła treść tego Zgłoszenia: ani internet, ani Token do Zgłoszeń tego nie naprawią.\n\nPlik zostaje w Kolejce wysyłki, która spróbuje go dopiero przy następnym starcie Centrum, więc Centrum niczego nie\nobiecuje, tylko każe skontaktować się z Maksem."
-      },
-      "ReportSent": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "sent",
-            "title": "State"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state"
-        ],
-        "title": "ReportSent",
-        "description": "Zgłoszenie tego problemu wysłano z tego uchwytu (albo kolejka dostarczyła je później); czeka na naprawę."
-      },
       "ReportWaiting": {
         "properties": {
           "state": {
@@ -4830,6 +4814,22 @@
         ],
         "title": "ReportWaiting",
         "description": "Zgłoszenie tego problemu wysłano wcześniej i jest otwarte: czeka na naprawę, drugie nie powstaje."
+      },
+      "Resolved": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "resolved",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "Resolved",
+        "description": "Maks zamknął issue sprawy jako ``completed`` albo bez powodu: będzie w następnej wersji."
       },
       "ResultCounts": {
         "properties": {
@@ -5280,29 +5280,29 @@
                     "$ref": "#/components/schemas/ReportReady"
                   },
                   {
-                    "$ref": "#/components/schemas/ReportSent"
-                  },
-                  {
                     "$ref": "#/components/schemas/ReportWaiting"
                   },
                   {
-                    "$ref": "#/components/schemas/ReportQueued"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ReportRejected"
-                  },
-                  {
                     "$ref": "#/components/schemas/ReportNotQueued"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Sent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Queued"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Rejected"
                   }
                 ],
                 "discriminator": {
                   "propertyName": "state",
                   "mapping": {
                     "not_queued": "#/components/schemas/ReportNotQueued",
-                    "queued": "#/components/schemas/ReportQueued",
+                    "queued": "#/components/schemas/Queued",
                     "ready": "#/components/schemas/ReportReady",
-                    "rejected": "#/components/schemas/ReportRejected",
-                    "sent": "#/components/schemas/ReportSent",
+                    "rejected": "#/components/schemas/Rejected",
+                    "sent": "#/components/schemas/Sent",
                     "waiting": "#/components/schemas/ReportWaiting"
                   }
                 }
@@ -5605,6 +5605,22 @@
         "title": "RunSummary",
         "description": "Podsumowanie albo plan (DRY-RUN) procesu tak, jak pokazuje je karta Uruchomienia, bez danych klientów.\n\nLiczby wyniku, potem szczegóły: kafelki liczb (np. Zlecenia na dzień), pliki okresu i Rozliczenia\npracowników: plan po podglądzie, zapisane po uruchomieniu (``None``, gdy proces ich nie tworzy)."
       },
+      "Sent": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "sent",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "Sent",
+        "description": "Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później."
+      },
       "Settings": {
         "properties": {
           "order_register": {
@@ -5801,19 +5817,19 @@
                 "$ref": "#/components/schemas/ReportReady"
               },
               {
-                "$ref": "#/components/schemas/ReportSent"
-              },
-              {
                 "$ref": "#/components/schemas/ReportWaiting"
               },
               {
-                "$ref": "#/components/schemas/ReportQueued"
-              },
-              {
-                "$ref": "#/components/schemas/ReportRejected"
-              },
-              {
                 "$ref": "#/components/schemas/ReportNotQueued"
+              },
+              {
+                "$ref": "#/components/schemas/Sent"
+              },
+              {
+                "$ref": "#/components/schemas/Queued"
+              },
+              {
+                "$ref": "#/components/schemas/Rejected"
               }
             ],
             "title": "Report",
@@ -5821,10 +5837,10 @@
               "propertyName": "state",
               "mapping": {
                 "not_queued": "#/components/schemas/ReportNotQueued",
-                "queued": "#/components/schemas/ReportQueued",
+                "queued": "#/components/schemas/Queued",
                 "ready": "#/components/schemas/ReportReady",
-                "rejected": "#/components/schemas/ReportRejected",
-                "sent": "#/components/schemas/ReportSent",
+                "rejected": "#/components/schemas/Rejected",
+                "sent": "#/components/schemas/Sent",
                 "waiting": "#/components/schemas/ReportWaiting"
               }
             }

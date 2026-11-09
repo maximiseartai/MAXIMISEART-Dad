@@ -90,6 +90,7 @@ NO_LOGS = ("Podgląd bez Logów", "")
 REFUSED = ("Uwaga, której Skrzynka nie przyjmie", "Treść odrzucona przez Skrzynkę.")
 LOGS_LABEL = "logi-uruchomienia"
 LOGS_LINK = re.compile(r"^\[Logi Uruchomienia\]\((.*)\)$", re.MULTILINE)
+# A Markdown link as GitHub renders it, for the harness page that shows an issue the way Maks sees it.
 MARKDOWN_LINK = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
 NO_RUNS = "Nie ma jeszcze Uruchomień z Centrum."
 NOT_IN_HISTORY = "Tego Uruchomienia nie ma w historii Centrum. Wybierz inne albo wyślij Uwagę ogólną."
@@ -181,7 +182,7 @@ def _draft(run: Run, title: str, body: str, name: str, run_id: str | None = None
         json.dumps(draft, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     assert isinstance(draft, dict)
-    return {"title": str(draft["title"]), "body": str(draft["body"])}
+    return {"title": str(draft["title"]), "body": str(draft["body"]), "shown_body": str(draft["shown_body"])}
 
 
 def _shown(figure: Locator) -> tuple[str, str]:
@@ -192,7 +193,7 @@ def _shown(figure: Locator) -> tuple[str, str]:
 
 
 def _shows(run: Run, figure: Locator, draft: dict[str, str], message: str) -> None:
-    expected = (draft["title"], MARKDOWN_LINK.sub(r"\1", draft["body"]))
+    expected = (draft["title"], draft["shown_body"])
     run.wait_for(lambda: _shown(figure) == expected, message)
 
 
@@ -573,7 +574,7 @@ def drive(run: Run, page: Page) -> None:
     _shows(run, figure, first, "back to Ogólna the figure shows the general draft again")
     expect(send).to_be_enabled()
     answer = _send(page, send)
-    run.check(answer == {"state": "waiting", "waits_for": "key"}, f"without a key the server says the Uwaga waits for the token ({answer})")
+    run.check(answer == {"state": "queued", "waits_for": "key"}, f"without a key the server says the Uwaga waits for the token ({answer})")
     expect(dialog.get_by_role("status")).to_have_text(FOR_KEY)
     run.check(dialog.get_by_role("status").locator("svg").count() == 1, "the sentence has the error icon")
     expect(dialog.get_by_text("Wyślę do Maksa, gdy będzie internet.", exact=True)).to_have_count(0)

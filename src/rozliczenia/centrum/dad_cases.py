@@ -6,9 +6,9 @@ w kolejce Skrzynki, dopóki ``numbered`` nie dopisze numeru. Zgłoszenie też id
 ``id`` to odcisk problemu, który wraca po zamknięciu (``CaseKind.recurs``), więc numer dostaje tylko czekająca sprawa.
 Numer i odrzuconą treść podają Sprawy taty w Skrzynce (``case_delivery``), a kto pokazuje stan sprawy (uchwyt
 Zgłoszenia), słyszy o nich przez ``watch``.
-Stan sprawy (``DadCases.state``) wynika tylko z tabeli ``_STATES``, a sprawy, która czeka w Kolejce wysyłki, także
-z tego, na co czeka (``DadCases.hold``): na internet, na Token do Zgłoszeń (brak albo odmowa Skrzynki) albo na nic, bo
-Skrzynka odrzuciła jej treść. Odrzuconą treść kolejka ponawia dopiero przy następnym starcie Centrum, więc Sprawy taty
+Stan sprawy (``DadCases.state``) to stan wysyłki, gdy sprawa czeka w Kolejce wysyłki (``DadCases.queued``): na
+internet, na Token do Zgłoszeń (brak albo odmowa Skrzynki) albo na nic, bo Skrzynka odrzuciła jej treść; potem
+„wysłana”, a po zamknięciu issue to, co z nią zrobił Maks (tabela ``_ANSWERS``). Odrzuconą treść kolejka ponawia dopiero przy następnym starcie Centrum, więc Sprawy taty
 pamiętają ją tylko w pamięci tej pracy Centrum. ``ask_box`` pyta skrzynkę o zamknięcie otwartych spraw, raz na
 rodzaj, który je ma.
 
@@ -30,8 +30,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final
 
+from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import notifications as notifications_contract
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
@@ -64,7 +65,7 @@ class CaseKind:
     przerwaniu przed znacznikiem (kolejka znajduje wtedy issue, które już założyła), daje sprawie numer tego issue.
     """
 
-    key: Literal["uwaga", "zgloszenie"]
+    key: notifications_contract.CaseKey
     label: Label
     name: str
     recurs: bool
@@ -75,20 +76,13 @@ NOTE: Final = CaseKind("uwaga", "uwaga-taty", "Uwaga taty", recurs=False)
 KINDS: Final = (REPORT, NOTE)
 _BY_KEY: Final[Mapping[str, CaseKind]] = {kind.key: kind for kind in KINDS}
 
-Hold = Literal["internet", "key", "rejected"]
-"""Na co czeka sprawa w Kolejce wysyłki: ``WaitsFor`` z kontraktu (``contract.common``) albo ``rejected``, gdy Skrzynka odrzuciła jej treść."""
-
-# (na co czeka w kolejce, issue zamknięte, state_reason) → stan sprawy; ``None``: sprawa ma numer issue. GitHub zamyka
-# issue bez powodu jako ``completed``, a duplikat to sprawa przeczytana bez zmian.
-_STATES: Final[Mapping[tuple[Hold | None, bool, CloseReason | None], notifications_contract.CaseState]] = {
-    ("internet", False, None): "czeka_na_internet",
-    ("key", False, None): "czeka_na_token",
-    ("rejected", False, None): "odrzucona",
-    (None, False, None): "wyslana",
-    (None, True, "completed"): "rozwiazana",
-    (None, True, None): "rozwiazana",
-    (None, True, "not_planned"): "przeczytana",
-    (None, True, "duplicate"): "przeczytana",
+# Zamknięcie issue przez Maksa (``state_reason``) → stan sprawy. GitHub zamyka issue bez powodu jako ``completed``, a
+# duplikat to sprawa przeczytana bez zmian.
+_ANSWERS: Final[Mapping[CloseReason | None, notifications_contract.Resolved | notifications_contract.ReadByMaks]] = {
+    "completed": notifications_contract.Resolved(state="resolved"),
+    None: notifications_contract.Resolved(state="resolved"),
+    "not_planned": notifications_contract.ReadByMaks(state="read"),
+    "duplicate": notifications_contract.ReadByMaks(state="read"),
 }
 
 
@@ -223,8 +217,8 @@ class DadCases:
         for watcher in watchers:
             watcher(news)
 
-    def hold(self, case_id: str, box: KeyedBox) -> Hold:
-        """Na co czeka sprawa o ``case_id`` w Kolejce wysyłki; nie pyta Skrzynki o token, gdy werdykt jest znany.
+    def queued(self, case_id: str, box: KeyedBox) -> common_contract.Queued | common_contract.Rejected:
+        """Stan sprawy o ``case_id``, która czeka w Kolejce wysyłki; nie pyta Skrzynki o token, gdy werdykt jest znany.
 
         Odrzucona treść nie czeka na nic. Bez tokenu albo z odrzuconym kolejka nie wyśle niczego, a z tokenem, którego
         Skrzynka nie odrzuciła (także jeszcze niesprawdzonym), czeka tylko na internet.
@@ -232,15 +226,18 @@ class DadCases:
 
         with self._lock:
             if case_id in self._rejected:
-                return "rejected"
-        return "key" if box.judge(wait_s=0) in ("missing", "refused") else "internet"
+                return common_contract.Rejected(state="rejected")
+        refused = box.judge(wait_s=0) in ("missing", "refused")
+        return common_contract.Queued(state="queued", waits_for="key" if refused else "internet")
 
     def state(self, case: Case, box: KeyedBox) -> notifications_contract.CaseState:
-        """Stan sprawy w Powiadomieniu, a sprawy bez numeru issue z tym, na co czeka w Kolejce wysyłki."""
+        """Stan sprawy w Powiadomieniu: bez numeru issue czeka w Kolejce wysyłki, z numerem jest wysłana, dopóki Maks
+        nie zamknie issue."""
 
-        hold = None if case.number is not None else self.hold(case.id, box)
+        if case.number is None:
+            return self.queued(case.id, box)
         closure = case.closure
-        return _STATES[(hold, closure is not None, None if closure is None else closure.reason)]
+        return common_contract.Sent(state="sent") if closure is None else _ANSWERS[closure.reason]
 
     def ask_box(self, box: KeyedBox) -> None:
         """Pyta skrzynkę o zamknięcie spraw, raz na rodzaj z otwartymi sprawami; bez odpowiedzi zostaje, co wiadomo.

@@ -17,6 +17,8 @@ from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, RETRY_S
 from rozliczenia.centrum.report_box import Refused, SendOutcome, Unreachable
 
 from tests.fixtures.centrum import (
+    QUEUED_FOR_INTERNET,
+    SENT,
     TOOL_COMMIT,
     Centrum,
     FakeIssue,
@@ -115,7 +117,7 @@ def test_uwaga_przy_pliku_zapisow_skrzynki_nieczytelnym_na_stale_czeka_a_dzienni
     response = started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY})
     started.client.post("/api/dad-notes", json={"title": "Druga uwaga", "body": BODY})
 
-    assert response.json() == {"state": "waiting", "waits_for": "internet"}
+    assert response.json() == QUEUED_FOR_INTERNET
     assert started.report_box.issues == []
     log = started.log_path.read_text(encoding="utf-8")
     assert log.count("skrzynka-zapisy-niedostepne typ=PermissionError") == 1
@@ -139,7 +141,9 @@ def test_podglad_maks_dostanie_to_dokladnie_wyslane_issue(tmp_path: Path, text: 
     assert sent.json() == {"state": "sent"}
     [issue] = dad_note_issues(started)
     assert draft.status_code == 200
-    assert draft.json() == {"title": issue.title, "body": issue.body} == {"title": TITLE, "body": body}
+    # Uwaga ogólna nie ma odnośnika, więc „Maks dostanie” pokazuje tacie treść issue bez zmian.
+    assert draft.json() == {"title": issue.title, "body": issue.body, "shown_body": issue.body}
+    assert (issue.title, issue.body) == (TITLE, body)
 
 
 def test_uwaga_z_adresem_z_rejestru_telefonem_i_ulica_wychodzi_zamaskowana_z_uwaga_a_podglad_to_wyslane_issue(
@@ -158,12 +162,13 @@ def test_uwaga_z_adresem_z_rejestru_telefonem_i_ulica_wychodzi_zamaskowana_z_uwa
 
     assert sent.json() == {"state": "sent"}
     [issue] = started.surroundings.report_box.issues_with("uwaga-taty")
-    assert draft.json() == {"title": issue.title, "body": issue.body} == {
-        "title": "Klient [adres]",
-        "body": "Dzwonił z [telefon], mieszka przy [ulica].\n"
+    assert draft.json() == {"title": issue.title, "body": issue.body, "shown_body": issue.body}
+    assert (issue.title, issue.body) == (
+        "Klient [adres]",
+        "Dzwonił z [telefon], mieszka przy [ulica].\n"
         "Reguła danych: zamaskowano wartość kolumny ADRES w: tytuł Uwagi taty.\n\n"
         f"{VERSION_LINE}",
-    }
+    )
 
 
 def test_uwaga_po_uporzadkowaniu_intermax_nie_wynosi_adresu_ani_numeru_umowy_z_wklejonych_wierszy(tmp_path: Path) -> None:
@@ -314,7 +319,7 @@ def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_ce
     response = started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY})
 
     assert response.status_code == 200
-    assert response.json() == {"state": "waiting", "waits_for": waits_for}
+    assert response.json() == {"state": "queued", "waits_for": waits_for}
     # Odpowiedź przychodzi z końcem nieudanej próby wysyłki, a nie po całym czasie czekania na skrzynkę.
     assert time.monotonic() - asked_at < DELIVERY_WAIT_S
     assert started.report_box.issues == []
@@ -328,7 +333,7 @@ def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_ce
     restarted.clock.pause(LIST_LAG_S)
     with restarted.client:
         assert restarted.report_box.wait_until(lambda box: len(box.issues) == 1)
-        assert wait_for(lambda: case_states(restarted.client, "uwaga") == ["wyslana"])
+        assert wait_for(lambda: case_states(restarted.client, "uwaga") == [SENT])
     restarted.client.stop()
 
     [issue] = dad_note_issues(restarted)
@@ -355,14 +360,11 @@ def test_uwaga_ktorej_kolejka_nie_zapisala_jest_odmowa_bez_sladu_w_stanie_uwag(t
 def test_uwaga_bez_sieci_wysyla_sie_sama_minute_po_powrocie_sieci_bez_restartu(tmp_path: Path) -> None:
     started = centrum_with_key(tmp_path)
     started.report_box.outcomes.append(Unreachable())
-    assert started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY}).json() == {
-        "state": "waiting",
-        "waits_for": "internet",
-    }
+    assert started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY}).json() == QUEUED_FOR_INTERNET
 
     started.clock.advance(RETRY_S)
 
     assert started.report_box.wait_until(lambda box: len(box.issues) == 1)
-    assert wait_for(lambda: case_states(started.client, "uwaga") == ["wyslana"])
+    assert wait_for(lambda: case_states(started.client, "uwaga") == [SENT])
     assert notes(tmp_path)[0]["number"] == dad_note_issues(started)[0].number
     assert wait_for(lambda: queued(tmp_path) == [])

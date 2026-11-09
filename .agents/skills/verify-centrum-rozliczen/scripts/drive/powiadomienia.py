@@ -33,7 +33,7 @@ FEATURE = "powiadomienia"
 BELL = "Powiadomienia"
 RESOLVED = "Rozwiązana. Będzie w następnej wersji."
 READ = "Maks przeczytał."
-SENT_NOTE = "Wysłana do Maksa."
+SENT_NOTE = "Uwaga wysłana do Maksa."
 CLOSED_AT = "2026-10-19T09:15:00Z"
 INTRO = "Ta wersja przyspiesza rozliczenia."
 POINTS = (
@@ -146,12 +146,12 @@ def drive(run: Run, page: Page) -> None:
     items = answer["items"]
     assert isinstance(items, list)
     run.check(
-        {"kind": "uwaga", "title": note["title"], "state": "wyslana", "unread": False}.items()
+        {"kind": "uwaga", "title": note["title"], "state": {"state": "sent"}, "unread": False}.items()
         <= next(item for item in items if item.get("title") == note["title"]).items(),
         "the sent Uwaga is a Powiadomienie, sent and not new",
     )
     run.check(
-        any(item.get("what") == report_what and item["state"] == "wyslana" for item in items),
+        any(item.get("what") == report_what and item["state"] == {"state": "sent"} for item in items),
         "the open Zgłoszenie is a Powiadomienie named by its „Co się stało”, without the code",
     )
     run.check(answer["unread"] == sum(item["unread"] for item in items), "the unread count is the new Powiadomienia")
@@ -441,7 +441,7 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
         read_ids = {
             str(item["id"])
             for item in items
-            if item["kind"] == "uwaga" and item["title"] == note["title"] and item["state"] == "rozwiazana"
+            if item["kind"] == "uwaga" and item["title"] == note["title"] and item["state"] == {"state": "resolved"}
         }
         run.check(bool(read_ids), "Centrum learned that Maks closed the Uwaga")
         page.reload()

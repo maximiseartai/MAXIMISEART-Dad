@@ -20,6 +20,10 @@ from rozliczenia.centrum.tool_freshness import PublishedRelease
 from rozliczenia.centrum.tool_update import Release
 
 from tests.fixtures.centrum import (
+    QUEUED_FOR_KEY,
+    READ_BY_MAKS,
+    RESOLVED,
+    SENT,
     TOOL_COMMIT,
     ToolDirectory,
     case_states,
@@ -70,7 +74,7 @@ def notifications(centrum: PreparingCentrum) -> dict[str, Any]:
     return answer
 
 
-def rows(centrum: PreparingCentrum) -> list[tuple[str, str, str, bool]]:
+def rows(centrum: PreparingCentrum) -> list[tuple[str, str, dict[str, str], bool]]:
     """Powiadomienia jak w widoku: rodzaj, nazwa, stan i czy nowe."""
 
     return [
@@ -99,14 +103,14 @@ def test_wyslana_uwaga_i_zgloszenie_daja_powiadomienia_a_zamkniecie_mowi_co_zrob
     assert sent_note(centrum) == {"state": "sent"}
     box, clock = centrum.surroundings.report_box, centrum.surroundings.clock
 
-    assert rows(centrum) == [("uwaga", NOTE_TITLE, "wyslana", False), ("zgloszenie", what, "wyslana", False)]
+    assert rows(centrum) == [("uwaga", NOTE_TITLE, SENT, False), ("zgloszenie", what, SENT, False)]
     assert notifications(centrum)["unread"] == 0
 
     box.close(number_of(centrum, NOTE_TITLE), "completed", CLOSED_AT)
     box.close(box.sent[-1].number, "not_planned", CLOSED_AT + timedelta(hours=1))
     clock.advance(minutes=10)
 
-    assert rows(centrum) == [("zgloszenie", what, "przeczytana", True), ("uwaga", NOTE_TITLE, "rozwiazana", True)]
+    assert rows(centrum) == [("zgloszenie", what, READ_BY_MAKS, True), ("uwaga", NOTE_TITLE, RESOLVED, True)]
     answer = notifications(centrum)
     assert answer["unread"] == 2
     assert [item["at"] for item in answer["items"]] == ["2026-10-20T10:15:00Z", "2026-10-20T09:15:00Z"]
@@ -115,11 +119,11 @@ def test_wyslana_uwaga_i_zgloszenie_daja_powiadomienia_a_zamkniecie_mowi_co_zrob
 
 @pytest.mark.parametrize(
     ("reason", "state"),
-    [("completed", "rozwiazana"), ("not_planned", "przeczytana"), ("duplicate", "przeczytana"), (None, "rozwiazana")],
+    [("completed", RESOLVED), ("not_planned", READ_BY_MAKS), ("duplicate", READ_BY_MAKS), (None, RESOLVED)],
     ids=["completed", "not_planned", "duplicate", "bez-powodu"],
 )
 def test_powod_zamkniecia_issue_rozstrzyga_stan_sprawy(
-    tmp_path: Path, reason: CloseReason | None, state: str
+    tmp_path: Path, reason: CloseReason | None, state: dict[str, str]
 ) -> None:
     centrum = preparing_centrum(tmp_path)
     write_report_key(centrum.tool)
@@ -132,9 +136,9 @@ def test_powod_zamkniecia_issue_rozstrzyga_stan_sprawy(
 def test_uwaga_bez_tokenu_czeka_na_token_bez_kropki_a_skrzynka_nie_jest_pytana(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
 
-    assert sent_note(centrum) == {"state": "waiting", "waits_for": "key"}
+    assert sent_note(centrum) == QUEUED_FOR_KEY
 
-    assert rows(centrum) == [("uwaga", NOTE_TITLE, "czeka_na_token", False)]
+    assert rows(centrum) == [("uwaga", NOTE_TITLE, QUEUED_FOR_KEY, False)]
     assert notifications(centrum)["unread"] == 0
     assert centrum.surroundings.report_box.listed == []
 
@@ -158,8 +162,8 @@ def test_oznacz_przeczytane_gasi_kropke_takze_po_restarcie_a_nowy_stan_znow_jest
     box.close(number_of(centrum, "Suma godzin na dole tabeli"), "not_planned")
     clock.advance(minutes=10)
     assert rows(centrum) == [
-        ("uwaga", "Suma godzin na dole tabeli", "przeczytana", True),
-        ("uwaga", NOTE_TITLE, "rozwiazana", False),
+        ("uwaga", "Suma godzin na dole tabeli", READ_BY_MAKS, True),
+        ("uwaga", NOTE_TITLE, RESOLVED, False),
     ]
 
 
@@ -223,7 +227,7 @@ def test_niedostepny_plik_spraw_taty_daje_komunikat_a_po_zwolnieniu_odczyt_zapis
 
     assert blocked["message"] == unavailable(DAD_CASES_FILE)
     assert released["message"] is None
-    assert rows(centrum) == [("uwaga", NOTE_TITLE, "wyslana", False)]
+    assert rows(centrum) == [("uwaga", NOTE_TITLE, SENT, False)]
 
 
 @pytest.mark.parametrize("again", ["odczyt", "oznaczenie"])
@@ -297,13 +301,13 @@ def test_zamknieta_sprawa_nie_jest_pytana_ponownie_a_jej_stan_zostaje_po_restarc
     what = sent_report(centrum)
     box = centrum.surroundings.report_box
     box.close(box.sent[-1].number, "not_planned")
-    assert rows(centrum) == [("zgloszenie", what, "przeczytana", True)]
+    assert rows(centrum) == [("zgloszenie", what, READ_BY_MAKS, True)]
     asked = polls(centrum)
 
     centrum.restart()
     box.search_failure = Unreachable()
 
-    assert rows(centrum) == [("zgloszenie", what, "przeczytana", True)]
+    assert rows(centrum) == [("zgloszenie", what, READ_BY_MAKS, True)]
     assert polls(centrum) == asked
 
 
@@ -320,7 +324,7 @@ def test_porazka_skrzynki_przechodzi_po_cichu_z_ostatnim_znanym_stanem(
     log_before = centrum.log_path.read_text(encoding="utf-8")
     asked = polls(centrum)
 
-    assert rows(centrum) == [("zgloszenie", what, "wyslana", False)]
+    assert rows(centrum) == [("zgloszenie", what, SENT, False)]
     assert polls(centrum) == asked + 1
     assert centrum.log_path.read_text(encoding="utf-8") == log_before
 
@@ -354,7 +358,7 @@ def test_przy_starcie_centrum_skrzynka_jest_pytana_w_tle_przed_odczytem_powiadom
         wait_for(lambda: polls(centrum) != asked, 5, every=0.01)
         asked_at_start = polls(centrum)
 
-        assert rows(centrum) == [("zgloszenie", what, "rozwiazana", True)]
+        assert rows(centrum) == [("zgloszenie", what, RESOLVED, True)]
 
     assert asked_at_start == polls(centrum) == asked + 1
 
@@ -369,14 +373,14 @@ def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_ta
     started = time.monotonic()
 
     try:
-        assert rows(centrum) == [("zgloszenie", what, "wyslana", False)]
+        assert rows(centrum) == [("zgloszenie", what, SENT, False)]
         took = time.monotonic() - started
     finally:
         box.search_hold.set()
 
     assert took < CHECK_WAIT_S + 2
-    wait_for(lambda: rows(centrum)[0][2] != "wyslana", 5, every=0.01)
-    assert rows(centrum) == [("zgloszenie", what, "rozwiazana", True)]
+    wait_for(lambda: rows(centrum)[0][2] != SENT, 5, every=0.01)
+    assert rows(centrum) == [("zgloszenie", what, RESOLVED, True)]
 
 
 SUMMARY = "Plik zbiorczy ma kolumnę z kilometrami."
@@ -564,7 +568,7 @@ def delivered_from_queue(centrum: PreparingCentrum) -> int:
     centrum.surroundings.clock.advance(RETRY_S)
     assert box.wait_until(lambda box: len(box.sent) == 1)
     number = box.sent[0].number
-    assert wait_for(lambda: case_states(centrum.client, "zgloszenie") == ["wyslana"])
+    assert wait_for(lambda: case_states(centrum.client, "zgloszenie") == [SENT])
     return number
 
 
@@ -576,10 +580,10 @@ def test_zgloszenie_w_kolejce_bez_tokenu_czeka_na_token_a_po_dostarczeniu_jest_w
     number = delivered_from_queue(centrum)
 
     assert [(item["what"], item["state"], item["unread"]) for item in waiting["items"]] == [
-        (what, "czeka_na_token", False)
+        (what, QUEUED_FOR_KEY, False)
     ]
     [item] = notifications(centrum)["items"]
-    assert (item["id"], item["state"], item["unread"]) == (f"zgloszenie-{number}-wyslana", "wyslana", False)
+    assert (item["id"], item["state"], item["unread"]) == (f"zgloszenie-{number}-wyslana", SENT, False)
 
 
 def test_wydanie_rozwiazuje_zgloszenie_wyslane_z_kolejki(tmp_path: Path) -> None:
@@ -647,7 +651,7 @@ def test_dwa_zgloszenia_w_kolejce_to_dwa_powiadomienia_o_roznych_id(tmp_path: Pa
     items = plain_centrum(tmp_path).client.get("/api/notifications").json()["items"]
 
     assert sorted((item["what"], item["state"]) for item in items) == [
-        ("Brak folderu.", "czeka_na_token"),
-        ("Nie znaleziono wzorca.", "czeka_na_token"),
+        ("Brak folderu.", QUEUED_FOR_KEY),
+        ("Nie znaleziono wzorca.", QUEUED_FOR_KEY),
     ]
     assert len({item["id"] for item in items}) == 2

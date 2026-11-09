@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import BUILD, CASE_DELIVERY, DAD_NOTES, UWAGA
+from cele_mutacji_centrum import BUILD, CASE_DELIVERY, DAD_CASES, UWAGA
 from mutacje import Edit, Mutation, check_all
 
 FIELDS = Edit(BUILD, "`-m-1 flex flex-col gap-5 overflow-y-auto p-1`", "`-m-1 flex min-h-0 flex-col gap-5 p-1`")
@@ -130,13 +130,13 @@ MUTATIONS = (
     ),
     Mutation(
         "Uwaga bez Tokenu do Zgłoszeń czeka na internet",
-        (Edit(DAD_NOTES, 'dad_notes_contract.DadNoteWaiting(state="waiting", waits_for=hold)', 'dad_notes_contract.DadNoteWaiting(state="waiting", waits_for="internet")'),),
+        (Edit(DAD_CASES, 'waits_for="key" if refused else "internet"', 'waits_for="internet"'),),
         UWAGA,
         "bez tokenu tata czyta, że Uwaga wyjdzie, gdy będzie internet, zamiast skontaktować się z Maksem (Q17)",
     ),
     Mutation(
         "Uwaga odrzucona przez Skrzynkę czeka",
-        (Edit(DAD_NOTES, '    if hold == "rejected":\n        return dad_notes_contract.DadNoteRejected', "    if False:\n        return dad_notes_contract.DadNoteRejected"),),
+        (Edit(DAD_CASES, '            if case_id in self._rejected:\n                return common_contract.Rejected', "            if False:\n                return common_contract.Rejected"),),
         UWAGA,
         "tata czyta, że Uwaga czeka, choć Skrzynka odrzuciła jej treść (Q17)",
     ),
