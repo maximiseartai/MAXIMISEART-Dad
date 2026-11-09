@@ -26,6 +26,7 @@ from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Pag
 import yaml
 
 from drive import feature
+from harness import File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.case_delivery import queue_directory
@@ -113,7 +114,7 @@ class Run:
     def box(self) -> Path:
         """The scripted skrzynka Zgłoszeń: one ``<number>.json`` per issue (``serve_centrum.py``)."""
 
-        return self.root / "skrzynka-zgloszen"
+        return report_box(self.root)
 
     @property
     def queue(self) -> Path:
@@ -203,13 +204,15 @@ class Run:
         return answer
 
     def answer_picker(self, path: str) -> None:
-        (self.root / "picker" / "answer.txt").write_text(path, encoding="utf-8")
+        File.PICKER_ANSWER.write(self.root, path)
 
-    def lines(self, name: str) -> list[dict[str, str]]:
-        log = self.root / name
-        if not log.exists():
+    def lines(self, log: Log) -> list[dict[str, str]]:
+        """The records the served Centrum appended to ``log``, none before the first."""
+
+        path = log.file(self.root)
+        if not path.exists():
             return []
-        return [json.loads(line) for line in read_text(log).splitlines() if line]
+        return [json.loads(line) for line in read_text(path).splitlines() if line]
 
     def settings_text(self) -> str | None:
         """The settings file as the server last put it in place (``read_text``), ``None`` before Centrum wrote it."""
@@ -355,12 +358,12 @@ def put_text(path: Path, text: str) -> None:
     replace_file(written, path)
 
 
-def edit_issue(box: Path, number: object, **changes: object) -> None:
+def edit_issue(run: Run, number: int, **changes: object) -> None:
     """Harness: Maks edits issue ``number`` of the skrzynka Zgłoszeń (closes it), and GitHub shows the edit at once.
 
     The server reads the issue's file from its own threads, so the edited file takes its place whole (``put_text``)."""
 
-    path = box / f"{number}.json"
+    path = issue_file(run.root, number)
     issue = {**read_json(path), **changes}
     put_text(path, json.dumps(issue, ensure_ascii=False, indent=2) + "\n")
 
@@ -442,22 +445,22 @@ def run_logs(run: Run, process: str | None = None) -> dict[str, dict[str, Any]]:
 
 
 def check_clock_alarm(run: Run) -> None:
-    """Fails once the wake-up thread of Centrum's clock has died (``<root>/zegar/budzik-padl.txt`` of ``ScriptedClock``):
+    """Fails once the wake-up thread of Centrum's clock has died (``File.CLOCK_DIED`` of ``ScriptedClock``):
     no wake-up on that clock, such as the queue's retry, fires any more, so a wait for one would only time out."""
 
-    died = run.root / "zegar" / "budzik-padl.txt"
+    died = File.CLOCK_DIED.file(run.root)
     if died.exists():
         raise DriveFailure(f"the wake-up thread of Centrum's clock died, so no wake-up fires any more:\n{read_text(died)}")
 
 
 def advance_clock(run: Run, minutes: float, why: str) -> None:
-    """Harness: Centrum's clock moves ``minutes`` on (``<root>/zegar/przesuniecie-min.txt``), so ``why``.
+    """Harness: Centrum's clock moves ``minutes`` on (``File.CLOCK_MOVE``), so ``why``.
 
     The clock's wake-up thread reads the file every 0.2 s, so it takes its place whole (``put_text``); a move wakes
     nothing once that thread has died (``check_clock_alarm``)."""
 
     check_clock_alarm(run)
-    moved = run.root / "zegar" / "przesuniecie-min.txt"
+    moved = File.CLOCK_MOVE.file(run.root)
     moved.parent.mkdir(exist_ok=True)
     before = float(read_text(moved)) if moved.exists() else 0.0
     put_text(moved, str(before + minutes))
@@ -490,7 +493,7 @@ def start_centrum(run: Run, name: str) -> None:
     ``api/<name>-server.txt``. Cleanup stops it through ``server.json``.
     """
 
-    port = read_json(run.root / "server.json")["port"]
+    port = read_json(File.SERVER.file(run.root))["port"]
     print("  harness: Dad starts Centrum again (this run's scripted Centrum on the same port)", flush=True)
     with (run.evidence / "api" / f"{name}-server.txt").open("wb") as console:
         subprocess.Popen(
@@ -509,7 +512,7 @@ def kill_centrum(run: Run) -> None:
     Harness: the drive kills this run's server through the pid in ``server.json`` (on Windows ``TerminateProcess``).
     """
 
-    pid = int(read_json(run.root / "server.json")["pid"])
+    pid = int(read_json(File.SERVER.file(run.root))["pid"])
     print("  harness: Centrum dies mid-run (its process is killed)", flush=True)
     if sys.platform == "win32":
         os.kill(pid, signal.SIGTERM)
@@ -646,7 +649,7 @@ def next_step_names_current_step(run: Run, page: Page, token: str, current: str)
 
 
 def last_opened_is(run: Run, path: Path) -> Callable[[], bool]:
-    return lambda: run.lines("opened.jsonl")[-1:] == [{"path": str(path)}]
+    return lambda: run.lines(Log.OPENED)[-1:] == [{"path": str(path)}]
 
 
 def history_rows(page: Page) -> Locator:
@@ -884,7 +887,7 @@ def served_version(run: Run) -> tuple[str, str | None]:
     """The tool commit the served Centrum runs and the day the run's tool clone moved to it, as Git reports them.
 
     The commit is the clone's ``HEAD`` unless a feature pinned another one in
-    ``<root>/github/tool-commit.txt``. The day (``YYYY-MM-DD``) is the last ``HEAD`` reflog entry's, in that entry's
+    ``File.TOOL_COMMIT``. The day (``YYYY-MM-DD``) is the last ``HEAD`` reflog entry's, in that entry's
     time zone, when that entry leads to the commit, else ``None``. Neither depends on how Centrum reads ``.git``.
     """
 
@@ -893,7 +896,7 @@ def served_version(run: Run) -> tuple[str, str | None]:
             ["git", "-C", run.fixture["tool"]["clone"], *arguments], capture_output=True, text=True, check=True
         ).stdout.strip()
 
-    pinned = run.root / "github" / "tool-commit.txt"
+    pinned = File.TOOL_COMMIT.file(run.root)
     commit = read_text(pinned).strip() if pinned.exists() else git("rev-parse", "HEAD")
     entry_commit, _, selector = git("log", "--walk-reflogs", "-1", "--date=short", "--format=%H %gd").partition(" ")
     return commit, selector.removeprefix("HEAD@{").removesuffix("}") if entry_commit == commit else None

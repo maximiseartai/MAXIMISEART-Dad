@@ -32,6 +32,7 @@ from drive.common import (
 from drive.teksty import FILES_UNCHANGED
 from drive.uzupelnienie import drive_result_card
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
+from harness import Log
 
 # An older period with no successful DRY-RUN in the fixture's metrics; its confirmation keeps the no-preview warning.
 NOT_PREVIEWED = "08_14_09_2026"
@@ -272,12 +273,12 @@ def drive(run: Run, page: Page) -> None:
     )
     run.check(not period_folder.exists(), "Przerwij bez zapisu wrote nothing")
     run.capture(page, "34-przygotowanie-zatrzymanie")
-    opened_before = len(run.lines("opened.jsonl"))
+    opened_before = len(run.lines(Log.OPENED))
     with sent_requests(page, "POST", "/api/settings/register/open") as sent:
         stop.get_by_role("button", name="Otwórz Rejestr zleceń", exact=True).click()
         settle(page, sent)
     run.check(
-        len(sent) == 1 and run.lines("opened.jsonl")[opened_before:] == [{"path": run.fixture["order_register"]}],
+        len(sent) == 1 and run.lines(Log.OPENED)[opened_before:] == [{"path": run.fixture["order_register"]}],
         "Otwórz Rejestr zleceń opens the Rejestr zleceń from Dad's settings",
     )
 
@@ -309,12 +310,12 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_label("Wynik")).to_contain_text("Plik zbiorczy przygotowany · wymaga sprawdzenia")
     run.check(True, "with the stream back, the dialog closes on the result")
     internal_settlement, collective_file = period_files(run)
-    opened_before = len(run.lines("opened.jsonl"))
+    opened_before = len(run.lines(Log.OPENED))
     with sent_requests(page, "POST", f"/api/periods/{LAST_COMPLETE}/open") as sent:
         page.get_by_label("Wynik").get_by_role("button", name="Otwórz Plik zbiorczy", exact=True).dblclick()
         settle(page, sent)
     run.check(
-        len(sent) == 1 and run.lines("opened.jsonl")[opened_before:] == [{"path": str(collective_file)}],
+        len(sent) == 1 and run.lines(Log.OPENED)[opened_before:] == [{"path": str(collective_file)}],
         f"a double click on the result's main action Otwórz Plik zbiorczy opens the Plik zbiorczy once ({len(sent)} requests)",
     )
 
@@ -350,12 +351,12 @@ def drive(run: Run, page: Page) -> None:
     # zbiorczy was opened by the double click above.
     page.wait_for_timeout(frontend_ms("pages/periods/open-period-path.ts", "REPEAT_IGNORED_MS") + 100)
     period_file_list = page.get_by_role("list", name="Pliki okresu")
-    opened_before = len(run.lines("opened.jsonl"))
+    opened_before = len(run.lines(Log.OPENED))
     for path in (internal_settlement, collective_file):
         period_file_list.get_by_role("button", name=path.name, exact=True).click()
         run.wait_for(last_opened_is(run, path), f"the period file name opens {path.name}")
     run.check(
-        run.lines("opened.jsonl")[opened_before:] == [{"path": str(internal_settlement)}, {"path": str(collective_file)}],
+        run.lines(Log.OPENED)[opened_before:] == [{"path": str(internal_settlement)}, {"path": str(collective_file)}],
         "each period file name in the result opens its own file, one per click",
     )
     run.capture(page, "3b-przygotowanie-otwieranie", full_page=False)

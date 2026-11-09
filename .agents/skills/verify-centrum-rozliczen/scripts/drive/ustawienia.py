@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from playwright.sync_api import Page, Request, Route, expect
 
 from drive.common import REPEAT_SETTLE_MS, Run, choose_periods_directory, move, sent_requests, settle, unreadable
+from harness import Log
 
 
 def drive(run: Run, page: Page) -> None:
@@ -25,7 +26,7 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "01-ustawienia-pusty-stan")
 
     run.step(feature, "ustawienia-jedno-okno-wyboru")
-    dialogs = len(run.lines("dialogs.jsonl"))
+    dialogs = len(run.lines(Log.DIALOGS))
     before = run.settings_text()
     pickers = ("Wskaż Rejestr zleceń", "Wskaż Folder okresów")
     empty_state = page.get_by_role("button", name="Wskaż folder okresów", exact=True)
@@ -55,7 +56,7 @@ def drive(run: Run, page: Page) -> None:
         for route in held:
             route.continue_()
         page.unroute("**/api/settings/*/choose")
-    run.wait_for(lambda: len(run.lines("dialogs.jsonl")) == dialogs + 1, "Dad closed the one picker (cancel)")
+    run.wait_for(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "Dad closed the one picker (cancel)")
     expect(empty_state).to_be_enabled()
     for name in pickers:
         expect(page.get_by_role("button", name=name, exact=True)).to_be_enabled()
@@ -64,7 +65,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "ustawienia-folder-okresow")
     choose_periods_directory(run, page)
     run.check(
-        run.lines("dialogs.jsonl")[-1]["title"] == "Wybierz folder okresów (np. Załączniki albo INEA)",
+        run.lines(Log.DIALOGS)[-1]["title"] == "Wybierz folder okresów (np. Załączniki albo INEA)",
         "the folder picker opened with its title",
     )
     run.check(
@@ -83,7 +84,7 @@ def drive(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
     register = page.get_by_role("group", name="Rejestr zleceń")
     expect(register.get_by_text(register_name)).to_be_visible()
-    run.check(run.lines("dialogs.jsonl")[-1]["title"] == "Wybierz plik Rejestru zleceń", "the file picker opened")
+    run.check(run.lines(Log.DIALOGS)[-1]["title"] == "Wybierz plik Rejestru zleceń", "the file picker opened")
     run.check(
         run.remembered("rejestr_zlecen") == run.fixture["order_register"],
         "the settings file remembers the Rejestr zleceń",
@@ -132,9 +133,9 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "ustawienia-anulowanie")
     before = run.settings_text()
-    dialogs = len(run.lines("dialogs.jsonl"))
+    dialogs = len(run.lines(Log.DIALOGS))
     page.get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
-    run.wait_for(lambda: len(run.lines("dialogs.jsonl")) == dialogs + 1, "the cancelled picker was shown")
+    run.wait_for(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "the cancelled picker was shown")
     expect(page.get_by_role("button", name="Zmień Rejestr zleceń", exact=True)).to_be_enabled()
     expect(register.get_by_text(register_name)).to_be_visible()
     run.check(run.settings_text() == before, "a cancelled picker leaves the settings file unchanged")

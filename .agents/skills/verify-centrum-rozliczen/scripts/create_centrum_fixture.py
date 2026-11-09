@@ -575,7 +575,6 @@ def dad_files(root: Path) -> dict[str, object]:
 def create(root: Path, variant: str | None = None) -> dict[str, object]:
     create_run_root(root)
     dad = dad_files(root)
-    (root / "picker").mkdir()
     fixture: dict[str, object] = {
         "today": TODAY,
         "periods_directory": dad["periods_directory"],

@@ -26,7 +26,7 @@ from drive.common import (
     stop_banner,
     unreadable,
 )
-from harness import register_fault
+from harness import File, Log, Switch
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 from atrapy.pliki_taty import REPORT_KEY_FILE
@@ -82,7 +82,7 @@ def drive(run: Run, page: Page) -> None:
     lock = excel_lock(register)
     diagnosis = page.get_by_role("region", name="Diagnoza")
     proposal = diagnosis.get_by_role("note", name="Propozycja aktualizacji")
-    main_commit = run.root / "github" / "main-commit.txt"
+    main_commit = File.MAIN_COMMIT.file(run.root)
 
     run.step(FEATURE, "diagnoza-dla-taty")
     page.goto(run.url)
@@ -109,10 +109,10 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_role("button", name="Diagnoza", exact=True)).to_have_count(0)
     run.check(True, "the stop offers Uruchom ponownie and no Diagnoza")
     run.capture(page, "50-diagnoza-dla-taty")
-    opened_before = len(run.lines("opened.jsonl"))
+    opened_before = len(run.lines(Log.OPENED))
     for_tata.get_by_role("button", name="Otwórz Rejestr zleceń", exact=True).click()
     run.wait_for(
-        lambda: run.lines("opened.jsonl")[opened_before:] == [{"path": str(register)}],
+        lambda: run.lines(Log.OPENED)[opened_before:] == [{"path": str(register)}],
         "Otwórz Rejestr zleceń opens the Rejestr zleceń from Dad's settings",
     )
 
@@ -274,9 +274,7 @@ def drive(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "diagnoza-nieoczekiwany-wyjatek")
-    fault = register_fault(run.root)
-    fault.parent.mkdir(exist_ok=True)
-    fault.touch()
+    fault = Switch.REGISTER_FAULT.on(run.root)
     try:
         page.get_by_role("button", name="Nowe Uruchomienie procesu").click()
         page.get_by_role("radio", name="Przygotowanie pliku zbiorczego").click()
@@ -361,10 +359,8 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "59-diagnoza-nieoczekiwany-wyjatek-zgloszenie")
 
     run.step(FEATURE, "diagnoza-klucz-odrzucony")
-    refusing = run.root / "skrzynka-zgloszen" / "odmawia-klucza"
     print("  harness: Maks writes a key the skrzynka refuses (an expired token)", flush=True)
-    refusing.parent.mkdir(exist_ok=True)
-    refusing.touch()
+    refusing = Switch.KEY_REFUSED.on(run.root)
     key_file.write_text(REFUSED_KEY + "\n", encoding="utf-8")
     try:
         page.reload()

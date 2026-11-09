@@ -22,6 +22,7 @@ from drive.common import (
     settle,
 )
 from atrapy.scenariusz_centrum import NEEDS_CHECK
+from harness import Log
 
 
 def _worker_settlement_count(row: dict[str, object]) -> int:
@@ -117,7 +118,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(True, "Następny krok targets the last complete period, whose Folder okresu does not exist")
 
     run.step(feature, "tablica-otwieranie")
-    opened_before = len(run.lines("opened.jsonl"))
+    opened_before = len(run.lines(Log.OPENED))
     clicks = [
         (f"Plik zbiorczy, okres {NEEDS_CHECK}", periods / NEEDS_CHECK / f"Rozliczenie {NEEDS_CHECK} - zbiorcze.xlsx"),
         ("Rozliczenie wewnętrzne, okres 22_28_09_2026", periods / "22_28_09_2026" / "Rozliczenie wew. 22_28_09_2026.xlsx"),
@@ -129,7 +130,7 @@ def drive(run: Run, page: Page) -> None:
         page.get_by_role("button", name=name, exact=True).click()
         run.wait_for(last_opened_is(run, path), f"{name} opened {path.name}")
         expect(page.get_by_text(path.name, exact=True).last).to_be_visible()
-    run.check(len(run.lines("opened.jsonl")) == opened_before + len(clicks), "one open per click, nothing else")
+    run.check(len(run.lines(Log.OPENED)) == opened_before + len(clicks), "one open per click, nothing else")
     run.capture(page, "07-tablica-otwieranie", full_page=False)
     missing = page.get_by_role("button", name="Plik zbiorczy, okres 15_21_09_2026", exact=True)
     expect(missing).to_be_disabled()
@@ -137,7 +138,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "tablica-brakujacy-plik")
     hint = page.get_by_text("Plik zbiorczy: jeszcze nie ma", exact=True)
-    opened_before = len(run.lines("opened.jsonl"))
+    opened_before = len(run.lines(Log.OPENED))
     missing.hover()
     expect(hint).to_be_visible()
     run.capture(page, "156-tablica-brakujacy-plik", full_page=False)
@@ -146,7 +147,7 @@ def drive(run: Run, page: Page) -> None:
         settle(page, sent)
     expect(hint).to_be_visible()
     run.check(
-        len(sent) == 0 and len(run.lines("opened.jsonl")) == opened_before,
+        len(sent) == 0 and len(run.lines(Log.OPENED)) == opened_before,
         "hovering the missing Plik zbiorczy shows „jeszcze nie ma”; a click keeps the hint and opens nothing",
     )
     page.mouse.move(4, 4)
@@ -166,7 +167,7 @@ def drive(run: Run, page: Page) -> None:
         run.capture(touch, "157-tablica-brakujacy-plik-dotyk", full_page=False)
         touch.get_by_role("heading", name="Okresy", exact=True).tap()
         expect(touch_hint).to_have_count(0)
-        run.check(len(run.lines("opened.jsonl")) == opened_before, "a finger tap shows the hint, a tap beside hides it")
+        run.check(len(run.lines(Log.OPENED)) == opened_before, "a finger tap shows the hint, a tap beside hides it")
 
     run.step(feature, "tablica-podwojne-klikniecie")
     closed = periods / "22_28_09_2026"
@@ -177,12 +178,12 @@ def drive(run: Run, page: Page) -> None:
          "a fast triple click", lambda button: button.click(click_count=3)),
     ]
     for name, path, how, click in repeated_clicks:
-        opened_before = len(run.lines("opened.jsonl"))
+        opened_before = len(run.lines(Log.OPENED))
         with sent_requests(page, "POST", "/api/periods/22_28_09_2026/open") as sent:
             click(page.get_by_role("button", name=name, exact=True))
             settle(page, sent)
         run.check(len(sent) == 1, f"{how} on {name} asks the server once ({len(sent)} requests)")
-        run.check(run.lines("opened.jsonl")[opened_before:] == [{"path": str(path)}], f"{how} opens {path.name} once")
+        run.check(run.lines(Log.OPENED)[opened_before:] == [{"path": str(path)}], f"{how} opens {path.name} once")
         confirmations = notifications.get_by_role("dialog", name="Otwieram").filter(
             has=page.get_by_text(path.name, exact=True)
         )
@@ -254,7 +255,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(True, "Podgląd bez zapisu on Następny krok shows the hint the board sent for its period")
 
     run.step(feature, "tablica-ochrona")
-    opened = len(run.lines("opened.jsonl"))
+    opened = len(run.lines(Log.OPENED))
     open_url = run.url.rstrip("/") + "/api/periods/22_28_09_2026/open"
     payload = json.dumps({"target": "collective_file"}).encode()
     foreign_origin = urllib.request.Request(
@@ -264,4 +265,4 @@ def drive(run: Run, page: Page) -> None:
     foreign_host = urllib.request.Request(run.url.rstrip("/") + "/api/health", headers={"Host": "zly.example"})
     run.check(run.refused(foreign_origin, "odmowa-obcy-origin") == 403, "an action from a foreign Origin is refused")
     run.check(run.refused(foreign_host, "odmowa-obcy-host") == 403, "a request with a foreign Host is refused")
-    run.check(len(run.lines("opened.jsonl")) == opened, "a refused request opens nothing")
+    run.check(len(run.lines(Log.OPENED)) == opened, "a refused request opens nothing")

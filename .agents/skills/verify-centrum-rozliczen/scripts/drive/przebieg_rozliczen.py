@@ -29,7 +29,7 @@ from drive.common import (
     start_card_warns_while_open,
     stop_banner,
 )
-from harness import Pace
+from harness import Log, Pace
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 from atrapy.workbooks import excel_lock
 
@@ -359,14 +359,14 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "44-przebieg-zapisane")
 
     run.step(feature, "przebieg-otwieranie")
-    opened_before = len(run.lines("opened.jsonl"))
+    opened_before = len(run.lines(Log.OPENED))
     for file in files:
         settlements.get_by_role("button", name=f"Otwórz {file}", exact=True).click()
         run.wait_for(last_opened_is(run, worker_settlements / file), f"Otwórz opens {file}")
     outcome.get_by_role("button", name="Otwórz folder rozliczeń pracowników", exact=True).click()
     run.wait_for(last_opened_is(run, worker_settlements), "the main action opens the Folder rozliczeń pracowników")
     run.check(
-        run.lines("opened.jsonl")[opened_before:]
+        run.lines(Log.OPENED)[opened_before:]
         == [{"path": str(worker_settlements / file)} for file in files] + [{"path": str(worker_settlements)}],
         "each Otwórz opens exactly its Wykonawca's Rozliczenie pracownika, the main action the folder, one per click",
     )
@@ -374,7 +374,7 @@ def drive(run: Run, page: Page) -> None:
     open_path = f"/api/periods/{LAST_COMPLETE}/worker-settlements/open"
     refused = run.post(open_path, "przebieg-otwieranie-spoza-folderu", outside).status
     run.check(
-        refused == 404 and len(run.lines("opened.jsonl")) == opened_before + len(files) + 1,
+        refused == 404 and len(run.lines(Log.OPENED)) == opened_before + len(files) + 1,
         "a Wykonawca name leading out of the Folder rozliczeń pracowników is refused and opens nothing",
     )
     run.capture(page, "49-przebieg-otwieranie", full_page=False)

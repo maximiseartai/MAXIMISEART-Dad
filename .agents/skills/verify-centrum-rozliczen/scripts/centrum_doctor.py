@@ -1,6 +1,6 @@
 """Read-only check that the Centrum of one verification run is worth driving.
 
-``DOCTOR OK`` means: this run's ``server.json`` exists (written by
+``DOCTOR OK`` means: this run's server record (``harness.File.SERVER``) exists (written by
 ``serve_centrum.py`` only after it bound the port), the URL is on
 ``127.0.0.1``, ``/api/health`` answers with Centrum's identity, the commit of
 this run's tool clone, and an identifier of this start, the page at ``/`` is
@@ -21,6 +21,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser
+from harness import File
 from atrapy.pliki_taty import SERVICE
 
 
@@ -31,7 +32,7 @@ def _get(url: str) -> tuple[int, bytes]:
 
 def check(root: Path) -> list[str]:
     problems: list[str] = []
-    server_file = root / "server.json"
+    server_file = File.SERVER.file(root)
     if not server_file.exists():
         return [f"{server_file} is missing; serve_centrum.py did not bind its port"]
     server = json.loads(server_file.read_text(encoding="utf-8"))

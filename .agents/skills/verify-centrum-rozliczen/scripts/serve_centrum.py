@@ -183,7 +183,20 @@ from rozliczenia.tool_files import listen_locally, log_path
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import ByteSource, DataRow, RegisterRow, file_bytes
 from skrypt_skilla import Parser
-from harness import Pace, register_fault
+from harness import (
+    File,
+    Log,
+    Pace,
+    Switch,
+    archive_file,
+    archive_listing,
+    comment_address,
+    efenix_files,
+    issue_file,
+    last_file_id,
+    rejects,
+    report_box,
+)
 from atrapy.atrapa_efenix import atrapa_efenix
 from atrapy.skrzynka import ArchivedFile, Archives, BoxArchive, BoxIssue, Issues
 from atrapy.widok_skrzynki import shown
@@ -214,13 +227,13 @@ class ScriptedPlatform:
         self._root = root
         self._lock = threading.Lock()
 
-    def _log(self, name: str, record: dict[str, str]) -> None:
-        with self._lock, (self._root / name).open("a", encoding="utf-8") as log:
-            log.write(json.dumps(record, ensure_ascii=False) + "\n")
+    def _log(self, log: Log, record: dict[str, str]) -> None:
+        with self._lock:
+            log.append(self._root, record)
 
     def _answer(self, title: str) -> Path | None:
-        self._log("dialogs.jsonl", {"title": title})
-        answer = self._root / "picker" / "answer.txt"
+        self._log(Log.DIALOGS, {"title": title})
+        answer = File.PICKER_ANSWER.file(self._root)
         if not answer.exists():
             return None
         chosen = answer.read_text(encoding="utf-8").strip()
@@ -228,7 +241,7 @@ class ScriptedPlatform:
         return Path(chosen)
 
     def open_path(self, path: Path) -> None:
-        self._log("opened.jsonl", {"path": str(path)})
+        self._log(Log.OPENED, {"path": str(path)})
 
     def choose_file(self, title: str, filetypes: Sequence[tuple[str, str]]) -> Path | None:
         return self._answer(title)
@@ -244,10 +257,9 @@ class FileReportBox:
     rules, and writes back what the step changed; the scripted refusals and the unreachable network come first.
     """
 
-    def __init__(self, directory: Path) -> None:
-        self._directory = directory
-        self._archives = directory.with_name("skrzynka-archiwum")
-        self._root = directory.parent
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        self._directory = report_box(root)
         self._lock = threading.Lock()
 
     def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
@@ -277,8 +289,9 @@ class FileReportBox:
             outcome = state.upload(archive_id, name, label, data)
             if isinstance(outcome, Asset):
                 [archive] = [each for each in state.archives if each.id == archive_id]
-                (self._archives / archive.tag).mkdir(parents=True, exist_ok=True)
-                (self._archives / archive.tag / name).write_bytes(data)
+                stored = archive_file(self._root, archive.tag, name)
+                stored.parent.mkdir(parents=True, exist_ok=True)
+                stored.write_bytes(data)
                 self._save_archives(state)
         return outcome
 
@@ -292,22 +305,22 @@ class FileReportBox:
             outcome = state.remove(asset_id)
             if found is not None:
                 archive, asset = found
-                (self._archives / archive.tag / asset.name).unlink()
+                archive_file(self._root, archive.tag, asset.name).unlink()
                 self._save_archives(state)
         return outcome
 
     def _archive_refused(self) -> Refused | Unreachable | None:
-        if (self._directory / "brak-sieci").exists():
+        if Switch.BOX_OFFLINE.is_on(self._root):
             return Unreachable()
-        if self._refuses_key() or (self._directory / "odmawia-archiwum").exists():
+        if Switch.KEY_REFUSED.is_on(self._root) or Switch.ARCHIVE_REFUSED.is_on(self._root):
             return Refused()
         return None
 
     def _archive_state(self) -> Archives:
-        """``archiwa.json`` with each file's bytes from ``<tag>/<name>`` and the last file id from ``ostatni-plik.txt``."""
+        """The Archiwa as listed (``archive_listing``) with each file's bytes (``archive_file``) and the last file id
+        (``last_file_id``)."""
 
-        listed = self._archives / "archiwa.json"
-        last = self._archives / "ostatni-plik.txt"
+        listed, last = archive_listing(self._root), last_file_id(self._root)
         entries = json.loads(listed.read_text(encoding="utf-8")) if listed.is_file() else []
         return Archives(
             [
@@ -317,7 +330,7 @@ class FileReportBox:
                     entry["title"],
                     entry["description"],
                     [
-                        ArchivedFile(asset["id"], asset["name"], asset["label"], (self._archives / entry["tag"] / asset["name"]).read_bytes())
+                        ArchivedFile(asset["id"], asset["name"], asset["label"], archive_file(self._root, entry["tag"], asset["name"]).read_bytes())
                         for asset in entry["assets"]
                     ],
                 )
@@ -327,10 +340,11 @@ class FileReportBox:
         )
 
     def _save_archives(self, state: Archives) -> None:
-        self._archives.mkdir(parents=True, exist_ok=True)
-        (self._archives / "ostatni-plik.txt").write_text(str(state.last_file_id), encoding="utf-8")
+        last = last_file_id(self._root)
+        last.parent.mkdir(parents=True, exist_ok=True)
+        last.write_text(str(state.last_file_id), encoding="utf-8")
         _save(
-            self._archives / "archiwa.json",
+            archive_listing(self._root),
             [
                 {
                     "id": archive.id,
@@ -345,10 +359,8 @@ class FileReportBox:
 
     def open_issue(self, label: Label, title: str, body: str, *, key: str) -> SendOutcome:
         Pace.REPORT_BOX.wait(self._root)
-        if (self._directory / "brak-sieci").exists():
-            return Unreachable()
-        if self._refuses_key():
-            return Refused()
+        if (blocked := self._blocked()) is not None:
+            return blocked
         if self._rejects(label):
             return Rejected()
         with self._lock:
@@ -362,7 +374,7 @@ class FileReportBox:
                 "labels": [label],
                 "state": "open",
             }
-            _save(self._directory / f"{opened.number}.json", issue)
+            _save(issue_file(self._root, opened.number), issue)
         return Sent(opened.number)
 
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
@@ -410,22 +422,22 @@ class FileReportBox:
 
     def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
         if include_closed:
-            with self._lock, self._directory.with_name(f"{self._directory.name}-zapytania.jsonl").open("a") as asked:
-                asked.write(json.dumps({"label": label}) + "\n")
+            with self._lock:
+                Log.REPORT_QUESTIONS.append(self._root, {"label": label})
         if (blocked := self._blocked()) is not None:
             return blocked
         with self._lock:
             return self._issues(*self._directory.glob("*.json")).listed(label, include_closed=include_closed)
 
     def _blocked(self) -> Refused | Unreachable | None:
-        if (self._directory / "brak-sieci").exists():
+        if Switch.BOX_OFFLINE.is_on(self._root):
             return Unreachable()
-        if self._refuses_key():
+        if Switch.KEY_REFUSED.is_on(self._root):
             return Refused()
         return None
 
     def _issue_file(self, number: int) -> tuple[Path, ...]:
-        path = self._directory / f"{number}.json"
+        path = issue_file(self._root, number)
         return (path,) if path.is_file() else ()
 
     def _issues(self, *paths: Path) -> Issues:
@@ -433,16 +445,13 @@ class FileReportBox:
         return Issues(sorted(map(_box_issue, documents), key=lambda issue: issue.number), comment_base=_COMMENT_BASE)
 
     def _save_comments(self, issue: BoxIssue) -> None:
-        path = self._directory / f"{issue.number}.json"
+        path = issue_file(self._root, issue.number)
         document = json.loads(_read_put_in_place(path))
         document["raw_comments"], document["comments"] = issue.comment_texts, issue.comments
         _save(path, document)
 
     def _rejects(self, label: str) -> bool:
-        return (self._directory / f"odrzuca-{label}").exists()
-
-    def _refuses_key(self) -> bool:
-        return (self._directory / "odmawia-klucza").exists()
+        return rejects(self._root, label).exists()
 
 
 # Comment ``k`` of issue ``n`` has the id ``n * 1000 + k`` (``FileReportBox.comment``).
@@ -461,7 +470,7 @@ def _box_issue(issue: dict[str, Any]) -> BoxIssue:
 
 
 def _comment_address(issue: BoxIssue, comment_id: int) -> str:
-    return f"skrzynka-zgloszen/{issue.number}.json#komentarz-{issue.position(comment_id)}"
+    return comment_address(issue.number, issue.position(comment_id))
 
 
 def _save(path: Path, content: object) -> None:
@@ -482,7 +491,7 @@ def _closure(issue: dict[str, Any]) -> Closure | None:
 
 def _scripted_github(root: Path, clone: Path) -> ToolFreshness:
     def local_commit() -> str | None:
-        chosen = root / "github" / "tool-commit.txt"
+        chosen = File.TOOL_COMMIT.file(root)
         return chosen.read_text(encoding="utf-8").strip() if chosen.exists() else tool_commit(clone)
 
     def since() -> date | None:
@@ -490,21 +499,19 @@ def _scripted_github(root: Path, clone: Path) -> ToolFreshness:
         return None if commit is None else commit_since(commit, clone)
 
     def releases() -> GitHubReleases | None:
-        if (root / "github" / "brak-sieci").exists():
+        if Switch.GITHUB_OFFLINE.is_on(root):
             return None
-        chosen, tag = root / "github" / "main-commit.txt", root / "github" / "wydanie.txt"
+        chosen, tag = File.MAIN_COMMIT.file(root), File.RELEASE_TAG.file(root)
         return GitHubReleases(
             chosen.read_text(encoding="utf-8").strip() if chosen.exists() else local_commit(),
             tag.read_text(encoding="utf-8").strip() if tag.exists() else None,
         )
 
     def published() -> tuple[PublishedRelease, ...] | None:
-        (root / "github").mkdir(exist_ok=True)
-        with (root / "github" / "zapytania-wydan.jsonl").open("a", encoding="utf-8") as questions:
-            questions.write(json.dumps({"lista": "wydania"}) + "\n")
-        if (root / "github" / "brak-sieci").exists():
+        Log.RELEASE_QUESTIONS.append(root, {"lista": "wydania"})
+        if Switch.GITHUB_OFFLINE.is_on(root):
             return None
-        listed = root / "github" / "wydania.json"
+        listed = File.RELEASES.file(root)
         return parse_published(json.loads(listed.read_text(encoding="utf-8"))) if listed.exists() else ()
 
     return ToolFreshness(
@@ -519,8 +526,8 @@ class ScriptedClock:
         """``retry_s`` limits a refused read of the move (``_read_put_in_place``); without ``alarm`` no wake-up thread
         fires what ``after`` schedules, as the self-test needs for a clock it only reads."""
 
-        self._moved = root / "zegar" / "przesuniecie-min.txt"
-        self._died = root / "zegar" / "budzik-padl.txt"
+        self._moved = File.CLOCK_MOVE.file(root)
+        self._died = File.CLOCK_DIED.file(root)
         self._retry_s = retry_s
         self._lock = threading.Lock()
         self._wakes: list[tuple[float, Callable[[], None]]] = []
@@ -565,7 +572,7 @@ def _scripted_onedrive(root: Path) -> CloudFiles:
     normal, online_only = 0x80, 0x400000  # FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
 
     def attributes(path: Path) -> int:
-        listed = root / "onedrive" / "tylko-w-chmurze.txt"
+        listed = File.CLOUD_ONLY.file(root)
         lines = listed.read_text(encoding="utf-8").splitlines() if listed.exists() else []
         return online_only if str(path) in lines else normal
 
@@ -602,7 +609,7 @@ def _pace_worker_templates(root: Path, worker_template: Path) -> None:
 
 def _register_failing_on_hook(root: Path, register: Path) -> ByteSource:
     def source(path: Path) -> bytes:
-        if register_fault(root).exists() and path.name == register.name:
+        if Switch.REGISTER_FAULT.is_on(root) and path.name == register.name:
             raise RuntimeError("synthetic unexpected failure")
         return file_bytes(path)
 
@@ -611,7 +618,7 @@ def _register_failing_on_hook(root: Path, register: Path) -> ByteSource:
 
 @contextmanager
 def _efenix_window(root: Path) -> Iterator[EfenixWindow]:
-    directory = root / "efenix"
+    directory = efenix_files(root)
     if not directory.exists():
         write_collective_file(directory, EFENIX_ORDERS)
     known = [
@@ -621,7 +628,7 @@ def _efenix_window(root: Path) -> Iterator[EfenixWindow]:
     ]
     with atrapa_efenix(known, answer_delay_s=EFENIX_SEARCH_DELAY_S) as atrapa:
         atrapa.expire_session()
-        (directory / "adres.txt").write_text(atrapa.url, encoding="utf-8")
+        File.EFENIX_ADDRESS.write(root, atrapa.url)
         # Bez tempa ludzkiego, jak testy procesu: na Atrapie efenix nikt nie patrzy na sesję taty.
         yield EfenixWindow(atrapa.url, root / "przegladarka-efenix", channel=None, headless=True, pace=None)
 
@@ -666,7 +673,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         configuration_files=ConfigurationFiles(**configuration),
         tool_freshness=_scripted_github(root, clone),
         cloud_files=_scripted_onedrive(root),
-        report_box=FileReportBox(root / "skrzynka-zgloszen"),
+        report_box=FileReportBox(root),
         clock=ScriptedClock(root),
         tool_update=ToolClone(
             clone, origin=str(Path(fixture["tool"]["origin"])), find_git=_paced_git(root), install=_paced_install(root)
@@ -679,7 +686,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
 
     def record_bound_server(url: str) -> None:
         record = {"pid": os.getpid(), "port": args.port, "url": url}
-        (root / "server.json").write_text(json.dumps(record), encoding="utf-8")
+        File.SERVER.write(root, json.dumps(record))
         print(f"SERVING {url}", flush=True)
 
     return serve(app, listener=listen_locally(args.port), on_ready=record_bound_server, shutdown=shutdown, log=log)

@@ -27,6 +27,7 @@ from drive.teksty import ABOUT_LOGS
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
 from atrapy.scenariusz_centrum import ROW_MARKER
 from atrapy.pliki_taty import REPORT_KEY_FILE
+from harness import archive_file, archive_listing
 
 FEATURE = "logi-uruchomienia"
 LABEL = "logi-uruchomienia"
@@ -125,7 +126,7 @@ def _archived(run: Run, tag: str, name: str) -> bytes:
     """The file ``name`` of the Archiwum ``tag`` in the run's skrzynka, unpacked byte for byte; empty when the Archiwum
     lacks it."""
 
-    path = run.root / "skrzynka-archiwum" / tag / name
+    path = archive_file(run.root, tag, name)
     return gzip.decompress(read_bytes(path)) if path.is_file() else b""
 
 
@@ -278,7 +279,7 @@ def drive(run: Run, page: Page) -> None:
         ),
         "each comment is in the issue of its own period and links the Archiwum of that period",
     )
-    listed = read_json(run.root / "skrzynka-archiwum" / "archiwa.json")
+    listed = read_json(archive_listing(run.root))
     run.check(
         sorted(archive["tag"] for archive in listed) == [f"logi-{period}" for period in periods]
         and sum(len(archive["assets"]) for archive in listed) == len(files),

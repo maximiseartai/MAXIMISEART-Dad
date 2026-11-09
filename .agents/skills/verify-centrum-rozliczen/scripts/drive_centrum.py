@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
 from drive.common import DriveFailure, Run, dad_context
 from skrypt_skilla import Parser
+from harness import Log
 from rozliczenia.tool_files import settings_file
 
 MODULES = {each.name: importlib.import_module(each.module) for each in FEATURES}
@@ -43,7 +44,7 @@ def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str,
 def main(argv: list[str] | None = None) -> int:
     parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
     parser.add_root("run root with fixture.json and a served Centrum")
-    parser.add_argument("--url", required=True, help="Centrum URL from <root>/server.json.")
+    parser.add_argument("--url", required=True, help="Centrum URL from the record serve_centrum.py writes (harness.File.SERVER).")
     parser.add_argument("--evidence", required=True, help="Evidence directory that survives cleanup.")
     parser.add_argument(
         "--feature",
@@ -84,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"DRIVE FAIL | {exc}" + "".join(f" | {note}" for note in getattr(exc, "__notes__", ())), file=sys.stderr)
         return 1
     finally:
-        for source in (run.root / "opened.jsonl", run.root / "dialogs.jsonl", settings_file(run.root), run.log_path):
+        for source in (Log.OPENED.file(run.root), Log.DIALOGS.file(run.root), settings_file(run.root), run.log_path):
             if source.exists():
                 shutil.copy2(source, run.evidence / "state" / source.name)
         logs = run.run_logs_dir

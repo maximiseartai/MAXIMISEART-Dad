@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, broken_rules, feature
+from harness import File
 from quiet_machine import MachineBusy, QuietMachine
 from skrypt_skilla import Parser, child_environment, new_run, part
 
@@ -108,7 +109,7 @@ def _launch(run_root: Path, evidence: Path) -> tuple[subprocess.Popen[bytes], st
         stderr=subprocess.STDOUT,
     )
     deadline = time.monotonic() + 30
-    server_file = run_root / "server.json"
+    server_file = File.SERVER.file(run_root)
     while True:
         if process.poll() is not None:
             raise VerificationFailure(f"Centrum exited with {process.returncode} before it was ready; see server.txt")

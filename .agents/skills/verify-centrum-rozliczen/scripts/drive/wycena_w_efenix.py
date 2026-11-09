@@ -28,6 +28,7 @@ from drive.common import (
 from drive.teksty import BELL_FRESH
 from atrapy.efenix import FIRST_ROW, SOURCE_NAME
 from atrapy.scenariusz_centrum import EFENIX_ADDRESS_MARKERS, EFENIX_ORDERS, EFENIX_PERIOD
+from harness import File, efenix_files
 
 FEATURE = "wycena-w-efenix"
 PROCESS = "Wycena w efenix"
@@ -81,7 +82,7 @@ def _address_fills(source: Path) -> dict[int, str | None]:
 def _log_in(run: Run) -> None:
     """Harness: Dad logs in to efenix in the window Centrum opened (the Atrapa's login form, posted from here)."""
 
-    address = read_text(run.root / "efenix" / "adres.txt")
+    address = read_text(File.EFENIX_ADDRESS.file(run.root))
     # The form of page_login.php posts to action_login.php with a hidden fingerprint, as in efenix.
     login = address.rsplit("/", 1)[0] + "/action_login.php"
     print("  harness: Dad logs in to the Atrapa efenix (the login form, posted to action_login.php)", flush=True)
@@ -98,7 +99,7 @@ def drive(run: Run, page: Page) -> None:
         choose_periods_directory(run, page)
     period_folder = Path(run.fixture["periods_directory"]) / PERIOD
     print(f"  harness: the Folder okresu {PERIOD} with a Plik zbiorczy of the Atrapa's orders, as after Uzupełnienie", flush=True)
-    shutil.copytree(run.root / "efenix" / PERIOD, period_folder)
+    shutil.copytree(efenix_files(run.root) / PERIOD, period_folder)
     source = period_folder / COLLECTIVE_FILE
     try:
         _price(run, page, source)
