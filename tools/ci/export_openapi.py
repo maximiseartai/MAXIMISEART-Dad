@@ -46,7 +46,7 @@ class _NoPlatform:
         raise AssertionError("Eksport kontraktu nie otwiera okien wyboru.")
 
 
-def main() -> int:
+def main(*, output: Path = OUTPUT) -> int:
     log = CentrumLog(Path(os.devnull))  # eksport nie obsługuje żądań, więc niczego nie zapisuje
     app = create_app(
         settings_path=SETTINGS,
@@ -56,7 +56,7 @@ def main() -> int:
     )
     contract = _sorted(app.openapi())
     document = json.dumps(contract, ensure_ascii=False, indent=2) + "\n"
-    OUTPUT.write_bytes(document.encode("utf-8"))
+    output.write_bytes(document.encode("utf-8"))
     return 0
 
 

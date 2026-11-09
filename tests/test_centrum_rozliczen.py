@@ -87,29 +87,24 @@ def test_po_aktualizacji_narzedzia_przegladarka_dostaje_nowy_pakiet_pod_ta_sama_
     assert (updated.status_code, updated.content) == (200, b"console.log('po aktualizacji')\n")
 
 
-def _exported_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    monkeypatch.setattr(export_openapi, "OUTPUT", tmp_path / "openapi.json")
-    assert export_openapi.main() == 0
+def _exported_contract(tmp_path: Path) -> dict[str, Any]:
+    assert export_openapi.main(output=tmp_path / "openapi.json") == 0
     return dict(json.loads((tmp_path / "openapi.json").read_text(encoding="utf-8")))
 
 
-def test_kontrakt_ma_trasy_i_schematy_po_kolei_wiec_dwie_nowe_trasy_nie_zmieniaja_tego_samego_miejsca(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    contract = _exported_contract(tmp_path, monkeypatch)
+def test_kontrakt_ma_trasy_i_schematy_po_kolei_wiec_dwie_nowe_trasy_nie_zmieniaja_tego_samego_miejsca(tmp_path: Path) -> None:
+    contract = _exported_contract(tmp_path)
     schemas = contract["components"]["schemas"]
 
     assert (list(contract["paths"]), list(schemas)) == (sorted(contract["paths"]), sorted(schemas))
 
 
-def test_frontend_parsuje_odpowiedzi_kontraktem_ktory_serwer_naprawde_eksportuje(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_frontend_parsuje_odpowiedzi_kontraktem_ktory_serwer_naprawde_eksportuje(tmp_path: Path) -> None:
     """Frontend parsuje każdą odpowiedź serwera schematami wygenerowanymi z ``frontend/src/api/openapi.json``."""
 
     committed = json.loads((ROOT / "frontend" / "src" / "api" / "openapi.json").read_text(encoding="utf-8"))
 
-    assert _exported_contract(tmp_path, monkeypatch) == committed
+    assert _exported_contract(tmp_path) == committed
 
 
 # Trasy, których przeglądarka nie mierzy przez `call` (frontend/src/api/client.ts), każda z powodem.
@@ -120,13 +115,11 @@ OUTSIDE_TIMING = {
 }
 
 
-def test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiarem(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiarem(tmp_path: Path) -> None:
     """``ApiOperation`` to dokładnie trasy API poza ``OUTSIDE_TIMING``; dziennik działań taty zapisuje przycisk tylko
     pod operacją z ``ApiOperation``, więc jedyna trasa poza nią, która coś zmienia, to sam pomiar widoku."""
 
-    paths = _exported_contract(tmp_path, monkeypatch)["paths"].values()
+    paths = _exported_contract(tmp_path)["paths"].values()
     methods = {operation["operationId"]: method for path in paths for method, operation in path.items()}
     listed = get_args(timing_contract.ApiOperation)
 
