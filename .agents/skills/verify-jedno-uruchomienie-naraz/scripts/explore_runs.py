@@ -109,8 +109,10 @@ def _end_foreign_thread() -> NoReturn:
     primitive; ``threading`` ends a thread on ``SystemExit`` (the class itself, not a subclass) without a traceback.
 
     This only keeps the thread quiet; it reports nothing, because it runs beside the checker and a report from it would
-    land in whichever schedule runs at that moment. The LUKA MODELU is the start of that thread, which the modelled
-    thread that started it reports: ``_start_tab`` for an Uruchomienie thread started beside ``threads.Thread``.
+    land in whichever schedule runs at that moment. Only an Uruchomienie thread started beside ``threads.Thread`` gets a
+    LUKA MODELU, which ``_start_tab`` of the modelled thread that started it reports. Any other foreign thread ends here
+    unreported: the check then explores fewer schedules and can still say OK (``self._decided.set()`` of ``Run.answer``
+    in a ``threading.Thread``: 87 schedules of ``zamknij-w-trakcie`` instead of 139, review of #1127 r3).
     """
 
     raise SystemExit

@@ -82,6 +82,10 @@ BY_CHANGE_ONLY = {
         "graf wybiera go przy zmianie każdego SKILL.md, a w STRUCTURE przekroczyłby limit testów "
         "wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
+    "tests/test_skille_dla_zmiany.py::test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill": (
+        "graf wybiera go przy zmianie skryptu i SKILL.md skilli Centrum (literały) i tools/lib/wplyw_zmiany.py, "
+        "a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
+    ),
     "tests/test_szybko.py": "sprawdza samo szybko w repozytoriach testu; graf wybiera go przy zmianie tools/szybko.py i tabel reguł",
     "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",

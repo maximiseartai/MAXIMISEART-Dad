@@ -603,7 +603,7 @@ NOT_THREADS = {
 
 def _thread_names(tree: ast.Module) -> set[str]:
     """Nazwy wątków modułu ``src/``: wartości stałych modułu ``*_THREAD`` i ``*_THREAD_PREFIX`` oraz napisy ``name=`` w
-    wywołaniu ``…Thread(...)``."""
+    wywołaniu ``…Thread(...)`` i ``within(...)`` (``centrum/deadline.py``, który nazwą wątku nazywa swoją pracę)."""
 
     names = set()
     for statement in tree.body:
@@ -616,7 +616,7 @@ def _thread_names(tree: ast.Module) -> set[str]:
         if isinstance(target, ast.Name) and THREAD_CONSTANT.fullmatch(target.id) and isinstance(value, ast.Constant):
             names.add(value.value)
     for call in ast.walk(tree):
-        if isinstance(call, ast.Call) and ast.unparse(call.func).endswith("Thread"):
+        if isinstance(call, ast.Call) and (ast.unparse(call.func).endswith("Thread") or ast.unparse(call.func).split(".")[-1] == "within"):
             names |= {
                 keyword.value.value
                 for keyword in call.keywords
@@ -642,12 +642,13 @@ def _texts(tree: ast.Module) -> Iterator[tuple[str, int, str]]:
         yield node.value, node.lineno, function
 
 
-def test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy() -> None:
-    """Granica: napis równy całej nazwie wątku albo jej początkowi (``*_THREAD_PREFIX``) poza docstringami; nazwę
-    złożoną w trakcie działania, kawałek f-stringu i kawałek nazwy widzi tylko przegląd. Napis, który nie nazywa wątku,
-    trafia do ``NOT_THREADS`` pod kluczem z nawiasu."""
+def _thread_names_in(src: Path) -> set[str]:
+    return set().union(*(_thread_names(ast.parse(path.read_text(encoding="utf-8"))) for path in sorted(src.rglob("*.py"))))
 
-    names = set().union(*(_thread_names(ast.parse(path.read_text(encoding="utf-8"))) for path in sorted(SRC.rglob("*.py"))))
+
+def _thread_name_copies(names: set[str]) -> list[str]:
+    """Napisy testów i atrap równe nazwie wątku z ``names`` spoza ``NOT_THREADS`` i wpisy ``NOT_THREADS`` bez napisu."""
+
     found, excepted = [], set()
     for path, name in _scanned():
         for text, line, function in _texts(ast.parse(path.read_text(encoding="utf-8"))):
@@ -658,7 +659,16 @@ def test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy() 
                 excepted.add(key)
             else:
                 found.append(f"{_shown(path)}:{line}: {text!r} to kopia nazwy wątku z src/ ({key})")
-    found += [f"NOT_THREADS: {key} nie ma już tego napisu, usuń wpis" for key in sorted(NOT_THREADS.keys() - excepted)]
+    return found + [f"NOT_THREADS: {key} nie ma już tego napisu, usuń wpis" for key in sorted(NOT_THREADS.keys() - excepted)]
+
+
+def test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy() -> None:
+    """Granica: napis równy całej nazwie wątku albo jej początkowi (``*_THREAD_PREFIX``) poza docstringami; nazwę
+    złożoną w trakcie działania, kawałek f-stringu i kawałek nazwy widzi tylko przegląd. Napis, który nie nazywa wątku,
+    trafia do ``NOT_THREADS`` pod kluczem z nawiasu."""
+
+    names = _thread_names_in(SRC)
+    found = _thread_name_copies(names)
 
     assert {QUEUE_THREAD, RUN_THREAD_PREFIX} <= names
     assert not found, "\n".join(
@@ -668,3 +678,33 @@ def test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy() 
             "napis, który nie nazywa wątku, wpisz do NOT_THREADS pod kluczem z nawiasu, z powodem.",
         ]
     )
+
+
+@pytest.mark.parametrize(
+    ("src", "copy"),
+    [
+        ("import threading\nthreading.Thread(target=print, name='watek-proby').start()\n", "tools/lib/atrapy/kopia.py"),
+        ("from typing import Final\nPROBA_THREAD: Final = 'watek-proby'\n", "test_kopia.py"),
+        ("from rozliczenia.centrum.deadline import within\nwithin(1.0, print, name='watek-proby')\n", "tools/lib/atrapy/kopia.py"),
+    ],
+    ids=["name-w-thread", "stala-thread", "name-w-within"],
+)
+def test_straznik_nazw_watkow_zglasza_kopie_nazwy_z_kazdej_czytanej_postaci_w_testach_i_atrapach(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, src: str, copy: str
+) -> None:
+    """Nazwa wątku w każdej postaci, którą strażnik czyta w ``src/``, skopiowana w atrapie albo teście obok pustej
+    reszty: strażnik ją zgłasza (przegląd #1175 r1, Drobne 1 i 2)."""
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "watek.py").write_text(src, encoding="utf-8")
+    atrapy = tmp_path / "tools" / "lib" / "atrapy"
+    atrapy.mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / ("tests" if copy.startswith("test_") else "") / copy).write_text("CZEKA_NA = 'watek-proby'\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "TESTS", tmp_path / "tests")
+    monkeypatch.setattr(sys.modules[__name__], "ATRAPY", atrapy)
+    monkeypatch.setattr(sys.modules[__name__], "NOT_THREADS", {})
+
+    found = _thread_name_copies(_thread_names_in(tmp_path / "src"))
+
+    assert [line.split(" (")[0] for line in found] == [f"{'tests/' if copy.startswith('test_') else ''}{copy}:1: 'watek-proby' to kopia nazwy wątku z src/"]

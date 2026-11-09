@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import json
 import os
@@ -41,9 +42,23 @@ HELPER_DIRECTORY = Path(".agents") / "skills" / "verify-rozliczenia" / "scripts"
 PROCESS_SCRIPT = str(Path("tools") / "uruchom_proces.py")
 
 
+Workflow = Callable[["WorkflowVariant", Path, Path, "Path | None"], None]
+
+
+@dataclass(frozen=True)
+class WorkflowProcess:
+    """A process the workflow runs: its workflow (variant, run root, evidence root, real Wzorce or ``None``), the steps
+    of the process and the helper steps whose evidence a successful run leaves, and the real Wzorce it copies."""
+
+    run: Workflow
+    process_steps: tuple[str, ...]
+    helper_steps: tuple[str, ...]
+    template_names: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class WorkflowVariant:
-    process: Literal["settlement", "preparation", "chain", "intermax"] = "settlement"
+    process: WorkflowProcess
     include_unmapped: bool = False
     pre_run_setup: Literal["existing", "locked"] | None = None
     dry_run_exit: int = 0
@@ -60,67 +75,19 @@ class WorkflowVariant:
         return self.templates == "config"
 
     @property
-    def template_names(self) -> tuple[str, ...]:
-        """Real Wzorce the local-only variant copies from the templates directory."""
-
-        if self.process == "chain":
-            return (*PREPARATION_TEMPLATE_NAMES, WORKER_TEMPLATE_NAME)
-        return PREPARATION_TEMPLATE_NAMES
-
-    @property
     def evidence_names(self) -> frozenset[str]:
         """Evidence files a successful run of this variant leaves behind, before the self-test."""
 
-        processes: tuple[str, ...]
-        helpers: tuple[str, ...]
-        if self.process == "chain":
-            processes = ("preparation-dry-run", "preparation-run", "settlement-dry-run", "settlement-run")
-            helpers = ("fixture", "doctor", "readiness", "cleanup")
-        elif self.process == "intermax":
-            # Uporządkowanie INTERMAX has no preview without saving, so one run; its Sprawdzanie is the preflight.
-            processes = ("run",)
-            helpers = ("fixture", "cleanup")
-        else:
-            processes = ("dry-run", "run")
-            helpers = ("fixture", "doctor", "cleanup")
         return frozenset(
             {
-                *(f"{step}.txt" for step in helpers),
-                *(name for step in processes for name in (f"{step}.json", f"{step}-metrics.jsonl", f"assert-{step}.txt")),
+                *(f"{step}.txt" for step in self.process.helper_steps),
+                *(
+                    name
+                    for step in self.process.process_steps
+                    for name in (f"{step}.json", f"{step}-metrics.jsonl", f"assert-{step}.txt")
+                ),
             }
         )
-
-
-WORKFLOW_VARIANTS = {
-    "default": WorkflowVariant(),
-    "existing": WorkflowVariant(
-        pre_run_setup="existing",
-        run_exit=1,
-        assertion="existing-output",
-        expected_stop="FOLDER_ROZLICZEN_ISTNIEJE",
-    ),
-    "locked": WorkflowVariant(
-        pre_run_setup="locked",
-        run_exit=1,
-        assertion="no-publish",
-        expected_stop="ZLY_WZORZEC_PRACOWNIKA",
-        expected_stop_what="Wzorzec rozliczenia pracownika jest otwarty lub zablokowany",
-    ),
-    "unmapped": WorkflowVariant(
-        include_unmapped=True,
-        dry_run_exit=2,
-        run_exit=1,
-        assertion="no-publish",
-        expected_stop="NIEZNANY_WYKONAWCA",
-        expected_stop_what="spoza konfiguracji wykonawców: unknown.synthetic.",
-    ),
-    "preparation": WorkflowVariant(process="preparation"),
-    "preparation-real-templates": WorkflowVariant(process="preparation", templates="config"),
-    "chain": WorkflowVariant(process="chain"),
-    "chain-real-templates": WorkflowVariant(process="chain", templates="config"),
-    "intermax": WorkflowVariant(process="intermax"),
-}
-CI_VARIANTS = tuple(name for name, variant in WORKFLOW_VARIANTS.items() if not variant.local_only)
 
 
 class VerificationFailure(RuntimeError):
@@ -291,15 +258,14 @@ def _default_templates_directory() -> Path:
 def _run_workflow(variant: str, run_root: Path, evidence_root: Path, templates_directory: Path) -> None:
     variant_config = WORKFLOW_VARIANTS[variant]
     real_templates = templates_directory if variant_config.templates == "config" else None
-    if variant_config.process == "preparation":
-        _run_preparation_workflow(run_root, evidence_root, real_templates)
-        return
-    if variant_config.process == "chain":
-        _run_chain_workflow(run_root, evidence_root, real_templates)
-        return
-    if variant_config.process == "intermax":
-        _run_intermax_workflow(run_root, evidence_root)
-        return
+    variant_config.process.run(variant_config, run_root, evidence_root, real_templates)
+
+
+def _run_settlement_workflow(
+    variant_config: WorkflowVariant, run_root: Path, evidence_root: Path, templates_directory: Path | None
+) -> None:
+    """Przebieg rozliczeń on a synthetic Plik zbiorczy: dry-run, the variant's setup, then the real write."""
+
     environment = _utf8_environment()
     version = _version()
     source = run_root / PERIOD / SOURCE_NAME
@@ -423,7 +389,9 @@ def _run_preparation_stage(
     _run_step(f"assert-{step_prefix}run", assert_arguments("run"), evidence_root, environment, expected_exit=0)
 
 
-def _run_preparation_workflow(run_root: Path, evidence_root: Path, templates_directory: Path | None) -> None:
+def _run_preparation_workflow(
+    variant_config: WorkflowVariant, run_root: Path, evidence_root: Path, templates_directory: Path | None
+) -> None:
     """Przygotowanie pliku zbiorczego: synthetic Rejestr, dry-run, then the real write.
 
     With ``templates_directory`` the fixture copies the real Wzorce instead of building synthetic ones.
@@ -447,7 +415,9 @@ def _run_preparation_workflow(run_root: Path, evidence_root: Path, templates_dir
     )
 
 
-def _run_chain_workflow(run_root: Path, evidence_root: Path, templates_directory: Path | None) -> None:
+def _run_chain_workflow(
+    variant_config: WorkflowVariant, run_root: Path, evidence_root: Path, templates_directory: Path | None
+) -> None:
     """Dad's whole path: Rejestr zleceń, Przygotowanie pliku zbiorczego, Gotowość, then Przebieg rozliczeń.
 
     The Przebieg rozliczeń reads the Plik zbiorczy that the Przygotowanie wrote, after
@@ -543,7 +513,9 @@ def _run_chain_workflow(run_root: Path, evidence_root: Path, templates_directory
     )
 
 
-def _run_intermax_workflow(run_root: Path, evidence_root: Path) -> None:
+def _run_intermax_workflow(
+    variant_config: WorkflowVariant, run_root: Path, evidence_root: Path, templates_directory: Path | None
+) -> None:
     """Uporządkowanie INTERMAX: a synthetic INTERMAX with one pasted day of Surowe zlecenia, then the one write.
 
     The process always saves, after a Kopia INTERMAX in ``--copies``, so every path stays inside the run root.
@@ -584,6 +556,53 @@ def _run_intermax_workflow(run_root: Path, evidence_root: Path) -> None:
         environment,
         expected_exit=0,
     )
+
+
+SETTLEMENT = WorkflowProcess(_run_settlement_workflow, ("dry-run", "run"), ("fixture", "doctor", "cleanup"))
+PREPARATION = WorkflowProcess(
+    _run_preparation_workflow, ("dry-run", "run"), ("fixture", "doctor", "cleanup"), PREPARATION_TEMPLATE_NAMES
+)
+CHAIN = WorkflowProcess(
+    _run_chain_workflow,
+    ("preparation-dry-run", "preparation-run", "settlement-dry-run", "settlement-run"),
+    ("fixture", "doctor", "readiness", "cleanup"),
+    (*PREPARATION_TEMPLATE_NAMES, WORKER_TEMPLATE_NAME),
+)
+# Uporządkowanie INTERMAX has no preview without saving, so one run; its Sprawdzanie is the preflight.
+INTERMAX = WorkflowProcess(_run_intermax_workflow, ("run",), ("fixture", "cleanup"))
+WORKFLOW_VARIANTS = {
+    "default": WorkflowVariant(SETTLEMENT),
+    "existing": WorkflowVariant(
+        SETTLEMENT,
+        pre_run_setup="existing",
+        run_exit=1,
+        assertion="existing-output",
+        expected_stop="FOLDER_ROZLICZEN_ISTNIEJE",
+    ),
+    "locked": WorkflowVariant(
+        SETTLEMENT,
+        pre_run_setup="locked",
+        run_exit=1,
+        assertion="no-publish",
+        expected_stop="ZLY_WZORZEC_PRACOWNIKA",
+        expected_stop_what="Wzorzec rozliczenia pracownika jest otwarty lub zablokowany",
+    ),
+    "unmapped": WorkflowVariant(
+        SETTLEMENT,
+        include_unmapped=True,
+        dry_run_exit=2,
+        run_exit=1,
+        assertion="no-publish",
+        expected_stop="NIEZNANY_WYKONAWCA",
+        expected_stop_what="spoza konfiguracji wykonawców: unknown.synthetic.",
+    ),
+    "preparation": WorkflowVariant(PREPARATION),
+    "preparation-real-templates": WorkflowVariant(PREPARATION, templates="config"),
+    "chain": WorkflowVariant(CHAIN),
+    "chain-real-templates": WorkflowVariant(CHAIN, templates="config"),
+    "intermax": WorkflowVariant(INTERMAX),
+}
+CI_VARIANTS = tuple(name for name, variant in WORKFLOW_VARIANTS.items() if not variant.local_only)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -634,7 +653,7 @@ def _missing_templates(variant: str, templates_directory: Path) -> list[str]:
     variant_config = WORKFLOW_VARIANTS[variant]
     if not variant_config.local_only:
         return []
-    return [name for name in variant_config.template_names if not (templates_directory / name).is_file()]
+    return [name for name in variant_config.process.template_names if not (templates_directory / name).is_file()]
 
 
 def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:

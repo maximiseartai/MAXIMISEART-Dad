@@ -24,6 +24,7 @@ tylko przegląd. Importu przez ``importlib`` ani polecenia składanego w czasie 
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from pathlib import Path
 import re
 import sys
@@ -68,15 +69,16 @@ def _required_subcommands(path: Path) -> list[str]:
     """Stałe nazwy ``add_parser`` narzędzia, które ma ``add_subparsers(required=True)``; pusta lista bez takiej grupy.
 
     Czyta każde ``add_parser("<nazwa>")`` ze stałą nazwą w pliku, bez rozróżniania grup, bo pierwsze zdanie ma wymienić
-    którąkolwiek z nich, a podkomenda na każdy wpis katalogu procesów (``add_parser(kind.key)`` w pętli
+    którąkolwiek z nich, a podkomenda na każdy wpis katalogu procesów (``add_parser(kind.key)`` w ciele pętli
     ``for kind in CATALOG.kinds``, Skrypt dla maszyn) to każdy klucz procesu (``common_contract.ProcessKey``). Podkomendy dodane
-    inaczej (ze zmiennej, w innej pętli) obok tych nie są sprawdzane. Narzędzie z ``required=True``, z którego nie da się
+    inaczej (ze zmiennej, w innej pętli, także po zmiennej o tej samej nazwie) obok tych nie są sprawdzane. Narzędzie z ``required=True``, z którego nie da się
     odczytać żadnej nazwy, to ``ValueError``, bo pusta lista przepuściłaby je bez sprawdzenia.
     """
 
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     calls = [
         (node.func.attr, node)
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for node in ast.walk(tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     ]
     required = any(
@@ -86,10 +88,11 @@ def _required_subcommands(path: Path) -> list[str]:
     )
     if not required:
         return []
-    kinds = {
-        node.target.id
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if isinstance(node, ast.For) and isinstance(node.target, ast.Name) and ast.unparse(node.iter) == "CATALOG.kinds"
+    per_kind = {
+        id(call)
+        for loop in ast.walk(tree)
+        if isinstance(loop, ast.For) and isinstance(loop.target, ast.Name) and ast.unparse(loop.iter) == "CATALOG.kinds"
+        for call in _calls_with_key_of(loop.target.id, loop.body)
     }
     names = []
     for method, call in calls:
@@ -98,7 +101,7 @@ def _required_subcommands(path: Path) -> list[str]:
         name = call.args[0]
         if isinstance(name, ast.Constant) and isinstance(name.value, str):
             names.append(name.value)
-        elif isinstance(name, ast.Attribute) and name.attr == "key" and isinstance(name.value, ast.Name) and name.value.id in kinds:
+        elif id(call) in per_kind:
             names += get_args(common_contract.ProcessKey)
     if not names:
         raise ValueError(
@@ -106,6 +109,15 @@ def _required_subcommands(path: Path) -> list[str]:
             'add_parser("<nazwa>"); dodaj choć jedną podkomendę osobnym add_parser ze stałą nazwą'
         )
     return names
+
+
+def _calls_with_key_of(kind: str, body: list[ast.stmt]) -> Iterator[ast.Call]:
+    """Wywołania ``….add_parser(<kind>.key)`` w ``body`` pętli po ``kind``."""
+
+    for node in (node for statement in body for node in ast.walk(statement)):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_parser" and node.args:
+            if ast.unparse(node.args[0]) == f"{kind}.key":
+                yield node
 
 
 def _names_subcommand_in_brackets(sentence: str, subcommands: list[str]) -> bool:
@@ -255,8 +267,13 @@ def test_podkomenda_liczy_sie_tylko_w_pierwszym_zdaniu_docstringu(tmp_path: Path
 
 @pytest.mark.parametrize(
     "parsers",
-    ["for name in ('plan', 'wykonaj'):\n    commands.add_parser(name)\n", "commands.add_parser(NAME)\n", ""],
-    ids=["w petli", "ze zmiennej", "bez podkomend"],
+    [
+        "for name in ('plan', 'wykonaj'):\n    commands.add_parser(name)\n",
+        "commands.add_parser(NAME)\n",
+        "",
+        "for kind in CATALOG.kinds:\n    pass\nfor kind in OTHER:\n    commands.add_parser(kind.key)\n",
+    ],
+    ids=["w petli", "ze zmiennej", "bez podkomend", "ta sama nazwa w innej petli"],
 )
 def test_obowiazkowa_podkomenda_spoza_stalej_nie_przechodzi_po_cichu(tmp_path: Path, parsers: str) -> None:
     tool = tmp_path / "narzedzie.py"

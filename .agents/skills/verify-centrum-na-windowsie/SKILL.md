@@ -29,6 +29,9 @@ pilnuje:
   - tools/lib/atrapy/efenix.py
   - tools/lib/atrapy/atrapa_efenix.py
   - tools/lib/atrapy/intermax.py
+  - tools/lib/atrapy/model_efenix.py
+  - tools/lib/atrapy/pliki_taty.py
+  - tools/lib/atrapy/workbooks.py
   - .agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py
 ---
 
