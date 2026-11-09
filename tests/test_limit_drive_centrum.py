@@ -12,10 +12,13 @@ wywołanego bez atrybutu ``screenshot`` (``getattr``).
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
+from contextlib import contextmanager
 import importlib.util
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
+from playwright.sync_api import Error as PlaywrightError
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,3 +73,48 @@ def test_zrzut_w_drive_centrum_idzie_tylko_przez_run_capture() -> None:
         "zrzut prosto przez screenshot omija regułę numerów zrzutów; użyj run.capture(page, name, clip=…) "
         f"z drive/common.py: {found}"
     )
+
+
+def test_nieudany_zrzut_po_bledzie_drive_nie_zastepuje_przyczyny_bledu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Po błędzie funkcji drive robi zrzut ``zz-failure.png``; gdy przeglądarka już padła, zrzut też pada, a ``DRIVE FAIL``
+    dalej podaje błąd funkcji, z dopiskiem, że zrzutu nie ma."""
+
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    spec = importlib.util.spec_from_file_location("drive_centrum", SCRIPTS / "drive_centrum.py")
+    assert spec is not None and spec.loader is not None
+    drive_centrum = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(drive_centrum)
+
+    class ClosedPage:
+        def set_default_timeout(self, timeout: float) -> None:
+            pass
+
+        def screenshot(self, **options: object) -> bytes:
+            raise PlaywrightError("Target page, context or browser has been closed")
+
+    class Browser:
+        def new_context(self, **options: object) -> SimpleNamespace:
+            return SimpleNamespace(new_page=ClosedPage)
+
+        def close(self) -> None:
+            pass
+
+    @contextmanager
+    def playwright() -> Iterator[SimpleNamespace]:
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=Browser))
+
+    def failing(run: object, page: object) -> None:
+        raise drive_centrum.DriveFailure("funkcja nie zobaczyła przycisku")
+
+    monkeypatch.setattr(drive_centrum, "sync_playwright", playwright)
+    monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=failing))
+    (tmp_path / "fixture.json").write_text("{}", encoding="utf-8")
+    arguments = ["--root", str(tmp_path), "--url", "http://127.0.0.1:9", "--evidence", str(tmp_path / "dowody")]
+
+    code = drive_centrum.main([*arguments, "--feature", "ustawienia"])
+
+    [line] = capsys.readouterr().err.splitlines()
+    assert code == 1
+    assert line.startswith("DRIVE FAIL | funkcja nie zobaczyła przycisku | zz-failure.png not taken: "), line
