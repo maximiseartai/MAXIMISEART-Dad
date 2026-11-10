@@ -603,27 +603,11 @@ def logged_read(mail: LoggedMail) -> MailRead:
 
 
 def _verdict_fault_of(fault: LoggedVerdictFault) -> VerdictFault:
-    match fault:
-        case "missing":
-            return VerdictFault.MISSING
-        case "letter":
-            return VerdictFault.LETTER
-        case "word":
-            return VerdictFault.WORD
-        case _:
-            assert_never(fault)
+    return {_verdict_fault(member): member for member in VerdictFault}[fault]
 
 
 def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
-    match fault:
-        case "no_date":
-            return SubjectFault.NO_DATE
-        case "no_year":
-            return SubjectFault.NO_YEAR
-        case "not_a_day":
-            return SubjectFault.NOT_A_DAY
-        case _:
-            assert_never(fault)
+    return {_subject_fault(member): member for member in SubjectFault}[fault]
 
 
 class LoggedOrderProblem(_Record):
