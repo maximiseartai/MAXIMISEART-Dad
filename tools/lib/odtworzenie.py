@@ -100,6 +100,7 @@ from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
+from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.raw_orders import SHIFT
 from rozliczenia.register_columns import COLUMNS, DAY_FILL, ORDERED_FONT, ORDERED_SIZE
 from rozliczenia.intermax_cells import CellsWritten
@@ -109,6 +110,7 @@ from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import ReportEnteringParts, SavedState
 from rozliczenia import report_entering_messages
 from rozliczenia.run_context import RunContexts
+from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 from rozliczenia.worker_reports import Login, OrderKey, OrderNumber, OwnEntries, OwnEntry, ReadStranger, SenderAddress, as_mail
@@ -821,7 +823,8 @@ def _entering_limits(record: RunLog) -> list[Limit]:
 def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     """INTERMAX z uporządkowanych wierszy Kopii wejścia, Konfiguracja wykonawców i plik adresów z loginów Wpisów,
     Skrzynka raportów z maili w postaci kanonicznej (``worker_reports.as_mail``), pamięć wpisów z ``rollout_before`` i
-    ``memory_before`` oraz zegar z dniem kliknięcia u taty."""
+    ``memory_before``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
+    zegar z dniem kliknięcia u taty."""
 
     register, limits = _register_file(record, work, "intermax", lambda sheet, row: _ORDERED_FONT)
     entering = record.report_entering
@@ -841,8 +844,14 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     warned = any(message.code == _MEMORY_NOT_SAVED for message in record.messages)
     inbox = FakeInbox(mails, skipped=0 if entering is None else entering.skipped)
     parts = HostParts(now=lambda: moment, reports=ReportEnteringParts(inbox, _LoggedState(saved, saves=not warned)))
+    periods = work.folder("okresy")
+    for token in [] if entering is None else entering.closed:
+        collective = PeriodFolder(periods, parse_period_token(token)).collective_file
+        collective.parent.mkdir(parents=True, exist_ok=True)
+        collective.touch()
     paths: dict[PathNeed, Path] = {
         "register": register,
+        "periods_directory": periods,
         "worker_config": files.path("worker_config"),
         "worker_addresses": files.path("worker_addresses"),
     }

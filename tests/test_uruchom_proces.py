@@ -613,6 +613,7 @@ _FLAGS = {
     ],
     "report_entering": [
         ("--register", True, None, "Rejestr zleceń (INTERMAX)."),
+        ("--periods-directory", True, None, "Folder okresów."),
         ("--config", False, WORKER_CONFIG, "Konfiguracja wykonawców."),
         ("--adresy-wykonawcow", False, CONFIG_DIR / WORKER_ADDRESSES_FILE, "Plik adresów Wykonawców."),
         ("--maile", True, None, "Folder maili .eml w miejscu Skrzynki raportów."),

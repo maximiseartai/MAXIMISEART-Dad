@@ -1,7 +1,7 @@
 """Wpisanie raportów w katalogu procesów: wpis i widok Uruchomienia (ADR 0028).
 
 Wpisanie raportów wpisuje Raporty wykonawców do INTERMAX z Ustawień taty i nie należy do okresu (jak Uporządkowanie
-INTERMAX, ADR 0019). Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``).
+INTERMAX, ADR 0019); folder okresów z Ustawień czyta tylko po to, by pominąć dni okresów z Plikiem zbiorczym. Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``).
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ def _logs(summary: EnteringSummary | None, facts: object) -> ProcessLogs:
 def _inputs(start: Start, parts: HostParts) -> EnteringInputs:
     return EnteringInputs(
         start.path("register"),
+        start.path("periods_directory"),
         start.path("worker_config"),
         start.path("worker_addresses"),
         parts.report_entering(),
@@ -68,7 +69,7 @@ KIND: Final[ProcessKind[EnteringInputs, EnteringSummary]] = ProcessKind(
     view=_VIEW,
     core=report_entering_process.PROCESS,
     default_metrics=REPORT_ENTERING_METRICS,
-    needs=("register", "worker_config", "worker_addresses", "worker_report_inbox"),
+    needs=("register", "periods_directory", "worker_config", "worker_addresses", "worker_report_inbox"),
     inputs=_inputs,
     settings=(
         NeededSetting(
