@@ -74,8 +74,16 @@ def _subject(fault: SubjectFault) -> str:
     match fault:
         case SubjectFault.NO_DATE:
             return "nie ma w nim daty dnia zleceń"
+        case SubjectFault.OTHER_TEXT:
+            return "poza tym słowem i datą temat ma inny tekst"
         case SubjectFault.NO_YEAR:
             return "data nie ma roku"
+        case SubjectFault.DATE_FORM:
+            return "data nie ma postaci dzień, miesiąc, rok"
+        case SubjectFault.SEPARATOR:
+            return "dzień, miesiąc i rok nie są rozdzielone kropką, podkreśleniem ani ukośnikiem"
+        case SubjectFault.YEAR_DIGITS:
+            return "rok w dacie nie ma dwóch ani czterech cyfr"
         case SubjectFault.NOT_A_DAY:
             return "data nie jest prawdziwym dniem"
 
@@ -85,6 +93,6 @@ def _verdict(fault: VerdictFault) -> str:
         case VerdictFault.MISSING:
             return "nie ma „tak” ani „nie”"
         case VerdictFault.LETTER:
-            return "ma samą literę zamiast „tak” albo „nie”"
+            return "ma samą literę „t” albo „n” zamiast „tak” albo „nie”"
         case VerdictFault.WORD:
-            return "ma inne słowo zamiast „tak” albo „nie”"
+            return "ma „skuteczne” albo „nieskuteczne” zamiast „tak” albo „nie”"

@@ -252,7 +252,8 @@ class Verdict(Enum):
 
 
 class VerdictFault(Enum):
-    """Dlaczego Wpis raportu nie ma ``tak`` ani ``nie``: brak słowa, sama litera albo inne słowo."""
+    """Dlaczego Wpis raportu nie ma ``tak`` ani ``nie``: brak słowa (``MISSING``), sama litera ``t`` albo ``n``
+    (``LETTER``) albo ``skuteczne``/``nieskuteczne`` (``WORD``)."""
 
     MISSING = auto()
     LETTER = auto()
@@ -260,11 +261,16 @@ class VerdictFault(Enum):
 
 
 class SubjectFault(Enum):
-    """Dlaczego temat ze słowem Raportu wykonawcy nie daje dnia zleceń: brak daty, brak roku albo data, która nie jest
-    dniem."""
+    """Dlaczego temat ze słowem Raportu wykonawcy nie daje dnia zleceń, w kolejności, w jakiej rdzeń to sprawdza: brak
+    liczb, inny tekst poza słowem i datą, dwie liczby, liczby nie w postaci dzień.miesiąc.rok, separator inny niż ``.``,
+    ``_`` albo ``/``, rok bez dwóch ani czterech cyfr i data, która nie jest dniem."""
 
     NO_DATE = auto()
+    OTHER_TEXT = auto()
     NO_YEAR = auto()
+    DATE_FORM = auto()
+    SEPARATOR = auto()
+    YEAR_DIGITS = auto()
     NOT_A_DAY = auto()
 
 

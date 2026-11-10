@@ -1,7 +1,15 @@
 UnreadableSubject
   Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale nie ma w nim daty dnia zleceń, więc Centrum go nie wpisało.
 UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale poza tym słowem i datą temat ma inny tekst, więc Centrum go nie wpisało.
+UnreadableSubject
   Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie ma roku, więc Centrum go nie wpisało.
+UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie ma postaci dzień, miesiąc, rok, więc Centrum go nie wpisało.
+UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale dzień, miesiąc i rok nie są rozdzielone kropką, podkreśleniem ani ukośnikiem, więc Centrum go nie wpisało.
+UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale rok w dacie nie ma dwóch ani czterech cyfr, więc Centrum go nie wpisało.
 UnreadableSubject
   Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie jest prawdziwym dniem, więc Centrum go nie wpisało.
 UnknownSender
@@ -9,9 +17,9 @@ UnknownSender
 MissingVerdict
   Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 nie ma „tak” ani „nie”, więc Centrum go nie wpisało.
 MissingVerdict
-  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma samą literę zamiast „tak” albo „nie”, więc Centrum go nie wpisało.
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma samą literę „t” albo „n” zamiast „tak” albo „nie”, więc Centrum go nie wpisało.
 MissingVerdict
-  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma inne słowo zamiast „tak” albo „nie”, więc Centrum go nie wpisało.
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma „skuteczne” albo „nieskuteczne” zamiast „tak” albo „nie”, więc Centrum go nie wpisało.
 UnknownNumber
   Numer 12345678 nie jest zleceniem jan.testowy z 08.11.2026.
 ForeignOrder
