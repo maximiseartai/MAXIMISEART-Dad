@@ -589,6 +589,9 @@ def _correction_order(column: ReportColumn, current: str | None) -> RegisterOrde
         pytest.param("earlier", None, None, False, True, False, id="reczna-rowna-wczesniejszemu-wpisowi-bez-pamieci"),
         pytest.param("manual", None, None, False, True, False, id="reczna-wartosc-zostaje-z-roznica"),
         pytest.param("manual", "earlier", None, False, True, False, id="wlasny-wpis-zmieniony-recznie-zostaje-z-roznica"),
+        pytest.param(
+            "earlier-upper", "earlier", None, False, True, False, id="wlasny-wpis-zmieniony-recznie-tylko-wielkoscia-liter-zostaje-z-roznica"
+        ),
         pytest.param("manual", None, "corrected", False, False, False, id="zostaw-moja-przy-tej-tresci-bez-roznicy"),
         pytest.param("manual", None, "earlier", False, True, False, id="zostaw-moja-przy-innej-tresci-z-roznica"),
     ],
@@ -604,12 +607,14 @@ def test_regula_komorki_dla_kazdej_kolumny_osobno(
 ) -> None:
     """Reguła komórki z projektu #1227 (§2.1): pusta dostaje Wpis, równa Wpisowi zostaje, własny nietknięty wpis
     dostaje poprawkę, a inna wartość zostaje z różnicą dla taty, chyba że tata kliknął „Zostaw moją” przy tej treści
-    Wpisu. Ręczna wartość równa Wpisowi do pamięci nie trafia (GLOSSARY „Wpisanie raportów”, US 33–36, 38–39)."""
+    Wpisu. Własny wpis zmieniony przez tatę choćby wielkością liter jest już ręczny. Ręczna wartość równa Wpisowi do
+    pamięci nie trafia (GLOSSARY „Wpisanie raportów”, US 33–36, 38–39)."""
 
     values = {
         "corrected": CORRECTED[column],
         "corrected-upper": CORRECTED[column].upper(),
         "earlier": EARLIER[column],
+        "earlier-upper": EARLIER[column].upper(),
         "manual": MANUAL[column],
     }
     cell = None if current is None else values[current]
@@ -741,6 +746,13 @@ def _no_year(arrived: datetime = EVENING, text: str = TEXT) -> UnreadableSubject
             None,
             id="zlecenie-innego-wykonawcy-raport-jeszcze-raz",
         ),
+        pytest.param(
+            _mail(JAN, SUBJECT, "40000001 tak wymiana routera 40000003 tak montaż"),
+            _mail(JAN, "Raport 09.11.2026", "40000003 tak montaż", LATER),
+            (),
+            OtherDay(JAN_LOGIN, DAY, OrderNumber("40000003"), (NEXT_DAY,)),
+            id="inna-data-raport-z-dniem-zlecenia",
+        ),
         pytest.param(_mail(JAN, SUBJECT, TYPO), None, (period_of(DAY).token,), JAN_TYPO, id="okres-dostal-plik-zbiorczy"),
     ],
 )
@@ -749,10 +761,11 @@ def test_problem_z_bledu_wykonawcy_znika_w_nastepnym_kliknieciu_po_poprawionym_m
 ) -> None:
     """US 40: wynik rdzenia jest liczony od nowa z maili, a stary mail z błędem zostaje w skrzynce. Poprawionym mailem
     jest późniejszy Raport wykonawcy tego Wykonawcy, który powtarza każdy Wpis starego maila do zleceń Wykonawcy z dnia
-    poprawki, więc znika problem starego maila; okres z Plikiem zbiorczym jest zamknięty. Numer zlecenia Ewy od Jana
-    (``problem`` ``None``) to do #1229 ``UnknownNumber``, a od niego ``ForeignOrder``: znika tak samo."""
+    poprawki, więc znika problem starego maila; okres z Plikiem zbiorczym jest zamknięty. Przy innej dacie dniem
+    poprawki jest dzień zlecenia. Numer zlecenia Ewy od Jana (``problem`` ``None``) to do #1229 ``UnknownNumber``, a od
+    niego ``ForeignOrder``: znika tak samo."""
 
-    first = enter_reports(_inputs([wrong], JAN_ORDERS))
+    first = enter_reports(_inputs([wrong], JAN_ORDERS, today=NEXT_DAY, rollout=DAY))
     second = enter_reports(
         _inputs([wrong] if fixed is None else [wrong, fixed], JAN_ORDERS, today=NEXT_DAY, rollout=DAY, closed=closed)
     )
@@ -779,6 +792,12 @@ def test_problem_z_bledu_wykonawcy_znika_w_nastepnym_kliknieciu_po_poprawionym_m
         ),
         pytest.param(
             _mail(JAN, SUBJECT, TYPO), _mail(JAN, SUBJECT, TYPO, LATER), JAN_TYPO, id="raport-jeszcze-raz-z-tym-samym-bledem"
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, f"{RESENT} 40000092 tak"),
+            _mail(JAN, SUBJECT, "40000001 nie", LATER),
+            JAN_TYPO,
+            id="poprawka-jednego-z-dwoch-wpisow-do-zlecen-wykonawcy",
         ),
         pytest.param(
             _mail(JAN, SUBJECT, TYPO),

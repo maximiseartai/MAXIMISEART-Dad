@@ -30,10 +30,11 @@ def standing(
     """Problemy, które dalej stoją po poprawionych mailach (US 40).
 
     Stary mail zostaje w skrzynce, więc rdzeń liczy jego problemy przy każdym kliknięciu. Poprawionym mailem jest
-    późniejszy Raport wykonawcy tego samego Wykonawcy, który powtarza każdy Wpis wcześniejszego maila do zleceń tego
-    Wykonawcy z dnia poprawki, a takich Wpisów jest co najmniej jeden: wtedy wiadomo, że to ten sam raport wysłany
-    jeszcze raz, a nie kolejny raport z innymi zleceniami, w którym nieznany numer może być zleceniem, którego brak w
-    INTERMAX. Poprawiony mail usuwa nieznany numer i cudze zlecenie z dnia z tematu, inną datę z dniem zlecenia (dzień
+    późniejszy Raport wykonawcy tego samego Wykonawcy z dnia poprawki, który ma numer każdego Wpisu wcześniejszego
+    maila do zleceń tego Wykonawcy z tego dnia, a takich Wpisów jest co najmniej jeden. Reguła porównuje tylko numery:
+    nie sprawdza ``tak``/``nie`` ani opisu i nie wymaga, żeby poprawiony mail powtórzył resztę wcześniejszego. Kolejny
+    raport bez tych numerów problemu nie usuwa, bo nieznany numer może być zleceniem, którego brak w INTERMAX.
+    Poprawiony mail usuwa nieznany numer i cudze zlecenie z dnia z tematu, inną datę z dniem zlecenia (dzień
     poprawki to dzień zlecenia) i nieczytelny temat (``unreadable``: numery Wpisów nieczytelnego maila). Brak
     ``tak``/``nie`` daje już najpóźniejszy Wpis numeru, a numer dwa razy w dniu to stan INTERMAX, więc stoją, jak
     nieznany nadawca i różnica z ręczną wartością.
