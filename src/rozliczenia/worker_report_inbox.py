@@ -95,10 +95,12 @@ InboxOutcome = Mails | PasswordRejected | InboxUnreachable
 
 @dataclass(frozen=True)
 class InboxSurvey:
-    """Stan skrzynki z dni od dnia przed wskazanym, bez treści maili. ``flags`` to flagi IMAP każdego maila folderu,
-    który czyta ``mails_since``, po UID; ``in_folder`` i ``in_inbox`` to liczby maili ze słowem ``SUBJECT_WORD`` w temacie w tym folderze i w ``INBOX`` (te
+    """Stan skrzynki z dni od dnia przed wskazanym, bez treści maili. ``searched`` to liczba maili, które w folderze
+    czytanym przez ``mails_since`` dało wyszukiwanie tych dni, a ``flags`` to flagi IMAP każdego z nich po UID;
+    ``in_folder`` i ``in_inbox`` to liczby maili ze słowem ``SUBJECT_WORD`` w temacie w tym folderze i w ``INBOX`` (te
     same, gdy port czyta ``INBOX``)."""
 
+    searched: int
     flags: Mapping[str, frozenset[str]]
     in_folder: int
     in_inbox: int
@@ -238,9 +240,9 @@ def _survey(imap: imaplib.IMAP4, access: _Access, day: date) -> InboxSurvey:
     flags = _flags(imap, uids)
     in_folder = len(_with_subject_word(imap, uids))
     if folder == "INBOX":
-        return InboxSurvey(flags, in_folder, in_folder)
+        return InboxSurvey(len(uids), flags, in_folder, in_folder)
     _ok(imap.select(_quoted("INBOX"), readonly=True))
-    return InboxSurvey(flags, in_folder, len(_with_subject_word(imap, _since(imap, day))))
+    return InboxSurvey(len(uids), flags, in_folder, len(_with_subject_word(imap, _since(imap, day))))
 
 
 def _since(imap: imaplib.IMAP4, day: date) -> list[str]:
@@ -258,19 +260,23 @@ def _with_subject_word(imap: imaplib.IMAP4, uids: list[str]) -> list[str]:
 
 
 def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
-    """UID → flagi dla ``uids`` w paczkach po ``FETCH_BATCH``; odpowiedź bez UID albo flag to
+    """UID → flagi każdego z ``uids`` w paczkach po ``FETCH_BATCH``. Odpowiedź paczki, która nie ma flag dla któregoś
+    jej UID (także ``OK`` bez żadnej linii ``FETCH``), ma linię bez UID albo flag albo flagi UID spoza paczki, to
     ``UnexpectedReply``."""
 
     flags = {}
     for start in range(0, len(uids), FETCH_BATCH):
-        for line in _ok(imap.uid("FETCH", ",".join(uids[start : start + FETCH_BATCH]), "(UID FLAGS)")):
-            if line is None:
-                continue
+        batch = uids[start : start + FETCH_BATCH]
+        lines = [line for line in _ok(imap.uid("FETCH", ",".join(batch), "(UID FLAGS)")) if line is not None]
+        found = {}
+        for line in lines:
             uid = _UID.search(line) if isinstance(line, bytes) else None
-            found = _FLAGS.search(line) if isinstance(line, bytes) else None
-            if uid is None or found is None:
-                raise UnexpectedReply
-            flags[uid[1].decode("ascii")] = frozenset(found["flags"].decode("latin-1").split())
+            line_flags = _FLAGS.search(line) if isinstance(line, bytes) else None
+            if uid is not None and line_flags is not None:
+                found[uid[1].decode("ascii")] = frozenset(line_flags["flags"].decode("latin-1").split())
+        if len(found) != len(lines) or found.keys() != set(batch):
+            raise UnexpectedReply
+        flags.update(found)
     return flags
 
 

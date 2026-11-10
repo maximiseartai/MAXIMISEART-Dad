@@ -69,7 +69,10 @@ class AtrapaImap:
     Skrzynka ma ``INBOX`` i, gdy ``all_folder``, folder ``\\All`` z nazwą w modified UTF-7 i spacją: ``\\All`` pokazuje
     każdy mail, a ``INBOX`` maile z ``in_inbox`` (bez ``all_folder`` każdy). ``flags`` to bieżące flagi maili po UID, które
     oddaje ``UID FETCH … FLAGS``; ``marks_seen`` dopisuje ``\\Seen`` mailowi, którego treść klient pobrał, nawet przez
-    ``BODY.PEEK[]``, jak serwer, który nie dotrzymuje RFC 3501. ``cut="greeting"`` zrywa każde połączenie przed
+    ``BODY.PEEK[]``, jak serwer, który nie dotrzymuje RFC 3501, a ``deletes_read`` taki mail usuwa ze skrzynki dla
+    następnych sesji, jak filtr, który przenosi przeczytane maile. ``flags_reply="without_fetch"`` odpowiada na
+    ``UID FETCH … FLAGS`` samym ``OK`` bez linii ``FETCH``, a ``flags_reply="unsolicited"`` dokłada do linii z flagami
+    linię ``FETCH`` z flagami bez UID, jak serwer, który ogłasza flagę zmienioną w innej sesji. ``cut="greeting"`` zrywa każde połączenie przed
     powitaniem, jak sieć, która zgubiła Gmaila, a
     ``cut="after_login"`` po udanym ``LOGIN`` czyta polecenia, ale odpowiada już tylko na ``CAPABILITY``, o które
     ``imaplib`` 3.14 pyta sam po ``LOGIN``, jak Gmail, który zamilkł w trakcie sesji: klient z limitem czasu dostaje
@@ -87,6 +90,8 @@ class AtrapaImap:
         cut: Literal["greeting", "after_login"] | None = None,
         refuse: Literal["login", "examine"] | None = None,
         marks_seen: bool = False,
+        deletes_read: bool = False,
+        flags_reply: Literal["without_fetch", "unsolicited"] | None = None,
     ) -> None:
         self.address = address
         self.password = password
@@ -95,6 +100,9 @@ class AtrapaImap:
         self.cut = cut
         self.refuse = refuse
         self.marks_seen = marks_seen
+        self.deletes_read = deletes_read
+        self.flags_reply = flags_reply
+        self.deleted: set[int] = set()
         self.flags: dict[int, set[str]] = {mail.uid: set(mail.flags) for mail in self.mails}
         self.commands: list[str] = []
         self._server = _Server(self)
@@ -168,7 +176,11 @@ class _Session(socketserver.StreamRequestHandler):
         elif command == "EXAMINE":
             known = atrapa.refuse != "examine" and _strings(arguments) in (["INBOX"], *([[_ALL]] if atrapa.all_folder else []))
             if known:
-                self._mails = tuple(mail for mail in atrapa.mails if _strings(arguments) == [_ALL] or mail.in_inbox or not atrapa.all_folder)
+                self._mails = tuple(
+                    mail
+                    for mail in atrapa.mails
+                    if mail.uid not in atrapa.deleted and (_strings(arguments) == [_ALL] or mail.in_inbox or not atrapa.all_folder)
+                )
             exists = f"* {len(self._mails)} EXISTS".encode()
             self._send(*((exists, f"{tag} OK [READ-ONLY] EXAMINE gotowe".encode()) if known else (f"{tag} NO brak folderu".encode(),)))
         elif command == "UID SEARCH":
@@ -189,16 +201,22 @@ class _Session(socketserver.StreamRequestHandler):
         return True
 
     def _fetch(self, number: int, mail: AtrapaMail, items: str) -> None:
-        flags = self.server.atrapa.flags[mail.uid]
+        atrapa = self.server.atrapa
+        flags = atrapa.flags[mail.uid]
         if items == "(UID FLAGS)":
-            self._send(f"* {number} FETCH (UID {mail.uid} FLAGS ({' '.join(sorted(flags))}))".encode())
+            if atrapa.flags_reply != "without_fetch":
+                self._send(f"* {number} FETCH (UID {mail.uid} FLAGS ({' '.join(sorted(flags))}))".encode())
+            if atrapa.flags_reply == "unsolicited":
+                self._send(f"* {number} FETCH (FLAGS ({' '.join(sorted(flags))}))".encode())
             return
         if _HEADER_ITEM in items:
             name, literal = "BODY[HEADER.FIELDS (SUBJECT)]", _subject_header(mail.raw)
         else:
             name, literal = "BODY[]", mail.raw
-            if self.server.atrapa.marks_seen:
+            if atrapa.marks_seen:
                 flags.add("\\Seen")
+            if atrapa.deletes_read:
+                atrapa.deleted.add(mail.uid)
         moment = mail.arrived
         internal = f"{moment.day:02d}-{_MONTHS[moment.month - 1]}-{moment.year} {moment:%H:%M:%S %z}"
         head = f'* {number} FETCH (UID {mail.uid} INTERNALDATE "{internal}" {name} {{{len(literal)}}}\r\n'

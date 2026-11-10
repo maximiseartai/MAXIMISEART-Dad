@@ -12,7 +12,9 @@ Po kolei:
 3. czyta Raporty wykonawców od ``--od`` portem (``mails_since``) i przepuszcza je przez rdzeń raportów
    (``enter_reports``) bez zleceń INTERMAX, więc każdy Wpis raportu z rozpoznanego Raportu to problem nieznanego numeru;
 4. czyta flagi jeszcze raz i porównuje je z pierwszym odczytem: mail, którego flagi są inne albo którego nie ma w
-   drugim odczycie, to mail ze zmienionymi flagami.
+   drugim odczycie, to mail ze zmienionymi flagami. Port oddaje flagi każdego wyszukanego maila albo błąd
+   ``UnexpectedReply``, a próba sprawdza jeszcze, że w każdym odczycie liczba maili z flagami równa się liczbie
+   wyszukanych.
 
 Skrzynki nie zmienia: port otwiera folder przez ``EXAMINE`` i pobiera tematy, treści i flagi przez ``BODY.PEEK`` i
 ``FETCH (FLAGS)``, bez ``SELECT`` i ``STORE``.
@@ -33,9 +35,15 @@ rozebrać, ``raporty`` maile z tematem ``Raport dd.mm.rrrr`` z dniem od ``--od``
 albo literą ``Ã``, ``Ä``, ``Å``, ``Ă``, ``Ĺ``, którą daje polska litera z UTF-8 przeczytana w zestawie jednobajtowym.
 ``PROBLEMY`` liczy problemy rdzenia według rodzaju (nazwa typu z ``rozliczenia.worker_reports``).
 
-Ostatnia linia to ``PROBA IMAP OK | …`` (kod 0) albo ``PROBA IMAP FAIL | <powód>`` (kod 1): brak albo zła treść pliku
-dostępu, pliku adresów albo Konfiguracji wykonawców, odrzucone hasło, skrzynka niedostępna (nazwa typu błędu), żaden
-mail z Raportem od ``--od``, zepsute znaki albo flagi, które zmieniły się między odczytami. Hasła nie ma
+Ostatnia linia to ``PROBA IMAP OK | …`` (kod 0) tylko wtedy, gdy rdzeń rozpoznał co najmniej jeden Raport wykonawcy od
+adresu z pliku adresów z Wpisem raportu z ``tak`` albo ``nie``, a inaczej ``PROBA IMAP FAIL | <powód>`` (kod 1): brak
+albo zła treść pliku dostępu, pliku adresów albo Konfiguracji wykonawców, odrzucone hasło, skrzynka niedostępna (nazwa
+typu błędu), brak rozpoznanego Raportu wykonawcy, zepsute znaki, flagi nieodczytane dla części wyszukanych maili albo
+flagi, które zmieniły się między odczytami. Powód ``brak rozpoznanego Raportu wykonawcy`` niesie liczby: maile ze
+słowem ``raport`` w temacie (``maile_z_raport``), Raporty od adresów spoza pliku adresów (``nieznani_nadawcy``), maile,
+których temat nie jest ``Raport dd.mm.rrrr`` z dniem od ``--od`` (``nierozpoznane_tematy``), Raporty od Wykonawców bez
+Wpisu (``raporty_bez_wpisow``) i Wpisy bez ``tak`` ani ``nie`` (``wpisy_bez_tak_nie``). Zepsute znaki daje też
+zagraniczne nazwisko z ``Å`` albo ``Ä`` w mailu ze słowem ``raport``: wtedy Maks sprawdza te maile ręcznie. Hasła nie ma
 w wyniku, wyjątkach ani żadnym pliku: zna je tylko port.
 
 Uruchomienie u taty, w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``), a ostatnią linię Maks wpisuje w
@@ -72,6 +80,7 @@ from rozliczenia.worker_report_inbox import (
 from rozliczenia.worker_reports import (
     OwnEntries,
     ReadReport,
+    ReadStranger,
     ReportInputs,
     ReportMail,
     ReportsOutcome,
@@ -124,6 +133,7 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date) -> list[str]
     )
     after = _survey(inbox, since, "drugim odczycie flag")
     changed = sum(1 for uid, flags in before.flags.items() if after.flags.get(uid) != flags)
+    unread = sum(1 for survey in (before, after) if len(survey.flags) != survey.searched)
 
     lines = [
         f"SKRZYNKA | folder_wszystkich={before.in_folder} | odebrane={before.in_inbox}"
@@ -133,12 +143,38 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date) -> list[str]
         f"FLAGI | sprawdzone={len(before.flags)} | zmienione={changed}",
     ]
     reasons = [
-        *([f"zaden mail z Raportem od {since.isoformat()}, podaj wczesniejsze --od"] if not mails else []),
+        *([] if _recognised(outcome) else [_no_report(mails, outcome, since)]),
         *([f"zepsute polskie znaki w {broken} mailach"] if (broken := _count(mails, _BROKEN)) else []),
+        *([f"flagi nie kazdego wyszukanego maila w {unread} z 2 odczytow"] if unread else []),
         *([f"flagi zmienione w {changed} mailach"] if changed else []),
     ]
     last = f"{FAIL} | {'; '.join(reasons)}" if reasons else f"{OK} | maile={len(mails)} | flagi bez zmian"
     return [*lines, last]
+
+
+def _recognised(outcome: ReportsOutcome) -> bool:
+    """Rdzeń rozpoznał Raport wykonawcy od adresu z pliku adresów z Wpisem raportu, który ma ``tak`` albo ``nie``."""
+
+    return any(entry.verdict is not None for report in _reports(outcome) for entry in report.entries)
+
+
+def _no_report(mails: Sequence[ReportMail], outcome: ReportsOutcome, since: date) -> str:
+    strangers = len(_strangers(outcome))
+    reports = _reports(outcome)
+    return (
+        f"brak rozpoznanego Raportu wykonawcy od {since.isoformat()} (maile_z_raport={len(mails)}"
+        f", nieznani_nadawcy={strangers}, nierozpoznane_tematy={len(mails) - len(reports) - strangers}"
+        f", raporty_bez_wpisow={sum(1 for report in reports if not report.entries)}"
+        f", wpisy_bez_tak_nie={sum(1 for report in reports for entry in report.entries if entry.verdict is None)})"
+    )
+
+
+def _reports(outcome: ReportsOutcome) -> list[ReadReport]:
+    return [read for read in outcome.mails if isinstance(read, ReadReport)]
+
+
+def _strangers(outcome: ReportsOutcome) -> list[ReadStranger]:
+    return [read for read in outcome.mails if isinstance(read, ReadStranger)]
 
 
 def _survey(inbox: ImapInbox, since: date, when: str) -> InboxSurvey:
@@ -167,10 +203,9 @@ def _count(mails: Sequence[ReportMail], pattern: re.Pattern[str]) -> int:
 
 
 def _mail_line(mails: Sequence[ReportMail], skipped: int, outcome: ReportsOutcome) -> str:
-    reports = [read for read in outcome.mails if isinstance(read, ReadReport)]
     return (
-        f"MAILE | przeczytane={len(mails)} | pominiete={skipped} | raporty={len(outcome.mails)}"
-        f" | wpisy={sum(len(report.entries) for report in reports)}"
+        f"MAILE | przeczytane={len(mails)} | pominiete={skipped} | raporty={len(_reports(outcome)) + len(_strangers(outcome))}"
+        f" | wpisy={sum(len(report.entries) for report in _reports(outcome))}"
         f" | polskie_znaki={_count(mails, _POLISH)} | zepsute_znaki={_count(mails, _BROKEN)}"
     )
 

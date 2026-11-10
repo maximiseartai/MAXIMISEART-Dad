@@ -13,6 +13,7 @@ from email.message import EmailMessage
 import email.policy
 import imaplib
 from pathlib import Path
+from typing import Any, Literal
 
 import pytest
 import proba_skrzynki_raportow
@@ -39,6 +40,7 @@ TRESCI = [
     "Raport 08.11.2026",
     "Raport 09.11.2026",
     "Raport bez daty",
+    "Re: Raport",
     "Faktura",
     "40000001",
     "40000003",
@@ -71,13 +73,13 @@ def mail(
 
 def skrzynka_z_raportami() -> list[AtrapaMail]:
     """Siedem maili z dni okna: dwa Raporty Wykonawcy z Wpisem (jeden tylko w folderze wszystkich maili) i jeden bez
-    Wpisu, Raport obcego nadawcy, mail bez dnia w temacie, mail ze słowem ``raport`` bez nadawcy i faktura bez tego
+    Wpisu, Raport obcego nadawcy, odpowiedź na Raport, mail ze słowem ``raport`` bez nadawcy i faktura bez tego
     słowa."""
 
     return [
         mail(1, temat="Raport 08.11.2026", flagi=("\\Seen",)),
         mail(2, temat="Raport 09.11.2026", tresc="40000003 tak", od=f"<{OBCY}>"),
-        mail(3, temat="Raport bez daty", tresc="40000001 tak"),
+        mail(3, temat="Re: Raport 08.11.2026", tresc="40000001 tak"),
         mail(4, temat="Faktura", tresc="do zapłaty", flagi=("\\Seen", "$Etykieta")),
         mail(5, temat="Raport 09.11.2026", tresc="40000004 nie klient odmówił", charset="iso-8859-2", w_odebranych=False),
         mail(6, temat="Raport 09.11.2026", od=None),
@@ -143,25 +145,133 @@ def test_proba_zglasza_flage_zmieniona_miedzy_odczytami(tmp_path: Path, capsys: 
     assert code == 1
 
 
-def test_proba_bez_maili_z_raportem_nie_przechodzi(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(4, temat="Faktura")]) as atrapa:
+def test_proba_liczy_mail_znikniety_przed_drugim_odczytem_jako_zmieniony(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    maile = [mail(1, temat="Raport 08.11.2026"), mail(4, temat="Faktura", tresc="do zapłaty")]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=maile, deletes_read=True) as atrapa:
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
-    assert lines[-1] == "PROBA IMAP FAIL | zaden mail z Raportem od 2026-11-01, podaj wczesniejsze --od"
+    assert atrapa.deleted == {1}
+    assert lines[-2:] == [
+        "FLAGI | sprawdzone=2 | zmienione=1",
+        "PROBA IMAP FAIL | flagi zmienione w 1 mailach",
+    ]
     assert code == 1
 
 
-def test_proba_zglasza_polskie_litery_zepsute_przez_zly_zestaw_znakow(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("odpowiedz", ["without_fetch", "unsolicited"])
+def test_proba_nie_przechodzi_gdy_serwer_nie_oddal_samych_flag_kazdego_wyszukanego_maila(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], odpowiedz: Literal["without_fetch", "unsolicited"]
 ) -> None:
-    utf8 = mail(1, temat="Raport 08.11.2026", tresc="40000001 tak usunięto awarię")
-    # Nadawca zapisał treść w UTF-8, a w nagłówku podał ISO-8859-2: „ę” to wtedy „Ä™”.
-    raw = utf8.raw.replace(b"charset=\"utf-8\"", b"charset=\"iso-8859-2\"")
-    assert raw != utf8.raw
-    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[AtrapaMail(1, utf8.arrived, raw)]) as atrapa:
+    with AtrapaImap(
+        address=SKRZYNKA, password=HASLO, mails=skrzynka_z_raportami(), marks_seen=True, flags_reply=odpowiedz
+    ) as atrapa:
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
-    assert lines[1].endswith("| polskie_znaki=0 | zepsute_znaki=1")
+    assert (code, lines) == (1, ["PROBA IMAP FAIL | skrzynka niedostepna przy pierwszym odczycie flag: UnexpectedReply"])
+
+
+class WyszukiwanieZPowtorzonymUid(imaplib.IMAP4):
+    """Serwer, który w wyniku ``UID SEARCH`` podaje pierwszy UID dwa razy: flagi ma wtedy mniej maili, niż wyszukano."""
+
+    def uid(self, command: str, *args: str) -> tuple[str, list[Any]]:
+        status, data = super().uid(command, *args)
+        if command == "SEARCH" and data and isinstance(data[0], bytes) and data[0]:
+            data = [data[0] + b" " + data[0].split()[0]]
+        return status, data
+
+
+def test_proba_nie_przechodzi_gdy_flagi_ma_mniej_maili_niz_wyszukano(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(1, temat="Raport 08.11.2026")]) as atrapa:
+        code, lines = proba(capsys, config(tmp_path), lambda: WyszukiwanieZPowtorzonymUid("127.0.0.1", atrapa.port))
+
+    assert lines[-2:] == [
+        "FLAGI | sprawdzone=1 | zmienione=0",
+        "PROBA IMAP FAIL | flagi nie kazdego wyszukanego maila w 2 z 2 odczytow",
+    ]
+    assert code == 1
+
+
+@pytest.mark.parametrize(
+    ("maile", "liczby"),
+    [
+        pytest.param(
+            [mail(4, temat="Faktura")],
+            "maile_z_raport=0, nieznani_nadawcy=0, nierozpoznane_tematy=0, raporty_bez_wpisow=0, wpisy_bez_tak_nie=0",
+            id="bez-maila-ze-slowem-raport",
+        ),
+        pytest.param(
+            [mail(3, temat="Raport bez daty")],
+            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=1, raporty_bez_wpisow=0, wpisy_bez_tak_nie=0",
+            id="temat-bez-dnia-od-wykonawcy",
+        ),
+        pytest.param(
+            [mail(2, temat="Raport 09.11.2026", tresc="40000003 tak", od=f"<{OBCY}>")],
+            "maile_z_raport=1, nieznani_nadawcy=1, nierozpoznane_tematy=0, raporty_bez_wpisow=0, wpisy_bez_tak_nie=0",
+            id="adres-spoza-pliku-adresow",
+        ),
+        pytest.param(
+            [mail(7, temat="Raport 09.11.2026", tresc="dzień bez zleceń")],
+            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=0, raporty_bez_wpisow=1, wpisy_bez_tak_nie=0",
+            id="raport-wykonawcy-bez-wpisu",
+        ),
+    ],
+)
+def test_proba_bez_rozpoznanego_raportu_wykonawcy_nie_przechodzi_i_mowi_dlaczego_liczbami(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], maile: list[AtrapaMail], liczby: str
+) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=maile) as atrapa:
+        code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
+
+    assert lines[-1] == f"PROBA IMAP FAIL | brak rozpoznanego Raportu wykonawcy od 2026-11-01 ({liczby})"
+    assert code == 1
+
+
+def test_proba_z_raportem_wykonawcy_bez_tak_ani_nie_nie_przechodzi(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Sama litera ``t`` to według gramatyki rdzenia Raport bez Wpisu albo Wpis bez ``tak``/``nie`` (#1228): żadne nie
+    # dowodzi, że rdzeń przeczyta ``SKUTECZNE`` z maili Wykonawców, więc liczby w nawiasie test zostawia rdzeniowi.
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(1, temat="Raport 08.11.2026", tresc="40000001 t wymiana")]) as atrapa:
+        code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
+
+    assert lines[-1].startswith("PROBA IMAP FAIL | brak rozpoznanego Raportu wykonawcy od 2026-11-01 (maile_z_raport=1,")
+    assert code == 1
+
+
+def test_proba_z_jednym_raportem_wykonawcy_z_wpisem_przechodzi(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(1, temat="Raport 08.11.2026")]) as atrapa:
+        code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
+
+    assert (code, lines[-1]) == (0, "PROBA IMAP OK | maile=1 | flagi bez zmian")
+
+
+@pytest.mark.parametrize(
+    ("tresc", "zapisany", "podany", "znak"),
+    [
+        pytest.param("usunięto awarię", "utf-8", "iso-8859-2", "Ä", id="utf-8-jako-iso-8859-2-Ä"),
+        pytest.param("próba", "utf-8", "iso-8859-2", "Ă", id="utf-8-jako-iso-8859-2-Ă"),
+        pytest.param("wyświetlacz", "utf-8", "cp1250", "Ĺ", id="utf-8-jako-cp1250-Ĺ"),
+        pytest.param("próba", "utf-8", "iso-8859-1", "Ã", id="utf-8-jako-latin-1-Ã"),
+        pytest.param("wyświetlacz", "utf-8", "iso-8859-1", "Å", id="utf-8-jako-latin-1-Å"),
+        pytest.param("wymiana złącza", "iso-8859-2", "utf-8", "\ufffd", id="iso-8859-2-jako-utf-8-znak-zastepczy"),
+    ],
+)
+def test_proba_zglasza_polskie_litery_zepsute_przez_zly_zestaw_znakow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], tresc: str, zapisany: str, podany: str, znak: str
+) -> None:
+    # Nadawca zapisał treść w jednym zestawie znaków, a w nagłówku podał inny: polska litera to wtedy ``znak``.
+    assert tresc.encode(zapisany).decode(podany, errors="replace").count(znak) >= 1
+    zapisany_mail = mail(1, temat="Raport 08.11.2026", tresc=f"40000001 tak {tresc}", charset=zapisany)
+    raw = zapisany_mail.raw.replace(f'charset="{zapisany}"'.encode(), f'charset="{podany}"'.encode())
+    assert raw != zapisany_mail.raw
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[AtrapaMail(1, zapisany_mail.arrived, raw)]) as atrapa:
+        code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
+
+    assert lines[1].endswith("| zepsute_znaki=1")
     assert lines[-1] == "PROBA IMAP FAIL | zepsute polskie znaki w 1 mailach"
     assert code == 1
 
