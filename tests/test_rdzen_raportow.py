@@ -508,9 +508,6 @@ def test_okresy_do_sprawdzenia_pliku_zbiorczego_to_okresy_od_dnia_wdrozenia_do_d
             date(2026, 10, 30), (OCTOBER_PERIOD, NOVEMBER_PERIOD), TUESDAY, id="od-dzis-gdy-poprzednie-zamkniete"
         ),
         pytest.param(date(2026, 11, 5), (OCTOBER_PERIOD,), date(2026, 11, 5), id="nie-przed-dniem-wdrozenia"),
-        pytest.param(
-            date(2026, 10, 30), (OCTOBER_PERIOD, NOVEMBER_PERIOD, TODAY_PERIOD), TUESDAY, id="wszystkie-zamkniete"
-        ),
     ],
 )
 def test_pierwszy_dzien_okna_to_pierwszy_dzien_otwarty_od_dnia_wdrozenia(
@@ -520,6 +517,14 @@ def test_pierwszy_dzien_okna_to_pierwszy_dzien_otwarty_od_dnia_wdrozenia(
     zmienią, więc ich nie czyta."""
 
     assert Window.of(TUESDAY, rollout, closed).first == first
+
+
+def test_okno_bez_dnia_otwartego_czyta_tylko_dzis() -> None:
+    """Okres dziś też ma Plik zbiorczy: żaden dzień nie jest otwarty, więc skrzynka i INTERMAX tylko od dziś."""
+
+    thursday = date(2026, 11, 12)
+
+    assert Window.of(thursday, date(2026, 10, 30), (OCTOBER_PERIOD, NOVEMBER_PERIOD, TODAY_PERIOD)).first == thursday
 
 
 def test_pamiec_zostawia_dawny_wpis_tylko_gdy_komorka_zlecenia_ma_dalej_wpisana_wartosc() -> None:
