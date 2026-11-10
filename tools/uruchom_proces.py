@@ -10,8 +10,8 @@ Użycie (z katalogu repozytorium):
         [--dry-run] [--config PLIK] [--internal-template PLIK] [--collective-template PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py intermax --register REJESTR [--copies FOLDER] [--metrics PLIK]
     python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--z-przekazaniem] [--metrics PLIK]
-    python tools/uruchom_proces.py report_entering --register REJESTR --maile FOLDER [--config PLIK]
-        [--adresy-wykonawcow PLIK] [--metrics PLIK]
+    python tools/uruchom_proces.py report_entering --register REJESTR --periods-directory FOLDER --maile FOLDER
+        [--config PLIK] [--adresy-wykonawcow PLIK] [--metrics PLIK]
 
 ``settlement`` to Przebieg rozliczeń, ``preparation`` Przygotowanie pliku
 zbiorczego, ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
@@ -21,7 +21,8 @@ uzupełnia w nim wyceny zleceń (data wykonania, Wycena Emmetta, pola „Ilość
 bez tempa ludzkiego, bo to zawsze adres Atrapy efenix, nigdy efenix.pl (ADR 0024). Bez ``--z-przekazaniem`` biegnie w
 trybie bez Przekazania (gotowe zlecenia dostają Znacznik efenix), a z nim gotowe zlecenia przekazuje do akceptacji
 (ADR 0027). ``report_entering`` to Wpisanie raportów (ADR 0028): maile czyta z plików ``.eml`` folderu ``--maile``,
-nigdy z Gmaila, a pamięć własnych wpisów ma tylko na czas Uruchomienia, więc okno dni zaczyna się dziś.
+nigdy z Gmaila, a pamięć własnych wpisów ma tylko na czas Uruchomienia, więc okno dni zaczyna się dziś, o ile okres
+dzisiejszego dnia nie ma Pliku zbiorczego w folderze ``--periods-directory``.
 Uporządkowanie nie ma okresu ani
 podglądu bez zapisu: zawsze
 zapisuje, a Kopia INTERMAX trafia do ``--copies`` (bez parametru folder Kopii

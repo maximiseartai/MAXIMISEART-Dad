@@ -707,7 +707,8 @@ przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz ze Śladem
 przesunięcia tylko z komórkami dozwolonymi przesunięty i nie oraz datą z
 godziną spod `DATA GODZ. POCZ.`, a nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
 których Planowanie liczy wiersz dnia. Wpisanie raportów ma w niej uporządkowane
-wiersze z dni od dnia wdrożenia, które przeczytało, w kolumnach od A do
+wiersze z dni od pierwszego dnia otwartego (od dnia wdrożenia, bez okresów z
+Plikiem zbiorczym przed nim), które przeczytało, w kolumnach od A do
 `UWAGI`, a Wpisy raportu, bez adresów, tematów i reszty treści maili, ma w
 swoim polu Logów, bo Kopia wejścia obejmuje tylko skoroszyty. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i

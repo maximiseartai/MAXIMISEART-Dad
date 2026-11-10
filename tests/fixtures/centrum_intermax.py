@@ -222,6 +222,7 @@ class EnteringCentrum:
     engines: Engines
     disk: FaultyDisk
     moment: list[datetime]
+    periods_directory: Path
 
     @property
     def tool(self) -> ToolDirectory:
@@ -259,15 +260,18 @@ def entering_centrum(
     access: InboxAccess = "ready",
     addresses: Mapping[str, Sequence[str]] | None = None,
     inbox: WorkerReportInbox | None = None,
+    periods: bool = True,
 ) -> EnteringCentrum:
     """Centrum po wskazaniu INTERMAX ``intermax`` z Wykonawcami ``WORKERS`` i adresami ``SENDERS`` (``addresses``: inna
     treść pliku adresów); Skrzynka raportów to ``inbox``, a bez niej atrapa, która oddaje ``mails`` i ma plik dostępu w
-    stanie ``access``. Chwila procesu to ostatni element ``EnteringCentrum.moment`` (na starcie ``ENTERING_NOW``), a
+    stanie ``access``. ``periods``: tata wskazał też pusty folder okresów ``EnteringCentrum.periods_directory``. Chwila procesu to ostatni element ``EnteringCentrum.moment`` (na starcie ``ENTERING_NOW``), a
     podmiana INTERMAX idzie przez ``EnteringCentrum.disk``."""
 
     register = tmp_path / "OneDrive" / REGISTER_NAME
     register.parent.mkdir(parents=True)
     layout = intermax.write(register)
+    periods_directory = tmp_path / "Okresy"
+    periods_directory.mkdir()
     tool = ToolDirectory(tmp_path)
     tool.config.mkdir(parents=True, exist_ok=True)
     tool.configuration.worker_config.write_text(
@@ -285,7 +289,7 @@ def entering_centrum(
     onedrive = surroundings.onedrive
     app = centrum_app(
         tool,
-        platform=FakePlatform(chosen_files=[register]),
+        platform=FakePlatform(chosen_files=[register], chosen_folders=[periods_directory]),
         today=ENTERING_NOW.date(),
         catalog=engines.catalog(),
         tool_freshness=surroundings.tool_freshness(),
@@ -302,4 +306,6 @@ def entering_centrum(
     client = CentrumClient(app)
     if chosen:
         assert client.post("/api/settings/register/choose").status_code == 200
-    return EnteringCentrum(client, register, layout, tmp_path, inbox, engines, disk, moment)
+    if periods:
+        assert client.post("/api/settings/periods-directory/choose").status_code == 200
+    return EnteringCentrum(client, register, layout, tmp_path, inbox, engines, disk, moment, periods_directory)

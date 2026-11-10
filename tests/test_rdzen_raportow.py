@@ -249,41 +249,105 @@ def test_tresc_bez_wpisu_raportu_nie_zmienia_komorek(text: str) -> None:
     assert outcome.mails == (ReadReport(mail.id, EVENING, Login("jan.testowy"), DAY, ()),)
 
 
-def test_numer_spoza_zlecen_wykonawcy_z_dnia_jest_problemem_bez_zmian() -> None:
-    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "12345678 tak wymiana routera")], [_order()]))
-
-    assert outcome.changes == ()
-    assert outcome.problems == (UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("12345678")),)
+JAN_LOGIN, EWA_LOGIN = Login("jan.testowy"), Login("ewa.probna")
 
 
 @pytest.mark.parametrize(
-    ("sender", "subject", "rollout", "problem"),
+    ("sender", "subject", "orders", "problem", "sentence"),
     [
         pytest.param(
             EWA,
             SUBJECT,
-            None,
-            UnknownNumber(Login("ewa.probna"), DAY, OrderNumber("40000001")),
-            id="numer-zlecenia-innego-wykonawcy-z-tego-dnia",
+            [_order()],
+            ForeignOrder(EWA_LOGIN, DAY, OrderNumber("40000001"), JAN_LOGIN),
+            "Zlecenie 40000001 z 08.11.2026 jest zleceniem jan.testowy, a Wpis przysłał ewa.probna, więc Centrum go nie "
+            "wpisało.",
+            id="numer-zlecenia-innego-wykonawcy-z-tego-dnia-z-oboma-wykonawcami",
         ),
         pytest.param(
             JAN,
             "Raport 07.11.2026",
-            date(2026, 11, 7),
-            UnknownNumber(Login("jan.testowy"), date(2026, 11, 7), OrderNumber("40000001")),
-            id="numer-zlecenia-wykonawcy-z-innego-dnia",
+            [_order()],
+            OtherDay(JAN_LOGIN, date(2026, 11, 7), OrderNumber("40000001"), (DAY,)),
+            "Zlecenie 40000001 od jan.testowy jest z 08.11.2026, a temat Raportu wykonawcy ma 07.11.2026, więc Centrum "
+            "go nie wpisało.",
+            id="numer-zlecenia-wykonawcy-z-innego-dnia-z-obiema-datami",
+        ),
+        pytest.param(
+            JAN,
+            SUBJECT,
+            [_order(day=date(2026, 11, 7)), _order(OrderRow("Zlecenia", 121), day=date(2026, 11, 5))],
+            OtherDay(JAN_LOGIN, DAY, OrderNumber("40000001"), (date(2026, 11, 5), date(2026, 11, 7))),
+            "Zlecenie 40000001 od jan.testowy jest z 05.11.2026, 07.11.2026, a temat Raportu wykonawcy ma 08.11.2026, "
+            "więc Centrum go nie wpisało.",
+            id="numer-zlecen-wykonawcy-z-dwoch-innych-dni",
+        ),
+        pytest.param(
+            JAN,
+            SUBJECT,
+            [_order(day=date(2026, 11, 7), worker="Ewa.Probna")],
+            UnknownNumber(JAN_LOGIN, DAY, OrderNumber("40000001")),
+            "Numer 40000001 nie jest zleceniem jan.testowy z 08.11.2026.",
+            id="numer-zlecenia-innego-wykonawcy-z-innego-dnia",
+        ),
+        pytest.param(
+            JAN,
+            SUBJECT,
+            [_order(number="12345678")],
+            UnknownNumber(JAN_LOGIN, DAY, OrderNumber("40000001")),
+            "Numer 40000001 nie jest zleceniem jan.testowy z 08.11.2026.",
+            id="numer-spoza-zlecen-wszystkich-wykonawcow",
         ),
     ],
 )
-def test_wpis_trafia_tylko_do_zlecenia_nadawcy_z_dnia_z_tematu(
-    sender: str, subject: str, rollout: date | None, problem: UnknownNumber
+def test_wpis_trafia_tylko_do_zlecenia_nadawcy_z_dnia_z_tematu_a_pomylka_ma_dokladny_powod(
+    sender: str, subject: str, orders: list[RegisterOrder], problem: ReportProblem, sentence: str
 ) -> None:
-    """Zlecenie ``40000001`` jest Jana z 08.11. Do #1229 cudze zlecenie i inny dzień to ``UnknownNumber``."""
+    """Spec #1224 US 27–30: cudzy numer z oboma Wykonawcami, inny dzień z obiema datami, numer spoza zleceń Wykonawcy z
+    dnia z dokładnym powodem; żadna komórka się nie zmienia."""
 
-    outcome = enter_reports(_inputs([_mail(sender, subject, TEXT)], [_order()], rollout=rollout))
+    outcome = enter_reports(_inputs([_mail(sender, subject, TEXT)], orders, rollout=date(2026, 11, 1)))
 
     assert outcome.changes == ()
     assert outcome.problems == (problem,)
+    assert reason(problem) == sentence
+
+
+def test_wlasne_zlecenie_z_innego_dnia_ma_pierwszenstwo_przed_cudzym_z_dnia_z_tematu() -> None:
+    """Wpis trafia tylko do zlecenia nadawcy, więc jego zlecenie z innego dnia jest bliżej zamiaru Wykonawcy niż zlecenie
+    innego Wykonawcy z dnia z tematu."""
+
+    orders = [_order(day=date(2026, 11, 7)), _order(OrderRow("Zlecenia", 121), worker="Ewa.Probna")]
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], orders, rollout=date(2026, 11, 1)))
+
+    assert outcome.problems == (OtherDay(JAN_LOGIN, DAY, OrderNumber("40000001"), (date(2026, 11, 7),)),)
+
+
+def test_numer_zlecen_dwoch_innych_wykonawcow_z_dnia_daje_problem_z_kazdym_z_nich() -> None:
+    adam = _order(OrderRow("Zlecenia", 121), worker="Adam.Inny")
+    orders = [_order(worker="Ewa.Probna"), adam]
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], orders))
+
+    assert outcome.changes == ()
+    assert outcome.problems == (
+        ForeignOrder(JAN_LOGIN, DAY, OrderNumber("40000001"), Login("adam.inny")),
+        ForeignOrder(JAN_LOGIN, DAY, OrderNumber("40000001"), EWA_LOGIN),
+    )
+
+
+def test_zlecenie_wykonawcy_z_dnia_zamknietego_nie_jest_innym_dniem_wpisu() -> None:
+    """Okres z Plikiem zbiorczym jest zamknięty (ADR 0028), więc jego zlecenie nie podpowiada innego dnia."""
+
+    closed = date(2026, 11, 2)
+    orders = [_order(day=closed), _order(OrderRow("Zlecenia", 121), day=date(2026, 11, 7))]
+
+    outcome = enter_reports(
+        _inputs([_mail(JAN, SUBJECT, TEXT)], orders, rollout=date(2026, 10, 30), closed=(period_of(closed).token,))
+    )
+
+    assert outcome.problems == (OtherDay(JAN_LOGIN, DAY, OrderNumber("40000001"), (date(2026, 11, 7),)),)
 
 
 def test_ten_sam_numer_dwa_razy_w_dniu_wykonawcy_nie_daje_zmian() -> None:
@@ -411,6 +475,70 @@ def test_raport_z_dnia_spoza_dni_otwartych_jest_pomijany_po_cichu(
     outcome = enter_reports(_inputs([mail], [_order(day=day)], rollout=rollout, closed=closed))
 
     assert outcome == ReportsOutcome((), (), (), (), OwnEntries.EMPTY)
+
+
+def test_raport_z_ostatniego_dnia_poprzedniego_okresu_wpisuje_sie_dopoki_okres_nie_ma_pliku_zbiorczego() -> None:
+    """US 12: Raport z poniedziałku 9.11, ostatniego dnia okresu ``03_09_11_2026``, przychodzi we wtorek 10.11, już w
+    nowym okresie."""
+
+    monday, tuesday = date(2026, 11, 9), date(2026, 11, 10)
+    mails = [_mail(JAN, "Raport 09.11.2026", TEXT, datetime(2026, 11, 10, 7, 40, tzinfo=TAPA))]
+    orders = [_order(day=monday)]
+
+    still_open = enter_reports(_inputs(mails, orders, today=tuesday, rollout=date(2026, 11, 4)))
+    closed = enter_reports(
+        _inputs(mails, orders, today=tuesday, rollout=date(2026, 11, 4), closed=(period_of(monday).token,))
+    )
+
+    assert [change.column for change in still_open.changes] == [ReportColumn.SUCCESSFUL, ReportColumn.COMPLETED]
+    assert closed == ReportsOutcome((), (), (), (), OwnEntries.EMPTY)
+
+
+TUESDAY = date(2026, 11, 10)
+OCTOBER_PERIOD, NOVEMBER_PERIOD, TODAY_PERIOD = "27_02_11_2026", "03_09_11_2026", "10_16_11_2026"
+
+
+@pytest.mark.parametrize(
+    ("rollout", "periods"),
+    [
+        pytest.param(None, (TODAY_PERIOD,), id="przed-pierwszym-kliknieciem-okres-dzis"),
+        pytest.param(TUESDAY, (TODAY_PERIOD,), id="wdrozenie-dzis"),
+        pytest.param(date(2026, 11, 9), (NOVEMBER_PERIOD, TODAY_PERIOD), id="wdrozenie-w-ostatni-dzien-okresu"),
+        pytest.param(date(2026, 10, 30), (OCTOBER_PERIOD, NOVEMBER_PERIOD, TODAY_PERIOD), id="trzy-okresy"),
+    ],
+)
+def test_okresy_do_sprawdzenia_pliku_zbiorczego_to_okresy_od_dnia_wdrozenia_do_dzis(
+    rollout: date | None, periods: tuple[str, ...]
+) -> None:
+    assert tuple(period.token for period in Window.periods(TUESDAY, rollout)) == periods
+
+
+@pytest.mark.parametrize(
+    ("rollout", "closed", "first"),
+    [
+        pytest.param(date(2026, 10, 30), (), date(2026, 10, 30), id="bez-pliku-zbiorczego-od-dnia-wdrozenia"),
+        pytest.param(date(2026, 10, 30), (OCTOBER_PERIOD,), date(2026, 11, 3), id="od-okresu-po-zamknietym"),
+        pytest.param(
+            date(2026, 10, 30), (OCTOBER_PERIOD, NOVEMBER_PERIOD), TUESDAY, id="od-dzis-gdy-poprzednie-zamkniete"
+        ),
+        pytest.param(date(2026, 11, 5), (OCTOBER_PERIOD,), date(2026, 11, 5), id="nie-przed-dniem-wdrozenia"),
+    ],
+)
+def test_pierwszy_dzien_okna_to_pierwszy_dzien_otwarty_od_dnia_wdrozenia(
+    rollout: date, closed: tuple[str, ...], first: date
+) -> None:
+    """Od pierwszego dnia okna proces czyta skrzynkę i INTERMAX: dni okresów z Plikiem zbiorczym przed nim nic nie
+    zmienią, więc ich nie czyta."""
+
+    assert Window.of(TUESDAY, rollout, closed).first == first
+
+
+def test_okno_bez_dnia_otwartego_czyta_tylko_dzis() -> None:
+    """Okres dziś też ma Plik zbiorczy: żaden dzień nie jest otwarty, więc skrzynka i INTERMAX tylko od dziś."""
+
+    thursday = date(2026, 11, 12)
+
+    assert Window.of(thursday, date(2026, 10, 30), (OCTOBER_PERIOD, NOVEMBER_PERIOD, TODAY_PERIOD)).first == thursday
 
 
 def test_pamiec_zostawia_dawny_wpis_tylko_gdy_komorka_zlecenia_ma_dalej_wpisana_wartosc() -> None:
@@ -874,6 +1002,20 @@ def test_postac_kanoniczna_wpisu_z_kazdym_znakiem_daje_ten_sam_wpis(
     read = ReadReport(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), DAY, (entry,))
 
     assert _read_back(read) == (read,)
+
+
+@settings(derandomize=True, database=None)
+@given(_MAILS.flatmap(lambda mails: st.tuples(st.just(mails), st.permutations(mails))))
+def test_wlasnosc_te_same_maile_w_dowolnej_kolejnosci_daja_ten_sam_wynik_dopasowania(
+    pair: tuple[list[ReportMail], list[ReportMail]],
+) -> None:
+    """Zlecenia mają numer Jana z dwóch dni i numer Ewy, więc maile dają cele, cudze zlecenia, inne dni, nieznane numery
+    i nieznanych nadawców; dwa kliknięcia z tymi samymi mailami w innej kolejności dają ten sam wynik."""
+
+    mails, shuffled = pair
+    inputs = _inputs(mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY)
+
+    assert enter_reports(replace(inputs, mails=shuffled)) == enter_reports(inputs)
 
 
 def _every_problem() -> list[ReportProblem]:
@@ -1341,7 +1483,7 @@ def _cells(entered: Sequence[tuple[int, str, str]]) -> tuple[CellChange, ...]:
         pytest.param(
             "40000001 tak router jak\n40000009 nie działał",
             ((0, "tak", "router jak"),),
-            (_unknown("40000009"),),
+            (ForeignOrder(JAN_LOGIN, DAY, OrderNumber("40000009"), EWA_LOGIN),),
             id="zlecenie-innego-wykonawcy-ze-znakiem",
         ),
         pytest.param(
