@@ -495,6 +495,7 @@ _TEXTS = st.one_of(_EXACT, st.lists(st.lists(_LINES, min_size=1, max_size=2).map
 _SUBJECTS = st.one_of(
     st.sampled_from([SUBJECT, "Raport 07.11.2026"]),
     st.sampled_from(["Raport 8.11.26", "raport 08_11_2026", "Raport", "Raport 08.11", "Raport 31.02.2026"]),
+    st.sampled_from(["Raport z 08.11.2026", "Raport 2026.11.08", "Raport 08-11-2026", "Raport 08.11.202"]),
 )
 _SENDERS = st.sampled_from([JAN, EWA, "obcy@przyklad.invalid"])
 _MAILS = st.lists(
@@ -564,6 +565,38 @@ def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[
         outcome.memory,
     )
     assert sorted(map(repr, map(_seen, again.problems))) == sorted(map(repr, map(_seen, outcome.problems)))
+
+
+def _read_back(read: ReadReport | ReadUnreadable) -> tuple[object, ...]:
+    sender = SenderAddress.of(JAN)
+    assert sender is not None
+    return enter_reports(_inputs([as_mail(read, sender)], [_order()])).mails
+
+
+@pytest.mark.parametrize("fault", list(SubjectFault), ids=lambda fault: fault.name)
+def test_postac_kanoniczna_nieczytelnego_tematu_daje_ten_sam_powod(fault: SubjectFault) -> None:
+    """Każdy powód nieczytelnego tematu, także taki, którego przykłady własności wyżej nie trafią."""
+
+    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault)
+
+    assert _read_back(read) == (read,)
+
+
+@pytest.mark.parametrize("activities", ["", "wymiana routera"])
+@pytest.mark.parametrize(
+    ("verdict", "fault"),
+    [*((verdict, None) for verdict in Verdict), *((None, fault) for fault in VerdictFault)],
+    ids=lambda mark: mark.name if mark is not None else "-",
+)
+def test_postac_kanoniczna_wpisu_z_kazdym_znakiem_daje_ten_sam_wpis(
+    verdict: Verdict | None, fault: VerdictFault | None, activities: str
+) -> None:
+    """Każdy ``tak``/``nie`` i każdy powód jego braku, z opisem i bez, także Wpis bez żadnego znaku."""
+
+    entry = ReportEntry(OrderNumber("40000001"), verdict, fault, activities)
+    read = ReadReport(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), DAY, (entry,))
+
+    assert _read_back(read) == (read,)
 
 
 def _every_problem() -> list[ReportProblem]:
@@ -1210,9 +1243,25 @@ TWO_CELLS = ((0, "tak", "wymiana routera"), (1, "nie", "brak klienta"))
         pytest.param(f"{ROUTER}\nmilego dnia.", ROUTER_CELLS, id="milego-dnia-bez-polskich-liter"),
         pytest.param(f"{ROUTER}\nMiłego wieczoru", ROUTER_CELLS, id="milego-wieczoru"),
         pytest.param(f"{ROUTER} serdecznie pozdrawiam", ROUTER_CELLS, id="pozegnanie-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, pozdrawiam Jan Testowy", ROUTER_CELLS, id="pozegnanie-i-podpis-w-tej-samej-linii"),
+        pytest.param(
+            f"{ROUTER}, pozdrawiam\nJan Testowy technik serwisu", ROUTER_CELLS, id="pozegnanie-na-koncu-linii-i-podpis-pod-nim"
+        ),
         pytest.param(
             "40000001 tak wymiana dzięki drabinie", ((0, "tak", "wymiana dzięki drabinie"),), id="dzieki-w-srodku-linii-to-opis"
         ),
+        pytest.param(
+            "40000001 tak wymiana routera, klient dziękuje za szybką obsługę",
+            ((0, "tak", "wymiana routera, klient dziękuje za szybką obsługę"),),
+            id="dziekuje-w-srodku-zdania-to-opis",
+        ),
+        pytest.param(
+            "40000001 tak przekazałem pozdrowienia od szefa, router wymieniony",
+            ((0, "tak", "przekazałem pozdrowienia od szefa, router wymieniony"),),
+            id="pozdrowienia-w-srodku-zdania-to-opis",
+        ),
+        pytest.param(f"{ROUTER}\nSent from my iPhone", ROUTER_CELLS, id="stopka-sent-from"),
+        pytest.param(f"{ROUTER}\nGet Outlook for Android", ROUTER_CELLS, id="stopka-get-outlook"),
         pytest.param(
             "Zlecenie 40000001 tak wymiana routera\nZlecenie 40000002 nie brak klienta", TWO_CELLS, id="przedrostek-zlecenie"
         ),
@@ -1243,7 +1292,8 @@ def test_opis_wpisu_konczy_pusta_linia_pozegnanie_z_tabeli_albo_przedrostek_nast
 ) -> None:
     """US 23, 24: podpis, imię i zdanie pod pustą linią, pożegnanie (także bez polskich liter i potoczne) ani słowo
     ``Zlecenie``/``Nr``/``Zl.`` przed numerem następnego Wpisu nie trafiają do ``CZYNNOŚCI ZREALIZOWANE``. Opis kończą
-    tylko wyliczone znaczniki, więc imię bez pustej linii pod opisem i opis dopiero pod pustą linią to nazwane granice."""
+    tylko wyliczone znaczniki, więc imię bez pustej linii pod opisem i opis dopiero pod pustą linią to nazwane granice.
+    Pożegnanie w środku zdania opisu (``klient dziękuje za szybką obsługę``) opisu nie ucina."""
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], _orders()))
 

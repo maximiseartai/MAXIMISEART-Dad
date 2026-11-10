@@ -51,8 +51,16 @@ def _unreadable(fault: SubjectFault) -> str:
     match fault:
         case SubjectFault.NO_DATE:
             return _WORD
+        case SubjectFault.OTHER_TEXT:
+            return f"{_WORD} z 08.11.2026"
         case SubjectFault.NO_YEAR:
             return f"{_WORD} 08.11"
+        case SubjectFault.DATE_FORM:
+            return f"{_WORD} 2026.11.08"
+        case SubjectFault.SEPARATOR:
+            return f"{_WORD} 08-11-2026"
+        case SubjectFault.YEAR_DIGITS:
+            return f"{_WORD} 08.11.202"
         case SubjectFault.NOT_A_DAY:
             return f"{_WORD} 31.02.2026"
         case _:

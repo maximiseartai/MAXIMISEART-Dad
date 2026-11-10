@@ -49,8 +49,11 @@ _CLOSINGS: Final = tuple(
     )
 )
 """Pożegnania, które kończą opis, bez względu na wielkość liter, polskie znaki i interpunkcję po nich (``Dziekuje!``,
-``Pzdr.``). Pożegnanie z ``False`` kończy opis tylko jako pierwsze słowo linii, bo w środku linii bywa słowem opisu
-(``wymiana dzięki drabinie``)."""
+``Pzdr.``). Pożegnanie na początku linii kończy opis zawsze. W środku linii bywa słowem opisu (``klient dziękuje za
+szybką obsługę``), więc kończy go tylko wtedy, gdy do końca linii stoi po nim najwyżej ``_SIGNATURE`` słów podpisu
+(``…, pozdrawiam Jan``); pożegnanie z ``False`` w środku linii nie kończy go nigdy (``wymiana dzięki drabinie``)."""
+_SIGNATURE: Final = 2
+"""Najwięcej słów podpisu (imię i nazwisko) po pożegnaniu w środku linii."""
 _PREFIXES: Final = frozenset({"zlecenie", "zlec", "zl", "nr"})
 """Słowa przed numerem następnego Wpisu (``Zlecenie``, ``Zlec.``, ``Zl.``, ``Nr``), które nie należą do opisu."""
 _END: Final = re.compile(
@@ -163,13 +166,29 @@ def _mark(words: _Stream, begin: int) -> tuple[Verdict | VerdictFault | None, in
 def _description(words: _Stream) -> str:
     kept: list[str] = []
     for index, word in enumerate(words):
-        if word is None or _closing(words[index : index + 2]):
+        if word is None or _closing(words[index:]):
             break
         kept.append(word.text)
     return " ".join(kept).strip(_DESCRIPTION_EDGES)
 
 
 def _closing(words: _Stream) -> bool:
-    folded = tuple("" if word is None else _fold(word.core) for word in words)
+    """Czy pożegnanie z ``_CLOSINGS`` na początku ``words`` kończy opis."""
+
     first = words[0] is not None and words[0].first
-    return any(folded[: len(closing)] == closing and (anywhere or first) for closing, anywhere in _CLOSINGS)
+    for closing, anywhere in _CLOSINGS:
+        folded = tuple("" if word is None else _fold(word.core) for word in words[: len(closing)])
+        if folded == closing and (first or (anywhere and _line_rest(words[len(closing) :]) <= _SIGNATURE)):
+            return True
+    return False
+
+
+def _line_rest(words: _Stream) -> int:
+    """Liczba słów ``words`` do końca linii."""
+
+    count = 0
+    for word in words:
+        if word is None or word.first:
+            break
+        count += 1
+    return count
