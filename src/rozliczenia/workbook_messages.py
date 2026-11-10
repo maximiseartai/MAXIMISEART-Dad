@@ -60,7 +60,8 @@ class DadWorkbook:
     """Plik taty w zdaniach wspólnych: nazwa w mianowniku i dopełniaczu, ogon „Co się stało” i zwrot ponowienia.
 
     Np. ``DadWorkbook("Rejestr zleceń", "Rejestru zleceń", "order_register", "Nie utworzono żadnego pliku.",
-    "uruchom ponownie")``.
+    "uruchom ponownie")``. ``closing``: zdanie „Co zrobić” o pliku otwartym w Excelu, gdy proces ma własne (puste:
+    „Zapisz i zamknij … w Excelu, potem …”).
     """
 
     name: str
@@ -68,6 +69,7 @@ class DadWorkbook:
     dad_file: DadFile
     unchanged: str
     again: str
+    closing: str = ""
 
 
 def lock_hint(path: Path, again: str) -> str:
@@ -85,7 +87,8 @@ def open_in_excel(code: str, path: Path, workbook: DadWorkbook) -> Message:
         dad_file=workbook.dad_file,
         what=f"{workbook.name} jest otwarty w Excelu. {workbook.unchanged}",
         where=file_label(path),
-        action=f"Zapisz i zamknij {workbook.name} w Excelu, potem {workbook.again}. {lock_hint(path, workbook.again)}",
+        action=f"{workbook.closing or f'Zapisz i zamknij {workbook.name} w Excelu, potem {workbook.again}.'} "
+        f"{lock_hint(path, workbook.again)}",
     )
 
 
