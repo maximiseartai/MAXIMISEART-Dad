@@ -13,7 +13,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -947,7 +947,7 @@ export type ModeStatistics = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax' | 'report_entering';
     mode: RunMode;
     /**
      * Completed Runs
@@ -1408,7 +1408,7 @@ export type ProcessFacts = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax' | 'report_entering';
     /**
      * Label
      */
@@ -1431,7 +1431,7 @@ export type ProcessRun = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax' | 'report_entering';
     /**
      * Process Label
      */
@@ -1816,6 +1816,35 @@ export type ReportDraft = {
 };
 
 /**
+ * ReportEnteringSetup
+ *
+ * Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ *
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania raportów z jego
+ * Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ */
+export type ReportEnteringSetup = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Reminder
+     */
+    reminder: string;
+    /**
+     * Blocker
+     */
+    blocker: string | null;
+    /**
+     * Open In Excel
+     */
+    open_in_excel: Array<string>;
+    last: RunRestored | null;
+};
+
+/**
  * ReportNotQueued
  *
  * Zgłoszenia nie udało się zapisać w kolejce, więc nic go nie wyśle; ``message`` mówi, co zrobić.
@@ -2058,7 +2087,7 @@ export type RunInfo = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax' | 'report_entering';
     /**
      * Title
      */
@@ -2957,7 +2986,7 @@ export type ProcessRunWritable = {
     /**
      * Process
      */
-    process: 'preparation' | 'settlement' | 'efenix' | 'intermax';
+    process: 'preparation' | 'settlement' | 'efenix' | 'intermax' | 'report_entering';
     /**
      * Process Label
      */
@@ -2995,6 +3024,35 @@ export type ProcessRunWritable = {
      * Run Id
      */
     run_id: string | null;
+};
+
+/**
+ * ReportEnteringSetup
+ *
+ * Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ *
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania raportów z jego
+ * Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ */
+export type ReportEnteringSetupWritable = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Reminder
+     */
+    reminder: string;
+    /**
+     * Blocker
+     */
+    blocker: string | null;
+    /**
+     * Open In Excel
+     */
+    open_in_excel: Array<string>;
+    last: RunRestoredWritable | null;
 };
 
 /**
@@ -3803,6 +3861,61 @@ export type OpenWorkerSettlementResponses = {
 };
 
 export type OpenWorkerSettlementResponse = OpenWorkerSettlementResponses[keyof OpenWorkerSettlementResponses];
+
+export type GetReportEnteringSetupData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/report-entering';
+};
+
+export type GetReportEnteringSetupResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReportEnteringSetup;
+};
+
+export type GetReportEnteringSetupResponse = GetReportEnteringSetupResponses[keyof GetReportEnteringSetupResponses];
+
+export type StartReportEnteringData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/report-entering/run';
+};
+
+export type StartReportEnteringErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+};
+
+export type StartReportEnteringError = StartReportEnteringErrors[keyof StartReportEnteringErrors];
+
+export type StartReportEnteringResponses = {
+    /**
+     * Response Startreportentering
+     *
+     * Successful Response
+     */
+    200: ({
+        state: 'idle';
+    } & RunIdle) | ({
+        state: 'running';
+    } & RunRunning) | ({
+        state: 'awaiting_decision';
+    } & RunAwaitingDecision) | ({
+        state: 'finished';
+    } & RunFinished);
+};
+
+export type StartReportEnteringResponse = StartReportEnteringResponses[keyof StartReportEnteringResponses];
 
 export type StartRunData = {
     body: RunRequest;

@@ -29,31 +29,29 @@ from rozliczenia.input_checks import ProcessTemplate
 from rozliczenia.message import Message
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.workbook_files import Problem
-from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
+from rozliczenia.tool_files import CONFIG_DIR, COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
+from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 
 
 @dataclass(frozen=True)
 class ConfigurationFiles:
-    """Konfiguracja wykonawców i trzy Wzorce, z których korzystają procesy."""
+    """Konfiguracja wykonawców, plik adresów Wykonawców i trzy Wzorce, z których korzystają procesy."""
 
     worker_config: Path
+    worker_addresses: Path
     internal_template: Path
     collective_template: Path
     worker_template: Path
 
     @classmethod
     def default(cls) -> ConfigurationFiles:
-        return cls(
-            worker_config=WORKER_CONFIG,
-            internal_template=INTERNAL_TEMPLATE,
-            collective_template=COLLECTIVE_TEMPLATE,
-            worker_template=WORKER_TEMPLATE,
-        )
+        return cls.in_folder(CONFIG_DIR)
 
     @classmethod
     def in_folder(cls, folder: Path) -> ConfigurationFiles:
         return cls(
             worker_config=folder / WORKER_CONFIG.name,
+            worker_addresses=folder / WORKER_ADDRESSES_FILE,
             internal_template=folder / INTERNAL_TEMPLATE.name,
             collective_template=folder / COLLECTIVE_TEMPLATE.name,
             worker_template=folder / WORKER_TEMPLATE.name,
@@ -63,6 +61,8 @@ class ConfigurationFiles:
         match need:
             case "worker_config":
                 return self.worker_config
+            case "worker_addresses":
+                return self.worker_addresses
             case "internal_template":
                 return self.internal_template
             case "collective_template":

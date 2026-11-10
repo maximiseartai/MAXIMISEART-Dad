@@ -1021,6 +1021,91 @@
         }
       }
     },
+    "/api/report-entering": {
+      "get": {
+        "tags": [
+          "uruchomienia"
+        ],
+        "summary": "Setup",
+        "operationId": "getReportEnteringSetup",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportEnteringSetup"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/report-entering/run": {
+      "post": {
+        "tags": [
+          "uruchomienia"
+        ],
+        "summary": "Start",
+        "operationId": "startReportEntering",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RunIdle"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunRunning"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunAwaitingDecision"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunFinished"
+                    }
+                  ],
+                  "title": "Response Startreportentering",
+                  "discriminator": {
+                    "propertyName": "state",
+                    "mapping": {
+                      "idle": "#/components/schemas/RunIdle",
+                      "running": "#/components/schemas/RunRunning",
+                      "awaiting_decision": "#/components/schemas/RunAwaitingDecision",
+                      "finished": "#/components/schemas/RunFinished"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs": {
       "post": {
         "tags": [
@@ -1912,6 +1997,8 @@
               "startIntermax",
               "getIntermaxCopies",
               "restoreIntermaxCopy",
+              "getReportEnteringSetup",
+              "startReportEntering",
               "decideRun",
               "diagnoseRun",
               "reportRun",
@@ -3396,7 +3483,8 @@
               "preparation",
               "settlement",
               "efenix",
-              "intermax"
+              "intermax",
+              "report_entering"
             ],
             "title": "Process"
           },
@@ -4180,7 +4268,8 @@
               "preparation",
               "settlement",
               "efenix",
-              "intermax"
+              "intermax",
+              "report_entering"
             ],
             "title": "Process"
           },
@@ -4206,7 +4295,8 @@
               "preparation",
               "settlement",
               "efenix",
-              "intermax"
+              "intermax",
+              "report_entering"
             ],
             "title": "Process"
           },
@@ -4826,6 +4916,57 @@
         "title": "ReportDraft",
         "description": "Dokładna treść Zgłoszenia, które „Wyślij do Maksa” wyśle do skrzynki Zgłoszeń: tytuł i treść Markdown."
       },
+      "ReportEnteringSetup": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "reminder": {
+            "type": "string",
+            "title": "Reminder"
+          },
+          "blocker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocker"
+          },
+          "open_in_excel": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Open In Excel"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunRestored"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "reminder",
+          "blocker",
+          "open_in_excel",
+          "last"
+        ],
+        "title": "ReportEnteringSetup",
+        "description": "Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,\n``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania raportów z jego\nLogów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
+      },
       "ReportNotQueued": {
         "properties": {
           "state": {
@@ -5196,7 +5337,8 @@
               "preparation",
               "settlement",
               "efenix",
-              "intermax"
+              "intermax",
+              "report_entering"
             ],
             "title": "Process"
           },

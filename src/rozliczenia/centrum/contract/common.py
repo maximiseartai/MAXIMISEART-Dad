@@ -20,10 +20,11 @@ class Problem(Model):
 
 
 # Każdy proces ma klucz, ten sam w Uruchomieniach i w Metrykach.
-ProcessKey = Literal["preparation", "settlement", "efenix", "intermax"]
+ProcessKey = Literal["preparation", "settlement", "efenix", "intermax", "report_entering"]
 
 
-# Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX ma własną kartę poza okresami.
+# Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX i Wpisanie raportów mają własne karty
+# poza okresami.
 PeriodProcessKey = Literal["preparation", "settlement", "efenix"]
 
 

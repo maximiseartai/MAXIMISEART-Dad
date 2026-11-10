@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import get_args
 
 from rozliczenia import tool_files
-from rozliczenia import efenix_messages, intermax_messages, intermax_replace
+from rozliczenia import efenix_messages, intermax_messages, intermax_replace, report_entering_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia import settlement_messages, worker_config_messages
 from rozliczenia.centrum import (
@@ -53,7 +53,9 @@ from rozliczenia.period_folder import (
 from rozliczenia.quantity_rules import DESCRIPTION_COLUMNS
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.workbook_files import MergedCells, MissingHeader, Problem, WorkbookError
+from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE, AddressesProblem, UnknownLogin
 from rozliczenia.worker_config import SameWorkerFile, WorkerConfigError
+from rozliczenia.worker_reports import Login
 
 REGISTER = Path("C:/Dane/ZLECENIA INTERMAX OD 08_11_2021.xlsx")
 PERIODS = Path("C:/Dane/INEA")
@@ -346,13 +348,22 @@ COPIES = Path("C:/Narzedzie/Kopie INTERMAX")
 COPY = COPIES / "INTERMAX przed uporządkowaniem 2026-09-14 07-30-00.xlsx"
 SEPTEMBER_14 = date(2026, 9, 14)
 REPLACEMENTS = (intermax_messages.ORDERING, intermax_messages.RESTORE)
+# Wpisanie raportów podmienia INTERMAX bez Kopii, więc odmowy o Kopii go nie dotyczą (ADR 0028).
+_WITHOUT_COPY = tuple(
+    refusal
+    for refusal in intermax_replace.Refusal
+    if refusal not in (intermax_replace.Refusal.COPY_FAILED, intermax_replace.Refusal.COPY_EXISTS)
+)
 INTERMAX_SAMPLES: Samples = {
     "register_unusable": [
         partial(intermax_messages.register_unusable, WorkbookError(REGISTER, problem), replacement)
-        for replacement in REPLACEMENTS
+        for replacement in (*REPLACEMENTS, intermax_messages.ENTERING)
         for problem in Problem
     ],
-    "register_missing": [partial(intermax_messages.register_missing, REGISTER, replacement) for replacement in REPLACEMENTS],
+    "register_missing": [
+        partial(intermax_messages.register_missing, REGISTER, replacement)
+        for replacement in (*REPLACEMENTS, intermax_messages.ENTERING)
+    ],
     "no_order_sheet": [lambda: intermax_messages.no_order_sheet(REGISTER)],
     "register_with_duplicated_headers": [
         lambda: intermax_messages.register_with_duplicated_headers(REGISTER, SHEET, ["ADRES"]),
@@ -379,9 +390,15 @@ INTERMAX_SAMPLES: Samples = {
     ],
     "unsupported_shape": [lambda: intermax_messages.unsupported_shape(REGISTER, SHEET)],
     "refused": [
-        partial(intermax_messages.refused, refusal, REGISTER, COPIES, replacement)
-        for replacement in REPLACEMENTS
-        for refusal in intermax_replace.Refusal
+        *(
+            partial(intermax_messages.refused, refusal, REGISTER, COPIES, replacement)
+            for replacement in REPLACEMENTS
+            for refusal in intermax_replace.Refusal
+        ),
+        *(
+            partial(intermax_messages.refused, refusal, REGISTER, REGISTER.parent, intermax_messages.ENTERING)
+            for refusal in _WITHOUT_COPY
+        ),
     ],
     "old_copies_kept": [partial(intermax_messages.old_copies_kept, COPIES, replacement) for replacement in REPLACEMENTS],
     "copies_unreadable": [lambda: intermax_messages.copies_unreadable(COPIES)],
@@ -390,6 +407,24 @@ INTERMAX_SAMPLES: Samples = {
     "copy_damaged": [lambda: intermax_messages.copy_damaged(COPY)],
     "unexpected_failure": [intermax_messages.unexpected_failure],
     "summary_not_shown": [intermax_messages.summary_not_shown],
+}
+
+ADDRESSES = tool_files.config_dir(Path("C:/Narzedzie")) / WORKER_ADDRESSES_FILE
+_ADDRESSES_PROBLEMS: tuple[AddressesProblem, ...] = (*get_args(get_args(AddressesProblem)[0]), UnknownLogin(Login("jan.testowy")))
+REPORT_ENTERING_SAMPLES: Samples = {
+    "inbox_access_missing": [report_entering_messages.inbox_access_missing],
+    "inbox_access_unreadable": [report_entering_messages.inbox_access_unreadable],
+    "password_rejected": [report_entering_messages.password_rejected],
+    "inbox_unreachable": [report_entering_messages.inbox_unreachable],
+    "addresses_unusable": [
+        partial(report_entering_messages.addresses_unusable, ADDRESSES, problem) for problem in _ADDRESSES_PROBLEMS
+    ],
+    "state_unreadable": [report_entering_messages.state_unreadable],
+    "cells_rejected": [report_entering_messages.cells_rejected],
+    "unsupported_shape": [lambda: report_entering_messages.unsupported_shape(REGISTER, SHEET)],
+    "memory_not_saved": [report_entering_messages.memory_not_saved],
+    "unexpected_failure": [report_entering_messages.unexpected_failure],
+    "summary_not_shown": [report_entering_messages.summary_not_shown],
 }
 
 RefusalSamples = Mapping[str, Sequence[Callable[[], refusal.Refusal]]]

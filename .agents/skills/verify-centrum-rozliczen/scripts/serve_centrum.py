@@ -197,6 +197,7 @@ from atrapy.skrzynka import ArchivedFile, Archives, BoxArchive, BoxIssue, Issues
 from atrapy.widok_skrzynki import shown
 from atrapy.efenix import write_collective_file
 from atrapy.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
+from atrapy.skrzynka_raportow import FolderInbox
 
 EFENIX_SEARCH_DELAY_S = 1.0
 # How long a file the drive is putting in place is tried again (``_read_put_in_place``).
@@ -648,6 +649,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
             "settlement": Path(metrics["settlement"]),
             "efenix": Path(metrics["efenix"]),
             "intermax": Path(metrics["intermax"]),
+            "report_entering": Path(metrics["report_entering"]),
         }
     )
     configuration = {name: Path(path) for name, path in fixture["configuration"].items()}
@@ -677,6 +679,8 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         intermax_copies=Path(fixture["intermax"]["copies"]),
         now=lambda: datetime.combine(today, datetime.now().astimezone().timetz()),
         efenix_window=efenix,
+        # Wpisanie raportów reads the run's .eml folder, never Dad's Gmail.
+        worker_report_inbox=FolderInbox(Path(fixture["report_entering"]["mails"])),
     )
 
     def record_bound_server(url: str) -> None:

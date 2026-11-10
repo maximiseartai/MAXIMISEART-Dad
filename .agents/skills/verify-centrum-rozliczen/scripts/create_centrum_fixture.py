@@ -93,6 +93,7 @@ from atrapy.pliki_taty import (
 )
 from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
 from rozliczenia.tool_files import WORKER_CONFIG, config_dir, settings_file
+from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
 PREPARATION_COUNTERS = {"period_orders": 9, "successful_orders": 8, "skipped_empty_rows": 1, "warnings": 0}
@@ -208,11 +209,21 @@ def _configuration(config: Path) -> dict[str, str]:
         ),
         encoding="utf-8",
     )
+    # Synthetic addresses of the Wykonawcy for Wpisanie raportów, never a real mailbox.
+    worker_addresses = config / WORKER_ADDRESSES_FILE
+    worker_addresses.write_text(
+        yaml.safe_dump(
+            {"schema_version": 1, "wykonawcy": {worker: [f"{worker}@przyklad.invalid"] for worker in WORKER_IDS}},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
     _template(config / INTERNAL_TEMPLATE_NAME, 1, INTERNAL_HEADERS)
     _template(config / COLLECTIVE_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS, PRICE_LIST)
     _template(config / WORKER_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS)
     return {
         "worker_config": str(worker_config),
+        "worker_addresses": str(worker_addresses),
         "internal_template": str(config / INTERNAL_TEMPLATE_NAME),
         "collective_template": str(config / COLLECTIVE_TEMPLATE_NAME),
         "worker_template": str(config / WORKER_TEMPLATE_NAME),
@@ -323,11 +334,18 @@ def _metrics(root: Path) -> dict[str, object]:
         "settlement": str(settlement),
         "intermax": str(metrics / "uporzadkowanie-intermax-metrics.jsonl"),
         "efenix": str(metrics / "wycena-efenix-metrics.jsonl"),
+        "report_entering": str(metrics / "wpisanie-raportow-metrics.jsonl"),
         "runs": len(PREPARATION_RUNS) + len(SETTLEMENT_RUNS),
         "oldest": min(run[0] for run in (*PREPARATION_RUNS, *SETTLEMENT_RUNS)),
         # period, then the measured phase times until the interruption
         "interrupted": [interrupted[2], [phase for phase in interrupted[4] if phase]],
     }
+
+
+def _report_entering(root: Path) -> dict[str, str]:
+    mails = root / "maile"
+    mails.mkdir()
+    return {"mails": str(mails)}
 
 
 def _dad_layout(root: Path) -> dict[str, object]:
@@ -602,6 +620,8 @@ def create(root: Path, variant: str | None = None) -> dict[str, object]:
         "tool": _tool_clone(root),
         # Uporządkowanie INTERMAX: two INTERMAX files, the folder of Kopie INTERMAX and the day it orders
         "intermax": _intermax(root),
+        # Wpisanie raportów: the folder of .eml mails Centrum reads in place of Dad's Gmail (FolderInbox)
+        "report_entering": _report_entering(root),
         # Przygotowanie pliku zbiorczego of the last complete period from the Rejestr zleceń above
         "preparation": EXPECTED_PREPARATION,
         # Przebieg rozliczeń: one Wiersz danych per Wykonawca with orders after Przygotowanie of the last complete

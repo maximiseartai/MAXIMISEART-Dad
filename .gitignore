@@ -37,3 +37,6 @@ Kopie INTERMAX/
 # Profil przeglądarki okna efenix (logowanie taty) i metryki Wyceny w efenix na komputerze taty.
 przegladarka-efenix/
 .wycena-efenix-metrics.jsonl
+
+# Metryki Wpisania raportów na komputerze taty.
+.wpisanie-raportow-metrics.jsonl

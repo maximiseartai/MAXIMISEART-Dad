@@ -46,6 +46,9 @@ SETTLEMENT_METRICS: Final = TOOL_ROOT / ".rozliczenia-metrics.jsonl"
 PREPARATION_METRICS: Final = TOOL_ROOT / ".przygotowanie-pliku-zbiorczego-metrics.jsonl"
 INTERMAX_METRICS: Final = TOOL_ROOT / ".uporzadkowanie-intermax-metrics.jsonl"
 EFENIX_METRICS: Final = TOOL_ROOT / ".wycena-efenix-metrics.jsonl"
+REPORT_ENTERING_METRICS: Final = TOOL_ROOT / ".wpisanie-raportow-metrics.jsonl"
+REPORT_ENTERING_STATE: Final = "wpisanie-raportow-stan.json"
+"""Pamięć własnych wpisów Wpisania raportów i dzień wdrożenia w ``config`` (ADR 0028)."""
 
 LOG_PATH: Final = log_path(TOOL_ROOT)
 

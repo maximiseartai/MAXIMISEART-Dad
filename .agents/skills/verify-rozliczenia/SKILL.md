@@ -34,6 +34,7 @@ pilnuje:
   - src/rozliczenia/register_columns.py
   - src/rozliczenia/register_file.py
   - src/rozliczenia/report_cells.py
+  - src/rozliczenia/report_entering*.py
   - src/rozliczenia/row_look.py
   - src/rozliczenia/row_positions.py
   - src/rozliczenia/run_clock.py
@@ -45,7 +46,10 @@ pilnuje:
   - src/rozliczenia/template_*.py
   - src/rozliczenia/tool_files.py
   - src/rozliczenia/workbook_*.py
+  - src/rozliczenia/worker_addresses.py
   - src/rozliczenia/worker_config*.py
+  - src/rozliczenia/worker_report_inbox.py
+  - src/rozliczenia/worker_reports/*.py
   - src/rozliczenia/write_routes.py
   - tools/lib/atrapy/intermax.py
   - tools/lib/atrapy/preparation.py

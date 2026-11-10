@@ -41,6 +41,8 @@ ApiOperation = Literal[
     "startIntermax",
     "getIntermaxCopies",
     "restoreIntermaxCopy",
+    "getReportEnteringSetup",
+    "startReportEntering",
     "decideRun",
     "diagnoseRun",
     "reportRun",

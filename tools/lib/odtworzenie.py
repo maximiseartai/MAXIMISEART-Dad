@@ -731,8 +731,18 @@ def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:
             return _Rebuild(_intermax_limits, _intermax)
         case "efenix":
             return _Rebuild(_efenix_limits, _efenix)
+        case "report_entering":
+            return _Rebuild(_report_entering_limits, _not_rebuilt)
         case _:
             assert_never(key)
+
+
+def _report_entering_limits(_record: RunLog) -> list[Limit]:
+    return [Limit("odtworzenie Wpisania raportów przyjdzie z #1233", blocking=True)]
+
+
+def _not_rebuilt(_record: RunLog, _work: _Work) -> _Rebuilt:
+    raise AssertionError("granica blokująca zatrzymuje odtworzenie przed odbudową plików")
 
 
 def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work) -> PreparedRun[Any, Any]:
@@ -879,11 +889,13 @@ NOT_COMPARED: Final = frozenset(
         "dad_actions",
         "interruption",
         "input_copy_notes",
+        "report_entering",
     }
 )
 """Pola Logów, które odtworzenie bierze z Logów albo które zależą od chwili, komputera albo taty, a nie od wejścia i
-kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie i uwagi o Kopii wejścia. Każde
-inne pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
+kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie i uwagi o Kopii wejścia, a do tego
+Wpisanie raportów, którego odtworzenie zatrzymuje granica blokująca do #1233. Każde inne pole ``RunLog`` jest w
+``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
 
 
 def first_difference(logged: RunLog, replayed: RunLog) -> Difference | None:

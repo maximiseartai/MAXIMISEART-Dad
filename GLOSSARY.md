@@ -524,7 +524,7 @@ a następnie ich uzupełnienie danymi z Pliku zbiorczego.
 ## Uruchomienie procesu
 
 Jedno uruchomienie Przebiegu rozliczeń, Przygotowania pliku zbiorczego,
-Uporządkowania INTERMAX albo Wyceny w efenix z Centrum rozliczeń albo ze
+Uporządkowania INTERMAX, Wyceny w efenix albo Wpisania raportów z Centrum rozliczeń albo ze
 Skryptu dla maszyn, od
 gotowych plików (i okresu, gdy proces go ma) do wyniku końcowego. Decyzja
 taty należy do Uruchomienia procesu bez względu na to, skąd wystartowało.
@@ -558,8 +558,8 @@ czekania na Decyzję taty nie wlicza się do `Czas uruchomienia` ani do metryk.
 ## Centrum rozliczeń
 
 Lokalna aplikacja w przeglądarce na komputerze taty, z której uruchamia
-Uporządkowanie INTERMAX, Przygotowanie pliku zbiorczego, Przebieg rozliczeń i
-Wycenę w efenix, przywraca Kopię INTERMAX oraz widzi Status okresu każdego okresu i historię
+Uporządkowanie INTERMAX, Przygotowanie pliku zbiorczego, Przebieg rozliczeń,
+Wycenę w efenix i Wpisanie raportów, przywraca Kopię INTERMAX oraz widzi Status okresu każdego okresu i historię
 Uruchomień procesu. Jest jedynym wejściem taty do
 tych procesów, nie osobnym procesem.
 _Avoid_: dashboard, panel, centrum dowodzenia
@@ -706,7 +706,10 @@ w kolumnach od A do `UWAGI`, które Uporządkowanie przenosi do dnia, także
 przesunięty pierwszy wiersz pod jego nagłówkami, a wiersz ze Śladem
 przesunięcia tylko z komórkami dozwolonymi przesunięty i nie oraz datą z
 godziną spod `DATA GODZ. POCZ.`, a nad wklejeniem tylko numery ostatniego uporządkowanego i żółtego wiersza, od
-których Planowanie liczy wiersz dnia. Wiersz ma numer i wartości komórek po literze
+których Planowanie liczy wiersz dnia. Wpisanie raportów ma w niej uporządkowane
+wiersze z dni od dnia wdrożenia, które przeczytało, w kolumnach od A do
+`UWAGI`, a Wpisy raportu, bez adresów, tematów i reszty treści maili, ma w
+swoim polu Logów, bo Kopia wejścia obejmuje tylko skoroszyty. Wiersz ma numer i wartości komórek po literze
 kolumny, a arkusz nagłówki kolumn; według reguły danych bez kolumn `ADRES` i
 `NUMER UMOWY/ZLECENIA ORANGE` (w Pliku zbiorczym kolumn B i I, także pod innym
 nagłówkiem), a wolny tekst i liczby po maskowaniu. Odcisk to rozmiar i skrót

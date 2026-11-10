@@ -17,6 +17,7 @@ import { RunHistoryCard } from "@/pages/metrics/run-history-card"
 import { PastRunCard, RunCard } from "@/pages/runs/run-card"
 import { DecisionDialog } from "@/pages/runs/run-dialogs"
 import { IntermaxCard } from "@/pages/runs/intermax-card"
+import { ReportEnteringCard } from "@/pages/runs/report-entering-card"
 import { RunSetupCard } from "@/pages/runs/run-setup-card"
 import { UnreadableStream } from "@/pages/runs/unreadable-stream"
 
@@ -144,6 +145,7 @@ function RunOrSetup({
       <div key="nowe" className={cn(shown, "flex flex-col gap-6")}>
         <RunSetupCard processes={processes} />
         <IntermaxCard />
+        <ReportEnteringCard />
       </div>
     )
   }

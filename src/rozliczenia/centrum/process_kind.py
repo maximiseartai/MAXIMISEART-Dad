@@ -40,6 +40,7 @@ from rozliczenia.order_facts import CollectiveOrders
 from rozliczenia.period_folder import PeriodStatus
 from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs, run_process
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 
@@ -50,13 +51,15 @@ SettingField = Literal["register", "periods_directory"]
 # Wzorzec, który proces czyta; Konfiguracja wymienia każdy pod jego rolą.
 TemplateRole = Literal["internal", "collective", "worker"]
 TemplateNeed = Literal["internal_template", "collective_template", "worker_template"]
-ConfigurationNeed = Literal["worker_config", TemplateNeed]
-"""Plik Konfiguracji (``configuration.ConfigurationFiles``): Konfiguracja wykonawców albo Wzorzec."""
+ConfigurationNeed = Literal["worker_config", "worker_addresses", TemplateNeed]
+"""Plik Konfiguracji (``configuration.ConfigurationFiles``): Konfiguracja wykonawców, plik adresów Wykonawców albo
+Wzorzec."""
 PathNeed = Literal["register", "periods_directory", "collective_file", "copies_directory", ConfigurationNeed]
-Need = PathNeed | Literal["period", "efenix_window"]
+Need = PathNeed | Literal["period", "efenix_window", "worker_report_inbox"]
 """Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
-ścieżkę (``period_start``, ``intermax_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie odbudowuje ją z Logów.
-``period``: token okresu (``Start.period``), ``efenix_window``: okno efenix gospodarza (``HostParts.efenix``)."""
+ścieżkę (``period_start``, ``intermax_run``, ``report_entering_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie
+odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``efenix_window``: okno efenix gospodarza
+(``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``)."""
 
 
 def _is_path(need: Need) -> TypeGuard[PathNeed]:
@@ -110,8 +113,9 @@ class HostParts:
     """Zależności jednego procesu, które daje gospodarz raz na swoje życie; domyślne to komputer bez Centrum.
 
     Centrum: okno efenix taty z tempem, dziennik Wyceny w efenix z Logów (``logs_disk.Journal``), zegar Centrum, przerwa
-    ponownej próby podmiany INTERMAX i kroki podmiany na dysku. Skrypt dla maszyn i odtworzenie: okno Atrapy efenix
-    (``efenix_chrome.atrapa_opening``), reszta domyślna (odtworzenie: ``now`` z Logów).
+    ponownej próby podmiany INTERMAX, kroki podmiany na dysku oraz Skrzynka raportów w Gmailu z pamięcią własnych wpisów
+    w ``config``. Skrypt dla maszyn i odtworzenie: okno Atrapy efenix (``efenix_chrome.atrapa_opening``), Skrzynka
+    raportów z folderu maili ``.eml`` z pamięcią bez pliku, reszta domyślna (odtworzenie: ``now`` z Logów).
     """
 
     efenix: EfenixOpening | None = None
@@ -119,10 +123,15 @@ class HostParts:
     now: Callable[[], datetime] = local_now
     waiting: Waiting = field(default_factory=Waiting)
     disk: Disk = LOCAL_DISK
+    reports: ReportEnteringParts | None = None
 
     def window(self) -> EfenixOpening:
         assert self.efenix is not None, "Catalog.prepared sprawdza potrzebę efenix_window"
         return self.efenix
+
+    def report_entering(self) -> ReportEnteringParts:
+        assert self.reports is not None, "Catalog.prepared sprawdza potrzebę worker_report_inbox"
+        return self.reports
 
 
 @dataclass(frozen=True)

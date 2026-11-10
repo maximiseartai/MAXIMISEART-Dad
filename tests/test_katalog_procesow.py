@@ -25,8 +25,9 @@ from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.run_context import RunContext
 from rozliczenia import tool_files
 from tests.fixtures.centrum import ToolDirectory, centrum, finished_view
-from tests.fixtures.centrum_intermax import ordering_centrum
+from tests.fixtures.centrum_intermax import entering_centrum, ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum
+from atrapy.intermax import Intermax
 from atrapy.preparation import PERIOD
 
 
@@ -114,6 +115,7 @@ def test_kazdy_proces_ma_wlasna_historie_metryk_w_katalogu_narzedzia() -> None:
         "settlement": tool_files.SETTLEMENT_METRICS,
         "efenix": tool_files.EFENIX_METRICS,
         "intermax": tool_files.INTERMAX_METRICS,
+        "report_entering": tool_files.REPORT_ENTERING_METRICS,
     }
 
 
@@ -129,12 +131,17 @@ def _intermax_setup(client: TestClient) -> tuple[str | None, Any]:
     return client.get("/api/intermax").json()["blocker"], client.post("/api/intermax/run")
 
 
+def _report_entering_setup(client: TestClient) -> tuple[str | None, Any]:
+    return client.get("/api/report-entering").json()["blocker"], client.post("/api/report-entering/run")
+
+
 # Karta przed startem i start każdego procesu tak, jak je woła przeglądarka; nowy wpis katalogu potrzebuje tu swojej.
 _SETUP_AND_START: dict[common_contract.ProcessKey, Callable[[TestClient], tuple[str | None, Any]]] = {
     "preparation": _period_setup("preparation"),
     "settlement": _period_setup("settlement"),
     "efenix": _period_setup("efenix"),
     "intermax": _intermax_setup,
+    "report_entering": _report_entering_setup,
 }
 
 
@@ -176,12 +183,19 @@ def _stopped_intermax(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
     return ordering.client, ordering.run_to_end()
 
 
+def _stopped_report_entering(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
+    entering = entering_centrum(tmp_path, Intermax())
+    entering.engines.fail_summary = True
+    return entering.client, entering.run_to_end()
+
+
 # Zatrzymanie „do Maksa” bez zmiany plików taty: silnik kończy pracę, a jego podsumowania nie da się pokazać.
 _STOPPED: dict[common_contract.ProcessKey, Callable[[Path], tuple[TestClient, dict[str, Any]]]] = {
     "preparation": _stopped_preparation,
     "settlement": _stopped_settlement,
     "efenix": _stopped_efenix,
     "intermax": _stopped_intermax,
+    "report_entering": _stopped_report_entering,
 }
 
 
