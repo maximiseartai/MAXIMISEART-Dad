@@ -46,14 +46,16 @@ _POLL_S: Final = 0.02
 
 @dataclass
 class FakeInbox:
-    """Skrzynka raportów testu: ``outcome`` to maile albo wynik porażki, ``state`` stan pliku dostępu, a ``days``
-    dzień każdego ``mails_since``, więc pusta lista mówi, że skrzynki nikt nie czytał. ``during`` dzieje się w trakcie
-    każdego odczytu, jak zapis INTERMAX przez tatę, gdy proces czeka na Gmaila."""
+    """Skrzynka raportów testu i odtworzenia z Logów: ``outcome`` to maile albo wynik porażki, ``state`` stan pliku
+    dostępu, a ``days`` dzień każdego ``mails_since``, więc pusta lista mówi, że skrzynki nikt nie czytał. ``during``
+    dzieje się w trakcie każdego odczytu, jak zapis INTERMAX przez tatę, gdy proces czeka na Gmaila, a ``skipped`` to
+    liczba maili, których skrzynka nie umiała przeczytać."""
 
     outcome: Sequence[ReportMail] | PasswordRejected | InboxUnreachable = ()
     state: InboxAccess = "ready"
     days: list[date] = field(default_factory=list)
     during: Callable[[], object] = lambda: None
+    skipped: int = 0
 
     def access(self) -> InboxAccess:
         return self.state
@@ -63,7 +65,7 @@ class FakeInbox:
         self.during()
         if isinstance(self.outcome, (PasswordRejected, InboxUnreachable)):
             return self.outcome
-        return Mails(tuple(self.outcome), skipped=0)
+        return Mails(tuple(self.outcome), skipped=self.skipped)
 
 
 @dataclass(frozen=True)
