@@ -6,7 +6,8 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
 - Sprawdzanie: plik dostępu do Skrzynki raportów, Konfiguracja wykonawców, plik adresów Wykonawców, pamięć własnych
   wpisów (``ReportState.load``), brak kopii konfliktu OneDrive obok INTERMAX (``onedrive_conflicts.beside``) i INTERMAX
   zamknięty w Excelu, więc przy kopii konfliktu albo INTERMAX otwartym w Excelu skrzynka nie jest czytana;
-- Odczyt danych: maile ze Skrzynki raportów, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
+- Odczyt danych: Pliki zbiorcze okresów okna (``scan_period_folders``), bo okres z Plikiem zbiorczym jest zamknięty, potem
+  maile ze Skrzynki raportów od pierwszego dnia otwartego, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
   wklejania uporządkowane wiersze z dni od pierwszego dnia okna (``raw_orders.ordered_rows``, w Kopii wejścia przez
   ``PasteArea.copy_rows``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
@@ -16,7 +17,8 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   z dniem wdrożenia, także przy zerze wpisanych komórek; kopia konfliktu OneDrive, która pojawiła się obok INTERMAX do
   końca zapisu, zatrzymuje kliknięcie już po zapisie pamięci, z podsumowaniem w faktach Zatrzymania.
 
-Okno dni zaczyna się od dnia wdrożenia z pamięci (przed pierwszym udanym kliknięciem: dziś). Proces nie należy do
+Okno dni zaczyna się od dnia wdrożenia z pamięci (przed pierwszym udanym kliknięciem: dziś) i nie ma dni okresów z
+Plikiem zbiorczym w folderze okresów; bez folderu okresów albo bez dostępu do niego skrzynka nie jest czytana. Proces nie należy do
 okresu: Uruchomienie ma okres dzisiejszej daty z zegara procesu (ADR 0019). Zatrzymanie po rdzeniu niesie fakty
 (``EnteringFacts``), a Zatrzymanie po zapisie całe podsumowanie (``EnteringSummary``), więc Logi mają zmiany i problemy
 także wtedy. Plik dostępu, który zniknie albo zepsuje się między
@@ -42,12 +44,13 @@ from .intermax_cells import CellsWritten, Rejected, write_cells
 from .intermax_ordering import local_now, paste_areas
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting
 from .message import Message, StopError
+from .period_folder import PeriodFolder, PeriodFolderInaccessible, scan_period_folders
 from .phase_runner import PhaseRunner
 from .register_columns import COMPLETED, DATE, ORDER_NUMBER, SUCCESSFUL, WORKER
 from .register_file import OrderSheets, RegisterFile
 from .report_cells import CellChange, OrderRow
 from .run_context import RunContext
-from .settlement_period import period_of
+from .settlement_period import SettlementPeriod, period_of
 from .workbook_files import WorkbookError
 from .workbook_parts import UnsupportedShape
 from .worker_addresses import AddressesError
@@ -128,10 +131,12 @@ class ReportEnteringParts:
 
 @dataclass(frozen=True)
 class EnteringInputs:
-    """Wejście Wpisania raportów: INTERMAX z Ustawień taty, Konfiguracja wykonawców, plik adresów, zależności gospodarza
-    i zegar procesu. ``period`` jak w ``OrderingInputs``: okres dzisiejszej daty przy starcie (ADR 0019)."""
+    """Wejście Wpisania raportów: INTERMAX i folder okresów z Ustawień taty, Konfiguracja wykonawców, plik adresów,
+    zależności gospodarza i zegar procesu. ``period`` jak w ``OrderingInputs``: okres dzisiejszej daty przy starcie
+    (ADR 0019)."""
 
     register_path: Path
+    periods_directory: Path
     worker_config: Path
     worker_addresses: Path
     parts: ReportEnteringParts
@@ -149,13 +154,14 @@ class EnteringFacts:
     """Fakty kliknięcia od rdzenia raportów, bez adresów, tematów i treści maili.
 
     ``rollout_before``: dzień wdrożenia z pamięci przed kliknięciem (``None``: pierwsze), ``rollout``: dzień wdrożenia
-    tego kliknięcia. ``memory_before``: zapamiętane własne wpisy zleceń, które mają Wpis w tym kliknięciu. ``skipped``:
+    tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne wpisy zleceń, które mają Wpis w tym kliknięciu. ``skipped``:
     maile, których Skrzynka raportów nie umiała przeczytać.
     """
 
     today: date
     rollout_before: date | None
     rollout: date
+    closed: tuple[str, ...]
     memory_before: tuple[OwnEntry, ...]
     skipped: int
     mails: tuple[MailRead, ...]
@@ -221,9 +227,11 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         return addresses, saved
 
     addresses, saved = phases.check(check)
-    window = Window.of(inputs.now().date(), saved.rollout)
+    today = inputs.now().date()
 
-    def read() -> tuple[RegisterFile, tuple[RegisterOrder, ...], int, tuple[ReportMail, ...]]:
+    def read() -> tuple[Window, RegisterFile, tuple[RegisterOrder, ...], int, tuple[ReportMail, ...]]:
+        closed = _closed(inputs.periods_directory, Window.periods(today, saved.rollout))
+        window = Window.of(today, saved.rollout, closed)
         outcome = parts.inbox.mails_since(window.first)
         match outcome:
             case PasswordRejected():
@@ -241,9 +249,9 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         with _stops_unusable():
             register = register_file.read(register_path, files)
         orders = _orders(register, window.first, copy=files.copy is not None)
-        return register, orders, outcome.skipped, outcome.mails
+        return window, register, orders, outcome.skipped, outcome.mails
 
-    register, orders, skipped, mails = phases.read(read)
+    window, register, orders, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries]:
         found = enter_reports(
@@ -263,8 +271,17 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 key=lambda entry: (entry.key, entry.column.value),
             )
         )
+        closed = tuple(period.token for period in Window.periods(today, saved.rollout) if period.token in window.closed)
         planned = EnteringFacts(
-            window.today, saved.rollout, window.rollout, before, skipped, found.mails, found.problems, found.changes
+            window.today,
+            saved.rollout,
+            window.rollout,
+            closed,
+            before,
+            skipped,
+            found.mails,
+            found.problems,
+            found.changes,
         )
         return planned, found.memory
 
@@ -293,6 +310,30 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     if copies := onedrive_conflicts.beside(register_path):
         raise StopError(messages.conflict_after_save(copies[0]), facts=summary)
     return summary
+
+
+def _closed(periods_directory: Path, periods: tuple[SettlementPeriod, ...]) -> tuple[str, ...]:
+    """Tokeny okresów ``periods`` z Plikiem zbiorczym w ich Folderze okresu, po kolei.
+
+    Folder okresu w kilku miesiącach (układ folderów taty) zamyka okres, gdy Plik zbiorczy jest w którymkolwiek z nich, bo
+    Wpisanie raportów nigdy nie zmienia okresu z Plikiem zbiorczym. Okres bez Folderu okresu jest otwarty.
+    """
+
+    directory = periods_directory.expanduser().resolve()
+    try:
+        folders = scan_period_folders(directory)
+        if folders.periods_directory_missing:
+            raise StopError(messages.periods_directory_missing(directory))
+        return tuple(
+            period.token
+            for period in periods
+            if any(
+                PeriodFolder(parent, period).observe().collective_file_exists
+                for parent in folders.locations.get(period, ())
+            )
+        )
+    except PeriodFolderInaccessible as error:
+        raise StopError(messages.periods_folder_inaccessible(error.folder)) from error
 
 
 def _ensure_access(access: str) -> None:

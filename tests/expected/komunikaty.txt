@@ -1325,6 +1325,21 @@ addresses_unusable #9 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
   Gdzie: plik adresy-wykonawcow.yaml, folder config
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
+periods_directory_missing [RAPORTY_BRAK_FOLDERU_OKRESOW]
+  Co się stało: Nie znaleziono folderu okresów, więc maili nie przeczytano. INTERMAX nie został zmieniony.
+  Gdzie: folder Dane\INEA
+  Co zrobić: Wskaż w Ustawieniach folder okresów, w którym są foldery tygodni, i kliknij jeszcze raz.
+
+periods_folder_inaccessible #1 [RAPORTY_NIEDOSTEPNY_FOLDER_OKRESOW]
+  Co się stało: Nie można teraz odczytać folderu okresów, więc maili nie przeczytano. INTERMAX nie został zmieniony.
+  Gdzie: folder Dane\INEA
+  Co zrobić: Sprawdź, czy folder otwiera się w Eksploratorze plików i czy OneDrive działa, potem kliknij jeszcze raz.
+
+periods_folder_inaccessible #2 [RAPORTY_NIEDOSTEPNY_FOLDER_OKRESOW]
+  Co się stało: Nie można teraz odczytać folderu okresów, więc maili nie przeczytano. INTERMAX nie został zmieniony.
+  Gdzie: folder INEA\08_14_09_2026
+  Co zrobić: Sprawdź, czy folder otwiera się w Eksploratorze plików i czy OneDrive działa, potem kliknij jeszcze raz.
+
 state_unreadable [RAPORTY_NIECZYTELNA_PAMIEC]
   Co się stało: Nie można odczytać pamięci wpisanych raportów. INTERMAX nie został zmieniony.
   Gdzie: plik wpisanie-raportow-stan.json, folder config

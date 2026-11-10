@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from email.utils import parseaddr
 from enum import Enum, auto
 import hashlib
 from typing import ClassVar, Final, NewType, assert_never
 
 from ..report_cells import CellChange, OrderRow, ReportColumn
-from ..settlement_period import period_of
+from ..settlement_period import SettlementPeriod, period_of
 from ..text import normalize_text
 
 SUBJECT_WORD: Final = "raport"
@@ -186,11 +186,28 @@ class Window:
 
         return cls(today, today if rollout is None else rollout, frozenset(closed))
 
+    @staticmethod
+    def periods(today: date, rollout: date | None = None) -> tuple[SettlementPeriod, ...]:
+        """Okresy dni okna po kolei, od okresu dnia wdrożenia do okresu dziś: w nich proces sprawdza Plik zbiorczy, a
+        tokeny okresów z nim podaje jako ``closed``."""
+
+        last = period_of(today).tuesday
+        tuesday = period_of(min(today if rollout is None else rollout, today)).tuesday
+        found = []
+        while tuesday <= last:
+            found.append(SettlementPeriod(tuesday))
+            tuesday += timedelta(days=7)
+        return tuple(found)
+
     @property
     def first(self) -> date:
-        """Pierwszy dzień okna: od niego proces czyta skrzynkę i zlecenia INTERMAX."""
+        """Pierwszy dzień otwarty okna (dziś, gdy żaden nie jest otwarty): od niego proces czyta skrzynkę i zlecenia
+        INTERMAX."""
 
-        return self.rollout
+        for period in self.periods(self.today, self.rollout):
+            if period.token not in self.closed:
+                return max(period.tuesday, self.rollout)
+        return self.today
 
     def opens(self, day: date) -> bool:
         return self.rollout <= day <= self.today and period_of(day).token not in self.closed

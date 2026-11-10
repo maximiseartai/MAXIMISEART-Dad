@@ -734,7 +734,8 @@ class LoggedReports(_Record):
     """Wpisanie raportów (ADR 0028) bez adresów nadawców, tematów i treści maili poza Wpisami.
 
     ``today`` i okno dni od ``rollout`` (dzień wdrożenia tego kliknięcia; ``rollout_before`` z pamięci przed nim,
-    ``None``: pierwsze kliknięcie), ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać, ``mails``
+    ``None``: pierwsze kliknięcie) bez dni okresów ``closed`` (tokeny okresów okna z Plikiem zbiorczym; Logi sprzed
+    #1229 ich nie mają, bo wtedy kliknięcie ich nie sprawdzało), ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać, ``mails``
     przeczytane maile po chwili przyjścia, ``problems`` problemy rdzenia raportów, ``changes`` komórki do wpisania,
     ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, a ``written`` liczba wpisanych komórek
     (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
@@ -743,6 +744,7 @@ class LoggedReports(_Record):
     today: date
     rollout_before: date | None
     rollout: date
+    closed: list[str] = []
     skipped: int
     mails: list[LoggedMail]
     problems: list[LoggedProblem]
@@ -756,6 +758,7 @@ class LoggedReports(_Record):
             today=facts.today,
             rollout_before=facts.rollout_before,
             rollout=facts.rollout,
+            closed=list(facts.closed),
             skipped=facts.skipped,
             mails=[_mail(read) for read in facts.mails],
             problems=[_problem(problem) for problem in facts.problems],

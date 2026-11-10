@@ -59,10 +59,11 @@ def _refused(centrum: OrderingCentrum, name: str) -> dict[str, str]:
     return dict(body["message"])
 
 
-def _ordered(tmp_path: Path) -> OrderingCentrum:
-    """Centrum po Uporządkowaniu INTERMAX o 14:05:07 z jego Kopią; zegar procesu stoi dalej na 16:35:07."""
+def _ordered(tmp_path: Path, periods_directory: Path | None = None) -> OrderingCentrum:
+    """Centrum po Uporządkowaniu INTERMAX o 14:05:07 z jego Kopią; zegar procesu stoi dalej na 16:35:07.
+    ``periods_directory``: tata wskazał też folder okresów."""
 
-    centrum = ordering_centrum(tmp_path)
+    centrum = ordering_centrum(tmp_path, periods_directory=periods_directory)
     assert centrum.run_to_end()["result"]["ending"] == "finished"
     centrum.clock.moments = [LATER]
     return centrum
@@ -514,8 +515,10 @@ def test_plik_obok_intermax_z_innymi_bajtami_niz_kopia_to_odmowa_bez_podmiany_i_
 def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa_odrzucone(tmp_path: Path) -> None:
     """Także Wpisanie raportów, które pisze do tego samego INTERMAX, nie startuje w trakcie przywracania."""
 
-    centrum = _ordered(tmp_path)
-    # Wpisanie raportów bez pliku adresów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
+    periods_directory = tmp_path / "Okresy"
+    periods_directory.mkdir()
+    centrum = _ordered(tmp_path, periods_directory)
+    # Wpisanie raportów bez folderu okresów i pliku adresów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
     ToolDirectory(tmp_path).configuration.worker_addresses.touch()
     during: dict[str, Any] = {}
 

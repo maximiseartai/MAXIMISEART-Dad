@@ -421,6 +421,11 @@ REPORT_ENTERING_SAMPLES: Samples = {
     "addresses_unusable": [
         partial(report_entering_messages.addresses_unusable, ADDRESSES, problem) for problem in _ADDRESSES_PROBLEMS
     ],
+    "periods_directory_missing": [lambda: report_entering_messages.periods_directory_missing(PERIODS)],
+    "periods_folder_inaccessible": [
+        lambda: report_entering_messages.periods_folder_inaccessible(PERIODS),
+        lambda: report_entering_messages.periods_folder_inaccessible(PERIOD_DIRECTORY),
+    ],
     "state_unreadable": [report_entering_messages.state_unreadable],
     "cells_rejected": [report_entering_messages.cells_rejected],
     "unsupported_shape": [lambda: report_entering_messages.unsupported_shape(REGISTER, SHEET)],

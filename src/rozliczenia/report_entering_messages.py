@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
-from .message import IF_ERROR_RETURNS, Message, file_label
+from .message import IF_ERROR_RETURNS, Message, explorer_check, file_label, folder_label
 from .tool_files import REPORT_ENTERING_STATE
 from .worker_addresses import AddressesProblem, UnknownLogin
 from .worker_report_inbox import INBOX_ACCESS_FILE
@@ -93,6 +93,29 @@ def conflict_after_save(copy: Path) -> Message:
         "w tym samym czasie.",
         where=file_label(copy),
         action=f"{CONFLICT_ACTION} Dopiero wtedy kliknij jeszcze raz.",
+    )
+
+
+def periods_directory_missing(periods_directory: Path) -> Message:
+    """Folderu okresów z Ustawień taty nie ma: bez niego narzędzie nie wie, które okresy mają już Plik zbiorczy."""
+
+    return Message(
+        code="RAPORTY_BRAK_FOLDERU_OKRESOW",
+        what=f"Nie znaleziono folderu okresów, więc maili nie przeczytano. {_UNCHANGED}",
+        where=folder_label(periods_directory),
+        action="Wskaż w Ustawieniach folder okresów, w którym są foldery tygodni, i kliknij jeszcze raz.",
+    )
+
+
+def periods_folder_inaccessible(folder: Path) -> Message:
+    """Folderu okresów albo Folderu okresu nie da się odczytać (brak dostępu, OneDrive nie działa), więc narzędzie nie
+    wie, czy okres ma już Plik zbiorczy."""
+
+    return Message(
+        code="RAPORTY_NIEDOSTEPNY_FOLDER_OKRESOW",
+        what=f"Nie można teraz odczytać folderu okresów, więc maili nie przeczytano. {_UNCHANGED}",
+        where=folder_label(folder),
+        action=explorer_check("folder", "kliknij jeszcze raz"),
     )
 
 

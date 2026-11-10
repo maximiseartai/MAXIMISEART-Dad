@@ -26,6 +26,7 @@ from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxA
 from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, Intermax, Order
 from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.skrzynka_raportow import AtrapaImap, FakeInbox
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import ToolDirectory, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
@@ -793,3 +794,220 @@ def test_bez_pliku_hasla_albo_adresow_karta_mowi_czego_brakuje_a_start_jest_odrz
     assert (started.status_code, started.json()) == (409, {"message": sentence})
     assert centrum.fake_inbox.days == []
     assert centrum.run_logs() == []
+
+
+# --- Dopasowanie Wpisów do zleceń i zakres maili kliknięcia (#1229) ---------------------------------------------------
+
+ANNA = SENDERS["anna.kowalska"]
+MONDAY_PERIOD = "03_09_11_2026"
+
+
+def _entering(centrum: EnteringCentrum, view: dict[str, Any]) -> dict[str, Any]:
+    """Wpisanie raportów w Logach Uruchomienia ``view``."""
+
+    [logs] = [entry for entry in centrum.run_logs() if entry["run_id"] == view["run"]["id"]]
+    return dict(logs["report_entering"])
+
+
+def _click_at(centrum: EnteringCentrum, moment: datetime, mails: list[Any]) -> dict[str, Any]:
+    centrum.moment.append(moment)
+    centrum.fake_inbox.outcome = mails
+    return _finished(centrum)
+
+
+def test_pomylka_wykonawcy_w_numerze_albo_dniu_daje_problem_z_powodem_a_wpis_trafia_tylko_do_zlecenia_nadawcy_z_dnia(
+    tmp_path: Path,
+) -> None:
+    """US 27–30: numer zlecenia Jana od Anny, numer zlecenia Jana z 8.11 w Raporcie z 9.11 i numer spoza zleceń dają
+    problemy z oboma Wykonawcami, obiema datami i numerem; wpisuje się tylko Wpis Jana do jego zlecenia z 9.11."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    before = _cells(centrum.register)
+
+    view = _click_at(
+        centrum,
+        ENTERING_NOW,
+        [
+            report(ANNA, SUBJECT, "40000001 tak montaż"),
+            report(JAN, SUBJECT, "40000010 tak wymiana gniazda"),
+            report(JAN, SUBJECT, "12345678 tak wymiana modemu"),
+            report(JAN, SUBJECT, "40000001 tak wymiana routera"),
+        ],
+    )
+
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+    problems = _entering(centrum, view)["problems"]
+    assert [
+        (problem["kind"], problem["worker"], problem["number"], problem["owner"], problem["order_days"])
+        for problem in problems
+    ] == [
+        ("foreign_order", "anna.kowalska", "40000001", "jan.testowy", []),
+        ("unknown_number", "jan.testowy", "12345678", None, []),
+        ("other_day", "jan.testowy", "40000010", None, ["2026-11-08"]),
+    ]
+    assert {problem["day"] for problem in problems} == {"2026-11-09"}
+    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 3, "unit": "count"}
+
+
+def test_ten_sam_numer_dwa_razy_u_wykonawcy_w_jednym_dniu_niczego_nie_wpisuje(tmp_path: Path) -> None:
+    """US 31: dwa uporządkowane wiersze Jana z numerem 40000001 i dniem 9.11 zostają puste, a problem mówi o numerze."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 13, "jan.testowy", 40000001)), raw=())
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    sheet = load_workbook(centrum.register)[ORDER_SHEET]
+    rows = [cell.row for line in sheet.iter_rows(min_row=2) for cell in line if cell.value == 40000001]
+
+    view = _finished(centrum)
+
+    after = load_workbook(centrum.register)[ORDER_SHEET]
+    assert len(rows) == 2
+    assert [(after.cell(row, SUCCESSFUL).value, after.cell(row, COMPLETED).value) for row in rows] == [(None, None)] * 2
+    entering = _entering(centrum, view)
+    assert [(problem["kind"], problem["number"]) for problem in entering["problems"]] == [("repeated_order", "40000001")]
+    assert (entering["changes"], entering["written"]) == ([], 0)
+
+
+def test_raport_z_adresu_spoza_listy_wpisuje_sie_przy_nastepnym_kliknieciu_po_dopisaniu_adresu(tmp_path: Path) -> None:
+    """US 15–16: Raport z poprawnym tematem z nowego adresu Jana daje problem nieznanego nadawcy; Maks dopisuje adres do
+    pliku adresów i następne kliknięcie wpisuje ten sam mail bez innej pracy."""
+
+    new_address = "jan.nowy@przyklad.invalid"
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(new_address, SUBJECT, "40000001 tak wymiana routera")])
+    before = _cells(centrum.register)
+
+    first = _finished(centrum)
+    listed = {"jan.testowy": [JAN, new_address], "anna.kowalska": [ANNA]}
+    centrum.tool.configuration.worker_addresses.write_text(
+        json.dumps({"schema_version": 1, "wykonawcy": listed}, ensure_ascii=False), encoding="utf-8"
+    )
+    second = _finished(centrum)
+
+    assert [problem["kind"] for problem in _entering(centrum, first)["problems"]] == ["unknown_sender"]
+    assert _entering(centrum, second)["problems"] == []
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+    assert new_address not in json.dumps(centrum.run_logs(), ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    "month",
+    [
+        pytest.param(Path(), id="folder-okresow-plaski"),
+        pytest.param(Path("Rozliczenia 2026") / "11_Listopad_2026" / "INEA", id="uklad-folderow-taty"),
+    ],
+)
+def test_raport_z_ostatniego_dnia_okresu_wpisuje_sie_w_nowym_okresie_dopoki_okres_nie_ma_pliku_zbiorczego(
+    tmp_path: Path, month: Path
+) -> None:
+    """US 11–12 i 42: we wtorek 10.11 kliknięcie wpisuje Raport Jana z poniedziałku 9.11, bo okres 03_09_11_2026 nie ma
+    Pliku zbiorczego. Gdy tata go przygotuje, kliknięcie nie czyta już dni tego okresu: Raport Anny z 9.11 się nie
+    wpisuje, a skrzynka jest czytana od dziś."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    folder = centrum.periods_directory / month / MONDAY_PERIOD
+    folder.mkdir(parents=True)
+    _click_at(centrum, ENTERING_NOW, [])
+    before = _cells(centrum.register)
+
+    still_open = _click_at(
+        centrum,
+        datetime(2026, 11, 10, 8),
+        [report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 10, 7, 40))],
+    )
+    (folder / f"Rozliczenie {MONDAY_PERIOD} - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
+    closed = _click_at(
+        centrum,
+        datetime(2026, 11, 10, 9),
+        [report(ANNA, SUBJECT, "40000002 tak montaż", at=datetime(2026, 11, 10, 8, 50))],
+    )
+
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana")}
+    assert centrum.fake_inbox.days == [date(2026, 11, 9), date(2026, 11, 9), date(2026, 11, 10)]
+    assert [_entering(centrum, view)["closed"] for view in (still_open, closed)] == [[], [MONDAY_PERIOD]]
+    assert _entering(centrum, closed)["mails"] == [], "Raport z dnia okresu z Plikiem zbiorczym rdzeń pomija po cichu"
+
+
+def test_te_same_maile_w_innej_kolejnosci_i_drugie_klikniecie_daja_ten_sam_wynik(tmp_path: Path) -> None:
+    """Kryterium #1229: kolejność, w jakiej skrzynka oddaje maile, nie zmienia wpisanych komórek ani problemów, a drugie
+    kliknięcie z tymi samymi mailami niczego nie zmienia i ma te same problemy."""
+
+    mails = [
+        report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17)),
+        report(JAN, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 17, 30)),
+        report(ANNA, SUBJECT, "40000002 tak montaż", at=datetime(2026, 11, 9, 17, 10)),
+        report(ANNA, SUBJECT, "40000001 tak montaż", at=datetime(2026, 11, 9, 17, 20)),
+        report("obcy@przyklad.invalid", SUBJECT, "40000002 nie brak", at=datetime(2026, 11, 9, 17, 5)),
+    ]
+    forward = entering_centrum(tmp_path / "w-kolejnosci", INTERMAX, mails)
+    backward = entering_centrum(tmp_path / "od-konca", INTERMAX, mails[::-1])
+
+    first, reversed_first = _finished(forward), _finished(backward)
+    again = _finished(forward)
+
+    results = [_entering(forward, first), _entering(backward, reversed_first)]
+    assert _cells(forward.register) == _cells(backward.register)
+    assert _cells(forward.register)[40000001] == ("nie", "klient nieobecny"), "wygrywa późniejszy mail"
+    assert [(result["changes"], result["problems"]) for result in results] == [
+        (results[0]["changes"], results[0]["problems"])
+    ] * 2
+    assert [problem["kind"] for problem in results[0]["problems"]] == ["unknown_sender", "foreign_order"]
+    repeated = _entering(forward, again)
+    assert (repeated["changes"], repeated["problems"]) == ([], results[0]["problems"])
+
+
+def test_bez_folderu_okresow_w_ustawieniach_karta_mowi_co_wskazac_a_start_jest_odrzucony(tmp_path: Path) -> None:
+    """Bez folderu okresów kliknięcie nie wie, które okresy mają Plik zbiorczy, więc nie startuje i nie czyta skrzynki."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")], periods=False)
+
+    setup = centrum.setup()
+    started = centrum.start()
+
+    assert setup["blocker"] == "Najpierw wskaż folder okresów."
+    assert (started.status_code, started.json()) == (409, {"message": "Najpierw wskaż folder okresów."})
+    assert centrum.fake_inbox.days == []
+    assert centrum.run_logs() == []
+
+
+def test_folder_okresow_ktorego_juz_nie_ma_zatrzymuje_klikniecie_dla_taty_bez_odczytu_skrzynki(tmp_path: Path) -> None:
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    before = centrum.register.read_bytes()
+    centrum.periods_directory.rmdir()
+
+    result = _stopped(centrum)
+
+    [stop] = result["stops"]
+    assert (result["stop_kind"], stop["what"], stop["where"]) == (
+        "for_tata",
+        "Nie znaleziono folderu okresów, więc maili nie przeczytano. INTERMAX nie został zmieniony.",
+        f"folder {tmp_path.name}\\Okresy",
+    )
+    assert centrum.fake_inbox.days == []
+    assert centrum.register.read_bytes() == before
+
+
+@NO_ACCESS_ON_WINDOWS
+@PATH_CHECKS
+def test_folder_okresu_bez_dostepu_zatrzymuje_klikniecie_dla_taty_bez_odczytu_skrzynki(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    """Bez dostępu do Folderu okresu (OneDrive nie działa) narzędzie nie wie, czy okres ma Plik zbiorczy: Zatrzymanie,
+    zanim proces przeczyta skrzynkę, zamiast wpisu do okresu, który może być zamknięty."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    folder = centrum.periods_directory / MONDAY_PERIOD
+    folder.mkdir()
+    before = centrum.register.read_bytes()
+    path_checks(monkeypatch)
+
+    with without_access(folder):
+        result = _stopped(centrum)
+
+    [stop] = result["stops"]
+    assert (result["stop_kind"], stop["what"], stop["where"]) == (
+        "for_tata",
+        "Nie można teraz odczytać folderu okresów, więc maili nie przeczytano. INTERMAX nie został zmieniony.",
+        f"folder Okresy\\{MONDAY_PERIOD}",
+    )
+    assert centrum.fake_inbox.days == []
+    assert centrum.register.read_bytes() == before

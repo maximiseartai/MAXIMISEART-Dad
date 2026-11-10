@@ -1218,6 +1218,60 @@ def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtw
     assert [(code, lines[0]) for code, lines in replayed] == [(0, "ODTWORZENIE ZGODNE")] * 2, replayed
 
 
+# Wpisanie raportów z dniami zamkniętymi i pomyłkami Wykonawców (#1229): tata kliknął w poniedziałek 9.11, potem
+# przygotował Plik zbiorczy okresu 03_09_11_2026, a w środę 11.11 rano skrzynka ma Raport z 9.11 (okres zamknięty), Raport
+# Jana z 11.11 z numerem jego zlecenia z 10.11, Raport Anny z numerem zlecenia Jana i Raport Jana z numerem, który stoi
+# dwa razy w jego dniu.
+MATCHED = Intermax(
+    ordered=(
+        Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001),)),
+        Order(datetime(2026, 11, 10, 9), "jan.testowy", 40000011, cells=((NUMBER, 40000011),)),
+        Order(datetime(2026, 11, 10, 10), "anna.kowalska", 40000012, cells=((NUMBER, 40000012),)),
+        Order(datetime(2026, 11, 10, 11), "jan.testowy", 40000013, cells=((NUMBER, 40000013),)),
+        Order(datetime(2026, 11, 10, 12), "jan.testowy", 40000013, cells=((NUMBER, 40000013),)),
+    ),
+    raw=(),
+)
+
+
+def test_klikniecie_z_okresem_zamknietym_i_pomylkami_wykonawcow_odtwarza_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Logi mają tokeny okresów z Plikiem zbiorczym, a odtworzenie kładzie Plik zbiorczy każdego z nich w swoim folderze
+    okresów: dni zamknięte, cudze zlecenie, inny dzień i numer dwa razy w dniu wychodzą tak samo jak u taty."""
+
+    surroundings = Surroundings()
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, (), surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    folder = centrum.periods_directory / "03_09_11_2026"
+    folder.mkdir()
+    (folder / "Rozliczenie 03_09_11_2026 - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
+    jan, anna = SENDERS["jan.testowy"], SENDERS["anna.kowalska"]
+    centrum.moment.append(datetime(2026, 11, 11, 8))
+    centrum.fake_inbox.outcome = [
+        report(jan, "Raport 09.11.2026", "40000001 tak wymiana", at=datetime(2026, 11, 10, 7)),
+        report(jan, "Raport 11.11.2026", "40000011 tak wymiana", at=datetime(2026, 11, 11, 7)),
+        report(anna, "Raport 10.11.2026", "40000011 tak montaż", at=datetime(2026, 11, 11, 7, 1)),
+        report(jan, "Raport 10.11.2026", "40000013 tak montaż", at=datetime(2026, 11, 11, 7, 2)),
+        report(jan, "Raport 10.11.2026", "40000012 nie brak klienta", at=datetime(2026, 11, 11, 7, 3)),
+    ]
+    second = centrum.run_to_end()
+    archived = _archived_run(surroundings.report_box, tmp_path, second["run"]["id"])
+    entering = json.loads(gzip.decompress(archived.read_bytes()))["report_entering"]
+    assert entering["closed"] == ["03_09_11_2026"]
+    assert [problem["kind"] for problem in entering["problems"]] == [
+        "foreign_order",
+        "foreign_order",
+        "repeated_order",
+        "other_day",
+    ], entering["problems"]
+
+    code, lines = _replayed(capsys, archived, "--na-tym-drzewie")
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 def _logged_entry(record: dict[str, Any], number: str) -> dict[str, Any]:
     """Jedyny Wpis raportu z numerem ``number`` w Logach Wpisania raportów, do zmiany w miejscu."""
 

@@ -1,6 +1,7 @@
 """Wpisanie raportów z Centrum rozliczeń: karta poza okresami, wejście procesu z Ustawień taty i start (ADR 0028).
 
-INTERMAX to Rejestr zleceń z Ustawień taty, Konfiguracja wykonawców i plik adresów Wykonawców leżą w ``config``, a
+INTERMAX to Rejestr zleceń z Ustawień taty, folder okresów też z nich (okres z Plikiem zbiorczym jest dla Wpisania
+raportów zamknięty), Konfiguracja wykonawców i plik adresów Wykonawców leżą w ``config``, a
 Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``). Proces nie należy do okresu: okres
 Uruchomienia to okres dzisiejszej daty z zegara procesu, ustalony przy starcie (ADR 0019), więc Logi Uruchomienia
 trafiają do Skrzynki Zgłoszeń przy tym okresie. Start biegnie w miejscu „jedno naraz” ``RunHost``, więc nie zaczyna się
@@ -29,15 +30,18 @@ from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook,
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import report_entering as report_entering_contract
 from rozliczenia.centrum.contract import runs as runs_contract
-from rozliczenia.centrum.process_kind import HostParts, PathNeed, PreparedRun, Start
+from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, HostParts, NeededSetting, PathNeed, PreparedRun, Start
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.runs import RunHost
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings import Settings, SettingsStore
 from rozliczenia.file_state import file_state
 from rozliczenia.run_context import RunContexts
 
 _KIND: Final = declaration_of("report_entering")
 _VIEW: Final = _KIND.view
+_SETTINGS: Final[tuple[NeededSetting, ...]] = (*_KIND.settings, PERIODS_DIRECTORY)
+"""Ustawienia, bez których kliknięcie nie startuje: INTERMAX i folder okresów. Folder okresów nie jest w
+``KIND.settings``, bo tam znaczy, że proces należy do okresu i czyta jego pliki (Diagnoza Folderu okresu)."""
 
 
 @dataclass(frozen=True)
@@ -66,15 +70,21 @@ class ReportEnteringEntry:
         return report_entering_contract.ReportEnteringSetup(
             title=_KIND.title,
             reminder=_VIEW.reminder,
-            blocker=_KIND.settings_blocker(settings) or self._not_set_up() or _conflict(register),
+            blocker=_blocker(_unchosen(settings)) or self._not_set_up() or _conflict(register),
             open_in_excel=[] if register is None else open_in_excel([InputWorkbook(_VIEW.register_name, register, "data_file")]),
             last=last,
         )
 
     def prepare(self) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień taty i Konfiguracji; ``Refusal``, gdy Rejestr zleceń nie jest wskazany."""
+        """Wejście procesu z Ustawień taty i Konfiguracji; ``Refusal``, gdy INTERMAX albo folder okresów nie jest
+        wskazany."""
 
-        paths: dict[PathNeed, Path] = {"register": _KIND.required_paths(self.store.load())["register"]}
+        settings = self.store.load()
+        if (unchosen := _unchosen(settings)) is not None:
+            raise unchosen
+        paths: dict[PathNeed, Path] = {
+            setting.field: path for setting in _SETTINGS if (path := setting.chosen(settings)) is not None
+        }
         if missing := self._missing():
             raise refusal.report_entering_not_set_up(missing)
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
@@ -95,6 +105,17 @@ class ReportEnteringEntry:
     def _not_set_up(self) -> str | None:
         missing = self._missing()
         return refusal.report_entering_not_set_up(missing).message if missing else None
+
+
+def _unchosen(settings: Settings) -> refusal.Refusal | None:
+    """„Najpierw wskaż …” z nazwami niewskazanych Ustawień kliknięcia; ``None``, gdy wszystkie są wskazane."""
+
+    missing = [setting.name for setting in _SETTINGS if setting.chosen(settings) is None]
+    return refusal.first_choose(missing) if missing else None
+
+
+def _blocker(unchosen: refusal.Refusal | None) -> str | None:
+    return None if unchosen is None else unchosen.message
 
 
 def _conflict(register: Path | None) -> str | None:
