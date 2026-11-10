@@ -23,7 +23,17 @@ import pytest
 from rozliczenia.intermax_replace import LOCAL_DISK
 from rozliczenia.tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_RESULT, REPORT_ENTERING_STATE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxAccess, InboxUnreachable, PasswordRejected
-from rozliczenia.worker_reports import ForeignOrder, Login, MailId, OrderNumber, SubjectFault, UnreadableSubject
+from rozliczenia.worker_reports import (
+    ConflictingVerdicts,
+    ForeignOrder,
+    Login,
+    MailId,
+    OrderNumber,
+    ReportEntry,
+    SubjectFault,
+    UnreadableSubject,
+    Verdict,
+)
 from rozliczenia.worker_reports.reasons import reason
 
 from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, Intermax, Order
@@ -1281,6 +1291,41 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
         "problems": [{"reason": reason(unreadable), "number": None, "sender": None, "keep": None}],
         "without_report": [],
     }
+
+
+def test_tak_i_nie_jednego_zlecenia_w_mailu_nic_do_niego_nie_wpisuja_a_widok_raporty_pokazuje_ostrzezenie_z_oboma_wpisami(
+    tmp_path: Path,
+) -> None:
+    """Decyzja Maksa 11.11: Raport Jana z aplikacji pocztowej w jednej linii ma dla 40000001 Wpis z ``tak`` i Wpis z
+    ``nie``, a na końcu stopkę. Zlecenie 40000001 zostaje puste, 40000005 dostaje ``tak`` bez stopki w opisie, a widok
+    Raporty pokazuje przy Janie ostrzeżenie z mailem, numerem i oboma Wpisami."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)), raw=())
+    text = "40000001 tak inst25m  40000001 nie brak klienta od umowy  40000005 tak   Wysłano z aplikacji mobilnej Poczty o2"
+    mail = report(JAN, SUBJECT, text)
+    centrum = entering_centrum(tmp_path, intermax, [mail])
+    before = _cells(centrum.register)
+
+    view = _finished(centrum)
+
+    number = OrderNumber("40000001")
+    warning = ConflictingVerdicts(
+        Login("jan.testowy"),
+        date(2026, 11, 9),
+        number,
+        mail.id,
+        mail.arrived,
+        (ReportEntry(number, Verdict.YES, None, "inst25m"), ReportEntry(number, Verdict.NO, None, "brak klienta od umowy")),
+    )
+    assert _cells(centrum.register) == {**before, 40000005: ("tak", None)}
+    assert view["result"]["summary"]["figures"][:2] == [
+        {"label": "Wpisane", "value": 1, "unit": "count"},
+        {"label": "Problemy", "value": 1, "unit": "count"},
+    ]
+    assert _worker(_view(centrum), "jan.testowy")["problems"] == [
+        {"reason": reason(warning), "number": "40000001", "sender": None, "keep": None}
+    ]
+    assert f"{mail.arrived:%d.%m.%Y o %H:%M}" in reason(warning)
 
 
 def test_widok_raporty_domyslnie_pokazuje_dzis_a_wczesniejsze_dni_tylko_z_otwartych_okresow(tmp_path: Path) -> None:

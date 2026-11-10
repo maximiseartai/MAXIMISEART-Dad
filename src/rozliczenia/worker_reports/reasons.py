@@ -9,11 +9,13 @@ from datetime import date
 from typing import assert_never
 
 from . import (
+    ConflictingVerdicts,
     ForeignOrder,
     ManualDifference,
     MissingVerdict,
     OtherDay,
     RepeatedOrder,
+    ReportEntry,
     ReportProblem,
     SubjectFault,
     UnknownNumber,
@@ -39,6 +41,13 @@ def reason(problem: ReportProblem) -> str:
             )
         case MissingVerdict(worker=worker, day=day, number=number, fault=fault):
             return f"Wpis zlecenia {number} od {worker} z {_day(day)} {_verdict(fault)}, więc Centrum go nie wpisało."
+        case ConflictingVerdicts(worker=worker, day=day, number=number, arrived=arrived, entries=entries):
+            said = " i ".join(f"„{_said(entry)}”" for entry in entries)
+            return (
+                f"Raport wykonawcy od {worker} z {_day(day)}, który przyszedł {arrived:%d.%m.%Y o %H:%M}, ma dla zlecenia "
+                f"{number} różne Wpisy: {said}, więc Centrum nic do tego zlecenia nie wpisało. Sprawdź z Wykonawcą, który "
+                "Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail."
+            )
         case UnknownNumber(worker=worker, day=day, number=number):
             return f"Numer {number} nie jest zleceniem {worker} z {_day(day)}."
         case ForeignOrder(worker=worker, day=day, number=number, owner=owner):
@@ -86,6 +95,13 @@ def _subject(fault: SubjectFault) -> str:
             return "rok w dacie nie ma dwóch ani czterech cyfr"
         case SubjectFault.NOT_A_DAY:
             return "data nie jest prawdziwym dniem"
+
+
+def _said(entry: ReportEntry) -> str:
+    """Wpis tak, jak go napisał Wykonawca: ``tak`` albo ``nie`` i czynności."""
+
+    mark = "" if entry.verdict is None else entry.verdict.value
+    return " ".join(part for part in (mark, entry.activities) if part)
 
 
 def _verdict(fault: VerdictFault) -> str:

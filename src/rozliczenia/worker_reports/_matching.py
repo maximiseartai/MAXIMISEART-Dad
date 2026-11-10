@@ -7,6 +7,7 @@ from collections.abc import Iterable, Sequence
 from datetime import date
 
 from ._model import (
+    ConflictingVerdicts,
     ForeignOrder,
     Login,
     MissingVerdict,
@@ -19,6 +20,7 @@ from ._model import (
     ReportEntry,
     ReportProblem,
     UnknownNumber,
+    VerdictFault,
 )
 
 
@@ -27,10 +29,10 @@ def match(
 ) -> tuple[dict[OrderKey, tuple[RegisterOrder, ReportEntry]], list[ReportProblem]]:
     """Zlecenie i zwycięski Wpis dla każdego zlecenia z Wpisami oraz problemy Wpisów bez jednego zlecenia.
 
-    ``reports`` idą w kolejności przyjścia, więc późniejszy Wpis zastępuje wcześniejszy. Numer w dwóch zleceniach
+    ``reports`` idą w kolejności przyjścia, więc późniejszy mail zastępuje Wpisy wcześniejszego. Numer w dwóch zleceniach
     Wykonawcy z dnia z tematu to ``RepeatedOrder``, a numer bez jego zlecenia z tego dnia rozstrzyga ``_unmatched``.
     Zwycięski Wpis bez ``tak`` ani ``nie`` to ``MissingVerdict`` zamiast celu, bo nie wiadomo, co Wykonawca miał na
-    myśli.
+    myśli, a zwycięski mail z Wpisami numeru z ``tak`` i z ``nie`` (``_entries.entries``) to ``ConflictingVerdicts``.
     """
 
     rows: defaultdict[OrderKey, list[RegisterOrder]] = defaultdict(list)
@@ -38,22 +40,30 @@ def match(
     for order in orders:
         rows[order.key].append(order)
         numbered[order.key.number].append(order.key)
-    targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]] = {}
+    latest: dict[OrderKey, tuple[RegisterOrder, ReadReport, tuple[ReportEntry, ...]]] = {}
     problems: list[ReportProblem] = []
     for report in reports:
+        said: defaultdict[OrderNumber, list[ReportEntry]] = defaultdict(list)
         for entry in report.entries:
-            key = OrderKey(entry.number, report.day, report.worker)
+            said[entry.number].append(entry)
+        for number, written in said.items():
+            key = OrderKey(number, report.day, report.worker)
             match rows.get(key, []):
                 case []:
-                    problems += _unmatched(key, numbered[entry.number])
+                    problems += _unmatched(key, numbered[number])
                 case [order]:
-                    targets[key] = (order, entry)
+                    latest[key] = (order, report, tuple(written))
                 case _:
-                    problems.append(RepeatedOrder(report.worker, report.day, entry.number))
-    for key, (_, entry) in list(targets.items()):
-        if entry.fault is not None:
-            del targets[key]
-            problems.append(MissingVerdict(key.worker, key.day, key.number, entry.fault))
+                    problems.append(RepeatedOrder(report.worker, report.day, number))
+    targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]] = {}
+    for key, (order, report, entries) in latest.items():
+        match entries:
+            case (ReportEntry(fault=None) as entry,):
+                targets[key] = (order, entry)
+            case (ReportEntry(fault=VerdictFault() as fault),):
+                problems.append(MissingVerdict(key.worker, key.day, key.number, fault))
+            case _:
+                problems.append(ConflictingVerdicts(key.worker, key.day, key.number, report.mail, report.arrived, entries))
     return targets, problems
 
 

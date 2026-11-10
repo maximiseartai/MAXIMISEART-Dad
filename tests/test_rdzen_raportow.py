@@ -23,6 +23,7 @@ import pytest
 from rozliczenia.report_cells import CellChange, OrderRow, ReportColumn
 from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_reports import (
+    ConflictingVerdicts,
     ForeignOrder,
     Kept,
     Login,
@@ -1052,6 +1053,25 @@ def _every_problem() -> list[ReportProblem]:
         *(UnreadableSubject(mail, jan, EVENING, fault) for fault in SubjectFault),
         UnknownSender(mail, sender, DAY),
         *(MissingVerdict(jan, DAY, number, fault) for fault in VerdictFault),
+        ConflictingVerdicts(
+            jan,
+            DAY,
+            OrderNumber("40000011"),
+            mail,
+            EVENING,
+            (
+                ReportEntry(OrderNumber("40000011"), Verdict.YES, None, "inst25m"),
+                ReportEntry(OrderNumber("40000011"), Verdict.NO, None, "brak klienta od umowy"),
+            ),
+        ),
+        ConflictingVerdicts(
+            jan,
+            DAY,
+            number,
+            mail,
+            EVENING,
+            (ReportEntry(number, Verdict.NO, None, ""), ReportEntry(number, Verdict.YES, None, "montaż")),
+        ),
         UnknownNumber(jan, DAY, OrderNumber("12345678")),
         ForeignOrder(jan, DAY, number, ewa),
         OtherDay(jan, DAY, number, (date(2026, 11, 6), date(2026, 11, 7))),
@@ -1377,14 +1397,14 @@ def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuj
             id="separator-podpisu",
         ),
         pytest.param(
-            "40000001 tak wymiana routera\n40000002 nie klient nieobecny\n40000001 nie brak klienta",
-            id="pierwszy-wpis-numeru-w-mailu",
+            "40000001 tak wymiana routera\n40000002 nie klient nieobecny\n40000001 tak montaż gniazda",
+            id="pierwszy-wpis-numeru-z-tym-samym-tak",
         ),
     ],
 )
 def test_powitanie_podpis_i_cytat_nie_trafiaja_do_opisu(text: str) -> None:
     """US 23, 25: powód nieskuteczności przy ``nie`` też trafia do ``CZYNNOŚCI ZREALIZOWANE``; z cytowanej odpowiedzi
-    nic. W jednym mailu liczy się pierwszy Wpis zlecenia, bo cytat stoi pod nową treścią."""
+    nic. Z dwóch Wpisów zlecenia z tym samym ``tak`` w jednym mailu liczy się pierwszy."""
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], _orders()))
 
@@ -1725,9 +1745,9 @@ TWO_CELLS = ((0, "tak", "wymiana routera"), (1, "nie", "brak klienta"))
         pytest.param(f"{ROUTER}\n2. Zlecenie 40000002 nie brak klienta", TWO_CELLS, id="znacznik-listy-i-przedrostek"),
         pytest.param(f"{ROUTER} zl. 40000002 nie brak klienta", TWO_CELLS, id="przedrostek-w-srodku-linii"),
         pytest.param(
-            "40000001 tak wymiana routera wysłano z serwisu",
-            ((0, "tak", "wymiana routera wysłano z serwisu"),),
-            id="slowa-stopki-w-srodku-linii-to-opis",
+            "40000001 tak wymiana routera wysłano z serwisu\n40000002 nie brak klienta",
+            ((0, "tak", "wymiana routera wysłano z serwisu"), (1, "nie", "brak klienta")),
+            id="slowa-stopki-w-srodku-linii-przed-nastepnym-wpisem-to-opis",
         ),
         pytest.param(
             f"{ROUTER}\nW dniu pon., 8 lis 2026 o 12:00\nJan Testowy\n<jan@przyklad.invalid> napisał(a):\n"
@@ -1767,3 +1787,294 @@ def test_dwa_nieczytelne_tematy_z_jednym_message_id_i_chwila_przyjscia_daja_ten_
         SubjectFault.NO_YEAR,
         SubjectFault.YEAR_DIGITS,
     }
+
+
+# --- Stopka w środku ostatniej linii i sprzeczne Wpisy jednego numeru (Część #1224, przegląd prawdziwych Raportów) ---
+
+FOOTER_ORDERS = [_order(row, number=number) for row, number in zip(ROWS, NUMBERS, strict=True)]
+
+
+@pytest.mark.parametrize(
+    ("text", "entered"),
+    [
+        pytest.param(
+            "40000001 tak inst25m  40000002 nie klientka nie wyraża zgody  40000003 tak   Wysłano z aplikacji mobilnej Poczty o2",
+            ((0, "tak", "inst25m"), (1, "nie", "klientka nie wyraża zgody"), (2, "tak", "")),
+            id="poczta-o2-po-wpisie-bez-opisu",
+        ),
+        pytest.param(
+            "40000001 tak 40000002 nie   40000003 tak montaż   Wysłano z aplikacji mobilnej WP Poczty",
+            ((0, "tak", ""), (1, "nie", ""), (2, "tak", "montaż")),
+            id="wp-poczta-po-opisie",
+        ),
+        pytest.param(f"{ROUTER}   Wysłane z iPhone'a", ROUTER_CELLS, id="wyslane-z"),
+        pytest.param(f"{ROUTER}   Wysłane ze smartfona Samsung Galaxy", ROUTER_CELLS, id="wyslane-ze"),
+        pytest.param(f"{ROUTER} Sent from my iPhone", ROUTER_CELLS, id="sent-from-po-jednej-spacji"),
+        pytest.param(f"{ROUTER}   GET OUTLOOK FOR ANDROID", ROUTER_CELLS, id="get-outlook-wielkimi-literami"),
+        pytest.param(f"{ROUTER}   Wysłano z aplikacji mobilnej Poczty o2\n\n \t\n", ROUTER_CELLS, id="pod-stopka-biale-znaki"),
+        pytest.param(
+            f"{ROUTER}   Wysłano z aplikacji mobilnej Poczty o2\n\nW dniu pon., 8 lis 2026 o 12:00 Jan "
+            "<jan@przyklad.invalid> napisał(a):\n> 40000002 nie brak klienta",
+            ROUTER_CELLS,
+            id="pod-stopka-cytat-gmaila",
+        ),
+        pytest.param(
+            f"{ROUTER}   Wysłano z aplikacji mobilnej Poczty o2\n> 40000002 nie brak klienta",
+            ROUTER_CELLS,
+            id="pod-stopka-linie-cytatu",
+        ),
+        pytest.param(
+            f"{ROUTER} pozdrawiam Jan   Wysłano z aplikacji mobilnej Poczty o2", ROUTER_CELLS, id="pozegnanie-podpis-i-stopka"
+        ),
+        pytest.param(
+            f"{ROUTER}\n40000002 nie brak klienta   Sent from my iPhone",
+            TWO_CELLS,
+            id="stopka-w-drugiej-linii-wpisu",
+        ),
+        pytest.param(
+            "40000001 tak wymiana routera,\nmontaż 2 gniazd   Wysłano z aplikacji mobilnej Poczty o2",
+            LONG_CELLS,
+            id="stopka-w-zawinietej-linii-opisu",
+        ),
+        pytest.param(
+            "40000001 nie sprzęt wysłano z magazynu 40000002 tak",
+            ((0, "nie", "sprzęt wysłano z magazynu"), (1, "tak", "")),
+            id="slowa-stopki-przed-kolejnym-wpisem-to-opis",
+        ),
+        pytest.param(
+            "40000001 nie sprzęt wysłano z magazynu 40000002 tak   Wysłano z aplikacji mobilnej Poczty o2",
+            ((0, "nie", "sprzęt wysłano z magazynu"), (1, "tak", "")),
+            id="slowa-stopki-w-opisie-i-stopka-na-koncu-linii",
+        ),
+        pytest.param(
+            "40000001 nie sprzęt wysłano z magazynu\nkurier jutro",
+            ((0, "nie", "sprzęt wysłano z magazynu kurier jutro"),),
+            id="slowa-stopki-przed-tekstem-w-nastepnej-linii-to-opis",
+        ),
+        pytest.param(
+            "40000001 nie sprzęt wysłano z magazynu\n\nJan",
+            ((0, "nie", "sprzęt wysłano z magazynu"),),
+            id="slowa-stopki-przed-tekstem-pod-pusta-linia-to-opis",
+        ),
+        pytest.param(
+            "40000001 nie sprzęt wysłano z magazynu", ((0, "nie", "sprzęt"),), id="slowa-stopki-do-konca-tresci-to-stopka"
+        ),
+    ],
+)
+def test_stopka_aplikacji_pocztowej_w_srodku_ostatniej_linii_nie_trafia_do_opisu(
+    text: str, entered: tuple[tuple[int, str, str], ...]
+) -> None:
+    """US 23: aplikacja pocztowa pisze raport w jednej linii, a stopkę na jej końcu. Stopka z wyliczonych (``Wysłano z``,
+    ``Wysłane z``/``ze``, ``Sent from``, ``Get Outlook for``), która zaczyna się w środku ostatniej linii treści i biegnie
+    do jej końca, a pod nią są tylko białe znaki albo cytat, kończy opis jak stopka w osobnej linii. Takie słowa, po
+    których stoi kolejny Wpis albo tekst w tej linii lub pod nią, to opis; te same słowa na samym końcu treści to
+    stopka, bo rdzeń ich od stopki nie odróżni."""
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], FOOTER_ORDERS))
+
+    assert outcome.changes == _cells(entered)
+    assert outcome.problems == ()
+
+
+_FOOTERS = (
+    "Wysłano z aplikacji mobilnej Poczty o2",
+    "WYSŁANO Z APLIKACJI MOBILNEJ WP POCZTY",
+    "Wysłane z iPhone'a",
+    "wysłane ze smartfona",
+    "Sent from my iPhone",
+    "Get Outlook for Android",
+)
+
+
+@PROPERTY
+@given(
+    st.lists(st.sampled_from(["montaż", "z", "from", "routera", "2", "gniazda", "Outlook", "for", "aplikacji", "wysłanie"]), max_size=5),
+    st.sampled_from(_FOOTERS),
+    st.sampled_from([" ", "  ", "\t", "\xa0 ", "   "]),
+    st.sampled_from([("", ""), ("\n", ""), ("\n\n \t\n", ""), ("\n> 40000002 nie brak klienta", ""), ("\nkurier jutro", "kurier jutro")]),
+    st.sampled_from([None, "\n", "  ", "\n\n"]),
+)
+def test_wlasnosc_stopka_konczy_opis_tylko_na_koncu_ostatniej_linii_tresci(
+    words: list[str], footer: str, gap: str, tail: tuple[str, str], more: str | None
+) -> None:
+    """US 23: stopka po dowolnych słowach opisu, w dowolnej wielkości liter i po dowolnych odstępach, z samymi białymi
+    znakami albo cytatem pod nią, nie trafia do opisu. Gdy po niej stoi kolejny Wpis (``more``), w tej samej linii albo
+    niżej, albo tekst w następnej linii, należy do opisu."""
+
+    after, kept = tail
+    text = f"40000001 tak {' '.join(words)}{gap}{footer}"
+    if more is None:
+        entered = [(0, "tak", " ".join([*words, *footer.split(), kept] if kept else words))]
+    else:
+        text += f"{more}40000002 nie brak klienta"
+        entered = [(0, "tak", " ".join([*words, *footer.split()])), (1, "nie", " ".join(filter(None, ["brak klienta", kept])))]
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text + after)], FOOTER_ORDERS))
+
+    assert outcome.changes == _cells(entered)
+
+
+CONFLICT_ORDERS = [
+    _order(OrderRow("Zlecenia", 130), number="40000010"),
+    _order(OrderRow("Zlecenia", 131), number="40000011"),
+    _order(OrderRow("Zlecenia", 132), number="40000012"),
+]
+CONFLICT = "40000010 tak\n40000011 tak inst25m\n40000011 nie brak klienta od umowy\n40000012 tak"
+
+
+def _said(number: str, verdict: Verdict, activities: str) -> ReportEntry:
+    return ReportEntry(OrderNumber(number), verdict, None, activities)
+
+
+def _conflict(mail: ReportMail, *entries: ReportEntry, number: str = "40000011") -> ConflictingVerdicts:
+    return ConflictingVerdicts(JAN_LOGIN, DAY, OrderNumber(number), mail.id, mail.arrived, entries)
+
+
+def test_tak_i_nie_jednego_zlecenia_w_jednym_mailu_niczego_do_niego_nie_wpisuja_a_tata_dostaje_oba_wpisy() -> None:
+    """Decyzja Maksa 11.11: ten sam numer z ``tak`` i z ``nie`` w treści jednego maila to ostrzeżenie z Wykonawcą,
+    mailem (dzień z tematu, chwila przyjścia), numerem i oboma Wpisami; do tego zlecenia Centrum nie wpisuje nic, a
+    pozostałe Wpisy maila wpisuje."""
+
+    mail = _mail(JAN, SUBJECT, CONFLICT)
+
+    outcome = enter_reports(_inputs([mail], CONFLICT_ORDERS))
+
+    assert outcome.changes == (
+        CellChange(OrderRow("Zlecenia", 130), ReportColumn.SUCCESSFUL, "tak"),
+        CellChange(OrderRow("Zlecenia", 132), ReportColumn.SUCCESSFUL, "tak"),
+    )
+    assert outcome.problems == (
+        _conflict(mail, _said("40000011", Verdict.YES, "inst25m"), _said("40000011", Verdict.NO, "brak klienta od umowy")),
+    )
+    assert outcome.memory.entries == {
+        OwnEntry(_key("40000010"), ReportColumn.SUCCESSFUL, "tak"),
+        OwnEntry(_key("40000012"), ReportColumn.SUCCESSFUL, "tak"),
+    }
+    assert [(worker.entered, worker.problems, worker.without_report) for worker in outcome.workers] == [(2, 1, ())]
+
+
+@pytest.mark.parametrize(
+    ("text", "changes", "problems"),
+    [
+        pytest.param(
+            "40000011 tak inst25m\n40000011 tak montaż", _both(ROW, "tak", "inst25m"), (), id="ten-sam-tak-pierwszy-wpis"
+        ),
+        pytest.param(
+            "40000011 nie brak klienta 40000011 NIE, nikt nie otworzył",
+            _both(ROW, "nie", "brak klienta"),
+            (),
+            id="to-samo-nie-w-jednej-linii-pierwszy-wpis",
+        ),
+        pytest.param(
+            "40000011 inst25m\n40000011 tak montaż", _both(ROW, "tak", "montaż"), (), id="wpis-bez-znaku-i-wpis-z-tak"
+        ),
+        pytest.param(
+            "40000011 nie brak klienta\n40000011 skuteczne", _both(ROW, "nie", "brak klienta"), (), id="wpis-z-nie-i-wpis-ze-slowem"
+        ),
+        pytest.param(
+            "40000011 t wymiana\n40000011 nie brak klienta", _both(ROW, "nie", "brak klienta"), (), id="wpis-z-litera-i-wpis-z-nie"
+        ),
+        pytest.param(
+            "40000011 inst25m\n40000011 t montaż",
+            (),
+            (MissingVerdict(JAN_LOGIN, DAY, OrderNumber("40000011"), VerdictFault.MISSING),),
+            id="dwa-wpisy-bez-tak-nie-pierwszy-wpis",
+        ),
+        pytest.param(
+            "40000011 tak inst25m\n\nW dniu pon., 8 lis 2026 o 12:00 Jan <jan@przyklad.invalid> napisał(a):\n"
+            "> 40000011 nie brak klienta",
+            _both(ROW, "tak", "inst25m"),
+            (),
+            id="nie-tylko-w-cytacie",
+        ),
+    ],
+)
+def test_z_wpisow_numeru_w_jednym_mailu_liczy_sie_pierwszy_z_tak_albo_nie(
+    text: str, changes: tuple[CellChange, ...], problems: tuple[ReportProblem, ...]
+) -> None:
+    """Decyzja Maksa do tabeli decyzji: z Wpisów numeru w treści maila (cytat do niej nie należy) liczy się pierwszy z
+    ``tak`` albo ``nie``, a Wpis bez nich tylko wtedy, gdy żaden ich nie ma (pierwszy)."""
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order(number="40000011")]))
+
+    assert (outcome.changes, outcome.problems) == (changes, problems)
+
+
+@pytest.mark.parametrize(
+    ("text", "entries"),
+    [
+        pytest.param(
+            "40000011 nie\n40000011 inst25m\n40000011 tak montaż\n40000011 nie brak klienta",
+            (_said("40000011", Verdict.NO, ""), _said("40000011", Verdict.YES, "montaż")),
+            id="pierwszy-wpis-z-kazdym-znakiem-w-kolejnosci-maila",
+        ),
+        pytest.param(
+            "40000011 tak inst25m   40000011 nie brak klienta   Wysłano z aplikacji mobilnej Poczty o2",
+            (_said("40000011", Verdict.YES, "inst25m"), _said("40000011", Verdict.NO, "brak klienta")),
+            id="w-jednej-linii-ze-stopka",
+        ),
+        pytest.param(
+            "#40000011 Tak, inst25m\nZlecenie 40000011 - nie: brak klienta",
+            (_said("40000011", Verdict.YES, "inst25m"), _said("40000011", Verdict.NO, "brak klienta")),
+            id="z-krzyzykiem-przedrostkiem-i-interpunkcja",
+        ),
+    ],
+)
+def test_ostrzezenie_o_tak_i_nie_numeru_ma_pierwszy_wpis_kazdego_znaku_w_kolejnosci_maila(
+    text: str, entries: tuple[ReportEntry, ...]
+) -> None:
+    mail = _mail(JAN, SUBJECT, text)
+
+    outcome = enter_reports(_inputs([mail], [_order(number="40000011")]))
+
+    assert (outcome.changes, outcome.problems) == ((), (_conflict(mail, *entries),))
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_pozniejszy_mail_z_jednym_wpisem_numeru_rozwiazuje_ostrzezenie_a_pozniejsze_sprzeczne_wpisy_je_daja(
+    reverse: bool,
+) -> None:
+    """US 37, 40: o zleceniu decyduje najpóźniejszy mail, także w kolejnym kliknięciu: jasny Wpis po sprzecznych daje
+    wpis bez ostrzeżenia, a sprzeczne Wpisy po jasnym dają ostrzeżenie i nie wpisują niczego nowego, a własny wpis z
+    pierwszego kliknięcia zostaje w komórce i pamięci."""
+
+    conflict = _mail(JAN, SUBJECT, CONFLICT)
+    fixed = _mail(JAN, SUBJECT, "40000011 nie brak klienta od umowy", LATER)
+    late_conflict = _mail(JAN, SUBJECT, CONFLICT, LATER + timedelta(hours=1))
+    orders = CONFLICT_ORDERS
+
+    first = enter_reports(_inputs([conflict], orders))
+    second = enter_reports(_inputs([fixed, conflict][:: -1 if reverse else 1], orders, memory=first.memory))
+    written = [replace(order, successful="nie", completed="brak klienta od umowy") if order.key.number == "40000011" else order for order in orders]
+    third = enter_reports(_inputs([conflict, fixed, late_conflict], written, memory=second.memory))
+
+    assert [type(problem) for problem in first.problems] == [ConflictingVerdicts]
+    assert second.problems == ()
+    assert _both(OrderRow("Zlecenia", 131), "nie", "brak klienta od umowy") == tuple(
+        change for change in second.changes if change.order == OrderRow("Zlecenia", 131)
+    )
+    assert third.problems == (
+        _conflict(
+            late_conflict, _said("40000011", Verdict.YES, "inst25m"), _said("40000011", Verdict.NO, "brak klienta od umowy")
+        ),
+    )
+    assert [change for change in third.changes if change.order == OrderRow("Zlecenia", 131)] == []
+    assert {entry for entry in third.memory.entries if entry.key.number == "40000011"} == {
+        OwnEntry(_key("40000011"), ReportColumn.SUCCESSFUL, "nie"),
+        OwnEntry(_key("40000011"), ReportColumn.COMPLETED, "brak klienta od umowy"),
+    }
+
+
+def test_postac_kanoniczna_maila_ze_sprzecznymi_wpisami_daje_te_same_wpisy_i_ostrzezenie() -> None:
+    """Odtworzenie z Logów (#1233): mail z ``as_mail`` w miejscu maila ze sprzecznymi Wpisami daje ten sam odczyt (oba
+    Wpisy numeru) i to samo ostrzeżenie."""
+
+    mail = _mail(JAN, SUBJECT, f"{CONFLICT}   Wysłano z aplikacji mobilnej Poczty o2")
+    outcome = enter_reports(_inputs([mail], CONFLICT_ORDERS))
+    sender = SenderAddress.of(JAN)
+    assert sender is not None
+
+    again = enter_reports(_inputs([as_mail(read, sender) for read in outcome.mails], CONFLICT_ORDERS))
+
+    assert again == outcome
+    assert [type(problem) for problem in again.problems] == [ConflictingVerdicts]

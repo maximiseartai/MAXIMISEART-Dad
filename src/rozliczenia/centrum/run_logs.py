@@ -77,6 +77,7 @@ from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts
 from rozliczenia.worker_reports import (
+    ConflictingVerdicts,
     ForeignOrder,
     Login,
     MailId,
@@ -522,6 +523,15 @@ class LoggedReportEntry(_Record):
     fault: LoggedVerdictFault | None
     activities: str
 
+    @classmethod
+    def of(cls, entry: ReportEntry) -> LoggedReportEntry:
+        return cls(
+            number=entry.number,
+            verdict=None if entry.verdict is None else entry.verdict.value,
+            fault=None if entry.fault is None else _verdict_fault(entry.fault),
+            activities=entry.activities,
+        )
+
 
 class LoggedReportMail(_Record):
     """Raport wykonawcy od Wykonawcy z listy adresów: skrót maila, chwila przyjścia, login, dzień z tematu i Wpisy; bez
@@ -560,15 +570,7 @@ LoggedMail = Annotated[LoggedReportMail | LoggedUnreadableMail | LoggedStrangerM
 def _mail(read: MailRead) -> LoggedMail:
     match read:
         case ReadReport():
-            entries = [
-                LoggedReportEntry(
-                    number=entry.number,
-                    verdict=None if entry.verdict is None else entry.verdict.value,
-                    fault=None if entry.fault is None else _verdict_fault(entry.fault),
-                    activities=entry.activities,
-                )
-                for entry in read.entries
-            ]
+            entries = [LoggedReportEntry.of(entry) for entry in read.entries]
             return LoggedReportMail(
                 kind="report", mail=read.mail.digest, arrived=read.arrived, worker=read.worker, day=read.day, entries=entries
             )
@@ -632,6 +634,19 @@ class LoggedOrderProblem(_Record):
     order_days: list[date] = []
 
 
+class LoggedConflictProblem(_Record):
+    """Raport wykonawcy z Wpisami jednego numeru z ``tak`` i z ``nie``: skrót maila, chwila przyjścia, Wykonawca, dzień
+    z tematu, numer i te Wpisy (pod strażnikiem jak w ``LoggedReportEntry``)."""
+
+    kind: Literal["conflicting_verdicts"]
+    mail: str
+    arrived: datetime
+    worker: str
+    day: date
+    number: str
+    entries: list[LoggedReportEntry]
+
+
 class LoggedSubjectProblem(_Record):
     kind: Literal["unreadable_subject"]
     mail: str
@@ -674,7 +689,8 @@ class LoggedManualProblem(_Record):
 
 
 LoggedProblem = Annotated[
-    LoggedOrderProblem | LoggedSubjectProblem | LoggedSenderProblem | LoggedManualProblem, Field(discriminator="kind")
+    LoggedOrderProblem | LoggedConflictProblem | LoggedSubjectProblem | LoggedSenderProblem | LoggedManualProblem,
+    Field(discriminator="kind"),
 ]
 
 
@@ -697,6 +713,16 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 day=problem.day,
                 number=problem.number,
                 fault=_verdict_fault(problem.fault),
+            )
+        case ConflictingVerdicts():
+            return LoggedConflictProblem(
+                kind="conflicting_verdicts",
+                mail=problem.mail.digest,
+                arrived=problem.arrived,
+                worker=problem.worker,
+                day=problem.day,
+                number=problem.number,
+                entries=[LoggedReportEntry.of(entry) for entry in problem.entries],
             )
         case UnknownNumber():
             return LoggedOrderProblem(kind="unknown_number", worker=problem.worker, day=problem.day, number=problem.number)

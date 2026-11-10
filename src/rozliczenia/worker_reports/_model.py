@@ -302,7 +302,9 @@ class ReportEntry:
 
 @dataclass(frozen=True)
 class ReadReport:
-    """Raport wykonawcy od Wykonawcy ``worker`` z dniem zleceń ``day`` z tematu i jego Wpisami."""
+    """Raport wykonawcy od Wykonawcy ``worker`` z dniem zleceń ``day`` z tematu i jego Wpisami: jeden Wpis na numer, a
+    przy numerze z Wpisami z ``tak`` i z ``nie`` pierwszy Wpis z każdym z nich, w kolejności maila
+    (``_entries.entries``)."""
 
     mail: MailId
     arrived: datetime
@@ -357,6 +359,19 @@ class MissingVerdict:
 
 
 @dataclass(frozen=True)
+class ConflictingVerdicts:
+    """Raport wykonawcy ``mail``, który przyszedł ``arrived``, ma dla numeru zlecenia Wpisy z ``tak`` i z ``nie``
+    (``entries``: pierwszy Wpis z każdym z nich, w kolejności maila)."""
+
+    worker: Login
+    day: date
+    number: OrderNumber
+    mail: MailId
+    arrived: datetime
+    entries: tuple[ReportEntry, ...]
+
+
+@dataclass(frozen=True)
 class UnknownNumber:
     worker: Login
     day: date
@@ -398,6 +413,7 @@ ReportProblem = (
     UnreadableSubject
     | UnknownSender
     | MissingVerdict
+    | ConflictingVerdicts
     | UnknownNumber
     | ForeignOrder
     | OtherDay
@@ -405,7 +421,7 @@ ReportProblem = (
     | ManualDifference
 )
 """Problem, który tata widzi z powodem (``reasons.reason``): nierozpoznany temat, nieznany nadawca, brak ``tak``/``nie``,
-nieznany numer, cudze zlecenie, inna data, ten sam numer dwa razy w dniu i różnica z ręczną wartością."""
+``tak`` i ``nie`` jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data, ten sam numer dwa razy w dniu i różnica z ręczną wartością."""
 
 
 @dataclass(frozen=True)
@@ -450,6 +466,8 @@ def problem_order(
             return day, "", "", kind, (mail.digest, sender)
         case MissingVerdict(fault=fault):
             return problem.day, problem.worker, problem.number, kind, (fault.name,)
+        case ConflictingVerdicts(mail=mail, arrived=arrived, entries=entries):
+            return problem.day, problem.worker, problem.number, kind, (arrived, mail.digest, *map(repr, entries))
         case ForeignOrder(owner=owner):
             return problem.day, problem.worker, problem.number, kind, (owner,)
         case OtherDay(order_days=order_days):

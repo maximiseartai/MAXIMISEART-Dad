@@ -36,8 +36,8 @@ def standing(
     raport bez tych numerów problemu nie usuwa, bo nieznany numer może być zleceniem, którego brak w INTERMAX.
     Poprawiony mail usuwa nieznany numer i cudze zlecenie z dnia z tematu, inną datę z dniem zlecenia (dzień
     poprawki to dzień zlecenia) i nieczytelny temat (``unreadable``: numery Wpisów nieczytelnego maila). Brak
-    ``tak``/``nie`` daje już najpóźniejszy Wpis numeru, a numer dwa razy w dniu to stan INTERMAX, więc stoją, jak
-    nieznany nadawca i różnica z ręczną wartością.
+    ``tak``/``nie`` i ``tak`` z ``nie`` jednego numeru daje już najpóźniejszy mail z numerem, a numer dwa razy w dniu to
+    stan INTERMAX, więc stoją, jak nieznany nadawca i różnica z ręczną wartością.
     """
 
     days: defaultdict[tuple[Login, date], set[OrderNumber]] = defaultdict(set)

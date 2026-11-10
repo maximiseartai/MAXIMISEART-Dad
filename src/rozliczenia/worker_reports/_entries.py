@@ -2,8 +2,9 @@
 kilka linii, ``tak``/``nie`` w dowolnej wielkości liter i z interpunkcją, bez powitania, podpisu i cytatu w opisie.
 
 Opis Wpisu kończy jeden z wyliczonych znaczników: następny Wpis, pusta linia, linia cytatu ``>``, nagłówek cytowanej
-wiadomości, stopka (``Wysłane z …``, ``Sent from …``), separator podpisu ``--``, pożegnanie z ``_CLOSINGS`` albo koniec
-treści. Tekst bez żadnego z nich tuż pod opisem (samo imię w następnej linii) należy do opisu."""
+wiadomości, stopka (``Wysłane z …``, ``Sent from …``) w osobnej linii albo w środku ostatniej linii treści, separator
+podpisu ``--``, pożegnanie z ``_CLOSINGS`` albo koniec treści. Tekst bez żadnego z nich tuż pod opisem (samo imię w
+następnej linii) należy do opisu."""
 
 from __future__ import annotations
 
@@ -91,17 +92,52 @@ def entries(text: str, digits: int) -> tuple[ReportEntry, ...]:
     ``nieskuteczne``, z interpunkcją, w dowolnej wielkości liter) albo gdy zaczyna linię. Krótsza liczba to słowo opisu.
     Opis to słowa do następnego Wpisu, przerwy, pożegnania albo końca treści, z pojedynczymi spacjami, bez słowa
     z ``_PREFIXES`` tuż przed numerem następnego Wpisu i bez znacznika listy (``1.``, ``-``) na początku jego linii. Słowa przed pierwszym Wpisem i po przerwie albo pożegnaniu
-    się nie liczą. W mailu liczy się pierwszy Wpis numeru, bo cytat stoi pod nową treścią.
+    się nie liczą. Opis ostatniego Wpisu kończy też stopka w środku ostatniej linii treści (``_last_end``).
+
+    Cytatu w treści już nie ma, więc kilka Wpisów jednego numeru Wykonawca napisał w nowej treści. Liczy się pierwszy
+    Wpis z ``tak`` albo ``nie``, a Wpis bez nich tylko wtedy, gdy żaden Wpis numeru ich nie ma (pierwszy). Gdy numer ma
+    Wpisy z ``tak`` i z ``nie``, wynik ma pierwszy Wpis z każdym z nich, w kolejności maila, a dopasowanie nie wpisuje
+    żadnego (``ConflictingVerdicts``).
     """
 
     stream = tuple(_stream(text))
     starts = [index for index in range(len(stream)) if _starts(stream, index, digits)]
-    found: dict[OrderNumber, ReportEntry] = {}
+    found: dict[OrderNumber, list[ReportEntry]] = {}
     for position, start in enumerate(starts):
-        end = _cut(stream, starts[position + 1]) if position + 1 < len(starts) else len(stream)
+        end = _cut(stream, starts[position + 1]) if position + 1 < len(starts) else _last_end(stream, start)
         number = OrderNumber(_word(stream, start).core)
-        found.setdefault(number, _entry(number, stream[start + 1 : end]))
-    return tuple(found.values())
+        found.setdefault(number, []).append(_entry(number, stream[start + 1 : end]))
+    return tuple(entry for said in found.values() for entry in _counted(said))
+
+
+def _counted(said: Sequence[ReportEntry]) -> tuple[ReportEntry, ...]:
+    """Wpisy numeru, które się liczą: pierwszy Wpis z każdym ``tak``/``nie``, a bez nich pierwszy Wpis."""
+
+    first: dict[Verdict, ReportEntry] = {}
+    for entry in said:
+        if entry.verdict is not None:
+            first.setdefault(entry.verdict, entry)
+    return tuple(first.values()) or (said[0],)
+
+
+def _last_end(stream: _Stream, start: int) -> int:
+    """Koniec opisu ostatniego Wpisu ``start``: koniec treści, a gdy w środku ostatniej linii treści stoi stopka, która
+    biegnie do końca tej linii (słowo, od którego reszta linii pasuje do ``_FOOTER``), pierwsze słowo stopki.
+
+    Taką stopkę stawiają aplikacje pocztowe na końcu raportu pisanego w jednej linii. Słowa stopki, po których stoi
+    kolejny Wpis albo tekst w tej linii lub pod nią, to opis, bo pod nimi nie ma już samych przerw."""
+
+    last = start + 1
+    while last < len(stream) and stream[last] is not None:
+        last += 1
+    if any(word is not None for word in stream[last:]):
+        return len(stream)
+    words = [_word(stream, index) for index in range(start + 1, last)]
+    for index in range(len(words)):
+        line = words[index:]
+        if not any(word.first for word in line) and _FOOTER.fullmatch(" ".join(word.text for word in line)):
+            return start + 1 + index
+    return len(stream)
 
 
 def _stream(text: str) -> Iterator[_Word | None]:

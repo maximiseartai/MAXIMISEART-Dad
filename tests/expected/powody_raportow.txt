@@ -20,6 +20,10 @@ MissingVerdict
   Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma samą literę „t” albo „n” zamiast „tak” albo „nie”, więc Centrum go nie wpisało.
 MissingVerdict
   Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma „skuteczne” albo „nieskuteczne” zamiast „tak” albo „nie”, więc Centrum go nie wpisało.
+ConflictingVerdicts
+  Raport wykonawcy od jan.testowy z 08.11.2026, który przyszedł 08.11.2026 o 18:05, ma dla zlecenia 40000011 różne Wpisy: „tak inst25m” i „nie brak klienta od umowy”, więc Centrum nic do tego zlecenia nie wpisało. Sprawdź z Wykonawcą, który Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail.
+ConflictingVerdicts
+  Raport wykonawcy od jan.testowy z 08.11.2026, który przyszedł 08.11.2026 o 18:05, ma dla zlecenia 40000001 różne Wpisy: „nie” i „tak montaż”, więc Centrum nic do tego zlecenia nie wpisało. Sprawdź z Wykonawcą, który Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail.
 UnknownNumber
   Numer 12345678 nie jest zleceniem jan.testowy z 08.11.2026.
 ForeignOrder

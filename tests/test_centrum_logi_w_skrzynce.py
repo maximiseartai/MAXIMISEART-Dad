@@ -1302,6 +1302,33 @@ def test_klikniecie_z_okresem_zamknietym_i_pomylkami_wykonawcow_odtwarza_sie_zgo
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
+def test_klikniecie_z_tak_i_nie_jednego_zlecenia_w_mailu_odtwarza_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Raport Jana ma dla zlecenia 40000001 Wpis z ``tak`` i Wpis z ``nie``: Logi mają oba Wpisy maila i ostrzeżenie z
+    nimi, a odtworzenie, które czyta mail w postaci kanonicznej, daje to samo ostrzeżenie i te same komórki."""
+
+    surroundings = Surroundings()
+    mail = report(SENDERS["jan.testowy"], "Raport 09.11.2026", "40000001 tak wymiana\n40000001 nie brak klienta")
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, [mail], surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    view = centrum.run_to_end()
+    assert view["result"]["ending"] == "finished"
+    logs = _archived_run(surroundings.report_box, tmp_path, view["run"]["id"])
+    entering = json.loads(gzip.decompress(logs.read_bytes()))["report_entering"]
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
+
+    [problem] = entering["problems"]
+    assert (problem["kind"], problem["number"], [entry["verdict"] for entry in problem["entries"]]) == (
+        "conflicting_verdicts",
+        "40000001",
+        ["tak", "nie"],
+    )
+    assert [entry["verdict"] for logged in entering["mails"] for entry in logged["entries"]] == ["tak", "nie"]
+    assert (entering["changes"], code, lines[0]) == ([], 0, "ODTWORZENIE ZGODNE"), lines
+
+
 def _logged_entry(record: dict[str, Any], number: str) -> dict[str, Any]:
     """Jedyny Wpis raportu z numerem ``number`` w Logach Wpisania raportów, do zmiany w miejscu."""
 

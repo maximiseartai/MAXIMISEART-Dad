@@ -16,6 +16,7 @@ from datetime import date, datetime
 from . import _cells, _corrections, _entries, _figures, _matching, _subject
 from ._model import (
     SUBJECT_WORD,
+    ConflictingVerdicts,
     ForeignOrder,
     Kept,
     Login,
@@ -54,6 +55,7 @@ from ._canonical import as_mail
 
 __all__ = [
     "SUBJECT_WORD",
+    "ConflictingVerdicts",
     "ForeignOrder",
     "Kept",
     "Login",
