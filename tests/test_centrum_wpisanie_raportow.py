@@ -479,6 +479,49 @@ def test_pamiec_wpisow_niezapisana_czeka_w_centrum_na_nastepne_klikniecie(tmp_pa
     assert centrum.fake_inbox.days == [date(2026, 11, 9)] * 2
 
 
+def test_reczna_zmiana_komorki_miedzy_kliknieciami_wygrywa_z_poprawka_a_nietkniety_wlasny_wpis_ja_dostaje(
+    tmp_path: Path,
+) -> None:
+    """Kryterium #1230: po pierwszym kliknięciu tata zmienia w INTERMAX ``SKUTECZNE`` Jana, a rano Jan i Anna przysyłają
+    poprawki. Ręczne ``nie`` taty zostaje z różnicą w Logach i w liczbie problemów, a własne wpisy, których nikt nie
+    zmienił (opis Jana, oba Anny), dostają poprawkę; pamięć ma po kliknięciu wartości z poprawek bez ręcznej."""
+
+    anna = SENDERS["anna.kowalska"]
+    reports = [report(JAN, SUBJECT, "40000001 tak wymiana"), report(anna, SUBJECT, "40000002 tak montaż")]
+    centrum = entering_centrum(tmp_path, INTERMAX, reports)
+    _finished(centrum)
+    _tata_writes(centrum.register, 40000001, "nie")
+    centrum.moment.append(datetime(2026, 11, 10, 8))
+    centrum.fake_inbox.outcome = [
+        *reports,
+        report(JAN, SUBJECT, "40000001 tak wymiana gniazda", at=datetime(2026, 11, 10, 7, 40)),
+        report(anna, SUBJECT, "40000002 nie klient nieobecny", at=datetime(2026, 11, 10, 7, 45)),
+    ]
+
+    second = _finished(centrum)
+
+    cells = _cells(centrum.register)
+    assert (cells[40000001], cells[40000002]) == (("nie", "wymiana gniazda"), ("nie", "klient nieobecny"))
+    assert second["result"]["summary"]["figures"][:2] == [
+        {"label": "Wpisane", "value": 2, "unit": "count"},
+        {"label": "Problemy", "value": 1, "unit": "count"},
+    ]
+    [logs] = [entry for entry in centrum.run_logs() if entry["run_id"] == second["run"]["id"]]
+    assert logs["report_entering"]["problems"] == [
+        {
+            "kind": "manual_difference",
+            "cell": {"number": 40000001, "day": "2026-11-09", "worker": "jan.testowy", "column": "SKUTECZNE", "value": "tak"},
+            "manual": "nie",
+        }
+    ]
+    own = json.loads(_state(centrum).read_text(encoding="utf-8"))["own"]
+    assert sorted((entry["number"], entry["column"], entry["value"]) for entry in own) == [
+        ("40000001", "CZYNNOŚCI ZREALIZOWANE", "wymiana gniazda"),
+        ("40000002", "CZYNNOŚCI ZREALIZOWANE", "klient nieobecny"),
+        ("40000002", "SKUTECZNE", "nie"),
+    ]
+
+
 # --- Przeszkody kliknięcia (#1232) --------------------------------------------------------------------------------------
 
 

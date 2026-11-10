@@ -1,4 +1,4 @@
-"""Nienadpisywanie komórek: Wpis zmienia tylko pustą komórkę, a pamięć własnych wpisów idzie za tym, co zostało."""
+"""Nienadpisywanie komórek: Wpis zmienia pustą komórkę albo nietknięty własny wpis, a ręczna wartość zostaje z różnicą."""
 
 from __future__ import annotations
 
@@ -6,36 +6,49 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 
 from ..report_cells import CellChange, ReportColumn
-from ._model import OrderKey, OwnEntries, OwnEntry, RegisterOrder, ReportEntry
+from ..text import normalize_text
+from ._model import Kept, ManualDifference, OrderKey, OwnEntries, OwnEntry, RegisterOrder, ReportEntry
 
 _COLUMNS = tuple(ReportColumn)
 
 
 def reconcile(
-    targets: Mapping[OrderKey, tuple[RegisterOrder, ReportEntry]], orders: Iterable[RegisterOrder], memory: OwnEntries
-) -> tuple[tuple[CellChange, ...], OwnEntries]:
-    """Zmiany komórek i następna pamięć.
+    targets: Mapping[OrderKey, tuple[RegisterOrder, ReportEntry]],
+    orders: Iterable[RegisterOrder],
+    memory: OwnEntries,
+    kept: frozenset[Kept],
+) -> tuple[tuple[CellChange, ...], tuple[ManualDifference, ...], OwnEntries]:
+    """Zmiany komórek, różnice z ręczną wartością i następna pamięć.
 
-    Każda kolumna osobno: ``tak``/``nie`` do ``SKUTECZNE``, niepusty opis do ``CZYNNOŚCI ZREALIZOWANE``, i tylko do
-    pustej komórki. Pamięć to nowe zmiany oraz dawne wpisy, których komórka dalej ma zapamiętaną wartość; wartość
-    ręczna równa Wpisowi do pamięci nie trafia, żeby późniejsza poprawka nie nadpisała taty.
+    Każda kolumna osobno: ``tak``/``nie`` do ``SKUTECZNE``, niepusty opis do ``CZYNNOŚCI ZREALIZOWANE``. Pusta komórka
+    i komórka z zapamiętaną własną wartością dostają Wpis, komórka równa Wpisowi (``normalize_text``) zostaje, a inna
+    wartość jest ręczna: zostaje z ``ManualDifference``, chyba że tata kliknął „Zostaw moją” przy tej treści Wpisu
+    (``kept``). Pamięć to nowe zmiany oraz dawne wpisy, których komórka dalej ma zapamiętaną wartość; wartość ręczna
+    równa Wpisowi do pamięci nie trafia, żeby późniejsza poprawka nie nadpisała taty.
     """
 
+    remembered = {(entry.key, entry.column): entry.value for entry in memory.entries}
+    current: defaultdict[tuple[OrderKey, ReportColumn], set[str | None]] = defaultdict(set)
+    for order in orders:
+        for column in _COLUMNS:
+            current[order.key, column].add(order.cell(column))
+    own = {cell: value for cell, value in remembered.items() if value in current[cell]}
     changes: list[CellChange] = []
-    own: set[OwnEntry] = set()
+    differences: list[ManualDifference] = []
     for order, entry in targets.values():
         reported = {
             ReportColumn.SUCCESSFUL: None if entry.verdict is None else entry.verdict.value,
             ReportColumn.COMPLETED: entry.activities or None,
         }
         for column, value in reported.items():
-            if value is not None and order.cell(column) is None:
+            cell = order.cell(column)
+            if value is None or (cell is not None and normalize_text(cell) == normalize_text(value)):
+                continue
+            if cell is None or cell == remembered.get((order.key, column)):
                 changes.append(CellChange(order.row, column, value))
-                own.add(OwnEntry(order.key, column, value))
-    current: defaultdict[tuple[OrderKey, ReportColumn], set[str | None]] = defaultdict(set)
-    for order in orders:
-        for column in _COLUMNS:
-            current[order.key, column].add(order.cell(column))
-    own.update(entry for entry in memory.entries if entry.value in current[entry.key, entry.column])
+                own[order.key, column] = value
+            elif Kept(order.key, column, value) not in kept:
+                differences.append(ManualDifference(order.key, column, cell, value))
     ordered = sorted(changes, key=lambda change: (change.order.sheet, change.order.row, _COLUMNS.index(change.column)))
-    return tuple(ordered), OwnEntries(frozenset(own))
+    entries = frozenset(OwnEntry(key, column, value) for (key, column), value in own.items())
+    return tuple(ordered), tuple(differences), OwnEntries(entries)
