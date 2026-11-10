@@ -27,6 +27,7 @@ import pytest
 
 from odtworzenie import COMPARED, NOT_COMPARED
 from rozliczenia import tool_files
+from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG
@@ -47,11 +48,11 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from atrapy.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
-from tests.fixtures.centrum_intermax import Clock, ordering_centrum
+from tests.fixtures.centrum_intermax import SENDERS, Clock, entering_centrum, ordering_centrum, report
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
-from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, Intermax, Order
+from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, NUMBER, Intermax, Order
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
     SettlingCentrum,
@@ -715,6 +716,17 @@ def test_odtworzenie_porownuje_kazde_pole_logow_poza_faktami_startu_i_okolicznos
     assert set(compared) | NOT_COMPARED == set(RunLog.model_fields)
 
 
+def test_pomoc_narzedzia_wymienia_kazdy_proces_katalogu(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` narzędzia odtwarzania wymienia każdy proces, który odtwarza, nazwą z karty Centrum."""
+
+    with pytest.raises(SystemExit) as exited:
+        odtworz_uruchomienie.main(["--help"])
+
+    shown = " ".join(capsys.readouterr().out.split())
+    assert exited.value.code == 0
+    assert [kind.title for kind in CATALOG.kinds if kind.title not in shown] == []
+
+
 def _replayed(capsys: pytest.CaptureFixture[str], *arguments: str | Path) -> tuple[int, list[str]]:
     code = odtworz_uruchomienie.main([str(argument) for argument in arguments])
     return code, capsys.readouterr().out.splitlines()
@@ -829,7 +841,84 @@ def _efenix(
     return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ("--efenix-dzis", TODAY.isoformat()))
 
 
-PROCESSES = {"settlement": _settlement, "preparation": _preparation, "intermax": _intermax, "efenix": _efenix}
+def _archived_run(fake: FakeReportBox, folder: Path, run_id: str) -> Path:
+    """Plik Logów Uruchomienia ``run_id`` z Archiwum Logów okresu fałszywej Skrzynki, spakowany gzipem."""
+
+    def arrived(box: FakeReportBox) -> bool:
+        return any(run_id in asset.name for archive in box.archives for asset in archive.assets)
+
+    assert fake.wait_until(arrived), f"plik Logów {run_id} nie doszedł do Archiwum"
+    [asset] = [asset for archive in fake.archives for asset in archive.assets if run_id in asset.name]
+    path = folder / asset.name
+    path.write_bytes(asset.data)
+    return path
+
+
+# Wpisanie raportów, drugie kliknięcie: tata kliknął w poniedziałek 9.11 (Raporty Jana: telefon w czynnościach, numer
+# zlecenia z zerem na początku), a we wtorek rano Anna przysyła Raporty za 9.11 do pustych komórek i do zlecenia z
+# ręcznym „nie” w SKUTECZNE, Jan numer spoza swoich zleceń, a obce adresy Raporty za 9.11: dwa różne adresy z jednym
+# Message-ID (dwa problemy) i jeden adres dwa razy z innym (jeden problem). Dwóch maili skrzynka nie umiała przeczytać.
+_SUCCESSFUL = FIRST + HEADERS.index("SKUTECZNE")
+_REPORTED_DAY = "Raport 09.11.2026"
+REPORTED = Intermax(
+    ordered=(
+        Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001),)),
+        Order(datetime(2026, 11, 9, 10), "jan.testowy", 4000005, cells=((NUMBER, "04000005"),)),
+        Order(datetime(2026, 11, 9, 11), "anna.kowalska", 40000002, cells=((NUMBER, 40000002),)),
+        Order(datetime(2026, 11, 9, 12), "anna.kowalska", 40000006, cells=((NUMBER, 40000006), (_SUCCESSFUL, "nie"))),
+    ),
+    raw=(),
+)
+JAN_REPORTS = [
+    report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000001 tak wymiana, tel. 600 100 200"),
+    report(SENDERS["jan.testowy"], _REPORTED_DAY, "04000005 nie brak klienta", at=datetime(2026, 11, 9, 17)),
+]
+NEXT_MORNING = [
+    *JAN_REPORTS,
+    report(SENDERS["anna.kowalska"], _REPORTED_DAY, "40000002 tak montaż", at=datetime(2026, 11, 10, 7, 50)),
+    report(SENDERS["anna.kowalska"], _REPORTED_DAY, "40000006 tak montaż anteny", at=datetime(2026, 11, 10, 7, 51)),
+    report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000099 tak wymiana", at=datetime(2026, 11, 10, 7, 52)),
+    report("obcy@przyklad.invalid", _REPORTED_DAY, "40000002 nie brak", at=datetime(2026, 11, 10, 7, 53), message_id="<a@x>"),
+    report("inny@przyklad.invalid", _REPORTED_DAY, "40000002 nie brak", at=datetime(2026, 11, 10, 7, 53), message_id="<a@x>"),
+    report("trzeci@przyklad.invalid", _REPORTED_DAY, "40000001 nie", at=datetime(2026, 11, 10, 7, 54), message_id="<b@x>"),
+    report("trzeci@przyklad.invalid", _REPORTED_DAY, "40000001 nie", at=datetime(2026, 11, 10, 7, 54), message_id="<b@x>"),
+]
+
+
+def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
+    """Logi drugiego kliknięcia Wpisania raportów (``memory_saved``: pamięć wpisów zapisała się po kliknięciu)."""
+
+    surroundings = Surroundings()
+    centrum = entering_centrum(tmp_path, REPORTED, JAN_REPORTS, surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path))
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    centrum.moment.append(datetime(2026, 11, 10, 8))
+    centrum.fake_inbox.outcome = NEXT_MORNING
+    centrum.fake_inbox.skipped = 2
+    if not memory_saved:
+        state = centrum.tool.config / REPORT_ENTERING_STATE
+
+        def unwritable() -> None:
+            state.unlink()
+            state.mkdir()
+
+        centrum.fake_inbox.during = unwritable
+    second = centrum.run_to_end()
+    assert second["result"]["ending"] == "finished"
+    produced = Produced(_archived_run(surroundings.report_box, tmp_path, second["run"]["id"]), ())
+    problems = [problem["kind"] for problem in produced.record["report_entering"]["problems"]]
+    assert problems == ["unknown_sender"] * 3 + ["unknown_number"], problems
+    assert produced.record["report_entering"]["skipped"] == 2
+    return produced
+
+
+PROCESSES = {
+    "settlement": _settlement,
+    "preparation": _preparation,
+    "intermax": _intermax,
+    "efenix": _efenix,
+    "report_entering": _report_entering,
+}
 
 
 @pytest.mark.parametrize("process", PROCESSES)
@@ -853,7 +942,13 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     assert lines[1] == f"Uruchomienie: {_title(record)}, {RunMode(record['mode']).word}, okres {record['period']}, {produced.archived.stem}"
     replayed = json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))
     assert (replayed["process"], replayed["mode"], replayed["result"]) == (process, record["mode"], record["result"])
-    trace = {"settlement": "templates", "preparation": "summary", "intermax": "intermax_entries", "efenix": "efenix_orders"}
+    trace = {
+        "settlement": "templates",
+        "preparation": "summary",
+        "intermax": "intermax_entries",
+        "efenix": "efenix_orders",
+        "report_entering": "report_entering",
+    }
     assert record[trace[process]], "ślad, który odtworzenie porównało, nie jest pusty"
     assert len((kept / "metryki.jsonl").read_text(encoding="utf-8").splitlines()) == 1
     assert (tool_metrics.read_bytes() if tool_metrics.exists() else None) == history, "rekord w historii metryk narzędzia"
@@ -897,6 +992,7 @@ def _title(record: dict[str, Any]) -> str:
         "preparation": "Przygotowanie pliku zbiorczego",
         "intermax": "Uporządkowanie INTERMAX",
         "efenix": "Wycena w efenix",
+        "report_entering": "Wpisanie raportów",
     }[record["process"]]
 
 
@@ -1098,6 +1194,136 @@ def test_celowo_zmieniona_kopia_wejscia_daje_wydruk_pierwszej_roznicy_a_nie_zgod
         "  Odtworzenie: 1",
     ]
     assert lines[6].startswith("Porównano: Kopia wejścia, wynik, zakończenie, Rodzaj Zatrzymania, Komunikaty")
+
+
+def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtwarza_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kliknięcie bez żadnego maila w skrzynce i drugie kliknięcie, po którym pamięci wpisów nie dało się zapisać na
+    dysku taty: odtworzenie daje ten sam wynik, także ostrzeżenie o pamięci, choć Wpisów, z których wziąć Konfigurację
+    wykonawców, i dysku taty nie ma."""
+
+    surroundings = Surroundings()
+    centrum = entering_centrum(tmp_path / "taty", REPORTED, (), surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    empty = centrum.run_to_end()
+    unsaved = _report_entering(tmp_path / "taty-pamiec", memory_saved=False)
+    assert [message["code"] for message in unsaved.record["messages"]] == ["RAPORTY_PAMIEC_NIEZAPISANA"]
+
+    replayed = [
+        _replayed(capsys, logs, "--na-tym-drzewie")
+        for logs in (_archived_run(surroundings.report_box, tmp_path, empty["run"]["id"]), unsaved.archived)
+    ]
+
+    assert [(code, lines[0]) for code, lines in replayed] == [(0, "ODTWORZENIE ZGODNE")] * 2, replayed
+
+
+def _logged_entry(record: dict[str, Any], number: str) -> dict[str, Any]:
+    """Jedyny Wpis raportu z numerem ``number`` w Logach Wpisania raportów, do zmiany w miejscu."""
+
+    entries: list[dict[str, Any]] = [entry for mail in record["report_entering"]["mails"] for entry in mail.get("entries", [])]
+    [entry] = [entry for entry in entries if entry["number"] == number]
+    return entry
+
+
+def _other_activities(record: dict[str, Any]) -> None:
+    _logged_entry(record, "40000002")["activities"] = "montaż gniazda"
+
+
+def test_zmieniony_wpis_raportu_w_logach_daje_pierwsza_roznice_w_komorkach_wpisanych_przez_odtworzenie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Wpis raportu Anny w Logach z innymi czynnościami niż te, z których Wpisanie raportów wpisało komórkę: odtworzenie
+    wpisuje czynności z Logów, więc pierwszą różnicą jest wartość tej komórki w zmianach, a Wpisy z Logów wracają z
+    postaci kanonicznej bez różnicy."""
+
+    produced = _report_entering(tmp_path / "taty")
+    changed = _changed(produced, tmp_path, _other_activities)
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie")
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    [sheet] = produced.record["input_copy"][0]["sheets"]
+    assert lines[3:6] == [
+        f"Pierwsza różnica: Wpisanie raportów (report_entering).changes[1: arkusz {sheet['sheet']}].value",
+        '  Logi:        "montaż"',
+        '  Odtworzenie: "montaż gniazda"',
+    ]
+
+
+def _guard_cut_in_mails(record: dict[str, Any]) -> None:
+    record["technical_notes"].append(
+        "Reguła danych: pominięto report_entering.mails[5]: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
+    )
+
+
+def _stopped_at_saving(record: dict[str, Any]) -> None:
+    record.update(ending="stop", stop_kind="for_tata", result=None)
+    record["report_entering"]["written"] = None
+
+
+# Granica Logów Wpisania raportów: zmiana pliku Logów drugiego kliknięcia, kod wyjścia i linia raportu (pierwsza przy
+# granicy blokującej, a przy zastrzeżeniu linie pod „Granice:”, które się nimi zaczynają).
+ENTERING_LIMITS: dict[str, tuple[Callable[[dict[str, Any]], None], int, tuple[str, ...]]] = {
+    "kazde_odtworzenie": (
+        lambda record: None,
+        0,
+        (
+            "- maili taty Logi nie mają: odtworzenie czyta Wpisy raportu z Logów z maili w postaci kanonicznej",
+            "- decyzji „Zostaw moją” Logi nie mają (#1231)",
+            "- Wpisy raportu w Logach mają maski strażnika reguły danych ([telefon] ×1): odtworzenie wpisuje do INTERMAX",
+        ),
+    ),
+    "numer_wpisu_jako_telefon": (
+        lambda record: _logged_entry(record, "40000099").update(number="[telefon]"),
+        3,
+        ("NIE DA SIĘ ODTWORZYĆ: Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ([telefon]: 9 cyfr",),
+    ),
+    "pamiec_bez_wpisu_z_numerem": (
+        lambda record: record["report_entering"]["memory_before"][0].update(number=4000007),
+        3,
+        ("NIE DA SIĘ ODTWORZYĆ: pamięć wpisów w Logach ma zlecenie 4000007 Wykonawcy jan.testowy z 09.11.2026 tylko jako liczbę",),
+    ),
+    "ciecie_straznika_we_wpisach": (
+        _guard_cut_in_mails,
+        3,
+        ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach report_entering.mails[5]",),
+    ),
+    "bez_wpisow_przed_rdzeniem": (
+        lambda record: record.update(report_entering=None),
+        1,
+        ("- Logi nie mają Wpisów raportu, bo Uruchomienie skończyło się przed rdzeniem raportów",),
+    ),
+    "zatrzymanie_przy_zapisie": (
+        _stopped_at_saving,
+        1,
+        ("- zapis INTERMAX u taty skończył się Zatrzymaniem, które zależy od jego dysku",),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", ENTERING_LIMITS)
+def test_granica_logow_wpisania_raportow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """Czego Logi Wpisania raportów nie niosą, raport mówi: maile taty, decyzje „Zostaw moją” i czynności pod maską są
+    zastrzeżeniem przy każdym odtworzeniu, a Logi bez Wpisów i Zatrzymanie przy zapisie u taty zastrzeżeniem przy
+    różnicy. Numer Wpisu zamaskowany jak telefon, numer pamięci bez Wpisu z nim i cięcie strażnika we Wpisach kończą
+    odtworzenie bez uruchomienia procesu (kod 3)."""
+
+    change, expected_code, expected = ENTERING_LIMITS[case]
+    produced = _report_entering(tmp_path / "taty")
+    changed = _changed(produced, tmp_path, change)
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie")
+
+    assert code == expected_code, lines
+    if expected_code == 3:
+        [first] = expected
+        assert lines[0].startswith(first) and not any(line.startswith("Pierwsza różnica") for line in lines), lines
+    else:
+        granice = lines[lines.index("Granice:") + 1 :]
+        assert all(any(line.startswith(text) for line in granice) for text in expected), granice
 
 
 def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen(

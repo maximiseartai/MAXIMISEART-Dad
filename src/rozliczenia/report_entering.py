@@ -4,8 +4,8 @@ Operacją procesu jest ``enter_from_mail()``. Silnik sekwencjonuje kroki i jako 
 Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
 
 - Sprawdzanie: plik dostępu do Skrzynki raportów, Konfiguracja wykonawców, plik adresów Wykonawców, pamięć własnych
-  wpisów (``ReportState.load``) i INTERMAX zamknięty w Excelu, więc przy INTERMAX otwartym w Excelu skrzynka nie jest
-  czytana;
+  wpisów (``ReportState.load``), brak kopii konfliktu OneDrive obok INTERMAX (``onedrive_conflicts.beside``) i INTERMAX
+  zamknięty w Excelu, więc przy kopii konfliktu albo INTERMAX otwartym w Excelu skrzynka nie jest czytana;
 - Odczyt danych: maile ze Skrzynki raportów, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
   wklejania uporządkowane wiersze z dni od pierwszego dnia okna (``raw_orders.ordered_rows``, w Kopii wejścia przez
   ``PasteArea.copy_rows``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
@@ -13,11 +13,13 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   stoi w tym oknie;
 - Planowanie: rdzeń raportów;
 - Zapisywanie: komórki bez Kopii INTERMAX (``intermax_cells.write_cells``), a po udanym zapisie pamięć własnych wpisów
-  z dniem wdrożenia, także przy zerze wpisanych komórek.
+  z dniem wdrożenia, także przy zerze wpisanych komórek; kopia konfliktu OneDrive, która pojawiła się obok INTERMAX do
+  końca zapisu, zatrzymuje kliknięcie już po zapisie pamięci, z podsumowaniem w faktach Zatrzymania.
 
 Okno dni zaczyna się od dnia wdrożenia z pamięci (przed pierwszym udanym kliknięciem: dziś). Proces nie należy do
 okresu: Uruchomienie ma okres dzisiejszej daty z zegara procesu (ADR 0019). Zatrzymanie po rdzeniu niesie fakty
-(``EnteringFacts``), więc Logi mają zmiany i problemy także wtedy. Plik dostępu, który zniknie albo zepsuje się między
+(``EnteringFacts``), a Zatrzymanie po zapisie całe podsumowanie (``EnteringSummary``), więc Logi mają zmiany i problemy
+także wtedy. Plik dostępu, który zniknie albo zepsuje się między
 Sprawdzaniem a odczytem skrzynki, daje to samo Zatrzymanie co w Sprawdzaniu. Adres, temat ani treść maila nie
 wychodzą z rdzenia do faktów: ``MailRead`` ich nie ma, a adres nieznanego nadawcy ma tylko problem w pamięci.
 """
@@ -32,7 +34,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Protocol, assert_never
 
-from . import intermax_messages, raw_orders, register_file, worker_addresses, workbook_files
+from . import intermax_messages, onedrive_conflicts, raw_orders, register_file, worker_addresses, workbook_files
 from . import report_entering_messages as messages
 from .domain import ProgressPhase
 from .input_checks import workers
@@ -212,6 +214,8 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             raise StopError(messages.addresses_unusable(inputs.worker_addresses, error.problem)) from error
         with _stops(messages.state_unreadable, StateUnreadable):
             saved = parts.state.load()
+        if copies := onedrive_conflicts.beside(register_path):
+            raise StopError(messages.conflict_copy(copies[0]))
         with _stops_unusable():
             workbook_files.ensure_available(register_path)
         return addresses, saved
@@ -285,8 +289,10 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
 
     written = phases.save(save)
     warnings = [] if parts.state.save_memory(written, window.rollout, memory) else [messages.memory_not_saved()]
-    summary = EnteringSummary(facts, written.count, warnings)
-    return replace(summary, phase_durations_ms=phases.durations_ms())
+    summary = replace(EnteringSummary(facts, written.count, warnings), phase_durations_ms=phases.durations_ms())
+    if copies := onedrive_conflicts.beside(register_path):
+        raise StopError(messages.conflict_after_save(copies[0]), facts=summary)
+    return summary
 
 
 def _ensure_access(access: str) -> None:

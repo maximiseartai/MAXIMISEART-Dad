@@ -3,8 +3,9 @@
 Jedyna operacja to ``enter_reports``: maile ze Skrzynki raportów (``worker_report_inbox``), adresy Wykonawców
 (``worker_addresses.load``), uporządkowane zlecenia INTERMAX, dni otwarte i pamięć własnych wpisów na wejściu, a zmiany
 komórek, problemy, liczby dla widoku Raporty i nowa pamięć na wyjściu. Zdanie dla taty o problemie daje
-``reasons.reason``. Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń i reguły komórek w
-pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
+``reasons.reason``, a mail, z którego rdzeń czyta z powrotem ten sam odczyt (odtworzenie z Logów, #1233), ``as_mail``.
+Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń, reguły komórek i postać kanoniczna maila
+w pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
 oraz ``report_cells``, ``settlement_period`` i ``text``, bo przejdzie bez zmian do Centrum w chmurze (#1161).
 """
 
@@ -49,6 +50,7 @@ from ._model import (
     WorkerDay,
     problem_order,
 )
+from ._canonical import as_mail
 
 __all__ = [
     "SUBJECT_WORD",
@@ -84,6 +86,7 @@ __all__ = [
     "Window",
     "WorkerAddresses",
     "WorkerDay",
+    "as_mail",
     "enter_reports",
 ]
 

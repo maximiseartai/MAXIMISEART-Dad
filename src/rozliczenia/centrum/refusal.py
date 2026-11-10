@@ -218,3 +218,28 @@ def run_not_in_history() -> Refusal:
 
 def note_not_queued() -> Refusal:
     return Refusal(500, "Uwaga się nie zapisała i nie pójdzie do Maksa. Spróbuj wysłać ją jeszcze raz.")
+
+
+ReportEnteringFile = Literal["inbox_access", "worker_addresses"]
+"""Plik w ``config``, który prowadzi Maks, bez którego Wpisanie raportów nie startuje: dostęp do skrzynki raportów
+(``skrzynka-raportow.txt``) albo adresy Wykonawców (``adresy-wykonawcow.yaml``)."""
+
+
+def _report_entering_file(missing: ReportEnteringFile) -> str:
+    match missing:
+        case "inbox_access":
+            return "hasła do skrzynki raportów (plik skrzynka-raportow.txt)"
+        case "worker_addresses":
+            return "adresów Wykonawców (plik adresy-wykonawcow.yaml)"
+        case _:
+            assert_never(missing)
+
+
+def report_entering_not_set_up(missing: Sequence[ReportEnteringFile]) -> Refusal:
+    """Wpisanie raportów nie startuje bez plików ``missing`` w ``config``; dopisać je może tylko Maks (spec #1224, US 51)."""
+
+    files = " i ".join(_report_entering_file(file) for file in missing)
+    return Refusal(
+        409,
+        f"Wpisanie raportów nie jest jeszcze ustawione: w folderze config brakuje {files}. Dopisze je Maks.",
+    )

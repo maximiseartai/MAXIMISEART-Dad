@@ -34,6 +34,8 @@ def _summary(summary: EnteringSummary, _dry_run: bool) -> runs_contract.RunSumma
 def _logs(summary: EnteringSummary | None, facts: object) -> ProcessLogs:
     if summary is not None:
         return ProcessLogs(report_entering=LoggedReports.of(summary.facts, summary.written))
+    if isinstance(facts, EnteringSummary):
+        return ProcessLogs(report_entering=LoggedReports.of(facts.facts, facts.written))
     if isinstance(facts, EnteringFacts):
         return ProcessLogs(report_entering=LoggedReports.of(facts, None))
     return ProcessLogs()

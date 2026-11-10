@@ -4,20 +4,25 @@ i tryb, a w miejscu efenix Atrapa efenix z odczytów stron; wynik to raport z pi
 Jedyną operacją jest ``replay()``. Kształt danych:
 
 - Logi Uruchomienia (``run_logs.RunLog`` tego drzewa) dają proces, tryb, okres, wynik i ślad do porównania, a Kopia
-  wejścia wiersze plików taty.
+  wejścia wiersze plików taty. Wpisanie raportów ma maile ze Skrzynki raportów tylko jako Wpisy raportu w Logach
+  (``report_entering``), więc odtworzenie podaje je procesowi jako maile w postaci kanonicznej
+  (``worker_reports.as_mail``) od adresów ``@odtworzenie.invalid``, z Konfiguracją wykonawców i plikiem adresów z
+  loginów Wpisów i z pamięcią wpisów sprzed kliknięcia z Logów.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
   pusta Kopia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu wyników szukania, wiersz Kopii albo
   zlecenie śladu efenix, które strażnik reguły danych pominął) kończy odtworzenie bez uruchomienia procesu: wynik
-  takiego odtworzenia nic by nie znaczył. Zastrzeżenie (maski strażnika w Kopii, wiersz Rejestru zleceń albo INTERMAX
-  w obu położeniach bez komórek dozwolonych tylko w jednym, pole albo element, które strażnik pominął poza wejściem, Wzorce spoza Logów,
-  Surowe zlecenia, dni nad wklejeniem, Atrapa w miejscu efenix) raport podaje przy każdym wyniku, bo może tłumaczyć
-  różnicę.
+  takiego odtworzenia nic by nie znaczył; to samo numer Wpisu raportu z maską strażnika i numer pamięci wpisów, którego
+  nie ma w jednym Wpisie. Zastrzeżenie (maski strażnika w Kopii i w czynnościach Wpisów, wiersz Rejestru zleceń albo
+  INTERMAX w obu położeniach bez komórek dozwolonych tylko w jednym, pole albo element, które strażnik pominął poza
+  wejściem, Wzorce spoza Logów, Surowe zlecenia, dni nad wklejeniem, Atrapa w miejscu efenix, maile w postaci
+  kanonicznej zamiast maili taty) raport podaje przy każdym wyniku, bo może tłumaczyć różnicę.
 - Pliki wejścia powstają w katalogu roboczym z Kopii wejścia, pod tą samą nazwą w folderach o tych samych nazwach co
   u taty (``CopiedFile.folders``), więc Komunikaty nazywają te same plik i folder: każdy arkusz z nagłówkami i
   wierszami pod tymi samymi numerami, przesunięty pierwszy wiersz wklejenia INTERMAX znowu przesunięty, a nad
   wklejeniem ostatni uporządkowany i żółty wiersz w tych samych wierszach co u taty. Wiersze Rejestru zleceń
   Przygotowania mają krój uporządkowanych wierszy taty (Calibri 8), bo pierwszy wiersz bloku bez niego pamięć reguły
-  danych zna dwie kolumny na lewo od nagłówka (#918), a wiersze wklejenia INTERMAX krój wiersza z aplikacji. W miejscu kolumn
+  danych zna dwie kolumny na lewo od nagłówka (#918), wiersze wklejenia INTERMAX krój wiersza z aplikacji, a wiersze
+  INTERMAX Wpisania raportów krój uporządkowanych wierszy, bo Kopia ma tylko uporządkowane wiersze. W miejscu kolumn
   ``ADRES`` i numeru Orange stoją wartości syntetyczne z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``),
   których żaden plik taty nie ma. Wzorce i Konfigurację wykonawców daje folder ``configuration``, bo Logi mają z nich
   tylko nazwę i rozmiar.
@@ -27,8 +32,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   tylko wtedy, gdy Logi kończą się odmową.
 - Porównanie (``first_difference``) idzie po polach Logów w kolejności przyczyn: Kopia wejścia (czy pliki z Kopii
   czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty, uwagi techniczne, podsumowanie, liczba
-  problemów, etapy, Szablony pracownika, Ilości tylko dla INEA, Wpisy INTERMAX, ślad zleceń i Zatrzymanie okna efenix
-  oraz ślad wywołań. Raport podaje przyczynę Zatrzymania z Logów (``stop_cause``): przyczynę techniczną Zatrzymania
+  problemów, etapy, Szablony pracownika, Ilości tylko dla INEA, Wpisy INTERMAX, Wpisanie raportów, ślad zleceń i
+  Zatrzymanie okna efenix oraz ślad wywołań. Raport podaje przyczynę Zatrzymania z Logów (``stop_cause``): przyczynę techniczną Zatrzymania
   okna efenix i łańcuch wyjątków śladu wywołań z drogą startu okna, która zawiodła (#976). Czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty i uwagi strażnika o Kopii
   wejścia są poza porównaniem: zależą od komputera i chwili, a nie od kodu i wejścia.
 
@@ -39,7 +44,7 @@ zapisuje, i metryki. Nic nie idzie do Skrzynki Zgłoszeń, bo odtworzenie nie ma
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Container, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -76,10 +81,17 @@ from rozliczenia.centrum.run_logs import (
     Environment,
     LoggedCell,
     LoggedInputFile,
+    LoggedOwnEntry,
+    LoggedReportEntry,
+    LoggedReportMail,
+    LoggedReports,
+    LoggedSenderProblem,
     LoggedSheet,
+    LoggedStrangerMail,
     LoggedTyped,
     RunLog,
     StartFacts,
+    logged_read,
 )
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun
@@ -90,12 +102,18 @@ from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
 from rozliczenia.raw_orders import SHIFT
 from rozliczenia.register_columns import COLUMNS, DAY_FILL, ORDERED_FONT, ORDERED_SIZE
+from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
+from rozliczenia.report_cells import ReportColumn
+from rozliczenia.report_entering import ReportEnteringParts, SavedState
+from rozliczenia import report_entering_messages
 from rozliczenia.run_context import RunContexts
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
+from rozliczenia.worker_reports import Login, OrderKey, OrderNumber, OwnEntries, OwnEntry, ReadStranger, SenderAddress, as_mail
 
+from atrapy.skrzynka_raportow import FakeInbox
 import atrapa_z_logow
 
 SYNTHETIC_ADDRESS: Final = atrapa_z_logow.SYNTHETIC_ADDRESS
@@ -288,8 +306,9 @@ def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, conf
             )
         ]
     limits = [*_guard_limits(record), *_typed_limits(copied), *_masked_limits(record), *rebuild.limits(record)]
-    if kind.configuration_needs:
-        limits.append(_configuration_limit(record, configuration, kind.configuration_needs))
+    needs = _from_configuration(kind, rebuild.configuration)
+    if needs:
+        limits.append(_configuration_limit(record, configuration, needs))
     if record.stop_kind == "repeated":
         limits.append(
             Limit(
@@ -318,7 +337,11 @@ def _guard_limits(record: RunLog) -> list[Limit]:
 
 
 def _replay_input(cut: GuardCut) -> bool:
-    return cut.field == "efenix_orders" or (cut.field == "input_copy" and ".fingerprint" not in cut.place)
+    return (
+        cut.field == "efenix_orders"
+        or (cut.field == "input_copy" and ".fingerprint" not in cut.place)
+        or cut.place.startswith(("report_entering.mails", "report_entering.memory_before", "report_entering.skipped"))
+    )
 
 
 def _typed_limits(copied: Sequence[LoggedInputFile]) -> list[Limit]:
@@ -424,10 +447,12 @@ class _Rebuilt:
 
 @dataclass(frozen=True)
 class _Rebuild:
-    """Odtworzenie jednego procesu w tym, czego katalog procesów nie wie: granice Logów i odbudowa plików z Logów."""
+    """Odtworzenie jednego procesu w tym, czego katalog procesów nie wie: granice Logów i odbudowa plików z Logów.
+    ``configuration``: pliki Konfiguracji, które odbudowa pisze z Logów, więc nie biorą się z folderu Konfiguracji."""
 
     limits: Callable[[RunLog], list[Limit]]
     files: Callable[[RunLog, _Work], _Rebuilt]
+    configuration: tuple[ConfigurationNeed, ...] = ()
 
 
 def _cell(value: LoggedCell) -> _Written:
@@ -719,6 +744,183 @@ def _efenix_limits(record: RunLog) -> list[Limit]:
     return limits
 
 
+# Wpisanie raportów: INTERMAX z Kopii wejścia, a maile ze Skrzynki raportów z Wpisów w Logach w postaci kanonicznej.
+
+_REPLAY_DOMAIN: Final = "odtworzenie.invalid"
+"""Domena adresów nadawców w odtworzeniu: adresów taty Logi nie mają, a ``.invalid`` nie jest adresem nikogo."""
+_NO_WORKER: Final = Login("odtworzenie")
+"""Login pliku adresów odtworzenia bez Wpisów od Wykonawców: plik adresów bez Wykonawcy nie przechodzi walidacji."""
+_MEMORY_NOT_SAVED: Final = report_entering_messages.memory_not_saved().code
+
+
+def _entering_limits(record: RunLog) -> list[Limit]:
+    limits = _one_file_limits(record, "Wpisanie raportów")
+    if limits:
+        return limits
+    entering = record.report_entering
+    if entering is None:
+        return [
+            Limit(
+                "Logi nie mają Wpisów raportu, bo Uruchomienie skończyło się przed rdzeniem raportów: odtworzenie czyta "
+                "Skrzynkę raportów bez maili, a pamięć wpisów bez dnia wdrożenia, więc powtarza tylko kroki przed "
+                "rdzeniem"
+            )
+        ]
+    masked = [entry.number for entry in _logged_entries(entering) if not _digits(entry.number)]
+    if masked:
+        return [
+            Limit(
+                f"Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ({masked[0]}: 9 cyfr "
+                "z rzędu strażnik bierze za telefon), więc odtworzenie nie wie, do którego zlecenia szedł ten Wpis",
+                blocking=True,
+            )
+        ]
+    numbers = _numbers(entering)
+    unknown = [entry for entry in entering.memory_before if len(numbers.get(_memory_key(entry), ())) != 1]
+    if unknown:
+        entry = unknown[0]
+        return [
+            Limit(
+                f"pamięć wpisów w Logach ma zlecenie {entry.number} Wykonawcy {entry.worker} z {entry.day:%d.%m.%Y} "
+                "tylko jako liczbę, a jego numeru nie ma w dokładnie jednym Wpisie raportu w Logach, więc odtworzenie "
+                "nie wie, czy numer ma zera na początku",
+                blocking=True,
+            )
+        ]
+    limits = [
+        Limit(
+            "maili taty Logi nie mają: odtworzenie czyta Wpisy raportu z Logów z maili w postaci kanonicznej (temat "
+            "„Raport dd.mm.rrrr”, linia „numer tak|nie czynności” na Wpis) od adresów @odtworzenie.invalid, z "
+            "Konfiguracją wykonawców i plikiem adresów z loginów Wpisów, więc powtarza dopasowanie do zleceń, pamięć "
+            "wpisów i Nienadpisywanie, ale nie rozpoznanie tekstu maila taty"
+        ),
+        Limit("decyzji „Zostaw moją” Logi nie mają (#1231): odtworzenie biegnie bez nich, tak jak dziś Centrum taty"),
+    ]
+    counted = Counter(
+        {mask: sum(entry.activities.count(mask) for entry in _logged_entries(entering)) for mask in MASKS}
+    )
+    if +counted:
+        masks = ", ".join(f"{mask} ×{count}" for mask, count in (+counted).most_common())
+        limits.append(
+            Limit(
+                f"Wpisy raportu w Logach mają maski strażnika reguły danych ({masks}): odtworzenie wpisuje do INTERMAX "
+                "maskę w miejscu czynności Wykonawcy, więc reguła, która porównuje je z komórką, może zdecydować inaczej"
+            )
+        )
+    if record.ending != "finished" and entering.written is None and entering.changes:
+        limits.append(
+            Limit(
+                "zapis INTERMAX u taty skończył się Zatrzymaniem, które zależy od jego dysku (INTERMAX otwarty w Excelu "
+                "albo zmieniony w trakcie): w katalogu roboczym odtworzenia zapis może się udać, więc to Zatrzymanie "
+                "może się nie powtórzyć"
+            )
+        )
+    return limits
+
+
+def _entering(record: RunLog, work: _Work) -> _Rebuilt:
+    """INTERMAX z uporządkowanych wierszy Kopii wejścia, Konfiguracja wykonawców i plik adresów z loginów Wpisów,
+    Skrzynka raportów z maili w postaci kanonicznej (``worker_reports.as_mail``), pamięć wpisów z ``rollout_before`` i
+    ``memory_before`` oraz zegar z dniem kliknięcia u taty."""
+
+    register, limits = _register_file(record, work, "intermax", lambda sheet, row: _ORDERED_FONT)
+    entering = record.report_entering
+    reads = [] if entering is None else [logged_read(mail) for mail in entering.mails]
+    logins = sorted({read.worker for read in reads if not isinstance(read, ReadStranger)}) or [_NO_WORKER]
+    senders = {login: _sender(f"wykonawca-{index}") for index, login in enumerate(logins)}
+    files = ConfigurationFiles.in_folder(work.folder("konfiguracja"))
+    workers = {"schema_version": 1, "workers": {login: login for login in logins}}
+    addresses = {"schema_version": 1, "wykonawcy": {login: [sender.shown()] for login, sender in senders.items()}}
+    files.path("worker_config").write_text(json.dumps(workers, ensure_ascii=False), encoding="utf-8")
+    files.path("worker_addresses").write_text(json.dumps(addresses, ensure_ascii=False), encoding="utf-8")
+    strangers = iter(_strangers(entering))
+    mails = [as_mail(read, next(strangers) if isinstance(read, ReadStranger) else senders[read.worker]) for read in reads]
+    saved = SavedState(None, OwnEntries.EMPTY) if entering is None else _saved(entering)
+    started = record.started_at.astimezone()
+    moment = datetime.combine(started.date() if entering is None else entering.today, started.timetz())
+    warned = any(message.code == _MEMORY_NOT_SAVED for message in record.messages)
+    inbox = FakeInbox(mails, skipped=0 if entering is None else entering.skipped)
+    parts = HostParts(now=lambda: moment, reports=ReportEnteringParts(inbox, _LoggedState(saved, saves=not warned)))
+    paths: dict[PathNeed, Path] = {
+        "register": register,
+        "worker_config": files.path("worker_config"),
+        "worker_addresses": files.path("worker_addresses"),
+    }
+    return _Rebuilt(paths, parts, limits)
+
+
+@dataclass
+class _LoggedState:
+    """Pamięć wpisów taty przed kliknięciem z Logów; zapis po kliknięciu nie udaje się, gdy u taty się nie udał."""
+
+    saved: SavedState
+    saves: bool
+
+    def load(self) -> SavedState:
+        return self.saved
+
+    def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
+        return self.saves
+
+
+def _strangers(entering: LoggedReports | None) -> list[SenderAddress]:
+    """Adres każdego maila spoza listy adresów w Logach, po kolei: jeden z tylu adresów, ile problemów nieznanego
+    nadawcy mają w Logach jego skrót i dzień, bo rdzeń daje jeden problem na różny adres maili z tym Message-ID."""
+
+    if entering is None:
+        return []
+    senders = Counter((problem.mail, problem.day) for problem in entering.problems if isinstance(problem, LoggedSenderProblem))
+    seen: Counter[tuple[str, date]] = Counter()
+    found: list[SenderAddress] = []
+    for mail in entering.mails:
+        if isinstance(mail, LoggedStrangerMail):
+            key = (mail.mail, mail.day)
+            found.append(_sender(f"obcy-{mail.mail}-{seen[key] % max(senders[key], 1)}"))
+            seen[key] += 1
+    return found
+
+
+def _sender(local: str) -> SenderAddress:
+    sender = SenderAddress.of(f"{local}@{_REPLAY_DOMAIN}")
+    assert sender is not None, local
+    return sender
+
+
+def _digits(number: str) -> bool:
+    return number.isascii() and number.isdigit()
+
+
+def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
+    return [entry for mail in entering.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
+
+
+def _memory_key(entry: LoggedOwnEntry) -> tuple[int, date, str]:
+    return entry.number, entry.day, entry.worker
+
+
+def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
+    """Numery Wpisów raportu w Logach po liczbie, dniu i Wykonawcy: pamięć wpisów ma w Logach numer tylko jako liczbę,
+    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie."""
+
+    numbers: dict[tuple[int, date, str], set[str]] = {}
+    for mail in entering.mails:
+        if isinstance(mail, LoggedReportMail):
+            for entry in mail.entries:
+                if _digits(entry.number):
+                    numbers.setdefault((int(entry.number), mail.day, mail.worker), set()).add(entry.number)
+    return numbers
+
+
+def _saved(entering: LoggedReports) -> SavedState:
+    numbers = _numbers(entering)
+    entries: set[OwnEntry] = set()
+    for logged in entering.memory_before:
+        [number] = numbers[_memory_key(logged)]
+        key = OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
+        entries.add(OwnEntry(key, ReportColumn(logged.column), logged.value))
+    return SavedState(entering.rollout_before, OwnEntries(frozenset(entries)))
+
+
 def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:
     """Odtworzenie procesu ``key``; nowy proces bez swojej gałęzi pada w mypy."""
 
@@ -732,17 +934,15 @@ def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:
         case "efenix":
             return _Rebuild(_efenix_limits, _efenix)
         case "report_entering":
-            return _Rebuild(_report_entering_limits, _not_rebuilt)
+            return _Rebuild(_entering_limits, _entering, configuration=("worker_config", "worker_addresses"))
         case _:
             assert_never(key)
 
 
-def _report_entering_limits(_record: RunLog) -> list[Limit]:
-    return [Limit("odtworzenie Wpisania raportów przyjdzie z #1233", blocking=True)]
+def _from_configuration(kind: ProcessKind[Any, Any], rebuilt: Container[str]) -> list[ConfigurationNeed]:
+    """Pliki Konfiguracji procesu ``kind``, które odtworzenie bierze z folderu Konfiguracji, a nie z odbudowy."""
 
-
-def _not_rebuilt(_record: RunLog, _work: _Work) -> _Rebuilt:
-    raise AssertionError("granica blokująca zatrzymuje odtworzenie przed odbudową plików")
+    return [need for need in kind.configuration_needs if need not in rebuilt]
 
 
 def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work) -> PreparedRun[Any, Any]:
@@ -750,7 +950,7 @@ def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, wo
     metryk w katalogu roboczym w miejscu pliku metryk procesu. Okres Uporządkowania INTERMAX to okres dnia z zegara
     procesu u taty (ADR 0019), więc start podaje okres tylko procesowi z okresem."""
 
-    paths = {**rebuilt.paths, **_configured(work, kind.configuration_needs)}
+    paths = {**rebuilt.paths, **_configured(work, _from_configuration(kind, rebuilt.paths))}
     period = record.period if isinstance(kind, PeriodProcessKind) else None
     start = Start(paths, period=period, dry_run=record.mode.dry_run, pricing=record.pricing)
     metrics = work.path("metryki.jsonl")
@@ -872,6 +1072,7 @@ COMPARED: Final = (
     ),
     _Part("Ilości tylko dla INEA", "inea_only_cleared"),
     _Part("Wpisy INTERMAX", "intermax_entries"),
+    _Part("Wpisanie raportów", "report_entering"),
     _Part("ślad zleceń efenix", "efenix_orders", _orders),
     _Part("Zatrzymanie okna efenix", "efenix_stop", _window_stop),
     _Part("ślad wywołań", "trace"),
@@ -889,13 +1090,11 @@ NOT_COMPARED: Final = frozenset(
         "dad_actions",
         "interruption",
         "input_copy_notes",
-        "report_entering",
     }
 )
 """Pola Logów, które odtworzenie bierze z Logów albo które zależą od chwili, komputera albo taty, a nie od wejścia i
-kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie i uwagi o Kopii wejścia, a do tego
-Wpisanie raportów, którego odtworzenie zatrzymuje granica blokująca do #1233. Każde inne pole ``RunLog`` jest w
-``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
+kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie i uwagi o Kopii wejścia. Każde inne
+pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
 
 
 def first_difference(logged: RunLog, replayed: RunLog) -> Difference | None:

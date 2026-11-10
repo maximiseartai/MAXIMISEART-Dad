@@ -44,23 +44,55 @@ def inbox_access_unreadable() -> Message:
 
 
 def password_rejected() -> Message:
-    """Gmail odrzucił hasło aplikacji: nowe hasło może dać tylko Maks."""
+    """Gmail odrzucił hasło aplikacji: nowe hasło może dać tylko Maks (spec #1224, US 47)."""
 
     return Message.to_maintainer(
         code="RAPORTY_HASLO_ODRZUCONE",
-        what=f"Gmail nie przyjął hasła do skrzynki raportów, więc maili nie przeczytano. {_UNCHANGED}",
+        what=f"Skrzynka raportów odrzuciła hasło, Maks musi je odnowić. Maili nie przeczytano. {_UNCHANGED}",
         where=_INBOX,
     )
 
 
 def inbox_unreachable() -> Message:
-    """Skrzynki raportów nie dało się teraz przeczytać (sieć, Gmail)."""
+    """Skrzynki raportów nie dało się teraz przeczytać (sieć, Gmail): tata ponawia sam, bez Zgłoszenia (US 49)."""
 
     return Message(
         code="RAPORTY_SKRZYNKA_NIEDOSTEPNA",
         what=f"Nie udało się połączyć ze skrzynką raportów. {_UNCHANGED}",
         where=_INBOX,
-        action=f"Sprawdź połączenie z internetem i spróbuj za chwilę: kliknij jeszcze raz. {IF_ERROR_RETURNS}",
+        action=f"Spróbuj za chwilę: sprawdź połączenie z internetem i kliknij jeszcze raz. {IF_ERROR_RETURNS}",
+    )
+
+
+CONFLICT_ACTION: Final = (
+    "Otwórz w Excelu INTERMAX i tę kopię, przepisz do INTERMAX zmiany, których w nim brakuje, zapisz go i usuń kopię."
+)
+"""Co tata robi z kopią konfliktu OneDrive obok INTERMAX: w Komunikacie i na karcie Wpisania raportów."""
+
+
+def conflict_copy(copy: Path) -> Message:
+    """Obok INTERMAX leży kopia konfliktu OneDrive ``copy``: dwie wersje INTERMAX, więc kliknięcie niczego nie czyta."""
+
+    return Message(
+        code="RAPORTY_KOPIA_KONFLIKTU",
+        dad_file="order_register",
+        what=f"Obok INTERMAX leży kopia konfliktu OneDrive, więc maili nie przeczytano. {_UNCHANGED}",
+        where=file_label(copy),
+        action=f"{CONFLICT_ACTION} Potem kliknij jeszcze raz.",
+    )
+
+
+def conflict_after_save(copy: Path) -> Message:
+    """Po zapisie obok INTERMAX pojawiła się kopia konfliktu OneDrive ``copy``: ktoś zmieniał INTERMAX w tym samym
+    czasie, a raporty są już wpisane."""
+
+    return Message(
+        code="RAPORTY_KOPIA_KONFLIKTU_PO_ZAPISIE",
+        dad_file="order_register",
+        what="Raporty zostały wpisane, ale obok INTERMAX pojawiła się kopia konfliktu OneDrive: ktoś zmieniał INTERMAX "
+        "w tym samym czasie.",
+        where=file_label(copy),
+        action=f"{CONFLICT_ACTION} Dopiero wtedy kliknij jeszcze raz.",
     )
 
 

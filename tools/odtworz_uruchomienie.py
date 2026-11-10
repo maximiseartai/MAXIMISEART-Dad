@@ -1,6 +1,7 @@
 """Odtwarza Uruchomienie z pliku Logów (dysk albo Archiwum Logów okresu) na Macu i drukuje pierwszą różnicę; użyj, by powtórzyć run taty.
 
-Narzędzie odtwarzania Uruchomienia procesu z Logów Uruchomienia (#847, spec #837).
+Narzędzie odtwarzania Uruchomienia procesu z Logów Uruchomienia (#847, spec #837). Odtwarza każdy proces Centrum:
+Przebieg rozliczeń, Przygotowanie pliku zbiorczego, Uporządkowanie INTERMAX, Wycena w efenix i Wpisanie raportów.
 
 Użycie (z katalogu repozytorium):
 
@@ -22,7 +23,11 @@ Odtworzenie (``tools/lib/odtworzenie.py``) buduje pliki wejścia z Kopii wejści
 wartości syntetyczne), uruchamia ten sam proces w tym samym trybie przez ten sam rdzeń co Centrum, a Wycenę w efenix
 na Atrapie efenix z odczytów stron w Logach (``tools/lib/atrapa_z_logow.py``), i porównuje Logi odtworzenia z Logami.
 ``--konfiguracja``: folder z ``worker_mapping.yaml`` i Wzorcami (bez parametru ``config/`` głównego checkoutu), bo
-Logi ich nie niosą; potrzebują go Przygotowanie pliku zbiorczego i Przebieg rozliczeń. ``--efenix-dzis``: dzisiejszy
+Logi ich nie niosą; potrzebują go Przygotowanie pliku zbiorczego i Przebieg rozliczeń. Wpisanie raportów bierze
+INTERMAX z Kopii wejścia, a maile ze Skrzynki raportów z Wpisów raportu w Logach, w postaci kanonicznej od adresów
+``@odtworzenie.invalid`` (adresów, tematów i treści maili taty Logi nie mają), z Konfiguracją wykonawców i plikiem
+adresów z loginów Wpisów i z pamięcią wpisów sprzed kliknięcia: powtarza dopasowanie do zleceń, pamięć wpisów i
+Nienadpisywanie, a nie rozpoznanie tekstu maila taty. ``--efenix-dzis``: dzisiejszy
 dzień kalendarza Atrapy (bez parametru dzień startu Uruchomienia). ``--zachowaj``: folder, w którym zostają pliki wejścia,
 pliki, które zapisał proces, i ``odtworzone-logi.json``; bez niego wszystko znika po końcu.
 

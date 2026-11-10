@@ -411,6 +411,8 @@ INTERMAX_SAMPLES: Samples = {
 
 ADDRESSES = tool_files.config_dir(Path("C:/Narzedzie")) / WORKER_ADDRESSES_FILE
 _ADDRESSES_PROBLEMS: tuple[AddressesProblem, ...] = (*get_args(get_args(AddressesProblem)[0]), UnknownLogin(Login("jan.testowy")))
+# Kopia konfliktu OneDrive obok INTERMAX: jego nazwa z dopiskiem nazwy komputera (``onedrive_conflicts``).
+CONFLICT_COPY = REGISTER.with_name(f"{REGISTER.stem}-LAPTOP-TATY{REGISTER.suffix}")
 REPORT_ENTERING_SAMPLES: Samples = {
     "inbox_access_missing": [report_entering_messages.inbox_access_missing],
     "inbox_access_unreadable": [report_entering_messages.inbox_access_unreadable],
@@ -423,11 +425,18 @@ REPORT_ENTERING_SAMPLES: Samples = {
     "cells_rejected": [report_entering_messages.cells_rejected],
     "unsupported_shape": [lambda: report_entering_messages.unsupported_shape(REGISTER, SHEET)],
     "memory_not_saved": [report_entering_messages.memory_not_saved],
+    "conflict_copy": [lambda: report_entering_messages.conflict_copy(CONFLICT_COPY)],
+    "conflict_after_save": [lambda: report_entering_messages.conflict_after_save(CONFLICT_COPY)],
     "unexpected_failure": [report_entering_messages.unexpected_failure],
     "summary_not_shown": [report_entering_messages.summary_not_shown],
 }
 
 RefusalSamples = Mapping[str, Sequence[Callable[[], refusal.Refusal]]]
+_REPORT_ENTERING_MISSING: tuple[tuple[refusal.ReportEnteringFile, ...], ...] = (
+    ("inbox_access",),
+    ("worker_addresses",),
+    ("inbox_access", "worker_addresses"),
+)
 _RETRIES: tuple[refusal.Retry, ...] = get_args(refusal.Retry)
 
 # Każda fabryka katalogu odmów Centrum rozliczeń; nazwa bez końcówki ``_SAMPLES``, bo odmowa nie ma kodu Komunikatu.
@@ -471,4 +480,7 @@ REFUSALS: RefusalSamples = {
     "history_unreadable": [refusal.history_unreadable],
     "run_not_in_history": [refusal.run_not_in_history],
     "note_not_queued": [refusal.note_not_queued],
+    "report_entering_not_set_up": [
+        partial(refusal.report_entering_not_set_up, missing) for missing in _REPORT_ENTERING_MISSING
+    ],
 }

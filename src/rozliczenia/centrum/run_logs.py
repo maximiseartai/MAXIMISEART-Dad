@@ -78,20 +78,25 @@ from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts
 from rozliczenia.worker_reports import (
     ForeignOrder,
+    Login,
+    MailId,
     MailRead,
     ManualDifference,
     MissingVerdict,
     OrderKey,
+    OrderNumber,
     OtherDay,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
     RepeatedOrder,
+    ReportEntry,
     ReportProblem,
     SubjectFault,
     UnknownNumber,
     UnknownSender,
     UnreadableSubject,
+    Verdict,
     VerdictFault,
 )
 
@@ -579,6 +584,38 @@ def _mail(read: MailRead) -> LoggedMail:
             return LoggedStrangerMail(kind="stranger", mail=read.mail.digest, arrived=read.arrived, day=read.day)
         case _:
             assert_never(read)
+
+
+def logged_read(mail: LoggedMail) -> MailRead:
+    """Odczyt maila z jego zapisu w Logach, czyli zapis w drugą stronę: odtworzenie Uruchomienia z Logów (#1233) podaje
+    go procesowi jako mail w postaci kanonicznej (``worker_reports.as_mail``)."""
+
+    match mail:
+        case LoggedReportMail():
+            entries = tuple(
+                ReportEntry(
+                    OrderNumber(entry.number),
+                    None if entry.verdict is None else Verdict(entry.verdict),
+                    None if entry.fault is None else _verdict_fault_of(entry.fault),
+                    entry.activities,
+                )
+                for entry in mail.entries
+            )
+            return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
+        case LoggedUnreadableMail():
+            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), _subject_fault_of(mail.fault))
+        case LoggedStrangerMail():
+            return ReadStranger(MailId(mail.mail), mail.arrived, mail.day)
+        case _:
+            assert_never(mail)
+
+
+def _verdict_fault_of(fault: LoggedVerdictFault) -> VerdictFault:
+    return {_verdict_fault(member): member for member in VerdictFault}[fault]
+
+
+def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
+    return {_subject_fault(member): member for member in SubjectFault}[fault]
 
 
 class LoggedOrderProblem(_Record):

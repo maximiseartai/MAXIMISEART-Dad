@@ -23,6 +23,7 @@ pilnuje:
   - src/rozliczenia/input_copy.py
   - src/rozliczenia/intermax_*.py
   - src/rozliczenia/message.py
+  - src/rozliczenia/onedrive_conflicts.py
   - src/rozliczenia/order_facts.py
   - src/rozliczenia/period_folder.py
   - src/rozliczenia/phase_runner.py

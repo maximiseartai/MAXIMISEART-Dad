@@ -1733,9 +1733,10 @@ export const zIntermaxSetup = z.object({
  *
  * Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
  *
- * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
- * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania raportów z jego
- * Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
+ * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
+ * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
+ * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
 export const zReportEnteringSetup = z.object({
     title: z.string(),
@@ -2064,9 +2065,10 @@ export const zIntermaxSetupWritable = z.object({
  *
  * Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
  *
- * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
- * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania raportów z jego
- * Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
+ * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
+ * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
+ * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
 export const zReportEnteringSetupWritable = z.object({
     title: z.string(),
