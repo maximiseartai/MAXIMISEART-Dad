@@ -9,19 +9,19 @@ from typing import Final
 
 from ._model import SUBJECT_WORD, SubjectFault
 
-_REPLY: Final = re.compile(r"\s*(?:re|fwd?)\s*:")
+_REPLY: Final = re.compile(r"\s*(?:re|fwd?|odp|pd)\s*:")
 _NUMBER: Final = re.compile(r"[0-9]+")
-_SHAPE: Final = re.compile(rf"\s*{re.escape(SUBJECT_WORD)}\s*(?P<date>[0-9]+(?:(?:[^\w]|_)+[0-9]+)*)\s*")
+_SHAPE: Final = re.compile(rf"\s*{re.escape(SUBJECT_WORD)}\s*(?P<date>[0-9]+(?:(?:[^\w]|_)+[0-9]+)*)(?:\s*r\.?)?\s*")
 _SEPARATORS: Final = frozenset("._/")
 
 
 def read(subject: str) -> date | SubjectFault | None:
     """Dzień zleceń z tematu Raportu wykonawcy, powód, gdy temat ze słowem ``raport`` nie daje dnia, albo ``None``, gdy
     mail nie jest Raportem wykonawcy: temat bez tego słowa albo odpowiedź i przekazanie dalej (``Re:``, ``Fwd:``,
-    ``Fw:``).
+    ``Fw:``, z Outlooka po polsku ``Odp:`` i ``PD:``).
 
     Temat to słowo ``raport`` w dowolnej wielkości liter i data dzień, miesiąc, rok: dzień i miesiąc z zerem albo bez,
-    rok z dwiema albo czterema cyframi (``26`` to 2026), między nimi ``.``, ``_`` albo ``/``, a wokół słowa, daty i
+    rok z dwiema albo czterema cyframi (``26`` to 2026), z dopiskiem ``r.`` albo bez, między nimi ``.``, ``_`` albo ``/``, a wokół słowa, daty i
     separatorów dowolne białe znaki. Inny temat ze słowem dostaje pierwszy powód z kolejności ``SubjectFault``.
     """
 

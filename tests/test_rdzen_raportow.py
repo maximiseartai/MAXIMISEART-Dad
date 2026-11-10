@@ -168,11 +168,17 @@ def test_raport_z_adresu_spoza_listy_nie_zmienia_komorek_i_jest_problemem_niezna
         "FW: raport 08.11.2026",
         " re: Fwd: Raport 08.11.2026",
         "Re: Raport bez daty",
+        "ODP: Raport 08.11.2026",
+        "Odp: Raport 08.11.2026",
+        "odp :Raport 08.11.2026",
+        "PD: Raport 08.11.2026",
+        "pd: Raport bez daty",
         "Zlecenia na jutro 08.11.2026",
     ],
 )
 def test_mail_z_innym_tematem_niz_raport_z_data_nie_daje_niczego(subject: str) -> None:
-    """Odpowiedź i przekazanie dalej nie są Raportem wykonawcy (US 9), także z tematem, którego nie da się odczytać."""
+    """Odpowiedź i przekazanie dalej nie są Raportem wykonawcy (US 9), także po polsku z Outlooka (``Odp:``, ``PD:``) i z
+    tematem, którego nie da się odczytać."""
 
     outcome = enter_reports(_inputs([_mail(JAN, subject, TEXT)], [_order()]))
 
@@ -542,11 +548,14 @@ def _subject_day(subject: str) -> tuple[CellChange, ...]:
         "Raport 08 . 11 . 2026",
         "Raport\t8_11/2026",
         "Raport\xa008.11.2026",
+        "Raport 08.11.2026r.",
+        "Raport 8.11.2026 r",
+        "Raport 08.11.26 r.",
     ],
 )
 def test_temat_raportu_w_kazdym_zapisie_daty_daje_dzien_zlecen(subject: str) -> None:
     """US 8: ``Raport`` bez względu na wielkość liter i spacje, separator ``.``, ``_`` albo ``/``, rok dwu- albo
-    czterocyfrowy, dzień i miesiąc bez zera."""
+    czterocyfrowy, dzień i miesiąc bez zera, rok z dopiskiem ``r.``."""
 
     assert _subject_day(subject) == _both(ROW, "tak", "wymiana routera")
 
@@ -586,13 +595,15 @@ def test_wlasnosc_kazdy_zapis_tematu_raportu_daje_ten_sam_dzien_co_zapis_kanonic
         pytest.param("Raport 08.11.20226", SubjectFault.YEAR_DIGITS, id="rok-piec-cyfr"),
         pytest.param("Raport 08112026", SubjectFault.DATE_FORM, id="bez-separatorow"),
         pytest.param("Raport 008.11.2026", SubjectFault.DATE_FORM, id="dzien-trzy-cyfry"),
+        pytest.param("Raport 08.011.2026", SubjectFault.DATE_FORM, id="miesiac-trzy-cyfry"),
         pytest.param("Raport 08.11.2026.1", SubjectFault.DATE_FORM, id="cztery-liczby"),
         pytest.param("Raporty 08.11.2026", SubjectFault.OTHER_TEXT, id="slowo-z-litera"),
         pytest.param("Raport z 08.11.2026", SubjectFault.OTHER_TEXT, id="slowo-przed-data"),
         pytest.param("Mój raport 08.11.2026", SubjectFault.OTHER_TEXT, id="tekst-przed-slowem"),
         pytest.param("Raport 08.11.2026 poprawka", SubjectFault.OTHER_TEXT, id="tekst-po-dacie"),
         pytest.param("Raport: 08.11.2026", SubjectFault.OTHER_TEXT, id="dwukropek"),
-        pytest.param("Odp: Raport 08.11.2026", SubjectFault.OTHER_TEXT, id="odpowiedz-spoza-re-fwd"),
+        pytest.param("Odpowiedź: Raport 08.11.2026", SubjectFault.OTHER_TEXT, id="slowo-odpowiedz"),
+        pytest.param("Raport 08.11.2026 rok", SubjectFault.OTHER_TEXT, id="slowo-rok-po-dacie"),
     ],
 )
 def test_temat_ze_slowem_raport_ktorego_nie_da_sie_odczytac_jest_problemem_z_powodem(
@@ -859,3 +870,228 @@ def test_wlasnosc_permutacja_maili_z_problemami_rozpoznania_daje_ten_sam_wynik()
     outcomes = [enter_reports(_inputs(order, _orders())) for order in itertools.permutations(mails)]
 
     assert all(outcome == outcomes[0] for outcome in outcomes)
+
+
+# --- Wpis przez kilka linii (#1228 runda 2): granica Wpisu nie zależy od końca linii ---
+
+EWA_ORDER = _order(OrderRow("Zlecenia", 123), number="40000009", worker="Ewa.Probna")
+LONG = "40000001 tak wymiana routera,\nmontaż 2 gniazd"
+LONG_CELLS = ((0, "tak", "wymiana routera, montaż 2 gniazd"),)
+
+
+def _unknown(number: str) -> UnknownNumber:
+    return UnknownNumber(Login("jan.testowy"), DAY, OrderNumber(number))
+
+
+def _cells(entered: Sequence[tuple[int, str, str]]) -> tuple[CellChange, ...]:
+    return tuple(
+        change
+        for index, verdict, activities in entered
+        for change in (_both(ROWS[index], verdict, activities) if activities else (CellChange(ROWS[index], ReportColumn.SUCCESSFUL, verdict),))
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "entered", "problems"),
+    [
+        pytest.param("40000001 tak\nwymiana routera", ((0, "tak", "wymiana routera"),), (), id="opis-w-nastepnej-linii"),
+        pytest.param(LONG, LONG_CELLS, (), id="opis-zawiniety"),
+        pytest.param(
+            "40000001 tak wymiana routera 40000002 nie brak klienta 40000003\ntak montaż",
+            ((0, "tak", "wymiana routera"), (1, "nie", "brak klienta"), (2, "tak", "montaż")),
+            (),
+            id="lamanie-miedzy-numerem-a-tak",
+        ),
+        pytest.param("40000001\ntak wymiana routera", ((0, "tak", "wymiana routera"),), (), id="numer-sam-w-linii"),
+        pytest.param(
+            "40000001 tak wymiana routera\n3 nie działały", ((0, "tak", "wymiana routera 3 nie działały"),), (), id="linia-od-liczby-i-nie"
+        ),
+        pytest.param(
+            "40000001 tak wymiana routera\n2 tak jak ustalono",
+            ((0, "tak", "wymiana routera 2 tak jak ustalono"),),
+            (),
+            id="linia-od-liczby-i-tak",
+        ),
+        pytest.param(
+            "40000001 tak router\n4000002 nie brak", ((0, "tak", "router 4000002 nie brak"),), (), id="liczba-krotsza-niz-numer-zlecenia"
+        ),
+        pytest.param(
+            "40000001 tak wymiana routera\n40000099 nie brak klienta",
+            ((0, "tak", "wymiana routera"),),
+            (_unknown("40000099"),),
+            id="literowka-w-numerze-w-nastepnej-linii",
+        ),
+        pytest.param(
+            "40000001 tak wymiana routera 40000099 nie brak klienta",
+            ((0, "tak", "wymiana routera"),),
+            (_unknown("40000099"),),
+            id="literowka-w-numerze-w-tej-samej-linii",
+        ),
+        pytest.param(
+            "40000001 tak wymiana routera\n40000099 brak klienta",
+            ((0, "tak", "wymiana routera"),),
+            (_unknown("40000099"),),
+            id="literowka-w-numerze-bez-tak-nie-na-poczatku-linii",
+        ),
+        pytest.param(
+            "40000001 tak router jak\n40000009 nie działał",
+            ((0, "tak", "router jak"),),
+            (_unknown("40000009"),),
+            id="zlecenie-innego-wykonawcy-ze-znakiem",
+        ),
+        pytest.param(
+            "40000001 tak router\n40000002 wymiana",
+            ((0, "tak", "router"),),
+            (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000002"), VerdictFault.MISSING),),
+            id="zlecenie-na-poczatku-linii-bez-tak-nie",
+        ),
+        pytest.param(
+            "40000001 tak wymiana routera, montaż 2\ngniazd 40000002 nie brak klienta",
+            ((0, "tak", "wymiana routera, montaż 2 gniazd"), (1, "nie", "brak klienta")),
+            (),
+            id="koniec-opisu-przed-wpisem-w-linii",
+        ),
+        pytest.param(
+            "- 40000001 tak router\n• 40000002 nie brak klienta\n(3) 40000003 tak montaż",
+            ((0, "tak", "router"), (1, "nie", "brak klienta"), (2, "tak", "montaż")),
+            (),
+            id="lista-z-punktorami",
+        ),
+        pytest.param(
+            "40000001 tak gniazda 2 40000002 nie brak klienta",
+            ((0, "tak", "gniazda 2"), (1, "nie", "brak klienta")),
+            (),
+            id="liczba-przed-wpisem-w-srodku-linii",
+        ),
+        pytest.param(
+            "40000001 tak klient nie odbiera tel 600100200 nie odbiera",
+            ((0, "tak", "klient nie odbiera tel"),),
+            (_unknown("600100200"),),
+            id="telefon-ze-znakiem-po-nim-to-problem",
+        ),
+        pytest.param(
+            "Dzień dobry, 2 tak jak ustalono:\n40000001 tak router", ((0, "tak", "router"),), (), id="liczba-w-powitaniu"
+        ),
+        pytest.param(f"{LONG}\nPozdrawiam\nJan", LONG_CELLS, (), id="pozdrawiam"),
+        pytest.param(f"{LONG}\nPozdr. Jan", LONG_CELLS, (), id="pozdr"),
+        pytest.param(f"{LONG}\npozdrowienia", LONG_CELLS, (), id="pozdrowienia"),
+        pytest.param(f"{LONG}\nDziękuję\nJan", LONG_CELLS, (), id="dziekuje"),
+        pytest.param(f"{LONG}\nZ poważaniem\nJan Testowy", LONG_CELLS, (), id="z-powazaniem"),
+        pytest.param(f"{LONG} z\npoważaniem Jan", LONG_CELLS, (), id="z-powazaniem-zawiniete"),
+        pytest.param(f"{LONG}\n-- \nJan 40000002 tak x", LONG_CELLS, (), id="separator-podpisu"),
+        pytest.param(f"{LONG}\n--\nJan 40000002 tak x", LONG_CELLS, (), id="separator-podpisu-bez-spacji"),
+        pytest.param(f"{LONG}\nWysłane z iPhone'a", LONG_CELLS, (), id="wyslane-z-iphonea"),
+        pytest.param(f"{LONG}\n\nSent from my iPhone", LONG_CELLS, (), id="sent-from-my-iphone"),
+        pytest.param(f"{LONG}\nWysłano z aplikacji Poczta\n40000002 nie brak", (*LONG_CELLS, (1, "nie", "brak")), (), id="wyslano-z"),
+        pytest.param(f"{LONG}\n> stary cytat\nmontaż", LONG_CELLS, (), id="linia-cytatu"),
+        pytest.param(
+            "40000001 tak router 40000002\n> cytat\ntak montaż", ((0, "tak", "router 40000002"),), (), id="znak-za-cytatem"
+        ),
+        pytest.param(
+            f"{LONG}\n\nW dniu pon., 8 lis 2026 o 12:00 Jan <jan@przyklad.invalid> napisał(a):\n> 40000001 nie brak klienta",
+            LONG_CELLS,
+            (),
+            id="cytat-gmaila",
+        ),
+        pytest.param(
+            f"{LONG}\nOn Mon, 8 Nov 2026 at 12:00 Jan <jan@przyklad.invalid> wrote:\n40000002 nie brak klienta",
+            LONG_CELLS,
+            (),
+            id="cytat-po-angielsku-bez-znakow-cytatu",
+        ),
+        pytest.param(
+            f"{LONG}\nOn Mon, 8 Nov 2026 at 12:00\nJan <jan@przyklad.invalid> wrote:\n40000002 nie brak klienta",
+            LONG_CELLS,
+            (),
+            id="cytat-po-angielsku-zawiniety",
+        ),
+        pytest.param(
+            f"{LONG}\n---------- Forwarded message ---------\n40000002 nie brak klienta",
+            LONG_CELLS,
+            (),
+            id="przekazanie-dalej",
+        ),
+        pytest.param(
+            f"{LONG}\n---------- Wiadomość przekazana dalej ----------\n40000002 nie brak klienta",
+            LONG_CELLS,
+            (),
+            id="wiadomosc-przekazana-dalej",
+        ),
+        pytest.param(
+            "40000001 tak router ４００００００２ nie brak",
+            ((0, "tak", "router ４００００００２ nie brak"),),
+            (),
+            id="cyfry-spoza-ascii-to-opis",
+        ),
+    ],
+)
+def test_opis_wpisu_ciagnie_sie_przez_kolejne_linie_do_nastepnego_wpisu_podpisu_albo_cytatu(
+    text: str, entered: tuple[tuple[int, str, str], ...], problems: tuple[ReportProblem, ...]
+) -> None:
+    """US 19, 20, 23, 24: łamanie linii w opisie to pojedyncza spacja, a Wpis zaczyna numer w kształcie numeru zlecenia
+    (tyle cyfr co najkrótszy numer zlecenia) ze znakiem po nim albo na początku linii; krótsza liczba to słowo opisu.
+    Literówka w numerze daje problem i nie dokleja się do opisu poprzedniego Wpisu."""
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [*_orders(), EWA_ORDER]))
+
+    assert outcome.changes == _cells(entered)
+    assert outcome.problems == problems
+
+
+@pytest.mark.parametrize(
+    ("numbers", "problems"),
+    [
+        pytest.param(("40000001", "400002"), (_unknown("400099"),), id="najkrotszy-numer-ma-6-cyfr"),
+        pytest.param(("40000001", "40000002"), (), id="najkrotszy-numer-ma-8-cyfr"),
+    ],
+)
+def test_ksztalt_numeru_zlecenia_wyznacza_najkrotszy_numer_zlecenia_z_dni_otwartych(
+    numbers: tuple[str, ...], problems: tuple[ReportProblem, ...]
+) -> None:
+    orders = [_order(row, number=number) for row, number in zip(ROWS, numbers, strict=False)]
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "40000001 tak router\n400099 nie brak")], orders))
+
+    assert outcome.problems == problems
+
+
+def test_raport_z_dnia_bez_zlecen_w_dniach_otwartych_daje_problem_numeru() -> None:
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "Dzień dobry 12 tak router")], []))
+
+    assert outcome.problems == (_unknown("12"),)
+
+
+_WHITESPACE = st.sampled_from([" ", "  ", "\n", "\n\n", " \n ", "\t", "\r\n"])
+
+
+@PROPERTY
+@given(st.lists(_WHITESPACE, min_size=40, max_size=40))
+def test_wlasnosc_dowolne_lamanie_linii_miedzy_slowami_daje_te_same_komorki(gaps: list[str]) -> None:
+    """US 19, 24: granica Wpisu i opis nie zależą od tego, gdzie Wykonawca albo jego program pocztowy złamał linię."""
+
+    words = [word for number, (verdict, activities) in zip(NUMBERS, _EXPECTED, strict=True) for word in (number, verdict, *activities.split())]
+    text = words[0] + "".join(gap + word for gap, word in zip(gaps, words[1:], strict=False))
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], _orders()))
+
+    assert outcome.changes == tuple(
+        change for row, (word, activities) in zip(ROWS, _EXPECTED, strict=True) for change in _both(row, word, activities)
+    )
+    assert outcome.problems == ()
+
+
+def test_dwa_nieczytelne_tematy_z_jednym_message_id_i_chwila_przyjscia_daja_ten_sam_wynik_w_kazdej_kolejnosci() -> None:
+    """Remis ``(arrived, MailId)`` nieczytelnych tematów rozstrzyga powód, nie kolejność maili na wejściu."""
+
+    mails = [
+        _mail(JAN, "Raport 08.11", TEXT, EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, "Raport 08.11.226", TEXT, EVENING, "<1@przyklad.invalid>"),
+    ]
+
+    outcomes = [enter_reports(_inputs(order, [_order()])) for order in (mails, mails[::-1])]
+
+    assert outcomes[0] == outcomes[1]
+    assert {read.fault for read in outcomes[0].mails if isinstance(read, ReadUnreadable)} == {
+        SubjectFault.NO_YEAR,
+        SubjectFault.YEAR_DIGITS,
+    }

@@ -10,7 +10,6 @@ oraz ``report_cells``, ``settlement_period`` i ``text``, bo przejdzie bez zmian 
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import date, datetime
 
 from . import _cells, _entries, _figures, _matching, _subject
@@ -94,15 +93,14 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
 
     Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``) z dniem otwartym w ``inputs.window``; inne maile
     rdzeń pomija po cichu. Temat ze słowem ``raport`` bez dnia zleceń daje ``UnreadableSubject``, gdy mail przyszedł od
-    Wykonawcy w dniu otwartym. Wpis trafia tylko do zlecenia nadawcy z dnia z tematu i tylko do pustej komórki, a przy
+    Wykonawcy w dniu otwartym. Wpis zaczyna numer z co najmniej tyloma cyframi, ile ma najkrótszy numer zlecenia z dni
+    otwartych (``_entries.entries``). Wpis trafia tylko do zlecenia nadawcy z dnia z tematu i tylko do pustej komórki, a przy
     kilku Wpisach jednego zlecenia decyduje najpóźniejszy mail; mail z tą samą chwilą przyjścia i tym samym Message-ID
     rozstrzyga treść odczytu.
     """
 
     orders = tuple(order for order in inputs.orders if inputs.window.opens(order.key.day))
-    numbers: defaultdict[tuple[date, Login], set[OrderNumber]] = defaultdict(set)
-    for order in orders:
-        numbers[order.key.day, order.key.worker].add(order.key.number)
+    digits = min((len(order.key.number) for order in orders), default=1)
     read: list[MailRead] = []
     problems: list[ReportProblem] = []
     for mail in inputs.mails:
@@ -121,7 +119,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
                 read.append(ReadStranger(mail.id, mail.arrived, found))
                 problems.append(UnknownSender(mail.id, mail.sender, found))
             case date():
-                entries = _entries.entries(mail.text, numbers.get((found, worker), set()))
+                entries = _entries.entries(mail.text, digits)
                 read.append(ReadReport(mail.id, mail.arrived, worker, found, entries))
     mails = tuple(sorted(read, key=_mail_order))
     reports = [found for found in mails if isinstance(found, ReadReport)]
