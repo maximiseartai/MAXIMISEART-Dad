@@ -1,5 +1,9 @@
 """Wpisy raportu z treści Raportu wykonawcy tak, jak piszą Wykonawcy: wiele Wpisów w mailu, w jednej linii albo przez
-kilka linii, ``tak``/``nie`` w dowolnej wielkości liter i z interpunkcją, bez powitania, podpisu i cytatu w opisie."""
+kilka linii, ``tak``/``nie`` w dowolnej wielkości liter i z interpunkcją, bez powitania, podpisu i cytatu w opisie.
+
+Opis Wpisu kończy jeden z wyliczonych znaczników: następny Wpis, pusta linia, linia cytatu ``>``, nagłówek cytowanej
+wiadomości, stopka (``Wysłane z …``, ``Sent from …``), separator podpisu ``--``, pożegnanie z ``_CLOSINGS`` albo koniec
+treści. Tekst bez żadnego z nich tuż pod opisem (samo imię w następnej linii) należy do opisu."""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 import re
 from typing import Final
+import unicodedata
 
 from ._model import OrderNumber, ReportEntry, Verdict, VerdictFault
 
@@ -18,7 +23,36 @@ _MARKS: Final[dict[str, Verdict | VerdictFault]] = {
     "skuteczne": VerdictFault.WORD,
     "nieskuteczne": VerdictFault.WORD,
 }
-_CLOSINGS: Final = (("pozdrawiam",), ("pozdrowienia",), ("pozdr",), ("dziękuję",), ("z", "poważaniem"))
+
+
+def _fold(word: str) -> str:
+    """Słowo małymi literami bez polskich znaków (``Dziękuję`` → ``dziekuje``), jak z telefonu bez polskiej klawiatury."""
+
+    decomposed = unicodedata.normalize("NFKD", word.casefold().replace("ł", "l"))
+    return "".join(letter for letter in decomposed if not unicodedata.combining(letter))
+
+
+_CLOSINGS: Final = tuple(
+    (tuple(_fold(word) for word in closing.split()), anywhere)
+    for closing, anywhere in (
+        ("pozdrawiam", True),
+        ("pozdrowienia", True),
+        ("pozdr", True),
+        ("pzdr", True),
+        ("pozdro", True),
+        ("serdecznie pozdrawiam", True),
+        ("dziękuję", True),
+        ("dzięki", False),
+        ("z poważaniem", True),
+        ("miłego dnia", True),
+        ("miłego wieczoru", True),
+    )
+)
+"""Pożegnania, które kończą opis, bez względu na wielkość liter, polskie znaki i interpunkcję po nich (``Dziekuje!``,
+``Pzdr.``). Pożegnanie z ``False`` kończy opis tylko jako pierwsze słowo linii, bo w środku linii bywa słowem opisu
+(``wymiana dzięki drabinie``)."""
+_PREFIXES: Final = frozenset({"zlecenie", "zlec", "zl", "nr"})
+"""Słowa przed numerem następnego Wpisu (``Zlecenie``, ``Zlec.``, ``Zl.``, ``Nr``), które nie należą do opisu."""
 _END: Final = re.compile(
     r"^[ \t]*(?:--"
     r"|(?:w dniu|on) .*(?:\n.*){0,2}?(?:napisał\(a\)|napisał|napisała|wrote):"
@@ -42,18 +76,18 @@ class _Word:
 
 
 _Stream = Sequence[_Word | None]
-"""Słowa treści w kolejności; ``None`` to przerwa: linia cytatu ``>`` albo stopka (``Wysłane z iPhone'a``)."""
+"""Słowa treści w kolejności; ``None`` to przerwa: pusta linia, linia cytatu ``>`` albo stopka (``Wysłane z iPhone'a``)."""
 
 
 def entries(text: str, digits: int) -> tuple[ReportEntry, ...]:
     """Wpisy z treści; ``digits`` to liczba cyfr najkrótszego numeru zlecenia.
 
     Treść kończy separator podpisu ``--`` albo nagłówek cytowanej wiadomości, a koniec linii nie kończy ani Wpisu, ani
-    opisu. Numer w kształcie numeru zlecenia (same cyfry ASCII, z ``#`` albo bez, co najmniej ``digits`` cyfr) zaczyna
+    opisu; pusta linia kończy jedno i drugie. Numer w kształcie numeru zlecenia (same cyfry ASCII, z ``#`` albo bez, co najmniej ``digits`` cyfr) zaczyna
     Wpis, gdy po nim, także w następnej linii, stoi znak (``tak``, ``nie``, ``t``, ``n``, ``skuteczne``,
     ``nieskuteczne``, z interpunkcją, w dowolnej wielkości liter) albo gdy zaczyna linię. Krótsza liczba to słowo opisu.
-    Opis to słowa do następnego Wpisu, przerwy, pożegnania albo końca treści, z pojedynczymi spacjami, bez znacznika
-    listy (``1.``, ``-``) na początku linii następnego Wpisu. Słowa przed pierwszym Wpisem i po przerwie albo pożegnaniu
+    Opis to słowa do następnego Wpisu, przerwy, pożegnania albo końca treści, z pojedynczymi spacjami, bez słowa
+    z ``_PREFIXES`` tuż przed numerem następnego Wpisu i bez znacznika listy (``1.``, ``-``) na początku jego linii. Słowa przed pierwszym Wpisem i po przerwie albo pożegnaniu
     się nie liczą. W mailu liczy się pierwszy Wpis numeru, bo cytat stoi pod nową treścią.
     """
 
@@ -72,7 +106,7 @@ def _stream(text: str) -> Iterator[_Word | None]:
     end = _END.search(lines)
     for line in lines[: None if end is None else end.start()].split("\n"):
         stripped = line.strip()
-        if stripped.startswith(">") or _FOOTER.fullmatch(stripped):
+        if not stripped or stripped.startswith(">") or _FOOTER.fullmatch(stripped):
             yield None
         else:
             yield from (_Word(word, _EDGES.sub("", word), index == 0) for index, word in enumerate(stripped.split()))
@@ -86,10 +120,14 @@ def _starts(stream: _Stream, index: int, digits: int) -> bool:
 
 
 def _cut(stream: _Stream, start: int) -> int:
-    """Koniec opisu przed Wpisem ``start``: bez znacznika listy (sama interpunkcja albo liczba) na początku linii."""
+    """Koniec opisu przed Wpisem ``start``: bez słów z ``_PREFIXES`` tuż przed numerem i bez znacznika listy (sama
+    interpunkcja albo liczba) na początku linii."""
 
-    before = stream[start - 1]
-    return start - 1 if before is not None and before.first and (not before.core or before.core.isdigit()) else start
+    end = start
+    while (prefix := stream[end - 1]) is not None and _fold(prefix.core) in _PREFIXES:
+        end -= 1
+    before = stream[end - 1]
+    return end - 1 if before is not None and before.first and (not before.core or before.core.isdigit()) else end
 
 
 def _word(stream: _Stream, index: int) -> _Word:
@@ -132,5 +170,6 @@ def _description(words: _Stream) -> str:
 
 
 def _closing(words: _Stream) -> bool:
-    cores = tuple("" if word is None else word.core.casefold() for word in words)
-    return any(cores[: len(closing)] == closing for closing in _CLOSINGS)
+    folded = tuple("" if word is None else _fold(word.core) for word in words)
+    first = words[0] is not None and words[0].first
+    return any(folded[: len(closing)] == closing and (anywhere or first) for closing, anywhere in _CLOSINGS)
