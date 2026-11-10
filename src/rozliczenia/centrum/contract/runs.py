@@ -241,7 +241,9 @@ DiagnosisOffer = Literal["on_request", "automatic"]
 
 
 # Otwarcie tego, co proces zapisał: akcja po wyniku z zapisem, którą deklaruje proces (``run_view``).
-ResultAction = Literal["open_collective_file", "open_worker_settlements_folder", "open_order_register"]
+ResultAction = Literal[
+    "open_collective_file", "open_worker_settlements_folder", "open_order_register", "open_reports_view"
+]
 
 
 NextAction = Literal["run", "rerun", ResultAction]

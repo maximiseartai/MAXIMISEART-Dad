@@ -1,8 +1,8 @@
 """Katalog Komunikatów Wpisania raportów dla taty (zasady treści: zob. ``message``, ADR 0028).
 
 Komunikaty o samym INTERMAX (brak, Excel, OneDrive, nieudany zapis) daje ``intermax_messages`` z ``ENTERING``, tak jak
-w Uporządkowaniu INTERMAX. Tu są Komunikaty o Skrzynce raportów, pliku adresów, pamięci własnych wpisów i zapisie
-komórek. Żaden nie zawiera hasła aplikacji, adresu skrzynki ani nadawcy, tematu ani treści maila, numeru zlecenia ani
+w Uporządkowaniu INTERMAX. Tu są Komunikaty o Skrzynce raportów, pliku adresów, pamięci własnych wpisów, decyzjach
+„Zostaw moją” i zapisie komórek. Żaden nie zawiera hasła aplikacji, adresu skrzynki ani nadawcy, tematu ani treści maila, numeru zlecenia ani
 loginu Wykonawcy: pliki w ``config`` prowadzi Maks, więc każda ich usterka idzie do niego.
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Final
 
 from .message import IF_ERROR_RETURNS, Message, explorer_check, file_label, folder_label
-from .tool_files import REPORT_ENTERING_STATE
+from .tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_STATE
 from .worker_addresses import AddressesProblem, UnknownLogin
 from .worker_report_inbox import INBOX_ACCESS_FILE
 
@@ -21,6 +21,7 @@ _UNCHANGED: Final = "INTERMAX nie został zmieniony."
 _INBOX: Final = "skrzynka raportów w Gmailu"
 _ACCESS: Final = file_label(Path("config") / INBOX_ACCESS_FILE)
 _STATE: Final = file_label(Path("config") / REPORT_ENTERING_STATE)
+_DECISIONS: Final = file_label(Path("config") / REPORT_ENTERING_DECISIONS)
 
 
 def inbox_access_missing() -> Message:
@@ -158,6 +159,18 @@ def state_unreadable() -> Message:
         code="RAPORTY_NIECZYTELNA_PAMIEC",
         what=f"Nie można odczytać pamięci wpisanych raportów. {_UNCHANGED}",
         where=_STATE,
+    )
+
+
+def decisions_unreadable() -> Message:
+    """Decyzji „Zostaw moją” nie da się odczytać: bez nich wróciłyby różnice, które tata zostawił. Pamięć własnych wpisów
+    jest poprawna, więc Komunikat jej nie wskazuje, a usunięcie pliku decyzji przywróciłoby różnice."""
+
+    return Message.to_maintainer(
+        code="RAPORTY_NIECZYTELNE_DECYZJE",
+        what=f"Nie można odczytać decyzji „Zostaw moją”, więc maili nie przeczytano. {_UNCHANGED}",
+        where=_DECISIONS,
+        before="Nie usuwaj tego pliku: bez niego wrócą różnice, przy których kliknięto „Zostaw moją”.",
     )
 
 

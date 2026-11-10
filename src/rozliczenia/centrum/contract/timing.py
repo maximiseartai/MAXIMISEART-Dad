@@ -10,7 +10,7 @@ from rozliczenia.centrum.contract.common import Model
 
 
 # Strony Centrum (`frontend/src/pages.tsx`): z bocznego menu i widok Powiadomienia; identyfikator to adres `#/<id>` strony.
-PageId = Literal["okresy", "uruchomienia", "metryki", "konfiguracja", "powiadomienia", "uzupelnienie"]
+PageId = Literal["okresy", "uruchomienia", "metryki", "konfiguracja", "powiadomienia", "uzupelnienie", "raporty"]
 
 
 # Zimny start strony (otwarcie albo odświeżenie karty) albo przejście w menu.
@@ -43,6 +43,8 @@ ApiOperation = Literal[
     "restoreIntermaxCopy",
     "getReportEnteringSetup",
     "startReportEntering",
+    "getReportsView",
+    "keepManualValue",
     "decideRun",
     "diagnoseRun",
     "reportRun",

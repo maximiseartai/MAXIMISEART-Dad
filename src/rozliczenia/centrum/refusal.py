@@ -243,3 +243,20 @@ def report_entering_not_set_up(missing: Sequence[ReportEnteringFile]) -> Refusal
         409,
         f"Wpisanie raportów nie jest jeszcze ustawione: w folderze config brakuje {files}. Dopisze je Maks.",
     )
+
+
+def reports_unreadable() -> Refusal:
+    """Widok Raporty: pliku wyniku albo decyzji „Zostaw moją” w ``config`` nie da się odczytać, a zapis decyzji bez
+    dawnych przywróciłby ich różnice."""
+
+    return Refusal(
+        500,
+        "Nie udało się odczytać wyniku Wpisania raportów ani decyzji „Zostaw moją”. Odśwież kartę, a gdy to się "
+        "powtarza, wyślij Uwagę ogólną.",
+    )
+
+
+def difference_gone() -> Refusal:
+    """„Zostaw moją” przy różnicy, której nie ma w wyniku ostatniego kliknięcia (np. widok z kliknięcia sprzed innego)."""
+
+    return Refusal(404, "Tej różnicy nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty.")

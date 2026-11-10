@@ -510,6 +510,8 @@ NOT_SWEPT: dict[str, str] = {
     "startToolUpdate": "aktualizacja zmienia katalog narzędzia, nie pliki taty (test_centrum_aktualizacja)",
     "reportToolUpdate": "wymaga nieudanej aktualizacji; klucz i wysłane Zgłoszenia sprawdza reportRun",
     "closeCentrum": "kończy Centrum testu",
+    "getReportsView": "czyta tylko pliki Wpisania raportów w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
+    "keepManualValue": "zapisuje tylko plik decyzji w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
 }
 
 

@@ -7,7 +7,7 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   wejścia wiersze plików taty. Wpisanie raportów ma maile ze Skrzynki raportów tylko jako Wpisy raportu w Logach
   (``report_entering``), więc odtworzenie podaje je procesowi jako maile w postaci kanonicznej
   (``worker_reports.as_mail``) od adresów ``@odtworzenie.invalid``, z Konfiguracją wykonawców i plikiem adresów z
-  loginów Wpisów i z pamięcią wpisów sprzed kliknięcia z Logów.
+  loginów Wpisów oraz z pamięcią wpisów i decyzjami „Zostaw moją” sprzed kliknięcia z Logów.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
   pusta Kopia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu wyników szukania, wiersz Kopii albo
   zlecenie śladu efenix, które strażnik reguły danych pominął) kończy odtworzenie bez uruchomienia procesu: wynik
@@ -107,13 +107,23 @@ from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.report_cells import ReportColumn
-from rozliczenia.report_entering import ReportEnteringParts, SavedState
+from rozliczenia.report_entering import ClickResult, ReportEnteringParts, SavedState
 from rozliczenia import report_entering_messages
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
-from rozliczenia.worker_reports import Login, OrderKey, OrderNumber, OwnEntries, OwnEntry, ReadStranger, SenderAddress, as_mail
+from rozliczenia.worker_reports import (
+    Kept,
+    Login,
+    OrderKey,
+    OrderNumber,
+    OwnEntries,
+    OwnEntry,
+    ReadStranger,
+    SenderAddress,
+    as_mail,
+)
 
 from atrapy.skrzynka_raportow import FakeInbox
 import atrapa_z_logow
@@ -342,7 +352,9 @@ def _replay_input(cut: GuardCut) -> bool:
     return (
         cut.field == "efenix_orders"
         or (cut.field == "input_copy" and ".fingerprint" not in cut.place)
-        or cut.place.startswith(("report_entering.mails", "report_entering.memory_before", "report_entering.skipped"))
+        or cut.place.startswith(
+            ("report_entering.mails", "report_entering.memory_before", "report_entering.kept", "report_entering.skipped")
+        )
     )
 
 
@@ -778,25 +790,25 @@ def _entering_limits(record: RunLog) -> list[Limit]:
             )
         ]
     numbers = _numbers(entering)
-    unknown = [entry for entry in entering.memory_before if len(numbers.get(_memory_key(entry), ())) != 1]
-    if unknown:
-        entry = unknown[0]
-        return [
-            Limit(
-                f"pamięć wpisów w Logach ma zlecenie {entry.number} Wykonawcy {entry.worker} z {entry.day:%d.%m.%Y} "
-                "tylko jako liczbę, a jego numeru nie ma w dokładnie jednym Wpisie raportu w Logach, więc odtworzenie "
-                "nie wie, czy numer ma zera na początku",
-                blocking=True,
-            )
-        ]
+    for name, logged in (("pamięć wpisów", entering.memory_before), ("decyzje „Zostaw moją”", entering.kept)):
+        unknown = [entry for entry in logged if len(numbers.get(_memory_key(entry), ())) != 1]
+        if unknown:
+            entry = unknown[0]
+            return [
+                Limit(
+                    f"{name} w Logach ma zlecenie {entry.number} Wykonawcy {entry.worker} z {entry.day:%d.%m.%Y} "
+                    "tylko jako liczbę, a jego numeru nie ma w dokładnie jednym Wpisie raportu w Logach, więc "
+                    "odtworzenie nie wie, czy numer ma zera na początku",
+                    blocking=True,
+                )
+            ]
     limits = [
         Limit(
             "maili taty Logi nie mają: odtworzenie czyta Wpisy raportu z Logów z maili w postaci kanonicznej (temat "
             "„Raport dd.mm.rrrr”, linia „numer tak|nie czynności” na Wpis) od adresów @odtworzenie.invalid, z "
             "Konfiguracją wykonawców i plikiem adresów z loginów Wpisów, więc powtarza dopasowanie do zleceń, pamięć "
-            "wpisów i Nienadpisywanie, ale nie rozpoznanie tekstu maila taty"
+            "wpisów, decyzje „Zostaw moją” i Nienadpisywanie, ale nie rozpoznanie tekstu maila taty"
         ),
-        Limit("decyzji „Zostaw moją” Logi nie mają (#1231): odtworzenie biegnie bez nich, tak jak dziś Centrum taty"),
     ]
     counted = Counter(
         {mask: sum(entry.activities.count(mask) for entry in _logged_entries(entering)) for mask in MASKS}
@@ -823,7 +835,7 @@ def _entering_limits(record: RunLog) -> list[Limit]:
 def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     """INTERMAX z uporządkowanych wierszy Kopii wejścia, Konfiguracja wykonawców i plik adresów z loginów Wpisów,
     Skrzynka raportów z maili w postaci kanonicznej (``worker_reports.as_mail``), pamięć wpisów z ``rollout_before`` i
-    ``memory_before``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
+    ``memory_before`` z decyzjami „Zostaw moją” z ``kept``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
     zegar z dniem kliknięcia u taty."""
 
     register, limits = _register_file(record, work, "intermax", lambda sheet, row: _ORDERED_FONT)
@@ -870,6 +882,9 @@ class _LoggedState:
 
     def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
         return self.saves
+
+    def save_result(self, written: CellsWritten, result: ClickResult) -> None:
+        """Widoku Raporty odtworzenie nie ma, a wynik kliknięcia porównuje z Logów."""
 
 
 def _strangers(entering: LoggedReports | None) -> list[SenderAddress]:
@@ -922,12 +937,14 @@ def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
 
 def _saved(entering: LoggedReports) -> SavedState:
     numbers = _numbers(entering)
-    entries: set[OwnEntry] = set()
-    for logged in entering.memory_before:
+
+    def key(logged: LoggedOwnEntry) -> OrderKey:
         [number] = numbers[_memory_key(logged)]
-        key = OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
-        entries.add(OwnEntry(key, ReportColumn(logged.column), logged.value))
-    return SavedState(entering.rollout_before, OwnEntries(frozenset(entries)))
+        return OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
+
+    entries = frozenset(OwnEntry(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.memory_before)
+    kept = frozenset(Kept(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.kept)
+    return SavedState(entering.rollout_before, OwnEntries(entries), kept)
 
 
 def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:

@@ -3,6 +3,7 @@ name: verify-centrum-rozliczen
 description: Verify Centrum rozliczeń, MAXIMISEART-Dad's local browser app, end to end in Chromium (Playwright for Python) on a synthetic folder okresów, checking screens, API answers, and effects on disk, with retained screenshots; use after changes to the Centrum server, frontend, contract, or launcher, and read ADR 0004 (`docs/adr/0004-centrum-rozliczen-adapter.md`) before making them. When a change can make the frontend faster or slower, measure it before and after with `--feature wydajnosc` and update the baseline as `features/wydajnosc.md` says.
 pilnuje:
   - src/rozliczenia/centrum/*
+  - src/rozliczenia/report_entering.py
   - frontend/*
   - run_centrum.py
   - tools/lib/atrapy/scenariusz_centrum.py
@@ -57,7 +58,7 @@ py -3 .agents\skills\verify-centrum-rozliczen\scripts\run_centrum_verification.p
 
 `--feature ustawienia`, `--feature tablica-okresow`, `--feature uklad-folderow-taty`, `--feature konfiguracja`, `--feature aktualizacja`,
 `--feature metryki`, `--feature blad-odczytu`, `--feature przygotowanie-pliku-zbiorczego`, `--feature uzupelnienie`,
-`--feature przebieg-rozliczen`, `--feature uporzadkowanie-intermax`, `--feature kopie-intermax`, `--feature kontrola-ilosci`, `--feature diagnoza`, `--feature aktualnosc-i-onedrive`, `--feature zgloszenie`, `--feature uwaga-taty`, `--feature logi-uruchomienia`, `--feature karta-z-logow`, `--feature powiadomienia`, `--feature pomiar-u-taty`, `--feature wycena-w-efenix`, or `--feature start-i-zamykanie` drives one
+`--feature przebieg-rozliczen`, `--feature uporzadkowanie-intermax`, `--feature kopie-intermax`, `--feature kontrola-ilosci`, `--feature diagnoza`, `--feature aktualnosc-i-onedrive`, `--feature zgloszenie`, `--feature uwaga-taty`, `--feature logi-uruchomienia`, `--feature karta-z-logow`, `--feature powiadomienia`, `--feature pomiar-u-taty`, `--feature wpisanie-raportow`, `--feature wycena-w-efenix`, or `--feature start-i-zamykanie` drives one
 feature; the default `all` drives every feature in `features/` except `wydajnosc`, ending
 with `start-i-zamykanie`, which closes Centrum through its own button. In `all`,
 Dad's whole week runs in order: Przygotowanie pliku zbiorczego, the summary of
@@ -108,7 +109,9 @@ Explorer appends the path to `<root>/opened.jsonl` instead of launching an
 application. While `<root>/pacing/szablony-ms.txt` exists, each Szablon
 pracownika of a Przebieg rozliczeń RUN waits that many milliseconds, so the
 live progress and the refused closing can be observed; the drive turns it on
-for one RUN only. Uporządkowanie INTERMAX keeps its Kopie INTERMAX in `<root>/Kopie INTERMAX`, and its clock is the
+for one RUN only. Wpisanie raportów reads its Skrzynka raportów from the run's folder of `.eml` mails `<root>/maile/`
+(`FolderInbox`), never Dad's Gmail, and keeps its files (pamięć, wynik for the view Raporty, decisions of „Zostaw moją”)
+in the run's `config/`. Uporządkowanie INTERMAX keeps its Kopie INTERMAX in `<root>/Kopie INTERMAX`, and its clock is the
 fixture's "today" at the computer's time of day. Wycena w efenix never reaches efenix.pl: its window is Playwright's
 headless Chromium on the tests' Atrapa efenix, which `serve_centrum.py` serves on a free port while Centrum runs
 (address in `<root>/efenix/adres.txt`, logged out until a form is posted to its `page_login.php`), with the

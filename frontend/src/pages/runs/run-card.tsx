@@ -53,6 +53,7 @@ import { rerunOf, useRuns } from "@/lib/runs"
 import { FillingOnResult } from "@/pages/filling/filling-on-result"
 import { OpenCollectiveFileButton } from "@/pages/periods/open-collective-file"
 import { openAndConfirm, openOrderRegisterAndConfirm, type OpenedInPeriod } from "@/pages/periods/open-period-path"
+import { ReportsLink } from "@/pages/worker-reports/reports-link"
 import { CountTiles, NumberStrip } from "@/pages/runs/count-tiles"
 import { useStopDiagnosis } from "@/pages/runs/diagnosis"
 import { ConfirmRunDialog } from "@/pages/runs/run-dialogs"
@@ -589,6 +590,8 @@ function NextActionButton({
       )
     case "open_order_register":
       return DAD_FILES.order_register(run, "default")
+    case "open_reports_view":
+      return <ReportsLink />
     default: {
       const unhandled: never = action
 

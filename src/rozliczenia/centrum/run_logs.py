@@ -737,8 +737,9 @@ class LoggedReports(_Record):
     ``None``: pierwsze kliknięcie) bez dni okresów ``closed`` (tokeny okresów okna z Plikiem zbiorczym; Logi sprzed
     #1229 ich nie mają, bo wtedy kliknięcie ich nie sprawdzało), ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać, ``mails``
     przeczytane maile po chwili przyjścia, ``problems`` problemy rdzenia raportów, ``changes`` komórki do wpisania,
-    ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, a ``written`` liczba wpisanych komórek
-    (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
+    ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, ``kept`` decyzje „Zostaw moją” tych zleceń z
+    migawki kliknięcia (komórka z treścią Wpisu jako ``value``; Logi sprzed #1231 ich nie mają), a ``written`` liczba
+    wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
     """
 
     today: date
@@ -750,6 +751,7 @@ class LoggedReports(_Record):
     problems: list[LoggedProblem]
     changes: list[LoggedChange]
     memory_before: list[LoggedOwnEntry]
+    kept: list[LoggedOwnEntry] = []
     written: int | None
 
     @classmethod
@@ -769,6 +771,7 @@ class LoggedReports(_Record):
                 for change in facts.changes
             ],
             memory_before=[LoggedOwnEntry.of(entry.key, entry.column, entry.value) for entry in facts.memory_before],
+            kept=[LoggedOwnEntry.of(kept.key, kept.column, kept.reported) for kept in facts.kept],
             written=written,
         )
 

@@ -9,6 +9,8 @@ import type {
   GetIntermaxSetupResponse,
   GetNotificationsResponse,
   GetReportEnteringSetupResponse,
+  GetReportsViewResponse,
+  KeptCell,
   GetPeriodBoardResponse,
   GetQuantitiesToFillResponse,
   GetKindTableResponse,
@@ -62,6 +64,9 @@ export type IntermaxDays = GetIntermaxDaysResponse
 
 /** Karta „Wpisz raporty z maili” poza okresami (ADR 0028). */
 export type ReportEnteringSetup = GetReportEnteringSetupResponse
+
+/** Widok Raporty: wynik ostatniego kliknięcia „Wpisz raporty z maili” w wybranym dniu. */
+export type ReportsView = GetReportsViewResponse
 
 /** Wynik przywrócenia Kopii INTERMAX: przywrócona albo odmowa z Komunikatem (unia z kontraktu po `state`). */
 export type IntermaxRestore = Awaited<ReturnType<typeof restoreIntermaxCopy>>
@@ -176,6 +181,16 @@ export function getReportEnteringSetup() {
 /** Start Wpisania raportów z INTERMAX z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */
 export function startReportEntering() {
   return call("startReportEntering")
+}
+
+/** Widok Raporty dnia `day` (`null`: dziś) z pliku wyniku ostatniego kliknięcia; serwer nie czyta przy tym skrzynki. */
+export function getReportsView(day: string | null) {
+  return call("getReportsView", { query: { day } })
+}
+
+/** „Zostaw moją” przy różnicy `cell`: serwer zapisuje decyzję poza INTERMAX i oddaje widok dnia bez tej różnicy. */
+export function keepManualValue(cell: KeptCell) {
+  return call("keepManualValue", { body: cell })
 }
 
 /** Kopie INTERMAX w Konfiguracji, od najnowszej. */

@@ -483,6 +483,7 @@ UI_TEXTS: Final = {
     "Uzupełnij i zapisz": "frontend/src/lib/pricing.tsx",
     "Uzupełnij bez zapisu": "frontend/src/lib/pricing.tsx",
     "Kontynuuj": "frontend/src/pages/runs/run-dialogs.tsx",
+    "Zostaw moją": "frontend/src/pages/worker-reports/worker-row.tsx",
 }
 # Cytaty Komunikatów, których test nie szuka w pliku frontendu, każdy z powodem: tekst spoza UI Centrum rozliczeń
 # albo napis UI w postaci, której ``_ui_text`` nie czyta.

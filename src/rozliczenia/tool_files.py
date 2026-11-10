@@ -49,6 +49,10 @@ EFENIX_METRICS: Final = TOOL_ROOT / ".wycena-efenix-metrics.jsonl"
 REPORT_ENTERING_METRICS: Final = TOOL_ROOT / ".wpisanie-raportow-metrics.jsonl"
 REPORT_ENTERING_STATE: Final = "wpisanie-raportow-stan.json"
 """Pamięć własnych wpisów Wpisania raportów i dzień wdrożenia w ``config`` (ADR 0028)."""
+REPORT_ENTERING_RESULT: Final = "wpisanie-raportow-wynik.json"
+"""Wynik ostatniego udanego kliknięcia Wpisania raportów dla widoku Raporty w ``config`` (ADR 0028)."""
+REPORT_ENTERING_DECISIONS: Final = "wpisanie-raportow-decyzje.json"
+"""Decyzje taty „Zostaw moją” Wpisania raportów w ``config`` (ADR 0028)."""
 
 LOG_PATH: Final = log_path(TOOL_ROOT)
 

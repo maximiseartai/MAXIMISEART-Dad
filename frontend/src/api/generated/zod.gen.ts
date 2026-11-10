@@ -31,6 +31,8 @@ export const zApiTiming = z.object({
         'restoreIntermaxCopy',
         'getReportEnteringSetup',
         'startReportEntering',
+        'getReportsView',
+        'keepManualValue',
         'decideRun',
         'diagnoseRun',
         'reportRun',
@@ -306,6 +308,20 @@ export const zIntermaxDay = z.object({
  */
 export const zIntermaxRestoreRequest = z.object({
     name: z.string()
+});
+
+/**
+ * KeptCell
+ *
+ * Komórka zlecenia z treścią Wpisu raportu, przy której tata klika „Zostaw moją”: numer, dzień i Wykonawca
+ * zlecenia, kolumna INTERMAX i treść Wpisu (``reported``), która różni się od ręcznej wartości.
+ */
+export const zKeptCell = z.object({
+    number: z.string(),
+    day: z.iso.date(),
+    worker: z.string(),
+    column: z.enum(['SKUTECZNE', 'CZYNNOŚCI ZREALIZOWANE']),
+    reported: z.string()
 });
 
 /**
@@ -871,6 +887,55 @@ export const zReportWaiting = z.object({
 });
 
 /**
+ * ReportsProblem
+ *
+ * Problem z ostatniego kliknięcia: zdanie dla taty, numer zlecenia (``None``: problem bez numeru), adres
+ * nieznanego nadawcy (tylko przy nim) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją”
+ * (``keep``).
+ */
+export const zReportsProblem = z.object({
+    reason: z.string(),
+    number: z.string().nullable(),
+    sender: z.string().nullable(),
+    keep: zKeptCell.nullable()
+});
+
+/**
+ * ReportsWorker
+ *
+ * Wykonawca w wybranym dniu: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu,
+ * kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”, i numery
+ * zleceń bez żadnego Wpisu.
+ */
+export const zReportsWorker = z.object({
+    worker: z.string(),
+    orders: z.int(),
+    entered: z.int(),
+    mails: z.int(),
+    problems: z.array(zReportsProblem),
+    without_report: z.array(z.string())
+});
+
+/**
+ * ReportsView
+ *
+ * Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki.
+ *
+ * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
+ * ``day`` wybrany dzień, ``days`` dni do wyboru od najnowszego (dziś i dni otwartych okresów z ostatniego kliknięcia),
+ * ``workers`` Wykonawcy wybranego dnia, a ``unknown_senders`` Raporty wykonawcy z tego dnia z adresów spoza listy
+ * adresów Wykonawców.
+ */
+export const zReportsView = z.object({
+    clicked_at: z.iso.datetime().nullable(),
+    today: z.iso.date(),
+    day: z.iso.date(),
+    days: z.array(z.iso.date()),
+    workers: z.array(zReportsWorker),
+    unknown_senders: z.array(zReportsProblem)
+});
+
+/**
  * Resolved
  *
  * Maks zamknął issue sprawy jako ``completed`` albo bez powodu: będzie w następnej wersji.
@@ -1187,7 +1252,8 @@ export const zRunRecorded = z.object({
         'rerun',
         'open_collective_file',
         'open_worker_settlements_folder',
-        'open_order_register'
+        'open_order_register',
+        'open_reports_view'
     ])
 });
 
@@ -1506,7 +1572,8 @@ export const zViewTiming = z.object({
         'metryki',
         'konfiguracja',
         'powiadomienia',
-        'uzupelnienie'
+        'uzupelnienie',
+        'raporty'
     ]),
     ready_ms: z.int().gte(0).lte(600000),
     fcp_ms: z.int().gte(0).lte(600000).nullable(),
@@ -1595,7 +1662,8 @@ export const zLoggedOutcome = z.object({
         'rerun',
         'open_collective_file',
         'open_worker_settlements_folder',
-        'open_order_register'
+        'open_order_register',
+        'open_reports_view'
     ]),
     stop_kind: z.enum([
         'for_tata',
@@ -1649,7 +1717,8 @@ export const zRunOutcome = z.object({
         'rerun',
         'open_collective_file',
         'open_worker_settlements_folder',
-        'open_order_register'
+        'open_order_register',
+        'open_reports_view'
     ]),
     stop_kind: z.enum([
         'for_tata',
@@ -1866,7 +1935,8 @@ export const zLoggedOutcomeWritable = z.object({
         'rerun',
         'open_collective_file',
         'open_worker_settlements_folder',
-        'open_order_register'
+        'open_order_register',
+        'open_reports_view'
     ]),
     stop_kind: z.enum([
         'for_tata',
@@ -1987,7 +2057,8 @@ export const zRunOutcomeWritable = z.object({
         'rerun',
         'open_collective_file',
         'open_worker_settlements_folder',
-        'open_order_register'
+        'open_order_register',
+        'open_reports_view'
     ]),
     stop_kind: z.enum([
         'for_tata',
@@ -2343,6 +2414,13 @@ export const zOpenWorkerSettlementResponse = zOpened;
  */
 export const zGetReportEnteringSetupResponse = zReportEnteringSetup;
 
+export const zKeepManualValueBody = zKeptCell;
+
+/**
+ * Successful Response
+ */
+export const zKeepManualValueResponse = zReportsView;
+
 /**
  * Response Startreportentering
  *
@@ -2354,6 +2432,15 @@ export const zStartReportEnteringResponse = z.discriminatedUnion('state', [
     zRunAwaitingDecision,
     zRunFinished
 ]);
+
+export const zGetReportsViewQuery = z.object({
+    day: z.iso.date().nullish()
+});
+
+/**
+ * Successful Response
+ */
+export const zGetReportsViewResponse = zReportsView;
 
 export const zStartRunBody = zRunRequest;
 
