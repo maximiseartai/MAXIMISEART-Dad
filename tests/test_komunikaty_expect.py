@@ -46,6 +46,7 @@ from rozliczenia.centrum import (
     fill_messages,
     notification_messages,
     refusal,
+    report_entering_run,
     report_messages,
     run_cards,
     runs,
@@ -122,6 +123,10 @@ OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[],
 # Zdania dla taty poza Komunikatem: dopisek, który karta pokazuje przy Komunikacie, bez kodu i trzech części.
 SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | None]]]]] = {
     "Wynik Uruchomienia (zdania)": (runs, {"stop_note": [lambda: runs.stop_note("for_maks")]}),
+    "Karta Wpisania raportów (zdania)": (
+        report_entering_run,
+        {"conflict_note": [lambda: report_entering_run.conflict_note(message_samples.CONFLICT_COPY)]},
+    ),
 }
 
 

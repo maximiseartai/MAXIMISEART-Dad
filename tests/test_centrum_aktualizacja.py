@@ -486,6 +486,8 @@ def test_w_trakcie_aktualizacji_uruchomienie_druga_aktualizacja_i_zamkniecie_sa_
     hold = threading.Event()
     centrum, repository = updating_centrum(tmp_path, hold=hold)
     current = repository.head()
+    # Wpisanie raportów bez pliku adresów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
+    centrum.tool.configuration.worker_addresses.touch()
     assert centrum.client.post("/api/tool-update").status_code == 202
 
     run = centrum.start(dry_run=True)
