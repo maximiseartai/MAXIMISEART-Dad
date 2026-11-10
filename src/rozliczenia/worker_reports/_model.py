@@ -239,9 +239,8 @@ OwnEntries.EMPTY = OwnEntries(frozenset())
 
 @dataclass(frozen=True)
 class Kept:
-    """Decyzja taty „Zostaw moją” dla komórki ``column`` zlecenia ``key`` przy treści Wpisu ``reported``: nowa treść od
-    Wykonawcy pokazuje różnicę znowu. ``enter_reports`` jeszcze jej nie czyta, bo nie pokazuje różnic z ręczną
-    wartością."""
+    """Decyzja taty „Zostaw moją” dla komórki ``column`` zlecenia ``key`` przy treści Wpisu ``reported``: różnica z tą
+    treścią nie wraca, a nowa treść od Wykonawcy pokazuje różnicę znowu."""
 
     key: OrderKey
     column: ReportColumn

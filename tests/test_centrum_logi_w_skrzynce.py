@@ -857,7 +857,8 @@ def _archived_run(fake: FakeReportBox, folder: Path, run_id: str) -> Path:
 # Wpisanie raportów, drugie kliknięcie: tata kliknął w poniedziałek 9.11 (Raporty Jana: telefon w czynnościach, numer
 # zlecenia z zerem na początku), a we wtorek rano Anna przysyła Raporty za 9.11 do pustych komórek i do zlecenia z
 # ręcznym „nie” w SKUTECZNE, Jan numer spoza swoich zleceń, a obce adresy Raporty za 9.11: dwa różne adresy z jednym
-# Message-ID (dwa problemy) i jeden adres dwa razy z innym (jeden problem). Dwóch maili skrzynka nie umiała przeczytać.
+# Message-ID (dwa problemy) i jeden adres dwa razy z innym (jeden problem), a Jan poprawia opis swojego wpisu z
+# poniedziałku (#1230). Dwóch maili skrzynka nie umiała przeczytać.
 _SUCCESSFUL = FIRST + HEADERS.index("SKUTECZNE")
 _REPORTED_DAY = "Raport 09.11.2026"
 REPORTED = Intermax(
@@ -882,6 +883,7 @@ NEXT_MORNING = [
     report("inny@przyklad.invalid", _REPORTED_DAY, "40000002 nie brak", at=datetime(2026, 11, 10, 7, 53), message_id="<a@x>"),
     report("trzeci@przyklad.invalid", _REPORTED_DAY, "40000001 nie", at=datetime(2026, 11, 10, 7, 54), message_id="<b@x>"),
     report("trzeci@przyklad.invalid", _REPORTED_DAY, "40000001 nie", at=datetime(2026, 11, 10, 7, 54), message_id="<b@x>"),
+    report(SENDERS["jan.testowy"], _REPORTED_DAY, "04000005 nie klient nieobecny", at=datetime(2026, 11, 10, 7, 55)),
 ]
 
 
@@ -907,7 +909,8 @@ def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
     assert second["result"]["ending"] == "finished"
     produced = Produced(_archived_run(surroundings.report_box, tmp_path, second["run"]["id"]), ())
     problems = [problem["kind"] for problem in produced.record["report_entering"]["problems"]]
-    assert problems == ["unknown_sender"] * 3 + ["unknown_number"], problems
+    assert problems == ["unknown_sender"] * 3 + ["manual_difference", "unknown_number"], problems
+    assert "klient nieobecny" in [change["value"] for change in produced.record["report_entering"]["changes"]]
     assert produced.record["report_entering"]["skipped"] == 2
     return produced
 
@@ -1299,7 +1302,7 @@ def test_zmieniony_wpis_raportu_w_logach_daje_pierwsza_roznice_w_komorkach_wpisa
     assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
     [sheet] = produced.record["input_copy"][0]["sheets"]
     assert lines[3:6] == [
-        f"Pierwsza różnica: Wpisanie raportów (report_entering).changes[1: arkusz {sheet['sheet']}].value",
+        f"Pierwsza różnica: Wpisanie raportów (report_entering).changes[2: arkusz {sheet['sheet']}].value",
         '  Logi:        "montaż"',
         '  Odtworzenie: "montaż gniazda"',
     ]
