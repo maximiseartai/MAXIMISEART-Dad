@@ -9,12 +9,16 @@ nie umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz
 Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło),
 który Maks pisze Notatnikiem albo PowerShellem, więc odczyt przyjmuje BOM UTF-8 i UTF-16. Hasło nie wychodzi z modułu:
 nie ma go w żadnym wyniku, ``repr`` ani wyjątku.
+
+``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``, #1234): flagi maili i liczby maili
+ze słowem w temacie w folderze ``mails_since`` i w ``INBOX``, tą samą drogą (plik dostępu, połączenie, wybór folderu,
+wyniki porażek) i tak samo tylko do odczytu, żeby próba sprawdzała port, a nie swoją kopię.
 """
 
 from __future__ import annotations
 
 import codecs
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -28,7 +32,7 @@ from pathlib import Path
 import re
 import ssl
 import time
-from typing import Final, Literal, Protocol
+from typing import Final, Literal, Protocol, TypeVar
 
 from .worker_reports import SUBJECT_WORD, MailId, ReportMail, SenderAddress
 
@@ -38,6 +42,7 @@ __all__ = [
     "ImapInbox",
     "InboxAccess",
     "InboxOutcome",
+    "InboxSurvey",
     "InboxUnreachable",
     "Mails",
     "PasswordRejected",
@@ -54,6 +59,8 @@ FETCH_BATCH: Final = 100
 _MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _LIST_LINE: Final = re.compile(rb'\((?P<flags>[^)]*)\) (?:"(?:[^"\\]|\\.)*"|NIL) "(?P<name>(?:[^"\\]|\\.)*)"')
 _UID: Final = re.compile(rb"\bUID (\d+)\b")
+_FLAGS: Final = re.compile(rb"\bFLAGS \((?P<flags>[^)]*)\)")
+_T = TypeVar("_T")
 
 InboxAccess = Literal["ready", "missing", "unreadable"]
 """Plik dostępu do skrzynki: gotowy, brak pliku albo pustej linii (``missing``), zła treść (``unreadable``)."""
@@ -84,6 +91,19 @@ class InboxUnreachable:
 
 
 InboxOutcome = Mails | PasswordRejected | InboxUnreachable
+
+
+@dataclass(frozen=True)
+class InboxSurvey:
+    """Stan skrzynki z dni od dnia przed wskazanym, bez treści maili. ``searched`` to liczba maili, które w folderze
+    czytanym przez ``mails_since`` dało wyszukiwanie tych dni, a ``flags`` to flagi IMAP każdego z nich po UID;
+    ``in_folder`` i ``in_inbox`` to liczby maili ze słowem ``SUBJECT_WORD`` w temacie w tym folderze i w ``INBOX`` (te
+    same, gdy port czyta ``INBOX``)."""
+
+    searched: int
+    flags: Mapping[str, frozenset[str]]
+    in_folder: int
+    in_inbox: int
 
 
 class WorkerReportInbox(Protocol):
@@ -126,6 +146,15 @@ class ImapInbox:
         return "ready" if isinstance(found, _Access) else found
 
     def mails_since(self, day: date) -> InboxOutcome:
+        return self._session(lambda imap, access: _read(imap, access, day))
+
+    def survey(self, day: date) -> InboxSurvey | PasswordRejected | InboxUnreachable:
+        """Flagi i liczby maili z dni od dnia przed ``day``, jak ``mails_since`` tylko do odczytu: ``EXAMINE`` i
+        ``UID FETCH`` flag i tematów przez ``BODY.PEEK``."""
+
+        return self._session(lambda imap, access: _survey(imap, access, day))
+
+    def _session(self, read: Callable[[imaplib.IMAP4, _Access], _T]) -> _T | PasswordRejected | InboxUnreachable:
         found = _read_access(self._config)
         if not isinstance(found, _Access):
             return InboxUnreachable(found)
@@ -134,7 +163,7 @@ class ImapInbox:
         except (OSError, imaplib.IMAP4.error) as error:
             return InboxUnreachable(_cause(error))
         try:
-            return _read(imap, found, day)
+            return read(imap, found)
         except imaplib.IMAP4.abort as error:
             return InboxUnreachable(_cause(error))
         except imaplib.IMAP4.error as error:
@@ -188,12 +217,7 @@ def _ok(reply: tuple[str, Sequence[object]]) -> Sequence[object]:
 def _read(imap: imaplib.IMAP4, access: _Access, day: date) -> Mails:
     imap.login(_quoted(access.address.shown()), access.password)
     _ok(imap.select(_quoted(_folder(imap)), readonly=True))
-    first = day - timedelta(days=1)
-    since = f"{first.day:02d}-{_MONTHS[first.month - 1]}-{first.year}"
-    found = _ok(imap.uid("SEARCH", "SINCE", since))
-    uids = [uid.decode("ascii") for line in found if isinstance(line, bytes) for uid in line.split()]
-    subjects = _fetched(imap, uids, "(UID BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
-    chosen = [uid for uid, (_, header) in subjects.items() if SUBJECT_WORD in _subject(header).casefold()]
+    chosen = _with_subject_word(imap, _since(imap, day))
     mails, skipped = [], 0
     for prefix, raw in _fetched(imap, chosen, "(UID INTERNALDATE BODY.PEEK[])").values():
         moment = imaplib.Internaldate2tuple(prefix)
@@ -206,6 +230,54 @@ def _read(imap: imaplib.IMAP4, access: _Access, day: date) -> Mails:
         elif mail.sender != access.address:
             mails.append(mail)
     return Mails(tuple(mails), skipped)
+
+
+def _survey(imap: imaplib.IMAP4, access: _Access, day: date) -> InboxSurvey:
+    imap.login(_quoted(access.address.shown()), access.password)
+    folder = _folder(imap)
+    _ok(imap.select(_quoted(folder), readonly=True))
+    uids = _since(imap, day)
+    flags = _flags(imap, uids)
+    in_folder = len(_with_subject_word(imap, uids))
+    if folder == "INBOX":
+        return InboxSurvey(len(uids), flags, in_folder, in_folder)
+    _ok(imap.select(_quoted("INBOX"), readonly=True))
+    return InboxSurvey(len(uids), flags, in_folder, len(_with_subject_word(imap, _since(imap, day))))
+
+
+def _since(imap: imaplib.IMAP4, day: date) -> list[str]:
+    """UID maili otwartego folderu z dni od dnia przed ``day`` (``WorkerReportInbox.mails_since`` mówi dlaczego)."""
+
+    first = day - timedelta(days=1)
+    since = f"{first.day:02d}-{_MONTHS[first.month - 1]}-{first.year}"
+    found = _ok(imap.uid("SEARCH", "SINCE", since))
+    return [uid.decode("ascii") for line in found if isinstance(line, bytes) for uid in line.split()]
+
+
+def _with_subject_word(imap: imaplib.IMAP4, uids: list[str]) -> list[str]:
+    subjects = _fetched(imap, uids, "(UID BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
+    return [uid for uid, (_, header) in subjects.items() if SUBJECT_WORD in _subject(header).casefold()]
+
+
+def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
+    """UID → flagi każdego z ``uids`` w paczkach po ``FETCH_BATCH``. Odpowiedź paczki, która nie ma flag dla któregoś
+    jej UID (także ``OK`` bez żadnej linii ``FETCH``), ma linię bez UID albo flag albo flagi UID spoza paczki, to
+    ``UnexpectedReply``."""
+
+    flags = {}
+    for start in range(0, len(uids), FETCH_BATCH):
+        batch = uids[start : start + FETCH_BATCH]
+        lines = [line for line in _ok(imap.uid("FETCH", ",".join(batch), "(UID FLAGS)")) if line is not None]
+        found = {}
+        for line in lines:
+            uid = _UID.search(line) if isinstance(line, bytes) else None
+            line_flags = _FLAGS.search(line) if isinstance(line, bytes) else None
+            if uid is not None and line_flags is not None:
+                found[uid[1].decode("ascii")] = frozenset(line_flags["flags"].decode("latin-1").split())
+        if len(found) != len(lines) or found.keys() != set(batch):
+            raise UnexpectedReply
+        flags.update(found)
+    return flags
 
 
 def _folder(imap: imaplib.IMAP4) -> str:

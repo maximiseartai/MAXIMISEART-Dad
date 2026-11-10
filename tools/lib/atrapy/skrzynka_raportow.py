@@ -101,18 +101,27 @@ class FolderInbox:
 
 @dataclass(frozen=True)
 class AtrapaMail:
-    """Mail w atrapie: UID, chwila przyjęcia przez skrzynkę (``INTERNALDATE``, ze strefą) i bajty MIME."""
+    """Mail w atrapie: UID, chwila przyjęcia przez skrzynkę (``INTERNALDATE``, ze strefą), bajty MIME, flagi IMAP i to,
+    czy leży też w ``INBOX`` (``False``: tylko w folderze ``\\All``, jak mail zarchiwizowany w Gmailu)."""
 
     uid: int
     arrived: datetime
     raw: bytes
+    flags: tuple[str, ...] = ()
+    in_inbox: bool = True
 
 
 class AtrapaImap:
     """Serwer IMAP jednej skrzynki na czas bloku ``with``; ``port`` to jego port, ``commands`` polecenia klienta.
 
-    Skrzynka ma ``INBOX`` i, gdy ``all_folder``, folder ``\\All`` z nazwą w modified UTF-7 i spacją; oba pokazują te
-    same maile. ``cut="greeting"`` zrywa każde połączenie przed powitaniem, jak sieć, która zgubiła Gmaila, a
+    Skrzynka ma ``INBOX`` i, gdy ``all_folder``, folder ``\\All`` z nazwą w modified UTF-7 i spacją: ``\\All`` pokazuje
+    każdy mail, a ``INBOX`` maile z ``in_inbox`` (bez ``all_folder`` każdy). ``flags`` to bieżące flagi maili po UID, które
+    oddaje ``UID FETCH … FLAGS``; ``marks_seen`` dopisuje ``\\Seen`` mailowi, którego treść klient pobrał, nawet przez
+    ``BODY.PEEK[]``, jak serwer, który nie dotrzymuje RFC 3501, a ``deletes_read`` taki mail usuwa ze skrzynki dla
+    następnych sesji, jak filtr, który przenosi przeczytane maile. ``flags_reply="without_fetch"`` odpowiada na
+    ``UID FETCH … FLAGS`` samym ``OK`` bez linii ``FETCH``, a ``flags_reply="unsolicited"`` dokłada do linii z flagami
+    linię ``FETCH`` z flagami bez UID, jak serwer, który ogłasza flagę zmienioną w innej sesji. ``cut="greeting"`` zrywa każde połączenie przed
+    powitaniem, jak sieć, która zgubiła Gmaila, a
     ``cut="after_login"`` po udanym ``LOGIN`` czyta polecenia, ale odpowiada już tylko na ``CAPABILITY``, o które
     ``imaplib`` 3.14 pyta sam po ``LOGIN``, jak Gmail, który zamilkł w trakcie sesji: klient z limitem czasu dostaje
     wtedy ``TimeoutError``. ``refuse="login"`` odmawia ``LOGIN`` jak Gmail w chwilowej awarii (``NO [UNAVAILABLE]``, bez
@@ -128,6 +137,9 @@ class AtrapaImap:
         all_folder: bool = True,
         cut: Literal["greeting", "after_login"] | None = None,
         refuse: Literal["login", "examine"] | None = None,
+        marks_seen: bool = False,
+        deletes_read: bool = False,
+        flags_reply: Literal["without_fetch", "unsolicited"] | None = None,
     ) -> None:
         self.address = address
         self.password = password
@@ -135,6 +147,11 @@ class AtrapaImap:
         self.all_folder = all_folder
         self.cut = cut
         self.refuse = refuse
+        self.marks_seen = marks_seen
+        self.deletes_read = deletes_read
+        self.flags_reply = flags_reply
+        self.deleted: set[int] = set()
+        self.flags: dict[int, set[str]] = {mail.uid: set(mail.flags) for mail in self.mails}
         self.commands: list[str] = []
         self._server = _Server(self)
         self._thread = threading.Thread(target=self._server.serve_forever, args=(_POLL_S,), name="atrapa-imap")
@@ -171,6 +188,7 @@ class _Session(socketserver.StreamRequestHandler):
         if atrapa.cut == "greeting":
             return
         self._send(b"* OK [CAPABILITY IMAP4rev1] AtrapaImap gotowa")
+        self._mails: tuple[AtrapaMail, ...] = ()
         logged_in = False
         while line := self.rfile.readline():
             tag, _, rest = line.decode("utf-8").rstrip("\r\n").partition(" ")
@@ -205,13 +223,19 @@ class _Session(socketserver.StreamRequestHandler):
             self._send(*folders, done)
         elif command == "EXAMINE":
             known = atrapa.refuse != "examine" and _strings(arguments) in (["INBOX"], *([[_ALL]] if atrapa.all_folder else []))
-            exists = f"* {len(atrapa.mails)} EXISTS".encode()
+            if known:
+                self._mails = tuple(
+                    mail
+                    for mail in atrapa.mails
+                    if mail.uid not in atrapa.deleted and (_strings(arguments) == [_ALL] or mail.in_inbox or not atrapa.all_folder)
+                )
+            exists = f"* {len(self._mails)} EXISTS".encode()
             self._send(*((exists, f"{tag} OK [READ-ONLY] EXAMINE gotowe".encode()) if known else (f"{tag} NO brak folderu".encode(),)))
         elif command == "UID SEARCH":
-            self._send(f"* SEARCH {' '.join(str(mail.uid) for mail in _since(atrapa.mails, arguments))}".rstrip().encode(), done)
+            self._send(f"* SEARCH {' '.join(str(mail.uid) for mail in _since(self._mails, arguments))}".rstrip().encode(), done)
         elif command == "UID FETCH":
             uids, _, items = arguments.partition(" ")
-            for number, mail in enumerate(atrapa.mails, start=1):
+            for number, mail in enumerate(self._mails, start=1):
                 if str(mail.uid) in uids.split(","):
                     self._fetch(number, mail, items)
             self._send(done)
@@ -225,10 +249,22 @@ class _Session(socketserver.StreamRequestHandler):
         return True
 
     def _fetch(self, number: int, mail: AtrapaMail, items: str) -> None:
+        atrapa = self.server.atrapa
+        flags = atrapa.flags[mail.uid]
+        if items == "(UID FLAGS)":
+            if atrapa.flags_reply != "without_fetch":
+                self._send(f"* {number} FETCH (UID {mail.uid} FLAGS ({' '.join(sorted(flags))}))".encode())
+            if atrapa.flags_reply == "unsolicited":
+                self._send(f"* {number} FETCH (FLAGS ({' '.join(sorted(flags))}))".encode())
+            return
         if _HEADER_ITEM in items:
             name, literal = "BODY[HEADER.FIELDS (SUBJECT)]", _subject_header(mail.raw)
         else:
             name, literal = "BODY[]", mail.raw
+            if atrapa.marks_seen:
+                flags.add("\\Seen")
+            if atrapa.deletes_read:
+                atrapa.deleted.add(mail.uid)
         moment = mail.arrived
         internal = f"{moment.day:02d}-{_MONTHS[moment.month - 1]}-{moment.year} {moment:%H:%M:%S %z}"
         head = f'* {number} FETCH (UID {mail.uid} INTERNALDATE "{internal}" {name} {{{len(literal)}}}\r\n'
