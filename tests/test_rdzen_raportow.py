@@ -24,6 +24,7 @@ from rozliczenia.report_cells import CellChange, OrderRow, ReportColumn
 from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_reports import (
     ForeignOrder,
+    Kept,
     Login,
     MailId,
     ManualDifference,
@@ -109,6 +110,7 @@ def _inputs(
     rollout: date | None = None,
     closed: Sequence[str] = (),
     memory: OwnEntries = OwnEntries.EMPTY,
+    kept: frozenset[Kept] = frozenset(),
 ) -> ReportInputs:
     logins = {}
     for login, senders in ADDRESSES.items():
@@ -122,7 +124,7 @@ def _inputs(
         orders=orders,
         window=Window.of(today, rollout, closed),
         memory=memory,
-        kept=frozenset(),
+        kept=kept,
     )
 
 
@@ -189,25 +191,37 @@ def test_mail_z_innym_tematem_niz_raport_z_data_nie_daje_niczego(subject: str) -
 
 
 def test_komorka_rowna_wpisowi_nie_daje_zmiany_a_drugie_klikniecie_niczego_nie_zmienia() -> None:
-    """Ręczne ``tak`` równe Wpisowi nie trafia do pamięci, bo późniejsza poprawka nadpisałaby wtedy tatę."""
+    """Ręczne ``tak`` równe Wpisowi nie trafia do pamięci, bo późniejsza poprawka nadpisałaby wtedy tatę: poprawka od
+    Wykonawcy w trzecim kliknięciu podmienia tylko własny opis, a przy ręcznym ``tak`` daje różnicę."""
 
     mails = [_mail(JAN, SUBJECT, TEXT)]
+    correction = _mail(JAN, SUBJECT, "40000001 nie klient nieobecny", EVENING + timedelta(hours=1))
+    entered = _order(successful="tak", completed="wymiana routera")
 
     first = enter_reports(_inputs(mails, [_order(successful="tak")]))
-    second = enter_reports(_inputs(mails, [_order(successful="tak", completed="wymiana routera")], memory=first.memory))
+    second = enter_reports(_inputs(mails, [entered], memory=first.memory))
+    third = enter_reports(_inputs([*mails, correction], [entered], memory=second.memory))
 
     assert first.changes == (CellChange(ROW, ReportColumn.COMPLETED, "wymiana routera"),)
     assert first.memory == OwnEntries(frozenset({OwnEntry(_key(), ReportColumn.COMPLETED, "wymiana routera")}))
-    assert second.changes == ()
+    assert (second.changes, second.problems) == ((), ())
     assert second.memory == first.memory
+    assert third.changes == (CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),)
+    assert third.problems == (ManualDifference(_key(), ReportColumn.SUCCESSFUL, "tak", "nie"),)
 
 
-def test_reczna_wartosc_w_komorce_zostaje_a_pusta_komorka_obok_dostaje_wpis() -> None:
+def test_reczny_opis_zostaje_z_roznica_dla_taty_a_puste_skuteczne_obok_dostaje_wpis() -> None:
+    """US 35: ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` liczą się osobno."""
+
     order = _order(completed="wymiana modemu, klient prosi o telefon")
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], [order]))
 
     assert outcome.changes == (CellChange(ROW, ReportColumn.SUCCESSFUL, "tak"),)
+    assert outcome.problems == (
+        ManualDifference(_key(), ReportColumn.COMPLETED, "wymiana modemu, klient prosi o telefon", "wymiana routera"),
+    )
+    assert outcome.memory == OwnEntries(frozenset({OwnEntry(_key(), ReportColumn.SUCCESSFUL, "tak")}))
 
 
 def test_wpis_bez_opisu_wpisuje_tylko_skuteczne() -> None:
@@ -546,6 +560,288 @@ def test_pamiec_z_dwoma_wpisami_jednej_komorki_zlecenia_jest_odrzucona() -> None
 
     with pytest.raises(ValueError, match="dwa wpisy jednej komórki"):
         OwnEntries(frozenset(entries))
+
+
+# --- Poprawki od Wykonawcy i pierwszeństwo ręcznej wartości (#1230, US 33–37, 40) ---
+
+# Poprawka Jana: późniejszy mail z innym ``tak``/``nie`` i opisem niż wcześniejszy Wpis. W kolumnie obok stoi już wartość
+# z poprawki, więc każdy przypadek dotyczy tylko jednej komórki.
+CORRECTION = "40000001 nie klient nieobecny"
+CORRECTED = {ReportColumn.SUCCESSFUL: "nie", ReportColumn.COMPLETED: "klient nieobecny"}
+EARLIER = {ReportColumn.SUCCESSFUL: "tak", ReportColumn.COMPLETED: "wymiana routera"}
+MANUAL = {ReportColumn.SUCCESSFUL: "tak, do sprawdzenia", ReportColumn.COMPLETED: "wymiana gniazda, klient prosi o fakturę"}
+
+
+def _correction_order(column: ReportColumn, current: str | None) -> RegisterOrder:
+    cells = {**CORRECTED, column: current}
+    return _order(successful=cells[ReportColumn.SUCCESSFUL], completed=cells[ReportColumn.COMPLETED])
+
+
+@pytest.mark.parametrize("column", list(ReportColumn), ids=lambda column: column.name)
+@pytest.mark.parametrize(
+    ("current", "remembered", "kept", "changed", "different", "remembers"),
+    [
+        pytest.param(None, None, None, True, False, True, id="pusta-dostaje-wpis"),
+        pytest.param("corrected", None, None, False, False, False, id="reczna-rowna-wpisowi-bez-pamieci"),
+        pytest.param("corrected-upper", None, None, False, False, False, id="reczna-rowna-wpisowi-inna-wielkoscia-liter"),
+        pytest.param("corrected", "corrected", None, False, False, True, id="wlasny-wpis-rowny-poprawce-zostaje-w-pamieci"),
+        pytest.param("earlier", "earlier", None, True, False, True, id="nietkniety-wlasny-wpis-dostaje-poprawke"),
+        pytest.param("earlier", None, None, False, True, False, id="reczna-rowna-wczesniejszemu-wpisowi-bez-pamieci"),
+        pytest.param("manual", None, None, False, True, False, id="reczna-wartosc-zostaje-z-roznica"),
+        pytest.param("manual", "earlier", None, False, True, False, id="wlasny-wpis-zmieniony-recznie-zostaje-z-roznica"),
+        pytest.param(
+            "earlier-upper", "earlier", None, False, True, False, id="wlasny-wpis-zmieniony-recznie-tylko-wielkoscia-liter-zostaje-z-roznica"
+        ),
+        pytest.param("manual", None, "corrected", False, False, False, id="zostaw-moja-przy-tej-tresci-bez-roznicy"),
+        pytest.param("manual", None, "earlier", False, True, False, id="zostaw-moja-przy-innej-tresci-z-roznica"),
+    ],
+)
+def test_regula_komorki_dla_kazdej_kolumny_osobno(
+    column: ReportColumn,
+    current: str | None,
+    remembered: str | None,
+    kept: str | None,
+    changed: bool,
+    different: bool,
+    remembers: bool,
+) -> None:
+    """Reguła komórki z projektu #1227 (§2.1): pusta dostaje Wpis, równa Wpisowi zostaje, własny nietknięty wpis
+    dostaje poprawkę, a inna wartość zostaje z różnicą dla taty, chyba że tata kliknął „Zostaw moją” przy tej treści
+    Wpisu. Własny wpis zmieniony przez tatę choćby wielkością liter jest już ręczny. Ręczna wartość równa Wpisowi do
+    pamięci nie trafia (GLOSSARY „Wpisanie raportów”, US 33–36, 38–39)."""
+
+    values = {
+        "corrected": CORRECTED[column],
+        "corrected-upper": CORRECTED[column].upper(),
+        "earlier": EARLIER[column],
+        "earlier-upper": EARLIER[column].upper(),
+        "manual": MANUAL[column],
+    }
+    cell = None if current is None else values[current]
+    memory = () if remembered is None else (OwnEntry(_key(), column, values[remembered]),)
+    decisions = frozenset(() if kept is None else (Kept(_key(), column, values[kept]),))
+    mails = [_mail(JAN, SUBJECT, TEXT), _mail(JAN, SUBJECT, CORRECTION, EVENING + timedelta(hours=1))]
+
+    outcome = enter_reports(
+        _inputs(mails, [_correction_order(column, cell)], memory=OwnEntries(frozenset(memory)), kept=decisions)
+    )
+
+    assert outcome.changes == ((CellChange(ROW, column, CORRECTED[column]),) if changed else ())
+    assert outcome.problems == ((ManualDifference(_key(), column, values[current or ""], CORRECTED[column]),) if different else ())
+    remembered_after = (OwnEntry(_key(), column, CORRECTED[column]),) if remembers else ()
+    assert outcome.memory == OwnEntries(frozenset(remembered_after))
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_poprawka_wykonawcy_w_drugim_kliknieciu_podmienia_nietkniety_wlasny_wpis_najpozniejszym_mailem(
+    reverse: bool,
+) -> None:
+    """US 36–37: drugi mail Jana z poprawką, a potem trzeci z jeszcze jedną: wygrywa najpóźniejszy, w każdej kolejności
+    maili ze skrzynki, a pamięć ma po kliknięciu jego wartości."""
+
+    first_mail = _mail(JAN, SUBJECT, TEXT)
+    later = [
+        _mail(JAN, SUBJECT, "40000001 tak wymiana routera i gniazda", EVENING + timedelta(minutes=20)),
+        _mail(JAN, SUBJECT, CORRECTION, EVENING + timedelta(minutes=40)),
+    ]
+    mails = [first_mail, *later]
+
+    first = enter_reports(_inputs([first_mail], [_order()]))
+    second = enter_reports(
+        _inputs(mails[::-1] if reverse else mails, [_order(successful="tak", completed="wymiana routera")], memory=first.memory)
+    )
+
+    assert second.changes == (
+        CellChange(ROW, ReportColumn.SUCCESSFUL, "nie"),
+        CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),
+    )
+    assert second.problems == ()
+    assert second.memory == OwnEntries(frozenset(OwnEntry(_key(), column, value) for column, value in CORRECTED.items()))
+
+
+def test_reczna_zmiana_miedzy_kliknieciami_wygrywa_z_poprawka_a_kolumna_obok_dostaje_poprawke() -> None:
+    """Kryterium #1230: tata zmienia ``SKUTECZNE`` wpisane z raportu między kliknięciami, a Jan przysyła poprawkę. Ręczne
+    ``SKUTECZNE`` zostaje z różnicą, a nietknięty własny opis dostaje poprawkę. Różnica nie znika w trzecim kliknięciu."""
+
+    correction = _mail(JAN, SUBJECT, CORRECTION, EVENING + timedelta(hours=1))
+    first = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], [_order()]))
+    by_tata = _order(successful="nie wiem", completed="wymiana routera")
+
+    second = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT), correction], [by_tata], memory=first.memory))
+    corrected = _order(successful="nie wiem", completed="klient nieobecny")
+    third = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT), correction], [corrected], memory=second.memory))
+
+    difference = ManualDifference(_key(), ReportColumn.SUCCESSFUL, "nie wiem", "nie")
+    assert second.changes == (CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),)
+    assert second.problems == (difference,)
+    assert second.memory == OwnEntries(frozenset({OwnEntry(_key(), ReportColumn.COMPLETED, "klient nieobecny")}))
+    assert (third.changes, third.problems, third.memory) == ((), (difference,), second.memory)
+
+
+def test_poprawka_nie_rusza_pamieci_innego_zlecenia_ani_wpisu_wczesniejszego_maila_w_innym_zleceniu() -> None:
+    """Poprawka jednego zlecenia z drugiego maila nie cofa Wpisu innego zlecenia z pierwszego maila: oba zostają w
+    pamięci."""
+
+    other = OrderRow("Zlecenia", 121)
+    first_mail = _mail(JAN, SUBJECT, "40000001 tak wymiana routera 40000002 tak montaż")
+    orders = [_order(), _order(other, number="40000002")]
+    first = enter_reports(_inputs([first_mail], orders))
+    entered = [
+        _order(successful="tak", completed="wymiana routera"),
+        _order(other, number="40000002", successful="tak", completed="montaż"),
+    ]
+
+    second = enter_reports(
+        _inputs([first_mail, _mail(JAN, SUBJECT, CORRECTION, EVENING + timedelta(hours=1))], entered, memory=first.memory)
+    )
+
+    assert second.changes == (
+        CellChange(ROW, ReportColumn.SUCCESSFUL, "nie"),
+        CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),
+    )
+    assert second.memory == OwnEntries(
+        frozenset(
+            {
+                *(OwnEntry(_key(), column, value) for column, value in CORRECTED.items()),
+                OwnEntry(_key("40000002"), ReportColumn.SUCCESSFUL, "tak"),
+                OwnEntry(_key("40000002"), ReportColumn.COMPLETED, "montaż"),
+            }
+        )
+    )
+
+
+LATER = EVENING + timedelta(hours=1)
+NEXT_DAY = date(2026, 11, 9)
+# Raport Jana z 8.11 z literówką w drugim numerze, ten sam raport wysłany jeszcze raz z dobrym numerem, a obok Raport
+# z samym zleceniem 40000002 (kolejny raport, nie poprawka) i mail z tematem bez roku.
+TYPO = "40000001 tak wymiana routera 40000092 tak montaż"
+RESENT = "40000001 tak wymiana routera 40000002 tak montaż"
+NO_YEAR = "Raport 08.11"
+JAN_ORDERS = [
+    _order(),
+    _order(OrderRow("Zlecenia", 121), number="40000002"),
+    _order(OrderRow("Zlecenia", 122), number="40000003", day=NEXT_DAY),
+    _order(OrderRow("Zlecenia", 123), number="40000004", worker="Ewa.Probna"),
+]
+JAN_TYPO = UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("40000092"))
+
+
+def _no_year(arrived: datetime = EVENING, text: str = TEXT) -> UnreadableSubject:
+    return UnreadableSubject(_mail(JAN, NO_YEAR, text, arrived).id, Login("jan.testowy"), arrived, SubjectFault.NO_YEAR)
+
+
+@pytest.mark.parametrize(
+    ("wrong", "fixed", "closed", "problem"),
+    [
+        pytest.param(
+            _mail(JAN, SUBJECT, TYPO), _mail(JAN, SUBJECT, RESENT, LATER), (), JAN_TYPO, id="nieznany-numer-raport-jeszcze-raz"
+        ),
+        pytest.param(
+            _mail(JAN, NO_YEAR, TEXT), _mail(JAN, SUBJECT, TEXT, LATER), (), _no_year(), id="nieczytelny-temat-raport-jeszcze-raz"
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, "40000001 tak wymiana routera 40000004 tak montaż"),
+            _mail(JAN, SUBJECT, RESENT, LATER),
+            (),
+            None,
+            id="zlecenie-innego-wykonawcy-raport-jeszcze-raz",
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, "40000001 tak wymiana routera 40000003 tak montaż"),
+            _mail(JAN, "Raport 09.11.2026", "40000003 tak montaż", LATER),
+            (),
+            OtherDay(JAN_LOGIN, DAY, OrderNumber("40000003"), (NEXT_DAY,)),
+            id="inna-data-raport-z-dniem-zlecenia",
+        ),
+        pytest.param(_mail(JAN, SUBJECT, TYPO), None, (period_of(DAY).token,), JAN_TYPO, id="okres-dostal-plik-zbiorczy"),
+    ],
+)
+def test_problem_z_bledu_wykonawcy_znika_w_nastepnym_kliknieciu_po_poprawionym_mailu_albo_pliku_zbiorczym(
+    wrong: ReportMail, fixed: ReportMail | None, closed: tuple[str, ...], problem: ReportProblem | None
+) -> None:
+    """US 40: wynik rdzenia jest liczony od nowa z maili, a stary mail z błędem zostaje w skrzynce. Poprawionym mailem
+    jest późniejszy Raport wykonawcy tego Wykonawcy, który powtarza każdy Wpis starego maila do zleceń Wykonawcy z dnia
+    poprawki, więc znika problem starego maila; okres z Plikiem zbiorczym jest zamknięty. Przy innej dacie dniem
+    poprawki jest dzień zlecenia. Numer zlecenia Ewy od Jana (``problem`` ``None``) to do #1229 ``UnknownNumber``, a od
+    niego ``ForeignOrder``: znika tak samo."""
+
+    first = enter_reports(_inputs([wrong], JAN_ORDERS, today=NEXT_DAY, rollout=DAY))
+    second = enter_reports(
+        _inputs([wrong] if fixed is None else [wrong, fixed], JAN_ORDERS, today=NEXT_DAY, rollout=DAY, closed=closed)
+    )
+
+    assert len(first.problems) == 1
+    assert problem is None or first.problems == (problem,)
+    assert second.problems == ()
+
+
+@pytest.mark.parametrize(
+    ("wrong", "later", "problem"),
+    [
+        pytest.param(
+            _mail(JAN, SUBJECT, TYPO),
+            _mail(JAN, SUBJECT, "40000002 tak montaż", LATER),
+            JAN_TYPO,
+            id="kolejny-raport-z-innym-zleceniem",
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, "40000092 tak montaż"),
+            _mail(JAN, SUBJECT, "40000002 tak montaż", LATER),
+            JAN_TYPO,
+            id="raport-po-jednym-zleceniu-bez-wpisu-do-zlecenia-wykonawcy",
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, TYPO), _mail(JAN, SUBJECT, TYPO, LATER), JAN_TYPO, id="raport-jeszcze-raz-z-tym-samym-bledem"
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, f"{RESENT} 40000092 tak"),
+            _mail(JAN, SUBJECT, "40000001 nie", LATER),
+            JAN_TYPO,
+            id="poprawka-jednego-z-dwoch-wpisow-do-zlecen-wykonawcy",
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, TYPO),
+            _mail(JAN, "Raport 09.11.2026", "40000001 tak 40000002 tak 40000003 tak", LATER),
+            JAN_TYPO,
+            id="raport-z-innego-dnia",
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, f"{TYPO} 40000003 tak"),
+            _mail(JAN, "Raport 09.11.2026", "40000003 tak", LATER),
+            JAN_TYPO,
+            id="raport-z-innego-dnia-z-wpisem-do-zlecenia-tego-dnia",
+        ),
+        pytest.param(
+            _mail(JAN, SUBJECT, TYPO), _mail(EWA, SUBJECT, f"{RESENT} 40000004 tak", LATER), JAN_TYPO, id="raport-innego-wykonawcy"
+        ),
+        pytest.param(_mail(JAN, SUBJECT, TYPO, LATER), _mail(JAN, SUBJECT, RESENT), JAN_TYPO, id="wczesniejszy-raport"),
+        pytest.param(
+            _mail(JAN, NO_YEAR, TEXT),
+            _mail(JAN, "Raport 09.11.2026", "40000003 tak montaż", LATER),
+            _no_year(),
+            id="temat-raport-z-innego-dnia",
+        ),
+        pytest.param(
+            _mail(JAN, NO_YEAR, TEXT, LATER), _mail(JAN, SUBJECT, TEXT), _no_year(LATER), id="temat-wczesniejszy-raport"
+        ),
+        pytest.param(
+            _mail(JAN, NO_YEAR, "wyślę jutro"),
+            _mail(JAN, SUBJECT, TEXT, LATER),
+            _no_year(text="wyślę jutro"),
+            id="temat-bez-wpisow",
+        ),
+    ],
+)
+def test_problem_z_bledu_wykonawcy_zostaje_bez_raportu_wyslanego_jeszcze_raz(
+    wrong: ReportMail, later: ReportMail, problem: ReportProblem
+) -> None:
+    """Późniejszy mail nie jest poprawką, gdy nie powtarza każdego Wpisu starego maila do zleceń Wykonawcy z dnia
+    poprawki albo nie ma ich wcale: nieznany numer w kolejnym raporcie może być zleceniem, którego brak w INTERMAX, więc
+    zostaje."""
+
+    outcome = enter_reports(_inputs([wrong, later], JAN_ORDERS, today=NEXT_DAY, rollout=DAY))
+
+    assert problem in outcome.problems
 
 
 def test_liczby_wykonawcy_z_dnia_dla_widoku_raporty() -> None:

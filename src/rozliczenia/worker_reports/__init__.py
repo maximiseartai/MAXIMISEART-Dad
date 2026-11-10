@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from . import _cells, _entries, _figures, _matching, _subject
+from . import _cells, _corrections, _entries, _figures, _matching, _subject
 from ._model import (
     SUBJECT_WORD,
     ForeignOrder,
@@ -97,15 +97,18 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``) z dniem otwartym w ``inputs.window``; inne maile
     rdzeń pomija po cichu. Temat ze słowem ``raport`` bez dnia zleceń daje ``UnreadableSubject``, gdy mail przyszedł od
     Wykonawcy w dniu otwartym. Wpis zaczyna numer z co najmniej tyloma cyframi, ile ma najkrótszy numer zlecenia z dni
-    otwartych (``_entries.entries``). Wpis trafia tylko do zlecenia nadawcy z dnia z tematu i tylko do pustej komórki, a przy
-    kilku Wpisach jednego zlecenia decyduje najpóźniejszy mail; mail z tą samą chwilą przyjścia i tym samym Message-ID
-    rozstrzyga treść odczytu.
+    otwartych (``_entries.entries``). Wpis trafia tylko do zlecenia nadawcy z dnia z tematu, a przy kilku Wpisach jednego
+    zlecenia decyduje najpóźniejszy mail; mail z tą samą chwilą przyjścia i tym samym Message-ID rozstrzyga treść
+    odczytu. Wpis zmienia pustą komórkę albo własny wpis z ``inputs.memory``, którego nikt od tamtej pory nie zmienił, a
+    inna wartość komórki jest ręczna i zostaje z ``ManualDifference`` (``_cells.reconcile``). Problem z błędu Wykonawcy
+    znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``).
     """
 
     orders = tuple(order for order in inputs.orders if inputs.window.opens(order.key.day))
     digits = min((len(order.key.number) for order in orders), default=1)
     read: list[MailRead] = []
     problems: list[ReportProblem] = []
+    unreadable: dict[MailId, frozenset[OrderNumber]] = {}
     for mail in inputs.mails:
         found = _subject.read(mail.subject)
         worker = inputs.addresses.logins.get(mail.sender)
@@ -116,6 +119,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
                 if worker is not None and inputs.window.opens(mail.arrived.date()):
                     read.append(ReadUnreadable(mail.id, mail.arrived, worker, found))
                     problems.append(UnreadableSubject(mail.id, worker, mail.arrived, found))
+                    unreadable[mail.id] = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
             case date() if not inputs.window.opens(found):
                 continue
             case date() if worker is None:
@@ -127,8 +131,9 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     mails = tuple(sorted(read, key=_mail_order))
     reports = [found for found in mails if isinstance(found, ReadReport)]
     targets, unmatched = _matching.match(reports, orders)
-    changes, memory = _cells.reconcile(targets, orders, inputs.memory)
-    problems_found = tuple(sorted({*problems, *unmatched}, key=problem_order))
+    changes, differences, memory = _cells.reconcile(targets, orders, inputs.memory, inputs.kept)
+    standing = _corrections.standing([*problems, *unmatched], reports, unreadable, orders)
+    problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     return ReportsOutcome(
         changes, problems_found, _figures.worker_days(orders, reports, problems_found, changes), mails, memory
     )

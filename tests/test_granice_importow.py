@@ -179,6 +179,7 @@ STDLIB_ONLY = {
     "rozliczenia/worker_reports/_entries.py": "Wpisy raportu w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_matching.py": "dopasowanie Wpisów do zleceń w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_cells.py": "Nienadpisywanie komórek w rdzeniu raportów (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/_corrections.py": "poprawione maile w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_figures.py": "liczby widoku Raporty w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_canonical.py": "postać kanoniczna maila w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/reasons.py": "zdania o problemach rdzenia raportów (ADR 0028, #1161)",
