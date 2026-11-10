@@ -220,10 +220,17 @@ class EnteringCentrum:
     tmp_path: Path
     inbox: WorkerReportInbox
     engines: Engines
+    disk: FaultyDisk
+    moment: list[datetime]
 
     @property
     def tool(self) -> ToolDirectory:
         return ToolDirectory(self.tmp_path)
+
+    @property
+    def fake_inbox(self) -> FakeInbox:
+        assert isinstance(self.inbox, FakeInbox), self.inbox
+        return self.inbox
 
     def setup(self) -> dict[str, Any]:
         response = self.client.get("/api/report-entering")
@@ -255,7 +262,8 @@ def entering_centrum(
 ) -> EnteringCentrum:
     """Centrum po wskazaniu INTERMAX ``intermax`` z Wykonawcami ``WORKERS`` i adresami ``SENDERS`` (``addresses``: inna
     treść pliku adresów); Skrzynka raportów to ``inbox``, a bez niej atrapa, która oddaje ``mails`` i ma plik dostępu w
-    stanie ``access``."""
+    stanie ``access``. Chwila procesu to ostatni element ``EnteringCentrum.moment`` (na starcie ``ENTERING_NOW``), a
+    podmiana INTERMAX idzie przez ``EnteringCentrum.disk``."""
 
     register = tmp_path / "OneDrive" / REGISTER_NAME
     register.parent.mkdir(parents=True)
@@ -272,6 +280,8 @@ def entering_centrum(
     surroundings = surroundings or Surroundings()
     engines = Engines(tool.metrics)
     inbox = inbox or FakeInbox(mails, access)
+    disk = FaultyDisk()
+    moment = [ENTERING_NOW]
     onedrive = surroundings.onedrive
     app = centrum_app(
         tool,
@@ -285,10 +295,11 @@ def entering_centrum(
         pause=surroundings.clock.pause,
         source=surroundings.source,
         template_check=surroundings.template_check,
-        now=lambda: ENTERING_NOW.astimezone(),
+        now=lambda: moment[-1].astimezone(),
         worker_report_inbox=inbox,
+        intermax_disk=disk.disk(),
     )
     client = CentrumClient(app)
     if chosen:
         assert client.post("/api/settings/register/choose").status_code == 200
-    return EnteringCentrum(client, register, layout, tmp_path, inbox, engines)
+    return EnteringCentrum(client, register, layout, tmp_path, inbox, engines, disk, moment)

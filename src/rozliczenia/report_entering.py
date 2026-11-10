@@ -4,10 +4,13 @@ Operacją procesu jest ``enter_from_mail()``. Silnik sekwencjonuje kroki i jako 
 Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
 
 - Sprawdzanie: plik dostępu do Skrzynki raportów, Konfiguracja wykonawców, plik adresów Wykonawców, pamięć własnych
-  wpisów (``ReportState.load``) i INTERMAX zamknięty w Excelu;
-- Odczyt danych: INTERMAX (``register_file.read``), w każdym obszarze wklejania uporządkowane wiersze z dni od
-  pierwszego dnia okna (``raw_orders.ordered_rows``, w Kopii wejścia przez ``PasteArea.copy_rows``), a dopiero potem
-  maile ze Skrzynki raportów, więc przy INTERMAX otwartym w Excelu skrzynka nie jest czytana;
+  wpisów (``ReportState.load``) i INTERMAX zamknięty w Excelu, więc przy INTERMAX otwartym w Excelu skrzynka nie jest
+  czytana;
+- Odczyt danych: maile ze Skrzynki raportów, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
+  wklejania uporządkowane wiersze z dni od pierwszego dnia okna (``raw_orders.ordered_rows``, w Kopii wejścia przez
+  ``PasteArea.copy_rows``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
+  przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
+  stoi w tym oknie;
 - Planowanie: rdzeń raportów;
 - Zapisywanie: komórki bez Kopii INTERMAX (``intermax_cells.write_cells``), a po udanym zapisie pamięć własnych wpisów
   z dniem wdrożenia, także przy zerze wpisanych komórek.
@@ -217,9 +220,6 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     window = Window.of(inputs.now().date(), saved.rollout)
 
     def read() -> tuple[RegisterFile, tuple[RegisterOrder, ...], int, tuple[ReportMail, ...]]:
-        with _stops_unusable():
-            register = register_file.read(register_path, files)
-        orders = _orders(register, window.first, copy=files.copy is not None)
         outcome = parts.inbox.mails_since(window.first)
         match outcome:
             case PasswordRejected():
@@ -231,8 +231,13 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             case InboxUnreachable():
                 raise StopError(messages.inbox_unreachable())
             case Mails():
-                return register, orders, outcome.skipped, outcome.mails
-        assert_never(outcome)
+                pass
+            case _:
+                assert_never(outcome)
+        with _stops_unusable():
+            register = register_file.read(register_path, files)
+        orders = _orders(register, window.first, copy=files.copy is not None)
+        return register, orders, outcome.skipped, outcome.mails
 
     register, orders, skipped, mails = phases.read(read)
 

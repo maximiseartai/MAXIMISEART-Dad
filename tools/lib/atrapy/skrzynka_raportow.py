@@ -1,7 +1,7 @@
 """Atrapy Skrzynki raportów taty w Gmailu: ``FakeInbox`` dla testów procesu, ``FolderInbox`` dla Skryptu dla maszyn i
 skilli oraz ``AtrapaImap`` dla testu portu IMAP.
 
-``FakeInbox`` oddaje gotowy wynik ``mails_since`` i zapisuje dzień każdego wywołania. ``FolderInbox`` czyta maile z
+``FakeInbox`` oddaje gotowy wynik ``mails_since``, zapisuje dzień każdego wywołania i w jego trakcie robi ``during``. ``FolderInbox`` czyta maile z
 plików ``.eml`` folderu tym samym rozbiorem MIME co port (``mail_of``), z chwilą przyjścia z nagłówka ``Date``. ``AtrapaImap`` to lokalny serwer
 IMAP na ``127.0.0.1`` z wolnym portem, z którym prawdziwy ``imaplib`` portu (``ImapInbox``) rozmawia jak z Gmailem: te
 same postacie odpowiedzi (literał ``{n}`` w FETCH, ``[READ-ONLY]`` po ``EXAMINE``, ``AUTHENTICATIONFAILED`` przy złym
@@ -12,7 +12,7 @@ Wierności Gmailowi atrapa nie dowodzi: prawdziwą skrzynkę sprawdza próba IMA
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 import email
@@ -47,17 +47,20 @@ _POLL_S: Final = 0.02
 @dataclass
 class FakeInbox:
     """Skrzynka raportów testu: ``outcome`` to maile albo wynik porażki, ``state`` stan pliku dostępu, a ``days``
-    dzień każdego ``mails_since``."""
+    dzień każdego ``mails_since``, więc pusta lista mówi, że skrzynki nikt nie czytał. ``during`` dzieje się w trakcie
+    każdego odczytu, jak zapis INTERMAX przez tatę, gdy proces czeka na Gmaila."""
 
     outcome: Sequence[ReportMail] | PasswordRejected | InboxUnreachable = ()
     state: InboxAccess = "ready"
     days: list[date] = field(default_factory=list)
+    during: Callable[[], object] = lambda: None
 
     def access(self) -> InboxAccess:
         return self.state
 
     def mails_since(self, day: date) -> InboxOutcome:
         self.days.append(day)
+        self.during()
         if isinstance(self.outcome, (PasswordRejected, InboxUnreachable)):
             return self.outcome
         return Mails(tuple(self.outcome), skipped=0)

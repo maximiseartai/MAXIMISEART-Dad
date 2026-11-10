@@ -7,14 +7,17 @@ Pierwsze kliknięcie ma okno dni od dziś (dzień wdrożenia), więc zlecenia z 
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Callable
+from datetime import date, datetime
 import imaplib
 import json
 from pathlib import Path
 from typing import Any
 
 from openpyxl import load_workbook
+import pytest
 
+from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox
 
 from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, Intermax, Order
@@ -28,9 +31,11 @@ from tests.fixtures.centrum_intermax import (
     SENDERS,
     EnteringCentrum,
     entering_centrum,
+    open_in_excel,
     report,
 )
 from tests.fixtures.centrum_processes import Surroundings, preparing_centrum
+from tests.fixtures.intermax_disk import denied, failing_replace
 
 SUCCESSFUL = FIRST + HEADERS.index("SKUTECZNE")
 COMPLETED = FIRST + HEADERS.index("CZYNNOŚCI ZREALIZOWANE")
@@ -278,3 +283,154 @@ def test_wpisanie_raportow_nie_startuje_w_trakcie_innego_uruchomienia(tmp_path: 
             )
         },
     )
+
+
+def _stopped(centrum: EnteringCentrum) -> dict[str, Any]:
+    view = centrum.run_to_end()
+    assert view["result"]["ending"] == "stop", view["result"]
+    return dict(view["result"])
+
+
+def _state(centrum: EnteringCentrum) -> Path:
+    return centrum.tool.config / REPORT_ENTERING_STATE
+
+
+def test_intermax_otwarty_w_excelu_zatrzymuje_klikniecie_zanim_proces_przeczyta_skrzynke(tmp_path: Path) -> None:
+    """ADR 0028: przy INTERMAX otwartym w Excelu tata dostaje Komunikat, a skrzynka raportów nie jest czytana."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    open_in_excel(centrum.register)
+    before = _cells(centrum.register)
+
+    result = _stopped(centrum)
+
+    assert result["stop_kind"] == "for_tata"
+    assert centrum.fake_inbox.days == [], "skrzynka nieczytana"
+    assert _cells(centrum.register) == before
+    assert not _state(centrum).exists()
+
+
+def test_odmowa_podmiany_intermax_nie_zapisuje_pamieci_wpisow_ani_dnia_wdrozenia(tmp_path: Path) -> None:
+    """Pamięć własnych wpisów i dzień wdrożenia zapisują się tylko po zapisie komórek: po odmowie podmiany (OneDrive
+    trzyma INTERMAX) pliku stanu nie ma, więc następne kliknięcie, dzień później, ma okno od swojego dnia."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    before = _cells(centrum.register)
+    centrum.disk.replace, _ = failing_replace(denied)
+
+    result = _stopped(centrum)
+    centrum.disk.replace = None
+    centrum.moment.append(datetime(2026, 11, 10, 8))
+    _finished(centrum)
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == (
+        "for_tata",
+        "OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony.",
+    )
+    assert centrum.fake_inbox.days == [date(2026, 11, 9), date(2026, 11, 10)]
+    assert _cells(centrum.register) == before, "Raport z 9.11 jest sprzed okna drugiego kliknięcia"
+
+
+def _tata_writes(register: Path, number: int, value: str) -> None:
+    """Tata wpisuje ``value`` w ``SKUTECZNE`` zlecenia ``number`` i zapisuje INTERMAX (bez Excela na dysku)."""
+
+    book = load_workbook(register)
+    sheet = book[ORDER_SHEET]
+    [row] = [cell.row for line in sheet.iter_rows(min_row=2) for cell in line if cell.value == number]
+    sheet.cell(row, SUCCESSFUL).value = value
+    book.save(register)
+
+
+def test_zapis_intermax_przez_tate_w_trakcie_odczytu_skrzynki_zostaje_w_intermax(tmp_path: Path) -> None:
+    """Proces czyta INTERMAX dopiero po skrzynce raportów, tuż przed zapisem: zapis taty w czasie odczytu Gmaila nie
+    przepada przy podmianie INTERMAX."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    centrum.fake_inbox.during = lambda: _tata_writes(centrum.register, 40000002, "nie")
+
+    _finished(centrum)
+
+    cells = _cells(centrum.register)
+    assert (cells[40000001], cells[40000002]) == (("tak", "wymiana"), ("nie", None))
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        pytest.param(lambda state: state.write_text("{", encoding="utf-8"), id="zly-json"),
+        pytest.param(lambda state: state.mkdir(), id="niedostepny"),
+    ],
+)
+def test_nieczytelna_pamiec_wpisow_to_zatrzymanie_do_maksa_bez_odczytu_skrzynki(
+    tmp_path: Path, spoil: Callable[[Path], object]
+) -> None:
+    """DESIGN §2.3: bez pamięci własnych wpisów narzędzie nie odróżni swojego wpisu od ręcznego, więc plik stanu, którego
+    nie da się odczytać, zatrzymuje kliknięcie do Maksa, zamiast liczyć się jak pusta pamięć."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    before = _cells(centrum.register)
+    spoil(_state(centrum))
+
+    result = _stopped(centrum)
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == (
+        "for_maks",
+        "Nie można odczytać pamięci wpisanych raportów. INTERMAX nie został zmieniony.",
+    )
+    assert centrum.fake_inbox.days == []
+    assert _cells(centrum.register) == before
+
+
+def _next_morning(centrum: EnteringCentrum) -> None:
+    """Następnego ranka Anna przysyła Raport za 9.11, a Raport Jana z 9.11 dalej jest w skrzynce."""
+
+    centrum.moment.append(datetime(2026, 11, 10, 8))
+    centrum.fake_inbox.outcome = [
+        report(JAN, SUBJECT, "40000001 tak wymiana"),
+        report(SENDERS["anna.kowalska"], SUBJECT, "40000002 tak montaż", at=datetime(2026, 11, 10, 7, 50)),
+    ]
+
+
+def _memory_before(centrum: EnteringCentrum, view: dict[str, Any]) -> list[tuple[int, str, str]]:
+    """Pamięć własnych wpisów, z którą zaczęło Uruchomienie ``view``, z jego Logów."""
+
+    [logs] = [entry for entry in centrum.run_logs() if entry["run_id"] == view["run"]["id"]]
+    return [(entry["number"], entry["column"], entry["value"]) for entry in logs["report_entering"]["memory_before"]]
+
+
+JAN_OWN = [(40000001, "CZYNNOŚCI ZREALIZOWANE", "wymiana"), (40000001, "SKUTECZNE", "tak")]
+ANNA_OWN = [(40000002, "CZYNNOŚCI ZREALIZOWANE", "montaż"), (40000002, "SKUTECZNE", "tak")]
+
+
+def test_klikniecie_nastepnego_dnia_czyta_od_dnia_wdrozenia_a_pamiec_wpisow_przechodzi_przez_rdzen(tmp_path: Path) -> None:
+    """Okno dni kliknięcia następnego dnia zaczyna się od zapisanego dnia wdrożenia, więc Raport za wczoraj trafia do
+    pustych komórek; rdzeń dostaje zapamiętane własne wpisy, więc pamięć po tym kliknięciu dalej ma wpisy z pierwszego."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _finished(centrum)
+    _next_morning(centrum)
+
+    _finished(centrum)
+    third = _finished(centrum)
+
+    assert centrum.fake_inbox.days == [date(2026, 11, 9)] * 3
+    assert _cells(centrum.register)[40000002] == ("tak", "montaż")
+    assert _memory_before(centrum, third) == JAN_OWN + ANNA_OWN
+
+
+def test_pamiec_wpisow_niezapisana_czeka_w_centrum_na_nastepne_klikniecie(tmp_path: Path) -> None:
+    """Gdy pliku stanu nie da się zapisać, raporty są wpisane z ostrzeżeniem, a pamięć czeka w tej pracy Centrum: drugie
+    kliknięcie bierze ją, choć plik dalej jest niedostępny."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    centrum.fake_inbox.during = lambda: _state(centrum).mkdir(exist_ok=True)
+
+    first = _finished(centrum)
+    _next_morning(centrum)
+    second = _finished(centrum)
+
+    assert [warning["what"] for warning in first["result"]["warnings"]] == [
+        "Raporty zostały wpisane, ale nie udało się zapisać pamięci wpisanych raportów."
+    ]
+    assert _memory_before(centrum, second) == JAN_OWN
+    assert centrum.fake_inbox.days == [date(2026, 11, 9)] * 2
