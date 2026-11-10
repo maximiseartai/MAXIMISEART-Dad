@@ -402,10 +402,12 @@ Assumed, and not checked:
   click's rollback, is not modelled. That rollback most likely fails on Git's
   `index.lock` and keeps the journal (a guess, not checked).
 - The old version starts with any libraries, because in `requirements.txt`
-  the libraries Centrum imports have only lower bounds; the one exact pin is a
-  test library (`hypothesis`) that Centrum does not import. Pip killed between
-  uninstalling and installing a library could break this, so the `wylaczenie`
-  model is optimistic.
+  the libraries Centrum imports have lower bounds, and Centrum does not check
+  the one upper bound (Playwright `<1.65`, #1242) when it starts, so the old
+  version also starts with a newer Playwright left by rolling back an update
+  that lifted that bound; the one exact pin is a test library (`hypothesis`)
+  that Centrum does not import. Pip killed between uninstalling and installing
+  a library could break this, so the `wylaczenie` model is optimistic.
 - Dad has one file in `config/`. His untracked files (Wzorce, Ustawienia taty,
   the Zgłoszenia key, the log, metrics, period files, and in `config/` the
   read Powiadomienia, the Sprawy taty and the outbox addresses) are not

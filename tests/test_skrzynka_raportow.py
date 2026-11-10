@@ -231,16 +231,21 @@ def test_zepsuty_mail_z_raportem_w_temacie_nie_wywraca_odczytu_skrzynki_tylko_li
     """Maile, na których pakiet ``email`` Pythona 3.11, 3.12 albo 3.14 zgłaszał wyjątek (fuzz recenzenta #1236).
 
     Który mail parser umie rozebrać, zależy od wersji, więc test żąda tylko, żeby każdy mail był przeczytany albo
-    policzony jako pominięty, a poprawny Raport obok doszedł.
+    policzony jako pominięty, a poprawne Raporty przed zepsutym mailem i po nim doszły (skrzynka: zepsuty, dobry,
+    zepsuty, dobry).
     """
 
-    mails = [w_skrzynce(1, surowy()), w_skrzynce(2, zepsuty)]
+    dobre = [surowy(message_id=b"<dobry-1@x.invalid>"), surowy(message_id=b"<dobry-2@x.invalid>")]
+    mails = [w_skrzynce(1, zepsuty), w_skrzynce(2, dobre[0]), w_skrzynce(3, zepsuty), w_skrzynce(4, dobre[1])]
 
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
         outcome = port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8))
 
     assert isinstance(outcome, Mails), outcome
-    assert (outcome.mails[0].subject, outcome.mails[0].text) == ("Raport 08.11.2026", "40000001 tak wymiana routera")
+    found = {mail.id: (mail.subject, mail.text) for mail in outcome.mails}
+    assert [found.get(MailId.of(f"<dobry-{n}@x.invalid>")) for n in (1, 2)] == [
+        ("Raport 08.11.2026", "40000001 tak wymiana routera")
+    ] * 2
     assert len(outcome.mails) + outcome.skipped == len(mails)
     assert polecenia(atrapa)[-1] == "LOGOUT"
 

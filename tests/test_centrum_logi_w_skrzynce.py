@@ -1335,6 +1335,36 @@ def test_zmieniony_wpis_raportu_w_logach_daje_pierwsza_roznice_w_komorkach_wpisa
     ]
 
 
+def test_problem_rdzenia_zdjety_z_logow_daje_pierwsza_roznice_w_problemach_wpisania_raportow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Odtworzenie porównuje problemy rdzenia raportów z Logów, nie tylko komórki: Logi bez pierwszego problemu
+    (nieznany nadawca), który rdzeń liczy z tych samych Wpisów, dają różnicę w problemach."""
+
+    produced = _report_entering(tmp_path / "taty")
+    changed = _changed(produced, tmp_path, lambda record: record["report_entering"]["problems"].pop(0))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie")
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    assert lines[3] == "Pierwsza różnica: Wpisanie raportów (report_entering).problems[0].mail", lines
+
+
+def test_logi_wpisania_raportow_sprzed_dni_zamknietych_bez_pola_closed_odtwarzaja_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Logi Wpisania raportów sprzed #1229 nie mają tokenów okresów z Plikiem zbiorczym (``closed``), bo kliknięcie ich
+    wtedy nie sprawdzało: odtwarzają się jak kliknięcie bez okresu zamkniętego."""
+
+    produced = _report_entering(tmp_path / "taty")
+    assert produced.record["report_entering"]["closed"] == []
+    changed = _changed(produced, tmp_path, lambda record: record["report_entering"].pop("closed"))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie")
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 def _guard_cut_in_mails(record: dict[str, Any]) -> None:
     record["technical_notes"].append(
         "Reguła danych: pominięto report_entering.mails[5]: strażnik zamaskował w nim wartość, której pole nie przyjmuje."

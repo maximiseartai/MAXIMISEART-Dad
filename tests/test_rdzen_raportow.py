@@ -830,6 +830,12 @@ def test_problem_z_bledu_wykonawcy_znika_w_nastepnym_kliknieciu_po_poprawionym_m
             _no_year(text="wyślę jutro"),
             id="temat-bez-wpisow",
         ),
+        pytest.param(
+            _mail(JAN, SUBJECT, "40000001 tak wymiana routera 40000003 tak montaż"),
+            _mail(JAN, SUBJECT, "40000001 tak wymiana routera", LATER),
+            OtherDay(JAN_LOGIN, DAY, OrderNumber("40000003"), (NEXT_DAY,)),
+            id="inna-data-raport-jeszcze-raz-z-dnia-z-tematu",
+        ),
     ],
 )
 def test_problem_z_bledu_wykonawcy_zostaje_bez_raportu_wyslanego_jeszcze_raz(
@@ -837,7 +843,7 @@ def test_problem_z_bledu_wykonawcy_zostaje_bez_raportu_wyslanego_jeszcze_raz(
 ) -> None:
     """Późniejszy mail nie jest poprawką, gdy nie powtarza każdego Wpisu starego maila do zleceń Wykonawcy z dnia
     poprawki albo nie ma ich wcale: nieznany numer w kolejnym raporcie może być zleceniem, którego brak w INTERMAX, więc
-    zostaje."""
+    zostaje. Przy innej dacie dniem poprawki jest dzień zlecenia, więc ponowny raport z dnia z tematu jej nie usuwa."""
 
     outcome = enter_reports(_inputs([wrong, later], JAN_ORDERS, today=NEXT_DAY, rollout=DAY))
 
@@ -1682,6 +1688,7 @@ TWO_CELLS = ((0, "tak", "wymiana routera"), (1, "nie", "brak klienta"))
         pytest.param(f"{ROUTER}\nMiłego wieczoru", ROUTER_CELLS, id="milego-wieczoru"),
         pytest.param(f"{ROUTER} serdecznie pozdrawiam", ROUTER_CELLS, id="pozegnanie-w-tej-samej-linii"),
         pytest.param(f"{ROUTER}, pozdrawiam Jan Testowy", ROUTER_CELLS, id="pozegnanie-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER} z poważaniem Jan Testowy", ROUTER_CELLS, id="dwuwyrazowe-pozegnanie-i-podpis-w-tej-samej-linii"),
         pytest.param(
             f"{ROUTER}, pozdrawiam\nJan Testowy technik serwisu", ROUTER_CELLS, id="pozegnanie-na-koncu-linii-i-podpis-pod-nim"
         ),
@@ -1692,6 +1699,11 @@ TWO_CELLS = ((0, "tak", "wymiana routera"), (1, "nie", "brak klienta"))
             "40000001 tak wymiana routera, klient dziękuje za szybką obsługę",
             ((0, "tak", "wymiana routera, klient dziękuje za szybką obsługę"),),
             id="dziekuje-w-srodku-zdania-to-opis",
+        ),
+        pytest.param(
+            "40000001 tak wymiana routera, klient dziękuje\nza szybką obsługę",
+            ((0, "tak", "wymiana routera, klient"),),
+            id="dziekuje-na-koncu-zawinietej-linii-to-granica",
         ),
         pytest.param(
             "40000001 tak przekazałem pozdrowienia od szefa, router wymieniony",
@@ -1731,7 +1743,8 @@ def test_opis_wpisu_konczy_pusta_linia_pozegnanie_z_tabeli_albo_przedrostek_nast
     """US 23, 24: podpis, imię i zdanie pod pustą linią, pożegnanie (także bez polskich liter i potoczne) ani słowo
     ``Zlecenie``/``Nr``/``Zl.`` przed numerem następnego Wpisu nie trafiają do ``CZYNNOŚCI ZREALIZOWANE``. Opis kończą
     tylko wyliczone znaczniki, więc imię bez pustej linii pod opisem i opis dopiero pod pustą linią to nazwane granice.
-    Pożegnanie w środku zdania opisu (``klient dziękuje za szybką obsługę``) opisu nie ucina."""
+    Pożegnanie w środku zdania opisu (``klient dziękuje za szybką obsługę``) opisu nie ucina, a pożegnanie w środku linii
+    z najwyżej dwoma słowami do jej końca ucina, więc zdanie opisu złamane tuż po ``dziękuje`` to nazwana granica."""
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], _orders()))
 

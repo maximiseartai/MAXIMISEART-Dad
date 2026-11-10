@@ -12,9 +12,11 @@ import re
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from typing import cast
 from xml.etree import ElementTree
+import zipfile
 
 import pytest
 from openpyxl import load_workbook
@@ -24,7 +26,7 @@ from rozliczenia import register_file
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.intermax_cells import CellProblem, CellsWritten, Rejected, write_cells
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
-from rozliczenia.intermax_replace import Refusal, Waiting
+from rozliczenia.intermax_replace import LOCAL_DISK, Refusal, Waiting
 from rozliczenia.report_cells import CellChange, OrderRow, ReportColumn
 from rozliczenia.run_context import RunContext
 from rozliczenia.workbook_parts import UnsupportedShape
@@ -169,6 +171,95 @@ def test_komorka_za_ostatnia_komorka_wiersza_staje_na_jego_koncu(tmp_path: Path)
 
     sheet = load_workbook(path)[ORDER_SHEET]
     assert [sheet.cell(5, column).value for column in range(1, COMPLETED + 2)] == [*kept, None, ACTIVITIES_TEXT, None]
+
+
+def test_komorka_wpisana_w_luke_wiersza_staje_miedzy_sasiadami_w_kolejnosci_kolumn(tmp_path: Path) -> None:
+    """Wiersz 5 atrapy nie ma komórek ``L``–``O``, a ma komórki na prawo od nich: wpisana komórka staje przed pierwszą
+    komórką na prawo od siebie, bo Excel otwiera wiersz z komórkami nie po kolei tylko z naprawą pliku."""
+
+    path = _register(tmp_path)
+    before = _cell_references(parts(path)[SHEET_PART], 5)
+    assert "L5" not in before and "P5" in before
+
+    outcome = _write(path, [_change(5, ReportColumn.SUCCESSFUL, "tak"), _change(5, ReportColumn.COMPLETED, "montaż")])
+
+    assert outcome == CellsWritten(2)
+    after = _cell_references(parts(path)[SHEET_PART], 5)
+    assert after == sorted({*before, "L5", "M5"}, key=lambda reference: (len(reference), reference))
+
+
+def _cell_references(sheet: bytes, row: int) -> list[str]:
+    """Adresy komórek wiersza ``row`` w kolejności w XML arkusza."""
+
+    [row_xml] = re.findall(rb'<row r="%d"[ >].*?</row>' % row, sheet, flags=re.S)
+    return [reference.decode() for reference in re.findall(rb'<c r="([A-Z]+\d+)"', row_xml)]
+
+
+def test_komorka_w_scaleniu_to_ksztalt_nieobslugiwany_bez_zapisu(tmp_path: Path) -> None:
+    path = _register(tmp_path)
+    merged = b'<mergeCells count="1"><mergeCell ref="L2:M2"/></mergeCells><hyperlinks>'
+    rewrite_parts(path, lambda name, data: data.replace(b"<hyperlinks>", merged, 1) if name == SHEET_PART else data)
+
+    with _untouched(path), pytest.raises(UnsupportedShape, match="scalenie"):
+        _write(path, [_change(2, ReportColumn.SUCCESSFUL, "tak")])
+
+
+def _zip_changed(
+    content: bytes, change: Callable[[str, bytes], bytes | None], added: dict[str, bytes] | None = None
+) -> bytes:
+    """Archiwum ``content`` z każdą częścią po ``change`` (``None`` usuwa część) i nowymi częściami ``added`` na
+    końcu."""
+
+    with zipfile.ZipFile(BytesIO(content)) as source:
+        members = [(info, change(info.filename, source.read(info.filename))) for info in source.infolist()]
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target:
+        for info, data in members:
+            if data is not None:
+                target.writestr(info, data)
+        for name, data in (added or {}).items():
+            target.writestr(name, data)
+    return out.getvalue()
+
+
+def _in_part(part: str, old: bytes, new: bytes) -> Callable[[bytes], bytes]:
+    def change(content: bytes) -> bytes:
+        def one(name: str, data: bytes) -> bytes:
+            if name != part:
+                return data
+            assert old in data, (part, old)
+            return data.replace(old, new, 1)
+
+        return _zip_changed(content, one)
+
+    return change
+
+
+WRITTEN_DIFFERENTLY: dict[str, Callable[[bytes], bytes]] = {
+    "nowa-czesc": lambda content: _zip_changed(content, lambda name, data: data, {"xl/extra.xml": b"<extra/>"}),
+    "bez-czesci": lambda content: _zip_changed(content, lambda name, data: None if name == "docProps/app.xml" else data),
+    "zmieniona-inna-czesc": _in_part("docProps/app.xml", b"</Properties>", b"<Company>x</Company></Properties>"),
+    "styl-w-srodku-listy": _in_part(STYLES_PART, b"<fonts", b'<fonts><font><sz val="9"/></font></fonts><fonts'),
+    "komorka-spoza-wpisanych": _in_part(SHEET_PART, b'<c r="D5" s="4" t="s"><v>17</v>', b'<c r="D5" s="4" t="s"><v>18</v>'),
+    "tekst-wpisanej-komorki": _in_part(SHEET_PART, b"<is><t>tak</t></is>", b"<is><t>nie</t></is>"),
+}
+
+
+@pytest.mark.parametrize("spoil", WRITTEN_DIFFERENTLY.values(), ids=WRITTEN_DIFFERENTLY.keys())
+def test_zapis_rozny_od_planu_w_odczycie_kontrolnym_nie_podmienia_intermax(
+    tmp_path: Path, spoil: Callable[[bytes], bytes]
+) -> None:
+    """Odczyt kontrolny pliku tymczasowego porównuje go z INTERMAX: inna lista części (nowa albo brakująca), inna
+    część poza arkuszem i stylami, styl wstawiony w środek listy, inna komórka arkusza albo inny tekst wpisanej komórki
+    to zapis niezgodny, a INTERMAX zostaje nietknięty."""
+
+    path = _register(tmp_path)
+    disk = FaultyDisk(read=lambda temporary: spoil(LOCAL_DISK.read(temporary)))
+
+    with _untouched(path):
+        outcome = _write(path, [_change(2, ReportColumn.SUCCESSFUL, "tak")], disk=disk)
+
+    assert outcome == Refusal.WRITE_MISMATCH
 
 
 @pytest.mark.parametrize(

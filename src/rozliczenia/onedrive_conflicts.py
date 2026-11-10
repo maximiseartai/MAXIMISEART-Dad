@@ -6,9 +6,10 @@ Learn, „Resolve sync issues in OneDrive for work or school”, sekcja „Revie
 https://learn.microsoft.com/en-us/troubleshoot/sharepoint/sync/troubleshoot-sync-issues). Kopia konfliktu to więc plik
 w folderze INTERMAX o nazwie ``<nazwa INTERMAX bez rozszerzenia>-<nazwa komputera><rozszerzenie INTERMAX>``, bez względu
 na wielkość liter, jak w Eksploratorze plików. Nazwa komputera zaczyna się i kończy literą albo cyfrą, a w środku ma
-też łączniki, podkreślenia i spacje, więc ``… - Kopia.xlsx`` z Eksploratora, plik blokady Excela ``~$…`` i plik
-tymczasowy zapisu ``.<nazwa>.….xlsx`` kopią konfliktu nie są. Obie strony błędu kosztują: przeoczona kopia gubi zmiany pracownika taty,
-a kopia rozpoznana bez potrzeby tylko zatrzymuje Wpisanie raportów z nazwą pliku, który tata sprawdzi.
+też łączniki, podkreślenia, spacje i apostrofy (domyślna nazwa Maca „Jan’s MacBook Air”), więc ``… - Kopia.xlsx`` z
+Eksploratora, plik blokady Excela ``~$…`` i plik tymczasowy zapisu ``.<nazwa>.….xlsx`` kopią konfliktu nie są. Obie
+strony błędu kosztują: przeoczona kopia gubi zmiany pracownika taty, a kopia rozpoznana bez potrzeby tylko zatrzymuje
+Wpisanie raportów z nazwą pliku, który tata sprawdzi.
 """
 
 from __future__ import annotations
@@ -19,8 +20,9 @@ from typing import Final
 
 __all__ = ["beside"]
 
-_DEVICE: Final = re.compile(r"[^\W_](?:[\w -]*[^\W_])?")
-"""Nazwa komputera w dopisku: litery, cyfry, łączniki, podkreślenia i spacje, z literą albo cyfrą na obu brzegach."""
+_DEVICE: Final = re.compile(r"[^\W_](?:[\w '’-]*[^\W_])?")
+"""Nazwa komputera w dopisku: litery, cyfry, łączniki, podkreślenia, spacje i apostrofy, z literą albo cyfrą na obu
+brzegach."""
 
 
 def beside(register: Path) -> tuple[Path, ...]:
