@@ -9,6 +9,7 @@ from datetime import date
 from ._model import (
     ForeignOrder,
     Login,
+    MissingVerdict,
     OrderKey,
     OrderNumber,
     OtherDay,
@@ -28,6 +29,8 @@ def match(
 
     ``reports`` idą w kolejności przyjścia, więc późniejszy Wpis zastępuje wcześniejszy. Numer w dwóch zleceniach
     Wykonawcy z dnia z tematu to ``RepeatedOrder``, a numer bez jego zlecenia z tego dnia rozstrzyga ``_unmatched``.
+    Zwycięski Wpis bez ``tak`` ani ``nie`` to ``MissingVerdict`` zamiast celu, bo nie wiadomo, co Wykonawca miał na
+    myśli.
     """
 
     rows: defaultdict[OrderKey, list[RegisterOrder]] = defaultdict(list)
@@ -47,6 +50,10 @@ def match(
                     targets[key] = (order, entry)
                 case _:
                     problems.append(RepeatedOrder(report.worker, report.day, entry.number))
+    for key, (_, entry) in list(targets.items()):
+        if entry.fault is not None:
+            del targets[key]
+            problems.append(MissingVerdict(key.worker, key.day, key.number, entry.fault))
     return targets, problems
 
 

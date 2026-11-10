@@ -474,7 +474,7 @@ class LoggedWindowStop(_Record):
 LoggedColumn = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
 """Kolumna INTERMAX, którą zmienia Wpisanie raportów (``report_cells.ReportColumn``)."""
 LoggedVerdictFault = Literal["missing", "letter", "word"]
-LoggedSubjectFault = Literal["no_date", "no_year", "not_a_day"]
+LoggedSubjectFault = Literal["no_date", "other_text", "no_year", "date_form", "separator", "year_digits", "not_a_day"]
 
 
 def _column(column: ReportColumn) -> LoggedColumn:
@@ -499,8 +499,16 @@ def _subject_fault(fault: SubjectFault) -> LoggedSubjectFault:
     match fault:
         case SubjectFault.NO_DATE:
             return "no_date"
+        case SubjectFault.OTHER_TEXT:
+            return "other_text"
         case SubjectFault.NO_YEAR:
             return "no_year"
+        case SubjectFault.DATE_FORM:
+            return "date_form"
+        case SubjectFault.SEPARATOR:
+            return "separator"
+        case SubjectFault.YEAR_DIGITS:
+            return "year_digits"
         case SubjectFault.NOT_A_DAY:
             return "not_a_day"
 

@@ -11,6 +11,8 @@ oraz ``report_cells``, ``settlement_period`` i ``text``, bo przejdzie bez zmian 
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from . import _cells, _entries, _figures, _matching, _subject
 from ._model import (
     SUBJECT_WORD,
@@ -92,27 +94,64 @@ __all__ = [
 def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     """Jedyna operacja rdzenia: ten sam wynik dla tych samych wejść, w dowolnej kolejności maili.
 
-    Liczy się tylko mail z tematem ``Raport dd.mm.rrrr`` z dniem otwartym w ``inputs.window``; inne maile rdzeń pomija
-    po cichu. Wpis trafia tylko do zlecenia nadawcy z dnia z tematu i tylko do pustej komórki, a przy kilku Wpisach
-    jednego zlecenia wygrywa najpóźniejszy mail.
+    Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``) z dniem otwartym w ``inputs.window``; inne maile
+    rdzeń pomija po cichu. Temat ze słowem ``raport`` bez dnia zleceń daje ``UnreadableSubject``, gdy mail przyszedł od
+    Wykonawcy w dniu otwartym. Wpis zaczyna numer z co najmniej tyloma cyframi, ile ma najkrótszy numer zlecenia z dni
+    otwartych (``_entries.entries``). Wpis trafia tylko do zlecenia nadawcy z dnia z tematu i tylko do pustej komórki, a przy
+    kilku Wpisach jednego zlecenia decyduje najpóźniejszy mail; mail z tą samą chwilą przyjścia i tym samym Message-ID
+    rozstrzyga treść odczytu.
     """
 
     orders = tuple(order for order in inputs.orders if inputs.window.opens(order.key.day))
+    digits = min((len(order.key.number) for order in orders), default=1)
     read: list[MailRead] = []
     problems: list[ReportProblem] = []
     for mail in inputs.mails:
-        day = _subject.day_of(mail.subject)
-        if day is None or not inputs.window.opens(day):
-            continue
+        found = _subject.read(mail.subject)
         worker = inputs.addresses.logins.get(mail.sender)
-        if worker is None:
-            read.append(ReadStranger(mail.id, mail.arrived, day))
-            problems.append(UnknownSender(mail.id, mail.sender, day))
-        else:
-            read.append(ReadReport(mail.id, mail.arrived, worker, day, _entries.entries(mail.text)))
-    mails = tuple(sorted(read, key=lambda found: (found.arrived, found.mail)))
+        match found:
+            case None:
+                continue
+            case SubjectFault():
+                if worker is not None and inputs.window.opens(mail.arrived.date()):
+                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, found))
+                    problems.append(UnreadableSubject(mail.id, worker, mail.arrived, found))
+            case date() if not inputs.window.opens(found):
+                continue
+            case date() if worker is None:
+                read.append(ReadStranger(mail.id, mail.arrived, found))
+                problems.append(UnknownSender(mail.id, mail.sender, found))
+            case date():
+                entries = _entries.entries(mail.text, digits)
+                read.append(ReadReport(mail.id, mail.arrived, worker, found, entries))
+    mails = tuple(sorted(read, key=_mail_order))
     reports = [found for found in mails if isinstance(found, ReadReport)]
     targets, unmatched = _matching.match(reports, orders)
     changes, memory = _cells.reconcile(targets, orders, inputs.memory)
-    found = tuple(sorted({*problems, *unmatched}, key=problem_order))
-    return ReportsOutcome(changes, found, _figures.worker_days(orders, reports, found, changes), mails, memory)
+    problems_found = tuple(sorted({*problems, *unmatched}, key=problem_order))
+    return ReportsOutcome(
+        changes, problems_found, _figures.worker_days(orders, reports, problems_found, changes), mails, memory
+    )
+
+
+def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]]:
+    """Chwila przyjścia, mail, a przy remisie (Message-ID ustawia nadawca) rodzaj i każde pole odczytu, więc dwa różne
+    odczyty nigdy nie mają równego miejsca."""
+
+    match found:
+        case ReadReport(worker=worker, day=day, entries=entries):
+            content = (
+                part
+                for entry in entries
+                for part in (
+                    entry.number,
+                    "" if entry.verdict is None else entry.verdict.value,
+                    "" if entry.fault is None else entry.fault.name,
+                    entry.activities,
+                )
+            )
+            return found.arrived, found.mail, "report", (worker, day.isoformat(), *content)
+        case ReadUnreadable(worker=worker, fault=fault):
+            return found.arrived, found.mail, "unreadable", (worker, fault.name)
+        case ReadStranger(day=day):
+            return found.arrived, found.mail, "stranger", (day.isoformat(),)
