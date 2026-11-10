@@ -8,7 +8,8 @@ i karty przed startem biorą rdzeń, historię metryk i silnik procesu tylko st�
 
 Wejście procesu buduje tylko ``Catalog.prepared`` z wpisu procesu (``ProcessKind.inputs``), ten sam dla każdego
 gospodarza. Kartę przed startem procesu z okresem składa ``period_start.PeriodStarts`` z polityki wpisu
-(``PeriodStart``), a Uporządkowanie INTERMAX ma własną kartę poza okresami (``intermax_run``, ADR 0019).
+(``PeriodStart``), a Uporządkowanie INTERMAX i Wpisanie raportów mają własne karty poza okresami (``intermax_run``,
+ADR 0019, i ``report_entering_run``, ADR 0028).
 
 Moduł nie robi I/O przy wczytaniu, a granicę jego importów opisuje i sprawdza ``tests/test_granice_importow.py``.
 """
@@ -22,12 +23,18 @@ from typing import Any, Final
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.process_kind import Engine, HostParts, PeriodProcessKind, PreparedRun, ProcessKind, Start
-from rozliczenia.centrum.processes import efenix, intermax, preparation, settlement
+from rozliczenia.centrum.processes import efenix, intermax, preparation, report_entering, settlement
 from rozliczenia.process_run import Process, run_process
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 
-KINDS: Final[tuple[ProcessKind[Any, Any], ...]] = (preparation.KIND, settlement.KIND, efenix.KIND, intermax.KIND)
+KINDS: Final[tuple[ProcessKind[Any, Any], ...]] = (
+    preparation.KIND,
+    settlement.KIND,
+    efenix.KIND,
+    intermax.KIND,
+    report_entering.KIND,
+)
 """Kolejność statystyk w Metrykach."""
 
 _BY_KEY: Final[Mapping[common_contract.ProcessKey, ProcessKind[Any, Any]]] = {kind.key: kind for kind in KINDS}
@@ -82,7 +89,8 @@ class Catalog:
 
         Okres Uruchomienia to ``start.period``, a bez niego okres z wejścia (Plik zbiorczy, dzień Uporządkowania
         INTERMAX, ADR 0019). ``ValueError`` to błąd gospodarza, nie taty: start bez potrzeby procesu albo Podgląd bez
-        zapisu procesu bez niego; odmowy dla taty daje wcześniej karta startu (``period_start``, ``intermax_run``).
+        zapisu procesu bez niego; odmowy dla taty daje wcześniej karta startu (``period_start``, ``intermax_run``,
+        ``report_entering_run``).
         """
 
         kind = self.kind(key)
@@ -92,6 +100,8 @@ class Catalog:
             raise ValueError(f"{kind.title} potrzebuje okresu")
         if "efenix_window" in kind.needs and parts.efenix is None:
             raise ValueError(f"{kind.title} potrzebuje okna efenix")
+        if "worker_report_inbox" in kind.needs and parts.reports is None:
+            raise ValueError(f"{kind.title} potrzebuje Skrzynki raportów")
         if start.dry_run and kind.core.preview is None:
             raise ValueError(f"{kind.title} nie ma Podglądu bez zapisu")
         pricing = kind.pricing_of(start.pricing)

@@ -89,6 +89,7 @@ def test_bez_plikow_metryk_historia_uruchomien_procesu_jest_pusta(tmp_path: Path
         {"process": "settlement", "label": "Przebieg"},
         {"process": "efenix", "label": "efenix"},
         {"process": "intermax", "label": "INTERMAX"},
+        {"process": "report_entering", "label": "Raporty"},
     ]
     assert body["phases"] == ["Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"]
     assert body["minimum_completed_runs"] == 5

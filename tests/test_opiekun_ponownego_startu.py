@@ -119,6 +119,7 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "PREPARATION_METRICS": tool_files.PREPARATION_METRICS,
         "INTERMAX_METRICS": tool_files.INTERMAX_METRICS,
         "EFENIX_METRICS": tool_files.EFENIX_METRICS,
+        "REPORT_ENTERING_METRICS": tool_files.REPORT_ENTERING_METRICS,
         "LOG_PATH": tool_files.LOG_PATH,
     }
 
@@ -132,6 +133,7 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "PREPARATION_METRICS": ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
         "INTERMAX_METRICS": ".uporzadkowanie-intermax-metrics.jsonl",
         "EFENIX_METRICS": ".wycena-efenix-metrics.jsonl",
+        "REPORT_ENTERING_METRICS": ".wpisanie-raportow-metrics.jsonl",
         "LOG_PATH": "logs/centrum-rozliczen.log",
     }
 

@@ -1,4 +1,5 @@
-"""Katalog Komunikatów Uporządkowania INTERMAX i przywrócenia Kopii INTERMAX dla taty (zasady treści: zob. ``message``).
+"""Katalog Komunikatów o INTERMAX dla procesów, które go podmieniają: Uporządkowania INTERMAX, przywrócenia Kopii INTERMAX
+i Wpisania raportów (zasady treści: zob. ``message``).
 
 Komunikaty nie zawierają adresów, numerów zleceń, numerów umów ani loginów Wykonawców.
 """
@@ -28,7 +29,8 @@ _AGAIN = "przywróć kopię jeszcze raz"
 
 @dataclass(frozen=True)
 class Replacement:
-    """Proces, który podmienia INTERMAX: Uporządkowanie (``ORDERING``) albo przywrócenie Kopii (``RESTORE``).
+    """Proces, który podmienia INTERMAX: Uporządkowanie (``ORDERING``), przywrócenie Kopii (``RESTORE``) albo Wpisanie
+    raportów (``ENTERING``, bez Kopii INTERMAX, ADR 0028).
 
     Komunikaty o INTERMAX, którego proces nie może podmienić, mówią to samo w obu procesach, a różnią się kodem,
     zwrotem ponowienia (``workbook.again``) i zdaniem „Co się stało” o tym, czego proces nie zrobił. Kod zdania o samym
@@ -65,6 +67,18 @@ RESTORE: Final = Replacement(
     old_copies_code="PRZYWRACANIE_STARE_KOPIE",
     done="Kopia została przywrócona",
 )
+ENTERING: Final = Replacement(
+    workbook=_INTERMAX,
+    prefix="RAPORTY_",
+    not_written_code="RAPORTY_ZAPIS_INTERMAX_NIEUDANY",
+    not_written="Nie udało się zapisać INTERMAX.",
+    no_copy_code="RAPORTY_KOPIA_INTERMAX_NIEUDANA",
+    no_copy="Nie udało się zrobić Kopii INTERMAX.",
+    old_copies_code="RAPORTY_STARE_KOPIE_INTERMAX",
+    done="Raporty zostały wpisane",
+)
+"""Wpisanie raportów podmienia INTERMAX bez Kopii (``intermax_replace.replace_without_copy``), więc Komunikatów o Kopii
+nie daje; pola o Kopii są tu tylko dlatego, że ``Replacement`` je ma."""
 
 
 def register_unusable(error: WorkbookError, replacement: Replacement) -> Message:
@@ -82,7 +96,7 @@ def register_unusable(error: WorkbookError, replacement: Replacement) -> Message
             missing=partial(register_missing, replacement=replacement),
             open_in_excel=partial(_register_open, replacement=replacement),
             inaccessible=not_synced,
-            unreadable=_register_unreadable if replacement is ORDERING else not_synced,
+            unreadable=not_synced if replacement is RESTORE else partial(_register_unreadable, replacement=replacement),
         ),
     )
 
@@ -104,9 +118,9 @@ def _register_open(register: Path, replacement: Replacement) -> Message:
     return workbook_messages.open_in_excel(f"{replacement.prefix}INTERMAX_OTWARTY", register, replacement.workbook)
 
 
-def _register_unreadable(register: Path) -> Message:
+def _register_unreadable(register: Path, replacement: Replacement) -> Message:
     return Message(
-        code="NIECZYTELNY_INTERMAX",
+        code=f"{replacement.prefix}NIECZYTELNY_INTERMAX",
         dad_file="order_register",
         what=f"Nie można odczytać INTERMAX jako skoroszytu Excela. {_UNCHANGED}",
         where=file_label(register),
@@ -257,8 +271,8 @@ def unsupported_shape(register: Path, sheet: str) -> Message:
 def refused(refusal: Refusal, register: Path, copies: Path, replacement: Replacement) -> Message:
     """Podmiana INTERMAX procesu ``replacement`` odmówiła z powodu ``refusal``; INTERMAX i Kopie są takie, jak były.
 
-    Uporządkowanie sprawdza zapis planem dnia, więc różnica to błąd narzędzia; przywrócenie porównuje same bajty Kopii,
-    więc różnica to nieudany zapis. Kopia o tej samej nazwie przy przywróceniu to przywrócenie z tej samej sekundy.
+    Uporządkowanie sprawdza zapis planem dnia, a Wpisanie raportów zmianami komórek, więc różnica to błąd narzędzia;
+    przywrócenie porównuje same bajty Kopii, więc różnica to nieudany zapis. Kopia o tej samej nazwie przy przywróceniu to przywrócenie z tej samej sekundy.
     """
 
     match refusal:
@@ -271,9 +285,9 @@ def refused(refusal: Refusal, register: Path, copies: Path, replacement: Replace
                 where=file_label(register),
                 action=f"Poczekaj, aż OneDrive skończy synchronizację, potem {replacement.workbook.again}.",
             )
-        case Refusal.WRITE_MISMATCH if replacement is ORDERING:
+        case Refusal.WRITE_MISMATCH if replacement is not RESTORE:
             return Message.to_maintainer(
-                code="ZAPIS_INTERMAX_NIEZGODNY",
+                code=f"{replacement.prefix}ZAPIS_INTERMAX_NIEZGODNY",
                 what=f"Sprawdzenie zapisu wykazało różnicę, więc zapis został odrzucony. {_UNCHANGED}",
                 where=file_label(register),
             )

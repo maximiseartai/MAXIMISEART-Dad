@@ -512,12 +512,15 @@ def test_plik_obok_intermax_z_innymi_bajtami_niz_kopia_to_odmowa_bez_podmiany_i_
 
 
 def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa_odrzucone(tmp_path: Path) -> None:
+    """Także Wpisanie raportów, które pisze do tego samego INTERMAX, nie startuje w trakcie przywracania."""
+
     centrum = _ordered(tmp_path)
     during: dict[str, Any] = {}
 
     def replacing(source: Path, target: Path) -> None:
         if not during:
             during["run"] = centrum.client.post("/api/intermax/run")
+            during["report_entering"] = centrum.client.post("/api/report-entering/run")
             during["shutdown"] = centrum.client.post("/api/shutdown")
             during["restore"] = _restore(centrum, ORDERED)
         os.replace(source, target)
@@ -531,6 +534,7 @@ def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa
     assert restored.json()["state"] == "restored"
     assert {action: (response.status_code, response.json()) for action, response in during.items()} == {
         "run": (409, {"message": f"{busy} uruchom proces."}),
+        "report_entering": (409, {"message": f"{busy} uruchom proces."}),
         "shutdown": (409, {"message": f"{busy} zamknij Centrum rozliczeń."}),
         "restore": (409, {"message": f"{busy} przywróć kopię jeszcze raz."}),
     }

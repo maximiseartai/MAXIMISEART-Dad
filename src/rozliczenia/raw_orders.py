@@ -304,7 +304,7 @@ def recognize(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> Ra
     found = _pasted(raw, columns)
     orders = [order for order in found if isinstance(order, RawOrder)]
     days = sorted({order.when.date() for order in orders})
-    above = None if ordered is None else _above(ordered, rows, columns, days[0] if days else None)[0]
+    above = None if ordered is None else _above(ordered, rows, columns, days[0] if days else None).obstacle
     if above is not None:
         return above
     if not raw:
@@ -330,7 +330,24 @@ def ordered_days(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, si
     first = _bottom(rows, columns)[3]
     if first is None:
         return frozenset()
-    return frozenset(day for day in _above(first, rows, columns, since)[1] if day >= since)
+    return frozenset(day for day in _above(first, rows, columns, since).days if day >= since)
+
+
+def ordered_rows(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, since: date) -> tuple[RowFacts, ...]:
+    """Uporządkowane wiersze z dniem od ``since`` z wierszy arkusza zleceń od ostatniego w górę, od dołu.
+
+    Ten sam przegląd co w ``ordered_days``: od ostatniego uporządkowanego wiersza nad Surowymi zleceniami w górę, do
+    ``_EARLIER_ROWS`` kolejnych wierszy z dniem wcześniejszym niż ``since``. Surowych zleceń na dole przegląd nie oddaje,
+    a kończy go też wiersz z wyglądem z aplikacji nad uporządkowanymi, więc uporządkowane zlecenia nad takim blokiem nie
+    wchodzą, jak w Dniu uporządkowanym. Wiersz bez daty w ``DATA GODZ. POCZ.`` nie wchodzi.
+    """
+
+    rows = iter(rows_from_bottom)
+    first = _bottom(rows, columns)[3]
+    if first is None:
+        return ()
+    dated = ((row, row.value(columns.date)) for row in _above(first, rows, columns, since).rows)
+    return tuple(row for row, when in dated if isinstance(when, datetime) and when.date() >= since)
 
 
 def pasted(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> tuple[RawOrder | Undated | WithoutWorker, ...]:
@@ -589,10 +606,19 @@ def _operator(text: str) -> str:
     return _name(_COMPANY_SUFFIX.sub("", text))
 
 
-def _above(
-    first: RowFacts, rows: Iterator[RowFacts], columns: OrderColumns, day: date | None
-) -> tuple[AboveOrdered | None, set[date]]:
-    """Przegląd od ostatniego uporządkowanego wiersza ``first`` w górę: wiersz z wyglądem z aplikacji nad nim i dni.
+@dataclass(frozen=True)
+class _Above:
+    """Wynik przeglądu nad blokiem: wiersz z wyglądem z aplikacji nad uporządkowanymi (``obstacle``), uporządkowane dni
+    i uporządkowane wiersze z wartościami, które przegląd przeszedł, od dołu."""
+
+    obstacle: AboveOrdered | None
+    days: set[date]
+    rows: tuple[RowFacts, ...]
+
+
+def _above(first: RowFacts, rows: Iterator[RowFacts], columns: OrderColumns, day: date | None) -> _Above:
+    """Przegląd od ostatniego uporządkowanego wiersza ``first`` w górę: wiersz z wyglądem z aplikacji nad nim, dni i
+    przejrzane uporządkowane wiersze.
 
     Dni to uporządkowane dni przeglądu: dzień dwóch kolejnych wierszy z datą albo wiersza, pod którym nie ma
     wcześniejszego dnia. Przegląd kończy ``_EARLIER_ROWS`` kolejnych wierszy z dniem wcześniejszym niż ``day`` (bez
@@ -601,6 +627,7 @@ def _above(
 
     below = first.number
     days: set[date] = set()
+    seen: list[RowFacts] = []
     earlier = 0
     previous: date | None = None
     lowest: date | None = None
@@ -608,8 +635,9 @@ def _above(
         if row.blank:
             continue
         if not _is_ordered(row, columns):
-            return AboveOrdered(row.number, below), days
+            return _Above(AboveOrdered(row.number, below), days, tuple(seen))
         below = row.number
+        seen.append(row)
         when = row.value(columns.date)
         if not isinstance(when, datetime):
             continue
@@ -625,7 +653,7 @@ def _above(
                 break
         else:
             earlier = 0
-    return None, days
+    return _Above(None, days, tuple(seen))
 
 
 def _is_date(value: object) -> bool:

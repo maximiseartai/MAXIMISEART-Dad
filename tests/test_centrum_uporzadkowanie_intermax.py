@@ -574,6 +574,7 @@ def test_historia_metryki_i_karta_maja_uporzadkowanie_intermax(tmp_path: Path) -
         ("settlement", "DRY-RUN"),
         ("efenix", "RUN"),
         ("intermax", "RUN"),
+        ("report_entering", "RUN"),
     ]
     assert card["state"] == "restored"
     assert (card["run"]["title"], card["result"]["headline"]) == ("Uporządkowanie INTERMAX", "INTERMAX uporządkowany")

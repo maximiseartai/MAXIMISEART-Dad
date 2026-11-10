@@ -5,7 +5,8 @@ podsumowanie, etapy, ślad wywołań Zatrzymania, a z ostatniego snapshotu proje
 pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z Diagnozy z rozmiarem i atrybutem OneDrive.
 Dodatki Logów procesu (``ProcessLogs``) daje jego wpis w katalogu procesów: z podsumowania silnika Przebiegu rozliczeń
 liczba wyczyszczonych Ilości tylko dla INEA, której karta nie pokazuje (ADR 0018), a z podsumowania Uporządkowania
-INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy. Z
+INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy, a z
+Wpisania raportów Wpisy, problemy i zmiany komórek (``LoggedReports``, ADR 0028) bez adresów, tematów i treści maili. Z
 podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``) z działaniami okna efenix i odczytem strony po
 każdym (``LoggedStep``, #843), bez numeru zlecenia i bez danych adresowych z pliku i z efenix.
 Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
@@ -45,7 +46,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Final, Literal, assert_never
 
-from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum.contract import common as common_contract
@@ -73,6 +74,26 @@ from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.process_run import RunResult, StopEnding
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.report_cells import ReportColumn
+from rozliczenia.report_entering import EnteringFacts
+from rozliczenia.worker_reports import (
+    ForeignOrder,
+    MailRead,
+    ManualDifference,
+    MissingVerdict,
+    OrderKey,
+    OtherDay,
+    ReadReport,
+    ReadStranger,
+    ReadUnreadable,
+    RepeatedOrder,
+    ReportProblem,
+    SubjectFault,
+    UnknownNumber,
+    UnknownSender,
+    UnreadableSubject,
+    VerdictFault,
+)
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 SCHEMA_VERSION: Final = 3
@@ -445,6 +466,265 @@ class LoggedWindowStop(_Record):
         )
 
 
+LoggedColumn = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
+"""Kolumna INTERMAX, którą zmienia Wpisanie raportów (``report_cells.ReportColumn``)."""
+LoggedVerdictFault = Literal["missing", "letter", "word"]
+LoggedSubjectFault = Literal["no_date", "no_year", "not_a_day"]
+
+
+def _column(column: ReportColumn) -> LoggedColumn:
+    match column:
+        case ReportColumn.SUCCESSFUL:
+            return "SKUTECZNE"
+        case ReportColumn.COMPLETED:
+            return "CZYNNOŚCI ZREALIZOWANE"
+
+
+def _verdict_fault(fault: VerdictFault) -> LoggedVerdictFault:
+    match fault:
+        case VerdictFault.MISSING:
+            return "missing"
+        case VerdictFault.LETTER:
+            return "letter"
+        case VerdictFault.WORD:
+            return "word"
+
+
+def _subject_fault(fault: SubjectFault) -> LoggedSubjectFault:
+    match fault:
+        case SubjectFault.NO_DATE:
+            return "no_date"
+        case SubjectFault.NO_YEAR:
+            return "no_year"
+        case SubjectFault.NOT_A_DAY:
+            return "not_a_day"
+
+
+class LoggedReportEntry(_Record):
+    """Wpis raportu: numer zlecenia z treści maila (pod strażnikiem: 9 cyfr z rzędu maskuje jak telefon), ``tak``/``nie``
+    albo powód jego braku i czynności (pod strażnikiem: telefon i ulica zamaskowane)."""
+
+    number: str
+    verdict: Literal["tak", "nie"] | None
+    fault: LoggedVerdictFault | None
+    activities: str
+
+
+class LoggedReportMail(_Record):
+    """Raport wykonawcy od Wykonawcy z listy adresów: skrót maila, chwila przyjścia, login, dzień z tematu i Wpisy; bez
+    adresu, tematu i reszty treści."""
+
+    kind: Literal["report"]
+    mail: str
+    arrived: datetime
+    worker: str
+    day: date
+    entries: list[LoggedReportEntry]
+
+
+class LoggedUnreadableMail(_Record):
+    """Mail od Wykonawcy z tematem, z którego nie da się odczytać dnia; bez tematu."""
+
+    kind: Literal["unreadable"]
+    mail: str
+    arrived: datetime
+    worker: str
+    fault: LoggedSubjectFault
+
+
+class LoggedStrangerMail(_Record):
+    """Raport wykonawcy z adresu spoza listy adresów; bez adresu."""
+
+    kind: Literal["stranger"]
+    mail: str
+    arrived: datetime
+    day: date
+
+
+LoggedMail = Annotated[LoggedReportMail | LoggedUnreadableMail | LoggedStrangerMail, Field(discriminator="kind")]
+
+
+def _mail(read: MailRead) -> LoggedMail:
+    match read:
+        case ReadReport():
+            entries = [
+                LoggedReportEntry(
+                    number=entry.number,
+                    verdict=None if entry.verdict is None else entry.verdict.value,
+                    fault=None if entry.fault is None else _verdict_fault(entry.fault),
+                    activities=entry.activities,
+                )
+                for entry in read.entries
+            ]
+            return LoggedReportMail(
+                kind="report", mail=read.mail.digest, arrived=read.arrived, worker=read.worker, day=read.day, entries=entries
+            )
+        case ReadUnreadable():
+            return LoggedUnreadableMail(
+                kind="unreadable",
+                mail=read.mail.digest,
+                arrived=read.arrived,
+                worker=read.worker,
+                fault=_subject_fault(read.fault),
+            )
+        case ReadStranger():
+            return LoggedStrangerMail(kind="stranger", mail=read.mail.digest, arrived=read.arrived, day=read.day)
+        case _:
+            assert_never(read)
+
+
+class LoggedOrderProblem(_Record):
+    """Problem Wpisu raportu Wykonawcy z dnia: rodzaj, numer z treści maila (pod strażnikiem jak w
+    ``LoggedReportEntry``), a przy ``missing_verdict`` powód, przy ``foreign_order`` Wykonawca zlecenia, przy
+    ``other_day`` dni zleceń z tym numerem."""
+
+    kind: Literal["missing_verdict", "unknown_number", "foreign_order", "other_day", "repeated_order"]
+    worker: str
+    day: date
+    number: str
+    fault: LoggedVerdictFault | None = None
+    owner: str | None = None
+    order_days: list[date] = []
+
+
+class LoggedSubjectProblem(_Record):
+    kind: Literal["unreadable_subject"]
+    mail: str
+    worker: str
+    arrived: datetime
+    fault: LoggedSubjectFault
+
+
+class LoggedSenderProblem(_Record):
+    """Raport wykonawcy z adresu spoza listy adresów: skrót maila i dzień, bez adresu."""
+
+    kind: Literal["unknown_sender"]
+    mail: str
+    day: date
+
+
+class LoggedOwnEntry(_Record):
+    """Komórka zlecenia INTERMAX z wartością Wpisania raportów. ``number`` to ``NUMER ZL.`` z wiersza INTERMAX jako
+    liczba: liczby spoza ``READ_VALUES`` strażnik nie sprawdza, a numer zlecenia może wyjść (ADR 0025), więc 9 cyfr nie
+    staje się maską telefonu. ``value`` to tekst komórki pod strażnikiem."""
+
+    number: int
+    day: date
+    worker: str
+    column: LoggedColumn
+    value: str
+
+    @classmethod
+    def of(cls, key: OrderKey, column: ReportColumn, value: str) -> LoggedOwnEntry:
+        return cls(number=int(key.number), day=key.day, worker=key.worker, column=_column(column), value=value)
+
+
+class LoggedManualProblem(_Record):
+    """Różnica Wpisu z ręczną wartością komórki: komórka zlecenia jak w ``LoggedOwnEntry`` z wartością z Wpisu
+    (``value``) i ręczną (``manual``)."""
+
+    kind: Literal["manual_difference"]
+    cell: LoggedOwnEntry
+    manual: str
+
+
+LoggedProblem = Annotated[
+    LoggedOrderProblem | LoggedSubjectProblem | LoggedSenderProblem | LoggedManualProblem, Field(discriminator="kind")
+]
+
+
+def _problem(problem: ReportProblem) -> LoggedProblem:
+    match problem:
+        case UnreadableSubject():
+            return LoggedSubjectProblem(
+                kind="unreadable_subject",
+                mail=problem.mail.digest,
+                worker=problem.worker,
+                arrived=problem.arrived,
+                fault=_subject_fault(problem.fault),
+            )
+        case UnknownSender():
+            return LoggedSenderProblem(kind="unknown_sender", mail=problem.mail.digest, day=problem.day)
+        case MissingVerdict():
+            return LoggedOrderProblem(
+                kind="missing_verdict",
+                worker=problem.worker,
+                day=problem.day,
+                number=problem.number,
+                fault=_verdict_fault(problem.fault),
+            )
+        case UnknownNumber():
+            return LoggedOrderProblem(kind="unknown_number", worker=problem.worker, day=problem.day, number=problem.number)
+        case ForeignOrder():
+            return LoggedOrderProblem(
+                kind="foreign_order", worker=problem.worker, day=problem.day, number=problem.number, owner=problem.owner
+            )
+        case OtherDay():
+            return LoggedOrderProblem(
+                kind="other_day",
+                worker=problem.worker,
+                day=problem.day,
+                number=problem.number,
+                order_days=list(problem.order_days),
+            )
+        case RepeatedOrder():
+            return LoggedOrderProblem(kind="repeated_order", worker=problem.worker, day=problem.day, number=problem.number)
+        case ManualDifference():
+            cell = LoggedOwnEntry.of(problem.key, problem.column, problem.reported)
+            return LoggedManualProblem(kind="manual_difference", cell=cell, manual=problem.manual)
+        case _:
+            assert_never(problem)
+
+
+class LoggedChange(_Record):
+    """Komórka, którą Wpisanie raportów wpisuje: arkusz, wiersz, kolumna i tekst (pod strażnikiem)."""
+
+    sheet: str
+    row: int
+    column: LoggedColumn
+    value: str
+
+
+class LoggedReports(_Record):
+    """Wpisanie raportów (ADR 0028) bez adresów nadawców, tematów i treści maili poza Wpisami.
+
+    ``today`` i okno dni od ``rollout`` (dzień wdrożenia tego kliknięcia; ``rollout_before`` z pamięci przed nim,
+    ``None``: pierwsze kliknięcie), ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać, ``mails``
+    przeczytane maile po chwili przyjścia, ``problems`` problemy rdzenia raportów, ``changes`` komórki do wpisania,
+    ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, a ``written`` liczba wpisanych komórek
+    (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
+    """
+
+    today: date
+    rollout_before: date | None
+    rollout: date
+    skipped: int
+    mails: list[LoggedMail]
+    problems: list[LoggedProblem]
+    changes: list[LoggedChange]
+    memory_before: list[LoggedOwnEntry]
+    written: int | None
+
+    @classmethod
+    def of(cls, facts: EnteringFacts, written: int | None) -> LoggedReports:
+        return cls(
+            today=facts.today,
+            rollout_before=facts.rollout_before,
+            rollout=facts.rollout,
+            skipped=facts.skipped,
+            mails=[_mail(read) for read in facts.mails],
+            problems=[_problem(problem) for problem in facts.problems],
+            changes=[
+                LoggedChange(
+                    sheet=change.order.sheet, row=change.order.row, column=_column(change.column), value=change.value
+                )
+                for change in facts.changes
+            ],
+            memory_before=[LoggedOwnEntry.of(entry.key, entry.column, entry.value) for entry in facts.memory_before],
+            written=written,
+        )
+
+
 class ProcessLogs(_Record):
     """Dodatki Logów jednego procesu: wpis procesu w katalogu daje je z podsumowania silnika i faktów Zatrzymania
     (``ProcessKind.logs``), a plik ma je jako pola ``RunLog`` o tych samych nazwach. Proces bez dodatków ma wszystkie
@@ -454,6 +734,7 @@ class ProcessLogs(_Record):
     intermax_entries: LoggedEntries | None = None
     efenix_orders: list[LoggedOrder] | None = None
     efenix_stop: LoggedWindowStop | None = None
+    report_entering: LoggedReports | None = None
 
 
 class LoggedInterruption(_Record):
@@ -613,6 +894,9 @@ class RunLog(StartFacts):
     efenix_stop: LoggedWindowStop | None = None
     """Zatrzymanie okna efenix z przyczyną techniczną. ``None``: inne procesy, Wycena w efenix bez takiego Zatrzymania i
     pliki sprzed tego pola."""
+    report_entering: LoggedReports | None = None
+    """Wpisanie raportów (``LoggedReports``). ``None``: inne procesy, Wpisanie raportów zatrzymane przed rdzeniem raportów
+    i pliki sprzed tego pola."""
     environment: Environment
     trace: CallTrace | None
     diagnosis: LoggedDiagnosis | None

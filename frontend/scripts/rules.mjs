@@ -34,7 +34,10 @@ const FIELDS_OUTSIDE_UI = new Map([
 
 // Pliki, które wolno rozgałęziać po nazwie procesu; każdy z uzasadnieniem.
 const PROCESS_COMPARISON_FILES = new Map([
-  ["src/lib/runs.tsx", "ponowne Uruchomienie: Uporządkowanie INTERMAX startuje bez okresu własną operacją kontraktu"],
+  [
+    "src/lib/runs.tsx",
+    "ponowne Uruchomienie: Uporządkowanie INTERMAX i Wpisanie raportów startują bez okresu własną operacją kontraktu",
+  ],
 ])
 
 // Pliki, które wolno łączyć z serwerem; każdy z uzasadnieniem. Plik bez połączenia trzeba stąd usunąć.

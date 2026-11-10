@@ -53,6 +53,8 @@ from rozliczenia.centrum.run_cards import RunCards, run_cards_router
 from rozliczenia.centrum.run_comments import RecordMaker, RunComments
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.process_kind import HostParts
+from rozliczenia.centrum.report_entering_run import ReportEnteringEntry, report_entering_router
+from rozliczenia.centrum.report_entering_state import FileReportState
 from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.server import AFTER_START
 from rozliczenia.centrum.settings import SettingsStore
@@ -72,7 +74,9 @@ from rozliczenia.intermax_copies import default_directory as default_intermax_co
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
+from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.workbook_files import ByteSource, file_bytes
+from rozliczenia.worker_report_inbox import ImapInbox, WorkerReportInbox
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 _LOCAL_HOSTNAMES = frozenset({HOST, "localhost"})
@@ -102,6 +106,7 @@ def create_app(
     intermax_disk: Disk = LOCAL_DISK,
     now: Callable[[], datetime] = lambda: datetime.now().astimezone(),
     efenix_window: EfenixWindow | None = None,
+    worker_report_inbox: WorkerReportInbox | None = None,
 ) -> FastAPI:
     work = CentrumWork(config=settings_path.parent, log=log, clock=clock, pause=pause)
 
@@ -224,18 +229,22 @@ def create_app(
     )
     contexts = RunContexts(files=files, template_check=template_check)
     # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
+    # Skrzynka raportów taty w Gmailu z plikiem dostępu w ``config``; testy i skille podają atrapę.
     parts = HostParts(
         efenix=(efenix_window or EfenixWindow.of_tata()).opening(),
         journal=disk.journal,
         now=now,
         waiting=Waiting(clock, pause),
         disk=intermax_disk,
+        reports=ReportEnteringParts(worker_report_inbox or ImapInbox(work.config), FileReportState.of_work(work)),
     )
     starts = PeriodStarts(store, configuration, catalog, today, contexts, parts)
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
         store, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
+    # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX.
+    report_entering = ReportEnteringEntry(store, catalog, configuration, parts, contexts)
     cards = RunCards(disk, history.runs)
     closed = comments.close_left_behind()
     notifications = Notifications(work, cases, box, surroundings.tool_freshness, release, lambda: cards.ended("efenix"))
@@ -262,6 +271,7 @@ def create_app(
     app.include_router(runs_router(runs, starts))
     app.include_router(intermax_router(runs, intermax, lambda: cards.latest(intermax.key)))
     app.include_router(intermax_copies_router(runs, intermax))
+    app.include_router(report_entering_router(runs, report_entering, lambda: cards.latest(report_entering.key)))
     app.include_router(run_cards_router(cards))
     app.include_router(notifications_router(notifications))
     app.include_router(

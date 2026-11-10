@@ -1,75 +1,29 @@
 import { cn } from "cn"
-import { CheckIcon, FileSpreadsheetIcon, HistoryIcon, InfoIcon, ListOrderedIcon } from "lucide-react"
+import { CheckIcon, ListOrderedIcon } from "lucide-react"
 
-import { getIntermaxDays, getIntermaxSetup, type IntermaxDays, type IntermaxSetup } from "@/api/centrum"
-import type { RunRestored } from "@/api/generated"
+import { getIntermaxDays, getIntermaxSetup, type IntermaxDays } from "@/api/centrum"
 import { LoadFailure } from "@/components/load-failure"
-import { SettingPath } from "@/components/setting-path"
 import { ThreePartMessage } from "@/components/three-part-message"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { WarningSentences } from "@/components/warning-sentences"
-import { dateTime } from "@/lib/format"
-import { useRuns } from "@/lib/runs"
 import { useResource } from "@/lib/use-resource"
-import { RestoredCardButton } from "@/pages/runs/run-card-sheet"
+import { OutsidePeriodCard } from "@/pages/runs/outside-period-card"
 
 /**
- * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty, tu pod nazwą, którą zna tata,
- * więc jest tylko jeden przycisk.
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty, tu pod nazwą, którą zna tata.
  */
 export function IntermaxCard() {
-  const { resource: setup, reload } = useResource(getIntermaxSetup, [])
-
-  switch (setup.state) {
-    case "loading":
-      return <Skeleton className="h-44 w-full" aria-label="Wczytywanie Uporządkowania INTERMAX" />
-    case "failed":
-      return <LoadFailure what="Uporządkowania INTERMAX" message={setup.message} reload={reload} />
-    case "ready":
-      return <IntermaxSetupCard setup={setup.data} />
-    default: {
-      const unhandled: never = setup
-
-      return unhandled
-    }
-  }
-}
-
-function IntermaxSetupCard({ setup }: { setup: IntermaxSetup }) {
-  const { starting, start } = useRuns()
-  const blocked = setup.blocker !== null || setup.open_in_excel.length > 0
-  const notes = setup.blocker === null ? setup.open_in_excel : [setup.blocker, ...setup.open_in_excel]
-
   return (
-    <Card role="region" aria-label="Uporządkuj INTERMAX">
-      <CardHeader>
-        <CardTitle className="text-lg">{setup.title}</CardTitle>
-        <CardDescription>Zlecenia dnia wklejone na dół INTERMAX.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <SettingPath label="INTERMAX" icon={<FileSpreadsheetIcon />} path="order_register" />
-        {setup.blocker === null ? <RegisterDays /> : null}
-        <WarningSentences sentences={notes} />
-        {setup.last === null ? null : <LastOrdering last={setup.last} />}
-      </CardContent>
-      <CardFooter className="gap-2">
-        <span className="flex items-center gap-2 text-sm text-muted-foreground">
-          <InfoIcon className="size-4" aria-hidden />
-          {setup.reminder}
-        </span>
-        <Button
-          size="lg"
-          className="ml-auto h-11 px-5 text-base"
-          disabled={blocked || starting}
-          onClick={() => start({ process: "intermax" })}
-        >
-          <ListOrderedIcon data-icon="inline-start" />
-          Uporządkuj INTERMAX
-        </Button>
-      </CardFooter>
-    </Card>
+    <OutsidePeriodCard
+      read={getIntermaxSetup}
+      what="Uporządkowania INTERMAX"
+      label="Uporządkuj INTERMAX"
+      description="Zlecenia dnia wklejone na dół INTERMAX."
+      icon={<ListOrderedIcon data-icon="inline-start" />}
+      request={{ process: "intermax" }}
+      skeleton="h-44"
+      unblocked={<RegisterDays />}
+      lastDetail={(last) => last.result.summary?.counts?.counts[0]?.label}
+    />
   )
 }
 
@@ -122,22 +76,5 @@ function DayRow({ days }: { days: IntermaxDays }) {
         </li>
       ))}
     </ol>
-  )
-}
-
-function LastOrdering({ last }: { last: RunRestored }) {
-  const day = last.result.summary?.counts?.counts[0]?.label
-
-  return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground tabular-nums">
-      <HistoryIcon className="size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 truncate">
-        Ostatnio {dateTime(last.started_at)} · {last.result.headline}
-        {day === undefined ? null : ` · ${day}`}
-      </span>
-      <span className="ml-auto">
-        <RestoredCardButton card={last} />
-      </span>
-    </div>
   )
 }

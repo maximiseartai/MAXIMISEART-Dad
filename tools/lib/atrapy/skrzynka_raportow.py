@@ -1,6 +1,8 @@
-"""Atrapy Skrzynki raportów taty w Gmailu: ``FakeInbox`` dla testów procesu i ``AtrapaImap`` dla testu portu IMAP.
+"""Atrapy Skrzynki raportów taty w Gmailu: ``FakeInbox`` dla testów procesu, ``FolderInbox`` dla Skryptu dla maszyn i
+skilli oraz ``AtrapaImap`` dla testu portu IMAP.
 
-``FakeInbox`` oddaje gotowy wynik ``mails_since`` i zapisuje dzień każdego wywołania. ``AtrapaImap`` to lokalny serwer
+``FakeInbox`` oddaje gotowy wynik ``mails_since``, zapisuje dzień każdego wywołania i w jego trakcie robi ``during``. ``FolderInbox`` czyta maile z
+plików ``.eml`` folderu tym samym rozbiorem MIME co port (``mail_of``), z chwilą przyjścia z nagłówka ``Date``. ``AtrapaImap`` to lokalny serwer
 IMAP na ``127.0.0.1`` z wolnym portem, z którym prawdziwy ``imaplib`` portu (``ImapInbox``) rozmawia jak z Gmailem: te
 same postacie odpowiedzi (literał ``{n}`` w FETCH, ``[READ-ONLY]`` po ``EXAMINE``, ``AUTHENTICATIONFAILED`` przy złym
 haśle, folder ``\\All`` w cudzysłowie). Zapisuje polecenia klienta (``LOGIN`` bez argumentów, bo niesie hasło) i
@@ -10,19 +12,29 @@ Wierności Gmailowi atrapa nie dowodzi: prawdziwą skrzynkę sprawdza próba IMA
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import email
+import email.policy
+from pathlib import Path
 import re
 import socketserver
 import threading
 from types import TracebackType
 from typing import Final, Literal
 
-from rozliczenia.worker_report_inbox import InboxAccess, InboxOutcome, InboxUnreachable, Mails, PasswordRejected
-from rozliczenia.worker_reports import ReportMail
+from rozliczenia.worker_report_inbox import (
+    InboxAccess,
+    InboxOutcome,
+    InboxUnreachable,
+    Mails,
+    PasswordRejected,
+    mail_of,
+)
+from rozliczenia.worker_reports import SUBJECT_WORD, ReportMail
 
-__all__ = ["AtrapaImap", "AtrapaMail", "FakeInbox"]
+__all__ = ["AtrapaImap", "AtrapaMail", "FakeInbox", "FolderInbox"]
 
 _MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _WRITES: Final = frozenset({"SELECT", "STORE", "COPY", "MOVE", "EXPUNGE", "APPEND"})
@@ -35,20 +47,56 @@ _POLL_S: Final = 0.02
 @dataclass
 class FakeInbox:
     """Skrzynka raportów testu: ``outcome`` to maile albo wynik porażki, ``state`` stan pliku dostępu, a ``days``
-    dzień każdego ``mails_since``."""
+    dzień każdego ``mails_since``, więc pusta lista mówi, że skrzynki nikt nie czytał. ``during`` dzieje się w trakcie
+    każdego odczytu, jak zapis INTERMAX przez tatę, gdy proces czeka na Gmaila."""
 
     outcome: Sequence[ReportMail] | PasswordRejected | InboxUnreachable = ()
     state: InboxAccess = "ready"
     days: list[date] = field(default_factory=list)
+    during: Callable[[], object] = lambda: None
 
     def access(self) -> InboxAccess:
         return self.state
 
     def mails_since(self, day: date) -> InboxOutcome:
         self.days.append(day)
+        self.during()
         if isinstance(self.outcome, (PasswordRejected, InboxUnreachable)):
             return self.outcome
         return Mails(tuple(self.outcome), skipped=0)
+
+
+@dataclass(frozen=True)
+class FolderInbox:
+    """Skrzynka raportów z plików ``.eml`` w ``folder``, po nazwie pliku; bez folderu plik dostępu jest ``missing``.
+
+    Jak port oddaje maile ze słowem ``SUBJECT_WORD`` w temacie z dni od dnia przed wskazanym, a mail, którego nie umie
+    przeczytać (bez ``From`` z adresem albo bez ``Date``), tylko liczy. Nie łączy się z siecią.
+    """
+
+    folder: Path
+
+    def access(self) -> InboxAccess:
+        return "ready" if self.folder.is_dir() else "missing"
+
+    def mails_since(self, day: date) -> InboxOutcome:
+        if not self.folder.is_dir():
+            return InboxUnreachable("missing")
+        mails: list[ReportMail] = []
+        skipped = 0
+        for path in sorted(self.folder.glob("*.eml")):
+            raw = path.read_bytes()
+            message = email.message_from_bytes(raw, policy=email.policy.default)
+            if SUBJECT_WORD not in str(message["Subject"] or "").casefold():
+                continue
+            sent = message["Date"]
+            arrived = None if sent is None else sent.datetime
+            mail = None if not isinstance(arrived, datetime) else mail_of(raw, arrived)
+            if mail is None:
+                skipped += 1
+            elif mail.arrived.date() >= day - timedelta(days=1):
+                mails.append(mail)
+        return Mails(tuple(mails), skipped=skipped)
 
 
 @dataclass(frozen=True)
