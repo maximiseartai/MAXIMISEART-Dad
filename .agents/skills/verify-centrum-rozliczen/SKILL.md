@@ -47,6 +47,8 @@ after a change of this skill's folder. Run `all` and the mutations locally only 
 or the night's issue. What stays with you: drive the feature you change and look at its
 screenshots after a UI change, because a passing run does not judge visual
 quality. `wydajnosc` is never part of `all` and runs only locally (`features/wydajnosc.md`).
+The real-mailbox review of Wpisanie raportów never runs in CI either: it needs Dad's real Gmail, the access file and
+Maks's consent (`features/wpisanie-raportow.md`, section Real mailbox).
 
 ## Launch
 
