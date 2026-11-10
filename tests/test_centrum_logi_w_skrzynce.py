@@ -1221,6 +1221,33 @@ def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtw
     assert [(code, lines[0]) for code, lines in replayed] == [(0, "ODTWORZENIE ZGODNE")] * 2, replayed
 
 
+def test_klikniecie_po_zostaw_moja_odtwarza_sie_zgodnie_z_decyzja_z_logow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Po drugim kliknięciu tata klika „Zostaw moją” przy ręcznym ``nie`` Anny, więc trzecie kliknięcie nie ma różnicy:
+    Logi mają decyzję z migawki kliknięcia, a odtworzenie bierze ją z nich i daje ten sam wynik bez różnicy (#1231)."""
+
+    surroundings = Surroundings()
+    centrum = entering_centrum(tmp_path / "taty", REPORTED, JAN_REPORTS, surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    centrum.moment.append(datetime(2026, 11, 10, 8))
+    centrum.fake_inbox.outcome = NEXT_MORNING
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    view = centrum.client.get("/api/report-entering/view", params={"day": "2026-11-09"}).json()
+    [cell] = [problem["keep"] for worker in view["workers"] for problem in worker["problems"] if problem["keep"]]
+    assert centrum.client.post("/api/report-entering/keep", json=cell).status_code == 200
+    third = centrum.run_to_end()
+    logs = _archived_run(surroundings.report_box, tmp_path, third["run"]["id"])
+    entering = json.loads(gzip.decompress(logs.read_bytes()))["report_entering"]
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
+
+    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3 + ["unknown_number"]
+    assert [(kept["number"], kept["column"], kept["value"]) for kept in entering["kept"]] == [(40000006, "SKUTECZNE", "tak")]
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 # Wpisanie raportów z dniami zamkniętymi i pomyłkami Wykonawców (#1229): tata kliknął w poniedziałek 9.11, potem
 # przygotował Plik zbiorczy okresu 03_09_11_2026, a w środę 11.11 rano skrzynka ma Raport z 9.11 (okres zamknięty), Raport
 # Jana z 11.11 z numerem jego zlecenia z 10.11, Raport Anny z numerem zlecenia Jana i Raport Jana z numerem, który stoi
@@ -1327,7 +1354,6 @@ ENTERING_LIMITS: dict[str, tuple[Callable[[dict[str, Any]], None], int, tuple[st
         0,
         (
             "- maili taty Logi nie mają: odtworzenie czyta Wpisy raportu z Logów z maili w postaci kanonicznej",
-            "- decyzji „Zostaw moją” Logi nie mają (#1231)",
             "- Wpisy raportu w Logach mają maski strażnika reguły danych ([telefon] ×1): odtworzenie wpisuje do INTERMAX",
         ),
     ),
@@ -1363,8 +1389,8 @@ ENTERING_LIMITS: dict[str, tuple[Callable[[dict[str, Any]], None], int, tuple[st
 def test_granica_logow_wpisania_raportow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """Czego Logi Wpisania raportów nie niosą, raport mówi: maile taty, decyzje „Zostaw moją” i czynności pod maską są
-    zastrzeżeniem przy każdym odtworzeniu, a Logi bez Wpisów i Zatrzymanie przy zapisie u taty zastrzeżeniem przy
+    """Czego Logi Wpisania raportów nie niosą, raport mówi: maile taty i czynności pod maską są zastrzeżeniem przy każdym
+    odtworzeniu, a Logi bez Wpisów i Zatrzymanie przy zapisie u taty zastrzeżeniem przy
     różnicy. Numer Wpisu zamaskowany jak telefon, numer pamięci bez Wpisu z nim i cięcie strażnika we Wpisach kończą
     odtworzenie bez uruchomienia procesu (kod 3)."""
 

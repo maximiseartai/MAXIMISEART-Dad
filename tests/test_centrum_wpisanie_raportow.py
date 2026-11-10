@@ -20,8 +20,10 @@ from openpyxl import load_workbook
 import pytest
 
 from rozliczenia.intermax_replace import LOCAL_DISK
-from rozliczenia.tool_files import REPORT_ENTERING_STATE
+from rozliczenia.tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_RESULT, REPORT_ENTERING_STATE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxAccess, InboxUnreachable, PasswordRejected
+from rozliczenia.worker_reports import ForeignOrder, Login, OrderNumber
+from rozliczenia.worker_reports.reasons import reason
 
 from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, Intermax, Order
 from atrapy.preparation import PERIOD, incomplete_period_rows
@@ -375,13 +377,14 @@ def test_odmowa_podmiany_intermax_nie_zapisuje_pamieci_wpisow_ani_dnia_wdrozenia
     assert _cells(centrum.register) == before, "Raport z 9.11 jest sprzed okna drugiego kliknięcia"
 
 
-def _tata_writes(register: Path, number: int, value: str) -> None:
-    """Tata wpisuje ``value`` w ``SKUTECZNE`` zlecenia ``number`` i zapisuje INTERMAX (bez Excela na dysku)."""
+def _tata_writes(register: Path, number: int, value: str, *, column: int = SUCCESSFUL) -> None:
+    """Tata wpisuje ``value`` w kolumnie ``column`` (``SKUTECZNE``) zlecenia ``number`` i zapisuje INTERMAX (bez Excela
+    na dysku)."""
 
     book = load_workbook(register)
     sheet = book[ORDER_SHEET]
     [row] = [cell.row for line in sheet.iter_rows(min_row=2) for cell in line if cell.value == number]
-    sheet.cell(row, SUCCESSFUL).value = value
+    sheet.cell(row, column).value = value
     book.save(register)
 
 
@@ -1054,3 +1057,218 @@ def test_folder_okresu_bez_dostepu_zatrzymuje_klikniecie_dla_taty_bez_odczytu_sk
     )
     assert centrum.fake_inbox.days == []
     assert centrum.register.read_bytes() == before
+
+
+# --- Widok Raporty i „Zostaw moją” (#1231) ------------------------------------------------------------------------------
+
+STRANGER = "obcy@przyklad.invalid"
+
+
+def _view(centrum: EnteringCentrum, day: str | None = None) -> dict[str, Any]:
+    response = centrum.client.get("/api/report-entering/view", params={} if day is None else {"day": day})
+    assert response.status_code == 200, response.json()
+    return dict(response.json())
+
+
+def _worker(view: dict[str, Any], login: str) -> dict[str, Any]:
+    [found] = [worker for worker in view["workers"] if worker["worker"] == login]
+    return dict(found)
+
+
+def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlecenia_bez_raportu_bez_odczytu_skrzynki(
+    tmp_path: Path,
+) -> None:
+    """US 52–56: po kliknięciu widok Raporty ma przy każdym Wykonawcy dnia jego zlecenia, wpisane, Raporty wykonawcy i
+    problemy z powodem i numerem zlecenia, oraz zlecenia bez żadnego Wpisu; Raport z adresu spoza listy stoi osobno z
+    adresem, którego Logi nie mają. Widok czyta wynik z pliku, a nie skrzynkę."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 10, "jan.testowy", 40000005),
+            _order(9, 11, "anna.kowalska", 40000002),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(
+        tmp_path,
+        intermax,
+        [
+            report(JAN, SUBJECT, "40000001 tak wymiana routera"),
+            report(ANNA, SUBJECT, "40000001 tak montaż"),
+            report(STRANGER, SUBJECT, "40000002 nie brak"),
+        ],
+    )
+    before = _view(centrum)
+    _finished(centrum)
+    read = list(centrum.fake_inbox.days)
+
+    view = _view(centrum)
+
+    assert before == {
+        "clicked_at": None,
+        "today": "2026-11-09",
+        "day": "2026-11-09",
+        "days": ["2026-11-09"],
+        "workers": [],
+        "unknown_senders": [],
+    }
+    assert centrum.fake_inbox.days == read, "widok Raporty nie czyta skrzynki"
+    assert datetime.fromisoformat(view["clicked_at"]) == ENTERING_NOW.astimezone()
+    assert (view["day"], view["days"]) == ("2026-11-09", ["2026-11-09"])
+    foreign = ForeignOrder(Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("40000001"), Login("jan.testowy"))
+    assert view["workers"] == [
+        {
+            "worker": "anna.kowalska",
+            "orders": 1,
+            "entered": 0,
+            "mails": 1,
+            "problems": [{"reason": reason(foreign), "number": "40000001", "sender": None, "keep": None}],
+            "without_report": ["40000002"],
+        },
+        {"worker": "jan.testowy", "orders": 2, "entered": 1, "mails": 1, "problems": [], "without_report": ["40000005"]},
+    ]
+    [stranger] = view["unknown_senders"]
+    assert (stranger["sender"], stranger["number"], stranger["keep"]) == (STRANGER, None, None)
+    assert STRANGER not in json.dumps(centrum.run_logs(), ensure_ascii=False)
+
+
+def test_widok_raporty_domyslnie_pokazuje_dzis_a_wczesniejsze_dni_tylko_z_otwartych_okresow(tmp_path: Path) -> None:
+    """US 53: we wtorek widok Raporty pokazuje dziś, a tata przełącza go na poniedziałek z otwartego okresu, w którym
+    widzi Wykonawców z Raportami z ostatniego kliknięcia. Gdy okres poniedziałku dostanie Plik zbiorczy, następne
+    kliknięcie nie daje już jego dni do wyboru."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _finished(centrum)
+    _next_morning(centrum)
+    _finished(centrum)
+
+    today = _view(centrum)
+    monday = _view(centrum, "2026-11-09")
+    folder = centrum.periods_directory / MONDAY_PERIOD
+    folder.mkdir()
+    (folder / f"Rozliczenie {MONDAY_PERIOD} - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
+    _finished(centrum)
+
+    assert (today["day"], today["days"], today["workers"]) == ("2026-11-10", ["2026-11-10", "2026-11-09"], [])
+    assert (monday["today"], monday["day"]) == ("2026-11-10", "2026-11-09")
+    assert [(worker["worker"], worker["entered"], worker["mails"]) for worker in monday["workers"]] == [
+        ("anna.kowalska", 1, 1),
+        ("jan.testowy", 1, 1),
+    ]
+    assert monday["clicked_at"] == today["clicked_at"]
+    assert _view(centrum)["days"] == ["2026-11-10"]
+
+
+def test_udane_klikniecie_bez_problemow_nie_daje_powiadomienia(tmp_path: Path) -> None:
+    """US 57: kliknięcie, które wpisało Raport bez problemów, zmienia tylko stan na ekranie, a pod dzwonkiem nie ma nic
+    nowego."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    before = centrum.client.get("/api/notifications").json()
+
+    view = _finished(centrum)
+
+    after = centrum.client.get("/api/notifications").json()
+    assert view["result"]["summary"]["figures"][:2] == [
+        {"label": "Wpisane", "value": 1, "unit": "count"},
+        {"label": "Problemy", "value": 0, "unit": "count"},
+    ]
+    assert (after["unread"], after["items"]) == (before["unread"], before["items"])
+
+
+def test_zostaw_moja_zapisuje_decyzje_poza_intermax_a_roznica_nie_wraca_dopoki_wykonawca_nie_przysle_innej_tresci(
+    tmp_path: Path,
+) -> None:
+    """US 38–39 i 58: przy różnicy Wpisu z ręcznymi czynnościami taty „Zostaw moją” zapisuje decyzję w pliku decyzji,
+    INTERMAX zostaje bajt w bajt, a różnica znika z widoku od razu i nie wraca przy następnym kliknięciu, które ma
+    decyzję w Logach. Poprawka Wykonawcy z inną treścią pokazuje różnicę znowu, a ręczna wartość dalej zostaje."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
+    first = _finished(centrum)
+    [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
+    register = centrum.register.read_bytes()
+
+    kept = centrum.client.post("/api/report-entering/keep", json=difference["keep"])
+
+    assert first["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
+    cell = {
+        "number": "40000001",
+        "day": "2026-11-09",
+        "worker": "jan.testowy",
+        "column": "CZYNNOŚCI ZREALIZOWANE",
+        "reported": "wymiana",
+    }
+    assert (difference["number"], difference["keep"]) == ("40000001", cell)
+    assert kept.status_code == 200, kept.json()
+    assert _worker(kept.json(), "jan.testowy")["problems"] == []
+    assert centrum.register.read_bytes() == register, "„Zostaw moją” nie zmienia INTERMAX"
+    decisions = json.loads((centrum.tool.config / REPORT_ENTERING_DECISIONS).read_text(encoding="utf-8"))
+    assert decisions == {"schema_version": 1, "kept": [cell]}
+
+    again = _finished(centrum)
+
+    assert (_entering(centrum, again)["problems"], _worker(_view(centrum), "jan.testowy")["problems"]) == ([], [])
+    assert _entering(centrum, again)["kept"] == [
+        {"number": 40000001, "day": "2026-11-09", "worker": "jan.testowy", "column": "CZYNNOŚCI ZREALIZOWANE", "value": "wymiana"}
+    ]
+    corrected = _click_at(
+        centrum,
+        datetime(2026, 11, 9, 19, 30),
+        [
+            report(JAN, SUBJECT, "40000001 tak wymiana"),
+            report(JAN, SUBJECT, "40000001 tak wymiana gniazda", at=datetime(2026, 11, 9, 19)),
+        ],
+    )
+    [shown] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert shown["keep"] == {**cell, "reported": "wymiana gniazda"}
+    assert corrected["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
+    assert _cells(centrum.register)[40000001] == ("tak", "wymiana ręczna")
+
+
+def test_zostaw_moja_przy_roznicy_spoza_ostatniego_klikniecia_jest_odrzucone_bez_zapisu_decyzji(tmp_path: Path) -> None:
+    """„Zostaw moją” tylko przy różnicy z wyniku ostatniego kliknięcia: inna treść Wpisu (widok sprzed nowszego
+    kliknięcia) dostaje odmowę, a plik decyzji nie powstaje."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
+    _finished(centrum)
+    [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
+
+    refused = centrum.client.post("/api/report-entering/keep", json={**difference["keep"], "reported": "inna treść"})
+
+    assert (refused.status_code, refused.json()["message"]) == (
+        404,
+        "Tej różnicy nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty.",
+    )
+    assert not (centrum.tool.config / REPORT_ENTERING_DECISIONS).exists()
+    assert _worker(_view(centrum), "jan.testowy")["problems"] == [difference]
+
+
+@pytest.mark.parametrize("broken", [REPORT_ENTERING_RESULT, REPORT_ENTERING_DECISIONS])
+def test_nieczytelny_plik_wyniku_albo_decyzji_daje_odmowe_widoku_i_zostaw_moja_bez_zapisu(tmp_path: Path, broken: str) -> None:
+    """Pliku wyniku albo decyzji, którego nie da się odczytać, widok Raporty nie udaje pustym: odczyt i „Zostaw moją”
+    dostają odmowę z tym samym zdaniem, a plik decyzji zostaje bajt w bajt, bo zapis bez dawnych decyzji przywróciłby
+    ich różnice."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
+    _finished(centrum)
+    [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
+    decisions = centrum.tool.config / REPORT_ENTERING_DECISIONS
+    if broken == REPORT_ENTERING_DECISIONS:
+        decisions.write_text('{"schema_version": 2, "kept": []}', encoding="utf-8")
+    else:
+        (centrum.tool.config / REPORT_ENTERING_RESULT).write_text("{nie json", encoding="utf-8")
+    before = decisions.read_bytes() if decisions.exists() else None
+
+    shown = centrum.client.get("/api/report-entering/view")
+    kept = centrum.client.post("/api/report-entering/keep", json=difference["keep"])
+
+    message = (
+        "Nie udało się odczytać wyniku Wpisania raportów ani decyzji „Zostaw moją”. Odśwież kartę, a gdy to się "
+        "powtarza, wyślij Uwagę ogólną."
+    )
+    assert [(answer.status_code, answer.json()["message"]) for answer in (shown, kept)] == [(500, message)] * 2
+    assert (decisions.read_bytes() if decisions.exists() else None) == before

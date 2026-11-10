@@ -33,6 +33,11 @@ one whose pasted rows hold a formula, which Uporządkowanie INTERMAX stops „do
 bytes of three Kopie of both names (one ordered order fewer in the oldest), which that feature puts into the folder
 of Kopie only while it runs.
 
+``<root>/INTERMAX/raporty/`` holds the INTERMAX of ``wpisanie-raportow``: ordered orders of today 19.10.2026 of
+``wykonawca.a`` (two) and ``wykonawca.b`` (one, whose ``CZYNNOŚCI ZREALIZOWANE`` Dad filled in by hand).
+``<root>/maile/`` is the Skrzynka raportów of the run (``FolderInbox``): a Raport wykonawcy of each of them for today
+and one from an address outside the addresses of the Wykonawcy.
+
 ``--wariant rok-pracy`` (for ``wydajnosc``) adds a year of Dad's work on top:
 ``<root>/Rok pracy/Załączniki`` with 52 periods up to the last complete one in
 Dad's layout, each before it with a Folder rozliczeń pracowników of 14
@@ -41,7 +46,9 @@ Wykonawcy, and 258 more synthetic records in both metrics files.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from email.message import EmailMessage
+from email.utils import format_datetime
 import json
 from pathlib import Path
 import random
@@ -59,7 +66,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from skrypt_skilla import Parser, create_run_root
 from harness import File
-from atrapy.intermax import ORDER_SHEET, Intermax
+from atrapy.intermax import FIRST, HEADERS, NUMBER, ORDER_SHEET, Intermax, Order
 from atrapy.scenariusz_centrum import (
     COLLECTIVE_FILE_ROWS,
     COLLECTIVE_HEADERS,
@@ -342,10 +349,46 @@ def _metrics(root: Path) -> dict[str, object]:
     }
 
 
-def _report_entering(root: Path) -> dict[str, str]:
+def _report_entering(root: Path) -> dict[str, object]:
+    """INTERMAX and Skrzynka raportów of ``wpisanie-raportow`` (module docstring), with what the drive expects."""
+
+    completed = FIRST + HEADERS.index("CZYNNOŚCI ZREALIZOWANE")
+    register = root / "INTERMAX" / "raporty" / "ZLECENIA INTERMAX OD 08_11_2021-NOWA WERSJA.xlsx"
+    register.parent.mkdir(parents=True)
+    Intermax(
+        ordered=(
+            Order(datetime(2026, 10, 19, 8), "wykonawca.a", 40000101, cells=((NUMBER, 40000101),)),
+            Order(datetime(2026, 10, 19, 10), "wykonawca.a", 40000102, cells=((NUMBER, 40000102),)),
+            Order(
+                datetime(2026, 10, 19, 11),
+                "wykonawca.b",
+                40000103,
+                cells=((NUMBER, 40000103), (completed, "montaż ręcznie")),
+            ),
+        ),
+        raw=(),
+    ).write(register)
     mails = root / "maile"
     mails.mkdir()
-    return {"mails": str(mails)}
+    sent = [
+        ("raport-a.eml", "wykonawca.a@przyklad.invalid", "40000101 tak wymiana routera"),
+        ("raport-b.eml", "wykonawca.b@przyklad.invalid", "40000103 tak montaż anteny"),
+        ("raport-obcy.eml", "obcy@przyklad.invalid", "40000103 nie brak klienta"),
+    ]
+    for index, (name, sender, text) in enumerate(sent):
+        mail = EmailMessage()
+        mail["From"] = sender
+        mail["Subject"] = "Raport 19.10.2026"
+        mail["Date"] = format_datetime(datetime(2026, 10, 19, 17, index).astimezone())
+        mail["Message-ID"] = f"<{name}@przyklad.invalid>"
+        mail.set_content(text)
+        (mails / name).write_bytes(bytes(mail))
+    return {
+        "register": str(register),
+        "mails": str(mails),
+        "stranger": str(mails / "raport-obcy.eml"),
+        "stranger_address": "obcy@przyklad.invalid",
+    }
 
 
 def _dad_layout(root: Path) -> dict[str, object]:

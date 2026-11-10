@@ -488,4 +488,6 @@ REFUSALS: RefusalSamples = {
     "report_entering_not_set_up": [
         partial(refusal.report_entering_not_set_up, missing) for missing in _REPORT_ENTERING_MISSING
     ],
+    "reports_unreadable": [refusal.reports_unreadable],
+    "difference_gone": [refusal.difference_gone],
 }

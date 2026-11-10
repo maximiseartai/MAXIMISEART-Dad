@@ -8,6 +8,13 @@ export function fullDate(isoDate: string): string {
   return `${day}.${month}.${year}`
 }
 
+const WEEKDAY = new Intl.DateTimeFormat("pl-PL", { weekday: "long", timeZone: "UTC" })
+
+/** `2026-11-09` → `poniedziałek 09.11` */
+export function weekdayDate(isoDate: string): string {
+  return `${WEEKDAY.format(new Date(`${isoDate}T00:00:00Z`))} ${shortDate(isoDate)}`
+}
+
 /** `2026-10-06` → `06.10` */
 export function shortDate(isoDate: string): string {
   return fullDate(isoDate).slice(0, 5)

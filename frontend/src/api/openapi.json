@@ -1042,6 +1042,77 @@
         }
       }
     },
+    "/api/report-entering/keep": {
+      "post": {
+        "tags": [
+          "uruchomienia"
+        ],
+        "summary": "Keep",
+        "operationId": "keepManualValue",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeptCell"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportsView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/report-entering/run": {
       "post": {
         "tags": [
@@ -1099,6 +1170,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/report-entering/view": {
+      "get": {
+        "tags": [
+          "uruchomienia"
+        ],
+        "summary": "View",
+        "operationId": "getReportsView",
+        "parameters": [
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportsView"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1999,6 +2130,8 @@
               "restoreIntermaxCopy",
               "getReportEnteringSetup",
               "startReportEntering",
+              "getReportsView",
+              "keepManualValue",
               "decideRun",
               "diagnoseRun",
               "reportRun",
@@ -3093,6 +3226,46 @@
         "title": "IntermaxSetup",
         "description": "Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.\n\n``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,\n``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania\nINTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
       },
+      "KeptCell": {
+        "properties": {
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "column": {
+            "type": "string",
+            "enum": [
+              "SKUTECZNE",
+              "CZYNNOŚCI ZREALIZOWANE"
+            ],
+            "title": "Column"
+          },
+          "reported": {
+            "type": "string",
+            "title": "Reported"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "day",
+          "worker",
+          "column",
+          "reported"
+        ],
+        "title": "KeptCell",
+        "description": "Komórka zlecenia z treścią Wpisu raportu, przy której tata klika „Zostaw moją”: numer, dzień i Wykonawca\nzlecenia, kolumna INTERMAX i treść Wpisu (``reported``), która różni się od ręcznej wartości."
+      },
       "KindTableCell": {
         "properties": {
           "source": {
@@ -3274,7 +3447,8 @@
               "rerun",
               "open_collective_file",
               "open_worker_settlements_folder",
-              "open_order_register"
+              "open_order_register",
+              "open_reports_view"
             ],
             "title": "Next Action"
           },
@@ -5087,6 +5261,162 @@
         "title": "ReportWaiting",
         "description": "Zgłoszenie tego problemu wysłano wcześniej i jest otwarte: czeka na naprawę, drugie nie powstaje."
       },
+      "ReportsProblem": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          },
+          "keep": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KeptCell"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "number",
+          "sender",
+          "keep"
+        ],
+        "title": "ReportsProblem",
+        "description": "Problem z ostatniego kliknięcia: zdanie dla taty, numer zlecenia (``None``: problem bez numeru), adres\nnieznanego nadawcy (tylko przy nim) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją”\n(``keep``)."
+      },
+      "ReportsView": {
+        "properties": {
+          "clicked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicked At"
+          },
+          "today": {
+            "type": "string",
+            "format": "date",
+            "title": "Today"
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "days": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Days"
+          },
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/ReportsWorker"
+            },
+            "type": "array",
+            "title": "Workers"
+          },
+          "unknown_senders": {
+            "items": {
+              "$ref": "#/components/schemas/ReportsProblem"
+            },
+            "type": "array",
+            "title": "Unknown Senders"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "clicked_at",
+          "today",
+          "day",
+          "days",
+          "workers",
+          "unknown_senders"
+        ],
+        "title": "ReportsView",
+        "description": "Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki.\n\n``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,\n``day`` wybrany dzień, ``days`` dni do wyboru od najnowszego (dziś i dni otwartych okresów z ostatniego kliknięcia),\n``workers`` Wykonawcy wybranego dnia, a ``unknown_senders`` Raporty wykonawcy z tego dnia z adresów spoza listy\nadresów Wykonawców."
+      },
+      "ReportsWorker": {
+        "properties": {
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "orders": {
+            "type": "integer",
+            "title": "Orders"
+          },
+          "entered": {
+            "type": "integer",
+            "title": "Entered"
+          },
+          "mails": {
+            "type": "integer",
+            "title": "Mails"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/ReportsProblem"
+            },
+            "type": "array",
+            "title": "Problems"
+          },
+          "without_report": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Without Report"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "worker",
+          "orders",
+          "entered",
+          "mails",
+          "problems",
+          "without_report"
+        ],
+        "title": "ReportsWorker",
+        "description": "Wykonawca w wybranym dniu: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu,\nkto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”, i numery\nzleceń bez żadnego Wpisu."
+      },
       "Resolved": {
         "properties": {
           "state": {
@@ -5474,7 +5804,8 @@
               "rerun",
               "open_collective_file",
               "open_worker_settlements_folder",
-              "open_order_register"
+              "open_order_register",
+              "open_reports_view"
             ],
             "title": "Next Action"
           },
@@ -5701,7 +6032,8 @@
               "rerun",
               "open_collective_file",
               "open_worker_settlements_folder",
-              "open_order_register"
+              "open_order_register",
+              "open_reports_view"
             ],
             "title": "Next Action"
           }
@@ -6366,7 +6698,8 @@
               "metryki",
               "konfiguracja",
               "powiadomienia",
-              "uzupelnienie"
+              "uzupelnienie",
+              "raporty"
             ],
             "title": "Page"
           },

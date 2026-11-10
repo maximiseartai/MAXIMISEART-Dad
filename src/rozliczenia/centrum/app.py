@@ -230,13 +230,14 @@ def create_app(
     contexts = RunContexts(files=files, template_check=template_check)
     # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
     # Skrzynka raportów taty w Gmailu z plikiem dostępu w ``config``; testy i skille podają atrapę.
+    report_files = FileReportState.of_work(work)
     parts = HostParts(
         efenix=(efenix_window or EfenixWindow.of_tata()).opening(),
         journal=disk.journal,
         now=now,
         waiting=Waiting(clock, pause),
         disk=intermax_disk,
-        reports=ReportEnteringParts(worker_report_inbox or ImapInbox(work.config), FileReportState.of_work(work)),
+        reports=ReportEnteringParts(worker_report_inbox or ImapInbox(work.config), report_files),
     )
     starts = PeriodStarts(store, configuration, catalog, today, contexts, parts)
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
@@ -244,7 +245,7 @@ def create_app(
         store, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
     # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX.
-    report_entering = ReportEnteringEntry(store, catalog, configuration, parts, contexts)
+    report_entering = ReportEnteringEntry(store, catalog, configuration, parts, contexts, report_files)
     cards = RunCards(disk, history.runs)
     closed = comments.close_left_behind()
     notifications = Notifications(work, cases, box, surroundings.tool_freshness, release, lambda: cards.ended("efenix"))

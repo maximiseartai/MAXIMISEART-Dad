@@ -31,6 +31,8 @@ type OutsidePeriodCardProps<T extends OutsidePeriodSetup> = {
   unblocked?: ReactNode
   /** Dopisek linii „Ostatnio …” o ostatnim Uruchomieniu, np. dzień albo liczba Wpisanych. */
   lastDetail: (last: RunRestored) => string | undefined
+  /** Cicha akcja obok przycisku procesu, np. link do widoku jego wyniku. */
+  aside?: ReactNode
 }
 
 /**
@@ -63,6 +65,7 @@ function SetupCard<T extends OutsidePeriodSetup>({
   request,
   unblocked,
   lastDetail,
+  aside,
 }: OutsidePeriodCardProps<T> & { setup: T }) {
   const { starting, start } = useRuns()
   const blocked = setup.blocker !== null || setup.open_in_excel.length > 0
@@ -85,15 +88,13 @@ function SetupCard<T extends OutsidePeriodSetup>({
           <InfoIcon className="size-4" aria-hidden />
           {setup.reminder}
         </span>
-        <Button
-          size="lg"
-          className="ml-auto h-11 px-5 text-base"
-          disabled={blocked || starting}
-          onClick={() => start(request)}
-        >
-          {icon}
-          {label}
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          {aside}
+          <Button size="lg" className="h-11 px-5 text-base" disabled={blocked || starting} onClick={() => start(request)}>
+            {icon}
+            {label}
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   )

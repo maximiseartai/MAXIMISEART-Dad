@@ -15,7 +15,12 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
 - Planowanie: rdzeń raportów;
 - Zapisywanie: komórki bez Kopii INTERMAX (``intermax_cells.write_cells``), a po udanym zapisie pamięć własnych wpisów
   z dniem wdrożenia, także przy zerze wpisanych komórek; kopia konfliktu OneDrive, która pojawiła się obok INTERMAX do
-  końca zapisu, zatrzymuje kliknięcie już po zapisie pamięci, z podsumowaniem w faktach Zatrzymania.
+  końca zapisu, zatrzymuje kliknięcie już po zapisie pamięci i wyniku dla widoku Raporty, z podsumowaniem w faktach
+  Zatrzymania. Wynik dla widoku Raporty (``ClickResult``) proces zapisuje tylko po udanym zapisie INTERMAX, bo jego
+  liczby zakładają wpisane komórki.
+
+Decyzje taty „Zostaw moją” proces bierze w Sprawdzaniu jako migawkę (``SavedState.kept``), razem z pamięcią: decyzja
+kliknięta w trakcie Uruchomienia działa od następnego kliknięcia, a widok Raporty pokazuje ją od razu.
 
 Okno dni zaczyna się od dnia wdrożenia z pamięci (przed pierwszym udanym kliknięciem: dziś) i nie ma dni okresów z
 Plikiem zbiorczym w folderze okresów; bez folderu okresów albo bez dostępu do niego skrzynka nie jest czytana. Proces nie należy do
@@ -31,7 +36,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Protocol, assert_never
@@ -56,6 +61,7 @@ from .workbook_parts import UnsupportedShape
 from .worker_addresses import AddressesError
 from .worker_report_inbox import InboxUnreachable, Mails, PasswordRejected, WorkerReportInbox
 from .worker_reports import (
+    Kept,
     MailRead,
     OrderKey,
     OwnEntries,
@@ -67,10 +73,12 @@ from .worker_reports import (
     ReportProblem,
     Window,
     WorkerAddresses,
+    WorkerDay,
     enter_reports,
 )
 
 __all__ = [
+    "ClickResult",
     "EnteringFacts",
     "EnteringInputs",
     "EnteringSummary",
@@ -85,10 +93,22 @@ __all__ = [
 @dataclass(frozen=True)
 class SavedState:
     """Pamięć z ostatniego udanego zapisu: dzień wdrożenia (``None``: jeszcze żadnego udanego kliknięcia) i własne
-    wpisy."""
+    wpisy, a do tego decyzje taty „Zostaw moją” (``kept``)."""
 
     rollout: date | None
     memory: OwnEntries
+    kept: frozenset[Kept] = frozenset()
+
+
+@dataclass(frozen=True)
+class ClickResult:
+    """Wynik kliknięcia dla widoku Raporty: chwila kliknięcia, dni otwarte okna od pierwszego do dziś, liczby
+    Wykonawców z dni i problemy rdzenia raportów, z adresem nieznanego nadawcy (ADR 0028)."""
+
+    clicked_at: datetime
+    days: tuple[date, ...]
+    workers: tuple[WorkerDay, ...]
+    problems: tuple[ReportProblem, ...]
 
 
 class StateUnreadable(Exception):
@@ -106,19 +126,29 @@ class ReportState(Protocol):
         zapis na dysku się nie udał i czeka na następną próbę."""
         ...
 
+    def save_result(self, written: CellsWritten, result: ClickResult) -> None:
+        """Zapisuje wynik kliknięcia dla widoku Raporty po udanym zapisie INTERMAX (``written``); nieudany zapis czeka na
+        następną próbę, a widok do tego czasu pokazuje go z pamięci."""
+        ...
+
 
 @dataclass
 class ReportStateInMemory:
-    """Pamięć bez pliku: Skrypt dla maszyn i testy. ``saved`` to stan, a ``save_memory`` go zastępuje."""
+    """Pamięć bez pliku: Skrypt dla maszyn i testy. ``saved`` to stan, a ``save_memory`` go zastępuje z tymi samymi
+    decyzjami; ``result`` to ostatni wynik dla widoku Raporty."""
 
     saved: SavedState = field(default_factory=lambda: SavedState(None, OwnEntries.EMPTY))
+    result: ClickResult | None = None
 
     def load(self) -> SavedState:
         return self.saved
 
     def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
-        self.saved = SavedState(rollout, memory)
+        self.saved = SavedState(rollout, memory, self.saved.kept)
         return True
+
+    def save_result(self, written: CellsWritten, result: ClickResult) -> None:
+        self.result = result
 
 
 @dataclass(frozen=True)
@@ -154,8 +184,9 @@ class EnteringFacts:
     """Fakty kliknięcia od rdzenia raportów, bez adresów, tematów i treści maili.
 
     ``rollout_before``: dzień wdrożenia z pamięci przed kliknięciem (``None``: pierwsze), ``rollout``: dzień wdrożenia
-    tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne wpisy zleceń, które mają Wpis w tym kliknięciu. ``skipped``:
-    maile, których Skrzynka raportów nie umiała przeczytać.
+    tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne wpisy zleceń, które mają Wpis w tym kliknięciu, a
+    ``kept``: decyzje „Zostaw moją” tych zleceń z migawki kliknięcia. ``skipped``: maile, których Skrzynka raportów
+    nie umiała przeczytać.
     """
 
     today: date
@@ -163,6 +194,7 @@ class EnteringFacts:
     rollout: date
     closed: tuple[str, ...]
     memory_before: tuple[OwnEntry, ...]
+    kept: tuple[Kept, ...]
     skipped: int
     mails: tuple[MailRead, ...]
     problems: tuple[ReportProblem, ...]
@@ -227,7 +259,8 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         return addresses, saved
 
     addresses, saved = phases.check(check)
-    today = inputs.now().date()
+    clicked_at = inputs.now()
+    today = clicked_at.date()
 
     def read() -> tuple[Window, RegisterFile, tuple[RegisterOrder, ...], int, tuple[ReportMail, ...]]:
         closed = _closed(inputs.periods_directory, Window.periods(today, saved.rollout))
@@ -253,10 +286,10 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
 
     window, register, orders, skipped, mails = phases.read(read)
 
-    def plan() -> tuple[EnteringFacts, OwnEntries]:
+    def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
         found = enter_reports(
             ReportInputs(
-                mails=mails, addresses=addresses, orders=orders, window=window, memory=saved.memory, kept=frozenset()
+                mails=mails, addresses=addresses, orders=orders, window=window, memory=saved.memory, kept=saved.kept
             )
         )
         reported = {
@@ -271,6 +304,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 key=lambda entry: (entry.key, entry.column.value),
             )
         )
+        kept = tuple(sorted((decision for decision in saved.kept if decision.key in reported), key=_kept_order))
         closed = tuple(period.token for period in Window.periods(today, saved.rollout) if period.token in window.closed)
         planned = EnteringFacts(
             window.today,
@@ -278,14 +312,15 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             window.rollout,
             closed,
             before,
+            kept,
             skipped,
             found.mails,
             found.problems,
             found.changes,
         )
-        return planned, found.memory
+        return planned, found.memory, found.workers
 
-    facts, memory = phases.plan(plan, issue_count=lambda planned: len(planned[0].problems))
+    facts, memory, figures = phases.plan(plan, issue_count=lambda planned: len(planned[0].problems))
 
     def save() -> CellsWritten:
         with (
@@ -306,10 +341,22 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
 
     written = phases.save(save)
     warnings = [] if parts.state.save_memory(written, window.rollout, memory) else [messages.memory_not_saved()]
+    parts.state.save_result(written, ClickResult(clicked_at, _open_days(window), figures, facts.problems))
     summary = replace(EnteringSummary(facts, written.count, warnings), phase_durations_ms=phases.durations_ms())
     if copies := onedrive_conflicts.beside(register_path):
         raise StopError(messages.conflict_after_save(copies[0]), facts=summary)
     return summary
+
+
+def _kept_order(kept: Kept) -> tuple[OrderKey, str, str]:
+    return kept.key, kept.column.value, kept.reported
+
+
+def _open_days(window: Window) -> tuple[date, ...]:
+    """Dni otwarte okna od pierwszego do dziś: między nimi tata przełącza widok Raporty."""
+
+    count = (window.today - window.first).days + 1
+    return tuple(day for offset in range(count) if window.opens(day := window.first + timedelta(days=offset)))
 
 
 def _closed(periods_directory: Path, periods: tuple[SettlementPeriod, ...]) -> tuple[str, ...]:

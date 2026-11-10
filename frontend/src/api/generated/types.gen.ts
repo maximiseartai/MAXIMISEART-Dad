@@ -13,7 +13,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -709,6 +709,35 @@ export type IntermaxSetup = {
 };
 
 /**
+ * KeptCell
+ *
+ * Komórka zlecenia z treścią Wpisu raportu, przy której tata klika „Zostaw moją”: numer, dzień i Wykonawca
+ * zlecenia, kolumna INTERMAX i treść Wpisu (``reported``), która różni się od ręcznej wartości.
+ */
+export type KeptCell = {
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Day
+     */
+    day: string;
+    /**
+     * Worker
+     */
+    worker: string;
+    /**
+     * Column
+     */
+    column: 'SKUTECZNE' | 'CZYNNOŚCI ZREALIZOWANE';
+    /**
+     * Reported
+     */
+    reported: string;
+};
+
+/**
  * KindTableCell
  *
  * Komórka N:AP wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia, wpis taty, który robi wiersz, albo nic (0).
@@ -833,7 +862,7 @@ export type LoggedOutcome = {
     /**
      * Next Action
      */
-    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register';
+    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register' | 'open_reports_view';
     /**
      * Stop Kind
      */
@@ -1925,6 +1954,100 @@ export type ReportWaiting = {
 };
 
 /**
+ * ReportsProblem
+ *
+ * Problem z ostatniego kliknięcia: zdanie dla taty, numer zlecenia (``None``: problem bez numeru), adres
+ * nieznanego nadawcy (tylko przy nim) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją”
+ * (``keep``).
+ */
+export type ReportsProblem = {
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Number
+     */
+    number: string | null;
+    /**
+     * Sender
+     */
+    sender: string | null;
+    keep: KeptCell | null;
+};
+
+/**
+ * ReportsView
+ *
+ * Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki.
+ *
+ * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
+ * ``day`` wybrany dzień, ``days`` dni do wyboru od najnowszego (dziś i dni otwartych okresów z ostatniego kliknięcia),
+ * ``workers`` Wykonawcy wybranego dnia, a ``unknown_senders`` Raporty wykonawcy z tego dnia z adresów spoza listy
+ * adresów Wykonawców.
+ */
+export type ReportsView = {
+    /**
+     * Clicked At
+     */
+    clicked_at: string | null;
+    /**
+     * Today
+     */
+    today: string;
+    /**
+     * Day
+     */
+    day: string;
+    /**
+     * Days
+     */
+    days: Array<string>;
+    /**
+     * Workers
+     */
+    workers: Array<ReportsWorker>;
+    /**
+     * Unknown Senders
+     */
+    unknown_senders: Array<ReportsProblem>;
+};
+
+/**
+ * ReportsWorker
+ *
+ * Wykonawca w wybranym dniu: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu,
+ * kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”, i numery
+ * zleceń bez żadnego Wpisu.
+ */
+export type ReportsWorker = {
+    /**
+     * Worker
+     */
+    worker: string;
+    /**
+     * Orders
+     */
+    orders: number;
+    /**
+     * Entered
+     */
+    entered: number;
+    /**
+     * Mails
+     */
+    mails: number;
+    /**
+     * Problems
+     */
+    problems: Array<ReportsProblem>;
+    /**
+     * Without Report
+     */
+    without_report: Array<string>;
+};
+
+/**
  * Resolved
  *
  * Maks zamknął issue sprawy jako ``completed`` albo bez powodu: będzie w następnej wersji.
@@ -2174,7 +2297,7 @@ export type RunOutcome = {
     /**
      * Next Action
      */
-    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register';
+    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register' | 'open_reports_view';
     /**
      * Stop Kind
      */
@@ -2270,7 +2393,7 @@ export type RunRecorded = {
     /**
      * Next Action
      */
-    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register';
+    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register' | 'open_reports_view';
 };
 
 /**
@@ -2670,7 +2793,7 @@ export type ViewTiming = {
     /**
      * Page
      */
-    page: 'okresy' | 'uruchomienia' | 'metryki' | 'konfiguracja' | 'powiadomienia' | 'uzupelnienie';
+    page: 'okresy' | 'uruchomienia' | 'metryki' | 'konfiguracja' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
     /**
      * Ready Ms
      */
@@ -2877,7 +3000,7 @@ export type LoggedOutcomeWritable = {
     /**
      * Next Action
      */
-    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register';
+    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register' | 'open_reports_view';
     /**
      * Stop Kind
      */
@@ -3152,7 +3275,7 @@ export type RunOutcomeWritable = {
     /**
      * Next Action
      */
-    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register';
+    next_action: 'run' | 'rerun' | 'open_collective_file' | 'open_worker_settlements_folder' | 'open_order_register' | 'open_reports_view';
     /**
      * Stop Kind
      */
@@ -3880,6 +4003,43 @@ export type GetReportEnteringSetupResponses = {
 
 export type GetReportEnteringSetupResponse = GetReportEnteringSetupResponses[keyof GetReportEnteringSetupResponses];
 
+export type KeepManualValueData = {
+    body: KeptCell;
+    path?: never;
+    query?: never;
+    url: '/api/report-entering/keep';
+};
+
+export type KeepManualValueErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+};
+
+export type KeepManualValueError = KeepManualValueErrors[keyof KeepManualValueErrors];
+
+export type KeepManualValueResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReportsView;
+};
+
+export type KeepManualValueResponse = KeepManualValueResponses[keyof KeepManualValueResponses];
+
 export type StartReportEnteringData = {
     body?: never;
     path?: never;
@@ -3918,6 +4078,40 @@ export type StartReportEnteringResponses = {
 };
 
 export type StartReportEnteringResponse = StartReportEnteringResponses[keyof StartReportEnteringResponses];
+
+export type GetReportsViewData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Day
+         */
+        day?: string | null;
+    };
+    url: '/api/report-entering/view';
+};
+
+export type GetReportsViewErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+};
+
+export type GetReportsViewError = GetReportsViewErrors[keyof GetReportsViewErrors];
+
+export type GetReportsViewResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReportsView;
+};
+
+export type GetReportsViewResponse = GetReportsViewResponses[keyof GetReportsViewResponses];
 
 export type StartRunData = {
     body: RunRequest;

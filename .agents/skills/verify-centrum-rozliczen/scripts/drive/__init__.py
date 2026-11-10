@@ -397,6 +397,17 @@ FEATURES = (
             "243-kopie-intermax-przywrocona",
         ),
     ),
+    # Points the Rejestr zleceń to its own INTERMAX and back, and counts only the Logi of Wpisanie raportów.
+    Feature(
+        "wpisanie-raportow",
+        (
+            "280-raporty-karta",
+            "281-raporty-dzien-z-problemami",
+            "282-raporty-zostaw-moja",
+            "283-raporty-dzien-bez-problemow",
+            "284-raporty-waski-ekran",
+        ),
+    ),
     # Puts its own Folder okresu in the folder okresów and removes it again, and adds a file of Logi, so it runs
     # after every feature that counts periods or Logi.
     Feature(
