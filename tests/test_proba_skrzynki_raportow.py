@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 import email.policy
 import imaplib
+import os
 from pathlib import Path
 import stat
 import sys
@@ -482,6 +483,42 @@ def test_plik_przegladu_czyta_tylko_jego_wlasciciel(tmp_path: Path, capsys: pyte
     assert code == 0
     assert stat.S_IMODE(plik.stat().st_mode) == 0o600
     assert "stary przegląd" not in plik.read_text(encoding="utf-8")
+    assert sorted(path.name for path in tmp_path.iterdir() if path.name.startswith(".wpisy")) == []
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="prawa 0600 to prawa POSIX, których Windows nie ma")
+def test_nadpisany_przeglad_nie_trafia_do_pliku_otwartego_wczesniej_z_dawnymi_prawami(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plik = tmp_path / "wpisy.txt"
+    plik.write_text("stary przegląd\n", encoding="utf-8")
+    plik.chmod(0o644)
+    with plik.open(encoding="utf-8") as otwarty_wczesniej:
+        with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(1, temat="Raport 08.11.2026")]) as atrapa:
+            code, _ = proba(capsys, config(tmp_path), lokalnie(atrapa.port), "--przeglad", str(plik), "--nadpisz")
+        widzi = otwarty_wczesniej.read()
+
+    assert code == 0
+    assert widzi == "stary przegląd\n"
+    assert "40000001 | tak" in plik.read_text(encoding="utf-8")
+
+
+def test_nieudana_podmiana_przegladu_zostawia_stary_plik_i_nie_zostawia_maili_obok(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plik = tmp_path / "wpisy.txt"
+    plik.write_text("stary przegląd\n", encoding="utf-8")
+
+    def odmowa(*_: object) -> None:
+        raise PermissionError("dysk odmówił podmiany")
+
+    monkeypatch.setattr(os, "replace", odmowa)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(1, temat="Raport 08.11.2026")]) as atrapa:
+        wynik = proba(capsys, config(tmp_path), lokalnie(atrapa.port), "--przeglad", str(plik), "--nadpisz")
+
+    assert wynik == (1, ["PROBA IMAP FAIL | nie zapisano pliku przegladu: PermissionError"])
+    assert plik.read_text(encoding="utf-8") == "stary przegląd\n"
+    assert sorted(path.name for path in tmp_path.iterdir() if path.name.startswith(".wpisy")) == []
 
 
 def _w_repozytorium(tmp_path: Path) -> Path:

@@ -194,6 +194,8 @@ _REVIEW_HEAD: Final = """PRZEGLĄD WPISÓW Z PRAWDZIWEJ SKRZYNKI RAPORTÓW (tool
 Ten plik zawiera prawdziwe maile Wykonawców taty. Trzymaj go w ~/.t3/notes/<run>/, nie w repozytorium i nie w /tmp.
 Jego treść nie trafia do czatu, issue ani PR: wolno wypisać tylko zbiorcze wnioski i liczby, a każdy błąd dostaje test
 z syntetyczną postacią.
+Próba nie zna zleceń INTERMAX, więc numerem Wpisu jest tu liczba o dowolnej liczbie cyfr; Wpisanie raportów u taty
+uznaje za numer tylko liczbę co najmniej tak długą jak najkrótszy NUMER ZL. dni otwartych, a krótszą wpisuje do opisu.
 """
 
 
@@ -222,14 +224,24 @@ class ReviewFile:
         return None
 
     def write(self, mails: Sequence[ReportMail], addresses: WorkerAddresses, window: Window) -> None:
-        """Zapisuje przegląd z prawami ``0600``; ``ProbeFailed``, gdy zapis się nie udał."""
+        """Zapisuje przegląd do nowego pliku, który od utworzenia ma prawa ``0600``; ``ProbeFailed``, gdy zapis się
+        nie udał.
 
-        flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if self.replace else os.O_EXCL)
+        Z ``--nadpisz`` przegląd powstaje obok i podmienia stary plik przez ``os.replace``, więc deskryptor otwarty na
+        starym pliku (z dawnymi prawami) nigdy nie widzi prawdziwych maili; bez ``--nadpisz`` ``O_EXCL`` nie nadpisze
+        pliku, który powstał po ``refusal``."""
+
+        target = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp") if self.replace else self.path
         try:
-            descriptor = os.open(self.path, flags, 0o600)
-            self.path.chmod(0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as out:
-                _write_review(out, mails, addresses, window)
+            descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as out:
+                    _write_review(out, mails, addresses, window)
+                if self.replace:
+                    os.replace(target, self.path)
+            except BaseException:
+                target.unlink(missing_ok=True)
+                raise
         except OSError as error:
             raise ProbeFailed(f"nie zapisano pliku przegladu: {type(error).__name__}") from None
 
