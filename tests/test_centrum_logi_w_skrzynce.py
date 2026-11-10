@@ -27,6 +27,7 @@ import pytest
 
 from odtworzenie import COMPARED, NOT_COMPARED
 from rozliczenia import tool_files
+from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG
@@ -47,7 +48,7 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from atrapy.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
-from tests.fixtures.centrum_intermax import ENTERING_NOW, SENDERS, Clock, entering_centrum, ordering_centrum, report
+from tests.fixtures.centrum_intermax import SENDERS, Clock, entering_centrum, ordering_centrum, report
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
@@ -855,7 +856,8 @@ def _archived_run(fake: FakeReportBox, folder: Path, run_id: str) -> Path:
 
 # Wpisanie raportów, drugie kliknięcie: tata kliknął w poniedziałek 9.11 (Raporty Jana: telefon w czynnościach, numer
 # zlecenia z zerem na początku), a we wtorek rano Anna przysyła Raporty za 9.11 do pustych komórek i do zlecenia z
-# ręcznym „nie” w SKUTECZNE, Jan numer spoza swoich zleceń, a obcy adres Raport za 9.11.
+# ręcznym „nie” w SKUTECZNE, Jan numer spoza swoich zleceń, a obce adresy Raporty za 9.11: dwa różne adresy z jednym
+# Message-ID (dwa problemy) i jeden adres dwa razy z innym (jeden problem). Dwóch maili skrzynka nie umiała przeczytać.
 _SUCCESSFUL = FIRST + HEADERS.index("SKUTECZNE")
 _REPORTED_DAY = "Raport 09.11.2026"
 REPORTED = Intermax(
@@ -876,21 +878,38 @@ NEXT_MORNING = [
     report(SENDERS["anna.kowalska"], _REPORTED_DAY, "40000002 tak montaż", at=datetime(2026, 11, 10, 7, 50)),
     report(SENDERS["anna.kowalska"], _REPORTED_DAY, "40000006 tak montaż anteny", at=datetime(2026, 11, 10, 7, 51)),
     report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000099 tak wymiana", at=datetime(2026, 11, 10, 7, 52)),
-    report("obcy@przyklad.invalid", _REPORTED_DAY, "40000002 nie brak", at=datetime(2026, 11, 10, 7, 53)),
+    report("obcy@przyklad.invalid", _REPORTED_DAY, "40000002 nie brak", at=datetime(2026, 11, 10, 7, 53), message_id="<a@x>"),
+    report("inny@przyklad.invalid", _REPORTED_DAY, "40000002 nie brak", at=datetime(2026, 11, 10, 7, 53), message_id="<a@x>"),
+    report("trzeci@przyklad.invalid", _REPORTED_DAY, "40000001 nie", at=datetime(2026, 11, 10, 7, 54), message_id="<b@x>"),
+    report("trzeci@przyklad.invalid", _REPORTED_DAY, "40000001 nie", at=datetime(2026, 11, 10, 7, 54), message_id="<b@x>"),
 ]
 
 
-def _report_entering(tmp_path: Path) -> Produced:
+def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
+    """Logi drugiego kliknięcia Wpisania raportów (``memory_saved``: pamięć wpisów zapisała się po kliknięciu)."""
+
     surroundings = Surroundings()
     centrum = entering_centrum(tmp_path, REPORTED, JAN_REPORTS, surroundings=surroundings)
     write_report_key(ToolDirectory(tmp_path))
     assert centrum.run_to_end()["result"]["ending"] == "finished"
     centrum.moment.append(datetime(2026, 11, 10, 8))
     centrum.fake_inbox.outcome = NEXT_MORNING
+    centrum.fake_inbox.skipped = 2
+    if not memory_saved:
+        state = centrum.tool.config / REPORT_ENTERING_STATE
+
+        def unwritable() -> None:
+            state.unlink()
+            state.mkdir()
+
+        centrum.fake_inbox.during = unwritable
     second = centrum.run_to_end()
     assert second["result"]["ending"] == "finished"
-    assert ENTERING_NOW.date().isoformat() == "2026-11-09"
-    return Produced(_archived_run(surroundings.report_box, tmp_path, second["run"]["id"]), ())
+    produced = Produced(_archived_run(surroundings.report_box, tmp_path, second["run"]["id"]), ())
+    problems = [problem["kind"] for problem in produced.record["report_entering"]["problems"]]
+    assert problems == ["unknown_sender"] * 3 + ["unknown_number"], problems
+    assert produced.record["report_entering"]["skipped"] == 2
+    return produced
 
 
 PROCESSES = {
@@ -1175,6 +1194,28 @@ def test_celowo_zmieniona_kopia_wejscia_daje_wydruk_pierwszej_roznicy_a_nie_zgod
         "  Odtworzenie: 1",
     ]
     assert lines[6].startswith("Porównano: Kopia wejścia, wynik, zakończenie, Rodzaj Zatrzymania, Komunikaty")
+
+
+def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtwarza_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kliknięcie bez żadnego maila w skrzynce i drugie kliknięcie, po którym pamięci wpisów nie dało się zapisać na
+    dysku taty: odtworzenie daje ten sam wynik, także ostrzeżenie o pamięci, choć Wpisów, z których wziąć Konfigurację
+    wykonawców, i dysku taty nie ma."""
+
+    surroundings = Surroundings()
+    centrum = entering_centrum(tmp_path / "taty", REPORTED, (), surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    empty = centrum.run_to_end()
+    unsaved = _report_entering(tmp_path / "taty-pamiec", memory_saved=False)
+    assert [message["code"] for message in unsaved.record["messages"]] == ["RAPORTY_PAMIEC_NIEZAPISANA"]
+
+    replayed = [
+        _replayed(capsys, logs, "--na-tym-drzewie")
+        for logs in (_archived_run(surroundings.report_box, tmp_path, empty["run"]["id"]), unsaved.archived)
+    ]
+
+    assert [(code, lines[0]) for code, lines in replayed] == [(0, "ODTWORZENIE ZGODNE")] * 2, replayed
 
 
 def _logged_entry(record: dict[str, Any], number: str) -> dict[str, Any]:

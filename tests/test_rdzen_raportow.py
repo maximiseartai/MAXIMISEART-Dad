@@ -463,9 +463,17 @@ _WORDS = st.lists(
     max_size=4,
 )
 _LINES = st.builds(lambda number, mark, words: " ".join([number, mark, *words]), _NUMBERS, _MARKS, _WORDS)
-_TEXTS = st.lists(st.lists(_LINES, min_size=1, max_size=2).map(" ".join), max_size=3).map("\n".join)
-_SUBJECTS = st.sampled_from(
-    [SUBJECT, "Raport 07.11.2026", "Raport 8.11.26", "raport 08_11_2026", "Raport", "Raport 08.11", "Raport 31.02.2026"]
+_EXACT = st.builds(
+    lambda number, mark, words: " ".join([number, mark, *words]),
+    st.sampled_from(["40000001", "40000002", "40000003", "040000001", "12345678"]),
+    st.sampled_from(["tak", "nie"]),
+    _WORDS,
+)
+"""Wpis w dokładnym formacie: jedyny, który czyta każda gramatyka rdzenia, więc połowa maili go ma."""
+_TEXTS = st.one_of(_EXACT, st.lists(st.lists(_LINES, min_size=1, max_size=2).map(" ".join), max_size=3).map("\n".join))
+_SUBJECTS = st.one_of(
+    st.sampled_from([SUBJECT, "Raport 07.11.2026"]),
+    st.sampled_from(["Raport 8.11.26", "raport 08_11_2026", "Raport", "Raport 08.11", "Raport 31.02.2026"]),
 )
 _SENDERS = st.sampled_from([JAN, EWA, "obcy@przyklad.invalid"])
 _MAILS = st.lists(
