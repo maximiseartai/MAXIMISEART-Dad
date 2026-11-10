@@ -165,6 +165,33 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
     assert _cells(centrum.register)[40000001] == ("tak", activities), "do INTERMAX trafia pełny Wpis"
 
 
+@pytest.mark.parametrize(
+    ("subject", "fault"),
+    [
+        pytest.param("Raport bez daty", "no_date", id="bez-daty"),
+        pytest.param("Raport z 09.11.2026", "other_text", id="inny-tekst"),
+        pytest.param("Raport 09.11", "no_year", id="bez-roku"),
+        pytest.param("Raport 09112026", "date_form", id="postac-daty"),
+        pytest.param("Raport 09-11-2026", "separator", id="separator"),
+        pytest.param("Raport 09.11.226", "year_digits", id="cyfry-roku"),
+        pytest.param("Raport 31.11.2026", "not_a_day", id="nie-dzien"),
+    ],
+)
+def test_logi_maja_powod_kazdego_nieczytelnego_tematu_bez_tematu(tmp_path: Path, subject: str, fault: str) -> None:
+    """Każdy powód nieczytelnego tematu z rdzenia ma swoje słowo w Logach (mail i problem), a sam temat do Logów nie
+    trafia (ADR 0028)."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, subject, "40000001 tak wymiana")])
+
+    _finished(centrum)
+
+    [logs] = centrum.run_logs()
+    entering = logs["report_entering"]
+    assert [(mail["kind"], mail["fault"]) for mail in entering["mails"]] == [("unreadable", fault)]
+    assert [(problem["kind"], problem["fault"]) for problem in entering["problems"]] == [("unreadable_subject", fault)]
+    assert subject not in json.dumps(logs, ensure_ascii=False)
+
+
 def test_logi_maja_kopie_wejscia_z_przeczytanymi_wierszami_bez_adresu_i_numeru_umowy(tmp_path: Path) -> None:
     """Kopia wejścia Wpisania raportów to uporządkowane wiersze z dni okna, które proces przeczytał, z komórkami od A do
     ``UWAGI`` bez ``ADRES`` i ``NUMER UMOWY``; Surowego zlecenia i wiersza sprzed okna w niej nie ma."""
