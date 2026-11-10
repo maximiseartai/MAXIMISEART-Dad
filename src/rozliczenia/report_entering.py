@@ -79,6 +79,7 @@ from .worker_reports import (
 
 __all__ = [
     "ClickResult",
+    "DecisionsUnreadable",
     "EnteringFacts",
     "EnteringInputs",
     "EnteringSummary",
@@ -116,9 +117,15 @@ class StateUnreadable(Exception):
     i zrobiłaby z własnych wpisów ręczne, więc to Zatrzymanie."""
 
 
+class DecisionsUnreadable(Exception):
+    """Decyzji taty „Zostaw moją” nie da się odczytać, choć pamięć własnych wpisów jest poprawna. Bez decyzji różnice,
+    które tata zostawił, wróciłyby, więc to Zatrzymanie, z Komunikatem o tym pliku, a nie o pamięci."""
+
+
 class ReportState(Protocol):
     def load(self) -> SavedState:
-        """Pamięć z ostatniego udanego zapisu; ``StateUnreadable``, gdy jej nie da się odczytać."""
+        """Pamięć z ostatniego udanego zapisu; ``StateUnreadable``, gdy jej nie da się odczytać, a
+        ``DecisionsUnreadable``, gdy pamięć jest poprawna, ale decyzji „Zostaw moją” nie da się odczytać."""
         ...
 
     def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
@@ -250,7 +257,10 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             addresses = worker_addresses.load(inputs.worker_addresses, workers=found)
         except AddressesError as error:
             raise StopError(messages.addresses_unusable(inputs.worker_addresses, error.problem)) from error
-        with _stops(messages.state_unreadable, StateUnreadable):
+        with (
+            _stops(messages.state_unreadable, StateUnreadable),
+            _stops(messages.decisions_unreadable, DecisionsUnreadable),
+        ):
             saved = parts.state.load()
         if copies := onedrive_conflicts.beside(register_path):
             raise StopError(messages.conflict_copy(copies[0]))

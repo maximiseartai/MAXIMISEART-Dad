@@ -1345,6 +1345,11 @@ state_unreadable [RAPORTY_NIECZYTELNA_PAMIEC]
   Gdzie: plik wpisanie-raportow-stan.json, folder config
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
+decisions_unreadable [RAPORTY_NIECZYTELNE_DECYZJE]
+  Co się stało: Nie można odczytać decyzji „Zostaw moją”, więc maili nie przeczytano. INTERMAX nie został zmieniony.
+  Gdzie: plik wpisanie-raportow-decyzje.json, folder config
+  Co zrobić: Nie usuwaj tego pliku: bez niego wrócą różnice, przy których kliknięto „Zostaw moją”. Przekaż ten komunikat osobie utrzymującej narzędzie.
+
 cells_rejected [RAPORTY_ZMIANY_ODRZUCONE]
   Co się stało: Zapis odrzucił komórki, które narzędzie chciało wpisać. INTERMAX nie został zmieniony.
   Gdzie: Wpisanie raportów

@@ -22,7 +22,7 @@ import pytest
 from rozliczenia.intermax_replace import LOCAL_DISK
 from rozliczenia.tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_RESULT, REPORT_ENTERING_STATE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxAccess, InboxUnreachable, PasswordRejected
-from rozliczenia.worker_reports import ForeignOrder, Login, OrderNumber
+from rozliczenia.worker_reports import ForeignOrder, Login, MailId, OrderNumber, SubjectFault, UnreadableSubject
 from rozliczenia.worker_reports.reasons import reason
 
 from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, Intermax, Order
@@ -420,12 +420,52 @@ def test_nieczytelna_pamiec_wpisow_to_zatrzymanie_do_maksa_bez_odczytu_skrzynki(
 
     result = _stopped(centrum)
 
-    assert (result["stop_kind"], result["stops"][0]["what"]) == (
+    [stop] = result["stops"]
+    assert (result["stop_kind"], stop["what"], stop["where"]) == (
         "for_maks",
         "Nie można odczytać pamięci wpisanych raportów. INTERMAX nie został zmieniony.",
+        "plik wpisanie-raportow-stan.json, folder config",
     )
     assert centrum.fake_inbox.days == []
     assert _cells(centrum.register) == before
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        pytest.param(lambda decisions: decisions.write_text("{", encoding="utf-8"), id="zly-json"),
+        pytest.param(
+            lambda decisions: decisions.write_text('{"schema_version": 2, "kept": []}', encoding="utf-8"),
+            id="nowsza-wersja",
+        ),
+        pytest.param(lambda decisions: decisions.mkdir(), id="niedostepny"),
+    ],
+)
+def test_nieczytelny_plik_decyzji_zostaw_moja_zatrzymuje_klikniecie_do_maksa_komunikatem_o_nim_a_nie_o_pamieci(
+    tmp_path: Path, spoil: Callable[[Path], object]
+) -> None:
+    """Bez decyzji „Zostaw moją” różnice, które tata zostawił, wróciłyby, więc plik decyzji, którego nie da się
+    odczytać, zatrzymuje kliknięcie do Maksa. Komunikat nazywa plik decyzji i mówi, żeby go nie usuwać, a nie wskazuje
+    poprawnej pamięci własnych wpisów: jej „naprawa” skasowałaby własne wpisy i dzień wdrożenia (werdykt #1253)."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _finished(centrum)
+    memory = _state(centrum).read_bytes()
+    before = _cells(centrum.register)
+    read = list(centrum.fake_inbox.days)
+    spoil(centrum.tool.config / REPORT_ENTERING_DECISIONS)
+
+    result = _stopped(centrum)
+
+    [stop] = result["stops"]
+    assert (result["stop_kind"], stop["what"], stop["where"], stop["action"]) == (
+        "for_maks",
+        "Nie można odczytać decyzji „Zostaw moją”, więc maili nie przeczytano. INTERMAX nie został zmieniony.",
+        "plik wpisanie-raportow-decyzje.json, folder config",
+        "Nie usuwaj tego pliku: bez niego wrócą różnice, przy których kliknięto „Zostaw moją”. Przekaż ten komunikat "
+        "osobie utrzymującej narzędzie.",
+    )
+    assert (_state(centrum).read_bytes(), centrum.fake_inbox.days, _cells(centrum.register)) == (memory, read, before)
 
 
 def _next_morning(centrum: EnteringCentrum) -> None:
@@ -1133,6 +1173,30 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
     assert STRANGER not in json.dumps(centrum.run_logs(), ensure_ascii=False)
 
 
+def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlecen_i_raportow(tmp_path: Path) -> None:
+    """US 55: Anna nie ma zleceń 9.11, a jej mail z tego dnia ma temat bez daty, więc nie jest Raportem wykonawcy.
+    Widok Raporty pokazuje ją przy tym dniu z zerami i tym problemem, zamiast zgubić problem razem z nią."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001),), raw=())
+    mail = report(ANNA, "Raport bez daty", "40000002 tak montaż")
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000001 tak wymiana"), mail])
+    _finished(centrum)
+
+    view = _view(centrum)
+
+    unreadable = UnreadableSubject(
+        MailId.of("<syntetyczny@przyklad.invalid>"), Login("anna.kowalska"), mail.arrived, SubjectFault.NO_DATE
+    )
+    assert _worker(view, "anna.kowalska") == {
+        "worker": "anna.kowalska",
+        "orders": 0,
+        "entered": 0,
+        "mails": 0,
+        "problems": [{"reason": reason(unreadable), "number": None, "sender": None, "keep": None}],
+        "without_report": [],
+    }
+
+
 def test_widok_raporty_domyslnie_pokazuje_dzis_a_wczesniejsze_dni_tylko_z_otwartych_okresow(tmp_path: Path) -> None:
     """US 53: we wtorek widok Raporty pokazuje dziś, także przed pierwszym kliknięciem tego dnia, a tata przełącza go na
     poniedziałek z otwartego okresu, w którym widzi Wykonawców z Raportami z ostatniego kliknięcia. Gdy okres
@@ -1179,8 +1243,8 @@ def test_widok_raporty_nie_daje_dni_okresu_z_plikiem_zbiorczym_miedzy_otwartymi_
 
 
 def test_udane_klikniecie_bez_problemow_nie_daje_powiadomienia(tmp_path: Path) -> None:
-    """US 57: kliknięcie, które wpisało Raport bez problemów, zmienia tylko stan na ekranie, a pod dzwonkiem nie ma nic
-    nowego."""
+    """US 57: kliknięcie, które wpisało Raport bez problemów, zmienia tylko stan na ekranie: wynik proponuje „Otwórz
+    Raporty”, a pod dzwonkiem nie ma nic nowego."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     before = centrum.client.get("/api/notifications").json()
@@ -1188,6 +1252,7 @@ def test_udane_klikniecie_bez_problemow_nie_daje_powiadomienia(tmp_path: Path) -
     view = _finished(centrum)
 
     after = centrum.client.get("/api/notifications").json()
+    assert view["result"]["next_action"] == "open_reports_view"
     assert view["result"]["summary"]["figures"][:2] == [
         {"label": "Wpisane", "value": 1, "unit": "count"},
         {"label": "Problemy", "value": 0, "unit": "count"},
@@ -1243,6 +1308,23 @@ def test_zostaw_moja_zapisuje_decyzje_poza_intermax_a_roznica_nie_wraca_dopoki_w
     assert shown["keep"] == {**cell, "reported": "wymiana gniazda"}
     assert corrected["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
     assert _cells(centrum.register)[40000001] == ("tak", "wymiana ręczna")
+
+
+def test_logi_klikniecia_maja_decyzje_zostaw_moja_tylko_przy_zleceniach_z_wpisem_w_tym_kliknieciu(tmp_path: Path) -> None:
+    """Logi niosą decyzje „Zostaw moją” tak jak pamięć własnych wpisów: tylko zleceń z Wpisem w tym kliknięciu. Gdy
+    Raportu Jana nie ma już w skrzynce, Logi kliknięcia z samym Raportem Anny nie mają decyzji przy zleceniu Jana, bo
+    odtworzenie Logów z decyzją bez Wpisu kończy się granicą."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
+    _finished(centrum)
+    [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert centrum.client.post("/api/report-entering/keep", json=difference["keep"]).status_code == 200
+
+    later = _click_at(centrum, datetime(2026, 11, 9, 19, 30), [report(ANNA, SUBJECT, "40000002 tak montaż")])
+
+    assert _entering(centrum, later)["kept"] == []
+    assert _cells(centrum.register)[40000002] == ("tak", "montaż")
 
 
 def test_zostaw_moja_przy_roznicy_spoza_ostatniego_klikniecia_jest_odrzucone_bez_zapisu_decyzji(tmp_path: Path) -> None:

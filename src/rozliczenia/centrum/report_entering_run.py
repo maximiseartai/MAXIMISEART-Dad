@@ -44,7 +44,7 @@ from rozliczenia.centrum.runs import RunHost
 from rozliczenia.centrum.settings import Settings, SettingsStore
 from rozliczenia.file_state import file_state
 from rozliczenia.report_cells import ReportColumn
-from rozliczenia.report_entering import StateUnreadable
+from rozliczenia.report_entering import DecisionsUnreadable, StateUnreadable
 from rozliczenia.run_context import RunContexts
 from rozliczenia.worker_reports import Kept, Login, OrderKey, OrderNumber
 
@@ -110,7 +110,7 @@ class ReportEnteringEntry:
 
         try:
             return _view(self.files.shown(), self.files.kept(), day or self.parts.now().date(), self.parts.now().date())
-        except StateUnreadable as error:
+        except (StateUnreadable, DecisionsUnreadable) as error:
             raise refusal.reports_unreadable() from error
 
     def keep(self, cell: report_entering_contract.KeptCell) -> report_entering_contract.ReportsView:
@@ -124,7 +124,7 @@ class ReportEnteringEntry:
             if shown is None or kept not in {problem.difference for problem in shown.problems}:
                 raise refusal.difference_gone()
             self.files.keep(kept)
-        except StateUnreadable as error:
+        except (StateUnreadable, DecisionsUnreadable) as error:
             raise refusal.reports_unreadable() from error
         return self.view(cell.day)
 

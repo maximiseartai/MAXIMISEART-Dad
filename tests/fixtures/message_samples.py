@@ -427,6 +427,7 @@ REPORT_ENTERING_SAMPLES: Samples = {
         lambda: report_entering_messages.periods_folder_inaccessible(PERIOD_DIRECTORY),
     ],
     "state_unreadable": [report_entering_messages.state_unreadable],
+    "decisions_unreadable": [report_entering_messages.decisions_unreadable],
     "cells_rejected": [report_entering_messages.cells_rejected],
     "unsupported_shape": [lambda: report_entering_messages.unsupported_shape(REGISTER, SHEET)],
     "memory_not_saved": [report_entering_messages.memory_not_saved],

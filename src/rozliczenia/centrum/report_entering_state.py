@@ -11,7 +11,7 @@
 
 Każdy plik zapisuje się atomowo (``atomic_file.StateFile``); treść, której nie dało się zapisać, czeka w pamięci tej
 pracy Centrum i wygrywa przy następnym odczycie. Plik, którego nie da się odczytać (zły JSON, nieznana wersja, zły
-wpis), to ``StateUnreadable``.
+wpis), to ``StateUnreadable``, a plik decyzji ``DecisionsUnreadable``, żeby Komunikat wskazał plik, który zawinił.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.report_cells import ReportColumn
-from rozliczenia.report_entering import ClickResult, SavedState, StateUnreadable
+from rozliczenia.report_entering import ClickResult, DecisionsUnreadable, SavedState, StateUnreadable
 from rozliczenia.tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_RESULT, REPORT_ENTERING_STATE
 from rozliczenia.worker_reports import (
     ForeignOrder,
@@ -159,13 +159,15 @@ class ShownResult:
 
 @dataclass
 class _TextFile:
-    """Plik stanu z ostatnią treścią zapisaną przez tę pracę Centrum: ``text`` daje ją, dopóki plik jest niedostępny."""
+    """Plik stanu z ostatnią treścią zapisaną przez tę pracę Centrum: ``text`` daje ją, dopóki plik jest niedostępny.
+    ``unreadable``: wyjątek pliku, którego nie da się odczytać."""
 
     file: StateFile
+    unreadable: type[Exception]
     _written: str | None = field(default=None, repr=False)
 
     def text(self) -> str | None:
-        """Treść pliku; ``None``, gdy go nie ma, a ``StateUnreadable``, gdy nie da się go odczytać."""
+        """Treść pliku; ``None``, gdy go nie ma, a ``unreadable``, gdy nie da się go odczytać."""
 
         self.file.retry()
         if self.file.unavailable and self._written is not None:
@@ -175,7 +177,7 @@ class _TextFile:
         except FileNotFoundError:
             return None
         except (OSError, UnicodeDecodeError) as error:
-            raise StateUnreadable from error
+            raise self.unreadable from error
 
     def write(self, record: BaseModel) -> bool:
         self._written = json.dumps(record.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n"
@@ -195,20 +197,22 @@ class FileReportState:
 
     @classmethod
     def of_work(cls, work: CentrumWork) -> FileReportState:
-        def file(name: str, where: str) -> _TextFile:
-            return _TextFile(StateFile(work.config / name, work.log, where=where, pause=work.pause))
+        def file(name: str, where: str, unreadable: type[Exception] = StateUnreadable) -> _TextFile:
+            return _TextFile(StateFile(work.config / name, work.log, where=where, pause=work.pause), unreadable)
 
         return cls(
             file(REPORT_ENTERING_STATE, "pamięć Wpisania raportów"),
             file(REPORT_ENTERING_RESULT, "wynik Wpisania raportów"),
-            file(REPORT_ENTERING_DECISIONS, "decyzje „Zostaw moją”"),
+            file(REPORT_ENTERING_DECISIONS, "decyzje „Zostaw moją”", DecisionsUnreadable),
         )
 
     def load(self) -> SavedState:
+        """Pamięć i decyzje „Zostaw moją”: najpierw cała pamięć (``StateUnreadable``), potem decyzje
+        (``DecisionsUnreadable``), więc błąd decyzji znaczy, że pamięć jest poprawna."""
+
         text = self.memory.text()
-        kept = self.kept()
         if text is None:
-            return SavedState(None, OwnEntries.EMPTY, kept)
+            return SavedState(None, OwnEntries.EMPTY, self.kept())
         try:
             state = _State.model_validate_json(text)
             entries = frozenset(
@@ -217,9 +221,9 @@ class FileReportState:
                 )
                 for own in state.own
             )
-            return SavedState(state.rollout, OwnEntries(entries), kept)
         except (ValidationError, ValueError) as error:
             raise StateUnreadable from error
+        return SavedState(state.rollout, OwnEntries(entries), self.kept())
 
     def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
         own = [
@@ -294,7 +298,7 @@ class FileReportState:
         )
 
     def kept(self) -> frozenset[Kept]:
-        """Decyzje taty „Zostaw moją”."""
+        """Decyzje taty „Zostaw moją”; ``DecisionsUnreadable``, gdy pliku decyzji nie da się odczytać."""
 
         text = self.decisions.text()
         if text is None:
@@ -302,10 +306,10 @@ class FileReportState:
         try:
             return frozenset(decision.kept() for decision in _Decisions.model_validate_json(text).kept)
         except ValidationError as error:
-            raise StateUnreadable from error
+            raise DecisionsUnreadable from error
 
     def keep(self, kept: Kept) -> None:
-        """Dopisuje decyzję „Zostaw moją” ``kept`` do pliku decyzji; ``StateUnreadable``, gdy pliku nie da się
+        """Dopisuje decyzję „Zostaw moją” ``kept`` do pliku decyzji; ``DecisionsUnreadable``, gdy pliku nie da się
         odczytać, bo zapis bez dawnych decyzji przywróciłby ich różnice."""
 
         with self._deciding:
