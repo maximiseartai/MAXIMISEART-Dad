@@ -1134,13 +1134,14 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
 
 
 def test_widok_raporty_domyslnie_pokazuje_dzis_a_wczesniejsze_dni_tylko_z_otwartych_okresow(tmp_path: Path) -> None:
-    """US 53: we wtorek widok Raporty pokazuje dziś, a tata przełącza go na poniedziałek z otwartego okresu, w którym
-    widzi Wykonawców z Raportami z ostatniego kliknięcia. Gdy okres poniedziałku dostanie Plik zbiorczy, następne
-    kliknięcie nie daje już jego dni do wyboru."""
+    """US 53: we wtorek widok Raporty pokazuje dziś, także przed pierwszym kliknięciem tego dnia, a tata przełącza go na
+    poniedziałek z otwartego okresu, w którym widzi Wykonawców z Raportami z ostatniego kliknięcia. Gdy okres
+    poniedziałku dostanie Plik zbiorczy, następne kliknięcie nie daje już jego dni do wyboru."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     _finished(centrum)
     _next_morning(centrum)
+    morning = _view(centrum)
     _finished(centrum)
 
     today = _view(centrum)
@@ -1150,6 +1151,7 @@ def test_widok_raporty_domyslnie_pokazuje_dzis_a_wczesniejsze_dni_tylko_z_otwart
     (folder / f"Rozliczenie {MONDAY_PERIOD} - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
     _finished(centrum)
 
+    assert (morning["day"], morning["days"], morning["workers"]) == ("2026-11-10", ["2026-11-10", "2026-11-09"], [])
     assert (today["day"], today["days"], today["workers"]) == ("2026-11-10", ["2026-11-10", "2026-11-09"], [])
     assert (monday["today"], monday["day"]) == ("2026-11-10", "2026-11-09")
     assert [(worker["worker"], worker["entered"], worker["mails"]) for worker in monday["workers"]] == [
@@ -1158,6 +1160,22 @@ def test_widok_raporty_domyslnie_pokazuje_dzis_a_wczesniejsze_dni_tylko_z_otwart
     ]
     assert monday["clicked_at"] == today["clicked_at"]
     assert _view(centrum)["days"] == ["2026-11-10"]
+
+
+def test_widok_raporty_nie_daje_dni_okresu_z_plikiem_zbiorczym_miedzy_otwartymi_okresami(tmp_path: Path) -> None:
+    """ADR 0028: okno dni od dnia wdrożenia 9.11 do środy 18.11 nie ma dni okresu 10_16_11_2026, gdy ten ma Plik
+    zbiorczy, choć okres dnia wdrożenia dalej jest otwarty: widok Raporty daje do wyboru dziś, wtorek 17.11 i
+    poniedziałek 9.11."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _finished(centrum)
+    folder = centrum.periods_directory / "10_16_11_2026"
+    folder.mkdir()
+    (folder / "Rozliczenie 10_16_11_2026 - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
+
+    _click_at(centrum, datetime(2026, 11, 18, 8), [report(JAN, SUBJECT, "40000001 tak wymiana")])
+
+    assert _view(centrum)["days"] == ["2026-11-18", "2026-11-17", "2026-11-09"]
 
 
 def test_udane_klikniecie_bez_problemow_nie_daje_powiadomienia(tmp_path: Path) -> None:
