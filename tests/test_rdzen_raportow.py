@@ -8,12 +8,16 @@ problemy i liczby na wyjściu. Dane są syntetyczne, adresy w domenie ``.invalid
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 import itertools
 from pathlib import Path
 from typing import get_args
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
 import pytest
 
 from rozliczenia.report_cells import CellChange, OrderRow, ReportColumn
@@ -48,6 +52,7 @@ from rozliczenia.worker_reports import (
     Window,
     WorkerAddresses,
     WorkerDay,
+    as_mail,
     enter_reports,
 )
 from rozliczenia.worker_reports.reasons import reason
@@ -446,6 +451,90 @@ def test_dzien_zlecenia_z_daty_bez_godziny_i_pusta_komorka_z_samych_spacji() -> 
     order = RegisterOrder.of(ROW, number=NUMBER, started=DAY, worker="Jan.Testowy", successful="  ", completed="x")
 
     assert order == RegisterOrder(ROW, _key(), None, "x")
+
+
+# Maile Raportów wykonawców z tym, co rdzeń czyta albo pomija: Wpisy z ``tak``/``nie``, literą, słowem albo bez znaku, z
+# numerem zlecenia, spoza zleceń i z „#”, z czynnościami z interpunkcją, maską strażnika, pożegnaniem i numerem w opisie,
+# po kilka w mailu i w linii, tematy z dniem i bez dnia, od Wykonawców i spoza listy adresów, z remisem chwil przyjścia.
+_NUMBERS = st.sampled_from(["40000001", "40000002", "40000003", "#40000001", "040000001", "12345678"])
+_MARKS = st.sampled_from(["tak", "nie", "Tak,", "NIE.", "t", "n", "skuteczne", "", "tak:"])
+_WORDS = st.lists(
+    st.sampled_from(["wymiana", "routera,", "2", "gniazda", "[telefon]", "40000002", "tak", "-", "pozdrawiam", "Jan"]),
+    max_size=4,
+)
+_LINES = st.builds(lambda number, mark, words: " ".join([number, mark, *words]), _NUMBERS, _MARKS, _WORDS)
+_TEXTS = st.lists(st.lists(_LINES, min_size=1, max_size=2).map(" ".join), max_size=3).map("\n".join)
+_SUBJECTS = st.sampled_from(
+    [SUBJECT, "Raport 07.11.2026", "Raport 8.11.26", "raport 08_11_2026", "Raport", "Raport 08.11", "Raport 31.02.2026"]
+)
+_SENDERS = st.sampled_from([JAN, EWA, "obcy@przyklad.invalid"])
+_MAILS = st.lists(
+    st.builds(
+        lambda sender, subject, text, minutes, index: _mail(
+            sender, subject, text, EVENING + timedelta(minutes=minutes), f"<{index}@przyklad.invalid>"
+        ),
+        _SENDERS,
+        _SUBJECTS,
+        _TEXTS,
+        st.integers(0, 2),
+        st.integers(0, 3),
+    ),
+    max_size=5,
+)
+_CANONICAL_ORDERS = (
+    _order(number=40000001.0),
+    _order(OrderRow("Zlecenia", 121), number=40000002.0, completed="ręcznie"),
+    _order(OrderRow("Zlecenia", 122), number="040000001", successful="nie"),
+    _order(OrderRow("Zlecenia", 123), number=40000003.0, worker="ewa.probna"),
+    _order(OrderRow("Zlecenia", 124), number=40000002.0, day=date(2026, 11, 7)),
+)
+_CANONICAL_MEMORY = OwnEntries(frozenset({OwnEntry(_key("40000002"), ReportColumn.COMPLETED, "ręcznie")}))
+
+
+def _canonical_senders(outcome: ReportsOutcome) -> list[SenderAddress]:
+    """Adres każdego odczytu: Wykonawcy z listy adresów, a maila spoza listy jeden z tylu adresów spoza niej, ile
+    problemów nieznanego nadawcy ma jego mail z dniem, bo tyle różnych nadawców miały maile z tym Message-ID."""
+
+    senders = Counter((problem.mail, problem.day) for problem in outcome.problems if isinstance(problem, UnknownSender))
+    seen: Counter[tuple[MailId, date]] = Counter()
+    found: list[str] = []
+    for read in outcome.mails:
+        if isinstance(read, ReadStranger):
+            key = (read.mail, read.day)
+            found.append(f"obcy-{seen[key] % senders[key]}@odtworzenie.invalid")
+            seen[key] += 1
+        else:
+            found.append(ADDRESSES[read.worker][0])
+    addresses = [SenderAddress.of(address) for address in found]
+    assert None not in addresses
+    return [address for address in addresses if address is not None]
+
+
+def _seen(problem: ReportProblem) -> object:
+    """Problem bez adresu nieznanego nadawcy: postać kanoniczna ma inny adres spoza listy."""
+
+    return (problem.mail, problem.day) if isinstance(problem, UnknownSender) else problem
+
+
+@settings(derandomize=True, database=None)
+@given(_MAILS)
+def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[ReportMail]) -> None:
+    """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail z ``as_mail`` w miejscu każdego przeczytanego maila daje
+    ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy), liczby i pamięć wpisów."""
+
+    inputs = _inputs(mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY)
+    outcome = enter_reports(inputs)
+    canonical = list(map(as_mail, outcome.mails, _canonical_senders(outcome)))
+
+    again = enter_reports(replace(inputs, mails=canonical))
+
+    assert (again.mails, again.changes, again.workers, again.memory) == (
+        outcome.mails,
+        outcome.changes,
+        outcome.workers,
+        outcome.memory,
+    )
+    assert sorted(map(repr, map(_seen, again.problems))) == sorted(map(repr, map(_seen, outcome.problems)))
 
 
 def _every_problem() -> list[ReportProblem]:
