@@ -776,8 +776,9 @@ def _entering_limits(record: RunLog) -> list[Limit]:
         return [
             Limit(
                 "Logi nie mają Wpisów raportu, bo Uruchomienie skończyło się przed rdzeniem raportów: odtworzenie czyta "
-                "Skrzynkę raportów bez maili, a pamięć wpisów bez dnia wdrożenia, więc powtarza tylko kroki przed "
-                "rdzeniem"
+                "Skrzynkę raportów bez maili, z gotowym plikiem dostępu i własnym plikiem adresów, a pamięć wpisów bez "
+                "dnia wdrożenia, więc biegnie do końca, a Zatrzymanie taty z hasła, skrzynki, pliku adresów albo "
+                "pamięci wpisów się nie powtarza i różnica wychodzi w wyniku"
             )
         ]
     masked = [entry.number for entry in _logged_entries(entering) if not _digits(entry.number)]

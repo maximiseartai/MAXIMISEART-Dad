@@ -122,8 +122,9 @@ TypeOK ==
     /\ widzi \in {"centrum", "nic", "okienko", "wylaczony"}
 
 \* Czy wersja wystartuje ze skrótu taty (run_centrum.py z klonu). Założenie: stara
-\* wersja startuje z każdymi bibliotekami, bo requirements.txt ma tylko dolne granice
-\* wersji (docstring tool_update.py), więc pip nowej wersji jej nie psuje.
+\* wersja startuje z każdymi bibliotekami, bo requirements.txt ma dolne granice
+\* wersji, a jedynej górnej (Playwright <1.65, #1242) Centrum przy starcie nie
+\* sprawdza (docstring tool_update.py), więc pip nowej wersji jej nie psuje.
 Startuje(wersja) ==
     \/ wersja = "stara"
     \/ /\ nowaStartuje

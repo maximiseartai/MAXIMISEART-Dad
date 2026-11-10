@@ -20,7 +20,7 @@ import proba_skrzynki_raportow
 
 from rozliczenia import tool_files
 from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
-from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
+from rozliczenia.worker_report_inbox import FETCH_BATCH, INBOX_ACCESS_FILE
 
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail
 
@@ -195,6 +195,55 @@ def test_proba_nie_przechodzi_gdy_flagi_ma_mniej_maili_niz_wyszukano(
     assert code == 1
 
 
+class _PierwszaSesjaBezUid1(imaplib.IMAP4):
+    """Pierwsza sesja próby, która nie widzi maila UID 1 w ``UID SEARCH``, bo przyszedł tuż po niej."""
+
+    def uid(self, command: str, *args: str) -> tuple[str, list[Any]]:
+        status, data = super().uid(command, *args)
+        if command == "SEARCH" and data and isinstance(data[0], bytes):
+            data = [b" ".join(uid for uid in data[0].split() if uid != b"1")]
+        return status, data
+
+
+def test_proba_nie_przechodzi_gdy_raport_przyszedl_po_pierwszym_odczycie_flag(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Raport, którego pierwszy odczyt flag nie widział, port przeczytał i oznaczył: jego flag nikt nie porównał, więc
+    próba nie przechodzi, zamiast dać OK z flagami bez zmian."""
+
+    sesje: list[imaplib.IMAP4] = []
+
+    def connect(port: int) -> imaplib.IMAP4:
+        sesje.append(_PierwszaSesjaBezUid1("127.0.0.1", port) if not sesje else imaplib.IMAP4("127.0.0.1", port))
+        return sesje[-1]
+
+    maile = [mail(1, temat="Raport 08.11.2026")]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=maile, marks_seen=True) as atrapa:
+        code, lines = proba(capsys, config(tmp_path), lambda: connect(atrapa.port))
+
+    assert atrapa.flags == {1: {"\\Seen"}}
+    assert lines[-2:] == [
+        "FLAGI | sprawdzone=0 | zmienione=0",
+        "PROBA IMAP FAIL | 1 maili przyszlo w trakcie proby bez pierwszego odczytu flag, uruchom ponownie",
+    ]
+    assert code == 1
+
+
+def test_proba_porownuje_flagi_maili_z_kazdej_paczki_odczytu_flag(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Flagi czyta się w paczkach po ``FETCH_BATCH`` maili: Raport w drugiej paczce, który port oznaczył jako
+    przeczytany, to zmiana flag, a każdy mail ma flagi z obu odczytów."""
+
+    ostatni = FETCH_BATCH + 50
+    maile = [*(mail(uid, temat="Faktura", tresc="do zapłaty") for uid in range(1, ostatni)), mail(ostatni, temat="Raport 08.11.2026")]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=maile, marks_seen=True) as atrapa:
+        code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
+
+    assert lines[-2:] == [f"FLAGI | sprawdzone={ostatni} | zmienione=1", "PROBA IMAP FAIL | flagi zmienione w 1 mailach"]
+    assert code == 1
+
+
 @pytest.mark.parametrize(
     ("maile", "liczby"),
     [
@@ -218,6 +267,11 @@ def test_proba_nie_przechodzi_gdy_flagi_ma_mniej_maili_niz_wyszukano(
             "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=0, raporty_bez_wpisow=1, wpisy_bez_tak_nie=0",
             id="raport-wykonawcy-bez-wpisu",
         ),
+        pytest.param(
+            [mail(1, temat="Raport 08.11.2026", tresc="40000001 t wymiana")],
+            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=0, raporty_bez_wpisow=0, wpisy_bez_tak_nie=1",
+            id="wpis-z-litera-t-zamiast-tak",
+        ),
     ],
 )
 def test_proba_bez_rozpoznanego_raportu_wykonawcy_nie_przechodzi_i_mowi_dlaczego_liczbami(
@@ -227,18 +281,6 @@ def test_proba_bez_rozpoznanego_raportu_wykonawcy_nie_przechodzi_i_mowi_dlaczego
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
     assert lines[-1] == f"PROBA IMAP FAIL | brak rozpoznanego Raportu wykonawcy od 2026-11-01 ({liczby})"
-    assert code == 1
-
-
-def test_proba_z_raportem_wykonawcy_bez_tak_ani_nie_nie_przechodzi(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # Sama litera ``t`` to według gramatyki rdzenia Raport bez Wpisu albo Wpis bez ``tak``/``nie`` (#1228): żadne nie
-    # dowodzi, że rdzeń przeczyta ``SKUTECZNE`` z maili Wykonawców, więc liczby w nawiasie test zostawia rdzeniowi.
-    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(1, temat="Raport 08.11.2026", tresc="40000001 t wymiana")]) as atrapa:
-        code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
-
-    assert lines[-1].startswith("PROBA IMAP FAIL | brak rozpoznanego Raportu wykonawcy od 2026-11-01 (maile_z_raport=1,")
     assert code == 1
 
 

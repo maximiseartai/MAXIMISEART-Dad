@@ -14,6 +14,7 @@ from datetime import date, datetime
 import imaplib
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
 from openpyxl import load_workbook
@@ -406,13 +407,18 @@ def test_zapis_intermax_przez_tate_w_trakcie_odczytu_skrzynki_zostaje_w_intermax
     [
         pytest.param(lambda state: state.write_text("{", encoding="utf-8"), id="zly-json"),
         pytest.param(lambda state: state.mkdir(), id="niedostepny"),
+        pytest.param(
+            lambda state: [path.write_text("{", encoding="utf-8") for path in (state, state.with_name(REPORT_ENTERING_DECISIONS))],
+            id="zly-json-pamieci-i-decyzji",
+        ),
     ],
 )
 def test_nieczytelna_pamiec_wpisow_to_zatrzymanie_do_maksa_bez_odczytu_skrzynki(
     tmp_path: Path, spoil: Callable[[Path], object]
 ) -> None:
     """DESIGN §2.3: bez pamięci własnych wpisów narzędzie nie odróżni swojego wpisu od ręcznego, więc plik stanu, którego
-    nie da się odczytać, zatrzymuje kliknięcie do Maksa, zamiast liczyć się jak pusta pamięć."""
+    nie da się odczytać, zatrzymuje kliknięcie do Maksa, zamiast liczyć się jak pusta pamięć. Przy zepsutych pamięci i
+    decyzjach „Zostaw moją” Komunikat nazywa pamięć, bo proces czyta ją pierwszą."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     before = _cells(centrum.register)
@@ -466,6 +472,21 @@ def test_nieczytelny_plik_decyzji_zostaw_moja_zatrzymuje_klikniecie_do_maksa_kom
         "osobie utrzymującej narzędzie.",
     )
     assert (_state(centrum).read_bytes(), centrum.fake_inbox.days, _cells(centrum.register)) == (memory, read, before)
+
+
+def test_nieczytelny_plik_decyzji_przed_zapisana_pamiecia_wpisow_tez_zatrzymuje_klikniecie_do_maksa(tmp_path: Path) -> None:
+    """Decyzja „Zostaw moją” bywa zapisana, zanim pamięć własnych wpisów zapisała się choć raz (pamięć niezapisana po
+    kliknięciu), więc plik decyzji czyta się także bez pliku pamięci i zepsuty zatrzymuje kliknięcie do Maksa."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    before = _cells(centrum.register)
+    (centrum.tool.config / REPORT_ENTERING_DECISIONS).write_text("{", encoding="utf-8")
+
+    result = _stopped(centrum)
+
+    [stop] = result["stops"]
+    assert (result["stop_kind"], stop["where"]) == ("for_maks", "plik wpisanie-raportow-decyzje.json, folder config")
+    assert (_state(centrum).exists(), centrum.fake_inbox.days, _cells(centrum.register)) == (False, [], before)
 
 
 def _next_morning(centrum: EnteringCentrum) -> None:
@@ -617,6 +638,20 @@ def test_kopia_konfliktu_onedrive_przed_kliknieciem_blokuje_karte_i_zatrzymuje_k
     assert _cells(centrum.register)[40000001] == ("tak", "wymiana")
 
 
+def test_kopia_konfliktu_obok_intermax_otwartego_w_excelu_daje_komunikat_o_kopii(tmp_path: Path) -> None:
+    """Spec #1224, kolejność kroków kliknięcia: kopia konfliktu (krok 2) przed blokadą Excela (krok 3), bo po zamknięciu
+    INTERMAX kopia dalej by zatrzymała kliknięcie; tata najpierw przepisuje zmiany z kopii w Excelu."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    copy = _conflict_copy(centrum)
+    open_in_excel(centrum.register)
+
+    result = _stopped(centrum)
+
+    assert (result["stop_kind"], result["stops"][0]["where"]) == ("for_tata", f"plik {copy.name}, folder OneDrive")
+    assert centrum.fake_inbox.days == []
+
+
 def test_kopia_konfliktu_onedrive_po_zapisie_zatrzymuje_dla_taty_z_wpisanymi_raportami_i_blokuje_nastepne_klikniecie(
     tmp_path: Path,
 ) -> None:
@@ -669,6 +704,9 @@ def test_kopia_konfliktu_onedrive_po_zapisie_zatrzymuje_dla_taty_z_wpisanymi_rap
         pytest.param("{stem}-MacBook Pro{suffix}", True, id="nazwa-komputera-ze-spacja"),
         pytest.param("{stem}-LAPTOP-TATY-2{suffix}", True, id="kolejna-kopia-z-numerem"),
         pytest.param("{stem}-Łódź_1{suffix}", True, id="polskie-litery-i-podkreslenie"),
+        pytest.param("{stem}-Jan’s MacBook Air{suffix}", True, id="nazwa-maca-z-apostrofem-typograficznym"),
+        pytest.param("{stem}-Jan's MacBook Air{suffix}", True, id="nazwa-maca-z-apostrofem-prostym"),
+        pytest.param("{stem}-’LAPTOP{suffix}", False, id="apostrof-na-poczatku-dopisku"),
         pytest.param("{stem} - Kopia{suffix}", False, id="kopia-z-eksploratora"),
         pytest.param("~${stem}{suffix}", False, id="plik-blokady-excela"),
         pytest.param(".{stem}.k2x9{suffix}", False, id="plik-tymczasowy-zapisu"),
@@ -687,8 +725,9 @@ def test_karta_rozpoznaje_kopie_konfliktu_onedrive_po_nazwie_intermax_z_dopiskie
     tmp_path: Path, name: str, conflict: bool
 ) -> None:
     """Kopia konfliktu OneDrive to ``<nazwa INTERMAX>-<nazwa komputera><rozszerzenie>`` obok INTERMAX, bez względu na
-    wielkość liter (Microsoft Learn: „Report-JOHNS-SURFACE.txt” dla „Report.txt”); kopia z Eksploratora, plik blokady
-    Excela, plik tymczasowy zapisu i inny plik z łącznikiem kopią nie są."""
+    wielkość liter (Microsoft Learn: „Report-JOHNS-SURFACE.txt” dla „Report.txt”), także z domyślną nazwą Maca z
+    apostrofem („Jan’s MacBook Air”); kopia z Eksploratora, plik blokady Excela, plik tymczasowy zapisu i inny plik z
+    łącznikiem kopią nie są."""
 
     centrum = entering_centrum(tmp_path, INTERMAX)
     register = centrum.register
@@ -882,6 +921,44 @@ def test_bez_pliku_hasla_albo_adresow_karta_mowi_czego_brakuje_a_start_jest_odrz
     assert centrum.run_logs() == []
 
 
+def test_nieczytelny_plik_hasla_to_nie_brak_pliku_karta_bez_blokady_a_klikniecie_zatrzymuje_do_maksa_bez_odczytu_skrzynki(
+    tmp_path: Path,
+) -> None:
+    """Plik dostępu do skrzynki raportów, który jest, ale nie da się go odczytać, to nie brak pliku (US 51): karta nie
+    jest zablokowana zdaniem o brakującym haśle, a kliknięcie kończy się Zatrzymaniem „do Maksa” w Sprawdzaniu, zanim
+    proces przeczyta skrzynkę."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")], access="unreadable")
+    before = _cells(centrum.register)
+
+    setup = centrum.setup()
+    result = _stopped(centrum)
+
+    assert setup["blocker"] is None
+    [stop] = result["stops"]
+    assert (result["stop_kind"], stop["what"]) == (
+        "for_maks",
+        "Nie można odczytać ustawień skrzynki raportów, więc maili nie przeczytano. INTERMAX nie został zmieniony.",
+    )
+    assert centrum.fake_inbox.days == []
+    assert _cells(centrum.register) == before
+
+
+def test_intermax_w_folderze_ktorego_juz_nie_ma_zatrzymuje_klikniecie_dla_taty_bez_odczytu_skrzynki(tmp_path: Path) -> None:
+    """INTERMAX z Ustawień taty w folderze, którego już nie ma (OneDrive przeniósł albo tata usunął folder): karta
+    działa bez blokady kopii konfliktu, a kliknięcie kończy się Zatrzymaniem „dla taty” o brakującym INTERMAX."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    shutil.rmtree(centrum.register.parent)
+
+    setup = centrum.setup()
+    result = _stopped(centrum)
+
+    assert setup["blocker"] is None
+    assert (result["stop_kind"], result["stops"][0]["what"]) == ("for_tata", "Nie znaleziono INTERMAX. INTERMAX nie został zmieniony.")
+    assert centrum.fake_inbox.days == []
+
+
 # --- Dopasowanie Wpisów do zleceń i zakres maili kliknięcia (#1229) ---------------------------------------------------
 
 ANNA = SENDERS["anna.kowalska"]
@@ -893,6 +970,13 @@ def _entering(centrum: EnteringCentrum, view: dict[str, Any]) -> dict[str, Any]:
 
     [logs] = [entry for entry in centrum.run_logs() if entry["run_id"] == view["run"]["id"]]
     return dict(logs["report_entering"])
+
+
+def _copied_numbers(centrum: EnteringCentrum, view: dict[str, Any]) -> list[object]:
+    """``NUMER ZL.`` wierszy INTERMAX w Kopii wejścia Uruchomienia ``view``, po kolei."""
+
+    [logs] = [entry for entry in centrum.run_logs() if entry["run_id"] == view["run"]["id"]]
+    return [row["cells"].get("I") for copied in logs["input_copy"] for sheet in copied["sheets"] for row in sheet["rows"]]
 
 
 def _click_at(centrum: EnteringCentrum, moment: datetime, mails: list[Any]) -> dict[str, Any]:
@@ -987,7 +1071,8 @@ def test_raport_z_ostatniego_dnia_okresu_wpisuje_sie_w_nowym_okresie_dopoki_okre
 ) -> None:
     """US 11–12 i 42: we wtorek 10.11 kliknięcie wpisuje Raport Jana z poniedziałku 9.11, bo okres 03_09_11_2026 nie ma
     Pliku zbiorczego. Gdy tata go przygotuje, kliknięcie nie czyta już dni tego okresu: Raport Anny z 9.11 się nie
-    wpisuje, a skrzynka jest czytana od dziś."""
+    wpisuje, skrzynka jest czytana od dziś, a Kopia wejścia ma wiersze INTERMAX od pierwszego dnia otwartego, więc bez
+    zleceń z 9.11."""
 
     centrum = entering_centrum(tmp_path, INTERMAX)
     folder = centrum.periods_directory / month / MONDAY_PERIOD
@@ -1011,6 +1096,7 @@ def test_raport_z_ostatniego_dnia_okresu_wpisuje_sie_w_nowym_okresie_dopoki_okre
     assert centrum.fake_inbox.days == [date(2026, 11, 9), date(2026, 11, 9), date(2026, 11, 10)]
     assert [_entering(centrum, view)["closed"] for view in (still_open, closed)] == [[], [MONDAY_PERIOD]]
     assert _entering(centrum, closed)["mails"] == [], "Raport z dnia okresu z Plikiem zbiorczym rdzeń pomija po cichu"
+    assert [_copied_numbers(centrum, view) for view in (still_open, closed)] == [[40000002, 40000001], []]
 
 
 def test_te_same_maile_w_innej_kolejnosci_i_drugie_klikniecie_daja_ten_sam_wynik(tmp_path: Path) -> None:
