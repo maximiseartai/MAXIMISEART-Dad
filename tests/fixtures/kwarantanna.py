@@ -19,9 +19,6 @@ class Kwarantanna:
 
 
 KWARANTANNA: dict[str, Kwarantanna] = {
-    # Windows: Zatrzymanie dla taty bez części strony zamiast strony 404 zlecenia; przyczyna nieustalona (#972).
-    "tests/test_centrum_logi_uruchomienia.py::test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu"
-    "_i_slad_zlecen_sprzed_niego[D-strona-bledu-http-404]": Kwarantanna(972, date(2026, 11, 12)),
     # Windows: przebieg bez awarii eksploratora Wyceny w efenix zatrzymał się między „Załaduj do zlecenia” a pierwszą
     # ilością; przyczyna nieustalona, a BEZ_AWARII nazywa odtąd Zatrzymanie i ostatnie żądanie (#1008).
     "tests/test_centrum_logi_uruchomienia.py::test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich"
