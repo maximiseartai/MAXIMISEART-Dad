@@ -118,7 +118,7 @@ from atrapy.atrapa_efenix import (
     amount_of,
     atrapa_efenix,
 )
-from atrapy.efenix import DAY, Order, write_collective_file
+from atrapy.efenix import ADDRESS, DAY, Order, write_collective_file
 from atrapy.interlocutor import Tata
 from tests.fixtures.okno_w_procesie import okno
 from tests.fixtures.przegladarka import chromium, page_of
@@ -1821,6 +1821,139 @@ def test_cala_przegladarka_zamknieta_w_trakcie_otwierania_strony_zlecenia_to_zam
     )
 
 
+class _ScriptBefore:
+    """Okno efenix, w którego karcie ``page`` biegnie skrypt tuż przed każdym działaniem okna z ``scripts`` (nazwa
+    działania ``Efenix`` → skrypt)."""
+
+    def __init__(self, efenix: Efenix, page: Page, scripts: dict[str, str]) -> None:
+        self._efenix = efenix
+        self._page = page
+        self._scripts = scripts
+
+    def __getattr__(self, name: str) -> object:
+        act = getattr(self._efenix, name)
+        script = self._scripts.get(name)
+        if script is None:
+            return act
+
+        def prepared(*args: object) -> object:
+            self._page.evaluate(script)
+            return act(*args)
+
+        return prepared
+
+
+# Okno daty, które po kliknięciu zamknięcia znika dopiero po 200 ms, jak okno bootstrapa efenix po animacji ukrycia.
+_SLOW_DATE_CLOSE = """() => document.querySelectorAll('#dialog_select_date [data-dismiss="modal"]').forEach((button) =>
+    button.addEventListener('click', () => {
+        const dialog = document.getElementById('dialog_select_date');
+        dialog.style.display = 'block';
+        setTimeout(() => { dialog.style.display = 'none'; }, 200);
+    }))"""
+# Skrypt strony, który odświeża kwotę końcową 200 ms po odpowiedzi na zapis ilości.
+_SLOW_AMOUNT = """() => {
+    const json = Response.prototype.json;
+    Response.prototype.json = function () { return new Promise((resolve) => setTimeout(() => resolve(json.call(this)), 200)); };
+}"""
+
+
+def test_okno_czeka_na_efenix_swoim_czasem_takze_w_karcie_z_krotszym_domyslnym_limitem_playwrighta(tmp_path: Path, page: Page) -> None:
+    """Kartę daje rozmówca okna (``efenix_browser.window``), więc jej domyślny limit Playwrighta nie jest limitem okna: tu
+    karta ma 1 ms na każde czekanie i nawigację, a okno czeka swoim czasem (10 s) na stronę, element i odpowiedź w
+    każdym działaniu Wyceny: otwarcie listy i strony zlecenia, szukanie, data wykonania kalendarzem, Wycena Emmetta,
+    ilość z pliku z kwotą, którą strona odświeża chwilę po odpowiedzi, i zamknięcie okna daty, które znika chwilę po
+    kliknięciu, gdy kalendarz nie przyjął dnia. Zlecenie z pustą wyceną jest więc gotowe z datą, Wyceną Emmetta i
+    ilością z pliku, a zlecenie z dniem spoza zakresu kalendarza zostaje błędem zlecenia, a nie Zatrzymaniem okna z
+    błędem przeglądarki."""
+
+    filled = {"012": 1, "019": 2}
+    orders = [
+        Order("#8381", cells={"O": 1, "T": 2}, amount=_au(filled), emmett={"012": 1}),
+        Order("#8382", day=date(2026, 8, 31), cells={"O": 1}, amount=_au({"012": 1})),
+    ]
+    source = write_collective_file(tmp_path, orders)
+    page.set_default_timeout(1)
+    page.set_default_navigation_timeout(1)
+    with atrapa_efenix([orders[0].in_efenix("901"), orders[1].in_efenix("902")], today=date(2026, 10, 12)) as atrapa:
+        slow = {"set_execution_date": _SLOW_DATE_CLOSE, "enter_quantity": _SLOW_AMOUNT}
+        outcome = _run(source, page, atrapa.url, window=lambda efenix: cast(Efenix, _ScriptBefore(efenix, page, slow)))
+        pricing = _pricing(atrapa)
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == (
+        "WYMAGA_SPRAWDZENIA",
+        _figures_of(2, 1),
+        [("EFENIX_DATA_POZA_ZAKRESEM", "wiersz 19")],
+    )
+    assert pricing == {"8381": (filled, DAY, 1), "8382": ({}, None, 0)}
+
+
+def _filled_in_t() -> tuple[list[Order], list[AtrapaOrder]]:
+    """Zlecenie, w którym efenix ma już O z pliku, a proces wpisuje tylko T (019)."""
+
+    order = Order("#8386", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), quantities={"012": 1})
+    return [order], [replace(order.in_efenix("901"), execution_date=DAY)]
+
+
+# Pole Ilość zasłonięte elementem nad całą stroną, jak okno dialogowe, które zostało otwarte.
+_COVERED = "document.body.insertAdjacentHTML('beforeend', '<div style=\"position: fixed; inset: 0; z-index: 9999\"></div>')"
+# Enter w polu Ilość, przed którym strona zapisuje jeszcze inną pozycję tego zlecenia jej ilością (synchroniczne XHR, jak
+# ``$.ajax`` efenix), więc odpowiedź na ten zapis przychodzi, zanim skrypt strony wyśle zapis wpisanej ilości.
+_OTHER_SAVE = """() => document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    const other = [...document.querySelectorAll('.wycena-ilosc')].find((field) => field !== event.target);
+    const saving = new XMLHttpRequest();
+    saving.open('POST', 'action_save_index.php', false);
+    saving.send(new URLSearchParams({order_id: other.getAttribute('order_id'), index: other.id, rodzaj: 'ILOSC', parametr: other.value}));
+}, {capture: true, once: true})"""
+
+
+def test_pole_ilosc_zasloniete_na_stronie_zlecenia_to_zatrzymanie_okna_bez_wpisania_ilosci(tmp_path: Path, page: Page) -> None:
+    """Okno klika w pole Ilość, zanim wpisze ilość, jak tata: pole, którego nie da się kliknąć, bo coś je zasłania, to
+    Zatrzymanie okna przy kliknięciu, a nie ilość wpisana w pole, którego tata na stronie nie widzi."""
+
+    orders, in_efenix = _filled_in_t()
+    with atrapa_efenix(in_efenix) as atrapa:
+        outcome = _run(
+            write_collective_file(tmp_path, orders),
+            page,
+            atrapa.url,
+            timeout_ms=1_000,
+            window=lambda efenix: cast(Efenix, _ScriptBefore(efenix, page, {"enter_quantity": _COVERED})),
+        )
+        pricing = _pricing(atrapa)
+
+    assert isinstance(outcome.ending, Stop) and isinstance(outcome.ending.facts, PricingStopped), _ending(outcome)
+    facts = outcome.ending.facts
+    assert (_stop(outcome), facts.part, facts.cause) == (
+        "EFENIX_OKNO_ZATRZYMANE",
+        PagePart.QUANTITY,
+        BrowserFailure(TIMEOUT, Operation.CLICK),
+    )
+    assert pricing == {"8386": ({"012": 1}, DAY, 0)}
+
+
+def test_kwota_po_wpisaniu_ilosci_jest_z_odpowiedzi_na_zapis_tej_pozycji_a_nie_innej_zapisanej_w_tym_samym_czasie(
+    tmp_path: Path, page: Page
+) -> None:
+    """Skrypt strony zapisuje tuż przed wpisaną ilością T inną pozycję tego zlecenia (O), a odpowiedź na ten zapis ma
+    kwotę zlecenia bez T. Okno bierze kwotę z odpowiedzi na zapis swojej pozycji, więc zlecenie z kwotą równą AU jest
+    gotowe, a nie błędem kwoty innej niż AU."""
+
+    orders, in_efenix = _filled_in_t()
+    with atrapa_efenix(in_efenix) as atrapa:
+        outcome = _run(
+            write_collective_file(tmp_path, orders),
+            page,
+            atrapa.url,
+            window=lambda efenix: cast(Efenix, _ScriptBefore(efenix, page, {"enter_quantity": _OTHER_SAVE})),
+        )
+        pricing = _pricing(atrapa)
+        requested = atrapa.requested()
+
+    assert (outcome.result, _figures(outcome), _errors(outcome)) == ("OK", _figures_of(1, 1), [])
+    assert (pricing, requested.count(("POST", SAVE_QUANTITY))) == ({"8386": ({"012": 1, "019": 2}, DAY, 0)}, 2)
+
+
 def test_strona_ktora_nie_odpowiada_konczy_dzialanie_okna_zatrzymaniem_w_czasie_okna(tmp_path: Path, page: Page) -> None:
     """Skrypt strony efenix stoi w pętli przez 20 s, więc strona nie odpowiada: działanie okna kończy się po czasie
     czekania okna (tu 1 s) Zatrzymaniem do Maksa, a pytanie, czy karta jest zamknięta (``BrowserEfenix.closed``), ma ten
@@ -1861,6 +1994,7 @@ ERROR_ANSWERS = {
     "data-wykonania": (SET_DATE, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.DATE),
     "zaladuj-do-zlecenia": (LOAD_EMMETT, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.EMMETT),
     "ilosc": (SAVE_QUANTITY, 1, HTTPStatus.NOT_FOUND, PagePart.QUANTITY),
+    "ilosc-400": (SAVE_QUANTITY, 1, HTTPStatus.BAD_REQUEST, PagePart.QUANTITY),
 }
 
 
@@ -1970,6 +2104,22 @@ def test_strona_bez_listy_zlecen_i_adres_bez_efenix_zatrzymuja_wycene(tmp_path: 
     unreachable = _price(tmp_path / "niedostepny", _next_tab(page), closed, [Order("#9301")])
 
     assert (_stop(changed), _stop(unreachable), _kept(changed), _kept(unreachable)) == ("EFENIX_OKNO_ZATRZYMANE", "EFENIX_NIEDOSTEPNY", False, False)
+
+
+def test_strona_efenix_ze_statusem_2xx_bez_pola_numer_pod_adresem_listy_to_element_listy_a_nie_status_http(
+    tmp_path: Path, page: Page
+) -> None:
+    """Adres listy zleceń odpowiada stroną efenix ze statusem 200, ale bez pola ``Numer`` (tu strona zlecenia): przy
+    starcie to Zatrzymanie okna z polem ``Numer``, którego na stronie nie ma, a status HTTP nazywa tylko strona błędu
+    serwera (#878)."""
+
+    orders = [Order("#9302")]
+    with atrapa_efenix([orders[0].in_efenix("901")]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url.replace(LIST_PAGE, f"{ORDER_PAGE}?id=901"), orders, timeout_ms=3_000)
+
+    assert isinstance(outcome.ending, Stop) and isinstance(outcome.ending.facts, PricingStopped), _ending(outcome)
+    facts = outcome.ending.facts
+    assert (_stop(outcome), facts.part, facts.cause) == ("EFENIX_OKNO_ZATRZYMANE", PagePart.LIST, ElementCount("#field_numer", 0))
 
 
 # --- Znacznik efenix w Pliku zbiorczym (#747) ------------------------------------------------------------------------
@@ -2399,6 +2549,21 @@ def test_zatrzymanie_w_polowie_przebiegu_oznacza_zlecenia_gotowe_przed_nim(
     assert (_stop(outcome), _marked(source)) == ("EFENIX_WYLOGOWANY", marked)
     assert (source.read_bytes() == unmarked) == (not marked)
     assert outcome.progress.step == SavingStep("Znaczniki efenix w Pliku zbiorczym", None, 0, 0)
+
+
+def test_zapis_zatrzymania_wyceny_nie_pokazuje_numerow_zlecen_ani_adresow_ktore_niosa_jego_fakty_dla_logow(tmp_path: Path) -> None:
+    """Fakty Zatrzymania (``PricingStopped``) niosą dla Logów Uruchomienia wynik każdego zlecenia sprzed niego, z
+    Pliku zbiorczego taty, ale zapis Zatrzymania (``repr``, np. w porażce testu albo w logu) ich nie pokazuje: nie ma w
+    nim numeru zlecenia ani adresu z pliku."""
+
+    orders = [Order(f"#791{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2)]
+    stan = StanEfenix([order.in_efenix(f"79{index}") for index, order in enumerate(orders)], expire_after=(Action.QUANTITY, 1))
+    outcome = _price_in_process(tmp_path, stan, orders)
+
+    assert isinstance(outcome.ending, Stop) and isinstance(outcome.ending.facts, PricingStopped), _ending(outcome)
+    assert _stop(outcome) == "EFENIX_WYLOGOWANY"
+    shown = repr(outcome.ending)
+    assert [text for text in ("7911", "7912", ADDRESS) if text in shown] == []
 
 
 def _resumed_orders() -> list[Order]:
@@ -3408,6 +3573,41 @@ def test_profil_przegladarki_okna_efenix_lezy_w_katalogu_narzedzia_poza_gitem() 
     )
 
     assert (profile.parent, ignored.returncode) == (TOOL_ROOT, 0)
+
+
+# Argumenty okna efenix w nowym interpreterze, który nie zna jeszcze listy Playwrighta (``launch_options`` bierze ją z
+# przeglądarki uruchomionej raz na proces), i zawartość folderu tymczasowego sterownika Playwrighta zaraz po nich.
+_LAUNCH_OPTIONS = """
+import sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from rozliczenia.efenix_browser import launch_options
+
+with sync_playwright() as playwright:
+    launch_options(playwright)
+    print(sorted(path.name for path in Path(sys.argv[1]).iterdir()))
+"""
+
+
+def test_argumenty_okna_efenix_nie_zostawiaja_otwartej_przegladarki_z_ktorej_wziely_liste_playwrighta(tmp_path: Path) -> None:
+    """Listę ``--disable-features`` Playwrighta okno bierze z linii poleceń przeglądarki uruchomionej bez okna, którą
+    zamyka, zanim wystartuje przeglądarka okna: po argumentach okna w folderze tymczasowym nie ma profilu przeglądarki
+    Playwrighta, który leży tam, dopóki przeglądarka jest otwarta, więc u taty przez całą Wycenę nie wisi druga
+    przeglądarka."""
+
+    temporary = tmp_path / "tymczasowy"
+    temporary.mkdir()
+    folders = {"TMPDIR": str(temporary), "TEMP": str(temporary), "TMP": str(temporary)}
+    listed = subprocess.run(
+        [sys.executable, "-c", _LAUNCH_OPTIONS, str(temporary)],
+        env={**os.environ, **folders, "PYTHONPATH": str(TOOL_ROOT / "src")},
+        capture_output=True,
+        text=True,
+        timeout=100,
+        check=True,
+    )
+
+    assert listed.stdout.strip() == "[]"
 
 
 def _run_with(source: Path, open_efenix: Callable[[Login], AbstractContextManager[efenix_browser.BrowserEfenix]]) -> Priced:

@@ -491,9 +491,11 @@ def _starting(headers: Sequence[str], header: str) -> list[int]:
     return [index for index, text in enumerate(headers) if text.casefold().startswith(header)]
 
 
-def read_order(page: Page) -> tuple[OrderPricing, Mapping[str, str]]:
+def read_order(page: Page, *, timeout_ms: float | None = None) -> tuple[OrderPricing, Mapping[str, str]]:
     """Data wykonania, kwota końcowa i ilości pozycji ze strony zlecenia, którą pokazuje ``page``, oraz ``id`` pola Ilość
-    każdej pozycji (kod ``NNN`` → ``id``)."""
+    każdej pozycji (kod ``NNN`` → ``id``). Tekst daty i kwoty czeka na stronę najwyżej ``timeout_ms`` (``None``: domyślny
+    limit Playwrighta karty, który narzędzie zgodności ustawia na swój czas), bo okno efenix czeka swoim czasem także w
+    karcie z innym domyślnym limitem."""
 
     executed = single(page, EXECUTION_DATE, PagePart.ORDER)
     total = single(page, AMOUNT, PagePart.ORDER)
@@ -510,7 +512,8 @@ def read_order(page: Page) -> tuple[OrderPricing, Mapping[str, str]]:
             raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, found[1]))
         positions[found[1]] = field_id
         quantities[found[1]] = int(value.strip() or 0)
-    return OrderPricing(_execution_date(executed.inner_text()), amount(total.inner_text(), PagePart.ORDER), quantities), positions
+    shown_date, shown_amount = executed.inner_text(timeout=timeout_ms), total.inner_text(timeout=timeout_ms)
+    return OrderPricing(_execution_date(shown_date), amount(shown_amount, PagePart.ORDER), quantities), positions
 
 
 def login_form(page: Page) -> bool:
