@@ -210,6 +210,11 @@ export function useRuns() {
 
 export type ActiveRunView = Extract<RunView, { state: "running" | "awaiting_decision" }>
 
+/** Uruchomienie procesu bez okresu `process` z widoku strumienia, trwające albo zakończone w tej pracy Centrum; inaczej `null`. */
+export function runOf(view: RunView | null, process: ProcessWithoutPeriod): Exclude<RunView, { state: "idle" }> | null {
+  return view === null || view.state === "idle" || view.run.process !== process ? null : view
+}
+
 export function isActive(view: RunView | null): view is ActiveRunView {
   return view !== null && (view.state === "running" || view.state === "awaiting_decision")
 }

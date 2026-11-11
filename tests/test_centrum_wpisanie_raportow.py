@@ -1,8 +1,9 @@
 """Wpisanie raportów z Centrum rozliczeń przez HTTP API i strumień zdarzeń, jak widzi je przeglądarka (#1227, #1232,
 ADR 0028).
 
-Karta „Wpisz raporty z maili” stoi poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty, maile daje atrapa
-Skrzynki raportów (``FakeInbox``), a hasło aplikacji sprawdza lokalny serwer IMAP (``AtrapaImap``) zamiast Gmaila.
+Przycisk „Wpisz raporty z maili” na ekranie Raporty stoi poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty,
+maile daje atrapa Skrzynki raportów (``FakeInbox``), a hasło aplikacji sprawdza lokalny serwer IMAP (``AtrapaImap``)
+zamiast Gmaila.
 Pierwsze kliknięcie ma okno dni od dziś (dzień wdrożenia), więc zlecenia z Wpisami są z dnia ``ENTERING_NOW``.
 Przeszkody kliknięcia (#1232) mają zdania Komunikatów ze speca #1224 (US 44–51).
 """

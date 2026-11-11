@@ -5139,7 +5139,7 @@
           "last"
         ],
         "title": "ReportEnteringSetup",
-        "description": "Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w\n``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży\nobok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania\nraportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
+        "description": "Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w\n``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży\nobok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania\nraportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
       },
       "ReportNotQueued": {
         "properties": {

@@ -68,7 +68,7 @@ def inbox_unreachable() -> Message:
 CONFLICT_ACTION: Final = (
     "Otwórz w Excelu INTERMAX i tę kopię, przepisz do INTERMAX zmiany, których w nim brakuje, zapisz go i usuń kopię."
 )
-"""Co tata robi z kopią konfliktu OneDrive obok INTERMAX: w Komunikacie i na karcie Wpisania raportów."""
+"""Co tata robi z kopią konfliktu OneDrive obok INTERMAX: w Komunikacie i na ekranie Raporty."""
 
 
 def conflict_copy(copy: Path) -> Message:

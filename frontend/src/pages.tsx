@@ -37,7 +37,7 @@ export const NOTIFICATIONS_PAGE = {
 export const PAGES = [
   { id: "okresy", title: "Okresy", icon: CalendarRangeIcon, Content: PeriodsPage, menu: true },
   { id: "uruchomienia", title: "Uruchomienia", icon: PlayIcon, Content: RunsPage, menu: true },
-  // Raporty otwiera też karta „Wpisz raporty z maili” i wynik jej Uruchomienia.
+  // Raporty ma przycisk „Wpisz raporty z maili”; otwiera je też wynik Wpisania raportów w Uruchomieniach.
   { id: "raporty", title: "Raporty", icon: MailCheckIcon, Content: ReportsPage, menu: true },
   { id: "metryki", title: "Metryki", icon: ChartColumnIcon, Content: MetricsPage, menu: true },
   { id: "konfiguracja", title: "Konfiguracja", icon: SlidersHorizontalIcon, Content: ConfigurationPage, menu: true },

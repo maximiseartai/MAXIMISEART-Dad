@@ -401,11 +401,13 @@ FEATURES = (
     Feature(
         "wpisanie-raportow",
         (
-            "280-raporty-karta",
+            "280-raporty-przycisk",
+            "285-raporty-blokada",
             "281-raporty-dzien-z-problemami",
             "282-raporty-zostaw-moja",
             "283-raporty-dzien-bez-problemow",
             "284-raporty-waski-ekran",
+            "286-raporty-zatrzymanie",
         ),
     ),
     # Puts its own Folder okresu in the folder okresów and removes it again, and adds a file of Logi, so it runs

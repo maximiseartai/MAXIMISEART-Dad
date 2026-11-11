@@ -77,7 +77,7 @@ class ReportEnteringEntry:
         return "report_entering"
 
     def setup(self, last: runs_contract.RunRestored | None) -> report_entering_contract.ReportEnteringSetup:
-        """Karta przed kliknięciem z ostatnim Wpisaniem raportów ``last`` z Logów Uruchomienia."""
+        """Stan przycisku na ekranie Raporty przed kliknięciem z ostatnim Wpisaniem raportów ``last`` z Logów Uruchomienia."""
 
         settings = self.store.load()
         register = settings.register
@@ -215,7 +215,7 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
 
 
 def conflict_note(copy: Path) -> str:
-    """Zdanie karty o kopii konfliktu OneDrive ``copy`` obok INTERMAX: tata usuwa ją, zanim kliknie."""
+    """Zdanie ekranu Raporty o kopii konfliktu OneDrive ``copy`` obok INTERMAX: tata usuwa ją, zanim kliknie."""
 
     return f"Obok INTERMAX leży kopia konfliktu OneDrive {copy.name}. {messages.CONFLICT_ACTION} Potem odśwież kartę."
 
