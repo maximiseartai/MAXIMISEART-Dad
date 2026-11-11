@@ -2106,10 +2106,13 @@ def test_znacznik_efenix_staje_tylko_w_adresie_gotowych_zlecen_a_reszta_pliku_zo
 
     assert (outcome.result, _figures(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(5, 2, warnings=1, photos=1))
     assert _address_fills(source) == {18: READY_RGB, 19: READY_RGB, 20: None, 21: None, 22: None, 23: YELLOW}
-    # Poza wypełnieniem komórka ADRES ma swój wygląd, także czerwoną, pogrubioną kursywę taty w wierszu 18.
+    # Poza wypełnieniem komórka ADRES ma swój wygląd, także czerwoną, pogrubioną kursywę taty, cienkie obramowanie z
+    # czterech stron i odblokowaną ochronę w wierszu 18.
     assert _address_looks(source) == looks
-    font = looks[18][0]
+    font, border, protection = looks[18][:3]
     assert (font.color.rgb if font.color else None, font.b, font.i) == ("FFFF0000", True, True)
+    sides = (border.left, border.right, border.top, border.bottom)
+    assert ([side.style if side else None for side in sides], protection.locked) == (["thin"] * 4, False)
     assert _amounts(source) == amounts
     written = _parts(source)
     assert [name for name, _ in written] == [name for name, _ in parts]
