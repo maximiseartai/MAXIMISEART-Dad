@@ -9,11 +9,13 @@ from datetime import date
 from typing import assert_never
 
 from . import (
+    ConflictingVerdicts,
     ForeignOrder,
     ManualDifference,
     MissingVerdict,
     OtherDay,
     RepeatedOrder,
+    ReportEntry,
     ReportProblem,
     SubjectFault,
     UnknownNumber,
@@ -39,6 +41,13 @@ def reason(problem: ReportProblem) -> str:
             )
         case MissingVerdict(worker=worker, day=day, number=number, fault=fault):
             return f"Wpis zlecenia {number} od {worker} z {_day(day)} {_verdict(fault)}, więc Centrum go nie wpisało."
+        case ConflictingVerdicts(worker=worker, day=day, number=number, arrived=arrived, entries=entries):
+            said = " i ".join(f"„{_said(entry)}”" for entry in entries)
+            return (
+                f"Raport wykonawcy od {worker} z {_day(day)}, który przyszedł {arrived:%d.%m.%Y o %H:%M}, ma dla zlecenia "
+                f"{number} różne Wpisy: {said}, więc Centrum nie zmieniło tego zlecenia przy tym kliknięciu. Sprawdź z "
+                "Wykonawcą, który Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail."
+            )
         case UnknownNumber(worker=worker, day=day, number=number):
             return f"Numer {number} nie jest zleceniem {worker} z {_day(day)}."
         case ForeignOrder(worker=worker, day=day, number=number, owner=owner):
@@ -88,11 +97,21 @@ def _subject(fault: SubjectFault) -> str:
             return "data nie jest prawdziwym dniem"
 
 
+def _said(entry: ReportEntry) -> str:
+    """Wpis tak, jak go napisał Wykonawca: znak (``tak``, ``t``, ``nieskuteczne``) i czynności."""
+
+    return " ".join(part for part in (entry.mark, entry.activities) if part)
+
+
 def _verdict(fault: VerdictFault) -> str:
     match fault:
         case VerdictFault.MISSING:
             return "nie ma „tak” ani „nie”"
-        case VerdictFault.LETTER:
-            return "ma samą literę „t” albo „n” zamiast „tak” albo „nie”"
-        case VerdictFault.WORD:
-            return "ma „skuteczne” albo „nieskuteczne” zamiast „tak” albo „nie”"
+        case VerdictFault.LETTER_YES:
+            return "ma samą literę „t” zamiast „tak”"
+        case VerdictFault.LETTER_NO:
+            return "ma samą literę „n” zamiast „nie”"
+        case VerdictFault.WORD_YES:
+            return "ma „skuteczne” zamiast „tak”"
+        case VerdictFault.WORD_NO:
+            return "ma „nieskuteczne” zamiast „nie”"

@@ -1,7 +1,8 @@
 """Postać kanoniczna Raportu wykonawcy: mail, z którego rdzeń czyta z powrotem ten sam odczyt (``MailRead``).
 
 Odtworzenie Uruchomienia z Logów (#1233) ma z maila tylko odczyt, bez adresu, tematu i treści, więc buduje z niego mail
-w postaci kanonicznej: temat ``Raport dd.mm.rrrr`` i jedna linia ``<numer> <znak> <czynności>`` na Wpis raportu.
+w postaci kanonicznej: temat ``Raport dd.mm.rrrr``, jedna linia ``<numer> <znak> <czynności>`` na Wpis raportu, a pod
+nimi pusta linia i ``_CLOSING``.
 """
 
 from __future__ import annotations
@@ -19,10 +20,13 @@ from ._model import (
     ReportMail,
     SenderAddress,
     SubjectFault,
-    VerdictFault,
 )
 
 _WORD = SUBJECT_WORD.capitalize()
+_CLOSING = "\n\nPozdrawiam"
+"""Koniec treści pod Wpisami: tekst pod przerwą, którego rdzeń nie czyta, a przez który stopka w środku ostatniej linii
+(``_entries._last_end``) nie biegnie do końca treści. Bez niego czynności ostatniego Wpisu z ``wysłano z …`` w środku,
+które w oryginale stały przed dalszym tekstem albo przed Wpisem, który się nie liczy, rdzeń uciąłby jak stopkę."""
 
 
 def as_mail(read: MailRead, sender: SenderAddress) -> ReportMail:
@@ -32,7 +36,7 @@ def as_mail(read: MailRead, sender: SenderAddress) -> ReportMail:
 
     match read:
         case ReadReport(day=day, entries=entries):
-            return ReportMail(read.mail, sender, _subject(day), "\n".join(map(_line, entries)), read.arrived)
+            return ReportMail(read.mail, sender, _subject(day), "\n".join(map(_line, entries)) + _CLOSING, read.arrived)
         case ReadStranger(day=day):
             return ReportMail(read.mail, sender, _subject(day), "", read.arrived)
         case ReadUnreadable(fault=fault):
@@ -68,19 +72,4 @@ def _unreadable(fault: SubjectFault) -> str:
 
 
 def _line(entry: ReportEntry) -> str:
-    mark = entry.verdict.value if entry.verdict is not None else _fault_mark(entry.fault)
-    return " ".join(part for part in (entry.number, mark, entry.activities) if part)
-
-
-def _fault_mark(fault: VerdictFault | None) -> str:
-    """Znak, z którego rdzeń czyta brak ``tak``/``nie`` z powodu ``fault``; bez znaku Wpis nie ma żadnego słowa."""
-
-    match fault:
-        case None | VerdictFault.MISSING:
-            return ""
-        case VerdictFault.LETTER:
-            return "t"
-        case VerdictFault.WORD:
-            return "skuteczne"
-        case _:
-            assert_never(fault)
+    return " ".join(part for part in (entry.number, entry.mark, entry.activities) if part)

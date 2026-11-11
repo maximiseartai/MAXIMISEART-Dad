@@ -77,6 +77,7 @@ from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts
 from rozliczenia.worker_reports import (
+    ConflictingVerdicts,
     ForeignOrder,
     Login,
     MailId,
@@ -473,7 +474,7 @@ class LoggedWindowStop(_Record):
 
 LoggedColumn = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
 """Kolumna INTERMAX, którą zmienia Wpisanie raportów (``report_cells.ReportColumn``)."""
-LoggedVerdictFault = Literal["missing", "letter", "word"]
+LoggedVerdictFault = Literal["missing", "letter_yes", "letter_no", "word_yes", "word_no"]
 LoggedSubjectFault = Literal["no_date", "other_text", "no_year", "date_form", "separator", "year_digits", "not_a_day"]
 
 
@@ -489,10 +490,14 @@ def _verdict_fault(fault: VerdictFault) -> LoggedVerdictFault:
     match fault:
         case VerdictFault.MISSING:
             return "missing"
-        case VerdictFault.LETTER:
-            return "letter"
-        case VerdictFault.WORD:
-            return "word"
+        case VerdictFault.LETTER_YES:
+            return "letter_yes"
+        case VerdictFault.LETTER_NO:
+            return "letter_no"
+        case VerdictFault.WORD_YES:
+            return "word_yes"
+        case VerdictFault.WORD_NO:
+            return "word_no"
 
 
 def _subject_fault(fault: SubjectFault) -> LoggedSubjectFault:
@@ -521,6 +526,15 @@ class LoggedReportEntry(_Record):
     verdict: Literal["tak", "nie"] | None
     fault: LoggedVerdictFault | None
     activities: str
+
+    @classmethod
+    def of(cls, entry: ReportEntry) -> LoggedReportEntry:
+        return cls(
+            number=entry.number,
+            verdict=None if entry.verdict is None else entry.verdict.value,
+            fault=None if entry.fault is None else _verdict_fault(entry.fault),
+            activities=entry.activities,
+        )
 
 
 class LoggedReportMail(_Record):
@@ -560,15 +574,7 @@ LoggedMail = Annotated[LoggedReportMail | LoggedUnreadableMail | LoggedStrangerM
 def _mail(read: MailRead) -> LoggedMail:
     match read:
         case ReadReport():
-            entries = [
-                LoggedReportEntry(
-                    number=entry.number,
-                    verdict=None if entry.verdict is None else entry.verdict.value,
-                    fault=None if entry.fault is None else _verdict_fault(entry.fault),
-                    activities=entry.activities,
-                )
-                for entry in read.entries
-            ]
+            entries = [LoggedReportEntry.of(entry) for entry in read.entries]
             return LoggedReportMail(
                 kind="report", mail=read.mail.digest, arrived=read.arrived, worker=read.worker, day=read.day, entries=entries
             )
@@ -632,6 +638,19 @@ class LoggedOrderProblem(_Record):
     order_days: list[date] = []
 
 
+class LoggedConflictProblem(_Record):
+    """Raport wykonawcy z Wpisami jednego numeru o przeciwnym zamiarze: skrót maila, chwila przyjścia, Wykonawca, dzień
+    z tematu, numer i te Wpisy (pod strażnikiem jak w ``LoggedReportEntry``)."""
+
+    kind: Literal["conflicting_verdicts"]
+    mail: str
+    arrived: datetime
+    worker: str
+    day: date
+    number: str
+    entries: list[LoggedReportEntry]
+
+
 class LoggedSubjectProblem(_Record):
     kind: Literal["unreadable_subject"]
     mail: str
@@ -674,7 +693,8 @@ class LoggedManualProblem(_Record):
 
 
 LoggedProblem = Annotated[
-    LoggedOrderProblem | LoggedSubjectProblem | LoggedSenderProblem | LoggedManualProblem, Field(discriminator="kind")
+    LoggedOrderProblem | LoggedConflictProblem | LoggedSubjectProblem | LoggedSenderProblem | LoggedManualProblem,
+    Field(discriminator="kind"),
 ]
 
 
@@ -697,6 +717,16 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 day=problem.day,
                 number=problem.number,
                 fault=_verdict_fault(problem.fault),
+            )
+        case ConflictingVerdicts():
+            return LoggedConflictProblem(
+                kind="conflicting_verdicts",
+                mail=problem.mail.digest,
+                arrived=problem.arrived,
+                worker=problem.worker,
+                day=problem.day,
+                number=problem.number,
+                entries=[LoggedReportEntry.of(entry) for entry in problem.entries],
             )
         case UnknownNumber():
             return LoggedOrderProblem(kind="unknown_number", worker=problem.worker, day=problem.day, number=problem.number)

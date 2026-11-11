@@ -9,6 +9,7 @@ from datetime import date
 from ..report_cells import CellChange, OrderRow, ReportColumn
 from ..text import normalize_text
 from ._model import (
+    ConflictingVerdicts,
     ForeignOrder,
     Login,
     ManualDifference,
@@ -70,7 +71,7 @@ def _place(problem: ReportProblem) -> tuple[date, Login] | None:
     match problem:
         case UnreadableSubject() | UnknownSender():
             return None
-        case MissingVerdict() | UnknownNumber() | ForeignOrder() | OtherDay() | RepeatedOrder():
+        case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | ForeignOrder() | OtherDay() | RepeatedOrder():
             return problem.day, problem.worker
         case ManualDifference(key=key):
             return key.day, key.worker
