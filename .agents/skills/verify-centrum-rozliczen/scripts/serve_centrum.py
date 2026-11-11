@@ -547,7 +547,8 @@ class ScriptedClock:
 
     def _fire_due(self) -> None:
         """A failure ends every later wake-up, so it leaves its traceback where the drive finds it
-        (``check_clock_alarm``)."""
+        (``check_clock_alarm``), put in place whole: a plain write leaves it empty for a moment, and a reader that waits
+        only for it to exist reads no traceback (#1210)."""
 
         try:
             while True:
@@ -559,8 +560,7 @@ class ScriptedClock:
                 for wake in due:
                     wake()
         except BaseException:
-            self._died.parent.mkdir(exist_ok=True)
-            self._died.write_text(traceback.format_exc(), encoding="utf-8")
+            replace_atomically(self._died, traceback.format_exc())
             raise
 
 
@@ -684,8 +684,10 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     )
 
     def record_bound_server(url: str) -> None:
+        """The run waits for the record as soon as it exists, so it is put in place whole (``replace_atomically``)."""
+
         record = {"pid": os.getpid(), "port": args.port, "url": url}
-        File.SERVER.write(root, json.dumps(record))
+        replace_atomically(File.SERVER.file(root), json.dumps(record))
         print(f"SERVING {url}", flush=True)
 
     return serve(app, listener=listen_locally(args.port), on_ready=record_bound_server, shutdown=shutdown, log=log)

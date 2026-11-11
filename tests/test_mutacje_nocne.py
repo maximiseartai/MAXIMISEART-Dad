@@ -61,12 +61,15 @@ class GitHubWPamieci:
         pr_commitow: dict[str, list[dict[str, Any]]] | None = None,
         runy: list[dict[str, Any]] | None = None,
         zakresy: dict[int, bytes | None] | None = None,
+        urwane: frozenset[int] = frozenset(),
     ) -> None:
         self.issues = issues or []
         self.pr_commitow = pr_commitow or {}
         self.runy = runy or []
         # Treść pliku artefaktu ``zakres-nocy`` runu, a ``None``, gdy artefakt wygasł; run bez wpisu nie ma artefaktu.
         self.zakresy = zakresy or {}
+        # Runy, których archiwum artefaktu ``zakres-nocy`` przychodzi urwane w połowie.
+        self.urwane = urwane
         self.wyslane: list[tuple[str, str, Mapping[str, object]]] = []
 
     def json(self, sciezka: str) -> Any:
@@ -87,13 +90,15 @@ class GitHubWPamieci:
 
     def bajty(self, sciezka: str) -> bytes:
         artefakt = re.fullmatch(rf"{re.escape(REPO)}/actions/artifacts/(\d+)/zip", sciezka)
-        tresc = self.zakresy.get(int(artefakt[1])) if artefakt else None
+        id_runu = int(artefakt[1]) if artefakt else None
+        tresc = self.zakresy.get(id_runu) if id_runu is not None else None
         if tresc is None:
             raise KeyError(sciezka)
         archiwum = io.BytesIO()
         with zipfile.ZipFile(archiwum, "w") as zip_:
             zip_.writestr("zakres.json", tresc)
-        return archiwum.getvalue()
+        zip_bajty = archiwum.getvalue()
+        return zip_bajty[: len(zip_bajty) // 2] if id_runu in self.urwane else zip_bajty
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
         self.wyslane.append((metoda, sciezka, tresc))
@@ -234,6 +239,8 @@ def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_d
     # Dwa commity PR #11 dają jedno issue.
     assert "\n".join(f"MUTACJA {nazwa} | klucz {_klucz(nazwa)}" for nazwa in (*przezyte[:2], przezyte[4])) + "\n" in tresc_11
     assert RUN in tresc_11 and "nie warto, bo" in tresc_11 and "które ostatnio zmienił #11:" in tresc_11
+    # Rada o mutacjach bez werdyktu stoi tylko przy nich (``test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_…``).
+    assert "uruchom ją `tools/mutacje.py`" not in tresc_11
     tresc_commitu = nowe[f"Przeżyte mutacje z commitu {d[:9]}"]["body"]
     assert f"MUTACJA src/a.py:4 stała | klucz {_klucz('src/a.py:4 stała')}" in tresc_commitu and f"które ostatnio zmienił commit {d}:" in tresc_commitu
     # Issue #12 ma już mutację „stała”, a #14 zamknięte z powodem dla niej: dostają tylko nowe mutacje.
@@ -525,6 +532,19 @@ def test_noc_po_udanym_przebiegu_z_wygaslym_zakresem_konczy_sie_fail_zamiast_pom
 
     with pytest.raises(ValueError, match="artefakt zakres-nocy runu 41 wygasł"):
         mutacje_nocne.baza(github, repo, "", TERAZ)
+
+
+def test_noc_z_urwanym_archiwum_zakresu_ostatniego_udanego_przebiegu_konczy_sie_fail_z_przyczyna(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, shas = _repo_z_datami(tmp_path, monkeypatch)
+    github = GitHubWPamieci(runy=[{"id": 41, "head_sha": shas["wczoraj"]}], zakresy={41: json.dumps({"do": shas["przedwczoraj"]}).encode()}, urwane=frozenset({41}))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+
+    kod = mutacje_nocne.main(["plan"], root=repo, github=github)
+
+    assert (kod, capsys.readouterr().out.splitlines()[-1]) == (1, "MUTACJE NOCNE FAIL | File is not a zip file")
+    assert not (tmp_path / "output").exists()
 
 
 def test_reczna_noc_z_od_bez_wspolnego_przodka_z_head_konczy_sie_fail_z_przyczyna(
