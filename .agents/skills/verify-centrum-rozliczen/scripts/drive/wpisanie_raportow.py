@@ -14,6 +14,7 @@ from drive.common import (
     DAD_VIEWPORT,
     FOCUS,
     Run,
+    active_run_signs,
     current_run,
     ended_run_shown,
     figure,
@@ -305,17 +306,31 @@ def _other_process_running(run: Run, page: Page) -> None:
     print("  harness: the Uruchomienia stream shows a Uporządkowanie INTERMAX that runs", flush=True)
     page.route("**/api/runs/events", running)
     try:
-        page.reload()
-        expect(page.get_by_role("heading", name="Raporty", exact=True)).to_be_visible()
+        _reload_settled(page)
+        expect(active_run_signs(page, "Trwa Uruchomienie")[1]).to_be_visible()
         expect(_button(page)).to_be_disabled()
         expect(page.get_by_role("alert")).to_have_count(0)
         run.check(True, "while another Uruchomienie procesu runs, `Wpisz raporty z maili` is off")
         run.capture(page, "287-raporty-w-czasie-innego", live=True)  # the menu sign of the run turns while it runs
     finally:
         page.unroute("**/api/runs/events")
-    page.reload()
+    _reload_settled(page)
     expect(_button(page)).to_be_enabled()
     run.check(True, "with no Uruchomienie running the button is on again")
+
+
+def _reload_settled(page: Page) -> None:
+    """Reloads Raporty and waits until the page shows the setup of the button: before it is read the button is off
+    anyway, so a check of „off” right after a reload would pass whatever the stream says."""
+
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/report-entering") and response.request.method == "GET"
+    ) as answered:
+        page.reload()
+    answered.value.finished()
+    expect(page.get_by_role("heading", name="Raporty", exact=True)).to_be_visible()
+    # Two frames after the answer: React has shown it, so the button's state is the one the page settled on.
+    page.evaluate("() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))")
 
 
 def _range_map(run: Run, page: Page) -> None:
