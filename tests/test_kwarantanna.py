@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 import importlib
+import os
 from pathlib import Path, PurePosixPath
 import subprocess
 import sys
@@ -86,3 +87,44 @@ def test_wydanie_czyta_kwarantanne_z_pliku_ktory_importuje_conftest() -> None:
 
     assert modul.KWARANTANNA is uzywana
     assert niestabilne_testy.ma_wpisy((ROOT / plik).read_text(encoding="utf-8")) == bool(uzywana)
+
+
+def test_porazka_testu_z_kwarantanny_drukuje_w_logu_koniec_powodu_a_przejscie_nic(tmp_path: Path) -> None:
+    """Pod xdist, jak zadanie pytest w CI: porażka testu z kwarantanny jest xfail, więc bez podsumowania z
+    ``tests/conftest.py`` log miałby tylko liczbę ``xfailed`` i diagnostyka z komunikatu by przepadła (#1008)."""
+
+    # Jak tests/conftest.py: test z kwarantanny jest xfail(strict=False) i ma własność kwarantanny; zwykły xfail jej nie ma.
+    (tmp_path / "conftest.py").write_text(
+        "import pytest\n\nfrom tests.conftest import pytest_terminal_summary\n\n\n"
+        "def pytest_itemcollected(item):\n"
+        "    item.add_marker(pytest.mark.xfail(strict=False))\n"
+        "    if item.name != 'test_zwykly_xfail':\n"
+        f"        item.user_properties.append(({niestabilne_testy.WLASNOSC!r}, 'kwarantanna #1 do 2026-11-01'))\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "test_x.py").write_text(
+        "def test_pada():\n"
+        "    raise AssertionError('POCZATEK_KOMUNIKATU ' + 'x' * 20_000 + '\\nZatrzymanie EFENIX_X, ostatnie żądanie POST /a')\n\n\n"
+        "def test_przechodzi():\n    pass\n\n\n"
+        "def test_zwykly_xfail():\n    raise AssertionError('ZWYKLY_XFAIL')\n",
+        encoding="utf-8",
+    )
+
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", "-n", "2", "-p", "no:cacheprovider", "--rootdir", str(tmp_path), "test_x.py"],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONUTF8": "1"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert [line for line in run.stdout.splitlines() if line.startswith("KWARANTANNA |")] == [
+        "KWARANTANNA | test_x.py::test_pada padł (call), kwarantanna #1 do 2026-11-01:"
+    ], run.stdout
+    assert "Zatrzymanie EFENIX_X, ostatnie żądanie POST /a" in run.stdout
+    assert "(początek ucięty, " in run.stdout
+    assert "POCZATEK_KOMUNIKATU" not in run.stdout
+    assert "ZWYKLY_XFAIL" not in run.stdout

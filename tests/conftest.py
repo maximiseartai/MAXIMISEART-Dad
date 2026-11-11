@@ -9,6 +9,7 @@ import sys
 from typing import Any, NoReturn
 
 import pytest
+from _pytest.terminal import TerminalReporter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -31,6 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 import niestabilne_testy
 
 _CHECKED_CONTENT_TYPES = ("application/json", "text/event-stream")
+# Koniec komunikatu porażki testu z kwarantanny w logu; komunikat eksploratora Wyceny w efenix ma całe jego wyjście.
+POWOD_ZNAKOW = 10_000
 # Kod eksploratora przeplotów skilla w procesie pytest wywraca test (docstring pluginu).
 pytest_plugins = ["tests.fixtures.eksplorator_w_procesie"]
 
@@ -44,6 +47,30 @@ def pytest_itemcollected(item: pytest.Item) -> None:
         reason = f"kwarantanna #{entry.issue} do {entry.do.isoformat()}"
         item.add_marker(pytest.mark.xfail(strict=False, reason=reason))
         item.user_properties.append((niestabilne_testy.WLASNOSC, reason))
+
+
+def pytest_terminal_summary(terminalreporter: TerminalReporter) -> None:
+    """Porażka testu z ``KWARANTANNA`` drukuje w podsumowaniu pytest swój powód, bo jako xfail ma w logu i w junit tylko
+    liczbę ``xfailed`` (#1008): linię ``KWARANTANNA |`` z id testu i koniec komunikatu porażki, najwyżej
+    ``POWOD_ZNAKOW`` znaków, bo koniec mówi więcej niż początek. Pod xdist drukuje kontroler, który ma raporty workerów;
+    test z kwarantanny, który przeszedł, nie drukuje nic."""
+
+    failed = [
+        (report, dict(report.user_properties)[niestabilne_testy.WLASNOSC])
+        for report in terminalreporter.stats.get("xfailed", [])
+        if niestabilne_testy.WLASNOSC in dict(report.user_properties)
+    ]
+    if not failed:
+        return
+    terminalreporter.write_sep("=", "kwarantanna: powody porażek")
+    for report, reason in failed:
+        text = report.longreprtext
+        if len(text) > POWOD_ZNAKOW:
+            tail = text[-POWOD_ZNAKOW:]
+            tail = tail.partition("\n")[2] or tail
+            text = f"… (początek ucięty, {len(text) - len(tail)} znaków)\n{tail}"
+        terminalreporter.write_line(f"KWARANTANNA | {report.nodeid} padł ({report.when}), {reason}:")
+        terminalreporter.write_line(text)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
