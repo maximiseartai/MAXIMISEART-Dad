@@ -1,9 +1,10 @@
-import { ChevronLeftIcon, ChevronRightIcon, HistoryIcon, MailCheckIcon } from "lucide-react"
+import { ChevronLeftIcon, ChevronRightIcon, FileSpreadsheetIcon, HistoryIcon, MailCheckIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { getReportsView, keepManualValue, type ReportsView } from "@/api/centrum"
 import { LoadFailure } from "@/components/load-failure"
 import { PageHeader } from "@/components/page-header"
+import { SettingPath } from "@/components/setting-path"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
@@ -13,16 +14,20 @@ import { href, usePagePath } from "@/lib/address"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { dateTime, weekdayDate } from "@/lib/format"
 import { useResource } from "@/lib/use-resource"
+import { EnteringNotes, EnterReportsButton, useReportEntering } from "@/pages/worker-reports/report-entering"
 import { UnknownSenders, WorkerRow, type Keep } from "@/pages/worker-reports/worker-row"
 
 /**
  * Widok Raporty z adresu `#/raporty/<dzień>`: wynik ostatniego kliknięcia „Wpisz raporty z maili” w wybranym dniu
  * (bez dnia: dziś). Serwer czyta go z pliku wyniku, nie ze skrzynki; „Zostaw moją” zastępuje widok odpowiedzią serwera.
+ * Przycisk Wpisania raportów stoi w nagłówku, a koniec Wpisania czyta widok od nowa. Pod nagłówkiem jedna cicha linia
+ * z chwilą ostatniego kliknięcia i INTERMAX z Ustawień taty.
  */
 export function ReportsPage() {
   const [day = null] = usePagePath()
   const { resource: view, reload, replace } = useResource(getReportsView, [day], { fromDadFiles: false })
   const entrance = useContentEntrance(view.state === "loading")
+  const entering = useReportEntering(reload)
 
   const { running, run } = useAction(
     async (cell: Keep) => replace({ state: "ready", data: await keepManualValue(cell) }),
@@ -31,7 +36,26 @@ export function ReportsPage() {
 
   return (
     <>
-      <PageHeader action={view.state === "ready" ? <DayPicker view={view.data} /> : undefined} />
+      <PageHeader
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+            {view.state === "ready" ? <DayPicker view={view.data} /> : null}
+            <EnterReportsButton entering={entering} />
+          </div>
+        }
+      />
+      <EnteringNotes entering={entering} />
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+        {view.state === "ready" && view.data.clicked_at !== null ? (
+          <p className="flex items-center gap-2 tabular-nums">
+            <HistoryIcon className="size-4" aria-hidden />
+            Ostatnie kliknięcie {dateTime(view.data.clicked_at)}
+          </p>
+        ) : null}
+        <div className="ml-auto min-w-0">
+          <SettingPath label="INTERMAX" icon={<FileSpreadsheetIcon />} path="order_register" />
+        </div>
+      </div>
       {view.state === "loading" ? <Skeleton className="h-64 w-full" aria-label="Wczytywanie Raportów" /> : null}
       {view.state === "failed" ? <LoadFailure what="Raportów" message={view.message} reload={reload} /> : null}
       {view.state === "ready" ? (
@@ -50,7 +74,7 @@ function DayPicker({ view }: { view: ReportsView }) {
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Dzień">
       <DayLink day={older} label="Wcześniejszy dzień" icon={<ChevronLeftIcon />} />
-      <span className="min-w-36 text-center text-sm font-medium tabular-nums" aria-live="polite">
+      <span className="min-w-36 text-center text-sm font-medium whitespace-nowrap tabular-nums" aria-live="polite">
         {weekdayDate(view.day)}
         {view.day === view.today ? <span className="font-normal text-muted-foreground"> · dziś</span> : null}
       </span>
@@ -94,7 +118,7 @@ function ReportsContent({
             <MailCheckIcon />
           </EmptyMedia>
           <EmptyTitle>Jeszcze nie ma Raportów</EmptyTitle>
-          <EmptyDescription>Kliknij „Wpisz raporty z maili” w Uruchomieniach.</EmptyDescription>
+          <EmptyDescription>Kliknij „Wpisz raporty z maili” powyżej.</EmptyDescription>
         </EmptyHeader>
       </Empty>
     )
@@ -104,10 +128,6 @@ function ReportsContent({
 
   return (
     <div className={`flex flex-col gap-4 ${className ?? ""}`}>
-      <p className="flex items-center gap-2 text-sm text-muted-foreground tabular-nums">
-        <HistoryIcon className="size-4" aria-hidden />
-        Ostatnie kliknięcie {dateTime(view.clicked_at)}
-      </p>
       {nothing ? (
         <Card>
           <CardContent className="text-sm text-muted-foreground">Ten dzień nie ma zleceń ani Raportów wykonawców.</CardContent>

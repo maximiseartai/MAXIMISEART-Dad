@@ -1,4 +1,4 @@
-"""Kontrakt Wpisania raportów: karta „Wpisz raporty z maili” poza okresami i widok Raporty (ADR 0028)."""
+"""Kontrakt Wpisania raportów: przycisk „Wpisz raporty z maili” poza okresami i widok Raporty (ADR 0028)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from rozliczenia.centrum.contract.runs import RunRestored
 
 
 class ReportEnteringSetup(Model):
-    """Karta „Wpisz raporty z maili” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+    """Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
 
     ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
     ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży

@@ -1,7 +1,7 @@
 import { FileSpreadsheetIcon, HistoryIcon, InfoIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
-import type { IntermaxSetup, ReportEnteringSetup } from "@/api/centrum"
+import type { IntermaxSetup } from "@/api/centrum"
 import type { RunRestored } from "@/api/generated"
 import { LoadFailure } from "@/components/load-failure"
 import { SettingPath } from "@/components/setting-path"
@@ -14,11 +14,8 @@ import { type RunStart, useRuns } from "@/lib/runs"
 import { useResource } from "@/lib/use-resource"
 import { RestoredCardButton } from "@/pages/runs/run-card-sheet"
 
-/** Ustawienia karty procesu bez okresu, które serwer podaje w tym samym kształcie dla każdego z nich. */
-type OutsidePeriodSetup = IntermaxSetup | ReportEnteringSetup
-
-type OutsidePeriodCardProps<T extends OutsidePeriodSetup> = {
-  read: () => Promise<T>
+type OutsidePeriodCardProps = {
+  read: () => Promise<IntermaxSetup>
   /** Nazwa procesu w dopełniaczu, do szkieletu i błędu odczytu („Wczytywanie Uporządkowania INTERMAX”). */
   what: string
   /** Napis przycisku i nazwa karty dla czytnika ekranu. */
@@ -29,17 +26,16 @@ type OutsidePeriodCardProps<T extends OutsidePeriodSetup> = {
   skeleton: string
   /** Treść pod INTERMAX z Ustawień taty, gdy serwer nie podaje blokady (np. dni INTERMAX). */
   unblocked?: ReactNode
-  /** Dopisek linii „Ostatnio …” o ostatnim Uruchomieniu, np. dzień albo liczba Wpisanych. */
+  /** Dopisek linii „Ostatnio …” o ostatnim Uruchomieniu, np. liczba uporządkowanych zleceń. */
   lastDetail: (last: RunRestored) => string | undefined
-  /** Cicha akcja obok przycisku procesu, np. link do widoku jego wyniku. */
-  aside?: ReactNode
 }
 
 /**
- * Karta procesu bez okresu (Uporządkowanie INTERMAX, Wpisanie raportów): proces bierze INTERMAX z Ustawień taty, więc
- * karta ma tylko jeden przycisk, zablokowany, gdy serwer podaje blokadę albo INTERMAX otwarty w Excelu.
+ * Karta procesu bez okresu w Uruchomieniach (Uporządkowanie INTERMAX; Wpisanie raportów ma przycisk na ekranie Raporty):
+ * proces bierze INTERMAX z Ustawień taty, więc karta ma tylko jeden przycisk, zablokowany, gdy serwer podaje blokadę
+ * albo INTERMAX otwarty w Excelu.
  */
-export function OutsidePeriodCard<T extends OutsidePeriodSetup>(props: OutsidePeriodCardProps<T>) {
+export function OutsidePeriodCard(props: OutsidePeriodCardProps) {
   const { resource: setup, reload } = useResource(props.read, [])
 
   switch (setup.state) {
@@ -57,7 +53,7 @@ export function OutsidePeriodCard<T extends OutsidePeriodSetup>(props: OutsidePe
   }
 }
 
-function SetupCard<T extends OutsidePeriodSetup>({
+function SetupCard({
   setup,
   label,
   description,
@@ -65,8 +61,7 @@ function SetupCard<T extends OutsidePeriodSetup>({
   request,
   unblocked,
   lastDetail,
-  aside,
-}: OutsidePeriodCardProps<T> & { setup: T }) {
+}: OutsidePeriodCardProps & { setup: IntermaxSetup }) {
   const { starting, start } = useRuns()
   const blocked = setup.blocker !== null || setup.open_in_excel.length > 0
   const notes = setup.blocker === null ? setup.open_in_excel : [setup.blocker, ...setup.open_in_excel]
@@ -88,13 +83,10 @@ function SetupCard<T extends OutsidePeriodSetup>({
           <InfoIcon className="size-4" aria-hidden />
           {setup.reminder}
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          {aside}
-          <Button size="lg" className="h-11 px-5 text-base" disabled={blocked || starting} onClick={() => start(request)}>
-            {icon}
-            {label}
-          </Button>
-        </div>
+        <Button size="lg" className="ml-auto h-11 px-5 text-base" disabled={blocked || starting} onClick={() => start(request)}>
+          {icon}
+          {label}
+        </Button>
       </CardFooter>
     </Card>
   )

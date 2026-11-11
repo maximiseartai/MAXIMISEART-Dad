@@ -78,9 +78,9 @@ ENTERING: Final = Replacement(
     done="Raporty zostały wpisane",
 )
 """Wpisanie raportów podmienia INTERMAX bez Kopii (``intermax_replace.replace_without_copy``), więc Komunikatów o Kopii
-nie daje; pola o Kopii są tu tylko dlatego, że ``Replacement`` je ma. Tata klika „Wpisz raporty z maili” na karcie, więc
-zwrot ponowienia to „kliknij jeszcze raz”, a przy INTERMAX otwartym w Excelu „Zamknij INTERMAX i kliknij jeszcze raz”
-(spec #1224, US 44)."""
+nie daje; pola o Kopii są tu tylko dlatego, że ``Replacement`` je ma. Tata klika „Wpisz raporty z maili” na ekranie
+Raporty, więc zwrot ponowienia to „kliknij jeszcze raz”, a przy INTERMAX otwartym w Excelu „Zamknij INTERMAX i kliknij
+jeszcze raz” (spec #1224, US 44)."""
 
 
 def register_unusable(error: WorkbookError, replacement: Replacement) -> Message:
