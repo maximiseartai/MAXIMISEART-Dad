@@ -74,6 +74,7 @@ from atrapy.atrapa_efenix import (
 )
 from atrapy.efenix import write_template_costs
 from tests.fixtures.expect import assert_expected
+from tests.fixtures.potomne import wait_for
 from atrapy.settlement import CellValue
 from atrapy.workbooks import active_worksheet
 
@@ -590,20 +591,30 @@ class Chromium:
 
     endpoint: str
     _jobs: queue.Queue[tuple[Callable[[Browser], object], queue.Queue[tuple[object, BaseException | None]]]]
+    _owner: threading.Thread
+    _ended: queue.Queue[BaseException]
 
     def do(self, job: Callable[[Browser], _T]) -> _T:
-        """``job`` na przeglądarce połączonej przez zdalne debugowanie, w wątku, który obsługuje Playwrighta Chromium."""
+        """``job`` na przeglądarce połączonej przez zdalne debugowanie, w wątku, który obsługuje Playwrighta Chromium.
+
+        Gdy ten wątek się skończył, ``do`` rzuca błąd, od którego się skończył, zamiast czekać na odpowiedź, której nie
+        będzie: test dostaje przyczynę, a nie przekroczony czas (#979, #1104).
+        """
 
         answer: queue.Queue[tuple[object, BaseException | None]] = queue.Queue()
         self._jobs.put((job, answer))
-        result, error = answer.get(timeout=120)
+        if not wait_for(lambda: not answer.empty() or not self._owner.is_alive(), 120, every=0.01):
+            raise TimeoutError("Chromium nie wykonał działania Maksa w 120 s")
+        if answer.empty():
+            raise self._ended.get_nowait()
+        result, error = answer.get_nowait()
         if error is not None:
             raise error
         return cast(_T, result)
 
 
 @pytest.fixture(scope="module")
-def chromium() -> Iterator[Chromium]:
+def chromium(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Chromium]:
     """Chromium ze zdalnym debugowaniem (jak Chrome Maksa) i ciasteczkiem sesji Atrapy w domyślnym kontekście.
 
     Chromium i jego Playwright żyją w osobnym wątku, który przez cały czas obsługuje Playwrighta, jak osobny program
@@ -611,26 +622,38 @@ def chromium() -> Iterator[Chromium]:
     narzędzia, na Windows wstrzymuje przeglądarkę: jego sterownik pisze do pełnej rury procesu testu i przestaje
     wznawiać nowe karty, więc karta, w której narzędzie składa HTML, nie wczytuje się (#755, CI na windows-2025).
     Dlatego i działania Maksa w kartach (``Chromium.do``) wykonuje ten sam wątek.
+
+    Port zdalnego debugowania Chromium wybiera sam i zapisuje w ``DevToolsActivePort`` swojego profilu, gdy już na nim
+    nasłuchuje. Port, który test wybierał przed startem Chromium jako wolny, mogło do tej chwili zająć inne gniazdo
+    procesu, a połączenie z portem, na którym Chromium nie nasłuchuje, dostaje ``ECONNREFUSED`` (#1118).
+    Wątek obsługuje Playwrighta na karcie, z którą Chromium startuje, więc ta karta jest w kartach Maksa
+    (``contexts[0].pages``) od pierwszego działania, a test nie zamyka jej jako karty, którą sam otworzył. Połączenie
+    przez zdalne debugowanie dopisuje do domyślnego kontekstu także karty innych kontekstów, ale kartę otwartą po
+    połączeniu dopiero po chwili: test, którego karty sprzed działania jeszcze jej nie miały, zamykał ją po sobie,
+    wątek kończył się na zamkniętej karcie, a następny test czekał na niego 120 s (#1104).
     """
 
-    with socket.socket() as free:
-        free.bind(("127.0.0.1", 0))
-        port = free.getsockname()[1]
-    endpoint = f"http://127.0.0.1:{port}"
-    started: queue.Queue[BaseException | None] = queue.Queue()
+    profile = tmp_path_factory.mktemp("chromium-zgodnosc")
+    started: queue.Queue[str | BaseException] = queue.Queue()
+    ended: queue.Queue[BaseException] = queue.Queue()
     stop = threading.Event()
     jobs: queue.Queue[tuple[Callable[[Browser], object], queue.Queue[tuple[object, BaseException | None]]]] = queue.Queue()
 
     def own() -> None:
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(**launch_options(playwright, arguments=[f"--remote-debugging-port={port}"]))
+                own_context = playwright.chromium.launch_persistent_context(
+                    profile, **launch_options(playwright, arguments=["--remote-debugging-port=0"])
+                )
                 try:
+                    [idle] = own_context.pages
+                    active_port = profile / "DevToolsActivePort"
+                    wait_for(active_port.is_file, 30)
+                    endpoint = f"http://127.0.0.1:{active_port.read_text(encoding='utf-8').split()[0]}"
                     remote = playwright.chromium.connect_over_cdp(endpoint)
                     name, value = SESSION_COOKIE
                     remote.contexts[0].add_cookies([{"name": name, "value": value, "domain": "127.0.0.1", "path": "/"}])
-                    idle = browser.new_page()
-                    started.put(None)
+                    started.put(endpoint)
                     while not stop.is_set():
                         try:
                             job, answer = jobs.get_nowait()
@@ -642,17 +665,19 @@ def chromium() -> Iterator[Chromium]:
                         except Exception as error:  # noqa: BLE001 - błąd działania Maksa wraca do testu w jego wątku
                             answer.put((None, error))
                 finally:
-                    browser.close()
-        except BaseException as error:  # noqa: BLE001 - błąd startu przeglądarki wraca do fixture'a w wątku testu
+                    own_context.close()
+        except BaseException as error:  # noqa: BLE001 - błąd startu albo obsługi przeglądarki wraca do wątku testu
+            # Na start czeka fixture (``started``), a po starcie na działanie Maksa ``Chromium.do`` (``ended``).
+            ended.put(error)
             started.put(error)
 
     owner = threading.Thread(target=own, name="chromium-zgodnosc")
     owner.start()
     try:
-        failure = started.get(timeout=120)
-        if failure is not None:
-            raise failure
-        yield Chromium(endpoint, jobs)
+        endpoint = started.get(timeout=120)
+        if isinstance(endpoint, BaseException):
+            raise endpoint
+        yield Chromium(endpoint, jobs, owner, ended)
     finally:
         stop.set()
         owner.join()
