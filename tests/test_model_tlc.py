@@ -15,11 +15,13 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 import email.message
 import hashlib
+import http.client
 import io
 import json
 import os
 from pathlib import Path
 import subprocess
+import time
 from types import ModuleType
 import urllib.error
 
@@ -27,6 +29,7 @@ import pytest
 import yaml
 
 from tests.fixtures.ci_workflow import action
+from tests.fixtures.clock import ManualClock
 from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
 import model_tlc
 import narzedzia_tlc
@@ -377,36 +380,45 @@ def test_narzedzia_dla_kopii_ustawiaja_jave_i_jar_checkoutu_a_ustawionych_zmienn
 JAR = b"tla2tools z atrapy"
 
 
-def _download_answers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answers: list[int | OSError]) -> list[str]:
-    """Atrapa ``urlopen`` odpowiada kolejno z ``answers``: kod HTTP (200 daje jar) albo błąd sieci; zwraca adresy prób."""
+def _download_answers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answers: list[int | Exception], clock: ManualClock | None = None
+) -> list[str]:
+    """Atrapa ``urlopen`` odpowiada kolejno z ``answers``: kod HTTP (200 daje jar) albo błąd, który rzuca; zwraca adresy
+    prób. Przerwy przed ponowieniem przesuwają tylko ``clock``."""
 
     calls: list[str] = []
 
     def urlopen(url: str, timeout: float) -> io.BytesIO:
         calls.append(url)
         code = answers[len(calls) - 1]
-        if isinstance(code, OSError):
+        if isinstance(code, Exception):
             raise code
         if code != 200:
             raise urllib.error.HTTPError(url, code, "Gateway Time-out", email.message.Message(), None)
         return io.BytesIO(JAR)
 
     monkeypatch.setattr("urllib.request.urlopen", urlopen)
-    monkeypatch.setattr(narzedzia_tlc, "PRZERWY_S", (0.0, 0.0))
+    monkeypatch.setattr(time, "sleep", (clock or ManualClock()).pause)
     monkeypatch.setattr(narzedzia_tlc, "TLA_SHA256", hashlib.sha256(JAR).hexdigest())
     return calls
 
 
-@pytest.mark.parametrize("awaria", [504, 500, 429, urllib.error.URLError("Connection reset by peer")], ids=["504", "500", "429", "siec"])
-def test_chwilowa_awaria_github_releases_nie_przerywa_pobrania_tla2tools_bo_pobieranie_ponawia(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, awaria: int | OSError
+@pytest.mark.parametrize(
+    "awaria",
+    [504, 500, 429, urllib.error.URLError("Connection reset by peer"), http.client.IncompleteRead(b"czesc jara", 1000)],
+    ids=["504", "500", "429", "siec", "urwana-odpowiedz"],
+)
+def test_chwilowa_awaria_github_releases_nie_przerywa_pobrania_tla2tools_bo_pobieranie_ponawia_po_przerwie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, awaria: int | Exception
 ) -> None:
-    calls = _download_answers(tmp_path, monkeypatch, [awaria, 200])
+    clock = ManualClock()
+    calls = _download_answers(tmp_path, monkeypatch, [awaria, 200], clock)
 
     jar = narzedzia_tlc.jar(tmp_path)
 
     assert jar.read_bytes() == JAR
     assert calls == [narzedzia_tlc.TLA_URL, narzedzia_tlc.TLA_URL]
+    assert clock.seconds == narzedzia_tlc.PRZERWY_S[0]
 
 
 def test_pobranie_tla2tools_ktore_zawodzi_do_konca_konczy_sie_bledem_pobierania_a_nie_modelu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -497,8 +509,14 @@ def _zapis() -> ModuleType:
     return skrypt_modelu(ZAPIS)
 
 
-@pytest.mark.parametrize(("jar", "zapisz"), [(None, "false"), (b"jar innej wersji", "false"), (JAR, "true")], ids=["bez-katalogu", "inna-suma", "przypiety"])
-def test_ci_zapisuje_cache_narzedzi_tlc_tylko_z_jarem_o_przypietej_sumie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, jar: bytes | None, zapisz: str) -> None:
+@pytest.mark.parametrize(
+    ("jar", "zapisz", "decyzja"),
+    [(None, "false", "nie ma"), (b"jar innej wersji", "false", "nie ma"), (JAR, "true", "ma")],
+    ids=["bez-katalogu", "inna-suma", "przypiety"],
+)
+def test_ci_zapisuje_cache_narzedzi_tlc_tylko_z_jarem_o_przypietej_sumie_i_drukuje_decyzje(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], jar: bytes | None, zapisz: str, decyzja: str
+) -> None:
     module = _zapis()
     monkeypatch.setattr(narzedzia_tlc, "TLA_SHA256", hashlib.sha256(JAR).hexdigest())
     monkeypatch.chdir(tmp_path)
@@ -510,6 +528,8 @@ def test_ci_zapisuje_cache_narzedzi_tlc_tylko_z_jarem_o_przypietej_sumie(tmp_pat
 
     assert module.main([]) == 0
     assert (tmp_path / "output").read_text(encoding="utf-8") == f"zapisz={zapisz}\n"
+    jar_tla = narzedzia_tlc.jar_tla(narzedzia_tlc.KATALOG).as_posix()
+    assert capsys.readouterr().out == f"NARZĘDZIA TLC: {jar_tla} {decyzja} przypiętej sumy, zapisz={zapisz}\n"
 
 
 def test_kazde_zadanie_z_cache_narzedzi_tlc_zapisuje_go_dopiero_po_sprawdzeniu_jara() -> None:
