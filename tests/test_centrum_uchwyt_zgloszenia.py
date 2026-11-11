@@ -327,6 +327,31 @@ def test_zgloszenie_nieudanej_aktualizacji_z_bardzo_dlugim_dziennikiem_to_jedna_
     assert len(body) + len(LONG_ENTRIES[-kept - 1]) + 1 > PART_LIMIT
 
 
+def update_report(result: UpdateResult, entries: tuple[str, ...]) -> UpdateReport:
+    message = update_messages.UpdateFailure.of(result.code).message
+    return UpdateReport(result, message, entries, ProblemFingerprint.of_tool_update(message))
+
+
+def test_zgloszenie_nieudanej_aktualizacji_po_instalacji_bibliotek_bez_commitu_przed_mowi_to_wprost(
+    computer: Computer,
+) -> None:
+    body = sent_alone(computer, update_report(UpdateResult(NO_CONNECTION, None, None, installed=True), SHORT_ENTRIES))
+
+    lines = body.splitlines()
+    start = lines.index("- Commit przed: nieznany")
+    assert lines[start : start + 3] == ["- Commit przed: nieznany", "- Commit po: brak", "- Biblioteki instalowane: tak"]
+
+
+def test_zgloszenie_dokladnie_na_granicy_jednej_czesci_wysylki_jest_cale(computer: Computer) -> None:
+    result = UpdateResult(NO_CONNECTION, TOOL_COMMIT, None)
+    frame = update_report(result, ("",)).report(commit=None, previous=None).body
+    entry = "x" * (PART_LIMIT - len(frame))
+
+    body = sent_alone(computer, update_report(result, (entry,)))
+
+    assert (len(body), f"\n{entry}\n" in body, "Pominięte najstarsze wpisy" in body) == (PART_LIMIT, True, False)
+
+
 def test_bez_sieci_zgloszenie_czeka_w_kolejce_i_dostaje_numer_po_dostarczeniu(computer: Computer) -> None:
     computer.with_key()
     computer.box.search_failure = Unreachable()
@@ -556,6 +581,49 @@ def test_wysylka_przerwana_wyjatkiem_nie_blokuje_nastepnej_ani_nie_zmienia_stanu
     assert after_failure == READY
     assert answers == [SENT]
     assert owner.states == [READY, SENT]
+
+
+def test_klikniecie_w_trakcie_powrotu_problemu_czeka_na_jego_koniec_i_nie_kladzie_zgloszenia_drugi_raz(
+    computer: Computer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Problem z otwartym Zgłoszeniem wraca po Diagnozie, a uchwyt kładzie powrót w kolejce sam (bez sieci zostaje w
+    niej); „Wyślij do Maksa” kliknięte w trakcie czeka na koniec powrotu i oddaje stan kolejki."""
+
+    computer.with_key()
+    reports = computer.reports()
+    report = stop_report(SHORT_ENTRIES)
+    first = reports.handle(report.fingerprint)
+    first.prepare(report)
+    first.wait_for_box()
+    assert dump(first.send()) == SENT
+    computer.box.search_failure = Unreachable()
+    outbox = computer.outbox
+    assert outbox is not None
+    post, posting, release = outbox.post, threading.Event(), threading.Event()
+
+    def held(queued: Post) -> bool:
+        posting.set()
+        release.wait(10)
+        return post(queued)
+
+    monkeypatch.setattr(outbox, "post", held)
+    handle = reports.handle(report.fingerprint)
+    answers: list[dict[str, Any]] = []
+    click = threading.Thread(target=lambda: answers.append(dump(handle.send())), daemon=True)
+
+    handle.prepare(report)
+    try:
+        assert posting.wait(10)
+        click.start()
+        click.join(0.2)
+        click_waits = click.is_alive()
+    finally:
+        release.set()
+    click.join(10)
+    handle.wait_for_box()
+
+    assert (click_waits, answers, dump(handle.state)) == (True, [QUEUED_FOR_INTERNET], QUEUED_FOR_INTERNET)
+    assert len(computer.queued()) == 1
 
 
 def test_otwarte_zgloszenie_wyslane_spoza_tego_komputera_czeka_na_naprawe_bez_drugiego_issue(computer: Computer) -> None:
