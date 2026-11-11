@@ -30,10 +30,6 @@ const SCHEMAS_OUTSIDE_UI = new Map([
 const FIELDS_OUTSIDE_UI = new Map([
   ["Health.service", "czyta je launcher Centrum (launcher.py), nie przeglądarka"],
   ["RunEvent.sequence", "numer zdarzenia strumienia SSE, nie treść dla taty"],
-  ["ReportsDay.holiday", "pokaże je ekran Mapa cieplna Raportów (#1323); dziś strona Raporty pokazuje dzień jak przed #1322"],
-  ["ReportsOrder.successful", "pokaże je ekran Mapa cieplna Raportów (#1323); dziś strona Raporty pokazuje dzień jak przed #1322"],
-  ["ReportsOrder.activities", "pokaże je ekran Mapa cieplna Raportów (#1323); dziś strona Raporty pokazuje dzień jak przed #1322"],
-  ["ReportsWorkerDay.orders_detail", "pokaże je ekran Mapa cieplna Raportów (#1323); dziś strona Raporty pokazuje dzień jak przed #1322"],
 ])
 
 // Pliki, które wolno rozgałęziać po nazwie procesu; każdy z uzasadnieniem.

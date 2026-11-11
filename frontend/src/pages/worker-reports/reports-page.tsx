@@ -1,34 +1,41 @@
-import { ChevronLeftIcon, ChevronRightIcon, FileSpreadsheetIcon, HistoryIcon, MailCheckIcon } from "lucide-react"
-import type { ReactNode } from "react"
+import * as React from "react"
+import { FileSpreadsheetIcon, MailCheckIcon, SearchIcon } from "lucide-react"
 
 import { getReportsView, keepManualValue, type ReportsView } from "@/api/centrum"
 import { LoadFailure } from "@/components/load-failure"
 import { PageHeader } from "@/components/page-header"
 import { SettingPath } from "@/components/setting-path"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAction } from "@/lib/action"
 import { href, usePagePath } from "@/lib/address"
 import { useContentEntrance } from "@/lib/content-entrance"
-import { dateTime, weekdayDate } from "@/lib/format"
+import { dateTime, plural } from "@/lib/format"
 import { useResource } from "@/lib/use-resource"
+import { type DayState, dayState, hasStatus, type Status } from "@/pages/worker-reports/day-state"
+import type { Keep } from "@/pages/worker-reports/day-details"
+import { type DayRange, rangeFromPath } from "@/pages/worker-reports/days"
+import { type HeatRow, HeatMap } from "@/pages/worker-reports/heat-map"
+import { RangeBar } from "@/pages/worker-reports/range-bar"
 import { EnteringNotes, EnterReportsButton, useReportEntering } from "@/pages/worker-reports/report-entering"
-import { UnknownSenders, WorkerRow, type Keep } from "@/pages/worker-reports/worker-row"
+import { StatusFilter } from "@/pages/worker-reports/status-filter"
+import { UnknownSenders } from "@/pages/worker-reports/unknown-senders"
 
 /**
- * Widok Raporty z adresu `#/raporty/<dzień>`: wynik ostatniego kliknięcia „Wpisz raporty z maili” w wybranym dniu
- * (bez dnia: dziś). Serwer oddaje całe okno z pliku wyniku, nie ze skrzynki, a strona pokazuje z niego dzień z adresu;
- * „Zostaw moją” zastępuje widok odpowiedzią serwera.
- * Przycisk Wpisania raportów stoi w nagłówku, a koniec Wpisania czyta widok od nowa. Pod nagłówkiem jedna cicha linia
- * z chwilą ostatniego kliknięcia i INTERMAX z Ustawień taty.
+ * Raporty: wynik ostatniego kliknięcia „Wpisz raporty z maili” jako Mapa cieplna Wykonawców i dni (#1319). Serwer
+ * oddaje całe okno z pliku wyniku, nie ze skrzynki; zakres dni z adresu `#/raporty/<od>/<do>` (bez zakresu:
+ * poniedziałek poprzedniego tygodnia do niedzieli bieżącego, przycięte do dni okna), stan dnia, wyszukiwarkę i filtr
+ * Status liczy przeglądarka. „Zostaw moją” zastępuje widok odpowiedzią serwera, a koniec Wpisania czyta go od nowa.
  */
 export function ReportsPage() {
-  const [path = null] = usePagePath()
+  const path = usePagePath()
   const { resource: view, reload, replace } = useResource(getReportsView, [], { fromDadFiles: false })
   const entrance = useContentEntrance(view.state === "loading")
   const entering = useReportEntering(reload)
+  const ready = view.state === "ready" && view.data.clicked_at !== null ? view.data : null
+  const days = React.useMemo(() => ready?.days.map((found) => found.day) ?? [], [ready])
+  const range = ready === null ? null : rangeFromPath(path, days, ready.today)
 
   const { running, run } = useAction(
     async (cell: Keep) => replace({ state: "ready", data: await keepManualValue(cell) }),
@@ -39,123 +46,152 @@ export function ReportsPage() {
     <>
       <PageHeader
         action={
-          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-            {view.state === "ready" ? <DayPicker view={view.data} day={path ?? view.data.today} /> : null}
+          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+            {ready === null || range === null ? null : (
+              <RangeBar days={days} today={ready.today} range={range} onRange={showRange} />
+            )}
             <EnterReportsButton entering={entering} />
           </div>
         }
       />
       <EnteringNotes entering={entering} />
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-        {view.state === "ready" && view.data.clicked_at !== null ? (
-          <p className="flex items-center gap-2 tabular-nums">
-            <HistoryIcon className="size-4" aria-hidden />
-            Ostatnie kliknięcie {dateTime(view.data.clicked_at)}
+        {ready?.clicked_at == null ? null : (
+          <p className="tabular-nums">
+            {ready.workers.length} {plural(ready.workers.length, { one: "Wykonawca", few: "Wykonawcy", many: "Wykonawców" })}
+            {" · "}ostatnie kliknięcie {dateTime(ready.clicked_at)}
           </p>
-        ) : null}
+        )}
         <div className="ml-auto min-w-0">
           <SettingPath label="INTERMAX" icon={<FileSpreadsheetIcon />} path="order_register" />
         </div>
       </div>
       {view.state === "loading" ? <Skeleton className="h-64 w-full" aria-label="Wczytywanie Raportów" /> : null}
       {view.state === "failed" ? <LoadFailure what="Raportów" message={view.message} reload={reload} /> : null}
-      {view.state === "ready" ? (
-        <ReportsContent
-          view={view.data}
-          day={path ?? view.data.today}
+      {view.state === "ready" && ready === null ? <NoReports className={entrance} /> : null}
+      {ready === null || range === null ? null : (
+        <ReportsMap
+          view={ready}
+          range={range}
           keeping={running?.[0] ?? null}
           onKeep={run}
           className={entrance}
         />
-      ) : null}
+      )}
     </>
   )
 }
 
-/** Dzień widoku ze strzałkami na dzień wcześniejszy i późniejszy z dni okna, które podaje serwer (od najstarszego). */
-function DayPicker({ view, day }: { view: ReportsView; day: string }) {
-  const days = view.days.map((found) => found.day)
-  const at = days.indexOf(day)
-  const older = at <= 0 ? undefined : days[at - 1]
-  const newer = at === -1 ? undefined : days[at + 1]
+/** Nowy zakres w adresie, więc Wstecz w przeglądarce wraca do poprzedniego. */
+function showRange(range: DayRange) {
+  window.location.hash = href("raporty", range.from, range.to)
+}
 
+function NoReports({ className }: { className: string | undefined }) {
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Dzień">
-      <DayLink day={older} label="Wcześniejszy dzień" icon={<ChevronLeftIcon />} />
-      <span className="min-w-36 text-center text-sm font-medium whitespace-nowrap tabular-nums" aria-live="polite">
-        {weekdayDate(day)}
-        {day === view.today ? <span className="font-normal text-muted-foreground"> · dziś</span> : null}
-      </span>
-      <DayLink day={newer} label="Późniejszy dzień" icon={<ChevronRightIcon />} />
-    </div>
+    <Empty className={className}>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <MailCheckIcon />
+        </EmptyMedia>
+        <EmptyTitle>Jeszcze nie ma Raportów</EmptyTitle>
+        <EmptyDescription>Kliknij „Wpisz raporty z maili” powyżej.</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 
-function DayLink({ day, label, icon }: { day: string | undefined; label: string; icon: ReactNode }) {
-  if (day === undefined) {
-    return (
-      <Button variant="ghost" size="icon" aria-label={label} disabled>
-        {icon}
-      </Button>
-    )
-  }
+const NO_STATUS: Readonly<Record<Status, number>> = { problem: 0, without_report: 0, waiting: 0, complete: 0 }
 
-  return (
-    <Button variant="ghost" size="icon" aria-label={label} nativeButton={false} render={<a href={href("raporty", day)} />}>
-      {icon}
-    </Button>
-  )
-}
-
-function ReportsContent({
+/**
+ * Pasek narzędzi (wyszukiwarka, filtr Status) i Mapa cieplna dni zakresu, pod nią Raporty spoza listy adresów z tych
+ * dni. Wykonawcy zawsze alfabetycznie; filtr Status zostawia tych, którzy mają w zakresie dzień wybranego stanu.
+ */
+function ReportsMap({
   view,
-  day,
+  range,
   keeping,
   onKeep,
   className,
 }: {
   view: ReportsView
-  day: string
+  range: DayRange
   keeping: Keep | null
   onKeep: (cell: Keep) => void
   className: string | undefined
 }) {
-  if (view.clicked_at === null) {
-    return (
-      <Empty className={className}>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <MailCheckIcon />
-          </EmptyMedia>
-          <EmptyTitle>Jeszcze nie ma Raportów</EmptyTitle>
-          <EmptyDescription>Kliknij „Wpisz raporty z maili” powyżej.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
+  const [query, setQuery] = React.useState("")
+  const [chosen, setChosen] = React.useState<ReadonlySet<Status>>(new Set())
+  const columns = view.days.filter((column) => column.day >= range.from && column.day <= range.to)
+
+  const rows: ReadonlyArray<HeatRow> = view.workers
+    .toSorted((left, right) => left.worker.localeCompare(right.worker, "pl"))
+    .map(({ worker, days }) => ({
+      worker,
+      cells: columns.map((column) => ({
+        column,
+        state: dayState(
+          days.find((found) => found.day === column.day),
+          column,
+          view.today
+        ),
+      })),
+    }))
+
+  const counts = { ...NO_STATUS }
+
+  for (const { state } of rows.flatMap((row) => row.cells)) {
+    if (hasStatus(state)) {
+      counts[state.kind] += 1
+    }
   }
 
-  const workers = view.workers.flatMap(({ worker, days }) =>
-    days.filter((found) => found.day === day).map((found) => ({ worker, day: found }))
+  const needle = query.trim().toLocaleLowerCase("pl")
+
+  const shown = rows.filter(
+    (row) =>
+      row.worker.toLocaleLowerCase("pl").includes(needle) &&
+      (chosen.size === 0 || row.cells.some((cell) => hasChosen(cell.state, chosen)))
   )
 
-  const unknown = view.unknown_senders.filter((sender) => sender.day === day)
-  const nothing = workers.length === 0 && unknown.length === 0
+  const unknown = view.unknown_senders.filter((sender) => columns.some((column) => column.day === sender.day))
 
   return (
     <div className={`flex flex-col gap-4 ${className ?? ""}`}>
-      {nothing ? (
-        <Card>
-          <CardContent className="text-sm text-muted-foreground">Ten dzień nie ma zleceń ani Raportów wykonawców.</CardContent>
-        </Card>
-      ) : null}
-      {workers.length === 0 ? null : (
-        <Card className="py-0" role="list" aria-label="Wykonawcy">
-          {workers.map(({ worker, day: shown }) => (
-            <WorkerRow key={worker} worker={worker} day={shown} keeping={keeping} onKeep={onKeep} />
-          ))}
-        </Card>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-64">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            type="search"
+            aria-label="Szukaj Wykonawcy"
+            placeholder="Szukaj Wykonawcy"
+            autoComplete="off"
+            className="h-9 pl-8"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <StatusFilter chosen={chosen} counts={counts} onChange={setChosen} />
+        {chosen.size === 0 ? null : (
+          <span className="text-sm text-muted-foreground tabular-nums" aria-live="polite">
+            {shown.length} z {rows.length} Wykonawców
+          </span>
+        )}
+      </div>
+      <HeatMap
+        columns={columns}
+        today={view.today}
+        rows={shown}
+        dimmed={chosen.size === 0 ? null : chosen}
+        empty={chosen.size === 0 ? "Żaden Wykonawca nie pasuje do wyszukiwania." : "Nikt nie ma dni w tym stanie w wybranych dniach."}
+        keeping={keeping}
+        onKeep={onKeep}
+      />
       <UnknownSenders senders={unknown} />
     </div>
   )
+}
+
+function hasChosen(state: DayState, chosen: ReadonlySet<Status>): boolean {
+  return hasStatus(state) && chosen.has(state.kind)
 }
