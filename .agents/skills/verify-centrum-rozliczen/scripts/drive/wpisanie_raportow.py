@@ -327,7 +327,7 @@ def _reload_settled(page: Page) -> None:
         lambda response: response.url.endswith("/api/report-entering") and response.request.method == "GET"
     ) as answered:
         page.reload()
-    answered.value.finished()
+    answered.value.body()
     expect(page.get_by_role("heading", name="Raporty", exact=True)).to_be_visible()
     # Two frames after the answer: React has shown it, so the button's state is the one the page settled on.
     page.evaluate("() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))")
