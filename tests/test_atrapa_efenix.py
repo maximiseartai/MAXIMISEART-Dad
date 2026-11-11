@@ -61,16 +61,19 @@ from atrapy.atrapa_efenix import (
     LIST_PAGE,
     LIST_SCRIPT,
     LOAD_EMMETT,
+    LOGIN_ACTION,
     LOGIN_PAGE,
     LOGOUT,
     CHANGE_STATUS,
     ORDER_PAGE,
+    ORDER_SCRIPT,
     SAVE_QUANTITY,
     SEARCH,
     SET_DATE,
     AtrapaOrder,
     Changed,
     Outage,
+    Unread,
     atrapa_efenix,
 )
 from tests.fixtures.expect import assert_expected
@@ -216,6 +219,77 @@ def test_kazda_odpowiedz_atrapy_podaje_typ_tresci_z_kodowaniem_utf8() -> None:
         connection.close()
 
     assert types == ["text/html; charset=utf-8", "text/javascript; charset=utf-8", "text/html; charset=utf-8"]
+
+
+def test_odciety_efenix_konczy_polaczenie_resetem_bez_bajtu_odpowiedzi() -> None:
+    """Sieć, która zniknęła (``Outage.CUT``): pytający nie dostaje ani bajtu odpowiedzi, a połączenie kończy reset (w
+    przeglądarce ``net::ERR_CONNECTION_RESET``), a nie zwykłe zamknięcie, które dałoby pusty odczyt."""
+
+    with atrapa_efenix([], outage_from=(Outage.CUT, 0)) as atrapa:
+        address = urlparse(atrapa.url)
+        with socket.create_connection((address.hostname or "", address.port or 0), timeout=10) as asking:
+            asking.sendall(f"GET /{LIST_PAGE} HTTP/1.1\r\nHost: atrapa\r\n\r\n".encode())
+            with pytest.raises(ConnectionResetError):
+                asking.recv(1)
+
+
+def test_stojaca_siec_daje_polowe_tresci_i_milknie_bez_konca_polaczenia() -> None:
+    """Sieć, która stanęła (``Outage.STALLED``): po połowie treści nie przychodzi ani bajt, ani koniec połączenia (jak
+    zerwanie, ``Outage.TORN``). Ciszę widać tylko w oknie czasu, więc pytający czeka na resztę sekundę."""
+
+    with atrapa_efenix([], outage_from=(Outage.STALLED, 0)) as atrapa:
+        connection = _connection(atrapa.url)
+        connection.request("GET", f"/{LIST_PAGE}")
+        response = connection.getresponse()
+        length = int(response.getheader("Content-Length", "0"))
+        half = response.read(length // 2)
+        assert connection.sock is not None
+        connection.sock.settimeout(1)
+        with pytest.raises(TimeoutError):
+            response.read(1)
+        connection.close()
+
+    assert len(half) == length // 2
+
+
+def test_logowanie_z_sesja_w_ciasteczku_daje_ciasteczko_ktorym_przegladarka_jest_w_sesji() -> None:
+    """Efenix trzyma sesję w ciasteczku (``cookie_session``): przekierowanie po zalogowaniu daje ciasteczko sesji, z którym
+    lista otwiera się w sesji, a bez niego przekierowuje na logowanie."""
+
+    with atrapa_efenix([], cookie_session=True) as atrapa:
+        atrapa.expire_session()
+        connection = _connection(atrapa.url)
+        connection.request("POST", f"/{LOGIN_ACTION}", body="", headers=_FORM)
+        login = connection.getresponse()
+        login.read()
+        connection.request("GET", f"/{LIST_PAGE}", headers={"Cookie": login.getheader("Set-Cookie", "")})
+        with_cookie = connection.getresponse()
+        with_cookie.read()
+        connection.request("GET", f"/{LIST_PAGE}")
+        without_cookie = connection.getresponse()
+        without_cookie.read()
+        connection.close()
+
+    assert (login.status, login.getheader("Location"), with_cookie.status, without_cookie.getheader("Location")) == (
+        302,
+        LIST_PAGE,
+        200,
+        LOGIN_PAGE,
+    )
+
+
+@pytest.mark.parametrize(("changed", "shown"), [(None, "21.00"), (Unread.PRICE_TEXT, "21,00")], ids=["z-kropka", "z-przecinkiem"])
+def test_cena_pozycji_w_tekscie_karty_ma_kropke_albo_przecinek_ceny_z_przecinkiem(changed: Unread | None, shown: str) -> None:
+    """Cena pozycji 012 (21.00) w tekście jej karty; wariant ``ceny-z-przecinkiem`` narzędzia zgodności
+    (``tests/test_zgodnosc_efenix.py``) sprawdza na niej, że narzędzie czyta też cenę z przecinkiem."""
+
+    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")], changed=changed) as atrapa:
+        connection = _connection(atrapa.url)
+        connection.request("GET", f"/{ORDER_PAGE}?id=901")
+        page = connection.getresponse().read().decode("utf-8")
+        connection.close()
+
+    assert [text for text in ("21.00", "21,00") if text in page] == [shown]
 
 
 @pytest.mark.parametrize("changed", [None, Changed.DATE_FORMAT, Changed.DATE_DIGITS], ids=["zapis-efenix", "inny-zapis", "same-cyfry"])
@@ -730,3 +804,32 @@ def test_okno_przegladarki_na_atrapie_daje_ten_sam_przebieg_co_okno_w_procesie(r
         observed = _observed(window, row.steps, atrapa.expire_session) + _ended(atrapa.stan, row.resent)
 
     assert observed == _in_process(row)
+
+
+@pytest.mark.parametrize(
+    ("path", "java_script"),
+    [
+        pytest.param(LIST_PAGE, False, id="elementy-listy"),
+        pytest.param(f"{ORDER_PAGE}?id=901", False, id="elementy-strony-zlecenia"),
+        pytest.param(LIST_SCRIPT, True, id="skrypt-listy"),
+        pytest.param(ORDER_SCRIPT, True, id="skrypt-strony-zlecenia"),
+    ],
+)
+def test_wroga_strona_atrapy_w_zwyklej_przegladarce_sama_konczy_sesje_efenix(path: str, java_script: bool, browser: Browser) -> None:
+    """Wariant ``skrypty-stron-zapisuja-i-wylogowuja`` narzędzia zgodności (``tests/test_zgodnosc_efenix.py``) pokazuje,
+    że narzędzie czyta strony ``Unread.HOSTILE`` bez skutków. Tu każda ich część w zwykłej przeglądarce sama wylogowuje:
+    elementy strony już bez JavaScriptu, a skrypt strony wykonany na stronie Atrapy bez innych skryptów."""
+
+    with (
+        atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")], changed=Unread.HOSTILE) as atrapa,
+        page_of(browser, java_script=java_script) as page,
+    ):
+        origin = atrapa.url.removesuffix(LIST_PAGE)
+        if java_script:
+            page.goto(f"{origin}nie_ma.php")
+            page.evaluate("src => document.head.append(Object.assign(document.createElement('script'), {src}))", f"{origin}{path}")
+        else:
+            page.goto(f"{origin}{path}", wait_until="commit")
+        logged_out = wait_for(lambda: not atrapa.state()[1], seconds=10)
+
+    assert logged_out
