@@ -41,6 +41,42 @@ Preconditions:
 - **Narrow screen.** Viewport 390×844, row `wykonawca.a` opened, bounding boxes of the names and of `Problemy 0`. Capture `284`. Viewport back to 1440×1000. Harness: the Rejestr zleceń from before the feature.
 - **Proof.** Screenshots `280`–`284`, `api/raporty-*.json`, `state/` (the Logi), checks in `drive.txt`.
 
+### Real mailbox (only on the machine with the access file, with Maks's consent)
+
+The synthetic mails prove the rules; only Dad's real Raporty wykonawców show the forms no test has yet. On 11.11.2026
+a review of them next to their Wpisy found two faults of the core that the probe's figures did not show: a mail app's
+footer inside the activities, and contradicting Wpisy of one number. Run this path before a Wydanie that changes how
+Raporty are recognised (`src/rozliczenia/worker_reports/`) or the IMAP port (`src/rozliczenia/worker_report_inbox.py`),
+only on a machine that holds the access file (`config/skrzynka-raportow.txt` with the app password; today only Maks's
+Mac), and only after Maks agreed to this run. Never open the access file yourself, and never run the probe without
+that consent: it logs in to Dad's real Gmail (read-only, `EXAMINE` and `BODY.PEEK`). CI never runs this path.
+
+- **Run.** `.venv/bin/python tools/proba_skrzynki_raportow.py --config ~/MAXIMISEART-Dad/config --przeglad ~/.t3/notes/<run>/wpisy.txt`
+  (`--od RRRR-MM-DD` for another first day, by default 14 days back; `--nadpisz` replaces the file of an earlier run).
+  Stdout is the probe's figures, unchanged, ending with `PROBA IMAP OK | …` or `PROBA IMAP FAIL | <powód>`. The file
+  (rights `0600`) holds every Raport wykonawcy and every mail of a Wykonawca with an unrecognised subject, by arrival:
+  the arrival, the Wykonawca as `Wykonawca A`, `B`, …, the subject, the day or the subject's fault, the body as the
+  port gave it, and the core's Wpisy (number, `tak`/`nie` or `bez tak/nie: <fault>`, activities); at the end, every
+  number with several Wpisy of one Wykonawca and day. Before it connects, the tool refuses a path inside a Git
+  repository (the tool's clone included) and an existing file without `--nadpisz`.
+- **Review checklist.** Read every body next to its Wpisy and count, per item, the mails that show it:
+  - footers and signatures inside the activities (`Wysłane z …`, a name, a phone number, a greeting after the last Wpis);
+  - an activity cut short, or glued to the next Wpis or to a quoted earlier mail;
+  - contradicting Wpisy of one number (section `NUMERY Z KILKOMA WPISAMI …`): a later mail correcting an earlier one is
+    the rule, but one number twice in one body is not, and the file shows only its first Wpis, as the core keeps it;
+  - unrecognised subjects (`temat nierozpoznany: <fault>`): a form Dad's Wykonawcy write often is a missing rule;
+  - Raporty outside the window (`dzien spoza okna proby`), which Wpisanie raportów skips silently, and numbers that are
+    no order numbers (a phone number, a date, too few digits);
+  - Polish letters: each one intact, with no `Ã`, `Ä`, `Å`, `Ă`, `Ĺ` or U+FFFD (also counted in `zepsute_znaki`).
+- **What may leave the file.** The file holds real mails: names, addresses and clients' order numbers. In the chat, an
+  issue or a PR go only the stdout lines, the counts per checklist item and each finding as a form rebuilt from
+  synthetic data (`40000001 tak wymiana gniazdka` followed by `Wysłane z iPhone'a`), never a body, subject, activity,
+  name, address or order number from the file. Keep it in `~/.t3/notes/<run>/` on that machine, never in the
+  repository or in `/tmp`.
+- **It does not replace tests.** Every finding gets a test with its synthetic form that fails before the fix, in
+  `tests/test_rdzen_raportow.py` for the core or `tests/test_skrzynka_raportow.py` for the port; the next run on the
+  real mailbox shows whether the form is gone.
+
 ## Gotchas
 
 - `Otwórz Raporty` is an anchor rendered as a button, so its role is `button`, not `link`.

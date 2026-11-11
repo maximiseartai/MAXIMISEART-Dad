@@ -52,19 +52,39 @@ Uruchomienie u taty, w klonie narzędzia z plikami w ``config/`` (Windows: ``py 
 komentarzu #1234:
 
     .venv/bin/python tools/proba_skrzynki_raportow.py [--od RRRR-MM-DD] [--config <folder config>]
+        [--przeglad <plik> [--nadpisz]]
+
+Przegląd Wpisów (``--przeglad PLIK``, ścieżka prawdziwej skrzynki skilla ``verify-centrum-rozliczen``, funkcja
+``wpisanie-raportow``): stdout zostaje ten sam, a ``PLIK`` dostaje dla każdego przeczytanego Raportu wykonawcy od
+Wykonawcy z pliku adresów i każdego jego maila z nierozpoznanym tematem chwilę przyjścia, Wykonawcę jako alias
+(``Wykonawca A``, ``B``, … w kolejności pierwszego maila w pliku, bez loginu i adresu), temat, dzień z tematu albo
+powód tematu, treść tak, jak ją oddał port (końce linii jako ``\n``), i Wpisy raportu z rdzenia: numer, ``tak``/``nie``
+albo powód braku i czynności. Raport z dniem spoza okna próby (od ``--od`` do dziś), który rdzeń pomija, plik pokazuje
+z Wpisami i dopiskiem, a Raporty od adresów spoza pliku adresów liczy tylko stdout. Na końcu plik zbiera numery, które
+mają kilka Wpisów jednego Wykonawcy z jednego dnia. Plik powstaje zaraz po odczycie maili, także gdy próba potem nie
+przechodzi.
+
+**Plik przeglądu zawiera prawdziwe maile Wykonawców taty** (nazwiska, adresy i numery zleceń klientów w treści).
+Trzymaj go w ``~/.t3/notes/<run>/`` na maszynie z plikiem dostępu, nie w repozytorium i nie w ``/tmp``. Jego treść nie
+trafia do czatu, issue ani PR: wolno z niego wypisać tylko zbiorcze wnioski i liczby, a każdy znaleziony błąd dostaje
+test z syntetyczną postacią. Narzędzie tworzy plik z prawami ``0600``, odmawia ścieżki w repozytorium Git, także w
+klonie narzędzia (folder pliku albo folder nad nim ma ``.git``, po dowiązaniach) i istniejącego pliku bez
+``--nadpisz``: odmowa to ``PROBA IMAP FAIL | <powód>`` bez łączenia ze skrzynką.
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import imaplib
+import os
 from pathlib import Path
 import re
 import sys
-from typing import Final
+from typing import Final, TextIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -80,13 +100,20 @@ from rozliczenia.worker_report_inbox import (
     PasswordRejected,
 )
 from rozliczenia.worker_reports import (
+    Login,
+    OrderNumber,
     OwnEntries,
     ReadReport,
     ReadStranger,
+    ReadUnreadable,
+    ReportEntry,
     ReportInputs,
     ReportMail,
     ReportsOutcome,
+    Verdict,
+    VerdictFault,
     Window,
+    WorkerAddresses,
     enter_reports,
 )
 
@@ -105,9 +132,9 @@ class ProbeFailed(Exception):
         self.reason = reason
 
 
-def probe(inbox: ImapInbox, config: Path, since: date, today: date) -> list[str]:
+def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: ReviewFile | None = None) -> list[str]:
     """Linie wyniku próby z ostatnią ``PROBA IMAP OK`` albo ``PROBA IMAP FAIL``; ``ProbeFailed``, gdy próba nie doszła
-    do liczb."""
+    do liczb. ``review`` dostaje przeczytane maile zaraz po ich odczycie."""
 
     match inbox.access():
         case "missing":
@@ -130,9 +157,10 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date) -> list[str]
     if isinstance(read, (PasswordRejected, InboxUnreachable)):
         raise ProbeFailed(_unreachable(read, "odczycie maili"))
     mails = read.mails
-    outcome = enter_reports(
-        ReportInputs(mails, addresses, (), Window.of(today, since), OwnEntries.EMPTY, frozenset())
-    )
+    window = Window.of(today, since)
+    outcome = enter_reports(ReportInputs(mails, addresses, (), window, OwnEntries.EMPTY, frozenset()))
+    if review is not None:
+        review.write(mails, addresses, window)
     after = _survey(inbox, since, "drugim odczycie flag")
     changed = sum(1 for uid, flags in before.flags.items() if after.flags.get(uid) != flags)
     unread = sum(1 for survey in (before, after) if len(survey.flags) != survey.searched)
@@ -158,6 +186,130 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date) -> list[str]
     ]
     last = f"{FAIL} | {'; '.join(reasons)}" if reasons else f"{OK} | maile={len(mails)} | flagi bez zmian"
     return [*lines, last]
+
+
+_WHOLE_TIME: Final = Window(date.max, date.min, frozenset())
+"""Okno, które otwiera każdy dzień: przegląd czyta nim także Raport z dniem spoza okna próby, który rdzeń pomija."""
+_REVIEW_HEAD: Final = """PRZEGLĄD WPISÓW Z PRAWDZIWEJ SKRZYNKI RAPORTÓW (tools/proba_skrzynki_raportow.py --przeglad)
+Ten plik zawiera prawdziwe maile Wykonawców taty. Trzymaj go w ~/.t3/notes/<run>/, nie w repozytorium i nie w /tmp.
+Jego treść nie trafia do czatu, issue ani PR: wolno wypisać tylko zbiorcze wnioski i liczby, a każdy błąd dostaje test
+z syntetyczną postacią.
+Próba nie zna zleceń INTERMAX, więc numerem Wpisu jest tu liczba o dowolnej liczbie cyfr; Wpisanie raportów u taty
+uznaje za numer tylko liczbę co najmniej tak długą jak najkrótszy NUMER ZL. dni otwartych, a krótszą wpisuje do opisu.
+"""
+
+
+@dataclass(frozen=True)
+class ReviewFile:
+    """Plik przeglądu Wpisów (``--przeglad``): ``path`` po dowiązaniach, ``replace`` z ``--nadpisz``."""
+
+    path: Path
+    replace: bool
+
+    @classmethod
+    def of(cls, path: Path, replace: bool) -> ReviewFile:
+        return cls(path.expanduser().resolve(), replace)
+
+    def refusal(self) -> str | None:
+        """Powód odmowy pliku przed łączeniem ze skrzynką, bez ścieżki; ``None``, gdy plik wolno zapisać."""
+
+        if any((folder / ".git").exists() for folder in self.path.parents):
+            return "plik przegladu w repozytorium Git, a ma prawdziwe maile: podaj sciezke w ~/.t3/notes/<run>/"
+        if self.path.is_dir():
+            return "plik przegladu to folder: podaj sciezke pliku"
+        if self.path.exists() and not self.replace:
+            return "plik przegladu juz istnieje: podaj nowa sciezke albo --nadpisz"
+        if not self.path.parent.is_dir():
+            return "brak folderu pliku przegladu"
+        return None
+
+    def write(self, mails: Sequence[ReportMail], addresses: WorkerAddresses, window: Window) -> None:
+        """Zapisuje przegląd do nowego pliku, który od utworzenia ma prawa ``0600``; ``ProbeFailed``, gdy zapis się
+        nie udał.
+
+        Z ``--nadpisz`` przegląd powstaje obok i podmienia stary plik przez ``os.replace``, więc deskryptor otwarty na
+        starym pliku (z dawnymi prawami) nigdy nie widzi prawdziwych maili; bez ``--nadpisz`` ``O_EXCL`` nie nadpisze
+        pliku, który powstał po ``refusal``."""
+
+        target = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp") if self.replace else self.path
+        try:
+            descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as out:
+                    _write_review(out, mails, addresses, window)
+                if self.replace:
+                    os.replace(target, self.path)
+            except BaseException:
+                target.unlink(missing_ok=True)
+                raise
+        except OSError as error:
+            raise ProbeFailed(f"nie zapisano pliku przegladu: {type(error).__name__}") from None
+
+
+def _write_review(out: TextIO, mails: Sequence[ReportMail], addresses: WorkerAddresses, window: Window) -> None:
+    """Każdy mail osobno przez rdzeń: Wpisy jednego maila nie zależą od innych maili, gdy próba nie ma zleceń."""
+
+    aliases: dict[Login, str] = {}
+    entries: dict[tuple[str, date, OrderNumber], list[tuple[datetime, ReportEntry]]] = {}
+    out.write(_REVIEW_HEAD)
+    for mail, found in sorted(_worker_reads(mails, addresses), key=lambda pair: pair[0].arrived):
+        alias = aliases.setdefault(found.worker, _alias(len(aliases)))
+        out.write(f"\n===== {mail.arrived:%Y-%m-%d %H:%M %z} | {alias} | temat: {mail.subject!r}")
+        match found:
+            case ReadReport(day=day):
+                outside = "" if window.opens(day) else " | dzien spoza okna proby: rdzen pomija ten Raport"
+                out.write(f" | dzien {day.isoformat()}{outside}\n")
+            case ReadUnreadable(fault=fault):
+                outside = "" if window.opens(mail.arrived.date()) else " | przyszedl przed oknem proby: rdzen go pomija"
+                out.write(f" | temat nierozpoznany: {fault.name}{outside}\n")
+        out.write("----- TRESC\n")
+        out.write("".join(f"{line}\n" for line in mail.text.splitlines()))
+        match found:
+            case ReadReport(day=day, entries=read):
+                out.write(f"----- WPISY ({len(read)})\n")
+                for entry in read:
+                    out.write(f"  {_entry_line(entry)}\n")
+                    entries.setdefault((alias, day, entry.number), []).append((mail.arrived, entry))
+            case ReadUnreadable():
+                out.write("----- WPISY: brak, bo temat nierozpoznany\n")
+    repeated = {key: same for key, same in entries.items() if len(same) > 1}
+    out.write(f"\n===== NUMERY Z KILKOMA WPISAMI JEDNEGO WYKONAWCY Z JEDNEGO DNIA ({len(repeated)})\n")
+    for (alias, day, number), same in sorted(repeated.items()):
+        out.write(f"{alias} | dzien {day.isoformat()} | {number}\n")
+        for arrived, entry in same:
+            out.write(f"  {arrived:%Y-%m-%d %H:%M %z} | {_entry_line(entry)}\n")
+
+
+def _worker_reads(
+    mails: Sequence[ReportMail], addresses: WorkerAddresses
+) -> Iterator[tuple[ReportMail, ReadReport | ReadUnreadable]]:
+    for mail in mails:
+        outcome = enter_reports(ReportInputs((mail,), addresses, (), _WHOLE_TIME, OwnEntries.EMPTY, frozenset()))
+        for found in outcome.mails:
+            if isinstance(found, (ReadReport, ReadUnreadable)):
+                yield mail, found
+
+
+def _alias(index: int) -> str:
+    """``Wykonawca A`` … ``Z``, potem ``AA``, ``AB`` …"""
+
+    letters = ""
+    index += 1
+    while index:
+        index, rest = divmod(index - 1, 26)
+        letters = chr(ord("A") + rest) + letters
+    return f"Wykonawca {letters}"
+
+
+def _entry_line(entry: ReportEntry) -> str:
+    match entry:
+        case ReportEntry(verdict=Verdict() as verdict):
+            shown = verdict.value
+        case ReportEntry(fault=VerdictFault() as fault):
+            shown = f"bez tak/nie: {fault.name}"
+        case _:
+            shown = "bez tak/nie"
+    return f"{entry.number} | {shown} | {entry.activities!r}"
 
 
 def _recognised(outcome: ReportsOutcome) -> bool:
@@ -240,10 +392,25 @@ def main(argv: Sequence[str] | None = None, *, connect: Callable[[], imaplib.IMA
         default=tool_files.CONFIG_DIR,
         help="Folder config z plikiem dostępu i plikiem adresów (domyślnie config klonu narzędzia, jak w Centrum).",
     )
+    parser.add_argument(
+        "--przeglad",
+        type=Path,
+        help="Plik przeglądu Wpisów z prawdziwymi mailami Wykonawców (prawa 0600): trzymaj go w ~/.t3/notes/<run>/, nie w"
+        " repozytorium i nie w /tmp, a jego treść nie trafia do czatu, issue ani PR, tylko zbiorcze wnioski bez danych"
+        " klientów. Ścieżki w repozytorium Git narzędzie odmawia bez łączenia ze skrzynką.",
+    )
+    parser.add_argument(
+        "--nadpisz", action="store_true", help="Zastąp istniejący plik --przeglad (bez tej flagi narzędzie go odmawia)."
+    )
     args = parser.parse_args(argv)
+    if args.nadpisz and args.przeglad is None:
+        parser.error("--nadpisz dotyczy tylko --przeglad")
+    review = None if args.przeglad is None else ReviewFile.of(args.przeglad, args.nadpisz)
     inbox = ImapInbox(args.config) if connect is None else ImapInbox(args.config, connect=connect)
     try:
-        lines = probe(inbox, args.config, args.od, today)
+        if review is not None and (refusal := review.refusal()) is not None:
+            raise ProbeFailed(refusal)
+        lines = probe(inbox, args.config, args.od, today, review)
     except ProbeFailed as error:
         lines = [f"{FAIL} | {error.reason}"]
     print("\n".join(lines))
