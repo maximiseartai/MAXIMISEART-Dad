@@ -33,7 +33,10 @@ with open(os.environ["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
 if os.environ.get("ATRAPA_BEZ_API"):
     sys.exit(0)
 base = ustawienia_claude.base_url(sys.argv[1:], os.getcwd(), os.environ)
-urllib.request.urlopen(urllib.request.Request(base + "/v1/messages", data=b"{{}}", method="POST")).read()
+with urllib.request.urlopen(urllib.request.Request(base + "/v1/messages", data=b"{{}}", method="POST")) as answer:
+    answer.read()
+    with open(os.environ["ATRAPA_WYWOLANIA"] + ".odpowiedz", "w", encoding="utf-8") as headers:
+        json.dump(dict(answer.headers), headers)
 time.sleep(max(0.0, float(os.environ.get("ATRAPA_DO", "0")) - time.time()))
 '''
 
@@ -50,14 +53,19 @@ def calls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _claude(
-    calls: Path, cwd: Path, stop: threading.Event, contact_s: float = falszywe_api.CONTACT_S, **env: str
+    calls: Path,
+    cwd: Path,
+    stop: threading.Event,
+    contact_s: float = falszywe_api.CONTACT_S,
+    timeout: float = 60,
+    **env: str,
 ) -> falszywe_api.Ran:
     return falszywe_api.claude(
         ["-p", "x"],
         answer=lambda body: falszywe_api.stream({"type": "text", "text": "ok"}),
         cwd=cwd,
         env={"ATRAPA_WYWOLANIA": str(calls), **env},
-        timeout=60,
+        timeout=timeout,
         stop=stop,
         contact_s=contact_s,
     )
@@ -147,3 +155,52 @@ def test_straznik_kontaktu_przypadku_bez_zapytania_nie_konczy_nastepnego_przypad
     second = _claude(calls, tmp_path, stop, ATRAPA_DO=str(first_deadline + 0.5))
 
     assert (first, second) == (falszywe_api.Ran(0, False), falszywe_api.Ran(0, True))
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_falszywe_api_odpowiada_strumieniem_zdarzen_jak_messages_api(calls: Path, tmp_path: Path) -> None:
+    # Messages API ze ``stream`` odpowiada typem ``text/event-stream``, a Claude Code dostaje strumień w tej postaci.
+    _claude(calls, tmp_path, threading.Event())
+
+    headers = json.loads(calls.with_name(calls.name + ".odpowiedz").read_text(encoding="utf-8"))
+    assert {name.lower(): value for name, value in headers.items()}["content-type"] == "text/event-stream"
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_claude_po_limicie_czasu_ginie_bez_kodu_wyjscia(calls: Path, tmp_path: Path) -> None:
+    # Atrapa po zapytaniu żyje jeszcze 60 s, a limit to 1 s.
+    ran = _claude(calls, tmp_path, threading.Event(), timeout=1, ATRAPA_DO=str(time.time() + 60))
+
+    assert ran == falszywe_api.Ran(None, True)
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_po_koncu_claude_falszywe_api_nie_zostawia_watku(calls: Path, tmp_path: Path) -> None:
+    # Wątek serwera bez ``shutdown`` kręci się dalej na zamkniętym gnieździe (ok. 70% rdzenia na Macu, 11.11.2026),
+    # a wyrocznia uruchamia ``claude`` raz na przypadek.
+    before = set(threading.enumerate())
+
+    _claude(calls, tmp_path, threading.Event())
+
+    for thread in set(threading.enumerate()) - before:
+        thread.join(timeout=5)
+    assert [thread.name for thread in set(threading.enumerate()) - before] == []
+
+
+def _events(data: bytes) -> list[dict[str, object]]:
+    return [json.loads(line[6:]) for line in data.decode().splitlines() if line.startswith("data: ")]
+
+
+@pytest.mark.parametrize(
+    ("block", "reason"),
+    [
+        ({"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "true"}}, "tool_use"),
+        ({"type": "text", "text": "ok"}, "end_turn"),
+    ],
+    ids=["narzedzie", "tekst"],
+)
+def test_strumien_konczy_wiadomosc_powodem_jej_bloku(block: dict[str, object], reason: str) -> None:
+    # ``stop_reason`` ``tool_use`` każe Claude Code uruchomić narzędzie, a ``end_turn`` kończy turę.
+    (delta,) = [event["delta"] for event in _events(falszywe_api.stream(block)) if event["type"] == "message_delta"]
+
+    assert isinstance(delta, dict) and delta["stop_reason"] == reason

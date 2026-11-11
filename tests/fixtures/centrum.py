@@ -504,6 +504,17 @@ def write_report_key(tool: ToolDirectory, key: str = REPORT_KEY) -> Path:
     return tool.report_key
 
 
+def remove_report_key(client: CentrumClient, tool: ToolDirectory) -> None:
+    """Maks zabiera Token do Zgłoszeń działającemu Centrum: usuwa jego plik, gdy wątki Centrum w tle skończyły pracę.
+
+    Pytania skrzynki, które Diagnoza i Kolejka wysyłki zostawiają w tle po odpowiedzi API, czytają ten plik, a na Windows
+    pliku, który wątek w tej chwili czyta, nie da się usunąć (``PermissionError``, #1064).
+    """
+
+    join_threads_since(client.since)
+    tool.report_key.unlink()
+
+
 def efenix_window(
     tool: ToolDirectory, url: str = NO_EFENIX, *, arguments: tuple[str, ...] = (), pace: Pace | None = None
 ) -> EfenixWindow:

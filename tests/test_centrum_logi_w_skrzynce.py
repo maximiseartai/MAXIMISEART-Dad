@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+import copy
 from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
@@ -20,12 +21,24 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from typing import Any, Final
 
+from openpyxl import load_workbook
 import pytest
 
-from odtworzenie import COMPARED, NOT_COMPARED
+from odtworzenie import (
+    COMPARED,
+    NOT_COMPARED,
+    SYNTHETIC_ADDRESS,
+    SYNTHETIC_ORANGE,
+    Difference,
+    Report,
+    Verdict,
+    first_difference,
+    replay,
+)
 from rozliczenia import tool_files
 from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia import intermax_copies
@@ -66,8 +79,13 @@ from tests.fixtures.centrum_processes import (
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
 from atrapy.settlement import PERIOD
+import sys
 
 import odtworz_uruchomienie
+import openpyxl
+from atrapa_z_logow import ScopedOrder, fed
+from rozliczenia.centrum.run_logs import LoggedOrder
+from rozliczenia.efenix_address import AddressPart, address_differences
 
 LABEL: Final = "logi-uruchomienia"
 LINE = f"- Logi Uruchomienia okresu: {PERIOD}"
@@ -717,7 +735,8 @@ def test_odtworzenie_porownuje_kazde_pole_logow_poza_faktami_startu_i_okolicznos
 
 
 def test_pomoc_narzedzia_wymienia_kazdy_proces_katalogu(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` narzędzia odtwarzania wymienia każdy proces, który odtwarza, nazwą z karty Centrum."""
+    """``--help`` narzędzia odtwarzania wymienia każdy proces, który odtwarza, nazwą z karty Centrum, a parametrów,
+    którymi narzędzie woła swoją kopię commitu (``--opis-kodu``, ``--granica``), nie pokazuje."""
 
     with pytest.raises(SystemExit) as exited:
         odtworz_uruchomienie.main(["--help"])
@@ -725,6 +744,18 @@ def test_pomoc_narzedzia_wymienia_kazdy_proces_katalogu(capsys: pytest.CaptureFi
     shown = " ".join(capsys.readouterr().out.split())
     assert exited.value.code == 0
     assert [kind.title for kind in CATALOG.kinds if kind.title not in shown] == []
+    assert [option for option in ("--opis-kodu", "--granica") if option in shown] == []
+
+
+def test_zly_parametr_narzedzia_daje_skladnie_i_blad_na_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    """Parametr, którego narzędzie nie przyjmuje (dzień Atrapy, który nie jest datą), kończy je kodem 2 ze składnią
+    wywołania i błędem na stderr."""
+
+    with pytest.raises(SystemExit) as exited:
+        odtworz_uruchomienie.main(["logi.json", "--efenix-dzis", "jutro"])
+
+    shown = capsys.readouterr()
+    assert (exited.value.code, shown.out, shown.err.startswith("usage: "), "błąd: argument --efenix-dzis" in shown.err) == (2, "", True, True), shown.err
 
 
 def _replayed(capsys: pytest.CaptureFixture[str], *arguments: str | Path) -> tuple[int, list[str]]:
@@ -829,10 +860,11 @@ def _efenix(
     in_efenix: list[AtrapaOrder] | None = None,
     result: str = "WYMAGA_SPRAWDZENIA",
     pricing: str = "bez Przekazania",
+    priced: list[EfenixOrder] = PRICED,
 ) -> Produced:
     with atrapa_efenix(in_efenix or IN_EFENIX, prices=_TATA_PRICES) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
-        write_collective_file(centrum.period_parent, PRICED)
+        write_collective_file(centrum.period_parent, priced)
         write_report_key(ToolDirectory(tmp_path))
         request = {"process": "efenix", "period": PERIOD, "mode": "RUN", "pricing": pricing}
         started = centrum.client.post("/api/runs", json=request)
@@ -922,6 +954,21 @@ PROCESSES = {
     "efenix": _efenix,
     "report_entering": _report_entering,
 }
+_CONFIGURATION = "- Konfiguracja wykonawców i Wzorce nie są w Logach"
+# Granice zgodnego odtworzenia Logów każdego procesu, po kolei (początek linii pod „Granice:”): to, czego Logi tego
+# procesu nie niosą, bez braków w folderze Konfiguracji i arkusza, w którym odtworzenie nie wie, gdzie stały ADRES i
+# NUMER UMOWY. Maski strażnika są tylko przy Wpisaniu raportów: Raport Jana i jego wiersz INTERMAX mają telefon.
+ALWAYS = {
+    "settlement": (_CONFIGURATION,),
+    "preparation": ("- Surowe zlecenia na dole arkuszy Rejestru zleceń", "- folderu okresów taty Logi nie mają", _CONFIGURATION),
+    "intermax": ("- dni uporządkowane nad wklejeniem nie są w Kopii wejścia", "- kolumn z aplikacji za UWAGI nie ma w Kopii"),
+    "efenix": ("- efenix to Atrapa efenix z odczytów stron w Logach, a nie efenix taty",),
+    "report_entering": (
+        "- Kopia wejścia ma maski strażnika reguły danych ([telefon] ×1)",
+        "- maili taty Logi nie mają",
+        "- Wpisy raportu w Logach mają maski strażnika reguły danych ([telefon] ×1)",
+    ),
+}
 
 
 @pytest.mark.parametrize("process", PROCESSES)
@@ -931,7 +978,8 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     """Plik z Archiwum Logów okresu, który wyprodukowało Uruchomienie procesu z Centrum, odtwarza się na tym kodzie z
     tymi samymi wynikiem, Komunikatami, podsumowaniem, etapami i śladem (Szablony pracownika, Wpisy INTERMAX z
     wierszami dnia, ślad zleceń efenix z odczytem każdej strony), a pliki, które odtworzenie zapisuje, zostają w jego
-    katalogu roboczym, także rekord metryk: historii metryk narzędzia odtworzenie nie dopisuje."""
+    katalogu roboczym, także rekord metryk: historii metryk narzędzia odtworzenie nie dopisuje. Pod „Granice:” stoi
+    tylko to, czego Logi procesu nie niosą, a Konfiguracja z folderu taty nie ma braków ani innego rozmiaru."""
 
     produced = PROCESSES[process](tmp_path / "taty")
     record = produced.record
@@ -943,6 +991,10 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
 
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     assert lines[1] == f"Uruchomienie: {_title(record)}, {RunMode(record['mode']).word}, okres {record['period']}, {produced.archived.stem}"
+    granice = lines[lines.index("Granice:") + 1 :]
+    assert len(granice) == len(ALWAYS[process]) and all(map(str.startswith, granice, ALWAYS[process])), granice
+    configuration = [line for line in granice if line.startswith(_CONFIGURATION)]
+    assert [line for line in configuration if not line.endswith("a Logi mają tylko nazwę i rozmiar plików taty")] == []
     replayed = json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))
     assert (replayed["process"], replayed["mode"], replayed["result"]) == (process, record["mode"], record["result"])
     trace = {
@@ -1061,6 +1113,12 @@ LIMITS = {
         "NIE DA SIĘ ODTWORZYĆ: Kopia wejścia nie zapisała wartości 1 komórek (typ spoza Kopii, np. Sheet1 A18), więc "
         "odtworzone pliki ich nie mają",
     ),
+    "naglowki_poza_wierszem_17": (
+        lambda record: record["input_copy"][0]["sheets"][0].update(header_row=1),
+        None,
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: Kopia Pliku zbiorczego nie ma jednego arkusza z nagłówkami w wierszu 17",
+    ),
     "bez_folderu_konfiguracji": (lambda record: None, "nie-ma", 3, "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Konfiguracją"),
     "maska_strazinka_w_kopii": (
         _cell_with_phone,
@@ -1076,9 +1134,10 @@ LIMITS = {
 def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodnosci(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """Czego Logi nie niosą, raport mówi: Urwane Uruchomienie, pusta Kopia wejścia, komórka typu spoza Kopii i brak
-    folderu Konfiguracji kończą odtworzenie bez uruchomienia procesu (kod 3), a maska strażnika w Kopii i Konfiguracja
-    innego rozmiaru niż u taty stoją pod „Granice:” przy zgodnym odtworzeniu."""
+    """Czego Logi nie niosą, raport mówi: Urwane Uruchomienie, pusta Kopia wejścia, komórka typu spoza Kopii, Kopia
+    Pliku zbiorczego z nagłówkami poza wierszem 17 i brak folderu Konfiguracji kończą odtworzenie bez uruchomienia
+    procesu (kod 3), a maska strażnika w Kopii i Konfiguracja innego rozmiaru niż u taty stoją pod „Granice:” przy
+    zgodnym odtworzeniu."""
 
     change, folder, expected_code, expected = LIMITS[case]
     produced = _settlement(tmp_path / "taty")
@@ -1097,6 +1156,107 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
     if case == "inny_rozmiar_konfiguracji":
         size = (configuration / tool_files.WORKER_CONFIG.name).stat().st_size
         assert any(line.endswith(f"inny rozmiar niż u taty: worker_mapping.yaml: u taty 1 B, tu {size} B") for line in lines)
+
+
+# Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.
+ONE_FILE = {
+    "settlement": "proces",
+    "preparation": "Przygotowanie pliku zbiorczego",
+    "intermax": "Uporządkowanie INTERMAX",
+    "efenix": "proces",
+    "report_entering": "Wpisanie raportów",
+}
+
+
+@pytest.mark.parametrize("process", PROCESSES)
+def test_kopia_wejscia_z_dwoma_plikami_konczy_odtworzenie_granica_procesu_jednego_pliku(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], process: str
+) -> None:
+    """Każdy proces czyta jeden plik taty, więc Logi z Kopią wejścia z dwoma plikami (ten sam plik drugi raz) nie
+    odtwarzają się: kod 3 z granicą, która nazywa liczbę plików i proces, bez uruchomienia procesu."""
+
+    produced = PROCESSES[process](tmp_path / "taty")
+    changed = _changed(produced, tmp_path, lambda record: record["input_copy"].append(record["input_copy"][0]))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (3, f"NIE DA SIĘ ODTWORZYĆ: Kopia wejścia ma 2 pliki, a {ONE_FILE[process]} czyta jeden"), lines
+
+
+def test_folder_konfiguracji_bez_konfiguracji_wykonawcow_raport_nazywa_brakujacy_plik(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Folder Konfiguracji z Wzorcami, a bez Konfiguracji wykonawców: raport mówi pod „Granice:”, którego pliku w nim
+    nie ma, bo bez niego Przebieg rozliczeń kończy się inaczej niż u taty."""
+
+    produced = _settlement(tmp_path / "taty")
+    folder = tmp_path / "bez-konfiguracji-wykonawcow"
+    shutil.copytree(tmp_path / "taty" / "config", folder)
+    (folder / tool_files.WORKER_CONFIG.name).unlink()
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--konfiguracja", folder)
+
+    [configuration] = [line for line in lines if line.startswith(_CONFIGURATION)]
+    assert (code, configuration.endswith(f"; w folderze nie ma: {tool_files.WORKER_CONFIG.name}")) == (1, True), lines
+
+
+def test_odtworzenie_bez_folderu_konfiguracji_mowi_ze_folderu_nie_podano(tmp_path: Path) -> None:
+    """Bez folderu Konfiguracji (narzędzie nie ma domyślnego, gdy główny checkout nie ma ``config/``) odtworzenie
+    Przebiegu rozliczeń nie biegnie, a granica mówi, że folderu nie podano."""
+
+    record = RunLog.model_validate(_settlement(tmp_path / "taty").record)
+
+    report = replay(record, work=tmp_path / "odtworzenie", configuration=None)
+
+    assert report.lines(record, "kod")[0] == (
+        "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Konfiguracją wykonawców i Wzorcami (brak, --konfiguracja): Logi ich nie "
+        "niosą, a proces bez nich nie biegnie"
+    )
+
+
+def test_arkusz_kopii_bez_naglowkow_daje_granice_o_kolumnach_adres_i_numer_umowy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Arkusz Kopii wejścia INTERMAX bez nagłówków: odtworzenie nie wie, w których kolumnach stały ``ADRES`` i
+    ``NUMER UMOWY``, więc raport mówi to pod „Granice:” przy różnicy w Kopii wejścia (Uporządkowanie nie czyta arkusza
+    bez nagłówków), a nie kończy się wyjątkiem."""
+
+    produced = _intermax(tmp_path / "taty")
+
+    def without_headers(record: dict[str, Any]) -> None:
+        record["input_copy"][0]["sheets"].append({"sheet": "Bez nagłówków", "header_row": 1, "columns": {}, "rows": [], "empty_rows": []})
+
+    changed = _changed(produced, tmp_path, without_headers)
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie")
+
+    assert (code, lines[3].startswith("Pierwsza różnica: Kopia wejścia (input_copy)")) == (1, True), lines
+    assert "- arkusz Bez nagłówków: nie wiem, gdzie stały kolumny ADRES i NUMER UMOWY" in lines[lines.index("Granice:") + 1 :]
+
+
+def test_odtworzony_rejestr_ma_w_adresie_i_numerze_umowy_wartosci_syntetyczne_swojego_wiersza(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kopia wejścia nie ma ``ADRES`` ani ``NUMER UMOWY`` Rejestru zleceń, więc odtworzony Rejestr w katalogu
+    odtworzenia ma w nich w każdym wierszu Kopii wartość syntetyczną z numerem tego wiersza, której żaden plik taty nie
+    ma."""
+
+    produced = _preparation(tmp_path / "taty")
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+
+    [register] = (kept / "rejestr").rglob("*.xlsx")
+    workbook = load_workbook(register)
+    found, expected = [], []
+    for sheet in produced.record["input_copy"][0]["sheets"]:
+        created = workbook[sheet["sheet"]]
+        headers = {cell.value: cell.column for cell in created[sheet["header_row"]] if cell.value in ("ADRES", "NUMER UMOWY")}
+        for row in sheet["rows"]:
+            found.append((created.cell(row["row"], headers["ADRES"]).value, created.cell(row["row"], headers["NUMER UMOWY"]).value))
+            expected.append((SYNTHETIC_ADDRESS.format(row=row["row"]), SYNTHETIC_ORANGE.format(row=row["row"])))
+    workbook.close()
+    assert (code, len(found) > 1, found) == (0, True, expected), lines
 
 
 def test_powtorka_zatrzymania_porownuje_sie_jak_zatrzymanie_dla_taty(
@@ -1140,6 +1300,57 @@ def test_zatrzymanie_okna_efenix_jest_granica_przy_roznicy_odtworzenia_na_atrapi
     ), cause
 
 
+# Strona zlecenia Wykonawcy z drugiego wiersza bez przycisku Emmetta: okno efenix staje na elemencie, którego szukało.
+_EMMETT_GONE = [IN_EFENIX[0], replace(PRICED[1].in_efenix("642"), changed=Changed.EMMETT_BUTTON)]
+_WINDOW_CHAIN = "rozliczenia.message.StopError ← rozliczenia.efenix_window.UnexpectedPage"
+
+
+def test_przyczyna_zatrzymania_okna_ma_element_strony_a_wyjatek_bez_ramek_nie_ma_miejsca_powstania(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Przyczyna w Logach nazywa element strony, którego okno efenix nie znalazło dokładnie raz, i miejsce w kodzie
+    okna, w którym powstał jego wyjątek; Logi, w których wyjątek okna nie ma ramek śladu wywołań, mają przyczynę bez
+    tego miejsca (#976)."""
+
+    produced = _efenix(tmp_path / "taty", _EMMETT_GONE, "BLAD_KRYTYCZNY")
+    cause = produced.record["efenix_stop"]["cause"]
+    without = _changed(produced, tmp_path, lambda record: record["trace"]["causes"][0].update(frames=[]))
+
+    shown = [
+        [line for line in _replayed(capsys, logs, "--na-tym-drzewie", *produced.arguments)[1] if line.startswith("Przyczyna w Logach: ")]
+        for logs in (produced.archived, without)
+    ]
+
+    stopped = f"Przyczyna w Logach: okno efenix przy wierszu 19 (2 z 6): {cause['what']} ({cause['element']}); wyjątki {_WINDOW_CHAIN}"
+    assert (cause["element"], shown[0][0].startswith(f"{stopped}, powstał w src/rozliczenia/efenix_browser.py:")) == ("#button_emmett", True), shown
+    assert shown[1] == [stopped]
+
+
+def test_porownanie_zatrzymania_okna_efenix_pomija_czasy_krokow_a_nie_przyczyne(tmp_path: Path) -> None:
+    """Zatrzymanie okna efenix w Logach i w odtworzeniu różni się przyczyną (innym elementem strony), a nie czasami
+    kroków przy zleceniu; tak samo Zatrzymanie przy starcie okna, które nie ma zlecenia ani działania, które zawiodło."""
+
+    record = _efenix(tmp_path / "taty", _EMMETT_GONE, "BLAD_KRYTYCZNY").record
+    element = record["efenix_stop"]["cause"]["element"]
+
+    def stopped(*, other_element: bool = False, later: bool = False, at_start: bool = False) -> RunLog:
+        changed = copy.deepcopy(record)
+        stop = changed["efenix_stop"]
+        if other_element:
+            stop["cause"]["element"] = "#inny_element"
+        if later:
+            for step in [*stop["steps"], stop["failed"]]:
+                step.update(started_at="2026-11-11T23:59:00Z", duration_ms=step["duration_ms"] + 1000)
+        if at_start:
+            stop.update(row=None, order=None, orders=None, steps=[], failed=None)
+        return RunLog.model_validate(changed)
+
+    other = Difference("Zatrzymanie okna efenix (efenix_stop).cause.element", element, "#inny_element")
+    assert first_difference(stopped(), stopped(later=True)) is None
+    assert first_difference(stopped(), stopped(other_element=True)) == other
+    assert first_difference(stopped(at_start=True), stopped(at_start=True, other_element=True)) == other
+
+
 def test_plik_ktory_nie_jest_plikiem_logow_konczy_sie_bledem_albo_granica(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1159,6 +1370,61 @@ def test_plik_ktory_nie_jest_plikiem_logow_konczy_sie_bledem_albo_granica(
         3,
         ["NIE DA SIĘ ODTWORZYĆ: Logi nie mają commitu narzędzia; odtwórz na kodzie tego checkoutu (--na-tym-drzewie)"],
     )
+
+
+def test_plik_logow_ktorego_nie_ma_albo_nie_w_utf8_daje_blad_na_stderr(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Pliku Logów, którego nie ma, i pliku nie w UTF-8 narzędzie nie czyta: kod 2, a na stderr błąd, który mówi,
+    czego brakuje albo czego nie dało się odczytać; stdout, na którym stoi raport, zostaje pusty."""
+
+    missing = tmp_path / "nie-ma.json"
+    other_encoding = tmp_path / "cp1250.json"
+    other_encoding.write_bytes('{"tool": "łódź"}'.encode("cp1250"))
+
+    shown = []
+    for logs in (missing, other_encoding):
+        code = odtworz_uruchomienie.main([str(logs), "--na-tym-drzewie"])
+        captured = capsys.readouterr()
+        shown.append((code, captured.out, captured.err))
+
+    assert shown == [
+        (2, "", f"BŁĄD: nie ma pliku Logów {missing}\n"),
+        (2, "", "BŁĄD: nie da się odczytać pliku Logów cp1250.json: UnicodeDecodeError\n"),
+    ]
+
+
+@pytest.mark.parametrize("text", ["[]", '{"tool": {"commit": ""}}'], ids=["json_nie_obiekt", "pusty_commit"])
+def test_logi_bez_commitu_w_innej_postaci_nie_maja_kopii_commitu(tmp_path: Path, capsys: pytest.CaptureFixture[str], text: str) -> None:
+    """JSON, który nie jest obiektem, i pusty commit narzędzia to też Logi bez commitu: kod 3 z podpowiedzią
+    ``--na-tym-drzewie``, a nie wyjątek ani szukanie pustego commitu."""
+
+    logs = tmp_path / "logi.json"
+    logs.write_text(text, encoding="utf-8")
+
+    assert _replayed(capsys, logs) == (
+        3,
+        ["NIE DA SIĘ ODTWORZYĆ: Logi nie mają commitu narzędzia; odtwórz na kodzie tego checkoutu (--na-tym-drzewie)"],
+    )
+
+
+def test_odtworzenie_na_tym_drzewie_zachowuje_pliki_w_pustym_folderze_a_niepustego_nie_rusza(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--zachowaj`` przyjmuje folder, który już jest, gdy jest pusty, i zostawia w nim Logi odtworzenia, a folder
+    z plikami odrzuca kodem 2 z błędem na stderr. Logi bez commitu narzędzia raport nazywa Logami z commitu
+    nieznanego."""
+
+    produced = _settlement(tmp_path / "taty")
+    logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=None))
+    kept = tmp_path / "odtworzenie"
+    kept.mkdir()
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+    again = odtworz_uruchomienie.main([str(logs), "--na-tym-drzewie", "--zachowaj", str(kept), *produced.arguments])
+    shown = capsys.readouterr()
+
+    assert (code, lines[0], lines[2].endswith("; Logi są z commitu nieznanego")) == (0, "ODTWORZENIE ZGODNE", True), lines
+    assert (kept / "odtworzone-logi.json").is_file()
+    assert (again, shown.out, shown.err) == (2, "", f"BŁĄD: folder {kept} nie jest pusty\n")
 
 
 def _changed(produced: Produced, folder: Path, change: Any) -> Path:
@@ -1197,6 +1463,7 @@ def test_celowo_zmieniona_kopia_wejscia_daje_wydruk_pierwszej_roznicy_a_nie_zgod
         "  Odtworzenie: 1",
     ]
     assert lines[6].startswith("Porównano: Kopia wejścia, wynik, zakończenie, Rodzaj Zatrzymania, Komunikaty")
+    assert lines[7].startswith("Poza porównaniem: czasy i chwile kroków, odciski plików, środowisko")
 
 
 def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtwarza_sie_zgodnie(
@@ -1525,6 +1792,158 @@ def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen
     assert lines[3] == "Pierwsza różnica: Komunikaty (messages)[1: kod EFENIX_INNY_STATUS].code"
 
 
+# Wiersze 18–20 po Wykonawcach: ``ADRES``, którego reguła adresu nie rozbiera (bez rodzaju ulicy), ``Dane adresowe``
+# bez rodzaju ulicy i ``Dane adresowe`` z inną ulicą i numerem domu. Adresy są wymyślone.
+ADDRESSED = [
+    _efenix_order("#ZLQR11", "adrian.testowy", address="ZAWILCOWA 12/3"),
+    _efenix_order("#ZLQR12", "beata.testowa", efenix_address="Miastowo-Centrum Zawilcowa 12 Lokal 3"),
+    _efenix_order("#ZLQR13", "celina.testowa", efenix_address="Miastowo-Centrum ul.Rumiankowa 14 Lokal 3"),
+]
+
+
+def test_logi_wyceny_z_adresem_bez_rozbioru_i_innym_adresem_w_efenix_odtwarzaja_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Atrapa z Logów pokazuje ``Dane adresowe``, które różnią się od ``ADRES`` odtworzonego Pliku zbiorczego tymi
+    samymi częściami co u taty: ``ADRES`` bez rozbioru (w odtworzonym pliku też bez rodzaju ulicy, z numerem swojego
+    wiersza), ``Dane adresowe`` bez rozbioru oraz inna ulica i numer domu. Wycena daje więc te same Komunikaty i ślad, a
+    raport nie ma granicy o adresie."""
+
+    in_efenix = [order.in_efenix(str(651 + index)) for index, order in enumerate(ADDRESSED)]
+    produced = _efenix(tmp_path / "taty", in_efenix, priced=ADDRESSED)
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+
+    logged = [result["address"] for order in produced.record["efenix_orders"] for result in order["steps"][0]["results"]]
+    assert logged == [[AddressPart.FILE_UNREAD.value], [AddressPart.EFENIX_UNREAD.value], ["ulica", "numer domu"]]
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert [line[:40] for line in lines[lines.index("Granice:") + 1 :]] == ["- efenix to Atrapa efenix z odczytów str"], lines
+    [collective] = (kept / "okresy").rglob("*.xlsx")
+    workbook = openpyxl.load_workbook(collective)
+    sheet = workbook.active
+    assert sheet is not None
+    column = next(cell.column for cell in sheet[17] if cell.value == "ADRES")
+    addresses = {row: str(sheet.cell(row, column).value) for row in (18, 19, 20)}
+    workbook.close()
+    unread = (AddressPart.FILE_UNREAD, AddressPart.EFENIX_UNREAD)
+    assert [(address_differences(address, address), address.endswith(f" {row}")) for row, address in addresses.items()] == [
+        (unread, True),
+        ((), True),
+        ((), True),
+    ], addresses
+
+
+def test_logi_wyceny_sprzed_odczytu_wierszy_listy_koncza_odtworzenie_granica(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Logi sprzed #843 mają szukanie z trafieniami bez odczytu wierszy listy, więc Atrapa nie wie, co pokazać:
+    odtworzenie kończy się granicą (kod 3), a nie różnicą."""
+
+    produced = _efenix(tmp_path / "taty")
+
+    def without_results(record: dict[str, Any]) -> None:
+        for order in record["efenix_orders"]:
+            for step in order["steps"]:
+                if step["action"] == "szukanie":
+                    step["results"] = None
+
+    changed = _changed(produced, tmp_path, without_results)
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: Logi Wyceny w efenix nie mają odczytu wierszy listy po szukaniu (Logi sprzed #843), więc "
+        "Atrapa nie wie, co pokazać",
+    ), lines
+
+
+def _page(amount: str, quantities: dict[str, int | str]) -> dict[str, Any]:
+    """Odczyt strony zlecenia po otwarciu w śladzie: kwota końcowa i ilości (każda pozycja Atrapy bez podanej ma 0)."""
+
+    shown = {**dict.fromkeys(PRICES, 0), **quantities}
+    return {"action": "otwarcie zlecenia", "duration_ms": 1, "found": None, "execution_date": None, "amount": amount,
+            "quantities": shown, "position": None, "quantity": None, "accepted": None}
+
+
+def _typed(position: str, quantity: int, amount: str | None) -> dict[str, Any]:
+    """Wpisanie ilości pozycji w śladzie z kwotą końcową po zapisie (``None``: zapis bez kwoty)."""
+
+    return {"action": "ilość", "duration_ms": 1, "found": None, "execution_date": None, "amount": amount,
+            "quantities": None, "position": position, "quantity": quantity, "accepted": True}
+
+
+def _searched(*results: dict[str, Any]) -> dict[str, Any]:
+    return {"action": "szukanie", "duration_ms": 1, "found": len(results), "execution_date": None, "amount": None,
+            "quantities": None, "position": None, "quantity": None, "accepted": None, "results": list(results)}
+
+
+def _traced(row: int, *steps: dict[str, Any]) -> LoggedOrder:
+    return LoggedOrder.model_validate({"row": row, "outcome": "gotowe", "code": None, "file": {}, "file_amount": "0", "steps": list(steps)})
+
+
+_UNKNOWN_012 = ("ceny pozycji 012 nie wynikają z kwot w Logach: Atrapa liczy je swoimi cenami", False)
+# Kroki śladu każdego zlecenia w Logach, ceny, które z nich wynikają, i granice Atrapy (tekst, czy blokuje).
+PRICES_FROM_LOGS: dict[str, tuple[list[list[dict[str, Any]]], dict[str, Decimal], tuple[tuple[str, bool], ...]]] = {
+    "zmiana_kwoty_po_wpisaniu_ilosci": ([[_page("0.00", {}), _typed("012", 1, "99.00")]], {"012": Decimal(99)}, ()),
+    "zmiana_jednej_z_dwoch_pozycji_strony": (
+        [[_page("30.00", {"012": 1, "013": 1}), _typed("012", 2, "40.00")]],
+        {"012": Decimal(10), "013": Decimal(20)},
+        (),
+    ),
+    "cena_ze_strony_innego_zlecenia": (
+        [[_page("30.00", {"012": 1, "013": 1})], [_page("10.00", {"012": 1})]],
+        {"012": Decimal(10), "013": Decimal(20)},
+        (),
+    ),
+    "zapis_ilosci_bez_kwoty": ([[_page("0.00", {}), _typed("012", 1, None)]], {"012": PRICES["012"]}, ()),
+    "dwie_nieznane_na_stronie_jedna_spoza_atrapy": (
+        [[_page("50.00", {"012": 1, "999": 1})]],
+        {"012": PRICES["012"]},
+        (_UNKNOWN_012, ("pozycji 999 nie ma na stronach Atrapy efenix", False)),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", PRICES_FROM_LOGS)
+def test_ceny_atrapy_z_logow_wynikaja_z_kwot_po_wpisaniu_ilosci_i_ze_stron_z_jedna_nieznana_cena(case: str) -> None:
+    """Cena pozycji to zmiana kwoty końcowej po wpisaniu ilości przez zmianę jej ilości, a kwota strony, na której
+    tylko jedna pozycja z ilością ma nieznaną cenę, daje tę cenę, także ze strony innego zlecenia i po cenie wyznaczonej
+    później. Cena, której Logi nie wyznaczają, zostaje ceną Atrapy z granicą, gdy pozycja ma ilość, a pozycja spoza
+    stron Atrapy ma swoją granicę (``atrapa_z_logow``)."""
+
+    steps, prices, limits = PRICES_FROM_LOGS[case]
+
+    found = fed([_traced(18 + index, *order) for index, order in enumerate(steps)], [])
+
+    assert ({code: found.prices[code] for code in prices}, found.limits) == (prices, limits)
+
+
+def test_atrapa_z_logow_nazywa_wiersz_bez_numeru_zl_i_roznice_adresu_ktorej_nie_umie_pokazac() -> None:
+    """Zlecenie z wynikami szukania w Logach, którego wiersz odtworzonego Pliku zbiorczego nie ma ``NUMER ZL.``, i
+    wynik z częścią adresu, której Atrapa nie umie pokazać (np. z innej wersji Logów), dają granice, które nie blokują;
+    zlecenie bez wyników szukania granicy nie daje."""
+
+    listed = {"same_number": True, "status": "Do wyceny", "realizator": "adrian.testowy"}
+    orders = [
+        _traced(18, _searched({**listed, "address": []})),
+        _traced(19, _searched()),
+        _traced(20, _searched({**listed, "address": ["województwo"]})),
+    ]
+    scoped = [ScopedOrder(18, None, "ul. Odtworzeniowa 18"), ScopedOrder(19, None, "ul. Odtworzeniowa 19"), ScopedOrder(20, "ZL20", "ul. Odtworzeniowa 20")]
+
+    found = fed(orders, scoped)
+
+    assert ([order.number for order in found.orders], found.limits) == (
+        ["ZL20"],
+        (
+            ("wiersz 18 Pliku zbiorczego nie ma w odtworzeniu zlecenia z NUMER ZL.", False),
+            ("wiersz 20: Atrapa nie umie pokazać różnicy adresu ['województwo']", False),
+        ),
+    )
+
+
 def test_kopia_wejscia_bez_folderow_nad_plikiem_daje_roznice_w_kopii_a_nie_zgodnosc(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1599,6 +2018,55 @@ def test_lista_innej_dlugosci_w_logach_daje_roznice_w_pierwszym_elemencie_bez_pa
     assert lines[3] == f"Pierwsza różnica: etapy (phases)[{place}]", lines
     shown = dict(line.strip().split(":", 1) for line in lines[4:6])
     assert (shown[absent].strip(), '"phase": "Zapisywanie"' in shown[present]) == ("(brak)", True), lines
+
+
+# Komórka Kopii wejścia w Logach i w odtworzeniu (``None``: tej komórki po tej stronie nie ma) i czy porównanie
+# odtworzenia ma w niej pierwszą różnicę (``_same`` w ``odtworzenie``).
+CELLS: dict[str, tuple[object, object, bool]] = {
+    "komorka_tylko_w_logach": ("wymiana", None, True),
+    "komorka_tylko_w_odtworzeniu": (None, "wymiana", True),
+    "liczba_przeciw_prawdzie": (1, True, True),
+    "prawda_przeciw_falszowi": (True, False, True),
+    "calkowita_przeciw_ulamkowi_tej_samej_wartosci": (5, 5.0, False),
+}
+
+
+@pytest.mark.parametrize("case", CELLS)
+def test_porownanie_odtworzenia_rozni_brak_pola_i_prawde_od_liczby_a_nie_ulamek_od_calkowitej(tmp_path: Path, case: str) -> None:
+    """Pierwszą różnicą jest pole, które ma tylko jedna strona (po drugiej „(brak)”), i prawda albo fałsz inne niż po
+    drugiej stronie, także liczba 1 przeciw prawdzie; liczba całkowita i ułamek tej samej wartości różnicą nie są, bo
+    zapis pliku zmienia 5.0 w 5."""
+
+    logged, replayed, differs = CELLS[case]
+    record = _settlement(tmp_path / "taty").record
+
+    def with_cell(value: object) -> RunLog:
+        changed = copy.deepcopy(record)
+        if value is not None:
+            changed["input_copy"][0]["sheets"][0]["rows"][0]["cells"]["Z"] = value
+        return RunLog.model_validate(changed)
+
+    found = first_difference(with_cell(logged), with_cell(replayed))
+
+    shown = ["(brak)" if value is None else value for value in (logged, replayed)]
+    if differs:
+        assert found is not None and (found.field.endswith(".cells.Z"), [found.logged, found.replayed]) == (True, shown), found
+        assert [type(value) for value in (found.logged, found.replayed)] == [type(value) for value in shown]
+    else:
+        assert found is None
+
+
+def test_wartosc_roznicy_do_300_znakow_raport_pokazuje_cala_a_dluzsza_ucina(tmp_path: Path) -> None:
+    """Wartość w pierwszej różnicy raport pokazuje w JSON najwyżej na 300 znakach: tyle mieści się cała, a dłuższa
+    kończy się na 297 znakach i „...”."""
+
+    record = RunLog.model_validate(_settlement(tmp_path / "taty").record)
+    whole, cut = "a" * 298, "b" * 299  # z cudzysłowami JSON 300 i 301 znaków
+
+    lines = Report(Verdict.DIFFERS, Difference("pole", whole, cut), ()).lines(record, "kod")
+
+    start = lines.index("Pierwsza różnica: pole")
+    assert lines[start + 1 : start + 3] == [f'  Logi:        "{whole}"', f'  Odtworzenie: "{cut[:296]}...']
 
 
 def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_niz_u_taty(
@@ -1837,6 +2305,112 @@ def test_logi_bez_kopii_wejscia_daja_granice_a_nie_zgodnosc(tmp_path: Path, caps
     )
 
 
+def _commit_like_head(folder: Path, *, without: str | None = None, changed: tuple[str, bytes] | None = None) -> str:
+    """Commit bez gałęzi z drzewem HEAD bez pliku ``without`` albo z inną treścią ``changed`` (ścieżka, bajty) jednego
+    pliku: commit sprzed narzędzia odtwarzania albo z innym ``requirements.txt``, których płytki klon CI nie ma."""
+
+    environment = os.environ | {"GIT_INDEX_FILE": str(folder / "indeks-commitu")}
+
+    def git(*arguments: str, given: bytes | None = None) -> str:
+        done = subprocess.run(["git", *arguments], cwd=ROOT, env=environment, input=given, capture_output=True, check=True)
+        return done.stdout.decode("utf-8").strip()
+
+    git("read-tree", "HEAD")
+    if without is not None:
+        git("update-index", "--force-remove", without)
+    if changed is not None:
+        path, content = changed
+        blob = git("hash-object", "-w", "--stdin", given=content)
+        git("update-index", "--add", "--cacheinfo", f"100644,{blob},{path}")
+    return git("commit-tree", git("write-tree"), "-p", "HEAD", "-m", "commit z Logów w teście odtworzenia")
+
+
+def test_commit_z_logow_sprzed_narzedzia_odtwarzania_konczy_sie_granica(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Commit z Logów, w którym nie ma narzędzia odtwarzania (sprzed #847), nie odtwarza się na swojej kopii: kod 3 z
+    podpowiedzią ``--na-tym-drzewie``."""
+
+    produced = _settlement(tmp_path / "taty")
+    commit = _commit_like_head(tmp_path, without="tools/odtworz_uruchomienie.py")
+    logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=commit))
+
+    assert _replayed(capsys, logs, *produced.arguments) == (
+        3,
+        [
+            f"NIE DA SIĘ ODTWORZYĆ: commit {commit} jest sprzed narzędzia odtwarzania (#847); odtwórz na kodzie tego "
+            "checkoutu (--na-tym-drzewie)"
+        ],
+    )
+
+
+def test_kopia_commitu_z_logow_dostaje_parametry_narzedzia_i_granice_innych_bibliotek(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kopia commitu z Logów Wyceny w efenix odtwarza z dniem Atrapy i folderem do zachowania z parametrów narzędzia
+    (bez dnia Atrapy Wycena różni się od Logów), a ``requirements.txt`` commitu inny niż tego checkoutu raport podaje
+    jako granicę. Błąd w kopii (folder do zachowania nie jest pusty) narzędzie oddaje na swój stderr z jej kodem."""
+
+    produced = _efenix(tmp_path / "taty")
+    requirements = (ROOT / "requirements.txt").read_bytes() + b"# inne biblioteki commitu z Logow\n"
+    commit = _commit_like_head(tmp_path, changed=("requirements.txt", requirements))
+    logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=commit))
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, logs, "--zachowaj", kept, *produced.arguments)
+    again = odtworz_uruchomienie.main([str(logs), "--zachowaj", str(kept), *produced.arguments])
+    shown = capsys.readouterr()
+
+    assert (code, lines[0], lines[2]) == (0, "ODTWORZENIE ZGODNE", f"Kod: commit {commit} z Logów, w osobnym drzewie"), lines
+    assert "- requirements.txt commitu różni się od tego checkoutu: odtworzenie biegło bibliotekami .venv tego checkoutu" in lines
+    assert (kept / "odtworzone-logi.json").is_file()
+    assert (again, shown.out, shown.err) == (2, "", f"BŁĄD: folder {kept.resolve()} nie jest pusty\n")
+
+
+def _tool_process(logs: Path, *arguments: str | Path, tool: Path = TOOL, path: Path) -> subprocess.CompletedProcess[str]:
+    """Narzędzie odtwarzania ``tool`` jako osobny proces z ``path`` w ``PYTHONPATH`` przed instalacją pakietu."""
+
+    return subprocess.run(
+        [sys.executable, str(tool), str(logs), "--na-tym-drzewie", *map(str, arguments)],
+        cwd=path,
+        env=os.environ | {"PYTHONPATH": str(path), "PYTHONUTF8": "1"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+
+def test_narzedzie_jako_proces_odtwarza_kodem_swojego_drzewa_a_nie_innym_pakietem_rozliczenia(tmp_path: Path) -> None:
+    """Narzędzie uruchomione jako proces bierze pakiet ``rozliczenia`` ze swojego drzewa, choć inny pakiet o tej
+    nazwie stoi wcześniej na ścieżce (``PYTHONPATH``, instalacja innego checkoutu), więc odtwarza kodem tego drzewa."""
+
+    produced = _settlement(tmp_path / "taty")
+    other = tmp_path / "inny-pakiet"
+    (other / "rozliczenia").mkdir(parents=True)
+    (other / "rozliczenia" / "__init__.py").write_text("", encoding="utf-8")
+
+    done = _tool_process(produced.archived, *produced.arguments, path=other)
+
+    assert (done.returncode, done.stdout.splitlines()[:1]) == (0, ["ODTWORZENIE ZGODNE"]), done.stderr
+
+
+def test_narzedzie_w_drzewie_bez_kodu_procesu_nie_odtwarza_kodem_innego_checkoutu(tmp_path: Path) -> None:
+    """Narzędzie z drzewa bez ``src`` (kopia samych narzędzi) dostałoby pakiet ``rozliczenia`` innego checkoutu, więc
+    nie odtwarza: kod 2 z błędem na stderr, który nazywa oba miejsca."""
+
+    produced = _settlement(tmp_path / "taty")
+    tree = tmp_path / "same-narzedzia"
+    for source in (TOOL, ROOT / "tools" / "lib" / "potomne.py", ROOT / "tools" / "lib" / "repo.py"):
+        copied = tree / source.relative_to(ROOT)
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        copied.write_bytes(source.read_bytes())
+
+    done = _tool_process(produced.archived, *produced.arguments, tool=tree / "tools" / "odtworz_uruchomienie.py", path=ROOT / "src")
+
+    assert (done.returncode, done.stdout) == (2, ""), done.stderr
+    assert done.stderr == f"BŁĄD: rozliczenia z {ROOT / 'src' / 'rozliczenia' / '__init__.py'}, a nie z {tree.resolve() / 'src'}\n"
+
+
 def _head() -> str:
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
 
@@ -1871,18 +2445,19 @@ def test_odtworzenie_biegnie_na_kopii_commitu_z_logow_jej_wlasnym_narzedziem(
 
 
 @contextmanager
-def _fake_gh(folder: Path, archived: Path) -> Iterator[Path]:
-    """``gh`` na początku ``PATH``, który zapisuje swoje argumenty i kładzie plik ``archived`` w folderze ``--dir``."""
+def _fake_gh(folder: Path, archived: Path | None) -> Iterator[Path]:
+    """``gh`` na początku ``PATH``, który zapisuje swoje argumenty i kładzie plik ``archived`` w folderze ``--dir``
+    (``None``: kończy się kodem 0 bez pliku)."""
 
     calls = folder / "wywolania.json"
+    lays = "" if archived is None else f"shutil.copy({str(archived)!r}, directory / sys.argv[sys.argv.index('--pattern') + 1])\n"
     fake_cli(
         folder,
         "gh",
         "import json, shutil, sys\n"
         "from pathlib import Path\n"
         f"Path({str(calls)!r}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
-        "directory = Path(sys.argv[sys.argv.index('--dir') + 1])\n"
-        f"shutil.copy({str(archived)!r}, directory / sys.argv[sys.argv.index('--pattern') + 1])\n",
+        "directory = Path(sys.argv[sys.argv.index('--dir') + 1])\n" + lays,
     )
     path = os.environ["PATH"]
     os.environ["PATH"] = f"{folder}{os.pathsep}{path}"
@@ -1896,8 +2471,8 @@ def test_odnosnik_z_komentarza_logow_pobiera_plik_z_archiwum_przez_gh_i_odtwarza
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Odnośnik do pliku w Archiwum Logów okresu z komentarza Logów to ``gh release download`` z tagiem okresu i nazwą
-    pliku w repozytorium Zgłoszeń; pobrany plik odtwarza się tak jak plik z dysku. Odnośnika spoza GitHuba narzędzie nie
-    pobiera."""
+    pliku w repozytorium Zgłoszeń; pobrany plik odtwarza się tak jak plik z dysku. Odnośnika spoza GitHuba ani spoza
+    plików GitHub Release narzędzie nie pobiera."""
 
     produced = _settlement(tmp_path / "taty")
     name = produced.archived.name
@@ -1906,9 +2481,23 @@ def test_odnosnik_z_komentarza_logow_pobiera_plik_z_archiwum_przez_gh_i_odtwarza
 
     with _fake_gh(tmp_path / "gh", produced.archived) as calls:
         elsewhere = _replayed(capsys, link.replace("https://github.com/", "https://example.invalid/"), "--na-tym-drzewie")
-        assert (elsewhere[0], calls.exists()) == (2, False), elsewhere
+        not_release = _replayed(capsys, link.replace("/releases/download/", "/archive/download/"), "--na-tym-drzewie")
+        assert (elsewhere[0], not_release[0], calls.exists()) == (2, 2, False), (elsewhere, not_release)
         code, lines = _replayed(capsys, link, "--na-tym-drzewie", *produced.arguments)
 
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     arguments = json.loads(calls.read_text(encoding="utf-8"))
     assert arguments[:7] == ["release", "download", tag, "--repo", REPOSITORY, "--pattern", name]
+
+
+def test_gh_bez_pobranego_pliku_daje_blad_a_nie_odtworzenie(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """``gh release download``, które kończy się kodem 0, a pliku nie kładzie, to błąd pobrania z Archiwum (kod 2)."""
+
+    name = "20261111T000000Z-settlement-0.json.gz"
+    tag = f"logi-{PERIOD}"
+
+    with _fake_gh(tmp_path / "gh", None):
+        code = odtworz_uruchomienie.main([f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}", "--na-tym-drzewie"])
+
+    shown = capsys.readouterr()
+    assert (code, shown.out, shown.err) == (2, "", f"BŁĄD: gh release download nie pobrał {name} z {REPOSITORY} {tag}: \n")

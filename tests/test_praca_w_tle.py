@@ -12,6 +12,7 @@ uruchamia hooki ``Stop`` z ``.claude/settings.json`` tak, jak robi to Claude Cod
 from __future__ import annotations
 
 from collections.abc import Mapping
+import contextlib
 from datetime import datetime, timedelta
 import json
 import os
@@ -120,8 +121,9 @@ def test_zapis_wejscia_claude_code_z_sleep_w_tle_zatrzymuje_koniec_tury_i_trafia
         ([AGENT_MONITOR], ["shell bm1 „tail -f ci.log | grep --line-buffered FAIL”"]),
         ([{**SHELL, "status": "pending"}], ["shell bi6lxbxlb"]),
         ([SUBAGENT, SHELL, AGENT_MONITOR, ARTIFACT_WATCH], ["shell bi6lxbxlb", "shell bm1"]),
+        ([{"id": "b3", "type": "shell", "status": "running", "description": "Sen w tle"}], ["shell b3 „Sen w tle”"]),
     ],
-    ids=["monitor-agenta", "pending", "zywe-bash-i-monitor-obok-podagenta-i-obserwacji-artefaktu"],
+    ids=["monitor-agenta", "pending", "zywe-bash-i-monitor-obok-podagenta-i-obserwacji-artefaktu", "bez-polecenia"],
 )
 def test_zywe_zadanie_basha_albo_monitor_agenta_w_tle_zatrzymuje_koniec_tury(
     tmp_path: Path, tasks: list[object], named: list[str]
@@ -278,6 +280,38 @@ def test_json_glebszy_niz_stos_pythona_przechodzi_i_trafia_do_dziennika(tmp_path
     )
 
 
+def test_rekursja_dekodera_jak_na_macos_przechodzi_i_trafia_do_dziennika(tmp_path: Path) -> None:
+    # Dekoder JSON z macOS rzuca RecursionError na zbyt głębokim wejściu, a Linux z Pythonem 3.14 nie, więc test
+    # podaje hookowi dekoder, który rzuca jak na macOS, na każdym systemie.
+    broken = (
+        f"import json, runpy, sys\n"
+        f"def loads(*args, **kwargs): raise RecursionError('maximum recursion depth exceeded')\n"
+        f"json.loads = loads\n"
+        f"sys.argv = [{str(HOOK)!r}]\n"
+        f"runpy.run_path({str(HOOK)!r}, run_name='__main__')\n"
+    )
+    env = {**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+
+    hooked = subprocess.run(
+        [sys.executable, "-c", broken], input=json.dumps(REAL).encode("utf-8"), capture_output=True, env=env, check=False
+    )
+
+    assert (hooked.returncode, hooked.stdout) == (0, b"")
+    assert [(row["decyzja"], row["szczegoly"]) for row in _log(tmp_path)] == [
+        ("przepuszczam", ["nieczytelne wejście: RecursionError"])
+    ]
+
+
+def test_kolejne_konce_tury_dopisuja_sie_do_dziennika_czytelnego_bez_dekodowania(tmp_path: Path) -> None:
+    # Dziennik czyta się jako tekst (grep, edytor), więc polskie litery i cudzysłowy stoją w nim wprost, nie jako ``\u201e``.
+    for _ in range(2):
+        _reason(_hook(json.dumps(REAL), tmp_path))
+
+    text = (tmp_path / ".cache" / "maximiseart" / "praca_w_tle.jsonl").read_text(encoding="utf-8")
+    assert [row["decyzja"] for row in _log(tmp_path)] == ["odmowa", "odmowa"]
+    assert text.count("shell bi6lxbxlb „sleep 60”") == 2
+
+
 def test_niedostepny_dziennik_nie_zmienia_odmowy(tmp_path: Path) -> None:
     (tmp_path / ".cache").write_text("plik zamiast katalogu", encoding="utf-8")
 
@@ -375,7 +409,8 @@ if argv == ["--version"]:
     sys.exit(0)
 with open(ATRAPA["ATRAPA_WYWOLANIA"], "a", encoding="utf-8") as calls:
     keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "MAXIMISEART_WYROCZNIA_W_SRODKU", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "MAXIMISEART_PRACA_W_TLE_DZIENNIK")
-    calls.write(json.dumps({{"argv": argv, "cwd": os.getcwd(), "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
+    seen = open(ATRAPA["ATRAPA_WYJSCIE"], encoding="utf-8").read() if ATRAPA.get("ATRAPA_WYJSCIE") else None
+    calls.write(json.dumps({{"argv": argv, "cwd": os.getcwd(), "env": {{k: os.environ.get(k) for k in keys}}, "wyjscie": seen}}) + "\\n")
 if ATRAPA.get("ATRAPA_CISZA"):
     time.sleep(600)
 base = ustawienia_claude.base_url(argv, os.getcwd(), os.environ)
@@ -388,12 +423,18 @@ def api(messages):
     start = next(e["content_block"] for e in events if e["type"] == "content_block_start")
     delta = next(e["delta"] for e in events if e["type"] == "content_block_delta")
     return start, delta
+def user(text):
+    return [{{"type": "text", "text": text}}] if ATRAPA.get("ATRAPA_BLOKI") else text
 api([{{"role": "user", "content": "Podaj tytuł sesji."}}])
-messages = [{{"role": "user", "content": argv[argv.index("-p") + 1]}}]
+if ATRAPA.get("ATRAPA_TYLKO_POBOCZNE"):
+    sys.exit(0)
+messages = [{{"role": "user", "content": user(argv[argv.index("-p") + 1])}}]
 tasks, active = [], False
 for _ in range(12):
     start, delta = api(messages)
     if start["type"] == "tool_use":
+        if ATRAPA.get("ATRAPA_BEZ_WYNIKU"):
+            sys.exit(0)
         bash = json.loads(delta["partial_json"])
         if bash.get("run_in_background"):
             tasks.append({{"id": "b1", "type": "shell", "status": "running", "description": bash["description"], "command": bash["command"]}})
@@ -418,8 +459,8 @@ for _ in range(12):
     if ATRAPA.get("ATRAPA_JEDNA_ODMOWA") and not active:
         reasons.append("Odmowa końca tury: w tle sesji biegnie jeszcze nic (fałszywa odmowa).")
     if not reasons:
-        sys.exit(0)
-    messages.append({{"role": "user", "content": "Stop hook feedback:\\n" + reasons[0]}})
+        sys.exit(int(ATRAPA.get("ATRAPA_KOD", "0")))
+    messages.append({{"role": "user", "content": user("Stop hook feedback:\\n" + reasons[0])}})
     active = True
 sys.exit(3)
 '''
@@ -431,30 +472,38 @@ def _oracle(
     env: dict[str, str] | None = None,
     atrapa: dict[str, str] | None = None,
     user_settings: Mapping[str, object] | None = None,
+    stdout: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    """Wyrocznia z atrapą ``claude``; ze ``stdout`` jej wyjście idzie do tego pliku, a atrapa kopiuje go przy każdym starcie."""
+
     programs = tmp_path / "bin"
     fixtures = str(Path(ustawienia_claude.__file__).parent)
     atrapa = {"ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"), **(atrapa or {})}
+    if stdout is not None:
+        atrapa["ATRAPA_WYJSCIE"] = str(stdout)
     fake_cli(programs, "claude", FAKE_CLAUDE.format(fixtures=fixtures, atrapa=atrapa))
     (tmp_path / "dom" / ".claude").mkdir(parents=True)
     if user_settings is not None:
         (tmp_path / "dom" / ".claude" / "settings.json").write_text(json.dumps(user_settings), encoding="utf-8")
-    return subprocess.run(
-        [sys.executable, str(ORACLE), *arguments],
-        env={
-            **os.environ,
-            "HOME": str(tmp_path / "dom"),
-            "PATH": f"{programs}{os.pathsep}/usr/bin{os.pathsep}/bin",
-            "CLAUDECODE": "1",
-            "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
-            "ANTHROPIC_AUTH_TOKEN": "token-huba",
-            **(env or {}),
-        },
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
+    with contextlib.ExitStack() as files:
+        output = files.enter_context(stdout.open("w", encoding="utf-8")) if stdout is not None else subprocess.PIPE
+        return subprocess.run(
+            [sys.executable, str(ORACLE), *arguments],
+            env={
+                **os.environ,
+                "HOME": str(tmp_path / "dom"),
+                "PATH": f"{programs}{os.pathsep}/usr/bin{os.pathsep}/bin",
+                "CLAUDECODE": "1",
+                "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
+                "ANTHROPIC_AUTH_TOKEN": "token-huba",
+                **(env or {}),
+            },
+            stdout=output,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=60,
+        )
 
 
 def _calls(tmp_path: Path) -> list[dict[str, object]]:
@@ -463,8 +512,12 @@ def _calls(tmp_path: Path) -> list[dict[str, object]]:
 
 
 @POSIX_ONLY
-def test_wyrocznia_z_odmowa_hooka_przy_pracy_w_tle_i_bez_niej_konczy_sie_ok(tmp_path: Path) -> None:
-    ran = _oracle(tmp_path)
+@pytest.mark.parametrize("atrapa", [{}, {"ATRAPA_BLOKI": "1"}], ids=["tresc-tekstem", "tresc-blokami-tekstu"])
+def test_wyrocznia_z_odmowa_hooka_przy_pracy_w_tle_i_bez_niej_konczy_sie_ok(
+    tmp_path: Path, atrapa: dict[str, str]
+) -> None:
+    # Messages API przyjmuje treść wiadomości jako tekst albo listę bloków; wyrocznia rozpoznaje przypadek i odmowy w obu.
+    ran = _oracle(tmp_path, atrapa=atrapa)
 
     assert ran.stdout.splitlines() == [
         "Claude Code 9.9.9 (Claude Code), przypadki 2",
@@ -545,6 +598,63 @@ def test_wyrocznia_gdy_hook_odmawia_bez_pracy_w_tle_konczy_sie_zmiana(tmp_path: 
         "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | ZMIANA 1",
     ], ran.stderr
     assert ran.returncode == 1
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    ("atrapa", "seen"),
+    [
+        ({"ATRAPA_TYLKO_POBOCZNE": "1"}, "Claude Code nie zapytał fałszywego API"),
+        ({"ATRAPA_BEZ_WYNIKU": "1"}, "Bash nie oddał wyniku"),
+    ],
+    ids=["tylko-zapytanie-poboczne", "koniec-przed-wynikiem-basha"],
+)
+def test_wyrocznia_gdy_claude_code_konczy_sie_przed_wynikiem_basha_konczy_sie_zmiana(
+    tmp_path: Path, atrapa: dict[str, str], seen: str
+) -> None:
+    # Zapytanie poboczne (tytuł sesji) nie jest pytaniem przypadku, a bez wyniku Basha hook nie miał czego ocenić.
+    ran = _oracle(tmp_path, "praca-w-tle", atrapa=atrapa)
+
+    assert ran.stdout.splitlines()[1:] == [
+        f"ZMIANA praca-w-tle | {seen}",
+        "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | ZMIANA 1",
+    ], ran.stderr
+    assert ran.returncode == 1
+
+
+@POSIX_ONLY
+def test_wyrocznia_gdy_claude_code_bez_odmowy_konczy_sie_bledem_konczy_sie_zmiana(tmp_path: Path) -> None:
+    ran = _oracle(tmp_path, "bez-pracy-w-tle", atrapa={"ATRAPA_KOD": "5"})
+
+    assert ran.stdout.splitlines()[1:] == [
+        "ZMIANA bez-pracy-w-tle | koniec tury bez odmowy (kod 5)",
+        "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | ZMIANA 1",
+    ], ran.stderr
+    assert ran.returncode == 1
+
+
+@POSIX_ONLY
+def test_wyrocznia_z_nazwa_spoza_przypadkow_nie_konczy_sie_ok(tmp_path: Path) -> None:
+    # Literówka w nazwie przypadku nie sprawdza niczego, więc nie może dać ``WYROCZNIA OK``.
+    ran = _oracle(tmp_path, "praca-w-tel")
+
+    assert (ran.returncode, ran.stdout.splitlines(), _calls(tmp_path)) == (
+        1,
+        ["Claude Code 9.9.9 (Claude Code), przypadki 0", "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | brak przypadków"],
+        [],
+    )
+
+
+@POSIX_ONLY
+def test_wynik_przypadku_widac_w_wyjsciu_zanim_zacznie_sie_nastepny(tmp_path: Path) -> None:
+    # Wyjście do pliku albo potoku (T3, log) Python buforuje, a następny przypadek trwa do limitu ``--limit-s``.
+    output = tmp_path / "wyjscie.txt"
+
+    ran = _oracle(tmp_path, stdout=output)
+
+    assert ran.returncode == 0, output.read_text(encoding="utf-8") + ran.stderr
+    seen = [call["wyjscie"] for call in _calls(tmp_path)]
+    assert len(seen) == 2 and "ZGODNE praca-w-tle | odmowy hooka: 2\n" in str(seen[1]), seen
 
 
 @POSIX_ONLY

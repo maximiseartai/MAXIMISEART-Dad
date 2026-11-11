@@ -615,7 +615,7 @@ class BrowserEfenix:
         self._ensure_logged_in(PagePart.ORDER)
         try:
             with _doing(Operation.READ):
-                pricing, positions = read_order(self._page)
+                pricing, positions = read_order(self._page, timeout_ms=self._timeout_ms)
         except UnexpectedPage as unread:
             if response is not None and not response.ok:
                 raise UnexpectedPage(PagePart.ORDER, HttpStatus(response.status)) from unread

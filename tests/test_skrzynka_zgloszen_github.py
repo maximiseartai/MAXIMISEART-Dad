@@ -939,12 +939,13 @@ def test_klucz_bez_uprawnienia_do_tresci_repozytorium_zostawia_plik_w_kolejce_a_
     queue = github_queue(tmp_path, github)
 
     queue.post(logs_post("{}\n"))
-    assert wait_for(lambda: bool(github.issues) and bool(github.issues[1]["comments"]))
-    assert wait_for(lambda: "przyczyna=odmowa-archiwum" in (tmp_path / "logs" / "centrum-rozliczen.log").read_text("utf-8"))
+    # Przejście zamienia plik kolejki na plik ze znacznikiem części, a na Windows odczyt w trakcie zamiany pada
+    # (PermissionError), więc test czyta plik dopiero po przejściu.
+    assert not queue.wait_delivered("", "zgloszenie", timeout_s=30), "przejście kolejki się skończyło"
 
+    assert "przyczyna=odmowa-archiwum" in (tmp_path / "logs" / "centrum-rozliczen.log").read_text("utf-8")
     [queued] = (tmp_path / "kolejka").glob("*.json")
-    # Kolejka pisze odmowę do dziennika przed znacznikiem części (Outbox._send_all), więc znacznik może dojść chwilę później.
-    assert wait_for(lambda: json.loads(queued.read_text("utf-8"))["delivered_parts"] == 1)
+    assert json.loads(queued.read_text("utf-8"))["delivered_parts"] == 1
     assert github.releases == {}
     [comment] = github.issues[1]["comments"]
     assert re.search(rf"Plik `{re.escape(ASSET)}` czeka w Kolejce wysyłki", str(comment["body"]))

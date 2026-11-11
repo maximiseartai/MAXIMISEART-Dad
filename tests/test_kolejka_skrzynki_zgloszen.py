@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
+import gzip
 import itertools
 import json
 from pathlib import Path
@@ -41,7 +42,7 @@ from rozliczenia.centrum.outbox import (
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Sent, Unreachable
 from rozliczenia.centrum.reports import report_target
 
-from atrapy.skrzynka import BoxIssue
+from atrapy.skrzynka import ArchivedFile, BoxArchive, BoxIssue
 from tests.fixtures.centrum import FakeReportBox
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
@@ -660,12 +661,14 @@ def test_uwaga_ktorej_komentarz_skrzynka_odrzucila_dostaje_reszte_czesci_w_swoim
 
     queue.outbox.post(note)
     queue.passed()
+    rejected = queue.outbox.rejected(RUN_ID, "uwaga-taty")
     queue.restarted().resume()
 
     assert wait_for(lambda: queue.files() == [])
     [issue] = queue.box.issues_with("uwaga-taty")
     assert (issue.body, issue.comments) == ("Część 1/2\n\na", ["Część 2/2\n\nb"])
     assert queue.delivered == [(RUN_ID, issue.number)]
+    assert (rejected, "przyczyna=odmowa-tresci" in queue.log(), "nieoczekiwany-wyjatek" in queue.log()) == (True, True, False)
 
 
 def test_wysylka_ktorej_nie_da_sie_zapisac_przepada_bez_wyjatku(tmp_path: Path) -> None:
@@ -738,8 +741,9 @@ def test_zapis_urwany_przez_utrate_zasilania_znika_przy_starcie_i_nie_jest_wysyl
         '{"schema_version": 2}',
         post(["x"]).to_json().replace('"schema_version": 3', '"schema_version": 4'),
         post(["x"]).to_json().replace('"kontrola-ilosci"', '"inna-etykieta"'),
+        post(["x"]).to_json().replace('"archived": false', '"archived": 0'),
     ],
-    ids=["urwany", "nie-obiekt", "bez-celu", "nowszy-schemat", "nieznana-etykieta"],
+    ids=["urwany", "nie-obiekt", "bez-celu", "nowszy-schemat", "nieznana-etykieta", "archiwum-nie-tak-ani-nie"],
 )
 def test_plik_kolejki_ktorego_nie_da_sie_odczytac_zostaje_z_jednym_wpisem_i_nie_wstrzymuje_innych(
     tmp_path: Path, text: str
@@ -1330,11 +1334,14 @@ def test_przejscie_w_ktorym_archiwum_odmowilo_nie_pyta_go_o_pliki_nastepnych_log
     assert all(f"Plik `{run_id}.json.gz` czeka w Kolejce wysyłki" in comment for run_id, comment in zip(run_ids, issue.comments, strict=True))
     queued = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(queue.directory.glob("*.json"))]
     assert [(entry["delivered_parts"], entry["archived"]) for entry in queued] == [(1, False)] * 3
+    asked = len(queue.box.listed)
 
     queue.clock.advance(RETRY_S)
     queue.passed()
 
-    assert queue.box.archive_requests == 2
+    # Części są już w Skrzynce, więc budzenie pyta tylko Archiwum, a dziennik tej pracy Centrum mówi raz o każdym pliku.
+    assert (queue.box.archive_requests, len(queue.box.listed)) == (2, asked)
+    assert queue.log().count("przyczyna=odmowa-archiwum") == len(run_ids)
 
 
 def test_najdluzszy_komentarz_logow_z_plikiem_zostawia_miejsce_na_dopisek_gdy_archiwum_odmowi(tmp_path: Path) -> None:
@@ -1363,6 +1370,108 @@ def test_najdluzszy_komentarz_logow_z_plikiem_zostawia_miejsce_na_dopisek_gdy_ar
     [comment] = issue.comments
     assert "czeka w Kolejce wysyłki" in comment
     assert len(comment) <= TEXT_LIMIT
+
+
+def test_plik_do_archiwum_z_wysylka_w_dwoch_czesciach_to_blad_programu() -> None:
+    with pytest.raises(ValueError, match="Plik do Archiwum okresu idzie z jedną częścią do issue okresu"):
+        replace(logs_with_file(RUN_ID), parts=("pierwsza\n", "druga\n"))
+
+
+def test_logi_z_plikiem_bez_naglowka_maja_w_tresci_nowego_issue_dopisek_ze_plik_czeka(tmp_path: Path) -> None:
+    """Bez nagłówka część Logów jest treścią nowego issue okresu, więc tam stoi dopisek o pliku, którego Archiwum
+    okresu nie przyjęło."""
+
+    queue = Queue(tmp_path, FakeReportBox(archive_failure=Refused()))
+
+    queue.outbox.post(replace(logs_with_file(RUN_ID), header=None))
+    queue.passed()
+
+    [issue] = queue.box.issues_with(LOGS.label)
+    assert f"Plik `{RUN_ID}.json.gz` czeka w Kolejce wysyłki" in issue.body
+    assert issue.comments == []
+
+
+# Wersja wysyłki pliku kolejki Logów z poprzedniej pracy Centrum (``queued_logs``): chwila i numer z jego nazwy.
+LOGS_VERSION = "20261023T101500000000Z-0001"
+LOGS_TAG = "logi-08_14_09_2026"
+
+
+def queued_logs(queue: Queue) -> None:
+    """Logi Uruchomienia ``RUN_ID`` z plikiem do Archiwum w pliku kolejki z poprzedniej pracy Centrum."""
+
+    queue.directory.mkdir(parents=True, exist_ok=True)
+    name = f"{LOGS_VERSION}-logi-uruchomienia-{RUN_ID[:8]}.json"
+    (queue.directory / name).write_text(logs_with_file(RUN_ID).to_json(), encoding="utf-8")
+
+
+def test_plik_logow_w_archiwum_ma_etykiete_z_nazwa_i_wersja_wysylki(tmp_path: Path) -> None:
+    queue = Queue(tmp_path, FakeReportBox())
+    queued_logs(queue)
+
+    queue.outbox.resume()
+    queue.passed()
+
+    [archive] = queue.box.archives
+    assert [(asset.name, asset.label) for asset in archive.assets] == [
+        (f"{RUN_ID}.json.gz", f"{RUN_ID}.json.gz (wersja {LOGS_VERSION})")
+    ]
+
+
+def test_plik_archiwum_z_etykieta_w_innej_postaci_ustepuje_plikowi_wysylki(tmp_path: Path) -> None:
+    """Etykieta, z której kolejka nie odczyta wersji (np. dopisana ręcznie), nie jest nowszą wersją wysyłki."""
+
+    stale = ArchivedFile(1, f"{RUN_ID}.json.gz", f"{RUN_ID}.json.gz (wersja dodany ręcznie)", gzip.compress(b"stary\n"))
+    archive = BoxArchive(1, LOGS_TAG, "Logi Uruchomień 08_14_09_2026", "Opis.", [stale])
+    queue = Queue(tmp_path, FakeReportBox(archives=[archive]))
+    queued_logs(queue)
+
+    queue.outbox.resume()
+    queue.passed()
+
+    assert queue.box.archived(LOGS_TAG) == {f"{RUN_ID}.json.gz": b"{}\n"}
+    assert queue.files() == []
+
+
+def test_plik_czekajacy_na_archiwum_bez_sieci_zostaje_w_kolejce_i_dochodzi_po_powrocie_sieci(tmp_path: Path) -> None:
+    """Plik Logów, którego części już są w Skrzynce, a Archiwum jest nieosiągalne, czeka jak bez sieci (linia dziennika i
+    budzenie ``RETRY_S``), a nie znika; gdy sieć wraca, dochodzi do Archiwum z linią dziennika jego okresu."""
+
+    queue = Queue(tmp_path, FakeReportBox(archive_failure=Refused()))
+    queued_logs(queue)
+    queue.outbox.resume()
+    queue.passed()
+
+    queue.box.archive_failure = Unreachable()
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+
+    assert (len(queue.files()), "przyczyna=brak-sieci" in queue.log()) == (1, True)
+    queue.box.archive_failure = None
+    queue.clock.advance(RETRY_S)
+    queue.passed()
+    assert queue.box.archived(LOGS_TAG) == {f"{RUN_ID}.json.gz": b"{}\n"}
+    assert queue.files() == []
+    assert "skrzynka-archiwum etykieta=logi-uruchomienia okres=08_14_09_2026" in queue.log()
+
+
+def test_plik_starszego_centrum_ze_znacznikiem_dostarczenia_znika_po_starcie_bez_skrzynki_i_bez_linii_o_archiwum(
+    tmp_path: Path,
+) -> None:
+    """Plik schematu 2 (bez pliku do Archiwum), który stare Centrum oznaczyło jako dostarczony, ale go nie usunęło."""
+
+    queue = Queue(tmp_path, FakeReportBox())
+    queue.directory.mkdir(parents=True)
+    document = json.loads(post(["treść\n"]).to_json())
+    for key in ("archive", "archived", "rank", "state"):
+        del document[key]
+    document.update(schema_version=2, delivered_parts=1)
+    (queue.directory / f"{LOGS_VERSION}-kontrola-ilosci-{RUN_ID[:8]}.json").write_text(json.dumps(document), encoding="utf-8")
+
+    queue.outbox.resume()
+    queue.passed()
+
+    assert (queue.files(), queue.box.keys, queue.box.listed) == ([], [], [])
+    assert "skrzynka-archiwum" not in queue.log()
 
 
 def test_kontrole_ilosci_okresu_w_jednym_przejsciu_ida_do_jednego_issue_zanim_lista_je_pokaze(tmp_path: Path) -> None:

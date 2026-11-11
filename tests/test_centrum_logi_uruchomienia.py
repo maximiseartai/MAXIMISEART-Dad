@@ -1997,6 +1997,28 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
     assert [marker for marker in ("TESTOWA", "Testowa", "Miasto-Dzielnica") if marker in text] == [], "ADRES"
 
 
+def test_logi_zatrzymania_okna_efenix_na_elemencie_strony_nie_dokladnie_raz_maja_jego_selektor_i_liczbe(tmp_path: Path) -> None:
+    """Strona zlecenia nie ma przycisku Emmetta, gdy okno ładuje Wycenę Emmetta zlecenia z wiersza 19: Logi
+    Uruchomienia mówią Maksowi, który element strony okno znalazło ile razy (tu 0), a nie tylko, że budowa się zmieniła."""
+
+    orders = [PRICED[0], Order("#ZLQX08", worker="gosia.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 1})]
+    with atrapa_efenix([orders[0].in_efenix("611"), orders[1].in_efenix("618")], changed=Changed.EMMETT_BUTTON) as atrapa:
+        centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
+        write_collective_file(centrum.period_parent, orders)
+        assert _start_pricing(centrum).status_code == 200
+        finished_view(centrum.client)
+    [record] = records(centrum)
+    stop = record["efenix_stop"]
+
+    assert {key: value for key, value in stop["cause"].items() if value is not None} == {
+        "part": "EMMETT",
+        "what": "element strony nie występuje dokładnie raz",
+        "element": "#button_emmett",
+        "count": 0,
+    }
+    assert (stop["row"], stop["failed"]["action"]) == (19, "Wycena Emmetta")
+
+
 @dataclass(frozen=True)
 class StartPath:
     """Droga startu okna efenix, która kończy Wycenę Zatrzymaniem (tabela w ``tests/test_tabela_zatrzyman_efenix.py``):
