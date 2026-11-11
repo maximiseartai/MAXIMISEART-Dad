@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from rozliczenia.centrum.contract.common import ProcessKey
+from rozliczenia.centrum.contract.metrics import ProcessRun
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
@@ -605,3 +606,43 @@ def test_logi_ostatniego_startu_ktorych_system_nie_daje_odczytac_to_start_bez_ka
     (tmp_path / RUN_LOGS_DIRECTORY / name_of(start(process="settlement"))).mkdir(parents=True)
 
     assert RunCards(disk, list).last(LeftBehindClosed()) is None
+
+
+def test_wiersz_historii_ze_startem_w_chwili_startu_uruchomienia_to_jego_wynik(tmp_path: Path) -> None:
+    """Zegar Windows tyka co ok. 15 ms, więc rekord metryk może mieć start równy startowi Uruchomienia; to dalej jego
+    wiersz (okno od startu jak w ``CentrumRuns.remember``), a nie Urwane Uruchomienie."""
+
+    disk = on_disk(tmp_path)
+    disk.started(start())
+    row = ProcessRun(
+        process="efenix",
+        process_label="Wycena w efenix",
+        started_at=SECOND,
+        mode=RunMode.RUN,
+        period=PERIOD,
+        result="OK",
+        total_duration_ms=60_000,
+        phase_durations=[],
+        origin="centrum",
+        stop_kind=None,
+        run_id=RUN_ID,
+    )
+
+    previous = RunCards(disk, lambda: [row]).last(LeftBehindClosed())
+
+    assert previous is not None
+    assert (previous.state, previous.started_at, previous.run.id) == ("recorded", SECOND, RUN_ID)
+
+
+def test_zero_zlecen_przed_zamknieciem_centrum_nie_ostrzega(tmp_path: Path) -> None:
+    """Karta Urwanej Wyceny liczy zlecenia skończone przed zamknięciem Centrum; zero to zwykła liczba, a nie sygnał dla
+    taty jak dzień bez zleceń (``CountGroup.zero_warns``)."""
+
+    disk = on_disk(tmp_path)
+    disk.started(start())
+    written(tmp_path, interrupted_logs(start()))
+
+    previous = RunCards(disk, list).last(LeftBehindClosed())
+
+    assert previous is not None and previous.state == "interrupted" and previous.orders is not None
+    assert ({count.count for count in previous.orders.counts}, previous.orders.zero_warns) == ({0}, False)
