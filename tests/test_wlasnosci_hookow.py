@@ -752,20 +752,27 @@ def test_wygenerowane_polecenia_sa_poprawne_dla_basha(case: Case) -> None:
 
 
 TIMER = """
-import importlib.util, json, statistics, sys, time
+import importlib.util, json, math, statistics, sys, time
 spec = importlib.util.spec_from_file_location("czekanie", sys.argv[1])
 hook = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = hook
 spec.loader.exec_module(hook)
-growth, rounds = int(sys.argv[2]), int(sys.argv[3])
+growth, rounds, min_half_s = int(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4])
 short, long = json.load(sys.stdin)
+once = []
+for _ in range(2):
+    start = time.perf_counter()
+    hook.judge(long, False)
+    once.append(time.perf_counter() - start)
+repeat = max(1, math.ceil(min_half_s / min(once)))
 ratios = []
 for _ in range(rounds):
     start = time.perf_counter()
-    for _ in range(growth):
+    for _ in range(growth * repeat):
         hook.judge(short, False)
     middle = time.perf_counter()
-    hook.judge(long, False)
+    for _ in range(repeat):
+        hook.judge(long, False)
     ratios.append((time.perf_counter() - middle) / (middle - start))
 print(statistics.median(ratios))
 """
@@ -775,8 +782,13 @@ print(statistics.median(ratios))
 # runnera skraca się w stosunku; mediana rund pomija rundy, w które trafiło. Dawniej długie i krótkie polecenie biegły
 # osobno, a w runie 41975021886 werdykt długiego (47 ms) wyszedł 68,6 raza dłuższy od krótkiego (0,69 ms) przy limicie
 # 64, choć na Macu ten przykład rośnie liniowo (#906).
+# Połowa rundy trwa co najmniej ``MIN_HALF_S``: obie powtarzają swoje werdykty tyle samo razy. Przestój o długości
+# przydziału procesora (kilka ms) zmienia wtedy stosunek o dziesiąte części, a nie kilka razy. Dawniej połowa z jednym
+# werdyktem długiego trwała na Macu 0,4 ms, a w runie 42438089096 mediana pięciu rund wyszła 4,16 przy limicie 4
+# (``echo '`` i ``{ ``, na Macu 0,8), więc przestój wydłużył tę połowę w co najmniej trzech rundach z pięciu (#1096).
 GROWTH = 16
 ROUNDS = 5
+MIN_HALF_S = 0.01
 LINEAR_LIMIT = 4
 # Tylko na zawieszenie (wzorzec wykładniczy): werdykt daje stosunek czasów, a nie ten limit.
 HANG_S = 30
@@ -850,7 +862,7 @@ def test_czas_werdyktu_rosnie_najwyzej_liniowo_z_dlugoscia_polecenia(prefix: str
     commands = [prefix + unit * repeats, prefix + unit * repeats * GROWTH]
 
     timed = subprocess.run(
-        [sys.executable, "-c", TIMER, str(CZEKANIE), str(GROWTH), str(ROUNDS)],
+        [sys.executable, "-c", TIMER, str(CZEKANIE), str(GROWTH), str(ROUNDS), str(MIN_HALF_S)],
         input=json.dumps(commands),
         capture_output=True,
         text=True,
