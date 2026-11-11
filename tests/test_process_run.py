@@ -372,3 +372,21 @@ def test_pliki_taty_sa_bez_zmian_tylko_w_podgladzie_albo_gdy_zapisywanie_sie_nie
     outcome = run_core(fake_process(execute=engine), tmp_path / "metrics.jsonl", dry_run=dry_run, tata=tata)
 
     assert outcome.files_unchanged is unchanged
+
+
+def test_slad_wywolan_zatrzymania_ucina_lancuch_przyczyn_na_dziesieciu_takze_lancuch_ktory_wraca_do_siebie(
+    tmp_path: Path,
+) -> None:
+    """Ślad wywołań własnego zatrzymania z przyczyną w wyjątku niesie łańcuch ``__cause__`` (#976), najwyżej 10
+    przyczyn, więc przyczyna, której przyczyną jest ona sama, nie zatrzymuje Uruchomienia w nieskończonej pętli."""
+
+    looped = ValueError(SECRET)
+    looped.__cause__ = looped
+
+    def stop_from_loop(_inputs: Inputs, _context: RunContext) -> NoReturn:
+        raise stop_error("Pętla przyczyn.") from looped
+
+    outcome = run_core(fake_process(execute=stop_from_loop), tmp_path / "metrics.jsonl")
+
+    assert isinstance(outcome.ending, Stop) and outcome.ending.trace is not None, outcome.ending
+    assert [cause.exception_type for cause in outcome.ending.trace.causes] == 10 * ["ValueError"]
