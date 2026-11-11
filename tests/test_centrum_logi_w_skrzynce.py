@@ -1234,8 +1234,14 @@ def test_klikniecie_po_zostaw_moja_odtwarza_sie_zgodnie_z_decyzja_z_logow(
     centrum.moment.append(datetime(2026, 11, 10, 8))
     centrum.fake_inbox.outcome = NEXT_MORNING
     assert centrum.run_to_end()["result"]["ending"] == "finished"
-    view = centrum.client.get("/api/report-entering/view", params={"day": "2026-11-09"}).json()
-    [cell] = [problem["keep"] for worker in view["workers"] for problem in worker["problems"] if problem["keep"]]
+    view = centrum.client.get("/api/report-entering/view").json()
+    [cell] = [
+        problem["keep"]
+        for worker in view["workers"]
+        for day in worker["days"]
+        for problem in day["problems"]
+        if problem["keep"]
+    ]
     assert centrum.client.post("/api/report-entering/keep", json=cell).status_code == 200
     third = centrum.run_to_end()
     logs = _archived_run(surroundings.report_box, tmp_path, third["run"]["id"])

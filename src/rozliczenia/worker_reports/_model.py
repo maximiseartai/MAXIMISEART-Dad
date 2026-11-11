@@ -471,10 +471,40 @@ ReportProblem = (
 przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data, ten sam numer dwa razy w dniu i różnica z ręczną wartością."""
 
 
+class OrderState(Enum):
+    """Stan zlecenia dnia Wykonawcy w widoku Raporty: problem, którego tata nie zostawił „Zostaw moją”, bez żadnego Wpisu
+    (bez raportu, także gdy tata sam wpisał ``tak``) albo wpisane z Wpisu."""
+
+    ENTERED = "entered"
+    WITHOUT_REPORT = "without_report"
+    PROBLEM = "problem"
+
+    @classmethod
+    def of(cls, *, reported: bool, problem: bool) -> OrderState:
+        """Stan zlecenia z Wpisem (``reported``) albo bez niego, z problemem w widoku albo bez; problem ma tylko zlecenie
+        z Wpisem, bo każdy problem przy numerze zlecenia z dnia Wykonawcy pochodzi z jego Wpisu."""
+
+        if problem:
+            return cls.PROBLEM
+        return cls.ENTERED if reported else cls.WITHOUT_REPORT
+
+
+@dataclass(frozen=True)
+class OrderDetail:
+    """Zlecenie dnia Wykonawcy w widoku Raporty: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie zmian
+    kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i czy zlecenie ma jakikolwiek Wpis (``reported``)."""
+
+    number: OrderNumber
+    successful: str | None
+    activities: str | None
+    reported: bool
+
+
 @dataclass(frozen=True)
 class WorkerDay:
     """Liczby Wykonawcy z dnia dla widoku Raporty: zlecenia, zlecenia z ``tak`` albo ``nie`` w ``SKUTECZNE`` po
-    kliknięciu (``entered``), Raporty wykonawcy, problemy i numery zleceń bez żadnego Wpisu."""
+    kliknięciu (``entered``), Raporty wykonawcy, problemy, numery zleceń bez żadnego Wpisu i zlecenia dnia w kolejności
+    z INTERMAX (``orders_detail``)."""
 
     day: date
     worker: Login
@@ -483,6 +513,7 @@ class WorkerDay:
     mails: int
     problems: int
     without_report: tuple[OrderNumber, ...]
+    orders_detail: tuple[OrderDetail, ...]
 
 
 @dataclass(frozen=True)

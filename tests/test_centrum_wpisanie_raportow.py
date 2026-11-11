@@ -22,6 +22,7 @@ from openpyxl import load_workbook
 import pytest
 
 from rozliczenia.intermax_replace import LOCAL_DISK
+from rozliczenia.public_holidays import public_holidays
 from rozliczenia.tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_RESULT, REPORT_ENTERING_STATE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxAccess, InboxUnreachable, PasswordRejected
 from rozliczenia.worker_reports import (
@@ -41,7 +42,7 @@ from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMB
 from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.skrzynka_raportow import AtrapaImap, FakeInbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
-from tests.fixtures.centrum import ToolDirectory, run_events, views_until, write_report_key
+from tests.fixtures.centrum import ROOT, ToolDirectory, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
     ENTERING_PERIOD,
@@ -1201,15 +1202,27 @@ def test_folder_okresu_bez_dostepu_zatrzymuje_klikniecie_dla_taty_bez_odczytu_sk
 STRANGER = "obcy@przyklad.invalid"
 
 
-def _view(centrum: EnteringCentrum, day: str | None = None) -> dict[str, Any]:
-    response = centrum.client.get("/api/report-entering/view", params={} if day is None else {"day": day})
+def _view(centrum: EnteringCentrum) -> dict[str, Any]:
+    response = centrum.client.get("/api/report-entering/view")
     assert response.status_code == 200, response.json()
     return dict(response.json())
 
 
-def _worker(view: dict[str, Any], login: str) -> dict[str, Any]:
-    [found] = [worker for worker in view["workers"] if worker["worker"] == login]
+def _worker(view: dict[str, Any], login: str, day: str = "2026-11-09") -> dict[str, Any]:
+    """Dzień ``day`` Wykonawcy ``login`` z widoku Raporty."""
+
+    [found] = [shown for worker in view["workers"] if worker["worker"] == login for shown in worker["days"] if shown["day"] == day]
     return dict(found)
+
+
+def _days(view: dict[str, Any]) -> list[str]:
+    return [shown["day"] for shown in view["days"]]
+
+
+def _workers_of(view: dict[str, Any], day: str) -> list[str]:
+    """Wykonawcy, którzy mają w widoku Raporty dzień ``day``."""
+
+    return [worker["worker"] for worker in view["workers"] if day in {shown["day"] for shown in worker["days"]}]
 
 
 def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlecenia_bez_raportu_bez_odczytu_skrzynki(
@@ -1245,29 +1258,127 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
     assert before == {
         "clicked_at": None,
         "today": "2026-11-09",
-        "day": "2026-11-09",
-        "days": ["2026-11-09"],
+        "days": [{"day": "2026-11-09", "holiday": None}],
         "workers": [],
         "unknown_senders": [],
     }
     assert centrum.fake_inbox.days == read, "widok Raporty nie czyta skrzynki"
     assert datetime.fromisoformat(view["clicked_at"]) == ENTERING_NOW.astimezone()
-    assert (view["day"], view["days"]) == ("2026-11-09", ["2026-11-09"])
+    assert view["days"] == [{"day": "2026-11-09", "holiday": None}]
     foreign = ForeignOrder(Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("40000001"), Login("jan.testowy"))
     assert view["workers"] == [
         {
             "worker": "anna.kowalska",
-            "orders": 1,
-            "entered": 0,
-            "mails": 1,
-            "problems": [{"reason": reason(foreign), "number": "40000001", "sender": None, "keep": None}],
-            "without_report": ["40000002"],
+            "days": [
+                {
+                    "day": "2026-11-09",
+                    "orders": 1,
+                    "entered": 0,
+                    "mails": 1,
+                    "without_report": ["40000002"],
+                    "problems": [{"reason": reason(foreign), "number": "40000001", "keep": None}],
+                    "orders_detail": [
+                        {"number": "40000002", "successful": None, "activities": None, "state": "without_report"}
+                    ],
+                }
+            ],
         },
-        {"worker": "jan.testowy", "orders": 2, "entered": 1, "mails": 1, "problems": [], "without_report": ["40000005"]},
+        {
+            "worker": "jan.testowy",
+            "days": [
+                {
+                    "day": "2026-11-09",
+                    "orders": 2,
+                    "entered": 1,
+                    "mails": 1,
+                    "without_report": ["40000005"],
+                    "problems": [],
+                    "orders_detail": [
+                        {"number": "40000001", "successful": "tak", "activities": "wymiana routera", "state": "entered"},
+                        {"number": "40000005", "successful": None, "activities": None, "state": "without_report"},
+                    ],
+                }
+            ],
+        },
     ]
     [stranger] = view["unknown_senders"]
-    assert (stranger["sender"], stranger["number"], stranger["keep"]) == (STRANGER, None, None)
+    assert (stranger["day"], stranger["sender"]) == ("2026-11-09", STRANGER)
     assert STRANGER not in json.dumps(centrum.run_logs(), ensure_ascii=False)
+
+
+def test_zlecenia_dnia_w_widoku_raporty_zgadzaja_sie_z_intermax_po_kliknieciu_takze_przy_zostaw_moja(tmp_path: Path) -> None:
+    """#1322: przy każdym dniu Wykonawcy widok Raporty ma jego zlecenia w kolejności wierszy INTERMAX, z ``SKUTECZNE`` i
+    ``CZYNNOŚCI ZREALIZOWANE`` takimi, jakie INTERMAX ma po kliknięciu, także z ręczną wartością taty, i stan: wpisane z
+    Wpisu, bez raportu albo problem. Po „Zostaw moją” zlecenie z ręczną wartością jest wpisane, a INTERMAX bez zmian."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "jan.testowy", 40000006),
+            _order(9, 10, "jan.testowy", 40000001),
+            _order(9, 11, "jan.testowy", 40000005),
+            _order(9, 12, "anna.kowalska", 40000002),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(
+        tmp_path,
+        intermax,
+        [report(JAN, SUBJECT, "40000006 tak montaż 40000001 tak wymiana"), report(ANNA, SUBJECT, "40000002 brak klienta")],
+    )
+    _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
+    _finished(centrum)
+    cells = _cells(centrum.register)
+
+    view = _view(centrum)
+    [difference] = _worker(view, "jan.testowy")["problems"]
+    kept = centrum.client.post("/api/report-entering/keep", json=difference["keep"]).json()
+
+    def shown(found: dict[str, Any], login: str) -> list[tuple[int, object, object, str]]:
+        return [
+            (int(order["number"]), order["successful"], order["activities"], order["state"])
+            for order in _worker(found, login)["orders_detail"]
+        ]
+
+    jan = [number for number in cells if number in {40000006, 40000001, 40000005}]
+    states = {40000006: "entered", 40000001: "problem", 40000005: "without_report"}
+    assert jan == [40000006, 40000001, 40000005], "zlecenia Jana stoją w INTERMAX w tej kolejności"
+    assert shown(view, "jan.testowy") == [(number, *cells[number], states[number]) for number in jan]
+    assert cells[40000001] == ("tak", "wymiana ręczna")
+    assert shown(view, "anna.kowalska") == [(40000002, *cells[40000002], "problem")]
+    assert shown(kept, "jan.testowy") == [(number, *cells[number], {**states, 40000001: "entered"}[number]) for number in jan]
+    assert _cells(centrum.register) == cells, "„Zostaw moją” nie zmienia INTERMAX"
+
+
+def test_plik_wyniku_sprzed_zlecen_dnia_czyta_sie_z_liczbami_bez_zlecen_az_do_nastepnego_klikniecia(tmp_path: Path) -> None:
+    """#1322: plik wyniku w wersji 1, zapisany przez Centrum sprzed listy zleceń, leży u taty w ``config``. Widok Raporty
+    czyta go bez błędu: liczby, problemy i nieznany nadawca jak w pliku, a ``orders_detail`` jest ``null`` przy każdym
+    dniu; „Zostaw moją” przy jego różnicy działa. Następne kliknięcie zapisuje wynik ze zleceniami dnia."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    old = ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v1.json"
+    shutil.copyfile(old, centrum.tool.config / REPORT_ENTERING_RESULT)
+
+    view = _view(centrum)
+    [difference] = _worker(view, "jan.testowy")["problems"]
+    kept = centrum.client.post("/api/report-entering/keep", json=difference["keep"])
+
+    assert datetime.fromisoformat(view["clicked_at"]) == datetime.fromisoformat("2026-11-09T18:30:00+01:00")
+    assert [
+        (worker["worker"], [(day["day"], day["orders"], day["entered"], day["mails"], day["without_report"]) for day in worker["days"]])
+        for worker in view["workers"]
+    ] == [
+        ("anna.kowalska", [("2026-11-09", 1, 0, 1, ["40000002"])]),
+        ("jan.testowy", [("2026-11-09", 2, 1, 1, ["40000005"])]),
+    ]
+    assert [day["orders_detail"] for worker in view["workers"] for day in worker["days"]] == [None, None]
+    assert [problem["number"] for problem in _worker(view, "anna.kowalska")["problems"]] == ["40000001"]
+    assert [(sender["day"], sender["sender"]) for sender in view["unknown_senders"]] == [("2026-11-09", STRANGER)]
+    assert kept.status_code == 200, kept.json()
+    assert (_worker(kept.json(), "jan.testowy")["problems"], _worker(kept.json(), "jan.testowy")["orders_detail"]) == ([], None)
+
+    _finished(centrum)
+
+    assert [order["number"] for order in _worker(_view(centrum), "jan.testowy")["orders_detail"]] == ["40000001"]
 
 
 def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlecen_i_raportow(tmp_path: Path) -> None:
@@ -1285,12 +1396,13 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
         MailId.of("<syntetyczny@przyklad.invalid>"), Login("anna.kowalska"), mail.arrived, SubjectFault.NO_DATE
     )
     assert _worker(view, "anna.kowalska") == {
-        "worker": "anna.kowalska",
+        "day": "2026-11-09",
         "orders": 0,
         "entered": 0,
         "mails": 0,
-        "problems": [{"reason": reason(unreadable), "number": None, "sender": None, "keep": None}],
         "without_report": [],
+        "problems": [{"reason": reason(unreadable), "number": None, "keep": None}],
+        "orders_detail": [],
     }
 
 
@@ -1324,15 +1436,15 @@ def test_tak_i_nie_jednego_zlecenia_w_mailu_nic_do_niego_nie_wpisuja_a_widok_rap
         {"label": "Problemy", "value": 1, "unit": "count"},
     ]
     assert _worker(_view(centrum), "jan.testowy")["problems"] == [
-        {"reason": reason(warning), "number": "40000001", "sender": None, "keep": None}
+        {"reason": reason(warning), "number": "40000001", "keep": None}
     ]
     assert f"{mail.arrived:%d.%m.%Y o %H:%M}" in reason(warning)
 
 
-def test_widok_raporty_domyslnie_pokazuje_dzis_a_wczesniejsze_dni_tylko_z_otwartych_okresow(tmp_path: Path) -> None:
-    """US 53: we wtorek widok Raporty pokazuje dziś, także przed pierwszym kliknięciem tego dnia, a tata przełącza go na
-    poniedziałek z otwartego okresu, w którym widzi Wykonawców z Raportami z ostatniego kliknięcia. Gdy okres
-    poniedziałku dostanie Plik zbiorczy, następne kliknięcie nie daje już jego dni do wyboru."""
+def test_widok_raporty_ma_cale_okno_od_dnia_wdrozenia_do_dzis_tylko_z_otwartych_okresow(tmp_path: Path) -> None:
+    """US 53, #1322: we wtorek widok Raporty ma dni od poniedziałku, dnia wdrożenia, do dziś, także przed pierwszym
+    kliknięciem tego dnia, a przy poniedziałku Wykonawców z Raportami z ostatniego kliknięcia. Gdy okres poniedziałku
+    dostanie Plik zbiorczy, następne kliknięcie nie daje już jego dni."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     _finished(centrum)
@@ -1341,27 +1453,48 @@ def test_widok_raporty_domyslnie_pokazuje_dzis_a_wczesniejsze_dni_tylko_z_otwart
     _finished(centrum)
 
     today = _view(centrum)
-    monday = _view(centrum, "2026-11-09")
     folder = centrum.periods_directory / MONDAY_PERIOD
     folder.mkdir()
     (folder / f"Rozliczenie {MONDAY_PERIOD} - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
     _finished(centrum)
 
-    assert (morning["day"], morning["days"], morning["workers"]) == ("2026-11-10", ["2026-11-10", "2026-11-09"], [])
-    assert (today["day"], today["days"], today["workers"]) == ("2026-11-10", ["2026-11-10", "2026-11-09"], [])
-    assert (monday["today"], monday["day"]) == ("2026-11-10", "2026-11-09")
-    assert [(worker["worker"], worker["entered"], worker["mails"]) for worker in monday["workers"]] == [
-        ("anna.kowalska", 1, 1),
-        ("jan.testowy", 1, 1),
+    assert (morning["today"], _days(morning), _workers_of(morning, "2026-11-10")) == (
+        "2026-11-10",
+        ["2026-11-09", "2026-11-10"],
+        [],
+    )
+    assert (today["today"], _days(today), _workers_of(today, "2026-11-10")) == (
+        "2026-11-10",
+        ["2026-11-09", "2026-11-10"],
+        [],
+    )
+    assert [
+        (login, _worker(today, login)["entered"], _worker(today, login)["mails"]) for login in _workers_of(today, "2026-11-09")
+    ] == [("anna.kowalska", 1, 1), ("jan.testowy", 1, 1)]
+    assert _days(_view(centrum)) == ["2026-11-10"]
+
+
+def test_widok_raporty_daje_kazdy_dzien_okna_z_nazwa_swieta(tmp_path: Path) -> None:
+    """#1322: kliknięcie w czwartek 12.11 po wdrożeniu w poniedziałek 9.11 daje widok z każdym dniem od 9.11 do 12.11,
+    a 11.11 ma nazwę dnia ustawowo wolnego od pracy z ``public_holidays``; pozostałe dni są bez święta."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    _finished(centrum)
+
+    _click_at(centrum, datetime(2026, 11, 12, 8), [report(JAN, SUBJECT, "40000001 tak wymiana")])
+
+    assert _view(centrum)["days"] == [
+        {"day": "2026-11-09", "holiday": None},
+        {"day": "2026-11-10", "holiday": None},
+        {"day": "2026-11-11", "holiday": public_holidays(2026)[date(2026, 11, 11)]},
+        {"day": "2026-11-12", "holiday": None},
     ]
-    assert monday["clicked_at"] == today["clicked_at"]
-    assert _view(centrum)["days"] == ["2026-11-10"]
 
 
 def test_widok_raporty_nie_daje_dni_okresu_z_plikiem_zbiorczym_miedzy_otwartymi_okresami(tmp_path: Path) -> None:
     """ADR 0028: okno dni od dnia wdrożenia 9.11 do środy 18.11 nie ma dni okresu 10_16_11_2026, gdy ten ma Plik
-    zbiorczy, choć okres dnia wdrożenia dalej jest otwarty: widok Raporty daje do wyboru dziś, wtorek 17.11 i
-    poniedziałek 9.11."""
+    zbiorczy, choć okres dnia wdrożenia dalej jest otwarty: widok Raporty daje poniedziałek 9.11, wtorek 17.11 i
+    dziś."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     _finished(centrum)
@@ -1371,7 +1504,7 @@ def test_widok_raporty_nie_daje_dni_okresu_z_plikiem_zbiorczym_miedzy_otwartymi_
 
     _click_at(centrum, datetime(2026, 11, 18, 8), [report(JAN, SUBJECT, "40000001 tak wymiana")])
 
-    assert _view(centrum)["days"] == ["2026-11-18", "2026-11-17", "2026-11-09"]
+    assert _days(_view(centrum)) == ["2026-11-09", "2026-11-17", "2026-11-18"]
 
 
 def test_udane_klikniecie_bez_problemow_nie_daje_powiadomienia(tmp_path: Path) -> None:

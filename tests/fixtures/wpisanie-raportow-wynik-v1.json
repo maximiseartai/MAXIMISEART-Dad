@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "clicked_at": "2026-11-09T18:30:00+01:00",
+  "days": [
+    "2026-11-09"
+  ],
+  "workers": [
+    {
+      "day": "2026-11-09",
+      "worker": "anna.kowalska",
+      "orders": 1,
+      "entered": 0,
+      "mails": 1,
+      "without_report": [
+        "40000002"
+      ]
+    },
+    {
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "orders": 2,
+      "entered": 1,
+      "mails": 1,
+      "without_report": [
+        "40000005"
+      ]
+    }
+  ],
+  "problems": [
+    {
+      "day": "2026-11-09",
+      "worker": null,
+      "number": null,
+      "reason": "Raport wykonawcy z 09.11.2026 przyszedł z adresu spoza listy adresów Wykonawców, więc Centrum go nie wpisało. Powiedz Maksowi, czyj to adres.",
+      "sender": "obcy@przyklad.invalid",
+      "difference": null
+    },
+    {
+      "day": "2026-11-09",
+      "worker": "anna.kowalska",
+      "number": "40000001",
+      "reason": "Zlecenie 40000001 z 09.11.2026 jest zleceniem jan.testowy, a Wpis przysłał anna.kowalska, więc Centrum go nie wpisało.",
+      "sender": null,
+      "difference": null
+    },
+    {
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "number": "40000001",
+      "reason": "Zlecenie 40000001 od jan.testowy z 09.11.2026 ma w CZYNNOŚCI ZREALIZOWANE ręczną wartość „wymiana ręczna”, a Wpis raportu mówi „wymiana”. Ręczna wartość zostaje.",
+      "sender": null,
+      "difference": {
+        "number": "40000001",
+        "day": "2026-11-09",
+        "worker": "jan.testowy",
+        "column": "CZYNNOŚCI ZREALIZOWANE",
+        "reported": "wymiana"
+      }
+    }
+  ]
+}

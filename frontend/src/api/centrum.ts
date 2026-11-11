@@ -65,7 +65,7 @@ export type IntermaxDays = GetIntermaxDaysResponse
 /** Karta „Wpisz raporty z maili” poza okresami (ADR 0028). */
 export type ReportEnteringSetup = GetReportEnteringSetupResponse
 
-/** Widok Raporty: wynik ostatniego kliknięcia „Wpisz raporty z maili” w wybranym dniu. */
+/** Widok Raporty: wynik ostatniego kliknięcia „Wpisz raporty z maili” dla całego okna dni. */
 export type ReportsView = GetReportsViewResponse
 
 /** Wynik przywrócenia Kopii INTERMAX: przywrócona albo odmowa z Komunikatem (unia z kontraktu po `state`). */
@@ -183,12 +183,12 @@ export function startReportEntering() {
   return call("startReportEntering")
 }
 
-/** Widok Raporty dnia `day` (`null`: dziś) z pliku wyniku ostatniego kliknięcia; serwer nie czyta przy tym skrzynki. */
-export function getReportsView(day: string | null) {
-  return call("getReportsView", { query: { day } })
+/** Widok Raporty całego okna z pliku wyniku ostatniego kliknięcia; serwer nie czyta przy tym skrzynki. */
+export function getReportsView() {
+  return call("getReportsView")
 }
 
-/** „Zostaw moją” przy różnicy `cell`: serwer zapisuje decyzję poza INTERMAX i oddaje widok dnia bez tej różnicy. */
+/** „Zostaw moją” przy różnicy `cell`: serwer zapisuje decyzję poza INTERMAX i oddaje cały widok bez tej różnicy. */
 export function keepManualValue(cell: KeptCell) {
   return call("keepManualValue", { body: cell })
 }

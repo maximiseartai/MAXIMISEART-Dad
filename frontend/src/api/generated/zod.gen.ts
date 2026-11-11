@@ -887,52 +887,71 @@ export const zReportWaiting = z.object({
 });
 
 /**
+ * ReportsDay
+ *
+ * Dzień okna widoku Raporty z nazwą polskiego dnia ustawowo wolnego od pracy (``None``: dzień bez święta).
+ */
+export const zReportsDay = z.object({
+    day: z.iso.date(),
+    holiday: z.string().nullable()
+});
+
+/**
+ * ReportsOrder
+ *
+ * Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
+ * zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez
+ * żadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
+ */
+export const zReportsOrder = z.object({
+    number: z.string(),
+    successful: z.string().nullable(),
+    activities: z.string().nullable(),
+    state: z.enum([
+        'entered',
+        'without_report',
+        'problem'
+    ])
+});
+
+/**
  * ReportsProblem
  *
- * Problem z ostatniego kliknięcia: zdanie dla taty, numer zlecenia (``None``: problem bez numeru), adres
- * nieznanego nadawcy (tylko przy nim) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją”
- * (``keep``).
+ * Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
+ * numeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``).
  */
 export const zReportsProblem = z.object({
     reason: z.string(),
     number: z.string().nullable(),
-    sender: z.string().nullable(),
     keep: zKeptCell.nullable()
+});
+
+/**
+ * ReportsWorkerDay
+ *
+ * Dzień Wykonawcy z ostatniego kliknięcia: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po
+ * kliknięciu, kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”,
+ * numery zleceń bez żadnego Wpisu i zlecenia dnia (``orders_detail``; ``None``: wynik kliknięcia sprzed listy zleceń,
+ * dopóki tata nie kliknie znowu).
+ */
+export const zReportsWorkerDay = z.object({
+    day: z.iso.date(),
+    orders: z.int(),
+    entered: z.int(),
+    mails: z.int(),
+    without_report: z.array(z.string()),
+    problems: z.array(zReportsProblem),
+    orders_detail: z.array(zReportsOrder).nullable()
 });
 
 /**
  * ReportsWorker
  *
- * Wykonawca w wybranym dniu: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu,
- * kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”, i numery
- * zleceń bez żadnego Wpisu.
+ * Wykonawca z ostatniego kliknięcia i jego dni ze zleceniami, Raportem wykonawcy albo problemem, od najstarszego.
  */
 export const zReportsWorker = z.object({
     worker: z.string(),
-    orders: z.int(),
-    entered: z.int(),
-    mails: z.int(),
-    problems: z.array(zReportsProblem),
-    without_report: z.array(z.string())
-});
-
-/**
- * ReportsView
- *
- * Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki.
- *
- * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
- * ``day`` wybrany dzień, ``days`` dni do wyboru od najnowszego (dziś i dni otwartych okresów z ostatniego kliknięcia),
- * ``workers`` Wykonawcy wybranego dnia, a ``unknown_senders`` Raporty wykonawcy z tego dnia z adresów spoza listy
- * adresów Wykonawców.
- */
-export const zReportsView = z.object({
-    clicked_at: z.iso.datetime().nullable(),
-    today: z.iso.date(),
-    day: z.iso.date(),
-    days: z.array(z.iso.date()),
-    workers: z.array(zReportsWorker),
-    unknown_senders: z.array(zReportsProblem)
+    days: z.array(zReportsWorkerDay)
 });
 
 /**
@@ -1497,6 +1516,34 @@ export const zToolUpdateUpdated = z.object({
 export const zToolVersion = z.object({
     commit: z.string(),
     since: z.iso.date().nullable()
+});
+
+/**
+ * UnknownReportSender
+ *
+ * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty.
+ */
+export const zUnknownReportSender = z.object({
+    day: z.iso.date(),
+    sender: z.string(),
+    reason: z.string()
+});
+
+/**
+ * ReportsView
+ *
+ * Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki, dla całego okna.
+ *
+ * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
+ * ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
+ * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
+ */
+export const zReportsView = z.object({
+    clicked_at: z.iso.datetime().nullable(),
+    today: z.iso.date(),
+    days: z.array(zReportsDay),
+    workers: z.array(zReportsWorker),
+    unknown_senders: z.array(zUnknownReportSender)
 });
 
 /**
@@ -2432,10 +2479,6 @@ export const zStartReportEnteringResponse = z.discriminatedUnion('state', [
     zRunAwaitingDecision,
     zRunFinished
 ]);
-
-export const zGetReportsViewQuery = z.object({
-    day: z.iso.date().nullish()
-});
 
 /**
  * Successful Response

@@ -19,13 +19,14 @@ import { UnknownSenders, WorkerRow, type Keep } from "@/pages/worker-reports/wor
 
 /**
  * Widok Raporty z adresu `#/raporty/<dzień>`: wynik ostatniego kliknięcia „Wpisz raporty z maili” w wybranym dniu
- * (bez dnia: dziś). Serwer czyta go z pliku wyniku, nie ze skrzynki; „Zostaw moją” zastępuje widok odpowiedzią serwera.
+ * (bez dnia: dziś). Serwer oddaje całe okno z pliku wyniku, nie ze skrzynki, a strona pokazuje z niego dzień z adresu;
+ * „Zostaw moją” zastępuje widok odpowiedzią serwera.
  * Przycisk Wpisania raportów stoi w nagłówku, a koniec Wpisania czyta widok od nowa. Pod nagłówkiem jedna cicha linia
  * z chwilą ostatniego kliknięcia i INTERMAX z Ustawień taty.
  */
 export function ReportsPage() {
-  const [day = null] = usePagePath()
-  const { resource: view, reload, replace } = useResource(getReportsView, [day], { fromDadFiles: false })
+  const [path = null] = usePagePath()
+  const { resource: view, reload, replace } = useResource(getReportsView, [], { fromDadFiles: false })
   const entrance = useContentEntrance(view.state === "loading")
   const entering = useReportEntering(reload)
 
@@ -39,7 +40,7 @@ export function ReportsPage() {
       <PageHeader
         action={
           <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-            {view.state === "ready" ? <DayPicker view={view.data} /> : null}
+            {view.state === "ready" ? <DayPicker view={view.data} day={path ?? view.data.today} /> : null}
             <EnterReportsButton entering={entering} />
           </div>
         }
@@ -59,24 +60,31 @@ export function ReportsPage() {
       {view.state === "loading" ? <Skeleton className="h-64 w-full" aria-label="Wczytywanie Raportów" /> : null}
       {view.state === "failed" ? <LoadFailure what="Raportów" message={view.message} reload={reload} /> : null}
       {view.state === "ready" ? (
-        <ReportsContent view={view.data} keeping={running?.[0] ?? null} onKeep={run} className={entrance} />
+        <ReportsContent
+          view={view.data}
+          day={path ?? view.data.today}
+          keeping={running?.[0] ?? null}
+          onKeep={run}
+          className={entrance}
+        />
       ) : null}
     </>
   )
 }
 
-/** Dzień widoku ze strzałkami na dzień wcześniejszy i późniejszy z dni, które podaje serwer (od najnowszego). */
-function DayPicker({ view }: { view: ReportsView }) {
-  const at = view.days.indexOf(view.day)
-  const older = at === -1 ? undefined : view.days[at + 1]
-  const newer = at <= 0 ? undefined : view.days[at - 1]
+/** Dzień widoku ze strzałkami na dzień wcześniejszy i późniejszy z dni okna, które podaje serwer (od najstarszego). */
+function DayPicker({ view, day }: { view: ReportsView; day: string }) {
+  const days = view.days.map((found) => found.day)
+  const at = days.indexOf(day)
+  const older = at <= 0 ? undefined : days[at - 1]
+  const newer = at === -1 ? undefined : days[at + 1]
 
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Dzień">
       <DayLink day={older} label="Wcześniejszy dzień" icon={<ChevronLeftIcon />} />
       <span className="min-w-36 text-center text-sm font-medium whitespace-nowrap tabular-nums" aria-live="polite">
-        {weekdayDate(view.day)}
-        {view.day === view.today ? <span className="font-normal text-muted-foreground"> · dziś</span> : null}
+        {weekdayDate(day)}
+        {day === view.today ? <span className="font-normal text-muted-foreground"> · dziś</span> : null}
       </span>
       <DayLink day={newer} label="Późniejszy dzień" icon={<ChevronRightIcon />} />
     </div>
@@ -101,11 +109,13 @@ function DayLink({ day, label, icon }: { day: string | undefined; label: string;
 
 function ReportsContent({
   view,
+  day,
   keeping,
   onKeep,
   className,
 }: {
   view: ReportsView
+  day: string
   keeping: Keep | null
   onKeep: (cell: Keep) => void
   className: string | undefined
@@ -124,7 +134,11 @@ function ReportsContent({
     )
   }
 
-  const nothing = view.workers.length === 0 && view.unknown_senders.length === 0
+  const workers = view.workers.flatMap(({ worker, days }) =>
+    days.filter((found) => found.day === day).map((found) => ({ worker, day: found }))
+  )
+  const unknown = view.unknown_senders.filter((sender) => sender.day === day)
+  const nothing = workers.length === 0 && unknown.length === 0
 
   return (
     <div className={`flex flex-col gap-4 ${className ?? ""}`}>
@@ -133,14 +147,14 @@ function ReportsContent({
           <CardContent className="text-sm text-muted-foreground">Ten dzień nie ma zleceń ani Raportów wykonawców.</CardContent>
         </Card>
       ) : null}
-      {view.workers.length === 0 ? null : (
+      {workers.length === 0 ? null : (
         <Card className="py-0" role="list" aria-label="Wykonawcy">
-          {view.workers.map((worker) => (
-            <WorkerRow key={worker.worker} worker={worker} keeping={keeping} onKeep={onKeep} />
+          {workers.map(({ worker, day: shown }) => (
+            <WorkerRow key={worker} worker={worker} day={shown} keeping={keeping} onKeep={onKeep} />
           ))}
         </Card>
       )}
-      <UnknownSenders problems={view.unknown_senders} />
+      <UnknownSenders senders={unknown} />
     </div>
   )
 }
