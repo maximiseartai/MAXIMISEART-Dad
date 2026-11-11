@@ -65,6 +65,7 @@ from atrapy.intermax import (
     parts,
 )
 from atrapy.interlocutor import Tata
+from atrapy.pliki_taty import PASTE_SHIFT
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace, no_space, partial_copy, writing
 from atrapy.workbooks import rewrite_parts, without_sheet
 
@@ -1261,6 +1262,10 @@ def _without_workbook_properties(path: Path) -> None:
 
 def test_data_wklejenia_we_wbudowanym_formacie_daty_excela_jest_data(tmp_path: Path) -> None:
     path, layout = _register(tmp_path, Intermax(raw_date_format=DATE_FORMAT))
+    sheet = load_workbook(path)[ORDER_SHEET]
+    first, *other = layout.raw_rows  # pierwszy wiersz wklejenia przychodzi przesunięty
+    shown = {sheet.cell(first, DATE - PASTE_SHIFT).number_format, *(sheet.cell(row, DATE).number_format for row in other)}
+    assert shown == {DATE_FORMAT}, "wklejenie ma daty we wbudowanym formacie, który test sprawdza"
 
     summary = _ordered(_run(tmp_path))
 
@@ -1293,6 +1298,21 @@ def test_wiersz_z_sama_wartoscia_pod_wklejeniem_to_zlecenie_bez_daty_z_wierszem_
 
     assert (stop.message.code, stop.stop_kind) == ("SUROWE_ZLECENIE_BEZ_DATY", "for_tata")
     assert stop.message.where.endswith(f"komórka C{stray}")
+
+
+def test_atrapa_stawia_pusty_wiersz_taty_nad_wskazanym_zleceniem_wklejenia_i_ramke_piec_wierszy_pod_wklejeniem(
+    tmp_path: Path,
+) -> None:
+    """Atrapa INTERMAX: pusty wiersz taty stoi we wklejeniu nad zleceniem z ``Intermax.blank_in_paste``, a przygotowane
+    puste wiersze taty z ramką (``Intermax.grid``) sięgają 5 wierszy pod ostatni wiersz wklejenia."""
+
+    path, layout = _register(tmp_path, Intermax(blank_in_paste=frozenset({2})))
+    first, last = layout.first_raw, layout.first_raw + len(layout.raw)
+    sheet = load_workbook(path)[ORDER_SHEET]
+
+    assert layout.raw_rows == (first, first + 1, *range(first + 3, last + 1))
+    assert order_rows(path, first + 2, first + 2) == [None]
+    assert [_thin_row(sheet, number) for number in (last + 5, last + 6)] == [(BLANK_HEIGHT, "thin"), (None, None)]
 
 
 def test_wiersz_z_samymi_spacjami_pod_wklejeniem_jest_pusty(tmp_path: Path) -> None:

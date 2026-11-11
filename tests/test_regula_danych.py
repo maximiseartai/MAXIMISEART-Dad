@@ -7,6 +7,8 @@ sprawdzają własności w ``test_wlasnosci_dopasowania_tekstu.py``. Wartości s�
 
 from __future__ import annotations
 
+from datetime import time
+
 import pytest
 
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, Guarded, free_text
@@ -45,6 +47,24 @@ def test_numer_orange_ktory_excel_czyta_jako_liczbe_ulamkowa_jest_zamaskowany_w_
     guarded = forbidden.guard("umowa 4801234567 aktywna", "tekst")
 
     assert guarded == Guarded("umowa [numer Orange] aktywna", (ORANGE_NOTE,))
+
+
+def test_liczba_z_czescia_ulamkowa_z_zakazanej_kolumny_jest_zamaskowana_razem_z_czescia_ulamkowa() -> None:
+    # Tylko liczba całkowita zapisana jako ułamek traci część po przecinku (``shown``); inna zostaje w zapisie Excela.
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ORANGE, 48012.75)
+
+    guarded = forbidden.guard("umowa 48012.75 aktywna", "tekst")
+
+    assert guarded == Guarded("umowa [numer Orange] aktywna", (ORANGE_NOTE,))
+
+
+def test_godzina_z_zakazanej_kolumny_nie_jest_zakazana_wartoscia() -> None:
+    # Godzina, jak data, nie wskazuje klienta, a zamaskowałaby każdą tę samą godzinę w Logach.
+    forbidden = ForbiddenValues()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, time(8, 30))
+
+    assert forbidden.guard("przyjazd 08:30:00 rano", "tekst") == Guarded("przyjazd 08:30:00 rano", ())
 
 
 def test_wartosc_zapamietana_pod_dwiema_kolumnami_jest_maskowana_jak_pierwsza() -> None:
