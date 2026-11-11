@@ -66,6 +66,7 @@ from tests.fixtures.centrum_processes import (
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
 from atrapy.settlement import PERIOD
+import sys
 
 import odtworz_uruchomienie
 
@@ -717,7 +718,8 @@ def test_odtworzenie_porownuje_kazde_pole_logow_poza_faktami_startu_i_okolicznos
 
 
 def test_pomoc_narzedzia_wymienia_kazdy_proces_katalogu(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` narzędzia odtwarzania wymienia każdy proces, który odtwarza, nazwą z karty Centrum."""
+    """``--help`` narzędzia odtwarzania wymienia każdy proces, który odtwarza, nazwą z karty Centrum, a parametrów,
+    którymi narzędzie woła swoją kopię commitu (``--opis-kodu``, ``--granica``), nie pokazuje."""
 
     with pytest.raises(SystemExit) as exited:
         odtworz_uruchomienie.main(["--help"])
@@ -725,6 +727,18 @@ def test_pomoc_narzedzia_wymienia_kazdy_proces_katalogu(capsys: pytest.CaptureFi
     shown = " ".join(capsys.readouterr().out.split())
     assert exited.value.code == 0
     assert [kind.title for kind in CATALOG.kinds if kind.title not in shown] == []
+    assert [option for option in ("--opis-kodu", "--granica") if option in shown] == []
+
+
+def test_zly_parametr_narzedzia_daje_skladnie_i_blad_na_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    """Parametr, którego narzędzie nie przyjmuje (dzień Atrapy, który nie jest datą), kończy je kodem 2 ze składnią
+    wywołania i błędem na stderr."""
+
+    with pytest.raises(SystemExit) as exited:
+        odtworz_uruchomienie.main(["logi.json", "--efenix-dzis", "jutro"])
+
+    shown = capsys.readouterr()
+    assert (exited.value.code, shown.out, shown.err.startswith("usage: "), "błąd: argument --efenix-dzis" in shown.err) == (2, "", True, True), shown.err
 
 
 def _replayed(capsys: pytest.CaptureFixture[str], *arguments: str | Path) -> tuple[int, list[str]]:
@@ -1159,6 +1173,61 @@ def test_plik_ktory_nie_jest_plikiem_logow_konczy_sie_bledem_albo_granica(
         3,
         ["NIE DA SIĘ ODTWORZYĆ: Logi nie mają commitu narzędzia; odtwórz na kodzie tego checkoutu (--na-tym-drzewie)"],
     )
+
+
+def test_plik_logow_ktorego_nie_ma_albo_nie_w_utf8_daje_blad_na_stderr(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Pliku Logów, którego nie ma, i pliku nie w UTF-8 narzędzie nie czyta: kod 2, a na stderr błąd, który mówi,
+    czego brakuje albo czego nie dało się odczytać; stdout, na którym stoi raport, zostaje pusty."""
+
+    missing = tmp_path / "nie-ma.json"
+    other_encoding = tmp_path / "cp1250.json"
+    other_encoding.write_bytes('{"tool": "łódź"}'.encode("cp1250"))
+
+    shown = []
+    for logs in (missing, other_encoding):
+        code = odtworz_uruchomienie.main([str(logs), "--na-tym-drzewie"])
+        captured = capsys.readouterr()
+        shown.append((code, captured.out, captured.err))
+
+    assert shown == [
+        (2, "", f"BŁĄD: nie ma pliku Logów {missing}\n"),
+        (2, "", "BŁĄD: nie da się odczytać pliku Logów cp1250.json: UnicodeDecodeError\n"),
+    ]
+
+
+@pytest.mark.parametrize("text", ["[]", '{"tool": {"commit": ""}}'], ids=["json_nie_obiekt", "pusty_commit"])
+def test_logi_bez_commitu_w_innej_postaci_nie_maja_kopii_commitu(tmp_path: Path, capsys: pytest.CaptureFixture[str], text: str) -> None:
+    """JSON, który nie jest obiektem, i pusty commit narzędzia to też Logi bez commitu: kod 3 z podpowiedzią
+    ``--na-tym-drzewie``, a nie wyjątek ani szukanie pustego commitu."""
+
+    logs = tmp_path / "logi.json"
+    logs.write_text(text, encoding="utf-8")
+
+    assert _replayed(capsys, logs) == (
+        3,
+        ["NIE DA SIĘ ODTWORZYĆ: Logi nie mają commitu narzędzia; odtwórz na kodzie tego checkoutu (--na-tym-drzewie)"],
+    )
+
+
+def test_odtworzenie_na_tym_drzewie_zachowuje_pliki_w_pustym_folderze_a_niepustego_nie_rusza(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--zachowaj`` przyjmuje folder, który już jest, gdy jest pusty, i zostawia w nim Logi odtworzenia, a folder
+    z plikami odrzuca kodem 2 z błędem na stderr. Logi bez commitu narzędzia raport nazywa Logami z commitu
+    nieznanego."""
+
+    produced = _settlement(tmp_path / "taty")
+    logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=None))
+    kept = tmp_path / "odtworzenie"
+    kept.mkdir()
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+    again = odtworz_uruchomienie.main([str(logs), "--na-tym-drzewie", "--zachowaj", str(kept), *produced.arguments])
+    shown = capsys.readouterr()
+
+    assert (code, lines[0], lines[2].endswith("; Logi są z commitu nieznanego")) == (0, "ODTWORZENIE ZGODNE", True), lines
+    assert (kept / "odtworzone-logi.json").is_file()
+    assert (again, shown.out, shown.err) == (2, "", f"BŁĄD: folder {kept} nie jest pusty\n")
 
 
 def _changed(produced: Produced, folder: Path, change: Any) -> Path:
@@ -1831,6 +1900,112 @@ def test_logi_bez_kopii_wejscia_daja_granice_a_nie_zgodnosc(tmp_path: Path, caps
     )
 
 
+def _commit_like_head(folder: Path, *, without: str | None = None, changed: tuple[str, bytes] | None = None) -> str:
+    """Commit bez gałęzi z drzewem HEAD bez pliku ``without`` albo z inną treścią ``changed`` (ścieżka, bajty) jednego
+    pliku: commit sprzed narzędzia odtwarzania albo z innym ``requirements.txt``, których płytki klon CI nie ma."""
+
+    environment = os.environ | {"GIT_INDEX_FILE": str(folder / "indeks-commitu")}
+
+    def git(*arguments: str, given: bytes | None = None) -> str:
+        done = subprocess.run(["git", *arguments], cwd=ROOT, env=environment, input=given, capture_output=True, check=True)
+        return done.stdout.decode("utf-8").strip()
+
+    git("read-tree", "HEAD")
+    if without is not None:
+        git("update-index", "--force-remove", without)
+    if changed is not None:
+        path, content = changed
+        blob = git("hash-object", "-w", "--stdin", given=content)
+        git("update-index", "--add", "--cacheinfo", f"100644,{blob},{path}")
+    return git("commit-tree", git("write-tree"), "-p", "HEAD", "-m", "commit z Logów w teście odtworzenia")
+
+
+def test_commit_z_logow_sprzed_narzedzia_odtwarzania_konczy_sie_granica(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Commit z Logów, w którym nie ma narzędzia odtwarzania (sprzed #847), nie odtwarza się na swojej kopii: kod 3 z
+    podpowiedzią ``--na-tym-drzewie``."""
+
+    produced = _settlement(tmp_path / "taty")
+    commit = _commit_like_head(tmp_path, without="tools/odtworz_uruchomienie.py")
+    logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=commit))
+
+    assert _replayed(capsys, logs, *produced.arguments) == (
+        3,
+        [
+            f"NIE DA SIĘ ODTWORZYĆ: commit {commit} jest sprzed narzędzia odtwarzania (#847); odtwórz na kodzie tego "
+            "checkoutu (--na-tym-drzewie)"
+        ],
+    )
+
+
+def test_kopia_commitu_z_logow_dostaje_parametry_narzedzia_i_granice_innych_bibliotek(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kopia commitu z Logów Wyceny w efenix odtwarza z dniem Atrapy i folderem do zachowania z parametrów narzędzia
+    (bez dnia Atrapy Wycena różni się od Logów), a ``requirements.txt`` commitu inny niż tego checkoutu raport podaje
+    jako granicę. Błąd w kopii (folder do zachowania nie jest pusty) narzędzie oddaje na swój stderr z jej kodem."""
+
+    produced = _efenix(tmp_path / "taty")
+    requirements = (ROOT / "requirements.txt").read_bytes() + b"# inne biblioteki commitu z Logow\n"
+    commit = _commit_like_head(tmp_path, changed=("requirements.txt", requirements))
+    logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=commit))
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, logs, "--zachowaj", kept, *produced.arguments)
+    again = odtworz_uruchomienie.main([str(logs), "--zachowaj", str(kept), *produced.arguments])
+    shown = capsys.readouterr()
+
+    assert (code, lines[0], lines[2]) == (0, "ODTWORZENIE ZGODNE", f"Kod: commit {commit} z Logów, w osobnym drzewie"), lines
+    assert "- requirements.txt commitu różni się od tego checkoutu: odtworzenie biegło bibliotekami .venv tego checkoutu" in lines
+    assert (kept / "odtworzone-logi.json").is_file()
+    assert (again, shown.out, shown.err) == (2, "", f"BŁĄD: folder {kept.resolve()} nie jest pusty\n")
+
+
+def _tool_process(logs: Path, *arguments: str | Path, tool: Path = TOOL, path: Path) -> subprocess.CompletedProcess[str]:
+    """Narzędzie odtwarzania ``tool`` jako osobny proces z ``path`` w ``PYTHONPATH`` przed instalacją pakietu."""
+
+    return subprocess.run(
+        [sys.executable, str(tool), str(logs), "--na-tym-drzewie", *map(str, arguments)],
+        cwd=path,
+        env=os.environ | {"PYTHONPATH": str(path), "PYTHONUTF8": "1"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+
+def test_narzedzie_jako_proces_odtwarza_kodem_swojego_drzewa_a_nie_innym_pakietem_rozliczenia(tmp_path: Path) -> None:
+    """Narzędzie uruchomione jako proces bierze pakiet ``rozliczenia`` ze swojego drzewa, choć inny pakiet o tej
+    nazwie stoi wcześniej na ścieżce (``PYTHONPATH``, instalacja innego checkoutu), więc odtwarza kodem tego drzewa."""
+
+    produced = _settlement(tmp_path / "taty")
+    other = tmp_path / "inny-pakiet"
+    (other / "rozliczenia").mkdir(parents=True)
+    (other / "rozliczenia" / "__init__.py").write_text("", encoding="utf-8")
+
+    done = _tool_process(produced.archived, *produced.arguments, path=other)
+
+    assert (done.returncode, done.stdout.splitlines()[:1]) == (0, ["ODTWORZENIE ZGODNE"]), done.stderr
+
+
+def test_narzedzie_w_drzewie_bez_kodu_procesu_nie_odtwarza_kodem_innego_checkoutu(tmp_path: Path) -> None:
+    """Narzędzie z drzewa bez ``src`` (kopia samych narzędzi) dostałoby pakiet ``rozliczenia`` innego checkoutu, więc
+    nie odtwarza: kod 2 z błędem na stderr, który nazywa oba miejsca."""
+
+    produced = _settlement(tmp_path / "taty")
+    tree = tmp_path / "same-narzedzia"
+    for source in (TOOL, ROOT / "tools" / "lib" / "potomne.py", ROOT / "tools" / "lib" / "repo.py"):
+        copied = tree / source.relative_to(ROOT)
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        copied.write_bytes(source.read_bytes())
+
+    done = _tool_process(produced.archived, *produced.arguments, tool=tree / "tools" / "odtworz_uruchomienie.py", path=ROOT / "src")
+
+    assert (done.returncode, done.stdout) == (2, ""), done.stderr
+    assert done.stderr == f"BŁĄD: rozliczenia z {ROOT / 'src' / 'rozliczenia' / '__init__.py'}, a nie z {tree.resolve() / 'src'}\n"
+
+
 def _head() -> str:
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
 
@@ -1865,18 +2040,19 @@ def test_odtworzenie_biegnie_na_kopii_commitu_z_logow_jej_wlasnym_narzedziem(
 
 
 @contextmanager
-def _fake_gh(folder: Path, archived: Path) -> Iterator[Path]:
-    """``gh`` na początku ``PATH``, który zapisuje swoje argumenty i kładzie plik ``archived`` w folderze ``--dir``."""
+def _fake_gh(folder: Path, archived: Path | None) -> Iterator[Path]:
+    """``gh`` na początku ``PATH``, który zapisuje swoje argumenty i kładzie plik ``archived`` w folderze ``--dir``
+    (``None``: kończy się kodem 0 bez pliku)."""
 
     calls = folder / "wywolania.json"
+    lays = "" if archived is None else f"shutil.copy({str(archived)!r}, directory / sys.argv[sys.argv.index('--pattern') + 1])\n"
     fake_cli(
         folder,
         "gh",
         "import json, shutil, sys\n"
         "from pathlib import Path\n"
         f"Path({str(calls)!r}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
-        "directory = Path(sys.argv[sys.argv.index('--dir') + 1])\n"
-        f"shutil.copy({str(archived)!r}, directory / sys.argv[sys.argv.index('--pattern') + 1])\n",
+        "directory = Path(sys.argv[sys.argv.index('--dir') + 1])\n" + lays,
     )
     path = os.environ["PATH"]
     os.environ["PATH"] = f"{folder}{os.pathsep}{path}"
@@ -1890,8 +2066,8 @@ def test_odnosnik_z_komentarza_logow_pobiera_plik_z_archiwum_przez_gh_i_odtwarza
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Odnośnik do pliku w Archiwum Logów okresu z komentarza Logów to ``gh release download`` z tagiem okresu i nazwą
-    pliku w repozytorium Zgłoszeń; pobrany plik odtwarza się tak jak plik z dysku. Odnośnika spoza GitHuba narzędzie nie
-    pobiera."""
+    pliku w repozytorium Zgłoszeń; pobrany plik odtwarza się tak jak plik z dysku. Odnośnika spoza GitHuba ani spoza
+    plików GitHub Release narzędzie nie pobiera."""
 
     produced = _settlement(tmp_path / "taty")
     name = produced.archived.name
@@ -1900,9 +2076,23 @@ def test_odnosnik_z_komentarza_logow_pobiera_plik_z_archiwum_przez_gh_i_odtwarza
 
     with _fake_gh(tmp_path / "gh", produced.archived) as calls:
         elsewhere = _replayed(capsys, link.replace("https://github.com/", "https://example.invalid/"), "--na-tym-drzewie")
-        assert (elsewhere[0], calls.exists()) == (2, False), elsewhere
+        not_release = _replayed(capsys, link.replace("/releases/download/", "/archive/download/"), "--na-tym-drzewie")
+        assert (elsewhere[0], not_release[0], calls.exists()) == (2, 2, False), (elsewhere, not_release)
         code, lines = _replayed(capsys, link, "--na-tym-drzewie", *produced.arguments)
 
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     arguments = json.loads(calls.read_text(encoding="utf-8"))
     assert arguments[:7] == ["release", "download", tag, "--repo", REPOSITORY, "--pattern", name]
+
+
+def test_gh_bez_pobranego_pliku_daje_blad_a_nie_odtworzenie(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """``gh release download``, które kończy się kodem 0, a pliku nie kładzie, to błąd pobrania z Archiwum (kod 2)."""
+
+    name = "20261111T000000Z-settlement-0.json.gz"
+    tag = f"logi-{PERIOD}"
+
+    with _fake_gh(tmp_path / "gh", None):
+        code = odtworz_uruchomienie.main([f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}", "--na-tym-drzewie"])
+
+    shown = capsys.readouterr()
+    assert (code, shown.out, shown.err) == (2, "", f"BŁĄD: gh release download nie pobrał {name} z {REPOSITORY} {tag}: \n")
