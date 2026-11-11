@@ -1383,6 +1383,52 @@ def test_plik_wyniku_sprzed_zlecen_dnia_czyta_sie_z_liczbami_bez_zlecen_az_do_na
     assert [order["number"] for order in _worker(_view(centrum), "jan.testowy")["orders_detail"]] == ["40000001"]
 
 
+def test_plik_wyniku_sprzed_zlecen_dnia_daje_null_takze_przy_dniu_z_samym_problemem(tmp_path: Path) -> None:
+    """#1322: w pliku wyniku w wersji 1 Wykonawca może mieć dzień z samym problemem, bez liczb. Widok Raporty daje przy
+    nim zera i ``orders_detail`` ``null`` jak przy innych dniach tego pliku, bo wersja 1 nie zapisywała zleceń dnia."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    old = json.loads((ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v1.json").read_text(encoding="utf-8"))
+    old["problems"].append(
+        {
+            "day": "2026-11-09",
+            "worker": "ola.testowa",
+            "number": "40000009",
+            "reason": "Numer 40000009 nie jest zleceniem ola.testowa z 09.11.2026.",
+            "sender": None,
+            "difference": None,
+        }
+    )
+    (centrum.tool.config / REPORT_ENTERING_RESULT).write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+
+    only_problem = _worker(_view(centrum), "ola.testowa")
+
+    assert (only_problem["orders"], only_problem["entered"], only_problem["mails"], only_problem["orders_detail"]) == (
+        0,
+        0,
+        0,
+        None,
+    )
+    assert [problem["number"] for problem in only_problem["problems"]] == ["40000009"]
+
+
+def test_widok_raporty_na_przelomie_roku_daje_swieta_z_obu_lat(tmp_path: Path) -> None:
+    """#1322: okno od Wigilii 2026, dnia wdrożenia, do soboty 2.01.2027 ma przy każdym dniu święto z jego własnego
+    roku, więc 24–26.12.2026 i 1.01.2027 mają nazwy, choć okno kończy się w innym roku niż zaczyna."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    _click_at(centrum, datetime(2026, 12, 24, 18), [])
+    _click_at(centrum, datetime(2027, 1, 2, 8), [])
+
+    days = _view(centrum)["days"]
+    named = [shown["day"] for shown in days if shown["holiday"] is not None]
+
+    assert [shown["holiday"] for shown in days] == [
+        public_holidays(date.fromisoformat(shown["day"]).year).get(date.fromisoformat(shown["day"])) for shown in days
+    ]
+    assert named == ["2026-12-24", "2026-12-25", "2026-12-26", "2027-01-01"]
+
+
 def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlecen_i_raportow(tmp_path: Path) -> None:
     """US 55: Anna nie ma zleceń 9.11, a jej mail z tego dnia ma temat bez daty, więc nie jest Raportem wykonawcy.
     Widok Raporty pokazuje ją przy tym dniu z zerami i tym problemem, zamiast zgubić problem razem z nią."""
