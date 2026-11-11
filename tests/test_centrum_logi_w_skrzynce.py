@@ -68,6 +68,10 @@ from atrapy.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows,
 from atrapy.settlement import PERIOD
 
 import odtworz_uruchomienie
+import openpyxl
+from atrapa_z_logow import ScopedOrder, fed
+from rozliczenia.centrum.run_logs import LoggedOrder
+from rozliczenia.efenix_address import AddressPart, address_differences
 
 LABEL: Final = "logi-uruchomienia"
 LINE = f"- Logi Uruchomienia okresu: {PERIOD}"
@@ -829,10 +833,11 @@ def _efenix(
     in_efenix: list[AtrapaOrder] | None = None,
     result: str = "WYMAGA_SPRAWDZENIA",
     pricing: str = "bez Przekazania",
+    priced: list[EfenixOrder] = PRICED,
 ) -> Produced:
     with atrapa_efenix(in_efenix or IN_EFENIX, prices=_TATA_PRICES) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
-        write_collective_file(centrum.period_parent, PRICED)
+        write_collective_file(centrum.period_parent, priced)
         write_report_key(ToolDirectory(tmp_path))
         request = {"process": "efenix", "period": PERIOD, "mode": "RUN", "pricing": pricing}
         started = centrum.client.post("/api/runs", json=request)
@@ -1517,6 +1522,158 @@ def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen
 
     assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
     assert lines[3] == "Pierwsza różnica: Komunikaty (messages)[1: kod EFENIX_INNY_STATUS].code"
+
+
+# Wiersze 18–20 po Wykonawcach: ``ADRES``, którego reguła adresu nie rozbiera (bez rodzaju ulicy), ``Dane adresowe``
+# bez rodzaju ulicy i ``Dane adresowe`` z inną ulicą i numerem domu. Adresy są wymyślone.
+ADDRESSED = [
+    _efenix_order("#ZLQR11", "adrian.testowy", address="ZAWILCOWA 12/3"),
+    _efenix_order("#ZLQR12", "beata.testowa", efenix_address="Miastowo-Centrum Zawilcowa 12 Lokal 3"),
+    _efenix_order("#ZLQR13", "celina.testowa", efenix_address="Miastowo-Centrum ul.Rumiankowa 14 Lokal 3"),
+]
+
+
+def test_logi_wyceny_z_adresem_bez_rozbioru_i_innym_adresem_w_efenix_odtwarzaja_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Atrapa z Logów pokazuje ``Dane adresowe``, które różnią się od ``ADRES`` odtworzonego Pliku zbiorczego tymi
+    samymi częściami co u taty: ``ADRES`` bez rozbioru (w odtworzonym pliku też bez rodzaju ulicy, z numerem swojego
+    wiersza), ``Dane adresowe`` bez rozbioru oraz inna ulica i numer domu. Wycena daje więc te same Komunikaty i ślad, a
+    raport nie ma granicy o adresie."""
+
+    in_efenix = [order.in_efenix(str(651 + index)) for index, order in enumerate(ADDRESSED)]
+    produced = _efenix(tmp_path / "taty", in_efenix, priced=ADDRESSED)
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+
+    logged = [result["address"] for order in produced.record["efenix_orders"] for result in order["steps"][0]["results"]]
+    assert logged == [[AddressPart.FILE_UNREAD.value], [AddressPart.EFENIX_UNREAD.value], ["ulica", "numer domu"]]
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert [line[:40] for line in lines[lines.index("Granice:") + 1 :]] == ["- efenix to Atrapa efenix z odczytów str"], lines
+    [collective] = (kept / "okresy").rglob("*.xlsx")
+    workbook = openpyxl.load_workbook(collective)
+    sheet = workbook.active
+    assert sheet is not None
+    column = next(cell.column for cell in sheet[17] if cell.value == "ADRES")
+    addresses = {row: str(sheet.cell(row, column).value) for row in (18, 19, 20)}
+    workbook.close()
+    unread = (AddressPart.FILE_UNREAD, AddressPart.EFENIX_UNREAD)
+    assert [(address_differences(address, address), address.endswith(f" {row}")) for row, address in addresses.items()] == [
+        (unread, True),
+        ((), True),
+        ((), True),
+    ], addresses
+
+
+def test_logi_wyceny_sprzed_odczytu_wierszy_listy_koncza_odtworzenie_granica(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Logi sprzed #843 mają szukanie z trafieniami bez odczytu wierszy listy, więc Atrapa nie wie, co pokazać:
+    odtworzenie kończy się granicą (kod 3), a nie różnicą."""
+
+    produced = _efenix(tmp_path / "taty")
+
+    def without_results(record: dict[str, Any]) -> None:
+        for order in record["efenix_orders"]:
+            for step in order["steps"]:
+                if step["action"] == "szukanie":
+                    step["results"] = None
+
+    changed = _changed(produced, tmp_path, without_results)
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: Logi Wyceny w efenix nie mają odczytu wierszy listy po szukaniu (Logi sprzed #843), więc "
+        "Atrapa nie wie, co pokazać",
+    ), lines
+
+
+def _page(amount: str, quantities: dict[str, int | str]) -> dict[str, Any]:
+    """Odczyt strony zlecenia po otwarciu w śladzie: kwota końcowa i ilości (każda pozycja Atrapy bez podanej ma 0)."""
+
+    shown = {**dict.fromkeys(PRICES, 0), **quantities}
+    return {"action": "otwarcie zlecenia", "duration_ms": 1, "found": None, "execution_date": None, "amount": amount,
+            "quantities": shown, "position": None, "quantity": None, "accepted": None}
+
+
+def _typed(position: str, quantity: int, amount: str | None) -> dict[str, Any]:
+    """Wpisanie ilości pozycji w śladzie z kwotą końcową po zapisie (``None``: zapis bez kwoty)."""
+
+    return {"action": "ilość", "duration_ms": 1, "found": None, "execution_date": None, "amount": amount,
+            "quantities": None, "position": position, "quantity": quantity, "accepted": True}
+
+
+def _searched(*results: dict[str, Any]) -> dict[str, Any]:
+    return {"action": "szukanie", "duration_ms": 1, "found": len(results), "execution_date": None, "amount": None,
+            "quantities": None, "position": None, "quantity": None, "accepted": None, "results": list(results)}
+
+
+def _traced(row: int, *steps: dict[str, Any]) -> LoggedOrder:
+    return LoggedOrder.model_validate({"row": row, "outcome": "gotowe", "code": None, "file": {}, "file_amount": "0", "steps": list(steps)})
+
+
+_UNKNOWN_012 = ("ceny pozycji 012 nie wynikają z kwot w Logach: Atrapa liczy je swoimi cenami", False)
+# Kroki śladu każdego zlecenia w Logach, ceny, które z nich wynikają, i granice Atrapy (tekst, czy blokuje).
+PRICES_FROM_LOGS: dict[str, tuple[list[list[dict[str, Any]]], dict[str, Decimal], tuple[tuple[str, bool], ...]]] = {
+    "zmiana_kwoty_po_wpisaniu_ilosci": ([[_page("0.00", {}), _typed("012", 1, "99.00")]], {"012": Decimal(99)}, ()),
+    "zmiana_jednej_z_dwoch_pozycji_strony": (
+        [[_page("30.00", {"012": 1, "013": 1}), _typed("012", 2, "40.00")]],
+        {"012": Decimal(10), "013": Decimal(20)},
+        (),
+    ),
+    "cena_ze_strony_innego_zlecenia": (
+        [[_page("30.00", {"012": 1, "013": 1})], [_page("10.00", {"012": 1})]],
+        {"012": Decimal(10), "013": Decimal(20)},
+        (),
+    ),
+    "zapis_ilosci_bez_kwoty": ([[_page("0.00", {}), _typed("012", 1, None)]], {"012": PRICES["012"]}, ()),
+    "dwie_nieznane_na_stronie_jedna_spoza_atrapy": (
+        [[_page("50.00", {"012": 1, "999": 1})]],
+        {"012": PRICES["012"]},
+        (_UNKNOWN_012, ("pozycji 999 nie ma na stronach Atrapy efenix", False)),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", PRICES_FROM_LOGS)
+def test_ceny_atrapy_z_logow_wynikaja_z_kwot_po_wpisaniu_ilosci_i_ze_stron_z_jedna_nieznana_cena(case: str) -> None:
+    """Cena pozycji to zmiana kwoty końcowej po wpisaniu ilości przez zmianę jej ilości, a kwota strony, na której
+    tylko jedna pozycja z ilością ma nieznaną cenę, daje tę cenę, także ze strony innego zlecenia i po cenie wyznaczonej
+    później. Cena, której Logi nie wyznaczają, zostaje ceną Atrapy z granicą, gdy pozycja ma ilość, a pozycja spoza
+    stron Atrapy ma swoją granicę (``atrapa_z_logow``)."""
+
+    steps, prices, limits = PRICES_FROM_LOGS[case]
+
+    found = fed([_traced(18 + index, *order) for index, order in enumerate(steps)], [])
+
+    assert ({code: found.prices[code] for code in prices}, found.limits) == (prices, limits)
+
+
+def test_atrapa_z_logow_nazywa_wiersz_bez_numeru_zl_i_roznice_adresu_ktorej_nie_umie_pokazac() -> None:
+    """Zlecenie z wynikami szukania w Logach, którego wiersz odtworzonego Pliku zbiorczego nie ma ``NUMER ZL.``, i
+    wynik z częścią adresu, której Atrapa nie umie pokazać (np. z innej wersji Logów), dają granice, które nie blokują;
+    zlecenie bez wyników szukania granicy nie daje."""
+
+    listed = {"same_number": True, "status": "Do wyceny", "realizator": "adrian.testowy"}
+    orders = [
+        _traced(18, _searched({**listed, "address": []})),
+        _traced(19, _searched()),
+        _traced(20, _searched({**listed, "address": ["województwo"]})),
+    ]
+    scoped = [ScopedOrder(18, None, "ul. Odtworzeniowa 18"), ScopedOrder(19, None, "ul. Odtworzeniowa 19"), ScopedOrder(20, "ZL20", "ul. Odtworzeniowa 20")]
+
+    found = fed(orders, scoped)
+
+    assert ([order.number for order in found.orders], found.limits) == (
+        ["ZL20"],
+        (
+            ("wiersz 18 Pliku zbiorczego nie ma w odtworzeniu zlecenia z NUMER ZL.", False),
+            ("wiersz 20: Atrapa nie umie pokazać różnicy adresu ['województwo']", False),
+        ),
+    )
 
 
 def test_kopia_wejscia_bez_folderow_nad_plikiem_daje_roznice_w_kopii_a_nie_zgodnosc(
