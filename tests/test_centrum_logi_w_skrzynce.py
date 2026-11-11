@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+import copy
 from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
@@ -20,12 +21,24 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from typing import Any, Final
 
+from openpyxl import load_workbook
 import pytest
 
-from odtworzenie import COMPARED, NOT_COMPARED
+from odtworzenie import (
+    COMPARED,
+    NOT_COMPARED,
+    SYNTHETIC_ADDRESS,
+    SYNTHETIC_ORANGE,
+    Difference,
+    Report,
+    Verdict,
+    first_difference,
+    replay,
+)
 from rozliczenia import tool_files
 from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia import intermax_copies
@@ -922,6 +935,21 @@ PROCESSES = {
     "efenix": _efenix,
     "report_entering": _report_entering,
 }
+_CONFIGURATION = "- Konfiguracja wykonawców i Wzorce nie są w Logach"
+# Granice zgodnego odtworzenia Logów każdego procesu, po kolei (początek linii pod „Granice:”): to, czego Logi tego
+# procesu nie niosą, bez braków w folderze Konfiguracji i arkusza, w którym odtworzenie nie wie, gdzie stały ADRES i
+# NUMER UMOWY. Maski strażnika są tylko przy Wpisaniu raportów: Raport Jana i jego wiersz INTERMAX mają telefon.
+ALWAYS = {
+    "settlement": (_CONFIGURATION,),
+    "preparation": ("- Surowe zlecenia na dole arkuszy Rejestru zleceń", "- folderu okresów taty Logi nie mają", _CONFIGURATION),
+    "intermax": ("- dni uporządkowane nad wklejeniem nie są w Kopii wejścia", "- kolumn z aplikacji za UWAGI nie ma w Kopii"),
+    "efenix": ("- efenix to Atrapa efenix z odczytów stron w Logach, a nie efenix taty",),
+    "report_entering": (
+        "- Kopia wejścia ma maski strażnika reguły danych ([telefon] ×1)",
+        "- maili taty Logi nie mają",
+        "- Wpisy raportu w Logach mają maski strażnika reguły danych ([telefon] ×1)",
+    ),
+}
 
 
 @pytest.mark.parametrize("process", PROCESSES)
@@ -931,7 +959,8 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     """Plik z Archiwum Logów okresu, który wyprodukowało Uruchomienie procesu z Centrum, odtwarza się na tym kodzie z
     tymi samymi wynikiem, Komunikatami, podsumowaniem, etapami i śladem (Szablony pracownika, Wpisy INTERMAX z
     wierszami dnia, ślad zleceń efenix z odczytem każdej strony), a pliki, które odtworzenie zapisuje, zostają w jego
-    katalogu roboczym, także rekord metryk: historii metryk narzędzia odtworzenie nie dopisuje."""
+    katalogu roboczym, także rekord metryk: historii metryk narzędzia odtworzenie nie dopisuje. Pod „Granice:” stoi
+    tylko to, czego Logi procesu nie niosą, a Konfiguracja z folderu taty nie ma braków ani innego rozmiaru."""
 
     produced = PROCESSES[process](tmp_path / "taty")
     record = produced.record
@@ -943,6 +972,10 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
 
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     assert lines[1] == f"Uruchomienie: {_title(record)}, {RunMode(record['mode']).word}, okres {record['period']}, {produced.archived.stem}"
+    granice = lines[lines.index("Granice:") + 1 :]
+    assert len(granice) == len(ALWAYS[process]) and all(map(str.startswith, granice, ALWAYS[process])), granice
+    configuration = [line for line in granice if line.startswith(_CONFIGURATION)]
+    assert [line for line in configuration if not line.endswith("a Logi mają tylko nazwę i rozmiar plików taty")] == []
     replayed = json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))
     assert (replayed["process"], replayed["mode"], replayed["result"]) == (process, record["mode"], record["result"])
     trace = {
@@ -1061,6 +1094,12 @@ LIMITS = {
         "NIE DA SIĘ ODTWORZYĆ: Kopia wejścia nie zapisała wartości 1 komórek (typ spoza Kopii, np. Sheet1 A18), więc "
         "odtworzone pliki ich nie mają",
     ),
+    "naglowki_poza_wierszem_17": (
+        lambda record: record["input_copy"][0]["sheets"][0].update(header_row=1),
+        None,
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: Kopia Pliku zbiorczego nie ma jednego arkusza z nagłówkami w wierszu 17",
+    ),
     "bez_folderu_konfiguracji": (lambda record: None, "nie-ma", 3, "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Konfiguracją"),
     "maska_strazinka_w_kopii": (
         _cell_with_phone,
@@ -1076,9 +1115,10 @@ LIMITS = {
 def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodnosci(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """Czego Logi nie niosą, raport mówi: Urwane Uruchomienie, pusta Kopia wejścia, komórka typu spoza Kopii i brak
-    folderu Konfiguracji kończą odtworzenie bez uruchomienia procesu (kod 3), a maska strażnika w Kopii i Konfiguracja
-    innego rozmiaru niż u taty stoją pod „Granice:” przy zgodnym odtworzeniu."""
+    """Czego Logi nie niosą, raport mówi: Urwane Uruchomienie, pusta Kopia wejścia, komórka typu spoza Kopii, Kopia
+    Pliku zbiorczego z nagłówkami poza wierszem 17 i brak folderu Konfiguracji kończą odtworzenie bez uruchomienia
+    procesu (kod 3), a maska strażnika w Kopii i Konfiguracja innego rozmiaru niż u taty stoją pod „Granice:” przy
+    zgodnym odtworzeniu."""
 
     change, folder, expected_code, expected = LIMITS[case]
     produced = _settlement(tmp_path / "taty")
@@ -1097,6 +1137,107 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
     if case == "inny_rozmiar_konfiguracji":
         size = (configuration / tool_files.WORKER_CONFIG.name).stat().st_size
         assert any(line.endswith(f"inny rozmiar niż u taty: worker_mapping.yaml: u taty 1 B, tu {size} B") for line in lines)
+
+
+# Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.
+ONE_FILE = {
+    "settlement": "proces",
+    "preparation": "Przygotowanie pliku zbiorczego",
+    "intermax": "Uporządkowanie INTERMAX",
+    "efenix": "proces",
+    "report_entering": "Wpisanie raportów",
+}
+
+
+@pytest.mark.parametrize("process", PROCESSES)
+def test_kopia_wejscia_z_dwoma_plikami_konczy_odtworzenie_granica_procesu_jednego_pliku(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], process: str
+) -> None:
+    """Każdy proces czyta jeden plik taty, więc Logi z Kopią wejścia z dwoma plikami (ten sam plik drugi raz) nie
+    odtwarzają się: kod 3 z granicą, która nazywa liczbę plików i proces, bez uruchomienia procesu."""
+
+    produced = PROCESSES[process](tmp_path / "taty")
+    changed = _changed(produced, tmp_path, lambda record: record["input_copy"].append(record["input_copy"][0]))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (3, f"NIE DA SIĘ ODTWORZYĆ: Kopia wejścia ma 2 pliki, a {ONE_FILE[process]} czyta jeden"), lines
+
+
+def test_folder_konfiguracji_bez_konfiguracji_wykonawcow_raport_nazywa_brakujacy_plik(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Folder Konfiguracji z Wzorcami, a bez Konfiguracji wykonawców: raport mówi pod „Granice:”, którego pliku w nim
+    nie ma, bo bez niego Przebieg rozliczeń kończy się inaczej niż u taty."""
+
+    produced = _settlement(tmp_path / "taty")
+    folder = tmp_path / "bez-konfiguracji-wykonawcow"
+    shutil.copytree(tmp_path / "taty" / "config", folder)
+    (folder / tool_files.WORKER_CONFIG.name).unlink()
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--konfiguracja", folder)
+
+    [configuration] = [line for line in lines if line.startswith(_CONFIGURATION)]
+    assert (code, configuration.endswith(f"; w folderze nie ma: {tool_files.WORKER_CONFIG.name}")) == (1, True), lines
+
+
+def test_odtworzenie_bez_folderu_konfiguracji_mowi_ze_folderu_nie_podano(tmp_path: Path) -> None:
+    """Bez folderu Konfiguracji (narzędzie nie ma domyślnego, gdy główny checkout nie ma ``config/``) odtworzenie
+    Przebiegu rozliczeń nie biegnie, a granica mówi, że folderu nie podano."""
+
+    record = RunLog.model_validate(_settlement(tmp_path / "taty").record)
+
+    report = replay(record, work=tmp_path / "odtworzenie", configuration=None)
+
+    assert report.lines(record, "kod")[0] == (
+        "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Konfiguracją wykonawców i Wzorcami (brak, --konfiguracja): Logi ich nie "
+        "niosą, a proces bez nich nie biegnie"
+    )
+
+
+def test_arkusz_kopii_bez_naglowkow_daje_granice_o_kolumnach_adres_i_numer_umowy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Arkusz Kopii wejścia INTERMAX bez nagłówków: odtworzenie nie wie, w których kolumnach stały ``ADRES`` i
+    ``NUMER UMOWY``, więc raport mówi to pod „Granice:” przy różnicy w Kopii wejścia (Uporządkowanie nie czyta arkusza
+    bez nagłówków), a nie kończy się wyjątkiem."""
+
+    produced = _intermax(tmp_path / "taty")
+
+    def without_headers(record: dict[str, Any]) -> None:
+        record["input_copy"][0]["sheets"].append({"sheet": "Bez nagłówków", "header_row": 1, "columns": {}, "rows": [], "empty_rows": []})
+
+    changed = _changed(produced, tmp_path, without_headers)
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie")
+
+    assert (code, lines[3].startswith("Pierwsza różnica: Kopia wejścia (input_copy)")) == (1, True), lines
+    assert "- arkusz Bez nagłówków: nie wiem, gdzie stały kolumny ADRES i NUMER UMOWY" in lines[lines.index("Granice:") + 1 :]
+
+
+def test_odtworzony_rejestr_ma_w_adresie_i_numerze_umowy_wartosci_syntetyczne_swojego_wiersza(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kopia wejścia nie ma ``ADRES`` ani ``NUMER UMOWY`` Rejestru zleceń, więc odtworzony Rejestr w katalogu
+    odtworzenia ma w nich w każdym wierszu Kopii wartość syntetyczną z numerem tego wiersza, której żaden plik taty nie
+    ma."""
+
+    produced = _preparation(tmp_path / "taty")
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+
+    [register] = (kept / "rejestr").rglob("*.xlsx")
+    workbook = load_workbook(register)
+    found, expected = [], []
+    for sheet in produced.record["input_copy"][0]["sheets"]:
+        created = workbook[sheet["sheet"]]
+        headers = {cell.value: cell.column for cell in created[sheet["header_row"]] if cell.value in ("ADRES", "NUMER UMOWY")}
+        for row in sheet["rows"]:
+            found.append((created.cell(row["row"], headers["ADRES"]).value, created.cell(row["row"], headers["NUMER UMOWY"]).value))
+            expected.append((SYNTHETIC_ADDRESS.format(row=row["row"]), SYNTHETIC_ORANGE.format(row=row["row"])))
+    workbook.close()
+    assert (code, len(found) > 1, found) == (0, True, expected), lines
 
 
 def test_powtorka_zatrzymania_porownuje_sie_jak_zatrzymanie_dla_taty(
@@ -1138,6 +1279,57 @@ def test_zatrzymanie_okna_efenix_jest_granica_przy_roznicy_odtworzenia_na_atrapi
         "Przyczyna w Logach: okno efenix przy wierszu 19 (2 z 6): wartość pola Ilość, która nie jest liczbą całkowitą; "
         "wyjątki rozliczenia.message.StopError ← rozliczenia.efenix_window.UnexpectedPage"
     ), cause
+
+
+# Strona zlecenia Wykonawcy z drugiego wiersza bez przycisku Emmetta: okno efenix staje na elemencie, którego szukało.
+_EMMETT_GONE = [IN_EFENIX[0], replace(PRICED[1].in_efenix("642"), changed=Changed.EMMETT_BUTTON)]
+_WINDOW_CHAIN = "rozliczenia.message.StopError ← rozliczenia.efenix_window.UnexpectedPage"
+
+
+def test_przyczyna_zatrzymania_okna_ma_element_strony_a_wyjatek_bez_ramek_nie_ma_miejsca_powstania(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Przyczyna w Logach nazywa element strony, którego okno efenix nie znalazło dokładnie raz, i miejsce w kodzie
+    okna, w którym powstał jego wyjątek; Logi, w których wyjątek okna nie ma ramek śladu wywołań, mają przyczynę bez
+    tego miejsca (#976)."""
+
+    produced = _efenix(tmp_path / "taty", _EMMETT_GONE, "BLAD_KRYTYCZNY")
+    cause = produced.record["efenix_stop"]["cause"]
+    without = _changed(produced, tmp_path, lambda record: record["trace"]["causes"][0].update(frames=[]))
+
+    shown = [
+        [line for line in _replayed(capsys, logs, "--na-tym-drzewie", *produced.arguments)[1] if line.startswith("Przyczyna w Logach: ")]
+        for logs in (produced.archived, without)
+    ]
+
+    stopped = f"Przyczyna w Logach: okno efenix przy wierszu 19 (2 z 6): {cause['what']} ({cause['element']}); wyjątki {_WINDOW_CHAIN}"
+    assert (cause["element"], shown[0][0].startswith(f"{stopped}, powstał w src/rozliczenia/efenix_browser.py:")) == ("#button_emmett", True), shown
+    assert shown[1] == [stopped]
+
+
+def test_porownanie_zatrzymania_okna_efenix_pomija_czasy_krokow_a_nie_przyczyne(tmp_path: Path) -> None:
+    """Zatrzymanie okna efenix w Logach i w odtworzeniu różni się przyczyną (innym elementem strony), a nie czasami
+    kroków przy zleceniu; tak samo Zatrzymanie przy starcie okna, które nie ma zlecenia ani działania, które zawiodło."""
+
+    record = _efenix(tmp_path / "taty", _EMMETT_GONE, "BLAD_KRYTYCZNY").record
+    element = record["efenix_stop"]["cause"]["element"]
+
+    def stopped(*, other_element: bool = False, later: bool = False, at_start: bool = False) -> RunLog:
+        changed = copy.deepcopy(record)
+        stop = changed["efenix_stop"]
+        if other_element:
+            stop["cause"]["element"] = "#inny_element"
+        if later:
+            for step in [*stop["steps"], stop["failed"]]:
+                step.update(started_at="2026-11-11T23:59:00Z", duration_ms=step["duration_ms"] + 1000)
+        if at_start:
+            stop.update(row=None, order=None, orders=None, steps=[], failed=None)
+        return RunLog.model_validate(changed)
+
+    other = Difference("Zatrzymanie okna efenix (efenix_stop).cause.element", element, "#inny_element")
+    assert first_difference(stopped(), stopped(later=True)) is None
+    assert first_difference(stopped(), stopped(other_element=True)) == other
+    assert first_difference(stopped(at_start=True), stopped(at_start=True, other_element=True)) == other
 
 
 def test_plik_ktory_nie_jest_plikiem_logow_konczy_sie_bledem_albo_granica(
@@ -1197,6 +1389,7 @@ def test_celowo_zmieniona_kopia_wejscia_daje_wydruk_pierwszej_roznicy_a_nie_zgod
         "  Odtworzenie: 1",
     ]
     assert lines[6].startswith("Porównano: Kopia wejścia, wynik, zakończenie, Rodzaj Zatrzymania, Komunikaty")
+    assert lines[7].startswith("Poza porównaniem: czasy i chwile kroków, odciski plików, środowisko")
 
 
 def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtwarza_sie_zgodnie(
@@ -1593,6 +1786,55 @@ def test_lista_innej_dlugosci_w_logach_daje_roznice_w_pierwszym_elemencie_bez_pa
     assert lines[3] == f"Pierwsza różnica: etapy (phases)[{place}]", lines
     shown = dict(line.strip().split(":", 1) for line in lines[4:6])
     assert (shown[absent].strip(), '"phase": "Zapisywanie"' in shown[present]) == ("(brak)", True), lines
+
+
+# Komórka Kopii wejścia w Logach i w odtworzeniu (``None``: tej komórki po tej stronie nie ma) i czy porównanie
+# odtworzenia ma w niej pierwszą różnicę (``_same`` w ``odtworzenie``).
+CELLS: dict[str, tuple[object, object, bool]] = {
+    "komorka_tylko_w_logach": ("wymiana", None, True),
+    "komorka_tylko_w_odtworzeniu": (None, "wymiana", True),
+    "liczba_przeciw_prawdzie": (1, True, True),
+    "prawda_przeciw_falszowi": (True, False, True),
+    "calkowita_przeciw_ulamkowi_tej_samej_wartosci": (5, 5.0, False),
+}
+
+
+@pytest.mark.parametrize("case", CELLS)
+def test_porownanie_odtworzenia_rozni_brak_pola_i_prawde_od_liczby_a_nie_ulamek_od_calkowitej(tmp_path: Path, case: str) -> None:
+    """Pierwszą różnicą jest pole, które ma tylko jedna strona (po drugiej „(brak)”), i prawda albo fałsz inne niż po
+    drugiej stronie, także liczba 1 przeciw prawdzie; liczba całkowita i ułamek tej samej wartości różnicą nie są, bo
+    zapis pliku zmienia 5.0 w 5."""
+
+    logged, replayed, differs = CELLS[case]
+    record = _settlement(tmp_path / "taty").record
+
+    def with_cell(value: object) -> RunLog:
+        changed = copy.deepcopy(record)
+        if value is not None:
+            changed["input_copy"][0]["sheets"][0]["rows"][0]["cells"]["Z"] = value
+        return RunLog.model_validate(changed)
+
+    found = first_difference(with_cell(logged), with_cell(replayed))
+
+    shown = ["(brak)" if value is None else value for value in (logged, replayed)]
+    if differs:
+        assert found is not None and (found.field.endswith(".cells.Z"), [found.logged, found.replayed]) == (True, shown), found
+        assert [type(value) for value in (found.logged, found.replayed)] == [type(value) for value in shown]
+    else:
+        assert found is None
+
+
+def test_wartosc_roznicy_do_300_znakow_raport_pokazuje_cala_a_dluzsza_ucina(tmp_path: Path) -> None:
+    """Wartość w pierwszej różnicy raport pokazuje w JSON najwyżej na 300 znakach: tyle mieści się cała, a dłuższa
+    kończy się na 297 znakach i „...”."""
+
+    record = RunLog.model_validate(_settlement(tmp_path / "taty").record)
+    whole, cut = "a" * 298, "b" * 299  # z cudzysłowami JSON 300 i 301 znaków
+
+    lines = Report(Verdict.DIFFERS, Difference("pole", whole, cut), ()).lines(record, "kod")
+
+    start = lines.index("Pierwsza różnica: pole")
+    assert lines[start + 1 : start + 3] == [f'  Logi:        "{whole}"', f'  Odtworzenie: "{cut[:296]}...']
 
 
 def test_kopia_intermax_bez_wiersza_nad_wklejeniem_stawia_dzien_gdzie_indziej_niz_u_taty(
