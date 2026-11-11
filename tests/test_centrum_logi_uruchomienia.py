@@ -3424,6 +3424,27 @@ def test_logi_przebiegu_rozliczen_maja_wiersze_pliku_zbiorczego_bez_adresu_i_num
     assert sheet["rows"][1]["cells"]["AS"] is True, "prawda/fałsz, nie liczba"
 
 
+def test_kolumna_pliku_zbiorczego_z_naglowkiem_z_samych_spacji_nie_jest_kolumna_kopii_wejscia(tmp_path: Path) -> None:
+    """Spacje, które tata zostawił w nagłówku pustej kolumny Pliku zbiorczego, nie czynią z niej kolumny Kopii wejścia:
+    Kopia nazywa tylko kolumny z nagłówkiem."""
+
+    centrum = settling_centrum(tmp_path)
+    write_quantity_source(centrum.collective_file, [MARKED])
+    workbook = load_workbook(centrum.collective_file)
+    try:
+        active_worksheet(workbook)["L17"] = "  "
+        workbook.save(centrum.collective_file)
+    finally:
+        workbook.close()
+
+    run_to_end(centrum, dry_run=True)
+
+    [record] = records(centrum)
+    [copied] = record["input_copy"]
+    [sheet] = copied["sheets"]
+    assert sheet["columns"] == COLLECTIVE_COLUMNS
+
+
 def test_logi_wyceny_w_efenix_maja_wiersze_pliku_zbiorczego_z_kwota_i_odcisk_przeczytanej_wersji_pliku(
     tmp_path: Path,
 ) -> None:
