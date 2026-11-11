@@ -17,7 +17,7 @@ from rozliczenia.centrum.report_box import REPOSITORY, Refused, Rejected, Unreac
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.telemetry import MetricsStore
 
-from tests.fixtures.centrum import QUEUED_FOR_KEY, FakeReportBox, ToolDirectory, write_report_key
+from tests.fixtures.centrum import QUEUED_FOR_KEY, FakeReportBox, ToolDirectory, remove_report_key, write_report_key
 from tests.fixtures.centrum_processes import SettlingCentrum, run_logs_handled, run_to_end, settling_centrum
 from tests.fixtures.potomne import wait_for
 from atrapy.settlement import PERIOD
@@ -322,7 +322,7 @@ def test_komentarz_do_usunietego_issue_uwagi_kolejka_porzuca_raz_i_wiecej_o_nie_
     assert wait_for(lambda: len(queued(centrum)) == 2)
     [comment] = queued(centrum, "uwaga-taty")
     assert centrum.client.post("/api/dad-notes", json={"title": "Inna Uwaga"}).json() == {"state": "sent"}
-    centrum.tool.report_key.unlink()
+    remove_report_key(centrum.client, centrum.tool)
     behind = centrum.client.post("/api/dad-notes", json={"title": "Uwaga za komentarzem"})
     assert behind.json() == QUEUED_FOR_KEY
     # Maks usuwa issue Uwagi, gdy lista issue już je pokazuje: usunięte w LIST_LAG_S po założeniu lista issue z etykietą
@@ -359,7 +359,7 @@ def _refused_listing(centrum: SettlingCentrum) -> None:
 
 
 def _without_key(centrum: SettlingCentrum) -> None:
-    centrum.tool.report_key.unlink()
+    remove_report_key(centrum.client, centrum.tool)
 
 
 UNCHECKABLE: Final[dict[str, tuple[Callable[[SettlingCentrum], None], str]]] = {
