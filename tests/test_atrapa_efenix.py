@@ -23,13 +23,13 @@ jego Zatrzymanie przechodzi przez okno jak każdy wyjątek działania.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, nullcontext, suppress
 from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 import enum
 from functools import partial
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 import socket
 import threading
@@ -69,6 +69,8 @@ from atrapy.atrapa_efenix import (
     SEARCH,
     SET_DATE,
     AtrapaOrder,
+    Changed,
+    Outage,
     atrapa_efenix,
 )
 from tests.fixtures.expect import assert_expected
@@ -160,6 +162,42 @@ def test_po_bloku_atrapy_polaczenie_otwarte_w_bloku_nie_dostaje_odpowiedzi_a_po_
         _answer(connection, "GET", LIST_PAGE)
     connection.close()
     assert wait_for(lambda: set(threading.enumerate()) <= before, seconds=10)
+
+
+def test_koniec_bloku_atrapy_przerywa_odpowiedz_wolnego_efenix_i_nie_zostawia_jej_watku() -> None:
+    """Odpowiedź wolnego efenix (``Outage.SLOW``) czeka na koniec bloku, a koniec bloku ją przerywa, więc wątek, który
+    ją obsługuje, nie czeka dłużej niż Atrapa (pytający może dostać odpowiedź albo zerwane połączenie)."""
+
+    before = set(threading.enumerate())
+    with atrapa_efenix([], outage_from=(Outage.SLOW, 0)) as atrapa:
+        connection = _connection(atrapa.url)
+        asking = threading.Thread(target=_ask_ignoring_answer, args=(connection,))
+        asking.start()
+        assert wait_for(lambda: atrapa.requested() == [("GET", LIST_PAGE)], seconds=10)
+
+    asking.join(timeout=10)
+    connection.close()
+    assert (asking.is_alive(), wait_for(lambda: set(threading.enumerate()) <= before, seconds=10)) == (False, True)
+
+
+def _ask_ignoring_answer(connection: HTTPConnection) -> None:
+    with suppress(OSError, HTTPException):
+        _answer(connection, "GET", LIST_PAGE)
+
+
+@pytest.mark.parametrize("changed", [None, Changed.DATE_FORMAT, Changed.DATE_DIGITS], ids=["zapis-efenix", "inny-zapis", "same-cyfry"])
+def test_strona_zlecenia_bez_daty_wykonania_ma_pusta_date_takze_przy_innym_zapisie_daty(changed: Changed | None) -> None:
+    """Inny zapis daty wykonania zmienia tylko datę, którą zlecenie ma: zlecenie bez niej ma stronę z pustą datą, jak w
+    zapisie, który zna narzędzie."""
+
+    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")], changed=changed) as atrapa:
+        connection = _connection(atrapa.url)
+        connection.request("GET", f"/{ORDER_PAGE}?id=901")
+        response = connection.getresponse()
+        answer = (response.status, response.read().decode("utf-8"))
+        connection.close()
+
+    assert (answer[0], '<span id="data_install"></span>' in answer[1]) == (200, True)
 
 
 def _order() -> EfenixOrder:
