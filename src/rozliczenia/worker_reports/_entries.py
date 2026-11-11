@@ -19,10 +19,10 @@ from ._model import OrderNumber, ReportEntry, Verdict, VerdictFault
 _EDGES: Final = re.compile(r"^(?:[^\w]|_)+|(?:[^\w]|_)+$")
 _MARKS: Final[dict[str, Verdict | VerdictFault]] = {
     **{verdict.value: verdict for verdict in Verdict},
-    "t": VerdictFault.LETTER,
-    "n": VerdictFault.LETTER,
-    "skuteczne": VerdictFault.WORD,
-    "nieskuteczne": VerdictFault.WORD,
+    "t": VerdictFault.LETTER_YES,
+    "n": VerdictFault.LETTER_NO,
+    "skuteczne": VerdictFault.WORD_YES,
+    "nieskuteczne": VerdictFault.WORD_NO,
 }
 
 
@@ -95,9 +95,11 @@ def entries(text: str, digits: int) -> tuple[ReportEntry, ...]:
     się nie liczą. Opis ostatniego Wpisu kończy też stopka w środku ostatniej linii treści (``_last_end``).
 
     Cytatu w treści już nie ma, więc kilka Wpisów jednego numeru Wykonawca napisał w nowej treści. Liczy się pierwszy
-    Wpis z ``tak`` albo ``nie``, a Wpis bez nich tylko wtedy, gdy żaden Wpis numeru ich nie ma (pierwszy). Gdy numer ma
-    Wpisy z ``tak`` i z ``nie``, wynik ma pierwszy Wpis z każdym z nich, w kolejności maila, a dopasowanie nie wpisuje
-    żadnego (``ConflictingVerdicts``).
+    Wpis z ``tak`` albo ``nie``, a Wpis bez nich tylko wtedy, gdy żaden Wpis numeru ich nie ma (pierwszy). Litera
+    ``t``/``n`` i słowo ``skuteczne``/``nieskuteczne`` niosą zamiar (Decyzja Maksa D13, ``ReportEntry.leaning``): gdy
+    Wpisy numeru mają przeciwny zamiar (``tak`` albo ``t`` albo ``skuteczne`` i ``nie`` albo ``n`` albo
+    ``nieskuteczne``), wynik ma pierwszy Wpis każdego zamiaru, w kolejności maila, a dopasowanie nie wpisuje żadnego
+    (``ConflictingVerdicts``).
     """
 
     stream = tuple(_stream(text))
@@ -111,13 +113,16 @@ def entries(text: str, digits: int) -> tuple[ReportEntry, ...]:
 
 
 def _counted(said: Sequence[ReportEntry]) -> tuple[ReportEntry, ...]:
-    """Wpisy numeru, które się liczą: pierwszy Wpis z każdym ``tak``/``nie``, a bez nich pierwszy Wpis."""
+    """Wpisy numeru, które się liczą: przy przeciwnym zamiarze pierwszy Wpis każdego zamiaru, inaczej pierwszy Wpis z
+    ``tak``/``nie``, a bez nich pierwszy Wpis."""
 
     first: dict[Verdict, ReportEntry] = {}
     for entry in said:
-        if entry.verdict is not None:
-            first.setdefault(entry.verdict, entry)
-    return tuple(first.values()) or (said[0],)
+        if entry.leaning is not None:
+            first.setdefault(entry.leaning, entry)
+    if len(first) > 1:
+        return tuple(first.values())
+    return next(((entry,) for entry in said if entry.verdict is not None), (said[0],))
 
 
 def _last_end(stream: _Stream, start: int) -> int:

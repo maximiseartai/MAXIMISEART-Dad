@@ -269,11 +269,42 @@ class Verdict(Enum):
 
 class VerdictFault(Enum):
     """Dlaczego Wpis raportu nie ma ``tak`` ani ``nie``: brak słowa (``MISSING``), sama litera ``t`` albo ``n``
-    (``LETTER``) albo ``skuteczne``/``nieskuteczne`` (``WORD``)."""
+    (``LETTER_YES``, ``LETTER_NO``) albo ``skuteczne``/``nieskuteczne`` (``WORD_YES``, ``WORD_NO``). Litera i słowo
+    niosą zamiar Wykonawcy (``leaning``), choć Centrum ich nie wpisuje (Decyzja Maksa D13)."""
 
     MISSING = auto()
-    LETTER = auto()
-    WORD = auto()
+    LETTER_YES = auto()
+    LETTER_NO = auto()
+    WORD_YES = auto()
+    WORD_NO = auto()
+
+    @property
+    def leaning(self) -> Verdict | None:
+        """``tak`` albo ``nie``, które znak ma na myśli; ``None`` bez znaku."""
+
+        match self:
+            case VerdictFault.MISSING:
+                return None
+            case VerdictFault.LETTER_YES | VerdictFault.WORD_YES:
+                return Verdict.YES
+            case VerdictFault.LETTER_NO | VerdictFault.WORD_NO:
+                return Verdict.NO
+
+    @property
+    def mark(self) -> str:
+        """Znak, z którego rdzeń czyta ten powód, małymi literami; bez znaku pusty."""
+
+        match self:
+            case VerdictFault.MISSING:
+                return ""
+            case VerdictFault.LETTER_YES:
+                return "t"
+            case VerdictFault.LETTER_NO:
+                return "n"
+            case VerdictFault.WORD_YES:
+                return "skuteczne"
+            case VerdictFault.WORD_NO:
+                return "nieskuteczne"
 
 
 class SubjectFault(Enum):
@@ -299,12 +330,27 @@ class ReportEntry:
     fault: VerdictFault | None
     activities: str
 
+    @property
+    def leaning(self) -> Verdict | None:
+        """``tak`` albo ``nie`` Wpisu albo to, które ma na myśli jego litera lub słowo; ``None`` bez znaku."""
+
+        return self.fault.leaning if self.verdict is None and self.fault is not None else self.verdict
+
+    @property
+    def mark(self) -> str:
+        """Znak Wpisu małymi literami (``tak``, ``t``, ``nieskuteczne``), z którego rdzeń czyta go z powrotem; bez znaku
+        pusty."""
+
+        if self.verdict is not None:
+            return self.verdict.value
+        return "" if self.fault is None else self.fault.mark
+
 
 @dataclass(frozen=True)
 class ReadReport:
     """Raport wykonawcy od Wykonawcy ``worker`` z dniem zleceń ``day`` z tematu i jego Wpisami: jeden Wpis na numer, a
-    przy numerze z Wpisami z ``tak`` i z ``nie`` pierwszy Wpis z każdym z nich, w kolejności maila
-    (``_entries.entries``)."""
+    przy numerze z Wpisami o przeciwnym zamiarze (``ReportEntry.leaning``) pierwszy Wpis każdego zamiaru, w kolejności
+    maila (``_entries.entries``)."""
 
     mail: MailId
     arrived: datetime
@@ -360,8 +406,9 @@ class MissingVerdict:
 
 @dataclass(frozen=True)
 class ConflictingVerdicts:
-    """Raport wykonawcy ``mail``, który przyszedł ``arrived``, ma dla numeru zlecenia Wpisy z ``tak`` i z ``nie``
-    (``entries``: pierwszy Wpis z każdym z nich, w kolejności maila)."""
+    """Raport wykonawcy ``mail``, który przyszedł ``arrived``, ma dla numeru zlecenia Wpisy o przeciwnym zamiarze:
+    ``tak``/``t``/``skuteczne`` i ``nie``/``n``/``nieskuteczne`` (``entries``: pierwszy Wpis każdego zamiaru, w
+    kolejności maila)."""
 
     worker: Login
     day: date
@@ -421,7 +468,7 @@ ReportProblem = (
     | ManualDifference
 )
 """Problem, który tata widzi z powodem (``reasons.reason``): nierozpoznany temat, nieznany nadawca, brak ``tak``/``nie``,
-``tak`` i ``nie`` jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data, ten sam numer dwa razy w dniu i różnica z ręczną wartością."""
+przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data, ten sam numer dwa razy w dniu i różnica z ręczną wartością."""
 
 
 @dataclass(frozen=True)
@@ -455,8 +502,10 @@ def problem_order(
     problem: ReportProblem,
 ) -> tuple[date, str, str, str, tuple[str | SenderAddress | datetime, ...]]:
     """Miejsce problemu w widoku Raporty: dzień, Wykonawca, numer, rodzaj i pozostałe pola problemu. Klucz bierze
-    każde pole problemu, więc dwa różne problemy nigdy nie mają równego miejsca, a kolejność nie zależy od kolejności
-    maili ani od ``PYTHONHASHSEED``."""
+    każde pole, którym mogą się różnić dwa problemy jednego wyniku, więc dwa różne problemy nigdy nie mają równego
+    miejsca, a kolejność nie zależy od kolejności maili ani od ``PYTHONHASHSEED``. ``ConflictingVerdicts`` jest
+    najwyżej jeden na zlecenie, bo daje go tylko jego zwycięski mail (``_matching.match``), więc wystarczy mu dzień,
+    Wykonawca i numer."""
 
     kind = type(problem).__name__
     match problem:
@@ -466,13 +515,11 @@ def problem_order(
             return day, "", "", kind, (mail.digest, sender)
         case MissingVerdict(fault=fault):
             return problem.day, problem.worker, problem.number, kind, (fault.name,)
-        case ConflictingVerdicts(mail=mail, arrived=arrived, entries=entries):
-            return problem.day, problem.worker, problem.number, kind, (arrived, mail.digest, *map(repr, entries))
         case ForeignOrder(owner=owner):
             return problem.day, problem.worker, problem.number, kind, (owner,)
         case OtherDay(order_days=order_days):
             return problem.day, problem.worker, problem.number, kind, tuple(map(date.isoformat, order_days))
-        case UnknownNumber() | RepeatedOrder():
+        case ConflictingVerdicts() | UnknownNumber() | RepeatedOrder():
             return problem.day, problem.worker, problem.number, kind, ()
         case ManualDifference(key=key, column=column, manual=manual, reported=reported):
             return key.day, key.worker, key.number, kind, (column.value, manual, reported)

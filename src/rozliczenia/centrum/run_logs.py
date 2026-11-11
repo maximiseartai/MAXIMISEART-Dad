@@ -474,7 +474,7 @@ class LoggedWindowStop(_Record):
 
 LoggedColumn = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
 """Kolumna INTERMAX, którą zmienia Wpisanie raportów (``report_cells.ReportColumn``)."""
-LoggedVerdictFault = Literal["missing", "letter", "word"]
+LoggedVerdictFault = Literal["missing", "letter_yes", "letter_no", "word_yes", "word_no"]
 LoggedSubjectFault = Literal["no_date", "other_text", "no_year", "date_form", "separator", "year_digits", "not_a_day"]
 
 
@@ -490,10 +490,14 @@ def _verdict_fault(fault: VerdictFault) -> LoggedVerdictFault:
     match fault:
         case VerdictFault.MISSING:
             return "missing"
-        case VerdictFault.LETTER:
-            return "letter"
-        case VerdictFault.WORD:
-            return "word"
+        case VerdictFault.LETTER_YES:
+            return "letter_yes"
+        case VerdictFault.LETTER_NO:
+            return "letter_no"
+        case VerdictFault.WORD_YES:
+            return "word_yes"
+        case VerdictFault.WORD_NO:
+            return "word_no"
 
 
 def _subject_fault(fault: SubjectFault) -> LoggedSubjectFault:
@@ -635,7 +639,7 @@ class LoggedOrderProblem(_Record):
 
 
 class LoggedConflictProblem(_Record):
-    """Raport wykonawcy z Wpisami jednego numeru z ``tak`` i z ``nie``: skrót maila, chwila przyjścia, Wykonawca, dzień
+    """Raport wykonawcy z Wpisami jednego numeru o przeciwnym zamiarze: skrót maila, chwila przyjścia, Wykonawca, dzień
     z tematu, numer i te Wpisy (pod strażnikiem jak w ``LoggedReportEntry``)."""
 
     kind: Literal["conflicting_verdicts"]

@@ -1331,7 +1331,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "arrived": "2026-11-09T17:00:00.100000Z",
                 "worker": "wykonawca.syntetyczny",
                 "day": "2026-11-09",
-                "entries": [{"number": "40000001", "verdict": "tak", "fault": "letter", "activities": "Czynność syntetyczna"}],
+                "entries": [{"number": "40000001", "verdict": "tak", "fault": "letter_yes", "activities": "Czynność syntetyczna"}],
             },
             {
                 "kind": "unreadable",
@@ -1348,7 +1348,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "worker": "wykonawca.syntetyczny",
                 "day": "2026-11-09",
                 "number": "40000002",
-                "fault": "word",
+                "fault": "word_no",
                 "owner": "wykonawca.inny",
                 "order_days": ["2026-11-07"],
             },

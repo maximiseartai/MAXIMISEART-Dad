@@ -906,14 +906,34 @@ def test_dzien_zlecenia_z_daty_bez_godziny_i_pusta_komorka_z_samych_spacji() -> 
 
 
 # Maile Raportów wykonawców z tym, co rdzeń czyta albo pomija: Wpisy z ``tak``/``nie``, literą, słowem albo bez znaku, z
-# numerem zlecenia, spoza zleceń i z „#”, z czynnościami z interpunkcją, maską strażnika, pożegnaniem i numerem w opisie,
-# po kilka w mailu i w linii, tematy z dniem i bez dnia, od Wykonawców i spoza listy adresów, z remisem chwil przyjścia.
+# numerem zlecenia, spoza zleceń i z „#”, z czynnościami z interpunkcją, maską strażnika, pożegnaniem, numerem i słowami
+# stopki w opisie, po kilka w mailu i w linii, także jednego numeru z tym samym i z przeciwnym znakiem, linie samego
+# tekstu, stopki i puste, tematy z dniem i bez dnia, od Wykonawców i spoza listy adresów, z remisem chwil przyjścia.
 _NUMBERS = st.sampled_from(["40000001", "40000002", "40000003", "#40000001", "040000001", "12345678"])
-_MARKS = st.sampled_from(["tak", "nie", "Tak,", "NIE.", "t", "n", "skuteczne", "", "tak:"])
+_MARKS = st.sampled_from(["tak", "nie", "Tak,", "NIE.", "t", "N", "skuteczne", "nieskuteczne", "", "tak:"])
 _WORDS = st.lists(
-    st.sampled_from(["wymiana", "routera,", "2", "gniazda", "[telefon]", "40000002", "tak", "-", "pozdrawiam", "Jan"]),
-    max_size=4,
+    st.sampled_from(
+        [
+            "wymiana",
+            "routera,",
+            "2",
+            "gniazda",
+            "[telefon]",
+            "40000002",
+            "tak",
+            "-",
+            "pozdrawiam",
+            "Jan",
+            "wysłano z magazynu",
+        ]
+    ),
+    max_size=3,
+).flatmap(
+    lambda words: st.sampled_from(["", "wysłano z magazynu", "Wysłano z aplikacji mobilnej Poczty o2"]).map(
+        lambda ending: [*words, ending] if ending else words
+    )
 )
+"""Słowa opisu, a na końcu co drugiego słowa stopki."""
 _LINES = st.builds(lambda number, mark, words: " ".join([number, mark, *words]), _NUMBERS, _MARKS, _WORDS)
 _EXACT = st.builds(
     lambda number, mark, words: " ".join([number, mark, *words]),
@@ -922,7 +942,12 @@ _EXACT = st.builds(
     _WORDS,
 )
 """Wpis w dokładnym formacie: jedyny, który czyta każda gramatyka rdzenia, więc połowa maili go ma."""
-_TEXTS = st.one_of(_EXACT, st.lists(st.lists(_LINES, min_size=1, max_size=2).map(" ".join), max_size=3).map("\n".join))
+_TEXT_LINES = st.one_of(
+    st.lists(_LINES, min_size=1, max_size=2).map(" ".join),
+    st.sampled_from(["kurier jutro", "", "Wysłano z aplikacji mobilnej Poczty o2"]),
+)
+"""Linia treści: jeden albo dwa Wpisy, sam tekst pod opisem, pusta linia albo stopka."""
+_TEXTS = st.one_of(_EXACT, st.lists(_TEXT_LINES, max_size=4).map("\n".join))
 _SUBJECTS = st.one_of(
     st.sampled_from([SUBJECT, "Raport 07.11.2026"]),
     st.sampled_from(["Raport 8.11.26", "raport 08_11_2026", "Raport", "Raport 08.11", "Raport 31.02.2026"]),
@@ -1071,6 +1096,17 @@ def _every_problem() -> list[ReportProblem]:
             mail,
             EVENING,
             (ReportEntry(number, Verdict.NO, None, ""), ReportEntry(number, Verdict.YES, None, "montaż")),
+        ),
+        ConflictingVerdicts(
+            jan,
+            DAY,
+            number,
+            mail,
+            EVENING,
+            (
+                ReportEntry(number, None, VerdictFault.LETTER_YES, "wymiana"),
+                ReportEntry(number, None, VerdictFault.WORD_NO, "brak klienta"),
+            ),
         ),
         UnknownNumber(jan, DAY, OrderNumber("12345678")),
         ForeignOrder(jan, DAY, number, ewa),
@@ -1334,10 +1370,10 @@ def test_tak_albo_nie_bez_wzgledu_na_wielkosc_liter_i_interpunkcje_trafia_malymi
 @pytest.mark.parametrize(
     ("text", "fault"),
     [
-        pytest.param("40000001 t wymiana routera", VerdictFault.LETTER, id="t"),
-        pytest.param("40000001 N, brak klienta", VerdictFault.LETTER, id="n"),
-        pytest.param("40000001 skuteczne wymiana routera", VerdictFault.WORD, id="skuteczne"),
-        pytest.param("40000001 Nieskuteczne: brak klienta", VerdictFault.WORD, id="nieskuteczne"),
+        pytest.param("40000001 t wymiana routera", VerdictFault.LETTER_YES, id="t"),
+        pytest.param("40000001 N, brak klienta", VerdictFault.LETTER_NO, id="n"),
+        pytest.param("40000001 skuteczne wymiana routera", VerdictFault.WORD_YES, id="skuteczne"),
+        pytest.param("40000001 Nieskuteczne: brak klienta", VerdictFault.WORD_NO, id="nieskuteczne"),
         pytest.param("40000001 wymiana routera", VerdictFault.MISSING, id="bez-tak-nie"),
         pytest.param("40000001 nieobecny", VerdictFault.MISSING, id="slowo-od-nie"),
         pytest.param("40000001", VerdictFault.MISSING, id="sam-numer"),
@@ -1361,7 +1397,7 @@ def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuj
     outcome = enter_reports(_inputs(mails, [_order()]))
 
     assert outcome.changes == ()
-    assert outcome.problems == (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER),)
+    assert outcome.problems == (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES),)
 
 
 @pytest.mark.parametrize(
@@ -1926,6 +1962,10 @@ def _said(number: str, verdict: Verdict, activities: str) -> ReportEntry:
     return ReportEntry(OrderNumber(number), verdict, None, activities)
 
 
+def _signed(number: str, fault: VerdictFault, activities: str) -> ReportEntry:
+    return ReportEntry(OrderNumber(number), None, fault, activities)
+
+
 def _conflict(mail: ReportMail, *entries: ReportEntry, number: str = "40000011") -> ConflictingVerdicts:
     return ConflictingVerdicts(JAN_LOGIN, DAY, OrderNumber(number), mail.id, mail.arrived, entries)
 
@@ -1969,16 +2009,25 @@ def test_tak_i_nie_jednego_zlecenia_w_jednym_mailu_niczego_do_niego_nie_wpisuja_
             "40000011 inst25m\n40000011 tak montaż", _both(ROW, "tak", "montaż"), (), id="wpis-bez-znaku-i-wpis-z-tak"
         ),
         pytest.param(
-            "40000011 nie brak klienta\n40000011 skuteczne", _both(ROW, "nie", "brak klienta"), (), id="wpis-z-nie-i-wpis-ze-slowem"
+            "40000011 t wymiana\n40000011 tak montaż", _both(ROW, "tak", "montaż"), (), id="litera-i-tak-w-zgodzie-liczy-sie-tak"
         ),
         pytest.param(
-            "40000011 t wymiana\n40000011 nie brak klienta", _both(ROW, "nie", "brak klienta"), (), id="wpis-z-litera-i-wpis-z-nie"
+            "40000011 nieskuteczne\n40000011 n\n40000011 NIE brak klienta",
+            _both(ROW, "nie", "brak klienta"),
+            (),
+            id="slowo-litera-i-nie-w-zgodzie-liczy-sie-nie",
         ),
         pytest.param(
             "40000011 inst25m\n40000011 t montaż",
             (),
             (MissingVerdict(JAN_LOGIN, DAY, OrderNumber("40000011"), VerdictFault.MISSING),),
             id="dwa-wpisy-bez-tak-nie-pierwszy-wpis",
+        ),
+        pytest.param(
+            "40000011 skuteczne\n40000011 t montaż\n40000011 inst25m",
+            (),
+            (MissingVerdict(JAN_LOGIN, DAY, OrderNumber("40000011"), VerdictFault.WORD_YES),),
+            id="slowo-i-litera-w-zgodzie-pierwszy-wpis",
         ),
         pytest.param(
             "40000011 tak inst25m\n\nW dniu pon., 8 lis 2026 o 12:00 Jan <jan@przyklad.invalid> napisał(a):\n"
@@ -1992,8 +2041,9 @@ def test_tak_i_nie_jednego_zlecenia_w_jednym_mailu_niczego_do_niego_nie_wpisuja_
 def test_z_wpisow_numeru_w_jednym_mailu_liczy_sie_pierwszy_z_tak_albo_nie(
     text: str, changes: tuple[CellChange, ...], problems: tuple[ReportProblem, ...]
 ) -> None:
-    """Decyzja Maksa do tabeli decyzji: z Wpisów numeru w treści maila (cytat do niej nie należy) liczy się pierwszy z
-    ``tak`` albo ``nie``, a Wpis bez nich tylko wtedy, gdy żaden ich nie ma (pierwszy)."""
+    """Decyzje Maksa 11.11 (D13): z Wpisów numeru w treści maila (cytat do niej nie należy), których litera albo słowo
+    nie mają przeciwnego zamiaru, liczy się pierwszy z ``tak`` albo ``nie``, a Wpis bez nich tylko wtedy, gdy żaden
+    ich nie ma (pierwszy)."""
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order(number="40000011")]))
 
@@ -2018,11 +2068,38 @@ def test_z_wpisow_numeru_w_jednym_mailu_liczy_sie_pierwszy_z_tak_albo_nie(
             (_said("40000011", Verdict.YES, "inst25m"), _said("40000011", Verdict.NO, "brak klienta")),
             id="z-krzyzykiem-przedrostkiem-i-interpunkcja",
         ),
+        pytest.param(
+            "40000011 t wymiana\n40000011 nie brak klienta",
+            (_signed("40000011", VerdictFault.LETTER_YES, "wymiana"), _said("40000011", Verdict.NO, "brak klienta")),
+            id="litera-t-i-nie",
+        ),
+        pytest.param(
+            "40000011 nie brak klienta\n40000011 Skuteczne",
+            (_said("40000011", Verdict.NO, "brak klienta"), _signed("40000011", VerdictFault.WORD_YES, "")),
+            id="nie-i-slowo-skuteczne",
+        ),
+        pytest.param(
+            "40000011 t wymiana 40000011 N. brak klienta",
+            (_signed("40000011", VerdictFault.LETTER_YES, "wymiana"), _signed("40000011", VerdictFault.LETTER_NO, "brak klienta")),
+            id="litery-t-i-n-bez-tak-nie",
+        ),
+        pytest.param(
+            "40000011 nieskuteczne brak klienta\n40000011 inst25m\n40000011 tak montaż",
+            (_signed("40000011", VerdictFault.WORD_NO, "brak klienta"), _said("40000011", Verdict.YES, "montaż")),
+            id="slowo-nieskuteczne-wpis-bez-znaku-i-tak",
+        ),
+        pytest.param(
+            "40000011 t wymiana\n40000011 tak montaż\n40000011 nie brak klienta",
+            (_signed("40000011", VerdictFault.LETTER_YES, "wymiana"), _said("40000011", Verdict.NO, "brak klienta")),
+            id="pierwszy-wpis-zamiaru-takze-z-litera",
+        ),
     ],
 )
-def test_ostrzezenie_o_tak_i_nie_numeru_ma_pierwszy_wpis_kazdego_znaku_w_kolejnosci_maila(
+def test_ostrzezenie_o_przeciwnym_zamiarze_wpisow_numeru_ma_pierwszy_wpis_kazdego_zamiaru_w_kolejnosci_maila(
     text: str, entries: tuple[ReportEntry, ...]
 ) -> None:
+    """Decyzja Maksa 11.11 (D13): litera ``t``/``n`` i słowo ``skuteczne``/``nieskuteczne`` niosą zamiar, więc Wpis z
+    nimi przeciw Wpisowi z ``tak``/``nie`` albo z przeciwną literą lub słowem to też sprzeczność."""
     mail = _mail(JAN, SUBJECT, text)
 
     outcome = enter_reports(_inputs([mail], [_order(number="40000011")]))
@@ -2036,7 +2113,8 @@ def test_pozniejszy_mail_z_jednym_wpisem_numeru_rozwiazuje_ostrzezenie_a_pozniej
 ) -> None:
     """US 37, 40: o zleceniu decyduje najpóźniejszy mail, także w kolejnym kliknięciu: jasny Wpis po sprzecznych daje
     wpis bez ostrzeżenia, a sprzeczne Wpisy po jasnym dają ostrzeżenie i nie wpisują niczego nowego, a własny wpis z
-    pierwszego kliknięcia zostaje w komórce i pamięci."""
+    wcześniejszego kliknięcia zostaje w komórce i pamięci. Zdanie ostrzeżenia jest prawdziwe przy pustej komórce i przy
+    własnym wpisie w niej: Centrum nie zmienia zlecenia przy tym kliknięciu, a nie „nic do niego nie wpisało”."""
 
     conflict = _mail(JAN, SUBJECT, CONFLICT)
     fixed = _mail(JAN, SUBJECT, "40000011 nie brak klienta od umowy", LATER)
@@ -2059,6 +2137,9 @@ def test_pozniejszy_mail_z_jednym_wpisem_numeru_rozwiazuje_ostrzezenie_a_pozniej
         ),
     )
     assert [change for change in third.changes if change.order == OrderRow("Zlecenia", 131)] == []
+    for problem in (*first.problems, *third.problems):
+        assert "Centrum nie zmieniło tego zlecenia przy tym kliknięciu." in reason(problem)
+        assert "nie wpisało" not in reason(problem)
     assert {entry for entry in third.memory.entries if entry.key.number == "40000011"} == {
         OwnEntry(_key("40000011"), ReportColumn.SUCCESSFUL, "nie"),
         OwnEntry(_key("40000011"), ReportColumn.COMPLETED, "brak klienta od umowy"),

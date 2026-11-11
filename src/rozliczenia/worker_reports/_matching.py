@@ -32,7 +32,7 @@ def match(
     ``reports`` idą w kolejności przyjścia, więc późniejszy mail zastępuje Wpisy wcześniejszego. Numer w dwóch zleceniach
     Wykonawcy z dnia z tematu to ``RepeatedOrder``, a numer bez jego zlecenia z tego dnia rozstrzyga ``_unmatched``.
     Zwycięski Wpis bez ``tak`` ani ``nie`` to ``MissingVerdict`` zamiast celu, bo nie wiadomo, co Wykonawca miał na
-    myśli, a zwycięski mail z Wpisami numeru z ``tak`` i z ``nie`` (``_entries.entries``) to ``ConflictingVerdicts``.
+    myśli, a zwycięski mail z Wpisami numeru o przeciwnym zamiarze (``_entries.entries``) to ``ConflictingVerdicts``.
     """
 
     rows: defaultdict[OrderKey, list[RegisterOrder]] = defaultdict(list)
