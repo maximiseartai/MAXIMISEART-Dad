@@ -82,6 +82,8 @@ OTHER_RUN = {
 WINDOW_TODAY = "2026-11-11"
 WINDOW_FIRST = date(2026, 10, 26)
 HOLIDAYS = {"2026-11-01": "Wszystkich Świętych", WINDOW_TODAY: "Narodowe Święto Niepodległości"}
+# Days on which wykonawca.c sent a mail but has no orders and no problem: nothing to enter, so an empty cell.
+MAIL_ONLY = ("2026-11-07", "2026-11-08")
 WINDOW_WORKERS = ("wykonawca.a", "wykonawca.b", "wykonawca.c")
 
 Json = dict[str, Any]
@@ -265,7 +267,8 @@ def _window_day(day: str, number: int, orders: int, *, without: int = 0, problem
 
 def _window_view(clicked_at: str) -> Json:
     """The view of a click on 11.11.2026 with the window from 26.10 (harness): wykonawca.a waits for yesterday's
-    Raport, wykonawca.b has a problem on 03.11 and an order without a report on 05.11, wykonawca.c is complete."""
+    Raport, wykonawca.b has a problem on 03.11 and an order without a report on 05.11, wykonawca.c is complete and
+    sent a mail without orders on Saturday 07.11 and Sunday 08.11 (`MAIL_ONLY`)."""
 
     days = [(WINDOW_FIRST + timedelta(days=offset)).isoformat() for offset in range(17)]
     workdays = [day for day in days if date.fromisoformat(day).weekday() < 6 and day not in HOLIDAYS]
@@ -273,11 +276,12 @@ def _window_view(clicked_at: str) -> Json:
         ("wykonawca.a", "2026-11-10"): {"orders": 3, "without": 3, "mails": 0},
         ("wykonawca.b", "2026-11-03"): {"orders": 3, "problem": True},
         ("wykonawca.b", "2026-11-05"): {"orders": 2, "without": 1},
+        **{("wykonawca.c", day): {"orders": 0} for day in MAIL_ONLY},
     }
     workers = []
     for index, worker in enumerate(WINDOW_WORKERS):
         worker_days = []
-        for position, day in enumerate(workdays):
+        for position, day in enumerate(day for day in days if day in workdays or (worker, day) in special):
             shape: dict[str, Any] = special.get((worker, day), {"orders": index + 2})
             worker_days.append(_window_day(day, 40100000 + index * 1000 + position * 10, **shape))
         workers.append({"worker": worker, "days": worker_days})
@@ -351,6 +355,7 @@ def _range_map(run: Run, page: Page) -> None:
         page.goto(run.url + "#/raporty")
         page.reload()
         expect(_range(page)).to_contain_text("2–11 lis")
+        expect(page.get_by_role("button", name="Późniejsze dni", exact=True)).to_be_disabled()
         expect(_map(page).get_by_role("row")).to_have_count(1 + len(WINDOW_WORKERS))
         run.check(_day_columns(page) == 10, "by default the range is Monday of last week to today: 2–11.11")
         holiday = _map(page).get_by_role("columnheader", name="śr. 11.11, święto: Narodowe Święto Niepodległości")
@@ -358,6 +363,10 @@ def _range_map(run: Run, page: Page) -> None:
         sundays = _map(page).locator('td[data-day="2026-11-08"].niedziela')
         expect(sundays).to_have_count(len(WINDOW_WORKERS))
         run.check(True, "11.11 has the holiday column with „Św.” and Sunday 08.11 is struck through in every row")
+        for day in MAIL_ONLY:
+            expect(_row(page, "wykonawca.c").locator(f'td[data-day="{day}"]')).to_be_empty()
+        run.check(True, "a day with a mail but no orders and no problem is an empty cell, on Sunday struck through")
+        run.capture(page, "293-raporty-mapa-bez-popovera", full_page=False)
         _tile_is(page, "wykonawca.a", "2026-11-10", "Czeka", 0, 3)
         _tile_is(page, "wykonawca.b", "2026-11-03", "Problem", 2, 3)
         _tile_is(page, "wykonawca.b", "2026-11-05", "Bez raportu", 1, 2)
@@ -395,7 +404,8 @@ def _range_map(run: Run, page: Page) -> None:
         expect(_range(page)).to_contain_text("26 paź – 4 lis")
         page.go_forward()
         expect(_range(page)).to_contain_text("2–11 lis")
-        run.check(True, "the arrows change columns and address, and Back returns to the previous range")
+        expect(page.get_by_role("button", name="Późniejsze dni", exact=True)).to_be_disabled()
+        run.check(True, "the arrows change columns and address, Back returns, and each arrow is off at its window end")
 
         page.get_by_role("button", name="Wybierz dni w kalendarzu", exact=True).click()
         calendar = page.get_by_role("dialog", name="Kalendarz dni", exact=True)

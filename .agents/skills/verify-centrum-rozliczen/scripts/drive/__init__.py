@@ -408,6 +408,7 @@ FEATURES = (
             "283-raporty-dzien-bez-problemow",
             "284-raporty-waski-ekran",
             "287-raporty-w-czasie-innego",
+            "293-raporty-mapa-bez-popovera",
             "288-raporty-mapa-jasna",
             "289-raporty-mapa-ciemna",
             "290-raporty-kalendarz",
