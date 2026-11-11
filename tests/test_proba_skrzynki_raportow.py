@@ -435,7 +435,7 @@ def test_przeglad_zapisuje_kazdy_mail_wykonawcy_z_trescia_i_wpisami_rdzenia_a_st
         "40000005 t\n"
         "----- WPISY (2)\n"
         "  40000001 | nie | 'klient odmówił'\n"
-        "  40000005 | bez tak/nie: LETTER | ''\n"
+        "  40000005 | bez tak/nie: LETTER_YES | ''\n"
         "\n"
         f"===== {chwila(datetime(2026, 11, 9, 21, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport 20.10.2026'"
         " | dzien 2026-10-20 | dzien spoza okna proby: rdzen pomija ten Raport\n"
