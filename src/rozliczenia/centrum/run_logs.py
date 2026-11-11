@@ -558,7 +558,7 @@ class LoggedUnreadableMail(_Record):
     worker: str
     fault: LoggedSubjectFault
     numbers: list[str] | None = None
-    """Numery Wpisów treści maila po kolei, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
+    """Numery Wpisów treści maila rosnąco, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
     pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, więc ostrzeżenie zdjęte przez poprawkę wraca w nim jako
     różnica."""
 

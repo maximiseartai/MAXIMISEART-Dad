@@ -110,7 +110,6 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     digits = min((len(order.key.number) for order in orders), default=1)
     read: list[MailRead] = []
     problems: list[ReportProblem] = []
-    unreadable: dict[MailId, frozenset[OrderNumber]] = {}
     for mail in inputs.mails:
         found = _subject.read(mail.subject)
         worker = inputs.addresses.logins.get(mail.sender)
@@ -121,8 +120,6 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
                 if worker is not None and inputs.window.opens(mail.arrived.date()):
                     numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
                     read.append(ReadUnreadable(mail.id, mail.arrived, worker, found, numbers))
-                    problems.append(UnreadableSubject(mail.id, worker, mail.arrived, found))
-                    unreadable[mail.id] = numbers
             case date() if not inputs.window.opens(found):
                 continue
             case date() if worker is None:
@@ -135,6 +132,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     reports = [found for found in mails if isinstance(found, ReadReport)]
     targets, unmatched = _matching.match(reports, orders)
     changes, differences, memory = _cells.reconcile(targets, orders, inputs.memory, inputs.kept)
+    unreadable = [found for found in mails if isinstance(found, ReadUnreadable)]
     standing = _corrections.standing([*problems, *unmatched], reports, unreadable, orders)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     return ReportsOutcome(

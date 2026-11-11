@@ -270,8 +270,9 @@ def _write_review(out: TextIO, mails: Sequence[ReportMail], addresses: WorkerAdd
                 for entry in read:
                     out.write(f"  {_entry_line(entry)}\n")
                     entries.setdefault((alias, day, entry.number), []).append((mail.arrived, entry))
-            case ReadUnreadable():
-                out.write("----- WPISY: brak, bo temat nierozpoznany\n")
+            case ReadUnreadable(numbers=numbers):
+                listed = ", ".join(sorted(numbers)) or "brak"
+                out.write(f"----- WPISY: brak, bo temat nierozpoznany; numery dla poprawionego Raportu: {listed}\n")
     repeated = {key: same for key, same in entries.items() if len(same) > 1}
     out.write(f"\n===== NUMERY Z KILKOMA WPISAMI JEDNEGO WYKONAWCY Z JEDNEGO DNIA ({len(repeated)})\n")
     for (alias, day, number), same in sorted(repeated.items()):

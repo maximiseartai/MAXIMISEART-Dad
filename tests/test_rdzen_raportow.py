@@ -1010,6 +1010,13 @@ def _seen(problem: ReportProblem) -> object:
         _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>"),
     ]
 )
+@example(
+    [
+        _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, "Raport", "kurier jutro", EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>"),
+    ]
+)
 def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[ReportMail]) -> None:
     """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail z ``as_mail`` w miejscu każdego przeczytanego maila daje
     ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy), liczby i pamięć wpisów."""
@@ -1813,6 +1820,22 @@ def test_opis_wpisu_konczy_pusta_linia_pozegnanie_z_tabeli_albo_przedrostek_nast
 
     assert outcome.changes == _cells(entered)
     assert outcome.problems == ()
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_poprawiony_mail_nie_zdejmuje_ostrzezenia_drugiego_nieczytelnego_maila_z_tym_samym_message_id(reverse: bool) -> None:
+    """Dwa maile z tematem bez dnia, z tym samym Message-ID i chwilą przyjścia, i późniejszy Raport, który poprawia
+    tylko jeden z nich: ostrzeżenie zostaje w każdej kolejności maili na wejściu."""
+
+    unreadable = [
+        _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, "Raport", "kurier jutro", EVENING, "<1@przyklad.invalid>"),
+    ]
+    corrected = _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>")
+
+    outcome = enter_reports(_inputs([*(unreadable[::-1] if reverse else unreadable), corrected], [_order()]))
+
+    assert outcome.problems == (UnreadableSubject(unreadable[0].id, Login("jan.testowy"), EVENING, SubjectFault.NO_DATE),)
 
 
 def test_dwa_nieczytelne_tematy_z_jednym_message_id_chwila_i_powodem_rozstrzygaja_numery_wpisow() -> None:
