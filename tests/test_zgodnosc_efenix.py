@@ -135,12 +135,10 @@ def _answered(status: int) -> Rewrite:
     return lambda _answer: Answer(status, {}, "<p>Błąd serwera.</p>")
 
 
-def _to_login_if_warned(answer: Answer) -> Answer:
-    """Odpowiedź z ostrzeżeniem o wygasłej sesji zamieniona na przekierowanie na stronę logowania, a inna bez zmian."""
+def _if_warned(rewrite: Rewrite) -> Rewrite:
+    """Odpowiedź z ostrzeżeniem o wygasłej sesji zmieniona przez ``rewrite``, a inna bez zmian."""
 
-    if "Twoja sesja wygasła" in answer.body:
-        return Answer(302, {"Location": LOGIN_PAGE}, "")
-    return answer
+    return lambda answer: rewrite(answer) if "Twoja sesja wygasła" in answer.body else answer
 
 
 @dataclass(frozen=True)
@@ -273,7 +271,12 @@ CHANGED = {
     # Szukanie bez sesji przekierowane na stronę logowania, jak Atrapa przed #828, zamiast ostrzeżenia efenix.
     "szukanie-bez-sesji-przekierowuje-na-logowanie": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-sesji-przekierowuje-na-logowanie.txt",
-        rewrites={SEARCH: _to_login_if_warned},
+        rewrites={SEARCH: _if_warned(lambda _answer: Answer(302, {"Location": LOGIN_PAGE}, ""))},
+    ),
+    # Szukanie bez sesji odpowiada błędem serwera bez przekierowania, a szukanie z sesją jak w Atrapie.
+    "szukanie-bez-sesji-z-bledem-serwera": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "szukanie-bez-sesji-z-bledem-serwera.txt",
+        rewrites={SEARCH: _if_warned(_answered(500))},
     ),
     # Propozycja w oknie Emmetta ma tekst albo element bez tekstu na stronie zlecenia, zanim skrypt włoży do niej
     # propozycję.
