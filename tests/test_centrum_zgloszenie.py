@@ -422,9 +422,11 @@ def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_
 
 @pytest.mark.parametrize("started", [preparing_centrum, settling_centrum], ids=["przygotowanie", "przebieg"])
 def test_zatrzymanie_centrum_czeka_na_kazdy_jego_watek_takze_sprzed_ponownego_startu_a_drugie_nic_nie_robi(
-    tmp_path: Path, started: Callable[[Path], PreparingCentrum | SettlingCentrum]
+    tmp_path: Path, started: Callable[..., PreparingCentrum | SettlingCentrum]
 ) -> None:
-    centrum = started(tmp_path)
+    # Wątek Zgłoszenia przestaje czekać na skrzynkę po terminie szukania: z terminem taty (3 s) kończył się przed
+    # ``stop``, gdy runner CI spóźnił się z ponownym startem (#1094), więc tu termin przekracza limit pytest-timeout.
+    centrum = started(tmp_path, surroundings=Surroundings(report_search_deadline_s=600))
     write_report_key(centrum.tool)
     hold = centrum.surroundings.report_box.search_hold = threading.Event()
     run_id = stopped_for_maks(centrum)
@@ -433,9 +435,11 @@ def test_zatrzymanie_centrum_czeka_na_kazdy_jego_watek_takze_sprzed_ponownego_st
 
     with centrum.client:
         running = centrum.client.threads()
-        with pytest.raises(AssertionError, match=f"żyją wątki .*{REPORT_THREAD}"):
-            centrum.client.stop(timeout_s=0)
-        hold.set()
+        try:
+            with pytest.raises(AssertionError, match=f"żyją wątki .*{REPORT_THREAD}"):
+                centrum.client.stop(timeout_s=0)
+        finally:
+            hold.set()
         centrum.client.stop()
         centrum.client.stop()
 
