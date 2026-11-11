@@ -119,9 +119,10 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
                 continue
             case SubjectFault():
                 if worker is not None and inputs.window.opens(mail.arrived.date()):
-                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, found))
+                    numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
+                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, found, numbers))
                     problems.append(UnreadableSubject(mail.id, worker, mail.arrived, found))
-                    unreadable[mail.id] = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
+                    unreadable[mail.id] = numbers
             case date() if not inputs.window.opens(found):
                 continue
             case date() if worker is None:
@@ -158,7 +159,7 @@ def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]
                 )
             )
             return found.arrived, found.mail, "report", (worker, day.isoformat(), *content)
-        case ReadUnreadable(worker=worker, fault=fault):
-            return found.arrived, found.mail, "unreadable", (worker, fault.name)
+        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers):
+            return found.arrived, found.mail, "unreadable", (worker, fault.name, *sorted(numbers))
         case ReadStranger(day=day):
             return found.arrived, found.mail, "stranger", (day.isoformat(),)
