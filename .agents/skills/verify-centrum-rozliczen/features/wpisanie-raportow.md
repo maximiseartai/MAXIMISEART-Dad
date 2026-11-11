@@ -20,6 +20,7 @@ and does not come back at the next click.
 
 ## How to get to it (user POV)
 
+- The menu `Sekcje Centrum rozliczeń` → link `Raporty`, right after `Uruchomienia`.
 - Uruchomienia → the card `Wpisz raporty z maili` → `Otwórz Raporty` (after a result: `Nowe Uruchomienie procesu` first).
 - The result of `Wpisz raporty z maili` → `Otwórz Raporty`.
 - The address `#/raporty/<dzień>` (the day as `RRRR-MM-DD`), which the arrows of group `Dzień` change.
@@ -35,7 +36,7 @@ Preconditions:
 - **Card.** When `GET /api/settings` has no folder okresów: `#/okresy`, harness answers the picker, `Wskaż folder okresów`. `#/uruchomienia`, `Nowe Uruchomienie procesu` when a result is shown; region `Wpisz raporty z maili` → `Wskaż INTERMAX`/`Zmień INTERMAX` with `report_entering.register`; button enabled, button-styled link `Otwórz Raporty` (role `button`); `api/raporty-karta.json`. Capture `280`.
 - **Before the click.** `Otwórz Raporty` → heading `Raporty`; `api/raporty-widok-przed.json`.
 - **Click.** The card's button → `api/raporty-wynik.json` with the three figures; `Otwórz Raporty` in region `Podgląd na żywo`.
-- **View.** `api/raporty-widok.json`; the rows by `list "Wykonawcy"` → `listitem` named after the Wykonawca, figures by labels `Zlecenia N`, `Wpisane N`, `Maile N`, `Problemy N`; the first button of a row opens it. Capture `281`.
+- **View.** `api/raporty-widok.json`; the rows by `list "Wykonawcy"` → `listitem` named after the Wykonawca, figures by labels `Zlecenia N`, `Wpisane N`, `Maile N`, `Problemy N`; the first button of a row opens it. In list `Sekcje Centrum rozliczeń` the first links are `Okresy`, `Uruchomienia`, `Raporty`, the last with `aria-current=page`, and the page has no other link `Uruchomienia`. Capture `281`.
 - **Zostaw moją.** Click it while waiting for the response of `/api/report-entering/keep`; read `config/wpisanie-raportow-decyzje.json`. Capture `282`.
 - **Day without problems.** Harness moves `raport-obcy.eml` to `<root>/maile-odlozone/` (back at the end of the step); `api/raporty-powiadomienia-przed.json` and `-po.json`, the click → `api/raporty-drugie.json`, the newest file of Logi of `report_entering`; `Otwórz Raporty`; `api/raporty-bez-problemow.json`. Capture `283`.
 - **Narrow screen.** Viewport 390×844, row `wykonawca.a` opened, bounding boxes of the names and of `Problemy 0`. Capture `284`. Viewport back to 1440×1000. Harness: the Rejestr zleceń from before the feature.

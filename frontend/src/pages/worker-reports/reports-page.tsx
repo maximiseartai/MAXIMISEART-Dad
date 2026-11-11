@@ -13,7 +13,6 @@ import { href, usePagePath } from "@/lib/address"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { dateTime, weekdayDate } from "@/lib/format"
 import { useResource } from "@/lib/use-resource"
-import { BackLink } from "@/pages/filling/back-link"
 import { UnknownSenders, WorkerRow, type Keep } from "@/pages/worker-reports/worker-row"
 
 /**
@@ -32,7 +31,6 @@ export function ReportsPage() {
 
   return (
     <>
-      <BackLink to={href("uruchomienia")}>Uruchomienia</BackLink>
       <PageHeader action={view.state === "ready" ? <DayPicker view={view.data} /> : undefined} />
       {view.state === "loading" ? <Skeleton className="h-64 w-full" aria-label="Wczytywanie Raportów" /> : null}
       {view.state === "failed" ? <LoadFailure what="Raportów" message={view.message} reload={reload} /> : null}

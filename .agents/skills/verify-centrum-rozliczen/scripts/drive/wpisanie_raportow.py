@@ -138,6 +138,13 @@ def drive(run: Run, page: Page) -> None:
     run.check(unknown["sender"] == fixture["stranger_address"], "the Raport from outside the list shows its address")
     for worker, shown in SHOWN.items():
         _figures(_row(page, worker), shown)
+    menu = page.get_by_role("list", name="Sekcje Centrum rozliczeń")
+    run.check(
+        menu.get_by_role("link").all_inner_texts()[:3] == ["Okresy", "Uruchomienia", "Raporty"],
+        "Raporty is a menu section right after Uruchomienia",
+    )
+    expect(menu.get_by_role("link", name="Raporty", exact=True)).to_have_attribute("aria-current", "page")
+    expect(page.get_by_role("link", name="Uruchomienia", exact=True)).to_have_count(1)
     _row(page, "wykonawca.a").get_by_role("button").first.click()
     expect(_row(page, "wykonawca.a").get_by_role("group", name="Bez raportu")).to_contain_text("40000102")
     _row(page, "wykonawca.b").get_by_role("button").first.click()
