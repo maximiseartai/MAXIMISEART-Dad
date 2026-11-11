@@ -22,6 +22,7 @@ from tests.fixtures.centrum import (
     ToolDirectory,
     case_states,
     centrum,
+    remove_report_key,
     write_report_key,
 )
 from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, stopped_for_maks
@@ -158,7 +159,7 @@ def test_odrzucona_tresc_zostaje_odrzucona_takze_gdy_potem_token_przestaje_dzial
 
     # Token przestaje działać, ale odrzuconej treści i tak nie wyśle żaden token, więc tata dalej słyszy, że tego
     # Zgłoszenia nie da się wysłać.
-    ToolDirectory(tmp_path).report_key.unlink()
+    remove_report_key(centrum.client, centrum.tool)
 
     assert current_report(centrum) == REJECTED
     assert case_states(centrum.client, "zgloszenie") == [REJECTED]

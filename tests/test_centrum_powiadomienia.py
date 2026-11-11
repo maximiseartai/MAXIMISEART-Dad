@@ -30,6 +30,7 @@ from tests.fixtures.centrum import (
     centrum as plain_centrum,
     finished_view,
     join_threads_since,
+    remove_report_key,
     write_report_key,
 )
 from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, settling_centrum, stopped_for_maks
@@ -335,7 +336,7 @@ def test_bez_wyslanych_spraw_albo_klucza_skrzynka_nie_jest_pytana(tmp_path: Path
 
     sent_report(centrum)
     asked = polls(centrum)
-    ToolDirectory(tmp_path).report_key.unlink()
+    remove_report_key(centrum.client, centrum.tool)
 
     notifications(centrum)
     assert polls(centrum) == asked
