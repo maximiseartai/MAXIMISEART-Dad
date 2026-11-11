@@ -677,12 +677,12 @@ def ended_run_shown(view: dict[str, object]) -> bool:
     return view["state"] == "finished" or (view["state"] == "idle" and view["previous"] is not None)
 
 
-def finished_view(run: Run, name: str, *, replacing: str | None = None) -> dict[str, Any]:
+def finished_view(run: Run, name: str, *, replacing: str | None = None, timeout_s: float = 10) -> dict[str, Any]:
     """The current Uruchomienie once it finished, the one answer kept in ``api/<name>.json``.
 
     ``replacing`` is the id of the Uruchomienie the drive just started again (`Uruchom ponownie`): a click does not wait
     for the tab's request, so the server can still show the one before it as finished, and only another id is the new
-    Uruchomienie."""
+    Uruchomienie. ``timeout_s`` is the wait for the end (``Run.wait_for``)."""
 
     # One answer for both the state and the result: a second read could already see the next Uruchomienie.
     seen: dict[str, Any] = {}
@@ -692,12 +692,12 @@ def finished_view(run: Run, name: str, *, replacing: str | None = None) -> dict[
         seen.update(current_run(run, name))
         return bool(seen["state"] == "finished" and seen["run"]["id"] != replacing)
 
-    run.wait_for(finished, "the Uruchomienie procesu finished")
+    run.wait_for(finished, "the Uruchomienie procesu finished", timeout_s=timeout_s)
     return seen
 
 
-def finished_result(run: Run, name: str, *, replacing: str | None = None) -> dict[str, Any]:
-    result = finished_view(run, name, replacing=replacing)["result"]
+def finished_result(run: Run, name: str, *, replacing: str | None = None, timeout_s: float = 10) -> dict[str, Any]:
+    result = finished_view(run, name, replacing=replacing, timeout_s=timeout_s)["result"]
     assert isinstance(result, dict)
     return result
 

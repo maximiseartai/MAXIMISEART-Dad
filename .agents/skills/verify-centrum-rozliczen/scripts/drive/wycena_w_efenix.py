@@ -53,6 +53,10 @@ FORWARD = "Uzupełnij i zapisz"
 FILL_HINT = "Zielony „Zapisz” w efenix klikasz sam"
 FORWARD_HINT = "Zielony „Zapisz” przy gotowych klika Centrum"
 DONE_OK_FORWARDED = "Przekazane do akceptacji"
+# The wait for the end of a Wycena that goes through the efenix window: the four orders of the Atrapa take 5.6–5.9 s on
+# Maks's Mac (seven runs on 11.11.2026, four of them at once), and the default 10 s of Run.wait_for ran out on the
+# Windows runner of CI on main ca200191a (#1296).
+PRICING_S = 60
 
 Json = dict[str, Any]
 
@@ -179,7 +183,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
     run.capture(page, "262-efenix-postep", live=True)
 
     run.step(FEATURE, "karta")
-    result: Json = finished_result(run, "efenix-wynik")
+    result: Json = finished_result(run, "efenix-wynik", timeout_s=PRICING_S)
     expect(page.get_by_label("Wynik")).to_contain_text(DONE, timeout=30_000)
     toast = page.get_by_role("region", name="Notifications").get_by_role("dialog", name=DONE)
     expect(toast).to_contain_text(f"Okres {PERIOD}")
@@ -331,7 +335,7 @@ def _forward(run: Run, page: Page, source: Path) -> None:
     run.wait_for(login_or_end, "the Wycena with Przekazanie asks for the login or works", timeout_s=30)
     if asks[0]:
         _log_in(run)
-    result: Json = finished_result(run, "efenix-z-zapisem-wynik")
+    result: Json = finished_result(run, "efenix-z-zapisem-wynik", timeout_s=PRICING_S)
     shown = current_run(run, "efenix-z-zapisem-karta")["run"]
     assert isinstance(shown, dict)
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
