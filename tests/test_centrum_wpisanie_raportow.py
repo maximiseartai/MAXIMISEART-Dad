@@ -1309,7 +1309,8 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
 def test_zlecenia_dnia_w_widoku_raporty_zgadzaja_sie_z_intermax_po_kliknieciu_takze_przy_zostaw_moja(tmp_path: Path) -> None:
     """#1322: przy każdym dniu Wykonawcy widok Raporty ma jego zlecenia w kolejności wierszy INTERMAX, z ``SKUTECZNE`` i
     ``CZYNNOŚCI ZREALIZOWANE`` takimi, jakie INTERMAX ma po kliknięciu, także z ręczną wartością taty, i stan: wpisane z
-    Wpisu, bez raportu albo problem. Po „Zostaw moją” zlecenie z ręczną wartością jest wpisane, a INTERMAX bez zmian."""
+    Wpisu, bez raportu albo problem. Po „Zostaw moją” zlecenie z ręczną wartością jest wpisane, a INTERMAX bez zmian.
+    Ręczny opis taty przy zleceniu bez raportu widok też pokazuje."""
 
     intermax = Intermax(
         ordered=(
@@ -1326,6 +1327,7 @@ def test_zlecenia_dnia_w_widoku_raporty_zgadzaja_sie_z_intermax_po_kliknieciu_ta
         [report(JAN, SUBJECT, "40000006 tak montaż 40000001 tak wymiana"), report(ANNA, SUBJECT, "40000002 brak klienta")],
     )
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
+    _tata_writes(centrum.register, 40000005, "klient przełożył", column=COMPLETED)
     _finished(centrum)
     cells = _cells(centrum.register)
 
@@ -1343,7 +1345,7 @@ def test_zlecenia_dnia_w_widoku_raporty_zgadzaja_sie_z_intermax_po_kliknieciu_ta
     states = {40000006: "entered", 40000001: "problem", 40000005: "without_report"}
     assert jan == [40000006, 40000001, 40000005], "zlecenia Jana stoją w INTERMAX w tej kolejności"
     assert shown(view, "jan.testowy") == [(number, *cells[number], states[number]) for number in jan]
-    assert cells[40000001] == ("tak", "wymiana ręczna")
+    assert (cells[40000001], cells[40000005]) == (("tak", "wymiana ręczna"), (None, "klient przełożył"))
     assert shown(view, "anna.kowalska") == [(40000002, *cells[40000002], "problem")]
     assert shown(kept, "jan.testowy") == [(number, *cells[number], {**states, 40000001: "entered"}[number]) for number in jan]
     assert _cells(centrum.register) == cells, "„Zostaw moją” nie zmienia INTERMAX"

@@ -137,6 +137,7 @@ function ReportsContent({
   const workers = view.workers.flatMap(({ worker, days }) =>
     days.filter((found) => found.day === day).map((found) => ({ worker, day: found }))
   )
+
   const unknown = view.unknown_senders.filter((sender) => sender.day === day)
   const nothing = workers.length === 0 && unknown.length === 0
 
