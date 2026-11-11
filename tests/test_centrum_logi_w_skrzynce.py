@@ -43,7 +43,9 @@ from rozliczenia import tool_files
 from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia import intermax_copies
 from rozliczenia.centrum import app
+from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.catalog import CATALOG
+from rozliczenia.centrum.keyed_box import OPENING_FILE
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.run_logs import RunLog
@@ -1191,7 +1193,11 @@ def test_folder_konfiguracji_bez_konfiguracji_wykonawcow_raport_nazywa_brakujacy
 
     produced = _settlement(tmp_path / "taty")
     folder = tmp_path / "bez-konfiguracji-wykonawcow"
-    shutil.copytree(tmp_path / "taty" / "config", folder)
+    # Bez plików, które kolejka Skrzynki Zgłoszeń Centrum dalej zapisuje w tle (zamiana przez plik ``.tmp``): kopia
+    # w chwili zamiany padała na Windows (#1328), a odtworzenie czyta tylko Wzorce i Konfigurację wykonawców.
+    shutil.copytree(
+        tmp_path / "taty" / "config", folder, ignore=shutil.ignore_patterns(f"{OPENING_FILE}*", UNSENT_DIRECTORY)
+    )
     (folder / tool_files.WORKER_CONFIG.name).unlink()
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--konfiguracja", folder)
