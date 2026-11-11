@@ -30,13 +30,15 @@ export const NOTIFICATIONS_PAGE = {
 
 /**
  * Strony Centrum. Nowa strona to nowy wpis: menu, adres `#/<id>`, tytuł w `PageHeader` i treść biorą się stąd. Strona z `menu: false`
- * (Powiadomienia, otwierane dzwonkiem; Uzupełnienie, otwierane z Okresów; Raporty, otwierane z Uruchomień) nie ma pozycji w menu, a `inMenu` to
+ * (Powiadomienia, otwierane dzwonkiem; Uzupełnienie, otwierane z Okresów) nie ma pozycji w menu, a `inMenu` to
  * pozycja menu, którą wtedy podświetla. Człony adresu za `#/<id>` (np. okres w `#/uzupelnienie/<okres>`) czyta
  * sama strona przez `usePagePath`. Kolejność wpisów to kolejność w menu; pierwszy wpis jest stroną startową.
  */
 export const PAGES = [
   { id: "okresy", title: "Okresy", icon: CalendarRangeIcon, Content: PeriodsPage, menu: true },
   { id: "uruchomienia", title: "Uruchomienia", icon: PlayIcon, Content: RunsPage, menu: true },
+  // Raporty otwiera też karta „Wpisz raporty z maili” i wynik jej Uruchomienia.
+  { id: "raporty", title: "Raporty", icon: MailCheckIcon, Content: ReportsPage, menu: true },
   { id: "metryki", title: "Metryki", icon: ChartColumnIcon, Content: MetricsPage, menu: true },
   { id: "konfiguracja", title: "Konfiguracja", icon: SlidersHorizontalIcon, Content: ConfigurationPage, menu: true },
   NOTIFICATIONS_PAGE,
@@ -48,8 +50,6 @@ export const PAGES = [
     menu: false,
     inMenu: "okresy",
   },
-  // Widok Raporty otwiera karta „Wpisz raporty z maili” i wynik jej Uruchomienia (`#/raporty/<dzień>`).
-  { id: "raporty", title: "Raporty", icon: MailCheckIcon, Content: ReportsPage, menu: false, inMenu: "uruchomienia" },
 ] as const satisfies ReadonlyArray<{
   // Identyfikator strony z kontraktu: pod nim pomiar widoku trafia do dziennika Centrum.
   id: ViewTiming["page"]
