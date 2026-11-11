@@ -29,7 +29,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 import enum
 from functools import partial
-from http.client import HTTPConnection, HTTPException
+from http.client import HTTPConnection, HTTPException, IncompleteRead
 from pathlib import Path
 import socket
 import threading
@@ -183,6 +183,39 @@ def test_koniec_bloku_atrapy_przerywa_odpowiedz_wolnego_efenix_i_nie_zostawia_je
 def _ask_ignoring_answer(connection: HTTPConnection) -> None:
     with suppress(OSError, HTTPException):
         _answer(connection, "GET", LIST_PAGE)
+
+
+def test_zerwana_odpowiedz_daje_zawsze_polowe_tresci_i_koniec_polaczenia_przed_jej_dlugoscia_a_nie_reset() -> None:
+    """Sieć zrywa odpowiedzi (``Outage.TORN``): pytający dostaje połowę treści, a potem koniec połączenia przed
+    ``Content-Length`` (w przeglądarce ``net::ERR_CONTENT_LENGTH_MISMATCH``). Reset zaraz po połowie treści przeglądarka
+    czasem gubiła razem z nią (#908)."""
+
+    with atrapa_efenix([], outage_from=(Outage.TORN, 0)) as atrapa:
+        connection = _connection(atrapa.url)
+        connection.request("GET", f"/{LIST_PAGE}")
+        response = connection.getresponse()
+        length = int(response.getheader("Content-Length", "0"))
+        with pytest.raises(IncompleteRead) as torn:
+            response.read()
+        connection.close()
+
+    assert (len(torn.value.partial), torn.value.expected) == (length // 2, length - length // 2)
+
+
+def test_kazda_odpowiedz_atrapy_podaje_typ_tresci_z_kodowaniem_utf8() -> None:
+    """Przeglądarka czyta polskie litery stron, skryptów i odpowiedzi JSON w UTF-8, bez zgadywania kodowania."""
+
+    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")]) as atrapa:
+        connection = _connection(atrapa.url)
+        types = []
+        for method, path, body in [("GET", LIST_PAGE, None), ("GET", LIST_SCRIPT, None), ("POST", SAVE_QUANTITY, "order_id=901")]:
+            connection.request(method, f"/{path}", body=body, headers=_FORM if body is not None else {})
+            response = connection.getresponse()
+            response.read()
+            types.append(response.getheader("Content-Type"))
+        connection.close()
+
+    assert types == ["text/html; charset=utf-8", "text/javascript; charset=utf-8", "text/html; charset=utf-8"]
 
 
 @pytest.mark.parametrize("changed", [None, Changed.DATE_FORMAT, Changed.DATE_DIGITS], ids=["zapis-efenix", "inny-zapis", "same-cyfry"])
