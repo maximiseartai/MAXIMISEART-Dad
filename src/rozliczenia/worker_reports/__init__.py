@@ -110,7 +110,6 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     digits = min((len(order.key.number) for order in orders), default=1)
     read: list[MailRead] = []
     problems: list[ReportProblem] = []
-    unreadable: dict[MailId, frozenset[OrderNumber]] = {}
     for mail in inputs.mails:
         found = _subject.read(mail.subject)
         worker = inputs.addresses.logins.get(mail.sender)
@@ -119,9 +118,8 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
                 continue
             case SubjectFault():
                 if worker is not None and inputs.window.opens(mail.arrived.date()):
-                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, found))
-                    problems.append(UnreadableSubject(mail.id, worker, mail.arrived, found))
-                    unreadable[mail.id] = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
+                    numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
+                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, found, numbers))
             case date() if not inputs.window.opens(found):
                 continue
             case date() if worker is None:
@@ -134,6 +132,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     reports = [found for found in mails if isinstance(found, ReadReport)]
     targets, unmatched = _matching.match(reports, orders)
     changes, differences, memory = _cells.reconcile(targets, orders, inputs.memory, inputs.kept)
+    unreadable = [found for found in mails if isinstance(found, ReadUnreadable)]
     standing = _corrections.standing([*problems, *unmatched], reports, unreadable, orders)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     return ReportsOutcome(
@@ -158,7 +157,7 @@ def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]
                 )
             )
             return found.arrived, found.mail, "report", (worker, day.isoformat(), *content)
-        case ReadUnreadable(worker=worker, fault=fault):
-            return found.arrived, found.mail, "unreadable", (worker, fault.name)
+        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers):
+            return found.arrived, found.mail, "unreadable", (worker, fault.name, *sorted(numbers))
         case ReadStranger(day=day):
             return found.arrived, found.mail, "stranger", (day.isoformat(),)

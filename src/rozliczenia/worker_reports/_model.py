@@ -361,12 +361,14 @@ class ReadReport:
 
 @dataclass(frozen=True)
 class ReadUnreadable:
-    """Mail od Wykonawcy ze słowem Raportu wykonawcy w temacie, z którego tematu nie da się odczytać dnia."""
+    """Mail od Wykonawcy ze słowem Raportu wykonawcy w temacie, z którego tematu nie da się odczytać dnia. ``numbers``:
+    numery Wpisów jego treści, po których poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``)."""
 
     mail: MailId
     arrived: datetime
     worker: Login
     fault: SubjectFault
+    numbers: frozenset[OrderNumber]
 
 
 @dataclass(frozen=True)

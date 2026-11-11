@@ -89,6 +89,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedSheet,
     LoggedStrangerMail,
     LoggedTyped,
+    LoggedUnreadableMail,
     RunLog,
     StartFacts,
     logged_read,
@@ -820,6 +821,14 @@ def _entering_limits(record: RunLog) -> list[Limit]:
             Limit(
                 f"Wpisy raportu w Logach mają maski strażnika reguły danych ({masks}): odtworzenie wpisuje do INTERMAX "
                 "maskę w miejscu czynności Wykonawcy, więc reguła, która porównuje je z komórką, może zdecydować inaczej"
+            )
+        )
+    if any(isinstance(mail, LoggedUnreadableMail) and mail.numbers is None for mail in entering.mails):
+        limits.append(
+            Limit(
+                "Logi sprzed numerów Wpisów maila z nieczytelnym tematem (v0.7.0): odtworzenie czyta ten mail bez Wpisów, "
+                "więc ostrzeżenie o nieczytelnym temacie, które u taty zdjął poprawiony mail, wraca w odtworzeniu jako "
+                "różnica"
             )
         )
     if record.ending != "finished" and entering.written is None and entering.changes:

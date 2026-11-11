@@ -557,6 +557,10 @@ class LoggedUnreadableMail(_Record):
     arrived: datetime
     worker: str
     fault: LoggedSubjectFault
+    numbers: list[str] | None = None
+    """Numery Wpisów treści maila rosnąco, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
+    pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, więc ostrzeżenie zdjęte przez poprawkę wraca w nim jako
+    różnica."""
 
 
 class LoggedStrangerMail(_Record):
@@ -585,6 +589,7 @@ def _mail(read: MailRead) -> LoggedMail:
                 arrived=read.arrived,
                 worker=read.worker,
                 fault=_subject_fault(read.fault),
+                numbers=sorted(read.numbers),
             )
         case ReadStranger():
             return LoggedStrangerMail(kind="stranger", mail=read.mail.digest, arrived=read.arrived, day=read.day)
@@ -609,7 +614,8 @@ def logged_read(mail: LoggedMail) -> MailRead:
             )
             return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
         case LoggedUnreadableMail():
-            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), _subject_fault_of(mail.fault))
+            numbers = frozenset(OrderNumber(number) for number in mail.numbers or ())
+            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), _subject_fault_of(mail.fault), numbers)
         case LoggedStrangerMail():
             return ReadStranger(MailId(mail.mail), mail.arrived, mail.day)
         case _:

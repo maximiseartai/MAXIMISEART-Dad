@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 import copy
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import gzip
 import json
@@ -61,7 +61,7 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from atrapy.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
-from tests.fixtures.centrum_intermax import SENDERS, Clock, entering_centrum, ordering_centrum, report
+from tests.fixtures.centrum_intermax import ENTERING_NOW, SENDERS, Clock, entering_centrum, ordering_centrum, report
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
@@ -1594,6 +1594,70 @@ def test_klikniecie_z_tak_i_nie_jednego_zlecenia_w_mailu_odtwarza_sie_zgodnie(
     )
     assert [entry["verdict"] for logged in entering["mails"] for entry in logged["entries"]] == ["tak", "nie"]
     assert (entering["changes"], code, lines[0]) == ([], 0, "ODTWORZENIE ZGODNE"), lines
+
+
+def _corrected_unreadable(tmp_path: Path, text: str = "40000001 tak wymiana") -> Produced:
+    """Logi kliknięcia, w którym Jan przysłał Raport z tematem bez dnia i treścią ``text``, a potem Raport z dniem."""
+
+    surroundings = Surroundings()
+    jan = SENDERS["jan.testowy"]
+    mails = [
+        report(jan, "Raport", text, at=ENTERING_NOW - timedelta(minutes=5)),
+        report(jan, "Raport 09.11.2026", "40000001 tak wymiana"),
+    ]
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, mails, surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    view = centrum.run_to_end()
+    assert view["result"]["ending"] == "finished"
+    logs = _archived_run(surroundings.report_box, tmp_path, view["run"]["id"])
+    return Produced(logs, ("--na-tym-drzewie",))
+
+
+OLD_LOGS_LIMIT: Final = "- Logi sprzed numerów Wpisów maila z nieczytelnym tematem (v0.7.0)"
+
+
+@pytest.mark.parametrize(
+    ("text", "numbers", "problems"),
+    [
+        pytest.param("40000001 tak wymiana", ["40000001"], [], id="poprawiony"),
+        pytest.param("kurier jutro", [], ["unreadable_subject"], id="bez-wpisow"),
+    ],
+)
+def test_klikniecie_z_nieczytelnym_tematem_i_poprawionym_mailem_odtwarza_sie_zgodnie(
+    text: str, numbers: list[str], problems: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Poprawiony mail zdejmuje ostrzeżenie o nieczytelnym temacie, a Logi mają numery Wpisów nieczytelnego maila, więc
+    odtworzenie też widzi poprawkę i nie pokazuje ostrzeżenia, którego kliknięcie u taty nie pokazało (kliknięcie
+    taty z 11.11 odtwarzało się z jednym problemem więcej). Mail bez Wpisów ma w nowych Logach pustą listę numerów,
+    więc ostrzeżenie zostaje, a granicy starych Logów nie ma."""
+
+    produced = _corrected_unreadable(tmp_path, text)
+    entering = produced.record["report_entering"]
+
+    code, lines = _replayed(capsys, produced.archived, *produced.arguments)
+
+    assert [(mail["kind"], mail.get("numbers")) for mail in entering["mails"]] == [
+        ("unreadable", numbers),
+        ("report", None),
+    ]
+    assert [problem["kind"] for problem in entering["problems"]] == problems
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert not any(line.startswith(OLD_LOGS_LIMIT) for line in lines), lines
+
+
+def test_logi_sprzed_numerow_nieczytelnego_maila_daja_roznice_z_granica_w_raporcie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Logi z v0.7.0 nie mają numerów Wpisów maila z nieczytelnym tematem: odtworzenie nie widzi poprawki, a raport
+    mówi dlaczego."""
+
+    produced = _corrected_unreadable(tmp_path)
+    changed = _changed(produced, tmp_path, lambda record: record["report_entering"]["mails"][0].pop("numbers"))
+
+    code, lines = _replayed(capsys, changed, *produced.arguments)
+
+    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
+    assert any(line.startswith(OLD_LOGS_LIMIT) for line in lines), lines
 
 
 @pytest.mark.parametrize(

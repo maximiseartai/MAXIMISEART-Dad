@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from datetime import date, datetime
 
 from . import _matching
@@ -14,6 +14,7 @@ from ._model import (
     OrderNumber,
     OtherDay,
     ReadReport,
+    ReadUnreadable,
     RegisterOrder,
     ReportProblem,
     UnknownNumber,
@@ -24,7 +25,7 @@ from ._model import (
 def standing(
     problems: Iterable[ReportProblem],
     reports: Sequence[ReadReport],
-    unreadable: Mapping[MailId, frozenset[OrderNumber]],
+    unreadable: Sequence[ReadUnreadable],
     orders: Sequence[RegisterOrder],
 ) -> set[ReportProblem]:
     """Problemy, które dalej stoją po poprawionych mailach (US 40).
@@ -35,7 +36,9 @@ def standing(
     nie sprawdza ``tak``/``nie`` ani opisu i nie wymaga, żeby poprawiony mail powtórzył resztę wcześniejszego. Kolejny
     raport bez tych numerów problemu nie usuwa, bo nieznany numer może być zleceniem, którego brak w INTERMAX.
     Poprawiony mail usuwa nieznany numer i cudze zlecenie z dnia z tematu, inną datę z dniem zlecenia (dzień
-    poprawki to dzień zlecenia) i nieczytelny temat (``unreadable``: numery Wpisów nieczytelnego maila). Brak
+    poprawki to dzień zlecenia) i nieczytelny temat (``unreadable``: odczyty maili z nieczytelnym tematem z numerami ich Wpisów). Ostrzeżenie
+    o nieczytelnym temacie stoi, gdy któregoś odczytu z nim nie poprawiono, więc nie zależy od kolejności maili z tym
+    samym Message-ID. Brak
     ``tak``/``nie`` i przeciwny zamiar Wpisów jednego numeru daje już najpóźniejszy mail z numerem, a numer dwa razy
     w dniu to stan INTERMAX, więc stoją, jak nieznany nadawca i różnica z ręczną wartością.
     """
@@ -58,11 +61,11 @@ def standing(
         match problem:
             case UnknownNumber() | ForeignOrder() | OtherDay():
                 continue
-            case UnreadableSubject(mail=mail, worker=worker, arrived=arrived):
-                if not corrected(worker, unreadable[mail], (arrived, mail), None):
-                    found.add(problem)
             case _:
                 found.add(problem)
+    for read in unreadable:
+        if not corrected(read.worker, read.numbers, (read.arrived, read.mail), None):
+            found.add(UnreadableSubject(read.mail, read.worker, read.arrived, read.fault))
     for report in reports:
         numbers = frozenset(entry.number for entry in report.entries)
         for problem in _matching.match([report], orders)[1]:

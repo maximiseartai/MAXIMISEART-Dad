@@ -16,7 +16,7 @@ import itertools
 from pathlib import Path
 from typing import get_args
 
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 import pytest
 
@@ -1004,6 +1004,19 @@ def _seen(problem: ReportProblem) -> object:
 
 @settings(derandomize=True, database=None)
 @given(_MAILS)
+@example(
+    [
+        _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>"),
+    ]
+)
+@example(
+    [
+        _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, "Raport", "kurier jutro", EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>"),
+    ]
+)
 def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[ReportMail]) -> None:
     """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail z ``as_mail`` w miejscu każdego przeczytanego maila daje
     ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy), liczby i pamięć wpisów."""
@@ -1031,9 +1044,10 @@ def _read_back(read: ReadReport | ReadUnreadable) -> tuple[object, ...]:
 
 @pytest.mark.parametrize("fault", list(SubjectFault), ids=lambda fault: fault.name)
 def test_postac_kanoniczna_nieczytelnego_tematu_daje_ten_sam_powod(fault: SubjectFault) -> None:
-    """Każdy powód nieczytelnego tematu, także taki, którego przykłady własności wyżej nie trafią."""
+    """Każdy powód nieczytelnego tematu, także taki, którego przykłady własności wyżej nie trafią, z numerami Wpisów."""
 
-    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault)
+    numbers = frozenset({OrderNumber("40000001"), OrderNumber("40000002")})
+    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, numbers)
 
     assert _read_back(read) == (read,)
 
@@ -1245,7 +1259,7 @@ def test_temat_ze_slowem_raport_ktorego_nie_da_sie_odczytac_jest_problemem_z_pow
 
     assert outcome.changes == ()
     assert outcome.problems == (UnreadableSubject(mail.id, Login("jan.testowy"), EVENING, fault),)
-    assert outcome.mails == (ReadUnreadable(mail.id, EVENING, Login("jan.testowy"), fault),)
+    assert outcome.mails == (ReadUnreadable(mail.id, EVENING, Login("jan.testowy"), fault, frozenset({OrderNumber("40000001")})),)
 
 
 @pytest.mark.parametrize(
@@ -1806,6 +1820,55 @@ def test_opis_wpisu_konczy_pusta_linia_pozegnanie_z_tabeli_albo_przedrostek_nast
 
     assert outcome.changes == _cells(entered)
     assert outcome.problems == ()
+
+
+def test_poprawiony_mail_zdejmuje_ostrzezenie_tylko_nieczytelnego_maila_sprzed_niego() -> None:
+    """Dwa maile z tematem bez dnia i jeden Raport z dniem między nimi: ostrzeżenie zostaje tylko przy mailu, który
+    przyszedł po poprawce."""
+
+    before = _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>")
+    corrected = _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>")
+    after = _mail(JAN, "Raport", "40000001 tak wymiana", EVENING + timedelta(minutes=2), "<3@przyklad.invalid>")
+
+    outcome = enter_reports(_inputs([before, corrected, after], [_order()]))
+
+    assert outcome.problems == (
+        UnreadableSubject(after.id, Login("jan.testowy"), EVENING + timedelta(minutes=2), SubjectFault.NO_DATE),
+    )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_poprawiony_mail_nie_zdejmuje_ostrzezenia_drugiego_nieczytelnego_maila_z_tym_samym_message_id(reverse: bool) -> None:
+    """Dwa maile z tematem bez dnia, z tym samym Message-ID i chwilą przyjścia, i późniejszy Raport, który poprawia
+    tylko jeden z nich: ostrzeżenie zostaje w każdej kolejności maili na wejściu."""
+
+    unreadable = [
+        _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, "Raport", "kurier jutro", EVENING, "<1@przyklad.invalid>"),
+    ]
+    corrected = _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>")
+
+    outcome = enter_reports(_inputs([*(unreadable[::-1] if reverse else unreadable), corrected], [_order()]))
+
+    assert outcome.problems == (UnreadableSubject(unreadable[0].id, Login("jan.testowy"), EVENING, SubjectFault.NO_DATE),)
+
+
+def test_dwa_nieczytelne_tematy_z_jednym_message_id_chwila_i_powodem_rozstrzygaja_numery_wpisow() -> None:
+    """Remis ``(arrived, MailId)`` i powodu nieczytelnego tematu rozstrzygają numery Wpisów treści, nie kolejność maili
+    na wejściu."""
+
+    mails = [
+        _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>"),
+        _mail(JAN, "Raport", "40000002 tak wymiana", EVENING, "<1@przyklad.invalid>"),
+    ]
+
+    outcomes = [enter_reports(_inputs(order, [_order()])) for order in (mails, mails[::-1])]
+
+    assert outcomes[0] == outcomes[1]
+    assert [read.numbers for read in outcomes[0].mails if isinstance(read, ReadUnreadable)] == [
+        frozenset({OrderNumber("40000001")}),
+        frozenset({OrderNumber("40000002")}),
+    ]
 
 
 def test_dwa_nieczytelne_tematy_z_jednym_message_id_i_chwila_przyjscia_daja_ten_sam_wynik_w_kazdej_kolejnosci() -> None:

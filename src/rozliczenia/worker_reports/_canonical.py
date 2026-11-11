@@ -2,7 +2,7 @@
 
 Odtworzenie Uruchomienia z Logów (#1233) ma z maila tylko odczyt, bez adresu, tematu i treści, więc buduje z niego mail
 w postaci kanonicznej: temat ``Raport dd.mm.rrrr``, jedna linia ``<numer> <znak> <czynności>`` na Wpis raportu, a pod
-nimi pusta linia i ``_CLOSING``.
+nimi pusta linia i ``_CLOSING``. Mail z nieczytelnym tematem ma w treści sam numer w linii na każdy numer jego Wpisów.
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ def as_mail(read: MailRead, sender: SenderAddress) -> ReportMail:
             return ReportMail(read.mail, sender, _subject(day), "\n".join(map(_line, entries)) + _CLOSING, read.arrived)
         case ReadStranger(day=day):
             return ReportMail(read.mail, sender, _subject(day), "", read.arrived)
-        case ReadUnreadable(fault=fault):
-            return ReportMail(read.mail, sender, _unreadable(fault), "", read.arrived)
+        case ReadUnreadable(fault=fault, numbers=numbers):
+            return ReportMail(read.mail, sender, _unreadable(fault), "\n".join(sorted(numbers)), read.arrived)
         case _:
             assert_never(read)
 
