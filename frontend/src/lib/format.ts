@@ -1,18 +1,11 @@
-// Prezentacja dat i czasów z kontraktu w zapisie taty. Bez arytmetyki dat: okresy i zakresy liczy serwer; jedyny
-// rachunek to odległość chwili od zegara karty w `ago`.
+// Prezentacja dat i czasów z kontraktu w zapisie taty. Bez arytmetyki dat: okresy liczy serwer, zakres dni Raportów
+// `pages/worker-reports/days.ts`; jedyny rachunek tutaj to odległość chwili od zegara karty w `ago`.
 
 /** `2026-10-06` → `06.10.2026` */
 export function fullDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-")
 
   return `${day}.${month}.${year}`
-}
-
-const WEEKDAY = new Intl.DateTimeFormat("pl-PL", { weekday: "long", timeZone: "UTC" })
-
-/** `2026-11-09` → `poniedziałek 09.11` */
-export function weekdayDate(isoDate: string): string {
-  return `${WEEKDAY.format(new Date(`${isoDate}T00:00:00Z`))} ${shortDate(isoDate)}`
 }
 
 /** `2026-10-06` → `06.10` */

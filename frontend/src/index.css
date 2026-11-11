@@ -17,6 +17,12 @@
     --color-warning: var(--warning);
     --color-success: var(--success);
     --color-to-fill: var(--to-fill);
+    --color-success-tile: var(--success-tile);
+    --color-success-tile-foreground: var(--success-tile-foreground);
+    --color-warning-tile: var(--warning-tile);
+    --color-warning-tile-foreground: var(--warning-tile-foreground);
+    --color-destructive-tile: var(--destructive-tile);
+    --color-destructive-tile-foreground: var(--destructive-tile-foreground);
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
@@ -70,6 +76,13 @@
     --warning: oklch(0.6 0.13 70);
     --success: oklch(0.55 0.11 160);
     --to-fill: oklch(0.965 0.06 102);
+    /* Kafelki Mapy cieplnej Raportów: kolor stanu zmieszany z kartą, napis ze stanu zmieszany z tekstem. */
+    --success-tile: color-mix(in oklab, var(--success) 30%, var(--card));
+    --success-tile-foreground: color-mix(in oklab, var(--success) 60%, var(--foreground));
+    --warning-tile: color-mix(in oklab, var(--warning) 36%, var(--card));
+    --warning-tile-foreground: color-mix(in oklab, var(--warning) 45%, var(--foreground));
+    --destructive-tile: color-mix(in oklab, var(--destructive) 26%, var(--card));
+    --destructive-tile-foreground: color-mix(in oklab, var(--destructive) 70%, var(--foreground));
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-accent: oklch(0.97 0 0);
@@ -109,6 +122,9 @@
     --warning: oklch(0.8 0.12 80);
     --success: oklch(0.75 0.1 160);
     --to-fill: oklch(0.3 0.04 100);
+    --success-tile: color-mix(in oklab, var(--success) 34%, var(--card));
+    --warning-tile: color-mix(in oklab, var(--warning) 30%, var(--card));
+    --destructive-tile: color-mix(in oklab, var(--destructive) 30%, var(--card));
     --sidebar-ring: oklch(0.556 0 0);
 }
 
@@ -167,6 +183,14 @@
     transition:
       opacity 200ms var(--ease-out),
       scale 200ms var(--ease-out);
+  }
+  /* Niedziela na Mapie cieplnej Raportów: kolumna w ukośne kreski. */
+  .niedziela {
+    background: repeating-linear-gradient(
+      135deg,
+      transparent 0 5px,
+      color-mix(in oklab, var(--border) 70%, transparent) 5px 6px
+    );
   }
   /* Treść po szkielecie. */
   .pojawienie {
