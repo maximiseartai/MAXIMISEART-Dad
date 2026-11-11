@@ -1,6 +1,6 @@
 import { ChevronDownIcon, MailQuestionIcon } from "lucide-react"
 
-import type { KeptCell, ReportsProblem, ReportsWorker } from "@/api/generated"
+import type { KeptCell, ReportsProblem, ReportsWorkerDay, UnknownReportSender } from "@/api/generated"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -9,36 +9,38 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 export type Keep = KeptCell
 
 /**
- * Wykonawca dnia w jednej linii: nazwa i cztery liczby. Problemy i zlecenia bez raportu rozwijają się pod nią;
- * Wykonawca bez nich nie ma czego rozwinąć.
+ * Wykonawca `worker` w dniu `day` w jednej linii: nazwa i cztery liczby. Problemy i zlecenia bez raportu rozwijają się
+ * pod nią; Wykonawca bez nich nie ma czego rozwinąć.
  */
 export function WorkerRow({
   worker,
+  day,
   keeping,
   onKeep,
 }: {
-  worker: ReportsWorker
+  worker: string
+  day: ReportsWorkerDay
   keeping: Keep | null
   onKeep: (cell: Keep) => void
 }) {
-  const details = worker.problems.length > 0 || worker.without_report.length > 0
+  const details = day.problems.length > 0 || day.without_report.length > 0
 
   // Na wąskim ekranie liczby schodzą pod nazwę, w cztery równe kolumny; od `sm` stoją w jednej linii z nazwą.
   const line = (
     <>
-      <span className="min-w-0 flex-1 truncate font-medium">{worker.worker}</span>
+      <span className="min-w-0 flex-1 truncate font-medium">{worker}</span>
       <span className="order-last grid w-full grid-cols-4 gap-2 sm:order-none sm:flex sm:w-auto sm:gap-6">
-        <Figure label="Zlecenia" value={worker.orders} />
-        <Figure label="Wpisane" value={worker.entered} />
-        <Figure label="Maile" value={worker.mails} />
-        <Figure label="Problemy" value={worker.problems.length} warn={worker.problems.length > 0} />
+        <Figure label="Zlecenia" value={day.orders} />
+        <Figure label="Wpisane" value={day.entered} />
+        <Figure label="Maile" value={day.mails} />
+        <Figure label="Problemy" value={day.problems.length} warn={day.problems.length > 0} />
       </span>
     </>
   )
 
   if (!details) {
     return (
-      <div role="listitem" aria-label={worker.worker} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-5 py-3 last:border-b-0 sm:flex-nowrap sm:gap-6">
+      <div role="listitem" aria-label={worker} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-5 py-3 last:border-b-0 sm:flex-nowrap sm:gap-6">
         {line}
         <span className="size-4 shrink-0" aria-hidden />
       </div>
@@ -46,7 +48,7 @@ export function WorkerRow({
   }
 
   return (
-    <Collapsible role="listitem" aria-label={worker.worker} className="border-b last:border-b-0">
+    <Collapsible role="listitem" aria-label={worker} className="border-b last:border-b-0">
       <CollapsibleTrigger className="group flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 text-left transition-colors hover:bg-muted/50 sm:flex-nowrap sm:gap-6">
         {line}
         <ChevronDownIcon
@@ -56,17 +58,17 @@ export function WorkerRow({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="flex flex-col gap-4 px-5 pt-1 pb-4">
-          {worker.problems.length === 0 ? null : (
+          {day.problems.length === 0 ? null : (
             <ul className="flex flex-col gap-3" aria-label="Problemy">
-              {worker.problems.map((problem) => (
+              {day.problems.map((problem) => (
                 <ProblemItem key={problemKey(problem)} problem={problem} keeping={keeping} onKeep={onKeep} />
               ))}
             </ul>
           )}
-          {worker.without_report.length === 0 ? null : (
+          {day.without_report.length === 0 ? null : (
             <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Bez raportu">
               <span className="text-muted-foreground">Bez raportu</span>
-              {worker.without_report.map((number) => (
+              {day.without_report.map((number) => (
                 <span key={number} className="rounded-md bg-secondary px-2 py-0.5 tabular-nums">
                   {number}
                 </span>
@@ -80,8 +82,8 @@ export function WorkerRow({
 }
 
 /** Raporty wykonawcy dnia z adresów spoza listy adresów Wykonawców: adres widać tylko tutaj. */
-export function UnknownSenders({ problems }: { problems: ReadonlyArray<ReportsProblem> }) {
-  if (problems.length === 0) {
+export function UnknownSenders({ senders }: { senders: ReadonlyArray<UnknownReportSender> }) {
+  if (senders.length === 0) {
     return null
   }
 
@@ -95,10 +97,10 @@ export function UnknownSenders({ problems }: { problems: ReadonlyArray<ReportsPr
       </CardHeader>
       <CardContent>
         <ul className="flex flex-col gap-3">
-          {problems.map((problem) => (
-            <li key={problemKey(problem)} className="flex flex-col gap-0.5 text-sm">
-              <span className="font-medium break-all">{problem.sender}</span>
-              <span className="text-muted-foreground">{problem.reason}</span>
+          {senders.map((sender) => (
+            <li key={JSON.stringify([sender.sender, sender.reason])} className="flex flex-col gap-0.5 text-sm">
+              <span className="font-medium break-all">{sender.sender}</span>
+              <span className="text-muted-foreground">{sender.reason}</span>
             </li>
           ))}
         </ul>
@@ -150,5 +152,5 @@ function ProblemItem({
 }
 
 function problemKey(problem: ReportsProblem): string {
-  return JSON.stringify([problem.number, problem.sender, problem.reason, problem.keep])
+  return JSON.stringify([problem.number, problem.reason, problem.keep])
 }

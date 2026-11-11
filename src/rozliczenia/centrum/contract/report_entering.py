@@ -37,41 +37,72 @@ class KeptCell(Model):
 
 
 class ReportsProblem(Model):
-    """Problem z ostatniego kliknięcia: zdanie dla taty, numer zlecenia (``None``: problem bez numeru), adres
-    nieznanego nadawcy (tylko przy nim) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją”
-    (``keep``)."""
+    """Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
+    numeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``)."""
 
     reason: str
     number: str | None
-    sender: str | None
     keep: KeptCell | None
 
 
-class ReportsWorker(Model):
-    """Wykonawca w wybranym dniu: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu,
-    kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”, i numery
-    zleceń bez żadnego Wpisu."""
+class ReportsOrder(Model):
+    """Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
+    zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez
+    żadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``)."""
 
-    worker: str
+    number: str
+    successful: str | None
+    activities: str | None
+    state: Literal["entered", "without_report", "problem"]
+
+
+class ReportsWorkerDay(Model):
+    """Dzień Wykonawcy z ostatniego kliknięcia: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po
+    kliknięciu, kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”,
+    numery zleceń bez żadnego Wpisu i zlecenia dnia (``orders_detail``; ``None``: wynik kliknięcia sprzed listy zleceń,
+    dopóki tata nie kliknie znowu)."""
+
+    day: date
     orders: int
     entered: int
     mails: int
-    problems: list[ReportsProblem]
     without_report: list[str]
+    problems: list[ReportsProblem]
+    orders_detail: list[ReportsOrder] | None
+
+
+class ReportsWorker(Model):
+    """Wykonawca z ostatniego kliknięcia i jego dni ze zleceniami, Raportem wykonawcy albo problemem, od najstarszego."""
+
+    worker: str
+    days: list[ReportsWorkerDay]
+
+
+class ReportsDay(Model):
+    """Dzień okna widoku Raporty z nazwą polskiego dnia ustawowo wolnego od pracy (``None``: dzień bez święta)."""
+
+    day: date
+    holiday: str | None
+
+
+class UnknownReportSender(Model):
+    """Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty."""
+
+    day: date
+    sender: str
+    reason: str
 
 
 class ReportsView(Model):
-    """Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki.
+    """Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki, dla całego okna.
 
     ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
-    ``day`` wybrany dzień, ``days`` dni do wyboru od najnowszego (dziś i dni otwartych okresów z ostatniego kliknięcia),
-    ``workers`` Wykonawcy wybranego dnia, a ``unknown_senders`` Raporty wykonawcy z tego dnia z adresów spoza listy
-    adresów Wykonawców.
+    ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
+    alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
     """
 
     clicked_at: datetime | None
     today: date
-    day: date
-    days: list[date]
+    days: list[ReportsDay]
     workers: list[ReportsWorker]
-    unknown_senders: list[ReportsProblem]
+    unknown_senders: list[UnknownReportSender]

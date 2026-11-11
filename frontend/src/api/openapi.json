@@ -1184,25 +1184,6 @@
         ],
         "summary": "View",
         "operationId": "getReportsView",
-        "parameters": [
-          {
-            "name": "day",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Day"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1215,21 +1196,11 @@
             }
           },
           "500": {
+            "description": "Internal Server Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -5261,6 +5232,83 @@
         "title": "ReportWaiting",
         "description": "Zgłoszenie tego problemu wysłano wcześniej i jest otwarte: czeka na naprawę, drugie nie powstaje."
       },
+      "ReportsDay": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "holiday": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holiday"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "day",
+          "holiday"
+        ],
+        "title": "ReportsDay",
+        "description": "Dzień okna widoku Raporty z nazwą polskiego dnia ustawowo wolnego od pracy (``None``: dzień bez święta)."
+      },
+      "ReportsOrder": {
+        "properties": {
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "successful": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Successful"
+          },
+          "activities": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activities"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "entered",
+              "without_report",
+              "problem"
+            ],
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "successful",
+          "activities",
+          "state"
+        ],
+        "title": "ReportsOrder",
+        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez\nżadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``)."
+      },
       "ReportsProblem": {
         "properties": {
           "reason": {
@@ -5278,17 +5326,6 @@
             ],
             "title": "Number"
           },
-          "sender": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sender"
-          },
           "keep": {
             "anyOf": [
               {
@@ -5305,11 +5342,10 @@
         "required": [
           "reason",
           "number",
-          "sender",
           "keep"
         ],
         "title": "ReportsProblem",
-        "description": "Problem z ostatniego kliknięcia: zdanie dla taty, numer zlecenia (``None``: problem bez numeru), adres\nnieznanego nadawcy (tylko przy nim) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją”\n(``keep``)."
+        "description": "Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez\nnumeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``)."
       },
       "ReportsView": {
         "properties": {
@@ -5330,15 +5366,9 @@
             "format": "date",
             "title": "Today"
           },
-          "day": {
-            "type": "string",
-            "format": "date",
-            "title": "Day"
-          },
           "days": {
             "items": {
-              "type": "string",
-              "format": "date"
+              "$ref": "#/components/schemas/ReportsDay"
             },
             "type": "array",
             "title": "Days"
@@ -5352,7 +5382,7 @@
           },
           "unknown_senders": {
             "items": {
-              "$ref": "#/components/schemas/ReportsProblem"
+              "$ref": "#/components/schemas/UnknownReportSender"
             },
             "type": "array",
             "title": "Unknown Senders"
@@ -5363,19 +5393,42 @@
         "required": [
           "clicked_at",
           "today",
-          "day",
           "days",
           "workers",
           "unknown_senders"
         ],
         "title": "ReportsView",
-        "description": "Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki.\n\n``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,\n``day`` wybrany dzień, ``days`` dni do wyboru od najnowszego (dziś i dni otwartych okresów z ostatniego kliknięcia),\n``workers`` Wykonawcy wybranego dnia, a ``unknown_senders`` Raporty wykonawcy z tego dnia z adresów spoza listy\nadresów Wykonawców."
+        "description": "Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki, dla całego okna.\n\n``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,\n``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy\nalfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców."
       },
       "ReportsWorker": {
         "properties": {
           "worker": {
             "type": "string",
             "title": "Worker"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/ReportsWorkerDay"
+            },
+            "type": "array",
+            "title": "Days"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "worker",
+          "days"
+        ],
+        "title": "ReportsWorker",
+        "description": "Wykonawca z ostatniego kliknięcia i jego dni ze zleceniami, Raportem wykonawcy albo problemem, od najstarszego."
+      },
+      "ReportsWorkerDay": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
           },
           "orders": {
             "type": "integer",
@@ -5389,6 +5442,13 @@
             "type": "integer",
             "title": "Mails"
           },
+          "without_report": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Without Report"
+          },
           "problems": {
             "items": {
               "$ref": "#/components/schemas/ReportsProblem"
@@ -5396,26 +5456,34 @@
             "type": "array",
             "title": "Problems"
           },
-          "without_report": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Without Report"
+          "orders_detail": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ReportsOrder"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orders Detail"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "worker",
+          "day",
           "orders",
           "entered",
           "mails",
+          "without_report",
           "problems",
-          "without_report"
+          "orders_detail"
         ],
-        "title": "ReportsWorker",
-        "description": "Wykonawca w wybranym dniu: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu,\nkto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”, i numery\nzleceń bez żadnego Wpisu."
+        "title": "ReportsWorkerDay",
+        "description": "Dzień Wykonawcy z ostatniego kliknięcia: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po\nkliknięciu, kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”,\nnumery zleceń bez żadnego Wpisu i zlecenia dnia (``orders_detail``; ``None``: wynik kliknięcia sprzed listy zleceń,\ndopóki tata nie kliknie znowu)."
       },
       "Resolved": {
         "properties": {
@@ -6623,6 +6691,32 @@
         ],
         "title": "ToolVersion",
         "description": "Wersja narzędzia, z której działa Centrum: skrót commitu i dzień, od którego narzędzie jest na tym commicie."
+      },
+      "UnknownReportSender": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "day",
+          "sender",
+          "reason"
+        ],
+        "title": "UnknownReportSender",
+        "description": "Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty."
       },
       "UnreadablePath": {
         "properties": {

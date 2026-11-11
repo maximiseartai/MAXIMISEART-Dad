@@ -30,6 +30,7 @@ from rozliczenia.worker_reports import (
     MailId,
     ManualDifference,
     MissingVerdict,
+    OrderDetail,
     OrderKey,
     OrderNumber,
     OtherDay,
@@ -851,22 +852,33 @@ def test_problem_z_bledu_wykonawcy_zostaje_bez_raportu_wyslanego_jeszcze_raz(
     assert problem in outcome.problems
 
 
-def test_liczby_wykonawcy_z_dnia_dla_widoku_raporty() -> None:
-    """``entered`` liczy zlecenia z ``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu, także wpisane ręcznie."""
+def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_intermax() -> None:
+    """``entered`` liczy zlecenia z ``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu, także wpisane ręcznie, a zlecenia
+    dnia idą od góry arkusza, choć proces czyta je od dołu, z ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
+    zmian kliknięcia, kto by ich nie wpisał, i z tym, czy mają Wpis (#1322)."""
 
     orders = [
-        _order(OrderRow("Zlecenia", 120), number="40000001"),
-        _order(OrderRow("Zlecenia", 121), number="40000002", successful=" NIE "),
-        _order(OrderRow("Zlecenia", 122), number="40000003"),
-        _order(OrderRow("Zlecenia", 123), number="40000004", successful="???"),
         _order(OrderRow("Zlecenia", 124), number="40000010", worker="Ewa.Probna"),
+        _order(OrderRow("Zlecenia", 123), number="40000004", successful="???", completed="ręcznie"),
+        _order(OrderRow("Zlecenia", 122), number="40000003"),
+        _order(OrderRow("Zlecenia", 121), number="40000002", successful=" NIE "),
+        _order(OrderRow("Zlecenia", 120), number="40000001"),
     ]
     mails = [_mail(JAN, SUBJECT, TEXT), _mail(JAN, SUBJECT, "12345678 tak montaż", EVENING + timedelta(hours=1))]
 
     outcome = enter_reports(_inputs(mails, orders))
 
     assert outcome.workers == (
-        WorkerDay(DAY, Login("ewa.probna"), orders=1, entered=0, mails=0, problems=0, without_report=(OrderNumber("40000010"),)),
+        WorkerDay(
+            DAY,
+            Login("ewa.probna"),
+            orders=1,
+            entered=0,
+            mails=0,
+            problems=0,
+            without_report=(OrderNumber("40000010"),),
+            orders_detail=(OrderDetail(OrderNumber("40000010"), None, None, reported=False),),
+        ),
         WorkerDay(
             DAY,
             Login("jan.testowy"),
@@ -875,6 +887,12 @@ def test_liczby_wykonawcy_z_dnia_dla_widoku_raporty() -> None:
             mails=2,
             problems=1,
             without_report=(OrderNumber("40000002"), OrderNumber("40000003"), OrderNumber("40000004")),
+            orders_detail=(
+                OrderDetail(OrderNumber("40000001"), "tak", "wymiana routera", reported=True),
+                OrderDetail(OrderNumber("40000002"), " NIE ", None, reported=False),
+                OrderDetail(OrderNumber("40000003"), None, None, reported=False),
+                OrderDetail(OrderNumber("40000004"), "???", "ręcznie", reported=False),
+            ),
         ),
     )
 

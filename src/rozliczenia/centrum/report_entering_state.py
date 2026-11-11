@@ -2,9 +2,12 @@
 
 - ``wpisanie-raportow-stan.json``, ``{schema_version: 1, rollout, own: [{number, day, worker, column, value}]}``: dzień
   wdrożenia i komórki, które Wpisanie raportów samo wpisało. Pisze go tylko proces po udanym zapisie INTERMAX.
-- ``wpisanie-raportow-wynik.json``, ``{schema_version: 1, clicked_at, days, workers, problems}``: wynik ostatniego
-  udanego kliknięcia dla widoku Raporty, z liczbami Wykonawców, zdaniem o każdym problemie (``reasons.reason``) i
-  adresem nieznanego nadawcy, który poza widokiem Raporty nigdzie nie trafia. Pisze go tylko proces, po pamięci.
+- ``wpisanie-raportow-wynik.json``, ``{schema_version: 2, clicked_at, days, workers, problems}``: wynik ostatniego
+  udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``: numer,
+  ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu i czy zlecenie ma Wpis), zdaniem o każdym problemie
+  (``reasons.reason``) i adresem nieznanego nadawcy; zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Pisze
+  go tylko proces, po pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia
+  (``ShownResult.detailed``), dopóki następne kliknięcie nie zapisze wersji 2.
 - ``wpisanie-raportow-decyzje.json``, ``{schema_version: 1, kept: [{number, day, worker, column, reported}]}``: decyzje
   taty „Zostaw moją”. Pisze go tylko żądanie API „Zostaw moją” (``keep``); proces czyta go przy Sprawdzaniu razem z
   pamięcią jako migawkę, a widok Raporty łączy go z wynikiem przy odczycie, więc wspólnej blokady procesu i API nie ma.
@@ -20,9 +23,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 import json
 import threading
-from typing import Final, Literal, assert_never
+from typing import Annotated, Final, Literal, assert_never
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.work import CentrumWork
@@ -37,6 +40,7 @@ from rozliczenia.worker_reports import (
     Login,
     ManualDifference,
     MissingVerdict,
+    OrderDetail,
     OrderKey,
     OrderNumber,
     OtherDay,
@@ -51,6 +55,8 @@ from rozliczenia.worker_reports import (
 from rozliczenia.worker_reports.reasons import reason
 
 _SCHEMA_VERSION: Final = 1
+_RESULT_VERSION: Final = 2
+"""Wersja pliku wyniku: 2 dodała zlecenia dnia Wykonawcy (#1322)."""
 
 Column = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
 
@@ -95,13 +101,24 @@ class _Decisions(_Record):
     kept: list[_Kept]
 
 
-class _Worker(_Record):
+class _WorkerV1(_Record):
     day: date
     worker: str
     orders: int
     entered: int
     mails: int
     without_report: list[str]
+
+
+class _Order(_Record):
+    number: str
+    successful: str | None
+    activities: str | None
+    reported: bool
+
+
+class _Worker(_WorkerV1):
+    orders_detail: list[_Order]
 
 
 class _Problem(_Record):
@@ -113,18 +130,33 @@ class _Problem(_Record):
     difference: _Kept | None
 
 
-class _Result(_Record):
+class _ResultV1(_Record):
+    """Plik wyniku sprzed zleceń dnia (#1322): czyta go tylko ``shown``."""
+
     schema_version: Literal[1]
+    clicked_at: datetime
+    days: list[date]
+    workers: list[_WorkerV1]
+    problems: list[_Problem]
+
+
+class _Result(_Record):
+    schema_version: Literal[2]
     clicked_at: datetime
     days: list[date]
     workers: list[_Worker]
     problems: list[_Problem]
 
 
+class _AnyResult(RootModel[Annotated[_ResultV1 | _Result, Field(discriminator="schema_version")]]):
+    """Plik wyniku w którejkolwiek wersji, rozpoznanej po ``schema_version``."""
+
+
 @dataclass(frozen=True)
 class ShownWorker:
     """Liczby Wykonawcy ``worker`` z dnia ``day`` z ostatniego kliknięcia: zlecenia, wpisane (``tak`` albo ``nie`` w
-    ``SKUTECZNE`` po kliknięciu), Raporty wykonawcy i numery zleceń bez żadnego Wpisu."""
+    ``SKUTECZNE`` po kliknięciu), Raporty wykonawcy, numery zleceń bez żadnego Wpisu i zlecenia dnia w kolejności z
+    INTERMAX (``None``: plik wyniku sprzed zleceń dnia)."""
 
     day: date
     worker: str
@@ -132,6 +164,7 @@ class ShownWorker:
     entered: int
     mails: int
     without_report: tuple[str, ...]
+    orders_detail: tuple[OrderDetail, ...] | None
 
 
 @dataclass(frozen=True)
@@ -150,12 +183,14 @@ class ShownProblem:
 
 @dataclass(frozen=True)
 class ShownResult:
-    """Wynik ostatniego udanego kliknięcia dla widoku Raporty (bez decyzji „Zostaw moją”: łączy je widok)."""
+    """Wynik ostatniego udanego kliknięcia dla widoku Raporty (bez decyzji „Zostaw moją”: łączy je widok);
+    ``detailed``: plik ma zlecenia dnia (wersja 2)."""
 
     clicked_at: datetime
     days: tuple[date, ...]
     workers: tuple[ShownWorker, ...]
     problems: tuple[ShownProblem, ...]
+    detailed: bool
 
 
 @dataclass
@@ -248,12 +283,21 @@ class FileReportState:
                 entered=worker.entered,
                 mails=worker.mails,
                 without_report=list(worker.without_report),
+                orders_detail=[
+                    _Order(
+                        number=order.number,
+                        successful=order.successful,
+                        activities=order.activities,
+                        reported=order.reported,
+                    )
+                    for order in worker.orders_detail
+                ],
             )
             for worker in result.workers
         ]
         self.result.write(
             _Result(
-                schema_version=_SCHEMA_VERSION,
+                schema_version=_RESULT_VERSION,
                 clicked_at=result.clicked_at,
                 days=list(result.days),
                 workers=workers,
@@ -268,7 +312,7 @@ class FileReportState:
         if text is None:
             return None
         try:
-            result = _Result.model_validate_json(text)
+            result = _AnyResult.model_validate_json(text).root
         except ValidationError as error:
             raise StateUnreadable from error
         return ShownResult(
@@ -282,6 +326,7 @@ class FileReportState:
                     worker.entered,
                     worker.mails,
                     tuple(worker.without_report),
+                    _orders(worker),
                 )
                 for worker in result.workers
             ),
@@ -296,6 +341,7 @@ class FileReportState:
                 )
                 for problem in result.problems
             ),
+            detailed=isinstance(result, _Result),
         )
 
     def kept(self) -> frozenset[Kept]:
@@ -318,6 +364,15 @@ class FileReportState:
             self.decisions.write(
                 _Decisions(schema_version=_SCHEMA_VERSION, kept=[_Kept.of(decision) for decision in decisions])
             )
+
+
+def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
+    if not isinstance(worker, _Worker):
+        return None
+    return tuple(
+        OrderDetail(OrderNumber(order.number), order.successful, order.activities, order.reported)
+        for order in worker.orders_detail
+    )
 
 
 def _problem(problem: ReportProblem) -> _Problem:

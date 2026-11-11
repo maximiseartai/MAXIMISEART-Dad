@@ -103,8 +103,8 @@ class SavedState:
 
 @dataclass(frozen=True)
 class ClickResult:
-    """Wynik kliknięcia dla widoku Raporty: chwila kliknięcia, dni otwarte okna od pierwszego do dziś, liczby
-    Wykonawców z dni i problemy rdzenia raportów, z adresem nieznanego nadawcy (ADR 0028)."""
+    """Wynik kliknięcia dla widoku Raporty: chwila kliknięcia, dni otwarte okna od pierwszego do dziś, liczby i
+    zlecenia Wykonawców z dni i problemy rdzenia raportów, z adresem nieznanego nadawcy (ADR 0028)."""
 
     clicked_at: datetime
     days: tuple[date, ...]

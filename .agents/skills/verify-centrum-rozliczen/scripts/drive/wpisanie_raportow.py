@@ -35,6 +35,15 @@ SHOWN = {
     "wykonawca.a": {"orders": 2, "entered": 1, "mails": 1, "problems": 0, "without_report": ["40000102"]},
     "wykonawca.b": {"orders": 1, "entered": 1, "mails": 1, "problems": 1, "without_report": []},
 }
+# The orders of today at each Wykonawca after the first click, in the INTERMAX order: number, SKUTECZNE, CZYNNOŚCI
+# ZREALIZOWANE and state. Dad's own `montaż ręcznie` stays, so 40000103 is a problem until `Zostaw moją`.
+ORDERS = {
+    "wykonawca.a": [
+        ("40000101", "tak", "wymiana routera", "entered"),
+        ("40000102", None, None, "without_report"),
+    ],
+    "wykonawca.b": [("40000103", "tak", "montaż ręcznie", "problem")],
+}
 KEPT = {
     "number": "40000103",
     "day": DAY,
@@ -96,16 +105,32 @@ def _view(run: Run, name: str) -> Json:
     return view
 
 
+def _days_of(view: Json) -> dict[str, Json]:
+    """Each Wykonawca's day ``DAY`` of the view, which has the whole window of the last click."""
+
+    return {worker["worker"]: day for worker in view["workers"] for day in worker["days"] if day["day"] == DAY}
+
+
 def _workers(view: Json) -> dict[str, Json]:
     return {
-        worker["worker"]: {
-            "orders": worker["orders"],
-            "entered": worker["entered"],
-            "mails": worker["mails"],
-            "problems": len(worker["problems"]),
-            "without_report": worker["without_report"],
+        worker: {
+            "orders": day["orders"],
+            "entered": day["entered"],
+            "mails": day["mails"],
+            "problems": len(day["problems"]),
+            "without_report": day["without_report"],
         }
-        for worker in view["workers"]
+        for worker, day in _days_of(view).items()
+    }
+
+
+def _orders(view: Json) -> dict[str, list[tuple[str, str | None, str | None, str]]]:
+    return {
+        worker: [
+            (order["number"], order["successful"], order["activities"], order["state"])
+            for order in day["orders_detail"] or []
+        ]
+        for worker, day in _days_of(view).items()
     }
 
 
@@ -153,7 +178,10 @@ def drive(run: Run, page: Page) -> None:
     if first_view["clicked_at"] is None:
         expect(page.get_by_text("Jeszcze nie ma Raportów", exact=True)).to_be_visible()
         expect(page.get_by_text("Kliknij „Wpisz raporty z maili” powyżej.", exact=True)).to_be_visible()
-    run.check(first_view["today"] == DAY and first_view["day"] == DAY, "the view opens on today, 19.10.2026")
+    run.check(
+        first_view["today"] == DAY and {"day": DAY, "holiday": None} in first_view["days"],
+        "the view has today, 19.10.2026, among the days of its window, without a holiday",
+    )
 
     run.step(FEATURE, "blokada")
     lock = excel_lock(register)
@@ -198,6 +226,11 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_role("group", name="Dzień")).to_contain_text("poniedziałek 19.10 · dziś")
     view = _view(run, "raporty-widok")
     run.check(_workers(view) == SHOWN, "the view has each Wykonawca of the day with the figures of the click")
+    run.check(
+        view["days"] == [{"day": DAY, "holiday": None}] and _orders(view) == ORDERS,
+        "the view has the window of the click and at each Wykonawca the orders of the day as INTERMAX has them after "
+        "the click, with Dad's own value and its state",
+    )
     [unknown] = view["unknown_senders"]
     run.check(unknown["sender"] == fixture["stranger_address"], "the Raport from outside the list shows its address")
     for worker, shown in SHOWN.items():
@@ -232,6 +265,10 @@ def drive(run: Run, page: Page) -> None:
     _figures(_row(page, "wykonawca.b"), {**SHOWN["wykonawca.b"], "problems": 0})
     decisions = read_json(run.config / "wpisanie-raportow-decyzje.json")
     run.check(answered.value.status == 200 and _workers(kept)["wykonawca.b"]["problems"] == 0, "the difference is gone at once")
+    run.check(
+        _orders(kept)["wykonawca.b"] == [("40000103", "tak", "montaż ręcznie", "entered")],
+        "after „Zostaw moją” the order with Dad's own value is entered",
+    )
     run.check(decisions == {"schema_version": 1, "kept": [KEPT]}, "the decision is in the file of decisions")
     run.check(read_bytes(register) == register_after_click, "„Zostaw moją” leaves INTERMAX byte for byte")
     run.capture(page, "282-raporty-zostaw-moja")
@@ -258,7 +295,7 @@ def drive(run: Run, page: Page) -> None:
         )
         calm = _view(run, "raporty-bez-problemow")
         run.check(
-            all(not worker["problems"] for worker in calm["workers"]) and calm["unknown_senders"] == [],
+            all(not day["problems"] for day in _days_of(calm).values()) and calm["unknown_senders"] == [],
             "the day has no problems left",
         )
         # Still no reload since the stranger's region stood above: the view after the click came by itself.

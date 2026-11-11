@@ -12,15 +12,17 @@ odrzucony. Kopię konfliktu OneDrive obok INTERMAX karta pokazuje z instrukcją 
 starej karty kończy się Zatrzymaniem „dla taty” z tą samą instrukcją, zanim proces przeczyta skrzynkę (spec #1224,
 US 46 i 51).
 
-Widok Raporty pokazuje wynik ostatniego udanego kliknięcia z pliku wyniku, bez czytania skrzynki, z dniem do wyboru
-(domyślnie dziś z zegara Centrum). Problemy łączy przy odczycie z decyzjami „Zostaw moją”: różnica, przy której tata
-kliknął „Zostaw moją” z tą samą treścią Wpisu, znika z widoku od razu, także gdy wynik pochodzi z kliknięcia sprzed
-decyzji. „Zostaw moją” zapisuje decyzję w pliku decyzji, nigdy w INTERMAX, i tylko przy różnicy z wyniku ostatniego
-kliknięcia (spec #1224, US 38–39 i 52–58).
+Widok Raporty pokazuje wynik ostatniego udanego kliknięcia z pliku wyniku, bez czytania skrzynki, dla całego okna
+tego kliknięcia: każdy dzień z nazwą święta (``public_holidays``), a przy każdym Wykonawcy jego dni z liczbami,
+problemami i zleceniami dnia (#1319, #1322). Problemy łączy przy odczycie z decyzjami „Zostaw moją”: różnica, przy
+której tata kliknął „Zostaw moją” z tą samą treścią Wpisu, znika z widoku od razu, także gdy wynik pochodzi z
+kliknięcia sprzed decyzji, a jej zlecenie jest wtedy wpisane. „Zostaw moją” zapisuje decyzję w pliku decyzji, nigdy w
+INTERMAX, i tylko przy różnicy z wyniku ostatniego kliknięcia (spec #1224, US 38–39 i 52–58).
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timezone
@@ -39,14 +41,15 @@ from rozliczenia.centrum.contract import report_entering as report_entering_cont
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, HostParts, NeededSetting, PathNeed, PreparedRun, Start
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
-from rozliczenia.centrum.report_entering_state import FileReportState, ShownProblem, ShownResult
+from rozliczenia.centrum.report_entering_state import FileReportState, ShownProblem, ShownResult, ShownWorker
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia.centrum.settings import Settings, SettingsStore
 from rozliczenia.file_state import file_state
+from rozliczenia.public_holidays import public_holidays
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import DecisionsUnreadable, StateUnreadable
 from rozliczenia.run_context import RunContexts
-from rozliczenia.worker_reports import Kept, Login, OrderKey, OrderNumber
+from rozliczenia.worker_reports import Kept, Login, OrderKey, OrderNumber, OrderState
 
 _KIND: Final = declaration_of("report_entering")
 _UNREADABLE: Final[dict[int | str, dict[str, object]]] = {500: {"model": common_contract.Problem}}
@@ -105,16 +108,16 @@ class ReportEnteringEntry:
         start = Start(paths, period=None, dry_run=False)
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
-    def view(self, day: date | None) -> report_entering_contract.ReportsView:
-        """Widok Raporty dnia ``day`` (``None``: dziś) z wyniku ostatniego kliknięcia i decyzji „Zostaw moją”."""
+    def view(self) -> report_entering_contract.ReportsView:
+        """Widok Raporty całego okna z wyniku ostatniego kliknięcia i decyzji „Zostaw moją”."""
 
         try:
-            return _view(self.files.shown(), self.files.kept(), day or self.parts.now().date(), self.parts.now().date())
+            return _view(self.files.shown(), self.files.kept(), self.parts.now().date())
         except (StateUnreadable, DecisionsUnreadable) as error:
             raise refusal.reports_unreadable() from error
 
     def keep(self, cell: report_entering_contract.KeptCell) -> report_entering_contract.ReportsView:
-        """„Zostaw moją” przy różnicy ``cell`` z wyniku ostatniego kliknięcia; widok Raporty dnia jej zlecenia."""
+        """„Zostaw moją” przy różnicy ``cell`` z wyniku ostatniego kliknięcia; cały widok Raporty bez tej różnicy."""
 
         kept = Kept(
             OrderKey(OrderNumber(cell.number), cell.day, Login(cell.worker)), ReportColumn(cell.column), cell.reported
@@ -126,7 +129,7 @@ class ReportEnteringEntry:
             self.files.keep(kept)
         except (StateUnreadable, DecisionsUnreadable) as error:
             raise refusal.reports_unreadable() from error
-        return self.view(cell.day)
+        return self.view()
 
     def _missing(self) -> list[refusal.ReportEnteringFile]:
         """Pliki w ``config``, których nie ma: bez nich kliknięcie i tak by się nie udało."""
@@ -159,40 +162,72 @@ def _conflict(register: Path | None) -> str | None:
     return conflict_note(copies[0]) if copies else None
 
 
-def _view(
-    shown: ShownResult | None, kept: frozenset[Kept], day: date, today: date
-) -> report_entering_contract.ReportsView:
-    """Wykonawcy dnia ``day`` z wyniku ``shown`` bez różnic, przy których tata kliknął „Zostaw moją” (``kept``); dni do
-    wyboru to dziś i dni otwarte ostatniego kliknięcia, od najnowszego. Chwila kliknięcia jest w UTC, jak każda chwila
-    kontraktu, a przeglądarka pokazuje ją w czasie komputera taty."""
+def _view(shown: ShownResult | None, kept: frozenset[Kept], today: date) -> report_entering_contract.ReportsView:
+    """Całe okno wyniku ``shown`` bez różnic, przy których tata kliknął „Zostaw moją” (``kept``): dni otwarte ostatniego
+    kliknięcia i dziś od najstarszego, Wykonawcy alfabetycznie z dniami, które mają liczby albo problem. Chwila
+    kliknięcia jest w UTC, jak każda chwila kontraktu, a przeglądarka pokazuje ją w czasie komputera taty."""
 
     if shown is None:
         return report_entering_contract.ReportsView(
-            clicked_at=None, today=today, day=day, days=[today], workers=[], unknown_senders=[]
+            clicked_at=None, today=today, days=_days({today}), workers=[], unknown_senders=[]
         )
-    problems = [problem for problem in shown.problems if problem.day == day and problem.difference not in kept]
-    figures = {worker.worker: worker for worker in shown.workers if worker.day == day}
-    names = sorted(figures.keys() | {problem.worker for problem in problems if problem.worker is not None})
-    workers = []
-    for name in names:
-        figure = figures.get(name)
-        workers.append(
-            report_entering_contract.ReportsWorker(
-                worker=name,
-                orders=0 if figure is None else figure.orders,
-                entered=0 if figure is None else figure.entered,
-                mails=0 if figure is None else figure.mails,
-                problems=[_problem(problem) for problem in problems if problem.worker == name],
-                without_report=[] if figure is None else list(figure.without_report),
-            )
-        )
+    problems = [problem for problem in shown.problems if problem.difference not in kept]
+    placed: defaultdict[tuple[str, date], list[ShownProblem]] = defaultdict(list)
+    for problem in problems:
+        if problem.worker is not None:
+            placed[problem.worker, problem.day].append(problem)
+    figures = {(worker.worker, worker.day): worker for worker in shown.workers}
+    days: defaultdict[str, list[report_entering_contract.ReportsWorkerDay]] = defaultdict(list)
+    for name, day in sorted(figures.keys() | placed.keys()):
+        days[name].append(_worker_day(day, figures.get((name, day)), placed[name, day], shown.detailed))
     return report_entering_contract.ReportsView(
         clicked_at=shown.clicked_at.astimezone(timezone.utc),
         today=today,
+        days=_days({today, *shown.days}),
+        workers=[report_entering_contract.ReportsWorker(worker=name, days=found) for name, found in days.items()],
+        unknown_senders=[
+            report_entering_contract.UnknownReportSender(day=problem.day, sender=problem.sender, reason=problem.reason)
+            for problem in problems
+            if problem.worker is None and problem.sender is not None
+        ],
+    )
+
+
+def _days(days: set[date]) -> list[report_entering_contract.ReportsDay]:
+    """Dni od najstarszego, każdy z nazwą polskiego święta albo ``None``."""
+
+    holidays = {found: name for year in {day.year for day in days} for found, name in public_holidays(year).items()}
+    return [report_entering_contract.ReportsDay(day=day, holiday=holidays.get(day)) for day in sorted(days)]
+
+
+def _worker_day(
+    day: date, figure: ShownWorker | None, problems: list[ShownProblem], detailed: bool
+) -> report_entering_contract.ReportsWorkerDay:
+    """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem, zera) i problemami ``problems``; stan
+    zlecenia daje ``OrderState.of`` z numerów problemów dnia."""
+
+    numbers = {problem.number for problem in problems}
+    orders = () if figure is None else figure.orders_detail
+    if figure is None and not detailed:
+        orders = None
+    return report_entering_contract.ReportsWorkerDay(
         day=day,
-        days=sorted({today, *shown.days}, reverse=True),
-        workers=workers,
-        unknown_senders=[_problem(problem) for problem in problems if problem.worker is None],
+        orders=0 if figure is None else figure.orders,
+        entered=0 if figure is None else figure.entered,
+        mails=0 if figure is None else figure.mails,
+        without_report=[] if figure is None else list(figure.without_report),
+        problems=[_problem(problem) for problem in problems],
+        orders_detail=None
+        if orders is None
+        else [
+            report_entering_contract.ReportsOrder(
+                number=order.number,
+                successful=order.successful,
+                activities=order.activities,
+                state=OrderState.of(reported=order.reported, problem=order.number in numbers).value,
+            )
+            for order in orders
+        ],
     )
 
 
@@ -209,9 +244,7 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
             reported=difference.reported,
         )
     )
-    return report_entering_contract.ReportsProblem(
-        reason=problem.reason, number=problem.number, sender=problem.sender, keep=keep
-    )
+    return report_entering_contract.ReportsProblem(reason=problem.reason, number=problem.number, keep=keep)
 
 
 def conflict_note(copy: Path) -> str:
@@ -234,8 +267,8 @@ def report_entering_router(
         return host.start(entry.prepare())
 
     @router.get("/view", operation_id="getReportsView", responses=_UNREADABLE)
-    def view(day: date | None = None) -> report_entering_contract.ReportsView:
-        return entry.view(day)
+    def view() -> report_entering_contract.ReportsView:
+        return entry.view()
 
     @router.post("/keep", operation_id="keepManualValue", responses={**NOT_FOUND_OR_CONFLICT, **_UNREADABLE})
     def keep(cell: report_entering_contract.KeptCell) -> report_entering_contract.ReportsView:
