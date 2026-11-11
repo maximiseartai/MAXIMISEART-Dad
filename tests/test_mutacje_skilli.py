@@ -327,7 +327,9 @@ def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium() -> None:
     assert dead == []
 
 
-POZA_VERIFY_ROZLICZENIA: dict[str, str] = {}
+POZA_VERIFY_ROZLICZENIA: dict[str, str] = {
+    "src/rozliczenia/public_holidays.py": "święta kolumn dni widoku Raporty Centrum; żaden proces ich nie woła (#1319)",
+}
 
 
 def test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen() -> None:
