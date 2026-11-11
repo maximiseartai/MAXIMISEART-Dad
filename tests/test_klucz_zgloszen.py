@@ -51,9 +51,9 @@ class Skrzynka:
         self.keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock)
 
     def requests(self) -> int:
-        """Zapytania z kluczem, które doszły do skrzynki: listy, nowe issue i komentarze."""
+        """Zapytania z kluczem, które doszły do skrzynki: listy, nowe issue, komentarze i kroki Archiwum."""
 
-        return len(self.box.listed) + len(self.box.keys)
+        return len(self.box.listed) + len(self.box.keys) + self.box.archive_requests
 
 
 def accepted(skrzynka: Skrzynka) -> None:
@@ -116,6 +116,7 @@ ANSWERS: dict[str, tuple[Callable[[], FakeReportBox], Callable[[Skrzynka], objec
         lambda s: s.keyed.comment(7, "treść"),
         Rejected(),
     ),
+    "nowe-archiwum": (FakeReportBox, lambda s: s.keyed.open_archive("logi-2026-10", "tytuł", "opis"), Archive(1, ())),
 }
 
 
@@ -294,6 +295,7 @@ OPENINGS_FREE = {
     "nie-json": "uwaga-taty 3.0",
     "nie-slownik": "[3.0]",
     "stara-postac": json.dumps({"uwaga-taty": [3.0, "inny-zapis"]}),
+    "zapisy-nie-slownik": json.dumps({"zapisy": [], "issue": [], "archiwa": [], "pliki": [], "usuniete": []}),
     "nie-para": _notes({"uwaga-taty": [3.0]}),
     "nie-liczba": _notes({"uwaga-taty": ["trzy", "inny-zapis"]}),
 }
@@ -330,6 +332,36 @@ def test_issue_ktore_maks_zamknal_zaraz_po_zalozeniu_nie_wraca_na_liste_otwartyc
     every = keyed.labelled_issues("zgloszenie", include_closed=True)
     assert isinstance(every, tuple)
     assert [(issue.number, issue.closure is not None) for issue in every] == [(1, True)]
+
+
+def test_lista_z_zamknietymi_dolacza_swieze_issue_ktorego_nie_pokazuje_bez_drugiego_pytania() -> None:
+    """Lista z zamkniętymi pokazuje też issue, które Maks zamknął, więc świeże issue, którego na niej nie ma, nie jest
+    zamknięte i dołącza od razu."""
+
+    box = FakeReportBox(list_lag=True)
+    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(seconds=100.0))
+    assert keyed.open_issue("zgloszenie", "tytuł", "- Odcisk problemu: abc") == Sent(1)
+
+    assert _numbers(keyed.labelled_issues("zgloszenie", include_closed=True)) == [1]
+    assert box.listed == [("zgloszenie", True)]
+
+
+def test_archiwum_zaraz_po_zalozeniu_ma_wyslany_do_niego_plik_jako_doszly_w_calosci(tmp_path: Path) -> None:
+    """Lista Archiwów jeszcze nie pokazuje nowego Archiwum (#887), więc jego plik zna tylko plik zapisów; kolejka nie
+    usuwa go i nie wysyła drugi raz jak pliku urwanego w trakcie wysyłki (``Asset.uploaded``)."""
+
+    clock = ManualClock(seconds=100.0)
+    keyed = KeyedBox(
+        FakeReportBox(list_lag=True), lambda: KEY, clock=clock, opening=NotesFile(tmp_path / OPENING_FILE, replace_atomically)
+    )
+    archive = keyed.open_archive("logi-2026-10", "tytuł", "opis")
+    assert isinstance(archive, Archive)
+    sent = Asset(1, "uruchomienie.log.gz", "etykieta", True)
+    assert keyed.upload(archive.id, sent.name, sent.label, b"x") == sent
+
+    clock.pause(2.0)
+
+    assert keyed.archive("logi-2026-10") == Archive(archive.id, (sent,))
 
 
 def test_nowe_centrum_zaraz_po_zapisie_starego_zna_jego_issue_i_nie_czeka(tmp_path: Path) -> None:
