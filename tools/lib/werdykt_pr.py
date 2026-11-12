@@ -28,6 +28,8 @@ from enum import Enum
 import re
 from typing import Literal
 
+from stan_pr import Pull
+
 VERDICT_LINE = re.compile(r"WERDYKT: (PASS|FAIL) ([0-9a-f]{40})")
 FINDINGS_LINE = re.compile(r"Znaleziska: (\d+) \(Ważne (\d+), Drobne (\d+)\)")
 MAX_MINOR = 3
@@ -78,12 +80,13 @@ def text_lines(body: object) -> list[str]:
     return [line.strip() for line in str(body).splitlines() if line.strip()]
 
 
-def consent_problem(verdicts: Sequence[dict[str, object]], head: str, number: int) -> str | None:
-    """Przyczyna odmowy merge'a PR ``number``, gdy najnowszy werdykt dla ``head`` nie jest zgodą."""
+def consent_problem(pull: Pull) -> str | None:
+    """Przyczyna odmowy merge'a PR, gdy najnowszy werdykt dla jego HEAD nie jest zgodą."""
 
-    publish = f"tools/scal_pr.py {number} --werdykt PLIK"
+    head = pull.head
+    publish = f"tools/scal_pr.py {pull.number} --werdykt PLIK"
     latest = None
-    for verdict in verdicts:
+    for verdict in pull.verdicts:
         found = read(verdict, head)
         latest = found if found is not None and found.stance is not None else latest
     if latest is None:
