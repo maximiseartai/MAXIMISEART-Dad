@@ -22,8 +22,9 @@ from pathlib import Path
 
 import pytest
 
+ROOT = Path(__file__).resolve().parents[1]
 EXPLORER = (
-    Path(__file__).resolve().parents[1]
+    ROOT
     / ".agents"
     / "skills"
     / "verify-jedno-uruchomienie-naraz"
@@ -33,25 +34,18 @@ EXPLORER = (
 # Poniżej limitu 120 s pytest, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło wypisać.
 OWN_PROCESS_LIMIT_S = 100
 
-# Skrypt, który na końcu wypisuje nazwy wątków systemu uruchomionych w trakcie sprawdzenia.
+# Skrypt, który na końcu wypisuje nazwy wątków systemu uruchomionych w trakcie sprawdzenia; wątki liczy właściciel linii
+# wątków testu, także we własnym procesie.
 COUNTED = """
 import sys
-import threading
 
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[2])
 import explore_runs
+from tests.fixtures.linie_watkow import started_threads
 
-started = []
-start = threading.Thread.start
-
-
-def counted(thread):
-    started.append(thread.name)
-    start(thread)
-
-
-threading.Thread.start = counted
-code = explore_runs.main(sys.argv[2:])
+with started_threads() as started:
+    code = explore_runs.main(sys.argv[3:])
 print("wątki systemu:", ", ".join(started))
 raise SystemExit(code)
 """
@@ -79,7 +73,9 @@ import threading
 import time
 
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[2])
 import explore_runs
+from tests.fixtures.linie_watkow import new_line, threads_since
 
 explore_runs.STALL_SECONDS = 1.0
 held = threading.Lock()
@@ -98,12 +94,13 @@ def waiting(host, prepared):
 
 
 explore_runs.runs.RunHost.start = waiting
+since = new_line()
 report = explore_runs.explore(explore_runs.SCOPES["zamknij-w-trakcie"])
 for gap in report.gaps:
     print("LUKA:", gap)
 print(explore_runs.summarize([report]).lines[-1])
 schedules = report.schedules
-checker = next(thread for thread in threading.enumerate() if thread.name == "sprawdzenie przeplotów")
+checker = threads_since(since, named="sprawdzenie przeplotów")[0]
 held.release()
 checker.join(timeout=30)
 print("po zwolnieniu blokady:", "żyje" if checker.is_alive() else "skończony", report.schedules - schedules)
@@ -181,7 +178,7 @@ def test_sprawdzenie_przeplotow_prowadzi_watki_modelu_bez_watkow_systemu() -> No
     innymi workerami xdist sprawdzenie dochodziło do limitu 120 s pytest.
     """
 
-    code, lines = _in_own_process("-c", COUNTED, str(EXPLORER.parent), "--scope", "zamknij-w-trakcie")
+    code, lines = _in_own_process("-c", COUNTED, str(EXPLORER.parent), str(ROOT), "--scope", "zamknij-w-trakcie")
 
     # Jeden wątek systemu na całe sprawdzenie: biegną na nim wątki modelu, a wywołujący patrzy z zewnątrz, czy robią kroki.
     assert (code, lines[-2:]) == (0, ["URUCHOMIENIA OK", "wątki systemu: sprawdzenie przeplotów"]), "\n".join(lines)
@@ -197,7 +194,7 @@ def test_watek_modelu_czekajacy_poza_modelem_konczy_sprawdzenie_luka_modelu_z_na
     script = tmp_path / "czeka_na_blokade.py"
     script.write_text(HELD_AFTER_SHORT_WAITS, encoding="utf-8")
 
-    code, lines = _in_own_process(str(script), str(EXPLORER.parent))
+    code, lines = _in_own_process(str(script), str(EXPLORER.parent), str(ROOT))
 
     output = "\n".join(lines)
     assert code == 0, output
