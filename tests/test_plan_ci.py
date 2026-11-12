@@ -36,7 +36,7 @@ from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, 
 ROOT = Path(__file__).resolve().parents[1]
 
 FILES = [f"tests/test_{index:02}.py" for index in range(40)]
-# Plik dłuższy niż zadanie, jak test_uszkodzone_wejscia: 1100 s testów na Windows.
+# Plik dłuższy niż zadanie, jak test_uszkodzone_wejscia: 1100 s testów na Windows w 400 testach.
 LONG = "tests/test_dlugi.py"
 
 
@@ -57,12 +57,13 @@ BEZ_LOGOWANIA = _BezLogowania()
 
 
 def _times(per_file_s: float = 60.0) -> czasy_ci.Czasy:
-    """Czasy jednego runu main: każdy plik ``per_file_s`` na każdym torze, ``LONG`` 1100 s, i dwa zadania pytest toru."""
+    """Czasy jednego runu main: każdy plik ``per_file_s`` na każdym torze w 20 testach, ``LONG`` 1100 s w 400, i dwa
+    zadania pytest toru."""
 
     lanes: dict[str, dict[str, tuple[czasy_ci.Obserwacja, ...]]] = {}
     for lane in TORY:
-        keys: dict[str, tuple[czasy_ci.Obserwacja, ...]] = {f"pytest:{name}": (czasy_ci.Obserwacja(1, "A", per_file_s),) for name in FILES}
-        keys[f"pytest:{LONG}"] = (czasy_ci.Obserwacja(1, "B", 1100.0),)
+        keys: dict[str, tuple[czasy_ci.Obserwacja, ...]] = {f"pytest:{name}": (czasy_ci.Obserwacja(1, "A", per_file_s, 20),) for name in FILES}
+        keys[f"pytest:{LONG}"] = (czasy_ci.Obserwacja(1, "B", 1100.0, 400),)
         keys["narzut:pytest"] = (czasy_ci.Obserwacja(1, "A", 14.0), czasy_ci.Obserwacja(1, "B", 16.0))
         keys["krok:pytest"] = (czasy_ci.Obserwacja(1, "A", 20.0 * per_file_s / 4 + 30), czasy_ci.Obserwacja(1, "B", 1100.0 / 4 + 30))
         keys["krok:e2e"] = (czasy_ci.Obserwacja(1, "A", 61.0),)
@@ -125,6 +126,28 @@ def test_kazdy_plik_testow_biegnie_raz_na_kazdym_torze_a_udzialy_dlugiego_pliku_
         # Cały plik albo jego udziały, a cały tylko wtedy, gdy zmieścił się w celu ściany.
         assert (f"pytest:{LONG}" in units) == (count == 0) == (1100 / plan_ci.WORKERY < longest <= plan.cel_s), (lane, plan.cel_s)
     assert [job.id for job in plan.zadania if "krok:timing" in job.jednostki] != [] == [job for job in plan.zadania if "krok:timing" in job.jednostki and job.tor != "windows-3.14"]
+
+
+def test_dlugi_plik_dzieli_sie_najwyzej_na_tyle_udzialow_ile_testow_policzyly_mu_runy_main_a_bez_tej_liczby_biegnie_caly() -> None:
+    """Udział bez testu nie zgłasza wyniku i czerwieni Required (plik o 2 testach w 3 udziałach, run 43236423244)."""
+
+    few, uncounted = "tests/test_dwa_testy.py", "tests/test_bez_liczby.py"
+    czasy = _times()
+    # Dwa runy main: w runie 1 plik ``few`` biegł w dwóch udziałach (2 + 1 testy), w runie 2 cały w 2 testach.
+    observed = {
+        f"pytest:{few}": (czasy_ci.Obserwacja(1, "A", 550.0, 2), czasy_ci.Obserwacja(1, "B", 550.0, 1), czasy_ci.Obserwacja(2, "A", 1100.0, 2)),
+        f"pytest:{uncounted}": (czasy_ci.Obserwacja(1, "A", 1100.0),),
+    }
+    czasy = dataclasses.replace(czasy, tory={lane: {**keys, **observed} for lane, keys in czasy.tory.items()})
+    plan = _plan(czasy, [LONG, few, uncounted])
+
+    for lane in TORY:
+        units = sorted(unit for job in plan.zadania if job.tor == lane.nazwa for unit in job.jednostki if unit.startswith(("pytest:tests/test_d", "pytest:tests/test_b")))
+        longs = [unit for unit in units if unit.startswith(f"pytest:{LONG}#")]
+
+        # Każdy z trzech plików waży 275 s na workerach, kilka razy tyle, ile mieści zadanie.
+        assert len(longs) > 2, (lane, units)
+        assert [unit for unit in units if unit not in longs] == [f"pytest:{uncounted}", f"pytest:{few}#1/2", f"pytest:{few}#2/2"], lane
 
 
 def test_sciana_pliku_testow_w_planie_to_jego_czas_na_czterech_vcpu_runnera_githuba() -> None:

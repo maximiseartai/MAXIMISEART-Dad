@@ -2,7 +2,9 @@
 
 L to PR z samym plikiem testu (#416), C to zmiana Centrum (#461): ``src/``, frontend i drive skilla. Ich zmienione
 ścieżki i czasy CI jednego runu ``main`` leżą zamrożone w ``tests/fixtures/ksztalt_bramki``, więc plan zmienia się
-tylko z kodem planu i wyboru testów albo z grafem zależności testów repozytorium. Liczą się zadania runu bez Mutation
+tylko z kodem planu i wyboru testów albo z grafem zależności testów repozytorium. Run sprzed liczenia testów pliku w
+zapisie czasów dostał liczby testów z ``pytest --collect-only`` na 7af2cdd78 (12 888 testów), bo plan bez nich nie dzieli
+pliku na udziały. Liczą się zadania runu bez Mutation
 checks, a prognoza to najdłuższa ściana zadania z planu. Testy to pliki i węzły ``plik::test``,
 które biegną na każdym torze: limit zadań C przepuszcza wszystkie pliki na dwóch torach, a limit testów nie.
 

@@ -5,7 +5,7 @@ Zapis zadania (``Zapis``, ``wczytaj``). Każde zadanie ``pytest`` i ``mutations`
 
     {"wersja": 1, "run": 40259456807, "proba": 1, "szablon": "pytest", "zadanie": "pytest (Python 3.14, 1/4)",
      "tor": "windows-3.14", "zdarzenie": "push", "sha": "31bb7651...", "narzut_s": 17.0,
-     "jednostki": [{"klucz": "pytest:tests/test_adr.py", "s": 0.412, "status": "ok"}, ...], "bledy": [],
+     "jednostki": [{"klucz": "pytest:tests/test_adr.py", "s": 0.412, "status": "ok", "testy": 3}, ...], "bledy": [],
      "plan": "9f2c...", "zadanie_planu": "windows-3.14-1"}
 
 Tor to system runnera i jego Python (``windows-3.11``, ``windows-3.14``, ``linux-3.14``). Klucz jednostki nie zależy od
@@ -20,14 +20,14 @@ podziału na zadania, więc para tor i klucz wskazuje tę samą pracę w każdym
     skill:<skill>/ci         podstawa skilla w zadaniu Mutation checks
     skill:<skill>/<skrypt>   skrypt mutacji skilla; jego części z różnych zadań runu dają kilka obserwacji klucza
 
-Status jednostki to ``ok`` albo ``fail``; pominięty krok i pominięty skrypt nie są jednostką. ``plan`` to ``digest``
-planu, z którego zadanie biegło.
+Status jednostki to ``ok`` albo ``fail``; pominięty krok i pominięty skrypt nie są jednostką. ``testy`` ma tylko plik
+testów: ile jego testów (``<testcase>``) jest w junit zadania. ``plan`` to ``digest`` planu, z którego zadanie biegło.
 
 Scalenie. Na pushu do main ``Required CI status`` scala zapisy runu w ``czasy-ci.json`` (``tools/ci/zapis_czasow.py
 scal``, artefakt ``czasy-ci``, 30 dni), jedyne źródło czasów CI:
 
     {"wersja": 1, "runy": [{"run": 40259456807, "proba": 1, "sha": "31bb7651...", "zdarzenie": "push"}],
-     "tory": {"windows-3.14": {"narzut:pytest": [{"run": 40259456807, "proba": 1, "zadanie": "...", "s": 17.0, "status": "ok"}],
+     "tory": {"windows-3.14": {"narzut:pytest": [{"run": 40259456807, "proba": 1, "zadanie": "...", "s": 17.0, "status": "ok", "testy": null}],
                                "pytest:tests/test_adr.py": [...]}}}
 
 Obserwacje klucza idą po runie, próbie i zadaniu, więc te same zapisy dają ten sam plik bajt w bajt.
@@ -37,6 +37,9 @@ Odczyt. ``z_mainu`` daje ``Czasy`` z artefaktów ``czasy-ci`` ostatnich ``ILE_RU
 ``lokalne`` w ``katalog_checkoutu``, czyli ``.git/czasy-ci`` wspólnym dla worktree, odświeżanym co ``ODSWIEZ_S``. Bez
 sieci, bez ``gh`` i bez artefaktu ``Czasy`` są puste, a ``blad`` mówi dlaczego: czytający waży wtedy pracę domyślnie,
 zamiast padać. Obserwacje zadania z kilku prób runu liczą się z ostatniej.
+
+Liczba testów pliku (``Czasy.testy``) to najmniejsza z runów suma jego testów w zadaniach runu: plan CI nie dzieli pliku
+na więcej udziałów, niż ma testów, bo udział bez testu nie zgłasza wyniku i czerwieni ``Required CI status``.
 
 Koszt pliku testów (``KosztyPlikow``) to jego zmierzona praca, a pliku bez pomiaru mediana zmierzonych plików toru:
 tak ważą pliki plan CI, ``tools/szybko.py`` i test scalenia ``tools/scal_pr.py``. Dwa ostatnie liczą pracę pytestu
@@ -90,6 +93,7 @@ class Jednostka:
     klucz: str
     s: float
     status: Status
+    testy: int | None = None  # testy pliku w junit zadania; inna jednostka ich nie ma
 
 
 @dataclass(frozen=True)
@@ -113,6 +117,7 @@ class Obserwacja:
     run: int
     zadanie: str
     s: float
+    testy: int | None = None
 
 
 @dataclass(frozen=True)
@@ -143,6 +148,17 @@ class Czasy:
         for obserwacja in self.tory.get(tor, {}).get(klucz, ()):
             w_runie[obserwacja.run] += obserwacja.s
         return statistics.median(w_runie.values()) if w_runie else None
+
+    def testy(self, tor: str, klucz: str) -> int | None:
+        """Najmniej testów pliku w runach, które je policzyły (suma zadań runu, bo udziały pliku biegną w kilku), albo
+        ``None`` bez takiego runu: test dodany po starszym runie tylko zaniża liczbę, a usunięty liczy się od runu,
+        który go już nie miał."""
+
+        w_runie: dict[int, int] = defaultdict(int)
+        for obserwacja in self.tory.get(tor, {}).get(klucz, ()):
+            if obserwacja.testy is not None:
+                w_runie[obserwacja.run] += obserwacja.testy
+        return min(w_runie.values()) if w_runie else None
 
     def pliki(self, tor: str) -> dict[str, float]:
         return {
@@ -213,7 +229,7 @@ def _obserwacje(dokumenty: list[dict[str, Any]]) -> dict[str, dict[str, tuple[Ob
     for dokument in dokumenty:
         for tor, klucze in dokument["tory"].items():
             for klucz, obserwacje in klucze.items():
-                wybrane = [Obserwacja(o["run"], o["zadanie"], float(o["s"])) for o in obserwacje if o["proba"] == ostatnia[(tor, o["run"], o["zadanie"])]]
+                wybrane = [Obserwacja(o["run"], o["zadanie"], float(o["s"]), o.get("testy")) for o in obserwacje if o["proba"] == ostatnia[(tor, o["run"], o["zadanie"])]]
                 tory[tor][klucz] = (*tory[tor].get(klucz, ()), *wybrane)
     return tory
 

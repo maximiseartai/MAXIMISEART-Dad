@@ -70,6 +70,8 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 ## Plan runu, zadania pytest i Mutation checks
 
 - Ile zadań pytest startuje na każdym torze i które pliki testów (albo udziały długiego pliku) bierze każde, ustala zadanie `Plan CI` (`tools/plan_ci.py`) z czasów ostatnich zielonych runów `main`, a E2E i straż czasu dokłada do zadań Windows.
+- Długi plik dostaje najwyżej tyle udziałów, ile testów policzyły mu w junit runy `main` (najmniej z runów), a plik bez tej liczby biegnie cały, bo udział bez testu nie zgłasza wyniku i czerwieni `Required CI status`.
+  Plik, któremu PR usunął testy poniżej liczby jego udziałów, wciąż może dostać udział bez testu.
 - Plan dzieli kroki skilli (na PR podstawy `ci:` i skrypt mutacji modelu przy zmianie modelu, na `main` także każdy skrypt `check_*_mutations.py`) między zadania Mutation checks w tym samym limicie zadań runu i z tym samym celem ściany co pytest, a skrypt mutacji dłuższy niż zadanie dzieli na części, najwyżej po jednej na mutację.
 - Podstawę `ci:` plan dzieli tak samo, na najwyżej tyle części, ile mówi klucz `ci-czesci:` w `SKILL.md`, a podstawę bez niego nie dzieli wcale.
   Linia każdego toru w planie nazywa najdłuższą jednostkę po podziale, poniżej której ściana zadania nie zejdzie.
