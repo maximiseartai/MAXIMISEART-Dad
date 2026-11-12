@@ -9,7 +9,6 @@ Required czeka na każde zadanie runu.
 
 from __future__ import annotations
 
-import itertools
 import json
 import os
 from pathlib import Path
@@ -119,13 +118,31 @@ def test_kazde_zadanie_z_mutacjami_instaluje_ruff_i_mypy_bramy_typow_z_dodatku_d
 
 
 def _dependency_files(command: str) -> set[str]:
-    """Pliki zależności polecenia ``uv pip install``: plik ``-r`` i ``pyproject.toml`` instalacji ``-e .``."""
+    """Pliki zależności polecenia ``uv pip install``: plik ``-r``/``--requirement`` i ``pyproject.toml`` instalacji
+    katalogu repo (``-e``/``--editable`` albo pozycyjnie: ``.``, ``./``, ``.[dodatek]``). Parser jest zamknięty: zapis,
+    którego nie zna, kończy test błędem z tym zapisem, zamiast po cichu zgubić plik, z którego zadanie instaluje."""
 
-    return {
-        "pyproject.toml" if option == "-e" and value.split("[")[0] == "." else value
-        for option, value in itertools.pairwise(shlex.split(command))
-        if option in {"-r", "-e"}
-    }
+    def local(path: str) -> str:
+        assert path.split("[")[0].rstrip("/") == ".", f"instalacja spoza katalogu repo: {path!r} w {command!r}"
+        return "pyproject.toml"
+
+    tokens = shlex.split(command)
+    start = next(index for index in range(len(tokens) - 2) if tokens[index : index + 3] == ["uv", "pip", "install"]) + 3
+    files, rest = set(), iter(tokens[start:])
+    for token in rest:
+        if token == "--system":
+            continue
+        if token == "--python":
+            next(rest)
+        elif token in {"-r", "--requirement"}:
+            files.add(next(rest))
+        elif token in {"-e", "--editable"}:
+            files.add(local(next(rest)))
+        elif token.startswith("."):
+            files.add(local(token))
+        else:
+            raise AssertionError(f"nieznany zapis {token!r} w {command!r}: dopisz go do _dependency_files")
+    return files
 
 
 def test_zmiana_pliku_zaleznosci_zadan_krokow_skilli_uruchamia_kroki_skilli() -> None:
