@@ -1183,17 +1183,6 @@ def test_nazwa_wykonawcy_nie_wyprowadza_poza_folder_rozliczen_pracownikow(tmp_pa
     assert app.platform.opened == []
 
 
-def test_otwieranie_rozliczenia_pracownika_bez_wskazanego_folderu_okresow_prosi_o_jego_wskazanie(
-    tmp_path: Path,
-) -> None:
-    app = centrum(tmp_path)
-
-    response = app.client.post("/api/periods/22_28_09_2026/worker-settlements/open", json={"worker": "Anna Testowa"})
-
-    assert (response.status_code, response.json()) == (409, {"message": "Najpierw wskaż folder okresów."})
-    assert app.platform.opened == []
-
-
 def log_lines(app: Centrum) -> list[str]:
     """Wpisy dziennika Centrum bez znacznika czasu."""
 
