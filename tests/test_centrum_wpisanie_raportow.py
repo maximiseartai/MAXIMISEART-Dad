@@ -53,6 +53,8 @@ from rozliczenia.worker_reports import (
     OrderNumber,
     Reminder,
     ReportEntry,
+    SenderAddress,
+    SentReminder,
     SubjectFault,
     UnknownNumber,
     UnreadableSubject,
@@ -1508,6 +1510,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
         "days": [{"day": "2026-11-09", "holiday": None}],
         "workers": [],
         "unknown_senders": [],
+        "reminders_without_footer": False,
     }
     assert centrum.fake_inbox.days == read, "widok Raporty nie czyta skrzynki"
     assert datetime.fromisoformat(view["clicked_at"]) == ENTERING_NOW.astimezone()
@@ -1528,6 +1531,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "orders_detail": [
                         {"number": "40000002", "successful": None, "activities": None, "state": "without_report"}
                     ],
+                    "reminders": [],
                 }
             ],
         },
@@ -1546,6 +1550,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                         {"number": "40000001", "successful": "tak", "activities": "wymiana routera", "state": "entered"},
                         {"number": "40000005", "successful": None, "activities": None, "state": "without_report"},
                     ],
+                    "reminders": [],
                 }
             ],
         },
@@ -1701,6 +1706,7 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
         "problems": [{"reason": reason(unreadable), "number": None, "keep": None}],
         "notes": [],
         "orders_detail": [],
+        "reminders": [],
     }
 
 
@@ -2231,3 +2237,62 @@ def test_praca_przypomnien_nie_blokuje_wpisania_raportow_ktore_biegnie_w_trakcie
 
     assert view["result"]["result"] == "OK"
     assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska", "jan.testowy"]
+
+
+def _reminders_of(view: dict[str, Any], login: str) -> list[datetime]:
+    """Chwile Przypomnień o raporcie za 9.11 przy dniu Wykonawcy ``login`` w widoku Raporty."""
+
+    return [datetime.fromisoformat(moment) for moment in _worker(view, login)["reminders"]]
+
+
+def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stopki_do_sprawdzenia_po_dodaniu_pliku(
+    tmp_path: Path,
+) -> None:
+    """Kryterium #1351: po pracy przypomnień widok Raporty ma przy dniu 9.11 każdego Wykonawcy chwile wysłanych za ten
+    dzień przypomnień, z „Wysłanych” i z tego sprawdzenia, bez przypomnienia za inny dzień; brak pliku stopki widok mówi
+    do następnego sprawdzenia po dodaniu pliku, a odpowiedź nie ma adresów, tematu ani stopki (US 44–45, ADR 0030)."""
+
+    for_other_day = SentReminder(frozenset({SenderAddress(JAN)}), date(2026, 11, 8), datetime(2026, 11, 9, 8, 0).astimezone())
+    mailbox = FakeMailbox(sent=(for_other_day,))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum.tool, footer=None)
+    centrum.client.start()
+    _finished(centrum)
+    before = _view(centrum)
+    morning, evening = REMINDER_MORNING.astimezone(), datetime(2026, 11, 10, 18, 5).astimezone()
+
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.rhythm.tick()
+    after_morning = centrum.client.get("/api/report-entering/view")
+    (centrum.tool.config / REMINDERS_FOOTER).write_text("Pozdrawiam\nTata\n", encoding="utf-8")
+    mailbox.sent = (
+        for_other_day,
+        *(SentReminder(frozenset(reminder.recipients), reminder.day, at) for reminder, at in mailbox.sends),
+    )
+    centrum.moment.append(datetime(2026, 11, 10, 18, 5))
+    centrum.rhythm.tick()
+    after_evening = _view(centrum)
+    centrum.client.stop()
+
+    assert (_reminders_of(before, "jan.testowy"), before["reminders_without_footer"]) == ([], False)
+    shown = after_morning.json()
+    assert (_reminders_of(shown, "jan.testowy"), _reminders_of(shown, "anna.kowalska")) == ([morning], [morning])
+    assert shown["reminders_without_footer"] is True
+    assert _reminders_of(after_evening, "jan.testowy") == [morning, evening]
+    assert after_evening["reminders_without_footer"] is False
+    for secret in (JAN, ANNA, SKRZYNKA, "Przypomnienie: raport", "Pozdrawiam"):
+        assert secret not in after_morning.text, secret
+
+
+@pytest.mark.parametrize("content", [b"{\"schema_version\": 1, \"sent\": [", b"\xff\xfe nie JSON", b'{"schema_version": 2, "footer": "missing", "sent": []}'])
+def test_nieczytelny_wynik_przypomnien_nie_psuje_widoku_raporty(tmp_path: Path, content: bytes) -> None:
+    """Wynik pracy przypomnień, którego nie da się przeczytać (urwany, nie UTF-8, innej wersji), widok Raporty pomija:
+    pokazuje wynik kliknięcia bez pór przypomnień i bez informacji o stopce, a nie odmowę (#1351)."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    _finished(centrum)
+    (centrum.tool.config / REMINDERS_RESULT).write_bytes(content)
+
+    view = _view(centrum)
+
+    assert (_reminders_of(view, "jan.testowy"), view["reminders_without_footer"]) == ([], False)

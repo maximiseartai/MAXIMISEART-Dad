@@ -1,5 +1,5 @@
 import * as React from "react"
-import { FileSpreadsheetIcon, MailCheckIcon, SearchIcon } from "lucide-react"
+import { BellOffIcon, FileSpreadsheetIcon, MailCheckIcon, SearchIcon } from "lucide-react"
 
 import { getReportsView, keepManualValue, type ReportsView } from "@/api/centrum"
 import { LoadFailure } from "@/components/load-failure"
@@ -66,6 +66,7 @@ export function ReportsPage() {
           <SettingPath label="INTERMAX" icon={<FileSpreadsheetIcon />} path="order_register" />
         </div>
       </div>
+      {view.state === "ready" && view.data.reminders_without_footer ? <WithoutFooter /> : null}
       {view.state === "loading" ? <Skeleton className="h-64 w-full" aria-label="Wczytywanie Raportów" /> : null}
       {view.state === "failed" ? <LoadFailure what="Raportów" message={view.message} reload={reload} /> : null}
       {view.state === "ready" && ready === null ? <NoReports className={entrance} /> : null}
@@ -85,6 +86,16 @@ export function ReportsPage() {
 /** Nowy zakres w adresie, więc Wstecz w przeglądarce wraca do poprzedniego. */
 function showRange(range: DayRange) {
   window.location.hash = href("raporty", range.from, range.to)
+}
+
+/** Spokojna informacja, że ostatnie sprawdzenie przypomnień nie znalazło pliku stopki; znika po następnym z plikiem. */
+function WithoutFooter() {
+  return (
+    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+      <BellOffIcon className="size-3.5 shrink-0" aria-hidden />
+      Przypomnienia o raporcie idą bez Twojej stopki, bo brakuje jej pliku. Powiedz o tym Maksowi.
+    </p>
+  )
 }
 
 function NoReports({ className }: { className: string | undefined }) {

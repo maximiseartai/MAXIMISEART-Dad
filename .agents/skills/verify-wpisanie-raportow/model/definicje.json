@@ -31,8 +31,8 @@
   },
   "src/rozliczenia/centrum/report_entering_run.py": {
     "ReportEnteringEntry.keep": "c20ea2503a531687",
-    "ReportEnteringEntry.view": "6b81995cd11347db",
-    "_view": "f28e8003ae7128aa"
+    "ReportEnteringEntry.view": "dccec4156e2aa3a5",
+    "_view": "2fac76e69159e8ca"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
     "StateFile": "71beaa3fba9d5cdd"

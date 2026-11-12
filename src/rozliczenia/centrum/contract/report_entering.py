@@ -78,6 +78,9 @@ class ReportsWorkerDay(Model):
     problems: list[ReportsProblem]
     notes: list[ReportsNote]
     orders_detail: list[ReportsOrder] | None
+    reminders: list[datetime]
+    """Chwile wysłania Przypomnień o raporcie za ten dzień do tego Wykonawcy z ostatniego sprawdzenia pracy przypomnień,
+    od najstarszej (ADR 0030), bez adresów i tematów maili."""
 
 
 class ReportsWorker(Model):
@@ -116,3 +119,6 @@ class ReportsView(Model):
     days: list[ReportsDay]
     workers: list[ReportsWorker]
     unknown_senders: list[UnknownReportSender]
+    reminders_without_footer: bool
+    """Ostatnie sprawdzenie pracy przypomnień nie znalazło pliku stopki taty, więc Przypomnienia o raporcie idą bez
+    niej (spec #1344, US 44); bez treści stopki."""

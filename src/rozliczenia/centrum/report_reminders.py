@@ -22,7 +22,9 @@ porażka trafia do dziennika Centrum, bez adresów, Wykonawców i treści maili 
 dostaje raz, aż przyczyna się zmieni. Wynik ostatniego sprawdzenia w porze leży w ``REMINDERS_RESULT`` dla widoku
 Raporty: ``{schema_version: 1, checked_at, pora, failure, footer, sent: [{worker, day, sent_at}]}``, gdzie ``sent`` to
 przypomnienia z „Wysłanych” i z tego sprawdzenia przypisane Wykonawcom z listy adresów (pusta lista, gdy sprawdzenie
-nie doszło do „Wysłanych”), a ``footer`` to ``present``, ``missing`` albo ``null`` przed odczytem stopki.
+nie doszło do „Wysłanych”), a ``footer`` to ``present``, ``missing`` albo ``null`` przed odczytem stopki. Widok Raporty
+czyta go przez ``ReportReminders.shown`` tym samym kształtem (``_Result``): chwile wysłania po Wykonawcy i dniu i to, czy
+ostatnie sprawdzenie nie znalazło stopki (#1351).
 """
 
 from __future__ import annotations
@@ -30,11 +32,13 @@ from __future__ import annotations
 import codecs
 import json
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Final, Literal, Protocol
+
+from pydantic import BaseModel, ValidationError
 
 from rozliczenia import register_file, worker_addresses
 from rozliczenia.centrum import reminder_messages
@@ -119,6 +123,30 @@ class _Check:
     sent: list[tuple[str, date, datetime]] = field(default_factory=list)
 
 
+class _Sent(BaseModel):
+    worker: str
+    day: date
+    sent_at: datetime
+
+
+class _Result(BaseModel):
+    """Kształt pliku ``REMINDERS_RESULT``, który pisze ``ReportReminders._write``, w polach, które czyta widok Raporty."""
+
+    schema_version: Literal[1]
+    footer: Literal["present", "missing"] | None
+    sent: list[_Sent]
+
+
+@dataclass(frozen=True)
+class ShownReminders:
+    """Wynik ostatniego sprawdzenia przypomnień dla widoku Raporty: chwile wysłania (UTC, rosnąco, jak w pliku po
+    ``_write``) po Wykonawcy i dniu przypomnienia i to, czy sprawdzenie nie znalazło pliku stopki. Bez adresów, tematów
+    i treści maili (ADR 0030)."""
+
+    sent: Mapping[tuple[str, date], tuple[datetime, ...]] = field(default_factory=dict)
+    without_footer: bool = False
+
+
 class ReportReminders:
     """Praca Przypomnień o raporcie jednej pracy Centrum; ``check`` woła rytm, ``now`` to chwila ze strefą taty."""
 
@@ -158,6 +186,19 @@ class ReportReminders:
             self._log.unexpected_failure(failure, where="Przypomnienia o raporcie")
         finally:
             self._lock.release()
+
+    def shown(self) -> ShownReminders:
+        """Wynik ostatniego sprawdzenia z ``REMINDERS_RESULT``; bez pliku albo z plikiem nieczytelnym pusty, bo widok
+        Raporty pokazuje Wpisanie raportów także wtedy, gdy przypomnień nie ma albo ich wynik się zepsuł."""
+
+        try:
+            result = _Result.model_validate_json(self._result.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValidationError):
+            return ShownReminders()
+        sent: dict[tuple[str, date], tuple[datetime, ...]] = {}
+        for found in result.sent:
+            sent[found.worker, found.day] = (*sent.get((found.worker, found.day), ()), found.sent_at)
+        return ShownReminders(sent, without_footer=result.footer == "missing")
 
     def _check(self) -> None:
         now = self._now()
