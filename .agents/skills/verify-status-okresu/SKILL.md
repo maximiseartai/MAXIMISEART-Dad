@@ -24,7 +24,7 @@ pilnuje:
   - tools/lib/atrapy/skrzynka_raportow.py
   - tools/lib/eksplorator.py
   - tools/lib/rozjazd_modelu.py
-ci: .agents/skills/verify-status-okresu/scripts/explore_status_okresu.py
+ci: .agents/skills/verify-status-okresu/scripts/check_status_okresu_mutations.py
 ---
 
 # Verify Status okresu
