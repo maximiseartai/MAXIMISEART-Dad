@@ -22,7 +22,9 @@
     "_came_whole": "74cfead327507694",
     "BrowserEfenix.forward_to_accept": "98ec6e917f652182",
     "BrowserEfenix._refusal": "6db03a32bf79bec1",
-    "BrowserEfenix._status_answer": "b0c48e7935dd3344"
+    "BrowserEfenix._status_answer": "b0c48e7935dd3344",
+    "BrowserEfenix._go": "39c1032aa0fbd655",
+    "BrowserEfenix._reloaded": "b442ccdf419af511"
   },
   "src/rozliczenia/efenix_checks.py": {
     "listing": "8faac784be1d32ab"

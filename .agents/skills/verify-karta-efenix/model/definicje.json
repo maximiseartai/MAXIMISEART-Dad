@@ -1,6 +1,8 @@
 {
   "src/rozliczenia/efenix_browser.py": {
     "BrowserEfenix._blocked_cause": "d9d678806672ae76",
+    "BrowserEfenix._go": "39c1032aa0fbd655",
+    "BrowserEfenix._reloaded": "b442ccdf419af511",
     "BrowserEfenix.enter_quantity": "b869c4b5ef589c0a",
     "BrowserEfenix.load_emmett": "849d98d3d253cddb",
     "BrowserEfenix.open_order": "87742ecd03ff98a9",
