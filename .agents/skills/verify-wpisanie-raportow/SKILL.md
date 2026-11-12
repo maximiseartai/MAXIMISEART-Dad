@@ -278,17 +278,21 @@ is wrong:
 
 Left out: Przeniesienia zleceń (ADR 0029, #1347, #1350): a Wpis of another Wykonawca or with another day moves the
 order to them or to the day of the subject, and the cell's own entries go with the row to the `OrderKey` it has after
-the click, after a Przeniesienie and after Dad's change of `WYKONAWCA` or of the day alike, while the number has one
-row in its day or, gone from its day, in the open days (`_moves._following`), so for the one cell the model has it is
+the click, after a Przeniesienie and after Dad's change of `WYKONAWCA` or of the day alike, only while the number has
+one order in the days the process reads, after today too (`_moves._carried`), so for the one cell the model has it is
 the newest Wpis of `NowyMail`, whoever sent it and whichever day its subject has; a mistaken subject (two or more
 Wpisy with another day) only decides which order the Wpis reaches, and a Raport wykonawcy whose day lies in a period
 with a Plik zbiorczy reaches an order of an open day only that way, so both are `NowyMail` too. Dad's change of
-`WYKONAWCA` or of the day (the memory of the order `OwnMove`, found by `_model.memories_of`, and the rule
+`WYKONAWCA` or of the day (the memory of the number `OwnMove`, found by `_model.memories_of`, and the rule
 `_model.may_move`, whose transition table `tests/test_rdzen_raportow.py` checks as a property) only leaves an older
-Wpis in force, which `NowyMail` also covers. A number the open days hold in several orders moves none of them and
-reaches only the sender's one order in the day of the subject (`_matching.Board`), otherwise a problem, which also
-only leaves an older Wpis in force; after Dad merges two orders of a number into one, the own entries of both stay
-under their keys (`_moves._following`), so the cell counts as Dad's value, as after `TataZmienia`. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
+Wpis in force, which `NowyMail` also covers. A number the read days hold in several orders (a closed day or one after
+today too) moves none of them and reaches only the sender's one order in the day of the subject (`_matching.Board`),
+otherwise a problem, which also only leaves an older Wpis in force. Its cells keep no own entries in the memory
+(`_cells.reconcile`, #1367 r4: Excel does not tell which row of the number is which after Dad deletes, merges or swaps
+them), so after the click that wrote it the tool's own entry counts as Dad's value, as after `TataZmienia`: a later
+Wpis with another content gives a `ManualDifference` at the tool's own entry, which BezFalszywejRoznicy forbids for
+the model's one cell. The model leaves that cell out by design (direction safe: NieNadpisuje holds; decision for Maks
+in #1367). The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
 mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).
