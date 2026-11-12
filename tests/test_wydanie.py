@@ -317,46 +317,69 @@ def test_commit_bez_wpisow_kwarantanny_jest_do_wydania_bez_jej_zapisu(releasing:
     assert releasing.planned()["commit"] == merged
 
 
-@pytest.mark.parametrize(
-    ("source", "entries"),
-    [
-        (EMPTY, False),
-        ("KWARANTANNA: dict[str, Kwarantanna] = dict(WPISY)\n", True),
-        ("KWARANTANNA = {\n", True),
-        ("WPISY = {}\n", True),
-        (EMPTY + 'KWARANTANNA["tests/test_x.py::test_niestabilny"] = Kwarantanna(1, date(2026, 10, 30))\n', True),
-        (EMPTY + "KWARANTANNA.update(WPISY)\n", True),
-        (EMPTY + "KWARANTANNA |= WPISY\n", True),
-        (EMPTY + 'KWARANTANNA = {"tests/test_x.py::test_niestabilny": Kwarantanna(1, date(2026, 10, 30))}\n', True),
-        (EMPTY + "KWARANTANNA: dict[str, Kwarantanna] = dict(WPISY)\n", True),
-        (EMPTY + 'globals()["KWARANTANNA"].update(WPISY)\n', True),
-    ],
-    ids=[
-        "jedno puste przypisanie",
-        "nie dosłowny słownik",
-        "błąd składni",
-        "bez słownika",
-        "dopisany klucz",
-        "update",
-        "|=",
-        "drugie przypisanie",
-        "drugie przypisanie z adnotacją",
-        "przez globals()",
-    ],
+# Kwarantanna pusta w kształcie pliku repo: docstring i importy wokół jednego pustego przypisania, które tekst wymienia.
+EMPTY_LIKE_REPO = (
+    '"""Kwarantanna: wpisy ``KWARANTANNA.update`` dopisuje się w słowniku niżej."""\n'
+    "from datetime import date\n" + EMPTY + "# KWARANTANNA |= WPISY\n"
 )
-def test_kwarantanna_ma_wpisy_przy_kazdym_uzyciu_poza_jednym_pustym_przypisaniem(source: str, entries: bool) -> None:
-    assert niestabilne_testy.ma_wpisy(source) is entries
+# Źródło ``PLIK_KWARANTANNY`` w kolejnych commitach jednej historii i czy ``KWARANTANNA`` ma wpisy; ``None`` to commit
+# bez pliku. Ostatni wiersz (HEAD) ma wpisy, a puste stoją przed nim, więc odczyt z HEAD zamiast commitu pada.
+QUARANTINE_HISTORY: dict[str, tuple[str | None, bool]] = {
+    "brak pliku": (None, False),
+    "jedno puste przypisanie": (EMPTY, False),
+    "nie dosłowny słownik": ("KWARANTANNA: dict[str, Kwarantanna] = dict(WPISY)\n", True),
+    "pusta w kształcie pliku repo": (EMPTY_LIKE_REPO, False),
+    "błąd składni": ("KWARANTANNA = {\n", True),
+    "bez słownika": ("WPISY = {}\n", True),
+    "dopisany klucz": (EMPTY + 'KWARANTANNA["tests/test_x.py::test_niestabilny"] = Kwarantanna(1, date(2026, 10, 30))\n', True),
+    "update": (EMPTY + "KWARANTANNA.update(WPISY)\n", True),
+    "|=": (EMPTY + "KWARANTANNA |= WPISY\n", True),
+    "drugie przypisanie": (EMPTY + 'KWARANTANNA = {"tests/test_x.py::test_niestabilny": Kwarantanna(1, date(2026, 10, 30))}\n', True),
+    "drugie przypisanie z adnotacją": (EMPTY + "KWARANTANNA: dict[str, Kwarantanna] = dict(WPISY)\n", True),
+    "przez globals()": (EMPTY + 'globals()["KWARANTANNA"].update(WPISY)\n', True),
+}
 
 
-def test_wydanie_odmawia_gdy_test_z_kwarantanny_padl_w_ponowionym_runie_commitu(releasing: Releasing) -> None:
+@pytest.fixture(scope="module")
+def quarantine_history(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, dict[str, str]]:
+    """Repozytorium z commitem na każdy wiersz ``QUARANTINE_HISTORY`` i commit każdego wiersza."""
+
+    root = tmp_path_factory.mktemp("kwarantanna")
+    git(root, "init", "--quiet")
+    commits = {}
+    for row, (source, _) in QUARANTINE_HISTORY.items():
+        (root / "README.md").write_text(row + "\n", encoding="utf-8")
+        if source is not None:
+            (root / QUARANTINE_FILE).parent.mkdir(parents=True, exist_ok=True)
+            (root / QUARANTINE_FILE).write_text(source, encoding="utf-8")
+        commits[row] = commit(root, row)
+    return root, commits
+
+
+@pytest.mark.parametrize("row", QUARANTINE_HISTORY)
+def test_kwarantanna_z_drzewa_commitu_ma_wpisy_przy_kazdym_uzyciu_poza_jednym_pustym_przypisaniem(
+    quarantine_history: tuple[Path, dict[str, str]], row: str
+) -> None:
+    root, commits = quarantine_history
+
+    assert wydanie._has_quarantine(root, commits[row]) is QUARANTINE_HISTORY[row][1]
+
+
+@pytest.mark.parametrize(
+    ("conclusion", "quarantine", "state"),
+    [("failure", "przeszedł", "czerwone"), ("success", "padł", "kwarantanna czerwona")],
+)
+def test_wydanie_odmawia_gdy_ci_commitu_po_planie_stalo_sie_czerwone_albo_test_z_kwarantanny_padl(
+    releasing: Releasing, conclusion: str, quarantine: str, state: str
+) -> None:
     merged = releasing.merge(1, "feat: ilości usług", {"src/a.py": "a = 1\n", QUARANTINE_FILE: QUARANTINED})
     releasing.planned()
-    releasing.ci(merged, "success", "padł")
+    releasing.ci(merged, conclusion, quarantine)
 
     result = releasing.publish("--potwierdzone-przez-maksa")
 
     assert result.returncode == 1
-    assert result.stdout.splitlines()[-1] == f"WYDANIE ODMOWA | CI commitu {merged} nie jest już zielone (kwarantanna czerwona)."
+    assert result.stdout.splitlines()[-1] == f"WYDANIE ODMOWA | CI commitu {merged} nie jest już zielone ({state})."
     assert releasing.remote_tags() == {}
     assert releasing.posted() == []
 
