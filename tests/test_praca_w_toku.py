@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import itertools
 import json
@@ -344,15 +345,6 @@ _GITHUB_ONLY = (
     _Checkout("zdalna", None, frozenset({_REMOTE, _REMOTE_LATER}), pr=9, pr_files=_REMOTE.files | _REMOTE_LATER.files),
     _Checkout("niepobrana", None, frozenset({_UNFETCHED}), pr=10, pr_files=_UNFETCHED.files),
 )
-# Strony pełnego świata, które dzielą z „ja” plik albo commit: commit tych samych plików, stos na origin/zdalna, scalenie
-# origin/zdalna (wspólny commit, którego nakładanie się nie liczy, #1419 r1) i niezacommitowany szkic.py odłączonego HEAD.
-_OVERLAPPING_SIDES = (
-    (True, "wlasny", "czysty"),
-    (True, "na-remote", "czysty"),
-    (True, "merge", "czysty"),
-    (False, "merge", "czysty"),
-    (False, "brak", "zmiana"),
-)
 _PULL_REQUESTS = {
     "inny-g-wlasny-czysty": (8, {"wspolny.py", "tylko-w-pr.py"}),
     "ja": (7, {"wspolny.py"}),
@@ -400,13 +392,8 @@ def _expected_report(me: _Checkout, world: list[_Checkout], github: bool, compar
     return sorted(lines)
 
 
-def _world(tmp_path: Path, every_side: bool) -> list[_Checkout]:
-    """Worktree w każdej kombinacji: HEAD dołączony albo odłączony × commity × niezacommitowane pliki, plus rebase obu backendów i bisect.
-
-    Bez ``every_side`` z iloczynu tylko strony, które nakładają się z „ja”, i bez piaskownicy, gałęzi tylko na remote ani
-    gałęzi bez worktree: stan „ja” zmienia odniesienie, nakładania i werdykt, a nie klasyfikację innych stron, którą
-    sprawdza świat pełny.
-    """
+def _world(tmp_path: Path) -> list[_Checkout]:
+    """Worktree w każdej kombinacji: HEAD dołączony albo odłączony × commity × niezacommitowane pliki, plus rebase obu backendów i bisect."""
 
     origin, main = tmp_path / "origin.git", tmp_path / "main"
     git(tmp_path, "init", "--quiet", "--bare", "--initial-branch", "main", str(origin))
@@ -436,10 +423,9 @@ def _world(tmp_path: Path, every_side: bool) -> list[_Checkout]:
             (path / name).write_text(f"x = '{path.name}'\n", encoding="utf-8")
 
     world = []
-    sides = itertools.product(
+    for attached, commits, dirty in itertools.product(
         (True, False), ("brak", "wlasny", "przeniesienie", "merge", "na-remote"), ("czysty", "zmiana", "przeniesienie")
-    )
-    for attached, commits, dirty in sides if every_side else _OVERLAPPING_SIDES:
+    ):
         name = f"inny-{'g' if attached else 'o'}-{commits}-{dirty}"
         path = worktree(name, attached, "origin/zdalna" if commits == "na-remote" else "main")
         made: frozenset[_Commit] = frozenset()
@@ -469,24 +455,23 @@ def _world(tmp_path: Path, every_side: bool) -> list[_Checkout]:
         pr, pr_files = _PULL_REQUESTS.get(name, (None, set()))
         world.append(_Checkout(name if attached else None, path, made, changed, pr, frozenset(pr_files)))
 
-    if every_side:
-        pushed = worktree("tylko-na-remote", False, "origin/zdalna-druga")
-        world.append(_Checkout(None, pushed, frozenset({_Commit("zdalna-druga", frozenset({"zdalny.py"}), on_remote=True)})))
+    pushed = worktree("tylko-na-remote", False, "origin/zdalna-druga")
+    world.append(_Checkout(None, pushed, frozenset({_Commit("zdalna-druga", frozenset({"zdalny.py"}), on_remote=True)})))
 
-        sandbox = worktree("piaskownica", False, "inny-g-wlasny-czysty")
-        world.append(_Checkout(None, sandbox, next(side for side in world if side.branch == "inny-g-wlasny-czysty").commits))
+    sandbox = worktree("piaskownica", False, "inny-g-wlasny-czysty")
+    world.append(_Checkout(None, sandbox, next(side for side in world if side.branch == "inny-g-wlasny-czysty").commits))
 
-        without = worktree("bez-worktree", True)
-        write(without, frozenset({"wspolny.py"}))
-        commit(without, "praca")
-        git(main, "worktree", "remove", str(without))
-        world.append(_Checkout("bez-worktree", None, frozenset({_Commit("bez-worktree", frozenset({"wspolny.py"}))})))
+    without = worktree("bez-worktree", True)
+    write(without, frozenset({"wspolny.py"}))
+    commit(without, "praca")
+    git(main, "worktree", "remove", str(without))
+    world.append(_Checkout("bez-worktree", None, frozenset({_Commit("bez-worktree", frozenset({"wspolny.py"}))})))
 
-        deleted = worktree("usuniety", True)
-        write(deleted, frozenset({"wspolny.py"}))
-        commit(deleted, "praca")
-        shutil.rmtree(deleted)
-        world.append(_Checkout("usuniety", None, frozenset({_Commit("usuniety", frozenset({"wspolny.py"}))})))
+    deleted = worktree("usuniety", True)
+    write(deleted, frozenset({"wspolny.py"}))
+    commit(deleted, "praca")
+    shutil.rmtree(deleted)
+    world.append(_Checkout("usuniety", None, frozenset({_Commit("usuniety", frozenset({"wspolny.py"}))})))
 
     rebasing, rebasing_detached = worktree("rebasuje", True), worktree("rebasuje-odlaczony", False)
     rebasing_apply = worktree("rebasuje-apply", True)
@@ -542,60 +527,33 @@ def _world(tmp_path: Path, every_side: bool) -> list[_Checkout]:
     return world
 
 
-@dataclass(frozen=True)
-class _Built:
-    world: list[_Checkout]
-    github: str
-    compared: str
+# Każdy stan „ja” stoi w tym samym świecie jako osobny worktree, a dla pozostałych stanów jest zwykłą stroną modelu.
+# Uruchomienia narzędzia biegną naraz: każde to ok. 400 gitów, głównie start procesu (25–37 ms na Windows), i pięć po kolei
+# przekroczyło tam limit czasu testu (#1133). Jeden test buduje świat raz, a nie raz na worker xdist.
+_STATES = (("ja", True), ("ja-odlaczony", False), ("ja-na-zdalnej", True), ("rebasuje", False), ("szuka", False))
 
 
-def _built(tmp_path_factory: pytest.TempPathFactory, every_side: bool) -> _Built:
-    tmp_path = tmp_path_factory.mktemp("swiat")
-    world = _world(tmp_path, every_side)
+@pytest.mark.dlugi
+def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Path) -> None:
+    world = _world(tmp_path)
     answer = json.dumps(
         [
             {"number": pr, "headRefName": branch, "title": "", "body": "", "files": [{"path": p} for p in sorted(files)]}
             for branch, (pr, files) in _PULL_REQUESTS.items()
         ]
     )
-    return _Built(world, _fake_gh(tmp_path, answer), _compared(tmp_path / "main"))
+    with_github, compared = _fake_gh(tmp_path, answer), _compared(tmp_path / "main")
 
+    def report(name: str, github: bool) -> list[str]:
+        return sorted(_report(tmp_path / name, path=with_github if github else None).splitlines())
 
-# Świat raz na worker: narzędzie tylko go czyta, a każdy przypadek ogląda go z innego checkoutu.
-@pytest.fixture(scope="module")
-def full_world(tmp_path_factory: pytest.TempPathFactory) -> _Built:
-    return _built(tmp_path_factory, every_side=True)
+    with ThreadPoolExecutor(len(_STATES)) as pool:
+        reports = [pool.submit(report, name, github) for name, github in _STATES]
 
-
-@pytest.fixture(scope="module")
-def small_world(tmp_path_factory: pytest.TempPathFactory) -> _Built:
-    return _built(tmp_path_factory, every_side=False)
-
-
-# Jedno uruchomienie narzędzia na przypadek: to setki gitów po 25–37 ms na Windows, a pięć w jednym teście przekroczyło
-# tam limit czasu testu (#1133). Bez ``dlugi``, żeby xdist nie rozdał przypadków workerom, z których każdy buduje świat.
-# Czas rośnie z liczbą stron, więc pełny świat ogląda tylko „ja”, a pozostałe stany „ja” mały.
-@pytest.mark.parametrize(
-    ("world", "name", "github"),
-    [
-        pytest.param("full_world", "ja", True, id="ja-True"),
-        pytest.param("small_world", "ja-odlaczony", False, id="ja-odlaczony-False"),
-        pytest.param("small_world", "ja-na-zdalnej", True, id="ja-na-zdalnej-True"),
-        pytest.param("small_world", "rebasuje", False, id="rebasuje-False"),
-        pytest.param("small_world", "szuka", False, id="szuka-False"),
-    ],
-)
-def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(
-    request: pytest.FixtureRequest, world: str, name: str, github: bool
-) -> None:
-    built_world: _Built = request.getfixturevalue(world)
-    [me] = [side for side in built_world.world if side.path is not None and side.path.name == name]
-    assert me.path is not None
-
-    report = _report(me.path, path=built_world.github if github else None)
-
-    expected = _expected_report(me, built_world.world, github=github, compared=built_world.compared)
-    actual = sorted(report.splitlines())
-    mismatches = [f"brak {line}" for line in expected if line not in actual]
-    mismatches += [f"nadmiar {line}" for line in actual if line not in expected]
+    mismatches = []
+    for (name, github), future in zip(_STATES, reports, strict=True):
+        [me] = [side for side in world if side.path == (tmp_path / name).resolve()]
+        expected, actual = _expected_report(me, world, github=github, compared=compared), future.result()
+        mismatches += [f"{name}: brak {line}" for line in expected if line not in actual]
+        mismatches += [f"{name}: nadmiar {line}" for line in actual if line not in expected]
     assert not mismatches, "\n".join(mismatches)
