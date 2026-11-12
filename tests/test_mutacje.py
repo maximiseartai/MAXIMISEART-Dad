@@ -201,7 +201,8 @@ def test_pierwsza_strona_pomocy_ma_przepis_z_plikiem_json_ktory_narzedzie_przyjm
 
     whole = _mutacje("--help").stdout
     page = whole.splitlines()[:FIRST_PAGE]
-    rules = _mutacje("--zasady").stdout
+    answered = _mutacje("--zasady")
+    rules = answered.stdout
 
     start, end = page.index("    ["), page.index("    ]")
     example = tmp_path / "mutacje.json"
@@ -212,18 +213,21 @@ def test_pierwsza_strona_pomocy_ma_przepis_z_plikiem_json_ktory_narzedzie_przyjm
     assert "--zmiana src/rozliczenia/x.py 'if n > LIMIT:' 'if False:' \\ -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu" in text
     assert [phrase in text for phrase in ("``-p no:xdist`` pada", "``--baza``", f"najwyżej {ciezkie_ci.TARGETED} mutacji", "drukuje ``--zasady``")] == [True] * 4
     assert ("pytest-timeout" in whole, "ZAWIESZENIE to test, który pytest-timeout skończył" in rules) == (False, True)
+    assert answered.returncode == 0, answered.stderr
 
 
 @pytest.mark.parametrize(
     ("entries", "problem"),
     [
         ({"nazwa": "m"}, "plik mutacji to lista, nie dict"),
+        (["m"], "wpis 1 nie jest obiektem"),
+        ([{"zmiany": [["a.py", "x", "y"]]}], "wpis 1 ma zły albo brakujący klucz 'nazwa'"),
         ([{"nazwa": "m", "zmiana": [["a.py", "x", "y"]]}], "wpis 1 ma nieznany klucz 'zmiana'"),
         ([{"nazwa": "m", "zmiany": [["a.py", "x"]]}], "wpis 1 ma zły albo brakujący klucz 'zmiany'"),
         ([{"nazwa": "m", "zmiany": []}], "wpis 1 ma zły albo brakujący klucz 'zmiany'"),
         ([{"nazwa": "m", "zmiany": [["a.py", "x", "y"]]}, {"nazwa": "n", "zmiany": [["a.py", "x", "y"]], "polecenie": "-c"}], "wpis 2 ma zły albo brakujący klucz 'polecenie'"),
     ],
-    ids=["nie-lista", "nieznany-klucz", "zmiana-bez-zamiany", "zmiany-puste", "polecenie-tekstem"],
+    ids=["nie-lista", "wpis-nie-obiekt", "bez-nazwy", "nieznany-klucz", "zmiana-bez-zamiany", "zmiany-puste", "polecenie-tekstem"],
 )
 def test_plik_mutacji_innej_postaci_jest_odrzucony_z_postacia_pliku(tmp_path: Path, entries: object, problem: str) -> None:
     plan = tmp_path / "mutacje.json"
