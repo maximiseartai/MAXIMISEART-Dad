@@ -9,6 +9,9 @@ from datetime import date
 from typing import assert_never
 
 from . import (
+    ADDED_DIGITS,
+    AddBar,
+    Added,
     ConflictingVerdicts,
     ForeignOrder,
     HandedOver,
@@ -56,8 +59,11 @@ def reason(problem: ReportProblem) -> str:
                 f"{number} różne Wpisy: {said}, więc Centrum nie zmieniło tego zlecenia przy tym kliknięciu. Sprawdź z "
                 "Wykonawcą, który Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail."
             )
-        case UnknownNumber(worker=worker, day=day, number=number):
-            return f"Numer {number} nie jest zleceniem {worker} z {_day(day)}."
+        case UnknownNumber(worker=worker, day=day, number=number, bar=bar):
+            return (
+                f"Numeru {number} z Wpisu od {worker} z {_day(day)} nie ma w uporządkowanych zleceniach INTERMAX, a "
+                f"Centrum go nie dopisało, bo {_add_bar(bar, day)}."
+            )
         case ForeignOrder(worker=worker, day=day, number=number, owner=owner):
             return (
                 f"Zlecenie {number} z {_day(day)} jest zleceniem {owner}, a Wpis przysłał {worker}, więc Centrum go "
@@ -103,6 +109,8 @@ def note(found: ReportNote) -> str:
             return f"przeniesione na {_short(target_day)}"
         case SubjectLost(order_day=order_day):
             return f"pomylony temat: wpisane do zlecenia z {_short(order_day)}"
+        case Added():
+            return "dopisane z raportu, uzupełnij resztę"
         case _:
             assert_never(found)
 
@@ -127,6 +135,18 @@ def _bar(bar: MoveBar, day: date, order_day: date) -> str:
             return f"okres z dniem {_day(day)} ma już Plik zbiorczy"
         case MoveBar.CLOSED_SOURCE:
             return f"okres z dniem {_day(order_day)} ma już Plik zbiorczy"
+
+
+def _add_bar(bar: AddBar, day: date) -> str:
+    match bar:
+        case AddBar.PASTED:
+            return "INTERMAX ma go jako Surowe zlecenie: uporządkuj INTERMAX i kliknij jeszcze raz"
+        case AddBar.FORM:
+            return f"dopisuje tylko numer z {ADDED_DIGITS} cyframi, jak numer z aplikacji firmowej"
+        case AddBar.MISTAKEN_SUBJECT:
+            return "Raport wykonawcy ma pomylony temat (co najmniej dwa zlecenia z innego dnia)"
+        case AddBar.NOT_ORDERED:
+            return f"dzień {_day(day)} nie jest jeszcze uporządkowany w INTERMAX"
 
 
 def _subject(fault: SubjectFault) -> str:

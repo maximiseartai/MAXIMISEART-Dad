@@ -54,7 +54,7 @@ from pathlib import Path
 import platform
 from typing import Any, Final, assert_never
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import column_index_from_string
 from openpyxl.worksheet.worksheet import Worksheet
@@ -104,7 +104,7 @@ from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.raw_orders import SHIFT
-from rozliczenia.register_columns import COLUMNS, DAY_FILL, ORDERED_FONT, ORDERED_SIZE
+from rozliczenia.register_columns import COLUMNS, DATE, DAY_FILL, ORDER_NUMBER, ORDERED_FONT, ORDERED_SIZE
 from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
@@ -848,10 +848,13 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     """INTERMAX z uporządkowanych wierszy Kopii wejścia, Konfiguracja wykonawców i plik adresów z loginów Wpisów,
     Skrzynka raportów z maili w postaci kanonicznej (``worker_reports.as_mail``), pamięć wpisów z ``rollout_before`` i
     ``memory_before`` z decyzjami „Zostaw moją” z ``kept``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
-    zegar z dniem kliknięcia u taty."""
+    zegar z dniem kliknięcia u taty. Surowe zlecenia z numerem z Wpisu (``pasted``) stają na dole swojego arkusza z
+    krojem z aplikacji, bo Kopia wejścia Wpisania raportów ma tylko uporządkowane wiersze."""
 
     register, limits = _register_file(record, work, "intermax", lambda sheet, row: _ORDERED_FONT)
     entering = record.report_entering
+    if entering is not None and entering.pasted:
+        _add_pasted(register, entering)
     reads = [] if entering is None else [logged_read(mail) for mail in entering.mails]
     logins = sorted({read.worker for read in reads if not isinstance(read, ReadStranger)}) or [_NO_WORKER]
     senders = {login: _sender(f"wykonawca-{index}") for index, login in enumerate(logins)}
@@ -880,6 +883,26 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
         "worker_addresses": files.path("worker_addresses"),
     }
     return _Rebuilt(paths, parts, limits)
+
+
+def _add_pasted(register: Path, entering: LoggedReports) -> None:
+    """Surowe zlecenie z Logów pod ostatnim wierszem swojego arkusza (z pustym wierszem nad sobą): ``NUMER ZL.`` w
+    postaci z Wpisu (z zerem na początku, gdy Wpis go ma, inaczej liczbą) i dzień kliknięcia w ``DATA GODZ. POCZ.``, oba
+    krojem z aplikacji, więc proces czyta je jak Surowe zlecenie, a nie uporządkowane."""
+
+    numbers = _numbers(entering)
+    workbook = load_workbook(register)
+    for logged in entering.pasted:
+        sheet = workbook[logged.sheet]
+        header = {normalize_text(cell.value): cell.column for cell in sheet[1] if cell.value is not None}
+        texts = {text for (value, _, _), found in numbers.items() if value == logged.number for text in found}
+        zero = sorted(text for text in texts if text.startswith("0"))
+        row = sheet.max_row + 2
+        cells = {DATE: datetime.combine(entering.today, time()), ORDER_NUMBER: zero[0] if zero else logged.number}
+        for column, value in cells.items():
+            [place] = [header[name] for name in map(normalize_text, column.register_headers) if name in header]
+            sheet.cell(row, place, value).font = _PASTED_FONT
+    workbook.save(register)
 
 
 @dataclass
@@ -978,6 +1001,7 @@ def _saved(entering: LoggedReports) -> SavedState:
             logged.origin_name,
             logged.since,
             logged.overridden,
+            logged.added,
         )
         for logged in entering.moves_before
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime
 
 from . import _matching
@@ -29,9 +29,11 @@ def standing(
     unreadable: Sequence[ReadUnreadable],
     orders: Sequence[RegisterOrder],
     board: _matching.Board,
+    added: Mapping[OrderNumber, tuple[datetime, MailId]],
 ) -> set[ReportProblem]:
     """Problemy, które dalej stoją po poprawionych mailach (US 40); ``board``: zlecenia kliknięcia, jak w
-    ``enter_reports``.
+    ``enter_reports``, ``added``: numery Zleceń dopisanych z raportu w tym kliknięciu z chwilą i mailem, który je
+    dopisał.
 
     Stary mail zostaje w skrzynce, więc rdzeń liczy jego problemy przy każdym kliknięciu. Poprawionym mailem jest
     późniejszy Raport wykonawcy tego samego Wykonawcy z dnia poprawki, który ma numer każdego Wpisu wcześniejszego
@@ -40,7 +42,8 @@ def standing(
     raport bez tych numerów problemu nie usuwa, bo nieznany numer może być zleceniem, którego brak w INTERMAX.
     Poprawiony mail usuwa nieznany numer i cudze zlecenie z dnia z tematu, inną datę z dniem zlecenia (dzień
     poprawki to dzień zlecenia), Przeniesienie na dzień, do którego nie wolno, tak samo z dniem zlecenia i nieczytelny
-    temat (``unreadable``: odczyty maili z nieczytelnym tematem z numerami ich Wpisów). Ostrzeżenie
+    temat (``unreadable``: odczyty maili z nieczytelnym tematem z numerami ich Wpisów). Nieznany numer znika też, gdy
+    ten numer dopisał w tym kliknięciu późniejszy mail (od każdego Wykonawcy), bo zlecenie już jest. Ostrzeżenie
     o nieczytelnym temacie stoi, gdy któregoś odczytu z nim nie poprawiono, więc nie zależy od kolejności maili z tym
     samym Message-ID. Brak
     ``tak``/``nie`` i przeciwny zamiar Wpisów jednego numeru daje już najpóźniejszy mail z numerem, a numer dwa razy
@@ -74,6 +77,11 @@ def standing(
         numbers = frozenset(entry.number for entry in report.entries)
         for problem in board.match([report]).problems:
             match problem:
+                case UnknownNumber(number=number) if added.get(number, (report.arrived, report.mail)) > (
+                    report.arrived,
+                    report.mail,
+                ):
+                    continue
                 case UnknownNumber(day=day) | ForeignOrder(day=day):
                     on = {day}
                 case OtherDay(order_days=order_days):

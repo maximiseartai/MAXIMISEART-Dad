@@ -960,7 +960,9 @@ def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
     assert second["result"]["ending"] == "finished"
     produced = Produced(_archived_run(surroundings.report_box, tmp_path, second["run"]["id"]), ())
     problems = [problem["kind"] for problem in produced.record["report_entering"]["problems"]]
-    assert problems == ["unknown_sender"] * 3 + ["manual_difference", "unknown_number"], problems
+    assert problems == ["unknown_sender"] * 3 + ["manual_difference"], problems
+    added = [(found["number"], found["worker"]) for found in produced.record["report_entering"]["added"]]
+    assert added == [(40000099, "jan.testowy")], "nowy numer Jana z 8 cyframi to Zlecenie dopisane z raportu (#1354)"
     assert "klient nieobecny" in [change["value"] for change in produced.record["report_entering"]["changes"]]
     assert produced.record["report_entering"]["skipped"] == 2
     return produced
@@ -1535,7 +1537,9 @@ def test_klikniecie_po_zostaw_moja_odtwarza_sie_zgodnie_z_decyzja_z_logow(
 
     code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
 
-    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3 + ["unknown_number"]
+    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3
+    assert entering["added"] == [], "40000099 dopisało drugie kliknięcie, a trzecie go nie dubluje (#1354)"
+    assert [move["number"] for move in entering["moves_before"] if move["added"]] == [40000099]
     assert [(kept["number"], kept["column"], kept["value"]) for kept in entering["kept"]] == [(40000006, "SKUTECZNE", "tak")]
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 

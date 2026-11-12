@@ -9,12 +9,15 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
 - Odczyt danych: Pliki zbiorcze okresów okna (``scan_period_folders``), bo okres z Plikiem zbiorczym jest zamknięty, potem
   maile ze Skrzynki raportów od pierwszego dnia otwartego, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
   wklejania uporządkowane wiersze z dni od ``Window.start`` (tydzień przed pierwszym dniem otwartym, nie przed dniem
-  wdrożenia: ``raw_orders.ordered_rows``, w Kopii wejścia przez ``PasteArea.copy_rows``) oraz Dni uporządkowane
+  wdrożenia: ``raw_orders.ordered_rows``, w Kopii wejścia przez ``PasteArea.copy_rows``; z ``ADRES`` rdzeń dostaje
+  tylko to, czy ma wartość), numery Surowych zleceń z dołu arkusza (``raw_orders.pasted_rows``), których rdzeń nie
+  dopisuje, oraz Dni uporządkowane
   (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
 - Planowanie: rdzeń raportów;
-- Zapisywanie: komórki i Przeniesienia zleceń bez Kopii INTERMAX (``intermax_cells.write_cells``), a po udanym zapisie
+- Zapisywanie: komórki, Przeniesienia zleceń i Zlecenia dopisane z raportu bez Kopii INTERMAX
+  (``intermax_cells.write_cells``), a po udanym zapisie
   pamięć własnych wpisów
   z dniem wdrożenia, także przy zerze wpisanych komórek; kopia konfliktu OneDrive, która pojawiła się obok INTERMAX do
   końca zapisu, zatrzymuje kliknięcie już po zapisie pamięci i wyniku dla widoku Raporty, z podsumowaniem w faktach
@@ -53,9 +56,9 @@ from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting
 from .message import Message, StopError
 from .period_folder import PeriodFolder, PeriodFolderInaccessible, scan_period_folders
 from .phase_runner import PhaseRunner
-from .register_columns import COMPLETED, DATE, ORDER_NUMBER, SUCCESSFUL, WORKER
+from .register_columns import ADDRESS, COMPLETED, DATE, ORDER_NUMBER, SUCCESSFUL, WORKER
 from .register_file import OrderSheets, RegisterFile
-from .report_cells import CellChange, OrderMove, OrderRow
+from .report_cells import CellChange, OrderAdded, OrderMove, OrderRow
 from .run_context import RunContext
 from .settlement_period import SettlementPeriod, period_of
 from .workbook_files import WorkbookError
@@ -66,6 +69,7 @@ from .worker_reports import (
     Kept,
     MailRead,
     OrderKey,
+    OrderNumber,
     OrderedDay,
     OwnEntries,
     OwnEntry,
@@ -80,6 +84,7 @@ from .worker_reports import (
     WorkerAddresses,
     WorkerDay,
     enter_reports,
+    order_number,
 )
 
 __all__ = [
@@ -203,7 +208,8 @@ class EnteringFacts:
     ``kept``: decyzje „Zostaw moją” zleceń z Wpisem z migawki kliknięcia, ``moves_before``: pamięć zleceń (``OwnMove``)
     numerów, które mają Wpis w tym kliknięciu, z każdego dnia, bo zlecenie mogło przejść na inny dzień, a pamięć zostaje
     pod dniem, w którym zostawiło je Centrum. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
-    ``moves``: Przeniesienia zleceń do zapisu, ``notes``: informacje dla taty.
+    ``moves``: Przeniesienia zleceń do zapisu, ``added``: Zlecenia dopisane z raportu do zapisu, ``notes``: informacje
+    dla taty, ``pasted``: arkusz i numer każdego Surowego zlecenia z numerem, który ma Wpis w tym kliknięciu.
     """
 
     today: date
@@ -219,6 +225,8 @@ class EnteringFacts:
     moves: tuple[OrderMove, ...] = ()
     notes: tuple[ReportNote, ...] = ()
     moves_before: tuple[OwnMove, ...] = ()
+    added: tuple[OrderAdded, ...] = ()
+    pasted: tuple[tuple[str, OrderNumber], ...] = ()
 
 
 @dataclass
@@ -232,9 +240,10 @@ class EnteringSummary:
 
     @property
     def entered(self) -> int:
-        """Zlecenia, do których kliknięcie coś wpisało: tyle Wpisów raportu tata już nie przepisuje."""
+        """Zlecenia, do których kliknięcie coś wpisało, z Zleceniami dopisanymi z raportu: tyle Wpisów raportu tata już
+        nie przepisuje."""
 
-        return len({change.order for change in self.facts.changes}) if self.written else 0
+        return len({change.order for change in self.facts.changes}) + len(self.facts.added)
 
     @property
     def reports(self) -> int:
@@ -286,7 +295,13 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     today = clicked_at.date()
 
     def read() -> tuple[
-        Window, RegisterFile, tuple[RegisterOrder, ...], frozenset[OrderedDay], int, tuple[ReportMail, ...]
+        Window,
+        RegisterFile,
+        tuple[RegisterOrder, ...],
+        frozenset[OrderedDay],
+        dict[OrderNumber, str],
+        int,
+        tuple[ReportMail, ...],
     ]:
         closed = _closed(inputs.periods_directory, Window.periods(today, saved.rollout))
         window = Window.of(today, saved.rollout, closed)
@@ -307,9 +322,10 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         with _stops_unusable():
             register = register_file.read(register_path, files)
         orders = _orders(register, window.start, copy=files.copy is not None)
-        return window, register, orders, _ordered_days(register, window.start), outcome.skipped, outcome.mails
+        ordered = _ordered_days(register, window.start)
+        return window, register, orders, ordered, _pasted(register), outcome.skipped, outcome.mails
 
-    window, register, orders, ordered_days, skipped, mails = phases.read(read)
+    window, register, orders, ordered_days, pasted, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
         found = enter_reports(
@@ -321,6 +337,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 memory=saved.memory,
                 kept=saved.kept,
                 ordered_days=ordered_days,
+                pasted=frozenset(pasted),
             )
         )
         reported = {
@@ -358,6 +375,8 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             found.moves,
             found.notes,
             moves_before,
+            found.added,
+            tuple(sorted((sheet, number) for number, sheet in pasted.items() if number in numbers)),
         )
         return planned, found.memory, found.workers
 
@@ -368,7 +387,9 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             _stops(lambda: messages.unsupported_shape(register_path, _sheet(facts)), UnsupportedShape, facts=facts),
             _stops_unusable(facts),
         ):
-            written = write_cells(register, facts.changes, facts.moves, waiting=inputs.waiting, disk=inputs.disk)
+            written = write_cells(
+                register, facts.changes, facts.moves, facts.added, waiting=inputs.waiting, disk=inputs.disk
+            )
         match written:
             case Refusal():
                 message = intermax_messages.refused(written, register_path, register_path.parent, intermax_messages.ENTERING)
@@ -443,11 +464,14 @@ def _stops_unusable(facts: EnteringFacts | None = None) -> Iterator[None]:
 
 
 def _sheet(facts: EnteringFacts) -> str:
-    """Arkusz pierwszej zmiany albo pierwszego Przeniesienia: tam zapis trafił na kształt, którego nie przenosi."""
+    """Arkusz pierwszej zmiany, pierwszego Przeniesienia albo pierwszego dopisania: tam zapis trafił na kształt, którego
+    nie przenosi."""
 
     if facts.changes:
         return facts.changes[0].order.sheet
-    return facts.moves[0].order.sheet if facts.moves else ""
+    if facts.moves:
+        return facts.moves[0].order.sheet
+    return facts.added[0].sheet if facts.added else ""
 
 
 def _ordered_days(register: RegisterFile, since: date) -> frozenset[OrderedDay]:
@@ -459,6 +483,26 @@ def _ordered_days(register: RegisterFile, since: date) -> frozenset[OrderedDay]:
         with _stops(lambda: messages.unsupported_shape(register.path, area.sheet), UnsupportedShape):
             found |= {OrderedDay(area.sheet, day) for day in raw_orders.ordered_days(area.rows_from_bottom(), area.columns, since)}
     return frozenset(found)
+
+
+def _pasted(register: RegisterFile) -> dict[OrderNumber, str]:
+    """Numer każdego Surowego zlecenia z dołu każdego obszaru wklejania (``raw_orders.pasted_rows``, w przesuniętym
+    pierwszym wierszu ``raw_orders.SHIFT`` kolumn w lewo) z nazwą arkusza: rdzeń nie dopisuje zlecenia, które czeka w
+    INTERMAX na Uporządkowanie INTERMAX."""
+
+    assert isinstance(register.order_sheets, OrderSheets), "paste_areas zatrzymuje Rejestr bez arkuszy zleceń"
+    positions = {sheet.name: sheet.positions for sheet in register.order_sheets.sheets}
+    found: dict[OrderNumber, str] = {}
+    for area in paste_areas(register):
+        with _stops(lambda: messages.unsupported_shape(register.path, area.sheet), UnsupportedShape):
+            rows = raw_orders.pasted_rows(area.rows_from_bottom(), area.columns)
+            shifted = raw_orders.shifted_row(area.rows_from_bottom(), area.columns)
+        column = positions[area.sheet][ORDER_NUMBER]
+        for row in rows:
+            number = order_number(row.value(column - (raw_orders.SHIFT if row.number == shifted else 0)))
+            if number is not None:
+                found.setdefault(number, area.sheet)
+    return found
 
 
 def _orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[RegisterOrder, ...]:
@@ -483,6 +527,7 @@ def _orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[Registe
                 worker=row.value(at[WORKER]),
                 successful=row.value(at[SUCCESSFUL]),
                 completed=row.value(at[COMPLETED]),
+                address=row.value(at[ADDRESS]),
             )
             if order is not None:
                 orders.append(order)

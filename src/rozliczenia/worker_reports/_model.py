@@ -13,7 +13,7 @@ from enum import Enum, auto
 import hashlib
 from typing import ClassVar, Final, NewType, assert_never
 
-from ..report_cells import CellChange, OrderMove, OrderRow, ReportColumn
+from ..report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from ..settlement_period import SettlementPeriod, period_of
 from ..text import normalize_text
 
@@ -125,29 +125,44 @@ class OrderKey:
 class RegisterOrder:
     """Uporządkowane zlecenie INTERMAX z bieżącą wartością ``SKUTECZNE`` (``successful``) i ``CZYNNOŚCI ZREALIZOWANE``
     (``completed``); ``None`` to pusta komórka. ``worker_name``: ``WYKONAWCA`` tak, jak stoi w komórce, bez spacji na
-    brzegach: tę pisownię dostaje zlecenie przeniesione do tego Wykonawcy."""
+    brzegach: tę pisownię dostaje zlecenie przeniesione albo dopisane do tego Wykonawcy. ``addressed``: komórka
+    ``ADRES`` ma wartość; samego adresu rdzeń nie dostaje (ADR 0028)."""
 
     row: OrderRow
     key: OrderKey
     successful: str | None
     completed: str | None
     worker_name: str
+    addressed: bool
 
     @classmethod
     def of(
-        cls, row: OrderRow, *, number: object, started: object, worker: object, successful: object, completed: object
+        cls,
+        row: OrderRow,
+        *,
+        number: object,
+        started: object,
+        worker: object,
+        successful: object,
+        completed: object,
+        address: object,
     ) -> RegisterOrder | None:
         """Zlecenie z wartości komórek, jak je daje czytnik INTERMAX: numer jako liczba albo tekst (z „#” albo bez),
-        ``DATA GODZ. POCZ.`` jako data, Wykonawca po ``normalize_text``. ``None``, gdy wiersz nie ma numeru, dnia albo
-        Wykonawcy."""
+        ``DATA GODZ. POCZ.`` jako data, Wykonawca po ``normalize_text``, a z ``ADRES`` tylko to, czy ma wartość.
+        ``None``, gdy wiersz nie ma numeru, dnia albo Wykonawcy."""
 
-        order_number = _order_number(number)
+        found = order_number(number)
         day = started.date() if isinstance(started, datetime) else started
         login = normalize_text(worker)
-        if order_number is None or not isinstance(day, date) or not login:
+        if found is None or not isinstance(day, date) or not login:
             return None
         return cls(
-            row, OrderKey(order_number, day, Login(login)), _cell(successful), _cell(completed), str(worker).strip()
+            row,
+            OrderKey(found, day, Login(login)),
+            _cell(successful),
+            _cell(completed),
+            str(worker).strip(),
+            _cell(address) is not None,
         )
 
     def cell(self, column: ReportColumn) -> str | None:
@@ -158,7 +173,10 @@ class RegisterOrder:
                 return self.completed
 
 
-def _order_number(value: object) -> OrderNumber | None:
+def order_number(value: object) -> OrderNumber | None:
+    """``NUMER ZL.`` z wartości komórki, jak ją daje czytnik INTERMAX (liczba albo tekst z „#” albo bez); ``None``, gdy
+    to nie numer."""
+
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     if isinstance(value, int):
@@ -248,9 +266,10 @@ class OwnMove:
     była pusta; ręczna zmiana taty go nie przesuwa. ``origin_day``, ``origin_worker`` i ``origin_name`` (pisownia
     ``WYKONAWCA``): gdzie zlecenie stało przed pierwszym Przeniesieniem Centrum; bez Przeniesienia to samo miejsce co
     ``day`` i ``worker``. ``since``: chwila przyjścia najświeższego maila, na który Centrum zadziałało (przyjęło jego
-    Wpis albo przeniosło nim zlecenie), gdziekolwiek zlecenie wtedy stało; nigdy nie maleje. ``overridden``: tata zmienił
-    Wykonawcę albo dzień po Przeniesieniu Centrum, co zostaje, dopóki dzień ``day`` jest otwarty. Którego zlecenia w
-    INTERMAX dotyczy pamięć, mówi ``memories_of``.
+    Wpis, przeniosło nim zlecenie albo je nim dopisało), gdziekolwiek zlecenie wtedy stało; nigdy nie maleje.
+    ``overridden``: tata zmienił Wykonawcę albo dzień po Przeniesieniu Centrum, co zostaje, dopóki dzień ``day`` jest
+    otwarty. ``added``: Centrum dopisało to zlecenie z raportu (Zlecenie dopisane z raportu), a miejsce dopisania jest
+    jego miejscem sprzed Przeniesień. Którego zlecenia w INTERMAX dotyczy pamięć, mówi ``memories_of``.
 
     Tata widzi informację o Przeniesieniu, dopóki INTERMAX ma zlecenie tam, gdzie je zostawiło Centrum, a to miejsce
     różni się od miejsca sprzed pierwszego Przeniesienia."""
@@ -263,6 +282,7 @@ class OwnMove:
     origin_name: str
     since: datetime
     overridden: bool = False
+    added: bool = False
 
     def overridden_at(self, worker: Login, day: date) -> bool:
         """Czy tata zmienił miejsce zlecenia po Przeniesieniu Centrum, gdy INTERMAX ma je u ``worker`` w dniu ``day``:
@@ -343,8 +363,9 @@ class OrderedDay:
 @dataclass(frozen=True)
 class ReportInputs:
     """Wejście rdzenia: maile ze Skrzynki raportów, adresy Wykonawców, uporządkowane zlecenia INTERMAX z dni od
-    ``window.start``, dni otwarte, pamięć własnych wpisów, decyzje „Zostaw moją” i Dni uporządkowane każdego arkusza
-    zleceń od ``window.start`` (``ordered_days``)."""
+    ``window.start``, dni otwarte, pamięć własnych wpisów, decyzje „Zostaw moją”, Dni uporządkowane każdego arkusza
+    zleceń od ``window.start`` (``ordered_days``) i numery Surowych zleceń z dołu każdego arkusza zleceń (``pasted``),
+    których rdzeń nie dopisuje."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -353,6 +374,7 @@ class ReportInputs:
     memory: OwnEntries
     kept: frozenset[Kept]
     ordered_days: frozenset[OrderedDay] = frozenset()
+    pasted: frozenset[OrderNumber] = frozenset()
 
 
 class Verdict(Enum):
@@ -515,11 +537,33 @@ class ConflictingVerdicts:
     entries: tuple[ReportEntry, ...]
 
 
+class AddBar(Enum):
+    """Dlaczego numer z Wpisu raportu, którego INTERMAX nie ma w uporządkowanych zleceniach żadnego odczytanego dnia, nie
+    stał się Zleceniem dopisanym z raportu (ADR 0029), w kolejności, w jakiej rdzeń to sprawdza: INTERMAX ma go jako
+    Surowe zlecenie na dole arkusza zleceń, które czeka na Uporządkowanie INTERMAX (``PASTED``; dopisanie dałoby
+    zlecenie dwa razy), numer nie ma postaci numeru z aplikacji firmowej, czyli dokładnie ``ADDED_DIGITS`` cyfr
+    (``FORM``), Raport wykonawcy ma pomylony temat (``MISTAKEN_SUBJECT``) albo dzień z tematu nie jest Dniem
+    uporządkowanym w żadnym arkuszu zleceń (``NOT_ORDERED``)."""
+
+    PASTED = auto()
+    FORM = auto()
+    MISTAKEN_SUBJECT = auto()
+    NOT_ORDERED = auto()
+
+
+ADDED_DIGITS: Final = 8
+"""Tyle cyfr ma numer z aplikacji firmowej (jak w INTERMAX): tylko taki numer staje się Zleceniem dopisanym z raportu."""
+
+
 @dataclass(frozen=True)
 class UnknownNumber:
+    """Numeru z Wpisu Wykonawcy ``worker`` z dniem z tematu ``day`` nie ma w uporządkowanych zleceniach żadnego
+    odczytanego dnia INTERMAX, a Centrum go nie dopisało z powodu ``bar``."""
+
     worker: Login
     day: date
     number: OrderNumber
+    bar: AddBar
 
 
 @dataclass(frozen=True)
@@ -596,8 +640,9 @@ ReportProblem = (
     | ManualDifference
 )
 """Problem, który tata widzi z powodem (``reasons.reason``): nierozpoznany temat, nieznany nadawca, brak ``tak``/``nie``,
-przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data bez jednego
-zlecenia, ten sam numer dwa razy w dniu, Przeniesienie na dzień, do którego nie wolno, i różnica z ręczną wartością."""
+przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, którego Centrum nie dopisało, cudze zlecenie,
+inna data bez jednego zlecenia, ten sam numer dwa razy w dniu, Przeniesienie na dzień, do którego nie wolno, i różnica z
+ręczną wartością."""
 
 
 @dataclass(frozen=True)
@@ -655,10 +700,21 @@ class SubjectLost:
     order_day: date
 
 
-ReportNote = TakenOver | HandedOver | MovedFrom | MovedTo | SubjectLost
+@dataclass(frozen=True)
+class Added:
+    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: zlecenie ``number`` Centrum dopisało z raportu, a
+    INTERMAX nie ma jeszcze jego ``ADRES`` („dopisane z raportu, uzupełnij resztę”)."""
+
+    day: date
+    worker: Login
+    number: OrderNumber
+
+
+ReportNote = TakenOver | HandedOver | MovedFrom | MovedTo | SubjectLost | Added
 """Informacja dla taty o zmianie, którą Wpisanie raportów zrobiło w INTERMAX (ADR 0029): tylko numer, Wykonawca i dzień.
 Nie jest problemem ani Zgłoszeniem; zdanie daje ``reasons.note``. Przeniesienie stoi, dopóki INTERMAX ma zlecenie tam,
-gdzie postawiło je Centrum, a przegrany temat, dopóki jego Wpis jest zwycięskim Wpisem zlecenia."""
+gdzie postawiło je Centrum, przegrany temat, dopóki jego Wpis jest zwycięskim Wpisem zlecenia, a dopisane zlecenie,
+dopóki nie ma ``ADRES``."""
 
 
 def note_order(note: ReportNote) -> tuple[date, str, str, str, str]:
@@ -669,6 +725,8 @@ def note_order(note: ReportNote) -> tuple[date, str, str, str, str]:
             return note.day, note.worker, note.number, type(note).__name__, other
         case MovedFrom(origin_day=other_day) | MovedTo(target_day=other_day) | SubjectLost(order_day=other_day):
             return note.day, note.worker, note.number, type(note).__name__, other_day.isoformat()
+        case Added():
+            return note.day, note.worker, note.number, type(note).__name__, ""
         case _:
             assert_never(note)
 
@@ -722,9 +780,11 @@ class WorkerDay:
 class ReportsOutcome:
     """Wynik rdzenia. ``changes`` po arkuszu, wierszu i kolumnie, każda komórka najwyżej raz, w wierszach tak, jak je
     przeczytał proces; ``moves`` (Przeniesienia zleceń) po arkuszu i wierszu, każdy wiersz najwyżej raz, a zapis
-    przenosi wiersz już z komórkami z ``changes``; ``problems`` bez powtórzeń, w kolejności ``problem_order``;
-    ``notes`` (informacje dla taty) w kolejności ``note_order``; ``workers`` po dniu i Wykonawcy, po Przeniesieniach;
-    ``mails`` po chwili przyjścia. ``memory`` proces zapisuje dopiero po udanym zapisie INTERMAX."""
+    przenosi wiersz już z komórkami z ``changes``; ``added`` (Zlecenia dopisane z raportu) po arkuszu, dniu, Wykonawcy i
+    numerze, każdy numer najwyżej raz, a zapis dopisuje je po Przeniesieniach; ``problems`` bez powtórzeń, w kolejności
+    ``problem_order``; ``notes`` (informacje dla taty) w kolejności ``note_order``; ``workers`` po dniu i Wykonawcy, po
+    Przeniesieniach i dopisaniach; ``mails`` po chwili przyjścia. ``memory`` proces zapisuje dopiero po udanym zapisie
+    INTERMAX."""
 
     changes: tuple[CellChange, ...]
     problems: tuple[ReportProblem, ...]
@@ -733,6 +793,7 @@ class ReportsOutcome:
     memory: OwnEntries
     moves: tuple[OrderMove, ...]
     notes: tuple[ReportNote, ...]
+    added: tuple[OrderAdded, ...]
 
 
 def problem_order(
@@ -756,7 +817,9 @@ def problem_order(
             return problem.day, problem.worker, problem.number, kind, (owner,)
         case OtherDay(order_days=order_days):
             return problem.day, problem.worker, problem.number, kind, tuple(map(date.isoformat, order_days))
-        case ConflictingVerdicts() | UnknownNumber() | RepeatedOrder():
+        case UnknownNumber(bar=bar):
+            return problem.day, problem.worker, problem.number, kind, (bar.name,)
+        case ConflictingVerdicts() | RepeatedOrder():
             return problem.day, problem.worker, problem.number, kind, ()
         case RefusedMove(day=day, order_day=order_day, bar=bar):
             return problem.shown, problem.worker, problem.number, kind, (day.isoformat(), order_day.isoformat(), bar.name)

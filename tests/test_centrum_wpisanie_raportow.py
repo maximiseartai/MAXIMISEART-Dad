@@ -47,6 +47,7 @@ from rozliczenia.worker_report_inbox import (
     PasswordRejected,
 )
 from rozliczenia.worker_reports import (
+    AddBar,
     ConflictingVerdicts,
     Login,
     MailId,
@@ -1021,12 +1022,12 @@ def _click_at(centrum: EnteringCentrum, moment: datetime, mails: list[Any]) -> d
     return _finished(centrum)
 
 
-def test_pomylka_wykonawcy_w_numerze_daje_problem_a_jedyne_zlecenie_z_innego_dnia_przechodzi_na_dzien_z_tematu(
+def test_nowy_numer_jest_dopisany_a_jedyne_zlecenie_z_innego_dnia_przechodzi_na_dzien_z_tematu(
     tmp_path: Path,
 ) -> None:
-    """US 27–30: numer spoza zleceń daje problem z numerem, a Wpis Anny do zlecenia Jana przegrywa ze świeższym mailem
-    Jana (ADR 0029). Numer zlecenia Jana z 8.11 w Raporcie z 9.11 to jedyny niezgodny Wpis tego raportu, więc zlecenie
-    przechodzi na 9.11 z Wpisem (#1350), bez problemu."""
+    """ADR 0029: numer z 8 cyframi spoza zleceń (wcześniej problem, US 27–30 speca #1224) to Zlecenie dopisane z raportu
+    (#1354), a Wpis Anny do zlecenia Jana przegrywa ze świeższym mailem Jana. Numer zlecenia Jana z 8.11 w Raporcie z
+    9.11 to jedyny niezgodny Wpis tego raportu, więc zlecenie przechodzi na 9.11 z Wpisem (#1350), bez problemu."""
 
     centrum = entering_centrum(tmp_path, INTERMAX)
     _click_at(centrum, datetime(2026, 11, 8, 18), [])
@@ -1048,14 +1049,10 @@ def test_pomylka_wykonawcy_w_numerze_daje_problem_a_jedyne_zlecenie_z_innego_dni
         40000001: ("tak", "wymiana routera"),
         40000010: ("tak", "wymiana gniazda"),
     }
-    problems = _entering(centrum, view)["problems"]
-    assert [
-        (problem["kind"], problem["worker"], problem["number"], problem["owner"], problem["order_days"])
-        for problem in problems
-    ] == [("unknown_number", "jan.testowy", "30000077", None, [])]
-    assert {problem["day"] for problem in problems} == {"2026-11-09"}
+    assert _entering(centrum, view)["problems"] == []
+    assert [(added["number"], added["worker"]) for added in _entering(centrum, view)["added"]] == [(30000077, "jan.testowy")]
     assert _entering(centrum, view)["moves"] == [{"sheet": ORDER_SHEET, "row": 2, "day": "2026-11-09", "worker": "jan.testowy"}]
-    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
+    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 0, "unit": "count"}
 
 
 def test_ten_sam_numer_dwa_razy_u_wykonawcy_w_jednym_dniu_niczego_nie_wpisuje(tmp_path: Path) -> None:
@@ -1540,6 +1537,108 @@ def test_nadawca_bez_segmentu_w_dniu_dostaje_nowy_segment_na_miejscu_alfabetyczn
     assert not any(cell.value for cell in separator)
 
 
+def _address_written(register: Path, number: int) -> None:
+    """Tata wpisuje w Excelu ``ADRES`` dopisanego zlecenia ``number``."""
+
+    book = load_workbook(register)
+    [row] = [cell.row for cell in book[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == number]
+    book[ORDER_SHEET].cell(row, ADDRESS).value = "Ulica Testowa 7"
+    book.save(register)
+
+
+def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_przypomina_o_adresie_do_jego_wpisania(
+    tmp_path: Path,
+) -> None:
+    """Kryteria #1354 (ADR 0029, US 17–24): Jan przysłał Wpis numeru z 8 cyframi, którego INTERMAX nie ma w żadnym dniu.
+    Kliknięcie dopisuje wiersz pod ostatnim zleceniem Jana 9.11, przed pustym wierszem i żółtym wierszem dnia, z
+    ``NUMER ZL.``, dniem w ``DATA GODZ. POCZ.`` w formacie dat dnia, ``WYKONAWCA``, ``SKUTECZNE`` i ``CZYNNOŚCI
+    ZREALIZOWANE``, w wyglądzie uporządkowanego zlecenia bez Koloru operatora, zapisem bez Kopii INTERMAX; Logi mają
+    dopisanie. Okienko dnia Jana mówi „dopisane z raportu, uzupełnij resztę” bez treści ``ADRES``, a drugie kliknięcie
+    niczego nie dubluje. Gdy tata wpisze ``ADRES``, informacja znika."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak montaż ONT")])
+    date_format = _started(centrum.register, 40000001)[1]
+
+    view = _finished(centrum)
+    shown = _view(centrum)
+    after = centrum.register.read_bytes()
+    again = _finished(centrum)
+    unchanged = centrum.register.read_bytes() == after
+    still = _view(centrum)
+    _address_written(centrum.register, 40000077)
+    addressed = _finished(centrum)
+
+    assert _day_rows(centrum.register, 7) == [
+        (40000002, "anna.kowalska"),
+        "pusty",
+        (40000001, "jan.testowy"),
+        (40000077, "jan.testowy"),
+        "pusty",
+        "żółty",
+    ]
+    sheet = load_workbook(centrum.register)[ORDER_SHEET]
+    filled = {column: sheet.cell(5, column).value for column in range(1, LAST + 1) if column != ADDRESS}
+    assert {column: value for column, value in filled.items() if value is not None} == {
+        DATE: datetime(2026, 11, 9),
+        NUMBER: 40000077,
+        WORKER: "jan.testowy",
+        SUCCESSFUL: "tak",
+        COMPLETED: "montaż ONT",
+    }
+    assert sheet.cell(5, DATE).number_format == date_format
+    looks = [(cell.font.name, cell.font.sz, bool(cell.font.b), cell.border.left.style, cell.fill.fill_type) for cell in sheet[5][FIRST - 1 : LAST]]
+    assert looks == [("Calibri", 9 if column == WORKER else 8, column == WORKER, "thin", None) for column in range(FIRST, LAST + 1)]
+    assert not centrum.tool.intermax_copies.exists(), "Wpisanie raportów nie robi Kopii INTERMAX"
+    entering = _entering(centrum, view)
+    assert entering["added"] == [
+        {
+            "sheet": ORDER_SHEET,
+            "day": "2026-11-09",
+            "worker": "jan.testowy",
+            "number": 40000077,
+            "successful": "tak",
+            "completed": "montaż ONT",
+        }
+    ]
+    assert (entering["problems"], entering["moves"]) == ([], [])
+    assert view["result"]["summary"]["figures"][0] == {"label": "Wpisane", "value": 1, "unit": "count"}
+    jan = _worker(shown, "jan.testowy")
+    assert jan["notes"] == [{"number": "40000077", "text": "dopisane z raportu, uzupełnij resztę"}]
+    assert [order["number"] for order in jan["orders_detail"]] == ["40000001", "40000077"]
+    assert jan["problems"] == []
+    assert "Ulica" not in json.dumps(shown, ensure_ascii=False)
+    assert (_entering(centrum, again)["added"], _entering(centrum, again)["changes"]) == ([], [])
+    assert unchanged, "drugie kliknięcie nie zmienia INTERMAX"
+    assert _worker(still, "jan.testowy")["notes"] == jan["notes"]
+    assert (_entering(centrum, addressed)["added"], _entering(centrum, addressed)["changes"]) == ([], [])
+    assert _worker(_view(centrum), "jan.testowy")["notes"] == []
+
+
+def test_klikniecie_nie_dopisuje_zlecenia_ktore_czeka_w_intermax_jako_surowe_zlecenie(tmp_path: Path) -> None:
+    """Granica #1354: numer z Wpisu jest w INTERMAX jako Surowe zlecenie na dole arkusza (wklejone, jeszcze
+    nieuporządkowane). Dopisanie dałoby to zlecenie dwa razy po Uporządkowaniu INTERMAX, więc kliknięcie nie zmienia
+    INTERMAX, a problem mówi tacie, żeby uporządkował INTERMAX."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000004 tak montaż")])
+    before = centrum.register.read_bytes()
+
+    view = _finished(centrum)
+
+    assert centrum.register.read_bytes() == before
+    entering = _entering(centrum, view)
+    assert (entering["added"], [(problem["kind"], problem["bar"]) for problem in entering["problems"]]) == (
+        [],
+        [("unknown_number", "pasted")],
+    )
+    assert entering["pasted"] == [{"sheet": ORDER_SHEET, "number": 40000004}]
+    [problem] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert "INTERMAX ma go jako Surowe zlecenie: uporządkuj INTERMAX i kliknij jeszcze raz" in problem["reason"]
+
+
 def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesienia_ktore_zatrzymuja_reczna_zmiane(
     tmp_path: Path,
 ) -> None:
@@ -1590,6 +1689,7 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
             "origin_name": "jan.testowy",
             "since": jan_since,
             "overridden": False,
+            "added": False,
         },
         {
             "number": "40000005",
@@ -1600,6 +1700,7 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
             "origin_name": "jan.testowy",
             "since": anna_since,
             "overridden": False,
+            "added": False,
         },
     ]
     assert _entering(centrum, again)["moves"] == []
@@ -1751,7 +1852,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
         intermax,
         [
             report(JAN, SUBJECT, "40000001 tak wymiana routera"),
-            report(ANNA, SUBJECT, "40000009 tak montaż"),
+            report(ANNA, SUBJECT, "400000099 tak montaż"),
             report(STRANGER, SUBJECT, "40000002 nie brak"),
         ],
     )
@@ -1772,7 +1873,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
     assert centrum.fake_inbox.days == read, "widok Raporty nie czyta skrzynki"
     assert datetime.fromisoformat(view["clicked_at"]) == ENTERING_NOW.astimezone()
     assert view["days"] == [{"day": "2026-11-09", "holiday": None}]
-    unknown = UnknownNumber(Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("40000009"))
+    unknown = UnknownNumber(Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("400000099"), AddBar.FORM)
     assert view["workers"] == [
         {
             "worker": "anna.kowalska",
@@ -1783,7 +1884,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "entered": 0,
                     "mails": 1,
                     "without_report": ["40000002"],
-                    "problems": [{"reason": reason(unknown), "number": "40000009", "keep": None}],
+                    "problems": [{"reason": reason(unknown), "number": "400000099", "keep": None}],
                     "notes": [],
                     "orders_detail": [
                         {"number": "40000002", "successful": None, "activities": None, "state": "without_report"}

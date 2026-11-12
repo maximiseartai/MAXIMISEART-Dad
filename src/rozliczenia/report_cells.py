@@ -1,5 +1,5 @@
-"""Zmiany Wpisania raportów w INTERMAX: którą komórkę uporządkowanego zlecenia zmienić na jaki tekst i które zlecenie
-przenieść do którego Wykonawcy (Przeniesienie zlecenia, ADR 0029).
+"""Zmiany Wpisania raportów w INTERMAX: którą komórkę uporządkowanego zlecenia zmienić na jaki tekst, które zlecenie
+przenieść do którego Wykonawcy (Przeniesienie zlecenia) i które dopisać (Zlecenie dopisane z raportu, ADR 0029).
 
 Rdzeń Wpisania raportów zwraca listy takich zmian bez Excela, a zapis do INTERMAX (``intermax_cells.write_cells``)
 przyjmuje tylko je (ADR 0028). Moduł nie zna skoroszytu, więc rdzeń może go brać i w chmurze (#1161).
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import Enum
 
-__all__ = ["CellChange", "OrderMove", "OrderRow", "ReportColumn"]
+__all__ = ["CellChange", "OrderAdded", "OrderMove", "OrderRow", "ReportColumn"]
 
 
 class ReportColumn(Enum):
@@ -48,3 +48,19 @@ class OrderMove:
     order: OrderRow
     day: date
     worker: str
+
+
+@dataclass(frozen=True)
+class OrderAdded:
+    """Zlecenie dopisane z raportu: nowy wiersz w arkuszu zleceń ``sheet`` pod ostatnim zleceniem Wykonawcy ``worker``
+    (tekst ``WYKONAWCA``) w dniu ``day``, a gdy Wykonawca nie ma w tym dniu segmentu, w nowym segmencie na jego miejscu
+    w kolejności alfabetycznej. Wiersz ma tylko ``NUMER ZL.`` ``number`` (same cyfry), dzień w ``DATA GODZ. POCZ.``,
+    ``WYKONAWCA``, ``SKUTECZNE`` ``successful`` (``tak`` albo ``nie``) i ``CZYNNOŚCI ZREALIZOWANE`` ``completed``
+    (``None``: pusta); resztę uzupełnia tata."""
+
+    sheet: str
+    day: date
+    worker: str
+    number: str
+    successful: str
+    completed: str | None
