@@ -25,6 +25,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+from rozliczenia.file_state import file_state
 from rozliczenia.message import refer_if
 from rozliczenia.tool_files import NO_BROWSER_FLAG, TOOL_ROOT, centrum_script
 
@@ -90,7 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Skrót „Centrum rozliczeń” powstaje tylko na Windows. Przy rozwoju uruchom: python run_centrum.py")
         return 1
     windowless_python = Path(sys.executable).with_name("pythonw.exe")
-    if not windowless_python.is_file():
+    if file_state(windowless_python) != "file":
         print(
             "Co się stało: Nie utworzono skrótu, bo ten Python nie ma programu pythonw.exe.\n"
             f"Gdzie: folder {windowless_python.parent}\n"

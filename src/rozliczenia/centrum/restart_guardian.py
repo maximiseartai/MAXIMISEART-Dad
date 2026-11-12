@@ -44,6 +44,7 @@ from rozliczenia.centrum.tool_update import (
     UpdateResult,
     write_result,
 )
+from rozliczenia.file_state import file_state
 from rozliczenia.tool_files import TOOL_ROOT, port_free, start_command
 
 # Tyle czekają: stare Centrum na zamknięcie (otwarte połączenia karty do 5 s) i nowa wersja na pierwszą odpowiedź.
@@ -55,6 +56,7 @@ _SOURCE: Final = TOOL_ROOT / "src"
 # Pakiet-szkielet kopii: tylko moduły bez bibliotek narzędzia, które opiekun importuje.
 _COPIED: Final = (
     "rozliczenia/__init__.py",
+    "rozliczenia/file_state.py",
     "rozliczenia/message.py",
     "rozliczenia/tool_files.py",
     "rozliczenia/centrum/__init__.py",
@@ -218,7 +220,7 @@ def _windowless_python() -> str:
     """``pythonw.exe`` obok tego Pythona w Windows (bez okna konsoli, jak skrót); gdzie indziej ten sam Python."""
 
     windowless = Path(sys.executable).with_name("pythonw.exe")
-    return str(windowless) if sys.platform == "win32" and windowless.is_file() else sys.executable
+    return str(windowless) if sys.platform == "win32" and file_state(windowless) == "file" else sys.executable
 
 
 def _detached(command: list[str], cwd: Path) -> subprocess.Popen[bytes]:

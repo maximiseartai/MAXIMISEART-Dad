@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -17,7 +18,7 @@ import pytest
 
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
-from rozliczenia.period_folder import PeriodFolder
+from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible
 from rozliczenia import efenix_process
 from rozliczenia.centrum import app
 from rozliczenia.centrum.app import STATIC_DIRECTORY
@@ -488,6 +489,26 @@ def test_tablica_okresow_z_nieistniejacym_folderem_okresow_mowi_o_tym_wprost(tmp
     response = app.client.get("/api/periods")
 
     assert response.json() == {"state": "missing", "name": "INEA"}
+
+
+def test_plik_folderu_okresu_spoza_listowania_bez_dostepu_to_folder_niedostepny_a_nie_brak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = PeriodFolder(tmp_path, parse_period_token("22_28_09_2026"))
+    folder.directory.mkdir()
+    real_stat = Path.stat
+
+    def stat(path: Path, **kwargs: Any) -> os.stat_result:
+        if path == folder.collective_file:
+            raise PermissionError(errno.EACCES, "Odmowa dostępu")
+        return real_stat(path, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+
+    with pytest.raises(PeriodFolderInaccessible) as raised:
+        folder.observe()
+
+    assert raised.value.folder == folder.directory
 
 
 def test_tablica_okresow_pokazuje_status_okresu_kazdego_folderu_okresu_od_najnowszego(tmp_path: Path) -> None:

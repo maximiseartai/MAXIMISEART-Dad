@@ -162,6 +162,7 @@ STDLIB_ONLY = {
     "rozliczenia/__init__.py": "pakiet, który wczytuje każdy moduł poniżej",
     "rozliczenia/centrum/__init__.py": "pakiet, który wczytuje każdy moduł Centrum",
     "rozliczenia/message.py": "Komunikat startu o brakującej bibliotece musi działać bez zależności",
+    "rozliczenia/file_state.py": "opiekun ponownego startu i Aktualizacja narzędzia pytają przez niego o stan pliku",
     "rozliczenia/decision.py": "moduły procesu biorą z niego rozmowę bez zależności od rdzenia Uruchomienia",
     "rozliczenia/tool_files.py": "układ plików narzędzia czytają launcher przed FastAPI i opiekun ponownego startu",
     "rozliczenia/centrum/version.py": "launcher pyta o wersję, zanim wczyta FastAPI",

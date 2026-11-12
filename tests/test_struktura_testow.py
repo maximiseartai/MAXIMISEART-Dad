@@ -774,7 +774,7 @@ def test_straznik_nazw_watkow_zglasza_kopie_nazwy_z_kazdej_czytanej_postaci_w_te
 
 def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
     """Dowód braku fałszywych alarmów każdej formy każdej zapadki: z bazą w pustym drzewie gita każda linia ``tests/``
-    jest dodana, a zapadki przechodzą, więc żadna forma nie trafia w dzisiejszy, poprawny test.
+    i ``src/`` jest dodana, a zapadki przechodzą, więc żadna forma nie trafia w dzisiejszy, poprawny test ani kod.
 
     Biegnie tu, a nie w ``tests/test_zapadki.py``, bo pomiar zapadek kładzie tamten plik na starych commitach, których
     ``tests/`` miało jeszcze własne wyrocznie, a moduł testu niczego nie eksportuje, więc zapadki biegną osobnym pytest.
