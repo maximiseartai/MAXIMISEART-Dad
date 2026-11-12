@@ -54,7 +54,7 @@ def _parts(shape: object) -> list[str] | None:
 
 def gaps(explorer: Path) -> list[str]:
     scripts = explorer.parent
-    sys.path.insert(0, str(scripts))
+    sys.path.insert(0, str(scripts))  # noqa: TID251 - katalog scripts skilla, którego conftest nie kładzie
     module = __import__(explorer.stem)
     found: list[str] = []
     entries: dict[str, list[str]] = {}
@@ -98,8 +98,8 @@ GAPS = 3
 """Kod wyjścia, gdy eksplorator ma luki; inny niż 0 i 3 to błąd czytania."""
 
 if __name__ == "__main__":
-    sys.path.insert(0, sys.argv[1])
-    sys.path.insert(0, str(Path(sys.argv[1]) / "lib"))
+    sys.path.insert(0, sys.argv[1])  # noqa: TID251 - skrypt biegnie osobnym procesem, bez conftest
+    sys.path.insert(0, str(Path(sys.argv[1]) / "lib"))  # noqa: TID251 - skrypt biegnie osobnym procesem, bez conftest
     found = gaps(Path(sys.argv[2]).resolve())
     print(json.dumps(found, ensure_ascii=False))
     raise SystemExit(GAPS if found else 0)

@@ -1,0 +1,34 @@
+# Ruff takes banned-api from the nearest configuration file whole instead of adding to its parent's table: the first
+# entries copy the table of pyproject.toml (tests/test_zakazy_ruff.py checks that none is lost), and the last ones
+# hold only in drive/, each with a sample in tests/test_zakazy_ruff.py. A helper of common.py that needs a banned
+# name puts # noqa: TID251 - <reason> on its line.
+extend = "../../../../../pyproject.toml"
+
+[lint.flake8-tidy-imports.banned-api]
+"os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
+"rozliczenia.centrum.refusal._CATALOG".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.refusal._Catalog".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.refusal._refused".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.process_kind._CATALOG".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
+"rozliczenia.centrum.process_kind._Catalog".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
+"rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
+"rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
+"rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
+# Deleting, moving or replacing a file or folder fails on Windows while the server holds it open (WinError 32, #921);
+# the retrying helpers of drive/common.py wait it out. Forms ruff cannot resolve (a method on an instance, p.unlink())
+# are the guard _removals of centrum_self_test.py.
+"os.remove".msg = "delete a file of the run with remove of drive/common.py, which retries while the server holds it open (#921)"
+"os.unlink".msg = "delete a file of the run with remove of drive/common.py, which retries while the server holds it open (#921)"
+"os.rmdir".msg = "delete an empty folder of the run with remove_empty_folder of drive/common.py, which retries while the server looks into it (#921)"
+"os.removedirs".msg = "delete an empty folder of the run with remove_empty_folder of drive/common.py, which retries while the server looks into it (#921)"
+"shutil.rmtree".msg = "delete a folder of the run with remove_tree of drive/common.py, which retries while the server holds a file in it open (#921)"
+"os.rename".msg = "rename a file or folder of the run with move of drive/common.py, which retries while the server holds it open (#921)"
+"os.renames".msg = "rename a file or folder of the run with move of drive/common.py, which retries while the server holds it open (#921)"
+"shutil.move".msg = "rename a file or folder of the run with move of drive/common.py, which retries while the server holds it open (#921)"
+"pathlib.Path.move".msg = "rename a file or folder of the run with move of drive/common.py, which retries while the server holds it open (#921)"
+"pathlib.PosixPath.move".msg = "rename a file or folder of the run with move of drive/common.py, which retries while the server holds it open (#921)"
+"pathlib.WindowsPath.move".msg = "rename a file or folder of the run with move of drive/common.py, which retries while the server holds it open (#921)"
+"os.replace".msg = "put a file in place with replace_file of drive/common.py, which retries while the server holds the target open (#921)"
+"pathlib.Path.replace".msg = "put a file in place with replace_file of drive/common.py, which retries while the server holds the target open (#921)"
+"pathlib.PosixPath.replace".msg = "put a file in place with replace_file of drive/common.py, which retries while the server holds the target open (#921)"
+"pathlib.WindowsPath.replace".msg = "put a file in place with replace_file of drive/common.py, which retries while the server holds the target open (#921)"
