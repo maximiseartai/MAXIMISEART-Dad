@@ -12,10 +12,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 import threading
 from typing import Final, Generic, TypeVar
+
+from rozliczenia.wall_clock import utc_now
 
 SHOWN_FAILING_AFTER_S: Final = 60.0
 # Strona ponawia nieudany odczyt co 3 s; dłuższa cisza znaczy, że nikt nie patrzył (ukryta karta, inna strona).
@@ -121,7 +123,7 @@ class LastGoodReads(Generic[T]):
     def succeeded(self, path: Path, value: T, attempt: Attempt) -> GoodRead[T]:
         with self._lock:
             file = self._files.setdefault(path, _File())
-            file.last = GoodRead(value, attempt.version, datetime.now(timezone.utc))
+            file.last = GoodRead(value, attempt.version, utc_now())
             file.failing = None
             return file.last
 

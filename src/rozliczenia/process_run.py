@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Generic, Literal, Protocol, Self, TypeVar
@@ -30,6 +29,7 @@ from .progress import PhaseState, ProgressProjection, ProgressSnapshot
 from .telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from .write_routes import RouteCounts
 from .run_clock import RunClock
+from .wall_clock import utc_now
 
 __all__ = [
     "Counter",
@@ -352,7 +352,7 @@ def run_process(
 
     dry_run = process.dry_run(inputs)
     mode = RunMode.of(dry_run=dry_run)
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = utc_now().isoformat()
     clock = context.clock
     started = clock.now()
     observation = _Observation(interlocutor)

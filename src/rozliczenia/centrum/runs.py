@@ -20,7 +20,7 @@ import threading
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Final, Protocol
 
 import anyio
@@ -45,6 +45,7 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, RunResult, Stop
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
+from rozliczenia.wall_clock import utc_now
 
 _STREAM_POLL_SECONDS: Final = 0.05
 _KEEPALIVE_SECONDS: Final = 15.0
@@ -131,7 +132,7 @@ class EndedRun:
         progress: runs_contract.Progress,
         started_at: datetime,
     ) -> EndedRun:
-        return cls(info, core, stopped, progress, started_at, datetime.now(timezone.utc), prepared.input_copy)
+        return cls(info, core, stopped, progress, started_at, utc_now(), prepared.input_copy)
 
     @property
     def result(self) -> RunResult:
@@ -388,7 +389,7 @@ class RunHost:
         return stopped
 
     def remember(self, prepared: PreparedRun[Any, Any], run_id: str, since: datetime) -> None:
-        self._centrum_runs.remember(prepared.kind.key, run_id, prepared.metrics, since, datetime.now(timezone.utc))
+        self._centrum_runs.remember(prepared.kind.key, run_id, prepared.metrics, since, utc_now())
 
     def failed(self, failure: Exception) -> None:
         """Wyniku Uruchomienia nie dało się pokazać."""
@@ -447,7 +448,7 @@ class Run:
         self._prepared = prepared
         self._stops = stops
         self.info = prepared.info(uuid.uuid4().hex)
-        self.started_at = datetime.now(timezone.utc)
+        self.started_at = utc_now()
         self._progress = prepared.progress_view(ProgressProjection().snapshot)
         self._stale = False
         self._decided: Signal = threads.Event()

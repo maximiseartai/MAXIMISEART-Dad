@@ -24,6 +24,7 @@ from .domain import (
     WorkerStarted,
     WorkerStatus,
 )
+from .wall_clock import utc_now
 
 KeyT = TypeVar("KeyT")
 ValueT = TypeVar("ValueT")
@@ -92,10 +93,6 @@ def _immutable_mapping(values: Mapping[KeyT, ValueT]) -> Mapping[KeyT, ValueT]:
     return MappingProxyType(dict(values))
 
 
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 class ProgressProjection:
     """Jedyny interpretator Zdarzeń przebiegu.
 
@@ -104,7 +101,7 @@ class ProgressProjection:
     w której się dzieją, więc chwila nadejścia to chwila zdarzenia.
     """
 
-    def __init__(self, now: Callable[[], datetime] = _utc_now) -> None:
+    def __init__(self, now: Callable[[], datetime] = utc_now) -> None:
         self._now = now
         self._phase_states = {ProgressPhase(phase): PhaseState.PENDING for phase in PHASES}
         self._phase_durations_ms = {ProgressPhase(phase): 0 for phase in PHASES}

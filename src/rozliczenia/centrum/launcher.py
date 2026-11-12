@@ -58,6 +58,7 @@ from rozliczenia.tool_files import (
     centrum_script,
     listen_locally,
 )
+from rozliczenia.wall_clock import epoch_s
 
 _HEALTH_TIMEOUT_S = 5  # drugie kliknięcie skrótu może trafić na Centrum, które jeszcze startuje
 _SHORTCUT_HOLDS_PORT_S = 10  # skrót kliknięty w trakcie ponownego startu oddaje port po odczycie dziennika (#246)
@@ -127,7 +128,7 @@ def _start(
 
     try:
         interrupted = None if started_by_guardian else ToolClone(TOOL_ROOT).interrupted_update()
-        guardian_may_run = interrupted is not None and interrupted.guardian_may_run(time.time())
+        guardian_may_run = interrupted is not None and interrupted.guardian_may_run(epoch_s())
         if interrupted is not None and not guardian_may_run:
             _roll_back(interrupted)
     except BaseException:

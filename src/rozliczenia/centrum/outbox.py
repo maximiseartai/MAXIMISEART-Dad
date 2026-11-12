@@ -65,7 +65,7 @@ import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, BinaryIO, Final, Literal, Protocol, assert_never, get_args
@@ -91,6 +91,7 @@ from rozliczenia.centrum.report_box import (
     archive_url,
     newest_with_line,
 )
+from rozliczenia.wall_clock import utc_now
 
 if sys.platform == "win32":
     import msvcrt
@@ -654,10 +655,6 @@ def _unlink(path: Path) -> None:
 LOCAL_QUEUE_DISK: Final = QueueDisk(read=_read_text, write=replace_atomically, remove=_unlink)
 
 
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _in_thread(drain: Callable[[], None]) -> None:
     """Przejście kolejki w nowym wątku ``QUEUE_THREAD``, który nie trzyma zamknięcia Centrum."""
 
@@ -1189,7 +1186,7 @@ class Outbox:
         addresses: Path | None = None,
         disk: QueueDisk = LOCAL_QUEUE_DISK,
         start: Callable[[Callable[[], None]], None] = _in_thread,
-        now: Callable[[], datetime] = _utc_now,
+        now: Callable[[], datetime] = utc_now,
     ) -> None:
         """``disk`` czyta, zapisuje i usuwa pliki kolejki, a ``start`` uruchamia przejście (``_drain``) w tle; inne niż
         domyślne daje tylko wyrocznia ``verify-kolejka-skrzynki``, która decyduje o każdym kroku. ``now`` to zegar

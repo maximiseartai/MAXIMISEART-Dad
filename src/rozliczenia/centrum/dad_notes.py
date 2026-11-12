@@ -18,7 +18,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Final
 
 from fastapi import APIRouter
@@ -36,6 +35,7 @@ from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, Outbox
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.version import version_label
 from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.wall_clock import utc_now
 
 RECENT_RUNS: Final = 6
 
@@ -132,7 +132,7 @@ def send(
 
     issue = note_issue(request.title, request.body, commit, pinned, forbidden)
     run_id = None if pinned is None else pinned.run.run_id
-    note = Case(NOTE, uuid.uuid4().hex, issue.title, commit, datetime.now(timezone.utc), number=None, run_id=run_id)
+    note = Case(NOTE, uuid.uuid4().hex, issue.title, commit, utc_now(), number=None, run_id=run_id)
     cases.add(note)
     logs_on_the_way = pinned is not None and pinned.logs is None
     queued = outbox.post(note_post(note.id, issue.title, issue.body, logs_on_the_way=logs_on_the_way))

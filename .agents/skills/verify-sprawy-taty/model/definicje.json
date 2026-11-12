@@ -28,13 +28,13 @@
     "Reports.__init__": "5cb3d34fabd0e2d5",
     "Reports.handle": "5b8dc9ce041dbe39",
     "Reports._heard": "85f65a53791e3c05",
-    "Reports._queue": "21b62582ddcce42c",
+    "Reports._queue": "c9198a7ca79b1ccf",
     "Reports._pending": "933676e05a1deb0a",
     "Reports._ask_box": "dd0928ff48ccdd20",
     "Reports._state_of": "92c365569ed8ffdb"
   },
   "src/rozliczenia/centrum/dad_notes.py": {
-    "send": "bc5f5ece58a78ccf"
+    "send": "7566c51df10966c7"
   },
   "src/rozliczenia/centrum/case_delivery.py": {
     "case_outbox": "f61164f509cfb309",

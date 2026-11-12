@@ -54,7 +54,7 @@ from . import report_entering_messages as messages
 from .domain import ProgressPhase
 from .input_checks import workers
 from .intermax_cells import CellsWritten, Rejected, write_cells
-from .intermax_ordering import local_now, paste_areas
+from .intermax_ordering import paste_areas
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting
 from .message import Message, StopError
 from .period_folder import PeriodFolder, PeriodFolderInaccessible, scan_period_folders
@@ -91,6 +91,7 @@ from .worker_reports import (
     enter_reports,
     order_number,
 )
+from .wall_clock import local_now
 
 __all__ = [
     "ClickResult",

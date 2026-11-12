@@ -1,4 +1,5 @@
-"""Zegar Centrum u taty (``SYSTEM_CLOCK``) i wątki w tle, na które zamknięcie Centrum nie czeka.
+"""Zegar Centrum u taty (``SYSTEM_CLOCK``), wątki w tle, na które zamknięcie Centrum nie czeka, i zegar ścienny
+(``rozliczenia.wall_clock``) w strefie komputera.
 
 Testy Centrum podstawiają ``ManualClock``, więc prawdziwy budzik i wątek sprawdzenia klucza sprawdza tylko ten plik.
 """
@@ -9,10 +10,15 @@ import os
 import subprocess
 import sys
 import threading
+from datetime import date, timedelta
 from pathlib import Path
+import time
+
+import pytest
 
 from rozliczenia.centrum.clock import SYSTEM_CLOCK
 from rozliczenia.centrum.keyed_box import KeyedBox
+from rozliczenia.wall_clock import dad_today, local_now, utc_now
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,3 +63,23 @@ def test_zamkniecie_centrum_nie_czeka_na_budzik_ani_na_skrzynke_bez_odpowiedzi()
     )
 
     assert finished.returncode == 0
+
+
+def test_dzien_taty_jest_dniem_strefy_komputera_a_nie_dniem_utc(monkeypatch: pytest.MonkeyPatch) -> None:
+    if sys.platform == "win32":
+        pytest.skip("time.tzset jest tylko w systemach POSIX")
+    # UTC+14 i UTC−12 dzieli 26 h, więc w każdej chwili mają inną datę, a dzień UTC byłby w obu strefach ten sam.
+    seen: dict[str, tuple[date, timedelta | None, timedelta | None]] = {}
+    try:
+        for zone in ("Etc/GMT-14", "Etc/GMT+12"):
+            monkeypatch.setenv("TZ", zone)
+            time.tzset()
+            seen[zone] = (dad_today(), local_now().utcoffset(), utc_now().utcoffset())
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    east, west = seen["Etc/GMT-14"], seen["Etc/GMT+12"]
+    assert east[0] > west[0]
+    assert (east[1], west[1]) == (timedelta(hours=14), timedelta(hours=-12))
+    assert east[2] == west[2] == timedelta(0)

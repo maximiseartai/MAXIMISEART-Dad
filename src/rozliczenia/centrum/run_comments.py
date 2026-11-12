@@ -72,7 +72,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime
 from functools import cache, partial
 from pathlib import Path
 import platform
@@ -108,6 +108,7 @@ from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.period_folder import PeriodFolderInaccessible
+from rozliczenia.wall_clock import utc_now
 
 PROGRESS_S: Final = 300.0
 """Odstęp między postępami jednej Wyceny w efenix na zegarze Centrum (#846: „najwyżej co 5 minut”)."""
@@ -328,7 +329,7 @@ class RunComments:
             last = self._last
             if last is None or last.record.run_id != run_id:
                 return
-            logged = logged_diagnosis(diagnosis, diagnosed_at=datetime.now(timezone.utc))
+            logged = logged_diagnosis(diagnosis, diagnosed_at=utc_now())
             logs = last.with_diagnosis(logged, self._forbidden)
             if logs is None:
                 return
