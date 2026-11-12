@@ -8,8 +8,10 @@ and a second failure keeps the alert and gives the button back. One shared
 component draws it (`frontend/src/components/load-failure.tsx`), so a page
 without it is a dead end this feature catches. A page with several reads
 (Okresy: Ustawienia taty, the board, the key numbers) shows one alert, and its
-button reads every failed one again. The card `Uporządkowanie INTERMAX`
-(`/api/intermax`) and the card `Kopie INTERMAX` (`/api/intermax/copies`) use the same
+button reads every failed one again. The card `Uporządkuj INTERMAX`
+(`/api/intermax`, `Nie udało się odczytać Uporządkowania INTERMAX`, and its `dni INTERMAX`), the card `Kopie INTERMAX`
+(`/api/intermax/copies`), the side panel `karty Uruchomienia` and Raporty (`/api/report-entering/view`,
+`Raportów`, and apart from it `/api/report-entering`, `Wpisania raportów`, under the header button) use the same
 component, but this feature does not drive their failed reads.
 
 ## Sub-features

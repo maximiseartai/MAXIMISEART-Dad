@@ -37,7 +37,13 @@ from atrapy.workbooks import excel_lock
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SERVE = REPO_ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "serve_centrum.py"
 # Pages of the sidebar menu in its order: contract id (`#/<id>`, `PageId`) and the heading Dad reads.
-PAGES = {"okresy": "Okresy", "uruchomienia": "Uruchomienia", "metryki": "Metryki", "konfiguracja": "Konfiguracja"}
+PAGES = {
+    "okresy": "Okresy",
+    "uruchomienia": "Uruchomienia",
+    "raporty": "Raporty",
+    "metryki": "Metryki",
+    "konfiguracja": "Konfiguracja",
+}
 # Dad's computer runs on Polish time; dates in Centrum are shown in the browser's time zone.
 DAD_TIME_ZONE = ZoneInfo("Europe/Warsaw")
 # Dad's screen: the drive's tab and every other tab it opens unless a feature needs another window.

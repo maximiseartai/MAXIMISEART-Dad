@@ -33,5 +33,5 @@ Preconditions:
 ## Gotchas
 
 - The settings button's accessible name is the verb plus the label: `Zmień Folder okresów` with a capital F, while the empty state's button is `Wskaż folder okresów`.
-- `29_05_10_2026` crosses the month; the fixture puts it in the October folder. Centrum does not decide a period's month: it searches every month folder, so a period in any one month is on the board (a period in two months is shown once, from the first).
+- `29_05_10_2026` crosses the month; the fixture puts it in the October folder. Centrum does not decide a period's month: it searches every month folder, so a period in any one month is on the board (a period in two months is shown once, from the first, but opening it or starting an Uruchomienie of it is refused with 409 until Dad leaves it in one month; not driven).
 - The step changes the remembered folder okresów; it must restore `INEA` before the next feature, which expects the flat fixture.

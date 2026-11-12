@@ -23,7 +23,7 @@ INACCESSIBLE_WORKER_CONFIG = (
 
 
 def _configuration_snapshot(files: dict[str, Path]) -> dict[str, tuple[bytes, int]]:
-    """Bytes and modification time of the konfiguracja wykonawców and the three Wzorce, plus every lock file."""
+    """Bytes and modification time of every configuration file of the fixture, plus every lock file."""
 
     config = next(iter(files.values())).parent
     paths = [*files.values(), *config.glob(f"{EXCEL_LOCK_PREFIX}*")]

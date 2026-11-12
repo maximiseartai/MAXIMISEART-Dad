@@ -43,6 +43,7 @@ the Token do Zgłoszeń is there and whether the skrzynka accepts it, never its 
 ## How to get to it (user POV)
 
 - Uruchomienia: a stop with `Diagnoza`; after it, region `Diagnoza` holds `Wyślij do Maksa` and `Co zostanie wysłane`, the confirmation, or the queued `status`.
+- Raporty: a stop „do Maksa” of Wpisanie raportów (e.g. `RAPORTY_HASLO_ODRZUCONE`, an unreadable access file) shows region `Zatrzymanie Wpisania raportów` with the link `Uruchomieniach`, whose card has the same `Diagnoza` and Zgłoszenie; this feature does not drive it (`tests/test_centrum_wpisanie_raportow.py` does).
 - Before a Diagnoza (after a reload or in a new Uruchomienie) only the confirmation, the waiting `status`, or the queued `status` is shown under the stop.
 - Konfiguracja: the page header reads `Zgłoszenia: gotowe`, `Zgłoszenia: brak tokenu` or `Zgłoszenia: token odrzucony`.
 
