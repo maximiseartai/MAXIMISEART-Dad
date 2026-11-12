@@ -28,6 +28,8 @@ import sys
 
 import pytest
 
+from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = sorted([*(ROOT / "tools").glob("**/*.py"), *(ROOT / ".agents" / "skills").glob("*/scripts/**/*.py")])
 STRIPPED = (
@@ -49,14 +51,20 @@ BASE_URL = "ANTHROPIC_BASE_URL"
 BASE_URL_WORD = re.compile(rf"(?<![A-Za-z0-9_]){BASE_URL}(?![A-Za-z0-9_])")
 
 
+@pytest.fixture(autouse=True, scope="module")
+def drzewa_raz_na_modul() -> Iterator[None]:
+    with pamiec_drzew():
+        yield
+
+
 def _entry(path: Path) -> tuple[bool, bool]:
     """Czy skrypt ma ``if __name__ == "__main__"`` i czy buduje parser argumentów."""
 
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = drzewo(path)
     entry = any(isinstance(node, ast.If) and "__main__" in ast.unparse(node.test) for node in tree.body)
     parser = any(
         isinstance(node, ast.Call) and ast.unparse(node.func).rsplit(".", 1)[-1] in ("ArgumentParser", "Parser")
-        for node in ast.walk(tree)
+        for node in wezly(tree)
     )
     return entry, parser
 
@@ -64,7 +72,7 @@ def _entry(path: Path) -> tuple[bool, bool]:
 def _path_changes(tree: ast.Module) -> Iterator[ast.expr | ast.stmt]:
     """Każda zmiana ``sys.path``: wywołanie metody, przypisanie, ``del``, ``sys`` albo ``sys.path`` pod inną nazwą."""
 
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             if ast.unparse(node.func.value) == "sys.path" and node.func.attr not in READING:
                 yield node
@@ -111,7 +119,7 @@ def _bootstrap_problem(path: Path, tree: ast.Module, change: ast.expr | ast.stmt
 def test_skrypt_dopisuje_katalogi_do_sys_path_jedna_linia() -> None:
     problems = []
     for path in SCRIPTS:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = drzewo(path)
         seen: set[str] = set()
         for change in _path_changes(tree):
             problem = _bootstrap_problem(path, tree, change, seen)
@@ -161,8 +169,8 @@ def _text(node: ast.AST) -> str | None:
 
 
 def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
-    bare = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)}
-    for node in ast.walk(tree):
+    bare = {id(node.value) for node in wezly(tree) if isinstance(node, ast.Expr)}
+    for node in wezly(tree):
         text = _text(node)
         if isinstance(node, ast.keyword) and node.arg == BASE_URL:
             yield node.lineno, f"nazywa {BASE_URL}"
@@ -229,7 +237,7 @@ def test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api() -> None:
         f"{path.relative_to(ROOT).as_posix()}:{line}: {what} poza tools/lib/falszywe_api.py"
         for path in SCRIPTS
         if path != FAKE_API
-        for line, what in _claude_launches(ast.parse(path.read_text(encoding="utf-8")))
+        for line, what in _claude_launches(drzewo(path))
     ]
 
     assert not found, "\n".join(
