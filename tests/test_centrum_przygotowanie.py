@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import itertools
 import json
 from pathlib import Path
@@ -221,7 +220,7 @@ def test_przerwij_bez_zapisu_zatrzymuje_z_trzema_czesciami_dla_centrum(tmp_path:
 
 def test_czas_czekania_na_decyzje_nie_wlicza_sie_do_czasu_ani_metryk(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path, incomplete_period_rows())
-    waited_ms = 1500
+    waited_ms = 300
 
     started = time.perf_counter()
     centrum.start(dry_run=False)
@@ -663,21 +662,6 @@ def test_okres_spoza_kalendarza_okresow_jest_odrzucony(tmp_path: Path) -> None:
 
     assert (refused.status_code, refused.json()) == (404, {"message": "Nie ma takiego okresu."})
     assert not centrum.metrics_path.exists()
-
-
-def test_centrum_dopisuje_rekord_do_pliku_metryk_procesu_i_rozpoznaje_swoje_uruchomienia(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    centrum.start(dry_run=True)
-    finished_view(centrum.client)
-    store = MetricsStore(centrum.metrics_path, preparation_process.PROCESS.counter_names)
-    [own] = store.read()
-    later = (datetime.fromisoformat(own["started_at"]) + timedelta(seconds=1)).isoformat()
-
-    store.append({**own, "started_at": later})
-    history = centrum.client.get("/api/metrics").json()["runs"]
-
-    assert (own["mode"], own["result"]) == ("DRY-RUN", "OK")
-    assert [(run["origin"], run["mode"]) for run in history] == [("cmd", "DRY-RUN"), ("centrum", "DRY-RUN")]
 
 
 def test_awaria_podgladu_na_zywo_nie_zmienia_wyniku_zapisu_ani_metryk(

@@ -1101,10 +1101,18 @@ def test_tablica_okresow_bez_folderu_okresow_mowi_o_braku_choc_folder_innego_mie
     assert settings.json()["periods_directory"]["state"] == "missing"
 
 
-def test_otwieranie_bez_wskazanego_folderu_okresow_prosi_o_jego_wskazanie(tmp_path: Path) -> None:
+# Obie trasy wołają requested_folder osobno, więc każda ma swój wiersz (#1452 r1).
+@pytest.mark.parametrize(
+    ("route", "body"),
+    [("open", {"target": "period_folder"}), ("worker-settlements/open", {"worker": "Anna Testowa"})],
+    ids=["folder-okresu", "rozliczenie-pracownika"],
+)
+def test_otwieranie_bez_wskazanego_folderu_okresow_prosi_o_jego_wskazanie(
+    tmp_path: Path, route: str, body: dict[str, str]
+) -> None:
     app = centrum(tmp_path)
 
-    response = app.client.post("/api/periods/22_28_09_2026/open", json={"target": "period_folder"})
+    response = app.client.post(f"/api/periods/22_28_09_2026/{route}", json=body)
 
     assert response.status_code == 409
     assert response.json() == {"message": "Najpierw wskaż folder okresów."}
@@ -1218,17 +1226,6 @@ def test_nazwa_wykonawcy_nie_wyprowadza_poza_folder_rozliczen_pracownikow(tmp_pa
     response = app.client.post("/api/periods/22_28_09_2026/worker-settlements/open", json={"worker": worker})
 
     assert response.status_code == 404
-    assert app.platform.opened == []
-
-
-def test_otwieranie_rozliczenia_pracownika_bez_wskazanego_folderu_okresow_prosi_o_jego_wskazanie(
-    tmp_path: Path,
-) -> None:
-    app = centrum(tmp_path)
-
-    response = app.client.post("/api/periods/22_28_09_2026/worker-settlements/open", json={"worker": "Anna Testowa"})
-
-    assert (response.status_code, response.json()) == (409, {"message": "Najpierw wskaż folder okresów."})
     assert app.platform.opened == []
 
 

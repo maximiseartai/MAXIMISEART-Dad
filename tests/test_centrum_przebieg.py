@@ -173,55 +173,46 @@ def test_wynik_ktorego_nie_da_sie_pokazac_to_niepokazane_podsumowanie_z_tym_samy
     assert record["result"] == result["result"] == "BLAD_KRYTYCZNY"
 
 
-def test_strumien_pokazuje_postep_szablonow_pracownikow_z_biezacym_wykonawca(tmp_path: Path) -> None:
+def test_strumien_pokazuje_postep_i_liczniki_szablonow_pracownikow_z_biezacym_wykonawca(tmp_path: Path) -> None:
     centrum = settling_centrum(tmp_path)
-    seen: list[tuple[str | None, int, int]] = []
+    progress_seen: list[tuple[str | None, int, int]] = []
+    figures_seen: list[list[tuple[str, int]]] = []
 
     for event in run_events(centrum.client):
         view = event["view"]
         if view["state"] == "idle":
             centrum.start(dry_run=False)
+            continue
+        if view["state"] == "finished":
+            break
+        if view["state"] != "running":
             continue
         progress = view["progress"]
         shown = (progress["current_worker"], progress["templates_completed"], progress["template_total"])
-        if view["state"] == "running" and progress["template_total"] > 0 and (not seen or seen[-1] != shown):
-            seen.append(shown)
-        if view["state"] == "finished":
-            break
-
-    assert seen == [
-        (None, 0, 3),
-        ("Adrian Testowy", 0, 3),
-        (None, 1, 3),
-        ("Darek Fikcyjny", 1, 3),
-        (None, 2, 3),
-        ("Kamil Syntetyczny", 2, 3),
-        (None, 3, 3),
-    ]
-
-
-def test_strumien_pokazuje_liczniki_szablonow_pracownikow_na_biezaco(tmp_path: Path) -> None:
-    centrum = settling_centrum(tmp_path)
-    seen: list[list[tuple[str, int]]] = []
-
-    for event in run_events(centrum.client):
-        view = event["view"]
-        if view["state"] == "idle":
-            centrum.start(dry_run=False)
-            continue
-        shown = [(figure["label"], figure["value"]) for figure in view["progress"]["figures"]]
-        if view["state"] == "running" and (not seen or seen[-1] != shown):
-            seen.append(shown)
-        if view["state"] == "finished":
-            break
+        if progress["template_total"] > 0 and (not progress_seen or progress_seen[-1] != shown):
+            progress_seen.append(shown)
+        figures = [(figure["label"], figure["value"]) for figure in progress["figures"]]
+        if not figures_seen or figures_seen[-1] != figures:
+            figures_seen.append(figures)
 
     labels = ["Wiersze danych", "Zapisane szablony", "Puste szablony", "Problemy"]
-    assert seen == [
-        list(zip(labels, [0, 0, 0, 0], strict=True)),
-        list(zip(labels, [2, 1, 0, 0], strict=True)),
-        list(zip(labels, [3, 2, 0, 0], strict=True)),
-        list(zip(labels, [3, 2, 1, 0], strict=True)),
-    ]
+    assert (progress_seen, figures_seen) == (
+        [
+            (None, 0, 3),
+            ("Adrian Testowy", 0, 3),
+            (None, 1, 3),
+            ("Darek Fikcyjny", 1, 3),
+            (None, 2, 3),
+            ("Kamil Syntetyczny", 2, 3),
+            (None, 3, 3),
+        ],
+        [
+            list(zip(labels, [0, 0, 0, 0], strict=True)),
+            list(zip(labels, [2, 1, 0, 0], strict=True)),
+            list(zip(labels, [3, 2, 0, 0], strict=True)),
+            list(zip(labels, [3, 2, 1, 0], strict=True)),
+        ],
+    )
 
 
 def test_podglad_z_nieznanym_wykonawca_wymaga_sprawdzenia_inaczej_niz_sukces(tmp_path: Path) -> None:

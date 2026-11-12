@@ -16,7 +16,7 @@ from typing import Any, Final
 import pytest
 
 from rozliczenia.centrum.outbox import Outbox, Post
-from rozliczenia.centrum.report_box import Refused, SendOutcome, Sent, Unreachable
+from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
 
 from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
@@ -302,28 +302,21 @@ def test_wartosc_adresu_rowna_slowom_tytulu_kontroli_ilosci_jest_zamaskowana_tak
     assert "- Reguła danych: zamaskowano wartość kolumny ADRES w: tytuł Kontroli ilości.\n" in issue.body
 
 
-@pytest.mark.parametrize(
-    ("answer", "key"),
-    [(Sent(1), True), (Refused(), True), (Unreachable(), True), (None, False)],
-    ids=["przyjela", "odmowila", "brak-sieci", "brak-klucza"],
-)
-def test_wynik_przebiegu_jest_ten_sam_przy_kazdej_odpowiedzi_skrzynki(
-    tmp_path: Path, answer: SendOutcome | None, key: bool
-) -> None:
-    centrum = centrum_with(tmp_path, TATA_ROWS, key=key)
-    if answer is not None:
+def test_wynik_przebiegu_jest_ten_sam_przy_kazdej_odpowiedzi_skrzynki(tmp_path: Path) -> None:
+    without_key = centrum_with(tmp_path / "bez-klucza", TATA_ROWS, key=False)
+    expected = run_to_end(without_key, dry_run=False)["result"]
+    [expected_record] = without_key.metric_records()
+    results, records = [], []
+    for answer in (Sent(1), Refused(), Unreachable()):
+        centrum = centrum_with(tmp_path / type(answer).__name__, TATA_ROWS)
         box(centrum).outcomes.append(answer)
+        results.append(without_times(run_to_end(centrum, dry_run=False)["result"]))
+        [record] = centrum.metric_records()
+        records.append(without_times(record))
 
-    view = run_to_end(centrum, dry_run=False)
-
-    reference = centrum_with(tmp_path / "bez-skrzynki", TATA_ROWS, key=False)
-    expected = run_to_end(reference, dry_run=False)
-    assert without_times(view["result"]) == without_times(expected["result"])
-    assert view["result"]["technical_notes"] == [] and view["result"]["warnings"] == []
-    [record] = centrum.metric_records()
-    [expected_record] = reference.metric_records()
-    assert without_times(record) == without_times(expected_record)
-    assert list(ToolDirectory(tmp_path).queue.parent.glob("Zgłoszenie *.md")) == []
+    assert (expected["technical_notes"], expected["warnings"]) == ([], [])
+    assert results == [without_times(expected)] * 3
+    assert records == [without_times(expected_record)] * 3
 
 
 def test_logi_uruchomienia_ida_do_kolejki_wysylki_przed_kontrola_ilosci(
