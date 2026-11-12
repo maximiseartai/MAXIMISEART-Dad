@@ -752,7 +752,13 @@ class _ActionsApi:
 
     def json(self, sciezka: str) -> dict[str, object]:
         if sciezka.startswith("repos/{owner}/{repo}/actions/workflows/ci.yml/runs?created=2026-11-03&"):
-            return {"workflow_runs": [{k: v for k, v in run.items() if k != "jobs"} for run in self.runs]}
+            return {"workflow_runs": [{k: v for k, v in run.items() if k not in ("jobs", "proby")} for run in self.runs]}
+        if "/attempts/" in sciezka:
+            run_id, _, attempt = sciezka.removeprefix("repos/{owner}/{repo}/actions/runs/").partition("/attempts/")
+            run = next(run for run in self.runs if str(run["id"]) == run_id)
+            conclusions = run.get("proby", {})
+            assert isinstance(conclusions, dict)
+            return {"conclusion": conclusions.get(int(attempt), "failure")}
         jobs = next(run["jobs"] for run in self.runs if sciezka.startswith(f"repos/{{owner}}/{{repo}}/actions/runs/{run['id']}/jobs?"))
         if jobs is None:
             raise BladApi(f"gh api {sciezka}", "gh: Not Found (HTTP 404)")
@@ -793,6 +799,10 @@ def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_
         heads[head] = commit(checkout, head)
     retried = [*_gate(0, 10, conclusion="failure"), *_gate(12, 25, attempt=2)]
     cancelled = [_ci_job("pytest (Python 3.14, Linux, 1/1)", 60, 61.8, conclusion="cancelled"), _ci_job("Required CI status", 61.9, 62, conclusion="failure")]
+    cancelled_attempt = [
+        _ci_job("pytest (Python 3.14, Linux, 1/1)", 75, 77.8, conclusion="cancelled"),
+        _ci_job("Required CI status", 77.9, 78, conclusion="failure"),
+    ]
     retry_cancelled = [
         *_gate(70, 95, conclusion="failure"),
         _ci_job("pytest (Python 3.14, Linux, 1/1)", 96, 99.8, attempt=2, conclusion="cancelled"),
@@ -809,6 +819,9 @@ def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_
         _ci_run(10, "push", base, 60, cancelled, conclusion="cancelled"),
         _ci_run(11, "push", base, 65, [*_gate(65, 80, conclusion="failure"), *_gate(82, 90, attempt=2)], attempts=2),
         _ci_run(12, "push", base, 70, retry_cancelled, attempts=2, conclusion="cancelled"),
+        # Próbę 1 anulowano w trakcie (jej Required kończy się porażką w chwili anulowania), a próba 2 przeszła.
+        {**_ci_run(13, "push", base, 75, [*cancelled_attempt, *_gate(80, 92, attempt=2)], attempts=2), "proby": {1: "cancelled"}},
+        _ci_run(14, "push", base, 100, _gate(100, 101, conclusion="skipped")),
     ]
     github = _ActionsApi(runs)
 
@@ -816,14 +829,20 @@ def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_
 
     out, err = capsys.readouterr()
     assert out.splitlines()[-1] == (
-        "POMIAR CI | PR wybór p50 4.0 p90 10.0 (n 3) | każdy PR p50 4.0 p90 12.0 (n 4) | main strażnik p50 20.0 p90 25.0 (n 3)"
-        " | runów 9, błędów API 1, zapytań 11"
+        "POMIAR CI | PR wybór p50 4.0 p90 10.0 (n 3) | każdy PR p50 4.0 p90 12.0 (n 4) | main strażnik p50 17.0 p90 22.0 (n 4)"
+        " | runów 11, błędów API 1, zapytań 17"
     )
     assert (code, err.splitlines()) == (1, ["POMIAR CI | błąd API run 6: gh api repos/{owner}/{repo}/actions/runs/6/jobs?filter=all&per_page=100&page=1: gh: Not Found (HTTP 404)"])
     records = {record["run"]: record for record in map(json.loads, (tmp_path / "bieg" / "pomiar.jsonl").read_text(encoding="utf-8").splitlines())}
     assert {run: records[run]["klasa"] for run in (1, 2, 3, 4, 5)} == {1: "docs", 2: "same testy", 3: "src", 4: "pełna bramka", 5: "src"}
     assert (records[3]["do_required_s"], records[3]["werdykt"]) == (600, "2026-11-03T10:10:00+00:00")
-    assert [(records[run]["do_werdyktu_main_s"], records[run]["run_werdyktu_main"]) for run in (10, 11, 12)] == [(1200, 11), (900, 11), (1500, 12)]
+    assert [(records[run]["do_werdyktu_main_s"], records[run]["run_werdyktu_main"]) for run in (10, 11, 12, 13, 14)] == [
+        (1200, 11),
+        (900, 11),
+        (1320, 13),
+        (1020, 13),
+        (None, None),
+    ]
 
 
 def test_pomiar_ci_zna_kazde_zadanie_bramki_z_ci_yml_i_jego_krok_pracy() -> None:

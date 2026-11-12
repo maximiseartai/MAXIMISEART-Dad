@@ -18,8 +18,9 @@ Run:
     krytyczne         zadanie, które skończyło ostatnie przed Required, z jego kolejką, startem, pracą i końcem
     ogon              koniec krytycznego → koniec Required
     main → werdykt    na main: merge (utworzenie runu pushu) → najwcześniejszy koniec Required dowolnej próby runu main
-                      utworzonego nie wcześniej, zielonej albo czerwonej, poza anulowaną ostatnią próbą (anulowany run
-                      commitu obejmuje następny, a czerwona próba przed ponowieniem to już werdykt, na który się czeka)
+                      utworzonego nie wcześniej, zielonej albo czerwonej, poza próbą anulowaną w trakcie, ostatnią albo
+                      wcześniejszą (``anulowane_proby``; anulowany run commitu obejmuje następny, a czerwona próba przed
+                      ponowieniem to już werdykt, na który się czeka)
 
 Klasa zmiany PR (``Klasa``) wynika z plików, którymi głowa PR różni się od ``main`` z chwili runu (``git merge-base``
 z ostatnim commitem first-parent ``origin/main`` sprzed runu): pełna bramka (ścieżka z ``Context.PR_GATE`` w tej
@@ -289,6 +290,15 @@ def zadania(api: Api, run: dict[str, Any]) -> list[Zadanie]:
     return wynik
 
 
+def anulowane_proby(api: Api, run: dict[str, Any]) -> frozenset[int]:
+    """Próby runu anulowane w trakcie. Wynik runu mówi tylko o ostatniej próbie, więc wcześniejsze pytają
+    ``/attempts/<n>``: Required anulowanej próby biegnie z ``always()`` i kończy się w chwili anulowania, a to nie werdykt."""
+
+    ostatnia = run["run_attempt"]
+    wczesniejsze = {n for n in range(1, ostatnia) if api.json(f"{REPO}/actions/runs/{run['id']}/attempts/{n}", lambda _: True)["conclusion"] == "cancelled"}
+    return frozenset(wczesniejsze | ({ostatnia} if run["conclusion"] == "cancelled" else set()))
+
+
 class Zmiany:
     """Pliki, którymi głowa PR różni się od ``main`` z chwili runu; brakujące commity pobiera jednym ``git fetch``."""
 
@@ -318,15 +328,16 @@ def _pliki_planu(plan: Plan) -> int:
     return len({klucz.nazwa.partition("::")[0] for klucz in klucze if klucz.rodzaj is Rodzaj.PYTEST})
 
 
-def zmierz(run: dict[str, Any], wszystkie: list[Zadanie], plan: Plan | None, zmienione: frozenset[str] | None) -> Pomiar:
+def zmierz(
+    run: dict[str, Any], wszystkie: list[Zadanie], plan: Plan | None, zmienione: frozenset[str] | None, anulowane: frozenset[int] = frozenset()
+) -> Pomiar:
     utworzony = _moment(run["created_at"])
     pierwsze = [z for z in wszystkie if z.proba == 1]
     required = next((z for z in pierwsze if z.szablon == "required" and z.biegl), None)
     pracujace = [z for z in pierwsze if z.szablon not in ("required", POZA_BRAMKA) and z.biegl]
     krytyczne = max(pracujace, key=lambda z: z.koniec or utworzony, default=None)
     czerwone = [z.koniec for z in pierwsze if z.szablon != POZA_BRAMKA and z.wynik == "failure" and z.koniec]
-    anulowana = run["run_attempt"] if run["conclusion"] == "cancelled" else None
-    werdykty = [z.koniec for z in wszystkie if z.szablon == "required" and z.biegl and z.koniec and z.proba != anulowana]
+    werdykty = [z.koniec for z in wszystkie if z.szablon == "required" and z.biegl and z.koniec and z.proba not in anulowane]
     kolejki: dict[str, list[float]] = {}
     konce_s: dict[str, float] = {}
     for z in pierwsze:
@@ -505,12 +516,13 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     for run in lista:
         try:
             wszystkie = zadania(api, run)
+            anulowane = anulowane_proby(api, run)
         except (BladApi, subprocess.TimeoutExpired) as blad:
             bledy_api += 1
             print(f"POMIAR CI | błąd API run {run['id']}: {blad}", file=sys.stderr)
             continue
         zmienione = zmiany.pliki(run["head_sha"], run["created_at"]) if run["event"] == "pull_request" else None
-        pomiary.append(zmierz(run, wszystkie, _plan(args.artefakty, run["id"]), zmienione))
+        pomiary.append(zmierz(run, wszystkie, _plan(args.artefakty, run["id"]), zmienione, anulowane))
     pomiary = z_werdyktem_main(pomiary)
     (args.katalog / "pomiar.jsonl").write_text("".join(json.dumps(asdict(p), ensure_ascii=False) + "\n" for p in pomiary), encoding="utf-8")
     linie = tabela(pomiary)
