@@ -23,33 +23,12 @@ from wplyw_zmiany import STRUCTURE
 ROOT = Path(__file__).resolve().parents[1]
 
 BY_CHANGE_ONLY = {
-    "tests/test_brama_pre_push.py": "sprawdza zachowanie bramy pushem w repozytorium testu, a nie całe repozytorium",
-    "tests/test_ciezkie_ci.py": "sprawdza strażnika narzędzi na repozytoriach testu i atrapie gh; ci.yml czyta ścieżką, którą graf widzi",
-    "tests/test_czekanie.py": "sprawdza hook na pojedynczych poleceniach; graf wybiera go przy zmianie hooka i .claude/settings.json",
-    "tests/test_eksplorator_w_procesie.py": (
-        "sprawdza strażnika na katalogach przypadków w osobnym pytest; graf wybiera go przy zmianie pluginu (import), "
-        "a zmiana tests/conftest.py uruchamia pełny zestaw"
-    ),
     "tests/test_git_w_testach.py": (
         "sprawdza gita sesji testów, a nie całe repozytorium"
-    ),
-    "tests/test_jedno_uruchomienie_naraz.py::test_rozjazd_czesci_modelowanej_recznie_sprawdzenie_przeplotow_tylko_ostrzega_takze_w_ci": (
-        "sprawdza skrypt skilla z podmienionym rozjazdem we własnym procesie, a nie całe repozytorium; graf wybiera go przy zmianie skilla"
-    ),
-    "tests/test_publikacja_plikow_okresu.py::test_rozjazd_kroku_zapisu_skoroszytu_sprawdzenie_tylko_ostrzega_takze_w_ci": (
-        "sprawdza skrypt skilla z podmienionym rozjazdem, a nie całe repozytorium; graf wybiera go przy zmianie skilla"
-    ),
-    "tests/test_centrum_rozliczen.py::test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiarem": (
-        "sprawdza trasy aplikacji Centrum, a nie całe repozytorium; graf wybiera go przy zmianie każdego modułu Centrum, "
-        "bo eksporter kontraktu, który test wczytuje literalną ścieżką, importuje create_app"
     ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples), pliku tests/expected/komunikaty.txt i plików frontendu z UI_TEXTS (literały)"
-    ),
-    "tests/test_mutacje_skilli.py::test_kazdy_skill_z_modelem_wskazuje_kod_modelu_w_pilnuje_i_kroki_naprawy_rozjazdu_bez_sync_commit": (
-        "graf wybiera go przy zmianie SKILL.md i pliku model/ skilla, także nowego modelu .tla albo definicje.json, i tools/lib/rozjazd_modelu.py, "
-        "a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
     "tests/test_mutacje_skilli.py::test_kazde_przyjete_ryzyko_i_znane_ustalenie_eksploratora_ma_mutacje_tuz_za_granica_kazdej_czesci_ksztaltu": (
         "graf wybiera go przy zmianie każdego pliku scripts/ skilla, także nowego eksploratora, i tests/fixtures/"
@@ -58,16 +37,12 @@ BY_CHANGE_ONLY = {
     "tests/test_mutacje_skilli.py::test_straznik_granic_czerwieni_wpis_bez_jawnego_ksztaltu_albo_czesc_bez_mutacji_tuz_za_granica": (
         "sprawdza strażnika granic kształtów na skillach testu, a nie całe repozytorium"
     ),
-    "tests/test_mutacje.py": "sprawdza silnik mutacji na repozytoriach testu, a nie całe repozytorium",
     "tests/test_mutacje_nocne.py": (
         "sprawdza narzędzie na repozytoriach testu i atrapie GitHuba; mutacje-nocne.yml czyta ścieżką, którą graf widzi"
     ),
-    "tests/test_na_scalonych_pr.py": "sprawdza narzędzie na repozytoriach testu, a nie całe repozytorium",
     "tests/test_plan_ci.py": "sprawdza plan na repozytoriach testu i atrapach czasów; graf wybiera go przy zmianie planu i ci.yml",
     "tests/test_podstawa_w_czesciach.py": "sprawdza podział podstawy Centrum; graf wybiera go przy zmianie skilla i skrypt_skilla.py",
-    "tests/test_rozjazd_modelu.py": "sprawdza właścicielkę rozjazdu modelu na repozytoriach testu, a nie całe repozytorium",
     "tests/test_praca_w_tle.py": "sprawdza hook na pojedynczych wejściach Stop; graf wybiera go przy zmianie hooka i .claude/settings.json",
-    "tests/test_praca_w_toku.py": "sprawdza werdykt narzędzia na repozytoriach testu, a nie całe repozytorium; trwa ok. 19 s",
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
     "tests/test_skille_dla_zmiany.py::test_liczy_ci_i_liczy_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_plan_pull_requestu_i_nocy": (
         "sprawdza linie LICZY CI i LICZY NOC na repozytorium testu, a nie całe repozytorium"
@@ -78,15 +53,10 @@ BY_CHANGE_ONLY = {
     "tests/test_skille_dla_zmiany.py::test_skill_z_poleceniami_w_ci_zostaje_w_skillach_verify_a_liczy_ci_wymienia_jego_polecenia": (
         "sprawdza wybór skilli na repozytorium testu, a nie całe repozytorium"
     ),
-    "tests/test_skille_dla_zmiany.py::test_skill_kaze_czekac_na_polecenie_w_tle_w_tej_samej_turze": (
-        "graf wybiera go przy zmianie każdego SKILL.md, a w STRUCTURE przekroczyłby limit testów "
-        "wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
     "tests/test_skille_dla_zmiany.py::test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill": (
         "graf wybiera go przy zmianie skryptu i SKILL.md skilli Centrum (literały) i tools/lib/wplyw_zmiany.py, "
         "a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
-    "tests/test_szybko.py": "sprawdza samo szybko w repozytoriach testu; graf wybiera go przy zmianie tools/szybko.py i tabel reguł",
     "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
     "tests/test_zgoda.py": (
