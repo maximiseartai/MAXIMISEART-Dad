@@ -3610,7 +3610,7 @@ def test_temat_raportu_w_kazdym_zapisie_daty_daje_dzien_zlecen(subject: str) -> 
         pytest.param("Raport 09.01.2026", EVENING, date(2027, 1, 9), id="303-dni-wstecz-rok-naprzod"),
     ],
 )
-def test_literowka_w_roku_tematu_daje_dzien_z_tym_dniem_i_miesiacem_najblizej_przyjscia_maila(
+def test_literowka_w_roku_tematu_daje_dzien_z_tym_dniem_i_miesiacem_w_granicach_wokol_przyjscia_maila(
     subject: str, arrived: datetime, day: date
 ) -> None:
     """Wykonawca pomylił rok (Raport z 10.11.2026 z tematem ``Raport 10.11.2016``, prawdziwa skrzynka 12.11.2026):
@@ -3624,6 +3624,15 @@ def test_literowka_w_roku_tematu_daje_dzien_z_tym_dniem_i_miesiacem_najblizej_pr
 
     assert outcome.changes == _both(ROW, "tak", "wymiana routera")
     assert [found.day for found in outcome.mails if isinstance(found, ReadReport)] == [day]
+
+
+def test_29_lutego_z_innego_roku_przestepnego_daje_29_lutego_roku_przestepnego_w_granicach() -> None:
+    mail = _mail(JAN, "Raport 29.02.2024", TEXT, datetime(2028, 3, 10, 18, tzinfo=TAPA))
+
+    outcome = enter_reports(_inputs([mail], [_order(day=date(2028, 2, 29))], today=date(2028, 3, 10), rollout=date(2028, 2, 1)))
+
+    assert [found.day for found in outcome.mails if isinstance(found, ReadReport)] == [date(2028, 2, 29)]
+    assert outcome.changes == _both(ROW, "tak", "wymiana routera")
 
 
 def test_29_lutego_bez_roku_przestepnego_w_granicach_zostaje_z_tematu() -> None:

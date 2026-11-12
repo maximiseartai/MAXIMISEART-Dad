@@ -60,8 +60,9 @@ def read(subject: str, arrived: date) -> date | SubjectFault | None:
 
     Rok z tematu jest literówką Wykonawcy, gdy data leży ponad ``_BEFORE`` przed dniem przyjścia maila ``arrived`` albo
     ponad ``_AFTER`` po nim (``Raport 10.11.2016`` w mailu z 10.11.2026, ``Raport 29.12.2027`` z 2.01.2027): dniem
-    zleceń jest wtedy ten sam dzień i miesiąc w roku, w którym wypada w tych granicach. Gdy w żadnym nie wypada (29
-    lutego), zostaje data z tematu.
+    zleceń jest wtedy ten sam dzień i miesiąc w roku, w którym wypada w tych granicach. Gdy w żadnym roku nie wypada w
+    granicach (29 lutego bez roku przestępnego w nich albo, gdy granice obejmują 29 lutego, dzień tuż poza nimi), zostaje
+    data z tematu.
     """
 
     reply = _REMINDER_REPLY.match(subject)
