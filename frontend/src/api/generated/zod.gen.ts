@@ -941,7 +941,8 @@ export const zReportsWorkerDay = z.object({
     mails: z.int(),
     without_report: z.array(z.string()),
     problems: z.array(zReportsProblem),
-    orders_detail: z.array(zReportsOrder).nullable()
+    orders_detail: z.array(zReportsOrder).nullable(),
+    reminders: z.array(z.iso.datetime())
 });
 
 /**
@@ -1543,7 +1544,8 @@ export const zReportsView = z.object({
     today: z.iso.date(),
     days: z.array(zReportsDay),
     workers: z.array(zReportsWorker),
-    unknown_senders: z.array(zUnknownReportSender)
+    unknown_senders: z.array(zUnknownReportSender),
+    reminders_without_footer: z.boolean()
 });
 
 /**

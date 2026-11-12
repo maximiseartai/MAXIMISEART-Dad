@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Final
 
@@ -42,6 +42,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, HostParts, NeededSetting, PathNeed, PreparedRun, Start
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.report_entering_state import FileReportState, ShownProblem, ShownResult, ShownWorker
+from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia.centrum.settings import Settings, SettingsStore
 from rozliczenia.file_state import file_state
@@ -65,7 +66,8 @@ class ReportEnteringEntry:
 
     ``parts``: zegar procesu, przerwa ponownej próby podmiany INTERMAX, kroki podmiany na dysku, Skrzynka raportów i
     pamięć własnych wpisów. ``contexts``: Kontekst Uruchomienia pracy Centrum. ``files``: pliki Wpisania raportów w
-    ``config``, z których widok Raporty czyta wynik i decyzje, a „Zostaw moją” zapisuje decyzję.
+    ``config``, z których widok Raporty czyta wynik i decyzje, a „Zostaw moją” zapisuje decyzję. ``reminders``: wynik
+    ostatniego sprawdzenia pracy Przypomnień o raporcie (ADR 0030).
     """
 
     store: SettingsStore
@@ -74,6 +76,7 @@ class ReportEnteringEntry:
     parts: HostParts
     contexts: RunContexts
     files: FileReportState
+    reminders: Callable[[], ShownReminders]
 
     @property
     def key(self) -> common_contract.ProcessKey:
@@ -109,10 +112,11 @@ class ReportEnteringEntry:
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:
-        """Widok Raporty całego okna z wyniku ostatniego kliknięcia i decyzji „Zostaw moją”."""
+        """Widok Raporty całego okna z wyniku ostatniego kliknięcia i decyzji „Zostaw moją”, z Przypomnieniami o raporcie
+        z ostatniego sprawdzenia ich pracy."""
 
         try:
-            return _view(self.files.shown(), self.files.kept(), self.parts.now().date())
+            return _view(self.files.shown(), self.files.kept(), self.parts.now().date(), self.reminders())
         except (StateUnreadable, DecisionsUnreadable) as error:
             raise refusal.reports_unreadable() from error
 
@@ -162,14 +166,24 @@ def _conflict(register: Path | None) -> str | None:
     return conflict_note(copies[0]) if copies else None
 
 
-def _view(shown: ShownResult | None, kept: frozenset[Kept], today: date) -> report_entering_contract.ReportsView:
+def _view(
+    shown: ShownResult | None, kept: frozenset[Kept], today: date, reminders: ShownReminders
+) -> report_entering_contract.ReportsView:
     """Całe okno wyniku ``shown`` bez różnic, przy których tata kliknął „Zostaw moją” (``kept``): dni otwarte ostatniego
     kliknięcia i dziś od najstarszego, Wykonawcy alfabetycznie z dniami, które mają liczby albo problem. Chwila
-    kliknięcia jest w UTC, jak każda chwila kontraktu, a przeglądarka pokazuje ją w czasie komputera taty."""
+    kliknięcia jest w UTC, jak każda chwila kontraktu, a przeglądarka pokazuje ją w czasie komputera taty.
+
+    Przy dniu Wykonawcy stoją chwile Przypomnień o raporcie za ten dzień z ``reminders``. Przypomnienie za dzień, którego
+    Wykonawca nie ma w wyniku kliknięcia, nie tworzy dnia, bo kafelek bez wyniku nie ma okienka."""
 
     if shown is None:
         return report_entering_contract.ReportsView(
-            clicked_at=None, today=today, days=_days({today}), workers=[], unknown_senders=[]
+            clicked_at=None,
+            today=today,
+            days=_days({today}),
+            workers=[],
+            unknown_senders=[],
+            reminders_without_footer=reminders.without_footer,
         )
     problems = [problem for problem in shown.problems if problem.difference not in kept]
     placed: defaultdict[tuple[str, date], list[ShownProblem]] = defaultdict(list)
@@ -179,7 +193,9 @@ def _view(shown: ShownResult | None, kept: frozenset[Kept], today: date) -> repo
     figures = {(worker.worker, worker.day): worker for worker in shown.workers}
     days: defaultdict[str, list[report_entering_contract.ReportsWorkerDay]] = defaultdict(list)
     for name, day in sorted(figures.keys() | placed.keys()):
-        days[name].append(_worker_day(day, figures.get((name, day)), placed[name, day], shown.detailed))
+        days[name].append(
+            _worker_day(day, figures.get((name, day)), placed[name, day], shown.detailed, reminders.sent.get((name, day), ()))
+        )
     return report_entering_contract.ReportsView(
         clicked_at=shown.clicked_at.astimezone(timezone.utc),
         today=today,
@@ -190,6 +206,7 @@ def _view(shown: ShownResult | None, kept: frozenset[Kept], today: date) -> repo
             for problem in problems
             if problem.worker is None and problem.sender is not None
         ],
+        reminders_without_footer=reminders.without_footer,
     )
 
 
@@ -201,10 +218,10 @@ def _days(days: set[date]) -> list[report_entering_contract.ReportsDay]:
 
 
 def _worker_day(
-    day: date, figure: ShownWorker | None, problems: list[ShownProblem], detailed: bool
+    day: date, figure: ShownWorker | None, problems: list[ShownProblem], detailed: bool, reminders: tuple[datetime, ...]
 ) -> report_entering_contract.ReportsWorkerDay:
-    """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem, zera) i problemami ``problems``; stan
-    zlecenia daje ``OrderState.of`` z numerów problemów dnia."""
+    """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem, zera), problemami ``problems`` i
+    chwilami Przypomnień o raporcie ``reminders``; stan zlecenia daje ``OrderState.of`` z numerów problemów dnia."""
 
     numbers = {problem.number for problem in problems}
     orders = () if figure is None else figure.orders_detail
@@ -228,6 +245,7 @@ def _worker_day(
             )
             for order in orders
         ],
+        reminders=list(reminders),
     )
 
 
