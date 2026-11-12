@@ -5,6 +5,19 @@ zapis na każdym komputerze. ``local_now`` to chwila na zegarze komputera w jego
 bierze dzień oraz porę taty. ``dad_today`` to dzień taty (okres rozliczeniowy, dzień INTERMAX, Metryki), czyli dzień
 w strefie komputera taty, nigdy dzień UTC: od północy do 1:00 (latem do 2:00) czasu taty dzień UTC to jeszcze wczoraj.
 ``epoch_s`` to sekundy od epoki dla terminu, który czyta też inny proces (dzierżawa opiekuna ponownego startu).
+
+Granica zakazu zegara. Ruff ``TID251`` (``src/ruff.toml``) odrzuca w ``src/`` poza tym plikiem tylko odwołanie, które
+ruff rozwiązuje do pełnej nazwy wymienionej w ``src/ruff.toml`` (``datetime.datetime.now``, ``time.time``,
+``email.utils.formatdate`` i reszta listy ``CLOCK`` w ``tests/test_zakazy_ruff.py``), także przez import z aliasem.
+``tests/test_zakazy_ruff.py`` dokłada, że tej nazwy nie zwalnia ``noqa``, wyjątek w konfiguracji ruff ani wyłączenie
+pliku z lintu. Ruff nie zna typu wyrażenia ani wartości w czasie biegu, więc każde inne źródło chwili łapie tylko
+przegląd, na przykład:
+
+- dzień UTC z chwili tego modułu (``utc_now().date()``);
+- instancja albo podklasa ``datetime`` (``datetime.min.now()``, ``class X(datetime)`` i ``X.now()``);
+- reeksport (``from rozliczenia.wall_clock import datetime``);
+- nazwa podana napisem (``__import__``, ``getattr``, ``importlib``);
+- zegar modułu, którego ``src/ruff.toml`` nie wymienia.
 """
 
 from __future__ import annotations
