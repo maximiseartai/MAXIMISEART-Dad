@@ -397,7 +397,8 @@ def dropped_navigation(line: str, previous: str) -> bool:
     końcu (krotka bez nawiasu) albo elementem listy, której nikt nie czyta. Odstęp z ``#`` w napisie ``previous``
     (``"strona #1",``) nie daje więc alarmu. Nie łapie odpowiedzi przypisanej, zwróconej albo podanej dalej w tej samej
     linii, nawigacji po linii, której komentarz albo napis od odstępu z ``#`` kończy się ``(``, ``[`` albo ``,``
-    (``wait()  # najpierw lista,``), ``as _`` ani nieużytej zmiennej po ``as``, ``expect_navigation`` z nawiasem w kilku
+    (``wait()  # najpierw lista,``), nawigacji po linii, której tekst przed odstępem z ``#`` kończy się ``,``, ``(``
+    albo ``[`` (``log("lista, #1")``), ``as _`` ani nieużytej zmiennej po ``as``, ``expect_navigation`` z nawiasem w kilku
     liniach, nawigacji na wyniku wywołania (``context.new_page().goto(``), ``wait_for_url`` i ``wait_for_load_state``,
     metody pod inną nazwą
     (``go = page.goto``) ani nawigacji w pliku bez linii, która po wcięciu zaczyna się od ``from playwright`` albo

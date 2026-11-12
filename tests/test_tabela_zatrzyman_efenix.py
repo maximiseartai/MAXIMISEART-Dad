@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
+import importlib
 from pathlib import Path
 from typing import NamedTuple
 
@@ -194,8 +195,15 @@ TABLE = [
 
 
 # ``of`` dziedziczy każda podklasa, więc ``LoggedOut.of(…)`` też klasyfikuje, choć może dać inny wyjątek okna (#1365 r2).
-# Bezpośrednie podklasy wystarczą, bo każda jest ``@final``, więc podklasę podklasy odrzuca mypy (#1378 r1).
-_WINDOW_STOPS = {WindowStop.__name__, *(stop.__name__ for stop in WindowStop.__subclasses__())}
+# Podklasy zbiera rekurencyjnie z modułów tabeli: ``@final`` odrzuca podklasę podklasy w mypy, ale nie z
+# ``# type: ignore[misc]`` (#1378 r2); podklasy spoza tych modułów i ``efenix_window`` zostają przeglądowi.
+def _window_stops(cls: type) -> set[str]:
+    return {cls.__name__}.union(*(_window_stops(sub) for sub in cls.__subclasses__()))
+
+
+for _module in MODULES:
+    importlib.import_module(f"rozliczenia.{_module}")
+_WINDOW_STOPS = _window_stops(WindowStop)
 
 
 def _classified(path: Path) -> list[tuple[str, str]]:
