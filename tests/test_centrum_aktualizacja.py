@@ -442,23 +442,6 @@ def test_diagnoza_bez_odpowiedzi_githuba_nie_kasuje_odpowiedzi_pamietanej_przez_
     assert (remembered, after_diagnosis) == ("newer", "newer")
 
 
-@pytest.mark.parametrize(
-    "headers",
-    [{"Origin": "http://obca-strona.example"}, {"Host": "obca-strona.example"}],
-    ids=["obcy-origin", "obcy-host"],
-)
-def test_aktualizacja_z_obcej_strony_jest_odrzucona(tmp_path: Path, headers: dict[str, str]) -> None:
-    centrum, repository = updating_centrum(tmp_path)
-    before = repository.head()
-    repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
-
-    refused = centrum.client.post("/api/tool-update", headers=headers)
-
-    assert refused.status_code == 403
-    assert centrum.client.get("/api/tool-update").json() == {"state": "idle"}
-    assert repository.head() == before
-
-
 def test_aktualizacja_w_trakcie_uruchomienia_procesu_jest_odrzucona(tmp_path: Path) -> None:
     centrum, repository = updating_centrum(tmp_path, incomplete_period=True)
     before = repository.head()

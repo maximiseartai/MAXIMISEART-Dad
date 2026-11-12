@@ -95,18 +95,6 @@ def test_dziennik_przyjmuje_najwyzej_200_pomiarow_na_jedno_uruchomienie_centrum(
     assert entries[-1].startswith("pomiar widok=zimny-start strona=okresy ")
 
 
-def test_pomiar_spoza_karty_centrum_jest_odrzucony_i_nic_nie_zapisuje(tmp_path: Path) -> None:
-    app = centrum(tmp_path)
-
-    foreign_origin = app.client.post("/api/view-timings", json=view_timing(), headers={"Origin": "http://zly.example"})
-    foreign_host = app.client.post(
-        "/api/view-timings", json=view_timing(), headers={"Host": "zly.example:47811", "Origin": "http://zly.example:47811"}
-    )
-
-    assert [foreign_origin.status_code, foreign_host.status_code] == [403, 403]
-    assert log_entries(app) == []
-
-
 @pytest.mark.parametrize(
     "changes",
     [
