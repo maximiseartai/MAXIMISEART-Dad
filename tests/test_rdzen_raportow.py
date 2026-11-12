@@ -31,7 +31,11 @@ from rozliczenia.worker_reports import (
     MailId,
     ManualDifference,
     MissingVerdict,
+    MoveBar,
+    MovedFrom,
+    MovedTo,
     OrderDetail,
+    OrderedDay,
     OrderKey,
     OrderNumber,
     OtherDay,
@@ -41,6 +45,7 @@ from rozliczenia.worker_reports import (
     ReadReport,
     ReadStranger,
     ReadUnreadable,
+    RefusedMove,
     RegisterOrder,
     RepeatedOrder,
     ReportEntry,
@@ -50,6 +55,7 @@ from rozliczenia.worker_reports import (
     ReportsOutcome,
     SenderAddress,
     SubjectFault,
+    SubjectLost,
     TakenOver,
     UnknownNumber,
     UnknownSender,
@@ -116,6 +122,7 @@ def _inputs(
     closed: Sequence[str] = (),
     memory: OwnEntries = OwnEntries.EMPTY,
     kept: frozenset[Kept] = frozenset(),
+    ordered: Sequence[date] = (),
 ) -> ReportInputs:
     logins = {}
     for login, senders in ADDRESSES.items():
@@ -130,6 +137,7 @@ def _inputs(
         window=Window.of(today, rollout, closed),
         memory=memory,
         kept=kept,
+        ordered_days=frozenset(OrderedDay(ROW.sheet, day) for day in ordered),
     )
 
 
@@ -273,10 +281,10 @@ JAN_LOGIN, EWA_LOGIN = Login("jan.testowy"), Login("ewa.probna")
             JAN,
             "Raport 07.11.2026",
             [_order()],
-            OtherDay(JAN_LOGIN, date(2026, 11, 7), OrderNumber("40000001"), (DAY,)),
-            "Zlecenie 40000001 od jan.testowy jest z 08.11.2026, a temat Raportu wykonawcy ma 07.11.2026, więc Centrum "
-            "go nie wpisało.",
-            id="numer-zlecenia-wykonawcy-z-innego-dnia-z-obiema-datami",
+            RefusedMove(JAN_LOGIN, date(2026, 11, 7), OrderNumber("40000001"), DAY, MoveBar.NOT_ORDERED),
+            "Wpis zlecenia 40000001 od jan.testowy ma w temacie 07.11.2026, a INTERMAX ma to zlecenie w 08.11.2026. "
+            "Centrum go nie przeniosło i nie wpisało, bo dzień 07.11.2026 nie jest jeszcze uporządkowany w INTERMAX.",
+            id="numer-zlecenia-wykonawcy-z-innego-dnia-bez-dnia-uporzadkowanego",
         ),
         pytest.param(
             JAN,
@@ -291,9 +299,10 @@ JAN_LOGIN, EWA_LOGIN = Login("jan.testowy"), Login("ewa.probna")
             JAN,
             SUBJECT,
             [_order(day=date(2026, 11, 7), worker="Ewa.Probna")],
-            UnknownNumber(JAN_LOGIN, DAY, OrderNumber("40000001")),
-            "Numer 40000001 nie jest zleceniem jan.testowy z 08.11.2026.",
-            id="numer-zlecenia-innego-wykonawcy-z-innego-dnia",
+            RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000001"), date(2026, 11, 7), MoveBar.NOT_ORDERED),
+            "Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. "
+            "Centrum go nie przeniosło i nie wpisało, bo dzień 08.11.2026 nie jest jeszcze uporządkowany w INTERMAX.",
+            id="numer-zlecenia-innego-wykonawcy-z-innego-dnia-bez-dnia-uporzadkowanego",
         ),
         pytest.param(
             JAN,
@@ -309,8 +318,8 @@ def test_wpis_trafia_tylko_do_zlecenia_nadawcy_z_dnia_z_tematu_a_pomylka_ma_dokl
     sender: str, subject: str, orders: list[RegisterOrder], problem: ReportProblem, sentence: str
 ) -> None:
     """Spec #1224 US 27–30: cudzy numer, którego nie da się przenieść, bo jest dwa razy u innego Wykonawcy, z oboma
-    Wykonawcami, inny dzień z obiema datami, numer spoza zleceń Wykonawcy z dnia z dokładnym powodem; żadna komórka się
-    nie zmienia."""
+    Wykonawcami, numer z innego dnia, którego nie da się przenieść na dzień z tematu bez Dnia uporządkowanego (ADR 0029),
+    numer z dwóch innych dni z obiema datami i numer spoza zleceń z dokładnym powodem; żadna komórka się nie zmienia."""
 
     outcome = enter_reports(_inputs([_mail(sender, subject, TEXT)], orders, rollout=date(2026, 11, 1)))
 
@@ -345,17 +354,18 @@ def test_numer_zlecen_dwoch_innych_wykonawcow_z_dnia_daje_problem_z_kazdym_z_nic
 
 def _after(orders: Sequence[RegisterOrder], outcome: ReportsOutcome) -> list[RegisterOrder]:
     """INTERMAX po zapisie kliknięcia, tak jak go przeczyta następne kliknięcie: komórki z ``changes``, a przeniesione
-    zlecenie u nowego Wykonawcy, w tym samym wierszu (miejsce w dniu rdzeń dostaje tylko przez wiersz)."""
+    zlecenie u nowego Wykonawcy i w nowym dniu, w tym samym wierszu (miejsce w dniu rdzeń dostaje tylko przez wiersz)."""
 
     written = {(change.order, change.column): change.value for change in outcome.changes}
     moved = {move.order: move for move in outcome.moves}
     found = []
     for order in orders:
         move = moved.get(order.row)
+        day = order.key.day if move is None else move.day
         changed = RegisterOrder.of(
             order.row,
             number=order.key.number,
-            started=datetime(order.key.day.year, order.key.day.month, order.key.day.day, 9, 30),
+            started=datetime(day.year, day.month, day.day, 9, 30),
             worker=order.worker_name if move is None else move.worker,
             successful=written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
             completed=written.get((order.row, ReportColumn.COMPLETED), order.completed),
@@ -568,17 +578,284 @@ def test_dwa_zlecenia_jana_przejete_przez_ewe_bez_segmentu_przechodza_razem_po_w
     assert len(outcome.notes) == 4
 
 
-def test_zlecenie_wykonawcy_z_dnia_zamknietego_nie_jest_innym_dniem_wpisu() -> None:
-    """Okres z Plikiem zbiorczym jest zamknięty (ADR 0028), więc jego zlecenie nie podpowiada innego dnia."""
+# --- Zlecenie z innego dnia (#1350, ADR 0029): Przeniesienie na dzień z tematu albo pomylony temat ---
+
+SEVENTH, SIXTH = date(2026, 11, 7), date(2026, 11, 6)
+OPEN_DAYS = (SIXTH, SEVENTH, DAY)
+"""Dni uporządkowane arkusza ``Zlecenia``: wszystkie dni otwarte okna od 6.11."""
+
+
+def _numbered(index: int, day: date = DAY, worker: str = "Jan.Testowy") -> RegisterOrder:
+    return _order(OrderRow("Zlecenia", 200 + index), number=f"4000{index:04d}", day=day, worker=worker)
+
+
+def _days(outcome: ReportsOutcome) -> dict[tuple[date, Login], WorkerDay]:
+    return {(worker.day, worker.worker): worker for worker in outcome.workers}
+
+
+def test_jeden_niezgodny_wpis_przenosi_zlecenie_na_dzien_z_tematu_z_informacja_po_obu_stronach() -> None:
+    """US 5, 12, 27: zlecenie Jana z 7.11 w Raporcie wykonawcy za 8.11 to jedyny niezgodny Wpis, więc przechodzi na 8.11
+    pod jego zlecenia (pisownia ``WYKONAWCA`` z jego segmentu), z Wpisem i informacją „przeniesione z 7.11” w dniu
+    docelowym i „przeniesione na 8.11” w źródłowym. Pamięć ma Przeniesienie na nowym dniu i własne wpisy pod nowym
+    kluczem."""
+
+    moved, own = _numbered(1, SEVENTH), _numbered(2)
+    mail = _mail(JAN, SUBJECT, "40000001 tak montaż\n40000002 nie brak klienta")
+
+    outcome = enter_reports(_inputs([mail], [moved, own], rollout=SIXTH, ordered=OPEN_DAYS))
+
+    number = OrderNumber("40000001")
+    assert outcome.moves == (OrderMove(moved.row, DAY, "Jan.Testowy"),)
+    assert outcome.problems == ()
+    assert [(change.order, change.value) for change in outcome.changes] == [
+        (moved.row, "tak"),
+        (moved.row, "montaż"),
+        (own.row, "nie"),
+        (own.row, "brak klienta"),
+    ]
+    assert outcome.notes == (MovedTo(SEVENTH, JAN_LOGIN, number, DAY), MovedFrom(DAY, JAN_LOGIN, number, SEVENTH))
+    assert [note(found) for found in outcome.notes] == ["przeniesione na 8.11", "przeniesione z 7.11"]
+    assert outcome.memory.moves == frozenset({OwnMove(number, DAY, JAN_LOGIN, SEVENTH, JAN_LOGIN)})
+    assert {entry.key for entry in outcome.memory.entries} == {_key("40000001"), _key("40000002")}
+    days = _days(outcome)
+    assert [order.number for order in days[DAY, JAN_LOGIN].orders_detail] == ["40000002", "40000001"]
+    assert (SEVENTH, JAN_LOGIN) not in days
+
+
+@pytest.mark.parametrize(
+    "mistaken",
+    [pytest.param((SIXTH, SEVENTH), id="dwa-rozne-dni"), pytest.param((SEVENTH, SEVENTH), id="ten-sam-dzien")],
+)
+def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_bez_przeniesienia(
+    mistaken: tuple[date, date],
+) -> None:
+    """US 6–8: Raport wykonawcy za 8.11 z 8 zgodnymi i 2 niezgodnymi Wpisami (także wskazującymi różne dni) to pomylony
+    temat: niezgodne wpisują się do zleceń z ich dnia w INTERMAX bez Przeniesienia, zgodne normalnie, a tata dostaje w
+    dniu z tematu informację o każdym przegranym temacie. Zlecenia z ich dnia liczą się jako wpisane z Wpisu."""
+
+    matching = [_numbered(index) for index in range(1, 9)]
+    other = [_numbered(9, mistaken[0]), _numbered(10, mistaken[1])]
+    text = "\n".join(f"4000{index:04d} tak montaż {index}" for index in range(1, 11))
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [*matching, *other], rollout=SIXTH, ordered=OPEN_DAYS))
+
+    assert (outcome.moves, outcome.problems) == ((), ())
+    assert {change.order for change in outcome.changes} == {order.row for order in [*matching, *other]}
+    assert outcome.notes == (
+        SubjectLost(DAY, JAN_LOGIN, OrderNumber("40000009"), mistaken[0]),
+        SubjectLost(DAY, JAN_LOGIN, OrderNumber("40000010"), mistaken[1]),
+    )
+    assert note(outcome.notes[0]) == f"pomylony temat: wpisane do zlecenia z {mistaken[0].day}.11"
+    assert outcome.memory.moves == frozenset()
+    for order in other:
+        [detail] = [found for found in _days(outcome)[order.key.day, JAN_LOGIN].orders_detail if found.number == order.key.number]
+        assert detail == OrderDetail(order.key.number, "tak", detail.activities, reported=True)
+
+
+def test_zlecenie_cudze_i_z_innego_dnia_zmienia_wykonawce_zawsze_a_dzien_wedlug_progu() -> None:
+    """US 9: zlecenie Ewy z 7.11 w Raporcie Jana za 8.11. Jako jedyny niezgodny Wpis przechodzi do Jana i na 8.11, z
+    informacjami o obu zmianach po obu stronach; z drugim niezgodnym Wpisem (pomylony temat) przechodzi do Jana w swoim
+    dniu 7.11."""
+
+    ewa = _numbered(1, SEVENTH, "Ewa.Probna")
+    number = OrderNumber("40000001")
+
+    single = enter_reports(_inputs([_mail(JAN, SUBJECT, "40000001 tak")], [ewa], rollout=SIXTH, ordered=OPEN_DAYS))
+    mistaken = enter_reports(
+        _inputs(
+            [_mail(JAN, SUBJECT, "40000001 tak\n40000002 tak")],
+            [ewa, _numbered(2, SIXTH)],
+            rollout=SIXTH,
+            ordered=OPEN_DAYS,
+        )
+    )
+
+    assert single.moves == (OrderMove(ewa.row, DAY, "jan.testowy"),)
+    assert set(single.notes) == {
+        TakenOver(DAY, JAN_LOGIN, number, EWA_LOGIN),
+        HandedOver(SEVENTH, EWA_LOGIN, number, JAN_LOGIN),
+        MovedFrom(DAY, JAN_LOGIN, number, SEVENTH),
+        MovedTo(SEVENTH, EWA_LOGIN, number, DAY),
+    }
+    assert mistaken.moves == (OrderMove(ewa.row, SEVENTH, "Jan.Testowy"),)
+    assert set(mistaken.notes) == {
+        TakenOver(SEVENTH, JAN_LOGIN, number, EWA_LOGIN),
+        HandedOver(SEVENTH, EWA_LOGIN, number, JAN_LOGIN),
+        SubjectLost(DAY, JAN_LOGIN, number, SEVENTH),
+        SubjectLost(DAY, JAN_LOGIN, OrderNumber("40000002"), SIXTH),
+    }
+
+
+@pytest.mark.parametrize(
+    ("ordered", "bar"),
+    [
+        pytest.param((SIXTH, SEVENTH), MoveBar.NOT_ORDERED, id="dzien-z-tematu-nieuporzadkowany"),
+        pytest.param((), MoveBar.OTHER_SHEET, id="dzien-z-tematu-uporzadkowany-w-innym-arkuszu"),
+    ],
+)
+def test_przeniesienie_tylko_do_dnia_uporzadkowanego_arkusza_zlecenia(ordered: tuple[date, ...], bar: MoveBar) -> None:
+    """US 13: Przeniesienie na dzień, który nie jest Dniem uporządkowanym arkusza zlecenia, zostawia INTERMAX bez zmiany
+    i daje problem z powodem w dniu z tematu."""
+
+    order = _numbered(1, SEVENTH)
+    inputs = _inputs([_mail(JAN, SUBJECT, "40000001 tak")], [order], rollout=SIXTH, ordered=ordered)
+    if bar is MoveBar.OTHER_SHEET:
+        inputs = replace(inputs, ordered_days=frozenset({OrderedDay("ZLECENIA OD 08_11_2021", DAY)}))
+
+    outcome = enter_reports(inputs)
+
+    assert (outcome.changes, outcome.moves, outcome.notes) == ((), (), ())
+    assert outcome.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000001"), SEVENTH, bar),)
+    assert _days(outcome)[DAY, JAN_LOGIN].problems == 1
+
+
+CLOSED_DAY = date(2026, 11, 2)
+CLOSED = (period_of(CLOSED_DAY).token,)
+
+
+def test_przeniesienie_z_okresu_z_plikiem_zbiorczym_jest_problemem_bez_zmiany() -> None:
+    """US 14: zlecenie z dnia okresu z Plikiem zbiorczym w Raporcie za dzień otwarty to jedyny niezgodny Wpis, ale okres
+    jest zamknięty, więc problem z powodem w dniu z tematu; przy pomylonym temacie zlecenie zostaje w zamkniętym dniu bez
+    problemu, a drugi niezgodny Wpis wpisuje się do zlecenia ze swojego dnia."""
+
+    closed = _numbered(1, CLOSED_DAY)
+    inputs = _inputs([_mail(JAN, SUBJECT, "40000001 tak")], [closed], rollout=date(2026, 10, 30), closed=CLOSED, ordered=OPEN_DAYS)
+
+    single = enter_reports(inputs)
+    mistaken = enter_reports(
+        replace(inputs, mails=[_mail(JAN, SUBJECT, "40000001 tak\n40000002 tak")], orders=[closed, _numbered(2, SEVENTH)])
+    )
+
+    assert (single.changes, single.moves) == ((), ())
+    assert single.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000001"), CLOSED_DAY, MoveBar.CLOSED_SOURCE),)
+    assert (mistaken.moves, mistaken.problems) == ((), ())
+    assert [change.order for change in mistaken.changes] == [OrderRow("Zlecenia", 202)]
+    assert mistaken.notes == (SubjectLost(DAY, JAN_LOGIN, OrderNumber("40000002"), SEVENTH),)
+
+
+def test_przeniesienie_do_okresu_z_plikiem_zbiorczym_jest_problemem_w_dniu_zlecenia() -> None:
+    """US 14: Raport za dzień okresu z Plikiem zbiorczym z jednym zleceniem z dnia otwartego nie przenosi go do
+    zamkniętego okresu. Problem stoi w dniu zlecenia, bo dnia z tematu widok Raporty nie pokazuje; pomylony temat
+    takiego raportu wpisuje się do zleceń z ich dnia, z informacją w dniu zlecenia. Zgodny Wpis do zamkniętego dnia
+    niczego nie zmienia."""
+
+    open_order, closed_order = _numbered(1, SEVENTH), _numbered(3, CLOSED_DAY)
+    subject = f"Raport {CLOSED_DAY:%d.%m.%Y}"
+    inputs = _inputs(
+        [_mail(JAN, subject, "40000001 tak\n40000003 tak")],
+        [open_order, closed_order],
+        rollout=date(2026, 10, 30),
+        closed=CLOSED,
+        ordered=OPEN_DAYS,
+    )
+
+    single = enter_reports(inputs)
+    mistaken = enter_reports(
+        replace(
+            inputs,
+            mails=[_mail(JAN, subject, "40000001 tak\n40000002 tak\n40000003 tak")],
+            orders=[open_order, _numbered(2, SIXTH), closed_order],
+        )
+    )
+
+    refused = RefusedMove(JAN_LOGIN, CLOSED_DAY, OrderNumber("40000001"), SEVENTH, MoveBar.CLOSED_TARGET)
+    assert (single.changes, single.moves, single.notes) == ((), (), ())
+    assert single.problems == (refused,)
+    assert refused.shown == SEVENTH
+    assert _days(single)[SEVENTH, JAN_LOGIN].problems == 1
+    assert "okres z dniem 02.11.2026 ma już Plik zbiorczy" in reason(refused)
+    assert (mistaken.moves, mistaken.problems) == ((), ())
+    assert {change.order for change in mistaken.changes} == {open_order.row, OrderRow("Zlecenia", 202)}
+    assert set(mistaken.notes) == {
+        SubjectLost(SEVENTH, JAN_LOGIN, OrderNumber("40000001"), SEVENTH),
+        SubjectLost(SIXTH, JAN_LOGIN, OrderNumber("40000002"), SIXTH),
+    }
+
+
+def test_powtorne_klikniecie_po_przeniesieniu_na_inny_dzien_nic_nie_zmienia_a_informacje_zostaja() -> None:
+    mails = [_mail(JAN, SUBJECT, "40000001 tak montaż")]
+    orders = [_numbered(1, SEVENTH)]
+    first = enter_reports(_inputs(mails, orders, rollout=SIXTH, ordered=OPEN_DAYS))
+
+    second = enter_reports(_inputs(mails, _after(orders, first), rollout=SIXTH, ordered=OPEN_DAYS, memory=first.memory))
+
+    assert (second.changes, second.moves, second.problems) == ((), (), ())
+    assert second.notes == first.notes != ()
+    assert second.memory == first.memory
+
+
+@pytest.mark.parametrize("day", [SEVENTH, SIXTH], ids=["z-powrotem", "na-trzeci-dzien"])
+def test_reczne_przeniesienie_po_zmianie_centrum_wygrywa_bez_problemu(day: date) -> None:
+    """US 15: tata przeniósł zlecenie z powrotem na 7.11 albo na 6.11 po Przeniesieniu Centrum na 8.11. Kolejne
+    kliknięcie z tym samym mailem zostawia je tam bez zmian, problemu i informacji, a pamięć pamięta Przeniesienie
+    dalej."""
+
+    mails = [_mail(JAN, SUBJECT, "40000001 tak montaż")]
+    orders = [_numbered(1, SEVENTH)]
+    first = enter_reports(_inputs(mails, orders, rollout=SIXTH, ordered=OPEN_DAYS))
+    [after] = _after(orders, first)
+    by_tata = [_order(after.row, number=after.key.number, day=day, successful=after.successful, completed=after.completed)]
+
+    second = enter_reports(_inputs(mails, by_tata, rollout=SIXTH, ordered=OPEN_DAYS, memory=first.memory))
+
+    assert (second.changes, second.moves, second.problems, second.notes) == ((), (), (), ())
+    assert second.memory.moves == first.memory.moves
+
+
+def test_przeniesienia_na_inny_dzien_daja_ten_sam_wynik_w_kazdej_kolejnosci_maili_i_w_kolejnych_kliknieciach() -> None:
+    """Własność kolejności maili (#1350): raport Jana za 8.11 przenosi zlecenie z 7.11, późniejszy raport Jana za 6.11 z
+    dwoma niezgodnymi Wpisami (pomylony temat) oddaje je dniowi 7.11, a najpóźniejszy raport Ewy za 7.11 przejmuje je.
+    Jedno kliknięcie w każdej kolejności maili i kolejne kliknięcia po każdym mailu kończą się tym samym INTERMAX, bo
+    próg liczy dzień zlecenia sprzed Przeniesień Centrum."""
+
+    moved, other = _numbered(1, SEVENTH), _numbered(2)
+    first = _mail(JAN, SUBJECT, "40000001 tak a", EVENING)
+    mistaken = _mail(JAN, "Raport 06.11.2026", "40000001 nie b\n40000002 tak c", EVENING + timedelta(minutes=10))
+    taken = _mail(EWA, "Raport 07.11.2026", "40000001 tak d", EVENING + timedelta(minutes=20))
+    orders = [moved, other]
+
+    def state(found: Sequence[RegisterOrder]) -> list[tuple[OrderKey, str | None, str | None]]:
+        return sorted((order.key, order.successful, order.completed) for order in found)
+
+    clicks: list[RegisterOrder] = orders
+    memory = OwnEntries.EMPTY
+    for index in range(1, 4):
+        outcome = enter_reports(
+            _inputs([first, mistaken, taken][:index], clicks, rollout=SIXTH, ordered=OPEN_DAYS, memory=memory)
+        )
+        clicks, memory = _after(clicks, outcome), outcome.memory
+
+    expected = [
+        (_key("40000001", SEVENTH, "ewa.probna"), "tak", "d"),
+        (_key("40000002"), "tak", "c"),
+    ]
+    assert state(clicks) == expected
+    for mails in itertools.permutations([first, mistaken, taken]):
+        once = enter_reports(_inputs(mails, orders, rollout=SIXTH, ordered=OPEN_DAYS))
+
+        assert state(_after(orders, once)) == expected
+        assert once.notes == outcome.notes
+
+
+def test_zlecenie_wykonawcy_z_dnia_zamknietego_nie_jest_kandydatem_przeniesienia() -> None:
+    """Okres z Plikiem zbiorczym jest zamknięty (ADR 0028), więc jego zlecenie nie robi numeru niejednoznacznym:
+    Przeniesienie bierze jedyne zlecenie z dnia otwartego."""
 
     closed = date(2026, 11, 2)
     orders = [_order(day=closed), _order(OrderRow("Zlecenia", 121), day=date(2026, 11, 7))]
 
     outcome = enter_reports(
-        _inputs([_mail(JAN, SUBJECT, TEXT)], orders, rollout=date(2026, 10, 30), closed=(period_of(closed).token,))
+        _inputs(
+            [_mail(JAN, SUBJECT, TEXT)],
+            orders,
+            rollout=date(2026, 10, 30),
+            closed=(period_of(closed).token,),
+            ordered=[DAY],
+        )
     )
 
-    assert outcome.problems == (OtherDay(JAN_LOGIN, DAY, OrderNumber("40000001"), (date(2026, 11, 7),)),)
+    assert outcome.problems == ()
+    assert outcome.moves == (OrderMove(OrderRow("Zlecenia", 121), DAY, "Jan.Testowy"),)
 
 
 def test_ten_sam_numer_dwa_razy_w_dniu_wykonawcy_nie_daje_zmian() -> None:
@@ -701,11 +978,15 @@ def test_wpis_z_dnia_od_wdrozenia_trafia_do_zlecenia_tego_dnia() -> None:
 def test_raport_z_dnia_spoza_dni_otwartych_jest_pomijany_po_cichu(
     day: date, rollout: date | None, closed: tuple[str, ...]
 ) -> None:
+    """Raport z dniem w okresie z Plikiem zbiorczym rdzeń czyta (``mails``), bo jego niezgodne Wpisy mówią o dniach
+    otwartych (ADR 0029), ale Wpis do zlecenia z dnia zamkniętego niczego nie zmienia i nie daje problemu."""
+
     mail = _mail(JAN, f"Raport {day:%d.%m.%Y}", TEXT)
 
     outcome = enter_reports(_inputs([mail], [_order(day=day)], rollout=rollout, closed=closed))
 
-    assert outcome == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), ())
+    assert replace(outcome, mails=()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), ())
+    assert [type(read) for read in outcome.mails] == ([ReadReport] if closed else [])
 
 
 def test_raport_z_ostatniego_dnia_poprzedniego_okresu_wpisuje_sie_dopoki_okres_nie_ma_pliku_zbiorczego() -> None:
@@ -722,7 +1003,7 @@ def test_raport_z_ostatniego_dnia_poprzedniego_okresu_wpisuje_sie_dopoki_okres_n
     )
 
     assert [change.column for change in still_open.changes] == [ReportColumn.SUCCESSFUL, ReportColumn.COMPLETED]
-    assert closed == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), ())
+    assert replace(closed, mails=()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), ())
 
 
 TUESDAY = date(2026, 11, 10)
@@ -982,7 +1263,7 @@ def _no_year(arrived: datetime = EVENING, text: str = TEXT) -> UnreadableSubject
             _mail(JAN, SUBJECT, "40000001 tak wymiana routera 40000003 tak montaż"),
             _mail(JAN, "Raport 09.11.2026", "40000003 tak montaż", LATER),
             (),
-            OtherDay(JAN_LOGIN, DAY, OrderNumber("40000003"), (NEXT_DAY,)),
+            RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000003"), NEXT_DAY, MoveBar.NOT_ORDERED),
             id="inna-data-raport-z-dniem-zlecenia",
         ),
         pytest.param(_mail(JAN, SUBJECT, TYPO), None, (period_of(DAY).token,), JAN_TYPO, id="okres-dostal-plik-zbiorczy"),
@@ -1065,7 +1346,7 @@ def test_problem_z_bledu_wykonawcy_znika_w_nastepnym_kliknieciu_po_poprawionym_m
         pytest.param(
             _mail(JAN, SUBJECT, "40000001 tak wymiana routera 40000003 tak montaż"),
             _mail(JAN, SUBJECT, "40000001 tak wymiana routera", LATER),
-            OtherDay(JAN_LOGIN, DAY, OrderNumber("40000003"), (NEXT_DAY,)),
+            RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000003"), NEXT_DAY, MoveBar.NOT_ORDERED),
             id="inna-data-raport-jeszcze-raz-z-dnia-z-tematu",
         ),
     ],
@@ -1379,6 +1660,7 @@ def _every_problem() -> list[ReportProblem]:
         ForeignOrder(jan, DAY, number, ewa),
         OtherDay(jan, DAY, number, (date(2026, 11, 6), date(2026, 11, 7))),
         RepeatedOrder(jan, DAY, number),
+        *(RefusedMove(jan, DAY, number, date(2026, 11, 7), bar) for bar in MoveBar),
         *(ManualDifference(_key(), column, "ręcznie", "z raportu") for column in ReportColumn),
     ]
 

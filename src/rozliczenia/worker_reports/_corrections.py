@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from datetime import date, datetime
 
 from . import _matching
@@ -13,9 +13,9 @@ from ._model import (
     MailId,
     OrderNumber,
     OtherDay,
-    OwnMove,
     ReadReport,
     ReadUnreadable,
+    RefusedMove,
     RegisterOrder,
     ReportProblem,
     UnknownNumber,
@@ -28,10 +28,10 @@ def standing(
     reports: Sequence[ReadReport],
     unreadable: Sequence[ReadUnreadable],
     orders: Sequence[RegisterOrder],
-    moves: Mapping[tuple[OrderNumber, date], OwnMove],
+    board: _matching.Board,
 ) -> set[ReportProblem]:
-    """Problemy, które dalej stoją po poprawionych mailach (US 40); ``moves``: Przeniesienia z pamięci, jak w
-    ``_matching.match``.
+    """Problemy, które dalej stoją po poprawionych mailach (US 40); ``board``: zlecenia kliknięcia, jak w
+    ``enter_reports``.
 
     Stary mail zostaje w skrzynce, więc rdzeń liczy jego problemy przy każdym kliknięciu. Poprawionym mailem jest
     późniejszy Raport wykonawcy tego samego Wykonawcy z dnia poprawki, który ma numer każdego Wpisu wcześniejszego
@@ -39,7 +39,8 @@ def standing(
     nie sprawdza ``tak``/``nie`` ani opisu i nie wymaga, żeby poprawiony mail powtórzył resztę wcześniejszego. Kolejny
     raport bez tych numerów problemu nie usuwa, bo nieznany numer może być zleceniem, którego brak w INTERMAX.
     Poprawiony mail usuwa nieznany numer i cudze zlecenie z dnia z tematu, inną datę z dniem zlecenia (dzień
-    poprawki to dzień zlecenia) i nieczytelny temat (``unreadable``: odczyty maili z nieczytelnym tematem z numerami ich Wpisów). Ostrzeżenie
+    poprawki to dzień zlecenia), Przeniesienie na dzień, do którego nie wolno, tak samo z dniem zlecenia i nieczytelny
+    temat (``unreadable``: odczyty maili z nieczytelnym tematem z numerami ich Wpisów). Ostrzeżenie
     o nieczytelnym temacie stoi, gdy któregoś odczytu z nim nie poprawiono, więc nie zależy od kolejności maili z tym
     samym Message-ID. Brak
     ``tak``/``nie`` i przeciwny zamiar Wpisów jednego numeru daje już najpóźniejszy mail z numerem, a numer dwa razy
@@ -62,7 +63,7 @@ def standing(
     found: set[ReportProblem] = set()
     for problem in problems:
         match problem:
-            case UnknownNumber() | ForeignOrder() | OtherDay():
+            case UnknownNumber() | ForeignOrder() | OtherDay() | RefusedMove():
                 continue
             case _:
                 found.add(problem)
@@ -71,12 +72,14 @@ def standing(
             found.add(UnreadableSubject(read.mail, read.worker, read.arrived, read.fault))
     for report in reports:
         numbers = frozenset(entry.number for entry in report.entries)
-        for problem in _matching.match([report], orders, moves).problems:
+        for problem in board.match([report]).problems:
             match problem:
                 case UnknownNumber(day=day) | ForeignOrder(day=day):
                     on = {day}
                 case OtherDay(order_days=order_days):
                     on = set(order_days)
+                case RefusedMove(order_day=order_day):
+                    on = {order_day}
                 case _:
                     continue
             if not corrected(report.worker, numbers, (report.arrived, report.mail), on):

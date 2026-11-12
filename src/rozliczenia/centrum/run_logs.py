@@ -86,7 +86,9 @@ from rozliczenia.worker_reports import (
     MissingVerdict,
     OrderKey,
     OrderNumber,
+    MoveBar,
     OtherDay,
+    RefusedMove,
     OwnMove,
     ReadReport,
     ReadStranger,
@@ -479,6 +481,18 @@ LoggedVerdictFault = Literal["missing", "letter_yes", "letter_no", "word_yes", "
 LoggedSubjectFault = Literal["no_date", "other_text", "no_year", "date_form", "separator", "year_digits", "not_a_day"]
 
 
+def _move_bar(bar: MoveBar) -> LoggedMoveBar:
+    match bar:
+        case MoveBar.NOT_ORDERED:
+            return "not_ordered"
+        case MoveBar.OTHER_SHEET:
+            return "other_sheet"
+        case MoveBar.CLOSED_TARGET:
+            return "closed_target"
+        case MoveBar.CLOSED_SOURCE:
+            return "closed_source"
+
+
 def _column(column: ReportColumn) -> LoggedColumn:
     match column:
         case ReportColumn.SUCCESSFUL:
@@ -631,18 +645,23 @@ def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
     return {_subject_fault(member): member for member in SubjectFault}[fault]
 
 
+LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source"]
+
+
 class LoggedOrderProblem(_Record):
     """Problem Wpisu raportu Wykonawcy z dnia: rodzaj, numer z treści maila (pod strażnikiem jak w
     ``LoggedReportEntry``), a przy ``missing_verdict`` powód, przy ``foreign_order`` Wykonawca zlecenia, przy
-    ``other_day`` dni zleceń z tym numerem."""
+    ``other_day`` dni zleceń z tym numerem, a przy ``refused_move`` dzień zlecenia (``order_days``) i powód odmowy
+    Przeniesienia (``bar``)."""
 
-    kind: Literal["missing_verdict", "unknown_number", "foreign_order", "other_day", "repeated_order"]
+    kind: Literal["missing_verdict", "unknown_number", "foreign_order", "other_day", "repeated_order", "refused_move"]
     worker: str
     day: date
     number: str
     fault: LoggedVerdictFault | None = None
     owner: str | None = None
     order_days: list[date] = []
+    bar: LoggedMoveBar | None = None
 
 
 class LoggedConflictProblem(_Record):
@@ -751,6 +770,15 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
             )
         case RepeatedOrder():
             return LoggedOrderProblem(kind="repeated_order", worker=problem.worker, day=problem.day, number=problem.number)
+        case RefusedMove():
+            return LoggedOrderProblem(
+                kind="refused_move",
+                worker=problem.worker,
+                day=problem.day,
+                number=problem.number,
+                order_days=[problem.order_day],
+                bar=_move_bar(problem.bar),
+            )
         case ManualDifference():
             cell = LoggedOwnEntry.of(problem.key, problem.column, problem.reported)
             return LoggedManualProblem(kind="manual_difference", cell=cell, manual=problem.manual)

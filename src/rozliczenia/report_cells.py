@@ -42,8 +42,8 @@ class CellChange:
 class OrderMove:
     """Przeniesienie zlecenia: wiersz ``order``, tak jak go przeczytał proces, przed zmianami kliknięcia, dostaje w
     ``WYKONAWCA`` tekst ``worker`` i staje pod ostatnim zleceniem tego Wykonawcy w dniu ``day``, a gdy Wykonawca nie ma
-    w tym dniu segmentu, w nowym segmencie na jego miejscu w kolejności alfabetycznej. Zapis przenosi dziś tylko w
-    obrębie dnia zlecenia (``day`` to jego dzień)."""
+    w tym dniu segmentu, w nowym segmencie na jego miejscu w kolejności alfabetycznej. Na inny dzień niż dzień
+    zlecenia zapis zmienia też dzień w ``DATA GODZ. POCZ.``, a godzina zostaje."""
 
     order: OrderRow
     day: date

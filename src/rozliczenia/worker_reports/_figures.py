@@ -18,6 +18,7 @@ from ._model import (
     OrderKey,
     OtherDay,
     ReadReport,
+    RefusedMove,
     RegisterOrder,
     RepeatedOrder,
     ReportProblem,
@@ -37,13 +38,16 @@ def worker_days(
     problems: Iterable[ReportProblem],
     changes: Iterable[CellChange],
     moved: frozenset[OrderRow],
+    reached: frozenset[OrderKey],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
     zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał.
 
     ``orders`` mają klucz po Przeniesieniach kliknięcia. Zlecenia dnia idą w kolejności z INTERMAX po zapisie: arkusze
     zleceń tak, jak przyszły w ``orders``, a w arkuszu od góry, a zlecenia przeniesione (``moved``) za pozostałymi,
-    bo zapis stawia je pod ostatnim zleceniem nowego Wykonawcy.
+    bo zapis stawia je pod ostatnim zleceniem nowego Wykonawcy. Zlecenie ma Wpis, gdy Raport wykonawcy z jego dnia ma
+    jego numer albo gdy zwycięski Wpis innego dnia trafił do niego (``reached``: klucze celów po kliknięciu, np.
+    pomylony temat).
     """
 
     found_orders = tuple(orders)
@@ -53,7 +57,7 @@ def worker_days(
     for order in sorted(found_orders, key=lambda order: (order.row in moved, sheets[order.row.sheet], order.row.row)):
         days[order.key.day, order.key.worker].append(order)
     mails = Counter((report.day, report.worker) for report in reports)
-    reported = {OrderKey(entry.number, report.day, report.worker) for report in reports for entry in report.entries}
+    reported = reached | {OrderKey(entry.number, report.day, report.worker) for report in reports for entry in report.entries}
     places = Counter(place for problem in problems if (place := _place(problem)) is not None)
     figures = []
     for day, worker in sorted(days.keys() | mails.keys()):
@@ -88,5 +92,7 @@ def _place(problem: ReportProblem) -> tuple[date, Login] | None:
             return None
         case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | ForeignOrder() | OtherDay() | RepeatedOrder():
             return problem.day, problem.worker
+        case RefusedMove():
+            return problem.shown, problem.worker
         case ManualDifference(key=key):
             return key.day, key.worker

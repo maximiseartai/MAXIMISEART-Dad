@@ -8,8 +8,9 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   zamknięty w Excelu, więc przy kopii konfliktu albo INTERMAX otwartym w Excelu skrzynka nie jest czytana;
 - Odczyt danych: Pliki zbiorcze okresów okna (``scan_period_folders``), bo okres z Plikiem zbiorczym jest zamknięty, potem
   maile ze Skrzynki raportów od pierwszego dnia otwartego, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
-  wklejania uporządkowane wiersze z dni od pierwszego dnia okna (``raw_orders.ordered_rows``, w Kopii wejścia przez
-  ``PasteArea.copy_rows``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
+  wklejania uporządkowane wiersze z dni od ``Window.start`` (tydzień przed pierwszym dniem otwartym, nie przed dniem
+  wdrożenia: ``raw_orders.ordered_rows``, w Kopii wejścia przez ``PasteArea.copy_rows``) oraz Dni uporządkowane
+  (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
 - Planowanie: rdzeń raportów;
@@ -65,6 +66,7 @@ from .worker_reports import (
     Kept,
     MailRead,
     OrderKey,
+    OrderedDay,
     OwnEntries,
     OwnEntry,
     OwnMove,
@@ -281,7 +283,9 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     clicked_at = inputs.now()
     today = clicked_at.date()
 
-    def read() -> tuple[Window, RegisterFile, tuple[RegisterOrder, ...], int, tuple[ReportMail, ...]]:
+    def read() -> tuple[
+        Window, RegisterFile, tuple[RegisterOrder, ...], frozenset[OrderedDay], int, tuple[ReportMail, ...]
+    ]:
         closed = _closed(inputs.periods_directory, Window.periods(today, saved.rollout))
         window = Window.of(today, saved.rollout, closed)
         outcome = parts.inbox.mails_since(window.first)
@@ -300,15 +304,21 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 assert_never(outcome)
         with _stops_unusable():
             register = register_file.read(register_path, files)
-        orders = _orders(register, window.first, copy=files.copy is not None)
-        return window, register, orders, outcome.skipped, outcome.mails
+        orders = _orders(register, window.start, copy=files.copy is not None)
+        return window, register, orders, _ordered_days(register, window.start), outcome.skipped, outcome.mails
 
-    window, register, orders, skipped, mails = phases.read(read)
+    window, register, orders, ordered_days, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
         found = enter_reports(
             ReportInputs(
-                mails=mails, addresses=addresses, orders=orders, window=window, memory=saved.memory, kept=saved.kept
+                mails=mails,
+                addresses=addresses,
+                orders=orders,
+                window=window,
+                memory=saved.memory,
+                kept=saved.kept,
+                ordered_days=ordered_days,
             )
         )
         reported = {
@@ -436,6 +446,17 @@ def _sheet(facts: EnteringFacts) -> str:
     if facts.changes:
         return facts.changes[0].order.sheet
     return facts.moves[0].order.sheet if facts.moves else ""
+
+
+def _ordered_days(register: RegisterFile, since: date) -> frozenset[OrderedDay]:
+    """Dni uporządkowane od ``since`` w każdym obszarze wklejania (``raw_orders.ordered_days``, ta sama reguła co karta
+    Uporządkowania INTERMAX), każdy z arkuszem: tylko do nich rdzeń przenosi zlecenie z tego arkusza (ADR 0029)."""
+
+    found: set[OrderedDay] = set()
+    for area in paste_areas(register):
+        with _stops(lambda: messages.unsupported_shape(register.path, area.sheet), UnsupportedShape):
+            found |= {OrderedDay(area.sheet, day) for day in raw_orders.ordered_days(area.rows_from_bottom(), area.columns, since)}
+    return frozenset(found)
 
 
 def _orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[RegisterOrder, ...]:

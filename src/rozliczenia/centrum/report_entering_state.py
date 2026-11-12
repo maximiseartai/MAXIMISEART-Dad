@@ -47,6 +47,7 @@ from rozliczenia.worker_reports import (
     OrderKey,
     OrderNumber,
     OtherDay,
+    RefusedMove,
     OwnEntries,
     OwnEntry,
     OwnMove,
@@ -473,6 +474,8 @@ def _problem(problem: ReportProblem) -> _Problem:
             return _Problem(
                 day=problem.day, worker=problem.worker, number=problem.number, reason=said, sender=None, difference=None
             )
+        case RefusedMove(worker=worker, number=number):
+            return _Problem(day=problem.shown, worker=worker, number=number, reason=said, sender=None, difference=None)
         case ManualDifference(key=key, column=column, reported=reported):
             difference = _Kept.of(Kept(key, column, reported))
             return _Problem(

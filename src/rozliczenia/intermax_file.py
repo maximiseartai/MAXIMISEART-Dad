@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import html
 import re
+from decimal import Decimal
 import struct
 import zipfile
 import zlib
@@ -93,6 +94,7 @@ _WORKBOOK_VIEW: Final = re.compile(rb"<workbookView\b([^>]*?)(/?>)")
 _CELL: Final = re.compile(rb'<c r="([A-Z]{1,3})\d+"([^>]*?)(?:/>|>.*?</c>)', re.S)
 _STYLE: Final = re.compile(rb'\ss="\d+"')
 _INLINE_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
+_VALUE: Final = re.compile(rb"<v>([^<]*)</v>")
 _MERGED: Final = re.compile(r'<mergeCell\b[^>]*?\sref="([^"]*)"')
 _COMPRESSION: Final = 1
 """Poziom zlib zapisu: arkusz zleceń taty (dziesiątki MB XML) zajmuje przy nim tyle co po zapisie w Excelu, a domyślny
@@ -181,7 +183,8 @@ def with_cells(register: RegisterFile, cells: Cells, moves: Moves | None = None)
     pliku, zachowuje swój styl, a komórka, której nie ma, dostaje styl tekstu uporządkowanego wiersza
     (``_Looks.text``), dopisany do ``xl/styles.xml`` tylko wtedy, gdy go tam nie ma. Potem Przeniesienia (``_moved``):
     wiersze od ``MovePlan.first`` do końca arkusza stają w kolejności planu, przeniesione zlecenie dostaje tekst
-    ``WYKONAWCA``, a nowy pusty wiersz między segmentami wygląd z Uporządkowania INTERMAX. Każda inna część i każdy inny
+    ``WYKONAWCA``, a przeniesione na inny dzień nowy dzień w ``DATA GODZ. POCZ.`` (``_shifted``), a nowy pusty wiersz
+    między segmentami wygląd z Uporządkowania INTERMAX. Każda inna część i każdy inny
     bajt arkusza zostają, także widok i aktywna karta. ``UnsupportedShape``, gdy komórka ma formułę albo leży w
     scaleniu, gdy przesuwany wiersz ma formułę albo gdy zakres (poza Hiperłączem jednej komórki) sięga przesuwanych
     wierszy, a ``WorkbookError``, gdy stylów nie da się odczytać.
@@ -346,7 +349,8 @@ def _moved(sheet: RowsFromBottom, columns: OrderColumns, plan: MovePlan, looks: 
     """XML arkusza z wierszami od ``plan.first`` w kolejności planu.
 
     Wiersz, który zostaje pod swoim numerem i nie jest przenoszony, zostaje bajt w bajt. Inny dostaje nowy numer
-    (``_renumbered``), a przeniesione zlecenie tekst ``WYKONAWCA`` w stylu swojej komórki (``_row_with_cells``). Nowy
+    (``_renumbered``), a przeniesione zlecenie tekst ``WYKONAWCA`` w stylu swojej komórki (``_row_with_cells``) i, na
+    inny dzień, liczbę daty większą o ``MovePlan.shifts`` (``_shifted``). Nowy
     pusty wiersz między segmentami ma puste komórki od A do ``UWAGI`` z wyglądem Uporządkowania (``_order_row``) i
     wygląd ``<row>`` przeniesionego zlecenia. Hiperłącza przesuwanych wierszy idą z nimi, a ``<dimension>`` sięga
     ostatniego wiersza, gdy arkusz urósł.
@@ -375,6 +379,8 @@ def _moved(sheet: RowsFromBottom, columns: OrderColumns, plan: MovePlan, looks: 
         if _FORMULA.search(row_xml):
             raise UnsupportedShape("formuła")
         row_xml = _renumbered(row_xml, number)
+        if slot in plan.shifts:
+            row_xml = _shifted(row_xml, columns.date, plan.shifts[slot])
         if slot in plan.workers:
             row_xml = _row_with_cells(row_xml, number, {columns.worker: plan.workers[slot]}, looks)
         rows.append(row_xml)
@@ -384,6 +390,29 @@ def _moved(sheet: RowsFromBottom, columns: OrderColumns, plan: MovePlan, looks: 
     end = region[-1].end if region else sheet.end
     tail = _renumbered_hyperlinks(xml[tail_at:], _new_numbers(plan), plan.first)
     return b"".join((head, xml[sheet.start : start], *rows, xml[end:tail_at], tail))
+
+
+def _shifted(row_xml: bytes, column: int, days: int) -> bytes:
+    """Wiersz z liczbą daty Excela w kolumnie ``column`` większą o ``days`` (dzień się zmienia, godzina, typ i styl
+    komórki zostają); ``UnsupportedShape``, gdy komórka nie jest liczbą."""
+
+    for found in _CELL.finditer(row_xml):
+        if _column(found) != column:
+            continue
+        cell = found.group(0)
+        value = _VALUE.search(cell)
+        kind = SheetCell(column, found.group(2), None).kind
+        if value is None or kind not in (None, b"n"):
+            break
+        shifted = cell[: value.start(1)] + _serial(value.group(1), days) + cell[value.end(1) :]
+        return row_xml[: found.start()] + shifted + row_xml[found.end() :]
+    raise UnsupportedShape("data")
+
+
+def _serial(value: bytes, days: int) -> bytes:
+    """Liczba daty Excela ``value`` większa o ``days`` dni, z tą samą częścią godziny co do cyfry."""
+
+    return format(Decimal(value.decode("ascii")) + days, "f").encode("ascii")
 
 
 def _renumbered_hyperlinks(tail: bytes, numbers: Mapping[int, int], first: int) -> bytes:
@@ -405,8 +434,8 @@ def _renumbered_hyperlinks(tail: bytes, numbers: Mapping[int, int], first: int) 
 def _check_moved(before: RowsFromBottom, written: bytes, columns: OrderColumns, plan: MovePlan) -> None:
     """``WriteMismatch``, gdy arkusz ``written`` różni się od ``before`` (arkusza z komórkami, przed przesunięciem)
     czymś więcej niż wierszami ``plan`` pod nowymi numerami: każdy wiersz planu ma te same komórki (treść, rodzaj i styl),
-    przeniesione zlecenie ``WYKONAWCA`` z planu, a nowy pusty wiersz żadnej wartości; bajty nad ``plan.first`` się nie
-    zmieniają."""
+    przeniesione zlecenie ``WYKONAWCA`` z planu, a na inny dzień ``DATA GODZ. POCZ.`` większą o dni z planu w tym samym
+    typie i stylu, a nowy pusty wiersz żadnej wartości; bajty nad ``plan.first`` się nie zmieniają."""
 
     try:
         data = RowsFromBottom(written)
@@ -444,6 +473,16 @@ def _check_moved(before: RowsFromBottom, written: bytes, columns: OrderColumns, 
             cell = new.pop(columns.worker, None)
             old.pop(columns.worker, None)
             if cell is None or cell.kind != b"inlineStr" or _inline_text(cell) != plan.workers[slot]:
+                raise WriteMismatch(f"wiersz {number}")
+        if slot in plan.shifts:
+            was, cell = old.pop(columns.date, None), new.pop(columns.date, None)
+            if (
+                was is None
+                or cell is None
+                or was.value is None
+                or (cell.kind, cell.style) != (was.kind, was.style)
+                or cell.value != _serial(was.value, plan.shifts[slot])
+            ):
                 raise WriteMismatch(f"wiersz {number}")
         if {column: (cell.content, cell.kind, cell.style) for column, cell in old.items()} != {
             column: (cell.content, cell.kind, cell.style) for column, cell in new.items()

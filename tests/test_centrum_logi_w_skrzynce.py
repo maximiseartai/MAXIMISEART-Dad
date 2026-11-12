@@ -1559,8 +1559,8 @@ def test_klikniecie_z_okresem_zamknietym_i_pomylkami_wykonawcow_odtwarza_sie_zgo
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Logi mają tokeny okresów z Plikiem zbiorczym, a odtworzenie kładzie Plik zbiorczy każdego z nich w swoim folderze
-    okresów: dni zamknięte, Przeniesienia zleceń między Janem i Anną (ADR 0029), inny dzień i numer dwa razy w dniu
-    wychodzą tak samo jak u taty."""
+    okresów: dni zamknięte, Przeniesienia zleceń między Janem i Anną (ADR 0029), zlecenie z innego dnia, którego nie
+    wolno przenieść na dzień bez uporządkowanych zleceń (#1350), i numer dwa razy w dniu wychodzą tak samo jak u taty."""
 
     surroundings = Surroundings()
     centrum = entering_centrum(tmp_path / "taty", MATCHED, (), surroundings=surroundings)
@@ -1582,7 +1582,8 @@ def test_klikniecie_z_okresem_zamknietym_i_pomylkami_wykonawcow_odtwarza_sie_zgo
     archived = _archived_run(surroundings.report_box, tmp_path, second["run"]["id"])
     entering = json.loads(gzip.decompress(archived.read_bytes()))["report_entering"]
     assert entering["closed"] == ["03_09_11_2026"]
-    assert [problem["kind"] for problem in entering["problems"]] == ["repeated_order", "other_day"], entering["problems"]
+    assert [problem["kind"] for problem in entering["problems"]] == ["repeated_order", "refused_move"], entering["problems"]
+    assert entering["problems"][1]["bar"] == "not_ordered"
     assert [(move["row"], move["worker"]) for move in entering["moves"]] == [(3, "anna.kowalska"), (5, "jan.testowy")]
 
     code, lines = _replayed(capsys, archived, "--na-tym-drzewie")

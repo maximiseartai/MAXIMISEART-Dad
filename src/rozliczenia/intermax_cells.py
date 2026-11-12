@@ -3,7 +3,8 @@
 Operacją jest ``write_cells``: dostaje Rejestr zleceń przeczytany przez proces (``register_file.read``), zmiany komórek
 (``report_cells.CellChange``) i Przeniesienia zleceń (``report_cells.OrderMove``) z rdzenia Wpisania raportów. Najpierw
 odrzuca całość, gdy którakolwiek zmiana nie trafia w ``SKUTECZNE`` albo ``CZYNNOŚCI ZREALIZOWANE`` uporządkowanego
-wiersza zlecenia albo Przeniesienie nie zaczyna się w uporządkowanym wierszu albo idzie na inny dzień (``CellProblem``),
+wiersza zlecenia albo Przeniesienie nie zaczyna się w uporządkowanym wierszu albo idzie na dzień bez uporządkowanych
+zleceń w arkuszu (``CellProblem``),
 a INTERMAX zostaje wtedy nietknięty. Inaczej bajty z tylko tymi komórkami, a potem z wierszami w układzie dnia z planu
 Przeniesień (``raw_orders.plan_moves``, ``intermax_file.with_cells``) zastępują INTERMAX tą samą podmianą co
 Uporządkowanie INTERMAX, bez Kopii (``intermax_replace.replace_without_copy``), z odczytem kontrolnym
@@ -20,13 +21,13 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Final
 
 from . import intermax_file, raw_orders
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting, replace_without_copy
-from .raw_orders import MovePlan, RowLook
+from .raw_orders import MissingDays, MovePlan, RowLook
 from .register_columns import COMPLETED, SUCCESSFUL, Column
 from .register_file import OrderSheets, PasteArea, RegisterFile
 from .report_cells import CellChange, OrderMove, ReportColumn
@@ -56,8 +57,9 @@ class CellProblem(Enum):
     MOVE_NOT_ORDERED = "Przeniesienie spoza uporządkowanego wiersza zlecenia"
     """Przeniesienie z wiersza, który nie jest uporządkowanym wierszem zlecenia z datą, albo drugi raz z tego samego
     wiersza."""
-    OTHER_DAY = "Przeniesienie na inny dzień niż dzień zlecenia"
-    """Zapis przenosi dziś tylko w obrębie dnia zlecenia."""
+    NO_DAY = "Przeniesienie na dzień bez uporządkowanych zleceń w arkuszu"
+    """Arkusz zlecenia nie ma uporządkowanego wiersza dnia docelowego, pod który wiersz mógłby stanąć
+    (``raw_orders.MissingDays``); rdzeń przenosi tylko do Dnia uporządkowanego arkusza zlecenia."""
 
 
 @dataclass(frozen=True)
@@ -90,7 +92,8 @@ def write_cells(
     wiersza, więc idą z nim.
 
     ``Rejected`` przed zapisem, gdy którakolwiek zmiana nie trafia w komórkę raportu uporządkowanego wiersza albo
-    Przeniesienie nie zaczyna się w uporządkowanym wierszu zlecenia albo idzie na inny dzień, a ``Refusal`` podmiany
+    Przeniesienie nie zaczyna się w uporządkowanym wierszu zlecenia albo idzie na dzień bez uporządkowanych zleceń w
+    arkuszu, a ``Refusal`` podmiany
     (Excel, OneDrive, nieudany albo niezgodny zapis) tak samo jak w Uporządkowaniu INTERMAX. ``UnsupportedShape``, gdy
     komórka albo przesuwany wiersz ma formułę, komórka leży w scaleniu, zakres sięga przesuwanych wierszy albo wierszy
     arkusza nie da się rozdzielić, a ``WorkbookError``, gdy stylów INTERMAX nie da się odczytać; INTERMAX zostaje wtedy
@@ -121,7 +124,8 @@ def _plans(
 
     sheets = register.order_sheets.sheets if isinstance(register.order_sheets, OrderSheets) else ()
     areas = {sheet.name: sheet.paste for sheet in sheets if sheet.paste is not None}
-    wanted: dict[PasteArea, dict[int, str]] = {}
+    wanted: dict[PasteArea, dict[int, tuple[str, date]]] = {}
+    sources: dict[PasteArea, list[OrderMove]] = {}
     problems: list[tuple[OrderMove, CellProblem]] = []
     for move in moves:
         area = areas.get(move.order.sheet)
@@ -129,13 +133,19 @@ def _plans(
         when = None if facts is None or area is None else facts.value(area.columns.date)
         if area is None or not isinstance(when, datetime) or move.order.row in wanted.get(area, {}):
             problems.append((move, CellProblem.MOVE_NOT_ORDERED))
-        elif when.date() != move.day:
-            problems.append((move, CellProblem.OTHER_DAY))
         else:
-            wanted.setdefault(area, {})[move.order.row] = move.worker
+            wanted.setdefault(area, {})[move.order.row] = (move.worker, move.day)
+            sources.setdefault(area, []).append(move)
+    plans: dict[PasteArea, MovePlan] = {}
+    for area, rows in wanted.items():
+        plan = raw_orders.plan_moves(area.rows_from_bottom(), area.columns, rows)
+        if isinstance(plan, MissingDays):
+            problems += [(move, CellProblem.NO_DAY) for move in sources[area] if move.day in plan.days]
+        else:
+            plans[area] = plan
     if problems:
         return {}, tuple(problems)
-    return {area: raw_orders.plan_moves(area.rows_from_bottom(), area.columns, rows) for area, rows in wanted.items()}, ()
+    return plans, ()
 
 
 def _ordered_row(area: PasteArea, number: int) -> raw_orders.RowFacts | None:

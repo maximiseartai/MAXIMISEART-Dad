@@ -38,6 +38,14 @@ OtherDay
   Zlecenie 40000001 od jan.testowy jest z 06.11.2026, 07.11.2026, a temat Raportu wykonawcy ma 08.11.2026, więc Centrum go nie wpisało.
 RepeatedOrder
   Zlecenie 40000001 jest dwa razy w dniu 08.11.2026 u jan.testowy, więc Centrum niczego do niego nie wpisało.
+RefusedMove
+  Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. Centrum go nie przeniosło i nie wpisało, bo dzień 08.11.2026 nie jest jeszcze uporządkowany w INTERMAX.
+RefusedMove
+  Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. Centrum go nie przeniosło i nie wpisało, bo dzień 08.11.2026 jest uporządkowany w innym arkuszu zleceń.
+RefusedMove
+  Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. Centrum go nie przeniosło i nie wpisało, bo okres z dniem 08.11.2026 ma już Plik zbiorczy.
+RefusedMove
+  Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. Centrum go nie przeniosło i nie wpisało, bo okres z dniem 07.11.2026 ma już Plik zbiorczy.
 ManualDifference
   Zlecenie 40000001 od jan.testowy z 08.11.2026 ma w SKUTECZNE ręczną wartość „ręcznie”, a Wpis raportu mówi „z raportu”. Ręczna wartość zostaje.
 ManualDifference

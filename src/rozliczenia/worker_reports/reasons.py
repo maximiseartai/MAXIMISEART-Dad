@@ -14,12 +14,17 @@ from . import (
     HandedOver,
     ManualDifference,
     MissingVerdict,
+    MoveBar,
+    MovedFrom,
+    MovedTo,
     OtherDay,
+    RefusedMove,
     RepeatedOrder,
     ReportEntry,
     ReportNote,
     ReportProblem,
     SubjectFault,
+    SubjectLost,
     TakenOver,
     UnknownNumber,
     UnknownSender,
@@ -69,6 +74,11 @@ def reason(problem: ReportProblem) -> str:
                 f"Zlecenie {number} jest dwa razy w dniu {_day(day)} u {worker}, więc Centrum niczego do niego nie "
                 "wpisało."
             )
+        case RefusedMove(worker=worker, day=day, number=number, order_day=order_day, bar=bar):
+            return (
+                f"Wpis zlecenia {number} od {worker} ma w temacie {_day(day)}, a INTERMAX ma to zlecenie w "
+                f"{_day(order_day)}. Centrum go nie przeniosło i nie wpisało, bo {_bar(bar, day, order_day)}."
+            )
         case ManualDifference(key=key, column=column, manual=manual, reported=reported):
             return (
                 f"Zlecenie {key.number} od {key.worker} z {_day(key.day)} ma w {column.value} ręczną wartość "
@@ -79,19 +89,44 @@ def reason(problem: ReportProblem) -> str:
 
 
 def note(found: ReportNote) -> str:
-    """Informacja dla taty przy dniu Wykonawcy, krótko, bo stoi przy numerze zlecenia: tylko drugi Wykonawca."""
+    """Informacja dla taty przy dniu Wykonawcy, krótko, bo stoi przy numerze zlecenia: tylko drugi Wykonawca albo drugi
+    dzień."""
 
     match found:
         case TakenOver(previous=previous):
             return f"przejęte od {previous}"
         case HandedOver(successor=successor):
             return f"przekazane {successor}"
+        case MovedFrom(origin_day=origin_day):
+            return f"przeniesione z {_short(origin_day)}"
+        case MovedTo(target_day=target_day):
+            return f"przeniesione na {_short(target_day)}"
+        case SubjectLost(order_day=order_day):
+            return f"pomylony temat: wpisane do zlecenia z {_short(order_day)}"
         case _:
             assert_never(found)
 
 
 def _day(day: date) -> str:
     return f"{day:%d.%m.%Y}"
+
+
+def _short(day: date) -> str:
+    """Dzień bez roku i bez zera na początku, jak „4.11” w okienku dnia."""
+
+    return f"{day.day}.{day.month:02d}"
+
+
+def _bar(bar: MoveBar, day: date, order_day: date) -> str:
+    match bar:
+        case MoveBar.NOT_ORDERED:
+            return f"dzień {_day(day)} nie jest jeszcze uporządkowany w INTERMAX"
+        case MoveBar.OTHER_SHEET:
+            return f"dzień {_day(day)} jest uporządkowany w innym arkuszu zleceń"
+        case MoveBar.CLOSED_TARGET:
+            return f"okres z dniem {_day(day)} ma już Plik zbiorczy"
+        case MoveBar.CLOSED_SOURCE:
+            return f"okres z dniem {_day(order_day)} ma już Plik zbiorczy"
 
 
 def _subject(fault: SubjectFault) -> str:

@@ -39,7 +39,7 @@ from rozliczenia.worker_reports import (
 )
 from rozliczenia.worker_reports.reasons import reason
 
-from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
+from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
 from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.skrzynka_raportow import AtrapaImap, FakeInbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
@@ -998,12 +998,12 @@ def _click_at(centrum: EnteringCentrum, moment: datetime, mails: list[Any]) -> d
     return _finished(centrum)
 
 
-def test_pomylka_wykonawcy_w_numerze_albo_dniu_daje_problem_z_powodem_a_wpis_trafia_tylko_do_zlecenia_nadawcy_z_dnia(
+def test_pomylka_wykonawcy_w_numerze_daje_problem_a_jedyne_zlecenie_z_innego_dnia_przechodzi_na_dzien_z_tematu(
     tmp_path: Path,
 ) -> None:
-    """US 27–30: numer zlecenia Jana z 8.11 w Raporcie z 9.11 i numer spoza zleceń dają problemy z obiema datami i
-    numerem, a Wpis Anny do zlecenia Jana przegrywa ze świeższym mailem Jana (ADR 0029); wpisuje się tylko Wpis Jana do
-    jego zlecenia z 9.11."""
+    """US 27–30: numer spoza zleceń daje problem z numerem, a Wpis Anny do zlecenia Jana przegrywa ze świeższym mailem
+    Jana (ADR 0029). Numer zlecenia Jana z 8.11 w Raporcie z 9.11 to jedyny niezgodny Wpis tego raportu, więc zlecenie
+    przechodzi na 9.11 z Wpisem (#1350), bez problemu."""
 
     centrum = entering_centrum(tmp_path, INTERMAX)
     _click_at(centrum, datetime(2026, 11, 8, 18), [])
@@ -1020,17 +1020,19 @@ def test_pomylka_wykonawcy_w_numerze_albo_dniu_daje_problem_z_powodem_a_wpis_tra
         ],
     )
 
-    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+    assert _cells(centrum.register) == {
+        **before,
+        40000001: ("tak", "wymiana routera"),
+        40000010: ("tak", "wymiana gniazda"),
+    }
     problems = _entering(centrum, view)["problems"]
     assert [
         (problem["kind"], problem["worker"], problem["number"], problem["owner"], problem["order_days"])
         for problem in problems
-    ] == [
-        ("unknown_number", "jan.testowy", "12345678", None, []),
-        ("other_day", "jan.testowy", "40000010", None, ["2026-11-08"]),
-    ]
+    ] == [("unknown_number", "jan.testowy", "12345678", None, [])]
     assert {problem["day"] for problem in problems} == {"2026-11-09"}
-    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 2, "unit": "count"}
+    assert _entering(centrum, view)["moves"] == [{"sheet": ORDER_SHEET, "row": 2, "day": "2026-11-09", "worker": "jan.testowy"}]
+    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
 
 
 def test_ten_sam_numer_dwa_razy_u_wykonawcy_w_jednym_dniu_niczego_nie_wpisuje(tmp_path: Path) -> None:
@@ -1083,9 +1085,10 @@ def test_raport_z_ostatniego_dnia_okresu_wpisuje_sie_w_nowym_okresie_dopoki_okre
     tmp_path: Path, month: Path
 ) -> None:
     """US 11–12 i 42: we wtorek 10.11 kliknięcie wpisuje Raport Jana z poniedziałku 9.11, bo okres 03_09_11_2026 nie ma
-    Pliku zbiorczego. Gdy tata go przygotuje, kliknięcie nie czyta już dni tego okresu: Raport Anny z 9.11 się nie
-    wpisuje, skrzynka jest czytana od dziś, a Kopia wejścia ma wiersze INTERMAX od pierwszego dnia otwartego, więc bez
-    zleceń z 9.11."""
+    Pliku zbiorczego. Gdy tata go przygotuje, Raport Anny z 9.11 się nie wpisuje, choć rdzeń go czyta (jego niezgodne
+    Wpisy mówiłyby o dniach otwartych, #1350), skrzynka jest czytana od dziś, a Kopia wejścia ma wiersze INTERMAX od
+    ``Window.start``, więc dalej zlecenia z 9.11: po nich rdzeń poznaje zlecenie z okresu z Plikiem zbiorczym, którego nie
+    przenosi."""
 
     centrum = entering_centrum(tmp_path, INTERMAX)
     folder = centrum.periods_directory / month / MONDAY_PERIOD
@@ -1108,8 +1111,9 @@ def test_raport_z_ostatniego_dnia_okresu_wpisuje_sie_w_nowym_okresie_dopoki_okre
     assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana")}
     assert centrum.fake_inbox.days == [date(2026, 11, 9), date(2026, 11, 9), date(2026, 11, 10)]
     assert [_entering(centrum, view)["closed"] for view in (still_open, closed)] == [[], [MONDAY_PERIOD]]
-    assert _entering(centrum, closed)["mails"] == [], "Raport z dnia okresu z Plikiem zbiorczym rdzeń pomija po cichu"
-    assert [_copied_numbers(centrum, view) for view in (still_open, closed)] == [[40000002, 40000001], []]
+    assert [mail["day"] for mail in _entering(centrum, closed)["mails"]] == ["2026-11-09"]
+    assert (_entering(centrum, closed)["changes"], _entering(centrum, closed)["problems"]) == ([], [])
+    assert [_copied_numbers(centrum, view) for view in (still_open, closed)] == [[40000002, 40000001]] * 2
 
 
 def test_te_same_maile_w_innej_kolejnosci_i_drugie_klikniecie_daja_ten_sam_wynik(tmp_path: Path) -> None:
@@ -1227,6 +1231,129 @@ def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja
     assert (_entering(centrum, again)["changes"], _entering(centrum, again)["moves"]) == ([], [])
     assert centrum.register.read_bytes() == after
     assert _worker(_view(centrum), "anna.kowalska")["notes"] == anna["notes"]
+
+
+def _started(register: Path, number: int) -> tuple[object, str]:
+    """``DATA GODZ. POCZ.`` wiersza zlecenia ``number`` i jej format liczby."""
+
+    sheet = load_workbook(register)[ORDER_SHEET]
+    [row] = [cell.row for cell in sheet[get_column_letter(NUMBER)] if cell.value == number]
+    return sheet.cell(row, DATE).value, sheet.cell(row, DATE).number_format
+
+
+TWO_DAYS = Intermax(
+    ordered=(
+        _order(8, 9, "anna.kowalska", 40000001),
+        _order(8, 10, "jan.testowy", 40000002),
+        _order(8, 12, "jan.testowy", 40000004),
+        _order(9, 9, "anna.kowalska", 40000003),
+    ),
+    raw=(),
+)
+"""8.11: segment Anny i segment Jana z dwoma zleceniami; 9.11: segment Anny; pusty wiersz pod każdym segmentem, żółty
+wiersz pod dniem 9.11."""
+
+
+def test_klikniecie_przenosi_zlecenie_na_dzien_z_tematu_z_ta_sama_godzina_i_informacja_w_okienku_po_obu_stronach(
+    tmp_path: Path,
+) -> None:
+    """Kryteria #1350 (ADR 0029): Raport Jana za 9.11 z jednym zleceniem z 8.11. Kliknięcie zmienia w INTERMAX dzień w
+    ``DATA GODZ. POCZ.`` na 9.11 z tą samą godziną i formatem daty i stawia wiersz w nowym segmencie Jana 9.11 (za
+    Anną, alfabetycznie), z wyglądem, Hiperłączem i Wpisem; segment Jana 8.11 zostaje z drugim zleceniem, a pusty
+    wiersz między dniami i żółty wiersz zostają. Okienko dnia pokazuje „przeniesione z 8.11” u Jana 9.11 pod zleceniem
+    i „przeniesione na 9.11” u Jana 8.11 osobnym wierszem; drugie kliknięcie niczego nie zmienia."""
+
+    centrum = entering_centrum(tmp_path, TWO_DAYS)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    look, (_, date_format) = _order_look(centrum.register, 40000002), _started(centrum.register, 40000002)
+    assert _day_rows(centrum.register, 9) == [
+        (40000001, "anna.kowalska"),
+        "pusty",
+        (40000002, "jan.testowy"),
+        (40000004, "jan.testowy"),
+        "pusty",
+        (40000003, "anna.kowalska"),
+        "pusty",
+        "żółty",
+    ]
+
+    view = _click_at(centrum, ENTERING_NOW, [report(JAN, SUBJECT, "40000002 tak montaż gniazda")])
+    shown = _view(centrum)
+    after = centrum.register.read_bytes()
+    again = _finished(centrum)
+
+    assert _day_rows(centrum.register, 10) == [
+        (40000001, "anna.kowalska"),
+        "pusty",
+        (40000004, "jan.testowy"),
+        "pusty",
+        (40000003, "anna.kowalska"),
+        "pusty",
+        (40000002, "jan.testowy"),
+        "pusty",
+        "żółty",
+    ]
+    assert _started(centrum.register, 40000002) == (datetime(2026, 11, 9, 10), date_format)
+    assert _started(centrum.register, 40000004) == (datetime(2026, 11, 8, 12), date_format)
+    assert _order_look(centrum.register, 40000002) == look
+    assert _cells(centrum.register)[40000002] == ("tak", "montaż gniazda")
+    entering = _entering(centrum, view)
+    assert entering["moves"] == [{"sheet": ORDER_SHEET, "row": 4, "day": "2026-11-09", "worker": "jan.testowy"}]
+    assert entering["problems"] == []
+    target, source = _worker(shown, "jan.testowy"), _worker(shown, "jan.testowy", "2026-11-08")
+    assert target["notes"] == [{"number": "40000002", "text": "przeniesione z 8.11"}]
+    assert [order["number"] for order in target["orders_detail"]] == ["40000002"]
+    assert source["notes"] == [{"number": "40000002", "text": "przeniesione na 9.11"}]
+    assert [order["number"] for order in source["orders_detail"]] == ["40000004"]
+    assert (target["problems"], source["problems"]) == ([], [])
+    assert (_entering(centrum, again)["changes"], _entering(centrum, again)["moves"]) == ([], [])
+    assert centrum.register.read_bytes() == after
+
+
+def test_pomylony_temat_wpisuje_do_zlecen_z_ich_dnia_bez_przeniesienia_z_informacja_w_dniu_z_tematu(tmp_path: Path) -> None:
+    """Kryterium #1350: Raport Jana za 9.11 z dwoma zleceniami z 8.11 to pomylony temat: Wpisy trafiają do zleceń 8.11,
+    INTERMAX nie przenosi żadnego wiersza, a okienko Jana 9.11 mówi o każdym przegranym temacie."""
+
+    centrum = entering_centrum(tmp_path, TWO_DAYS)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    before = _cells(centrum.register)
+
+    view = _click_at(centrum, ENTERING_NOW, [report(JAN, SUBJECT, "40000002 tak a\n40000004 nie b")])
+
+    assert _cells(centrum.register) == {**before, 40000002: ("tak", "a"), 40000004: ("nie", "b")}
+    assert _entering(centrum, view)["moves"] == []
+    assert _worker(_view(centrum), "jan.testowy")["notes"] == [
+        {"number": "40000002", "text": "pomylony temat: wpisane do zlecenia z 8.11"},
+        {"number": "40000004", "text": "pomylony temat: wpisane do zlecenia z 8.11"},
+    ]
+
+
+def test_raport_za_dzien_okresu_z_plikiem_zbiorczym_nie_przenosi_zlecenia_a_problem_stoi_w_dniu_zlecenia(
+    tmp_path: Path,
+) -> None:
+    """Kryterium #1350 (US 14): okres 03_09_11_2026 dostał Plik zbiorczy, a Jan przysyła Raport za 9.11 ze zleceniem,
+    które INTERMAX ma 10.11. Centrum go nie przenosi do zamkniętego okresu, a problem z powodem stoi w okienku Jana
+    10.11, bo dnia 9.11 widok Raporty już nie pokazuje."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "anna.kowalska", 40000003), _order(10, 9, "jan.testowy", 40000002)), raw=())
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, ENTERING_NOW, [])
+    folder = centrum.periods_directory / MONDAY_PERIOD
+    folder.mkdir(parents=True)
+    (folder / f"Rozliczenie {MONDAY_PERIOD} - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
+    before = centrum.register.read_bytes()
+
+    view = _click_at(
+        centrum, datetime(2026, 11, 10, 18), [report(JAN, SUBJECT, "40000002 tak montaż", at=datetime(2026, 11, 10, 17))]
+    )
+
+    assert centrum.register.read_bytes() == before
+    assert [(problem["kind"], problem["bar"]) for problem in _entering(centrum, view)["problems"]] == [
+        ("refused_move", "closed_target")
+    ]
+    [problem] = _worker(_view(centrum), "jan.testowy", "2026-11-10")["problems"]
+    assert problem["number"] == "40000002"
+    assert "okres z dniem 09.11.2026 ma już Plik zbiorczy" in problem["reason"]
 
 
 def test_nadawca_bez_segmentu_w_dniu_dostaje_nowy_segment_na_miejscu_alfabetycznym(tmp_path: Path) -> None:

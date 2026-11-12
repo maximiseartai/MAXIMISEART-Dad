@@ -213,8 +213,21 @@ class Window:
                 return max(period.tuesday, self.rollout)
         return self.today
 
+    @property
+    def start(self) -> date:
+        """Pierwszy dzień, od którego proces czyta zlecenia INTERMAX: ``first`` i tydzień przed nim, nie przed dniem
+        wdrożenia. Zlecenia dni zamkniętych z tego tygodnia i spomiędzy dni otwartych rdzeń zna tylko po to, żeby nie
+        przenieść zlecenia z okresu z Plikiem zbiorczym (ADR 0029); starsze numery są dla niego nieznane."""
+
+        return max(self.rollout, self.first - timedelta(days=7))
+
     def opens(self, day: date) -> bool:
         return self.rollout <= day <= self.today and period_of(day).token not in self.closed
+
+    def closes(self, day: date) -> bool:
+        """Dzień od dnia wdrożenia do dziś w okresie z Plikiem zbiorczym."""
+
+        return self.rollout <= day <= self.today and period_of(day).token in self.closed
 
 
 @dataclass(frozen=True)
@@ -271,10 +284,20 @@ class Kept:
     reported: str
 
 
+@dataclass(frozen=True, order=True)
+class OrderedDay:
+    """Dzień uporządkowany ``day`` w arkuszu zleceń ``sheet`` (``raw_orders.ordered_days``, ta sama reguła co karta
+    Uporządkowania INTERMAX): tylko do niego Przeniesienie zlecenia przenosi wiersz z tego arkusza (ADR 0029)."""
+
+    sheet: str
+    day: date
+
+
 @dataclass(frozen=True)
 class ReportInputs:
     """Wejście rdzenia: maile ze Skrzynki raportów, adresy Wykonawców, uporządkowane zlecenia INTERMAX z dni od
-    ``window.first``, dni otwarte, pamięć własnych wpisów i decyzje „Zostaw moją”."""
+    ``window.start``, dni otwarte, pamięć własnych wpisów, decyzje „Zostaw moją” i Dni uporządkowane każdego arkusza
+    zleceń od ``window.start`` (``ordered_days``)."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -282,6 +305,7 @@ class ReportInputs:
     window: Window
     memory: OwnEntries
     kept: frozenset[Kept]
+    ordered_days: frozenset[OrderedDay] = frozenset()
 
 
 class Verdict(Enum):
@@ -474,6 +498,36 @@ class RepeatedOrder:
     number: OrderNumber
 
 
+class MoveBar(Enum):
+    """Dlaczego Wpis raportu nie przenosi zlecenia na inny dzień (ADR 0029): dzień docelowy nie jest Dniem
+    uporządkowanym (``NOT_ORDERED``), jest Dniem uporządkowanym tylko w innym arkuszu zleceń (``OTHER_SHEET``), jest w
+    okresie z Plikiem zbiorczym (``CLOSED_TARGET``) albo zlecenie jest w takim okresie (``CLOSED_SOURCE``)."""
+
+    NOT_ORDERED = auto()
+    OTHER_SHEET = auto()
+    CLOSED_TARGET = auto()
+    CLOSED_SOURCE = auto()
+
+
+@dataclass(frozen=True)
+class RefusedMove:
+    """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` do zlecenia ``number``, które INTERMAX ma w dniu
+    ``order_day``, przeniósłby je na dzień, do którego nie wolno (``bar``); INTERMAX zostaje bez zmiany."""
+
+    worker: Login
+    day: date
+    number: OrderNumber
+    order_day: date
+    bar: MoveBar
+
+    @property
+    def shown(self) -> date:
+        """Dzień, w którym tata widzi problem: dzień otwarty, czyli dzień z tematu, a gdy ten jest w okresie z Plikiem
+        zbiorczym, dzień zlecenia."""
+
+        return self.order_day if self.bar is MoveBar.CLOSED_TARGET else self.day
+
+
 @dataclass(frozen=True)
 class ManualDifference:
     key: OrderKey
@@ -491,10 +545,12 @@ ReportProblem = (
     | ForeignOrder
     | OtherDay
     | RepeatedOrder
+    | RefusedMove
     | ManualDifference
 )
 """Problem, który tata widzi z powodem (``reasons.reason``): nierozpoznany temat, nieznany nadawca, brak ``tak``/``nie``,
-przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data, ten sam numer dwa razy w dniu i różnica z ręczną wartością."""
+przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data bez jednego
+zlecenia, ten sam numer dwa razy w dniu, Przeniesienie na dzień, do którego nie wolno, i różnica z ręczną wartością."""
 
 
 @dataclass(frozen=True)
@@ -519,18 +575,53 @@ class HandedOver:
     successor: Login
 
 
-ReportNote = TakenOver | HandedOver
+@dataclass(frozen=True)
+class MovedFrom:
+    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: zlecenie ``number`` Centrum przeniosło tu z dnia
+    ``origin_day`` („przeniesione z”)."""
+
+    day: date
+    worker: Login
+    number: OrderNumber
+    origin_day: date
+
+
+@dataclass(frozen=True)
+class MovedTo:
+    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: jego zlecenie ``number`` Centrum przeniosło na
+    dzień ``target_day`` („przeniesione na”)."""
+
+    day: date
+    worker: Login
+    number: OrderNumber
+    target_day: date
+
+
+@dataclass(frozen=True)
+class SubjectLost:
+    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day`` (dzień z tematu): jego Raport wykonawcy ma pomylony
+    temat, więc Wpis zlecenia ``number`` Centrum wpisało do zlecenia z dnia ``order_day`` z INTERMAX (ADR 0029)."""
+
+    day: date
+    worker: Login
+    number: OrderNumber
+    order_day: date
+
+
+ReportNote = TakenOver | HandedOver | MovedFrom | MovedTo | SubjectLost
 """Informacja dla taty o zmianie, którą Wpisanie raportów zrobiło w INTERMAX (ADR 0029): tylko numer, Wykonawca i dzień.
-Nie jest problemem ani Zgłoszeniem; zdanie daje ``reasons.note``. Stoi, dopóki INTERMAX ma zlecenie tam, gdzie
-postawiło je Centrum."""
+Nie jest problemem ani Zgłoszeniem; zdanie daje ``reasons.note``. Przeniesienie stoi, dopóki INTERMAX ma zlecenie tam,
+gdzie postawiło je Centrum, a przegrany temat, dopóki jego Wpis jest zwycięskim Wpisem zlecenia."""
 
 
 def note_order(note: ReportNote) -> tuple[date, str, str, str, str]:
-    """Miejsce informacji w widoku Raporty: dzień, Wykonawca, numer, rodzaj i drugi Wykonawca."""
+    """Miejsce informacji w widoku Raporty: dzień, Wykonawca, numer, rodzaj i drugi Wykonawca albo drugi dzień."""
 
     match note:
         case TakenOver(previous=other) | HandedOver(successor=other):
             return note.day, note.worker, note.number, type(note).__name__, other
+        case MovedFrom(origin_day=other_day) | MovedTo(target_day=other_day) | SubjectLost(order_day=other_day):
+            return note.day, note.worker, note.number, type(note).__name__, other_day.isoformat()
         case _:
             assert_never(note)
 
@@ -620,6 +711,8 @@ def problem_order(
             return problem.day, problem.worker, problem.number, kind, tuple(map(date.isoformat, order_days))
         case ConflictingVerdicts() | UnknownNumber() | RepeatedOrder():
             return problem.day, problem.worker, problem.number, kind, ()
+        case RefusedMove(day=day, order_day=order_day, bar=bar):
+            return problem.shown, problem.worker, problem.number, kind, (day.isoformat(), order_day.isoformat(), bar.name)
         case ManualDifference(key=key, column=column, manual=manual, reported=reported):
             return key.day, key.worker, key.number, kind, (column.value, manual, reported)
         case _:
