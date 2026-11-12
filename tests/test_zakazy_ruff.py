@@ -201,31 +201,54 @@ def test_ruff_odrzuca_probke_zakazu_w_jego_katalogu(code: str) -> None:
     assert found == [banned], f"{config.relative_to(ROOT).as_posix()} ma odrzucić zakazem {banned}:\n{code}"
 
 
-# Właściciel zegara ściennego w src/: jedyny plik z wyjątkiem w extend-per-file-ignores w src/ruff.toml.
+# Właściciel zegara ściennego w src/: jedyny plik zwolniony z zakazów zegara.
 CLOCK_OWNER = ROOT / "src" / "rozliczenia" / "wall_clock.py"
+# Zakazy zegara ściennego w src/ruff.toml, które testy niżej uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie
+# komunikatu, żeby nowy zakaz zegara o innym brzmieniu nie wypadł z niej po cichu.
+CLOCK = (
+    "datetime.datetime.now",
+    "datetime.datetime.today",
+    "datetime.datetime.utcnow",
+    "datetime.date.today",
+    "time.time",
+    "time.time_ns",
+    "time.localtime",
+    "time.gmtime",
+    "time.ctime",
+    "time.asctime",
+    "time.strftime",
+)
+CLOCK_MODULES = ("datetime.", "time.")
+CLOCK_PROBE = "import time\nlease = time.time()  # noqa: TID251 - termin opiekuna\n"
 
 
-def _clock_findings(*arguments: str, code: str | None = None) -> list[str]:
-    """``plik:linia`` każdego zakazu zegara ściennego (wpis ``src/ruff.toml`` z komunikatem o
-    ``rozliczenia.wall_clock``), który ruff zgłasza z ``--ignore-noqa``."""
-    banned = _banned(tomllib.loads(SRC_CONFIG.read_text(encoding="utf-8"))["lint"])
-    clock = {name for name, entry in banned.items() if "rozliczenia.wall_clock" in entry["msg"]}
+def _clock_findings(*arguments: str, code: str | None = None, cwd: Path = ROOT) -> list[str]:
+    """``plik:linia`` każdego zakazu zegara z ``CLOCK``, który ``ruff check`` z ``--ignore-noqa`` zgłasza w ``cwd``."""
     result = subprocess.run(
-        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--select", "TID251"]
-        + ["--output-format", "json", *arguments],
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--output-format", "json", *arguments],
         input=code,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        cwd=ROOT,
+        cwd=cwd,
         check=False,
     )
     assert result.stderr == "", result.stderr
     return [
-        f"{Path(finding['filename']).relative_to(ROOT).as_posix()}:{finding['location']['row']}"
+        f"{Path(finding['filename']).resolve().relative_to(cwd.resolve()).as_posix()}:{finding['location']['row']}"
         for finding in json.loads(result.stdout)
-        if finding["message"].split("`")[1] in clock
+        if finding["code"] == "TID251" and finding["message"].split("`")[1] in CLOCK
     ]
+
+
+def test_kazdy_zakaz_zegara_jest_na_liscie_clock() -> None:
+    """Zakazem zegara jest wpis ``src/ruff.toml`` dla modułu ``datetime`` albo ``time`` i wpis, którego komunikat
+    odsyła do ``rozliczenia.wall_clock``."""
+    banned = _banned(tomllib.loads(SRC_CONFIG.read_text(encoding="utf-8"))["lint"])
+    clock = {name for name, entry in banned.items() if name.startswith(CLOCK_MODULES) or "rozliczenia.wall_clock" in entry["msg"]}
+
+    assert sorted(clock - set(CLOCK)) == [], "dopisz zakaz zegara do CLOCK w tests/test_zakazy_ruff.py"
+    assert sorted(set(CLOCK) - banned.keys()) == [], "CLOCK wymienia zakaz, którego nie ma w src/ruff.toml"
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
@@ -238,8 +261,31 @@ def test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa() -> None:
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_noqa_nie_zwalnia_z_zakazu_zegara_a_wlasciciel_jest_zwolniony() -> None:
-    code = "import time\nlease = time.time()  # noqa: TID251 - termin opiekuna\n"
     probe = SRC_CONFIG.parent / "rozliczenia" / "sonda_zakazu.py"
 
-    assert _clock_findings("--stdin-filename", str(probe), "-", code=code) == ["src/rozliczenia/sonda_zakazu.py:2"]
-    assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=code) == []
+    assert _clock_findings("--stdin-filename", str(probe), "-", code=CLOCK_PROBE) == ["src/rozliczenia/sonda_zakazu.py:2"]
+    assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=CLOCK_PROBE) == []
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela(tmp_path: Path) -> None:
+    """Wyjątek w konfiguracji (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore``, ``exclude`` w każdym pliku
+    konfiguracji ruff) to druga droga do zegara obok ``noqa``. Kopia drzewa ``src/`` z próbką zegara w miejscu każdego
+    pliku i z każdym plikiem konfiguracji ruff repozytorium idzie przez ruff tak jak ``src/``: plik bez zgłoszenia jest
+    zwolniony, a zwolniony może być tylko właściciel."""
+    for config in (ROOT / "pyproject.toml", *_configs(ROOT)):
+        copy = tmp_path / config.relative_to(ROOT)
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
+    probes = set()
+    for source in (ROOT / "src").rglob("*.py"):
+        probe = tmp_path / source.relative_to(ROOT)
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_text(CLOCK_PROBE, encoding="utf-8")
+        probes.add(source.relative_to(ROOT).as_posix())
+
+    reported = {finding.rsplit(":", 1)[0] for finding in _clock_findings("src", cwd=tmp_path)}
+
+    assert sorted(probes - reported) == [CLOCK_OWNER.relative_to(ROOT).as_posix()], (
+        "z zakazu zegara konfiguracja ruff zwalnia tylko rozliczenia/wall_clock.py: teraz i dzień taty bierz z niego"
+    )
