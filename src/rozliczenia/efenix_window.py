@@ -6,6 +6,10 @@ Jedyna zmiana statusu zlecenia, którą zna okno, to Przekazanie do akceptacji (
 przerywa, zanim dojdzie do efenix (``StatusChangeBlocked``). Zlecenie, któremu efenix odmawia Przekazania, zanim
 pokaże okno zmiany statusu, okno oddaje z przyczyną z zamkniętej listy (``ForwardRefusal``).
 
+Który wyjątek okna daje awaria (wylogowanie, zamknięte okno, niedostępny efenix, przeglądarka, która nie wystartowała,
+albo działanie, którego okno nie dokończyło), rozstrzyga tylko tabela decyzji ``WindowStop.of`` z dowodu awarii
+(``Evidence``), który zbiera miejsce awarii; konstruktor wyjątku okna wymaga dowodu tego klasyfikatora (``_CLASSIFIED``).
+
 Moduł to sam słownik okna, bez decyzji Wyceny i bez przeglądarki: tylko biblioteka standardowa. Implementują go okno w
 przeglądarce (``efenix_browser`` z odczytami ``efenix_page``), okno z tempem ludzkim (``efenix_pace``), okno ze śladem
 dla Logów Uruchomienia (``efenix_trace``) i okno w procesie testów (``tests/fixtures/okno_w_procesie.py``). Silnik
@@ -21,7 +25,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 import enum
-from typing import Final, Protocol
+from typing import Final, Protocol, final
 
 ACCEPTANCE_STATUS: Final = "Do akceptacji"
 """Status zlecenia efenix po Przekazaniu do akceptacji: jedyny, na który okno może zmienić status zlecenia."""
@@ -35,11 +39,14 @@ __all__ = [
     "EfenixUnreachable",
     "ElementCount",
     "EmmettLoad",
+    "Evidence",
     "ForwardRefusal",
     "HttpStatus",
+    "ListOpenFailed",
     "ListedOrder",
     "LoggedOut",
     "Login",
+    "LoginExpired",
     "LoginSign",
     "OpenEfenix",
     "Operation",
@@ -212,8 +219,48 @@ WindowCause = PageCause | LoginSign | Closed
 zleceń; Komunikat taty jej nie pokazuje."""
 
 
+@dataclass(frozen=True)
+class ListOpenFailed:
+    """Otwarcie listy zleceń zgłosiło błąd przeglądarki ``failure``; ``efenix_opened``: okno otworzyło już efenix
+    wcześniej w tym przebiegu."""
+
+    failure: BrowserFailure
+    efenix_opened: bool
+
+
+@dataclass(frozen=True)
+class LoginExpired:
+    """Minął czas, w którym okno czeka na logowanie taty: błąd przeglądarki ostatniego pytania o sesję (``None``, gdy
+    efenix na nie odpowiedział), ile sekund przed tym pytaniem efenix ostatni raz odpowiedział albo okno zaczęło czekać
+    (``silent_s``) i czas okna (``timeout_ms``)."""
+
+    unanswered: BrowserFailure | None
+    silent_s: float
+    timeout_ms: int
+
+
+Evidence = WindowCause | ListOpenFailed | LoginExpired
+"""Dowód awarii okna, który zbiera miejsce awarii; wyjątek okna wybiera z niego ``WindowStop.of``."""
+
+
+@final
+class _Classified:
+    """Typ dowodu, że wyjątek okna zbudował klasyfikator ``WindowStop.of`` (``_CLASSIFIED``)."""
+
+    __slots__ = ()
+
+
+_CLASSIFIED: Final = _Classified()
+"""Dowód klasyfikatora: konstruktor wyjątku okna bez niego to błąd mypy (brak argumentu albo zły typ), więc miejsce
+awarii nie rozstrzyga samo, który to wyjątek okna (#758, #802, #808, #1090), tylko podaje dowód ``WindowStop.of``.
+Łapie tylko wywołanie konstruktora bez dowodu: nie łapie importu ``_CLASSIFIED`` ani ``_Classified`` spoza tego modułu,
+wartości ``Any`` ani ``copy.copy`` gotowego wyjątku."""
+
+
 class WindowStop(Exception):
     """Okno efenix nie może działać dalej: część strony (``None`` poza stronami efenix) i przyczyna techniczna.
+
+    Buduje go tylko ``of`` z dowodu awarii.
 
     ``sent``: działanie okna, które zgłosiło wyjątek, kliknęło już przycisk, który wysyła do efenix zmianę zlecenia (data
     wykonania, „Załaduj do zlecenia”, Enter w polu „Ilość”, „Tak” Przekazania do akceptacji), więc efenix mógł ją
@@ -222,26 +269,58 @@ class WindowStop(Exception):
 
     sent: bool = False
 
-    def __init__(self, part: PagePart | None, cause: WindowCause) -> None:
+    def __init__(self, part: PagePart | None, cause: WindowCause, proof: _Classified) -> None:
         super().__init__(None if part is None else part.name)
         self.part = part
         self.cause = cause
+
+    @classmethod
+    def of(cls, part: PagePart, evidence: Evidence) -> WindowStop:
+        """Wyjątek okna z dowodu awarii ``evidence`` w części ``part`` strony efenix, na której albo do której okno
+        działało: jedyna tabela decyzji granicy awarii efenix.
+
+        Przeglądarka, która nie wystartowała (błąd startu sterownika albo przeglądarki), nie ma części strony, a
+        niedostępny efenix i brak logowania to zawsze lista zleceń. Błąd przeglądarki to niedostępny efenix tylko przy
+        otwarciu listy, zanim okno otworzyło efenix, i po czasie czekania na logowanie, gdy efenix nie odpowiedział na
+        ostatnie pytanie o sesję ani na żadne przez dwa czasy okna przed nim. W każdym innym działaniu okno nie zgaduje,
+        czy to sieć, wolny czy zmieniony efenix: to działanie, którego nie dokończyło, z błędem przeglądarki.
+        """
+
+        match evidence:
+            case LoginSign():
+                return LoggedOut(part, evidence, _CLASSIFIED)
+            case Closed():
+                return WindowClosed(part, evidence, _CLASSIFIED)
+            case BrowserFailure(operation=Operation.DRIVER | Operation.START):
+                return BrowserNotStarted(evidence, _CLASSIFIED)
+            case ElementCount() | HttpStatus() | OtherShape() | BrowserFailure() | StatusChangeBlocked():
+                return UnexpectedPage(part, evidence, _CLASSIFIED)
+            case ListOpenFailed(failure=failure, efenix_opened=False):
+                return EfenixUnreachable(failure, _CLASSIFIED)
+            case ListOpenFailed(failure=failure):
+                return UnexpectedPage(part, failure, _CLASSIFIED)
+            case LoginExpired(unanswered=BrowserFailure() as failure, silent_s=silent_s, timeout_ms=timeout_ms) if (
+                silent_s >= 2 * timeout_ms / 1000
+            ):
+                return EfenixUnreachable(failure, _CLASSIFIED)
+            case LoginExpired():
+                return LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN, _CLASSIFIED)
 
 
 class LoggedOut(WindowStop):
     """efenix wylogował okno: pokazał stronę logowania albo ostrzeżenie o wygasłej sesji zamiast strony albo odpowiedzi,
     o którą prosiło okno (``sign`` mówi, po czym okno to poznało)."""
 
-    def __init__(self, part: PagePart, sign: LoginSign) -> None:
-        super().__init__(part, sign)
+    def __init__(self, part: PagePart, sign: LoginSign, proof: _Classified) -> None:
+        super().__init__(part, sign, proof)
 
 
 class UnexpectedPage(WindowStop):
     """Okno nie dokończyło działania w części ``part`` strony efenix (bez treści strony): strona nie ma budowy, którą
     zna okno, albo przeglądarka zgłosiła błąd (także czas okna, który minął); ``cause`` mówi, które z nich."""
 
-    def __init__(self, part: PagePart, cause: PageCause) -> None:
-        super().__init__(part, cause)
+    def __init__(self, part: PagePart, cause: PageCause, proof: _Classified) -> None:
+        super().__init__(part, cause, proof)
         self.part: PagePart = part
 
 
@@ -249,23 +328,23 @@ class EfenixUnreachable(WindowStop):
     """Okno nie otworzyło efenix przy starcie albo w czasie czekania na logowanie taty: adres nie odpowiada albo nie ma
     połączenia."""
 
-    def __init__(self, failure: BrowserFailure) -> None:
-        super().__init__(PagePart.LIST, failure)
+    def __init__(self, failure: BrowserFailure, proof: _Classified) -> None:
+        super().__init__(PagePart.LIST, failure, proof)
 
 
 class WindowClosed(WindowStop):
     """Okno albo karta efenix zamknęły się w trakcie przebiegu (tata je zamknął)."""
 
-    def __init__(self, part: PagePart, closed: Closed) -> None:
-        super().__init__(part, closed)
+    def __init__(self, part: PagePart, closed: Closed, proof: _Classified) -> None:
+        super().__init__(part, closed, proof)
 
 
 class BrowserNotStarted(WindowStop):
     """Przeglądarka okna efenix nie wystartowała: nie ma jej na komputerze, jej profil trzyma inne okno albo nie
     wystartował sterownik Playwrighta (``Operation.DRIVER``)."""
 
-    def __init__(self, failure: BrowserFailure) -> None:
-        super().__init__(None, failure)
+    def __init__(self, failure: BrowserFailure, proof: _Classified) -> None:
+        super().__init__(None, failure, proof)
 
 
 class SentChanges:
