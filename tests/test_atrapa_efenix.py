@@ -29,6 +29,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 import enum
 from functools import partial
+from http import HTTPStatus
 from http.client import HTTPConnection, HTTPException, IncompleteRead
 from pathlib import Path
 import socket
@@ -43,6 +44,7 @@ from atrapy.model_efenix import (
     Action,
     EfenixOrder,
     EmmettRefusal,
+    NoOrder,
     NoSession,
     ProposalFailure,
     Saved,
@@ -57,7 +59,9 @@ from rozliczenia import efenix_browser
 from rozliczenia.efenix_pricing import _emmett
 from rozliczenia.efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing, WindowStop
 from atrapy.atrapa_efenix import (
+    BY_LIST,
     FILL_EMMETT,
+    GET_DATE,
     LIST_PAGE,
     LIST_SCRIPT,
     LOAD_EMMETT,
@@ -308,6 +312,67 @@ def test_strona_zlecenia_bez_daty_wykonania_ma_pusta_date_takze_przy_innym_zapis
     assert (answer[0], '<span id="data_install"></span>' in answer[1]) == (200, True)
 
 
+def _answer_text(connection: HTTPConnection, method: str, path: str, body: str) -> tuple[int, str]:
+    connection.request(method, f"/{path}", body=body, headers=_FORM)
+    response = connection.getresponse()
+    return response.status, response.read().decode("utf-8")
+
+
+def test_blad_serwera_na_szukanie_okna_nie_trafia_w_szukanie_ktore_lista_wysyla_sama() -> None:
+    """``error_answer`` liczy tylko szukania okna, więc szukanie listy po pierwszym szukaniu okna dostaje wyniki."""
+
+    with atrapa_efenix(
+        [AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")], error_answer=(SEARCH, 1, HTTPStatus.INTERNAL_SERVER_ERROR)
+    ) as atrapa:
+        connection = _connection(atrapa.url)
+        own = _answer_text(connection, "POST", SEARCH, "numer=9301&rodzaj=szukanie&strona=1&na_stronie=10")
+        by_list = _answer_text(connection, "POST", SEARCH, f"numer=9301&rodzaj={BY_LIST}&strona=1&na_stronie=10")
+        connection.close()
+
+    assert (own[0], by_list[0], "9301" in by_list[1]) == (500, 200, True)
+
+
+def test_zapis_daty_wykonania_odpowiada_ok_a_odczyt_daty_zero_przed_zapisem_i_zapisany_dzien_po_nim() -> None:
+    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")]) as atrapa:
+        connection = _connection(atrapa.url)
+        answers = [
+            _answer_text(connection, "POST", GET_DATE, "id=901"),
+            _answer_text(connection, "POST", SET_DATE, "id=901&date=2026-09-09"),
+            _answer_text(connection, "POST", GET_DATE, "id=901"),
+        ]
+        connection.close()
+
+    assert answers == [(200, "0"), (200, "ok"), (200, "2026-09-09")]
+
+
+@pytest.mark.parametrize("changed", [None, Unread.ORDER_REDIRECT], ids=["zwykla-strona", "strona-zlecenia-przekierowuje"])
+def test_strona_zlecenia_bez_sesji_przekierowuje_na_logowanie_takze_gdy_efenix_przekierowuje_strone_zlecenia(changed: Unread | None) -> None:
+    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")], changed=changed) as atrapa:
+        atrapa.expire_session()
+        connection = _connection(atrapa.url)
+        connection.request("GET", f"/{ORDER_PAGE}?id=901")
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+
+    assert (response.status, response.getheader("Location")) == (302, LOGIN_PAGE)
+
+
+def test_zawieszona_strona_zlecenia_nie_odpowiada_i_nie_konczy_polaczenia() -> None:
+    """Efenix, który stanął na stronie zlecenia (``hung``): ani odpowiedź, ani koniec połączenia nie przychodzą do końca
+    bloku. Ciszę widać tylko w oknie czasu, więc pytający czeka sekundę."""
+
+    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", hung=True)]) as atrapa:
+        connection = _connection(atrapa.url)
+        connection.connect()
+        assert connection.sock is not None
+        connection.sock.settimeout(1)
+        connection.request("GET", f"/{ORDER_PAGE}?id=901")
+        with pytest.raises(TimeoutError):
+            connection.getresponse()
+        connection.close()
+
+
 def _order() -> EfenixOrder:
     """Zlecenie z wyceną taty (T, 019: 2) i inną propozycją Emmetta (O, 012: 1)."""
 
@@ -502,6 +567,23 @@ def test_zmiana_statusu_zmienia_status_zlecenia_w_efenix() -> None:
 
     [order], _ = stan.state()
     assert (answer, order.status) == (None, "Do akceptacji")
+
+
+def test_dzialanie_na_zleceniu_ktorego_nie_ma_w_efenix_dostaje_brak_zlecenia_i_niczego_nie_zmienia() -> None:
+    stan = StanEfenix([_order()])
+    serwer = stan.serwer
+
+    answers = [
+        serwer.page("999"),
+        serwer.set_date("999", "2026-09-09"),
+        serwer.proposal("999"),
+        serwer.load_emmett("999"),
+        serwer.save_quantity("999", "012", 1),
+        serwer.date_of("999"),
+        serwer.change_status("999", "Do akceptacji"),
+    ]
+
+    assert (answers, stan.state()) == ([NoOrder.NO_ORDER] * 7, ([_order()], True))
 
 
 # Kontrakt okien: okno w procesie i okno przeglądarki na Atrapie efenix na tym samym stanie efenix.
