@@ -253,8 +253,8 @@ class _Classified:
 _CLASSIFIED: Final = _Classified()
 """Dowód klasyfikatora: konstruktor wyjątku okna bez niego to błąd mypy (brak argumentu albo zły typ), więc miejsce
 awarii nie rozstrzyga samo, który to wyjątek okna (#758, #802, #808, #1090), tylko podaje dowód ``WindowStop.of``.
-Łapie tylko wywołanie konstruktora bez dowodu: nie łapie importu ``_CLASSIFIED`` ani ``_Classified`` spoza tego modułu,
-wartości ``Any`` ani ``copy.copy`` gotowego wyjątku."""
+Import ``_CLASSIFIED`` albo ``_Classified`` i ich atrybut modułu poza tym modułem odrzuca ruff ``TID251``. Nie łapie
+``getattr`` ani ``importlib`` z napisem, wartości ``Any`` ani ``copy.copy`` gotowego wyjątku."""
 
 
 class WindowStop(Exception):
