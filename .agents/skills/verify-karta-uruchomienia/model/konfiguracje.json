@@ -1,0 +1,109 @@
+{
+  "jedna-karta": {
+    "opis": "Jedna karta: dwa starty, Decyzja, nieczytelny widok i zerwany strumień.",
+    "stale": {
+      "Czesc": "uruchomienia",
+      "MaxStartow": 2,
+      "DrugaKarta": false,
+      "MozeDecyzja": true,
+      "MozeZatrzymac": false,
+      "MaxRestartow": 0,
+      "MaxNieczytelnych": 1,
+      "MaxZerwan": 1,
+      "MaxWejsc": 0,
+      "MaxZaladowan": 0,
+      "MaxAktualizacji": 0
+    },
+    "znane": [
+      {
+        "obietnica": "WynikNaKarcie",
+        "przyczyna": "wybor-przed-wynikiem",
+        "znalezisko": "tata wybiera nowe Uruchomienie (kafelek albo okres na karcie startu, krok w Tablicy okresów, „Gotowe, rozlicz pracowników”), zanim ta karta odczyta wynik Uruchomienia, które już trwa albo właśnie się skończyło: draft zostaje, a po wyniku RunOrSetup pokazuje kartę startu zamiast wyniku"
+      }
+    ]
+  },
+  "druga-karta": {
+    "opis": "Druga karta uruchamia i odpowiada na Decyzję: dwa starty w sumie, z tej karty i z drugiej.",
+    "stale": {
+      "Czesc": "uruchomienia",
+      "MaxStartow": 2,
+      "DrugaKarta": true,
+      "MozeDecyzja": true,
+      "MozeZatrzymac": false,
+      "MaxRestartow": 0,
+      "MaxNieczytelnych": 0,
+      "MaxZerwan": 0,
+      "MaxWejsc": 0,
+      "MaxZaladowan": 0,
+      "MaxAktualizacji": 0
+    },
+    "znane": [
+      {
+        "obietnica": "WynikNaKarcie",
+        "przyczyna": "wybor-przed-wynikiem",
+        "znalezisko": "tata wybiera nowe Uruchomienie (kafelek albo okres na karcie startu, krok w Tablicy okresów, „Gotowe, rozlicz pracowników”), zanim ta karta odczyta wynik Uruchomienia, które już trwa albo właśnie się skończyło: draft zostaje, a po wyniku RunOrSetup pokazuje kartę startu zamiast wyniku"
+      },
+      {
+        "obietnica": "WynikNaKarcie",
+        "przyczyna": "druga-karta",
+        "znalezisko": "Uruchomienie z drugiej karty nie czyści draft tej karty (setDraft(null) robi tylko przyjęty start z tej karty), więc wybór sprzed niego albo odmowa startu tej karty zasłania jego wynik kartą startu"
+      },
+      {
+        "obietnica": "PrzyciskWraca",
+        "przyczyna": "cudze-uruchomienie-przed-odpowiedzia",
+        "znalezisko": "odpowiedź startu przychodzi, gdy strumień pokazał już koniec przyjętego Uruchomienia i Uruchomienie z drugiej karty: starting czeka na kolejny widok, którego nie będzie, i start zostaje wyłączony do odświeżenia strony"
+      }
+    ]
+  },
+  "restart": {
+    "opis": "Centrum startuje ponownie w każdej chwili: dwa starty z tej karty, Decyzja i nieczytelny widok.",
+    "stale": {
+      "Czesc": "uruchomienia",
+      "MaxStartow": 2,
+      "DrugaKarta": false,
+      "MozeDecyzja": true,
+      "MozeZatrzymac": false,
+      "MaxRestartow": 1,
+      "MaxNieczytelnych": 1,
+      "MaxZerwan": 0,
+      "MaxWejsc": 0,
+      "MaxZaladowan": 0,
+      "MaxAktualizacji": 0
+    },
+    "znane": [
+      {
+        "obietnica": "WynikNaKarcie",
+        "przyczyna": "wybor-przed-wynikiem",
+        "znalezisko": "tata wybiera nowe Uruchomienie (kafelek albo okres na karcie startu, krok w Tablicy okresów, „Gotowe, rozlicz pracowników”), zanim ta karta odczyta wynik Uruchomienia, które już trwa albo właśnie się skończyło: draft zostaje, a po wyniku RunOrSetup pokazuje kartę startu zamiast wyniku"
+      },
+      {
+        "obietnica": "PrzyciskWraca",
+        "przyczyna": "restart-przed-odpowiedzia",
+        "znalezisko": "odpowiedź startu przychodzi po idle ponownie uruchomionego Centrum: starting czeka na kolejny widok, którego nie będzie, i start zostaje wyłączony do odświeżenia strony"
+      }
+    ]
+  },
+  "aktualizacja": {
+    "opis": "Aktualizacja narzędzia: dwa wejścia na stronę z odczytem, porażka albo ponowny start, jedno przeładowanie.",
+    "stale": {
+      "Czesc": "aktualizacja",
+      "MaxStartow": 1,
+      "DrugaKarta": false,
+      "MozeDecyzja": true,
+      "MozeZatrzymac": false,
+      "MaxRestartow": 0,
+      "MaxNieczytelnych": 0,
+      "MaxZerwan": 0,
+      "MaxWejsc": 2,
+      "MaxZaladowan": 1,
+      "MaxAktualizacji": 2
+    },
+    "znane": [
+      {
+        "obietnica": "AktualizacjaNieWraca",
+        "przyczyna": "stary-odczyt",
+        "znalezisko": "odpowiedź read() wysłanego przed kliknięciem (bez numeru zapytania) przychodzi po starcie aktualizacji z idle: karta pokazuje „Zaktualizuj narzędzie”, przestaje odpytywać i nie przeładuje się po ponownym starcie"
+      }
+    ]
+  }
+}
