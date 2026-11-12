@@ -37,6 +37,7 @@ import pytest
 from rozliczenia.centrum.contract import common as common_contract
 
 from tests.fixtures.expect import assert_expected
+from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_MD = ROOT / "AGENTS.md"
@@ -58,12 +59,18 @@ SYSTEM_PYTHON = re.compile(r"\bpython3\s+(tools/\S+\.py)\b")
 MODULE_DIRS = (TOOLS / "lib", TOOLS, TOOLS / "ci")
 
 
+@pytest.fixture(autouse=True, scope="module")
+def drzewa_raz_na_modul() -> Iterator[None]:
+    with pamiec_drzew():
+        yield
+
+
 def _tools() -> list[Path]:
     return sorted(TOOLS.glob("*.py"))
 
 
 def _first_paragraph(path: Path) -> list[str]:
-    docstring = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or ""
+    docstring = ast.get_docstring(drzewo(path)) or ""
     return docstring.split("\n\n", 1)[0].splitlines()
 
 
@@ -77,10 +84,10 @@ def _required_subcommands(path: Path) -> list[str]:
     odczytać żadnej nazwy, to ``ValueError``, bo pusta lista przepuściłaby je bez sprawdzenia.
     """
 
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = drzewo(path)
     calls = [
         (node.func.attr, node)
-        for node in ast.walk(tree)
+        for node in wezly(tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     ]
     required = any(
@@ -92,7 +99,7 @@ def _required_subcommands(path: Path) -> list[str]:
         return []
     per_kind = {
         id(call)
-        for loop in ast.walk(tree)
+        for loop in wezly(tree)
         if isinstance(loop, ast.For) and isinstance(loop.target, ast.Name) and ast.unparse(loop.iter) == "CATALOG.kinds"
         for call in _calls_with_key_of(loop.target.id, loop.body)
     }
@@ -190,7 +197,7 @@ def test_agents_md_ani_skill_nie_wskazuja_agentowi_skryptow_ci() -> None:
 
 def test_dokument_agenta_nie_kaze_mu_uruchamiac_skryptu_ci() -> None:
     documents = {path: path.read_text(encoding="utf-8") for path in AGENT_DOCS}
-    documents |= {path: ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or "" for path in _tools()}
+    documents |= {path: ast.get_docstring(drzewo(path)) or "" for path in _tools()}
     found = [
         f"{path.relative_to(ROOT).as_posix()}: {line.strip()}"
         for path, text in documents.items()
@@ -325,7 +332,7 @@ def _imports(tree: ast.Module) -> list[str]:
     """Najwyższe nazwy modułów, które plik importuje, także w funkcjach, bez ``from __future__``."""
 
     names = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Import):
             names += [alias.name.partition(".")[0] for alias in node.names]
         elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0 and node.module != "__future__":
@@ -337,7 +344,7 @@ def _adds_to_sys_path(tree: ast.Module) -> list[str]:
     """Napisy w argumentach każdego ``sys.path.insert`` i ``sys.path.append`` pliku."""
 
     found = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and ast.unparse(node.func) in ("sys.path.insert", "sys.path.append"):
             found += [part.value for argument in node.args for part in ast.walk(argument) if isinstance(part, ast.Constant) and isinstance(part.value, str)]
     return found
@@ -352,7 +359,7 @@ def test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci() -> None:
     ci_modules = {path.stem for path in (TOOLS / "ci").glob("*.py")}
     found = []
     for path in _agent_files():
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = drzewo(path)
         name = path.relative_to(ROOT).as_posix()
         found += [f"{name}: sys.path z {text!r}" for text in _adds_to_sys_path(tree) if text.rstrip("/").endswith("ci")]
         found += [f"{name}: import {module}" for module in _imports(tree) if module in ci_modules]
@@ -376,7 +383,7 @@ def _library_reaches_tools(root: Path = ROOT) -> list[str]:
     tools = {path.stem for path in (root / "tools").glob("*.py")}
     found = []
     for path in sorted((root / "tools" / "lib").rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = drzewo(path)
         name = path.relative_to(root).as_posix()
         found += [f"{name}: sys.path z {text!r}" for text in _adds_to_sys_path(tree) if text.rstrip("/").endswith("tools")]
         found += [f"{name}: import {module}" for module in _imports(tree) if module in tools]
@@ -426,7 +433,7 @@ def _outside_stdlib(scripts: set[Path], root: Path = ROOT) -> list[str]:
         if path in seen:
             continue
         seen.add(path)
-        for module in _imports(ast.parse(path.read_text(encoding="utf-8"))):
+        for module in _imports(drzewo(path)):
             local = next((folder / f"{module}.py" for folder in (path.parent, *MODULE_DIRS) if (folder / f"{module}.py").is_file()), None)
             if local is not None:
                 queue.append(local)
@@ -461,7 +468,7 @@ def test_narzedzie_uruchamia_gh_tylko_przez_github() -> None:
     found = [
         f"{path.relative_to(ROOT).as_posix()}:{node.lineno}: {ast.unparse(node)[:80]}"
         for path in sorted({*TOOLS.rglob("*.py"), TOOLS / "hooks" / "pre-push"} - {TOOLS / "lib" / "github.py"})
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for node in wezly(drzewo(path))
         if isinstance(node, (ast.List, ast.Tuple)) and node.elts and isinstance(node.elts[0], ast.Constant) and node.elts[0].value == "gh"
     ]
 
@@ -481,8 +488,8 @@ CONTRACTS = (
 def _texts(tree: ast.AST) -> list[tuple[int, str]]:
     """Napisy kodu, także każdy stały kawałek f-stringu, bez docstringów i innych napisów stojących samotnie jako instrukcja."""
 
-    alone = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)}
-    return [(node.lineno, node.value) for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in alone]
+    alone = {id(node.value) for node in wezly(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)}
+    return [(node.lineno, node.value) for node in wezly(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in alone]
 
 
 def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None:
@@ -497,7 +504,7 @@ def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None
     found = [
         f"{path.relative_to(ROOT).as_posix()}:{line}: {text[:60]!r} należy do {owner.relative_to(ROOT).as_posix()}"
         for path in paths
-        for line, text in _texts(ast.parse(path.read_text(encoding="utf-8")))
+        for line, text in _texts(drzewo(path))
         for pattern, owner in CONTRACTS
         if path != owner and pattern.match(text)
     ]

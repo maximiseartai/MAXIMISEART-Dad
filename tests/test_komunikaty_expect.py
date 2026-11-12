@@ -82,6 +82,7 @@ from tests.fixtures.message_samples import (
     WORKER_CONFIG_SAMPLES,
     Samples,
 )
+from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
@@ -135,6 +136,12 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
 
 # Katalog odmów jest osobno: odmowa to kod HTTP i jedno zdanie, a nie Komunikat z kodem i trzema częściami.
 REFUSAL_CATALOG: Final = "Odmowy Centrum rozliczeń"
+
+
+@pytest.fixture(autouse=True, scope="module")
+def drzewa_raz_na_modul() -> Iterator[None]:
+    with pamiec_drzew():
+        yield
 
 
 def _source(module: ModuleType) -> str:
@@ -218,10 +225,10 @@ def _creating(path: Path) -> set[str]:
     przegląd.
     """
 
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = drzewo(path)
     imported = {
         alias.asname or alias.name: alias.name
-        for node in ast.walk(tree)
+        for node in wezly(tree)
         if isinstance(node, ast.Import | ast.ImportFrom)
         for alias in node.names
     }
@@ -338,11 +345,11 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     """
 
     def outside_type(module: ModuleType) -> bool:
-        tree = ast.parse(Path(str(module.__file__)).read_text(encoding="utf-8"))
+        tree = drzewo(Path(str(module.__file__)))
         typed = {id(inner) for root in _type_positions(tree) for inner in _type_nodes(root)}
         return any(
             isinstance(node, ast.Name | ast.Attribute) and id(node) not in typed and _resolved(module, node) is refusal.Refusal
-            for node in ast.walk(tree)
+            for node in wezly(tree)
         )
 
     assert {module.__name__ for module in _engine_modules() if outside_type(module)} == {refusal.__name__}, (
@@ -367,18 +374,18 @@ def _type_positions(tree: ast.AST) -> Iterator[ast.expr]:
 
     called = {
         id(inner)
-        for node in ast.walk(tree)
+        for node in wezly(tree)
         if isinstance(node, ast.Call | ast.Lambda)
         for inner in ast.walk(node)
         if inner is not node
     } | {
         id(inner)
-        for node in ast.walk(tree)
+        for node in wezly(tree)
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
         for statement in node.body
         for inner in ast.walk(statement)
     }
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         match node:
             case ast.FunctionDef(args=args, returns=returns) | ast.AsyncFunctionDef(args=args, returns=returns):
                 parameters = [*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg]
@@ -431,8 +438,8 @@ def _resolved(module: ModuleType, node: ast.expr) -> object:
 def _caught_for_message(module: ModuleType, makers: Sequence[object]) -> Iterator[object]:
     """Typy z ``except`` modułu, którego obsługa woła fabrykę Komunikatu albo tworzy ``StopError``."""
 
-    tree = ast.parse(Path(str(module.__file__)).read_text(encoding="utf-8"))
-    for handler in ast.walk(tree):
+    tree = drzewo(Path(str(module.__file__)))
+    for handler in wezly(tree):
         if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
             continue
         calls = [node.func for node in ast.walk(handler) if isinstance(node, ast.Call)]

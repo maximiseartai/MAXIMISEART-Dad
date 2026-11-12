@@ -94,6 +94,8 @@ import typing
 
 import pytest
 
+from tests.fixtures.skladnia import drzewo, pamiec_drzew, raz_na_drzewo, wezly
+
 SRC = Path(__file__).resolve().parents[1] / "src"
 GUARDIAN = SRC / "rozliczenia" / "centrum" / "restart_guardian.py"
 ROOT = SRC.parent
@@ -211,6 +213,12 @@ WORKBOOK_LAYER = "rozliczenia.template_file"
 WORKBOOK_LIBRARY = "openpyxl"
 
 
+@pytest.fixture(autouse=True, scope="module")
+def drzewa_raz_na_modul() -> Iterator[None]:
+    with pamiec_drzew():
+        yield
+
+
 @dataclass(frozen=True)
 class Import:
     file: str
@@ -258,24 +266,33 @@ def _from_module(node: ast.ImportFrom, file: str) -> str:
 def _imports(file: str, root: Path = SRC) -> Iterator[Import]:
     """Importy pliku z modułami, które wczytują; ``nested`` dla importu w funkcji."""
 
-    tree = ast.parse((root / file).read_text(encoding="utf-8"))
+    for node, code, nested in _import_statements(drzewo(root / file)):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        else:
+            base = _from_module(node, file)
+            names = [base, *(f"{base}.{alias.name}" for alias in node.names if _file_of(f"{base}.{alias.name}", root))]
+        for name in names:
+            for module in _modules_loaded(name):
+                yield Import(file, node.lineno, code, module, nested)
+
+
+@raz_na_drzewo
+def _import_statements(tree: ast.Module) -> tuple[tuple[ast.Import | ast.ImportFrom, str, bool], ...]:
+    """Instrukcje importu drzewa z tekstem i ``nested``, raz na drzewo: ``_chains`` wraca do tych samych modułów
+    z każdego modułu startowego."""
+
     in_function = {
         node
-        for function in ast.walk(tree)
+        for function in wezly(tree)
         if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
         for node in ast.walk(function)
     }
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
-        elif isinstance(node, ast.ImportFrom):
-            base = _from_module(node, file)
-            names = [base, *(f"{base}.{alias.name}" for alias in node.names if _file_of(f"{base}.{alias.name}", root))]
-        else:
-            continue
-        for name in names:
-            for module in _modules_loaded(name):
-                yield Import(file, node.lineno, ast.unparse(node), module, node in in_function)
+    return tuple(
+        (node, ast.unparse(node), node in in_function)
+        for node in wezly(tree)
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+    )
 
 
 def _is_stdlib(module: str) -> bool:
@@ -283,7 +300,7 @@ def _is_stdlib(module: str) -> bool:
 
 
 def _copied() -> tuple[str, ...]:
-    for node in ast.parse(GUARDIAN.read_text(encoding="utf-8")).body:
+    for node in drzewo(GUARDIAN).body:
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "_COPIED":
             assert node.value is not None
             copied = ast.literal_eval(node.value)
@@ -378,7 +395,7 @@ def _report_core_private(tree: ast.Module, file: str | None) -> list[tuple[int, 
     ``getattr``) i pakiet przypisany innej nazwie."""
 
     found = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Import):
             found += [(node.lineno, alias.name) for alias in node.names if alias.name.startswith(f"{REPORT_CORE_PACKAGE}._")]
         elif isinstance(node, ast.ImportFrom) and (file is not None or not node.level):
@@ -423,7 +440,7 @@ def test_moduly_prywatne_rdzenia_raportow_importuje_tylko_jego_pakiet() -> None:
         for path in paths
         if not path.is_relative_to(SRC / REPORT_CORE)
         for line, module in _report_core_private(
-            ast.parse(path.read_text(encoding="utf-8")),
+            drzewo(path),
             path.relative_to(SRC).as_posix() if path.is_relative_to(SRC) else None,
         )
     ]
@@ -561,8 +578,8 @@ def _imported_modules(path: Path) -> Iterator[tuple[int, str]]:
     """Moduły, które importuje plik ``path``, z linią; ``from a import b`` daje ``a`` i ``a.b``, a import względny
     w ``src`` moduł, który wskazuje."""
 
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
+    tree = drzewo(path)
+    for node in wezly(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 yield node.lineno, alias.name
@@ -610,7 +627,7 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
 
     builds = {"PreparedRun"}
     copies = {"replace", *(f"{module}.replace" for module in _COPYING_MODULES)}
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.ImportFrom):
             builds |= {alias.asname for alias in node.names if alias.name == "PreparedRun" and alias.asname}
             if node.module in _COPYING_MODULES:
@@ -618,7 +635,7 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
         elif isinstance(node, ast.Import):
             copies |= {f"{alias.asname}.replace" for alias in node.names if alias.name in _COPYING_MODULES and alias.asname}
     found: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.ClassDef):
             for base in node.bases:
                 named = base.value if isinstance(base, ast.Subscript) else base
@@ -647,7 +664,7 @@ def test_uruchomienie_gotowe_do_startu_sklada_tylko_katalog_procesow() -> None:
         f"{path.relative_to(ROOT).as_posix()}:{line}: {call}"
         for path in _python_files()
         if path != CATALOG
-        for line, call in _prepared_run_builds(ast.parse(path.read_text(encoding="utf-8")))
+        for line, call in _prepared_run_builds(drzewo(path))
     }
 
     assert not found, "\n".join(
@@ -764,7 +781,7 @@ def test_model_i_atrapa_efenix_nie_importuja_kodu_pod_testem() -> None:
     found = {
         f"{path.relative_to(ROOT).as_posix()}:{node.lineno}: {ast.unparse(node)}"
         for path, allowed in EFENIX_ORACLE.items()
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for node in wezly(drzewo(path))
         if isinstance(node, (ast.Import, ast.ImportFrom))
         for module in ([alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""])
         if (isinstance(node, ast.ImportFrom) and node.level) or not (_is_stdlib(module) or module in allowed)
@@ -782,7 +799,7 @@ def test_model_i_atrapa_efenix_nie_importuja_kodu_pod_testem() -> None:
 
 def test_okno_w_procesie_bierze_z_kodu_pod_testem_tylko_typy_seamu() -> None:
     found = []
-    for node in ast.walk(ast.parse(WINDOW_IN_PROCESS.read_text(encoding="utf-8"))):
+    for node in wezly(drzewo(WINDOW_IN_PROCESS)):
         if isinstance(node, ast.Import):
             found += [ast.unparse(node) for alias in node.names if not _is_stdlib(alias.name)]
         elif isinstance(node, ast.ImportFrom):
@@ -813,9 +830,9 @@ def _is_type(value: object) -> bool:
 
 
 def test_wersje_komentarza_uruchomienia_nie_robia_io_i_biora_tylko_nazwy_z_listy() -> None:
-    tree = ast.parse((SRC / COMMENT_VERSIONS).read_text(encoding="utf-8"))
+    tree = drzewo(SRC / COMMENT_VERSIONS)
     found = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Import):
             found += [ast.unparse(node) for alias in node.names if alias.name not in PURE_STDLIB]
         elif isinstance(node, ast.ImportFrom):
@@ -847,7 +864,7 @@ def _type_nodes(tree: ast.AST) -> set[ast.AST]:
     buduje."""
 
     roots: list[ast.AST] = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.arg) and node.annotation is not None:
             roots.append(node.annotation)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is not None:
@@ -870,7 +887,7 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
 
     names = GUARDED | {
         alias.asname
-        for node in ast.walk(tree)
+        for node in wezly(tree)
         if isinstance(node, ast.ImportFrom)
         for alias in node.names
         if alias.name in GUARDED and alias.asname
@@ -878,11 +895,11 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     typed = _type_nodes(tree)
     docstrings = {
         node.value
-        for node in ast.walk(tree)
+        for node in wezly(tree)
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
     }
     found = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if (
             (isinstance(node, ast.Name) and node.id == "_MINTED")
             or (isinstance(node, ast.Attribute) and node.attr == "_MINTED")
@@ -911,7 +928,7 @@ def test_logi_i_tekst_po_strazniku_powstaja_tylko_ze_straznika() -> None:
         f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
         for path in _python_files()
         if path not in {SRC / RUN_LOGS_GUARD, GUARD_CHECK}
-        for line, code in _guard_bypasses(ast.parse(path.read_text(encoding="utf-8")))
+        for line, code in _guard_bypasses(drzewo(path))
     ]
 
     assert not found, "\n".join(
@@ -997,7 +1014,7 @@ def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     labels = {"LABEL"} if own else set[str]()
     modules = {"comment_versions"}
     found = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.ImportFrom):
             module = _from_module(node, file)
             for alias in node.names:
@@ -1010,7 +1027,7 @@ def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
         elif isinstance(node, ast.Import):
             modules |= {alias.asname for alias in node.names if alias.name == VERSIONS and alias.asname}
 
-    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    parents = {child: node for node in wezly(tree) for child in ast.iter_child_nodes(node)}
     in_post_of = {
         node
         for function in tree.body
@@ -1019,7 +1036,7 @@ def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     }
     in_types = {
         node
-        for subscript in ast.walk(tree)
+        for subscript in wezly(tree)
         if isinstance(subscript, ast.Subscript) and ast.unparse(subscript.value) in {"Literal", "typing.Literal"}
         for node in ast.walk(subscript)
     }
@@ -1036,7 +1053,7 @@ def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
             isinstance(node, ast.Attribute) and node.attr == "LABEL" and versions_module(node.value)
         )
 
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.alias) and node.name == "post_of" and node.asname not in {None, "post_of"}:
             found.append((node.lineno, ast.unparse(node)))
         if not isinstance(node, ast.expr):
@@ -1084,7 +1101,7 @@ def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
         f"src/{file}:{line}: {code}"
         for path in sorted((SRC / "rozliczenia").rglob("*.py"))
         for file in [path.relative_to(SRC).as_posix()]
-        for line, code in _logs_post_breaks(ast.parse(path.read_text(encoding="utf-8")), file)
+        for line, code in _logs_post_breaks(drzewo(path), file)
     ]
 
     assert not found, "\n".join(
@@ -1376,7 +1393,7 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
 
     bound: set[str] = set()
     found: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.split(".")[0] == SRC_PACKAGE:
@@ -1401,14 +1418,14 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     def src_in(nodes: typing.Iterable[ast.expr]) -> bool:
         return any(from_src(part) for node in nodes for part in _literal(node))
 
-    subclasses = [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+    subclasses = [node for node in wezly(tree) if isinstance(node, ast.ClassDef)]
     while grown := [node for node in subclasses if node.name not in bound and any(map(from_src, node.bases))]:
         bound.update(node.name for node in grown)
     for node in subclasses:
         if node.name in bound:
             found.extend((line, f"{node.name}.{name}") for line, name in _bound_in_class(node) if _private(name))
 
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Attribute) and _private(node.attr) and from_src(node.value):
             found.append((node.lineno, ast.unparse(node)))
         elif isinstance(node, ast.Call):
@@ -1441,7 +1458,7 @@ def test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy() -> Non
         f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
         for pattern in ORACLES
         for path in sorted(ROOT.glob(pattern))
-        for line, code in _private_reaches(ast.parse(path.read_text(encoding="utf-8")))
+        for line, code in _private_reaches(drzewo(path))
     ]
 
     assert reaches == [], (
@@ -1687,7 +1704,7 @@ def _tests_imports(tree: ast.Module) -> list[tuple[int, str]]:
     ``exec``, ``sys.path`` zmienione inaczej niż ``insert`` i ``append`` oraz ``sys.modules``."""
 
     found = []
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Import):
             found += [(node.lineno, alias.name) for alias in node.names if _of_tests(alias.name)]
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module is not None and _of_tests(node.module):
@@ -1718,7 +1735,7 @@ def test_kod_spoza_testow_nie_importuje_testow() -> None:
     found = [
         f"{path.relative_to(ROOT).as_posix()}:{line}: {module}"
         for path in _outside_tests()
-        for line, module in _tests_imports(ast.parse(path.read_text(encoding="utf-8")))
+        for line, module in _tests_imports(drzewo(path))
     ]
 
     assert found == [], "\n".join(

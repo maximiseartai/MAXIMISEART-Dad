@@ -22,7 +22,7 @@ from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
 
-from tests.fixtures.skladnia import dotted, imports
+from tests.fixtures.skladnia import dotted, drzewo, imports, pamiec_drzew, wezly
 
 TESTS = Path(__file__).resolve().parent
 # Atrapy wspólne z testami żyją poza tests/ (granica N13d), ale reguły czekania i limitów czasu obejmują je jak testy.
@@ -49,11 +49,17 @@ SIMULATED_TIME = {
 }
 
 
+@pytest.fixture(autouse=True, scope="module")
+def drzewa_raz_na_modul() -> Iterator[None]:
+    with pamiec_drzew():
+        yield
+
+
 def test_moduly_testow_importuja_pomocniki_tylko_z_fixtures() -> None:
     imports = {
         f"{path.name}: {node.module}"
         for path in sorted(TESTS.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for node in wezly(drzewo(path))
         if isinstance(node, ast.ImportFrom)
         and node.module is not None
         and node.module.startswith("tests.")
@@ -147,7 +153,7 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
     def has_tools(node: ast.AST) -> bool:
         return any("tools" in PureWindowsPath(text).parts for text in texts(node, frozenset()))
 
-    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    calls = [node for node in wezly(tree) if isinstance(node, ast.Call)]
     prepends = [node.lineno for node in calls if (path := path_of(node, PREPEND)) is not None and has_tools(path)]
     loads = [node.lineno for node in calls if (path := path_of(node, LOAD)) is not None and a_tool(parts(path, frozenset()))]
     return sorted([*prepends, *loads])
@@ -158,7 +164,7 @@ def test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow() -> None:
         f"{path.relative_to(TESTS.parent).as_posix()}:{line}"
         for path in sorted(TESTS.rglob("*.py"))
         if path != CONFTEST
-        for line in _tools_on_path(ast.parse(path.read_text(encoding="utf-8")))
+        for line in _tools_on_path(drzewo(path))
     ]
 
     assert found == [], "\n".join(
@@ -267,7 +273,7 @@ def _owned_names() -> set[str]:
         if isinstance(path, Path) and path.suffix and path != tool_files.LOG_PATH
     }
     for module in sorted(SRC.rglob("*.py")):
-        for node in ast.parse(module.read_text(encoding="utf-8")).body:
+        for node in drzewo(module).body:
             target = node.targets[0] if isinstance(node, ast.Assign) and len(node.targets) == 1 else getattr(node, "target", None)
             value = getattr(node, "value", None)
             if (
@@ -283,7 +289,7 @@ def _owned_names() -> set[str]:
 
 
 def _owned_literals(path: Path, names: set[str]) -> Iterator[ast.Constant]:
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+    for node in wezly(drzewo(path)):
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and any(_ends_with(node.value, owned) for owned in names):
             yield node
 
@@ -340,7 +346,7 @@ def _handed_over(definition: Definition, tree: ast.Module, parents: dict[ast.AST
         name = parent.targets[0].id
     else:
         name = definition.name
-    for use in ast.walk(tree):
+    for use in wezly(tree):
         if not (isinstance(use, ast.Name) and use.id == name and isinstance(use.ctx, ast.Load)):
             continue
         call = parents[use]
@@ -361,8 +367,8 @@ def _fixed_sleeps(tree: ast.Module) -> Iterator[tuple[ast.Call, str]]:
     """
 
     names = imports(tree)
-    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-    for call in ast.walk(tree):
+    parents = {child: node for node in wezly(tree) for child in ast.iter_child_nodes(node)}
+    for call in wezly(tree):
         if not (isinstance(call, ast.Call) and _is_sleep(call, names)):
             continue
         enclosing: list[ast.AST] = []
@@ -379,7 +385,7 @@ def _fixed_sleeps(tree: ast.Module) -> Iterator[tuple[ast.Call, str]]:
 def test_testy_czekaja_na_stan_a_nie_stala_liczbe_sekund() -> None:
     found, simulated = [], set()
     for path, name in _scanned():
-        for call, function in _fixed_sleeps(ast.parse(path.read_text(encoding="utf-8"))):
+        for call, function in _fixed_sleeps(drzewo(path)):
             if f"{name}::{function}" == WAITING:
                 continue
             if f"{name}::{function}" in SIMULATED_TIME:
@@ -456,7 +462,7 @@ def _bindings(tree: ast.Module) -> dict[str, list[ast.expr | None]]:
     """
 
     bound: dict[str, list[ast.expr | None]] = {}
-    for node in ast.walk(tree):
+    for node in wezly(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 for bound_name, value in _unpacked(target, node.value):
@@ -555,8 +561,8 @@ def _constant_time_bounds(tree: ast.Module) -> Iterator[tuple[ast.Compare, str]]
     names = imports(tree)
     bound = _bindings(tree)
     measured_names = _measured_names(bound, names)
-    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-    for statement in ast.walk(tree):
+    parents = {child: node for node in wezly(tree) for child in ast.iter_child_nodes(node)}
+    for statement in wezly(tree):
         if not isinstance(statement, ast.Assert):
             continue
         for compare in ast.walk(statement.test):
@@ -583,7 +589,7 @@ def _constant_time_bounds(tree: ast.Module) -> Iterator[tuple[ast.Compare, str]]
 def test_zmierzony_czas_nie_jest_ograniczony_stala_liczba() -> None:
     found, excepted = [], set()
     for path, name in _scanned():
-        for compare, function in _constant_time_bounds(ast.parse(path.read_text(encoding="utf-8"))):
+        for compare, function in _constant_time_bounds(drzewo(path)):
             key = f"{name}::{function}::{ast.unparse(compare)}"
             if key in CONSTANT_TIME_BOUNDS:
                 excepted.add(key)
@@ -677,7 +683,7 @@ def _thread_names(tree: ast.Module) -> set[str]:
             continue
         if isinstance(target, ast.Name) and THREAD_CONSTANT.fullmatch(target.id) and isinstance(value, ast.Constant):
             names.add(value.value)
-    for call in ast.walk(tree):
+    for call in wezly(tree):
         if isinstance(call, ast.Call) and (ast.unparse(call.func).endswith("Thread") or ast.unparse(call.func).split(".")[-1] == "within"):
             names |= {
                 keyword.value.value
@@ -691,8 +697,8 @@ def _texts(tree: ast.Module) -> Iterator[tuple[str, int, str]]:
     """Napisy modułu z nazwą funkcji, w której stoją, poza docstringami (napis jako całe wyrażenie-instrukcja) i
     kawałkami f-stringów."""
 
-    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-    for node in ast.walk(tree):
+    parents = {child: node for node in wezly(tree) for child in ast.iter_child_nodes(node)}
+    for node in wezly(tree):
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
             continue
         if isinstance(parents.get(node), (ast.Expr, ast.JoinedStr)):
@@ -705,7 +711,7 @@ def _texts(tree: ast.Module) -> Iterator[tuple[str, int, str]]:
 
 
 def _thread_names_in(src: Path) -> set[str]:
-    return set().union(*(_thread_names(ast.parse(path.read_text(encoding="utf-8"))) for path in sorted(src.rglob("*.py"))))
+    return set().union(*(_thread_names(drzewo(path)) for path in sorted(src.rglob("*.py"))))
 
 
 def _thread_name_copies(names: set[str]) -> list[str]:
@@ -713,7 +719,7 @@ def _thread_name_copies(names: set[str]) -> list[str]:
 
     found, excepted = [], set()
     for path, name in _scanned():
-        for text, line, function in _texts(ast.parse(path.read_text(encoding="utf-8"))):
+        for text, line, function in _texts(drzewo(path)):
             if text not in names:
                 continue
             key = f"{name}::{function}::{text}"
