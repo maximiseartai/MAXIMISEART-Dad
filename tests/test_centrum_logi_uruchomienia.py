@@ -1920,9 +1920,10 @@ HYPOTHESES = {
         ["szukanie"],
         "otwarcie zlecenia",
     ),
+    # 404 na stronie zlecenia, a 5xx po Emmetcie niżej: każda klasa statusu ma swój wiersz (#1440 r1).
     "D-strona-bledu-http": (
-        replace(STOPPED_AT_SECOND[1].in_efenix("617"), error_status=HTTPStatus.INTERNAL_SERVER_ERROR),
-        {"what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 500},
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), error_status=HTTPStatus.NOT_FOUND),
+        {"what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 404},
         ["szukanie"],
         "otwarcie zlecenia",
     ),
@@ -1934,6 +1935,12 @@ HYPOTHESES = {
             after_emmett=True,
         ),
         {"what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 500},
+        ["szukanie", "otwarcie zlecenia"],
+        "Wycena Emmetta",
+    ),
+    "E-formularz-logowania-po-wycenie-emmetta": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), execution_date=DAY, login_form=True, after_emmett=True),
+        {"what": "formularz logowania efenix pod adresem strony zlecenia, bez przekierowania"},
         ["szukanie", "otwarcie zlecenia"],
         "Wycena Emmetta",
     ),
