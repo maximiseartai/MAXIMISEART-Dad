@@ -185,7 +185,7 @@ def wspolny_cache_mypy(tmp_path_factory: pytest.TempPathFactory, monkeypatch: py
 
 def _structure_stubs(body: str) -> dict[str, str]:
     stubs: dict[str, str] = {}
-    for node in STRUCTURE:
+    for node in (*STRUCTURE, *szybko.ZAPADKI):
         path, _, name = node.partition("::")
         header = "from pathlib import Path\n" if "Path(" in body else ""
         stubs[path] = stubs.get(path, header) + f"\n\ndef {name or 'test_struktura'}() -> None:\n    {body}\n"
@@ -514,14 +514,14 @@ def test_plan_bierze_zawsze_odleglosc_1_a_dalsze_w_budzecie_i_nazywa_zostawione(
     assert {"tests/test_a_drogi.py", "tests/test_a_tani.py", "tests/test_dane.py"} <= set(chosen.run)
 
 
-def test_testy_struktury_biegna_przy_zmianie_ktora_ich_nie_dotyka(tmp_path: Path) -> None:
+def test_testy_struktury_i_zapadki_biegna_przy_zmianie_ktora_ich_nie_dotyka(tmp_path: Path) -> None:
     repo = _repo(tmp_path, structure="assert False")
     _write(repo, "docs/notatka.md", "nowa\n")
 
     answered = _szybko(repo)
 
     failed = set(re.findall(r"^FAILED (\S+)", answered.stdout, re.MULTILINE))
-    assert {node if "::" in node else f"{node}::test_struktura" for node in STRUCTURE} <= failed
+    assert {node if "::" in node else f"{node}::test_struktura" for node in (*STRUCTURE, *szybko.ZAPADKI)} <= failed
     assert answered.returncode == 1
 
 
@@ -828,11 +828,11 @@ def test_kazdy_test_z_tabel_regul_jest_testem_struktury_albo_ma_powod() -> None:
     ]
     guards = [row.rsplit("|", 2)[-2] for found in rows.values() for row in found]
     named = {test for guard in guards for test in _named_tests(guard)}
-    whole_files = {node for node in STRUCTURE if "::" not in node}
+    whole_files = {node for node in (*STRUCTURE, *szybko.ZAPADKI) if "::" not in node}
     files_with_node = {node.partition("::")[0] for node in STRUCTURE}
 
     collected = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", *STRUCTURE],
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", *STRUCTURE, *szybko.ZAPADKI],
         cwd=ROOT,
         capture_output=True,
         text=True,

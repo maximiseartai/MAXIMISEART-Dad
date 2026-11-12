@@ -25,7 +25,8 @@ jako „zostawione CI”, więc ``SZYBKO OK`` znaczy, że przeszły uruchomione 
 Testy ``STRUCTURE`` modułu wpływu zmiany (reguły z tabel w ``AGENTS.md``, ``CODING_STANDARDS.md`` i ``docs/agents/`` oraz testy całego
 repozytorium) biegną przy każdej zmianie, a gdy ``--baza`` poszła dalej niż HEAD, także na mergu z nią (to drzewo
 sprawdza CI PR-u; numer ADR zajęty równolegle pada dopiero tam). Na mergu biegną tylko one, bez mypy, testów
-dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami. Merge z konfliktem szybko pomija z linią ``UWAGA``,
+dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami. Zapadki (``ZAPADKI``) biegną przy każdej zmianie
+tylko w szybko, bo w CI nie mają bazy zmiany. Merge z konfliktem szybko pomija z linią ``UWAGA``,
 a merge, którego git nie policzy (``git merge-tree`` z kodem innym niż konflikt), wywraca ten krok z powodem.
 Szybko nie pobiera ``origin``, więc merge jest z bazą z ostatniego ``git fetch``. Nie uruchamia zadań CI
 ``mutations`` (skrypty mutacji skilli), ``Frontend``, E2E ani Timing guard.
@@ -75,6 +76,9 @@ import wyniki_testow
 from zakres_runu import podstawa_na_pull_request
 
 GREEN = "szybko-zielone.json"
+# Zapadki padają tylko na liniach, które zmiana dodaje, więc biegną przy każdej zmianie jak ``STRUCTURE``. Plan CI ich
+# nie ma, bo płytki checkout zadań pytest nie ma bazy zmiany i zapadka się tam pomija.
+ZAPADKI = ("tests/test_zapadki.py",)
 # Sekundy czasów CI na workera. Porażki pytest w szybko z 23–24.10 łapie ten sam plan od 20 s wzwyż, bo prawie
 # wszystkie padły w odległości 0–1 albo w testach struktury, więc budżet stoi blisko tej granicy.
 BUDGET_S = 45.0
@@ -208,7 +212,8 @@ def _merge_steps(base: str, copies: ExitStack) -> list[Step]:
 
 
 def _pytest_arguments(tests: Iterable[str], junit: Path) -> tuple[str, ...]:
-    return (*with_structure(tests), *wyniki_testow.zapis(junit))
+    chosen = with_structure(tests)
+    return (*chosen, *(path for path in ZAPADKI if path not in chosen), *wyniki_testow.zapis(junit))
 
 
 def _failing(root: Path, name: str, why: str) -> Step:
