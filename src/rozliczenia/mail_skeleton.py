@@ -32,7 +32,7 @@ import itertools
 import re
 from typing import Final
 
-__all__ = ["FetchValue", "Structure", "UnknownReply", "fetch_responses", "sections", "skeleton"]
+__all__ = ["FetchValue", "Structure", "UnknownReply", "chosen", "fetch_responses", "sections", "skeleton"]
 
 FetchValue = bytes | None | list["FetchValue"]
 """Wartość z odpowiedzi ``FETCH``: napis albo literał (``bytes``), ``NIL`` (``None``) albo lista w nawiasie."""
@@ -127,10 +127,12 @@ def _items(response: list[FetchValue]) -> dict[bytes, FetchValue]:
 @dataclass(frozen=True)
 class Structure:
     """Część maila z ``BODYSTRUCTURE``: ``parts`` to dzieci części ``multipart`` (puste dla części bez dzieci),
-    ``text`` mówi, czy serwer opisuje część jako ``TEXT``, a ``related``, czy to ``multipart/related``."""
+    ``text`` mówi, czy serwer opisuje część jako ``TEXT``, ``plain``, czy jako ``TEXT/PLAIN``, a ``related``, czy to
+    ``multipart/related``."""
 
     parts: tuple[Structure, ...] = ()
     text: bool = False
+    plain: bool = False
     related: bool = False
 
     @property
@@ -151,34 +153,46 @@ class Structure:
                 return None
             return Structure(tuple(part for part in parts if part is not None), related=subtype.upper() == b"RELATED")
         if isinstance(value[0], bytes) and isinstance(value[1], bytes):
-            return Structure(text=value[0].upper() == b"TEXT")
+            text = value[0].upper() == b"TEXT"
+            return Structure(text=text, plain=text and value[1].upper() == b"PLAIN")
         return None
+
+    def _leaves(self) -> Iterator[Structure]:
+        if not self.multipart:
+            yield self
+        for part in self.parts:
+            yield from part._leaves()
 
 
 def sections(structure: Structure) -> tuple[str, ...]:
     """Sekcje ``BODY[…]``, które szkielet bierze od serwera oprócz nagłówka maila, w stałej kolejności: ``TEXT`` dla
     maila z jedną częścią tekstu, a w ``multipart`` ``n.MIME`` każdej części ``multipart`` i ``text`` oraz każdego
-    dziecka ``multipart/related``, i ``n`` każdej części ``text``."""
+    dziecka ``multipart/related``, i ``n`` każdej części ``text/plain``, a gdy mail jej nie ma, każdej części ``text``.
+
+    Treść części ``text/html`` obok ``text/plain`` jest zbędna, gdy ``get_body`` wybiera tekst przed HTML, a każda treść
+    to jedno pobranie po stronie Gmaila. Którą część ``get_body`` wybrał naprawdę, mówi ``chosen`` na szkielecie."""
 
     if not structure.multipart:
         return ("TEXT",) if structure.text else ()
-    return tuple(_sections(structure, ""))
+    with_plain = any(leaf.plain for leaf in structure._leaves())
+    return tuple(_sections(structure, "", with_plain))
 
 
-def _sections(structure: Structure, prefix: str) -> Iterator[str]:
+def _sections(structure: Structure, prefix: str, with_plain: bool) -> Iterator[str]:
     for number, part in enumerate(structure.parts, start=1):
         name = f"{prefix}{number}"
         if part.multipart or part.text or structure.related:
             yield f"{name}.MIME"
-        if part.text and not part.multipart:
+        if part.text and not part.multipart and (part.plain or not with_plain):
             yield name
         if part.multipart:
-            yield from _sections(part, f"{name}.")
+            yield from _sections(part, f"{name}.", with_plain)
 
 
 def skeleton(structure: Structure, header: bytes, parts: Mapping[str, bytes]) -> bytes | None:
-    """Mail MIME z nagłówka maila ``header`` i sekcji ``parts`` (``sections``), bez treści części innych niż tekst;
-    ``None``, gdy nagłówek od serwera nie zgadza się z ``BODYSTRUCTURE`` (typ, brak ``boundary``) albo brak sekcji."""
+    """Mail MIME z nagłówka maila ``header`` i sekcji ``parts`` (``sections``), bez treści części innych niż tekst i
+    części tekstu, której treści ``parts`` nie ma; ``None``, gdy nagłówek od serwera nie zgadza się z ``BODYSTRUCTURE``
+    (typ, brak ``boundary``) albo brak nagłówka części."""
 
     try:
         return _part(structure, header, parts, "")
@@ -209,4 +223,27 @@ def _part(structure: Structure, header: bytes, parts: Mapping[str, bytes], name:
         return None
     if not structure.text:
         return head
-    return head + parts[name or "TEXT"]
+    return head + parts.get(name or "TEXT", b"")
+
+
+def chosen(structure: Structure, raw: bytes, preference: tuple[str, ...]) -> str | None:
+    """Sekcja części, którą ``get_body(preferencelist=preference)`` wybiera ze szkieletu ``raw`` złożonego z
+    ``structure`` (``TEXT`` dla maila z jedną częścią), albo ``None``, gdy nie wybiera żadnej. Wybór czyta tylko nagłówki
+    części, a te szkielet ma od serwera, więc to ta sama część co w całym mailu."""
+
+    message = email.message_from_bytes(raw, policy=email.policy.default)
+    assert isinstance(message, EmailMessage)
+    body = message.get_body(preferencelist=preference)
+    if body is None:
+        return None
+    return next((name for part, name in _named(message, structure, "") if part is body), None)
+
+
+def _named(message: EmailMessage, structure: Structure, name: str) -> Iterator[tuple[object, str]]:
+    yield message, name or "TEXT"
+    payload = message.get_payload() if structure.multipart else []
+    if not isinstance(payload, list) or len(payload) != len(structure.parts):
+        return
+    for number, (part, child) in enumerate(zip(payload, structure.parts, strict=True), start=1):
+        if isinstance(part, EmailMessage):
+            yield from _named(part, child, f"{name}.{number}" if name else str(number))

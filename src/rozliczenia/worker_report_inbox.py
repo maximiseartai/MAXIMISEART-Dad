@@ -48,7 +48,7 @@ import ssl
 import time
 from typing import Final, Literal, Protocol, TypeVar
 
-from .mail_skeleton import FetchValue, Structure, UnknownReply, fetch_responses, sections, skeleton
+from .mail_skeleton import FetchValue, Structure, UnknownReply, chosen, fetch_responses, sections, skeleton
 from .worker_reports import SUBJECT_WORD, MailId, Reminder, ReportMail, SenderAddress, SentReminder, reminder_day
 
 __all__ = [
@@ -84,6 +84,8 @@ _FLAGS: Final = re.compile(rb"\bFLAGS \((?P<flags>[^)]*)\)")
 _SENT_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (SUBJECT TO)])"
 _LIGHT_ITEMS: Final = "(UID INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER])"
 _WHOLE_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[])"
+_BODY_PREFERENCE: Final = ("plain", "html")
+"""Treść maila to część ``text/plain``, a bez niej ``text/html`` (``mail_of``, ``mail_skeleton.chosen``)."""
 _SMTP_NETWORK: Final = (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)
 """Porażki SMTP, które są siecią, a nie odmową serwera, jak każdy inny ``OSError``: przypomnienie poczeka na następną
 próbę w tej porze. ``SMTPException`` dziedziczy po ``OSError``, więc idą przed odmową serwera."""
@@ -353,6 +355,28 @@ def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dic
     for uid, (_, structure, _) in light.items():
         groups.setdefault(sections(structure), []).append(uid)
     parts: dict[str, dict[str, bytes]] = {uid: {} for uid in light}
+    _fetch_sections(imap, groups, parts)
+    missing: dict[tuple[str, ...], list[str]] = {}
+    for uid, (_, structure, header) in light.items():
+        raw = skeleton(structure, header, parts[uid])
+        section = None if raw is None else chosen(structure, raw, _BODY_PREFERENCE)
+        if section is not None and section not in parts[uid]:
+            missing.setdefault((section,), []).append(uid)
+    _fetch_sections(imap, missing, parts)
+    built: dict[str, tuple[bytes, bytes]] = {}
+    for uid, (internal, structure, header) in light.items():
+        raw = skeleton(structure, header, parts[uid])
+        section = None if raw is None else chosen(structure, raw, _BODY_PREFERENCE)
+        if raw is not None and (section is None or section in parts[uid]):
+            built[uid] = (internal, raw)
+    whole = _fetched(imap, [uid for uid in uids if uid not in built and uid not in from_box], _WHOLE_ITEMS)
+    return {uid: mail for uid in uids if (mail := built.get(uid) or whole.get(uid)) is not None}
+
+
+def _fetch_sections(imap: imaplib.IMAP4, groups: Mapping[tuple[str, ...], list[str]], parts: dict[str, dict[str, bytes]]) -> None:
+    """Dopisuje do ``parts`` sekcje ``BODY.PEEK[…]`` każdej grupy maili: jedno ``UID FETCH`` na paczkę maili z tą samą
+    listą sekcji, bo Gmail odmawia całego polecenia, gdy któryś mail nie ma żądanej sekcji."""
+
     for names, members in groups.items():
         items = "(UID " + " ".join(f"BODY.PEEK[{name}]" for name in names) + ")"
         for batch in _batches(members) if names else ():
@@ -363,13 +387,6 @@ def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dic
                     value = response.get(f"BODY[{name}]".encode("ascii"))
                     if taken is not None and isinstance(value, bytes):
                         taken[name] = value
-    built: dict[str, tuple[bytes, bytes]] = {}
-    for uid, (internal, structure, header) in light.items():
-        raw = skeleton(structure, header, parts[uid])
-        if raw is not None:
-            built[uid] = (internal, raw)
-    whole = _fetched(imap, [uid for uid in uids if uid not in built and uid not in from_box], _WHOLE_ITEMS)
-    return {uid: mail for uid in uids if (mail := built.get(uid) or whole.get(uid)) is not None}
 
 
 def _described(
@@ -581,7 +598,7 @@ def _report_mail(raw: bytes, arrived: datetime) -> ReportMail | None:
     sender = SenderAddress.of(str(message["From"] or ""))
     if sender is None:
         return None
-    body = message.get_body(preferencelist=("plain", "html"))
+    body = message.get_body(preferencelist=_BODY_PREFERENCE)
     text = ""
     if body is not None:
         content = _decoded(body)

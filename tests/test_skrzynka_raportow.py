@@ -235,7 +235,8 @@ def z_zalacznikami(*, message_id: bytes | None = b"<z-zalacznikami@x.invalid>") 
 
 def test_skrzynka_czyta_raport_bez_pobierania_zalacznikow(tmp_path: Path) -> None:
     """Pełny mail ze zdjęciami to megabajty, a Gmail liczy pobranie treści za każdy mail: port bierze strukturę, nagłówki
-    i części tekstu, a treść załączników zostaje w skrzynce (pomiar 12.11.2026: 214 MB i 17–34 s dla 121 maili)."""
+    i treść części ``text/plain``, którą wybiera ``mail_of``, a treść HTML i załączników zostaje w skrzynce (pomiar
+    12.11.2026: 214 MB i 17–34 s dla 121 maili)."""
 
     surowe = z_zalacznikami()
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)]) as atrapa:
@@ -244,8 +245,7 @@ def test_skrzynka_czyta_raport_bez_pobierania_zalacznikow(tmp_path: Path) -> Non
     assert [(mail.id, mail.subject, mail.text) for mail in found] == [(MailId.of("<z-zalacznikami@x.invalid>"), TEMAT, TRESC)]
     fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
     asked = {section for command in fetches for section in re.findall(r"BODY\.PEEK\[([^\]]*)\]", command)}
-    assert "" not in asked
-    assert asked <= {"HEADER.FIELDS (SUBJECT)", "HEADER", "1.MIME", "1.1.MIME", "1.1", "1.2.MIME", "1.2"}
+    assert asked == {"HEADER.FIELDS (SUBJECT)", "HEADER", "1.MIME", "1.1.MIME", "1.1", "1.2.MIME"}
 
 
 def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path) -> None:
@@ -306,6 +306,15 @@ def _related_ze_start_na_zdjecie() -> list[Message]:
     return [related]
 
 
+def _html_obok_tekstu_w_zalaczniku() -> list[Message]:
+    """Treść w HTML, a ``text/plain`` tylko w załączniku: ``get_body`` wybiera HTML, którego treści port nie wziął w
+    pierwszym poleceniu, bo mail ma część ``text/plain``."""
+
+    zalacznik = MIMEText("notatka", "plain", "utf-8")
+    zalacznik.add_header("Content-Disposition", "attachment", filename="notatka.txt")
+    return [MIMEMultipart("mixed", _subparts=[zalacznik, MIMEText("<p>40000001 tak</p>", "html", "utf-8")])]
+
+
 def _tekst(draw: st.DrawFn) -> str:
     return draw(st.text(alphabet="40000123 takniewymiaśćżółęńŁŻ,.\n", min_size=1, max_size=40)).strip() or "40000001 tak"
 
@@ -345,6 +354,7 @@ def czesc_maila(draw: st.DrawFn, glebokosc: int = 0) -> Message:
 @settings(max_examples=60, derandomize=True, database=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(st.lists(czesc_maila(), min_size=1, max_size=4))
 @example(_related_ze_start_na_zdjecie())
+@example(_html_obok_tekstu_w_zalaczniku())
 def test_skrzynka_bez_tresci_zalacznikow_daje_te_same_maile_co_rozbior_calego_maila(tmp_path: Path, czesci: list[Message]) -> None:
     """``mail_of`` na mailu ze skrzynki daje to samo co na całym mailu (``mail_skeleton``): nadawca, temat, ``MailId``
     i treść, którą wybiera ``get_body``, dla każdego kształtu maila z ``czesc_maila``."""
