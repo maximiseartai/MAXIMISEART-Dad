@@ -178,13 +178,23 @@ def _nazwa(wpis: dict[str, object]) -> str:
 
 
 def _zapisy(
-    katalog: Path, czesci: dict[int, tuple[tuple[int, str], list[dict[str, object]]]], bez_werdyktu: dict[int, list[dict[str, object]]] | None = None
+    katalog: Path,
+    czesci: dict[int, tuple[tuple[int, str], list[dict[str, object]]]],
+    bez_werdyktu: dict[int, list[dict[str, object]]] | None = None,
+    przekroczony_czas: dict[int, list[dict[str, object]]] | None = None,
 ) -> Path:
     """Zapis każdej części (numer → kod wyjścia z ostatnią linią i przeżyte) w postaci ``tools/mutacje_zmiany.py --zapis``."""
 
     for numer, ((kod, wynik), przezyte) in czesci.items():
         (katalog / f"mutacje-nocne-{numer}").mkdir(parents=True)
-        zapis = {"czesc": f"{numer}/3", "kod": kod, "wynik": wynik, "przezyte": przezyte, "bez_werdyktu": (bez_werdyktu or {}).get(numer, [])}
+        zapis = {
+            "czesc": f"{numer}/3",
+            "kod": kod,
+            "wynik": wynik,
+            "przezyte": przezyte,
+            "bez_werdyktu": (bez_werdyktu or {}).get(numer, []),
+            "przekroczony_czas": (przekroczony_czas or {}).get(numer, []),
+        }
         (katalog / f"mutacje-nocne-{numer}" / "czesc.json").write_text(json.dumps(zapis), encoding="utf-8")
     return katalog
 
@@ -340,6 +350,41 @@ def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a
     [komentarz] = [komentarz["body"] for komentarz in github.issues[0]["comments"]]
     assert [linia for linia in komentarz.splitlines() if linia.startswith("MUTACJA")] == [f"MUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}{bez_werdyktu}"]
     assert "uruchom ją `tools/mutacje.py`" in komentarz
+
+
+def test_mutacja_z_przekroczonym_czasem_testow_trafia_do_issue_z_wlasnym_dopiskiem_i_rada_a_nie_jako_przezyta(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Limit czasu mutacji dotyczy całego zbioru testów, więc ``PRZEKROCZONY CZAS`` nie mówi, czy test łapie mutację
+    (#1339): jej linia ``MUTACJA`` ma własny dopisek i radę, także w komentarzu do issue, które PR już ma, a ostatnia linia
+    liczy ją osobno od przeżytych."""
+
+    repo, baza = _historia(tmp_path)
+    github = GitHubWPamieci(issues=[{"number": 5, "title": "Przeżyte mutacje z #12", "state": "open", "body": "", "comments": []}])
+    wynik = (1, "MUTACJE ZMIANY FAIL | przeżyło 1 | przekroczony czas 2 | mutacje=24 | wyjątki=0 | innego systemu=0")
+    zapisy = _zapisy(
+        tmp_path / "zapisy",
+        {1: (wynik, [_przezyta("src/a.py:1 stała")])},
+        przekroczony_czas={1: [_przezyta("src/a.py:5 inna"), _przezyta("src/a.py:2 stała")]},
+    )
+
+    kod = mutacje_nocne.zglos(github, repo, baza, zapisy, 1, RUN)
+
+    assert kod == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "MUTACJE NOCNE OK | części 1 | przeżyło 1 | przekroczony czas 2"
+    tresci = {issue["title"]: issue["body"] for issue in github.issues}
+    dopisek = " | przekroczony czas testów, bez werdyktu"
+    assert [linia for linia in tresci["Przeżyte mutacje z #11"].splitlines() if linia.startswith("MUTACJA")] == [
+        f"MUTACJA src/a.py:1 stała | klucz {_klucz('src/a.py:1 stała')}",
+        f"MUTACJA src/a.py:5 inna | klucz {_klucz('src/a.py:5 inna')}{dopisek}",
+    ]
+    rada = "Linia z `przekroczony czas testów, bez werdyktu` to mutacja, której testy nie skończyły się w limicie czasu mutacji"
+    assert rada in tresci["Przeżyte mutacje z #11"] and "uruchom ją `tools/mutacje.py`" in tresci["Przeżyte mutacje z #11"]
+    # Rada o limicie czasu części stoi tylko przy mutacjach bez werdyktu po nim.
+    assert "przed limitem czasu części" not in tresci["Przeżyte mutacje z #11"]
+    [komentarz] = [komentarz["body"] for komentarz in github.issues[0]["comments"]]
+    assert [linia for linia in komentarz.splitlines() if linia.startswith("MUTACJA")] == [f"MUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}{dopisek}"]
+    assert rada in komentarz
 
 
 def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_by_ja_anulowalo_bez_zapisu() -> None:
@@ -797,7 +842,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     assert (kod, capsys.readouterr().out.splitlines()[-1]) == (0, "MUTACJE NOCNE OK | części 2 | przeżyło 0 | bez werdyktu 2")
     (issue,) = github.issues
     assert issue["title"] == "Przeżyte mutacje z #2"
-    assert sorted(linia.split(" | klucz ")[0] for linia in issue["body"].splitlines() if linia.endswith(mutacje_nocne.BEZ_WERDYKTU)) == [
+    assert sorted(linia.split(" | klucz ")[0] for linia in issue["body"].splitlines() if linia.endswith(mutacje_nocne.Rodzaj.BEZ_WERDYKTU.dopisek)) == [
         "MUTACJA src/rozliczenia/b.py:2 granica `x > 2` → `>=`",
         "MUTACJA src/rozliczenia/b.py:2 zmiana linii 2 cofnięta do bazy",
     ]
