@@ -1,8 +1,8 @@
 """Kroki sprawdzeń, które biegną lokalnie tak jak w CI (ruff, mypy obu systemów, pytest), i środowisko kodu drzewa.
 
 Kroki ruff i mypy (``static_steps``) to brama pre-push i zadanie CI „Ruff, mypy”: biegną nimi ``tools/ci_lokalnie.py``,
-``tools/szybko.py`` i brama typów mutacji (``tools/lib/silnik_mutacji.py``). Kroki zizmor i actionlint (``workflow_steps``)
-sprawdzają ``.github/`` w tym samym zadaniu CI, a lokalnie biegną nimi ``tools/ci_lokalnie.py`` i ``tools/szybko.py``. Krok pytest (``pytest_step``) to ten sam pytest, który
+``tools/szybko.py`` i brama typów mutacji (``tools/lib/silnik_mutacji.py``). Kroki zizmor, actionlint
+i shellcheck akcji złożonych (``workflow_steps``) sprawdzają ``.github/`` w tym samym zadaniu CI, a lokalnie biegną nimi ``tools/ci_lokalnie.py`` i ``tools/szybko.py``. Krok pytest (``pytest_step``) to ten sam pytest, który
 ``tools/ci_lokalnie.py`` uruchamia w całości, a ``tools/szybko.py`` z wybranymi testami.
 
 ``environment`` to środowisko procesu, który uruchamia kod drzewa ``root`` (checkoutu albo jego kopii): edytowalna
@@ -47,8 +47,9 @@ def static_steps(root: Path) -> list[Step]:
 
 
 def workflow_steps(root: Path) -> list[Step]:
-    """Kroki zizmor i actionlint z shellcheckiem w ``root``, jak w zadaniu CI „Ruff, mypy”, narzędziami z dodatku ``workflowy``
-    w katalogu skryptów Pythona, który je uruchamia; bez narzędzia krok pada z poleceniem, które je instaluje."""
+    """Kroki zizmor, actionlint z shellcheckiem (``.github/workflows``) i shellcheck skryptów akcji złożonych
+    (``.github/actions``, których actionlint nie czyta) w ``root``, jak w zadaniu CI „Ruff, mypy”, narzędziami z dodatku
+    ``workflowy`` w katalogu skryptów Pythona, który je uruchamia; bez narzędzia krok pada z poleceniem, które je instaluje."""
 
     scripts = sysconfig.get_path("scripts")
     zizmor, actionlint, shellcheck = (shutil.which(name, path=scripts) for name in ("zizmor", "actionlint", "shellcheck"))
@@ -57,6 +58,12 @@ def workflow_steps(root: Path) -> list[Step]:
     return [
         Step("zizmor", "workflowy", (zizmor, "--offline", "--min-severity", "low", ".github") if zizmor else fails, root),
         Step("actionlint", "workflowy", (actionlint, "-shellcheck", shellcheck) if actionlint and shellcheck else fails, root),
+        Step(
+            "shellcheck akcji",
+            "workflowy",
+            (sys.executable, "tools/ci/shellcheck_akcji.py", "--shellcheck", shellcheck) if shellcheck else fails,
+            root,
+        ),
     ]
 
 

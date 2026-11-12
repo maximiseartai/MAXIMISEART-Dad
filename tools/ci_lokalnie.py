@@ -72,13 +72,14 @@ def _reproduced(root: Path) -> list[tuple[str, Step]]:
 
     python, npm, frontend = sys.executable, _npm(), root / "frontend"
     ruff, mypy, mypy_windows = static_steps(root)
-    zizmor, actionlint = workflow_steps(root)
+    zizmor, actionlint, shellcheck_actions = workflow_steps(root)
     return [
         ("-m ruff check", ruff),
         ("-m mypy --platform linux", mypy),
         ("-m mypy --platform win32", mypy_windows),
         ("zizmor --offline --min-severity low .github", zizmor),
         ("actionlint -shellcheck", actionlint),
+        ("tools/ci/shellcheck_akcji.py", shellcheck_actions),
         ("tools/ci/wykonaj_zadanie.py", pytest_step(root)),
         # W CI kroki skilli biegną z planu, w zadaniach Mutation checks; tu tym samym wykonaniem wszystkie kroki pushu po kolei.
         ("tools/ci/wykonaj_zadanie.py", Step("mutacje skilli", "mutations", (python, "tools/ci/wykonaj_zadanie.py", "--kroki-pushu"), root)),

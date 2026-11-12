@@ -20,8 +20,8 @@ runs:
       env:
         PYTHON: ${{ inputs.python }}
       run: |
-        packages="$(python -c "import tomllib; dev = tomllib.load(open('pyproject.toml', 'rb'))['project']['optional-dependencies']['dev']; print(' '.join(p.replace(' ', '') for p in dev if p.startswith(('playwright==', 'tzdata=='))))")"
-        uv pip install --system --python "$PYTHON" $packages
+        read -ra packages <<< "$(python -c "import tomllib; dev = tomllib.load(open('pyproject.toml', 'rb'))['project']['optional-dependencies']['dev']; print(' '.join(p.replace(' ', '') for p in dev if p.startswith(('playwright==', 'tzdata=='))))")"
+        uv pip install --system --python "$PYTHON" "${packages[@]}"
 
     - name: Playwright version
       id: playwright

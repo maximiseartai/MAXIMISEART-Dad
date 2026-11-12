@@ -25,6 +25,7 @@ from tests.fixtures.ci_workflow import CHROMIUM, WORKFLOW, action, chromium, com
 
 import plan_ci
 import plan_runu
+import shellcheck_akcji
 from zakres_runu import Zdarzenie
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -225,9 +226,9 @@ def test_w_ruff_mypy_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych() -> Non
     steps = jobs()["ruff-mypy"]["steps"]
     deps = next(index for index, step in enumerate(steps) if step.get("id") == "deps")
 
-    checks = [(step["run"].removeprefix("python -m ").split()[0], step.get("if")) for step in steps[deps + 1 :]]
+    checks = [(step["run"].removeprefix("python -m ").removeprefix("python ").split()[0], step.get("if")) for step in steps[deps + 1 :]]
 
-    assert checks == [(check, INDEPENDENT) for check in ("ruff", "mypy", "mypy", "zizmor", "actionlint")]
+    assert checks == [(check, INDEPENDENT) for check in ("ruff", "mypy", "mypy", "zizmor", "actionlint", "tools/ci/shellcheck_akcji.py")]
 
 
 def test_dependabot_przesuwa_przypiete_akcje_kazdej_akcji_zlozonej_z_repozytorium() -> None:
@@ -237,3 +238,38 @@ def test_dependabot_przesuwa_przypiete_akcje_kazdej_akcji_zlozonej_z_repozytoriu
     composite = {"/" + path.parent.relative_to(ROOT).as_posix() for path in (ROOT / ".github" / "actions").rglob("action.yml")}
 
     assert composite - set(actions["directories"]) == set()
+
+
+def test_shellcheck_akcji_sprawdza_tylko_skrypty_bash_akcji_zlozonych_i_podaje_ich_linie_w_pliku(tmp_path: Path) -> None:
+    # Podstawiony shellcheck zgłasza każdą linię skryptu z ZLE, więc test widzi, które skrypty i z jakimi liniami dostał.
+    fake = tmp_path / "shellcheck.py"
+    fake.write_text(
+        "import pathlib, sys\n"
+        "script = pathlib.Path(sys.argv[-1])\n"
+        "for number, line in enumerate(script.read_text(encoding='utf-8').splitlines(), 1):\n"
+        "    if 'ZLE' in line: print(f'{script}:{number}:1: error: {line.strip()} [SC1000]')\n",
+        encoding="utf-8",
+    )
+    action = tmp_path / ".github" / "actions" / "x" / "action.yml"
+    action.parent.mkdir(parents=True)
+    action.write_text(
+        "runs:\n"
+        "  using: composite\n"
+        "  steps:\n"
+        "    - shell: bash\n"
+        "      run: |\n"
+        "        echo dobrze\n"
+        "        echo ZLE ${{ inputs.x }}\n"
+        "    - shell: pwsh\n"
+        "      run: echo ZLE\n"
+        "    - shell: bash\n"
+        "      run: echo ZLE\n",
+        encoding="utf-8",
+    )
+
+    lines = shellcheck_akcji.findings([sys.executable, str(fake)], tmp_path)
+
+    assert lines == [
+        ".github/actions/x/action.yml:7: error: echo ZLE _______________ [SC1000]",
+        ".github/actions/x/action.yml:11: error: echo ZLE [SC1000]",
+    ]

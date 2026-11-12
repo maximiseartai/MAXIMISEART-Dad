@@ -389,9 +389,9 @@ def test_zizmor_i_actionlint_biegna_tylko_przy_zmianie_w_github(tmp_path: Path) 
     inside = _szybko(repo)
 
     def workflow_steps(answered: subprocess.CompletedProcess[str]) -> list[str]:
-        return re.findall(r"^(?:OK  |FAIL) (zizmor|actionlint) \(", answered.stdout, re.MULTILINE)
+        return re.findall(r"^(?:OK  |FAIL) (zizmor|actionlint|shellcheck akcji) \(", answered.stdout, re.MULTILINE)
 
-    assert (workflow_steps(outside), workflow_steps(inside)) == ([], ["zizmor", "actionlint"])
+    assert (workflow_steps(outside), workflow_steps(inside)) == ([], ["zizmor", "actionlint", "shellcheck akcji"])
 
 
 def test_zmiana_konfiguracji_uruchamia_pelny_zestaw_i_mowi_dlaczego(tmp_path: Path) -> None:

@@ -138,6 +138,11 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: actionlint -shellcheck shellcheck
 
+      # actionlint reads only .github/workflows, so the bash scripts of the composite actions get shellcheck here.
+      - name: Lint composite action scripts (shellcheck)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: python tools/ci/shellcheck_akcji.py
+
   plan:
     # Decides the pytest and Mutation checks jobs of this run (tools/plan_ci.py), from the unit times of the last green
     # main runs (artifact czasy-ci). Standard library only, so the runner's python3 runs it as is. Mutations of changed

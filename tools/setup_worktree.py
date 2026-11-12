@@ -1,4 +1,4 @@
-"""Tworzy własne .venv checkoutu albo worktree z dodatkiem dev; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
+"""Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
 
 ``.venv`` głównego checkoutu instaluje edytowalnie ``src`` głównego checkoutu,
 więc pytest i skrypty weryfikacyjne uruchomione nim z worktree mogą po cichu
