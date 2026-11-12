@@ -1036,7 +1036,7 @@ def test_pomylka_wykonawcy_w_numerze_daje_problem_a_jedyne_zlecenie_z_innego_dni
         [
             report(ANNA, SUBJECT, "40000001 tak montaż", at=datetime(2026, 11, 9, 17)),
             report(JAN, SUBJECT, "40000010 tak wymiana gniazda"),
-            report(JAN, SUBJECT, "12345678 tak wymiana modemu"),
+            report(JAN, SUBJECT, "30000077 tak wymiana modemu"),
             report(JAN, SUBJECT, "40000001 tak wymiana routera"),
         ],
     )
@@ -1050,7 +1050,7 @@ def test_pomylka_wykonawcy_w_numerze_daje_problem_a_jedyne_zlecenie_z_innego_dni
     assert [
         (problem["kind"], problem["worker"], problem["number"], problem["owner"], problem["order_days"])
         for problem in problems
-    ] == [("unknown_number", "jan.testowy", "12345678", None, [])]
+    ] == [("unknown_number", "jan.testowy", "30000077", None, [])]
     assert {problem["day"] for problem in problems} == {"2026-11-09"}
     assert _entering(centrum, view)["moves"] == [{"sheet": ORDER_SHEET, "row": 2, "day": "2026-11-09", "worker": "jan.testowy"}]
     assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
