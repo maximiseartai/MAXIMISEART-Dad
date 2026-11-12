@@ -13,9 +13,12 @@ from typing import Any
 from fastapi.testclient import TestClient
 import pytest
 
+from rozliczenia.centrum.contract.runs import LoggedOutcome, RunOutcome
+
 from tests.fixtures.centrum import views_until
 
-LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
+# Pola karty na żywo, których Logi nie niosą: wynik na żywo bez pól wyniku z Logów, wyprowadzone z kontraktu.
+LIVE_ONLY = frozenset(RunOutcome.model_fields) - frozenset(LoggedOutcome.model_fields)
 
 
 def restored(live: dict[str, Any], started_at: str) -> dict[str, Any]:

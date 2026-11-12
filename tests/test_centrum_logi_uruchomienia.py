@@ -2263,8 +2263,8 @@ def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_reali
     ]
     # Numer zlecenia może wyjść (ADR 0025) i stoi w Kopii wejścia, ale nie w śladzie zleceń; adresu nie ma nigdzie.
     traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
-    numbers = [*(order.number.removeprefix("#") for order in READ), "ZLQS050"]
-    assert [number for number in numbers if number in traced_text] == []
+    numbers = [*(order.number for order in READ), "ZLQS050"]
+    assert [number for number in numbers if zawiera_wartosc(traced_text, number)] == []
     private = [_FILE_ADDRESS, "ZAWILCOWA", "Zawilcowa", "Rumiankowa", "Miastowo"]
     assert [marker for marker in private if any(marker in text for text in texts + in_box(box))] == []
     assert record["technical_notes"] == []
@@ -2571,7 +2571,9 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
     }
     assert (card, [item for item in notifications if item["kind"] == "wycena_w_efenix"]) == ({"state": "missing"}, [])
     assert journals(centrum) == [], "dziennik, którego Logi przyjęła Kolejka wysyłki, znika"
-    private = [*(order.number.removeprefix("#") for order in CUT), "TESTOWA", "Testowa", "Miasto-Dzielnica"]
+    numbers = [order.number for order in CUT]
+    assert [number for number in numbers if zawiera_wartosc(journal_text, number) or zawiera_wartosc(comment, number)] == []
+    private = ["TESTOWA", "Testowa", "Miasto-Dzielnica"]
     assert [marker for marker in private if marker in journal_text or marker in comment] == []
 
 

@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from playwright.sync_api import Page, expect
+from rozliczenia.centrum.contract.runs import LoggedOutcome, RunOutcome
 
 from drive.common import (
     Run,
@@ -28,8 +29,9 @@ from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import LAST_STARTED_FILE
 
 FEATURE = "karta-z-logow"
-# What the live card has and the Logi do not hold: order_notes carry the order numbers and Wykonawcy of Wycena w efenix.
-LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
+# What the live card has and the Logi do not hold (order_notes carry the order numbers and Wykonawcy of Wycena w efenix):
+# the live result's fields without those of the result from the Logi, derived from the contract.
+LIVE_ONLY = frozenset(RunOutcome.model_fields) - frozenset(LoggedOutcome.model_fields)
 INTERRUPTED_WHAT = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
 WRITE_ADVICE = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."
 MISSING = "Karty tego Uruchomienia nie ma"

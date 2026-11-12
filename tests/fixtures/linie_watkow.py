@@ -26,7 +26,7 @@ _LINE_STARTS: weakref.WeakKeyDictionary[threading.Thread, int] = weakref.WeakKey
 # Wątki Centrum dopisują się do ``_LINE_STARTS`` w chwili, gdy ``threads_since`` go przegląda.
 _LINE_STARTS_LOCK = threading.Lock()
 _STARTS = itertools.count()
-_thread_start = threading.Thread.start
+_thread_start = threading.Thread.start  # noqa: TID251 - jedyna podmiana startu wątku, którą zakaz kieruje tutaj
 # pytest-timeout bez sygnałów (Windows) mierzy każdy test wątkiem-timerem o tej nazwie, uruchomionym w wątku testu: to
 # wątek pytest, nie Centrum, i żyje do końca testu, także w teardownie modułu, który sprawdza linie (#1080).
 PYTEST_TIMEOUT_THREAD = "pytest_timeout "
@@ -64,7 +64,7 @@ def _start_in_line(self: threading.Thread) -> None:
     _thread_start(self)
 
 
-threading.Thread.start = _start_in_line  # type: ignore[method-assign]
+threading.Thread.start = _start_in_line  # type: ignore[method-assign]  # noqa: TID251 - jedyna podmiana startu wątku
 
 
 # Zatrzymania Centrum, które ``stopped_after_test`` woła po teście.

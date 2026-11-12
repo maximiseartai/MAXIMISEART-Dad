@@ -29,6 +29,7 @@ from rozliczenia.centrum.tool_update import (
     read_result,
 )
 
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, without_access
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.potomne import beating
 from tests.fixtures.fake_cli import fake_cli
@@ -513,6 +514,23 @@ def test_plik_konfiguracji_usuniety_w_nowej_wersji_zostaje_u_taty(
 
     assert (result.code, repository.head()) == ("ok", newest)
     assert repository.read("config/stawki.yaml") == RATES
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_plik_konfiguracji_bez_dostepu_usuniety_w_nowej_wersji_zatrzymuje_aktualizacje_na_kopii(tmp_path: Path) -> None:
+    """Plik taty, którego nie da się sprawdzić (folder bez dostępu), idzie do kopii jak plik, który jest, więc kopia
+    pada, a klon zostaje przy poprzedniej wersji, zamiast żeby przesunięcie usunęło plik jak brakujący (#1369)."""
+
+    name = "config/bez-dostepu/stawki.yaml"
+    repository = tool_repository(tmp_path / "repozytoria", {**FIRST_VERSION, name: RATES})
+    before = repository.head()
+    repository.publish({name: None})
+
+    with without_access(repository.clone / "config" / "bez-dostepu"), pytest.raises(PermissionError):
+        update(repository)
+
+    assert repository.head() == before
+    assert repository.read(name) == RATES
 
 
 # Pliki taty, których Git nie śledzi: Wzorce, Ustawienia taty, klucz do Zgłoszeń, metryki i dziennik.
