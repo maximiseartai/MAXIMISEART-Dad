@@ -1822,13 +1822,16 @@ def _keeps_invariants(start: _SequenceStart, events: Sequence[tuple[object, ...]
                 lines[which % len(lines)].present = False
             case ("wkleja", int(which), (date() as day, str(login), int(successful), int(completed))):
                 lines.append(_line(_SEQUENCE_NUMBERS[which], (day, login, successful, completed)))
-            case ("zostaw",) if last is not None:
-                kept |= {Kept(found.key, found.column, found.reported) for found in last.problems if isinstance(found, ManualDifference)}
+            case ("zostaw",):
+                found = () if last is None else last.problems
+                kept |= {Kept(shown.key, shown.column, shown.reported) for shown in found if isinstance(shown, ManualDifference)}
             case ("klik",):
                 _same_row(lines, alone)
                 last = _click_keeping_invariants(lines, mails, start[2], memory, kept)
                 memory = last.memory
                 alone = _single_rows(lines)
+            case _:
+                raise AssertionError(f"Nieznane zdarzenie ciągu: {event}")
 
 
 def _single_rows(lines: Sequence[_Line]) -> dict[str, int]:
