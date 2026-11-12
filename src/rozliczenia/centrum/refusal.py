@@ -29,10 +29,11 @@ argumentu albo zły typ). Poza tym modułem ruff (``TID251`` w ``pyproject.toml`
 (także z aliasem) i atrybut modułu (``refusal._CATALOG``, także przez alias albo pełną ścieżkę), tak samo ``_Catalog``
 i ``_refused``, która sama wkłada dowód.
 Mypy odrzuca też ``type(odmowa)(…)`` bez dowodu, a podklasę ``Refusal`` (``final``). Łapie tylko te postacie: nie łapie
-``getattr(refusal, "_CATALOG")``, wartości ``Any``, dowodu zaimportowanego z ``# noqa: TID251``, odmowy bez
-konstruktora (``Refusal.__new__(Refusal)``) ani klasy wyjętej z argumentów typu (``get_args(…)[0]``).
+``getattr(refusal, "_CATALOG")``, wartości ``Any``, dowodu ani ``_refused`` zaimportowanych z ``# noqa: TID251``,
+odmowy bez konstruktora (``Refusal.__new__(Refusal)``) ani klasy wyjętej z argumentów typu (``get_args(…)[0]``).
 ``tests/test_komunikaty_expect.py`` łapie w ``src`` każde odwołanie do ``Refusal`` po nazwie poza typem, także
-``Refusal(…, _CATALOG)`` z dowodem z ``noqa``, ale nie ``type(odmowa)(…, _CATALOG)``; to zostaje przeglądowi."""
+``Refusal(…, _CATALOG)`` z dowodem z ``noqa``, ale nie ``type(odmowa)(…, _CATALOG)`` ani ``_refused(…)`` z ``noqa``;
+te zostają przeglądowi."""
 
 
 @final

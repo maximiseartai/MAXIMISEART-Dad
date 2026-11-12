@@ -391,21 +391,23 @@ def dropped_navigation(line: str, previous: str) -> bool:
     ``.go_forward(`` (``page.goto(…)``, ``self._page.reload(…)``), oraz linię, która zaczyna się od ``with``, z
     ``expect_navigation(…)``, którego nawias zamyka się w tej samej linii (z najwyżej jednym poziomem nawiasów w
     środku) bez ``as`` po nim; obie także w linii napisu wielowierszowego. Przepuszcza każdą z nich, gdy ``previous``
-    bez komentarza na końcu (od odstępu i ``#``) i bez końcowych odstępów kończy się ``(``, ``[`` albo ``,``, bo tak
-    ruff format łamie nawigację podaną dalej jako argument albo element listy (``return _checked(`` i pod nim
-    ``page.goto(…``), także gdy ta linia jest nową instrukcją po linii z ``,`` na końcu (krotka bez nawiasu) albo
-    elementem listy, której nikt nie czyta. Odstęp i ``#`` w napisie ``previous`` zapadka też bierze za komentarz, więc
-    taka linia może dać fałszywy alarm albo przepustkę. Nie łapie odpowiedzi przypisanej, zwróconej albo podanej dalej w tej samej linii, ``as _``
-    ani nieużytej zmiennej po ``as``, ``expect_navigation`` z nawiasem w kilku liniach, nawigacji na wyniku wywołania
-    (``context.new_page().goto(``), ``wait_for_url`` i ``wait_for_load_state``, metody pod inną nazwą
+    bez końcowych odstępów kończy się ``(``, ``[`` albo ``,`` tak, jak stoi, albo po zdjęciu wszystkiego od pierwszego
+    odstępu z ``#`` (komentarz na końcu), bo tak ruff format łamie nawigację podaną dalej jako argument albo element
+    listy (``return _checked(`` i pod nim ``page.goto(…``), także gdy ta linia jest nową instrukcją po linii z ``,`` na
+    końcu (krotka bez nawiasu) albo elementem listy, której nikt nie czyta. Odstęp z ``#`` w napisie ``previous``
+    (``"strona #1",``) nie daje więc alarmu. Nie łapie odpowiedzi przypisanej, zwróconej albo podanej dalej w tej samej
+    linii, nawigacji po linii, której komentarz albo napis od odstępu z ``#`` kończy się ``(``, ``[`` albo ``,``
+    (``wait()  # najpierw lista,``), ``as _`` ani nieużytej zmiennej po ``as``, ``expect_navigation`` z nawiasem w kilku
+    liniach, nawigacji na wyniku wywołania (``context.new_page().goto(``), ``wait_for_url`` i ``wait_for_load_state``,
+    metody pod inną nazwą
     (``go = page.goto``) ani nawigacji w pliku bez linii, która po wcięciu zaczyna się od ``from playwright`` albo
     ``import playwright`` (karta podana bez adnotacji); import pod ``if TYPE_CHECKING:`` się liczy. Te zostają
     przeglądowi. Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
     (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
     """
 
-    code = _TRAILING_COMMENT.sub("", previous).rstrip()
-    return _DROPPED_NAVIGATION.search(line) is not None and not code.endswith(("(", "[", ","))
+    ends = (previous.rstrip(), _TRAILING_COMMENT.sub("", previous).rstrip())
+    return _DROPPED_NAVIGATION.search(line) is not None and not any(end.endswith(("(", "[", ",")) for end in ends)
 
 
 def navigation_drops(root: Path, base: str) -> list[str]:
@@ -521,6 +523,8 @@ def test_zapadka_nawigacji_przepuszcza_odpowiedz_podana_dalej_po_zlamaniu_linii(
         ("    )", "    with page.expect_navigation(timeout=min(a, b)), other():"),
         ("", "    page.goto(url)"),
         ('    log("lista #1,")', "    page.goto(url)"),
+        # ``#`` bez odstępu przed nim nie zaczyna komentarza.
+        ('    log("lista(#1)")', "    page.goto(url)"),
     ],
 )
 def test_zapadka_lapie_odrzucona_odpowiedz_nawigacji(previous: str, line: str) -> None:
@@ -558,6 +562,10 @@ def test_zapadka_przepuszcza_odpowiedz_nawigacji_ktora_ktos_czyta(line: str) -> 
         "    return _checked(  # lista zleceń",
         "    return [",
         "    statuses = [  # odpowiedzi kolejnych stron",
+        # Odstęp z ``#`` w napisie, a linia kończy się przecinkiem albo nawiasem (#1378 r1).
+        '            "strona #1",',
+        '    return _checked(f"lista #{number}", (',
+        "    wait()  # najpierw lista,",
     ],
 )
 def test_zapadka_przepuszcza_nawigacje_ktora_jest_argumentem_po_zlamaniu_linii(previous: str) -> None:

@@ -61,7 +61,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 ## Reguły i co ich pilnuje
 
 Przy poprawce operatora i Ważnym z przeglądu nazwij korzeń, czyli co skłoniło agenta (skopiowany najbliższy przykład, druga droga do tego samego, brak typu albo właściciela, instrukcja), i napraw go na najwyższym szczeblu, który działa: (a) usuń drugą drogę i stare przykłady, daj jednego właściciela; (b) typ, z którym zła droga nie przechodzi mypy, albo reguła ruff (`banned-api` z `msg` „użyj X”); (c) test zachowania; (d) dopiero zapadka w `tests/test_zapadki.py`, która pada tylko na dodanych liniach (warunki w `CODING_STANDARDS.md`).
-Zakaz ruff albo mypy z (b) nie zastępuje strażnika po nazwie, dopóki dla tej reguły wolno `noqa` albo `type: ignore`, więc strażnika odejmij tylko wtedy, gdy zamiennik łapie każdą formę, którą strażnik łapał (#1371).
+Zakaz ruff albo mypy z (b) nie zastępuje testu, który szuka nazwy w kodzie, dopóki dla tej reguły wolno `noqa` albo `type: ignore`, więc test usuń dopiero, gdy zamiennik łapie każdą formę, którą test łapał (#1371).
 Wiersz tabeli dopisz tylko z nowym strażnikiem, w dokumencie reguły (kod i testy: `CODING_STANDARDS.md` po angielsku; proces: ten plik, `docs/agents/pr-i-ci.md` albo `docs/agents/skille.md`); regułę z osądem zostaw zdaniem dla recenzenta, a wiersz, którego błąd nie może się już zdarzyć, usuń.
 Wyjątek zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` i `known()` w `tests/fixtures/fakt_domeny.py`).
 

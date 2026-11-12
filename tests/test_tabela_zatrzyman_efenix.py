@@ -194,6 +194,7 @@ TABLE = [
 
 
 # ``of`` dziedziczy każda podklasa, więc ``LoggedOut.of(…)`` też klasyfikuje, choć może dać inny wyjątek okna (#1365 r2).
+# Bezpośrednie podklasy wystarczą, bo każda jest ``@final``, więc podklasę podklasy odrzuca mypy (#1378 r1).
 _WINDOW_STOPS = {WindowStop.__name__, *(stop.__name__ for stop in WindowStop.__subclasses__())}
 
 
