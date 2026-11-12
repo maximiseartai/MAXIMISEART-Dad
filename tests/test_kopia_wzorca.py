@@ -127,7 +127,7 @@ def test_czesci_kopii_wzorca_porownuja_razem_kazde_rozliczenie_pracownika_raz_i_
 
 def test_hypothesis_ma_te_sama_wersje_w_requirements_i_w_dodatku_dev() -> None:
     """Sprawdzenie sięga do ``hypothesis.internal`` (wyłącza losowanie z literałów modułów obok, #288), którego Hypothesis
-    nie obiecuje między wersjami. Zadania CI z samym ``requirements.txt`` (pytest Windows, Mutation checks) i z dodatkiem
+    nie obiecuje między wersjami. Zadania CI z samym ``requirements.txt`` (pytest Windows) i z dodatkiem
     ``dev`` mają więc dostać tę samą, dokładnie przypiętą wersję."""
 
     root = Path(__file__).resolve().parents[1]

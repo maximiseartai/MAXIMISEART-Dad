@@ -94,9 +94,10 @@ _TESTS, _GATE, _SKILLS = Context.TESTS, Context.PR_GATE, Context.SKILL_STEPS
 TEST_FILES = ("test_*.py", "*_test.py")
 # Zmiana członka tabeli zmienia, co biegnie na pull request, więc według ADR 0020 wymaga dowodu z backtestu.
 _RUN_ALL = (
-    # Konfiguracja pytest i narzędzi (#305).
-    _Rule("pyproject.toml", frozenset({_TESTS, _GATE})),
-    # Biblioteki testów (#305) i zadania mutacji skilli, które instaluje tylko je (#293).
+    # Konfiguracja pytest i narzędzi (#305) i biblioteki zadań kroków skilli, które instalują dodatek dev (#293).
+    _Rule("pyproject.toml", frozenset({_TESTS, _GATE, _SKILLS})),
+    # Biblioteki testów (#305) i kroki skilli (#293) z czasu, gdy zadania mutacji instalowały tylko je; zdjęcie kroków
+    # skilli stąd zwęża bramkę PR, więc czeka na zgodę Maksa (ADR 0020).
     _Rule("requirements.txt", frozenset({_TESTS, _GATE, _SKILLS})),
     # conftest każdego testu (#305) i fixture gita, którą wczytuje dla całej sesji (#360).
     _Rule("tests/conftest.py", frozenset({_TESTS, _GATE})),

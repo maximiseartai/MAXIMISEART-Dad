@@ -26,6 +26,7 @@ from tests.fixtures.ci_workflow import CHROMIUM, WORKFLOW, action, chromium, com
 import plan_ci
 import plan_runu
 import shellcheck_akcji
+from wplyw_zmiany import Context
 from zakres_runu import Zdarzenie
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -89,19 +90,76 @@ def test_github_konczy_zadanie_pytest_po_limicie_z_planu_a_nie_po_szesciu_godzin
     assert jobs()["pytest"]["timeout-minutes"] == "${{ matrix.limit_minut }}"
 
 
-def test_mutation_checks_instaluja_playwright_i_chromium_tylko_w_zadaniu_ktore_plan_oznaczyl() -> None:
-    job = jobs()["mutations"]
-
-    assert [step["name"] for step in job["steps"] if ".[dev]" in step.get("run", "")] == []
-    assert [(step["if"], step["with"]["playwright"]) for step in chromium(job)] == [("${{ matrix.przegladarka }}", "true")]
-
-
-def test_zadanie_pytest_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_plikiem_testow_atrapy_efenix() -> None:
+@pytest.mark.parametrize("name", ["pytest", "mutations"])
+def test_zadanie_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_przegladarka(name: str) -> None:
     # Playwright przychodzi z zależnościami narzędzia (requirements.txt, dodatek dev), więc brakuje tylko przeglądarki.
-    assert [(step["if"], step.get("with")) for step in chromium(jobs()["pytest"])] == [("${{ matrix.przegladarka }}", None)]
+    assert [(step["if"], step.get("with")) for step in chromium(jobs()[name])] == [("${{ matrix.przegladarka }}", None)]
 
 
 TESTS_RUN_BY = ("tools/ci/wykonaj_zadanie.py", "tools/mutacje_zmiany.py")
+DEV = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"'
+
+
+def test_kazde_zadanie_z_mutacjami_instaluje_ruff_i_mypy_bramy_typow_z_dodatku_dev() -> None:
+    """Brama typów silnika mutacji uruchamia ruff i mypy z dodatku dev. Mutation checks z samym ``requirements.txt``
+    drukowały w każdym skrypcie z przeżytą mutacją ``BRAMA TYPÓW CZERWONA: ruff: … No module named ruff`` (main
+    5.11–12.11). Zadanie pytest na Windows instaluje ``requirements.txt`` jak u taty, a mutacje nocy biegną w nim w
+    testach, z bramą czerwoną bez narzędzi; tylko skrypt skilla kończy się wtedy kodem 2."""
+
+    installs = {
+        (workflow.name, name): [step["run"] for step in job["steps"] if "uv pip install" in step.get("run", "")]
+        for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
+        for name, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items()
+        if any(tool in str(job.get("steps")) for tool in TESTS_RUN_BY) and (workflow, name) != (WORKFLOW, "pytest")
+    }
+
+    assert installs == dict.fromkeys(installs, [DEV])
+    assert set(installs) >= {("ci.yml", "mutations"), ("mutacje-nocne.yml", "change-mutations"), ("mutacje-nocne.yml", "skill-mutations")}
+
+
+def _dependency_files(command: str) -> set[str]:
+    """Pliki zależności polecenia ``uv pip install``: plik ``-r``/``--requirement`` i ``pyproject.toml`` instalacji
+    katalogu repo (``-e``/``--editable`` albo pozycyjnie: ``.``, ``./``, ``.[dodatek]``). Parser jest zamknięty: zapis,
+    którego nie zna, kończy test błędem z tym zapisem, zamiast po cichu zgubić plik, z którego zadanie instaluje."""
+
+    def local(path: str) -> str:
+        assert path.split("[")[0].rstrip("/") == ".", f"instalacja spoza katalogu repo: {path!r} w {command!r}"
+        return "pyproject.toml"
+
+    tokens = shlex.split(command)
+    start = next(index for index in range(len(tokens) - 2) if tokens[index : index + 3] == ["uv", "pip", "install"]) + 3
+    files, rest = set(), iter(tokens[start:])
+    for token in rest:
+        if token == "--system":
+            continue
+        if token == "--python":
+            next(rest)
+        elif token in {"-r", "--requirement"}:
+            files.add(next(rest))
+        elif token in {"-e", "--editable"}:
+            files.add(local(next(rest)))
+        elif token.startswith("."):
+            files.add(local(token))
+        else:
+            raise AssertionError(f"nieznany zapis {token!r} w {command!r}: dopisz go do _dependency_files")
+    return files
+
+
+def test_zmiana_pliku_zaleznosci_zadan_krokow_skilli_uruchamia_kroki_skilli() -> None:
+    """Kroki skilli biegną w zadaniach planu poza pytest (Mutation checks, nocne skrypty skilli), a ich werdykty zależą od
+    zainstalowanych bibliotek, także ruff i mypy bramy typów. Plik, z którego takie zadanie je instaluje, ma więc
+    uruchamiać każdy krok skilla (#293); dodatek dev zastąpił w nich ``requirements.txt``, a reguła została przy nim."""
+
+    installed = {
+        (workflow.name, name): set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "uv pip install" in step.get("run", "")))
+        for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
+        for name, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items()
+        if "tools/ci/wykonaj_zadanie.py" in str(job.get("steps")) and (workflow, name) != (WORKFLOW, "pytest")
+    }
+
+    assert set(installed) == {("ci.yml", "mutations"), ("mutacje-nocne.yml", "skill-mutations")}
+    assert {job: files - set(Context.SKILL_STEPS.paths()) for job, files in installed.items()} == dict.fromkeys(installed, set()), installed
+    assert all(installed.values()), installed
 
 
 @pytest.mark.parametrize("workflow", sorted(WORKFLOW.parent.glob("*.yml")), ids=lambda path: path.name)

@@ -350,16 +350,15 @@ jobs:
         with:
           enable-cache: false
 
+      # The type gate of the mutation scripts (tools/lib/silnik_mutacji.py) runs ruff and mypy of the dev extra, the
+      # steps of the pre-push gate; without them the script ends with code 2.
       - name: Install dependencies
-        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -r requirements.txt
+        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
 
       # verify-centrum-rozliczen drives Centrum in Chromium; the plan marks the jobs that run its steps.
       - name: Chromium
         if: ${{ matrix.przegladarka }}
         uses: ./.github/actions/chromium
-        with:
-          playwright: 'true'
-          python: ${{ steps.python.outputs.python-path }}
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
