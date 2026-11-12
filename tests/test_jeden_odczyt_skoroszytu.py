@@ -6,16 +6,18 @@ skoroszyt w openpyxl tylko z bajtów. Odczyt z dysku poza nimi trafia w klasyfik
 ``OSError`` to plik nieczytelny, i tata dostaje Komunikat o uszkodzonym pliku, który jest cały.
 
 ``DadFiles.read`` bierze chwilę zmiany pliku przed jego bajtami, więc odcisk w Kopii wejścia ma chwilę przeczytanej
-wersji. Bajty z ``file_bytes``, ``workbook_content`` albo ``template_content`` i skoroszyt z ``open_workbook`` mają
-tylko miejsca z ``ONLY`` i ``EXCEPTIONS``, więc nowy czytnik nie czyta wartości pliku taty obok uchwytu, bez sprawdzenia
-dostępności, źródła bajtów uchwytu (``DadFiles.source``), pamięci i Kopii. Pamięć reguły danych i Kopię wejścia pisze
-tylko świadek arkusza (``dad_files.WitnessedSheet``), więc Kopia nie ma wiersza, którego nie zna pamięć (ADR 0025). Test
-i atrapa wspólna z testami (``tools/lib/atrapy``) podstawiają bajty przez źródło bajtów uchwytu (``DadFiles.source``, w
-Centrum ``create_app(source=...)``), a nie łatają modułu skoroszytu.
+wersji. Import i atrybut modułu ``file_bytes``, ``template_content`` i ``open_workbook`` poza ``workbook_files.py`` odrzuca
+ruff ``TID251`` z ``src/ruff.toml`` (wyjątek to linia z ``# noqa: TID251 - <powód>``), a bajty z ``workbook_content``
+mają tylko miejsca z ``EXCEPTIONS``, więc nowy czytnik nie czyta wartości pliku taty obok uchwytu, bez sprawdzenia dostępności, źródła bajtów uchwytu
+(``DadFiles.source``), pamięci i Kopii. Pamięć reguły danych i Kopię wejścia pisze tylko świadek arkusza
+(``dad_files.WitnessedSheet``), więc Kopia nie ma wiersza, którego nie zna pamięć (ADR 0025). Test i atrapa wspólna z
+testami (``tools/lib/atrapy``) podstawiają bajty przez źródło bajtów uchwytu (``DadFiles.source``, w Centrum
+``create_app(source=...)``), a nie łatają modułu skoroszytu.
 
-Granica: strażnik widzi wywołanie po nazwie funkcji (także z aliasem importu ``from … import … as …``) i łatanie modułu
-``workbook_files`` przez ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w
-wywołaniu po nazwie, aliasie importu, jako atrybut (``rozliczenia.workbook_files``) albo jako napis
+Granica: ruff nie widzi wywołania tych trzech funkcji w samym ``workbook_files.py`` ani przez nazwę, którą inny moduł
+re-eksportuje. Strażnik widzi wywołanie z ``ONLY`` po nazwie funkcji (także z aliasem importu ``from … import … as …``)
+i łatanie modułu ``workbook_files`` przez ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``,
+gdy moduł stoi w wywołaniu po nazwie, aliasie importu, jako atrybut (``rozliczenia.workbook_files``) albo jako napis
 ``"rozliczenia.workbook_files…"``. Funkcję albo moduł wzięte do zmiennej (``read = workbook_files.file_bytes``,
 ``importlib``, napis złożony w czasie biegu), przypisanie wprost (``workbook_files.file_bytes = …``), łatkę przez alias
 łatającego (``patch as p``), ``patch.dict``, ``getattr`` z napisem i surowe ``open(path, "rb")`` w ``src`` widzi tylko
@@ -40,17 +42,7 @@ ATRAPY = ROOT / "tools" / "lib" / "atrapy"
 ONLY: dict[str, frozenset[str]] = {
     "read_bytes": frozenset({"rozliczenia/workbook_files.py::file_bytes"}),
     "load_workbook": frozenset({"rozliczenia/workbook_files.py::_open"}),
-    "file_bytes": frozenset(
-        {
-            "rozliczenia/workbook_files.py::workbook_content",
-            "rozliczenia/workbook_files.py::template_content",
-        }
-    ),
     "workbook_content": frozenset(),
-    "template_content": frozenset({"rozliczenia/template_file.py::_read"}),
-    "open_workbook": frozenset(
-        {"rozliczenia/template_file.py::_openpyxl_workbook", "rozliczenia/register_file.py::_windows"}
-    ),
     "_modified_at": frozenset({"rozliczenia/dad_files.py::read"}),
     "ReadFile": frozenset({"rozliczenia/dad_files.py::read"}),
     "InputCopy": frozenset({"rozliczenia/dad_files.py::for_run"}),
@@ -221,42 +213,29 @@ def test_plik_taty_czyta_jedna_droga_a_pamiec_i_kopie_pisze_tylko_swiadek_arkusz
         [
             *found,
             "Bajty skoroszytu czytaj przez file_bytes, a skoroszyt otwieraj przez _open z tych bajtów (workbook_files.py). "
-            "Wartości pliku taty czytaj obiektywem na DadFiles.read, a nie z bajtów file_bytes, workbook_content albo "
-            "template_content; pamięć reguły danych i Kopia wejścia tylko przez WitnessedSheet albo SheetMemory "
-            "(dad_files.py). Plik, który nie jest skoroszytem z wartościami taty (Wzorzec, bajty do podmiany), wpisz do "
-            "EXCEPTIONS z powodem.",
+            "Wartości pliku taty czytaj obiektywem na DadFiles.read, a nie z bajtów workbook_content; pamięć reguły danych i Kopia wejścia tylko przez "
+            "WitnessedSheet albo SheetMemory (dad_files.py). Plik, który nie jest skoroszytem z wartościami taty, wpisz "
+            "do EXCEPTIONS z powodem.",
         ]
     )
 
 
-def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -> None:
+def test_czytnik_wartosci_pliku_taty_z_bajtow_workbook_content_wywraca_straznika() -> None:
     reader = (
         "from . import workbook_files\n"
-        "from .workbook_files import open_workbook as opened, workbook_content\n"
+        "from .workbook_files import workbook_content as content\n"
         "def first_address(path):\n"
-        "    with workbook_files.open_workbook(path, workbook_files.file_bytes(path), read_only=True) as read:\n"
-        "        return read.workbook.active['B18'].value\n"
+        "    return workbook_files.workbook_content(path)\n"
         "def first_address_after_check(path):\n"
-        "    with opened(path, workbook_content(path)) as read:\n"
-        "        return read.workbook.active['B18'].value\n"
-        "def template_address(path):\n"
-        "    return workbook_files.template_content(path)\n"
-        "def opened_values(path, content):\n"
-        "    return workbook_files.open_workbook(path, content, read_only=True)\n"
+        "    return content(path)\n"
     )
 
     found, _ = _src_findings({"rozliczenia/sonda.py": reader})
 
-    assert sorted(found) == sorted(
-        [
-            "src/rozliczenia/sonda.py:4: workbook_files.open_workbook(...) w rozliczenia/sonda.py::first_address",
-            "src/rozliczenia/sonda.py:4: workbook_files.file_bytes(...) w rozliczenia/sonda.py::first_address",
-            "src/rozliczenia/sonda.py:7: opened(...) w rozliczenia/sonda.py::first_address_after_check",
-            "src/rozliczenia/sonda.py:7: workbook_content(...) w rozliczenia/sonda.py::first_address_after_check",
-            "src/rozliczenia/sonda.py:10: workbook_files.template_content(...) w rozliczenia/sonda.py::template_address",
-            "src/rozliczenia/sonda.py:12: workbook_files.open_workbook(...) w rozliczenia/sonda.py::opened_values",
-        ]
-    )
+    assert sorted(found) == [
+        "src/rozliczenia/sonda.py:4: workbook_files.workbook_content(...) w rozliczenia/sonda.py::first_address",
+        "src/rozliczenia/sonda.py:6: content(...) w rozliczenia/sonda.py::first_address_after_check",
+    ]
 
 
 def _patching_candidates() -> list[Path]:

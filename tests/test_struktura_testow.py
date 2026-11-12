@@ -64,7 +64,6 @@ def test_moduly_testow_importuja_pomocniki_tylko_z_fixtures() -> None:
 
 
 CONFTEST = TESTS / "conftest.py"
-PATH_CHANGES = frozenset({"sys.path.insert", "sys.path.append"})
 # Ostatnia część nazwy wywołania (z każdym odbiorcą: ``monkeypatch.``, ``importlib.util.``, ``util.``, i bez niego), miejsce
 # argumentu ścieżki i jego nazwa.
 PREPEND = ("syspath_prepend", 0, "path")
@@ -74,15 +73,16 @@ ON_PATH = frozenset({(), ("lib",), ("ci",)})
 
 
 def _tools_on_path(tree: ast.Module) -> list[int]:
-    """Linie wstawek na ``sys.path`` ścieżki z częścią ``tools`` i wczytań pliku z ``tools``, ``tools/lib`` albo
-    ``tools/ci``: ``tests/conftest.py`` już kładzie te katalogi na ``sys.path`` każdego testu, więc druga wstawka w module
-    testu albo fixture tylko to powtarza, fixture, który przez nią importuje narzędzie, kusi, żeby je re-eksportować, a
-    moduł wczytany z pliku bez wpisu w ``sys.modules`` jest drugą kopią narzędzia, w której dataclass nie działa (K2 F15,
-    7 testów do 9.11.2026).
+    """Linie wstawek ścieżki z częścią ``tools`` przez ``syspath_prepend`` i wczytań pliku z ``tools``, ``tools/lib``
+    albo ``tools/ci``: ``tests/conftest.py`` już kładzie te katalogi na ``sys.path`` każdego testu, więc druga wstawka w
+    module testu albo fixture tylko to powtarza, fixture, który przez nią importuje narzędzie, kusi, żeby je
+    re-eksportować, a moduł wczytany z pliku bez wpisu w ``sys.modules`` jest drugą kopią narzędzia, w której dataclass
+    nie działa (K2 F15, 7 testów do 9.11.2026).
 
-    Łapie dokładnie te postaci, na poziomie modułu i w funkcji:
+    Każde użycie ``sys.path`` w ``tests/`` (``sys.path.insert``, ``sys.path[:0] = …``, ``from sys import path``) poza
+    linią z ``# noqa: TID251 - <powód>`` odrzuca ruff ``TID251`` z ``tests/ruff.toml``, więc to sprawdzenie łapie tylko
+    te postaci, na poziomie modułu i w funkcji:
 
-    - ``sys.path.insert`` i ``sys.path.append`` tą pełną nazwą;
     - wywołanie, którego nazwa kończy się na ``syspath_prepend`` (``monkeypatch.``, inna nazwa fixture), ze ścieżką
       pierwszym argumentem albo ``path=``;
     - wywołanie, którego nazwa kończy się na ``spec_from_file_location`` (``importlib.util.``, ``util.`` po ``from
@@ -93,10 +93,9 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
     z argumentów pozycyjnych wywołań (``str(…)``).
     Katalog ``scripts`` skilla i plik z ``tools/hooks`` przechodzą, bo conftest ich nie kładzie.
 
-    Każda inna postać to tylko przegląd, m.in.: wstawka w napisie kodu podprocesu (ten proces nie ma conftest, więc jej
-    potrzebuje), ścieżka złożona w trakcie działania (argument funkcji, ``sys.argv``, atrybut), ``sys.path`` pod inną
-    nazwą (``from sys import path``) albo zmienione inaczej niż ``insert`` i ``append``, wywołanie przez zmienną
-    (``f = monkeypatch.syspath_prepend``) oraz narzędzie wczytane inaczej niż ``spec_from_file_location`` (``runpy``,
+    Nie łapie, więc zostaje przeglądowi: wstawki w napisie kodu podprocesu (ten proces nie ma conftest, więc jej
+    potrzebuje), ścieżki złożonej w trakcie działania (argument funkcji, ``sys.argv``, atrybut), wywołania przez zmienną
+    (``f = monkeypatch.syspath_prepend``) ani narzędzia wczytanego inaczej niż ``spec_from_file_location`` (``runpy``,
     ``exec``, ``SourceFileLoader``)."""
 
     assigned = {
@@ -149,10 +148,9 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
         return any("tools" in PureWindowsPath(text).parts for text in texts(node, frozenset()))
 
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    inserts = [node.lineno for node in calls if ast.unparse(node.func) in PATH_CHANGES and any(has_tools(argument) for argument in node.args)]
     prepends = [node.lineno for node in calls if (path := path_of(node, PREPEND)) is not None and has_tools(path)]
     loads = [node.lineno for node in calls if (path := path_of(node, LOAD)) is not None and a_tool(parts(path, frozenset()))]
-    return sorted([*inserts, *prepends, *loads])
+    return sorted([*prepends, *loads])
 
 
 def test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow() -> None:
@@ -172,16 +170,11 @@ def test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow() -> None:
     )
 
 
-# Każda postać wstawki katalogu narzędzi, którą zna sprawdzenie.
+# Każda postać wstawki katalogu narzędzi, którą zna sprawdzenie (``sys.path`` odrzuca ruff ``TID251``).
 TOOLS_ON_PATH = {
-    "katalog": 'import sys\nsys.path.insert(0, str(ROOT / "tools"))',
-    "podkatalog": 'import sys\nsys.path.insert(0, str(ROOT / "tools" / "lib"))',
-    "napis": 'import sys\nsys.path.append(str(Path(__file__).resolve().parents[1] / "tools/ci"))',
-    "windows": 'import sys\nsys.path.append("C:\\\\repo\\\\tools")',
-    "nazwa-modulu": 'import sys\nTOOLS = ROOT / "tools"\nsys.path.insert(0, str(TOOLS / "lib"))',
-    "nazwa-z-adnotacja": 'import sys\nTOOLS: Final = ROOT / "tools"\nsys.path.insert(0, str(TOOLS / "lib"))',
-    "nazwa-przez-nazwe": 'import sys\nREPO = ROOT\nTOOLS = REPO / "tools"\nLIB = TOOLS / "lib"\nsys.path.insert(0, str(LIB))',
-    "w-funkcji": 'import sys\ndef f() -> None:\n    sys.path.insert(0, str(ROOT / "tools"))',
+    "monkeypatch-z-katalogu-windows": 'def f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend("C:\\\\repo\\\\tools")',
+    "monkeypatch-z-nazwy-przez-nazwe": 'REPO = ROOT\nTOOLS = REPO / "tools"\nLIB = TOOLS / "lib"\ndef f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend(str(LIB))',
+    "monkeypatch-z-adnotacja": 'TOOLS: Final = ROOT / "tools"\ndef f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend(str(TOOLS / "lib"))',
     "monkeypatch": 'TOOLS = ROOT / "tools"\ndef f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend(str(TOOLS))',
     "plik-narzedzia": 'import importlib.util\nSCRIPT = ROOT / "tools" / "uruchom_proces.py"\nimportlib.util.spec_from_file_location("x", SCRIPT)',
     "plik-biblioteki": 'from importlib.util import spec_from_file_location\nTOOLS = ROOT / "tools"\nspec_from_file_location("x", TOOLS / "lib" / "kroki_skilli.py")',
@@ -201,11 +194,10 @@ def test_sprawdzenie_sys_path_lapie_kazda_wyliczona_postac_wstawki_narzedzi(code
 
 def test_sprawdzenie_sys_path_przepuszcza_skrypty_skilli_i_kod_podprocesu() -> None:
     code = (
-        "import sys\n"
         'SKILL = ROOT / ".agents" / "skills" / "verify-x"\n'
-        'sys.path.insert(0, str(SKILL / "scripts"))\n'
-        "sys.path.insert(0, sys.argv[1])\n"
-        'sys.path.insert(0, "my_tools")\n'
+        'monkeypatch.syspath_prepend(str(SKILL / "scripts"))\n'
+        "monkeypatch.syspath_prepend(sys.argv[1])\n"
+        'monkeypatch.syspath_prepend("my_tools")\n'
         'KOD = "import sys\\nsys.path.insert(0, \'tools\')\\nimport mutacje\\n"\n'
         'LISTA = [str(ROOT / "tools")]\n'
         'HOOK = ROOT / "tools" / "hooks" / "czekanie.py"\n'

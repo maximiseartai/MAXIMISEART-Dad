@@ -76,7 +76,7 @@ from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
-from rozliczenia.workbook_files import ByteSource, file_bytes
+from rozliczenia.workbook_files import ByteSource, file_bytes  # noqa: TID251 - domyślne źródło bajtów uchwytu (create_app(source=...))
 from rozliczenia.worker_report_inbox import ImapInbox, ReminderMailbox, WorkerReportInbox
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
