@@ -34,6 +34,7 @@ from tests.fixtures.ci_workflow import chromium, jobs
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
 
+import czasy_ci
 from jednostka import Czesc
 import mutacje_nocne
 import mutacje_zmiany
@@ -646,11 +647,10 @@ def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
     assert output == {"baza": baza, "do": head, "czesci": json.dumps(macierz), "liczba": str(len(czesci))}
 
 
-def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_inna_nie(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test pliku ``okno.py`` sięga Atrapy efenix przez fixture, więc biegnie w prawdziwej przeglądarce; test ``a.py``
-    nie. Każdy plik ma swoją część (po dwie mutacje: granica porównania i cofnięcie fragmentu)."""
+def _plik_zwykly_i_plik_okna(tmp_path: Path) -> tuple[Path, str]:
+    """Repozytorium i baza nocy, od której zmiana daje dwie części po dwie mutacje (granica porównania i cofnięcie
+    fragmentu), każdą z jednego pliku: część 1 to ``a.py`` z ``tests/test_a.py``, a część 2 ``okno.py`` z
+    ``tests/test_okno.py``, który sięga Atrapy efenix przez fixture, więc biegnie w prawdziwej przeglądarce."""
 
     fixture = "from atrapy.atrapa_efenix import ATRAPA as OKNO\n"
     repo = repository(
@@ -671,13 +671,79 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
     for sciezka, funkcja in (("src/pakiet/a.py", "a"), ("src/pakiet/okno.py", "b")):
         (repo / sciezka).write_text(f"def {funkcja}(x: int) -> bool:\n    return x > 2\n", encoding="utf-8")
     commit(repo, "zmiana")
+    return repo, baza
+
+
+def _wyjscie_planu(sciezka: Path) -> dict[str, str]:
+    return dict(linia.split("=", 1) for linia in sciezka.read_text(encoding="utf-8").splitlines())
+
+
+def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_inna_nie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, baza = _plik_zwykly_i_plik_okna(tmp_path)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
     kod = mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=2)
 
-    output = dict(linia.split("=", 1) for linia in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
+    output = _wyjscie_planu(tmp_path / "output")
     assert (kod, capsys.readouterr().out.splitlines()[-1].rpartition(" | ")[2]) == (0, "z Chromium 1")
     assert json.loads(output["czesci"]) == [{"czesc": 1, "przegladarka": False}, {"czesc": 2, "przegladarka": True}]
+
+
+@pytest.mark.parametrize(
+    ("praca", "kolejnosc"),
+    [
+        ({}, [1, 2]),
+        ({"tests/test_a.py": 5.0, "tests/test_okno.py": 5.0}, [1, 2]),
+        ({"tests/test_a.py": 1.0, "tests/test_okno.py": 50.0}, [2, 1]),
+        ({"tests/test_a.py": 50.0, "tests/test_okno.py": 1.0}, [1, 2]),
+    ],
+    ids=["bez-czasow", "rowna-praca", "drozsza-druga", "drozsza-pierwsza"],
+)
+def test_czesc_z_najdrozszymi_testami_startuje_pierwsza_a_noc_mutuje_te_same_czesci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, praca: dict[str, float], kolejnosc: list[int]
+) -> None:
+    """GitHub uruchamia wpisy macierzy w kolejności listy, więc plan stawia na początku część, której plik ma najwięcej
+    pracy testów na ``main``, a bez czasów albo przy równej pracy zostawia kolejność numerów (ADR 0021). Wpis niesie
+    dalej numer i Chromium swojej części, więc noc mutuje te same części, a zgłoszenie czyta te same zapisy."""
+
+    repo, baza = _plik_zwykly_i_plik_okna(tmp_path)
+    plany = {}
+    for nazwa, koszty in (("numery", {}), ("czasy", praca)):
+        monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / f"output-{nazwa}"))
+        assert mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=2, koszty=czasy_ci.KosztyPlikow(koszty)) == 0
+        plany[nazwa] = _wyjscie_planu(tmp_path / f"output-{nazwa}")
+    czesci = json.loads(plany["czasy"].pop("czesci"))
+
+    assert [wpis["czesc"] for wpis in czesci] == kolejnosc
+    assert sorted(czesci, key=lambda wpis: wpis["czesc"]) == json.loads(plany["numery"].pop("czesci"))
+    assert plany["czasy"] == plany["numery"]
+
+
+def test_noc_z_workflow_wazy_czesci_praca_testow_linuksa_z_artefaktu_czasy_ci(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plan w ``mutacje-nocne.yml`` dostaje katalog artefaktów ``czasy-ci`` (``--czasy``), a części biegną na
+    ``ubuntu-latest`` z Pythonem 3.14, więc waży je praca testów toru ``linux-3.14``, a nie innego systemu. Nowe funkcje
+    ``a.py`` dają ponad ``NA_CZESC`` mutacji, więc część 1 to sam ``a.py``, a część 2 jego reszta i ``okno.py``."""
+
+    repo, baza = _plik_zwykly_i_plik_okna(tmp_path)
+    with (repo / "src" / "pakiet" / "a.py").open("a", encoding="utf-8") as plik:
+        plik.write("".join(f"\n\ndef a{i}(x: int) -> bool:\n    return x < {i}\n" for i in range(mutacje_nocne.NA_CZESC)))
+    commit(repo, "nowe funkcje a")
+    czasy = tmp_path / "czasy"
+    czasy.mkdir()
+
+    def tor(a_s: float, okno_s: float) -> dict[str, list[dict[str, object]]]:
+        praca = {"tests/test_a.py": a_s, "tests/test_okno.py": okno_s}
+        return {f"pytest:{plik}": [{"run": 7, "proba": 1, "zadanie": "pytest", "s": s, "status": "ok"}] for plik, s in praca.items()}
+
+    artefakt = {"wersja": 1, "runy": [{"run": 7, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}], "tory": {"linux-3.14": tor(1.0, 50.0), "windows-3.14": tor(50.0, 1.0)}}
+    (czasy / "7.json").write_text(json.dumps(artefakt), encoding="utf-8")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+
+    assert mutacje_nocne.main(["plan", "--od", baza, "--czasy", str(czasy)], root=repo, github=GitHubWPamieci()) == 0
+    output = _wyjscie_planu(tmp_path / "output")
+    assert (output["liczba"], [wpis["czesc"] for wpis in json.loads(output["czesci"])]) == ("2", [2, 1])
 
 
 FUNKCJA = "def a(x: int) -> bool:\n    return x > 1\n"
@@ -1057,6 +1123,17 @@ def test_noc_biegnie_raz_na_dobe_i_recznie_z_opcjonalnym_od_a_dwa_przebiegi_nie_
     assert [re.fullmatch(r"\d+ \d+ \* \* \*", wpis["cron"]) is not None for wpis in wyzwalacze["schedule"]] == [True]
     assert wyzwalacze["workflow_dispatch"]["inputs"]["od"]["required"] is False
     assert workflow["concurrency"]["cancel-in-progress"] is False
+
+
+def test_noc_zajmuje_najwyzej_20_zadan_organizacji_naraz() -> None:
+    """Organizacja ma 60 zadań naraz, wspólnych z runami CI PR-ów, a noc dostaje z nich najwyżej 20 (ADR 0021): każda
+    macierz nocy ma ``max-parallel``, a ich suma mieści się w 20."""
+
+    zadania = _nocne()["jobs"]
+    naraz = {nazwa: zadanie["strategy"].get("max-parallel") for nazwa, zadanie in zadania.items() if "matrix" in zadanie.get("strategy", {})}
+
+    assert None not in naraz.values(), naraz
+    assert sum(naraz.values()) <= 20, naraz
 
 
 def test_kazda_czesc_mutuje_od_bazy_planu_i_wgrywa_zapis_pod_nazwa_ktora_czyta_zgloszenie() -> None:

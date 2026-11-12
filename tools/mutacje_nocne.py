@@ -19,6 +19,10 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   ``czesci`` i ``liczba``, a z ``--zakres`` plik JSON z ``baza`` i ``do`` (artefakt ``zakres-nocy``). ``czesci`` to
   macierz zadań części: numer i ``przegladarka``, gdy testy, które mogą sprawdzać mutacje części (dotknięte jej
   plikami), sięgają Atrapy efenix, więc zadanie części instaluje Chromium tak jak zadanie pytest planu CI.
+  Wpisy idą od części, której najdroższy plik ma najwięcej pracy testów na ``main`` (``czasy_ci``, tor ``TOR_LOKALNY``),
+  bo GitHub uruchamia wpisy macierzy w kolejności listy, gdy zwalnia się miejsce w ``max-parallel``, a długa część
+  na końcu kolejki wydłuża noc. Kolejność nie zmienia mutacji części, bo te daje numer części; równa praca, także bez
+  czasów, zostawia kolejność numerów.
 - Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --do <do> --czesc k/n --zapis …``: kolejne mutacje z listy
   posortowanej po plikach, więc pokrycie biegnie na testach kilku plików, nie całej zmiany dnia.
 - ``zglos`` czyta zapisy części. Każdą przeżytą mutację, mutację bez werdyktu po limicie czasu części i mutację, której
@@ -76,6 +80,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import czasy_ci
 from github import MERGE, REPO, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, blok_kodu, issues, strony
 from github import wykonaj as wykonaj_akcje
 from kroki_skilli import Katalog, Step
@@ -99,9 +104,11 @@ PREFIKS = "MUTACJE NOCNE"
 # dalszych przebiegów dochodzi tyle jej mutacji, co w którejś zmierzonej części: ok. 9700 s, a o kolejkę większa ok.
 # 10 800 s (ADR 0021). Mutacja, która trwa pełny limit także w testach pliku, może go przekroczyć i zostaje bez werdyktu.
 NA_CZESC = 6 * mutacje_zmiany.WORKERS
-# Zadania części biegną najwyżej po 20 naraz (max-parallel w mutacje-nocne.yml), bo 60 zadań organizacji dzielą też
-# runy CI PR-ów, więc noc to najwyżej dwie fale części.
+# Zadania części biegną najwyżej po 17 naraz, a zadania skryptów skilli po 3 (max-parallel w mutacje-nocne.yml), bo 60
+# zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20.
 CZESCI_NA_NOC = 40
+# Plan bez czasów CI waży każdą część zerem, więc części zostają w kolejności numerów.
+BEZ_CZASOW = czasy_ci.KosztyPlikow({})
 GITHUB = GhApi()
 OKNO = timedelta(hours=24)
 ETYKIETY = ("ready-for-agent", "przezyte-mutacje")
@@ -183,23 +190,35 @@ def _koniec_runu(github: GitHub, run: dict[str, Any]) -> str:
         return str(json.loads(archiwum.read(ZAKRES))["do"])
 
 
-def macierz(noc: mutacje_zmiany.ZakresMutacji, n: int, repository: Repository) -> list[dict[str, int | bool]]:
+def macierz(noc: mutacje_zmiany.ZakresMutacji, n: int, repository: Repository, koszty: czasy_ci.KosztyPlikow) -> list[dict[str, int | bool]]:
     """Wpis macierzy każdej z ``n`` części nocy: jej numer i ``przegladarka``, gdy testy jej mutacji sięgają Atrapy efenix,
-    więc zadanie części instaluje Chromium jak zadanie pytest planu CI (``zakres_runu.potrzebuja_chromium``)."""
+    więc zadanie części instaluje Chromium jak zadanie pytest planu CI (``zakres_runu.potrzebuja_chromium``).
 
-    wpisy: list[dict[str, int | bool]] = []
+    Wpisy idą od części, której plik ma najwięcej pracy dotkniętych nim plików testów (``koszty``): mutacja pliku
+    uruchamia jego testy, a część czeka na swój najdroższy plik. Równa praca zostawia kolejność numerów."""
+
+    wpisy: list[tuple[float, dict[str, int | bool]]] = []
     for czesc in Czesc.calosc(n):
-        sciezki = {mutant.path for mutant in noc.czesc(czesc)}
-        testy = [test for dotkniete in mutacje_zmiany.tests_of(repository, sciezki).values() for test in dotkniete]
-        wpisy.append({"czesc": czesc.k, "przegladarka": bool(potrzebuja_chromium(testy, repository))})
-    return wpisy
+        dotkniete = mutacje_zmiany.tests_of(repository, {mutant.path for mutant in noc.czesc(czesc)})
+        testy = [test for testy_pliku in dotkniete.values() for test in testy_pliku]
+        praca = max((sum(koszty.s(plik) for plik in {test.partition("::")[0] for test in testy_pliku}) for testy_pliku in dotkniete.values()), default=0.0)
+        wpisy.append((praca, {"czesc": czesc.k, "przegladarka": bool(potrzebuja_chromium(testy, repository))}))
+    return [wpis for _, wpis in sorted(wpisy, key=lambda para: -para[0])]
 
 
 def zaplanuj(
-    github: GitHub, root: Path, od: str, zakres: Path | None, *, na_czesc: int = NA_CZESC, czesci_na_noc: int = CZESCI_NA_NOC
+    github: GitHub,
+    root: Path,
+    od: str,
+    zakres: Path | None,
+    *,
+    na_czesc: int = NA_CZESC,
+    czesci_na_noc: int = CZESCI_NA_NOC,
+    koszty: czasy_ci.KosztyPlikow = BEZ_CZASOW,
 ) -> int:
     """Plan nocy w ``root``: baza, koniec jej zakresu i macierz części po najwyżej ``na_czesc`` mutacji, najwyżej
-    ``czesci_na_noc`` części, w ``GITHUB_OUTPUT``, a z ``zakres`` plik artefaktu ``zakres-nocy``."""
+    ``czesci_na_noc`` części, od najdroższej według ``koszty`` plików testów, w ``GITHUB_OUTPUT``, a z ``zakres`` plik
+    artefaktu ``zakres-nocy``."""
 
     od_sha, skad = baza(github, root, od, datetime.now(UTC))
     caly = mutacje_zmiany.ZakresMutacji.od(od_sha, root)
@@ -207,7 +226,7 @@ def zaplanuj(
         print(f"MUTACJE NOCNE | {caly.zly_wyjatek}; część mutacji to zgłosi")
     do_sha = caly.najdalszy_koniec(na_czesc * czesci_na_noc)
     noc = caly.do(do_sha)
-    wpisy = macierz(noc, noc.liczba_czesci(na_czesc), Repository.scan(root))
+    wpisy = macierz(noc, noc.liczba_czesci(na_czesc), Repository.scan(root), koszty)
     z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
     if zalegle := len(caly.mutanty) - len(noc.mutanty):
         print(f"MUTACJE NOCNE | zaległość: {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
@@ -577,6 +596,7 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     plan.add_argument("--od", default="", help="Commit, od którego liczyć zmiany, a spoza linii HEAD jego wspólny przodek z HEAD (domyślnie koniec zakresu ostatniego udanego runu albo 24 h wstecz).")
     plan.add_argument("--baza", help="To samo co --od, jak w innych narzędziach zmiany; obie z różnymi wartościami to błąd użycia.")
     plan.add_argument("--zakres", type=Path, help=f"Plik JSON z bazą i końcem zakresu nocy (artefakt {ARTEFAKT_ZAKRESU}, z którego następna noc bierze bazę).")
+    plan.add_argument("--czasy", type=Path, help="Katalog artefaktów czasy-ci, pobieranych od nowa (domyślnie .git/czasy-ci); kolejność części.")
     zgloszenie = polecenia.add_parser("zglos", help="Issue dla przeżytych mutacji ze wszystkich części.")
     zgloszenie.add_argument("--baza", required=True, help="Baza nocy z planu.")
     zgloszenie.add_argument("--zapisy", type=Path, required=True, help=f"Katalog z podkatalogami artefaktów {ARTEFAKT}<k>.")
@@ -588,7 +608,11 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
         if args.polecenie == "plan":
             if args.od and args.baza and args.od != args.baza:
                 plan.error(f"dwie różne bazy: --od {args.od} i --baza {args.baza}")
-            return zaplanuj(github, root, args.od or args.baza or "", args.zakres)
+            czasy = czasy_ci.z_mainu(args.czasy or czasy_ci.katalog_checkoutu(root), odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S, github=github)
+            if czasy.blad:
+                print(f"CZASY CI | {czasy.blad}; część bez zmierzonej pracy testów zostaje na miejscu swojego numeru")
+            # Części biegną na ubuntu-latest z Pythonem 3.14, jak zadania pytest toru ``TOR_LOKALNY``.
+            return zaplanuj(github, root, args.od or args.baza or "", args.zakres, koszty=czasy.koszty(czasy_ci.TOR_LOKALNY))
         plan_skilli = None if args.plan_skilli is None else plan_runu.Plan.z_json(args.plan_skilli.read_text(encoding="utf-8"))
         return zglos(github, root, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
     except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile) as blad:

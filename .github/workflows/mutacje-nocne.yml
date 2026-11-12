@@ -46,13 +46,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Standard library only, so the runner's python3 runs it as is.
+      # Standard library only, so the runner's python3 runs it as is. The test times of main order the parts, and the
+      # skill planner below reads the same download.
       - name: Find the base and split its mutations into parts
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
           OD: ${{ inputs.od }}
-        run: python3 tools/mutacje_nocne.py plan --od "$OD" --zakres .ci-plan/zakres.json
+        run: python3 tools/mutacje_nocne.py plan --od "$OD" --zakres .ci-plan/zakres.json --czasy .ci-plan/czasy
 
       # The next night reads "do" from the last successful run's artifact: its base, so the backlog is not skipped.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -90,8 +91,9 @@ jobs:
     timeout-minutes: 180
     strategy:
       fail-fast: false
-      # The organization runs 60 jobs at once, shared with the CI runs of pull requests.
-      max-parallel: 20
+      # The organization runs 60 jobs at once, shared with the CI runs of pull requests, and the night takes at most 20 of
+      # them: 17 parts and 3 skill jobs. GitHub starts the entries in list order, so the plan puts the costliest first.
+      max-parallel: 17
       matrix:
         # Each entry is a part number and przegladarka: its mutations are checked by tests that reach Atrapa efenix.
         include: ${{ fromJSON(needs.plan.outputs.czesci) }}
@@ -157,6 +159,9 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      # With the 17 parts, the night's 20 jobs at once. The 14–16 skill jobs of the nights 9–12.11 took 5.2–5.9
+      # runner-hours, so three at a time end in about 2 h, before the parts.
+      max-parallel: 3
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.skille) }}
     env:
