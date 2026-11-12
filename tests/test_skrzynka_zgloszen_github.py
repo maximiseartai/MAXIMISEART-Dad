@@ -56,7 +56,7 @@ from tests.fixtures.proxy_systemu import system_proxy
 from atrapy.sluchacz_kolejki import QueueListener
 
 SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
-sys.path.insert(0, str(SKILL / "scripts"))
+sys.path.insert(0, str(SKILL / "scripts"))  # noqa: TID251 - katalog scripts skilla, którego conftest nie kładzie
 
 import github_przypadki_archiwum  # noqa: E402
 import github_skrzynki  # noqa: E402

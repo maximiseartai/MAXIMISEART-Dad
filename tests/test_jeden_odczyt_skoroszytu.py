@@ -13,13 +13,19 @@ tylko świadek arkusza (``dad_files.WitnessedSheet``), więc Kopia nie ma wiersz
 i atrapa wspólna z testami (``tools/lib/atrapy``) podstawiają bajty przez źródło bajtów uchwytu (``DadFiles.source``, w
 Centrum ``create_app(source=...)``), a nie łatają modułu skoroszytu.
 
-Granica: strażnik widzi wywołanie po nazwie funkcji (także z aliasem importu ``from … import … as …``) i łatanie modułu
-``workbook_files`` przez ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w
-wywołaniu po nazwie, aliasie importu, jako atrybut (``rozliczenia.workbook_files``) albo jako napis
-``"rozliczenia.workbook_files…"``. Funkcję albo moduł wzięte do zmiennej (``read = workbook_files.file_bytes``,
-``importlib``, napis złożony w czasie biegu), przypisanie wprost (``workbook_files.file_bytes = …``), łatkę przez alias
-łatającego (``patch as p``), ``patch.dict``, ``getattr`` z napisem i surowe ``open(path, "rb")`` w ``src`` widzi tylko
-przegląd.
+Granica ruff: ``TID251`` z ``src/ruff.toml`` odrzuca w ``src/`` poza ``workbook_files.py`` linię importu i atrybut modułu
+``file_bytes``, ``template_content`` i ``open_workbook`` (``workbook_files.file_bytes``), chyba że linia ma
+``# noqa: TID251 - <powód>``. Nie widzi użycia nazwy, którą moduł już zaimportował z ``noqa`` na linii importu
+(``app.py``, ``template_file.py``), wywołania w samym ``workbook_files.py`` ani nazwy, którą re-eksportuje inny moduł.
+Dlatego te trzy nazwy zostają w ``ONLY``: ich wywołanie po nazwie w takim miejscu łapie ten strażnik.
+
+Granica strażnika: widzi wywołanie po nazwie funkcji (także z aliasem importu ``from … import … as …``) i łatanie
+modułu ``workbook_files`` przez ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł
+stoi w wywołaniu po nazwie, aliasie importu, jako atrybut (``rozliczenia.workbook_files``) albo jako napis
+``"rozliczenia.workbook_files…"``. Funkcję albo moduł wzięte do zmiennej (``read = file_bytes`` po imporcie z ``noqa``,
+``importlib``, napis złożony w czasie biegu; ``read = workbook_files.file_bytes`` odrzuca ruff), przypisanie wprost
+(``workbook_files.file_bytes = …``), łatkę przez alias łatającego (``patch as p``), ``patch.dict``, ``getattr`` z napisem
+i surowe ``open(path, "rb")`` w ``src`` widzi tylko przegląd.
 """
 
 from __future__ import annotations
@@ -258,6 +264,27 @@ def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -
         ]
     )
 
+
+
+def test_wywolanie_nazwy_zaimportowanej_z_noqa_ruff_wywraca_straznika() -> None:
+    """Ruff ``TID251`` oznacza tylko linię importu, więc nowe wywołanie nazwy, którą moduł zaimportował z ``noqa`` (jak
+    ``app.py`` i ``template_file.py``), łapie tylko ten strażnik."""
+    reader = (
+        "from .workbook_files import file_bytes, open_workbook, template_content  # noqa: TID251 - sonda\n"
+        "def values(path):\n"
+        "    with open_workbook(path, template_content(path), read_only=True) as read:\n"
+        "        return read.workbook.active['B18'].value\n"
+        "def raw(path):\n"
+        "    return file_bytes(path)\n"
+    )
+
+    found, _ = _src_findings({"rozliczenia/centrum/app.py": reader})
+
+    assert sorted(found) == [
+        "src/rozliczenia/centrum/app.py:3: open_workbook(...) w rozliczenia/centrum/app.py::values",
+        "src/rozliczenia/centrum/app.py:3: template_content(...) w rozliczenia/centrum/app.py::values",
+        "src/rozliczenia/centrum/app.py:6: file_bytes(...) w rozliczenia/centrum/app.py::raw",
+    ]
 
 def _patching_candidates() -> list[Path]:
     return sorted([*TESTS.rglob("*.py"), *ATRAPY.rglob("*.py")])

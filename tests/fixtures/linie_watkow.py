@@ -30,6 +30,8 @@ _thread_start = threading.Thread.start
 # pytest-timeout bez sygnałów (Windows) mierzy każdy test wątkiem-timerem o tej nazwie, uruchomionym w wątku testu: to
 # wątek pytest, nie Centrum, i żyje do końca testu, także w teardownie modułu, który sprawdza linie (#1080).
 PYTEST_TIMEOUT_THREAD = "pytest_timeout "
+# Nazwy wątków, które linie od numeru startu uruchomiły w bloku ``started_threads``, także te, które już się skończyły.
+_RECORDED: list[tuple[int, list[str]]] = []
 
 
 # Linia wątku, który wysłał żądanie przez wspólną pętlę ``TestClient``: obsługa żądania biegnie w wątku tej pętli albo
@@ -55,7 +57,10 @@ def _start_in_line(self: threading.Thread) -> None:
 
     with _LINE_STARTS_LOCK:
         if not isinstance(self, WorkerThread) and not self.name.startswith(PYTEST_TIMEOUT_THREAD):
-            _LINE_STARTS[self] = _line_of_new_thread()
+            line = _LINE_STARTS[self] = _line_of_new_thread()
+            for since, names in _RECORDED:
+                if line >= since:
+                    names.append(self.name)
     _thread_start(self)
 
 
@@ -144,6 +149,24 @@ def new_line() -> int:
     """Numer, od którego ``threads_since`` liczy wątki, które wątek testu uruchomi od teraz."""
 
     return next(_STARTS)
+
+
+@contextlib.contextmanager
+def started_threads() -> Iterator[list[str]]:
+    """Nazwy wątków, które wątek testu uruchomi w bloku, razem z wątkami, które one uruchomią, także już skończonych.
+
+    Dla testu, który sprawdza, że kod nie uruchamia wątków; o wątki, które jeszcze żyją, pyta ``threads_since``.
+    """
+
+    names: list[str] = []
+    recorded = (new_line(), names)
+    with _LINE_STARTS_LOCK:
+        _RECORDED.append(recorded)
+    try:
+        yield names
+    finally:
+        with _LINE_STARTS_LOCK:
+            _RECORDED.remove(recorded)
 
 
 def threads_since(since: int, *, named: str | None = None) -> list[threading.Thread]:

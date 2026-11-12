@@ -37,6 +37,57 @@ _FILE_STATE_HELPER = (
     " folder_entries entry_kind), które rozróżnia brak od pliku niedostępnego (OneDrive, folder bez dostępu)"
 )
 
+# Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``
+# w 0e304aec7 (#633, czerwony main: wątki innych testów policzone jako wątki sprawdzenia).
+_WORKER_THREADS = re.compile(r"\bactive_count\(|\bThread\.start\b|\bThread,\s*[\"']start[\"']")
+_THREAD_LINES = "tests/fixtures/linie_watkow.py"
+_THREAD_LINES_HELPER = (
+    "wątki procesu workera pytest poza linią testu: zapytaj tests/fixtures/linie_watkow.py (new_line i threads_since o"
+    " wątki, które żyją, started_threads o wątki uruchomione w bloku), bo w workerze żyją też wątki wcześniejszych testów"
+    " i timer pytest-timeout"
+)
+
+# Pliki, którym wolno parsować Pythona ręcznie: stan z 12.11.2026 (23 pliki); wpis maleje z każdym usuniętym plikiem.
+# Jeden napis z odstępami, bo graf wyboru testów (``tools/lib/wplyw_zmiany.py``) bierze ścieżkę z napisu testu za jego
+# zależność, a zapadki i tak biegną przy każdej zmianie (``ZAPADKI`` w ``tools/szybko.py``).
+PARSERS = frozenset(
+    """
+    .agents/skills/verify-centrum-rozliczen/scripts/centrum_self_test.py
+    tests/fixtures/skladnia.py
+    tests/test_decyzje_na_faktach.py
+    tests/test_eksplorator_w_procesie.py
+    tests/test_granice_importow.py
+    tests/test_granice_wyjatkow.py
+    tests/test_jeden_odczyt_skoroszytu.py
+    tests/test_jeden_zapis_skoroszytu.py
+    tests/test_komunikaty_expect.py
+    tests/test_limit_drive_centrum.py
+    tests/test_mapy_funkcji.py
+    tests/test_potomne.py
+    tests/test_rodzaj_zatrzymania.py
+    tests/test_skrypty_bez_instalacji.py
+    tests/test_spis_narzedzi.py
+    tests/test_struktura_testow.py
+    tests/test_tabela_zatrzyman_efenix.py
+    tests/test_wywolanie_skryptow_skilli.py
+    tools/lib/kroki_skilli.py
+    tools/lib/niestabilne_testy.py
+    tools/lib/rozjazd_modelu.py
+    tools/lib/wplyw_zmiany.py
+    tools/mutacje_zmiany.py
+    """.split()
+)
+PARSER_FOLDERS = ("tests", "tools", ".agents/skills")
+_PARSER_CALL = re.compile(r"(?<![\w.])(?:ast\.(?:parse|walk)\(|tokenize\.)")
+_NEW_PARSER = (
+    "nowy plik z ręcznym parserem Pythona (ast.parse, ast.walk, tokenize): nazwij korzeń poprawki i napraw go na"
+    " najwyższym szczeblu z sekcji „Reguły i co ich pilnuje” w AGENTS.md: (a) jedna droga i jeden właściciel, (b) typ"
+    " albo reguła ruff (banned-api TID251 z msg „użyj X” w pyproject.toml), (c) test zachowania, (d) dopiero zapadka"
+    " w tests/test_zapadki.py; plik, który mimo to parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w"
+    " opisie PR"
+)
+_GONE_PARSER = "plik zniknął: usuń go z PARSERS w tests/test_zapadki.py"
+
 
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
@@ -214,6 +265,91 @@ def test_zapadka_przepuszcza_zawiera_wartosc_i_inne_wyrazenia(line: str) -> None
     assert not order_number_oracle(line)
 
 
+def worker_threads(line: str) -> bool:
+    """Czy linia testu pyta o wątki procesu workera pytest z pominięciem ``linie_watkow``.
+
+    Łapie tylko ``active_count(`` (także ``threading.active_count(``), ``Thread.start`` jako całą nazwę (odczyt,
+    podmiana i wywołanie ``threading.Thread.start``) oraz ``Thread,`` i napis ``"start"`` albo ``'start'``
+    (``monkeypatch.setattr(threading.Thread, "start", …)``), także w komentarzu, docstringu i napisie z kodem procesu
+    potomnego. Nie łapie ``threading.enumerate()`` przed i po (#1297 i #1308 dodały tę formę w scalonych PR-ach bez
+    rundy FAIL, więc zapadka na niej dałaby alarm na historii; jej przykłady zniknęły z ``tests/``),
+    ``thread.start()`` na wątku, ``super().start()``, ``ModelThread.start``, ``sys._current_frames``,
+    ``threading._active``, ``setattr`` z nazwą klasy w zmiennej ani podmiany ``Thread.run`` i ``Thread.__init__``; te
+    zostają przeglądowi.
+    Żadna forma nie trafia w dzisiejsze ``tests/``, gdy każda jego linia jest dodana
+    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
+    """
+
+    return _WORKER_THREADS.search(line) is not None
+
+
+def worker_thread_counts(root: Path, base: str) -> list[str]:
+    """Linie ``tests/`` poza ``linie_watkow.py`` i tym plikiem, które zmiana od ``base`` dodaje z ``worker_threads``."""
+
+    return [
+        f"{path}:{number}: {_THREAD_LINES_HELPER}"
+        for path, number, line in _added_lines(root, base, "tests")
+        if path not in {_THREAD_LINES, "tests/test_zapadki.py"} and worker_threads(line)
+    ]
+
+
+def test_watki_testu_tylko_przez_linie_watkow() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    assert worker_thread_counts(ROOT, base) == []
+
+
+def test_zapadka_watkow_widzi_tylko_tests_poza_linie_watkow(tmp_path: Path) -> None:
+    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    for path in (_THREAD_LINES, "tests/test_zapadki.py", "tests/test_watkow.py", "src/rozliczenia/watki.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
+
+    found = worker_thread_counts(tmp_path, base)
+
+    assert found == [f"tests/test_watkow.py:2: {_THREAD_LINES_HELPER}"]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "    start = threading.Thread.start",
+        '    monkeypatch.setattr(threading.Thread, "start", counted)',
+        "    monkeypatch.setattr(threading.Thread, 'start', counted)",
+        "threading.Thread.start = counted",
+        "    assert threading.active_count() == before",
+        "        threading.Thread.start(thread)",
+    ],
+)
+def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
+    assert worker_threads(line)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "    since = new_line()",
+        "    assert wait_for(lambda: threads_since(since) == [], seconds=10)",
+        "    with started_threads() as started:",
+        "        asking.start()",
+        "        super().start()",
+        "    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)",
+        "    for index, thread in enumerate(threads):",
+        # Formy, których zapadka według docstringu nie łapie.
+        "    before = set(threading.enumerate())",
+        '        checks = [thread for thread in threading.enumerate() if thread.name == "powiadomienia-sprawdzanie"]',
+        '    monkeypatch.setattr(threading.Thread, "run", counted)',
+        '    monkeypatch.setattr(klasa, "start", counted)',
+    ],
+)
+def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
+    assert not worker_threads(line)
+
+
 def test_zapadka_widzi_linie_dodane_od_bazy_i_nowe_pliki_a_nie_usuniete_ani_spoza_folderu(tmp_path: Path) -> None:
     author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
     (tmp_path / "tests").mkdir()
@@ -236,3 +372,153 @@ def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("MAXIMISEART_ZAPADKA_BAZA", "galaz-rodzica")
 
     assert _base() == "galaz-rodzica"
+
+
+def parsers_off_entry(root: Path, base: str) -> list[str]:
+    """Pliki zmiany od ``base``, na których wpis ``PARSERS`` rozjeżdża się ze stanem, każdy z poleceniem naprawy.
+
+    Łapie tylko plik ``*.py`` w ``tests/``, ``tools/`` albo ``.agents/skills/`` (bez ``tests/test_zapadki.py``), który
+    zmiana dodaje, zmienia albo usuwa (zmiana nazwy to usunięcie i dodanie), gdy po zmianie jego tekst, z komentarzami i
+    napisami, ma ``ast.parse(``, ``ast.walk(`` albo ``tokenize.``, a ``PARSERS`` go nie ma: nowy plik z ręcznym
+    parserem albo istniejący, do którego zmiana dopisała pierwsze takie wywołanie.
+    Z wpisu każe usunąć tylko plik z ``PARSERS``, którego zmiana usuwa.
+    Plik z ``PARSERS``, z którego zmiana usuwa ostatnie takie wywołanie, przechodzi i zostaje we wpisie, bo zapadka pada
+    tylko na dodanym: inaczej nocna mutacja, która usuwa linię parsera, byłaby WYKRYTA przez wpis, a nie przez test
+    zachowania, i linia bez testu nie trafiłaby do ``Przeżyte mutacje z #N`` (#670).
+    Nie łapie matchera dopisanego do pliku z ``PARSERS`` ani do ``tests/test_zapadki.py``, regexu,
+    ``from ast import parse``, ``import ast as a``, samego ``import tokenize``, ``from tokenize import …``,
+    ``compile(…, ast.PyCF_ONLY_AST)``, ``ast.NodeVisitor``, wywołania pomocnika, który parsuje za wywołującego
+    (``tests/fixtures/skladnia.py``), ani parsera w ``src/`` i poza tymi trzema folderami; te zostają przeglądowi.
+    Pliku z ``PARSERS``, którego zmiana nie dotyka, nie sprawdza.
+    """
+
+    patterns = [f"{folder}/*.py" for folder in PARSER_FOLDERS]
+    changed = {
+        *_git(root, "diff", "--no-renames", "--name-only", base, "--", *patterns).splitlines(),
+        *_git(root, "ls-files", "--others", "--exclude-standard", "--", *patterns).splitlines(),
+    }
+    found = []
+    for path in sorted(changed - {"tests/test_zapadki.py"}):
+        file = root / path
+        parses = file.is_file() and _PARSER_CALL.search(file.read_text(encoding="utf-8")) is not None
+        if parses and path not in PARSERS:
+            found.append(f"{path}: {_NEW_PARSER}")
+        elif not file.is_file() and path in PARSERS:
+            found.append(f"{path}: {_GONE_PARSER}")
+    return found
+
+
+def test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+
+    assert parsers_off_entry(ROOT, base) == []
+
+
+# Plik z ``PARSERS``, który testy zapadki kładą w swoim repozytorium (zmienna, nie napis, z powodu jak przy ``PARSERS``).
+_IN_ENTRY = min(PARSERS)
+
+
+def _repo_with_parser(root: Path) -> str:
+    """Repozytorium z jednym plikiem z ``PARSERS`` i jednym bez parsera; zwraca commit bazy."""
+
+    for path, text in {
+        _IN_ENTRY: "import ast\n\ntree = ast.parse(source)\n",
+        "tests/test_zwykly.py": "def test_zwykly() -> None:\n    assert True\n",
+    }.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text, encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+@pytest.mark.parametrize(
+    ("path", "text"),
+    [
+        ("tests/test_nowy.py", "import ast\n\nnodes = list(ast.walk(ast.parse(source)))\n"),
+        ("tests/fixtures/nowy.py", "for node in ast.walk(tree):\n    pass\n"),
+        ("tools/lib/nowy.py", "import tokenize\n\ntokens = tokenize.generate_tokens(readline)\n"),
+        (".agents/skills/verify-x/scripts/nowy.py", "tree = ast.parse(path.read_text())\n"),
+        ("tests/test_zwykly.py", "import ast\n\n\ndef test_zwykly() -> None:\n    assert ast.parse('x')\n"),
+    ],
+    ids=["nowy-test", "nowy-pomocnik", "tokenize-w-tools", "skrypt-skilla", "pierwsze-wywolanie-w-istniejacym"],
+)
+def test_zapadka_parsera_lapie_plik_spoza_wpisu_z_recznym_parserem(tmp_path: Path, path: str, text: str) -> None:
+    base = _repo_with_parser(tmp_path)
+    (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / path).write_text(text, encoding="utf-8")
+
+    assert parsers_off_entry(tmp_path, base) == [f"{path}: {_NEW_PARSER}"]
+
+
+def test_zapadka_parsera_widzi_nowy_plik_oznaczony_git_add_n(tmp_path: Path) -> None:
+    base = _repo_with_parser(tmp_path)
+    (tmp_path / "tests" / "test_nowy.py").write_text("tree = ast.parse(source)\n", encoding="utf-8")
+    _git(tmp_path, "add", "-N", "tests/test_nowy.py")
+
+    assert parsers_off_entry(tmp_path, base) == [f"tests/test_nowy.py: {_NEW_PARSER}"]
+
+
+@pytest.mark.parametrize(
+    ("path", "text"),
+    [
+        (_IN_ENTRY, "import ast\n\ntree = ast.parse(source)\nnodes = list(ast.walk(tree))\n"),
+        ("tests/test_nowy.py", "import re\n\nCALL = re.compile(r'open\\(')\n"),
+        ("tests/test_nowy.py", "from ast import parse\n\ntree = parse(source)\n"),
+        ("tests/test_nowy.py", "import ast as syntax\n\ntree = syntax.parse(source)\n"),
+        ("tests/test_nowy.py", "import tokenize\n"),
+        ("tests/test_nowy.py", "from tokenize import generate_tokens\n\ntokens = generate_tokens(readline)\n"),
+        ("tests/test_nowy.py", "from tests.fixtures.skladnia import calls\n\nfound = calls(tree)\n"),
+        ("tests/test_nowy.py", "tree = myast.parse(source)\nvalue = node.ast.walk(x)\n"),
+        ("src/pakiet/nowy.py", "tree = ast.parse(source)\n"),
+        ("tests/test_zapadki.py", "tree = ast.parse(source)\n"),
+    ],
+    ids=[
+        "matcher-w-pliku-z-wpisu",
+        "regex",
+        "from-ast-import",
+        "alias-modulu",
+        "import-tokenize",
+        "from-tokenize-import",
+        "pomocnik",
+        "inna-nazwa-przed-kropka",
+        "src",
+        "plik-zapadek",
+    ],
+)
+def test_zapadka_parsera_przepuszcza_formy_spoza_granicy(tmp_path: Path, path: str, text: str) -> None:
+    base = _repo_with_parser(tmp_path)
+    (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / path).write_text(text, encoding="utf-8")
+
+    assert parsers_off_entry(tmp_path, base) == []
+
+
+@pytest.mark.parametrize(
+    ("removed", "written", "expected"),
+    [
+        (True, {}, [f"{_IN_ENTRY}: {_GONE_PARSER}"]),
+        (False, {_IN_ENTRY: "from tests.fixtures.skladnia import calls\n"}, []),
+        (
+            True,
+            {"tests/test_granice.py": "import ast\n\ntree = ast.parse(source)\n"},
+            [f"{_IN_ENTRY}: {_GONE_PARSER}", f"tests/test_granice.py: {_NEW_PARSER}"],
+        ),
+    ],
+    ids=["usuniety", "bez-wywolania", "nowa-nazwa"],
+)
+def test_zapadka_parsera_kaze_usunac_z_wpisu_tylko_plik_ktory_zniknal(
+    tmp_path: Path, removed: bool, written: dict[str, str], expected: list[str]
+) -> None:
+    base = _repo_with_parser(tmp_path)
+    if removed:
+        (tmp_path / _IN_ENTRY).unlink()
+    for path, text in written.items():
+        (tmp_path / path).write_text(text, encoding="utf-8")
+    # W indeksie, jak w commicie gałęzi, git widzi przeniesienie pliku jako zmianę nazwy.
+    _git(tmp_path, "add", "-A")
+
+    assert parsers_off_entry(tmp_path, base) == expected

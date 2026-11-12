@@ -60,10 +60,9 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 
 ## Reguły i co ich pilnuje
 
-Gdy operator Cię poprawi, dopisz regułę z jej strażnikiem do tabeli, do której należy: regułę o tym, jak pisać kod i testy, do tabeli jej sekcji w [`CODING_STANDARDS.md`](CODING_STANDARDS.md) (po angielsku), regułę procesu gałęzi z [`docs/agents/pr-i-ci.md`](docs/agents/pr-i-ci.md) albo [`docs/agents/skille.md`](docs/agents/skille.md) do tabeli tego pliku, a pozostałą regułę procesu do tabeli niżej.
-Jeśli reguła już tam była, a nic jej nie pilnowało, to błąd się powtórzył: w tej samej zmianie dodaj sprawdzenie, które go łapie.
+Przy poprawce operatora i Ważnym z przeglądu nazwij korzeń, czyli co skłoniło agenta (skopiowany najbliższy przykład, druga droga do tego samego, brak typu albo właściciela, instrukcja), i napraw go na najwyższym szczeblu, który działa: (a) usuń drugą drogę i stare przykłady, daj jednego właściciela; (b) typ, z którym zła droga nie przechodzi mypy, albo reguła ruff (`banned-api` z `msg` „użyj X”); (c) test zachowania; (d) dopiero zapadka w `tests/test_zapadki.py`, która pada tylko na dodanych liniach (warunki w `CODING_STANDARDS.md`).
+Wiersz tabeli dopisz tylko z nowym strażnikiem, w dokumencie reguły (kod i testy: `CODING_STANDARDS.md` po angielsku; proces: ten plik, `docs/agents/pr-i-ci.md` albo `docs/agents/skille.md`); regułę z osądem zostaw zdaniem dla recenzenta, a wiersz, którego błąd nie może się już zdarzyć, usuń.
 Wyjątek zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` i `known()` w `tests/fixtures/fakt_domeny.py`).
-Szczegóły strażnika, jego wyjątki i granicę (co łapie tylko przegląd) opisuje jego docstring.
 
 | Reguła | Co jej pilnuje |
 |---|---|
@@ -78,3 +77,4 @@ Szczegóły strażnika, jego wyjątki i granicę (co łapie tylko przegląd) opi
 | Niestabilny test trafia do kwarantanny tylko wpisem w `KWARANTANNA` (`tests/fixtures/kwarantanna.py`) z numerem issue `Flaky test: <test>` i terminem najwyżej 7 dni od dziś, a wpis wygasły czerwieni CI; Maks zgodził się na takie wpisy z góry (ADR 0020), więc nie potrzebują osobnej zgody. | `tests/test_kwarantanna.py` |
 | Repozytorium mówi po angielsku „flaky test” („flaky testy” w polskim zdaniu), także w nazwach zadań CI oraz tytule i etykiecie issue, które zakłada CI, i nigdy nie używa spolszczonej formy tego słowa; wyjątek mają tylko dane historyczne. | `tests/test_slowo_flaky_test.py` |
 | W `AGENTS.md`, `CODING_STANDARDS.md`, `docs/agents/pr-i-ci.md` i `docs/agents/skille.md` łam linię prozy tylko na końcu zdania, żeby zmiana słowa zmieniała jedną linię, a nie cały akapit. | `tests/test_dokumenty_regul.py` |
+| Ręczny parser Pythona (`ast.parse(`, `ast.walk(`, `tokenize.`) w `tests/`, `tools/` i `.agents/skills/` stoi tylko w plikach wpisu `PARSERS`. | `tests/test_zapadki.py::test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu` |

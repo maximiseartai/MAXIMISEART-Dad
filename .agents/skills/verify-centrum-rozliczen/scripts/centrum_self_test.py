@@ -60,14 +60,15 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 CLOCK_ANSWER_S = 5.0
 # Deleting, moving or replacing a file or folder fails on Windows while another process holds it open (WinError 32,
 # #921), so the drive does it only through the retrying helpers of ``drive/common.py`` (``DRIVE_HELPERS``). The forms
-# the guard ``_removals`` catches and its boundary are the tables of its docstring and of features/README.md.
+# the guard ``_removals`` catches and its boundary are the tables of its docstring and of features/README.md; ruff
+# ``TID251`` (``drive/ruff.toml``) rejects the functions of ``os``, ``shutil`` and the pathlib classes it can resolve,
+# each ban with a sample in ``tests/test_zakazy_ruff.py``.
 # Only deletions and moves have attributes of these names (pathlib, ``os``, ``shutil``): form 1 takes them on anything.
 ONLY_REMOVING = frozenset({"unlink", "rename", "rmdir", "rmtree", "removedirs", "renames", "move_into"})
-# Deletions and moves of a module whose names other objects share (``list.remove``): form 2, only on the module.
-SHARED_REMOVING = {"os": frozenset({"remove", "replace"}), "shutil": frozenset({"move"})}
-# Path methods whose names other objects share (``str.replace``, ``page.mouse.move``): forms 4 and 5.
+# Path methods whose names other objects share (``str.replace``, ``page.mouse.move``): form 2.
 PATH_SHARED = frozenset({"replace", "move"})
-PATHLIB_CLASSES = frozenset({"Path", "PosixPath", "WindowsPath"})
+# Deletions and moves whose names other objects share (``list.remove``), which form 3 takes in ``getattr``.
+SHARED_REMOVING = frozenset({"remove", *PATH_SHARED})
 DRIVE_HELPERS = frozenset({"remove", "remove_tree", "remove_empty_folder", "move", "replace_file"})
 # The readers of ``drive/common.py`` that wait while the server puts a file in place (#1087); ``read_json`` reads
 # through ``read_text``.
@@ -89,37 +90,15 @@ REMOVAL_SAMPLES = {
     "type(p).unlink(p)": ".unlink (form 1)",
     "import os\nfs = os\nfs.unlink(p)": ".unlink (form 1)",
     "import os\nimport shutil\nfs = os\nfs = shutil\nfs.rmtree(p)": ".rmtree (form 1)",
-    "import os\nos.remove(p)": "os.remove (form 2)",
-    "import os\nos.replace(p, q)": "os.replace (form 2)",
-    "import shutil\nshutil.move(p, q)": "shutil.move (form 2)",
-    "import os as system\nsystem.remove(p)": "system.remove (form 2)",
-    "import shutil as files\nfiles.move(p, q)": "files.move (form 2)",
-    "import os.path\nos.remove(p)": "os.remove (form 2)",
-    "import functools\nimport os\nfunctools.partial(os.replace, p, q)": "os.replace (form 2)",
-    "import os as fs\nimport shutil as fs\nfs.move(p, q)": "fs.move (form 2)",
-    "from os import remove": "from os import remove (form 3)",
-    "from os import replace as swap": "from os import replace (form 3)",
-    "from os import getcwd, unlink": "from os import unlink (form 3)",
-    "from shutil import move as shift": "from shutil import move (form 3)",
-    "from shutil import rmtree": "from shutil import rmtree (form 3)",
-    "from os import *": "from os import * (form 3)",
-    "from shutil import *": "from shutil import * (form 3)",
-    "from pathlib import *": "from pathlib import * (form 3)",
-    "from pathlib import Path\nPath.replace(p, q)": "Path.replace (form 4)",
-    "from pathlib import Path\nPath.move(p, q)": "Path.move (form 4)",
-    "from pathlib import Path as P\nP.replace(p, q)": "P.replace (form 4)",
-    "import pathlib\npathlib.Path.move(p, q)": "pathlib.Path.move (form 4)",
-    "import pathlib as pl\npl.WindowsPath.replace(p, q)": "pl.WindowsPath.replace (form 4)",
-    "from pathlib import Path\nswap = Path.replace": "Path.replace (form 4)",
-    "p.replace(q)": ".replace(target) (form 5)",
-    "p.replace(target=q)": ".replace(target) (form 5)",
-    "p.move(q)": ".move(target) (form 5)",
-    "p.move(target=q)": ".move(target) (form 5)",
-    "from pathlib import Path\nPath(p).replace(q)": ".replace(target) (form 5)",
-    "getattr(p, 'unlink')()": "getattr(…, 'unlink') (form 6)",
-    "import os\ngetattr(os, 'remove')(p)": "getattr(…, 'remove') (form 6)",
-    "getattr(p, 'replace')(q)": "getattr(…, 'replace') (form 6)",
-    "import shutil\ngetattr(shutil, 'move', None)": "getattr(…, 'move') (form 6)",
+    "p.replace(q)": ".replace(target) (form 2)",
+    "p.replace(target=q)": ".replace(target) (form 2)",
+    "p.move(q)": ".move(target) (form 2)",
+    "p.move(target=q)": ".move(target) (form 2)",
+    "from pathlib import Path\nPath(p).replace(q)": ".replace(target) (form 2)",
+    "getattr(p, 'unlink')()": "getattr(…, 'unlink') (form 3)",
+    "import os\ngetattr(os, 'remove')(p)": "getattr(…, 'remove') (form 3)",
+    "getattr(p, 'replace')(q)": "getattr(…, 'replace') (form 3)",
+    "import shutil\ngetattr(shutil, 'move', None)": "getattr(…, 'move') (form 3)",
 }
 LOOKALIKE_SAMPLES = (
     "text.replace('a', 'b')",
@@ -208,27 +187,28 @@ def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
     """Each deletion, move or replacement of a file or folder in ``source`` in a form of the first table, outside the
     top-level functions ``helpers``, as ``<line>: <what> (form <n>)``.
 
-    It knows a module or a pathlib class only by a name an ``import`` or ``from … import`` binds, never by an
-    assignment, so it walks the tree twice with no fixed point to reach; a name two imports bind to two modules keeps
-    both. The guard catches exactly these forms:
+    Ruff ``TID251`` (``drive/ruff.toml``) already rejects each name it resolves through ``import [as x]``, ``from …
+    import … [as x]`` or an attribute to ``os.remove``, ``os.unlink``, ``os.rmdir``, ``os.removedirs``, ``os.rename``,
+    ``os.renames``, ``os.replace``, ``shutil.rmtree``, ``shutil.move``, or ``replace`` and ``move`` of ``pathlib.Path``,
+    ``PosixPath`` and ``WindowsPath`` (``import os as system; system.replace(p, q)``, ``partial(os.remove, p)``,
+    ``from shutil import rmtree``, ``P.move(p, q)``), and ruff ``F403`` rejects ``from os import *``. This guard catches
+    only these forms, which ruff cannot resolve, mostly a method on an instance; it knows a module only by a name an
+    ``import`` binds, never by an assignment, which form 2 skips:
 
     | Form | The guard catches | Example |
     |---|---|---|
     | 1 | an attribute `unlink`, `rename`, `rmdir`, `rmtree`, `removedirs`, `renames` or `move_into` on anything, called or not | `p.unlink(missing_ok=True)`, `p.rename(target=q)`, `os.renames(p, q)`, `shutil.rmtree(p)`, `drop = Path.unlink`, `fs = os; fs.unlink(p)` |
-    | 2 | `remove` or `replace` on a name that `import os [as x]` binds, `move` on a name that `import shutil [as x]` binds, called or not | `os.remove(p)`, `import os as system; system.replace(p, q)`, `shutil.move(p, q)`, `partial(os.remove, p)` |
-    | 3 | `from os import <name of form 1 or 2> [as x]`, the same from `shutil`, and `from os import *`, `from shutil import *`, `from pathlib import *` | `from os import replace as swap`, `from shutil import rmtree` |
-    | 4 | `replace` or `move` on `Path`, `PosixPath` or `WindowsPath` that `from pathlib import <class> [as x]` binds or that is reached through a name that `import pathlib [as x]` binds, called or not | `Path.replace(p, q)`, `P.move(p, q)`, `pathlib.WindowsPath.replace(p, q)`, `swap = Path.replace` |
-    | 5 | a call `x.replace(…)` or `x.move(…)` with one positional argument and no named one, or with only `target=`, where `x` is neither a name that an `import` binds nor a class of form 4 | `p.replace(q)`, `p.move(target=q)`, `Path(p).replace(q)` |
-    | 6 | `getattr(x, "<name>", …)` with a constant name of form 1, 2 or 4 | `getattr(p, "unlink")()`, `getattr(os, "remove")(p)` |
+    | 2 | a call `x.replace(…)` or `x.move(…)` with one positional argument and no named one, or with only `target=`, where `x` is not a name that an `import` binds | `p.replace(q)`, `p.move(target=q)`, `Path(p).replace(q)` |
+    | 3 | `getattr(x, "<name>", …)` with a constant name of form 1, `remove`, `replace` or `move` | `getattr(p, "unlink")()`, `getattr(os, "remove")(p)` |
 
     Its boundary, which review checks:
 
     | Boundary | Passes the guard |
     |---|---|
-    | a module or pathlib class through a name that no import binds (forms 1 and 5 still catch on it) | `fs = os; fs.remove(p)`, `s: ModuleType = os; s.replace(p, q)`, `Q = Path; Q.replace(p, q)`, `self.files = shutil` |
-    | `replace` or `move` of an object kept or passed instead of called (form 5 takes only a call) | `swap = p.replace; swap(q)`, `retry(p.move, q)` |
-    | a call of form 5 with unpacked arguments | `p.replace(*args)`, `p.move(**named)` |
-    | a call of form 5 on a name that an `import` in the file also binds | `import time` and elsewhere `time = p; time.replace(q)` |
+    | a module or pathlib class through a name that no import binds (forms 1 and 2 still catch on it) | `fs = os; fs.remove(p)`, `s: ModuleType = os; s.replace(p, q)`, `Q = Path; Q.replace(p, q)`, `self.files = shutil` |
+    | `replace` or `move` of an object kept or passed instead of called (form 2 takes only a call) | `swap = p.replace; swap(q)`, `retry(p.move, q)` |
+    | a call of form 2 with unpacked arguments | `p.replace(*args)`, `p.move(**named)` |
+    | a call of form 2 on a name that an `import` in the file also binds | `import time` and elsewhere `time = p; time.replace(q)` |
     | a pathlib class from an expression | `type(p).replace(p, q)`, `p.__class__.move(p, q)` |
     | another module | `posix`, `nt`, `_winapi`, `ctypes` |
     | a name computed at run time, or a name in a string outside `getattr` | `getattr(p, name)`, `operator.methodcaller("unlink")`, `vars(os)["remove"]`, `sys.modules["os"]`, `importlib`, `__import__`, `eval` |
@@ -236,8 +216,8 @@ def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
     | no deletion or move | a copy onto a file the server reads (`shutil.copy2`, `copyfile`, `copytree(…, dirs_exist_ok=True)`), a write (`open(p, "w")`, `write_bytes`, `workbook.save`), `tempfile` cleanup |
     | code outside `drive/*.py` | `drive_centrum.py`, `create_centrum_fixture.py`, `serve_centrum.py` |
 
-    A false alarm is loud and names the helpers: form 1 on an object that is no file (`frame.rename(columns=…)`), form 5
-    on any object with a one-argument `replace` or `move` (`moment.replace(2026)`), form 6 on any object."""
+    A false alarm is loud and names the helpers: form 1 on an object that is no file (`frame.rename(columns=…)`), form 2
+    on any object with a one-argument `replace` or `move` (`moment.replace(2026)`), form 3 on any object."""
 
     tree = ast.parse(source)
     skipped = {
@@ -246,25 +226,13 @@ def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
         if isinstance(node, ast.FunctionDef) and node.name in helpers
         for inner in ast.walk(node)
     }
-    modules: dict[str, set[str]] = {}  # each name an ``import`` binds, with every module it binds it to
-    pathlib_classes: set[str] = set()  # each name ``from pathlib import <class> [as x]`` binds
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                root = alias.name.split(".")[0]  # ``import os.path`` binds ``os``; ``import os.path as p`` binds os.path
-                modules.setdefault(alias.asname or root, set()).add(alias.name if alias.asname else root)
-        elif isinstance(node, ast.ImportFrom) and node.module == "pathlib" and not node.level:
-            pathlib_classes.update(alias.asname or alias.name for alias in node.names if alias.name in PATHLIB_CLASSES)
-
-    def pathlib_class(owner: ast.expr) -> bool:
-        if isinstance(owner, ast.Name):
-            return owner.id in pathlib_classes
-        return (
-            isinstance(owner, ast.Attribute)
-            and owner.attr in PATHLIB_CLASSES
-            and isinstance(owner.value, ast.Name)
-            and "pathlib" in modules.get(owner.value.id, set())
-        )
+    # Each name an ``import`` binds: ``import os.path`` binds ``os``, ``import os.path as p`` binds ``p``.
+    modules = {
+        alias.asname or alias.name.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
 
     def path_signature(call: ast.Call) -> bool:
         one_positional = len(call.args) == 1 and not isinstance(call.args[0], ast.Starred) and not call.keywords
@@ -274,20 +242,8 @@ def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
     for node in ast.walk(tree):
         if id(node) in skipped:
             continue
-        if isinstance(node, ast.ImportFrom) and not node.level and node.module in ("os", "shutil", "pathlib"):
-            imported = ONLY_REMOVING | SHARED_REMOVING[node.module] if node.module != "pathlib" else frozenset()
-            for alias in node.names:
-                if alias.name == "*" or alias.name in imported:
-                    found.add((node.lineno, f"from {node.module} import {alias.name} (form 3)"))
-        elif isinstance(node, ast.Attribute):
-            owner = node.value
-            bound = modules.get(owner.id, set()) if isinstance(owner, ast.Name) else set()
-            if any(node.attr in SHARED_REMOVING.get(module, ()) for module in bound):
-                found.add((node.lineno, f"{ast.unparse(owner)}.{node.attr} (form 2)"))
-            elif node.attr in PATH_SHARED and pathlib_class(owner):
-                found.add((node.lineno, f"{ast.unparse(owner)}.{node.attr} (form 4)"))
-            elif node.attr in ONLY_REMOVING:
-                found.add((node.lineno, f".{node.attr} (form 1)"))
+        if isinstance(node, ast.Attribute) and node.attr in ONLY_REMOVING:
+            found.add((node.lineno, f".{node.attr} (form 1)"))
         elif isinstance(node, ast.Call):
             function = node.func
             if (
@@ -295,17 +251,16 @@ def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
                 and function.attr in PATH_SHARED
                 and path_signature(node)
                 and not (isinstance(function.value, ast.Name) and function.value.id in modules)
-                and not pathlib_class(function.value)
             ):
-                found.add((node.lineno, f".{function.attr}(target) (form 5)"))
+                found.add((node.lineno, f".{function.attr}(target) (form 2)"))
             elif (
                 isinstance(function, ast.Name)
                 and function.id == "getattr"
                 and len(node.args) >= 2
                 and isinstance(node.args[1], ast.Constant)
-                and node.args[1].value in ONLY_REMOVING | PATH_SHARED | SHARED_REMOVING["os"] | SHARED_REMOVING["shutil"]
+                and node.args[1].value in ONLY_REMOVING | SHARED_REMOVING
             ):
-                found.add((node.lineno, f"getattr(…, {node.args[1].value!r}) (form 6)"))
+                found.add((node.lineno, f"getattr(…, {node.args[1].value!r}) (form 3)"))
     return [f"{line}: {form}" for line, form in sorted(found)]
 
 

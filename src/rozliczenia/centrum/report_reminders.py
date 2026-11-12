@@ -210,6 +210,10 @@ class ReportReminders:
         found = _Check()
         self._send(now, found)
         failed = found.failed
+        # Bez dnia wdrożenia przypomnienia są wyłączone, a nie zepsute: tak stoi każde Centrum przed Wydaniem i każdy
+        # klon bez ``config`` taty, więc praca nie zostawia śladu ani w dzienniku, ani w ``config``.
+        if failed is not None and failed.cause == "bez-wdrozenia":
+            return
         if failed is None or not failed.retry:
             self._settled = (now.date(), pora)
         if failed is not None and failed != self._last_failure:

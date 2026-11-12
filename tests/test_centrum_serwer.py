@@ -41,7 +41,7 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from tests.fixtures.clock import ManualClock
-from tests.fixtures.linie_watkow import PYTEST_TIMEOUT_THREAD, new_line, threads_since
+from tests.fixtures.linie_watkow import PYTEST_TIMEOUT_THREAD, new_line, started_threads, threads_since
 
 KONTROLA = Post.of(
     PeriodThread(
@@ -263,7 +263,7 @@ def test_zamkniete_centrum_zwalnia_port_od_razu_takze_gdy_kolejka_czeka_na_skrzy
 
 
 class _EndingThread(threading.Thread):
-    """Wątek, którego kod już się skończył (zniknął z ``threading.enumerate()``), a wątek systemu jeszcze żyje.
+    """Wątek, którego kod już się skończył (zniknął z listy wątków modułu ``threading``), a wątek systemu jeszcze żyje.
 
     Tak kończy się każdy wątek: ``Thread._delete`` zdejmuje go z ``enumerate()``, zanim skończy się wątek systemu, a
     ``is_alive()`` do tej chwili zwraca True; tu ta chwila trwa, dopóki test nie ustawi ``end``.
@@ -295,6 +295,32 @@ def test_zatrzymanie_centrum_w_tescie_czeka_na_koniec_watku_systemu_a_nie_tylko_
     join_threads_since(since)
 
     assert not ending.is_alive()
+
+
+def _ran(name: str) -> None:
+    thread = threading.Thread(target=lambda: None, name=name)
+    thread.start()
+    thread.join()
+
+
+def test_watki_uruchomione_w_bloku_licza_sie_takze_skonczone_a_watki_wczesniejszej_linii_i_po_bloku_nie() -> None:
+    # Wątek wcześniejszego testu, który został w workerze, uruchamia swój wątek w czasie bloku następnego testu.
+    go = threading.Event()
+
+    def left_behind() -> None:
+        go.wait(30)
+        _ran("z-wczesniejszej-linii")
+
+    earlier = threading.Thread(target=left_behind, name="wczesniejszy")
+    earlier.start()
+
+    with started_threads() as started:
+        _ran("w-bloku")
+        go.set()
+        earlier.join(30)
+    _ran("po-bloku")
+
+    assert (started, earlier.is_alive()) == (["w-bloku"], False)
 
 
 def test_klient_testowy_bez_with_nie_otwiera_nowej_petli_zdarzen_na_zadanie(monkeypatch: pytest.MonkeyPatch) -> None:

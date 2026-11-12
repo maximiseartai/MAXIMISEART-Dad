@@ -32,7 +32,7 @@ from rozliczenia.centrum.report_box import (
 from atrapy.skrzynka import Archives, Issues
 
 SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
-sys.path.insert(0, str(SKILL / "scripts"))
+sys.path.insert(0, str(SKILL / "scripts"))  # noqa: TID251 - katalog scripts skilla, którego conftest nie kładzie
 
 import github_skrzynki  # noqa: E402
 import github_sprzatanie  # noqa: E402
