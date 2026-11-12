@@ -592,7 +592,15 @@ _TRACES: list[Trace] = []
 _LISTING = ("os.listdir", "os.scandir")
 
 
+# Zdarzenia audytu, których argumenty to ścieżki; inne niosą też bajty (np. ``.pyc`` przy imporcie), a ich
+# ``os.fsdecode`` na Windows rzuca błąd z samego importu (#1417 r1).
+_PATH_EVENTS = frozenset({"open", "os.listdir", "os.scandir", "os.rename", "os.remove", "os.rmdir", "os.mkdir",
+                          "shutil.copyfile", "stat", "lstat"})
+
+
 def _record(event: str, args: tuple[object, ...]) -> None:
+    if event not in _PATH_EVENTS:
+        return
     for trace in _TRACES:
         trace.extend((event, os.fsdecode(arg)) for arg in args if isinstance(arg, str | bytes | os.PathLike))
 
