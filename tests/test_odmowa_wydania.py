@@ -1,9 +1,10 @@
 """Hook ``tools/hooks/reczne_wydanie.py``: agent nie zakłada tagu Wydania ``v*`` ani GitHub Release z Basha.
 
-Formy Wydania to formy z docstringu hooka i sondy przeglądów #1403 r1 i #1414 r1–r2, a polecenia zwykłej pracy pochodzą
-z historii agentów i z sond fałszywych odmów #1414 r1–r2. Każdy test zachowania uruchamia hook tak jak Claude Code: JSON na
-stdin, a odmowa to kod 2 z przyczyną na stderr. Własności Hypothesis biorą oczekiwanie z docstringu hooka, a to, czym
-polecenie jest dla powłoki, rozstrzyga ``shlex.split`` i ``bash -n``, niezależne od hooka.
+Formy Wydania to formy z docstringu hooka i sondy przeglądów #1403 r1 i #1414 r1–r3, a polecenia zwykłej pracy pochodzą
+z historii agentów i z sond fałszywych odmów #1414 r1–r3. Konstrukcje spoza podzbioru i słowa Wydania pochodzą z docstringu
+hooka: polecenie spoza podzbioru ze słowem Wydania dostaje odmowę, a bez niego przechodzi. Każdy test zachowania uruchamia
+hook tak jak Claude Code: JSON na stdin, a odmowa to kod 2 z przyczyną na stderr. Własności Hypothesis biorą oczekiwanie
+z docstringu hooka, a to, czym polecenie jest dla powłoki, rozstrzyga ``shlex.split`` i ``bash -n``, niezależne od hooka.
 """
 
 from __future__ import annotations
@@ -52,9 +53,36 @@ SUBSTITUTION_PROBES = (
     "gh release -R $(gh repo view --json nameWithOwner -q .nameWithOwner) create v9.9.9 --notes x",
     "gh -R $(cat repo.txt) release create v9.9.9",
 )
+# Sondy #1414 r3 W1: podstawienie procesu to słowo, a polecenie biegnie dalej.
+PROCESS_SUBSTITUTION_PROBES = (
+    "git tag -a -F <(printf 'Wydanie\\n') v9.9.9",
+    "git tag -F <(echo x) v9.9.9",
+    "gh api --input <(jq -n '{tag_name:\"v9.9.9\"}') repos/o/r/releases",
+    "gh api -X POST --input <(echo '{}') repos/o/r/releases",
+    "git push -o <(echo x) origin v9.9.9",
+)
 RELEASES = (
     *REVIEW_PROBES,
     *SUBSTITUTION_PROBES,
+    *PROCESS_SUBSTITUTION_PROBES,
+    "git push origin v9.9.9 2> >(tee push.log)",
+    # Podstawienie w cudzysłowie hook ocenia tak samo jak bez niego.
+    'X="$(git tag v9.9.9)"',
+    'echo "`git tag v9.9.9`"',
+    "git tag $'v9.9.9'",
+    "echo $'it\\'s'; git tag v9.9.9",
+    # Komentarz w podstawieniu kończy się na nowej linii, a ``#`` za podstawieniem jest w środku słowa (#1414 r3 D2).
+    "git push origin $(git rev-parse HEAD # it's\n):refs/tags/v9.9.9",
+    "echo $(date)# x; git push origin $(git rev-parse HEAD):refs/tags/v9.9.9",
+    # Nawias podpowłoki w podstawieniu go nie zamyka (#1414 r3 D3).
+    "git push origin $( (git rev-parse HEAD) ):refs/tags/v9.9.9",
+    # `` \` `` w `` `…` `` go nie zamyka (#1414 r3 D3): inaczej `` ` `` w komentarzu zamknąłby podstawienie, które
+    # połyka refspec z nazwą bez słowa Wydania.
+    "git tag -m `echo \\`date\\`` v9.9.9 # `",
+    "git push origin `echo \\`git rev-parse HEAD\\``:v9 # `",
+    # ``\\`` na końcu komentarza nie łączy linii (#1414 r2 D1), także w pierwszej linii polecenia (#1414 r3 D3).
+    "# tag Wydania ręcznie \\\ngit tag v9.9.9",
+    "echo start # krok \\\ngh release create v9.9.9 --generate-notes",
     # Apostrof w komentarzu, po ``\\`` i w ``$(…)`` albo `` `…` `` w cudzysłowie nie otwiera napisu, który ukryłby
     # dalsze podstawienie.
     "echo x # don't\ngit tag -m $(date +%F) v9.9.9",
@@ -140,10 +168,27 @@ RELEASES = (
     "sh -euo pipefail -c \"git push --tags\"",
     "bash -c \"bash -c 'git tag v9.9.9'\"",
     "eval 'git tag v9.9.9'",
-    # Niezamknięty cudzysłów: forma Wydania stoi w poleceniu wprost.
+    # Spoza podzbioru ze słowem Wydania (#1414 r2 D1, r3 D1 i D2).
     'echo "niezamknięty; git tag v9.9.9',
     "git tag v9.9.9 'niezamknięty",
     "'gh' release create v9.9.9 \"niezamknięty",
+    "echo $(\ngit tag v9.9.9",
+    "$(which git) tag v9.9.9",
+    "$(command -v gh) release create v9.9.9",
+    "`which git` tag v9.9.9",
+    "git $(echo tag) v9.9.9",
+    "gh $(echo release) create v9.9.9",
+    "g$(echo i)t tag v9.9.9",
+    "G=git; $G tag v9.9.9",
+    "$(which git) push origin v9.9.9",
+    "git push origin $(case a in a) echo HEAD;; esac):refs/tags/v9.9.9",
+    'git commit -m "$(echo "it\'s # done")" && git tag v9.9.9',
+    "echo $((1<<2))\ngit tag v9.9.9",
+    "echo 'a <<EOF'\ngit tag v9.9.9",
+    "function f { git tag v9.9.9; }; f",
+    "bash <<'EOF'\ngit tag v9.9.9",
+    "echo v9.9.9 | xargs git tag",
+    "gh api -X POST $URL -f tag_name=v9.9.9",
 )
 NOT_RELEASES = (
     "gh pr create --title x --body-file - <<'EOF'\nOdmawia:\ngit tag v9.9.9 i gh release create v9.9.9\nEOF",
@@ -164,6 +209,14 @@ NOT_RELEASES = (
     "git tag -d $(git tag -l 'v9*')",
     "git diff --stat $(git merge-base HEAD origin/main) HEAD",
     "git status # $(git tag v9.9.9)",
+    # Podstawienie procesu i ``$(…)`` w cudzysłowie w zwykłej pracy (#1414 r3).
+    "diff <(git show main:a.py) <(git show HEAD:a.py)",
+    "while read t; do echo $t; done < <(git tag -l 'v*')",
+    "git commit -m \"$(printf 'fix: don'\"'\"'t tag v9.9.9')\"",
+    "gh api repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases --jq '.[0].tag_name'",
+    "gh api graphql -f query='{ repository(owner:\"o\", name:\"r\") { releases(first:3) { nodes { tagName } } } }'",
+    "echo $(( $(git rev-list --count HEAD) + 1 ))",
+    "grep -n '^$' release_notes.py",
     "git push origin HEAD 2>&1 | tail -3",
     ".venv/bin/python tools/wydanie.py plan --plik ~/.t3/notes/wydanie/plan.json",
     ".venv/bin/python tools/wydanie.py wydaj --plan p.json \\\n  --co-nowego c.txt --potwierdzam",
@@ -213,7 +266,6 @@ NOT_RELEASES = (
     "rg -n 'gh release|git tag' tools/ docs/",
     "# git tag v9.9.9",
     "git status # gh release create v9.9.9",
-    "bash tools/skrypt.sh git tag v9.9.9",
     # Niezamknięty cudzysłów bez formy Wydania.
     "grep -n \"don't",
 )
@@ -251,6 +303,81 @@ def test_polecenie_obok_wydania_przechodzi_bez_slowa(command: str) -> None:
     hooked = _bash(command)
 
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
+
+
+# Konstrukcje spoza podzbioru z docstringu hooka: ``{}`` to miejsce słowa, a polecenie bez słowa Wydania przechodzi.
+OUTSIDE_SUBSET = {
+    "$((": "echo $((1+2)) {}",
+    "bash": "bash -c 'echo {} x'",
+    "sh": "sh -c 'echo {} x'",
+    "zsh": "zsh -c 'echo {} x'",
+    "dash": "dash -c 'echo {} x'",
+    "ksh": "ksh -c 'echo {} x'",
+    "eval": "eval 'echo {} x'",
+    "source": "source ./skrypt.sh {}",
+    ".": ". ./skrypt.sh {}",
+    "trap": "trap 'echo {} x' EXIT",
+    "xargs": "echo {} | xargs echo",
+    "case": "case x in x) echo {};; esac",
+    "function": "function f { echo {}; }; f",
+}
+UNPARSED = {
+    "niezamknięty cudzysłów": 'echo "a {} b',
+    "niezamknięty apostrof": "echo {} 'x",
+    "niezamknięte podstawienie": "echo $(echo {}",
+    "niezamknięty `": "echo `echo {}",
+    "niezamknięty heredok": "cat <<EOF\n{}",
+    "\\ na końcu": "echo {} \\",
+    "program ze zmiennej": "$PY skrypt.py {}",
+    "program z podstawienia": "$(which python3) skrypt.py {}",
+    "podpolecenie git ze zmiennej": "git $CMD {}",
+    "podpolecenie gh z podstawienia": "gh $(echo pr) view {}",
+    "gh api z zapisem na adres ze zmiennej": "gh api -X POST $URL -f body='a {} b'",
+    "podstawienia głębiej niż MAX_DEPTH": "echo " + "$(echo " * 21 + "{}" + ")" * 21,
+    "podstawienia głębiej niż stos Pythona": "echo " + "$(" * 2000 + "{}" + ")" * 2000,
+}
+# Słowa Wydania z docstringu hooka i słowa obok nich, które nim nie są (słowo w środku dłuższego, wersja bez kropki).
+RELEASE_WORDS = (
+    *("tag", "release", "v1.2", "x:v0.8", "tag_name=v1.2"),
+    *("refs/tags/x", "repos/o/r/git/refs", "repos/o/r/releases", "--tags", "--follow-tags", "--mirror"),
+)
+NOT_RELEASE_WORDS = ("tagi", "tagów", "release_notes.py", "tag_name=x", "v080", "v3_dziennik", "--mirror-dir", "x")
+
+
+def test_tabela_konstrukcji_ma_kazda_konstrukcje_ze_stalej_hooka() -> None:
+    assert {hook.OUTSIDE_SUBSET.text.pattern.replace("\\", ""), *hook.OUTSIDE_SUBSET.programs} == set(OUTSIDE_SUBSET)
+
+
+@pytest.mark.parametrize("word", RELEASE_WORDS)
+@pytest.mark.parametrize("template", [*OUTSIDE_SUBSET.values(), *UNPARSED.values()], ids=[*OUTSIDE_SUBSET, *UNPARSED])
+def test_polecenie_spoza_podzbioru_ze_slowem_wydania_dostaje_odmowe(template: str, word: str) -> None:
+    hooked = _bash(template.replace("{}", word))
+
+    assert hooked.returncode == 2, hooked.stderr
+    assert "zapisz je prościej albo rozbij na kilka poleceń" in hooked.stderr
+    assert "tools/wydanie.py plan" in hooked.stderr
+
+
+@pytest.mark.parametrize("word", NOT_RELEASE_WORDS)
+@pytest.mark.parametrize("template", [*OUTSIDE_SUBSET.values(), *UNPARSED.values()], ids=[*OUTSIDE_SUBSET, *UNPARSED])
+def test_polecenie_spoza_podzbioru_bez_slowa_wydania_przechodzi(template: str, word: str) -> None:
+    hooked = _bash(template.replace("{}", word))
+
+    assert (hooked.returncode, hooked.stderr) == (0, "")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat <<'EOF'\ngit tag v9.9.9 i gh release create v9.9.9\nEOF\n$PY skrypt.py",
+        "$PY - <<'EOF'\nprint('tag', 'release')\nEOF",
+    ],
+    ids=["heredok-obok", "heredok-programu-ze-zmiennej"],
+)
+def test_slowo_wydania_w_zamknietym_heredoku_nie_liczy_sie_poza_podzbiorem(command: str) -> None:
+    hooked = _bash(command)
+
+    assert (hooked.returncode, hooked.stderr) == (0, "")
 
 
 @pytest.mark.parametrize("command", REVIEW_PROBES[:2])
@@ -373,7 +500,7 @@ def test_cudzyslow_i_lamanie_linii_nie_zmieniaja_werdyktu(
     command = template.text(quotes, continuations)
 
     assert shlex.split(command.replace("\\\n", "")) == list(template.words)
-    assert hook.releases(command) is template.release
+    assert (hook.refusal(command) is not None) is template.release
 
 
 @PROPERTY
@@ -383,7 +510,7 @@ def test_forma_wydania_w_tekscie_argumentu_nie_jest_poleceniem(template: Templat
     searched = f"{program} {shlex.quote(text)} wyniki.log"
 
     assert shlex.split(searched) == [*shlex.split(program), text, "wyniki.log"]
-    assert hook.releases(searched) is False
+    assert hook.refusal(searched) is None
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="na Windows bash to zaślepka WSL, która bez dystrybucji pada")

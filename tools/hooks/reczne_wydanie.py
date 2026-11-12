@@ -20,30 +20,39 @@ albo za ``env``, ``timeout``, ``nice``, ``nohup``, ``command``, ``exec``, ``sudo
   ``--verify``, ``--contains``, ``--no-contains``, ``--merged``, ``--no-merged``, ``--points-at``) z argumentem od
   ``v``, od ``refs/tags/v`` albo nieznanym.
 
-Polecenie dzieli na słowa jak bash ``shlex`` w trybie POSIX: napis w cudzysłowie to jedno słowo bez cudzysłowów,
-``\\`` z nową linią to dalszy ciąg polecenia, a polecenie proste kończy się na ``;``, ``&``, ``&&``, ``|``, ``||``,
-nowej linii i nawiasie. Podstawienie ``$(…)`` (także zagnieżdżone) i `` `…` `` bez cudzysłowu to w poleceniu jedno
-słowo o nieznanej treści, także w środku słowa (``$(git rev-parse HEAD):refs/tags/v1``), a jego treść hook ocenia
-jak osobne polecenie. Ciała heredoców pomija (``_without_heredocs`` hooka ``czekanie.py``), przekierowania z ich
-celem i deskryptorem (``2>&1``) nie są argumentami, ``#`` na początku słowa zaczyna komentarz do końca linii, a skrypt
-``-c`` powłoki (``bash``, ``sh``, ``zsh``, ``dash``, ``ksh``) i argumenty ``eval`` ocenia jak polecenie. Gdy
-``shlex`` nie umie podzielić polecenia (niezamknięty cudzysłów, ``\\`` na końcu), hook dzieli je tak samo, ale
-cudzysłowy i ``\\`` traktuje jak zwykłe znaki i usuwa je ze słów, więc odmawia tylko wtedy, gdy forma Wydania stoi
-w poleceniu wprost.
+Hook dzieli dokładnie tylko podzbiór basha. Słowa to napisy bez cudzysłowu, w apostrofach i w cudzysłowie, ``\\``
+z nową linią to dalszy ciąg polecenia, a polecenie proste kończy się na ``;``, ``&``, ``&&``, ``|``, ``||``, nowej
+linii i nawiasie. Przekierowanie z celem i deskryptorem (``2>&1``) nie jest argumentem, ``#`` na początku słowa
+zaczyna komentarz do końca linii, a ciało heredoku to dane (``_without_heredocs`` hooka ``czekanie.py``).
+Podstawienie ``$(…)``, `` `…` ``, ``<(…)`` i ``>(…)``, także zagnieżdżone i w środku słowa
+(``$(git rev-parse HEAD):refs/tags/v1``), a ``$(…)`` i `` `…` `` także w cudzysłowie, to w poleceniu słowo o nieznanej
+wartości, a treść podstawienia hook ocenia jak osobne polecenie.
+
+Polecenie spoza tego podzbioru, w którym stoi słowo Wydania, dostaje odmowę, a jej przyczyna każe zapisać je prościej
+albo rozbić na kilka poleceń. Spoza podzbioru jest polecenie, którego hook nie umie podzielić (niezamknięty
+cudzysłów, także po ``\\'`` w napisie ANSI-C ``$'…'``, niezamknięte podstawienie albo heredok, ``\\`` na końcu,
+podstawienia głębiej niż ``MAX_DEPTH``), polecenie z konstrukcją ze stałej ``OUTSIDE_SUBSET`` (``$((`` w tekście;
+powłoka, ``eval``, ``source``, ``.``, ``trap``, ``xargs``, ``case`` i ``function`` jako program) i polecenie, którego
+program albo podpolecenie ``git`` lub ``gh`` pochodzi ze zmiennej albo podstawienia, a także ``gh api`` z zapisem na
+adres ze zmiennej. Słowo Wydania
+(``RELEASE_WORD``) to ``tag``, ``release`` albo wersja z kropką (``v1.2``, także ``tag_name=v1.2``) jako osobne słowo
+(cudzysłów go nie kończy), a ``refs/tags``, ``git/refs``, ``/releases``, ``--tags``, ``--follow-tags`` i ``--mirror``
+w dowolnym miejscu polecenia poza ciałem zamkniętego heredoku.
 
 Przechodzi wszystko, gdy sesja Claude Code ma w środowisku ``MAXIMISEART_WYDANIE=1`` (nazwa: ``RELEASE_OVERRIDE``
 w ``tools/lib/repo.py``), a zmienna wpisana w samo polecenie niczego nie zmienia. ``tools/wydanie.py`` zakłada tag
 i Release z Pythona, więc hook go nie widzi i nie zatrzymuje.
-Granica: stronę GitHuba, skrypt z pliku albo w Pythonie, który sam woła ``git`` lub ``gh``, skrypt podany powłoce
-heredokiem, ``$(…)`` i `` `…` `` w cudzysłowie podwójnym, nazwę programu ze zmiennej albo aliasu, ``gh api graphql``
-(``createRef``), ``gh api`` z adresem ze zmiennej i ``push.followTags`` z konfiguracji gita łapie tylko przegląd.
-Tak samo trzy rzadkie formy:
-polecenie w linii za komentarzem zakończonym ``\\`` (hook bierze ją za dalszy ciąg komentarza, a bash ją wykonuje),
-polecenie w liniach za ``<<`` w napisie albo w ``$((…))`` (``_without_heredocs`` bierze je za początek heredoku
-i pomija dalsze linie) i ciało funkcji ``function f { …; }``. Hook nie zna repozytorium, w którym polecenie biegnie,
-więc odmowę dostaje też tag ``v*`` w repozytorium próbnym (``git init`` w katalogu tymczasowym), Release innego
-repozytorium i push gałęzi o nazwie od ``v`` z cyfrą (``v2-redesign``). Czas ``shlex`` rośnie z kwadratem długości
-najdłuższego słowa: polecenie z napisem ponad ok. 1 MB przekracza ``timeout`` i przechodzi.
+Granica: tego, czego nie ma w tekście polecenia, hook nie widzi, więc stronę GitHuba, skrypt z pliku, skrypt
+w Pythonie albo innym interpreterze, także podany heredokiem, alias, ``gh api graphql`` (``createRef``)
+i ``push.followTags`` z konfiguracji gita łapie tylko przegląd. Tak samo program spoza ``PROGRAMS``, ``WRAPPERS``
+i ``OUTSIDE_SUBSET``, który sam uruchamia polecenie ze swoich argumentów (``find -exec``, ``env -S``), linie po
+``<<SŁOWO`` w napisie aż do linii ``SŁOWO`` (``_without_heredocs`` bierze je za heredok) i polecenie spoza podzbioru
+bez słowa Wydania (``$G push origin v9``). Słowo Wydania w opisie zwykłej pracy daje fałszywą odmowę polecenia spoza
+podzbioru: na 285 997 poleceniach Basha agentów z 30 dni (#1414 r4) 10 takich, każde z programem ze zmiennej
+i opisem ze słowem ``tag`` albo ``release``. Hook nie zna repozytorium, w którym polecenie biegnie, więc odmowę
+dostaje też tag ``v*`` w repozytorium próbnym (``git init`` w katalogu tymczasowym), Release innego repozytorium i push
+gałęzi o nazwie od ``v`` z cyfrą (``v2-redesign``). Czas ``shlex`` rośnie z kwadratem długości najdłuższego słowa:
+polecenie z napisem ponad ok. 1 MB przekracza ``timeout`` i przechodzi.
 
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version``
 w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową, ``czekanie.py`` obok i ``tools/lib/repo.py``
@@ -60,7 +69,7 @@ from pathlib import Path
 import re
 import shlex
 import sys
-from typing import Optional
+from typing import NamedTuple, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/hooks"))
@@ -73,19 +82,24 @@ REFUSAL = (
     "a po zgodzie Maksa tools/wydanie.py wydaj. Nie zakładaj ani nie wypychaj tagu v* (git tag, git push, także "
     "z --no-verify), nie twórz ani nie zmieniaj Release i refów tagów (gh release, gh api) i nie rób tego stroną GitHuba."
 )
+OUTSIDE_REFUSAL = (
+    f"{REFUSAL} Polecenie ma też konstrukcję, której hook nie dzieli (powłoka, eval, xargs, case, $((, program "
+    "ze zmiennej albo podstawienia, niezamknięty napis), i słowo Wydania (tag, release, refs/tags, /releases): "
+    "jeśli nie zakłada Wydania, zapisz je prościej albo rozbij na kilka poleceń."
+)
 
 OPERATORS = ";&|()<>\n`"
 # ``\`` z nową linią poza parzystą liczbą ``\`` przed nim: bash usuwa je przed podziałem na słowa.
 CONTINUATION = re.compile(r"(?<!\\)((?:\\\\)*)\\\n")
-# Znaki, po których ``#`` zaczyna komentarz; ``#`` w środku słowa (``$#``, ``issues#1``) go nie zaczyna, a ``shlex``
-# zaczyna go tam także.
-WORD_BREAKS = " \t\r\n;&|()<>`"
-INNER_HASH = re.compile(f"(?<=[^{re.escape(WORD_BREAKS)}])#")
-# Słowo w miejscu podstawienia ``$(…)`` albo `` `…` ``: jego wartości hook nie zna.
+# Znaki, po których ``#`` zaczyna komentarz; ``#`` w środku słowa (``$#``, ``issues#1``, ``$(…)#``) go nie zaczyna.
+WORD_BREAKS = " \t\r\n;&|()<>"
+# Słowo w miejscu podstawienia ``$(…)``, `` `…` ``, ``<(…)`` albo ``>(…)``: jego wartości hook nie zna.
 SUBSTITUTION_STANDIN = "$S"
-HASH_STANDIN = "\0"
-# Przekierowanie w słowie operatora (``2>&1`` daje ``>&``, ``&>``, ``<<<``); ``<(`` to podstawienie procesu.
-REDIRECTION = re.compile(r"&>>?|[<>]&|>\||<<<|<<-?|<>|>>|[<>](?!\()")
+SUBSTITUTIONS = ("$(", "<(", ">(")
+# Linia za poleceniem: zostaje po ``_without_heredocs`` tylko wtedy, gdy każdy heredok się zamknął.
+HEREDOC_END = "\n\0"
+# Przekierowanie w słowie operatora (``2>&1`` daje ``>&``, ``&>``, ``<<<``).
+REDIRECTION = re.compile(r"&>>?|[<>]&|>\||<<<|<<-?|<>|>>|[<>]")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 RESERVED = frozenset({"!", "{", "}", "if", "then", "elif", "else", "while", "until", "do"})
 # Program przed poleceniem: opcje, które biorą wartość, i liczba słów bez ``-`` przed poleceniem.
@@ -99,10 +113,29 @@ WRAPPERS = {
     "sudo": (frozenset({"-u", "--user", "-g", "--group", "-C", "-D", "-h", "-p", "-R", "-r", "-t", "-U"}), 0),
     "time": (frozenset(), 0),
 }
-SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
-SHELL_SCRIPT_OPTION = re.compile(r"-[A-Za-z]*c[A-Za-z]*")
-# Skrypt w skrypcie: dalej niż na tej głębokości hook nie zagląda.
+# Podstawienie w podstawieniu: dalej niż na tej głębokości hook nie zagląda i polecenie jest spoza podzbioru.
 MAX_DEPTH = 20
+
+
+class Constructs(NamedTuple):
+    text: re.Pattern[str]
+    programs: frozenset[str]
+
+
+# Konstrukcje spoza podzbioru, który hook dzieli: tekst w poleceniu (bez ciał heredoków) i program polecenia prostego.
+# Spoza podzbioru jest też polecenie, którego hook nie umie podzielić, z niezamkniętym heredokiem, programem
+# albo podpoleceniem ``git``/``gh`` ze zmiennej lub podstawienia i ``gh api`` z zapisem na adres ze zmiennej.
+OUTSIDE_SUBSET = Constructs(
+    text=re.compile(r"\$\(\("),
+    programs=frozenset({"bash", "sh", "zsh", "dash", "ksh", "eval", "source", ".", "trap", "xargs", "case", "function"}),
+)
+# Słowo Wydania: ``tag``, ``release`` albo wersja ``v1.2`` jako osobne słowo (między odstępem, operatorem albo nawiasem;
+# wersja także po ``:`` i ``+`` refspecu i po ``=``) albo adres i opcja Wydania w dowolnym miejscu.
+EDGE = f"[{re.escape(WORD_BREAKS)}`]"
+RELEASE_WORD = re.compile(
+    rf"(?:^|(?<={EDGE}))(?:tag|release)(?={EDGE}|$)|(?:^|(?<={EDGE}|[:+=]))v\d+\.\d"
+    r"|refs/tags|git/refs|/releases|--tags|--follow-tags|--mirror(?![\w-])"
+)
 
 PROGRAMS = frozenset({"git", "gh", "gh-axi"})
 GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix"})
@@ -133,98 +166,60 @@ TAG_NOT_CREATING_LONG = frozenset(
 
 
 def _backtick_end(shell: str, index: int) -> int:
-    """Indeks `` ` ``, który zamyka `` ` `` pod ``index``, albo długość polecenia."""
+    """Indeks za `` ` ``, który zamyka `` ` `` pod ``index`` (bez ``\\`` przed nim), albo -1."""
 
     index += 1
     while index < len(shell) and shell[index] != "`":
         index += 2 if shell[index] == "\\" else 1
-    return min(index, len(shell))
+    return index + 1 if index < len(shell) else -1
 
 
-def _closing(shell: str, index: int) -> int:
-    """Indeks ``)``, który zamyka ``(`` otwarty przed ``index`` (z zagnieżdżeniem i cudzysłowami), albo -1."""
+def _lifted(shell: str, index: int = 0, closer: str = "") -> tuple[str, list[str], int]:
+    """Tekst od ``index`` do ``closer`` ze słowem ``$S`` w miejscu podstawień, treści podstawień i indeks za ``closer``.
 
-    depth = 1
-    while index < len(shell):
-        char = shell[index]
-        if char in "\\'\"":
-            index = _quoted_end(shell, index)
-            continue
-        depth += {"(": 1, ")": -1}.get(char, 0)
-        if depth == 0:
-            return index
-        index += 1
-    return -1
-
-
-def _quoted_end(shell: str, index: int) -> int:
-    """Indeks za napisem w cudzysłowie albo znakiem po ``\\`` pod ``index``; ``"…"`` mija ``$(…)`` i `` `…` `` w nim."""
-
-    if shell[index] == "\\":
-        return index + 2
-    if shell[index] == "'":
-        end = shell.find("'", index + 1)
-        return len(shell) if end < 0 else end + 1
-    index += 1
-    while index < len(shell) and shell[index] != '"':
-        if shell[index] == "\\":
-            index += 2
-        elif shell.startswith("$(", index):
-            end = _closing(shell, index + 2)
-            index = len(shell) if end < 0 else end + 1
-        elif shell[index] == "`":
-            index = _backtick_end(shell, index) + 1
-        else:
-            index += 1
-    return min(index + 1, len(shell))
-
-
-def _lifted(shell: str) -> tuple[str, list[str]]:
-    """Polecenie ze słowem ``$S`` w miejscu podstawień bez cudzysłowu i treść tych podstawień.
-
-    Napis w cudzysłowie i komentarz zostają w poleceniu bez zmian, tak jak podstawienie w nich.
+    ``closer`` to ``)`` podstawienia, ``"`` napisu albo pusty, gdy tekst biegnie do końca polecenia. Komentarz
+    wypada z tekstu, a napis w apostrofach zostaje bez zmian. Indeks -1 znaczy, że ``closer``, apostrof, cudzysłów
+    albo podstawienie się nie zamyka.
     """
 
     outer: list[str] = []
     substitutions: list[str] = []
-    index = 0
+    depth, previous = 0, " "
     while index < len(shell):
         char = shell[index]
-        if char in "\\'\"":
-            end = _quoted_end(shell, index)
-        elif char == "#" and (index == 0 or shell[index - 1] in WORD_BREAKS):
+        if char == closer and (closer == '"' or depth == 0):
+            return "".join(outer), substitutions, index + 1
+        if char == "\\":
+            piece, end = shell[index : index + 2], index + 2
+        elif (shell.startswith(SUBSTITUTIONS, index) and (char == "$" or closer != '"')) or char == "`":
+            end = _backtick_end(shell, index) if char == "`" else _lifted(shell, index + 2, ")")[2]
+            if end < 0:
+                return "".join(outer), substitutions, -1
+            substitutions.append(shell[index + (1 if char == "`" else 2) : end - 1])
+            piece = SUBSTITUTION_STANDIN
+        elif closer == '"':
+            piece, end = char, index + 1
+        elif char == "'":
+            end = shell.find("'", index + 1) + 1
+            if end == 0:
+                return "".join(outer), substitutions, -1
+            piece = shell[index:end]
+        elif char == '"':
+            text, inner, end = _lifted(shell, index + 1, '"')
+            if end < 0:
+                return "".join(outer), substitutions, -1
+            piece = f'"{text}"'
+            substitutions.extend(inner)
+        elif char == "#" and previous in WORD_BREAKS:
             end = shell.find("\n", index)
-            end = len(shell) if end < 0 else end
-        elif shell.startswith("$(", index) or char == "`":
-            close = _closing(shell, index + 2) if char == "$" else _backtick_end(shell, index)
-            if close < 0:  # niezamknięte ``$(``: reszta zostaje, a nawias kończy polecenie
-                outer.append(shell[index:])
-                break
-            substitutions.append(shell[index + (2 if char == "$" else 1) : close])
-            outer.append(SUBSTITUTION_STANDIN)
-            index = close + 1
-            continue
+            piece, end = "", len(shell) if end < 0 else end
         else:
-            end = index + 1
-        outer.append(shell[index:end])
+            depth += {"(": 1, ")": -1}.get(char, 0)
+            piece, end = char, index + 1
+        outer.append(piece)
+        previous = piece[-1] if piece else previous
         index = end
-    return "".join(outer), substitutions
-
-
-def _tokens(shell: str, quoting: bool) -> list[str]:
-    """Słowa i operatory jak u basha; bez ``quoting`` cudzysłów i ``\\`` to zwykłe znaki, usunięte ze słów."""
-
-    # Komentarz ``shlex`` zjada linię razem z jej końcem, więc nowa linia idzie podwójnie: druga kończy polecenie.
-    lexer = shlex.shlex(shell.replace("\n", "\n\n"), posix=True, punctuation_chars=OPERATORS)
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    if not quoting:
-        lexer.quotes = lexer.escape = ""
-    tokens = []
-    for token in lexer:
-        word = token if quoting or _operator(token) else token.replace("'", "").replace('"', "").replace("\\", "")
-        tokens.append(word.replace(HASH_STANDIN, "#"))
-    return tokens
+    return "".join(outer), substitutions, -1 if closer else index
 
 
 def _operator(token: str) -> bool:
@@ -232,16 +227,15 @@ def _operator(token: str) -> bool:
 
 
 def _simple_commands(shell: str) -> Iterator[list[str]]:
-    """Słowa każdego polecenia prostego, bez przekierowań i ich celów."""
+    """Słowa każdego polecenia prostego, bez przekierowań i ich celów; ``ValueError``, gdy ``shlex`` go nie podzieli."""
 
-    shell = INNER_HASH.sub(HASH_STANDIN, CONTINUATION.sub(r"\1", shell))
-    try:
-        tokens = _tokens(shell, quoting=True)
-    except ValueError:  # niezamknięty cudzysłów albo ``\`` na końcu
-        tokens = _tokens(shell, quoting=False)
+    lexer = shlex.shlex(CONTINUATION.sub(r"\1", shell), posix=True, punctuation_chars=OPERATORS)
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    lexer.commenters = ""
     words: list[str] = []
     target = False
-    for token in tokens:
+    for token in list(lexer):
         if not _operator(token):
             if target:
                 target = False
@@ -277,18 +271,6 @@ def _program(words: list[str]) -> tuple[str, list[str]]:
         else:
             return name, words[index + 1 :]
     return "", []
-
-
-def _shell_script(arguments: list[str]) -> Optional[str]:
-    """Skrypt ``-c`` powłoki: pierwsze słowo bez ``-`` za opcją z ``c`` (``-c``, ``-lc``, ``-euo pipefail -c``)."""
-
-    script_follows = False
-    for word in arguments:
-        if word.startswith("-"):
-            script_follows = script_follows or SHELL_SCRIPT_OPTION.fullmatch(word) is not None
-        elif script_follows:
-            return word
-    return None
 
 
 def _subcommand(arguments: list[str], takes_value: frozenset[str]) -> tuple[Optional[str], list[str]]:
@@ -366,19 +348,21 @@ def _tags_release(arguments: list[str]) -> bool:
     return any(_release_tag(word) for word in positionals)
 
 
-def _writes_release_api(arguments: list[str]) -> bool:
+def _api_write(arguments: list[str]) -> tuple[str, list[str], bool]:
+    """Adres ``gh api`` z zapisem (pusty bez zapisu), jego pola i czy treść idzie z pliku."""
+
     options, positionals = _parsed(arguments, GH_API_VALUE_OPTIONS)
-    if not positionals:
-        return False
-    address = positionals[0]
     methods = [value.upper() for name, value in options if name in ("-X", "--method")]
     fields = [value for name, value in options if name in GH_API_FIELDS]
     from_file = any(name == "--input" for name, _ in options) or any(
         value.partition("=")[2].startswith("@") for value in fields
     )
     writes = methods[-1] not in GH_API_READS if methods else bool(fields) or from_file
-    if not writes:
-        return False
+    return (positionals[0] if positionals and writes else ""), fields, from_file
+
+
+def _writes_release_api(arguments: list[str]) -> bool:
+    address, fields, from_file = _api_write(arguments)
     if RELEASES_ADDRESS.search(address):
         return True
     return REFS_ADDRESS.search(address) is not None and (
@@ -400,18 +384,56 @@ def _releases(program: str, arguments: list[str]) -> bool:
     return group == "api" and _writes_release_api(rest)
 
 
-def releases(command: str, depth: int = 0) -> bool:
-    """Czy polecenie Basha zakłada tag Wydania albo GitHub Release poza narzędziem Wydań (formy z docstringu)."""
+def _outside_subset(program: str, arguments: list[str]) -> bool:
+    """Czy polecenie proste jest spoza podzbioru: jego program albo podpolecenie ``git``/``gh`` hook zna tylko z nazwy."""
 
-    shell, substitutions = _lifted(_without_heredocs(command))
-    for words in _simple_commands(shell):
+    if program in OUTSIDE_SUBSET.programs or "$" in program:
+        return True
+    if program not in PROGRAMS:
+        return False
+    command, rest = _subcommand(arguments, GIT_VALUE_OPTIONS if program == "git" else GH_VALUE_OPTIONS)
+    if command is not None and "$" in command:
+        return True
+    return command == "api" and _api_write(rest)[0].startswith("$")
+
+
+def _scanned(shell: str, depth: int) -> tuple[bool, bool]:
+    """Czy polecenie albo jego podstawienie zakłada Wydanie i czy ma konstrukcję spoza podzbioru."""
+
+    outer, substitutions, end = _lifted(shell)
+    outside = end < 0 or OUTSIDE_SUBSET.text.search(shell) is not None
+    try:
+        commands = list(_simple_commands(outer))
+    except ValueError:  # niezamknięty cudzysłów albo ``\`` na końcu
+        commands, outside = [], True
+    for words in commands:
         program, arguments = _program(words)
-        script = _shell_script(arguments) if program in SHELLS else " ".join(arguments) if program == "eval" else None
         if program in PROGRAMS and _releases(program, arguments):
-            return True
-        if script is not None and depth < MAX_DEPTH and releases(script, depth + 1):
-            return True
-    return depth < MAX_DEPTH and any(releases(script, depth + 1) for script in substitutions)
+            return True, outside
+        outside = outside or _outside_subset(program, arguments)
+    for script in substitutions:
+        release, inner = _scanned(script, depth + 1) if depth < MAX_DEPTH else (False, True)
+        if release:
+            return True, outside
+        outside = outside or inner
+    return False, outside
+
+
+def refusal(command: str) -> Optional[str]:
+    """Przyczyna odmowy polecenia Basha (forma Wydania albo polecenie spoza podzbioru ze słowem Wydania) albo None."""
+
+    shell = _without_heredocs(command + HEREDOC_END)
+    if not shell.endswith(HEREDOC_END):  # heredok bez linii końca: jego ciało może być poleceniem
+        release, outside, shell = False, True, command
+    else:
+        shell = shell.removesuffix(HEREDOC_END)
+        try:
+            release, outside = _scanned(shell, 0)
+        except RecursionError:  # setki zagnieżdżonych podstawień albo napisów
+            release, outside = False, True
+    if release:
+        return REFUSAL
+    return OUTSIDE_REFUSAL if outside and RELEASE_WORD.search(shell) else None
 
 
 def _release_tool() -> bool:
@@ -429,9 +451,10 @@ def main() -> int:
         command = json.load(sys.stdin)["tool_input"]["command"]
     except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
         return 0
-    if not isinstance(command, str) or not releases(command) or _release_tool():
+    reason = refusal(command) if isinstance(command, str) else None
+    if reason is None or _release_tool():
         return 0
-    print(REFUSAL, file=sys.stderr)
+    print(reason, file=sys.stderr)
     return 2
 
 
