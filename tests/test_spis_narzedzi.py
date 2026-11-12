@@ -224,7 +224,9 @@ def test_pierwsze_zdanie_narzedzia_z_obowiazkowa_podkomenda_ja_wymienia() -> Non
 
     assert missing == {}, (
         f"te narzędzia wymagają podkomendy, a pierwsze zdanie docstringu (pozycja spisu) żadnej nie wymienia w nawiasie: {missing}; "
-        "napisz w nim w nawiasie podkomendę, której agent używa, np. „(plan --baza origin/main)”."
+        "napisz w nim w nawiasie podkomendę, której agent używa, np. „(plan --baza origin/main)”, bo agent, który zna "
+        "narzędzie tylko ze spisu, uruchamiał je bez podkomendy (pomiar 30–31.10.2026), a gołe słowo nie odróżnia "
+        "podkomendy od tego samego słowa w zdaniu (ADR 0022)."
     )
 
 
@@ -437,7 +439,11 @@ def test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standa
     scripts = _system_python_scripts()
 
     assert {path.relative_to(ROOT).as_posix() for path in scripts} >= {"tools/plan_ci.py", "tools/ci/werdykt_required.py", "tools/ci/zgloszenia_ci.py"}
-    assert _outside_stdlib(scripts) == [], "Systemowy python3 runnera nie ma zależności projektu: ten moduł nie może ich importować."
+    assert _outside_stdlib(scripts) == [], (
+        "Skrypt, który workflow uruchamia systemowym python3 runnera, i wszystko, co importuje z tools/, biorą tylko z "
+        "biblioteki standardowej, bo ten interpreter nie ma zależności projektu: zastąp import biblioteką standardową "
+        "albo przenieś kod, który jej potrzebuje, do kroku uruchamianego z .venv."
+    )
 
 
 def test_domkniecie_importow_skryptu_widzi_import_spoza_biblioteki_w_module_ktory_importuje(tmp_path: Path) -> None:
@@ -496,4 +502,11 @@ def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None
         if path != owner and pattern.match(text)
     ]
 
-    assert found == [], "\n".join([*found, "Weź klucz, część albo prefiks od jego właściciela zamiast pisać napis."])
+    assert found == [], "\n".join(
+        [
+            *found,
+            "Napis, który jedno narzędzie CI pisze, a inne czyta, pisze tylko jego właściciel: weź klucz, część albo "
+            "prefiks od właściciela zamiast pisać napis, bo zmiana napisu po jednej stronie zostawiała drugą z cichym "
+            "„nieznane”.",
+        ]
+    )

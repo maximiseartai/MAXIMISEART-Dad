@@ -152,7 +152,7 @@ def test_gdy_baza_sama_pada_pr_ktory_jej_nie_naprawia_dostaje_blad_a_bez_publiku
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     lines = answered.stdout.splitlines()
-    assert f"#1 error | main {main[:7]} sam nie przechodzi: mypy, mypy (Windows)" in lines
+    assert f"#1 error | main {main[:7]} sam nie przechodzi (czerwona baza, nie PR): mypy, mypy (Windows)" in lines
     assert any(line.startswith("#2 success | ") for line in lines)
     assert github.statuses_by_head() == {}
 

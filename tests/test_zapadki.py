@@ -29,7 +29,8 @@ _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,\d+)? @@")
 _ORDER_NUMBER_ORACLE = re.compile(r"\(\?<!\[?(?:\\d|0-9)")
 _ORDER_NUMBER_HELPER = (
     "własna wyrocznia wycieku numeru zlecenia: sprawdź tekst przez zawiera_wartosc z tests/fixtures/wyciek.py, która"
-    " pyta strażnika reguły danych (ForbiddenValues.guard)"
+    " pyta strażnika reguły danych (ForbiddenValues.guard), bo cztery własne wzorce z rzędu rozjechały się ze strażnikiem,"
+    " a jeden zaczerwienił main, gdy losowy hex HMAC zawierał numer"
 )
 
 # Stan ścieżki bez file_state, jak ``copy.path.exists()`` w ea69c32bea i ``old.is_file()`` w 5f4e134ba5.
@@ -37,7 +38,8 @@ _BARE_FILE_STATE = re.compile(r"\.(?:exists|is_file|is_dir)\(\s*\)|\bos\.path\.(
 _FILE_STATE = "src/rozliczenia/file_state.py"
 _FILE_STATE_HELPER = (
     "stan pliku poza file_state: zapytaj src/rozliczenia/file_state.py (file_state, path_state, path_taken, a o wpis"
-    " folder_entries entry_kind), które rozróżnia brak od pliku niedostępnego (OneDrive, folder bez dostępu)"
+    " folder_entries entry_kind), które rozróżnia brak od pliku niedostępnego (OneDrive, folder bez dostępu), bo gołe"
+    " .exists() albo .is_file() rzuca PermissionError na Pythonie 3.11–3.13 i odpowiada „brak” na 3.14 (#729, #1190)"
 )
 
 # Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``

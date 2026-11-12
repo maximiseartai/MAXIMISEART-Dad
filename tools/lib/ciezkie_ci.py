@@ -81,6 +81,8 @@ def refusal(
             "Wypchnij gałąź: CI policzy je w częściach, a stan pokaże tools/praca_w_toku.py albo gh pr checks. "
             if "mutations" in heavy
             else "Liczy je noc na main (mutacje-nocne.yml, ADR 0021), a przeżyte mutacje trafiają do issue „Przeżyte mutacje z #N”. "
+            "Czerwoną część nocy odtwarzasz na commicie runu: git checkout --detach <headSha runu>, a potem "
+            "tools/mutacje_zmiany.py --baza <baza z planu> --do <do z planu> --czesc K/N z --odtwarzam. "
         )
         return (
             f"CIĘŻKIE CI ODMOWA | {named} liczy CI na GitHubie, nie ten komputer. {where}"

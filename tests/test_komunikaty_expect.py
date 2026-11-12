@@ -345,7 +345,11 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
             for node in ast.walk(tree)
         )
 
-    assert {module.__name__ for module in _engine_modules() if outside_type(module)} == {refusal.__name__}
+    assert {module.__name__ for module in _engine_modules() if outside_type(module)} == {refusal.__name__}, (
+        "odmowę żądania API Centrum (Refusal: kod HTTP i zdanie dla taty) tworzy tylko katalog odmów "
+        "src/rozliczenia/centrum/refusal.py: dopisz tam fabrykę z próbką w message_samples i wołaj ją, a poza katalogiem "
+        "używaj Refusal tylko jako typu (adnotacja, except, isinstance, exception_handler)"
+    )
 
 
 def _type_nodes(root: ast.AST) -> Iterator[ast.AST]:
@@ -536,6 +540,10 @@ def test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum() -> None:
 
     Cytaty są z próbek wszystkich katalogów (``_rendered``), więc zmiana cytatu w Pythonie albo napisu w pliku TSX
     czerwieni ten test; nowy cytat dostaje wpis w ``UI_TEXTS`` albo powód w ``QUOTES_OUTSIDE_UI``.
+    Plik UI ma napis w jednej z postaci: dziecko JSX, ``label="…"``, ``label={"…"}`` albo ``label: "…"``.
+
+    Granica: czy trafienie to naprawdę napis przycisku (trafia też nagłówek albo przykład w komentarzu) i cytat tylko w
+    gałęzi Komunikatu, do której nie dochodzi żadna próbka, widzi tylko przegląd.
     """
 
     quoted = set(re.findall(r"„([^”]*)”", _rendered()))
@@ -543,6 +551,12 @@ def test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum() -> None:
         text: path for text, path in UI_TEXTS.items() if not _ui_text(text).search((ROOT / path).read_text(encoding="utf-8"))
     }
 
-    assert quoted - UI_TEXTS.keys() - QUOTES_OUTSIDE_UI.keys() == set(), "dopisz cytat do UI_TEXTS albo QUOTES_OUTSIDE_UI"
-    assert (UI_TEXTS.keys() | QUOTES_OUTSIDE_UI.keys()) - quoted == set(), "żaden Komunikat nie cytuje już tego napisu"
-    assert missing_in_ui == {}, "Komunikat cytuje napis, którego plik UI nie pokazuje jako napisu przycisku"
+    assert quoted - UI_TEXTS.keys() - QUOTES_OUTSIDE_UI.keys() == set(), (
+        "napis UI cytowany w Komunikacie w „…” stoi w pliku frontendu: dopisz cytat do UI_TEXTS z plikiem, który go "
+        "pokazuje, a cytat spoza UI (albo napis w innej postaci, np. w gałęzi warunku) do QUOTES_OUTSIDE_UI z powodem"
+    )
+    assert (UI_TEXTS.keys() | QUOTES_OUTSIDE_UI.keys()) - quoted == set(), "żaden Komunikat nie cytuje już tego napisu: usuń wpis"
+    assert missing_in_ui == {}, (
+        "Komunikat cytuje napis, którego plik UI nie pokazuje jako napisu przycisku (dziecko JSX, label=\"…\", label={\"…\"} "
+        "albo label: \"…\"): popraw cytat w Komunikacie albo napis w pliku z UI_TEXTS, żeby tata nie szukał przycisku, którego nie ma"
+    )

@@ -322,6 +322,7 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
     fast = re.fullmatch(r"CZAS: szybka → ([0-9]+) s", times[1])
     warned = re.fullmatch(rf"CZAS BLISKO LIMITU: {re.escape(script)} \(MUTACJE_CZESC=1/1\): wolna → ([0-9]+) s z limitu --limit-s 6 s .*", times[2])
     assert slow and fast and warned, shown
+    assert "to jeszcze nie porażka, ale przenieś mutację do mniejszego zakresu sprawdzenia albo przyspiesz sprawdzenie" in times[2], shown
     # Wolna śpi 3,5 s więcej niż szybka, a żadna nie biegnie dłużej niż cały skrypt na zegarze testu.
     assert (3 <= int(slow[1]) <= round(took), int(fast[1]) < int(slow[1]), warned[1] == slow[1]) == (True, True, True), shown
     # Z linii ostrzeżenia noc odtwarza skrypt, część, mutację, czas i limit, które zgłasza w issue PR-u (#935).

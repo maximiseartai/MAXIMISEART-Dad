@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Every `uses:` is pinned to a commit SHA with its exact version in a comment; Dependabot moves both together.
+  # Directory "/" covers only .github/workflows and a root action.yml, so each composite action is listed.
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/chromium
+      - /.github/actions/narzedzia-tlc
+      - /.github/actions/narzedzia-tlc/zapis
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      akcje:
+        patterns:
+          - '*'
