@@ -1,6 +1,6 @@
 """Uszkodzony plik taty, który czyta Centrum rozliczeń, nie kończy się ogólnym Komunikatem.
 
-Macierz: plik × uszkodzenie × wejście Centrum. Świat taty (Rejestr zleceń, trzy Wzorce, Plik
+Macierz: uszkodzenie × plik × wejście Centrum, które ten plik czyta (``READS``). Świat taty (Rejestr zleceń, trzy Wzorce, Plik
 zbiorczy, Konfiguracja wykonawców, Ustawienia, metryki, dziennik, Logi Uruchomienia i pliki
 Zgłoszeń) powstaje raz, a każdy przypadek dostaje jego kopię z jednym uszkodzonym plikiem albo folderem.
 Ogólny Komunikat to 500 „nieoczekiwany błąd”, Uruchomienie zakończone nieoczekiwanym wyjątkiem
@@ -11,13 +11,14 @@ Wejścia to operacje kontraktu Centrum; operacja spoza macierzy ma w ``NOT_SWEPT
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cache, cached_property
 from datetime import date, datetime
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePath
 import random
 import shutil
 import subprocess
@@ -118,7 +119,7 @@ FILES: dict[str, tuple[str, str]] = {
 # u taty po aktualizacji.
 OLD_DAD_CASES = ("wyslane_zgloszenia", "uwagi_taty")
 # Pliki, które Centrum czyta raz, przy starcie: przypadek psuje je przed startem Centrum, a nie po nim.
-READ_AT_START = ("sprawy_taty", *OLD_DAD_CASES)
+READ_AT_START = ("sprawy_taty", *OLD_DAD_CASES, "przeczytane_powiadomienia", "adresy_skrzynki")
 
 
 def _empty(path: Path) -> None:
@@ -513,6 +514,66 @@ NOT_SWEPT: dict[str, str] = {
     "getReportsView": "czyta tylko pliki Wpisania raportów w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
     "keepManualValue": "zapisuje tylko plik decyzji w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
 }
+_FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
+_BOARD = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
+_SETTINGS = {"ustawienia", "rejestr", "folder_okresow"}
+_METRICS = {"metryki_przygotowania", "metryki_przebiegu", "metryki_uporzadkowania"}
+_NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "uwagi_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
+_RUN = {"ustawienia", "rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}
+_PREPARATION = _RUN | _FOLDERS | {"konfiguracja_wykonawcow", "metryki_przygotowania", "wzorzec_wewnetrzny", "wzorzec_zbiorczy"}
+_SETTLEMENT = _RUN | _FOLDERS | {"konfiguracja_wykonawcow", "metryki_przebiegu", "plik_zbiorczy", "wzorzec_pracownika"}
+_ORDERING = _RUN | {"metryki_uporzadkowania"}
+# Pliki, które wejście czyta: macierz psuje plik tylko w wejściach, które po niego sięgają, bo w pozostałych wynik jest
+# wynikiem zdrowego świata. Pilnuje tego test_wejscie_siega_tylko_po_pliki_z_tabeli_odczytow; plik z READ_AT_START stoi
+# przy wejściach, w których widać jego odczyt przy starcie.
+READS: dict[str, set[str]] = {
+    "getSettings": _SETTINGS,
+    "chooseRegister": _SETTINGS,
+    "choosePeriodsDirectory": _SETTINGS,
+    "openRegister": {"ustawienia", "rejestr"},
+    "changeTheme": _SETTINGS,
+    "getPeriodBoard": _BOARD,
+    "openPeriodPath": _BOARD,
+    "getQuantitiesToFill": _BOARD,
+    "getCollectiveFileVersion": _BOARD,
+    "getWithoutQuantity": _BOARD,
+    "getKindTable": _BOARD,
+    "openWorkerSettlement": _FOLDERS | {"ustawienia"},
+    "getRunSetup": _BOARD
+    | {"rejestr", "metryki_przygotowania", "metryki_przebiegu", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
+    "getIntermaxSetup": {"ustawienia", "rejestr", "logi_uruchomien"},
+    "getIntermaxDays": {"ustawienia", "rejestr"},
+    "getIntermaxCopies": {"folder_kopii_intermax", "kopia_intermax"},
+    "getReportEnteringSetup": _METRICS
+    | {"ustawienia", "rejestr", "folder_okresow", "logi_uruchomien", "adresy_wykonawcow", "folder_kopii_intermax"},
+    "restoreIntermaxCopy": {"ustawienia", "rejestr", "folder_kopii_intermax", "kopia_intermax"},
+    "getMetrics": _METRICS | {"uruchomienia_centrum"},
+    "getConfiguration": {
+        "klucz_zgloszen",
+        "konfiguracja_wykonawcow",
+        "wzorzec_wewnetrzny",
+        "wzorzec_zbiorczy",
+        "wzorzec_pracownika",
+    },
+    "getNotifications": _NOTIFICATIONS,
+    "markNotificationsRead": _NOTIFICATIONS,
+    "getToolUpdate": set(),
+    "recordViewTiming": {"dziennik_centrum"},
+    "draftDadNote": set(),
+    "sendDadNote": {"dziennik_centrum", "folder_zgloszen", "klucz_zgloszen", "sprawy_taty"},
+    "uwaga-przypieta": _METRICS | {"uruchomienia_centrum", "adresy_skrzynki"},
+    "podglad[przygotowanie]": _PREPARATION,
+    "podglad[przebieg]": _SETTLEMENT,
+    "zapis[przebieg]": _SETTLEMENT,
+    "zapis[uporzadkowanie]": _ORDERING,
+    "zapis[wpisanie]": _RUN
+    | _FOLDERS
+    | _METRICS
+    | {"konfiguracja_wykonawcow", "adresy_wykonawcow", "folder_kopii_intermax"},
+    "diagnoza[przygotowanie]": _PREPARATION | {"sprawy_taty"},
+    "diagnoza[przebieg]": _SETTLEMENT,
+    "diagnoza[uporzadkowanie]": _ORDERING | {"sprawy_taty"},
+}
 
 
 def _cases() -> list[Any]:
@@ -521,8 +582,80 @@ def _cases() -> list[Any]:
         for entry in ENTRIES
         for damage, (kinds, _) in DAMAGES.items()
         for name, (_, kind) in FILES.items()
-        if kind in kinds
+        if kind in kinds and name in READS[entry]
     ]
+
+
+Trace = list[tuple[str, str]]  # (zdarzenie, ścieżka)
+# Ślady, które zbiera trwające śledzenie (_tracing).
+_TRACES: list[Trace] = []
+_LISTING = ("os.listdir", "os.scandir")
+
+
+# Zdarzenia audytu, których argumenty to ścieżki; inne niosą też bajty (np. ``.pyc`` przy imporcie), a ich
+# ``os.fsdecode`` na Windows rzuca błąd z samego importu (#1417 r1).
+_PATH_EVENTS = frozenset({"open", "os.listdir", "os.scandir", "os.rename", "os.remove", "os.rmdir", "os.mkdir",
+                          "shutil.copyfile", "stat", "lstat"})
+
+
+def _record(event: str, args: tuple[object, ...]) -> None:
+    if event not in _PATH_EVENTS:
+        return
+    for trace in _TRACES:
+        trace.extend((event, os.fsdecode(arg)) for arg in args if isinstance(arg, str | bytes | os.PathLike))
+
+
+@cache
+def _audit_hook() -> None:
+    # Hooka audytu nie da się zdjąć, więc zostaje w workerze do końca sesji i poza śledzeniem nic nie robi.
+    sys.addaudithook(_record)
+
+
+def _recorded(stat: Callable[..., os.stat_result]) -> Callable[..., os.stat_result]:
+    def recorded(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        _record(stat.__name__, (path,))
+        return stat(path, *args, **kwargs)
+
+    return recorded
+
+
+@contextmanager
+def _tracing() -> Iterator[Trace]:
+    """Ścieżki, po które sięga proces: otwarcie, listowanie, zmiana nazwy (zdarzenia audytu) i stan pliku (``os.stat``,
+    ``os.lstat``, przez które pyta ``file_state``)."""
+
+    _audit_hook()
+    trace: Trace = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(os, "stat", _recorded(os.stat))
+        patch.setattr(os, "lstat", _recorded(os.lstat))
+        _TRACES.append(trace)
+        try:
+            yield trace
+        finally:
+            _TRACES.remove(trace)
+
+
+def _files_reached(world: World, trace: Trace) -> set[str]:
+    """Pliki ``FILES``, po które sięga ``trace``: sam plik, coś w folderze, listowanie folderu, w którym leży (rodzaj
+    wpisu z listowania), albo plik blokady Excela skoroszytu."""
+
+    roots = {world.root, world.root.resolve()}
+    reached = {
+        (event, PurePath(path).relative_to(root))
+        for event, path in ((event, os.path.abspath(path)) for event, path in trace)
+        for root in roots
+        if PurePath(path).is_relative_to(root)
+    }
+    return {
+        name
+        for name, (place, kind) in FILES.items()
+        for event, path in reached
+        if path == PurePath(place)
+        or PurePath(place) in path.parents
+        or (event in _LISTING and path == PurePath(place).parent)
+        or (kind == XLSX and path == PurePath(place).with_name(f"~${PurePath(place).name}"))
+    }
 
 
 @pytest.fixture(scope="session")
@@ -561,6 +694,42 @@ def test_uszkodzony_plik_nie_konczy_sie_ogolnym_komunikatem(
         ]
 
     assert problems == []
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+def test_wejscie_siega_tylko_po_pliki_z_tabeli_odczytow(world_template: Path, tmp_path: Path, entry: str) -> None:
+    """Wywołanie wejścia sięga tylko po pliki z ``READS``, a po każdy z nich, który macierz psuje po starcie Centrum.
+
+    Plik spoza ``READS`` macierz w tym wejściu nie psuje, więc kruchego czytnika, który wejście po niego wyśle, nic by
+    nie złapało; plik z ``READS``, po który wejście nie sięga, daje przypadki z wynikiem zdrowego świata.
+    """
+
+    world = World(tmp_path / "swiat")
+    shutil.copytree(world_template, world.root)
+    client = _remembering_choices(world)
+    join_threads_since(client.since, named=QUEUE_THREAD)  # przejście kolejki Skrzynki po starcie, nie w wejściu
+    if entry in DIAGNOSIS_ENTRIES:
+        world.engines.fail_summary = True
+    with _tracing() as trace:
+        problems = ENTRIES[entry].call(client, [])
+        join_threads_since(client.since, named=QUEUE_THREAD)
+    reached = _files_reached(world, trace)
+
+    assert problems == []
+    assert reached - READS[entry] == set(), f"wejście {entry} czyta pliki spoza tabeli: dopisz je do READS"
+    assert READS[entry] - set(READ_AT_START) - reached == set(), f"wejście {entry} nie czyta tych plików z READS"
+
+
+def test_plik_czytany_tylko_przy_starcie_centrum_czyta_start(world_template: Path, tmp_path: Path) -> None:
+    """Macierz psuje plik z ``READ_AT_START`` przed startem Centrum, więc start musi po niego sięgać."""
+
+    world = World(tmp_path / "swiat")
+    shutil.copytree(world_template, world.root)
+    world.path("sprawy_taty").unlink()  # pliki sprzed Spraw taty Centrum czyta tylko bez pliku Spraw taty
+    with _tracing() as trace:
+        _remembering_choices(world)
+
+    assert set(READ_AT_START) - _files_reached(world, trace) == set()
 
 
 def test_centrum_swiata_bez_sieci_nie_zostawia_po_tescie_wysylki_ani_budzika_skrzynki(
@@ -639,6 +808,8 @@ def test_macierz_obejmuje_kazda_operacje_kontraktu_centrum(tmp_path: Path) -> No
 
     assert operations - swept - NOT_SWEPT.keys() == set(), "dodaj wejście do ENTRIES albo powód do NOT_SWEPT"
     assert (swept | NOT_SWEPT.keys()) - operations == set(), "ENTRIES albo NOT_SWEPT ma operację spoza kontraktu"
+    assert READS.keys() == ENTRIES.keys()
+    assert set().union(*READS.values()) == FILES.keys(), "pliku, którego nie czyta żadne wejście, macierz nie psuje"
 
 
 @pytest.mark.parametrize(
