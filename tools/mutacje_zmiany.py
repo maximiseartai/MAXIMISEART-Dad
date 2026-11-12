@@ -36,18 +36,25 @@ Mutacji (także cofnięcia fragmentu), która zmienia tylko to, czego w czasie w
 docstringi, komentarze, ``__all__`` (czyta je tylko ``from m import *``, którego nie wpuszcza ruff F403), import nazwy,
 której kod nie czyta poza adnotacjami, albo zmianę modułu, z którego nazwa przychodzi, i adnotacje, których nic nie
 wylicza: zmiennej w funkcji, argumentów i wyniku funkcji, a pod ``from __future__ import annotations`` zmiennej modułu,
-deklaracje w klasie ``Protocol`` (z parametrami metody bez ciała) i pola prywatnej klasy bez baz poza ``Generic`` (z
-dekoratorem najwyżej ``dataclass``), której nie nazywa adnotacja czytana w tym pliku; w pliku bez pydantic i FastAPI
-także aliasy typów (``Nazwa = Callable[...]``, ``A | B``) i ``TypeVar`` modułu czytane tylko w adnotacjach. W pliku z
-pydantic albo FastAPI zostają adnotacje funkcji z dekoratorem (trasa, ``field_validator``, ``computed_field``…) innym
-niż ``classmethod``, ``staticmethod``, ``property`` i ``cache``, funkcji podanej jako wartość (``Depends(f)``), a z
-FastAPI każdej publicznej funkcji modułu i metody, bo zależność może wskazać inny plik (``Depends(dad_actions.observe)``).
+deklaracje w klasie ``Protocol`` (z parametrami metody bez ciała) i pola prywatnej klasy, której plik nigdzie nie
+podaje; w pliku bez pydantic i FastAPI także aliasy typów (``Nazwa = Callable[...]``, ``A | B``) i ``TypeVar`` modułu
+czytane tylko w adnotacjach. Pole prywatnej klasy (``_Nazwa``, bez baz poza ``Generic``, z dekoratorami najwyżej
+``dataclasses.dataclass`` i ``typing.final``) pomija się tylko w pliku bez importu pydantic i FastAPI, który nie nazywa
+``fields``, ``get_type_hints``, ``get_annotations``, ``signature``, ``__annotations__``, ``__annotate__``,
+``__dataclass_fields__``, ``__signature__``, ``TypeAdapter`` ani ``validate_call``, gdy plik czyta nazwę klasy tylko
+jako wywołanie, w ``isinstance``/``issubclass`` i w adnotacjach, a nie nazywa jej adnotacja pola innej klasy, której
+pól filtr nie pomija. W pliku z pydantic albo FastAPI zostają adnotacje funkcji z dekoratorem (trasa,
+``field_validator``, ``computed_field``…) innym niż ``classmethod``, ``staticmethod``, ``property`` i ``cache``,
+funkcji podanej jako wartość (``Depends(f)``), a z FastAPI każdej publicznej funkcji modułu i metody, bo zależność może
+wskazać inny plik (``Depends(dad_actions.observe)``).
 Zostaje adnotacja pola publicznej klasy (pydantic czyta pola dataclassy z pola modelu w innym pliku, jak
 ``call_trace.CallTrace`` w ``RunLog``, a test ``get_type_hints(Stop)``), klasy z bazą (model pydantic z innego pliku),
 ``ClassVar``, ``InitVar`` i ``KW_ONLY`` pola dataclassy i każda instrukcja: dodanie albo usunięcie pola, deklaracji
-``x: int`` w funkcji (zmienia zasięg nazwy) albo import nazwy, którą kod czyta. Granica: adnotację, którą czyta inny
-plik w sposób spoza tej listy (``get_type_hints`` na prywatnej klasie, zależność FastAPI w pliku bez importu FastAPI),
-pomija się, choć coś ją czyta.
+``x: int`` w funkcji (zmienia zasięg nazwy) albo import nazwy, którą kod czyta. Granica: pomija się, choć coś je czyta,
+adnotację funkcji, którą inny plik czyta w sposób spoza tej listy (zależność FastAPI w pliku bez importu FastAPI),
+pole prywatnej klasy, której instancję inny plik przepuszcza przez ``fields(obj)`` albo ``type(obj).__annotations__``, i
+zmianę modułu importu nazwy, którą kod czyta (``from .okno import X`` → ``from .lista import X``): filtr porównuje
+tylko nazwy, więc nie wie, czy to ten sam obiekt (reeksport), czy inny.
 Dekoratorów narzędzie nie psuje, a samo usunięcie linii (bez linii dodanej w tym miejscu) nie daje mutacji.
 Kod, którego na tym systemie strzeże ``sys.platform ==``/``!=`` literał, dostaje linię ``POMINIĘTA``: gałąź ``if``
 albo ``… if … else …`` innego systemu, kod po ``if`` z takim warunkiem, którego ciało kończy się ``return``/``raise``
@@ -544,7 +551,8 @@ def _meaning(text: str) -> str:
     których nic nie wylicza (``_strip_annotations``), w pliku bez pydantic i FastAPI aliasy typów i ``TypeVar`` modułu
     czytane tylko w adnotacjach, i importy poza tym, które nazwy kod czyta poza adnotacjami: cofnięcie, które usuwa
     import takiej nazwy, kończy kod ``NameError`` (run 42783639074: trzy cofnięcia ``__all__`` z importami obok były
-    WYKRYTA), a zmiana modułu, z którego przychodzi nazwa, i import nazwy tylko z adnotacji nic nie zmienia. Zostaje
+    WYKRYTA), a import nazwy tylko z adnotacji nic nie zmienia. Zmiana modułu, z którego przychodzi nazwa, nie zmienia
+    nic przy reeksporcie, a filtr nie odróżnia jej od importu innego obiektu (granica w ``--help``). Zostaje
     każda instrukcja, której adnotację pominął: deklaracja ``x: int`` w funkcji zmienia zasięg nazwy, a pole
     dataclassy to pole.
     """
@@ -592,8 +600,14 @@ _NOT_READING = frozenset(
 )
 # Pierwsze słowo adnotacji pola, z którego ``dataclasses`` liczy, czy to pole i czy trafia do ``__init__``.
 _FIELD_KINDS = frozenset({"ClassVar", "InitVar", "KW_ONLY"})
-# Wywołania, które czytają adnotacje klasy podanej w argumencie.
-_HINT_READERS = frozenset({"TypeAdapter", "get_type_hints", "validate_call"})
+# Nazwy, przez które plik sam czyta adnotacje klasy albo jej obiektu (``fields(w)[0].type``, ``type(w).__annotations__``)
+# albo podaje je pydantic z reeksportu; plik, który nazywa którąś z nich, także napisem, nie ma klas z ukrytymi polami.
+_INTROSPECTION = frozenset(
+    {"__annotations__", "__annotate__", "__dataclass_fields__", "__signature__", "fields", "get_annotations", "get_type_hints", "signature"}
+    | {"TypeAdapter", "validate_call"}
+)
+# Dekoratory, które pól klasy nie czytają; ``dataclass`` z innego modułu (``pydantic.dataclasses``) waliduje pola.
+_FIELD_BLIND = frozenset({"dataclasses.dataclass", "typing.final", "typing_extensions.final"})
 _TYPE_VARIABLES = frozenset({"TypeVar", "ParamSpec", "TypeVarTuple"})
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
@@ -618,7 +632,7 @@ def _strip_annotations(tree: ast.Module, owner: Mapping[ast.AST, ast.AST], reade
     read = [function for function in functions if _read_function(function, owner[function], readers, values)]
     classes = [node for node in owner if isinstance(node, ast.ClassDef)]
     protocols = {node for node in classes if any(_last_name(base) == "Protocol" for base in node.bases)} if future else set()
-    hidden = _hidden_classes(owner, classes, read, readers) if future else set()
+    hidden = _hidden_classes(owner, classes, readers) if future else set()
     for function in functions:
         if owner[function] in protocols and _stub(function):
             function.args = ast.arguments(posonlyargs=[], args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[])
@@ -721,56 +735,93 @@ def _type_variable(value: ast.expr | None) -> bool:
     return isinstance(value, ast.Call) and _last_name(value.func) in _TYPE_VARIABLES
 
 
-def _hidden_classes(
-    owner: Mapping[ast.AST, ast.AST], classes: list[ast.ClassDef], read: list[ast.FunctionDef | ast.AsyncFunctionDef], readers: frozenset[str]
-) -> set[ast.ClassDef]:
-    """Klasy, których adnotacji pól nic w czasie wykonania nie czyta: prywatne (``_Nazwa``), bez baz poza ``Generic``,
-    z dekoratorami najwyżej ``dataclass`` i ``final``, których nie nazywa adnotacja czytana w tym pliku.
+def _hidden_classes(owner: Mapping[ast.AST, ast.AST], classes: list[ast.ClassDef], readers: frozenset[str]) -> set[ast.ClassDef]:
+    """Klasy, których adnotacji pól nic w czasie wykonania nie czyta.
 
-    Czytana jest adnotacja pola innej klasy (model pydantic, publiczna dataclassa: pydantic czyta pola dataclassy z
-    pola modelu, także z innego pliku, jak ``call_trace.CallTrace`` w ``RunLog``, a test czyta ``get_type_hints``),
-    baza takiej klasy, adnotacja funkcji z ``_read_function`` i argument ``TypeAdapter``, ``get_type_hints`` i
-    ``validate_call``. Plik z dataclassami pydantic nie ma takich klas.
+    Granica stoi na tym, dokąd trafia obiekt klasy, a nie na liście sposobów czytania: adnotacje pól klasy czyta tylko
+    ten, kto dostaje obiekt klasy (``TypeAdapter(Lista)`` przez alias, ``RootModel[...]``, ``get_type_hints(_W)`` w
+    innym pliku), a z instancji (``fields(w)``) tylko ten, kto pyta o adnotacje po nazwie; ``_INTROSPECTION`` to te
+    nazwy, a pydantic i FastAPI dostają klasę także z adnotacji parametru. Klasa ma ukryte pola, gdy wszystko to jest
+    prawdą:
+
+    - plik nie importuje pydantic ani FastAPI i nie nazywa, także napisem, żadnej nazwy z ``_INTROSPECTION``;
+    - klasa jest prywatna (``_Nazwa``), bez argumentów klasy i baz poza ``Generic``, z dekoratorami najwyżej
+      ``dataclasses.dataclass`` i ``typing.final``;
+    - plik czyta jej nazwę tylko jako wywołanie (``_W(...)``), drugi argument ``isinstance``/``issubclass`` i w
+      adnotacjach, więc obiekt klasy nigdzie nie trafia;
+    - nie nazywa jej adnotacja pola innej klasy, której pól ten filtr nie ukrywa (pydantic czyta pola dataclassy z pola
+      modelu, także z innego pliku, jak ``call_trace.CallTrace`` w ``RunLog``, a test czyta ``get_type_hints``).
+
+    Granica: instancja takiej klasy, którą inny plik przepuszcza przez ``fields(obj)`` albo ``type(obj).__annotations__``.
     """
 
-    pydantic_dataclasses = "pydantic" in readers and any(
-        isinstance(node, (ast.Import, ast.ImportFrom))
-        and any(
-            name.startswith("pydantic") and "dataclass" in name
-            for name in [*(alias.name for alias in node.names), *(f"{node.module}.{alias.name}" for alias in node.names if isinstance(node, ast.ImportFrom))]
-        )
-        for node in owner
-    )
+    if readers or any(_word(node) in _INTROSPECTION for node in owner):
+        return set()
+    origins = _origins(owner)
     candidates = {
         node.name: node
         for node in classes
         if node.name.startswith("_")
         and not node.keywords
         and all(_last_name(base) in {"Generic", "object"} for base in node.bases)
-        and all(_last_name(decorator) in {"dataclass", "final"} for decorator in node.decorator_list)
-        and not (pydantic_dataclasses and node.decorator_list)
+        and all(_origin(decorator.func if isinstance(decorator, ast.Call) else decorator, origins) in _FIELD_BLIND for decorator in node.decorator_list)
     }
-
     if not candidates:
         return set()
+    inert = {id(node.func) for node in owner if isinstance(node, ast.Call)}
+    for node in owner:
+        if isinstance(node, ast.Call) and _last_name(node.func) in {"isinstance", "issubclass"} and len(node.args) == 2:
+            inert |= {id(part) for part in ast.walk(node.args[1])}
+        annotation = node.annotation if isinstance(node, (ast.AnnAssign, ast.arg)) else node.returns if isinstance(node, _FUNCTIONS) else None
+        inert |= {id(part) for part in ast.walk(annotation)} if annotation is not None else set()
+    escaped = {node.id for node in owner if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and id(node) not in inert}
 
-    def declared(node: ast.ClassDef) -> list[ast.expr]:
-        return [*node.bases, *(statement.annotation for statement in node.body if isinstance(statement, ast.AnnAssign))]
+    def fields(node: ast.ClassDef) -> list[ast.expr]:
+        return [statement.annotation for statement in node.body if isinstance(statement, ast.AnnAssign)]
 
-    sources: list[ast.expr] = [expression for node in classes if candidates.get(node.name) is not node for expression in declared(node)]
-    for function in read:
-        sources += [argument.annotation for argument in ast.walk(function.args) if isinstance(argument, ast.arg) and argument.annotation]
-        sources += [function.returns] if function.returns else []
-    sources += [
-        argument for node in owner if isinstance(node, ast.Call) and _last_name(node.func) in _HINT_READERS for argument in node.args
-    ]
+    sources = [annotation for node in classes if candidates.get(node.name) is not node for annotation in fields(node)]
     reachable: set[str] = set()
     while sources:
         for name in _names(sources.pop()) - reachable:
             reachable.add(name)
             if name in candidates:
-                sources += declared(candidates[name])
-    return {node for name, node in candidates.items() if name not in reachable}
+                sources += fields(candidates[name])
+    return {node for name, node in candidates.items() if name not in reachable | escaped}
+
+
+def _word(node: ast.AST) -> str | None:
+    """Nazwa, którą węzeł podaje: zmienna, atrybut, import albo cały napis."""
+
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.alias):
+        return node.name.rsplit(".", 1)[-1]
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _origins(owner: Mapping[ast.AST, ast.AST]) -> dict[str, str]:
+    """Nazwy z importów pliku i ich pełne nazwy: ``from dataclasses import dataclass`` → ``dataclass``: ``dataclasses.dataclass``."""
+
+    found: dict[str, str] = {}
+    for node in owner:
+        if isinstance(node, ast.Import):
+            found.update({alias.asname or alias.name.split(".")[0]: alias.name if alias.asname else alias.name.split(".")[0] for alias in node.names})
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            found.update({alias.asname or alias.name: f"{node.module}.{alias.name}" for alias in node.names})
+    return found
+
+
+def _origin(node: ast.expr, origins: Mapping[str, str]) -> str | None:
+    """Pełna nazwa wyrażenia z importów pliku: ``dataclass`` albo ``dataclasses.dataclass`` → ``dataclasses.dataclass``."""
+
+    if isinstance(node, ast.Name):
+        return origins.get(node.id)
+    if isinstance(node, ast.Attribute):
+        prefix = _origin(node.value, origins)
+        return f"{prefix}.{node.attr}" if prefix else None
+    return None
 
 
 def _names(annotation: ast.expr) -> set[str]:

@@ -1347,13 +1347,21 @@ def test_w_pliku_z_pydantic_adnotacja_i_alias_typu_zostaja_mutacja() -> None:
 # Cofnięcia, których nic nie czyta w czasie wykonania (#1340): (kod po zmianie, zmieniona linia, linia bazy; ``None``,
 # gdy zmiana tylko dodała linię, a cofnięcie ją usuwa). Każdy wiersz to jeden wiersz tabeli przypadków w opisie PR-u.
 FUTURE = "from __future__ import annotations\n"
+DATACLASS = FUTURE + "from dataclasses import dataclass\nfrom typing import final\n\n\n"
 ROUTER = "from fastapi import APIRouter\n\n\n"
 NIEWIDOCZNE = {
     "__all__ (czyta je tylko import *, którego nie wpuszcza ruff F403)": ('__all__ = ["a", "b"]\n\n\ndef a():\n    pass\n', 1, '__all__ = ["a"]'),
     "dopisek do __all__": ('__all__ = ["a"]\n__all__ += ["b"]\n', 2, None),
     "adnotacja zmiennej w funkcji (PEP 526: Python jej nie wylicza)": ("def f() -> list[int]:\n    wynik: list[int] = []\n    return wynik\n", 2, "    wynik: list[str] = []"),
     "adnotacja atrybutu w metodzie": ("class A:\n    def __init__(self) -> None:\n        self.style: dict[tuple[bool], int] = {}\n", 3, "        self.style: dict[tuple[int], int] = {}"),
-    "pole prywatnej dataclassy, której pól nic nie czyta": (FUTURE + "@dataclass(frozen=True)\nclass _Widziane:\n    nowa: Version | None\n", 4, "    nowa: str | None"),
+    # Jak ``outbox._Seen`` (run 42982940704): plik tylko tworzy obiekty klasy i pyta ``isinstance``.
+    "pole prywatnej dataclassy, której pól nic nie czyta": (
+        DATACLASS + "@final\n@dataclass(frozen=True)\nclass _Widziane:\n    nowa: Version | None\n\n\n"
+        "def f(x: object) -> _Widziane | None:\n    return x if isinstance(x, (_Widziane, int)) else _Widziane(None)\n",
+        9,
+        "    nowa: str | None",
+    ),
+    "pole prywatnej klasy z dekoratorem dataclasses.dataclass": (FUTURE + "import dataclasses\n\n\n@dataclasses.dataclass\nclass _W:\n    n: int\n", 7, "    n: str"),
     "adnotacja zmiennej modułu": (FUTURE + "LIMIT: Final[int] = 5\n", 2, "LIMIT: int = 5"),
     "parametr metody bez ciała w Protocol z runtime_checkable": (
         FUTURE + "@runtime_checkable\nclass Skrzynka(Protocol):\n    def issues(self, label: str, *, include_closed: bool) -> list[int]:\n        \"\"\"Opis.\"\"\"\n        ...\n",
@@ -1361,6 +1369,11 @@ NIEWIDOCZNE = {
         "    def issues(self, label: str) -> list[int]:",
     ),
     "adnotacja atrybutu w Protocol z runtime_checkable": (FUTURE + "@runtime_checkable\nclass Wpis(Protocol):\n    key: ProcessKey\n", 4, "    key: str"),
+    "parametr metody Protocol, której ciało tylko rzuca NotImplementedError": (
+        FUTURE + "@runtime_checkable\nclass Skrzynka(Protocol):\n    def issues(self, label: str, *, include_closed: bool) -> list[int]:\n        raise NotImplementedError\n",
+        4,
+        "    def issues(self, label: str) -> list[int]:",
+    ),
     "deklaracja w Protocol bez runtime_checkable": (FUTURE + "class Skrzynka(Protocol):\n    def archive(self) -> None:\n        ...\n", 3, "    def stara(self) -> None:"),
     "granica TypeVar": (FUTURE + 'T = TypeVar("T", bound=Wynik)\n\n\nclass Pudlo(Generic[T]):\n    pass\n', 2, 'T = TypeVar("T")'),
     "TypeVar czytany tylko w adnotacjach": (FUTURE + 'T = TypeVar("T")\n\n\ndef pierwszy(xs: list[T]) -> T:\n    return xs[0]\n', 2, None),
@@ -1380,6 +1393,8 @@ def test_cofniecie_ktorego_nic_nie_czyta_w_czasie_wykonania_nie_jest_mutacja(cod
     assert _reverted(code, line, old) is None
 
 
+# Prywatna dataclassa ``_W`` z polem ``n: int`` w linii 8: ``{0}`` to import, ``{1}`` kod po klasie.
+PRYWATNA_W = FUTURE + "from dataclasses import dataclass\n{0}\n\n\n@dataclass\nclass _W:\n    n: int\n\n\n{1}"
 # Cofnięcia, które zmieniają zachowanie albo adnotację, którą coś czyta w czasie wykonania (#1340), w postaci jak wyżej.
 WIDOCZNE = {
     "__all__ czytane w pliku": ('__all__ = ["a"]\nNAZWY = list(__all__)\n', 1, "__all__ = []"),
@@ -1389,23 +1404,63 @@ WIDOCZNE = {
     "cofnięcie z kodem obok adnotacji": ("def f() -> int:\n    wynik: int = 2\n    return wynik\n", 2, "    wynik: str = 1"),
     # ``tests/test_uruchom_proces.py`` czyta ``get_type_hints(Stop)``, a pydantic pola ``call_trace.CallTrace`` z pola
     # ``RunLog`` w innym pliku.
-    "pole publicznej dataclassy": (FUTURE + '@dataclass(frozen=True)\nclass Stop:\n    kind: Literal["stop", "declined"]\n', 4, '    kind: Literal["stop"]'),
+    "pole publicznej dataclassy": (DATACLASS + '@dataclass(frozen=True)\nclass Stop:\n    kind: Literal["stop", "declined"]\n', 8, '    kind: Literal["stop"]'),
     "pole prywatnej dataclassy w polu publicznej": (
-        FUTURE + "@dataclass(frozen=True)\nclass _Ramka:\n    linia: int\n\n\n@dataclass(frozen=True)\nclass Slad:\n    ramki: tuple[_Ramka, ...]\n",
-        4,
+        DATACLASS + "@dataclass(frozen=True)\nclass _Ramka:\n    linia: int\n\n\n@dataclass(frozen=True)\nclass Slad:\n    ramki: tuple[_Ramka, ...]\n",
+        8,
         "    linia: str",
     ),
+    "pole prywatnej dataclassy w polu prywatnej w polu publicznej": (
+        DATACLASS + "@dataclass\nclass _Ramka:\n    linia: int\n\n\n@dataclass\nclass _Okno:\n    ramka: _Ramka\n\n\n@dataclass\nclass Slad:\n    okno: _Okno\n",
+        8,
+        "    linia: str",
+    ),
+    "pole prywatnej dataclassy z argumentem klasy": (DATACLASS + "@dataclass\nclass _W(metaclass=Rejestr):\n    n: int\n", 8, "    n: str"),
+    # Przegląd #1359: pydantic czyta pole prywatnej dataclassy przez alias, argument nazwany albo ``RootModel``, a plik
+    # przez ``fields``/``__annotations__``; filtr nie wylicza tych dróg, tylko ukrywa pola klasy, której obiekt nigdzie
+    # nie trafia, w pliku bez pydantic i bez nazw z ``_INTROSPECTION``.
+    "alias z prywatną dataclassą w polu modelu pydantic": (PRYWATNA_W.format("from pydantic import BaseModel", "Lista = list[_W]\n\n\nclass M(BaseModel):\n    x: Lista\n"), 8, "    n: str"),
+    "alias z prywatną dataclassą w TypeAdapter": (PRYWATNA_W.format("from pydantic import TypeAdapter", "Lista = list[_W]\nA = TypeAdapter(Lista)\n"), 8, "    n: str"),
+    "alias z prywatną dataclassą w RootModel": (PRYWATNA_W.format("from pydantic import RootModel", "L = list[_W]\n\n\nclass R(RootModel[L]):\n    pass\n"), 8, "    n: str"),
+    "TypeAdapter(type=_W)": (PRYWATNA_W.format("from pydantic import TypeAdapter", "A = TypeAdapter(type=_W)\n"), 8, "    n: str"),
+    "import pydantic i dekorator pydantic.dataclasses.dataclass": (FUTURE + "import pydantic\n\n\n@pydantic.dataclasses.dataclass\nclass _W:\n    n: int\n", 7, "    n: str"),
+    # FastAPI waliduje ciało żądania z pól ``_W``, które wskazuje tylko adnotacja parametru trasy.
+    "prywatna dataclassa w parametrze trasy FastAPI": (
+        PRYWATNA_W.format("from fastapi import APIRouter", "router = APIRouter()\n\n\n@router.post('/x')\ndef x(w: _W) -> None:\n    pass\n"), 8, "    n: str"
+    ),
+    "typ pola z fields(_W)": (PRYWATNA_W.format("from dataclasses import fields", "TYPY = [f.type for f in fields(_W)]\n"), 8, "    n: str"),
+    "_W.__annotations__": (PRYWATNA_W.format("", "A = _W.__annotations__\n"), 8, "    n: str"),
+    # Obiekt klasy trafia do kodu, który może czytać jej pola (``parse(_W, dane)`` z innego pliku).
+    "obiekt prywatnej klasy jako argument": (PRYWATNA_W.format("from .wczytaj import parse", "W = parse(_W, {})\n"), 8, "    n: str"),
+    # Dekorator ``dataclass`` spoza ``dataclasses`` (reeksport ``pydantic.dataclasses``) waliduje pola.
+    "dekorator dataclass spoza dataclasses": (FUTURE + "from .zgodnosc import dataclass\n\n\n@dataclass\nclass _W:\n    n: int\n", 7, "    n: str"),
     "pole prywatnej dataclassy z TypeAdapter": (
         FUTURE + "from pydantic import TypeAdapter\n\n\n@dataclass\nclass _Wiersz:\n    n: int\n\n\nWIERSZ = TypeAdapter(list[_Wiersz])\n",
         7,
         "    n: str",
     ),
     "pole prywatnej dataclassy pydantic": (FUTURE + "from pydantic.dataclasses import dataclass\n\n\n@dataclass\nclass _Wiersz:\n    n: int\n", 7, "    n: str"),
-    "ClassVar zamiast pola dataclassy": (FUTURE + "@dataclass\nclass _A:\n    x: ClassVar[int] = 1\n", 4, "    x: int = 1"),
-    "InitVar zamiast pola dataclassy": (FUTURE + "@dataclass\nclass _A:\n    x: int\n", 4, "    x: InitVar[int]"),
-    "dodane pole dataclassy": (FUTURE + "@dataclass\nclass _A:\n    x: int\n    y: int\n", 5, None),
+    **{
+        f"plik czyta adnotacje obiektu prywatnej klasy przez {sposob}": (PRYWATNA_W.format(importy, f"A = {wyrazenie}\n"), 8, "    n: str")
+        for sposob, importy, wyrazenie in (
+            ("fields", "from dataclasses import fields", "[f.type for f in fields(_W(1))]"),
+            ("get_type_hints", "from typing import get_type_hints", "get_type_hints(type(_W(1)))"),
+            ("get_type_hints pod inną nazwą", "from typing import get_type_hints as hints", "hints(type(_W(1)))"),
+            ("inspect.get_annotations", "import inspect", "inspect.get_annotations(type(_W(1)))"),
+            ("inspect.signature", "import inspect", "inspect.signature(type(_W(1)))"),
+            ("__annotations__ napisem", "", "getattr(type(_W(1)), '__annotations__')"),
+            ("__annotate__", "", "type(_W(1)).__annotate__(1)"),
+            ("__dataclass_fields__", "", "type(_W(1)).__dataclass_fields__['n'].type"),
+            ("__signature__", "", "type(_W(1)).__signature__"),
+            ("TypeAdapter z reeksportu", "from .zgodnosc import TypeAdapter", "TypeAdapter(type(_W(1)))"),
+            ("validate_call z reeksportu", "from .zgodnosc import validate_call", "validate_call(lambda w: w)(_W(1))"),
+        )
+    },
+    "ClassVar zamiast pola dataclassy": (DATACLASS + "@dataclass\nclass _A:\n    x: ClassVar[int] = 1\n", 8, "    x: int = 1"),
+    "InitVar zamiast pola dataclassy": (DATACLASS + "@dataclass\nclass _A:\n    x: int\n", 8, "    x: InitVar[int]"),
+    "dodane pole dataclassy": (DATACLASS + "@dataclass\nclass _A:\n    x: int\n    y: int\n", 9, None),
     "pole klasy z bazą (model pydantic z innego pliku)": (FUTURE + "class _Wpis(Rekord):\n    pole: int | None\n", 3, "    pole: int"),
-    "pole bez from __future__ import annotations (Python wylicza je przy imporcie)": ("@dataclass\nclass _A:\n    x: Nieznany\n", 3, "    x: int"),
+    "pole bez from __future__ import annotations (Python wylicza je przy imporcie)": ("from dataclasses import dataclass\n\n\n@dataclass\nclass _A:\n    x: Nieznany\n", 6, "    x: int"),
     "adnotacja zmiennej modułu bez from __future__ import annotations": ("LIMIT: Final[int] = 5\n", 1, "LIMIT: int = 5"),
     "metoda Protocol z ciałem": (FUTURE + "class P(Protocol):\n    def f(self, x: int) -> int:\n        return x + 1\n", 4, "        return x"),
     "nazwa członka Protocol z runtime_checkable (isinstance pyta o członków)": (
