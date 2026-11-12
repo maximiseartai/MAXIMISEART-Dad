@@ -46,6 +46,7 @@ SKRYPTY_MODELI = (
     ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "scripts" / "sprawdz_urwane_uruchomienie.py",
     ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "scripts" / "sprawdz_wznowienie_wyceny.py",
     ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py",
+    ROOT / ".agents" / "skills" / "verify-karta-uruchomienia" / "scripts" / "sprawdz_karte_uruchomienia.py",
 )
 SPEC = """---- MODULE M ----
 Next ==
@@ -290,7 +291,7 @@ def test_kazdy_skill_z_modelem_ma_konfiguracje_a_jego_opowiesc_zna_kazda_akcje_n
 
     assert sorted(model.skill for model in models) == [skill for skill in rozjazd_modelu.skille(ROOT) if any((skill / "model").glob("*.tla"))]
     assert checked == {name: (True, True) for name in checked}
-    assert {model.skill.name for model in models if model.akcje is not None} == {"verify-urwane-uruchomienie", "verify-wznowienie-wyceny-efenix"}
+    assert {model.skill.name for model in models if model.akcje is not None} == {"verify-karta-uruchomienia", "verify-urwane-uruchomienie", "verify-wznowienie-wyceny-efenix"}
 
 
 @pytest.mark.parametrize(
