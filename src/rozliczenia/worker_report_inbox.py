@@ -359,19 +359,30 @@ def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dic
     _fetch_sections(imap, groups, parts)
     missing: dict[tuple[str, ...], list[str]] = {}
     for uid, (_, structure, header) in light.items():
-        raw = skeleton(structure, header, parts[uid])
-        section = None if raw is None else chosen(structure, raw, _BODY_PREFERENCE)
-        if section is not None and section not in parts[uid]:
-            missing.setdefault((section,), []).append(uid)
+        found = _skeleton_of(structure, header, parts[uid])
+        if found is not None and found[1] is not None and found[1] not in parts[uid]:
+            missing.setdefault((found[1],), []).append(uid)
     _fetch_sections(imap, missing, parts)
     built: dict[str, tuple[bytes, bytes]] = {}
     for uid, (internal, structure, header) in light.items():
-        raw = skeleton(structure, header, parts[uid])
-        section = None if raw is None else chosen(structure, raw, _BODY_PREFERENCE)
-        if raw is not None and (section is None or section in parts[uid]):
-            built[uid] = (internal, raw)
+        found = _skeleton_of(structure, header, parts[uid])
+        if found is not None and (found[1] is None or found[1] in parts[uid]):
+            built[uid] = (internal, found[0])
     whole = _fetched(imap, [uid for uid in uids if uid not in built and uid not in from_box], _WHOLE_ITEMS)
     return {uid: mail for uid in uids if (mail := built.get(uid) or whole.get(uid)) is not None}
+
+
+def _skeleton_of(structure: Structure, header: bytes, parts: Mapping[str, bytes]) -> tuple[bytes, str | None] | None:
+    """Szkielet maila i sekcja części, którą wybiera ``mail_of`` (``None``: żadna); ``None``, gdy szkieletu nie da się
+    złożyć albo pakiet ``email`` nie umie rozebrać nagłówka którejś części: taki mail port pobiera w całości, a tam
+    ``mail_of`` liczy go jako pominięty, więc jeden zepsuty mail nie zatrzymuje odczytu skrzynki."""
+
+    # Pakiet email zgłasza na zepsutym nagłówku różne wyjątki, zależnie od wersji Pythona (jak ``mail_of``).
+    try:
+        raw = skeleton(structure, header, parts)
+        return None if raw is None else (raw, chosen(structure, raw, _BODY_PREFERENCE))
+    except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: taki mail port pobiera w całości
+        return None
 
 
 def _fetch_sections(imap: imaplib.IMAP4, groups: Mapping[tuple[str, ...], list[str]], parts: dict[str, dict[str, bytes]]) -> None:

@@ -270,6 +270,32 @@ def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path
     assert tresc and all(command.split(" ")[2].split(",") == ["7"] for command in tresc)
 
 
+def test_zepsuty_naglowek_czesci_jednego_maila_nie_wywraca_odczytu_skrzynki(tmp_path: Path) -> None:
+    """Nagłówek części, na którym pakiet ``email`` zgłasza wyjątek (fuzz przeglądu #1416 r1): szkielet tego maila się
+    nie składa, port pobiera go w całości, a ``mail_of`` liczy go jako pominięty; dobry mail obok dochodzi."""
+
+    def related(message_id: bytes, typ_drugiej: bytes) -> bytes:
+        return (
+            b"From: Jan Testowy <jan.testowy@przyklad.invalid>\r\nSubject: Raport 08.11.2026\r\nMessage-ID: " + message_id
+            + b'\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="B"\r\n\r\n'
+            + b"--B\r\nContent-Type: text/plain\r\n\r\n40000001 tak\r\n--B\r\nContent-Type: " + typ_drugiej
+            + b"\r\n\r\n40000001 tak\r\n--B--\r\n"
+        )
+
+    mails = [
+        w_skrzynce(1, related(b"<dobry@x.invalid>", b"text/plain; charset=utf-8")),
+        w_skrzynce(2, related(b"<zly@x.invalid>", b"*\r\n :multipart/mixed;attachment *")),
+    ]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
+        outcome = port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8))
+
+    assert isinstance(outcome, Mails), outcome
+    assert ([(mail.id, mail.text) for mail in outcome.mails], outcome.skipped) == (
+        [(MailId.of("<dobry@x.invalid>"), "40000001 tak")],
+        1,
+    )
+
+
 def test_mail_bez_message_id_port_pobiera_w_calosci_bo_jego_mailid_liczy_sie_z_bajtow_maila(tmp_path: Path) -> None:
     surowe = z_zalacznikami(message_id=None)
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)]) as atrapa:
