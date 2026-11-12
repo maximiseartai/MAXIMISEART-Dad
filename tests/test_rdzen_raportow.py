@@ -929,10 +929,10 @@ def test_przeniesienia_na_inny_dzien_daja_ten_sam_wynik_w_kazdej_kolejnosci_mail
     clicks: list[RegisterOrder] = orders
     memory = OwnEntries.EMPTY
     for index in range(1, 4):
-        mails = [first, mistaken, taken][:index]
-        outcome = enter_reports(_inputs(mails, clicks, rollout=SIXTH, ordered=OPEN_DAYS, memory=memory))
+        prefix = [first, mistaken, taken][:index]
+        outcome = enter_reports(_inputs(prefix, clicks, rollout=SIXTH, ordered=OPEN_DAYS, memory=memory))
         clicks, memory = _after(clicks, outcome), outcome.memory
-        once = enter_reports(_inputs(mails, orders, rollout=SIXTH, ordered=OPEN_DAYS))
+        once = enter_reports(_inputs(prefix, orders, rollout=SIXTH, ordered=OPEN_DAYS))
 
         assert state(clicks) == state(_after(orders, once)), index
 
