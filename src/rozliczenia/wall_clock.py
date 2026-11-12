@@ -5,11 +5,6 @@ zapis na każdym komputerze. ``local_now`` to chwila na zegarze komputera w jego
 bierze dzień oraz porę taty. ``dad_today`` to dzień taty (okres rozliczeniowy, dzień INTERMAX, Metryki), czyli dzień
 w strefie komputera taty, nigdy dzień UTC: od północy do 1:00 (latem do 2:00) czasu taty dzień UTC to jeszcze wczoraj.
 ``epoch_s`` to sekundy od epoki dla terminu, który czyta też inny proces (dzierżawa opiekuna ponownego startu).
-
-Zegar biblioteki standardowej (``datetime.now``, ``date.today``, ``time.time`` i podobne) w ``src/`` poza tym plikiem
-odrzuca ruff ``TID251`` (``src/ruff.toml``), a ``tests/test_zakazy_ruff.py`` także na linii z ``noqa``. Nie łapią
-dnia UTC wziętego z chwili tego modułu (``utc_now().date()``) ani zegara z modułu albo nazwy podanej napisem
-(``getattr``, ``__import__``, ``importlib``); to zostaje przeglądowi.
 """
 
 from __future__ import annotations
