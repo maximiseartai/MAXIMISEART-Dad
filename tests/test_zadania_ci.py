@@ -240,14 +240,17 @@ def test_dependabot_przesuwa_przypiete_akcje_kazdej_akcji_zlozonej_z_repozytoriu
     assert composite - set(actions["directories"]) == set()
 
 
-def test_shellcheck_akcji_sprawdza_tylko_skrypty_bash_akcji_zlozonych_i_podaje_ich_linie_w_pliku(tmp_path: Path) -> None:
-    # Podstawiony shellcheck zgłasza każdą linię skryptu z ZLE, więc test widzi, które skrypty i z jakimi liniami dostał.
+def test_shellcheck_akcji_sprawdza_skrypty_bash_i_sh_akcji_zlozonych_i_podaje_ich_linie_w_pliku(tmp_path: Path) -> None:
+    # Podstawiony shellcheck czyta bajty skryptu: zgłasza każdą linię z ZLE i każde \r, jak prawdziwy (SC1017), więc test
+    # widzi, które skrypty dostał, z jakimi liniami i dialektem, i że zapis nie ma końców linii Windows.
     fake = tmp_path / "shellcheck.py"
     fake.write_text(
         "import pathlib, sys\n"
         "script = pathlib.Path(sys.argv[-1])\n"
-        "for number, line in enumerate(script.read_text(encoding='utf-8').splitlines(), 1):\n"
-        "    if 'ZLE' in line: print(f'{script}:{number}:1: error: {line.strip()} [SC1000]')\n",
+        "dialect = sys.argv[sys.argv.index('--shell') + 1]\n"
+        "for number, line in enumerate(script.read_bytes().split(b'\\n'), 1):\n"
+        "    if b'\\r' in line: print(f'{script}:{number}:1: error: CR [SC1017]')\n"
+        "    if b'ZLE' in line: print(f'{script}:{number}:1: error: {dialect} {line.decode().strip()} [SC1000]')\n",
         encoding="utf-8",
     )
     action = tmp_path / ".github" / "actions" / "x" / "action.yml"
@@ -258,18 +261,21 @@ def test_shellcheck_akcji_sprawdza_tylko_skrypty_bash_akcji_zlozonych_i_podaje_i
         "  steps:\n"
         "    - shell: bash\n"
         "      run: |\n"
-        "        echo dobrze\n"
+        "        echo dobrze ${{\n"
+        "          inputs.x }}\n"
         "        echo ZLE ${{ inputs.x }}\n"
         "    - shell: pwsh\n"
         "      run: echo ZLE\n"
-        "    - shell: bash\n"
+        "    - shell: sh -e {0}\n"
         "      run: echo ZLE\n",
         encoding="utf-8",
     )
 
     lines = shellcheck_akcji.findings([sys.executable, str(fake)], tmp_path)
+    broken = shellcheck_akcji.findings([sys.executable, "-c", "raise SystemExit(3)"], tmp_path)
 
     assert lines == [
-        ".github/actions/x/action.yml:7: error: echo ZLE _______________ [SC1000]",
-        ".github/actions/x/action.yml:11: error: echo ZLE [SC1000]",
+        ".github/actions/x/action.yml:8: error: bash echo ZLE _______________ [SC1000]",
+        ".github/actions/x/action.yml:12: error: sh echo ZLE [SC1000]",
     ]
+    assert broken == [".github/actions/x/action.yml:6: shellcheck 3: ", ".github/actions/x/action.yml:12: shellcheck 3: "]
