@@ -148,20 +148,22 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``) z dniem otwartym w ``inputs.window``, a od
     Wykonawcy także z dniem w okresie z Plikiem zbiorczym od dnia wdrożenia (``Window.closes``), który daje tylko
     niezgodne Wpisy; inne maile rdzeń pomija po cichu. Temat ze słowem ``raport`` bez dnia zleceń daje
-    ``UnreadableSubject``, gdy mail przyszedł od Wykonawcy w dniu otwartym. Wpis zaczyna numer z co najmniej tyloma
-    cyframi, ile ma najkrótszy numer zlecenia z dni otwartych (``_entries.entries``). Wpis trafia do zlecenia nadawcy z
-    dnia z tematu, a bez niego do jedynego zlecenia tego numeru u innego Wykonawcy w tym dniu albo do jedynego zlecenia
-    tego numeru z innego dnia: Przeniesienie zlecenia do nadawcy i na dzień z tematu albo, przy pomylonym temacie, do
-    nadawcy w dniu zlecenia (ADR 0029, ``_matching.Board``, ``_moves.moved``), z informacją dla taty. Przy kilku Wpisach
-    jednego zlecenia decyduje najpóźniejszy mail, także od innego Wykonawcy; mail z tą samą chwilą przyjścia i tym samym
-    Message-ID rozstrzyga treść odczytu. Wpis zmienia pustą komórkę albo własny wpis z ``inputs.memory``, którego nikt od
-    tamtej pory nie zmienił, a inna wartość komórki jest ręczna i zostaje z ``ManualDifference`` (``_cells.reconcile``).
-    Problem z błędu Wykonawcy znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``).
+    ``UnreadableSubject``, gdy mail przyszedł od Wykonawcy w dniu otwartym. Które numery są w INTERMAX i ile mają
+    zleceń, mówi każde odczytane zlecenie (``inputs.orders``, także z dni zamkniętych i po dziś), a okno mówi tylko, do
+    których wolno pisać; Wpis zaczyna więc numer z co najmniej tyloma cyframi, ile ma najkrótszy numer odczytanego
+    zlecenia (``_entries.entries``). Wpis trafia do zlecenia nadawcy z dnia z tematu, a bez niego do jedynego zlecenia tego
+    numeru u innego Wykonawcy w tym dniu albo do jedynego zlecenia tego numeru z innego dnia: Przeniesienie zlecenia do
+    nadawcy i na dzień z tematu albo, przy pomylonym temacie, do nadawcy w dniu zlecenia (ADR 0029,
+    ``_matching.Board``, ``_moves.moved``), z informacją dla taty. Przy kilku Wpisach jednego zlecenia decyduje
+    najpóźniejszy mail, także od innego Wykonawcy; mail z tą samą chwilą przyjścia i tym samym Message-ID rozstrzyga
+    treść odczytu. Wpis zmienia pustą komórkę albo własny wpis z ``inputs.memory``, którego nikt od tamtej pory nie
+    zmienił, a inna wartość komórki jest ręczna i zostaje z ``ManualDifference`` (``_cells.reconcile``); własny wpis
+    pamięć ma tylko przy jedynym zleceniu numeru (``_moves._carried``). Problem z błędu Wykonawcy znika, gdy Wykonawca
+    przyśle poprawiony mail (``_corrections.standing``).
     """
 
     window = inputs.window
-    orders = tuple(order for order in inputs.orders if window.opens(order.key.day))
-    closed = tuple(order for order in inputs.orders if window.closes(order.key.day))
+    orders = tuple(inputs.orders)
     digits = min((len(order.key.number) for order in orders), default=1)
     read: list[MailRead] = []
     problems: list[ReportProblem] = []
@@ -185,7 +187,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
                 continue
     mails = tuple(sorted(read, key=_mail_order))
     reports = [found for found in mails if isinstance(found, ReadReport)]
-    board = _matching.Board(orders, closed, inputs.memory, window, inputs.ordered_days)
+    board = _matching.Board(orders, inputs.memory, window, inputs.ordered_days)
     matched = board.match(reports)
     moved = _moves.moved(matched.accepted, orders, inputs.memory, window)
     after = {order.row: order for order in moved.orders}
@@ -195,7 +197,8 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     standing = _corrections.standing([*problems, *matched.problems], reports, unreadable, orders, board)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     shown = [report for report in reports if window.opens(report.day)]
-    figures = _figures.worker_days(moved.orders, shown, problems_found, changes, moved.rows, frozenset(targets))
+    opened = [order for order in moved.orders if window.opens(order.key.day)]
+    figures = _figures.worker_days(opened, shown, problems_found, changes, moved.rows, frozenset(targets))
     notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
     return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes)
 

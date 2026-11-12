@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 
 from ..report_cells import CellChange, ReportColumn
 from ..text import normalize_text
-from ._model import Kept, ManualDifference, OrderKey, OwnEntries, OwnEntry, RegisterOrder, ReportEntry
+from ._model import Kept, ManualDifference, OrderKey, OwnEntries, OwnEntry, RegisterOrder, ReportEntry, single_orders
 
 _COLUMNS = tuple(ReportColumn)
 
@@ -18,15 +18,19 @@ def reconcile(
     memory: OwnEntries,
     kept: frozenset[Kept],
 ) -> tuple[tuple[CellChange, ...], tuple[ManualDifference, ...], OwnEntries]:
-    """Zmiany komórek, różnice z ręczną wartością i następna pamięć.
+    """Zmiany komórek, różnice z ręczną wartością i następna pamięć; ``orders``: każde odczytane zlecenie po
+    Przeniesieniach kliknięcia, ``memory``: pamięć z kluczami po kliknięciu.
 
     Każda kolumna osobno: ``tak``/``nie`` do ``SKUTECZNE``, niepusty opis do ``CZYNNOŚCI ZREALIZOWANE``. Pusta komórka
     i komórka z zapamiętaną własną wartością dostają Wpis, komórka równa Wpisowi (``normalize_text``) zostaje, a inna
     wartość jest ręczna: zostaje z ``ManualDifference``, chyba że tata kliknął „Zostaw moją” przy tej treści Wpisu
     (``kept``). Pamięć to nowe zmiany oraz dawne wpisy, których komórka dalej ma zapamiętaną wartość, z Przeniesieniami
-    z ``memory``; wartość ręczna równa Wpisowi do pamięci nie trafia, żeby późniejsza poprawka nie nadpisała taty.
+    z ``memory``, ale tylko pod kluczem jedynego zlecenia numeru (``single_orders``), żeby następne kliknięcie
+    wiedziało, który wiersz był którym (``_moves._carried``); wartość ręczna równa Wpisowi do pamięci nie trafia, żeby
+    późniejsza poprawka nie nadpisała taty.
     """
 
+    orders = tuple(orders)
     remembered = {(entry.key, entry.column): entry.value for entry in memory.entries}
     current: defaultdict[tuple[OrderKey, ReportColumn], set[str | None]] = defaultdict(set)
     for order in orders:
@@ -50,5 +54,6 @@ def reconcile(
             elif Kept(order.key, column, value) not in kept:
                 differences.append(ManualDifference(order.key, column, cell, value))
     ordered = sorted(changes, key=lambda change: (change.order.sheet, change.order.row, _COLUMNS.index(change.column)))
-    entries = frozenset(OwnEntry(key, column, value) for (key, column), value in own.items())
+    single = single_orders(orders)
+    entries = frozenset(OwnEntry(key, column, value) for (key, column), value in own.items() if single.get(key.number) == key)
     return tuple(ordered), tuple(differences), OwnEntries(entries, memory.moves)

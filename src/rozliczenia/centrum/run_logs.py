@@ -490,6 +490,8 @@ def _move_bar(bar: MoveBar) -> LoggedMoveBar:
             return "closed_target"
         case MoveBar.CLOSED_SOURCE:
             return "closed_source"
+        case MoveBar.AFTER_TODAY:
+            return "after_today"
 
 
 def _column(column: ReportColumn) -> LoggedColumn:
@@ -644,7 +646,7 @@ def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
     return {_subject_fault(member): member for member in SubjectFault}[fault]
 
 
-LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source"]
+LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source", "after_today"]
 
 
 class LoggedOrderPlace(_Record):

@@ -66,7 +66,7 @@ def reason(problem: ReportProblem) -> str:
             where = ", ".join(f"u {owner} z {_day(order_day)}" for order_day, owner in places)
             return (
                 f"Zlecenie {number} jest w INTERMAX więcej niż raz: {where}. Centrum nie wie, którego z nich dotyczy "
-                f"Wpis od {worker} z {_day(day)}, więc go nie wpisało i żadnego z nich nie przeniosło."
+                f"Wpis od {worker} z {_day(day)}, więc nie zmieniło żadnego z nich przy tym kliknięciu."
             )
         case RefusedMove(worker=worker, day=day, number=number, order_day=order_day, bar=bar):
             return (
@@ -121,6 +121,8 @@ def _bar(bar: MoveBar, day: date, order_day: date) -> str:
             return f"okres z dniem {_day(day)} ma już Plik zbiorczy"
         case MoveBar.CLOSED_SOURCE:
             return f"okres z dniem {_day(order_day)} ma już Plik zbiorczy"
+        case MoveBar.AFTER_TODAY:
+            return f"dzień {_day(order_day)} jeszcze nie nadszedł"
 
 
 def _subject(fault: SubjectFault) -> str:

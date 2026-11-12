@@ -245,12 +245,12 @@ class OwnMove:
     tabela przejść w opisie #1358, z miejscem = Wykonawca i dzień).
 
     ``day`` i ``worker``: gdzie Centrum zostawiło zlecenie, czyli przeniosło je tam albo przyjęło tam Wpis, gdy pamięć
-    była pusta; ręczna zmiana taty go nie przesuwa. ``origin_day``, ``origin_worker`` i ``origin_name`` (pisownia
+    numeru była pusta; ręczna zmiana taty go nie przesuwa. ``origin_day``, ``origin_worker`` i ``origin_name`` (pisownia
     ``WYKONAWCA``): gdzie zlecenie stało przed pierwszym Przeniesieniem Centrum; bez Przeniesienia to samo miejsce co
     ``day`` i ``worker``. ``since``: chwila przyjścia najświeższego maila, na który Centrum zadziałało (przyjęło jego
     Wpis albo przeniosło nim zlecenie), gdziekolwiek zlecenie wtedy stało; nigdy nie maleje. ``overridden``: tata zmienił
-    Wykonawcę albo dzień po Przeniesieniu Centrum, co zostaje, dopóki dzień ``day`` jest otwarty. Którego zlecenia w
-    INTERMAX dotyczy pamięć, mówi ``memories_of``.
+    Wykonawcę albo dzień po Przeniesieniu Centrum, co zostaje, dopóki dzień ``day`` jest otwarty. Pamięć dotyczy każdego
+    zlecenia numeru (``memories_of``).
 
     Tata widzi informację o Przeniesieniu, dopóki INTERMAX ma zlecenie tam, gdzie je zostawiło Centrum, a to miejsce
     różni się od miejsca sprzed pierwszego Przeniesienia."""
@@ -279,36 +279,46 @@ class OwnMove:
         return placed != (self.origin_worker, self.origin_day) and placed not in set(places)
 
 
-def may_move(memory: OwnMove | None, worker: Login, day: date, arrived: datetime) -> bool:
+def may_move(memory: Iterable[OwnMove], worker: Login, day: date, arrived: datetime) -> bool:
     """Reguła „Ręczna zmiana dalej wygrywa” (ADR 0029) w jednym miejscu: czy Wpis innego Wykonawcy z maila z chwilą
-    ``arrived`` może przenieść zlecenie, które INTERMAX ma teraz u ``worker`` w dniu ``day``, przy pamięci zlecenia
-    ``memory`` (tabela przejść w opisie #1358).
+    ``arrived`` może przenieść zlecenie, które INTERMAX ma teraz u ``worker`` w dniu ``day``, przy pamięci jego numeru
+    ``memory`` (``memories_of``, tabela przejść w opisie #1358).
 
     Bez pamięci (Centrum jeszcze nic z tym zleceniem nie zrobiło, także ręczny ``WYKONAWCA`` sprzed raportu, US 16)
-    przenosi każdy mail. Z pamięcią tylko mail świeższy niż ``since`` (ściśle: mail, na który Centrum już zadziałało,
-    i każdy starszy nigdy, gdziekolwiek zlecenie teraz stoi), i żaden po zmianie taty po Przeniesieniu Centrum (US 15,
-    ``OwnMove.overridden_at``)."""
+    przenosi każdy mail. Z pamięcią tylko mail świeższy niż ``since`` każdej z nich (ściśle: mail, na który Centrum już
+    zadziałało, i każdy starszy nigdy, gdziekolwiek zlecenie teraz stoi), i żaden po zmianie taty po Przeniesieniu
+    Centrum (US 15, ``OwnMove.overridden_at``)."""
 
-    return memory is None or (arrived > memory.since and not memory.overridden_at(worker, day))
+    return all(arrived > found.since and not found.overridden_at(worker, day) for found in memory)
 
 
-def memories_of(moves: Iterable[OwnMove], key: OrderKey, alone: bool) -> tuple[OwnMove, ...]:
-    """Pamięć zlecenia, które INTERMAX ma przed kliknięciem pod kluczem ``key``; ``alone``: to jedyne zlecenie jego
-    numeru w dniach otwartych.
+def memories_of(moves: Iterable[OwnMove], number: OrderNumber) -> tuple[OwnMove, ...]:
+    """Pamięć zleceń numeru ``number`` po dniach, czyli pamięć każdego jego zlecenia w INTERMAX.
 
-    Jedyne zlecenie numeru ma całą pamięć numeru, z każdego dnia: tata mógł je przenieść z miejsca Centrum na inny dzień,
-    a jego ręczna zmiana wygrywa tak samo jak zmiana Wykonawcy, więc Przeniesienie czeka na ``may_move`` każdej z nich.
-    Zlecenie numeru, który INTERMAX ma więcej niż raz, ma tylko pamięć numeru ze swojego dnia, bo Excel nie mówi, który
-    wiersz tata przeniósł. Centrum nie przenosi wtedy żadnego z tych zleceń (``_matching.Board``), więc ich pamięć tylko
-    rośnie (``since``, ``overridden``) i nic z niej nie ginie, dopóki numer nie ma znowu jednego zlecenia."""
+    Excel nie mówi, który wiersz numeru tata przeniósł albo usunął, więc pamięć nie należy do jednego wiersza. Brak
+    pamięci znaczy „każdy mail przenosi”, więc bezpieczny kierunek to pamięć dla każdego zlecenia numeru: Przeniesienie
+    jedynego zlecenia czeka na ``may_move`` każdej. Wpisanie raportów zakłada pamięć numeru tylko wtedy, gdy numer nie ma
+    żadnej, więc kilka pamięci jednego numeru ma tylko pamięć zapisana przed #1367 r4."""
 
-    return tuple(move for move in moves if move.number == key.number and (alone or move.day == key.day))
+    return tuple(sorted((move for move in moves if move.number == number), key=lambda move: move.day))
+
+
+def single_orders(orders: Iterable[RegisterOrder]) -> dict[OrderNumber, OrderKey]:
+    """Klucz zlecenia każdego numeru, który INTERMAX ma w odczytanych dniach raz. Tylko przy takim numerze wiadomo,
+    który wiersz jest którym, więc tylko jego własne wpisy Centrum pamięta i niesie za wierszem (``_cells.reconcile``,
+    ``_moves._carried``): tata może usunąć, scalić albo zamienić wiersze jednego numeru, a Excel tego nie mówi."""
+
+    found: dict[OrderNumber, OrderKey | None] = {}
+    for order in orders:
+        found[order.key.number] = None if order.key.number in found else order.key
+    return {number: key for number, key in found.items() if key is not None}
 
 
 @dataclass(frozen=True)
 class OwnEntries:
     """Pamięć własnych wpisów: najwyżej jeden wpis na komórkę zlecenia i najwyżej jedno Przeniesienie na numer i dzień
-    (``moves``; pamięć sprzed Przeniesień ich nie ma)."""
+    (``moves``; pamięć sprzed Przeniesień ich nie ma). Wpisy ma tylko numer, który w chwili zapisu miał w odczytanych
+    dniach jedno zlecenie (``_cells.reconcile``), więc następne kliknięcie wie, że to był jeden wiersz."""
 
     entries: frozenset[OwnEntry]
     moves: frozenset[OwnMove] = frozenset()
@@ -346,8 +356,9 @@ class OrderedDay:
 @dataclass(frozen=True)
 class ReportInputs:
     """Wejście rdzenia: maile ze Skrzynki raportów, adresy Wykonawców, uporządkowane zlecenia INTERMAX z dni od
-    ``window.start``, dni otwarte, pamięć własnych wpisów, decyzje „Zostaw moją” i Dni uporządkowane każdego arkusza
-    zleceń od ``window.start`` (``ordered_days``)."""
+    ``window.start``, także po dziś, dni otwarte, pamięć własnych wpisów, decyzje „Zostaw moją” i Dni uporządkowane
+    każdego arkusza zleceń od ``window.start`` (``ordered_days``). Każde zlecenie z ``orders`` mówi, że jego numer jest
+    w INTERMAX; okno mówi tylko, do których z nich wolno pisać."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -534,9 +545,10 @@ class RepeatedOrder:
 
 @dataclass(frozen=True)
 class RepeatedNumber:
-    """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` ma numer ``number``, który INTERMAX ma w dniach otwartych więcej
-    niż raz (``places``: dzień i Wykonawca każdego z tych zleceń, po kolei), a nadawca nie ma w dniu ``day`` żadnego z
-    nich. Centrum nie wie, którego zlecenia dotyczy Wpis, więc go nie wpisuje i nie przenosi żadnego z nich."""
+    """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` ma numer ``number``, który INTERMAX ma w odczytanych dniach
+    (także zamkniętych i po dziś) więcej niż raz (``places``: dzień i Wykonawca każdego z tych zleceń, po kolei), a
+    nadawca nie ma w dniu ``day`` żadnego z nich. Centrum nie wie, którego zlecenia dotyczy Wpis, więc nie zmienia
+    żadnego z nich."""
 
     worker: Login
     day: date
@@ -547,18 +559,20 @@ class RepeatedNumber:
 class MoveBar(Enum):
     """Dlaczego Wpis raportu nie przenosi zlecenia na inny dzień (ADR 0029): dzień docelowy nie jest Dniem
     uporządkowanym (``NOT_ORDERED``), jest Dniem uporządkowanym tylko w innym arkuszu zleceń (``OTHER_SHEET``), jest w
-    okresie z Plikiem zbiorczym (``CLOSED_TARGET``) albo zlecenie jest w takim okresie (``CLOSED_SOURCE``)."""
+    okresie z Plikiem zbiorczym (``CLOSED_TARGET``), zlecenie jest w takim okresie (``CLOSED_SOURCE``) albo w dniu po
+    dziś (``AFTER_TODAY``: tata wkleja zlecenia na jutro dzień wcześniej, ADR 0019, a Centrum nie zmienia dni po dziś)."""
 
     NOT_ORDERED = auto()
     OTHER_SHEET = auto()
     CLOSED_TARGET = auto()
     CLOSED_SOURCE = auto()
+    AFTER_TODAY = auto()
 
 
 @dataclass(frozen=True)
 class RefusedMove:
-    """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` do zlecenia ``number``, które INTERMAX ma w dniu
-    ``order_day``, przeniósłby je na dzień, do którego nie wolno (``bar``); INTERMAX zostaje bez zmiany."""
+    """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` do jedynego zlecenia ``number``, które INTERMAX ma w dniu
+    ``order_day``, przeniósłby je tam, skąd albo dokąd nie wolno (``bar``); INTERMAX zostaje bez zmiany."""
 
     worker: Login
     day: date
@@ -595,8 +609,8 @@ ReportProblem = (
 )
 """Problem, który tata widzi z powodem (``reasons.reason``): nierozpoznany temat, nieznany nadawca, brak ``tak``/``nie``,
 przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, ten sam numer dwa razy w dniu u nadawcy, numer
-w kilku zleceniach INTERMAX bez jednego zlecenia nadawcy w dniu z tematu, Przeniesienie na dzień, do którego nie wolno,
-i różnica z ręczną wartością."""
+w kilku zleceniach INTERMAX bez jednego zlecenia nadawcy w dniu z tematu, Przeniesienie skąd albo dokąd nie wolno (także
+jedyne zlecenie numeru w dniu po dziś) i różnica z ręczną wartością."""
 
 
 @dataclass(frozen=True)
