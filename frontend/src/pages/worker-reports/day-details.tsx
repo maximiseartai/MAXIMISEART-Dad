@@ -1,6 +1,7 @@
+import { ArrowLeftRightIcon } from "lucide-react"
 import { cn } from "cn"
 
-import type { KeptCell, ReportsOrder, ReportsProblem } from "@/api/generated"
+import type { KeptCell, ReportsNote, ReportsOrder, ReportsProblem } from "@/api/generated"
 import { Button } from "@/components/ui/button"
 import type { DayState, Status } from "@/pages/worker-reports/day-state"
 import { shortDay } from "@/pages/worker-reports/days"
@@ -31,8 +32,8 @@ export function WorkerAvatar({ worker }: { worker: string }) {
 
 /**
  * Popover kafelka: Wykonawca, dzień i stan, liczby dnia, pasek wpisanych w kolorze stanu i zlecenia dnia z INTERMAX
- * (`orders_detail`) z problemami i „Zostaw moją”. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`)
- * pokazuje zamiast niej numery bez raportu i problemy.
+ * (`orders_detail`) z problemami, „Zostaw moją” i spokojnymi informacjami o Przeniesieniach zleceń (`notes`). Wynik
+ * kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy.
  */
 export function DayDetails({
   worker,
@@ -83,7 +84,10 @@ const LIST = "flex flex-col border-t py-1 [&>li+li]:border-t [&>li+li]:border-bo
 
 const ROW = "grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5 gap-y-1 px-3.5 py-2"
 
-/** Zlecenia dnia w kolejności z INTERMAX, a po nich problemy bez zlecenia tego dnia (np. numer spoza zleceń). */
+/**
+ * Zlecenia dnia w kolejności z INTERMAX, a po nich problemy bez zlecenia tego dnia (np. numer spoza zleceń) i
+ * informacje o zleceniach, których dzień już nie ma (np. „przekazane …”).
+ */
 function Orders({
   orders,
   state,
@@ -92,6 +96,7 @@ function Orders({
 }: { orders: ReadonlyArray<ReportsOrder>; state: Extract<DayState, { kind: Status }> } & Keeping) {
   const numbers = new Set(orders.map((order) => order.number))
   const loose = state.day.problems.filter((problem) => problem.number === null || !numbers.has(problem.number))
+  const handed = state.day.notes.filter((note) => !numbers.has(note.number))
 
   return (
     <ul className={LIST} aria-label="Zlecenia dnia">
@@ -108,6 +113,17 @@ function Orders({
             .map((problem) => (
               <ProblemReason key={problemKey(problem)} problem={problem} keeping={keeping} onKeep={onKeep} />
             ))}
+          {state.day.notes
+            .filter((note) => note.number === order.number)
+            .map((note) => (
+              <NoteLine key={note.text} note={note} />
+            ))}
+        </li>
+      ))}
+      {handed.map((note) => (
+        <li key={`${note.number} ${note.text}`} className={ROW}>
+          <OrderNumber number={note.number} />
+          <NoteLine note={note} />
         </li>
       ))}
       {loose.map((problem) => (
@@ -177,6 +193,16 @@ function Fallback({ state, keeping, onKeep }: { state: Extract<DayState, { kind:
         </li>
       ))}
     </ul>
+  )
+}
+
+/** Informacja o zmianie, którą Centrum zrobiło w INTERMAX: spokojna, wyciszona, bez znaczka problemu. */
+function NoteLine({ note }: { note: ReportsNote }) {
+  return (
+    <span className="col-start-2 col-end-4 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <ArrowLeftRightIcon className="size-3 shrink-0" aria-hidden />
+      {note.text}
+    </span>
   )
 }
 

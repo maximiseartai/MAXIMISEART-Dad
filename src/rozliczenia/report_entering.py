@@ -13,7 +13,8 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
 - Planowanie: rdzeń raportów;
-- Zapisywanie: komórki bez Kopii INTERMAX (``intermax_cells.write_cells``), a po udanym zapisie pamięć własnych wpisów
+- Zapisywanie: komórki i Przeniesienia zleceń bez Kopii INTERMAX (``intermax_cells.write_cells``), a po udanym zapisie
+  pamięć własnych wpisów
   z dniem wdrożenia, także przy zerze wpisanych komórek; kopia konfliktu OneDrive, która pojawiła się obok INTERMAX do
   końca zapisu, zatrzymuje kliknięcie już po zapisie pamięci i wyniku dla widoku Raporty, z podsumowaniem w faktach
   Zatrzymania. Wynik dla widoku Raporty (``ClickResult``) proces zapisuje tylko po udanym zapisie INTERMAX, bo jego
@@ -53,7 +54,7 @@ from .period_folder import PeriodFolder, PeriodFolderInaccessible, scan_period_f
 from .phase_runner import PhaseRunner
 from .register_columns import COMPLETED, DATE, ORDER_NUMBER, SUCCESSFUL, WORKER
 from .register_file import OrderSheets, RegisterFile
-from .report_cells import CellChange, OrderRow
+from .report_cells import CellChange, OrderMove, OrderRow
 from .run_context import RunContext
 from .settlement_period import SettlementPeriod, period_of
 from .workbook_files import WorkbookError
@@ -66,10 +67,12 @@ from .worker_reports import (
     OrderKey,
     OwnEntries,
     OwnEntry,
+    OwnMove,
     ReadReport,
     RegisterOrder,
     ReportInputs,
     ReportMail,
+    ReportNote,
     ReportProblem,
     Window,
     WorkerAddresses,
@@ -104,12 +107,14 @@ class SavedState:
 @dataclass(frozen=True)
 class ClickResult:
     """Wynik kliknięcia dla widoku Raporty: chwila kliknięcia, dni otwarte okna od pierwszego do dziś, liczby i
-    zlecenia Wykonawców z dni i problemy rdzenia raportów, z adresem nieznanego nadawcy (ADR 0028)."""
+    zlecenia Wykonawców z dni, problemy rdzenia raportów, z adresem nieznanego nadawcy (ADR 0028), i informacje o
+    Przeniesieniach zleceń (ADR 0029)."""
 
     clicked_at: datetime
     days: tuple[date, ...]
     workers: tuple[WorkerDay, ...]
     problems: tuple[ReportProblem, ...]
+    notes: tuple[ReportNote, ...] = ()
 
 
 class StateUnreadable(Exception):
@@ -192,8 +197,9 @@ class EnteringFacts:
 
     ``rollout_before``: dzień wdrożenia z pamięci przed kliknięciem (``None``: pierwsze), ``rollout``: dzień wdrożenia
     tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne wpisy zleceń, które mają Wpis w tym kliknięciu, a
-    ``kept``: decyzje „Zostaw moją” tych zleceń z migawki kliknięcia. ``skipped``: maile, których Skrzynka raportów
-    nie umiała przeczytać.
+    ``kept``: decyzje „Zostaw moją” tych zleceń z migawki kliknięcia, ``moves_before``: zapamiętane Przeniesienia
+    numerów, które mają Wpis w tym kliknięciu. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
+    ``moves``: Przeniesienia zleceń do zapisu, ``notes``: informacje dla taty.
     """
 
     today: date
@@ -206,6 +212,9 @@ class EnteringFacts:
     mails: tuple[MailRead, ...]
     problems: tuple[ReportProblem, ...]
     changes: tuple[CellChange, ...]
+    moves: tuple[OrderMove, ...] = ()
+    notes: tuple[ReportNote, ...] = ()
+    moves_before: tuple[OwnMove, ...] = ()
 
 
 @dataclass
@@ -315,6 +324,13 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             )
         )
         kept = tuple(sorted((decision for decision in saved.kept if decision.key in reported), key=_kept_order))
+        numbers = {(key.number, key.day) for key in reported}
+        moves_before = tuple(
+            sorted(
+                (move for move in saved.memory.moves if (move.number, move.day) in numbers),
+                key=lambda move: (move.day, move.number),
+            )
+        )
         closed = tuple(period.token for period in Window.periods(today, saved.rollout) if period.token in window.closed)
         planned = EnteringFacts(
             window.today,
@@ -327,6 +343,9 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             found.mails,
             found.problems,
             found.changes,
+            found.moves,
+            found.notes,
+            moves_before,
         )
         return planned, found.memory, found.workers
 
@@ -337,7 +356,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             _stops(lambda: messages.unsupported_shape(register_path, _sheet(facts)), UnsupportedShape, facts=facts),
             _stops_unusable(facts),
         ):
-            written = write_cells(register, facts.changes, waiting=inputs.waiting, disk=inputs.disk)
+            written = write_cells(register, facts.changes, facts.moves, waiting=inputs.waiting, disk=inputs.disk)
         match written:
             case Refusal():
                 message = intermax_messages.refused(written, register_path, register_path.parent, intermax_messages.ENTERING)
@@ -351,7 +370,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
 
     written = phases.save(save)
     warnings = [] if parts.state.save_memory(written, window.rollout, memory) else [messages.memory_not_saved()]
-    parts.state.save_result(written, ClickResult(clicked_at, _open_days(window), figures, facts.problems))
+    parts.state.save_result(written, ClickResult(clicked_at, _open_days(window), figures, facts.problems, facts.notes))
     summary = replace(EnteringSummary(facts, written.count, warnings), phase_durations_ms=phases.durations_ms())
     if copies := onedrive_conflicts.beside(register_path):
         raise StopError(messages.conflict_after_save(copies[0]), facts=summary)
@@ -412,9 +431,11 @@ def _stops_unusable(facts: EnteringFacts | None = None) -> Iterator[None]:
 
 
 def _sheet(facts: EnteringFacts) -> str:
-    """Arkusz pierwszej zmiany: tam zapis trafił na kształt, którego nie przenosi."""
+    """Arkusz pierwszej zmiany albo pierwszego Przeniesienia: tam zapis trafił na kształt, którego nie przenosi."""
 
-    return facts.changes[0].order.sheet if facts.changes else ""
+    if facts.changes:
+        return facts.changes[0].order.sheet
+    return facts.moves[0].order.sheet if facts.moves else ""
 
 
 def _orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[RegisterOrder, ...]:

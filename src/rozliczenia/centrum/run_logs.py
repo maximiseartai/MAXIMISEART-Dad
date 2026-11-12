@@ -87,6 +87,7 @@ from rozliczenia.worker_reports import (
     OrderKey,
     OrderNumber,
     OtherDay,
+    OwnMove,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
@@ -766,6 +767,37 @@ class LoggedChange(_Record):
     value: str
 
 
+class LoggedMove(_Record):
+    """Przeniesienie zlecenia, które Wpisanie raportów zapisuje: arkusz i wiersz zlecenia sprzed zapisu, dzień i
+    ``WYKONAWCA`` po zapisie."""
+
+    sheet: str
+    row: int
+    day: date
+    worker: str
+
+
+class LoggedOwnMove(_Record):
+    """Przeniesienie zlecenia z pamięci Wpisania raportów: numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u którego
+    Centrum je postawiło, i dzień i Wykonawca sprzed pierwszego Przeniesienia Centrum."""
+
+    number: int
+    day: date
+    worker: str
+    origin_day: date
+    origin_worker: str
+
+    @classmethod
+    def of(cls, move: OwnMove) -> LoggedOwnMove:
+        return cls(
+            number=int(move.number),
+            day=move.day,
+            worker=move.worker,
+            origin_day=move.origin_day,
+            origin_worker=move.origin_worker,
+        )
+
+
 class LoggedReports(_Record):
     """Wpisanie raportów (ADR 0028) bez adresów nadawców, tematów i treści maili poza Wpisami.
 
@@ -774,8 +806,9 @@ class LoggedReports(_Record):
     #1229 ich nie mają, bo wtedy kliknięcie ich nie sprawdzało), ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać, ``mails``
     przeczytane maile po chwili przyjścia, ``problems`` problemy rdzenia raportów, ``changes`` komórki do wpisania,
     ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, ``kept`` decyzje „Zostaw moją” tych zleceń z
-    migawki kliknięcia (komórka z treścią Wpisu jako ``value``; Logi sprzed #1231 ich nie mają), a ``written`` liczba
-    wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
+    migawki kliknięcia (komórka z treścią Wpisu jako ``value``; Logi sprzed #1231 ich nie mają), ``moves`` Przeniesienia
+    zleceń do zapisu, ``moves_before`` zapamiętane Przeniesienia numerów z Wpisami tego kliknięcia (Logi sprzed #1347 nie
+    mają obu), a ``written`` liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
     """
 
     today: date
@@ -788,6 +821,8 @@ class LoggedReports(_Record):
     changes: list[LoggedChange]
     memory_before: list[LoggedOwnEntry]
     kept: list[LoggedOwnEntry] = []
+    moves: list[LoggedMove] = []
+    moves_before: list[LoggedOwnMove] = []
     written: int | None
 
     @classmethod
@@ -808,6 +843,11 @@ class LoggedReports(_Record):
             ],
             memory_before=[LoggedOwnEntry.of(entry.key, entry.column, entry.value) for entry in facts.memory_before],
             kept=[LoggedOwnEntry.of(kept.key, kept.column, kept.reported) for kept in facts.kept],
+            moves=[
+                LoggedMove(sheet=move.order.sheet, row=move.order.row, day=move.day, worker=move.worker)
+                for move in facts.moves
+            ],
+            moves_before=[LoggedOwnMove.of(move) for move in facts.moves_before],
             written=written,
         )
 

@@ -82,6 +82,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedCell,
     LoggedInputFile,
     LoggedOwnEntry,
+    LoggedOwnMove,
     LoggedReportEntry,
     LoggedReportMail,
     LoggedReports,
@@ -121,6 +122,7 @@ from rozliczenia.worker_reports import (
     OrderNumber,
     OwnEntries,
     OwnEntry,
+    OwnMove,
     ReadStranger,
     SenderAddress,
     as_mail,
@@ -952,9 +954,17 @@ def _saved(entering: LoggedReports) -> SavedState:
         [number] = numbers[_memory_key(logged)]
         return OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
 
+    def number(logged: LoggedOwnMove) -> OrderNumber:
+        found = {text for (value, day, _), texts in numbers.items() if (value, day) == (logged.number, logged.day) for text in texts}
+        return OrderNumber(found.pop() if len(found) == 1 else str(logged.number))
+
     entries = frozenset(OwnEntry(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.memory_before)
     kept = frozenset(Kept(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.kept)
-    return SavedState(entering.rollout_before, OwnEntries(entries), kept)
+    moves = frozenset(
+        OwnMove(number(logged), logged.day, Login(logged.worker), logged.origin_day, Login(logged.origin_worker))
+        for logged in entering.moves_before
+    )
+    return SavedState(entering.rollout_before, OwnEntries(entries, moves), kept)
 
 
 def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:

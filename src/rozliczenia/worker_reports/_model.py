@@ -13,7 +13,7 @@ from enum import Enum, auto
 import hashlib
 from typing import ClassVar, Final, NewType, assert_never
 
-from ..report_cells import CellChange, OrderRow, ReportColumn
+from ..report_cells import CellChange, OrderMove, OrderRow, ReportColumn
 from ..settlement_period import SettlementPeriod, period_of
 from ..text import normalize_text
 
@@ -124,12 +124,14 @@ class OrderKey:
 @dataclass(frozen=True)
 class RegisterOrder:
     """Uporządkowane zlecenie INTERMAX z bieżącą wartością ``SKUTECZNE`` (``successful``) i ``CZYNNOŚCI ZREALIZOWANE``
-    (``completed``); ``None`` to pusta komórka."""
+    (``completed``); ``None`` to pusta komórka. ``worker_name``: ``WYKONAWCA`` tak, jak stoi w komórce, bez spacji na
+    brzegach: tę pisownię dostaje zlecenie przeniesione do tego Wykonawcy."""
 
     row: OrderRow
     key: OrderKey
     successful: str | None
     completed: str | None
+    worker_name: str
 
     @classmethod
     def of(
@@ -144,7 +146,9 @@ class RegisterOrder:
         login = normalize_text(worker)
         if order_number is None or not isinstance(day, date) or not login:
             return None
-        return cls(row, OrderKey(order_number, day, Login(login)), _cell(successful), _cell(completed))
+        return cls(
+            row, OrderKey(order_number, day, Login(login)), _cell(successful), _cell(completed), str(worker).strip()
+        )
 
     def cell(self, column: ReportColumn) -> str | None:
         match column:
@@ -223,15 +227,35 @@ class OwnEntry:
 
 
 @dataclass(frozen=True)
+class OwnMove:
+    """Przeniesienie zlecenia, które Wpisanie raportów samo zrobiło: zlecenie ``number`` stoi w dniu ``day`` u
+    Wykonawcy ``worker``, a przed pierwszym Przeniesieniem Centrum stało w dniu ``origin_day`` u ``origin_worker``.
+
+    Dopóki INTERMAX ma zlecenie u ``worker``, Wpis innego Wykonawcy może je przenieść dalej, a tata widzi informację o
+    Przeniesieniu, gdy ``worker`` różni się od ``origin_worker``. Gdy tata zmienił ``WYKONAWCA`` po Przeniesieniu,
+    jego zmiana wygrywa (ADR 0029)."""
+
+    number: OrderNumber
+    day: date
+    worker: Login
+    origin_day: date
+    origin_worker: Login
+
+
+@dataclass(frozen=True)
 class OwnEntries:
-    """Pamięć własnych wpisów: najwyżej jeden wpis na komórkę zlecenia."""
+    """Pamięć własnych wpisów: najwyżej jeden wpis na komórkę zlecenia i najwyżej jedno Przeniesienie na numer i dzień
+    (``moves``; pamięć sprzed Przeniesień ich nie ma)."""
 
     entries: frozenset[OwnEntry]
+    moves: frozenset[OwnMove] = frozenset()
     EMPTY: ClassVar[OwnEntries]
 
     def __post_init__(self) -> None:
         if len({(entry.key, entry.column) for entry in self.entries}) != len(self.entries):
             raise ValueError("Pamięć własnych wpisów ma dwa wpisy jednej komórki zlecenia.")
+        if len({(move.number, move.day) for move in self.moves}) != len(self.moves):
+            raise ValueError("Pamięć własnych wpisów ma dwa Przeniesienia jednego zlecenia w jednym dniu.")
 
 
 OwnEntries.EMPTY = OwnEntries(frozenset())
@@ -473,6 +497,44 @@ ReportProblem = (
 przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data, ten sam numer dwa razy w dniu i różnica z ręczną wartością."""
 
 
+@dataclass(frozen=True)
+class TakenOver:
+    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: zlecenie ``number`` Centrum przeniosło do niego od
+    ``previous`` („przejęte od”)."""
+
+    day: date
+    worker: Login
+    number: OrderNumber
+    previous: Login
+
+
+@dataclass(frozen=True)
+class HandedOver:
+    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: jego zlecenie ``number`` Centrum przeniosło do
+    ``successor`` („przekazane”)."""
+
+    day: date
+    worker: Login
+    number: OrderNumber
+    successor: Login
+
+
+ReportNote = TakenOver | HandedOver
+"""Informacja dla taty o zmianie, którą Wpisanie raportów zrobiło w INTERMAX (ADR 0029): tylko numer, Wykonawca i dzień.
+Nie jest problemem ani Zgłoszeniem; zdanie daje ``reasons.note``. Stoi, dopóki INTERMAX ma zlecenie tam, gdzie
+postawiło je Centrum."""
+
+
+def note_order(note: ReportNote) -> tuple[date, str, str, str, str]:
+    """Miejsce informacji w widoku Raporty: dzień, Wykonawca, numer, rodzaj i drugi Wykonawca."""
+
+    match note:
+        case TakenOver(previous=other) | HandedOver(successor=other):
+            return note.day, note.worker, note.number, type(note).__name__, other
+        case _:
+            assert_never(note)
+
+
 class OrderState(Enum):
     """Stan zlecenia dnia Wykonawcy w widoku Raporty: problem, którego tata nie zostawił „Zostaw moją”, bez żadnego Wpisu
     (bez raportu, także gdy tata sam wpisał ``tak``) albo wpisane z Wpisu."""
@@ -520,15 +582,19 @@ class WorkerDay:
 
 @dataclass(frozen=True)
 class ReportsOutcome:
-    """Wynik rdzenia. ``changes`` po arkuszu, wierszu i kolumnie, każda komórka najwyżej raz; ``problems`` bez
-    powtórzeń, w kolejności ``problem_order``; ``workers`` po dniu i Wykonawcy; ``mails`` po chwili przyjścia.
-    ``memory`` proces zapisuje dopiero po udanym zapisie INTERMAX."""
+    """Wynik rdzenia. ``changes`` po arkuszu, wierszu i kolumnie, każda komórka najwyżej raz, w wierszach tak, jak je
+    przeczytał proces; ``moves`` (Przeniesienia zleceń) po arkuszu i wierszu, każdy wiersz najwyżej raz, a zapis
+    przenosi wiersz już z komórkami z ``changes``; ``problems`` bez powtórzeń, w kolejności ``problem_order``;
+    ``notes`` (informacje dla taty) w kolejności ``note_order``; ``workers`` po dniu i Wykonawcy, po Przeniesieniach;
+    ``mails`` po chwili przyjścia. ``memory`` proces zapisuje dopiero po udanym zapisie INTERMAX."""
 
     changes: tuple[CellChange, ...]
     problems: tuple[ReportProblem, ...]
     workers: tuple[WorkerDay, ...]
     mails: tuple[MailRead, ...]
     memory: OwnEntries
+    moves: tuple[OrderMove, ...]
+    notes: tuple[ReportNote, ...]
 
 
 def problem_order(

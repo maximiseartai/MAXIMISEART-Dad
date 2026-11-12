@@ -36,18 +36,21 @@ def worker_days(
     reports: Sequence[ReadReport],
     problems: Iterable[ReportProblem],
     changes: Iterable[CellChange],
+    moved: frozenset[OrderRow],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
     zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał.
 
-    Zlecenia dnia idą w kolejności z INTERMAX: arkusze zleceń tak, jak przyszły w ``orders``, a w arkuszu od góry.
+    ``orders`` mają klucz po Przeniesieniach kliknięcia. Zlecenia dnia idą w kolejności z INTERMAX po zapisie: arkusze
+    zleceń tak, jak przyszły w ``orders``, a w arkuszu od góry, a zlecenia przeniesione (``moved``) za pozostałymi,
+    bo zapis stawia je pod ostatnim zleceniem nowego Wykonawcy.
     """
 
     found_orders = tuple(orders)
     written: dict[tuple[OrderRow, ReportColumn], str] = {(change.order, change.column): change.value for change in changes}
     sheets = {sheet: rank for rank, sheet in enumerate(dict.fromkeys(order.row.sheet for order in found_orders))}
     days: defaultdict[tuple[date, Login], list[RegisterOrder]] = defaultdict(list)
-    for order in sorted(found_orders, key=lambda order: (sheets[order.row.sheet], order.row.row)):
+    for order in sorted(found_orders, key=lambda order: (order.row in moved, sheets[order.row.sheet], order.row.row)):
         days[order.key.day, order.key.worker].append(order)
     mails = Counter((report.day, report.worker) for report in reports)
     reported = {OrderKey(entry.number, report.day, report.worker) for report in reports for entry in report.entries}

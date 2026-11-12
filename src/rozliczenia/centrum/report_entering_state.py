@@ -1,13 +1,16 @@
 """Pliki Wpisania raportów w ``config`` (ADR 0028): jedyny moduł, który zna ich format. Każdy plik ma jednego pisarza.
 
-- ``wpisanie-raportow-stan.json``, ``{schema_version: 1, rollout, own: [{number, day, worker, column, value}]}``: dzień
-  wdrożenia i komórki, które Wpisanie raportów samo wpisało. Pisze go tylko proces po udanym zapisie INTERMAX.
-- ``wpisanie-raportow-wynik.json``, ``{schema_version: 2, clicked_at, days, workers, problems}``: wynik ostatniego
-  udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``: numer,
-  ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu i czy zlecenie ma Wpis), zdaniem o każdym problemie
-  (``reasons.reason``) i adresem nieznanego nadawcy; zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Pisze
-  go tylko proces, po pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia
-  (``ShownResult.detailed``), dopóki następne kliknięcie nie zapisze wersji 2.
+- ``wpisanie-raportow-stan.json``, ``{schema_version: 2, rollout, own: [{number, day, worker, column, value}], moves:
+  [{number, day, worker, origin_day, origin_worker}]}``: dzień wdrożenia, komórki, które Wpisanie raportów samo
+  wpisało, i Przeniesienia zleceń, które samo zrobiło (ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX.
+  Plik w wersji 1, sprzed Przeniesień, dalej się czyta, bez Przeniesień, dopóki następne kliknięcie nie zapisze wersji 2.
+- ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
+  ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
+  numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu i czy zlecenie ma Wpis), zdaniem o każdym problemie
+  (``reasons.reason``), adresem nieznanego nadawcy i informacjami o Przeniesieniach (``notes``: dzień, Wykonawca, numer
+  i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Pisze go tylko proces, po
+  pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
+  wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
 - ``wpisanie-raportow-decyzje.json``, ``{schema_version: 1, kept: [{number, day, worker, column, reported}]}``: decyzje
   taty „Zostaw moją”. Pisze go tylko żądanie API „Zostaw moją” (``keep``); proces czyta go przy Sprawdzaniu razem z
   pamięcią jako migawkę, a widok Raporty łączy go z wynikiem przy odczycie, więc wspólnej blokady procesu i API nie ma.
@@ -46,17 +49,21 @@ from rozliczenia.worker_reports import (
     OtherDay,
     OwnEntries,
     OwnEntry,
+    OwnMove,
     RepeatedOrder,
+    ReportNote,
     ReportProblem,
     UnknownNumber,
     UnknownSender,
     UnreadableSubject,
 )
-from rozliczenia.worker_reports.reasons import reason
+from rozliczenia.worker_reports.reasons import note, reason
 
-_SCHEMA_VERSION: Final = 1
-_RESULT_VERSION: Final = 2
-"""Wersja pliku wyniku: 2 dodała zlecenia dnia Wykonawcy (#1322)."""
+_DECISIONS_VERSION: Final = 1
+_STATE_VERSION: Final = 2
+"""Wersja pliku pamięci: 2 dodała Przeniesienia zleceń (#1347)."""
+_RESULT_VERSION: Final = 3
+"""Wersja pliku wyniku: 2 dodała zlecenia dnia Wykonawcy (#1322), 3 informacje o Przeniesieniach (#1347)."""
 
 Column = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
 
@@ -73,10 +80,31 @@ class _Own(_Record):
     value: str
 
 
-class _State(_Record):
+class _Move(_Record):
+    number: str
+    day: date
+    worker: str
+    origin_day: date
+    origin_worker: str
+
+
+class _StateV1(_Record):
+    """Plik pamięci sprzed Przeniesień (#1347): czyta go tylko ``load``."""
+
     schema_version: Literal[1]
     rollout: date
     own: list[_Own]
+
+
+class _State(_Record):
+    schema_version: Literal[2]
+    rollout: date
+    own: list[_Own]
+    moves: list[_Move]
+
+
+class _AnyState(RootModel[Annotated[_StateV1 | _State, Field(discriminator="schema_version")]]):
+    """Plik pamięci w którejkolwiek wersji, rozpoznanej po ``schema_version``."""
 
 
 class _Kept(_Record):
@@ -130,6 +158,13 @@ class _Problem(_Record):
     difference: _Kept | None
 
 
+class _Note(_Record):
+    day: date
+    worker: str
+    number: str
+    text: str
+
+
 class _ResultV1(_Record):
     """Plik wyniku sprzed zleceń dnia (#1322): czyta go tylko ``shown``."""
 
@@ -140,7 +175,9 @@ class _ResultV1(_Record):
     problems: list[_Problem]
 
 
-class _Result(_Record):
+class _ResultV2(_Record):
+    """Plik wyniku sprzed informacji o Przeniesieniach (#1347): czyta go tylko ``shown``."""
+
     schema_version: Literal[2]
     clicked_at: datetime
     days: list[date]
@@ -148,7 +185,16 @@ class _Result(_Record):
     problems: list[_Problem]
 
 
-class _AnyResult(RootModel[Annotated[_ResultV1 | _Result, Field(discriminator="schema_version")]]):
+class _Result(_Record):
+    schema_version: Literal[3]
+    clicked_at: datetime
+    days: list[date]
+    workers: list[_Worker]
+    problems: list[_Problem]
+    notes: list[_Note]
+
+
+class _AnyResult(RootModel[Annotated[_ResultV1 | _ResultV2 | _Result, Field(discriminator="schema_version")]]):
     """Plik wyniku w którejkolwiek wersji, rozpoznanej po ``schema_version``."""
 
 
@@ -182,15 +228,27 @@ class ShownProblem:
 
 
 @dataclass(frozen=True)
+class ShownNote:
+    """Informacja z ostatniego kliknięcia przy dniu ``day`` Wykonawcy ``worker``: numer zlecenia i zdanie dla taty."""
+
+    day: date
+    worker: str
+    number: str
+    text: str
+
+
+@dataclass(frozen=True)
 class ShownResult:
     """Wynik ostatniego udanego kliknięcia dla widoku Raporty (bez decyzji „Zostaw moją”: łączy je widok);
-    ``detailed``: plik ma zlecenia dnia (wersja 2)."""
+    ``detailed``: plik ma zlecenia dnia (wersja 2 i nowsza), ``notes``: informacje o Przeniesieniach (pusto w pliku
+    sprzed wersji 3)."""
 
     clicked_at: datetime
     days: tuple[date, ...]
     workers: tuple[ShownWorker, ...]
     problems: tuple[ShownProblem, ...]
     detailed: bool
+    notes: tuple[ShownNote, ...] = ()
 
 
 @dataclass
@@ -250,16 +308,21 @@ class FileReportState:
         if text is None:
             return SavedState(None, OwnEntries.EMPTY, self.kept())
         try:
-            state = _State.model_validate_json(text)
+            state = _AnyState.model_validate_json(text).root
             entries = frozenset(
                 OwnEntry(
                     OrderKey(OrderNumber(own.number), own.day, Login(own.worker)), ReportColumn(own.column), own.value
                 )
                 for own in state.own
             )
+            moves = frozenset(
+                OwnMove(OrderNumber(move.number), move.day, Login(move.worker), move.origin_day, Login(move.origin_worker))
+                for move in (state.moves if isinstance(state, _State) else ())
+            )
+            memory = OwnEntries(entries, moves)
         except (ValidationError, ValueError) as error:
             raise StateUnreadable from error
-        return SavedState(state.rollout, OwnEntries(entries), self.kept())
+        return SavedState(state.rollout, memory, self.kept())
 
     def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
         own = [
@@ -272,7 +335,17 @@ class FileReportState:
             )
             for entry in sorted(memory.entries, key=lambda entry: (entry.key, entry.column.value, entry.value))
         ]
-        return self.memory.write(_State(schema_version=_SCHEMA_VERSION, rollout=rollout, own=own))
+        moves = [
+            _Move(
+                number=move.number,
+                day=move.day,
+                worker=move.worker,
+                origin_day=move.origin_day,
+                origin_worker=move.origin_worker,
+            )
+            for move in sorted(memory.moves, key=lambda move: (move.day, move.number))
+        ]
+        return self.memory.write(_State(schema_version=_STATE_VERSION, rollout=rollout, own=own, moves=moves))
 
     def save_result(self, written: CellsWritten, result: ClickResult) -> None:
         workers = [
@@ -302,6 +375,7 @@ class FileReportState:
                 days=list(result.days),
                 workers=workers,
                 problems=[_problem(problem) for problem in result.problems],
+                notes=[_note(found) for found in result.notes],
             )
         )
 
@@ -341,7 +415,11 @@ class FileReportState:
                 )
                 for problem in result.problems
             ),
-            detailed=isinstance(result, _Result),
+            detailed=not isinstance(result, _ResultV1),
+            notes=tuple(
+                ShownNote(found.day, found.worker, found.number, found.text)
+                for found in (result.notes if isinstance(result, _Result) else ())
+            ),
         )
 
     def kept(self) -> frozenset[Kept]:
@@ -362,7 +440,7 @@ class FileReportState:
         with self._deciding:
             decisions = sorted(self.kept() | {kept}, key=lambda decision: (decision.key, decision.column.value, decision.reported))
             self.decisions.write(
-                _Decisions(schema_version=_SCHEMA_VERSION, kept=[_Kept.of(decision) for decision in decisions])
+                _Decisions(schema_version=_DECISIONS_VERSION, kept=[_Kept.of(decision) for decision in decisions])
             )
 
 
@@ -373,6 +451,12 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
         OrderDetail(OrderNumber(order.number), order.successful, order.activities, order.reported)
         for order in worker.orders_detail
     )
+
+
+def _note(found: ReportNote) -> _Note:
+    """Informacja w pliku wyniku: dzień i Wykonawca kafelka, numer zlecenia i zdanie dla taty, bez treści maili."""
+
+    return _Note(day=found.day, worker=found.worker, number=found.number, text=note(found))
 
 
 def _problem(problem: ReportProblem) -> _Problem:
