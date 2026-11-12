@@ -344,9 +344,15 @@ _GITHUB_ONLY = (
     _Checkout("zdalna", None, frozenset({_REMOTE, _REMOTE_LATER}), pr=9, pr_files=_REMOTE.files | _REMOTE_LATER.files),
     _Checkout("niepobrana", None, frozenset({_UNFETCHED}), pr=10, pr_files=_UNFETCHED.files),
 )
-# Strony pełnego świata, które nakładają się z „ja”: commit tych samych plików, stos na origin/zdalna i niezacommitowany
-# szkic.py odłączonego HEAD.
-_OVERLAPPING_SIDES = ((True, "wlasny", "czysty"), (True, "na-remote", "czysty"), (False, "brak", "zmiana"))
+# Strony pełnego świata, które dzielą z „ja” plik albo commit: commit tych samych plików, stos na origin/zdalna, scalenie
+# origin/zdalna (wspólny commit, którego nakładanie się nie liczy, #1419 r1) i niezacommitowany szkic.py odłączonego HEAD.
+_OVERLAPPING_SIDES = (
+    (True, "wlasny", "czysty"),
+    (True, "na-remote", "czysty"),
+    (True, "merge", "czysty"),
+    (False, "merge", "czysty"),
+    (False, "brak", "zmiana"),
+)
 _PULL_REQUESTS = {
     "inny-g-wlasny-czysty": (8, {"wspolny.py", "tylko-w-pr.py"}),
     "ja": (7, {"wspolny.py"}),
