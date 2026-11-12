@@ -25,6 +25,7 @@ from ._model import (
     ReportProblem,
     UnknownNumber,
     VerdictFault,
+    may_move,
 )
 
 
@@ -48,9 +49,9 @@ def match(
     Wykonawcy. Wpis trafia do zlecenia nadawcy z dnia z tematu; numer w dwóch takich zleceniach to ``RepeatedOrder``.
     Bez zlecenia nadawcy w tym dniu Wpis trafia do jedynego zlecenia tego numeru u innego Wykonawcy w tym dniu, a gdy
     zwycięży, zlecenie przechodzi do nadawcy (Przeniesienie zlecenia), chyba że nadawca ma ten numer w innym dniu
-    otwartym (``OtherDay``) albo tata zmienił ``WYKONAWCA`` po tym, jak Centrum ustaliło miejsce zlecenia (``moves``,
-    ``_movable``): wtedy liczą się tylko Wpisy Wykonawcy z INTERMAX, bez problemu. Numer w kilku zleceniach innych Wykonawców z tego dnia rozstrzyga
-    ``_unmatched``, tak jak numer bez zlecenia w tym dniu. Zwycięski Wpis bez ``tak`` ani ``nie`` to ``MissingVerdict``
+    otwartym (``OtherDay``) albo pamięć zlecenia nie pozwala na Przeniesienie tym mailem (``moves``, ``_movable``):
+    wtedy liczą się tylko Wpisy Wykonawcy z INTERMAX, bez problemu. Numer w kilku zleceniach innych Wykonawców z tego
+    dnia rozstrzyga ``_unmatched``, tak jak numer bez zlecenia w tym dniu. Zwycięski Wpis bez ``tak`` ani ``nie`` to ``MissingVerdict``
     zamiast celu, bo nie wiadomo, co Wykonawca miał na myśli, a zwycięski mail z Wpisami numeru o przeciwnym zamiarze
     (``_entries.entries``) to ``ConflictingVerdicts``; w obu zlecenie zostaje u swojego Wykonawcy.
     """
@@ -98,20 +99,10 @@ def match(
 
 
 def _movable(order: RegisterOrder, report: ReadReport, moves: Mapping[tuple[OrderNumber, date], OwnMove]) -> bool:
-    """Czy Wpis ``report`` innego Wykonawcy może przenieść zlecenie: ręczna zmiana ``WYKONAWCA`` po tym, jak Centrum
-    ustaliło miejsce zlecenia, wygrywa (ADR 0029 „Ręczna zmiana dalej wygrywa”).
+    """Czy Wpis ``report`` innego Wykonawcy może przenieść zlecenie: reguła ``may_move`` dla pamięci tego zlecenia."""
 
-    Przenosi Wpis zlecenia, którego miejsca Centrum nie ustaliło (także ``WYKONAWCA`` wpisany ręcznie przed raportem,
-    US 16) albo które INTERMAX ma dalej u Wykonawcy z pamięci. Gdy tata zmienił ``WYKONAWCA`` po Przeniesieniu Centrum,
-    nie przenosi żaden Wpis (US 15). Gdy zmienił go, kiedy zlecenie stało tam, gdzie przed pierwszym Przeniesieniem
-    Centrum (Centrum tylko przyjęło Wpis Wykonawcy zlecenia albo zlecenie wróciło do niego), przenosi tylko Wpis z
-    maila, który przyszedł po ostatnim przyjętym (``since``): Wpis, który Centrum już przyjęło, zmiana taty
-    unieważniła, a świeższy mail wygrywa (US 3). Mail z tą samą chwilą przyjścia nie jest świeższy."""
-
-    move = moves.get((order.key.number, order.key.day))
-    if move is None or move.worker == order.key.worker:
-        return True
-    return (move.worker, move.day) == (move.origin_worker, move.origin_day) and report.arrived > move.since
+    key = order.key
+    return may_move(moves.get((key.number, key.day)), key.worker, key.day, report.arrived)
 
 
 def _foreign(

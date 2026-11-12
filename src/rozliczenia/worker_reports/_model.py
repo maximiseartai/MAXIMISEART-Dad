@@ -228,16 +228,17 @@ class OwnEntry:
 
 @dataclass(frozen=True)
 class OwnMove:
-    """Miejsce zlecenia, które Wpisanie raportów samo ustaliło: zlecenie ``number`` stoi w dniu ``day`` u Wykonawcy
-    ``worker``, bo Centrum je tam przeniosło albo przyjęło tam Wpis jego własnego Wykonawcy; ``since``: chwila
-    przyjścia ostatniego maila, którego Wpis Centrum przyjęło u ``worker``. Przed pierwszym Przeniesieniem Centrum
-    zlecenie stało w dniu ``origin_day`` u ``origin_worker`` z pisownią ``WYKONAWCA`` ``origin_name``; bez Przeniesienia
-    to samo miejsce co ``day`` i ``worker``.
+    """Pamięć zlecenia ``number`` z dnia ``day``, na które Wpisanie raportów już zadziałało (ADR 0029 „Ręczna zmiana
+    dalej wygrywa”, tabela przejść w opisie #1358).
 
-    Dopóki INTERMAX ma zlecenie u ``worker``, Wpis innego Wykonawcy może je przenieść dalej, a tata widzi informację o
-    Przeniesieniu, gdy ``worker`` różni się od ``origin_worker``. Gdy tata zmienił ``WYKONAWCA`` potem, jego zmiana
-    wygrywa (ADR 0029): po Przeniesieniu z każdym Wpisem, a gdy zlecenie stoi u ``origin_worker``, z każdym Wpisem z
-    maila, który nie przyszedł po ``since`` (``_matching._movable``)."""
+    ``worker``: u kogo Centrum zostawiło zlecenie, czyli przeniosło je tam albo przyjęło tam Wpis, gdy pamięć była
+    pusta; ręczna zmiana taty go nie przesuwa. ``origin_day``, ``origin_worker`` i ``origin_name`` (pisownia
+    ``WYKONAWCA``): gdzie zlecenie stało przed pierwszym Przeniesieniem Centrum; bez Przeniesienia to samo miejsce co
+    ``day`` i ``worker``. ``since``: chwila przyjścia najświeższego maila, na który Centrum zadziałało (przyjęło jego
+    Wpis albo przeniosło nim zlecenie), gdziekolwiek zlecenie wtedy stało; nigdy nie maleje. ``overridden``: tata zmienił
+    Wykonawcę po Przeniesieniu Centrum, co zostaje, dopóki dzień jest otwarty.
+
+    Tata widzi informację o Przeniesieniu, dopóki INTERMAX ma zlecenie u ``worker`` innego niż ``origin_worker``."""
 
     number: OrderNumber
     day: date
@@ -246,6 +247,28 @@ class OwnMove:
     origin_worker: Login
     origin_name: str
     since: datetime
+    overridden: bool = False
+
+    def overridden_at(self, worker: Login, day: date) -> bool:
+        """Czy tata zmienił miejsce zlecenia po Przeniesieniu Centrum, gdy INTERMAX ma je u ``worker`` w dniu ``day``:
+        wcześniej (``overridden``) albo teraz, bo Przeniesienie stoi w pamięci (miejsce Centrum inne niż sprzed
+        pierwszego Przeniesienia), a zlecenie stoi gdzie indziej niż je zostawiło Centrum."""
+
+        placed = (self.worker, self.day)
+        return self.overridden or ((worker, day) != placed and placed != (self.origin_worker, self.origin_day))
+
+
+def may_move(memory: OwnMove | None, worker: Login, day: date, arrived: datetime) -> bool:
+    """Reguła „Ręczna zmiana dalej wygrywa” (ADR 0029) w jednym miejscu: czy Wpis innego Wykonawcy z maila z chwilą
+    ``arrived`` może przenieść zlecenie, które INTERMAX ma teraz u ``worker`` w dniu ``day``, przy pamięci zlecenia
+    ``memory`` (tabela przejść w opisie #1358).
+
+    Bez pamięci (Centrum jeszcze nic z tym zleceniem nie zrobiło, także ręczny ``WYKONAWCA`` sprzed raportu, US 16)
+    przenosi każdy mail. Z pamięcią tylko mail świeższy niż ``since`` (ściśle: mail, na który Centrum już zadziałało,
+    i każdy starszy nigdy, gdziekolwiek zlecenie teraz stoi), i żaden po zmianie taty po Przeniesieniu Centrum (US 15,
+    ``OwnMove.overridden_at``)."""
+
+    return memory is None or (arrived > memory.since and not memory.overridden_at(worker, day))
 
 
 @dataclass(frozen=True)

@@ -778,9 +778,10 @@ class LoggedMove(_Record):
 
 
 class LoggedOwnMove(_Record):
-    """Miejsce zlecenia z pamięci Wpisania raportów (``OwnMove``): numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u
-    którego Centrum je postawiło albo przyjęło Wpis, dzień, Wykonawca i pisownia ``WYKONAWCA`` sprzed pierwszego
-    Przeniesienia Centrum i chwila przyjścia ostatniego przyjętego maila."""
+    """Pamięć zlecenia Wpisania raportów (``OwnMove``): numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u którego
+    Centrum je zostawiło, dzień, Wykonawca i pisownia ``WYKONAWCA`` sprzed pierwszego Przeniesienia Centrum, chwila
+    przyjścia najświeższego maila, na który Centrum zadziałało, i czy tata zmienił Wykonawcę po Przeniesieniu Centrum
+    (Logi z gałęzi #1347 sprzed jej trzeciej rundy go nie mają)."""
 
     number: int
     day: date
@@ -789,6 +790,7 @@ class LoggedOwnMove(_Record):
     origin_worker: str
     origin_name: str
     since: datetime
+    overridden: bool = False
 
     @classmethod
     def of(cls, move: OwnMove) -> LoggedOwnMove:
@@ -800,6 +802,7 @@ class LoggedOwnMove(_Record):
             origin_worker=move.origin_worker,
             origin_name=move.origin_name,
             since=move.since,
+            overridden=move.overridden,
         )
 
 
