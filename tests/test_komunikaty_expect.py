@@ -46,6 +46,7 @@ from rozliczenia.centrum import (
     fill_messages,
     notification_messages,
     refusal,
+    reminder_messages,
     report_entering_run,
     report_messages,
     run_cards,
@@ -72,6 +73,7 @@ from tests.fixtures.message_samples import (
     PREPARATION_SAMPLES,
     REFUSALS,
     REGISTER,
+    REMINDER_SAMPLES,
     REPORT_ENTERING_SAMPLES,
     REPORT_SAMPLES,
     SETTLEMENT_SAMPLES,
@@ -95,6 +97,7 @@ CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
     "Uporządkowanie INTERMAX": (intermax_messages, INTERMAX_SAMPLES),
     "Wycena w efenix": (efenix_messages, EFENIX_SAMPLES),
     "Wpisanie raportów": (report_entering_messages, REPORT_ENTERING_SAMPLES),
+    "Przypomnienia o raporcie": (reminder_messages, REMINDER_SAMPLES),
 }
 # Komunikat karty Urwanego Uruchomienia (common_contract.Message) nie ma kodu; tytuł procesu jest syntetyczny.
 # Zdania wspólne o pliku taty dostają od katalogu kod, plik, ogon i zwrot ponowienia; tu syntetyczne.

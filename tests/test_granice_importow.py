@@ -35,8 +35,9 @@ Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O:
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
 plików i wątków.
 
-``imaplib`` importuje w ``src/`` tylko port Skrzynki raportów (``worker_report_inbox.py``), który otwiera skrzynkę
-taty tylko do odczytu (ADR 0028): inny moduł z własnym połączeniem IMAP mógłby wysłać ``SELECT`` albo ``STORE``.
+``imaplib`` i ``smtplib`` importuje w ``src/`` tylko port Skrzynki raportów (``worker_report_inbox.py``), który
+otwiera skrzynkę taty tylko do odczytu (ADR 0028) i wysyła z niej tylko Przypomnienia o raporcie (ADR 0030): inny moduł
+z własnym połączeniem IMAP mógłby wysłać ``SELECT`` albo ``STORE``, a z SMTP mail z hasłem aplikacji poza portem.
 
 Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły danych albo przerobił gotową wysyłkę Logów
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to
@@ -182,6 +183,7 @@ STDLIB_ONLY = {
     "rozliczenia/worker_reports/_corrections.py": "poprawione maile w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_figures.py": "liczby widoku Raporty w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_canonical.py": "postać kanoniczna maila w rdzeniu raportów (ADR 0028, #1161)",
+    "rozliczenia/worker_reports/_reminders.py": "Przypomnienia o raporcie w rdzeniu raportów (ADR 0030, #1161)",
     "rozliczenia/worker_reports/reasons.py": "zdania o problemach rdzenia raportów (ADR 0028, #1161)",
     "rozliczenia/report_cells.py": "rdzeń raportów zwraca zmiany komórek bez Excela (ADR 0028, #1161)",
     "rozliczenia/settlement_period.py": "rdzeń raportów liczy dni okresów zamkniętych bez zależności (ADR 0028, #1161)",
@@ -320,13 +322,13 @@ def test_moduly_bez_zaleznosci_wczytuja_tylko_biblioteke_standardowa() -> None:
     )
 
 
-def test_imap_importuje_tylko_port_skrzynki_raportow() -> None:
+def test_imap_i_smtp_importuje_tylko_port_skrzynki_raportow() -> None:
     found = {
         str(found)
         for path in sorted((SRC / "rozliczenia").rglob("*.py"))
         if path.relative_to(SRC).as_posix() != IMAP_PORT
         for found in _imports(path.relative_to(SRC).as_posix())
-        if found.module == "imaplib"
+        if found.module in ("imaplib", "smtplib")
     }
 
     assert (SRC / IMAP_PORT).is_file()
@@ -334,7 +336,7 @@ def test_imap_importuje_tylko_port_skrzynki_raportow() -> None:
         [
             *sorted(found),
             f"Skrzynkę raportów czyta tylko {IMAP_PORT}, który otwiera ją tylko do odczytu (ADR 0028): "
-            "weź z niego ImapInbox albo WorkerReportInbox zamiast imaplib.",
+            "weź z niego ImapInbox, WorkerReportInbox albo ReminderMailbox zamiast imaplib i smtplib.",
         ]
     )
 

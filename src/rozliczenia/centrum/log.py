@@ -32,6 +32,18 @@ _NO_PERIOD = "bez-okresu"
 # Dlaczego wysyłka w tle czeka w kolejce Skrzynki Zgłoszeń; ``odmowa-tresci`` i ``odmowa-archiwum`` (Archiwum okresu
 # nie przyjęło pliku wysyłki, której części już doszły) dotyczą tylko jednego pliku kolejki.
 WaitingCause = Literal["brak-klucza", "brak-sieci", "odmowa", "odmowa-tresci", "odmowa-archiwum"]
+# Dlaczego sprawdzenie Przypomnień o raporcie nie wysłało wszystkiego, co się należało (``report_reminders``).
+ReminderFailure = Literal[
+    "bez-wdrozenia",
+    "bez-ustawien",
+    "bez-dostepu",
+    "bez-adresow",
+    "okresy",
+    "intermax",
+    "brak-sieci",
+    "haslo-odrzucone",
+    "odmowa-wysylki",
+]
 # Dlaczego zmiany Ustawień taty nie zapisano: plik jest, ale system nie daje go czytać.
 SettingsUnreadableCause = Literal["dostep"]
 
@@ -217,6 +229,18 @@ class CentrumLog:
         Skrzynki czekają; tylko typ błędu, raz na pracę Centrum."""
 
         self._write("skrzynka-zapisy-niedostepne", typ=type(failure).__name__)
+
+    def reminder_sent(self, *, day: str, pora: str) -> None:
+        """Praca przypomnień wysłała Przypomnienie o raporcie za dzień ``day`` w porze ``pora``; bez adresu, Wykonawcy i
+        treści (ADR 0028, ADR 0030)."""
+
+        self._write("przypomnienie-wyslane", dzien=day, pora=pora)
+
+    def reminders_failed(self, *, cause: ReminderFailure, failure: str | None = None) -> None:
+        """Sprawdzenie Przypomnień o raporcie nie wysłało wszystkiego: przyczyna i nazwa typu wyjątku, gdy jest."""
+
+        named = {} if failure is None else {"typ": failure}
+        self._write("przypomnienia-porazka", przyczyna=cause, **named)
 
     def view_timed(
         self,

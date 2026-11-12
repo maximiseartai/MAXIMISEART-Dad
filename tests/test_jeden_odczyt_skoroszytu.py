@@ -69,6 +69,10 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
         "rozliczenia/worker_report_inbox.py::_read_access",
     ): "plik dostępu do Skrzynki raportów to plik tekstowy Maksa w config, nie plik taty",
     (
+        "read_bytes",
+        "rozliczenia/centrum/report_reminders.py::_text",
+    ): "dzień wdrożenia i stopka Przypomnień o raporcie to pliki tekstowe Maksa w config, nie pliki taty",
+    (
         "workbook_content",
         "rozliczenia/intermax_replace.py::_read",
     ): "bajty Rejestru do podmiany pliku, nie jego wartości",
