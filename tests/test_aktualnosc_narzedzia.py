@@ -309,10 +309,6 @@ def test_aktualnosc_laczy_sie_z_githubem_wprost_mimo_proxy_w_ustawieniach_system
     assert proxied == []
 
 
-def test_wyzsze_wydanie_spoza_main_jest_pominiete_a_nizsze_na_main_wybrane(github: str) -> None:
-    assert releases_from(f"{github}/spoza-main", timeout_s=30) == GitHubReleases(OLDER, "v0.2.0")
-
-
 @pytest.mark.parametrize("repository", ["bez-wydan", "tylko-spoza-main"])
 def test_bez_wydania_na_main_github_odpowiada_ze_nie_ma_wydania(github: str, repository: str) -> None:
     assert releases_from(f"{github}/{repository}", timeout_s=30) == GitHubReleases(None, None)
@@ -394,7 +390,7 @@ def test_czubek_main_albo_porownanie_w_innym_ksztalcie_to_nie_wiadomo(github: st
     assert releases_from(f"{github}/{repository}", timeout_s=30) is None
 
 
-def test_jedno_sprawdzenie_pyta_o_czubek_main_raz_dla_wszystkich_kandydatow(github: str) -> None:
+def test_wyzsze_wydanie_spoza_main_jest_pominiete_a_nizsze_na_main_wybrane_po_jednym_pytaniu_o_czubek_main(github: str) -> None:
     assert releases_from(f"{github}/spoza-main", timeout_s=30) == GitHubReleases(OLDER, "v0.2.0")
     assert _comparisons() >= 3
     assert sum(path.endswith("/git/ref/heads/main") for path in _ASKED) == 1
