@@ -223,11 +223,14 @@ CLOCK = (
     "email.utils.formatdate",
 )
 CLOCK_MODULES = ("datetime.", "time.", "email.utils.")
-CLOCK_PROBE = "import time\nlease = time.time()  # noqa: TID251 - termin opiekuna\n"
+# Druga linia to zegar z ``noqa``, trzecia to ``import *`` z ``noqa``: gwiazdka daje nazwę zegara bez pełnej nazwy
+# odwołania, której szuka TID251, więc w ``src/`` liczy się jak zegar (#1423 r1).
+CLOCK_PROBE = "import time\nlease = time.time()  # noqa: TID251 - termin opiekuna\nfrom datetime import *  # noqa: F403\n"
 
 
 def _clock_findings(*arguments: str, code: str | None = None, cwd: Path = ROOT) -> list[str]:
-    """``plik:linia`` każdego zakazu zegara z ``CLOCK``, który ``ruff check`` z ``--ignore-noqa`` zgłasza w ``cwd``."""
+    """``plik:linia`` każdego zakazu zegara z ``CLOCK`` i każdego ``import *`` (``F403``), które ``ruff check``
+    z ``--ignore-noqa`` zgłasza w ``cwd``."""
     result = subprocess.run(
         [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--output-format", "json", *arguments],
         input=code,
@@ -241,7 +244,7 @@ def _clock_findings(*arguments: str, code: str | None = None, cwd: Path = ROOT) 
     return [
         f"{Path(finding['filename']).resolve().relative_to(cwd.resolve()).as_posix()}:{finding['location']['row']}"
         for finding in json.loads(result.stdout)
-        if finding["code"] == "TID251" and finding["message"].split("`")[1] in CLOCK
+        if finding["code"] == STAR or (finding["code"] == "TID251" and finding["message"].split("`")[1] in CLOCK)
     ]
 
 
@@ -260,15 +263,18 @@ def test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa() -> None:
     """``# noqa: TID251`` przy ``datetime.now`` byłoby drugą drogą do zegara obok właściciela (#1371), więc zakazy zegara
     biegną tu z ``--ignore-noqa``; właściciel przechodzi tylko dzięki wyjątkowi w ``src/ruff.toml``."""
 
-    assert _clock_findings("src") == [], "teraz i dzień taty bierz z rozliczenia.wall_clock, bez noqa"
+    assert _clock_findings("src") == [], "teraz i dzień taty bierz z rozliczenia.wall_clock, bez noqa i bez import *"
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_noqa_nie_zwalnia_z_zakazu_zegara_a_wlasciciel_jest_zwolniony() -> None:
     probe = SRC_CONFIG.parent / "rozliczenia" / "sonda_zakazu.py"
 
-    assert _clock_findings("--stdin-filename", str(probe), "-", code=CLOCK_PROBE) == ["src/rozliczenia/sonda_zakazu.py:2"]
-    assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=CLOCK_PROBE) == []
+    assert _clock_findings("--stdin-filename", str(probe), "-", code=CLOCK_PROBE) == [
+        "src/rozliczenia/sonda_zakazu.py:2",
+        "src/rozliczenia/sonda_zakazu.py:3",
+    ]
+    assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=CLOCK_PROBE) == ["src/rozliczenia/wall_clock.py:3"]
 
 
 def _src_files() -> set[str]:
@@ -326,8 +332,10 @@ def test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela(tmp_path: P
         probe.parent.mkdir(parents=True, exist_ok=True)
         probe.write_text(CLOCK_PROBE, encoding="utf-8")
 
-    reported = {finding.rsplit(":", 1)[0] for finding in _clock_findings("src", cwd=tmp_path)}
+    owner = CLOCK_OWNER.relative_to(ROOT).as_posix()
+    expected = {f"{name}:{row}" for name in probes for row in ((3,) if name == owner else (2, 3))}
 
-    assert sorted(probes - reported) == [CLOCK_OWNER.relative_to(ROOT).as_posix()], (
-        "z zakazu zegara konfiguracja ruff zwalnia tylko rozliczenia/wall_clock.py: teraz i dzień taty bierz z niego"
+    assert sorted(expected ^ set(_clock_findings("src", cwd=tmp_path))) == [], (
+        "z zakazu zegara konfiguracja ruff zwalnia tylko rozliczenia/wall_clock.py, a z import * nikogo: "
+        "teraz i dzień taty bierz z wall_clock"
     )
