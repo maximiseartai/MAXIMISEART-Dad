@@ -1073,6 +1073,15 @@ def layout_dormant_tag_merged(repository: ToolRepository) -> None:
     git(repository.publisher, "push", "--quiet", "origin", "main")
 
 
+def layout_release_on_merge(repository: ToolRepository) -> None:
+    """Wydanie na commicie `--no-ff` merge'a, jak Wydanie na scaleniu PR-a na GitHubie."""
+
+    off_main_commit(repository)
+    git(repository.publisher, "merge", "--quiet", "--no-ff", "--no-edit", "agent")
+    git(repository.publisher, "push", "--quiet", "origin", "main")
+    repository.release()
+
+
 @pytest.mark.parametrize(
     "layout",
     [
@@ -1082,6 +1091,7 @@ def layout_dormant_tag_merged(repository: ToolRepository) -> None:
         layout_unreleased_main,
         layout_release_deep_on_main,
         layout_dormant_tag_merged,
+        layout_release_on_merge,
     ],
     ids=[
         "wyzsze-spoza-main",
@@ -1090,6 +1100,7 @@ def layout_dormant_tag_merged(repository: ToolRepository) -> None:
         "main-bez-wydania",
         "wydanie-glebiej-na-main",
         "uspiony-tag-wciagniety-merge-em",
+        "wydanie-na-scaleniu",
     ],
 )
 def test_aktualnosc_z_api_githuba_i_aktualizacja_wybieraja_to_samo_wydanie(
