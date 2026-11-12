@@ -41,7 +41,6 @@ from rozliczenia.efenix_window import (
     ForwardRefusal,
     HttpStatus,
     ListedOrder,
-    LoggedOut,
     Login,
     LoginSign,
     OrderPricing,
@@ -50,7 +49,7 @@ from rozliczenia.efenix_window import (
     Proposal,
     SentChanges,
     Shape,
-    UnexpectedPage,
+    WindowStop,
 )
 
 _P = ParamSpec("_P")
@@ -95,7 +94,7 @@ class OknoWProcesie(Generic[_O]):
         """Lista zleceń: bez sesji efenix przekierowuje ją na stronę logowania."""
 
         if not self._stan.logged_in:
-            raise LoggedOut(PagePart.LIST, LoginSign.PAGE)
+            raise WindowStop.of(PagePart.LIST, LoginSign.PAGE)
         self._opened = None
 
     @_action
@@ -104,7 +103,7 @@ class OknoWProcesie(Generic[_O]):
             self.open_list()
         found = self._stan.serwer.search(number)
         if isinstance(found, NoSession):
-            raise LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)
+            raise WindowStop.of(PagePart.RESULTS, LoginSign.SESSION_WARNING)
         return tuple(_listed(order) for order in found)
 
     @_action
@@ -121,9 +120,9 @@ class OknoWProcesie(Generic[_O]):
         self._sent.send()
         saved = self._stan.serwer.set_date(self._order_id(), day.isoformat())
         if isinstance(saved, NoSession):
-            raise LoggedOut(PagePart.DATE, LoginSign.REDIRECT)
+            raise WindowStop.of(PagePart.DATE, LoginSign.REDIRECT)
         if isinstance(saved, NoOrder):
-            raise UnexpectedPage(PagePart.DATE, _NO_ORDER)
+            raise WindowStop.of(PagePart.DATE, _NO_ORDER)
         return True
 
     @_action
@@ -148,15 +147,15 @@ class OknoWProcesie(Generic[_O]):
         refusal = self._stan.serwer.load_emmett(order_id)
         match refusal:
             case NoSession() | EmmettRefusal.LOGGED_OUT:
-                raise LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)
+                raise WindowStop.of(PagePart.EMMETT, LoginSign.REDIRECT)
             case NoOrder():
-                raise UnexpectedPage(PagePart.EMMETT, _NO_ORDER)
+                raise WindowStop.of(PagePart.EMMETT, _NO_ORDER)
             case EmmettRefusal.FORBIDDEN:
-                raise UnexpectedPage(PagePart.EMMETT, HttpStatus(403))
+                raise WindowStop.of(PagePart.EMMETT, HttpStatus(403))
             case EmmettRefusal.SERVER_ERROR:
-                raise UnexpectedPage(PagePart.EMMETT, HttpStatus(500))
+                raise WindowStop.of(PagePart.EMMETT, HttpStatus(500))
             case EmmettRefusal.ELSEWHERE:
-                raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
+                raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
             case None | EmmettRefusal.NOK | EmmettRefusal.OTHER:
                 return verdict(EmmettLoad(shown, self._page()))
 
@@ -166,13 +165,13 @@ class OknoWProcesie(Generic[_O]):
         okno czyta jak wygasłą sesję."""
 
         if position not in self._positions:
-            raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))
+            raise WindowStop.of(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))
         self._sent.send()
         saved = self._stan.serwer.save_quantity(self._order_id(), position, quantity)
         if isinstance(saved, NoOrder):
-            raise UnexpectedPage(PagePart.QUANTITY, _NO_ORDER)
+            raise WindowStop.of(PagePart.QUANTITY, _NO_ORDER)
         if not isinstance(saved, Saved):
-            raise LoggedOut(PagePart.QUANTITY, LoginSign.REFUSED)
+            raise WindowStop.of(PagePart.QUANTITY, LoginSign.REFUSED)
         return saved.amount
 
     @_action
@@ -187,11 +186,11 @@ class OknoWProcesie(Generic[_O]):
         order_id = self._order_id()
         changed = self._stan.serwer.change_status(order_id, _FORWARDED)
         if isinstance(changed, NoSession):
-            raise LoggedOut(PagePart.FORWARD, LoginSign.REDIRECT)
+            raise WindowStop.of(PagePart.FORWARD, LoginSign.REDIRECT)
         if isinstance(changed, NoOrder):
-            raise UnexpectedPage(PagePart.FORWARD, _NO_ORDER)
+            raise WindowStop.of(PagePart.FORWARD, _NO_ORDER)
         if isinstance(self._stan.serwer.page(order_id), NoSession):
-            raise LoggedOut(PagePart.FORWARD, LoginSign.PAGE)
+            raise WindowStop.of(PagePart.FORWARD, LoginSign.PAGE)
         return None
 
     def _order_id(self) -> str:
@@ -203,9 +202,9 @@ class OknoWProcesie(Generic[_O]):
 
         order = self._stan.serwer.page(self._order_id())
         if isinstance(order, NoSession):
-            raise LoggedOut(PagePart.ORDER, LoginSign.PAGE)
+            raise WindowStop.of(PagePart.ORDER, LoginSign.PAGE)
         if isinstance(order, NoOrder):
-            raise UnexpectedPage(PagePart.ORDER, _NO_ORDER)
+            raise WindowStop.of(PagePart.ORDER, _NO_ORDER)
         knobs = {
             field.name
             for field in dataclasses.fields(order)

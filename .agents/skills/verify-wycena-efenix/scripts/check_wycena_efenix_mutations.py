@@ -45,8 +45,8 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "            if response is not None and not response.ok:\n                raise UnexpectedPage(PagePart.ORDER, HttpStatus(",
-                "            if False:\n                raise UnexpectedPage(PagePart.ORDER, HttpStatus(",
+                "            if response is not None and not response.ok:\n                raise WindowStop.of(PagePart.ORDER, HttpStatus(",
+                "            if False:\n                raise WindowStop.of(PagePart.ORDER, HttpStatus(",
             ),
         ),
         explorer("odpowiedzi", "strona-zlecenia"),
@@ -72,8 +72,8 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "        raise UnexpectedPage(part, failed.failure) from failed.__cause__\n",
-                "        raise UnexpectedPage(part, BrowserFailure(failed.failure.error_type, None)) from failed.__cause__\n",
+                "        raise WindowStop.of(part, failed.failure) from failed.__cause__\n",
+                "        raise WindowStop.of(part, BrowserFailure(failed.failure.error_type, None)) from failed.__cause__\n",
             ),
         ),
         explorer("odciecia", "data-wykonania"),
@@ -102,8 +102,8 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "                if self._page.is_closed():\n                    raise WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)\n",
-                "                if False:\n                    raise WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)\n",
+                "                if self._page.is_closed():\n                    raise WindowStop.of(PagePart.LIST, Closed.DURING_LOGIN)\n",
+                "                if False:\n                    raise WindowStop.of(PagePart.LIST, Closed.DURING_LOGIN)\n",
             ),
         ),
         explorer("logowanie", "lista-na-starcie"),
@@ -116,7 +116,7 @@ MUTATIONS = (
             Edit(
                 BROWSER,
                 "        if response.status >= 400:\n"
-                "            raise UnexpectedPage(PagePart.LIST, HttpStatus(response.status))\n"
+                "            raise WindowStop.of(PagePart.LIST, HttpStatus(response.status))\n"
                 "        location = urlparse(",
                 "        location = urlparse(",
             ),
@@ -143,8 +143,8 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "                raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n        loaded = ",
-                "                raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n"
+                "                raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n        loaded = ",
+                "                raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n"
                 "            self._page.wait_for_timeout(1500)\n"
                 "            self._text(answer)\n"
                 "        loaded = ",

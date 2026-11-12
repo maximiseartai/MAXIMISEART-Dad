@@ -14,6 +14,8 @@ linkiem z wiersza. Przekierowanie strony albo odpowiedzi daty, Wyceny Emmetta i 
 ``page_login.php`` to ``LoggedOut``, tak samo ostrzeżenie o wygasłej sesji w odpowiedzi szukania (``efenix_page.SearchWarning``),
 bo na szukanie bez sesji efenix nie przekierowuje. Lista zleceń, której okno nie otworzyło przy starcie albo w czasie
 czekania na logowanie (adres nie odpowiada), to ``EfenixUnreachable``.
+Który wyjątek okna daje awaria, rozstrzyga tylko tabela decyzji ``efenix_window.WindowStop.of`` z dowodu, który okno
+zbiera w miejscu awarii.
 Każde inne działanie, którego okno nie dokończyło, to ``UnexpectedPage`` z częścią strony: strona bez oczekiwanej
 budowy, odpowiedź efenix ze statusem błędu, element obecny, ale niewidoczny, i każdy błąd Playwrighta w działaniu (czas czekania na stronę, odpowiedź albo
 element, który minął, otwarcie strony, które się nie udało, treść odpowiedzi, której nie da się przeczytać). Każdy z
@@ -116,16 +118,17 @@ from .call_trace import exception_type
 from .efenix_window import (
     ACCEPTANCE_STATUS,
     BrowserFailure,
-    BrowserNotStarted,
     Closed,
     EfenixUnreachable,
     ElementCount,
     EmmettLoad,
     ForwardRefusal,
     HttpStatus,
+    ListOpenFailed,
     ListedOrder,
     LoggedOut,
     Login,
+    LoginExpired,
     LoginSign,
     Operation,
     OrderPricing,
@@ -137,6 +140,7 @@ from .efenix_window import (
     StatusChangeBlocked,
     UnexpectedPage,
     WindowClosed,
+    WindowStop,
 )
 from .efenix_page import (
     AMOUNT,
@@ -241,7 +245,7 @@ def _action(
                 except Exception as error:
                     efenix.raise_blocked(error)
                     if efenix.closed and not isinstance(error, WindowClosed):
-                        raise WindowClosed(part, Closed.DURING_ACTION) from error
+                        raise WindowStop.of(part, Closed.DURING_ACTION) from error
                     raise
                 efenix.raise_blocked()
                 return done
@@ -320,7 +324,7 @@ class BrowserEfenix:
         żądanie zmiany statusu; ``error``: wyjątek działania, który to Zatrzymanie zastępuje."""
 
         if self._blocked is not None:
-            raise UnexpectedPage(self._part, self._blocked) from error
+            raise WindowStop.of(self._part, self._blocked) from error
 
     @_action(PagePart.LIST)
     def open_list(self) -> None:
@@ -330,9 +334,7 @@ class BrowserEfenix:
             with _doing(Operation.OPEN):
                 response = self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
         except _Failed as failed:
-            if not self._opened:
-                raise EfenixUnreachable(failed.failure) from failed.__cause__
-            raise
+            raise WindowStop.of(PagePart.LIST, ListOpenFailed(failed.failure, self._opened)) from failed.__cause__
         self._opened = True
         self._ensure_logged_in(PagePart.LIST)
         try:
@@ -340,7 +342,7 @@ class BrowserEfenix:
         except UnexpectedPage as unread:
             # Strona błędu serwera efenix: adres odpowiada, więc to nie ``EfenixUnreachable``, także przy starcie.
             if response is not None and not response.ok:
-                raise UnexpectedPage(PagePart.LIST, HttpStatus(response.status)) from unread
+                raise WindowStop.of(PagePart.LIST, HttpStatus(response.status)) from unread
             raise
 
     def wait_for_login(
@@ -368,13 +370,12 @@ class BrowserEfenix:
             return
         except LoggedOut:
             pass
-        silence_s = 2 * self._timeout_ms / 1000
         with login():
             answered = clock()
             deadline = answered + timeout_ms / 1000
             while True:
                 if self._page.is_closed():
-                    raise WindowClosed(PagePart.LIST, Closed.DURING_LOGIN)
+                    raise WindowStop.of(PagePart.LIST, Closed.DURING_LOGIN)
                 unanswered: _Failed | None = None
                 try:
                     session_open = self._session_open()
@@ -393,9 +394,12 @@ class BrowserEfenix:
                     answered = asked
                 remaining_ms = round((deadline - asked) * 1000)
                 if remaining_ms <= 0:
-                    if unanswered is not None and asked - answered >= silence_s:
-                        raise EfenixUnreachable(unanswered.failure) from unanswered.__cause__
-                    raise LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN)
+                    failure = None if unanswered is None else unanswered.failure
+                    stop = WindowStop.of(PagePart.LIST, LoginExpired(failure, asked - answered, self._timeout_ms))
+                    # Niedostępny efenix ma za przyczynę błąd pytania bez odpowiedzi, a brak logowania nie ma przyczyny.
+                    if unanswered is not None and isinstance(stop, EfenixUnreachable):
+                        raise stop from unanswered.__cause__
+                    raise stop
                 # Czekanie kończy się po limicie, a w karcie zamkniętej w jego trakcie błędem; o zamknięciu mówi ``is_closed``.
                 with suppress(PlaywrightError):
                     self._page.wait_for_url(lambda url: not _on_login_page(url), timeout=min(LOGIN_POLL_MS, remaining_ms))
@@ -415,7 +419,7 @@ class BrowserEfenix:
         with _doing(Operation.OPEN):
             response = self._page.context.request.get(self._url, max_redirects=0, timeout=self._timeout_ms)
         if response.status >= 400:
-            raise UnexpectedPage(PagePart.LIST, HttpStatus(response.status))
+            raise WindowStop.of(PagePart.LIST, HttpStatus(response.status))
         location = urlparse(response.headers.get("location", "")).path
         return response.ok and not location.endswith(LOGIN_PAGE)
 
@@ -455,14 +459,14 @@ class BrowserEfenix:
         with _doing(Operation.READ):
             shown = field.input_value(timeout=self._timeout_ms)
         if picked is not True:
-            raise UnexpectedPage(PagePart.DATE, OtherShape(Shape.NO_CALENDAR))
+            raise WindowStop.of(PagePart.DATE, OtherShape(Shape.NO_CALENDAR))
         if shown != day.isoformat():
             self._close(Element.DATE_DIALOG, Element.DATE_DISMISS, PagePart.DATE)
             return False
         confirm = self._element(Element.DATE_OK, PagePart.DATE)
         answer = self._answer(SET_DATE, lambda _params: True, lambda: self._click(confirm))
         if _redirected_to_login(answer):
-            raise LoggedOut(PagePart.DATE, LoginSign.REDIRECT)
+            raise WindowStop.of(PagePart.DATE, LoginSign.REDIRECT)
         return True
 
     @_action(PagePart.EMMETT)
@@ -487,15 +491,15 @@ class BrowserEfenix:
         with _doing(Operation.READ):
             window = emmett_window(self._page)
         if (fault := emmett_window_fault(window)) is not None:
-            raise UnexpectedPage(PagePart.EMMETT, fault)
+            raise WindowStop.of(PagePart.EMMETT, fault)
         seen = Proposal.SHOWN if window.shows else Proposal.NOTHING if _came_whole(asked.value) else Proposal.LOST
         load = self._element(Element.EMMETT_LOAD, PagePart.EMMETT)
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
             answer = self._answer(LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
             if _redirected_to_login(answer):
-                raise LoggedOut(PagePart.EMMETT, LoginSign.REDIRECT)
+                raise WindowStop.of(PagePart.EMMETT, LoginSign.REDIRECT)
             if 300 <= answer.status < 400:
-                raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
+                raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
         loaded = self._read_order(reload.value)
         return verdict(EmmettLoad(seen, loaded))
 
@@ -503,7 +507,7 @@ class BrowserEfenix:
     def enter_quantity(self, position: str, quantity: int) -> Decimal:
         field_id = self._positions.get(position)
         if field_id is None:
-            raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))
+            raise WindowStop.of(PagePart.QUANTITY, OtherShape(Shape.UNKNOWN_POSITION, position))
         with _doing(Operation.READ):
             field = single(self._page, f"{QUANTITY}#{field_id}", PagePart.QUANTITY)
         self._click(field)
@@ -511,16 +515,16 @@ class BrowserEfenix:
             field.fill(str(quantity), timeout=self._timeout_ms)
         answer = self._answer(SAVE_QUANTITY, lambda params: params.get("index") == [field_id], lambda: self._enter(field))
         if _redirected_to_login(answer):
-            raise LoggedOut(PagePart.QUANTITY, LoginSign.REDIRECT)
+            raise WindowStop.of(PagePart.QUANTITY, LoginSign.REDIRECT)
         try:
             saved = json.loads(self._text(answer))
         except ValueError as error:
-            raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, position)) from error
+            raise WindowStop.of(PagePart.QUANTITY, OtherShape(Shape.ANSWER_NOT_JSON, position)) from error
         result = saved.get("result") if isinstance(saved, dict) else None
         if result == "nok":
-            raise LoggedOut(PagePart.QUANTITY, LoginSign.REFUSED)
+            raise WindowStop.of(PagePart.QUANTITY, LoginSign.REFUSED)
         if result != "ok":
-            raise UnexpectedPage(PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, position))
+            raise WindowStop.of(PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, position))
         shown = str(saved.get(PRICE_ALL, ""))
         total = amount(shown, PagePart.QUANTITY)
         with _doing(Operation.AMOUNT):
@@ -540,7 +544,7 @@ class BrowserEfenix:
         with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
             answer = self._status_answer(lambda: self._click(confirm))
             if _redirected_to_login(answer):
-                raise LoggedOut(PagePart.FORWARD, LoginSign.REDIRECT)
+                raise WindowStop.of(PagePart.FORWARD, LoginSign.REDIRECT)
         self._ensure_logged_in(PagePart.FORWARD)
         return None
 
@@ -599,7 +603,7 @@ class BrowserEfenix:
             with _doing(Operation.ANSWER):
                 response = ended[0].response()
         if response is None:
-            raise UnexpectedPage(PagePart.FORWARD, OtherShape(Shape.STATUS_NOT_ANSWERED))
+            raise WindowStop.of(PagePart.FORWARD, OtherShape(Shape.STATUS_NOT_ANSWERED))
         if response.status >= 400:
             raise _ErrorAnswer(HttpStatus(response.status))
         return response
@@ -618,9 +622,9 @@ class BrowserEfenix:
                 pricing, positions = read_order(self._page, timeout_ms=self._timeout_ms)
         except UnexpectedPage as unread:
             if response is not None and not response.ok:
-                raise UnexpectedPage(PagePart.ORDER, HttpStatus(response.status)) from unread
+                raise WindowStop.of(PagePart.ORDER, HttpStatus(response.status)) from unread
             if login_form(self._page):
-                raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM)) from unread
+                raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM)) from unread
             raise
         self._positions = dict(positions)
         return pricing
@@ -633,7 +637,7 @@ class BrowserEfenix:
         with _doing(Operation.READ):
             count = located.count()
         if not element.element.fits(count):
-            raise UnexpectedPage(part, ElementCount(element.selector, count))
+            raise WindowStop.of(part, ElementCount(element.selector, count))
         return located
 
     @contextmanager
@@ -653,7 +657,7 @@ class BrowserEfenix:
             except PlaywrightError:
                 raise failed from failed.__cause__
             if count != 1:
-                raise UnexpectedPage(part, ElementCount(selector, count)) from failed.__cause__
+                raise WindowStop.of(part, ElementCount(selector, count)) from failed.__cause__
             raise
 
     def _shown(self, element: Element, part: PagePart) -> None:
@@ -706,7 +710,7 @@ class BrowserEfenix:
 
     def _ensure_logged_in(self, part: PagePart) -> None:
         if _on_login_page(self._page.url):
-            raise LoggedOut(part, LoginSign.PAGE)
+            raise WindowStop.of(part, LoginSign.PAGE)
 
 
 class _Failed(Exception):
@@ -744,11 +748,11 @@ def _within(part: PagePart) -> Iterator[None]:
     try:
         yield
     except _ErrorAnswer as answer:
-        raise UnexpectedPage(part, answer.status) from answer
+        raise WindowStop.of(part, answer.status) from answer
     except _Failed as failed:
-        raise UnexpectedPage(part, failed.failure) from failed.__cause__
+        raise WindowStop.of(part, failed.failure) from failed.__cause__
     except PlaywrightError as error:
-        raise UnexpectedPage(part, BrowserFailure(exception_type(error), None)) from error
+        raise WindowStop.of(part, BrowserFailure(exception_type(error), None)) from error
 
 
 def _is_search(request: Request, number: str) -> bool:
@@ -896,7 +900,7 @@ def _playwright() -> Iterator[Playwright]:
     try:
         playwright = sync_playwright().start()
     except (PlaywrightError, OSError) as error:
-        raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.DRIVER)) from error
+        raise WindowStop.of(PagePart.LIST, BrowserFailure(exception_type(error), Operation.DRIVER)) from error
     try:
         yield playwright
     finally:
@@ -929,7 +933,7 @@ def chrome(
                 profile, channel=channel, headless=headless, no_viewport=True, service_workers="block", **options
             )
         except PlaywrightError as error:
-            raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START)) from error
+            raise WindowStop.of(PagePart.LIST, BrowserFailure(exception_type(error), Operation.START)) from error
         try:
             page = context.pages[0] if context.pages else context.new_page()
             with window(page, url, login=login, login_timeout_ms=login_timeout_ms) as efenix:
@@ -949,7 +953,7 @@ def chromium(url: str, *, headless: bool = True) -> Iterator[BrowserEfenix]:
         try:
             browser = playwright.chromium.launch(headless=headless, **launch_options(playwright))
         except PlaywrightError as error:
-            raise BrowserNotStarted(BrowserFailure(exception_type(error), Operation.START)) from error
+            raise WindowStop.of(PagePart.LIST, BrowserFailure(exception_type(error), Operation.START)) from error
         try:
             with window(browser.new_page(service_workers="block"), url) as efenix:
                 yield efenix
