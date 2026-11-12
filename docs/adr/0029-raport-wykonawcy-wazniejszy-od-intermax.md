@@ -34,8 +34,8 @@ wklejeniem. Tata poprawia wtedy INTERMAX ręcznie według maila, bo mail mówi, 
   dostaje informację w obu przypadkach.
 - **Numer bez zlecenia to Zlecenie dopisane z raportu**, pod zleceniami nadawcy w dniu z tematu, z pięcioma kolumnami
   z raportu. Tylko numer w postaci numeru z aplikacji firmowej (8 cyfr, jak w INTERMAX), którego nie ma w żadnym
-  otwartym dniu, żeby literówka w numerze nie dopisała zlecenia, które już jest. Nie przy pomylonym temacie i nie do
-  dnia, który nie jest Dniem uporządkowanym.
+  czytanym dniu, także w zleceniach na jutro, żeby literówka w numerze ani zlecenie wklejone dzień wcześniej nie
+  dopisały zlecenia, które już jest. Nie przy pomylonym temacie i nie do dnia, który nie jest Dniem uporządkowanym.
 - **Wiersz idzie za zleceniem.** Przeniesienie zmienia dzień w `DATA GODZ. POCZ.` (godzina zostaje) albo `WYKONAWCA` i
   przenosi wiersz pod zlecenia nadawcy w tym dniu, w razie potrzeby do nowego segmentu na miejscu alfabetycznym, żeby
   dzień zachował układ z Uporządkowania INTERMAX. Przeniesienie idzie tylko do Dnia uporządkowanego, bo wiersz w dniu z

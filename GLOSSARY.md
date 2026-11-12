@@ -297,10 +297,10 @@ _Avoid_: korekta INTERMAX, poprawka daty
 
 Zlecenie, które Wpisanie raportów dopisało do Rejestru zleceń, bo numeru z
 Wpisu raportu, w postaci numeru z aplikacji firmowej (8 cyfr), nie ma w żadnym
-otwartym dniu Rejestru. Stoi pod zleceniami nadawcy w dniu z tematu i ma tylko
-`NUMER ZL.`, dzień, `WYKONAWCA`, `SKUTECZNE` i `CZYNNOŚCI ZREALIZOWANE`; resztę
-uzupełnia tata, a widok Raporty przypomina mu o tym, dopóki zlecenie nie ma
-`ADRES`. Nie powstaje, gdy temat raportu jest pomyłką, dzień z tematu nie
+czytanym dniu Rejestru, także w zleceniach na jutro. Stoi pod zleceniami
+nadawcy w dniu z tematu i ma tylko `NUMER ZL.`, dzień, `WYKONAWCA`, `SKUTECZNE`
+i `CZYNNOŚCI ZREALIZOWANE`; resztę uzupełnia tata, a widok Raporty przypomina
+mu o tym, dopóki zlecenie nie ma `ADRES`. Nie powstaje, gdy temat raportu jest pomyłką, dzień z tematu nie
 jest Dniem uporządkowanym, Wykonawca poprawił raport późniejszym mailem bez
 tego numeru albo najpóźniejszy mail z tym numerem go nie dopisuje.
 _Avoid_: nowe zlecenie, brakujące zlecenie
