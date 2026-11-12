@@ -142,12 +142,11 @@ def test_katalog_z_wlasnymi_zakazami_ruff_powtarza_kazdy_zakaz_z_pyproject() -> 
 
 
 def test_kazdy_zakaz_tylko_katalogu_ma_probke() -> None:
-    """Zakaz tylko katalogu to wpis, którego nie ma w ``pyproject.toml`` ani w każdym pliku katalogu naraz: wpis we
-    wszystkich jest kopią tabeli ``pyproject.toml`` (także taką, którą ``main`` już tam dopisał), a jej pilnuje test
+    """Zakaz tylko katalogu to wpis, którego nie ma w ``pyproject.toml``; kopii tabeli ``pyproject.toml`` pilnuje test
     zgodności wyżej."""
     root = _banned(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"]["lint"])
     local = {path: _banned((_ruff_table(path) or {}).get("lint", {})) for path in DIRECTORY_CONFIGS}
-    shared = root.keys() | set.intersection(*(set(banned) for banned in local.values()))
+    shared = root.keys()
     sampled = {(config, banned) for config, _, banned in SAMPLES.values()}
     missing = [
         f"{path.relative_to(ROOT).as_posix()}: {name}"
