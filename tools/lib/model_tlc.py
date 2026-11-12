@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 import json
 import os
@@ -31,6 +32,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import threading
 from typing import NamedTuple
 
 import narzedzia_tlc
@@ -163,7 +165,11 @@ def main(model: Model, argv: list[str] | None = None, *, opis: str | None = None
     java = os.environ.get(JAVA) or narzedzia_tlc.java(cache)
     jar = Path(os.environ.get(JAR) or narzedzia_tlc.jar(cache))
     spec = model.skill / "model" / model.specyfikacja
-    return sprawdz(model, chosen, lambda name, text: tlc(java, jar, spec, name, text), strict=args.strict, uwaga=drift)
+    stop = threading.Event()
+    try:
+        return sprawdz(model, chosen, lambda name, text: tlc(java, jar, spec, name, text, stop), strict=args.strict, uwaga=drift)
+    finally:
+        stop.set()
 
 
 def sprawdz(
@@ -176,6 +182,41 @@ def sprawdz(
 ) -> int:
     """Werdykt modelu na konfiguracjach ``chosen``; ``run_tlc(nazwa, treść .cfg)`` to wyjście TLC. Zwraca kod wyjścia."""
 
+    pool = ThreadPoolExecutor(max_workers=os.cpu_count() or 1)
+    try:
+        return _orzeknij(model, chosen, _przebiegi(model, chosen, run_tlc, pool), strict=strict, uwaga=uwaga)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _przebiegi(
+    model: Model, chosen: Sequence[Konfiguracja], run_tlc: Callable[[str, str], str], pool: ThreadPoolExecutor
+) -> dict[tuple[str, frozenset[tuple[str, str]]], Future[str]]:
+    """Każdy przebieg TLC naraz w ``pool``, kluczem (konfiguracja, wybaczone znaleziska).
+
+    Przebieg bez wszystkich znanych znalezisk konfiguracji przechodzi całą przestrzeń stanów, a przebieg znanego
+    znaleziska kończy się na pierwszym kontrprzykładzie, więc pełne startują pierwsze. Jednowątkowe sprawdzenie
+    liveness najdłuższego zostawia wtedy wolne rdzenie pozostałym."""
+
+    runs: list[tuple[Konfiguracja, frozenset[tuple[str, str]]]] = []
+    for config in chosen:
+        own_known = frozenset((finding.obietnica, finding.przyczyna) for finding in config.znane)
+        runs.append((config, own_known))
+        runs += [(config, own_known - {(finding.obietnica, finding.przyczyna)}) for finding in config.znane]
+    return {
+        (config.nazwa, forgiven): pool.submit(run_tlc, config.nazwa, cfg(model, config, forgiven))
+        for config, forgiven in runs
+    }
+
+
+def _orzeknij(
+    model: Model,
+    chosen: Sequence[Konfiguracja],
+    outputs: Mapping[tuple[str, frozenset[tuple[str, str]]], Future[str]],
+    *,
+    strict: bool,
+    uwaga: str | None,
+) -> int:
     new: list[str] = []
     gone: list[str] = []
     known: list[str] = []
@@ -185,7 +226,7 @@ def sprawdz(
         own_known = frozenset((finding.obietnica, finding.przyczyna) for finding in config.znane)
 
         def run(forgiven: frozenset[tuple[str, str]], config: Konfiguracja = config) -> Werdykt | None:
-            return werdykt(model, run_tlc(config.nazwa, cfg(model, config, forgiven)))
+            return werdykt(model, outputs[config.nazwa, forgiven].result())
 
         for finding in config.znane:
             pair = (finding.obietnica, finding.przyczyna)
@@ -389,7 +430,7 @@ def akcje_next(spec: str) -> frozenset[str]:
     return frozenset(re.findall(r"\\/\s*(?:\\E[^:]*:\s*)?(\w+)", found[1]))
 
 
-def tlc(java: str, jar: Path, spec: Path, name: str, text: str) -> str:
+def tlc(java: str, jar: Path, spec: Path, name: str, text: str, stop: threading.Event | None = None) -> str:
     """Wyjście TLC dla specyfikacji ``spec`` z konfiguracją ``text`` (treść pliku ``name.cfg``).
 
     TLC zapisuje ślady i stany obok specyfikacji, a moduły standardowe (``Naturals.tla``) rozpakowuje pod stałą nazwą
@@ -418,6 +459,7 @@ def tlc(java: str, jar: Path, spec: Path, name: str, text: str) -> str:
                 spec.name,
             ],
             cwd=Path(work),
+            stop=stop,
         )
     return result.stdout + result.stderr
 

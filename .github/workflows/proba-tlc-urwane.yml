@@ -10,15 +10,15 @@ permissions:
 
 jobs:
   warianty:
-    name: TLC warianty (${{ matrix.kolejnosc }})
+    name: TLC jednostka (${{ matrix.kolejnosc }})
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         kolejnosc:
-          - "baza dtemp xms8 w3"
-          - "w3 xms8 dtemp baza"
+          - "seq parf seqf par"
+          - "par seqf parf seq"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,4 +36,4 @@ jobs:
         shell: pwsh
         env:
           KOLEJNOSC: ${{ matrix.kolejnosc }}
-        run: python proba/tlc_warianty.py wszystko @($env:KOLEJNOSC -split ' ')
+        run: python proba/jednostka.py @($env:KOLEJNOSC -split ' ')
