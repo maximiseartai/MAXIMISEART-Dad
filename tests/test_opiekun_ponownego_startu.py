@@ -410,7 +410,8 @@ def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_p
         "            break\n"
         "    sys.path.insert(0, str(Path(__file__).resolve().parent / 'src'))\n"
         "    from rozliczenia.centrum import launcher\n"
-        "    assert hasattr(launcher, '_SHORTCUT_HOLDS_PORT_S')\n"
+        # Prawdziwy limit musi zmieścić się w 30 s, które test daje na koniec starej wersji; dopiero potem skrócony.
+        "    assert launcher._SHORTCUT_HOLDS_PORT_S <= 30, launcher._SHORTCUT_HOLDS_PORT_S\n"
         "    launcher._SHORTCUT_HOLDS_PORT_S = 0.5\n"
     )
     repository = centrum_tool_repository(
