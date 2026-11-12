@@ -7,7 +7,6 @@ formatowania jak u taty: inny krój, zawijanie, wyrównanie do góry, brak obram
 
 from __future__ import annotations
 
-from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -31,6 +30,7 @@ from atrapy.preparation import (
     make_preparation_fixture,
 )
 from tests.fixtures.operacje import run_preparation
+from tests.fixtures.wyglad_komorek import wyglad, wyglady
 from atrapy.settlement import write_template
 from atrapy.workbooks import LEFTOVER_DATE_FORMAT, LEFTOVER_ROW_HEIGHT, active_worksheet, leave_data_row_leftovers
 
@@ -188,7 +188,10 @@ def test_format_liczby_jest_z_komorki_zrodlowej_a_data_pracownika_ma_format_plik
     # DATA: kolumna G we wszystkich trzech plikach; Wzorce mają tam LEFTOVER_DATE_FORMAT, a pozostałe komórki Rejestru
     # format ogólny.
     for written in (chain.internal, chain.collective, chain.worker):
-        formats = {(cell.column == 7, cell.number_format) for cell in _cells(written)}
+        cells = _cells(written)
+        # Przez wyglady: jedyna asercja bezwzględna na pamięci stylów pomocnika (w wierszu G ma inny styl niż reszta).
+        looks = wyglady(cells)
+        formats = {(cell.column == 7, looks[cell.coordinate].number_format) for cell in cells}
         assert formats == {(True, REGISTER_DATE_FORMAT), (False, "General")}, written.path.name
     assert REGISTER_DATE_FORMAT != LEFTOVER_DATE_FORMAT
 
@@ -207,16 +210,7 @@ def _cells_before_look(workbook: Workbook) -> list[Cell | MergedCell]:
 
 
 def _resolved(cell: Cell | MergedCell) -> tuple[object, ...]:
-    return (
-        copy(cell.font),
-        copy(cell.fill),
-        copy(cell.border),
-        copy(cell.alignment),
-        cell.number_format,
-        copy(cell.protection),
-        cell.style,
-        cell.quotePrefix,
-    )
+    return (*wyglad(cell), cell.style, cell.quotePrefix)
 
 
 @pytest.mark.parametrize("first", range(4))

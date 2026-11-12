@@ -8,7 +8,6 @@ odwołania zewnętrzne.
 from __future__ import annotations
 
 from collections.abc import Callable
-from copy import copy
 from dataclasses import replace
 from pathlib import Path
 import re
@@ -34,6 +33,7 @@ from atrapy.preparation import (
     write_internal_template,
 )
 from tests.fixtures.operacje import other_warnings, run_preparation
+from tests.fixtures.wyglad_komorek import wyglady
 from atrapy.workbooks import (
     active_worksheet,
     external_link_parts,
@@ -137,19 +137,15 @@ def _cells(path: Path) -> dict[str, object]:
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
+        all_cells = [cell for row in sheet.iter_rows() for cell in row]
+        looks = wyglady(all_cells)
         cells = {
             cell.coordinate: (
                 cell.value,
-                cell.number_format,
-                (cell.font.name, cell.font.sz, bool(cell.font.b), bool(cell.font.i), copy(cell.font.color)),
-                copy(cell.fill),
-                copy(cell.border),
-                copy(cell.alignment),
-                copy(cell.protection),
+                looks[cell.coordinate],
                 cell.hyperlink.target if cell.hyperlink is not None else None,
             )
-            for row in sheet.iter_rows()
-            for cell in row
+            for cell in all_cells
         }
         names = {name: str(value.attr_text) for name, value in sheet.defined_names.items()}
         heights = {row: dimension.ht for row, dimension in sheet.row_dimensions.items()}
