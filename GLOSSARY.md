@@ -167,7 +167,7 @@ zleceniem. Po nim Rejestr otwiera się na dzisiejszym dniu z kalendarza, a gdy
 dziś nie ma zleceń, na ostatnim wcześniejszym dniu ze zleceniami. Zmienia tylko
 Surowe zlecenia i widok po otwarciu. Dnia, który już jest uporządkowany, nie
 porządkuje drugi raz; zlecenia dopisane później do takiego dnia wpisuje się
-ręcznie. Porządkuje dzień, nie okres. Po nim tata i pracownicy uzupełniają
+ręcznie albo dopisuje je Wpisanie raportów (Zlecenie dopisane z raportu). Porządkuje dzień, nie okres. Po nim tata i pracownicy uzupełniają
 dzień ręcznie, a dopiero potem okres trafia do Przygotowania pliku zbiorczego.
 _Avoid_: formatowanie, import
 
@@ -286,8 +286,9 @@ Zmiana dnia albo Wykonawcy zlecenia w Rejestrze zleceń według Wpisu raportu:
 zlecenie dostaje dzień z tematu albo nadawcę raportu i trafia pod zlecenia tego
 Wykonawcy w tym dniu, w jego segmencie albo w nowym segmencie na jego miejscu
 w kolejności alfabetycznej. Tak przechodzi zlecenie, które Wykonawca przejął od
-innego, albo wykonał innego dnia, niż mówi Rejestr. Nie przenosi zlecenia do
-okresu ani z okresu, który ma Plik zbiorczy.
+innego, albo wykonał innego dnia, niż mówi Rejestr. Przenosi tylko do Dnia
+uporządkowanego i nie przenosi zlecenia do okresu ani z okresu, który ma Plik
+zbiorczy; wtedy zostaje problem dla taty.
 _Avoid_: korekta INTERMAX, poprawka daty
 
 ## Zlecenie dopisane z raportu
@@ -307,9 +308,9 @@ Mail ze skrzynki raportów taty do Wykonawcy z listy adresów Wykonawców, któr
 ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu
 wykonawcy za ten dzień. Prosi o raport za ten dzień, podaje wzór tematu i
 treści i kończy się stopką taty. Pierwsze idzie o 8:00 następnego dnia, kolejne
-o 8:00 i 18:00, aż raport przyjdzie albo okres dnia dostanie Plik zbiorczy;
-nigdy w nocy i nigdy za dni sprzed wdrożenia przypomnień. Każdy brakujący dzień
-ma własne przypomnienia.
+o 8:00 i 18:00, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres
+dnia dostanie Plik zbiorczy; nigdy w nocy i nigdy za dni sprzed wdrożenia
+przypomnień. Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie
 
 ## Rozliczenie wewnętrzne

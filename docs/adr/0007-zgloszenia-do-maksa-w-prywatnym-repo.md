@@ -28,7 +28,10 @@ Uruchomienia, Uwagi taty i lista Wydań),
 każdej wysyłce rozstrzyga reguła danych ze strażnikiem przed wysyłką) i
 [ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md) (Centrum
 czyta też skrzynkę raportów w Gmailu przez IMAP, a hasło aplikacji to drugi
-sekret w `config/`).
+sekret w `config/`) i
+[ADR 0030](0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md) (Centrum
+wysyła też Przypomnienia o raporcie przez SMTP Gmaila tym samym hasłem
+aplikacji).
 
 ## Decyzja
 

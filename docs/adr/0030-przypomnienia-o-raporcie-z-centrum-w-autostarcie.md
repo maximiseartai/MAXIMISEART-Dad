@@ -11,7 +11,13 @@ Zaakceptowana (decyzja Maksa 12.11.2026 po rozmowie z tatą, grill w tej gałęz
 - „Gmail przez IMAP, tylko odczyt”: Centrum wysyła maile ze skrzynki raportów przez SMTP Gmaila tym samym hasłem
   aplikacji. Dalej niczego w skrzynce nie oznacza, nie przenosi i nie usuwa;
 - „Centrum nie sprawdza skrzynki cyklicznie i nie startuje samo z Windows”: sprawdza ją o 8:00 i 18:00 i startuje
-  samo, ale tylko po to, żeby wysłać przypomnienia.
+  samo, ale tylko po to, żeby wysłać przypomnienia;
+- „Własne pliki w `config/`” i „hasło aplikacji (czyta je tylko odczyt skrzynki)”: dochodzi plik stopki taty, a hasło
+  aplikacji czyta też wysyłka przypomnień; zdanie [ADR 0004](0004-centrum-rozliczen-adapter.md) o własnych plikach
+  Centrum zmienia się tak samo, a [ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md) dostaje wysyłkę przez
+  SMTP obok IMAP;
+- „Co widzi przeglądarka”: widok Raporty pokazuje też pory wysłanych przypomnień i informację o brakującej stopce,
+  bez adresów Wykonawców i bez treści maili.
 
 ## Kontekst
 
@@ -26,9 +32,10 @@ Laptop taty na pewno działa o 8:00. Nie wiadomo, czy działa w nocy albo wieczo
 - **8:00 i 18:00, nigdy w nocy.** Pierwsze przypomnienie za dzień idzie o 8:00 następnego dnia, kolejne o 18:00 i 8:00
   (10 godzin, z nocą przesuniętą na rano). Pora pominięta przez uśpiony albo wyłączony laptop nadrabia się po jego
   włączeniu do 22:00, później czeka do 8:00.
-- **Folder „Wysłane” jest pamięcią.** Przed wysłaniem Centrum sprawdza w skrzynce, czy przypomnienie za ten dzień do
-  tego Wykonawcy poszło w ciągu 10 godzin. Restart Centrum ani dwa sprawdzenia naraz nie wysyłają go drugi raz, a
-  Centrum nie ma własnego pliku stanu przypomnień.
+- **Najwyżej jedno w każdej porze, folder „Wysłane” jest pamięcią.** Pora poranna trwa od 8:00 do 18:00, wieczorna od
+  18:00 do 22:00. Przed wysłaniem Centrum sprawdza w skrzynce, czy przypomnienie za ten dzień do tego Wykonawcy poszło
+  już w bieżącej porze; poranne wysłane o 9:30 nie blokuje więc wieczornego o 18:00. Restart Centrum ani dwa
+  sprawdzenia naraz nie wysyłają go drugi raz, a Centrum nie ma własnego pliku stanu przypomnień.
 - **Kto i do kiedy.** Tylko Wykonawcy z listy adresów Wykonawców, którzy mają zlecenia dnia w INTERMAX, czytanym tylko
   do odczytu. Przypomnienia kończy czytelny Raport wykonawcy za ten dzień, nawet niepełny; mail z nieczytelnym
   tematem ich nie kończy. Kończy je też Plik zbiorczy okresu dnia. Liczą się dni od wdrożenia przypomnień, nie od

@@ -11,7 +11,10 @@ ADR:
   nowe wiersze;
 - [ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md), „Bez Kopii INTERMAX”: pamięć własnych wpisów
   obejmuje też Przeniesienia zleceń i Zlecenia dopisane z raportu, bo bez niej Wpisanie raportów nie odróżni własnej
-  zmiany od ręcznej.
+  zmiany od ręcznej;
+- [ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md), „Co widzi przeglądarka”: informacje o
+  Przeniesieniach i Zleceniach dopisanych z raportu używają tylko pól z tej listy (`NUMER ZL.`, `WYKONAWCA`, dzień),
+  a o brakującym `ADRES` mówią bez jego treści.
 
 ## Kontekst
 
@@ -35,7 +38,10 @@ wklejeniem. Tata poprawia wtedy INTERMAX ręcznie według maila, bo mail mówi, 
   dnia, który nie jest Dniem uporządkowanym.
 - **Wiersz idzie za zleceniem.** Przeniesienie zmienia dzień w `DATA GODZ. POCZ.` (godzina zostaje) albo `WYKONAWCA` i
   przenosi wiersz pod zlecenia nadawcy w tym dniu, w razie potrzeby do nowego segmentu na miejscu alfabetycznym, żeby
-  dzień zachował układ z Uporządkowania INTERMAX. Okres z Plikiem zbiorczym pozostaje zamknięty w obie strony.
+  dzień zachował układ z Uporządkowania INTERMAX. Przeniesienie idzie tylko do Dnia uporządkowanego, bo wiersz w dniu z
+  samymi Surowymi zleceniami albo bez zleceń sprawiłby, że Uporządkowanie INTERMAX uznałoby ten dzień za uporządkowany
+  i odmówiło jego wklejenia. Okres z Plikiem zbiorczym pozostaje zamknięty w obie strony. W tych przypadkach zostaje
+  problem dla taty.
 - **Ręczna zmiana dalej wygrywa.** Wpisanie raportów zmienia tylko to, co jest puste albo co samo zmieniło, a od tamtej
   pory nikt tego nie ruszył. Gdy tata przeniesie zlecenie z powrotem, Centrum go nie przenosi drugi raz.
 - **Informacja, nie Zgłoszenie.** Każde Przeniesienie, Zlecenie dopisane z raportu i temat, który przegrał z INTERMAX,
