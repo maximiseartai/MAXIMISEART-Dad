@@ -87,7 +87,8 @@ the tool built from this checkout's working tree (tracked and untracked files): 
 `requirements.txt` changes, so the update installs libraries with nothing new to fetch) and `not_starting`. Its only
 Wydanie `v0.1.0` is `first` and its `main` is one version ahead on `newest`. The feature `instalacja` runs README's
 PowerShell, which clones the tool into `<root>\Users\Józef Kowalski\MAXIMISEART-Dad` and resets it to the newest
-Wydanie, and makes the shortcut in `<root>\Pulpit`, never on the real desktop. Ready means the doctor's `DOCTOR OK` after `start-skrotem`.
+Wydanie, and makes the shortcuts in `<root>\Pulpit` and `<root>\Autostart`, never on the real desktop or in the
+real Autostart folder. Ready means the doctor's `DOCTOR OK` after `start-skrotem`.
 
 Centrum inherits the run's boundaries from the drive's environment (`windows_tool.boundaries`), because the drive
 opens the `.lnk` with `os.startfile` like Explorer does for Dad:

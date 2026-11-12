@@ -1,0 +1,167 @@
+{
+  "zwykle": {
+    "opis": "Jedna karta, jedno zgaśnięcie, jedna odmowa zapisu INTERMAX, bez awarii plików w config.",
+    "stale": {
+      "Karty": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiIntermax": 1,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiWyniku": 0,
+      "MaxAwariiDecyzji": 0,
+      "MozeOtworzyc": false,
+      "MozeKopia": false
+    },
+    "znane": [
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-wartosc",
+        "znalezisko": "tata (albo pracownik) zmienia własny wpis narzędzia i przed następnym kliknięciem wpisuje z powrotem dokładnie tę samą wartość (na przykład czyści komórkę i wpisuje „tak”), a poprawka Wykonawcy ją nadpisuje: _cells.reconcile porównuje wartość komórki z pamięcią, nie wie, kto ją wpisał (otwarte, łamie ADR 0028: „do własnego wcześniejszego wpisu, którego nikt potem nie zmienił”, a tata go zmienił, i ADR 0029: „od tamtej pory nikt tego nie ruszył”, sytuacja „z powrotem” rozstrzygnięta przeciw nadpisaniu; decyzja Maksa)"
+      },
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-ze-starej-pamieci",
+        "znalezisko": "pamięć na dysku jest starsza niż INTERMAX, bo Centrum zgasło między write_cells a save_memory albo zapis pamięci zawiódł i Centrum zgasło przed ponowieniem, a pamięć, którą policzyło kliknięcie, była inna niż ta na dysku; tata wpisuje dawną wartość narzędzia, którą ta stara pamięć wciąż ma, a następne kliknięcie ją nadpisuje, choć z właściwą pamięcią dałoby różnicę"
+      },
+      {
+        "obietnica": "BezFalszywejRoznicy",
+        "przyczyna": "przed-pamiecia",
+        "znalezisko": "Centrum gaśnie po podmianie INTERMAX (report_entering.py :340), a przed save_memory (:353): pamięć nie ma własnych wpisów tego kliknięcia, więc przy poprawce Wykonawcy widok Raporty pokazuje je jako ręczne różnice (kierunek bezpieczny: niczego nie nadpisuje)"
+      }
+    ]
+  },
+  "pamiec": {
+    "opis": "Jedna karta, jedno zgaśnięcie, jeden nieudany zapis pamięci własnych wpisów (OSError, treść czeka w pamięci), bez odmowy INTERMAX.",
+    "stale": {
+      "Karty": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiIntermax": 0,
+      "MaxAwariiPamieci": 1,
+      "MaxAwariiWyniku": 0,
+      "MaxAwariiDecyzji": 0,
+      "MozeOtworzyc": false,
+      "MozeKopia": false
+    },
+    "znane": [
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-wartosc",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-ze-starej-pamieci",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "BezFalszywejRoznicy",
+        "przyczyna": "przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "BezFalszywejRoznicy",
+        "przyczyna": "pamiec-odlozona",
+        "znalezisko": "save_memory zawodzi (OSError), proces daje tylko ostrzeżenie „narzędzie zapisze ją przy następnym kliknięciu”, a Centrum gaśnie przed ponowieniem: pamięć odłożona w StateFile ginie i własne wpisy wracają jako ręczne różnice (kierunek bezpieczny)"
+      }
+    ]
+  },
+  "decyzje": {
+    "opis": "Jedna karta, jedno zgaśnięcie, jeden nieudany zapis decyzji „Zostaw moją” (OSError, treść czeka w pamięci), bez odmowy INTERMAX.",
+    "stale": {
+      "Karty": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiIntermax": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiWyniku": 0,
+      "MaxAwariiDecyzji": 1,
+      "MozeOtworzyc": false,
+      "MozeKopia": false
+    },
+    "znane": [
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-wartosc",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-ze-starej-pamieci",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "BezFalszywejRoznicy",
+        "przyczyna": "przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "ZostawUcisza",
+        "przyczyna": "decyzja-odlozona",
+        "znalezisko": "zapis pliku decyzji w FileReportState.keep zawodzi (OSError), keep nie patrzy na wynik decisions.write i oddaje widok bez różnicy, a Centrum gaśnie przed ponowieniem: decyzja „Zostaw moją” ginie i różnica wraca"
+      }
+    ]
+  },
+  "dwie-karty": {
+    "opis": "Dwie karty z „Zostaw moją” naraz, bez zgaśnięć i awarii.",
+    "stale": {
+      "Karty": 2,
+      "MaxZgasniec": 0,
+      "MaxAwariiIntermax": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiWyniku": 0,
+      "MaxAwariiDecyzji": 0,
+      "MozeOtworzyc": false,
+      "MozeKopia": false
+    },
+    "znane": [
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-wartosc",
+        "znalezisko": "jak w zwykle"
+      }
+    ]
+  },
+  "okres": {
+    "opis": "Jedna karta, okres zamyka się Plikiem zbiorczym i otwiera znowu, bez zgaśnięć i awarii.",
+    "stale": {
+      "Karty": 1,
+      "MaxZgasniec": 0,
+      "MaxAwariiIntermax": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiWyniku": 0,
+      "MaxAwariiDecyzji": 0,
+      "MozeOtworzyc": true,
+      "MozeKopia": false
+    },
+    "znane": [
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-wartosc",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "BezFalszywejRoznicy",
+        "przyczyna": "okres-otwarty-ponownie",
+        "znalezisko": "okres dostaje Plik zbiorczy, więc kliknięcie nie czyta jego zleceń, a _cells.reconcile upuszcza z pamięci ich własne wpisy; gdy tata usunie Plik zbiorczy, własne wpisy tego okresu wracają przy poprawce Wykonawcy jako ręczne różnice (kierunek bezpieczny)"
+      }
+    ]
+  },
+  "kopia": {
+    "opis": "Jedna karta, kopia konfliktu OneDrive pojawia się i znika w dowolnej chwili, bez zgaśnięć i awarii.",
+    "stale": {
+      "Karty": 1,
+      "MaxZgasniec": 0,
+      "MaxAwariiIntermax": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiWyniku": 0,
+      "MaxAwariiDecyzji": 0,
+      "MozeOtworzyc": false,
+      "MozeKopia": true
+    },
+    "znane": [
+      {
+        "obietnica": "NieNadpisuje",
+        "przyczyna": "przywrocona-wartosc",
+        "znalezisko": "jak w zwykle"
+      }
+    ]
+  }
+}

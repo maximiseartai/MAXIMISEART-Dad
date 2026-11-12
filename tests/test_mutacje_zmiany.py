@@ -361,11 +361,16 @@ def test_mutacja_ktora_wiesza_test_do_limitu_pytest_timeout_jest_wykryta_a_nie_p
 
 
 @pytest.mark.parametrize("further", [False, True], ids=["ostatni-krok", "z-dalszymi-krokami"])
-def test_mutacja_ktora_tylko_spowalnia_test_ponad_limit_narzedzia_przezywa(tmp_path: Path, further: bool) -> None:
-    # Przegląd #711, runda 2: test kończy się w CI, bo pytest-timeout go nie przerywa, więc mutacja przeżyła.
+def test_mutacja_ktora_tylko_spowalnia_test_ponad_limit_narzedzia_nie_jest_wykryta_a_trafia_do_zapisu_z_przekroczonym_czasem(
+    tmp_path: Path, further: bool
+) -> None:
+    """Przegląd #711, runda 2: test kończy się w CI, bo pytest-timeout go nie przerywa, więc mutacja nie jest wykryta
+    (ADR 0021). Noc nie wie jednak, czy test by ją złapał, więc zapis ma ją w ``przekroczony_czas``, a nie w przeżytych
+    (#1339)."""
+
     slow = "import time\n\n" + ONE_CASE + "    if oba(True, False):\n        time.sleep(30)\n"
     # Z test_jeden, który wykonuje inny kod pliku, mutacja po przekroczonym czasie testów linii biegnie dalej z testami
-    # pliku jak przeżyta i dopiero tam przeżywa (#695).
+    # pliku, z linią o tym w logu, i dopiero tam kończy się przekroczonym czasem (#695).
     one = "\n\ndef jeden() -> int:\n    return 1\n" if further else ""
     if further:
         slow = slow.replace("import oba", "import jeden, oba") + "\n\ndef test_jeden() -> None:\n    assert jeden() == 1\n"
@@ -374,17 +379,42 @@ def test_mutacja_ktora_tylko_spowalnia_test_ponad_limit_narzedzia_przezywa(tmp_p
     done = _run(_repo(tmp_path / "repo", slow, CHANGED + one, BASE + one), "--limit-s", "8", "--zapis", str(record))
 
     assert done.returncode == 1, done.stdout + done.stderr
-    late = "→ brak wyniku po 8 s (limit --limit-s narzędzia, nie pytest-timeout)" + (" (testy pliku)" if further else "")
-    assert [line for line in done.stdout.splitlines() if " → " in line] == [
-        f"PRZEKROCZONY CZAS: src/rozliczenia/warunek.py:2 bez `b` w `and` {late}",
-        f"PRZEKROCZONY CZAS: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy {late}",
-    ], done.stdout
+    late = "→ brak wyniku po 8 s (limit --limit-s narzędzia, nie pytest-timeout)"
+    names = ["src/rozliczenia/warunek.py:2 bez `b` w `and`", "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"]
+    lines = [line for line in done.stdout.splitlines() if " → " in line]
+    if further:
+        lines_pass = [f"PRZEKROCZONY CZAS: {name} {late} (testy linii), biegnie dalej z szerszymi testami" for name in names]
+        assert sorted(lines[:2]) == lines_pass, done.stdout
+        lines = lines[2:]
+    assert lines == [f"PRZEKROCZONY CZAS: {name} {late}" + (" (testy pliku)" if further else "") for name in names], done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | przeżyło 2"), written["wynik"]
-    assert sorted(_named(entry) for entry in written["przezyte"]) == [
-        "src/rozliczenia/warunek.py:2 bez `b` w `and`",
-        "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy",
-    ]
+    assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | przeżyło 0 | przekroczony czas 2 | "), written["wynik"]
+    assert (written["przezyte"], sorted(_named(entry) for entry in written["przekroczony_czas"])) == ([], names)
+
+
+def test_mutacja_ktora_test_pliku_lapie_po_limicie_czasu_calego_zbioru_trafia_do_zapisu_z_przekroczonym_czasem_a_nie_jako_przezyta(
+    tmp_path: Path,
+) -> None:
+    """Jak #1265 i #1279: zbiór testów pliku bez mutacji mieści się w ``--limit-s``, a po mutacji test, który ją łapie,
+    pada dopiero po limicie całego polecenia. ``PRZEKROCZONY CZAS`` nie mówi więc, że test jej nie łapie (#1339)."""
+
+    # Stałą czyta test, który nie wykonał kodu pliku, więc jej mutację sprawdza dopiero drugi przebieg z testami pliku.
+    tests = (
+        "import subprocess\nimport sys\nimport time\n\nimport rozliczenia.warunek as warunek\n\n\n"
+        "def test_import_w_procesie() -> None:\n    subprocess.run([sys.executable, '-c', 'import rozliczenia.warunek'], check=True)\n\n\n"
+        "def test_stala() -> None:\n    if warunek.LIMIT != 5:\n        time.sleep(60)\n    assert warunek.LIMIT == 5\n"
+    )
+    record = tmp_path / "zapis" / "czesc.json"
+
+    done = _run(_repo(tmp_path / "repo", tests, "LIMIT = 5\n", "LIMIT = 3\n"), "--limit-s", "10", "--zapis", str(record))
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    name = "src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy"
+    late = f"PRZEKROCZONY CZAS: {name} → brak wyniku po 10 s (limit --limit-s narzędzia, nie pytest-timeout) (testy pliku)"
+    assert [line for line in done.stdout.splitlines() if " → " in line] == [late], done.stdout
+    written = json.loads(record.read_text(encoding="utf-8"))
+    assert written["wynik"] == "MUTACJE ZMIANY FAIL | przeżyło 0 | przekroczony czas 1 | mutacje=1 | wyjątki=0 | innego systemu=0"
+    assert (written["przezyte"], [_named(entry) for entry in written["przekroczony_czas"]]) == ([], [name])
 
 
 def test_mutacja_ktora_zawiesza_dopiero_testy_pliku_konczy_sie_bez_werdyktu_w_limicie_czasu_czesci(tmp_path: Path) -> None:

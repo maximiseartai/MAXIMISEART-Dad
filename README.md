@@ -57,9 +57,11 @@ Potem jednorazowo w folderze narzędzia:
 py -3 install_centrum_shortcut.py
 ```
 
-Polecenie tworzy na pulpicie skrót „Centrum rozliczeń” (zob.
-[Centrum rozliczeń](#centrum-rozliczeń-rozwój)). Powtórz je po przeniesieniu
-folderu narzędzia albo po instalacji nowego Pythona. Tata pracuje wyłącznie w
+Polecenie tworzy skrót „Centrum rozliczeń” na pulpicie i w folderze Autostart
+Windows, więc Centrum startuje samo po zalogowaniu taty, bez otwierania karty
+(zob. [Centrum rozliczeń](#centrum-rozliczeń-rozwój)). Powtórz je po
+przeniesieniu folderu narzędzia albo po instalacji nowego Pythona: nadpisuje
+oba skróty, nie dokłada nowych. Tata pracuje wyłącznie w
 Centrum rozliczeń ([ADR 0010](docs/adr/0010-centrum-jedynym-wejsciem-taty.md)).
 Osoba utrzymująca narzędzie, testy E2E i pomiary czasu uruchamiają procesy
 [skryptem dla maszyn](#skrypt-dla-maszyn)
@@ -419,7 +421,7 @@ folderów taty; `tools/benchmark_przebiegu.py comment` drukuje z dziennika
 `.benchmark/przebieg.jsonl` komentarz Markdown do issue-dziennika wspinaczki.
 Szczegóły i argumenty są w opisie narzędzia (`--help`).
 
-Na Windows testy tworzą też skrót przez `install_centrum_shortcut.py` i
+Na Windows testy tworzą też oba skróty przez `install_centrum_shortcut.py` i
 uruchamiają Centrum przez `pythonw.exe`.
 
 ## Centrum rozliczeń (rozwój)
@@ -433,8 +435,13 @@ wystarczają zależności z `requirements.txt`, bez Node.
 - Tata uruchamia Centrum skrótem „Centrum rozliczeń” z pulpitu. Skrót tworzy
   jednorazowo `py -3 install_centrum_shortcut.py`: wskazuje `pythonw.exe`
   tego samego Pythona co `py -3` i `run_centrum.py`, więc nie ma okna konsoli.
+  To samo polecenie zakłada skrót w folderze Autostart Windows (`shell:startup`)
+  z `--no-browser`: Centrum startuje samo po zalogowaniu taty, bez karty, żeby
+  Przypomnienia o raporcie szły bez jego kliknięcia
+  ([ADR 0030](docs/adr/0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md)).
   Ponowne kliknięcie rozpoznaje działające Centrum po `/api/health` (tożsamość
-  i commit narzędzia, z którego wystartowało) i tylko otwiera kartę. Błąd
+  i commit narzędzia, z którego wystartowało) i tylko otwiera kartę, a start z
+  `--no-browser` przy działającym Centrum kończy się bez karty. Błąd
   startu (port zajęty przez inny program, Centrum z innego commitu, brak
   biblioteki) bez konsoli pokazuje natywne okienko, z konsolą trzy linie
   komunikatu (`src/rozliczenia/centrum/start_problems.py`).

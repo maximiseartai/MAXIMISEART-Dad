@@ -120,6 +120,7 @@ def prepare(root: Path) -> dict[str, Any]:
         "tool": str(root / TOOL_FOLDER),
         "desktop": str(root / "Pulpit"),
         "shortcut": str(root / "Pulpit" / SHORTCUT),
+        "startup": str(root / "Autostart"),
         "origin": str(origin),
         "versions": versions,
         "browser": str(recorder),

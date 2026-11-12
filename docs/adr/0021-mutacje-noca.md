@@ -10,6 +10,7 @@ Zmieniona 31.10 (#701, zgoda Maksa w wątku T3: „okej zgadzam się na wdrożen
 Zmieniona 3.11 (cel Maksa w triage 3.11: noc ma znów każdej nocy dawać wynik i zbiegać do zielonego po zaległości): noc ma limit mutacji, a zaległość przechodzi na kolejne noce; część mieści się w limicie czasu także z najdroższymi zmierzonymi mutacjami, a mutacja bez werdyktu po limicie części trafia do issue zamiast zatrzymać noc (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
 Zmieniona 6.11 (#935, Maks 5.11: „gotowe dla agenta”): ostrzeżenie `CZAS BLISKO LIMITU` skryptu mutacji skilla z nocy trafia do issue PR-u (sekcja Decyzja).
 Zmieniona 6.11 (przegląd architektury 6.11, decyzja koordynatora w trybie auto Maksa): ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od`, jak części (sekcja Decyzja).
+Zmieniona 12.11 (#1339, bieg issues w trybie auto Maksa): mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS`, trafia do issue z dopiskiem, że noc nie dała jej werdyktu, a nie jako przeżyta; dalej nie jest wykryta (sekcje Decyzja i Odrzucone warianty).
 
 ## Kontekst
 
@@ -56,6 +57,12 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
 - Każda przeżyta mutacja trafia do issue `Przeżyte mutacje z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił zmienione linie, które ona psuje (`git blame` na `main`, commit scalenia, a bez numeru w jego temacie API GitHuba).
   Jedno issue na PR, a ta sama mutacja nie trafia do niego drugi raz, także gdy jej linie się przesuną: porównuje się klucz z pliku i zmienionego kodu, bez numerów linii.
   Issue naprawia agent testem, który zabija mutację, albo linią `MUTACJA <id> | nie warto, bo <powód>`.
+- Mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS` (`--limit-s`, 900 s), a której nie wykryła brama typów, trafia do issue PR-u z dopiskiem `przekroczony czas testów, bez werdyktu` i radą, by sprawdzić ją `tools/mutacje.py` (#1339).
+  Limit dotyczy całego polecenia `pytest`, a zbiór testów pliku trwa bez mutacji blisko niego: w runie 42783639074 część 10/37 dała `NIEWYKRYTA` po 802.59 s i 800.20 s, a mutację `report_box.py:210`, którą `tests/test_skrzynka_zgloszen_github.py` łapie w 14 testach, `PRZEKROCZONY CZAS` w tym samym zbiorze.
+  Taki wynik nie mówi więc ani, że test łapie mutację, ani, że jej nie łapie; przed #1339 siedem takich linii z nocy 9–11.11 trafiło do issues jako zwykłe przeżyte, choć test każdą łapał.
+  W runach 42783639074 i 42982940704 tak kończyło się 21 z 64 i 20 ze 143 przeżytych mutacji (odtworzenie zapisów i logów części w #1339).
+  Zapis części ma je w liście `przekroczony_czas`, a część kończy się kodem 1 jak z przeżytymi.
+  `PRZEKROCZONY CZAS` w przebiegu przed ostatnim ma linię w logu części z nazwą przebiegu, a mutacja biegnie dalej z szerszymi testami.
 - Przeżyta to mutacja, której nie wykrył ani test, ani brama typów (#703, zgoda Maksa w wątku T3 31.10).
   Mutację operatora (`True` → `False`, `<` → `<=`, `return x` → `return None`…), która przeżyła testy, sprawdzają jeszcze ruff i mypy obu systemów, te same kroki co brama pre-push (`tools/mutacje.py`, `type_gate`).
   Gdy któryś zgłasza, że kod jest błędny, mutacja jest `WYKRYTA PRZEZ BRAMĘ TYPÓW` i nie trafia do issue, bo takiego kodu nie wpuszczą brama pre-push ani zadanie CI „Ruff, mypy”.
@@ -111,7 +118,8 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
 - Części po 25 mutacji w limicie 3300 s, bo „części po 31–32 mutacje trwały 6–50 min” (3.11). Run 41179652907 nie miał jeszcze mutacji `tools/mutacje.py` z #711 i #721: część pierwszej nocy z 25 takimi mutacjami trwałaby ok. 3400–3600 s (ich czasy z runu 41285996039), a czerwona noc wracałaby z tą samą częścią co noc.
 - Części dzielone według szacowanego kosztu (3.11). Plan nie zna kosztu mutacji przed pokryciem: stosunek mediany mutacji pliku do czasu CI testów dotkniętych plikiem wynosił 0,00–0,48, a mutacja pliku z medianą 4 s potrafiła trwać 900 s. Koszt z poprzednich nocy wymaga stanu między nocami, a nowy drogi plik i tak czerwieniłby pierwszą noc.
 - Druga fala części w tym samym przebiegu dla mutacji bez werdyktu (3.11). Domyka je tej samej nocy, ale dokłada zadanie planu, drugą macierz i do 3 h przebiegu, a mutacja, której nie domknie druga fala, i tak potrzebuje reguły, która nie zatrzymuje nocy.
-- PRZEKROCZONY CZAS jako mutacja wykryta, jak w Stryker i PIT (3.11). Mutacje nocy, które trwały 900 s (np. bez kopii cache mypy w bramie typów), spowalniały testy, a nie wieszały ich: żadnego testu nie przerwał pytest-timeout, więc CI by ich nie złapało. Reguła nie skraca też kolejki: mutacje, które czekały za nimi, dalej nie zaczynały się przed limitem części.
+- PRZEKROCZONY CZAS jako mutacja wykryta, jak w Stryker i PIT (3.11). Mutacje nocy, które trwały 900 s (np. bez kopii cache mypy w bramie typów), spowalniały testy, a nie wieszały ich: żadnego testu nie przerwał pytest-timeout, więc CI by ich nie złapało. Reguła nie skraca też kolejki: mutacje, które czekały za nimi, dalej nie zaczynały się przed limitem części. Dlatego od #1339 taka mutacja nie jest wykryta, tylko trafia do issue z dopiskiem.
+- Druga próba mutacji z `PRZEKROCZONY CZAS` w testach pliku, z dłuższym limitem albo z węższym zbiorem testów (12.11, #1339). Dłuższy limit dokłada do części kolejny przebieg testów pliku po jednej mutacji naraz, którego nie liczy rozmiar części (`NA_CZESC`), a węższy zbiór już przeszedł we wcześniejszych przebiegach, więc nie da werdyktu.
 - Części po 28 mutacji, 1120 na noc (3.11, przegląd #815). Z najgorszymi czasami każdego przebiegu część po 28 trwa ok. 10 800 s, ponad limit części, więc mutacje z jej końca zostawałyby bez werdyktu.
 - Mniejsze części, np. po 8 mutacji, które mieszczą się w 3300 s przy każdej mutacji po 900 s (3.11). Noc miałaby 320 mutacji przy 40 częściach, mniej niż daje dzień, więc zaległość by rosła, a większość części, z mutacjami po kilka sekund, biegłaby głównie pokrycie.
 - Change mutations na PR, ale bez czekania na nie w `tools/scal_pr.py`. Każdy PR dalej zajmowałby trzy runnery po 15 min, a wynik po merge'u i tak musiałby trafić do issue.
