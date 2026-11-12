@@ -31,8 +31,10 @@ Laptop taty na pewno działa o 8:00. Nie wiadomo, czy działa w nocy albo wieczo
   otwierania przeglądarki. Skrót z pulpitu działa jak dziś: widzi działające Centrum i otwiera kartę.
 - **8:00 i 18:00, nigdy w nocy.** Pierwsze przypomnienie za dzień idzie o 8:00 następnego dnia, kolejne o 18:00 i 8:00
   (10 godzin, z nocą przesuniętą na rano). Pora pominięta przez uśpiony albo wyłączony laptop nadrabia się po jego
-  włączeniu do 22:00, później czeka do 8:00.
-- **Najwyżej jedno w każdej porze, folder „Wysłane” jest pamięcią.** Pora poranna trwa od 8:00 do 18:00, wieczorna od
+  włączeniu: poranna do 16:59, wieczorna do 21:59. Poranne przypomnienie, które nie poszło do 17:00, już nie idzie, a
+  od 17:00 do 18:00 nie idzie żadne, żeby laptop włączony tuż przed 18:00 nie wysłał Wykonawcy dwóch przypomnień w kilka
+  minut (decyzja Maksa 12.11.2026). Granica 17:00 stoi w jednym miejscu, w porach rdzenia raportów.
+- **Najwyżej jedno w każdej porze, folder „Wysłane” jest pamięcią.** Pora poranna trwa od 8:00 do 17:00, wieczorna od
   18:00 do 22:00. Przed wysłaniem Centrum sprawdza w skrzynce, czy przypomnienie za ten dzień do tego Wykonawcy poszło
   już w bieżącej porze; poranne wysłane o 9:30 nie blokuje więc wieczornego o 18:00. Restart Centrum ani dwa
   sprawdzenia naraz nie wysyłają go drugi raz, a Centrum nie ma własnego pliku stanu przypomnień.

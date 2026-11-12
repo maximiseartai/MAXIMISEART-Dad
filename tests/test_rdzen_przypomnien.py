@@ -2,7 +2,7 @@
 należą się w danej chwili, ich temat i treść.
 
 Testy idą przez operację rdzenia z chwilą na wejściu: zlecenia INTERMAX, maile ze Skrzynki raportów, przypomnienia z
-„Wysłanych”, adresy Wykonawców i stopka, a przypomnienia na wyjściu. Pory (8:00–18:00, 18:00–22:00), dzień X+1 i treść
+„Wysłanych”, adresy Wykonawców i stopka, a przypomnienia na wyjściu. Pory (8:00–17:00, 18:00–22:00), dzień X+1 i treść
 biorą wartości ze speca #1344 i ADR 0030. Dane są syntetyczne, adresy w domenie ``.invalid``, numery zmyślone.
 """
 
@@ -121,7 +121,14 @@ def _days(found: Sequence[Reminder]) -> list[tuple[str, date]]:
         pytest.param(_at(DAY + timedelta(days=1), 23, 30), [], [], id="23:30-noc-bez-zadnego"),
         pytest.param(_at(DAY, 18, 30), [], [], id="dzien-x-wieczorem-za-wczesnie"),
         pytest.param(_at(DAY, 21, 59), [], [], id="dzien-x-przed-22-za-wczesnie"),
-        pytest.param(_at(DAY + timedelta(days=1), 17, 50), [], [("jan.testowy", DAY)], id="17:50-po-uspieniu"),
+        pytest.param(_at(DAY + timedelta(days=1), 16, 30), [], [("jan.testowy", DAY)], id="16:30-poranna-nadrabia"),
+        pytest.param(_at(DAY + timedelta(days=1), 16, 59), [], [("jan.testowy", DAY)], id="16:59-poranna-nadrabia"),
+        pytest.param(_at(DAY + timedelta(days=1), 16, 59), [NEXT_MORNING], [], id="16:59-poranna-juz-poszla"),
+        pytest.param(_at(DAY + timedelta(days=1), 17, 0), [], [], id="17:00-poranna-nie-nadrabia"),
+        pytest.param(_at(DAY + timedelta(days=1), 17, 50), [], [], id="17:50-po-uspieniu-nic"),
+        pytest.param(_at(DAY + timedelta(days=1), 17, 59), [], [], id="17:59-nic"),
+        pytest.param(_at(DAY + timedelta(days=1), 18, 0), [], [("jan.testowy", DAY)], id="18:00-wieczorna-po-pominietej-porannej"),
+        pytest.param(_at(DAY + timedelta(days=1), 18, 0), [_at(DAY + timedelta(days=1), 16, 59)], [("jan.testowy", DAY)], id="18:00-po-16:59"),
         pytest.param(_at(DAY + timedelta(days=1), 18, 0), [_at(DAY + timedelta(days=1), 17, 50)], [("jan.testowy", DAY)], id="18:00-po-17:50"),
         pytest.param(_at(DAY + timedelta(days=2), 8, 0), [_at(DAY + timedelta(days=1), 18, 0)], [("jan.testowy", DAY)], id="8:00-kolejnego-dnia"),
         pytest.param(_at(DAY + timedelta(days=2), 9, 0), [NEXT_MORNING], [("jan.testowy", DAY)], id="poranna-wczoraj-nie-blokuje-dzis"),
@@ -130,18 +137,32 @@ def _days(found: Sequence[Reminder]) -> list[tuple[str, date]]:
 def test_przypomnienie_za_dzien_idzie_od_8_dnia_nastepnego_najwyzej_raz_w_porze_i_nigdy_w_nocy(
     now: datetime, sent: list[datetime], expected: list[tuple[str, date]]
 ) -> None:
-    """Pierwsze przypomnienie za dzień X idzie od 8:00 dnia X+1, kolejne w każdej porze (8:00–18:00, 18:00–22:00), w
-    której jeszcze nie poszło, z nadrabianiem do 22:00, a w nocy żadne (US 32–35)."""
+    """Pierwsze przypomnienie za dzień X idzie od 8:00 dnia X+1, kolejne w każdej porze (8:00–17:00, 18:00–22:00), w
+    której jeszcze nie poszło: poranne nadrabia się do 16:59, wieczorne do 21:59, a od 17:00 do 18:00 i w nocy nie
+    idzie żadne (US 32–35, decyzja Maksa 12.11 w ADR 0030)."""
 
     assert _days(_due(now, sent=[_sent(DAY, moment) for moment in sent])) == expected
 
+
+
+def test_laptop_wlaczony_przed_18_po_pominietej_porannej_daje_jedno_przypomnienie_o_18() -> None:
+    """Laptop taty włączony o 17:50 po pominiętej porze porannej: sprawdzenia co minutę do 17:59 nic nie dają, o 18:00
+    idzie jedno przypomnienie, a minuta później z nim w „Wysłanych” już żadne, więc Wykonawca nie dostaje dwóch maili w
+    10 minut (decyzja Maksa 12.11, ADR 0030)."""
+
+    evening = _at(DAY + timedelta(days=1), 18, 0)
+    before_evening = [_due(_at(DAY + timedelta(days=1), 17, minute)) for minute in range(50, 60)]
+
+    assert before_evening == [()] * 10
+    assert _days(_due(evening)) == [("jan.testowy", DAY)]
+    assert _due(_at(DAY + timedelta(days=1), 18, 1), sent=[_sent(DAY, evening)]) == ()
 
 def test_przypomnienie_wyslane_w_utc_liczy_sie_w_porze_taty() -> None:
     """Chwila z „Wysłanych” w innej strefie liczy się w strefie chwili sprawdzenia: 7:30 UTC to 8:30 u taty, poranna."""
 
     sent = _sent(DAY, datetime(2026, 11, 10, 7, 30, tzinfo=timezone.utc))
 
-    assert _due(_at(DAY + timedelta(days=1), 17, 0), sent=[sent]) == ()
+    assert _due(_at(DAY + timedelta(days=1), 16, 59), sent=[sent]) == ()
     assert _days(_due(_at(DAY + timedelta(days=1), 18, 0), sent=[sent])) == [("jan.testowy", DAY)]
 
 

@@ -203,19 +203,25 @@ def test_proba_liczy_przypomnienia_i_wysyla_jedno_tylko_na_podany_adres_z_tresci
     assert not WRITES & {command.split(" ")[0] for command in imap.commands}
 
 
+@pytest.mark.parametrize(
+    "teraz",
+    [datetime(2026, 11, 11, 23, 0), datetime(2026, 11, 11, 17, 30)],
+    ids=["noc", "po-17-przed-wieczorna"],
+)
 def test_proba_bez_naleznych_przypomnien_wysyla_przypomnienie_za_wczoraj_na_podany_adres(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], teraz: datetime
 ) -> None:
-    """W nocy przypomnienia nie idą (ADR 0030), więc próba liczy zero, a SMTP, treść i stopkę sprawdza przypomnieniem
-    za wczoraj, dalej tylko na adres z polecenia."""
+    """W nocy i od 17:00 do 18:00 przypomnienia nie idą (ADR 0030), więc próba mówi ``pora=brak`` i liczy zero, choć
+    rano tego dnia należały się trzy, a SMTP, treść i stopkę sprawdza przypomnieniem za wczoraj, dalej tylko na adres z
+    polecenia."""
 
     klon = _klon(tmp_path)
     with _gmail() as (imap, serwer):
-        code, line = _proba(capsys, klon, imap, serwer, teraz=datetime(2026, 11, 11, 23, 0))
+        code, line = _proba(capsys, klon, imap, serwer, teraz=teraz)
 
     assert (code, line) == (
         0,
-        "PROBA PRZYPOMNIEN OK | pora=noc | przypomnienia=0 | wykonawcy=0 | dni=0 | wyslano 1 na podany adres",
+        "PROBA PRZYPOMNIEN OK | pora=brak | przypomnienia=0 | wykonawcy=0 | dni=0 | wyslano 1 na podany adres",
     )
     message, recipients, _ = _mail(serwer)
     assert (recipients, message["To"], message["Subject"]) == ((MAKS,), MAKS, "Przypomnienie: raport za dzień 10.11.2026")
