@@ -11,7 +11,7 @@ Przeszkody kliknięcia (#1232) mają zdania Komunikatów ze speca #1224 (US 44�
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import email
 from email.message import EmailMessage
 import email.policy
@@ -1862,6 +1862,86 @@ def test_brak_sieci_przy_przypomnieniach_ponawia_w_nastepnej_minucie_tej_samej_p
     log = centrum.tool.log_path.read_text(encoding="utf-8")
     assert log.count("przypomnienia-porazka przyczyna=brak-sieci typ=TimeoutError") == 1
     assert surroundings.report_box.sent == []
+
+
+def test_brak_sieci_przy_odczycie_maili_skrzynki_nie_wysyla_przypomnien_choc_wyslane_sa_czytelne(tmp_path: Path) -> None:
+    """Gdy odczyt maili ze Skrzynki raportów się nie uda, a „Wysłane” są czytelne, nic nie wychodzi, bo bez maili
+    przypomnienie poszłoby też do Wykonawcy, który raport przysłał; pora zostaje otwarta i następna minuta wysyła
+    tylko temu, kto raportu nie przysłał (ADR 0030 „Kto i do kiedy”, US 47)."""
+
+    anna_report = report(ANNA, "Raport 09.11.2026", "40000002 tak montaż")
+    mailbox = FakeMailbox(outcome=InboxUnreachable("TimeoutError"))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum.tool)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    assert (mailbox.sends, _reminder_result(centrum)["failure"]) == ([], "brak-sieci")
+    mailbox.outcome = (anna_report,)
+    centrum.moment.append(datetime(2026, 11, 10, 8, 31))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["jan.testowy"]
+
+
+def test_odmowa_wysylki_przez_gmail_nie_ponawia_wysylki_do_konca_pory(tmp_path: Path) -> None:
+    """Odmowa wysyłki przez Gmaila inna niż odrzucone hasło (np. dzienny limit) zamyka porę: następne minuty tej samej
+    pory nie próbują znowu, a wynik dla widoku Raporty mówi o odmowie (US 47)."""
+
+    mailbox = FakeMailbox(send_outcome=MailRefused("SMTPDataError"))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum.tool)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.moment.append(datetime(2026, 11, 10, 8, 31))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska", "jan.testowy"]
+    assert _reminder_result(centrum)["failure"] == "odmowa-wysylki"
+    log = centrum.tool.log_path.read_text(encoding="utf-8")
+    assert log.count("przypomnienia-porazka przyczyna=odmowa-wysylki typ=SMTPDataError") == 1
+
+
+@pytest.mark.parametrize(
+    ("started", "later"),
+    [
+        (datetime(2026, 11, 10, 21, 59), datetime(2026, 11, 10, 22, 0)),
+        (datetime(2026, 11, 10, 17, 59), datetime(2026, 11, 10, 18, 0)),
+        (datetime(2026, 11, 10, 21, 59), datetime(2026, 11, 11, 7, 0)),
+        (datetime(2026, 11, 10, 21, 59), datetime(2026, 11, 11, 21, 0)),
+    ],
+    ids=["22-00", "poranna-do-wieczornej", "uspiony-do-rana", "uspiony-do-wieczora-innego-dnia"],
+)
+def test_seria_przypomnien_ktora_wyszla_poza_pore_czeka_z_reszta_na_nastepna_pore(
+    tmp_path: Path, started: datetime, later: datetime
+) -> None:
+    """Gdy zegar w trakcie serii przypomnień wyjdzie poza porę, w której seria ruszyła (minęła 22:00 albo 18:00, laptop
+    zasnął i obudził się rano albo wieczorem innego dnia), reszta serii nie idzie, a wysłane przypomnienie ma chwilę
+    swojej wysyłki, nie początku sprawdzenia (ADR 0030 „nigdy w nocy”)."""
+
+    class TickingMailbox(FakeMailbox):
+        def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+            outcome = super().send(reminder, at)
+            centrum.moment.append(later)
+            return outcome
+
+    first_send = started + timedelta(seconds=30)
+    mailbox = TickingMailbox(during=lambda: centrum.moment.append(first_send))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum.tool)
+    centrum.moment.append(started)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at) for reminder, at in mailbox.sends] == [("anna.kowalska", first_send.astimezone())]
+    assert [(sent["worker"], sent["day"]) for sent in _reminder_result(centrum)["sent"]] == [("anna.kowalska", "2026-11-09")]
 
 
 def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_porze(tmp_path: Path) -> None:
