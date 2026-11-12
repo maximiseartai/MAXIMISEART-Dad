@@ -1775,27 +1775,60 @@ def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_p
     assert _worker(_view(centrum), "jan.testowy")["notes"] == []
 
 
-def test_klikniecie_nie_dopisuje_zlecenia_ktore_czeka_w_intermax_jako_surowe_zlecenie(tmp_path: Path) -> None:
-    """Granica #1354: numery z Wpisów są w INTERMAX jako Surowe zlecenia na dole arkusza (wklejone, jeszcze
-    nieuporządkowane; pierwsze stoi przesunięte o dwie kolumny w lewo, jak z aplikacji). Dopisanie dałoby te zlecenia
-    dwa razy po Uporządkowaniu INTERMAX, więc kliknięcie nie zmienia INTERMAX, a problem mówi tacie, żeby uporządkował
-    INTERMAX."""
+def _day_with(row: Order) -> Intermax:
+    """Uporządkowany 9.11: zlecenie Jana, wiersz ``row`` i zlecenie Anny, bez Surowych zleceń."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000003 tak montaż\n40000004 nie brak")])
+    return Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), row, _order(9, 11, "anna.kowalska", 40000002)), raw=())
+
+
+_NINTH_AT_TEN = datetime(2026, 11, 9, 10)
+_ORDERLESS_ROWS = {
+    "surowe-zlecenia-na-dole": (INTERMAX, (40000003, 40000004)),
+    "bez-wykonawcy": (_day_with(Order(_NINTH_AT_TEN, "", 40000066, cells=((NUMBER, 40000066),))), (40000066,)),
+    "data-tekstem": (
+        _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000067, cells=((NUMBER, 40000067), (DATE, "09.11.2026 10:00")))),
+        (40000067,),
+    ),
+    "wyglad-z-aplikacji-i-zlecenie-nad-nim": (
+        _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000068, cells=((NUMBER, 40000068),), app_look=True)),
+        (40000001, 40000068),
+    ),
+    "przesuniety-wiersz-z-aplikacji": (
+        _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000069, cells=((NUMBER, 40000069),), shifted=True, app_look=True)),
+        (40000069,),
+    ),
+}
+
+
+@pytest.mark.parametrize(("intermax", "numbers"), list(_ORDERLESS_ROWS.values()), ids=list(_ORDERLESS_ROWS))
+def test_klikniecie_nie_dopisuje_numeru_ktory_intermax_ma_w_przeczytanym_wierszu_bez_zlecenia(
+    tmp_path: Path, intermax: Intermax, numbers: tuple[int, ...]
+) -> None:
+    """Przegląd #1374 r2 Ważne 1 (ADR 0029: Centrum nigdy nie dubluje zlecenia, które INTERMAX już ma): dziś 9.11, a
+    Jan przysłał Raport za 9.11 z numerami, które INTERMAX ma w wierszu, z którego proces nie robi zlecenia. Kształty z
+    kopii INTERMAX taty i z Uporządkowania: Surowe zlecenia na dole arkusza (pierwsze przesunięte o dwie kolumny w lewo,
+    jak z aplikacji), uporządkowany wiersz bez ``WYKONAWCA``, wiersz z ``DATA GODZ. POCZ.`` tekstem, wiersz z wyglądem z
+    aplikacji między uporządkowanymi (z nim zlecenie Jana nad nim, bo przegląd zleceń kończy się na takim wierszu) i
+    taki wiersz przesunięty jak pierwszy wiersz wklejenia. Kliknięcie nie zmienia INTERMAX, więc żaden numer nie stoi w
+    nim dwa razy, a okienko Jana z 9.11 ma problem z każdym numerem, który mówi, że zlecenie już jest. Logi mają te
+    numery, żeby odtworzenie postawiło je w INTERMAX."""
+
+    text = "\n".join(f"{number} tak montaż" for number in numbers)
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, text)])
     before = centrum.register.read_bytes()
 
     view = _finished(centrum)
 
-    assert centrum.register.read_bytes() == before
+    assert centrum.register.read_bytes() == before, "kliknięcie nie dopisuje numeru, który INTERMAX już ma"
     entering = _entering(centrum, view)
     assert (entering["added"], [(problem["kind"], problem["bar"]) for problem in entering["problems"]]) == (
         [],
-        [("unknown_number", "pasted")] * 2,
+        [("unknown_number", "in_intermax")] * len(numbers),
     )
-    assert entering["pasted"] == [{"sheet": ORDER_SHEET, "number": 40000003}, {"sheet": ORDER_SHEET, "number": 40000004}]
+    assert entering["orderless"] == [{"sheet": ORDER_SHEET, "number": number} for number in numbers]
     problems = _worker(_view(centrum), "jan.testowy")["problems"]
-    assert [problem["number"] for problem in problems] == ["40000003", "40000004"]
-    assert all("INTERMAX ma go jako Surowe zlecenie: uporządkuj INTERMAX i kliknij jeszcze raz" in problem["reason"] for problem in problems)
+    assert [problem["number"] for problem in problems] == [str(number) for number in numbers]
+    assert all(f"Zlecenie {problem['number']} z Wpisu od jan.testowy z 09.11.2026 jest już w INTERMAX" in problem["reason"] for problem in problems)
 
 
 def test_zlecenie_z_dnia_po_dzis_nie_jest_dopisane_drugi_raz_a_nastepnego_dnia_przechodzi_na_dzien_z_tematu(

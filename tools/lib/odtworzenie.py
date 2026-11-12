@@ -848,13 +848,14 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     """INTERMAX z uporządkowanych wierszy Kopii wejścia, Konfiguracja wykonawców i plik adresów z loginów Wpisów,
     Skrzynka raportów z maili w postaci kanonicznej (``worker_reports.as_mail``), pamięć wpisów z ``rollout_before`` i
     ``memory_before`` z decyzjami „Zostaw moją” z ``kept``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
-    zegar z dniem kliknięcia u taty. Surowe zlecenia z numerem z Wpisu (``pasted``) stają na dole swojego arkusza z
-    krojem z aplikacji, bo Kopia wejścia Wpisania raportów ma tylko uporządkowane wiersze."""
+    zegar z dniem kliknięcia u taty. Numery z Wpisu, które INTERMAX taty miał w przeczytanym wierszu bez zlecenia
+    (``orderless``), stają na dole swojego arkusza jako Surowe zlecenia z krojem z aplikacji, bo Kopia wejścia Wpisania
+    raportów ma tylko uporządkowane wiersze zleceń."""
 
     register, limits = _register_file(record, work, "intermax", lambda sheet, row: _ORDERED_FONT)
     entering = record.report_entering
-    if entering is not None and entering.pasted:
-        _add_pasted(register, entering)
+    if entering is not None and entering.orderless:
+        _add_orderless(register, entering)
     reads = [] if entering is None else [logged_read(mail) for mail in entering.mails]
     logins = sorted({read.worker for read in reads if not isinstance(read, ReadStranger)}) or [_NO_WORKER]
     senders = {login: _sender(f"wykonawca-{index}") for index, login in enumerate(logins)}
@@ -885,23 +886,24 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     return _Rebuilt(paths, parts, limits)
 
 
-def _add_pasted(register: Path, entering: LoggedReports) -> None:
-    """Surowe zlecenia z Logów pod ostatnim wierszem swojego arkusza (z pustym wierszem nad nimi), jak wklejenie z
-    aplikacji: pierwsze przesunięte o ``SHIFT`` kolumn w lewo, reszta pod nagłówkami, każde z ``NUMER ZL.`` w postaci z
-    Wpisu (z zerem na początku, gdy Wpis go ma, inaczej liczbą) i dniem kliknięcia w ``DATA GODZ. POCZ.``, krojem z
-    aplikacji. Proces czyta je wtedy jak Surowe zlecenia, a reguła danych zna pierwsze tylko w przesuniętym położeniu,
-    jak u taty."""
+def _add_orderless(register: Path, entering: LoggedReports) -> None:
+    """Numery z wierszy bez zlecenia z Logów jako Surowe zlecenia pod ostatnim wierszem swojego arkusza (z pustym
+    wierszem nad nimi), jak wklejenie z aplikacji: pierwsze przesunięte o ``SHIFT`` kolumn w lewo, reszta pod
+    nagłówkami, każde z ``NUMER ZL.`` w postaci z Wpisu (z zerem na początku, gdy Wpis go ma, inaczej liczbą) i dniem
+    kliknięcia w ``DATA GODZ. POCZ.``, krojem z aplikacji. Proces czyta wtedy ich numery jak u taty, choć wiersz taty
+    mógł być wierszem bez ``WYKONAWCA`` albo z datą tekstem, a reguła danych zna pierwsze tylko w przesuniętym
+    położeniu, jak u taty."""
 
     numbers = _numbers(entering)
     workbook = load_workbook(register)
     by_sheet: dict[str, list[int]] = {}
-    for logged in entering.pasted:
+    for logged in entering.orderless:
         by_sheet.setdefault(logged.sheet, []).append(logged.number)
-    for name, pasted in by_sheet.items():
+    for name, orderless in by_sheet.items():
         sheet = workbook[name]
         header = {normalize_text(cell.value): cell.column for cell in sheet[1] if cell.value is not None}
         first = sheet.max_row + 2
-        for index, number in enumerate(pasted):
+        for index, number in enumerate(orderless):
             texts = {text for (value, _, _), found in numbers.items() if value == number for text in found}
             zero = sorted(text for text in texts if text.startswith("0"))
             cells = {DATE: datetime.combine(entering.today, time()), ORDER_NUMBER: zero[0] if zero else number}

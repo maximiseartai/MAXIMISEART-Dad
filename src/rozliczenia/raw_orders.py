@@ -30,7 +30,9 @@ wcześniejsze dni (usterka z poprzedniego dnia dopisana pod dniem) nie kończą 
 ``since`` daje w ``ordered_days`` Dni uporządkowane arkusza: dzień, którego w przeglądzie stoją dwa kolejne
 uporządkowane wiersze z jego datą albo jeden, pod którym nie ma wiersza wcześniejszego dnia; zlecenie na jutro
 wpisane w dzisiejszym dniu nie czyni jutra uporządkowanym. Granicę i arkusze, w których się ich szuka, wybiera
-``intermax_ordering`` jednakowo dla Planowania i karty Uporządkowania INTERMAX w Centrum rozliczeń.
+``intermax_ordering`` jednakowo dla Planowania i karty Uporządkowania INTERMAX w Centrum rozliczeń. Ten sam przegląd
+daje Wpisaniu raportów uporządkowane wiersze (``ordered_rows``), a bez końca na wierszu z wyglądem z aplikacji każdy
+wiersz, z którego czyta ono numer zlecenia (``numbered_rows``).
 
 Plan dnia (``plan_day``) z bloku wyznacza docelowe wiersze zleceń: jeden pusty wiersz pod żółtym wierszem albo
 10 pustych pod ostatnim uporządkowanym zleceniem, segmenty Wykonawców w kolejności alfabetycznej z jednym
@@ -352,6 +354,38 @@ def ordered_rows(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, si
         return ()
     dated = ((row, row.value(columns.date)) for row in _above(first, rows, columns, since).rows)
     return tuple(row for row, when in dated if isinstance(when, datetime) and when.date() >= since)
+
+
+def numbered_rows(
+    rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, since: date
+) -> tuple[tuple[RowFacts, RowPositions], ...]:
+    """Każdy wiersz z wartościami, z którego Wpisanie raportów czyta ``NUMER ZL.``, od dołu, z położeniami, w których
+    może stać (``row_positions``, z pierwszym wierszem bloku wklejenia z ``first_in_block``).
+
+    To wklejenie na dole arkusza (``pasted_rows``) i przegląd ``ordered_rows`` od ostatniego uporządkowanego wiersza w
+    górę z tą samą granicą (``_upward``), którego nie kończy wiersz z wyglądem z aplikacji i z którego nie odpada wiersz
+    bez daty z godziną. Są tu więc wiersze ``ordered_rows`` i każdy przeczytany wiersz, z którego Wpisanie raportów
+    nie robi zlecenia: Surowe zlecenie, wiersz bez Wykonawcy, wiersz z datą tekstem albo bez daty, wiersz z wyglądem z
+    aplikacji między uporządkowanymi i uporządkowany wiersz nad nim.
+    """
+
+    first: dict[int, bool] = {}
+
+    def marked() -> Iterator[RowFacts]:
+        for row, opens in first_in_block(rows_from_bottom, lambda found: look(found, columns)):
+            first[row.number] = opens
+            yield row
+
+    rows = marked()
+    raw, _, _, ordered = _bottom(rows, columns)
+    above = () if ordered is None else tuple(_upward(ordered, rows, columns, since))
+    return tuple(
+        (
+            row,
+            row_positions(first=first[row.number], left_of_date=row.value(columns.date - SHIFT), date=row.value(columns.date)),
+        )
+        for row in (*reversed(raw), *above)
+    )
 
 
 def pasted(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> tuple[RawOrder | Undated | WithoutWorker, ...]:
@@ -907,12 +941,9 @@ def _above(first: RowFacts, rows: Iterator[RowFacts], columns: OrderColumns, day
     below = first.number
     days: set[date] = set()
     seen: list[RowFacts] = []
-    earlier = 0
     previous: date | None = None
     lowest: date | None = None
-    for row in chain([first], rows):
-        if row.blank:
-            continue
+    for row in _upward(first, rows, columns, day):
         if not _is_ordered(row, columns):
             return _Above(AboveOrdered(row.number, below), days, tuple(seen))
         below = row.number
@@ -920,19 +951,35 @@ def _above(first: RowFacts, rows: Iterator[RowFacts], columns: OrderColumns, day
         when = row.value(columns.date)
         if not isinstance(when, datetime):
             continue
-        if day is None:
-            day = when.date()
         lowest = when.date() if lowest is None else min(lowest, when.date())
         if when.date() in (previous, lowest):
             days.add(when.date())
         previous = when.date()
+    return _Above(None, days, tuple(seen))
+
+
+def _upward(first: RowFacts, rows: Iterator[RowFacts], columns: OrderColumns, day: date | None) -> Iterator[RowFacts]:
+    """Wiersze z wartościami od ``first`` w górę, z każdym wyglądem, do ``_EARLIER_ROWS`` kolejnych wierszy z dniem
+    wcześniejszym niż ``day`` (bez niego: dzień pierwszego wiersza z datą z godziną) włącznie; wiersz bez daty z
+    godziną nie przerywa tej serii i do niej nie wchodzi. Granica każdego przeglądu nad blokiem (``_above``,
+    ``numbered_rows``)."""
+
+    earlier = 0
+    for row in chain([first], rows):
+        if row.blank:
+            continue
+        yield row
+        when = row.value(columns.date)
+        if not isinstance(when, datetime):
+            continue
+        if day is None:
+            day = when.date()
         if when.date() < day:
             earlier += 1
             if earlier == _EARLIER_ROWS:
-                break
+                return
         else:
             earlier = 0
-    return _Above(None, days, tuple(seen))
 
 
 def _is_date(value: object) -> bool:

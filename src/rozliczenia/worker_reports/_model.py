@@ -377,9 +377,11 @@ class OrderedDay:
 class ReportInputs:
     """Wejście rdzenia: maile ze Skrzynki raportów, adresy Wykonawców, uporządkowane zlecenia INTERMAX z dni od
     ``window.start``, także po dziś, dni otwarte, pamięć własnych wpisów, decyzje „Zostaw moją”, Dni uporządkowane
-    każdego arkusza zleceń od ``window.start`` (``ordered_days``) i numery Surowych zleceń z dołu każdego arkusza zleceń
-    (``pasted``), których rdzeń nie dopisuje. Każde zlecenie z ``orders`` mówi, że jego numer jest w INTERMAX; okno mówi
-    tylko, do których z nich wolno pisać."""
+    każdego arkusza zleceń od ``window.start`` (``ordered_days``) i ``NUMER ZL.`` każdego wiersza INTERMAX, który proces
+    przeczytał (``present``): wiersza każdego zlecenia z ``orders`` i każdego wiersza, z którego nie powstało zlecenie
+    (Surowe zlecenie, wiersz bez ``WYKONAWCA`` albo bez daty z godziną, wiersz z wyglądem z aplikacji między
+    uporządkowanymi i nad nim). Tylko ``present`` mówi, czy INTERMAX ma numer, więc numeru z niego rdzeń nigdy nie
+    dopisuje; ``orders`` mówią, które z tych numerów są zleceniami, a okno, do których z nich wolno pisać."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -388,7 +390,7 @@ class ReportInputs:
     memory: OwnEntries
     kept: frozenset[Kept]
     ordered_days: frozenset[OrderedDay] = frozenset()
-    pasted: frozenset[OrderNumber] = frozenset()
+    present: frozenset[OrderNumber] = frozenset()
 
 
 class Verdict(Enum):
@@ -553,13 +555,13 @@ class ConflictingVerdicts:
 
 class AddBar(Enum):
     """Dlaczego numer z Wpisu raportu, którego INTERMAX nie ma w uporządkowanych zleceniach żadnego odczytanego dnia, nie
-    stał się Zleceniem dopisanym z raportu (ADR 0029), w kolejności, w jakiej rdzeń to sprawdza: INTERMAX ma go jako
-    Surowe zlecenie na dole arkusza zleceń, które czeka na Uporządkowanie INTERMAX (``PASTED``; dopisanie dałoby
+    stał się Zleceniem dopisanym z raportu (ADR 0029), w kolejności, w jakiej rdzeń to sprawdza: INTERMAX ma go w
+    przeczytanym wierszu, z którego nie powstało zlecenie (``IN_INTERMAX``, ``ReportInputs.present``; dopisanie dałoby
     zlecenie dwa razy), numer nie ma postaci numeru z aplikacji firmowej, czyli dokładnie ``ADDED_DIGITS`` cyfr
     (``FORM``), Raport wykonawcy ma pomylony temat (``MISTAKEN_SUBJECT``) albo dzień z tematu nie jest Dniem
     uporządkowanym w żadnym arkuszu zleceń (``NOT_ORDERED``)."""
 
-    PASTED = auto()
+    IN_INTERMAX = auto()
     FORM = auto()
     MISTAKEN_SUBJECT = auto()
     NOT_ORDERED = auto()

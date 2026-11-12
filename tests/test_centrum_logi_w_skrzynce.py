@@ -1522,23 +1522,26 @@ def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtw
     assert [(code, lines[0]) for code, lines in replayed] == [(0, "ODTWORZENIE ZGODNE")] * 2, replayed
 
 
-def test_klikniecie_z_wpisem_surowego_zlecenia_odtwarza_sie_zgodnie_z_surowym_zleceniem_z_logow(
+def test_klikniecie_z_wpisami_numerow_z_wierszy_bez_zlecenia_odtwarza_sie_zgodnie_z_numerami_z_logow(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """#1354: Jan przysłał Wpis numeru, który INTERMAX ma jako Surowe zlecenie na dole arkusza (bez numeru w ``NUMER
+    """#1354: Jan przysłał Wpisy numerów, które INTERMAX ma w wierszach bez zlecenia: Surowe zlecenie na dole arkusza,
+    uporządkowany wiersz z ``DATA GODZ. POCZ.`` tekstem i uporządkowany wiersz bez ``WYKONAWCA`` (bez numeru w ``NUMER
     UMOWY`` i kolumnach z aplikacji, które strażnik reguły danych zna, więc numer Wpisu wychodzi do Logów), i nowego
-    numeru. Logi
-    mają Surowe zlecenie (``pasted``) i dopisanie, a odtworzenie, którego Kopia wejścia ma tylko uporządkowane wiersze,
-    stawia Surowe zlecenie z Logów na dole arkusza, więc nie dopisuje go i daje ten sam wynik."""
+    numeru. Logi mają te numery (``orderless``) i dopisanie, a odtworzenie, którego Kopia wejścia ma tylko uporządkowane
+    wiersze zleceń, stawia numery z Logów na dole arkusza, więc nie dopisuje żadnego z nich i daje ten sam wynik."""
 
     other = ((CONTRACT_NUMBER, "UM-surowe"), *((column, f"APP{column}") for column in range(LAST + 1, APP_LAST + 1)))
     raw = tuple(
         Order(datetime(2026, 11, 10, 9), "jan.testowy", number, cells=((NUMBER, number), *other))
         for number in (40000030, 40000031)
     )
-    intermax = replace(REPORTED, raw=raw)
+    text_date = Order(datetime(2026, 11, 9, 13), "jan.testowy", 40000033, cells=((NUMBER, 40000033), (DATE, "09.11.2026 13:00"), *other))
+    no_worker = Order(datetime(2026, 11, 9, 14), "", 40000034, cells=((NUMBER, 40000034), *other))
+    intermax = replace(REPORTED, ordered=(*REPORTED.ordered, text_date, no_worker), raw=raw)
     surroundings = Surroundings()
-    mails = [report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000031 tak montaż\n40000032 nie brak klienta")]
+    text = "40000031 tak montaż\n40000032 nie brak klienta\n40000033 tak wymiana\n40000034 nie brak"
+    mails = [report(SENDERS["jan.testowy"], _REPORTED_DAY, text)]
     centrum = entering_centrum(tmp_path / "taty", intermax, mails, surroundings=surroundings)
     write_report_key(ToolDirectory(tmp_path / "taty"))
     view = centrum.run_to_end()
@@ -1547,9 +1550,9 @@ def test_klikniecie_z_wpisem_surowego_zlecenia_odtwarza_sie_zgodnie_z_surowym_zl
 
     code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
 
-    assert entering["pasted"] == [{"sheet": ORDER_SHEET, "number": 40000031}]
+    assert entering["orderless"] == [{"sheet": ORDER_SHEET, "number": number} for number in (40000031, 40000033, 40000034)]
     assert [found["number"] for found in entering["added"]] == [40000032]
-    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [("unknown_number", "pasted")]
+    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [("unknown_number", "in_intermax")] * 3
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 

@@ -162,10 +162,11 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     zlecenia (``_entries.entries``). Wpis trafia do zlecenia nadawcy z dnia z tematu, a bez niego do jedynego zlecenia tego
     numeru u innego Wykonawcy w tym dniu albo do jedynego zlecenia tego numeru z innego dnia: Przeniesienie zlecenia do
     nadawcy i na dzień z tematu albo, przy pomylonym temacie, do nadawcy w dniu zlecenia (ADR 0029,
-    ``_matching.Board``, ``_moves.moved``), z informacją dla taty. Numer, którego nie ma w żadnym odczytanym zleceniu, w
-    postaci numeru z aplikacji firmowej (``ADDED_DIGITS`` cyfr), to Zlecenie dopisane z raportu pod zleceniami nadawcy w
-    dniu z tematu, gdy ten jest Dniem uporządkowanym, temat nie jest pomylony, a INTERMAX nie ma go jako Surowego
-    zlecenia (inaczej ``UnknownNumber`` z powodem ``AddBar``), a jego Raportu wykonawcy nie poprawił późniejszy mail
+    ``_matching.Board``, ``_moves.moved``), z informacją dla taty. Numer, którego INTERMAX nie ma w żadnym przeczytanym
+    wierszu (``inputs.present``, jedyna odpowiedź na pytanie, czy INTERMAX ma numer), w postaci numeru z aplikacji
+    firmowej (``ADDED_DIGITS`` cyfr), to Zlecenie dopisane z raportu pod zleceniami nadawcy w dniu z tematu, gdy ten
+    jest Dniem uporządkowanym, a temat nie jest pomylony (inaczej, także dla numeru z wiersza bez zlecenia,
+    ``UnknownNumber`` z powodem ``AddBar``), a jego Raportu wykonawcy nie poprawił późniejszy mail
     (``_corrections.uncorrected``); jego ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` trafiają do pamięci jak własne
     wpisy. Przy kilku Wpisach jednego zlecenia decyduje najpóźniejszy mail, także od innego Wykonawcy; mail z tą samą
     chwilą przyjścia i tym samym Message-ID rozstrzyga treść odczytu. Wpis zmienia pustą komórkę albo własny wpis z
@@ -200,7 +201,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
                 continue
     mails = tuple(sorted(read, key=_mail_order))
     reports = [found for found in mails if isinstance(found, ReadReport)]
-    board = _matching.Board(orders, inputs.memory, window, inputs.ordered_days, inputs.pasted)
+    board = _matching.Board(orders, inputs.memory, window, inputs.ordered_days, inputs.present)
     matched = board.match(reports)
     additions = _corrections.uncorrected(matched.added, reports, orders)
     moved = _moves.moved(matched.accepted, additions, orders, inputs.memory, window)

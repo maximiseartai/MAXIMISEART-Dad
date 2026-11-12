@@ -293,8 +293,9 @@ them), so after the click that wrote it the tool's own entry counts as Dad's val
 Wpis with another content gives a `ManualDifference` at the tool's own entry, which BezFalszywejRoznicy forbids for
 the model's one cell. The model leaves that cell out by design (direction safe: NieNadpisuje holds; decision for Maks
 in #1367). A Zlecenie dopisane z raportu (#1354) is, for the one cell, the empty cell that `Zapis` fills with the Wpis
-and remembers as the tool's own entry (`_cells.with_added`); only a number no read day holds becomes one, so it never
-doubles an order the process read. Dad deleting the added row leaves no value of his that a write could overwrite,
+and remembers as the tool's own entry (`_cells.with_added`); only a number no row the process reads holds becomes one
+(`ReportInputs.present`, also a Surowe zlecenie and a row the core makes no order from: without `WYKONAWCA`, with the
+date as text, pasted from the app between ordered rows), so it never doubles a number of any row the process read. Dad deleting the added row leaves no value of his that a write could overwrite,
 and the click after it adds the row again only for a fresher mail (`_model.may_move` with the memory of the number),
 which the model's write into an empty cell over-approximates. The rollout day (it only moves the start of the window
 later, which leaves cells out), the reading of the

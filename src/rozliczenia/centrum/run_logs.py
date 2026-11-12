@@ -648,13 +648,13 @@ def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
 
 
 LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source", "after_today"]
-LoggedAddBar = Literal["pasted", "form", "mistaken_subject", "not_ordered"]
+LoggedAddBar = Literal["in_intermax", "form", "mistaken_subject", "not_ordered"]
 
 
 def _add_bar(bar: AddBar) -> LoggedAddBar:
     match bar:
-        case AddBar.PASTED:
-            return "pasted"
+        case AddBar.IN_INTERMAX:
+            return "in_intermax"
         case AddBar.FORM:
             return "form"
         case AddBar.MISTAKEN_SUBJECT:
@@ -853,9 +853,11 @@ class LoggedAdded(_Record):
     completed: str | None
 
 
-class LoggedPasted(_Record):
-    """Surowe zlecenie z numerem, który ma Wpis w kliknięciu: arkusz i numer jak w ``LoggedOwnEntry``; odtworzenie stawia
-    je na dole arkusza, bo Kopia wejścia Wpisania raportów ma tylko uporządkowane wiersze."""
+class LoggedOrderless(_Record):
+    """Numer z Wpisem w kliknięciu, który INTERMAX ma w przeczytanym wierszu bez zlecenia (Surowe zlecenie, wiersz bez
+    ``WYKONAWCA`` albo bez daty z godziną, wiersz z wyglądem z aplikacji między uporządkowanymi i nad nim): arkusz i numer
+    jak w ``LoggedOwnEntry``. Odtworzenie stawia go na dole arkusza jak Surowe zlecenie, bo Kopia wejścia Wpisania
+    raportów ma tylko uporządkowane wiersze zleceń."""
 
     sheet: str
     number: int
@@ -903,9 +905,9 @@ class LoggedReports(_Record):
     ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, ``kept`` decyzje „Zostaw moją” tych zleceń z
     migawki kliknięcia (komórka z treścią Wpisu jako ``value``; Logi sprzed #1231 ich nie mają), ``moves`` Przeniesienia
     zleceń do zapisu, ``moves_before`` zapamiętane miejsca zleceń numerów z Wpisami tego kliknięcia (Logi sprzed #1347 nie
-    mają obu), ``added`` Zlecenia dopisane z raportu do zapisu, ``pasted`` Surowe zlecenia z numerem z Wpisem tego
-    kliknięcia (Logi sprzed Zleceń dopisanych z raportu nie mają obu), a ``written`` liczba wpisanych komórek (``None``:
-    zapisu nie było, np. Zatrzymanie przy zapisie).
+    mają obu), ``added`` Zlecenia dopisane z raportu do zapisu, ``orderless`` numery z Wpisem tego kliknięcia z
+    przeczytanych wierszy INTERMAX bez zlecenia (Logi sprzed Zleceń dopisanych z raportu nie mają obu), a ``written``
+    liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
     """
 
     today: date
@@ -921,7 +923,7 @@ class LoggedReports(_Record):
     moves: list[LoggedMove] = []
     moves_before: list[LoggedOwnMove] = []
     added: list[LoggedAdded] = []
-    pasted: list[LoggedPasted] = []
+    orderless: list[LoggedOrderless] = []
     written: int | None
 
     @classmethod
@@ -958,7 +960,7 @@ class LoggedReports(_Record):
                 )
                 for added in facts.added
             ],
-            pasted=[LoggedPasted(sheet=sheet, number=int(number)) for sheet, number in facts.pasted],
+            orderless=[LoggedOrderless(sheet=sheet, number=int(number)) for sheet, number in facts.orderless],
             written=written,
         )
 

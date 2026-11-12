@@ -10,9 +10,9 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   maile ze Skrzynki raportów od pierwszego dnia otwartego, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
   wklejania uporządkowane wiersze z dni od ``Window.start`` (tydzień przed pierwszym dniem otwartym, nie przed dniem
   wdrożenia: ``raw_orders.ordered_rows``, w Kopii wejścia przez ``PasteArea.copy_rows``; z ``ADRES`` rdzeń dostaje
-  tylko to, czy ma wartość), numery Surowych zleceń z dołu arkusza (``raw_orders.pasted_rows``), których rdzeń nie
-  dopisuje, oraz Dni uporządkowane
-  (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
+  tylko to, czy ma wartość), numer zlecenia z każdego przeczytanego wiersza (``raw_orders.numbered_rows``: także Surowe
+  zlecenia z dołu arkusza i wiersze, z których nie powstało zlecenie), którego rdzeń nigdy nie dopisuje, oraz Dni
+  uporządkowane (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
 - Planowanie: rdzeń raportów;
@@ -209,7 +209,9 @@ class EnteringFacts:
     numerów, które mają Wpis w tym kliknięciu, z każdego dnia, bo zlecenie mogło przejść na inny dzień, a pamięć zostaje
     pod dniem, w którym zostawiło je Centrum. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
     ``moves``: Przeniesienia zleceń do zapisu, ``added``: Zlecenia dopisane z raportu do zapisu, ``notes``: informacje
-    dla taty, ``pasted``: arkusz i numer każdego Surowego zlecenia z numerem, który ma Wpis w tym kliknięciu.
+    dla taty, ``orderless``: arkusz i numer z Wpisem w tym kliknięciu, który INTERMAX ma w przeczytanym wierszu bez
+    zlecenia (Surowe zlecenie, wiersz bez ``WYKONAWCA`` albo bez daty z godziną, wiersz z wyglądem z aplikacji między
+    uporządkowanymi i nad nim): odtworzenie z Logów stawia go w INTERMAX.
     """
 
     today: date
@@ -226,7 +228,7 @@ class EnteringFacts:
     notes: tuple[ReportNote, ...] = ()
     moves_before: tuple[OwnMove, ...] = ()
     added: tuple[OrderAdded, ...] = ()
-    pasted: tuple[tuple[str, OrderNumber], ...] = ()
+    orderless: tuple[tuple[str, OrderNumber], ...] = ()
 
 
 @dataclass
@@ -323,9 +325,9 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             register = register_file.read(register_path, files)
         orders = _orders(register, window.start, copy=files.copy is not None)
         ordered = _ordered_days(register, window.start)
-        return window, register, orders, ordered, _pasted(register), outcome.skipped, outcome.mails
+        return window, register, orders, ordered, _present(register, window.start), outcome.skipped, outcome.mails
 
-    window, register, orders, ordered_days, pasted, skipped, mails = phases.read(read)
+    window, register, orders, ordered_days, present, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
         found = enter_reports(
@@ -337,7 +339,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 memory=saved.memory,
                 kept=saved.kept,
                 ordered_days=ordered_days,
-                pasted=frozenset(pasted),
+                present=frozenset(present),
             )
         )
         reported = {
@@ -361,6 +363,8 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             )
         )
         closed = tuple(period.token for period in Window.periods(today, saved.rollout) if period.token in window.closed)
+        ordered = {order.key.number for order in orders}
+        orderless = sorted((sheet, number) for number, sheet in present.items() if number in numbers and number not in ordered)
         planned = EnteringFacts(
             window.today,
             saved.rollout,
@@ -376,7 +380,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             found.notes,
             moves_before,
             found.added,
-            tuple(sorted((sheet, number) for number, sheet in pasted.items() if number in numbers)),
+            tuple(orderless),
         )
         return planned, found.memory, found.workers
 
@@ -485,23 +489,24 @@ def _ordered_days(register: RegisterFile, since: date) -> frozenset[OrderedDay]:
     return frozenset(found)
 
 
-def _pasted(register: RegisterFile) -> dict[OrderNumber, str]:
-    """Numer każdego Surowego zlecenia z dołu każdego obszaru wklejania (``raw_orders.pasted_rows``, w przesuniętym
-    pierwszym wierszu ``raw_orders.SHIFT`` kolumn w lewo) z nazwą arkusza: rdzeń nie dopisuje zlecenia, które czeka w
-    INTERMAX na Uporządkowanie INTERMAX."""
+def _present(register: RegisterFile, since: date) -> dict[OrderNumber, str]:
+    """``NUMER ZL.`` każdego wiersza, który Wpisanie raportów czyta w każdym obszarze wklejania
+    (``raw_orders.numbered_rows``), w każdym położeniu, w którym wiersz może stać (``RowPositions.known``, np.
+    przesunięty pierwszy wiersz wklejenia ``raw_orders.SHIFT`` kolumn w lewo), z nazwą arkusza: rdzeń nie dopisuje
+    numeru, który INTERMAX już ma, także w wierszu, z którego nie powstało zlecenie."""
 
     assert isinstance(register.order_sheets, OrderSheets), "paste_areas zatrzymuje Rejestr bez arkuszy zleceń"
     positions = {sheet.name: sheet.positions for sheet in register.order_sheets.sheets}
     found: dict[OrderNumber, str] = {}
     for area in paste_areas(register):
         with _stops(lambda: messages.unsupported_shape(register.path, area.sheet), UnsupportedShape):
-            rows = raw_orders.pasted_rows(area.rows_from_bottom(), area.columns)
-            shifted = raw_orders.shifted_row(area.rows_from_bottom(), area.columns)
+            rows = raw_orders.numbered_rows(area.rows_from_bottom(), area.columns, since)
         column = positions[area.sheet][ORDER_NUMBER]
-        for row in rows:
-            number = order_number(row.value(column - (raw_orders.SHIFT if row.number == shifted else 0)))
-            if number is not None:
-                found.setdefault(number, area.sheet)
+        for row, place in rows:
+            for shift in place.known:
+                number = order_number(row.value(column - shift))
+                if number is not None:
+                    found.setdefault(number, area.sheet)
     return found
 
 

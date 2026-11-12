@@ -58,11 +58,8 @@ def reason(problem: ReportProblem) -> str:
                 f"{number} różne Wpisy: {said}, więc Centrum nie zmieniło tego zlecenia przy tym kliknięciu. Sprawdź z "
                 "Wykonawcą, który Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail."
             )
-        case UnknownNumber(worker=worker, day=day, number=number, bar=bar):
-            return (
-                f"Numeru {number} z Wpisu od {worker} z {_day(day)} nie ma w uporządkowanych zleceniach INTERMAX, a "
-                f"Centrum go nie dopisało, bo {_add_bar(bar, day)}."
-            )
+        case UnknownNumber():
+            return _unknown(problem)
         case RepeatedOrder(worker=worker, day=day, number=number):
             return (
                 f"Zlecenie {number} jest dwa razy w dniu {_day(day)} u {worker}, więc Centrum niczego do niego nie "
@@ -133,16 +130,29 @@ def _bar(bar: MoveBar, day: date, order_day: date) -> str:
             return f"dzień {_day(order_day)} jeszcze nie nadszedł"
 
 
-def _add_bar(bar: AddBar, day: date) -> str:
-    match bar:
-        case AddBar.PASTED:
-            return "INTERMAX ma go jako Surowe zlecenie: uporządkuj INTERMAX i kliknij jeszcze raz"
+def _unknown(problem: UnknownNumber) -> str:
+    number, worker, day = problem.number, problem.worker, problem.day
+    missing = f"Numeru {number} z Wpisu od {worker} z {_day(day)} nie ma w uporządkowanych zleceniach INTERMAX"
+    match problem.bar:
+        case AddBar.IN_INTERMAX:
+            return (
+                f"Zlecenie {number} z Wpisu od {worker} z {_day(day)} jest już w INTERMAX, ale nie jako uporządkowane "
+                "zlecenie z dniem i Wykonawcą: jego wiersz nie ma WYKONAWCA albo daty z godziną, jest Surowym zleceniem "
+                "albo stoi nad wierszem wklejonym z aplikacji. Centrum niczego do niego nie wpisało i nie dopisało go "
+                "drugi raz; uzupełnij ten wiersz albo uporządkuj INTERMAX i kliknij jeszcze raz."
+            )
         case AddBar.FORM:
-            return f"dopisuje tylko numer z {ADDED_DIGITS} cyframi, jak numer z aplikacji firmowej"
+            return (
+                f"{missing}, a Centrum go nie dopisało, bo dopisuje tylko numer z {ADDED_DIGITS} cyframi, jak numer z "
+                "aplikacji firmowej."
+            )
         case AddBar.MISTAKEN_SUBJECT:
-            return "Raport wykonawcy ma pomylony temat (co najmniej dwa zlecenia z innego dnia)"
+            return (
+                f"{missing}, a Centrum go nie dopisało, bo Raport wykonawcy ma pomylony temat (co najmniej dwa zlecenia "
+                "z innego dnia)."
+            )
         case AddBar.NOT_ORDERED:
-            return f"dzień {_day(day)} nie jest jeszcze uporządkowany w INTERMAX"
+            return f"{missing}, a Centrum go nie dopisało, bo dzień {_day(day)} nie jest jeszcze uporządkowany w INTERMAX."
 
 
 def _subject(fault: SubjectFault) -> str:

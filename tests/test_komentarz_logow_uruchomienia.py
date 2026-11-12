@@ -1405,7 +1405,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "completed": "Czynność dopisana syntetyczna",
             }
         ],
-        "pasted": [{"sheet": "Arkusz zleceń syntetyczny", "number": 40000008}],
+        "orderless": [{"sheet": "Arkusz zleceń syntetyczny", "number": 40000008}],
         "written": 1,
     },
     "input_copy": [

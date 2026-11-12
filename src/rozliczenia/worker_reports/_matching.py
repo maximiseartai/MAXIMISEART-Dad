@@ -123,8 +123,9 @@ class _Claim:
 class Board:
     """Zlecenia kliknięcia do dopasowania: każde zlecenie, które proces odczytał z INTERMAX (``orders``: dni od
     ``Window.start``, zamknięte, otwarte i po dziś), z dniem i Wykonawcą sprzed Przeniesień Centrum, Przeniesienia z
-    pamięci, Dni uporządkowane i numery Surowych zleceń (``pasted``). Które numery są w INTERMAX i ile mają zleceń,
-    mówią wszystkie odczytane dni; okno mówi tylko, do których zleceń wolno pisać i które przenosić (dni otwarte).
+    pamięci, Dni uporządkowane i numer każdego przeczytanego wiersza INTERMAX (``present``, ``ReportInputs.present``).
+    Czy INTERMAX ma numer, mówi tylko ``present``; ile zleceń ma numer, mówią wszystkie odczytane dni, a okno mówi tylko,
+    do których zleceń wolno pisać i które przenosić (dni otwarte).
 
     Dzień i Wykonawca sprzed Przeniesień Centrum sprawiają, że Wpis liczy się do progu pomylonego tematu tak samo przed
     Przeniesieniem i po nim, więc kolejne kliknięcia dają to samo co jedno. Miejsce zmienia tylko jedyne zlecenie
@@ -141,10 +142,10 @@ class Board:
         memory: OwnEntries,
         window: Window,
         ordered_days: frozenset[OrderedDay],
-        pasted: frozenset[OrderNumber] = frozenset(),
+        present: frozenset[OrderNumber] = frozenset(),
     ) -> None:
         self._memory = tuple(move for move in memory.moves if window.opens(move.day))
-        self._pasted = pasted
+        self._present = present
         self._orders = tuple(orders)
         standing = {OrderKey(move.number, move.day, move.worker): move for move in self._memory}
         self._numbered: defaultdict[OrderNumber, list[_Placed]] = defaultdict(list)
@@ -162,7 +163,7 @@ class Board:
         ``reports`` idą w kolejności przyjścia, więc późniejszy mail zastępuje Wpisy wcześniejszego, także mail innego
         Wykonawcy i mail z innym dniem z tematu. Wpis każdego numeru Raportu wykonawcy z dniem z tematu D jest zgodny,
         gdy zlecenie tego numeru stoi w dniu D, niezgodny, gdy stoi tylko w innych odczytanych dniach (otwartych,
-        zamkniętych albo po dziś), a nieznany, gdy nie ma go nigdzie (``_unknown``). Numer z jednym zleceniem: zgodny
+        zamkniętych albo po dziś), a bez zlecenia w pozostałych przypadkach (``_unknown``). Numer z jednym zleceniem: zgodny
         Wpis trafia do niego, u nadawcy albo u innego Wykonawcy z dnia D (Przeniesienie zlecenia, ``_claim``), a
         niezgodny Wpis trafia do niego w innym dniu otwartym: jeden niezgodny Wpis w raporcie przenosi je na dzień D, a
         co najmniej ``MISTAKEN_SUBJECT`` to pomylony temat i zlecenie zostaje w swoim dniu, z informacją ``SubjectLost``
@@ -177,8 +178,8 @@ class Board:
         zmienia. Tak samo przy odmowie, bo Dzień uporządkowany przestaje nim być, gdy Przeniesienie Centrum zabierze z
         niego ostatnie zlecenie, a powtórne kliknięcie ma nic nie zmienić.
 
-        Wpis numeru, którego nie ma w żadnym odczytanym dniu, z Raportu wykonawcy z dniem otwartym to Zlecenie dopisane
-        z raportu (``_unknown``). O takim numerze decyduje tylko najpóźniejszy mail z nim, także od innego Wykonawcy i z
+        Wpis numeru bez zlecenia, którego INTERMAX nie ma w żadnym przeczytanym wierszu (``present``), z Raportu
+        wykonawcy z dniem otwartym to Zlecenie dopisane z raportu (``_unknown``). O takim numerze decyduje tylko najpóźniejszy mail z nim, także od innego Wykonawcy i z
         innym dniem z tematu: jego Wpis bez ``tak`` ani ``nie`` daje ``MissingVerdict``, a z przeciwnym zamiarem
         ``ConflictingVerdicts``, bez dopisania, a gdy jego Wpis nie dopisuje (problem, pamięć numeru albo Raport z dniem
         zamkniętym), Wpis wcześniejszego maila też nie dopisuje. Inaczej następne kliknięcie widziałoby zlecenie
@@ -261,15 +262,16 @@ class Board:
         return bool(placed) and all(found.day != day for found in placed)
 
     def _unknown(self, report: ReadReport, number: OrderNumber, mistaken: bool) -> _New | list[ReportProblem]:
-        """Wpis numeru, którego nie ma w żadnym odczytanym dniu, z Raportu wykonawcy z dniem otwartym: Zlecenie dopisane
-        z raportu w arkuszu ``_sheet``, a gdy nie wolno, ``UnknownNumber`` z pierwszym powodem z ``AddBar`` (Surowe
-        zlecenie, numer bez ``ADDED_DIGITS`` cyfr, pomylony temat, dzień, który nie jest Dniem uporządkowanym). Surowe
-        zlecenie nie liczy się do progu pomylonego tematu, bo jego dnia rdzeń nie zna. Numer, który Centrum już
+        """Wpis numeru bez zlecenia z Raportu wykonawcy z dniem otwartym: Zlecenie dopisane z raportu w arkuszu
+        ``_sheet``, a gdy nie wolno, ``UnknownNumber`` z pierwszym powodem z ``AddBar`` (numer w przeczytanym wierszu
+        INTERMAX, numer bez ``ADDED_DIGITS`` cyfr, pomylony temat, dzień, który nie jest Dniem uporządkowanym). Czy
+        INTERMAX ma numer, mówi tylko ``present``, więc numer z wiersza, z którego nie powstało zlecenie, nigdy się nie
+        dopisuje; nie liczy się też do progu pomylonego tematu, bo jego dnia rdzeń nie zna. Numer, który Centrum już
         dopisało albo zmieniło, a tata go usunął, wraca tylko z mailem, który ``may_move`` przyjmuje dla każdej pamięci
         tego numeru (świeższym niż ``since``); inaczej nic, bez problemu."""
 
-        if number in self._pasted:
-            bar = AddBar.PASTED
+        if number in self._present:
+            bar = AddBar.IN_INTERMAX
         elif len(number) != ADDED_DIGITS:
             bar = AddBar.FORM
         elif mistaken:
