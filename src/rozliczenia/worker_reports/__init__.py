@@ -41,6 +41,7 @@ from ._model import (
     OwnEntries,
     OwnEntry,
     OwnMove,
+    ReadNumber,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
@@ -112,6 +113,7 @@ __all__ = [
     "OwnEntry",
     "OwnMove",
     "Pora",
+    "ReadNumber",
     "ReadReport",
     "ReadStranger",
     "ReadUnreadable",
@@ -164,7 +166,8 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     zlecenia (``_entries.entries``). Wpis trafia do zlecenia nadawcy z dnia z tematu, a bez niego do jedynego zlecenia tego
     numeru u innego Wykonawcy w tym dniu albo do jedynego zlecenia tego numeru z innego dnia: Przeniesienie zlecenia do
     nadawcy i na dzień z tematu albo, przy pomylonym temacie, do nadawcy w dniu zlecenia (ADR 0029,
-    ``_matching.Board``, ``_moves.moved``), z informacją dla taty. Numer, którego INTERMAX nie ma w żadnym przeczytanym
+    ``_matching.Board``, ``_moves.moved``), z informacją dla taty. Zlecenia numeru, który stoi w kilku przeczytanych
+    wierszach (``inputs.present``, także w wierszu bez zlecenia), Wpis nie przenosi. Numer, którego INTERMAX nie ma w żadnym przeczytanym
     wierszu (``inputs.present``, jedyna odpowiedź na pytanie, czy INTERMAX ma numer), w postaci numeru z aplikacji
     firmowej (``ADDED_DIGITS`` cyfr), to Zlecenie dopisane z raportu pod zleceniami nadawcy w dniu z tematu, gdy ten
     jest Dniem uporządkowanym, a temat nie jest pomylony (inaczej, także dla numeru z wiersza bez zlecenia,

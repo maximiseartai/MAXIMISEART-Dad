@@ -158,7 +158,7 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: Revi
         raise ProbeFailed(_unreachable(read, "odczycie maili"))
     mails = read.mails
     window = Window.of(today, since)
-    outcome = enter_reports(ReportInputs(mails, addresses, (), window, OwnEntries.EMPTY, frozenset()))
+    outcome = enter_reports(ReportInputs(mails, addresses, (), window, OwnEntries.EMPTY, frozenset(), ()))
     if review is not None:
         review.write(mails, addresses, window)
     after = _survey(inbox, since, "drugim odczycie flag")
@@ -285,7 +285,7 @@ def _worker_reads(
     mails: Sequence[ReportMail], addresses: WorkerAddresses
 ) -> Iterator[tuple[ReportMail, ReadReport | ReadUnreadable]]:
     for mail in mails:
-        outcome = enter_reports(ReportInputs((mail,), addresses, (), _WHOLE_TIME, OwnEntries.EMPTY, frozenset()))
+        outcome = enter_reports(ReportInputs((mail,), addresses, (), _WHOLE_TIME, OwnEntries.EMPTY, frozenset(), ()))
         for found in outcome.mails:
             if isinstance(found, (ReadReport, ReadUnreadable)):
                 yield mail, found

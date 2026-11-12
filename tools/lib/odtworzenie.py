@@ -82,6 +82,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedCell,
     LoggedInputFile,
     LoggedOwnEntry,
+    LoggedOrderless,
     LoggedOwnMove,
     LoggedReportEntry,
     LoggedReportMail,
@@ -104,7 +105,16 @@ from rozliczenia.decision import Decision
 from rozliczenia.efenix_orders import PricingScope, read_scope
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.raw_orders import SHIFT
-from rozliczenia.register_columns import COLUMNS, DATE, DAY_FILL, ORDER_NUMBER, ORDERED_FONT, ORDERED_SIZE
+from rozliczenia.register_columns import (
+    COLUMNS,
+    DATE,
+    DAY_FILL,
+    ORDER_NUMBER,
+    ORDERED_FONT,
+    ORDERED_SIZE,
+    WORKER,
+    Column,
+)
 from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
@@ -850,7 +860,7 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     ``memory_before`` z decyzjami „Zostaw moją” z ``kept``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
     zegar z dniem kliknięcia u taty. Numery z Wpisu, które INTERMAX taty miał w przeczytanym wierszu bez zlecenia
     (``orderless``), stają na dole swojego arkusza jako Surowe zlecenia z krojem z aplikacji, bo Kopia wejścia Wpisania
-    raportów ma tylko uporządkowane wiersze zleceń."""
+    raportów ma tylko uporządkowane wiersze zleceń z dni od ``Window.start``."""
 
     register, limits = _register_file(record, work, "intermax", lambda sheet, row: _ORDERED_FONT)
     entering = record.report_entering
@@ -892,21 +902,29 @@ def _add_orderless(register: Path, entering: LoggedReports) -> None:
     nagłówkami, każde z ``NUMER ZL.`` w postaci z Wpisu (z zerem na początku, gdy Wpis go ma, inaczej liczbą) i dniem
     kliknięcia w ``DATA GODZ. POCZ.``, krojem z aplikacji. Proces czyta wtedy ich numery jak u taty, choć wiersz taty
     mógł być wierszem bez ``WYKONAWCA`` albo z datą tekstem, a reguła danych zna pierwsze tylko w przesuniętym
-    położeniu, jak u taty."""
+    położeniu, jak u taty. Numer, którego każdy wiersz był u taty zleceniem sprzed ``Window.start`` (``day``), dostaje
+    ten dzień i ``WYKONAWCA``, więc rdzeń daje ten sam powód (``AddBar.BEFORE_WINDOW``)."""
 
     numbers = _numbers(entering)
     workbook = load_workbook(register)
-    by_sheet: dict[str, list[int]] = {}
+    by_sheet: dict[str, list[LoggedOrderless]] = {}
     for logged in entering.orderless:
-        by_sheet.setdefault(logged.sheet, []).append(logged.number)
+        by_sheet.setdefault(logged.sheet, []).append(logged)
     for name, orderless in by_sheet.items():
         sheet = workbook[name]
         header = {normalize_text(cell.value): cell.column for cell in sheet[1] if cell.value is not None}
         first = sheet.max_row + 2
-        for index, number in enumerate(orderless):
+        for index, logged in enumerate(orderless):
+            number = logged.number
             texts = {text for (value, _, _), found in numbers.items() if value == number for text in found}
             zero = sorted(text for text in texts if text.startswith("0"))
-            cells = {DATE: datetime.combine(entering.today, time()), ORDER_NUMBER: zero[0] if zero else number}
+            day = entering.today if logged.day is None else logged.day
+            cells: dict[Column, datetime | int | str] = {
+                DATE: datetime.combine(day, time()),
+                ORDER_NUMBER: zero[0] if zero else number,
+            }
+            if logged.day is not None:
+                cells[WORKER] = _NO_WORKER
             shift = SHIFT if index == 0 else 0
             for column, value in cells.items():
                 [place] = [header[found] for found in map(normalize_text, column.register_headers) if found in header]

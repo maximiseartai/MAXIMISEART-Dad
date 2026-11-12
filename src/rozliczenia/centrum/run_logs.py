@@ -648,13 +648,15 @@ def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
 
 
 LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source", "after_today"]
-LoggedAddBar = Literal["in_intermax", "form", "mistaken_subject", "not_ordered"]
+LoggedAddBar = Literal["in_intermax", "before_window", "form", "mistaken_subject", "not_ordered"]
 
 
 def _add_bar(bar: AddBar) -> LoggedAddBar:
     match bar:
         case AddBar.IN_INTERMAX:
             return "in_intermax"
+        case AddBar.BEFORE_WINDOW:
+            return "before_window"
         case AddBar.FORM:
             return "form"
         case AddBar.MISTAKEN_SUBJECT:
@@ -854,13 +856,15 @@ class LoggedAdded(_Record):
 
 
 class LoggedOrderless(_Record):
-    """Numer z Wpisem w kliknięciu, który INTERMAX ma w przeczytanym wierszu bez zlecenia (Surowe zlecenie, wiersz bez
-    ``WYKONAWCA`` albo bez daty z godziną, wiersz z wyglądem z aplikacji między uporządkowanymi i nad nim): arkusz i numer
-    jak w ``LoggedOwnEntry``. Odtworzenie stawia go na dole arkusza jak Surowe zlecenie, bo Kopia wejścia Wpisania
-    raportów ma tylko uporządkowane wiersze zleceń."""
+    """Numer z Wpisem w kliknięciu, który INTERMAX ma w przeczytanym wierszu bez zlecenia, także obok zlecenia tego
+    numeru (``report_entering.Orderless``): arkusz i numer jak w ``LoggedOwnEntry``, a ``day`` dzień zlecenia, gdy każdy
+    przeczytany wiersz numeru to zlecenie z dniem sprzed ``Window.start`` (Logi sprzed #1374 r4 go nie mają).
+    Odtworzenie stawia go na dole arkusza jak Surowe zlecenie, z tym dniem i Wykonawcą, gdy ``day`` go ma, bo Kopia
+    wejścia Wpisania raportów ma tylko uporządkowane wiersze zleceń z dni od ``Window.start``."""
 
     sheet: str
     number: int
+    day: date | None = None
 
 
 class LoggedOwnMove(_Record):
@@ -960,7 +964,9 @@ class LoggedReports(_Record):
                 )
                 for added in facts.added
             ],
-            orderless=[LoggedOrderless(sheet=sheet, number=int(number)) for sheet, number in facts.orderless],
+            orderless=[
+                LoggedOrderless(sheet=found.sheet, number=int(found.number), day=found.day) for found in facts.orderless
+            ],
             written=written,
         )
 

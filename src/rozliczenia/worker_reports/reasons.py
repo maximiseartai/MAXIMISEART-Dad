@@ -67,6 +67,11 @@ def reason(problem: ReportProblem) -> str:
             )
         case RepeatedNumber(worker=worker, day=day, number=number, places=places):
             where = ", ".join(f"u {owner} z {_day(order_day)}" for order_day, owner in places)
+            if len(places) == 1:
+                where += (
+                    " i w wierszu, z którego Centrum nie robi zlecenia (bez WYKONAWCA albo daty z godziną, Surowe "
+                    "zlecenie albo zlecenie sprzed dni, które Centrum czyta)"
+                )
             return (
                 f"Zlecenie {number} jest w INTERMAX więcej niż raz: {where}. Centrum nie wie, którego z nich dotyczy "
                 f"Wpis od {worker} z {_day(day)}, więc nie zmieniło żadnego z nich przy tym kliknięciu."
@@ -142,6 +147,13 @@ def _unknown(problem: UnknownNumber) -> str:
                 "zlecenie z dniem i Wykonawcą: jego wiersz nie ma WYKONAWCA albo daty z godziną, jest Surowym zleceniem "
                 "albo stoi nad wierszem wklejonym z aplikacji. Centrum niczego do niego nie wpisało i nie dopisało go "
                 "drugi raz; uzupełnij ten wiersz albo uporządkuj INTERMAX i kliknij jeszcze raz."
+            )
+        case AddBar.BEFORE_WINDOW:
+            return (
+                f"Zlecenie {number} z Wpisu od {worker} z {_day(day)} jest już w INTERMAX, ale z dniem sprzed dni, których "
+                "zlecenia Centrum czyta przy tym kliknięciu (sprzed dnia wdrożenia albo ponad tydzień przed pierwszym "
+                "dniem otwartym). Centrum niczego do niego nie wpisało, nie przeniosło go i nie dopisało drugi raz; "
+                "jeśli Wpis go dotyczy, popraw ten wiersz ręcznie według maila."
             )
         case AddBar.FORM:
             return (

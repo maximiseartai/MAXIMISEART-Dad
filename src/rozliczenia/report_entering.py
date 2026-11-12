@@ -10,8 +10,9 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   maile ze Skrzynki raportów od pierwszego dnia otwartego, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
   wklejania uporządkowane wiersze z dni od ``Window.start`` (tydzień przed pierwszym dniem otwartym, nie przed dniem
   wdrożenia: ``raw_orders.ordered_rows``, w Kopii wejścia przez ``PasteArea.copy_rows``; z ``ADRES`` rdzeń dostaje
-  tylko to, czy ma wartość), numer zlecenia z każdego przeczytanego wiersza (``raw_orders.numbered_rows``: także Surowe
-  zlecenia z dołu arkusza i wiersze, z których nie powstało zlecenie), którego rdzeń nigdy nie dopisuje, oraz Dni
+  tylko to, czy ma wartość), numer zlecenia z każdego przeczytanego wiersza z dni od ``Window.numbers_since`` (tydzień
+  przed pierwszym dniem otwartym, także przed dniem wdrożenia: ``raw_orders.numbered_rows``, także Surowe zlecenia z
+  dołu arkusza i wiersze, z których nie powstało zlecenie), którego rdzeń nigdy nie dopisuje, oraz Dni
   uporządkowane (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
@@ -39,6 +40,7 @@ wychodzą z rdzenia do faktów: ``MailRead`` ich nie ma, a adres nieznanego nada
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -76,6 +78,7 @@ from .worker_reports import (
     OwnEntries,
     OwnEntry,
     OwnMove,
+    ReadNumber,
     ReadReport,
     RegisterOrder,
     ReportInputs,
@@ -95,6 +98,7 @@ __all__ = [
     "EnteringFacts",
     "EnteringInputs",
     "EnteringSummary",
+    "Orderless",
     "ReportEnteringParts",
     "ReportState",
     "ReportStateInMemory",
@@ -201,6 +205,19 @@ class EnteringInputs:
 
 
 @dataclass(frozen=True)
+class Orderless:
+    """Numer ``number`` z Wpisem w kliknięciu, który INTERMAX ma w przeczytanym wierszu arkusza ``sheet``, z którego
+    rdzeń nie zrobił zlecenia: Surowe zlecenie, wiersz bez ``WYKONAWCA`` albo bez daty z godziną, wiersz z wyglądem z
+    aplikacji między uporządkowanymi i nad nim albo zlecenie z dniem sprzed ``Window.start``, także obok zlecenia tego
+    numeru. ``day``: dzień zlecenia, gdy każdy przeczytany wiersz numeru to zlecenie z dniem sprzed ``Window.start``
+    (``AddBar.BEFORE_WINDOW``), a inaczej ``None``."""
+
+    sheet: str
+    number: OrderNumber
+    day: date | None
+
+
+@dataclass(frozen=True)
 class EnteringFacts:
     """Fakty kliknięcia od rdzenia raportów, bez adresów, tematów i treści maili.
 
@@ -213,9 +230,8 @@ class EnteringFacts:
     numerów, które mają Wpis w tym kliknięciu, z każdego dnia, bo zlecenie mogło przejść na inny dzień, a pamięć zostaje
     pod dniem, w którym zostawiło je Centrum. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
     ``moves``: Przeniesienia zleceń do zapisu, ``added``: Zlecenia dopisane z raportu do zapisu, ``notes``: informacje
-    dla taty, ``orderless``: arkusz i numer z Wpisem w tym kliknięciu, który INTERMAX ma w przeczytanym wierszu bez
-    zlecenia (Surowe zlecenie, wiersz bez ``WYKONAWCA`` albo bez daty z godziną, wiersz z wyglądem z aplikacji między
-    uporządkowanymi i nad nim): odtworzenie z Logów stawia go w INTERMAX.
+    dla taty, ``orderless``: numery z Wpisem w tym kliknięciu, które INTERMAX ma w przeczytanym wierszu bez zlecenia
+    (``Orderless``): odtworzenie z Logów stawia je w INTERMAX.
     """
 
     today: date
@@ -232,7 +248,7 @@ class EnteringFacts:
     notes: tuple[ReportNote, ...] = ()
     moves_before: tuple[OwnMove, ...] = ()
     added: tuple[OrderAdded, ...] = ()
-    orderless: tuple[tuple[str, OrderNumber], ...] = ()
+    orderless: tuple[Orderless, ...] = ()
 
 
 @dataclass
@@ -305,7 +321,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         RegisterFile,
         tuple[RegisterOrder, ...],
         frozenset[OrderedDay],
-        dict[OrderNumber, str],
+        tuple[tuple[str, ReadNumber], ...],
         int,
         tuple[ReportMail, ...],
     ]:
@@ -329,7 +345,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             register = register_file.read(register_path, files)
         orders = _orders(register, window.start, copy=files.copy is not None)
         ordered = _ordered_days(register, window.start)
-        return window, register, orders, ordered, _present(register, window.start), outcome.skipped, outcome.mails
+        return window, register, orders, ordered, _present(register, window.numbers_since), outcome.skipped, outcome.mails
 
     window, register, orders, ordered_days, present, skipped, mails = phases.read(read)
 
@@ -344,7 +360,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 memory=remembered,
                 kept=saved.kept,
                 ordered_days=ordered_days,
-                present=frozenset(present),
+                present=tuple(read for _, read in present),
             )
         )
         reported = {
@@ -368,8 +384,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             )
         )
         closed = tuple(period.token for period in Window.periods(today, saved.rollout) if period.token in window.closed)
-        ordered = {order.key.number for order in orders}
-        orderless = sorted((sheet, number) for number, sheet in present.items() if number in numbers and number not in ordered)
+        orderless = _orderless(present, orders, numbers, window.start)
         planned = EnteringFacts(
             window.today,
             saved.rollout,
@@ -385,7 +400,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             found.notes,
             moves_before,
             found.added,
-            tuple(orderless),
+            orderless,
         )
         return planned, found.memory, found.workers
 
@@ -494,25 +509,63 @@ def _ordered_days(register: RegisterFile, since: date) -> frozenset[OrderedDay]:
     return frozenset(found)
 
 
-def _present(register: RegisterFile, since: date) -> dict[OrderNumber, str]:
-    """``NUMER ZL.`` każdego wiersza, który Wpisanie raportów czyta w każdym obszarze wklejania
-    (``raw_orders.numbered_rows``), w każdym położeniu, w którym wiersz może stać (``RowPositions.known``, np.
-    przesunięty pierwszy wiersz wklejenia ``raw_orders.SHIFT`` kolumn w lewo), z nazwą arkusza: rdzeń nie dopisuje
-    numeru, który INTERMAX już ma, także w wierszu, z którego nie powstało zlecenie."""
+def _present(register: RegisterFile, since: date) -> tuple[tuple[str, ReadNumber], ...]:
+    """``NUMER ZL.`` każdego wiersza, który Wpisanie raportów czyta w każdym obszarze wklejania, z dniem od ``since``
+    (``Window.numbers_since``) i do ``raw_orders._EARLIER_ROWS`` wierszy wcześniej (``raw_orders.numbered_rows``), z
+    nazwą arkusza, raz na wiersz i numer: rdzeń nie dopisuje numeru, który INTERMAX już ma, także w wierszu, z którego
+    nie powstało zlecenie, i nie przenosi zlecenia numeru z kilku wierszy. Numer z każdego położenia, w którym wiersz
+    może stać (``RowPositions.known``, np. przesunięty pierwszy wiersz wklejenia ``raw_orders.SHIFT`` kolumn w lewo), z
+    dniem zlecenia czytanym w tym samym położeniu (``RegisterOrder.of``)."""
 
     assert isinstance(register.order_sheets, OrderSheets), "paste_areas zatrzymuje Rejestr bez arkuszy zleceń"
     positions = {sheet.name: sheet.positions for sheet in register.order_sheets.sheets}
-    found: dict[OrderNumber, str] = {}
+    found: list[tuple[str, ReadNumber]] = []
     for area in paste_areas(register):
         with _stops(lambda: messages.unsupported_shape(register.path, area.sheet), UnsupportedShape):
             rows = raw_orders.numbered_rows(area.rows_from_bottom(), area.columns, since)
-        column = positions[area.sheet][ORDER_NUMBER]
+        at = positions[area.sheet]
         for row, place in rows:
+            read: dict[OrderNumber, date | None] = {}
             for shift in place.known:
-                number = order_number(row.value(column - shift))
-                if number is not None:
-                    found.setdefault(number, area.sheet)
-    return found
+                number = order_number(row.value(at[ORDER_NUMBER] - shift))
+                if number is None:
+                    continue
+                order = RegisterOrder.of(
+                    OrderRow(area.sheet, row.number),
+                    number=number,
+                    started=row.value(at[DATE] - shift),
+                    worker=row.value(at[WORKER] - shift),
+                    successful=None,
+                    completed=None,
+                    address=None,
+                )
+                read.setdefault(number, None if order is None else order.key.day)
+            found += [(area.sheet, ReadNumber(number, day)) for number, day in read.items()]
+    return tuple(found)
+
+
+def _orderless(
+    present: tuple[tuple[str, ReadNumber], ...],
+    orders: tuple[RegisterOrder, ...],
+    numbers: set[OrderNumber],
+    start: date,
+) -> tuple[Orderless, ...]:
+    """Numery z Wpisem (``numbers``), które INTERMAX ma w więcej przeczytanych wierszach niż zleceń rdzenia, z
+    arkuszem pierwszego takiego wiersza i dniem zlecenia, gdy każdy wiersz numeru to zlecenie sprzed ``start``: tyle
+    odtworzenie z Logów potrzebuje, żeby rdzeń dał ten sam powód i tę samą regułę numeru z kilku wierszy."""
+
+    ordered = Counter(order.key.number for order in orders)
+    rows: dict[OrderNumber, list[tuple[str, date | None]]] = {}
+    for sheet, read in present:
+        rows.setdefault(read.number, []).append((sheet, read.order_day))
+    found = []
+    for number, places in rows.items():
+        if number not in numbers or len(places) <= ordered[number]:
+            continue
+        days = [day for _, day in places]
+        earlier = all(day is not None and day < start for day in days)
+        found.append(Orderless(places[0][0], number, max(day for day in days if day is not None) if earlier else None))
+    return tuple(sorted(found, key=lambda logged: (logged.sheet, logged.number)))
 
 
 def _orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[RegisterOrder, ...]:

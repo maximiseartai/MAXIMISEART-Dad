@@ -1526,21 +1526,25 @@ def test_klikniecie_z_wpisami_numerow_z_wierszy_bez_zlecenia_odtwarza_sie_zgodni
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """#1354: Jan przysłał Wpisy numerów, które INTERMAX ma w wierszach bez zlecenia: Surowe zlecenie na dole arkusza,
-    uporządkowany wiersz z ``DATA GODZ. POCZ.`` tekstem i uporządkowany wiersz bez ``WYKONAWCA`` (bez numeru w ``NUMER
-    UMOWY`` i kolumnach z aplikacji, które strażnik reguły danych zna, więc numer Wpisu wychodzi do Logów), i nowego
-    numeru. Logi mają te numery (``orderless``) i dopisanie, a odtworzenie, którego Kopia wejścia ma tylko uporządkowane
-    wiersze zleceń, stawia numery z Logów na dole arkusza, więc nie dopisuje żadnego z nich i daje ten sam wynik."""
+    uporządkowany wiersz z ``DATA GODZ. POCZ.`` tekstem, uporządkowany wiersz bez ``WYKONAWCA`` i zlecenie z 8.11 sprzed
+    dnia wdrożenia 9.11 (bez numeru w ``NUMER UMOWY`` i kolumnach z aplikacji, które strażnik reguły danych zna, więc
+    numer Wpisu wychodzi do Logów), numeru zlecenia Anny, które INTERMAX ma też jako Surowe zlecenie, i nowego numeru.
+    Logi mają numery z wierszy bez zlecenia (``orderless``, przy zleceniu sprzed okna z jego dniem) i dopisanie, a
+    odtworzenie, którego Kopia wejścia ma tylko uporządkowane wiersze zleceń od 9.11, stawia numery z Logów na dole
+    arkusza, więc nie dopisuje żadnego z nich, nie przenosi zlecenia Anny i daje ten sam wynik z tymi samymi powodami
+    (#1374 r4)."""
 
     other = ((CONTRACT_NUMBER, "UM-surowe"), *((column, f"APP{column}") for column in range(LAST + 1, APP_LAST + 1)))
     raw = tuple(
         Order(datetime(2026, 11, 10, 9), "jan.testowy", number, cells=((NUMBER, number), *other))
-        for number in (40000030, 40000031)
+        for number in (40000030, 40000031, 40000002)
     )
+    earlier = Order(datetime(2026, 11, 8, 9), "jan.testowy", 40000000, cells=((NUMBER, 40000000), *other))
     text_date = Order(datetime(2026, 11, 9, 13), "jan.testowy", 40000033, cells=((NUMBER, 40000033), (DATE, "09.11.2026 13:00"), *other))
     no_worker = Order(datetime(2026, 11, 9, 14), "", 40000034, cells=((NUMBER, 40000034), *other))
-    intermax = replace(REPORTED, ordered=(*REPORTED.ordered, text_date, no_worker), raw=raw)
+    intermax = replace(REPORTED, ordered=(earlier, *REPORTED.ordered, text_date, no_worker), raw=raw)
     surroundings = Surroundings()
-    text = "40000031 tak montaż\n40000032 nie brak klienta\n40000033 tak wymiana\n40000034 nie brak"
+    text = "40000031 tak montaż\n40000032 nie brak klienta\n40000033 tak wymiana\n40000034 nie brak\n40000000 tak\n40000002 tak"
     mails = [report(SENDERS["jan.testowy"], _REPORTED_DAY, text)]
     centrum = entering_centrum(tmp_path / "taty", intermax, mails, surroundings=surroundings)
     write_report_key(ToolDirectory(tmp_path / "taty"))
@@ -1550,9 +1554,17 @@ def test_klikniecie_z_wpisami_numerow_z_wierszy_bez_zlecenia_odtwarza_sie_zgodni
 
     code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
 
-    assert entering["orderless"] == [{"sheet": ORDER_SHEET, "number": number} for number in (40000031, 40000033, 40000034)]
+    assert entering["orderless"] == [
+        {"sheet": ORDER_SHEET, "number": 40000000, "day": "2026-11-08"},
+        *({"sheet": ORDER_SHEET, "number": number, "day": None} for number in (40000002, 40000031, 40000033, 40000034)),
+    ]
     assert [found["number"] for found in entering["added"]] == [40000032]
-    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [("unknown_number", "in_intermax")] * 3
+    assert entering["moves"] == []
+    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [
+        ("unknown_number", "before_window"),
+        ("repeated_number", None),
+        *[("unknown_number", "in_intermax")] * 3,
+    ]
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 

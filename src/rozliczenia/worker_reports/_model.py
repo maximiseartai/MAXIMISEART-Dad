@@ -235,9 +235,18 @@ class Window:
     def start(self) -> date:
         """Pierwszy dzień, od którego proces czyta zlecenia INTERMAX: ``first`` i tydzień przed nim, nie przed dniem
         wdrożenia. Zlecenia dni zamkniętych z tego tygodnia i spomiędzy dni otwartych rdzeń zna tylko po to, żeby nie
-        przenieść zlecenia z okresu z Plikiem zbiorczym (ADR 0029); starsze numery są dla niego nieznane."""
+        przenieść zlecenia z okresu z Plikiem zbiorczym (ADR 0029); starsze numery zna tylko z ``numbers_since``."""
 
-        return max(self.rollout, self.first - timedelta(days=7))
+        return max(self.rollout, self.numbers_since)
+
+    @property
+    def numbers_since(self) -> date:
+        """Granica dni, od której proces czyta numer każdego wiersza INTERMAX (``ReportInputs.present``): ``first`` i
+        tydzień przed nim, także sprzed dnia wdrożenia. W tygodniach po wdrożeniu ``start`` to dzień wdrożenia, a
+        Wykonawca może przysłać numer zlecenia, które tata wkleił dzień albo kilka dni przed wdrożeniem: bez tego
+        tygodnia Centrum dopisałoby je drugi raz (przegląd #1374 r3)."""
+
+        return self.first - timedelta(days=7)
 
     def opens(self, day: date) -> bool:
         return self.rollout <= day <= self.today and period_of(day).token not in self.closed
@@ -397,14 +406,30 @@ class OrderedDay:
 
 
 @dataclass(frozen=True)
+class ReadNumber:
+    """``NUMER ZL.`` ``number`` jednego wiersza INTERMAX, który proces przeczytał (``ReportInputs.present``), i dzień
+    zlecenia z tego wiersza (``order_day``), gdy wiersz ma numer, dzień i ``WYKONAWCA`` (``RegisterOrder.of``); ``None``:
+    wiersz bez ``WYKONAWCA`` albo bez daty, np. z datą tekstem. Pełny wiersz z dniem sprzed ``Window.start`` rdzeń zna
+    tylko stąd, bo ``orders`` go nie mają."""
+
+    number: OrderNumber
+    order_day: date | None = None
+
+
+@dataclass(frozen=True)
 class ReportInputs:
     """Wejście rdzenia: maile ze Skrzynki raportów, adresy Wykonawców, uporządkowane zlecenia INTERMAX z dni od
-    ``window.start``, także po dziś, dni otwarte, pamięć własnych wpisów, decyzje „Zostaw moją”, Dni uporządkowane
-    każdego arkusza zleceń od ``window.start`` (``ordered_days``) i ``NUMER ZL.`` każdego wiersza INTERMAX, który proces
-    przeczytał (``present``): wiersza każdego zlecenia z ``orders`` i każdego wiersza, z którego nie powstało zlecenie
-    (Surowe zlecenie, wiersz bez ``WYKONAWCA`` albo bez daty z godziną, wiersz z wyglądem z aplikacji między
-    uporządkowanymi i nad nim). Tylko ``present`` mówi, czy INTERMAX ma numer, więc numeru z niego rdzeń nigdy nie
-    dopisuje; ``orders`` mówią, które z tych numerów są zleceniami, a okno, do których z nich wolno pisać."""
+    ``window.start``, także po dziś, dni otwarte, pamięć własnych wpisów, decyzje „Zostaw moją”, ``NUMER ZL.`` każdego
+    wiersza INTERMAX, który proces przeczytał, raz na wiersz (``present``, ``ReadNumber``) i Dni uporządkowane każdego
+    arkusza zleceń od ``window.start`` (``ordered_days``).
+
+    ``present`` ma wiersz każdego zlecenia z ``orders`` i każdy wiersz, z którego nie powstało zlecenie: Surowe
+    zlecenie, wiersz bez ``WYKONAWCA`` albo bez daty z godziną, wiersz z wyglądem z aplikacji między uporządkowanymi i
+    nad nim oraz wiersz z dniem od ``Window.numbers_since`` sprzed ``window.start``. Tylko ``present`` mówi, czy
+    INTERMAX ma numer, więc numeru z niego rdzeń nigdy nie dopisuje, i tylko ``present`` mówi, czy numer stoi w
+    kilku wierszach, więc zlecenia takiego numeru rdzeń nie przenosi; ``orders`` mówią, które z tych wierszy są
+    zleceniami, a okno, do których z nich wolno pisać. Pole nie ma wartości domyślnej, bo bez niego rdzeń
+    dopisywałby każdy nowy numer i przenosił zlecenie numeru z kilku wierszy (przegląd #1374 r3)."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -412,8 +437,8 @@ class ReportInputs:
     window: Window
     memory: OwnEntries
     kept: frozenset[Kept]
+    present: Sequence[ReadNumber]
     ordered_days: frozenset[OrderedDay] = frozenset()
-    present: frozenset[OrderNumber] = frozenset()
 
 
 class Verdict(Enum):
@@ -580,11 +605,13 @@ class AddBar(Enum):
     """Dlaczego numer z Wpisu raportu, którego INTERMAX nie ma w uporządkowanych zleceniach żadnego odczytanego dnia, nie
     stał się Zleceniem dopisanym z raportu (ADR 0029), w kolejności, w jakiej rdzeń to sprawdza: INTERMAX ma go w
     przeczytanym wierszu, z którego nie powstało zlecenie (``IN_INTERMAX``, ``ReportInputs.present``; dopisanie dałoby
-    zlecenie dwa razy), numer nie ma postaci numeru z aplikacji firmowej, czyli dokładnie ``ADDED_DIGITS`` cyfr
-    (``FORM``), Raport wykonawcy ma pomylony temat (``MISTAKEN_SUBJECT``) albo dzień z tematu nie jest Dniem
-    uporządkowanym w żadnym arkuszu zleceń (``NOT_ORDERED``)."""
+    zlecenie dwa razy), a gdy każdy taki wiersz to zlecenie z dniem i ``WYKONAWCA`` z dnia sprzed ``Window.start``,
+    którego Centrum nie zmienia (``BEFORE_WINDOW``), numer nie ma postaci numeru z aplikacji firmowej, czyli dokładnie
+    ``ADDED_DIGITS`` cyfr (``FORM``), Raport wykonawcy ma pomylony temat (``MISTAKEN_SUBJECT``) albo dzień z tematu nie
+    jest Dniem uporządkowanym w żadnym arkuszu zleceń (``NOT_ORDERED``)."""
 
     IN_INTERMAX = auto()
+    BEFORE_WINDOW = auto()
     FORM = auto()
     MISTAKEN_SUBJECT = auto()
     NOT_ORDERED = auto()
@@ -614,9 +641,10 @@ class RepeatedOrder:
 
 @dataclass(frozen=True)
 class RepeatedNumber:
-    """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` ma numer ``number``, który INTERMAX ma w odczytanych dniach
-    (także zamkniętych i po dziś) więcej niż raz (``places``: dzień i Wykonawca każdego z tych zleceń, po kolei), a
-    nadawca nie ma w dniu ``day`` żadnego z nich. Centrum nie wie, którego zlecenia dotyczy Wpis, więc nie zmienia
+    """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` ma numer ``number``, który INTERMAX ma w przeczytanych
+    wierszach (także z dni zamkniętych i po dziś) więcej niż raz (``places``: dzień i Wykonawca każdego zlecenia z tym
+    numerem, po kolei; jedno miejsce, gdy pozostałe wiersze to wiersze bez zlecenia, ``ReportInputs.present``), a
+    nadawca nie ma w dniu ``day`` żadnego z tych zleceń. Centrum nie wie, którego wiersza dotyczy Wpis, więc nie zmienia
     żadnego z nich."""
 
     worker: Login

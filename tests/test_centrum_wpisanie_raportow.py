@@ -1785,6 +1785,17 @@ _NINTH_AT_TEN = datetime(2026, 11, 9, 10)
 _ORDERLESS_ROWS = {
     "surowe-zlecenia-na-dole": (INTERMAX, (40000003, 40000004)),
     "bez-wykonawcy": (_day_with(Order(_NINTH_AT_TEN, "", 40000066, cells=((NUMBER, 40000066),))), (40000066,)),
+    "bez-wykonawcy-sprzed-dnia-wdrozenia": (
+        Intermax(
+            ordered=(
+                Order(datetime(2026, 11, 8, 10), "", 40000065, cells=((NUMBER, 40000065),)),
+                _order(9, 9, "jan.testowy", 40000001),
+                _order(9, 11, "anna.kowalska", 40000002),
+            ),
+            raw=(),
+        ),
+        (40000065,),
+    ),
     "data-tekstem": (
         _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000067, cells=((NUMBER, 40000067), (DATE, "09.11.2026 10:00")))),
         (40000067,),
@@ -1797,6 +1808,19 @@ _ORDERLESS_ROWS = {
         _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000069, cells=((NUMBER, 40000069),), shifted=True, app_look=True)),
         (40000069,),
     ),
+    "dwa-wklejenia-dolny-przesuniety": (
+        Intermax(
+            ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)),
+            raw=(
+                _order(10, 9, "jan.testowy", 40000080),
+                _order(10, 10, "jan.testowy", 40000081),
+                Order(datetime(2026, 11, 10, 11), "jan.testowy", 40000078, cells=((NUMBER, 40000078),), shifted=True),
+                _order(10, 12, "jan.testowy", 40000079),
+            ),
+            blank_in_paste=frozenset({2}),
+        ),
+        (40000078,),
+    ),
 }
 
 
@@ -1807,9 +1831,12 @@ def test_klikniecie_nie_dopisuje_numeru_ktory_intermax_ma_w_przeczytanym_wierszu
     """Przegląd #1374 r2 Ważne 1 (ADR 0029: Centrum nigdy nie dubluje zlecenia, które INTERMAX już ma): dziś 9.11, a
     Jan przysłał Raport za 9.11 z numerami, które INTERMAX ma w wierszu, z którego proces nie robi zlecenia. Kształty z
     kopii INTERMAX taty i z Uporządkowania: Surowe zlecenia na dole arkusza (pierwsze przesunięte o dwie kolumny w lewo,
-    jak z aplikacji), uporządkowany wiersz bez ``WYKONAWCA``, wiersz z ``DATA GODZ. POCZ.`` tekstem, wiersz z wyglądem z
-    aplikacji między uporządkowanymi (z nim zlecenie Jana nad nim, bo przegląd zleceń kończy się na takim wierszu) i
-    taki wiersz przesunięty jak pierwszy wiersz wklejenia. Kliknięcie nie zmienia INTERMAX, więc żaden numer nie stoi w
+    jak z aplikacji), uporządkowany wiersz bez ``WYKONAWCA`` (także z 8.11 sprzed dnia wdrożenia: to wiersz bez zlecenia,
+    a nie zlecenie sprzed okna), wiersz z ``DATA GODZ. POCZ.`` tekstem, wiersz z wyglądem z
+    aplikacji między uporządkowanymi (z nim zlecenie Jana nad nim, bo przegląd zleceń kończy się na takim wierszu),
+    taki wiersz przesunięty jak pierwszy wiersz wklejenia i przesunięty pierwszy wiersz dolnego z dwóch wklejeń bez
+    Uporządkowania między nimi, który reguła danych zna w obu położeniach (przegląd #1374 r3 Drobne 1: numer tylko z
+    pierwszego położenia dawał dubel). Kliknięcie nie zmienia INTERMAX, więc żaden numer nie stoi w
     nim dwa razy, a okienko Jana z 9.11 ma problem z każdym numerem, który mówi, że zlecenie już jest. Logi mają te
     numery, żeby odtworzenie postawiło je w INTERMAX."""
 
@@ -1825,10 +1852,125 @@ def test_klikniecie_nie_dopisuje_numeru_ktory_intermax_ma_w_przeczytanym_wierszu
         [],
         [("unknown_number", "in_intermax")] * len(numbers),
     )
-    assert entering["orderless"] == [{"sheet": ORDER_SHEET, "number": number} for number in numbers]
+    assert entering["orderless"] == [{"sheet": ORDER_SHEET, "number": number, "day": None} for number in numbers]
     problems = _worker(_view(centrum), "jan.testowy")["problems"]
     assert [problem["number"] for problem in problems] == [str(number) for number in numbers]
     assert all(f"Zlecenie {problem['number']} z Wpisu od jan.testowy z 09.11.2026 jest już w INTERMAX" in problem["reason"] for problem in problems)
+
+
+def test_wiersz_bez_wykonawcy_nad_dziesiatkami_zlecen_dnia_nie_jest_dopisany_drugi_raz(tmp_path: Path) -> None:
+    """Przegląd #1374 r3 Drobne 2: dzień taty ma dziesiątki zleceń. Tata kliknął pierwszy raz 8.11, a INTERMAX ma wiersz
+    8.11 bez ``WYKONAWCA`` z 40000095 nad dwunastoma zleceniami Anny z 8.11, pod nimi dzień 9.11. Raport Jana za 9.11 z
+    tym numerem: przegląd numerów sięga przez cały dzień 8.11 (granica dni okna, nie dzień najniższego wiersza), więc
+    kliknięcie 9.11 nie dopisuje 40000095 drugi raz, a Jan ma problem, że zlecenie już jest."""
+
+    intermax = Intermax(
+        ordered=(
+            Order(datetime(2026, 11, 8, 7), "", 40000095, cells=((NUMBER, 40000095),)),
+            *(_order(8, 8, "anna.kowalska", 40000100 + index) for index in range(12)),
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 11, "anna.kowalska", 40000002),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    before = centrum.register.read_bytes()
+
+    entering = _entering(centrum, _click_at(centrum, ENTERING_NOW, [report(JAN, SUBJECT, "40000095 tak montaż")]))
+
+    assert centrum.register.read_bytes() == before, "kliknięcie nie dopisuje numeru, który INTERMAX już ma"
+    assert entering["added"] == []
+    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [("unknown_number", "in_intermax")]
+
+
+_REPASTED_NEXT_TO_ORDER = {
+    "surowe-zlecenie-na-dole": Intermax(
+        ordered=(
+            _order(8, 9, "anna.kowalska", 40000001),
+            _order(8, 10, "jan.testowy", 40000002),
+            _order(8, 12, "jan.testowy", 40000004),
+            _order(9, 9, "anna.kowalska", 40000003),
+        ),
+        raw=(_order(9, 14, "jan.testowy", 40000002), _order(9, 15, "anna.kowalska", 40000005)),
+    ),
+    "wiersz-bez-wykonawcy-w-dniu-z-tematu": Intermax(
+        ordered=(
+            _order(8, 9, "anna.kowalska", 40000001),
+            _order(8, 10, "jan.testowy", 40000002),
+            _order(8, 12, "jan.testowy", 40000004),
+            _order(9, 9, "anna.kowalska", 40000003),
+            Order(datetime(2026, 11, 9, 10), "", 40000002, cells=((NUMBER, 40000002),)),
+        ),
+        raw=(),
+    ),
+}
+
+
+@pytest.mark.parametrize("intermax", list(_REPASTED_NEXT_TO_ORDER.values()), ids=list(_REPASTED_NEXT_TO_ORDER))
+def test_zlecenie_numeru_z_drugim_wierszem_bez_zlecenia_nie_przechodzi_na_dzien_z_tematu(
+    tmp_path: Path, intermax: Intermax
+) -> None:
+    """Reguła #1367 „numer w kilku miejscach się nie przenosi” liczy też przeczytany wiersz bez zlecenia (przegląd #1374
+    r3): INTERMAX ma 40000002 jako zlecenie Jana z 8.11 (dzień otwarty od pierwszego kliknięcia 8.11) i drugi raz w 9.11
+    jako Surowe zlecenie na dole albo wiersz bez ``WYKONAWCA``. Raport Jana za 9.11 z tym numerem nie przenosi zlecenia z
+    8.11, bo 9.11 miałby wtedy ten numer dwa razy: INTERMAX zostaje bez zmian, a Jan ma problem z miejscem zlecenia i
+    zdaniem o wierszu bez zlecenia."""
+
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    before = centrum.register.read_bytes()
+
+    entering = _entering(centrum, _click_at(centrum, ENTERING_NOW, [report(JAN, SUBJECT, "40000002 tak montaż")]))
+
+    assert centrum.register.read_bytes() == before, "kliknięcie nie przenosi zlecenia obok wiersza z tym samym numerem"
+    assert (entering["moves"], entering["added"]) == ([], [])
+    assert [(problem["kind"], problem["number"]) for problem in entering["problems"]] == [("repeated_number", "40000002")]
+    [problem] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert "u jan.testowy z 08.11.2026 i w wierszu, z którego Centrum nie robi zlecenia" in problem["reason"]
+
+
+_EIGHTH_BEFORE_ROLLOUT = {
+    "zlecenie-pod-dniem": (INTERMAX, 40000010),
+    "zlecenie-nad-dziesiatkami-zlecen-dnia": (
+        Intermax(
+            ordered=(
+                _order(8, 7, "jan.testowy", 40000095),
+                *(_order(8, 8, "anna.kowalska", 40000100 + index) for index in range(12)),
+                _order(9, 9, "jan.testowy", 40000001),
+                _order(9, 11, "anna.kowalska", 40000002),
+            ),
+            raw=(),
+        ),
+        40000095,
+    ),
+}
+
+
+@pytest.mark.parametrize(("intermax", "number"), list(_EIGHTH_BEFORE_ROLLOUT.values()), ids=list(_EIGHTH_BEFORE_ROLLOUT))
+def test_zlecenie_sprzed_dnia_wdrozenia_nie_jest_dopisane_a_powod_mowi_o_dniu_sprzed_okna(
+    tmp_path: Path, intermax: Intermax, number: int
+) -> None:
+    """Przegląd #1374 r3 (Drobne 3 i granica dnia wdrożenia): tata klika pierwszy raz 9.11, więc zlecenia czyta od 9.11,
+    a INTERMAX ma pełne zlecenie Jana z 8.11 (z ``WYKONAWCA`` i datą z godziną), także nad dwunastoma zleceniami Anny z
+    8.11. Raport Jana za 9.11 z tym numerem nie dopisuje go drugi raz, bo numery proces czyta też z tygodnia przed
+    pierwszym dniem otwartym, sprzed dnia wdrożenia. Powód mówi, że zlecenie jest w dniu sprzed dni, które Centrum
+    czyta, a nie że wierszowi brakuje ``WYKONAWCA`` albo daty, i nie radzi kliknąć jeszcze raz, bo to nic nie zmieni.
+    Logi mają dzień zlecenia, żeby odtworzenie dało ten sam powód."""
+
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, f"{number} tak montaż")])
+    before = centrum.register.read_bytes()
+
+    entering = _entering(centrum, _finished(centrum))
+
+    assert centrum.register.read_bytes() == before, "kliknięcie nie dopisuje zlecenia, które INTERMAX ma przed dniem wdrożenia"
+    assert entering["added"] == []
+    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [("unknown_number", "before_window")]
+    assert entering["orderless"] == [{"sheet": ORDER_SHEET, "number": number, "day": "2026-11-08"}]
+    [problem] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert f"Zlecenie {number} z Wpisu od jan.testowy z 09.11.2026 jest już w INTERMAX, ale z dniem sprzed dni" in problem["reason"]
+    assert "WYKONAWCA" not in problem["reason"]
+    assert "kliknij jeszcze raz" not in problem["reason"]
 
 
 def test_zlecenie_z_dnia_po_dzis_nie_jest_dopisane_drugi_raz_a_nastepnego_dnia_przechodzi_na_dzien_z_tematu(
