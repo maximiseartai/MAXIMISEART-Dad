@@ -1,10 +1,11 @@
 """Wpisy raportu z treści Raportu wykonawcy tak, jak piszą Wykonawcy: wiele Wpisów w mailu, w jednej linii albo przez
 kilka linii, ``tak``/``nie`` w dowolnej wielkości liter i z interpunkcją, bez powitania, podpisu i cytatu w opisie.
 
-Opis Wpisu kończy jeden z wyliczonych znaczników: następny Wpis, pusta linia, linia cytatu ``>``, nagłówek cytowanej
-wiadomości, stopka (``Wysłane z …``, ``Sent from …``) w osobnej linii albo w środku ostatniej linii treści, separator
-podpisu ``--``, pożegnanie z ``_CLOSINGS`` albo koniec treści. Tekst bez żadnego z nich tuż pod opisem (samo imię w
-następnej linii) należy do opisu."""
+Treść kończy pierwsza linia z ``_END`` (separator podpisu albo pierwsza linia cytatu), a numery z przykładu w
+Przypomnieniu o raporcie nigdy nie są Wpisami. Opis Wpisu kończy jeden z wyliczonych znaczników: następny Wpis, pusta
+linia, stopka (``Wysłane z …``, ``Sent from …``) w osobnej linii albo w środku ostatniej linii treści, pożegnanie z
+``_CLOSINGS`` albo koniec treści. Tekst bez żadnego z nich tuż pod opisem (samo imię w następnej linii) należy do
+opisu."""
 
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from typing import Final
 import unicodedata
 
 from ._model import OrderNumber, ReportEntry, Verdict, VerdictFault
+from ._reminders import EXAMPLE_NUMBERS
 
 _EDGES: Final = re.compile(r"^(?:[^\w]|_)+|(?:[^\w]|_)+$")
 _MARKS: Final[dict[str, Verdict | VerdictFault]] = {
@@ -59,13 +61,28 @@ _PREFIXES: Final = frozenset({"zlecenie", "zlec", "zl", "nr"})
 """Słowa przed numerem następnego Wpisu (``Zlecenie``, ``Zlec.``, ``Zl.``, ``Nr``), które nie należą do opisu."""
 _END: Final = re.compile(
     r"^[ \t]*(?:--"
+    r"|>.*"
     r"|(?:w dniu|on) .*(?:\n.*){0,2}?(?:napisał\(a\)|napisał|napisała|wrote):"
     r"|-{2,} ?(?:original message|wiadomość oryginalna|forwarded message|wiadomość przekazana dalej) ?-{2,}"
+    r"|_{10,}"
     r"|(?:od|from): .*"
     r")[ \t]*$",
     re.IGNORECASE | re.MULTILINE,
 )
-"""Separator podpisu (``--`` z albo bez spacji, RFC 3676) albo nagłówek cytowanej wiadomości, także zawinięty."""
+"""Linia, od której treść się nie liczy, bez względu na wielkość liter i białe znaki na brzegach linii, jedna z:
+
+- separator podpisu ``--`` z albo bez spacji (RFC 3676);
+- linia cytatu: zaczyna się od ``>``;
+- nagłówek cytatu Gmaila ``W dniu … napisał(a):`` (także ``napisał:``, ``napisała:``) i ``On … wrote:``, rozbity
+  najwyżej na trzy linie, jak Gmail zawija go przy długiej nazwie albo adresie;
+- nagłówek przekazanej albo oryginalnej wiadomości między myślnikami (``---------- Forwarded message ---------``,
+  ``-----Wiadomość oryginalna-----``);
+- linia samych podkreślników, co najmniej 10, którą Outlook stawia nad nagłówkami cytatu;
+- pierwsza linia nagłówków cytatu Outlooka ``Od: …`` albo ``From: …`` (po dwukropku spacja).
+
+Inne postacie cytatu (``Wiadomość napisana przez … w dniu …:`` z Apple Mail po polsku, ``Od:`` bez spacji, cytat bez
+żadnego znacznika) to granica: tekst cytatu czyta się jak treść, a fałszywego Wpisu z cytowanego przypomnienia nie
+daje i tak, bo jedyne numery w nim to numery z przykładu."""
 _FOOTER: Final = re.compile(r"(?:wysłane|wysłano) ze? .*|sent from .*|get outlook for .*", re.IGNORECASE)
 _DESCRIPTION_EDGES: Final = " ,;:-–—"
 
@@ -80,19 +97,22 @@ class _Word:
 
 
 _Stream = Sequence[_Word | None]
-"""Słowa treści w kolejności; ``None`` to przerwa: pusta linia, linia cytatu ``>`` albo stopka (``Wysłane z iPhone'a``)."""
+"""Słowa treści w kolejności; ``None`` to przerwa: pusta linia albo stopka (``Wysłane z iPhone'a``)."""
 
 
 def entries(text: str, digits: int) -> tuple[ReportEntry, ...]:
     """Wpisy z treści; ``digits`` to liczba cyfr najkrótszego numeru zlecenia.
 
-    Treść kończy separator podpisu ``--`` albo nagłówek cytowanej wiadomości, a koniec linii nie kończy ani Wpisu, ani
-    opisu; pusta linia kończy jedno i drugie. Numer w kształcie numeru zlecenia (same cyfry ASCII, z ``#`` albo bez, co najmniej ``digits`` cyfr) zaczyna
+    Treść kończy pierwsza linia z ``_END`` (separator podpisu albo pierwsza linia cytatu), a koniec linii nie kończy ani
+    Wpisu, ani opisu; pusta linia kończy jedno i drugie. Numer w kształcie numeru zlecenia (same cyfry ASCII, z ``#`` albo bez, co najmniej ``digits`` cyfr) zaczyna
     Wpis, gdy po nim, także w następnej linii, stoi znak (``tak``, ``nie``, ``t``, ``n``, ``skuteczne``,
     ``nieskuteczne``, z interpunkcją, w dowolnej wielkości liter) albo gdy zaczyna linię. Krótsza liczba to słowo opisu.
     Opis to słowa do następnego Wpisu, przerwy, pożegnania albo końca treści, z pojedynczymi spacjami, bez słowa
     z ``_PREFIXES`` tuż przed numerem następnego Wpisu i bez znacznika listy (``1.``, ``-``) na początku jego linii. Słowa przed pierwszym Wpisem i po przerwie albo pożegnaniu
     się nie liczą. Opis ostatniego Wpisu kończy też stopka w środku ostatniej linii treści (``_last_end``).
+
+    Numer z przykładu w Przypomnieniu o raporcie (``EXAMPLE_NUMBERS``) zaczyna Wpis jak każdy inny, więc kończy opis
+    Wpisu nad nim, ale jego Wpis wypada z wyniku: Wykonawca przepisał albo zacytował przykład bez znaku cytatu.
 
     Cytatu w treści już nie ma, więc kilka Wpisów jednego numeru Wykonawca napisał w nowej treści. Liczy się pierwszy
     Wpis z ``tak`` albo ``nie``, a Wpis bez nich tylko wtedy, gdy żaden Wpis numeru ich nie ma (pierwszy). Litera
@@ -108,7 +128,8 @@ def entries(text: str, digits: int) -> tuple[ReportEntry, ...]:
     for position, start in enumerate(starts):
         end = _cut(stream, starts[position + 1]) if position + 1 < len(starts) else _last_end(stream, start)
         number = OrderNumber(_word(stream, start).core)
-        found.setdefault(number, []).append(_entry(number, stream[start + 1 : end]))
+        if number not in EXAMPLE_NUMBERS:
+            found.setdefault(number, []).append(_entry(number, stream[start + 1 : end]))
     return tuple(entry for said in found.values() for entry in _counted(said))
 
 
@@ -150,7 +171,7 @@ def _stream(text: str) -> Iterator[_Word | None]:
     end = _END.search(lines)
     for line in lines[: None if end is None else end.start()].split("\n"):
         stripped = line.strip()
-        if not stripped or stripped.startswith(">") or _FOOTER.fullmatch(stripped):
+        if not stripped or _FOOTER.fullmatch(stripped):
             yield None
         else:
             yield from (_Word(word, _EDGES.sub("", word), index == 0) for index, word in enumerate(stripped.split()))
