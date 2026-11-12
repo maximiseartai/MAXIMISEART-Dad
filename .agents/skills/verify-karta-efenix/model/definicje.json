@@ -1,10 +1,10 @@
 {
   "src/rozliczenia/efenix_browser.py": {
     "BrowserEfenix._blocked_cause": "d9d678806672ae76",
-    "BrowserEfenix.enter_quantity": "837c5ba6caed05f3",
-    "BrowserEfenix.load_emmett": "db405e989f5892fd",
+    "BrowserEfenix.enter_quantity": "b869c4b5ef589c0a",
+    "BrowserEfenix.load_emmett": "0a2f78509b4b99da",
     "BrowserEfenix.open_order": "ae826d0793ba96d1",
-    "BrowserEfenix.set_execution_date": "a65456c184aaa94c"
+    "BrowserEfenix.set_execution_date": "57974cc01feb8918"
   },
   "src/rozliczenia/efenix_pace.py": {
     "Pacing.before_write": "2efa861c69589453",

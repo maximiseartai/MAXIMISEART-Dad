@@ -565,7 +565,7 @@ def _emmett(load: EmmettLoad) -> OrderPricing:
     """
 
     if load.proposal is not Proposal.NOTHING and not _priced(load.page):
-        raise UnexpectedPage(PagePart.EMMETT, OtherShape(Shape.EMMETT_NOT_LOADED))
+        raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.EMMETT_NOT_LOADED))
     return load.page
 
 

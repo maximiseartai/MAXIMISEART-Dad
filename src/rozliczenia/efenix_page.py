@@ -39,7 +39,7 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Locator, Page
 
-from .efenix_window import ElementCount, ListedOrder, LoggedOut, LoginSign, OrderPricing, OtherShape, PagePart, Shape, UnexpectedPage
+from .efenix_window import ElementCount, ListedOrder, LoginSign, OrderPricing, OtherShape, PagePart, Shape, WindowStop
 
 __all__ = [
     "AMOUNT",
@@ -387,9 +387,9 @@ def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
         case SearchWarning.NOT_FOUND:
             return ()
         case SearchWarning.SESSION_EXPIRED:
-            raise LoggedOut(PagePart.RESULTS, LoginSign.SESSION_WARNING)
+            raise WindowStop.of(PagePart.RESULTS, LoginSign.SESSION_WARNING)
         case None:
-            raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))
+            raise WindowStop.of(PagePart.RESULTS, OtherShape(Shape.NO_TABLE))
 
 
 class RowFault(enum.Enum):
@@ -447,9 +447,9 @@ def _listed_order(headers: Sequence[str], row: Sequence[Cell]) -> ListedOrder:
     columns = {field: _column(headers, header) for field, header in _HEADERS.items()}
     faults = _row_faults(headers, columns, row)
     if RowFault.CELLS in faults or RowFault.LINK in faults:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))
+        raise WindowStop.of(PagePart.RESULTS, OtherShape(Shape.ROW_CELLS))
     if RowFault.EMPTY in faults:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))
+        raise WindowStop.of(PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY))
     status = row[columns["status"]]
     found = _LOGIN.findall(row[columns["realizator"]].login or "")
     return ListedOrder(
@@ -483,7 +483,7 @@ def _order_id(link: str) -> str:
 def _column(headers: Sequence[str], header: str) -> int:
     positions = _starting(headers, header)
     if len(positions) != 1:
-        raise UnexpectedPage(PagePart.RESULTS, OtherShape(Shape.COLUMNS))
+        raise WindowStop.of(PagePart.RESULTS, OtherShape(Shape.COLUMNS))
     return positions[0]
 
 
@@ -505,11 +505,11 @@ def read_order(page: Page, *, timeout_ms: float | None = None) -> tuple[OrderPri
     for field_id, value in fields:
         found = _POSITION.fullmatch(field_id)
         if found is None:
-            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_ID))
+            raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.QUANTITY_ID))
         if found[1] in positions:
-            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.POSITION_TWICE, found[1]))
+            raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.POSITION_TWICE, found[1]))
         if not _QUANTITY_TEXT.fullmatch(value.strip()):
-            raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, found[1]))
+            raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.QUANTITY_VALUE, found[1]))
         positions[found[1]] = field_id
         quantities[found[1]] = int(value.strip() or 0)
     shown_date, shown_amount = executed.inner_text(timeout=timeout_ms), total.inner_text(timeout=timeout_ms)
@@ -525,7 +525,7 @@ def single(page: Page, selector: str, part: PagePart) -> Locator:
 
     located = page.locator(selector)
     if (count := located.count()) != 1:
-        raise UnexpectedPage(part, ElementCount(selector, count))
+        raise WindowStop.of(part, ElementCount(selector, count))
     return located
 
 
@@ -534,7 +534,7 @@ def amount(shown: str, part: PagePart) -> Decimal:
 
     text = "".join(shown.split())
     if not _AMOUNT_TEXT.fullmatch(text):
-        raise UnexpectedPage(part, OtherShape(Shape.AMOUNT_TEXT))
+        raise WindowStop.of(part, OtherShape(Shape.AMOUNT_TEXT))
     return Decimal(text)
 
 
@@ -543,8 +543,8 @@ def _execution_date(shown: str) -> date | None:
     if not text:
         return None
     if not _DAY.fullmatch(text):
-        raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
+        raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
     try:
         return date.fromisoformat(text)
     except ValueError as error:
-        raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT)) from error
+        raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.DATE_TEXT)) from error
