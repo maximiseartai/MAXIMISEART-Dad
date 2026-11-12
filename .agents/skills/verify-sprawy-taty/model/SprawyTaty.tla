@@ -34,7 +34,7 @@ Issue == [nr : Numery \ {0}, rodzaj : Rodzaje, id : Idy, zamkniete : BOOLEAN]
 \* Stan uchwytu Zgłoszenia na karcie (diagnosis_contract.ReportState).
 Karty == {"gotowe", "czekaNaNaprawe", "wKolejce", "wyslane", "odrzucone", "niezapisane"}
 Przyczyny == {"zgasniecie-w-wysylce-zgloszenia", "zgasniecie-w-wysylce-uwagi", "plik-stanu-niedostepny",
-              "pokaz-po-odrzuceniu"}
+              "wycofanie-bez-zapisu", "zapomnienie-bez-zapisu", "pokaz-po-odrzuceniu"}
 
 Wolny == [krok |-> "wolny", plik |-> 0, wiesc |-> "-"]
 Bezczynne == [pc |-> "-", kto |-> "-", sid |-> 0, plik |-> 0, wynik |-> "-", znana |-> FALSE]
@@ -64,7 +64,10 @@ VARIABLES
     nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci, awariePlikuStanu, awarieKolejki,
     wyjatkiKolejki, odrzucenia, zamkniecia,
     \* Zdarzenia, które łamią obietnice: zbiór przyczyn w chwili każdego zdarzenia.
-    bezPliku, odrzuconaCzeka
+    bezPliku, odrzuconaCzeka,
+    \* Historia zmian spraw, z której zgaśnięcie bierze przyczynę każdej sprawy bez pliku (nie zmienia kroków kodu).
+    wycofane,           \* sprawy, które DadCases.withdraw (Reports._queue, finally) albo forget (dad_notes.send) usunęło
+    numerowane          \* sprawy, którym DadCases.numbered dało numer albo które usunęło, bo inna ma już ten numer
 
 dysk == <<plikStanu, kolejka, skrzynka, znaczniki>>
 pamiec == <<sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req, uwaga, uchwyt, pyt, otwarte,
@@ -72,7 +75,8 @@ pamiec == <<sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaP
 liczniki == <<nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci, awariePlikuStanu,
               awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
 zdarzenia == <<bezPliku, odrzuconaCzeka>>
-vars == <<dysk, pamiec, liczniki, zdarzenia>>
+duchy == <<wycofane, numerowane>>
+vars == <<dysk, pamiec, liczniki, zdarzenia, duchy>>
 
 Najwieksza(S) == CHOOSE x \in S : \A y \in S : y <= x
 Najmniejsza(S) == CHOOSE x \in S : \A y \in S : x <= y
@@ -105,6 +109,11 @@ Numerowane(s, rodzaj, id, n) ==
     ELSE LET k == Najwieksza(CzekajaceNasze(s, rodzaj, id)) IN
          \* Inna sprawa ma już ten numer: wysyłka trafiła do otwartego Zgłoszenia, czekająca znika.
          IF \E j \in 1..Len(s) : s[j].numer = n THEN Usun(s, k) ELSE [s EXCEPT ![k].numer = n]
+\* Sprawy, które to DadCases.numbered zmienia (dostają numer albo znikają).
+NumerowaneSidy(s, rodzaj, id) ==
+    IF rodzaj = "uwaga" THEN {s[k].sid : k \in Nasze(s, rodzaj, id)}
+    ELSE IF CzekajaceNasze(s, rodzaj, id) = {} THEN {}
+    ELSE {s[Najwieksza(CzekajaceNasze(s, rodzaj, id))].sid}
 
 \* DadCases._change: sprawy w pamięci, a plik stanu dostaje je, chyba że zapis zawiedzie (StateFile: treść czeka w
 \* pamięci, a następny _change, także bez zmiany, albo retry z odczytu Powiadomień zapisuje ją albo nowszą).
@@ -134,10 +143,25 @@ OdrzuconaWKolejce(s, k, odrz, kpc) ==
     k = "wKolejce" /\ CzekaZgl(s) /\ F \in odrz /\ ~(kpc.krok = "powiedz" /\ kpc.wiesc = "odrzucona")
 
 Zdarz(stare, warunek, przyczyny) == IF warunek THEN stare \cup {przyczyny} ELSE stare
-\* Ostatni koniunkt każdej akcji: zdarzenia obietnic w tym kroku z przyczynami, które akcja zna.
-Historia(przyczynyBezPliku, przyczynyKarty) ==
-    /\ bezPliku' = Zdarz(bezPliku, Osierocone(sprawy', kolejka', Wlasne(req', uwaga'))
-                                   \ Osierocone(sprawy, kolejka, Wlasne(req, uwaga)) # {}, przyczynyBezPliku)
+\* Rodzaj sprawy sid w pliku stanu (tam leży sprawa, która po zgaśnięciu czeka bez pliku).
+RodzajWPliku(sid) == (CHOOSE c \in {plikStanu[k] : k \in 1..Len(plikStanu)} : c.sid = sid).rodzaj
+\* Przyczyna, z którą sprawa sid czeka bez pliku po zgaśnięciu: jedna ścieżka kodu na przyczynę. Sprawa spoza tych
+\* ścieżek nie ma przyczyny, więc żadne znane znalezisko jej nie wybacza.
+PrzyczynaZgasniecia(sid) ==
+    \* Centrum gaśnie w zapytaniu tej sprawy: po DadCases.add, przed zapisem jej pliku albo przed withdraw/forget.
+    (IF req.pc \in {"post", "wycofaj"} /\ req.sid = sid THEN {"zgasniecie-w-wysylce-zgloszenia"} ELSE {})
+    \cup (IF uwaga.pc \in {"post", "zapomnij"} /\ uwaga.sid = sid THEN {"zgasniecie-w-wysylce-uwagi"} ELSE {})
+    \* Plik stanu nie dostał zmiany DadCases.numbered tej sprawy (StateFile trzymał ją w pamięci).
+    \cup (IF sid \in numerowane THEN {"plik-stanu-niedostepny"} ELSE {})
+    \* Plik stanu nie dostał withdraw (Reports._queue, finally) albo forget (dad_notes.send) tej sprawy.
+    \cup (IF sid \in wycofane /\ RodzajWPliku(sid) = "zgl" THEN {"wycofanie-bez-zapisu"} ELSE {})
+    \cup (IF sid \in wycofane /\ RodzajWPliku(sid) = "uwaga" THEN {"zapomnienie-bez-zapisu"} ELSE {})
+\* Ostatni koniunkt każdej akcji: zdarzenia obietnic w tym kroku, każda nowa sprawa bez pliku osobno z przyczyną,
+\* którą zna zgaśnięcie (inne akcje nie znają żadnej), a karta z przyczynami, które akcja zna.
+Historia(zgasniecie, przyczynyKarty) ==
+    /\ bezPliku' = bezPliku \cup {IF zgasniecie THEN PrzyczynaZgasniecia(sid) ELSE {} :
+                                  sid \in Osierocone(sprawy', kolejka', Wlasne(req', uwaga'))
+                                         \ Osierocone(sprawy, kolejka, Wlasne(req, uwaga))}
     /\ odrzuconaCzeka' = Zdarz(odrzuconaCzeka, ~OdrzuconaWKolejce(sprawy, karta, odrzuconeSprawy, kolejkaPc)
                                                /\ OdrzuconaWKolejce(sprawy', karta', odrzuconeSprawy', kolejkaPc'),
                                przyczynyKarty)
@@ -162,6 +186,7 @@ TypeOK ==
     /\ awarieKolejki \in 0..MaxAwariiKolejki /\ wyjatkiKolejki \in 0..MaxWyjatkowKolejki
     /\ odrzucenia \in 0..MaxOdrzucen /\ zamkniecia \in 0..MaxZamkniec
     /\ \A e \in {bezPliku, odrzuconaCzeka} : e \subseteq SUBSET Przyczyny
+    /\ wycofane \subseteq Sidy /\ numerowane \subseteq Sidy
 
 \* Pierwszy start Centrum na komputerze bez spraw: karta Zatrzymania problemu F jest gotowa do wysłania.
 Init ==
@@ -173,6 +198,7 @@ Init ==
     /\ klikniecia = 0 /\ uwagi = 0 /\ zgasniecia = 0 /\ awarieSieci = 0 /\ awariePlikuStanu = 0 /\ awarieKolejki = 0
     /\ wyjatkiKolejki = 0 /\ odrzucenia = 0 /\ zamkniecia = 0
     /\ bezPliku = {} /\ odrzuconaCzeka = {}
+    /\ wycofane = {} /\ numerowane = {}
 
 (* ---------------------------------------- uchwyt Zgłoszenia (reports.py) ---------------------------------------- *)
 
@@ -183,7 +209,7 @@ Podglad ==
     /\ pyt' = [krok |-> "pyta", numer |-> FALSE, wyslano |-> FALSE]
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req, uwaga, otwarte,
                    karta, liczniki>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* Reports._ask_box: within(search_deadline_s, find_issue(... include_closed=False)); odpowiedź przepada, gdy jej nie *)
 (* ma (Unreachable, NoKey, Refused, termin) albo gdy w trakcie pytania sprawa problemu dostała numer (_numbered).    *)
@@ -197,7 +223,7 @@ Pytanie ==
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req, uwaga, uchwyt,
                    karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awariePlikuStanu, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* ReportHandle._ask po odpowiedzi, pod blokadą uchwytu: odpowiedź na pytanie sprzed wysyłki przepada; inaczej       *)
 (* _show(stan, gdy _done, albo Reports._state_of), a podgląd problemu, który czeka na naprawę, idzie sam do kolejki   *)
@@ -209,13 +235,13 @@ Decyzja ==
        THEN UNCHANGED <<karta, uchwyt, req>>
        ELSE LET nowa == IF karta \in {"wyslane", "wKolejce"} THEN karta ELSE StanZgl(sprawy, otwarte, odrzuconeSprawy)
             IN /\ karta' = nowa
-               /\ IF nowa = "czekaNaNaprawe" /\ ~uchwyt.powrot /\ req.pc = "-"
+               /\ IF nowa = "czekaNaNaprawe" /\ ~uchwyt.powrot
                   THEN /\ uchwyt' = [uchwyt EXCEPT !.powrot = TRUE, !.wysyla = TRUE]
                        /\ req' = [Bezczynne EXCEPT !.pc = "sprawdz", !.kto = "powrot"]
                   ELSE UNCHANGED <<uchwyt, req>>
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga, otwarte,
                    liczniki>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* Tata klika „Wyślij do Maksa”: ReportHandle.send czeka, dopóki _sending, a gdy karta już mówi „wysłane” albo      *)
 (* „czeka w kolejce” (_done), oddaje ją bez wysyłki; inaczej _sending, _sends += 1 i Reports._queue(preview).      *)
@@ -229,7 +255,7 @@ Klik ==
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga, otwarte, karta,
                    nastepnaSprawa, nastepnyPlik, uwagi, zgasniecia, awarieSieci, awariePlikuStanu, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 \* Koniec Reports._queue: send pokazuje wynik (pc "pokaz"), a powrót w _ask tylko zdejmuje _sending. ``znana``: czy
 \* Sprawy taty wiedziały już w tej chwili, że Skrzynka odrzuciła treść.
@@ -253,7 +279,7 @@ Sprawdz ==
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga,
                    pyt, otwarte, karta, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* Reports._queue: queued = self._outbox.post(post), jeden krok: True (plik kolejki zapisany), False (OSError) albo *)
 (* wyjątek; po False i wyjątku finally wycofuje sprawę (withdraw).                                                *)
@@ -273,20 +299,21 @@ Post ==
           /\ UNCHANGED <<kolejka, nastepnyPlik, odrzucenia, awarieKolejki>>
     /\ UNCHANGED <<plikStanu, skrzynka, znaczniki, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga, uchwyt, pyt, otwarte,
                    karta, nastepnaSprawa, klikniecia, uwagi, zgasniecia, awarieSieci, awariePlikuStanu, zamkniecia>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* Reports._queue, finally: if not queued: self._cases.withdraw(case); potem ReportNotQueued (Komunikat), a wyjątek  *)
 (* idzie dalej: send zdejmuje _sending bez nowego stanu.                                                          *)
 Wycofaj ==
     /\ req.pc = "wycofaj"
     /\ Zapisz(Wycofana(sprawy, req.sid))
+    /\ wycofane' = wycofane \cup {req.sid}
     /\ IF req.wynik = "wyjatek" \/ req.kto = "powrot"
        THEN req' = Bezczynne /\ uchwyt' = [uchwyt EXCEPT !.wysyla = FALSE]
        ELSE req' = [req EXCEPT !.pc = "pokaz"] /\ UNCHANGED uchwyt
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga,
                    pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci,
-                   awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia({}, {})
+                   awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia, numerowane>>
+    /\ Historia(FALSE, {})
 
 (* Reports._queue po zapisie pliku: Outbox.wait_delivered (najwyżej DELIVERY_WAIT_S; kroki kolejki mogą przyjść     *)
 (* wcześniej) daje „wysłane”, a bez dostarczenia return self._cases.queued(fingerprint, box).                       *)
@@ -295,7 +322,7 @@ Czekaj ==
     /\ KoniecQueue(IF req.plik \in dostarczoneWPracy THEN "wyslane" ELSE Czekajaca(odrzuconeSprawy))
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga, pyt, otwarte,
                    karta, liczniki>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* ReportHandle.send po _queue, pod blokadą uchwytu: _sending = False; „czeka w kolejce”, gdy sprawa już nie czeka  *)
 (* (dostarczenie tuż po końcu czekania), to „wysłane”; _show(stan).                                               *)
@@ -305,7 +332,7 @@ Pokaz ==
     /\ req' = Bezczynne /\ uchwyt' = [uchwyt EXCEPT !.wysyla = FALSE]
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga, pyt, otwarte,
                    liczniki>>
-    /\ Historia({}, IF req.znana THEN {} ELSE {"pokaz-po-odrzuceniu"})
+    /\ UNCHANGED duchy /\ Historia(FALSE, IF req.znana THEN {} ELSE {"pokaz-po-odrzuceniu"})
 
 (* ---------------------------------------- Uwaga taty (dad_notes.send) ---------------------------------------- *)
 
@@ -319,7 +346,7 @@ UwagaWyslij ==
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req,
                    uchwyt, pyt, otwarte, karta, nastepnyPlik, klikniecia, zgasniecia, awarieSieci, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* dad_notes.send: queued = outbox.post(note_post(...)); po True czeka na skrzynkę i oddaje stan tylko tacie.       *)
 UwagaPost ==
@@ -336,17 +363,18 @@ UwagaPost ==
     /\ UNCHANGED <<plikStanu, skrzynka, znaczniki, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy,
                    kolejkaPc, req, uchwyt, pyt, otwarte, karta, nastepnaSprawa, klikniecia, uwagi, zgasniecia,
                    awarieSieci, awariePlikuStanu, wyjatkiKolejki, zamkniecia>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* dad_notes.send po False: cases.forget(NOTE, note.id), potem odmowa note_not_queued.                           *)
 UwagaZapomnij ==
     /\ uwaga.pc = "zapomnij"
     /\ Zapisz(Zapomniana(sprawy, uwaga.id))
+    /\ wycofane' = wycofane \cup {uwaga.sid}
     /\ uwaga' = BezUwagi
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req,
                    uchwyt, pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia,
-                   awarieSieci, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia({}, {})
+                   awarieSieci, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia, numerowane>>
+    /\ Historia(FALSE, {})
 
 (* ------------------------------------ wątek skrzynka-kolejka (outbox.py) ------------------------------------ *)
 
@@ -363,13 +391,13 @@ Doreczenie ==
            znacznik == {m \in znaczniki : m.plik = p.nr}
        IN \/ /\ awarieSieci < MaxAwariiSieci /\ awarieSieci' = awarieSieci + 1
              /\ UNCHANGED <<plikStanu, skrzynka, znaczniki, sprawy, odrzuconeSprawy, odrzuconePliki, kolejkaPc,
-                            awariePlikuStanu>>
+                            awariePlikuStanu, numerowane>>
           \/ /\ p.odrzucana /\ znacznik = {}
              /\ odrzuconePliki' = odrzuconePliki \cup {p.nr}
              /\ odrzuconeSprawy' = odrzuconeSprawy \cup {p.id}
              /\ kolejkaPc' = IF p.rodzaj = "zgl" THEN [krok |-> "powiedz", plik |-> p.nr, wiesc |-> "odrzucona"]
                              ELSE Wolny
-             /\ UNCHANGED <<plikStanu, skrzynka, znaczniki, sprawy, awarieSieci, awariePlikuStanu>>
+             /\ UNCHANGED <<plikStanu, skrzynka, znaczniki, sprawy, awarieSieci, awariePlikuStanu, numerowane>>
           \/ /\ ~(p.odrzucana /\ znacznik = {})
              /\ LET nowe == znacznik = {} /\ ~(p.rodzaj = "zgl" /\ OtwarteZgl # {})
                     nr == IF znacznik # {} THEN (CHOOSE m \in znacznik : TRUE).nr
@@ -380,13 +408,14 @@ Doreczenie ==
                                   ELSE skrzynka
                    /\ znaczniki' = znaczniki \cup {[plik |-> p.nr, nr |-> nr]}
                    /\ Zapisz(Numerowane(sprawy, p.rodzaj, p.id, nr))
+                   /\ numerowane' = numerowane \cup NumerowaneSidy(sprawy, p.rodzaj, p.id)
                    /\ kolejkaPc' = IF p.rodzaj = "zgl" /\ Znalezione(sprawy, p.rodzaj, p.id)
                                    THEN [krok |-> "powiedz", plik |-> p.nr, wiesc |-> "numer"]
                                    ELSE [krok |-> "oznacz", plik |-> p.nr, wiesc |-> "-"]
              /\ UNCHANGED <<odrzuconeSprawy, odrzuconePliki, awarieSieci>>
     /\ UNCHANGED <<kolejka, dostarczoneWPracy, req, uwaga, uchwyt, pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik,
-                   klikniecia, uwagi, zgasniecia, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia({}, {})
+                   klikniecia, uwagi, zgasniecia, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia, wycofane>>
+    /\ Historia(FALSE, {})
 
 (* DadCases._tell w wątku kolejki, poza blokadą spraw: Reports._heard (numer: _open, _numbered) i każdy żywy uchwyt *)
 (* problemu: ReportHandle._delivered („czeka w kolejce” -> „wysłane”) albo _rejected („odrzucone”).               *)
@@ -401,7 +430,7 @@ Uslyszane ==
             /\ kolejkaPc' = Wolny
             /\ UNCHANGED <<otwarte, pyt>>
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, req, uwaga, uchwyt, liczniki>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* _send_all po Listener.delivered: _first_comments (budzi wait_delivered), _mark_delivered i _remove pliku.        *)
 Oznacz ==
@@ -411,7 +440,7 @@ Oznacz ==
     /\ kolejkaPc' = Wolny
     /\ UNCHANGED <<plikStanu, skrzynka, znaczniki, sprawy, odrzuconeSprawy, odrzuconePliki, req, uwaga, uchwyt, pyt,
                    otwarte, karta, liczniki>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* ------------------------------------------- Powiadomienia i Maks ------------------------------------------- *)
 
@@ -425,7 +454,7 @@ Powiadomienia ==
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req,
                    uwaga, uchwyt, pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia,
                    awarieSieci, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* Maks zamyka issue w Skrzynce Zgłoszeń.                                                                           *)
 MaksZamyka ==
@@ -433,7 +462,7 @@ MaksZamyka ==
     /\ \E i \in skrzynka : ~i.zamkniete /\ skrzynka' = (skrzynka \ {i}) \cup {[i EXCEPT !.zamkniete = TRUE]}
     /\ UNCHANGED <<plikStanu, kolejka, znaczniki, pamiec, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia,
                    awarieSieci, awariePlikuStanu, awarieKolejki, wyjatkiKolejki, odrzucenia>>
-    /\ Historia({}, {})
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* ----------------------------------------------- zgaśnięcie ----------------------------------------------- *)
 
@@ -450,10 +479,7 @@ Zgasniecie ==
     /\ karta' = StanZgl(plikStanu, "?", {})
     /\ UNCHANGED <<dysk, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, awarieSieci, awariePlikuStanu, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
-    /\ Historia((IF req.pc \in {"post", "wycofaj"} THEN {"zgasniecie-w-wysylce-zgloszenia"} ELSE {})
-                \cup (IF uwaga.pc \in {"post", "zapomnij"} THEN {"zgasniecie-w-wysylce-uwagi"} ELSE {})
-                \cup (IF plikStanu # sprawy THEN {"plik-stanu-niedostepny"} ELSE {}),
-                {})
+    /\ UNCHANGED duchy /\ Historia(TRUE, {})
 
 Next ==
     \/ Podglad \/ Pytanie \/ Decyzja \/ Klik \/ Sprawdz \/ Post \/ Wycofaj \/ Czekaj \/ Pokaz

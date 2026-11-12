@@ -23,8 +23,9 @@ CI runs `sprawdz_sprawy_taty.py` (the `ci:` key) in Mutation checks whenever a c
 or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks step.
 In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
-`check_model_spraw_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
-`sprawdz_sprawy_taty.py`, and in full CI and nightly on `main` after a change of this skill's folder.
+`check_model_spraw_mutations.py` runs on a pull request that changes a file in `model/`, the script itself,
+`sprawdz_sprawy_taty.py` or a module that check imports (`tools/lib/model_tlc.py` and its imports), and in full CI and
+nightly on `main` after a change of this skill's folder.
 What stays with you on every change to the covered code is „Bring the model in line”: read the diff against the table,
 change the model, break the new path in it, replay each new counterexample on the code, and recompute the digests.
 A change whose model nobody brought in line is not verified, whatever CI says.
@@ -123,7 +124,7 @@ py -3 .agents\skills\verify-sprawy-taty\scripts\sprawdz_sprawy_taty.py
 
 `--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
 known findings are `tools/lib/model_tlc.py`; Java and `tla2tools.jar` come from `tools/lib/narzedzia_tlc.py`. The whole
-check took 24 s on Maks's Mac on 2026-11-12 (11 known findings in 16 TLC runs).
+check took 32 s on Maks's Mac on 2026-11-12 (16 known findings in 22 TLC runs).
 
 The last line is the verdict:
 
@@ -166,16 +167,22 @@ a request is the `KeyedBox.judge` of `DadCases.queued` replaced for the test, as
 | `odrzucona` | two clicks, one switch-off, the Skrzynka once without an answer, one text the Skrzynka rejects | known `zgasniecie-w-wysylce-zgloszenia`, `pokaz-po-odrzuceniu` |
 | `plik-stanu` | one click, one Uwaga, one switch-off, one failed write of `config/sprawy-taty.json` | known `zgasniecie-w-wysylce-zgloszenia`, `zgasniecie-w-wysylce-uwagi`, `plik-stanu-niedostepny` |
 | `kolejka` | two clicks, one Uwaga, one switch-off, `Outbox.post` once False and once an exception | known `zgasniecie-w-wysylce-zgloszenia`, `zgasniecie-w-wysylce-uwagi` |
+| `plik-stanu-kolejka` | one click, one Uwaga, one switch-off, one failed write of `config/sprawy-taty.json`, `Outbox.post` once False | known `zgasniecie-w-wysylce-zgloszenia`, `zgasniecie-w-wysylce-uwagi`, `plik-stanu-niedostepny`, `wycofanie-bez-zapisu`, `zapomnienie-bez-zapisu` |
 | `powrot` | two clicks, two switch-offs, the Skrzynka once without an answer, one rejected text, Maks closes one issue: the return of the problem after a start | known `zgasniecie-w-wysylce-zgloszenia`, `pokaz-po-odrzuceniu` |
 
 ## Known findings
 
 A configuration forgives only the findings `model/konfiguracje.json` lists for it (`znane`), each only for its promise
 and only for an event that happened with its cause (the history variables `bezPliku` and `odrzuconaCzeka` record the
-causes at every event). Zbieganie forgives only a card whose one disagreement is a forgiven `pokaz-po-odrzuceniu`
-(`KartaZnana`). All four findings were replayed on the code on 2026-11-12 (main at d0cefa5ef), each with a scratch script
+causes at every event). A case that waits without its file is an event of its own with one cause, which the switch-off
+takes from one path of the code (`PrzyczynaZgasniecia`): the request of that very case (findings 1 and 2), or the one
+change of that case `config/sprawy-taty.json` did not get, which the history variables `numerowane` (`DadCases.numbered`)
+and `wycofane` (`withdraw`, `forget`) name (findings 3, 5 and 6). A case outside these paths has no cause, so no known
+finding forgives it. Zbieganie forgives only a card whose one disagreement is a forgiven `pokaz-po-odrzuceniu`
+(`KartaZnana`). Findings 1–4 were replayed on the code on 2026-11-12 (main at d0cefa5ef), each with a scratch script
 outside the repository: a first Centrum work in its own process, killed with `os._exit` at the step, and a second start
-on the same folder.
+on the same folder. Findings 5 and 6 were replayed the same day on 4c8dcd06f with a second start on the same folder,
+with no process to kill: nothing writes the file between the failed write and the start.
 
 1. **`zgasniecie-w-wysylce-zgloszenia`, CzekaMaPlik (open).** Dad clicks „Wyślij do Maksa”; `Reports._queue` runs
    `self._cases.add(case)`, which writes the case without a number to `config/sprawy-taty.json`, and Centrum switches off
@@ -206,7 +213,20 @@ on the same folder.
    one that lets the queue reject the text first: the card showed `ready`, `rejected`, `queued`; the second click
    returned `queued`; `DadCases.queued` said `rejected`. Without such a hook the window is microseconds.
 
-Decide 1–4 with Maks; when the code changes, the finding disappears and the check says `ZNALEZISKO ZNIKNĘŁO`.
+5. **`wycofanie-bez-zapisu`, CzekaMaPlik (open).** `Outbox.post` returns False, the `finally` of `Reports._queue` calls
+   `DadCases.withdraw`, whose write of `config/sprawy-taty.json` fails (`StateFile` keeps the text in memory), and
+   Centrum switches off before the next write. After the start the case waits without a file, as in 1: the card says
+   „czeka w kolejce” and `_pending` stops every click, although Dad was told the Zgłoszenie was not saved. A failed
+   `Outbox.post`, a failed write and a switch-off before the next change. Replayed with a folder in place of
+   `sprawy-taty.json.tmp` made when `Outbox.post` returns False: „Wyślij do Maksa” `not_queued`, the file keeps the case
+   with `"number": null`, card after the start `{'state': 'queued', 'waits_for': 'internet'}`, the click the same, no
+   queue file, no Zgłoszenie in the Skrzynka.
+6. **`zapomnienie-bez-zapisu`, CzekaMaPlik (open).** The same in `dad_notes.send`: `Outbox.post` returns False,
+   `cases.forget` cannot write the file, Centrum switches off. Dad got the refusal `note_not_queued`, yet after the start
+   the Uwaga waits in the Powiadomienia forever, without its text anywhere. Replayed as in 5: the refusal, then after the
+   start the Powiadomienie of the Uwaga is `queued`, no queue file, no issue.
+
+Decide 1–6 with Maks; when the code changes, the finding disappears and the check says `ZNALEZISKO ZNIKNĘŁO`.
 
 One path is no finding: after a switch-off between the delivery of a Zgłoszenie file and its removal, the next start
 delivers that old file again (`_settle` finds its mark in issue N), and `DadCases.numbered` gives N to the newest
@@ -223,7 +243,8 @@ When a definition from `model/definicje.json` changes:
    TLA+ strings must be ASCII; comments may use Polish letters. Never weaken a promise or narrow a configuration to make
    the check pass.
 3. A new way to fail gets a constant, a branch guarded by it, and a value in `stale` of every configuration in
-   `model/konfiguracje.json`. A new action of `Next` gets its words in `_STEPS` of the script.
+   `model/konfiguracje.json`. A new change of the cases that a failed write can leave unsaved gets its own history
+   variable and cause in `PrzyczynaZgasniecia`, never a cause as wide as „the file differs from memory”. A new action of `Next` gets its words in `_STEPS` of the script.
 4. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
    to `scripts/check_model_spraw_mutations.py` with the code counterpart in its name.
 5. Run the check. A new violation is a finding: replay it on the code (Read a result) before you call it a bug, report
@@ -245,6 +266,12 @@ each gives `SPRAWY TATY: NOWE NARUSZENIE`:
 - Zbieganie: `ReportHandle._delivered` without `_show` (`zwykle`); `ReportHandle.send` without the `_pending` check after
   the wait (`zwykle`: the number comes between `DadCases.queued` and the end of `send`).
 
+`GRANICE` in the script holds the boundary of each cause a failed write leaves behind (`plik-stanu-niedostepny`,
+`wycofanie-bez-zapisu`, `zapomnienie-bez-zapisu`): `plik-stanu-kolejka` without that one known finding must give
+`NOWE NARUSZENIE`, so no other cause forgives its path. With the cause of round 1 of #1341 (any difference between the file
+and memory at the switch-off) the check said `ZNALEZISKO ZNIKNĘŁO` instead, because `plik-stanu-niedostepny` forgave the
+unsaved `withdraw`.
+
 ## Scope
 
 Verified: the three promises over every order of the actions above within the bounds of each configuration (one
@@ -258,6 +285,11 @@ is wrong:
 - **`os.replace` is atomic** (`StateFile`, queue files): a switch-off leaves the old file or the new one.
 - **One handle of the problem per Centrum work.** Two Zatrzymania of one problem in one work give two handles whose
   `_queue` may both pass `_pending` before either adds its case; the model has one.
+- **One `prepare` per handle, so one `_queue` of the handle at a time.** `Stops.diagnose` calls `prepare` at every
+  Diagnoza, and `ReportHandle._ask` sends the return of the problem without checking `_sending`, so a second Diagnoza
+  during a click can run the return's `_queue` next to the click's. The model has one `Podglad` per handle and one
+  request (`req`); with one `Podglad`, an answer that is not dropped never finds a request running (checked on every
+  configuration with an extra invariant on 2026-11-12), so `Decyzja` needs no guard of its own.
 - **`DadCases._tell` reaches the handle in the queue thread before `_first_comments`**, as `_send_all` calls the listener
   first.
 
