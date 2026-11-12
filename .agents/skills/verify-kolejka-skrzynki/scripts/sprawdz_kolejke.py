@@ -32,23 +32,21 @@ def _configs(*names: str) -> tuple[str, tuple[str, ...]]:
 
 
 # Jednostka to skrypt skilla z argumentami; każda biegnie od świeżego startu. Część bierze kolejne jednostki po ich
-# liczbie, nie po czasie, więc grupa zakresów waży ok. 140 s, a grupa konfiguracji ok. 90 s w CI, a kolejność daje przy
-# czterech i pięciu częściach (tyle plan bierze na PR) najdłuższą część ok. 300 s, poniżej podstawy
-# verify-urwane-uruchomienie (ok. 330 s), która biegnie z tą w większości PR-ów. Wagi to mediany 8 runów PR 5–12.11
-# (Windows CI): zakresy Archiwum 276 s, wątek okresu 115 s, ``diagnoza`` z ``diagnoza-odczyt``, ``archiwum-puste-repo``
-# i ``archiwum-lista`` 164 s, pozostałe zakresy z ``postep`` 144 s i model 453 s, podzielone między zakresy i
-# konfiguracje w proporcji ich czasów na Macu Maksa (12.11). Najdłuższe niepodzielne to zakresy ``archiwum`` i
-# ``archiwum-diagnoza`` (ok. 140 s).
+# liczbie, nie po czasie, więc kolejność przeplata ciężkie jednostki z lekkimi. Na czasach jednostek z runu PR
+# 43290270296 (Windows CI, 12.11: ``archiwum-diagnoza`` 265 s, grupa z ``postep`` 193 s, ``archiwum`` 146 s, grupa
+# z ``diagnoza`` 136 s, konfiguracja ``starsza`` 97 s, pozostałe 58–107 s) ta kolejność daje przy czterech i pięciu
+# częściach (tyle plan bierze na PR) najdłuższą część 323 s; najlepsza z wszystkich kolejności tych jednostek.
+# Najdłuższa niepodzielna jednostka to zakres ``archiwum-diagnoza``.
 UNITS = (
     _scopes("archiwum-diagnoza"),
-    _scopes("postep", "archiwum-lista", "nowe-issue", "nowe-issue-lista", "znane-issue"),
     _configs("archiwum", "logi", "odczyt"),
     _scopes("watek-okresu", "watek-okresu-lista", "zgloszenie", "zgloszenie-wrocilo", "zgloszenie-lista"),
     _configs("okres", "diagnoza", "zgloszenie", "znane"),
     _scopes("diagnoza", "diagnoza-odczyt", "archiwum-puste-repo"),
-    _scopes("archiwum"),
     _configs("starsza"),
+    _scopes("postep", "archiwum-lista", "nowe-issue", "nowe-issue-lista", "znane-issue"),
     _configs("archiwum-lista", "odmowa-tresci", "dwa-procesy", "dwie-kolejki"),
+    _scopes("archiwum"),
     _configs("postep", "puste-repo", "nowe"),
 )
 

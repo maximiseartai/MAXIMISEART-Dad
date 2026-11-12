@@ -109,14 +109,14 @@ def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centru
 # Jednostki sprawdzenia kodu i modelu w kolejności ``UNITS``; atrapa sprawdzenia wypisuje pierwszy zakres jednostki.
 ALL = [
     "explore_outbox.py --scope archiwum-diagnoza",
-    "explore_outbox.py --scope postep",
     "sprawdz_model_kolejki.py --config archiwum",
     "explore_outbox.py --scope watek-okresu",
     "sprawdz_model_kolejki.py --config okres",
     "explore_outbox.py --scope diagnoza",
-    "explore_outbox.py --scope archiwum",
     "sprawdz_model_kolejki.py --config starsza",
+    "explore_outbox.py --scope postep",
     "sprawdz_model_kolejki.py --config archiwum-lista",
+    "explore_outbox.py --scope archiwum",
     "sprawdz_model_kolejki.py --config postep",
 ]
 
