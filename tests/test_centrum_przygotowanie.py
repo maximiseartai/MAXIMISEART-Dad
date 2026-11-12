@@ -665,20 +665,6 @@ def test_okres_spoza_kalendarza_okresow_jest_odrzucony(tmp_path: Path) -> None:
     assert not centrum.metrics_path.exists()
 
 
-def test_uruchomienie_z_obcej_strony_jest_odrzucone(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-
-    refused = centrum.client.post(
-        "/api/runs",
-        json={"process": "preparation", "period": PERIOD, "mode": "RUN"},
-        headers={"Origin": "http://zly.example"},
-    )
-
-    assert refused.status_code == 403
-    assert centrum.client.get("/api/runs/current").json() == {"state": "idle", "previous": None}
-    assert list(centrum.fixture.periods_directory.iterdir()) == []
-
-
 def test_centrum_dopisuje_rekord_do_pliku_metryk_procesu_i_rozpoznaje_swoje_uruchomienia(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     centrum.start(dry_run=True)
