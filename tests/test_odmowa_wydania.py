@@ -1,7 +1,7 @@
 """Hook ``tools/hooks/reczne_wydanie.py``: agent nie zakłada tagu Wydania ``v*`` ani GitHub Release z Basha.
 
-Formy Wydania to formy z docstringu hooka i sondy przeglądów #1403 r1 i #1414 r1, a polecenia zwykłej pracy pochodzą
-z historii agentów i z sond fałszywych odmów #1414 r1. Każdy test zachowania uruchamia hook tak jak Claude Code: JSON na
+Formy Wydania to formy z docstringu hooka i sondy przeglądów #1403 r1 i #1414 r1–r2, a polecenia zwykłej pracy pochodzą
+z historii agentów i z sond fałszywych odmów #1414 r1–r2. Każdy test zachowania uruchamia hook tak jak Claude Code: JSON na
 stdin, a odmowa to kod 2 z przyczyną na stderr. Własności Hypothesis biorą oczekiwanie z docstringu hooka, a to, czym
 polecenie jest dla powłoki, rozstrzyga ``shlex.split`` i ``bash -n``, niezależne od hooka.
 """
@@ -14,7 +14,6 @@ import json
 import os
 from pathlib import Path
 import shlex
-import shutil
 import subprocess
 import sys
 from types import ModuleType
@@ -40,8 +39,36 @@ REVIEW_PROBES = (
     "  -f tag_name=v9.9.9",
     "git push --no-verify \\\n  origin refs/tags/v9.9.9",
 )
+# Sondy #1414 r2 W1: podstawienie bez cudzysłowu w środku argumentów nie kończy polecenia, a bash je wykonuje.
+SUBSTITUTION_PROBES = (
+    "git -C $(git rev-parse --show-toplevel) tag v9.9.9",
+    "git tag -m $(date +%F) v9.9.9",
+    "git push origin $(git rev-parse HEAD):refs/tags/v9.9.9",
+    "git push origin `git rev-parse HEAD`:refs/tags/v9.9.9",
+    "git push --no-verify $(git remote | head -1) v9.9.9",
+    "gh api repos/o/r/git/refs -f sha=$(git rev-parse HEAD) -f ref=refs/tags/v9.9.9",
+    "gh api -X POST repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases -f tag_name=v9.9.9",
+    "gh api repos/o/r/releases/$(gh api repos/o/r/releases/tags/v0.8.0 --jq .id) -X DELETE",
+    "gh release -R $(gh repo view --json nameWithOwner -q .nameWithOwner) create v9.9.9 --notes x",
+    "gh -R $(cat repo.txt) release create v9.9.9",
+)
 RELEASES = (
     *REVIEW_PROBES,
+    *SUBSTITUTION_PROBES,
+    # Apostrof w komentarzu, po ``\\`` i w ``$(…)`` albo `` `…` `` w cudzysłowie nie otwiera napisu, który ukryłby
+    # dalsze podstawienie.
+    "echo x # don't\ngit tag -m $(date +%F) v9.9.9",
+    'gh pr comment 1 --body "$(echo "it\'s ok")" && git tag -m $(date +%F) v9.9.9',
+    'gh pr comment 1 --body "`echo "it\'s ok"`" && git tag -m $(date +%F) v9.9.9',
+    "echo don\\'t && git tag -m $(date +%F) v9.9.9",
+    # Nawias w napisie w podstawieniu go nie zamyka.
+    "git tag -m $(echo ':)') v9.9.9",
+    # Opcja długa nie jest skupieniem flag krótkich: ``n`` z ``--annotate`` nie jest trybem listy (#1414 r2 D3).
+    "git tag --annotate v9.9.9",
+    # Ostatnia metoda ``gh api`` wygrywa (#1414 r2 D3).
+    "gh api -X GET -X POST repos/o/r/releases -f tag_name=v9.9.9",
+    # ``\\`` przed nową linią to ``\`` w słowie, a nowa linia kończy polecenie (#1414 r2 D3).
+    "echo a\\\\\ngit tag v9.9.9",
     "gh-axi release create v1.0.0",
     "gh release -R maximiseartai/MAXIMISEART-Dad create v9.9.9 --notes x",
     "/opt/homebrew/bin/gh release create v9.9.9",
@@ -132,6 +159,11 @@ NOT_RELEASES = (
     "git tag -a -m 'v0.8.0 przed rebase' przed-rebase",
     "git push origin verify-centrum",
     "git push origin $BRANCH",
+    # Podstawienie bez cudzysłowu w zwykłej pracy (#1414 r2), także w komentarzu, którego bash nie wykonuje.
+    "git push -u origin $(git branch --show-current)",
+    "git tag -d $(git tag -l 'v9*')",
+    "git diff --stat $(git merge-base HEAD origin/main) HEAD",
+    "git status # $(git tag v9.9.9)",
     "git push origin HEAD 2>&1 | tail -3",
     ".venv/bin/python tools/wydanie.py plan --plik ~/.t3/notes/wydanie/plan.json",
     ".venv/bin/python tools/wydanie.py wydaj --plan p.json \\\n  --co-nowego c.txt --potwierdzam",
@@ -145,11 +177,14 @@ NOT_RELEASES = (
     "gh release verify v0.8.0",
     "gh release verify-asset v0.8.0 MAXIMISEART.zip",
     "gh release --help",
+    "gh release create --help",
     "gh release --help 2>&1 | sed -n '/COMMANDS/,/FLAGS/p'",
     "gh api repos/o/r/releases/latest --jq .tag_name",
     "gh api -X GET repos/o/r/releases -f per_page=5",
     "gh api --method=GET repos/o/r/releases -f per_page=5",
     "gh api repos/o/r/git/refs -f ref=refs/heads/x -f sha=abc",
+    # ``HEAD`` to odczyt (#1414 r2 D3).
+    "gh api -X HEAD repos/o/r/releases",
     "gh api repos/o/r/issues/1/comments -f body='WERDYKT: PASS'",
     "git tag",
     "git tag -l 'v*'",
@@ -158,6 +193,10 @@ NOT_RELEASES = (
     "git tag -v v0.8.0",
     "git tag --contains HEAD",
     "git tag --sort=-creatordate | head",
+    # Wartość ``--sort`` i ``--format`` w osobnym słowie nie jest nazwą tagu (#1414 r2 D2).
+    "git tag --sort version:refname",
+    "git tag --sort -version:refname | tail -3",
+    "git tag --format '%(refname:short) %(creatordate:short)'",
     "git tag -n5",
     "git tag --merged origin/main",
     "git tag proba-123",
@@ -347,7 +386,7 @@ def test_forma_wydania_w_tekscie_argumentu_nie_jest_poleceniem(template: Templat
     assert hook.releases(searched) is False
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="brak basha")
+@pytest.mark.skipif(sys.platform == "win32", reason="na Windows bash to zaślepka WSL, która bez dystrybucji pada")
 @pytest.mark.parametrize("template", TEMPLATES, ids=lambda template: " ".join(template.words[:3]))
 def test_szablony_wlasnosci_to_poprawne_polecenia_basha(template: Template) -> None:
     command = template.text(["'"] * len(template.words), [True] * len(template.words))

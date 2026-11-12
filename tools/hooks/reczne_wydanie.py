@@ -7,7 +7,8 @@ odrzuca więc (kod 2, przyczyna z drogą przez skill na stderr trafia do agenta)
 polecenie proste, którego programem jest ``git``, ``gh`` albo ``gh-axi`` (także ze ścieżką, za przypisaniem zmiennej
 albo za ``env``, ``timeout``, ``nice``, ``nohup``, ``command``, ``exec``, ``sudo`` czy ``time``), a w nim:
 
-- ``gh release`` z innym podpoleceniem niż ``list``, ``ls``, ``view``, ``download``, ``verify`` i ``verify-asset``;
+- ``gh release`` z innym podpoleceniem niż ``list``, ``ls``, ``view``, ``download``, ``verify`` i ``verify-asset``,
+  bez ``--help``;
 - ``gh api`` z zapisem (``-X``/``--method`` innym niż ``GET`` i ``HEAD``, a bez metody z ``-f``, ``-F``,
   ``--field``, ``--raw-field`` albo ``--input``) na adres z segmentem ``releases`` albo na ``git/refs``, gdy adres
   albo pole wskazuje ``refs/tags/`` z nazwą od ``v`` albo nieznaną (``$``, ``*``) albo gdy treść idzie z pliku
@@ -21,11 +22,14 @@ albo za ``env``, ``timeout``, ``nice``, ``nohup``, ``command``, ``exec``, ``sudo
 
 Polecenie dzieli na słowa jak bash ``shlex`` w trybie POSIX: napis w cudzysłowie to jedno słowo bez cudzysłowów,
 ``\\`` z nową linią to dalszy ciąg polecenia, a polecenie proste kończy się na ``;``, ``&``, ``&&``, ``|``, ``||``,
-nowej linii, nawiasie i `` ` ``. Ciała heredoców pomija (``_without_heredocs`` hooka ``czekanie.py``), przekierowania
-z ich celem i deskryptorem (``2>&1``) nie są argumentami, ``#`` na początku słowa zaczyna komentarz do końca linii, a skrypt ``-c`` powłoki
-(``bash``, ``sh``, ``zsh``, ``dash``, ``ksh``) i argumenty ``eval`` ocenia jak polecenie. Gdy ``shlex`` nie umie
-podzielić polecenia (niezamknięty cudzysłów, ``\\`` na końcu), hook dzieli je tak samo, ale cudzysłowy i ``\\``
-traktuje jak zwykłe znaki i usuwa je ze słów, więc odmawia tylko wtedy, gdy forma Wydania stoi w poleceniu wprost.
+nowej linii i nawiasie. Podstawienie ``$(…)`` (także zagnieżdżone) i `` `…` `` bez cudzysłowu to w poleceniu jedno
+słowo o nieznanej treści, także w środku słowa (``$(git rev-parse HEAD):refs/tags/v1``), a jego treść hook ocenia
+jak osobne polecenie. Ciała heredoców pomija (``_without_heredocs`` hooka ``czekanie.py``), przekierowania z ich
+celem i deskryptorem (``2>&1``) nie są argumentami, ``#`` na początku słowa zaczyna komentarz do końca linii, a skrypt
+``-c`` powłoki (``bash``, ``sh``, ``zsh``, ``dash``, ``ksh``) i argumenty ``eval`` ocenia jak polecenie. Gdy
+``shlex`` nie umie podzielić polecenia (niezamknięty cudzysłów, ``\\`` na końcu), hook dzieli je tak samo, ale
+cudzysłowy i ``\\`` traktuje jak zwykłe znaki i usuwa je ze słów, więc odmawia tylko wtedy, gdy forma Wydania stoi
+w poleceniu wprost.
 
 Przechodzi wszystko, gdy sesja Claude Code ma w środowisku ``MAXIMISEART_WYDANIE=1`` (nazwa: ``RELEASE_OVERRIDE``
 w ``tools/lib/repo.py``), a zmienna wpisana w samo polecenie niczego nie zmienia. ``tools/wydanie.py`` zakłada tag
@@ -33,10 +37,13 @@ i Release z Pythona, więc hook go nie widzi i nie zatrzymuje.
 Granica: stronę GitHuba, skrypt z pliku albo w Pythonie, który sam woła ``git`` lub ``gh``, skrypt podany powłoce
 heredokiem, ``$(…)`` i `` `…` `` w cudzysłowie podwójnym, nazwę programu ze zmiennej albo aliasu, ``gh api graphql``
 (``createRef``), ``gh api`` z adresem ze zmiennej, ``push.followTags`` z konfiguracji gita i polecenie za ``#``
-w środku słowa w tej samej linii (``echo $#; git tag v1``) łapie tylko przegląd. Hook nie zna repozytorium, w którym
-polecenie biegnie, więc odmowę dostaje też tag ``v*`` w repozytorium próbnym (``git init`` w katalogu tymczasowym),
-Release innego repozytorium i push gałęzi o nazwie od ``v`` z cyfrą (``v2-redesign``). Czas ``shlex`` rośnie z kwadratem
-długości najdłuższego słowa: polecenie z napisem ponad ok. 1 MB przekracza ``timeout`` i przechodzi.
+w środku słowa w tej samej linii (``echo $#; git tag v1``) łapie tylko przegląd. Tak samo trzy rzadkie formy:
+polecenie w linii za komentarzem zakończonym ``\\`` (hook bierze ją za dalszy ciąg komentarza, a bash ją wykonuje),
+polecenie w liniach za ``<<`` w napisie albo w ``$((…))`` (``_without_heredocs`` bierze je za początek heredoku
+i pomija dalsze linie) i ciało funkcji ``function f { …; }``. Hook nie zna repozytorium, w którym polecenie biegnie,
+więc odmowę dostaje też tag ``v*`` w repozytorium próbnym (``git init`` w katalogu tymczasowym), Release innego
+repozytorium i push gałęzi o nazwie od ``v`` z cyfrą (``v2-redesign``). Czas ``shlex`` rośnie z kwadratem długości
+najdłuższego słowa: polecenie z napisem ponad ok. 1 MB przekracza ``timeout`` i przechodzi.
 
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version``
 w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową, ``czekanie.py`` obok i ``tools/lib/repo.py``
@@ -70,8 +77,12 @@ REFUSAL = (
 OPERATORS = ";&|()<>\n`"
 # ``\`` z nową linią poza parzystą liczbą ``\`` przed nim: bash usuwa je przed podziałem na słowa.
 CONTINUATION = re.compile(r"(?<!\\)((?:\\\\)*)\\\n")
-# ``#`` w środku słowa (``$#``, ``issues#1``) nie zaczyna komentarza, a ``shlex`` zaczyna go tam także.
-INNER_HASH = re.compile(r"(?<=[^\s;&|()<>`])#")
+# Znaki, po których ``#`` zaczyna komentarz; ``#`` w środku słowa (``$#``, ``issues#1``) go nie zaczyna, a ``shlex``
+# zaczyna go tam także.
+WORD_BREAKS = " \t\r\n;&|()<>`"
+INNER_HASH = re.compile(f"(?<=[^{re.escape(WORD_BREAKS)}])#")
+# Słowo w miejscu podstawienia ``$(…)`` albo `` `…` ``: jego wartości hook nie zna.
+SUBSTITUTION_STANDIN = "$S"
 HASH_STANDIN = "\0"
 # Przekierowanie w słowie operatora (``2>&1`` daje ``>&``, ``&>``, ``<<<``); ``<(`` to podstawienie procesu.
 REDIRECTION = re.compile(r"&>>?|[<>]&|>\||<<<|<<-?|<>|>>|[<>](?!\()")
@@ -111,12 +122,93 @@ TAG_REF = re.compile(r"refs/tags/(?:v|[^A-Za-z0-9_.-]|$)")
 PUSHED_RELEASE = re.compile(r"v\d")
 PUSH_ALL_TAGS = frozenset({"--tags", "--follow-tags", "--mirror"})
 PUSH_VALUE_OPTIONS = frozenset({"-o", "--push-option", "--receive-pack", "--exec", "--repo"})
-TAG_VALUE_OPTIONS = frozenset({"-m", "--message", "-F", "--file", "-u", "--local-user", "--cleanup", "--trailer"})
+TAG_VALUE_OPTIONS = frozenset(
+    {"-m", "--message", "-F", "--file", "-u", "--local-user", "--cleanup", "--trailer", "--sort", "--format"}
+)
 TAG_SHORT_VALUES = frozenset("mFu")
 TAG_NOT_CREATING = frozenset("ldvn")
 TAG_NOT_CREATING_LONG = frozenset(
     {"--list", "--delete", "--verify", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"}
 )
+
+
+def _backtick_end(shell: str, index: int) -> int:
+    """Indeks `` ` ``, który zamyka `` ` `` pod ``index``, albo długość polecenia."""
+
+    index += 1
+    while index < len(shell) and shell[index] != "`":
+        index += 2 if shell[index] == "\\" else 1
+    return min(index, len(shell))
+
+
+def _closing(shell: str, index: int) -> int:
+    """Indeks ``)``, który zamyka ``(`` otwarty przed ``index`` (z zagnieżdżeniem i cudzysłowami), albo -1."""
+
+    depth = 1
+    while index < len(shell):
+        char = shell[index]
+        if char in "\\'\"":
+            index = _quoted_end(shell, index)
+            continue
+        depth += {"(": 1, ")": -1}.get(char, 0)
+        if depth == 0:
+            return index
+        index += 1
+    return -1
+
+
+def _quoted_end(shell: str, index: int) -> int:
+    """Indeks za napisem w cudzysłowie albo znakiem po ``\\`` pod ``index``; ``"…"`` mija ``$(…)`` i `` `…` `` w nim."""
+
+    if shell[index] == "\\":
+        return index + 2
+    if shell[index] == "'":
+        end = shell.find("'", index + 1)
+        return len(shell) if end < 0 else end + 1
+    index += 1
+    while index < len(shell) and shell[index] != '"':
+        if shell[index] == "\\":
+            index += 2
+        elif shell.startswith("$(", index):
+            end = _closing(shell, index + 2)
+            index = len(shell) if end < 0 else end + 1
+        elif shell[index] == "`":
+            index = _backtick_end(shell, index) + 1
+        else:
+            index += 1
+    return min(index + 1, len(shell))
+
+
+def _lifted(shell: str) -> tuple[str, list[str]]:
+    """Polecenie ze słowem ``$S`` w miejscu podstawień bez cudzysłowu i treść tych podstawień.
+
+    Napis w cudzysłowie i komentarz zostają w poleceniu bez zmian, tak jak podstawienie w nich.
+    """
+
+    outer: list[str] = []
+    substitutions: list[str] = []
+    index = 0
+    while index < len(shell):
+        char = shell[index]
+        if char in "\\'\"":
+            end = _quoted_end(shell, index)
+        elif char == "#" and (index == 0 or shell[index - 1] in WORD_BREAKS):
+            end = shell.find("\n", index)
+            end = len(shell) if end < 0 else end
+        elif shell.startswith("$(", index) or char == "`":
+            close = _closing(shell, index + 2) if char == "$" else _backtick_end(shell, index)
+            if close < 0:  # niezamknięte ``$(``: reszta zostaje, a nawias kończy polecenie
+                outer.append(shell[index:])
+                break
+            substitutions.append(shell[index + (2 if char == "$" else 1) : close])
+            outer.append(SUBSTITUTION_STANDIN)
+            index = close + 1
+            continue
+        else:
+            end = index + 1
+        outer.append(shell[index:end])
+        index = end
+    return "".join(outer), substitutions
 
 
 def _tokens(shell: str, quoting: bool) -> list[str]:
@@ -304,21 +396,22 @@ def _releases(program: str, arguments: list[str]) -> bool:
     group, rest = _subcommand(arguments, GH_VALUE_OPTIONS)
     if group == "release":
         command, _ = _subcommand(rest, GH_VALUE_OPTIONS)
-        return command is not None and command not in GH_RELEASE_READS
+        return command is not None and command not in GH_RELEASE_READS and "--help" not in rest
     return group == "api" and _writes_release_api(rest)
 
 
 def releases(command: str, depth: int = 0) -> bool:
     """Czy polecenie Basha zakłada tag Wydania albo GitHub Release poza narzędziem Wydań (formy z docstringu)."""
 
-    for words in _simple_commands(_without_heredocs(command)):
+    shell, substitutions = _lifted(_without_heredocs(command))
+    for words in _simple_commands(shell):
         program, arguments = _program(words)
         script = _shell_script(arguments) if program in SHELLS else " ".join(arguments) if program == "eval" else None
         if program in PROGRAMS and _releases(program, arguments):
             return True
         if script is not None and depth < MAX_DEPTH and releases(script, depth + 1):
             return True
-    return False
+    return depth < MAX_DEPTH and any(releases(script, depth + 1) for script in substitutions)
 
 
 def _release_tool() -> bool:
