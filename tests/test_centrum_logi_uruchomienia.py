@@ -1920,8 +1920,13 @@ HYPOTHESES = {
         ["szukanie"],
         "otwarcie zlecenia",
     ),
-    # 404 na stronie zlecenia, a 5xx po Emmetcie niżej: każda klasa statusu ma swój wiersz (#1440 r1).
     "D-strona-bledu-http": (
+        replace(STOPPED_AT_SECOND[1].in_efenix("617"), error_status=HTTPStatus.INTERNAL_SERVER_ERROR),
+        {"what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 500},
+        ["szukanie"],
+        "otwarcie zlecenia",
+    ),
+    "D-strona-bledu-http-404": (
         replace(STOPPED_AT_SECOND[1].in_efenix("617"), error_status=HTTPStatus.NOT_FOUND),
         {"what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 404},
         ["szukanie"],
