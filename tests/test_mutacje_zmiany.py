@@ -191,7 +191,7 @@ def test_mutacja_ktora_przezyla_testy_pliku_albo_nie_ma_testow_tez_trafia_do_zap
     assert all(entry["linie"] == [2] and len(entry["klucz"]) == 12 for entry in written)
 
 # Jak #674: zmiana dopisuje ``case`` brakującego wariantu, a gołe ``return`` po ``match`` w bazie robi to samo, więc testy
-# przepuszczają cofnięcie, które odrzuca mypy (``exhaustive-match``). Cofnięcia ``__all__`` (#675) nie ma: nic go nie czyta (#1340).
+# przepuszczają cofnięcie, które odrzuca mypy (``exhaustive-match``). Jak #675: ``__all__`` nie czyta ani test, ani mypy.
 MATCH_BASE = (
     "from enum import Enum\n\n__all__ = [\"Kolor\"]\n\n\n"
     "class Kolor(Enum):\n    CZERWONY = 1\n    ZIELONY = 2\n\n\n"
@@ -234,6 +234,7 @@ def test_brama_typow_sprawdza_przezyte_mutacje_operatorow_a_cofniecie_do_bazy_tr
     assert sorted(_named(entry) for entry in written["przezyte"]) == [
         "src/rozliczenia/inny.py:2 zmiana linii 2 cofnięta do bazy",
         "src/rozliczenia/warunek.py:15 zmiana linii 15–23 cofnięta do bazy",
+        "src/rozliczenia/warunek.py:3 zmiana linii 3 cofnięta do bazy",
     ]
 
 
@@ -1348,10 +1349,6 @@ def test_w_pliku_z_pydantic_adnotacja_i_alias_typu_zostaja_mutacja() -> None:
 # bazy; ``None``, gdy zmiana tylko dodała linię, a cofnięcie ją usuwa).
 FUTURE = "from __future__ import annotations\n"
 NIEWIDOCZNE = {
-    "__all__ (czyta je tylko import *, którego nie wpuszcza ruff F403)": ('__all__ = ["a", "b"]\n\n\ndef a():\n    pass\n', 1, '__all__ = ["a"]'),
-    "dopisek do __all__": ('__all__ = ["a"]\n__all__ += ["b"]\n', 2, None),
-    "__all__ z adnotacją": ('__all__: list[str] = ["a", "b"]\n', 1, '__all__: list[str] = ["a"]'),
-    "__all__ w pliku z pydantic": ('from pydantic import BaseModel\n\n__all__ = ["M", "N"]\n', 3, '__all__ = ["M"]'),
     "typ zmiennej w funkcji (PEP 526: Python go nie wylicza)": ("def f() -> list[int]:\n    wynik: list[int] = []\n    return wynik\n", 2, "    wynik: list[str] = []"),
     "adnotacja dopisana do przypisania w funkcji": ("def f() -> list[int]:\n    wynik: list[int] = []\n    return wynik\n", 2, "    wynik = []"),
     "typ deklaracji bez wartości w funkcji": ("def f(a: bool) -> int:\n    x: int\n    x = 1 if a else 2\n    return x\n", 2, "    x: str"),
@@ -1375,7 +1372,14 @@ PRYWATNA_W = FUTURE + "from dataclasses import dataclass\n{0}\n\n\n@dataclass\nc
 # Kontrprzykłady przeglądów #1359 (rundy 1 i 2) pokazują, że czytania pól, ``TypeVar`` i ``Protocol`` z innego pliku
 # nie rozstrzyga analiza jednego pliku, więc te adnotacje zostają mutacjami.
 WIDOCZNE = {
+    # ``__all__`` jak na ``main`` (runda 3: plik czyta je też napisem, a wartość bywa wyliczana przy imporcie).
+    "__all__": ('__all__ = ["a", "b"]\n\n\ndef a():\n    pass\n', 1, '__all__ = ["a"]'),
+    "dopisek do __all__": ('__all__ = ["a"]\n__all__ += ["b"]\n', 2, None),
     "__all__ czytane w pliku": ('__all__ = ["a"]\nNAZWY = list(__all__)\n', 1, "__all__ = []"),
+    "__all__ czytane przez globals()": ('__all__ = ["a", "b"]\nNAZWY = tuple(globals()["__all__"])\n', 1, '__all__ = ["a"]'),
+    "__all__ czytane przez vars()": ('__all__ = ["a", "b"]\nNAZWY = tuple(vars()["__all__"])\n', 1, '__all__ = ["a"]'),
+    "__all__ czytane przez getattr(sys.modules)": ('import sys\n\n__all__ = ["a", "b"]\nNAZWY = getattr(sys.modules[__name__], "__all__")\n', 3, '__all__ = ["a"]'),
+    "__all__ z wartością wyliczaną przy imporcie": ('__all__ = _reg("a")\n', 1, '__all__ = _reg("b")'),
     "alias typu w ciele klasy (atrybut klasy)": ("class A:\n    Typ = list[int]\n", 2, "    Typ = list[str]"),
     "dodana deklaracja zmiennej w funkcji (zmienia jej zasięg)": ("def f() -> int:\n    x: int\n    return x\n", 2, None),
     "zmiana nazwy deklarowanej zmiennej w funkcji": ("def f() -> None:\n    x: int\n", 2, "    y: int"),
@@ -1384,6 +1388,8 @@ WIDOCZNE = {
     "adnotacja pola klasy z funkcji (Python ją wylicza)": ("def f() -> object:\n    class A:\n        n: int = 1\n    return A\n", 3, "        n: Nieznany = 1"),
     # Run 42783639074: cofnięcie ``__all__`` w ``efenix_checks.py`` usuwało też import ``normalize_text`` (WYKRYTA).
     "cofnięcie usuwa import nazwy, którą kod wywołuje": ("from .text import normalize_text\n\n\ndef f(s: str) -> str:\n    return normalize_text(s)\n", 1, None),
+    "cofnięcie usuwa import pod aliasem, który kod wywołuje": ("from .text import normalize_text as nt\n\n\ndef f(s: str) -> str:\n    return nt(s)\n", 1, None),
+    "cofnięcie usuwa import pakietu, którego moduł kod czyta": ("import os.path\n\n\ndef f() -> str:\n    return os.sep\n", 1, None),
     # Runda 1: pydantic czyta pole prywatnej dataclassy przez alias, argument nazwany, ``RootModel`` albo dekorator, a
     # plik przez ``fields``/``__annotations__``.
     "alias z prywatną dataclassą w polu modelu pydantic": (PRYWATNA_W.format("from pydantic import BaseModel", "Lista = list[_W]\n\n\nclass M(BaseModel):\n    x: Lista\n"), 8, "    n: str"),
@@ -1421,6 +1427,16 @@ WIDOCZNE = {
 @pytest.mark.parametrize(("code", "line", "old"), WIDOCZNE.values(), ids=WIDOCZNE.keys())
 def test_cofniecie_ktore_zmienia_zachowanie_albo_adnotacje_czytana_w_czasie_wykonania_zostaje_mutacja(code: str, line: int, old: str | None) -> None:
     assert _reverted(code, line, old) is not None
+
+
+def test_cofniecie_adnotacji_w_funkcji_razem_z_importem_nazwy_czytanej_w_innym_fragmencie_zostaje_mutacja() -> None:
+    # Fragment z linii 2–3 dodaje import ``g`` i zmienia tylko adnotację, a ``g`` czyta fragment z linii 5: na ``main``
+    # cofnięcie było mutacją przez adnotację, a bez importu kończy kod ``NameError``.
+    code = "def f() -> int:\n    from .x import g\n    wynik: int = 1\n    n = 0\n    return wynik + g() + n\n"
+
+    found = mutants("m.py", code, [Hunk(2, 2, ("    wynik: str = 1",))])
+
+    assert [mutant.source for mutant in found if mutant.revert] == ["def f() -> int:\n    wynik: str = 1\n    n = 0\n    return wynik + g() + n\n"]
 
 
 def _reverted(code: str, line: int, old: str | None) -> str | None:

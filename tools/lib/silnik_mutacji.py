@@ -33,10 +33,10 @@ ostatnim przebiegu testów noc zgłasza w issue z dopiskiem, że nie dała jej w
 wiersza poleceń, którego używa przegląd PR, oba są porażką.
 
 Noc nie robi mutacji (ani cofnięcia fragmentu do bazy), która zmienia tylko to, czego Python z konstrukcji nie czyta
-w czasie wykonania: docstringi, ``__all__``, adnotacje zmiennych w ciele funkcji, import nazwy, której kod nie czyta,
-i adnotacje funkcji oraz aliasy typów poza plikiem z pydantic albo FastAPI (#1340, lista w ``--help``
-``tools/mutacje_zmiany.py``);
-pola klas, zmienne modułu, ``TypeVar`` i ``Protocol``, które może czytać inny plik, dalej dają mutacje.
+w czasie wykonania: docstringi, adnotacje zmiennych w ciele funkcji, import nazwy, której kod nie czyta, i adnotacje
+funkcji oraz aliasy typów poza plikiem z pydantic albo FastAPI (#1340, lista w ``--help`` ``tools/mutacje_zmiany.py``);
+pola klas, zmienne modułu, ``__all__``, ``TypeVar`` i ``Protocol``, które może czytać inny plik albo ten sam przez
+napis, dalej dają mutacje.
 Mutację, którą polecenie przepuściło (NIEWYKRYTA, PRZEKROCZONY CZAS), noc (poza cofnięciem fragmentu do bazy, które
 przywraca kod, który bramę przeszedł) i ``check_all`` skryptów skilli sprawdzają jeszcze bramą typów (``type_gate``):
 krokami ruff i mypy obu systemów bramy pre-push (``tools/ci_lokalnie.py --tylko ruff,mypy``) na kopii z mutacją, z

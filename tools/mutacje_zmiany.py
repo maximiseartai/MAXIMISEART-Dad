@@ -32,18 +32,18 @@ zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. 
 inna mutacja (bez elementu krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia
 jej wyjątku (``Mutant.line``).
 
-Mutacja, która zmienia tylko docstringi, komentarze, ``__all__``, adnotacje zmiennych w funkcji, adnotacje argumentów
-i wyników funkcji, importy albo aliasy typów (``Nazwa = Callable[...]``, ``A | B`` czytane tylko w adnotacjach), nie
-zmienia zachowania, więc jej nie ma; dotyczy to także cofnięcia fragmentu. ``__all__`` czyta tylko ``from m import *``,
-którego nie wpuszcza ruff F403, a w repozytorium nic nie czyta ``__all__`` innego modułu. Adnotacji zmiennej w ciele
-funkcji (także ``self.x: T = v``) Python nie wylicza ani nie zapisuje (PEP 526), ale deklaracja ``x: T`` bez wartości
-zostaje, bo czyni nazwę lokalną; ciało klasy w funkcji to nie ciało funkcji. W pliku z pydantic albo FastAPI adnotacje
-funkcji i aliasy typów zostają, bo te biblioteki je czytają. Zostają zawsze adnotacje pól klas i zmiennych modułu,
+Mutacja, która zmienia tylko docstringi, komentarze, adnotacje zmiennych w funkcji, adnotacje argumentów i wyników
+funkcji, importy albo aliasy typów (``Nazwa = Callable[...]``, ``A | B`` czytane tylko w adnotacjach), nie zmienia
+zachowania, więc jej nie ma; dotyczy to także cofnięcia fragmentu. Adnotacji zmiennej w ciele funkcji (także
+``self.x: T = v``) Python nie wylicza ani nie zapisuje (PEP 526), ale deklaracja ``x: T`` bez wartości zostaje, bo
+czyni nazwę lokalną; ciało klasy w funkcji to nie ciało funkcji. W pliku z pydantic albo FastAPI adnotacje funkcji i
+aliasy typów zostają, bo te biblioteki je czytają. Zostają zawsze adnotacje pól klas i zmiennych modułu, ``__all__``,
 argumenty ``TypeVar`` i deklaracje ``Protocol``: czy czyta je w czasie wykonania inny plik (``get_type_hints(m._W)``,
-``from m import _W`` w polu modelu pydantic, model ``Generic`` z ``TypeVar`` z innego pliku), z jednego pliku nie
-widać (#1340). Z importu liczy się tylko to, czy nazwę, którą kod czyta poza pominiętymi adnotacjami, coś importuje:
-cofnięcie, które usuwa jej import, kończy kod ``NameError``, a zmiana modułu, z którego przychodzi, przy reeksporcie
-nie zmienia nic (granica: inny obiekt pod tą samą nazwą filtr też pomija).
+``from m import _W`` w polu modelu pydantic, model ``Generic`` z ``TypeVar`` z innego pliku) albo ten sam plik przez
+napis (``globals()["__all__"]``), z jednego pliku nie widać (#1340). Z importu liczy się tylko to, czy nazwę, którą kod
+czyta poza pominiętymi adnotacjami, coś importuje: cofnięcie, które usuwa jej import, kończy kod ``NameError``, a
+zmiana modułu, z którego przychodzi, przy reeksporcie nie zmienia nic (granica: inny obiekt pod tą samą nazwą filtr też
+pomija).
 Dekoratorów narzędzie nie psuje, a samo usunięcie linii (bez linii dodanej w tym miejscu) nie daje mutacji.
 Kod, którego na tym systemie strzeże ``sys.platform ==``/``!=`` literał, dostaje linię ``POMINIĘTA``: gałąź ``if``
 albo ``… if … else …`` innego systemu, kod po ``if`` z takim warunkiem, którego ciało kończy się ``return``/``raise``
@@ -84,9 +84,9 @@ błędny (niezdefiniowana nazwa, błąd składni, błąd typów), to ``WYKRYTA P
 nie trafia do zapisu ani do issue (``silnik_mutacji.wrong``). Cofnięcia fragmentu do bazy (``Mutant.revert``) brama nie
 sprawdza: przywraca ono kod, który przeszedł bramę, więc jej błąd na nim powstaje tylko z niezgodności z niecofniętymi
 fragmentami tej samej zmiany (import, adnotacja, typ w innym miejscu). Pełne cofnięcie zmiany przeszłoby bramę, a testy
-by go nie złapały, więc takie cofnięcie przeżywa i trafia do issue. Cofnięcia samego ``__all__`` albo adnotacji z
-listy wyżej (#675, #1340) nie ma; gdy zmiana była tylko typów, które zostają (pole klasy, ``TypeVar``, ``Protocol``), a
-nic ich nie czyta, agent odpowiada ``nie warto`` (#671, #674).
+by go nie złapały, więc takie cofnięcie przeżywa i trafia do issue. Cofnięcia samej adnotacji z listy wyżej (#1340)
+nie ma; gdy zmiana była tylko typów albo ``__all__``, które zostają (pole klasy, ``TypeVar``, ``Protocol``), a nic ich
+nie czyta, agent odpowiada ``nie warto`` (#671, #674, #675).
 Linia ``CZAS`` mówi, ile trwała każda faza, także brama typów.
 
 Mutacja, która przeżywa, to obietnica bez testu: dopisz test, który ją wykrywa. Mutacja równoważna (kod robi to samo)
@@ -533,16 +533,17 @@ def _candidates(node: ast.AST, source: _Source, exit_codes: dict[int, tuple[ast.
 
 
 def _meaning(text: str) -> str:
-    """Kod bez tego, czego test nie widzi: docstringów, ``__all__``, adnotacji zmiennych w funkcji, adnotacji funkcji,
-    importów i aliasów typów.
+    """Kod bez tego, czego test nie widzi: docstringów, adnotacji zmiennych w funkcji, adnotacji funkcji, importów i
+    aliasów typów.
 
     Adnotacje argumentów i wyników (``from __future__ import annotations``) nie działają w czasie wykonania. W pliku z
     pydantic albo FastAPI adnotacje i aliasy decydują o walidacji i trasach, więc zostają; tam pomija się tylko
-    docstringi, ``__all__``, adnotacje zmiennych w funkcji i importy. Adnotacje pól i zmiennych modułu, ``TypeVar`` i
-    deklaracje ``Protocol`` zostają zawsze: czy czyta je w czasie wykonania inny plik (``get_type_hints(m._W)``, pole
-    modelu pydantic, model ``Generic``), z tego pliku nie widać (#1340, przegląd #1359). Z importów zostają nazwy, które
-    kod czyta: cofnięcie, które usuwa import takiej nazwy, kończy kod ``NameError`` (run 42783639074: trzy cofnięcia
-    ``__all__`` z importem obok były WYKRYTA).
+    docstringi, adnotacje zmiennych w funkcji i importy. Adnotacje pól i zmiennych modułu, ``__all__``, ``TypeVar`` i
+    deklaracje ``Protocol`` zostają zawsze: czy czyta je w czasie wykonania inny plik albo ten sam przez napis
+    (``get_type_hints(m._W)``, pole modelu pydantic, model ``Generic``, ``globals()["__all__"]``), z tego pliku nie
+    widać (#1340, przegląd #1359). Z importów zostają nazwy, które kod czyta: cofnięcie, które usuwa import takiej nazwy
+    razem z pominiętą adnotacją, kończy kod ``NameError`` (run 42783639074: trzy cofnięcia z importem obok były
+    WYKRYTA).
     """
 
     tree = ast.parse(text)
@@ -560,8 +561,8 @@ def _meaning(text: str) -> str:
     }
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, *_FUNCTIONS)):
-            module = isinstance(node, ast.Module)
-            node.body = [statement for statement in node.body if not _invisible(statement, loaded, module=module, aliases=not runtime)]
+            module = isinstance(node, ast.Module) and not runtime
+            node.body = [statement for statement in node.body if not _invisible(statement, loaded, module=module)]
     return f"{ast.dump(tree)} {sorted(imported & loaded)}"
 
 
@@ -624,20 +625,21 @@ def _type_form(value: ast.expr) -> bool:
     return name is not None and (name in _TYPE_FORMS or (name[:1].isupper() and not name.isupper()))
 
 
-def _invisible(statement: ast.stmt, loaded: set[str], *, module: bool, aliases: bool) -> bool:
+def _invisible(statement: ast.stmt, loaded: set[str], *, module: bool) -> bool:
     if isinstance(statement, (ast.Import, ast.ImportFrom)):
         return True
     if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
         return True
-    targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target] if isinstance(statement, (ast.AnnAssign, ast.AugAssign)) else []
-    if not module or len(targets) != 1 or not isinstance(targets[0], ast.Name) or targets[0].id in loaded:
-        return False
-    # ``__all__`` czyta tylko ``from m import *``, którego nie wpuszcza ruff F403, a w ``src/``, ``tools/``, ``tests/``
-    # i ``.agents/`` nic nie czyta ``__all__`` innego modułu (12.11.2026: ``grep __all__`` daje tylko przypisania).
-    if targets[0].id == "__all__":
-        return True
     # Alias typu modułu (``Nazwa = Callable[...]`` albo ``A | B``) czytany tylko w adnotacjach.
-    return aliases and isinstance(statement, ast.Assign) and isinstance(statement.value, (ast.Subscript, ast.BinOp)) and _type_form(statement.value)
+    return (
+        module
+        and isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and isinstance(statement.targets[0], ast.Name)
+        and statement.targets[0].id not in loaded
+        and isinstance(statement.value, (ast.Subscript, ast.BinOp))
+        and _type_form(statement.value)
+    )
 
 
 def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.platform) -> list[Mutant]:
