@@ -281,13 +281,15 @@ order to them or to the day of the subject, and the cell's own entries go with t
 the click, after a Przeniesienie and after Dad's change of `WYKONAWCA` or of the day alike, only while the number has
 one order in the days the process reads, after today too (`_moves._carried`), so for the one cell the model has it is
 the newest Wpis of `NowyMail`, whoever sent it and whichever day its subject has; a mistaken subject (two or more
-Wpisy with another day) only decides which order the Wpis reaches, and a Raport wykonawcy whose day lies in a period
+Wpisy with another day; an order of a number the tool added counts for none, `_matching._Placed.added`, #1374 r4)
+only decides which order the Wpis reaches, and a Raport wykonawcy whose day lies in a period
 with a Plik zbiorczy reaches an order of an open day only that way, so both are `NowyMail` too. Dad's change of
 `WYKONAWCA` or of the day (the memory of the number `OwnMove`, found by `_model.memories_of`, and the rule
 `_model.may_move`, whose transition table `tests/test_rdzen_raportow.py` checks as a property) only leaves an older
-Wpis in force, which `NowyMail` also covers. A number the read days hold in several orders (a closed day or one after
-today too) moves none of them and reaches only the sender's one order in the day of the subject (`_matching.Board`),
-otherwise a problem, which also only leaves an older Wpis in force. Its cells keep no own entries in the memory
+Wpis in force, which `NowyMail` also covers. A number the process reads in several rows (several orders, a closed day
+or one after today too, or an order and a row the core makes no order from, `ReportInputs.present`, #1374 r4) moves
+none of them and reaches only the sender's one order in the day of the subject (`_matching.Board`), otherwise a
+problem, which also only leaves an older Wpis in force. A number in several orders keeps no own entries in the memory
 (`_cells.reconcile`, #1367 r4: Excel does not tell which row of the number is which after Dad deletes, merges or swaps
 them), so after the click that wrote it the tool's own entry counts as Dad's value, as after `TataZmienia`: a later
 Wpis with another content gives a `ManualDifference` at the tool's own entry, which BezFalszywejRoznicy forbids for
@@ -298,8 +300,9 @@ only at the number's one order with the same day and Wykonawca as when it was sa
 makes its cell Dad's value as above (`OlderOwnEntries.upgraded`, #1367 r5); the model starts from a memory this code
 wrote. A Zlecenie dopisane z raportu (#1354) is, for the one cell, the empty cell that `Zapis` fills with the Wpis and
 remembers as the tool's own entry (`_cells.with_added`); only a number no row the process reads holds becomes one
-(`ReportInputs.present`, also a Surowe zlecenie and a row the core makes no order from: without `WYKONAWCA`, with the
-date as text, pasted from the app between ordered rows), so it never doubles a number of any row the process read. Dad
+(`ReportInputs.present`, also a Surowe zlecenie, a row the core makes no order from: without `WYKONAWCA`, with the
+date as text, pasted from the app between ordered rows, and a row from the week before the first open day, before the
+rollout day too: `Window.numbers_since`), so it never doubles a number of any row the process read. Dad
 deleting the added row leaves no value of his that a write could overwrite, and the click after it adds the row again
 only for a fresher mail (`_model.may_move` with the memory of the number), which the model's write into an empty cell
 over-approximates. The rollout day (it only moves the start of the window later, which leaves cells out), the reading

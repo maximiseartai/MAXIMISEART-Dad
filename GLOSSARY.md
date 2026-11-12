@@ -299,8 +299,9 @@ Zlecenie, które Wpisanie raportów dopisało do Rejestru zleceń, bo numeru z
 Wpisu raportu, w postaci numeru z aplikacji firmowej (8 cyfr), nie ma w żadnym
 wierszu, który Wpisanie raportów czyta w Rejestrze: ani w zleceniach na jutro,
 ani w Surowym zleceniu, ani w wierszu, z którego nie powstaje zlecenie (bez
-`WYKONAWCA`, z datą tekstem, wklejonym z aplikacji między uporządkowanymi);
-numer z takiego wiersza to problem dla taty. Stoi pod zleceniami
+`WYKONAWCA`, z datą tekstem, wklejonym z aplikacji między uporządkowanymi), ani
+w wierszu z tygodnia przed pierwszym dniem otwartym, także sprzed dnia
+wdrożenia; numer z takiego wiersza to problem dla taty. Stoi pod zleceniami
 nadawcy w dniu z tematu i ma tylko `NUMER ZL.`, dzień, `WYKONAWCA`, `SKUTECZNE`
 i `CZYNNOŚCI ZREALIZOWANE`; resztę uzupełnia tata, a widok Raporty przypomina
 mu o tym, dopóki zlecenie nie ma `ADRES`. Nie powstaje, gdy temat raportu jest pomyłką, dzień z tematu nie
