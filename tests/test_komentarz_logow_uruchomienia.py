@@ -155,6 +155,8 @@ SUMMARY_LINES: dict[str, tuple[dict[str, Any], list[str]]] = {
         {"result": "BLAD_KRYTYCZNY", "ending": "after_engine", "stop_kind": "for_maks", "duration_ms": 12_345},
         ["- Czas: 12,3 s"],
     ),
+    "czas-tuz-pod-sekunda": ({"duration_ms": 999}, ["- Czas: 999 ms"]),
+    "czas-rowno-sekunda": ({"duration_ms": 1000}, ["- Czas: 1,0 s"]),
     "diagnoza": (
         {
             "diagnosis": {
@@ -221,6 +223,66 @@ def test_komentarz_postepu_wyceny_mowi_wyniki_zlecen_tymi_samymi_slowami_co_logi
         "- Zlecenia: 3 z 4 skończone (gotowe 1, błąd 2)",
         "- Ostatnie zlecenie: wiersz 20, błąd, `EFENIX_NIEZNANY_NUMER`",
     ]
+
+
+PRICING_START: Final = StartFacts(
+    run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 14, 8)
+)
+"""Start Wyceny w efenix ``RUN_ID``, której postęp i wynik bez Logów mówią komentarze niżej."""
+
+# Dziennik Wyceny w efenix → linie komentarza postępu o ostatnim zleceniu skończonym i zleceniu w trakcie: ostatnie bez
+# kodu Komunikatu ma tylko wiersz i wynik, a zlecenie w trakcie jest tylko wtedy, gdy dziennik ma zaczęte bez wyniku.
+PROGRESS_LINES: Final[dict[str, tuple[PricingProgress, list[str]]]] = {
+    "ostatnie-bez-kodu-i-zlecenie-w-trakcie": (
+        PricingProgress(PRICING_START, (OrderDone(19, OrderKind.READY, None),), 4, 20),
+        ["- Ostatnie zlecenie: wiersz 19, gotowe", "- W trakcie: wiersz 20"],
+    ),
+    "miedzy-zleceniami": (
+        PricingProgress(PRICING_START, (OrderDone(19, OrderKind.READY, None),), 4, None),
+        ["- Ostatnie zlecenie: wiersz 19, gotowe"],
+    ),
+}
+
+
+@pytest.mark.parametrize(("progress", "lines"), PROGRESS_LINES.values(), ids=PROGRESS_LINES.keys())
+def test_komentarz_postepu_wyceny_mowi_zlecenie_w_trakcie_i_ostatnie_skonczone_bez_kodu_tylko_wierszem_i_wynikiem(
+    progress: PricingProgress, lines: list[str]
+) -> None:
+    """Komentarz postępu Wyceny w efenix (#846) mówi zlecenie zaczęte w dzienniku bez wyniku, a ostatnie skończone bez
+    kodu Komunikatu tylko wierszem i wynikiem, bez pustego miejsca na kod."""
+
+    comment = progress_markdown(progress, elapsed_s=90).splitlines()
+
+    assert [line for line in comment if line.startswith(("- Ostatnie zlecenie:", "- W trakcie:"))] == lines
+
+
+# Dziennik Wyceny w efenix i wynik z wpisu końca → linie wyniku bez Logów, który start Centrum wysyła z dziennika (#910):
+# bez wpisu końca wynik jest nieznany, dziennik bez wpisu „zaczynam zlecenie” nie ma żadnego zlecenia, a zlecenie zaczęte
+# bez wyniku ma swoją linię.
+WITHOUT_LOGS_LINES: Final[dict[str, tuple[ResultWithoutLogs, list[str]]]] = {
+    "bez-wpisu-konca-i-bez-zlecen": (
+        ResultWithoutLogs(PricingProgress(PRICING_START, (), None, None), None, "nieczytelne"),
+        ["- Wynik: nieznany, dziennik Wyceny go nie ma", "- Zlecenia: dziennik Wyceny nie ma żadnego zlecenia"],
+    ),
+    "z-wpisem-konca-i-zleceniem-bez-wyniku": (
+        ResultWithoutLogs(
+            PricingProgress(PRICING_START, (OrderDone(18, OrderKind.READY, None),), 2, 19), "WYMAGA_SPRAWDZENIA", "niezapisane"
+        ),
+        ["- Wynik: WYMAGA_SPRAWDZENIA", "- Zlecenia: 1 z 2 skończone (gotowe 1)", "- Zlecenie bez wyniku: wiersz 19"],
+    ),
+}
+
+
+@pytest.mark.parametrize(("final", "lines"), WITHOUT_LOGS_LINES.values(), ids=WITHOUT_LOGS_LINES.keys())
+def test_wynik_bez_logow_mowi_wynik_nieznany_brak_zlecen_i_zlecenie_bez_wyniku_z_dziennika_wyceny(
+    final: ResultWithoutLogs, lines: list[str]
+) -> None:
+    """Wynik bez Logów, który start Centrum wysyła z dziennika Wyceny w efenix (``comment_versions.close``), mówi słowami,
+    że dziennik nie ma wyniku albo żadnego zlecenia, zamiast pustego pola, i wiersz zlecenia zaczętego bez wyniku."""
+
+    comment = without_logs_markdown(final).splitlines()
+
+    assert [line for line in comment if line.startswith(("- Wynik:", "- Zlecenia:", "- Zlecenie bez wyniku:"))] == lines
 
 
 def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archiwum_logow_okresu() -> None:
