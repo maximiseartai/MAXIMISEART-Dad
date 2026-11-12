@@ -897,6 +897,17 @@ export const zReportsDay = z.object({
 });
 
 /**
+ * ReportsNote
+ *
+ * Informacja z ostatniego kliknięcia przy dniu Wykonawcy o zmianie, którą Centrum zrobiło w INTERMAX (ADR 0029):
+ * numer zlecenia i krótkie zdanie, np. „przejęte od …” albo „przekazane …”. Nie jest problemem ani Zgłoszeniem.
+ */
+export const zReportsNote = z.object({
+    number: z.string(),
+    text: z.string()
+});
+
+/**
  * ReportsOrder
  *
  * Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
@@ -931,8 +942,8 @@ export const zReportsProblem = z.object({
  *
  * Dzień Wykonawcy z ostatniego kliknięcia: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po
  * kliknięciu, kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”,
- * numery zleceń bez żadnego Wpisu i zlecenia dnia (``orders_detail``; ``None``: wynik kliknięcia sprzed listy zleceń,
- * dopóki tata nie kliknie znowu).
+ * informacje o Przeniesieniach zleceń (``notes``), numery zleceń bez żadnego Wpisu i zlecenia dnia (``orders_detail``;
+ * ``None``: wynik kliknięcia sprzed listy zleceń, dopóki tata nie kliknie znowu).
  */
 export const zReportsWorkerDay = z.object({
     day: z.iso.date(),
@@ -941,6 +952,7 @@ export const zReportsWorkerDay = z.object({
     mails: z.int(),
     without_report: z.array(z.string()),
     problems: z.array(zReportsProblem),
+    notes: z.array(zReportsNote),
     orders_detail: z.array(zReportsOrder).nullable(),
     reminders: z.array(z.iso.datetime())
 });
@@ -948,7 +960,8 @@ export const zReportsWorkerDay = z.object({
 /**
  * ReportsWorker
  *
- * Wykonawca z ostatniego kliknięcia i jego dni ze zleceniami, Raportem wykonawcy albo problemem, od najstarszego.
+ * Wykonawca z ostatniego kliknięcia i jego dni ze zleceniami, Raportem wykonawcy, problemem albo informacją, od
+ * najstarszego.
  */
 export const zReportsWorker = z.object({
     worker: z.string(),

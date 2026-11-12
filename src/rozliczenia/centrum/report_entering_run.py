@@ -14,7 +14,7 @@ US 46 i 51).
 
 Widok Raporty pokazuje wynik ostatniego udanego kliknięcia z pliku wyniku, bez czytania skrzynki, dla całego okna
 tego kliknięcia: każdy dzień z nazwą święta (``public_holidays``), a przy każdym Wykonawcy jego dni z liczbami,
-problemami i zleceniami dnia (#1319, #1322). Problemy łączy przy odczycie z decyzjami „Zostaw moją”: różnica, przy
+problemami, informacjami o Przeniesieniach zleceń i zleceniami dnia (#1319, #1322, #1347). Problemy łączy przy odczycie z decyzjami „Zostaw moją”: różnica, przy
 której tata kliknął „Zostaw moją” z tą samą treścią Wpisu, znika z widoku od razu, także gdy wynik pochodzi z
 kliknięcia sprzed decyzji, a jej zlecenie jest wtedy wpisane. „Zostaw moją” zapisuje decyzję w pliku decyzji, nigdy w
 INTERMAX, i tylko przy różnicy z wyniku ostatniego kliknięcia (spec #1224, US 38–39 i 52–58).
@@ -41,7 +41,7 @@ from rozliczenia.centrum.contract import report_entering as report_entering_cont
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, HostParts, NeededSetting, PathNeed, PreparedRun, Start
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
-from rozliczenia.centrum.report_entering_state import FileReportState, ShownProblem, ShownResult, ShownWorker
+from rozliczenia.centrum.report_entering_state import FileReportState, ShownNote, ShownProblem, ShownResult, ShownWorker
 from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia.centrum.settings import Settings, SettingsStore
@@ -170,7 +170,7 @@ def _view(
     shown: ShownResult | None, kept: frozenset[Kept], today: date, reminders: ShownReminders
 ) -> report_entering_contract.ReportsView:
     """Całe okno wyniku ``shown`` bez różnic, przy których tata kliknął „Zostaw moją” (``kept``): dni otwarte ostatniego
-    kliknięcia i dziś od najstarszego, Wykonawcy alfabetycznie z dniami, które mają liczby albo problem. Chwila
+    kliknięcia i dziś od najstarszego, Wykonawcy alfabetycznie z dniami, które mają liczby, problem albo informację. Chwila
     kliknięcia jest w UTC, jak każda chwila kontraktu, a przeglądarka pokazuje ją w czasie komputera taty.
 
     Przy dniu Wykonawcy stoją chwile Przypomnień o raporcie za ten dzień z ``reminders``. Przypomnienie za dzień, którego
@@ -190,11 +190,21 @@ def _view(
     for problem in problems:
         if problem.worker is not None:
             placed[problem.worker, problem.day].append(problem)
+    noted: defaultdict[tuple[str, date], list[ShownNote]] = defaultdict(list)
+    for found in shown.notes:
+        noted[found.worker, found.day].append(found)
     figures = {(worker.worker, worker.day): worker for worker in shown.workers}
     days: defaultdict[str, list[report_entering_contract.ReportsWorkerDay]] = defaultdict(list)
-    for name, day in sorted(figures.keys() | placed.keys()):
+    for name, day in sorted(figures.keys() | placed.keys() | noted.keys()):
         days[name].append(
-            _worker_day(day, figures.get((name, day)), placed[name, day], shown.detailed, reminders.sent.get((name, day), ()))
+            _worker_day(
+                day,
+                figures.get((name, day)),
+                placed[name, day],
+                noted[name, day],
+                shown.detailed,
+                reminders.sent.get((name, day), ()),
+            )
         )
     return report_entering_contract.ReportsView(
         clicked_at=shown.clicked_at.astimezone(timezone.utc),
@@ -218,10 +228,16 @@ def _days(days: set[date]) -> list[report_entering_contract.ReportsDay]:
 
 
 def _worker_day(
-    day: date, figure: ShownWorker | None, problems: list[ShownProblem], detailed: bool, reminders: tuple[datetime, ...]
+    day: date,
+    figure: ShownWorker | None,
+    problems: list[ShownProblem],
+    notes: list[ShownNote],
+    detailed: bool,
+    reminders: tuple[datetime, ...],
 ) -> report_entering_contract.ReportsWorkerDay:
-    """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem, zera), problemami ``problems`` i
-    chwilami Przypomnień o raporcie ``reminders``; stan zlecenia daje ``OrderState.of`` z numerów problemów dnia."""
+    """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem albo informacją, zera), problemami
+    ``problems``, informacjami ``notes`` i chwilami Przypomnień o raporcie ``reminders``; stan zlecenia daje
+    ``OrderState.of`` z numerów problemów dnia."""
 
     numbers = {problem.number for problem in problems}
     orders = () if figure is None else figure.orders_detail
@@ -234,6 +250,7 @@ def _worker_day(
         mails=0 if figure is None else figure.mails,
         without_report=[] if figure is None else list(figure.without_report),
         problems=[_problem(problem) for problem in problems],
+        notes=[report_entering_contract.ReportsNote(number=found.number, text=found.text) for found in notes],
         orders_detail=None
         if orders is None
         else [

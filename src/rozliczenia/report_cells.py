@@ -1,15 +1,17 @@
-"""Zmiana komórki Wpisania raportów: którą komórkę uporządkowanego zlecenia w INTERMAX i na jaki tekst zmienić.
+"""Zmiany Wpisania raportów w INTERMAX: którą komórkę uporządkowanego zlecenia zmienić na jaki tekst i które zlecenie
+przenieść do którego Wykonawcy (Przeniesienie zlecenia, ADR 0029).
 
-Rdzeń Wpisania raportów zwraca listę takich zmian bez Excela, a zapis do INTERMAX (``intermax_cells.write_cells``)
-przyjmuje tylko ją (ADR 0028). Moduł nie zna skoroszytu, więc rdzeń może go brać i w chmurze (#1161).
+Rdzeń Wpisania raportów zwraca listy takich zmian bez Excela, a zapis do INTERMAX (``intermax_cells.write_cells``)
+przyjmuje tylko je (ADR 0028). Moduł nie zna skoroszytu, więc rdzeń może go brać i w chmurze (#1161).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum
 
-__all__ = ["CellChange", "OrderRow", "ReportColumn"]
+__all__ = ["CellChange", "OrderMove", "OrderRow", "ReportColumn"]
 
 
 class ReportColumn(Enum):
@@ -34,3 +36,15 @@ class CellChange:
     order: OrderRow
     column: ReportColumn
     value: str
+
+
+@dataclass(frozen=True)
+class OrderMove:
+    """Przeniesienie zlecenia: wiersz ``order``, tak jak go przeczytał proces, przed zmianami kliknięcia, dostaje w
+    ``WYKONAWCA`` tekst ``worker`` i staje pod ostatnim zleceniem tego Wykonawcy w dniu ``day``, a gdy Wykonawca nie ma
+    w tym dniu segmentu, w nowym segmencie na jego miejscu w kolejności alfabetycznej. Zapis przenosi dziś tylko w
+    obrębie dnia zlecenia (``day`` to jego dzień)."""
+
+    order: OrderRow
+    day: date
+    worker: str

@@ -285,9 +285,9 @@ def _points(world: World, scheduler: Scheduler) -> Iterator[None]:
         scheduler.point(CHECK, fails="niezgodny")
         real_check(register, written, area, block, plan)
 
-    def check_cells(register: register_file.RegisterFile, written: bytes, cells: Any) -> None:
+    def check_cells(register: register_file.RegisterFile, written: bytes, cells: Any, moves: Any = None) -> None:
         scheduler.point(CHECK_CELLS, fails="niezgodny")
-        real_check_cells(register, written, cells)
+        real_check_cells(register, written, cells, moves)
 
     def is_open(path: Path) -> bool:
         if path == world.register:
