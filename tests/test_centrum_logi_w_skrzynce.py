@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 import gzip
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -39,6 +40,7 @@ from odtworzenie import (
     Verdict,
     first_difference,
     replay,
+    stop_cause,
 )
 from rozliczenia import tool_files
 from rozliczenia.tool_files import REPORT_ENTERING_STATE
@@ -905,6 +907,52 @@ def _efenix(
     return Produced(_archive_file(centrum, tmp_path), ("--efenix-dzis", TODAY.isoformat()))
 
 
+# Strona zlecenia Wykonawcy z drugiego wiersza bez przycisku Emmetta: okno efenix staje na elemencie, którego szukało.
+_EMMETT_GONE = [IN_EFENIX[0], replace(PRICED[1].in_efenix("642"), changed=Changed.EMMETT_BUTTON)]
+
+# Logi, które wiele testów odtwarza albo zmienia w kopii w swoim ``tmp_path``, wyprodukowane raz na moduł i worker:
+# produkcja Wyceny to okno w Chromium na Atrapie efenix (~2,3 s). Logi z innymi parametrami są osobnym wpisem.
+SHARED: Final[dict[str, Callable[[Path], Produced]]] = {
+    "settlement": _settlement,
+    "efenix": _efenix,
+    "efenix_bez_emmetta": lambda folder: _efenix(folder, _EMMETT_GONE, "BLAD_KRYTYCZNY"),
+}
+
+
+def _fingerprint(folder: Path) -> dict[str, str]:
+    return {
+        path.relative_to(folder).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "folder"
+        for path in folder.rglob("*")
+    }
+
+
+@pytest.fixture(scope="module")
+def _shared_store() -> dict[str, tuple[Produced, dict[str, str]]]:
+    return {}
+
+
+@pytest.fixture
+def shared_logs(
+    _shared_store: dict[str, tuple[Produced, dict[str, str]]], tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[Callable[[str], Produced]]:
+    """Logi z ``SHARED`` po nazwie, wyprodukowane w pierwszym teście modułu, który o nie prosi, więc pod strażami z
+    conftest (reguła prywatności Centrum, bez GitHuba). Test, po którym folder wspólnych Logów różni się od folderu zaraz
+    po produkcji, pada: zmiany idą do kopii w ``tmp_path`` testu, bo inaczej następny test odtwarzałby cudze Logi."""
+
+    handed: set[str] = set()
+
+    def logs(name: str) -> Produced:
+        if name not in _shared_store:
+            produced = SHARED[name](tmp_path_factory.mktemp(name))
+            _shared_store[name] = (produced, _fingerprint(produced.archived.parent))
+        handed.add(name)
+        return _shared_store[name][0]
+
+    yield logs
+    changed = [name for name in sorted(handed) if _fingerprint(_shared_store[name][0].archived.parent) != _shared_store[name][1]]
+    assert changed == [], f"test zmienił folder wspólnych Logów {changed}; zmieniaj kopię w tmp_path testu"
+
+
 def _archived_run(fake: FakeReportBox, folder: Path, run_id: str) -> Path:
     """Plik Logów Uruchomienia ``run_id`` z Archiwum Logów okresu fałszywej Skrzynki, spakowany gzipem."""
 
@@ -1007,7 +1055,7 @@ ALWAYS = {
 
 @pytest.mark.parametrize("process", PROCESSES)
 def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_sladem(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], process: str
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], process: str
 ) -> None:
     """Plik z Archiwum Logów okresu, który wyprodukowało Uruchomienie procesu z Centrum, odtwarza się na tym kodzie z
     tymi samymi wynikiem, Komunikatami, podsumowaniem, etapami i śladem (Szablony pracownika, Wpisy INTERMAX z
@@ -1015,7 +1063,7 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     katalogu roboczym, także rekord metryk: historii metryk narzędzia odtworzenie nie dopisuje. Pod „Granice:” stoi
     tylko to, czego Logi procesu nie niosą, a Konfiguracja z folderu taty nie ma braków ani innego rozmiaru."""
 
-    produced = PROCESSES[process](tmp_path / "taty")
+    produced = shared_logs(process) if process in SHARED else PROCESSES[process](tmp_path / "taty")
     record = produced.record
     kept = tmp_path / "odtworzenie"
     tool_metrics = CATALOG.metrics(record["process"]).path
@@ -1059,12 +1107,12 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     ids=["z_przekazaniem", "logi_sprzed_trybow"],
 )
 def test_logi_wyceny_w_efenix_odtwarzaja_sie_w_trybie_z_logow_a_sprzed_trybow_bez_przekazania(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], pricing: str, change: Callable[[dict[str, Any]], None], replayed_pricing: str
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], pricing: str, change: Callable[[dict[str, Any]], None], replayed_pricing: str
 ) -> None:
     """Wycena w efenix z Przekazaniem do akceptacji odtwarza się w tym trybie, z tym samym śladem zleceń, a Logi sprzed
     trybów (bez pola trybu) w trybie bez Przekazania, w którym wtedy biegła każda Wycena (ADR 0027)."""
 
-    produced = _efenix(tmp_path / "taty", pricing=pricing)
+    produced = shared_logs("efenix") if pricing == "bez Przekazania" else _efenix(tmp_path / "taty", pricing=pricing)
     logs = _changed(produced, tmp_path, change)
     kept = tmp_path / "odtworzenie"
 
@@ -1166,7 +1214,7 @@ LIMITS = {
 
 @pytest.mark.parametrize("case", LIMITS)
 def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodnosci(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
     """Czego Logi nie niosą, raport mówi: Urwane Uruchomienie, pusta Kopia wejścia, komórka typu spoza Kopii, Kopia
     Pliku zbiorczego z nagłówkami poza wierszem 17 i brak folderu Konfiguracji kończą odtworzenie bez uruchomienia
@@ -1174,9 +1222,9 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
     zgodnym odtworzeniu."""
 
     change, folder, expected_code, expected = LIMITS[case]
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     changed = _changed(produced, tmp_path, change)
-    configuration = tmp_path / "taty" / "config" if folder is None else tmp_path / folder
+    configuration = produced.archived.parent / "config" if folder is None else tmp_path / folder
 
     code, lines = _replayed(capsys, changed, "--na-tym-drzewie", "--konfiguracja", configuration)
 
@@ -1204,12 +1252,12 @@ ONE_FILE = {
 
 @pytest.mark.parametrize("process", PROCESSES)
 def test_kopia_wejscia_z_dwoma_plikami_konczy_odtworzenie_granica_procesu_jednego_pliku(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], process: str
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], process: str
 ) -> None:
     """Każdy proces czyta jeden plik taty, więc Logi z Kopią wejścia z dwoma plikami (ten sam plik drugi raz) nie
     odtwarzają się: kod 3 z granicą, która nazywa liczbę plików i proces, bez uruchomienia procesu."""
 
-    produced = PROCESSES[process](tmp_path / "taty")
+    produced = shared_logs(process) if process in SHARED else PROCESSES[process](tmp_path / "taty")
     changed = _changed(produced, tmp_path, lambda record: record["input_copy"].append(record["input_copy"][0]))
 
     code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
@@ -1218,14 +1266,14 @@ def test_kopia_wejscia_z_dwoma_plikami_konczy_odtworzenie_granica_procesu_jedneg
 
 
 def test_folder_konfiguracji_bez_konfiguracji_wykonawcow_raport_nazywa_brakujacy_plik(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Folder Konfiguracji z Wzorcami, a bez Konfiguracji wykonawców: raport mówi pod „Granice:”, którego pliku w nim
     nie ma, bo bez niego Przebieg rozliczeń kończy się inaczej niż u taty."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     folder = tmp_path / "bez-konfiguracji-wykonawcow"
-    shutil.copytree(tmp_path / "taty" / "config", folder)
+    shutil.copytree(produced.archived.parent / "config", folder)
     (folder / tool_files.WORKER_CONFIG.name).unlink()
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--konfiguracja", folder)
@@ -1234,11 +1282,11 @@ def test_folder_konfiguracji_bez_konfiguracji_wykonawcow_raport_nazywa_brakujacy
     assert (code, configuration.endswith(f"; w folderze nie ma: {tool_files.WORKER_CONFIG.name}")) == (1, True), lines
 
 
-def test_odtworzenie_bez_folderu_konfiguracji_mowi_ze_folderu_nie_podano(tmp_path: Path) -> None:
+def test_odtworzenie_bez_folderu_konfiguracji_mowi_ze_folderu_nie_podano(tmp_path: Path, shared_logs: Callable[[str], Produced]) -> None:
     """Bez folderu Konfiguracji (narzędzie nie ma domyślnego, gdy główny checkout nie ma ``config/``) odtworzenie
     Przebiegu rozliczeń nie biegnie, a granica mówi, że folderu nie podano."""
 
-    record = RunLog.model_validate(_settlement(tmp_path / "taty").record)
+    record = RunLog.model_validate(shared_logs("settlement").record)
 
     report = replay(record, work=tmp_path / "odtworzenie", configuration=None)
 
@@ -1334,37 +1382,33 @@ def test_zatrzymanie_okna_efenix_jest_granica_przy_roznicy_odtworzenia_na_atrapi
     ), cause
 
 
-# Strona zlecenia Wykonawcy z drugiego wiersza bez przycisku Emmetta: okno efenix staje na elemencie, którego szukało.
-_EMMETT_GONE = [IN_EFENIX[0], replace(PRICED[1].in_efenix("642"), changed=Changed.EMMETT_BUTTON)]
 _WINDOW_CHAIN = "rozliczenia.message.StopError ← rozliczenia.efenix_window.UnexpectedPage"
 
 
 def test_przyczyna_zatrzymania_okna_ma_element_strony_a_wyjatek_bez_ramek_nie_ma_miejsca_powstania(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    shared_logs: Callable[[str], Produced],
 ) -> None:
     """Przyczyna w Logach nazywa element strony, którego okno efenix nie znalazło dokładnie raz, i miejsce w kodzie
     okna, w którym powstał jego wyjątek; Logi, w których wyjątek okna nie ma ramek śladu wywołań, mają przyczynę bez
-    tego miejsca (#976)."""
+    tego miejsca (#976). Linię przyczyny w raporcie narzędzia sprawdza test Zatrzymania okna przy różnicy odtworzenia."""
 
-    produced = _efenix(tmp_path / "taty", _EMMETT_GONE, "BLAD_KRYTYCZNY")
-    cause = produced.record["efenix_stop"]["cause"]
-    without = _changed(produced, tmp_path, lambda record: record["trace"]["causes"][0].update(frames=[]))
+    record = shared_logs("efenix_bez_emmetta").record
+    cause = record["efenix_stop"]["cause"]
+    without = copy.deepcopy(record)
+    without["trace"]["causes"][0]["frames"] = []
 
-    shown = [
-        [line for line in _replayed(capsys, logs, "--na-tym-drzewie", *produced.arguments)[1] if line.startswith("Przyczyna w Logach: ")]
-        for logs in (produced.archived, without)
-    ]
+    shown = [stop_cause(RunLog.model_validate(logs)) or "" for logs in (record, without)]
 
-    stopped = f"Przyczyna w Logach: okno efenix przy wierszu 19 (2 z 6): {cause['what']} ({cause['element']}); wyjątki {_WINDOW_CHAIN}"
-    assert (cause["element"], shown[0][0].startswith(f"{stopped}, powstał w src/rozliczenia/efenix_browser.py:")) == ("#button_emmett", True), shown
-    assert shown[1] == [stopped]
+    stopped = f"okno efenix przy wierszu 19 (2 z 6): {cause['what']} ({cause['element']}); wyjątki {_WINDOW_CHAIN}"
+    assert (cause["element"], shown[0].startswith(f"{stopped}, powstał w src/rozliczenia/efenix_browser.py:")) == ("#button_emmett", True), shown
+    assert shown[1] == stopped
 
 
-def test_porownanie_zatrzymania_okna_efenix_pomija_czasy_krokow_a_nie_przyczyne(tmp_path: Path) -> None:
+def test_porownanie_zatrzymania_okna_efenix_pomija_czasy_krokow_a_nie_przyczyne(shared_logs: Callable[[str], Produced]) -> None:
     """Zatrzymanie okna efenix w Logach i w odtworzeniu różni się przyczyną (innym elementem strony), a nie czasami
     kroków przy zleceniu; tak samo Zatrzymanie przy starcie okna, które nie ma zlecenia ani działania, które zawiodło."""
 
-    record = _efenix(tmp_path / "taty", _EMMETT_GONE, "BLAD_KRYTYCZNY").record
+    record = shared_logs("efenix_bez_emmetta").record
     element = record["efenix_stop"]["cause"]["element"]
 
     def stopped(*, other_element: bool = False, later: bool = False, at_start: bool = False) -> RunLog:
@@ -1441,13 +1485,13 @@ def test_logi_bez_commitu_w_innej_postaci_nie_maja_kopii_commitu(tmp_path: Path,
 
 
 def test_odtworzenie_na_tym_drzewie_zachowuje_pliki_w_pustym_folderze_a_niepustego_nie_rusza(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """``--zachowaj`` przyjmuje folder, który już jest, gdy jest pusty, i zostawia w nim Logi odtworzenia, a folder
     z plikami odrzuca kodem 2 z błędem na stderr. Logi bez commitu narzędzia raport nazywa Logami z commitu
     nieznanego."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=None))
     kept = tmp_path / "odtworzenie"
     kept.mkdir()
@@ -1472,13 +1516,13 @@ def _changed(produced: Produced, folder: Path, change: Any) -> Path:
 
 
 def test_celowo_zmieniona_kopia_wejscia_daje_wydruk_pierwszej_roznicy_a_nie_zgodnosc(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Wiersz Kopii wejścia z innym Wykonawcą niż ten, z którego Przebieg rozliczeń policzył Logi: odtworzenie liczy z
     Kopii, więc pierwsza różnica to liczba zleceń Rozliczenia pracownika w podsumowaniu, z wartością w Logach i w
     odtworzeniu, a raport mówi, co porównał."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
 
     def other_worker(record: dict[str, Any]) -> None:
         [sheet] = record["input_copy"][0]["sheets"]
@@ -2022,12 +2066,12 @@ def test_granica_logow_wpisania_raportow_jest_w_raporcie_a_blokujaca_konczy_odtw
 
 
 def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Atrapa efenix ma stronę z odczytów stron w Logach: odczyt wiersza listy zmieniony w Logach (status „Do wyceny”
     zamiast innego) zmienia, co okno widzi w odtworzeniu, więc Komunikat tego zlecenia różni się od Komunikatu w Logach."""
 
-    produced = _efenix(tmp_path / "taty")
+    produced = shared_logs("efenix")
 
     def ready_status(record: dict[str, Any]) -> None:
         [result] = record["efenix_orders"][2]["steps"][0]["results"]
@@ -2085,12 +2129,12 @@ def test_logi_wyceny_z_adresem_bez_rozbioru_i_innym_adresem_w_efenix_odtwarzaja_
 
 
 def test_logi_wyceny_sprzed_odczytu_wierszy_listy_koncza_odtworzenie_granica(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Logi sprzed #843 mają szukanie z trafieniami bez odczytu wierszy listy, więc Atrapa nie wie, co pokazać:
     odtworzenie kończy się granicą (kod 3), a nie różnicą."""
 
-    produced = _efenix(tmp_path / "taty")
+    produced = shared_logs("efenix")
 
     def without_results(record: dict[str, Any]) -> None:
         for order in record["efenix_orders"]:
@@ -2195,12 +2239,12 @@ def test_atrapa_z_logow_nazywa_wiersz_bez_numeru_zl_i_roznice_adresu_ktorej_nie_
 
 
 def test_kopia_wejscia_bez_folderow_nad_plikiem_daje_roznice_w_kopii_a_nie_zgodnosc(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Kopia wejścia bez nazw folderów nad plikiem (Logi sprzed #847): odbudowa kładzie Plik zbiorczy w folderze okresu,
     więc Kopia odtworzenia ma foldery, których Kopia w Logach nie ma, a pierwszą różnicą jest Kopia wejścia."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     changed = _changed(produced, tmp_path, lambda record: record["input_copy"][0].pop("folders"))
 
     code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
@@ -2215,12 +2259,12 @@ def test_kopia_wejscia_bez_folderow_nad_plikiem_daje_roznice_w_kopii_a_nie_zgodn
 
 
 def test_inna_data_wykonania_w_sladzie_zlecen_efenix_daje_roznice_w_sladzie_przy_tych_samych_komunikatach(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Dzień, który okno wpisało w datę wykonania, Atrapa z Logów bierze z Pliku zbiorczego, nie z kroku śladu: inny
     dzień w śladzie zleceń efenix w Logach nie zmienia Komunikatów, a odtworzenie zgłasza różnicę w tym kroku śladu."""
 
-    produced = _efenix(tmp_path / "taty")
+    produced = shared_logs("efenix")
 
     def other_day(record: dict[str, Any]) -> None:
         [typed] = [step for step in record["efenix_orders"][0]["steps"] if step["action"] == "data wykonania"]
@@ -2253,13 +2297,13 @@ LENGTHS: dict[str, tuple[Callable[[list[dict[str, Any]]], None], str, str, str]]
 
 @pytest.mark.parametrize("case", LENGTHS)
 def test_lista_innej_dlugosci_w_logach_daje_roznice_w_pierwszym_elemencie_bez_pary(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
     """Etapy w Logach z jednym więcej albo jednym mniej na końcu niż w odtworzeniu: wspólny początek się zgadza, więc
     pierwszą różnicą jest element bez pary, z wartością tam, gdzie jest, i „(brak)” tam, gdzie go nie ma."""
 
     change, place, present, absent = LENGTHS[case]
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     changed = _changed(produced, tmp_path, lambda record: change(record["phases"]))
 
     code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
@@ -2282,13 +2326,13 @@ CELLS: dict[str, tuple[object, object, bool]] = {
 
 
 @pytest.mark.parametrize("case", CELLS)
-def test_porownanie_odtworzenia_rozni_brak_pola_i_prawde_od_liczby_a_nie_ulamek_od_calkowitej(tmp_path: Path, case: str) -> None:
+def test_porownanie_odtworzenia_rozni_brak_pola_i_prawde_od_liczby_a_nie_ulamek_od_calkowitej(shared_logs: Callable[[str], Produced], case: str) -> None:
     """Pierwszą różnicą jest pole, które ma tylko jedna strona (po drugiej „(brak)”), i prawda albo fałsz inne niż po
     drugiej stronie, także liczba 1 przeciw prawdzie; liczba całkowita i ułamek tej samej wartości różnicą nie są, bo
     zapis pliku zmienia 5.0 w 5."""
 
     logged, replayed, differs = CELLS[case]
-    record = _settlement(tmp_path / "taty").record
+    record = shared_logs("settlement").record
 
     def with_cell(value: object) -> RunLog:
         changed = copy.deepcopy(record)
@@ -2306,11 +2350,11 @@ def test_porownanie_odtworzenia_rozni_brak_pola_i_prawde_od_liczby_a_nie_ulamek_
         assert found is None
 
 
-def test_wartosc_roznicy_do_300_znakow_raport_pokazuje_cala_a_dluzsza_ucina(tmp_path: Path) -> None:
+def test_wartosc_roznicy_do_300_znakow_raport_pokazuje_cala_a_dluzsza_ucina(shared_logs: Callable[[str], Produced]) -> None:
     """Wartość w pierwszej różnicy raport pokazuje w JSON najwyżej na 300 znakach: tyle mieści się cała, a dłuższa
     kończy się na 297 znakach i „...”."""
 
-    record = RunLog.model_validate(_settlement(tmp_path / "taty").record)
+    record = RunLog.model_validate(shared_logs("settlement").record)
     whole, cut = "a" * 298, "b" * 299  # z cudzysłowami JSON 300 i 301 znaków
 
     lines = Report(Verdict.DIFFERS, Difference("pole", whole, cut), ()).lines(record, "kod")
@@ -2522,14 +2566,14 @@ CUTS = {
 
 @pytest.mark.parametrize("case", CUTS)
 def test_element_ktory_straznik_pominal_w_logach_jest_granica_a_nie_falszywa_przyczyna_roznicy(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
     """Maska strażnika w polu z zamkniętą listą zabiera z Logów Wyceny w efenix cały element z uwagą techniczną.
     Zlecenie śladu albo wiersz Kopii to wejście odtworzenia, więc odtworzenie kończy się granicą z tym miejscem, a nie
     różnicą z fałszywą przyczyną (nieznany numer w efenix); pominięty Komunikat stoi pod „Granice:” przy różnicy."""
 
     word, expected_code, expected = CUTS[case]
-    produced = _efenix(tmp_path / "taty")
+    produced = shared_logs("efenix")
     cut = _guarded_with(produced, tmp_path, word)
 
     code, lines = _replayed(capsys, cut, "--na-tym-drzewie", *produced.arguments)
@@ -2543,8 +2587,8 @@ def test_element_ktory_straznik_pominal_w_logach_jest_granica_a_nie_falszywa_prz
         assert expected in lines[lines.index("Granice:") + 1 :], lines
 
 
-def test_logi_bez_kopii_wejscia_daja_granice_a_nie_zgodnosc(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    produced = _settlement(tmp_path / "taty")
+def test_logi_bez_kopii_wejscia_daja_granice_a_nie_zgodnosc(tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]) -> None:
+    produced = shared_logs("settlement")
     changed = _changed(produced, tmp_path, lambda record: record.update(input_copy=None))
 
     code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
@@ -2575,11 +2619,11 @@ def _commit_like_head(folder: Path, *, without: str | None = None, changed: tupl
     return git("commit-tree", git("write-tree"), "-p", "HEAD", "-m", "commit z Logów w teście odtworzenia")
 
 
-def test_commit_z_logow_sprzed_narzedzia_odtwarzania_konczy_sie_granica(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_commit_z_logow_sprzed_narzedzia_odtwarzania_konczy_sie_granica(tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]) -> None:
     """Commit z Logów, w którym nie ma narzędzia odtwarzania (sprzed #847), nie odtwarza się na swojej kopii: kod 3 z
     podpowiedzią ``--na-tym-drzewie``."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     commit = _commit_like_head(tmp_path, without="tools/odtworz_uruchomienie.py")
     logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=commit))
 
@@ -2593,13 +2637,13 @@ def test_commit_z_logow_sprzed_narzedzia_odtwarzania_konczy_sie_granica(tmp_path
 
 
 def test_kopia_commitu_z_logow_dostaje_parametry_narzedzia_i_granice_innych_bibliotek(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Kopia commitu z Logów Wyceny w efenix odtwarza z dniem Atrapy i folderem do zachowania z parametrów narzędzia
     (bez dnia Atrapy Wycena różni się od Logów), a ``requirements.txt`` commitu inny niż tego checkoutu raport podaje
     jako granicę. Błąd w kopii (folder do zachowania nie jest pusty) narzędzie oddaje na swój stderr z jej kodem."""
 
-    produced = _efenix(tmp_path / "taty")
+    produced = shared_logs("efenix")
     requirements = (ROOT / "requirements.txt").read_bytes() + b"# inne biblioteki commitu z Logow\n"
     commit = _commit_like_head(tmp_path, changed=("requirements.txt", requirements))
     logs = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=commit))
@@ -2630,11 +2674,11 @@ def _tool_process(logs: Path, *arguments: str | Path, tool: Path = TOOL, path: P
     )
 
 
-def test_narzedzie_jako_proces_odtwarza_kodem_swojego_drzewa_a_nie_innym_pakietem_rozliczenia(tmp_path: Path) -> None:
+def test_narzedzie_jako_proces_odtwarza_kodem_swojego_drzewa_a_nie_innym_pakietem_rozliczenia(tmp_path: Path, shared_logs: Callable[[str], Produced]) -> None:
     """Narzędzie uruchomione jako proces bierze pakiet ``rozliczenia`` ze swojego drzewa, choć inny pakiet o tej
     nazwie stoi wcześniej na ścieżce (``PYTHONPATH``, instalacja innego checkoutu), więc odtwarza kodem tego drzewa."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     other = tmp_path / "inny-pakiet"
     (other / "rozliczenia").mkdir(parents=True)
     (other / "rozliczenia" / "__init__.py").write_text("", encoding="utf-8")
@@ -2644,11 +2688,11 @@ def test_narzedzie_jako_proces_odtwarza_kodem_swojego_drzewa_a_nie_innym_pakiete
     assert (done.returncode, done.stdout.splitlines()[:1]) == (0, ["ODTWORZENIE ZGODNE"]), done.stderr
 
 
-def test_narzedzie_w_drzewie_bez_kodu_procesu_nie_odtwarza_kodem_innego_checkoutu(tmp_path: Path) -> None:
+def test_narzedzie_w_drzewie_bez_kodu_procesu_nie_odtwarza_kodem_innego_checkoutu(tmp_path: Path, shared_logs: Callable[[str], Produced]) -> None:
     """Narzędzie z drzewa bez ``src`` (kopia samych narzędzi) dostałoby pakiet ``rozliczenia`` innego checkoutu, więc
     nie odtwarza: kod 2 z błędem na stderr, który nazywa oba miejsca."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     tree = tmp_path / "same-narzedzia"
     for source in (TOOL, ROOT / "tools" / "lib" / "potomne.py", ROOT / "tools" / "lib" / "repo.py"):
         copied = tree / source.relative_to(ROOT)
@@ -2666,12 +2710,12 @@ def _head() -> str:
 
 
 def test_odtworzenie_biegnie_na_kopii_commitu_z_logow_jej_wlasnym_narzedziem(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Bez ``--na-tym-drzewie`` narzędzie robi kopię commitu z Logów i odtwarza w niej; commitu, którego nie ma w
     repozytorium, nie odtwarza."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     head = _head()
     at_head = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=head))
 
@@ -2718,13 +2762,13 @@ def _fake_gh(folder: Path, archived: Path | None) -> Iterator[Path]:
 
 
 def test_odnosnik_z_komentarza_logow_pobiera_plik_z_archiwum_przez_gh_i_odtwarza_go(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Odnośnik do pliku w Archiwum Logów okresu z komentarza Logów to ``gh release download`` z tagiem okresu i nazwą
     pliku w repozytorium Zgłoszeń; pobrany plik odtwarza się tak jak plik z dysku. Odnośnika spoza GitHuba ani spoza
     plików GitHub Release narzędzie nie pobiera."""
 
-    produced = _settlement(tmp_path / "taty")
+    produced = shared_logs("settlement")
     name = produced.archived.name
     tag = f"logi-{PERIOD}"
     link = f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}"
