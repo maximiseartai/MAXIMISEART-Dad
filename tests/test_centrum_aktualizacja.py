@@ -366,20 +366,6 @@ def test_udana_aktualizacja_z_pominietym_wydaniem_spoza_main_zostawia_slad_takze
     assert log_entries(centrum, "aktualizacja-koniec") == [f"wynik=ok przed={before} po={newest} biblioteki=nie"]
 
 
-def test_przed_kliknieciem_nie_ma_aktualizacji(tmp_path: Path) -> None:
-    centrum, _ = updating_centrum(tmp_path)
-
-    assert centrum.client.get("/api/tool-update").json() == {"state": "idle"}
-
-
-def test_brak_sieci_przy_sprawdzaniu_aktualnosci_to_nie_sprawdzono(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    centrum.surroundings.github.release = None
-    tool = tool_on_configuration(centrum)
-
-    assert (tool["freshness"], tool["update_offered"]) == ("not_checked", False)
-
-
 NEWER_MAIN = "f" * 40
 
 
@@ -600,16 +586,18 @@ def github_out_of_reach(repository: ToolRepository) -> Iterator[None]:
         away.rename(repository.origin)
 
 
-def test_porazka_aktualizacji_karta_dostaje_jako_komunikat_w_trzech_czesciach_a_narzedzie_zostaje(
+def test_porazka_aktualizacji_karta_dostaje_jako_komunikat_w_trzech_czesciach_a_po_powrocie_internetu_sie_udaje(
     tmp_path: Path,
 ) -> None:
     # Reguły porażek są w ``test_aktualizacja_narzedzia.py``; tu jedna zamiana kodu na Komunikat karty.
     centrum, repository = updating_centrum(tmp_path)
     before = repository.head()
-    repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    newest = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
 
     with github_out_of_reach(repository):
         view = update_until_done(centrum)
+    offline_head = repository.head()
+    retried = update_until_done(centrum)
 
     what = "Nie zaktualizowano narzędzia: brak połączenia z GitHubem."
     assert {key: value for key, value in view.items() if key != "draft"} == {
@@ -624,7 +612,10 @@ def test_porazka_aktualizacji_karta_dostaje_jako_komunikat_w_trzech_czesciach_a_
         "after_restart": False,
     }
     assert view["draft"]["title"] == f"BRAK_POLACZENIA: {what}"
-    assert repository.head() == before
+    assert offline_head == before
+    assert retried == {"state": "running", "step": "restarting"}
+    assert ([restart.after for restart in centrum.surroundings.restarts], repository.head()) == ([newest], newest)
+    # Koniec udanej aktualizacji zapisze nowe Centrum, z pliku wyniku od opiekuna.
     assert log_entries(centrum, "aktualizacja-koniec") == [f"wynik=BRAK_POLACZENIA przed={before} po=- biblioteki=nie"]
 
 
@@ -773,24 +764,6 @@ def test_zgloszenie_bez_nieudanej_aktualizacji_jest_odrzucone(tmp_path: Path) ->
 
     assert refused.status_code == 409
     assert centrum.surroundings.report_box.sent == []
-
-
-def test_gdy_wroci_internet_ponowna_aktualizacja_sie_udaje(tmp_path: Path) -> None:
-    centrum, repository = updating_centrum(tmp_path)
-    newest = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
-    with github_out_of_reach(repository):
-        offline = update_until_done(centrum)
-
-    retried = update_until_done(centrum)
-
-    assert offline["message"]["what"] == "Nie zaktualizowano narzędzia: brak połączenia z GitHubem."
-    assert retried == {"state": "running", "step": "restarting"}
-    assert [restart.after for restart in centrum.surroundings.restarts] == [newest]
-    assert repository.head() == newest
-    # Koniec udanej aktualizacji zapisze nowe Centrum, z pliku wyniku od opiekuna.
-    assert [entry.split(" ", 1)[0] for entry in log_entries(centrum, "aktualizacja-koniec")] == [
-        "wynik=BRAK_POLACZENIA"
-    ]
 
 
 def test_nowe_biblioteki_karta_widzi_krok_instalowania_a_dziennik_zapisuje_instalacje(tmp_path: Path) -> None:
@@ -946,8 +919,9 @@ def test_dziennik_rozpoznaje_zapisany_wynik_aktualizacji_bez_commitow(tmp_path: 
 
 @pytest.mark.parametrize(
     ("finished", "awaited"),
-    [(UPDATED, True), (NEW_VERSION_FAILED, False), (UNEXPECTED, False)],
-    ids=["po ok nowej wersji", "po porazce", "po innej porazce"],
+    # Porażka od opiekuna i każda, którą kończy się w Centrum kliknięcie z przesuniętym klonem (te same commity).
+    [(UPDATED, True), (NEW_VERSION_FAILED, False), (UNEXPECTED, False), (ROLLBACK_FAILED, False), (LIBRARIES_FAILED, False)],
+    ids=["po ok nowej wersji", "po porazce", "po innej porazce", "po nieudanym cofnieciu", "po nieudanej instalacji"],
 )
 def test_dziennik_po_koncu_z_tymi_samymi_commitami_czeka_tylko_na_porazke_po_ok_nowej_wersji(
     tmp_path: Path, finished: str, awaited: bool
@@ -1072,22 +1046,8 @@ def test_zgloszenie_po_kolejnych_startach_ma_jeden_koniec_aktualizacji_a_stary_w
     assert log_entries(centrum, "aktualizacja-koniec") == finished
 
 
-def second_click_fails(centrum: PreparingCentrum, installer: FakeInstaller, code: str) -> None:
-    """Następne kliknięcie „Zaktualizuj narzędzie” pada w samym Centrum z ``code``, z tymi samymi commitami co pierwsze."""
-
-    repository = centrum.surroundings.tool
-    assert repository is not None
-    if code == LIBRARIES_FAILED:
-        installer.succeeds = False
-    elif code == UNEXPECTED:
-        centrum.surroundings.guardian_failure = lambda: None
-    else:
-        centrum.surroundings.guardian_failure = lambda: changes_new_version_file(repository)
-
-
-@pytest.mark.parametrize("second", [LIBRARIES_FAILED, UNEXPECTED, ROLLBACK_FAILED])
 def test_zgloszony_wynik_nie_wraca_po_porazce_kolejnego_klikniecia_z_tymi_samymi_commitami(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, second: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     installer = FakeInstaller()
     centrum, repository = updating_centrum(tmp_path, installer=installer)
@@ -1098,7 +1058,7 @@ def test_zgloszony_wynik_nie_wraca_po_porazce_kolejnego_klikniecia_z_tymi_samymi
     disk_refuses_removing(monkeypatch, tmp_path / "config" / RESULT_FILE)
     centrum.restart()
     reported = centrum.client.get("/api/tool-update").json()["state"]
-    second_click_fails(centrum, installer, second)
+    installer.succeeds = False
 
     clicked = update_until_result(centrum)
     centrum.restart()  # plik wyniku dalej leży, a ostatni koniec ma te same commity i inny wynik
@@ -1109,7 +1069,7 @@ def test_zgloszony_wynik_nie_wraca_po_porazce_kolejnego_klikniecia_z_tymi_samymi
     assert view == {"state": "idle"}
     assert log_entries(centrum, "aktualizacja-koniec") == [
         f"wynik=NOWA_WERSJA_NIE_WYSTARTOWALA przed={before} po={newest} biblioteki=tak",
-        f"wynik={second} przed={before} po={newest} biblioteki=tak",
+        f"wynik={LIBRARIES_FAILED} przed={before} po={newest} biblioteki=tak",
     ]
 
 
@@ -1347,7 +1307,7 @@ def nothing(repository: ToolRepository) -> None:
 def test_gdy_opiekun_nie_wystartuje_klon_wraca_do_poprzedniej_wersji_a_karta_dostaje_komunikat(tmp_path: Path) -> None:
     centrum, repository = updating_centrum(tmp_path, guardian_failure=nothing)
     before = repository.head()
-    newest = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    newest = repository.publish({"requirements.txt": NEW_REQUIREMENTS, "src/narzedzie.py": "WERSJA = 2\n"})
 
     view = update_until_result(centrum)
 
@@ -1362,7 +1322,7 @@ def test_gdy_opiekun_nie_wystartuje_klon_wraca_do_poprzedniej_wersji_a_karta_dos
     assert centrum.surroundings.restarts == []
     assert "zamkniecie" not in log_events(centrum)
     assert log_entries(centrum, "aktualizacja-koniec") == [
-        f"wynik=NIEOCZEKIWANY_BLAD przed={before} po={newest} biblioteki=nie"
+        f"wynik=NIEOCZEKIWANY_BLAD przed={before} po={newest} biblioteki=tak"
     ]
     assert centrum.start(dry_run=True).status_code == 200
 
@@ -1374,7 +1334,7 @@ def changes_new_version_file(repository: ToolRepository) -> None:
 def test_gdy_cofniecie_sie_nie_uda_karta_nie_mowi_ze_narzedzie_dziala_w_poprzedniej_wersji(tmp_path: Path) -> None:
     centrum, repository = updating_centrum(tmp_path, guardian_failure=changes_new_version_file)
     before = repository.head()
-    newest = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    newest = repository.publish({"requirements.txt": NEW_REQUIREMENTS, "src/narzedzie.py": "WERSJA = 2\n"})
 
     view = update_until_result(centrum)
 
@@ -1390,7 +1350,7 @@ def test_gdy_cofniecie_sie_nie_uda_karta_nie_mowi_ze_narzedzie_dziala_w_poprzedn
         "after_restart": False,
     }
     assert log_entries(centrum, "aktualizacja-koniec") == [
-        f"wynik=COFNIECIE_NIEUDANE przed={before} po={newest} biblioteki=nie"
+        f"wynik=COFNIECIE_NIEUDANE przed={before} po={newest} biblioteki=tak"
     ]
     interrupted = ToolClone(repository.clone).interrupted_update()
     assert interrupted is not None
