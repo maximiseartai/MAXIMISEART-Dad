@@ -2037,6 +2037,34 @@ def test_zlecenie_z_dnia_po_dzis_nie_jest_dopisane_drugi_raz_a_nastepnego_dnia_p
     assert [move["day"] for move in _entering(centrum, tomorrow)["moves"]] == ["2026-11-09"]
 
 
+def test_dopisane_zlecenie_przelozone_przez_tate_na_jutro_zostaje_na_jutro_przy_poprawionym_raporcie(tmp_path: Path) -> None:
+    """Przegląd #1374 r4 Ważne 1 przez HTTP API: dziś 9.11. Raport Jana za 9.11 dopisuje 40000077, a tata przekłada
+    dopisany wiersz na 10.11 10:00. Wieczorem Jan przysyła poprawiony Raport za 9.11 z tym numerem. Zlecenia z dnia po
+    dziś Wpis nie zmienia (ADR 0029), także dopisanego, więc kliknięcie nie zmienia INTERMAX, a tata widzi w okienku
+    Jana odmowę z dniem 10.11."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    added = report(JAN, SUBJECT, "40000077 tak montaż ONT", at=datetime(2026, 11, 9, 17))
+    first = _click_at(centrum, ENTERING_NOW, [added])
+    _tata_dates(centrum.register, 40000077, "jan.testowy", datetime(2026, 11, 10, 10))
+    before = centrum.register.read_bytes()
+    correction = report(JAN, SUBJECT, "40000077 nie brak klienta", at=datetime(2026, 11, 9, 19))
+
+    view = _click_at(centrum, datetime(2026, 11, 9, 19, 30), [added, correction])
+
+    assert [found["number"] for found in _entering(centrum, first)["added"]] == [40000077]
+    assert centrum.register.read_bytes() == before, "kliknięcie nie przenosi dopisanego zlecenia z jutra"
+    entering = _entering(centrum, view)
+    assert (entering["moves"], entering["changes"], entering["added"]) == ([], [], [])
+    assert [(problem["kind"], problem["number"], problem["bar"]) for problem in entering["problems"]] == [
+        ("refused_move", "40000077", "after_today")
+    ]
+    assert _places(centrum.register, 40000077) == [(datetime(2026, 11, 10, 10), "jan.testowy", "tak", "montaż ONT")]
+    [refused] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert "dzień 10.11.2026 jeszcze nie nadszedł" in refused["reason"]
+
+
 def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesienia_ktore_zatrzymuja_reczna_zmiane(
     tmp_path: Path,
 ) -> None:

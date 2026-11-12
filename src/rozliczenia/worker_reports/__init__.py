@@ -208,7 +208,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     reports = [found for found in mails if isinstance(found, ReadReport)]
     board = _matching.Board(orders, inputs.memory, window, inputs.ordered_days, inputs.present)
     matched = board.match(reports)
-    additions = _corrections.uncorrected(matched.added, reports, orders)
+    additions = _corrections.uncorrected(matched.added, reports, board)
     moved = _moves.moved(matched.accepted, additions, orders, inputs.memory, window)
     after = {order.row: order for order in moved.orders}
     targets = {key: (after[order.row], entry) for key, (order, entry) in matched.targets.items()}
@@ -217,7 +217,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     memory = _cells.with_added(memory, ((key, found.verdict, found.activities) for key, found in added.items()))
     unreadable = [found for found in mails if isinstance(found, ReadUnreadable)]
     newest = {found.number: (found.arrived, found.mail) for found in additions}
-    standing = _corrections.standing([*problems, *matched.problems], reports, unreadable, orders, board, newest)
+    standing = _corrections.standing([*problems, *matched.problems], reports, unreadable, board, newest)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     shown = [report for report in reports if window.opens(report.day)]
     details = [

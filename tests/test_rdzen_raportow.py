@@ -1996,6 +1996,52 @@ _JAN, _EWA, _ADAM = "jan.testowy", "ewa.probna", "adam.inny"
     ([(SEVENTH, _JAN, 0, 0), (NINTH, _JAN, 0, 0)], (DAY, _ADAM, 0, 0), frozenset(READ_DAYS)),
     [("mail", _JAN, DAY, 0, [(0, "tak")]), ("klik",)],
 ).via("przegląd #1367 r3 Ważne 2: duplikat z jutra był niewidoczny, więc Centrum przeniosło zlecenie z 7.11")
+@example(
+    ([(SEVENTH, _JAN, 0, 0)], (DAY, _ADAM, 0, 0), frozenset(READ_DAYS)),
+    [
+        ("mail", _JAN, DAY, 0, [(2, "tak")]),
+        ("klik",),
+        ("dzień", 2, CLOSED_DAY),
+        ("mail", _JAN, DAY, 5, [(2, "nie")]),
+        ("klik",),
+    ],
+).via("przegląd #1374 r4 Ważne 1: dopisane zlecenie, które tata przełożył do okresu z Plikiem zbiorczym, wracało na 8.11")
+@example(
+    ([(SEVENTH, _JAN, 0, 0)], (DAY, _ADAM, 0, 0), frozenset(READ_DAYS)),
+    [
+        ("mail", _JAN, DAY, 0, [(2, "tak")]),
+        ("klik",),
+        ("dzień", 2, NINTH),
+        ("mail", _JAN, DAY, 5, [(2, "nie")]),
+        ("klik",),
+    ],
+).via("przegląd #1374 r4 Ważne 1: dopisane zlecenie, które tata przełożył na jutro, wracało na 8.11")
+@example(
+    ([(SIXTH, _EWA, 0, 0)], (SIXTH, _ADAM, 0, 0), frozenset(_SEQUENCE_DAYS)),
+    [
+        ("mail", _EWA, SIXTH, 1, [(0, "tak")]),
+        ("mail", _EWA, SIXTH, 0, [(0, "tak"), (1, "tak"), (2, "tak")]),
+        ("klik",),
+    ],
+).via("#1374 r5: zlecenie przejęte od Adama zmieniało poprawkę maila Ewy, więc drugie kliknięcie dopisywało literówkę")
+@example(
+    ([(SEVENTH, _ADAM, 0, 0)], (SIXTH, _ADAM, 0, 0), frozenset(_SEQUENCE_DAYS)),
+    [
+        ("mail", _ADAM, SEVENTH, 1, [(0, "tak")]),
+        ("mail", _ADAM, SEVENTH, 0, [(0, "tak"), (1, "tak"), (2, "tak")]),
+        ("klik",),
+    ],
+).via("#1374 r5: zlecenie przeniesione z 6.11 zmieniało poprawkę maila Adama, więc drugie kliknięcie dopisywało literówkę")
+@example(
+    ([(DAY, _JAN, 0, 0)], (DAY, _ADAM, 0, 0), frozenset(_SEQUENCE_DAYS)),
+    [
+        ("usuwa", 1),
+        ("mail", _JAN, DAY, 0, [(0, "tak"), (2, "tak"), (1, "tak")]),
+        ("mail", _JAN, DAY, 1, [(1, "tak")]),
+        ("mail", _JAN, DAY, 2, [(0, "tak")]),
+        ("klik",),
+    ],
+).via("#1374 r5: zlecenie dopisane w kliknięciu zmieniało poprawkę maila Jana, więc drugie kliknięcie dopisywało literówkę")
 def test_wlasnosc_centrum_nie_nadpisuje_taty_nie_przenosi_numeru_z_kilku_miejsc_ani_starym_mailem(
     start: _SequenceStart, events: list[tuple[object, ...]]
 ) -> None:
@@ -2021,8 +2067,7 @@ _SAME_MAILS = st.lists(
 """Maile z Wpisami z ``tak``/``nie`` i opisem do numerów ze zleceniem, każdy świeższy od poprzedniego: nadawca, dzień z
 tematu i Wpisy. Bez numeru bez zlecenia, bo Zlecenie dopisane z raportu (#1354) jest nieodwracalne: wiersz dopisany
 kliknięciem po wcześniejszym mailu zostaje, także gdy późniejszy mail (poprawka, pomylony temat) nie dopisałby go przy
-jednym kliknięciu, a potem liczy się do progu pomylonego tematu jak każde zlecenie INTERMAX. Że powtórne kliknięcie z
-dopisaniami nic nie zmienia, sprawdza własność ciągu (N4)."""
+jednym kliknięciu. Że powtórne kliknięcie z dopisaniami nic nie zmienia, sprawdza własność ciągu (N4)."""
 
 
 @settings(derandomize=True, database=None, deadline=None, max_examples=200)
@@ -4929,6 +4974,62 @@ def test_dopisane_zlecenie_nie_robi_ze_starszego_raportu_pomylonego_tematu_w_nas
     assert second.problems == first.problems
 
 
+@pytest.mark.parametrize(
+    ("moved_to", "bar"),
+    [
+        pytest.param(CLOSED_DAY, MoveBar.CLOSED_SOURCE, id="na-dzien-okresu-z-plikiem-zbiorczym"),
+        pytest.param(NINTH, MoveBar.AFTER_TODAY, id="na-jutro"),
+    ],
+)
+def test_dopisane_zlecenie_przelozone_przez_tate_na_dzien_nieotwarty_zostaje_tam_bez_zmiany(moved_to: date, bar: MoveBar) -> None:
+    """Przegląd #1374 r4 Ważne 1 (ADR 0029): Raport Jana za 8.11 dopisuje 40000077 w 8.11, a tata przekłada to zlecenie
+    na 2.11 (okres z Plikiem zbiorczym) albo na 9.11 (jutro). Świeższy Raport Jana za 8.11 z tym numerem nie przenosi go
+    z powrotem i nie zmienia jego komórek, tylko daje odmowę Przeniesienia, jak przy każdym jedynym zleceniu z dnia,
+    który nie jest otwarty: dopisane zlecenie pomija tylko próg pomylonego tematu."""
+
+    def click(mails: list[ReportMail], orders: list[RegisterOrder], memory: OwnEntries = OwnEntries.EMPTY) -> ReportsOutcome:
+        inputs = _inputs(mails, orders, rollout=_ROLLOUT, closed=CLOSED, ordered=[SEVENTH, DAY, NINTH], memory=memory)
+        return enter_reports(inputs)
+
+    orders = [_order(day=SEVENTH)]
+    first_mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    first = click([first_mail], orders)
+    [added] = [order for order in _after(orders, first) if order.key.number == ADDED]
+    moved = _order(added.row, number=ADDED, day=moved_to, successful="tak", completed="montaż ONT", address=None)
+    fresher = _mail(JAN, SUBJECT, f"{ADDED} nie brak klienta", LATER)
+
+    second = click([first_mail, fresher], [*orders, moved], first.memory)
+
+    assert [(found.day, found.number) for found in first.added] == [(DAY, ADDED)]
+    assert (second.moves, second.changes, second.added) == ((), (), ())
+    assert second.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber(ADDED), moved_to, moved_to, bar),)
+
+
+def test_raport_z_pomylonym_tematem_wpisuje_sie_do_dopisanego_zlecenia_w_jego_dniu_bez_przeniesienia() -> None:
+    """Przegląd #1374 r4 Ważne 1 (ADR 0029): Raport Jana za 7.11 dopisuje 40000077 w 7.11. Świeższy Raport Jana za 8.11 ma
+    dwa jego zlecenia z 7.11, więc temat jest pomylony, i 40000077 z „nie”. Dopisane zlecenie nie liczy się do progu, ale
+    przy pomylonym temacie zostaje w swoim dniu jak każde zlecenie raportu i dostaje Wpis z informacją o przegranym
+    temacie, więc tata nie dostaje sprzecznych informacji, że temat to pomyłka, a zlecenie przeszło na dzień z tematu."""
+
+    orders = [_order(day=SEVENTH), _order(OrderRow("Zlecenia", 121), number="40000002", day=SEVENTH)]
+    first_mail = _mail(JAN, "Raport 07.11.2026", ADDED_TEXT)
+    first = enter_reports(_inputs([first_mail], orders, rollout=SEVENTH, ordered=[SEVENTH, DAY]))
+    mistaken = _mail(JAN, SUBJECT, f"40000001 tak montaż\n40000002 tak montaż\n{ADDED} nie brak klienta", LATER)
+
+    second = enter_reports(
+        _inputs([first_mail, mistaken], _after(orders, first), rollout=SEVENTH, ordered=[SEVENTH, DAY], memory=first.memory)
+    )
+
+    assert [(found.day, found.number) for found in first.added] == [(SEVENTH, ADDED)]
+    assert (second.moves, second.added, second.problems) == ((), (), ())
+    assert {(change.order.row, change.value) for change in second.changes} == {
+        (row, value) for row in (120, 121) for value in ("tak", "montaż")
+    } | {(122, "nie"), (122, "brak klienta")}
+    assert [found for found in second.notes if isinstance(found, SubjectLost)] == [
+        SubjectLost(DAY, JAN_LOGIN, OrderNumber(number), SEVENTH) for number in ("40000001", "40000002", ADDED)
+    ]
+
+
 def test_zlecenie_numeru_z_drugim_przeczytanym_wierszem_nie_przechodzi_a_zlecenie_nadawcy_z_dnia_z_tematu_ma_wpis() -> None:
     """Reguła #1367 „numer w kilku miejscach się nie przenosi” z przeczytanymi wierszami (przegląd #1374 r3): proces
     przeczytał 40000001 w zleceniu i drugi raz w wierszu bez zlecenia (Surowe zlecenie albo wiersz bez ``WYKONAWCA``).
@@ -4953,23 +5054,30 @@ def test_zlecenie_numeru_z_drugim_przeczytanym_wierszem_nie_przechodzi_a_zleceni
 
 
 @pytest.mark.parametrize(
-    ("rows", "bar"),
+    ("rollout", "rows", "bar"),
     [
-        pytest.param((date(2026, 11, 5),), AddBar.BEFORE_WINDOW, id="zlecenie-sprzed-okna"),
-        pytest.param((date(2026, 11, 5), date(2026, 11, 4)), AddBar.BEFORE_WINDOW, id="dwa-zlecenia-sprzed-okna"),
-        pytest.param((date(2026, 11, 5), None), AddBar.IN_INTERMAX, id="zlecenie-sprzed-okna-i-wiersz-bez-zlecenia"),
-        pytest.param((SEVENTH,), AddBar.IN_INTERMAX, id="pelny-wiersz-w-oknie-bez-zlecenia-rdzenia"),
-        pytest.param((None,), AddBar.IN_INTERMAX, id="wiersz-bez-zlecenia"),
+        pytest.param(SEVENTH, (date(2026, 11, 5),), AddBar.BEFORE_WINDOW, id="zlecenie-sprzed-okna"),
+        pytest.param(SEVENTH, (date(2026, 11, 5), date(2026, 11, 4)), AddBar.BEFORE_WINDOW, id="dwa-zlecenia-sprzed-okna"),
+        pytest.param(SEVENTH, (date(2026, 11, 5), None), AddBar.IN_INTERMAX, id="zlecenie-sprzed-okna-i-wiersz-bez-zlecenia"),
+        pytest.param(SEVENTH, (SEVENTH,), AddBar.IN_INTERMAX, id="pelny-wiersz-w-oknie-bez-zlecenia-rdzenia"),
+        pytest.param(SEVENTH, (None,), AddBar.IN_INTERMAX, id="wiersz-bez-zlecenia"),
+        pytest.param(CLOSED_DAY, (CLOSED_DAY,), AddBar.IN_INTERMAX, id="pierwszy-czytany-dzien-przed-pierwszym-otwartym"),
+        pytest.param(CLOSED_DAY, (date(2026, 11, 1),), AddBar.BEFORE_WINDOW, id="dzien-przed-pierwszym-czytanym"),
     ],
 )
-def test_numer_przeczytany_tylko_w_zleceniach_sprzed_okna_ma_wlasny_powod(rows: tuple[date | None, ...], bar: AddBar) -> None:
-    """Przegląd #1374 r3 Drobne 3: okno czyta zlecenia od 7.11 (dzień wdrożenia), a proces przeczytał numer z Wpisu Jana
-    tylko w wierszach, z których rdzeń nie ma zlecenia. Gdy każdy z nich to zlecenie z dniem i ``WYKONAWCA`` sprzed 7.11,
-    powód mówi o dniu sprzed okna (``BEFORE_WINDOW``), a inaczej o wierszu bez zlecenia (``IN_INTERMAX``); w obu
-    przypadkach Centrum go nie dopisuje."""
+def test_numer_przeczytany_tylko_w_zleceniach_sprzed_okna_ma_wlasny_powod(
+    rollout: date, rows: tuple[date | None, ...], bar: AddBar
+) -> None:
+    """Przegląd #1374 r3 Drobne 3: okno czyta zlecenia od dnia wdrożenia (7.11), a proces przeczytał numer z Wpisu Jana
+    tylko w wierszach, z których rdzeń nie ma zlecenia. Gdy każdy z nich to zlecenie z dniem i ``WYKONAWCA`` sprzed dni,
+    których zlecenia czyta okno, powód mówi o dniu sprzed okna (``BEFORE_WINDOW``), a inaczej o wierszu bez zlecenia
+    (``IN_INTERMAX``); w obu przypadkach Centrum go nie dopisuje. Przegląd #1374 r4 Drobne 1: przy dniu wdrożenia 2.11
+    w okresie z Plikiem zbiorczym pierwszy dzień otwarty to 3.11, a zlecenia okno czyta od 2.11 (``Window.start``), więc
+    wiersz z 2.11 nie jest sprzed okna, a z 1.11 jest."""
 
     present = tuple(ReadNumber(OrderNumber(ADDED), day) for day in rows)
-    inputs = _inputs([_mail(JAN, SUBJECT, ADDED_TEXT)], [], rollout=SEVENTH, ordered=[SEVENTH, DAY], present=present)
+    mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    inputs = _inputs([mail], [], rollout=rollout, closed=CLOSED, ordered=[SEVENTH, DAY], present=present)
 
     outcome = enter_reports(inputs)
 

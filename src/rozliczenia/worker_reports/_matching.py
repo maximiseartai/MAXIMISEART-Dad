@@ -6,7 +6,7 @@ INTERMAX nie ma w żadnym odczytanym dniu, jako Zlecenie dopisane z raportu; prz
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 
@@ -90,13 +90,11 @@ class Matched:
 @dataclass(frozen=True)
 class _Placed:
     """Zlecenie z dniem i Wykonawcą sprzed Przeniesień Centrum (``day``, ``worker``): z pamięci, gdy INTERMAX ma je tam,
-    gdzie postawiło je Centrum, a inaczej z INTERMAX. ``added``: Centrum dopisało ten numer z raportu (pamięć numeru z
-    ``OwnMove.added``), więc przed Centrum numeru w INTERMAX nie było, a dzień jego zlecenia dał Raport wykonawcy."""
+    gdzie postawiło je Centrum, a inaczej z INTERMAX."""
 
     order: RegisterOrder
     day: date
     worker: Login
-    added: bool = False
 
 
 @dataclass(frozen=True)
@@ -131,15 +129,18 @@ class Board:
     odczytane dni, a okno mówi tylko, do których zleceń wolno pisać i które przenosić (dni otwarte).
 
     Dzień i Wykonawca sprzed Przeniesień Centrum sprawiają, że Wpis liczy się do progu pomylonego tematu tak samo przed
-    Przeniesieniem i po nim, a zlecenie numeru, który Centrum dopisało, nie liczy się do niego wcale, gdziekolwiek
-    stoi, jak numer bez zlecenia przed dopisaniem, więc kolejne kliknięcia dają to samo co jedno. Miejsce
-    zmienia tylko jedyne zlecenie numeru, który stoi w jednym przeczytanym wierszu, a czy Wpis może zmienić jego dzień
-    albo Wykonawcę, mówi reguła ``may_move`` dla pamięci tego numeru (``_movable``), a czy może dopisać numer, którego
-    INTERMAX już nie ma, ta sama reguła (``_addable``); gdy nie może, nic się nie dzieje, bez problemu (ADR 0029
-    „Ręczna zmiana dalej wygrywa”). Numer w kilku przeczytanych wierszach (``present``): w kilku zleceniach
-    odczytanych dni, także z dniem zamkniętym albo po dziś, albo w zleceniu i w wierszu bez zlecenia, nie zmienia
-    miejsca żadnego z nich (``_repeated``), bo Excel nie mówi, które z nich tata przeniósł, więc pamięć numeru nie wie,
-    do którego należy, a Przeniesienie obok wiersza bez zlecenia dałoby ten numer dwa razy w dniu z tematu.
+    Przeniesieniem i po nim, a numer, który Centrum dopisało (``_added``, pamięć z ``OwnMove.added``), nie liczy się do
+    progu wcale, gdziekolwiek stoi, jak numer bez zlecenia przed dopisaniem, więc kolejne kliknięcia dają to samo co
+    jedno. Drogę jego Wpisu wybiera, jak przy każdym zleceniu, dzień jego zlecenia (``_other_day_number``), więc z dnia,
+    który nie jest otwarty, Wpis go nie przenosi, a przy pomylonym temacie zostaje ono w swoim dniu (``_other_day``,
+    przegląd #1374 r4). Miejsce zmienia tylko jedyne zlecenie numeru, który stoi w jednym przeczytanym wierszu, a czy
+    Wpis może zmienić jego dzień albo Wykonawcę, mówi reguła ``may_move`` dla pamięci tego numeru (``_movable``), a czy
+    może dopisać numer, którego INTERMAX już nie ma, ta sama reguła (``_addable``); gdy nie może, nic się nie dzieje,
+    bez problemu (ADR 0029 „Ręczna zmiana dalej wygrywa”). Numer w kilku przeczytanych wierszach (``present``): w
+    kilku zleceniach odczytanych dni, także z dniem zamkniętym albo po dziś, albo w zleceniu i w wierszu bez zlecenia,
+    nie zmienia miejsca żadnego z nich (``_repeated``), bo Excel nie mówi, które z nich tata przeniósł, więc pamięć
+    numeru nie wie, do którego należy, a Przeniesienie obok wiersza bez zlecenia dałoby ten numer dwa razy w dniu z
+    tematu.
     """
 
     def __init__(
@@ -156,12 +157,21 @@ class Board:
             self._rows[read.number].append(read.order_day)
         self._orders = tuple(orders)
         standing = {OrderKey(move.number, move.day, move.worker): move for move in self._memory}
-        added = {move.number for move in self._memory if move.added}
+        self._added = frozenset(move.number for move in self._memory if move.added)
         self._numbered: defaultdict[OrderNumber, list[_Placed]] = defaultdict(list)
+        own: defaultdict[tuple[Login, date], set[OrderNumber]] = defaultdict(set)
         for order in orders:
             place = standing.get(order.key)
             day, worker = (order.key.day, order.key.worker) if place is None else (place.origin_day, place.origin_worker)
-            self._numbered[order.key.number].append(_Placed(order, day, worker, order.key.number in added))
+            self._numbered[order.key.number].append(_Placed(order, day, worker))
+            if order.key.number not in self._added:
+                own[worker, day].add(order.key.number)
+        self.own_numbers: Mapping[tuple[Login, date], frozenset[OrderNumber]] = {
+            place: frozenset(numbers) for place, numbers in own.items()
+        }
+        """Numery zleceń każdego Wykonawcy i dnia sprzed Przeniesień Centrum, bez numerów, które Centrum dopisało, jak
+        próg pomylonego tematu: po nich reguła poprawionego maila (``_corrections``) widzi te same zlecenia Wykonawcy z
+        dnia przed Przeniesieniem i dopisaniem Centrum i po nich, więc kolejne kliknięcia dają to samo co jedno."""
         self._window = window
         self._ordered = ordered_days
         self._ordered_anywhere = frozenset(found.day for found in ordered_days)
@@ -204,7 +214,7 @@ class Board:
             for entry in report.entries:
                 said.setdefault(entry.number, []).append(entry)
             other_day = [number for number in said if self._other_day_number(number, report.day)]
-            mistaken = len(other_day) >= MISTAKEN_SUBJECT
+            mistaken = sum(number not in self._added for number in other_day) >= MISTAKEN_SUBJECT
             for number, written in said.items():
                 placed = self._numbered.get(number, [])
                 if number not in other_day and not self._window.opens(report.day):
@@ -265,9 +275,9 @@ class Board:
 
     def _other_day_number(self, number: OrderNumber, day: date) -> bool:
         """Numer, którego zlecenia nie ma w dniu ``day`` (dzień sprzed Przeniesień Centrum), a jest w innym odczytanym
-        dniu; zlecenie numeru, który Centrum dopisało (``_Placed.added``), się nie liczy."""
+        dniu."""
 
-        placed = [found for found in self._numbered.get(number, []) if not found.added]
+        placed = self._numbered.get(number, [])
         return bool(placed) and all(found.day != day for found in placed)
 
     def _unknown(self, report: ReadReport, number: OrderNumber, mistaken: bool) -> _New | list[ReportProblem]:
