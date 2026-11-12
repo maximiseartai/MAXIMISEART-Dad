@@ -22,40 +22,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import part
 
-# Jednostka to skrypt skilla z argumentami; każda biegnie od świeżego startu. Na Macu Maksa (2026-11-05, obok innych
-# agentów) zakresy ``archiwum`` i ``archiwum-diagnoza`` trwają razem ok. 89 s, ``watek-okresu`` ok. 32 s, ``diagnoza``,
-# ``diagnoza-odczyt`` i ``archiwum-puste-repo`` razem ok. 43 s, cztery zakresy Zgłoszeń i Uwag z zakresem ``postep``
-# razem ok. 39 s, a model ok. 65 s, więc przy trzech częściach pierwsza bierze zakresy Archiwum, druga dwie następne
-# jednostki, a trzecia resztę i model (ok. 89 s, 75 s i 104 s). Zakresy z opóźnieniem listy (#879) dokładają po kilka
-# sekund do jednostek swoich celów: ``watek-okresu-lista`` i ``archiwum-lista`` ok. 8 s każdy, ``nowe-issue-lista`` i
-# ``zgloszenie-lista`` razem ok. 8 s (Mac Maksa pod obciążeniem, 2026-11-05).
+
+def _scopes(*names: str) -> tuple[str, tuple[str, ...]]:
+    return ("explore_outbox.py", tuple(argument for name in names for argument in ("--scope", name)))
+
+
+def _configs(*names: str) -> tuple[str, tuple[str, ...]]:
+    return ("sprawdz_model_kolejki.py", tuple(argument for name in names for argument in ("--config", name)))
+
+
+# Jednostka to skrypt skilla z argumentami; każda biegnie od świeżego startu. Część bierze kolejne jednostki po ich
+# liczbie, nie po czasie, więc grupa zakresów waży ok. 140 s, a grupa konfiguracji ok. 90 s w CI, a kolejność daje przy
+# czterech i pięciu częściach (tyle plan bierze na PR) najdłuższą część ok. 300 s, poniżej podstawy
+# verify-urwane-uruchomienie (ok. 330 s), która biegnie z tą w większości PR-ów. Wagi to mediany 8 runów PR 5–12.11
+# (Windows CI): zakresy Archiwum 276 s, wątek okresu 115 s, ``diagnoza`` z ``diagnoza-odczyt``, ``archiwum-puste-repo``
+# i ``archiwum-lista`` 164 s, pozostałe zakresy z ``postep`` 144 s i model 453 s, podzielone między zakresy i
+# konfiguracje w proporcji ich czasów na Macu Maksa (12.11). Najdłuższe niepodzielne to zakresy ``archiwum`` i
+# ``archiwum-diagnoza`` (ok. 140 s).
 UNITS = (
-    ("explore_outbox.py", ("--scope", "archiwum", "--scope", "archiwum-diagnoza")),
-    ("explore_outbox.py", ("--scope", "watek-okresu", "--scope", "watek-okresu-lista")),
-    (
-        "explore_outbox.py",
-        ("--scope", "diagnoza", "--scope", "diagnoza-odczyt", "--scope", "archiwum-puste-repo", "--scope", "archiwum-lista"),
-    ),
-    (
-        "explore_outbox.py",
-        (
-            "--scope",
-            "zgloszenie",
-            "--scope",
-            "zgloszenie-wrocilo",
-            "--scope",
-            "nowe-issue",
-            "--scope",
-            "nowe-issue-lista",
-            "--scope",
-            "zgloszenie-lista",
-            "--scope",
-            "znane-issue",
-            "--scope",
-            "postep",
-        ),
-    ),
-    ("sprawdz_model_kolejki.py", ()),
+    _scopes("archiwum-diagnoza"),
+    _scopes("postep", "archiwum-lista", "nowe-issue", "nowe-issue-lista", "znane-issue"),
+    _configs("archiwum", "logi", "odczyt"),
+    _scopes("watek-okresu", "watek-okresu-lista", "zgloszenie", "zgloszenie-wrocilo", "zgloszenie-lista"),
+    _configs("okres", "diagnoza", "zgloszenie", "znane"),
+    _scopes("diagnoza", "diagnoza-odczyt", "archiwum-puste-repo"),
+    _scopes("archiwum"),
+    _configs("starsza"),
+    _configs("archiwum-lista", "odmowa-tresci", "dwa-procesy", "dwie-kolejki"),
+    _configs("postep", "puste-repo", "nowe"),
 )
 
 

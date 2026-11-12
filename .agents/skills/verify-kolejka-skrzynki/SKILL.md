@@ -15,7 +15,7 @@ pilnuje:
   - tools/lib/narzedzia_tlc.py
   - tools/lib/eksplorator.py
 ci: .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_kolejke.py
-ci-czesci: 3
+ci-czesci: 5
 ---
 
 # Verify Kolejka Skrzynki Zgłoszeń
@@ -25,14 +25,12 @@ ci-czesci: 3
 CI runs `sprawdz_kolejke.py` (the `ci:` key) in Mutation checks whenever a change touches this skill:
 it runs the checker of the real code (`explore_outbox.py`) and the TLA+ model (`sprawdz_model_kolejki.py`, TLC,
 as the `ci:` of `verify-aktualizacja-narzedzia` does), each to its end. Its units (`UNITS` in
-`sprawdz_kolejke.py`) are the scopes `archiwum` and `archiwum-diagnoza` together, the scopes `watek-okresu` and
-`watek-okresu-lista`, the scopes `diagnoza`, `diagnoza-odczyt`, `archiwum-puste-repo` and `archiwum-lista` together, the
-other six scopes with `postep`, and the model; CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive
-units per part). On Maks's Mac (2026-11-05, after #911) the two scopes of the Archiwum take about 67 s together, the
-scopes of the issue okresu about 26 s, the third unit about 39 s, the other scopes with `postep` about 35 s and the model
-about 65 s, so with three parts the first runs the scopes of the Archiwum, the second the next two units and the third
-the rest and the model. On Windows CI the same units took about 7 times as long before #911 (1163 s, 304 s, 505 s and
-355 s in run 41993938633 against 145 s, 40 s, 69 s and 57 s on the Mac). A
+`sprawdz_kolejke.py`) are five groups of scopes (about 140 s each on Windows CI) and five groups of model configurations
+(about 90 s each); CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part).
+A part takes units by count, not by time, so their order keeps the longest part near 300 s with four or five parts.
+On Windows CI (8 pull request runs, 5–12.11) the scopes took 699 s and the model 453 s; with the earlier five units in
+three parts the third part (the six scopes of Zgłoszenia and Uwagi with `postep`, and the whole model) took 525–754 s
+against 192–393 s for the first. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
 In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether a change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
