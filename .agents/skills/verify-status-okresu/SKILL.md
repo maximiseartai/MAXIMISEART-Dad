@@ -113,7 +113,7 @@ The last line is the verdict:
 | `STATUS OKRESU OK, ZNANE USTALENIA: n, ZAAKCEPTOWANE RYZYKA: m` | 0 | Only the known findings and accepted risks below, each printed with its first state and every consumer's answer. A count of zero is left out. |
 | `STATUS OKRESU: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or a consumer crashed (`WYJATEK`) or answered in a way the checker cannot read (`NIEOCZEKIWANA_ODPOWIEDZ`, for example a renamed Komunikat code). |
 | `STATUS OKRESU: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding or accepted risk did not show in a scope of its `after`. If a change fixed it, narrow or delete it in `KNOWN_FINDINGS` or `ACCEPTED_RISKS` and below. |
-| `STATUS OKRESU: LUKA MODELU (n)` | 2 | The system does not take access away with `chmod` (Windows, or a run as root), so scope `niedostepne` did not run. No verdict on it. |
+| `STATUS OKRESU: LUKA MODELU (n)` | 2 | The system does not take access away here (a run as root, whom `chmod` does not stop, or `icacls` without effect on Windows), so scope `niedostepne` did not run. No verdict on it. |
 
 ## How it works and what it covers
 
@@ -131,16 +131,23 @@ The starts run the Sprawdzanie of each process on valid synthetic Wzorce, so onl
 | Scope | States of Folder okresu `08_14_09_2026` |
 | --- | --- |
 | `czytelne` (13) | no Folder okresu; a Folder okresu with or without Rozliczenie wewnętrzne, with or without Plik zbiorczy, without, with an empty or with a filled Folder rozliczeń pracowników |
-| `niedostepne` (24) | as above, with the Plik zbiorczy or the Folder rozliczeń pracowników unreadable (`chmod 0`), and the Folder okresu itself unreadable |
+| `niedostepne` (24) | as above, with the Plik zbiorczy or the Folder rozliczeń pracowników unreadable, and the Folder okresu itself unreadable |
+
+Access is taken away with `chmod 0` on macOS and Linux, and on Windows, where `chmod` only sets the read-only
+attribute, with a deny entry for the user (`icacls`): reading the data of the Plik zbiorczy, and reading the data and
+attributes of a folder, inherited by everything in it, so a file in an unreadable folder cannot be looked up either, as
+under `chmod 0`.
+Before the consumers are asked, the checker lists each unreadable folder and opens each unreadable file and stops with
+`WYJATEK` unless that gives `PermissionError`.
 
 There is no TLA+ model here, so `/statechart` does not apply: the order of events that leads to a state (Przebieg
 rozliczeń, then Dad moves the Plik zbiorczy away) is one step, and the check covers the state whatever led to it.
 
 Not covered: Dad's month layout with the Folder okresu in two months (`PeriodFolderLookupError`), a name taken by the
 wrong kind of entry (a folder named like the Plik zbiorczy, a file named like the Folder rozliczeń pracowników), a
-Plik zbiorczy open in Excel (a lock, not a Status okresu), unreadability that `chmod` does not model (OneDrive
-placeholders, Windows sharing violations), Diagnoza, the start card's own refusals after a choice
-(`PeriodStarts.prepare`), and anything after Sprawdzanie: the check does not run a whole process.
+Plik zbiorczy open in Excel (a lock, not a Status okresu), unreadability that a permission does not model (a OneDrive
+placeholder that does not download, a file another program holds with a sharing violation), Diagnoza, the start card's
+own refusals after a choice (`PeriodStarts.prepare`), and anything after Sprawdzanie: the check does not run a whole process.
 
 ## Known findings
 
@@ -189,7 +196,7 @@ Then sort it:
 - **Modelling error**: the reference is wrong for the state (read `GLOSSARY.md` again), the folder the checker built is
   not what the state says, or a Komunikat code in `UNREADABLE_STOPS` or a text the checker reads changed on purpose.
   Fix the checker, then rerun the mutations below.
-- **LUKA MODELU**: the scope with unreadable files did not run; run it on macOS or Linux as a normal user.
+- **LUKA MODELU**: the scope with unreadable files did not run; run it as a normal user, not as root.
 
 Never narrow a rule, the reference or a scope to make a real counterexample disappear.
 
@@ -207,8 +214,9 @@ py -3 .agents\skills\verify-status-okresu\scripts\check_status_okresu_mutations.
 It must end with `MUTACJE OK`: a Status okresu that ignores an empty Folder rozliczeń pracowników, Uzupełnienie
 deciding `settled` by the wrong Status okresu, Wpisanie raportów that closes no period, the karta Przebiegu rozliczeń
 offering a closed period, an unreadable folder read as a missing one, and the karta Przygotowania naming every period
-„Brak plików okresu” all give `NOWE NARUSZENIE`, and so do the `BOUNDARIES` variants: Wpisanie raportów closing a
-period by its Rozliczenie wewnętrzne (outside `states` of the first finding, outside `consumers` of ADR 0005),
+„Brak plików okresu” all give `NOWE NARUSZENIE`, and so does a state with an unreadable Plik zbiorczy built with a
+readable one, while taking access away without effect gives `LUKA MODELU`.
+The `BOUNDARIES` variants give `NOWE NARUSZENIE` too: Wpisanie raportów closing a period by its Rozliczenie wewnętrzne (outside `states` of the first finding, outside `consumers` of ADR 0005),
 Sprawdzanie of Przebieg rozliczeń without its guard (outside `consumers` of both findings), and the guard of
 Przygotowanie checking only the Rozliczenie wewnętrzne or also the Folder okresu (outside `states` of the second
 finding and of ADR 0005).

@@ -25,7 +25,8 @@ PREPARATION_FILES = Path("src/rozliczenia/preparation_files.py")
 FILLING = Path("src/rozliczenia/centrum/filling.py")
 PERIOD_START = Path("src/rozliczenia/centrum/period_start.py")
 SETTLEMENT_KIND = Path("src/rozliczenia/centrum/processes/settlement.py")
-EXPLORER = (".agents/skills/verify-status-okresu/scripts/explore_status_okresu.py",)
+EXPLORER_FILE = Path(".agents/skills/verify-status-okresu/scripts/explore_status_okresu.py")
+EXPLORER = (EXPLORER_FILE.as_posix(),)
 NEW = "STATUS OKRESU: NOWE NARUSZENIE"
 
 PERIOD_FILES_GUARD = "        for target in (folder.internal_settlement, folder.collective_file):\n"
@@ -181,6 +182,26 @@ MUTATIONS = (
         EXPLORER,
         "karta startu Przygotowania nazywa zamknięty okres „Brak plików okresu”",
         NEW,
+    ),
+    Mutation(
+        "stan z Plikiem zbiorczym bez dostępu budowany z plikiem, który da się odczytać",
+        (
+            Edit(
+                EXPLORER_FILE,
+                "        for path, folder in locked:\n            take_access(path, folder=folder)\n",
+                "        for path, folder in locked:\n            if folder:\n                take_access(path, folder=folder)\n",
+            ),
+        ),
+        EXPLORER,
+        "sprawdzenie ocenia stan, którego nie zbudowało, i przepuszcza konsumenta, który czyta niedostępny plik jak brak",
+        NEW,
+    ),
+    Mutation(
+        "odebranie dostępu bez skutku",
+        (Edit(EXPLORER_FILE, "        path.chmod(0)\n", "        pass\n"),),
+        EXPLORER,
+        "zakres niedostepne przechodzi bez żadnego stanu bez dostępu",
+        "STATUS OKRESU: LUKA MODELU",
     ),
     *dict.fromkeys(mutation for parts in BOUNDARIES.values() for mutations in parts.values() for mutation in mutations),
 )

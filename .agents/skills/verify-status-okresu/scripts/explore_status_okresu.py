@@ -1,7 +1,7 @@
 """Exhaustively check that every consumer of the Status okresu reads the same Folder okresu the same way.
 
 For every state of one Folder okresu in a scope, the checker builds the folder on the real disk (a temporary
-directory, real files, access taken away with ``chmod``) and asks each consumer through its public entry point:
+directory, real files, access taken away with ``chmod`` or, on Windows, a deny entry of ``icacls``) and asks each consumer through its public entry point:
 
 - Tablica okresów (``GET /api/periods`` of the real ``create_app``): the Status okresu and the steps it offers;
 - the start cards of Przygotowanie, Przebieg rozliczeń and Wycena w efenix (``GET /api/runs/setup``);
@@ -34,6 +34,7 @@ import itertools
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -317,9 +318,13 @@ def make_inputs(root: Path) -> Inputs:
 
 @contextmanager
 def built(periods: Path, state: FolderState, inputs: Inputs) -> Iterator[None]:
-    """The Folder okresu of ``state`` in ``periods``; access taken away for the time of the block."""
+    """The Folder okresu of ``state`` in ``periods``; access taken away for the time of the block.
 
-    locked: list[Path] = []
+    A path the state calls unreadable that still reads after ``take_access`` stops the run: the checker would judge a
+    state it did not build.
+    """
+
+    locked: list[tuple[Path, bool]] = []
     try:
         if state.folder is not Folder.BRAK:
             directory = periods / PERIOD.token
@@ -330,38 +335,83 @@ def built(periods: Path, state: FolderState, inputs: Inputs) -> Iterator[None]:
                 collective = directory / pliki_taty.collective_file_name(PERIOD.token)
                 shutil.copyfile(inputs.collective_bytes, collective)
                 if state.collective is Collective.NIEDOSTEPNY:
-                    locked.append(collective)
+                    locked.append((collective, False))
             if state.workers is not Workers.BRAK:
                 workers = directory / pliki_taty.worker_settlements_name(PERIOD.token)
                 workers.mkdir()
                 if state.workers is Workers.Z_ROZLICZENIEM:
                     shutil.copyfile(inputs.collective_bytes, workers / pliki_taty.worker_settlement_name(PERIOD.token, WORKER))
                 if state.workers is Workers.NIEDOSTEPNY:
-                    locked.append(workers)
+                    locked.append((workers, True))
             if state.folder is Folder.NIEDOSTEPNY:
-                locked.append(directory)
-        for path in locked:
-            path.chmod(0)
+                locked.append((directory, True))
+        for path, folder in locked:
+            take_access(path, folder=folder)
+        for path, folder in locked:
+            if not refuses_reading(path, folder=folder):
+                raise RuntimeError(f"{path.name} daje się odczytać, choć stan mówi, że jest bez dostępu")
         yield
     finally:
-        for path in reversed(locked):
-            path.chmod(stat.S_IRWXU)
+        for path, _ in reversed(locked):
+            give_access(path)
+
+
+def take_access(path: Path, *, folder: bool) -> None:
+    """Takes the user's access to read ``path`` away, as Dad loses it to a folder or file of the Folder okresu.
+
+    On macOS and Linux ``chmod 0``. On Windows ``chmod`` only sets the read-only attribute, so a deny entry for the user
+    (``icacls``) takes reading the data away; on a folder it also takes its attributes and is inherited by everything in
+    it, so a file inside cannot be read or even looked up, as under ``chmod 0``.
+    """
+
+    if sys.platform == "win32":
+        rights = "(OI)(CI)(RD,RA)" if folder else "(RD)"
+        subprocess.run(["icacls", str(path), "/deny", f"{os.environ['USERNAME']}:{rights}"], check=True, capture_output=True)
+    else:
+        path.chmod(0)
+
+
+def give_access(path: Path) -> None:
+    """Gives back what ``take_access`` took, so the run can delete its temporary folder."""
+
+    if sys.platform == "win32":
+        subprocess.run(["icacls", str(path), "/remove:d", os.environ["USERNAME"]], check=True, capture_output=True)
+    else:
+        path.chmod(stat.S_IRWXU)
+
+
+def refuses_reading(path: Path, *, folder: bool) -> bool:
+    """Whether listing the folder or opening the file ``path`` gives ``PermissionError``, as a consumer would see it."""
+
+    try:
+        if folder:
+            with os.scandir(path):
+                pass
+        else:
+            with path.open("rb"):
+                pass
+    except PermissionError:
+        return True
+    return False
 
 
 def access_can_be_taken() -> bool:
-    """Whether ``chmod 0`` makes a folder unreadable here: not on Windows and not for root."""
+    """Whether ``take_access`` makes a folder and a file in it unreadable here: not for root on macOS or Linux, whom
+    ``chmod`` does not stop, and not where ``icacls`` fails on Windows."""
 
     with tempfile.TemporaryDirectory(prefix="status-okresu-proba-") as probe:
         folder = Path(probe) / "folder"
         folder.mkdir()
-        folder.chmod(0)
+        inside = folder / "plik"
+        inside.write_bytes(b"")
         try:
-            with os.scandir(folder):
-                return False
-        except PermissionError:
-            return True
+            take_access(folder, folder=True)
+        except (OSError, subprocess.CalledProcessError):
+            return False
+        try:
+            return refuses_reading(folder, folder=True) and refuses_reading(inside, folder=False)
         finally:
-            folder.chmod(stat.S_IRWXU)
+            give_access(folder)
 
 
 # --- Asking each consumer --------------------------------------------------------------------------------------------
@@ -690,7 +740,7 @@ def story(state: FolderState, answers: Sequence[Answer]) -> list[str]:
 def explore(scope: Scope, inputs: Inputs, root: Path, *, can_take_access: bool) -> ScopeReport:
     report = ScopeReport(scope)
     if scope.needs_unreadable and not can_take_access:
-        report.skipped = "system nie odbiera dostępu do folderu przez chmod (Windows albo root)"
+        report.skipped = "system nie odbiera tu dostępu do folderu (root, którego chmod nie zatrzymuje, albo icacls bez skutku)"
         return report
     started = time.perf_counter()
     for number, state in enumerate(sorted(scope.states, key=FolderState.describe)):
