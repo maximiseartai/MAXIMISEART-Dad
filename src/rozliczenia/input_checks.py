@@ -18,6 +18,7 @@ from typing import Final
 from . import preparation_files, settlement_files, settlement_messages, workbook_files
 from . import worker_config_messages
 from . import preparation_messages as messages
+from .file_state import file_state
 from .message import Message, StopError
 from .period_folder import (
     PeriodFolder,
@@ -50,14 +51,14 @@ def _worker_template_unusable(error: WorkbookError) -> Message:
 def _old_worker_template_beside(error: WorkbookError) -> str | None:
     """Dawna nazwa Wzorca, gdy Wzorca brakuje, a plik o niej leży obok.
 
-    Dysk pyta tylko przy brakującym Wzorcu: przy innym problemie folder Wzorca może być bez dostępu, a ``Path.is_file``
-    na Pythonie do 3.13 rzuca wtedy ``PermissionError``.
+    Dysk pyta tylko przy brakującym Wzorcu: przy innym problemie Komunikat mówi o tym problemie, a nie o dawnej nazwie.
+    Plik niedostępny (``file_state``) to brak podpowiedzi, a nie błąd.
     """
 
     if error.problem is not Problem.MISSING:
         return None
     old = error.path.with_name(_OLD_WORKER_TEMPLATE_NAME)
-    return old.name if old.is_file() else None
+    return old.name if file_state(old) == "file" else None
 
 
 @dataclass(frozen=True)

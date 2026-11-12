@@ -3,7 +3,9 @@
 Jedyne miejsce reguły, który błąd systemu plików znaczy brak, a który niedostępność. Brak to ``FileNotFoundError`` i
 ``NotADirectoryError`` (plik w miejscu folderu nad ścieżką); każdy inny ``OSError`` (np. brak dostępu do folderu, plik
 trzymany przez OneDrive) to niedostępność, o której tata dostaje inny Komunikat niż o braku pliku. ``Path.exists`` i
-``Path.is_file`` od Pythona 3.14 dają w folderze bez dostępu ``False``, więc plik niedostępny byłby z nimi brakiem.
+``Path.is_file`` od Pythona 3.14 dają w folderze bez dostępu ``False``, więc plik niedostępny byłby z nimi brakiem, a do
+3.13 rzucają ``PermissionError`` tam, gdzie wołający czeka na odpowiedź. Dlatego kod w ``src/`` pyta o stan pliku tylko
+tędy (zapadka w ``tests/test_zapadki.py``).
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
-__all__ = ["FileState", "PathState", "file_state", "folder_entries", "path_state", "path_taken", "remove_file"]
+__all__ = ["FileState", "PathState", "entry_kind", "file_state", "folder_entries", "path_state", "path_taken", "remove_file"]
 
 PathState = Literal["file", "folder", "missing", "inaccessible"]
 FileState = Literal["file", "missing", "inaccessible"]
@@ -62,6 +64,15 @@ def folder_entries(directory: Path) -> list[os.DirEntry[str]] | None:
             return list(entries)
     except _ABSENT:
         return None
+
+
+def entry_kind(entry: os.DirEntry[str]) -> Literal["file", "folder", "missing"]:
+    """Czy wpis z ``folder_entries`` jest plikiem, folderem czy czymś innym (jak u ``path_state``: zepsuty skrót to
+    brak), bez osobnego ``stat``, gdy listowanie podało rodzaj wpisu; ``OSError``, gdy trzeba go doczytać, a się nie da."""
+
+    if entry.is_file():
+        return "file"
+    return "folder" if entry.is_dir() else "missing"
 
 
 def remove_file(path: Path) -> None:

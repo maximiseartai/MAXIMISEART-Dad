@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Final
 import urllib.request
 
+from rozliczenia.file_state import file_state, path_state
 from rozliczenia.tool_files import HOST, TOOL_ROOT
 
 SERVICE: Final = "centrum-rozliczen"
@@ -114,9 +115,10 @@ def commit_since(commit: str, root: Path = TOOL_ROOT) -> date | None:
 
 def _git_directory(root: Path) -> Path | None:
     dot_git = root / ".git"
-    if dot_git.is_dir():
+    state = path_state(dot_git)
+    if state == "folder":
         return dot_git
-    if dot_git.is_file():  # katalog roboczy git worktree: „gitdir: <ścieżka>”
+    if state == "file":  # katalog roboczy git worktree: „gitdir: <ścieżka>”
         pointer = dot_git.read_text(encoding="utf-8").strip()
         if pointer.startswith("gitdir: "):
             return (root / pointer.removeprefix("gitdir: ")).resolve()
@@ -126,15 +128,15 @@ def _git_directory(root: Path) -> Path | None:
 def _resolved(ref: str, git_directory: Path) -> str | None:
     common = git_directory
     commondir = git_directory / "commondir"
-    if commondir.is_file():  # gałęzie katalogu roboczego leżą we wspólnym katalogu Gita
+    if file_state(commondir) == "file":  # gałęzie katalogu roboczego leżą we wspólnym katalogu Gita
         common = (git_directory / commondir.read_text(encoding="utf-8").strip()).resolve()
     for directory in dict.fromkeys((git_directory, common)):
         loose = directory / ref
-        if loose.is_file():
+        if file_state(loose) == "file":
             commit = loose.read_text(encoding="utf-8").strip()
             return commit if is_commit(commit) else None
     packed = common / "packed-refs"
-    if packed.is_file():
+    if file_state(packed) == "file":
         for line in packed.read_text(encoding="utf-8").splitlines():
             commit, _, name = line.partition(" ")
             if name == ref and is_commit(commit):

@@ -18,6 +18,8 @@ from pathlib import Path
 import re
 from typing import Final
 
+from .file_state import folder_entries
+
 __all__ = ["beside"]
 
 _DEVICE: Final = re.compile(r"[^\W_](?:[\w '’-]*[^\W_])?")
@@ -31,7 +33,7 @@ def beside(register: Path) -> tuple[Path, ...]:
 
     head, tail = f"{register.stem}-".casefold(), register.suffix.casefold()
     try:
-        names = sorted(path.name for path in register.parent.iterdir())
+        names = sorted(entry.name for entry in folder_entries(register.parent) or ())
     except OSError:
         return ()
     return tuple(
