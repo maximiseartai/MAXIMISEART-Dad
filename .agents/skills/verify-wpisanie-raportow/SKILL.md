@@ -82,7 +82,7 @@ otherwise):
 | `ZamkniecieOkresu`, `OtwarcieOkresu` | the Plik zbiorczy of the period appears (Przygotowanie) or Dad removes it; `report_entering._closed` gives `Window.of` the closed tokens and `Window.opens` leaves the order out of `orders` in `enter_reports` |
 | `PojawiaSieKopia`, `TataUsuwaKopie` | OneDrive puts a conflict copy beside INTERMAX; Dad merges it and removes it |
 | `Sprawdzanie` | Dad clicks; `RunHost.start` (one Uruchomienie at a time), `enter_from_mail` `check`: `FileReportState.load`, which reads the memory through `_TextFile.text` (`StateFile.retry` first, then the waiting text or the file) and `kept()` the same way, then `onedrive_conflicts.beside` (:276), whose copy is a Zatrzymanie before the mailbox |
-| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`enter_reports` → `_cells.reconcile` on the snapshot `saved.memory`, `saved.kept`) and `save` (`write_cells` with the changes and the Przeniesienia zleceń of the click) as one step: without changes and Przeniesienia `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
+| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`enter_reports` → `_cells.reconcile` on the snapshot `saved.memory`, `saved.kept`, then `_cells.with_added`) and `save` (`write_cells` with the changes, the Przeniesienia zleceń and the Zlecenia dopisane z raportu of the click) as one step: without any of them `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
 | `ZapiszPamiec` | :382 `parts.state.save_memory` → `FileReportState.save_memory` → `_TextFile.write` → `StateFile.write`; an `OSError` keeps the text waiting and the process gives only the warning `memory_not_saved` |
 | `ZapiszWynik` | :383 `parts.state.save_result` (the `ClickResult` with `ManualDifference` among its problems) → `_TextFile.write`, then :385 `onedrive_conflicts.beside`: a copy is the Zatrzymanie `conflict_after_save`, otherwise the summary; one step, because nothing between them writes a file or INTERMAX |
 | `Odswiez` | a tab reads the Raporty view: `ReportEnteringEntry.view` → `FileReportState.shown` and `kept`, each `_TextFile.text` retries a waiting write |
@@ -285,7 +285,11 @@ Wpisy with another day) only decides which order the Wpis reaches, and a Raport 
 with a Plik zbiorczy reaches an order of an open day only that way, so both are `NowyMail` too. Dad's change of
 `WYKONAWCA` or of the day (the memory of the order `OwnMove`, found by `_model.memories_of`, and the rule
 `_model.may_move`, whose transition table `tests/test_rdzen_raportow.py` checks as a property) only leaves an older
-Wpis in force, which `NowyMail` also covers. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
+Wpis in force, which `NowyMail` also covers. A Zlecenie dopisane z raportu (#1354) is, for the one cell, the empty
+cell that `Zapis` fills with the Wpis and remembers as the tool's own entry (`_cells.with_added`); Dad deleting the
+added row leaves no value of his that a write could overwrite, and the click after it adds the row again only for a
+fresher mail (`_model.may_move` for every memory of the number), which the model's write into an empty cell
+over-approximates. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
 mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).
