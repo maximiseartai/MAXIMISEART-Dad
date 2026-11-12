@@ -178,11 +178,13 @@ ROW_VALUE_EVIDENCE = {
 }
 
 
-def test_self_test_odrzuca_dowod_z_wartoscia_wiersza_kazdego_fixture_skilla(tmp_path: Path) -> None:
+# Jeden plik osobno: kod wyjścia przy dokładnie jednym błędzie, którego przebieg z pięcioma błędami nie widzi (#1435 r1).
+@pytest.mark.parametrize("names", [tuple(ROW_VALUE_EVIDENCE), ("przebieg.txt",)], ids=["kazdy-fixture", "jeden-plik"])
+def test_self_test_odrzuca_dowod_z_wartoscia_wiersza_kazdego_fixture_skilla(tmp_path: Path, names: tuple[str, ...]) -> None:
     evidence = tmp_path / "dowody"
     evidence.mkdir()
-    for name, row_value in ROW_VALUE_EVIDENCE.items():
-        (evidence / name).write_text(f"VERIFY OK | wiersz={row_value}\n", encoding="utf-8")
+    for name in names:
+        (evidence / name).write_text(f"VERIFY OK | wiersz={ROW_VALUE_EVIDENCE[name]}\n", encoding="utf-8")
 
     done = _script(
         SKILLS / "verify-rozliczenia" / "scripts" / "self_test.py",
@@ -194,7 +196,7 @@ def test_self_test_odrzuca_dowod_z_wartoscia_wiersza_kazdego_fixture_skilla(tmp_
     found = "SELF-TEST FAIL: source row content found in evidence: "
     flagged = {line.removeprefix(found) for line in done.stderr.splitlines() if line.startswith(found)}
     assert done.returncode == 1, done.stdout + done.stderr
-    assert flagged == set(ROW_VALUE_EVIDENCE), done.stderr
+    assert flagged == set(names), done.stderr
 
 
 @pytest.mark.parametrize(
