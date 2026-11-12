@@ -77,6 +77,7 @@ from atrapy.atrapa_efenix import (
     atrapa_efenix,
 )
 from tests.fixtures.expect import assert_expected
+from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.okno_w_procesie import okno
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.przegladarka import chromium, page_of
@@ -156,7 +157,7 @@ def test_szukanie_bez_sesji_dostaje_jak_w_efenix_samo_ostrzezenie_o_wygaslej_ses
 
 
 def test_po_bloku_atrapy_polaczenie_otwarte_w_bloku_nie_dostaje_odpowiedzi_a_po_jego_zamknieciu_nie_zostaje_jej_watek() -> None:
-    before = set(threading.enumerate())
+    since = new_line()
     with atrapa_efenix([]) as atrapa:
         connection = _connection(atrapa.url)
         assert _answer(connection, "GET", LIST_PAGE)[0] == 200
@@ -164,14 +165,14 @@ def test_po_bloku_atrapy_polaczenie_otwarte_w_bloku_nie_dostaje_odpowiedzi_a_po_
     with pytest.raises(ConnectionError):
         _answer(connection, "GET", LIST_PAGE)
     connection.close()
-    assert wait_for(lambda: set(threading.enumerate()) <= before, seconds=10)
+    assert wait_for(lambda: threads_since(since) == [], seconds=10)
 
 
 def test_koniec_bloku_atrapy_przerywa_odpowiedz_wolnego_efenix_i_nie_zostawia_jej_watku() -> None:
     """Odpowiedź wolnego efenix (``Outage.SLOW``) czeka na koniec bloku, a koniec bloku ją przerywa, więc wątek, który
     ją obsługuje, nie czeka dłużej niż Atrapa (pytający może dostać odpowiedź albo zerwane połączenie)."""
 
-    before = set(threading.enumerate())
+    since = new_line()
     with atrapa_efenix([], outage_from=(Outage.SLOW, 0)) as atrapa:
         connection = _connection(atrapa.url)
         asking = threading.Thread(target=_ask_ignoring_answer, args=(connection,))
@@ -180,7 +181,7 @@ def test_koniec_bloku_atrapy_przerywa_odpowiedz_wolnego_efenix_i_nie_zostawia_je
 
     asking.join(timeout=10)
     connection.close()
-    assert (asking.is_alive(), wait_for(lambda: set(threading.enumerate()) <= before, seconds=10)) == (False, True)
+    assert (asking.is_alive(), wait_for(lambda: threads_since(since) == [], seconds=10)) == (False, True)
 
 
 def _ask_ignoring_answer(connection: HTTPConnection) -> None:

@@ -50,6 +50,7 @@ from tests.fixtures.centrum import (
     centrum,
 )
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.praca_centrum import centrum_work
 from tests.fixtures.locked_file import lock_file
 
@@ -715,11 +716,12 @@ def test_wysylka_uwagi_nieznanej_temu_komputerowi_idzie_bez_zmian(tmp_path: Path
 def test_sprawdzanie_powiadomien_w_tle_nie_wstrzymuje_zamkniecia_centrum(tmp_path: Path) -> None:
     old_files(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
+    since = new_line()
     started = centrum(tmp_path)
     hold = started.report_box.search_hold = threading.Event()
     try:
         started.client.get("/api/notifications")
-        checks = [thread for thread in threading.enumerate() if thread.name == CHECK_THREAD]
+        checks = threads_since(since, named=CHECK_THREAD)
     finally:
         hold.set()
 
