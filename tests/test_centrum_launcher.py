@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from rozliczenia.centrum import restart_guardian
+from rozliczenia.centrum.shortcut import Folder, Shortcut, shortcuts
 
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.centrum import ToolDirectory
@@ -230,15 +231,18 @@ def test_zamkniecie_z_karty_konczy_proces_centrum_i_zostawia_wpis_w_dzienniku(tm
         centrum_health(port, timeout_s=0)
 
 
-def _windowless(runtime: Path, port: int) -> list[str]:
-    """Polecenie skrótu: na Windows prawdziwy ``pythonw.exe``, gdzie indziej Python bez ``sys.stdout`` i ``sys.stderr``."""
+def _windowless(runtime: Path, port: int, *, arguments: tuple[str, ...] | None = None) -> list[str]:
+    """Polecenie skrótu: na Windows prawdziwy ``pythonw.exe``, gdzie indziej Python bez ``sys.stdout`` i ``sys.stderr``.
 
-    script = str(runtime / "run_centrum.py")
+    ``arguments`` to argumenty ``pythonw.exe`` ze skrótu (skrypt i flagi); domyślnie sam ``run_centrum.py`` klonu.
+    """
+
+    script, *flags = arguments or (str(runtime / "run_centrum.py"),)
     if sys.platform == "win32":
-        return [str(Path(sys.executable).with_name("pythonw.exe")), script, "--port", str(port)]
+        return [str(Path(sys.executable).with_name("pythonw.exe")), script, *flags, "--port", str(port)]
     # Tak widzi świat kod pod pythonw: strumienie konsoli to None.
     simulated = f"import runpy, sys; sys.stdout = sys.stderr = None; runpy.run_path({script!r}, run_name='__main__')"
-    return [sys.executable, "-c", simulated, "--port", str(port)]
+    return [sys.executable, "-c", simulated, *flags, "--port", str(port)]
 
 
 def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) -> None:
@@ -264,6 +268,45 @@ def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) ->
     assert _log_events(runtime) == ["start", "juz-dziala", "zamkniecie", "stop"]
     assert "konsola=nie" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
+
+
+def _shortcut(runtime: Path, folder: Folder) -> Shortcut:
+    """Skrót kroku instalacji z ``folder`` dla klonu ``runtime``; test pada, gdy kroku nie ma takiego skrótu."""
+
+    found = [shortcut for shortcut in shortcuts(runtime) if shortcut.folder is folder]
+    assert len(found) == 1, f"Krok instalacji zakłada {len(found)} skrótów w folderze {folder}."
+    return found[0]
+
+
+def test_centrum_z_autostartu_startuje_bez_karty_a_skrot_z_pulpitu_otwiera_karte_dzialajacego(tmp_path: Path) -> None:
+    runtime = copy_centrum_runtime(tmp_path / "narzedzie")
+    browser, opened = _browser_recorder(tmp_path)
+    port = free_port()
+    environment = _environment(browser)
+    startup = _shortcut(runtime, Folder.STARTUP).arguments
+    desktop = _shortcut(runtime, Folder.DESKTOP).arguments
+    first = subprocess.Popen(_windowless(runtime, port, arguments=startup), cwd=runtime, env=environment)
+    try:
+        health = centrum_health(port)
+        startup_again = subprocess.run(
+            _windowless(runtime, port, arguments=startup), cwd=runtime, env=environment, timeout=60, check=False
+        )
+        opened_before_desktop = opened.exists()
+        desktop_click = subprocess.run(
+            _windowless(runtime, port, arguments=desktop), cwd=runtime, env=environment, timeout=60, check=False
+        )
+        addresses = _opened_addresses(opened, 1)
+        _close(port)
+        exit_code = first.wait(timeout=30)
+    finally:
+        first.kill()
+        first.wait()
+
+    assert health["service"] == "centrum-rozliczen"
+    assert (startup_again.returncode, desktop_click.returncode, exit_code) == (0, 0, 0)
+    assert not opened_before_desktop, "Skrót z Autostartu otworzył kartę."
+    assert addresses == opened.read_text(encoding="utf-8").split() == [f"http://127.0.0.1:{port}/"]
+    assert _log_events(runtime) == ["start", "juz-dziala", "juz-dziala", "zamkniecie", "stop"]
 
 _CONSOLE, _NO_CONSOLE = 10, 20
 _CONSOLE_PROBE = (
@@ -320,25 +363,44 @@ def _read_shortcut(link: Path) -> dict[str, str]:
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="The desktop shortcut and pythonw.exe are Windows-only.")
-def test_krok_instalacji_tworzy_skrot_ktory_uruchamia_centrum_przez_pythonw(tmp_path: Path) -> None:
+def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchamiaja_centrum_przez_pythonw(
+    tmp_path: Path,
+) -> None:
     runtime = copy_centrum_runtime(tmp_path / "narzedzie")
     desktop = tmp_path / "pulpit"
+    startup = tmp_path / "autostart"
     desktop.mkdir()
+    startup.mkdir()
     browser, opened = _browser_recorder(tmp_path)
 
-    installed = subprocess.run(
-        [sys.executable, str(runtime / "install_centrum_shortcut.py"), "--folder", str(desktop)],
-        cwd=runtime,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=_environment(browser),
-        timeout=120,
-        check=False,
-    )
-    assert installed.returncode == 0, installed.stdout + installed.stderr
-    shortcut = _read_shortcut(desktop / "Centrum rozliczeń.lnk")
+    def install() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(runtime / "install_centrum_shortcut.py"),
+                "--folder",
+                str(desktop),
+                "--folder-autostartu",
+                str(startup),
+            ],
+            cwd=runtime,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_environment(browser),
+            timeout=120,
+            check=False,
+        )
+
+    installed, installed_again = install(), install()
+    assert (installed.returncode, installed_again.returncode) == (0, 0), installed.stdout + installed_again.stdout
+    # Jeden skrót w każdym folderze, o tej samej nazwie: ponowny krok nadpisuje, a nie dokłada.
+    on_desktop, in_startup = list(desktop.iterdir()), list(startup.iterdir())
+    assert len(on_desktop) == len(in_startup) == 1, (on_desktop, in_startup)
+    assert on_desktop[0].name == in_startup[0].name and on_desktop[0].suffix == ".lnk"
+    shortcut = _read_shortcut(on_desktop[0])
+    from_startup = _read_shortcut(in_startup[0])
     target = Path(shortcut["TargetPath"])
     icon, index = shortcut["IconLocation"].rsplit(",", 1)
 
@@ -346,6 +408,7 @@ def test_krok_instalacji_tworzy_skrot_ktory_uruchamia_centrum_przez_pythonw(tmp_
     assert shortcut["Arguments"] == f'"{runtime / "run_centrum.py"}"'
     assert Path(shortcut["WorkingDirectory"]) == runtime
     assert (Path(icon), index) == (runtime / "src" / "rozliczenia" / "centrum" / "centrum-rozliczen.ico", "0")
+    assert from_startup == shortcut | {"Arguments": f'"{runtime / "run_centrum.py"}" "--no-browser"'}
 
     port = free_port()
     process = subprocess.Popen(

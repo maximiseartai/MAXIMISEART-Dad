@@ -1,4 +1,4 @@
-"""Jednorazowy krok instalacji: skrót „Centrum rozliczeń” na pulpicie (Windows)."""
+"""Jednorazowy krok instalacji: skrót „Centrum rozliczeń” na pulpicie i w Autostarcie (Windows)."""
 
 from pathlib import Path
 import sys

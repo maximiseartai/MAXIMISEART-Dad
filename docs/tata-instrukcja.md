@@ -30,7 +30,9 @@ Pierwszą instalację robi osoba utrzymująca narzędzie:
    py -3 install_centrum_shortcut.py
    ```
 
-   Na pulpicie pojawi się skrót „Centrum rozliczeń” z ikoną. Drugie polecenie
+   Na pulpicie pojawi się skrót „Centrum rozliczeń” z ikoną. Ten sam skrót
+   trafia do Autostartu Windows, więc Centrum startuje samo po zalogowaniu, bez
+   otwierania karty; kartę otwierasz skrótem z pulpitu. Drugie polecenie
    powtórz tylko po przeniesieniu folderu narzędzia albo po instalacji nowego
    Pythona.
 
