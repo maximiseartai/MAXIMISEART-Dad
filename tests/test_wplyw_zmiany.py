@@ -229,7 +229,7 @@ def test_odleglosc_od_zmiany_to_najkrotsza_droga_w_grafie_zaleznosci(tmp_path: P
         ("pyproject.toml", {Context.TESTS, Context.PR_GATE}),
         ("tests/conftest.py", {Context.TESTS, Context.PR_GATE}),
         ("tests/fixtures/git_config.py", {Context.TESTS, Context.PR_GATE}),
-        # Biblioteki: też każdy krok skilla, bo zadanie mutacji instaluje tylko je (#293).
+        # Biblioteki: też każdy krok skilla (#293, powód przy regule).
         ("requirements.txt", {Context.TESTS, Context.PR_GATE, Context.SKILL_STEPS}),
         # Workflow w bramce PR (ADR 0020), a kroki skilli tylko przy zadaniu CI, w którym biegną (#293).
         (".github/workflows/ci.yml", {Context.PR_GATE, Context.SKILL_STEPS}),

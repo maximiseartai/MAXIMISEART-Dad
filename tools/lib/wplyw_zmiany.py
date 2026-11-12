@@ -96,7 +96,8 @@ TEST_FILES = ("test_*.py", "*_test.py")
 _RUN_ALL = (
     # Konfiguracja pytest i narzędzi (#305).
     _Rule("pyproject.toml", frozenset({_TESTS, _GATE})),
-    # Biblioteki testów (#305) i zadania mutacji skilli, które instaluje tylko je (#293).
+    # Biblioteki testów (#305) i kroki skilli (#293) z czasu, gdy zadania mutacji instalowały tylko je; dziś instalują
+    # dodatek dev pyproject.toml, a zdjęcie kroków skilli stąd zwęża bramkę PR, więc czeka na zgodę Maksa (ADR 0020).
     _Rule("requirements.txt", frozenset({_TESTS, _GATE, _SKILLS})),
     # conftest każdego testu (#305) i fixture gita, którą wczytuje dla całej sesji (#360).
     _Rule("tests/conftest.py", frozenset({_TESTS, _GATE})),

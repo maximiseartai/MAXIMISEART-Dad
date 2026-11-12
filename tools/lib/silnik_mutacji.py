@@ -42,8 +42,8 @@ WYKRYTA, bo takiej zmiany nie wpuszczą brama pre-push i zadanie CI „Ruff, myp
 (F401, F841), nie liczy się: zostawia ją sama mutacja jednej linii, np. ``return wynik`` → ``return None``, więc nie
 dowodzi, że test jest zbędny.
 Brama biegnie tylko dla takich mutacji, raz najpierw bez mutacji, a gdy wtedy zgłasza cokolwiek, linia ``BRAMA TYPÓW
-CZERWONA`` na stderr zostawia werdykty bez zmian; tak jest w zadaniach skryptów skilli w CI, które instalują tylko
-``requirements.txt``, bez ruff i mypy (``ci.yml`` i ``mutacje-nocne.yml``), więc tam brama nic nie zmienia. Narzędzie
+CZERWONA`` na stderr zostawia werdykty bez zmian. Ruff i mypy daje dodatek ``dev``, który instaluje każde zadanie CI z
+mutacjami; Python bez nich to błąd ``MissingGateTool``, na którym skrypt skilla kończy się kodem 2. Narzędzie
 z wiersza poleceń bramy nie uruchamia: przegląd dowodzi swojego polecenia, a mypy sprawdza poleceniem ``-- -m mypy``.
 
 Narzędzie z wiersza poleceń uruchamia każdą mutację NIEWYKRYTA na HEAD także na merge-base HEAD z ``--baza`` (bez
@@ -93,6 +93,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from functools import partial
+import importlib.machinery
 from itertools import pairwise
 import json
 import os
@@ -407,6 +408,10 @@ class Gate(Protocol):
     def __call__(self, copy: Path, *, limit_s: float, stop: threading.Event, deadline: float | None) -> Checked: ...
 
 
+class MissingGateTool(Exception):
+    """Python bramy typów nie ma jej narzędzia (ruff albo mypy z dodatku ``dev``), więc brama niczego nie sprawdzi."""
+
+
 # Kody ruff, które mówią, że kod jest błędny: nazwa, której nie ma (także w ``__all__`` i przed przypisaniem), i błąd
 # składni; dlaczego tylko one, mówi ``wrong``.
 RUFF_WRONG = frozenset({"F821", "F822", "F823", "invalid-syntax"})
@@ -484,11 +489,15 @@ def static_gate(copy: Path, *, limit_s: float, stop: threading.Event, deadline: 
     """Kroki ruff i mypy obu systemów bramy pre-push (``kroki_lokalne.static_steps``) w kopii, z diagnostykami w JSON.
 
     Diagnostyki każdego kroku, który padł; kroki biegną do pierwszego, którego diagnostyka liczy się jako wykrycie
-    (``wrong``), albo do pierwszego, który nie skończył się w czasie.
+    (``wrong``), albo do pierwszego, który nie skończył się w czasie. Krok, którego narzędzia Python nie znajdzie, to
+    ``MissingGateTool``, a nie diagnostyka: brak narzędzia to zła instalacja, a nie kod, który bramy nie przechodzi.
     """
 
     found: list[Finding] = []
     for step in static_steps(copy):
+        # ``python -m`` w korzeniu kopii szuka modułu najpierw w nim, potem tam, gdzie Python tego procesu.
+        if importlib.machinery.PathFinder.find_spec(step.job, [str(copy), *sys.path]) is None:
+            raise MissingGateTool(f"{sys.executable} nie ma modułu {step.job} kroku {step.name}")
         tool = _TOOLS[step.job]
         left = _left(limit_s, deadline)
         if left <= 0:
@@ -655,14 +664,19 @@ def _review_judgement(
 
 def check_all(mutations: Sequence[Mutation], *, limit_s: float = TIMEOUT, gate: Gate = static_gate) -> int:
     """Główna funkcja skryptu mutacji skilla (``check_<co>_mutations.py``): mutacje naraz (``PARALLEL``) z werdyktem,
-    który złapałoby CI, po bramie typów ``gate``; kod 0, gdy CI złapałoby każdą.
+    który złapałoby CI, po bramie typów ``gate``; kod 0, gdy CI złapałoby każdą, a kod 2, gdy brama nie ma narzędzia
+    (``MissingGateTool``).
 
     Część tabeli bierze z ``MUTACJE_CZESC`` w środowisku procesu, które ustawia plan CI, a nazwę skryptu do ostrzeżenia
     ``CZAS BLISKO LIMITU`` z ``sys.argv[0]``, więc działa tylko jako główna funkcja procesu skryptu.
     """
 
     judge = partial(_skill_judgement, gate=gate)
-    return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=PARALLEL, limit_s=limit_s)
+    try:
+        return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=PARALLEL, limit_s=limit_s)
+    except MissingGateTool as missing:
+        print(f'MUTACJE: brama typów bez narzędzia: {missing}; zainstaluj dodatek dev (uv pip install -e ".[dev]")', flush=True)
+        return 2
 
 
 def review(mutations: Sequence[Mutation], *, base: str, workers: int, limit_s: float = TIMEOUT) -> int:

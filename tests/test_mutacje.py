@@ -1098,6 +1098,25 @@ def test_brama_typow_czerwona_bez_mutacji_zostawia_przezyta_mutacje_przezyta(tmp
     ]
 
 
+def test_skrypt_mutacji_skilla_w_pythonie_bez_ruff_i_mypy_konczy_sie_bledem_instalacji_a_nie_przezyta_mutacja(tmp_path: Path) -> None:
+    """Mutation checks z samym ``requirements.txt`` drukowały ``BRAMA TYPÓW CZERWONA: ruff: … No module named ruff`` i
+    zostawiały przeżyte mutacje przeżytymi, choć brama typów mogła je wykryć (main 5.11–12.11). Brak narzędzia bramy to
+    zła instalacja, więc skrypt kończy się kodem 2 z poleceniem, które ją naprawia."""
+
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(tmp_path / "venv")], check=True, timeout=120)
+    python = next(path for path in (tmp_path / "venv" / "bin" / "python", tmp_path / "venv" / "Scripts" / "python.exe") if path.exists())
+    script = (
+        "import sys\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nfrom silnik_mutacji import Edit, Mutation, check_all\n"
+        f"raise SystemExit(check_all([Mutation('m', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), {IMPORT!r})]))\n"
+    )
+
+    answered = subprocess.run([python, "-c", script], cwd=_small_repository(tmp_path), capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
+
+    shown = answered.stdout.splitlines()
+    assert (answered.returncode, len(shown)) == (2, 1), answered.stdout + answered.stderr
+    assert re.fullmatch(r'MUTACJE: brama typów bez narzędzia: .+ nie ma modułu ruff kroku ruff; zainstaluj dodatek dev \(uv pip install -e "\.\[dev\]"\)', shown[0]), shown
+
+
 # Atrapy ``python -m ruff`` i ``python -m mypy`` w korzeniu kopii, które biegną przed zainstalowanymi: ruff zgłasza
 # niezdefiniowaną nazwę (F821, wykrycie bramy typów) w każdej linii ``src`` z komentarzem ``# brama: F821``, a mypy przechodzi.
 FAKE_RUFF = """\

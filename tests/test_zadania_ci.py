@@ -89,19 +89,30 @@ def test_github_konczy_zadanie_pytest_po_limicie_z_planu_a_nie_po_szesciu_godzin
     assert jobs()["pytest"]["timeout-minutes"] == "${{ matrix.limit_minut }}"
 
 
-def test_mutation_checks_instaluja_playwright_i_chromium_tylko_w_zadaniu_ktore_plan_oznaczyl() -> None:
-    job = jobs()["mutations"]
-
-    assert [step["name"] for step in job["steps"] if ".[dev]" in step.get("run", "")] == []
-    assert [(step["if"], step["with"]["playwright"]) for step in chromium(job)] == [("${{ matrix.przegladarka }}", "true")]
-
-
-def test_zadanie_pytest_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_plikiem_testow_atrapy_efenix() -> None:
+@pytest.mark.parametrize("name", ["pytest", "mutations"])
+def test_zadanie_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_przegladarka(name: str) -> None:
     # Playwright przychodzi z zależnościami narzędzia (requirements.txt, dodatek dev), więc brakuje tylko przeglądarki.
-    assert [(step["if"], step.get("with")) for step in chromium(jobs()["pytest"])] == [("${{ matrix.przegladarka }}", None)]
+    assert [(step["if"], step.get("with")) for step in chromium(jobs()[name])] == [("${{ matrix.przegladarka }}", None)]
 
 
 TESTS_RUN_BY = ("tools/ci/wykonaj_zadanie.py", "tools/mutacje_zmiany.py")
+DEV = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"'
+
+
+def test_kazde_zadanie_z_mutacjami_instaluje_ruff_i_mypy_bramy_typow_z_dodatku_dev() -> None:
+    """Brama typów silnika mutacji uruchamia ruff i mypy z dodatku dev. Mutation checks z samym ``requirements.txt``
+    drukowały w każdym skrypcie z przeżytą mutacją ``BRAMA TYPÓW CZERWONA: ruff: … No module named ruff`` (main
+    5.11–12.11). Mutacji nie uruchamiają tylko zadania pytest: na Windows instalują ``requirements.txt`` jak u taty."""
+
+    installs = {
+        (workflow.name, name): [step["run"] for step in job["steps"] if "uv pip install" in step.get("run", "")]
+        for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
+        for name, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items()
+        if any(tool in str(job.get("steps")) for tool in TESTS_RUN_BY) and (workflow, name) != (WORKFLOW, "pytest")
+    }
+
+    assert installs == dict.fromkeys(installs, [DEV])
+    assert set(installs) >= {("ci.yml", "mutations"), ("mutacje-nocne.yml", "change-mutations"), ("mutacje-nocne.yml", "skill-mutations")}
 
 
 @pytest.mark.parametrize("workflow", sorted(WORKFLOW.parent.glob("*.yml")), ids=lambda path: path.name)

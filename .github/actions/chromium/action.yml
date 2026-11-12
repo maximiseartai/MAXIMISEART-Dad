@@ -1,28 +1,11 @@
 name: Chromium dla Playwright
 description: >-
   Headless shell Chromium dla wersji Playwright zadania, z cache wspólnym dla zadań o tej samej wersji. Zadania pytest,
-  Mutation checks i nocne części, które prowadzą przeglądarkę (Atrapa efenix, napęd Centrum), biorą go stąd.
-inputs:
-  playwright:
-    description: >-
-      'true' instaluje najpierw Playwright i tzdata (strefa taty na Windows) przypięte w dodatku dev pyproject.toml, dla
-      zadania bez dodatku dev; skrypty skilli dodają src do sys.path same, więc pakiet nie musi być zainstalowany.
-    default: 'false'
-  python:
-    description: Python zadania (python-path z actions/setup-python), do którego uv instaluje Playwright.
-    default: ''
+  Mutation checks i nocne części, które prowadzą przeglądarkę (Atrapa efenix, napęd Centrum), biorą go stąd. Playwright
+  instaluje zadanie z zależnościami narzędzia (requirements.txt albo dodatek dev).
 runs:
   using: composite
   steps:
-    - name: Install Playwright
-      if: ${{ inputs.playwright == 'true' }}
-      shell: bash
-      env:
-        PYTHON: ${{ inputs.python }}
-      run: |
-        read -ra packages <<< "$(python -c "import tomllib; dev = tomllib.load(open('pyproject.toml', 'rb'))['project']['optional-dependencies']['dev']; print(' '.join(p.replace(' ', '') for p in dev if p.startswith(('playwright==', 'tzdata=='))))")"
-        uv pip install --system --python "$PYTHON" "${packages[@]}"
-
     - name: Playwright version
       id: playwright
       shell: bash
