@@ -1,0 +1,9 @@
+rules:
+  # Every external action, actions/* included, is pinned to a full commit SHA; Dependabot (dependabot.yml) moves it.
+  unpinned-uses:
+    config:
+      policies:
+        '*': hash-pin
+  # The suggested `uses: $/...` fails actionlint 1.7.12 ("ref is missing"), which runs beside zizmor in CI.
+  self-repository:
+    disable: true

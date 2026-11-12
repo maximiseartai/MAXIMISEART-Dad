@@ -34,7 +34,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/quiet_machine.py`: Pokazuje, co trzyma maszynę (--status), i pilnuje jednego pomiaru wydajności naraz na cichym procesorze; użyj, gdy pomiar czeka.
 - `tools/rownowaznosc.py`: Sprawdza, że refaktor nie zmienia wyniku procesów: te same scenariusze syntetyczne na bazie i na HEAD; użyj przy refaktorze src/.
 - `tools/scal_pr.py`: Jedyna droga merge'a PR przez agenta: sprawdza gotowość (CI, werdykt PASS, opis) tuż przed gh pr merge; użyj zamiast gołego merge'a.
-- `tools/setup_worktree.py`: Tworzy własne .venv checkoutu albo worktree z dodatkiem dev; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
+- `tools/setup_worktree.py`: Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
 - `tools/skille_dla_zmiany.py`: Wypisuje skille verify-*, które obowiązują dla zmiany od bazy, każdy z powodem; użyj przed pushem i przed oceną gotowości PR.
 - `tools/sprzatanie.py`: Raportuje, a z --usun usuwa worktree i gałęzie, których praca jest już w origin/main; użyj po merge'u albo gdy worktree się mnożą.
 - `tools/syntetyczne_wzorce.py`: Zapisuje syntetyczne Wzorce w kształcie Wzorców taty; użyj, gdy benchmark, weryfikacja w Excelu albo CI nie ma prawdziwych Wzorców.

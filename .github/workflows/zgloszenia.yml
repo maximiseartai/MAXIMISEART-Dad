@@ -3,7 +3,7 @@ name: Zgłoszenia CI
 # After every CI run: an issue "Flaky test: <test>" for each test that passed only on its retry, and on a push to main one
 # issue for a red main, closed by the next green main (tools/ci/zgloszenia_ci.py, ADR 0020).
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers] skips forks, runs main's code, reads only test ids from artifacts
     workflows:
       - CI
     types:
@@ -32,7 +32,7 @@ jobs:
     steps:
       # The history of main finds the parent of the red commit, the last green commit and the PRs merged since it, on
       # every run: an expression `push && 0 || 1` gave depth 1 on a push too, because 0 is false in GitHub expressions.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0

@@ -25,6 +25,7 @@ from tests.fixtures.ci_workflow import CHROMIUM, WORKFLOW, action, chromium, com
 
 import plan_ci
 import plan_runu
+import shellcheck_akcji
 from zakres_runu import Zdarzenie
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -225,4 +226,56 @@ def test_w_ruff_mypy_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych() -> Non
     steps = jobs()["ruff-mypy"]["steps"]
     deps = next(index for index, step in enumerate(steps) if step.get("id") == "deps")
 
-    assert [(step["run"].split()[2], step.get("if")) for step in steps[deps + 1 :]] == [("ruff", INDEPENDENT), ("mypy", INDEPENDENT), ("mypy", INDEPENDENT)]
+    checks = [(step["run"].removeprefix("python -m ").removeprefix("python ").split()[0], step.get("if")) for step in steps[deps + 1 :]]
+
+    assert checks == [(check, INDEPENDENT) for check in ("ruff", "mypy", "mypy", "zizmor", "actionlint", "tools/ci/shellcheck_akcji.py")]
+
+
+def test_dependabot_przesuwa_przypiete_akcje_kazdej_akcji_zlozonej_z_repozytorium() -> None:
+    # Katalog "/" obejmuje tylko .github/workflows i action.yml w korzeniu, a akcja złożona poza listą zostałaby na starym SHA.
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    (actions,) = [update for update in config["updates"] if update["package-ecosystem"] == "github-actions"]
+    composite = {"/" + path.parent.relative_to(ROOT).as_posix() for path in (ROOT / ".github" / "actions").rglob("action.yml")}
+
+    assert composite - set(actions["directories"]) == set()
+
+
+def test_shellcheck_akcji_sprawdza_skrypty_bash_i_sh_akcji_zlozonych_i_podaje_ich_linie_w_pliku(tmp_path: Path) -> None:
+    # Podstawiony shellcheck czyta bajty skryptu: zgłasza każdą linię z ZLE i każde \r, jak prawdziwy (SC1017), więc test
+    # widzi, które skrypty dostał, z jakimi liniami i dialektem, i że zapis nie ma końców linii Windows.
+    fake = tmp_path / "shellcheck.py"
+    fake.write_text(
+        "import pathlib, sys\n"
+        "script = pathlib.Path(sys.argv[-1])\n"
+        "dialect = sys.argv[sys.argv.index('--shell') + 1]\n"
+        "for number, line in enumerate(script.read_bytes().split(b'\\n'), 1):\n"
+        "    if b'\\r' in line: print(f'{script}:{number}:1: error: CR [SC1017]')\n"
+        "    if b'ZLE' in line: print(f'{script}:{number}:1: error: {dialect} {line.decode().strip()} [SC1000]')\n",
+        encoding="utf-8",
+    )
+    action = tmp_path / ".github" / "actions" / "x" / "action.yml"
+    action.parent.mkdir(parents=True)
+    action.write_text(
+        "runs:\n"
+        "  using: composite\n"
+        "  steps:\n"
+        "    - shell: bash\n"
+        "      run: |\n"
+        "        echo dobrze ${{\n"
+        "          inputs.x }}\n"
+        "        echo ZLE ${{ inputs.x }}\n"
+        "    - shell: pwsh\n"
+        "      run: echo ZLE\n"
+        "    - shell: sh -e {0}\n"
+        "      run: echo ZLE\n",
+        encoding="utf-8",
+    )
+
+    lines = shellcheck_akcji.findings([sys.executable, str(fake)], tmp_path)
+    broken = shellcheck_akcji.findings([sys.executable, "-c", "raise SystemExit(3)"], tmp_path)
+
+    assert lines == [
+        ".github/actions/x/action.yml:8: error: bash echo ZLE _______________ [SC1000]",
+        ".github/actions/x/action.yml:12: error: sh echo ZLE [SC1000]",
+    ]
+    assert broken == [".github/actions/x/action.yml:6: shellcheck 3: ", ".github/actions/x/action.yml:12: shellcheck 3: "]

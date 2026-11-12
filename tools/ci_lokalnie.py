@@ -1,7 +1,7 @@
 """Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 
-Lokalnie te same sprawdzenia co CI: zadania ruff, mypy (w CI jedno zadanie ``ruff-mypy``), frontend, pytest i
-mutations.
+Lokalnie te same sprawdzenia co CI: zadania ruff, mypy i workflowy (zizmor i actionlint ``.github/``; w CI jedno zadanie
+``ruff-mypy``), frontend, pytest i mutations.
 
 Uruchamia każdy krok po kolei Pythonem, który uruchomił skrypt (w worktree: jego ``.venv``,
 patrz ``tools/setup_worktree.py``), i drukuje wynik kroku jedną linią; wyjście pokazuje tylko
@@ -41,7 +41,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
-from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps
+from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
 from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
 import potomne
 from repo import BASE, ROOT
@@ -50,7 +50,7 @@ import repo
 # Wygenerowany kontrakt i zbudowany frontend muszą zgadzać się ze źródłami (u taty nie ma Node).
 GENERATED = ("frontend/src/api", "src/rozliczenia/centrum/static")
 # Zadanie w ci.yml, w którym biegną kroki zadania narzędzia, gdy nazywa się inaczej.
-CI_JOB = {"ruff": "ruff-mypy", "mypy": "ruff-mypy"}
+CI_JOB = {"ruff": "ruff-mypy", "mypy": "ruff-mypy", "workflowy": "ruff-mypy"}
 JOBS_ELSEWHERE = {
     "plan": "plan zadań pytest i Mutation checks runu (tools/plan_ci.py plan drukuje go lokalnie), nic nie sprawdza",
     "required": "zbiorczy status pozostałych zadań, nic do odtworzenia",
@@ -72,10 +72,14 @@ def _reproduced(root: Path) -> list[tuple[str, Step]]:
 
     python, npm, frontend = sys.executable, _npm(), root / "frontend"
     ruff, mypy, mypy_windows = static_steps(root)
+    zizmor, actionlint, shellcheck_actions = workflow_steps(root)
     return [
         ("-m ruff check", ruff),
         ("-m mypy --platform linux", mypy),
         ("-m mypy --platform win32", mypy_windows),
+        ("zizmor --offline --min-severity low .github", zizmor),
+        ("actionlint -shellcheck", actionlint),
+        ("tools/ci/shellcheck_akcji.py", shellcheck_actions),
         ("tools/ci/wykonaj_zadanie.py", pytest_step(root)),
         # W CI kroki skilli biegną z planu, w zadaniach Mutation checks; tu tym samym wykonaniem wszystkie kroki pushu po kolei.
         ("tools/ci/wykonaj_zadanie.py", Step("mutacje skilli", "mutations", (python, "tools/ci/wykonaj_zadanie.py", "--kroki-pushu"), root)),
