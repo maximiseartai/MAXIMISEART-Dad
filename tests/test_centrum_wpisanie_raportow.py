@@ -2143,6 +2143,7 @@ def test_praca_przypomnien_bez_dnia_wdrozenia_w_nocy_i_przed_8_dnia_nastepnego_n
 
     centrum.rhythm.tick()
     assert mailbox.days == [], "bez dnia wdrożenia skrzynka nie jest czytana"
+    assert _reminder_result(centrum)["failure"] == "bez-wdrozenia"
     (centrum.tool.config / REMINDERS_ROLLOUT).write_text("2026-11-09\n", encoding="utf-8")
     for moment in (datetime(2026, 11, 9, 21, 1), datetime(2026, 11, 9, 21, 2), datetime(2026, 11, 9, 23, 0), datetime(2026, 11, 10, 7, 59)):
         centrum.moment.append(moment)
@@ -2150,7 +2151,8 @@ def test_praca_przypomnien_bez_dnia_wdrozenia_w_nocy_i_przed_8_dnia_nastepnego_n
     centrum.client.stop()
 
     assert (mailbox.days, mailbox.sends) == ([date(2026, 11, 9)], [])
-    assert "przypomnienia-porazka przyczyna=bez-wdrozenia" in centrum.tool.log_path.read_text(encoding="utf-8")
+    log = centrum.tool.log_path.read_text(encoding="utf-8") if centrum.tool.log_path.exists() else ""
+    assert "przypomnienia-porazka" not in log, "przypomnienia bez dnia wdrożenia są wyłączone, nie zepsute"
 
 
 def test_brak_sieci_przy_przypomnieniach_ponawia_w_nastepnej_minucie_tej_samej_pory_bez_zgloszenia(tmp_path: Path) -> None:
