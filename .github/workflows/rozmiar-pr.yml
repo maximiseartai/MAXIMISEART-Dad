@@ -1,0 +1,44 @@
+name: Rozmiar PR
+
+# Each PR gets one label size:XS … size:XXL from its effective changed lines (tools/ci/rozmiar_pr.py, after t3code's
+# pr-size.yml). The label only informs: no ruleset or Required CI status depends on this workflow.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rozmiar-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  rozmiar:
+    name: Etykieta rozmiaru PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # pull_request_target runs main's workflow and main's tools/ci/rozmiar_pr.py with a token that can write labels,
+      # so the PR's commits are only git data here: never check them out, install from them or run their code.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch the PR head as git data
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          BAZA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags origin "$BAZA" "+refs/pull/$PR/head:refs/remotes/rozmiar-pr/$PR"
+
+      - name: Label the PR with its size
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BAZA: ${{ github.event.pull_request.base.sha }}
+        run: python3 tools/ci/rozmiar_pr.py --baza "$BAZA" --glowa "refs/remotes/rozmiar-pr/$PR" --pr "$PR"

@@ -63,6 +63,7 @@ The scope is the area (`intermax`, `centrum`, `plan`, `agents`), and the subject
 ## Why
 
 Open with the goal of the person who asked for the change and the problem it solves, then the approach in one sentence.
+A PR brings one change, which one sentence of `## Why` can describe, and independent changes go in separate PRs.
 No SHAs, rebase history or "based on main".
 Name the issue the PR closes (`Closes #N`, which GitHub closes, or `Naprawia #N`, which `tools/scal_pr.py` closes after the merge) or serves (`Część #N`).
 
