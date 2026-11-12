@@ -344,7 +344,7 @@ def test_rozjazd_takze_w_ci_tylko_ostrzega_a_java_i_jar_ze_zmiennych_zastepuja_n
     monkeypatch.setenv(model_tlc.JAR, str(tmp_path / "tla2tools.jar"))
     calls: list[tuple[str, Path, Path, str]] = []
 
-    def tlc(java: str, jar: Path, spec: Path, name: str, text: str) -> str:
+    def tlc(java: str, jar: Path, spec: Path, name: str, text: str, **_: object) -> str:
         calls.append((java, jar, spec, name))
         return PASSED
 
@@ -364,10 +364,35 @@ def test_znane_znaleziska_koncza_sie_kodem_1_tylko_ze_strict(
     _without_drift_or_tools(monkeypatch)
     monkeypatch.setenv(model_tlc.JAVA, "java")
     monkeypatch.setenv(model_tlc.JAR, str(tmp_path / "tla2tools.jar"))
-    monkeypatch.setattr(model_tlc, "tlc", lambda java, jar, spec, name, text: PASSED if "PozaZnanymi" in text else _violation("Jedno", '{"a"}'))
+    monkeypatch.setattr(model_tlc, "tlc", lambda java, jar, spec, name, text, **_: PASSED if "PozaZnanymi" in text else _violation("Jedno", '{"a"}'))
 
     assert model_tlc.main(model, argv) == returncode
     assert capsys.readouterr().out.splitlines()[-1] == "MODEL M OK, ZNANE ZNALEZISKA: 1"
+
+
+@pytest.mark.parametrize(("mutation", "lncheck"), [("", "final"), ("1", "default")], ids=["sprawdzenie", "mutacja"])
+def test_liveness_poza_mutacja_tylko_na_pelnym_grafie_a_w_mutacji_takze_w_trakcie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str, lncheck: str
+) -> None:
+    """Sprawdzenie modelu, który ma przejść, nie płaci za sprawdzenie liveness w trakcie BFS, a w kopii mutacji mutant,
+    który łamie obietnicę czasową, wychodzi po pierwszym sprawdzeniu w trakcie, a nie po całym BFS."""
+
+    model = _model(tmp_path, {"f": _config(znane=[FINDING])})
+    _without_drift_or_tools(monkeypatch)
+    monkeypatch.setenv(model_tlc.JAVA, "java")
+    monkeypatch.setenv(model_tlc.JAR, str(tmp_path / "tla2tools.jar"))
+    monkeypatch.setenv(model_tlc.MUTACJA, mutation)
+    commands: list[list[str]] = []
+
+    def run(command: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+        commands.append(list(command))
+        text = Path(cwd, command[-2]).read_text(encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, PASSED if "PozaZnanymi" in text else _violation("Jedno", '{"a"}'), "")
+
+    monkeypatch.setattr(potomne, "run", run)
+
+    assert model_tlc.main(model, []) == 0
+    assert [command[command.index("-lncheck") + 1] for command in commands] == [lncheck, lncheck]
 
 
 def test_narzedzia_dla_kopii_ustawiaja_jave_i_jar_checkoutu_a_ustawionych_zmiennych_nie_zmieniaja(
@@ -377,12 +402,14 @@ def test_narzedzia_dla_kopii_ustawiaja_jave_i_jar_checkoutu_a_ustawionych_zmienn
     monkeypatch.setattr(narzedzia_tlc, "jar", lambda katalog: katalog / "tla2tools.jar")
     monkeypatch.setenv(model_tlc.JAVA, "java-ustawiona")
     monkeypatch.delenv(model_tlc.JAR, raising=False)
+    monkeypatch.delenv(model_tlc.MUTACJA, raising=False)
 
     model_tlc.narzedzia_dla_kopii(tmp_path)
 
-    assert (os.environ[model_tlc.JAVA], os.environ[model_tlc.JAR]) == (
+    assert (os.environ[model_tlc.JAVA], os.environ[model_tlc.JAR], os.environ[model_tlc.MUTACJA]) == (
         "java-ustawiona",
         str(tmp_path / narzedzia_tlc.KATALOG / "tla2tools.jar"),
+        "1",
     )
 
 

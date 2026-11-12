@@ -10,6 +10,10 @@ z przyczynami znanych znalezisk) i opowieść kontrprzykładu krokami kodu. Resz
   krok skilla z rozjazdem nie biegnie, bo kończy go porażką wykonanie zadania (``tools/ci/wykonaj_zadanie.py``).
 - Javę i ``tla2tools.jar`` daje ``tools/lib/narzedzia_tlc.py``, a zmienne ``TLC_JAVA`` i ``TLC_JAR`` je zastępują, bo
   kopia checkoutu mutacji nie ma ignorowanego katalogu podręcznego (``narzedzia_dla_kopii``).
+- Liveness TLC sprawdza raz, na pełnym grafie stanów (``-lncheck final``): sprawdzenie pośrednie co minutę BFS nie
+  zmienia werdyktu modelu, który przechodzi, a na dużej przestrzeni stanów przechodzi drugi raz dużą część grafu. W
+  kopii mutacji (``TLC_MUTACJA``) TLC sprawdza liveness także w trakcie, bo mutant, który łamie obietnicę czasową,
+  wychodzi wtedy po pierwszym sprawdzeniu, a nie po całym BFS.
 - Znane znalezisko wybacza tylko w swojej konfiguracji, tylko swoją obietnicę i tylko przebieg, w którym zdarzyła się
   jego przyczyna. TLC kończy na pierwszym kontrprzykładzie, więc każde znane znalezisko ma swój przebieg bez pozostałych
   znanych tej konfiguracji (czy dalej jest), a konfiguracja jeden przebieg bez wszystkich swoich znanych (czy nic poza
@@ -41,6 +45,7 @@ __all__ = [
     "JAR",
     "JAVA",
     "KONFIGURACJE",
+    "MUTACJA",
     "NARUSZA",
     "PRZECHODZI",
     "Konfiguracja",
@@ -62,7 +67,7 @@ __all__ = [
 
 PRZECHODZI, NARUSZA = "przechodzi", "narusza"
 KONFIGURACJE = "model/konfiguracje.json"
-JAVA, JAR = "TLC_JAVA", "TLC_JAR"
+JAVA, JAR, MUTACJA = "TLC_JAVA", "TLC_JAR", "TLC_MUTACJA"
 _POZA_ZNANYMI = "PozaZnanymi"
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
@@ -163,7 +168,10 @@ def main(model: Model, argv: list[str] | None = None, *, opis: str | None = None
     java = os.environ.get(JAVA) or narzedzia_tlc.java(cache)
     jar = Path(os.environ.get(JAR) or narzedzia_tlc.jar(cache))
     spec = model.skill / "model" / model.specyfikacja
-    return sprawdz(model, chosen, lambda name, text: tlc(java, jar, spec, name, text), strict=args.strict, uwaga=drift)
+    early = bool(os.environ.get(MUTACJA))
+    return sprawdz(
+        model, chosen, lambda name, text: tlc(java, jar, spec, name, text, w_trakcie=early), strict=args.strict, uwaga=drift
+    )
 
 
 def sprawdz(
@@ -389,8 +397,10 @@ def akcje_next(spec: str) -> frozenset[str]:
     return frozenset(re.findall(r"\\/\s*(?:\\E[^:]*:\s*)?(\w+)", found[1]))
 
 
-def tlc(java: str, jar: Path, spec: Path, name: str, text: str) -> str:
+def tlc(java: str, jar: Path, spec: Path, name: str, text: str, *, w_trakcie: bool = False) -> str:
     """Wyjście TLC dla specyfikacji ``spec`` z konfiguracją ``text`` (treść pliku ``name.cfg``).
+
+    Liveness TLC sprawdza na pełnym grafie stanów, a z ``w_trakcie`` także co minutę BFS na grafie, który już zna.
 
     TLC zapisuje ślady i stany obok specyfikacji, a moduły standardowe (``Naturals.tla``) rozpakowuje pod stałą nazwą
     do ``java.io.tmpdir`` i usuwa przy wyjściu, więc każdy przebieg ma własny katalog tymczasowy i w nim swój
@@ -411,6 +421,8 @@ def tlc(java: str, jar: Path, spec: Path, name: str, text: str) -> str:
                 "tlc2.TLC",
                 "-workers",
                 "auto",
+                "-lncheck",
+                "default" if w_trakcie else "final",
                 "-metadir",
                 str(Path(work, "stany")),
                 "-config",
@@ -424,8 +436,10 @@ def tlc(java: str, jar: Path, spec: Path, name: str, text: str) -> str:
 
 def narzedzia_dla_kopii(root: Path) -> None:
     """Java i ``tla2tools.jar`` checkoutu ``root`` w ``TLC_JAVA`` i ``TLC_JAR`` dla poleceń, które biegną w kopiach
-    checkoutu bez katalogu podręcznego (skrypty mutacji modelu); ustawionych zmiennych nie zmienia."""
+    checkoutu bez katalogu podręcznego (skrypty mutacji modelu), i ``TLC_MUTACJA``, z którym sprawdzenie w kopii
+    sprawdza liveness w trakcie BFS; ustawionych zmiennych nie zmienia."""
 
     cache = root / narzedzia_tlc.KATALOG
     os.environ.setdefault(JAVA, narzedzia_tlc.java(cache))
     os.environ.setdefault(JAR, str(narzedzia_tlc.jar(cache)))
+    os.environ.setdefault(MUTACJA, "1")
