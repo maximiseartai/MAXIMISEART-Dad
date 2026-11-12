@@ -92,7 +92,8 @@ jobs:
     strategy:
       fail-fast: false
       # The organization runs 60 jobs at once, shared with the CI runs of pull requests, and the night takes at most 20 of
-      # them: 17 parts and 3 skill jobs. GitHub starts the entries in list order, so the plan puts the costliest first.
+      # them: 17 parts and 3 skill jobs. GitHub admits the entries to max-parallel in list order, so the plan puts the
+      # costliest first.
       max-parallel: 17
       matrix:
         # Each entry is a part number and przegladarka: its mutations are checked by tests that reach Atrapa efenix.

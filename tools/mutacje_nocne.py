@@ -20,7 +20,8 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   macierz zadań części: numer i ``przegladarka``, gdy testy, które mogą sprawdzać mutacje części (dotknięte jej
   plikami), sięgają Atrapy efenix, więc zadanie części instaluje Chromium tak jak zadanie pytest planu CI.
   Wpisy idą od części, której najdroższy plik ma najwięcej pracy testów na ``main`` (``czasy_ci``, tor ``TOR_LOKALNY``),
-  bo GitHub uruchamia wpisy macierzy w kolejności listy, gdy zwalnia się miejsce w ``max-parallel``, a długa część
+  bo GitHub wpuszcza wpisy macierzy do okna ``max-parallel`` w kolejności listy (start na runnerze zależy jeszcze od
+  wolnych slotów organizacji), a długa część
   na końcu kolejki wydłuża noc. Kolejność nie zmienia mutacji części, bo te daje numer części; równa praca, także bez
   czasów, zostawia kolejność numerów.
 - Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --do <do> --czesc k/n --zapis …``: kolejne mutacje z listy
@@ -608,7 +609,10 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
         if args.polecenie == "plan":
             if args.od and args.baza and args.od != args.baza:
                 plan.error(f"dwie różne bazy: --od {args.od} i --baza {args.baza}")
-            czasy = czasy_ci.z_mainu(args.czasy or czasy_ci.katalog_checkoutu(root), odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S, github=github)
+            # Czasy pobiera klient czasy_ci z krótkim limitem zapytania, żeby zawieszony gh nie trzymał planu nocy (limit
+            # zadania 10 min); wstrzyknięty klient testów zostaje.
+            czasy_github = czasy_ci.GITHUB if github is GITHUB else github
+            czasy = czasy_ci.z_mainu(args.czasy or czasy_ci.katalog_checkoutu(root), odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S, github=czasy_github)
             if czasy.blad:
                 print(f"CZASY CI | {czasy.blad}; część bez zmierzonej pracy testów zostaje na miejscu swojego numeru")
             # Części biegną na ubuntu-latest z Pythonem 3.14, jak zadania pytest toru ``TOR_LOKALNY``.
