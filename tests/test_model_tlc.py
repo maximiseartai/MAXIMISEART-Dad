@@ -48,6 +48,7 @@ SKRYPTY_MODELI = (
     ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py",
     ROOT / ".agents" / "skills" / "verify-karta-uruchomienia" / "scripts" / "sprawdz_karte_uruchomienia.py",
     ROOT / ".agents" / "skills" / "verify-sprawy-taty" / "scripts" / "sprawdz_sprawy_taty.py",
+    ROOT / ".agents" / "skills" / "verify-wpisanie-raportow" / "scripts" / "sprawdz_wpisanie_raportow.py",
 )
 SPEC = """---- MODULE M ----
 Next ==
@@ -296,6 +297,7 @@ def test_kazdy_skill_z_modelem_ma_konfiguracje_a_jego_opowiesc_zna_kazda_akcje_n
         "verify-karta-uruchomienia",
         "verify-sprawy-taty",
         "verify-urwane-uruchomienie",
+        "verify-wpisanie-raportow",
         "verify-wznowienie-wyceny-efenix",
     }
 
