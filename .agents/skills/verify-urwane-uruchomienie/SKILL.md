@@ -262,8 +262,8 @@ the code.
    replaced. Why accepted: the end entry and the metrics record are two files, so one order leaves a window; the other
    order (the end entry before the metrics record, mutation „wpis końca przed rekordem metryk”) makes the journal of a
    Wycena cut in that window disappear without any Logi, which breaks DziennikPoKolejce. Replayed with a journal
-   without its end entry (the last line removed after a Wycena, as `_pricing_cut_before_result` in
-   `tests/test_centrum_logi_uruchomienia.py` does), the Logs file and the queue folder removed, the metrics record
+   without its end entry (the journal as it stood at the Wycena's result, as `journals_at_result` in
+   `tests/test_centrum_logi_uruchomienia.py` keeps it), the Logs file and the queue folder removed, the metrics record
    kept: the start writes and sends Logi with `ending` `interrupted`, and the card after it is the Urwane Uruchomienie.
 2. **`wpis-nieudany`, ZaczeteWLogach (accepted).** A journal entry that fails (`OSError`) loses the entry, the Wycena
    goes on and changes the order in efenix, and when Centrum switches off then, no Logi name that order (or no journal
@@ -312,8 +312,8 @@ the journal of an Urwana Wycena it had once failed to read, because `RunCards._r
 Wycena), `historia-nieczytelna` and `historia-niezapisana` (BezUrwanychPoWyniku: a Wycena with a result and without a
 Logs file got Logi Urwanego Uruchomienia, which replaced its Logi with the result in the Skrzynka, when the start could
 not read the Historia or the metrics record had failed). The journal now says itself that its Uruchomienie reached its
-result, so the start reads no Historia; `tests/test_centrum_logi_uruchomienia.py` replays the three paths and fails on
-`main` before the fix.
+result, so the start reads no Historia: `historia-nieczytelna` has no path left and no test, and
+`tests/test_centrum_logi_uruchomienia.py` replays the other two paths, which failed on `main` before the fix.
 
 ## Bring the model in line
 

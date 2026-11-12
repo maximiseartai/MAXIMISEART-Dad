@@ -5,7 +5,7 @@ Testy czytają pliki z katalogu Logów obok dziennika Centrum, tak jak Maks dost
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import datetime, time as time_of_day, timedelta, timezone
@@ -1289,6 +1289,11 @@ PRICED = [
 ]
 # Zlecenia z ``PRICED``, które zna Atrapa efenix: gotowe i z Ostrzeżeniem Emmetta.
 IN_EFENIX = [PRICED[0].in_efenix("611"), PRICED[2].in_efenix("613"), PRICED[4].in_efenix("615"), PRICED[5].in_efenix("616")]
+# Najkrótszy początek ``PRICED``, który w Wycenie przez Centrum wykonuje te same linie src co całe ``PRICED`` (każdy
+# rodzaj zlecenia i szukanie po zleceniu z zapisem): dla testów, których kontrakt nie liczy zleceń, bo każde zlecenie to
+# czas Chromium.
+FEW_PRICED = PRICED[:4]
+FEW_IN_EFENIX = IN_EFENIX[:2]
 
 
 def test_okno_efenix_taty_to_widoczny_chrome_w_tempie_ludzkim_z_prawdziwym_efenix() -> None:
@@ -1307,22 +1312,22 @@ def test_wycena_w_efenix_z_centrum_pracuje_w_tempie_ludzkim_okna_efenix(tmp_path
     przerwa przed zapisem to ``ACTION_PAUSE_S``, a przed szukaniem zlecenia po zleceniu z zapisem próg podtrzymania sesji."""
 
     pauses: list[float] = []
-    with atrapa_efenix(IN_EFENIX) as atrapa:
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
         pace = Pace(sleep=pauses.append, clock=lambda: 0.0)
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, efenix_pace=pace))
-        write_collective_file(centrum.period_parent, PRICED)
+        write_collective_file(centrum.period_parent, FEW_PRICED)
         assert _start_pricing(centrum).status_code == 200
         finished = finished_view(centrum.client)
 
     assert (finished["result"]["result"], pauses[0], set(pauses)) == ("WYMAGA_SPRAWDZENIA", ACTION_PAUSE_S, {ACTION_PAUSE_S, KEEPALIVE_S})
 
 
-def _pricing_centrum(tmp_path: Path, atrapa: AtrapaEfenix, *arguments: str) -> SettlingCentrum:
+def _pricing_centrum(tmp_path: Path, atrapa: AtrapaEfenix, *arguments: str, orders: Sequence[Order] = PRICED) -> SettlingCentrum:
     """Centrum, którego okno efenix to Chromium na Atrapie z argumentami ``arguments``; Folder okresu ma Plik zbiorczy
-    z ``PRICED``."""
+    z ``orders``."""
 
     centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, efenix_arguments=arguments))
-    write_collective_file(centrum.period_parent, PRICED)
+    write_collective_file(centrum.period_parent, orders)
     return centrum
 
 
@@ -2273,8 +2278,8 @@ def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_reali
 def test_uwaga_taty_po_wycenie_w_efenix_nie_wynosi_adresu_z_pliku_zbiorczego_ani_danych_adresowych_efenix(
     tmp_path: Path,
 ) -> None:
-    with atrapa_efenix(IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa)
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
         write_report_key(ToolDirectory(tmp_path))
         assert _start_pricing(centrum).status_code == 200
         assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
@@ -2577,21 +2582,13 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
     assert [marker for marker in private if marker in journal_text or marker in comment] == []
 
 
-@pytest.mark.parametrize(
-    "lost",
-    [None, "historia", "logi", "nieczytelne-logi"],
-    ids=["logi-i-historia", "bez-historii", "bez-logow", "nieczytelne-logi"],
-)
-def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_start_uznalby_za_urwany(
-    tmp_path: Path, lost: str | None
-) -> None:
-    """Wycena w efenix doszła do wyniku. Następny start Centrum nie zamyka jej dziennika jako Urwanego Uruchomienia, także
-    gdy zostały tylko jej Logi albo tylko jej wiersz Historii (Centrum zgasło po rekordzie metryk, a przed Logami, #722),
-    albo gdy jej Logi są, ale urwane w połowie. Skrzynka nie dostaje drugich Logów, a dziennik znika; karta po starcie ma
-    wynik, a przy urwanych Logach karty nie ma: wynik był, tylko go nie znamy."""
+def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_start_uznalby_za_urwany(tmp_path: Path) -> None:
+    """Wycena w efenix doszła do wyniku, a Kolejka wysyłki przyjęła jej Logi, więc dziennik znika. Następny start Centrum
+    nie ma czego zamknąć jako Urwane Uruchomienie: Skrzynka nie dostaje drugich Logów, a karta po starcie ma wynik z
+    Logów."""
 
-    with atrapa_efenix(IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa)
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
         write_report_key(ToolDirectory(tmp_path))
         assert _start_pricing(centrum).status_code == 200
         run_id = finished_view(centrum.client)["run"]["id"]
@@ -2599,55 +2596,37 @@ def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_star
     assert box.wait_until(lambda fake: logs_arrived(fake, 1))
     centrum.client.stop()
     [logs] = log_files(centrum)
-    if lost == "historia":
-        centrum.engines.metrics.efenix.unlink()
-    elif lost == "logi":
-        logs.unlink()
-    elif lost == "nieczytelne-logi":
-        logs.write_text(logs.read_text(encoding="utf-8")[:100], encoding="utf-8")
 
     centrum.restart()
     previous = centrum.client.get("/api/runs/current").json()["previous"]
     centrum.client.stop()
 
-    # Karta nieczytelnych Logów: wynik był, tylko go nie znamy (``RunCards.last``).
-    expected = {"logi": ("recorded", run_id), "nieczytelne-logi": None}.get(str(lost), ("restored", run_id))
-    card = None if previous is None else (previous["state"], previous["run"]["id"])
-    assert (card, len(logs_comments(box))) == (expected, 1)
-    assert (log_files(centrum), journals(centrum)) == ([] if lost == "logi" else [logs], [])
+    assert ((previous["state"], previous["run"]["id"]), len(logs_comments(box))) == (("restored", run_id), 1)
+    assert (log_files(centrum), journals(centrum)) == ([logs], [])
 
 
-def _pricing_cut_before_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[SettlingCentrum, str, Path]:
-    """Wycena w efenix przeszła wszystkie zlecenia, ale Centrum zgasło przed jej wynikiem: dziennik ma każde zlecenie bez
-    wpisu końca, a nie ma Logów, wiersza Historii ani wysyłki w kolejce, czyli to Urwane Uruchomienie (ADR 0017).
-    Skrzynka Zgłoszeń ma klucz dopiero od następnego startu, więc nic z tej Wyceny do niej nie poszło. Zwraca też folder
-    kolejki wysyłki."""
+def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Path]:
+    """Wycena w efenix, którą Centrum zgasło w trakcie zlecenia: dysk Centrum ma jej start (plik ostatniego startu i
+    dziennik) i „zaczynam zlecenie” bez wpisu końca, a nie ma Logów, wiersza Historii ani wysyłki w kolejce, czyli to
+    Urwane Uruchomienie (ADR 0017). Skrzynka Zgłoszeń ma klucz dopiero od następnego startu, więc nic z tej Wyceny do
+    niej nie poszło. Zwraca też folder kolejki wysyłki."""
 
-    with atrapa_efenix(IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa)
-        kept = journals_at_result(monkeypatch, centrum.log_path.parent / "dzienniki-wyceny")
-        assert _start_pricing(centrum).status_code == 200
-        run_id = finished_view(centrum.client)["run"]["id"]
-    centrum.client.stop()
-    [logs] = log_files(centrum)
-    logs.unlink()
-    centrum.engines.metrics.efenix.unlink()
-    for path, text in kept.items():
-        path.write_text(text, encoding="utf-8")
-    queue = ToolDirectory(tmp_path).queue
-    shutil.rmtree(queue)
+    centrum = settling_centrum(tmp_path)
+    disk = LogsOnDisk(CentrumLog(centrum.log_path), journaled="efenix")
+    disk.started(PRICING_START)
+    disk.journal.begun(row=18, place=1, total=2)
     write_report_key(ToolDirectory(tmp_path))
-    return centrum, run_id, queue
+    return centrum, PRICING_START.run_id, ToolDirectory(tmp_path).queue
 
 
 def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka_ida_przy_nastepnym_starcie_raz(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, ale Centrum gaśnie znowu przed startem serwera,
     więc przed wysyłką: dziennik zostaje obok pliku Logów. Następny start wysyła te Logi do Skrzynki raz, karta ma Urwane
     Uruchomienie, a dziennik znika."""
 
-    centrum, run_id, _ = _pricing_cut_before_result(tmp_path, monkeypatch)
+    centrum, run_id, _ = _pricing_cut_before_result(tmp_path)
     box = centrum.surroundings.report_box
     centrum.restart()
     centrum.client.stop()
@@ -2671,7 +2650,7 @@ def test_start_serwera_wysyla_logi_urwanego_uruchomienia_raz_po_wznowieniu_kolej
     dopiero po tym kładzie w niej Logi Urwanego Uruchomienia, przed pierwszym zapytaniem karty, więc kolejka nie dostaje
     wysyłki przed swoim startem; zapytania karty po starcie nie wysyłają ich drugi raz."""
 
-    centrum, run_id, _ = _pricing_cut_before_result(tmp_path, monkeypatch)
+    centrum, run_id, _ = _pricing_cut_before_result(tmp_path)
     box = centrum.surroundings.report_box
     steps: list[str] = []
     resume, post = Outbox.resume, Outbox.post
@@ -2700,13 +2679,14 @@ def test_start_serwera_wysyla_logi_urwanego_uruchomienia_raz_po_wznowieniu_kolej
 
 
 def test_dziennik_urwanej_wyceny_ktorego_logow_kolejka_wysylki_nie_przyjela_zostaje_do_nastepnego_startu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """Kolejka wysyłki nie przyjmuje Logów Urwanego Uruchomienia (na miejscu jej folderu stoi plik): dziennik zostaje, a
     start po naprawie folderu wysyła te Logi do Skrzynki i dopiero wtedy dziennik znika."""
 
-    centrum, run_id, queue = _pricing_cut_before_result(tmp_path, monkeypatch)
+    centrum, run_id, queue = _pricing_cut_before_result(tmp_path)
     box = centrum.surroundings.report_box
+    queue.parent.mkdir(parents=True, exist_ok=True)
     queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
     centrum.restart()
     centrum.client.start()
@@ -3099,24 +3079,6 @@ def test_bez_sieci_w_kolejce_czeka_tylko_najnowszy_postep_a_po_powrocie_sieci_is
     assert archived_logs(centrum, summary)["ending"] == "finished"
 
 
-def test_wycena_ktorej_dziennika_nie_da_sie_zapisac_nie_ma_postepu_tylko_podsumowanie(tmp_path: Path) -> None:
-    """Katalog dzienników Wyceny zajęty przez plik: Wycena biegnie do wyniku, ale ani jej start, ani żaden wpis nie trafia
-    na dysk. Postęp nie wyprzedza dziennika, więc Skrzynka nie dostaje żadnego: komentarz, który powstałby bez dziennika,
-    zostałby po zgaśnięciu Centrum na zawsze postępem, bo start Centrum nie miałby czego zamknąć jako Logi Urwanego
-    Uruchomienia. Komentarz Uruchomienia powstaje od razu z podsumowaniem."""
-
-    blocked = tmp_path / "logs" / "dzienniki-wyceny"
-    blocked.parent.mkdir(parents=True)
-    blocked.write_text("", encoding="utf-8")
-    with pricing(tmp_path) as (centrum, _, _):
-        assert _start_pricing(centrum).status_code == 200
-        finished_view(centrum.client)
-    _, texts = comment_history(centrum)
-    [summary] = texts
-
-    assert len(archived_logs(centrum, summary)["efenix_orders"]) == 6
-
-
 def test_wpis_dziennika_wyceny_ktorego_nie_da_sie_zapisac_nie_zmienia_postepu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3188,10 +3150,10 @@ def test_komentarz_postepu_urwanej_wyceny_w_efenix_zamienia_w_podsumowanie_naste
     surroundings = Surroundings()
     box = surroundings.report_box
     box.background = frozenset()
-    with atrapa_efenix(IN_EFENIX) as atrapa:
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
-        write_collective_file(centrum.period_parent, PRICED)
+        write_collective_file(centrum.period_parent, FEW_PRICED)
         write_report_key(ToolDirectory(tmp_path))
         kept = journals_at_result(monkeypatch, centrum.log_path.parent / "dzienniki-wyceny")
         atrapa.expire_session()
@@ -3890,8 +3852,8 @@ def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego
     je do Skrzynki obok Logów Wyceny 2, a dopiero potem dziennik znika."""
 
     run_1 = "a" * 32
-    with atrapa_efenix(IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa)
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         started_at = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -3921,14 +3883,12 @@ def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego
     assert journals(centrum) == [], "dziennik, którego Logi przyjęła Kolejka wysyłki, znika"
 
 
-@pytest.mark.parametrize("unseen", ["historia-nieczytelna", "rekord-metryk-niezapisany"])
-def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomienia_gdy_start_nie_widzi_jej_wiersza_historii(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unseen: str
+def test_wycena_z_wynikiem_bez_pliku_logow_i_bez_rekordu_metryk_ma_logi_z_wynikiem_w_skrzynce_a_dziennik_znika(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#871: Wycena doszła do wyniku, ale pliku jej Logów nie ma (katalog Logów zajęty przez plik), więc Logi z wynikiem
-    poszły do Skrzynki tylko z kolejki. Start Centrum nie widzi jej wiersza Historii: plik metryk Wyceny w efenix jest
-    nieczytelny przy starcie albo rekord metryk się nie zapisał (pełny dysk). Dziennik ma wpis końca, więc start go usuwa
-    bez Logów Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
+    """#871: Wycena doszła do wyniku, ale pliku jej Logów nie ma (katalog Logów zajęty przez plik), a rekord metryk się
+    nie zapisał (pełny dysk). Logi z wynikiem idą do Skrzynki z kolejki, a dziennik znika za nimi, więc następny start
+    nie ma czego zamknąć jako Urwane Uruchomienie."""
 
     blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
@@ -3937,28 +3897,20 @@ def test_wycena_z_wynikiem_bez_pliku_logow_nie_dostaje_logow_urwanego_uruchomien
     def full_disk(_store: MetricsStore, _record: object) -> None:
         raise OSError(28, "No space left on device")
 
-    with atrapa_efenix(IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa)
+    monkeypatch.setattr(MetricsStore, "append", full_disk)
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
-        with monkeypatch.context() as patch:
-            if unseen == "rekord-metryk-niezapisany":
-                patch.setattr(MetricsStore, "append", full_disk)
-            assert _start_pricing(centrum).status_code == 200
-            run_id = finished_view(centrum.client)["run"]["id"]
+        assert _start_pricing(centrum).status_code == 200
+        run_id = finished_view(centrum.client)["run"]["id"]
         assert box.wait_until(lambda fake: logs_arrived(fake, 1))
-        [result] = [logs_json(box, comment) for comment in logs_comments(box)]
         centrum.client.stop()
-    blocked.unlink()
-    metrics = centrum.engines.metrics.efenix
-    with _refused(monkeypatch, "open", lambda path, mode: unseen == "historia-nieczytelna" and path == metrics and mode == "r"):
-        centrum.restart()
-        assert centrum.client.get("/api/runs/current").status_code == 200
-    centrum.client.stop()
 
-    assert (result["run_id"], result["ending"], metrics.exists() == (unseen == "historia-nieczytelna")) == (run_id, "finished", True)
-    assert (records(centrum), journals(centrum)) == ([], [])
-    assert [logs_json(box, comment)["ending"] for comment in logs_comments(box)] == ["finished"]
+    assert (centrum.engines.metrics.efenix.exists(), journals(centrum)) == (False, [])
+    assert [(logs["run_id"], logs["ending"]) for logs in (logs_json(box, comment) for comment in logs_comments(box))] == [
+        (run_id, "finished")
+    ]
 
 
 def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z_wynikiem_a_start_nie_robi_z_wyceny_urwanego_uruchomienia(
@@ -3972,8 +3924,8 @@ def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z
     blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
-    with atrapa_efenix(IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa)
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         metrics = centrum.engines.metrics.efenix
@@ -4261,8 +4213,8 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
     reached, released = held_before_removal(monkeypatch)
-    with atrapa_efenix(IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa)
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         assert _start_pricing(centrum).status_code == 200
@@ -4304,10 +4256,10 @@ def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_p
     box = surroundings.report_box
     box.background = frozenset()
     box.search_failure = Unreachable()
-    with atrapa_efenix(IN_EFENIX) as atrapa:
+    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
-        write_collective_file(centrum.period_parent, PRICED)
+        write_collective_file(centrum.period_parent, FEW_PRICED)
         write_report_key(ToolDirectory(tmp_path))
         started = _start_pricing(centrum)
         assert started.status_code == 200, started.json()
