@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -10,6 +11,7 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from openpyxl import load_workbook
@@ -30,6 +32,9 @@ from tests.fixtures.benchmark import (
 )
 from tests.fixtures.potomne import wait_for
 from atrapy.settlement import write_mapping
+import benchmark.referencja as referencja
+from benchmark.uruchomienie import Przebieg
+from porownanie_znaczeniowe import CATEGORIES
 
 RECORD_FIELDS = {
     "started_at",
@@ -545,6 +550,27 @@ def test_bramka_poprawnosci_liczy_rozne_liczniki_komunikaty_i_podsumowanie_kazde
         "podsumowanie": 1,
     }
     assert "niezgodny" in measured.stdout
+
+
+@pytest.mark.parametrize("changed", [None, "liczniki", "komunikaty", "podsumowanie"])
+def test_bramka_poprawnosci_jest_niezgodna_przy_roznicy_tylko_w_jednej_kategorii(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str | None
+) -> None:
+    # Pomiar end-to-end wyżej zmienia naraz wszystkie trzy kategorie, więc sam nie łapie bramki, która werdykt bierze
+    # tylko z jednej z nich (#1422 r1); tu każda kategoria osobno, bez kolejnego Przebiegu.
+    monkeypatch.setattr(referencja, "compare_worker_settlements", lambda *_: dict.fromkeys(CATEGORIES, 0))
+    result: dict[str, Any] = {"warnings": [{"code": "komunikat"}], "stop": None, "summary": {"figures": [{"value": 1}]}}
+    reference = referencja.Reference(tmp_path, {"rows": 1}, result)
+    measured = copy.deepcopy(result)
+    counters = {"rows": 2 if changed == "liczniki" else 1}
+    if changed == "komunikaty":
+        measured["warnings"][0]["code"] = "inny_komunikat"
+    if changed == "podsumowanie":
+        measured["summary"]["figures"][0]["value"] = 2
+
+    oracle = referencja.check_oracle(reference, tmp_path, Przebieg(0, 0, {"counters": counters}, measured))
+
+    assert oracle["wynik"] == ("zgodny" if changed is None else "niezgodny")
 
 
 def test_pomiar_z_wynikiem_referencyjnym_w_formacie_terminala_konczy_sie_poleceniem_ponownego_zamrozenia(
