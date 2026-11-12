@@ -252,13 +252,14 @@ def create_app(
     intermax = IntermaxEntry(
         store, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
-    # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX.
-    report_entering = ReportEnteringEntry(store, catalog, configuration, parts, contexts, report_files)
     # Przypomnienia o raporcie czytają INTERMAX tym samym uchwytem plików taty, bez Kopii wejścia, a skrzynkę i jej
     # „Wysłane” przez port skrzynki raportów; testy i skille podają atrapę skrzynki i rytm.
     reminders = ReportReminders(
         work, store, configuration, reminder_mailbox or ImapInbox(work.config), files, reports, now
     )
+    # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX; jej widok Raporty
+    # pokazuje też wynik ostatniego sprawdzenia przypomnień.
+    report_entering = ReportEnteringEntry(store, catalog, configuration, parts, contexts, report_files, reminders.shown)
     rhythm = reminder_rhythm or MinuteRhythm()
     cards = RunCards(disk, history.runs)
     closed = comments.close_left_behind()
