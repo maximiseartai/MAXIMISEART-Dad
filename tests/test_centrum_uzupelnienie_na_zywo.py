@@ -322,6 +322,9 @@ def test_po_uruchomieniu_ktore_zmienilo_pliki_okresu_nieudany_odczyt_nie_pokazuj
     centrum = _prepared(tmp_path)
     path = centrum.fixture.collective_file_path
     centrum.view(VIEW)
+    path.write_bytes(b"Excel zapisuje")
+    assert centrum.view(VIEW)["state"] == "ready"
+    assert len(centrum.log_lines(LOG_EVENT)) == 1
     # Tata usuwa Folder okresu i przygotowuje Plik zbiorczy od nowa; zaraz po zapisie OneDrive go jeszcze trzyma.
     shutil.rmtree(path.parent)
     assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
@@ -331,6 +334,7 @@ def test_po_uruchomieniu_ktore_zmienilo_pliki_okresu_nieudany_odczyt_nie_pokazuj
 
     assert view["state"] == "problem"
     assert view["message"]["what"] == "Plik zbiorczy jest uszkodzony albo nie jest skoroszytem Excela."
+    assert len(centrum.log_lines(LOG_EVENT)) == 2
 
 
 def test_podglad_bez_zapisu_zostawia_ostatni_dobry_odczyt(tmp_path: Path) -> None:
@@ -341,22 +345,6 @@ def test_podglad_bez_zapisu_zostawia_ostatni_dobry_odczyt(tmp_path: Path) -> Non
     path.write_bytes(b"Excel zapisuje")
 
     assert centrum.view(VIEW) == {**good, "read": {**good["read"], "retrying": True}}
-
-
-def test_po_uruchomieniu_ktore_zmienilo_pliki_okresu_porazka_trafia_do_dziennika_od_nowa(tmp_path: Path) -> None:
-    centrum = _prepared(tmp_path)
-    path = centrum.fixture.collective_file_path
-    centrum.view(VIEW)
-    path.write_bytes(b"Excel zapisuje")
-    centrum.view(VIEW)
-    assert len(centrum.log_lines(LOG_EVENT)) == 1
-    shutil.rmtree(path.parent)
-    assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
-    path.write_bytes(b"OneDrive synchronizuje")
-
-    centrum.view(VIEW)
-
-    assert len(centrum.log_lines(LOG_EVENT)) == 2
 
 
 def test_po_uruchomieniu_z_zapisem_zaden_plik_zbiorczy_nie_pokazuje_odczytu_sprzed_niego(tmp_path: Path) -> None:
