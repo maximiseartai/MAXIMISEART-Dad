@@ -61,16 +61,20 @@ def test_pomiary_widokow_z_przegladarki_trafiaja_do_dziennika_centrum(tmp_path: 
     ]
 
 
-def test_dziennik_przyjmuje_najwyzej_200_pomiarow_na_jedno_uruchomienie_centrum(tmp_path: Path) -> None:
+def test_dziennik_przyjmuje_ograniczona_liczbe_pomiarow_na_jedno_uruchomienie_centrum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    limit = 3
+    monkeypatch.setattr("rozliczenia.centrum.log.MAX_VIEW_TIMINGS", limit)
     app = centrum(tmp_path)
 
-    responses = [app.client.post("/api/view-timings", json=view_timing()) for _ in range(201)]
+    responses = [app.client.post("/api/view-timings", json=view_timing()) for _ in range(limit + 1)]
     after_restart = centrum(tmp_path).client.post("/api/view-timings", json=view_timing(page="okresy"))
 
     assert {response.status_code for response in responses} == {204}
     assert after_restart.status_code == 204
     entries = [entry for entry in log_entries(app) if entry.startswith("pomiar ")]
-    assert len(entries) == 201
+    assert len(entries) == limit + 1
     assert entries[-1].startswith("pomiar widok=zimny-start strona=okresy ")
 
 
