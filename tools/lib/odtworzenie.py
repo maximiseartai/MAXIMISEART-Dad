@@ -795,7 +795,7 @@ def _entering_limits(record: RunLog) -> list[Limit]:
         ]
     numbers = _numbers(entering)
     for name, logged in (("pamięć wpisów", entering.memory_before), ("decyzje „Zostaw moją”", entering.kept)):
-        unknown = [entry for entry in logged if len(numbers.get(_memory_key(entry), ())) != 1]
+        unknown = [entry for entry in logged if len(_texts(numbers, entry.number, entry.day, entry.worker)) != 1]
         if unknown:
             entry = unknown[0]
             return [
@@ -930,8 +930,13 @@ def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
     return [entry for mail in entering.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
 
 
-def _memory_key(entry: LoggedOwnEntry) -> tuple[int, date, str]:
-    return entry.number, entry.day, entry.worker
+def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: date, worker: str) -> set[str]:
+    """Postacie numeru ``number`` z dnia ``day`` we Wpisach raportu Wykonawcy ``worker`` w Logach, a bez jego Wpisu od
+    każdego Wykonawcy: wpis pamięci idzie za wierszem, więc może stać pod Wykonawcą, który nie przysłał Raportu."""
+
+    return numbers.get((number, day, worker)) or {
+        text for (value, found, _), texts in numbers.items() if (value, found) == (number, day) for text in texts
+    }
 
 
 def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
@@ -951,11 +956,11 @@ def _saved(entering: LoggedReports) -> SavedState:
     numbers = _numbers(entering)
 
     def key(logged: LoggedOwnEntry) -> OrderKey:
-        [number] = numbers[_memory_key(logged)]
+        [number] = _texts(numbers, logged.number, logged.day, logged.worker)
         return OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
 
     def number(logged: LoggedOwnMove) -> OrderNumber:
-        found = {text for (value, day, _), texts in numbers.items() if (value, day) == (logged.number, logged.day) for text in texts}
+        found = _texts(numbers, logged.number, logged.day, logged.worker)
         return OrderNumber(found.pop() if len(found) == 1 else str(logged.number))
 
     entries = frozenset(OwnEntry(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.memory_before)
@@ -969,6 +974,7 @@ def _saved(entering: LoggedReports) -> SavedState:
             Login(logged.origin_worker),
             logged.origin_name,
             logged.since,
+            logged.overridden,
         )
         for logged in entering.moves_before
     )

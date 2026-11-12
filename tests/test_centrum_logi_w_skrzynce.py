@@ -26,6 +26,7 @@ import subprocess
 from typing import Any, Final, Protocol
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 import pytest
 
 from odtworzenie import (
@@ -66,7 +67,7 @@ from tests.fixtures.centrum_intermax import ENTERING_NOW, SENDERS, Clock, enteri
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
-from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, NUMBER, Intermax, Order
+from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
     SettlingCentrum,
@@ -1588,6 +1589,75 @@ def test_klikniecie_z_okresem_zamknietym_i_pomylkami_wykonawcow_odtwarza_sie_zgo
 
     code, lines = _replayed(capsys, archived, "--na-tym-drzewie")
 
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
+def test_przeniesienie_po_recznej_zmianie_wykonawcy_odtwarza_sie_z_wpisami_centrum_pod_wykonawca_od_taty(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Centrum wpisało Wpis Jana, tata dał zlecenie Annie, a kliknięcie bez nowych maili przeniosło własne wpisy
+    Centrum pod klucz Anny (komórki idą z wierszem). Świeższy mail Jana przenosi zlecenie z powrotem i nadpisuje te
+    komórki: Logi mają własne wpisy zlecenia także pod Anną, która nie przysłała Raportu, więc odtworzenie daje te same
+    komórki, bez różnicy z ręczną wartością."""
+
+    surroundings = Surroundings()
+    jan = SENDERS["jan.testowy"]
+    first = report(jan, "Raport 09.11.2026", "40000001 tak wymiana", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, [first], surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    book = load_workbook(centrum.register)
+    [row] = [cell.row for cell in book[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == 40000001]
+    book[ORDER_SHEET].cell(row, WORKER).value = "anna.kowalska"
+    book.save(centrum.register)
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    centrum.fake_inbox.outcome = [first, report(jan, "Raport 09.11.2026", "40000001 nie brak klienta", at=datetime(2026, 11, 9, 18))]
+    third = centrum.run_to_end()
+    logs = _archived_run(surroundings.report_box, tmp_path, third["run"]["id"])
+    entering = json.loads(gzip.decompress(logs.read_bytes()))["report_entering"]
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
+
+    assert [(move["row"], move["worker"]) for move in entering["moves"]] == [(row, "jan.testowy")]
+    assert [(entry["worker"], entry["value"]) for entry in entering["memory_before"]] == [("anna.kowalska", "wymiana"), ("anna.kowalska", "tak")]
+    assert [change["value"] for change in entering["changes"]] == ["nie", "brak klienta"]
+    assert entering["problems"] == []
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
+def test_zmiana_taty_po_przeniesieniu_trzyma_przez_plik_pamieci_i_odtwarza_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Tabela przejść R3 przez plik pamięci i Logi: Centrum przeniosło zlecenie Jana do Anny, tata oddał je Janowi, a
+    potem znów Annie, tam, gdzie postawiło je Centrum. Tata zmienił Wykonawcę po Przeniesieniu, co pamięć niesie przez
+    plik, więc nowszy mail Jana zlecenia nie przenosi, a odtworzenie tego kliknięcia z Logów daje to samo."""
+
+    surroundings = Surroundings()
+    jan, anna = SENDERS["jan.testowy"], SENDERS["anna.kowalska"]
+    taken = report(anna, "Raport 09.11.2026", "40000001 nie brak klienta", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, [taken], surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    first = centrum.run_to_end()
+    assert first["result"]["ending"] == "finished"
+
+    def given_to(worker: str) -> None:
+        book = load_workbook(centrum.register)
+        [row] = [cell.row for cell in book[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == 40000001]
+        book[ORDER_SHEET].cell(row, WORKER).value = worker
+        book.save(centrum.register)
+
+    given_to("jan.testowy")
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    given_to("anna.kowalska")
+    centrum.fake_inbox.outcome = [taken, report(jan, "Raport 09.11.2026", "40000001 tak wymiana", at=datetime(2026, 11, 9, 18))]
+    third = centrum.run_to_end()
+    logs = _archived_run(surroundings.report_box, tmp_path, third["run"]["id"])
+    entering = json.loads(gzip.decompress(logs.read_bytes()))["report_entering"]
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
+
+    assert [move["overridden"] for move in entering["moves_before"]] == [True]
+    assert (entering["moves"], entering["changes"], entering["problems"]) == ([], [], [])
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 

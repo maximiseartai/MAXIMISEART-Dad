@@ -1419,6 +1419,45 @@ def test_reczna_zmiana_wykonawcy_po_wpisie_zostaje_przy_starym_mailu_a_swiezszy_
     assert _worker(_view(centrum), "jan.testowy")["notes"] == [{"number": "40000001", "text": "przejęte od anna.kowalska"}]
 
 
+def _given_to(register: Path, number: int, worker: str) -> None:
+    """Tata zmienia w Excelu ``WYKONAWCA`` zlecenia ``number`` na ``worker``."""
+
+    book = load_workbook(register)
+    [row] = [cell.row for cell in book[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == number]
+    book[ORDER_SHEET].cell(row, WORKER).value = worker
+    book.save(register)
+
+
+def test_druga_reczna_zmiana_wykonawcy_nie_wraca_mailem_ktory_centrum_juz_przyjelo(tmp_path: Path) -> None:
+    """Przegląd #1358 r2 (C), ADR 0029 „Ręczna zmiana dalej wygrywa”: kliknięcie wpisało Wpis Jana, tata dał zlecenie
+    Annie, kliknięcie wpisało u niej jej Wpis, a tata oddał zlecenie Janowi. Następne kliknięcie z tymi samymi mailami
+    zostawia zlecenie u Jana: mail Anny Centrum już przyjęło. Wpis Jana wraca do komórek, które Centrum samo wpisało, bez
+    różnicy z ręczną wartością i bez informacji o Przeniesieniu."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)),
+        raw=(),
+    )
+    jan = report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17))
+    anna = report(ANNA, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 17, 30))
+    centrum = entering_centrum(tmp_path, intermax, [jan])
+    _finished(centrum)
+    _given_to(centrum.register, 40000001, "anna.kowalska")
+    centrum.fake_inbox.outcome = [jan, anna]
+    at_anna = _finished(centrum)
+    _given_to(centrum.register, 40000001, "jan.testowy")
+
+    back = _finished(centrum)
+    shown = _view(centrum)
+
+    assert _entering(centrum, at_anna)["moves"] == []
+    assert _entering(centrum, back)["moves"] == []
+    assert _entering(centrum, back)["problems"] == []
+    assert _cells(centrum.register)[40000001] == ("tak", "wymiana")
+    assert _day_rows(centrum.register, 6) == [(40000002, "anna.kowalska"), "pusty", (40000001, "jan.testowy"), "pusty", "żółty"]
+    assert (_worker(shown, "jan.testowy")["notes"], _worker(shown, "jan.testowy")["problems"]) == ([], [])
+
+
 def test_nadawca_bez_segmentu_w_dniu_dostaje_nowy_segment_na_miejscu_alfabetycznym(tmp_path: Path) -> None:
     """Kryterium #1347: Anna nie ma zleceń 9.11, a przejmuje jedno z dwóch zleceń Jana. Jej nowy segment staje przed
     segmentem Jana (alfabetycznie), z jednym pustym wierszem między segmentami z wyglądem pustego wiersza Uporządkowania
@@ -1453,7 +1492,7 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
     tmp_path: Path,
 ) -> None:
     """Kryterium #1347: plik pamięci w wersji 1 (bez Przeniesień) czyta się bez błędu, z dniem wdrożenia i własnym
-    wpisem, który poprawka Jana dalej nadpisuje. Kliknięcie z Przeniesieniem zlecenia Jana do Anny zapisuje wersję 2 z
+    wpisem, który poprawka Jana dalej nadpisuje. Kliknięcie z Przeniesieniem zlecenia Jana do Anny zapisuje wersję 3 z
     tym Przeniesieniem i z miejscem zlecenia Jana, którego Wpis przyjęło u Jana, z pisownią ``WYKONAWCA`` i chwilą
     maila, więc gdy tata odda potem zlecenie Janowi w Excelu, następne kliknięcie go nie przenosi."""
 
@@ -1486,7 +1525,7 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
 
     assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
     assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 1"
-    assert saved["schema_version"] == 2
+    assert saved["schema_version"] == 3
     # Chwila maila ze strefą komputera (``report`` daje ``astimezone()``): na Macu „+01:00”, na Linuksie CI „Z”.
     jan_since, anna_since = datetime(2026, 11, 9, 17).astimezone(), datetime(2026, 11, 9, 17, 30).astimezone()
     assert [{**move, "since": datetime.fromisoformat(move["since"])} for move in saved["moves"]] == [
@@ -1498,6 +1537,7 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
             "origin_worker": "jan.testowy",
             "origin_name": "jan.testowy",
             "since": jan_since,
+            "overridden": False,
         },
         {
             "number": "40000005",
@@ -1507,12 +1547,51 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
             "origin_worker": "jan.testowy",
             "origin_name": "jan.testowy",
             "since": anna_since,
+            "overridden": False,
         },
     ]
     assert _entering(centrum, again)["moves"] == []
     assert _entering(centrum, again)["moves_before"] == [
         {**move, "number": int(move["number"])} for move in saved["moves"]
     ]
+
+
+_BRANCH_MOVE = {"number": "40000001", "day": "2026-11-09", "worker": "jan.testowy", "origin_day": "2026-11-09"}
+
+
+@pytest.mark.parametrize(
+    "move",
+    [
+        pytest.param({**_BRANCH_MOVE, "origin_worker": "anna.kowalska"}, id="runda-1"),
+        pytest.param(
+            {**_BRANCH_MOVE, "origin_worker": "anna.kowalska", "origin_name": "Anna", "since": "2026-11-09T17:00:00+01:00"},
+            id="runda-2",
+        ),
+    ],
+)
+def test_plik_pamieci_w_wersji_2_z_galezi_czyta_sie_bez_pamieci_zlecen_zamiast_zatrzymania(
+    tmp_path: Path, move: dict[str, str]
+) -> None:
+    """Plik pamięci w wersji 2 powstał tylko na gałęzi #1358 przed jej trzecią rundą, w dwóch postaciach ``moves``.
+    Kliknięcie go czyta jak wersję 1: dzień wdrożenia i własny wpis, który poprawka Jana dalej nadpisuje, ale bez
+    pamięci zleceń (Logi: ``moves_before`` puste), a zapisuje wersję 3."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "anna.kowalska", 40000005)), raw=())
+    centrum = entering_centrum(
+        tmp_path, intermax, [report(JAN, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 17))]
+    )
+    _tata_writes(centrum.register, 40000001, "tak")
+    own = {"number": "40000001", "day": "2026-11-09", "worker": "jan.testowy", "column": "SKUTECZNE", "value": "tak"}
+    _state(centrum).write_text(
+        json.dumps({"schema_version": 2, "rollout": "2026-11-09", "own": [own], "moves": [move]}), encoding="utf-8"
+    )
+
+    view = _finished(centrum)
+
+    assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
+    assert _entering(centrum, view)["moves_before"] == []
+    assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 2"
+    assert json.loads(_state(centrum).read_text(encoding="utf-8"))["schema_version"] == 3
 
 def test_bez_folderu_okresow_w_ustawieniach_karta_mowi_co_wskazac_a_start_jest_odrzucony(tmp_path: Path) -> None:
     """Bez folderu okresów kliknięcie nie wie, które okresy mają Plik zbiorczy, więc nie startuje i nie czyta skrzynki."""

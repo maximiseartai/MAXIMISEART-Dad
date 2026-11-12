@@ -5,7 +5,7 @@ Osobny moduł, żeby pakiet importował moduły prywatne na górze bez cyklu: te
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from email.utils import parseaddr
@@ -241,16 +241,19 @@ class OwnEntry:
 
 @dataclass(frozen=True)
 class OwnMove:
-    """Miejsce zlecenia, które Wpisanie raportów samo ustaliło: zlecenie ``number`` stoi w dniu ``day`` u Wykonawcy
-    ``worker``, bo Centrum je tam przeniosło albo przyjęło tam Wpis jego własnego Wykonawcy; ``since``: chwila
-    przyjścia ostatniego maila, którego Wpis Centrum przyjęło u ``worker``. Przed pierwszym Przeniesieniem Centrum
-    zlecenie stało w dniu ``origin_day`` u ``origin_worker`` z pisownią ``WYKONAWCA`` ``origin_name``; bez Przeniesienia
-    to samo miejsce co ``day`` i ``worker``.
+    """Pamięć zlecenia ``number``, na które Wpisanie raportów już zadziałało (ADR 0029 „Ręczna zmiana dalej wygrywa”,
+    tabela przejść w opisie #1358, z miejscem = Wykonawca i dzień).
 
-    Dopóki INTERMAX ma zlecenie u ``worker``, Wpis innego Wykonawcy może je przenieść dalej, a tata widzi informację o
-    Przeniesieniu, gdy ``worker`` różni się od ``origin_worker``. Gdy tata zmienił ``WYKONAWCA`` potem, jego zmiana
-    wygrywa (ADR 0029): po Przeniesieniu z każdym Wpisem, a gdy zlecenie stoi u ``origin_worker``, z każdym Wpisem z
-    maila, który nie przyszedł po ``since`` (``_matching.Board._movable``)."""
+    ``day`` i ``worker``: gdzie Centrum zostawiło zlecenie, czyli przeniosło je tam albo przyjęło tam Wpis, gdy pamięć
+    była pusta; ręczna zmiana taty go nie przesuwa. ``origin_day``, ``origin_worker`` i ``origin_name`` (pisownia
+    ``WYKONAWCA``): gdzie zlecenie stało przed pierwszym Przeniesieniem Centrum; bez Przeniesienia to samo miejsce co
+    ``day`` i ``worker``. ``since``: chwila przyjścia najświeższego maila, na który Centrum zadziałało (przyjęło jego
+    Wpis albo przeniosło nim zlecenie), gdziekolwiek zlecenie wtedy stało; nigdy nie maleje. ``overridden``: tata zmienił
+    Wykonawcę albo dzień po Przeniesieniu Centrum, co zostaje, dopóki dzień ``day`` jest otwarty. Którego zlecenia w
+    INTERMAX dotyczy pamięć, mówi ``memories_of``.
+
+    Tata widzi informację o Przeniesieniu, dopóki INTERMAX ma zlecenie tam, gdzie je zostawiło Centrum, a to miejsce
+    różni się od miejsca sprzed pierwszego Przeniesienia."""
 
     number: OrderNumber
     day: date
@@ -259,6 +262,44 @@ class OwnMove:
     origin_worker: Login
     origin_name: str
     since: datetime
+    overridden: bool = False
+
+    def overridden_at(self, worker: Login, day: date) -> bool:
+        """Czy tata zmienił miejsce zlecenia po Przeniesieniu Centrum, gdy INTERMAX ma je u ``worker`` w dniu ``day``:
+        wcześniej (``overridden``) albo teraz, bo Przeniesienie stoi w pamięci (miejsce Centrum inne niż sprzed
+        pierwszego Przeniesienia), a zlecenie stoi gdzie indziej niż je zostawiło Centrum."""
+
+        placed = (self.worker, self.day)
+        return self.overridden or ((worker, day) != placed and placed != (self.origin_worker, self.origin_day))
+
+
+def may_move(memory: OwnMove | None, worker: Login, day: date, arrived: datetime) -> bool:
+    """Reguła „Ręczna zmiana dalej wygrywa” (ADR 0029) w jednym miejscu: czy Wpis innego Wykonawcy z maila z chwilą
+    ``arrived`` może przenieść zlecenie, które INTERMAX ma teraz u ``worker`` w dniu ``day``, przy pamięci zlecenia
+    ``memory`` (tabela przejść w opisie #1358).
+
+    Bez pamięci (Centrum jeszcze nic z tym zleceniem nie zrobiło, także ręczny ``WYKONAWCA`` sprzed raportu, US 16)
+    przenosi każdy mail. Z pamięcią tylko mail świeższy niż ``since`` (ściśle: mail, na który Centrum już zadziałało,
+    i każdy starszy nigdy, gdziekolwiek zlecenie teraz stoi), i żaden po zmianie taty po Przeniesieniu Centrum (US 15,
+    ``OwnMove.overridden_at``)."""
+
+    return memory is None or (arrived > memory.since and not memory.overridden_at(worker, day))
+
+
+def memories_of(
+    moves: Iterable[OwnMove], key: OrderKey, places: Collection[tuple[OrderNumber, date]]
+) -> tuple[OwnMove, ...]:
+    """Pamięć zlecenia, które INTERMAX ma przed kliknięciem pod kluczem ``key`` (``places``: numer i dzień każdego
+    zlecenia w INTERMAX przed kliknięciem).
+
+    To pamięć jego numeru z jego dnia, a bez niej pamięć jego numeru z każdego dnia, w którym INTERMAX nie ma już tego
+    numeru: tata przeniósł zlecenie z miejsca Centrum na inny dzień, a jego ręczna zmiana wygrywa tak samo jak zmiana
+    Wykonawcy. Granica: Excel nie mówi, który wiersz tata przeniósł, więc pamięć z opuszczonego dnia dotyczy każdego
+    zlecenia tego numeru z dnia bez własnej pamięci, a Przeniesienie każdego z nich czeka na ``may_move`` każdej z nich."""
+
+    found = [move for move in moves if move.number == key.number]
+    here = tuple(move for move in found if move.day == key.day)
+    return here or tuple(move for move in found if (move.number, move.day) not in places)
 
 
 @dataclass(frozen=True)

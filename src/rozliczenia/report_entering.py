@@ -198,9 +198,10 @@ class EnteringFacts:
     """Fakty kliknięcia od rdzenia raportów, bez adresów, tematów i treści maili.
 
     ``rollout_before``: dzień wdrożenia z pamięci przed kliknięciem (``None``: pierwsze), ``rollout``: dzień wdrożenia
-    tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne wpisy zleceń, które mają Wpis w tym kliknięciu, a
-    ``kept``: decyzje „Zostaw moją” tych zleceń z migawki kliknięcia, ``moves_before``: zapamiętane miejsca zleceń
-    (``OwnMove``) numerów, które mają Wpis w tym kliknięciu. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
+    tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne
+    wpisy numerów, które mają Wpis w tym kliknięciu, z ich dnia, pod każdym Wykonawcą, bo wpisy idą za wierszem, a
+    ``kept``: decyzje „Zostaw moją” zleceń z Wpisem z migawki kliknięcia, ``moves_before``: pamięć zleceń (``OwnMove``)
+    numerów, które mają Wpis w tym kliknięciu. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
     ``moves``: Przeniesienia zleceń do zapisu, ``notes``: informacje dla taty.
     """
 
@@ -327,14 +328,14 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             if isinstance(read, ReadReport)
             for entry in read.entries
         }
+        numbers = {(key.number, key.day) for key in reported}
         before = tuple(
             sorted(
-                (entry for entry in saved.memory.entries if entry.key in reported),
+                (entry for entry in saved.memory.entries if (entry.key.number, entry.key.day) in numbers),
                 key=lambda entry: (entry.key, entry.column.value),
             )
         )
         kept = tuple(sorted((decision for decision in saved.kept if decision.key in reported), key=_kept_order))
-        numbers = {(key.number, key.day) for key in reported}
         moves_before = tuple(
             sorted(
                 (move for move in saved.memory.moves if (move.number, move.day) in numbers),

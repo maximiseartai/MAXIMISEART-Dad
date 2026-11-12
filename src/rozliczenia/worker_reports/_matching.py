@@ -21,7 +21,6 @@ from ._model import (
     OrderNumber,
     OtherDay,
     OwnEntries,
-    OwnMove,
     ReadReport,
     RefusedMove,
     RegisterOrder,
@@ -32,6 +31,8 @@ from ._model import (
     UnknownNumber,
     VerdictFault,
     Window,
+    may_move,
+    memories_of,
 )
 
 MISTAKEN_SUBJECT = 2
@@ -78,9 +79,9 @@ class Board:
     Centrum, numery zleceń dni zamkniętych z ``Window.start`` (``closed``), Przeniesienia z pamięci i Dni uporządkowane.
 
     Dzień i Wykonawca sprzed Przeniesień Centrum sprawiają, że Wpis liczy się do progu pomylonego tematu tak samo przed
-    Przeniesieniem i po nim, więc kolejne kliknięcia dają to samo co jedno. Przeniesienie z pamięci, którego INTERMAX nie
-    ma tam, gdzie postawiło je Centrum, to ręczna zmiana taty: blokuje zmianę dnia i Wykonawcy tego numeru
-    (``_movable``), bez problemu (ADR 0029 „Ręczna zmiana dalej wygrywa”).
+    Przeniesieniem i po nim, więc kolejne kliknięcia dają to samo co jedno. Czy Wpis może zmienić dzień albo Wykonawcę
+    zlecenia, mówi reguła ``may_move`` dla pamięci zlecenia (``_movable``); gdy nie może, nic się nie dzieje, bez
+    problemu (ADR 0029 „Ręczna zmiana dalej wygrywa”).
     """
 
     def __init__(
@@ -91,13 +92,9 @@ class Board:
         window: Window,
         ordered_days: frozenset[OrderedDay],
     ) -> None:
-        current = {order.key for order in orders}
-        records = [move for move in memory.moves if window.opens(move.day)]
-        standing = {OrderKey(move.number, move.day, move.worker): move for move in records}
-        self._broken: defaultdict[OrderNumber, list[OwnMove]] = defaultdict(list)
-        for move in records:
-            if OrderKey(move.number, move.day, move.worker) not in current:
-                self._broken[move.number].append(move)
+        self._memory = tuple(move for move in memory.moves if window.opens(move.day))
+        self._places = frozenset((order.key.number, order.key.day) for order in orders)
+        standing = {OrderKey(move.number, move.day, move.worker): move for move in self._memory}
         self._numbered: defaultdict[OrderNumber, list[_Placed]] = defaultdict(list)
         for order in orders:
             place = standing.get(order.key)
@@ -230,7 +227,7 @@ class Board:
         order = found.order
         if (day, report.worker) == (order.key.day, order.key.worker):
             return _Claim(order, day, report, (), lost)
-        if not self._movable(order.key.number, report):
+        if not self._movable(order, report):
             return []
         if day != order.key.day:
             bar = self._bar(order, day)
@@ -238,21 +235,13 @@ class Board:
                 return [RefusedMove(report.worker, report.day, order.key.number, order.key.day, bar)]
         return _Claim(order, day, report, (), lost)
 
-    def _movable(self, number: OrderNumber, report: ReadReport) -> bool:
-        """Czy Wpis ``report`` może zmienić Wykonawcę albo dzień zlecenia ``number``: ręczna zmiana taty po tym, jak
-        Centrum ustaliło miejsce zlecenia, wygrywa (ADR 0029 „Ręczna zmiana dalej wygrywa”).
+    def _movable(self, order: RegisterOrder, report: ReadReport) -> bool:
+        """Czy Wpis ``report`` może zmienić Wykonawcę albo dzień zlecenia ``order``: ``may_move`` dla każdej pamięci
+        tego zlecenia (``memories_of``), a gdy jej nie ma, ``may_move`` bez pamięci."""
 
-        Przenosi Wpis zlecenia, którego każde miejsce z pamięci INTERMAX ma dalej tam, gdzie je ustaliło Centrum (także
-        bez miejsca w pamięci: ``WYKONAWCA`` albo dzień wpisane ręcznie przed raportem, US 16). Gdy tata przeniósł
-        zlecenie po Przeniesieniu Centrum, nie przenosi żaden Wpis (US 15). Gdy przeniósł je, kiedy stało tam, gdzie przed
-        pierwszym Przeniesieniem Centrum (Centrum tylko przyjęło Wpis Wykonawcy zlecenia albo zlecenie wróciło), przenosi
-        tylko Wpis z maila, który przyszedł po ostatnim przyjętym (``since``): Wpis, który Centrum już przyjęło, zmiana
-        taty unieważniła, a świeższy mail wygrywa (US 3). Mail z tą samą chwilą przyjścia nie jest świeższy."""
-
-        return all(
-            (move.worker, move.day) == (move.origin_worker, move.origin_day) and report.arrived > move.since
-            for move in self._broken.get(number, ())
-        )
+        key = order.key
+        found = memories_of(self._memory, key, self._places)
+        return all(may_move(memory, key.worker, key.day, report.arrived) for memory in found or (None,))
 
     def _bar(self, order: RegisterOrder, day: date) -> MoveBar | None:
         if not self._window.opens(day):
