@@ -26,6 +26,8 @@ SKILL_ROOT = Path(__file__).resolve().parents[2]
 BASELINE = SKILL_ROOT / "wydajnosc-baseline.json"
 # docs/agents/komputer-taty.md: 4× is the reference profile of Dad's laptop, 6× the pessimistic one.
 PROFILES = (4, 6)
+# The menu pages the baseline holds; Raporty has no budget yet, so it is neither measured nor captured.
+MEASURED_PAGES = ("okresy", "uruchomienia", "metryki", "konfiguracja")
 LAP = ("uruchomienia", "metryki", "konfiguracja", "okresy")
 REOPENED = ("okresy", "metryki")
 TRACED = ("okresy", "metryki")
@@ -208,7 +210,7 @@ def script_ms(cdp: CDPSession) -> float:
     return float(metrics.get("ScriptDuration", 0)) * 1000
 
 
-def _cold_starts(browsing: Browsing, measured: Measured, pages: tuple[str, ...] = tuple(PAGES)) -> None:
+def _cold_starts(browsing: Browsing, measured: Measured, pages: tuple[str, ...] = MEASURED_PAGES) -> None:
     for page_id in pages:
         with browsing.context() as (context, requests):
             page, cdp = browsing.page(context)
@@ -680,7 +682,7 @@ def _prepare_year_of_work(run: Run, page: Page) -> None:
     assert isinstance(runs, list)
     run.check(len(runs) == run.fixture["metrics"]["runs"], f"Metryki read {len(runs)} records of the year")
     expect(page.get_by_role("button", name="Włącz motyw jasny", exact=True)).to_be_visible()
-    for number, page_id in enumerate(PAGES, start=84):
+    for number, page_id in enumerate(MEASURED_PAGES, start=84):
         page.get_by_role("link", name=PAGES[page_id], exact=True).click()
         expect(page.get_by_role("heading", name=PAGES[page_id], exact=True)).to_be_visible()
         expect(page.locator('[data-slot="skeleton"],[aria-busy="true"]')).to_have_count(0)

@@ -7,14 +7,17 @@ or a `RUN`, carries the card's result, ending, Rodzaj Zatrzymania, summary and
 Komunikaty in three parts with their codes, the number of problems, the call trace of a Zatrzymanie, the
 Szablony pracowników with their outcome and time, the tool's commit and its Wydanie, and the process's files by
 name (with size and whether OneDrive holds them only online). A Przebieg rozliczeń adds how many Ilości tylko dla
-INEA it left empty (`inea_only_cleared`, ADR 0018), and an Uporządkowanie INTERMAX its Wpisy urządzenia i
-czynności INTERMAX (`intermax_entries`, ADR 0019): INTERMAX row numbers and operator names, while its Kopia wejścia
-(#842) holds the pasted rows it ordered, columns A to `UWAGI` without `ADRES` and `NUMER UMOWY` (a row whose
-position it did not establish, in `uncertain_rows`, only with the cells allowed shifted and not). Dad sees nothing of it on the
+INEA it left empty (`inea_only_cleared`, ADR 0018), an Uporządkowanie INTERMAX its Wpisy urządzenia i
+czynności INTERMAX (`intermax_entries`, ADR 0019): INTERMAX row numbers and operator names, a Wycena w efenix the
+trace of every order (`efenix_orders`, `efenix_stop`), and a Wpisanie raportów its Wpisy, problems and changed cells
+(`report_entering`, ADR 0028) without addresses or mail content. The Kopia wejścia (`input_copy`, #841) holds every
+file of Dad's the Uruchomienie read, with its fingerprint and the rows it read, without `ADRES` and the Orange number;
+for an Uporządkowanie INTERMAX (#842) the pasted rows it ordered, columns A to `UWAGI` without `ADRES` and `NUMER
+UMOWY` (a row whose position it did not establish, in `uncertain_rows`, only with the cells allowed shifted and not). Dad sees nothing of it on the
 card: no alert, toast or text; only the previews of a Zgłoszenie
 (`zgloszenie.md`) and of an Uwaga taty pinned to the Uruchomienie
-(`uwaga-taty.md`) carry a line to its Logi. No path and no cell content
-of a Wiersz danych reach the file. The same Logi wait in the queue of the skrzynka
+(`uwaga-taty.md`) carry a line to its Logi. No path reaches the file, and cell content of a Wiersz
+danych only through the Kopia wejścia, after the data-rule guard (ADR 0025). The same Logi wait in the queue of the skrzynka
 Zgłoszeń (`config/zgloszenia/kolejka/`, like the Kontrola ilości) and go to the
 period's issue labelled `logi-uruchomienia`, which they keep using after Maks
 closes it, one comment per Uruchomienie: a summary ending with the link to its
@@ -36,7 +39,7 @@ an Uruchomienie from before a restart of Centrum adds nothing.
 
 ## How to get to it (user POV)
 
-- None: Dad starts Uruchomienia procesu as always. Maks reads the files in `logs/uruchomienia/` on Dad's computer.
+- None: Dad starts Uruchomienia procesu as always, on Uruchomienia or, for Wpisanie raportów, with `Wpisz raporty z maili` in the header of Raporty (its Logi go to today's period). Maks reads the files in `logs/uruchomienia/` on Dad's computer.
 
 ## Driving it with Playwright for Python
 

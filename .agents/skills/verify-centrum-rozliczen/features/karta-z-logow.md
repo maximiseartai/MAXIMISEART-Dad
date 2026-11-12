@@ -7,7 +7,7 @@ the same headline, Komunikaty, summary and files as before closing, the note
 server's next action, `Nowe Uruchomienie procesu` and `Napisz do Maksa o tym
 Uruchomieniu`, but no `Diagnoza`. An Urwane Uruchomienie (Centrum died during
 it) is named after the next start from `logs/ostatnie-uruchomienie.json`, with
-the advice for its mode and `Uruchom ponownie`. A last Uruchomienie without
+the advice for its mode and `Uruchom ponownie`; an urwana Wycena w efenix gets its Logi at that start, and its card shows the count tiles `Zlecenia przed zamknięciem Centrum` (not driven here). A last Uruchomienie without
 Logi whose result is in Historia (Centrum died after the metrics record, before
 the Logi, #722) shows that result with a short note instead. A Historia row opens the card
 of its Uruchomienie in a side panel, read-only; a row without Logi says the
@@ -42,7 +42,7 @@ Preconditions:
 
 ## Gotchas
 
-- After any start of Centrum, Uruchomienia opens on the card of the last Uruchomienie, not on the setup card. Recipes that click `Nowe Uruchomienie procesu` first keep working, because that card has the same button.
+- After a start of Centrum with a last Uruchomienie whose Logi it can read, Uruchomienia opens on its card, not on the setup card (unreadable or refused Logi, or no last start, give the setup card). Recipes that click `Nowe Uruchomienie procesu` first keep working, because that card has the same button.
 - In `all` the killed server is a successor of the runner's own process, because `aktualizacja` (the restart guardian) and `kontrola-ilosci` already restarted Centrum; alone it is the runner's own; cleanup stops whichever `server.json` names, and the runner's stop handles a process that is already dead.
 - Kill only while the RUN waits for the Decyzja: nothing has been written to the Folder okresu then, so moving the folder back restores the fixture.
 - The note's date is `started_at` of the file of Logi, which is a few milliseconds before the metrics record's; compare the panel with the card, not with the Historia row's date.

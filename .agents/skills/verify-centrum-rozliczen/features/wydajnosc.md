@@ -1,7 +1,7 @@
 # Wydajność
 
 Measures how fast Centrum rozliczeń feels on Dad's laptop and compares it with
-the baseline in `wydajnosc-baseline.json`: cold start of the four pages of the menu, reopening
+the baseline in `wydajnosc-baseline.json`: cold start of four pages of the menu (Okresy, Uruchomienia, Metryki, Konfiguracja), reopening
 the tab, two laps through the sidebar with the time a skeleton was visible, the
 interactions Dad uses (theme, Metryki filters, the Wykres/Tabela and
 Uruchomienie/Historia tabs, collapsing the sidebar, returning to the tab), the
@@ -9,12 +9,13 @@ API requests of each scenario, the bundle size, and CPU traces of the cold start
 of Okresy and Metryki. It is the hill-climbing loop for frontend changes: every
 change that makes Centrum faster or slower updates the baseline in its own PR.
 It runs only when named (`--feature wydajnosc`), never in `all`: it takes a few
-minutes and holds the machine alone. Powiadomienia (the header bell) and the
-dialog `Napisz do Maksa` are not measured.
+minutes and holds the machine alone. Raporty (the fifth menu page, with no budget in the baseline yet,
+`MEASURED_PAGES` in `drive/wydajnosc.py`), Powiadomienia (the header bell) and the dialog `Napisz do Maksa`
+are not measured.
 
 ## Sub-features
 
-- `wydajnosc-rok-pracy`: Centrum points to Dad's year of work (52 periods in his layout, 51 with Rozliczenia pracowników of 14 Wykonawcy, about 260 extra metrics records) through the UI, and the four pages are captured.
+- `wydajnosc-rok-pracy`: Centrum points to Dad's year of work (52 periods in his layout, 51 with Rozliczenia pracowników of 14 Wykonawcy, about 260 extra metrics records) through the UI, and the four measured pages are captured.
 - `wydajnosc-na-zywo`: the year's last period gets a synthetic Plik zbiorczy of Dad's size (430 rows), so the live summary of Uzupełnienie (#419) reads a real file.
 - `wydajnosc-pomiar`: every scenario runs in Chromium at CPU 4× (reference) and 6× (pessimistic), five times each by default.
 - `wydajnosc-porownanie`: the report gives each scenario's median, baseline and budget per profile and fails when a median exceeds its budget in the measurement and in the second measurement of that scenario, when a scenario's API requests differ from the expected ones, when a skeleton is visible in the second sidebar lap, or when the bundle exceeds its budget.
@@ -34,7 +35,7 @@ Preconditions:
 - Quiet CPU, held by the runner: it waits until no other Centrum verification run or `benchmark_przebiegu.py freeze` is registered and, on macOS and Linux, no pytest, other verification or Playwright browser runs, then takes the machine's measurement lock; `benchmark_przebiegu.py measure` takes the same lock and waits the same way. It prints `MASZYNA ZAJĘTA | …` every minute and `MASZYNA WOLNA | czekano N s` when it starts, and fails after 3 minutes with what kept the machine busy. Those runs do not wait while it waits for a quiet CPU; once it holds the lock they wait for it at most 15 minutes, three times a measurement, then fail with `zajmuje ją: pomiar (pid …)`. Load that starts during the measurement (a test run, editors, browsers) is not stopped and still adds noise.
 - Profiles follow `docs/agents/komputer-taty.md`: `Emulation.setCPUThrottlingRate` 4× and 6× on a Mac with M4 Max. On another developer computer the multipliers and the baseline do not apply.
 
-- **Rok pracy.** On the drive's tab, answer the picker with `year_of_work.periods_directory` and click `Wskaż folder okresów`, then `Wskaż Rejestr zleceń` with the fixture's register. `/api/periods` (`api/wydajnosc-tablica.json`) holds at least 52 periods, 51 `worker_settlements_ready`; `/api/metrics` (`api/wydajnosc-metryki.json`) has `fixture.metrics.runs` runs. Screenshots `84`–`87` show the four pages on the year. The tab then goes to `about:blank`, so its event stream does not run during the measurement.
+- **Rok pracy.** On the drive's tab, answer the picker with `year_of_work.periods_directory` and click `Wskaż folder okresów`, then `Wskaż Rejestr zleceń` with the fixture's register. `/api/periods` (`api/wydajnosc-tablica.json`) holds at least 52 periods, 51 `worker_settlements_ready`; `/api/metrics` (`api/wydajnosc-metryki.json`) has `fixture.metrics.runs` runs. Screenshots `84`–`87` show the four measured pages on the year. The tab then goes to `about:blank`, so its event stream does not run during the measurement.
 - **Ready view.** A view is ready when the `h1` in `[data-slot="sidebar-inset"]` is the page title and no `[data-slot="skeleton"]` or `[aria-busy="true"]` is in the page. A `MutationObserver` from an init script records the time of every change of that state and of the last DOM change.
 - **Visible skeleton.** A skeleton is in the DOM from the first render but transparent until its animation starts about 120 ms into the read (`index.css`), and a skeleton the browser never painted never starts it. The init script counts a skeleton as visible from the first `animationstart` of a `[data-slot="skeleton"]` or `[aria-busy="true"]` element until no such element is left in the page. The browser's own measurement counts `szkielet_ms` the same way (`pomiar-u-taty.md`).
 - **Scenarios** (each in a fresh context at 1440×1000, `pl-PL`, `Europe/Warsaw`, without HTTP or code cache unless stated):

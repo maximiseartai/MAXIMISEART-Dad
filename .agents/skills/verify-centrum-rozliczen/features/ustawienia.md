@@ -24,6 +24,7 @@ longer exists.
 - Okresy with no folder okresów: the `Wskaż folder okresów` button in the empty state.
 - Okresy, card `Ustawienia`: `Wskaż`/`Zmień` next to `Rejestr zleceń` and `Folder okresów`.
 - Uruchomienia: the setup card has the same `Rejestr zleceń` and `Folder okresów` groups and buttons (for Przebieg rozliczeń, group `Plik zbiorczy` replaces the Rejestr); the drive uses Okresy.
+- The Rejestr zleceń under the name Dad knows, group `INTERMAX` with `Wskaż INTERMAX`/`Zmień INTERMAX`: on the card `Uporządkuj INTERMAX` of Uruchomienia (`uporzadkowanie-intermax.md`) and in the header of Raporty (`wpisanie-raportow.md`); this feature drives neither.
 - The sun/moon icon in the header (`Włącz motyw jasny` / `Włącz motyw ciemny`).
 
 ## Driving it with Playwright for Python
@@ -51,5 +52,5 @@ Preconditions:
 - The scripted picker answers at once, while Dad's native window stays open for seconds. A step about what happens while a picker is open holds the request with `page.route` and continues it afterwards; without that, the window is over before the second click.
 - A waiting picker button spins forever, so capture that state with `live=True`, or `Run.capture` waits for the spinner until it times out.
 - The picker that is open belongs to the tab, not to a page: navigating away and back keeps every picker button waiting until it answers.
-- Centrum reads the remembered Rejestr zleceń only when Przygotowanie pliku zbiorczego runs or its Diagnoza checks it; without it, starting that Uruchomienie is refused with `Najpierw wskaż …`. A remembered Rejestr zleceń that is gone does not stop the start: `Podgląd bez zapisu` stays enabled, and the missing file surfaces in the Uruchomienie or its Diagnoza.
+- Centrum reads the remembered Rejestr zleceń when Przygotowanie pliku zbiorczego, Uporządkowanie INTERMAX or Wpisanie raportów runs or a Diagnoza checks it, and for the day row of `Uporządkuj INTERMAX`; without it, starting such an Uruchomienie is refused with `Najpierw wskaż …`. A remembered Rejestr zleceń that is gone does not stop the start: `Podgląd bez zapisu` stays enabled, and the missing file surfaces in the Uruchomienie or its Diagnoza.
 - Settings reload when the tab regains focus, so a missing path can also appear without a manual reload.

@@ -1,13 +1,13 @@
 # Metryki
 
-Metryki show the history of every Uruchomienie procesu of the three processes
-(Przebieg rozliczeń, Przygotowanie pliku zbiorczego, Uporządkowanie INTERMAX),
+Metryki show the history of every Uruchomienie procesu of the five processes of the catalog
+(Przygotowanie pliku zbiorczego, Przebieg rozliczeń, Wycena w efenix, Uporządkowanie INTERMAX, Wpisanie raportów),
 including those started outside Centrum (the former `.cmd` launchers, Maks's
 tools), read from the metrics files of the processes on every request:
 P50/P95 per process and mode from five completed observations, the result
 distribution, a stage-times chart, the interrupted runs with their phase times,
-and a sortable, filterable history table, whose rows of a Centrum Uruchomienie
-with a run id carry `Napisz do Maksa o tym Uruchomieniu` (`uwaga-taty.md`). Okresy shows three key numbers above
+and a sortable, filterable history table, whose rows carry the button of the Karta Uruchomienia
+(`karta-z-logow.md`) and, for a Centrum Uruchomienie with a run id, `Napisz do Maksa o tym Uruchomieniu` (`uwaga-taty.md`). Okresy shows three key numbers above
 the Tablica okresów. Records the metrics reader skips are skipped here too, and
 no metrics files mean an empty state, not an error.
 
@@ -30,6 +30,7 @@ no metrics files mean an empty state, not an error.
 ## How to get to it (user POV)
 
 - Sidebar `Metryki` (`#/metryki`).
+- Sidebar `Uruchomienia` (`#/uruchomienia`), tab `Historia`: the same history card.
 - Sidebar `Okresy` (`#/okresy`): the `Najważniejsze liczby` strip between `Następny krok` and `Tablica okresów`, once the folder okresów is set.
 - Returning to the tab or reloading it reads the metrics files again.
 
@@ -60,9 +61,9 @@ Preconditions:
 ## Gotchas
 
 - Statistics are per process and mode. A `BLAD_KRYTYCZNY` record is not a completed observation, but `WYMAGA_SPRAWDZENIA` is. The counts split `BLAD_KRYTYCZNY` into `stopped` („dla taty” and old records without a kind) and `failed` („do Maksa”).
-- The filters offer `INTERMAX` too, and for it `Tryb` has only RUN, because the server gives each process its modes (`app.py`, `GET /api/metrics`). The drive never selects `INTERMAX`: `uporzadkowanie-intermax` runs after this feature.
+- The filters offer all five processes, and for Wycena w efenix, Uporządkowanie INTERMAX and Wpisanie raportów `Tryb` has only RUN, because the server gives each process its modes (`metrics.py`, `GET /api/metrics`; `run_view.py`, `modes`). The drive selects none of these three: the features that start them run after this one.
 - The header filter (`Proces`, `Tryb`) drives the strip and the chart only; the history card has its own filters (`Proces w historii`, `Tryb w historii`). Filter and sort state is lost on reload.
-- Every fixture run is marked `.cmd`: the metrics schema has no origin field, so Centrum takes `origin` from its own `centrum-uruchomienia.jsonl`, and Metryki runs before any feature that starts an Uruchomienie procesu from Centrum. Runs Centrum started carry `origin: centrum`, their `run_id` from the same file (`null` for `.cmd` runs and Centrum lines from before Uwagi taty) and no badge; only a row with a `run_id` has the button `Napisz do Maksa o tym Uruchomieniu` in the last column (header `Uwaga`, for screen readers only), so Metryki never shows it and `uwaga-taty` drives it. So `--feature metryki` on a run root where they already ran fails the `.cmd` count.
+- Every fixture run is marked `.cmd`: the metrics schema has no origin field, so Centrum takes `origin` from its own `centrum-uruchomienia.jsonl`, and Metryki runs before any feature that starts an Uruchomienie procesu from Centrum. Runs Centrum started carry `origin: centrum`, their `run_id` from the same file (`null` for `.cmd` runs and Centrum lines from before Uwagi taty) and no badge; only a row with a `run_id` has the button `Napisz do Maksa o tym Uruchomieniu` in the last column (header `Karta Uruchomienia i Uwaga`, for screen readers only), so Metryki never shows it and `uwaga-taty` drives it. So `--feature metryki` on a run root where they already ran fails the `.cmd` count.
 - The step outside Centrum writes a record with the real current time, so it is the newest run; it uses the run-local metrics file, never the tool's.
 - Bars and details render without animation; a capture right after a filter click is still stable.
 - `tap()` needs a context with `has_touch=True`; the drive's own context has none, so the tap runs in a second context on the same Centrum.

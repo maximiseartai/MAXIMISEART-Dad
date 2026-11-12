@@ -38,7 +38,7 @@ question for the list of Releases per 10 minutes.
 
 ## Sub-features
 
-- `powiadomienia-dzwonek`: on all four pages the bell sits right of `Napisz do Maksa`; `GET /api/notifications` has the sent Uwaga as `uwaga`, `{"state": "sent"}`, not new, and the open Zgłoszenie of `zgloszenie` as `zgloszenie` named by its „Co się stało”; `unread` counts the new ones.
+- `powiadomienia-dzwonek`: on all five pages of the menu the bell sits right of `Napisz do Maksa`; `GET /api/notifications` has the sent Uwaga as `uwaga`, `{"state": "sent"}`, not new, and the open Zgłoszenie of `zgloszenie` as `zgloszenie` named by its „Co się stało”; `unread` counts the new ones.
 - `powiadomienia-zamkniete`: after Maks closes the Uwaga as `completed` and the Zgłoszenie as `not_planned`, 10 minutes later the bell is `Powiadomienia, są nowe`; Centrum asked at most once per label, and a second page within 10 minutes asks nothing.
 - `powiadomienia-oznaczenie-bez-odpowiedzi`: entering the view while marking read gets no answer (`/api/notifications/read` aborted, harness) shows one error notification with `Centrum rozliczeń nie odpowiada.`; the server's `unread` stays above 0 and, after a reload of Okresy, the bell is `Powiadomienia, są nowe`.
 - `powiadomienia-widok`: the bell opens the view in the same tab with no sidebar item current; the Uwaga row says `Rozwiązana. Będzie w następnej wersji.`, the Zgłoszenie row `Maks przeczytał.`, both with the mark `nowe` and `data-fresh="true"`; the bell is plain `Powiadomienia` at once, the server's `unread` is 0 and `config/powiadomienia.json` keeps the read ids; no alert, no error toast; both themes.
