@@ -42,8 +42,8 @@ from .workbook_files import (
     check_worker_header,
     header_columns,
     is_blank,
-    open_workbook,
-    template_content,
+    open_workbook,  # noqa: TID251 - template_file czyta Wzorzec
+    template_content,  # noqa: TID251 - template_file czyta Wzorzec
 )
 from .workbook_parts import UnsupportedShape
 from .workbook_save import SaveProblem, WorkbookSaveError, save_from_template, write_atomically

@@ -36,7 +36,7 @@ ForbiddenPositions = Sequence[tuple[ForbiddenColumn, int]]
 class DadFiles:
     """Pliki taty jednej pracy: źródło bajtów, pamięć reguły danych i Kopia wejścia Uruchomienia (``None``: bez Logów)."""
 
-    source: ByteSource = workbook_files.file_bytes
+    source: ByteSource = workbook_files.file_bytes  # noqa: TID251 - domyślne źródło bajtów uchwytu (DadFiles.source)
     forbidden: ForbiddenValues = field(default_factory=ForbiddenValues)
     copy: InputCopy | None = None
 

@@ -333,7 +333,7 @@ def remove_tree(folder: Path, *, missing_ok: bool = False) -> None:
 
     if missing_ok and not folder.exists():
         return
-    while_open(lambda: shutil.rmtree(folder))
+    while_open(lambda: shutil.rmtree(folder))  # noqa: TID251 - the helper remove_tree itself
 
 
 def remove_empty_folder(folder: Path) -> None:
@@ -352,7 +352,7 @@ def replace_file(source: Path, target: Path) -> None:
     """Harness: put ``source`` in place of ``target`` at once, like Excel saving a whole file, even while the server
     reads ``target``."""
 
-    while_open(lambda: os.replace(source, target))
+    while_open(lambda: os.replace(source, target))  # noqa: TID251 - the helper replace_file itself
 
 
 def put_text(path: Path, text: str) -> None:

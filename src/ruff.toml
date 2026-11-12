@@ -1,0 +1,20 @@
+# Ruff bierze banned-api z najbliższego pliku konfiguracji w całości, a nie dokłada do tabeli rodzica: pierwsze wpisy
+# to kopia tabeli z pyproject.toml (tests/test_zakazy_ruff.py pilnuje, że żadnego nie gubi), a ostatnie obowiązują tylko
+# w src/, każdy z próbką w tests/test_zakazy_ruff.py. Wyjątek dostaje swoją linię: # noqa: TID251 - <powód>.
+extend = "../pyproject.toml"
+
+[lint.flake8-tidy-imports.banned-api]
+"os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
+"rozliczenia.centrum.refusal._CATALOG".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.refusal._Catalog".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.refusal._refused".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.process_kind._CATALOG".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
+"rozliczenia.centrum.process_kind._Catalog".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
+"rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
+"rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
+"rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
+# Plik taty czyta jedna droga (tests/test_jeden_odczyt_skoroszytu.py): bajty i skoroszyt obok uchwytu omijają
+# sprawdzenie dostępności, źródło bajtów uchwytu, pamięć reguły danych i Kopię wejścia (#1087).
+"rozliczenia.workbook_files.file_bytes".msg = "wartości pliku taty czytaj uchwytem DadFiles.read z rozliczenia.dad_files"
+"rozliczenia.workbook_files.template_content".msg = "Wzorzec czytaj przez rozliczenia.template_file, a wartości pliku taty uchwytem DadFiles.read z rozliczenia.dad_files"
+"rozliczenia.workbook_files.open_workbook".msg = "wartości pliku taty czytaj uchwytem DadFiles.read z rozliczenia.dad_files, a arkusz świadkiem ReadFile.sheet"
