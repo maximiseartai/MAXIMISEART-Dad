@@ -1338,154 +1338,82 @@ def test_adnotacja_pola_modelu_zostaje_mutacja_a_stala_nie_jest_aliasem() -> Non
 
 
 def test_w_pliku_z_pydantic_adnotacja_i_alias_typu_zostaja_mutacja() -> None:
-    code = "from pydantic import BaseModel\nWynik = Annotated[A | B, Field(discriminator='rodzaj')]\n\n\n@router.get('/')\ndef trasa() -> Wynik:\n    pass\n"
+    code = "from pydantic import BaseModel\nWynik = Annotated[A | B, Field(discriminator='rodzaj')]\n\n\ndef trasa() -> Wynik:\n    pass\n"
 
     assert "zmiana linii 2 cofnięta do bazy" in _described(code, [2], ("Wynik = A | B",))
-    assert "zmiana linii 6 cofnięta do bazy" in _described(code, [6], ("def trasa() -> A:",))
+    assert "zmiana linii 5 cofnięta do bazy" in _described(code, [5], ("def trasa() -> A:",))
 
 
-# Cofnięcia, których nic nie czyta w czasie wykonania (#1340): (kod po zmianie, zmieniona linia, linia bazy; ``None``,
-# gdy zmiana tylko dodała linię, a cofnięcie ją usuwa). Każdy wiersz to jeden wiersz tabeli przypadków w opisie PR-u.
+# Cofnięcia, których Python z konstrukcji nie czyta w czasie wykonania (#1340): (kod po zmianie, zmieniona linia, linia
+# bazy; ``None``, gdy zmiana tylko dodała linię, a cofnięcie ją usuwa).
 FUTURE = "from __future__ import annotations\n"
-DATACLASS = FUTURE + "from dataclasses import dataclass\nfrom typing import final\n\n\n"
-ROUTER = "from fastapi import APIRouter\n\n\n"
 NIEWIDOCZNE = {
     "__all__ (czyta je tylko import *, którego nie wpuszcza ruff F403)": ('__all__ = ["a", "b"]\n\n\ndef a():\n    pass\n', 1, '__all__ = ["a"]'),
     "dopisek do __all__": ('__all__ = ["a"]\n__all__ += ["b"]\n', 2, None),
-    "adnotacja zmiennej w funkcji (PEP 526: Python jej nie wylicza)": ("def f() -> list[int]:\n    wynik: list[int] = []\n    return wynik\n", 2, "    wynik: list[str] = []"),
-    "adnotacja atrybutu w metodzie": ("class A:\n    def __init__(self) -> None:\n        self.style: dict[tuple[bool], int] = {}\n", 3, "        self.style: dict[tuple[int], int] = {}"),
-    # Jak ``outbox._Seen`` (run 42982940704): plik tylko tworzy obiekty klasy i pyta ``isinstance``.
-    "pole prywatnej dataclassy, której pól nic nie czyta": (
-        DATACLASS + "@final\n@dataclass(frozen=True)\nclass _Widziane:\n    nowa: Version | None\n\n\n"
-        "def f(x: object) -> _Widziane | None:\n    return x if isinstance(x, (_Widziane, int)) else _Widziane(None)\n",
-        9,
-        "    nowa: str | None",
-    ),
-    "pole prywatnej klasy z dekoratorem dataclasses.dataclass": (FUTURE + "import dataclasses\n\n\n@dataclasses.dataclass\nclass _W:\n    n: int\n", 7, "    n: str"),
-    "adnotacja zmiennej modułu": (FUTURE + "LIMIT: Final[int] = 5\n", 2, "LIMIT: int = 5"),
-    "parametr metody bez ciała w Protocol z runtime_checkable": (
-        FUTURE + "@runtime_checkable\nclass Skrzynka(Protocol):\n    def issues(self, label: str, *, include_closed: bool) -> list[int]:\n        \"\"\"Opis.\"\"\"\n        ...\n",
-        4,
-        "    def issues(self, label: str) -> list[int]:",
-    ),
-    "adnotacja atrybutu w Protocol z runtime_checkable": (FUTURE + "@runtime_checkable\nclass Wpis(Protocol):\n    key: ProcessKey\n", 4, "    key: str"),
-    "parametr metody Protocol, której ciało tylko rzuca NotImplementedError": (
-        FUTURE + "@runtime_checkable\nclass Skrzynka(Protocol):\n    def issues(self, label: str, *, include_closed: bool) -> list[int]:\n        raise NotImplementedError\n",
-        4,
-        "    def issues(self, label: str) -> list[int]:",
-    ),
-    "deklaracja w Protocol bez runtime_checkable": (FUTURE + "class Skrzynka(Protocol):\n    def archive(self) -> None:\n        ...\n", 3, "    def stara(self) -> None:"),
-    "granica TypeVar": (FUTURE + 'T = TypeVar("T", bound=Wynik)\n\n\nclass Pudlo(Generic[T]):\n    pass\n', 2, 'T = TypeVar("T")'),
-    "TypeVar czytany tylko w adnotacjach": (FUTURE + 'T = TypeVar("T")\n\n\ndef pierwszy(xs: list[T]) -> T:\n    return xs[0]\n', 2, None),
-    "plik z pydantic: argument metody z @classmethod": (
-        "from pydantic import BaseModel\n\n\nclass Przyczyna(BaseModel):\n    @classmethod\n    def z(cls, cause: WindowCause) -> Przyczyna:\n        return cls()\n",
-        6,
-        "    def z(cls, cause: StopCause) -> Przyczyna:",
-    ),
-    "plik z FastAPI: wynik prywatnej funkcji": (ROUTER + "def _rada() -> contract.Message:\n    return rada()\n", 4, "def _rada() -> Message:"),
-    "import nazwy czytanej tylko w adnotacjach": (FUTURE + "from .okno import Przyczyna\n\n\ndef f(p: Przyczyna) -> None:\n    pass\n", 2, None),
-    "ta sama nazwa z innego modułu": ("from .okno import ListedOrder\n\nWIERSZ = ListedOrder()\n", 1, "from .lista import ListedOrder"),
+    "__all__ z adnotacją": ('__all__: list[str] = ["a", "b"]\n', 1, '__all__: list[str] = ["a"]'),
+    "__all__ w pliku z pydantic": ('from pydantic import BaseModel\n\n__all__ = ["M", "N"]\n', 3, '__all__ = ["M"]'),
+    "typ zmiennej w funkcji (PEP 526: Python go nie wylicza)": ("def f() -> list[int]:\n    wynik: list[int] = []\n    return wynik\n", 2, "    wynik: list[str] = []"),
+    "adnotacja dopisana do przypisania w funkcji": ("def f() -> list[int]:\n    wynik: list[int] = []\n    return wynik\n", 2, "    wynik = []"),
+    "typ deklaracji bez wartości w funkcji": ("def f(a: bool) -> int:\n    x: int\n    x = 1 if a else 2\n    return x\n", 2, "    x: str"),
+    "typ atrybutu w metodzie": ("class A:\n    def __init__(self) -> None:\n        self.style: dict[tuple[bool], int] = {}\n", 3, "        self.style: dict[tuple[int], int] = {}"),
+    "typ zmiennej w bloku funkcji asynchronicznej": ("async def f(xs: list[int]) -> None:\n    for x in xs:\n        y: Nowy = x\n        print(y)\n", 3, "        y: Stary = x"),
+    "typ zmiennej w funkcji zagnieżdżonej": ("def f() -> None:\n    def g() -> int:\n        n: int = 1\n        return n\n    g()\n", 3, "        n: str = 1"),
+    "typ zmiennej w metodzie klasy z funkcji": ("def f() -> object:\n    class A:\n        def g(self) -> None:\n            n: int = 1\n    return A\n", 4, "            n: str = 1"),
+    "typ zmiennej w funkcji w pliku z pydantic": ("from pydantic import BaseModel\n\n\ndef f() -> None:\n    n: Nowy = 1\n", 5, "    n: Stary = 1"),
+    "import nazwy z samej adnotacji zmiennej w funkcji": ("from .okno import Przyczyna\n\n\ndef f() -> None:\n    p: Przyczyna = g()\n", 1, None),
 }
 
 
 @pytest.mark.parametrize(("code", "line", "old"), NIEWIDOCZNE.values(), ids=NIEWIDOCZNE.keys())
-def test_cofniecie_ktorego_nic_nie_czyta_w_czasie_wykonania_nie_jest_mutacja(code: str, line: int, old: str | None) -> None:
+def test_cofniecie_ktorego_python_nie_czyta_w_czasie_wykonania_nie_jest_mutacja(code: str, line: int, old: str | None) -> None:
     assert _reverted(code, line, old) is None
 
 
 # Prywatna dataclassa ``_W`` z polem ``n: int`` w linii 8: ``{0}`` to import, ``{1}`` kod po klasie.
 PRYWATNA_W = FUTURE + "from dataclasses import dataclass\n{0}\n\n\n@dataclass\nclass _W:\n    n: int\n\n\n{1}"
-# Cofnięcia, które zmieniają zachowanie albo adnotację, którą coś czyta w czasie wykonania (#1340), w postaci jak wyżej.
+# Cofnięcia, które zmieniają zachowanie albo adnotację, którą coś może czytać w czasie wykonania, w postaci jak wyżej.
+# Kontrprzykłady przeglądów #1359 (rundy 1 i 2) pokazują, że czytania pól, ``TypeVar`` i ``Protocol`` z innego pliku
+# nie rozstrzyga analiza jednego pliku, więc te adnotacje zostają mutacjami.
 WIDOCZNE = {
     "__all__ czytane w pliku": ('__all__ = ["a"]\nNAZWY = list(__all__)\n', 1, "__all__ = []"),
-    "deklaracja zmiennej w funkcji zmienia jej zasięg": ("def f() -> int:\n    x: int\n    return x\n", 2, None),
+    "alias typu w ciele klasy (atrybut klasy)": ("class A:\n    Typ = list[int]\n", 2, "    Typ = list[str]"),
+    "dodana deklaracja zmiennej w funkcji (zmienia jej zasięg)": ("def f() -> int:\n    x: int\n    return x\n", 2, None),
+    "zmiana nazwy deklarowanej zmiennej w funkcji": ("def f() -> None:\n    x: int\n", 2, "    y: int"),
+    "plik z pydantic: alias typu (pole modelu w innym pliku)": ("from pydantic import BaseModel\n\nWynik = Annotated[Nowy | Stary, Field(discriminator='rodzaj')]\n", 3, "Wynik = Annotated[Stary, Field()]"),
+    "cofnięcie z kodem obok adnotacji zmiennej w funkcji": ("def f() -> int:\n    wynik: int = 2\n    return wynik\n", 2, "    wynik: str = 1"),
+    "adnotacja pola klasy z funkcji (Python ją wylicza)": ("def f() -> object:\n    class A:\n        n: int = 1\n    return A\n", 3, "        n: Nieznany = 1"),
     # Run 42783639074: cofnięcie ``__all__`` w ``efenix_checks.py`` usuwało też import ``normalize_text`` (WYKRYTA).
     "cofnięcie usuwa import nazwy, którą kod wywołuje": ("from .text import normalize_text\n\n\ndef f(s: str) -> str:\n    return normalize_text(s)\n", 1, None),
-    "cofnięcie z kodem obok adnotacji": ("def f() -> int:\n    wynik: int = 2\n    return wynik\n", 2, "    wynik: str = 1"),
-    # ``tests/test_uruchom_proces.py`` czyta ``get_type_hints(Stop)``, a pydantic pola ``call_trace.CallTrace`` z pola
-    # ``RunLog`` w innym pliku.
-    "pole publicznej dataclassy": (DATACLASS + '@dataclass(frozen=True)\nclass Stop:\n    kind: Literal["stop", "declined"]\n', 8, '    kind: Literal["stop"]'),
-    "pole prywatnej dataclassy w polu publicznej": (
-        DATACLASS + "@dataclass(frozen=True)\nclass _Ramka:\n    linia: int\n\n\n@dataclass(frozen=True)\nclass Slad:\n    ramki: tuple[_Ramka, ...]\n",
-        8,
-        "    linia: str",
-    ),
-    "pole prywatnej dataclassy w polu prywatnej w polu publicznej": (
-        DATACLASS + "@dataclass\nclass _Ramka:\n    linia: int\n\n\n@dataclass\nclass _Okno:\n    ramka: _Ramka\n\n\n@dataclass\nclass Slad:\n    okno: _Okno\n",
-        8,
-        "    linia: str",
-    ),
-    "pole prywatnej dataclassy z argumentem klasy": (DATACLASS + "@dataclass\nclass _W(metaclass=Rejestr):\n    n: int\n", 8, "    n: str"),
-    # Przegląd #1359: pydantic czyta pole prywatnej dataclassy przez alias, argument nazwany albo ``RootModel``, a plik
-    # przez ``fields``/``__annotations__``; filtr nie wylicza tych dróg, tylko ukrywa pola klasy, której obiekt nigdzie
-    # nie trafia, w pliku bez pydantic i bez nazw z ``_INTROSPECTION``.
+    # Runda 1: pydantic czyta pole prywatnej dataclassy przez alias, argument nazwany, ``RootModel`` albo dekorator, a
+    # plik przez ``fields``/``__annotations__``.
     "alias z prywatną dataclassą w polu modelu pydantic": (PRYWATNA_W.format("from pydantic import BaseModel", "Lista = list[_W]\n\n\nclass M(BaseModel):\n    x: Lista\n"), 8, "    n: str"),
     "alias z prywatną dataclassą w TypeAdapter": (PRYWATNA_W.format("from pydantic import TypeAdapter", "Lista = list[_W]\nA = TypeAdapter(Lista)\n"), 8, "    n: str"),
     "alias z prywatną dataclassą w RootModel": (PRYWATNA_W.format("from pydantic import RootModel", "L = list[_W]\n\n\nclass R(RootModel[L]):\n    pass\n"), 8, "    n: str"),
     "TypeAdapter(type=_W)": (PRYWATNA_W.format("from pydantic import TypeAdapter", "A = TypeAdapter(type=_W)\n"), 8, "    n: str"),
     "import pydantic i dekorator pydantic.dataclasses.dataclass": (FUTURE + "import pydantic\n\n\n@pydantic.dataclasses.dataclass\nclass _W:\n    n: int\n", 7, "    n: str"),
-    # FastAPI waliduje ciało żądania z pól ``_W``, które wskazuje tylko adnotacja parametru trasy.
-    "prywatna dataclassa w parametrze trasy FastAPI": (
-        PRYWATNA_W.format("from fastapi import APIRouter", "router = APIRouter()\n\n\n@router.post('/x')\ndef x(w: _W) -> None:\n    pass\n"), 8, "    n: str"
-    ),
     "typ pola z fields(_W)": (PRYWATNA_W.format("from dataclasses import fields", "TYPY = [f.type for f in fields(_W)]\n"), 8, "    n: str"),
     "_W.__annotations__": (PRYWATNA_W.format("", "A = _W.__annotations__\n"), 8, "    n: str"),
-    # Obiekt klasy trafia do kodu, który może czytać jej pola (``parse(_W, dane)`` z innego pliku).
-    "obiekt prywatnej klasy jako argument": (PRYWATNA_W.format("from .wczytaj import parse", "W = parse(_W, {})\n"), 8, "    n: str"),
-    # Dekorator ``dataclass`` spoza ``dataclasses`` (reeksport ``pydantic.dataclasses``) waliduje pola.
-    "dekorator dataclass spoza dataclasses": (FUTURE + "from .zgodnosc import dataclass\n\n\n@dataclass\nclass _W:\n    n: int\n", 7, "    n: str"),
-    "pole prywatnej dataclassy z TypeAdapter": (
-        FUTURE + "from pydantic import TypeAdapter\n\n\n@dataclass\nclass _Wiersz:\n    n: int\n\n\nWIERSZ = TypeAdapter(list[_Wiersz])\n",
-        7,
-        "    n: str",
-    ),
-    "pole prywatnej dataclassy pydantic": (FUTURE + "from pydantic.dataclasses import dataclass\n\n\n@dataclass\nclass _Wiersz:\n    n: int\n", 7, "    n: str"),
-    **{
-        f"plik czyta adnotacje obiektu prywatnej klasy przez {sposob}": (PRYWATNA_W.format(importy, f"A = {wyrazenie}\n"), 8, "    n: str")
-        for sposob, importy, wyrazenie in (
-            ("fields", "from dataclasses import fields", "[f.type for f in fields(_W(1))]"),
-            ("get_type_hints", "from typing import get_type_hints", "get_type_hints(type(_W(1)))"),
-            ("get_type_hints pod inną nazwą", "from typing import get_type_hints as hints", "hints(type(_W(1)))"),
-            ("inspect.get_annotations", "import inspect", "inspect.get_annotations(type(_W(1)))"),
-            ("inspect.signature", "import inspect", "inspect.signature(type(_W(1)))"),
-            ("__annotations__ napisem", "", "getattr(type(_W(1)), '__annotations__')"),
-            ("__annotate__", "", "type(_W(1)).__annotate__(1)"),
-            ("__dataclass_fields__", "", "type(_W(1)).__dataclass_fields__['n'].type"),
-            ("__signature__", "", "type(_W(1)).__signature__"),
-            ("TypeAdapter z reeksportu", "from .zgodnosc import TypeAdapter", "TypeAdapter(type(_W(1)))"),
-            ("validate_call z reeksportu", "from .zgodnosc import validate_call", "validate_call(lambda w: w)(_W(1))"),
-        )
-    },
-    "ClassVar zamiast pola dataclassy": (DATACLASS + "@dataclass\nclass _A:\n    x: ClassVar[int] = 1\n", 8, "    x: int = 1"),
-    "InitVar zamiast pola dataclassy": (DATACLASS + "@dataclass\nclass _A:\n    x: int\n", 8, "    x: InitVar[int]"),
-    "dodane pole dataclassy": (DATACLASS + "@dataclass\nclass _A:\n    x: int\n    y: int\n", 9, None),
-    "pole klasy z bazą (model pydantic z innego pliku)": (FUTURE + "class _Wpis(Rekord):\n    pole: int | None\n", 3, "    pole: int"),
-    "pole bez from __future__ import annotations (Python wylicza je przy imporcie)": ("from dataclasses import dataclass\n\n\n@dataclass\nclass _A:\n    x: Nieznany\n", 6, "    x: int"),
-    "adnotacja zmiennej modułu bez from __future__ import annotations": ("LIMIT: Final[int] = 5\n", 1, "LIMIT: int = 5"),
-    "metoda Protocol z ciałem": (FUTURE + "class P(Protocol):\n    def f(self, x: int) -> int:\n        return x + 1\n", 4, "        return x"),
-    "nazwa członka Protocol z runtime_checkable (isinstance pyta o członków)": (
-        FUTURE + "@runtime_checkable\nclass P(Protocol):\n    def nowa(self) -> None:\n        ...\n",
-        4,
-        "    def stara(self) -> None:",
-    ),
-    "TypeVar w bazie Generic": (FUTURE + 'T = TypeVar("T")\n\n\nclass Pudlo(Generic[T]):\n    pass\n', 2, None),
-    "plik z pydantic: granica TypeVar modelu generycznego": ('from pydantic import BaseModel\nT = TypeVar("T", bound=Wynik)\n', 2, 'T = TypeVar("T")'),
-    "plik z pydantic: argument walidatora": (
-        "from pydantic import BaseModel, field_validator\n\n\nclass M(BaseModel):\n    @field_validator('x')\n    @classmethod\n    def dodatnie(cls, value: int) -> int:\n        return value\n",
-        7,
-        "    def dodatnie(cls, value: str) -> int:",
-    ),
-    "plik z pydantic: funkcja podana jako wartość": (
-        "from pydantic import BeforeValidator\n\n\ndef _liczba(value: object) -> int:\n    return 1\n\n\nLiczba = Annotated[int, BeforeValidator(_liczba)]\n",
-        4,
-        "def _liczba(value: str) -> int:",
-    ),
-    "plik z FastAPI: parametr trasy": (ROUTER + "router = APIRouter()\n\n\n@router.get('/x')\ndef x(n: int) -> int:\n    return n\n", 8, "def x(n: str) -> int:"),
-    # ``Depends(dad_actions.observe)`` w ``centrum/app.py`` wskazuje metodę z ``centrum/dad_action_journal.py``.
-    "plik z FastAPI: publiczna metoda (zależność z innego pliku)": (
-        "from fastapi import Request\n\n\nclass Dziennik:\n    async def observe(self, request: Request) -> None:\n        pass\n",
-        5,
-        "    async def observe(self, request: object) -> None:",
+    # Runda 2: ``dataclasses`` rozpoznaje ``ClassVar``/``InitVar``/``KW_ONLY`` pod aliasem, inny plik czyta pola klasy
+    # przez ``from m import _W``, ``m._W`` albo słownik modułu, a model ``Generic`` z innego pliku granicę ``TypeVar``.
+    "ClassVar pod aliasem zamiast pola": (FUTURE + "from dataclasses import dataclass\nfrom typing import ClassVar as CV\n\n\n@dataclass\nclass _W:\n    n: CV[int] = 0\n", 8, "    n: int = 0"),
+    "pole zamiast ClassVar pod aliasem": (FUTURE + "from dataclasses import dataclass\nfrom typing import ClassVar as CV\n\n\n@dataclass\nclass _W:\n    n: int = 0\n", 8, "    n: CV[int] = 0"),
+    "InitVar pod aliasem zamiast pola": (FUTURE + "from dataclasses import InitVar as IV, dataclass\n\n\n@dataclass\nclass _W:\n    n: IV[int] = 0\n", 7, "    n: int = 0"),
+    "KW_ONLY pod aliasem": (FUTURE + "from dataclasses import KW_ONLY as K, dataclass\n\n\n@dataclass\nclass _W:\n    _: K\n    n: int = 0\n", 7, "    _: int"),
+    "pole prywatnej dataclassy nieużytej w pliku (from m import _W w innym)": (PRYWATNA_W.format("", ""), 8, "    n: str"),
+    "pole prywatnej dataclassy tylko wywołanej w pliku (m._W w polu modelu w innym)": (PRYWATNA_W.format("", "X = _W(n=1)\n"), 8, "    n: str"),
+    "prywatna dataclassa przez sys.modules": (PRYWATNA_W.format("import sys", "K = getattr(sys.modules[__name__], '_W')\n"), 8, "    n: str"),
+    "prywatna dataclassa przez globals()": (PRYWATNA_W.format("", "K = globals()['_W']\n"), 8, "    n: str"),
+    "prywatna dataclassa przez vars()": (PRYWATNA_W.format("", "K = vars()['_W']\n"), 8, "    n: str"),
+    "granica TypeVar (model Generic w innym pliku)": ("from typing import TypeVar\n\nT = TypeVar('T', bound=int)\n", 3, "T = TypeVar('T', bound=str)"),
+    "ograniczenia TypeVar": ("from typing import TypeVar\n\nT = TypeVar('T', int, str)\n", 3, "T = TypeVar('T', int)"),
+    # Pozostałe kategorie #1340 z tego samego powodu: ``get_type_hints`` z innego pliku czyta zmienną modułu i deklarację
+    # ``Protocol``, a ``validate_call`` adnotację funkcji z pliku z pydantic.
+    "adnotacja zmiennej modułu pod from __future__": (FUTURE + "LIMIT: Final[int] = 5\n", 2, "LIMIT: int = 5"),
+    "deklaracja w Protocol pod from __future__": (FUTURE + "class Wpis(Protocol):\n    key: ProcessKey\n", 3, "    key: str"),
+    "plik z pydantic: argument metody z @classmethod": (
+        "from pydantic import BaseModel\n\n\nclass Przyczyna(BaseModel):\n    @classmethod\n    def z(cls, cause: WindowCause) -> Przyczyna:\n        return cls()\n",
+        6,
+        "    def z(cls, cause: StopCause) -> Przyczyna:",
     ),
 }
 
