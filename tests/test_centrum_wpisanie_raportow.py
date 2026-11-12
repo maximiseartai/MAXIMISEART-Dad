@@ -1362,8 +1362,9 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
     assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
     assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 1"
     assert saved["schema_version"] == 2
-    jan_since, anna_since = "2026-11-09T17:00:00+01:00", "2026-11-09T17:30:00+01:00"
-    assert saved["moves"] == [
+    # Chwila maila ze strefą komputera (``report`` daje ``astimezone()``): na Macu „+01:00”, na Linuksie CI „Z”.
+    jan_since, anna_since = datetime(2026, 11, 9, 17).astimezone(), datetime(2026, 11, 9, 17, 30).astimezone()
+    assert [{**move, "since": datetime.fromisoformat(move["since"])} for move in saved["moves"]] == [
         {
             "number": "40000001",
             "day": "2026-11-09",
