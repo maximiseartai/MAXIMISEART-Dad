@@ -32,12 +32,10 @@ ConflictingVerdicts
   Raport wykonawcy od jan.testowy z 08.11.2026, który przyszedł 08.11.2026 o 18:05, ma dla zlecenia 40000001 różne Wpisy: „t wymiana” i „nieskuteczne brak klienta”, więc Centrum nie zmieniło tego zlecenia przy tym kliknięciu. Sprawdź z Wykonawcą, który Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail.
 UnknownNumber
   Numer 12345678 nie jest zleceniem jan.testowy z 08.11.2026.
-ForeignOrder
-  Zlecenie 40000001 z 08.11.2026 jest zleceniem ewa.probna, a Wpis przysłał jan.testowy, więc Centrum go nie wpisało.
-OtherDay
-  Zlecenie 40000001 od jan.testowy jest z 06.11.2026, 07.11.2026, a temat Raportu wykonawcy ma 08.11.2026, więc Centrum go nie wpisało.
 RepeatedOrder
   Zlecenie 40000001 jest dwa razy w dniu 08.11.2026 u jan.testowy, więc Centrum niczego do niego nie wpisało.
+RepeatedNumber
+  Zlecenie 40000001 jest w INTERMAX więcej niż raz: u ewa.probna z 06.11.2026, u jan.testowy z 07.11.2026. Centrum nie wie, którego z nich dotyczy Wpis od jan.testowy z 08.11.2026, więc go nie wpisało i żadnego z nich nie przeniosło.
 RefusedMove
   Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. Centrum go nie przeniosło i nie wpisało, bo dzień 08.11.2026 nie jest jeszcze uporządkowany w INTERMAX.
 RefusedMove

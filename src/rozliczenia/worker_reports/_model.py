@@ -5,7 +5,7 @@ Osobny moduł, żeby pakiet importował moduły prywatne na górze bez cyklu: te
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from email.utils import parseaddr
@@ -266,11 +266,17 @@ class OwnMove:
 
     def overridden_at(self, worker: Login, day: date) -> bool:
         """Czy tata zmienił miejsce zlecenia po Przeniesieniu Centrum, gdy INTERMAX ma je u ``worker`` w dniu ``day``:
-        wcześniej (``overridden``) albo teraz, bo Przeniesienie stoi w pamięci (miejsce Centrum inne niż sprzed
-        pierwszego Przeniesienia), a zlecenie stoi gdzie indziej niż je zostawiło Centrum."""
+        wcześniej (``overridden``) albo teraz (``left``)."""
+
+        return self.overridden or self.left(((worker, day),))
+
+    def left(self, places: Iterable[tuple[Login, date]]) -> bool:
+        """Czy Przeniesienie stoi w pamięci (miejsce Centrum inne niż sprzed pierwszego Przeniesienia), a żadne z
+        zleceń tego numeru, które INTERMAX ma w miejscach ``places`` (Wykonawca i dzień), nie stoi tam, gdzie je
+        zostawiło Centrum: którekolwiek z nich to było, tata je stamtąd zabrał."""
 
         placed = (self.worker, self.day)
-        return self.overridden or ((worker, day) != placed and placed != (self.origin_worker, self.origin_day))
+        return placed != (self.origin_worker, self.origin_day) and placed not in set(places)
 
 
 def may_move(memory: OwnMove | None, worker: Login, day: date, arrived: datetime) -> bool:
@@ -286,20 +292,17 @@ def may_move(memory: OwnMove | None, worker: Login, day: date, arrived: datetime
     return memory is None or (arrived > memory.since and not memory.overridden_at(worker, day))
 
 
-def memories_of(
-    moves: Iterable[OwnMove], key: OrderKey, places: Collection[tuple[OrderNumber, date]]
-) -> tuple[OwnMove, ...]:
-    """Pamięć zlecenia, które INTERMAX ma przed kliknięciem pod kluczem ``key`` (``places``: numer i dzień każdego
-    zlecenia w INTERMAX przed kliknięciem).
+def memories_of(moves: Iterable[OwnMove], key: OrderKey, alone: bool) -> tuple[OwnMove, ...]:
+    """Pamięć zlecenia, które INTERMAX ma przed kliknięciem pod kluczem ``key``; ``alone``: to jedyne zlecenie jego
+    numeru w dniach otwartych.
 
-    To pamięć jego numeru z jego dnia, a bez niej pamięć jego numeru z każdego dnia, w którym INTERMAX nie ma już tego
-    numeru: tata przeniósł zlecenie z miejsca Centrum na inny dzień, a jego ręczna zmiana wygrywa tak samo jak zmiana
-    Wykonawcy. Granica: Excel nie mówi, który wiersz tata przeniósł, więc pamięć z opuszczonego dnia dotyczy każdego
-    zlecenia tego numeru z dnia bez własnej pamięci, a Przeniesienie każdego z nich czeka na ``may_move`` każdej z nich."""
+    Jedyne zlecenie numeru ma całą pamięć numeru, z każdego dnia: tata mógł je przenieść z miejsca Centrum na inny dzień,
+    a jego ręczna zmiana wygrywa tak samo jak zmiana Wykonawcy, więc Przeniesienie czeka na ``may_move`` każdej z nich.
+    Zlecenie numeru, który INTERMAX ma więcej niż raz, ma tylko pamięć numeru ze swojego dnia, bo Excel nie mówi, który
+    wiersz tata przeniósł. Centrum nie przenosi wtedy żadnego z tych zleceń (``_matching.Board``), więc ich pamięć tylko
+    rośnie (``since``, ``overridden``) i nic z niej nie ginie, dopóki numer nie ma znowu jednego zlecenia."""
 
-    found = [move for move in moves if move.number == key.number]
-    here = tuple(move for move in found if move.day == key.day)
-    return here or tuple(move for move in found if (move.number, move.day) not in places)
+    return tuple(move for move in moves if move.number == key.number and (alone or move.day == key.day))
 
 
 @dataclass(frozen=True)
@@ -523,26 +526,22 @@ class UnknownNumber:
 
 
 @dataclass(frozen=True)
-class ForeignOrder:
-    worker: Login
-    day: date
-    number: OrderNumber
-    owner: Login
-
-
-@dataclass(frozen=True)
-class OtherDay:
-    worker: Login
-    day: date
-    number: OrderNumber
-    order_days: tuple[date, ...]
-
-
-@dataclass(frozen=True)
 class RepeatedOrder:
     worker: Login
     day: date
     number: OrderNumber
+
+
+@dataclass(frozen=True)
+class RepeatedNumber:
+    """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` ma numer ``number``, który INTERMAX ma w dniach otwartych więcej
+    niż raz (``places``: dzień i Wykonawca każdego z tych zleceń, po kolei), a nadawca nie ma w dniu ``day`` żadnego z
+    nich. Centrum nie wie, którego zlecenia dotyczy Wpis, więc go nie wpisuje i nie przenosi żadnego z nich."""
+
+    worker: Login
+    day: date
+    number: OrderNumber
+    places: tuple[tuple[date, Login], ...]
 
 
 class MoveBar(Enum):
@@ -589,15 +588,15 @@ ReportProblem = (
     | MissingVerdict
     | ConflictingVerdicts
     | UnknownNumber
-    | ForeignOrder
-    | OtherDay
     | RepeatedOrder
+    | RepeatedNumber
     | RefusedMove
     | ManualDifference
 )
 """Problem, który tata widzi z powodem (``reasons.reason``): nierozpoznany temat, nieznany nadawca, brak ``tak``/``nie``,
-przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, cudze zlecenie, inna data bez jednego
-zlecenia, ten sam numer dwa razy w dniu, Przeniesienie na dzień, do którego nie wolno, i różnica z ręczną wartością."""
+przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, ten sam numer dwa razy w dniu u nadawcy, numer
+w kilku zleceniach INTERMAX bez jednego zlecenia nadawcy w dniu z tematu, Przeniesienie na dzień, do którego nie wolno,
+i różnica z ręczną wartością."""
 
 
 @dataclass(frozen=True)
@@ -741,8 +740,8 @@ def problem_order(
     """Miejsce problemu w widoku Raporty: dzień, Wykonawca, numer, rodzaj i pozostałe pola problemu. Klucz bierze
     każde pole, którym mogą się różnić dwa problemy jednego wyniku, więc dwa różne problemy nigdy nie mają równego
     miejsca, a kolejność nie zależy od kolejności maili ani od ``PYTHONHASHSEED``. ``ConflictingVerdicts`` jest
-    najwyżej jeden na zlecenie, bo daje go tylko jego zwycięski mail (``_matching.Board.match``), więc wystarczy mu dzień,
-    Wykonawca i numer."""
+    najwyżej jeden na zlecenie, bo daje go tylko jego zwycięski mail (``_matching.Board.match``), a miejsca zleceń
+    ``RepeatedNumber`` zależą tylko od numeru i INTERMAX kliknięcia, więc obu wystarczy dzień, Wykonawca i numer."""
 
     kind = type(problem).__name__
     match problem:
@@ -752,11 +751,7 @@ def problem_order(
             return day, "", "", kind, (mail.digest, sender)
         case MissingVerdict(fault=fault):
             return problem.day, problem.worker, problem.number, kind, (fault.name,)
-        case ForeignOrder(owner=owner):
-            return problem.day, problem.worker, problem.number, kind, (owner,)
-        case OtherDay(order_days=order_days):
-            return problem.day, problem.worker, problem.number, kind, tuple(map(date.isoformat, order_days))
-        case ConflictingVerdicts() | UnknownNumber() | RepeatedOrder():
+        case ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber():
             return problem.day, problem.worker, problem.number, kind, ()
         case RefusedMove(day=day, order_day=order_day, bar=bar):
             return problem.shown, problem.worker, problem.number, kind, (day.isoformat(), order_day.isoformat(), bar.name)

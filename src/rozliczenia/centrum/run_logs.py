@@ -78,7 +78,6 @@ from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts
 from rozliczenia.worker_reports import (
     ConflictingVerdicts,
-    ForeignOrder,
     Login,
     MailId,
     MailRead,
@@ -87,12 +86,12 @@ from rozliczenia.worker_reports import (
     OrderKey,
     OrderNumber,
     MoveBar,
-    OtherDay,
     RefusedMove,
     OwnMove,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
+    RepeatedNumber,
     RepeatedOrder,
     ReportEntry,
     ReportProblem,
@@ -648,19 +647,36 @@ def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
 LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source"]
 
 
+class LoggedOrderPlace(_Record):
+    """Miejsce zlecenia w INTERMAX: dzień i Wykonawca."""
+
+    day: date
+    worker: str
+
+
 class LoggedOrderProblem(_Record):
     """Problem Wpisu raportu Wykonawcy z dnia: rodzaj, numer z treści maila (pod strażnikiem jak w
-    ``LoggedReportEntry``), a przy ``missing_verdict`` powód, przy ``foreign_order`` Wykonawca zlecenia, przy
-    ``other_day`` dni zleceń z tym numerem, a przy ``refused_move`` dzień zlecenia (``order_days``) i powód odmowy
-    Przeniesienia (``bar``)."""
+    ``LoggedReportEntry``), a przy ``missing_verdict`` powód, przy ``repeated_number`` miejsce każdego zlecenia z tym
+    numerem (``places``), a przy ``refused_move`` dzień zlecenia (``order_days``) i powód odmowy Przeniesienia
+    (``bar``). Logi sprzed #1350 mają też ``foreign_order`` z Wykonawcą zlecenia (``owner``) i ``other_day`` z dniami
+    zleceń z tym numerem (``order_days``): dziś to ``repeated_number``."""
 
-    kind: Literal["missing_verdict", "unknown_number", "foreign_order", "other_day", "repeated_order", "refused_move"]
+    kind: Literal[
+        "missing_verdict",
+        "unknown_number",
+        "foreign_order",
+        "other_day",
+        "repeated_order",
+        "repeated_number",
+        "refused_move",
+    ]
     worker: str
     day: date
     number: str
     fault: LoggedVerdictFault | None = None
     owner: str | None = None
     order_days: list[date] = []
+    places: list[LoggedOrderPlace] = []
     bar: LoggedMoveBar | None = None
 
 
@@ -756,20 +772,16 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
             )
         case UnknownNumber():
             return LoggedOrderProblem(kind="unknown_number", worker=problem.worker, day=problem.day, number=problem.number)
-        case ForeignOrder():
+        case RepeatedOrder():
+            return LoggedOrderProblem(kind="repeated_order", worker=problem.worker, day=problem.day, number=problem.number)
+        case RepeatedNumber():
             return LoggedOrderProblem(
-                kind="foreign_order", worker=problem.worker, day=problem.day, number=problem.number, owner=problem.owner
-            )
-        case OtherDay():
-            return LoggedOrderProblem(
-                kind="other_day",
+                kind="repeated_number",
                 worker=problem.worker,
                 day=problem.day,
                 number=problem.number,
-                order_days=list(problem.order_days),
+                places=[LoggedOrderPlace(day=day, worker=worker) for day, worker in problem.places],
             )
-        case RepeatedOrder():
-            return LoggedOrderProblem(kind="repeated_order", worker=problem.worker, day=problem.day, number=problem.number)
         case RefusedMove():
             return LoggedOrderProblem(
                 kind="refused_move",
