@@ -69,22 +69,15 @@ def test_echo_drukuje_wyjscie_razem_z_stderr(tmp_path: Path, capsys: pytest.Capt
     assert (done.stdout, done.stderr, capsys.readouterr().out) == ("a\nb\n", "", "a\nb\n")
 
 
-def test_po_limicie_drzewo_ginie_a_run_rzuca_timeout(tmp_path: Path) -> None:
+def test_po_limicie_drzewo_ginie_a_run_rzuca_timeout_z_wyjsciem_wypisanym_przed_limitem(tmp_path: Path) -> None:
     beats = tmp_path / "wnuk-zyje"
-
-    with pytest.raises(subprocess.TimeoutExpired):
-        potomne.run(with_grandchild(beats, "time.sleep(60)"), cwd=tmp_path, timeout=5)
-
-    assert not beating(beats)
-
-
-def test_po_limicie_run_oddaje_wyjscie_wypisane_przed_limitem(tmp_path: Path) -> None:
-    code = "import sys, threading; print('a', flush=True); print('b', file=sys.stderr, flush=True); threading.Event().wait()"
+    then = "print('a', flush=True); print('b', file=sys.stderr, flush=True); time.sleep(60)"
 
     with pytest.raises(potomne.TimeoutExpired) as expired:
-        potomne.run([sys.executable, "-c", code], cwd=tmp_path, timeout=5)
+        potomne.run(with_grandchild(beats, then), cwd=tmp_path, timeout=5)
 
     assert expired.value.printed == ("a\n", "b\n")
+    assert not beating(beats)
 
 
 def test_wnuk_uruchomiony_zanim_narzedzie_wroci_ze_startu_polecenia_ginie_z_drzewem(
@@ -92,16 +85,21 @@ def test_wnuk_uruchomiony_zanim_narzedzie_wroci_ze_startu_polecenia_ginie_z_drze
 ) -> None:
     beats = tmp_path / "wnuk-zyje"
     start = subprocess.Popen
+    returned: list[float] = []
+    # Na Windows polecenie stoi wstrzymane, aż Popen wróci, więc wnuk dopiero startuje, gdy limit już biegnie.
+    limit = 5 if sys.platform == "win32" else 1
 
     def descheduled_after_start(*args: Any, **kwargs: Any) -> subprocess.Popen[str]:
         process = start(*args, **kwargs)
         wait_for(beats.exists, 3)
+        returned.append(time.monotonic())
         return process
 
     monkeypatch.setattr(subprocess, "Popen", descheduled_after_start)
     with pytest.raises(subprocess.TimeoutExpired):
-        potomne.run(with_grandchild(beats, "time.sleep(60)"), cwd=tmp_path, timeout=5)
+        potomne.run(with_grandchild(beats, "time.sleep(60)"), cwd=tmp_path, timeout=limit)
 
+    assert time.monotonic() - returned[-1] < 2 * limit
     assert not beating(beats)
 
 
@@ -248,24 +246,27 @@ def test_grupa_z_samymi_zombie_nie_wywraca_konca_polecenia(tmp_path: Path) -> No
 
 
 @POSIX_ONLY
-def test_potomek_spoza_drzewa_z_otwartym_wyjsciem_nie_wstrzymuje_wyniku(tmp_path: Path) -> None:
+def test_potomek_spoza_drzewa_z_otwartym_wyjsciem_nie_wstrzymuje_wyniku(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(potomne, "_DRAIN_S", 1.0)
     ready = tmp_path / "potomek-gotowy"
-    child = f"import os, pathlib, time\nos.setsid()\npathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\ntime.sleep(600)\n"
+    child = f"import os, pathlib, time\nos.setsid()\npathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\ntime.sleep(30)\n"
     code = (
         "import pathlib, subprocess, sys, time\n"
         f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
         f"while not pathlib.Path({str(ready)!r}).exists():\n    time.sleep(0.05)\n"
-        "print('gotowe')\n"
+        "print(time.time())\n"
     )
 
-    started = time.monotonic()
     try:
         done = potomne.run([sys.executable, "-c", code], cwd=tmp_path)
+        returned = time.time()
     finally:
         os.kill(int(ready.read_text()), signal.SIGTERM)
 
-    assert (done.returncode, done.stdout) == (0, "gotowe\n")
-    assert time.monotonic() - started < 30
+    assert done.returncode == 0
+    assert returned - float(done.stdout) < 2 * potomne._DRAIN_S
 
 
 @pytest.mark.parametrize("ending", ["koniec bloku", "wyjątek", "zablokowana kopia"])
