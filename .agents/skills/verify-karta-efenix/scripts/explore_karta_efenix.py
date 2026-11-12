@@ -191,6 +191,9 @@ class Run:
     orders: dict[str, AtrapaOrder]
     kind: OrderKind | None
     stop: str | None
+    stop_kind: str | None
+    """``Stop.kind`` of the ending: ``run_process`` turns any error of the process into a Zatrzymanie of another kind
+    than ``stop`` (``EFENIX_BLAD_NIEOCZEKIWANY``), so BEZ_WYJATKU reads it here, not only an escaped exception."""
     error: str | None = None
 
 
@@ -246,8 +249,8 @@ def run_once(browser: Browser, mode: PricingMode, case: Case | None) -> Run:
                 context.close()
         requests = [Seen(request.method, request.path, dict(request.params)) for request in atrapa.requests]
         orders = {order.order_id: order for order in atrapa.state()[0]}
-    kind, stop = _result(outcome)
-    return Run(requests, pauses, acted[0] if acted else None, orders, kind, stop, error)
+    kind, stop, stop_kind = _result(outcome)
+    return Run(requests, pauses, acted[0] if acted else None, orders, kind, stop, stop_kind, error)
 
 
 def _do(page: Page, action: DadAction, other_order: str, list_url: str) -> None:
@@ -260,17 +263,17 @@ def _do(page: Page, action: DadAction, other_order: str, list_url: str) -> None:
             page.reload(wait_until="load")
 
 
-def _result(outcome: Outcome[PricingSummary] | None) -> tuple[OrderKind | None, str | None]:
+def _result(outcome: Outcome[PricingSummary] | None) -> tuple[OrderKind | None, str | None, str | None]:
     if outcome is None:
-        return None, None
+        return None, None, None
     summary: PricingSummary | None = outcome.view
-    stop = None
+    stop = stop_kind = None
     if isinstance(outcome.ending, Stop):
-        stop = outcome.ending.message.code
+        stop, stop_kind = outcome.ending.message.code, outcome.ending.kind
         if isinstance(outcome.ending.facts, PricingStopped):
             summary = outcome.ending.facts.summary
     kind = summary.results[0].kind if summary is not None and summary.results else None
-    return kind, stop
+    return kind, stop, stop_kind
 
 
 # --- The checks ---------------------------------------------------------------------------------------------------
@@ -352,6 +355,8 @@ def check(run: Run, *, reference: bool, mode: PricingMode) -> list[Violation]:
     violations: list[Violation] = []
     if run.error is not None:
         violations.append(Violation("BEZ_WYJATKU", run.error))
+    if run.stop_kind is not None and run.stop_kind != "stop":
+        violations.append(Violation("BEZ_WYJATKU", f"Zatrzymanie {run.stop} z nieoczekiwanym błędem ({run.stop_kind})"))
     stray = strays(run)
     violations += [
         Violation("ZAPIS_W_PRZECZYTANYM", f"{found.write.value} z identyfikatorem {order!r}: {found.target.value}", found)

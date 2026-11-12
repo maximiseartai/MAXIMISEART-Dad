@@ -39,7 +39,7 @@ the tab), bringing the model in line when the drift says so, and sorting a red r
 
 Two more rules keep the check honest: **PRZEBIEG_WZORCOWY**, a run without Dad ends order A gotowe (mode without
 Przekazanie) or przekazane (mode with it) with the file's quantities and date in efenix, so the scenario reaches every
-write; and **BEZ_WYJATKU**, a run ends with a result or a Zatrzymanie, never with an unexpected error.
+write; and **BEZ_WYJATKU**, a run ends with a result or a Zatrzymanie of kind `stop`, never with an unexpected error: neither an exception escaping `run_process` nor the Zatrzymanie `EFENIX_BLAD_NIEOCZEKIWANY` that `run_process` makes of one.
 
 ## Why an explorer and not a TLA+ model
 

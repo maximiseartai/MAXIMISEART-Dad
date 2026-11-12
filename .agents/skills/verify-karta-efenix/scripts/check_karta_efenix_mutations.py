@@ -110,6 +110,13 @@ MUTATIONS = (
         "KARTA EFENIX: LUKA MODELU",
     ),
     Mutation(
+        "okno rzuca zwykły RuntimeError zamiast UnexpectedPage przy złej liczbie elementów",
+        (Edit(BROWSER, "            raise UnexpectedPage(part, ElementCount(element.selector, count))\n", "            raise RuntimeError(element.selector)\n"),),
+        EXPLORER,
+        "tata wraca na listę, okno nie znajduje elementu zlecenia i Uruchomienie kończy się EFENIX_BLAD_NIEOCZEKIWANY",
+        NEW,
+    ),
+    Mutation(
         "Wycena bez wpisywania ilości z pliku",
         (Edit(PRICING, "    for position, quantity in plan.to_enter.items():\n        amount = efenix.enter_quantity(position, quantity)\n", ""),),
         EXPLORER,
