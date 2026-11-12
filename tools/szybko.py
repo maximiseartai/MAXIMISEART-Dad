@@ -26,8 +26,9 @@ Testy ``STRUCTURE`` modułu wpływu zmiany (reguły z tabel w ``AGENTS.md``, ``C
 repozytorium) biegną przy każdej zmianie, a gdy ``--baza`` poszła dalej niż HEAD, także na mergu z nią (to drzewo
 sprawdza CI PR-u; numer ADR zajęty równolegle pada dopiero tam). Na mergu biegną tylko one, bez mypy, testów
 dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami. Zapadki (``ZAPADKI``) biegną przy każdej zmianie
-tylko w szybko, bo w CI nie mają bazy zmiany. Merge z konfliktem szybko pomija z linią ``UWAGA``,
-a merge, którego git nie policzy (``git merge-tree`` z kodem innym niż konflikt), wywraca ten krok z powodem.
+tylko w szybko, bo w CI nie mają bazy zmiany, i liczą dodane linie od ``merge-base`` HEAD z ``--baza`` (zmienna
+``ZAPADKA_BAZA``). Merge z konfliktem szybko pomija z linią ``UWAGA``, a merge, którego git nie policzy (``git
+merge-tree`` z kodem innym niż konflikt), wywraca ten krok z powodem.
 Szybko nie pobiera ``origin``, więc merge jest z bazą z ostatniego ``git fetch``. Nie uruchamia zadań CI
 ``mutations`` (skrypty mutacji skilli), ``Frontend``, E2E ani Timing guard.
 
@@ -79,6 +80,8 @@ GREEN = "szybko-zielone.json"
 # Zapadki padają tylko na liniach, które zmiana dodaje, więc biegną przy każdej zmianie jak ``STRUCTURE``. Plan CI ich
 # nie ma, bo płytki checkout zadań pytest nie ma bazy zmiany i zapadka się tam pomija.
 ZAPADKI = ("tests/test_zapadki.py",)
+# Zmienna, z której zapadki biorą bazę zmiany.
+ZAPADKA_BAZA = "MAXIMISEART_ZAPADKA_BAZA"
 # Sekundy czasów CI na workera. Porażki pytest w szybko z 23–24.10 łapie ten sam plan od 20 s wzwyż, bo prawie
 # wszystkie padły w odległości 0–1 albo w testach struktury, więc budżet stoi blisko tej granicy.
 BUDGET_S = 45.0
@@ -247,13 +250,19 @@ def _steps(root: Path, tests: Iterable[str], junit: Path) -> list[Step]:
     return [*static_steps(root), pytest_step(root, "pytest", _pytest_arguments(tests, junit)), *_imports_on_oldest(root)]
 
 
-def _environment(root: Path) -> dict[str, str]:
-    return {"PYTEST_XDIST_AUTO_NUM_WORKERS": str(czasy_ci.WORKERY_LOKALNE), **environment(root), "PYTHON": sys.executable}
+def _environment(root: Path, base: str) -> dict[str, str]:
+    return {
+        "PYTEST_XDIST_AUTO_NUM_WORKERS": str(czasy_ci.WORKERY_LOKALNE),
+        **environment(root),
+        "PYTHON": sys.executable,
+        ZAPADKA_BAZA: base,
+    }
 
 
-def _run_all(steps: list[Step], interruptible: Step | None = None) -> tuple[list[str], list[str]]:
-    """Kroki naraz; zwraca nazwy kroków, które padły, i przerwanych. Gdy padnie krok inny niż ``interruptible``,
-    ``interruptible`` jest przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie trzeba czekać."""
+def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) -> tuple[list[str], list[str]]:
+    """Kroki naraz, z bazą zapadek ``base``; zwraca nazwy kroków, które padły, i przerwanych. Gdy padnie krok inny niż
+    ``interruptible``, ``interruptible`` jest przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie
+    trzeba czekać."""
 
     stop, failure = threading.Event(), threading.Event()
 
@@ -261,7 +270,7 @@ def _run_all(steps: list[Step], interruptible: Step | None = None) -> tuple[list
         started = time.monotonic()
         try:
             done = potomne.run(
-                step.command, cwd=step.cwd, env=_environment(step.cwd), stop=failure if step is interruptible else stop
+                step.command, cwd=step.cwd, env=_environment(step.cwd, base), stop=failure if step is interruptible else stop
             )
         except potomne.Stopped:
             return None, "", time.monotonic() - started
@@ -336,7 +345,8 @@ def main(argv: list[str] | None = None) -> int:
     steps = _steps(ROOT, chosen.run, junit)
     with ExitStack() as copies:
         steps += _merge_steps(args.baza, copies)
-        failed, interrupted = _run_all(steps, next(step for step in steps if step.name == "pytest"))
+        base = repo.merge_base(ROOT, "HEAD", args.baza)
+        failed, interrupted = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
     failed = (["rozjazd modelu"] if drift else []) + failed
     memory.remember(selection, junit, chosen.run)
     junit.unlink(missing_ok=True)

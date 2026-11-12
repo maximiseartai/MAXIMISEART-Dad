@@ -525,6 +525,22 @@ def test_testy_struktury_i_zapadki_biegna_przy_zmianie_ktora_ich_nie_dotyka(tmp_
     assert answered.returncode == 1
 
 
+def test_zapadki_licza_dodane_linie_od_galezi_rodzica_z_baza(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    git(repo, "checkout", "--quiet", "-b", "rodzic")
+    _write(repo, "docs/rodzic.md", "z gałęzi rodzica\n")
+    parent = commit(repo, "gałąź rodzica").strip()
+    git(repo, "checkout", "--quiet", "-b", "dziecko")
+    _write(repo, "docs/dziecko.md", "z gałęzi dziecka\n")
+    commit(repo, "gałąź dziecka")
+    body = f"import os\n\n\ndef test_zapadka() -> None:\n    assert os.environ[{szybko.ZAPADKA_BAZA!r}] == {parent!r}\n"
+    _write(repo, "tests/test_zapadki.py", body)
+
+    answered = _szybko(repo, "--baza", "rodzic")
+
+    assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
+
+
 def test_testy_struktury_biegna_tez_na_mergu_z_baza_ktora_poszla_dalej(tmp_path: Path) -> None:
     repo = _repo(tmp_path, structure=UNIQUE_ADR)
     _base_moved_on(repo, ("docs/adr/0002-z-main.md", "# ADR 0002\n"), ("docs/adr/0002-z-galezi.md", "# ADR 0002\n"))

@@ -15,6 +15,9 @@ from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues
 def zawiera_wartosc(tekst: str, wartosc: str) -> bool:
     """Czy ``tekst`` zawiera ``wartosc`` (numer zlecenia, adres) według strażnika reguły danych.
 
+    To jest też definicja „zawiera” wymagania „ślad bez numeru zlecenia” (#843), które własnej nie ma: numer sklejony ze
+    znakiem słowa (``ZL_94001``, ``nr94001``) nie jest w śladzie wyciekiem, a ``#94001`` i ``nr 94001`` są.
+
     Wartości, której strażnik nie szuka, bo od pierwszego słowa ma mniej niż ``MIN_VALUE`` znaków (jak czterocyfrowy
     numer), pomocnik nie przyjmuje (``ValueError``): test z nią przechodziłby zawsze.
     """
