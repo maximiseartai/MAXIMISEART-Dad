@@ -903,6 +903,37 @@ def test_zlecenie_po_kazdym_kliknieciu_stoi_tam_gdzie_mowi_tabela_przejsc(events
         ("click",),
     ]
 )
+@example(
+    [
+        ("mail", "jan.testowy", 0, "tak", DAY),
+        ("click",),
+        ("tata", SIXTH),
+        ("mail", "jan.testowy", 3, "nie", SIXTH),
+        ("click",),
+        ("tata", DAY),
+        ("click",),
+    ]
+).via("Wpis przyjęty w dniu od taty podnosi since pamięci z dnia Centrum")
+@example(
+    [
+        ("mail", "jan.testowy", 0, "tak", SEVENTH),
+        ("click",),
+        ("mail", "jan.testowy", 1, "nie", SIXTH),
+        ("click",),
+        ("tata", SEVENTH),
+        ("mail", "ewa.probna", 3, "tak", SEVENTH),
+        ("click",),
+    ]
+).via("Przeniesienie na inny dzień zastępuje pamięć zlecenia, a tata oddaje je dniowi starej pamięci")
+@example(
+    [
+        ("mail", "jan.testowy", 0, "tak", DAY),
+        ("click",),
+        ("tata", SIXTH),
+        ("mail", "jan.testowy", 3, "nie", SIXTH),
+        ("click",),
+    ]
+).via("własne wpisy idą za zleceniem, któremu tata zmienił dzień")
 def test_zlecenie_po_kazdym_kliknieciu_stoi_tam_gdzie_mowi_tabela_przejsc_takze_miedzy_dniami(
     events: list[tuple[object, ...]],
 ) -> None:
@@ -1185,6 +1216,25 @@ def test_przeniesienie_do_okresu_z_plikiem_zbiorczym_jest_problemem_w_dniu_zlece
         SubjectLost(SEVENTH, JAN_LOGIN, OrderNumber("40000001"), SEVENTH),
         SubjectLost(SIXTH, JAN_LOGIN, OrderNumber("40000002"), SIXTH),
     }
+
+
+def test_wlasne_wpisy_ida_za_zleceniem_przeniesionym_na_inny_dzien_a_nie_do_zlecenia_tego_numeru_w_starym_dniu() -> None:
+    """Komórki idą z wierszem (ADR 0029): numer stoi 7.11 u Jana i u Ewy, a Centrum wpisało Wpis Jana do jego zlecenia.
+    Świeższy Raport Jana za 8.11 przenosi jego zlecenie na 8.11 i nadpisuje wpis Centrum w jego komórkach, bez różnicy z
+    ręczną wartością, a własne wpisy przechodzą pod nowy klucz zlecenia Jana, nie do zlecenia Ewy z 7.11."""
+
+    jan = _order(OrderRow("Zlecenia", 201), day=SEVENTH, worker="Jan.Testowy")
+    ewa = _order(OrderRow("Zlecenia", 202), day=SEVENTH, worker="Ewa.Probna")
+    entered = _mail(JAN, "Raport 07.11.2026", "40000001 tak montaż", EVENING)
+    fresher = _mail(JAN, SUBJECT, "40000001 nie klient nieobecny", EVENING + timedelta(minutes=5))
+    first = enter_reports(_inputs([entered], [jan, ewa], rollout=SIXTH, ordered=OPEN_DAYS))
+
+    second = enter_reports(_inputs([entered, fresher], _after([jan, ewa], first), rollout=SIXTH, ordered=OPEN_DAYS, memory=first.memory))
+
+    assert second.moves == (OrderMove(jan.row, DAY, "Jan.Testowy"),)
+    assert [(change.order, change.value) for change in second.changes] == [(jan.row, "nie"), (jan.row, "klient nieobecny")]
+    assert second.problems == ()
+    assert {entry.key for entry in second.memory.entries} == {_key(day=DAY)}
 
 
 def test_powtorne_klikniecie_po_przeniesieniu_na_inny_dzien_nic_nie_zmienia_a_informacje_zostaja() -> None:

@@ -858,17 +858,28 @@ def _days_with_moves(draw: st.DrawFn) -> _Planned:
     return tuple(ordered), targets
 
 
-def _expected_days(ordered: Sequence[tuple[date, str, int]], targets: dict[int, tuple[str, date]], rows_of: dict[int, int]) -> list[list[tuple[str, int]]]:
-    """Każdy dzień po kliknięciu jako segmenty (Wykonawca, numer): Wykonawcy alfabetycznie, w segmencie najpierw
-    zlecenia, które zostały, w kolejności arkusza, a pod nimi przeniesione w kolejności wierszy sprzed zapisu."""
+def _expected_rows(ordered: Sequence[tuple[date, str, int]], targets: dict[int, tuple[str, date]], rows_of: dict[int, int]) -> list[object]:
+    """Wiersze arkusza po kliknięciu jak w ``_sheet_rows``: każdy dzień w swoim miejscu, w nim segmenty Wykonawców
+    alfabetycznie z pustym wierszem między nimi, w segmencie najpierw zlecenia, które zostały, w kolejności arkusza, a
+    pod nimi przeniesione w kolejności wierszy sprzed zapisu. Puste wiersze między dniami i nad żółtym wierszem zostają
+    jak w atrapie (pusty wiersz, gdy ostatni Wykonawca dnia różni się od pierwszego następnego), a dzień bez zleceń
+    zostawia tylko je."""
 
-    found: list[list[tuple[str, int]]] = []
-    for day in sorted({day for day, _, _ in ordered}):
+    days = sorted({day for day, _, _ in ordered})
+    rows: list[object] = []
+    for index, day in enumerate(days):
         stay = [(worker, number) for when, worker, number in ordered if when == day and number not in targets]
         come = sorted(((worker, number) for number, (worker, when) in targets.items() if when == day), key=lambda item: rows_of[item[1]])
-        workers = sorted({worker for worker, _ in stay + come})
-        found.append([item for worker in workers for item in stay + come if item[0] == worker])
-    return [day for day in found if day]
+        previous: str | None = None
+        for worker in sorted({worker for worker, _ in stay + come}):
+            if previous is not None:
+                rows.append("pusty")
+            rows += [(number, worker, _link(number)) for found, number in stay + come if found == worker]
+            previous = worker
+        last = [worker for when, worker, _ in ordered if when == day][-1]
+        following = [worker for when, worker, _ in ordered if index + 1 < len(days) and when == days[index + 1]]
+        rows += ["pusty"] * (not following or following[0] != last)
+    return [*rows, "żółty"]
 
 
 @settings(max_examples=60, deadline=None, derandomize=True, database=None)
@@ -900,9 +911,10 @@ def test_dowolne_przeniesienia_miedzy_dniami_jednego_klikniecia_zapis_przyjmuje_
 ) -> None:
     """Własność #1350 (przegląd #1367 r1): rdzeń przenosi tylko na Dzień uporządkowany arkusza zlecenia sprzed
     kliknięcia, a każdy taki zbiór Przeniesień (wyjścia i wejścia dnia, łańcuchy przez dni, dzień opróżniony do zera
-    zleceń) zapis przyjmuje w całości, więc przyjmuje każdy plan rdzenia. Po zapisie dni stoją po kolei, w każdym dniu
-    każdy Wykonawca ma jeden segment, segmenty idą alfabetycznie z jednym pustym wierszem między nimi, przeniesione
-    zlecenie ma dzień docelowy z tą samą godziną i Hiperłącze, a żółty wiersz zostaje pod ostatnim dniem."""
+    zleceń) zapis przyjmuje w całości, więc przyjmuje każdy plan rdzenia. Po zapisie arkusz ma dokładnie układ
+    ``_expected_rows``: dni na swoich miejscach, w każdym dniu każdy Wykonawca ma jeden segment, segmenty idą
+    alfabetycznie z jednym pustym wierszem między nimi, puste wiersze między dniami i żółty wiersz zostają, a
+    przeniesione zlecenie ma dzień docelowy z tą samą godziną i Hiperłącze."""
 
     ordered, targets = planned
     rows_of = {number: row for row, (_, number) in enumerate(_ordered_rows([(worker, number) for _, worker, number in ordered]), start=2) if number}
@@ -915,26 +927,9 @@ def test_dowolne_przeniesienia_miedzy_dniami_jednego_klikniecia_zapis_przyjmuje_
         dates = _dates(path, last)
 
     assert outcome == CellsWritten(0, len(moves))
-    end = shown.index("żółty")
-    assert all(row in ("pusty", "żółty") for row in shown[end:])
-    days: list[list[tuple[str, int]]] = []
-    previous: tuple[date, str] | None = None
-    gap = 0
-    for row in shown[:end]:
-        if row == "pusty":
-            gap += 1
-            continue
-        assert isinstance(row, tuple)
-        number, worker, link = row
-        when = dates[number][0]
-        assert isinstance(when, datetime) and link == _link(number)
-        assert (when.hour, when.minute) == (9 + number % 10, 30)
-        if previous is None or previous[0] != when.date():
-            days.append([])
-        elif previous[1] != worker:
-            assert gap == 1, shown
-        else:
-            assert gap == 0, shown
-        days[-1].append((worker, number))
-        previous, gap = (when.date(), worker), 0
-    assert days == _expected_days(ordered, targets, rows_of)
+    expected = _expected_rows(ordered, targets, rows_of)
+    assert shown[: len(expected)] == expected
+    assert set(shown[len(expected) :]) <= {"pusty"}
+    for day, _, number in ordered:
+        moved = targets.get(number, (None, day))[1]
+        assert dates[number][0] == datetime(moved.year, moved.month, moved.day, 9 + number % 10, 30)
