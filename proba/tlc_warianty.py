@@ -22,6 +22,7 @@ SKRYPT = ROOT / ".agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwan
 GC = ["-XX:+UseParallelGC"]
 WARIANTY = {
     "baza": (GC, None, "auto"),
+    "final": (GC, None, "auto", ["-lncheck", "final"]),
     "dtemp": (GC, "RUNNER_TEMP", "auto"),
     "xms8": ([*GC, "-Xms8g", "-Xmx8g"], None, "auto"),
     "w3": (GC, None, "3"),
@@ -37,13 +38,13 @@ def ts(text: str) -> datetime.datetime:
 def phases(out: str, started: datetime.datetime) -> str:
     start = re.search(r"Starting\.\.\. \(" + TS, out)
     complete = re.search(r"complete state space with \d+ total distinct states at \(" + TS, out)
-    live = re.findall(r"Finished checking temporal properties in (\S+) at", out)
+    live = re.findall(r"Finished checking temporal properties in (.+?) at", out)
     inter = len(re.findall(r"for the current state space", out))
     if not (start and complete):
         return "fazy ?"
     jvm = (ts(start[1]) - started).total_seconds()
     bfs = (ts(complete[1]) - ts(start[1])).total_seconds()
-    return f"jvm+parse ~{jvm:.0f}\tbfs {bfs:.0f}\tliveness {live[-1] if live else '?'}\tposrednie {inter}"
+    return f"jvm+parse ~{jvm:.0f}\tbfs+posrednie {bfs:.0f}\tposrednie {inter} {live[:-1]}\tkoncowe {live[-1] if live else '?'}"
 
 
 def main() -> None:
@@ -59,13 +60,14 @@ def main() -> None:
     tla = model.skill / "model" / model.specyfikacja
     print(f"cpu {os.cpu_count()} TEMP {tempfile.gettempdir()} RUNNER_TEMP {os.environ.get('RUNNER_TEMP')}", flush=True)
     for name in variants:
-        opts, root_env, workers = WARIANTY[name]
+        opts, root_env, workers, *more = WARIANTY[name]
+        tlc_opts = more[0] if more else []
         root = os.environ.get(root_env) if root_env else None
         with tempfile.TemporaryDirectory(prefix="tlc-", dir=root) as work:
             shutil.copy2(tla, work)
             Path(work, f"{config_name}.cfg").write_text(text, encoding="utf-8")
             cmd = [java, *opts, f"-Djava.io.tmpdir={work}", "-cp", str(jar), "tlc2.TLC", "-workers", workers,
-                   "-metadir", str(Path(work, "stany")), "-config", f"{config_name}.cfg", tla.name]
+                   *tlc_opts, "-metadir", str(Path(work, "stany")), "-config", f"{config_name}.cfg", tla.name]
             started = datetime.datetime.now().replace(microsecond=0)  # noqa: DTZ005
             t = time.monotonic()
             r = subprocess.run(cmd, cwd=work, capture_output=True, text=True, check=False)
