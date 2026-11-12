@@ -314,7 +314,7 @@ def _read(imap: imaplib.IMAP4, access: _Access, day: date) -> Mails:
     _ok(imap.select(_quoted(_folder(imap)), readonly=True))
     chosen = _with_subject_word(imap, _since(imap, day))
     mails, skipped = [], 0
-    for prefix, raw in _mail_bytes(imap, chosen).values():
+    for prefix, raw in _mail_bytes(imap, chosen, access.address).values():
         moment = imaplib.Internaldate2tuple(prefix)
         if moment is None:
             raise UnexpectedReply
@@ -327,21 +327,28 @@ def _read(imap: imaplib.IMAP4, access: _Access, day: date) -> Mails:
     return Mails(tuple(mails), skipped)
 
 
-def _mail_bytes(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, tuple[bytes, bytes]]:
-    """UID → (``INTERNALDATE`` jak początek odpowiedzi FETCH, bajty maila) dla ``uids``, w ich kolejności: szkielet bez
-    treści załączników (``mail_skeleton``), a cały mail (``BODY.PEEK[]``) tylko wtedy, gdy szkieletu nie da się złożyć
-    albo mail nie ma ``Message-ID``, bo ``mail_of`` liczy wtedy jego ``MailId`` z bajtów całego maila.
+def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dict[str, tuple[bytes, bytes]]:
+    """UID → (``INTERNALDATE`` jak początek odpowiedzi FETCH, bajty maila) dla ``uids``, w ich kolejności, bez maili od
+    samej skrzynki ``own`` (jej Przypomnień o raporcie), które port i tak pomija, a o nadawcy mówi już nagłówek: szkielet
+    bez treści załączników (``mail_skeleton``), a cały mail (``BODY.PEEK[]``) tylko wtedy, gdy szkieletu nie da się
+    złożyć albo mail nie ma ``Message-ID``, bo ``mail_of`` liczy wtedy jego ``MailId`` z bajtów całego maila.
 
     Najpierw ``BODYSTRUCTURE`` i nagłówek w paczkach po ``FETCH_BATCH``, potem sekcje ``mail_skeleton.sections``:
     jedno ``UID FETCH`` na paczkę maili z tą samą listą sekcji, bo Gmail odmawia całego polecenia, gdy któryś mail nie
     ma żądanej sekcji. Odmowa albo odpowiedź spoza RFC 3501 przy tych poleceniach odsyła maile do pobrania w całości."""
 
     light: dict[str, tuple[bytes, Structure, bytes]] = {}
+    from_box: set[str] = set()
     for batch in _batches(uids):
         for response in _responses(imap.uid("FETCH", ",".join(batch), _LIGHT_ITEMS)):
             described = _described(response)
-            if described is not None:
-                light[described[0]] = described[1:]
+            if described is None:
+                continue
+            uid, internal, structure, header, sender, identified = described
+            if sender == own:
+                from_box.add(uid)
+            elif identified:
+                light[uid] = (internal, structure, header)
     groups: dict[tuple[str, ...], list[str]] = {}
     for uid, (_, structure, _) in light.items():
         groups.setdefault(sections(structure), []).append(uid)
@@ -361,21 +368,25 @@ def _mail_bytes(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, tuple[bytes, 
         raw = skeleton(structure, header, parts[uid])
         if raw is not None:
             built[uid] = (internal, raw)
-    whole = _fetched(imap, [uid for uid in uids if uid not in built], _WHOLE_ITEMS)
+    whole = _fetched(imap, [uid for uid in uids if uid not in built and uid not in from_box], _WHOLE_ITEMS)
     return {uid: mail for uid in uids if (mail := built.get(uid) or whole.get(uid)) is not None}
 
 
-def _described(response: Mapping[bytes, FetchValue]) -> tuple[str, bytes, Structure, bytes] | None:
-    """UID, ``INTERNALDATE`` jak początek odpowiedzi FETCH, ``BODYSTRUCTURE`` i nagłówek maila z odpowiedzi; ``None``,
-    gdy czegoś brak, kształt jest nieznany albo mail nie ma ``Message-ID``."""
+def _described(
+    response: Mapping[bytes, FetchValue],
+) -> tuple[str, bytes, Structure, bytes, SenderAddress | None, bool] | None:
+    """UID, ``INTERNALDATE`` jak początek odpowiedzi FETCH, ``BODYSTRUCTURE``, nagłówek maila, nadawca z ``From`` i to,
+    czy nagłówek ma ``Message-ID``, z odpowiedzi; ``None``, gdy czegoś brak, kształt jest nieznany albo nagłówka nie da
+    się rozebrać."""
 
     uid, internal, header = (response.get(name) for name in (b"UID", b"INTERNALDATE", b"BODY[HEADER]"))
     structure = Structure.of(response.get(b"BODYSTRUCTURE"))
     if not (isinstance(uid, bytes) and isinstance(internal, bytes) and isinstance(header, bytes)) or structure is None:
         return None
-    if not _has_message_id(header):
+    facts = _header_facts(header)
+    if facts is None:
         return None
-    return uid.decode("ascii"), b'INTERNALDATE "' + internal + b'"', structure, header
+    return uid.decode("ascii"), b'INTERNALDATE "' + internal + b'"', structure, header, *facts
 
 
 def _batches(uids: list[str]) -> Iterator[list[str]]:
@@ -395,14 +406,16 @@ def _responses(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchVal
         return []
 
 
-def _has_message_id(header: bytes) -> bool:
-    """Czy nagłówek maila daje ``mail_of`` niepusty ``Message-ID``, z którego liczy ``MailId`` bez bajtów treści."""
+def _header_facts(header: bytes) -> tuple[SenderAddress | None, bool] | None:
+    """Nadawca z ``From`` tak, jak go czyta ``mail_of``, i to, czy nagłówek daje ``mail_of`` niepusty ``Message-ID``, z
+    którego liczy ``MailId`` bez bajtów treści; ``None``, gdy nagłówka nie da się rozebrać (port pobiera cały mail)."""
 
     # Pakiet email zgłasza na zepsutym nagłówku różne wyjątki, zależnie od wersji Pythona (jak ``mail_of``).
     try:
-        return bool(str(email.message_from_bytes(header, policy=email.policy.default)["Message-ID"] or ""))
+        message = email.message_from_bytes(header, policy=email.policy.default)
+        return SenderAddress.of(str(message["From"] or "")), bool(str(message["Message-ID"] or ""))
     except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: taki mail port pobiera w całości
-        return False
+        return None
 
 
 def _survey(imap: imaplib.IMAP4, access: _Access, day: date) -> InboxSurvey:

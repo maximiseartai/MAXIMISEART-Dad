@@ -248,6 +248,22 @@ def test_skrzynka_czyta_raport_bez_pobierania_zalacznikow(tmp_path: Path) -> Non
     assert asked <= {"HEADER.FIELDS (SUBJECT)", "HEADER", "1.MIME", "1.1.MIME", "1.1", "1.2.MIME", "1.2"}
 
 
+def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path) -> None:
+    """Przypomnienia o raporcie, które Centrum wysyła ze skrzynki raportów, leżą w folderze wszystkich maili ze słowem
+    „raport” w temacie: port pomija je po nagłówku ``From``, zanim pobierze ich treść."""
+
+    od_skrzynki = z_zalacznikami(message_id=b"<przypomnienie@x.invalid>").replace(
+        b"From: Jan Testowy <jan.testowy@przyklad.invalid>", f"From: Tata <{SKRZYNKA}>".encode()
+    )
+    mails = [w_skrzynce(7, z_zalacznikami()), w_skrzynce(8, od_skrzynki)]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [(mail.id, mail.text) for mail in found] == [(MailId.of("<z-zalacznikami@x.invalid>"), TRESC)]
+    tresc = [command for command in atrapa.commands if command.startswith("UID FETCH") and re.search(r"PEEK\[(TEXT|\d[\d.]*)?\]", command)]
+    assert tresc and all(command.split(" ")[2].split(",") == ["7"] for command in tresc)
+
+
 def test_mail_bez_message_id_port_pobiera_w_calosci_bo_jego_mailid_liczy_sie_z_bajtow_maila(tmp_path: Path) -> None:
     surowe = z_zalacznikami(message_id=None)
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)]) as atrapa:
