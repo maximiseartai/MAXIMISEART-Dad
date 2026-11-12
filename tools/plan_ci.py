@@ -15,8 +15,9 @@ krok skilla bez pomiaru waży medianę zmierzonych jednostek tego rodzaju na tor
 Ściana zadania to narzut (od startu zadania do pracy), start pytest, suma kosztów jego jednostek i koniec zadania;
 narzut i start też są z pomiarów. Plan dzieli każdy tor na najmniej zadań o ścianie najwyżej ``cel_s`` (LPT: najdłuższa jednostka do
 zadania o najmniejszej sumie). Plik dłuższy niż zadanie dzieli się na k udziałów o tej samej wadze, najwyżej tyle, ile
-testów policzyły mu runy main (``Czasy.testy``), a bez tej liczby wcale, bo udział bez testu nie zgłasza wyniku i czerwieni
-``Required CI status``: udział k biegnie z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei). Skrypt mutacji dłuższy niż zadanie dzieli się tak samo na
+testów policzyły mu runy main (``Czasy.testy``), bo udział bez testu nie zgłasza wyniku i czerwieni ``Required CI
+status``. Bez tej liczby (czasy-ci sprzed jej zapisu) plik dzieli się tylko po czasie: cały, niepodzielny plik
+podniósłby cel wszystkich torów do swojej ściany (okno 22e6fe616, cel 615 s). Udział k biegnie z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei). Skrypt mutacji dłuższy niż zadanie dzieli się tak samo na
 najwyżej tyle części, ile ma mutacji: część biegnie z ``MUTACJE_CZESC=k/n`` (``tools/lib/silnik_mutacji.py``), z podstawą
 poleceń swoich mutacji. Podstawa ``ci:`` z ``ci-czesci: <n>`` dzieli się tak samo na najwyżej n części (część k
 skrypt bierze z ``MUTACJE_CZESC=k/n``, ``tools/lib/skrypt_skilla.py``), a bez niego nie. Plan drukuje najdłuższą jednostkę
@@ -124,13 +125,14 @@ class Wycena:
 
 
 def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: frozenset[str] = frozenset()) -> Wycena:
-    """Plik testów jest podzielny na najwyżej tyle udziałów, ile testów policzyły mu runy main (bez tej liczby na jeden),
-    a węzeł ``plik::test`` nie i waży najwyżej tyle, co typowy plik.
+    """Plik testów jest podzielny na najwyżej tyle udziałów, ile testów policzyły mu runy main (bez tej liczby tylko po
+    czasie), a węzeł ``plik::test`` nie i waży najwyżej tyle, co typowy plik.
 
     ``przegladarka``: pliki testów, które potrzebują Chromium; ich jednostki (udziały, węzły) dostają je w zadaniu.
     """
 
     koszty = czasy.koszty(tor.pomiary)
+    testy = {klucz: czasy.testy(tor.pomiary, klucz) for klucz in (jednostka.pytest(plik) for plik in pliki if "::" not in plik)}
     domyslny = koszty.typowy(DOMYSLNIE.plik_s)
     kroki = {jednostka.krok(nazwa): czasy.praca(tor.pomiary, jednostka.krok(nazwa)) or KROKI[nazwa].domyslnie_s for nazwa in tor.kroki}
     wezly = {jednostka.pytest(wezel): min(koszty.s(wezel.partition("::")[0], DOMYSLNIE.plik_s), domyslny) / WORKERY for wezel in pliki if "::" in wezel}
@@ -145,7 +147,7 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: f
         {**wezly, **kroki},
         statistics.median(narzuty) if narzuty else DOMYSLNIE.narzut_s,
         max(0.0, statistics.median(starty)) if starty else DOMYSLNIE.start_s,
-        {jednostka.pytest(plik): czasy.testy(tor.pomiary, jednostka.pytest(plik)) or 1 for plik in pliki if "::" not in plik},
+        {klucz: liczba for klucz, liczba in testy.items() if liczba},
         przegladarka=frozenset(jednostka.pytest(plik) for plik in pliki if plik.partition("::")[0] in przegladarka),
     )
 
