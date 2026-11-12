@@ -886,22 +886,29 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
 
 
 def _add_pasted(register: Path, entering: LoggedReports) -> None:
-    """Surowe zlecenie z Logów pod ostatnim wierszem swojego arkusza (z pustym wierszem nad sobą): ``NUMER ZL.`` w
-    postaci z Wpisu (z zerem na początku, gdy Wpis go ma, inaczej liczbą) i dzień kliknięcia w ``DATA GODZ. POCZ.``, oba
-    krojem z aplikacji, więc proces czyta je jak Surowe zlecenie, a nie uporządkowane."""
+    """Surowe zlecenia z Logów pod ostatnim wierszem swojego arkusza (z pustym wierszem nad nimi), jak wklejenie z
+    aplikacji: pierwsze przesunięte o ``SHIFT`` kolumn w lewo, reszta pod nagłówkami, każde z ``NUMER ZL.`` w postaci z
+    Wpisu (z zerem na początku, gdy Wpis go ma, inaczej liczbą) i dniem kliknięcia w ``DATA GODZ. POCZ.``, krojem z
+    aplikacji. Proces czyta je wtedy jak Surowe zlecenia, a reguła danych zna pierwsze tylko w przesuniętym położeniu,
+    jak u taty."""
 
     numbers = _numbers(entering)
     workbook = load_workbook(register)
+    by_sheet: dict[str, list[int]] = {}
     for logged in entering.pasted:
-        sheet = workbook[logged.sheet]
+        by_sheet.setdefault(logged.sheet, []).append(logged.number)
+    for name, pasted in by_sheet.items():
+        sheet = workbook[name]
         header = {normalize_text(cell.value): cell.column for cell in sheet[1] if cell.value is not None}
-        texts = {text for (value, _, _), found in numbers.items() if value == logged.number for text in found}
-        zero = sorted(text for text in texts if text.startswith("0"))
-        row = sheet.max_row + 2
-        cells = {DATE: datetime.combine(entering.today, time()), ORDER_NUMBER: zero[0] if zero else logged.number}
-        for column, value in cells.items():
-            [place] = [header[name] for name in map(normalize_text, column.register_headers) if name in header]
-            sheet.cell(row, place, value).font = _PASTED_FONT
+        first = sheet.max_row + 2
+        for index, number in enumerate(pasted):
+            texts = {text for (value, _, _), found in numbers.items() if value == number for text in found}
+            zero = sorted(text for text in texts if text.startswith("0"))
+            cells = {DATE: datetime.combine(entering.today, time()), ORDER_NUMBER: zero[0] if zero else number}
+            shift = SHIFT if index == 0 else 0
+            for column, value in cells.items():
+                [place] = [header[found] for found in map(normalize_text, column.register_headers) if found in header]
+                sheet.cell(first + index, place - shift, value).font = _PASTED_FONT
     workbook.save(register)
 
 

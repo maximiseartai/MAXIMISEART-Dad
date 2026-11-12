@@ -1619,11 +1619,12 @@ def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_p
 
 
 def test_klikniecie_nie_dopisuje_zlecenia_ktore_czeka_w_intermax_jako_surowe_zlecenie(tmp_path: Path) -> None:
-    """Granica #1354: numer z Wpisu jest w INTERMAX jako Surowe zlecenie na dole arkusza (wklejone, jeszcze
-    nieuporządkowane). Dopisanie dałoby to zlecenie dwa razy po Uporządkowaniu INTERMAX, więc kliknięcie nie zmienia
-    INTERMAX, a problem mówi tacie, żeby uporządkował INTERMAX."""
+    """Granica #1354: numery z Wpisów są w INTERMAX jako Surowe zlecenia na dole arkusza (wklejone, jeszcze
+    nieuporządkowane; pierwsze stoi przesunięte o dwie kolumny w lewo, jak z aplikacji). Dopisanie dałoby te zlecenia
+    dwa razy po Uporządkowaniu INTERMAX, więc kliknięcie nie zmienia INTERMAX, a problem mówi tacie, żeby uporządkował
+    INTERMAX."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000004 tak montaż")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000003 tak montaż\n40000004 nie brak")])
     before = centrum.register.read_bytes()
 
     view = _finished(centrum)
@@ -1632,11 +1633,12 @@ def test_klikniecie_nie_dopisuje_zlecenia_ktore_czeka_w_intermax_jako_surowe_zle
     entering = _entering(centrum, view)
     assert (entering["added"], [(problem["kind"], problem["bar"]) for problem in entering["problems"]]) == (
         [],
-        [("unknown_number", "pasted")],
+        [("unknown_number", "pasted")] * 2,
     )
-    assert entering["pasted"] == [{"sheet": ORDER_SHEET, "number": 40000004}]
-    [problem] = _worker(_view(centrum), "jan.testowy")["problems"]
-    assert "INTERMAX ma go jako Surowe zlecenie: uporządkuj INTERMAX i kliknij jeszcze raz" in problem["reason"]
+    assert entering["pasted"] == [{"sheet": ORDER_SHEET, "number": 40000003}, {"sheet": ORDER_SHEET, "number": 40000004}]
+    problems = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert [problem["number"] for problem in problems] == ["40000003", "40000004"]
+    assert all("INTERMAX ma go jako Surowe zlecenie: uporządkuj INTERMAX i kliknij jeszcze raz" in problem["reason"] for problem in problems)
 
 
 def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesienia_ktore_zatrzymuja_reczna_zmiane(

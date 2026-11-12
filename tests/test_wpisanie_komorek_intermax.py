@@ -1049,6 +1049,17 @@ def test_dopisane_zlecenie_wykonawcy_bez_segmentu_dostaje_nowy_segment_na_miejsc
     assert COMPLETED not in _row_cells(path, 4)
 
 
+def test_numer_dopisanego_zlecenia_z_zerem_na_poczatku_staje_tekstem(tmp_path: Path) -> None:
+    """``NUMER ZL.`` dopisanego zlecenia jest liczbą jak numery z aplikacji firmowej, a numer z zerem na początku tekstem,
+    bo liczba straciłaby zero i następne kliknięcie nie znalazłoby zlecenia z numerem z Wpisu."""
+
+    path = _register(tmp_path, Intermax(ordered=(_on(9, "jan.testowy", 40000001),), raw=()))
+
+    _write(path, [], added=[OrderAdded(ORDER_SHEET, DAY, "jan.testowy", "04000077", "nie", None)])
+
+    assert _row_cells(path, 3)[NUMBER] == "04000077"
+
+
 @pytest.mark.parametrize(
     ("added", "problem"),
     [

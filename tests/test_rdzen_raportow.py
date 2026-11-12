@@ -3657,6 +3657,25 @@ def test_poprawka_wykonawcy_zmienia_komorki_dopisanego_zlecenia_a_reczna_wartosc
     assert second.added == ()
 
 
+def test_dopisane_zlecenie_przejete_przez_innego_wykonawce_dalej_przypomina_o_adresie() -> None:
+    """Świeższy mail Ewy przenosi dopisane zlecenie Jana do niej (ADR 0029): informacja o dopisaniu idzie za zleceniem,
+    bo pamięć Przeniesienia niesie dopisanie, a obok stoi przejęcie po obu stronach."""
+
+    orders = [_order()]
+    mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    first = enter_reports(_inputs([mail], orders, ordered=[DAY]))
+    ewa = _mail(EWA, SUBJECT, f"{ADDED} nie brak klienta", LATER)
+
+    second = enter_reports(_inputs([mail, ewa], _after(orders, first), ordered=[DAY], memory=first.memory))
+
+    assert [move.worker for move in second.moves] == ["ewa.probna"]
+    assert second.notes == (
+        _added_note(EWA_LOGIN),
+        TakenOver(DAY, EWA_LOGIN, OrderNumber(ADDED), JAN_LOGIN),
+        HandedOver(DAY, JAN_LOGIN, OrderNumber(ADDED), EWA_LOGIN),
+    )
+
+
 def test_dopisane_zlecenie_usuniete_przez_tate_wraca_tylko_ze_swiezszym_mailem() -> None:
     """Granica #1354: tata usunął dopisany wiersz. Kolejne kliknięcie z tym samym mailem go nie dopisuje i nie daje
     problemu (pamięć dopisania, reguła ``may_move``), a świeższy mail Jana dopisuje je znowu, ze swoimi wartościami."""

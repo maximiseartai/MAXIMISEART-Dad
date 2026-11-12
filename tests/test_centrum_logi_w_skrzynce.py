@@ -67,7 +67,20 @@ from tests.fixtures.centrum_intermax import ENTERING_NOW, SENDERS, Clock, enteri
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
-from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
+from atrapy.intermax import (
+    ADDRESS,
+    APP_LAST,
+    CONTRACT_NUMBER,
+    DATE,
+    FIRST,
+    HEADERS,
+    LAST,
+    NUMBER,
+    ORDER_SHEET,
+    WORKER,
+    Intermax,
+    Order,
+)
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
     SettlingCentrum,
@@ -1507,6 +1520,37 @@ def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtw
     ]
 
     assert [(code, lines[0]) for code, lines in replayed] == [(0, "ODTWORZENIE ZGODNE")] * 2, replayed
+
+
+def test_klikniecie_z_wpisem_surowego_zlecenia_odtwarza_sie_zgodnie_z_surowym_zleceniem_z_logow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#1354: Jan przysłał Wpis numeru, który INTERMAX ma jako Surowe zlecenie na dole arkusza (bez numeru w ``NUMER
+    UMOWY`` i kolumnach z aplikacji, które strażnik reguły danych zna, więc numer Wpisu wychodzi do Logów), i nowego
+    numeru. Logi
+    mają Surowe zlecenie (``pasted``) i dopisanie, a odtworzenie, którego Kopia wejścia ma tylko uporządkowane wiersze,
+    stawia Surowe zlecenie z Logów na dole arkusza, więc nie dopisuje go i daje ten sam wynik."""
+
+    other = ((CONTRACT_NUMBER, "UM-surowe"), *((column, f"APP{column}") for column in range(LAST + 1, APP_LAST + 1)))
+    raw = tuple(
+        Order(datetime(2026, 11, 10, 9), "jan.testowy", number, cells=((NUMBER, number), *other))
+        for number in (40000030, 40000031)
+    )
+    intermax = replace(REPORTED, raw=raw)
+    surroundings = Surroundings()
+    mails = [report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000031 tak montaż\n40000032 nie brak klienta")]
+    centrum = entering_centrum(tmp_path / "taty", intermax, mails, surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    view = centrum.run_to_end()
+    logs = _archived_run(surroundings.report_box, tmp_path, view["run"]["id"])
+    entering = json.loads(gzip.decompress(logs.read_bytes()))["report_entering"]
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
+
+    assert entering["pasted"] == [{"sheet": ORDER_SHEET, "number": 40000031}]
+    assert [found["number"] for found in entering["added"]] == [40000032]
+    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [("unknown_number", "pasted")]
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
 def test_klikniecie_po_zostaw_moja_odtwarza_sie_zgodnie_z_decyzja_z_logow(
