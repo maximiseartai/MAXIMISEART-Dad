@@ -128,26 +128,34 @@ def test_kazdy_plik_testow_biegnie_raz_na_kazdym_torze_a_udzialy_dlugiego_pliku_
     assert [job.id for job in plan.zadania if "krok:timing" in job.jednostki] != [] == [job for job in plan.zadania if "krok:timing" in job.jednostki and job.tor != "windows-3.14"]
 
 
-def test_dlugi_plik_dzieli_sie_najwyzej_na_tyle_udzialow_ile_testow_policzyly_mu_runy_main_a_bez_tej_liczby_biegnie_caly() -> None:
-    """Udział bez testu nie zgłasza wyniku i czerwieni Required (plik o 2 testach w 3 udziałach, run 43236423244)."""
+def test_dlugi_plik_dzieli_sie_najwyzej_na_tyle_udzialow_ile_testow_policzyly_mu_runy_main_a_bez_tej_liczby_po_czasie(tmp_path: Path) -> None:
+    """Udział bez testu nie zgłasza wyniku i czerwieni Required (plik o 2 testach w 3 udziałach, run 43236423244), a plik
+    z czasy-ci bez liczby testów (artefakty sprzed jej zapisu) dzieli się po czasie jak przed nią: cały podniósłby cel
+    ściany wszystkich torów do swojej (cel 615 s w runach 43240424614, 43244323807, 43246867642)."""
 
     few, uncounted = "tests/test_dwa_testy.py", "tests/test_bez_liczby.py"
+    # Artefakt czasy-ci runu main sprzed zapisu liczby testów: obserwacja bez klucza ``testy``.
+    artifact = {
+        "wersja": 1,
+        "runy": [{"run": 3, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}],
+        "tory": {lane.nazwa: {f"pytest:{uncounted}": [{"run": 3, "proba": 1, "zadanie": "A", "s": 1100.0, "status": "ok"}]} for lane in TORY},
+    }
+    (tmp_path / "3.json").write_text(json.dumps(artifact), encoding="utf-8")
+    old = czasy_ci.z_mainu(tmp_path, github=BEZ_LOGOWANIA)
     czasy = _times()
     # Dwa runy main: w runie 1 plik ``few`` biegł w dwóch udziałach (2 + 1 testy), w runie 2 cały w 2 testach.
-    observed = {
-        f"pytest:{few}": (czasy_ci.Obserwacja(1, "A", 550.0, 2), czasy_ci.Obserwacja(1, "B", 550.0, 1), czasy_ci.Obserwacja(2, "A", 1100.0, 2)),
-        f"pytest:{uncounted}": (czasy_ci.Obserwacja(1, "A", 1100.0),),
-    }
-    czasy = dataclasses.replace(czasy, tory={lane: {**keys, **observed} for lane, keys in czasy.tory.items()})
+    observed = {f"pytest:{few}": (czasy_ci.Obserwacja(1, "A", 550.0, 2), czasy_ci.Obserwacja(1, "B", 550.0, 1), czasy_ci.Obserwacja(2, "A", 1100.0, 2))}
+    czasy = dataclasses.replace(czasy, tory={lane: {**keys, **observed, **old.tory[lane]} for lane, keys in czasy.tory.items()})
     plan = _plan(czasy, [LONG, few, uncounted])
 
     for lane in TORY:
         units = sorted(unit for job in plan.zadania if job.tor == lane.nazwa for unit in job.jednostki if unit.startswith(("pytest:tests/test_d", "pytest:tests/test_b")))
-        longs = [unit for unit in units if unit.startswith(f"pytest:{LONG}#")]
+        longs = [unit.partition("#")[2] for unit in units if unit.startswith(f"pytest:{LONG}#")]
 
-        # Każdy z trzech plików waży 275 s na workerach, kilka razy tyle, ile mieści zadanie.
+        # Każdy z trzech plików waży 275 s na workerach, kilka razy tyle, ile mieści zadanie: ``LONG`` (400 testów) i
+        # plik bez liczby dzielą się po czasie na te same udziały, a ``few`` na dwa.
         assert len(longs) > 2, (lane, units)
-        assert [unit for unit in units if unit not in longs] == [f"pytest:{uncounted}", f"pytest:{few}#1/2", f"pytest:{few}#2/2"], lane
+        assert [unit for unit in units if not unit.startswith(f"pytest:{LONG}#")] == [*(f"pytest:{uncounted}#{share}" for share in longs), f"pytest:{few}#1/2", f"pytest:{few}#2/2"], lane
 
 
 def test_sciana_pliku_testow_w_planie_to_jego_czas_na_czterech_vcpu_runnera_githuba() -> None:
