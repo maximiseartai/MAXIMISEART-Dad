@@ -7,7 +7,7 @@ otwarciu Centrum na komputerze taty.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
@@ -16,12 +16,21 @@ from typing import Any
 
 from rozliczenia import intermax_copies
 from rozliczenia.centrum.outbox import QUEUE_THREAD
-from rozliczenia.worker_report_inbox import InboxAccess, InboxUnreachable, PasswordRejected, WorkerReportInbox
+from fastapi import FastAPI
+
+from rozliczenia.worker_report_inbox import (
+    InboxAccess,
+    InboxUnreachable,
+    PasswordRejected,
+    ReminderMailbox,
+    WorkerReportInbox,
+)
 from rozliczenia.worker_reports import MailId, ReportMail, SenderAddress
 
 from tests.fixtures.centrum import (
     CentrumClient,
     FakePlatform,
+    HandRhythm,
     ToolDirectory,
     centrum_app,
     finished_view,
@@ -29,7 +38,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import Engines, Surroundings
 from atrapy.intermax import Intermax, Layout
-from atrapy.skrzynka_raportow import FakeInbox
+from atrapy.skrzynka_raportow import FakeInbox, FakeMailbox
 from tests.fixtures.intermax_disk import FaultyDisk
 
 REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021-NOWA WERSJA.xlsx"
@@ -223,10 +232,20 @@ class EnteringCentrum:
     disk: FaultyDisk
     moment: list[datetime]
     periods_directory: Path
+    rhythm: HandRhythm
+    rebuild: Callable[[HandRhythm], FastAPI]
 
     @property
     def tool(self) -> ToolDirectory:
         return ToolDirectory(self.tmp_path)
+
+    def restart(self) -> None:
+        """Nowe Centrum na tych samych plikach, Ustawieniach taty i skrzynkach, z nowym rytmem przypomnień, po
+        zamknięciu poprzedniego, jak zamknięcie i ponowne otwarcie Centrum u taty."""
+
+        self.client.stop()
+        self.rhythm = HandRhythm()
+        self.client = CentrumClient(self.rebuild(self.rhythm), since=self.client.since)
 
     @property
     def fake_inbox(self) -> FakeInbox:
@@ -261,10 +280,13 @@ def entering_centrum(
     addresses: Mapping[str, Sequence[str]] | None = None,
     inbox: WorkerReportInbox | None = None,
     periods: bool = True,
+    reminder_mailbox: ReminderMailbox | None = None,
 ) -> EnteringCentrum:
     """Centrum po wskazaniu INTERMAX ``intermax`` z Wykonawcami ``WORKERS`` i adresami ``SENDERS`` (``addresses``: inna
     treść pliku adresów); Skrzynka raportów to ``inbox``, a bez niej atrapa, która oddaje ``mails`` i ma plik dostępu w
-    stanie ``access``. ``periods``: tata wskazał też pusty folder okresów ``EnteringCentrum.periods_directory``. Chwila procesu to ostatni element ``EnteringCentrum.moment`` (na starcie ``ENTERING_NOW``), a
+    stanie ``access``. ``periods``: tata wskazał też pusty folder okresów ``EnteringCentrum.periods_directory``.
+    ``reminder_mailbox``: skrzynka pracy Przypomnień o raporcie (bez niej ``FakeMailbox``), której sprawdzenie test
+    woła przez ``EnteringCentrum.rhythm``. Chwila procesu to ostatni element ``EnteringCentrum.moment`` (na starcie ``ENTERING_NOW``), a
     podmiana INTERMAX idzie przez ``EnteringCentrum.disk``."""
 
     register = tmp_path / "OneDrive" / REGISTER_NAME
@@ -287,25 +309,35 @@ def entering_centrum(
     disk = FaultyDisk()
     moment = [ENTERING_NOW]
     onedrive = surroundings.onedrive
-    app = centrum_app(
-        tool,
-        platform=FakePlatform(chosen_files=[register], chosen_folders=[periods_directory]),
-        today=ENTERING_NOW.date(),
-        catalog=engines.catalog(),
-        tool_freshness=surroundings.tool_freshness(),
-        cloud_files=None if onedrive is None else onedrive.cloud_files(),
-        report_box=surroundings.report_box,
-        clock=surroundings.started_clock(),
-        pause=surroundings.clock.pause,
-        source=surroundings.source,
-        template_check=surroundings.template_check,
-        now=lambda: moment[-1].astimezone(),
-        worker_report_inbox=inbox,
-        intermax_disk=disk.disk(),
-    )
-    client = CentrumClient(app)
+    mailbox = reminder_mailbox or FakeMailbox()
+    platform = FakePlatform(chosen_files=[register], chosen_folders=[periods_directory])
+
+    def rebuild(rhythm: HandRhythm) -> FastAPI:
+        return centrum_app(
+            tool,
+            platform=platform,
+            today=ENTERING_NOW.date(),
+            catalog=engines.catalog(),
+            tool_freshness=surroundings.tool_freshness(),
+            cloud_files=None if onedrive is None else onedrive.cloud_files(),
+            report_box=surroundings.report_box,
+            clock=surroundings.started_clock(),
+            pause=surroundings.clock.pause,
+            source=surroundings.source,
+            template_check=surroundings.template_check,
+            now=lambda: moment[-1].astimezone(),
+            worker_report_inbox=inbox,
+            intermax_disk=disk.disk(),
+            reminder_mailbox=mailbox,
+            reminder_rhythm=rhythm,
+        )
+
+    rhythm = HandRhythm()
+    client = CentrumClient(rebuild(rhythm))
     if chosen:
         assert client.post("/api/settings/register/choose").status_code == 200
     if periods:
         assert client.post("/api/settings/periods-directory/choose").status_code == 200
-    return EnteringCentrum(client, register, layout, tmp_path, inbox, engines, disk, moment, periods_directory)
+    return EnteringCentrum(
+        client, register, layout, tmp_path, inbox, engines, disk, moment, periods_directory, rhythm, rebuild
+    )

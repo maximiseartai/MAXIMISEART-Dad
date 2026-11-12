@@ -22,6 +22,7 @@ from rozliczenia.centrum import (
     fill_messages,
     notification_messages,
     refusal,
+    reminder_messages,
     report_messages,
     runs,
     start_problems,
@@ -296,6 +297,10 @@ NOTIFICATION_SAMPLES: Samples = {
         lambda: notification_messages.unavailable([DAD_CASES_STATE]),
         lambda: notification_messages.unavailable([DAD_CASES_STATE, READ_NOTIFICATIONS_STATE]),
     ],
+}
+
+REMINDER_SAMPLES: Samples = {
+    "password_rejected": [reminder_messages.password_rejected],
 }
 
 UPDATE_SAMPLES: Samples = {

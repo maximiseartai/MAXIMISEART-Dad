@@ -55,6 +55,7 @@ from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.process_kind import HostParts
 from rozliczenia.centrum.report_entering_run import ReportEnteringEntry, report_entering_router
 from rozliczenia.centrum.report_entering_state import FileReportState
+from rozliczenia.centrum.report_reminders import MinuteRhythm, ReminderRhythm, ReportReminders
 from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.server import AFTER_START
 from rozliczenia.centrum.settings import SettingsStore
@@ -76,7 +77,7 @@ from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.workbook_files import ByteSource, file_bytes
-from rozliczenia.worker_report_inbox import ImapInbox, WorkerReportInbox
+from rozliczenia.worker_report_inbox import ImapInbox, ReminderMailbox, WorkerReportInbox
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 _LOCAL_HOSTNAMES = frozenset({HOST, "localhost"})
@@ -107,6 +108,8 @@ def create_app(
     now: Callable[[], datetime] = lambda: datetime.now().astimezone(),
     efenix_window: EfenixWindow | None = None,
     worker_report_inbox: WorkerReportInbox | None = None,
+    reminder_mailbox: ReminderMailbox | None = None,
+    reminder_rhythm: ReminderRhythm | None = None,
 ) -> FastAPI:
     work = CentrumWork(config=settings_path.parent, log=log, clock=clock, pause=pause)
 
@@ -119,7 +122,12 @@ def create_app(
         # Wysyłki, których poprzednia praca Centrum nie wysłała, a po nich, już po wpisie ``start``, wersje zastępcze z
         # jej dzienników Wyceny w efenix: kolejka nie dostaje wysyłki przed swoim startem.
         outbox.resume()
-        yield {AFTER_START: comments.send_left_behind}
+        # Przypomnienia o raporcie: praca co minutę od startu do zamknięcia, poza Uruchomieniami (ADR 0030).
+        rhythm.start(reminders.check)
+        try:
+            yield {AFTER_START: comments.send_left_behind}
+        finally:
+            rhythm.stop()
 
     dad_actions = DadActionJournal(work)
     # Bez /docs i /openapi.json: kontrakt eksportuje tools/ci/export_openapi.py, a Swagger ładowałby skrypty z sieci.
@@ -246,6 +254,12 @@ def create_app(
     )
     # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX.
     report_entering = ReportEnteringEntry(store, catalog, configuration, parts, contexts, report_files)
+    # Przypomnienia o raporcie czytają INTERMAX tym samym uchwytem plików taty, bez Kopii wejścia, a skrzynkę i jej
+    # „Wysłane” przez port skrzynki raportów; testy i skille podają atrapę skrzynki i rytm.
+    reminders = ReportReminders(
+        work, store, configuration, reminder_mailbox or ImapInbox(work.config), files, reports, now
+    )
+    rhythm = reminder_rhythm or MinuteRhythm()
     cards = RunCards(disk, history.runs)
     closed = comments.close_left_behind()
     notifications = Notifications(work, cases, box, surroundings.tool_freshness, release, lambda: cards.ended("efenix"))

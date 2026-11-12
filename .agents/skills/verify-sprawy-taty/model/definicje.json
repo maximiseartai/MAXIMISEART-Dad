@@ -18,7 +18,7 @@
   },
   "src/rozliczenia/centrum/reports.py": {
     "ReportHandle.__init__": "963c0eb0fb7f92be",
-    "ReportHandle.prepare": "eb6990ab663a8309",
+    "ReportHandle.prepare": "49c57a763ec52dc6",
     "ReportHandle._ask": "e3ca0b191657c601",
     "ReportHandle.send": "5dcb65f44dbd60ce",
     "ReportHandle._rejected": "a4921ba0e5f38360",
