@@ -6,8 +6,10 @@ robi. W porze czyta Ustawienia taty (INTERMAX, folder okresów), z ``config`` dz
 (``REMINDERS_ROLLOUT``, bez niego nic nie wysyła), Konfigurację wykonawców, plik adresów Wykonawców i stopkę taty
 (``REMINDERS_FOOTER``), Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii
 wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
-kolei przez port (``ReminderMailbox``). Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z niego bierze
-przypomnienia praca Centrum i próba Przypomnień przed Wydaniem (``tools/proba_przypomnien.py``).
+kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
+której sprawdzenie ruszyło (minęła 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
+czeka na następną porę, która zna wysłane z „Wysłanych”. Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z
+niego bierze przypomnienia praca Centrum i próba Przypomnień przed Wydaniem (``tools/proba_przypomnien.py``).
 
 Pora tego dnia jest załatwiona, gdy sprawdzenie skończy się bez porażki, którą naprawia czas: wtedy do końca pory nie
 czyta już niczego. Brak sieci (``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje
@@ -188,11 +190,14 @@ class ReportReminders:
         found.footer = "missing" if read.footer is None else "present"
         found.sent = [*_by_worker(read.sent, read.addresses)]
         for reminder in read.due:
-            outcome = self._mailbox.send(reminder, now)
+            moment = self._now()
+            if (moment.date(), reminder_pora(moment)) != (now.date(), reminder_pora(now)):
+                return
+            outcome = self._mailbox.send(reminder, moment)
             match outcome:
                 case MailSent():
                     self._log.reminder_sent(day=reminder.day.isoformat(), pora=_pora(now))
-                    found.sent.append((reminder.worker, reminder.day, now))
+                    found.sent.append((reminder.worker, reminder.day, moment))
                 case MailRefused(cause=cause):
                     found.failed = _Failed("odmowa-wysylki", cause, retry=False)
                 case PasswordRejected() | InboxUnreachable():
