@@ -123,18 +123,23 @@ PGREP_LOOP = Refusal(
 )
 
 
-def _without_heredocs(command: str) -> str:
+def _without_heredocs(command: str, expanded: Optional[list[str]] = None) -> str:
+    """Polecenie bez ciał heredoków; linie ciała z ogranicznikiem bez cudzysłowu, które bash rozwija, do ``expanded``."""
+
     kept: list[str] = []
     delimiter: Optional[str] = None
+    expands = False
     for line in command.split("\n"):
         if delimiter is not None:
             if line.strip() == delimiter:
                 delimiter = None
+            elif expands and expanded is not None:
+                expanded.append(line)
             continue
         kept.append(line)
         opened = HEREDOC.search(line)
         if opened:
-            delimiter = opened.group(2)
+            delimiter, expands = opened.group(2), not opened.group(1)
     return "\n".join(kept)
 
 

@@ -4,52 +4,72 @@
 Tag Wydania ``v*`` i GitHub Release tworzy tylko narzędzie Wydań ``tools/wydanie.py`` ze skilla ``wydanie``, bo tag
 na ``main`` trafia do taty (ADR 0014), a brama ``tools/hooks/pre-push`` widzi tylko ``git push`` z hookami. Hook
 odrzuca więc (kod 2, przyczyna z drogą przez skill na stderr trafia do agenta), na pierwszym planie i w tle,
-polecenie proste, którego programem jest ``git``, ``gh`` albo ``gh-axi`` (także ze ścieżką, za przypisaniem zmiennej
-albo za ``env``, ``timeout``, ``nice``, ``nohup``, ``command``, ``exec``, ``sudo`` czy ``time``), a w nim:
+polecenie proste z podzbioru opisanego niżej, którego programem jest ``git``, ``gh`` albo ``gh-axi`` (także ze ścieżką
+i za przypisaniem zmiennej), a w nim:
 
 - ``gh release`` z innym podpoleceniem niż ``list``, ``ls``, ``view``, ``download``, ``verify`` i ``verify-asset``,
-  bez ``--help``;
+  chyba że ``--help`` stoi zaraz za podpoleceniem albo za słowem, które nie jest opcją czekającą na wartość
+  (``--notes --help`` to treść ``--notes``);
 - ``gh api`` z zapisem (``-X``/``--method`` innym niż ``GET`` i ``HEAD``, a bez metody z ``-f``, ``-F``,
   ``--field``, ``--raw-field`` albo ``--input``) na adres z segmentem ``releases`` albo na ``git/refs``, gdy adres
   albo pole wskazuje ``refs/tags/`` z nazwą od ``v`` albo nieznaną (``$``, ``*``) albo gdy treść idzie z pliku
   (``--input``, pole ``=@plik``);
-- ``git push`` (z dowolnymi opcjami ``git`` przed nim, także ``--no-verify``) z ``--tags``, ``--follow-tags`` albo
-  ``--mirror`` albo z argumentem, którego strona refspecu (bez ``+``, po obu stronach ``:``) to ``v`` z cyfrą,
-  ``refs/tags/`` z nazwą od ``v`` albo nieznaną, albo nazwa od ``v`` albo nieznana po słowie ``tag``;
+- ``git push`` z ``--tags``, ``--follow-tags`` albo ``--mirror``, ze słowem spoza podzbioru albo ze wzorcem ścieżek
+  albo z argumentem, którego
+  strona refspecu (bez ``+``, po obu stronach ``:``) to ``v`` z cyfrą albo ``refs/tags/`` lub ``tags/`` z nazwą od
+  ``v`` albo nieznaną, albo z nazwą od ``v`` albo nieznaną po słowie ``tag``;
 - ``git tag`` bez trybu listy, usunięcia i weryfikacji (``-l``, ``-d``, ``-v``, ``-n``, ``--list``, ``--delete``,
   ``--verify``, ``--contains``, ``--no-contains``, ``--merged``, ``--no-merged``, ``--points-at``) z argumentem od
-  ``v``, od ``refs/tags/v`` albo nieznanym.
+  ``v``, od ``refs/tags/v``, nieznanym albo spoza podzbioru;
+- ``git update-ref`` bez ``-d`` z refem ``refs/tags/`` albo ``tags/`` z nazwą od ``v`` albo nieznaną.
 
-Hook dzieli dokładnie tylko podzbiór basha. Słowa to napisy bez cudzysłowu, w apostrofach i w cudzysłowie, ``\\``
-z nową linią to dalszy ciąg polecenia, a polecenie proste kończy się na ``;``, ``&``, ``&&``, ``|``, ``||``, nowej
-linii i nawiasie. Przekierowanie z celem i deskryptorem (``2>&1``) nie jest argumentem, ``#`` na początku słowa
-zaczyna komentarz do końca linii, a ciało heredoku to dane (``_without_heredocs`` hooka ``czekanie.py``).
-Podstawienie ``$(…)``, `` `…` ``, ``<(…)`` i ``>(…)``, także zagnieżdżone i w środku słowa
-(``$(git rev-parse HEAD):refs/tags/v1``), a ``$(…)`` i `` `…` `` także w cudzysłowie, to w poleceniu słowo o nieznanej
-wartości, a treść podstawienia hook ocenia jak osobne polecenie.
+Podzbiór to tylko to, co hook rozumie; reszta jest spoza niego:
 
-Polecenie spoza tego podzbioru, w którym stoi słowo Wydania, dostaje odmowę, a jej przyczyna każe zapisać je prościej
-albo rozbić na kilka poleceń. Spoza podzbioru jest polecenie, którego hook nie umie podzielić (niezamknięty
-cudzysłów, także po ``\\'`` w napisie ANSI-C ``$'…'``, niezamknięte podstawienie albo heredok, ``\\`` na końcu,
-podstawienia głębiej niż ``MAX_DEPTH``), polecenie z konstrukcją ze stałej ``OUTSIDE_SUBSET`` (``$((`` w tekście;
-powłoka, ``eval``, ``source``, ``.``, ``trap``, ``xargs``, ``case`` i ``function`` jako program) i polecenie, którego
-program albo podpolecenie ``git`` lub ``gh`` pochodzi ze zmiennej albo podstawienia, a także ``gh api`` z zapisem na
-adres ze zmiennej. Słowo Wydania
-(``RELEASE_WORD``) to ``tag``, ``release`` albo wersja z kropką (``v1.2``, także ``tag_name=v1.2``) jako osobne słowo
-(cudzysłów go nie kończy), a ``refs/tags``, ``git/refs``, ``/releases``, ``--tags``, ``--follow-tags`` i ``--mirror``
-w dowolnym miejscu polecenia poza ciałem zamkniętego heredoku.
+- słowo to napisy bez cudzysłowu, w apostrofach i w cudzysłowie; bez cudzysłowu ma tylko litery, cyfry, znaki
+  ``LITERAL``, znak po ``\\``, ``=`` poza początkiem słowa (zsh czyta ``=git`` jako ścieżkę programu), ``{`` jako całe
+  słowo, ``{}`` i ``{nazwa}`` (``PLAIN_BRACES``), ``[`` i ``[[`` jako całe słowo oraz znaki wzorca ścieżek ``*``, ``?``
+  i ``[``, z którymi słowo ma nieznaną wartość;
+- ``$`` przed nazwą zmiennej, cyfrą, parametrem specjalnym albo ``{nazwa}`` (``PARAMETER``) i ``${nazwa`` z operatorem
+  (``EXPANSION``), także w cudzysłowie, daje słowo o nieznanej wartości, a ``$`` przed odstępem, operatorem i końcem
+  jest zwykłym znakiem; podstawienie ``$(…)``, `` `…` ``, ``<(…)`` i ``>(…)`` (także zagnieżdżone, w środku słowa,
+  w ``${…}``, a ``$(…)`` i `` `…` `` także w cudzysłowie) to słowo o nieznanej wartości, a jego treść hook ocenia jak
+  osobne polecenie;
+- polecenie proste kończą ``;``, ``&``, ``&&``, ``|``, ``||``, ``|&`` i nowa linia, każdy za poleceniem, ``(`` zaczyna
+  podpowłokę tylko na początku polecenia, a ``()`` za słowem definiuje funkcję; ``\\`` z nową linią to dalszy ciąg
+  polecenia, przekierowanie z celem i deskryptorem (``2>&1``) nie jest argumentem, ``#`` na początku słowa zaczyna
+  komentarz do końca linii, a ciało heredoku to dane (``_without_heredocs`` hooka ``czekanie.py``), gdy ``<<`` stoi
+  poza napisem i komentarzem, a ogranicznik w cudzysłowie albo ciało bez podstawienia;
+- program to pierwsze słowo za słowami ``RESERVED`` i przypisaniami, o znanej wartości; ``git``, ``gh`` i ``gh-axi``
+  stoją w podzbiorze tylko w tym miejscu (nie w argumencie, wartości przypisania, ``${…}`` ani celu przekierowania),
+  ``git`` z opcjami przed poleceniem z ``GIT_OPTIONS`` i poleceniem z ``GIT_COMMANDS`` (alias, także z ``-c alias.``,
+  nie może zastąpić polecenia gita), a ``gh`` z ``GH_OPTIONS`` i ``GH_COMMANDS``; powłoka (``SHELLS``) nie stoi w podzbiorze w żadnym
+  miejscu, a jej polecenia, które wykonują napis albo zmieniają czytanie dalszych poleceń (``SHELL_BUILTINS``), jako
+  program.
+
+Hook dzieli polecenie jak bash, a agent na Macu biegnie w zsh: tekst, który zsh z domyślnymi opcjami czyta inaczej
+niż bash (``=git``, ``<1-9>``, ``(…)`` w środku polecenia, ``for x (…)``, ``${(f)x}``), jest spoza podzbioru,
+a ``$x[1]`` ma nieznaną wartość. Spoza podzbioru jest więc też polecenie, w którym ``git`` albo ``gh`` stoi za innym
+programem (``xargs git``, ``sudo gh``, ``coproc git``, ``X=git; env $X``), a ``gh api`` pisze na adres o nieznanej
+wartości. Polecenie spoza podzbioru, w którym stoi słowo Wydania, dostaje odmowę, a jej przyczyna każe zapisać je
+prościej albo rozbić na kilka poleceń. Słowo Wydania (``RELEASE_WORD``) to ``tag``, ``release`` albo wersja z kropką
+(``v1.2``, także ``tag_name=v1.2``) jako osobne słowo (cudzysłów go nie kończy, a nawias klamrowy i przecinek tak),
+a ``refs/tags``, ``git/refs``, ``/releases``, ``--tags``, ``--follow-tags`` i ``--mirror`` w dowolnym miejscu polecenia
+poza ciałem heredoku, które jest danymi. Polecenie spoza podzbioru bez słowa Wydania przechodzi, także gdy słowo
+Wydania składa się w nim z części (``sh -c 'git t"a"g v"9"'``), a ``git push`` nazwy o nieznanej wartości bez
+``refs/tags/`` (``git push origin $V``) przechodzi w podzbiorze.
 
 Przechodzi wszystko, gdy sesja Claude Code ma w środowisku ``MAXIMISEART_WYDANIE=1`` (nazwa: ``RELEASE_OVERRIDE``
 w ``tools/lib/repo.py``), a zmienna wpisana w samo polecenie niczego nie zmienia. ``tools/wydanie.py`` zakłada tag
 i Release z Pythona, więc hook go nie widzi i nie zatrzymuje.
-Granica: tego, czego nie ma w tekście polecenia, hook nie widzi, więc stronę GitHuba, skrypt z pliku, skrypt
-w Pythonie albo innym interpreterze, także podany heredokiem, alias, ``gh api graphql`` (``createRef``)
-i ``push.followTags`` z konfiguracji gita łapie tylko przegląd. Tak samo program spoza ``PROGRAMS``, ``WRAPPERS``
-i ``OUTSIDE_SUBSET``, który sam uruchamia polecenie ze swoich argumentów (``find -exec``, ``env -S``), linie po
-``<<SŁOWO`` w napisie aż do linii ``SŁOWO`` (``_without_heredocs`` bierze je za heredok) i polecenie spoza podzbioru
-bez słowa Wydania (``$G push origin v9``). Słowo Wydania w opisie zwykłej pracy daje fałszywą odmowę polecenia spoza
-podzbioru: na 285 997 poleceniach Basha agentów z 30 dni (#1414 r4) 10 takich, każde z programem ze zmiennej
-i opisem ze słowem ``tag`` albo ``release``. Hook nie zna repozytorium, w którym polecenie biegnie, więc odmowę
+Granica: hook widzi tylko tekst polecenia, więc stronę GitHuba, skrypt z pliku (``bash skrypt.sh``, ``source``, hook
+gita), Pythona i inny program, który wykonuje napis jako polecenie (interpreter z ``-c`` albo heredokiem,
+``git rebase -x``, ``ssh``, ``watch``), alias i funkcję z konfiguracji gita, ``gh`` i powłoki, opcje zsh
+z konfiguracji, które zmieniają składnię (``extendedglob``, ``rcquotes``), wartość zmiennej z profilu i nazwy plików,
+które wstawia wzorzec ścieżek, ``gh api graphql`` (``createRef``) oraz ``push.followTags`` i ``remote.*.push``
+z konfiguracji gita łapie tylko przegląd.
+Słowo Wydania w opisie zwykłej pracy daje fałszywą odmowę polecenia spoza podzbioru: na 285 997 poleceniach Basha
+agentów z 30 dni (#1414 r5) 13 takich: 11 z programem ze zmiennej i opisem ze słowem ``tag``, ``release`` albo
+wersją, jedno z nawiasami ``{a,b}`` i jedno z ``gh api`` piszącym na adres ze zmiennej. Hook nie zna repozytorium, w którym polecenie biegnie, więc odmowę
 dostaje też tag ``v*`` w repozytorium próbnym (``git init`` w katalogu tymczasowym), Release innego repozytorium i push
 gałęzi o nazwie od ``v`` z cyfrą (``v2-redesign``). Czas ``shlex`` rośnie z kwadratem długości najdłuższego słowa:
 polecenie z napisem ponad ok. 1 MB przekracza ``timeout`` i przechodzi.
@@ -74,7 +94,7 @@ from typing import NamedTuple, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/hooks"))
 
-from czekanie import _without_heredocs  # jedyny właściciel rozpoznania heredoków w hookach
+from czekanie import HEREDOC, _without_heredocs  # jedyny właściciel rozpoznania heredoków w hookach
 
 REFUSAL = (
     "Odmowa: tag Wydania v* i GitHub Release tworzy tylko narzędzie Wydań, bo tag na main trafia do taty (ADR 0014). "
@@ -83,9 +103,9 @@ REFUSAL = (
     "z --no-verify), nie twórz ani nie zmieniaj Release i refów tagów (gh release, gh api) i nie rób tego stroną GitHuba."
 )
 OUTSIDE_REFUSAL = (
-    f"{REFUSAL} Polecenie ma też konstrukcję, której hook nie dzieli (powłoka, eval, xargs, case, $((, program "
-    "ze zmiennej albo podstawienia, niezamknięty napis), i słowo Wydania (tag, release, refs/tags, /releases): "
-    "jeśli nie zakłada Wydania, zapisz je prościej albo rozbij na kilka poleceń."
+    f"{REFUSAL} Polecenie ma też tekst, którego hook nie czyta (nawiasy {{a,b}}, $'…', git lub gh za innym "
+    "programem, powłoka, program ze zmiennej, niezamknięty napis), i słowo Wydania (tag, release, refs/tags, "
+    "/releases): jeśli nie zakłada Wydania, zapisz je prościej albo rozbij na kilka poleceń."
 )
 
 OPERATORS = ";&|()<>\n`"
@@ -96,50 +116,96 @@ WORD_BREAKS = " \t\r\n;&|()<>"
 # Słowo w miejscu podstawienia ``$(…)``, `` `…` ``, ``<(…)`` albo ``>(…)``: jego wartości hook nie zna.
 SUBSTITUTION_STANDIN = "$S"
 SUBSTITUTIONS = ("$(", "<(", ">(")
+# Znacznik przed znakiem, którego hook nie czyta: słowo z nim jest spoza podzbioru.
+UNREAD = "\x1f"
+# Znacznik przed znakiem wzorca ścieżek (``*``, ``?``, ``[…]``): słowo ma nieznaną wartość jak ``$X``.
+PATTERN = "\x1e"
+# Znaki słowa bez cudzysłowu, które bash i zsh z domyślnymi opcjami biorą dosłownie.
+LITERAL = frozenset("_-./:=+@%,^~!]}#")
+# ``{`` jako słowo, ``{}`` i ``{nazwa}`` bez ``,`` i ``..``: bash i zsh nie rozwijają ich w kilka słów.
+PLAIN_BRACES = re.compile(r"\{(?=[\s;&|()<>]|$)|\{(?:[\w-]|\.(?!\.))*\}")
+# ``[`` i ``[[`` jako słowo (polecenie ``test``); ``[`` w słowie to wzorzec ścieżek.
+PLAIN_BRACKETS = re.compile(r"\[\[?(?=[\s;&|()<>]|$)")
+PATTERN_CHARS = frozenset("*?[")
+# Po ``$``: nazwa zmiennej, cyfra, parametr specjalny albo ``{nazwa}``; wartość jest nieznana, ale słowo czytelne.
+PARAMETER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|[0-9]|[@*#?$!-]|\{(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+)\}")
+# ``${`` z nazwą i operatorem (``${x:-a}``, ``${r##*/}``, ``${#x}``): wartość nieznana, a tekst za nazwą hook czyta
+# do ``}`` jak słowo; ``${(f)x}`` i ``${x@P}`` są spoza podzbioru.
+EXPANSION = re.compile(r"\$\{[#!]?(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-])")
+EXPANSION_PARTS = re.compile(r"[^\w./]+")
 # Linia za poleceniem: zostaje po ``_without_heredocs`` tylko wtedy, gdy każdy heredok się zamknął.
 HEREDOC_END = "\n\0"
-# Przekierowanie w słowie operatora (``2>&1`` daje ``>&``, ``&>``, ``<<<``).
+# Przekierowanie w słowie operatora (``2>&1`` daje ``>&``, ``&>``, ``<<<``) i heredok wśród nich.
 REDIRECTION = re.compile(r"&>>?|[<>]&|>\||<<<|<<-?|<>|>>|[<>]")
+HEREDOC_OPERATORS = frozenset({"<<", "<<-"})
+# Podstawienie w ciele heredoku z ogranicznikiem bez cudzysłowu: bash je wykonuje, chyba że stoi za ``\``.
+BODY_SUBSTITUTION = re.compile(r"(?<!\\)(?:\\\\)*(?:\$\(|`)")
+# Operator, który kończy polecenie proste; dwa takie bez polecenia między nimi (``;;`` w ``case``) są spoza podzbioru.
+CONTROL = re.compile(r"&&|\|\||\|&|[;&|()\n]")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
-RESERVED = frozenset({"!", "{", "}", "if", "then", "elif", "else", "while", "until", "do"})
-# Program przed poleceniem: opcje, które biorą wartość, i liczba słów bez ``-`` przed poleceniem.
-WRAPPERS = {
-    "env": (frozenset({"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}), 0),
-    "timeout": (frozenset({"-s", "--signal", "-k", "--kill-after"}), 1),
-    "nice": (frozenset({"-n", "--adjustment"}), 0),
-    "nohup": (frozenset(), 0),
-    "command": (frozenset(), 0),
-    "exec": (frozenset({"-a"}), 0),
-    "sudo": (frozenset({"-u", "--user", "-g", "--group", "-C", "-D", "-h", "-p", "-R", "-r", "-t", "-U"}), 0),
-    "time": (frozenset(), 0),
-}
-# Podstawienie w podstawieniu: dalej niż na tej głębokości hook nie zagląda i polecenie jest spoza podzbioru.
+RESERVED = frozenset({"!", "{", "}", "if", "then", "elif", "else", "while", "until", "do", "time"})
+# Powłoka i jej polecenia wbudowane, które wykonują napis albo zmieniają, jak powłoka czyta dalsze polecenia.
+SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
+SHELL_BUILTINS = frozenset({"eval", "trap", "source", ".", "alias"})
+# Podstawienie zagnieżdżone głębiej, niż hook zagląda: polecenie jest spoza podzbioru.
 MAX_DEPTH = 20
-
-
-class Constructs(NamedTuple):
-    text: re.Pattern[str]
-    programs: frozenset[str]
-
-
-# Konstrukcje spoza podzbioru, który hook dzieli: tekst w poleceniu (bez ciał heredoków) i program polecenia prostego.
-# Spoza podzbioru jest też polecenie, którego hook nie umie podzielić, z niezamkniętym heredokiem, programem
-# albo podpoleceniem ``git``/``gh`` ze zmiennej lub podstawienia i ``gh api`` z zapisem na adres ze zmiennej.
-OUTSIDE_SUBSET = Constructs(
-    text=re.compile(r"\$\(\("),
-    programs=frozenset({"bash", "sh", "zsh", "dash", "ksh", "eval", "source", ".", "trap", "xargs", "case", "function"}),
-)
-# Słowo Wydania: ``tag``, ``release`` albo wersja ``v1.2`` jako osobne słowo (między odstępem, operatorem albo nawiasem;
-# wersja także po ``:`` i ``+`` refspecu i po ``=``) albo adres i opcja Wydania w dowolnym miejscu.
-EDGE = f"[{re.escape(WORD_BREAKS)}`]"
+# Słowo Wydania: ``tag``, ``release`` albo wersja ``v1.2`` jako osobne słowo (między odstępem, operatorem, nawiasem
+# klamrowym i przecinkiem; wersja także po ``:`` i ``+`` refspecu i po ``=``) albo adres i opcja Wydania.
+EDGE = f"[{re.escape(WORD_BREAKS)}`{{}},]"
 RELEASE_WORD = re.compile(
     rf"(?:^|(?<={EDGE}))(?:tag|release)(?={EDGE}|$)|(?:^|(?<={EDGE}|[:+=]))v\d+\.\d"
     r"|refs/tags|git/refs|/releases|--tags|--follow-tags|--mirror(?![\w-])"
 )
 
 PROGRAMS = frozenset({"git", "gh", "gh-axi"})
-GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix"})
-GH_VALUE_OPTIONS = frozenset({"-R", "--repo"})
+
+
+class Options(NamedTuple):
+    """Opcje programu przed podpoleceniem, które hook zna: z wartością w osobnym słowie albo po ``=`` i flagi."""
+
+    values: frozenset[str]
+    flags: frozenset[str]
+
+
+GIT_OPTIONS = Options(
+    values=frozenset(
+        {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--attr-source", "--list-cmds"}
+    ),
+    flags=frozenset(
+        {"-v", "--version", "-h", "--help", "-p", "--paginate", "-P", "--no-pager", "--bare", "--exec-path"}
+        | {"--html-path", "--man-path", "--info-path", "--no-replace-objects", "--no-lazy-fetch", "--no-advice"}
+        | {"--no-optional-locks", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs"}
+    ),
+)
+GH_OPTIONS = Options(values=frozenset({"-R", "--repo"}), flags=frozenset({"-h", "--help", "--version"}))
+# Polecenia gita 2.50 (``git --list-cmds=main,nohelpers``) i ``gh`` 2.101 (``gh help``); inne słowo to alias
+# z konfiguracji albo rozszerzenie, których hook nie zna.
+GIT_COMMANDS = frozenset(
+    """
+    add am annotate apply archive backfill bisect blame branch bugreport bundle cat-file check-attr check-ignore
+    check-mailmap check-ref-format checkout checkout-index cherry cherry-pick clean clone column commit commit-graph
+    commit-tree config count-objects credential credential-cache credential-osxkeychain credential-store daemon
+    describe diagnose diff diff-files diff-index diff-pairs diff-tree difftool fast-export fast-import fetch
+    fetch-pack filter-branch fmt-merge-msg for-each-ref for-each-repo format-patch fsck fsck-objects gc
+    get-tar-commit-id grep hash-object help hook http-backend http-fetch http-push imap-send index-pack init init-db
+    interpret-trailers lfs log ls-files ls-remote ls-tree mailinfo mailsplit maintenance merge merge-base merge-file
+    merge-index merge-octopus merge-one-file merge-ours merge-recursive merge-recursive-ours merge-recursive-theirs
+    merge-resolve merge-subtree merge-tree mergetool mktag mktree multi-pack-index mv name-rev notes p4 pack-objects
+    pack-redundant pack-refs patch-id pickaxe prune prune-packed pull push quiltimport range-diff read-tree rebase
+    receive-pack reflog refs remote remote-ext remote-fd remote-ftp remote-ftps remote-http remote-https repack
+    replace replay request-pull rerere reset restore rev-list rev-parse revert rm send-email send-pack shell
+    shortlog show show-branch show-index show-ref sparse-checkout stage stash status stripspace submodule subtree
+    switch symbolic-ref tag unpack-file unpack-objects update-index update-ref update-server-info upload-archive
+    upload-pack var verify-commit verify-pack verify-tag version whatchanged worktree write-tree
+    """.split()
+)
+GH_COMMANDS = frozenset(
+    """
+    agent-task alias api attestation auth browse cache co codespace completion config copilot discussion extension
+    ext gist gpg-key help issue label licenses org pr preview project release repo ruleset run search secret skill
+    ssh-key status variable version workflow
+    """.split()
+)
 GH_RELEASE_READS = frozenset({"list", "ls", "view", "download", "verify", "verify-asset"})
 GH_API_VALUE_OPTIONS = frozenset(
     {"-X", "--method", "-f", "--raw-field", "-F", "--field", "--input", "-H", "--header", "-q", "--jq", "-t"}
@@ -151,7 +217,9 @@ RELEASES_ADDRESS = re.compile(r"(?:^|/)releases(?:[/?]|$)")
 REFS_ADDRESS = re.compile(r"(?:^|/)git/refs(?:[/?]|$)")
 # Nazwa tagu od ``v`` albo nieznana: ze zmiennej, podstawienia albo wzorca (``$T``, `` `…` ``, ``*``), także pusta.
 RELEASE_TAG = re.compile(r"v|[^A-Za-z0-9_.-]|$")
-TAG_REF = re.compile(r"refs/tags/(?:v|[^A-Za-z0-9_.-]|$)")
+TAG_REF = re.compile(r"(?:refs/)?tags/(?:v|[^A-Za-z0-9_.-]|$)")
+# ``refs/tags/`` i ``tags/``, które git rozwija do ``refs/tags/``.
+TAG_PREFIX = re.compile(r"(?:refs/)?tags/")
 PUSHED_RELEASE = re.compile(r"v\d")
 PUSH_ALL_TAGS = frozenset({"--tags", "--follow-tags", "--mirror"})
 PUSH_VALUE_OPTIONS = frozenset({"-o", "--push-option", "--receive-pack", "--exec", "--repo"})
@@ -165,6 +233,12 @@ TAG_NOT_CREATING_LONG = frozenset(
 )
 
 
+class Scan(NamedTuple):
+    release: bool
+    outside: bool
+    heredocs: int
+
+
 def _backtick_end(shell: str, index: int) -> int:
     """Indeks za `` ` ``, który zamyka `` ` `` pod ``index`` (bez ``\\`` przed nim), albo -1."""
 
@@ -174,12 +248,41 @@ def _backtick_end(shell: str, index: int) -> int:
     return index + 1 if index < len(shell) else -1
 
 
+def _read(shell: str, index: int, previous: str) -> str:
+    """Znak bez cudzysłowu pod ``index``, a przed nim ``UNREAD`` albo ``PATTERN``, gdy bash i zsh czytają go inaczej."""
+
+    char = shell[index]
+    if char in PATTERN_CHARS:
+        return PATTERN + char
+    if char == "{":
+        plain = PLAIN_BRACES.match(shell, index) is not None
+    elif char == "=" and previous in WORD_BREAKS:  # zsh: ``=git`` to ścieżka programu, ``=(…)`` plik z wyjściem
+        plain = shell[index + 1 : index + 2] in ("", " ", "\t", "\r", "\n", ";", "&", "|", ")", "=")
+    elif char == "<":  # zsh: ``<1-9>`` to wzorzec liczb
+        plain = re.match(r"<\d*-\d*>", shell[index:]) is None
+    else:
+        plain = char.isalnum() or not char.isascii() or char in WORD_BREAKS or char in LITERAL
+    return char if plain else UNREAD + char
+
+
+def _dollar(shell: str, index: int, quoted: bool) -> tuple[str, int]:
+    """``$`` pod ``index`` poza podstawieniem: parametr, zwykły znak albo znak, którego hook nie czyta."""
+
+    parameter = PARAMETER.match(shell, index + 1)
+    if parameter:
+        return shell[index : parameter.end()], parameter.end()
+    following = shell[index + 1 : index + 2]
+    literal = following in ("", *WORD_BREAKS) or (quoted and following in "'\"")
+    return ("$" if literal else UNREAD + "$"), index + 1
+
+
 def _lifted(shell: str, index: int = 0, closer: str = "") -> tuple[str, list[str], int]:
     """Tekst od ``index`` do ``closer`` ze słowem ``$S`` w miejscu podstawień, treści podstawień i indeks za ``closer``.
 
-    ``closer`` to ``)`` podstawienia, ``"`` napisu albo pusty, gdy tekst biegnie do końca polecenia. Komentarz
-    wypada z tekstu, a napis w apostrofach zostaje bez zmian. Indeks -1 znaczy, że ``closer``, apostrof, cudzysłów
-    albo podstawienie się nie zamyka.
+    ``closer`` to ``)`` podstawienia, ``}`` rozwinięcia ``${…}``, ``"`` napisu albo pusty, gdy tekst biegnie do końca
+    polecenia. ``${…}`` z operatorem też staje się słowem ``$S``. Komentarz wypada z tekstu, napis w apostrofach zostaje
+    bez zmian, a przed znakiem, którego hook nie czyta, stoi ``UNREAD``, i ``PATTERN`` przed znakiem wzorca ścieżek.
+    Indeks -1 znaczy, że ``closer``, apostrof, cudzysłów albo podstawienie się nie zamyka.
     """
 
     outer: list[str] = []
@@ -196,7 +299,21 @@ def _lifted(shell: str, index: int = 0, closer: str = "") -> tuple[str, list[str
             if end < 0:
                 return "".join(outer), substitutions, -1
             substitutions.append(shell[index + (1 if char == "`" else 2) : end - 1])
-            piece = SUBSTITUTION_STANDIN
+            # ``$((…))`` to arytmetyka, a nie podstawienie polecenia.
+            piece = (UNREAD if shell.startswith("$((", index) else "") + SUBSTITUTION_STANDIN
+        elif shell.startswith("${", index) and not PARAMETER.match(shell, index + 1):
+            expansion = EXPANSION.match(shell, index)
+            if expansion is None or shell.startswith("@", expansion.end()):  # ``${(f)x}``, ``${x@P}``
+                piece, end = UNREAD + "$", index + 1
+            else:
+                text, inner, end = _lifted(shell, expansion.end(), "}")
+                if end < 0:
+                    return "".join(outer), substitutions, -1
+                substitutions.extend(inner)
+                named = any(_names_program(part, False) for part in EXPANSION_PARTS.split(text))
+                piece = (UNREAD if named else "") + SUBSTITUTION_STANDIN
+        elif char == "$":
+            piece, end = _dollar(shell, index, closer == '"')
         elif closer == '"':
             piece, end = char, index + 1
         elif char == "'":
@@ -210,12 +327,13 @@ def _lifted(shell: str, index: int = 0, closer: str = "") -> tuple[str, list[str
                 return "".join(outer), substitutions, -1
             piece = f'"{text}"'
             substitutions.extend(inner)
-        elif char == "#" and previous in WORD_BREAKS:
+        elif char == "#" and previous in WORD_BREAKS and closer != "}":
             end = shell.find("\n", index)
             piece, end = "", len(shell) if end < 0 else end
         else:
             depth += {"(": 1, ")": -1}.get(char, 0)
-            piece, end = char, index + 1
+            bracket = PLAIN_BRACKETS.match(shell, index) if previous in WORD_BREAKS else None
+            piece, end = (bracket.group(), bracket.end()) if bracket else (_read(shell, index, previous), index + 1)
         outer.append(piece)
         previous = piece[-1] if piece else previous
         index = end
@@ -226,26 +344,52 @@ def _operator(token: str) -> bool:
     return token != "" and all(char in OPERATORS for char in token)
 
 
-def _simple_commands(shell: str) -> Iterator[list[str]]:
-    """Słowa każdego polecenia prostego, bez przekierowań i ich celów; ``ValueError``, gdy ``shlex`` go nie podzieli."""
+def _simple_commands(shell: str, redirections: list[tuple[str, str]]) -> Iterator[list[str]]:
+    """Słowa każdego polecenia prostego, bez przekierowań i ich celów; ``ValueError`` poza podzbiorem.
+
+    ``redirections`` dostaje każde przekierowanie (operator i cel), które stoi poza napisem i komentarzem.
+    """
 
     lexer = shlex.shlex(CONTINUATION.sub(r"\1", shell), posix=True, punctuation_chars=OPERATORS)
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     lexer.commenters = ""
     words: list[str] = []
-    target = False
+    target, depth, after_control = "", 0, True
     for token in list(lexer):
         if not _operator(token):
             if target:
-                target = False
+                redirections.append((target, token))
+                target = ""
             else:
                 words.append(token)
+            after_control = False
             continue
-        target = REDIRECTION.search(token) is not None
-        if REDIRECTION.match(token) and words and words[-1].isdigit():
-            words.pop()  # deskryptor przekierowania: ``2>&1`` to dla ``shlex`` słowo ``2`` i operator ``>&``
-        if REDIRECTION.sub("", token):
+        index = 0
+        while index < len(token):
+            redirection = REDIRECTION.match(token, index)
+            if redirection:
+                if index == 0 and words and words[-1].isdigit():
+                    words.pop()  # deskryptor przekierowania: ``2>&1`` to dla ``shlex`` słowo ``2`` i operator ``>&``
+                target, index = redirection.group(), redirection.end()
+                continue
+            control = CONTROL.match(token, index)
+            if control is None:
+                raise ValueError(token)
+            piece, index = control.group(), control.end()
+            if piece == "(" and token.startswith(")", index) and words:
+                index += 1  # ``f()``: definicja funkcji
+            elif piece == "(":
+                if any(word not in RESERVED for word in words):
+                    raise ValueError(token)  # nawias w środku polecenia: zsh czyta go jako wzorzec
+                depth += 1
+            elif piece == ")":
+                depth -= 1
+                if depth < 0:
+                    raise ValueError(token)  # wzorzec ``case``
+            elif piece != "\n" and after_control:
+                raise ValueError(token)
+            after_control = piece != ")"
             if words:
                 yield words
             words = []
@@ -253,37 +397,36 @@ def _simple_commands(shell: str) -> Iterator[list[str]]:
         yield words
 
 
-def _program(words: list[str]) -> tuple[str, list[str]]:
-    """Nazwa programu polecenia prostego (bez ścieżki) i jego argumenty, za przypisaniami i programami przed nim."""
+def _names_program(word: str, position: bool) -> bool:
+    """Czy słowo albo wartość za ``=`` to ``git``/``gh`` albo powłoka (bez ścieżki); polecenie wbudowane powłoki
+    (``eval``, ``.``) tylko w miejscu programu, bo inny program go nie uruchomi."""
 
-    index = 0
-    while index < len(words):
-        word = words[index]
-        name = word.rsplit("/", 1)[-1]
-        if word in RESERVED or ASSIGNMENT.match(word):
-            index += 1
-        elif name in WRAPPERS:
-            takes_value, operands = WRAPPERS[name]
-            index += 1
-            while index < len(words) and (words[index].startswith("-") or ASSIGNMENT.match(words[index])):
-                index += 2 if words[index] in takes_value else 1
-            index += operands
-        else:
-            return name, words[index + 1 :]
-    return "", []
+    names = {part.rsplit("/", 1)[-1] for part in (word, word.partition("=")[2])}
+    return bool(names & PROGRAMS or names & SHELLS or (position and names & SHELL_BUILTINS))
 
 
-def _subcommand(arguments: list[str], takes_value: frozenset[str]) -> tuple[Optional[str], list[str]]:
+def _subcommand(arguments: list[str], known: Options) -> tuple[Optional[str], list[str], bool]:
+    """Podpolecenie, jego argumenty i czy każda opcja przed nim jest znana."""
+
     index = 0
     while index < len(arguments):
         word = arguments[index]
-        if word in takes_value:
+        name = word.partition("=")[0]
+        if word in known.values:
             index += 2
-        elif word.startswith("-"):
+        elif word in known.flags or (word != name and name.startswith("--") and name in known.values | known.flags):
             index += 1
+        elif word.startswith("-"):
+            return None, [], False
         else:
-            return word, arguments[index + 1 :]
-    return None, []
+            return word, arguments[index + 1 :], True
+    return None, [], True
+
+
+def _unknown(word: Optional[str]) -> bool:
+    """Czy wartość słowa jest nieznana (zmienna, podstawienie) albo słowo jest spoza podzbioru."""
+
+    return word is not None and ("$" in word or UNREAD in word or PATTERN in word)
 
 
 def _parsed(arguments: list[str], takes_value: frozenset[str]) -> tuple[list[tuple[str, str]], list[str]]:
@@ -310,10 +453,13 @@ def _parsed(arguments: list[str], takes_value: frozenset[str]) -> tuple[list[tup
 
 
 def _release_tag(name: str) -> bool:
-    return RELEASE_TAG.match(name.removeprefix("refs/tags/")) is not None
+    prefix = TAG_PREFIX.match(name)
+    return _unknown(name) or RELEASE_TAG.match(name[prefix.end() if prefix else 0 :]) is not None
 
 
 def _pushes_release(arguments: list[str]) -> bool:
+    if any(UNREAD in word or PATTERN in word for word in arguments):  # ``?9.9.9``, ``{v9.9.9,}``: nazwa nieznana
+        return True
     options, positionals = _parsed(arguments, PUSH_VALUE_OPTIONS)
     if any(name in PUSH_ALL_TAGS for name, _ in options):
         return True
@@ -323,8 +469,7 @@ def _pushes_release(arguments: list[str]) -> bool:
             return True
         after_tag = word == "tag"
         for side in word.lstrip("+").split(":", 1):
-            full = side.startswith("refs/tags/")
-            if _release_tag(side) if full else PUSHED_RELEASE.match(side) is not None:
+            if _release_tag(side) if TAG_PREFIX.match(side) else PUSHED_RELEASE.match(side) is not None:
                 return True
     return False
 
@@ -348,6 +493,13 @@ def _tags_release(arguments: list[str]) -> bool:
     return any(_release_tag(word) for word in positionals)
 
 
+def _updates_tag(arguments: list[str]) -> bool:
+    options, positionals = _parsed(arguments, frozenset({"-m"}))
+    if any(name == "-d" for name, _ in options):
+        return False
+    return bool(positionals) and TAG_PREFIX.match(positionals[0]) is not None and _release_tag(positionals[0])
+
+
 def _api_write(arguments: list[str]) -> tuple[str, list[str], bool]:
     """Adres ``gh api`` z zapisem (pusty bez zapisu), jego pola i czy treść idzie z pliku."""
 
@@ -361,8 +513,7 @@ def _api_write(arguments: list[str]) -> tuple[str, list[str], bool]:
     return (positionals[0] if positionals and writes else ""), fields, from_file
 
 
-def _writes_release_api(arguments: list[str]) -> bool:
-    address, fields, from_file = _api_write(arguments)
+def _writes_release_api(address: str, fields: list[str], from_file: bool) -> bool:
     if RELEASES_ADDRESS.search(address):
         return True
     return REFS_ADDRESS.search(address) is not None and (
@@ -370,67 +521,101 @@ def _writes_release_api(arguments: list[str]) -> bool:
     )
 
 
-GIT_RELEASES = {"push": _pushes_release, "tag": _tags_release}
+def _help(arguments: list[str]) -> bool:
+    """Czy ``--help`` stoi zaraz za podpoleceniem albo za słowem, które nie jest opcją czekającą na wartość."""
+
+    return any(
+        word == "--help" and (index == 0 or not arguments[index - 1].startswith("-") or "=" in arguments[index - 1])
+        for index, word in enumerate(arguments)
+    )
 
 
-def _releases(program: str, arguments: list[str]) -> bool:
+GIT_RELEASES = {"push": _pushes_release, "tag": _tags_release, "update-ref": _updates_tag}
+
+
+def _releases(program: str, arguments: list[str]) -> tuple[bool, bool]:
+    """Czy polecenie ``git``/``gh`` zakłada Wydanie i czy jest spoza podzbioru."""
+
     if program == "git":
-        command, rest = _subcommand(arguments, GIT_VALUE_OPTIONS)
-        return command in GIT_RELEASES and GIT_RELEASES[command](rest)
-    group, rest = _subcommand(arguments, GH_VALUE_OPTIONS)
+        command, rest, known = _subcommand(arguments, GIT_OPTIONS)
+        if not known or (command is not None and command not in GIT_COMMANDS):
+            return False, True
+        return command in GIT_RELEASES and GIT_RELEASES[command](rest), False
+    group, rest, known = _subcommand(arguments, GH_OPTIONS)
+    if not known or (group is not None and group not in GH_COMMANDS):
+        return False, True
     if group == "release":
-        command, _ = _subcommand(rest, GH_VALUE_OPTIONS)
-        return command is not None and command not in GH_RELEASE_READS and "--help" not in rest
-    return group == "api" and _writes_release_api(rest)
+        command, rest, known = _subcommand(rest, GH_OPTIONS)
+        if not known or _unknown(command):
+            return False, True
+        return command is not None and command not in GH_RELEASE_READS and not _help(rest), False
+    if group != "api":
+        return False, False
+    address, fields, from_file = _api_write(rest)
+    return _writes_release_api(address, fields, from_file), _unknown(address)
 
 
-def _outside_subset(program: str, arguments: list[str]) -> bool:
-    """Czy polecenie proste jest spoza podzbioru: jego program albo podpolecenie ``git``/``gh`` hook zna tylko z nazwy."""
+def _command(words: list[str]) -> tuple[bool, bool]:
+    """Czy polecenie proste zakłada Wydanie i czy jest spoza podzbioru."""
 
-    if program in OUTSIDE_SUBSET.programs or "$" in program:
-        return True
-    if program not in PROGRAMS:
-        return False
-    command, rest = _subcommand(arguments, GIT_VALUE_OPTIONS if program == "git" else GH_VALUE_OPTIONS)
-    if command is not None and "$" in command:
-        return True
-    return command == "api" and _api_write(rest)[0].startswith("$")
+    index = 0
+    while index < len(words) and (words[index] in RESERVED or ASSIGNMENT.match(words[index])):
+        index += 1
+    program = words[index] if index < len(words) else ""
+    modelled = program.rsplit("/", 1)[-1] in PROGRAMS
+    outside = _unknown(program) or any(
+        UNREAD in word or (_names_program(word, position == index) and not (modelled and position == index))
+        for position, word in enumerate(words)
+    )
+    if not modelled:
+        return False, outside
+    release, unread = _releases(program.rsplit("/", 1)[-1], words[index + 1 :])
+    return release, outside or unread
 
 
-def _scanned(shell: str, depth: int) -> tuple[bool, bool]:
-    """Czy polecenie albo jego podstawienie zakłada Wydanie i czy ma konstrukcję spoza podzbioru."""
+def _scanned(shell: str, depth: int) -> Scan:
+    """Czy polecenie albo jego podstawienie zakłada Wydanie, czy jest spoza podzbioru i ile ma heredoków."""
 
     outer, substitutions, end = _lifted(shell)
-    outside = end < 0 or OUTSIDE_SUBSET.text.search(shell) is not None
+    redirections: list[tuple[str, str]] = []
     try:
-        commands = list(_simple_commands(outer))
-    except ValueError:  # niezamknięty cudzysłów albo ``\`` na końcu
-        commands, outside = [], True
+        commands = list(_simple_commands(outer, redirections))
+    except ValueError:  # niezamknięty cudzysłów, ``\`` na końcu albo operator spoza podzbioru
+        commands, end = [], -1
+    # Cel przekierowania to słowo jak argument: ``read X <<< git`` nazywa gita poza miejscem programu.
+    outside = end < 0 or any(UNREAD in target or _names_program(target, False) for _, target in redirections)
+    heredocs = sum(operator in HEREDOC_OPERATORS for operator, _ in redirections)
     for words in commands:
-        program, arguments = _program(words)
-        if program in PROGRAMS and _releases(program, arguments):
-            return True, outside
-        outside = outside or _outside_subset(program, arguments)
-    for script in substitutions:
-        release, inner = _scanned(script, depth + 1) if depth < MAX_DEPTH else (False, True)
+        release, unread = _command(words)
         if release:
-            return True, outside
-        outside = outside or inner
-    return False, outside
+            return Scan(True, outside, heredocs)
+        outside = outside or unread
+    for script in substitutions:
+        inner = _scanned(script, depth + 1) if depth < MAX_DEPTH else Scan(False, True, 0)
+        if inner.release:
+            return Scan(True, outside, heredocs)
+        outside = outside or inner.outside
+        heredocs += inner.heredocs
+    return Scan(False, outside, heredocs)
 
 
 def refusal(command: str) -> Optional[str]:
     """Przyczyna odmowy polecenia Basha (forma Wydania albo polecenie spoza podzbioru ze słowem Wydania) albo None."""
 
-    shell = _without_heredocs(command + HEREDOC_END)
+    expanded: list[str] = []
+    shell = _without_heredocs(command + HEREDOC_END, expanded)
     if not shell.endswith(HEREDOC_END):  # heredok bez linii końca: jego ciało może być poleceniem
         release, outside, shell = False, True, command
     else:
         shell = shell.removesuffix(HEREDOC_END)
         try:
-            release, outside = _scanned(shell, 0)
+            scan = _scanned(shell, 0)
         except RecursionError:  # setki zagnieżdżonych podstawień albo napisów
-            release, outside = False, True
+            scan = Scan(False, True, -1)
+        release, outside = scan.release, scan.outside
+        # ``<<`` w napisie albo komentarzu: ``_without_heredocs`` wziął za ciało heredoku linie, które są poleceniem.
+        if scan.heredocs != len(HEREDOC.findall(shell)) or any(BODY_SUBSTITUTION.search(line) for line in expanded):
+            outside, shell = True, command
     if release:
         return REFUSAL
     return OUTSIDE_REFUSAL if outside and RELEASE_WORD.search(shell) else None

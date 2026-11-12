@@ -1,6 +1,6 @@
 """Hook ``tools/hooks/reczne_wydanie.py``: agent nie zakłada tagu Wydania ``v*`` ani GitHub Release z Basha.
 
-Formy Wydania to formy z docstringu hooka i sondy przeglądów #1403 r1 i #1414 r1–r3, a polecenia zwykłej pracy pochodzą
+Formy Wydania to formy z docstringu hooka i sondy przeglądów #1403 r1 i #1414 r1–r4, a polecenia zwykłej pracy pochodzą
 z historii agentów i z sond fałszywych odmów #1414 r1–r3. Konstrukcje spoza podzbioru i słowa Wydania pochodzą z docstringu
 hooka: polecenie spoza podzbioru ze słowem Wydania dostaje odmowę, a bez niego przechodzi. Każdy test zachowania uruchamia
 hook tak jak Claude Code: JSON na stdin, a odmowa to kod 2 z przyczyną na stderr. Własności Hypothesis biorą oczekiwanie
@@ -144,6 +144,8 @@ RELEASES = (
     "git tag refs/tags/v9.9.9",
     "git tag $TAG",
     'git tag -s "v9.9.9"',
+    "git update-ref refs/tags/v9.9.9 HEAD",
+    "git update-ref -m x refs/tags/$T HEAD",
     "git tag v9.9.9 >/dev/null 2>&1",
     # Przekierowanie w środku polecenia go nie kończy, a pusty napis to słowo (wartość ``-m``).
     "git tag 2>/dev/null v9.9.9",
@@ -189,6 +191,53 @@ RELEASES = (
     "bash <<'EOF'\ngit tag v9.9.9",
     "echo v9.9.9 | xargs git tag",
     "gh api -X POST $URL -f tag_name=v9.9.9",
+    # Słowo Wydania tuż za `` ` `` (#1414 r4 D1).
+    "$G `echo tag`",
+    # Rozwinięcie nawiasów, napis ANSI-C i locale oraz wzorzec ścieżek: bash i zsh robią z nich inne słowa (#1414 r4 W1).
+    "git {tag,v9.9.9}",
+    "git {tag,v9.9.9} -m x",
+    "git {tag,v9.9.{9..9}}",
+    "git push --no-verify origin {v9.9.9,}",
+    "git push --no-verify origin HEAD:refs/tag{s/v9.9.9,}",
+    "gh {release,create,v9.9.9} --generate-notes",
+    "gh api repos/o/r/{releases,} -f tag_name=v9.9.9",
+    "git push --no-verify origin $'v9.9.9'",
+    "git push --no-verify origin HEAD:$'refs/tags/v9.9.9'",
+    'git push --no-verify origin $"v9.9.9"',
+    "git push --no-verify origin ?9.9.9",
+    "git push origin v[9].9.9",
+    # Opcja gita, której hook nie zna, alias z ``-c``, ``tags/`` w refspecu i ``--help`` jako wartość (#1414 r4 W2).
+    "git --attr-source HEAD push --no-verify origin v9.9.9",
+    "git --attr-source HEAD push --no-verify origin HEAD:refs/tags/v9.9.9",
+    "git --attr-source HEAD tag v9.9.9",
+    "git -c alias.p=push p --no-verify origin v9.9.9",
+    "git -c alias.t=tag t v9.9.9",
+    "git -c alias.t='!git tag' t v9.9.9",
+    "git -c ALIAS.t=tag t v9.9.9",
+    "git --config-env=alias.t=T t v9.9.9",
+    "git push --no-verify origin tags/v9.9.9",
+    "git push --no-verify origin HEAD:tags/v9.9.9",
+    "gh release create v9.9.9 --notes --help",
+    "gh release create v9.9.9 --title --help --generate-notes",
+    "gh rc v9.9.9",
+    # ``git`` i ``gh`` za innym programem (#1414 r4 D2) i zsh, który czyta tekst inaczej niż bash.
+    "coproc git tag v9.9.9",
+    "coproc T { git tag v9.9.9; }",
+    "caffeinate git tag v9.9.9",
+    "builtin command git tag v9.9.9",
+    "X=git; env $X tag v9.9.9",
+    "env ${X:-git} tag v9.9.9",
+    "read X <<< git; env $X tag v9.9.9",
+    "=git tag v9.9.9",
+    "git (tag) v9.9.9",
+    "for t (v9.9.9) git tag $t",
+    "git push origin v<9-9>.9.9",
+    "git push origin $x[1]",
+    # Ciało heredoku bez cudzysłowu w ograniczniku: bash wykonuje w nim podstawienie.
+    "cat <<EOF\n$(git tag v9.9.9)\nEOF",
+    "cat <<EOF\n`git tag v9.9.9`\nEOF",
+    # ``<<`` w komentarzu nie otwiera heredoku, więc linie za nim są poleceniem.
+    "echo x # <<EOF\ngit tag v9.9.9\nEOF",
 )
 NOT_RELEASES = (
     "gh pr create --title x --body-file - <<'EOF'\nOdmawia:\ngit tag v9.9.9 i gh release create v9.9.9\nEOF",
@@ -243,6 +292,9 @@ NOT_RELEASES = (
     "git tag -l 'v*'",
     "git tag --list v*",
     "git tag -d v9.9.9",
+    "git update-ref -d refs/tags/v9.9.9",
+    "git update-ref refs/heads/v9 HEAD",
+    "git for-each-ref --format='delete %(refname)' refs/tags/v9 | git update-ref --stdin",
     "git tag -v v0.8.0",
     "git tag --contains HEAD",
     "git tag --sort=-creatordate | head",
@@ -260,14 +312,30 @@ NOT_RELEASES = (
     "git log --oneline v0.8.0..HEAD",
     "git describe --tags",
     "git worktree add --detach ~/.t3/worktrees/wydanie-v0.9.0 abc",
-    # Słowo programu jako argument albo w komentarzu nie jest poleceniem.
-    "echo git tag v9.9.9",
+    # Napis z nazwą programu nie jest poleceniem, a słowo w komentarzu też nie.
     "rg -n gh\\ release tools/",
     "rg -n 'gh release|git tag' tools/ docs/",
     "# git tag v9.9.9",
     "git status # gh release create v9.9.9",
     # Niezamknięty cudzysłów bez formy Wydania.
     "grep -n \"don't",
+    # Wzorzec ścieżek to słowo o nieznanej wartości: przy ``-l`` ``git tag`` tylko wypisuje.
+    "git tag -l v*",
+    "rg -n release tools/*.py",
+    # Opcje gita i ``gh`` przed poleceniem, które hook zna (#1414 r4 D1), ``{nazwa}`` ``gh api`` i ``[[``.
+    "git -C /x log --grep tag",
+    "git --no-pager -c core.hooksPath=/dev/null log --grep release",
+    "gh -R o/r pr list --search release",
+    "gh api repos/{owner}/{repo}/releases --jq '.[0].tag_name'",
+    "[[ -n $t ]] && git log --grep tag",
+    "echo \"${t:-brak} ${#t} ${t##*/}\" tag",
+    "time git log --grep release",
+    "f() { git log --grep tag; }; f",
+    "rg -n release .",
+    "cat <<EOF\nWydanie: tag v9.9.9 i \\`git tag\\`\nEOF",
+    # Ciało heredoku z ogranicznikiem w cudzysłowie to dane, także z ``$(…)``.
+    "gh pr comment 1 --body-file - <<'EOF'\n$(git tag v9.9.9)\nEOF",
+    "echo =====; git tag -l",
 )
 
 
@@ -305,21 +373,50 @@ def test_polecenie_obok_wydania_przechodzi_bez_slowa(command: str) -> None:
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
 
-# Konstrukcje spoza podzbioru z docstringu hooka: ``{}`` to miejsce słowa, a polecenie bez słowa Wydania przechodzi.
+# Polecenia spoza podzbioru, który opisuje docstring hooka: tekst, którego hook nie czyta jak bash i zsh, ``git`` i ``gh``
+# poza miejscem programu, powłoka i opcje oraz polecenia ``git`` i ``gh``, których hook nie zna. ``{}`` to miejsce
+# słowa, a polecenie bez słowa Wydania przechodzi.
 OUTSIDE_SUBSET = {
-    "$((": "echo $((1+2)) {}",
+    "rozwinięcie nawiasów": "echo {a,b} {}",
+    "ciąg w nawiasach": "echo {1..3} {}",
+    "napis ANSI-C": "echo $'a' {}",
+    "napis locale": 'echo $"a" {}',
+    "arytmetyka": "echo $((1+2)) {}",
+    "arytmetyka $[": "echo $[1+2] {}",
+    "flaga zsh w ${}": "echo ${(f)x} {}",
+    "przekształcenie ${x@P}": "echo ${x@P} {}",
+    "znak sterujący": "echo a\x01b {}",
+    "=program zsh": "=python3 -c 1 {}",
+    "wzorzec liczb zsh": "ls {} <1-9>",
+    "nawias w środku polecenia": "echo (a) {}",
+    "for zsh z nawiasem": "for x (a) echo {}",
+    "wzorzec case": "case x in x) echo {}; esac",
+    "dwa operatory bez polecenia": "echo a;; echo {}",
+    "tablica": "a=(x y); echo {}",
+    "git za innym programem": "xargs git log {}",
+    "gh za innym programem": "sudo gh pr view {}",
+    "coproc": "coproc git log {}",
+    "nazwa gita w przypisaniu": "X=git; echo {}",
+    "nazwa gita w ${}": "echo ${X:-git} {}",
+    "nazwa gita w celu przekierowania": "read X <<< git; echo {}",
     "bash": "bash -c 'echo {} x'",
     "sh": "sh -c 'echo {} x'",
     "zsh": "zsh -c 'echo {} x'",
     "dash": "dash -c 'echo {} x'",
     "ksh": "ksh -c 'echo {} x'",
+    "powłoka za innym programem": "env bash -c 'echo {} x'",
     "eval": "eval 'echo {} x'",
+    "trap": "trap 'echo {} x' EXIT",
     "source": "source ./skrypt.sh {}",
     ".": ". ./skrypt.sh {}",
-    "trap": "trap 'echo {} x' EXIT",
-    "xargs": "echo {} | xargs echo",
-    "case": "case x in x) echo {};; esac",
-    "function": "function f { echo {}; }; f",
+    "alias": "alias l=ls; echo {}",
+    "nieznana opcja gita": "git --frobnicate log {}",
+    "alias gita z -c": "git -c alias.l=log l {}",
+    "nieznane polecenie gita": "git frob {}",
+    "nieznana opcja gh": "gh --frob pr view {}",
+    "nieznane polecenie gh": "gh frob {}",
+    "heredok z podstawieniem": "cat <<EOF\n$(date)\nEOF\necho {}",
+    "<< w napisie": "echo '<<EOF'\necho {}\nEOF",
 }
 UNPARSED = {
     "niezamknięty cudzysłów": 'echo "a {} b',
@@ -330,6 +427,7 @@ UNPARSED = {
     "\\ na końcu": "echo {} \\",
     "program ze zmiennej": "$PY skrypt.py {}",
     "program z podstawienia": "$(which python3) skrypt.py {}",
+    "program ze wzorca": "./skrypt*.sh {}",
     "podpolecenie git ze zmiennej": "git $CMD {}",
     "podpolecenie gh z podstawienia": "gh $(echo pr) view {}",
     "gh api z zapisem na adres ze zmiennej": "gh api -X POST $URL -f body='a {} b'",
@@ -342,10 +440,6 @@ RELEASE_WORDS = (
     *("refs/tags/x", "repos/o/r/git/refs", "repos/o/r/releases", "--tags", "--follow-tags", "--mirror"),
 )
 NOT_RELEASE_WORDS = ("tagi", "tagów", "release_notes.py", "tag_name=x", "v080", "v3_dziennik", "--mirror-dir", "x")
-
-
-def test_tabela_konstrukcji_ma_kazda_konstrukcje_ze_stalej_hooka() -> None:
-    assert {hook.OUTSIDE_SUBSET.text.pattern.replace("\\", ""), *hook.OUTSIDE_SUBSET.programs} == set(OUTSIDE_SUBSET)
 
 
 @pytest.mark.parametrize("word", RELEASE_WORDS)
