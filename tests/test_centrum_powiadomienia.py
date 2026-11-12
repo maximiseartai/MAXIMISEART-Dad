@@ -364,7 +364,8 @@ def test_przy_starcie_centrum_skrzynka_jest_pytana_w_tle_przed_odczytem_powiadom
 def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_tak_zostaje(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(notifications_module, "CHECK_WAIT_S", 0.05)
+    wait_s = 0.5
+    monkeypatch.setattr(notifications_module, "CHECK_WAIT_S", wait_s)
     centrum = preparing_centrum(tmp_path)
     write_report_key(centrum.tool)
     what = sent_report(centrum)
@@ -379,7 +380,7 @@ def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_ta
     finally:
         box.search_hold.set()
 
-    assert took < notifications_module.CHECK_WAIT_S + 2
+    assert took < wait_s * 1.8  # poniżej dwóch limitów, z zapasem na planowanie wątków na Windows
     wait_for(lambda: rows(centrum)[0][2] != SENT, 5, every=0.01)
     assert rows(centrum) == [("zgloszenie", what, RESOLVED, True)]
 

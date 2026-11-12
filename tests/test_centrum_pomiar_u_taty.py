@@ -7,6 +7,7 @@ import re
 
 import pytest
 
+from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import PeriodFolder
 from tests.fixtures.centrum import Centrum, centrum, view_timing
@@ -75,6 +76,22 @@ def test_dziennik_przyjmuje_ograniczona_liczbe_pomiarow_na_jedno_uruchomienie_ce
     assert after_restart.status_code == 204
     entries = [entry for entry in log_entries(app) if entry.startswith("pomiar ")]
     assert len(entries) == limit + 1
+    assert entries[-1].startswith("pomiar widok=zimny-start strona=okresy ")
+
+
+def test_dziennik_przyjmuje_najwyzej_200_pomiarow_na_jedno_uruchomienie_centrum() -> None:
+    lines: list[str] = []
+
+    def measure(log: CentrumLog, page: str) -> None:
+        log.view_timed(view="zimny-start", page=page, ready_ms=415, fcp_ms=210, skeleton_ms=120, requests=())
+
+    first_run = CentrumLog(Path("nieuzywany.log"), append=lines.append)
+    for _ in range(201):
+        measure(first_run, "metryki")
+    measure(CentrumLog(Path("nieuzywany.log"), append=lines.append), "okresy")
+
+    entries = [line.split(" ", 1)[1] for line in lines]
+    assert len(entries) == 201
     assert entries[-1].startswith("pomiar widok=zimny-start strona=okresy ")
 
 
