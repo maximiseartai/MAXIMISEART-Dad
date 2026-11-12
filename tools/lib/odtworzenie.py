@@ -931,12 +931,15 @@ def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
 
 
 def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: date, worker: str) -> set[str]:
-    """Postacie numeru ``number`` z dnia ``day`` we Wpisach raportu Wykonawcy ``worker`` w Logach, a bez jego Wpisu od
-    każdego Wykonawcy: wpis pamięci idzie za wierszem, więc może stać pod Wykonawcą, który nie przysłał Raportu."""
+    """Postacie numeru ``number`` z dnia ``day`` we Wpisach raportu Wykonawcy ``worker`` w Logach, bez jego Wpisu od
+    każdego Wykonawcy z tego dnia, a bez Wpisu z tego dnia z każdego dnia: wpis pamięci idzie za wierszem, więc może
+    stać pod Wykonawcą, który nie przysłał Raportu, i pod dniem innym niż temat Raportu (Przeniesienie na inny dzień)."""
 
-    return numbers.get((number, day, worker)) or {
-        text for (value, found, _), texts in numbers.items() if (value, found) == (number, day) for text in texts
-    }
+    return (
+        numbers.get((number, day, worker))
+        or {text for (value, found, _), texts in numbers.items() if (value, found) == (number, day) for text in texts}
+        or {text for (value, _, _), texts in numbers.items() if value == number for text in texts}
+    )
 
 
 def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:

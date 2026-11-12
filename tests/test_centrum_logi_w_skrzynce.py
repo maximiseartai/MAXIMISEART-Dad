@@ -67,7 +67,7 @@ from tests.fixtures.centrum_intermax import ENTERING_NOW, SENDERS, Clock, enteri
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
-from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
+from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
     SettlingCentrum,
@@ -1657,6 +1657,43 @@ def test_zmiana_taty_po_przeniesieniu_trzyma_przez_plik_pamieci_i_odtwarza_sie_z
     code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
 
     assert [move["overridden"] for move in entering["moves_before"]] == [True]
+    assert (entering["moves"], entering["changes"], entering["problems"]) == ([], [], [])
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
+def test_reczne_przeniesienie_na_inny_dzien_po_przeniesieniu_centrum_odtwarza_sie_z_pamiecia_spod_dnia_centrum(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#1350 z tabelą przejść R3: Raport Jana za 10.11 przeniósł jego zlecenie z 9.11 na 10.11, a tata przestawił dzień
+    z powrotem na 9.11. Raport Anny za 9.11 z tym numerem nie przenosi zlecenia, bo pamięć spod 10.11 mówi o zmianie
+    taty, choć temat Anny ma 9.11: Logi mają pamięć zleceń i własne wpisy numeru z każdego dnia, więc odtworzenie daje
+    to samo, a nie Przeniesienie do Anny."""
+
+    surroundings = Surroundings()
+    jan, anna = SENDERS["jan.testowy"], SENDERS["anna.kowalska"]
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, (), surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    centrum.moment.append(datetime(2026, 11, 11, 8))
+    centrum.fake_inbox.outcome = [report(jan, "Raport 10.11.2026", "40000001 tak wymiana", at=datetime(2026, 11, 10, 18))]
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    book = load_workbook(centrum.register)
+    [row] = [cell.row for cell in book[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == 40000001]
+    assert book[ORDER_SHEET].cell(row, DATE).value == datetime(2026, 11, 10, 9)
+    book[ORDER_SHEET].cell(row, DATE).value = datetime(2026, 11, 9, 9)
+    book.save(centrum.register)
+    before = centrum.register.read_bytes()
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.fake_inbox.outcome = [report(anna, "Raport 09.11.2026", "40000001 tak montaż", at=datetime(2026, 11, 11, 8, 20))]
+    third = centrum.run_to_end()
+    logs = _archived_run(surroundings.report_box, tmp_path, third["run"]["id"])
+    entering = json.loads(gzip.decompress(logs.read_bytes()))["report_entering"]
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
+
+    assert centrum.register.read_bytes() == before
+    assert [(move["day"], move["overridden"]) for move in entering["moves_before"]] == [("2026-11-10", False)]
+    assert {(entry["day"], entry["worker"]) for entry in entering["memory_before"]} == {("2026-11-10", "jan.testowy")}
     assert (entering["moves"], entering["changes"], entering["problems"]) == ([], [], [])
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 

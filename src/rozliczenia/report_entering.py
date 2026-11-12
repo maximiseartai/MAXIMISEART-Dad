@@ -199,9 +199,10 @@ class EnteringFacts:
 
     ``rollout_before``: dzień wdrożenia z pamięci przed kliknięciem (``None``: pierwsze), ``rollout``: dzień wdrożenia
     tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne
-    wpisy numerów, które mają Wpis w tym kliknięciu, z ich dnia, pod każdym Wykonawcą, bo wpisy idą za wierszem, a
+    wpisy numerów, które mają Wpis w tym kliknięciu, z każdego dnia, pod każdym Wykonawcą, bo wpisy idą za wierszem, a
     ``kept``: decyzje „Zostaw moją” zleceń z Wpisem z migawki kliknięcia, ``moves_before``: pamięć zleceń (``OwnMove``)
-    numerów, które mają Wpis w tym kliknięciu. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
+    numerów, które mają Wpis w tym kliknięciu, z każdego dnia, bo zlecenie mogło przejść na inny dzień, a pamięć zostaje
+    pod dniem, w którym zostawiło je Centrum. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
     ``moves``: Przeniesienia zleceń do zapisu, ``notes``: informacje dla taty.
     """
 
@@ -328,17 +329,17 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             if isinstance(read, ReadReport)
             for entry in read.entries
         }
-        numbers = {(key.number, key.day) for key in reported}
+        numbers = {key.number for key in reported}
         before = tuple(
             sorted(
-                (entry for entry in saved.memory.entries if (entry.key.number, entry.key.day) in numbers),
+                (entry for entry in saved.memory.entries if entry.key.number in numbers),
                 key=lambda entry: (entry.key, entry.column.value),
             )
         )
         kept = tuple(sorted((decision for decision in saved.kept if decision.key in reported), key=_kept_order))
         moves_before = tuple(
             sorted(
-                (move for move in saved.memory.moves if (move.number, move.day) in numbers),
+                (move for move in saved.memory.moves if move.number in numbers),
                 key=lambda move: (move.day, move.number),
             )
         )
