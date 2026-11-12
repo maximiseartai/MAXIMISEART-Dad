@@ -45,8 +45,8 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "            if response is not None and not response.ok:\n                raise WindowStop.of(PagePart.ORDER, HttpStatus(",
-                "            if False:\n                raise WindowStop.of(PagePart.ORDER, HttpStatus(",
+                "            if (error_page := _error_page(response)) is not None:\n                raise WindowStop.of(PagePart.ORDER, error_page)",
+                "            if False:\n                raise WindowStop.of(PagePart.ORDER, error_page)",
             ),
         ),
         explorer("odpowiedzi", "strona-zlecenia"),
@@ -55,7 +55,7 @@ MUTATIONS = (
     ),
     Mutation(
         "#808: strona przeładowana po Wycenie Emmetta czytana bez jej odpowiedzi",
-        (Edit(BROWSER, "        loaded = self._read_order(reload.value)\n", "        loaded = self._read_order(None)\n"),),
+        (Edit(BROWSER, "        loaded = self._read_order(reloaded)\n", "        loaded = self._read_order(None)\n"),),
         explorer("odpowiedzi", "strona-po-emmetcie"),
         "błąd serwera po „Załaduj do zlecenia” wygląda jak zmieniony efenix",
         NEW,
@@ -143,11 +143,11 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "                raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n        loaded = ",
+                "                raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n\n        reloaded = ",
                 "                raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))\n"
                 "            self._page.wait_for_timeout(1500)\n"
-                "            self._text(answer)\n"
-                "        loaded = ",
+                "            self._text(answer)\n\n"
+                "        reloaded = ",
             ),
         ),
         explorer("odpowiedzi", "zaladuj-do-zlecenia"),
