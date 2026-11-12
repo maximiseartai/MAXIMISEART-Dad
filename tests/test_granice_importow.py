@@ -24,12 +24,9 @@ Katalog procesów (``centrum/catalog.py``), wpis procesu (``centrum/process_kind
 nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy okresów ani okna efenix, także przez inne
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
 komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
-katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``replace`` z ``metrics=`` albo
-z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
-plik metryk i silnik procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``,
-``Catalog.steered``, ``Catalog.with_engine``). Eksplorator Uruchomień daje swój silnik przez ``Catalog.with_engine``, więc
-prawdziwe ``PreparedRun.conduct`` biegnie w każdym harmonogramie (przegląd #1127: podklasa z własnym ``conduct`` je
-omijała).
+katalog. ``PreparedRun`` składa tylko ``Catalog.prepared``, ale tego pilnuje typ, a nie ten test: konstruktor bez
+dowodu katalogu, kopię przez ``replace`` i podklasę odrzuca mypy, a dowód poza katalogiem ruff (docstring
+``process_kind._CATALOG``).
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
@@ -43,17 +40,17 @@ Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to
 zostaje przeglądowi.
 
-- Wysyłkę Logów Uruchomienia (``Post`` z etykietą ``logi-uruchomienia``) buduje tylko ``comment_versions.post_of``, a
-  jej wynik idzie od razu do kolejki (``<kolejka>.post(post_of(wersja))``), więc nikt go nie zmieni przez
-  ``dataclasses.replace``. Nazwę ``post_of`` test rozpoznaje po niej samej, z dowolną bazą i także jako napis, a nie po
-  imporcie. Etykietę Logów (``comment_versions.LABEL``) kod poza ``post_of`` tylko podaje kolejce w pytaniu
+- Wysyłkę Logów Uruchomienia daje tylko ``comment_versions.post_of`` jako ``LogsPost``, której nikt nie zmieni przed
+  kolejką: tego pilnuje typ (docstring ``comment_versions._VERSIONS``). Test łapie tylko nową wysyłkę z etykietą Logów
+  obok ``post_of``: etykietę Logów (``comment_versions.LABEL``) kod poza ``post_of`` tylko podaje kolejce w pytaniu
   ``delivered`` albo ``rejected``, a napis ``logi-uruchomienia`` stoi tylko w ``Literal``.
 - Logi i tekst po strażniku (``GuardedLogs``, ``GuardedText``) daje tylko ``guard_logs`` i ``guard_text`` z
   ``run_logs_guard``, inaczej ich typ niczego by nie dowodził. Konstruktor bez dowodu strażnika (``_MINTED``), ``replace``,
   kopię, ``pickle``, zmianę pola, podklasę i wartość innego typu (``Any``) zamyka sam typ albo jego sprawdzenie przy
-  uruchomieniu (docstring ``run_logs_guard._MINTED``). Poza ``run_logs_guard`` nazwy tych typów padają tylko w adnotacjach,
-  importach i ``isinstance``, a ``_MINTED`` i napis z ich nazwą w żadnej postaci, więc test łapie
-  ``object.__new__(GuardedLogs)``, ``object.__setattr__`` slotu i ``cast(GuardedLogs, …)``.
+  uruchomieniu, a import i atrybut modułu ``_MINTED`` ruff (``TID251``, docstring ``run_logs_guard._MINTED``). Poza
+  ``run_logs_guard`` nazwy tych typów padają tylko w adnotacjach, importach i ``isinstance``, a napis z ich nazwą albo
+  z ``_MINTED`` nigdzie, więc test łapie ``object.__new__(GuardedLogs)``, ``object.__setattr__`` slotu,
+  ``cast(GuardedLogs, …)`` i ``getattr(run_logs_guard, "_MINTED")``.
 
 Wyrocznie skilli (``.agents/skills/*/scripts``) i narzędzia (``tools/``) biorą z ``src`` tylko publiczne nazwy
 (docs/agents/skille.md, „Co wyrocznia bierze z src”): mechanikę przez publiczny punkt obserwacji, a dane o świecie
@@ -70,9 +67,7 @@ przechodzi.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
-(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod nazwą
-przypisaną poza importem albo jako ``type(prepared)``, kopia ``PreparedRun`` przez ``replace`` przypisane innej nazwie
-poza importem albo z wyrażenia bez ``prepared`` w tekście z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…), moduł ``comment_versions`` przypisany innej
+(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), moduł ``comment_versions`` przypisany innej
 nazwie poza importem, wysyłka Logów zmieniona w słuchaczu kolejki bez nazwania etykiety (np. po ``run_id``) albo
 zbudowana z etykietą wziętą z innej wysyłki (``post.target.label``) oraz celowe obejście strażnika bez nazwy jego typów
 (``object.__new__(type(logs))``, zmiana ``__class__``).
@@ -108,7 +103,7 @@ PURE_STDLIB = frozenset({"__future__", "collections", "collections.abc", "datacl
 PURE_VERSIONS = {
     "rozliczenia.centrum.contract": frozenset({"runs"}),
     "rozliczenia.centrum.catalog": frozenset({"declaration_of"}),
-    "rozliczenia.centrum.outbox": frozenset({"ArchiveFile", "PeriodThread", "Post", "Rank"}),
+    "rozliczenia.centrum.outbox": frozenset({"ArchiveFile", "PeriodThread", "Post", "Rank", "Target"}),
     "rozliczenia.centrum.report_box": frozenset({"Label"}),
     "rozliczenia.centrum.version": frozenset({"short_commit"}),
     "rozliczenia.centrum.run_logs": frozenset({"LoggedDiagnosis", "LoggedMessage", "RunLog", "StartFacts"}),
@@ -590,109 +585,6 @@ def test_wpisy_procesow_czyta_tylko_katalog_procesow() -> None:
     )
 
 
-# Moduły z funkcją ``replace``, która kopiuje dataclassę z podmienionymi polami.
-_COPYING_MODULES: typing.Final = frozenset({"dataclasses", "copy"})
-
-
-def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
-    """Miejsca w ``tree``, które składają ``PreparedRun`` obok ``Catalog.prepared``: jego konstruktor (nazwa albo
-    atrybut ``PreparedRun``), podklasa (składa się sama, ``cls(...)``) i kopia przez ``replace`` z ``dataclasses`` albo
-    ``copy`` albo przez ``__replace__``, z innym plikiem metryk (``metrics=``) albo z wyrażenia, którego tekst ma
-    ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
-
-    Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
-    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``).
-    """
-
-    builds = {"PreparedRun"}
-    copies = {"replace", *(f"{module}.replace" for module in _COPYING_MODULES)}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            builds |= {alias.asname for alias in node.names if alias.name == "PreparedRun" and alias.asname}
-            if node.module in _COPYING_MODULES:
-                copies |= {alias.asname or alias.name for alias in node.names if alias.name == "replace"}
-        elif isinstance(node, ast.Import):
-            copies |= {f"{alias.asname}.replace" for alias in node.names if alias.name in _COPYING_MODULES and alias.asname}
-    found: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            for base in node.bases:
-                named = base.value if isinstance(base, ast.Subscript) else base
-                if (named.id if isinstance(named, ast.Name) else getattr(named, "attr", None)) in builds:
-                    found.append((node.lineno, f"class {node.name}({ast.unparse(base)})"))
-            continue
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if (func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)) in builds:
-            found.append((node.lineno, f"{ast.unparse(func)}("))
-            continue
-        if isinstance(func, ast.Attribute) and func.attr == "__replace__":
-            copied = ast.unparse(func.value)
-        elif ast.unparse(func) in copies:
-            copied = ast.unparse(node.args[0]) if node.args else ""
-        else:
-            continue
-        if "prepared" in copied.lower() or any(keyword.arg == "metrics" for keyword in node.keywords):
-            found.append((node.lineno, ast.unparse(node)))
-    return found
-
-
-def test_uruchomienie_gotowe_do_startu_sklada_tylko_katalog_procesow() -> None:
-    found = {
-        f"{path.relative_to(ROOT).as_posix()}:{line}: {call}"
-        for path in _python_files()
-        if path != CATALOG
-        for line, call in _prepared_run_builds(ast.parse(path.read_text(encoding="utf-8")))
-    }
-
-    assert not found, "\n".join(
-        [
-            *sorted(found),
-            "PreparedRun składa tylko Catalog.prepared (src/rozliczenia/centrum/catalog.py), także kopią "
-            "(dataclasses.replace z metrics= albo z wartości prepared) i podklasą: rdzeń, historia metryk i silnik "
-            "procesu pochodzą z katalogu, więc Centrum, Skrypt dla maszyn, odtworzenie, testy i skrypty skilli "
-            "podmieniają je tylko przez Catalog.with_metrics, Catalog.steered i Catalog.with_engine.",
-        ]
-    )
-
-
-# Złożenie PreparedRun obok Catalog.prepared (kopie i nazwy z importu: przegląd #1122, runda 1).
-PREPARED_RUN_BUILDS: typing.Final = {
-    "konstruktor": "run = PreparedRun(kind, period, inputs, context, metrics)",
-    "konstruktor-z-modulu": "run = process_kind.PreparedRun(kind, period, inputs, context, metrics)",
-    "konstruktor-pod-nazwa-z-importu": "from rozliczenia.centrum.process_kind import PreparedRun as _G\nrun = _G(1, 2)",
-    "replace-z-plikiem-metryk": "run = replace(run, metrics=MetricsStore(path, ()))",
-    "dataclasses-replace-uruchomienia": "run = dataclasses.replace(prepared, kind=other)",
-    "copy-replace-z-atrybutu": "run = copy.replace(self.prepared, period=period)",
-    "dunder-replace": "run = PREPARED.__replace__(kind=other)",
-    "replace-pod-nazwa-z-importu": "from dataclasses import replace as _r\nrun = _r(run, metrics=None)",
-    "modul-pod-nazwa-z-importu": "import dataclasses as dc\nrun = dc.replace(run, metrics=store)",
-    # Przegląd #1127, runda 1: podklasa z własnym conduct składała się przez cls(**pola).
-    "podklasa-z-modulu": "class Modelled(process_kind.PreparedRun[Any, Any]):\n    pass",
-    "podklasa-pod-nazwa-z-importu": "from rozliczenia.centrum.process_kind import PreparedRun as _G\nclass M(_G):\n    pass",
-}
-# Kopie innych wartości, napisy i nazwy typu, które sprawdzenie przepuszcza.
-PREPARED_RUN_ALLOWED: typing.Final = {
-    "pole-kind-innej-dataclassy": "shown = replace(named, kind=kind, offer=offer)",
-    "replace-napisu": 'line = text.replace("PREPARED", "")',
-    "replace-bez-wartosci-w-argumencie": "copy = replace(**changes)",
-    "replace-innej-funkcji-pod-ta-nazwa": "from os import replace as swap\nswap(prepared, target)",
-    "adnotacja-i-isinstance": "def f(run: PreparedRun) -> bool:\n    return isinstance(run, PreparedRun)\n",
-    "podklasa-innej-klasy-generycznej": "class Shown(Generic[SummaryT]):\n    pass",
-}
-
-
-@pytest.mark.parametrize("code", PREPARED_RUN_BUILDS.values(), ids=PREPARED_RUN_BUILDS.keys())
-def test_sprawdzenie_katalogu_lapie_zlozenie_uruchomienia_obok_catalog_prepared(code: str) -> None:
-    assert _prepared_run_builds(ast.parse(code))
-
-
-@pytest.mark.parametrize("code", PREPARED_RUN_ALLOWED.values(), ids=PREPARED_RUN_ALLOWED.keys())
-def test_sprawdzenie_katalogu_przepuszcza_kopie_innych_wartosci(code: str) -> None:
-    assert _prepared_run_builds(ast.parse(code)) == []
-
-
 # Drzewa src z modułem rdzenia a.py i drogą do warstwy skoroszytu, którą sprawdzenie łapie.
 WORKBOOK_ROUTES: typing.Final = {
     "import-wprost": {"a.py": "import openpyxl\n"},
@@ -859,10 +751,11 @@ def _type_nodes(tree: ast.AST) -> set[ast.AST]:
 
 def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     """Miejsca, z których Logi albo tekst po strażniku mogą powstać albo się zmienić z pominięciem ``guard_logs`` i
-    ``guard_text`` drogą, której nie zamyka typ ani jego sprawdzenie przy uruchomieniu (docstring ``run_logs_guard._MINTED``):
-    ``_MINTED`` w każdej postaci, także napis; nazwa ``GuardedLogs`` albo ``GuardedText`` (także pod inną nazwą z
-    importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą (także slot
-    ``_GuardedLogs__…``) poza docstringiem. Celowego obejścia bez tych nazw nie łapie (docstring modułu)."""
+    ``guard_text`` drogą, której nie zamyka typ, jego sprawdzenie przy uruchomieniu ani ruff (docstring
+    ``run_logs_guard._MINTED``): napis ``"_MINTED"`` (``getattr``, ``vars``); nazwa ``GuardedLogs`` albo ``GuardedText``
+    (także pod inną nazwą z importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą
+    (także slot ``_GuardedLogs__…``) poza docstringiem. Import i atrybut modułu ``_MINTED`` łapie ruff (``TID251``), a
+    nie ten test. Celowego obejścia bez tych nazw nie łapie (docstring modułu)."""
 
     names = GUARDED | {
         alias.asname
@@ -879,13 +772,8 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     }
     found = []
     for node in ast.walk(tree):
-        if (
-            (isinstance(node, ast.Name) and node.id == "_MINTED")
-            or (isinstance(node, ast.Attribute) and node.attr == "_MINTED")
-            or (isinstance(node, ast.alias) and node.name == "_MINTED")
-            or (isinstance(node, ast.Constant) and node.value == "_MINTED")
-        ):
-            found.append((getattr(node, "lineno", 0), "_MINTED"))
+        if isinstance(node, ast.Constant) and node.value == "_MINTED":
+            found.append((node.lineno, repr(node.value)))
         elif node in typed:
             continue
         elif (isinstance(node, ast.Name) and node.id in names) or (
@@ -915,15 +803,15 @@ def test_logi_i_tekst_po_strazniku_powstaja_tylko_ze_straznika() -> None:
             *found,
             f"Logi i tekst po strażniku reguły danych (GuardedLogs, GuardedText) daje tylko guard_logs i guard_text z "
             f"src/{RUN_LOGS_GUARD}. Poza nim te nazwy padają tylko w adnotacjach, importach i isinstance, a napis z nimi i "
-            "dowód strażnika (_MINTED) nigdzie, bo object.__new__, object.__setattr__ i cast typ przepuszcza. Kopia, "
-            "replace, zmiana pola, podklasa i wartość innego typu rzucają (docstring _MINTED).",
+            "napis dowodu strażnika (\"_MINTED\") nigdzie, bo object.__new__, object.__setattr__, cast i getattr typ "
+            "przepuszcza. Kopia, replace, zmiana pola, podklasa i wartość innego typu rzucają (docstring _MINTED).",
         ]
     )
 
 
-# Drogi obok guard_logs i guard_text, których typ nie zamyka (przegląd #1038, rundy 1 i 2, i docstring
+# Drogi obok guard_logs i guard_text, których typ ani ruff nie zamyka (przegląd #1038, rundy 1 i 2, i docstring
 # run_logs_guard._MINTED). Podklasę zamyka też __init_subclass__, a cast(Any, …) sprawdzenie przy uruchomieniu (testy w
-# tests/test_komentarz_logow_uruchomienia.py).
+# tests/test_komentarz_logow_uruchomienia.py). Import i atrybut modułu _MINTED odrzuca ruff (TID251).
 GUARD_BYPASSES: typing.Final = {
     "nowa-wartosc-bez-konstruktora": "logs = object.__new__(GuardedLogs)",
     "slot-istniejacej-wartosci": 'object.__setattr__(logs, "_GuardedLogs__record", record)',
@@ -933,8 +821,6 @@ GUARD_BYPASSES: typing.Final = {
     "nazwa-z-importu-pod-inna-nazwa": (
         "from rozliczenia.centrum.run_logs_guard import GuardedLogs as Logs\nlogs = Logs.__new__(Logs)"
     ),
-    "dowod-z-importu": "from rozliczenia.centrum.run_logs_guard import _MINTED",
-    "dowod-z-atrybutu-modulu": "proof = run_logs_guard._MINTED",
     "dowod-przez-getattr": 'proof = getattr(run_logs_guard, "_MINTED")',
     "dowod-ze-slownika-modulu": 'proof = vars(run_logs_guard)["_MINTED"]',
     "podklasa": "class Mine(GuardedLogs):\n    pass\n",
@@ -964,21 +850,18 @@ def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_impor
 
 
 def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
-    """Miejsca pliku ``file``, które mogą zbudować albo przerobić wysyłkę Logów Uruchomienia poza ``post_of``.
+    """Miejsca pliku ``file``, które mogą zbudować nową wysyłkę Logów Uruchomienia obok ``post_of``.
 
-    ``post_of`` test rozpoznaje po nazwie, a nie po imporcie: każda nazwa i atrybut ``post_of`` (z dowolną bazą) stoi
-    tylko w ``<kolejka>.post(post_of(…))``, więc wynik idzie od razu do kolejki, a nikt go nie zatrzyma, nie zmieni
-    (``dataclasses.replace`` na ``Post``) i nie wyśle w innym stopniu. Napis ``"post_of"`` (``getattr``, ``vars``) i
-    import ``post_of`` pod inną nazwą to znalezisko.
-
-    Etykietę Logów test rozpoznaje po pochodzeniu, bo ``LABEL`` mają też inne wysyłki (``quantity_check_run.LABEL``):
-    import ``LABEL`` z ``comment_versions`` pod dowolną nazwą, także względny, oraz atrybut ``LABEL`` i ``getattr`` z
-    napisem ``"LABEL"`` na module ``comment_versions``, czyli na atrybucie ``comment_versions`` (``centrum.…``, pełna
-    ścieżka) albo nazwie z importu tego modułu. Tak wybrałem, bo to najprostsza zasada bez fałszywego alarmu: sama
-    nazwa ``LABEL`` alarmuje na Kontroli ilości, a sam import (runda 2) przepuszcza atrybut pakietu. Poza
-    ``comment_versions`` etykietę kod tylko podaje kolejce w pytaniu, czy wysyłka Logów doszła albo została odrzucona
-    (``delivered``, ``rejected``), a w ``comment_versions`` używa jej tylko ``post_of``. Napis ``logi-uruchomienia``
-    stoi poza ``comment_versions`` tylko w ``Literal``.
+    Gotowej wysyłki z ``post_of`` (``LogsPost``) nikt nie zmieni: tego pilnuje typ (docstring
+    ``comment_versions._VERSIONS``), a nie to sprawdzenie. Łapie tylko etykietę Logów, z którą da się złożyć nową
+    ``Post``, i rozpoznaje ją po pochodzeniu, bo ``LABEL`` mają też inne wysyłki (``quantity_check_run.LABEL``): import
+    ``LABEL`` z ``comment_versions`` pod dowolną nazwą, także względny i przez ``*``, oraz atrybut ``LABEL`` i
+    ``getattr`` z napisem ``"LABEL"`` na module ``comment_versions``, czyli na atrybucie ``comment_versions``
+    (``centrum.…``, pełna ścieżka) albo nazwie z importu tego modułu. Poza ``comment_versions`` etykietę kod tylko
+    podaje kolejce w pytaniu, czy wysyłka Logów doszła albo została odrzucona (``delivered``, ``rejected``), a w
+    ``comment_versions`` używa jej tylko ``post_of``. Napis ``logi-uruchomienia`` stoi poza ``comment_versions`` tylko w
+    ``Literal``. Nie łapie etykiety wziętej z innej wysyłki (``LogsPost.target.label``) ani modułu przypisanego innej
+    nazwie poza importem (docstring modułu).
     """
 
     own = file == COMMENT_VERSIONS
@@ -1025,20 +908,11 @@ def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
         )
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.alias) and node.name == "post_of" and node.asname not in {None, "post_of"}:
-            found.append((node.lineno, ast.unparse(node)))
         if not isinstance(node, ast.expr):
             continue
         if label(node):
             if not (node in in_post_of if own else _asks_queue(node, parents)):
                 found.append((node.lineno, ast.unparse(node)))
-        elif (isinstance(node, ast.Name) and node.id == "post_of") or (
-            isinstance(node, ast.Attribute) and node.attr == "post_of"
-        ):
-            if not _queued_at_once(node, parents):
-                found.append((node.lineno, ast.unparse(parents.get(node, node))))
-        elif isinstance(node, ast.Constant) and node.value == "post_of":
-            found.append((node.lineno, repr(node.value)))
         elif not own and isinstance(node, ast.Constant) and node.value == RUN_LOGS_LABEL and node not in in_types:
             found.append((node.lineno, repr(node.value)))
     return found
@@ -1053,20 +927,6 @@ def _asks_queue(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
     return isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr in QUEUE_QUESTIONS
 
 
-def _queued_at_once(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
-    """``post_of`` wołane i jego wynik jedynym argumentem ``….post(…)`` kolejki."""
-
-    call = parents.get(node)
-    queued = parents.get(call) if isinstance(call, ast.Call) and call.func is node else None
-    return (
-        isinstance(queued, ast.Call)
-        and isinstance(queued.func, ast.Attribute)
-        and queued.func.attr == "post"
-        and queued.args == [call]
-        and not queued.keywords
-    )
-
-
 def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
     found = [
         f"src/{file}:{line}: {code}"
@@ -1079,41 +939,16 @@ def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
         [
             *found,
             "Wysyłkę Logów Uruchomienia (etykieta logi-uruchomienia) buduje tylko post_of z wersji komentarza "
-            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of), a jej wynik "
-            "idzie od razu do kolejki: outbox.post(post_of(wersja)), bez replace, bez innej nazwy i bez getattr. Etykietę "
-            "Logów (comment_versions.LABEL) kod poza post_of tylko podaje kolejce w pytaniu delivered albo rejected.",
+            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of): wyślij "
+            "outbox.post(post_of(wersja)). Etykietę Logów (comment_versions.LABEL) kod poza post_of tylko podaje "
+            "kolejce w pytaniu delivered albo rejected.",
         ]
     )
 
 
-# Wysyłki Logów poza post_of (przegląd #1038: dwie pierwsze to przypadki recenzenta z rundy 1, te z „pakietu” i
-# „getattr” z rundy 2).
+# Etykieta Logów obok post_of (przegląd #1038, rundy 1 i 2: „pakiet” i „getattr”). Zmianę gotowej wysyłki z post_of
+# (replace z rundy 1) odrzuca mypy, bo LogsPost nie jest dataclassą.
 LOGS_POST_BREAKS: typing.Final = {
-    "zastepcza-w-stopniu-logow-z-wynikiem": (
-        "from dataclasses import replace\n"
-        "from rozliczenia.centrum.comment_versions import OwnLogs, StandInLogs, post_of\n"
-        "from rozliczenia.centrum.outbox import Post, Rank\n"
-        "def own_from_start(logs):\n"
-        "    return replace(post_of(StandInLogs(logs)), rank=Rank.OWN)\n"
-    ),
-    "komentarz-sprzed-straznika": (
-        "from dataclasses import replace\n"
-        "from rozliczenia.centrum.comment_versions import OwnLogs, post_of\n"
-        "def unguarded(logs, record):\n"
-        "    return replace(post_of(OwnLogs(logs)), parts=(record.text + '\\n',))\n"
-    ),
-    "wysylka-zatrzymana-przed-kolejka": (
-        "from rozliczenia.centrum.comment_versions import post_of\n"
-        "def send(outbox, version):\n"
-        "    post = post_of(version)\n"
-        "    outbox.post(post)\n"
-    ),
-    "wysylka-odlozona-przed-kolejka": (
-        "from rozliczenia.centrum.comment_versions import post_of\n"
-        "def hold(held, version):\n"
-        "    held.append(post_of(version))\n"
-    ),
-    "post-of-pod-inna-nazwa":"from rozliczenia.centrum import comment_versions as cv\nmake = cv.post_of\n",
     "etykieta-w-nowej-wysylce": (
         "from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS\n"
         "thread = PeriodThread(label=RUN_LOGS, line='-', closed='reuse', title='t')\n"
@@ -1130,33 +965,6 @@ LOGS_POST_BREAKS: typing.Final = {
     ),
     "etykieta-napisem": "thread = PeriodThread(label='logi-uruchomienia', line='-', closed='reuse', title='t')\n",
     "import-gwiazdki": "from rozliczenia.centrum.comment_versions import *\n",
-    "post-of-z-getattr": (
-        "from rozliczenia.centrum import comment_versions as cv\n"
-        "def send(outbox, version):\n"
-        "    make = getattr(cv, 'post_of')\n"
-        "    outbox.post(replace(make(version), rank=Rank.OWN))\n"
-    ),
-    "post-of-ze-slownika-modulu": "def send(outbox, version, cv):\n    outbox.post(vars(cv)['post_of'](version))\n",
-    "post-of-atrybutem-pakietu": (
-        "from rozliczenia import centrum\n"
-        "def send(outbox, version):\n"
-        "    outbox.post(replace(centrum.comment_versions.post_of(version), rank=Rank.OWN))\n"
-    ),
-    "post-of-pelna-sciezka": (
-        "import rozliczenia.centrum.comment_versions\n"
-        "def send(outbox, version):\n"
-        "    outbox.post(replace(rozliczenia.centrum.comment_versions.post_of(version), rank=Rank.OWN))\n"
-    ),
-    "post-of-z-pakietu-wzglednie": (
-        "from .. import centrum\n"
-        "def send(outbox, version):\n"
-        "    outbox.post(replace(centrum.comment_versions.post_of(version), rank=Rank.OWN))\n"
-    ),
-    "post-of-z-importu-pod-inna-nazwa": (
-        "from rozliczenia.centrum.comment_versions import post_of as make\n"
-        "def send(outbox, version):\n"
-        "    outbox.post(make(version))\n"
-    ),
     "etykieta-atrybutem-pakietu": (
         "from rozliczenia import centrum\n"
         "thread = PeriodThread(label=centrum.comment_versions.LABEL, line='-', closed='reuse', title='t')\n"
@@ -1189,6 +997,12 @@ LOGS_POST_ALLOWED: typing.Final = {
         "from rozliczenia.centrum.comment_versions import post_of\n"
         "def keep(outbox, version):\n"
         "    return outbox.post(post_of(version))\n"
+    ),
+    "wysylka-trzymana-przed-kolejka": (
+        "from rozliczenia.centrum.comment_versions import post_of\n"
+        "def send(outbox, version):\n"
+        "    post = post_of(version)\n"
+        "    return outbox.post(post)\n"
     ),
     "pytanie-kolejki-o-logi": (
         "from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS_LABEL\n"
