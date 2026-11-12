@@ -6,6 +6,12 @@ test usuwa z ``sys.path`` każdy katalog z pakietem ``rozliczenia`` i uruchamia 
 argumentów, tak jak ``python skrypt.py``. Skrypt z ``if __name__ == "__main__"`` bez parsera ładuje pod inną nazwą
 niż ``__main__``, bo ``--help`` nie zatrzymałoby jego pracy, więc sprawdza tylko jego importy.
 
+Czas zjada import bibliotek, więc jeden podproces wczytuje raz moduły bibliotek z ``requirements.txt``, które skrypty
+importują, i każdy skrypt biegnie w swoim dziecku ``os.fork``: importy jednego skryptu nie dochodzą do następnego (115
+skryptów na Macu 12.11.2026: 4,3 s, bez wstępnego importu 8,3 s). Granica: skrypt, który sięga po podmoduł biblioteki bez jego
+importu (``openpyxl.styles`` po samym ``import openpyxl``), przejdzie, gdy ten podmoduł importuje inny skrypt.
+``os.fork`` nie ma na Windows, ale tam test się nie uruchamia.
+
 Skrypt dopisuje każdy katalog jedną linią w jednej postaci (``BOOTSTRAP``) zaraz pod importami biblioteki. Ruff
 zwalnia z E402 importy pod wywołaniem ``sys.path.insert``, ale nie pod przypisaniem ani stałą, więc ta postać nie
 potrzebuje ani ``noqa``, ani ``per-file-ignores``, a E402 dalej łapie import pod innym kodem. Dlatego linia liczy
@@ -21,6 +27,8 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterator
+from importlib.metadata import packages_distributions
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -30,15 +38,54 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = sorted([*(ROOT / "tools").glob("**/*.py"), *(ROOT / ".agents" / "skills").glob("*/scripts/**/*.py")])
-STRIPPED = (
-    "import runpy, sys\n"
-    "from pathlib import Path\n"
-    "script = sys.argv[1]\n"
-    "sys.path[:] = [entry for entry in sys.path if not (Path(entry or '.') / 'rozliczenia').is_dir()]\n"
-    "sys.path.insert(0, str(Path(script).parent))\n"
-)
-WITHOUT_INSTALL = STRIPPED + "sys.argv = [script, '--help']\nrunpy.run_path(script, run_name='__main__')\n"
-LOADED_WITHOUT_INSTALL = STRIPPED + "runpy.run_path(script, run_name='bez_instalacji')\n"
+REQUIREMENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+ONE_PROCESS = """
+import json, os, runpy, signal, sys, traceback
+from importlib import import_module
+from pathlib import Path
+
+work = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+sys.path[:] = [entry for entry in sys.path if not (Path(entry or '.') / 'rozliczenia').is_dir()]
+for module in work['libraries']:
+    import_module(module)
+loaded = sorted(name for name in sys.modules if name.split('.')[0] == 'rozliczenia')
+failed = {}
+for index, (script, run_name) in enumerate(work['scripts']):
+    folder = Path(str(index))
+    folder.mkdir()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    pid = os.fork()
+    if pid == 0:
+        code = 1
+        try:
+            os.chdir(folder)
+            os.dup2(os.open('stderr.txt', os.O_WRONLY | os.O_CREAT), 2)
+            os.dup2(os.open(os.devnull, os.O_WRONLY), 1)
+            signal.alarm(60)
+            sys.path.insert(0, str(Path(script).parent))
+            sys.argv = [script, '--help'] if run_name == '__main__' else ['-c', script]
+            try:
+                runpy.run_path(script, run_name=run_name)
+                code = 0
+            except SystemExit as stop:
+                if stop.code is None or isinstance(stop.code, int):
+                    code = stop.code or 0
+                else:
+                    print(stop.code, file=sys.stderr)
+            sys.stdout.flush()
+        except BaseException:
+            code = 1
+            traceback.print_exc()
+        finally:
+            sys.stderr.flush()
+            os._exit(code)
+    _, status = os.waitpid(pid, 0)
+    code = os.waitstatus_to_exitcode(status)
+    if code != 0:
+        failed[script] = f'kod {code}\\n' + (folder / 'stderr.txt').read_text(encoding='utf-8', errors='replace')
+print(json.dumps({'rozliczenia': loaded, 'failed': failed}))
+"""
 BOOTSTRAP = 'sys.path.insert(0, str(Path(__file__).resolve().parents[{parents}] / "{folder}"))'
 BOOTSTRAP_SHAPE = re.compile(
     r"sys\.path\.insert\(0, str\(Path\(__file__\)\.resolve\(\)\.parents\[(\d+)\](?: / '([^']+)')?\)\)"
@@ -121,35 +168,52 @@ def test_skrypt_dopisuje_katalogi_do_sys_path_jedna_linia() -> None:
     assert problems == [], "\n".join(problems)
 
 
-def _assert_runs(tmp_path: Path, program: str, script: Path) -> None:
+def _libraries() -> list[str]:
+    """Moduły bibliotek z ``requirements.txt``, które skrypty importują, do wczytania raz przed pierwszym skryptem."""
+
+    def normal(name: str) -> str:
+        return re.sub(r"[-_.]+", "-", name).lower()
+
+    required = {
+        normal(found.group())
+        for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        if (found := REQUIREMENT.match(line))
+    }
+    tops = {top for top, names in packages_distributions().items() if any(normal(name) in required for name in names)}
+    imported: set[str] = set()
+    for path in SCRIPTS:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                imported.add(node.module)
+    return sorted(name for name in imported if name.split(".")[0] in tops)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="CI na Windows i tak uruchamia skrypty bez instalacji pakietu")
+def test_skrypt_odpowiada_na_help_albo_laduje_sie_bez_zainstalowanego_pakietu(tmp_path: Path) -> None:
+    scripts = [
+        *([str(path), "__main__"] for path in SCRIPTS if _entry(path) == (True, True)),
+        *([str(path), "bez_instalacji"] for path in SCRIPTS if _entry(path) == (True, False)),
+    ]
+    work = tmp_path / "praca.json"
+    work.write_text(json.dumps({"libraries": _libraries(), "scripts": scripts}), encoding="utf-8")
     answered = subprocess.run(
-        [sys.executable, "-c", program, str(script)],
+        [sys.executable, "-c", ONE_PROCESS, str(work)],
         cwd=tmp_path,
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=60,
-        check=False,
+        timeout=300,
+        check=True,
     )
+    result = json.loads(answered.stdout)
 
-    assert answered.returncode == 0, answered.stderr
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="CI na Windows i tak uruchamia skrypty bez instalacji pakietu")
-@pytest.mark.parametrize(
-    "script", [path for path in SCRIPTS if _entry(path) == (True, True)], ids=lambda path: path.relative_to(ROOT).as_posix()
-)
-def test_skrypt_odpowiada_na_help_bez_zainstalowanego_pakietu(tmp_path: Path, script: Path) -> None:
-    _assert_runs(tmp_path, WITHOUT_INSTALL, script)
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="CI na Windows i tak uruchamia skrypty bez instalacji pakietu")
-@pytest.mark.parametrize(
-    "script", [path for path in SCRIPTS if _entry(path) == (True, False)], ids=lambda path: path.relative_to(ROOT).as_posix()
-)
-def test_skrypt_bez_parsera_laduje_sie_bez_zainstalowanego_pakietu(tmp_path: Path, script: Path) -> None:
-    _assert_runs(tmp_path, LOADED_WITHOUT_INSTALL, script)
+    assert result["rozliczenia"] == [], "biblioteki z requirements.txt wczytały pakiet rozliczenia przed skryptami"
+    assert result["failed"] == {}, "\n\n".join(
+        f"{Path(script).relative_to(ROOT).as_posix()}: {error}" for script, error in result["failed"].items()
+    )
 
 
 def _text(node: ast.AST) -> str | None:
