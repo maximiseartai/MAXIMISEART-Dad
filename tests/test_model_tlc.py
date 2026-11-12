@@ -395,22 +395,25 @@ def test_liveness_poza_mutacja_tylko_na_pelnym_grafie_a_w_mutacji_takze_w_trakci
     assert [command[command.index("-lncheck") + 1] for command in commands] == [lncheck, lncheck]
 
 
-def test_narzedzia_dla_kopii_ustawiaja_jave_i_jar_checkoutu_a_ustawionych_zmiennych_nie_zmieniaja(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("ustawiona", [model_tlc.JAVA, model_tlc.JAR, model_tlc.MUTACJA])
+def test_narzedzia_dla_kopii_ustawiaja_jave_jar_i_mutacje_a_ustawionej_zmiennej_nie_zmieniaja(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ustawiona: str
 ) -> None:
+    """``narzedzia_dla_kopii`` zmienia środowisko procesu, a ``monkeypatch.delenv`` nieobecnej zmiennej nie cofa
+    tego, co ustawi funkcja, więc test najpierw ustawia każdą zmienną przez ``setenv``."""
+
     monkeypatch.setattr(narzedzia_tlc, "java", lambda katalog: f"java z {katalog.name}")
     monkeypatch.setattr(narzedzia_tlc, "jar", lambda katalog: katalog / "tla2tools.jar")
-    monkeypatch.setenv(model_tlc.JAVA, "java-ustawiona")
-    monkeypatch.delenv(model_tlc.JAR, raising=False)
-    monkeypatch.delenv(model_tlc.MUTACJA, raising=False)
+    zmienne = (model_tlc.JAVA, model_tlc.JAR, model_tlc.MUTACJA)
+    for zmienna in zmienne:
+        monkeypatch.setenv(zmienna, "ustawiona")
+        if zmienna != ustawiona:
+            monkeypatch.delenv(zmienna)
 
     model_tlc.narzedzia_dla_kopii(tmp_path)
 
-    assert (os.environ[model_tlc.JAVA], os.environ[model_tlc.JAR], os.environ[model_tlc.MUTACJA]) == (
-        "java-ustawiona",
-        str(tmp_path / narzedzia_tlc.KATALOG / "tla2tools.jar"),
-        "1",
-    )
+    oczekiwane = {model_tlc.JAVA: f"java z {narzedzia_tlc.KATALOG.name}", model_tlc.JAR: str(tmp_path / narzedzia_tlc.KATALOG / "tla2tools.jar"), model_tlc.MUTACJA: "1"}
+    assert {zmienna: os.environ[zmienna] for zmienna in zmienne} == {**oczekiwane, ustawiona: "ustawiona"}
 
 
 JAR = b"tla2tools z atrapy"

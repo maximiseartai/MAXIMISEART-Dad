@@ -4,6 +4,8 @@ Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje 
 opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu
 z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko
 ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
+W CI część ``MUTACJE_CZESC=k/n`` (``ci-czesci`` w ``SKILL.md``) sprawdza tylko swój kawałek ``UNITS``
+(``skrypt_skilla.part``); jawne ``--config`` (skrypt mutacji, człowiek) bierze swoje konfiguracje bez względu na część.
 
     .venv/bin/python .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
     py -3 .agents\\skills\\verify-urwane-uruchomienie\\scripts\\sprawdz_urwane_uruchomienie.py
@@ -11,8 +13,9 @@ ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (`
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import itertools
+import os
 from pathlib import Path
 import re
 import sys
@@ -20,6 +23,23 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from model_tlc import Model, Obietnica, Stan, main
+from skrypt_skilla import part
+
+# Jednostki części podstawy w CI: grupy konfiguracji. Przebieg ``wszystko`` to ~85% podstawy (Windows CI, 12.11, sonda
+# 43305166779 z ``-lncheck final``: 245 i 239 s z 288 i 284 s), więc stoi sam, a reszta (42 i 44 s) w drugiej.
+UNITS = (
+    ("wszystko",),
+    ("koniec", "logi-i-kolejka", "odczyt", "stare-logi", "wpisy", "zegar", "zwykle"),
+)
+
+
+def arguments(argv: Sequence[str], environment: Mapping[str, str] = os.environ) -> list[str]:
+    """Argumenty ``main``: bez ``--config`` konfiguracje części ``MUTACJE_CZESC`` z ``UNITS`` (bez części wszystkie);
+    zła część to ``ValueError``."""
+
+    if any(argument.partition("=")[0] == "--config" for argument in argv):
+        return list(argv)
+    return [*argv, *(f"--config={name}" for unit in part(UNITS, environment) for name in unit)]
 
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
@@ -205,4 +225,9 @@ MODEL = Model(
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(MODEL, opis=__doc__.splitlines()[0] if __doc__ else None))
+    try:
+        argv = arguments(sys.argv[1:])
+    except ValueError as problem:
+        print(f"BŁĄD MODELU: {problem}\n\n{MODEL.werdykt}: BŁĄD MODELU (1)")
+        raise SystemExit(2) from None
+    raise SystemExit(main(MODEL, argv, opis=__doc__.splitlines()[0] if __doc__ else None))

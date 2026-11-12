@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from rozliczenia import efenix_process
 from rozliczenia.centrum import app
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.contract import timing as timing_contract
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
@@ -40,6 +42,7 @@ from tests.fixtures.centrum import (
     Centrum,
     ROOT,
     centrum,
+    view_timing,
 )
 
 import export_openapi
@@ -100,12 +103,42 @@ def test_kontrakt_ma_trasy_i_schematy_po_kolei_wiec_dwie_nowe_trasy_nie_zmieniaj
     assert (list(contract["paths"]), list(schemas)) == (sorted(contract["paths"]), sorted(schemas))
 
 
+def _committed_contract() -> dict[str, Any]:
+    return dict(json.loads((ROOT / "frontend" / "src" / "api" / "openapi.json").read_text(encoding="utf-8")))
+
+
 def test_frontend_parsuje_odpowiedzi_kontraktem_ktory_serwer_naprawde_eksportuje(tmp_path: Path) -> None:
     """Frontend parsuje każdą odpowiedź serwera schematami wygenerowanymi z ``frontend/src/api/openapi.json``."""
 
-    committed = json.loads((ROOT / "frontend" / "src" / "api" / "openapi.json").read_text(encoding="utf-8"))
+    assert _exported_contract(tmp_path) == _committed_contract()
 
-    assert _exported_contract(tmp_path) == committed
+
+def _state_changing_actions() -> list[tuple[str, str]]:
+    """Każda trasa kontraktu poza GET; odmowa Host i Origin zapada przed routingiem, więc parametr ścieżki
+    może być byle jaki."""
+
+    return [
+        (method, re.sub(r"\{[^}]+\}", "x", path))
+        for path, operations in _committed_contract()["paths"].items()
+        for method in operations
+        if method != "get"
+    ]
+
+
+def _passed_through(app: Centrum, headers: dict[str, str]) -> list[tuple[str, str]]:
+    """Akcje z ``_state_changing_actions()``, które z ``headers`` nie dostały 403, i wpisy dziennika działań taty.
+
+    Dziennik dostaje wpis za każdą akcję, zanim zadziała jej trasa, więc pusty dziennik znaczy, że odrzucone żądanie
+    nie doszło do routingu. Pomiar widoku dostaje poprawne ciało: bez niego dziennik nic by nie wpisał."""
+
+    allowed = []
+    for method, path in _state_changing_actions():
+        body = view_timing() if path == "/api/view-timings" else None
+        if app.client.request(method, path, headers=headers, json=body).status_code != 403:
+            allowed.append((method, path))
+    journal = app.log_path.parent / DAD_ACTIONS_FILE
+    entries = journal.read_text(encoding="utf-8").splitlines() if journal.exists() else []
+    return allowed + [("dziennik", entry) for entry in entries]
 
 
 # Trasy, których przeglądarka nie mierzy przez `call` (frontend/src/api/client.ts), każda z powodem.
@@ -131,12 +164,17 @@ def test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiare
 
 
 def test_zadanie_z_obcym_naglowkiem_host_jest_odrzucone(tmp_path: Path) -> None:
-    client = centrum(tmp_path).client
+    app = centrum(tmp_path)
 
-    response = client.get("/api/health", headers={"Host": "zly.example:47811"})
+    # Origin zgodny z obcym Host: tak wygląda zapytanie strony obcej domeny przemapowanej w DNS na 127.0.0.1.
+    foreign = {"Host": "zly.example:47811", "Origin": "http://zly.example:47811"}
+
+    response = app.client.get("/api/health", headers=foreign)
+    allowed = _passed_through(app, foreign)
 
     assert response.status_code == 403
     assert "commit" not in response.text
+    assert allowed == []
 
 
 def test_localhost_jest_dozwolonym_naglowkiem_host(tmp_path: Path) -> None:
@@ -407,15 +445,15 @@ def test_plik_ustawien_niedostepny_na_chwile_przyjmuje_zmiane_po_ponowieniu(tmp_
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:
-    client = centrum(tmp_path).client
+    app = centrum(tmp_path)
 
-    foreign = client.put("/api/settings/theme", json={"theme": "light"}, headers={"Origin": "http://zly.example"})
-    other_port = client.put(
+    allowed = _passed_through(app, {"Origin": "http://zly.example"})
+    other_port = app.client.put(
         "/api/settings/theme", json={"theme": "light"}, headers={"Origin": "http://127.0.0.1:3000"}
     )
 
-    assert (foreign.status_code, other_port.status_code) == (403, 403)
-    assert client.get("/api/settings").json()["theme"] == "dark"
+    assert (allowed, other_port.status_code) == ([], 403)
+    assert app.client.get("/api/settings").json()["theme"] == "dark"
 
 
 def test_akcja_bez_origin_jest_odrzucona(tmp_path: Path) -> None:
@@ -1199,15 +1237,6 @@ def test_zamkniecie_centrum_z_karty_jest_przyjete_i_zapisane_w_dzienniku(tmp_pat
     assert response.status_code == 202
     assert response.json() == {"state": "closing"}
     assert log_lines(app) == ['zamkniecie z="karta Centrum"']
-
-
-def test_zamkniecie_centrum_z_obcej_strony_jest_odrzucone(tmp_path: Path) -> None:
-    app = centrum(tmp_path)
-
-    response = app.client.post("/api/shutdown", headers={"Origin": "http://zly.example"})
-
-    assert response.status_code == 403
-    assert log_lines(app) == []
 
 
 def test_nieoczekiwany_wyjatek_daje_bezpieczny_komunikat_i_wpis_bez_tekstu_wyjatku(tmp_path: Path) -> None:
