@@ -580,7 +580,7 @@ def _windows(path: Path, content: bytes, sheets: _SheetsKey, ranges: Mapping[str
     """Okno każdego arkusza zleceń w openpyxl z bajtów ``content``: wiersze z ``ranges`` (od 2), a arkusz bez zakresu
     od wiersza 2 do końca."""
 
-    with workbook_files.open_workbook(path, content, read_only=True) as workbook:
+    with workbook_files.open_workbook(path, content, read_only=True) as workbook:  # noqa: TID251 - okna arkuszy zleceń Rejestru z bajtów, które przeczytał uchwyt
         windows = []
         for name, columns, look_columns in sheets:
             with workbook_files.unreadable_as_error(path):
