@@ -36,7 +36,8 @@ STAR = "F403"
 
 # Próbka → katalog (plik konfiguracji, podkatalog, w którym stoi sonda) i jedyny zakaz, który ruff w niej zgłasza
 # (``F403`` dla ``import *``). Pierwsze postaci usunięć napędu to dawne ``REMOVAL_SAMPLES`` z ``centrum_self_test.py``,
-# a ``sys.path`` dawne ``TOOLS_ON_PATH`` z ``test_struktura_testow.py``.
+# a ``sys.path`` dawne ``TOOLS_ON_PATH`` z ``test_struktura_testow.py``. Postaci wątków to formy zapadki wątków z
+# ``tests/test_zapadki.py`` (0e304aec7, #633), które ruff widzi w kodzie.
 SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import os\nos.remove(p)": (DRIVE_CONFIG, (), "os.remove"),
     "import os\nos.replace(p, q)": (DRIVE_CONFIG, (), "os.replace"),
@@ -80,6 +81,10 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import sys\nsys.path[:0] = [x]": (TESTS_CONFIG, (), "sys.path"),
     "import sys as s\ns.path.append(x)": (TESTS_CONFIG, (), "sys.path"),
     "from sys import path as p": (TESTS_CONFIG, (), "sys.path"),
+    "import threading\nstart = threading.Thread.start": (TESTS_CONFIG, (), "threading.Thread.start"),
+    "from threading import Thread as Worker\nWorker.start = counted": (TESTS_CONFIG, ("fixtures",), "threading.Thread.start"),
+    "import threading\nassert threading.active_count() == before": (TESTS_CONFIG, (), "threading.active_count"),
+    "from threading import active_count as count": (TESTS_CONFIG, (), "threading.active_count"),
     "from .workbook_files import file_bytes": (SRC_CONFIG, ("rozliczenia",), "rozliczenia.workbook_files.file_bytes"),
     "from ..workbook_files import open_workbook as opened": (
         SRC_CONFIG,
