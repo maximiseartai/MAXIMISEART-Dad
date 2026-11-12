@@ -441,6 +441,22 @@ class Post:
         return _queue_text(self, delivered_parts=0, archived=False)
 
 
+class Queueable(Protocol):
+    """To, co ``Outbox.post`` czyta z wysyłki: ``Post`` albo wysyłka, której nadawca nie daje zmienić przed kolejką
+    (``comment_versions.LogsPost``)."""
+
+    @property
+    def target(self) -> Target: ...
+
+    @property
+    def period(self) -> str | None: ...
+
+    @property
+    def run_id(self) -> str: ...
+
+    def to_json(self) -> str: ...
+
+
 @dataclass(frozen=True)
 class _Queued:
     """Plik kolejki: wysyłka, ile jej części skrzynka już przyjęła i czy plik do Archiwum już tam jest.
@@ -1272,7 +1288,7 @@ class Outbox:
             self._changed.wait_for(settled, timeout_s)
             return (run_id, label) in self._first_comments
 
-    def post(self, post: Post) -> bool:
+    def post(self, post: Queueable) -> bool:
         """Zapisuje ``post`` w nowym pliku kolejki i budzi wysyłkę w tle; nie pyta skrzynki i nie czeka na sieć.
 
         Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął

@@ -86,9 +86,9 @@ TABLE = [
     Row("efenix_browser", "open_list", "WindowStop.of(PagePart.LIST, ListOpenFailed(failed.failure, self._opened))",
         "goto listy zleceń: błąd Playwrighta (Operation.OPEN), przed pierwszym otwarciem efenix EfenixUnreachable, a po "
         "nim UnexpectedPage listy", "D przy starcie albo D"),
-    Row("efenix_browser", "open_list", "WindowStop.of(PagePart.LIST, HttpStatus(response.status))",
-        "lista zleceń, także przy starcie, z odpowiedzią 4xx/5xx (nawigacja nie zgłasza wtedy błędu), a pola Numer na niej "
-        "nie ma: adres odpowiada, więc to nie EfenixUnreachable (#878)", "D"),
+    Row("efenix_browser", "open_list", "WindowStop.of(PagePart.LIST, error_page)",
+        "lista zleceń, także przy starcie, z odpowiedzią 4xx/5xx (nawigacja nie zgłasza wtedy błędu, dowód HttpStatus z "
+        "_error_page), a pola Numer na niej nie ma: adres odpowiada, więc to nie EfenixUnreachable (#878)", "D"),
     Row("efenix_browser", "wait_for_login", "WindowStop.of(PagePart.LIST, Closed.DURING_LOGIN)",
         "karta zamknięta w czasie czekania na logowanie, także pytaniem o sesję, które przez nią padło", "E"),
     Row("efenix_browser", "wait_for_login",
@@ -113,9 +113,9 @@ TABLE = [
     Row("efenix_browser", "_within", "WindowStop.of(part, BrowserFailure(exception_type(error), None))",
         "błąd Playwrighta w działaniu przeglądarki bez nazwy (przegląd odcięć sprawdza, że żadne takie nie zostało)", "D"),
     # --- strona zlecenia, której okno nie przeczytało ---
-    Row("efenix_browser", "_read_order", "WindowStop.of(PagePart.ORDER, HttpStatus(response.status))",
+    Row("efenix_browser", "_read_order", "WindowStop.of(PagePart.ORDER, error_page)",
         "otwarcie strony zlecenia albo jej przeładowanie po Wycenie Emmetta z odpowiedzią 4xx/5xx (nawigacja nie zgłasza "
-        "wtedy błędu), a odczyt strony się nie udał", "D"),
+        "wtedy błędu, dowód HttpStatus z _error_page), a odczyt strony się nie udał", "D"),
     Row("efenix_browser", "_read_order", "WindowStop.of(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM))",
         "formularz logowania pod adresem strony zlecenia, bez przekierowania, a odczyt strony się nie udał", "E"),
     Row("efenix_page", "single", "WindowStop.of(part, ElementCount(selector, count))",
@@ -161,9 +161,9 @@ TABLE = [
         "okno Emmetta, gdy któreś jest już widoczne, nie dokładnie raz na stronie albo propozycja w nim nie dokładnie raz "
         "(ElementCount z efenix_page.emmett_window_fault, tej samej reguły, którą narzędzie zgodności mierzy efenix); "
         "zaraz po kliknięciu przycisku Emmetta okno Emmetta nie dokładnie raz to _element", "C"),
-    Row("efenix_browser", "load_emmett", "WindowStop.of(PagePart.EMMETT, LoginSign.REDIRECT)",
+    Row("efenix_browser", "load_to_order", "WindowStop.of(PagePart.EMMETT, LoginSign.REDIRECT)",
         "odpowiedź „Załaduj do zlecenia” przekierowana na page_login.php", "E"),
-    Row("efenix_browser", "load_emmett", "WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))",
+    Row("efenix_browser", "load_to_order", "WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))",
         "odpowiedź „Załaduj do zlecenia” przekierowana gdzie indziej niż na page_login.php", "inna budowa"),
     Row("efenix_pricing", "_emmett", "WindowStop.of(PagePart.EMMETT, OtherShape(Shape.EMMETT_NOT_LOADED))",
         "odpowiedź „Załaduj do zlecenia” 2xx, a strona po przeładowaniu nie ma żadnej ilości, choć okno Emmetta "
@@ -182,7 +182,7 @@ TABLE = [
     Row("efenix_browser", "enter_quantity", "WindowStop.of(PagePart.QUANTITY, OtherShape(Shape.ANSWER_RESULT, position))",
         "odpowiedź zapisu ilości z result innym niż ok i nok", "inna budowa"),
     # --- Przekazanie do akceptacji i strażnik zmiany statusu ---
-    Row("efenix_browser", "forward_to_accept", "WindowStop.of(PagePart.FORWARD, LoginSign.REDIRECT)",
+    Row("efenix_browser", "accept", "WindowStop.of(PagePart.FORWARD, LoginSign.REDIRECT)",
         "odpowiedź na „Tak” Przekazania do akceptacji przekierowana na page_login.php", "E"),
     Row("efenix_browser", "_status_answer", "WindowStop.of(PagePart.FORWARD, OtherShape(Shape.STATUS_NOT_ANSWERED))",
         "żądanie Przekazania do akceptacji bez odpowiedzi w czasie okna albo z zerwanym połączeniem", "D"),

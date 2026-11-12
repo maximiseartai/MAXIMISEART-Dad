@@ -42,6 +42,7 @@ from rozliczenia.centrum.comment_versions import (
     CommentVersion,
     Drop,
     LogsMissing,
+    LogsPost,
     OwnLogs,
     ProgressVersion,
     ResultWithoutLogs,
@@ -74,7 +75,7 @@ from rozliczenia.centrum.logs_disk import (
     Unreadable,
     name_of,
 )
-from rozliczenia.centrum.outbox import PeriodThread, Post, Rank
+from rozliczenia.centrum.outbox import PeriodThread, Rank
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import READ_VALUES, RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
@@ -615,10 +616,10 @@ class SwitchedOff(BaseException):
 class RecordingQueue:
     """Kolejka wysyłki, która przyjmuje każdą wysyłkę (``accepts``) albo każdej odmawia i pamięta przyjęte."""
 
-    posts: list[Post] = dataclasses.field(default_factory=list)
+    posts: list[LogsPost] = dataclasses.field(default_factory=list)
     accepts: bool = True
 
-    def post(self, post: Post) -> bool:
+    def post(self, post: LogsPost) -> bool:
         if self.accepts:
             self.posts.append(post)
         return self.accepts
@@ -682,7 +683,7 @@ class PowerCut:
         cut = self
 
         class SwitchedOffQueue(RecordingQueue):
-            def post(self, post: Post) -> bool:
+            def post(self, post: LogsPost) -> bool:
                 if post.rank != Rank.DRAFT or cut.off:
                     cut.reached("Wyslij" if post.rank == Rank.STAND_IN else "WyslijWynik")
                 return super().post(post)
@@ -798,7 +799,7 @@ def test_wyjatek_wysylki_jednej_wersji_zastepczej_przy_starcie_nie_zatrzymuje_na
     )
 
     class FailingFirst(RecordingQueue):
-        def post(self, post: Post) -> bool:
+        def post(self, post: LogsPost) -> bool:
             if post.run_id == RUN_ID:
                 raise RuntimeError("nieprzewidziany błąd kolejki")
             return super().post(post)

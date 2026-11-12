@@ -320,6 +320,10 @@ def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:
 def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     """Klasa ``Refusal`` jako wartość stoi tylko w ``centrum/refusal.py``, więc tylko katalog tworzy odmowę.
 
+    Konstruktor bez dowodu katalogu (``refusal._CATALOG``) i podklasę odrzuca też mypy, a dowód poza katalogiem ruff
+    (docstring ``_CATALOG``), ale typ gubi klasę wziętą jako wartość, np. ``Refusal.__new__(Refusal)`` (odmowa bez
+    ``status_code``, przegląd #1371 r1) i ``get_args(Refusal | None)[0](…)`` (#1179 r2). Te łapie ten test.
+
     Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
     odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu, pola albo zmiennej, w nawiasach typu i unii
     ``|`` w instrukcji modułu albo klasy poza wywołaniem i lambdą (alias ``Callable[[], Refusal | None]``), w
@@ -327,9 +331,9 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     Każde inne odwołanie pada, w tym wywołanie, argument wywołania (``partial(Refusal, 500)``), przypisanie do nazwy
     (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa, odwołanie wewnątrz wywołania albo lambdy i
     nawiasy typu albo unia w ciele funkcji (``make = Refusal | Refusal``, ``list[Refusal].__args__[0](…)``).
-    Granica (tylko przegląd): ``getattr`` z napisem (``"Refusal"``), import wewnątrz funkcji, ``type(odmowa)(…)``,
-    ``copy``/``replace`` gotowej odmowy i klasa wyjęta z aliasu typu modułu bez odwołania do ``Refusal`` w tym miejscu
-    (``ShutdownBlocker.__args__…``).
+    Łapie tylko odwołania do ``Refusal`` po nazwie: nie łapie ``getattr`` z napisem (``"Refusal"``), importu wewnątrz
+    funkcji, ``type(odmowa)(…)`` z dowodem typu ``Any``, ``copy`` gotowej odmowy ani klasy wyjętej z aliasu typu modułu
+    bez odwołania do ``Refusal`` w tym miejscu (``ShutdownBlocker.__args__…``): to zostaje przeglądowi.
     """
 
     def outside_type(module: ModuleType) -> bool:

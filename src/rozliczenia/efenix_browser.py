@@ -331,8 +331,7 @@ class BrowserEfenix:
         """Otwiera listę zleceń; ``EfenixUnreachable``, gdy okno nie otworzyło jeszcze efenix, a adres nie odpowiada."""
 
         try:
-            with _doing(Operation.OPEN):
-                response = self._page.goto(self._url, wait_until="load", timeout=self._timeout_ms)
+            response = self._go(self._url)
         except _Failed as failed:
             raise WindowStop.of(PagePart.LIST, ListOpenFailed(failed.failure, self._opened)) from failed.__cause__
         self._opened = True
@@ -341,8 +340,8 @@ class BrowserEfenix:
             self._element(Element.NUMBER, PagePart.LIST)
         except UnexpectedPage as unread:
             # Strona błędu serwera efenix: adres odpowiada, więc to nie ``EfenixUnreachable``, także przy starcie.
-            if response is not None and not response.ok:
-                raise WindowStop.of(PagePart.LIST, HttpStatus(response.status)) from unread
+            if (error_page := _error_page(response)) is not None:
+                raise WindowStop.of(PagePart.LIST, error_page) from unread
             raise
 
     def wait_for_login(
@@ -443,11 +442,7 @@ class BrowserEfenix:
     @_action(PagePart.ORDER)
     def open_order(self, order: ListedOrder) -> OrderPricing:
         self._order_id = order.order_id
-        with _doing(Operation.OPEN):
-            response = self._page.goto(
-                urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}"), wait_until="load", timeout=self._timeout_ms
-            )
-        return self._read_order(response)
+        return self._read_order(self._go(urljoin(self._url, f"{ORDER_PAGE}?id={order.order_id}")))
 
     @_action(PagePart.DATE)
     def set_execution_date(self, day: date) -> bool:
@@ -494,13 +489,16 @@ class BrowserEfenix:
             raise WindowStop.of(PagePart.EMMETT, fault)
         seen = Proposal.SHOWN if window.shows else Proposal.NOTHING if _came_whole(asked.value) else Proposal.LOST
         load = self._element(Element.EMMETT_LOAD, PagePart.EMMETT)
-        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
+
+        def load_to_order() -> None:
             answer = self._answer(LOAD_EMMETT, lambda _params: True, lambda: self._click(load))
             if _redirected_to_login(answer):
                 raise WindowStop.of(PagePart.EMMETT, LoginSign.REDIRECT)
             if 300 <= answer.status < 400:
                 raise WindowStop.of(PagePart.EMMETT, OtherShape(Shape.ANSWER_REDIRECT))
-        loaded = self._read_order(reload.value)
+
+        reloaded = self._reloaded(load_to_order)
+        loaded = self._read_order(reloaded)
         return verdict(EmmettLoad(seen, loaded))
 
     @_action(PagePart.QUANTITY)
@@ -541,10 +539,15 @@ class BrowserEfenix:
         if (refusal := self._refusal()) is not None:
             return refusal
         confirm = self._element(Element.FORWARD_OK, PagePart.FORWARD)
-        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):
+
+        def accept() -> None:
             answer = self._status_answer(lambda: self._click(confirm))
             if _redirected_to_login(answer):
                 raise WindowStop.of(PagePart.FORWARD, LoginSign.REDIRECT)
+
+        # Status zmieniło już żądanie Przekazania (``_status_answer``), więc strony po przeładowaniu okno nie czyta,
+        # a tylko sprawdza jej adres.
+        self._reloaded(accept)
         self._ensure_logged_in(PagePart.FORWARD)
         return None
 
@@ -621,8 +624,8 @@ class BrowserEfenix:
             with _doing(Operation.READ):
                 pricing, positions = read_order(self._page, timeout_ms=self._timeout_ms)
         except UnexpectedPage as unread:
-            if response is not None and not response.ok:
-                raise WindowStop.of(PagePart.ORDER, HttpStatus(response.status)) from unread
+            if (error_page := _error_page(response)) is not None:
+                raise WindowStop.of(PagePart.ORDER, error_page) from unread
             if login_form(self._page):
                 raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.LOGIN_FORM)) from unread
             raise
@@ -712,6 +715,21 @@ class BrowserEfenix:
         if _on_login_page(self._page.url):
             raise WindowStop.of(part, LoginSign.PAGE)
 
+    def _go(self, url: str) -> Response | None:
+        """Jedyne przejście karty pod adres ``url`` (``Operation.OPEN``). Odpowiedź oddaje temu, kto czyta stronę, bo
+        nawigacja nie zgłasza błędu przy statusie 4xx i 5xx: o stronę, której nie przeczytał, pyta ``_error_page``."""
+
+        with _doing(Operation.OPEN):
+            return self._page.goto(url, wait_until="load", timeout=self._timeout_ms)
+
+    def _reloaded(self, act: Callable[[], None]) -> Response | None:
+        """Jedyne czekanie na przeładowanie strony, które skrypt efenix robi po działaniu ``act`` (``Operation.RELOAD``),
+        z odpowiedzią przeładowania jak ``_go``. Wyjątek ``act`` kończy czekanie bez przeładowania."""
+
+        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:
+            act()
+        return reload.value
+
 
 class _Failed(Exception):
     """Błąd Playwrighta w działaniu przeglądarki, które nazwał ``_doing``; ``__cause__`` to ten błąd."""
@@ -737,6 +755,15 @@ def _doing(operation: Operation) -> Iterator[None]:
         yield
     except PlaywrightError as error:
         raise _Failed(BrowserFailure(exception_type(error), operation)) from error
+
+
+def _error_page(response: Response | None) -> HttpStatus | None:
+    """Jedyne sprawdzenie odpowiedzi nawigacji (``BrowserEfenix._go``, ``_reloaded``): dowód ``HttpStatus`` dla
+    ``WindowStop.of``, gdy odpowiedź ma status błędu HTTP, bo to strona błędu serwera efenix, a nie strona w innej
+    budowie; inaczej ``None``. Pyta się je dopiero po nieudanym odczycie strony, bo strony, którą okno przeczytało, żaden
+    status nie odrzuca."""
+
+    return None if response is None or response.ok else HttpStatus(response.status)
 
 
 @contextmanager

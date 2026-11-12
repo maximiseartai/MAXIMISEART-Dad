@@ -1,6 +1,6 @@
 ---
 name: verify-karta-efenix
-description: Interleave Dad's clicks in the tool's efenix tab (he opens another order, goes back to the list, reloads the page) with every write of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix) and check that each write (execution date, „Załaduj do zlecenia”, quantity, Przekazanie do akceptacji) reaches efenix with the order the process read (`_order_id`) and that no other order changes. Use when a change touches `open_order`, `set_execution_date`, `load_emmett`, `enter_quantity`, `forward_to_accept`, `guard` or `_blocked_cause` in `src/rozliczenia/efenix_browser.py`, the pauses in `src/rozliczenia/efenix_pace.py`, the order of writes in `src/rozliczenia/efenix_pricing.py`, how the Atrapa efenix page script picks the order of a request, or when a write of Wycena w efenix landed in an order the tool never read.
+description: Interleave Dad's clicks in the tool's efenix tab (he opens another order, goes back to the list, reloads the page) with every write of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix) and check that each write (execution date, „Załaduj do zlecenia”, quantity, Przekazanie do akceptacji) reaches efenix with the order the process read (`_order_id`) and that no other order changes. Use when a change touches `open_order`, `set_execution_date`, `load_emmett`, `enter_quantity`, `forward_to_accept`, `guard`, `_blocked_cause`, `_go` or `_reloaded` in `src/rozliczenia/efenix_browser.py`, the pauses in `src/rozliczenia/efenix_pace.py`, the order of writes in `src/rozliczenia/efenix_pricing.py`, how the Atrapa efenix page script picks the order of a request, or when a write of Wycena w efenix landed in an order the tool never read.
 pilnuje:
   - src/rozliczenia/efenix_browser.py
   - src/rozliczenia/efenix_page.py
@@ -61,8 +61,8 @@ Two parts are modelled by hand, and their code is in `model/definicje.json`:
 | Hand-made part | Code it stands for |
 | --- | --- |
 | Dad acts in each pause before a write: `Pace.sleep` is his hook | `Pacing.before_write`, `_PacedEfenix._paced` in `src/rozliczenia/efenix_pace.py`: the pause `ACTION_PAUSE_S` before each write (date, Emmett, quantity, Przekazanie) |
-| Dad acts during the reload after „Załaduj do zlecenia”: the `requestfinished` of `action_load_emmett.php` | the efenix script reloads the page after the answer (`EFENIX_EMMETT_RELOAD_MS`, about 1 s), and `BrowserEfenix.load_emmett` reads the page the navigation brings |
-| The known finding below | `BrowserEfenix.open_order`, `set_execution_date`, `load_emmett`, `enter_quantity`, `_blocked_cause` in `src/rozliczenia/efenix_browser.py` |
+| Dad acts during the reload after „Załaduj do zlecenia”: the `requestfinished` of `action_load_emmett.php` | the efenix script reloads the page after the answer (`EFENIX_EMMETT_RELOAD_MS`, about 1 s), and `BrowserEfenix.load_emmett` reads the page the navigation brings, which `BrowserEfenix._reloaded` waits for |
+| The known finding below | `BrowserEfenix.open_order`, `set_execution_date`, `load_emmett`, `enter_quantity`, `_blocked_cause`, and `_go` and `_reloaded`, through which the window navigates, in `src/rozliczenia/efenix_browser.py` |
 
 A change that makes the window write in efenix in a new way (a new request with an order, a new action) is checked only
 if its request is in `WRITES` of the explorer: add it there with the field that carries the order.
