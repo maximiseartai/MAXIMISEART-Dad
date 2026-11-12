@@ -42,6 +42,7 @@ from rozliczenia.worker_reports import (
     ReadStranger,
     ReadUnreadable,
     RegisterOrder,
+    ReminderInputs,
     RepeatedOrder,
     ReportEntry,
     ReportInputs,
@@ -61,6 +62,8 @@ from rozliczenia.worker_reports import (
     WorkerDay,
     as_mail,
     enter_reports,
+    reminder_text,
+    reminders_due,
 )
 from rozliczenia.worker_reports.reasons import note, reason
 from tests.fixtures.expect import assert_expected
@@ -298,7 +301,7 @@ JAN_LOGIN, EWA_LOGIN = Login("jan.testowy"), Login("ewa.probna")
         pytest.param(
             JAN,
             SUBJECT,
-            [_order(number="12345678")],
+            [_order(number="40000077")],
             UnknownNumber(JAN_LOGIN, DAY, OrderNumber("40000001")),
             "Numer 40000001 nie jest zleceniem jan.testowy z 08.11.2026.",
             id="numer-spoza-zlecen-wszystkich-wykonawcow",
@@ -736,8 +739,8 @@ def test_problemy_sa_bez_powtorzen_i_ten_sam_wynik_dla_kazdej_kolejnosci_maili()
     first = _mail("obcy@przyklad.invalid", SUBJECT, TEXT, EVENING + timedelta(minutes=2), "<1@obcy.invalid>")
     second = _mail("inny@przyklad.invalid", SUBJECT, TEXT, EVENING + timedelta(minutes=3), "<1@obcy.invalid>")
     twice = [
-        _mail(JAN, SUBJECT, "12345678 tak a", EVENING + timedelta(minutes=4)),
-        _mail(JAN, SUBJECT, "12345678 tak b", EVENING + timedelta(minutes=5)),
+        _mail(JAN, SUBJECT, "30000077 tak a", EVENING + timedelta(minutes=4)),
+        _mail(JAN, SUBJECT, "30000077 tak b", EVENING + timedelta(minutes=5)),
     ]
     repeated = _mail(JAN, SUBJECT, "40000002 tak", EVENING + timedelta(minutes=6))
     entered = _mail(JAN, SUBJECT, TEXT, EVENING + timedelta(minutes=7))
@@ -757,7 +760,7 @@ def test_problemy_sa_bez_powtorzen_i_ten_sam_wynik_dla_kazdej_kolejnosci_maili()
         UnknownNumber(Login("ewa.probna"), date(2026, 11, 7), OrderNumber("40000009")),
         UnknownSender(second.id, second.sender, DAY),
         UnknownSender(first.id, first.sender, DAY),
-        UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("12345678")),
+        UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("30000077")),
         RepeatedOrder(Login("jan.testowy"), DAY, OrderNumber("40000002")),
     )
 
@@ -1177,7 +1180,7 @@ def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_in
         _order(OrderRow("Zlecenia", 121), number="40000002", successful=" NIE "),
         _order(OrderRow("Zlecenia", 120), number="40000001"),
     ]
-    mails = [_mail(JAN, SUBJECT, TEXT), _mail(JAN, SUBJECT, "12345678 tak montaż", EVENING + timedelta(hours=1))]
+    mails = [_mail(JAN, SUBJECT, TEXT), _mail(JAN, SUBJECT, "40000077 tak montaż", EVENING + timedelta(hours=1))]
 
     outcome = enter_reports(_inputs(mails, orders))
 
@@ -1237,10 +1240,11 @@ def test_dzien_zlecenia_z_daty_bez_godziny_i_pusta_komorka_z_samych_spacji() -> 
 
 
 # Maile Raportów wykonawców z tym, co rdzeń czyta albo pomija: Wpisy z ``tak``/``nie``, literą, słowem albo bez znaku, z
-# numerem zlecenia, spoza zleceń i z „#”, z czynnościami z interpunkcją, maską strażnika, pożegnaniem, numerem i słowami
-# stopki w opisie, po kilka w mailu i w linii, także jednego numeru z tym samym i z przeciwnym znakiem, linie samego
-# tekstu, stopki i puste, tematy z dniem i bez dnia, od Wykonawców i spoza listy adresów, z remisem chwil przyjścia.
-_NUMBERS = st.sampled_from(["40000001", "40000002", "40000003", "#40000001", "040000001", "12345678"])
+# numerem zlecenia, spoza zleceń, z przykładu w przypomnieniu i z „#”, z czynnościami z interpunkcją, maską strażnika,
+# pożegnaniem, numerem i słowami stopki w opisie, po kilka w mailu i w linii, także jednego numeru z tym samym i z
+# przeciwnym znakiem, linie samego tekstu, cytatu, stopki i puste, tematy z dniem, bez dnia i odpowiedzi na
+# przypomnienie, od Wykonawców i spoza listy adresów, z remisem chwil przyjścia.
+_NUMBERS = st.sampled_from(["40000001", "40000002", "40000003", "#40000001", "040000001", "40000077", "12345678"])
 _MARKS = st.sampled_from(["tak", "nie", "Tak,", "NIE.", "t", "N", "skuteczne", "nieskuteczne", "", "tak:"])
 _WORDS = st.lists(
     st.sampled_from(
@@ -1268,19 +1272,19 @@ _WORDS = st.lists(
 _LINES = st.builds(lambda number, mark, words: " ".join([number, mark, *words]), _NUMBERS, _MARKS, _WORDS)
 _EXACT = st.builds(
     lambda number, mark, words: " ".join([number, mark, *words]),
-    st.sampled_from(["40000001", "40000002", "40000003", "040000001", "12345678"]),
+    st.sampled_from(["40000001", "40000002", "40000003", "040000001", "40000077"]),
     st.sampled_from(["tak", "nie"]),
     _WORDS,
 )
 """Wpis w dokładnym formacie: jedyny, który czyta każda gramatyka rdzenia, więc połowa maili go ma."""
 _TEXT_LINES = st.one_of(
     st.lists(_LINES, min_size=1, max_size=2).map(" ".join),
-    st.sampled_from(["kurier jutro", "", "Wysłano z aplikacji mobilnej Poczty o2"]),
+    st.sampled_from(["kurier jutro", "", "Wysłano z aplikacji mobilnej Poczty o2", "> 40000002 nie brak klienta"]),
 )
-"""Linia treści: jeden albo dwa Wpisy, sam tekst pod opisem, pusta linia albo stopka."""
+"""Linia treści: jeden albo dwa Wpisy, sam tekst pod opisem, pusta linia, stopka albo linia cytatu."""
 _TEXTS = st.one_of(_EXACT, st.lists(_TEXT_LINES, max_size=4).map("\n".join))
 _SUBJECTS = st.one_of(
-    st.sampled_from([SUBJECT, "Raport 07.11.2026"]),
+    st.sampled_from([SUBJECT, "Raport 07.11.2026", "Re: Przypomnienie: raport za dzień 08.11.2026"]),
     st.sampled_from(["Raport 8.11.26", "raport 08_11_2026", "Raport", "Raport 08.11", "Raport 31.02.2026"]),
     st.sampled_from(["Raport z 08.11.2026", "Raport 2026.11.08", "Raport 08-11-2026", "Raport 08.11.202"]),
 )
@@ -1490,6 +1494,185 @@ def test_wpis_raportu_ma_numer_tak_albo_nie_i_czynnosci() -> None:
         ),
     )
     assert outcome.changes[1] == CellChange(ROW, ReportColumn.COMPLETED, "wymiana routera, 2 gniazda")
+
+
+# --- Odpowiedź na Przypomnienie o raporcie (#1352, US 48–51, ADR 0030) ---
+
+# Przypomnienie za 8.11 wysłane ze skrzynki raportów taty, tak jak je cytują Gmail i Outlook. Treść z przykładem
+# (``12345678``, ``12345679``) pisze rdzeń przypomnień, a stopka jest zmyślona.
+REMINDER = "Przypomnienie: raport za dzień 08.11.2026"
+REMINDER_TEXT = reminder_text(DAY, "Pozdrawiam\nTata Testowy")
+QUOTED = "".join(f"> {line}\n" if line else ">\n" for line in REMINDER_TEXT.splitlines())
+INBOX = "Raporty <raporty.taty@przyklad.invalid>"
+OUTLOOK_HEADERS = f"Wysłane: poniedziałek, 9 listopada 2026 08:00\nDo: {JAN}\nTemat: {REMINDER}\n\n"
+REPLY = "40000001 tak wymiana routera"
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        f"Re: {REMINDER}",
+        f"Odp: Re: {REMINDER}",
+        f"RE: {REMINDER}",
+        f"ODP: {REMINDER}",
+        f"re:Re: odp: {REMINDER}",
+        f" Re : {REMINDER} ",
+    ],
+)
+def test_odpowiedz_na_przypomnienie_jest_raportem_wykonawcy_za_dzien_z_tematu_przypomnienia(subject: str) -> None:
+    """US 48–49: ``Re:`` albo ``Odp:`` raz albo więcej, w dowolnej wielkości liter, przed tematem przypomnienia daje dzień
+    zleceń z tematu przypomnienia."""
+
+    mail = _mail(JAN, subject, REPLY)
+
+    outcome = enter_reports(_inputs([mail], [_order()]))
+
+    assert outcome.changes == _both(ROW, "tak", "wymiana routera")
+    assert outcome.mails == (
+        ReadReport(
+            mail.id, EVENING, Login("jan.testowy"), DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana routera"),)
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        f"Fwd: {REMINDER}",
+        f"Fw: {REMINDER}",
+        f"PD: {REMINDER}",
+        f"Re: Fwd: {REMINDER}",
+        f"Fwd: Re: {REMINDER}",
+        f"Odp: PD: {REMINDER}",
+        "Re: przypomnienie: raport za dzień 08.11.2026",
+        "Re: Przypomnienie: raport za dzień 8.11.2026",
+        "Re: Przypomnienie: raport za dzień 08.11.2026 poprawka",
+        "Re: Przypomnienie: raport za dzień 31.11.2026",
+    ],
+)
+def test_przekazanie_przypomnienia_i_odpowiedz_na_inny_temat_nie_sa_raportem(subject: str) -> None:
+    """US 51: przekazanie dalej (``Fwd:``, ``Fw:``, ``PD:``) gdziekolwiek przed tematem przypomnienia i odpowiedź na
+    temat, którego nie napisało Centrum, nie są Raportem wykonawcy."""
+
+    outcome = enter_reports(_inputs([_mail(JAN, subject, REPLY)], [_order()]))
+
+    assert (outcome.changes, outcome.problems, outcome.mails) == ((), (), ())
+
+
+_PREFIXES = st.sampled_from(["Re:", "RE:", "re :", "Odp:", "ODP:", "odp:", "Fwd:", "FW:", "PD:", "pd :"])
+
+
+@settings(derandomize=True, database=None, deadline=None)
+@given(st.lists(st.tuples(st.sampled_from(["", " ", "  "]), _PREFIXES), min_size=1, max_size=3))
+def test_wlasnosc_odpowiedz_na_przypomnienie_jest_raportem_tylko_gdy_kazdy_przedrostek_to_re_albo_odp(
+    prefixes: list[tuple[str, str]],
+) -> None:
+    subject = "".join(space + prefix for space, prefix in prefixes) + " " + REMINDER
+    replies = all(prefix.replace(" ", "").casefold() in {"re:", "odp:"} for _, prefix in prefixes)
+
+    assert _subject_day(subject) == (_both(ROW, "tak", "wymiana routera") if replies else ())
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(f"{REPLY}\n\nW dniu pon., 9 lis 2026 o 08:00 {INBOX} napisał(a):\n\n{QUOTED}", id="gmail"),
+        pytest.param(
+            f"{REPLY}\n\nW dniu pon., 9 lis 2026 o 08:00 Skrzynka Raportów Taty Testowego\n"
+            f"<raporty.taty@przyklad.invalid> napisał(a):\n\n{QUOTED}",
+            id="gmail-naglowek-w-dwoch-liniach",
+        ),
+        pytest.param(f"{REPLY}\nW dniu pon., 9 lis 2026 o 08:00 {INBOX} napisał(a):\n{QUOTED}", id="gmail-bez-pustych-linii"),
+        pytest.param(f"{REPLY}\n\nOn Mon, 9 Nov 2026 at 08:00 {INBOX} wrote:\n\n{QUOTED}", id="gmail-po-angielsku"),
+        pytest.param(f"{REPLY}\n{QUOTED}", id="same-linie-cytatu"),
+        pytest.param(f"{REPLY}\n\n________________________________\nOd: {INBOX}\n{OUTLOOK_HEADERS}{REMINDER_TEXT}", id="outlook"),
+        pytest.param(f"{REPLY}\n________________________________\nOd: {INBOX}\n{OUTLOOK_HEADERS}{REMINDER_TEXT}", id="outlook-bez-pustej-linii"),
+        pytest.param(
+            f"{REPLY}\n\nFrom: {INBOX}\nSent: Monday, November 9, 2026 8:00 AM\nTo: {JAN}\nSubject: {REMINDER}\n\n{REMINDER_TEXT}",
+            id="outlook-po-angielsku",
+        ),
+        pytest.param(f"{REPLY}\n\nOd: {INBOX}\n{OUTLOOK_HEADERS}{REMINDER_TEXT}", id="outlook-z-telefonu"),
+    ],
+)
+def test_z_odpowiedzi_na_przypomnienie_licza_sie_tylko_wpisy_nad_cytatem(text: str) -> None:
+    """US 50: treść kończy pierwsza linia cytatu przypomnienia: linia ``>``, nagłówek cytatu Gmaila (także w dwóch
+    liniach i po angielsku) albo Outlooka (z linią ``_`` nad nim albo bez)."""
+
+    outcome = enter_reports(_inputs([_mail(JAN, f"Re: {REMINDER}", text)], _orders()))
+
+    assert outcome.changes == _both(ROWS[0], "tak", "wymiana routera")
+    assert outcome.problems == ()
+
+
+def test_wpis_pod_linia_cytatu_sie_nie_liczy() -> None:
+    """Treść kończy pierwsza linia ``>``: Wpis pod cytatem (odpowiedź pod spodem) nie jest Wpisem tej odpowiedzi."""
+
+    text = f"{REPLY}\n> Poproszę o wysłanie raportu za dzień 08.11.2026.\n40000002 nie brak klienta"
+
+    outcome = enter_reports(_inputs([_mail(JAN, f"Re: {REMINDER}", text)], _orders()))
+
+    assert outcome.changes == _both(ROWS[0], "tak", "wymiana routera")
+
+
+@pytest.mark.parametrize("subject", [f"Re: {REMINDER}", SUBJECT])
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(f"{REPLY}\n12345678 tak montaż ONT\n12345679 nie brak klienta", id="przyklad-bez-cytatu"),
+        pytest.param(f"12345678 tak montaż ONT 12345679 nie brak klienta {REPLY}", id="przyklad-w-jednej-linii"),
+        pytest.param(f"{REPLY}\n\n{REMINDER_TEXT}", id="cale-przypomnienie-bez-cytatu"),
+        pytest.param(f"{REPLY}\n\n#12345678 t\n12345679", id="przyklad-z-krzyzykiem-i-bez-znaku"),
+    ],
+)
+def test_numery_z_przykladu_nie_daja_wpisu_ani_problemu_nawet_gdy_sa_zleceniami(subject: str, text: str) -> None:
+    """US 50: numery z przykładu w przypomnieniu (``12345678``, ``12345679``) nie dają Wpisu ani problemu numeru, z którego
+    powstałoby Zlecenie dopisane z raportu, także bez znaku cytatu i gdy INTERMAX ma zlecenie o tym numerze, a linia
+    przykładu kończy opis Wpisu nad nią."""
+
+    example = _order(OrderRow("Zlecenia", 125), number="12345678")
+    mail = _mail(JAN, subject, text)
+
+    outcome = enter_reports(_inputs([mail], [_order(), example]))
+
+    assert outcome.changes == _both(ROW, "tak", "wymiana routera")
+    assert outcome.problems == ()
+    assert [entry.number for read in outcome.mails if isinstance(read, ReadReport) for entry in read.entries] == ["40000001"]
+
+
+def test_numery_z_przykladu_nie_sa_numerami_nieczytelnego_tematu() -> None:
+    """Mail z nieczytelnym tematem pamięta numery swoich Wpisów dla poprawionego maila, bez numerów z przykładu."""
+
+    mail = _mail(JAN, "Raport 08.11", f"{REPLY}\n12345678 tak montaż ONT")
+
+    outcome = enter_reports(_inputs([mail], [_order()]))
+
+    assert outcome.mails == (
+        ReadUnreadable(mail.id, EVENING, Login("jan.testowy"), SubjectFault.NO_YEAR, frozenset({OrderNumber("40000001")})),
+    )
+
+
+@pytest.mark.parametrize(
+    ("subject", "due"),
+    [
+        pytest.param(f"Re: {REMINDER}", [], id="odpowiedz"),
+        pytest.param(f"Odp: Re: {REMINDER}", [], id="odpowiedz-z-outlooka"),
+        pytest.param(f"Fwd: {REMINDER}", [(Login("jan.testowy"), DAY)], id="przekazanie"),
+        pytest.param("Re: Przypomnienie: raport za dzień 07.11.2026", [(Login("jan.testowy"), DAY)], id="inny-dzien"),
+    ],
+)
+def test_odpowiedz_na_przypomnienie_konczy_przypomnienia_za_ten_dzien(subject: str, due: list[tuple[Login, date]]) -> None:
+    """US 49 i ADR 0030: odpowiedź na przypomnienie za dzień jest czytelnym Raportem wykonawcy za ten dzień, więc
+    przypomnienia za niego ustają; przekazanie dalej i odpowiedź za inny dzień ich nie kończą."""
+
+    mail = _mail(JAN, subject, f"{REPLY}\n\nW dniu pon., 9 lis 2026 o 08:00 {INBOX} napisał(a):\n{QUOTED}")
+    now = datetime(2026, 11, 9, 18, 0, tzinfo=TAPA)
+    inputs = _inputs([mail], [_order()], today=now.date(), rollout=DAY - timedelta(days=1))
+
+    found = reminders_due(
+        ReminderInputs(now, inputs.window, inputs.orders, inputs.mails, (), inputs.addresses, footer=None)
+    )
+
+    assert [(reminder.worker, reminder.day) for reminder in found] == due
 
 
 # --- Rozpoznanie tematu i Wpisów tak, jak piszą Wykonawcy (#1228, US 8–10, 18–26) ---
@@ -1810,7 +1993,7 @@ def test_opis_ma_pojedyncze_spacje_bez_spacji_na_brzegach() -> None:
     ("text", "number"),
     [
         pytest.param("040000001 tak wymiana routera", "040000001", id="zero-wiodace"),
-        pytest.param("Dzień dobry 12345678 tak wymiana routera", "12345678", id="po-powitaniu"),
+        pytest.param("Dzień dobry 40000077 tak wymiana routera", "40000077", id="po-powitaniu"),
     ],
 )
 def test_numer_z_tak_albo_nie_spoza_zlecen_wykonawcy_jest_problemem(text: str, number: str) -> None:

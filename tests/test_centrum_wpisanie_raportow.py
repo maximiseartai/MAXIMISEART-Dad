@@ -1036,7 +1036,7 @@ def test_pomylka_wykonawcy_w_numerze_albo_dniu_daje_problem_z_powodem_a_wpis_tra
         [
             report(ANNA, SUBJECT, "40000001 tak montaż", at=datetime(2026, 11, 9, 17)),
             report(JAN, SUBJECT, "40000010 tak wymiana gniazda"),
-            report(JAN, SUBJECT, "12345678 tak wymiana modemu"),
+            report(JAN, SUBJECT, "30000077 tak wymiana modemu"),
             report(JAN, SUBJECT, "40000001 tak wymiana routera"),
         ],
     )
@@ -1047,7 +1047,7 @@ def test_pomylka_wykonawcy_w_numerze_albo_dniu_daje_problem_z_powodem_a_wpis_tra
         (problem["kind"], problem["worker"], problem["number"], problem["owner"], problem["order_days"])
         for problem in problems
     ] == [
-        ("unknown_number", "jan.testowy", "12345678", None, []),
+        ("unknown_number", "jan.testowy", "30000077", None, []),
         ("other_day", "jan.testowy", "40000010", None, ["2026-11-08"]),
     ]
     assert {problem["day"] for problem in problems} == {"2026-11-09"}

@@ -155,6 +155,33 @@ def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_m
     assert found[0].arrived.utcoffset() == datetime(2026, 11, 8, 18, 5).astimezone().utcoffset()
 
 
+@pytest.mark.parametrize(
+    ("temat", "oddane"),
+    [
+        pytest.param(
+            b"=?utf-8?q?Re=3A_Przypomnienie=3A_raport_za_dzie=C5=84_08=2E11=2E2026?=",
+            ["Re: Przypomnienie: raport za dzień 08.11.2026"],
+            id="re",
+        ),
+        pytest.param(
+            b"=?utf-8?b?T2RwOiBQcnp5cG9tbmllbmllOiByYXBvcnQgemEgZHppZcWEIDA4LjExLjIwMjY=?=",
+            ["Odp: Przypomnienie: raport za dzień 08.11.2026"],
+            id="odp-z-outlooka",
+        ),
+        pytest.param(b"Re: Przypomnienie o fakturze", [], id="bez-slowa-raport"),
+    ],
+)
+def test_skrzynka_oddaje_odpowiedz_wykonawcy_na_przypomnienie_o_raporcie(
+    tmp_path: Path, temat: bytes, oddane: list[str]
+) -> None:
+    """Odpowiedź na Przypomnienie o raporcie ma słowo „raport” w temacie, więc port oddaje ją rdzeniowi (ADR 0030)."""
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(1, surowy(temat=temat))]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [mail.subject for mail in found] == oddane
+
+
 def test_skrzynka_szuka_od_dnia_przed_wskazanym_bo_gmail_liczy_dzien_przyjecia_w_swojej_strefie(tmp_path: Path) -> None:
     # 23:30 UTC 7 listopada to 00:30 8 listopada u taty: Gmail zalicza taki mail do 7 listopada.
     po_polnocy_u_taty = w_skrzynce(1, surowy(), datetime(2026, 11, 7, 23, 30, tzinfo=timezone.utc))

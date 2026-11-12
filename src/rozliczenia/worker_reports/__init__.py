@@ -68,12 +68,11 @@ from ._reminders import (
     Reminder,
     ReminderInputs,
     SentReminder,
-    reminder_day,
     reminder_pora,
-    reminder_subject,
     reminder_text,
     reminders_due,
 )
+from ._subject import reminder_day, reminder_subject
 
 __all__ = [
     "EXAMPLE_NUMBERS",

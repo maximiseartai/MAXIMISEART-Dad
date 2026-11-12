@@ -1,7 +1,8 @@
 """Przypomnienia o raporcie (ADR 0030): które przypomnienia należą się teraz, ich temat i treść.
 
 Pory, dzień, od którego należy się przypomnienie, i treść ze wzorem Raportu wykonawcy są tu jako dane, a czytelność
-tematu Raportu wykonawcy rozstrzyga ``_subject.read``, ten sam co we Wpisaniu raportów.
+tematu Raportu wykonawcy rozstrzyga ``_subject.read``, ten sam co we Wpisaniu raportów. Temat przypomnienia też ma
+``_subject`` (``reminder_subject``, ``reminder_day``), bo odpowiedź na przypomnienie jest Raportem wykonawcy.
 """
 
 from __future__ import annotations
@@ -10,11 +11,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from enum import Enum
-import re
 from typing import Final
 
 from . import _subject
 from ._model import Login, OrderNumber, RegisterOrder, ReportMail, SenderAddress, Window, WorkerAddresses
+from ._subject import reminder_subject
 
 
 class Pora(Enum):
@@ -34,10 +35,8 @@ EXAMPLE: Final = ("12345678 tak montaż ONT", "12345679 nie brak klienta")
 """Linie przykładu w treści przypomnienia."""
 
 EXAMPLE_NUMBERS: Final = frozenset(OrderNumber(line.split()[0]) for line in EXAMPLE)
-"""Numery zleceń z przykładu w treści przypomnienia: w cytacie odpowiedzi nie są Wpisami."""
+"""Numery zleceń z przykładu w treści przypomnienia: w żadnym mailu nie są Wpisami (``_entries.entries``)."""
 
-_SUBJECT: Final = "Przypomnienie: raport za dzień {day}"
-_SUBJECT_SHAPE: Final = re.compile(r"Przypomnienie: raport za dzień (\d{2})\.(\d{2})\.(\d{4})")
 
 
 @dataclass(frozen=True)
@@ -79,25 +78,6 @@ def reminder_pora(now: datetime) -> Pora | None:
     """Pora chwili ``now``; ``None`` w nocy, od 22:00 do 8:00."""
 
     return next((pora for pora, start, end in _PORY if start <= now.time() < end), None)
-
-
-def reminder_subject(day: date) -> str:
-    """Temat Przypomnienia o raporcie za dzień ``day``: ``Przypomnienie: raport za dzień dd.mm.rrrr``."""
-
-    return _SUBJECT.format(day=f"{day:%d.%m.%Y}")
-
-
-def reminder_day(subject: str) -> date | None:
-    """Dzień z tematu, który napisał ``reminder_subject``; ``None`` dla każdej innej postaci (także innej wielkości
-    liter, daty bez zer i tematu z dopiskiem), bo temat pisze tylko Centrum."""
-
-    found = _SUBJECT_SHAPE.fullmatch(subject.strip())
-    if found is None:
-        return None
-    try:
-        return date(int(found[3]), int(found[2]), int(found[1]))
-    except ValueError:
-        return None
 
 
 def reminder_text(day: date, footer: str | None) -> str:
