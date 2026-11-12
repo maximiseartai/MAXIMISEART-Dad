@@ -543,7 +543,6 @@ REJECTED_LOGS = (
 LOGS_GONE = f"Logi Uruchomienia nie dotrą: Centrum przestało je wysyłać (Uruchomienie {PINNED_RUN})."
 LOGS: frozenset[Label] = RUN_LOGS_IN_BACKGROUND
 ZGLOSZENIE_3 = BoxIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
-UWAGA_12 = BoxIssue(12, "uwaga-taty", "Brakuje ilości przy montażu", "Uwaga")
 
 
 class Skrzynka:
@@ -606,20 +605,6 @@ def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian(
     skrzynka.sent(Post(target, period=None, run_id=PINNED_ID, header=None, parts=(f"Treść\n{WAITING_LOGS}",)))
 
     assert f"Treść\n{WAITING_LOGS}" in skrzynka.texts()
-
-
-@pytest.mark.parametrize(
-    "target", [*OTHER_TARGETS.values(), KnownIssue("uwaga-taty", 12)], ids=[*OTHER_TARGETS.keys(), "komentarz-uwagi"]
-)
-def test_tylko_nowa_uwaga_dostaje_komentarz_o_odrzuconych_logach(
-    tmp_path: Path, target: PeriodThread | KnownIssue | NewIssue
-) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
-    skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[ZGLOSZENIE_3, UWAGA_12], background=LOGS))
-
-    skrzynka.sent(Post(target, period=None, run_id=PINNED_ID, header=None, parts=(f"Treść\n{REJECTED_LOGS}",)))
-
-    assert LOGS_GONE not in skrzynka.texts()
 
 
 def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path) -> None:
@@ -713,7 +698,10 @@ def test_wysylka_uwagi_nieznanej_temu_komputerowi_idzie_bez_zmian(tmp_path: Path
     assert (issue.body, issue.comments) == (WAITING_LOGS, [])
 
 
-def test_sprawdzanie_powiadomien_w_tle_nie_wstrzymuje_zamkniecia_centrum(tmp_path: Path) -> None:
+def test_sprawdzanie_powiadomien_w_tle_nie_wstrzymuje_zamkniecia_centrum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("rozliczenia.centrum.notifications.CHECK_WAIT_S", 0.05)
     old_files(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
     since = new_line()

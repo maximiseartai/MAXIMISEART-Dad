@@ -412,6 +412,16 @@ CONSTANT_TIME_BOUNDS = {
     "::time.monotonic() - started < 1.5": (
         "serwer nie odpowiada nigdy, więc bez limitu 0,3 s diagnoza czekałaby bez końca; granica to 5× ten limit"
     ),
+    "test_centrum_launcher.py::test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health"
+    "::took < wait_s * 1.8": (
+        "obcy program nie odpowiada nigdy, a granica poniżej dwóch skróconych limitów czekania na health (0,5 s) łapie "
+        "Centrum, które czeka dwa razy dłużej albo bez końca"
+    ),
+    "test_centrum_powiadomienia.py::test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_tak_zostaje"
+    "::took < wait_s * 1.8": (
+        "skrzynka trzyma odpowiedź do końca testu, a granica poniżej dwóch skróconych limitów CHECK_WAIT_S (1 s) łapie "
+        "Powiadomienia, które czekają dwa razy dłużej"
+    ),
     "test_potomne.py::test_potomek_spoza_drzewa_z_otwartym_wyjsciem_nie_wstrzymuje_wyniku::time.monotonic() - started < 30": (
         "granica 30 s oddziela koniec od zawieszenia: potomek z otwartym wyjściem śpi 600 s"
     ),
