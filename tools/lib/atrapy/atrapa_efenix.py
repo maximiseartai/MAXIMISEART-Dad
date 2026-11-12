@@ -151,6 +151,9 @@ EFENIX_EMMETT_RELOAD_MS = 1000
 """Przeładowanie strony, które skrypt efenix robi po odpowiedzi „Załaduj do zlecenia”: w efenix po 1 s."""
 # W Atrapie domyślnie krócej, żeby testy szły szybko.
 _EMMETT_RELOAD_MS = 200
+POLL_S: Final = 0.02
+"""Co tyle wątek serwera Atrapy (i serwera testu przed nią) sprawdza prośbę o zatrzymanie: tyle najwyżej czeka koniec
+bloku ``with`` na ``shutdown``. Domyślne ``serve_forever`` sprawdza co 0,5 s, a test otwiera Atrapę setki razy."""
 _APPEAR_MS = 300
 """Animacja pokazania każdego okna dialogowego, jak w bootstrapie 4, który ładuje strona zlecenia efenix: ``.modal.fade
 .modal-dialog`` 300 ms, a samo ``.modal.fade`` połowę tego (150 ms). Bootstrap kończy pokazanie na ``.modal-dialog``."""
@@ -620,7 +623,7 @@ def atrapa_efenix(
             self.end_headers()
 
     server = _Server(Handler)
-    thread = threading.Thread(target=server.serve_forever, name="atrapa-efenix")
+    thread = threading.Thread(target=server.serve_forever, args=(POLL_S,), name="atrapa-efenix")
     thread.start()
     atrapa.url = f"http://127.0.0.1:{server.server_address[1]}/{LIST_PAGE}"
     try:
