@@ -12,6 +12,7 @@ tego katalogu, a usunięcie albo literówka w linii zakazu wywraca jego próbkę
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -158,6 +159,7 @@ def test_kazdy_zakaz_tylko_katalogu_ma_probke() -> None:
     assert missing == [], "dopisz do SAMPLES w tests/test_zakazy_ruff.py próbkę zakazu:\n" + "\n".join(missing)
 
 
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 @pytest.mark.parametrize("code", list(SAMPLES))
 def test_ruff_odrzuca_probke_zakazu_w_jego_katalogu(code: str) -> None:
     config, subdirectory, banned = SAMPLES[code]
