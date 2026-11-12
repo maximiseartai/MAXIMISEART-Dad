@@ -2060,6 +2060,10 @@ export type ReportsView = {
      * Unknown Senders
      */
     unknown_senders: Array<UnknownReportSender>;
+    /**
+     * Reminders Without Footer
+     */
+    reminders_without_footer: boolean;
 };
 
 /**
@@ -2120,6 +2124,10 @@ export type ReportsWorkerDay = {
      * Orders Detail
      */
     orders_detail: Array<ReportsOrder> | null;
+    /**
+     * Reminders
+     */
+    reminders: Array<string>;
 };
 
 /**

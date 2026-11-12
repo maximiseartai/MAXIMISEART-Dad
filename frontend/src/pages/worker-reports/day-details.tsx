@@ -1,8 +1,9 @@
-import { ArrowLeftRightIcon } from "lucide-react"
+import { ArrowLeftRightIcon, BellIcon } from "lucide-react"
 import { cn } from "cn"
 
 import type { KeptCell, ReportsNote, ReportsOrder, ReportsProblem } from "@/api/generated"
 import { Button } from "@/components/ui/button"
+import { dayMonth, hourMinute, plural } from "@/lib/format"
 import type { DayState, Status } from "@/pages/worker-reports/day-state"
 import { shortDay } from "@/pages/worker-reports/days"
 import { look, StatusBadge } from "@/pages/worker-reports/status"
@@ -33,7 +34,8 @@ export function WorkerAvatar({ worker }: { worker: string }) {
 /**
  * Popover kafelka: Wykonawca, dzień i stan, liczby dnia, pasek wpisanych w kolorze stanu i zlecenia dnia z INTERMAX
  * (`orders_detail`) z problemami, „Zostaw moją” i spokojnymi informacjami o Przeniesieniach zleceń (`notes`). Wynik
- * kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy.
+ * kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Pod listą
+ * pory Przypomnień o raporcie za ten dzień (`reminders`).
  */
 export function DayDetails({
   worker,
@@ -67,7 +69,25 @@ export function DayDetails({
       ) : (
         <Orders orders={day.orders_detail} state={state} keeping={keeping} onKeep={onKeep} />
       )}
+      <Reminders moments={day.reminders} />
     </div>
+  )
+}
+
+/** Pory Przypomnień o raporcie za ten dzień do tego Wykonawcy, w czasie komputera taty: „10.11 08:00, 10.11 18:00”. */
+function Reminders({ moments }: { moments: ReadonlyArray<string> }) {
+  if (moments.length === 0) {
+    return null
+  }
+
+  return (
+    <p className="flex items-start gap-1.5 border-t px-3.5 py-2.5 text-xs text-muted-foreground tabular-nums">
+      <BellIcon className="mt-px size-3 shrink-0" aria-hidden />
+      <span>
+        {plural(moments.length, { one: "Przypomnienie", few: "Przypomnienia", many: "Przypomnień" })}{" "}
+        {moments.map((moment) => `${dayMonth(moment)} ${hourMinute(moment)}`).join(", ")}
+      </span>
+    </p>
   )
 }
 
