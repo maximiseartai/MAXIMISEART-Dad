@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hook ``PreToolUse`` Claude Code dla Basha: odrzuca blokujące czekanie na CI i pętle ``pgrep -f``.
+"""Hook ``PreToolUse`` Claude Code dla Basha: odrzuca blokujące czekanie na CI, pętle ``pgrep -f`` i ręczne Wydanie.
 
 Agent na pierwszym planie, który pętli ``until/while/for … sleep`` na ``gh pr checks``, stoi do limitu 600 s
 Basha, choć CI i tak powiadamia: wątek główny przez ``watch_pull_request`` T3, a polecenie w tle przez
@@ -14,7 +14,7 @@ Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` al
 (``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``), bo bez nich to partia zapytań z ``sleep`` jako limitem API,
 a pętla puszczona ``&`` nie czeka: sama, w liście z ``|``, ``&&`` albo ``||``, w grupie ``( … )`` albo ``{ …; }``.
 ``&`` w grupie za pętlą (``done | (cat & wait)``) puszcza w tło tylko tę grupę.
-Wszystko inne, także te polecenia z ``run_in_background``, przechodzi bez słowa (kod 0).
+Wszystko inne, także te polecenia z ``run_in_background``, przechodzi bez słowa (kod 0), poza ręcznym Wydaniem (niżej).
 Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zatrzymać pracy.
 
 Ciała heredoców (skrypt Pythona, treść commitu) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
@@ -25,8 +25,39 @@ hook pomija, bo to nie są polecenia powłoki; zostawia z nich ``$(…)`` i cia�
 Granica: inne harnessy niż Claude Code (Codex, opencode), pętlę w skrypcie uruchomionym z pliku, w Pythonie
 (``time.sleep``) albo z adresem ``gh api`` w cudzysłowie, czekanie na plik wyjścia zadania w tle i pętle, których
 wzorca hook nie zna, łapie tylko przegląd.
+
+Tag Wydania ``v*`` i GitHub Release tworzy tylko narzędzie Wydań ``tools/wydanie.py`` ze skilla ``wydanie``, bo tag
+na ``main`` trafia do taty (ADR 0014), a brama ``tools/hooks/pre-push`` widzi tylko ``git push`` z hookami. Dlatego
+hook odrzuca, także w tle, polecenie proste (do ``;``, ``&``, ``|``, nowej linii, nawiasu albo `` ` ``), w którym od
+słowa ``git``, ``gh`` albo ``gh-axi`` (także ze ścieżką, za ``env``, ``timeout`` czy ``echo``) do następnego takiego
+słowa, bez przekierowań i ich celów, stoi:
+
+- ``gh release`` z innym podpoleceniem niż ``list``, ``view``, ``download``, ``verify`` i ``verify-asset``;
+- ``gh api`` z zapisem (``-X``/``--method`` innym niż ``GET`` i ``HEAD``, a bez metody z ``-f``, ``-F``,
+  ``--field``, ``--raw-field`` albo ``--input``) na adres z segmentem ``releases`` albo na ``git/refs``, gdy adres
+  albo pole wskazuje ``refs/tags/`` z nazwą od ``v`` albo nieznaną (``$``, ``*``) albo gdy treść idzie z pliku
+  (``--input``, pole ``=@plik``);
+- ``git push`` (z dowolnymi opcjami ``git`` przed nim, także ``--no-verify``) z ``--tags``, ``--follow-tags`` albo
+  ``--mirror`` albo z argumentem, którego strona refspecu (bez ``+``, po obu stronach ``:``) to ``v`` z cyfrą,
+  ``refs/tags/`` z nazwą od ``v`` albo nieznaną, albo nazwa od ``v`` albo nieznana po słowie ``tag``;
+- ``git tag`` bez trybu listy, usunięcia i weryfikacji (``-l``, ``-d``, ``-v``, ``-n``, ``--list``, ``--delete``,
+  ``--verify``, ``--contains``, ``--no-contains``, ``--merged``, ``--no-merged``, ``--points-at``) z argumentem od
+  ``v``, od ``refs/tags/v`` albo nieznanym.
+
+Przechodzi wszystko, gdy sesja Claude Code ma w środowisku ``MAXIMISEART_WYDANIE=1`` (nazwa: ``RELEASE_OVERRIDE``
+w ``tools/lib/repo.py``), a zmienna wpisana w samo polecenie niczego nie zmienia. ``tools/wydanie.py`` zakłada tag
+i Release z Pythona, więc hook go nie widzi i nie zatrzymuje.
+Granica: stronę GitHuba, skrypt z pliku albo w Pythonie, który sam woła ``git`` lub ``gh``, skrypt podany powłoce
+heredokiem albo przez ``eval``, polecenie w napisie ze spacją, nazwę programu ze zmiennej albo aliasu, ``gh api
+graphql`` (``createRef``), ``gh api`` z adresem ze zmiennej i ``push.followTags`` z konfiguracji gita łapie tylko
+przegląd. Hook nie zna repozytorium, w którym polecenie biegnie, więc odmowę dostaje też tag ``v*`` w repozytorium
+próbnym (``git init`` w katalogu tymczasowym) i Release innego repozytorium; słowo ``git`` albo ``gh`` jako argument
+(``echo git tag v1``) też.
+
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
-(``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
+(``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową, poza
+``tools/lib/repo.py`` dopiero przy odmowie Wydania. Hook, który się wywróci albo przekroczy ``timeout``, nie
+zatrzymuje polecenia.
 """
 
 from __future__ import annotations
@@ -35,9 +66,13 @@ from bisect import bisect_left
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import json
+import os
+from pathlib import Path
 import re
 import sys
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 _GH = r"\bgh(?:-axi)?\s+"
 ASKS_CI = re.compile(_GH + r"(?:pr\s+(?:checks|view)|run\s+(?:view|list|watch))")
@@ -120,6 +155,42 @@ PGREP_LOOP = Refusal(
     "Na własny proces uruchom go Bashem z run_in_background: true i przed końcem tury czekaj na jego koniec "
     "(w T3 t3_background_wait z jego ID), "
     "a na proces ze znanym PID sprawdzaj kill -0 $PID, nie pgrep."
+)
+RELEASE = Refusal(
+    "Odmowa: tag Wydania v* i GitHub Release tworzy tylko narzędzie Wydań, bo tag na main trafia do taty (ADR 0014). "
+    "Wydanie robi skill wydanie (.agents/skills/wydanie/SKILL.md): .venv/bin/python tools/wydanie.py plan, "
+    "a po zgodzie Maksa tools/wydanie.py wydaj. Nie zakładaj ani nie wypychaj tagu v* (git tag, git push, także "
+    "z --no-verify), nie twórz ani nie zmieniaj Release i refów tagów (gh release, gh api) i nie rób tego stroną GitHuba."
+)
+
+# Wydanie (ADR 0014): polecenie proste dzieli się na odcinki od każdego słowa programu do następnego, więc każde słowo
+# czyta się raz, także przy tysiącach ``gh`` w jednym poleceniu.
+RELEASE_COMMAND_END = re.compile(r"[;&|\n()`]")
+PROGRAMS = frozenset({"git", "gh", "gh-axi"})
+# Przekierowanie (``>/dev/null``, ``2>`` z celem w następnym słowie, ``<<<"$s"``) nie jest argumentem programu.
+REDIRECTION = re.compile(r"\d*(?:<<<|<<-?|>>|>\||<>|[<>])&?")
+GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix"})
+GH_VALUE_OPTIONS = frozenset({"-R", "--repo"})
+GH_RELEASE_READS = frozenset({"list", "view", "download", "verify", "verify-asset"})
+GH_API_VALUE_OPTIONS = frozenset(
+    {"-X", "--method", "-f", "--raw-field", "-F", "--field", "--input", "-H", "--header", "-q", "--jq", "-t"}
+    | {"--template", "--cache", "--hostname", "-p", "--preview"}
+)
+GH_API_FIELDS = frozenset({"-f", "--raw-field", "-F", "--field"})
+GH_API_READS = frozenset({"GET", "HEAD"})
+RELEASES_ADDRESS = re.compile(r"(?:^|/)releases(?:[/?]|$)")
+REFS_ADDRESS = re.compile(r"(?:^|/)git/refs(?:[/?]|$)")
+# Nazwa tagu od ``v`` albo nieznana: ze zmiennej, podstawienia albo wzorca (``$T``, `` `…` ``, ``*``), także pusta.
+RELEASE_TAG = re.compile(r"v|[^A-Za-z0-9_.-]|$")
+TAG_REF = re.compile(r"refs/tags/(?:v|[^A-Za-z0-9_.-]|$)")
+PUSHED_RELEASE = re.compile(r"v\d")
+PUSH_ALL_TAGS = frozenset({"--tags", "--follow-tags", "--mirror"})
+PUSH_VALUE_OPTIONS = frozenset({"-o", "--push-option", "--receive-pack", "--exec", "--repo"})
+TAG_VALUE_OPTIONS = frozenset({"-m", "--message", "-F", "--file", "-u", "--local-user", "--cleanup", "--trailer"})
+TAG_SHORT_VALUES = frozenset("mFu")
+TAG_NOT_CREATING = frozenset("ldvn")
+TAG_NOT_CREATING_LONG = frozenset(
+    {"--list", "--delete", "--verify", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"}
 )
 
 
@@ -343,12 +414,162 @@ def _first_from(positions: list[int], start: int, default: int) -> int:
     return positions[index] if index < len(positions) else default
 
 
-def judge(command: str, in_background: bool) -> Optional[Refusal]:
-    if in_background:
-        return None
+def _program_runs(shell: str) -> Iterator[tuple[str, list[str]]]:
+    """Każde słowo ``git``, ``gh`` i ``gh-axi`` z jego słowami do końca polecenia prostego albo następnego programu.
+
+    Słowa są bez cudzysłowów i ukośników, bo ``"v1"`` i ``v\\1`` to dla powłoki ``v1``.
+    """
+
+    for part in RELEASE_COMMAND_END.split(shell):
+        program: Optional[str] = None
+        arguments: list[str] = []
+        target = False
+        for raw in part.split():
+            redirection = REDIRECTION.match(raw)
+            if target or redirection:
+                target = redirection is not None and redirection.end() == len(raw)
+                continue
+            word = raw.replace("'", "").replace('"', "").replace("\\", "")
+            if not word:
+                continue
+            name = word.rsplit("/", 1)[-1]
+            if name in PROGRAMS:
+                if program is not None:
+                    yield program, arguments
+                program, arguments = name, []
+            elif program is not None:
+                arguments.append(word)
+        if program is not None:
+            yield program, arguments
+
+
+def _subcommand(arguments: list[str], takes_value: frozenset[str]) -> tuple[Optional[str], list[str]]:
+    index = 0
+    while index < len(arguments):
+        word = arguments[index]
+        if word in takes_value:
+            index += 2
+        elif word.startswith("-"):
+            index += 1
+        else:
+            return word, arguments[index + 1 :]
+    return None, []
+
+
+def _parsed(arguments: list[str], takes_value: frozenset[str]) -> tuple[list[tuple[str, str]], list[str]]:
+    """Opcje (nazwa, wartość; flaga z pustą) i argumenty; wartość także sklejona: ``--method=POST``, ``-XPOST``."""
+
+    options: list[tuple[str, str]] = []
+    positionals: list[str] = []
+    words = iter(arguments)
+    for word in words:
+        if word == "--":
+            positionals.extend(words)
+        elif word.startswith("--") and "=" in word:
+            name, value = word.split("=", 1)
+            options.append((name, value))
+        elif word in takes_value:
+            options.append((word, next(words, "")))
+        elif not word.startswith("--") and word[:2] in takes_value:
+            options.append((word[:2], word[2:]))
+        elif word.startswith("-") and word != "-":
+            options.append((word, ""))
+        else:
+            positionals.append(word)
+    return options, positionals
+
+
+def _release_tag(name: str) -> bool:
+    return RELEASE_TAG.match(name.removeprefix("refs/tags/")) is not None
+
+
+def _pushes_release(arguments: list[str]) -> bool:
+    options, positionals = _parsed(arguments, PUSH_VALUE_OPTIONS)
+    if any(name in PUSH_ALL_TAGS for name, _ in options):
+        return True
+    after_tag = False
+    for word in positionals:
+        if after_tag and _release_tag(word):
+            return True
+        after_tag = word == "tag"
+        for side in word.lstrip("+").split(":", 1):
+            full = side.startswith("refs/tags/")
+            if _release_tag(side) if full else PUSHED_RELEASE.match(side) is not None:
+                return True
+    return False
+
+
+def _short_flags(name: str) -> set[str]:
+    """Litery skupionych flag krótkich (``-fa``) do pierwszej, która bierze wartość (``-mdone`` to wiadomość)."""
+
+    letters: set[str] = set()
+    if name.startswith("-") and not name.startswith("--"):
+        for letter in name[1:]:
+            if letter in TAG_SHORT_VALUES:
+                break
+            letters.add(letter)
+    return letters
+
+
+def _tags_release(arguments: list[str]) -> bool:
+    options, positionals = _parsed(arguments, TAG_VALUE_OPTIONS)
+    if any(name in TAG_NOT_CREATING_LONG or _short_flags(name) & TAG_NOT_CREATING for name, _ in options):
+        return False
+    return any(_release_tag(word) for word in positionals)
+
+
+def _writes_release_api(arguments: list[str]) -> bool:
+    options, positionals = _parsed(arguments, GH_API_VALUE_OPTIONS)
+    if not positionals:
+        return False
+    address = positionals[0]
+    methods = [value.upper() for name, value in options if name in ("-X", "--method")]
+    fields = [value for name, value in options if name in GH_API_FIELDS]
+    from_file = any(name == "--input" for name, _ in options) or any(
+        value.partition("=")[2].startswith("@") for value in fields
+    )
+    writes = methods[-1] not in GH_API_READS if methods else bool(fields) or from_file
+    if not writes:
+        return False
+    if RELEASES_ADDRESS.search(address):
+        return True
+    return REFS_ADDRESS.search(address) is not None and (
+        from_file or any(TAG_REF.search(text) for text in (address, *fields))
+    )
+
+
+GIT_RELEASES = {"push": _pushes_release, "tag": _tags_release}
+
+
+def _releases(shell: str) -> bool:
+    """Czy polecenie zakłada tag Wydania albo GitHub Release poza narzędziem Wydań (formy z docstringu modułu)."""
+
+    for program, arguments in _program_runs(shell):
+        if program == "git":
+            command, rest = _subcommand(arguments, GIT_VALUE_OPTIONS)
+            if command in GIT_RELEASES and GIT_RELEASES[command](rest):
+                return True
+            continue
+        group, rest = _subcommand(arguments, GH_VALUE_OPTIONS)
+        if group == "release":
+            command, _ = _subcommand(rest, GH_VALUE_OPTIONS)
+            if command is not None and command not in GH_RELEASE_READS:
+                return True
+        elif group == "api" and _writes_release_api(rest):
+            return True
+    return False
+
+
+def judge(command: str, in_background: bool, release_tool: bool = False) -> Optional[Refusal]:
+    """Odmowa dla polecenia Basha albo ``None``; ``release_tool``: sesja ma ``MAXIMISEART_WYDANIE=1``."""
+
     try:
         shell, _ = _code(_without_heredocs(command))
     except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
+        return None
+    if not release_tool and _releases(shell):
+        return RELEASE
+    if in_background:
         return None
     if RUN_WATCH.search(shell) or _in_one_command(shell, CHECKS, WATCH_OPTION).starts:
         return WATCHING
@@ -367,6 +588,16 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
     return None
 
 
+def _release_tool() -> bool:
+    """Czy sesja ma zmienną narzędzia Wydań; czyta jej nazwę z ``tools/lib/repo.py`` dopiero przy odmowie Wydania."""
+
+    try:
+        import repo
+    except ImportError:  # checkout bez repo.py: bez nazwy zmiennej odmowa zostaje
+        return False
+    return os.environ.get(repo.RELEASE_OVERRIDE) == "1"
+
+
 def main() -> int:
     try:
         tool_input = json.load(sys.stdin)["tool_input"]
@@ -377,6 +608,8 @@ def main() -> int:
     if not isinstance(command, str):
         return 0
     refusal = judge(command, in_background)
+    if refusal is RELEASE and _release_tool():
+        refusal = judge(command, in_background, release_tool=True)
     if refusal is None:
         return 0
     print(refusal.reason, file=sys.stderr)

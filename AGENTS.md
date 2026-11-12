@@ -51,7 +51,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - Przegląd PR zlecaj zaraz po pushu, równolegle z CI.
 - Skille `verify-*` przeszły, gdy ich polecenia z linii `LICZY CI` przechodzą w zielonym CI, a resztę ich workflow agent wykonał i skończył bez FAIL.
 - Merge PR: tylko `.venv/bin/python tools/scal_pr.py N` (Windows: `py -3 tools/scal_pr.py N`), nigdy gołe `gh pr merge`; warunki scalenia i postać werdyktów podaje jego `--help`.
-- Tag Wydania `v*` i GitHub Release tworzy tylko narzędzie Wydań (ADR 0014); brama `tools/hooks/pre-push` łapie tylko `git push`, więc agent nie tworzy ich też przez `--no-verify`, `gh release create`, `gh api` ani stronę GitHuba.
+- Tagu Wydania `v*` ani GitHub Release nie twórz stroną GitHuba ani skryptem: robi to tylko narzędzie Wydań (ADR 0014), a drogi przez `git` i `gh` w Bashu odrzuca hook `tools/hooks/czekanie.py`.
 - CI i gałąź: przeczytaj [`docs/agents/pr-i-ci.md`](docs/agents/pr-i-ci.md), zanim uruchomisz lokalnie zadanie CI, i gdy zadanie CI padło, status `scalenie z main` nie jest zielony albo `main` jest czerwony.
 
 ## Reguły i co ich pilnuje
