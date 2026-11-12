@@ -238,9 +238,12 @@ def _order(number: str, state: str) -> Json:
     }
 
 
-def _window_day(day: str, number: int, orders: int, *, without: int = 0, problem: bool = False, mails: int = 1) -> Json:
-    """A synthetic day of a Wykonawca: ``orders`` orders from ``number``, the last ``without`` without a report, and with
-    ``problem`` the first one a problem without `Zostaw moją`."""
+def _window_day(
+    day: str, number: int, orders: int, *, without: int = 0, problem: bool = False, mails: int = 1, taken: bool = False
+) -> Json:
+    """A synthetic day of a Wykonawca: ``orders`` orders from ``number``, the last ``without`` without a report, with
+    ``problem`` the first one a problem without `Zostaw moją`, and with ``taken`` the last one taken over from
+    `wykonawca.a` (`TAKEN_NOTE`, a Przeniesienie zlecenia, #1347)."""
 
     numbers = [str(number + offset) for offset in range(orders)]
     states = ["entered"] * (orders - without) + ["without_report"] * without
@@ -261,8 +264,13 @@ def _window_day(day: str, number: int, orders: int, *, without: int = 0, problem
         ]
         if problem
         else [],
+        "notes": [{"number": numbers[-1], "text": TAKEN_NOTE}] if taken else [],
         "orders_detail": [_order(found, state) for found, state in zip(numbers, states, strict=True)],
     }
+
+
+TAKEN_NOTE = "przejęte od wykonawca.a"
+"""The calm note of a Przeniesienie zlecenia in the popover of `wykonawca.b` 03.11 (#1347)."""
 
 
 def _window_view(clicked_at: str) -> Json:
@@ -274,7 +282,7 @@ def _window_view(clicked_at: str) -> Json:
     workdays = [day for day in days if date.fromisoformat(day).weekday() < 6 and day not in HOLIDAYS]
     special = {
         ("wykonawca.a", "2026-11-10"): {"orders": 3, "without": 3, "mails": 0},
-        ("wykonawca.b", "2026-11-03"): {"orders": 3, "problem": True},
+        ("wykonawca.b", "2026-11-03"): {"orders": 3, "problem": True, "taken": True},
         ("wykonawca.b", "2026-11-05"): {"orders": 2, "without": 1},
         **{("wykonawca.c", day): {"orders": 0} for day in MAIL_ONLY},
     }
@@ -380,6 +388,10 @@ def _range_map(run: Run, page: Page) -> None:
             popover = _popover(page, "wykonawca.b", "2026-11-03")
             expect(popover).to_contain_text("różne Wpisy")
             expect(popover.get_by_role("button", name="Zostaw moją")).to_have_count(0)
+            taken = popover.get_by_role("listitem").filter(has_text=TAKEN_NOTE)
+            expect(taken).to_have_count(1)
+            expect(taken).to_contain_text("Wpisane")
+            expect(taken).not_to_contain_text("Problem")
             run.capture(page, "288-raporty-mapa-jasna", full_page=False)
             _close(page, popover)
             switch_theme(page, "ciemny")
@@ -388,7 +400,11 @@ def _range_map(run: Run, page: Page) -> None:
             _close(page, popover)
         finally:
             switch_theme(page, "ciemny" if was_dark else "jasny")
-        run.check(True, "the popover of a tile shows the problem's sentence, in the light and the dark theme")
+        run.check(
+            True,
+            "the popover of a tile shows the problem's sentence and, under the taken order, the calm note "
+            "„przejęte od wykonawca.a” without a Problem badge, in the light and the dark theme",
+        )
 
         page.get_by_role("button", name="Wcześniejsze dni", exact=True).click()
         expect(_range(page)).to_contain_text("26 paź – 4 lis")

@@ -401,6 +401,33 @@ def test_przeniesienie_jedynego_zlecenia_segmentu_zabiera_pusty_wiersz_a_wiersze
     assert ordered.order_count == len(intermax.raw)
 
 
+def test_przeniesione_zlecenie_staje_pod_ostatnim_zleceniem_segmentu_nadawcy_a_nie_na_koncu_dnia(tmp_path: Path) -> None:
+    """Glosariusz „Przeniesienie zlecenia”: zlecenie Anny przejęte przez Jana staje pod ostatnim zleceniem Jana, przed
+    pustym wierszem i segmentem Zofii, którzy są dalej w kolejności alfabetycznej."""
+
+    intermax = Intermax(
+        ordered=(
+            _on(9, "anna.kowalska", 40000001),
+            _on(10, "anna.kowalska", 40000002),
+            _on(11, "jan.testowy", 40000003),
+            _on(12, "zofia.nowa", 40000004),
+        ),
+        raw=(),
+    )
+    path = _register(tmp_path, intermax)
+
+    _write(path, [], moves=[_move(2, "jan.testowy")])
+
+    assert _sheet_rows(path, 8) == [
+        (40000002, "anna.kowalska", _link(40000002)),
+        "pusty",
+        (40000003, "jan.testowy", _link(40000003)),
+        (40000001, "jan.testowy", _link(40000001)),
+        "pusty",
+        (40000004, "zofia.nowa", _link(40000004)),
+        "pusty",
+    ]
+
 def test_dwa_przeniesienia_jednego_klikniecia_tworza_segment_i_zabieraja_segment_ktory_zostal_pusty(tmp_path: Path) -> None:
     """Oba zlecenia Jana przechodzą do Anny, która nie ma segmentu: pierwsze zakłada jej segment przed segmentem Jana,
     drugie staje pod nim, a pusty segment Jana znika z pustym wierszem nad sobą."""
