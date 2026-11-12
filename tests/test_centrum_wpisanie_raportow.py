@@ -2143,7 +2143,7 @@ def test_praca_przypomnien_bez_dnia_wdrozenia_w_nocy_i_przed_8_dnia_nastepnego_n
 
     centrum.rhythm.tick()
     assert mailbox.days == [], "bez dnia wdrożenia skrzynka nie jest czytana"
-    assert _reminder_result(centrum)["failure"] == "bez-wdrozenia"
+    assert not (centrum.tool.config / REMINDERS_RESULT).exists(), "bez dnia wdrożenia praca nie pisze do config"
     (centrum.tool.config / REMINDERS_ROLLOUT).write_text("2026-11-09\n", encoding="utf-8")
     for moment in (datetime(2026, 11, 9, 21, 1), datetime(2026, 11, 9, 21, 2), datetime(2026, 11, 9, 23, 0), datetime(2026, 11, 10, 7, 59)):
         centrum.moment.append(moment)
