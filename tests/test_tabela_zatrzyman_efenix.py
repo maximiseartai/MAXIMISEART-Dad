@@ -22,15 +22,13 @@ gdzie okno zbiera który dowód. Tabela to dane, a test porównuje ją z kodem: 
 jeden wiersz, a każdy wiersz ma swoje miejsce. Nowe miejsce bez wiersza albo przyczyny nie przejdzie, więc recenzent
 czyta najpierw tę tabelę. Że przyczyna dochodzi do Logów Uruchomienia, pokazują przegląd odcięć w
 ``tests/test_wycena_efenix.py`` i testy hipotez B–E w ``tests/test_centrum_logi_uruchomienia.py``. Granica: wywołanie
-klasyfikatora gdzie indziej niż w tych czterech modułach albo pod inną nazwą niż ``of`` na nazwie klasy wyjątku okna
-(``WindowStop.of``, ``LoggedOut.of``) tabela pomija.
+klasyfikatora gdzie indziej niż w tych czterech modułach albo pod inną nazwą niż ``WindowStop.of`` tabela pomija.
 """
 
 from __future__ import annotations
 
 import ast
 from collections import Counter
-import importlib
 from pathlib import Path
 from typing import NamedTuple
 
@@ -194,29 +192,15 @@ TABLE = [
 ]
 
 
-# ``of`` dziedziczy każda podklasa, więc ``LoggedOut.of(…)`` też klasyfikuje, choć może dać inny wyjątek okna (#1365 r2).
-# Podklasy zbiera rekurencyjnie z modułów tabeli: ``@final`` odrzuca podklasę podklasy w mypy, ale nie z
-# ``# type: ignore[misc]`` (#1378 r2); podklasy spoza tych modułów i ``efenix_window`` zostają przeglądowi.
-def _window_stops(cls: type) -> set[str]:
-    return {cls.__name__}.union(*(_window_stops(sub) for sub in cls.__subclasses__()))
-
-
-for _module in MODULES:
-    importlib.import_module(f"rozliczenia.{_module}")
-_WINDOW_STOPS = _window_stops(WindowStop)
-
-
 def _classified(path: Path) -> list[tuple[str, str]]:
-    """Funkcja i tekst każdego wywołania klasyfikatora ``WindowStop.of`` w pliku ``path``, także przez podklasę
-    (``LoggedOut.of``)."""
+    """Funkcja i tekst każdego wywołania klasyfikatora ``WindowStop.of`` w pliku ``path``."""
 
     found: list[tuple[str, str]] = []
 
     def walk(node: ast.AST, function: str) -> None:
         for child in ast.iter_child_nodes(node):
             inside = child.name if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else function
-            func = child.func if isinstance(child, ast.Call) else None
-            if isinstance(func, ast.Attribute) and func.attr == "of" and ast.unparse(func.value) in _WINDOW_STOPS:
+            if isinstance(child, ast.Call) and ast.unparse(child.func) == "WindowStop.of":
                 found.append((inside, ast.unparse(child)))
             walk(child, inside)
 

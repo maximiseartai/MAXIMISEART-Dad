@@ -307,7 +307,6 @@ class WindowStop(Exception):
                 return LoggedOut(PagePart.LIST, LoginSign.NO_LOGIN, _CLASSIFIED)
 
 
-@final
 class LoggedOut(WindowStop):
     """efenix wylogował okno: pokazał stronę logowania albo ostrzeżenie o wygasłej sesji zamiast strony albo odpowiedzi,
     o którą prosiło okno (``sign`` mówi, po czym okno to poznało)."""
@@ -316,7 +315,6 @@ class LoggedOut(WindowStop):
         super().__init__(part, sign, proof)
 
 
-@final
 class UnexpectedPage(WindowStop):
     """Okno nie dokończyło działania w części ``part`` strony efenix (bez treści strony): strona nie ma budowy, którą
     zna okno, albo przeglądarka zgłosiła błąd (także czas okna, który minął); ``cause`` mówi, które z nich."""
@@ -326,7 +324,6 @@ class UnexpectedPage(WindowStop):
         self.part: PagePart = part
 
 
-@final
 class EfenixUnreachable(WindowStop):
     """Okno nie otworzyło efenix przy starcie albo w czasie czekania na logowanie taty: adres nie odpowiada albo nie ma
     połączenia."""
@@ -335,7 +332,6 @@ class EfenixUnreachable(WindowStop):
         super().__init__(PagePart.LIST, failure, proof)
 
 
-@final
 class WindowClosed(WindowStop):
     """Okno albo karta efenix zamknęły się w trakcie przebiegu (tata je zamknął)."""
 
@@ -343,7 +339,6 @@ class WindowClosed(WindowStop):
         super().__init__(part, closed, proof)
 
 
-@final
 class BrowserNotStarted(WindowStop):
     """Przeglądarka okna efenix nie wystartowała: nie ma jej na komputerze, jej profil trzyma inne okno albo nie
     wystartował sterownik Playwrighta (``Operation.DRIVER``)."""
