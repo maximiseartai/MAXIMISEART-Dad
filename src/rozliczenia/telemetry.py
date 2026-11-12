@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal, TypedDict, get_args
 
 from .domain import PHASES, ProgressPhase, RunMode, StopKind
+from .file_state import path_state
 from .settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD
 from .write_routes import Route, RouteCounts, TemplateKind
 
@@ -208,7 +209,7 @@ class MetricsStore:
             os.fsync(stream.fileno())
 
     def read(self) -> list[dict[str, Any]]:
-        if not self.path.exists():
+        if path_state(self.path) == "missing":
             return []
         records: list[dict[str, Any]] = []
         with self.path.open("r", encoding="utf-8", errors="replace") as stream:

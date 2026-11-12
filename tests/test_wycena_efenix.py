@@ -84,6 +84,7 @@ from rozliczenia.efenix_window import (
     WindowAction,
     WindowCause,
     WindowClosed,
+    WindowStop,
 )
 from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
@@ -3706,7 +3707,7 @@ class _SlowEfenix:
 
     def open_order(self, order: ListedOrder) -> OrderPricing:
         self.time.pause(self.ACTION_S)
-        raise UnexpectedPage(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
+        raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
 
     def set_execution_date(self, day: date) -> bool:
         raise AssertionError("ślad nie woła działań, których nie woła przebieg")

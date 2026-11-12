@@ -56,8 +56,8 @@ order of steps:
   typed, never at the tool's own entry. Harm: Dad sees „ręczna wartość zostaje” about a value he never typed, and a
   worker's correction of a report never reaches INTERMAX (direction safe: nothing is overwritten).
 - **KopiaZatrzymuje**: a click does not read the mailbox while an OneDrive conflict copy lies beside INTERMAX
-  (`report_entering.py` :265), and a copy that appeared until the end of the write ends the click with a Zatrzymanie
-  for Dad, not a summary (:356; ADR 0028: „Gdy po zapisie obok INTERMAX pojawi się kopia konfliktu OneDrive, następuje
+  (`report_entering.py` :274), and a copy that appeared until the end of the write ends the click with a Zatrzymanie
+  for Dad, not a summary (:375; ADR 0028: „Gdy po zapisie obok INTERMAX pojawi się kopia konfliktu OneDrive, następuje
   Zatrzymanie dla taty”). Harm: the worker's change sits only in the copy, Dad does not learn it, and the Rozliczenia go
   out without it.
 
@@ -81,10 +81,10 @@ otherwise):
 | `NowyMail` | a Raport wykonawcy with another content of the Wpis for this order arrives; the latest mail wins (`enter_reports`) |
 | `ZamkniecieOkresu`, `OtwarcieOkresu` | the Plik zbiorczy of the period appears (Przygotowanie) or Dad removes it; `report_entering._closed` gives `Window.of` the closed tokens and `Window.opens` leaves the order out of `orders` in `enter_reports` |
 | `PojawiaSieKopia`, `TataUsuwaKopie` | OneDrive puts a conflict copy beside INTERMAX; Dad merges it and removes it |
-| `Sprawdzanie` | Dad clicks; `RunHost.start` (one Uruchomienie at a time), `enter_from_mail` `check`: `FileReportState.load`, which reads the memory through `_TextFile.text` (`StateFile.retry` first, then the waiting text or the file) and `kept()` the same way, then `onedrive_conflicts.beside` (:265), whose copy is a Zatrzymanie before the mailbox |
-| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`enter_reports` → `_cells.reconcile` on the snapshot `saved.memory`, `saved.kept`) and `save` (`write_cells`, :340) as one step: without changes `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
-| `ZapiszPamiec` | :353 `parts.state.save_memory` → `FileReportState.save_memory` → `_TextFile.write` → `StateFile.write`; an `OSError` keeps the text waiting and the process gives only the warning `memory_not_saved` |
-| `ZapiszWynik` | :354 `parts.state.save_result` (the `ClickResult` with `ManualDifference` among its problems) → `_TextFile.write`, then :356 `onedrive_conflicts.beside`: a copy is the Zatrzymanie `conflict_after_save`, otherwise the summary; one step, because nothing between them writes a file or INTERMAX |
+| `Sprawdzanie` | Dad clicks; `RunHost.start` (one Uruchomienie at a time), `enter_from_mail` `check`: `FileReportState.load`, which reads the memory through `_TextFile.text` (`StateFile.retry` first, then the waiting text or the file) and `kept()` the same way, then `onedrive_conflicts.beside` (:274), whose copy is a Zatrzymanie before the mailbox |
+| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`enter_reports` → `_cells.reconcile` on the snapshot `saved.memory`, `saved.kept`) and `save` (`write_cells` with the changes and the Przeniesienia zleceń of the click) as one step: without changes and Przeniesienia `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
+| `ZapiszPamiec` | :372 `parts.state.save_memory` → `FileReportState.save_memory` → `_TextFile.write` → `StateFile.write`; an `OSError` keeps the text waiting and the process gives only the warning `memory_not_saved` |
+| `ZapiszWynik` | :373 `parts.state.save_result` (the `ClickResult` with `ManualDifference` among its problems) → `_TextFile.write`, then :375 `onedrive_conflicts.beside`: a copy is the Zatrzymanie `conflict_after_save`, otherwise the summary; one step, because nothing between them writes a file or INTERMAX |
 | `Odswiez` | a tab reads the Raporty view: `ReportEnteringEntry.view` → `FileReportState.shown` and `kept`, each `_TextFile.text` retries a waiting write |
 | `ZostawSprawdz` | „Zostaw moją” on tab k: `ReportEnteringEntry.keep` checks `files.shown()` outside any lock (`report_entering_run.py` :125-129), else `difference_gone` |
 | `ZostawCzytaj` | `FileReportState.keep` under `_deciding`: `self.kept()` |
@@ -184,7 +184,7 @@ Each finding was replayed on the code (Read a result), with a scratch test that 
    „back again” case against overwriting. Forgiven only so the check stays green without a product change; no ADR or
    decision of Maks accepts it.
 2. **`przywrocona-ze-starej-pamieci`, NieNadpisuje (open).** The memory file is older than INTERMAX: Centrum switched off
-   between `write_cells` (:340) and `save_memory` (:353), or `save_memory` failed and Centrum switched off before a retry,
+   between `write_cells` (:359) and `save_memory` (:372), or `save_memory` failed and Centrum switched off before a retry,
    and the memory the click computed differs from the one on disk (a switch-off that loses nothing is not this cause).
    The tool wrote `tak`, then `nie` over its own `tak` in the click whose memory was lost; Dad types `tak`; the next click
    with the mail still `nie` finds `tak` in the old memory and writes `nie` over Dad's value. With the right memory
@@ -276,7 +276,12 @@ is wrong:
   a read of the file itself never fails (a file that cannot be read is `StateUnreadable` or `DecisionsUnreadable`, a
   Zatrzymanie or a refusal that changes nothing).
 
-Left out: the rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
+Left out: Przeniesienia zleceń (ADR 0029, #1347): a Wpis of another Wykonawca moves the order to them, and the cell's
+own entries go with the row to the `OrderKey` it has after the click, after a Przeniesienie and after Dad's change of
+`WYKONAWCA` alike, while the number has one row in its day (`_moves._following`), so for the one cell the model has it
+is the newest Wpis of `NowyMail`, whoever sent it; Dad's change of `WYKONAWCA` (the memory of the order `OwnMove` and
+the rule `_model.may_move`, whose transition table `tests/test_rdzen_raportow.py` checks as a property) only leaves an
+older Wpis in force, which `NowyMail` also covers. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
 mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).

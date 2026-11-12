@@ -5,7 +5,7 @@
     "_efenix_stops": "83eec75cd9f80e07",
     "_outcome": "7bb9e1e151640ffd",
     "_priced": "59d65ecdffde4aac",
-    "_emmett": "00b65d26a2926b6f",
+    "_emmett": "366167077661f347",
     "_dated": "086bfa4b2b50697b",
     "_completed": "eaf8ddaaaa37a86a",
     "_priced_outcome": "630811d029a8d76a",
@@ -16,13 +16,13 @@
     "same_amount": "bc973a2141c850aa"
   },
   "src/rozliczenia/efenix_browser.py": {
-    "BrowserEfenix.load_emmett": "db405e989f5892fd",
-    "BrowserEfenix.enter_quantity": "837c5ba6caed05f3",
+    "BrowserEfenix.load_emmett": "0a2f78509b4b99da",
+    "BrowserEfenix.enter_quantity": "b869c4b5ef589c0a",
     "BrowserEfenix._finished": "af03337f484dd240",
     "_came_whole": "74cfead327507694",
-    "BrowserEfenix.forward_to_accept": "44fdfa15b4451bda",
+    "BrowserEfenix.forward_to_accept": "34ad9c66189ffbcc",
     "BrowserEfenix._refusal": "6db03a32bf79bec1",
-    "BrowserEfenix._status_answer": "92368310cf29e855"
+    "BrowserEfenix._status_answer": "b0c48e7935dd3344"
   },
   "src/rozliczenia/efenix_checks.py": {
     "listing": "8faac784be1d32ab"

@@ -12,7 +12,6 @@ Excel (``read_computed_rows``).
 
 from __future__ import annotations
 
-import os
 import zipfile
 import zlib
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -233,7 +232,7 @@ def is_open_in_excel(path: Path) -> bool:
     W folderze bez dostępu blokady nie widać; niedostępny skoroszyt zgłasza jego odczyt (``ensure_available``).
     """
 
-    return os.path.exists(excel_lock_file(path))
+    return file_state(excel_lock_file(path)) == "file"
 
 
 def ensure_available(path: Path, *, despite_excel_lock: bool = False) -> None:

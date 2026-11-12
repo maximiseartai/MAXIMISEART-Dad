@@ -41,7 +41,7 @@ from typing import Literal
 
 from .settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD, SettlementPeriod, parse_period_token
 
-from .file_state import folder_entries
+from .file_state import entry_kind, folder_entries, path_state
 
 # ``{token}`` to token okresu, ``{worker}`` nazwa Wykonawcy.
 _INTERNAL_SETTLEMENT = "Rozliczenie wew. {token}.xlsx"
@@ -219,7 +219,7 @@ class PeriodFolder:
                 if entry.name.startswith(prefix)
                 and entry.name.endswith(suffix)
                 and len(entry.name) > len(prefix) + len(suffix)
-                and entry.is_file()
+                and entry_kind(entry) == "file"
             )
         )
 
@@ -242,10 +242,14 @@ def _exists(listed: Mapping[str, os.DirEntry[str]], path: Path, *, directory: bo
     wielkości liter, a macOS postaci Unicode, więc plik może mieć inną nazwę.
     """
 
+    kind = "folder" if directory else "file"
     entry = listed.get(path.name)
-    if entry is None:
-        return path.is_dir() if directory else path.is_file()
-    return entry.is_dir() if directory else entry.is_file()
+    if entry is not None:
+        return entry_kind(entry) == kind
+    state = path_state(path)
+    if state == "inaccessible":
+        raise PeriodFolderInaccessible(path.parent)
+    return state == kind
 
 
 def collective_period_token(path: Path) -> str:
@@ -338,11 +342,11 @@ def _month_periods_folders(entries: Iterable[os.DirEntry[str]]) -> list[Path]:
     Puste w układzie płaskim. Folder miesiąca bez dostępu to ``PeriodFolderInaccessible`` z tym folderem.
     """
 
-    years = sorted(Path(entry.path) for entry in entries if entry.is_dir() and _YEAR_FOLDER.fullmatch(entry.name))
+    years = sorted(Path(entry.path) for entry in entries if entry_kind(entry) == "folder" and _YEAR_FOLDER.fullmatch(entry.name))
     return [
         month / _MONTH_PERIODS_FOLDER
         for year in years
-        for month in sorted(Path(entry.path) for entry in _listing(year) or () if entry.is_dir())
+        for month in sorted(Path(entry.path) for entry in _listing(year) or () if entry_kind(entry) == "folder")
         if _exists(
             {entry.name: entry for entry in _listing(month) or ()}, month / _MONTH_PERIODS_FOLDER, directory=True
         )
@@ -429,7 +433,7 @@ def scan_period_folders(periods_directory: Path) -> PeriodFolders:
     locations: dict[SettlementPeriod, list[Path]] = {}
     for parent in (layout_root, *month_folders):
         for entry in _listing(parent) or ():
-            if not entry.is_dir():
+            if entry_kind(entry) != "folder":
                 continue
             try:
                 period = parse_period_token(entry.name)

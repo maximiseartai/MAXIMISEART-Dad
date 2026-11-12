@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-import os
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -29,6 +28,7 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.period_board import requested_folder
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.dad_files import DadFiles
+from rozliczenia.file_state import file_state, path_state
 from rozliczenia.collective_file import NumberedOrders
 from rozliczenia.message import Message
 from rozliczenia.order_facts import MissingHeaders
@@ -75,12 +75,11 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
             )
         if failing.kept is not None:
             return failing.kept
-        # ``os.path.isfile``, bo ``Path.is_file`` w folderze bez dostępu rzuca PermissionError zamiast odpowiedzieć „nie”.
         return filling_contract.QuantitiesToFillProblem(
             state="problem",
             message=common_contract.Message.of(found.message),
             version=attempt.version,
-            collective_file_exists=os.path.isfile(path),
+            collective_file_exists=file_state(path) == "file",
         )
 
     @router.get(
@@ -225,13 +224,13 @@ def _attempt(path: Path, cloud_files: CloudFiles, files: DadFiles) -> NumberedOr
 def _excel_lock(path: Path) -> str:
     """``tak`` albo ``nie`` tylko wtedy, gdy system odpowiedział o pliku blokady; inaczej ``nieznany``.
 
-    ``stat`` sprawdza prawa jak każdy odczyt, także ACL w Windows, gdzie ``os.access`` ich nie widzi.
+    ``path_state`` sprawdza prawa jak każdy odczyt, także ACL w Windows, gdzie ``os.access`` ich nie widzi.
     """
 
-    try:
-        excel_lock_file(path).stat()
-    except FileNotFoundError:
-        return "nie"
-    except OSError:
-        return "nieznany"
-    return "tak"
+    match path_state(excel_lock_file(path)):
+        case "missing":
+            return "nie"
+        case "inaccessible":
+            return "nieznany"
+        case "file" | "folder":
+            return "tak"

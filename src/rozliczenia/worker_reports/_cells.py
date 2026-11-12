@@ -23,8 +23,8 @@ def reconcile(
     Każda kolumna osobno: ``tak``/``nie`` do ``SKUTECZNE``, niepusty opis do ``CZYNNOŚCI ZREALIZOWANE``. Pusta komórka
     i komórka z zapamiętaną własną wartością dostają Wpis, komórka równa Wpisowi (``normalize_text``) zostaje, a inna
     wartość jest ręczna: zostaje z ``ManualDifference``, chyba że tata kliknął „Zostaw moją” przy tej treści Wpisu
-    (``kept``). Pamięć to nowe zmiany oraz dawne wpisy, których komórka dalej ma zapamiętaną wartość; wartość ręczna
-    równa Wpisowi do pamięci nie trafia, żeby późniejsza poprawka nie nadpisała taty.
+    (``kept``). Pamięć to nowe zmiany oraz dawne wpisy, których komórka dalej ma zapamiętaną wartość, z Przeniesieniami
+    z ``memory``; wartość ręczna równa Wpisowi do pamięci nie trafia, żeby późniejsza poprawka nie nadpisała taty.
     """
 
     remembered = {(entry.key, entry.column): entry.value for entry in memory.entries}
@@ -51,4 +51,4 @@ def reconcile(
                 differences.append(ManualDifference(order.key, column, cell, value))
     ordered = sorted(changes, key=lambda change: (change.order.sheet, change.order.row, _COLUMNS.index(change.column)))
     entries = frozenset(OwnEntry(key, column, value) for (key, column), value in own.items())
-    return tuple(ordered), tuple(differences), OwnEntries(entries)
+    return tuple(ordered), tuple(differences), OwnEntries(entries, memory.moves)

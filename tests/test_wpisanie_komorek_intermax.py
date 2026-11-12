@@ -1,4 +1,5 @@
-"""Zapis komórek Wpisania raportów do INTERMAX bez Kopii (``intermax_cells.write_cells``, #1226, ADR 0028).
+"""Zapis komórek i Przeniesień zleceń Wpisania raportów do INTERMAX bez Kopii (``intermax_cells.write_cells``, #1226,
+#1347, ADR 0028, ADR 0029).
 
 INTERMAX to syntetyczny Rejestr zleceń z atrap plików taty, czytany jak w procesie (``register_file.read``). Testy
 patrzą na plik na dysku: części zip przed i po, wartości i wygląd komórek w openpyxl. Reguły samej podmiany (Excel,
@@ -11,13 +12,16 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
+import tempfile
 from typing import cast
 from xml.etree import ElementTree
 import zipfile
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
 import pytest
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell, MergedCell
@@ -27,11 +31,11 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.intermax_cells import CellProblem, CellsWritten, Rejected, write_cells
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.intermax_replace import LOCAL_DISK, Refusal, Waiting
-from rozliczenia.report_cells import CellChange, OrderRow, ReportColumn
+from rozliczenia.report_cells import CellChange, OrderMove, OrderRow, ReportColumn
 from rozliczenia.run_context import RunContext
 from rozliczenia.workbook_parts import UnsupportedShape
 
-from atrapy.intermax import FIRST, HEADERS, NUMBER, ORDER_SHEET, Intermax, Order, parts
+from atrapy.intermax import FIRST, HEADERS, NUMBER, ORDER_SHEET, WORKER, Intermax, Order, parts
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace
@@ -61,14 +65,22 @@ def _change(row: int, column: ReportColumn, value: str, sheet: str = ORDER_SHEET
 
 
 def _write(
-    path: Path, changes: Sequence[CellChange], *, disk: FaultyDisk | None = None, after_read: Callable[[], object] = lambda: None
+    path: Path,
+    changes: Sequence[CellChange],
+    *,
+    disk: FaultyDisk | None = None,
+    after_read: Callable[[], object] = lambda: None,
+    moves: Sequence[OrderMove] = (),
 ) -> CellsWritten | Rejected | Refusal:
-    """Wpisanie ``changes`` do INTERMAX przeczytanego jak w procesie; ``after_read`` dzieje się po odczycie."""
+    """Wpisanie ``changes`` i Przeniesień ``moves`` do INTERMAX przeczytanego jak w procesie; ``after_read`` dzieje się po
+    odczycie."""
 
     register = register_file.read(path, DadFiles())
     after_read()
     clock = ManualClock()
-    return write_cells(register, changes, waiting=Waiting(clock, clock.pause), disk=(disk or FaultyDisk()).disk())
+    return write_cells(
+        register, changes, moves, waiting=Waiting(clock, clock.pause), disk=(disk or FaultyDisk()).disk()
+    )
 
 
 @contextmanager
@@ -333,3 +345,271 @@ def test_otwarty_intermax_i_odmowa_onedrive_daja_ten_sam_fakt_co_w_uporzadkowani
     assert (excel, onedrive, changed) == (Refusal.EXCEL_HOLDS, Refusal.ONEDRIVE_HOLDS, Refusal.ONEDRIVE_HOLDS)
     assert path.read_bytes() == worker
     assert sorted(child.name for child in path.parent.iterdir()) == [path.name]
+
+
+DAY = date(2026, 11, 9)
+
+
+def _on(hour: int, worker: str, number: int) -> Order:
+    return Order(datetime(2026, 11, 9, hour), worker, number, cells=((NUMBER, number),))
+
+
+def _move(row: int, worker: str, day: date = DAY) -> OrderMove:
+    return OrderMove(OrderRow(ORDER_SHEET, row), day, worker)
+
+
+def _sheet_rows(path: Path, last: int) -> list[object]:
+    """Wiersze arkusza zleceń od 2 do ``last``: (``NUMER ZL.``, ``WYKONAWCA``, Hiperłącze ``NUMER ZL.``) wiersza z
+    wartościami albo „żółty” i „pusty”."""
+
+    sheet = load_workbook(path)[ORDER_SHEET]
+    rows: list[object] = []
+    for number in range(2, last + 1):
+        values = [sheet.cell(number, column).value for column in range(1, sheet.max_column + 1)]
+        if any(value is not None for value in values):
+            link = sheet.cell(number, NUMBER).hyperlink
+            rows.append((sheet.cell(number, NUMBER).value, sheet.cell(number, WORKER).value, link and link.target))
+        else:
+            rows.append("żółty" if sheet.row_dimensions[number].fill.fgColor.rgb == "FFFFFF00" else "pusty")
+    return rows
+
+
+def _link(number: int) -> str:
+    return f"https://example.invalid/zlecenie/{number}"
+
+
+def test_przeniesienie_jedynego_zlecenia_segmentu_zabiera_pusty_wiersz_a_wiersze_pod_dniem_ida_wyzej(tmp_path: Path) -> None:
+    """ADR 0029: Jan miał jedno zlecenie dnia, więc jego segment znika razem z pustym wierszem pod nim, a zlecenie staje
+    pod ostatnim zleceniem Anny. Pusty wiersz pod dniem, żółty wiersz i wklejenie na dole przesuwają się o wiersz w górę
+    z Hiperłączami, więc Uporządkowanie INTERMAX stawia potem dzień tak, jak bez Przeniesienia."""
+
+    intermax = Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "anna.kowalska", 40000002), _on(11, "anna.kowalska", 40000003)))
+    path = _register(tmp_path, intermax)
+    pasted = _sheet_rows(path, 17)[9:]
+
+    outcome = _write(path, [], moves=[_move(2, "anna.kowalska")])
+    rows = _sheet_rows(path, 16)
+    ordered = order_register(OrderingInputs(path, tmp_path / "Kopie", now=lambda: NOW), RunContext())
+
+    assert outcome == CellsWritten(0, 1)
+    assert rows[:6] == [
+        (40000002, "anna.kowalska", _link(40000002)),
+        (40000003, "anna.kowalska", _link(40000003)),
+        (40000001, "anna.kowalska", _link(40000001)),
+        "pusty",
+        "żółty",
+        "pusty",
+    ]
+    assert rows[8:] == pasted
+    assert ordered.order_count == len(intermax.raw)
+
+
+def test_przeniesione_zlecenie_staje_pod_ostatnim_zleceniem_segmentu_nadawcy_a_nie_na_koncu_dnia(tmp_path: Path) -> None:
+    """Glosariusz „Przeniesienie zlecenia”: zlecenie Anny przejęte przez Jana staje pod ostatnim zleceniem Jana, przed
+    pustym wierszem i segmentem Zofii, którzy są dalej w kolejności alfabetycznej."""
+
+    intermax = Intermax(
+        ordered=(
+            _on(9, "anna.kowalska", 40000001),
+            _on(10, "anna.kowalska", 40000002),
+            _on(11, "jan.testowy", 40000003),
+            _on(12, "zofia.nowa", 40000004),
+        ),
+        raw=(),
+    )
+    path = _register(tmp_path, intermax)
+
+    _write(path, [], moves=[_move(2, "jan.testowy")])
+
+    assert _sheet_rows(path, 8) == [
+        (40000002, "anna.kowalska", _link(40000002)),
+        "pusty",
+        (40000003, "jan.testowy", _link(40000003)),
+        (40000001, "jan.testowy", _link(40000001)),
+        "pusty",
+        (40000004, "zofia.nowa", _link(40000004)),
+        "pusty",
+    ]
+
+def test_dwa_przeniesienia_jednego_klikniecia_tworza_segment_i_zabieraja_segment_ktory_zostal_pusty(tmp_path: Path) -> None:
+    """Oba zlecenia Jana przechodzą do Anny, która nie ma segmentu: pierwsze zakłada jej segment przed segmentem Jana,
+    drugie staje pod nim, a pusty segment Jana znika z pustym wierszem nad sobą."""
+
+    intermax = Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "jan.testowy", 40000005)), raw=())
+    path = _register(tmp_path, intermax)
+
+    outcome = _write(path, [], moves=[_move(3, "anna.kowalska"), _move(2, "anna.kowalska")])
+
+    assert outcome == CellsWritten(0, 2)
+    assert _sheet_rows(path, 5) == [
+        (40000001, "anna.kowalska", _link(40000001)),
+        (40000005, "anna.kowalska", _link(40000005)),
+        "pusty",
+        "żółty",
+    ]
+
+
+def test_przeniesienie_z_komorkami_wpisuje_je_przed_przesunieciem_wiersza(tmp_path: Path) -> None:
+    """Komórki zmian mają wiersze INTERMAX sprzed zapisu, więc idą z przeniesionym wierszem, a wiersz, który przesunął
+    się w górę, zostaje bez nich."""
+
+    intermax = Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "jan.testowy", 40000005), _on(11, "anna.kowalska", 40000002)), raw=())
+    path = _register(tmp_path, intermax)
+
+    _write(path, [_change(2, ReportColumn.SUCCESSFUL, "tak")], moves=[_move(2, "anna.kowalska")])
+
+    sheet = load_workbook(path)[ORDER_SHEET]
+    assert [(sheet.cell(row, NUMBER).value, sheet.cell(row, SUCCESSFUL).value) for row in (2, 4, 5)] == [
+        (40000005, None),
+        (40000002, None),
+        (40000001, "tak"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ordered", "moves", "expected"),
+    [
+        pytest.param(
+            (("anna.kowalska", 40000001), ("jan.testowy", 40000002), ("jan.testowy", 40000003)),
+            ((2, "jan.testowy"), (4, "zofia.nowa")),
+            (("jan.testowy", (40000003, 40000001)), ("zofia.nowa", (40000002,))),
+            id="drugie z pierwszego wiersza segmentu, do którego weszło pierwsze",
+        ),
+        pytest.param(
+            (("anna.kowalska", 40000001), ("jan.testowy", 40000002), ("zofia.nowa", 40000003)),
+            ((2, "jan.testowy"), (4, "zofia.nowa")),
+            (("jan.testowy", (40000001,)), ("zofia.nowa", (40000003, 40000002))),
+            id="łańcuch A do B i B do C",
+        ),
+        pytest.param(
+            (("anna.kowalska", 40000001), ("anna.kowalska", 40000004), ("jan.testowy", 40000002)),
+            ((2, "jan.testowy"), (5, "anna.kowalska")),
+            (("anna.kowalska", (40000004, 40000002)), ("jan.testowy", (40000001,))),
+            id="zamiana A i B",
+        ),
+        pytest.param(
+            (("anna.kowalska", 40000001), ("jan.testowy", 40000002), ("jan.testowy", 40000005), ("zofia.nowa", 40000003)),
+            ((2, "zofia.nowa"), (4, "anna.kowalska"), (7, "jan.testowy")),
+            (("anna.kowalska", (40000002,)), ("jan.testowy", (40000005, 40000003)), ("zofia.nowa", (40000001,))),
+            id="trzy naraz",
+        ),
+    ],
+)
+def test_kilka_przeniesien_w_dniu_zostawia_kazdy_segment_wykonawcy_w_jednym_kawalku(
+    tmp_path: Path,
+    ordered: tuple[tuple[str, int], ...],
+    moves: tuple[tuple[int, str], ...],
+    expected: tuple[tuple[str, tuple[int, ...]], ...],
+) -> None:
+    """US 10 i glosariusz „Przeniesienie zlecenia”: kilka Przeniesień jednego kliknięcia (dwa zwykłe maile o przejęciu)
+    stawia każde zlecenie pod ostatnim zleceniem jego Wykonawcy, także gdy wcześniejsze Przeniesienie weszło do segmentu,
+    z którego później odchodzi pierwsze zlecenie (przegląd #1358 r1)."""
+
+    intermax = Intermax(ordered=tuple(_on(9 + index, worker, number) for index, (worker, number) in enumerate(ordered)), raw=())
+    path = _register(tmp_path, intermax)
+
+    _write(path, [], moves=[_move(row, worker) for row, worker in moves])
+
+    rows: list[object] = []
+    for worker, numbers in expected:
+        rows += [(number, worker, _link(number)) for number in numbers] + ["pusty"]
+    assert _sheet_rows(path, len(rows) + 2) == [*rows, "żółty"]
+
+
+_WORKERS = ("anna.kowalska", "ewa.probna", "jan.testowy", "zofia.nowa")
+
+
+@st.composite
+def _day_with_moves(draw: st.DrawFn) -> tuple[tuple[tuple[str, int], ...], dict[int, str]]:
+    """Uporządkowany dzień (segmenty Wykonawców po kolei, 1–3 zlecenia) i Przeniesienia części jego zleceń do innych
+    Wykonawców: numer zlecenia → nowy Wykonawca."""
+
+    workers = sorted(draw(st.sets(st.sampled_from(_WORKERS), min_size=1, max_size=3)))
+    ordered = tuple(
+        (worker, 40000000 + 10 * segment + index)
+        for segment, worker in enumerate(workers)
+        for index in range(draw(st.integers(1, 3)))
+    )
+    moved = draw(st.sets(st.sampled_from([number for _, number in ordered]), min_size=1, max_size=3))
+    targets = {
+        number: draw(st.sampled_from([worker for worker in _WORKERS if (worker, number) not in ordered]))
+        for number in sorted(moved)
+    }
+    return ordered, targets
+
+
+@settings(max_examples=40, deadline=None, derandomize=True, database=None)
+@given(_day_with_moves())
+def test_dowolne_przeniesienia_w_dniu_daja_uklad_uporzadkowania(day: tuple[tuple[tuple[str, int], ...], dict[int, str]]) -> None:
+    """Własność US 10–11: po dowolnych Przeniesieniach w dniu każdy Wykonawca ma jeden segment, segmenty stoją w
+    kolejności alfabetycznej jak po Uporządkowaniu INTERMAX, z jednym pustym wierszem między nimi i nad żółtym wierszem,
+    zlecenia Wykonawcy, których nikt nie przeniósł, zostają w swojej kolejności, a każde przeniesione staje pod nimi,
+    pod ostatnim zleceniem swojego Wykonawcy (Przeniesienia po wierszach od góry), z Hiperłączem."""
+
+    ordered, targets = day
+    with tempfile.TemporaryDirectory() as folder:
+        path = _register(Path(folder), Intermax(ordered=tuple(_on(9, worker, number) for worker, number in ordered), raw=()))
+        rows_of = {number: row for row, (_, number) in enumerate(_ordered_rows(ordered), start=2) if number}
+        _write(path, [], moves=[_move(rows_of[number], worker) for number, worker in targets.items()])
+        shown = _sheet_rows(path, len(ordered) + 2 * len(_WORKERS) + 2)
+
+    expected: list[object] = []
+    for worker in sorted({targets.get(number, owner) for owner, number in ordered}):
+        expected += [(number, worker, _link(number)) for owner, number in ordered if owner == worker and number not in targets]
+        expected += [(number, worker, _link(number)) for number, target in sorted(targets.items(), key=lambda item: rows_of[item[0]]) if target == worker]
+        expected.append("pusty")
+    assert shown[: len(expected) + 1] == [*expected, "żółty"]
+
+
+def _ordered_rows(ordered: Sequence[tuple[str, int]]) -> list[tuple[str, int | None]]:
+    """Wiersze uporządkowanego dnia atrapy od wiersza 2: zlecenia z pustym wierszem (numer ``None``) między Wykonawcami."""
+
+    rows: list[tuple[str, int | None]] = []
+    for index, (worker, number) in enumerate(ordered):
+        if index and ordered[index - 1][0] != worker:
+            rows.append(("", None))
+        rows.append((worker, number))
+    return rows
+
+@pytest.mark.parametrize(
+    ("move", "problem"),
+    [
+        pytest.param(_move(11, "anna.kowalska", date(2026, 10, 26)), CellProblem.MOVE_NOT_ORDERED, id="Surowe zlecenie"),
+        pytest.param(_move(3, "anna.kowalska"), CellProblem.MOVE_NOT_ORDERED, id="pusty wiersz"),
+        pytest.param(_move(2, "anna.kowalska", date(2026, 11, 10)), CellProblem.OTHER_DAY, id="inny dzień"),
+    ],
+)
+def test_przeniesienie_spoza_uporzadkowanego_wiersza_albo_na_inny_dzien_jest_odrzucone_przed_zapisem(
+    tmp_path: Path, move: OrderMove, problem: CellProblem
+) -> None:
+    """Zapis przenosi tylko uporządkowane zlecenie w obrębie jego dnia; Przeniesienie na inny dzień zostaje dla #1350."""
+
+    intermax = Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "anna.kowalska", 40000002)))
+    path = _register(tmp_path, intermax)
+
+    with _untouched(path):
+        outcome = _write(path, [_change(2, ReportColumn.SUCCESSFUL, "tak")], moves=[move])
+
+    assert outcome == Rejected(((move, problem),))
+
+
+def test_formula_w_przesuwanym_wierszu_to_ksztalt_nieobslugiwany_bez_zapisu(tmp_path: Path) -> None:
+    formula = Order(datetime(2026, 11, 9, 11), "anna.kowalska", 40000002, cells=((NUMBER, 40000002), (SUCCESSFUL, "=1+1")))
+    intermax = Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "jan.testowy", 40000005), formula), raw=())
+    path = _register(tmp_path, intermax)
+
+    with _untouched(path), pytest.raises(UnsupportedShape, match="formuła"):
+        _write(path, [], moves=[_move(2, "anna.kowalska")])
+
+
+def test_inny_wykonawca_w_odczycie_kontrolnym_przeniesienia_nie_podmienia_intermax(tmp_path: Path) -> None:
+    intermax = Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "anna.kowalska", 40000002)), raw=())
+    path = _register(tmp_path, intermax)
+
+    spoil = _in_part(SHEET_PART, b"<t>anna.kowalska</t>", b"<t>jan.testowy</t>")
+    disk = FaultyDisk(read=lambda temporary: spoil(LOCAL_DISK.read(temporary)))
+
+    with _untouched(path):
+        outcome = _write(path, [], moves=[_move(2, "anna.kowalska")], disk=disk)
+
+    assert outcome == Refusal.WRITE_MISMATCH
