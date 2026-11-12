@@ -174,5 +174,9 @@ def test_git_z_kodu_narzedzia_nie_ma_tozsamosci_jak_u_taty(tmp_path: Path, monke
 
     from_tool = tool_update._Git(git_program, tmp_path).run("commit", "--quiet", "--allow-empty", "--message", "narzędzie")
 
-    assert from_tool.returncode != 0
-    assert "Author identity unknown" in from_tool.stderr
+    identity = (
+        "git z kodu narzędzia (src/) ma pustą tożsamość, jak u taty, więc jego git commit pada: nie przekazuj mu "
+        "GIT_AUTHOR_*/GIT_COMMITTER_* ani user.name z konfiguracji testów"
+    )
+    assert from_tool.returncode != 0, identity
+    assert "Author identity unknown" in from_tool.stderr, identity

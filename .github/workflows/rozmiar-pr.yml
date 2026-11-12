@@ -3,7 +3,7 @@ name: Rozmiar PR
 # Each PR gets one label size:XS … size:XXL from its effective changed lines (tools/ci/rozmiar_pr.py, after t3code's
 # pr-size.yml). The label only informs: no ruleset or Required CI status depends on this workflow.
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] the PR's commits are only git data here, never run
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
     steps:
       # pull_request_target runs main's workflow and main's tools/ci/rozmiar_pr.py with a token that can write labels,
       # so the PR's commits are only git data here: never check them out, install from them or run their code.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false

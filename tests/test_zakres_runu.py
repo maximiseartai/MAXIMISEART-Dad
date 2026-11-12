@@ -110,8 +110,12 @@ def test_bramka_pr_biegnie_na_windows_311_i_linuksie_z_wyborem_szybko_a_e2e_i_st
 
     gate = zakres(Zdarzenie.PULL_REQUEST, frozenset({changed}), repo)
 
-    assert [(lane.nazwa, lane.kroki) for lane in gate.tory] == [(WINDOWS, steps), (LINUX, ())]
-    assert gate.zrodlo == source
+    rule = (
+        "bramka PR uruchamia pytest na Windows 3.11 i Linux 3.14 na wyborze tools/szybko.py dla zmiany, a zmiana ścieżki "
+        "z Context.PR_GATE (tools/lib/wplyw_zmiany.py) wybiera wszystkie pliki, E2E i straż czasu"
+    )
+    assert [(lane.nazwa, lane.kroki) for lane in gate.tory] == [(WINDOWS, steps), (LINUX, ())], rule
+    assert gate.zrodlo == source, rule
     # GATE nie ma plików testów ze STRUCTURE, więc wybór biegnie z całą strukturą.
     assert list(gate.pliki) == (pliki_testow(repo) if files is None else [*files, *STRUCTURE])
 
@@ -737,4 +741,8 @@ def test_workflowy_runow_nie_wywoluja_skryptow_skilli_poza_planem() -> None:
         "mutacje-nocne.yml": (ROOT / ".github" / "workflows" / "mutacje-nocne.yml").read_text(encoding="utf-8"),
     }
 
-    assert {name: _odwolania_do_skilli(text) for name, text in workflows.items()} == {"ci.yml": [], "mutacje-nocne.yml": []}
+    assert {name: _odwolania_do_skilli(text) for name, text in workflows.items()} == {"ci.yml": [], "mutacje-nocne.yml": []}, (
+        "ci.yml i mutacje-nocne.yml nie wywołują skryptu skilla wprost, bo takiego wywołania nie wymieniłaby linia LICZY CI: "
+        "uruchom go jako krok zakresu runu (podstawa ci: we frontmatterze skilla, skrypt mutacji albo wywołanie w kroku CI "
+        "z KROKI w tools/lib/zakres_runu.py)"
+    )

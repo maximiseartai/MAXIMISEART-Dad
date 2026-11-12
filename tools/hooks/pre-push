@@ -16,7 +16,7 @@ Kroki bierze z ``tools/ci_lokalnie.py``, uruchomionego Pythonem z ``.venv`` chec
 checkoutu.
 
 Przed krokami drukuje dwie linie, które tylko informują: werdykt ``tools/praca_w_toku.py --aktualizacja``, czy
-aktualizować gałąź z ``origin/main``, i skille ``verify-*`` do załadowania z ``tools/skille_dla_zmiany.py``. Gdy
+aktualizować gałąź z ``origin/main``, i skille ``verify-*`` do załadowania z ``tools/skille_dla_zmiany.py`` razem z jego linią ``CO DALEJ``. Gdy
 narzędzie się nie uda, brama drukuje ``AKTUALIZACJA: nieznana (…)`` albo ``SKILLE VERIFY: nieznane (…)``, a wynik
 pushu się nie zmienia.
 
@@ -61,14 +61,15 @@ class Note:
     command: tuple[str, ...]
     prefix: str
     unknown: str
+    earlier: tuple[str, ...] = ()
 
 
 def _notes() -> tuple[Note, ...]:
-    from ostatnie_linie import AKTUALIZACJA, SKILLE_VERIFY  # tylko push agenta zależy od narzędzi agenta
+    from ostatnie_linie import AKTUALIZACJA, CO_DALEJ, SKILLE_VERIFY  # tylko push agenta zależy od narzędzi agenta
 
     return (
         Note((str(VENV_PYTHON), "tools/praca_w_toku.py", "--aktualizacja"), AKTUALIZACJA, "nieznana"),
-        Note((str(VENV_PYTHON), "tools/skille_dla_zmiany.py"), SKILLE_VERIFY, "nieznane"),
+        Note((str(VENV_PYTHON), "tools/skille_dla_zmiany.py"), SKILLE_VERIFY, "nieznane", earlier=(CO_DALEJ,)),
     )
 
 
@@ -90,9 +91,10 @@ def _print_note(note: Note) -> None:
     except Exception as error:  # noqa: BLE001 - linia tylko informuje, więc żaden błąd narzędzia nie zmienia wyniku pushu
         reason = f"{type(error).__name__}: {error}"
     else:
-        last = (done.stdout.strip().splitlines() or [""])[-1]
-        if last.startswith(note.prefix):
-            print(last, flush=True)
+        lines = done.stdout.strip().splitlines() or [""]
+        if lines[-1].startswith(note.prefix):
+            for line in [*(line for line in lines[:-1] if line.startswith(note.earlier)), lines[-1]]:
+                print(line, flush=True)
             return
         reason = f"{note.command[1]}: " + (done.stderr.strip().splitlines() or [f"kod {done.returncode}"])[-1]
     print(f"{note.prefix}{note.unknown} ({reason})", flush=True)

@@ -1,4 +1,4 @@
-"""Tworzy własne .venv checkoutu albo worktree z dodatkiem dev; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
+"""Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
 
 ``.venv`` głównego checkoutu instaluje edytowalnie ``src`` głównego checkoutu,
 więc pytest i skrypty weryfikacyjne uruchomione nim z worktree mogą po cichu
@@ -30,7 +30,7 @@ from repo import ROOT
 import repo
 
 VENV = ROOT / ".venv"
-EXTRAS = ".[dev]"
+EXTRAS = ".[dev,workflowy]"
 HOOKS = "tools/hooks"
 MINIMUM_PYTHON = (3, 11)  # requires-python z pyproject.toml
 SUPPORTED = sys.version_info >= MINIMUM_PYTHON
