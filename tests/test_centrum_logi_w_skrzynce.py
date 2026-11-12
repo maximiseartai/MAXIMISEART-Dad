@@ -23,7 +23,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from openpyxl import load_workbook
 import pytest
@@ -54,6 +54,7 @@ from rozliczenia.domain import RunMode
 from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
+    CentrumClient,
     FakeReportBox,
     ToolDirectory,
     finished_view,
@@ -763,10 +764,27 @@ def _replayed(capsys: pytest.CaptureFixture[str], *arguments: str | Path) -> tup
     return code, capsys.readouterr().out.splitlines()
 
 
-def _archive_file(fake: FakeReportBox, folder: Path) -> Path:
-    """Plik Logów z Archiwum Logów okresu fałszywej Skrzynki, spakowany gzipem, jak go pobiera Maks."""
+class _Sending(Protocol):
+    """Centrum procesu z fałszywą Skrzynką Zgłoszeń, do której Kolejka wysyłki wysyła plik Logów."""
 
+    @property
+    def client(self) -> CentrumClient: ...
+
+    @property
+    def surroundings(self) -> Surroundings: ...
+
+
+def _archive_file(centrum: _Sending, folder: Path) -> Path:
+    """Plik Logów z Archiwum Logów okresu fałszywej Skrzynki, spakowany gzipem, jak go pobiera Maks.
+
+    Zatrzymuje Centrum, gdy plik doszedł: wątek kolejki po wysyłce dalej zapisuje plik zapisów skrzynki i znacznik
+    części w ``config`` przez pliki ``.tmp``, a kopia albo odczyt folderu Konfiguracji w trakcie tych zapisów pada na
+    wolnym runnerze Windows (``shutil.Error``, #1329).
+    """
+
+    fake = centrum.surroundings.report_box
     assert fake.wait_until(lambda box: any(archive.assets for archive in box.archives)), "plik Logów nie doszedł do Archiwum"
+    centrum.client.stop()
     [asset] = [asset for archive in fake.archives for asset in archive.assets]
     path = folder / asset.name
     path.write_bytes(asset.data)
@@ -790,7 +808,7 @@ def _settlement(tmp_path: Path) -> Produced:
     centrum = settling_centrum(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
     assert run_to_end(centrum, dry_run=True)["result"]["result"] == "OK"
-    return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
+    return Produced(_archive_file(centrum, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
 
 
 def _preparation(tmp_path: Path, paste: Callable[[Path], object] | None = None) -> Produced:
@@ -802,7 +820,7 @@ def _preparation(tmp_path: Path, paste: Callable[[Path], object] | None = None) 
     assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     configuration = {centrum.fixture.config_path.parent, centrum.fixture.internal_template_path.parent}
     assert configuration == {tmp_path / "config"}
-    return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
+    return Produced(_archive_file(centrum, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
 
 
 # Instalacje hurt z Wpisem urządzenia i czynności INTERMAX i bez niego, dwóch Wykonawców: wiersze dnia w śladzie
@@ -820,7 +838,7 @@ def _intermax(tmp_path: Path, intermax: Intermax | None = None) -> Produced:
     centrum = ordering_centrum(tmp_path, intermax or Intermax(raw=PASTED), clock=Clock([ORDERED_AT]))
     write_report_key(ToolDirectory(tmp_path))
     centrum.run_to_end()
-    return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ())
+    return Produced(_archive_file(centrum, tmp_path), ())
 
 
 # Wycena w efenix na Atrapie: każde działanie okna (szukanie, otwarcie zlecenia, data wykonania, Wycena Emmetta, ilość)
@@ -870,7 +888,7 @@ def _efenix(
         started = centrum.client.post("/api/runs", json=request)
         assert started.status_code == 200, started.json()
         assert finished_view(centrum.client)["result"]["result"] == result
-    return Produced(_archive_file(centrum.surroundings.report_box, tmp_path), ("--efenix-dzis", TODAY.isoformat()))
+    return Produced(_archive_file(centrum, tmp_path), ("--efenix-dzis", TODAY.isoformat()))
 
 
 def _archived_run(fake: FakeReportBox, folder: Path, run_id: str) -> Path:
@@ -1067,7 +1085,7 @@ def test_odtworzenie_odpowiada_w_decyzji_taty_tak_jak_tata_w_logach(
     waiting = views_until(centrum.client, "awaiting_decision")[-1]
     centrum.client.post(f"/api/runs/{waiting['run']['id']}/decision", json={"answer": answer})
     finished_view(centrum.client)
-    produced = Produced(_archive_file(centrum.surroundings.report_box, folder), ("--konfiguracja", str(folder / "config")))
+    produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
     assert produced.record["ending"] == ending
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
@@ -2255,7 +2273,7 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_intermax_nie_wypuszcza_adresu_ani
     write_report_key(ToolDirectory(root))
     centrum.run_to_end()
     note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": QUOTED}).json()["body"]
-    archived = _archive_file(centrum.surroundings.report_box, root)
+    archived = _archive_file(centrum, root)
     record = json.loads(gzip.decompress(archived.read_bytes()))
     [sheet] = record["input_copy"][0]["sheets"]
 
@@ -2284,7 +2302,7 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_rejestru_nie_wypuszcza_adresu_ani
     write_report_key(ToolDirectory(root))
     run_to_end(centrum, dry_run=False)
     note = centrum.client.post("/api/dad-notes/draft", json={"title": "Pytanie", "body": QUOTED}).json()["body"]
-    archived = _archive_file(centrum.surroundings.report_box, root)
+    archived = _archive_file(centrum, root)
     record = json.loads(gzip.decompress(archived.read_bytes()))
     [sheet] = record["input_copy"][0]["sheets"]
     devices = next(letter for letter, name in sheet["columns"].items() if name == "URZĄDZENIA")
