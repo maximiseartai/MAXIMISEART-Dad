@@ -92,7 +92,8 @@ Recenzent pracuje we własnym odłączonym checkoucie HEAD PR (`git fetch origin
 2. Przejrzyj diff według sekcji „Co jest porażką” i „Dowody”, a skille z linii `SKILLE VERIFY` wykonaj według sekcji `What CI runs and what stays local` każdego z nich.
    Linia `CI` z kroku 1 mówi, czy polecenia z linii `LICZY CI` przeszły: przy `success` logów zadań CI nie przeszukuj, a przy `failure` czytaj tylko logi padłych zadań, które podaje.
    Każde potwierdzone znalezisko z oznaczeniem, plik:linia i dowodem od razu dopisz do pliku `runda-<k>.md` w katalogu werdyktu, żeby przerwany przegląd zostawił znaleziska.
-   Krok kończy się, gdy przejrzałeś cały diff, a każde znalezisko jest w pliku.
+   Każde Ważne kończy jedno zdanie z jego korzeniem i szczeblem poprawki (a)–(d), tak jak je nazywa sekcja „Reguły i co ich pilnuje” w [`AGENTS.md`](../../../AGENTS.md).
+   Krok kończy się, gdy przejrzałeś cały diff, a każde znalezisko jest w pliku, Ważne z korzeniem i szczeblem.
 3. Dopisz na górę pliku dwie linie z sekcji „Postać werdyktu”, a na koniec krótko, co sprawdzone i z jakim wynikiem.
    Krok kończy się, gdy liczby w drugiej linii zgadzają się ze znaleziskami w pliku.
 4. Opublikuj werdykt: `.venv/bin/python tools/scal_pr.py <PR> --werdykt <plik>`.
