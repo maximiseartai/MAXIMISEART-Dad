@@ -99,7 +99,7 @@ def test_wnuk_uruchomiony_zanim_narzedzie_wroci_ze_startu_polecenia_ginie_z_drze
     with pytest.raises(subprocess.TimeoutExpired):
         potomne.run(with_grandchild(beats, "time.sleep(60)"), cwd=tmp_path, timeout=limit)
 
-    assert time.monotonic() - returned[0] < 2 * limit
+    assert time.monotonic() - returned[-1] < 2 * limit
     assert not beating(beats)
 
 
