@@ -281,7 +281,8 @@ order to them or to the day of the subject, and the cell's own entries go with t
 the click, after a Przeniesienie and after Dad's change of `WYKONAWCA` or of the day alike, only while the number has
 one order in the days the process reads, after today too (`_moves._carried`), so for the one cell the model has it is
 the newest Wpis of `NowyMail`, whoever sent it and whichever day its subject has; a mistaken subject (two or more
-Wpisy with another day; an order of a number the tool added counts for none, `_matching._Placed.added`, #1374 r4)
+Wpisy with another day; an order of a number the tool added counts for none, `_matching.Board._added`, #1374 r4, but
+the day of that order still picks the route, so a Wpis never moves it from a day that is not open, #1374 r5)
 only decides which order the Wpis reaches, and a Raport wykonawcy whose day lies in a period
 with a Plik zbiorczy reaches an order of an open day only that way, so both are `NowyMail` too. Dad's change of
 `WYKONAWCA` or of the day (the memory of the number `OwnMove`, found by `_model.memories_of`, and the rule
