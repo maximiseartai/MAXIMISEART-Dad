@@ -412,6 +412,16 @@ CONSTANT_TIME_BOUNDS = {
     "::time.monotonic() - started < 1.5": (
         "serwer nie odpowiada nigdy, więc bez limitu 0,3 s diagnoza czekałaby bez końca; granica to 5× ten limit"
     ),
+    "test_centrum_launcher.py::test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health"
+    "::took < wait_s * 1.8": (
+        "obcy program nie odpowiada nigdy, a granica poniżej dwóch skróconych limitów czekania na health (0,5 s) łapie "
+        "Centrum, które czeka dwa razy dłużej albo bez końca"
+    ),
+    "test_centrum_powiadomienia.py::test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_tak_zostaje"
+    "::took < wait_s * 1.8": (
+        "skrzynka trzyma odpowiedź do końca testu, a granica poniżej dwóch skróconych limitów CHECK_WAIT_S (1 s) łapie "
+        "Powiadomienia, które czekają dwa razy dłużej"
+    ),
     "test_weryfikacja_w_excelu.py::test_start_excela_bez_zgody_na_automatyzacje_konczy_sie_od_razu_nazwana_przyczyna"
     "::time.monotonic() - started < 10": (
         "granica 10 s to połowa limitu startu Excela (20 s), do którego launch czekałby, gdyby nie rozpoznał odmowy"

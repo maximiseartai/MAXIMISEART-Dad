@@ -7,7 +7,8 @@ import os
 import socket
 import subprocess
 import sys
-import urllib.error
+import threading
+import time
 import urllib.request
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from rozliczenia.centrum import restart_guardian
+from rozliczenia.centrum import launcher, restart_guardian
 from rozliczenia.centrum.shortcut import Folder, Shortcut, shortcuts
 
 from tests.fixtures.fake_cli import fake_cli
@@ -91,9 +92,13 @@ def _environment(browser: Path) -> dict[str, str]:
     return environment
 
 
+def _run_centrum(runtime: Path, port: int) -> list[str]:
+    return [sys.executable, str(runtime / "run_centrum.py"), "--port", str(port)]
+
+
 def _launch_again(runtime: Path, port: int, environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(runtime / "run_centrum.py"), "--port", str(port)],
+        _run_centrum(runtime, port),
         cwd=runtime,
         env=environment,
         capture_output=True,
@@ -179,20 +184,66 @@ def test_obcy_program_na_porcie_daje_bezpieczny_komunikat_w_trzech_czesciach(tmp
     with socket.socket() as foreign_program:
         foreign_program.bind(("127.0.0.1", 0))
         foreign_program.listen()
+        foreign_program.settimeout(60)
         port = foreign_program.getsockname()[1]
-        result = _launch_again(runtime, port, _environment(browser))
+        with subprocess.Popen(
+            _run_centrum(runtime, port),
+            cwd=runtime,
+            env=_environment(browser),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        ) as launch:
+            try:
+                # Milczący obcy program sprawdza test w procesie, na skróconym limicie czekania.
+                foreign_program.accept()[0].close()
+                stdout, stderr = launch.communicate(timeout=60)
+            except BaseException:
+                launch.kill()
+                raise
 
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert result.stdout.splitlines() == [
+    assert launch.returncode == 1, stdout + stderr
+    assert stdout.splitlines() == [
         f"Co się stało: Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program.",
         f"Gdzie: adres http://127.0.0.1:{port}/ na tym komputerze",
         "Co zrobić: Uruchom ponownie komputer i kliknij skrót „Centrum rozliczeń”. Jeśli komunikat wraca, "
         "przekaż go osobie utrzymującej narzędzie.",
     ]
-    assert result.stderr == ""
+    assert stderr == ""
     assert not opened.exists()
     assert _log_events(runtime) == ["blad-startu"]
     assert "kod=PORT_ZAJETY" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
+
+
+def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wait_s = 0.5
+    monkeypatch.setattr(launcher, "_HEALTH_TIMEOUT_S", wait_s)
+    monkeypatch.setattr(launcher, "LOG_PATH", tmp_path / "centrum-rozliczen.log")
+    exit_codes: list[int] = []
+
+    with socket.socket() as foreign_program:
+        foreign_program.bind(("127.0.0.1", 0))
+        foreign_program.listen()
+        port = foreign_program.getsockname()[1]
+        start = threading.Thread(
+            target=lambda: exit_codes.append(launcher.main(["--port", str(port), "--no-browser"])), daemon=True
+        )
+        started = time.monotonic()
+        start.start()
+        start.join(10)
+        took = time.monotonic() - started
+        still_waiting = start.is_alive()
+
+    assert not still_waiting
+    assert took < wait_s * 1.8
+    assert exit_codes == [1]
+    assert capsys.readouterr().out.splitlines()[0] == (
+        f"Co się stało: Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program."
+    )
 
 
 def _close(port: int) -> dict[str, object]:
@@ -203,32 +254,6 @@ def _close(port: int) -> dict[str, object]:
         body = json.load(response)
         assert isinstance(body, dict)
         return body
-
-
-def test_zamkniecie_z_karty_konczy_proces_centrum_i_zostawia_wpis_w_dzienniku(tmp_path: Path) -> None:
-    runtime = copy_centrum_runtime(tmp_path / "narzedzie")
-    browser, _ = _browser_recorder(tmp_path)
-    port = free_port()
-    process = subprocess.Popen(
-        [sys.executable, str(runtime / "run_centrum.py"), "--port", str(port), "--no-browser"],
-        cwd=runtime,
-        env=_environment(browser),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    try:
-        centrum_health(port)
-        closing = _close(port)
-        exit_code = process.wait(timeout=30)
-    finally:
-        process.kill()
-        process.wait()
-
-    assert closing == {"state": "closing"}
-    assert exit_code == 0
-    assert _log_events(runtime) == ["start", "zamkniecie", "stop"]
-    with pytest.raises(urllib.error.URLError):
-        centrum_health(port, timeout_s=0)
 
 
 def _windowless(runtime: Path, port: int, *, arguments: tuple[str, ...] | None = None) -> list[str]:

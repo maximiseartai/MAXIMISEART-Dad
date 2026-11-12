@@ -11,7 +11,8 @@ from typing import Any
 
 import pytest
 
-from rozliczenia.centrum.notifications import CHECK_WAIT_S, NOTIFICATIONS_FILE
+from rozliczenia.centrum import notifications as notifications_module
+from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes, render
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_REPORTS_FILE, REPORT
@@ -360,7 +361,11 @@ def test_przy_starcie_centrum_skrzynka_jest_pytana_w_tle_przed_odczytem_powiadom
     assert asked_at_start == polls(centrum) == asked + 1
 
 
-def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_tak_zostaje(tmp_path: Path) -> None:
+def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_tak_zostaje(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wait_s = 1.0
+    monkeypatch.setattr(notifications_module, "CHECK_WAIT_S", wait_s)
     centrum = preparing_centrum(tmp_path)
     write_report_key(centrum.tool)
     what = sent_report(centrum)
@@ -375,7 +380,7 @@ def test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_ta
     finally:
         box.search_hold.set()
 
-    assert took < CHECK_WAIT_S + 2
+    assert took < wait_s * 1.8
     wait_for(lambda: rows(centrum)[0][2] != SENT, 5, every=0.01)
     assert rows(centrum) == [("zgloszenie", what, RESOLVED, True)]
 
