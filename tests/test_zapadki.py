@@ -47,6 +47,19 @@ _THREAD_LINES_HELPER = (
     " i timer pytest-timeout"
 )
 
+# Odpowiedź nawigacji karty odrzucona w ``src/``, jak ``page.goto(…)`` w 637b1ef25c i ``with page.expect_navigation(…):``
+# w 7ba1aaf8d1 (#808 r1 i r2: strona błędu serwera efenix wyglądała jak zmieniony efenix).
+_DROPPED_NAVIGATION = re.compile(
+    r"^\s*[A-Za-z_][\w.]*\.(?:goto|reload|go_back|go_forward)\("
+    r"|^\s*with\b.*\bexpect_navigation\((?:[^()]|\([^()]*\))*\)(?!\s+as\b)"
+)
+_PLAYWRIGHT_IMPORT = re.compile(r"^(?:from|import) playwright\b", re.MULTILINE)
+_NAVIGATION_HELPER = (
+    "odpowiedź nawigacji karty odrzucona: przejdź przez BrowserEfenix._go albo _reloaded"
+    " (src/rozliczenia/efenix_browser.py) i stronę, której nie przeczytasz, zapytaj o nią _error_page, bo nawigacja nie"
+    " zgłasza błędu przy statusie 4xx i 5xx"
+)
+
 # Pliki, którym wolno parsować Pythona ręcznie: stan z 12.11.2026 (23 pliki); wpis maleje z każdym usuniętym plikiem.
 # Jeden napis z odstępami, bo graf wyboru testów (``tools/lib/wplyw_zmiany.py``) bierze ścieżkę z napisu testu za jego
 # zależność, a zapadki i tak biegną przy każdej zmianie (``ZAPADKI`` w ``tools/szybko.py``).
@@ -348,6 +361,96 @@ def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
 )
 def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
     assert not worker_threads(line)
+
+
+def dropped_navigation(line: str) -> bool:
+    """Czy linia pliku ``src/`` z importem ``playwright`` (``navigation_drops``) odrzuca odpowiedź nawigacji karty.
+
+    Łapie tylko linię, która zaczyna się od kropkowanej nazwy i wywołania ``.goto(``, ``.reload(``, ``.go_back(`` albo
+    ``.go_forward(`` (``page.goto(…)``, ``self._page.reload(…)``), oraz linię, która zaczyna się od ``with``, z
+    ``expect_navigation(…)``, którego nawias zamyka się w tej samej linii (z najwyżej jednym poziomem nawiasów w
+    środku) bez ``as`` po nim; obie także w linii napisu wielowierszowego. Nie łapie odpowiedzi przypisanej, zwróconej
+    albo podanej dalej, ``as _`` ani nieużytej zmiennej po ``as``, ``expect_navigation`` z nawiasem w kilku liniach,
+    nawigacji na wyniku wywołania (``context.new_page().goto(``), ``wait_for_url`` i ``wait_for_load_state``, metody
+    pod inną nazwą (``go = page.goto``) ani nawigacji w pliku bez linii ``from playwright`` albo ``import playwright``
+    (karta podana bez adnotacji); te zostają przeglądowi.
+    Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
+    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
+    """
+
+    return _DROPPED_NAVIGATION.search(line) is not None
+
+
+def navigation_drops(root: Path, base: str) -> list[str]:
+    """Linie plików ``src/`` z importem ``playwright``, które zmiana od ``base`` dodaje z ``dropped_navigation``, z
+    komunikatem. Inne pliki ``src/`` kart przeglądarki nie mają, a ich ``.reload(`` (np. ustawień) to nie nawigacja."""
+
+    return [
+        f"{path}:{number}: {_NAVIGATION_HELPER}"
+        for path, number, line in _added_lines(root, base, "src")
+        if dropped_navigation(line) and _PLAYWRIGHT_IMPORT.search((root / path).read_text(encoding="utf-8")) is not None
+    ]
+
+
+def test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    assert navigation_drops(ROOT, base) == []
+
+
+def test_zapadka_nawigacji_widzi_tylko_pliki_src_z_importem_playwright(tmp_path: Path) -> None:
+    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    for path, imports in {
+        "src/rozliczenia/okno.py": "from playwright.sync_api import Page\n",
+        "src/rozliczenia/ustawienia.py": "import importlib\n",
+        "tests/test_okna.py": "from playwright.sync_api import Page\n",
+        "tools/narzedzie.py": "from playwright.sync_api import Page\n",
+    }.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(f"{imports}\n\ndef open_order(page, url):\n    page.goto(url)\n", encoding="utf-8")
+
+    found = navigation_drops(tmp_path, base)
+
+    assert found == [f"src/rozliczenia/okno.py:5: {_NAVIGATION_HELPER}"]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        '    page.goto(urljoin(url, f"edit.php?id={order_id}"), wait_until="load", timeout=timeout_ms)',
+        "    with page.expect_navigation(wait_until=\"load\", timeout=timeout_ms):",
+        "        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until=\"load\", timeout=self._timeout_ms):",
+        "            self._page.reload(timeout=self._timeout_ms)",
+        "    tab.go_back()",
+        "    with page.expect_navigation(timeout=min(a, b)), other():",
+    ],
+)
+def test_zapadka_lapie_odrzucona_odpowiedz_nawigacji(line: str) -> None:
+    assert dropped_navigation(line)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "    response = page.goto(url, wait_until=\"load\", timeout=timeout_ms)",
+        "            return self._page.goto(url, wait_until=\"load\", timeout=self._timeout_ms)",
+        "        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until=\"load\", timeout=self._timeout_ms) as reload:",
+        "        return self._read_order(self._go(urljoin(self._url, f\"{ORDER_PAGE}?id={order.order_id}\")))",
+        "        self._reloaded(accept)",
+        "    # page.goto(url) odrzuca odpowiedź",
+        # Formy, których zapadka według docstringu nie łapie.
+        "    with page.expect_navigation(",
+        "    browser.contexts[0].new_page().goto(address)",
+        "    page.wait_for_url(url)",
+        "    with page.expect_navigation() as _:",
+    ],
+)
+def test_zapadka_przepuszcza_odpowiedz_nawigacji_ktora_ktos_czyta(line: str) -> None:
+    assert not dropped_navigation(line)
 
 
 def test_zapadka_widzi_linie_dodane_od_bazy_i_nowe_pliki_a_nie_usuniete_ani_spoza_folderu(tmp_path: Path) -> None:

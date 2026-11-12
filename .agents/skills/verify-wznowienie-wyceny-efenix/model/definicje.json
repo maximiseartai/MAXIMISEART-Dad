@@ -16,11 +16,11 @@
     "same_amount": "bc973a2141c850aa"
   },
   "src/rozliczenia/efenix_browser.py": {
-    "BrowserEfenix.load_emmett": "0a2f78509b4b99da",
+    "BrowserEfenix.load_emmett": "849d98d3d253cddb",
     "BrowserEfenix.enter_quantity": "b869c4b5ef589c0a",
     "BrowserEfenix._finished": "af03337f484dd240",
     "_came_whole": "74cfead327507694",
-    "BrowserEfenix.forward_to_accept": "34ad9c66189ffbcc",
+    "BrowserEfenix.forward_to_accept": "98ec6e917f652182",
     "BrowserEfenix._refusal": "6db03a32bf79bec1",
     "BrowserEfenix._status_answer": "b0c48e7935dd3344"
   },

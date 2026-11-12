@@ -89,8 +89,8 @@ MUTATIONS = (
             ),
             Edit(
                 BROWSER,
-                "        loaded = self._read_order(reload.value)\n",
-                "        self._same_order(PagePart.EMMETT)\n        loaded = self._read_order(reload.value)\n",
+                "        loaded = self._read_order(reloaded)\n",
+                "        self._same_order(PagePart.EMMETT)\n        loaded = self._read_order(reloaded)\n",
             ),
             Edit(
                 BROWSER,
