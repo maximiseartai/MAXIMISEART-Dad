@@ -262,8 +262,8 @@ the code.
    replaced. Why accepted: the end entry and the metrics record are two files, so one order leaves a window; the other
    order (the end entry before the metrics record, mutation „wpis końca przed rekordem metryk”) makes the journal of a
    Wycena cut in that window disappear without any Logi, which breaks DziennikPoKolejce. Replayed with a journal
-   without its end entry (the last line removed after a Wycena, as `_pricing_cut_before_result` in
-   `tests/test_centrum_logi_uruchomienia.py` does), the Logs file and the queue folder removed, the metrics record
+   without its end entry (a start and a „zaczynam zlecenie” entry written by `LogsOnDisk` with no end entry, as
+   `_pricing_cut_before_result` in `tests/test_centrum_logi_uruchomienia.py` writes it), the Logs file and the queue folder removed, the metrics record
    kept: the start writes and sends Logi with `ending` `interrupted`, and the card after it is the Urwane Uruchomienie.
 2. **`wpis-nieudany`, ZaczeteWLogach (accepted).** A journal entry that fails (`OSError`) loses the entry, the Wycena
    goes on and changes the order in efenix, and when Centrum switches off then, no Logi name that order (or no journal
