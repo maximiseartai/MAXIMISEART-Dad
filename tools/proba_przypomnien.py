@@ -12,8 +12,10 @@ przypomnienia należą się w tej chwili.
 Potem wysyła przez SMTP Gmaila **jedno** przypomnienie, a jedynym adresatem jest adres z ``--do`` (adres Maksa):
 pierwsze należne przypomnienie (najstarszy dzień) z adresatami zamienionymi na ten adres, a gdy nic się nie należy
 (np. w nocy), przypomnienie za wczoraj. Temat, treść ze wzorem Raportu wykonawcy i stopkę ma takie, jakie dostałby
-Wykonawca. Do Wykonawcy narzędzie nie wysyła nigdy: adres z ``--do``, który jest na liście adresów Wykonawców, to
-odmowa bez wysyłki. Bez pliku stopki narzędzie też nie wysyła, bo przypomnienie Wykonawcy poszłoby bez stopki.
+Wykonawca. Na adres z listy adresów Wykonawców narzędzie nie wysyła nigdy: taki adres w ``--do`` to odmowa bez
+wysyłki. Odmowa porównuje cały adres bez względu na wielkość liter, więc inny adres tej samej skrzynki
+Wykonawcy (w Gmailu z ``+…`` albo z kropkami w części przed ``@``) przechodzi i mail do niego dojdzie: ``--do`` to
+zawsze własny adres Maksa. Bez pliku stopki narzędzie też nie wysyła, bo przypomnienie Wykonawcy poszłoby bez stopki.
 
 Wynik (stdout) to jedna linia z samymi liczbami, bez adresów, loginów, nazw Wykonawców i numerów zleceń, i same znaki
 ASCII (polskie słowa bez polskich liter, jak próba IMAP ``tools/proba_skrzynki_raportow.py``):
@@ -158,7 +160,10 @@ def main(
     parser.add_argument(
         "--do",
         required=True,
-        help="Jedyny adres, na który idzie przypomnienie próby (adres Maksa); adres Wykonawcy narzędzie odmawia.",
+        help=(
+            "Jedyny adres, na który idzie przypomnienie próby (własny adres Maksa); adres z listy adresów Wykonawców "
+            "narzędzie odmawia, ale innego adresu tej samej skrzynki (w Gmailu z +… albo z kropkami) nie rozpozna."
+        ),
     )
     parser.add_argument(
         "--config",
