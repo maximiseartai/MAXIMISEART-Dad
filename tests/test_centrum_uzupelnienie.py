@@ -1,7 +1,8 @@
 """Uzupełnienie pliku zbiorczego w Centrum rozliczeń (#415, #417, ADR 0016), przez HTTP API jak przeglądarka.
 
 Każdy test przygotowuje Plik zbiorczy z syntetycznego Rejestru zleceń w Centrum, potem zmienia go jak tata w
-Excelu (openpyxl) i pyta Centrum o Ilości do uzupełnienia okresu.
+Excelu (openpyxl) i pyta Centrum o Ilości do uzupełnienia okresu. Ostatni uruchamia na nim prawdziwy Przebieg
+rozliczeń, po którym wiersz bez wpisu taty jest „bez ilości” (#422).
 """
 
 from __future__ import annotations
@@ -16,9 +17,17 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from tests.fixtures.centrum import FakeOneDrive, view_timing
-from tests.fixtures.centrum_processes import FILLING_DEVICES, PreparingCentrum, Surroundings, filling_centrum
+from rozliczenia import tool_files
+from tests.fixtures.centrum import FakeOneDrive, finished_view
+from tests.fixtures.centrum_processes import (
+    FILLING_DEVICES,
+    WORKER_SETTLEMENTS,
+    PreparingCentrum,
+    Surroundings,
+    filling_centrum,
+)
 from atrapy.preparation import COLLECTIVE_FILE_NAME, PERIOD
+from atrapy.settlement import write_template
 
 URL = f"/api/periods/{PERIOD}/quantities-to-fill"
 LOG_EVENT = "uzupelnienie-odczyt-nieudany"
@@ -35,6 +44,10 @@ def _prepared(
 
 def _kinds(view: dict[str, Any]) -> dict[str, list[tuple[int, bool]]]:
     return {kind["kind"]: [(row["row"], row["state"] == "done") for row in kind["rows"]] for kind in view["kinds"]}
+
+
+def _states(view: dict[str, Any]) -> dict[str, list[tuple[int, str]]]:
+    return {kind["kind"]: [(row["row"], row["state"]) for row in kind["rows"]] for kind in view["kinds"]}
 
 
 def _kind_done(view: dict[str, Any]) -> dict[str, bool]:
@@ -244,9 +257,11 @@ def test_odpowiedz_i_dziennik_nie_niosa_tresci_wierszy(tmp_path: Path) -> None:
     assert logged != ""
 
 
-def _problem(centrum: PreparingCentrum) -> dict[str, str]:
+def _problem(centrum: PreparingCentrum, *, collective_file_exists: bool) -> dict[str, str]:
+    """Komunikat widoku z problemem; ``collective_file_exists`` mówi, czy „Otwórz Plik zbiorczy” ma co otworzyć."""
+
     view = centrum.view(URL)
-    assert view["state"] == "problem"
+    assert (view["state"], view["collective_file_exists"]) == ("problem", collective_file_exists)
     message: dict[str, str] = view["message"]
     return message
 
@@ -257,7 +272,7 @@ def test_uszkodzony_plik_zbiorczy_daje_komunikat_i_wpis_w_dzienniku(tmp_path: Pa
     path.write_bytes(b"to nie jest skoroszyt")
     path.with_name(f"~${path.name}").write_bytes(b"blokada Excela")
 
-    message = _problem(centrum)
+    message = _problem(centrum, collective_file_exists=True)
 
     assert message["what"] == "Plik zbiorczy jest uszkodzony albo nie jest skoroszytem Excela."
     assert message["where"] == f"plik {COLLECTIVE_FILE_NAME}, folder {PERIOD}"
@@ -271,7 +286,7 @@ def test_niedostepny_plik_zbiorczy_nie_jest_nazwany_uszkodzonym(tmp_path: Path) 
     path = _collective_file(centrum)
     path.chmod(0)
     try:
-        message = _problem(centrum)
+        message = _problem(centrum, collective_file_exists=True)
     finally:
         path.chmod(0o644)
 
@@ -288,7 +303,7 @@ def test_folder_okresu_bez_odczytu_daje_komunikat_bez_stanu_blokady(tmp_path: Pa
     folder = _collective_file(centrum).parent
     folder.chmod(0)
     try:
-        message = _problem(centrum)
+        message = _problem(centrum, collective_file_exists=False)
     finally:
         folder.chmod(0o755)
 
@@ -304,7 +319,7 @@ def test_plik_tylko_w_chmurze_daje_komunikat_onedrive(tmp_path: Path) -> None:
     onedrive.online_only.add(path)
     path.write_bytes(b"")
 
-    message = _problem(centrum)
+    message = _problem(centrum, collective_file_exists=True)
 
     assert message["what"] == "Plik zbiorczy jest tylko w OneDrive w chmurze, bez kopii na tym komputerze."
     assert message["where"] == f"plik {COLLECTIVE_FILE_NAME}, folder {PERIOD}"
@@ -314,7 +329,7 @@ def test_brak_pliku_zbiorczego_daje_komunikat(tmp_path: Path) -> None:
     centrum = _prepared(tmp_path)
     _collective_file(centrum).unlink()
 
-    message = _problem(centrum)
+    message = _problem(centrum, collective_file_exists=False)
 
     assert message["what"] == "Nie ma Pliku zbiorczego tego okresu."
     [line] = centrum.log_lines(LOG_EVENT)
@@ -330,7 +345,7 @@ def test_brak_naglowka_urzadzen_nazywa_naglowek(tmp_path: Path) -> None:
 
     _edit(_collective_file(centrum), change)
 
-    message = _problem(centrum)
+    message = _problem(centrum, collective_file_exists=True)
 
     assert message["what"] == "Brakuje nagłówka w Pliku zbiorczym: UMOWA i URZĄDZENIA w wierszu 17."
     [line] = centrum.log_lines(LOG_EVENT)
@@ -341,7 +356,7 @@ def test_brak_naglowka_wykonawca_nazywa_komorke(tmp_path: Path) -> None:
     centrum = _prepared(tmp_path)
     _write(_collective_file(centrum), {"H17": None})
 
-    message = _problem(centrum)
+    message = _problem(centrum, collective_file_exists=True)
 
     assert message["what"] == "Brakuje nagłówka w Pliku zbiorczym: WYKONAWCA w komórce H17."
 
@@ -351,7 +366,7 @@ def test_okres_bez_folderu_okresu_daje_komunikat_o_braku_pliku_zbiorczego(tmp_pa
 
     view = centrum.client.get("/api/periods/15_21_09_2026/quantities-to-fill").json()
 
-    assert view["state"] == "problem"
+    assert (view["state"], view["collective_file_exists"]) == ("problem", False)
     assert view["message"]["what"] == "Nie ma Pliku zbiorczego tego okresu."
 
 
@@ -366,17 +381,35 @@ def test_zly_token_okresu_i_brak_folderu_okresow_sa_odmowa(tmp_path: Path) -> No
     assert (without_periods.status_code, without_periods.json()["message"]) == (409, "Najpierw wskaż folder okresów.")
 
 
-def test_pomiar_widoku_strony_uzupelnienia_trafia_do_dziennika(tmp_path: Path) -> None:
-    centrum = _prepared(tmp_path)
-    timing = view_timing(
-        kind="navigation",
-        page="uzupelnienie",
-        fcp_ms=None,
-        requests=[{"operation": "getQuantitiesToFill", "browser_ms": 310, "server_ms": 280}],
+def test_po_przebiegu_rozliczen_wiersze_bez_wpisu_taty_sa_bez_ilosci_na_kazdej_stronie(tmp_path: Path) -> None:
+    centrum = filling_centrum(tmp_path)
+    write_template(tool_files.config_dir(tmp_path) / tool_files.WORKER_TEMPLATE.name)
+    path = _collective_file(centrum)
+    _write(path, {"O19": 1})
+    before = centrum.view(URL)
+
+    started = centrum.client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "RUN"})
+    assert started.status_code == 200, started.text
+    assert finished_view(centrum.client)["result"]["result"] == "OK"
+    assert (path.parent / WORKER_SETTLEMENTS).is_dir()
+    after = centrum.view(URL)
+    table = centrum.view(f"{URL}/without_rule")
+    window = centrum.view(f"/api/periods/{PERIOD}/without-quantity")
+
+    assert (before["settled"], _states(before)) == (
+        False,
+        {"without_rule": [(19, "done"), (22, "to_fill")], "from_description": [(20, "to_fill"), (21, "to_fill")]},
     )
-
-    response = centrum.client.post("/api/view-timings", json=timing)
-
-    assert response.status_code == 204
-    assert "strona=uzupelnienie" in centrum.log_path.read_text(encoding="utf-8")
-    assert "zapytania=getQuantitiesToFill:310/280" in centrum.log_path.read_text(encoding="utf-8")
+    assert (after["settled"], _states(after)) == (
+        True,
+        {
+            "without_rule": [(19, "done"), (22, "without_quantity")],
+            "from_description": [(20, "without_quantity"), (21, "without_quantity")],
+        },
+    )
+    assert _kind_done(after) == {"without_rule": False, "from_description": False}
+    assert (table["settled"], [(row["row"], row["state"]) for row in table["rows"]]) == (
+        True,
+        [(19, "done"), (22, "without_quantity")],
+    )
+    assert window["sentence"] == "3 wiersze bez ilości: 20, 21, 22"
