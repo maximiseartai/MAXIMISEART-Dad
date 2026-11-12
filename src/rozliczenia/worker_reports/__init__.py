@@ -157,7 +157,8 @@ __all__ = [
 def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     """Operacja Wpisania raportów: ten sam wynik dla tych samych wejść, w dowolnej kolejności maili.
 
-    Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``) z dniem otwartym w ``inputs.window``, a od
+    Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``, z rokiem literówki czytanym od dnia przyjścia
+    maila) z dniem otwartym w ``inputs.window``, a od
     Wykonawcy także z dniem w okresie z Plikiem zbiorczym od dnia wdrożenia (``Window.closes``), który daje tylko
     niezgodne Wpisy; inne maile rdzeń pomija po cichu. Temat ze słowem ``raport`` bez dnia zleceń daje
     ``UnreadableSubject``, gdy mail przyszedł od Wykonawcy w dniu otwartym. Które numery są w INTERMAX i ile mają
@@ -187,7 +188,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     read: list[MailRead] = []
     problems: list[ReportProblem] = []
     for mail in inputs.mails:
-        found = _subject.read(mail.subject)
+        found = _subject.read(mail.subject, mail.arrived.date())
         worker = inputs.addresses.logins.get(mail.sender)
         match found:
             case None:

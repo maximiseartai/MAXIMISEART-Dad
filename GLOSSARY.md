@@ -240,8 +240,10 @@ Rejestrze, który tata uzupełnia, a nie trzeci stan zlecenia.
 
 Mail, który Wykonawca wysyła ze swojego adresu na skrzynkę raportów taty, z
 tematem `Raport` i datą dnia zleceń (dzień, miesiąc, rok rozdzielone `.`, `_`
-albo `/`), bez względu na wielkość liter, bez `Re:` ani `Fwd:` w temacie. Ma
-jeden albo więcej Wpisów raportu, niekoniecznie każdy w osobnej linii.
+albo `/`), bez względu na wielkość liter, bez `Re:` ani `Fwd:` w temacie. Datę
+z rokiem pomylonym przez Wykonawcę (ponad 302 dni przed przyjściem maila albo
+ponad 62 dni po nim) Centrum czyta jako ten sam dzień i miesiąc w roku, w
+którym data leży w tych granicach. Ma jeden albo więcej Wpisów raportu, niekoniecznie każdy w osobnej linii.
 Raportem wykonawcy za dzień jest też odpowiedź Wykonawcy na Przypomnienie o
 raporcie za ten dzień, a jego Wpisami tylko tekst nad cytatem, bez numerów z
 przykładu w przypomnieniu. Inne maile w tej skrzynce, także od

@@ -4,7 +4,7 @@ pisze Centrum (``reminder_subject``) i czyta z „Wysłanych” (``reminder_day`
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import re
 from typing import Final
 
@@ -16,6 +16,11 @@ _REMINDER_REPLY: Final = re.compile(r"(?:\s*(?:re|odp)\s*:)+", re.IGNORECASE)
 _NUMBER: Final = re.compile(r"[0-9]+")
 _SHAPE: Final = re.compile(rf"\s*{re.escape(SUBJECT_WORD)}\s*(?P<date>[0-9]+(?:(?:[^\w]|_)+[0-9]+)*)(?:\s*r\.?)?\s*")
 _SEPARATORS: Final = frozenset("._/")
+_BEFORE: Final = timedelta(days=302)
+_AFTER: Final = timedelta(days=62)
+"""Dzień z tematu Raportu wykonawcy leży od ``_BEFORE`` przed dniem przyjścia maila do ``_AFTER`` po nim; razem 365 dni,
+więc każdy dzień z miesiącem wypada w nich najwyżej raz. ``_AFTER`` to dwa miesiące, żeby literówka w miesiącu
+(``Raport 10.11`` za 10.10) nie stała się dniem sprzed roku, tylko jak dotąd czekała na swój dzień."""
 _REMINDER: Final = "Przypomnienie: raport za dzień {day}"
 _REMINDER_SHAPE: Final = re.compile(r"Przypomnienie: raport za dzień (\d{2})\.(\d{2})\.(\d{4})")
 
@@ -39,7 +44,7 @@ def reminder_day(subject: str) -> date | None:
         return None
 
 
-def read(subject: str) -> date | SubjectFault | None:
+def read(subject: str, arrived: date) -> date | SubjectFault | None:
     """Dzień zleceń z tematu Raportu wykonawcy, powód, gdy temat ze słowem ``raport`` nie daje dnia, albo ``None``, gdy
     mail nie jest Raportem wykonawcy: temat bez tego słowa albo odpowiedź i przekazanie dalej (``Re:``, ``Fwd:``,
     ``Fw:``, z Outlooka po polsku ``Odp:`` i ``PD:``) poza odpowiedzią na Przypomnienie o raporcie.
@@ -52,6 +57,12 @@ def read(subject: str) -> date | SubjectFault | None:
     Temat to słowo ``raport`` w dowolnej wielkości liter i data dzień, miesiąc, rok: dzień i miesiąc z zerem albo bez,
     rok z dwiema albo czterema cyframi (``26`` to 2026), z dopiskiem ``r.`` albo bez, między nimi ``.``, ``_`` albo ``/``, a wokół słowa, daty i
     separatorów dowolne białe znaki. Inny temat ze słowem dostaje pierwszy powód z kolejności ``SubjectFault``.
+
+    Rok z tematu jest literówką Wykonawcy, gdy data leży ponad ``_BEFORE`` przed dniem przyjścia maila ``arrived`` albo
+    ponad ``_AFTER`` po nim (``Raport 10.11.2016`` w mailu z 10.11.2026, ``Raport 29.12.2027`` z 2.01.2027): dniem
+    zleceń jest wtedy ten sam dzień i miesiąc w roku, w którym wypada w tych granicach. Gdy w żadnym roku nie wypada w
+    granicach (29 lutego bez roku przestępnego w nich albo, gdy granice obejmują 29 lutego, dzień tuż poza nimi), zostaje
+    data z tematu.
     """
 
     reply = _REMINDER_REPLY.match(subject)
@@ -70,7 +81,8 @@ def read(subject: str) -> date | SubjectFault | None:
             return SubjectFault.NO_YEAR
         case [day, month, year] if len(day) <= 2 and len(month) <= 2:
             separators = _NUMBER.split(shape["date"])[1:-1]
-            return _day(day, month, year, [separator.strip() for separator in separators])
+            found = _day(day, month, year, [separator.strip() for separator in separators])
+            return _near(found, arrived) if isinstance(found, date) else found
         case _:
             return SubjectFault.DATE_FORM
 
@@ -84,3 +96,14 @@ def _day(day: str, month: str, year: str, separators: list[str]) -> date | Subje
         return date(int(year) + (2000 if len(year) == 2 else 0), int(month), int(day))
     except ValueError:
         return SubjectFault.NOT_A_DAY
+
+
+def _near(found: date, arrived: date) -> date:
+    for year in (found.year, arrived.year - 1, arrived.year, arrived.year + 1):
+        try:
+            candidate = found.replace(year=year)
+        except ValueError:
+            continue
+        if arrived - _BEFORE <= candidate <= arrived + _AFTER:
+            return candidate
+    return found

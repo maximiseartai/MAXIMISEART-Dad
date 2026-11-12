@@ -1230,6 +1230,33 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
         assert detail == OrderDetail(order.key.number, "tak", detail.activities, reported=True)
 
 
+@pytest.mark.parametrize("intermax_day", [SIXTH, SEVENTH], ids=["zlecenia-z-6", "zlecenia-z-7"])
+def test_ta_sama_tresc_raportu_pod_dwoma_dniami_wpisuje_sie_raz_do_zlecen_z_ich_dnia_w_intermax(intermax_day: date) -> None:
+    """Prawdziwa skrzynka 12.11.2026: Wykonawca wysłał treść jednego dnia jako ``Raport`` za 7.11 i zaraz jako
+    ``Raport`` za 6.11, a potem prawdziwy Raport za 7.11. Dzień zleceń mówi INTERMAX: które z dwóch tematów jest
+    pomylone, ten przegrywa (pomylony temat, ADR 0029), więc każde zlecenie dostaje Wpis raz, w swoim dniu, bez
+    Przeniesienia i bez problemu dla taty, w każdej kolejności maili."""
+
+    twice = [_numbered(index, intermax_day) for index in range(1, 4)]
+    seventh = [_numbered(index, SEVENTH) for index in range(4, 6)]
+    same = "40000001 tak montaż\n40000002 nie brak klienta\n40000003 tak"
+    mails = [
+        _mail(JAN, "Raport 07.11.2026", same, datetime(2026, 11, 8, 18, 54, tzinfo=TAPA)),
+        _mail(JAN, "Raport 06.11.2026", same, datetime(2026, 11, 8, 18, 56, tzinfo=TAPA)),
+        _mail(JAN, "Raport 07.11.2026", "40000004 tak\n40000005 tak", datetime(2026, 11, 8, 18, 59, tzinfo=TAPA)),
+    ]
+
+    for order in (mails, mails[::-1]):
+        outcome = enter_reports(_inputs(order, [*twice, *seventh], rollout=SIXTH, ordered=OPEN_DAYS))
+
+        assert (outcome.moves, outcome.problems) == ((), ())
+        assert {change.order for change in outcome.changes} == {found.row for found in [*twice, *seventh]}
+        assert len(outcome.changes) == len({(change.order, change.column) for change in outcome.changes})
+        assert {entry.key.day for entry in outcome.memory.entries if entry.key.number in {"40000001", "40000002", "40000003"}} == {
+            intermax_day
+        }
+
+
 def test_zlecenie_cudze_i_z_innego_dnia_zmienia_wykonawce_zawsze_a_dzien_wedlug_progu() -> None:
     """US 9: zlecenie Ewy z 7.11 w Raporcie Jana za 8.11. Jako jedyny niezgodny Wpis przechodzi do Jana i na 8.11, z
     informacjami o obu zmianach po obu stronach; z drugim niezgodnym Wpisem (pomylony temat) przechodzi do Jana w swoim
@@ -3563,6 +3590,59 @@ def test_temat_raportu_w_kazdym_zapisie_daty_daje_dzien_zlecen(subject: str) -> 
     czterocyfrowy, dzień i miesiąc bez zera, rok z dopiskiem ``r.``."""
 
     assert _subject_day(subject) == _both(ROW, "tak", "wymiana routera")
+
+
+@pytest.mark.parametrize(
+    ("subject", "arrived", "day"),
+    [
+        pytest.param("Raport 08.11.2016", EVENING, DAY, id="rok-sprzed-dziesieciu-lat"),
+        pytest.param("Raport 08.11.2025", EVENING, DAY, id="rok-poprzedni"),
+        pytest.param("Raport 08.11.27", EVENING, DAY, id="rok-nastepny"),
+        pytest.param("Raport 29.12.2027", datetime(2027, 1, 2, 18, tzinfo=TAPA), date(2026, 12, 29), id="nowy-rok-po-dniu"),
+        pytest.param("Raport 02.01.2026", datetime(2027, 1, 3, 18, tzinfo=TAPA), date(2027, 1, 2), id="stary-rok-po-nowym"),
+        pytest.param("Raport 29.12.2026", datetime(2027, 1, 2, 18, tzinfo=TAPA), date(2026, 12, 29), id="grudzien-w-styczniu"),
+        pytest.param("Raport 02.01.2026", datetime(2026, 12, 30, 18, tzinfo=TAPA), date(2027, 1, 2), id="styczen-w-grudniu"),
+        pytest.param("Raport 09.11.2026", EVENING, date(2026, 11, 9), id="jutro-zostaje"),
+        pytest.param("Raport 08.12.2026", EVENING, date(2026, 12, 8), id="literowka-w-miesiacu-zostaje"),
+        pytest.param("Raport 09.01.2027", EVENING, date(2027, 1, 9), id="za-62-dni-zostaje"),
+        pytest.param("Raport 10.01.2027", EVENING, date(2026, 1, 10), id="za-63-dni-rok-wstecz"),
+        pytest.param("Raport 10.01.2026", EVENING, date(2026, 1, 10), id="302-dni-wstecz-zostaje"),
+        pytest.param("Raport 09.01.2026", EVENING, date(2027, 1, 9), id="303-dni-wstecz-rok-naprzod"),
+    ],
+)
+def test_literowka_w_roku_tematu_daje_dzien_z_tym_dniem_i_miesiacem_w_granicach_wokol_przyjscia_maila(
+    subject: str, arrived: datetime, day: date
+) -> None:
+    """Wykonawca pomylił rok (Raport z 10.11.2026 z tematem ``Raport 10.11.2016``, prawdziwa skrzynka 12.11.2026):
+    data z tematu ponad 302 dni przed dniem przyjścia albo ponad 62 dni po nim to ten sam dzień i miesiąc w roku, w
+    którym wypada w tych granicach, więc Raport wpisuje się do zleceń tego dnia bez taty. Data w granicach zostaje."""
+
+    order = _order(day=day)
+    mail = _mail(JAN, subject, TEXT, arrived)
+
+    outcome = enter_reports(_inputs([mail], [order], today=max(day, arrived.date()), rollout=day))
+
+    assert outcome.changes == _both(ROW, "tak", "wymiana routera")
+    assert [found.day for found in outcome.mails if isinstance(found, ReadReport)] == [day]
+
+
+def test_29_lutego_z_innego_roku_przestepnego_daje_29_lutego_roku_przestepnego_w_granicach() -> None:
+    mail = _mail(JAN, "Raport 29.02.2024", TEXT, datetime(2028, 3, 10, 18, tzinfo=TAPA))
+
+    outcome = enter_reports(_inputs([mail], [_order(day=date(2028, 2, 29))], today=date(2028, 3, 10), rollout=date(2028, 2, 1)))
+
+    assert [found.day for found in outcome.mails if isinstance(found, ReadReport)] == [date(2028, 2, 29)]
+    assert outcome.changes == _both(ROW, "tak", "wymiana routera")
+
+
+def test_29_lutego_bez_roku_przestepnego_w_granicach_zostaje_z_tematu() -> None:
+    """Dzień, którego nie ma w żadnym roku wokół przyjścia maila, zostaje z tematu, więc poza oknem rdzeń go pomija."""
+
+    mail = _mail(JAN, "Raport 29.02.2024", TEXT, datetime(2026, 11, 8, 18, tzinfo=TAPA))
+
+    outcome = enter_reports(_inputs([mail], [_order()], rollout=date(2024, 1, 1)))
+
+    assert [found.day for found in outcome.mails if isinstance(found, ReadReport)] == [date(2024, 2, 29)]
 
 
 @st.composite
