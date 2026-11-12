@@ -11,6 +11,9 @@ porządkuje okresu).
 [ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md) dodaje
 Wpisanie raportów jako kolejny proces, który zmienia Rejestr zleceń, i to bez
 Kopii INTERMAX.
+[ADR 0029](0029-raport-wykonawcy-wazniejszy-od-intermax.md) pozwala Wpisaniu
+raportów zmieniać też dzień i `WYKONAWCA` zlecenia, przenosić jego wiersz i
+dopisywać nowe wiersze do Dnia uporządkowanego.
 
 ## Kontekst
 
