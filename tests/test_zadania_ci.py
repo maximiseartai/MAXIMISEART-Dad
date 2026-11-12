@@ -225,4 +225,15 @@ def test_w_ruff_mypy_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych() -> Non
     steps = jobs()["ruff-mypy"]["steps"]
     deps = next(index for index, step in enumerate(steps) if step.get("id") == "deps")
 
-    assert [(step["run"].split()[2], step.get("if")) for step in steps[deps + 1 :]] == [("ruff", INDEPENDENT), ("mypy", INDEPENDENT), ("mypy", INDEPENDENT)]
+    checks = [(step["run"].removeprefix("python -m ").split()[0], step.get("if")) for step in steps[deps + 1 :]]
+
+    assert checks == [(check, INDEPENDENT) for check in ("ruff", "mypy", "mypy", "zizmor", "actionlint")]
+
+
+def test_dependabot_przesuwa_przypiete_akcje_kazdej_akcji_zlozonej_z_repozytorium() -> None:
+    # Katalog "/" obejmuje tylko .github/workflows i action.yml w korzeniu, a akcja złożona poza listą zostałaby na starym SHA.
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    (actions,) = [update for update in config["updates"] if update["package-ecosystem"] == "github-actions"]
+    composite = {"/" + path.parent.relative_to(ROOT).as_posix() for path in (ROOT / ".github" / "actions").rglob("action.yml")}
+
+    assert composite - set(actions["directories"]) == set()

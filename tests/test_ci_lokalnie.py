@@ -52,7 +52,7 @@ def _commands(job: dict[str, object]) -> list[str]:
     for step in _steps(job.get("steps", [])):  # type: ignore[arg-type]
         for line in str(step.get("run", "")).splitlines():
             command = line.strip().replace("py -3 ", "python ")
-            if command.startswith(("python ", "npm ", 'stale="$(git')) and not any(
+            if command.startswith(("python ", "npm ", 'stale="$(git', "zizmor ", "actionlint ")) and not any(
                 setup in command for setup in RUNNER_SETUP
             ):
                 commands.append(command)

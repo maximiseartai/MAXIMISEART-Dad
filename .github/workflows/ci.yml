@@ -26,14 +26,16 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
 
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false
 
@@ -41,7 +43,7 @@ jobs:
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
 
       # Centrum rozliczeń: the committed build and contract must match their sources (tata has no Node).
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '24'
           cache: npm
@@ -97,20 +99,22 @@ jobs:
     name: Ruff, mypy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
 
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false
 
       - name: Install development dependencies
         id: deps
-        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
+        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev,workflowy]"
 
       # Each check runs even when an earlier step failed, so one red check does not hide the others.
       - name: Lint Python code
@@ -124,6 +128,15 @@ jobs:
       - name: Typecheck Python code (Linux)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python -m mypy --platform linux
+
+      # Offline: the same verdict without a token or GitHub's API; low and above, configured in .github/zizmor.yml.
+      - name: Audit workflows (zizmor)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: zizmor --offline --min-severity low .github
+
+      - name: Lint workflows (actionlint with shellcheck)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: actionlint -shellcheck shellcheck
 
   plan:
     # Decides the pytest and Mutation checks jobs of this run (tools/plan_ci.py), from the unit times of the last green
@@ -140,10 +153,11 @@ jobs:
       pytest: ${{ steps.plan.outputs.pytest }}
       mutations: ${{ steps.plan.outputs.mutations }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # On a pull request HEAD is the merge commit and HEAD^1 the base it merges into.
           fetch-depth: 2
+          persist-credentials: false
 
       - name: Plan the units of work from the times of the last main runs
         id: plan
@@ -151,7 +165,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 tools/plan_ci.py plan --zdarzenie "${{ github.event_name }}" --baza HEAD^1 --czasy .ci-plan/czasy --wyjscie .ci-plan/plan.json
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: plan
           path: .ci-plan/plan.json
@@ -187,14 +201,16 @@ jobs:
       EXPECTED_PYTHON_VERSION: ${{ matrix.python }}
       PYTHONUTF8: '1'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
 
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false
 
@@ -205,6 +221,7 @@ jobs:
 
       - name: Verify py -3 interpreter
         if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
         run: |
           $actualVersion = py -3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
           if ($actualVersion -ne $env:EXPECTED_PYTHON_VERSION) {
@@ -226,7 +243,7 @@ jobs:
         if: ${{ matrix.przegladarka }}
         uses: ./.github/actions/chromium
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: plan
           path: .ci-plan
@@ -240,7 +257,7 @@ jobs:
       # Tests that passed only on their retry; the workflow zgloszenia.yml files an issue "Flaky test: <test>" for each.
       - name: Upload the flaky tests
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: flaky-testy-${{ matrix.id }}-${{ github.run_attempt }}
           path: .ci-niestabilne/flaky-testy.json
@@ -251,7 +268,7 @@ jobs:
       # Quarantined tests do not turn Required red, so tools/wydanie.py reads their results on the main commit.
       - name: Upload the results of quarantined tests
         if: ${{ !cancelled() && github.event_name == 'push' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kwarantanna-${{ matrix.id }}-${{ github.run_attempt }}
           path: .ci-niestabilne/kwarantanna.json
@@ -261,7 +278,7 @@ jobs:
 
       - name: Upload E2E and timing guard evidence on failure
         if: ${{ failure() && steps.units.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: evidence-${{ matrix.id }}-${{ github.run_attempt }}
           path: |
@@ -282,7 +299,7 @@ jobs:
       - name: Upload the unit times
         if: ${{ !cancelled() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: czasy-zadanie-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: .ci-czasy/zapis/
@@ -315,14 +332,16 @@ jobs:
     env:
       PYTHONUTF8: '1'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
 
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false
 
@@ -337,7 +356,7 @@ jobs:
           playwright: 'true'
           python: ${{ steps.python.outputs.python-path }}
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: plan
           path: .ci-plan
@@ -362,7 +381,7 @@ jobs:
       # A red baseline (e.g. Centrum --feature all) leaves its screenshots and logs here; mutation copies keep none.
       - name: Upload baseline evidence on failure
         if: ${{ failure() && steps.units.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: evidence-${{ matrix.id }}-${{ github.run_attempt }}
           path: .verification/evidence/
@@ -381,7 +400,7 @@ jobs:
       - name: Upload the unit times
         if: ${{ !cancelled() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: czasy-zadanie-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: .ci-czasy/zapis/
@@ -405,12 +424,13 @@ jobs:
     # Also in a cancelled run: a skipped required check counts as success and would not block the merge.
     if: ${{ always() }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: tools
+          persist-credentials: false
 
       # A missing plan or record is the verdict's to judge, not a failed download.
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
           name: plan
@@ -418,7 +438,7 @@ jobs:
 
       - name: Download the unit times of every job of this run
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: czasy-zadanie-*
           merge-multiple: true
@@ -439,7 +459,7 @@ jobs:
       - name: Upload czasy-ci
         if: ${{ !cancelled() && github.event_name == 'push' }}
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: czasy-ci
           path: .ci-czasy/czasy-ci.json

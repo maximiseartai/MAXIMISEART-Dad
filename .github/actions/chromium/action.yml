@@ -31,7 +31,7 @@ runs:
     # One playwright version always downloads the same browser, so the jobs share it; on a hit the install below finds
     # it in place. Headless Chromium runs the headless shell alone, a third of the full browser's size.
     - name: Cache Chromium
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
         key: chromium-headless-shell-${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}

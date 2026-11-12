@@ -30,7 +30,7 @@ from repo import ROOT
 import repo
 
 VENV = ROOT / ".venv"
-EXTRAS = ".[dev]"
+EXTRAS = ".[dev,workflowy]"
 HOOKS = "tools/hooks"
 MINIMUM_PYTHON = (3, 11)  # requires-python z pyproject.toml
 SUPPORTED = sys.version_info >= MINIMUM_PYTHON

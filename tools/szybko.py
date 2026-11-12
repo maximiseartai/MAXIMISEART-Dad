@@ -2,7 +2,7 @@
 
 Agent uruchamia je po każdej zmianie; pełną bramką jest CI na GitHubie. Zmiana to pliki, którymi checkout,
 razem z niezacommitowanymi i nieśledzonymi plikami, różni się od ``merge-base`` HEAD z ``--baza`` (domyślnie
-``origin/main``). Kroki ruff i mypy to kroki ``tools/ci_lokalnie.py``, a pytest to jego krok z wybranymi
+``origin/main``). Kroki ruff, mypy, zizmor i actionlint to kroki ``tools/ci_lokalnie.py``, a pytest to jego krok z wybranymi
 testami. Gdy ``.venv`` ma Pythona nowszego niż najstarszy z ``requires-python``, który CI też testuje, krok
 ``import src pod Pythonem <wersja>`` importuje każdy moduł ``src/`` tym Pythonem przez ``uv`` (bez ``uv`` pada).
 Kroki biegną naraz, a gdy padnie inny krok, szybko przerywa krok pytest i wypisuje, że go przerwał.
@@ -67,7 +67,7 @@ import tomllib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import czasy_ci
-from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps
+from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
 import potomne
 from repo import BASE, ROOT
 import repo
@@ -247,7 +247,7 @@ def _imports_on_oldest(root: Path) -> list[Step]:
 
 
 def _steps(root: Path, tests: Iterable[str], junit: Path) -> list[Step]:
-    return [*static_steps(root), pytest_step(root, "pytest", _pytest_arguments(tests, junit)), *_imports_on_oldest(root)]
+    return [*static_steps(root), *workflow_steps(root), pytest_step(root, "pytest", _pytest_arguments(tests, junit)), *_imports_on_oldest(root)]
 
 
 def _environment(root: Path, base: str) -> dict[str, str]:

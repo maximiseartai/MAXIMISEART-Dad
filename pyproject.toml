@@ -37,6 +37,12 @@ dev = [
     "tzdata==2026.5; sys_platform == 'win32'",
     "uvicorn==0.54.0",
 ]
+# Linters of .github/ for CI job ruff-mypy and tools/ci_lokalnie.py; apart from dev, so other jobs do not install them.
+workflowy = [
+    "actionlint-py==1.7.12.25",
+    "shellcheck-py==0.11.0.1",
+    "zizmor==1.32.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
