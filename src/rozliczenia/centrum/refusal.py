@@ -27,13 +27,16 @@ _CATALOG: Final = _Catalog()
 """Dowód katalogu odmów: ``Refusal`` bez niego, także przez ``functools.partial(Refusal, 500)``, to błąd mypy (brak
 argumentu albo zły typ). Poza tym modułem ruff (``TID251`` w ``pyproject.toml``) odrzuca ``from … import _CATALOG``
 (także z aliasem) i atrybut modułu (``refusal._CATALOG``, także przez alias albo pełną ścieżkę), tak samo ``_Catalog``.
-Łapie tylko te postacie: nie łapie ``getattr(refusal, "_CATALOG")``, wartości ``Any`` ani klasy wyjętej z gotowej
-odmowy (``type(odmowa)``)."""
+Mypy odrzuca też ``type(odmowa)(…)`` bez dowodu, a podklasę ``Refusal`` (``final``). Łapie tylko te postacie: nie łapie
+``getattr(refusal, "_CATALOG")``, wartości ``Any``, odmowy bez konstruktora (``Refusal.__new__(Refusal)``) ani klasy
+wyjętej z argumentów typu (``get_args(…)[0]``). Te w ``src`` łapie ``tests/test_komunikaty_expect.py``: poza katalogiem
+``Refusal`` stoi tylko jako typ."""
 
 
+@final
 class Refusal(Exception):
     """Serwer odmawia żądania; ``create_app`` zamienia odmowę na odpowiedź ``Problem``. Tworzy ją tylko fabryka tego
-    katalogu (``_CATALOG``)."""
+    katalogu (``_CATALOG``), a podklasę z własnym konstruktorem bez dowodu odrzuca mypy (``final``)."""
 
     def __init__(self, status_code: int, message: str, proof: _Catalog) -> None:
         super().__init__(message)

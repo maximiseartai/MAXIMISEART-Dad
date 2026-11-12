@@ -85,6 +85,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.comment_versions import (
     LABEL,
     Drop,
+    LogsPost,
     OwnLogs,
     ProgressVersion,
     StandInLogs,
@@ -98,7 +99,6 @@ from rozliczenia.centrum.comment_versions import (
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.logs_disk import JournalKey, JournalRead, LogsOnDisk
-from rozliczenia.centrum.outbox import Post
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.logs_of_run import logged_diagnosis, logs_of
 from rozliczenia.centrum.run_logs import Environment, LoggedFile, RunLog, StartFacts, Tool
@@ -129,8 +129,8 @@ ProcessFiles = Callable[[common_contract.ProcessKey, str], Sequence[Path]]
 class CommentQueue(Protocol):
     """Kolejka wysyłki (``outbox.Outbox``) tak, jak widzi ją komentarz Uruchomienia."""
 
-    def post(self, post: Post) -> bool:
-        """Wysyłka do kolejki; ``True``: plik kolejki powstał."""
+    def post(self, post: LogsPost) -> bool:
+        """Wysyłka Logów z ``post_of`` do kolejki; ``True``: plik kolejki powstał."""
         ...
 
     def delivered(self, run_id: str, label: Label) -> str | None:

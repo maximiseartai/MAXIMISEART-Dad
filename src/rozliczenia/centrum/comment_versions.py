@@ -16,7 +16,8 @@ Wersja końcowa zamienia więc postęp w podsumowanie także po cofnięciu zegar
 Logów z wynikiem, które kolejka już przyjęła. Każda wersja niesie tylko tekst po strażniku reguły danych pracy Centrum
 (``run_logs_guard.GuardedLogs``, ``run_logs_guard.GuardedText``, ADR 0025), więc wysyłka (``post_of``) strażnika nie
 potrzebuje, a wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``), ``TypeError`` w
-konstruktorze wersji. Dziennik Wyceny znika tylko po wersji końcowej, którą kolejka przyjęła (``journal_after``).
+konstruktorze wersji. Wysyłkę daje tylko ``post_of`` jako ``LogsPost``, której nikt nie zmieni przed kolejką
+(docstring ``_VERSIONS``). Dziennik Wyceny znika tylko po wersji końcowej, którą kolejka przyjęła (``journal_after``).
 
 Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wybiera ``close``: cała macierz startu w jednym
 ``match``, ze strażnikiem w środku, więc start Centrum (``run_comments.RunComments``) dostaje tylko wersję po strażniku.
@@ -30,13 +31,13 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, Literal, assert_never
+from typing import TYPE_CHECKING, Final, Literal, assert_never, final
 
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, JournalRead, LeftJournal, Missing, Refused, Unreadable, name_of
-from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank
+from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Target
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, guard_logs, guard_text
 from rozliczenia.centrum.version import short_commit
@@ -211,7 +212,82 @@ _WITHOUT_LOGS_PLACE: Final = "wynik Wyceny w efenix bez Logów"
 """Miejsce zamaskowanej wartości w uwadze technicznej wyniku bez Logów."""
 
 
-def post_of(version: CommentVersion) -> Post:
+@final
+class _Versions:
+    """Typ dowodu, że wysyłkę Logów zbudował ``post_of`` (``_VERSIONS``)."""
+
+    __slots__ = ()
+
+
+_VERSIONS: Final = _Versions()
+"""Dowód wersji komentarza: ``LogsPost`` bez niego to błąd mypy (brak argumentu albo zły typ). Bierze go tylko
+``post_of``, bez pomocnika, który wkładałby go za wywołującego. Poza tym modułem ruff (``TID251`` w ``pyproject.toml``)
+odrzuca ``from … import _VERSIONS`` (także z aliasem) i atrybut modułu (``comment_versions._VERSIONS``, także przez
+alias albo pełną ścieżkę), tak samo ``_Versions``.
+
+``LogsPost`` nie jest dataclassą i nie oddaje swojej ``Post``, więc mypy odrzuca ``dataclasses.replace`` gotowej
+wysyłki, np. w innym stopniu albo z innymi częściami (``type-var``), a ``replace`` wartości ``Any`` rzuca
+``TypeError``. Podklasę odrzuca mypy (``final``). Łapie tylko te postacie: nie łapie ``getattr(comment_versions,
+"_VERSIONS")``, wartości ``Any`` z dowodem, dowodu zaimportowanego z ``# noqa: TID251``, ``object.__setattr__`` slotu
+ani nowej ``Post`` złożonej z pól gotowej wysyłki (``Post(sent.target, …)``), bo ``Outbox.post`` bierze też gołą
+``Post``. Tę ostatnią łapie
+``tests/test_granice_importow.py``: wynik ``post_of`` stoi tylko w ``<kolejka>.post(post_of(…))``, więc nikt nie czyta
+jego pól, a etykietę Logów (``LABEL``) kod poza ``post_of`` tylko podaje kolejce w pytaniu (``delivered``,
+``rejected``)."""
+
+
+@final
+class LogsPost:
+    """Wysyłka Logów Uruchomienia, którą ``Outbox.post`` bierze tak, jak zbudował ją ``post_of`` (``_VERSIONS``): pola
+    tylko do odczytu, bez ``Post`` do skopiowania."""
+
+    __slots__ = ("__post",)
+
+    def __init__(self, post: Post, proof: _Versions) -> None:
+        self.__post: Final = post
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, LogsPost) and self.__post == other.__post
+
+    def __hash__(self) -> int:
+        return hash(self.__post)
+
+    def __repr__(self) -> str:
+        return f"LogsPost({self.__post!r})"
+
+    @property
+    def target(self) -> Target:
+        return self.__post.target
+
+    @property
+    def period(self) -> str | None:
+        return self.__post.period
+
+    @property
+    def run_id(self) -> str:
+        return self.__post.run_id
+
+    @property
+    def header(self) -> str | None:
+        return self.__post.header
+
+    @property
+    def parts(self) -> tuple[str, ...]:
+        return self.__post.parts
+
+    @property
+    def archive(self) -> ArchiveFile | None:
+        return self.__post.archive
+
+    @property
+    def rank(self) -> Rank:
+        return self.__post.rank
+
+    def to_json(self) -> str:
+        return self.__post.to_json()
+
+
+def post_of(version: CommentVersion) -> LogsPost:
     """Wysyłka wersji ``version``: jeden komentarz Uruchomienia w issue Logów okresu, a przy Logach także ich pełny plik w
     Archiwum Logów okresu, w stopniu ``rank_of``."""
 
@@ -227,7 +303,7 @@ def post_of(version: CommentVersion) -> Post:
         case _:
             assert_never(version)
     period = start.period
-    return Post(
+    post = Post(
         PeriodThread(
             label=LABEL,
             line=f"- Logi Uruchomienia okresu: {period}",
@@ -244,6 +320,7 @@ def post_of(version: CommentVersion) -> Post:
         archive=archive,
         rank=rank_of(version),
     )
+    return LogsPost(post, _VERSIONS)
 
 
 def progress_markdown(progress: PricingProgress, *, elapsed_s: float) -> str:
