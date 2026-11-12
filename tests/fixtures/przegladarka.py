@@ -27,10 +27,11 @@ def chromium() -> Iterator[Browser]:
 
 
 @contextmanager
-def page_of(browser: Browser) -> Iterator[Page]:
-    """Nowa karta w osobnym kontekście (bez ciasteczek i pamięci innych testów)."""
+def page_of(browser: Browser, *, java_script: bool = True) -> Iterator[Page]:
+    """Nowa karta w osobnym kontekście (bez ciasteczek i pamięci innych testów), bez JavaScriptu przy ``java_script``
+    ``False``."""
 
-    context = browser.new_context()
+    context = browser.new_context(java_script_enabled=java_script)
     try:
         yield context.new_page()
     finally:
