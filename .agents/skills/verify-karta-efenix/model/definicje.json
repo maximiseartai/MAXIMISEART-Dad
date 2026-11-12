@@ -1,0 +1,13 @@
+{
+  "src/rozliczenia/efenix_browser.py": {
+    "BrowserEfenix._blocked_cause": "d9d678806672ae76",
+    "BrowserEfenix.enter_quantity": "837c5ba6caed05f3",
+    "BrowserEfenix.load_emmett": "db405e989f5892fd",
+    "BrowserEfenix.open_order": "ae826d0793ba96d1",
+    "BrowserEfenix.set_execution_date": "a65456c184aaa94c"
+  },
+  "src/rozliczenia/efenix_pace.py": {
+    "Pacing.before_write": "2efa861c69589453",
+    "_PacedEfenix._paced": "10c4225578c39855"
+  }
+}
