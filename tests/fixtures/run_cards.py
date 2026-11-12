@@ -15,6 +15,7 @@ import pytest
 
 from tests.fixtures.centrum import views_until
 
+# Celowa kopia wymagania, nie kontraktu: wyrocznia z kontraktu nie widzi pola, które przestaje trafiać do Logów.
 LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
 
 

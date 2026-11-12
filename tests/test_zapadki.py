@@ -1,5 +1,8 @@
-"""Zapadki: reguły, które padają tylko na liniach dodanych przez zmianę, bo stare wystąpienia już zniknęły albo jest ich
-za dużo, by je zakazać od razu.
+"""Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę.
+
+W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę z
+bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``. Formę, która ma jeszcze
+stare wystąpienia, zapadka dostaje dopiero wtedy, gdy zmiana je usunie albo poprawi tamten test.
 
 Bazę zmiany daje zmienna ``MAXIMISEART_ZAPADKA_BAZA`` (commit albo gałąź), a bez niej zapadka liczy od ``merge-base``
 HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowanymi zmianami) i całe pliki nieśledzone.
@@ -53,6 +56,7 @@ _DROPPED_NAVIGATION = re.compile(
     r"^\s*[A-Za-z_][\w.]*\.(?:goto|reload|go_back|go_forward)\("
     r"|^\s*with\b.*\bexpect_navigation\((?:[^()]|\([^()]*\))*\)(?!\s+as\b)"
 )
+_TRAILING_COMMENT = re.compile(r"\s#.*$")
 _PLAYWRIGHT_IMPORT = re.compile(r"^\s*(?:from|import) playwright\b", re.MULTILINE)
 _NAVIGATION_HELPER = (
     "odpowiedź nawigacji karty odrzucona: przejdź przez BrowserEfenix._go albo _reloaded"
@@ -223,6 +227,8 @@ def test_zapadka_stanu_pliku_widzi_tylko_src_poza_file_state(tmp_path: Path) -> 
         "    return os.path.exists(excel_lock_file(path))",
         "            collective_file_exists=os.path.isfile(path),",
         "    if not path.exists( ):",
+        "    taken = os.path.lexists(link)",
+        "    if os.path.isdir(folder):",
     ],
 )
 def test_zapadka_lapie_stan_pliku_poza_file_state(line: str) -> None:
@@ -287,8 +293,11 @@ def worker_threads(line: str) -> bool:
     potomnego. Nie łapie ``threading.enumerate()`` przed i po (#1297 i #1308 dodały tę formę w scalonych PR-ach bez
     rundy FAIL, więc zapadka na niej dałaby alarm na historii; jej przykłady zniknęły z ``tests/``),
     ``thread.start()`` na wątku, ``super().start()``, ``ModelThread.start``, ``sys._current_frames``,
-    ``threading._active``, ``setattr`` z nazwą klasy w zmiennej ani podmiany ``Thread.run`` i ``Thread.__init__``; te
-    zostają przeglądowi.
+    ``threading._active``, ``setattr`` z nazwą klasy w zmiennej, podmiany ``Thread.run`` i ``Thread.__init__`` ani
+    wywołania rozbitego na kilka linii (``monkeypatch.setattr(``, pod nim ``threading.Thread,`` i ``"start",``, jak łamie
+    je ruff format przy magicznym przecinku); te zostają przeglądowi.
+    W kodzie ``threading.Thread.start`` i ``threading.active_count`` odrzuca wcześniej, także w CI, ruff (``TID251`` w
+    ``tests/ruff.toml``), ale nie na linii z ``# noqa: TID251`` ani w napisie, więc zapadka zostaje.
     Żadna forma nie trafia w dzisiejsze ``tests/``, gdy każda jego linia jest dodana
     (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
     """
@@ -297,12 +306,13 @@ def worker_threads(line: str) -> bool:
 
 
 def worker_thread_counts(root: Path, base: str) -> list[str]:
-    """Linie ``tests/`` poza ``linie_watkow.py`` i tym plikiem, które zmiana od ``base`` dodaje z ``worker_threads``."""
+    """Linie ``tests/`` poza ``linie_watkow.py``, tym plikiem i ``test_zakazy_ruff.py`` (próbki zakazu ruff tych samych
+    form), które zmiana od ``base`` dodaje z ``worker_threads``."""
 
     return [
         f"{path}:{number}: {_THREAD_LINES_HELPER}"
         for path, number, line in _added_lines(root, base, "tests")
-        if path not in {_THREAD_LINES, "tests/test_zapadki.py"} and worker_threads(line)
+        if path not in {_THREAD_LINES, "tests/test_zapadki.py", "tests/test_zakazy_ruff.py"} and worker_threads(line)
     ]
 
 
@@ -318,7 +328,13 @@ def test_zapadka_watkow_widzi_tylko_tests_poza_linie_watkow(tmp_path: Path) -> N
     _git(tmp_path, "init", "-q")
     _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
     base = _git(tmp_path, "rev-parse", "HEAD").strip()
-    for path in (_THREAD_LINES, "tests/test_zapadki.py", "tests/test_watkow.py", "src/rozliczenia/watki.py"):
+    for path in (
+        _THREAD_LINES,
+        "tests/test_zapadki.py",
+        "tests/test_zakazy_ruff.py",
+        "tests/test_watkow.py",
+        "src/rozliczenia/watki.py",
+    ):
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
 
@@ -357,6 +373,10 @@ def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
         '        checks = [thread for thread in threading.enumerate() if thread.name == "powiadomienia-sprawdzanie"]',
         '    monkeypatch.setattr(threading.Thread, "run", counted)',
         '    monkeypatch.setattr(klasa, "start", counted)',
+        # Granice całej nazwy: inna nazwa, która zaczyna się od ``start`` albo kończy na ``active_count``.
+        "    began = threading.Thread.started_at",
+        "    threading.Thread.start_soon(work)",
+        "    assert pool._active_count() == 0",
     ],
 )
 def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
@@ -365,24 +385,30 @@ def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
 
 def dropped_navigation(line: str, previous: str) -> bool:
     """Czy linia pliku ``src/`` z importem ``playwright`` (``navigation_drops``) odrzuca odpowiedź nawigacji karty;
-    ``previous`` to poprzednia niepusta linia pliku.
+    ``previous`` to poprzednia niepusta linia pliku, która nie jest samym komentarzem.
 
     Łapie tylko linię, która zaczyna się od kropkowanej nazwy i wywołania ``.goto(``, ``.reload(``, ``.go_back(`` albo
     ``.go_forward(`` (``page.goto(…)``, ``self._page.reload(…)``), oraz linię, która zaczyna się od ``with``, z
     ``expect_navigation(…)``, którego nawias zamyka się w tej samej linii (z najwyżej jednym poziomem nawiasów w
     środku) bez ``as`` po nim; obie także w linii napisu wielowierszowego. Przepuszcza każdą z nich, gdy ``previous``
-    bez końcowych odstępów kończy się ``(`` albo ``,``, bo tak ruff format łamie nawigację podaną dalej jako argument
-    (``return _checked(`` i pod nim ``page.goto(…``), także gdy ta linia jest nową instrukcją po linii z ``,`` na końcu
-    (krotka bez nawiasu). Nie łapie odpowiedzi przypisanej, zwróconej albo podanej dalej, ``as _`` ani nieużytej
-    zmiennej po ``as``, ``expect_navigation`` z nawiasem w kilku liniach, nawigacji na wyniku wywołania
-    (``context.new_page().goto(``), ``wait_for_url`` i ``wait_for_load_state``, metody pod inną nazwą
+    bez końcowych odstępów kończy się ``(``, ``[`` albo ``,`` tak, jak stoi, albo po zdjęciu wszystkiego od pierwszego
+    odstępu z ``#`` (komentarz na końcu), bo tak ruff format łamie nawigację podaną dalej jako argument albo element
+    listy (``return _checked(`` i pod nim ``page.goto(…``), także gdy ta linia jest nową instrukcją po linii z ``,`` na
+    końcu (krotka bez nawiasu) albo elementem listy, której nikt nie czyta. Odstęp z ``#`` w napisie ``previous``
+    (``"strona #1",``) nie daje więc alarmu. Nie łapie odpowiedzi przypisanej, zwróconej albo podanej dalej w tej samej
+    linii, nawigacji po linii, której komentarz albo napis od odstępu z ``#`` kończy się ``(``, ``[`` albo ``,``
+    (``wait()  # najpierw lista,``), nawigacji po linii, której tekst przed odstępem z ``#`` kończy się ``,``, ``(``
+    albo ``[`` (``log("lista, #1")``), ``as _`` ani nieużytej zmiennej po ``as``, ``expect_navigation`` z nawiasem w kilku
+    liniach, nawigacji na wyniku wywołania (``context.new_page().goto(``), ``wait_for_url`` i ``wait_for_load_state``,
+    metody pod inną nazwą
     (``go = page.goto``) ani nawigacji w pliku bez linii, która po wcięciu zaczyna się od ``from playwright`` albo
     ``import playwright`` (karta podana bez adnotacji); import pod ``if TYPE_CHECKING:`` się liczy. Te zostają
     przeglądowi. Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
     (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
     """
 
-    return _DROPPED_NAVIGATION.search(line) is not None and not previous.rstrip().endswith(("(", ","))
+    ends = (previous.rstrip(), _TRAILING_COMMENT.sub("", previous).rstrip())
+    return _DROPPED_NAVIGATION.search(line) is not None and not any(end.endswith(("(", "[", ",")) for end in ends)
 
 
 def navigation_drops(root: Path, base: str) -> list[str]:
@@ -398,7 +424,8 @@ def navigation_drops(root: Path, base: str) -> list[str]:
         imports_playwright, lines = files[path]
         if not imports_playwright:
             continue
-        previous = next((lines[index] for index in range(number - 2, -1, -1) if lines[index].strip()), "")
+        earlier = (lines[index].strip() for index in range(number - 2, -1, -1))
+        previous = next((text for text in earlier if text and not text.startswith("#")), "")
         if dropped_navigation(line, previous):
             found.append(f"{path}:{number}: {_NAVIGATION_HELPER}")
     return found
@@ -461,13 +488,29 @@ def test_zapadka_nawigacji_przepuszcza_odpowiedz_podana_dalej_po_zlamaniu_linii(
         "    )\n"
         "\n\n"
         "def reload(page):\n"
-        "    page.reload()\n",
+        "    page.reload()\n"
+        "\n\n"
+        "def open_noted(page, url):\n"
+        "    return _checked(\n"
+        "        # lista zleceń\n"
+        "        page.goto(url, wait_until=\"load\"),\n"
+        "    )\n"
+        "\n\n"
+        "def statuses(page, urls):\n"
+        "    return [\n"
+        "        page.goto(url).status\n"
+        "        for url in urls\n"
+        "    ]\n"
+        "\n\n"
+        "def open_after_comment(page, url):\n"
+        "    # najpierw lista zleceń,\n"
+        "    page.goto(url)\n",
         encoding="utf-8",
     )
 
     found = navigation_drops(tmp_path, base)
 
-    assert found == [f"src/okno.py:28: {_NAVIGATION_HELPER}"]
+    assert found == [f"src/okno.py:28: {_NAVIGATION_HELPER}", f"src/okno.py:47: {_NAVIGATION_HELPER}"]
 
 
 @pytest.mark.parametrize(
@@ -480,6 +523,9 @@ def test_zapadka_nawigacji_przepuszcza_odpowiedz_podana_dalej_po_zlamaniu_linii(
         ("    tab.go_forward()", "    tab.go_back()"),
         ("    )", "    with page.expect_navigation(timeout=min(a, b)), other():"),
         ("", "    page.goto(url)"),
+        ('    log("lista #1,")', "    page.goto(url)"),
+        # ``#`` bez odstępu przed nim nie zaczyna komentarza.
+        ('    log("lista(#1)")', "    page.goto(url)"),
     ],
 )
 def test_zapadka_lapie_odrzucona_odpowiedz_nawigacji(previous: str, line: str) -> None:
@@ -508,7 +554,20 @@ def test_zapadka_przepuszcza_odpowiedz_nawigacji_ktora_ktos_czyta(line: str) -> 
 
 @pytest.mark.parametrize(
     "previous",
-    ["    return _checked(", "        self._read_order(", "        page,", "    return _checked(  ", "        response = _checked(page, ("],
+    [
+        "    return _checked(",
+        "        self._read_order(",
+        "        page,",
+        "    return _checked(  ",
+        "        response = _checked(page, (",
+        "    return _checked(  # lista zleceń",
+        "    return [",
+        "    statuses = [  # odpowiedzi kolejnych stron",
+        # Odstęp z ``#`` w napisie, a linia kończy się przecinkiem albo nawiasem (#1378 r1).
+        '            "strona #1",',
+        '    return _checked(f"lista #{number}", (',
+        "    wait()  # najpierw lista,",
+    ],
 )
 def test_zapadka_przepuszcza_nawigacje_ktora_jest_argumentem_po_zlamaniu_linii(previous: str) -> None:
     assert not dropped_navigation("        page.goto(", previous)
