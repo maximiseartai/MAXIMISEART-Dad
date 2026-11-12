@@ -914,8 +914,8 @@ def test_reczna_zmiana_dnia_po_przyjetym_wpisie_zostaje_przy_starym_mailu_a_swie
 def test_przeniesienia_na_inny_dzien_daja_ten_sam_wynik_w_kazdej_kolejnosci_maili_i_w_kolejnych_kliknieciach() -> None:
     """Własność kolejności maili (#1350): raport Jana za 8.11 przenosi zlecenie z 7.11, późniejszy raport Jana za 6.11 z
     dwoma niezgodnymi Wpisami (pomylony temat) oddaje je dniowi 7.11, a najpóźniejszy raport Ewy za 7.11 przejmuje je.
-    Jedno kliknięcie w każdej kolejności maili i kolejne kliknięcia po każdym mailu kończą się tym samym INTERMAX, bo
-    próg liczy dzień zlecenia sprzed Przeniesień Centrum."""
+    Jedno kliknięcie w każdej kolejności maili i kolejne kliknięcia po każdym mailu dają po każdym kliknięciu ten sam
+    INTERMAX, bo próg i pomylony temat liczą dzień zlecenia sprzed Przeniesień Centrum."""
 
     moved, other = _numbered(1, SEVENTH), _numbered(2)
     first = _mail(JAN, SUBJECT, "40000001 tak a", EVENING)
@@ -929,10 +929,12 @@ def test_przeniesienia_na_inny_dzien_daja_ten_sam_wynik_w_kazdej_kolejnosci_mail
     clicks: list[RegisterOrder] = orders
     memory = OwnEntries.EMPTY
     for index in range(1, 4):
-        outcome = enter_reports(
-            _inputs([first, mistaken, taken][:index], clicks, rollout=SIXTH, ordered=OPEN_DAYS, memory=memory)
-        )
+        mails = [first, mistaken, taken][:index]
+        outcome = enter_reports(_inputs(mails, clicks, rollout=SIXTH, ordered=OPEN_DAYS, memory=memory))
         clicks, memory = _after(clicks, outcome), outcome.memory
+        once = enter_reports(_inputs(mails, orders, rollout=SIXTH, ordered=OPEN_DAYS))
+
+        assert state(clicks) == state(_after(orders, once)), index
 
     expected = [
         (_key("40000001", SEVENTH, "ewa.probna"), "tak", "d"),
