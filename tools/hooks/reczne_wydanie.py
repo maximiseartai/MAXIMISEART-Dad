@@ -36,8 +36,8 @@ w ``tools/lib/repo.py``), a zmienna wpisana w samo polecenie niczego nie zmienia
 i Release z Pythona, więc hook go nie widzi i nie zatrzymuje.
 Granica: stronę GitHuba, skrypt z pliku albo w Pythonie, który sam woła ``git`` lub ``gh``, skrypt podany powłoce
 heredokiem, ``$(…)`` i `` `…` `` w cudzysłowie podwójnym, nazwę programu ze zmiennej albo aliasu, ``gh api graphql``
-(``createRef``), ``gh api`` z adresem ze zmiennej, ``push.followTags`` z konfiguracji gita i polecenie za ``#``
-w środku słowa w tej samej linii (``echo $#; git tag v1``) łapie tylko przegląd. Tak samo trzy rzadkie formy:
+(``createRef``), ``gh api`` z adresem ze zmiennej i ``push.followTags`` z konfiguracji gita łapie tylko przegląd.
+Tak samo trzy rzadkie formy:
 polecenie w linii za komentarzem zakończonym ``\\`` (hook bierze ją za dalszy ciąg komentarza, a bash ją wykonuje),
 polecenie w liniach za ``<<`` w napisie albo w ``$((…))`` (``_without_heredocs`` bierze je za początek heredoku
 i pomija dalsze linie) i ciało funkcji ``function f { …; }``. Hook nie zna repozytorium, w którym polecenie biegnie,
