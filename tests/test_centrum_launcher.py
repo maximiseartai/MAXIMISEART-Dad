@@ -239,7 +239,7 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
         still_waiting = start.is_alive()
 
     assert not still_waiting
-    assert took < wait_s * 1.8  # poniżej dwóch limitów, z zapasem na planowanie wątków na Windows
+    assert took < wait_s * 1.8
     assert exit_codes == [1]
     assert capsys.readouterr().out.splitlines()[0] == (
         f"Co się stało: Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program."
