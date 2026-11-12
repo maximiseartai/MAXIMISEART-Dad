@@ -2122,24 +2122,36 @@ def test_plik_pamieci_w_wersji_2_z_galezi_czyta_sie_bez_pamieci_zlecen_zamiast_z
         pytest.param(ROOT / "tests" / "fixtures" / "wpisanie-raportow-stan-v3.json", id="main-przed-1367"),
     ],
 )
+@pytest.mark.parametrize(
+    ("day", "worker"),
+    [
+        pytest.param(8, "anna.kowalska", id="inny-dzien-i-wykonawca"),
+        pytest.param(9, "anna.kowalska", id="ten-sam-dzien-inny-wykonawca"),
+        pytest.param(8, "jan.testowy", id="ten-sam-wykonawca-inny-dzien"),
+    ],
+)
 def test_plik_pamieci_ze_starszej_wersji_nie_niesie_wpisow_na_inne_zlecenie_numeru_z_reczna_wartoscia_taty(
-    tmp_path: Path, saved: Path
+    tmp_path: Path, saved: Path, day: int, worker: str
 ) -> None:
-    """Przegląd #1367 r4 Ważne 1, cel Maksa: Centrum nigdy nie nadpisuje ręcznej wartości taty, także po aktualizacji.
+    """Przegląd #1367 r4 Ważne 1 i r5 Drobne 1, cel Maksa: Centrum nigdy nie nadpisuje ręcznej wartości taty, także po
+    aktualizacji.
 
     Plik pamięci zapisało Centrum z Wydania v0.8.0 (wersja 1) albo z ``main`` przed #1367 (wersja 3), każde swoim kodem
-    przy tym samym kliknięciu: 40000001 stał u Anny w 8.11 z ręcznym „tak” i opisem taty i u Jana w 9.11, a Raport Jana
-    za 9.11 wpisał się do jego zlecenia, więc plik ma wpisy Jana przy numerze w dwóch zleceniach. Po aktualizacji, przed
-    pierwszym kliknięciem, tata usuwa wiersz Jana (duplikat). Raport Anny za 8.11 „nie” nie zmienia jej komórek: wpis
-    ze starszego pliku należy do miejsca z chwili zapisu (numer, dzień, Wykonawca) i nie przechodzi na inny wiersz,
-    więc obie komórki Anny są ręczne i zostają z różnicą. Logi mają pamięć, z którą liczyło kliknięcie, a plik pamięci
-    ma potem wersję 4 bez tych wpisów."""
+    przy tym samym kliknięciu: 40000001 stał z ręcznym „tak” i opisem taty w drugim zleceniu i u Jana w 9.11, a Raport
+    Jana za 9.11 wpisał się do jego zlecenia, więc plik ma wpisy Jana przy numerze w dwóch zleceniach. Drugie zlecenie
+    różni się od Jana 9.11 dniem i Wykonawcą (Anna 8.11), samym Wykonawcą (Anna 9.11) albo samym dniem (Jan 8.11), a
+    kod v0.8.0 zapisuje dla każdego z nich ten sam plik (przegląd #1367 r5 porównał oba nowe miejsca z fixture'em).
+    Po aktualizacji, przed pierwszym kliknięciem, tata usuwa wiersz Jana 9.11 (duplikat). Raport właściciela drugiego zlecenia za jego dzień
+    „nie” nie zmienia jego komórek: wpis ze starszego pliku należy do miejsca z chwili zapisu (numer, dzień i Wykonawca
+    naraz) i nie przechodzi na wiersz, który zgadza się z nim tylko dniem albo tylko Wykonawcą, więc obie komórki są
+    ręczne i zostają z różnicą. Logi mają pamięć, z którą liczyło kliknięcie, a plik pamięci ma potem wersję 4 bez tych
+    wpisów."""
 
     intermax = Intermax(
         ordered=(
             Order(
-                datetime(2026, 11, 8, 9),
-                "anna.kowalska",
+                datetime(2026, 11, day, 8),
+                worker,
                 40000001,
                 cells=((NUMBER, 40000001), (SUCCESSFUL, "tak"), (COMPLETED, "montaż taty")),
             ),
@@ -2150,12 +2162,12 @@ def test_plik_pamieci_ze_starszej_wersji_nie_niesie_wpisow_na_inne_zlecenie_nume
     )
     centrum = entering_centrum(tmp_path, intermax)
     shutil.copyfile(saved, _state(centrum))
-    anna = report(ANNA, "Raport 08.11.2026", "40000001 nie brak klienta", at=datetime(2026, 11, 9, 17, 30))
+    mail = report(SENDERS[worker], f"Raport {day:02d}.11.2026", "40000001 nie brak klienta", at=datetime(2026, 11, 9, 17, 30))
 
-    view = _click_at(centrum, datetime(2026, 11, 9, 18, 30), [anna])
+    view = _click_at(centrum, datetime(2026, 11, 9, 18, 30), [mail])
 
     entering = _entering(centrum, view)
-    cell = {"number": 40000001, "day": "2026-11-08", "worker": "anna.kowalska"}
+    cell = {"number": 40000001, "day": f"2026-11-{day:02d}", "worker": worker}
     assert _cells(centrum.register)[40000001] == ("tak", "montaż taty"), "Centrum nadpisało ręczną wartość taty"
     assert entering["changes"] == []
     assert entering["problems"] == [
@@ -2167,7 +2179,7 @@ def test_plik_pamieci_ze_starszej_wersji_nie_niesie_wpisow_na_inne_zlecenie_nume
         {"kind": "manual_difference", "cell": {**cell, "column": "SKUTECZNE", "value": "nie"}, "manual": "tak"},
     ]
     assert (entering["rollout_before"], entering["memory_before"]) == ("2026-11-08", [])
-    assert [problem["number"] for problem in _worker(_view(centrum), "anna.kowalska", "2026-11-08")["problems"]] == [
+    assert [problem["number"] for problem in _worker(_view(centrum), worker, f"2026-11-{day:02d}")["problems"]] == [
         "40000001"
     ] * 2
     after = json.loads(_state(centrum).read_text(encoding="utf-8"))
