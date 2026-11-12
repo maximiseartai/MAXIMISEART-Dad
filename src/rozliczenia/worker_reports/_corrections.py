@@ -30,7 +30,7 @@ def standing(
     orders: Sequence[RegisterOrder],
     moves: Mapping[tuple[OrderNumber, date], OwnMove],
 ) -> set[ReportProblem]:
-    """Problemy, które dalej stoją po poprawionych mailach (US 40); ``moves``: Przeniesienia z pamięci, jak w
+    """Problemy, które dalej stoją po poprawionych mailach (US 40); ``moves``: miejsca zleceń z pamięci, jak w
     ``_matching.match``.
 
     Stary mail zostaje w skrzynce, więc rdzeń liczy jego problemy przy każdym kliknięciu. Poprawionym mailem jest

@@ -149,7 +149,7 @@ def test_wpis_raportu_trafia_do_pustych_komorek_zlecenia_wykonawcy_z_dnia_z_tema
         CellChange(ROW, ReportColumn.COMPLETED, "wymiana routera"),
     )
     assert outcome.problems == ()
-    assert outcome.memory == OwnEntries(
+    assert outcome.memory.entries == (
         frozenset(
             {
                 OwnEntry(_key(), ReportColumn.SUCCESSFUL, "tak"),
@@ -208,7 +208,7 @@ def test_komorka_rowna_wpisowi_nie_daje_zmiany_a_drugie_klikniecie_niczego_nie_z
     third = enter_reports(_inputs([*mails, correction], [entered], memory=second.memory))
 
     assert first.changes == (CellChange(ROW, ReportColumn.COMPLETED, "wymiana routera"),)
-    assert first.memory == OwnEntries(frozenset({OwnEntry(_key(), ReportColumn.COMPLETED, "wymiana routera")}))
+    assert first.memory.entries == (frozenset({OwnEntry(_key(), ReportColumn.COMPLETED, "wymiana routera")}))
     assert (second.changes, second.problems) == ((), ())
     assert second.memory == first.memory
     assert third.changes == (CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),)
@@ -226,7 +226,7 @@ def test_reczny_opis_zostaje_z_roznica_dla_taty_a_puste_skuteczne_obok_dostaje_w
     assert outcome.problems == (
         ManualDifference(_key(), ReportColumn.COMPLETED, "wymiana modemu, klient prosi o telefon", "wymiana routera"),
     )
-    assert outcome.memory == OwnEntries(frozenset({OwnEntry(_key(), ReportColumn.SUCCESSFUL, "tak")}))
+    assert outcome.memory.entries == (frozenset({OwnEntry(_key(), ReportColumn.SUCCESSFUL, "tak")}))
 
 
 def test_wpis_bez_opisu_wpisuje_tylko_skuteczne() -> None:
@@ -410,7 +410,7 @@ def test_wpis_innego_wykonawcy_do_zlecenia_z_dnia_przenosi_je_do_nadawcy_z_infor
     assert [note(found) for found in outcome.notes] == ["przejęte od jan.testowy", "przekazane ewa.probna"]
     assert outcome.memory == OwnEntries(
         frozenset({OwnEntry(ewa_key, ReportColumn.SUCCESSFUL, "tak"), OwnEntry(ewa_key, ReportColumn.COMPLETED, "montaż")}),
-        frozenset({OwnMove(OrderNumber("40000001"), DAY, EWA_LOGIN, DAY, JAN_LOGIN)}),
+        frozenset({OwnMove(OrderNumber("40000001"), DAY, EWA_LOGIN, DAY, JAN_LOGIN, "Jan.Testowy", EVENING)}),
     )
     days = {(worker.day, worker.worker): worker for worker in outcome.workers}
     assert [order.number for order in days[DAY, EWA_LOGIN].orders_detail] == [
@@ -435,7 +435,8 @@ def test_przeniesione_zlecenie_stoi_w_liczbach_nadawcy_za_jego_zleceniami_dnia_n
 def test_swiezszy_mail_wygrywa_miedzy_wykonawcami_w_kolejnych_kliknieciach_i_w_jednym() -> None:
     """US 3, kryterium #1347: Jan, potem Ewa, potem znów Jan. Kliknięcie po mailu Ewy przenosi zlecenie do Ewy z jej
     Wpisem, a kliknięcie po drugim mailu Jana oddaje je Janowi z jego Wpisem, bez informacji, bo zlecenie stoi tam, gdzie
-    stało przed Centrum; Jan nie ma innych zleceń, więc wraca z loginem. Jedno kliknięcie z trzema mailami w każdej
+    stało przed Centrum; Jan nie ma innych zleceń, więc wraca z pisownią ``WYKONAWCA``, którą pamięć ma sprzed
+    Przeniesienia do Ewy. Jedno kliknięcie z trzema mailami w każdej
     kolejności daje to samo, co kolejne kliknięcia."""
 
     jan = _mail(JAN, SUBJECT, "40000001 tak wymiana routera", EVENING)
@@ -453,7 +454,7 @@ def test_swiezszy_mail_wygrywa_miedzy_wykonawcami_w_kolejnych_kliknieciach_i_w_j
     assert first.moves == ()
     assert second.moves == (OrderMove(ROW, DAY, "Ewa.Probna"),)
     assert [change.value for change in second.changes] == ["nie", "klient nieobecny"]
-    assert third.moves == (OrderMove(ROW, DAY, "jan.testowy"),)
+    assert third.moves == (OrderMove(ROW, DAY, "Jan.Testowy"),)
     assert [change.value for change in third.changes] == ["tak", "montaż"]
     assert third.notes == ()
     final = [(order.key, order.successful, order.completed) for order in fourth_orders]
@@ -484,22 +485,27 @@ def test_drugie_klikniecie_bez_nowych_maili_nic_nie_zmienia_a_informacje_zostaja
 def test_reczna_zmiana_wykonawcy_po_przeniesieniu_wygrywa_bez_problemu(manual: str) -> None:
     """US 15, ADR 0029: tata oddał zlecenie Janowi albo dał je komuś innemu po Przeniesieniu do Ewy. Następne kliknięcie
     z tym samym mailem Ewy go nie przenosi, nie wpisuje Wpisu Ewy i nie daje problemu ani informacji, a pamięć dalej
-    pamięta Przeniesienie, żeby zmiana taty wygrywała też potem."""
+    pamięta Przeniesienie, żeby zmiana taty wygrywała też potem, także z późniejszym mailem Ewy (decyzja autora #1358
+    do potwierdzenia przez Maksa)."""
 
     mails = [_mail(EWA, SUBJECT, "40000001 nie klient nieobecny")]
+    later = _mail(EWA, SUBJECT, "40000001 tak montaż", EVENING + timedelta(minutes=10))
     orders = [_order(), EWA_OWN]
     first = enter_reports(_inputs(mails, orders))
     by_tata = [replace(order, key=replace(order.key, worker=Login(manual.lower())), worker_name=manual) if order.row == ROW else order for order in _after(orders, first)]
 
     second = enter_reports(_inputs(mails, by_tata, memory=first.memory))
+    third = enter_reports(_inputs([*mails, later], by_tata, memory=second.memory))
 
-    assert (second.changes, second.moves, second.problems, second.notes) == ((), (), (), ())
+    for after in (second, third):
+        assert (after.changes, after.moves, after.problems, after.notes) == ((), (), (), ())
     assert second.memory.moves == first.memory.moves
 
 
 def test_po_recznym_oddaniu_zlecenia_janowi_liczy_sie_jego_wpis_a_nie_mail_ewy() -> None:
     """Gdy tata oddał przeniesione zlecenie Janowi, liczą się tylko Wpisy Jana: jego wcześniejszy Wpis wraca do komórek,
-    które Centrum samo wpisało Wpisem Ewy."""
+    które Centrum samo wpisało Wpisem Ewy, a pamięć dalej mówi o Przeniesieniu, więc mail Ewy nie przenosi zlecenia
+    także w następnym kliknięciu."""
 
     jan = _mail(JAN, SUBJECT, "40000001 tak wymiana routera", EVENING)
     ewa = _mail(EWA, SUBJECT, "40000001 nie klient nieobecny", EVENING + timedelta(minutes=10))
@@ -508,9 +514,11 @@ def test_po_recznym_oddaniu_zlecenia_janowi_liczy_sie_jego_wpis_a_nie_mail_ewy()
     by_tata = [replace(order, key=_key(), worker_name="Jan.Testowy") if order.row == ROW else order for order in _after(orders, first)]
 
     second = enter_reports(_inputs([jan, ewa], by_tata, memory=first.memory))
+    third = enter_reports(_inputs([jan, ewa], _after(by_tata, second), memory=second.memory))
 
     assert second.moves == ()
     assert [change.value for change in second.changes] == ["tak", "wymiana routera"]
+    assert (third.changes, third.moves) == ((), ())
 
 
 def test_reczna_zmiana_miejsca_po_przeniesieniu_wygrywa() -> None:
@@ -533,6 +541,81 @@ def test_reczna_zmiana_wykonawcy_przed_raportem_poprawia_mail() -> None:
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], [_order(worker="Ewa.Probna")]))
 
     assert outcome.moves == (OrderMove(ROW, DAY, "jan.testowy"),)
+
+
+def _given_to(orders: Sequence[RegisterOrder], name: str) -> list[RegisterOrder]:
+    """Tata zmienia w Excelu ``WYKONAWCA`` zlecenia z wiersza ``ROW`` na ``name``."""
+
+    return [
+        replace(order, key=replace(order.key, worker=Login(name.lower())), worker_name=name) if order.row == ROW else order
+        for order in orders
+    ]
+
+
+def test_reczna_zmiana_wykonawcy_po_wpisie_bez_przeniesienia_wygrywa_z_tym_samym_mailem() -> None:
+    """ADR 0029 „Ręczna zmiana dalej wygrywa”, przegląd #1358 r1: Centrum wpisało Wpis Jana, a potem jego poprawkę, do
+    jego własnego zlecenia, a tata dał potem zlecenie Ewie. Kolejne kliknięcia z tymi samymi mailami Jana nie przenoszą
+    zlecenia z powrotem, nie dają informacji ani problemu, a komórki, które Centrum wpisało i których nikt nie ruszył,
+    dalej są jego wpisem."""
+
+    mails = [_mail(JAN, SUBJECT, TEXT), _mail(JAN, SUBJECT, "40000001 nie klient nieobecny", EVENING + timedelta(minutes=5))]
+    orders = [_order()]
+    first = enter_reports(_inputs(mails[:1], orders))
+    corrected = enter_reports(_inputs(mails, _after(orders, first), memory=first.memory))
+    by_tata = _given_to(_after(_after(orders, first), corrected), "Ewa.Probna")
+
+    second = enter_reports(_inputs(mails, by_tata, memory=corrected.memory))
+    third = enter_reports(_inputs(mails, by_tata, memory=second.memory))
+
+    assert (first.moves, corrected.moves) == ((), ())
+    assert [change.value for change in corrected.changes] == ["nie", "klient nieobecny"]
+    for later in (second, third):
+        assert (later.changes, later.moves, later.problems, later.notes) == ((), (), (), ())
+    assert third.memory.entries == {
+        OwnEntry(_key(worker="ewa.probna"), ReportColumn.SUCCESSFUL, "nie"),
+        OwnEntry(_key(worker="ewa.probna"), ReportColumn.COMPLETED, "klient nieobecny"),
+    }
+
+
+def test_swiezszy_mail_po_recznej_zmianie_wykonawcy_po_wpisie_przenosi_zlecenie_z_pisownia_taty() -> None:
+    """US 3: mail Jana, który przyszedł po Wpisie, który Centrum już wpisało, wygrywa z ręczną zmianą taty sprzed niego,
+    więc przenosi zlecenie z powrotem do Jana z informacją po obu stronach. Jan nie ma innych zleceń w dniach otwartych,
+    więc zlecenie dostaje pisownię ``WYKONAWCA``, którą miało u Jana, gdy Centrum przyjęło jego Wpis. Mail z tą samą
+    chwilą przyjścia co przyjęty nie jest świeższy."""
+
+    first_mail = _mail(JAN, SUBJECT, TEXT)
+    orders = [_order(worker="JAN.Testowy")]
+    first = enter_reports(_inputs([first_mail], orders))
+    by_tata = _given_to(_after(orders, first), "Ewa.Probna")
+    same_time = _mail(JAN, SUBJECT, "40000001 nie klient nieobecny", EVENING)
+    newer = _mail(JAN, SUBJECT, "40000001 nie klient nieobecny", EVENING + timedelta(minutes=1))
+
+    tie = enter_reports(_inputs([first_mail, same_time], by_tata, memory=first.memory))
+    outcome = enter_reports(_inputs([first_mail, newer], by_tata, memory=first.memory))
+
+    assert tie.moves == ()
+    assert outcome.moves == (OrderMove(ROW, DAY, "JAN.Testowy"),)
+    assert [change.value for change in outcome.changes] == ["nie", "klient nieobecny"]
+    assert outcome.notes == (
+        HandedOver(DAY, EWA_LOGIN, OrderNumber("40000001"), JAN_LOGIN),
+        TakenOver(DAY, JAN_LOGIN, OrderNumber("40000001"), EWA_LOGIN),
+    )
+
+
+def test_miejsce_zlecenia_z_dnia_poza_oknem_wypada_z_pamieci() -> None:
+    """Pamięć trzyma miejsca zleceń tylko z dni otwartych: okres z Plikiem zbiorczym zamyka dzień, więc jego
+    Przeniesienie wypada z pamięci przy następnym kliknięciu, a Przeniesienie z dnia otwartego zostaje."""
+
+    closed = date(2026, 11, 2)
+    old = OwnMove(OrderNumber("40000009"), closed, EWA_LOGIN, closed, JAN_LOGIN, "Jan.Testowy", EVENING - timedelta(days=6))
+    standing = OwnMove(OrderNumber("40000001"), DAY, EWA_LOGIN, DAY, JAN_LOGIN, "Jan.Testowy", EVENING)
+    memory = OwnEntries(frozenset(), frozenset({old, standing}))
+
+    outcome = enter_reports(
+        _inputs([], [_order(worker="Ewa.Probna")], rollout=date(2026, 10, 30), closed=(period_of(closed).token,), memory=memory)
+    )
+
+    assert outcome.memory.moves == {standing}
 
 
 @pytest.mark.parametrize(
@@ -783,7 +866,7 @@ def test_pamiec_zostawia_dawny_wpis_tylko_gdy_komorka_zlecenia_ma_dalej_wpisana_
 
     outcome = enter_reports(_inputs([], orders, memory=OwnEntries(frozenset({kept, changed_by_tata, outside}))))
 
-    assert outcome.memory == OwnEntries(frozenset({kept}))
+    assert outcome.memory.entries == (frozenset({kept}))
 
 
 def test_pamiec_z_dwoma_wpisami_jednej_komorki_zlecenia_jest_odrzucona() -> None:
@@ -860,7 +943,7 @@ def test_regula_komorki_dla_kazdej_kolumny_osobno(
     assert outcome.changes == ((CellChange(ROW, column, CORRECTED[column]),) if changed else ())
     assert outcome.problems == ((ManualDifference(_key(), column, values[current or ""], CORRECTED[column]),) if different else ())
     remembered_after = (OwnEntry(_key(), column, CORRECTED[column]),) if remembers else ()
-    assert outcome.memory == OwnEntries(frozenset(remembered_after))
+    assert outcome.memory.entries == (frozenset(remembered_after))
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -887,7 +970,7 @@ def test_poprawka_wykonawcy_w_drugim_kliknieciu_podmienia_nietkniety_wlasny_wpis
         CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),
     )
     assert second.problems == ()
-    assert second.memory == OwnEntries(frozenset(OwnEntry(_key(), column, value) for column, value in CORRECTED.items()))
+    assert second.memory.entries == (frozenset(OwnEntry(_key(), column, value) for column, value in CORRECTED.items()))
 
 
 def test_reczna_zmiana_miedzy_kliknieciami_wygrywa_z_poprawka_a_kolumna_obok_dostaje_poprawke() -> None:
@@ -905,7 +988,7 @@ def test_reczna_zmiana_miedzy_kliknieciami_wygrywa_z_poprawka_a_kolumna_obok_dos
     difference = ManualDifference(_key(), ReportColumn.SUCCESSFUL, "nie wiem", "nie")
     assert second.changes == (CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),)
     assert second.problems == (difference,)
-    assert second.memory == OwnEntries(frozenset({OwnEntry(_key(), ReportColumn.COMPLETED, "klient nieobecny")}))
+    assert second.memory.entries == (frozenset({OwnEntry(_key(), ReportColumn.COMPLETED, "klient nieobecny")}))
     assert (third.changes, third.problems, third.memory) == ((), (difference,), second.memory)
 
 
@@ -930,7 +1013,7 @@ def test_poprawka_nie_rusza_pamieci_innego_zlecenia_ani_wpisu_wczesniejszego_mai
         CellChange(ROW, ReportColumn.SUCCESSFUL, "nie"),
         CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),
     )
-    assert second.memory == OwnEntries(
+    assert second.memory.entries == (
         frozenset(
             {
                 *(OwnEntry(_key(), column, value) for column, value in CORRECTED.items()),
@@ -1224,7 +1307,7 @@ _CANONICAL_ORDERS = (
 )
 _CANONICAL_MEMORY = OwnEntries(
     frozenset({OwnEntry(_key("40000002"), ReportColumn.COMPLETED, "ręcznie")}),
-    frozenset({OwnMove(OrderNumber("40000003"), DAY, Login("ewa.probna"), DAY, Login("jan.testowy"))}),
+    frozenset({OwnMove(OrderNumber("40000003"), DAY, Login("ewa.probna"), DAY, Login("jan.testowy"), "Jan.Testowy", EVENING)}),
 )
 """Pamięć z ręczną wartością równą Wpisowi i Przeniesieniem zlecenia Jana do Ewy, które INTERMAX ma dalej u Ewy."""
 

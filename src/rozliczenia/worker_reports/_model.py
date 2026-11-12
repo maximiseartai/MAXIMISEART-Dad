@@ -228,18 +228,24 @@ class OwnEntry:
 
 @dataclass(frozen=True)
 class OwnMove:
-    """Przeniesienie zlecenia, które Wpisanie raportów samo zrobiło: zlecenie ``number`` stoi w dniu ``day`` u
-    Wykonawcy ``worker``, a przed pierwszym Przeniesieniem Centrum stało w dniu ``origin_day`` u ``origin_worker``.
+    """Miejsce zlecenia, które Wpisanie raportów samo ustaliło: zlecenie ``number`` stoi w dniu ``day`` u Wykonawcy
+    ``worker``, bo Centrum je tam przeniosło albo przyjęło tam Wpis jego własnego Wykonawcy; ``since``: chwila
+    przyjścia ostatniego maila, którego Wpis Centrum przyjęło u ``worker``. Przed pierwszym Przeniesieniem Centrum
+    zlecenie stało w dniu ``origin_day`` u ``origin_worker`` z pisownią ``WYKONAWCA`` ``origin_name``; bez Przeniesienia
+    to samo miejsce co ``day`` i ``worker``.
 
     Dopóki INTERMAX ma zlecenie u ``worker``, Wpis innego Wykonawcy może je przenieść dalej, a tata widzi informację o
-    Przeniesieniu, gdy ``worker`` różni się od ``origin_worker``. Gdy tata zmienił ``WYKONAWCA`` po Przeniesieniu,
-    jego zmiana wygrywa (ADR 0029)."""
+    Przeniesieniu, gdy ``worker`` różni się od ``origin_worker``. Gdy tata zmienił ``WYKONAWCA`` potem, jego zmiana
+    wygrywa (ADR 0029): po Przeniesieniu z każdym Wpisem, a gdy zlecenie stoi u ``origin_worker``, z każdym Wpisem z
+    maila, który nie przyszedł po ``since`` (``_matching._movable``)."""
 
     number: OrderNumber
     day: date
     worker: Login
     origin_day: date
     origin_worker: Login
+    origin_name: str
+    since: datetime
 
 
 @dataclass(frozen=True)

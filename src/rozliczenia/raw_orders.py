@@ -572,8 +572,10 @@ def plan_moves(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, move
 
     Blok dnia zlecenia to jego wiersz i uporządkowane wiersze z jego datą nad nim i pod nim, z pojedynczymi pustymi
     wierszami (nie żółtymi) między nimi; segment to ciąg wierszy bloku z wartościami bez pustego wiersza. Przeniesienia
-    idą po wierszach od góry. Wiersz odchodzi ze swojego miejsca, a segment, który zostaje bez wierszy, traci pusty
-    wiersz pod sobą (nad sobą, gdy był ostatni w bloku). Wiersz staje pod ostatnim wierszem ostatniego segmentu z
+    idą po wierszach od góry, a klucz segmentu daje ``WYKONAWCA`` jego pierwszego wiersza w tej chwili planu: wiersz już
+    przeniesiony ma nowego Wykonawcę, a wiersz, którego Przeniesienie przyjdzie później, dalej tego z pliku. Wiersz
+    odchodzi ze swojego miejsca, a segment, który zostaje bez wierszy, traci pusty wiersz pod sobą (nad sobą, gdy był
+    ostatni w bloku). Wiersz staje pod ostatnim wierszem ostatniego segmentu z
     kluczem ``segment_key`` nowego Wykonawcy, a bez takiego segmentu w nowym segmencie: z pustym wierszem pod sobą przed
     pierwszym segmentem z kluczem większym albo z pustym wierszem nad sobą za ostatnim segmentem; w bloku bez innych
     wierszy staje na swoim miejscu. Wiersze od pierwszego bloku do końca arkusza dostają kolejne numery, więc wiersze
@@ -626,6 +628,13 @@ def plan_moves(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, move
     read = list(range(base, last + 1))
     first = min(base + block(read, source - base, _day_of(facts[source], columns))[0] for source in moves)
     slots: list[int | NewSeparator] = list(range(first, last + 1))
+    placed: set[int] = set()
+
+    def worker_now(slot: int) -> object:
+        """``WYKONAWCA`` wiersza w tej chwili planu: po zaplanowanym Przeniesieniu nowy, przed nim ten z pliku."""
+
+        return moves[slot] if slot in placed else facts[slot].value(columns.worker)
+
     for source in sorted(moves):
         day = _day_of(facts[source], columns)
         at = slots.index(source)
@@ -652,7 +661,7 @@ def plan_moves(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, move
             if segments and segments[-1][2] == index - 1:
                 segments[-1] = (segments[-1][0], segments[-1][1], index)
             else:
-                segments.append((segment_key(moves.get(slot, facts[slot].value(columns.worker))), index, index))
+                segments.append((segment_key(worker_now(slot)), index, index))
         wanted = segment_key(moves[source])
         same = [end for key, _, end in segments if key == wanted]
         later = [start for key, start, _ in segments if key > wanted]
@@ -663,6 +672,7 @@ def plan_moves(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, move
         else:
             end = segments[-1][2]
             slots[end + 1 : end + 1] = [NewSeparator(source), source]
+        placed.add(source)
     return MovePlan(first, tuple(slots), MappingProxyType(dict(moves)))
 
 

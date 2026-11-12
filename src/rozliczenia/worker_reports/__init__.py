@@ -148,7 +148,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     reports = [found for found in mails if isinstance(found, ReadReport)]
     remembered = {(move.number, move.day): move for move in inputs.memory.moves}
     matched = _matching.match(reports, orders, remembered)
-    moved = _moves.moved(matched.transfers, orders, inputs.memory, inputs.window)
+    moved = _moves.moved(matched.accepted, orders, inputs.memory, inputs.window)
     after = {order.row: order for order in moved.orders}
     targets = {key: (after[order.row], entry) for key, (order, entry) in matched.targets.items()}
     changes, differences, memory = _cells.reconcile(targets, moved.orders, moved.memory, inputs.kept)

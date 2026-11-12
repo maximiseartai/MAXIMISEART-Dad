@@ -778,14 +778,17 @@ class LoggedMove(_Record):
 
 
 class LoggedOwnMove(_Record):
-    """Przeniesienie zlecenia z pamięci Wpisania raportów: numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u którego
-    Centrum je postawiło, i dzień i Wykonawca sprzed pierwszego Przeniesienia Centrum."""
+    """Miejsce zlecenia z pamięci Wpisania raportów (``OwnMove``): numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u
+    którego Centrum je postawiło albo przyjęło Wpis, dzień, Wykonawca i pisownia ``WYKONAWCA`` sprzed pierwszego
+    Przeniesienia Centrum i chwila przyjścia ostatniego przyjętego maila."""
 
     number: int
     day: date
     worker: str
     origin_day: date
     origin_worker: str
+    origin_name: str
+    since: datetime
 
     @classmethod
     def of(cls, move: OwnMove) -> LoggedOwnMove:
@@ -795,6 +798,8 @@ class LoggedOwnMove(_Record):
             worker=move.worker,
             origin_day=move.origin_day,
             origin_worker=move.origin_worker,
+            origin_name=move.origin_name,
+            since=move.since,
         )
 
 
@@ -807,7 +812,7 @@ class LoggedReports(_Record):
     przeczytane maile po chwili przyjścia, ``problems`` problemy rdzenia raportów, ``changes`` komórki do wpisania,
     ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, ``kept`` decyzje „Zostaw moją” tych zleceń z
     migawki kliknięcia (komórka z treścią Wpisu jako ``value``; Logi sprzed #1231 ich nie mają), ``moves`` Przeniesienia
-    zleceń do zapisu, ``moves_before`` zapamiętane Przeniesienia numerów z Wpisami tego kliknięcia (Logi sprzed #1347 nie
+    zleceń do zapisu, ``moves_before`` zapamiętane miejsca zleceń numerów z Wpisami tego kliknięcia (Logi sprzed #1347 nie
     mają obu), a ``written`` liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
     """
 

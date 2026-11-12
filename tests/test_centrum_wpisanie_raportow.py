@@ -1229,6 +1229,48 @@ def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja
     assert _worker(_view(centrum), "anna.kowalska")["notes"] == anna["notes"]
 
 
+def test_reczna_zmiana_wykonawcy_po_wpisie_zostaje_przy_starym_mailu_a_swiezszy_mail_przenosi(tmp_path: Path) -> None:
+    """ADR 0029 „Ręczna zmiana dalej wygrywa”, przegląd #1358 r1: kliknięcie wpisało Wpis Jana do jego zlecenia, a tata
+    dał potem zlecenie Annie w Excelu. Następne kliknięcie z tym samym mailem zostawia zlecenie u Anny bez zapisu
+    INTERMAX; świeższy mail Jana (US 3) przenosi je z powrotem pod jego zlecenia, z informacją w okienku dnia."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "anna.kowalska", 40000002),
+            _order(9, 10, "jan.testowy", 40000001),
+            _order(9, 11, "jan.testowy", 40000005),
+        ),
+        raw=(),
+    )
+    first = report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path, intermax, [first])
+    _finished(centrum)
+    sheet = load_workbook(centrum.register)
+    [row] = [cell.row for cell in sheet[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == 40000001]
+    sheet[ORDER_SHEET].cell(row, WORKER).value = "anna.kowalska"
+    sheet.save(centrum.register)
+    by_tata = centrum.register.read_bytes()
+
+    same = _finished(centrum)
+    kept = centrum.register.read_bytes()
+    centrum.fake_inbox.outcome = [first, report(JAN, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 18))]
+    newer = _finished(centrum)
+
+    assert (_entering(centrum, same)["changes"], _entering(centrum, same)["moves"]) == ([], [])
+    assert kept == by_tata
+    assert _entering(centrum, newer)["moves"] == [{"sheet": ORDER_SHEET, "row": row, "day": "2026-11-09", "worker": "jan.testowy"}]
+    assert _day_rows(centrum.register, 7) == [
+        (40000002, "anna.kowalska"),
+        "pusty",
+        (40000005, "jan.testowy"),
+        (40000001, "jan.testowy"),
+        "pusty",
+        "żółty",
+    ]
+    assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny")
+    assert _worker(_view(centrum), "jan.testowy")["notes"] == [{"number": "40000001", "text": "przejęte od anna.kowalska"}]
+
+
 def test_nadawca_bez_segmentu_w_dniu_dostaje_nowy_segment_na_miejscu_alfabetycznym(tmp_path: Path) -> None:
     """Kryterium #1347: Anna nie ma zleceń 9.11, a przejmuje jedno z dwóch zleceń Jana. Jej nowy segment staje przed
     segmentem Jana (alfabetycznie), z jednym pustym wierszem między segmentami z wyglądem pustego wiersza Uporządkowania
@@ -1264,7 +1306,8 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
 ) -> None:
     """Kryterium #1347: plik pamięci w wersji 1 (bez Przeniesień) czyta się bez błędu, z dniem wdrożenia i własnym
     wpisem, który poprawka Jana dalej nadpisuje. Kliknięcie z Przeniesieniem zlecenia Jana do Anny zapisuje wersję 2 z
-    tym Przeniesieniem, więc gdy tata odda potem zlecenie Janowi w Excelu, następne kliknięcie go nie przenosi."""
+    tym Przeniesieniem i z miejscem zlecenia Jana, którego Wpis przyjęło u Jana, z pisownią ``WYKONAWCA`` i chwilą
+    maila, więc gdy tata odda potem zlecenie Janowi w Excelu, następne kliknięcie go nie przenosi."""
 
     intermax = Intermax(
         ordered=(
@@ -1296,24 +1339,30 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
     assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
     assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 1"
     assert saved["schema_version"] == 2
+    jan_since, anna_since = "2026-11-09T17:00:00+01:00", "2026-11-09T17:30:00+01:00"
     assert saved["moves"] == [
+        {
+            "number": "40000001",
+            "day": "2026-11-09",
+            "worker": "jan.testowy",
+            "origin_day": "2026-11-09",
+            "origin_worker": "jan.testowy",
+            "origin_name": "jan.testowy",
+            "since": jan_since,
+        },
         {
             "number": "40000005",
             "day": "2026-11-09",
             "worker": "anna.kowalska",
             "origin_day": "2026-11-09",
             "origin_worker": "jan.testowy",
-        }
+            "origin_name": "jan.testowy",
+            "since": anna_since,
+        },
     ]
     assert _entering(centrum, again)["moves"] == []
     assert _entering(centrum, again)["moves_before"] == [
-        {
-            "number": 40000005,
-            "day": "2026-11-09",
-            "worker": "anna.kowalska",
-            "origin_day": "2026-11-09",
-            "origin_worker": "jan.testowy",
-        }
+        {**move, "number": int(move["number"])} for move in saved["moves"]
     ]
 
 def test_bez_folderu_okresow_w_ustawieniach_karta_mowi_co_wskazac_a_start_jest_odrzucony(tmp_path: Path) -> None:

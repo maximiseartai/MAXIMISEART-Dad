@@ -15,10 +15,13 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
+import tempfile
 from typing import cast
 from xml.etree import ElementTree
 import zipfile
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
 import pytest
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell, MergedCell
@@ -462,6 +465,111 @@ def test_przeniesienie_z_komorkami_wpisuje_je_przed_przesunieciem_wiersza(tmp_pa
         (40000001, "tak"),
     ]
 
+
+@pytest.mark.parametrize(
+    ("ordered", "moves", "expected"),
+    [
+        pytest.param(
+            (("anna.kowalska", 40000001), ("jan.testowy", 40000002), ("jan.testowy", 40000003)),
+            ((2, "jan.testowy"), (4, "zofia.nowa")),
+            (("jan.testowy", (40000003, 40000001)), ("zofia.nowa", (40000002,))),
+            id="drugie z pierwszego wiersza segmentu, do którego weszło pierwsze",
+        ),
+        pytest.param(
+            (("anna.kowalska", 40000001), ("jan.testowy", 40000002), ("zofia.nowa", 40000003)),
+            ((2, "jan.testowy"), (4, "zofia.nowa")),
+            (("jan.testowy", (40000001,)), ("zofia.nowa", (40000003, 40000002))),
+            id="łańcuch A do B i B do C",
+        ),
+        pytest.param(
+            (("anna.kowalska", 40000001), ("anna.kowalska", 40000004), ("jan.testowy", 40000002)),
+            ((2, "jan.testowy"), (5, "anna.kowalska")),
+            (("anna.kowalska", (40000004, 40000002)), ("jan.testowy", (40000001,))),
+            id="zamiana A i B",
+        ),
+        pytest.param(
+            (("anna.kowalska", 40000001), ("jan.testowy", 40000002), ("jan.testowy", 40000005), ("zofia.nowa", 40000003)),
+            ((2, "zofia.nowa"), (4, "anna.kowalska"), (7, "jan.testowy")),
+            (("anna.kowalska", (40000002,)), ("jan.testowy", (40000005, 40000003)), ("zofia.nowa", (40000001,))),
+            id="trzy naraz",
+        ),
+    ],
+)
+def test_kilka_przeniesien_w_dniu_zostawia_kazdy_segment_wykonawcy_w_jednym_kawalku(
+    tmp_path: Path,
+    ordered: tuple[tuple[str, int], ...],
+    moves: tuple[tuple[int, str], ...],
+    expected: tuple[tuple[str, tuple[int, ...]], ...],
+) -> None:
+    """US 10 i glosariusz „Przeniesienie zlecenia”: kilka Przeniesień jednego kliknięcia (dwa zwykłe maile o przejęciu)
+    stawia każde zlecenie pod ostatnim zleceniem jego Wykonawcy, także gdy wcześniejsze Przeniesienie weszło do segmentu,
+    z którego później odchodzi pierwsze zlecenie (przegląd #1358 r1)."""
+
+    intermax = Intermax(ordered=tuple(_on(9 + index, worker, number) for index, (worker, number) in enumerate(ordered)), raw=())
+    path = _register(tmp_path, intermax)
+
+    _write(path, [], moves=[_move(row, worker) for row, worker in moves])
+
+    rows: list[object] = []
+    for worker, numbers in expected:
+        rows += [(number, worker, _link(number)) for number in numbers] + ["pusty"]
+    assert _sheet_rows(path, len(rows) + 2) == [*rows, "żółty"]
+
+
+_WORKERS = ("anna.kowalska", "ewa.probna", "jan.testowy", "zofia.nowa")
+
+
+@st.composite
+def _day_with_moves(draw: st.DrawFn) -> tuple[tuple[tuple[str, int], ...], dict[int, str]]:
+    """Uporządkowany dzień (segmenty Wykonawców po kolei, 1–3 zlecenia) i Przeniesienia części jego zleceń do innych
+    Wykonawców: numer zlecenia → nowy Wykonawca."""
+
+    workers = sorted(draw(st.sets(st.sampled_from(_WORKERS), min_size=1, max_size=3)))
+    ordered = tuple(
+        (worker, 40000000 + 10 * segment + index)
+        for segment, worker in enumerate(workers)
+        for index in range(draw(st.integers(1, 3)))
+    )
+    moved = draw(st.sets(st.sampled_from([number for _, number in ordered]), min_size=1, max_size=3))
+    targets = {
+        number: draw(st.sampled_from([worker for worker in _WORKERS if (worker, number) not in ordered]))
+        for number in sorted(moved)
+    }
+    return ordered, targets
+
+
+@settings(max_examples=40, deadline=None, derandomize=True, database=None)
+@given(_day_with_moves())
+def test_dowolne_przeniesienia_w_dniu_daja_uklad_uporzadkowania(day: tuple[tuple[tuple[str, int], ...], dict[int, str]]) -> None:
+    """Własność US 10–11: po dowolnych Przeniesieniach w dniu każdy Wykonawca ma jeden segment, segmenty stoją w
+    kolejności alfabetycznej jak po Uporządkowaniu INTERMAX, z jednym pustym wierszem między nimi i nad żółtym wierszem,
+    zlecenia Wykonawcy, których nikt nie przeniósł, zostają w swojej kolejności, a każde przeniesione staje pod nimi,
+    pod ostatnim zleceniem swojego Wykonawcy (Przeniesienia po wierszach od góry), z Hiperłączem."""
+
+    ordered, targets = day
+    with tempfile.TemporaryDirectory() as folder:
+        path = _register(Path(folder), Intermax(ordered=tuple(_on(9, worker, number) for worker, number in ordered), raw=()))
+        rows_of = {number: row for row, (_, number) in enumerate(_ordered_rows(ordered), start=2) if number}
+        _write(path, [], moves=[_move(rows_of[number], worker) for number, worker in targets.items()])
+        shown = _sheet_rows(path, len(ordered) + 2 * len(_WORKERS) + 2)
+
+    expected: list[object] = []
+    for worker in sorted({targets.get(number, owner) for owner, number in ordered}):
+        expected += [(number, worker, _link(number)) for owner, number in ordered if owner == worker and number not in targets]
+        expected += [(number, worker, _link(number)) for number, target in sorted(targets.items(), key=lambda item: rows_of[item[0]]) if target == worker]
+        expected.append("pusty")
+    assert shown[: len(expected) + 1] == [*expected, "żółty"]
+
+
+def _ordered_rows(ordered: Sequence[tuple[str, int]]) -> list[tuple[str, int | None]]:
+    """Wiersze uporządkowanego dnia atrapy od wiersza 2: zlecenia z pustym wierszem (numer ``None``) między Wykonawcami."""
+
+    rows: list[tuple[str, int | None]] = []
+    for index, (worker, number) in enumerate(ordered):
+        if index and ordered[index - 1][0] != worker:
+            rows.append(("", None))
+        rows.append((worker, number))
+    return rows
 
 @pytest.mark.parametrize(
     ("move", "problem"),

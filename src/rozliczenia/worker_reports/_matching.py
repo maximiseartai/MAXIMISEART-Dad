@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from ..report_cells import OrderRow
 from ._model import (
@@ -31,11 +31,11 @@ from ._model import (
 @dataclass(frozen=True)
 class Matched:
     """Wynik dopasowania: zwycięski Wpis każdego zlecenia po kluczu, który zlecenie ma po kliknięciu (``targets``),
-    zlecenia, które przechodzą do nadawcy zwycięskiego Wpisu (``transfers``: zlecenie i nadawca), i problemy Wpisów bez
-    jednego zlecenia."""
+    zlecenie każdego zwycięskiego Wpisu z jego nadawcą i chwilą przyjścia maila (``accepted``; zlecenie innego
+    Wykonawcy niż nadawca przechodzi do nadawcy) i problemy Wpisów bez jednego zlecenia."""
 
     targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]]
-    transfers: tuple[tuple[RegisterOrder, Login], ...]
+    accepted: tuple[tuple[RegisterOrder, Login, datetime], ...]
     problems: list[ReportProblem]
 
 
@@ -48,8 +48,8 @@ def match(
     Wykonawcy. Wpis trafia do zlecenia nadawcy z dnia z tematu; numer w dwóch takich zleceniach to ``RepeatedOrder``.
     Bez zlecenia nadawcy w tym dniu Wpis trafia do jedynego zlecenia tego numeru u innego Wykonawcy w tym dniu, a gdy
     zwycięży, zlecenie przechodzi do nadawcy (Przeniesienie zlecenia), chyba że nadawca ma ten numer w innym dniu
-    otwartym (``OtherDay``) albo tata zmienił ``WYKONAWCA`` po Przeniesieniu Centrum (``moves``): wtedy liczą się tylko
-    Wpisy Wykonawcy z INTERMAX, bez problemu. Numer w kilku zleceniach innych Wykonawców z tego dnia rozstrzyga
+    otwartym (``OtherDay``) albo tata zmienił ``WYKONAWCA`` po tym, jak Centrum ustaliło miejsce zlecenia (``moves``,
+    ``_movable``): wtedy liczą się tylko Wpisy Wykonawcy z INTERMAX, bez problemu. Numer w kilku zleceniach innych Wykonawców z tego dnia rozstrzyga
     ``_unmatched``, tak jak numer bez zlecenia w tym dniu. Zwycięski Wpis bez ``tak`` ani ``nie`` to ``MissingVerdict``
     zamiast celu, bo nie wiadomo, co Wykonawca miał na myśli, a zwycięski mail z Wpisami numeru o przeciwnym zamiarze
     (``_entries.entries``) to ``ConflictingVerdicts``; w obu zlecenie zostaje u swojego Wykonawcy.
@@ -74,7 +74,7 @@ def match(
                 case []:
                     found = _foreign(key, numbered[number], days[number, report.day])
                     if isinstance(found, RegisterOrder):
-                        if _movable(found, moves):
+                        if _movable(found, report, moves):
                             latest[found.row] = (found, report, tuple(written))
                     else:
                         problems += found
@@ -83,27 +83,35 @@ def match(
                 case _:
                     problems.append(RepeatedOrder(report.worker, report.day, number))
     targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]] = {}
-    transfers: list[tuple[RegisterOrder, Login]] = []
+    accepted: list[tuple[RegisterOrder, Login, datetime]] = []
     for order, report, entries in latest.values():
         key = OrderKey(order.key.number, order.key.day, report.worker)
         match entries:
             case (ReportEntry(fault=None) as entry,):
                 targets[key] = (order, entry)
-                if report.worker != order.key.worker:
-                    transfers.append((order, report.worker))
+                accepted.append((order, report.worker, report.arrived))
             case (ReportEntry(fault=VerdictFault() as fault),):
                 problems.append(MissingVerdict(key.worker, key.day, key.number, fault))
             case _:
                 problems.append(ConflictingVerdicts(key.worker, key.day, key.number, report.mail, report.arrived, entries))
-    return Matched(targets, tuple(transfers), problems)
+    return Matched(targets, tuple(accepted), problems)
 
 
-def _movable(order: RegisterOrder, moves: Mapping[tuple[OrderNumber, date], OwnMove]) -> bool:
-    """Zlecenie bez Przeniesienia Centrum albo dalej u Wykonawcy, do którego przeniosło je Centrum: ręczna zmiana
-    ``WYKONAWCA`` po Przeniesieniu wygrywa (ADR 0029)."""
+def _movable(order: RegisterOrder, report: ReadReport, moves: Mapping[tuple[OrderNumber, date], OwnMove]) -> bool:
+    """Czy Wpis ``report`` innego Wykonawcy może przenieść zlecenie: ręczna zmiana ``WYKONAWCA`` po tym, jak Centrum
+    ustaliło miejsce zlecenia, wygrywa (ADR 0029 „Ręczna zmiana dalej wygrywa”).
+
+    Przenosi Wpis zlecenia, którego miejsca Centrum nie ustaliło (także ``WYKONAWCA`` wpisany ręcznie przed raportem,
+    US 16) albo które INTERMAX ma dalej u Wykonawcy z pamięci. Gdy tata zmienił ``WYKONAWCA`` po Przeniesieniu Centrum,
+    nie przenosi żaden Wpis (US 15). Gdy zmienił go, kiedy zlecenie stało tam, gdzie przed pierwszym Przeniesieniem
+    Centrum (Centrum tylko przyjęło Wpis Wykonawcy zlecenia albo zlecenie wróciło do niego), przenosi tylko Wpis z
+    maila, który przyszedł po ostatnim przyjętym (``since``): Wpis, który Centrum już przyjęło, zmiana taty
+    unieważniła, a świeższy mail wygrywa (US 3). Mail z tą samą chwilą przyjścia nie jest świeższy."""
 
     move = moves.get((order.key.number, order.key.day))
-    return move is None or move.worker == order.key.worker
+    if move is None or move.worker == order.key.worker:
+        return True
+    return (move.worker, move.day) == (move.origin_worker, move.origin_day) and report.arrived > move.since
 
 
 def _foreign(

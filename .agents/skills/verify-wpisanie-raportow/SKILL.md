@@ -278,8 +278,9 @@ is wrong:
 
 Left out: Przeniesienia zleceń (ADR 0029, #1347): a Wpis of another Wykonawca moves the order to them, and the cell's
 own entries go with the row to its new `OrderKey` (`_moves.moved`), so for the one cell the model has it is the
-newest Wpis of `NowyMail`, whoever sent it; Dad's change of `WYKONAWCA` after a Przeniesienie only leaves an older Wpis
-in force, which `NowyMail` also covers. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
+newest Wpis of `NowyMail`, whoever sent it; Dad's change of `WYKONAWCA` after a Przeniesienie or after an accepted Wpis
+(the place `OwnMove` in the memory, `_matching._movable`) only leaves an older Wpis in force, which `NowyMail` also
+covers. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
 mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).
