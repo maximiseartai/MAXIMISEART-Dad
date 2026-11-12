@@ -24,9 +24,13 @@ Katalog procesów (``centrum/catalog.py``), wpis procesu (``centrum/process_kind
 nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy okresów ani okna efenix, także przez inne
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
 komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
-katalog. ``PreparedRun`` składa tylko ``Catalog.prepared``, ale tego pilnuje typ, a nie ten test: konstruktor bez
-dowodu katalogu, kopię przez ``replace`` i podklasę odrzuca mypy, a dowód poza katalogiem ruff (docstring
-``process_kind._CATALOG``).
+katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``replace`` z ``metrics=`` albo
+z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
+plik metryk i silnik procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``,
+``Catalog.steered``, ``Catalog.with_engine``). Eksplorator Uruchomień daje swój silnik przez ``Catalog.with_engine``, więc
+prawdziwe ``PreparedRun.conduct`` biegnie w każdym harmonogramie (przegląd #1127: podklasa z własnym ``conduct`` je
+omijała). Konstruktor bez dowodu katalogu odrzuca też mypy, a dowód ``process_kind._CATALOG`` poza katalogiem ruff
+(``TID251``), ale nie z ``# noqa: TID251``, więc konstruktor łapie ten test (przegląd #1371 r2).
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
@@ -49,10 +53,10 @@ zostaje przeglądowi.
 - Logi i tekst po strażniku (``GuardedLogs``, ``GuardedText``) daje tylko ``guard_logs`` i ``guard_text`` z
   ``run_logs_guard``, inaczej ich typ niczego by nie dowodził. Konstruktor bez dowodu strażnika (``_MINTED``), ``replace``,
   kopię, ``pickle``, zmianę pola, podklasę i wartość innego typu (``Any``) zamyka sam typ albo jego sprawdzenie przy
-  uruchomieniu, a import i atrybut modułu ``_MINTED`` ruff (``TID251``, docstring ``run_logs_guard._MINTED``). Poza
-  ``run_logs_guard`` nazwy tych typów padają tylko w adnotacjach, importach i ``isinstance``, a napis z ich nazwą albo
-  z ``_MINTED`` nigdzie, więc test łapie ``object.__new__(GuardedLogs)``, ``object.__setattr__`` slotu,
-  ``cast(GuardedLogs, …)`` i ``getattr(run_logs_guard, "_MINTED")``.
+  uruchomieniu (docstring ``run_logs_guard._MINTED``). Poza ``run_logs_guard`` nazwy tych typów padają tylko w adnotacjach,
+  importach i ``isinstance``, a ``_MINTED`` i napis z ich nazwą w żadnej postaci, więc test łapie
+  ``object.__new__(GuardedLogs)``, ``object.__setattr__`` slotu, ``cast(GuardedLogs, …)`` i ``_MINTED`` zaimportowany
+  z ``# noqa: TID251``, którego ruff nie widzi (przegląd #1371 r2).
 
 Wyrocznie skilli (``.agents/skills/*/scripts``) i narzędzia (``tools/``) biorą z ``src`` tylko publiczne nazwy
 (docs/agents/skille.md, „Co wyrocznia bierze z src”): mechanikę przez publiczny punkt obserwacji, a dane o świecie
@@ -69,7 +73,9 @@ przechodzi.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
 trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
-(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), moduł ``comment_versions`` przypisany innej
+(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod nazwą
+przypisaną poza importem albo jako ``type(prepared)``, kopia ``PreparedRun`` przez ``replace`` przypisane innej nazwie
+poza importem albo z wyrażenia bez ``prepared`` w tekście z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…), moduł ``comment_versions`` przypisany innej
 nazwie poza importem, wysyłka Logów zmieniona w słuchaczu kolejki bez nazwania etykiety (np. po ``run_id``) albo
 zbudowana z etykietą wziętą z innej wysyłki (``post.target.label``) oraz celowe obejście strażnika bez nazwy jego typów
 (``object.__new__(type(logs))``, zmiana ``__class__``).
@@ -587,6 +593,109 @@ def test_wpisy_procesow_czyta_tylko_katalog_procesow() -> None:
     )
 
 
+# Moduły z funkcją ``replace``, która kopiuje dataclassę z podmienionymi polami.
+_COPYING_MODULES: typing.Final = frozenset({"dataclasses", "copy"})
+
+
+def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
+    """Miejsca w ``tree``, które składają ``PreparedRun`` obok ``Catalog.prepared``: jego konstruktor (nazwa albo
+    atrybut ``PreparedRun``), podklasa (składa się sama, ``cls(...)``) i kopia przez ``replace`` z ``dataclasses`` albo
+    ``copy`` albo przez ``__replace__``, z innym plikiem metryk (``metrics=``) albo z wyrażenia, którego tekst ma
+    ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
+
+    Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
+    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``).
+    """
+
+    builds = {"PreparedRun"}
+    copies = {"replace", *(f"{module}.replace" for module in _COPYING_MODULES)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            builds |= {alias.asname for alias in node.names if alias.name == "PreparedRun" and alias.asname}
+            if node.module in _COPYING_MODULES:
+                copies |= {alias.asname or alias.name for alias in node.names if alias.name == "replace"}
+        elif isinstance(node, ast.Import):
+            copies |= {f"{alias.asname}.replace" for alias in node.names if alias.name in _COPYING_MODULES and alias.asname}
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for base in node.bases:
+                named = base.value if isinstance(base, ast.Subscript) else base
+                if (named.id if isinstance(named, ast.Name) else getattr(named, "attr", None)) in builds:
+                    found.append((node.lineno, f"class {node.name}({ast.unparse(base)})"))
+            continue
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if (func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)) in builds:
+            found.append((node.lineno, f"{ast.unparse(func)}("))
+            continue
+        if isinstance(func, ast.Attribute) and func.attr == "__replace__":
+            copied = ast.unparse(func.value)
+        elif ast.unparse(func) in copies:
+            copied = ast.unparse(node.args[0]) if node.args else ""
+        else:
+            continue
+        if "prepared" in copied.lower() or any(keyword.arg == "metrics" for keyword in node.keywords):
+            found.append((node.lineno, ast.unparse(node)))
+    return found
+
+
+def test_uruchomienie_gotowe_do_startu_sklada_tylko_katalog_procesow() -> None:
+    found = {
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {call}"
+        for path in _python_files()
+        if path != CATALOG
+        for line, call in _prepared_run_builds(ast.parse(path.read_text(encoding="utf-8")))
+    }
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "PreparedRun składa tylko Catalog.prepared (src/rozliczenia/centrum/catalog.py), także kopią "
+            "(dataclasses.replace z metrics= albo z wartości prepared) i podklasą: rdzeń, historia metryk i silnik "
+            "procesu pochodzą z katalogu, więc Centrum, Skrypt dla maszyn, odtworzenie, testy i skrypty skilli "
+            "podmieniają je tylko przez Catalog.with_metrics, Catalog.steered i Catalog.with_engine.",
+        ]
+    )
+
+
+# Złożenie PreparedRun obok Catalog.prepared (kopie i nazwy z importu: przegląd #1122, runda 1).
+PREPARED_RUN_BUILDS: typing.Final = {
+    "konstruktor": "run = PreparedRun(kind, period, inputs, context, metrics)",
+    "konstruktor-z-modulu": "run = process_kind.PreparedRun(kind, period, inputs, context, metrics)",
+    "konstruktor-pod-nazwa-z-importu": "from rozliczenia.centrum.process_kind import PreparedRun as _G\nrun = _G(1, 2)",
+    "replace-z-plikiem-metryk": "run = replace(run, metrics=MetricsStore(path, ()))",
+    "dataclasses-replace-uruchomienia": "run = dataclasses.replace(prepared, kind=other)",
+    "copy-replace-z-atrybutu": "run = copy.replace(self.prepared, period=period)",
+    "dunder-replace": "run = PREPARED.__replace__(kind=other)",
+    "replace-pod-nazwa-z-importu": "from dataclasses import replace as _r\nrun = _r(run, metrics=None)",
+    "modul-pod-nazwa-z-importu": "import dataclasses as dc\nrun = dc.replace(run, metrics=store)",
+    # Przegląd #1127, runda 1: podklasa z własnym conduct składała się przez cls(**pola).
+    "podklasa-z-modulu": "class Modelled(process_kind.PreparedRun[Any, Any]):\n    pass",
+    "podklasa-pod-nazwa-z-importu": "from rozliczenia.centrum.process_kind import PreparedRun as _G\nclass M(_G):\n    pass",
+}
+# Kopie innych wartości, napisy i nazwy typu, które sprawdzenie przepuszcza.
+PREPARED_RUN_ALLOWED: typing.Final = {
+    "pole-kind-innej-dataclassy": "shown = replace(named, kind=kind, offer=offer)",
+    "replace-napisu": 'line = text.replace("PREPARED", "")',
+    "replace-bez-wartosci-w-argumencie": "copy = replace(**changes)",
+    "replace-innej-funkcji-pod-ta-nazwa": "from os import replace as swap\nswap(prepared, target)",
+    "adnotacja-i-isinstance": "def f(run: PreparedRun) -> bool:\n    return isinstance(run, PreparedRun)\n",
+    "podklasa-innej-klasy-generycznej": "class Shown(Generic[SummaryT]):\n    pass",
+}
+
+
+@pytest.mark.parametrize("code", PREPARED_RUN_BUILDS.values(), ids=PREPARED_RUN_BUILDS.keys())
+def test_sprawdzenie_katalogu_lapie_zlozenie_uruchomienia_obok_catalog_prepared(code: str) -> None:
+    assert _prepared_run_builds(ast.parse(code))
+
+
+@pytest.mark.parametrize("code", PREPARED_RUN_ALLOWED.values(), ids=PREPARED_RUN_ALLOWED.keys())
+def test_sprawdzenie_katalogu_przepuszcza_kopie_innych_wartosci(code: str) -> None:
+    assert _prepared_run_builds(ast.parse(code)) == []
+
+
 # Drzewa src z modułem rdzenia a.py i drogą do warstwy skoroszytu, którą sprawdzenie łapie.
 WORKBOOK_ROUTES: typing.Final = {
     "import-wprost": {"a.py": "import openpyxl\n"},
@@ -753,11 +862,10 @@ def _type_nodes(tree: ast.AST) -> set[ast.AST]:
 
 def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     """Miejsca, z których Logi albo tekst po strażniku mogą powstać albo się zmienić z pominięciem ``guard_logs`` i
-    ``guard_text`` drogą, której nie zamyka typ, jego sprawdzenie przy uruchomieniu ani ruff (docstring
-    ``run_logs_guard._MINTED``): napis ``"_MINTED"`` (``getattr``, ``vars``); nazwa ``GuardedLogs`` albo ``GuardedText``
-    (także pod inną nazwą z importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą
-    (także slot ``_GuardedLogs__…``) poza docstringiem. Import i atrybut modułu ``_MINTED`` łapie ruff (``TID251``), a
-    nie ten test. Celowego obejścia bez tych nazw nie łapie (docstring modułu)."""
+    ``guard_text`` drogą, której nie zamyka typ ani jego sprawdzenie przy uruchomieniu (docstring ``run_logs_guard._MINTED``):
+    ``_MINTED`` w każdej postaci, także napis; nazwa ``GuardedLogs`` albo ``GuardedText`` (także pod inną nazwą z
+    importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą (także slot
+    ``_GuardedLogs__…``) poza docstringiem. Celowego obejścia bez tych nazw nie łapie (docstring modułu)."""
 
     names = GUARDED | {
         alias.asname
@@ -774,8 +882,13 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     }
     found = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and node.value == "_MINTED":
-            found.append((node.lineno, repr(node.value)))
+        if (
+            (isinstance(node, ast.Name) and node.id == "_MINTED")
+            or (isinstance(node, ast.Attribute) and node.attr == "_MINTED")
+            or (isinstance(node, ast.alias) and node.name == "_MINTED")
+            or (isinstance(node, ast.Constant) and node.value == "_MINTED")
+        ):
+            found.append((getattr(node, "lineno", 0), "_MINTED"))
         elif node in typed:
             continue
         elif (isinstance(node, ast.Name) and node.id in names) or (
@@ -805,15 +918,15 @@ def test_logi_i_tekst_po_strazniku_powstaja_tylko_ze_straznika() -> None:
             *found,
             f"Logi i tekst po strażniku reguły danych (GuardedLogs, GuardedText) daje tylko guard_logs i guard_text z "
             f"src/{RUN_LOGS_GUARD}. Poza nim te nazwy padają tylko w adnotacjach, importach i isinstance, a napis z nimi i "
-            "napis dowodu strażnika (\"_MINTED\") nigdzie, bo object.__new__, object.__setattr__, cast i getattr typ "
-            "przepuszcza. Kopia, replace, zmiana pola, podklasa i wartość innego typu rzucają (docstring _MINTED).",
+            "dowód strażnika (_MINTED) nigdzie, bo object.__new__, object.__setattr__ i cast typ przepuszcza. Kopia, "
+            "replace, zmiana pola, podklasa i wartość innego typu rzucają (docstring _MINTED).",
         ]
     )
 
 
-# Drogi obok guard_logs i guard_text, których typ ani ruff nie zamyka (przegląd #1038, rundy 1 i 2, i docstring
+# Drogi obok guard_logs i guard_text, których typ nie zamyka (przegląd #1038, rundy 1 i 2, i docstring
 # run_logs_guard._MINTED). Podklasę zamyka też __init_subclass__, a cast(Any, …) sprawdzenie przy uruchomieniu (testy w
-# tests/test_komentarz_logow_uruchomienia.py). Import i atrybut modułu _MINTED odrzuca ruff (TID251).
+# tests/test_komentarz_logow_uruchomienia.py).
 GUARD_BYPASSES: typing.Final = {
     "nowa-wartosc-bez-konstruktora": "logs = object.__new__(GuardedLogs)",
     "slot-istniejacej-wartosci": 'object.__setattr__(logs, "_GuardedLogs__record", record)',
@@ -823,6 +936,8 @@ GUARD_BYPASSES: typing.Final = {
     "nazwa-z-importu-pod-inna-nazwa": (
         "from rozliczenia.centrum.run_logs_guard import GuardedLogs as Logs\nlogs = Logs.__new__(Logs)"
     ),
+    "dowod-z-importu": "from rozliczenia.centrum.run_logs_guard import _MINTED",
+    "dowod-z-atrybutu-modulu": "proof = run_logs_guard._MINTED",
     "dowod-przez-getattr": 'proof = getattr(run_logs_guard, "_MINTED")',
     "dowod-ze-slownika-modulu": 'proof = vars(run_logs_guard)["_MINTED"]',
     "podklasa": "class Mine(GuardedLogs):\n    pass\n",
@@ -854,10 +969,10 @@ def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_impor
 def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     """Miejsca pliku ``file``, które mogą zbudować albo przerobić wysyłkę Logów Uruchomienia obok ``post_of``.
 
-    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca typ (docstring ``comment_versions._VERSIONS``), a nie
-    to sprawdzenie. Typ przepuszcza za to nową ``Post`` złożoną z pól gotowej wysyłki, bo ``Outbox.post`` bierze też
-    gołą ``Post`` (``Post(sent.target, …, Rank.OWN)`` i ``parts=(record.text,)``, przegląd #1371 r1). Dlatego
-    sprawdzenie łapie tylko dwie rzeczy.
+    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca też typ (docstring ``comment_versions._VERSIONS``),
+    ale nie z ``# type: ignore[…]``. Typ przepuszcza też nową ``Post`` złożoną z pól gotowej wysyłki, bo ``Outbox.post``
+    bierze też gołą ``Post`` (``Post(sent.target, …, Rank.OWN)`` i ``parts=(record.text,)``, przegląd #1371 r1).
+    Dlatego sprawdzenie łapie tylko dwie rzeczy.
 
     ``post_of`` rozpoznaje po nazwie, a nie po imporcie: każda nazwa i atrybut ``post_of`` (z dowolną bazą) stoi tylko
     w ``<kolejka>.post(post_of(…))``, więc wynik idzie od razu do kolejki i nikt nie przeczyta jego pól. Napis
@@ -976,16 +1091,30 @@ def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
             *found,
             "Wysyłkę Logów Uruchomienia (etykieta logi-uruchomienia) buduje tylko post_of z wersji komentarza "
             f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of), a jej wynik "
-            "idzie od razu do kolejki: outbox.post(post_of(wersja)), bez Post złożonej z jego pól, bez innej nazwy i "
-            "bez getattr. Etykietę Logów (comment_versions.LABEL) kod poza post_of tylko podaje kolejce w pytaniu "
-            "delivered albo rejected.",
+            "idzie od razu do kolejki: outbox.post(post_of(wersja)), bez replace, bez Post złożonej z jego pól, bez "
+            "innej nazwy i bez getattr. Etykietę Logów (comment_versions.LABEL) kod poza post_of tylko podaje kolejce w "
+            "pytaniu delivered albo rejected.",
         ]
     )
 
 
-# Wysyłki Logów obok post_of (przegląd #1038, rundy 1 i 2: „pakiet” i „getattr”; przegląd #1371 r1: dwie pierwsze,
-# czyli przypadki #1038 r1 bez replace, które mypy przepuszcza). Sam replace gotowej wysyłki odrzuca mypy (LogsPost).
+# Wysyłki Logów obok post_of (przegląd #1038, rundy 1 i 2: dwie pierwsze z replace, „pakiet” i „getattr”; przegląd
+# #1371 r1: dwie następne, czyli przypadki #1038 r1 bez replace, które mypy przepuszcza). Replace gotowej wysyłki
+# odrzuca też mypy (LogsPost), ale nie z # type: ignore[…], więc te próbki zostają.
 LOGS_POST_BREAKS: typing.Final = {
+    "zastepcza-w-stopniu-logow-z-wynikiem-przez-replace": (
+        "from dataclasses import replace\n"
+        "from rozliczenia.centrum.comment_versions import OwnLogs, StandInLogs, post_of\n"
+        "from rozliczenia.centrum.outbox import Post, Rank\n"
+        "def own_from_start(logs):\n"
+        "    return replace(post_of(StandInLogs(logs)), rank=Rank.OWN)\n"
+    ),
+    "komentarz-sprzed-straznika-przez-replace": (
+        "from dataclasses import replace\n"
+        "from rozliczenia.centrum.comment_versions import OwnLogs, post_of\n"
+        "def unguarded(logs, record):\n"
+        "    return replace(post_of(OwnLogs(logs)), parts=(record.text + '\\n',))\n"
+    ),
     "zastepcza-w-stopniu-logow-z-wynikiem": (
         "from rozliczenia.centrum.comment_versions import StandInLogs, post_of\n"
         "from rozliczenia.centrum.outbox import Post, Rank\n"
