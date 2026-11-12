@@ -372,15 +372,27 @@ def _overlapping(log: list[str]) -> list[str]:
 
 
 @POSIX_ONLY
-def test_kopie_commitu_z_wielu_watkow_nie_zmieniaja_worktree_naraz(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("place", ["wątek", "inny proces"])
+def test_kopie_commitu_z_wielu_watkow_i_procesow_nie_zmieniaja_worktree_naraz(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, place: str
+) -> None:
     repo = _repository(tmp_path / "repo")
     log, shim = tmp_path / "git.log", fake_cli(tmp_path / "atrapa", "git", WORKTREE_LOG)
     monkeypatch.setenv("SHIM_GIT", str(shutil.which("git")))
     monkeypatch.setenv("SHIM_LOG", str(log))
     monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ['PATH']}")
     seen: list[str] = []
+    # Workery pytest-xdist i narzędzia z kilku worktree robią kopie jednego repozytorium z osobnych procesów (#1312).
+    code = (
+        f"import pathlib, sys\nsys.path.insert(0, {str(TOOLS / 'lib')!r})\nimport potomne\n"
+        f"with potomne.commit_copy(pathlib.Path({str(repo)!r}), 'HEAD') as copy:\n"
+        "    print((copy / 'plik.txt').read_text(encoding='utf-8'), end='')\n"
+    )
 
     def second_copy() -> None:
+        if place == "inny proces":
+            seen.append(subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60, check=True).stdout)
+            return
         with potomne.commit_copy(repo, "HEAD") as copy:
             seen.append((copy / "plik.txt").read_text(encoding="utf-8"))
 
