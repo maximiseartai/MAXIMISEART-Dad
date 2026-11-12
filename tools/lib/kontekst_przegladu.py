@@ -62,7 +62,7 @@ def print_context(number: int) -> int:
     print(repo.git(ROOT, "diff", "--stat", fork, pull.head, timeout=limit).rstrip())
     print(f"PLIKI | {len(files)}", *files, sep="\n")
     print(f"SKILLE | {SKILLS_FOR_CHANGE.as_posix()} {fork} na HEAD PR", *_skills_for_change(pull.head, fork), sep="\n")
-    print(stan_pr.ci_line(pull.checks, pull.head))
+    print(stan_pr.ci_line(pull))
     print(*werdykt_pr.history(pull.verdicts, pull.head), sep="\n")
     print(f"PRZEGLĄD OK | #{pull.number} {pull.head[:7]}")
     return 0

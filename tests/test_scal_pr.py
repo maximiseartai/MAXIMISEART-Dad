@@ -147,6 +147,28 @@ def _verdict(kind: str, body: str, association: str = "OWNER", *, when: str) -> 
     return {"body": body, "authorAssociation": association, "state": kind, "submittedAt": when, "author": {"login": "recenzent"}}
 
 
+def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
+    """Odpowiedź ``gh pr view --json`` otwartego PR ``number`` z HEAD ``head``, zielonym CI i bez werdyktu, z ``fields``."""
+
+    return {
+        "number": number,
+        "title": f"PR {number}",
+        "body": BODY,
+        "state": "OPEN",
+        "isDraft": False,
+        "isCrossRepository": False,
+        "baseRefName": "main",
+        "headRefOid": head,
+        "statusCheckRollup": GREEN,
+        "comments": [],
+        "reviews": [],
+        "mergeCommit": None,
+        "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
+        "closingIssuesReferences": [],
+        **fields,
+    }
+
+
 class MergeGitHub(FakeGitHub):
     def __init__(self, tmp_path: Path, files: dict[str, str]) -> None:
         super().__init__(
@@ -173,22 +195,7 @@ class MergeGitHub(FakeGitHub):
 
         head = self.commit_on(parent or self.start, files, f"PR {number}")
         self.push_head(number, head)
-        self.pulls[str(number)] = {
-            "number": number,
-            "title": f"PR {number}",
-            "body": BODY,
-            "state": "OPEN",
-            "isDraft": False,
-            "isCrossRepository": False,
-            "baseRefName": "main",
-            "headRefOid": head,
-            "statusCheckRollup": GREEN,
-            "comments": [],
-            "reviews": [],
-            "mergeCommit": None,
-            "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
-            "closingIssuesReferences": [],
-        }
+        self.pulls[str(number)] = _pr_view(number, head)
         self._save()
         return head
 
@@ -327,10 +334,19 @@ def _broken(problems: str) -> str:
     return BROKEN_PASS.format(short=HEAD[:7], problems=problems)
 
 
-def _written(*verdicts: tuple[str, ...]) -> list[dict[str, object]]:
-    """Komentarze (``comment``) i recenzje (stan recenzji) z kontem (domyślnie ``OWNER``) w kolejności utworzenia."""
+def _pull(**fields: object) -> stan_pr.Pull:
+    """``stan_pr.pull`` PR 1 z HEAD ``HEAD`` na odpowiedzi ``gh pr view`` z ``fields``, z atrapą ``gh`` w procesie."""
 
-    return [_verdict(kind, body, *association, when=f"2026-10-24T03:00:{index:02d}Z") for index, (kind, body, *association) in enumerate(verdicts)]
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(stan_pr.github, "gh", lambda *arguments: json.dumps(_pr_view(1, HEAD, **fields)))
+        return stan_pr.pull(1)
+
+
+def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
+    """PR z komentarzami (``comment``) i recenzjami (stan recenzji) z kontem (domyślnie ``OWNER``) utworzonymi po kolei."""
+
+    written = [_verdict(kind, body, *association, when=f"2026-10-24T03:00:{index:02d}Z") for index, (kind, body, *association) in enumerate(verdicts)]
+    return _pull(comments=[verdict for verdict in written if "createdAt" in verdict], reviews=[verdict for verdict in written if "submittedAt" in verdict])
 
 
 @pytest.mark.parametrize(
@@ -441,7 +457,7 @@ def _written(*verdicts: tuple[str, ...]) -> list[dict[str, object]]:
     ],
 )
 def test_najnowszy_werdykt_dla_head_rozstrzyga_zgode_na_merge(verdicts: list[tuple[str, ...]], reason: str | None) -> None:
-    assert werdykt_pr.consent_problem(_written(*verdicts), HEAD, 1) == reason
+    assert werdykt_pr.consent_problem(_written(*verdicts)) == reason
 
 
 @pytest.mark.parametrize(
@@ -556,7 +572,7 @@ RED_RUN_BEFORE_OLDER_GREEN = [*_run(42706832032, *RED_RUN), *_run(42701212234, *
 def test_gotowosc_ci_liczy_tylko_najnowszy_run_ci_na_head_a_nie_czeka_na_mutacje_zmiany(rollup: list[dict[str, str | None]], reason: str | None) -> None:
     """Mutacje zmienionych linii biegną nocą na ``main`` (ADR 0021), więc ich check nie blokuje gotowości."""
 
-    assert stan_pr.ci_problem(tuple(rollup)) == (None if reason is None else f"CI: {reason}")
+    assert stan_pr.ci_problem(_pull(statusCheckRollup=rollup)) == (None if reason is None else f"CI: {reason}")
 
 
 @pytest.mark.parametrize(
@@ -1210,7 +1226,7 @@ WAITING_VERIFY = _check_run("IN_PROGRESS", None, name="Verify Centrum na Windows
     ],
 )
 def test_linia_ci_przegladu_podaje_stan_required_ci_status_i_padle_zadania_najnowszego_runu(ci: list[dict[str, str | None]], line: str) -> None:
-    assert stan_pr.ci_line(tuple(ci), HEAD) == f"CI | Required CI status {line}"
+    assert stan_pr.ci_line(_pull(statusCheckRollup=ci)) == f"CI | Required CI status {line}"
 
 
 @pytest.mark.parametrize(

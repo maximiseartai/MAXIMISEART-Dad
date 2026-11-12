@@ -1,7 +1,8 @@
 """Stan PR z GitHuba dla ``tools/scal_pr.py`` z jednego ``gh pr view --json`` (jego ``--help`` mówi, co z niego bierze).
 
 Stan najnowszego runu CI na HEAD czytają dwa tryby narzędzia: merge jako przyczynę odmowy (``ci_problem``) i
-``--przeglad`` jako linię ``CI`` (``ci_line``), oba z tego samego ``latest_ci_run``.
+``--przeglad`` jako linię ``CI`` (``ci_line``), oba z tego samego ``latest_ci_run``. Obie biorą cały ``Pull`` z
+``pull``, a nie rollup, żeby wołający nie mógł regule niczego przyciąć ani przefiltrować.
 """
 
 from __future__ import annotations
@@ -117,11 +118,11 @@ def latest_ci_run(checks: tuple[dict[str, str | None], ...] | list[dict[str, str
     return CiRun(latest, tuple(runs[latest]))
 
 
-def ci_problem(rollup: tuple[dict[str, str | None], ...]) -> str | None:
+def ci_problem(pull: Pull) -> str | None:
     """Przyczyna odmowy merge'a, gdy najnowszy run CI na HEAD nie skończył się zielonym ``Required CI status``."""
 
     try:
-        run = latest_ci_run(rollup)
+        run = latest_ci_run(pull.checks)
     except UnknownRun as unknown:
         return f"CI: check „{unknown.name}” workflow „{github.CI_WORKFLOW}” bez identyfikatora runu w detailsUrl {unknown.url}"
     if run is None:
@@ -135,13 +136,14 @@ def ci_problem(rollup: tuple[dict[str, str | None], ...]) -> str | None:
     return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa" if run.running else None
 
 
-def ci_line(rollup: tuple[dict[str, str | None], ...], head: str) -> str:
+def ci_line(pull: Pull) -> str:
     """Linia ``CI`` przeglądu: stan najnowszego runu CI na HEAD i zadania innych workflowów, na które czeka gotowość."""
 
     where = f"CI | {github.REQUIRED}"
-    others = [check for check in rollup if check.get("workflowName") and check.get("workflowName") != github.CI_WORKFLOW]
+    head = pull.head
+    others = [check for check in pull.checks if check.get("workflowName") and check.get("workflowName") != github.CI_WORKFLOW]
     try:
-        run = latest_ci_run(rollup)
+        run = latest_ci_run(pull.checks)
     except UnknownRun as unknown:
         return (
             f"{where} nieznany na HEAD {head} | check „{unknown.name}” workflow „{github.CI_WORKFLOW}” bez identyfikatora "

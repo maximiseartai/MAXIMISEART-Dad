@@ -100,7 +100,7 @@ def _problems(pull: Pull) -> list[str]:
         problems.append("PR jest szkicem")
     if pull.from_fork:
         problems.append("PR z forka")
-    return [*problems, *filter(None, [stan_pr.ci_problem(pull.checks), _body_problem(pull.body), werdykt_pr.consent_problem(pull.verdicts, pull.head, pull.number)])]
+    return [*problems, *filter(None, [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull)])]
 
 
 def _remote_base(base: str) -> str:
