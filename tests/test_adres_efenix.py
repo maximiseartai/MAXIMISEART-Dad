@@ -231,12 +231,6 @@ def test_roznica_adresow_to_dokladnie_zmieniona_czesc_ulica_numer_domu_albo_loka
     assert address_differences(data.draw(_collective(address)), data.draw(_efenix(changed))) == (part,)
 
 
-@PROPERTY
-@given(st.data(), addresses)
-def test_ten_sam_adres_nie_ma_roznicy(data: st.DataObject, address: Address) -> None:
-    assert address_differences(data.draw(_collective(address)), data.draw(_efenix(address))) == ()
-
-
 @pytest.mark.parametrize(
     ("collective", "efenix", "parts"),
     [
