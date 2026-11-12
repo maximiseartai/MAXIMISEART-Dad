@@ -96,6 +96,19 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia",),
         "rozliczenia.workbook_files.template_content",
     ),
+    # Zegar ścienny w src/ tylko przez rozliczenia/wall_clock.py; pierwsza próbka to dzień UTC zamiast dnia taty.
+    "from datetime import datetime, timezone\nday = datetime.now(timezone.utc).date()": (SRC_CONFIG, ("rozliczenia",), "datetime.datetime.now"),
+    "import datetime as dt\nmoment = dt.datetime.now(dt.UTC)": (SRC_CONFIG, ("rozliczenia",), "datetime.datetime.now"),
+    "from datetime import datetime\nmoment = datetime.today()": (SRC_CONFIG, ("rozliczenia",), "datetime.datetime.today"),
+    "from datetime import datetime\nmoment = datetime.utcnow()": (SRC_CONFIG, ("rozliczenia",), "datetime.datetime.utcnow"),
+    "from datetime import date\ntoday: Callable[[], date] = date.today": (SRC_CONFIG, ("rozliczenia",), "datetime.date.today"),
+    "import time\nlease = time.time() + 30": (SRC_CONFIG, ("rozliczenia",), "time.time"),
+    "from time import time_ns": (SRC_CONFIG, ("rozliczenia",), "time.time_ns"),
+    "import time\nparts = time.localtime()": (SRC_CONFIG, ("rozliczenia",), "time.localtime"),
+    "import time\nparts = time.gmtime()": (SRC_CONFIG, ("rozliczenia",), "time.gmtime"),
+    "import time\ntext = time.ctime()": (SRC_CONFIG, ("rozliczenia",), "time.ctime"),
+    "import time\ntext = time.asctime()": (SRC_CONFIG, ("rozliczenia",), "time.asctime"),
+    "import time\nname = time.strftime('%Y%m%d')": (SRC_CONFIG, ("rozliczenia",), "time.strftime"),
 }
 
 
@@ -186,3 +199,47 @@ def test_ruff_odrzuca_probke_zakazu_w_jego_katalogu(code: str) -> None:
     ]
 
     assert found == [banned], f"{config.relative_to(ROOT).as_posix()} ma odrzucić zakazem {banned}:\n{code}"
+
+
+# Właściciel zegara ściennego w src/: jedyny plik z wyjątkiem w extend-per-file-ignores w src/ruff.toml.
+CLOCK_OWNER = ROOT / "src" / "rozliczenia" / "wall_clock.py"
+
+
+def _clock_findings(*arguments: str, code: str | None = None) -> list[str]:
+    """``plik:linia`` każdego zakazu zegara ściennego (wpis ``src/ruff.toml`` z komunikatem o
+    ``rozliczenia.wall_clock``), który ruff zgłasza z ``--ignore-noqa``."""
+    banned = _banned(tomllib.loads(SRC_CONFIG.read_text(encoding="utf-8"))["lint"])
+    clock = {name for name, entry in banned.items() if "rozliczenia.wall_clock" in entry["msg"]}
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--select", "TID251"]
+        + ["--output-format", "json", *arguments],
+        input=code,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=ROOT,
+        check=False,
+    )
+    assert result.stderr == "", result.stderr
+    return [
+        f"{Path(finding['filename']).relative_to(ROOT).as_posix()}:{finding['location']['row']}"
+        for finding in json.loads(result.stdout)
+        if finding["message"].split("`")[1] in clock
+    ]
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa() -> None:
+    """``# noqa: TID251`` przy ``datetime.now`` byłoby drugą drogą do zegara obok właściciela (#1371), więc zakazy zegara
+    biegną tu z ``--ignore-noqa``; właściciel przechodzi tylko dzięki wyjątkowi w ``src/ruff.toml``."""
+
+    assert _clock_findings("src") == [], "teraz i dzień taty bierz z rozliczenia.wall_clock, bez noqa"
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_noqa_nie_zwalnia_z_zakazu_zegara_a_wlasciciel_jest_zwolniony() -> None:
+    code = "import time\nlease = time.time()  # noqa: TID251 - termin opiekuna\n"
+    probe = SRC_CONFIG.parent / "rozliczenia" / "sonda_zakazu.py"
+
+    assert _clock_findings("--stdin-filename", str(probe), "-", code=code) == ["src/rozliczenia/sonda_zakazu.py:2"]
+    assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=code) == []

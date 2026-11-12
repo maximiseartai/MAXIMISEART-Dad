@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from types import MappingProxyType
 from typing import TypeVar
@@ -23,6 +23,7 @@ from typing import TypeVar
 from .efenix_checks import ListedRead, read_listed
 from .efenix_orders import CollectiveOrder
 from .efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, OrderPricing, WindowAction
+from .wall_clock import utc_now
 
 __all__ = ["OrderTrace", "TraceStep", "traced"]
 
@@ -141,16 +142,12 @@ def _page(action: WindowAction, started_at: datetime, duration_ms: int, pricing:
     )
 
 
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def traced(
     efenix: Efenix,
     order: CollectiveOrder,
     trace: OrderTrace,
     clock: Callable[[], float],
-    now: Callable[[], datetime] = _utc_now,
+    now: Callable[[], datetime] = utc_now,
 ) -> Efenix:
     """Okno ``efenix`` przy zleceniu ``order`` Pliku zbiorczego, które zapisuje w ``trace`` każde swoje udane działanie z
     odczytem strony, czasem z ``clock`` (sekundy) i chwilą rozpoczęcia z ``now`` (UTC)."""

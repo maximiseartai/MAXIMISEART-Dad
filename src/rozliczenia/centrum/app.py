@@ -79,6 +79,7 @@ from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.workbook_files import ByteSource, file_bytes  # noqa: TID251 - domyślne źródło bajtów uchwytu (create_app(source=...))
 from rozliczenia.worker_report_inbox import ImapInbox, ReminderMailbox, WorkerReportInbox
+from rozliczenia.wall_clock import dad_today, local_now
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 _LOCAL_HOSTNAMES = frozenset({HOST, "localhost"})
@@ -91,7 +92,7 @@ def create_app(
     platform: Platform,
     log: CentrumLog,
     shutdown: Shutdown,
-    today: Callable[[], date] = date.today,
+    today: Callable[[], date] = dad_today,
     catalog: Catalog = CATALOG,
     configuration_files: ConfigurationFiles | None = None,
     tool_freshness: ToolFreshness | None = None,
@@ -106,7 +107,7 @@ def create_app(
     template_check: TemplateCheck = check_on_disk,
     intermax_copies: Path | None = None,
     intermax_disk: Disk = LOCAL_DISK,
-    now: Callable[[], datetime] = lambda: datetime.now().astimezone(),
+    now: Callable[[], datetime] = local_now,
     efenix_window: EfenixWindow | None = None,
     worker_report_inbox: WorkerReportInbox | None = None,
     reminder_mailbox: ReminderMailbox | None = None,

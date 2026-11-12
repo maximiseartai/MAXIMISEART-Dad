@@ -39,7 +39,6 @@ import uuid
 import weakref
 from collections.abc import Callable, Sequence
 from dataclasses import astuple, dataclass, replace
-from datetime import datetime, timezone
 import hashlib
 from typing import Final, Literal
 
@@ -62,6 +61,7 @@ from rozliczenia.centrum.tool_update import UpdateResult
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.message import Message
 from rozliczenia.process_run import Stop
+from rozliczenia.wall_clock import utc_now
 
 # Podgląd Zgłoszenia czeka w tle na odpowiedź skrzynki o otwarte Zgłoszenie najwyżej tyle, co Diagnoza na commit `main`.
 SEARCH_DEADLINE_S: Final = 3.0
@@ -584,7 +584,7 @@ class Reports:
         fingerprint = preview.report.fingerprint
         if self._pending(fingerprint):
             return self._cases.queued(fingerprint, self._box)
-        case = Case(REPORT, fingerprint, preview.report.what, self._commit(), datetime.now(timezone.utc), number=None)
+        case = Case(REPORT, fingerprint, preview.report.what, self._commit(), utc_now(), number=None)
         # Własny identyfikator wysyłki: odcisk wraca po zamknięciu, a kolejka czeka na dostarczenie po identyfikatorze.
         post = Post.of(
             report_target(fingerprint, preview.report.title),

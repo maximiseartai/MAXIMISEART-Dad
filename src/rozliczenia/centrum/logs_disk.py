@@ -49,7 +49,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 import os
 from pathlib import Path
 import re
@@ -67,6 +67,7 @@ from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption,
 from rozliczenia.centrum.run_logs_guard import GuardedLogs
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.file_state import folder_entries, remove_file
+from rozliczenia.wall_clock import utc_now
 
 LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
 _JOURNALS: Final = "dzienniki-wyceny"
@@ -188,10 +189,6 @@ class _JournalLine(RootModel[_JournalEntry]):
     """Jedna linia dziennika: jeden wpis w JSON."""
 
 
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _first_line(start: StartFacts) -> _JournalStarted:
     return _JournalStarted(**dict(start.start), entry="start Uruchomienia")
 
@@ -238,10 +235,10 @@ class Journal:
             return PricingProgress(start, tuple(self._done), self._total, self._current)
 
     def begun(self, row: int, place: int, total: int) -> None:
-        self._write(_OrderBegun(at=_utc_now(), entry="zaczynam zlecenie", row=row, place=place, total=total))
+        self._write(_OrderBegun(at=utc_now(), entry="zaczynam zlecenie", row=row, place=place, total=total))
 
     def ended(self, result: OrderResult) -> None:
-        self._write(_OrderEnded(at=_utc_now(), entry="zlecenie skończone", order=LoggedOrder.of(result)))
+        self._write(_OrderEnded(at=utc_now(), entry="zlecenie skończone", order=LoggedOrder.of(result)))
 
     def end(self, run_id: str, result: RunResult) -> None:
         """Wpis końca z wynikiem ``result`` w dzienniku Uruchomienia ``run_id``, który ma pierwszą linię na dysku. Dziennik
@@ -258,7 +255,7 @@ class Journal:
         if header:
             _remove(self._path(start), self._log, where="wpis")
         else:
-            self._write(_RunEnded(at=_utc_now(), entry="koniec Uruchomienia", result=result))
+            self._write(_RunEnded(at=utc_now(), entry="koniec Uruchomienia", result=result))
 
     def remove(self, run_id: str) -> None:
         """Dziennik Uruchomienia ``run_id`` znika; dziennik bez pierwszej linii na dysku (``_header``) usunął już

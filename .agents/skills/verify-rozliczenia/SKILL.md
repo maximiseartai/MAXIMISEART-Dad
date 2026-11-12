@@ -46,6 +46,7 @@ pilnuje:
   - src/rozliczenia/text.py
   - src/rozliczenia/template_*.py
   - src/rozliczenia/tool_files.py
+  - src/rozliczenia/wall_clock.py
   - src/rozliczenia/workbook_*.py
   - src/rozliczenia/worker_addresses.py
   - src/rozliczenia/worker_config*.py

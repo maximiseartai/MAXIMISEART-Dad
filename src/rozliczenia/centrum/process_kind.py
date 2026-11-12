@@ -33,7 +33,6 @@ from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
 from rozliczenia.efenix_window import OpenEfenix
 from rozliczenia.input_copy import InputCopy
-from rozliczenia.intermax_ordering import local_now
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
 from rozliczenia.order_facts import CollectiveOrders
@@ -43,6 +42,7 @@ from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
+from rozliczenia.wall_clock import local_now
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)

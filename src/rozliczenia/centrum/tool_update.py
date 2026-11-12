@@ -65,6 +65,7 @@ from typing import IO, Final, Literal, TypeGuard
 
 from rozliczenia.file_state import file_state, path_taken
 from rozliczenia.tool_files import REPOSITORY_URL, TOOL_ROOT, config_dir
+from rozliczenia.wall_clock import epoch_s
 
 BRANCH: Final = "main"
 
@@ -372,7 +373,7 @@ class ToolClone:
         run = _Git(git, self.root)
         journal = self._journal
         interrupted = journal.read()
-        if interrupted is not None and not interrupted.guardian_may_run(time.time()):
+        if interrupted is not None and not interrupted.guardian_may_run(epoch_s()):
             if not _moved_back(run, journal):
                 return UpdateResult(ROLLBACK_FAILED, interrupted.before, interrupted.after)
         before = run.text("rev-parse", "HEAD")
@@ -449,7 +450,7 @@ class ToolClone:
         Gdy blok rzuci, opiekun nie wystartował, więc termin znika.
         """
 
-        self._journal.lease(time.time() + GUARDIAN_LEASE_S)
+        self._journal.lease(epoch_s() + GUARDIAN_LEASE_S)
         try:
             yield
         except BaseException:

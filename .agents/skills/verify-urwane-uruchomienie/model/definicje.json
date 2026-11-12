@@ -38,7 +38,7 @@
     "_NAME": "7e5bf69553e4b18c",
     "_RUN_ID": "38b226cc6aeae33a",
     "LogsRead": "2dfbc7e2c338f6b7",
-    "Journal": "aac657169aeb12c0",
+    "Journal": "253df9215c9a0aeb",
     "_first_line": "f9a16b6e76575975",
     "_RunEnded": "de0df1f225b6c810",
     "JournalRead": "0e4cbc86128d9c88",
@@ -82,7 +82,7 @@
     "_superseded": "563aa9a41628837b"
   },
   "src/rozliczenia/centrum/launcher.py": {
-    "_start": "b14a179937a29521",
+    "_start": "d93f6411bc6064ea",
     "_listen_when_released": "f8e942c859e06ae0"
   },
   "src/rozliczenia/centrum/server.py": {
@@ -98,6 +98,6 @@
     "price_orders.save": "944904a2f85b713b"
   },
   "src/rozliczenia/process_run.py": {
-    "run_process": "b1cbe3d6afe02cd9"
+    "run_process": "63aab0e739341e47"
   }
 }

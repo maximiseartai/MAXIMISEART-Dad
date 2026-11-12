@@ -11,12 +11,12 @@ brakuje zależności.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from datetime import datetime
 from pathlib import Path
 import threading
 from typing import Literal, final
 
 from rozliczenia.centrum.tool_update import UPDATED
+from rozliczenia.wall_clock import local_now
 
 VIEW_TIMING_EVENT = "pomiar"
 UNEXPECTED_FAILURE_EVENT = "nieoczekiwany-wyjatek"
@@ -294,7 +294,7 @@ class CentrumLog:
     # (#1115), to błąd mypy (``final``).
     @final
     def _write(self, event: str, **facts: str | int) -> None:
-        moment = datetime.now().astimezone().isoformat(timespec="seconds")
+        moment = local_now().isoformat(timespec="seconds")
         self._append(" ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())]))
 
     @final

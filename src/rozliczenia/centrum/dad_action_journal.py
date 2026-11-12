@@ -19,7 +19,7 @@ Centrum) stoi obok. Nieudany zapis wpisu to linia dziennika Centrum, nigdy błą
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 import threading
 from typing import Final, TypeGuard, get_args
 
@@ -31,6 +31,7 @@ from rozliczenia.centrum.contract import timing as timing_contract
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.dad_actions import ButtonPressed, CentrumStarted, DadAction, DadActions, ViewOpened
 from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.wall_clock import utc_now
 
 DAD_ACTIONS_FILE: Final = "dzialania-taty.jsonl"
 MAX_ENTRIES: Final = 1000
@@ -43,10 +44,6 @@ class _Line(RootModel[DadAction]):
     """Jedna linia pliku dziennika: jeden wpis w JSON."""
 
 
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 class DadActionJournal:
     """Plik ``DAD_ACTIONS_FILE`` w katalogu Logów z działaniami taty, które czekają na Logi następnego Uruchomienia."""
 
@@ -55,7 +52,7 @@ class DadActionJournal:
         self._log = work.log
         self._lock = threading.Lock()
         # Start tej pracy Centrum, dopóki nie trafił do pliku z jej pierwszym działaniem.
-        self._started: CentrumStarted | None = CentrumStarted(at=_utc_now(), action="start Centrum")
+        self._started: CentrumStarted | None = CentrumStarted(at=utc_now(), action="start Centrum")
 
     async def observe(self, request: Request) -> None:
         """Zależność każdej trasy API: wpis widoku albo przycisku, zanim trasa zacznie działać.
@@ -67,7 +64,7 @@ class DadActionJournal:
         operation = getattr(request.scope.get("route"), "operation_id", None)
         if request.method == "GET" or operation is None:
             return
-        at = _utc_now()
+        at = utc_now()
         if operation == "recordViewTiming":
             try:
                 timing = timing_contract.ViewTiming.model_validate_json(await request.body())

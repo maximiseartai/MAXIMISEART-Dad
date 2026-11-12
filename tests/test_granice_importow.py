@@ -169,6 +169,7 @@ STDLIB_ONLY = {
     "rozliczenia/decision.py": "moduły procesu biorą z niego rozmowę bez zależności od rdzenia Uruchomienia",
     "rozliczenia/tool_files.py": "układ plików narzędzia czytają launcher przed FastAPI i opiekun ponownego startu",
     "rozliczenia/centrum/version.py": "launcher pyta o wersję, zanim wczyta FastAPI",
+    "rozliczenia/wall_clock.py": "Aktualizacja narzędzia i opiekun ponownego startu biorą z niego termin dzierżawy",
     "rozliczenia/centrum/log.py": "dziennik Centrum zapisuje błąd startu, gdy brakuje zależności",
     "rozliczenia/centrum/platform.py": "okienko z Komunikatem startu pokazuje też brak zależności",
     "rozliczenia/centrum/tool_update.py": "launcher kończy przerwaną Aktualizację narzędzia, zanim wczyta FastAPI",

@@ -59,6 +59,7 @@ _COPIED: Final = (
     "rozliczenia/file_state.py",
     "rozliczenia/message.py",
     "rozliczenia/tool_files.py",
+    "rozliczenia/wall_clock.py",
     "rozliczenia/centrum/__init__.py",
     "rozliczenia/centrum/platform.py",
     "rozliczenia/centrum/start_problems.py",
