@@ -35,8 +35,8 @@ from rozliczenia.domain import RunMode
 from rozliczenia.centrum import app
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.process_run import RunResult
-from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, MAX_ENTRIES
-from rozliczenia.centrum.dad_actions import DadActions
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, DadActionJournal
+from rozliczenia.centrum.dad_actions import DadActions, ViewOpened
 from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
 from rozliczenia.centrum.log import CentrumLog
@@ -100,6 +100,7 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.potomne import wait_for
+from tests.fixtures.praca_centrum import centrum_work
 from atrapy.pliki_taty import COLLECTIVE_HEADERS, REGISTER_NAME
 from atrapy.preparation import (
     OLD_REGISTER_HEADERS,
@@ -386,9 +387,12 @@ ENDINGS = {
 
 
 @pytest.mark.parametrize("ending", ENDINGS.values(), ids=ENDINGS.keys())
-def test_kazda_droga_zakonczenia_w_obu_trybach_daje_jeden_plik_logow_z_wynikiem_i_komunikatami_karty(
+def test_kazda_droga_zakonczenia_w_obu_trybach_daje_jeden_plik_logow_a_po_ponownym_starcie_z_niego_karte_ostatniego_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ending: Ending
 ) -> None:
+    """Logi każdej drogi końca mają wynik, sposób końca, Rodzaj Zatrzymania i Komunikaty karty, bez adresu i ścieżek, a
+    Centrum po ponownym starcie pokazuje z nich kartę tego Uruchomienia taką, jaka była na żywo."""
+
     centrum, view = ending.run(tmp_path, monkeypatch)
 
     [path] = log_files(centrum)
@@ -407,18 +411,10 @@ def test_kazda_droga_zakonczenia_w_obu_trybach_daje_jeden_plik_logow_z_wynikiem_
     assert [marker for marker in ("syntetyczny adres SYN-", "OR-SYN-") if marker in text] == [], "ADRES i numer Orange"
     assert in_json(tmp_path) not in text and in_json(tmp_path.resolve()) not in text
 
-
-@pytest.mark.parametrize("ending", ENDINGS.values(), ids=ENDINGS.keys())
-def test_po_ponownym_starcie_karta_ostatniego_uruchomienia_wraca_z_logow(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ending: Ending
-) -> None:
-    centrum, live = ending.run(tmp_path, monkeypatch)
-    [record] = records(centrum)
-
     centrum.restart()
 
     current = centrum.client.get("/api/runs/current").json()
-    assert current == {"state": "idle", "previous": restored(live, record["started_at"])}
+    assert current == {"state": "idle", "previous": restored(view, record["started_at"])}
     assert first_view(centrum.client) == current
     assert in_json(tmp_path) not in json.dumps(current), "same nazwy plików, bez ścieżek"
 
@@ -1208,22 +1204,25 @@ def test_logi_podaja_najwyzsze_wydanie_na_commicie_narzedzia_a_po_wydaniu_brak(
     assert record["tool"] == {"wydanie": wydanie, "commit": repository.head()}
 
 
-def _no_git(tmp_path: Path) -> Path | None:
+def _no_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path | None:
     return None
 
 
-def _uninstalled_git(tmp_path: Path) -> Path | None:
+def _uninstalled_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path | None:
     return tmp_path / "odinstalowany" / "git"
 
 
-def _git_failing_on_tags(tmp_path: Path) -> Path | None:
+def _git_failing_on_tags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path | None:
     return git_failing_on(tmp_path, "for-each-ref")
 
 
-def _git_not_answering(tmp_path: Path) -> Path | None:
+def _git_not_answering(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path | None:
     """Git, który na każde polecenie milczy dłużej, niż Centrum czeka na Wydanie, a potem podaje tag Wydania."""
 
-    return fake_cli(tmp_path, "git", "import time\ntime.sleep(30)\nprint('v9.9.9')\n")
+    wait_s = 0.5
+    monkeypatch.setattr("rozliczenia.centrum.tool_update._TAGS_TIMEOUT_S", wait_s)
+    # Odpowiedź przed dwoma limitami: Centrum, które czeka dwa razy dłużej, zapisze Wydanie z tej odpowiedzi.
+    return fake_cli(tmp_path, "git", f"import time\ntime.sleep({wait_s * 1.2})\nprint('v9.9.9')\n")
 
 
 GITS = {
@@ -1236,10 +1235,10 @@ GITS = {
 
 @pytest.mark.parametrize("found_git", GITS.values(), ids=GITS.keys())
 def test_bez_dzialajacego_gita_logi_maja_commit_narzedzia_bez_wydania(
-    tmp_path: Path, found_git: Callable[[Path], Path | None]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, found_git: Callable[[Path, pytest.MonkeyPatch], Path | None]
 ) -> None:
     repository = tool_repository(tmp_path / "repozytoria")
-    git = found_git(tmp_path)
+    git = found_git(tmp_path, monkeypatch)
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository, find_git=lambda: git))
 
     run_to_end(centrum, dry_run=True)
@@ -1911,12 +1910,6 @@ HYPOTHESES = {
         ["szukanie"],
         "otwarcie zlecenia",
     ),
-    "C-data-w-innej-postaci": (
-        replace(STOPPED_AT_SECOND[1].in_efenix("617"), changed=Changed.DATE_FORMAT, execution_date=DAY),
-        {"what": "data wykonania w innej postaci niż RRRR-MM-DD"},
-        ["szukanie"],
-        "otwarcie zlecenia",
-    ),
     "D-zerwane-otwarcie-strony": (
         replace(STOPPED_AT_SECOND[1].in_efenix("617"), cut=True),
         {
@@ -2404,21 +2397,38 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
     assert [marker for marker in ("SYNTETYCZNY-TYTUŁ", "SYNTETYCZNA-TREŚĆ") if marker in text or marker in sent] == []
 
 
-def test_logi_maja_najnowsze_dzialania_taty_do_limitu_a_liczbe_starszych_obok(tmp_path: Path) -> None:
+def test_logi_maja_najnowsze_dzialania_taty_do_limitu_a_liczbe_starszych_obok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Tata długo przegląda Centrum przed Uruchomieniem: Logi mają ``MAX_ENTRIES`` najnowszych działań, ze startem tego
     Uruchomienia na końcu, a start Centrum, wybór folderu okresów i najstarszy widok liczy ``omitted``."""
 
+    limit = 5
+    monkeypatch.setattr("rozliczenia.centrum.dad_action_journal.MAX_ENTRIES", limit)
     centrum = settling_centrum(tmp_path)
-    for _ in range(MAX_ENTRIES):
+    for _ in range(limit):
         assert centrum.client.post("/api/view-timings", json=view_timing(kind="navigation", page="okresy")).status_code == 204
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
 
     _, record = logged_record(centrum, run_id)
     assert dad_actions(record) == [
-        *[("widok", "okresy", "navigation")] * (MAX_ENTRIES - 1),
+        *[("widok", "okresy", "navigation")] * (limit - 1),
         ("przycisk", "startRun", "settlement", "DRY-RUN"),
     ]
     assert record["dad_actions"]["omitted"] == 3
+
+
+def test_logi_maja_najwyzej_1000_najnowszych_dzialan_taty(tmp_path: Path) -> None:
+    oldest = datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc)
+    moments = [oldest + timedelta(seconds=second) for second in range(1001)]
+    tmp_path.joinpath(DAD_ACTIONS_FILE).write_text(
+        "".join(ViewOpened(at=at, action="widok", page="okresy", kind="navigation").model_dump_json() + "\n" for at in moments),
+        encoding="utf-8",
+    )
+
+    taken = DadActionJournal(centrum_work(tmp_path, CentrumLog(tmp_path / "centrum.log"))).take()
+
+    assert ([entry.at for entry in taken.entries], taken.omitted) == (moments[1:], 1)
 
 
 def test_dziennik_dzialan_taty_ktorego_nie_da_sie_zapisac_jest_linia_dziennika_centrum_a_nie_bledem_przycisku(

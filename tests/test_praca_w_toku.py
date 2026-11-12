@@ -16,7 +16,9 @@ import time
 import pytest
 
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.git_repo import built_once, commit, git
+from tests.fixtures.git_repo import TOOLS, built_once, commit, git, with_imports
+
+from wplyw_zmiany import Repository
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "praca_w_toku.py"
 
@@ -198,6 +200,26 @@ def test_kazdy_test_ma_wlasne_repozytorium_z_worktree_choc_proces_buduje_je_raz(
         ]
         assert git(branch, "log", "-1", "--format=%s") == "drugi plik"
         assert (git(main, "diff-files", "--name-only"), git(branch, "diff-files", "--name-only")) == ("", "")
+
+
+def test_kopia_narzedzia_ma_te_same_moduly_co_z_grafu_calego_repozytorium() -> None:
+    """``with_imports`` liczy graf importów samych ``tools/``; plik ``tools/``, który dochodzi do innego pliku ``tools/``
+    przez ``tests/``, ``src/`` albo skrypt skilla, dałby kopię narzędzia bez tego pliku, a test z tą kopią przeszedłby
+    albo padł z powodu ImportError, nie tego, który sprawdza."""
+
+    root = TOOL.parents[1]
+    full = Repository.scan(root)
+    listed = git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard").split("\0")
+    expected = {
+        name: sorted({name, *(found for found in full.imported(name) if found.startswith("tools/"))})
+        for name in listed
+        if name.startswith("tools/")
+    }
+
+    assert {name: copied for name, wanted in expected.items() if (copied := with_imports([name])) != wanted} == {}
+    assert all(len(expected[name]) > 1 for name in TOOLS)
+    with pytest.raises(ValueError, match="tylko pliki tools/"):
+        with_imports([".agents/skills/verify-a/scripts/a.py"])
 
 
 def _compared(checkout: Path) -> str:

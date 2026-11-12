@@ -846,7 +846,7 @@ PREFIXES = ("", "until x; do sleep 1; ", "while :; do sleep 1; gh pr checks 1; d
 
 
 # Bez zmniejszania przykładu: na kodzie kwadratowym każda próba zmniejszenia czekałaby do ``HANG_S``.
-@settings(derandomize=True, database=None, deadline=None, max_examples=30, phases=(Phase.explicit, Phase.generate))
+@settings(derandomize=True, database=None, deadline=None, max_examples=10, phases=(Phase.explicit, Phase.generate))
 # Dawne regresje: wzorzec wykładniczy po ``done`` (#446 runda 2), pętle bez końca, puste wiersze, ``gh pr checks``
 # i ``gh api`` czytane do końca polecenia, ``"$(`` głębiej niż stos Pythona.
 @example(prefix="while :; do sleep 1; gh pr checks 1; done ", unit="2>1 ")

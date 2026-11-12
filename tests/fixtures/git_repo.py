@@ -48,17 +48,24 @@ def copy_files(path: Path, names: Iterable[str]) -> None:
 
 
 def with_imports(names: Iterable[str]) -> list[str]:
-    """``names`` (ścieżki od korzenia checkoutu) i pliki ``tools/``, do których dochodzą importem, wprost albo przez inny
-    moduł (``Repository.imported``), więc kopia narzędzia ma każdy swój moduł bez listy, która się rozjeżdża."""
+    """``names`` (pliki ``tools/`` checkoutu) i pliki ``tools/``, do których dochodzą importem, wprost albo przez inny
+    moduł (``Repository.imported``), więc kopia narzędzia ma każdy swój moduł bez listy, która się rozjeżdża.
+
+    Graf obejmuje same ``tools/`` (0,2 s zamiast 2,2 s grafu całego repozytorium na każdy worker), więc plik spoza
+    ``tools/`` to błąd. Że graf całego repozytorium nie dochodzi do innych plików ``tools/``, pilnuje
+    ``tests/test_praca_w_toku.py::test_kopia_narzedzia_ma_te_same_moduly_co_z_grafu_calego_repozytorium``.
+    """
 
     names = tuple(names)
-    reached = {found for name in names for found in _checkout().imported(name) if found.startswith("tools/")}
-    return sorted({*names, *reached})
+    if outside := [name for name in names if not name.startswith("tools/")]:
+        raise ValueError(f"with_imports zna tylko pliki tools/, nie {outside}")
+    return sorted({*names, *(found for name in names for found in _checkout().imported(name))})
 
 
 @cache
 def _checkout() -> Repository:
-    return Repository.scan(ROOT)
+    listed = git(ROOT, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "tools")
+    return Repository(ROOT, frozenset(path for path in listed.split("\0") if path))
 
 
 def repository(path: Path, files: dict[str, str], tools: Iterable[str] = TOOLS) -> Path:

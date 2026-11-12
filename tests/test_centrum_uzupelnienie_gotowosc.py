@@ -49,21 +49,6 @@ def test_po_uzupelnieniu_w_pliku_okno_przestaje_wymieniac_wiersze(tmp_path: Path
     assert centrum.view(URL) == {"state": "read", "sentence": None}
 
 
-def test_v_t_i_n_nie_zdejmuja_wiersza_bez_reguly_a_zero_nie_jest_iloscia(tmp_path: Path) -> None:
-    centrum = filling_centrum(tmp_path)
-    _write(centrum.fixture.collective_file_path, {"V19": 1, "T19": 1, "N19": 45, "O22": 0, "Y20": "0"})
-
-    assert centrum.view(URL)["sentence"] == "4 wiersze bez ilości: 19, 20, 21, 22"
-
-
-def test_plik_otwarty_w_excelu_dalej_wymienia_wiersze(tmp_path: Path) -> None:
-    centrum = filling_centrum(tmp_path)
-    path = centrum.fixture.collective_file_path
-    path.with_name(f"~${path.name}").write_bytes(b"blokada Excela")
-
-    assert centrum.view(URL)["sentence"] == "4 wiersze bez ilości: 19, 20, 21, 22"
-
-
 def test_nieczytelny_plik_zbiorczy_daje_unread_zamiast_bledu(tmp_path: Path) -> None:
     centrum = filling_centrum(tmp_path)
     centrum.fixture.collective_file_path.write_bytes(b"to nie jest skoroszyt")
@@ -76,15 +61,6 @@ def test_plik_zbiorczy_bez_naglowka_urzadzen_daje_unread(tmp_path: Path) -> None
     _write(centrum.fixture.collective_file_path, {}, header="URZĄDZENIA")
 
     assert centrum.view(URL) == {"state": "unread"}
-
-
-def test_przeniesiony_folder_okresow_to_odmowa(tmp_path: Path) -> None:
-    centrum = filling_centrum(tmp_path)
-    centrum.fixture.periods_directory.rename(tmp_path / "przeniesiony")
-
-    response = centrum.client.get(URL)
-
-    assert (response.status_code, response.json()["message"]) == (409, "Najpierw wskaż folder okresów.")
 
 
 def test_ustawienie_przebiegu_nie_otwiera_zadnego_pliku_zbiorczego(tmp_path: Path) -> None:

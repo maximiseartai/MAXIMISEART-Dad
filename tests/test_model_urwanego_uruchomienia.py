@@ -13,13 +13,18 @@ from __future__ import annotations
 from collections import defaultdict
 import json
 from pathlib import Path
+import runpy
 import shutil
+import sys
 
 import pytest
 
 from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
 import model_tlc
 import rozjazd_modelu
+
+from jednostka import ZMIENNA_CZESCI
+import kroki_skilli
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "scripts" / "sprawdz_urwane_uruchomienie.py"
@@ -154,3 +159,47 @@ def test_przebieg_bez_konca_to_naruszone_zbieganie_bez_znanych_znalezisk(capsys:
     told = capsys.readouterr().out
     assert found == model_tlc.Werdykt("Zbieganie")
     assert ("naruszone Zbieganie" in told, "(stąd znów krok 0 i tak bez końca)" in told) == (True, True)
+
+
+def test_czesci_podstawy_kazdej_liczby_do_ci_czesci_sprawdzaja_kazda_konfiguracje_modelu_raz_a_wszystko_osobno() -> None:
+    baseline = skrypt_modelu(SCRIPT)
+    count = kroki_skilli.ci_parts(SCRIPT.parents[1] / "SKILL.md")
+    configs = sorted(config.nazwa for config in model_tlc.konfiguracje(baseline.MODEL))
+
+    assert 1 < count <= len(baseline.UNITS)
+    for parts in range(1, count + 1):
+        chosen = [baseline.arguments([], {ZMIENNA_CZESCI: f"{number}/{parts}"}) for number in range(1, parts + 1)]
+        assert all(chosen), parts
+        assert sorted(argument.removeprefix("--config=") for part in chosen for argument in part) == configs, parts
+    assert ["--config=wszystko"] in chosen
+
+
+@pytest.mark.parametrize(
+    ("part", "given", "checked", "code"),
+    [
+        ("1/2", [], ["--config=wszystko"], 0),
+        ("1/2", ["--config", "zegar"], ["--config", "zegar"], 0),
+        ("2/2", ["--config=zegar", "--strict"], ["--config=zegar", "--strict"], 0),
+        ("3/3", [], None, 2),
+    ],
+    ids=["czesc-ci", "konfiguracja-mutacji", "konfiguracja-z-rownasciem", "zla-czesc"],
+)
+def test_podstawa_w_ci_sprawdza_konfiguracje_swojej_czesci_a_jawne_konfiguracje_bez_wzgledu_na_czesc(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], part: str, given: list[str], checked: list[str] | None, code: int
+) -> None:
+    calls: list[list[str]] = []
+
+    def checked_by_tlc(_model: model_tlc.Model, argv: list[str], **_: object) -> int:
+        calls.append(argv)
+        return 0
+
+    monkeypatch.setattr(model_tlc, "main", checked_by_tlc)
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), *given])
+    monkeypatch.setenv(ZMIENNA_CZESCI, part)
+
+    with pytest.raises(SystemExit) as done:
+        runpy.run_path(str(SCRIPT), run_name="__main__")
+
+    assert (done.value.code, calls) == (code, [checked] if checked else [])
+    if checked is None:
+        assert capsys.readouterr().out.splitlines()[-1] == "URWANE URUCHOMIENIE: BŁĄD MODELU (1)"
