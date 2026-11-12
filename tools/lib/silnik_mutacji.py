@@ -26,8 +26,11 @@ tam ZAWIESZENIA nie ma, a werdykt daje kod wyjścia albo ``--limit-s``. PRZEKROC
 ZAWIESZENIE czerwieni CI, bo pytest-timeout kończy test porażką. Dlatego ``in_ci`` liczy je jak WYKRYTA z dopiskiem, a
 liczą tak noc (``tools/mutacje_zmiany.py``) i ``check_all`` skryptów mutacji skilli, więc nie trafia do issue
 ``Przeżyte mutacje z #N``. PRZEKROCZONY CZAS CI nie czerwieni, gdy każdy test mieści się w swoim limicie pytest-timeout
-(test tylko wolniejszy), więc noc i skrypty skilli liczą go jak przeżytą. W narzędziu z wiersza poleceń, którego używa
-przegląd PR, oba są porażką.
+(test tylko wolniejszy), więc ``in_ci`` nie liczy go jak WYKRYTA, a skrypty skilli liczą go jak przeżytą. Noc też go
+nie liczy jak wykrytą, ale ``--limit-s`` dotyczy u niej całego zbioru testów przebiegu, który bez mutacji trwa blisko
+limitu, więc mutacja, po której test pada, też potrafi go przekroczyć (#1339): mutację z PRZEKROCZONYM CZASEM w
+ostatnim przebiegu testów noc zgłasza w issue z dopiskiem, że nie dała jej werdyktu, a nie jako przeżytą. W narzędziu z
+wiersza poleceń, którego używa przegląd PR, oba są porażką.
 
 Mutację, którą polecenie przepuściło (NIEWYKRYTA, PRZEKROCZONY CZAS), noc (poza cofnięciem fragmentu do bazy, które
 przywraca kod, który bramę przeszedł) i ``check_all`` skryptów skilli sprawdzają jeszcze bramą typów (``type_gate``):
@@ -153,8 +156,9 @@ def in_ci(verdict: Verdict, last: str) -> tuple[bool, str]:
     """Czy CI złapałoby mutację z tym werdyktem, i ostatnia linia do logu.
 
     ZAWIESZENIE (pytest-timeout) dostaje dopisek ``HANG_CAUGHT``; PRZEKROCZONY CZAS nie jest wykryciem, bo test, który
-    tylko przekroczył ``--limit-s`` narzędzia, w CI przechodzi. WYKRYTA PRZEZ BRAMĘ TYPÓW (``type_gate``) jest wykryciem:
-    zmianę, na której pada ruff albo mypy, odrzucają brama pre-push i zadanie CI „Ruff, mypy”.
+    tylko przekroczył ``--limit-s`` narzędzia, w CI przechodzi; noc nie liczy go też jak przeżytej
+    (``tools/mutacje_zmiany.py``). WYKRYTA PRZEZ BRAMĘ TYPÓW (``type_gate``) jest wykryciem: zmianę, na której pada ruff
+    albo mypy, odrzucają brama pre-push i zadanie CI „Ruff, mypy”.
     """
 
     if verdict is Verdict.HANG:
