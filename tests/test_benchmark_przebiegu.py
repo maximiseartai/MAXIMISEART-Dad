@@ -9,9 +9,7 @@ import shutil
 import signal
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
 from openpyxl import load_workbook
@@ -504,27 +502,8 @@ def test_pomiar_z_innym_wzorcem_rozliczenia_pracownika_nie_ma_pasujacego_wyniku_
     assert record["oracle"] is None
 
 
-def changed_counter(result: dict[str, Any]) -> None:
-    result["counters"]["rows"] += 1
-
-
-def added_warning(result: dict[str, Any]) -> None:
-    result["result"]["warnings"].append(
-        {"code": "inny_komunikat", "what": "Co się stało.", "where": "Gdzie.", "action": "Co zrobić."}
-    )
-
-
-def changed_summary_figure(result: dict[str, Any]) -> None:
-    result["result"]["summary"]["figures"][0]["value"] += 1
-
-
-@pytest.mark.parametrize(
-    ("change", "category"),
-    [(changed_counter, "liczniki"), (added_warning, "komunikaty"), (changed_summary_figure, "podsumowanie")],
-    ids=["inne-liczniki", "inny-kod-komunikatu", "inne-podsumowanie"],
-)
-def test_bramka_poprawnosci_jest_niezgodna_przy_innych_licznikach_komunikatach_albo_podsumowaniu(
-    tmp_path: Path, change: Callable[[dict[str, Any]], None], category: str
+def test_bramka_poprawnosci_liczy_rozne_liczniki_komunikaty_i_podsumowanie_kazde_w_swojej_kategorii(
+    tmp_path: Path,
 ) -> None:
     config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
     journal = tmp_path / "dziennik.jsonl"
@@ -545,7 +524,13 @@ def test_bramka_poprawnosci_jest_niezgodna_przy_innych_licznikach_komunikatach_a
     assert frozen.returncode == 0, frozen.stdout + frozen.stderr
     result_path = frozen_reference(references).parent / "wynik.json"
     result = json.loads(result_path.read_text(encoding="utf-8"))
-    change(result)
+    for name in ("rows", "empty", "templates_total"):
+        result["counters"][name] += 1
+    result["result"]["warnings"] += [
+        {"code": f"inny_komunikat_{number}", "what": "Co się stało.", "where": "Gdzie.", "action": "Co zrobić."}
+        for number in (1, 2)
+    ]
+    result["result"]["summary"]["figures"][0]["value"] += 1
     result_path.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 
     measured = run_benchmark("measure", *common, "--journal", str(journal), "--machine", "test")
@@ -553,7 +538,12 @@ def test_bramka_poprawnosci_jest_niezgodna_przy_innych_licznikach_komunikatach_a
     assert measured.returncode == 0, measured.stderr
     (record,) = (json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines())
     assert record["oracle"]["wynik"] == "niezgodny"
-    assert record["oracle"]["roznice"] == dict.fromkeys(ORACLE_CATEGORIES, 0) | {category: 1}
+    # Różne liczby w kategoriach łapią też kategorię liczoną ze źródła innej.
+    assert record["oracle"]["roznice"] == dict.fromkeys(ORACLE_CATEGORIES, 0) | {
+        "liczniki": 3,
+        "komunikaty": 2,
+        "podsumowanie": 1,
+    }
     assert "niezgodny" in measured.stdout
 
 
