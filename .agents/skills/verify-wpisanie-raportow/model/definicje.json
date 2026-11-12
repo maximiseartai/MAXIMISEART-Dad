@@ -12,7 +12,7 @@
     "enter_reports": "20d34105603897c1"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "28c0db91d5b093c2",
+    "enter_from_mail": "82107db6e27fc154",
     "_closed": "0dba7524418354f7",
     "SavedState": "abe2b515b6132306"
   },
@@ -22,8 +22,8 @@
   "src/rozliczenia/centrum/report_entering_state.py": {
     "_TextFile": "9c433f212b12cb17",
     "FileReportState.of_work": "2b62d28982518644",
-    "FileReportState.load": "06e0220b584c5cca",
-    "FileReportState.save_memory": "e5692e8d9f5eeea6",
+    "FileReportState.load": "3e86157a9cb9f7ef",
+    "FileReportState.save_memory": "f321e38c47f0d856",
     "FileReportState.save_result": "c054fa963d01bc4d",
     "FileReportState.shown": "fcf8146651a93b97",
     "FileReportState.kept": "97d11bf6647e9014",
