@@ -571,6 +571,14 @@ class MovePlan:
 
 
 @dataclass(frozen=True)
+class _Vacated:
+    """Miejsce bloku dnia ``day``, z którego w planie odeszło ostatnie zlecenie: pierwsze zlecenie przeniesione na ten
+    dzień staje tutaj. Plan go nie oddaje."""
+
+    day: date
+
+
+@dataclass(frozen=True)
 class MissingDays:
     """Dni, na które Przeniesienia idą, a arkusz nie ma w nich uporządkowanego zlecenia, pod które wiersz mógłby stanąć."""
 
@@ -582,18 +590,24 @@ def plan_moves(
 ) -> MovePlan | MissingDays:
     """Plan Przeniesień ``moves`` (wiersz uporządkowanego zlecenia → ``WYKONAWCA`` i dzień po zapisie).
 
+    Dzień docelowy musi mieć uporządkowany wiersz w arkuszu przed zapisem (``MissingDays``, gdy go nie ma), także
+    wiersz, który w tym samym planie odchodzi, bo rdzeń liczy Dni uporządkowane z INTERMAX przed kliknięciem.
+
     Blok dnia to uporządkowane wiersze z jego datą wokół wiersza, z pojedynczymi pustymi wierszami (nie żółtymi) między
     nimi; segment to ciąg wierszy bloku z wartościami bez pustego wiersza. Przeniesienia idą po wierszach od góry, a
     klucz segmentu daje ``WYKONAWCA`` jego pierwszego wiersza w tej chwili planu: wiersz już przeniesiony ma nowego
     Wykonawcę, a wiersz, którego Przeniesienie przyjdzie później, dalej tego z pliku. Wiersz odchodzi ze swojego miejsca, a segment, który zostaje bez wierszy, traci pusty wiersz pod sobą (nad sobą,
     gdy był ostatni w bloku). W tym samym dniu wiersz staje w bloku, z którego wyszedł, a na inny dzień w bloku dnia
-    docelowego wokół jego najniższego uporządkowanego wiersza (``MissingDays``, gdy go nie ma): pod ostatnim wierszem
-    ostatniego segmentu z kluczem ``segment_key`` nowego Wykonawcy, a bez takiego segmentu w nowym segmencie, z pustym
-    wierszem pod sobą przed pierwszym segmentem z kluczem większym albo z pustym wierszem nad sobą za ostatnim
-    segmentem; w bloku bez innych wierszy staje na swoim miejscu. Wiersze od pierwszego bloku do końca arkusza dostają
-    kolejne numery, więc wiersze pod blokami przesuwają się o tyle, o ile urósł albo zmalał blok. Odczyt od dołu kończy
-    pierwszy wiersz z wartościami nad najwyższym przenoszonym wierszem, który nie jest z dnia żadnego z nich ani z dnia
-    docelowego, gdy arkusz ma już uporządkowany wiersz każdego dnia docelowego.
+    docelowego wokół jego najniższego wiersza w tej chwili planu (także wiersza, którego Przeniesienie przyjdzie
+    później): pod ostatnim wierszem ostatniego segmentu z kluczem ``segment_key`` nowego Wykonawcy, a bez takiego
+    segmentu w nowym segmencie, z pustym wierszem pod sobą przed pierwszym segmentem z kluczem większym albo z pustym
+    wierszem nad sobą za ostatnim segmentem; w bloku bez innych wierszy staje na swoim miejscu. Blok, z którego na inny
+    dzień odszedł ostatni wiersz, zostawia swoje miejsce (``_Vacated``), a pierwszy wiersz przeniesiony na jego dzień
+    staje tam, więc dzień, którego wszystkie zlecenia odchodzą, a inne przychodzą, zostaje na swoim miejscu w arkuszu.
+    Wiersze od pierwszego bloku do końca arkusza dostają kolejne numery, więc wiersze pod blokami przesuwają się o tyle,
+    o ile urósł albo zmalał blok. Odczyt od dołu kończy pierwszy wiersz z wartościami nad najwyższym przenoszonym
+    wierszem, który nie jest z dnia żadnego z nich ani z dnia docelowego, gdy arkusz ma już uporządkowany wiersz każdego
+    dnia docelowego.
     """
 
     lowest = min(moves)
@@ -606,9 +620,7 @@ def plan_moves(
         day = _day_of(row, columns)
         if row.number in moves:
             days.add(day)
-            if moves[row.number][1] == day:
-                missing.discard(day)
-        elif day in missing and not row.blank and look(row, columns) is RowLook.ORDERED:
+        if day in missing and not row.blank and look(row, columns) is RowLook.ORDERED:
             missing.discard(day)
         if row.number < lowest and not row.blank and day not in days and day not in targets and not missing:
             break
@@ -617,18 +629,22 @@ def plan_moves(
     base, last = min(facts), max(facts)
     placed: dict[int, date] = {}
 
-    def blank(slot: int | NewSeparator) -> bool:
+    def blank(slot: int | NewSeparator | _Vacated) -> bool:
+        if isinstance(slot, _Vacated):
+            return False
         if isinstance(slot, NewSeparator):
             return True
         found = facts.get(slot)
         return found is None or (found.blank and not _is_yellow(found, columns))
 
-    def of_day(slot: int | NewSeparator, day: date | None) -> bool:
+    def of_day(slot: int | NewSeparator | _Vacated, day: date | None) -> bool:
+        if isinstance(slot, _Vacated):
+            return slot.day == day
         if isinstance(slot, NewSeparator) or (found := facts.get(slot)) is None or found.blank:
             return False
         return look(found, columns) is RowLook.ORDERED and placed.get(slot, _day_of(found, columns)) == day
 
-    def block(slots: Sequence[int | NewSeparator], at: int, day: date | None) -> tuple[int, int]:
+    def block(slots: Sequence[int | NewSeparator | _Vacated], at: int, day: date | None) -> tuple[int, int]:
         """Pierwszy i ostatni wiersz bloku dnia ``day`` wokół miejsca ``at`` w ``slots``."""
 
         def step(at: int, direction: int) -> int:
@@ -648,20 +664,20 @@ def plan_moves(
             bottom += grow
         return top, bottom
 
-    def anchor(slots: Sequence[int | NewSeparator], day: date) -> int | None:
-        """Najniższy uporządkowany wiersz dnia ``day`` w ``slots``, który nie jest przenoszony."""
+    def anchor(slots: Sequence[int | NewSeparator | _Vacated], day: date) -> int | None:
+        """Najniższy uporządkowany wiersz dnia ``day`` w ``slots`` w tej chwili planu albo miejsce opuszczonego bloku."""
 
-        found = [index for index, slot in enumerate(slots) if of_day(slot, day) and (slot in placed or slot not in moves)]
+        found = [index for index, slot in enumerate(slots) if of_day(slot, day)]
         return max(found) if found else None
 
-    read: list[int | NewSeparator] = list(range(base, last + 1))
+    read: list[int | NewSeparator | _Vacated] = list(range(base, last + 1))
     tops = [block(read, source - base, _day_of(facts[source], columns))[0] for source in moves]
     for day in targets:
         at = anchor(read, day)
         if at is not None:
             tops.append(block(read, at, day)[0])
     first = base + min(tops)
-    slots: list[int | NewSeparator] = list(range(first, last + 1))
+    slots: list[int | NewSeparator | _Vacated] = list(range(first, last + 1))
     shifts: dict[int, int] = {}
     done: set[int] = set()
 
@@ -684,24 +700,30 @@ def plan_moves(
         elif alone and at - 1 >= top and blank(slots[at - 1]):
             del slots[at - 1]
             at, bottom = at - 1, bottom - 1
+        left = [index for index in range(top, bottom + 1) if of_day(slots[index], day)]
         if target == day:
-            left = [index for index in range(top, bottom + 1) if of_day(slots[index], day)]
             if not left:
                 slots.insert(at, source)
                 done.add(source)
                 continue
             top, bottom = block(slots, left[0], day)
         else:
+            if not left and day is not None:
+                slots.insert(at, _Vacated(day))
             found = anchor(slots, target)
             if found is None:
                 return MissingDays(frozenset({target}))
             top, bottom = block(slots, found, target)
             shifts[source] = (target - day).days if day is not None else 0
             placed[source] = target
+            if isinstance(slots[found], _Vacated):
+                slots[found] = source
+                done.add(source)
+                continue
         segments: list[tuple[str, int, int]] = []
         for index in range(top, bottom + 1):
             slot = slots[index]
-            if isinstance(slot, NewSeparator) or not of_day(slot, target):
+            if not isinstance(slot, int) or not of_day(slot, target):
                 continue
             if segments and segments[-1][2] == index - 1:
                 segments[-1] = (segments[-1][0], segments[-1][1], index)
@@ -719,7 +741,8 @@ def plan_moves(
             slots[end + 1 : end + 1] = [NewSeparator(source), source]
         done.add(source)
     workers = {source: worker for source, (worker, _) in moves.items()}
-    return MovePlan(first, tuple(slots), MappingProxyType(workers), MappingProxyType(shifts))
+    kept = tuple(slot for slot in slots if not isinstance(slot, _Vacated))
+    return MovePlan(first, kept, MappingProxyType(workers), MappingProxyType(shifts))
 
 
 def _day_of(row: RowFacts, columns: OrderColumns) -> date | None:

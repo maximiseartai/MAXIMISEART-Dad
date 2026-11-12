@@ -20,7 +20,7 @@ from typing import cast
 from xml.etree import ElementTree
 import zipfile
 
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 import pytest
 from openpyxl import load_workbook
@@ -728,20 +728,38 @@ def test_przeniesienia_na_inny_dzien_i_w_tym_samym_dniu_w_jednym_kliknieciu_twor
     ]
 
 
-def test_inna_data_w_odczycie_kontrolnym_przeniesienia_na_inny_dzien_nie_podmienia_intermax(tmp_path: Path) -> None:
-    """Kontrola zapisu sprawdza nowy dzień przeniesionego zlecenia: zapis z innym dniem niż w planie to odmowa."""
+def _next_day(data: bytes) -> bytes:
+    return re.sub(rb'(<c r="C4"[^>]*><v>)(\d+)', lambda found: found.group(1) + b"%d" % (int(found.group(2)) + 1), data)
+
+
+def _other_style(data: bytes) -> bytes:
+    return re.sub(rb'<c r="C4" s="(\d+)"', lambda found: b'<c r="C4" s="%d"' % (int(found.group(1)) + 1), data)
+
+
+def _text_kind(data: bytes) -> bytes:
+    return re.sub(rb'<c r="C4"( s="\d+")?', lambda found: found.group(0) + b' t="str"', data)
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        pytest.param(_next_day, id="inny-dzien"),
+        pytest.param(_other_style, id="inny-styl"),
+        pytest.param(_text_kind, id="inny-rodzaj"),
+    ],
+)
+def test_inna_data_w_odczycie_kontrolnym_przeniesienia_na_inny_dzien_nie_podmienia_intermax(
+    tmp_path: Path, spoil: Callable[[bytes], bytes]
+) -> None:
+    """Kontrola zapisu sprawdza nową datę przeniesionego zlecenia: zapis z innym dniem niż w planie albo z datą w innym
+    stylu (formacie) czy rodzaju komórki (tekst zamiast liczby) to odmowa."""
 
     path = _register(tmp_path, Intermax(ordered=TWO_DAYS, raw=()))
 
-    def next_day(content: bytes) -> bytes:
-        def one(name: str, data: bytes) -> bytes:
-            if name != SHEET_PART:
-                return data
-            return re.sub(rb'(<c r="C4"[^>]*><v>)(\d+)', lambda found: found.group(1) + b"%d" % (int(found.group(2)) + 1), data)
+    def spoiled(content: bytes) -> bytes:
+        return _zip_changed(content, lambda name, data: spoil(data) if name == SHEET_PART else data)
 
-        return _zip_changed(content, one)
-
-    disk = FaultyDisk(read=lambda temporary: next_day(LOCAL_DISK.read(temporary)))
+    disk = FaultyDisk(read=lambda temporary: spoiled(LOCAL_DISK.read(temporary)))
 
     with _untouched(path):
         outcome = _write(path, [], moves=[_move(8, "jan.testowy", EIGHTH)], disk=disk)
@@ -780,3 +798,143 @@ def test_przeniesienie_na_inny_dzien_z_pierwszego_wiersza_segmentu_do_ktorego_id
         "żółty",
     ]
     assert _dates(path, 8)[40000002][0] == datetime(2026, 11, 9, 10, 30)
+
+
+def test_zamiana_jedynych_zlecen_dwoch_dni_w_jednym_kliknieciu_staje_na_miejscu_dnia(tmp_path: Path) -> None:
+    """Przegląd #1367 r1 (Ważne 1): jedyne zlecenie 8.11 (Anna) idzie na 9.11, a zlecenie Jana z 9.11 na 8.11 w tym
+    samym kliknięciu. Rdzeń widzi oba dni jako Dni uporządkowane sprzed kliknięcia, więc zapis też: zlecenie Jana staje
+    tam, gdzie stał dzień 8.11, a zlecenie Anny w nowym segmencie Anny 9.11 przed Zofią. Zapis nie odrzuca kliknięcia."""
+
+    intermax = Intermax(
+        ordered=(
+            _at(EIGHTH, 9, "anna.kowalska", 40000001),
+            _at(DAY, 9, "jan.testowy", 40000004),
+            _at(DAY, 10, "zofia.nowa", 40000005),
+        ),
+        raw=(),
+    )
+    path = _register(tmp_path, intermax)
+
+    outcome = _write(path, [], moves=[_move(2, "anna.kowalska", DAY), _move(4, "jan.testowy", EIGHTH)])
+
+    assert outcome == CellsWritten(0, 2)
+    assert _sheet_rows(path, 8) == [
+        (40000004, "jan.testowy", _link(40000004)),
+        "pusty",
+        (40000001, "anna.kowalska", _link(40000001)),
+        "pusty",
+        (40000005, "zofia.nowa", _link(40000005)),
+        "pusty",
+        "żółty",
+    ]
+    dates = _dates(path, 8)
+    assert (dates[40000004][0], dates[40000001][0]) == (datetime(2026, 11, 8, 9, 30), datetime(2026, 11, 9, 9, 30))
+
+
+SEVENTH = date(2026, 11, 7)
+_THREE_DAYS = (SEVENTH, EIGHTH, DAY)
+
+_Planned = tuple[tuple[tuple[date, str, int], ...], dict[int, tuple[str, date]]]
+"""Uporządkowane zlecenia (dzień, Wykonawca, numer) w kolejności arkusza i Przeniesienia: numer → (Wykonawca, dzień)."""
+
+
+@st.composite
+def _days_with_moves(draw: st.DrawFn) -> _Planned:
+    """Dwa albo trzy uporządkowane dni (w każdym segmenty Wykonawców po kolei, 1–2 zlecenia) i Przeniesienia części
+    zleceń na inny dzień albo do innego Wykonawcy w tym samym kliknięciu."""
+
+    days = draw(st.sampled_from([_THREE_DAYS[:2], _THREE_DAYS[1:], _THREE_DAYS]))
+    ordered: list[tuple[date, str, int]] = []
+    for index, day in enumerate(days):
+        workers = sorted(draw(st.sets(st.sampled_from(_WORKERS), min_size=1, max_size=2)))
+        for segment, worker in enumerate(workers):
+            ordered += [(day, worker, 40000000 + 100 * index + 10 * segment + order) for order in range(draw(st.integers(1, 2)))]
+    moved = draw(st.sets(st.sampled_from([number for _, _, number in ordered]), min_size=1, max_size=4))
+    targets: dict[int, tuple[str, date]] = {}
+    for number in sorted(moved):
+        day, worker = next((day, worker) for day, worker, found in ordered if found == number)
+        places = [(other, when) for when in days for other in _WORKERS if (other, when) != (worker, day)]
+        targets[number] = draw(st.sampled_from(places))
+    return tuple(ordered), targets
+
+
+def _expected_days(ordered: Sequence[tuple[date, str, int]], targets: dict[int, tuple[str, date]], rows_of: dict[int, int]) -> list[list[tuple[str, int]]]:
+    """Każdy dzień po kliknięciu jako segmenty (Wykonawca, numer): Wykonawcy alfabetycznie, w segmencie najpierw
+    zlecenia, które zostały, w kolejności arkusza, a pod nimi przeniesione w kolejności wierszy sprzed zapisu."""
+
+    found: list[list[tuple[str, int]]] = []
+    for day in sorted({day for day, _, _ in ordered}):
+        stay = [(worker, number) for when, worker, number in ordered if when == day and number not in targets]
+        come = sorted(((worker, number) for number, (worker, when) in targets.items() if when == day), key=lambda item: rows_of[item[1]])
+        workers = sorted({worker for worker, _ in stay + come})
+        found.append([item for worker in workers for item in stay + come if item[0] == worker])
+    return [day for day in found if day]
+
+
+@settings(max_examples=60, deadline=None, derandomize=True, database=None)
+@given(_days_with_moves())
+@example(
+    (
+        ((EIGHTH, "anna.kowalska", 40000001), (DAY, "jan.testowy", 40000101), (DAY, "zofia.nowa", 40000111)),
+        {40000001: ("anna.kowalska", DAY), 40000101: ("jan.testowy", EIGHTH)},
+    )
+).via("przegląd #1367 r1: zamiana jedynych zleceń dwóch dni")
+@example(
+    (
+        ((SEVENTH, "anna.kowalska", 40000001), (EIGHTH, "ewa.probna", 40000101), (DAY, "jan.testowy", 40000201)),
+        {
+            40000001: ("anna.kowalska", EIGHTH),
+            40000101: ("ewa.probna", DAY),
+            40000201: ("jan.testowy", SEVENTH),
+        },
+    )
+).via("łańcuch przez trzy dni, każdy dzień opróżniony i zapełniony")
+@example(
+    (
+        ((SEVENTH, "anna.kowalska", 40000001), (EIGHTH, "ewa.probna", 40000101)),
+        {40000101: ("ewa.probna", SEVENTH)},
+    )
+).via("dzień opróżniony do zera zleceń")
+def test_dowolne_przeniesienia_miedzy_dniami_jednego_klikniecia_zapis_przyjmuje_i_zostawia_uklad_uporzadkowania(
+    planned: _Planned,
+) -> None:
+    """Własność #1350 (przegląd #1367 r1): rdzeń przenosi tylko na Dzień uporządkowany arkusza zlecenia sprzed
+    kliknięcia, a każdy taki zbiór Przeniesień (wyjścia i wejścia dnia, łańcuchy przez dni, dzień opróżniony do zera
+    zleceń) zapis przyjmuje w całości, więc przyjmuje każdy plan rdzenia. Po zapisie dni stoją po kolei, w każdym dniu
+    każdy Wykonawca ma jeden segment, segmenty idą alfabetycznie z jednym pustym wierszem między nimi, przeniesione
+    zlecenie ma dzień docelowy z tą samą godziną i Hiperłącze, a żółty wiersz zostaje pod ostatnim dniem."""
+
+    ordered, targets = planned
+    rows_of = {number: row for row, (_, number) in enumerate(_ordered_rows([(worker, number) for _, worker, number in ordered]), start=2) if number}
+    moves = [_move(rows_of[number], worker, day) for number, (worker, day) in targets.items()]
+    last = len(ordered) * 3 + 8
+    with tempfile.TemporaryDirectory() as folder:
+        path = _register(Path(folder), Intermax(ordered=tuple(_at(day, 9 + number % 10, worker, number) for day, worker, number in ordered), raw=()))
+        outcome = _write(path, [], moves=moves)
+        shown = _sheet_rows(path, last)
+        dates = _dates(path, last)
+
+    assert outcome == CellsWritten(0, len(moves))
+    end = shown.index("żółty")
+    assert all(row in ("pusty", "żółty") for row in shown[end:])
+    days: list[list[tuple[str, int]]] = []
+    previous: tuple[date, str] | None = None
+    gap = 0
+    for row in shown[:end]:
+        if row == "pusty":
+            gap += 1
+            continue
+        assert isinstance(row, tuple)
+        number, worker, link = row
+        when = dates[number][0]
+        assert isinstance(when, datetime) and link == _link(number)
+        assert (when.hour, when.minute) == (9 + number % 10, 30)
+        if previous is None or previous[0] != when.date():
+            days.append([])
+        elif previous[1] != worker:
+            assert gap == 1, shown
+        else:
+            assert gap == 0, shown
+        days[-1].append((worker, number))
+        previous, gap = (when.date(), worker), 0
+    assert days == _expected_days(ordered, targets, rows_of)

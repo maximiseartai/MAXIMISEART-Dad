@@ -1333,6 +1333,58 @@ def test_klikniecie_przenosi_zlecenie_na_dzien_z_tematu_z_ta_sama_godzina_i_info
     assert centrum.register.read_bytes() == after
 
 
+def test_zamiana_jedynych_zlecen_dwoch_dni_w_jednym_kliknieciu_przenosi_oba_a_drugie_klikniecie_niczego_nie_zmienia(
+    tmp_path: Path,
+) -> None:
+    """Przegląd #1367 r1 (Ważne 1): 8.11 ma jedno zlecenie (Anny). W jednym kliknięciu Anna przysyła Raport za 9.11 z
+    nim, a Jan Raport za 8.11 ze swoim zleceniem z 9.11. Oba dni są Dniami uporządkowanymi przed kliknięciem, więc
+    kliknięcie przenosi oba zlecenia (zlecenie Jana staje na miejscu dnia 8.11) i wpisuje do nich Wpisy, zamiast
+    zatrzymać całe Wpisanie raportów odrzuceniem zapisu, a drugie kliknięcie z tymi samymi mailami niczego nie zmienia."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(8, 9, "anna.kowalska", 40000001),
+            _order(9, 10, "jan.testowy", 40000002),
+            _order(9, 11, "anna.kowalska", 40000003),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    mails = [
+        report(ANNA, "Raport 09.11.2026", "40000001 tak montaż"),
+        report(JAN, "Raport 08.11.2026", "40000002 tak wymiana"),
+    ]
+
+    view = _click_at(centrum, ENTERING_NOW, mails)
+    after = centrum.register.read_bytes()
+    again = _click_at(centrum, ENTERING_NOW, mails)
+
+    assert view["result"]["result"] == "OK"
+    assert _day_rows(centrum.register, 8) == [
+        (40000002, "jan.testowy"),
+        "pusty",
+        (40000003, "anna.kowalska"),
+        (40000001, "anna.kowalska"),
+        "pusty",
+        "żółty",
+        "pusty",
+    ]
+    assert (_started(centrum.register, 40000002)[0], _started(centrum.register, 40000001)[0]) == (
+        datetime(2026, 11, 8, 10),
+        datetime(2026, 11, 9, 9),
+    )
+    assert _cells(centrum.register)[40000001] == ("tak", "montaż")
+    assert _cells(centrum.register)[40000002] == ("tak", "wymiana")
+    assert len(_entering(centrum, view)["moves"]) == 2
+    assert (again["result"]["result"], _entering(centrum, again)["changes"], _entering(centrum, again)["moves"]) == (
+        "OK",
+        [],
+        [],
+    )
+    assert centrum.register.read_bytes() == after
+
+
 def test_pomylony_temat_wpisuje_do_zlecen_z_ich_dnia_bez_przeniesienia_z_informacja_w_dniu_z_tematu(tmp_path: Path) -> None:
     """Kryterium #1350: Raport Jana za 9.11 z dwoma zleceniami z 8.11 to pomylony temat: Wpisy trafiają do zleceń 8.11,
     INTERMAX nie przenosi żadnego wiersza, a okienko Jana 9.11 mówi o każdym przegranym temacie."""
