@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -9,7 +10,6 @@ import shutil
 import signal
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,9 @@ from tests.fixtures.benchmark import (
 )
 from tests.fixtures.potomne import wait_for
 from atrapy.settlement import write_mapping
+import benchmark.referencja as referencja
+from benchmark.uruchomienie import Przebieg
+from porownanie_znaczeniowe import CATEGORIES
 
 RECORD_FIELDS = {
     "started_at",
@@ -504,27 +507,8 @@ def test_pomiar_z_innym_wzorcem_rozliczenia_pracownika_nie_ma_pasujacego_wyniku_
     assert record["oracle"] is None
 
 
-def changed_counter(result: dict[str, Any]) -> None:
-    result["counters"]["rows"] += 1
-
-
-def added_warning(result: dict[str, Any]) -> None:
-    result["result"]["warnings"].append(
-        {"code": "inny_komunikat", "what": "Co się stało.", "where": "Gdzie.", "action": "Co zrobić."}
-    )
-
-
-def changed_summary_figure(result: dict[str, Any]) -> None:
-    result["result"]["summary"]["figures"][0]["value"] += 1
-
-
-@pytest.mark.parametrize(
-    ("change", "category"),
-    [(changed_counter, "liczniki"), (added_warning, "komunikaty"), (changed_summary_figure, "podsumowanie")],
-    ids=["inne-liczniki", "inny-kod-komunikatu", "inne-podsumowanie"],
-)
-def test_bramka_poprawnosci_jest_niezgodna_przy_innych_licznikach_komunikatach_albo_podsumowaniu(
-    tmp_path: Path, change: Callable[[dict[str, Any]], None], category: str
+def test_bramka_poprawnosci_liczy_rozne_liczniki_komunikaty_i_podsumowanie_kazde_w_swojej_kategorii(
+    tmp_path: Path,
 ) -> None:
     config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
     journal = tmp_path / "dziennik.jsonl"
@@ -545,7 +529,13 @@ def test_bramka_poprawnosci_jest_niezgodna_przy_innych_licznikach_komunikatach_a
     assert frozen.returncode == 0, frozen.stdout + frozen.stderr
     result_path = frozen_reference(references).parent / "wynik.json"
     result = json.loads(result_path.read_text(encoding="utf-8"))
-    change(result)
+    for name in ("rows", "empty", "templates_total"):
+        result["counters"][name] += 1
+    result["result"]["warnings"] += [
+        {"code": f"inny_komunikat_{number}", "what": "Co się stało.", "where": "Gdzie.", "action": "Co zrobić."}
+        for number in (1, 2)
+    ]
+    result["result"]["summary"]["figures"][0]["value"] += 1
     result_path.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 
     measured = run_benchmark("measure", *common, "--journal", str(journal), "--machine", "test")
@@ -553,8 +543,34 @@ def test_bramka_poprawnosci_jest_niezgodna_przy_innych_licznikach_komunikatach_a
     assert measured.returncode == 0, measured.stderr
     (record,) = (json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines())
     assert record["oracle"]["wynik"] == "niezgodny"
-    assert record["oracle"]["roznice"] == dict.fromkeys(ORACLE_CATEGORIES, 0) | {category: 1}
+    # Różne liczby w kategoriach łapią też kategorię liczoną ze źródła innej.
+    assert record["oracle"]["roznice"] == dict.fromkeys(ORACLE_CATEGORIES, 0) | {
+        "liczniki": 3,
+        "komunikaty": 2,
+        "podsumowanie": 1,
+    }
     assert "niezgodny" in measured.stdout
+
+
+@pytest.mark.parametrize("changed", [None, "liczniki", "komunikaty", "podsumowanie"])
+def test_bramka_poprawnosci_jest_niezgodna_przy_roznicy_tylko_w_jednej_kategorii(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str | None
+) -> None:
+    # Pomiar end-to-end wyżej zmienia naraz wszystkie trzy kategorie, więc sam nie łapie bramki, która werdykt bierze
+    # tylko z jednej z nich (#1422 r1); tu każda kategoria osobno, bez kolejnego Przebiegu.
+    monkeypatch.setattr(referencja, "compare_worker_settlements", lambda *_: dict.fromkeys(CATEGORIES, 0))
+    result: dict[str, Any] = {"warnings": [{"code": "komunikat"}], "stop": None, "summary": {"figures": [{"value": 1}]}}
+    reference = referencja.Reference(tmp_path, {"rows": 1}, result)
+    measured = copy.deepcopy(result)
+    counters = {"rows": 2 if changed == "liczniki" else 1}
+    if changed == "komunikaty":
+        measured["warnings"][0]["code"] = "inny_komunikat"
+    if changed == "podsumowanie":
+        measured["summary"]["figures"][0]["value"] = 2
+
+    oracle = referencja.check_oracle(reference, tmp_path, Przebieg(0, 0, {"counters": counters}, measured))
+
+    assert oracle["wynik"] == ("zgodny" if changed is None else "niezgodny")
 
 
 def test_pomiar_z_wynikiem_referencyjnym_w_formacie_terminala_konczy_sie_poleceniem_ponownego_zamrozenia(

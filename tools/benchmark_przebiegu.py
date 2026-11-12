@@ -105,10 +105,12 @@ def _default_machine() -> str:
 
 
 def _machine() -> QuietMachine:
-    """Maszyna tego komputera; testy podają w ``QUIET_MACHINE_SCRATCH`` własny folder blokad bez ``ps``."""
+    """Maszyna tego komputera; testy podają w ``QUIET_MACHINE_SCRATCH`` własny folder blokad bez ``ps`` i bez 5 s snu."""
 
     scratch = os.environ.get("QUIET_MACHINE_SCRATCH")
-    return QuietMachine() if scratch is None else QuietMachine(Path(scratch), busy_processes=lambda: [])
+    if scratch is None:
+        return QuietMachine()
+    return QuietMachine(Path(scratch), busy_processes=lambda: [], poll_s=0.05)
 
 
 def _parser() -> argparse.ArgumentParser:
