@@ -40,10 +40,12 @@ Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to
 zostaje przeglądowi.
 
-- Wysyłkę Logów Uruchomienia daje tylko ``comment_versions.post_of`` jako ``LogsPost``, której nikt nie zmieni przed
-  kolejką: tego pilnuje typ (docstring ``comment_versions._VERSIONS``). Test łapie tylko nową wysyłkę z etykietą Logów
-  obok ``post_of``: etykietę Logów (``comment_versions.LABEL``) kod poza ``post_of`` tylko podaje kolejce w pytaniu
-  ``delivered`` albo ``rejected``, a napis ``logi-uruchomienia`` stoi tylko w ``Literal``.
+- Wysyłkę Logów Uruchomienia daje tylko ``comment_versions.post_of`` jako ``LogsPost``. Jej ``replace`` i podklasę
+  odrzuca typ (docstring ``comment_versions._VERSIONS``), ale nową ``Post`` złożoną z jej pól typ przepuszcza, bo
+  ``Outbox.post`` bierze też gołą ``Post`` (przegląd #1371 r1). Dlatego wynik ``post_of`` idzie od razu do kolejki
+  (``<kolejka>.post(post_of(wersja))``), a nazwę ``post_of`` test rozpoznaje po niej samej, z dowolną bazą i także
+  jako napis, a nie po imporcie. Etykietę Logów (``comment_versions.LABEL``) kod poza ``post_of`` tylko podaje kolejce
+  w pytaniu ``delivered`` albo ``rejected``, a napis ``logi-uruchomienia`` stoi tylko w ``Literal``.
 - Logi i tekst po strażniku (``GuardedLogs``, ``GuardedText``) daje tylko ``guard_logs`` i ``guard_text`` z
   ``run_logs_guard``, inaczej ich typ niczego by nie dowodził. Konstruktor bez dowodu strażnika (``_MINTED``), ``replace``,
   kopię, ``pickle``, zmianę pola, podklasę i wartość innego typu (``Any``) zamyka sam typ albo jego sprawdzenie przy
@@ -850,18 +852,29 @@ def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_impor
 
 
 def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
-    """Miejsca pliku ``file``, które mogą zbudować nową wysyłkę Logów Uruchomienia obok ``post_of``.
+    """Miejsca pliku ``file``, które mogą zbudować albo przerobić wysyłkę Logów Uruchomienia obok ``post_of``.
 
-    Gotowej wysyłki z ``post_of`` (``LogsPost``) nikt nie zmieni: tego pilnuje typ (docstring
-    ``comment_versions._VERSIONS``), a nie to sprawdzenie. Łapie tylko etykietę Logów, z którą da się złożyć nową
-    ``Post``, i rozpoznaje ją po pochodzeniu, bo ``LABEL`` mają też inne wysyłki (``quantity_check_run.LABEL``): import
-    ``LABEL`` z ``comment_versions`` pod dowolną nazwą, także względny i przez ``*``, oraz atrybut ``LABEL`` i
-    ``getattr`` z napisem ``"LABEL"`` na module ``comment_versions``, czyli na atrybucie ``comment_versions``
-    (``centrum.…``, pełna ścieżka) albo nazwie z importu tego modułu. Poza ``comment_versions`` etykietę kod tylko
+    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca typ (docstring ``comment_versions._VERSIONS``), a nie
+    to sprawdzenie. Typ przepuszcza za to nową ``Post`` złożoną z pól gotowej wysyłki, bo ``Outbox.post`` bierze też
+    gołą ``Post`` (``Post(sent.target, …, Rank.OWN)`` i ``parts=(record.text,)``, przegląd #1371 r1). Dlatego
+    sprawdzenie łapie tylko dwie rzeczy.
+
+    ``post_of`` rozpoznaje po nazwie, a nie po imporcie: każda nazwa i atrybut ``post_of`` (z dowolną bazą) stoi tylko
+    w ``<kolejka>.post(post_of(…))``, więc wynik idzie od razu do kolejki i nikt nie przeczyta jego pól. Napis
+    ``"post_of"`` (``getattr``, ``vars``) i import ``post_of`` pod inną nazwą to znalezisko.
+
+    Etykietę Logów, z którą da się złożyć nową ``Post``, rozpoznaje po pochodzeniu, bo ``LABEL`` mają też inne wysyłki
+    (``quantity_check_run.LABEL``): import ``LABEL`` z ``comment_versions`` pod dowolną nazwą, także względny i przez
+    ``*``, oraz atrybut ``LABEL`` i ``getattr`` z napisem ``"LABEL"`` na module ``comment_versions``, czyli na atrybucie
+    ``comment_versions`` (``centrum.…``, pełna ścieżka) albo nazwie z importu tego modułu. Poza ``comment_versions`` etykietę kod tylko
     podaje kolejce w pytaniu, czy wysyłka Logów doszła albo została odrzucona (``delivered``, ``rejected``), a w
     ``comment_versions`` używa jej tylko ``post_of``. Napis ``logi-uruchomienia`` stoi poza ``comment_versions`` tylko w
-    ``Literal``. Nie łapie etykiety wziętej z innej wysyłki (``LogsPost.target.label``) ani modułu przypisanego innej
-    nazwie poza importem (docstring modułu).
+    ``Literal``.
+
+    Nie łapie etykiety wziętej z wysyłki, która nie przyszła z ``post_of`` (``post.target.label`` w słuchaczu kolejki),
+    ``post_of`` pod nazwą złożoną w trakcie działania (``getattr`` z napisu sklejonego z części), wyniku ``post_of``
+    podanego metodzie ``post`` obiektu, który nie jest kolejką, ani etykiety z modułu przypisanego innej nazwie poza
+    importem (docstring modułu).
     """
 
     own = file == COMMENT_VERSIONS
@@ -908,11 +921,20 @@ def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
         )
 
     for node in ast.walk(tree):
+        if isinstance(node, ast.alias) and node.name == "post_of" and node.asname not in {None, "post_of"}:
+            found.append((node.lineno, ast.unparse(node)))
         if not isinstance(node, ast.expr):
             continue
         if label(node):
             if not (node in in_post_of if own else _asks_queue(node, parents)):
                 found.append((node.lineno, ast.unparse(node)))
+        elif (isinstance(node, ast.Name) and node.id == "post_of") or (
+            isinstance(node, ast.Attribute) and node.attr == "post_of"
+        ):
+            if not _queued_at_once(node, parents):
+                found.append((node.lineno, ast.unparse(parents.get(node, node))))
+        elif isinstance(node, ast.Constant) and node.value == "post_of":
+            found.append((node.lineno, repr(node.value)))
         elif not own and isinstance(node, ast.Constant) and node.value == RUN_LOGS_LABEL and node not in in_types:
             found.append((node.lineno, repr(node.value)))
     return found
@@ -927,6 +949,20 @@ def _asks_queue(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
     return isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr in QUEUE_QUESTIONS
 
 
+def _queued_at_once(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    """``post_of`` wołane i jego wynik jedynym argumentem ``….post(…)`` kolejki."""
+
+    call = parents.get(node)
+    queued = parents.get(call) if isinstance(call, ast.Call) and call.func is node else None
+    return (
+        isinstance(queued, ast.Call)
+        and isinstance(queued.func, ast.Attribute)
+        and queued.func.attr == "post"
+        and queued.args == [call]
+        and not queued.keywords
+    )
+
+
 def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
     found = [
         f"src/{file}:{line}: {code}"
@@ -939,16 +975,43 @@ def test_wysylke_logow_uruchomienia_buduje_tylko_post_of() -> None:
         [
             *found,
             "Wysyłkę Logów Uruchomienia (etykieta logi-uruchomienia) buduje tylko post_of z wersji komentarza "
-            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of): wyślij "
-            "outbox.post(post_of(wersja)). Etykietę Logów (comment_versions.LABEL) kod poza post_of tylko podaje "
-            "kolejce w pytaniu delivered albo rejected.",
+            f"(src/{COMMENT_VERSIONS}), która niesie tylko tekst po strażniku i wybiera stopień (rank_of), a jej wynik "
+            "idzie od razu do kolejki: outbox.post(post_of(wersja)), bez Post złożonej z jego pól, bez innej nazwy i "
+            "bez getattr. Etykietę Logów (comment_versions.LABEL) kod poza post_of tylko podaje kolejce w pytaniu "
+            "delivered albo rejected.",
         ]
     )
 
 
-# Etykieta Logów obok post_of (przegląd #1038, rundy 1 i 2: „pakiet” i „getattr”). Zmianę gotowej wysyłki z post_of
-# (replace z rundy 1) odrzuca mypy, bo LogsPost nie jest dataclassą.
+# Wysyłki Logów obok post_of (przegląd #1038, rundy 1 i 2: „pakiet” i „getattr”; przegląd #1371 r1: dwie pierwsze,
+# czyli przypadki #1038 r1 bez replace, które mypy przepuszcza). Sam replace gotowej wysyłki odrzuca mypy (LogsPost).
 LOGS_POST_BREAKS: typing.Final = {
+    "zastepcza-w-stopniu-logow-z-wynikiem": (
+        "from rozliczenia.centrum.comment_versions import StandInLogs, post_of\n"
+        "from rozliczenia.centrum.outbox import Post, Rank\n"
+        "def own_from_start(outbox, logs):\n"
+        "    sent = post_of(StandInLogs(logs))\n"
+        "    return outbox.post(Post(sent.target, sent.period, sent.run_id, sent.header, sent.parts, sent.archive, Rank.OWN))\n"
+    ),
+    "komentarz-sprzed-straznika": (
+        "from rozliczenia.centrum.comment_versions import OwnLogs, post_of\n"
+        "from rozliczenia.centrum.outbox import Post\n"
+        "def unguarded(outbox, logs, record):\n"
+        "    sent = post_of(OwnLogs(logs))\n"
+        "    return outbox.post(Post(sent.target, sent.period, sent.run_id, sent.header, (record.text + '\\n',), rank=sent.rank))\n"
+    ),
+    "wysylka-zatrzymana-przed-kolejka": (
+        "from rozliczenia.centrum.comment_versions import post_of\n"
+        "def send(outbox, version):\n"
+        "    post = post_of(version)\n"
+        "    outbox.post(post)\n"
+    ),
+    "wysylka-odlozona-przed-kolejka": (
+        "from rozliczenia.centrum.comment_versions import post_of\n"
+        "def hold(held, version):\n"
+        "    held.append(post_of(version))\n"
+    ),
+    "post-of-pod-inna-nazwa":"from rozliczenia.centrum import comment_versions as cv\nmake = cv.post_of\n",
     "etykieta-w-nowej-wysylce": (
         "from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS\n"
         "thread = PeriodThread(label=RUN_LOGS, line='-', closed='reuse', title='t')\n"
@@ -965,6 +1028,33 @@ LOGS_POST_BREAKS: typing.Final = {
     ),
     "etykieta-napisem": "thread = PeriodThread(label='logi-uruchomienia', line='-', closed='reuse', title='t')\n",
     "import-gwiazdki": "from rozliczenia.centrum.comment_versions import *\n",
+    "post-of-z-getattr": (
+        "from rozliczenia.centrum import comment_versions as cv\n"
+        "def send(outbox, version):\n"
+        "    make = getattr(cv, 'post_of')\n"
+        "    outbox.post(replace(make(version), rank=Rank.OWN))\n"
+    ),
+    "post-of-ze-slownika-modulu": "def send(outbox, version, cv):\n    outbox.post(vars(cv)['post_of'](version))\n",
+    "post-of-atrybutem-pakietu": (
+        "from rozliczenia import centrum\n"
+        "def send(outbox, version):\n"
+        "    outbox.post(replace(centrum.comment_versions.post_of(version), rank=Rank.OWN))\n"
+    ),
+    "post-of-pelna-sciezka": (
+        "import rozliczenia.centrum.comment_versions\n"
+        "def send(outbox, version):\n"
+        "    outbox.post(replace(rozliczenia.centrum.comment_versions.post_of(version), rank=Rank.OWN))\n"
+    ),
+    "post-of-z-pakietu-wzglednie": (
+        "from .. import centrum\n"
+        "def send(outbox, version):\n"
+        "    outbox.post(replace(centrum.comment_versions.post_of(version), rank=Rank.OWN))\n"
+    ),
+    "post-of-z-importu-pod-inna-nazwa": (
+        "from rozliczenia.centrum.comment_versions import post_of as make\n"
+        "def send(outbox, version):\n"
+        "    outbox.post(make(version))\n"
+    ),
     "etykieta-atrybutem-pakietu": (
         "from rozliczenia import centrum\n"
         "thread = PeriodThread(label=centrum.comment_versions.LABEL, line='-', closed='reuse', title='t')\n"
@@ -997,12 +1087,6 @@ LOGS_POST_ALLOWED: typing.Final = {
         "from rozliczenia.centrum.comment_versions import post_of\n"
         "def keep(outbox, version):\n"
         "    return outbox.post(post_of(version))\n"
-    ),
-    "wysylka-trzymana-przed-kolejka": (
-        "from rozliczenia.centrum.comment_versions import post_of\n"
-        "def send(outbox, version):\n"
-        "    post = post_of(version)\n"
-        "    return outbox.post(post)\n"
     ),
     "pytanie-kolejki-o-logi": (
         "from rozliczenia.centrum.comment_versions import LABEL as RUN_LOGS_LABEL\n"

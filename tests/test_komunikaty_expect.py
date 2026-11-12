@@ -318,29 +318,82 @@ def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:
 
 
 def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
-    """Odmowę API Centrum (``Refusal``) tworzy tylko katalog odmów ``centrum/refusal.py``, a pilnuje tego typ:
-    konstruktor bez dowodu katalogu (``refusal._CATALOG``) odrzuca mypy, także przez ``partial(Refusal, 500)``, nazwę,
-    kolekcję i ``type(odmowa)(…)``, podklasę też mypy (``final``), a dowód poza katalogiem ruff (``TID251``).
+    """Klasa ``Refusal`` jako wartość stoi tylko w ``centrum/refusal.py``, więc tylko katalog tworzy odmowę.
 
-    Ten test łapie tylko to, co typ gubi, bo daje ``Any``: klasę wyjętą z argumentów typu, gdy ``Refusal`` (nazwa, alias
-    importu modułu albo atrybut modułu) stoi w tym samym wywołaniu ``get_args``/``typing.get_args`` albo przed
-    ``.__args__``, np. ``get_args(refusal.Refusal | None)[0](…)`` (#1179 r2) i ``list[Refusal].__args__[0](…)``.
-    Nie łapie ``get_args`` pod inną nazwą, ``getattr`` z napisem (``"Refusal"``), ``copy`` gotowej odmowy ani klasy
-    wyjętej z aliasu typu modułu bez ``Refusal`` w tym miejscu (``ShutdownBlocker.__args__…``): to zostaje przeglądowi.
+    Konstruktor bez dowodu katalogu (``refusal._CATALOG``) i podklasę odrzuca też mypy, a dowód poza katalogiem ruff
+    (docstring ``_CATALOG``), ale typ gubi klasę wziętą jako wartość, np. ``Refusal.__new__(Refusal)`` (odmowa bez
+    ``status_code``, przegląd #1371 r1) i ``get_args(Refusal | None)[0](…)`` (#1179 r2). Te łapie ten test.
+
+    Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
+    odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu, pola albo zmiennej, w nawiasach typu i unii
+    ``|`` w instrukcji modułu albo klasy poza wywołaniem i lambdą (alias ``Callable[[], Refusal | None]``), w
+    ``except``, w drugim argumencie ``isinstance``/``issubclass`` i w argumencie ``exception_handler``.
+    Każde inne odwołanie pada, w tym wywołanie, argument wywołania (``partial(Refusal, 500)``), przypisanie do nazwy
+    (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa, odwołanie wewnątrz wywołania albo lambdy i
+    nawiasy typu albo unia w ciele funkcji (``make = Refusal | Refusal``, ``list[Refusal].__args__[0](…)``).
+    Łapie tylko odwołania do ``Refusal`` po nazwie: nie łapie ``getattr`` z napisem (``"Refusal"``), importu wewnątrz
+    funkcji, ``type(odmowa)(…)`` z dowodem typu ``Any``, ``copy`` gotowej odmowy ani klasy wyjętej z aliasu typu modułu
+    bez odwołania do ``Refusal`` w tym miejscu (``ShutdownBlocker.__args__…``): to zostaje przeglądowi.
     """
 
-    def unpacked(module: ModuleType) -> bool:
+    def outside_type(module: ModuleType) -> bool:
         tree = ast.parse(Path(str(module.__file__)).read_text(encoding="utf-8"))
+        typed = {id(inner) for root in _type_positions(tree) for inner in _type_nodes(root)}
         return any(
-            _resolved(module, inner) is refusal.Refusal
+            isinstance(node, ast.Name | ast.Attribute) and id(node) not in typed and _resolved(module, node) is refusal.Refusal
             for node in ast.walk(tree)
-            if (isinstance(node, ast.Call) and ast.unparse(node.func) in {"get_args", "typing.get_args"})
-            or (isinstance(node, ast.Attribute) and node.attr == "__args__")
-            for inner in ast.walk(node)
-            if isinstance(inner, ast.Name | ast.Attribute)
         )
 
-    assert [module.__name__ for module in _engine_modules() if unpacked(module)] == []
+    assert {module.__name__ for module in _engine_modules() if outside_type(module)} == {refusal.__name__}
+
+
+def _type_nodes(root: ast.AST) -> Iterator[ast.AST]:
+    """Węzły typu w ``root`` bez wnętrza wywołań i lambd, więc ``CACHE[Refusal(500, "x")]`` nie jest typem."""
+
+    if isinstance(root, ast.Call | ast.Lambda):
+        return
+    yield root
+    for child in ast.iter_child_nodes(root):
+        yield from _type_nodes(child)
+
+
+def _type_positions(tree: ast.AST) -> Iterator[ast.expr]:
+    """Wyrażenia, w których klasa stoi jako typ, a nie wartość (lista w docstringu strażnika katalogu odmów)."""
+
+    called = {
+        id(inner)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call | ast.Lambda)
+        for inner in ast.walk(node)
+        if inner is not node
+    } | {
+        id(inner)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        for statement in node.body
+        for inner in ast.walk(statement)
+    }
+    for node in ast.walk(tree):
+        match node:
+            case ast.FunctionDef(args=args, returns=returns) | ast.AsyncFunctionDef(args=args, returns=returns):
+                parameters = [*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg]
+                yield from (parameter.annotation for parameter in parameters if parameter and parameter.annotation)
+                if returns is not None:
+                    yield returns
+            case ast.AnnAssign(annotation=annotation):
+                yield annotation
+            case ast.Subscript(slice=inner) if id(node) not in called:
+                yield inner
+            case ast.BinOp(left=left, op=ast.BitOr(), right=right) if id(node) not in called:
+                yield from (left, right)
+            case ast.ExceptHandler(type=kind) if kind is not None:
+                yield kind
+            case ast.Call(func=ast.Name(id="isinstance" | "issubclass"), args=[_, kind]):
+                yield kind
+            case ast.Call(func=ast.Attribute(attr="exception_handler"), args=handled):
+                yield from handled
+            case _:
+                pass
 
 
 def _engine_modules() -> list[ModuleType]:

@@ -28,8 +28,9 @@ _CATALOG: Final = _Catalog()
 argumentu albo zły typ). Poza tym modułem ruff (``TID251`` w ``pyproject.toml``) odrzuca ``from … import _CATALOG``
 (także z aliasem) i atrybut modułu (``refusal._CATALOG``, także przez alias albo pełną ścieżkę), tak samo ``_Catalog``.
 Mypy odrzuca też ``type(odmowa)(…)`` bez dowodu, a podklasę ``Refusal`` (``final``). Łapie tylko te postacie: nie łapie
-``getattr(refusal, "_CATALOG")``, wartości ``Any`` ani klasy wyjętej z argumentów typu (``get_args(…)[0]``), której
-w ``src`` pilnuje ``tests/test_komunikaty_expect.py``."""
+``getattr(refusal, "_CATALOG")``, wartości ``Any``, odmowy bez konstruktora (``Refusal.__new__(Refusal)``) ani klasy
+wyjętej z argumentów typu (``get_args(…)[0]``). Te w ``src`` łapie ``tests/test_komunikaty_expect.py``: poza katalogiem
+``Refusal`` stoi tylko jako typ."""
 
 
 @final

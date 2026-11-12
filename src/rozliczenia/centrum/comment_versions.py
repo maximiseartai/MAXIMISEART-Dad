@@ -228,8 +228,11 @@ alias albo pełną ścieżkę), tak samo ``_Versions``.
 ``LogsPost`` nie jest dataclassą i nie oddaje swojej ``Post``, więc mypy odrzuca ``dataclasses.replace`` gotowej
 wysyłki, np. w innym stopniu albo z innymi częściami (``type-var``), a ``replace`` wartości ``Any`` rzuca
 ``TypeError``. Podklasę odrzuca mypy (``final``). Łapie tylko te postacie: nie łapie ``getattr(comment_versions,
-"_VERSIONS")``, wartości ``Any`` z dowodem, ``object.__setattr__`` slotu ani nowej ``Post`` z etykietą Logów (``LABEL``,
-``LogsPost.target``), której pilnuje ``tests/test_granice_importow.py``."""
+"_VERSIONS")``, wartości ``Any`` z dowodem, ``object.__setattr__`` slotu ani nowej ``Post`` złożonej z pól gotowej
+wysyłki (``Post(sent.target, …)``), bo ``Outbox.post`` bierze też gołą ``Post``. Tę ostatnią łapie
+``tests/test_granice_importow.py``: wynik ``post_of`` stoi tylko w ``<kolejka>.post(post_of(…))``, więc nikt nie czyta
+jego pól, a etykietę Logów (``LABEL``) kod poza ``post_of`` tylko podaje kolejce w pytaniu (``delivered``,
+``rejected``)."""
 
 
 @final
