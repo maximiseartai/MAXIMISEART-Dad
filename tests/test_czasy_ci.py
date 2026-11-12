@@ -765,12 +765,15 @@ class _ActionsApi:
         raise AssertionError(f"pomiar nie pisze do GitHuba: {metoda} {sciezka}")
 
 
-def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_bierze_werdykt_nastepnego_runu(
+def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_bierze_najwczesniejszy_werdykt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """PR z wyborem testów to klasa inna niż pełna bramka; czas do Required liczy się z pierwszej próby, anulowany run
-    się nie liczy, merge z anulowanym runem dostaje werdykt następnego runu main, a run, którego zadań API nie dało, to
-    błąd API i kod 1. Kwantyl najbliższej rangi: z 2, 4 i 10 min p90 to 10, nie 8,8 z interpolacji."""
+    i pominięty Required się nie liczą, a run, którego zadań API nie dało, to błąd API i kod 1. Strażnik main czeka na
+    najwcześniejszy werdykt dowolnej próby, także czerwonej przed ponowieniem i tej przed anulowaną ostatnią próbą, a
+    Required anulowanego runu, który biegnie z ``always()`` i kończy się w chwili anulowania, werdyktem nie jest, więc
+    merge z anulowanym runem dostaje werdykt następnego runu. Kwantyl najbliższej rangi: z 2, 4 i 10 min p90 to 10, nie
+    8,8 z interpolacji."""
 
     checkout = tmp_path / "repo"
     checkout.mkdir()
@@ -789,6 +792,12 @@ def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_
             (checkout / name).write_text(f"{head}\n", encoding="utf-8")
         heads[head] = commit(checkout, head)
     retried = [*_gate(0, 10, conclusion="failure"), *_gate(12, 25, attempt=2)]
+    cancelled = [_ci_job("pytest (Python 3.14, Linux, 1/1)", 60, 61.8, conclusion="cancelled"), _ci_job("Required CI status", 61.9, 62, conclusion="failure")]
+    retry_cancelled = [
+        *_gate(70, 95, conclusion="failure"),
+        _ci_job("pytest (Python 3.14, Linux, 1/1)", 96, 99.8, attempt=2, conclusion="cancelled"),
+        _ci_job("Required CI status", 99.9, 100, attempt=2, conclusion="failure"),
+    ]
     runs = [
         _ci_run(1, "pull_request", heads["docs"], 0, _gate(0, 2)),
         _ci_run(2, "pull_request", heads["testy"], 0, _gate(0, 4)),
@@ -796,8 +805,10 @@ def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_
         _ci_run(4, "pull_request", heads["pelna"], 0, _gate(0, 12)),
         _ci_run(5, "pull_request", heads["src"], 0, _gate(0, 1, conclusion="cancelled"), conclusion="cancelled"),
         _ci_run(6, "pull_request", heads["docs"], 0, None),
-        _ci_run(10, "push", base, 60, [], conclusion="cancelled"),
-        _ci_run(11, "push", base, 65, _gate(65, 90)),
+        _ci_run(7, "pull_request", heads["docs"], 0, _gate(0, 3, conclusion="skipped")),
+        _ci_run(10, "push", base, 60, cancelled, conclusion="cancelled"),
+        _ci_run(11, "push", base, 65, [*_gate(65, 80, conclusion="failure"), *_gate(82, 90, attempt=2)], attempts=2),
+        _ci_run(12, "push", base, 70, retry_cancelled, attempts=2, conclusion="cancelled"),
     ]
     github = _ActionsApi(runs)
 
@@ -805,14 +816,14 @@ def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_
 
     out, err = capsys.readouterr()
     assert out.splitlines()[-1] == (
-        "POMIAR CI | PR wybór p50 4.0 p90 10.0 (n 3) | każdy PR p50 4.0 p90 12.0 (n 4) | main strażnik p50 25.0 p90 30.0 (n 2)"
-        " | runów 7, błędów API 1, zapytań 9"
+        "POMIAR CI | PR wybór p50 4.0 p90 10.0 (n 3) | każdy PR p50 4.0 p90 12.0 (n 4) | main strażnik p50 20.0 p90 25.0 (n 3)"
+        " | runów 9, błędów API 1, zapytań 11"
     )
     assert (code, err.splitlines()) == (1, ["POMIAR CI | błąd API run 6: gh api repos/{owner}/{repo}/actions/runs/6/jobs?filter=all&per_page=100&page=1: gh: Not Found (HTTP 404)"])
     records = {record["run"]: record for record in map(json.loads, (tmp_path / "bieg" / "pomiar.jsonl").read_text(encoding="utf-8").splitlines())}
     assert {run: records[run]["klasa"] for run in (1, 2, 3, 4, 5)} == {1: "docs", 2: "same testy", 3: "src", 4: "pełna bramka", 5: "src"}
-    assert (records[3]["do_required_s"], records[3]["werdykt"]) == (600, "2026-11-03T10:25:00+00:00")
-    assert [(records[run]["do_werdyktu_main_s"], records[run]["run_werdyktu_main"]) for run in (10, 11)] == [(1800, 11), (1500, 11)]
+    assert (records[3]["do_required_s"], records[3]["werdykt"]) == (600, "2026-11-03T10:10:00+00:00")
+    assert [(records[run]["do_werdyktu_main_s"], records[run]["run_werdyktu_main"]) for run in (10, 11, 12)] == [(1200, 11), (900, 11), (1500, 12)]
 
 
 def test_pomiar_ci_zna_kazde_zadanie_bramki_z_ci_yml_i_jego_krok_pracy() -> None:

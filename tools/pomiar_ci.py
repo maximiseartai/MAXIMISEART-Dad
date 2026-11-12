@@ -17,8 +17,9 @@ Run:
     do czerwieni      utworzenie runu → koniec pierwszego zadania z wynikiem failure
     krytyczne         zadanie, które skończyło ostatnie przed Required, z jego kolejką, startem, pracą i końcem
     ogon              koniec krytycznego → koniec Required
-    main → werdykt    na main: merge (utworzenie runu pushu) → najwcześniejszy koniec Required runu main utworzonego
-                      nie wcześniej, który nie jest anulowany (anulowany run commitu obejmuje następny)
+    main → werdykt    na main: merge (utworzenie runu pushu) → najwcześniejszy koniec Required dowolnej próby runu main
+                      utworzonego nie wcześniej, zielonej albo czerwonej, poza anulowaną ostatnią próbą (anulowany run
+                      commitu obejmuje następny, a czerwona próba przed ponowieniem to już werdykt, na który się czeka)
 
 Klasa zmiany PR (``Klasa``) wynika z plików, którymi głowa PR różni się od ``main`` z chwili runu (``git merge-base``
 z ostatnim commitem first-parent ``origin/main`` sprzed runu): pełna bramka (ścieżka z ``Context.PR_GATE`` w tej
@@ -207,7 +208,7 @@ class Pomiar:
     kolejki: dict[str, list[float]]
     konce_s: dict[str, float]  # szablon → od utworzenia runu do końca jego ostatniego zadania
     starty_s: list[float]
-    werdykt: str | None  # koniec Required ostatniej próby, gdy run nie jest anulowany
+    werdykt: str | None  # najwcześniejszy koniec Required próby, która nie jest anulowaną ostatnią próbą
     do_werdyktu_main_s: float | None = None
     run_werdyktu_main: int | None = None
 
@@ -324,7 +325,8 @@ def zmierz(run: dict[str, Any], wszystkie: list[Zadanie], plan: Plan | None, zmi
     pracujace = [z for z in pierwsze if z.szablon not in ("required", POZA_BRAMKA) and z.biegl]
     krytyczne = max(pracujace, key=lambda z: z.koniec or utworzony, default=None)
     czerwone = [z.koniec for z in pierwsze if z.szablon != POZA_BRAMKA and z.wynik == "failure" and z.koniec]
-    ostatnia = max((z for z in wszystkie if z.szablon == "required" and z.biegl), key=lambda z: (z.proba, z.koniec or utworzony), default=None)
+    anulowana = run["run_attempt"] if run["conclusion"] == "cancelled" else None
+    werdykty = [z.koniec for z in wszystkie if z.szablon == "required" and z.biegl and z.koniec and z.proba != anulowana]
     kolejki: dict[str, list[float]] = {}
     konce_s: dict[str, float] = {}
     for z in pierwsze:
@@ -357,7 +359,7 @@ def zmierz(run: dict[str, Any], wszystkie: list[Zadanie], plan: Plan | None, zmi
         kolejki=kolejki,
         konce_s=konce_s,
         starty_s=[s for z in pracujace if z.praca and (s := z.odcinki()["start_s"]) is not None],
-        werdykt=ostatnia.koniec.isoformat() if ostatnia and ostatnia.koniec and run["conclusion"] != "cancelled" else None,
+        werdykt=min(werdykty).isoformat() if werdykty else None,
     )
 
 
