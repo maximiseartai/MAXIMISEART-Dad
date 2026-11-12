@@ -827,10 +827,6 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chrome: str, tmp_path: Pa
     assert set(atrapa.requested()) <= READING
 
 
-# Wyjątek bez terminu, zgoda Maksa 6.11.2026 (#979): `zgodnosc_efenix.py --emmett` uruchamia tylko Maks na swoim Macu,
-# więc ten test biegnie tylko na Macu i Linuksie. Na Windows CI wątek Playwrighta z fixture `chromium` ginie w trakcie
-# kliknięcia Maksa, a worker xdist pada („node down: Not properly terminated”, #975); kwarantanna (xfail) tego nie łapie.
-@pytest.mark.skipif(sys.platform == "win32", reason="#979: narzędzie Maksa tylko na Macu; worker xdist pada na Windows")
 @pytest.mark.parametrize("variant", EMMETT.values(), ids=EMMETT.keys())
 def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odczytem(
     chromium: Chromium, tmp_path: Path, variant: Emmett
