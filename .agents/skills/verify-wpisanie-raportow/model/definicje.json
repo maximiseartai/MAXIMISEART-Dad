@@ -12,8 +12,8 @@
     "enter_reports": "00b9cd5776bf5054"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "508e569746592738",
-    "_closed": "0dba7524418354f7",
+    "enter_from_mail": "2b4c5a53b322134b",
+    "closed_periods": "5b9ce8bf021b5dd9",
     "SavedState": "61cca2a0f5c0d9c4"
   },
   "src/rozliczenia/intermax_cells.py": {

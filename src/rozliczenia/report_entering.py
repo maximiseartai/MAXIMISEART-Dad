@@ -325,7 +325,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         int,
         tuple[ReportMail, ...],
     ]:
-        closed = _closed(inputs.periods_directory, Window.periods(today, saved.rollout))
+        closed = closed_periods(inputs.periods_directory, Window.periods(today, saved.rollout))
         window = Window.of(today, saved.rollout, closed)
         outcome = parts.inbox.mails_since(window.first)
         match outcome:
@@ -343,7 +343,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 assert_never(outcome)
         with _stops_unusable():
             register = register_file.read(register_path, files)
-        orders = _orders(register, window.start, copy=files.copy is not None)
+        orders = register_orders(register, window.start, copy=files.copy is not None)
         ordered = _ordered_days(register, window.start)
         return window, register, orders, ordered, _present(register, window.numbers_since), outcome.skipped, outcome.mails
 
@@ -445,7 +445,7 @@ def _open_days(window: Window) -> tuple[date, ...]:
     return tuple(day for offset in range(count) if window.opens(day := window.first + timedelta(days=offset)))
 
 
-def _closed(periods_directory: Path, periods: tuple[SettlementPeriod, ...]) -> tuple[str, ...]:
+def closed_periods(periods_directory: Path, periods: tuple[SettlementPeriod, ...]) -> tuple[str, ...]:
     """Tokeny okresów ``periods`` z Plikiem zbiorczym w ich Folderze okresu, po kolei.
 
     Folder okresu w kilku miesiącach (układ folderów taty) zamyka okres, gdy Plik zbiorczy jest w którymkolwiek z nich, bo
@@ -568,7 +568,7 @@ def _orderless(
     return tuple(sorted(found, key=lambda logged: (logged.sheet, logged.number)))
 
 
-def _orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[RegisterOrder, ...]:
+def register_orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[RegisterOrder, ...]:
     """Uporządkowane zlecenia z dni od ``since`` w każdym obszarze wklejania, każdy przeczytany wiersz w Kopii wejścia
     (``copy``)."""
 
