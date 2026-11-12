@@ -55,7 +55,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Code in `src/` asks whether a file or folder is there only through `src/rozliczenia/file_state.py`. | `tests/test_zapadki.py::test_stan_pliku_w_src_tylko_przez_file_state` (boundary: docstring of `bare_file_state`) |
 | Code in `src/` keeps the response of every navigation of a browser tab. | `tests/test_zapadki.py::test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona` (boundary: docstring of `dropped_navigation`) |
 | `zip` takes `strict=True` when both sides must have the same length, `strict=False` only with a comment naming the check that already reports a different length, and successive pairs come from `itertools.pairwise`. | ruff `B905`, `RUF007` |
-| Tata's day is `datetime.now().astimezone().date()`, never the UTC day. | ruff `DTZ` (boundary: it does not tell a UTC day from tata's day, such as `datetime.now(timezone.utc).date()`; only review) |
+| Code in `src/` takes the current moment and tata's day only from `rozliczenia.wall_clock`, and tata's day is `dad_today()`, never `utc_now().date()`. | ruff `TID251`, `tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa` (boundary: docstring of `wall_clock`) |
 
 ## Test Surface
 
