@@ -47,17 +47,30 @@ MISTAKEN_SUBJECT = 2
 @dataclass(frozen=True)
 class Addition:
     """Zwycięski Wpis numeru ``number``, którego INTERMAX nie ma, z ``tak``/``nie`` ``verdict`` i czynnościami
-    ``activities``, od Wykonawcy ``worker`` z dniem z tematu ``day``, z maila ``mail``, który przyszedł ``arrived``:
-    Zlecenie dopisane z raportu w arkuszu zleceń ``sheet``."""
+    ``activities``, z Raportu wykonawcy ``report``: Zlecenie dopisane z raportu w arkuszu zleceń ``sheet`` pod
+    zleceniami nadawcy w dniu z tematu."""
 
     sheet: str
-    day: date
-    worker: Login
     number: OrderNumber
     verdict: Verdict
     activities: str
-    arrived: datetime
-    mail: MailId
+    report: ReadReport
+
+    @property
+    def day(self) -> date:
+        return self.report.day
+
+    @property
+    def worker(self) -> Login:
+        return self.report.worker
+
+    @property
+    def arrived(self) -> datetime:
+        return self.report.arrived
+
+    @property
+    def mail(self) -> MailId:
+        return self.report.mail
 
 
 @dataclass(frozen=True)
@@ -164,9 +177,12 @@ class Board:
         ``ConflictingVerdicts``; w obu zlecenie zostaje, gdzie stoi.
 
         Wpis numeru, którego nie ma w żadnym odczytanym dniu, z Raportu wykonawcy z dniem otwartym to Zlecenie dopisane
-        z raportu (``_unknown``), a przy kilku takich Wpisach jednego numeru dopisuje najpóźniejszy mail, także od
-        innego Wykonawcy i z innym dniem z tematu; jego Wpis bez ``tak`` ani ``nie`` daje ``MissingVerdict``, a z
-        przeciwnym zamiarem ``ConflictingVerdicts``, bez dopisania.
+        z raportu (``_unknown``). O takim numerze decyduje tylko najpóźniejszy mail z nim, także od innego Wykonawcy i z
+        innym dniem z tematu: jego Wpis bez ``tak`` ani ``nie`` daje ``MissingVerdict``, a z przeciwnym zamiarem
+        ``ConflictingVerdicts``, bez dopisania, a gdy jego Wpis nie dopisuje (problem, pamięć numeru albo Raport z dniem
+        zamkniętym), Wpis wcześniejszego maila też nie dopisuje. Inaczej następne kliknięcie widziałoby zlecenie
+        dopisane starszym mailem, a najpóźniejszy mail przeniósłby je albo dał problem, więc dwa kliknięcia dałyby co
+        innego niż jedno.
         """
 
         latest: dict[OrderRow, _Claim] = {}
@@ -181,6 +197,7 @@ class Board:
             for number, written in said.items():
                 placed = self._numbered.get(number, [])
                 if number not in other_day and not self._window.opens(report.day):
+                    newest.pop(number, None)
                     continue
                 found: _Claim | _New | list[ReportProblem]
                 if len(placed) > 1:
@@ -191,6 +208,7 @@ class Board:
                     found = self._claim(placed[0], report, report.day, None)
                 else:
                     found = self._unknown(report, number, mistaken)
+                    newest.pop(number, None)
                 if isinstance(found, _Claim):
                     latest[found.order.row] = _Claim(found.order, found.day, report, tuple(written), found.lost)
                 elif isinstance(found, _New):
@@ -222,9 +240,7 @@ class Board:
             report = new.report
             match new.entries:
                 case (ReportEntry(verdict=Verdict() as verdict, activities=activities),):
-                    added.append(
-                        Addition(new.sheet, report.day, report.worker, number, verdict, activities, report.arrived, report.mail)
-                    )
+                    added.append(Addition(new.sheet, number, verdict, activities, report))
                 case (ReportEntry(fault=VerdictFault() as fault),):
                     problems.append(MissingVerdict(report.worker, report.day, number, fault))
                 case _:

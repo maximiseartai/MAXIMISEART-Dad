@@ -3953,6 +3953,27 @@ def test_numer_obecny_w_innym_otwartym_dniu_nie_jest_dopisany_tylko_przenoszony(
     assert outcome.moves == (OrderMove(ROW, DAY, "Jan.Testowy"),)
 
 
+LATER_ROW = OrderRow("Zlecenia", 125)
+
+
+def test_numer_z_dnia_po_dzis_nie_jest_dopisany_a_nastepnego_dnia_przechodzi_na_dzien_z_tematu() -> None:
+    """Przegląd #1374 r1: tata wkleja i porządkuje zlecenia jutra dzień wcześniej (ADR 0019), więc INTERMAX ma już
+    zlecenie 40000055 z 9.11, a Jan zrobił je 8.11 i wpisał do Raportu za 8.11. Kliknięcie 8.11 nie dopisuje go drugi
+    raz i niczego nie zmienia w INTERMAX, a tata dostaje problem z tym numerem. Kliknięcie 9.11 widzi zlecenie w dniu
+    otwartym i przenosi je na dzień z tematu z Wpisem (#1350)."""
+
+    orders = [_order(), _order(LATER_ROW, number="40000055", day=NEXT_DAY)]
+    mail = _mail(JAN, SUBJECT, "40000055 tak montaż ONT")
+
+    today = enter_reports(_inputs([mail], orders, today=DAY, ordered=[DAY, NEXT_DAY]))
+    tomorrow = enter_reports(_inputs([mail], orders, today=NEXT_DAY, rollout=DAY, ordered=[DAY, NEXT_DAY]))
+
+    assert (today.added, today.moves, today.changes) == ((), (), ())
+    assert ["40000055" in reason(problem) for problem in today.problems] == [True]
+    assert tomorrow.added == ()
+    assert tomorrow.moves == (OrderMove(LATER_ROW, DAY, "Jan.Testowy"),)
+    assert tomorrow.problems == ()
+
 def test_numery_z_przykladu_przypomnienia_nigdy_nie_daja_dopisania() -> None:
     """Kryterium #1354 i US 50: Wykonawca przepisał przykład z Przypomnienia o raporcie; jego numery mają 8 cyfr i nie ma
     ich w INTERMAX, ale nie są Wpisami, więc nic się nie dopisuje i nie ma problemu."""
@@ -4074,6 +4095,79 @@ def test_przy_kilku_mailach_z_nowym_numerem_dopisuje_najswiezszy_a_problem_stars
         MissingVerdict(EWA_LOGIN, DAY, OrderNumber(ADDED), VerdictFault.LETTER_YES),
         UnknownNumber(JAN_LOGIN, NEXT_DAY, OrderNumber(ADDED), AddBar.NOT_ORDERED),
     )
+
+
+@pytest.mark.parametrize(
+    ("orders", "newest", "rollout", "closed", "ordered", "problems"),
+    [
+        pytest.param(
+            [
+                _order(),
+                _order(OrderRow("Zlecenia", 121), number="40000003", day=date(2026, 11, 7), worker="Ewa.Probna"),
+                _order(OrderRow("Zlecenia", 122), number="40000004", day=date(2026, 11, 7), worker="Ewa.Probna"),
+            ],
+            _mail(EWA, SUBJECT, f"40000003 tak a\n40000004 nie b\n{ADDED} nie brak klienta", LATER),
+            date(2026, 11, 7),
+            (),
+            [date(2026, 11, 7), DAY],
+            (UnknownNumber(EWA_LOGIN, DAY, OrderNumber(ADDED), AddBar.MISTAKEN_SUBJECT),),
+            id="pomylony-temat",
+        ),
+        pytest.param(
+            [_order()],
+            _mail(EWA, "Raport 02.11.2026", f"{ADDED} nie brak klienta", LATER),
+            CLOSED_DAY,
+            CLOSED,
+            [DAY],
+            (),
+            id="dzien-okresu-z-plikiem-zbiorczym",
+        ),
+    ],
+)
+def test_starszy_mail_nie_dopisuje_numeru_gdy_najswiezszy_wpis_tego_numeru_nie_dopisuje(
+    orders: list[RegisterOrder],
+    newest: ReportMail,
+    rollout: date,
+    closed: tuple[str, ...],
+    ordered: list[date],
+    problems: tuple[ReportProblem, ...],
+) -> None:
+    """Przegląd #1374 r1: o numerze, którego INTERMAX nie ma, decyduje najświeższy Raport wykonawcy z tym numerem (US 3),
+    także gdy jego Wpis niczego nie dopisuje. Jan (starszy mail) ma nowy numer z ``tak``, a Ewa (świeższy) ten sam numer
+    z ``nie`` w Raporcie z pomylonym tematem (dwa jej zlecenia z 7.11) albo w Raporcie za dzień okresu z Plikiem
+    zbiorczym. Kliknięcie nie dopisuje więc Wpisu Jana, a drugie kliknięcie daje to samo co pierwsze, zamiast przenieść
+    dopisane zlecenie do Ewy albo dać problem Przeniesienia do zamkniętego okresu."""
+
+    jan = _mail(JAN, SUBJECT, ADDED_TEXT)
+    inputs = _inputs([jan, newest], orders, rollout=rollout, closed=closed, ordered=ordered)
+
+    first = enter_reports(inputs)
+    second = enter_reports(replace(inputs, orders=_after(orders, first), memory=first.memory))
+
+    assert (first.added, first.problems) == ((), problems)
+    assert (second.added, second.moves, second.changes, second.problems) == ((), (), (), problems)
+
+def test_literowka_poprawiona_swiezszym_mailem_tego_samego_wykonawcy_nie_jest_dopisana() -> None:
+    """Przegląd #1374 r1, reguła poprawionego maila (US 40) dla dopisania: Jan wysłał raport z literówką w drugim numerze
+    (40000092 zamiast 40000002), a potem ten sam raport z dobrym numerem. Świeższy mail powtarza zlecenie Jana z 8.11 z
+    pierwszego, więc go poprawia, a numer, którego w nim nie ma, nie staje się Zleceniem dopisanym z raportu, także gdy
+    oba maile są w skrzynce przy jednym kliknięciu. Kolejny raport Jana bez zlecenia z pierwszego nie jest poprawką, więc
+    numer pierwszego się dopisuje."""
+
+    orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002")]
+    typo = _mail(JAN, SUBJECT, TYPO)
+
+    corrected = enter_reports(_inputs([typo, _mail(JAN, SUBJECT, RESENT, LATER)], orders, ordered=[DAY]))
+    another = enter_reports(_inputs([typo, _mail(JAN, SUBJECT, "40000002 tak montaż", LATER)], orders, ordered=[DAY]))
+
+    assert (corrected.added, corrected.problems) == ((), ())
+    assert {(change.order.row, change.value) for change in corrected.changes} == {
+        (120, "tak"),
+        (120, "wymiana routera"),
+        (121, "tak"),
+        (121, "montaż"),
+    }
+    assert [added.number for added in another.added] == ["40000092"]
 
 
 def test_dopisanie_idzie_do_arkusza_z_zleceniem_nadawcy_w_dniu_z_tematu() -> None:

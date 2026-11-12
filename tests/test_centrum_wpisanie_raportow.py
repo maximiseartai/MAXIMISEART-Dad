@@ -1715,6 +1715,38 @@ def test_klikniecie_nie_dopisuje_zlecenia_ktore_czeka_w_intermax_jako_surowe_zle
     assert all("INTERMAX ma go jako Surowe zlecenie: uporządkuj INTERMAX i kliknij jeszcze raz" in problem["reason"] for problem in problems)
 
 
+def test_zlecenie_z_dnia_po_dzis_nie_jest_dopisane_drugi_raz_a_nastepnego_dnia_przechodzi_na_dzien_z_tematu(
+    tmp_path: Path,
+) -> None:
+    """Przegląd #1374 r1 przez HTTP API: dziś 9.11, a INTERMAX ma już uporządkowany 10.11 (tata wkleja i porządkuje
+    zlecenia jutra dzień wcześniej, ADR 0019). Jan zrobił zlecenie 40000055 z 10.11 już dziś i wpisał je do Raportu za
+    9.11. Kliknięcie nie zmienia INTERMAX, więc numer nie stoi w nim dwa razy, a okienko Jana z 9.11 ma problem z tym
+    numerem. Kliknięcie 10.11 przenosi zlecenie na 9.11 z Wpisem (#1350)."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "anna.kowalska", 40000002),
+            _order(9, 10, "jan.testowy", 40000001),
+            _order(10, 9, "jan.testowy", 40000055),
+        ),
+        raw=(),
+    )
+    mail = report(JAN, SUBJECT, "40000055 tak montaż ONT")
+    centrum = entering_centrum(tmp_path, intermax, [mail])
+    before = centrum.register.read_bytes()
+
+    view = _finished(centrum)
+    unchanged = centrum.register.read_bytes() == before
+    problems = _worker(_view(centrum), "jan.testowy")["problems"]
+    tomorrow = _click_at(centrum, datetime(2026, 11, 10, 18, 30), [mail])
+
+    assert unchanged, "kliknięcie nie dopisuje zlecenia, które INTERMAX ma w dniu po dziś"
+    assert _entering(centrum, view)["added"] == []
+    assert [problem["number"] for problem in problems] == ["40000055"]
+    assert _places(centrum.register, 40000055) == [(datetime(2026, 11, 9, 9), "jan.testowy", "tak", "montaż ONT")]
+    assert [move["day"] for move in _entering(centrum, tomorrow)["moves"]] == ["2026-11-09"]
+
+
 def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesienia_ktore_zatrzymuja_reczna_zmiane(
     tmp_path: Path,
 ) -> None:

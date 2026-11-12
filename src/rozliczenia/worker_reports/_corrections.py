@@ -1,4 +1,5 @@
-"""Poprawiony mail: problemy z błędów Wykonawcy, które znikają, gdy Wykonawca przyśle swój Raport wykonawcy jeszcze raz."""
+"""Poprawiony mail: problemy z błędów Wykonawcy i Zlecenia dopisane z raportu z jego literówki, które znikają, gdy
+Wykonawca przyśle swój Raport wykonawcy jeszcze raz."""
 
 from __future__ import annotations
 
@@ -49,18 +50,10 @@ def standing(
     w dniu to stan INTERMAX, więc stoją, jak nieznany nadawca i różnica z ręczną wartością.
     """
 
-    days: defaultdict[tuple[Login, date], set[OrderNumber]] = defaultdict(set)
-    for order in orders:
-        days[order.key.worker, order.key.day].add(order.key.number)
+    days = _days(orders)
 
     def corrected(worker: Login, numbers: frozenset[OrderNumber], sent: tuple[datetime, MailId], on: set[date] | None) -> bool:
-        return any(
-            report.worker == worker
-            and (report.arrived, report.mail) > sent
-            and (on is None or report.day in on)
-            and _repeats(numbers & days[worker, report.day], report)
-            for report in reports
-        )
+        return _corrected(reports, days, worker, numbers, sent, on)
 
     found: set[ReportProblem] = set()
     for problem in problems:
@@ -92,6 +85,60 @@ def standing(
             if not corrected(report.worker, numbers, (report.arrived, report.mail), on):
                 found.add(problem)
     return found
+
+
+def uncorrected(
+    additions: Iterable[_matching.Addition], reports: Sequence[ReadReport], orders: Sequence[RegisterOrder]
+) -> tuple[_matching.Addition, ...]:
+    """Zlecenia dopisane z raportu bez tych, których Raport wykonawcy poprawił późniejszy mail tego Wykonawcy z tym
+    samym dniem z tematu (ta sama reguła poprawionego maila co w ``standing``, US 40): poprawiony mail nie ma ich numeru,
+    bo z nim to on byłby najpóźniejszym mailem numeru, więc numer był literówką i nie staje się zleceniem. Kolejny
+    raport bez numeru zlecenia Wykonawcy z pierwszego nie jest poprawką, a raport bez Wpisu do zlecenia Wykonawcy z tego
+    dnia nie ma poprawki, więc ich numery się dopisują."""
+
+    days = _days(orders)
+    return tuple(
+        addition
+        for addition in additions
+        if not _corrected(
+            reports,
+            days,
+            addition.worker,
+            frozenset(entry.number for entry in addition.report.entries),
+            (addition.arrived, addition.mail),
+            {addition.day},
+        )
+    )
+
+
+def _days(orders: Iterable[RegisterOrder]) -> defaultdict[tuple[Login, date], set[OrderNumber]]:
+    """Numery zleceń każdego Wykonawcy i dnia."""
+
+    days: defaultdict[tuple[Login, date], set[OrderNumber]] = defaultdict(set)
+    for order in orders:
+        days[order.key.worker, order.key.day].add(order.key.number)
+    return days
+
+
+def _corrected(
+    reports: Iterable[ReadReport],
+    days: Mapping[tuple[Login, date], set[OrderNumber]],
+    worker: Login,
+    numbers: frozenset[OrderNumber],
+    sent: tuple[datetime, MailId],
+    on: set[date] | None,
+) -> bool:
+    """Czy mail Wykonawcy ``worker`` z numerami ``numbers``, który przyszedł ``sent``, poprawił późniejszy Raport
+    wykonawcy tego Wykonawcy z dniem z ``on`` (``None``: z każdym dniem): powtarza każdy z tych numerów, który jest
+    zleceniem Wykonawcy z dnia tego Raportu, a takich jest co najmniej jeden."""
+
+    return any(
+        report.worker == worker
+        and (report.arrived, report.mail) > sent
+        and (on is None or report.day in on)
+        and _repeats(numbers & days.get((worker, report.day), set()), report)
+        for report in reports
+    )
 
 
 def _repeats(numbers: frozenset[OrderNumber], report: ReadReport) -> bool:

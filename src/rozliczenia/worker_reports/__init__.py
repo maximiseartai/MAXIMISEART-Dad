@@ -163,8 +163,9 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     nadawcy w dniu zlecenia (ADR 0029, ``_matching.Board``, ``_moves.moved``), z informacją dla taty. Numer, którego
     nie ma w żadnym odczytanym dniu, w postaci numeru z aplikacji firmowej (``ADDED_DIGITS`` cyfr), to Zlecenie dopisane
     z raportu pod zleceniami nadawcy w dniu z tematu, gdy ten jest Dniem uporządkowanym, temat nie jest pomylony, a
-    INTERMAX nie ma go jako Surowego zlecenia (inaczej ``UnknownNumber`` z powodem ``AddBar``); jego ``SKUTECZNE`` i
-    ``CZYNNOŚCI ZREALIZOWANE`` trafiają do pamięci jak własne wpisy. Przy kilku Wpisach
+    INTERMAX nie ma go jako Surowego zlecenia (inaczej ``UnknownNumber`` z powodem ``AddBar``), a jego Raportu
+    wykonawcy nie poprawił późniejszy mail (``_corrections.uncorrected``); jego ``SKUTECZNE`` i ``CZYNNOŚCI
+    ZREALIZOWANE`` trafiają do pamięci jak własne wpisy. Przy kilku Wpisach
     jednego zlecenia decyduje najpóźniejszy mail, także od innego Wykonawcy; mail z tą samą chwilą przyjścia i tym samym
     Message-ID rozstrzyga treść odczytu. Wpis zmienia pustą komórkę albo własny wpis z ``inputs.memory``, którego nikt od
     tamtej pory nie zmienił, a inna wartość komórki jest ręczna i zostaje z ``ManualDifference`` (``_cells.reconcile``).
@@ -199,14 +200,15 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     reports = [found for found in mails if isinstance(found, ReadReport)]
     board = _matching.Board(orders, closed, inputs.memory, window, inputs.ordered_days, inputs.pasted)
     matched = board.match(reports)
-    moved = _moves.moved(matched.accepted, matched.added, orders, inputs.memory, window)
+    additions = _corrections.uncorrected(matched.added, reports, orders)
+    moved = _moves.moved(matched.accepted, additions, orders, inputs.memory, window)
     after = {order.row: order for order in moved.orders}
     targets = {key: (after[order.row], entry) for key, (order, entry) in matched.targets.items()}
     changes, differences, memory = _cells.reconcile(targets, moved.orders, moved.memory, inputs.kept)
-    added = {OrderKey(found.number, found.day, found.worker): found for found in matched.added}
+    added = {OrderKey(found.number, found.day, found.worker): found for found in additions}
     memory = _cells.with_added(memory, ((key, found.verdict, found.activities) for key, found in added.items()))
     unreadable = [found for found in mails if isinstance(found, ReadUnreadable)]
-    newest = {found.number: (found.arrived, found.mail) for found in matched.added}
+    newest = {found.number: (found.arrived, found.mail) for found in additions}
     standing = _corrections.standing([*problems, *matched.problems], reports, unreadable, orders, board, newest)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     shown = [report for report in reports if window.opens(report.day)]
