@@ -31,7 +31,7 @@ TS = r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)"
 
 
 def ts(text: str) -> datetime.datetime:
-    return datetime.datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+    return datetime.datetime.strptime(text, "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007
 
 
 def phases(out: str, started: datetime.datetime) -> str:
@@ -66,9 +66,9 @@ def main() -> None:
             Path(work, f"{config_name}.cfg").write_text(text, encoding="utf-8")
             cmd = [java, *opts, f"-Djava.io.tmpdir={work}", "-cp", str(jar), "tlc2.TLC", "-workers", workers,
                    "-metadir", str(Path(work, "stany")), "-config", f"{config_name}.cfg", tla.name]
-            started = datetime.datetime.now().replace(microsecond=0)
+            started = datetime.datetime.now().replace(microsecond=0)  # noqa: DTZ005
             t = time.monotonic()
-            r = subprocess.run(cmd, cwd=work, capture_output=True, text=True)
+            r = subprocess.run(cmd, cwd=work, capture_output=True, text=True, check=False)
             s = time.monotonic() - t
         out = r.stdout + r.stderr
         found = re.findall(r"(\d+) states generated, (\d+) distinct states found", out)
