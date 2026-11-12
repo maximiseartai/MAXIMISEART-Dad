@@ -14,8 +14,9 @@ krok skilla bez pomiaru waży medianę zmierzonych jednostek tego rodzaju na tor
 
 Ściana zadania to narzut (od startu zadania do pracy), start pytest, suma kosztów jego jednostek i koniec zadania;
 narzut i start też są z pomiarów. Plan dzieli każdy tor na najmniej zadań o ścianie najwyżej ``cel_s`` (LPT: najdłuższa jednostka do
-zadania o najmniejszej sumie). Plik dłuższy niż zadanie dzieli się na k udziałów o tej samej wadze: udział k biegnie
-z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei). Skrypt mutacji dłuższy niż zadanie dzieli się tak samo na
+zadania o najmniejszej sumie). Plik dłuższy niż zadanie dzieli się na k udziałów o tej samej wadze, najwyżej tyle, ile
+testów policzyły mu runy main (``Czasy.testy``), a bez tej liczby wcale, bo udział bez testu nie zgłasza wyniku i czerwieni
+``Required CI status``: udział k biegnie z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei). Skrypt mutacji dłuższy niż zadanie dzieli się tak samo na
 najwyżej tyle części, ile ma mutacji: część biegnie z ``MUTACJE_CZESC=k/n`` (``tools/lib/silnik_mutacji.py``), z podstawą
 poleceń swoich mutacji. Podstawa ``ci:`` z ``ci-czesci: <n>`` dzieli się tak samo na najwyżej n części (część k
 skrypt bierze z ``MUTACJE_CZESC=k/n``, ``tools/lib/skrypt_skilla.py``), a bez niego nie. Plan drukuje najdłuższą jednostkę
@@ -108,7 +109,7 @@ class Wycena:
     niepodzielne: Mapping[str, float]  # węzeł testu, krok CI albo podstawa skilla
     narzut_s: float
     start_s: float
-    czesci: Mapping[str, int] = field(default_factory=dict)  # najwięcej części jednostki podzielnej (skrypt: mutacje)
+    czesci: Mapping[str, int] = field(default_factory=dict)  # najwięcej części jednostki podzielnej (plik: testy, skrypt: mutacje)
     przegladarka: frozenset[str] = frozenset()  # jednostki, które potrzebują Chromium
 
     def jednostki(self, pojemnosc_s: float) -> list[Jednostka]:
@@ -123,7 +124,8 @@ class Wycena:
 
 
 def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: frozenset[str] = frozenset()) -> Wycena:
-    """Plik testów jest podzielny na udziały, a węzeł ``plik::test`` nie i waży najwyżej tyle, co typowy plik.
+    """Plik testów jest podzielny na najwyżej tyle udziałów, ile testów policzyły mu runy main (bez tej liczby na jeden),
+    a węzeł ``plik::test`` nie i waży najwyżej tyle, co typowy plik.
 
     ``przegladarka``: pliki testów, które potrzebują Chromium; ich jednostki (udziały, węzły) dostają je w zadaniu.
     """
@@ -143,6 +145,7 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: f
         {**wezly, **kroki},
         statistics.median(narzuty) if narzuty else DOMYSLNIE.narzut_s,
         max(0.0, statistics.median(starty)) if starty else DOMYSLNIE.start_s,
+        {jednostka.pytest(plik): czasy.testy(tor.pomiary, jednostka.pytest(plik)) or 1 for plik in pliki if "::" not in plik},
         przegladarka=frozenset(jednostka.pytest(plik) for plik in pliki if plik.partition("::")[0] in przegladarka),
     )
 

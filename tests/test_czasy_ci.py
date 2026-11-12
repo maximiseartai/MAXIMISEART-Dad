@@ -88,13 +88,14 @@ PYTEST_STEPS: list[dict[str, str | None]] = [
 # Krok zapisu sam trwa, gdy czyta API.
 RECORDING = _running(_step("Record the time of each unit of work", "success", "02:39:09", "02:39:10"))
 PYTEST_STEPS.append(RECORDING)
-API_UNITS = [{"klucz": "krok:praca", "s": 479.0, "status": "fail"}]
+API_UNITS = [{"klucz": "krok:praca", "s": 479.0, "status": "fail", "testy": None}]
+# Plik testów ma też liczbę swoich testów w junit: pominięty test się liczy, bo jest w udziale pliku.
 JUNIT_UNITS = [
-    {"klucz": "pytest:tests/test_a.py", "s": 1.5, "status": "fail"},
-    {"klucz": "pytest:tests/test_b.py", "s": 0.3, "status": "ok"},
-    {"klucz": "pytest:tests/test_c.py", "s": 0.254, "status": "fail"},
-    {"klucz": "pytest:tests/test_d.py", "s": 2.0, "status": "ok"},
-    {"klucz": "pytest:tests/test_e.py", "s": 0.0, "status": "fail"},
+    {"klucz": "pytest:tests/test_a.py", "s": 1.5, "status": "fail", "testy": 1},
+    {"klucz": "pytest:tests/test_b.py", "s": 0.3, "status": "ok", "testy": 2},
+    {"klucz": "pytest:tests/test_c.py", "s": 0.254, "status": "fail", "testy": 1},
+    {"klucz": "pytest:tests/test_d.py", "s": 2.0, "status": "ok", "testy": 2},
+    {"klucz": "pytest:tests/test_e.py", "s": 0.0, "status": "fail", "testy": 1},
 ]
 # Jednostki, które mierzy ``tools/ci/wykonaj_zadanie.py``, i plan, z którego biegły.
 PLANNED = {"plan": "digest-planu", "zadanie": "windows-3.14-1"}
@@ -103,7 +104,9 @@ PLANNED_UNITS = [
     {"klucz": "krok:e2e", "s": 61.0, "status": "ok"},
     {"klucz": "krok:timing", "s": 35.0, "status": "ok"},
 ]
-PYTEST_UNITS = [*API_UNITS, *JUNIT_UNITS, *PLANNED_UNITS]
+# W zapisie zadania jednostka spoza junit ma ``testy`` puste.
+PLANNED_RECORDED = [{**unit, "testy": None} for unit in PLANNED_UNITS]
+PYTEST_UNITS = [*API_UNITS, *JUNIT_UNITS, *PLANNED_RECORDED]
 
 
 class _Api:
@@ -300,7 +303,7 @@ def test_brakujace_albo_zepsute_wejscie_jest_zgloszone_a_reszta_pomiaru_zostaje(
     assert code == 1
     assert isinstance(errors, list) and len(errors) == 1 and errors[0].startswith(error), errors
     assert out[0] == f"CZASY CI FAIL | {errors[0]}"
-    kept = {"api": API_UNITS, "junit": JUNIT_UNITS, "wykonanie": PLANNED_UNITS}
+    kept = {"api": API_UNITS, "junit": JUNIT_UNITS, "wykonanie": PLANNED_RECORDED}
     assert record["jednostki"] == [unit for other in ("api", "junit", "wykonanie") if other != source for unit in kept[other]]
     assert record["zadanie"] == ("pytest" if source == "api" else "pytest (Python 3.14, 1/2)")
     assert (record["plan"], record["zadanie_planu"]) == ((None, None) if source == "wykonanie" else ("digest-planu", "windows-3.14-1"))
@@ -339,7 +342,7 @@ def test_scalenie_zapisow_runu_daje_obserwacje_kazdego_klucza_na_torze(tmp_path:
     merged = json.loads((tmp_path / "czasy-ci.json").read_text(encoding="utf-8"))
 
     def observed(unit: dict[str, object]) -> list[dict[str, object]]:
-        return [{"run": 40259456807, "proba": 2, "zadanie": "pytest (Python 3.14, 1/2)", "s": unit["s"], "status": unit["status"]}]
+        return [{"run": 40259456807, "proba": 2, "zadanie": "pytest (Python 3.14, 1/2)", "s": unit["s"], "status": unit["status"], "testy": unit.get("testy")}]
 
     assert code == 0
     assert merged["wersja"] == 1
@@ -499,6 +502,27 @@ def test_czasy_z_main_to_mediana_trzech_najnowszych_zielonych_runow_z_artefaktem
     assert czasy.pliki("windows-3.14") == {"tests/test_x.py": 27}
     assert (czasy.praca("linux-3.14", "pytest:tests/test_x.py"), czasy.pliki("linux-3.14")) == (None, {})
     assert czasy.zadania("windows-3.14")[:2] == [{"pytest:tests/test_x.py": 8, "narzut:pytest": 10}, {"pytest:tests/test_x.py": 16, "narzut:pytest": 20}]
+
+
+def test_liczba_testow_pliku_z_main_to_najmniejsza_z_runow_suma_zadan_ostatniej_proby_a_bez_policzenia_jej_nie_ma(tmp_path: Path) -> None:
+    def counted(run: int, *jobs: tuple[str, int, int]) -> dict[str, object]:
+        """Artefakt runu, w którym zadania (nazwa, próba, testy) policzyły testy pliku ``test_x.py``."""
+
+        observed = [{"run": run, "proba": attempt, "zadanie": job, "s": 1.0, "status": "ok", "testy": tests} for job, attempt, tests in jobs]
+        return {"wersja": 1, "runy": [{"run": run, "proba": 1, "sha": f"sha{run}", "zdarzenie": "push"}], "tory": {"windows-3.14": {"pytest:tests/test_x.py": observed}}}
+
+    # Run 8: udziały pliku w dwóch zadaniach, 2 + 3 testy, bo zadanie B powtórzone liczy się z próby 2; run 9: 4 testy;
+    # run 10 sprzed liczenia testów, w którym biegł też ``test_y.py``.
+    artifacts = {
+        8: counted(8, ("A", 1, 2), ("B", 1, 9), ("B", 2, 3)),
+        9: counted(9, ("A", 1, 4)),
+        10: _artifact(10, A={"pytest:tests/test_x.py": 1.0, "pytest:tests/test_y.py": 1.0}),
+    }
+
+    czasy = czasy_ci.z_mainu(tmp_path, github=_GitHub([10, 9, 8], artifacts))
+
+    assert czasy.runy == (8, 9, 10)
+    assert [czasy.testy(lane, f"pytest:tests/{name}") for lane, name in [("windows-3.14", "test_x.py"), ("windows-3.14", "test_y.py"), ("linux-3.14", "test_x.py")]] == [4, None, None]
 
 
 def test_wygasly_artefakt_zielonego_runu_nie_liczy_sie_do_trzech_najnowszych(tmp_path: Path) -> None:
