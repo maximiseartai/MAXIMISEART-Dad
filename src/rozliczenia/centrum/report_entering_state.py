@@ -1,8 +1,9 @@
 """Pliki Wpisania raportów w ``config`` (ADR 0028): jedyny moduł, który zna ich format. Każdy plik ma jednego pisarza.
 
 - ``wpisanie-raportow-stan.json``, ``{schema_version: 2, rollout, own: [{number, day, worker, column, value}], moves:
-  [{number, day, worker, origin_day, origin_worker}]}``: dzień wdrożenia, komórki, które Wpisanie raportów samo
-  wpisało, i Przeniesienia zleceń, które samo zrobiło (ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX.
+  [{number, day, worker, origin_day, origin_worker, origin_name, since}]}``: dzień wdrożenia, komórki, które Wpisanie
+  raportów samo wpisało, i miejsca zleceń, które samo ustaliło Przeniesieniem albo Wpisem (``OwnMove``, ADR 0029).
+  Pisze go tylko proces po udanym zapisie INTERMAX.
   Plik w wersji 1, sprzed Przeniesień, dalej się czyta, bez Przeniesień, dopóki następne kliknięcie nie zapisze wersji 2.
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
@@ -87,6 +88,8 @@ class _Move(_Record):
     worker: str
     origin_day: date
     origin_worker: str
+    origin_name: str
+    since: datetime
 
 
 class _StateV1(_Record):
@@ -317,7 +320,15 @@ class FileReportState:
                 for own in state.own
             )
             moves = frozenset(
-                OwnMove(OrderNumber(move.number), move.day, Login(move.worker), move.origin_day, Login(move.origin_worker))
+                OwnMove(
+                    OrderNumber(move.number),
+                    move.day,
+                    Login(move.worker),
+                    move.origin_day,
+                    Login(move.origin_worker),
+                    move.origin_name,
+                    move.since,
+                )
                 for move in (state.moves if isinstance(state, _State) else ())
             )
             memory = OwnEntries(entries, moves)
@@ -343,6 +354,8 @@ class FileReportState:
                 worker=move.worker,
                 origin_day=move.origin_day,
                 origin_worker=move.origin_worker,
+                origin_name=move.origin_name,
+                since=move.since,
             )
             for move in sorted(memory.moves, key=lambda move: (move.day, move.number))
         ]

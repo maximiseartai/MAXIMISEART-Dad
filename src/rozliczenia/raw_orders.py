@@ -583,8 +583,9 @@ def plan_moves(
     """Plan Przeniesień ``moves`` (wiersz uporządkowanego zlecenia → ``WYKONAWCA`` i dzień po zapisie).
 
     Blok dnia to uporządkowane wiersze z jego datą wokół wiersza, z pojedynczymi pustymi wierszami (nie żółtymi) między
-    nimi; segment to ciąg wierszy bloku z wartościami bez pustego wiersza. Przeniesienia idą po wierszach od góry.
-    Wiersz odchodzi ze swojego miejsca, a segment, który zostaje bez wierszy, traci pusty wiersz pod sobą (nad sobą,
+    nimi; segment to ciąg wierszy bloku z wartościami bez pustego wiersza. Przeniesienia idą po wierszach od góry, a
+    klucz segmentu daje ``WYKONAWCA`` jego pierwszego wiersza w tej chwili planu: wiersz już przeniesiony ma nowego
+    Wykonawcę, a wiersz, którego Przeniesienie przyjdzie później, dalej tego z pliku. Wiersz odchodzi ze swojego miejsca, a segment, który zostaje bez wierszy, traci pusty wiersz pod sobą (nad sobą,
     gdy był ostatni w bloku). W tym samym dniu wiersz staje w bloku, z którego wyszedł, a na inny dzień w bloku dnia
     docelowego wokół jego najniższego uporządkowanego wiersza (``MissingDays``, gdy go nie ma): pod ostatnim wierszem
     ostatniego segmentu z kluczem ``segment_key`` nowego Wykonawcy, a bez takiego segmentu w nowym segmencie, z pustym
@@ -662,6 +663,13 @@ def plan_moves(
     first = base + min(tops)
     slots: list[int | NewSeparator] = list(range(first, last + 1))
     shifts: dict[int, int] = {}
+    done: set[int] = set()
+
+    def worker_now(slot: int) -> object:
+        """``WYKONAWCA`` wiersza w tej chwili planu: po zaplanowanym Przeniesieniu nowy, przed nim ten z pliku."""
+
+        return moves[slot][0] if slot in done else facts[slot].value(columns.worker)
+
     for source in sorted(moves):
         worker, target = moves[source]
         day = _day_of(facts[source], columns)
@@ -680,6 +688,7 @@ def plan_moves(
             left = [index for index in range(top, bottom + 1) if of_day(slots[index], day)]
             if not left:
                 slots.insert(at, source)
+                done.add(source)
                 continue
             top, bottom = block(slots, left[0], day)
         else:
@@ -697,8 +706,7 @@ def plan_moves(
             if segments and segments[-1][2] == index - 1:
                 segments[-1] = (segments[-1][0], segments[-1][1], index)
             else:
-                name = moves[slot][0] if slot in moves else facts[slot].value(columns.worker)
-                segments.append((segment_key(name), index, index))
+                segments.append((segment_key(worker_now(slot)), index, index))
         wanted = segment_key(worker)
         same = [end for key, _, end in segments if key == wanted]
         later = [start for key, start, _ in segments if key > wanted]
@@ -709,6 +717,7 @@ def plan_moves(
         else:
             end = segments[-1][2]
             slots[end + 1 : end + 1] = [NewSeparator(source), source]
+        done.add(source)
     workers = {source: worker for source, (worker, _) in moves.items()}
     return MovePlan(first, tuple(slots), MappingProxyType(workers), MappingProxyType(shifts))
 

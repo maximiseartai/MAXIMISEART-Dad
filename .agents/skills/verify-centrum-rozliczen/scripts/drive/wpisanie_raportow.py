@@ -271,6 +271,8 @@ def _window_day(
 
 TAKEN_NOTE = "przejęte od wykonawca.a"
 """The calm note of a Przeniesienie zlecenia in the popover of `wykonawca.b` 03.11 (#1347)."""
+HANDED_NOTE = "przekazane wykonawca.b"
+"""The other side of it in the popover of `wykonawca.a` 03.11: a row of its own, because the order is no longer there."""
 
 
 def _window_view(clicked_at: str) -> Json:
@@ -287,12 +289,16 @@ def _window_view(clicked_at: str) -> Json:
         **{("wykonawca.c", day): {"orders": 0} for day in MAIL_ONLY},
     }
     workers = []
+    tiles: dict[tuple[str, str], Json] = {}
     for index, worker in enumerate(WINDOW_WORKERS):
         worker_days = []
         for position, day in enumerate(day for day in days if day in workdays or (worker, day) in special):
             shape: dict[str, Any] = special.get((worker, day), {"orders": index + 2})
-            worker_days.append(_window_day(day, 40100000 + index * 1000 + position * 10, **shape))
+            tiles[worker, day] = _window_day(day, 40100000 + index * 1000 + position * 10, **shape)
+            worker_days.append(tiles[worker, day])
         workers.append({"worker": worker, "days": worker_days})
+    [taken] = tiles["wykonawca.b", "2026-11-03"]["notes"]
+    tiles["wykonawca.a", "2026-11-03"]["notes"].append({"number": taken["number"], "text": HANDED_NOTE})
     return {
         "clicked_at": clicked_at,
         "today": WINDOW_TODAY,
@@ -394,6 +400,12 @@ def _range_map(run: Run, page: Page) -> None:
             expect(taken).not_to_contain_text("Problem")
             run.capture(page, "288-raporty-mapa-jasna", full_page=False)
             _close(page, popover)
+            popover = _popover(page, "wykonawca.a", "2026-11-03")
+            handed = popover.get_by_role("listitem").filter(has_text=HANDED_NOTE)
+            expect(handed).to_have_count(1)
+            expect(handed).not_to_contain_text("Wpisane")
+            expect(handed).not_to_contain_text("Problem")
+            _close(page, popover)
             switch_theme(page, "ciemny")
             popover = _popover(page, "wykonawca.b", "2026-11-03")
             run.capture(page, "289-raporty-mapa-ciemna", full_page=False)
@@ -403,7 +415,8 @@ def _range_map(run: Run, page: Page) -> None:
         run.check(
             True,
             "the popover of a tile shows the problem's sentence and, under the taken order, the calm note "
-            "„przejęte od wykonawca.a” without a Problem badge, in the light and the dark theme",
+            "„przejęte od wykonawca.a” without a Problem badge, in the light and the dark theme; the popover of "
+            "wykonawca.a shows „przekazane wykonawca.b” as a row of its own, without a badge",
         )
 
         page.get_by_role("button", name="Wcześniejsze dni", exact=True).click()

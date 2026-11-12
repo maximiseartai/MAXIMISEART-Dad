@@ -199,8 +199,8 @@ class EnteringFacts:
 
     ``rollout_before``: dzień wdrożenia z pamięci przed kliknięciem (``None``: pierwsze), ``rollout``: dzień wdrożenia
     tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne wpisy zleceń, które mają Wpis w tym kliknięciu, a
-    ``kept``: decyzje „Zostaw moją” tych zleceń z migawki kliknięcia, ``moves_before``: zapamiętane Przeniesienia
-    numerów, które mają Wpis w tym kliknięciu. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
+    ``kept``: decyzje „Zostaw moją” tych zleceń z migawki kliknięcia, ``moves_before``: zapamiętane miejsca zleceń
+    (``OwnMove``) numerów, które mają Wpis w tym kliknięciu. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
     ``moves``: Przeniesienia zleceń do zapisu, ``notes``: informacje dla taty.
     """
 

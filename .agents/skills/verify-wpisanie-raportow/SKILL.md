@@ -281,8 +281,9 @@ order to them or to the day of the subject, and the cell's own entries go with t
 (`_moves.moved`), so for the one cell the model has it is the newest Wpis of `NowyMail`, whoever sent it and whichever
 day its subject has; a mistaken subject (two or more Wpisy with another day) only decides which order the Wpis reaches,
 and a Raport wykonawcy whose day lies in a period with a Plik zbiorczy reaches an order of an open day only that way,
-so both are `NowyMail` too. Dad's change of `WYKONAWCA` or of the day after a Przeniesienie only leaves an older Wpis
-in force, which `NowyMail` also covers. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
+so both are `NowyMail` too. Dad's change of `WYKONAWCA` or of the day after a Przeniesienie or after an accepted Wpis
+(the place `OwnMove` in the memory, `_matching.Board._movable`) only leaves an older Wpis in force, which `NowyMail`
+also covers. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
 mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).

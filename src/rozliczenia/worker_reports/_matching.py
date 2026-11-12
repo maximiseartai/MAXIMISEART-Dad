@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from ..report_cells import OrderRow
 from ._model import (
@@ -21,6 +21,7 @@ from ._model import (
     OrderNumber,
     OtherDay,
     OwnEntries,
+    OwnMove,
     ReadReport,
     RefusedMove,
     RegisterOrder,
@@ -40,11 +41,12 @@ MISTAKEN_SUBJECT = 2
 @dataclass(frozen=True)
 class Matched:
     """Wynik dopasowania: zwycięski Wpis każdego zlecenia po kluczu, który zlecenie ma po kliknięciu (``targets``),
-    zlecenia, które zmieniają Wykonawcę albo dzień (``placements``: zlecenie, Wykonawca i dzień po kliknięciu), problemy
+    zlecenie każdego zwycięskiego Wpisu z nadawcą, dniem po kliknięciu i chwilą przyjścia maila (``accepted``; zlecenie
+    w innym miejscu przechodzi do nadawcy i na ten dzień), problemy
     Wpisów bez jednego zlecenia i informacje o przegranym temacie zwycięskich Wpisów (``lost``)."""
 
     targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]]
-    placements: tuple[tuple[RegisterOrder, Login, date], ...]
+    accepted: tuple[tuple[RegisterOrder, Login, date, datetime], ...]
     problems: list[ReportProblem]
     lost: tuple[SubjectLost, ...]
 
@@ -77,7 +79,7 @@ class Board:
 
     Dzień i Wykonawca sprzed Przeniesień Centrum sprawiają, że Wpis liczy się do progu pomylonego tematu tak samo przed
     Przeniesieniem i po nim, więc kolejne kliknięcia dają to samo co jedno. Przeniesienie z pamięci, którego INTERMAX nie
-    ma tam, gdzie postawiło je Centrum, to ręczna zmiana taty: blokuje każdą zmianę dnia i Wykonawcy tego numeru
+    ma tam, gdzie postawiło je Centrum, to ręczna zmiana taty: blokuje zmianę dnia i Wykonawcy tego numeru
     (``_movable``), bez problemu (ADR 0029 „Ręczna zmiana dalej wygrywa”).
     """
 
@@ -92,11 +94,14 @@ class Board:
         current = {order.key for order in orders}
         records = [move for move in memory.moves if window.opens(move.day)]
         standing = {OrderKey(move.number, move.day, move.worker): move for move in records}
-        self._blocked = frozenset(move.number for move in records if OrderKey(move.number, move.day, move.worker) not in current)
+        self._broken: defaultdict[OrderNumber, list[OwnMove]] = defaultdict(list)
+        for move in records:
+            if OrderKey(move.number, move.day, move.worker) not in current:
+                self._broken[move.number].append(move)
         self._numbered: defaultdict[OrderNumber, list[_Placed]] = defaultdict(list)
         for order in orders:
-            move = standing.get(order.key)
-            day, worker = (order.key.day, order.key.worker) if move is None else (move.origin_day, move.origin_worker)
+            place = standing.get(order.key)
+            day, worker = (order.key.day, order.key.worker) if place is None else (place.origin_day, place.origin_worker)
             self._numbered[order.key.number].append(_Placed(order, day, worker))
         self._closed: defaultdict[OrderNumber, set[date]] = defaultdict(set)
         for order in closed:
@@ -142,7 +147,7 @@ class Board:
                 else:
                     problems += found
         targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]] = {}
-        placements: list[tuple[RegisterOrder, Login, date]] = []
+        accepted: list[tuple[RegisterOrder, Login, date, datetime]] = []
         lost: list[SubjectLost] = []
         for claim in latest.values():
             order, report = claim.order, claim.report
@@ -150,8 +155,7 @@ class Board:
             match claim.entries:
                 case (ReportEntry(fault=None) as entry,):
                     targets[OrderKey(order.key.number, claim.day, report.worker)] = (order, entry)
-                    if (claim.day, report.worker) != (order.key.day, order.key.worker):
-                        placements.append((order, report.worker, claim.day))
+                    accepted.append((order, report.worker, claim.day, report.arrived))
                     if claim.lost is not None:
                         lost.append(claim.lost)
                 case (ReportEntry(fault=VerdictFault() as fault),):
@@ -162,7 +166,7 @@ class Board:
                             report.worker, shown, order.key.number, report.mail, report.arrived, claim.entries
                         )
                     )
-        return Matched(targets, tuple(placements), problems, tuple(lost))
+        return Matched(targets, tuple(accepted), problems, tuple(lost))
 
     def _other_day_number(self, number: OrderNumber, day: date) -> bool:
         """Numer, którego zlecenia nie ma w dniu ``day`` (dzień sprzed Przeniesień Centrum), a jest w innym dniu."""
@@ -226,13 +230,29 @@ class Board:
         order = found.order
         if (day, report.worker) == (order.key.day, order.key.worker):
             return _Claim(order, day, report, (), lost)
-        if order.key.number in self._blocked:
+        if not self._movable(order.key.number, report):
             return []
         if day != order.key.day:
             bar = self._bar(order, day)
             if bar is not None:
                 return [RefusedMove(report.worker, report.day, order.key.number, order.key.day, bar)]
         return _Claim(order, day, report, (), lost)
+
+    def _movable(self, number: OrderNumber, report: ReadReport) -> bool:
+        """Czy Wpis ``report`` może zmienić Wykonawcę albo dzień zlecenia ``number``: ręczna zmiana taty po tym, jak
+        Centrum ustaliło miejsce zlecenia, wygrywa (ADR 0029 „Ręczna zmiana dalej wygrywa”).
+
+        Przenosi Wpis zlecenia, którego każde miejsce z pamięci INTERMAX ma dalej tam, gdzie je ustaliło Centrum (także
+        bez miejsca w pamięci: ``WYKONAWCA`` albo dzień wpisane ręcznie przed raportem, US 16). Gdy tata przeniósł
+        zlecenie po Przeniesieniu Centrum, nie przenosi żaden Wpis (US 15). Gdy przeniósł je, kiedy stało tam, gdzie przed
+        pierwszym Przeniesieniem Centrum (Centrum tylko przyjęło Wpis Wykonawcy zlecenia albo zlecenie wróciło), przenosi
+        tylko Wpis z maila, który przyszedł po ostatnim przyjętym (``since``): Wpis, który Centrum już przyjęło, zmiana
+        taty unieważniła, a świeższy mail wygrywa (US 3). Mail z tą samą chwilą przyjścia nie jest świeższy."""
+
+        return all(
+            (move.worker, move.day) == (move.origin_worker, move.origin_day) and report.arrived > move.since
+            for move in self._broken.get(number, ())
+        )
 
     def _bar(self, order: RegisterOrder, day: date) -> MoveBar | None:
         if not self._window.opens(day):

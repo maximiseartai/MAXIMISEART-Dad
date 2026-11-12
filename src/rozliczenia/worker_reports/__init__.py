@@ -1,9 +1,11 @@
 """Rdzeń raportów Wpisania raportów (ADR 0028): Raporty wykonawców bez Excela i bez IMAP.
 
-Jedyna operacja to ``enter_reports``: maile ze Skrzynki raportów (``worker_report_inbox``), adresy Wykonawców
+Operacja Wpisania raportów to ``enter_reports``: maile ze Skrzynki raportów (``worker_report_inbox``), adresy Wykonawców
 (``worker_addresses.load``), uporządkowane zlecenia INTERMAX, dni otwarte i pamięć własnych wpisów na wejściu, a zmiany
 komórek, Przeniesienia zleceń, problemy, informacje i liczby dla widoku Raporty i nowa pamięć na wyjściu. Zdanie dla
-taty o problemie daje ``reasons.reason``, o informacji ``reasons.note``, a mail, z którego rdzeń czyta z powrotem ten sam odczyt (odtworzenie z Logów, #1233), ``as_mail``.
+taty o problemie daje ``reasons.reason``, o informacji ``reasons.note``, a mail, z którego rdzeń czyta z powrotem ten
+sam odczyt (odtworzenie z Logów, #1233), ``as_mail``.
+Druga operacja, ``reminders_due``, mówi, które Przypomnienia o raporcie należą się teraz (ADR 0030, ``_reminders.py``).
 Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń, reguły komórek i postać kanoniczna maila
 w pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
 oraz ``report_cells``, ``settlement_period`` i ``text``, bo przejdzie bez zmian do Centrum w chmurze (#1161).
@@ -65,8 +67,23 @@ from ._model import (
     problem_order,
 )
 from ._canonical import as_mail
+from ._reminders import (
+    EXAMPLE_NUMBERS,
+    FIRST_REMINDER,
+    Pora,
+    Reminder,
+    ReminderInputs,
+    SentReminder,
+    reminder_day,
+    reminder_pora,
+    reminder_subject,
+    reminder_text,
+    reminders_due,
+)
 
 __all__ = [
+    "EXAMPLE_NUMBERS",
+    "FIRST_REMINDER",
     "SUBJECT_WORD",
     "ConflictingVerdicts",
     "ForeignOrder",
@@ -89,11 +106,14 @@ __all__ = [
     "OwnEntries",
     "OwnEntry",
     "OwnMove",
+    "Pora",
     "ReadReport",
     "ReadStranger",
     "ReadUnreadable",
     "RefusedMove",
     "RegisterOrder",
+    "Reminder",
+    "ReminderInputs",
     "RepeatedOrder",
     "ReportEntry",
     "ReportInputs",
@@ -102,6 +122,7 @@ __all__ = [
     "ReportProblem",
     "ReportsOutcome",
     "SenderAddress",
+    "SentReminder",
     "SubjectFault",
     "SubjectLost",
     "TakenOver",
@@ -116,11 +137,16 @@ __all__ = [
     "as_mail",
     "enter_reports",
     "note_order",
+    "reminder_day",
+    "reminder_pora",
+    "reminder_subject",
+    "reminder_text",
+    "reminders_due",
 ]
 
 
 def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
-    """Jedyna operacja rdzenia: ten sam wynik dla tych samych wejść, w dowolnej kolejności maili.
+    """Operacja Wpisania raportów: ten sam wynik dla tych samych wejść, w dowolnej kolejności maili.
 
     Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``) z dniem otwartym w ``inputs.window``, a od
     Wykonawcy także z dniem w okresie z Plikiem zbiorczym od dnia wdrożenia (``Window.closes``), który daje tylko
@@ -164,7 +190,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     reports = [found for found in mails if isinstance(found, ReadReport)]
     board = _matching.Board(orders, closed, inputs.memory, window, inputs.ordered_days)
     matched = board.match(reports)
-    moved = _moves.moved(matched.placements, orders, inputs.memory, window)
+    moved = _moves.moved(matched.accepted, orders, inputs.memory, window)
     after = {order.row: order for order in moved.orders}
     targets = {key: (after[order.row], entry) for key, (order, entry) in matched.targets.items()}
     changes, differences, memory = _cells.reconcile(targets, moved.orders, moved.memory, inputs.kept)

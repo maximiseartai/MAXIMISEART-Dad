@@ -29,6 +29,7 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.platform import Platform
+from rozliczenia.centrum.report_reminders import ReminderRhythm
 from rozliczenia.centrum.report_box import (
     REPOSITORY,
     ArchiveOutcome,
@@ -62,12 +63,12 @@ from rozliczenia.intermax_replace import LOCAL_DISK, Disk
 from rozliczenia.run_context import TemplateCheck, check_on_disk
 from rozliczenia.workbook_files import ByteSource, file_bytes
 from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
-from rozliczenia.worker_report_inbox import WorkerReportInbox
+from rozliczenia.worker_report_inbox import ReminderMailbox, WorkerReportInbox
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, stop_after_test, threads_since
 from atrapy.skrzynka import Archives, BoxArchive, BoxIssue, Issues
-from atrapy.skrzynka_raportow import FakeInbox
+from atrapy.skrzynka_raportow import FakeInbox, FakeMailbox
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -565,6 +566,8 @@ def centrum_app(
     intermax_disk: Disk = LOCAL_DISK,
     window: EfenixWindow | None | Fake = FAKE,
     worker_report_inbox: WorkerReportInbox | Fake = FAKE,
+    reminder_mailbox: ReminderMailbox | Fake = FAKE,
+    reminder_rhythm: ReminderRhythm | Fake = FAKE,
 ) -> FastAPI:
     """Jedyna aplikacja Centrum w testach: na plikach katalogu narzędzia ``tool`` i z podróbkami świata taty.
 
@@ -572,7 +575,8 @@ def centrum_app(
     (``FakePlatform``), metryki i Konfiguracja w ``tool``, GitHub (``FakeGitHub``), OneDrive (``FakeOneDrive``),
     skrzynka Zgłoszeń z Logami Uruchomienia w tle, zegar, który stoi (``ManualClock``, a jego ``pause`` tylko
     przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool``, okno efenix pod martwym adresem i
-    Skrzynka raportów bez maili (``FakeInbox``); prawdziwego Gmaila test nie dostaje nigdy.
+    Skrzynka raportów bez maili (``FakeInbox``), skrzynka Przypomnień o raporcie bez maili (``FakeMailbox``) i rytm
+    przypomnień, który sprawdza tylko na ``HandRhythm.tick`` testu; prawdziwego Gmaila test nie dostaje nigdy.
     ``None`` daje domyślną wartość produkcyjną tylko testowi, który ją sprawdza (np. Kopie INTERMAX w folderze
     narzędzia albo prawdziwy odczyt atrybutów OneDrive). Bez ``tool_update`` i ``guardian`` Aktualizacja narzędzia i
     opiekun ponownego startu wywracają test (``tests/conftest.py``).
@@ -607,7 +611,26 @@ def centrum_app(
         now=now,
         efenix_window=_or_fake(window, lambda: efenix_window(tool)),
         worker_report_inbox=FakeInbox() if isinstance(worker_report_inbox, Fake) else worker_report_inbox,
+        reminder_mailbox=FakeMailbox() if isinstance(reminder_mailbox, Fake) else reminder_mailbox,
+        reminder_rhythm=HandRhythm() if isinstance(reminder_rhythm, Fake) else reminder_rhythm,
     )
+
+
+@dataclass
+class HandRhythm:
+    """Rytm Przypomnień o raporcie w teście: sprawdzenie biegnie tylko w ``tick``, w wątku testu, po starcie Centrum."""
+
+    check: Callable[[], None] | None = None
+
+    def start(self, check: Callable[[], None]) -> None:
+        self.check = check
+
+    def stop(self) -> None:
+        self.check = None
+
+    def tick(self) -> None:
+        assert self.check is not None, "Rytm przypomnień tyka dopiero po starcie Centrum (CentrumClient.start)."
+        self.check()
 
 
 def join_threads_since(since: int, timeout_s: float = STOP_S, *, named: str | None = None) -> None:

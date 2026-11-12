@@ -1,6 +1,6 @@
 """Skrzynka raportów (ADR 0028): port czyta maile Wykonawców z Gmaila tylko do odczytu.
 
-Port rozmawia prawdziwym ``imaplib`` z lokalną ``AtrapaImap`` (``tools/lib/atrapy/skrzynka_raportow.py``), bez sieci:
+Port rozmawia prawdziwym ``imaplib`` i ``smtplib`` z lokalną ``AtrapaImap`` i ``AtrapaSmtp`` (``tools/lib/atrapy/skrzynka_raportow.py``), bez sieci:
 test sprawdza polecenia, które dostał serwer, i wynik, który oddał port. Prawdziwego Gmaila sprawdza próba IMAP (#1234).
 Maile są syntetyczne, zbudowane w teście bajt po bajcie, żeby było widać każde kodowanie nagłówka i treści.
 """
@@ -10,8 +10,13 @@ from __future__ import annotations
 import base64
 import codecs
 from datetime import date, datetime, timedelta, timezone
+import email
+from email.message import EmailMessage
+import email.policy
+from email.utils import format_datetime
 import hashlib
 import imaplib
+import smtplib
 from pathlib import Path
 import quopri
 from typing import Literal
@@ -25,14 +30,17 @@ from rozliczenia.worker_report_inbox import (
     ImapInbox,
     InboxOutcome,
     InboxUnreachable,
+    MailRefused,
     Mails,
+    MailSent,
     PasswordRejected,
+    SentReminders,
     WorkerReportInbox,
     mail_of,
 )
-from rozliczenia.worker_reports import MailId, ReportMail, SenderAddress
+from rozliczenia.worker_reports import Login, MailId, Reminder, ReportMail, SenderAddress, SentReminder
 
-from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, FakeInbox
+from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox
 
 SKRZYNKA = "raporty.taty@przyklad.invalid"
 HASLO = "abcdefghijklmnop"
@@ -443,3 +451,156 @@ def test_atrapa_skrzynki_raportow_procesu_oddaje_swoj_wynik_i_zapisuje_dzien_kaz
     assert [inbox.mails_since(date(2026, 11, 8)) for inbox in inboxes] == [Mails((mail,), skipped=0), PasswordRejected()]
     assert [inbox.access() for inbox in inboxes] == ["ready", "unreadable"]
     assert with_mails.days == rejected.days == [date(2026, 11, 8)]
+
+
+# --- Przypomnienia o raporcie: „Wysłane” i wysyłka przez SMTP (ADR 0030, #1349) ----------------------------------------
+
+PRZYPOMNIENIE = Reminder(
+    worker=Login("jan.testowy"),
+    recipients=(SenderAddress(WYKONAWCA), SenderAddress("jan.prywatny@przyklad.invalid")),
+    day=date(2026, 11, 9),
+    subject="Przypomnienie: raport za dzień 09.11.2026",
+    text="Poproszę o wysłanie raportu za dzień 09.11.2026.\n\nPozdrawiam, zażółć gęślą jaźń\n",
+)
+WYSLANE_O = datetime(2026, 11, 10, 8, 1, tzinfo=TATA)
+
+
+def wyslany(uid: int, temat: str, do: str = WYKONAWCA, kiedy: datetime = WYSLANE_O, flagi: tuple[str, ...] = ()) -> AtrapaMail:
+    """Mail w „Wysłanych” skrzynki raportów: od skrzynki do ``do`` z tematem ``temat``."""
+
+    message = EmailMessage()
+    message["From"] = SKRZYNKA
+    message["To"] = do
+    message["Subject"] = temat
+    message["Date"] = format_datetime(kiedy)
+    message.set_content("treść")
+    return AtrapaMail(uid, kiedy, bytes(message), flags=flagi, in_inbox=False)
+
+
+def smtp_portu(config: Path, imap: AtrapaImap, smtp: AtrapaSmtp) -> ImapInbox:
+    return ImapInbox(
+        config,
+        connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port),
+        smtp=lambda: smtplib.SMTP("127.0.0.1", smtp.port, timeout=10),
+    )
+
+
+def test_przypomnienie_idzie_przez_smtp_ze_skrzynki_raportow_do_kazdego_adresu_wykonawcy_i_trafia_do_wyslanych(
+    tmp_path: Path,
+) -> None:
+    """Wysyłka loguje się adresem i hasłem aplikacji z pliku dostępu, wysyła jeden mail z tematem, treścią w UTF-8 i datą
+    na wszystkie adresy Wykonawcy, a Gmail (atrapa) kładzie go w „Wysłanych”, skąd czyta go odczyt przypomnień."""
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO) as imap, AtrapaSmtp(imap) as smtp:
+        inbox = smtp_portu(dostep(tmp_path), imap, smtp)
+        outcome = inbox.send(PRZYPOMNIENIE, WYSLANE_O)
+        sent = inbox.sent_reminders(date(2026, 11, 9))
+
+    assert outcome == MailSent()
+    [(raw, recipients)] = smtp.received
+    message = email.message_from_bytes(raw, policy=email.policy.default)
+    assert recipients == (WYKONAWCA, "jan.prywatny@przyklad.invalid")
+    assert (message["From"], message["To"], message["Subject"]) == (
+        SKRZYNKA,
+        f"{WYKONAWCA}, jan.prywatny@przyklad.invalid",
+        "Przypomnienie: raport za dzień 09.11.2026",
+    )
+    assert message["Date"].datetime == WYSLANE_O
+    body = message.get_body()
+    assert body is not None and body.get_content().replace("\r\n", "\n") == PRZYPOMNIENIE.text, "SMTP niesie linie z CRLF"
+    assert [command.split(" ")[0] for command in smtp.commands] == ["ehlo", "AUTH", "mail", "rcpt", "rcpt", "data", "quit"]
+    assert sent == SentReminders(
+        (SentReminder(frozenset(PRZYPOMNIENIE.recipients), date(2026, 11, 9), WYSLANE_O.astimezone()),)
+    )
+
+
+def test_wyslane_przypomnienia_czyta_z_folderu_wyslane_tylko_do_odczytu_bez_zmiany_flag(tmp_path: Path) -> None:
+    """Odczyt „Wysłanych” otwiera folder ``\\Sent`` przez ``EXAMINE``, pobiera tylko nagłówki ``Subject`` i ``To`` przez
+    ``BODY.PEEK`` i oddaje tylko maile z tematem przypomnienia, z adresatami i chwilą przyjęcia; flagi zostają."""
+
+    sent = [
+        wyslany(101, "Przypomnienie: raport za dzień 09.11.2026", flagi=("\\Seen",)),
+        wyslany(102, "Przypomnienie: raport za dzień 08.11.2026", do=f"Ewa <ewa@przyklad.invalid>, {WYKONAWCA}"),
+        wyslany(103, "Re: Raport 09.11.2026"),
+        wyslany(104, "Przypomnienie: raport za dzień 01.11.2026", kiedy=datetime(2026, 11, 2, 8, 0, tzinfo=TATA)),
+    ]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=sent) as atrapa:
+        outcome = port(dostep(tmp_path), atrapa).sent_reminders(date(2026, 11, 8))
+
+    assert outcome == SentReminders(
+        (
+            SentReminder(frozenset({SenderAddress(WYKONAWCA)}), date(2026, 11, 9), WYSLANE_O.astimezone()),
+            SentReminder(
+                frozenset({SenderAddress(WYKONAWCA), SenderAddress("ewa@przyklad.invalid")}),
+                date(2026, 11, 8),
+                WYSLANE_O.astimezone(),
+            ),
+        )
+    )
+    assert 'EXAMINE "[Gmail]/Wys&AUI-ane"' in atrapa.commands
+    assert not WRITES & {name.removeprefix("UID ") for name in polecenia(atrapa)}
+    fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
+    assert fetches and all("BODY.PEEK[HEADER.FIELDS (SUBJECT TO)]" in command for command in fetches)
+    assert atrapa.flags == {101: {"\\Seen"}, 102: set(), 103: set(), 104: set()}
+
+
+def test_skrzynka_bez_folderu_wyslane_nie_daje_przypomnien_tylko_wynik_niedostepnej(tmp_path: Path) -> None:
+    """Bez folderu ``\\Sent`` nie wiadomo, co już poszło, więc odczyt nie oddaje pustej listy, która wysłałaby wszystko."""
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, sent_folder=False) as atrapa:
+        outcome = port(dostep(tmp_path), atrapa).sent_reminders(date(2026, 11, 8))
+
+    assert outcome == InboxUnreachable("UnexpectedReply")
+
+
+def test_odrzucone_haslo_przy_wysylce_i_odczycie_wyslanych_daje_wynik_odrzuconego_hasla(tmp_path: Path) -> None:
+    """Gmail odrzuca hasło aplikacji przy SMTP (``535``) i IMAP (``AUTHENTICATIONFAILED``): oba to ``PasswordRejected``,
+    z którego praca przypomnień zakłada Zgłoszenie do Maksa (US 47)."""
+
+    with AtrapaImap(address=SKRZYNKA, password="inne-haslo-maksa") as imap, AtrapaSmtp(imap) as smtp:
+        inbox = smtp_portu(dostep(tmp_path), imap, smtp)
+        outcomes = [inbox.send(PRZYPOMNIENIE, WYSLANE_O), inbox.sent_reminders(date(2026, 11, 8))]
+
+    assert outcomes == [PasswordRejected(), PasswordRejected()]
+    assert smtp.received == [] and "mail" not in [command.split(" ")[0] for command in smtp.commands]
+
+
+def _bez_sieci() -> smtplib.SMTP:
+    raise ConnectionRefusedError(f"AUTH {SKRZYNKA} {HASLO}")
+
+
+def _wynik_wysylki(config: Path, scenariusz: str) -> tuple[ImapInbox, object]:
+    if scenariusz == "brak-sieci":
+        inbox = ImapInbox(config, smtp=_bez_sieci)
+        return inbox, inbox.send(PRZYPOMNIENIE, WYSLANE_O)
+    password = "inne-haslo-maksa" if scenariusz == "odrzucone-haslo" else HASLO
+    cut: Literal["greeting"] | None = "greeting" if scenariusz == "zerwane" else None
+    refuse: Literal["recipients"] | None = "recipients" if scenariusz == "odmowa-adresu" else None
+    with AtrapaImap(address=SKRZYNKA, password=password) as imap, AtrapaSmtp(imap, cut=cut, refuse=refuse) as smtp:
+        inbox = smtp_portu(config, imap, smtp)
+        return inbox, inbox.send(PRZYPOMNIENIE, WYSLANE_O)
+
+
+@pytest.mark.parametrize(
+    ("scenariusz", "wynik"),
+    [
+        pytest.param("wyslane", MailSent(), id="wyslane"),
+        pytest.param("odrzucone-haslo", PasswordRejected(), id="odrzucone-haslo"),
+        pytest.param("brak-sieci", InboxUnreachable("ConnectionRefusedError"), id="brak-sieci"),
+        pytest.param("zerwane", InboxUnreachable("SMTPServerDisconnected"), id="zerwane-polaczenie"),
+        pytest.param("odmowa-adresu", MailRefused("SMTPRecipientsRefused"), id="odmowa-adresu"),
+    ],
+)
+def test_wynik_wysylki_przypomnienia_niesie_sama_nazwe_bledu_bez_hasla(tmp_path: Path, scenariusz: str, wynik: object) -> None:
+    """Brak sieci i zerwane połączenie to ``InboxUnreachable`` (ponowienie w tej samej porze), inna odmowa serwera to
+    ``MailRefused``, a hasło aplikacji nie wychodzi z portu w żadnym wyniku, ``repr`` ani tekście (US 47)."""
+
+    inbox, outcome = _wynik_wysylki(dostep(tmp_path), scenariusz)
+
+    assert outcome == wynik
+    assert not [text for text in (repr(inbox), repr(outcome), str(outcome)) if HASLO in text or "abcd efgh" in text]
+
+
+def test_test_bez_atrapy_smtp_pada_zamiast_laczyc_sie_z_gmailem(tmp_path: Path) -> None:
+    with pytest.raises(AssertionError, match="Skrzynką raportów w Gmailu"):
+        ImapInbox(dostep(tmp_path)).send(PRZYPOMNIENIE, WYSLANE_O)

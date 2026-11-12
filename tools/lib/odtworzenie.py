@@ -961,7 +961,15 @@ def _saved(entering: LoggedReports) -> SavedState:
     entries = frozenset(OwnEntry(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.memory_before)
     kept = frozenset(Kept(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.kept)
     moves = frozenset(
-        OwnMove(number(logged), logged.day, Login(logged.worker), logged.origin_day, Login(logged.origin_worker))
+        OwnMove(
+            number(logged),
+            logged.day,
+            Login(logged.worker),
+            logged.origin_day,
+            Login(logged.origin_worker),
+            logged.origin_name,
+            logged.since,
+        )
         for logged in entering.moves_before
     )
     return SavedState(entering.rollout_before, OwnEntries(entries, moves), kept)
