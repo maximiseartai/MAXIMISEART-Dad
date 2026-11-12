@@ -38,6 +38,7 @@ def worker_days(
     changes: Iterable[CellChange],
     moved: frozenset[OrderRow],
     reached: frozenset[OrderKey],
+    added: Iterable[tuple[OrderKey, OrderDetail]],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
     zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał.
@@ -46,7 +47,8 @@ def worker_days(
     zleceń tak, jak przyszły w ``orders``, a w arkuszu od góry, a zlecenia przeniesione (``moved``) za pozostałymi,
     bo zapis stawia je pod ostatnim zleceniem nowego Wykonawcy. Zlecenie ma Wpis, gdy Raport wykonawcy z jego dnia ma
     jego numer albo gdy zwycięski Wpis innego dnia trafił do niego (``reached``: klucze celów po kliknięciu, np.
-    pomylony temat).
+    pomylony temat). Zlecenia dopisane z raportu (``added``: klucz i zlecenie po zapisie) stoją na końcu zleceń swojego
+    Wykonawcy z dnia, za przeniesionymi, bo zapis dopisuje je po Przeniesieniach.
     """
 
     found_orders = tuple(orders)
@@ -58,16 +60,22 @@ def worker_days(
     mails = Counter((report.day, report.worker) for report in reports)
     reported = reached | {OrderKey(entry.number, report.day, report.worker) for report in reports for entry in report.entries}
     places = Counter(place for problem in problems if (place := _place(problem)) is not None)
+    extra: defaultdict[tuple[date, Login], list[OrderDetail]] = defaultdict(list)
+    for key, found in added:
+        extra[key.day, key.worker].append(found)
     figures = []
-    for day, worker in sorted(days.keys() | mails.keys()):
-        detail = tuple(
-            OrderDetail(
-                order.key.number,
-                written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
-                written.get((order.row, ReportColumn.COMPLETED), order.completed),
-                order.key in reported,
-            )
-            for order in days.get((day, worker), [])
+    for day, worker in sorted(days.keys() | mails.keys() | extra.keys()):
+        detail = (
+            *(
+                OrderDetail(
+                    order.key.number,
+                    written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
+                    written.get((order.row, ReportColumn.COMPLETED), order.completed),
+                    order.key in reported,
+                )
+                for order in days.get((day, worker), [])
+            ),
+            *extra.get((day, worker), []),
         )
         missing = {order.number for order in detail if not order.reported}
         figures.append(

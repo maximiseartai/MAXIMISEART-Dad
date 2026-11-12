@@ -77,6 +77,7 @@ from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts
 from rozliczenia.worker_reports import (
+    AddBar,
     ConflictingVerdicts,
     Login,
     MailId,
@@ -647,6 +648,21 @@ def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
 
 
 LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source", "after_today"]
+LoggedAddBar = Literal["in_intermax", "before_window", "form", "mistaken_subject", "not_ordered"]
+
+
+def _add_bar(bar: AddBar) -> LoggedAddBar:
+    match bar:
+        case AddBar.IN_INTERMAX:
+            return "in_intermax"
+        case AddBar.BEFORE_WINDOW:
+            return "before_window"
+        case AddBar.FORM:
+            return "form"
+        case AddBar.MISTAKEN_SUBJECT:
+            return "mistaken_subject"
+        case AddBar.NOT_ORDERED:
+            return "not_ordered"
 
 
 class LoggedOrderPlace(_Record):
@@ -659,9 +675,10 @@ class LoggedOrderPlace(_Record):
 class LoggedOrderProblem(_Record):
     """Problem Wpisu raportu Wykonawcy z dnia: rodzaj, numer z treści maila (pod strażnikiem jak w
     ``LoggedReportEntry``), a przy ``missing_verdict`` powód, przy ``repeated_number`` miejsce każdego zlecenia z tym
-    numerem (``places``), a przy ``refused_move`` dzień zlecenia (``order_days``) i powód odmowy Przeniesienia
-    (``bar``). Logi sprzed #1350 mają też ``foreign_order`` z Wykonawcą zlecenia (``owner``) i ``other_day`` z dniami
-    zleceń z tym numerem (``order_days``): dziś to ``repeated_number``."""
+    numerem (``places``), przy ``refused_move`` dzień zlecenia (``order_days``) i powód odmowy Przeniesienia (``bar``),
+    a przy ``unknown_number`` powód, dla którego Centrum nie dopisało zlecenia (``bar``; Logi sprzed Zleceń dopisanych z
+    raportu go nie mają). Logi sprzed #1350 mają też ``foreign_order`` z Wykonawcą zlecenia (``owner``) i ``other_day``
+    z dniami zleceń z tym numerem (``order_days``): dziś to ``repeated_number``."""
 
     kind: Literal[
         "missing_verdict",
@@ -679,7 +696,7 @@ class LoggedOrderProblem(_Record):
     owner: str | None = None
     order_days: list[date] = []
     places: list[LoggedOrderPlace] = []
-    bar: LoggedMoveBar | None = None
+    bar: LoggedMoveBar | LoggedAddBar | None = None
 
 
 class LoggedConflictProblem(_Record):
@@ -773,7 +790,13 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 entries=[LoggedReportEntry.of(entry) for entry in problem.entries],
             )
         case UnknownNumber():
-            return LoggedOrderProblem(kind="unknown_number", worker=problem.worker, day=problem.day, number=problem.number)
+            return LoggedOrderProblem(
+                kind="unknown_number",
+                worker=problem.worker,
+                day=problem.day,
+                number=problem.number,
+                bar=_add_bar(problem.bar),
+            )
         case RepeatedOrder():
             return LoggedOrderProblem(kind="repeated_order", worker=problem.worker, day=problem.day, number=problem.number)
         case RepeatedNumber():
@@ -819,11 +842,37 @@ class LoggedMove(_Record):
     worker: str
 
 
+class LoggedAdded(_Record):
+    """Zlecenie dopisane z raportu, które Wpisanie raportów zapisuje: arkusz, dzień, ``WYKONAWCA``, numer jak w
+    ``LoggedOwnEntry`` (liczba z numeru z aplikacji firmowej, 8 cyfr), ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` (pod
+    strażnikiem; ``None``: pusta)."""
+
+    sheet: str
+    day: date
+    worker: str
+    number: int
+    successful: Literal["tak", "nie"]
+    completed: str | None
+
+
+class LoggedOrderless(_Record):
+    """Numer z Wpisem w kliknięciu, który INTERMAX ma w przeczytanym wierszu bez zlecenia, także obok zlecenia tego
+    numeru (``report_entering.Orderless``): arkusz i numer jak w ``LoggedOwnEntry``, a ``day`` dzień zlecenia, gdy każdy
+    przeczytany wiersz numeru to zlecenie z dniem sprzed ``Window.start`` (Logi sprzed #1374 r4 go nie mają).
+    Odtworzenie stawia go na dole arkusza jak Surowe zlecenie, z tym dniem i Wykonawcą, gdy ``day`` go ma, bo Kopia
+    wejścia Wpisania raportów ma tylko uporządkowane wiersze zleceń z dni od ``Window.start``."""
+
+    sheet: str
+    number: int
+    day: date | None = None
+
+
 class LoggedOwnMove(_Record):
     """Pamięć zlecenia Wpisania raportów (``OwnMove``): numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u którego
     Centrum je zostawiło, dzień, Wykonawca i pisownia ``WYKONAWCA`` sprzed pierwszego Przeniesienia Centrum, chwila
-    przyjścia najświeższego maila, na który Centrum zadziałało, i czy tata zmienił Wykonawcę po Przeniesieniu Centrum
-    (Logi z gałęzi #1347 sprzed jej trzeciej rundy go nie mają)."""
+    przyjścia najświeższego maila, na który Centrum zadziałało, czy tata zmienił Wykonawcę po Przeniesieniu Centrum
+    (Logi z gałęzi #1347 sprzed jej trzeciej rundy go nie mają) i czy Centrum dopisało to zlecenie (Logi sprzed Zleceń
+    dopisanych z raportu go nie mają)."""
 
     number: int
     day: date
@@ -833,6 +882,7 @@ class LoggedOwnMove(_Record):
     origin_name: str
     since: datetime
     overridden: bool = False
+    added: bool = False
 
     @classmethod
     def of(cls, move: OwnMove) -> LoggedOwnMove:
@@ -845,6 +895,7 @@ class LoggedOwnMove(_Record):
             origin_name=move.origin_name,
             since=move.since,
             overridden=move.overridden,
+            added=move.added,
         )
 
 
@@ -858,7 +909,9 @@ class LoggedReports(_Record):
     ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, ``kept`` decyzje „Zostaw moją” tych zleceń z
     migawki kliknięcia (komórka z treścią Wpisu jako ``value``; Logi sprzed #1231 ich nie mają), ``moves`` Przeniesienia
     zleceń do zapisu, ``moves_before`` zapamiętane miejsca zleceń numerów z Wpisami tego kliknięcia (Logi sprzed #1347 nie
-    mają obu), a ``written`` liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
+    mają obu), ``added`` Zlecenia dopisane z raportu do zapisu, ``orderless`` numery z Wpisem tego kliknięcia z
+    przeczytanych wierszy INTERMAX bez zlecenia (Logi sprzed Zleceń dopisanych z raportu nie mają obu), a ``written``
+    liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
     """
 
     today: date
@@ -873,6 +926,8 @@ class LoggedReports(_Record):
     kept: list[LoggedOwnEntry] = []
     moves: list[LoggedMove] = []
     moves_before: list[LoggedOwnMove] = []
+    added: list[LoggedAdded] = []
+    orderless: list[LoggedOrderless] = []
     written: int | None
 
     @classmethod
@@ -898,6 +953,20 @@ class LoggedReports(_Record):
                 for move in facts.moves
             ],
             moves_before=[LoggedOwnMove.of(move) for move in facts.moves_before],
+            added=[
+                LoggedAdded(
+                    sheet=added.sheet,
+                    day=added.day,
+                    worker=added.worker,
+                    number=int(added.number),
+                    successful=Verdict(added.successful).value,
+                    completed=added.completed,
+                )
+                for added in facts.added
+            ],
+            orderless=[
+                LoggedOrderless(sheet=found.sheet, number=int(found.number), day=found.day) for found in facts.orderless
+            ],
             written=written,
         )
 

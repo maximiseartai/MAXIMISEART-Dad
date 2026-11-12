@@ -1395,6 +1395,17 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "since": "2026-11-05T18:05:00+01:00",
             }
         ],
+        "added": [
+            {
+                "sheet": "Arkusz zleceń syntetyczny",
+                "day": "2026-11-09",
+                "worker": "Wykonawca.Syntetyczny",
+                "number": 40000007,
+                "successful": "nie",
+                "completed": "Czynność dopisana syntetyczna",
+            }
+        ],
+        "orderless": [{"sheet": "Arkusz zleceń syntetyczny", "number": 40000008}],
         "written": 1,
     },
     "input_copy": [

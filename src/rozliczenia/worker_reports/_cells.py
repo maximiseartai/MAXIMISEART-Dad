@@ -4,10 +4,21 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 
 from ..report_cells import CellChange, ReportColumn
 from ..text import normalize_text
-from ._model import Kept, ManualDifference, OrderKey, OwnEntries, OwnEntry, RegisterOrder, ReportEntry, single_orders
+from ._model import (
+    Kept,
+    ManualDifference,
+    OrderKey,
+    OwnEntries,
+    OwnEntry,
+    RegisterOrder,
+    ReportEntry,
+    Verdict,
+    single_orders,
+)
 
 _COLUMNS = tuple(ReportColumn)
 
@@ -57,3 +68,16 @@ def reconcile(
     single = single_orders(orders)
     entries = frozenset(OwnEntry(key, column, value) for (key, column), value in own.items() if single.get(key.number) == key)
     return tuple(ordered), tuple(differences), OwnEntries(entries, memory.moves)
+
+
+def with_added(memory: OwnEntries, added: Iterable[tuple[OrderKey, Verdict, str]]) -> OwnEntries:
+    """Pamięć z wartościami, które Zlecenie dopisane z raportu pod kluczem dostaje w ``SKUTECZNE`` (``tak``/``nie``) i w
+    ``CZYNNOŚCI ZREALIZOWANE`` (niepusty opis): Centrum je wpisało, więc w następnych kliknięciach poprawka Wykonawcy je
+    zmienia, a ręczna wartość taty wygrywa jak przy każdej komórce."""
+
+    entries = {(entry.key, entry.column): entry for entry in memory.entries}
+    for key, verdict, activities in added:
+        entries[key, ReportColumn.SUCCESSFUL] = OwnEntry(key, ReportColumn.SUCCESSFUL, verdict.value)
+        if activities:
+            entries[key, ReportColumn.COMPLETED] = OwnEntry(key, ReportColumn.COMPLETED, activities)
+    return replace(memory, entries=frozenset(entries.values()))

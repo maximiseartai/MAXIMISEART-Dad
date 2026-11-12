@@ -1,12 +1,14 @@
-"""Zapis komórek i Przeniesień zleceń Wpisania raportów do INTERMAX bez Kopii INTERMAX (ADR 0028, ADR 0029).
+"""Zapis komórek, Przeniesień zleceń i Zleceń dopisanych z raportu Wpisania raportów do INTERMAX bez Kopii INTERMAX
+(ADR 0028, ADR 0029).
 
 Operacją jest ``write_cells``: dostaje Rejestr zleceń przeczytany przez proces (``register_file.read``), zmiany komórek
-(``report_cells.CellChange``) i Przeniesienia zleceń (``report_cells.OrderMove``) z rdzenia Wpisania raportów. Najpierw
-odrzuca całość, gdy którakolwiek zmiana nie trafia w ``SKUTECZNE`` albo ``CZYNNOŚCI ZREALIZOWANE`` uporządkowanego
-wiersza zlecenia albo Przeniesienie nie zaczyna się w uporządkowanym wierszu albo idzie na dzień bez uporządkowanych
-zleceń w arkuszu (``CellProblem``),
+(``report_cells.CellChange``), Przeniesienia zleceń (``report_cells.OrderMove``) i Zlecenia dopisane z raportu
+(``report_cells.OrderAdded``) z rdzenia Wpisania raportów. Najpierw odrzuca całość, gdy którakolwiek zmiana nie trafia
+w ``SKUTECZNE`` albo ``CZYNNOŚCI ZREALIZOWANE`` uporządkowanego wiersza zlecenia, Przeniesienie nie zaczyna się w
+uporządkowanym wierszu, dopisanie idzie do arkusza bez obszaru wklejania albo z tekstem, którego komórka nie przyjmie,
+albo Przeniesienie lub dopisanie idzie na dzień bez uporządkowanych zleceń w arkuszu (``CellProblem``),
 a INTERMAX zostaje wtedy nietknięty. Inaczej bajty z tylko tymi komórkami, a potem z wierszami w układzie dnia z planu
-Przeniesień (``raw_orders.plan_moves``, ``intermax_file.with_cells``) zastępują INTERMAX tą samą podmianą co
+Przeniesień i dopisań (``raw_orders.plan_moves``, ``intermax_file.with_cells``) zastępują INTERMAX tą samą podmianą co
 Uporządkowanie INTERMAX, bez Kopii (``intermax_replace.replace_without_copy``), z odczytem kontrolnym
 ``intermax_file.check_cells``. Podmiana porównuje INTERMAX z bajtami, które proces przeczytał, więc zmiana pracownika
 wgrana przez OneDrive w przerwie przed ponowną próbą daje odmowę, a nie zostaje nadpisana.
@@ -27,10 +29,10 @@ from typing import Final
 
 from . import intermax_file, raw_orders
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting, replace_without_copy
-from .raw_orders import MissingDays, MovePlan, RowLook
-from .register_columns import COMPLETED, SUCCESSFUL, Column
-from .register_file import OrderSheets, PasteArea, RegisterFile
-from .report_cells import CellChange, OrderMove, ReportColumn
+from .raw_orders import AddedRow, MissingDays, MovePlan, RowLook
+from .register_columns import COMPLETED, ORDER_NUMBER, SUCCESSFUL, Column
+from .register_file import OrderSheet, OrderSheets, PasteArea, RegisterFile
+from .report_cells import CellChange, OrderAdded, OrderMove, ReportColumn
 
 __all__ = ["CellProblem", "CellsWritten", "Rejected", "write_cells"]
 
@@ -57,43 +59,47 @@ class CellProblem(Enum):
     MOVE_NOT_ORDERED = "Przeniesienie spoza uporządkowanego wiersza zlecenia"
     """Przeniesienie z wiersza, który nie jest uporządkowanym wierszem zlecenia z datą, albo drugi raz z tego samego
     wiersza."""
-    NO_DAY = "Przeniesienie na dzień bez uporządkowanych zleceń w arkuszu"
+    NO_DAY = "Przeniesienie albo dopisanie na dzień bez uporządkowanych zleceń w arkuszu"
     """Arkusz zlecenia nie ma uporządkowanego wiersza dnia docelowego, pod który wiersz mógłby stanąć
-    (``raw_orders.MissingDays``); rdzeń przenosi tylko do Dnia uporządkowanego arkusza zlecenia."""
+    (``raw_orders.MissingDays``); rdzeń przenosi i dopisuje tylko do Dnia uporządkowanego arkusza."""
+    ADDED_OUTSIDE = "dopisanie do arkusza bez obszaru wklejania"
 
 
 @dataclass(frozen=True)
 class Rejected:
-    """Zmiany i Przeniesienia, których INTERMAX nie dostał, każde z powodem; żadna inna zmiana też nie trafiła do
-    INTERMAX."""
+    """Zmiany, Przeniesienia i dopisania, których INTERMAX nie dostał, każde z powodem; żadna inna zmiana też nie trafiła
+    do INTERMAX."""
 
-    problems: tuple[tuple[CellChange | OrderMove, CellProblem], ...]
+    problems: tuple[tuple[CellChange | OrderMove | OrderAdded, CellProblem], ...]
 
 
 @dataclass(frozen=True)
 class CellsWritten:
-    """INTERMAX ma wszystkie zmiany; ``count``: ile komórek, ``moved``: ile Przeniesień zleceń (oba 0: INTERMAX
-    nietknięty)."""
+    """INTERMAX ma wszystkie zmiany; ``count``: ile komórek, ``moved``: ile Przeniesień zleceń, ``added``: ile Zleceń
+    dopisanych z raportu (wszystkie 0: INTERMAX nietknięty)."""
 
     count: int
     moved: int = 0
+    added: int = 0
 
 
 def write_cells(
     register: RegisterFile,
     changes: Sequence[CellChange],
     moves: Sequence[OrderMove] = (),
+    added: Sequence[OrderAdded] = (),
     *,
     waiting: Waiting,
     disk: Disk = LOCAL_DISK,
 ) -> CellsWritten | Rejected | Refusal:
-    """Wpisuje ``changes`` i Przeniesienia ``moves`` do INTERMAX ``register`` bez Kopii INTERMAX albo nie zmienia go
-    wcale. Wiersze zmian i Przeniesień są wierszami INTERMAX ``register``: komórki wpisują się przed przeniesieniem
-    wiersza, więc idą z nim.
+    """Wpisuje ``changes``, Przeniesienia ``moves`` i Zlecenia dopisane z raportu ``added`` do INTERMAX ``register`` bez
+    Kopii INTERMAX albo nie zmienia go wcale. Wiersze zmian i Przeniesień są wierszami INTERMAX ``register``: komórki
+    wpisują się przed przeniesieniem wiersza, więc idą z nim, a dopisania stają po Przeniesieniach.
 
-    ``Rejected`` przed zapisem, gdy którakolwiek zmiana nie trafia w komórkę raportu uporządkowanego wiersza albo
-    Przeniesienie nie zaczyna się w uporządkowanym wierszu zlecenia albo idzie na dzień bez uporządkowanych zleceń w
-    arkuszu, a ``Refusal`` podmiany
+    ``Rejected`` przed zapisem, gdy którakolwiek zmiana nie trafia w komórkę raportu uporządkowanego wiersza,
+    Przeniesienie nie zaczyna się w uporządkowanym wierszu zlecenia, dopisanie idzie do arkusza bez obszaru wklejania
+    albo ma tekst, którego komórka nie przyjmie, albo Przeniesienie lub dopisanie idzie na dzień bez uporządkowanych
+    zleceń w arkuszu, a ``Refusal`` podmiany
     (Excel, OneDrive, nieudany albo niezgodny zapis) tak samo jak w Uporządkowaniu INTERMAX. ``UnsupportedShape``, gdy
     komórka albo przesuwany wiersz ma formułę, komórka leży w scaleniu, zakres sięga przesuwanych wierszy albo wierszy
     arkusza nie da się rozdzielić, a ``WorkbookError``, gdy stylów INTERMAX nie da się odczytać; INTERMAX zostaje wtedy
@@ -101,10 +107,10 @@ def write_cells(
     """
 
     cells, problems = _cells(register, changes)
-    plans, refused = _plans(register, moves)
+    plans, refused = _plans(register, moves, added)
     if problems or refused:
         return Rejected((*problems, *refused))
-    if not changes and not moves:
+    if not changes and not moves and not added:
         return CellsWritten(0)
 
     def written_as_planned(written: bytes) -> None:
@@ -114,19 +120,21 @@ def write_cells(
     refusal = replace_without_copy(
         register.path, register.content, content, written_as_planned, waiting=waiting, disk=disk
     )
-    return CellsWritten(len(changes), len(moves)) if refusal is None else refusal
+    return CellsWritten(len(changes), len(moves), len(added)) if refusal is None else refusal
 
 
 def _plans(
-    register: RegisterFile, moves: Sequence[OrderMove]
-) -> tuple[dict[PasteArea, MovePlan], tuple[tuple[OrderMove, CellProblem], ...]]:
-    """Plan Przeniesień każdego obszaru wklejania z Przeniesieniami i Przeniesienia odrzucone z powodem."""
+    register: RegisterFile, moves: Sequence[OrderMove], added: Sequence[OrderAdded]
+) -> tuple[dict[PasteArea, MovePlan], tuple[tuple[OrderMove | OrderAdded, CellProblem], ...]]:
+    """Plan Przeniesień i dopisań każdego obszaru wklejania z nimi oraz Przeniesienia i dopisania odrzucone z
+    powodem."""
 
     sheets = register.order_sheets.sheets if isinstance(register.order_sheets, OrderSheets) else ()
     areas = {sheet.name: sheet.paste for sheet in sheets if sheet.paste is not None}
     wanted: dict[PasteArea, dict[int, tuple[str, date]]] = {}
-    sources: dict[PasteArea, list[OrderMove]] = {}
-    problems: list[tuple[OrderMove, CellProblem]] = []
+    sources: dict[PasteArea, list[OrderMove | OrderAdded]] = {}
+    rows: dict[PasteArea, list[AddedRow]] = {}
+    problems: list[tuple[OrderMove | OrderAdded, CellProblem]] = []
     for move in moves:
         area = areas.get(move.order.sheet)
         facts = None if area is None else _ordered_row(area, move.order.row)
@@ -136,16 +144,44 @@ def _plans(
         else:
             wanted.setdefault(area, {})[move.order.row] = (move.worker, move.day)
             sources.setdefault(area, []).append(move)
+    by_sheet = {sheet.name: sheet for sheet in sheets if sheet.paste is not None}
+    for order in added:
+        sheet = by_sheet.get(order.sheet)
+        texts = (order.worker, order.successful, order.completed or "")
+        if sheet is None or sheet.paste is None:
+            problems.append((order, CellProblem.ADDED_OUTSIDE))
+        elif any(not _writable(text) for text in texts):
+            problems.append((order, CellProblem.UNWRITABLE_TEXT))
+        else:
+            rows.setdefault(sheet.paste, []).append(_added_row(sheet, order))
+            sources.setdefault(sheet.paste, []).append(order)
     plans: dict[PasteArea, MovePlan] = {}
-    for area, rows in wanted.items():
-        plan = raw_orders.plan_moves(area.rows_from_bottom(), area.columns, rows)
+    for area in {**wanted, **rows}:
+        plan = raw_orders.plan_moves(area.rows_from_bottom(), area.columns, wanted.get(area, {}), rows.get(area, ()))
         if isinstance(plan, MissingDays):
-            problems += [(move, CellProblem.NO_DAY) for move in sources[area] if move.day in plan.days]
+            problems += [(found, CellProblem.NO_DAY) for found in sources[area] if found.day in plan.days]
         else:
             plans[area] = plan
     if problems:
         return {}, tuple(problems)
     return plans, ()
+
+
+def _added_row(sheet: OrderSheet, order: OrderAdded) -> AddedRow:
+    """Wiersz dopisanego zlecenia w kolumnach arkusza ``sheet``: ``NUMER ZL.`` liczbą jak numery z aplikacji firmowej
+    (tekstem, gdy zaczyna się od zera, którego liczba by nie miała), ``SKUTECZNE`` i niepuste ``CZYNNOŚCI
+    ZREALIZOWANE``."""
+
+    at = sheet.positions
+    number: str | int = order.number if order.number.startswith("0") else int(order.number)
+    cells: dict[int, str | int] = {at[ORDER_NUMBER]: number, at[SUCCESSFUL]: order.successful}
+    if order.completed is not None:
+        cells[at[COMPLETED]] = order.completed
+    return AddedRow(order.worker, order.day, cells)
+
+
+def _writable(text: str) -> bool:
+    return len(text) <= _LONGEST and not _NOT_IN_XML.search(text)
 
 
 def _ordered_row(area: PasteArea, number: int) -> raw_orders.RowFacts | None:
@@ -177,7 +213,7 @@ def _cells(
             problems.append((change, CellProblem.NOT_ORDERED))
         elif column is None:
             problems.append((change, CellProblem.NOT_REPORT_COLUMN))
-        elif len(change.value) > _LONGEST or _NOT_IN_XML.search(change.value):
+        elif not _writable(change.value):
             problems.append((change, CellProblem.UNWRITABLE_TEXT))
         else:
             area, positions = found

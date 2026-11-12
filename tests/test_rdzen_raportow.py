@@ -21,9 +21,11 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 import pytest
 
-from rozliczenia.report_cells import CellChange, OrderMove, OrderRow, ReportColumn
+from rozliczenia.report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_reports import (
+    AddBar,
+    Added,
     ConflictingVerdicts,
     HandedOver,
     Kept,
@@ -41,6 +43,7 @@ from rozliczenia.worker_reports import (
     OwnEntries,
     OwnEntry,
     OwnMove,
+    ReadNumber,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
@@ -104,6 +107,7 @@ def _order(
     worker: object = "Jan.Testowy",
     successful: object = None,
     completed: object = None,
+    address: object = "Ulica Testowa 1",
 ) -> RegisterOrder:
     order = RegisterOrder.of(
         row,
@@ -112,6 +116,7 @@ def _order(
         worker=worker,
         successful=successful,
         completed=completed,
+        address=address,
     )
     assert order is not None
     return order
@@ -127,7 +132,10 @@ def _inputs(
     memory: OwnEntries = OwnEntries.EMPTY,
     kept: frozenset[Kept] = frozenset(),
     ordered: Sequence[date] = (),
+    present: Sequence[ReadNumber] | None = None,
 ) -> ReportInputs:
+    """Wejście rdzenia; bez ``present`` proces przeczytał tylko wiersze zleceń ``orders``, każdy raz."""
+
     logins = {}
     for login, senders in ADDRESSES.items():
         for sender in senders:
@@ -141,6 +149,7 @@ def _inputs(
         window=Window.of(today, rollout, closed),
         memory=memory,
         kept=kept,
+        present=tuple(ReadNumber(order.key.number, order.key.day) for order in orders) if present is None else present,
         ordered_days=frozenset(OrderedDay(ROW.sheet, day) for day in ordered),
     )
 
@@ -316,9 +325,10 @@ JAN_LOGIN, EWA_LOGIN = Login("jan.testowy"), Login("ewa.probna")
             JAN,
             SUBJECT,
             [_order(number="40000077")],
-            UnknownNumber(JAN_LOGIN, DAY, OrderNumber("40000001")),
-            "Numer 40000001 nie jest zleceniem jan.testowy z 08.11.2026.",
-            id="numer-spoza-zlecen-wszystkich-wykonawcow",
+            UnknownNumber(JAN_LOGIN, DAY, OrderNumber("40000001"), AddBar.NOT_ORDERED),
+            "Numeru 40000001 z Wpisu od jan.testowy z 08.11.2026 nie ma w uporządkowanych zleceniach INTERMAX, a Centrum "
+            "go nie dopisało, bo dzień 08.11.2026 nie jest jeszcze uporządkowany w INTERMAX.",
+            id="numer-spoza-zlecen-wszystkich-wykonawcow-bez-dnia-uporzadkowanego",
         ),
     ],
 )
@@ -365,7 +375,8 @@ def test_numer_zlecen_dwoch_innych_wykonawcow_z_dnia_daje_jeden_problem_z_kazdym
 
 def _after(orders: Sequence[RegisterOrder], outcome: ReportsOutcome) -> list[RegisterOrder]:
     """INTERMAX po zapisie kliknięcia, tak jak go przeczyta następne kliknięcie: komórki z ``changes``, a przeniesione
-    zlecenie u nowego Wykonawcy i w nowym dniu, w tym samym wierszu (miejsce w dniu rdzeń dostaje tylko przez wiersz)."""
+    zlecenie u nowego Wykonawcy i w nowym dniu, w tym samym wierszu (miejsce w dniu rdzeń dostaje tylko przez wiersz), a
+    Zlecenie dopisane z raportu w nowym wierszu pod ostatnim wierszem arkusza, bez ``ADRES``."""
 
     written = {(change.order, change.column): change.value for change in outcome.changes}
     moved = {move.order: move for move in outcome.moves}
@@ -380,9 +391,23 @@ def _after(orders: Sequence[RegisterOrder], outcome: ReportsOutcome) -> list[Reg
             worker=order.worker_name if move is None else move.worker,
             successful=written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
             completed=written.get((order.row, ReportColumn.COMPLETED), order.completed),
+            address="Ulica Testowa 1" if order.addressed else None,
         )
         assert changed is not None
         found.append(changed)
+    last = max((order.row.row for order in orders), default=1)
+    for index, added in enumerate(outcome.added, start=1):
+        new = RegisterOrder.of(
+            OrderRow(added.sheet, last + index),
+            number=added.number,
+            started=datetime(added.day.year, added.day.month, added.day.day),
+            worker=added.worker,
+            successful=added.successful,
+            completed=added.completed,
+            address=None,
+        )
+        assert new is not None
+        found.append(new)
     return found
 
 
@@ -1655,7 +1680,8 @@ def _described(index: int) -> str:
 class _Line:
     """Wiersz INTERMAX w wyroczni. Tożsamość wiersza (indeks) zna tylko test, a Centrum widzi numer, dzień, Wykonawcę i
     komórki. ``written``: wartość, którą Centrum ostatnio wpisało do komórki tego wiersza; ``since``: chwila przyjścia
-    najświeższego maila, którego opis Centrum wpisało do tego wiersza."""
+    najświeższego maila, którego opis Centrum wpisało do tego wiersza; ``as_order``: proces robi z wiersza zlecenie, a
+    bez tego czyta z niego tylko numer (wiersz bez ``WYKONAWCA``, z datą tekstem, z wyglądem z aplikacji)."""
 
     number: str
     day: date
@@ -1664,6 +1690,7 @@ class _Line:
     written: dict[ReportColumn, str] = field(default_factory=dict)
     since: datetime | None = None
     present: bool = True
+    as_order: bool = True
 
     def order(self, index: int) -> RegisterOrder:
         return _order(
@@ -1748,6 +1775,7 @@ _SEQUENCE_TATA = st.one_of(
     st.tuples(st.just("dzień"), st.integers(0, 3), st.sampled_from(_SEQUENCE_DAYS)),
     st.tuples(st.just("usuwa"), st.integers(0, 3)),
     st.tuples(st.just("wkleja"), st.integers(0, 1), _SEQUENCE_LINE),
+    st.tuples(st.just("bez zlecenia"), st.integers(0, 2), st.sampled_from(_SEQUENCE_DAYS)),
     st.just(("zostaw",)),
     st.just(("nowy dzień",)),
 )
@@ -1755,13 +1783,14 @@ _SEQUENCE_EVENTS = st.lists(
     st.tuples(st.lists(_SEQUENCE_TATA, max_size=3), st.lists(_SEQUENCE_MAIL, max_size=3)), min_size=1, max_size=6
 ).map(lambda rounds: [event for tata, mails in rounds for event in (*tata, *mails, ("klik",))])
 """Rundy zdarzeń: tata zmienia komórkę, Wykonawcę albo dzień wiersza (także na jutro i na dzień okresu z Plikiem
-zbiorczym), usuwa wiersz, wkleja nowy wiersz numeru 40000001 albo 40000002, klika „Zostaw moją” przy każdej różnicy z
-ostatniego kliknięcia albo przychodzi nowy dzień (dziś 9.11), przychodzą maile (nadawca, dzień z tematu, minuta
-przyjścia, Wpisy: numer i ``tak``/``nie`` albo brak), a potem tata klika."""
+zbiorczym), usuwa wiersz, wkleja nowy wiersz numeru 40000001 albo 40000002, wkleja wiersz dowolnego numeru, z którego
+proces nie robi zlecenia (bez ``WYKONAWCA``; wpisanie Wykonawcy robi z niego zlecenie), klika „Zostaw moją” przy każdej
+różnicy z ostatniego kliknięcia albo przychodzi nowy dzień (dziś 9.11), przychodzą maile (nadawca, dzień z tematu, także
+zamknięty i po dziś, minuta przyjścia, Wpisy: numer i ``tak``/``nie`` albo brak), a potem tata klika."""
 
 
 def _click_keeping_invariants(
-    lines: Sequence[_Line],
+    lines: list[_Line],
     mails: Sequence[tuple[ReportMail, Login, frozenset[str]]],
     ordered: frozenset[date],
     memory: OwnEntries,
@@ -1769,19 +1798,24 @@ def _click_keeping_invariants(
     today: date,
 ) -> ReportsOutcome:
     """Kliknięcie dnia ``today`` w oknie od 30.10 z okresem 27.10–2.11 z Plikiem zbiorczym, z wyroczniami N0–N4
-    (``_keeps_invariants``); zmienia ``lines`` tak, jak zapis INTERMAX. Dni uporządkowane to ``ordered`` i dzień każdego
-    wiersza (uporządkowany wiersz ma swój dzień)."""
+    (``_keeps_invariants``); zmienia ``lines`` tak, jak zapis INTERMAX. Dni uporządkowane to ``ordered``, 2.11 i dzień
+    każdego wiersza (uporządkowany wiersz ma swój dzień)."""
 
-    present = {index: line for index, line in enumerate(lines) if line.present}
-    counted = Counter(line.number for line in present.values())
+    present = {index: line for index, line in enumerate(lines) if line.present and line.as_order}
+    counted = Counter(line.number for line in lines if line.present)
+    ordered_count = Counter(line.number for line in present.values())
+    read = frozenset(OrderNumber(line.number) for line in lines if line.present)
 
     def click(memory: OwnEntries) -> ReportsOutcome:
         orders = [line.order(index) for index, line in present.items()]
-        days = sorted(ordered | {line.day for line in present.values()})
+        days = sorted(ordered | {line.day for line in present.values()} | {CLOSED_DAY})
         sent = [mail for mail, _, _ in mails]
-        return enter_reports(
-            _inputs(sent, orders, today=today, rollout=_ROLLOUT, closed=CLOSED, ordered=days, memory=memory, kept=kept)
+        rows = (
+            *(ReadNumber(order.key.number, order.key.day) for order in orders),
+            *(ReadNumber(OrderNumber(line.number)) for line in lines if line.present and not line.as_order),
         )
+        inputs = _inputs(sent, orders, today=today, rollout=_ROLLOUT, closed=CLOSED, ordered=days, memory=memory, kept=kept)
+        return enter_reports(replace(inputs, present=rows))
 
     outcome = click(memory)
     arrived = {_described(index): mail.arrived for index, (mail, _, _) in enumerate(mails)}
@@ -1789,7 +1823,7 @@ def _click_keeping_invariants(
     for move in outcome.moves:
         index, worker = move.order.row - 300, Login(move.worker.lower())
         line = present[index]
-        assert counted[line.number] == 1, ("N2: Przeniesienie numeru, który INTERMAX ma więcej niż raz", move)
+        assert counted[line.number] == 1, ("N2: Przeniesienie numeru, który INTERMAX ma w więcej niż jednym wierszu", move)
         assert _open(line.day, today) and _open(move.day, today), ("N0: Przeniesienie z dnia albo na dzień nieotwarty", move)
         assert any(
             sender == worker and line.number in numbers and (line.since is None or mail.arrived > line.since)
@@ -1805,8 +1839,31 @@ def _click_keeping_invariants(
         line.cells[change.column] = line.written[change.column] = change.value
         if change.column is ReportColumn.COMPLETED:
             line.since = arrived[change.value] if line.since is None else max(line.since, arrived[change.value])
+    assert len({added.number for added in outcome.added}) == len(outcome.added), ("N2: numer dopisany dwa razy", outcome)
+    for added in outcome.added:
+        worker, subject = Login(added.worker.lower()), f"Raport {added.day:%d.%m.%Y}"
+        assert added.number not in read, ("N2: dopisany numer, który INTERMAX ma w przeczytanym wierszu", added)
+        assert _open(added.day, today), ("N0: dopisanie w dniu, który nie jest otwarty", added)
+        assert added.completed is not None
+        mail, sender, numbers = mails[ascii_lowercase.index(added.completed.removeprefix("opis "))]
+        assert (sender, mail.subject) == (worker, subject) and added.number in numbers, ("N2: dopisanie bez maila", added)
+        assert all(
+            line.since is None or mail.arrived > line.since for line in lines if line.number == added.number
+        ), ("N3: dopisanie usuniętego wiersza bez maila świeższego od wpisanego do niego", added)
+        cells: dict[ReportColumn, str | None] = {
+            ReportColumn.SUCCESSFUL: added.successful,
+            ReportColumn.COMPLETED: added.completed,
+        }
+        written = {column: value for column, value in cells.items() if value is not None}
+        line = _Line(added.number, added.day, worker, cells, written, mail.arrived)
+        present[len(lines)] = line
+        lines.append(line)
     unknown = [problem for problem in outcome.problems if isinstance(problem, UnknownNumber)]
-    assert all(counted[problem.number] == 0 for problem in unknown), ("N2: numer z INTERMAX jako nieznany", unknown)
+    assert all(ordered_count[problem.number] == 0 for problem in unknown), ("N2: numer zlecenia jako nieznany", unknown)
+    assert all((problem.bar is AddBar.IN_INTERMAX) == (problem.number in read) for problem in unknown), (
+        "N2: numer z przeczytanego wiersza bez powodu, że INTERMAX go ma",
+        unknown,
+    )
     again = click(outcome.memory)
     assert (again.changes, again.moves, again.memory) == ((), (), outcome.memory), ("N4: powtórne kliknięcie", again)
     return outcome
@@ -1816,16 +1873,21 @@ def _keeps_invariants(start: _SequenceStart, events: Sequence[tuple[object, ...]
     """Wyrocznie #1367 r4 bez kodu produkcyjnego, z tożsamością wiersza, której Centrum nie zna (``_Line``). Po każdym
     kliknięciu:
 
-    - N0: Centrum zmienia komórki i przenosi tylko zlecenia z dni otwartych, i tylko na dzień otwarty, a dni okresu z
-      Plikiem zbiorczym i dni po dziś (``_open``) nie są otwarte, także po nowym dniu;
+    - N0: Centrum zmienia komórki i przenosi tylko zlecenia z dni otwartych, i tylko na dzień otwarty, a dopisuje tylko
+      w dniu otwartym, także przy mailu z dniem zamkniętym albo po dziś; dni okresu z Plikiem zbiorczym i dni po dziś
+      (``_open``) nie są otwarte, także po nowym dniu;
     - N1: komórka zmienia się tylko, gdy jest pusta albo ma wartość, którą Centrum ostatnio wpisało do tego wiersza, więc
       ręczna wartość taty zostaje, także równa Wpisowi z maila, po „Zostaw moją”, po zmianie Wykonawcy, dnia, usunięciu
       innego wiersza numeru i po wklejeniu drugiego;
-    - N2: Centrum przenosi tylko zlecenie, którego numer INTERMAX ma w odczytanych dniach (także po dziś) jeden raz, nie
-      dodaje wierszy i nie mówi, że numeru nie ma (``UnknownNumber``), gdy INTERMAX go ma;
+    - N2: Centrum przenosi tylko zlecenie, którego numer INTERMAX ma w przeczytanych wierszach (także z dnia po dziś i bez
+      zlecenia, przegląd #1374 r3) jeden raz, dopisuje (Zlecenie dopisane z raportu, #1354) tylko numer, którego INTERMAX nie ma w żadnym przeczytanym wierszu
+      (także bez zlecenia, przegląd #1374 r2), raz, z maila nadawcy z tym numerem i z dniem z tematu, i nie mówi, że
+      numeru nie ma (``UnknownNumber``), gdy INTERMAX ma jego zlecenie, a przy numerze z wiersza bez zlecenia mówi, że
+      INTERMAX go ma (``AddBar.IN_INTERMAX``);
     - N3: wiersz przenosi tylko mail nowego Wykonawcy z jego numerem, świeższy niż każdy mail, którego opis Centrum
       wpisało do tego wiersza, a mail, którego opis kliknięcie wpisuje do przenoszonego wiersza, jest świeższy, więc
-      stary mail nigdy nie cofa ręcznej zmiany taty (tabela przejść #1358);
+      stary mail nigdy nie cofa ręcznej zmiany taty (tabela przejść #1358); numer, którego wiersze tata usunął, wraca
+      tylko z mailem świeższym niż każdy mail, którego opis Centrum wpisało do któregoś z nich;
     - N4: powtórne kliknięcie bez nowych zdarzeń nic nie zmienia, a pamięć zostaje ta sama.
 
     Tożsamość wiersza to wiersz w arkuszu, z jednym wyjątkiem z reguły #1367 r4: numer, który ma w INTERMAX jeden
@@ -1848,12 +1910,15 @@ def _keeps_invariants(start: _SequenceStart, events: Sequence[tuple[object, ...]
                 lines[which % len(lines)].cells[column] = _BY_TATA[column][value % len(_BY_TATA[column])]
             case ("wykonawca", int(which), str(login)):
                 lines[which % len(lines)].worker = Login(login)
+                lines[which % len(lines)].as_order = True
             case ("dzień", int(which), date() as day):
                 lines[which % len(lines)].day = day
             case ("usuwa", int(which)):
                 lines[which % len(lines)].present = False
             case ("wkleja", int(which), (date() as day, str(login), int(successful), int(completed))):
                 lines.append(_line(_SEQUENCE_NUMBERS[which], (day, login, successful, completed)))
+            case ("bez zlecenia", int(which), date() as day):
+                lines.append(replace(_line(_SEQUENCE_NUMBERS[which], (day, _LOGINS[0], 0, 0)), as_order=False))
             case ("zostaw",):
                 found = () if last is None else last.problems
                 kept |= {Kept(shown.key, shown.column, shown.reported) for shown in found if isinstance(shown, ManualDifference)}
@@ -1873,7 +1938,7 @@ def _single_rows(lines: Sequence[_Line]) -> dict[str, int]:
 
     rows: dict[str, list[int]] = {}
     for index, line in enumerate(lines):
-        if line.present:
+        if line.present and line.as_order:
             rows.setdefault(line.number, []).append(index)
     return {number: found for number, (found, *more) in rows.items() if not more}
 
@@ -1931,6 +1996,52 @@ _JAN, _EWA, _ADAM = "jan.testowy", "ewa.probna", "adam.inny"
     ([(SEVENTH, _JAN, 0, 0), (NINTH, _JAN, 0, 0)], (DAY, _ADAM, 0, 0), frozenset(READ_DAYS)),
     [("mail", _JAN, DAY, 0, [(0, "tak")]), ("klik",)],
 ).via("przegląd #1367 r3 Ważne 2: duplikat z jutra był niewidoczny, więc Centrum przeniosło zlecenie z 7.11")
+@example(
+    ([(SEVENTH, _JAN, 0, 0)], (DAY, _ADAM, 0, 0), frozenset(READ_DAYS)),
+    [
+        ("mail", _JAN, DAY, 0, [(2, "tak")]),
+        ("klik",),
+        ("dzień", 2, CLOSED_DAY),
+        ("mail", _JAN, DAY, 5, [(2, "nie")]),
+        ("klik",),
+    ],
+).via("przegląd #1374 r4 Ważne 1: dopisane zlecenie, które tata przełożył do okresu z Plikiem zbiorczym, wracało na 8.11")
+@example(
+    ([(SEVENTH, _JAN, 0, 0)], (DAY, _ADAM, 0, 0), frozenset(READ_DAYS)),
+    [
+        ("mail", _JAN, DAY, 0, [(2, "tak")]),
+        ("klik",),
+        ("dzień", 2, NINTH),
+        ("mail", _JAN, DAY, 5, [(2, "nie")]),
+        ("klik",),
+    ],
+).via("przegląd #1374 r4 Ważne 1: dopisane zlecenie, które tata przełożył na jutro, wracało na 8.11")
+@example(
+    ([(SIXTH, _EWA, 0, 0)], (SIXTH, _ADAM, 0, 0), frozenset(_SEQUENCE_DAYS)),
+    [
+        ("mail", _EWA, SIXTH, 1, [(0, "tak")]),
+        ("mail", _EWA, SIXTH, 0, [(0, "tak"), (1, "tak"), (2, "tak")]),
+        ("klik",),
+    ],
+).via("#1374 r5: zlecenie przejęte od Adama zmieniało poprawkę maila Ewy, więc drugie kliknięcie dopisywało literówkę")
+@example(
+    ([(SEVENTH, _ADAM, 0, 0)], (SIXTH, _ADAM, 0, 0), frozenset(_SEQUENCE_DAYS)),
+    [
+        ("mail", _ADAM, SEVENTH, 1, [(0, "tak")]),
+        ("mail", _ADAM, SEVENTH, 0, [(0, "tak"), (1, "tak"), (2, "tak")]),
+        ("klik",),
+    ],
+).via("#1374 r5: zlecenie przeniesione z 6.11 zmieniało poprawkę maila Adama, więc drugie kliknięcie dopisywało literówkę")
+@example(
+    ([(DAY, _JAN, 0, 0)], (DAY, _ADAM, 0, 0), frozenset(_SEQUENCE_DAYS)),
+    [
+        ("usuwa", 1),
+        ("mail", _JAN, DAY, 0, [(0, "tak"), (2, "tak"), (1, "tak")]),
+        ("mail", _JAN, DAY, 1, [(1, "tak")]),
+        ("mail", _JAN, DAY, 2, [(0, "tak")]),
+        ("klik",),
+    ],
+).via("#1374 r5: zlecenie dopisane w kliknięciu zmieniało poprawkę maila Jana, więc drugie kliknięcie dopisywało literówkę")
 def test_wlasnosc_centrum_nie_nadpisuje_taty_nie_przenosi_numeru_z_kilku_miejsc_ani_starym_mailem(
     start: _SequenceStart, events: list[tuple[object, ...]]
 ) -> None:
@@ -1947,13 +2058,16 @@ _SAME_MAILS = st.lists(
         st.sampled_from(_LOGINS),
         st.sampled_from(OPEN_DAYS),
         st.lists(
-            st.tuples(st.integers(0, 2), st.sampled_from(["tak", "nie"])), min_size=1, max_size=3, unique_by=lambda entry: entry[0]
+            st.tuples(st.integers(0, 1), st.sampled_from(["tak", "nie"])), min_size=1, max_size=2, unique_by=lambda entry: entry[0]
         ),
     ),
     min_size=1,
     max_size=6,
 )
-"""Maile z Wpisami z ``tak``/``nie`` i opisem, każdy świeższy od poprzedniego: nadawca, dzień z tematu i Wpisy."""
+"""Maile z Wpisami z ``tak``/``nie`` i opisem do numerów ze zleceniem, każdy świeższy od poprzedniego: nadawca, dzień z
+tematu i Wpisy. Bez numeru bez zlecenia, bo Zlecenie dopisane z raportu (#1354) jest nieodwracalne: wiersz dopisany
+kliknięciem po wcześniejszym mailu zostaje, także gdy późniejszy mail (poprawka, pomylony temat) nie dopisałby go przy
+jednym kliknięciu. Że powtórne kliknięcie z dopisaniami nic nie zmienia, sprawdza własność ciągu (N4)."""
 
 
 @settings(derandomize=True, database=None, deadline=None, max_examples=200)
@@ -2422,10 +2536,10 @@ def test_problemy_sa_bez_powtorzen_i_ten_sam_wynik_dla_kazdej_kolejnosci_maili()
 
     assert all(outcome == outcomes[0] for outcome in outcomes)
     assert outcomes[0].problems == (
-        UnknownNumber(Login("ewa.probna"), date(2026, 11, 7), OrderNumber("40000009")),
+        UnknownNumber(Login("ewa.probna"), date(2026, 11, 7), OrderNumber("40000009"), AddBar.NOT_ORDERED),
         UnknownSender(second.id, second.sender, DAY),
         UnknownSender(first.id, first.sender, DAY),
-        UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("30000077")),
+        UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("30000077"), AddBar.NOT_ORDERED),
         RepeatedOrder(Login("jan.testowy"), DAY, OrderNumber("40000002")),
     )
 
@@ -2459,7 +2573,7 @@ def test_raport_z_dnia_spoza_dni_otwartych_jest_pomijany_po_cichu(
 
     outcome = enter_reports(_inputs([mail], [_order(day=day)], rollout=rollout, closed=closed))
 
-    assert replace(outcome, mails=()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), ())
+    assert replace(outcome, mails=()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), (), ())
     assert [type(read) for read in outcome.mails] == ([ReadReport] if closed else [])
 
 
@@ -2477,7 +2591,7 @@ def test_raport_z_ostatniego_dnia_poprzedniego_okresu_wpisuje_sie_dopoki_okres_n
     )
 
     assert [change.column for change in still_open.changes] == [ReportColumn.SUCCESSFUL, ReportColumn.COMPLETED]
-    assert replace(closed, mails=()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), ())
+    assert replace(closed, mails=()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), (), ())
 
 
 TUESDAY = date(2026, 11, 10)
@@ -2710,7 +2824,7 @@ JAN_ORDERS = [
     _order(OrderRow("Zlecenia", 123), number="40000004", worker="Ewa.Probna"),
     _order(OrderRow("Zlecenia", 124), number="40000004", worker="Ewa.Probna"),
 ]
-JAN_TYPO = UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("40000092"))
+JAN_TYPO = UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("40000092"), AddBar.NOT_ORDERED)
 
 
 def _no_year(arrived: datetime = EVENING, text: str = TEXT) -> UnreadableSubject:
@@ -2898,14 +3012,19 @@ def test_wiersz_bez_numeru_dnia_albo_wykonawcy_nie_jest_zleceniem_rdzenia(
     number: object, started: object, worker: object
 ) -> None:
     assert (
-        RegisterOrder.of(ROW, number=number, started=started, worker=worker, successful=None, completed=None) is None
+        RegisterOrder.of(
+            ROW, number=number, started=started, worker=worker, successful=None, completed=None, address=None
+        )
+        is None
     )
 
 
 def test_dzien_zlecenia_z_daty_bez_godziny_i_pusta_komorka_z_samych_spacji() -> None:
-    order = RegisterOrder.of(ROW, number=NUMBER, started=DAY, worker="Jan.Testowy", successful="  ", completed="x")
+    order = RegisterOrder.of(
+        ROW, number=NUMBER, started=DAY, worker="Jan.Testowy", successful="  ", completed="x", address="  "
+    )
 
-    assert order == RegisterOrder(ROW, _key(), None, "x", "Jan.Testowy")
+    assert order == RegisterOrder(ROW, _key(), None, "x", "Jan.Testowy", addressed=False)
 
 
 # Maile Raportów wykonawców z tym, co rdzeń czyta albo pomija: Wpisy z ``tak``/``nie``, literą, słowem albo bez znaku, z
@@ -2983,6 +3102,8 @@ _CANONICAL_MEMORY = OwnEntries(
     frozenset({OwnMove(OrderNumber("40000003"), DAY, Login("ewa.probna"), DAY, Login("jan.testowy"), "Jan.Testowy", EVENING)}),
 )
 """Pamięć z ręczną wartością równą Wpisowi i Przeniesieniem zlecenia Jana do Ewy, które INTERMAX ma dalej u Ewy."""
+_CANONICAL_DAYS = (date(2026, 11, 7), DAY)
+"""Oba dni zleceń są Dniami uporządkowanymi, więc nowy numer z 8 cyframi z maila się dopisuje."""
 
 
 def _canonical_senders(outcome: ReportsOutcome) -> list[SenderAddress]:
@@ -3029,15 +3150,18 @@ def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[
     """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail z ``as_mail`` w miejscu każdego przeczytanego maila daje
     ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy), liczby i pamięć wpisów."""
 
-    inputs = _inputs(mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY)
+    inputs = _inputs(
+        mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY, ordered=_CANONICAL_DAYS
+    )
     outcome = enter_reports(inputs)
     canonical = list(map(as_mail, outcome.mails, _canonical_senders(outcome)))
 
     again = enter_reports(replace(inputs, mails=canonical))
 
-    assert (again.mails, again.changes, again.workers, again.memory) == (
+    assert (again.mails, again.changes, again.added, again.workers, again.memory) == (
         outcome.mails,
         outcome.changes,
+        outcome.added,
         outcome.workers,
         outcome.memory,
     )
@@ -3082,12 +3206,15 @@ def test_postac_kanoniczna_wpisu_z_kazdym_znakiem_daje_ten_sam_wpis(
 def test_wlasnosc_te_same_maile_w_dowolnej_kolejnosci_daja_ten_sam_wynik_dopasowania(
     pair: tuple[list[ReportMail], list[ReportMail]],
 ) -> None:
-    """Zlecenia mają numer Jana z dwóch dni i numer Ewy, więc maile dają cele, Przeniesienia zleceń w obie strony,
-    inne dni, nieznane numery i nieznanych nadawców; dwa kliknięcia z tymi samymi mailami w innej kolejności dają ten
-    sam wynik, z tymi samymi Przeniesieniami i informacjami."""
+    """Zlecenia mają numer Jana z dwóch dni i numer Ewy, a oba dni są Dniami uporządkowanymi, więc maile dają cele,
+    Przeniesienia zleceń w obie strony, inne dni, Zlecenia dopisane z raportu (40000077), nieznane numery i nieznanych
+    nadawców; dwa kliknięcia z tymi samymi mailami w innej kolejności dają ten sam wynik, z tymi samymi Przeniesieniami,
+    dopisaniami i informacjami."""
 
     mails, shuffled = pair
-    inputs = _inputs(mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY)
+    inputs = _inputs(
+        mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY, ordered=_CANONICAL_DAYS
+    )
 
     assert enter_reports(replace(inputs, mails=shuffled)) == enter_reports(inputs)
 
@@ -3131,9 +3258,14 @@ def _every_problem() -> list[ReportProblem]:
                 ReportEntry(number, None, VerdictFault.WORD_NO, "brak klienta"),
             ),
         ),
-        UnknownNumber(jan, DAY, OrderNumber("12345678")),
+        UnknownNumber(jan, DAY, OrderNumber("40000099"), AddBar.IN_INTERMAX),
+        UnknownNumber(jan, DAY, OrderNumber("40000099"), AddBar.BEFORE_WINDOW),
+        UnknownNumber(jan, DAY, OrderNumber("4000009"), AddBar.FORM),
+        UnknownNumber(jan, DAY, OrderNumber("40000099"), AddBar.MISTAKEN_SUBJECT),
+        UnknownNumber(jan, DAY, OrderNumber("40000099"), AddBar.NOT_ORDERED),
         RepeatedOrder(jan, DAY, number),
         RepeatedNumber(jan, DAY, number, ((date(2026, 11, 6), ewa), (date(2026, 11, 7), jan))),
+        RepeatedNumber(jan, DAY, number, ((date(2026, 11, 7), jan),)),
         RefusedMove(jan, DAY, number, SEVENTH, DAY, MoveBar.NOT_ORDERED),
         RefusedMove(jan, DAY, number, SEVENTH, DAY, MoveBar.OTHER_SHEET),
         RefusedMove(jan, DAY, number, SEVENTH, DAY, MoveBar.CLOSED_TARGET),
@@ -3663,19 +3795,20 @@ def test_opis_ma_pojedyncze_spacje_bez_spacji_na_brzegach() -> None:
 
 
 @pytest.mark.parametrize(
-    ("text", "number"),
+    ("text", "number", "bar"),
     [
-        pytest.param("040000001 tak wymiana routera", "040000001", id="zero-wiodace"),
-        pytest.param("Dzień dobry 40000077 tak wymiana routera", "40000077", id="po-powitaniu"),
+        pytest.param("040000001 tak wymiana routera", "040000001", AddBar.FORM, id="zero-wiodace"),
+        pytest.param("Dzień dobry 40000077 tak wymiana routera", "40000077", AddBar.NOT_ORDERED, id="po-powitaniu"),
     ],
 )
-def test_numer_z_tak_albo_nie_spoza_zlecen_wykonawcy_jest_problemem(text: str, number: str) -> None:
-    """Zero wiodące to inny numer niż ``NUMER ZL.``, a pomyłka w numerze przed pierwszym Wpisem linii też jest Wpisem."""
+def test_numer_z_tak_albo_nie_spoza_zlecen_wykonawcy_jest_problemem(text: str, number: str, bar: AddBar) -> None:
+    """Zero wiodące to inny numer niż ``NUMER ZL.`` (9 cyfr, więc bez dopisania), a pomyłka w numerze przed pierwszym
+    Wpisem linii też jest Wpisem (dzień nie jest Dniem uporządkowanym, więc bez dopisania)."""
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()]))
 
     assert outcome.changes == ()
-    assert outcome.problems == (UnknownNumber(Login("jan.testowy"), DAY, OrderNumber(number)),)
+    assert outcome.problems == (UnknownNumber(Login("jan.testowy"), DAY, OrderNumber(number), bar),)
 
 
 def test_dwa_maile_z_jednym_message_id_i_chwila_przyjscia_daja_ten_sam_wynik_w_kazdej_kolejnosci() -> None:
@@ -3717,8 +3850,8 @@ LONG = "40000001 tak wymiana routera,\nmontaż 2 gniazd"
 LONG_CELLS = ((0, "tak", "wymiana routera, montaż 2 gniazd"),)
 
 
-def _unknown(number: str) -> UnknownNumber:
-    return UnknownNumber(Login("jan.testowy"), DAY, OrderNumber(number))
+def _unknown(number: str, bar: AddBar = AddBar.NOT_ORDERED) -> UnknownNumber:
+    return UnknownNumber(Login("jan.testowy"), DAY, OrderNumber(number), bar)
 
 
 def _cells(entered: Sequence[tuple[int, str, str]]) -> tuple[CellChange, ...]:
@@ -3804,7 +3937,7 @@ def _cells(entered: Sequence[tuple[int, str, str]]) -> tuple[CellChange, ...]:
         pytest.param(
             "40000001 tak klient nie odbiera tel 600100200 nie odbiera",
             ((0, "tak", "klient nie odbiera tel"),),
-            (_unknown("600100200"),),
+            (_unknown("600100200", AddBar.FORM),),
             id="telefon-ze-znakiem-po-nim-to-problem",
         ),
         pytest.param(
@@ -3879,7 +4012,7 @@ def test_opis_wpisu_ciagnie_sie_przez_kolejne_linie_do_nastepnego_wpisu_podpisu_
 @pytest.mark.parametrize(
     ("numbers", "problems"),
     [
-        pytest.param(("40000001", "400002"), (_unknown("400099"),), id="najkrotszy-numer-ma-6-cyfr"),
+        pytest.param(("40000001", "400002"), (_unknown("400099", AddBar.FORM),), id="najkrotszy-numer-ma-6-cyfr"),
         pytest.param(("40000001", "40000002"), (), id="najkrotszy-numer-ma-8-cyfr"),
     ],
 )
@@ -3900,7 +4033,7 @@ def test_ksztalt_numeru_zlecenia_wyznacza_najkrotszy_numer_odczytanego_zlecenia(
 def test_raport_z_dnia_bez_zlecen_w_dniach_otwartych_daje_problem_numeru() -> None:
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "Dzień dobry 12 tak router")], []))
 
-    assert outcome.problems == (_unknown("12"),)
+    assert outcome.problems == (_unknown("12", AddBar.FORM),)
 
 
 _WHITESPACE = st.sampled_from([" ", "  ", "\n", " \n ", "\t", "\r\n"])
@@ -4422,3 +4555,531 @@ def test_postac_kanoniczna_maila_ze_sprzecznymi_wpisami_daje_te_same_wpisy_i_ost
 
     assert again == outcome
     assert [type(problem) for problem in again.problems] == [ConflictingVerdicts]
+
+
+# Zlecenie dopisane z raportu (#1354, ADR 0029): Wpis numeru z aplikacji firmowej (8 cyfr), którego INTERMAX nie ma w
+# żadnym odczytanym dniu, dopisuje zlecenie pod zleceniami nadawcy w dniu z tematu, gdy ten jest Dniem uporządkowanym.
+
+ADDED = "40000077"
+ADDED_TEXT = f"{ADDED} tak montaż ONT"
+
+
+def _added(
+    worker: str = "Jan.Testowy", successful: str = "tak", completed: str | None = "montaż ONT", sheet: str = ROW.sheet
+) -> OrderAdded:
+    return OrderAdded(sheet, DAY, worker, ADDED, successful, completed)
+
+
+def _added_note(worker: Login = JAN_LOGIN) -> Added:
+    return Added(DAY, worker, OrderNumber(ADDED))
+
+
+def test_numer_z_aplikacji_spoza_dni_otwartych_to_zlecenie_dopisane_pod_zleceniami_nadawcy_w_dniu_z_tematu() -> None:
+    """Kryterium #1354 (US 17, 18, 22): numer z 8 cyframi, którego nie ma w żadnym dniu, dopisuje się z pisownią
+    ``WYKONAWCA`` nadawcy, ``tak`` i czynnościami z Wpisu, z informacją dla taty, bez problemu; pamięć ma jego komórki jak
+    własne wpisy i zlecenie jako dopisane, a widok liczy je na końcu zleceń nadawcy."""
+
+    orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002", worker="Ewa.Probna")]
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, ADDED_TEXT)], orders, ordered=[DAY]))
+
+    assert outcome.added == (_added(),)
+    assert (outcome.changes, outcome.moves, outcome.problems) == ((), (), ())
+    assert outcome.notes == (_added_note(),)
+    key = _key(ADDED)
+    assert {entry for entry in outcome.memory.entries if entry.key == key} == {
+        OwnEntry(key, ReportColumn.SUCCESSFUL, "tak"),
+        OwnEntry(key, ReportColumn.COMPLETED, "montaż ONT"),
+    }
+    assert outcome.memory.moves == {
+        OwnMove(OrderNumber(ADDED), DAY, JAN_LOGIN, DAY, JAN_LOGIN, "Jan.Testowy", EVENING, added=True)
+    }
+    [jan] = [worker for worker in outcome.workers if worker.worker == JAN_LOGIN]
+    assert (jan.orders, jan.entered, jan.without_report) == (2, 1, (OrderNumber("40000001"),))
+    assert jan.orders_detail[-1] == OrderDetail(OrderNumber(ADDED), "tak", "montaż ONT", True)
+
+
+@pytest.mark.parametrize(
+    ("text", "orders", "ordered", "problem"),
+    [
+        pytest.param(
+            "4000007 tak montaż",
+            [_order(number="4000001")],
+            [DAY],
+            UnknownNumber(JAN_LOGIN, DAY, OrderNumber("4000007"), AddBar.FORM),
+            id="7-cyfr",
+        ),
+        pytest.param(
+            "400000077 tak montaż",
+            [_order()],
+            [DAY],
+            UnknownNumber(JAN_LOGIN, DAY, OrderNumber("400000077"), AddBar.FORM),
+            id="9-cyfr",
+        ),
+        pytest.param(
+            f"40000003 tak a\n40000004 nie b\n{ADDED_TEXT}",
+            [
+                _order(OrderRow("Zlecenia", 121), number="40000003", day=date(2026, 11, 7)),
+                _order(OrderRow("Zlecenia", 122), number="40000004", day=date(2026, 11, 7)),
+            ],
+            [date(2026, 11, 7), DAY],
+            UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), AddBar.MISTAKEN_SUBJECT),
+            id="pomylony-temat-z-nowym-numerem",
+        ),
+        pytest.param(
+            ADDED_TEXT,
+            [_order(), _order(OrderRow("Zlecenia", 121), number="40000002", day=date(2026, 11, 7))],
+            [date(2026, 11, 7)],
+            UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), AddBar.NOT_ORDERED),
+            id="dzien-nieuporzadkowany",
+        ),
+    ],
+)
+def test_numer_bez_postaci_numeru_z_aplikacji_pomylony_temat_albo_dzien_nieuporzadkowany_daja_problem_bez_dopisania(
+    text: str, orders: list[RegisterOrder], ordered: list[date], problem: UnknownNumber
+) -> None:
+    """Kryteria #1354 (US 19, 21): numer z 7 albo 9 cyframi (gdy jest Wpisem, bo INTERMAX ma numer z 7 cyframi albo
+    numer ma więcej cyfr niż najkrótszy), Raport wykonawcy z pomylonym tematem (dwa zlecenia z 7.11) i dzień z tematu,
+    który nie jest Dniem uporządkowanym, dają problem z powodem i nic nie dopisują."""
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], orders, rollout=date(2026, 11, 7), ordered=ordered))
+
+    assert outcome.added == ()
+    assert outcome.problems == (problem,)
+    assert not any(isinstance(note, Added) for note in outcome.notes)
+
+
+def test_numer_z_przeczytanego_wiersza_bez_zlecenia_nie_jest_dopisany_i_nie_liczy_sie_do_progu_pomylonego_tematu() -> None:
+    """Przegląd #1374 r2 Ważne 1: proces przeczytał w INTERMAX wiersz z numerem, z którego nie powstało zlecenie
+    (Surowe zlecenie, wiersz bez ``WYKONAWCA`` albo z datą tekstem, wiersz z wyglądem z aplikacji między
+    uporządkowanymi), więc numer jest w ``present`` bez zlecenia w ``orders``. Dopisanie dałoby go dwa razy: problem z
+    powodem, bez dopisania. Jego dnia rdzeń nie zna, więc nie jest niezgodnym Wpisem, a jedyne zlecenie Jana z 7.11 dalej
+    przechodzi na dzień z tematu."""
+
+    text = f"40000001 tak a\n{ADDED_TEXT}"
+    inputs = _inputs([_mail(JAN, SUBJECT, text)], [_order(day=date(2026, 11, 7))], rollout=date(2026, 11, 7), ordered=[date(2026, 11, 7), DAY])
+
+    outcome = enter_reports(replace(inputs, present=(*inputs.present, ReadNumber(OrderNumber(ADDED)))))
+
+    assert outcome.added == ()
+    assert outcome.problems == (UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), AddBar.IN_INTERMAX),)
+    assert outcome.moves == (OrderMove(ROW, DAY, "Jan.Testowy"),)
+    assert reason(outcome.problems[0]).startswith(f"Zlecenie {ADDED} z Wpisu od jan.testowy z 08.11.2026 jest już w INTERMAX")
+
+
+def test_numer_obecny_w_innym_otwartym_dniu_nie_jest_dopisany_tylko_przenoszony() -> None:
+    """Kryterium #1354 (US 20): numer, który INTERMAX ma w innym otwartym dniu, nie dopisuje drugiego zlecenia, tylko
+    idzie regułą #1350 (jeden niezgodny Wpis: Przeniesienie na dzień z tematu)."""
+
+    orders = [_order(day=date(2026, 11, 7))]
+
+    outcome = enter_reports(
+        _inputs([_mail(JAN, SUBJECT, "40000001 tak montaż")], orders, rollout=date(2026, 11, 7), ordered=[date(2026, 11, 7), DAY])
+    )
+
+    assert outcome.added == ()
+    assert outcome.moves == (OrderMove(ROW, DAY, "Jan.Testowy"),)
+
+
+LATER_ROW = OrderRow("Zlecenia", 125)
+
+
+def test_numer_z_dnia_po_dzis_nie_jest_dopisany_a_nastepnego_dnia_przechodzi_na_dzien_z_tematu() -> None:
+    """Przegląd #1374 r1: tata wkleja i porządkuje zlecenia jutra dzień wcześniej (ADR 0019), więc INTERMAX ma już
+    zlecenie 40000055 z 9.11, a Jan zrobił je 8.11 i wpisał do Raportu za 8.11. Kliknięcie 8.11 nie dopisuje go drugi
+    raz i niczego nie zmienia w INTERMAX, a tata dostaje problem z tym numerem: dzień zlecenia jeszcze nie nadszedł
+    (#1367 r4). Kliknięcie 9.11 widzi zlecenie w dniu otwartym i przenosi je na dzień z tematu z Wpisem (#1350)."""
+
+    orders = [_order(), _order(LATER_ROW, number="40000055", day=NEXT_DAY)]
+    mail = _mail(JAN, SUBJECT, "40000055 tak montaż ONT")
+
+    today = enter_reports(_inputs([mail], orders, today=DAY, ordered=[DAY, NEXT_DAY]))
+    tomorrow = enter_reports(_inputs([mail], orders, today=NEXT_DAY, rollout=DAY, ordered=[DAY, NEXT_DAY]))
+
+    assert (today.added, today.moves, today.changes) == ((), (), ())
+    assert today.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000055"), NEXT_DAY, NEXT_DAY, MoveBar.AFTER_TODAY),)
+    assert tomorrow.added == ()
+    assert tomorrow.moves == (OrderMove(LATER_ROW, DAY, "Jan.Testowy"),)
+    assert tomorrow.problems == ()
+
+
+def test_nowy_numer_w_raporcie_z_dwoma_zleceniami_z_jutra_nie_jest_dopisany_ani_dzis_ani_jutro() -> None:
+    """Przegląd #1374 r1 z regułą #1367 r4: Raport Jana za 8.11 ma dwa zlecenia, które INTERMAX ma już w 9.11 (tata
+    wkleja jutro dzień wcześniej), i numer, którego INTERMAX nie ma. Dwa niezgodne Wpisy to pomylony temat także dziś,
+    bo rdzeń widzi dzień po dziś, więc kliknięcie 8.11 i 9.11 zgadzają się: nowego numeru nie dopisują, a tata dostaje
+    problem pomylonego tematu."""
+
+    orders = [
+        _order(),
+        _order(LATER_ROW, number="40000055", day=NEXT_DAY),
+        _order(OrderRow("Zlecenia", 126), number="40000056", day=NEXT_DAY),
+    ]
+    mail = _mail(JAN, SUBJECT, "40000055 tak montaż\n40000056 tak montaż\n40000099 tak montaż")
+
+    today = enter_reports(_inputs([mail], orders, today=DAY, ordered=[DAY, NEXT_DAY]))
+    tomorrow = enter_reports(_inputs([mail], orders, today=NEXT_DAY, rollout=DAY, ordered=[DAY, NEXT_DAY]))
+
+    for outcome in (today, tomorrow):
+        assert (outcome.added, outcome.moves) == ((), ())
+        assert _unknown("40000099", AddBar.MISTAKEN_SUBJECT) in outcome.problems
+    assert today.changes == ()
+
+def test_numery_z_przykladu_przypomnienia_nigdy_nie_daja_dopisania() -> None:
+    """Kryterium #1354 i US 50: Wykonawca przepisał przykład z Przypomnienia o raporcie; jego numery mają 8 cyfr i nie ma
+    ich w INTERMAX, ale nie są Wpisami, więc nic się nie dopisuje i nie ma problemu."""
+
+    text = "12345678 tak montaż ONT\n12345679 nie brak klienta"
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()], ordered=[DAY]))
+
+    assert (outcome.added, outcome.changes, outcome.problems, outcome.notes) == ((), (), (), ())
+
+
+def test_drugie_klikniecie_nie_dubluje_dopisanego_zlecenia_a_informacja_stoi_do_wpisania_adresu() -> None:
+    """Kryteria #1354 (US 22, 24): kolejne kliknięcie z tym samym mailem widzi dopisane zlecenie w INTERMAX, więc nic
+    nie dopisuje ani nie zmienia; informacja „dopisane z raportu” stoi, dopóki tata nie wpisze ``ADRES``."""
+
+    orders = [_order()]
+    mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    first = enter_reports(_inputs([mail], orders, ordered=[DAY]))
+    after = _after(orders, first)
+
+    second = enter_reports(_inputs([mail], after, ordered=[DAY], memory=first.memory))
+    addressed = [replace(order, addressed=True) if order.key.number == ADDED else order for order in after]
+    third = enter_reports(_inputs([mail], addressed, ordered=[DAY], memory=second.memory))
+
+    assert (second.added, second.changes, second.moves, second.problems) == ((), (), (), ())
+    assert second.notes == (_added_note(),)
+    assert second.memory == first.memory
+    assert (third.added, third.changes, third.notes) == ((), (), ())
+
+
+@pytest.mark.parametrize(
+    ("manual", "changed", "differences"),
+    [
+        pytest.param(None, ("nie", "klient nieobecny"), (), id="poprawka-wykonawcy"),
+        pytest.param(
+            "montaż ONT i gniazda",
+            ("nie",),
+            (ManualDifference(_key(ADDED), ReportColumn.COMPLETED, "montaż ONT i gniazda", "klient nieobecny"),),
+            id="reczna-wartosc-taty-wygrywa",
+        ),
+    ],
+)
+def test_poprawka_wykonawcy_zmienia_komorki_dopisanego_zlecenia_a_reczna_wartosc_wygrywa(
+    manual: str | None, changed: tuple[str, ...], differences: tuple[ManualDifference, ...]
+) -> None:
+    """Kryterium #1354 (US 25): świeższy mail Jana zmienia ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` dopisanego zlecenia,
+    bo Centrum samo je wpisało, a wartość, którą tata wpisał ręcznie, zostaje z różnicą."""
+
+    orders = [_order()]
+    mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    first = enter_reports(_inputs([mail], orders, ordered=[DAY]))
+    after = [
+        replace(order, completed=manual) if order.key.number == ADDED and manual is not None else order
+        for order in _after(orders, first)
+    ]
+    fresher = _mail(JAN, SUBJECT, f"{ADDED} nie klient nieobecny", LATER)
+
+    second = enter_reports(_inputs([mail, fresher], after, ordered=[DAY], memory=first.memory))
+
+    [row] = [order.row for order in after if order.key.number == ADDED]
+    assert [(change.order, change.value) for change in second.changes] == [(row, value) for value in changed]
+    assert second.problems == differences
+    assert second.added == ()
+
+
+def test_dopisane_zlecenie_przejete_przez_innego_wykonawce_dalej_przypomina_o_adresie() -> None:
+    """Świeższy mail Ewy przenosi dopisane zlecenie Jana do niej (ADR 0029): informacja o dopisaniu idzie za zleceniem,
+    bo pamięć Przeniesienia niesie dopisanie, a obok stoi przejęcie po obu stronach."""
+
+    orders = [_order()]
+    mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    first = enter_reports(_inputs([mail], orders, ordered=[DAY]))
+    ewa = _mail(EWA, SUBJECT, f"{ADDED} nie brak klienta", LATER)
+
+    second = enter_reports(_inputs([mail, ewa], _after(orders, first), ordered=[DAY], memory=first.memory))
+
+    assert [move.worker for move in second.moves] == ["ewa.probna"]
+    assert second.notes == (
+        _added_note(EWA_LOGIN),
+        TakenOver(DAY, EWA_LOGIN, OrderNumber(ADDED), JAN_LOGIN),
+        HandedOver(DAY, JAN_LOGIN, OrderNumber(ADDED), EWA_LOGIN),
+    )
+
+
+def test_dopisane_zlecenie_usuniete_przez_tate_wraca_tylko_ze_swiezszym_mailem() -> None:
+    """Granica #1354: tata usunął dopisany wiersz. Kolejne kliknięcie z tym samym mailem go nie dopisuje i nie daje
+    problemu (pamięć dopisania, reguła ``may_move``), a świeższy mail Jana dopisuje je znowu, ze swoimi wartościami."""
+
+    orders = [_order()]
+    mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    first = enter_reports(_inputs([mail], orders, ordered=[DAY]))
+
+    same = enter_reports(_inputs([mail], orders, ordered=[DAY], memory=first.memory))
+    fresher = _mail(JAN, SUBJECT, f"{ADDED} nie klient nieobecny", LATER)
+    newer = enter_reports(_inputs([mail, fresher], orders, ordered=[DAY], memory=same.memory))
+
+    assert (same.added, same.problems, same.notes) == ((), (), ())
+    assert newer.added == (_added(successful="nie", completed="klient nieobecny"),)
+
+
+def test_przy_kilku_mailach_z_nowym_numerem_dopisuje_najswiezszy_a_problem_starszego_znika() -> None:
+    """US 3 dla dopisania: Jan przysłał numer za 9.11 (dzień nieuporządkowany), a potem Ewa ten sam numer za 8.11.
+    Dopisuje mail Ewy, w nowym segmencie Ewy (jej login, bo nie ma zleceń w INTERMAX), a problem starszego maila Jana
+    znika, bo zlecenie już jest; numer bez ``tak`` ani ``nie`` w najświeższym mailu nic nie dopisuje."""
+
+    orders = [_order()]
+    jan = _mail(JAN, "Raport 09.11.2026", ADDED_TEXT)
+    ewa = _mail(EWA, SUBJECT, f"{ADDED} nie brak klienta", LATER)
+    letter = _mail(EWA, SUBJECT, f"{ADDED} t montaż", LATER + timedelta(minutes=1))
+
+    outcome = enter_reports(_inputs([ewa, jan], orders, today=NEXT_DAY, rollout=DAY, ordered=[DAY]))
+    without = enter_reports(_inputs([jan, ewa, letter], orders, today=NEXT_DAY, rollout=DAY, ordered=[DAY]))
+
+    assert outcome.added == (_added("ewa.probna", "nie", "brak klienta"),)
+    assert outcome.problems == ()
+    assert outcome.notes == (_added_note(EWA_LOGIN),)
+    assert without.added == ()
+    assert without.problems == (
+        MissingVerdict(EWA_LOGIN, DAY, OrderNumber(ADDED), VerdictFault.LETTER_YES),
+        UnknownNumber(JAN_LOGIN, NEXT_DAY, OrderNumber(ADDED), AddBar.NOT_ORDERED),
+    )
+
+
+@pytest.mark.parametrize(
+    ("orders", "newest", "rollout", "closed", "ordered", "problems"),
+    [
+        pytest.param(
+            [
+                _order(),
+                _order(OrderRow("Zlecenia", 121), number="40000003", day=date(2026, 11, 7), worker="Ewa.Probna"),
+                _order(OrderRow("Zlecenia", 122), number="40000004", day=date(2026, 11, 7), worker="Ewa.Probna"),
+            ],
+            _mail(EWA, SUBJECT, f"40000003 tak a\n40000004 nie b\n{ADDED} nie brak klienta", LATER),
+            date(2026, 11, 7),
+            (),
+            [date(2026, 11, 7), DAY],
+            (UnknownNumber(EWA_LOGIN, DAY, OrderNumber(ADDED), AddBar.MISTAKEN_SUBJECT),),
+            id="pomylony-temat",
+        ),
+        pytest.param(
+            [_order()],
+            _mail(EWA, "Raport 02.11.2026", f"{ADDED} nie brak klienta", LATER),
+            CLOSED_DAY,
+            CLOSED,
+            [DAY],
+            (),
+            id="dzien-okresu-z-plikiem-zbiorczym",
+        ),
+    ],
+)
+def test_starszy_mail_nie_dopisuje_numeru_gdy_najswiezszy_wpis_tego_numeru_nie_dopisuje(
+    orders: list[RegisterOrder],
+    newest: ReportMail,
+    rollout: date,
+    closed: tuple[str, ...],
+    ordered: list[date],
+    problems: tuple[ReportProblem, ...],
+) -> None:
+    """Przegląd #1374 r1: o numerze, którego INTERMAX nie ma, decyduje najświeższy Raport wykonawcy z tym numerem (US 3),
+    także gdy jego Wpis niczego nie dopisuje. Jan (starszy mail) ma nowy numer z ``tak``, a Ewa (świeższy) ten sam numer
+    z ``nie`` w Raporcie z pomylonym tematem (dwa jej zlecenia z 7.11) albo w Raporcie za dzień okresu z Plikiem
+    zbiorczym. Kliknięcie nie dopisuje więc Wpisu Jana, a drugie kliknięcie daje to samo co pierwsze, zamiast przenieść
+    dopisane zlecenie do Ewy albo dać problem Przeniesienia do zamkniętego okresu."""
+
+    jan = _mail(JAN, SUBJECT, ADDED_TEXT)
+    inputs = _inputs([jan, newest], orders, rollout=rollout, closed=closed, ordered=ordered)
+
+    first = enter_reports(inputs)
+    second = enter_reports(replace(inputs, orders=_after(orders, first), memory=first.memory))
+
+    assert (first.added, first.problems) == ((), problems)
+    assert (second.added, second.moves, second.changes, second.problems) == ((), (), (), problems)
+
+def test_literowka_poprawiona_swiezszym_mailem_tego_samego_wykonawcy_nie_jest_dopisana() -> None:
+    """Przegląd #1374 r1, reguła poprawionego maila (US 40) dla dopisania: Jan wysłał raport z literówką w drugim numerze
+    (40000092 zamiast 40000002), a potem ten sam raport z dobrym numerem. Świeższy mail powtarza zlecenie Jana z 8.11 z
+    pierwszego, więc go poprawia, a numer, którego w nim nie ma, nie staje się Zleceniem dopisanym z raportu, także gdy
+    oba maile są w skrzynce przy jednym kliknięciu. Kolejny raport Jana bez zlecenia z pierwszego nie jest poprawką, więc
+    numer pierwszego się dopisuje."""
+
+    orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002")]
+    typo = _mail(JAN, SUBJECT, TYPO)
+
+    corrected = enter_reports(_inputs([typo, _mail(JAN, SUBJECT, RESENT, LATER)], orders, ordered=[DAY]))
+    another = enter_reports(_inputs([typo, _mail(JAN, SUBJECT, "40000002 tak montaż", LATER)], orders, ordered=[DAY]))
+
+    assert (corrected.added, corrected.problems) == ((), ())
+    assert {(change.order.row, change.value) for change in corrected.changes} == {
+        (120, "tak"),
+        (120, "wymiana routera"),
+        (121, "tak"),
+        (121, "montaż"),
+    }
+    assert [added.number for added in another.added] == ["40000092"]
+
+
+def test_raport_za_inny_dzien_z_numerem_zlecenia_z_tamtego_dnia_nie_poprawia_raportu_z_nowym_numerem() -> None:
+    """Przegląd #1374 r2 Drobne 1, reguła poprawionego maila (US 40) dla dopisania: poprawką Raportu wykonawcy za D jest
+    tylko późniejszy Raport tego Wykonawcy za D. Jan wpisał do raportu za 8.11 nowy numer i numer swojego zlecenia z
+    7.11, a potem przysłał raport za 7.11 z tym zleceniem. Ten raport powtarza zlecenie Jana ze swojego dnia, ale nie
+    poprawia raportu za 8.11, więc nowy numer się dopisuje, a zlecenie z 7.11 dostaje Wpis świeższego maila."""
+
+    first = _mail(JAN, SUBJECT, f"40000001 tak a\n{ADDED_TEXT}")
+    other_day = _mail(JAN, "Raport 07.11.2026", "40000001 tak b", LATER)
+
+    outcome = enter_reports(
+        _inputs([first, other_day], [_order(day=SEVENTH)], rollout=SEVENTH, ordered=[SEVENTH, DAY])
+    )
+
+    assert outcome.added == (_added(),)
+    assert (outcome.moves, outcome.problems) == ((), ())
+    assert {(change.order.row, change.value) for change in outcome.changes} == {(120, "tak"), (120, "b")}
+
+
+def test_dopisanie_idzie_do_arkusza_z_zleceniem_nadawcy_w_dniu_z_tematu() -> None:
+    """Dzień z tematu jest Dniem uporządkowanym w dwóch arkuszach zleceń: dopisanie idzie do arkusza, w którym nadawca ma
+    zlecenie tego dnia."""
+
+    other = OrderRow("Zlecenia 2026", 40)
+    inputs = _inputs([_mail(JAN, SUBJECT, ADDED_TEXT)], [_order(other)], ordered=[DAY])
+
+    outcome = enter_reports(replace(inputs, ordered_days=frozenset({OrderedDay(ROW.sheet, DAY), OrderedDay(other.sheet, DAY)})))
+
+    assert outcome.added == (_added(sheet=other.sheet),)
+
+
+
+def test_dopisane_zlecenie_nie_robi_ze_starszego_raportu_pomylonego_tematu_w_nastepnym_kliknieciu() -> None:
+    """Własność N4 po scaleniu #1367 r5 (#1374 r4): INTERMAX ma 40000001 u Jana w 6.11. Starszy Raport Jana za 2.11
+    (okres z Plikiem zbiorczym) ma 40000001 i nowy numer 40000077, a świeższy Raport Jana za 6.11 dopisuje 40000077 w
+    6.11. Następne kliknięcie widzi dopisane zlecenie, ale jego dzień dał Raport wykonawcy, a nie tata, więc starszy
+    raport dalej ma jeden niezgodny Wpis, a nie pomylony temat, i nie wpisuje się do 40000001: dwa kliknięcia dają to
+    samo co jedno."""
+
+    orders = [_order(day=SIXTH)]
+    old = _mail(JAN, "Raport 02.11.2026", f"40000001 tak montaż\n{ADDED} tak montaż", EVENING)
+    new = _mail(JAN, "Raport 06.11.2026", ADDED_TEXT, EVENING + timedelta(minutes=5))
+    first = enter_reports(_inputs([old, new], orders, rollout=CLOSED_DAY, closed=CLOSED, ordered=[SIXTH, DAY]))
+
+    second = enter_reports(
+        _inputs([old, new], _after(orders, first), rollout=CLOSED_DAY, closed=CLOSED, ordered=[SIXTH, DAY], memory=first.memory)
+    )
+
+    assert [(added.day, added.number) for added in first.added] == [(SIXTH, ADDED)]
+    assert first.changes == ()
+    assert (second.changes, second.moves, second.added) == ((), (), ())
+    assert second.memory == first.memory
+    assert second.problems == first.problems
+
+
+@pytest.mark.parametrize(
+    ("moved_to", "bar"),
+    [
+        pytest.param(CLOSED_DAY, MoveBar.CLOSED_SOURCE, id="na-dzien-okresu-z-plikiem-zbiorczym"),
+        pytest.param(NINTH, MoveBar.AFTER_TODAY, id="na-jutro"),
+    ],
+)
+def test_dopisane_zlecenie_przelozone_przez_tate_na_dzien_nieotwarty_zostaje_tam_bez_zmiany(moved_to: date, bar: MoveBar) -> None:
+    """Przegląd #1374 r4 Ważne 1 (ADR 0029): Raport Jana za 8.11 dopisuje 40000077 w 8.11, a tata przekłada to zlecenie
+    na 2.11 (okres z Plikiem zbiorczym) albo na 9.11 (jutro). Świeższy Raport Jana za 8.11 z tym numerem nie przenosi go
+    z powrotem i nie zmienia jego komórek, tylko daje odmowę Przeniesienia, jak przy każdym jedynym zleceniu z dnia,
+    który nie jest otwarty: dopisane zlecenie pomija tylko próg pomylonego tematu."""
+
+    def click(mails: list[ReportMail], orders: list[RegisterOrder], memory: OwnEntries = OwnEntries.EMPTY) -> ReportsOutcome:
+        inputs = _inputs(mails, orders, rollout=_ROLLOUT, closed=CLOSED, ordered=[SEVENTH, DAY, NINTH], memory=memory)
+        return enter_reports(inputs)
+
+    orders = [_order(day=SEVENTH)]
+    first_mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    first = click([first_mail], orders)
+    [added] = [order for order in _after(orders, first) if order.key.number == ADDED]
+    moved = _order(added.row, number=ADDED, day=moved_to, successful="tak", completed="montaż ONT", address=None)
+    fresher = _mail(JAN, SUBJECT, f"{ADDED} nie brak klienta", LATER)
+
+    second = click([first_mail, fresher], [*orders, moved], first.memory)
+
+    assert [(found.day, found.number) for found in first.added] == [(DAY, ADDED)]
+    assert (second.moves, second.changes, second.added) == ((), (), ())
+    assert second.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber(ADDED), moved_to, moved_to, bar),)
+
+
+def test_raport_z_pomylonym_tematem_wpisuje_sie_do_dopisanego_zlecenia_w_jego_dniu_bez_przeniesienia() -> None:
+    """Przegląd #1374 r4 Ważne 1 (ADR 0029): Raport Jana za 7.11 dopisuje 40000077 w 7.11. Świeższy Raport Jana za 8.11 ma
+    dwa jego zlecenia z 7.11, więc temat jest pomylony, i 40000077 z „nie”. Dopisane zlecenie nie liczy się do progu, ale
+    przy pomylonym temacie zostaje w swoim dniu jak każde zlecenie raportu i dostaje Wpis z informacją o przegranym
+    temacie, więc tata nie dostaje sprzecznych informacji, że temat to pomyłka, a zlecenie przeszło na dzień z tematu."""
+
+    orders = [_order(day=SEVENTH), _order(OrderRow("Zlecenia", 121), number="40000002", day=SEVENTH)]
+    first_mail = _mail(JAN, "Raport 07.11.2026", ADDED_TEXT)
+    first = enter_reports(_inputs([first_mail], orders, rollout=SEVENTH, ordered=[SEVENTH, DAY]))
+    mistaken = _mail(JAN, SUBJECT, f"40000001 tak montaż\n40000002 tak montaż\n{ADDED} nie brak klienta", LATER)
+
+    second = enter_reports(
+        _inputs([first_mail, mistaken], _after(orders, first), rollout=SEVENTH, ordered=[SEVENTH, DAY], memory=first.memory)
+    )
+
+    assert [(found.day, found.number) for found in first.added] == [(SEVENTH, ADDED)]
+    assert (second.moves, second.added, second.problems) == ((), (), ())
+    assert {(change.order.row, change.value) for change in second.changes} == {
+        (row, value) for row in (120, 121) for value in ("tak", "montaż")
+    } | {(122, "nie"), (122, "brak klienta")}
+    assert [found for found in second.notes if isinstance(found, SubjectLost)] == [
+        SubjectLost(DAY, JAN_LOGIN, OrderNumber(number), SEVENTH) for number in ("40000001", "40000002", ADDED)
+    ]
+
+
+def test_zlecenie_numeru_z_drugim_przeczytanym_wierszem_nie_przechodzi_a_zlecenie_nadawcy_z_dnia_z_tematu_ma_wpis() -> None:
+    """Reguła #1367 „numer w kilku miejscach się nie przenosi” z przeczytanymi wierszami (przegląd #1374 r3): proces
+    przeczytał 40000001 w zleceniu i drugi raz w wierszu bez zlecenia (Surowe zlecenie albo wiersz bez ``WYKONAWCA``).
+    Raport Jana za 8.11 nie przenosi jego zlecenia z 7.11 (8.11 miałby wtedy ten numer dwa razy), tylko daje problem z
+    miejscem zlecenia, a zlecenie Jana z 8.11 dostaje Wpis bez Przeniesienia. Bez drugiego wiersza to samo zlecenie z
+    7.11 przechodzi na 8.11."""
+
+    mail = _mail(JAN, SUBJECT, "40000001 tak montaż")
+    seventh, eighth = _order(day=SEVENTH), _order()
+
+    def click(order: RegisterOrder, twice: bool) -> ReportsOutcome:
+        rows = (ReadNumber(N1, order.key.day), *((ReadNumber(N1),) if twice else ()))
+        return enter_reports(_inputs([mail], [order], rollout=SEVENTH, ordered=[SEVENTH, DAY], present=rows))
+
+    moved, repasted, own = click(seventh, False), click(seventh, True), click(eighth, True)
+
+    assert moved.moves == (OrderMove(ROW, DAY, "Jan.Testowy"),)
+    assert (repasted.moves, repasted.changes) == ((), ())
+    assert repasted.problems == (RepeatedNumber(JAN_LOGIN, DAY, N1, ((SEVENTH, JAN_LOGIN),)),)
+    assert own.moves == ()
+    assert {(change.order, change.value) for change in own.changes} == {(ROW, "tak"), (ROW, "montaż")}
+
+
+@pytest.mark.parametrize(
+    ("rollout", "rows", "bar"),
+    [
+        pytest.param(SEVENTH, (date(2026, 11, 5),), AddBar.BEFORE_WINDOW, id="zlecenie-sprzed-okna"),
+        pytest.param(SEVENTH, (date(2026, 11, 5), date(2026, 11, 4)), AddBar.BEFORE_WINDOW, id="dwa-zlecenia-sprzed-okna"),
+        pytest.param(SEVENTH, (date(2026, 11, 5), None), AddBar.IN_INTERMAX, id="zlecenie-sprzed-okna-i-wiersz-bez-zlecenia"),
+        pytest.param(SEVENTH, (SEVENTH,), AddBar.IN_INTERMAX, id="pelny-wiersz-w-oknie-bez-zlecenia-rdzenia"),
+        pytest.param(SEVENTH, (None,), AddBar.IN_INTERMAX, id="wiersz-bez-zlecenia"),
+        pytest.param(CLOSED_DAY, (CLOSED_DAY,), AddBar.IN_INTERMAX, id="pierwszy-czytany-dzien-przed-pierwszym-otwartym"),
+        pytest.param(CLOSED_DAY, (date(2026, 11, 1),), AddBar.BEFORE_WINDOW, id="dzien-przed-pierwszym-czytanym"),
+    ],
+)
+def test_numer_przeczytany_tylko_w_zleceniach_sprzed_okna_ma_wlasny_powod(
+    rollout: date, rows: tuple[date | None, ...], bar: AddBar
+) -> None:
+    """Przegląd #1374 r3 Drobne 3: okno czyta zlecenia od dnia wdrożenia (7.11), a proces przeczytał numer z Wpisu Jana
+    tylko w wierszach, z których rdzeń nie ma zlecenia. Gdy każdy z nich to zlecenie z dniem i ``WYKONAWCA`` sprzed dni,
+    których zlecenia czyta okno, powód mówi o dniu sprzed okna (``BEFORE_WINDOW``), a inaczej o wierszu bez zlecenia
+    (``IN_INTERMAX``); w obu przypadkach Centrum go nie dopisuje. Przegląd #1374 r4 Drobne 1: przy dniu wdrożenia 2.11
+    w okresie z Plikiem zbiorczym pierwszy dzień otwarty to 3.11, a zlecenia okno czyta od 2.11 (``Window.start``), więc
+    wiersz z 2.11 nie jest sprzed okna, a z 1.11 jest."""
+
+    present = tuple(ReadNumber(OrderNumber(ADDED), day) for day in rows)
+    mail = _mail(JAN, SUBJECT, ADDED_TEXT)
+    inputs = _inputs([mail], [], rollout=rollout, closed=CLOSED, ordered=[SEVENTH, DAY], present=present)
+
+    outcome = enter_reports(inputs)
+
+    assert outcome.added == ()
+    assert outcome.problems == (UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), bar),)

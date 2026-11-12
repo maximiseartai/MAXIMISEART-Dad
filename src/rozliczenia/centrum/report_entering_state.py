@@ -1,21 +1,22 @@
 """Pliki Wpisania raportów w ``config`` (ADR 0028): jedyny moduł, który zna ich format. Każdy plik ma jednego pisarza.
 
 - ``wpisanie-raportow-stan.json``, ``{schema_version: 4, rollout, own: [{number, day, worker, column, value}], moves:
-  [{number, day, worker, origin_day, origin_worker, origin_name, since, overridden}]}``: dzień wdrożenia, komórki,
-  które Wpisanie raportów samo wpisało, i pamięć zleceń, na które samo zadziałało Przeniesieniem albo Wpisem
-  (``OwnMove``, ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX. Wersja 4 (#1367) to obietnica pisarza:
-  ``own`` ma tylko numer, który w chwili zapisu miał w odczytanych dniach jedno zlecenie, pod jego kluczem
-  (``OwnEntries``), więc wpisy idą za wierszem.
+  [{number, day, worker, origin_day, origin_worker, origin_name, since, overridden, added}]}``: dzień wdrożenia,
+  komórki, które Wpisanie raportów samo wpisało, i pamięć zleceń, na które samo zadziałało Przeniesieniem, Wpisem albo
+  dopisaniem (``OwnMove``, ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX. Wersja 4 (#1367) to obietnica
+  pisarza: ``own`` ma tylko numer, który w chwili zapisu miał w odczytanych dniach jedno zlecenie, pod jego kluczem
+  (``OwnEntries``), więc wpisy idą za wierszem. Plik bez ``added`` (sprzed Zleceń dopisanych z raportu, #1354) czyta się
+  z ``added`` fałszywym.
   Starsze wersje czyta ``load`` jako ``OlderOwnEntries``, bez Zatrzymania, a ich wpis należy do miejsca z chwili zapisu
   (numer, dzień, Wykonawca), dopóki następne kliknięcie nie zapisze wersji 4: wersja 1 (Wydania v0.7.0 i v0.8.0, sprzed
   Przeniesień) bez pamięci zleceń, wersja 2 (tylko gałąź #1358, bez ``overridden``, w pierwszej rundzie też bez
   ``origin_name`` i ``since``, nigdy w Wydaniu) jak wersja 1, a wersja 3 (``main`` przed #1367, nigdy w Wydaniu) z
-  pamięcią zleceń.
+  pamięcią zleceń, a na gałęzi #1354 przed scaleniem #1367 także z ``added``.
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
   numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu i czy zlecenie ma Wpis), zdaniem o każdym problemie
-  (``reasons.reason``), adresem nieznanego nadawcy i informacjami o Przeniesieniach (``notes``: dzień, Wykonawca, numer
-  i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Pisze go tylko proces, po
+  (``reasons.reason``), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
+  Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Pisze go tylko proces, po
   pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
   wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
 - ``wpisanie-raportow-decyzje.json``, ``{schema_version: 1, kept: [{number, day, worker, column, reported}]}``: decyzje
@@ -98,6 +99,7 @@ class _Move(_Record):
     origin_name: str
     since: datetime
     overridden: bool
+    added: bool = False
 
 
 class _StateV1(_Record):
@@ -358,6 +360,7 @@ class FileReportState:
                     move.origin_name,
                     move.since,
                     move.overridden,
+                    move.added,
                 )
                 for move in (state.moves if isinstance(state, _StateV3 | _State) else ())
             )
@@ -387,6 +390,7 @@ class FileReportState:
                 origin_name=move.origin_name,
                 since=move.since,
                 overridden=move.overridden,
+                added=move.added,
             )
             for move in sorted(memory.moves, key=lambda move: (move.day, move.number))
         ]

@@ -202,11 +202,13 @@ Not covered:
   `intermax_file.check` compares), which `tests/test_uporzadkowanie_intermax.py`
   covers, and the look of the written cells, which rows and columns
   `write_cells` refuses and where a Przeniesienie zlecenia (`OrderMove`, #1347, on
-  another day #1350) puts its row and its day (`raw_orders.plan_moves`), which
-  `tests/test_wpisanie_komorek_intermax.py` covers: a Przeniesienie only changes the
-  bytes the write builds before the temporary file, and its refusal (a day without
-  ordered orders in the sheet) comes before the read of the disk, so neither adds
-  a step between the read and the replace;
+  another day #1350) and a Zlecenie dopisane z raportu (`OrderAdded`, #1354) put
+  their row and its day (`raw_orders.plan_moves`), which
+  `tests/test_wpisanie_komorek_intermax.py` covers: both only change the bytes the
+  write builds before the temporary file, and their refusal (a day without ordered
+  orders in the sheet, a sheet without a paste area, a text a cell does not take)
+  comes before the read of the disk, so neither adds a step between the read and
+  the replace;
 - the Excel lock check right before the replace (`is_open_in_excel` in
   `_replacement`): the checker's replace fails while the `~$` lock exists, as on
   Windows, and the refused replace reads the lock again, so INTERMAX stays as it

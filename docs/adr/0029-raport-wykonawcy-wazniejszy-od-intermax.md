@@ -34,8 +34,15 @@ wklejeniem. Tata poprawia wtedy INTERMAX ręcznie według maila, bo mail mówi, 
   dostaje informację w obu przypadkach.
 - **Numer bez zlecenia to Zlecenie dopisane z raportu**, pod zleceniami nadawcy w dniu z tematu, z pięcioma kolumnami
   z raportu. Tylko numer w postaci numeru z aplikacji firmowej (8 cyfr, jak w INTERMAX), którego nie ma w żadnym
-  otwartym dniu, żeby literówka w numerze nie dopisała zlecenia, które już jest. Nie przy pomylonym temacie i nie do
-  dnia, który nie jest Dniem uporządkowanym.
+  wierszu, który Wpisanie raportów czyta: ani w zleceniach na jutro, ani w Surowym zleceniu, ani w wierszu, z którego
+  nie powstaje zlecenie (bez `WYKONAWCA`, z datą tekstem, wklejonym z aplikacji między uporządkowanymi), żeby literówka
+  w numerze ani zlecenie wklejone dzień wcześniej nie dopisały zlecenia, które już jest. Numery Wpisanie raportów czyta
+  z tygodnia przed pierwszym dniem otwartym, także sprzed dnia wdrożenia, więc w pierwszych tygodniach po wdrożeniu nie
+  dopisuje zlecenia wklejonego przed nim. Numer z takiego wiersza to problem dla taty. Nie przy pomylonym temacie i nie
+  do dnia, który nie jest Dniem uporządkowanym. Dzień dopisanego zlecenia dał raport, a nie tata, więc nie liczy się
+  do pomylonego tematu innych raportów. Poza tym progiem dopisane zlecenie jest jak każde inne: Wpis nie przenosi go z
+  dnia w okresie z Plikiem zbiorczym ani z dnia po dziś, także gdy tata je tam przełożył, a przy pomylonym temacie
+  zostaje ono w swoim dniu (#1374).
 - **Wiersz idzie za zleceniem.** Przeniesienie zmienia dzień w `DATA GODZ. POCZ.` (godzina zostaje) albo `WYKONAWCA` i
   przenosi wiersz pod zlecenia nadawcy w tym dniu, w razie potrzeby do nowego segmentu na miejscu alfabetycznym, żeby
   dzień zachował układ z Uporządkowania INTERMAX. Przeniesienie idzie tylko do Dnia uporządkowanego, bo wiersz w dniu z
@@ -44,10 +51,11 @@ wklejeniem. Tata poprawia wtedy INTERMAX ręcznie według maila, bo mail mówi, 
   problem dla taty.
 - **Ręczna zmiana dalej wygrywa.** Wpisanie raportów zmienia tylko to, co jest puste albo co samo zmieniło, a od tamtej
   pory nikt tego nie ruszył. Gdy tata przeniesie zlecenie z powrotem, Centrum go nie przenosi drugi raz.
-- **Numer w kilku zleceniach się nie przenosi.** Gdy Rejestr zleceń ma numer z Wpisu więcej niż raz w dniach, które
-  Wpisanie raportów czyta (także w okresie z Plikiem zbiorczym i w zleceniach na jutro), Wpisanie raportów nie przenosi
-  żadnego z tych zleceń: Wpis trafia tylko do jedynego zlecenia nadawcy w dniu z tematu, a inaczej zostaje problem z
-  dniem i Wykonawcą każdego z nich. Excel nie mówi, które z tych zleceń tata przeniósł, scalił albo usunął, więc Centrum
+- **Numer w kilku zleceniach się nie przenosi.** Gdy Rejestr zleceń ma numer z Wpisu więcej niż raz w wierszach, które
+  Wpisanie raportów czyta (także w okresie z Plikiem zbiorczym, w zleceniach na jutro i w wierszu, z którego nie
+  powstaje zlecenie, np. Surowym zleceniu albo wierszu bez `WYKONAWCA`), Wpisanie raportów nie przenosi żadnego z tych
+  zleceń: Wpis trafia tylko do jedynego zlecenia nadawcy w dniu z tematu, a inaczej zostaje problem z dniem i
+  Wykonawcą każdego z nich. Przeniesienie obok takiego wiersza dałoby ten numer dwa razy w dniu z tematu (#1374). Excel nie mówi, które z tych zleceń tata przeniósł, scalił albo usunął, więc Centrum
   pamięta swoje wpisy w komórkach tylko przy numerze z jednym zleceniem, a wartość w zleceniu numeru, który ma ich
   kilka, liczy jak wartość taty. Bez tej granicy stary mail cofał ręczną zmianę taty i nadpisywał jego wartość
   (przeglądy #1367). Pamięć zapisana przed tą granicą (Wydania v0.7.0 i v0.8.0) ma wpisy także przy numerze w kilku
