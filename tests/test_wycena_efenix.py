@@ -22,7 +22,6 @@ from copy import copy
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from functools import partial
 from http import HTTPStatus
 import json
 from pathlib import Path
@@ -200,13 +199,25 @@ def _run(
 
 
 def _run_in_process(
-    source: Path, stan: StanEfenix[AtrapaOrder], *, mode: PricingMode = PricingMode.FILL, pace: Pace | None = None
+    source: Path,
+    stan: StanEfenix[AtrapaOrder],
+    *,
+    mode: PricingMode = PricingMode.FILL,
+    pace: Pace | None = None,
+    meanwhile: Callable[[], None] = lambda: None,
 ) -> Priced:
     """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source`` w oknie w procesie na stanie efenix ``stan``
     (``tests/fixtures/okno_w_procesie.py``), bez przeglądarki: test decyzji Wyceny. Że okno w procesie daje na tym
-    samym stanie to samo co okno przeglądarki na Atrapie efenix, sprawdza kontrakt w ``tests/test_atrapa_efenix.py``."""
+    samym stanie to samo co okno przeglądarki na Atrapie efenix, sprawdza kontrakt w ``tests/test_atrapa_efenix.py``.
+    ``meanwhile``: jak w ``_run``."""
 
-    return _launched(source, partial(okno, stan), mode=mode, pace=pace)
+    @contextmanager
+    def open_efenix(login: Login) -> Iterator[Efenix]:
+        with okno(stan, login) as efenix:
+            yield efenix
+        meanwhile()
+
+    return _launched(source, open_efenix, mode=mode, pace=pace)
 
 
 def _price_in_process(tmp_path: Path, stan: StanEfenix[AtrapaOrder], orders: Sequence[Order]) -> Priced:
@@ -558,39 +569,27 @@ def test_kwota_efenix_inna_niz_au_po_dopisaniu_ilosci_to_blad_z_obiema_kwotami(t
     assert f"kwota w efenix to {efenix_amount:.2f} zł, a Kwota (AU) {au:.2f} zł".replace(".", ",") in what
 
 
-@pytest.mark.parametrize(
-    ("day", "result", "errors", "pricing"),
-    [
-        pytest.param(date(2026, 9, 1), "OK", [], ({"012": 1}, date(2026, 9, 1), 1), id="pierwszy-dzień-poprzedniego-miesiąca"),
-        pytest.param(date(2026, 10, 12), "OK", [], ({"012": 1}, date(2026, 10, 12), 1), id="dziś"),
-        pytest.param(
-            date(2026, 8, 31), "WYMAGA_SPRAWDZENIA", [("EFENIX_DATA_POZA_ZAKRESEM", "wiersz 18")], ({}, None, 0), id="przed-poprzednim-miesiącem"
-        ),
-        pytest.param(date(2026, 10, 13), "WYMAGA_SPRAWDZENIA", [("EFENIX_DATA_POZA_ZAKRESEM", "wiersz 18")], ({}, None, 0), id="jutro"),
-    ],
-)
-def test_dzien_z_data_spoza_zakresu_kalendarza_efenix_to_blad_bez_zapisu_daty_bez_emmetta_i_bez_ilosci(
-    tmp_path: Path,
-    page: Page,
-    day: date,
-    result: str,
-    errors: list[tuple[str, str]],
-    pricing: tuple[dict[str, int], date | None, int],
-) -> None:
-    """Kalendarz Atrapy ma za dziś 12 października 2026, więc efenix przyjmuje daty wykonania od 1 września do 12 października.
+def test_dzien_z_data_spoza_zakresu_kalendarza_efenix_to_blad_bez_zapisu_daty_bez_emmetta_i_bez_ilosci(tmp_path: Path, page: Page) -> None:
+    """Kalendarz Atrapy ma za dziś 12 października 2026, więc efenix przyjmuje daty wykonania od 1 września do 12 października;
+    że okno przeglądarki widzi obie granice tak jak okno w procesie, sprawdzają wiersze ``kalendarz-*`` kontraktu okien.
 
     Okna „Wybierz datę wykonania” z dniem, którego kalendarz nie przyjął, okno efenix nie zostawia otwartego w efenix taty:
     zamyka je bez „Potwierdź”."""
 
-    order = Order("#5601", day=day, cells={"O": 1}, amount=_au({"012": 1}))
+    order = Order("#5601", day=date(2026, 10, 13), cells={"O": 1}, amount=_au({"012": 1}))
     with atrapa_efenix([order.in_efenix("901")], today=date(2026, 10, 12)) as atrapa:
         outcome = _price(tmp_path, page, atrapa.url, [order])
         after = _pricing(atrapa)
         requested = atrapa.requested()
         dialog_hidden = page.locator("#dialog_select_date").is_hidden()
 
-    assert (outcome.result, _errors(outcome), after, dialog_hidden) == (result, errors, {"5601": pricing}, True)
-    assert requested.count(("POST", SET_DATE)) == (1 if result == "OK" else 0)
+    assert (outcome.result, _errors(outcome), after, dialog_hidden) == (
+        "WYMAGA_SPRAWDZENIA",
+        [("EFENIX_DATA_POZA_ZAKRESEM", "wiersz 18")],
+        {"5601": ({}, None, 0)},
+        True,
+    )
+    assert requested.count(("POST", SET_DATE)) == 0
 
 
 @pytest.mark.parametrize(
@@ -781,9 +780,7 @@ def test_szukanie_ktore_lista_efenix_wysyla_sama_po_powrocie_ze_strony_zlecenia_
     assert (searched, by_list) == (["5101", "5102", "5103"], ["5101", "5102"])
 
 
-def test_zlecenia_ze_zdjeciami_i_usterki_sa_pominiete_i_policzone_a_wiersz_z_samymi_zerami_jest_w_zakresie(
-    tmp_path: Path, page: Page
-) -> None:
+def test_zlecenia_ze_zdjeciami_i_usterki_sa_pominiete_i_policzone_a_wiersz_z_samymi_zerami_jest_w_zakresie(tmp_path: Path) -> None:
     photo_columns = ["AB", "AC", "AD", "AE", "AF", "AJ", "AK", "AL", "AM", "AN", "AO", "AP", "AS"]
     orders = [
         *(Order(f"#60{index:02}", cells={column: 1}) for index, column in enumerate(photo_columns)),
@@ -793,14 +790,13 @@ def test_zlecenia_ze_zdjeciami_i_usterki_sa_pominiete_i_policzone_a_wiersz_z_sam
         Order("#6302", cells=dict.fromkeys([*photo_columns, "AI"], "0")),
         Order("#6401", cells={"H": None}),
     ]
-    with atrapa_efenix([order.in_efenix(f"9{index:02}") for index, order in enumerate(orders)]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, orders)
-        searched = atrapa.searched()
+    efenix = StanEfenix([order.in_efenix(f"9{index:02}") for index, order in enumerate(orders)])
+    outcome = _price_in_process(tmp_path, efenix, orders)
 
-    assert (outcome.result, _figures(outcome), searched) == ("OK", _figures_of(2, 2, photos=14, defects=1), ["6301", "6302"])
+    assert (outcome.result, _figures(outcome), efenix.searched()) == ("OK", _figures_of(2, 2, photos=14, defects=1), ["6301", "6302"])
 
 
-def test_zlecenia_ida_po_wykonawcach_alfabetycznie_a_u_kazdego_od_najstarszej_daty(tmp_path: Path, page: Page) -> None:
+def test_zlecenia_ida_po_wykonawcach_alfabetycznie_a_u_kazdego_od_najstarszej_daty(tmp_path: Path) -> None:
     orders = [
         Order("#7001", worker="zenon.testowy", day=date(2026, 9, 8)),
         Order("#7002", worker="adrian.testowy", day=date(2026, 9, 12)),
@@ -808,11 +804,10 @@ def test_zlecenia_ida_po_wykonawcach_alfabetycznie_a_u_kazdego_od_najstarszej_da
         Order("#7004", worker="adrian.testowy", day=date(2026, 9, 9)),
         Order("#7005", worker="zenon.testowy", day=date(2026, 9, 7)),
     ]
-    with atrapa_efenix([order.in_efenix(f"90{index}") for index, order in enumerate(orders)]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, orders)
-        searched = atrapa.searched()
+    efenix = StanEfenix([order.in_efenix(f"90{index}") for index, order in enumerate(orders)])
+    outcome = _price_in_process(tmp_path, efenix, orders)
 
-    assert (outcome.result, searched) == ("OK", ["7004", "7002", "7003", "7005", "7001"])
+    assert (outcome.result, efenix.searched()) == ("OK", ["7004", "7002", "7003", "7005", "7001"])
 
 
 def test_kazda_niezgodnosc_z_efenix_to_blad_zlecenia_z_powodem_a_proces_idzie_dalej(tmp_path: Path) -> None:
@@ -1331,43 +1326,42 @@ def test_plik_bez_naglowka_kolumny_wyceny_albo_z_wykonawca_poza_h17_zatrzymuje_w
     assert (_stop(outcome), outcome.ending.message.what.startswith(missing), requested) == (code, True, [])
 
 
-def test_numer_zl_liczba_niecalkowita_to_numer_z_czescia_ulamkowa_a_nie_numer_innego_zlecenia(tmp_path: Path, page: Page) -> None:
+def test_numer_zl_liczba_niecalkowita_to_numer_z_czescia_ulamkowa_a_nie_numer_innego_zlecenia(tmp_path: Path) -> None:
     """``NUMER ZL.`` liczbą całkowitą to numer bez ``.0``, a liczba z częścią ułamkową to numer z nią: zlecenie 9122 z
     efenix nie jest zleceniem z ``9122.5`` w Pliku zbiorczym, więc tego numeru efenix nie zna."""
 
     whole = Order("#9121", cells={"F": 9121.0})
     fraction = Order("#9122", cells={"F": 9122.5})
-    with atrapa_efenix([whole.in_efenix("912"), fraction.in_efenix("913")]) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, [whole, fraction])
-        searched = atrapa.searched()
+    efenix = StanEfenix([whole.in_efenix("912"), fraction.in_efenix("913")])
+    outcome = _price_in_process(tmp_path, efenix, [whole, fraction])
 
-    assert (searched, _errors(outcome)) == (["9121", "9122.5"], [("EFENIX_NIEZNANY_NUMER", "wiersz 19")])
+    assert (efenix.searched(), _errors(outcome)) == (["9121", "9122.5"], [("EFENIX_NIEZNANY_NUMER", "wiersz 19")])
 
 
 @pytest.mark.parametrize(
     ("expire_after", "searched", "kept"),
     [
         pytest.param(None, [], False, id="przed-szukaniem"),
-        pytest.param((ORDER_PAGE, 0), ["9201"], False, id="przy-otwarciu-pierwszego-zlecenia"),
+        pytest.param((Action.OPEN, 0), ["9201"], False, id="przy-otwarciu-pierwszego-zlecenia"),
         # Szukanie bez sesji efenix nie przekierowuje, tylko odpowiada samym ostrzeżeniem o wygasłej sesji (#828).
-        pytest.param((SEARCH, 1), ["9201", "9202"], True, id="przy-szukaniu"),
+        pytest.param((Action.SEARCH, 1), ["9201", "9202"], True, id="przy-szukaniu"),
         # Strona pierwszego zlecenia otwiera się trzy razy: przy otwarciu, po dacie wykonania i po Wycenie Emmetta.
-        pytest.param((ORDER_PAGE, 3), ["9201", "9202"], True, id="przy-otwarciu-zlecenia"),
-        pytest.param((SET_DATE, 1), ["9201", "9202"], True, id="przy-dacie-wykonania"),
-        pytest.param((LOAD_EMMETT, 1), ["9201", "9202"], True, id="przy-wycenie-emmetta"),
-        pytest.param((SAVE_QUANTITY, 1), ["9201", "9202"], True, id="przy-zapisie-ilości"),
+        pytest.param((Action.OPEN, 3), ["9201", "9202"], True, id="przy-otwarciu-zlecenia"),
+        pytest.param((Action.DATE, 1), ["9201", "9202"], True, id="przy-dacie-wykonania"),
+        pytest.param((Action.EMMETT, 1), ["9201", "9202"], True, id="przy-wycenie-emmetta"),
+        pytest.param((Action.QUANTITY, 1), ["9201", "9202"], True, id="przy-zapisie-ilości"),
     ],
 )
 def test_wylogowanie_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_komunikat_mowi_czy_cos_zmienila(
-    tmp_path: Path, page: Page, expire_after: tuple[str, int] | None, searched: list[str], kept: bool
+    tmp_path: Path, expire_after: tuple[Action, int] | None, searched: list[str], kept: bool
 ) -> None:
     orders = [Order(f"#920{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2, 3)]
-    with atrapa_efenix([order.in_efenix(f"90{index}") for index, order in enumerate(orders)], expire_after=expire_after) as atrapa:
-        if expire_after is None:
-            atrapa.expire_session()
-        outcome = _price(tmp_path, page, atrapa.url, orders)
+    efenix = StanEfenix([order.in_efenix(f"90{index}") for index, order in enumerate(orders)], expire_after=expire_after)
+    if expire_after is None:
+        efenix.expire_session()
+    outcome = _price_in_process(tmp_path, efenix, orders)
 
-        assert (_stop(outcome), atrapa.searched(), _kept(outcome)) == ("EFENIX_WYLOGOWANY", searched, kept)
+    assert (_stop(outcome), efenix.searched(), _kept(outcome)) == ("EFENIX_WYLOGOWANY", searched, kept)
 
 
 def test_wylogowanie_w_odpowiedzi_na_date_wykonania_zatrzymuje_wycene_bez_ponownego_otwarcia_zlecenia(tmp_path: Path, page: Page) -> None:
@@ -2263,12 +2257,11 @@ def test_metryki_wyceny_licza_zlecenia_gotowe_bledy_ostrzezenia_emmetta_i_pomini
     )
 
 
-def test_znacznik_efenix_staje_tylko_w_adresie_gotowych_zlecen_a_reszta_pliku_zostaje_bajt_w_bajt(tmp_path: Path, page: Page) -> None:
+def test_znacznik_efenix_staje_tylko_w_adresie_gotowych_zlecen_a_reszta_pliku_zostaje_bajt_w_bajt(tmp_path: Path) -> None:
     orders = _marking_orders()
     source = write_collective_file(tmp_path, orders)
     parts, looks, amounts = _parts(source), _address_looks(source), _amounts(source)
-    with atrapa_efenix(_marking_efenix(orders)) as atrapa:
-        outcome = _run(source, page, atrapa.url)
+    outcome = _run_in_process(source, StanEfenix(_marking_efenix(orders)))
 
     assert (outcome.result, _figures(outcome)) == ("WYMAGA_SPRAWDZENIA", _figures_of(5, 2, warnings=1, photos=1))
     assert _address_fills(source) == {18: READY_RGB, 19: READY_RGB, 20: None, 21: None, 22: None, 23: YELLOW}
@@ -2293,20 +2286,17 @@ def test_znacznik_efenix_staje_tylko_w_adresie_gotowych_zlecen_a_reszta_pliku_zo
     assert (counts[b"fills"] - original[b"fills"], counts[b"cellXfs"] - original[b"cellXfs"]) == (1, 2)
 
 
-def test_nastepny_przebieg_na_pliku_ze_znacznikami_czyta_kwoty_au_ma_te_same_gotowe_i_niczego_nie_zmienia(
-    tmp_path: Path, page: Page
-) -> None:
+def test_nastepny_przebieg_na_pliku_ze_znacznikami_czyta_kwoty_au_ma_te_same_gotowe_i_niczego_nie_zmienia(tmp_path: Path) -> None:
     """Drugi przebieg nie ma czego dopisać: błąd kwoty (wiersz 20) i Ostrzeżenie Emmetta (wiersz 21) wracają takie same,
     gotowe wiersze mają już Znaczniki, a w efenix i w Pliku zbiorczym nic się nie zmienia (#767)."""
 
     orders = _marking_orders()
     source = write_collective_file(tmp_path, orders)
-    with atrapa_efenix(_marking_efenix(orders)) as atrapa:
-        first = _run(source, page, atrapa.url)
-        assert _figures(first) == _figures_of(5, 2, warnings=1, photos=1)
-        marked, saved, state, requests = source.read_bytes(), source.stat().st_mtime_ns, atrapa.state(), len(atrapa.requested())
-        second = _run(source, _next_tab(page), atrapa.url)
-        after, again = atrapa.state(), atrapa.requested()[requests:]
+    efenix = StanEfenix(_marking_efenix(orders))
+    first = _run_in_process(source, efenix)
+    assert _figures(first) == _figures_of(5, 2, warnings=1, photos=1)
+    marked, saved, state, changes = source.read_bytes(), source.stat().st_mtime_ns, efenix.state(), _changes(efenix)
+    second = _run_in_process(source, efenix)
 
     assert (_figures(second), _marked(source), _amounts(source)[18]) == (_figures_of(5, 2, warnings=1, photos=1), [18, 19], _au({"012": 1}))
     assert [error for error in _errors(second) if error[1] in {"wiersz 20", "wiersz 21"}] == [
@@ -2315,7 +2305,7 @@ def test_nastepny_przebieg_na_pliku_ze_znacznikami_czyta_kwoty_au_ma_te_same_got
     ]
     # Plik ze wszystkimi Znacznikami nie jest zapisywany od nowa, więc OneDrive nie dostaje nowej wersji.
     assert (source.read_bytes() == marked, source.stat().st_mtime_ns == saved) == (True, True)
-    assert (after == state, set(again) <= READING) == (True, True)
+    assert (efenix.state() == state, _changes(efenix) == changes) == (True, True)
 
 
 def test_kolejne_uruchomienie_oznacza_nowe_gotowe_zlecenie_wypelnieniem_i_stylem_z_poprzedniego(
@@ -2404,16 +2394,20 @@ PRICED_SHAPES = {
 Znaczników."""
 
 
-@pytest.mark.parametrize("shape", PRICED_SHAPES.values(), ids=PRICED_SHAPES.keys())
 @pytest.mark.parametrize(
-    ("extra", "ending"),
+    ("shape", "extra", "ending"),
     [
-        pytest.param(0, ("BLAD_KRYTYCZNY", "rozliczenia.workbook_parts.UnsupportedShape"), id="gotowe-zlecenie"),
-        pytest.param(1, ("WYMAGA_SPRAWDZENIA", None), id="bez-gotowych-zlecen"),
+        *(
+            pytest.param(shape, 0, ("BLAD_KRYTYCZNY", "rozliczenia.workbook_parts.UnsupportedShape"), id=f"gotowe-zlecenie-{name}")
+            for name, shape in PRICED_SHAPES.items()
+        ),
+        # Bez gotowych zleceń zapis Znaczników wraca, zanim przeczyta którąkolwiek część pliku. Relację skoroszytu czyta
+        # pierwszą, bo z niej bierze ścieżki reszty części, więc ten kształt pada przy każdym późniejszym powrocie.
+        pytest.param(PRICED_SHAPES["bez-relacji-skoroszytu"], 1, ("WYMAGA_SPRAWDZENIA", None), id="bez-gotowych-zlecen"),
     ],
 )
 def test_wycena_pliku_w_ksztalcie_ktorego_zapis_znacznikow_nie_przenosi_to_blad_kodu_bez_zmiany_pliku(
-    tmp_path: Path, page: Page, shape: Callable[[dict[str, bytes]], dict[str, bytes]], extra: int, ending: tuple[str, str | None]
+    tmp_path: Path, shape: Callable[[dict[str, bytes]], dict[str, bytes]], extra: int, ending: tuple[str, str | None]
 ) -> None:
     """Gotowe zlecenie w pliku, którego kształtu zapis Znaczników nie przenosi: Uruchomienie kończy się błędem kodu, a
     ślad wywołań w Logach Uruchomienia mówi Maksowi, że to kształt pliku (``UnsupportedShape``), nie inny błąd. Plik
@@ -2423,8 +2417,7 @@ def test_wycena_pliku_w_ksztalcie_ktorego_zapis_znacznikow_nie_przenosi_to_blad_
     order = Order("#7451", cells={"O": 1}, amount=_au({"012": 1}) + extra, quantities={"012": 1})
     source = _shaped(tmp_path, order, shape)
     before = source.read_bytes()
-    with atrapa_efenix([order.in_efenix("751")]) as atrapa:
-        outcome = _run(source, page, atrapa.url)
+    outcome = _run_in_process(source, StanEfenix([order.in_efenix("751")]))
 
     trace = outcome.ending.trace if isinstance(outcome.ending, Stop) else None
     assert (outcome.result, trace and trace.exception_type, source.read_bytes() == before) == (*ending, True), _ending(outcome)
@@ -2519,7 +2512,7 @@ def _read_only_folder(source: Path) -> Iterator[Callable[[], None]]:
     ],
 )
 def test_plik_ktorego_nie_da_sie_oznaczyc_daje_komunikat_a_ponowne_uruchomienie_stawia_znaczniki_bez_zmian_w_efenix(
-    tmp_path: Path, page: Page, obstacle: Callable[[Path], AbstractContextManager[Callable[[], None]]], code: str
+    tmp_path: Path, obstacle: Callable[[Path], AbstractContextManager[Callable[[], None]]], code: str
 ) -> None:
     orders = [
         Order("#7801", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}),
@@ -2527,15 +2520,14 @@ def test_plik_ktorego_nie_da_sie_oznaczyc_daje_komunikat_a_ponowne_uruchomienie_
         Order("#7803", cells={"O": 1}, amount=_au({"012": 1}) + 5),
     ]
     source = write_collective_file(tmp_path, orders)
-    with atrapa_efenix([order.in_efenix(f"78{index}") for index, order in enumerate(orders)]) as atrapa:
-        with obstacle(source) as meanwhile:
-            stopped = _run(source, page, atrapa.url, meanwhile=meanwhile)
-            unmarked = source.read_bytes()
-            assert (_stop(stopped), _marked(source)) == (code, [])
-        priced, requests = atrapa.state(), len(atrapa.requested())
-        assert source.read_bytes() == unmarked
-        again = _run(source, _next_tab(page), atrapa.url)
-        after, repeated = atrapa.state(), atrapa.requested()[requests:]
+    efenix = StanEfenix([order.in_efenix(f"78{index}") for index, order in enumerate(orders)])
+    with obstacle(source) as meanwhile:
+        stopped = _run_in_process(source, efenix, meanwhile=meanwhile)
+        unmarked = source.read_bytes()
+        assert (_stop(stopped), _marked(source)) == (code, [])
+    priced, changes = efenix.state(), _changes(efenix)
+    assert source.read_bytes() == unmarked
+    again = _run_in_process(source, efenix)
 
     assert {order.number: (order.quantities, order.execution_date, order.emmett_loads) for order in priced[0]} == {
         "7801": ({"012": 1}, DAY, 0),
@@ -2543,18 +2535,18 @@ def test_plik_ktorego_nie_da_sie_oznaczyc_daje_komunikat_a_ponowne_uruchomienie_
         "7803": ({"012": 1}, DAY, 1),
     }
     assert (again.result, _figures(again), _marked(source)) == ("WYMAGA_SPRAWDZENIA", _figures_of(3, 2), [18, 19])
-    assert (after == priced, set(repeated) <= READING) == (True, True)
+    assert (efenix.state() == priced, _changes(efenix) == changes) == (True, True)
 
 
 @pytest.mark.parametrize(
     ("expire_after", "marked"),
     [
-        pytest.param((SAVE_QUANTITY, 1), [18], id="po-pierwszym-gotowym"),
-        pytest.param((SAVE_QUANTITY, 0), [], id="przed-pierwszym-gotowym"),
+        pytest.param((Action.QUANTITY, 1), [18], id="po-pierwszym-gotowym"),
+        pytest.param((Action.QUANTITY, 0), [], id="przed-pierwszym-gotowym"),
     ],
 )
 def test_zatrzymanie_w_polowie_przebiegu_oznacza_zlecenia_gotowe_przed_nim(
-    tmp_path: Path, page: Page, expire_after: tuple[str, int], marked: list[int]
+    tmp_path: Path, expire_after: tuple[Action, int], marked: list[int]
 ) -> None:
     """Po Zatrzymaniu proces stawia Znaczniki efenix gotowym zleceniom, a postęp mówi to tak jak po ostatnim zleceniu:
     ostatni krok Zapisywania to Znaczniki efenix, nie zlecenie, przy którym okno stanęło."""
@@ -2562,8 +2554,8 @@ def test_zatrzymanie_w_polowie_przebiegu_oznacza_zlecenia_gotowe_przed_nim(
     orders = [Order(f"#790{index}", cells={"O": 1}, amount=_au({"012": 1})) for index in (1, 2, 3)]
     source = write_collective_file(tmp_path, orders)
     unmarked = source.read_bytes()
-    with atrapa_efenix([order.in_efenix(f"79{index}") for index, order in enumerate(orders)], expire_after=expire_after) as atrapa:
-        outcome = _run(source, page, atrapa.url)
+    efenix = StanEfenix([order.in_efenix(f"79{index}") for index, order in enumerate(orders)], expire_after=expire_after)
+    outcome = _run_in_process(source, efenix)
 
     assert (_stop(outcome), _marked(source)) == ("EFENIX_WYLOGOWANY", marked)
     assert (source.read_bytes() == unmarked) == (not marked)
@@ -3675,11 +3667,10 @@ def test_plik_zbiorczy_otwarty_w_excelu_zatrzymuje_wycene_zanim_otworzy_efenix(
     assert [phase for phase, state in outcome.progress.phase_states.items() if state is PhaseState.FAILED] == [failed]
 
 
-def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pracownika_bez_nich(tmp_path: Path, page: Page) -> None:
+def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pracownika_bez_nich(tmp_path: Path) -> None:
     orders = _marking_orders()
     source = write_collective_file(tmp_path, orders)
-    with atrapa_efenix(_marking_efenix(orders)) as atrapa:
-        _run(source, page, atrapa.url)
+    _run_in_process(source, StanEfenix(_marking_efenix(orders)))
     template = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(template)
     assert _marked(source) == [18, 19]
