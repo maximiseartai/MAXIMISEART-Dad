@@ -21,6 +21,7 @@ from tests.fixtures.git_repo import commit, copy_files, repository, with_imports
 from tests.fixtures.potomne import wait_for
 
 import repo
+from skille_dla_zmiany import WHAT_NEXT
 
 HOOK = Path(__file__).resolve().parents[1] / "tools" / "hooks" / "pre-push"
 WORK_IN_PROGRESS = HOOK.parents[1] / "praca_w_toku.py"
@@ -252,14 +253,17 @@ def _skills_lines(checkout: Path, changed: str) -> list[str]:
     pushed = _git(checkout, "push", "origin", f"HEAD:{BRANCH}")
 
     assert pushed.returncode == 0, pushed.stdout + pushed.stderr
-    return [line for line in (pushed.stdout + pushed.stderr).splitlines() if line.startswith("SKILLE VERIFY: ")]
+    return [line for line in (pushed.stdout + pushed.stderr).splitlines() if line.startswith(("SKILLE VERIFY: ", "CO DALEJ: "))]
 
 
-@pytest.mark.parametrize(("changed", "line"), [("kod/nowy.py", "SKILLE VERIFY: verify-kod"), ("inny.txt", "SKILLE VERIFY: brak")])
-def test_push_agenta_drukuje_skille_dla_zmiany(checkout: Path, changed: str, line: str) -> None:
+@pytest.mark.parametrize(
+    ("changed", "lines"),
+    [("kod/nowy.py", [WHAT_NEXT, "SKILLE VERIFY: verify-kod"]), ("inny.txt", ["SKILLE VERIFY: brak"])],
+)
+def test_push_agenta_drukuje_skille_dla_zmiany_i_co_dalej(checkout: Path, changed: str, lines: list[str]) -> None:
     _with_skills_for_change(checkout, main=True)
 
-    assert _skills_lines(checkout, changed) == [line]
+    assert _skills_lines(checkout, changed) == lines
 
 
 def test_push_agenta_bez_origin_main_drukuje_powod_nieznanych_skilli(checkout: Path) -> None:

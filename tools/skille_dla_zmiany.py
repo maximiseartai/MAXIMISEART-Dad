@@ -36,7 +36,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from kroki_skilli import Katalog, hits
-from ostatnie_linie import SKILLE_VERIFY
+from ostatnie_linie import CO_DALEJ, SKILLE_VERIFY
 from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
 from zakres_runu import Zdarzenie, zakres
@@ -46,7 +46,7 @@ AT_NIGHT = "LICZY NOC"
 SHOWN = 3
 # Co agent robi z wynikiem przed pushem: linia przed ``LICZY CI``, gdy jakiś skill obowiązuje.
 WHAT_NEXT = (
-    f"CO DALEJ: załaduj każdy skill z ostatniej linii i wykonaj workflow z jego SKILL.md. Polecenia z linii {IN_CI} liczy "
+    f"{CO_DALEJ}załaduj każdy skill z ostatniej linii i wykonaj workflow z jego SKILL.md. Polecenia z linii {IN_CI} liczy "
     f"CI na tym SHA, a skrypty z linii {AT_NIGHT} noc na main po merge'u: lokalnie uruchamiasz je tylko do odtworzenia "
     "czerwonego kroku CI albo issue nocy, albo przy pracy nad jedną funkcją. Resztę workflow (osąd modelu i zrzutów, "
     "prawdziwe Wzorce, Excel na Macu) robisz sam według sekcji „What CI runs and what stays local” w SKILL.md skilla. "

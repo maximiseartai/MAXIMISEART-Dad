@@ -55,6 +55,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Code in `src/` asks whether a file or folder is there only through `src/rozliczenia/file_state.py`. | `tests/test_zapadki.py::test_stan_pliku_w_src_tylko_przez_file_state` (boundary: docstring of `bare_file_state`) |
 | Code in `src/` keeps the response of every navigation of a browser tab. | `tests/test_zapadki.py::test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona` (boundary: docstring of `dropped_navigation`) |
 | `zip` takes `strict=True` when both sides must have the same length, `strict=False` only with a comment naming the check that already reports a different length, and successive pairs come from `itertools.pairwise`. | ruff `B905`, `RUF007` |
+| Tata's day is `datetime.now().astimezone().date()`, never the UTC day. | ruff `DTZ` (boundary: it does not tell a UTC day from tata's day, such as `datetime.now(timezone.utc).date()`; only review) |
 
 ## Test Surface
 
@@ -119,6 +120,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 
 | Rule | Guard |
 |---|---|
+| The UI never branches on a process name, outside the files `PROCESS_COMPARISON_FILES` lists with their reasons. | `npm run rules` (boundary: comment of rule 2 in `frontend/scripts/rules.mjs`) |
 | A text of the UI that a Komunikat quotes in „…” stands as that text in its frontend file listed in `UI_TEXTS`, and every other quote of a Komunikat has its reason in `QUOTES_OUTSIDE_UI`. | `tests/test_komunikaty_expect.py::test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum` (boundary: its docstring) |
 
 ## Documents and Claims
