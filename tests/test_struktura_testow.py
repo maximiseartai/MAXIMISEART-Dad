@@ -9,8 +9,10 @@ from __future__ import annotations
 import ast
 from collections.abc import Callable, Iterator
 from itertools import pairwise
+import os
 from pathlib import Path, PureWindowsPath
 import re
+import subprocess
 import sys
 
 import pytest
@@ -768,3 +770,29 @@ def test_straznik_nazw_watkow_zglasza_kopie_nazwy_z_kazdej_czytanej_postaci_w_te
     found = _thread_name_copies(_thread_names_in(tmp_path / "src"))
 
     assert [line.split(" (")[0] for line in found] == [f"{'tests/' if copy.startswith('test_') else ''}{copy}:1: 'watek-proby' to kopia nazwy wątku z src/"]
+
+
+def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
+    """Dowód braku fałszywych alarmów każdej formy każdej zapadki: z bazą w pustym drzewie gita każda linia ``tests/``
+    jest dodana, a zapadki przechodzą, więc żadna forma nie trafia w dzisiejszy, poprawny test.
+
+    Biegnie tu, a nie w ``tests/test_zapadki.py``, bo pomiar zapadek kładzie tamten plik na starych commitach, których
+    ``tests/`` miało jeszcze własne wyrocznie, a moduł testu niczego nie eksportuje, więc zapadki biegną osobnym pytest.
+    """
+
+    empty_tree = subprocess.run(
+        ["git", "hash-object", "-t", "tree", "--stdin"], cwd=TESTS.parent, input="", capture_output=True, text=True, check=True
+    ).stdout.strip()
+    environment = {name: value for name, value in os.environ.items() if not name.startswith("PYTEST_XDIST_")}
+
+    answered = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_zapadki.py"],
+        cwd=TESTS.parent,
+        env={**environment, "MAXIMISEART_ZAPADKA_BAZA": empty_tree},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert answered.returncode == 0, answered.stdout[-3000:]

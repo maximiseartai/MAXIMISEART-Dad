@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Final, Generic, Literal, Protocol, TypeGuard, TypeVar, get_args
+from typing import Any, Final, Generic, Literal, Protocol, TypeGuard, TypeVar, final, get_args
 
 from rozliczenia import preparation_messages
 from rozliczenia.centrum.contract import common as common_contract
@@ -38,7 +38,7 @@ from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
 from rozliczenia.order_facts import CollectiveOrders
 from rozliczenia.period_folder import PeriodStatus
-from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs, run_process
+from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.run_context import RunContext
@@ -371,21 +371,53 @@ class Engine(Protocol):
     ) -> Outcome[Any]: ...
 
 
-@dataclass(frozen=True)
+@final
+class _Catalog:
+    """Typ dowodu, że Uruchomienie gotowe do startu złożył katalog procesów (``_CATALOG``)."""
+
+    __slots__ = ()
+
+
+_CATALOG: Final = _Catalog()
+"""Dowód katalogu procesów: ``PreparedRun`` bez niego to błąd mypy (brak argumentu albo zły typ). Bierze go tylko
+``Catalog.prepared``: poza tym modułem i ``catalog.py`` (jedyny ``noqa``) ruff (``TID251`` w ``pyproject.toml``)
+odrzuca ``from … import _CATALOG`` (także z aliasem) i atrybut modułu (``process_kind._CATALOG``, także przez alias albo
+pełną ścieżkę), tak samo ``_Catalog``.
+
+``PreparedRun`` nie jest dataclassą, więc mypy odrzuca też ``dataclasses.replace`` gotowego Uruchomienia, np. z innym
+plikiem metryk (``type-var``), a przypisanie jego pola (``Final``). Łapie tylko te postacie: nie łapie
+``getattr(process_kind, "_CATALOG")``, wartości ``Any`` ani ``copy.copy`` gotowego Uruchomienia."""
+
+
+@final
 class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
     w efenix (``None``: proces bez trybów), ``engine``: silnik z katalogu (``run_process``; inny daje tylko wyrocznia
-    ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``). Powstaje tylko w ``Catalog.prepared``.
+    ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``). Powstaje tylko w ``Catalog.prepared``
+    (``_CATALOG``).
     """
 
-    kind: ProcessKind[InputsT, SummaryT]
-    period: str
-    inputs: InputsT
-    context: RunContext
-    metrics: MetricsStore
-    pricing: runs_contract.Pricing | None = None
-    engine: Engine = run_process
+    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing")
+
+    def __init__(
+        self,
+        kind: ProcessKind[InputsT, SummaryT],
+        period: str,
+        inputs: InputsT,
+        context: RunContext,
+        metrics: MetricsStore,
+        pricing: runs_contract.Pricing | None,
+        engine: Engine,
+        proof: _Catalog,
+    ) -> None:
+        self.kind: Final = kind
+        self.period: Final = period
+        self.inputs: Final = inputs
+        self.context: Final = context
+        self.metrics: Final = metrics
+        self.pricing: Final = pricing
+        self.engine: Final = engine
 
     @property
     def dry_run(self) -> bool:

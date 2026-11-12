@@ -160,6 +160,14 @@ extend-select = [
 # Mypy w CI sprawdza kod dla Windows i dla macOS/Linuksa, ale gałąź pod os.name widzi na obu, więc
 # odrzuca w niej API drugiego systemu (os.killpg, signal.SIGKILL w f7a2261 i d0008d3).
 "os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
+# Prywatny dowód modułu w konstruktorze typu (wzór run_logs_guard._MINTED): bez niego mypy odrzuca wywołanie, a ruff
+# odrzuca import dowodu i jego atrybut modułu poza modułem, który go zna (getattr z napisem nie).
+"rozliczenia.centrum.refusal._CATALOG".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.refusal._Catalog".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.refusal._refused".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
+"rozliczenia.centrum.process_kind._CATALOG".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
+"rozliczenia.centrum.process_kind._Catalog".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
+"rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
 
 [tool.mypy]
 # API biblioteki standardowej sprawdzane dla najstarszego Pythona z requires-python, nie dla tego, którym biegnie mypy.
