@@ -67,7 +67,7 @@ ASK_RULE = {
 RM_CHECK = _request("bypassPermissions") | {
     "permission_suggestions": [{"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "rm -f logi/*"}]}]
 }
-# Komunikat odmowy, który agent dostaje zamiast pytania, cały: wiersz reguły w AGENTS.md odsyła do niego, więc każde
+# Komunikat odmowy, który agent dostaje zamiast pytania, cały: to jedyne miejsce, w którym agent poznaje regułę, więc każde
 # jego zdanie jest obietnicą, a sprawdzenie samych fragmentów przepuszczało zdania o odwrotnym sensie.
 EXPECTED_MESSAGE = (
     "Claude Code zatrzymałby to polecenie Basha na zgodzie człowieka, a agent w trybie bypass nie czeka na zgodę, "

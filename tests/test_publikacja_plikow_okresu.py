@@ -198,7 +198,7 @@ def test_rozjazd_kroku_zapisu_skoroszytu_sprawdzenie_tylko_ostrzega_takze_w_ci(m
 
 def test_przyjete_ryzyko_ktorego_nie_pokazal_zakres_z_jego_after_wywraca_werdykt() -> None:
     """Przyjęte ryzyko ADR 0005 występuje zawsze po obu zakresach (``after``): zakres, który przeszedł do końca bez niego,
-    daje ``ZNALEZISKO ZNIKNĘŁO`` i kod 1, bo wpis przestał opisywać kod (docs/agents/skille.md, wpisy eksploratorów)."""
+    daje ``ZNALEZISKO ZNIKNĘŁO`` i kod 1, bo wpis przestał opisywać kod (``Excuse`` w ``tools/lib/eksplorator.py``)."""
 
     explorer = _load_explorer()
     report = explorer.ScopeReport(explorer.SCOPES["jedno-uruchomienie"], schedules=1, undisturbed_successes=1)

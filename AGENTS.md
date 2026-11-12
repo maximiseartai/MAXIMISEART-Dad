@@ -7,7 +7,7 @@
 - Model domeny i reguły procesu: przeczytaj [`GLOSSARY.md`](GLOSSARY.md) oraz właściwe ADR-y w [`docs/adr/`](docs/adr/).
 - Tytuł i opis PR: napisz według skilla [`.agents/skills/pr/SKILL.md`](.agents/skills/pr/SKILL.md), także zamiast osobistego `/pr`, a gdy wzorowi czegoś brakuje, dopisz to do skilla.
 - Przegląd PR: zanim zlecisz przegląd, użyj skilla [`przeglad`](.agents/skills/przeglad/SKILL.md) w trybie autora, a zanim napiszesz werdykt, w trybie recenzenta.
-- Skille: przeczytaj [`docs/agents/skille.md`](docs/agents/skille.md) przed pushem i przed utworzeniem albo zmianą skilla.
+- Skille: przeczytaj [`docs/agents/skille.md`](docs/agents/skille.md) przed utworzeniem albo zmianą skilla.
 - Wydajność i środowisko taty: przy pomiarach wydajności albo decyzjach zależnych od jego sprzętu lub OneDrive przeczytaj [`docs/agents/komputer-taty.md`](docs/agents/komputer-taty.md).
 - Uruchamianie narzędzia przez człowieka: użyj [`README.md`](README.md).
 - Issues i specyfikacje: użyj [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
@@ -58,10 +58,5 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 
 Przy poprawce operatora i Ważnym z przeglądu nazwij korzeń, czyli co skłoniło agenta (skopiowany najbliższy przykład, druga droga do tego samego, brak typu albo właściciela, instrukcja), i napraw go na najwyższym szczeblu, który działa: (a) usuń drugą drogę i stare przykłady, daj jednego właściciela; (b) typ, z którym zła droga nie przechodzi mypy, albo reguła ruff (`banned-api` z `msg` „użyj X”); (c) test zachowania; (d) dopiero zapadka w `tests/test_zapadki.py`, która pada tylko na dodanych liniach (warunki w `CODING_STANDARDS.md`).
 Zakaz ruff albo mypy z (b) nie zastępuje testu, który szuka nazwy w kodzie, dopóki dla tej reguły wolno `noqa` albo `type: ignore`, więc test usuń dopiero, gdy zamiennik łapie każdą formę, którą test łapał (#1371).
-Wiersz tabeli dopisz tylko z nowym strażnikiem, którego komunikat nie mówi już tej reguły, w dokumencie reguły (kod i testy: `CODING_STANDARDS.md` po angielsku; proces: ten plik, `docs/agents/pr-i-ci.md` albo `docs/agents/skille.md`); regułę z osądem zostaw zdaniem dla recenzenta, a wiersz, którego błąd nie może się już zdarzyć, usuń.
+Regułę i drogę naprawy mówi komunikat strażnika (asercja testu, `msg` w `banned-api`, odmowa hooka albo narzędzia), a wiersz tabeli dopisz tylko z nowym strażnikiem, którego komunikat nie mówi już tej reguły albo który nie łapie każdej jej formy (granica w jego docstringu), w dokumencie reguły (kod i testy: `CODING_STANDARDS.md` po angielsku; proces: `docs/agents/pr-i-ci.md` albo `docs/agents/skille.md`); regułę z osądem zostaw zdaniem dla recenzenta, a wiersz, którego błąd nie może się już zdarzyć, usuń.
 Wyjątek zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` i `known()` w `tests/fixtures/fakt_domeny.py`).
-
-| Reguła | Co jej pilnuje |
-|---|---|
-| Agent nie kończy tury, dopóki w tle jego sesji biegnie polecenie Basha z `run_in_background` albo jego Monitor: czeka na jego koniec na pierwszym planie (w T3 `t3_background_wait`) albo zatrzymuje je i robi tę pracę Bashem na pierwszym planie, a hook przepuszcza i zapisuje w `~/.cache/maximiseart/praca_w_tle.jsonl` wątpliwość i każde zadanie typu `monitor`, bo ten typ ma też obserwacja artefaktu, którą Claude Code włącza sam po publikacji; po aktualizacji Claude Code uruchom `tools/wyrocznia_pracy_w_tle.py`. | hook `Stop` `tools/hooks/praca_w_tle.py` (`.claude/settings.json`), `tests/test_praca_w_tle.py` |
-| Agent w trybie bypass nie czeka na zgodę człowieka na polecenie Basha: gdy Claude Code by o nią zapytał (kontrola `rm`, której nie zdejmuje `permissions.allow`, albo reguła `permissions.ask`), od razu oddaje mu odmowę z poprawką, którą podaje komunikat hooka; po aktualizacji Claude Code uruchom `tools/wyrocznia_zgody.py`. | hook `PermissionRequest` `tools/hooks/zgoda.py` (`.claude/settings.json`), `tests/test_zgoda.py` |

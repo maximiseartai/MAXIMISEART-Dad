@@ -16,7 +16,9 @@ def test_numery_plikow_adr_sa_unikalne() -> None:
     numbers = Counter(_number(path) for path in ADR_DIRECTORY.glob("*.md"))
 
     assert numbers
-    assert {number: count for number, count in numbers.items() if count > 1} == {}
+    assert {number: count for number, count in numbers.items() if count > 1} == {}, (
+        "numer ADR jest unikalny: nadaj nowemu plikowi następny wolny numer i popraw odsyłacze do niego"
+    )
 
 
 def test_naglowek_adr_ma_numer_pliku() -> None:
@@ -24,4 +26,4 @@ def test_naglowek_adr_ma_numer_pliku() -> None:
 
     assert {
         path.name: heading for path, heading in headings.items() if not heading.startswith(f"# ADR {_number(path)}:")
-    } == {}
+    } == {}, "pierwsza linia ADR to „# ADR <numer z nazwy pliku>: <tytuł>”: popraw nagłówek albo numer w nazwie pliku"

@@ -19,6 +19,7 @@ from tests.fixtures.git_repo import commit, copy_files, git, with_imports
 
 import kroki_skilli
 import repo
+import skille_dla_zmiany
 import wplyw_zmiany
 import zakres_runu
 
@@ -103,7 +104,7 @@ def test_zmiana_wskazuje_skille_ktorych_glob_albo_folder_obejmuje_zmieniony_plik
     result = _run(tmp_path, base)
 
     assert _skills(result) == skills
-    assert result.stdout.splitlines()[:-1] == ([reason] if reason else [])
+    assert result.stdout.splitlines()[:-1] == ([reason, skille_dla_zmiany.WHAT_NEXT] if reason else [])
 
 
 def test_zmiana_bez_commitu_nowy_plik_i_przeniesienie_poza_glob_wskazuja_skill(tmp_path: Path) -> None:
@@ -161,6 +162,7 @@ def test_wiele_plikow_jednego_skilla_skraca_powod(tmp_path: Path) -> None:
 
     assert result.stdout.splitlines() == [
         "verify-a: src/a/plik0.py (src/a/*), src/a/plik1.py (src/a/*), src/a/plik2.py (src/a/*) i 2 innych",
+        skille_dla_zmiany.WHAT_NEXT,
         f"{VERDICT}verify-a",
     ]
 
@@ -180,8 +182,12 @@ def test_skill_z_poleceniami_w_ci_zostaje_w_skillach_verify_a_liczy_ci_wymienia_
 
     result = _run(tmp_path, base)
 
-    assert _skills(result) == ["verify-a", "verify-mac", "verify-zly"]
-    assert result.stdout.splitlines()[-2] == "LICZY CI: verify-a (narzedzie.py --wszystko)"
+    rule = (
+        "skill, którego polecenia liczy CI, dalej obowiązuje dla zmiany (SKILLE VERIFY), a jego polecenia z CI "
+        "wymienia linia LICZY CI"
+    )
+    assert _skills(result) == ["verify-a", "verify-mac", "verify-zly"], rule
+    assert result.stdout.splitlines()[-2] == "LICZY CI: verify-a (narzedzie.py --wszystko)", rule
 
 
 MUTATION_SCRIPT = "MUTATIONS = ()\nif __name__ == '__main__':\n    print('MUTACJE OK')\n"
@@ -357,7 +363,10 @@ def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(
     }
 
     assert "tools/lib/atrapy/pliki_taty.py" in atrapy
-    assert sorted(atrapy - kroki_skilli.hits(folder, atrapy).files.keys()) == [], f"dopisz te atrapy do pilnuje: {skill}"
+    assert sorted(atrapy - kroki_skilli.hits(folder, atrapy).files.keys()) == [], (
+        f"skrypty skilla {skill} importują te atrapy z tools/lib/atrapy/, więc zmiana atrapy musi wybrać skill: dopisz je "
+        "do pilnuje: tego skilla (a więc i do paths workflow Windows)"
+    )
 
 # Zdanie, które każe uruchomić coś przed oddaniem pracy albo pushem.
 BEFORE_PUSH = re.compile(r"before (handing|you hand|pushing|you push|opening|you open)|przed (pushem|oddaniem)", re.IGNORECASE)
@@ -441,7 +450,7 @@ def test_skill_z_poleceniami_w_ci_mowi_co_liczy_ci_a_co_zostaje_lokalnie() -> No
 
 
 def test_agents_md_nie_wymienia_skilli_verify() -> None:
-    """``AGENTS.md`` i pliki ``docs/agents/``, do których odsyła przed pushem, nie wymieniają skilli ``verify-*``."""
+    """``AGENTS.md`` i pliki ``docs/agents/``, do których odsyła, nie wymieniają skilli ``verify-*``."""
 
     documents = (ROOT / "AGENTS.md", ROOT / "docs" / "agents" / "pr-i-ci.md", ROOT / "docs" / "agents" / "skille.md")
     agents = "\n".join(path.read_text(encoding="utf-8") for path in documents)
@@ -488,7 +497,7 @@ def _background_without_waiting(text: str) -> list[str]:
 
 
 def test_skill_kaze_czekac_na_polecenie_w_tle_w_tej_samej_turze() -> None:
-    """Zdanie ``SKILL.md`` o tle każe czekać na koniec polecenia w tej samej turze (``AGENTS.md``, hook ``praca_w_tle.py``).
+    """Zdanie ``SKILL.md`` o tle każe czekać na koniec polecenia w tej samej turze (hook ``Stop`` ``tools/hooks/praca_w_tle.py``).
 
     Granica: zdanie o tle w kodzie, w tabeli, w pliku ``features/`` skilla i inne słowa niż „background” łapie tylko
     przegląd.
@@ -501,7 +510,7 @@ def test_skill_kaze_czekac_na_polecenie_w_tle_w_tej_samej_turze() -> None:
     }
 
     assert found == {}, (
-        "Polecenie w tle: każ w tym samym zdaniu czekać na jego koniec „in the same turn” (AGENTS.md), "
+        "Polecenie w tle: każ w tym samym zdaniu czekać na jego koniec „in the same turn” (hook Stop tools/hooks/praca_w_tle.py), "
         "a nie oddać turę i czekać na powiadomienie; polecenie do 600 s uruchom na pierwszym planie."
     )
 

@@ -7,14 +7,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 - Co biegnie na swojej gałęzi, drukuje `.venv/bin/python tools/plan_ci.py plan --baza origin/main` (Windows: `py -3 tools/plan_ci.py plan --baza origin/main`).
   Linia `PLAN CI` podaje źródło plików (`wybór <n> plików` albo `FULL (<pliki>)`), a linie `WYBRANY` i `POMINIĘTY` kroki skilli z powodem.
-
-## Change mutations
-
-- Issue `Przeżyte mutacje z #N` naprawiasz testem, który zabija mutację (dowód z `tools/mutacje.py`), albo linią `MUTACJA <plik>:<linia> <opis> | nie warto, bo <powód>`, a potem je zamykasz.
-  Mutację bez werdyktu albo z przekroczonym czasem testów najpierw uruchamiasz `tools/mutacje.py`, a gdy test już ją wykrywa, odpowiadasz linią `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`.
-  Issue skryptu skilla naprawiasz poprawką sprawdzenia skilla albo tabeli mutacji, albo linią `SKRYPT <skrypt> | nie warto, bo <powód>`.
-  Linię `CZAS BLISKO LIMITU` naprawiasz, przenosząc mutację do mniejszego zakresu sprawdzenia albo przyspieszając sprawdzenie, albo odpowiadasz `CZAS BLISKO LIMITU <skrypt> | <mutacja> | nie warto, bo <powód>`.
-- Czerwoną część nocy odtwarzasz na commicie runu: `git checkout --detach <headSha runu>` i `.venv/bin/python tools/mutacje_zmiany.py --baza <baza z planu> --do <do z planu> --czesc K/N --odtwarzam <run>`.
+- Do bramki PR dokładasz tylko to, co złapałoby defekt, który przez nią przeszedł, z dowodem z backtestu.
 
 ## Zadanie CI padło
 
@@ -28,10 +21,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 ## Status `scalenie z main`
 
-- Status `scalenie z main` na HEAD PR mówi, czy scalenie PR z obecnym `main` przechodzi bez konfliktu, ruff i mypy dla obu systemów (`tools/ci/status_scalenia.py` w workflow `scalenia.yml`, po każdym pushu do `main`).
-- Ruleset go nie wymaga, więc gotowość PR od niego nie zależy, choć `gh pr checks` kończy się kodem 1, gdy jest czerwony.
-- `failure` znaczy, że PR trzeba zaktualizować z `origin/main` i poprawić, a opis statusu nazywa pliki z konfliktem albo kroki, które padły.
-- `error` z „sam nie przechodzi” znaczy, że czerwony jest `main`, nie PR.
+- Status (`tools/ci/status_scalenia.py`) mówi w opisie, co zrobić, a ruleset go nie wymaga, więc gotowość PR od niego nie zależy, choć `gh pr checks` kończy się kodem 1, gdy jest czerwony.
 - Brak statusu znaczy, że `main` nie zmienił się od pushu PR albo przebieg jeszcze trwa.
 
 ## Czerwony `main`
@@ -45,8 +35,6 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 | Reguła | Co jej pilnuje |
 |---|---|
-| Bramka PR uruchamia pytest na Windows 3.11 i Linux 3.14 na wyborze `tools/szybko.py` dla zmiany, a zmiana ścieżki z `Context.PR_GATE` (`tools/lib/wplyw_zmiany.py`) wybiera wszystkie pliki, E2E i straż czasu. | `tests/test_zakres_runu.py::test_bramka_pr_biegnie_na_windows_311_i_linuksie_z_wyborem_szybko_a_e2e_i_straz_czasu_tylko_przy_ich_zmianie` |
-| Do bramki PR dokładasz tylko to, co złapałoby defekt, który przez nią przeszedł, z dowodem z backtestu, a plan wzorcowych PR-ów L i C ponad limit testów, zadań albo prognozy ściany to decyzja Maksa. | limitu testów, zadań i prognozy ściany (+20%) pilnuje `tests/test_ksztalt_bramki.py`, a dowodu z backtestu tylko przegląd |
 | Trwający run `main` kończy się, a nowy push do PR anuluje run jego starszego commitu. | `tests/test_zadania_ci.py::test_push_do_main_nie_anuluje_trwajacego_runu_a_nowy_push_pr_anuluje_stary` |
 | Gotowość CI w `tools/scal_pr.py` liczy tylko najnowszy run workflow `CI` na HEAD PR (największy identyfikator runu z `detailsUrl`): gotowy jest, gdy ten run się skończył, a jego `Required CI status` przeszedł, więc po zamknięciu i otwarciu PR stare czerwone checki nie blokują merge'u, a trwający nowy run go blokuje. | `tests/test_scal_pr.py::test_gotowosc_ci_liczy_tylko_najnowszy_run_ci_na_head` |
 | `Required CI status` biegnie także w anulowanym runie, bo pominięty wymagany check przepuszcza merge. | `tests/test_zadania_ci.py::test_required_biegnie_takze_w_anulowanym_runie_bo_pominiety_wymagany_check_przepuszcza_merge` |

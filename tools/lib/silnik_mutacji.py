@@ -758,7 +758,10 @@ class NearLimit:
     def line(self) -> str:
         part = f" ({ZMIENNA_CZESCI}={self.part})" if self.part else ""
         near = f"CZAS BLISKO LIMITU: {self.script}{part}: {self.name} → {self.seconds} s z limitu --limit-s {self.limit_s:g} s"
-        return f"{near} (po nim PRZEKROCZONY CZAS: podziel zakres mutacji albo przyspiesz sprawdzenie)"
+        return (
+            f"{near} (po nim PRZEKROCZONY CZAS i czerwony main: to jeszcze nie porażka, ale przenieś mutację do mniejszego "
+            "zakresu sprawdzenia albo przyspiesz sprawdzenie; ostrzeżenie z nocy trafia raz do issue „Przeżyte mutacje skilli z #N”)"
+        )
 
     def record(self, key: str) -> dict[str, Any]:
         """Wpis ``blisko_limitu`` zapisu wykonania zadania planu CI: klucz kroku skilla ``key`` i pola ostrzeżenia."""
