@@ -32,6 +32,10 @@ limitu, więc mutacja, po której test pada, też potrafi go przekroczyć (#1339
 ostatnim przebiegu testów noc zgłasza w issue z dopiskiem, że nie dała jej werdyktu, a nie jako przeżytą. W narzędziu z
 wiersza poleceń, którego używa przegląd PR, oba są porażką.
 
+Noc nie robi mutacji (ani cofnięcia fragmentu do bazy), która zmienia tylko to, czego w czasie wykonania nic nie
+czyta: docstringi, ``__all__``, import nazwy czytanej tylko w adnotacjach i adnotacje, których nic nie wylicza (#1340,
+lista w ``--help`` ``tools/mutacje_zmiany.py``); adnotacje, które czytają pydantic, FastAPI, ``dataclasses`` albo test
+(pole publicznej dataclassy, trasa, walidator), dalej dają mutacje.
 Mutację, którą polecenie przepuściło (NIEWYKRYTA, PRZEKROCZONY CZAS), noc (poza cofnięciem fragmentu do bazy, które
 przywraca kod, który bramę przeszedł) i ``check_all`` skryptów skilli sprawdzają jeszcze bramą typów (``type_gate``):
 krokami ruff i mypy obu systemów bramy pre-push (``tools/ci_lokalnie.py --tylko ruff,mypy``) na kopii z mutacją, z

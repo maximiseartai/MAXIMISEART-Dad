@@ -32,8 +32,22 @@ zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. 
 inna mutacja (bez elementu krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia
 jej wyjątku (``Mutant.line``).
 
-Mutacja, która zmienia tylko docstringi, komentarze, adnotacje argumentów i wyników funkcji, importy albo aliasy
-typów (``Nazwa = Callable[...]``, ``A | B`` czytane tylko w adnotacjach), nie zmienia zachowania, więc jej nie ma.
+Mutacji (także cofnięcia fragmentu), która zmienia tylko to, czego w czasie wykonania nic nie czyta, nie ma (#1340):
+docstringi, komentarze, ``__all__`` (czyta je tylko ``from m import *``, którego nie wpuszcza ruff F403), import nazwy,
+której kod nie czyta poza adnotacjami, albo zmianę modułu, z którego nazwa przychodzi, i adnotacje, których nic nie
+wylicza: zmiennej w funkcji, argumentów i wyniku funkcji, a pod ``from __future__ import annotations`` zmiennej modułu,
+deklaracje w klasie ``Protocol`` (z parametrami metody bez ciała) i pola prywatnej klasy bez baz poza ``Generic`` (z
+dekoratorem najwyżej ``dataclass``), której nie nazywa adnotacja czytana w tym pliku; w pliku bez pydantic i FastAPI
+także aliasy typów (``Nazwa = Callable[...]``, ``A | B``) i ``TypeVar`` modułu czytane tylko w adnotacjach. W pliku z
+pydantic albo FastAPI zostają adnotacje funkcji z dekoratorem (trasa, ``field_validator``, ``computed_field``…) innym
+niż ``classmethod``, ``staticmethod``, ``property`` i ``cache``, funkcji podanej jako wartość (``Depends(f)``), a z
+FastAPI każdej publicznej funkcji modułu i metody, bo zależność może wskazać inny plik (``Depends(dad_actions.observe)``).
+Zostaje adnotacja pola publicznej klasy (pydantic czyta pola dataclassy z pola modelu w innym pliku, jak
+``call_trace.CallTrace`` w ``RunLog``, a test ``get_type_hints(Stop)``), klasy z bazą (model pydantic z innego pliku),
+``ClassVar``, ``InitVar`` i ``KW_ONLY`` pola dataclassy i każda instrukcja: dodanie albo usunięcie pola, deklaracji
+``x: int`` w funkcji (zmienia zasięg nazwy) albo import nazwy, którą kod czyta. Granica: adnotację, którą czyta inny
+plik w sposób spoza tej listy (``get_type_hints`` na prywatnej klasie, zależność FastAPI w pliku bez importu FastAPI),
+pomija się, choć coś ją czyta.
 Dekoratorów narzędzie nie psuje, a samo usunięcie linii (bez linii dodanej w tym miejscu) nie daje mutacji.
 Kod, którego na tym systemie strzeże ``sys.platform ==``/``!=`` literał, dostaje linię ``POMINIĘTA``: gałąź ``if``
 albo ``… if … else …`` innego systemu, kod po ``if`` z takim warunkiem, którego ciało kończy się ``return``/``raise``
@@ -74,8 +88,10 @@ błędny (niezdefiniowana nazwa, błąd składni, błąd typów), to ``WYKRYTA P
 nie trafia do zapisu ani do issue (``silnik_mutacji.wrong``). Cofnięcia fragmentu do bazy (``Mutant.revert``) brama nie
 sprawdza: przywraca ono kod, który przeszedł bramę, więc jej błąd na nim powstaje tylko z niezgodności z niecofniętymi
 fragmentami tej samej zmiany (import, adnotacja, typ w innym miejscu). Pełne cofnięcie zmiany przeszłoby bramę, a testy
-by go nie złapały, więc takie cofnięcie przeżywa i trafia do issue; gdy zmiana była tylko typów, agent odpowiada
-``nie warto`` (#671, #674).
+by go nie złapały, więc takie cofnięcie przeżywa i trafia do issue. Cofnięcie samych typów albo ``__all__`` (#671,
+#674) nie powstaje, bo nic go nie czyta w czasie wykonania (#1340); cofnięcie typu, który coś czyta (pole publicznej
+dataclassy, adnotacja funkcji w pliku z pydantic albo FastAPI), trafia do issue, a gdy nic go nie czyta poza granicą
+filtra, agent odpowiada ``nie warto``.
 Linia ``CZAS`` mówi, ile trwała każda faza, także brama typów.
 
 Mutacja, która przeżywa, to obietnica bez testu: dopisz test, który ją wykrywa. Mutacja równoważna (kod robi to samo)
@@ -522,43 +538,253 @@ def _candidates(node: ast.AST, source: _Source, exit_codes: dict[int, tuple[ast.
 
 
 def _meaning(text: str) -> str:
-    """Kod bez tego, czego test nie widzi: docstringów, adnotacji funkcji, importów i aliasów typów.
+    """Kod bez tego, czego w czasie wykonania nic nie czyta, więc zmiany nie zobaczy żaden test (#1340).
 
-    Adnotacje argumentów i wyników (``from __future__ import annotations``) nie działają w czasie wykonania, a import
-    nazwy, którą kod naprawdę wywołuje, psuje już mutacja linii z tym wywołaniem. W pliku z pydantic albo FastAPI
-    adnotacje i aliasy decydują o walidacji i trasach, więc zostają; tam pomija się tylko docstringi i importy.
-    Adnotacje pól zostają zawsze.
+    Pomija docstringi, ``__all__`` (czyta je tylko ``from m import *``, a tego nie wpuszcza ruff F403), adnotacje,
+    których nic nie wylicza (``_strip_annotations``), w pliku bez pydantic i FastAPI aliasy typów i ``TypeVar`` modułu
+    czytane tylko w adnotacjach, i importy poza tym, które nazwy kod czyta poza adnotacjami: cofnięcie, które usuwa
+    import takiej nazwy, kończy kod ``NameError`` (run 42783639074: trzy cofnięcia ``__all__`` z importami obok były
+    WYKRYTA), a zmiana modułu, z którego przychodzi nazwa, i import nazwy tylko z adnotacji nic nie zmienia. Zostaje
+    każda instrukcja, której adnotację pominął: deklaracja ``x: int`` w funkcji zmienia zasięg nazwy, a pole
+    dataclassy to pole.
     """
 
     tree = ast.parse(text)
-    if _runtime_annotations(tree):
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                node.body = [statement for statement in node.body if not _invisible(statement, set(), module=False)]
-        return ast.dump(tree)
+    owner = _owners(tree)
+    readers = _readers(owner)
+    _strip_annotations(tree, owner, readers)
+    loaded: set[str] = set()
+    imported: set[str] = set()
+    scopes: list[ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.arg):
-            node.annotation = None
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            node.returns = None
-    loaded = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            module = isinstance(node, ast.Module)
-            node.body = [statement for statement in node.body if not _invisible(statement, loaded, module=module)]
-    return ast.dump(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            loaded.add(node.id)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            imported.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
+        elif isinstance(node, (ast.Module, ast.ClassDef, *_FUNCTIONS)):
+            scopes.append(node)
+    for scope in scopes:
+        module = isinstance(scope, ast.Module)
+        scope.body = [statement for statement in scope.body if not _invisible(statement, loaded, module=module, types_read=bool(readers))]
+    return f"{ast.dump(tree)} {sorted(imported & loaded)}"
 
 
-def _runtime_annotations(tree: ast.AST) -> bool:
-    """Plik importuje pydantic albo FastAPI, które czytają adnotacje i aliasy typów w czasie wykonania."""
+_READERS = frozenset({"pydantic", "fastapi"})
 
-    for node in ast.walk(tree):
+
+def _readers(owner: Mapping[ast.AST, ast.AST]) -> frozenset[str]:
+    """Biblioteki, które czytają adnotacje w czasie wykonania (pydantic, FastAPI) i które plik importuje."""
+
+    found: set[str] = set()
+    for node in owner:
         names = (
             [alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""] if isinstance(node, ast.ImportFrom) else []
         )
-        if any(name.split(".")[0] in {"pydantic", "fastapi"} for name in names):
+        found.update(name.split(".")[0] for name in names if name.split(".")[0] in _READERS)
+    return frozenset(found)
+
+
+# Dekoratory, które adnotacji funkcji nie czytają; każdy inny (trasa FastAPI, ``field_validator``, ``computed_field``,
+# ``model_serializer``…) może je czytać, więc w pliku z pydantic albo FastAPI adnotacje funkcji z nim zostają.
+_NOT_READING = frozenset(
+    {"classmethod", "staticmethod", "property", "setter", "getter", "deleter", "cached_property", "cache", "lru_cache"}
+    | {"abstractmethod", "override", "overload", "final"}
+)
+# Pierwsze słowo adnotacji pola, z którego ``dataclasses`` liczy, czy to pole i czy trafia do ``__init__``.
+_FIELD_KINDS = frozenset({"ClassVar", "InitVar", "KW_ONLY"})
+# Wywołania, które czytają adnotacje klasy podanej w argumencie.
+_HINT_READERS = frozenset({"TypeAdapter", "get_type_hints", "validate_call"})
+_TYPE_VARIABLES = frozenset({"TypeVar", "ParamSpec", "TypeVarTuple"})
+_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _strip_annotations(tree: ast.Module, owner: Mapping[ast.AST, ast.AST], readers: frozenset[str]) -> None:
+    """Zastępuje adnotacje, których w czasie wykonania nic nie wylicza, tą samą stałą, a w pliku bez pydantic i FastAPI
+    usuwa argumenty ``TypeVar``/``ParamSpec`` modułu (granica ``bound`` czytana tylko przez mypy).
+
+    Nic nie wylicza adnotacji zmiennej w funkcji (PEP 526), adnotacji argumentów i wyniku funkcji, której nie czyta
+    pydantic ani FastAPI (``_read_function``), a pod ``from __future__ import annotations`` także adnotacji zmiennej
+    modułu, deklaracji w klasie ``Protocol`` (z parametrami metody bez ciała, a bez ``runtime_checkable`` całej
+    deklaracji bez ciała i bez wartości) i pola klasy, której pól nic nie czyta (``_hidden_classes``). Bez ``from
+    __future__ import annotations`` Python wylicza adnotacje modułu i klas przy imporcie, więc zostają.
+    """
+
+    future = any(
+        isinstance(node, ast.ImportFrom) and node.module == "__future__" and any(alias.name == "annotations" for alias in node.names)
+        for node in tree.body
+    )
+    values = _values(owner) if readers else set()
+    functions = [node for node in owner if isinstance(node, _FUNCTIONS)]
+    read = [function for function in functions if _read_function(function, owner[function], readers, values)]
+    classes = [node for node in owner if isinstance(node, ast.ClassDef)]
+    protocols = {node for node in classes if any(_last_name(base) == "Protocol" for base in node.bases)} if future else set()
+    hidden = _hidden_classes(owner, classes, read, readers) if future else set()
+    for function in functions:
+        if owner[function] in protocols and _stub(function):
+            function.args = ast.arguments(posonlyargs=[], args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[])
+        elif function in read:
+            continue
+        for argument in ast.walk(function.args):
+            if isinstance(argument, ast.arg):
+                argument.annotation = None
+        function.returns = None
+    for node, scope in owner.items():
+        if not isinstance(node, ast.AnnAssign):
+            continue
+        in_class = isinstance(scope, ast.ClassDef) and (scope in protocols or (scope in hidden and _field_kind(node.annotation) is None))
+        if isinstance(scope, _FUNCTIONS) or (future and isinstance(scope, ast.Module)) or in_class:
+            node.annotation = ast.Constant(None)
+    for protocol in protocols:
+        # Bez ``runtime_checkable`` nic nie pyta o członków: deklaracja bez ciała nie zostaje nawet nazwą.
+        if all(_last_name(decorator) != "runtime_checkable" for decorator in protocol.decorator_list):
+            protocol.body = [
+                statement
+                for statement in protocol.body
+                if not (isinstance(statement, _FUNCTIONS) and _stub(statement)) and not (isinstance(statement, ast.AnnAssign) and statement.value is None)
+            ]
+    if not readers:
+        for statement in tree.body:
+            if isinstance(statement, ast.Assign) and isinstance(statement.value, ast.Call) and _type_variable(statement.value):
+                statement.value.args, statement.value.keywords = [], []
+
+
+def _owners(tree: ast.Module) -> dict[ast.AST, ast.AST]:
+    """Każdy węzeł pliku poza modułem i jego zasięg: najbliższy moduł, klasa albo funkcja, która go zawiera."""
+
+    found: dict[ast.AST, ast.AST] = {}
+
+    def visit(node: ast.AST, scope: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            found[child] = scope
+            visit(child, child if isinstance(child, (ast.ClassDef, *_FUNCTIONS, ast.Lambda)) else scope)
+
+    visit(tree, tree)
+    return found
+
+
+def _values(owner: Mapping[ast.AST, ast.AST]) -> set[str]:
+    """Nazwy, które plik podaje jako wartość, a nie wywołuje ani nie dekoruje nimi (``Depends(f)``, ``BeforeValidator(f)``)."""
+
+    called = {id(node.func) for node in owner if isinstance(node, ast.Call)}
+    called |= {id(decorator) for node in owner if isinstance(node, (*_FUNCTIONS, ast.ClassDef)) for decorator in node.decorator_list}
+    return {
+        node.id if isinstance(node, ast.Name) else node.attr
+        for node in owner
+        if isinstance(node, (ast.Name, ast.Attribute)) and isinstance(node.ctx, ast.Load) and id(node) not in called
+    }
+
+
+def _last_name(node: ast.expr) -> str | None:
+    """Nazwa wyrażenia bez modułu, argumentów i indeksu: ``router.get("/")`` → ``get``, ``typing.ClassVar[int]`` → ``ClassVar``."""
+
+    if isinstance(node, ast.Call):
+        return _last_name(node.func)
+    if isinstance(node, ast.Subscript):
+        return _last_name(node.value)
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        words = re.findall(r"\w+", node.value.split("[", 1)[0])
+        return words[-1] if words else None
+    return node.attr if isinstance(node, ast.Attribute) else node.id if isinstance(node, ast.Name) else None
+
+
+def _read_function(function: ast.FunctionDef | ast.AsyncFunctionDef, scope: ast.AST, readers: frozenset[str], values: set[str]) -> bool:
+    """Adnotacje funkcji czyta pydantic albo FastAPI: ma dekorator inny niż ``_NOT_READING``, plik podaje ją jako
+    wartość, albo w pliku z FastAPI jest publiczną funkcją modułu lub metodą, bo zależność może wskazać inny plik
+    (``Depends(dad_actions.observe)`` w ``centrum/app.py``)."""
+
+    if not readers:
+        return False
+    if any(_last_name(decorator) not in _NOT_READING for decorator in function.decorator_list) or function.name in values:
+        return True
+    return "fastapi" in readers and not function.name.startswith("_") and isinstance(scope, (ast.Module, ast.ClassDef))
+
+
+def _stub(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Metoda bez ciała: tylko docstring, ``...``, ``pass`` albo ``raise NotImplementedError``."""
+
+    def empty(statement: ast.stmt) -> bool:
+        if isinstance(statement, ast.Pass):
             return True
-    return False
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant):
+            return statement.value.value is Ellipsis or isinstance(statement.value.value, str)
+        return isinstance(statement, ast.Raise) and statement.exc is not None and _last_name(statement.exc) == "NotImplementedError"
+
+    return all(empty(statement) for statement in function.body)
+
+
+def _field_kind(annotation: ast.expr) -> str | None:
+    name = _last_name(annotation)
+    return name if name in _FIELD_KINDS else None
+
+
+def _type_variable(value: ast.expr | None) -> bool:
+    return isinstance(value, ast.Call) and _last_name(value.func) in _TYPE_VARIABLES
+
+
+def _hidden_classes(
+    owner: Mapping[ast.AST, ast.AST], classes: list[ast.ClassDef], read: list[ast.FunctionDef | ast.AsyncFunctionDef], readers: frozenset[str]
+) -> set[ast.ClassDef]:
+    """Klasy, których adnotacji pól nic w czasie wykonania nie czyta: prywatne (``_Nazwa``), bez baz poza ``Generic``,
+    z dekoratorami najwyżej ``dataclass`` i ``final``, których nie nazywa adnotacja czytana w tym pliku.
+
+    Czytana jest adnotacja pola innej klasy (model pydantic, publiczna dataclassa: pydantic czyta pola dataclassy z
+    pola modelu, także z innego pliku, jak ``call_trace.CallTrace`` w ``RunLog``, a test czyta ``get_type_hints``),
+    baza takiej klasy, adnotacja funkcji z ``_read_function`` i argument ``TypeAdapter``, ``get_type_hints`` i
+    ``validate_call``. Plik z dataclassami pydantic nie ma takich klas.
+    """
+
+    pydantic_dataclasses = "pydantic" in readers and any(
+        isinstance(node, (ast.Import, ast.ImportFrom))
+        and any(
+            name.startswith("pydantic") and "dataclass" in name
+            for name in [*(alias.name for alias in node.names), *(f"{node.module}.{alias.name}" for alias in node.names if isinstance(node, ast.ImportFrom))]
+        )
+        for node in owner
+    )
+    candidates = {
+        node.name: node
+        for node in classes
+        if node.name.startswith("_")
+        and not node.keywords
+        and all(_last_name(base) in {"Generic", "object"} for base in node.bases)
+        and all(_last_name(decorator) in {"dataclass", "final"} for decorator in node.decorator_list)
+        and not (pydantic_dataclasses and node.decorator_list)
+    }
+
+    if not candidates:
+        return set()
+
+    def declared(node: ast.ClassDef) -> list[ast.expr]:
+        return [*node.bases, *(statement.annotation for statement in node.body if isinstance(statement, ast.AnnAssign))]
+
+    sources: list[ast.expr] = [expression for node in classes if candidates.get(node.name) is not node for expression in declared(node)]
+    for function in read:
+        sources += [argument.annotation for argument in ast.walk(function.args) if isinstance(argument, ast.arg) and argument.annotation]
+        sources += [function.returns] if function.returns else []
+    sources += [
+        argument for node in owner if isinstance(node, ast.Call) and _last_name(node.func) in _HINT_READERS for argument in node.args
+    ]
+    reachable: set[str] = set()
+    while sources:
+        for name in _names(sources.pop()) - reachable:
+            reachable.add(name)
+            if name in candidates:
+                sources += declared(candidates[name])
+    return {node for name, node in candidates.items() if name not in reachable}
+
+
+def _names(annotation: ast.expr) -> set[str]:
+    """Nazwy w adnotacji, także w adnotacji w cudzysłowie."""
+
+    found: set[str] = set()
+    for node in ast.walk(annotation):
+        if isinstance(node, ast.Name):
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            found.add(node.attr)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.update(re.findall(r"[A-Za-z_]\w*", node.value))
+    return found
 
 
 _TYPE_FORMS = frozenset(
@@ -579,21 +805,20 @@ def _type_form(value: ast.expr) -> bool:
     return name is not None and (name in _TYPE_FORMS or (name[:1].isupper() and not name.isupper()))
 
 
-def _invisible(statement: ast.stmt, loaded: set[str], *, module: bool) -> bool:
+def _invisible(statement: ast.stmt, loaded: set[str], *, module: bool, types_read: bool) -> bool:
     if isinstance(statement, (ast.Import, ast.ImportFrom)):
         return True
     if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
         return True
-    # Alias typu modułu (``Nazwa = Callable[...]`` albo ``A | B``) czytany tylko w adnotacjach.
-    return (
-        module
-        and isinstance(statement, ast.Assign)
-        and len(statement.targets) == 1
-        and isinstance(statement.targets[0], ast.Name)
-        and statement.targets[0].id not in loaded
-        and isinstance(statement.value, (ast.Subscript, ast.BinOp))
-        and _type_form(statement.value)
-    )
+    targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target] if isinstance(statement, (ast.AnnAssign, ast.AugAssign)) else []
+    if not module or len(targets) != 1 or not isinstance(targets[0], ast.Name) or targets[0].id in loaded:
+        return False
+    if targets[0].id == "__all__":
+        return True
+    # Alias typu (``Nazwa = Callable[...]`` albo ``A | B``) i ``TypeVar`` modułu czytane tylko w adnotacjach; pydantic
+    # czyta aliasy pól modeli i granice ``TypeVar`` modeli generycznych.
+    value = statement.value if isinstance(statement, ast.Assign) else None
+    return not types_read and value is not None and ((isinstance(value, (ast.Subscript, ast.BinOp)) and _type_form(value)) or _type_variable(value))
 
 
 def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.platform) -> list[Mutant]:

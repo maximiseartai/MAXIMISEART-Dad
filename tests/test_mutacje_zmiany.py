@@ -191,7 +191,7 @@ def test_mutacja_ktora_przezyla_testy_pliku_albo_nie_ma_testow_tez_trafia_do_zap
     assert all(entry["linie"] == [2] and len(entry["klucz"]) == 12 for entry in written)
 
 # Jak #674: zmiana dopisuje ``case`` brakującego wariantu, a gołe ``return`` po ``match`` w bazie robi to samo, więc testy
-# przepuszczają cofnięcie, które odrzuca mypy (``exhaustive-match``). Jak #675: ``__all__`` nie czyta ani test, ani mypy.
+# przepuszczają cofnięcie, które odrzuca mypy (``exhaustive-match``). Cofnięcia ``__all__`` (#675) nie ma: nic go nie czyta (#1340).
 MATCH_BASE = (
     "from enum import Enum\n\n__all__ = [\"Kolor\"]\n\n\n"
     "class Kolor(Enum):\n    CZERWONY = 1\n    ZIELONY = 2\n\n\n"
@@ -234,7 +234,6 @@ def test_brama_typow_sprawdza_przezyte_mutacje_operatorow_a_cofniecie_do_bazy_tr
     assert sorted(_named(entry) for entry in written["przezyte"]) == [
         "src/rozliczenia/inny.py:2 zmiana linii 2 cofnięta do bazy",
         "src/rozliczenia/warunek.py:15 zmiana linii 15–23 cofnięta do bazy",
-        "src/rozliczenia/warunek.py:3 zmiana linii 3 cofnięta do bazy",
     ]
 
 
@@ -1339,10 +1338,113 @@ def test_adnotacja_pola_modelu_zostaje_mutacja_a_stala_nie_jest_aliasem() -> Non
 
 
 def test_w_pliku_z_pydantic_adnotacja_i_alias_typu_zostaja_mutacja() -> None:
-    code = "from pydantic import BaseModel\nWynik = Annotated[A | B, Field(discriminator='rodzaj')]\n\n\ndef trasa() -> Wynik:\n    pass\n"
+    code = "from pydantic import BaseModel\nWynik = Annotated[A | B, Field(discriminator='rodzaj')]\n\n\n@router.get('/')\ndef trasa() -> Wynik:\n    pass\n"
 
     assert "zmiana linii 2 cofnięta do bazy" in _described(code, [2], ("Wynik = A | B",))
-    assert "zmiana linii 5 cofnięta do bazy" in _described(code, [5], ("def trasa() -> A:",))
+    assert "zmiana linii 6 cofnięta do bazy" in _described(code, [6], ("def trasa() -> A:",))
+
+
+# Cofnięcia, których nic nie czyta w czasie wykonania (#1340): (kod po zmianie, zmieniona linia, linia bazy; ``None``,
+# gdy zmiana tylko dodała linię, a cofnięcie ją usuwa). Każdy wiersz to jeden wiersz tabeli przypadków w opisie PR-u.
+FUTURE = "from __future__ import annotations\n"
+ROUTER = "from fastapi import APIRouter\n\n\n"
+NIEWIDOCZNE = {
+    "__all__ (czyta je tylko import *, którego nie wpuszcza ruff F403)": ('__all__ = ["a", "b"]\n\n\ndef a():\n    pass\n', 1, '__all__ = ["a"]'),
+    "dopisek do __all__": ('__all__ = ["a"]\n__all__ += ["b"]\n', 2, None),
+    "adnotacja zmiennej w funkcji (PEP 526: Python jej nie wylicza)": ("def f() -> list[int]:\n    wynik: list[int] = []\n    return wynik\n", 2, "    wynik: list[str] = []"),
+    "adnotacja atrybutu w metodzie": ("class A:\n    def __init__(self) -> None:\n        self.style: dict[tuple[bool], int] = {}\n", 3, "        self.style: dict[tuple[int], int] = {}"),
+    "pole prywatnej dataclassy, której pól nic nie czyta": (FUTURE + "@dataclass(frozen=True)\nclass _Widziane:\n    nowa: Version | None\n", 4, "    nowa: str | None"),
+    "adnotacja zmiennej modułu": (FUTURE + "LIMIT: Final[int] = 5\n", 2, "LIMIT: int = 5"),
+    "parametr metody bez ciała w Protocol z runtime_checkable": (
+        FUTURE + "@runtime_checkable\nclass Skrzynka(Protocol):\n    def issues(self, label: str, *, include_closed: bool) -> list[int]:\n        \"\"\"Opis.\"\"\"\n        ...\n",
+        4,
+        "    def issues(self, label: str) -> list[int]:",
+    ),
+    "adnotacja atrybutu w Protocol z runtime_checkable": (FUTURE + "@runtime_checkable\nclass Wpis(Protocol):\n    key: ProcessKey\n", 4, "    key: str"),
+    "deklaracja w Protocol bez runtime_checkable": (FUTURE + "class Skrzynka(Protocol):\n    def archive(self) -> None:\n        ...\n", 3, "    def stara(self) -> None:"),
+    "granica TypeVar": (FUTURE + 'T = TypeVar("T", bound=Wynik)\n\n\nclass Pudlo(Generic[T]):\n    pass\n', 2, 'T = TypeVar("T")'),
+    "TypeVar czytany tylko w adnotacjach": (FUTURE + 'T = TypeVar("T")\n\n\ndef pierwszy(xs: list[T]) -> T:\n    return xs[0]\n', 2, None),
+    "plik z pydantic: argument metody z @classmethod": (
+        "from pydantic import BaseModel\n\n\nclass Przyczyna(BaseModel):\n    @classmethod\n    def z(cls, cause: WindowCause) -> Przyczyna:\n        return cls()\n",
+        6,
+        "    def z(cls, cause: StopCause) -> Przyczyna:",
+    ),
+    "plik z FastAPI: wynik prywatnej funkcji": (ROUTER + "def _rada() -> contract.Message:\n    return rada()\n", 4, "def _rada() -> Message:"),
+    "import nazwy czytanej tylko w adnotacjach": (FUTURE + "from .okno import Przyczyna\n\n\ndef f(p: Przyczyna) -> None:\n    pass\n", 2, None),
+    "ta sama nazwa z innego modułu": ("from .okno import ListedOrder\n\nWIERSZ = ListedOrder()\n", 1, "from .lista import ListedOrder"),
+}
+
+
+@pytest.mark.parametrize(("code", "line", "old"), NIEWIDOCZNE.values(), ids=NIEWIDOCZNE.keys())
+def test_cofniecie_ktorego_nic_nie_czyta_w_czasie_wykonania_nie_jest_mutacja(code: str, line: int, old: str | None) -> None:
+    assert _reverted(code, line, old) is None
+
+
+# Cofnięcia, które zmieniają zachowanie albo adnotację, którą coś czyta w czasie wykonania (#1340), w postaci jak wyżej.
+WIDOCZNE = {
+    "__all__ czytane w pliku": ('__all__ = ["a"]\nNAZWY = list(__all__)\n', 1, "__all__ = []"),
+    "deklaracja zmiennej w funkcji zmienia jej zasięg": ("def f() -> int:\n    x: int\n    return x\n", 2, None),
+    # Run 42783639074: cofnięcie ``__all__`` w ``efenix_checks.py`` usuwało też import ``normalize_text`` (WYKRYTA).
+    "cofnięcie usuwa import nazwy, którą kod wywołuje": ("from .text import normalize_text\n\n\ndef f(s: str) -> str:\n    return normalize_text(s)\n", 1, None),
+    "cofnięcie z kodem obok adnotacji": ("def f() -> int:\n    wynik: int = 2\n    return wynik\n", 2, "    wynik: str = 1"),
+    # ``tests/test_uruchom_proces.py`` czyta ``get_type_hints(Stop)``, a pydantic pola ``call_trace.CallTrace`` z pola
+    # ``RunLog`` w innym pliku.
+    "pole publicznej dataclassy": (FUTURE + '@dataclass(frozen=True)\nclass Stop:\n    kind: Literal["stop", "declined"]\n', 4, '    kind: Literal["stop"]'),
+    "pole prywatnej dataclassy w polu publicznej": (
+        FUTURE + "@dataclass(frozen=True)\nclass _Ramka:\n    linia: int\n\n\n@dataclass(frozen=True)\nclass Slad:\n    ramki: tuple[_Ramka, ...]\n",
+        4,
+        "    linia: str",
+    ),
+    "pole prywatnej dataclassy z TypeAdapter": (
+        FUTURE + "from pydantic import TypeAdapter\n\n\n@dataclass\nclass _Wiersz:\n    n: int\n\n\nWIERSZ = TypeAdapter(list[_Wiersz])\n",
+        7,
+        "    n: str",
+    ),
+    "pole prywatnej dataclassy pydantic": (FUTURE + "from pydantic.dataclasses import dataclass\n\n\n@dataclass\nclass _Wiersz:\n    n: int\n", 7, "    n: str"),
+    "ClassVar zamiast pola dataclassy": (FUTURE + "@dataclass\nclass _A:\n    x: ClassVar[int] = 1\n", 4, "    x: int = 1"),
+    "InitVar zamiast pola dataclassy": (FUTURE + "@dataclass\nclass _A:\n    x: int\n", 4, "    x: InitVar[int]"),
+    "dodane pole dataclassy": (FUTURE + "@dataclass\nclass _A:\n    x: int\n    y: int\n", 5, None),
+    "pole klasy z bazą (model pydantic z innego pliku)": (FUTURE + "class _Wpis(Rekord):\n    pole: int | None\n", 3, "    pole: int"),
+    "pole bez from __future__ import annotations (Python wylicza je przy imporcie)": ("@dataclass\nclass _A:\n    x: Nieznany\n", 3, "    x: int"),
+    "adnotacja zmiennej modułu bez from __future__ import annotations": ("LIMIT: Final[int] = 5\n", 1, "LIMIT: int = 5"),
+    "metoda Protocol z ciałem": (FUTURE + "class P(Protocol):\n    def f(self, x: int) -> int:\n        return x + 1\n", 4, "        return x"),
+    "nazwa członka Protocol z runtime_checkable (isinstance pyta o członków)": (
+        FUTURE + "@runtime_checkable\nclass P(Protocol):\n    def nowa(self) -> None:\n        ...\n",
+        4,
+        "    def stara(self) -> None:",
+    ),
+    "TypeVar w bazie Generic": (FUTURE + 'T = TypeVar("T")\n\n\nclass Pudlo(Generic[T]):\n    pass\n', 2, None),
+    "plik z pydantic: granica TypeVar modelu generycznego": ('from pydantic import BaseModel\nT = TypeVar("T", bound=Wynik)\n', 2, 'T = TypeVar("T")'),
+    "plik z pydantic: argument walidatora": (
+        "from pydantic import BaseModel, field_validator\n\n\nclass M(BaseModel):\n    @field_validator('x')\n    @classmethod\n    def dodatnie(cls, value: int) -> int:\n        return value\n",
+        7,
+        "    def dodatnie(cls, value: str) -> int:",
+    ),
+    "plik z pydantic: funkcja podana jako wartość": (
+        "from pydantic import BeforeValidator\n\n\ndef _liczba(value: object) -> int:\n    return 1\n\n\nLiczba = Annotated[int, BeforeValidator(_liczba)]\n",
+        4,
+        "def _liczba(value: str) -> int:",
+    ),
+    "plik z FastAPI: parametr trasy": (ROUTER + "router = APIRouter()\n\n\n@router.get('/x')\ndef x(n: int) -> int:\n    return n\n", 8, "def x(n: str) -> int:"),
+    # ``Depends(dad_actions.observe)`` w ``centrum/app.py`` wskazuje metodę z ``centrum/dad_action_journal.py``.
+    "plik z FastAPI: publiczna metoda (zależność z innego pliku)": (
+        "from fastapi import Request\n\n\nclass Dziennik:\n    async def observe(self, request: Request) -> None:\n        pass\n",
+        5,
+        "    async def observe(self, request: object) -> None:",
+    ),
+}
+
+
+@pytest.mark.parametrize(("code", "line", "old"), WIDOCZNE.values(), ids=WIDOCZNE.keys())
+def test_cofniecie_ktore_zmienia_zachowanie_albo_adnotacje_czytana_w_czasie_wykonania_zostaje_mutacja(code: str, line: int, old: str | None) -> None:
+    assert _reverted(code, line, old) is not None
+
+
+def _reverted(code: str, line: int, old: str | None) -> str | None:
+    """Kod po cofnięciu zmiany linii ``line`` do ``old`` (``None``: linia dodana), gdy cofnięcie jest mutacją."""
+
+    found = mutants("m.py", code, [Hunk(line, 1, () if old is None else (old,))])
+    return next((mutant.source for mutant in found if mutant.revert), None)
 
 
 def test_adnotacje_i_docstringi_nie_dostaja_mutacji() -> None:
