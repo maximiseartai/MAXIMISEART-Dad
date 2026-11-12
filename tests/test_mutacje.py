@@ -1103,18 +1103,44 @@ def test_skrypt_mutacji_skilla_w_pythonie_bez_ruff_i_mypy_konczy_sie_bledem_inst
     zostawiały przeżyte mutacje przeżytymi, choć brama typów mogła je wykryć (main 5.11–12.11). Brak narzędzia bramy to
     zła instalacja, więc skrypt kończy się kodem 2 z poleceniem, które ją naprawia."""
 
-    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(tmp_path / "venv")], check=True, timeout=120)
-    python = next(path for path in (tmp_path / "venv" / "bin" / "python", tmp_path / "venv" / "Scripts" / "python.exe") if path.exists())
     script = (
         "import sys\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nfrom silnik_mutacji import Edit, Mutation, check_all\n"
         f"raise SystemExit(check_all([Mutation('m', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), {IMPORT!r})]))\n"
     )
 
-    answered = subprocess.run([python, "-c", script], cwd=_small_repository(tmp_path), capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
+    answered = subprocess.run(
+        [_python_without_dev(tmp_path), "-c", script], cwd=_small_repository(tmp_path), capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
+    )
 
     shown = answered.stdout.splitlines()
     assert (answered.returncode, len(shown)) == (2, 1), answered.stdout + answered.stderr
     assert re.fullmatch(r'MUTACJE: brama typów bez narzędzia: .+ nie ma modułu ruff kroku ruff; zainstaluj dodatek dev \(uv pip install -e "\.\[dev\]"\)', shown[0]), shown
+
+
+def test_brama_typow_nocy_w_pythonie_bez_ruff_i_mypy_jest_czerwona_i_zostawia_werdykty(tmp_path: Path) -> None:
+    """Noc (``tools/mutacje_zmiany.py``) woła ``type_gate`` z ``static_gate``, a jej testy biegną w zadaniu pytest na
+    Windows z samym ``requirements.txt``. Brak narzędzia nie przerywa tam przebiegu: brama jest czerwona bez mutacji,
+    a przeżyta mutacja zostaje przeżyta."""
+
+    script = (
+        "import sys\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nfrom silnik_mutacji import Edit, Mutation, Verdict, static_gate, type_gate\n"
+        f"mutation = Mutation('m', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), {IMPORT!r})\n"
+        "print([(str(verdict), shown) for verdict, shown in type_gate([mutation], [(Verdict.SURVIVED, 'kod wyjścia 0')], workers=1, gate=static_gate)])\n"
+    )
+
+    answered = subprocess.run(
+        [_python_without_dev(tmp_path), "-c", script], cwd=_small_repository(tmp_path), capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
+    )
+
+    assert (answered.returncode, answered.stdout) == (0, "[('NIEWYKRYTA', 'kod wyjścia 0')]\n"), answered.stdout + answered.stderr
+    assert re.fullmatch(r"BRAMA TYPÓW CZERWONA: ruff: .*No module named ruff \(bez mutacji, więc przeżyte mutacje zostają przeżyte\)\n", answered.stderr), answered.stderr
+
+
+def _python_without_dev(tmp_path: Path) -> Path:
+    """Python świeżego venv bez pakietów, więc bez ruff i mypy dodatku dev, jak zadanie pytest na Windows."""
+
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(tmp_path / "venv")], check=True, timeout=120)
+    return next(path for path in (tmp_path / "venv" / "bin" / "python", tmp_path / "venv" / "Scripts" / "python.exe") if path.exists())
 
 
 # Atrapy ``python -m ruff`` i ``python -m mypy`` w korzeniu kopii, które biegną przed zainstalowanymi: ruff zgłasza

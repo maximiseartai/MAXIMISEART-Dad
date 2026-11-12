@@ -43,7 +43,8 @@ WYKRYTA, bo takiej zmiany nie wpuszczą brama pre-push i zadanie CI „Ruff, myp
 dowodzi, że test jest zbędny.
 Brama biegnie tylko dla takich mutacji, raz najpierw bez mutacji, a gdy wtedy zgłasza cokolwiek, linia ``BRAMA TYPÓW
 CZERWONA`` na stderr zostawia werdykty bez zmian. Ruff i mypy daje dodatek ``dev``, który instaluje każde zadanie CI z
-mutacjami; Python bez nich to błąd ``MissingGateTool``, na którym skrypt skilla kończy się kodem 2. Narzędzie
+mutacjami. W skrypcie skilla Python bez nich to błąd ``MissingGateTool`` i kod 2, a w nocy brama czerwona, bo noc
+biegnie też w testach pytest na Windows, które instalują samo ``requirements.txt``. Narzędzie
 z wiersza poleceń bramy nie uruchamia: przegląd dowodzi swojego polecenia, a mypy sprawdza poleceniem ``-- -m mypy``.
 
 Narzędzie z wiersza poleceń uruchamia każdą mutację NIEWYKRYTA na HEAD także na merge-base HEAD z ``--baza`` (bez
@@ -489,15 +490,13 @@ def static_gate(copy: Path, *, limit_s: float, stop: threading.Event, deadline: 
     """Kroki ruff i mypy obu systemów bramy pre-push (``kroki_lokalne.static_steps``) w kopii, z diagnostykami w JSON.
 
     Diagnostyki każdego kroku, który padł; kroki biegną do pierwszego, którego diagnostyka liczy się jako wykrycie
-    (``wrong``), albo do pierwszego, który nie skończył się w czasie. Krok, którego narzędzia Python nie znajdzie, to
-    ``MissingGateTool``, a nie diagnostyka: brak narzędzia to zła instalacja, a nie kod, który bramy nie przechodzi.
+    (``wrong``), albo do pierwszego, który nie skończył się w czasie. Krok bez narzędzia pada jak każdy inny
+    (``No module named ruff``), więc ``type_gate`` widzi bramę czerwoną bez mutacji; błędem instalacji robi to tylko
+    brama ``check_all`` (``_installed_gate``).
     """
 
     found: list[Finding] = []
     for step in static_steps(copy):
-        # ``python -m`` w korzeniu kopii szuka modułu najpierw w nim, potem tam, gdzie Python tego procesu.
-        if importlib.machinery.PathFinder.find_spec(step.job, [str(copy), *sys.path]) is None:
-            raise MissingGateTool(f"{sys.executable} nie ma modułu {step.job} kroku {step.name}")
         tool = _TOOLS[step.job]
         left = _left(limit_s, deadline)
         if left <= 0:
@@ -514,6 +513,21 @@ def static_gate(copy: Path, *, limit_s: float, stop: threading.Event, deadline: 
             if any(map(wrong, found)):
                 break
     return Checked(tuple(found))
+
+
+def _installed_gate(copy: Path, *, limit_s: float, stop: threading.Event, deadline: float | None) -> Checked:
+    """``static_gate`` skryptu mutacji skilla: krok, którego narzędzia Python nie znajdzie, to ``MissingGateTool``.
+
+    Zadania CI ze skryptami skilli instalują dodatek ``dev``, więc brak ruff albo mypy to zła instalacja, a nie kod, który
+    bramy nie przechodzi. Noc (``tools/mutacje_zmiany.py``) bierze samo ``static_gate``: pytest na Windows uruchamia ją
+    z ``requirements.txt``, bez narzędzi bramy, i wtedy brama jest czerwona bez mutacji.
+    """
+
+    for step in static_steps(copy):
+        # ``python -m`` w korzeniu kopii szuka modułu najpierw w nim, potem tam, gdzie Python tego procesu.
+        if importlib.machinery.PathFinder.find_spec(step.job, [str(copy), *sys.path]) is None:
+            raise MissingGateTool(f"{sys.executable} nie ma modułu {step.job} kroku {step.name}")
+    return static_gate(copy, limit_s=limit_s, stop=stop, deadline=deadline)
 
 
 def _gated(
@@ -662,10 +676,11 @@ def _review_judgement(
     return [(verdict, shown, verdict is Verdict.CAUGHT) for verdict, shown in compared]
 
 
-def check_all(mutations: Sequence[Mutation], *, limit_s: float = TIMEOUT, gate: Gate = static_gate) -> int:
+def check_all(mutations: Sequence[Mutation], *, limit_s: float = TIMEOUT, gate: Gate = _installed_gate) -> int:
     """Główna funkcja skryptu mutacji skilla (``check_<co>_mutations.py``): mutacje naraz (``PARALLEL``) z werdyktem,
     który złapałoby CI, po bramie typów ``gate``; kod 0, gdy CI złapałoby każdą, a kod 2, gdy brama nie ma narzędzia
-    (``MissingGateTool``).
+    (``MissingGateTool``). Brama biegnie tylko po mutacji, którą polecenie przepuściło, więc przebieg, w którym CI
+    złapałoby każdą, kończy się kodem 0 także w Pythonie bez dodatku ``dev``.
 
     Część tabeli bierze z ``MUTACJE_CZESC`` w środowisku procesu, które ustawia plan CI, a nazwę skryptu do ostrzeżenia
     ``CZAS BLISKO LIMITU`` z ``sys.argv[0]``, więc działa tylko jako główna funkcja procesu skryptu.

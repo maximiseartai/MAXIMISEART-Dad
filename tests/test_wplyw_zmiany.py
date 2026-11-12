@@ -225,8 +225,8 @@ def test_odleglosc_od_zmiany_to_najkrotsza_droga_w_grafie_zaleznosci(tmp_path: P
 @pytest.mark.parametrize(
     ("path", "contexts"),
     [
-        # Pliki, od których zależy każdy test (#305, #360): lokalnie i w bramce PR.
-        ("pyproject.toml", {Context.TESTS, Context.PR_GATE}),
+        # Pliki, od których zależy każdy test (#305, #360): lokalnie i w bramce PR; biblioteki też każdy krok skilla.
+        ("pyproject.toml", {Context.TESTS, Context.PR_GATE, Context.SKILL_STEPS}),
         ("tests/conftest.py", {Context.TESTS, Context.PR_GATE}),
         ("tests/fixtures/git_config.py", {Context.TESTS, Context.PR_GATE}),
         # Biblioteki: też każdy krok skilla (#293, powód przy regule).

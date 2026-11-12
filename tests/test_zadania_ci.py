@@ -9,6 +9,7 @@ Required czeka na każde zadanie runu.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,7 @@ from tests.fixtures.ci_workflow import CHROMIUM, WORKFLOW, action, chromium, com
 import plan_ci
 import plan_runu
 import shellcheck_akcji
+from wplyw_zmiany import Context
 from zakres_runu import Zdarzenie
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,7 +104,8 @@ DEV = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}
 def test_kazde_zadanie_z_mutacjami_instaluje_ruff_i_mypy_bramy_typow_z_dodatku_dev() -> None:
     """Brama typów silnika mutacji uruchamia ruff i mypy z dodatku dev. Mutation checks z samym ``requirements.txt``
     drukowały w każdym skrypcie z przeżytą mutacją ``BRAMA TYPÓW CZERWONA: ruff: … No module named ruff`` (main
-    5.11–12.11). Mutacji nie uruchamiają tylko zadania pytest: na Windows instalują ``requirements.txt`` jak u taty."""
+    5.11–12.11). Zadanie pytest na Windows instaluje ``requirements.txt`` jak u taty, a mutacje nocy biegną w nim w
+    testach, z bramą czerwoną bez narzędzi; tylko skrypt skilla kończy się wtedy kodem 2."""
 
     installs = {
         (workflow.name, name): [step["run"] for step in job["steps"] if "uv pip install" in step.get("run", "")]
@@ -113,6 +116,33 @@ def test_kazde_zadanie_z_mutacjami_instaluje_ruff_i_mypy_bramy_typow_z_dodatku_d
 
     assert installs == dict.fromkeys(installs, [DEV])
     assert set(installs) >= {("ci.yml", "mutations"), ("mutacje-nocne.yml", "change-mutations"), ("mutacje-nocne.yml", "skill-mutations")}
+
+
+def _dependency_files(command: str) -> set[str]:
+    """Pliki zależności polecenia ``uv pip install``: plik ``-r`` i ``pyproject.toml`` instalacji ``-e .``."""
+
+    return {
+        "pyproject.toml" if option == "-e" and value.split("[")[0] == "." else value
+        for option, value in itertools.pairwise(shlex.split(command))
+        if option in {"-r", "-e"}
+    }
+
+
+def test_zmiana_pliku_zaleznosci_zadan_krokow_skilli_uruchamia_kroki_skilli() -> None:
+    """Kroki skilli biegną w zadaniach planu poza pytest (Mutation checks, nocne skrypty skilli), a ich werdykty zależą od
+    zainstalowanych bibliotek, także ruff i mypy bramy typów. Plik, z którego takie zadanie je instaluje, ma więc
+    uruchamiać każdy krok skilla (#293); dodatek dev zastąpił w nich ``requirements.txt``, a reguła została przy nim."""
+
+    installed = {
+        (workflow.name, name): set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "uv pip install" in step.get("run", "")))
+        for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
+        for name, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items()
+        if "tools/ci/wykonaj_zadanie.py" in str(job.get("steps")) and (workflow, name) != (WORKFLOW, "pytest")
+    }
+
+    assert set(installed) == {("ci.yml", "mutations"), ("mutacje-nocne.yml", "skill-mutations")}
+    assert {job: files - set(Context.SKILL_STEPS.paths()) for job, files in installed.items()} == dict.fromkeys(installed, set()), installed
+    assert all(installed.values()), installed
 
 
 @pytest.mark.parametrize("workflow", sorted(WORKFLOW.parent.glob("*.yml")), ids=lambda path: path.name)
