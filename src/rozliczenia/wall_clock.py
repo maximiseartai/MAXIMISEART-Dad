@@ -8,8 +8,8 @@ w strefie komputera taty, nigdy dzień UTC: od północy do 1:00 (latem do 2:00)
 
 Zegar biblioteki standardowej (``datetime.now``, ``date.today``, ``time.time`` i podobne) w ``src/`` poza tym plikiem
 odrzuca ruff ``TID251`` (``src/ruff.toml``), a ``tests/test_zakazy_ruff.py`` także na linii z ``noqa``. Nie łapią
-dnia UTC wziętego z chwili tego modułu (``utc_now().date()``) ani zegara podanego z napisu (``getattr``); to zostaje
-przeglądowi.
+dnia UTC wziętego z chwili tego modułu (``utc_now().date()``) ani zegara z modułu albo nazwy podanej napisem
+(``getattr``, ``__import__``, ``importlib``); to zostaje przeglądowi.
 """
 
 from __future__ import annotations
