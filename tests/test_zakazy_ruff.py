@@ -267,22 +267,60 @@ def test_noqa_nie_zwalnia_z_zakazu_zegara_a_wlasciciel_jest_zwolniony() -> None:
     assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=CLOCK_PROBE) == []
 
 
+def _src_files() -> set[str]:
+    """Pliki ``src/*.py``, które ruff ma sprawdzać: śledzone i nowe nieignorowane, które stoją na dysku."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "src/*.py"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+    return {name for name in listed.split("\0") if name and (ROOT / name).is_file()}
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_ruff_sprawdza_kazdy_plik_src() -> None:
+    """Plik ``src/``, którego ruff nie sprawdza, omija każdy zakaz, także zegara. Ruff wyłącza plik nie tylko ``exclude``
+    i ``include`` konfiguracji, ale też wpisem w ``.ignore``, ``.gitignore`` i ``.git/info/exclude``, więc test pyta
+    ruff tym samym wywołaniem co CI (``ruff check`` bez ścieżek, ``--show-files``), które pliki ``src/`` sprawdza."""
+    shown = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--show-files"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+    checked = {
+        path.relative_to(ROOT.resolve()).as_posix()
+        for line in shown.splitlines()
+        if (path := Path(line).resolve()).is_relative_to(ROOT.resolve() / "src")
+    }
+
+    assert sorted(_src_files() - checked) == [], (
+        "ruff nie sprawdza tych plików src/, więc nie obejmuje ich żaden zakaz src/ruff.toml: usuń ich wyłączenie "
+        "(exclude albo include w konfiguracji ruff) i nie dopisuj pliku src/ do .ignore, .gitignore ani .git/info/exclude"
+    )
+
+
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela(tmp_path: Path) -> None:
-    """Wyjątek w konfiguracji (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore``, ``exclude`` w każdym pliku
+    """Wyjątek od reguły w konfiguracji (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore`` w każdym pliku
     konfiguracji ruff) to druga droga do zegara obok ``noqa``. Kopia drzewa ``src/`` z próbką zegara w miejscu każdego
     pliku i z każdym plikiem konfiguracji ruff repozytorium idzie przez ruff tak jak ``src/``: plik bez zgłoszenia jest
-    zwolniony, a zwolniony może być tylko właściciel."""
+    zwolniony, a zwolniony może być tylko właściciel. Że ruff w ogóle sprawdza każdy plik ``src/``, pilnuje
+    ``test_ruff_sprawdza_kazdy_plik_src`` na prawdziwym checkoucie."""
     for config in (ROOT / "pyproject.toml", *_configs(ROOT)):
         copy = tmp_path / config.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
-    probes = set()
-    for source in (ROOT / "src").rglob("*.py"):
-        probe = tmp_path / source.relative_to(ROOT)
+    probes = _src_files()
+    for name in probes:
+        probe = tmp_path / name
         probe.parent.mkdir(parents=True, exist_ok=True)
         probe.write_text(CLOCK_PROBE, encoding="utf-8")
-        probes.add(source.relative_to(ROOT).as_posix())
 
     reported = {finding.rsplit(":", 1)[0] for finding in _clock_findings("src", cwd=tmp_path)}
 
