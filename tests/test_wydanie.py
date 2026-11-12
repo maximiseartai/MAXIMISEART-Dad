@@ -19,11 +19,13 @@ import pytest
 
 from rozliczenia.centrum import release_notes, tool_update
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes
+from rozliczenia.centrum.tool_update import Release
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import AUTHOR, commit, git
 
 import niestabilne_testy
 import repo
+import wydanie
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
@@ -316,19 +318,21 @@ def test_commit_bez_wpisow_kwarantanny_jest_do_wydania_bez_jej_zapisu(releasing:
 
 
 @pytest.mark.parametrize(
-    "source",
+    ("source", "entries"),
     [
-        "KWARANTANNA: dict[str, Kwarantanna] = dict(WPISY)\n",
-        "KWARANTANNA = {\n",
-        "WPISY = {}\n",
-        EMPTY + 'KWARANTANNA["tests/test_x.py::test_niestabilny"] = Kwarantanna(1, date(2026, 10, 30))\n',
-        EMPTY + "KWARANTANNA.update(WPISY)\n",
-        EMPTY + "KWARANTANNA |= WPISY\n",
-        EMPTY + 'KWARANTANNA = {"tests/test_x.py::test_niestabilny": Kwarantanna(1, date(2026, 10, 30))}\n',
-        EMPTY + "KWARANTANNA: dict[str, Kwarantanna] = dict(WPISY)\n",
-        EMPTY + 'globals()["KWARANTANNA"].update(WPISY)\n',
+        (EMPTY, False),
+        ("KWARANTANNA: dict[str, Kwarantanna] = dict(WPISY)\n", True),
+        ("KWARANTANNA = {\n", True),
+        ("WPISY = {}\n", True),
+        (EMPTY + 'KWARANTANNA["tests/test_x.py::test_niestabilny"] = Kwarantanna(1, date(2026, 10, 30))\n', True),
+        (EMPTY + "KWARANTANNA.update(WPISY)\n", True),
+        (EMPTY + "KWARANTANNA |= WPISY\n", True),
+        (EMPTY + 'KWARANTANNA = {"tests/test_x.py::test_niestabilny": Kwarantanna(1, date(2026, 10, 30))}\n', True),
+        (EMPTY + "KWARANTANNA: dict[str, Kwarantanna] = dict(WPISY)\n", True),
+        (EMPTY + 'globals()["KWARANTANNA"].update(WPISY)\n', True),
     ],
     ids=[
+        "jedno puste przypisanie",
         "nie dosłowny słownik",
         "błąd składni",
         "bez słownika",
@@ -340,15 +344,8 @@ def test_commit_bez_wpisow_kwarantanny_jest_do_wydania_bez_jej_zapisu(releasing:
         "przez globals()",
     ],
 )
-def test_kwarantanna_inna_niz_jedno_puste_przypisanie_wymaga_zapisu(releasing: Releasing, source: str) -> None:
-    passed = releasing.merge(1, "fix: pierwsza naprawa", {"src/a.py": "a = 1\n"})
-    skipped = releasing.merge(2, "fix: druga", {QUARANTINE_FILE: source})
-    releasing.ci(skipped, "success", "brak")
-
-    planned = releasing.planned()
-
-    assert planned["commit"] == passed
-    assert planned["skipped"] == [{"commit": skipped, "ci": "bez zapisu kwarantanny"}]
+def test_kwarantanna_ma_wpisy_przy_kazdym_uzyciu_poza_jednym_pustym_przypisaniem(source: str, entries: bool) -> None:
+    assert niestabilne_testy.ma_wpisy(source) is entries
 
 
 def test_wydanie_odmawia_gdy_test_z_kwarantanny_padl_w_ponowionym_runie_commitu(releasing: Releasing) -> None:
@@ -361,6 +358,7 @@ def test_wydanie_odmawia_gdy_test_z_kwarantanny_padl_w_ponowionym_runie_commitu(
     assert result.returncode == 1
     assert result.stdout.splitlines()[-1] == f"WYDANIE ODMOWA | CI commitu {merged} nie jest już zielone (kwarantanna czerwona)."
     assert releasing.remote_tags() == {}
+    assert releasing.posted() == []
 
 
 def test_bez_potwierdzenia_maksa_nie_powstaje_tag_ani_release(releasing: Releasing) -> None:
@@ -421,19 +419,6 @@ def test_ponowione_wydanie_konczy_to_samo_bez_drugiego_release(releasing: Releas
     assert again.returncode == 0, again.stdout + again.stderr
     assert again.stdout.splitlines()[-1].startswith("WYDANIE OK | v0.1.0 | ")
     assert len(releasing.posted()) == 1
-
-
-def test_wydanie_odmawia_gdy_ci_commitu_przestalo_byc_zielone(releasing: Releasing) -> None:
-    merged = releasing.merge(1, "feat: ilości usług", {"src/a.py": "a = 1\n"})
-    releasing.planned()
-    releasing.ci(merged, "failure")
-
-    result = releasing.publish("--potwierdzone-przez-maksa")
-
-    assert result.returncode == 1
-    assert result.stdout.splitlines()[-1].startswith("WYDANIE ODMOWA | ")
-    assert releasing.remote_tags() == {}
-    assert releasing.posted() == []
 
 
 @pytest.mark.parametrize(
@@ -523,27 +508,40 @@ def test_plan_odmawia_bez_dostepu_do_skrzynki_zgloszen(releasing: Releasing) -> 
 
 
 @pytest.mark.parametrize(
-    ("number", "refusal"),
+    ("number", "off_main", "refusal"),
     [
-        ("0.2.0", "nie jest wyższy"),
-        ("v0.1.9", "nie jest wyższy"),
-        ("1.0.0", "nie ma kształtu"),
-        ("0.3", "nie ma kształtu"),
+        ("0.2.0", (), "Numer v0.2.0 nie jest wyższy od Wydania v0.2.0."),
+        ("v0.1.9", (), "Numer v0.1.9 nie jest wyższy od Wydania v0.2.0."),
+        ("0.5.0", ("v0.7.0",), "Numer v0.5.0 nie jest wyższy od Wydania v0.7.0."),
+        ("1.0.0", (), "Numer 1.0.0 nie ma kształtu 0.MINOR.PATCH (np. 0.2.0)."),
+        ("0.3", (), "Numer 0.3 nie ma kształtu 0.MINOR.PATCH (np. 0.2.0)."),
     ],
 )
-def test_numer_podany_przez_maksa_musi_byc_wyzszy_i_miec_ksztalt_0_minor_patch(
-    releasing: Releasing, number: str, refusal: str
+def test_numer_podany_przez_maksa_musi_byc_wyzszy_od_kazdego_wydania_i_miec_ksztalt_0_minor_patch(
+    number: str, off_main: tuple[str, ...], refusal: str
 ) -> None:
+    previous, proposed = Release.of_tag("v0.2.0"), Release.of_tag("v0.2.1")
+    assert previous is not None and proposed is not None
+    chosen = wydanie.ReleasePlan("b" * 40, wydanie.PreviousRelease(previous, "a" * 40), off_main, proposed, wydanie.Bump.PATCH, (), (), ())
+
+    with pytest.raises(wydanie.Refused) as refused:
+        wydanie.chosen_release(chosen, number)
+
+    assert str(refused.value) == refusal
+
+
+def test_wydanie_z_numerem_maksa_spoza_ksztaltu_odmawia_przed_tagiem_i_release(releasing: Releasing) -> None:
     released = releasing.merge(1, "feat: pierwsze", {"src/a.py": "a = 1\n"})
     releasing.released("v0.2.0", released)
     releasing.merge(2, "fix: naprawa", {"src/a.py": "a = 2\n"})
     releasing.planned()
 
-    result = releasing.publish("--numer", number, "--potwierdzone-przez-maksa")
+    result = releasing.publish("--numer", "1.0.0", "--potwierdzone-przez-maksa")
 
     assert result.returncode == 1
-    assert refusal in result.stdout.splitlines()[-1]
+    assert result.stdout.splitlines()[-1] == "WYDANIE ODMOWA | Numer 1.0.0 nie ma kształtu 0.MINOR.PATCH (np. 0.2.0)."
     assert set(releasing.remote_tags()) == {"v0.2.0"}
+    assert releasing.posted() == []
 
 
 def test_numer_podany_przez_maksa_wyzszy_od_poprzedniego_jest_wydany(releasing: Releasing) -> None:
