@@ -23,7 +23,9 @@ w Logach Uruchomienia), a gdy to nie wystarczy, najstarsze wpisy dziennika Centr
 ``tool_updates``) trzyma jego uchwyt (``ReportHandle``): uchwyt zamraża podgląd,
 a „Wyślij do Maksa” kładzie dokładnie ten podgląd w kolejce Skrzynki Zgłoszeń,
 najwyżej raz na uchwyt. Powrót problemu, którego Zgłoszenie jest otwarte, idzie
-do kolejki sam po Diagnozie Zatrzymania, bez kliknięcia (#820). Bez sieci albo Tokenu do Zgłoszeń Zgłoszenie czeka w
+do kolejki sam po Diagnozie Zatrzymania, bez kliknięcia (#820). Zgłoszenie pracy Przypomnień o raporcie
+(``ReminderReport``, odrzucone hasło aplikacji przy wysyłce) praca przypomnień w ``report_reminders`` wysyła sama, bo
+tata przy niej nie siedzi (ADR 0030). Bez sieci albo Tokenu do Zgłoszeń Zgłoszenie czeka w
 kolejce i wychodzi samo; Komunikat jest tylko wtedy, gdy nie da się zapisać
 pliku kolejki. Zgłoszenie, którego treść Skrzynka odrzuciła, nie czeka na nic,
 co mógłby naprawić tata albo internet (``Rejected``).
@@ -89,7 +91,7 @@ class ProblemFingerprint:
     Kody są unikalne tylko w katalogu procesu, więc odcisk zawiera proces.
     """
 
-    process: common_contract.ProcessKey | Literal["tool_update"]
+    process: common_contract.ProcessKey | Literal["tool_update", "report_reminders"]
     code: str
     what: str
     where: str
@@ -104,6 +106,12 @@ class ProblemFingerprint:
         """Odcisk problemu nieudanej Aktualizacji narzędzia: jej kody są unikalne w jej własnym katalogu."""
 
         return cls("tool_update", message.code, message.what, message.where, message.action)
+
+    @classmethod
+    def of_reminders(cls, message: Message) -> ProblemFingerprint:
+        """Odcisk problemu pracy Przypomnień o raporcie: jej kody są unikalne w jej własnym katalogu."""
+
+        return cls("report_reminders", message.code, message.what, message.where, message.action)
 
     @property
     def digest(self) -> str:
@@ -201,6 +209,40 @@ class UpdateReport:
             ]
 
         return _report(self.message, _fitted(lines, frames=0, entries=len(self.log_entries)), fingerprint)
+
+
+@dataclass(frozen=True)
+class ReminderReport:
+    """Zgłoszenie pracy Przypomnień o raporcie, które Centrum wysyła samo, bez taty: Komunikat i ostatnie wpisy
+    dziennika Centrum (bez adresów Wykonawców i treści maili, bo dziennik ich nie ma)."""
+
+    message: Message
+    log_entries: tuple[str, ...]
+    fingerprint: ProblemFingerprint
+
+    @classmethod
+    def of(cls, message: Message, log: CentrumLog) -> ReminderReport:
+        return cls(message, tuple(log.recent(_UPDATE_LOG_ENTRIES)), ProblemFingerprint.of_reminders(message))
+
+    @property
+    def period(self) -> None:
+        return None
+
+    def report(self, *, commit: str | None, previous: int | None) -> Report:
+        fingerprint = self.fingerprint.digest
+
+        def lines(_dropped_frames: int, dropped_entries: int) -> list[str]:
+            return [
+                *_message_lines(self.message),
+                *_tool_lines(fingerprint, previous, commit=f"- Commit: {commit or 'nieznany'}"),
+                *_log_lines(self.log_entries, dropped_entries),
+            ]
+
+        return _report(self.message, _fitted(lines, frames=0, entries=len(self.log_entries)), fingerprint)
+
+
+ReportSource = StopReport | UpdateReport | ReminderReport
+"""Źródło Zgłoszenia: Zatrzymanie, nieudana Aktualizacja narzędzia albo praca Przypomnień o raporcie."""
 
 
 def _message_lines(message: Message) -> list[str]:
@@ -345,7 +387,7 @@ class NoPreview(Exception):
 
 
 class ReportHandle:
-    """Zgłoszenie jednego problemu z jednego źródła (Zatrzymanie, nieudana Aktualizacja narzędzia), od podglądu do wysyłki.
+    """Zgłoszenie jednego problemu z jednego źródła (``ReportSource``), od podglądu do wysyłki.
 
     ``prepare`` zamraża podgląd i pyta skrzynkę Zgłoszeń w tle o otwarte Zgłoszenie tego problemu, a ``send``
     kładzie ostatni podgląd w kolejce Skrzynki najwyżej raz; drugie kliknięcie w trakcie wysyłki czeka na jej wynik.
@@ -375,7 +417,7 @@ class ReportHandle:
         with self._changed:
             return self._state
 
-    def prepare(self, source: StopReport | UpdateReport) -> diagnosis_contract.ReportDraft:
+    def prepare(self, source: ReportSource) -> diagnosis_contract.ReportDraft:
         """Nowy podgląd ``source``, który wyśle ``send``; nie czeka na skrzynkę i niczego nie zapisuje.
 
         Gdy ten problem był już zgłoszony z tego komputera, Zgłoszenie ma odnośnik do ostatniego z nich. Podgląd
@@ -532,7 +574,7 @@ class Reports:
                 case CaseRejected():
                     handle._rejected()
 
-    def _preview(self, source: StopReport | UpdateReport) -> _Preview:
+    def _preview(self, source: ReportSource) -> _Preview:
         fingerprint = source.fingerprint.digest
         sent = [case.number for case in self._cases.all() if case.kind == REPORT and case.id == fingerprint]
         previous = next((number for number in reversed(sent) if number is not None), None)

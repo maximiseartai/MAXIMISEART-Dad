@@ -1385,6 +1385,13 @@ summary_not_shown [BLAD_PODSUMOWANIA]
   Gdzie: Wpisanie raportów
   Co zrobić: Sprawdź INTERMAX i przekaż ten komunikat osobie utrzymującej narzędzie.
 
+=== Przypomnienia o raporcie (src/rozliczenia/centrum/reminder_messages.py) ===
+
+password_rejected [PRZYPOMNIENIA_HASLO_ODRZUCONE]
+  Co się stało: Skrzynka raportów odrzuciła hasło, Maks musi je odnowić. Przypomnienia o raporcie nie poszły.
+  Gdzie: Przypomnienia o raporcie
+  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
+
 === Plik taty (zdania wspólne) (src/rozliczenia/workbook_messages.py) ===
 
 open_in_excel [PLIK_OTWARTY]

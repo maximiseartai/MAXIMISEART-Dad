@@ -1,4 +1,5 @@
-"""Skrzynka raportów: maile Wykonawców ze skrzynki raportów taty w Gmailu, przez IMAP i tylko do odczytu (ADR 0028).
+"""Skrzynka raportów: maile Wykonawców ze skrzynki raportów taty w Gmailu, przez IMAP i tylko do odczytu (ADR 0028), oraz
+wysyłka Przypomnień o raporcie przez SMTP Gmaila (ADR 0030).
 
 Port niczego w skrzynce nie zmienia: otwiera folder przez ``EXAMINE`` i pobiera maile przez ``BODY.PEEK``, więc nie
 oznacza ich jako przeczytanych, i nie wysyła ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE`` ani ``APPEND``.
@@ -9,6 +10,14 @@ nie umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz
 Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło),
 który Maks pisze Notatnikiem albo PowerShellem, więc odczyt przyjmuje BOM UTF-8 i UTF-16. Hasło nie wychodzi z modułu:
 nie ma go w żadnym wyniku, ``repr`` ani wyjątku.
+
+Przypomnienia o raporcie (``ReminderMailbox``): ``sent_reminders`` czyta tak samo tylko do odczytu folder z atrybutem
+``\\Sent`` (RFC 6154, w Gmailu „Wysłane”) i oddaje maile, których temat napisał ``reminder_subject``, z adresatami z
+``To`` i chwilą przyjęcia przez Gmaila; bez takiego folderu to ``InboxUnreachable``, bo bez niego nie wiadomo, co już
+poszło. ``send`` wysyła jedno przypomnienie przez ``smtp.gmail.com`` z adresu i hasła aplikacji z tego samego pliku
+dostępu, a porażkę oddaje jako wynik: odrzucone hasło (``SMTPAuthenticationError``) to ``PasswordRejected``, sieć
+(``OSError``, zerwane albo nienawiązane połączenie SMTP) to ``InboxUnreachable``, a każda inna odmowa serwera SMTP to
+``MailRefused``; każdy wynik niesie tylko nazwę typu wyjątku.
 
 ``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``, #1234): flagi maili i liczby maili
 ze słowem w temacie w folderze ``mails_since`` i w ``INBOX``, tą samą drogą (plik dostępu, połączenie, wybór folderu,
@@ -24,17 +33,20 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 import email
 from email.message import MIMEPart
+from email.mime.text import MIMEText
 import email.policy
+from email.utils import format_datetime, getaddresses, make_msgid
 import hashlib
 from html.parser import HTMLParser
 import imaplib
 from pathlib import Path
 import re
+import smtplib
 import ssl
 import time
 from typing import Final, Literal, Protocol, TypeVar
 
-from .worker_reports import SUBJECT_WORD, MailId, ReportMail, SenderAddress
+from .worker_reports import SUBJECT_WORD, MailId, Reminder, ReportMail, SenderAddress, SentReminder, reminder_day
 
 __all__ = [
     "FETCH_BATCH",
@@ -44,8 +56,12 @@ __all__ = [
     "InboxOutcome",
     "InboxSurvey",
     "InboxUnreachable",
+    "MailRefused",
+    "MailSent",
     "Mails",
     "PasswordRejected",
+    "ReminderMailbox",
+    "SentReminders",
     "WorkerReportInbox",
     "mail_of",
 ]
@@ -53,6 +69,8 @@ __all__ = [
 INBOX_ACCESS_FILE: Final = "skrzynka-raportow.txt"
 GMAIL_HOST: Final = "imap.gmail.com"
 GMAIL_PORT: Final = 993
+SMTP_HOST: Final = "smtp.gmail.com"
+SMTP_PORT: Final = 465
 TIMEOUT_S: Final = 30
 FETCH_BATCH: Final = 100
 """Najwięcej UID w jednym ``UID FETCH``, żeby polecenie miało ograniczoną długość przy każdej liczbie maili."""
@@ -60,6 +78,10 @@ _MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
 _LIST_LINE: Final = re.compile(rb'\((?P<flags>[^)]*)\) (?:"(?:[^"\\]|\\.)*"|NIL) "(?P<name>(?:[^"\\]|\\.)*)"')
 _UID: Final = re.compile(rb"\bUID (\d+)\b")
 _FLAGS: Final = re.compile(rb"\bFLAGS \((?P<flags>[^)]*)\)")
+_SENT_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (SUBJECT TO)])"
+_SMTP_NETWORK: Final = (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)
+"""Porażki SMTP, które są siecią, a nie odmową serwera, jak każdy inny ``OSError``: przypomnienie poczeka na następną
+próbę w tej porze. ``SMTPException`` dziedziczy po ``OSError``, więc idą przed odmową serwera."""
 _T = TypeVar("_T")
 
 InboxAccess = Literal["ready", "missing", "unreadable"]
@@ -94,6 +116,25 @@ InboxOutcome = Mails | PasswordRejected | InboxUnreachable
 
 
 @dataclass(frozen=True)
+class SentReminders:
+    """Przypomnienia o raporcie z folderu „Wysłane” z dni od dnia przed wskazanym."""
+
+    reminders: tuple[SentReminder, ...]
+
+
+@dataclass(frozen=True)
+class MailSent:
+    """Gmail przyjął przypomnienie do wysłania."""
+
+
+@dataclass(frozen=True)
+class MailRefused:
+    """Serwer SMTP odmówił przypomnienia inaczej niż odrzuceniem hasła (np. adresu); ``cause`` to nazwa typu wyjątku."""
+
+    cause: str
+
+
+@dataclass(frozen=True)
 class InboxSurvey:
     """Stan skrzynki z dni od dnia przed wskazanym, bez treści maili. ``searched`` to liczba maili, które w folderze
     czytanym przez ``mails_since`` dało wyszukiwanie tych dni, a ``flags`` to flagi IMAP każdego z nich po UID;
@@ -120,6 +161,16 @@ class WorkerReportInbox(Protocol):
         ...
 
 
+class ReminderMailbox(WorkerReportInbox, Protocol):
+    def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
+        """Przypomnienia o raporcie z folderu „Wysłane” z dni od dnia przed ``day``; skrzynka zostaje bez zmian."""
+        ...
+
+    def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+        """Wysyła przypomnienie ze skrzynki raportów do jego adresatów z datą ``at``."""
+        ...
+
+
 @dataclass(frozen=True)
 class _Access:
     address: SenderAddress
@@ -134,12 +185,25 @@ def _gmail() -> imaplib.IMAP4:
     return imaplib.IMAP4_SSL(GMAIL_HOST, GMAIL_PORT, ssl_context=ssl.create_default_context(), timeout=TIMEOUT_S)
 
 
-class ImapInbox:
-    """Skrzynka raportów taty w Gmailu; ``config_directory`` to folder ``config`` z plikiem ``INBOX_ACCESS_FILE``."""
+def _gmail_smtp() -> smtplib.SMTP:
+    return smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context(), timeout=TIMEOUT_S)
 
-    def __init__(self, config_directory: Path, *, connect: Callable[[], imaplib.IMAP4] = _gmail) -> None:
+
+class ImapInbox:
+    """Skrzynka raportów taty w Gmailu; ``config_directory`` to folder ``config`` z plikiem ``INBOX_ACCESS_FILE``.
+
+    ``connect`` łączy z serwerem IMAP, a ``smtp`` z serwerem SMTP; testy podają atrapy."""
+
+    def __init__(
+        self,
+        config_directory: Path,
+        *,
+        connect: Callable[[], imaplib.IMAP4] = _gmail,
+        smtp: Callable[[], smtplib.SMTP] = _gmail_smtp,
+    ) -> None:
         self._config = config_directory
         self._connect = connect
+        self._smtp = smtp
 
     def access(self) -> InboxAccess:
         found = _read_access(self._config)
@@ -147,6 +211,32 @@ class ImapInbox:
 
     def mails_since(self, day: date) -> InboxOutcome:
         return self._session(lambda imap, access: _read(imap, access, day))
+
+    def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
+        return self._session(lambda imap, access: _sent(imap, access, day))
+
+    def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+        found = _read_access(self._config)
+        if not isinstance(found, _Access):
+            return InboxUnreachable(found)
+        message = _reminder_message(reminder, found.address, at)
+        smtp: smtplib.SMTP | None = None
+        try:
+            smtp = self._smtp()
+            smtp.login(found.address.shown(), found.password)
+            smtp.send_message(message)
+        except smtplib.SMTPAuthenticationError:
+            return PasswordRejected()
+        except _SMTP_NETWORK as error:
+            return InboxUnreachable(_cause(error))
+        except smtplib.SMTPException as error:
+            return MailRefused(_cause(error))
+        except OSError as error:
+            return InboxUnreachable(_cause(error))
+        finally:
+            if smtp is not None:
+                _quit(smtp)
+        return MailSent()
 
     def survey(self, day: date) -> InboxSurvey | PasswordRejected | InboxUnreachable:
         """Flagi i liczby maili z dni od dnia przed ``day``, jak ``mails_since`` tylko do odczytu: ``EXAMINE`` i
@@ -283,11 +373,70 @@ def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
 def _folder(imap: imaplib.IMAP4) -> str:
     """Folder Gmaila ze wszystkimi mailami (atrybut ``\\All``, RFC 6154), a bez niego ``INBOX``."""
 
+    return _special(imap, rb"\all") or "INBOX"
+
+
+def _special(imap: imaplib.IMAP4, attribute: bytes) -> str | None:
+    """Folder z atrybutem ``attribute`` (małymi literami, RFC 6154); ``None``, gdy skrzynka go nie ma."""
+
     for line in _ok(imap.list()):
         found = _LIST_LINE.fullmatch(line) if isinstance(line, bytes) else None
-        if found is not None and rb"\all" in found["flags"].lower().split():
+        if found is not None and attribute in found["flags"].lower().split():
             return re.sub(rb"\\(.)", rb"\1", found["name"]).decode("ascii")
-    return "INBOX"
+    return None
+
+
+def _sent(imap: imaplib.IMAP4, access: _Access, day: date) -> SentReminders:
+    imap.login(_quoted(access.address.shown()), access.password)
+    folder = _special(imap, rb"\sent")
+    if folder is None:
+        raise UnexpectedReply
+    _ok(imap.select(_quoted(folder), readonly=True))
+    reminders = []
+    for prefix, header in _fetched(imap, _since(imap, day), _SENT_ITEMS).values():
+        moment = imaplib.Internaldate2tuple(prefix)
+        if moment is None:
+            raise UnexpectedReply
+        found = _sent_reminder(header, datetime.fromtimestamp(time.mktime(moment), tz=timezone.utc).astimezone())
+        if found is not None:
+            reminders.append(found)
+    return SentReminders(tuple(reminders))
+
+
+def _sent_reminder(header: bytes, sent_at: datetime) -> SentReminder | None:
+    """Przypomnienie z nagłówków ``Subject`` i ``To`` maila z „Wysłanych”; ``None`` dla innego tematu, maila bez adresata
+    i nagłówka, którego pakiet ``email`` nie umie rozebrać."""
+
+    # Pakiet email zgłasza na zepsutym nagłówku różne wyjątki, zależnie od wersji Pythona (jak ``mail_of``).
+    try:
+        message = email.message_from_bytes(header, policy=email.policy.default)
+        day = reminder_day(str(message["Subject"] or ""))
+        pairs = getaddresses([str(value) for value in message.get_all("To", [])])
+    except Exception:  # noqa: BLE001 - granica jednego maila z „Wysłanych”: inny mail niż przypomnienie
+        return None
+    recipients = frozenset(address for _, raw in pairs if (address := SenderAddress.of(raw)) is not None)
+    return None if day is None or not recipients else SentReminder(recipients, day, sent_at)
+
+
+def _reminder_message(reminder: Reminder, sender: SenderAddress, at: datetime) -> MIMEText:
+    """Mail przypomnienia w UTF-8, z tematem po RFC 2047 (polityka SMTP pakietu ``email``)."""
+
+    message = MIMEText(reminder.text, "plain", "utf-8", policy=email.policy.SMTP)
+    message["From"] = sender.shown()
+    message["To"] = ", ".join(recipient.shown() for recipient in reminder.recipients)
+    message["Subject"] = reminder.subject
+    message["Date"] = format_datetime(at)
+    message["Message-ID"] = make_msgid(domain=sender.shown().partition("@")[2])
+    return message
+
+
+def _quit(smtp: smtplib.SMTP) -> None:
+    """Koniec sesji SMTP bez wyjątku: po zerwanym połączeniu zamyka samo gniazdo."""
+
+    try:
+        smtp.quit()
+    except (OSError, smtplib.SMTPException):
+        smtp.close()
 
 
 def _fetched(imap: imaplib.IMAP4, uids: list[str], items: str) -> dict[str, tuple[bytes, bytes]]:
