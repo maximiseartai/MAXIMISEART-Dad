@@ -116,8 +116,8 @@ py -3 .agents\skills\verify-wpisanie-raportow\scripts\sprawdz_wpisanie_raportow.
 
 `--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
 known findings are `tools/lib/model_tlc.py`; Java and `tla2tools.jar` come from `tools/lib/narzedzia_tlc.py`. The whole
-check took 52 s on Maks's Mac on 2026-11-12 (six configurations, 15 known findings in 21 TLC runs, about 8.9 million
-states in the six full runs) under a load average of 25 from other runs.
+check took 54 s on Maks's Mac on 2026-11-12 (six configurations, 15 known findings in 21 TLC runs, about 9.6 million
+states in the six full runs) under a load average of 19 from other runs.
 
 The last line is the verdict: `WPISANIE RAPORTÓW OK` or `WPISANIE RAPORTÓW OK, ZNANE ZNALEZISKA: n` (exit 0, 1 with
 `--strict`), `WPISANIE RAPORTÓW: NOWE NARUSZENIE (n)` or `ZNALEZISKO ZNIKNĘŁO (n)` (exit 1), `BŁĄD MODELU (n)` (exit
@@ -151,8 +151,8 @@ model is wrong until you show it is not.
 | Configuration | What can happen | Expected |
 | --- | --- | --- |
 | `zwykle` | one tab, one switch-off, one refused INTERMAX write | known `przywrocona-wartosc`, `przywrocona-ze-starej-pamieci`, `przed-pamiecia` |
-| `pamiec` | one tab, one switch-off, one failed write of the memory file | the three of `zwykle` and `pamiec-odlozona` |
-| `decyzje` | one tab, one switch-off, one failed write of the decisions file | the three of `zwykle` and `decyzja-odlozona` |
+| `pamiec` | one tab, one switch-off, one failed write of the memory file, which may fail again while its text waits | the three of `zwykle` and `pamiec-odlozona` |
+| `decyzje` | one tab, one switch-off, one failed write of the decisions file, which may fail again while its text waits | the three of `zwykle` and `decyzja-odlozona` |
 | `dwie-karty` | two tabs with „Zostaw moją” at once, no switch-off, no failure | known `przywrocona-wartosc` |
 | `okres` | the period closes with a Plik zbiorczy and opens again | known `przywrocona-wartosc`, `okres-otwarty-ponownie` |
 | `kopia` | a conflict copy appears and goes at any moment | known `przywrocona-wartosc` |
@@ -168,19 +168,24 @@ findings of `zwykle` on 2026-11-12 before it was dropped to keep the check under
 A configuration forgives only the findings `model/konfiguracje.json` lists for it (`znane`), each only for its promise
 and only for an event that happened with its cause. The causes come from history variables, not from the code:
 `ostatniWlasny` (the value the tool last wrote), `zapomniala` and `zapomnialaCzeka` (a click whose memory survived saw
-the cell without that value), `utrataPamieci` (a switch-off lost a memory text a click computed after its INTERMAX
-write), `bezPamieci` (why the memory lacks the tool's value that still stands in the cell), `upuszczona` (the memory
-dropped it in a closed period) and `zostawione` (what „Zostaw moją” confirmed to Dad). Each finding was replayed on
-the code (Read a result), with a scratch test that is not in `tests/`.
+the cell without that value), `utrataPamieci` (a switch-off left on disk a memory other than the one this Centrum work
+held for right, `PamiecWlasciwa`: the text the click computed after its INTERMAX write, else the waiting text; cleared
+when the tool writes the cell again), `bezPamieci` (why the memory lacks the tool's value that still stands in the
+cell), `upuszczona` (the memory dropped it in a closed period) and `zostawione` (what „Zostaw moją” confirmed to Dad).
+Each finding was replayed on the code (Read a result), with a scratch test that is not in `tests/`.
 
-1. **`przywrocona-wartosc`, NieNadpisuje (by design, decide with Maks).** The tool wrote `tak`; Dad (or his worker)
-   clears the cell and types `tak` again, or changes it and changes it back, before any click; a corrected Raport says
-   `nie`; the next click finds `cell == remembered` in `reconcile` and writes `nie` over Dad's `tak`. The memory compares
-   values, not who typed them, so it cannot tell. Replayed: after the second click INTERMAX has `nie` and the click has no
-   problem. Harm is small (Dad's value equals the old report), and ADR 0028 accepts it as „własny wpis, którego nikt
-   potem nie zmienił”.
+1. **`przywrocona-wartosc`, NieNadpisuje (open, breaks ADR 0028 and 0029, decide with Maks).** The tool wrote `tak`;
+   Dad (or his worker) clears the cell and types `tak` again, or changes it and changes it back, before any click; a
+   corrected Raport says `nie`; the next click finds `cell == remembered` in `reconcile` and writes `nie` over Dad's
+   `tak`. The memory compares values, not who typed them, so it cannot tell. Replayed: after the second click INTERMAX
+   has `nie` and the click has no problem. Harm is small (Dad's value equals the old report), but it breaks the promise: ADR 0028 writes only „do
+   własnego wcześniejszego wpisu, którego nikt potem nie zmienił”, and Dad did change it; ADR 0029 („a od tamtej pory
+   nikt tego nie ruszył. Gdy tata przeniesie zlecenie z powrotem, Centrum go nie przenosi drugi raz”) decides the same
+   „back again” case against overwriting. Forgiven only so the check stays green without a product change; no ADR or
+   decision of Maks accepts it.
 2. **`przywrocona-ze-starej-pamieci`, NieNadpisuje (open).** The memory file is older than INTERMAX: Centrum switched off
-   between `write_cells` (:340) and `save_memory` (:353), or `save_memory` failed and Centrum switched off before a retry.
+   between `write_cells` (:340) and `save_memory` (:353), or `save_memory` failed and Centrum switched off before a retry,
+   and the memory the click computed differs from the one on disk (a switch-off that loses nothing is not this cause).
    The tool wrote `tak`, then `nie` over its own `tak` in the click whose memory was lost; Dad types `tak`; the next click
    with the mail still `nie` finds `tak` in the old memory and writes `nie` over Dad's value. With the right memory
    (`nie`) it would have shown a difference. Replayed: memory and result files restored to the first click after the
@@ -232,8 +237,8 @@ When a definition from `model/definicje.json` changes:
 
 `.venv/bin/python .agents/skills/verify-wpisanie-raportow/scripts/check_model_wpisania_mutations.py` applies each
 broken variant of the model to a copy of the checkout (`tools/lib/silnik_mutacji.py`) and must end with `MUTACJE OK`;
-run it only to reproduce a red Mutation checks step or while you change the model. Each mutation removes a guard the
-code has, and each gives `WPISANIE RAPORTÓW: NOWE NARUSZENIE`:
+run it only to reproduce a red Mutation checks step or while you change the model. Each mutation but the last removes a
+guard the code has, and each gives `WPISANIE RAPORTÓW: NOWE NARUSZENIE`:
 
 - NieNadpisuje: `reconcile` without `cell is None or cell == remembered` (`zwykle`); `own` without `if value in
   current[cell]`, so the memory keeps an own entry Dad changed (`zwykle`).
@@ -243,6 +248,11 @@ code has, and each gives `WPISANIE RAPORTÓW: NOWE NARUSZENIE`:
   decision is lost); `keep` without `self.kept() |` (`dwie-karty`); `kept()` in `keep` without the waiting text
   (`decyzje`); `_view` without `if problem.difference not in kept` (`dwie-karty`).
 - KopiaZatrzymuje: `check` without `onedrive_conflicts.beside`; the end of `enter_from_mail` without it (`kopia`).
+
+The last one removes the cause of three known findings instead: a switch-off that leaves on disk the memory this work
+held for right (as if `save_memory` were part of the INTERMAX write and nothing waited in memory) must give
+`WPISANIE RAPORTÓW: ZNALEZISKO ZNIKNĘŁO (3)` in `pamiec`, so `przywrocona-ze-starej-pamieci`, `przed-pamiecia` and
+`pamiec-odlozona` all go. A history variable that marks a cause the event did not have would leave one of them standing.
 
 A mutation reported as `NIEAKTUALNA` no longer matches the model: rewrite its anchor against the new model so that it
 breaks the same rule again.
@@ -261,9 +271,10 @@ is wrong:
 - **`replace_atomically` is atomic**: a switch-off leaves the old file or the new one.
 - **One `FileReportState` per Centrum work** (`create_app.report_files`), shared by the process and the API, and one
   Uruchomienie at a time (`RunHost.start`).
-- **A file that failed its write may keep failing every retry while its text waits**; a read of the file itself never
-  fails (a file that cannot be read is `StateUnreadable` or `DecisionsUnreadable`, a Zatrzymanie or a refusal that
-  changes nothing).
+- **A file that failed its write may keep failing every retry and every write while its text waits**
+  (`StateFile._save` then writes without pauses), with no limit after the one first failure its configuration allows;
+  a read of the file itself never fails (a file that cannot be read is `StateUnreadable` or `DecisionsUnreadable`, a
+  Zatrzymanie or a refusal that changes nothing).
 
 Left out: the rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
 mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a

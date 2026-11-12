@@ -15,12 +15,12 @@
       {
         "obietnica": "NieNadpisuje",
         "przyczyna": "przywrocona-wartosc",
-        "znalezisko": "tata (albo pracownik) zmienia własny wpis narzędzia i przed następnym kliknięciem wpisuje z powrotem dokładnie tę samą wartość (na przykład czyści komórkę i wpisuje „tak”), a poprawka Wykonawcy ją nadpisuje: _cells.reconcile porównuje wartość komórki z pamięcią, nie wie, kto ją wpisał (przyjęte w ADR 0028 jako „własny wpis, którego nikt potem nie zmienił”; decyzja Maksa)"
+        "znalezisko": "tata (albo pracownik) zmienia własny wpis narzędzia i przed następnym kliknięciem wpisuje z powrotem dokładnie tę samą wartość (na przykład czyści komórkę i wpisuje „tak”), a poprawka Wykonawcy ją nadpisuje: _cells.reconcile porównuje wartość komórki z pamięcią, nie wie, kto ją wpisał (otwarte, łamie ADR 0028: „do własnego wcześniejszego wpisu, którego nikt potem nie zmienił”, a tata go zmienił, i ADR 0029: „od tamtej pory nikt tego nie ruszył”, sytuacja „z powrotem” rozstrzygnięta przeciw nadpisaniu; decyzja Maksa)"
       },
       {
         "obietnica": "NieNadpisuje",
         "przyczyna": "przywrocona-ze-starej-pamieci",
-        "znalezisko": "pamięć na dysku jest starsza niż INTERMAX, bo Centrum zgasło między write_cells a save_memory albo zapis pamięci zawiódł i Centrum zgasło przed ponowieniem; tata wpisuje dawną wartość narzędzia, którą ta stara pamięć wciąż ma, a następne kliknięcie ją nadpisuje, choć z właściwą pamięcią dałoby różnicę"
+        "znalezisko": "pamięć na dysku jest starsza niż INTERMAX, bo Centrum zgasło między write_cells a save_memory albo zapis pamięci zawiódł i Centrum zgasło przed ponowieniem, a pamięć, którą policzyło kliknięcie, była inna niż ta na dysku; tata wpisuje dawną wartość narzędzia, którą ta stara pamięć wciąż ma, a następne kliknięcie ją nadpisuje, choć z właściwą pamięcią dałoby różnicę"
       },
       {
         "obietnica": "BezFalszywejRoznicy",

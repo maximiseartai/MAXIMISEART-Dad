@@ -15,8 +15,8 @@ CONSTANTS
     MaxZgasniec,        \* zgaśnięć Centrum: brak prądu, zabity proces; treść odłożona w pamięci ginie
     MaxAwariiIntermax,  \* write_cells: Refusal albo Rejected (Excel, OneDrive, nieudany zapis), INTERMAX nietknięty
     MaxAwariiPamieci,   \* StateFile.write pamięci, wyniku i decyzji: OSError z replace_atomically pliku w config;
-    MaxAwariiWyniku,    \* plik, którego zapis zawiódł, może zawodzić przy każdym ponowieniu (StateFile.retry), dopóki
-    MaxAwariiDecyzji,   \* treść czeka, bez dalszych awarii z tej puli
+    MaxAwariiWyniku,    \* plik, którego zapis zawiódł, może zawodzić przy każdym ponowieniu (StateFile.retry) i
+    MaxAwariiDecyzji,   \* zapisie (StateFile.write), dopóki treść czeka, bez dalszych awarii z tej puli
     MozeOtworzyc,       \* tata usuwa Plik zbiorczy okresu, który już był zamknięty, więc okres znów jest otwarty
     MozeKopia,          \* OneDrive kładzie obok INTERMAX kopię konfliktu (onedrive_conflicts.beside)
     \* Przyczyny znanych znalezisk, które wariant ...PozaZnanymi danej obietnicy pomija (skrypt skilla je ustawia).
@@ -33,7 +33,10 @@ Fazy == {"wolne", "sprawdzone", "zapisane", "pamiec"}
 Etapy == {"nic", "sprawdzona", "czyta"}
 Ponowienia(czeka) == IF czeka THEN {"udany", "nieudany"} ELSE {"bez"}
 Zapisy == {"udany", "nieudany"}
-Nieudane(z) == IF z = "nieudany" THEN 1 ELSE 0
+\* StateFile._save: zapis pliku, którego treść już czeka, idzie bez przerw i może znów zawieść (OSError); taka porażka
+\* nie bierze nowej awarii z puli, jak nieudane ponowienie (Ponowienia).
+MozeZawiesc(z, czeka, awarie, max) == z = "nieudany" => (czeka \/ awarie < max)
+Nieudane(z, czeka) == IF z = "nieudany" /\ ~czeka THEN 1 ELSE 0
 Przyczyny == {"przywrocona-wartosc", "przywrocona-ze-starej-pamieci", "przed-pamiecia", "pamiec-odlozona",
               "okres-otwarty-ponownie", "decyzja-odlozona", "przy-sprawdzaniu", "po-zapisie"}
 
@@ -57,7 +60,7 @@ VARIABLES
     ostatniWlasny,      \* wartość, którą narzędzie ostatnio wpisało do komórki
     zapomniala,         \* pamięć na dysku nie ma już ostatniWlasny, bo kliknięcie widziało komórkę bez niej
     zapomnialaCzeka,    \* to samo, ale tylko w treści odłożonej
-    utrataPamieci,      \* zgaśnięcie zgubiło treść pamięci, którą kliknięcie policzyło po zapisie INTERMAX
+    utrataPamieci,      \* zgaśnięcie zostawiło na dysku pamięć inną niż PamiecWlasciwa, a narzędzie od tej pory nie pisało
     bezPamieci,         \* dlaczego pamięć nie ma wartości, którą narzędzie wpisało i która dalej stoi w komórce
     upuszczona,         \* pamięć upuściła własny wpis, który stoi w komórce, bo okres był zamknięty
     zostawione,         \* treści, przy których „Zostaw moją” wróciło do taty z widokiem bez różnicy
@@ -82,6 +85,9 @@ vars == <<swiat, plikPamieci, plikWyniku, plikDecyzji, klik, karty, duchy, liczn
 PamiecEfektywna == IF pamiecCzeka THEN pamiecOdlozona ELSE pamiec
 PokazanaRoznica == IF wynikCzeka THEN wynikOdlozony ELSE wynik
 DecyzjeWidoku == IF decyzjeCzeka THEN decyzjeOdlozone ELSE decyzje
+\* Pamięć, którą ta praca Centrum ma za właściwą: policzona przez kliknięcie po zapisie INTERMAX, a przed save_memory,
+\* inaczej treść odłożona albo plik.
+PamiecWlasciwa == IF faza = "zapisane" THEN planPamiec ELSE PamiecEfektywna
 
 TypeOK ==
     /\ komorka \in Komorki /\ autor \in {"nikt", "narzedzie", "tata"} /\ wpis \in Pamieci
@@ -237,6 +243,7 @@ Zapis ==
              /\ zapomniala' = IF zmiana = Brak THEN zapomniala ELSE FALSE
              /\ zapomnialaCzeka' = IF zmiana = Brak THEN zapomnialaCzeka ELSE FALSE
              /\ bezPamieci' = IF zmiana = Brak THEN bezPamieci ELSE {}
+             /\ utrataPamieci' = IF zmiana = Brak THEN utrataPamieci ELSE FALSE
              /\ upuszczona' =
                     IF zmiana # Brak THEN FALSE
                     ELSE upuszczona \/ (~okresOtwarty /\ autor = "narzedzie" /\ migPamiec = komorka)
@@ -244,7 +251,7 @@ Zapis ==
              /\ przeoczonaKopia' = przeoczonaKopia \cup (IF kopiaPrzySprawdzaniu THEN {{"przy-sprawdzaniu"}} ELSE {})
              \* migawka kliknięcia jest potrzebna tylko w planie, więc dalej jej nie ma
              /\ migPamiec' = Brak /\ migDecyzje' = {} /\ kopiaPrzySprawdzaniu' = FALSE
-             /\ UNCHANGED <<wpis, okresOtwarty, kopia, utrataPamieci, zostawione, liczniki, falszywe, bezDecyzji>>
+             /\ UNCHANGED <<wpis, okresOtwarty, kopia, zostawione, liczniki, falszywe, bezDecyzji>>
     /\ UNCHANGED <<plikPamieci, plikWyniku, plikDecyzji, karty>>
 
 (* report_entering.py :353: parts.state.save_memory po udanym zapisie INTERMAX, także przy zerze wpisanych komórek: *)
@@ -254,8 +261,8 @@ ZapiszPamiec ==
     /\ faza = "zapisane"
     /\ faza' = "pamiec"
     /\ \E z \in Zapisy :
-        /\ z = "nieudany" => awariePamieci < MaxAwariiPamieci
-        /\ awariePamieci' = awariePamieci + Nieudane(z)
+        /\ MozeZawiesc(z, pamiecCzeka, awariePamieci, MaxAwariiPamieci)
+        /\ awariePamieci' = awariePamieci + Nieudane(z, pamiecCzeka)
         /\ IF z = "udany"
            THEN /\ pamiec' = planPamiec /\ pamiecCzeka' = FALSE /\ pamiecOdlozona' = Brak
                 /\ zapomniala' = (zapomniala \/ zapomnialaCzeka \/ planZapomina) /\ zapomnialaCzeka' = FALSE
@@ -274,8 +281,8 @@ ZapiszPamiec ==
 ZapiszWynik ==
     /\ faza = "pamiec"
     /\ \E z \in Zapisy :
-        /\ z = "nieudany" => awarieWyniku < MaxAwariiWyniku
-        /\ awarieWyniku' = awarieWyniku + Nieudane(z)
+        /\ MozeZawiesc(z, wynikCzeka, awarieWyniku, MaxAwariiWyniku)
+        /\ awarieWyniku' = awarieWyniku + Nieudane(z, wynikCzeka)
         /\ IF z = "udany"
            THEN wynik' = planRoznica /\ wynikCzeka' = FALSE /\ wynikOdlozony' = Brak
            ELSE wynikCzeka' = TRUE /\ wynikOdlozony' = planRoznica /\ UNCHANGED wynik
@@ -325,8 +332,8 @@ ZostawZapisz(k) ==
     /\ etap' = [etap EXCEPT ![k] = "nic"]
     /\ LET nowe == odczyt[k] \cup {tresc[k]} IN
        /\ \E z \in Zapisy :
-           /\ z = "nieudany" => awarieDecyzji < MaxAwariiDecyzji
-           /\ awarieDecyzji' = awarieDecyzji + Nieudane(z)
+           /\ MozeZawiesc(z, decyzjeCzeka, awarieDecyzji, MaxAwariiDecyzji)
+           /\ awarieDecyzji' = awarieDecyzji + Nieudane(z, decyzjeCzeka)
            /\ IF z = "udany"
               THEN decyzje' = nowe /\ decyzjeCzeka' = FALSE /\ decyzjeOdlozone' = {}
               ELSE decyzjeCzeka' = TRUE /\ decyzjeOdlozone' = nowe /\ UNCHANGED decyzje
@@ -343,13 +350,14 @@ Zgasniecie ==
     /\ zgasniecia < MaxZgasniec
     /\ zgasniecia' = zgasniecia + 1
     /\ KlikWolny
-    /\ pamiecCzeka' = FALSE /\ pamiecOdlozona' = Brak
+    \* na dysku zostaje plik, nie pamięć, którą ta praca policzyła albo odłożyła
+    /\ pamiec' = pamiec /\ pamiecCzeka' = FALSE /\ pamiecOdlozona' = Brak
     /\ wynikCzeka' = FALSE /\ wynikOdlozony' = Brak
     /\ decyzjeCzeka' = FALSE /\ decyzjeOdlozone' = {}
     /\ etap' = [k \in KartyZ |-> "nic"] /\ tresc' = [k \in KartyZ |-> Brak] /\ odczyt' = [k \in KartyZ |-> {}]
     /\ blokada' = 0
     /\ zapomnialaCzeka' = FALSE
-    /\ utrataPamieci' = (utrataPamieci \/ faza = "zapisane" \/ (pamiecCzeka /\ pamiecOdlozona # pamiec))
+    /\ utrataPamieci' = (utrataPamieci \/ PamiecWlasciwa # pamiec')
     /\ bezPamieci' = bezPamieci
                      \cup (IF faza = "zapisane" /\ planZapisal THEN {"przed-pamiecia"} ELSE {})
                      \cup (IF pamiecCzeka /\ pamiecOdlozona = ostatniWlasny /\ pamiec # ostatniWlasny
@@ -357,7 +365,7 @@ Zgasniecie ==
     /\ bezDecyzji' = bezDecyzji
                      \cup (IF decyzjeCzeka /\ (zostawione \cap decyzjeOdlozone) \ decyzje # {}
                            THEN {"decyzja-odlozona"} ELSE {})
-    /\ UNCHANGED <<swiat, pamiec, wynik, decyzje, ostatniWlasny, zapomniala, upuszczona, zostawione,
+    /\ UNCHANGED <<swiat, wynik, decyzje, ostatniWlasny, zapomniala, upuszczona, zostawione,
                    awarieIntermax, awariePamieci, awarieWyniku, awarieDecyzji, nadpisane, falszywe, przeoczonaKopia>>
 
 Next ==

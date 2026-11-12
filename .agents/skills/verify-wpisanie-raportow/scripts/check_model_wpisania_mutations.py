@@ -4,8 +4,10 @@ Each mutation removes from ``model/WpisanieRaportow.tla`` one guard or step whos
 ``src/rozliczenia/worker_reports/_cells.py``, ``src/rozliczenia/report_entering.py``,
 ``src/rozliczenia/centrum/report_entering_state.py`` or ``report_entering_run.py`` the mutation names, runs on its own
 copy of the checkout (``tools/lib/silnik_mutacji.py``) and must end the check with
-``WPISANIE RAPORTÓW: NOWE NARUSZENIE``. A mutation whose anchor text is no longer in the model is reported as
-NIEAKTUALNA: update it to the new model.
+``WPISANIE RAPORTÓW: NOWE NARUSZENIE``. One mutation instead removes the cause of the known findings of a stale memory
+(a switch-off that loses the memory) and must end with ``ZNALEZISKO ZNIKNĘŁO (3)``: each of the three findings has to
+go, so the trace of none of them may stand without its cause. A mutation whose anchor text is no longer in the model
+is reported as NIEAKTUALNA: update it to the new model.
 
 The copy of the checkout has no ignored TLC cache, so this script hands Java and ``tla2tools.jar`` of this checkout
 to every command through ``TLC_JAVA`` and ``TLC_JAR`` (``model_tlc.narzedzia_dla_kopii``).
@@ -25,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[4]
 MODEL = Path(".agents/skills/verify-wpisanie-raportow/model/WpisanieRaportow.tla")
 CHECK = ".agents/skills/verify-wpisanie-raportow/scripts/sprawdz_wpisanie_raportow.py"
 NEW = "WPISANIE RAPORTÓW: NOWE NARUSZENIE"
+GONE = "WPISANIE RAPORTÓW: ZNALEZISKO ZNIKNĘŁO"
 
 
 def _check(config: str) -> tuple[str, ...]:
@@ -144,6 +147,20 @@ MUTATIONS = (
         _check("kopia"),
         "tata dostaje podsumowanie, choć zmiana pracownika leży w kopii konfliktu obok INTERMAX",
         NEW,
+    ),
+    Mutation(
+        "zgaśnięcie nie gubi pamięci (save_memory jako część write_cells, a StateFile bez treści odłożonej w pamięci pracy)",
+        (
+            Edit(
+                MODEL,
+                "    /\\ pamiec' = pamiec /\\ pamiecCzeka' = FALSE",
+                "    /\\ pamiec' = PamiecWlasciwa /\\ pamiecCzeka' = FALSE",
+            ),
+        ),
+        _check("pamiec"),
+        "po naprawie straty pamięci znikają wszystkie trzy znaleziska starej pamięci, także "
+        "przywrocona-ze-starej-pamieci, której ślad bez tej straty nie powstaje",
+        f"{GONE} (3)",
     ),
 )
 
