@@ -70,7 +70,11 @@ def _with_fake_gh(tmp_path: Path, run: dict[str, object]) -> dict[str, str]:
 
 
 PUSH = "Wypchnij gałąź: CI policzy je w częściach, a stan pokaże tools/praca_w_toku.py albo gh pr checks."
-NIGHT = "Liczy je noc na main (mutacje-nocne.yml, ADR 0021), a przeżyte mutacje trafiają do issue „Przeżyte mutacje z #N”."
+NIGHT = (
+    "Liczy je noc na main (mutacje-nocne.yml, ADR 0021), a przeżyte mutacje trafiają do issue „Przeżyte mutacje z #N”. "
+    "Czerwoną część nocy odtwarzasz na commicie runu: git checkout --detach <headSha runu>, a potem "
+    "tools/mutacje_zmiany.py --baza <baza z planu> --do <do z planu> --czesc K/N z --odtwarzam."
+)
 
 
 @pytest.mark.parametrize(
