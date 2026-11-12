@@ -22,7 +22,10 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fak
 from tests.fixtures.git_repo import commit, git, with_imports
 
 import czasy_ci
+import github as klient_github
 import naprawia
+import stan_pr
+import werdykt_pr
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
@@ -143,6 +146,36 @@ NO_PASS = "werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opu
 OBJECTION = "werdykt: FAIL dla {short} bez nowszego „WERDYKT: PASS {head}”"
 
 
+def _verdict(kind: str, body: str, association: str = "OWNER", *, when: str) -> dict[str, object]:
+    """Komentarz (``kind`` to ``comment``) albo recenzja w stanie ``kind`` w polach ``gh pr view --json``."""
+
+    if kind == "comment":
+        return {"body": body, "authorAssociation": association, "createdAt": when, "author": {"login": "recenzent"}}
+    return {"body": body, "authorAssociation": association, "state": kind, "submittedAt": when, "author": {"login": "recenzent"}}
+
+
+def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
+    """Odpowiedź ``gh pr view --json`` otwartego PR ``number`` z HEAD ``head``, zielonym CI i bez werdyktu, z ``fields``."""
+
+    return {
+        "number": number,
+        "title": f"PR {number}",
+        "body": BODY,
+        "state": "OPEN",
+        "isDraft": False,
+        "isCrossRepository": False,
+        "baseRefName": "main",
+        "headRefOid": head,
+        "statusCheckRollup": GREEN,
+        "comments": [],
+        "reviews": [],
+        "mergeCommit": None,
+        "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
+        "closingIssuesReferences": [],
+        **fields,
+    }
+
+
 class MergeGitHub(FakeGitHub):
     def __init__(self, tmp_path: Path, files: dict[str, str]) -> None:
         super().__init__(
@@ -169,22 +202,7 @@ class MergeGitHub(FakeGitHub):
 
         head = self.commit_on(parent or self.start, files, f"PR {number}")
         self.push_head(number, head)
-        self.pulls[str(number)] = {
-            "number": number,
-            "title": f"PR {number}",
-            "body": BODY,
-            "state": "OPEN",
-            "isDraft": False,
-            "isCrossRepository": False,
-            "baseRefName": "main",
-            "headRefOid": head,
-            "statusCheckRollup": GREEN,
-            "comments": [],
-            "reviews": [],
-            "mergeCommit": None,
-            "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
-            "closingIssuesReferences": [],
-        }
+        self.pulls[str(number)] = _pr_view(number, head)
         self._save()
         return head
 
@@ -193,19 +211,19 @@ class MergeGitHub(FakeGitHub):
         self._save()
 
     def comment(self, number: int, body: str, association: str = "OWNER") -> None:
-        self._write(number, "comments", {"body": body, "authorAssociation": association, "createdAt": self._now()})
+        self._write(number, "comments", _verdict("comment", body, association, when=self._now()))
 
     def review(self, number: int, body: str, association: str = "OWNER", *, state: str = "COMMENTED") -> None:
-        self._write(number, "reviews", {"body": body, "authorAssociation": association, "state": state, "submittedAt": self._now()})
+        self._write(number, "reviews", _verdict(state, body, association, when=self._now()))
 
     def _now(self) -> str:
         self.written += 1
         return f"2026-10-24T03:{self.written // 60:02d}:{self.written % 60:02d}Z"
 
-    def _write(self, number: int, kind: str, verdict: dict[str, str]) -> None:
+    def _write(self, number: int, kind: str, verdict: dict[str, object]) -> None:
         verdicts = self.pulls[str(number)][kind]
         assert isinstance(verdicts, list)
-        verdicts.append({**verdict, "author": {"login": "recenzent"}})
+        verdicts.append(verdict)
         self._save()
 
     def open_issues(self, *numbers: int, state: str = "open") -> None:
@@ -311,6 +329,36 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     assert (github.checkout / "posprzatane").exists()
 
 
+# Pełne SHA w tabelach na interfejsach: HEAD PR i starszy commit (litery, żeby ``HEAD.upper()`` był inny niż HEAD).
+HEAD = "abcdef0123456789abcdef0123456789abcdef01"
+OLD = "0" * 40
+PASS_HEAD = PASS.format(head=HEAD)
+FAIL_HEAD = f"WERDYKT: FAIL {HEAD}"
+NO_PASS_HEAD = NO_PASS.format(head=HEAD)
+OBJECTION_HEAD = OBJECTION.format(short=HEAD[:7], head=HEAD)
+BROKEN_PASS = "werdykt: PASS dla {short} nie przechodzi reguł --werdykt ({problems}); popraw plik werdyktu i opublikuj go przez tools/scal_pr.py 1 --werdykt PLIK"
+NO_FINDINGS = "druga linia „{line}” to nie „Znaleziska: N (Ważne a, Drobne b)”"
+
+
+def _broken(problems: str) -> str:
+    return BROKEN_PASS.format(short=HEAD[:7], problems=problems)
+
+
+def _pull(**fields: object) -> stan_pr.Pull:
+    """``stan_pr.pull`` PR 1 z HEAD ``HEAD`` na odpowiedzi ``gh pr view`` z ``fields``, z atrapą ``gh`` w procesie."""
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(klient_github, "gh", lambda *arguments: json.dumps(_pr_view(1, HEAD, **fields)))
+        return stan_pr.pull(1)
+
+
+def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
+    """PR z komentarzami (``comment``) i recenzjami (stan recenzji) z kontem (domyślnie ``OWNER``) utworzonymi po kolei."""
+
+    written = [_verdict(kind, body, *association, when=f"2026-10-24T03:00:{index:02d}Z") for index, (kind, body, *association) in enumerate(verdicts)]
+    return _pull(comments=[verdict for verdict in written if "createdAt" in verdict], reviews=[verdict for verdict in written if "submittedAt" in verdict])
+
+
 @pytest.mark.parametrize(
     ("conclusion", "own"),
     [
@@ -345,43 +393,63 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
 
 
 @pytest.mark.parametrize(
-    ("ci", "comments", "reason"),
+    ("verdicts", "reason"),
     [
+        ([], NO_PASS_HEAD),
+        ([("comment", f"WERDYKT: PASS {OLD}")], NO_PASS_HEAD),
+        ([("comment", PASS_HEAD, "NONE")], NO_PASS_HEAD),
+        ([("comment", PASS_HEAD, "CONTRIBUTOR")], NO_PASS_HEAD),
+        ([("COMMENTED", PASS_HEAD, "CONTRIBUTOR")], NO_PASS_HEAD),
+        ([("PENDING", PASS_HEAD)], NO_PASS_HEAD),
+        ([("comment", f"Recenzja: WERDYKT: PASS {HEAD}")], NO_PASS_HEAD),
+        ([("comment", f"WERDYKT: PASS {HEAD} — bez uwag")], NO_PASS_HEAD),
+        ([("comment", f"WERDYKT: PASS {HEAD[:7]}")], NO_PASS_HEAD),
+        ([("comment", f"WERDYKT: PASS {HEAD.upper()}")], NO_PASS_HEAD),
+        ([("comment", f"**WERDYKT: PASS {HEAD}**")], NO_PASS_HEAD),
+        ([("comment", "## Werdykt niezależny: PASS")], NO_PASS_HEAD),
+        ([("APPROVED", "Wygląda dobrze.")], NO_PASS_HEAD),
+        ([("comment", PASS_HEAD), ("comment", FAIL_HEAD, "MEMBER")], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("comment", FAIL_HEAD)], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("comment", f"{FAIL_HEAD}\n- krytyczne: brak testu")], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("comment", f"\n\n  {FAIL_HEAD}  \r\n")], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("COMMENTED", FAIL_HEAD)], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", "Popraw nazwę funkcji.")], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", "")], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("comment", f"{FAIL_HEAD}\nZnaleziska: dwa Ważne, brak testu")], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("comment", f"{FAIL_HEAD}\nZnaleziska: 1 (Ważne 0, Drobne 1)")], OBJECTION_HEAD),
+        ([("comment", PASS_HEAD), ("comment", f"WERDYKT: FAIL {OLD}")], None),
+        ([("comment", FAIL_HEAD), ("comment", PASS_HEAD)], None),
+        ([("COMMENTED", FAIL_HEAD), ("comment", PASS_HEAD)], None),
+        ([("comment", FAIL_HEAD), ("COMMENTED", PASS_HEAD)], None),
+        ([("comment", PASS_HEAD), ("comment", FAIL_HEAD, "CONTRIBUTOR")], None),
+        ([("comment", PASS_HEAD), ("COMMENTED", "")], None),
+        ([("comment", f"WERDYKT: PASS {HEAD}\r\n\r\nZnaleziska: 1 (Ważne 0, Drobne 1)\r\n- drobne: nazwa")], None),
+        ([("comment", f"  WERDYKT: PASS {HEAD}  \n  Znaleziska: 0 (Ważne 0, Drobne 0)  ")], None),
+        ([("CHANGES_REQUESTED", "Popraw nazwę funkcji."), ("comment", PASS_HEAD)], None),
+        ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", "Popraw nazwę funkcji.", "CONTRIBUTOR")], None),
+        ([("comment", PASS_HEAD), ("PENDING", FAIL_HEAD)], None),
+        ([("comment", PASS_HEAD), ("comment", f"WERDYKT: FAIL {HEAD[:7]}")], None),
+        ([("comment", PASS_HEAD), ("comment", f"{FAIL_HEAD} — brak testu")], None),
+        ([("comment", PASS_HEAD), ("comment", f"Werdykt: FAIL {HEAD}")], None),
+        ([("comment", PASS_HEAD), ("comment", f"## Przegląd\n\n{FAIL_HEAD}")], None),
+        ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0"), ("comment", PASS_HEAD)], None),
+        ([("comment", f"WERDYKT: PASS {OLD}\nZnaleziska: 0"), ("comment", PASS_HEAD)], None),
+        ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0")], _broken(NO_FINDINGS.format(line="Znaleziska: 0"))),
+        ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 1 (Drobne 1)")], _broken(NO_FINDINGS.format(line="Znaleziska: 1 (Drobne 1)"))),
+        ([("comment", f"WERDYKT: PASS {HEAD}")], _broken(NO_FINDINGS.format(line=""))),
         (
-            [_check_run("COMPLETED", "FAILURE")],
-            [(PASS, "OWNER")],
-            "CI: „Required CI status” FAILURE",
+            [("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 1 (Ważne 1, Drobne 0)")],
+            _broken("PASS z Ważne 1: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
         ),
+        ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 4 (Ważne 0, Drobne 4)")], _broken("Drobne 4: podaj najwyżej 3, najważniejsze")),
+        ([("COMMENTED", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0")], _broken(NO_FINDINGS.format(line="Znaleziska: 0"))),
+        ([("comment", PASS_HEAD), ("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0")], _broken(NO_FINDINGS.format(line="Znaleziska: 0"))),
         (
-            [_check_run("IN_PROGRESS", None)],
-            [(PASS, "OWNER")],
-            "CI: „Required CI status” IN_PROGRESS",
+            [("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 2 (Ważne 1, Drobne 0)")],
+            _broken("Znaleziska: 2, a Ważne 1 i Drobne 0 dają 1; PASS z Ważne 1: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
         ),
-        (GREEN[:1], [(PASS, "OWNER")], "CI: run CI 4077 jeszcze trwa"),
-        ([COMMIT_STATUS], [(PASS, "OWNER")], NOT_ACTIONS),
-        ([_check_run("COMPLETED", "SUCCESS", workflow="")], [(PASS, "OWNER")], NOT_ACTIONS),
-        (GREEN, [], NO_PASS),
-        (GREEN, [("WERDYKT: PASS {old}", "OWNER")], NO_PASS),
-        (GREEN, [(PASS, "NONE")], NO_PASS),
-        (GREEN, [(PASS, "CONTRIBUTOR")], NO_PASS),
-        (GREEN, [(PASS, "CONTRIBUTOR", "COMMENTED")], NO_PASS),
-        (GREEN, [(PASS, "OWNER", "PENDING")], NO_PASS),
-        (GREEN, [("Recenzja: WERDYKT: PASS {head}", "OWNER")], NO_PASS),
-        (GREEN, [("WERDYKT: PASS {head} — bez uwag", "OWNER")], NO_PASS),
-        (GREEN, [("WERDYKT: PASS {head7}", "OWNER")], NO_PASS),
-        (GREEN, [("WERDYKT: PASS {upper}", "OWNER")], NO_PASS),
-        (GREEN, [("**WERDYKT: PASS {head}**", "OWNER")], NO_PASS),
-        (GREEN, [("## Werdykt niezależny: PASS", "OWNER")], NO_PASS),
-        (GREEN, [("Wygląda dobrze.", "OWNER", "APPROVED")], NO_PASS),
-        (GREEN, [(PASS, "OWNER"), ("WERDYKT: FAIL {head}", "MEMBER")], OBJECTION),
-        ([_check_run("COMPLETED", "FAILURE")], [], f"CI: „Required CI status” FAILURE; {NO_PASS}"),
     ],
     ids=[
-        "ci-czerwone",
-        "ci-trwa",
-        "ci-run-bez-wymaganego-checku-jeszcze-trwa",
-        "ci-tylko-status-commitu",
-        "ci-check-spoza-github-actions",
         "bez-werdyktu",
         "pass-dla-starszego-commitu",
         "pass-konta-bez-prawa-zapisu",
@@ -396,26 +464,73 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
         "pass-w-naglowku",
         "zatwierdzona-recenzja-bez-linii-werdyktu",
         "fail-po-pass",
-        "wszystkie-przyczyny-naraz",
+        "sprzeciw-komentarz",
+        "sprzeciw-komentarz-ze-znaleziskami",
+        "sprzeciw-puste-linie-i-odstepy",
+        "sprzeciw-recenzja",
+        "sprzeciw-prosba-o-zmiany",
+        "sprzeciw-prosba-o-zmiany-bez-tresci",
+        "sprzeciw-fail-z-proza-w-drugiej-linii-jak-532",
+        "sprzeciw-fail-bez-waznych-poza-regulami-werdyktu",
+        "fail-dla-starszego-commitu",
+        "pass-po-fail",
+        "pass-po-starszej-recenzji-z-fail",
+        "pass-w-recenzji-po-fail",
+        "fail-kontrybutora",
+        "recenzja-bez-tresci",
+        "pass-z-crlf",
+        "pass-z-odstepami",
+        "pass-po-prosbie-o-zmiany",
+        "prosba-o-zmiany-kontrybutora",
+        "nieopublikowana-recenzja-z-fail",
+        "fail-ze-skroconym-sha-to-nie-werdykt",
+        "fail-z-dopiskiem-to-nie-werdykt",
+        "fail-z-malymi-literami-to-nie-werdykt",
+        "fail-nie-w-pierwszej-linii-to-nie-werdykt",
+        "pass-po-pass-poza-regulami-werdyktu",
+        "pass-poza-regulami-dla-starszego-commitu",
+        "pass-poza-regulami-znaleziska-0-jak-994",
+        "pass-poza-regulami-drobne-bez-waznych-jak-1004",
+        "pass-poza-regulami-bez-drugiej-linii",
+        "pass-poza-regulami-z-waznym",
+        "pass-poza-regulami-za-duzo-drobnych",
+        "pass-poza-regulami-w-recenzji",
+        "pass-poza-regulami-po-pass-w-postaci-werdyktu",
+        "pass-poza-regulami-kilka-przyczyn",
     ],
 )
-def test_bez_zielonego_ci_albo_werdyktu_pass_dla_head_pr_nie_jest_scalany(
-    tmp_path: Path, ci: list[dict[str, str | None]], comments: list[tuple[str, ...]], reason: str
-) -> None:
+def test_najnowszy_werdykt_dla_head_rozstrzyga_zgode_na_merge(verdicts: list[tuple[str, ...]], reason: str | None) -> None:
+    assert werdykt_pr.consent_problem(_written(*verdicts)) == reason
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "refused"),
+    [
+        ([("comment", PASS), ("COMMENTED", "WERDYKT: FAIL {head}")], True),
+        ([("COMMENTED", "WERDYKT: FAIL {head}"), ("comment", PASS)], False),
+        ([("comment", PASS), ("CHANGES_REQUESTED", "Popraw nazwę funkcji.")], True),
+        ([("comment", PASS), ("comment", "WERDYKT: FAIL {head}", "CONTRIBUTOR")], False),
+    ],
+    ids=["recenzja-z-fail-po-komentarzu-pass", "komentarz-pass-po-recenzji-z-fail", "prosba-o-zmiany-po-pass", "fail-kontrybutora-po-pass"],
+)
+def test_komentarze_i_recenzje_z_gh_licza_sie_w_kolejnosci_utworzenia(tmp_path: Path, verdicts: list[tuple[str, ...]], refused: bool) -> None:
+    """Rozstrzyga też element inny niż ostatni, więc ``scal_pr`` musi oddać regule wszystkie komentarze i recenzje."""
+
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    old = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    head = github.commit_on(old, {"kod/inne.py": "INNE: int = 2\n"}, "PR 1 po poprawce")
-    git(github.checkout, "push", "--quiet", "--force", "origin", f"{head}:refs/pull/1/head")
-    github.update(1, headRefOid=head, statusCheckRollup=ci)
-    for body, association, *state in comments:
-        text = body.format(head=head, old=old, head7=head[:7], upper=head.upper())
-        github.review(1, text, association, state=state[0]) if state else github.comment(1, text, association)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    for kind, body, *association in verdicts:
+        if kind == "comment":
+            github.comment(1, body.format(head=head), *association)
+        else:
+            github.review(1, body.format(head=head), *association, state=kind)
 
-    answered = github.run("1")
+    answered = github.run("1", "--bez-merge")
 
-    assert answered.returncode == 1, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | {reason.format(short=head[:7], head=head)}"
-    assert github.merges() == []
+    assert answered.returncode == int(refused), answered.stdout + answered.stderr
+    if refused:
+        assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | {OBJECTION.format(short=head[:7], head=head)}"
+    else:
+        assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a")
 
 
 SAME_START = "2026-11-09T22:01:27Z"
@@ -440,13 +555,21 @@ def _run(run: int, *jobs: tuple[str, str, str | None], started: str = SAME_START
     ]
 
 
+RED_RUN_BEFORE_OLDER_GREEN = [*_run(42706832032, *RED_RUN), *_run(42701212234, *GREEN_RUN)]
+
+
 @pytest.mark.parametrize(
-    ("rollup", "outcome"),
+    ("rollup", "reason"),
     [
+        ([_check_run("COMPLETED", "FAILURE")], "„Required CI status” FAILURE"),
+        ([_check_run("IN_PROGRESS", None)], "„Required CI status” IN_PROGRESS"),
+        (GREEN[:1], "run CI 4077 jeszcze trwa"),
+        ([COMMIT_STATUS], "brak „Required CI status” z GitHub Actions na HEAD"),
+        ([_check_run("COMPLETED", "SUCCESS", workflow="")], "brak „Required CI status” z GitHub Actions na HEAD"),
         ([*_run(42701212234, *RED_RUN), *_run(42706832032, *RED_RUN), *_run(42707489817, *GREEN_RUN)], None),
         ([*_run(42707489817, *GREEN_RUN), *_run(42706832032, *RED_RUN), *_run(42701212234, *RED_RUN)], None),
         ([*_run(42701212234, *GREEN_RUN), *_run(42706832032, *RED_RUN)], "„Required CI status” FAILURE"),
-        ([*_run(42706832032, *RED_RUN), *_run(42701212234, *GREEN_RUN)], "„Required CI status” FAILURE"),
+        (RED_RUN_BEFORE_OLDER_GREEN, "„Required CI status” FAILURE"),
         ([*_run(9999, *RED_RUN), *_run(10000, *GREEN_RUN)], None),
         ([*_run(42707489817, *GREEN_RUN, started="2026-11-09T22:30:00Z"), *_run(42709423144, *RUNNING_RUN)], "run CI 42709423144 jeszcze trwa"),
         (
@@ -463,8 +586,16 @@ def _run(run: int, *jobs: tuple[str, str, str | None], started: str = SAME_START
             [*_run(42707489817, *GREEN_RUN), _check_run("COMPLETED", "FAILURE", name="Lint skilli", workflow="Skille", url="https://example.com/x")],
             None,
         ),
+        (GREEN, None),
+        ([*GREEN, _check_run("IN_PROGRESS", None, name="Change mutations (1/3)", workflow="Mutacje nocne", url="https://github.com/o/r/actions/runs/4100/job/3")], None),
+        ([*GREEN, _check_run("COMPLETED", "FAILURE", name="Change mutations (1/3)")], None),
     ],
     ids=[
+        "ci-czerwone",
+        "ci-trwa",
+        "ci-run-bez-wymaganego-checku-jeszcze-trwa",
+        "ci-tylko-status-commitu",
+        "ci-check-spoza-github-actions",
         "stare-czerwone-po-zamknieciu-i-otwarciu-nowe-zielone-jak-1238",
         "nowy-zielony-run-przed-starymi-czerwonymi-w-rollupie",
         "stary-zielony-run-nowy-czerwony",
@@ -476,167 +607,15 @@ def _run(run: int, *jobs: tuple[str, str, str | None], started: str = SAME_START
         "ponowione-zadanie-najnowszego-runu-w-toku-obok-jego-zielonego-required",
         "check-ci-bez-identyfikatora-runu",
         "inny-workflow-nie-jest-runem-ci",
+        "mutacje-zmiany-bez-checku",
+        "mutacje-zmiany-w-toku-w-nocnym-workflow",
+        "mutacje-zmiany-przezyte-w-runie-ci",
     ],
 )
-def test_gotowosc_ci_liczy_tylko_najnowszy_run_ci_na_head(tmp_path: Path, rollup: list[dict[str, str | None]], outcome: str | None) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.update(1, statusCheckRollup=rollup)
-    github.comment(1, PASS.format(head=head))
+def test_gotowosc_ci_liczy_tylko_najnowszy_run_ci_na_head_a_nie_czeka_na_mutacje_zmiany(rollup: list[dict[str, str | None]], reason: str | None) -> None:
+    """Mutacje zmienionych linii biegną nocą na ``main`` (ADR 0021), więc ich check nie blokuje gotowości."""
 
-    answered = github.run("1", "--bez-merge")
-
-    if outcome is None:
-        assert answered.returncode == 0, answered.stdout + answered.stderr
-        assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a z main")
-    else:
-        assert answered.returncode == 1, answered.stdout + answered.stderr
-        assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | CI: {outcome}"
-    assert github.merges() == []
-
-
-@pytest.mark.parametrize(
-    ("kind", "objection"),
-    [
-        ("comment", "WERDYKT: FAIL {head}"),
-        ("comment", "WERDYKT: FAIL {head}\n- krytyczne: brak testu"),
-        ("comment", "\n\n  WERDYKT: FAIL {head}  \r\n"),
-        ("COMMENTED", "WERDYKT: FAIL {head}"),
-        ("CHANGES_REQUESTED", "Popraw nazwę funkcji."),
-        ("CHANGES_REQUESTED", ""),
-        ("comment", "WERDYKT: FAIL {head}\nZnaleziska: dwa Ważne, brak testu"),
-        ("comment", "WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 0, Drobne 1)"),
-    ],
-    ids=[
-        "komentarz",
-        "komentarz-ze-znaleziskami",
-        "puste-linie-i-odstepy",
-        "recenzja",
-        "prosba-o-zmiany",
-        "prosba-o-zmiany-bez-tresci",
-        "fail-z-proza-w-drugiej-linii-jak-532",
-        "fail-bez-waznych-poza-regulami-werdyktu",
-    ],
-)
-def test_sprzeciw_zaufanego_konta_dla_head_po_pass_blokuje_merge(tmp_path: Path, kind: str, objection: str) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    old = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    head = github.commit_on(old, {"kod/inne.py": "INNE: int = 2\n"}, "PR 1 po poprawce")
-    git(github.checkout, "push", "--quiet", "--force", "origin", f"{head}:refs/pull/1/head")
-    github.update(1, headRefOid=head)
-    github.comment(1, PASS.format(head=head))
-    body = objection.format(head=head)
-    github.comment(1, body) if kind == "comment" else github.review(1, body, state=kind)
-
-    answered = github.run("1")
-
-    assert answered.returncode == 1, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | {OBJECTION.format(short=head[:7], head=head)}"
-    assert github.merges() == []
-
-
-@pytest.mark.parametrize(
-    "verdicts",
-    [
-        [("comment", PASS), ("comment", "WERDYKT: FAIL {old}")],
-        [("comment", "WERDYKT: FAIL {head}"), ("comment", PASS)],
-        [("COMMENTED", "WERDYKT: FAIL {head}"), ("comment", PASS)],
-        [("comment", "WERDYKT: FAIL {head}"), ("COMMENTED", PASS)],
-        [("comment", PASS), ("comment", "WERDYKT: FAIL {head}", "CONTRIBUTOR")],
-        [("comment", PASS), ("COMMENTED", "")],
-        [("comment", "WERDYKT: PASS {head}\r\n\r\nZnaleziska: 1 (Ważne 0, Drobne 1)\r\n- drobne: nazwa")],
-        [("comment", "  WERDYKT: PASS {head}  \n  Znaleziska: 0 (Ważne 0, Drobne 0)  ")],
-        [("CHANGES_REQUESTED", "Popraw nazwę funkcji."), ("comment", PASS)],
-        [("comment", PASS), ("CHANGES_REQUESTED", "Popraw nazwę funkcji.", "CONTRIBUTOR")],
-        [("comment", PASS), ("PENDING", "WERDYKT: FAIL {head}")],
-        [("comment", PASS), ("comment", "WERDYKT: FAIL {head7}")],
-        [("comment", PASS), ("comment", "WERDYKT: FAIL {head} — brak testu")],
-        [("comment", PASS), ("comment", "Werdykt: FAIL {head}")],
-        [("comment", PASS), ("comment", "## Przegląd\n\nWERDYKT: FAIL {head}")],
-        [("comment", "WERDYKT: PASS {head}\nZnaleziska: 0"), ("comment", PASS)],
-        [("comment", "WERDYKT: PASS {old}\nZnaleziska: 0"), ("comment", PASS)],
-    ],
-    ids=[
-        "fail-dla-starszego-commitu",
-        "pass-po-fail",
-        "pass-po-starszej-recenzji-z-fail",
-        "pass-w-recenzji-po-fail",
-        "fail-kontrybutora",
-        "recenzja-bez-tresci",
-        "pass-z-crlf",
-        "pass-z-odstepami",
-        "pass-po-prosbie-o-zmiany",
-        "prosba-o-zmiany-kontrybutora",
-        "nieopublikowana-recenzja-z-fail",
-        "fail-ze-skroconym-sha-to-nie-werdykt",
-        "fail-z-dopiskiem-to-nie-werdykt",
-        "fail-z-malymi-literami-to-nie-werdykt",
-        "fail-nie-w-pierwszej-linii-to-nie-werdykt",
-        "pass-po-pass-poza-regulami-werdyktu",
-        "pass-poza-regulami-dla-starszego-commitu",
-    ],
-)
-def test_sprzeciw_dla_innego_commitu_starszy_niz_pass_bez_prawa_zapisu_albo_poza_kontraktem_nie_blokuje(
-    tmp_path: Path, verdicts: list[tuple[str, ...]]
-) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    old = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    head = github.commit_on(old, {"kod/inne.py": "INNE: int = 2\n"}, "PR 1 po poprawce")
-    git(github.checkout, "push", "--quiet", "--force", "origin", f"{head}:refs/pull/1/head")
-    github.update(1, headRefOid=head)
-    for kind, body, *association in verdicts:
-        text = body.format(head=head, head7=head[:7], old=old)
-        github.comment(1, text, *association) if kind == "comment" else github.review(1, text, *association, state=kind)
-
-    answered = github.run("1", "--bez-merge")
-
-    assert answered.returncode == 0, answered.stdout + answered.stderr
-    assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a")
-
-
-BROKEN_PASS = "werdykt: PASS dla {short} nie przechodzi reguł --werdykt ({problems}); popraw plik werdyktu i opublikuj go przez tools/scal_pr.py 1 --werdykt PLIK"
-NO_FINDINGS = "druga linia „{line}” to nie „Znaleziska: N (Ważne a, Drobne b)”"
-
-
-@pytest.mark.parametrize(
-    ("verdicts", "problems"),
-    [
-        ([("comment", "WERDYKT: PASS {head}\nZnaleziska: 0")], NO_FINDINGS.format(line="Znaleziska: 0")),
-        ([("comment", "WERDYKT: PASS {head}\nZnaleziska: 1 (Drobne 1)")], NO_FINDINGS.format(line="Znaleziska: 1 (Drobne 1)")),
-        ([("comment", "WERDYKT: PASS {head}")], NO_FINDINGS.format(line="")),
-        ([("comment", "WERDYKT: PASS {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)")], "PASS z Ważne 1: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
-        ([("comment", "WERDYKT: PASS {head}\nZnaleziska: 4 (Ważne 0, Drobne 4)")], "Drobne 4: podaj najwyżej 3, najważniejsze"),
-        ([("COMMENTED", "WERDYKT: PASS {head}\nZnaleziska: 0")], NO_FINDINGS.format(line="Znaleziska: 0")),
-        ([("comment", PASS), ("comment", "WERDYKT: PASS {head}\nZnaleziska: 0")], NO_FINDINGS.format(line="Znaleziska: 0")),
-        (
-            [("comment", "WERDYKT: PASS {head}\nZnaleziska: 2 (Ważne 1, Drobne 0)")],
-            "Znaleziska: 2, a Ważne 1 i Drobne 0 dają 1; PASS z Ważne 1: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych",
-        ),
-    ],
-    ids=[
-        "znaleziska-0-jak-994",
-        "drobne-bez-waznych-jak-1004",
-        "bez-drugiej-linii",
-        "pass-z-waznym",
-        "za-duzo-drobnych",
-        "w-recenzji",
-        "po-pass-w-postaci-werdyktu",
-        "kilka-przyczyn",
-    ],
-)
-def test_pass_dla_head_opublikowany_z_pominieciem_regul_werdyktu_nie_scala_a_odmowa_wskazuje_werdykt(
-    tmp_path: Path, verdicts: list[tuple[str, str]], problems: str
-) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    for kind, body in verdicts:
-        github.comment(1, body.format(head=head)) if kind == "comment" else github.review(1, body.format(head=head), state=kind)
-
-    answered = github.run("1")
-
-    assert answered.returncode == 1, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | {BROKEN_PASS.format(short=head[:7], problems=problems)}"
-    assert github.merges() == []
+    assert stan_pr.ci_problem(_pull(statusCheckRollup=rollup)) == (None if reason is None else f"CI: {reason}")
 
 
 @pytest.mark.parametrize(
@@ -696,10 +675,15 @@ def test_pr_bez_naglowka_wzoru_skilla_pr_w_jego_kolejnosci_nie_jest_scalany(tmp_
         assert answered.returncode == 0, answered.stdout + answered.stderr
 
 
-def test_brak_naglowka_wzoru_jest_w_jednej_odmowie_z_czerwonym_ci_i_brakiem_werdyktu(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "rollup", [[_check_run("COMPLETED", "FAILURE")], RED_RUN_BEFORE_OLDER_GREEN], ids=["ci-czerwone", "nowy-czerwony-run-przed-starym-zielonym-w-rollupie"]
+)
+def test_brak_naglowka_wzoru_jest_w_jednej_odmowie_z_czerwonym_ci_i_brakiem_werdyktu(tmp_path: Path, rollup: list[dict[str, str | None]]) -> None:
+    """W drugim rollupie rozstrzyga run sprzed ostatniego checku, więc ``scal_pr`` musi oddać regule cały rollup."""
+
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.update(1, body="", statusCheckRollup=[_check_run("COMPLETED", "FAILURE")])
+    github.update(1, body="", statusCheckRollup=rollup)
 
     answered = github.run("1", "--bez-merge")
 
@@ -1122,29 +1106,6 @@ def test_sprzatanie_po_czasie_nie_odwoluje_scalenia(tmp_path: Path) -> None:
 
 
 
-@pytest.mark.parametrize(
-    "mutations",
-    [
-        [],
-        [_check_run("IN_PROGRESS", None, name="Change mutations (1/3)", workflow="Mutacje nocne", url="https://github.com/o/r/actions/runs/4100/job/3")],
-        [_check_run("COMPLETED", "FAILURE", name="Change mutations (1/3)")],
-    ],
-    ids=["bez-checku", "w-toku", "przezyte"],
-)
-def test_gotowy_pr_nie_czeka_na_mutacje_zmiany_ani_linie_mutacja_bo_mutacje_biegna_noca_na_main(
-    tmp_path: Path, mutations: list[dict[str, str | None]]
-) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.update(1, statusCheckRollup=[*GREEN, *mutations])
-    github.comment(1, PASS.format(head=head))
-
-    answered = github.run("1", "--bez-merge")
-
-    assert answered.returncode == 0, answered.stdout + answered.stderr
-    assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a")
-
-
 # ``tools/skille_dla_zmiany.py`` atrapa: skill z pliku ``skille.txt`` drzewa, w którym leży skrypt (jak prawdziwe narzędzie,
 # które szuka korzenia od ``__file__``, więc skrypt z checkoutu zamiast kopii HEAD PR czytałby ``skille.txt`` checkoutu), i pliki
 # zmiany od bazy z argumentu.
@@ -1216,76 +1177,76 @@ def test_przeglad_po_pass_dla_head_mowi_ze_werdykt_dotyczy_tego_head_a_rundy_z_f
 OTHER_RUN = "https://github.com/o/r/actions/runs/4000/job/2"
 PASSED = "polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj"
 UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi padłych zadań: gh run view 4077 --log-failed"
+RED_WITH_FAILED_JOBS = [
+    _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)"),
+    _check_run("COMPLETED", "TIMED_OUT", name="Mutation checks 2"),
+    _check_run("COMPLETED", "SUCCESS", name="Ruff, mypy"),
+    _check_run("COMPLETED", "SKIPPED", name="Frontend"),
+    _check_run("COMPLETED", "FAILURE", name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN),
+    _check_run("COMPLETED", "FAILURE"),
+]
+FAILED_JOBS = "padłe zadania: Mutation checks 2, pytest (Python 3.11, 1/2)"
+WAITING_VERIFY = _check_run("IN_PROGRESS", None, name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN)
 
 
 @pytest.mark.parametrize(
     ("ci", "line"),
     [
-        (GREEN, f"success na HEAD {{head}} | {PASSED}"),
+        (GREEN, f"success na HEAD {HEAD} | {PASSED}"),
         (
             [
                 *GREEN,
-                _check_run("IN_PROGRESS", None, name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN),
+                WAITING_VERIFY,
                 _check_run("COMPLETED", "FAILURE", name="Lint skilli", workflow="Skille", url=OTHER_RUN),
                 _check_run("COMPLETED", "SKIPPED", name="Notka", workflow="Skille", url=OTHER_RUN),
             ],
-            f"success na HEAD {{head}} | {PASSED} | inne workflowy, na które czeka gotowość: w toku: Verify Centrum na Windowsie; padłe: Lint skilli",
+            f"success na HEAD {HEAD} | {PASSED} | inne workflowy, na które czeka gotowość: w toku: Verify Centrum na Windowsie; padłe: Lint skilli",
         ),
         (
             [_check_run("COMPLETED", "SUCCESS", name="Ruff, mypy"), _check_run("IN_PROGRESS", None)],
-            "pending na HEAD {head} (w toku: 1) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 1) | polecenia z linii LICZY CI jeszcze bez wyniku",
         ),
         (
             [_check_run("QUEUED", None, name="Plan CI"), _check_run("IN_PROGRESS", None, name="Frontend")],
-            "pending na HEAD {head} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
         ),
         (
             [_check_run("IN_PROGRESS", None, name="Frontend"), _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)")],
-            "pending na HEAD {head} (w toku: 1; padłe zadania: pytest (Python 3.11, 1/2)) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 1; padłe zadania: pytest (Python 3.11, 1/2)) | polecenia z linii LICZY CI jeszcze bez wyniku",
         ),
-        (
-            [
-                _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)"),
-                _check_run("COMPLETED", "TIMED_OUT", name="Mutation checks 2"),
-                _check_run("COMPLETED", "SUCCESS", name="Ruff, mypy"),
-                _check_run("COMPLETED", "SKIPPED", name="Frontend"),
-                _check_run("COMPLETED", "FAILURE", name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN),
-                _check_run("COMPLETED", "FAILURE"),
-            ],
-            f"failure na HEAD {{head}} | padłe zadania: Mutation checks 2, pytest (Python 3.11, 1/2) | {UNPROVEN}",
-        ),
+        (RED_WITH_FAILED_JOBS, f"failure na HEAD {HEAD} | {FAILED_JOBS} | {UNPROVEN}"),
         (
             [_check_run("COMPLETED", "FAILURE", name="Plan CI", url=OTHER_RUN), _check_run("COMPLETED", "FAILURE")],
-            f"failure na HEAD {{head}} | bez padłego zadania, przyczynę podaje log „Required CI status” | {UNPROVEN}",
+            f"failure na HEAD {HEAD} | bez padłego zadania, przyczynę podaje log „Required CI status” | {UNPROVEN}",
         ),
-        ([COMMIT_STATUS], "brak na HEAD {head} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"),
+        ([COMMIT_STATUS], f"brak na HEAD {HEAD} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"),
         (
             [*_run(4000, ("pytest (Python 3.11, 1/2)", "COMPLETED", "FAILURE"), RED_RUN[-1]), *_run(4077, ("pytest (Python 3.11, 1/2)", "COMPLETED", "SUCCESS"), REQUIRED_DONE)],
-            f"success na HEAD {{head}} | {PASSED}",
+            f"success na HEAD {HEAD} | {PASSED}",
         ),
         (
             [*_run(4000, ("Ruff, mypy", "COMPLETED", "SUCCESS"), REQUIRED_DONE), *_run(4077, ("Ruff, mypy", "COMPLETED", "FAILURE"), RED_RUN[-1])],
-            f"failure na HEAD {{head}} | padłe zadania: Ruff, mypy | {UNPROVEN}",
+            f"failure na HEAD {HEAD} | padłe zadania: Ruff, mypy | {UNPROVEN}",
         ),
         (
             [*_run(4000, ("Plan CI", "COMPLETED", "FAILURE"), RED_RUN[-1]), *_run(4077, *RUNNING_RUN)],
-            "pending na HEAD {head} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
         ),
         (
             [*_run(3000, *RED_RUN), *_run(4000, *GREEN_RUN), *_run(4077, *RUNNING_RUN)],
-            "pending na HEAD {head} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
         ),
         (
             _run(4077, ("Plan CI", "COMPLETED", "SUCCESS"), ("Frontend", "COMPLETED", "SUCCESS")),
-            "pending na HEAD {head} (w toku: 0) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 0) | polecenia z linii LICZY CI jeszcze bez wyniku",
         ),
         (
             [*_run(4077, ("Frontend", "IN_PROGRESS", None), REQUIRED_DONE)],
-            "pending na HEAD {head} (w toku: 1) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 1) | polecenia z linii LICZY CI jeszcze bez wyniku",
         ),
         (
             [*GREEN, _check_run("COMPLETED", "SUCCESS", name="Frontend", url="https://github.com/o/r/runs/129482655837")],
-            "nieznany na HEAD {head} | check „Frontend” workflow „CI” bez identyfikatora runu w detailsUrl "
+            f"nieznany na HEAD {HEAD} | check „Frontend” workflow „CI” bez identyfikatora runu w detailsUrl "
             "https://github.com/o/r/runs/129482655837 | polecenia z linii LICZY CI nie są dowiedzione",
         ),
     ],
@@ -1307,12 +1268,24 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
         "check-ci-bez-identyfikatora-runu",
     ],
 )
-def test_przeglad_podaje_stan_required_ci_status_na_head_i_padle_zadania_jego_runu(
-    tmp_path: Path, ci: list[dict[str, str | None]], line: str
-) -> None:
+def test_linia_ci_przegladu_podaje_stan_required_ci_status_i_padle_zadania_najnowszego_runu(ci: list[dict[str, str | None]], line: str) -> None:
+    assert stan_pr.ci_line(_pull(statusCheckRollup=ci)) == f"CI | Required CI status {line}"
+
+
+@pytest.mark.parametrize(
+    ("rollup", "line"),
+    [
+        ([*GREEN, WAITING_VERIFY], f"success na HEAD {{head}} | {PASSED} | inne workflowy, na które czeka gotowość: w toku: Verify Centrum na Windowsie"),
+        (RED_WITH_FAILED_JOBS, f"failure na HEAD {{head}} | {FAILED_JOBS} | {UNPROVEN}"),
+    ],
+    ids=["zielony-a-inny-workflow-w-toku", "czerwony-z-padlymi-zadaniami-jego-runu"],
+)
+def test_przeglad_podaje_linie_ci_z_rollupu_checkow_gh(tmp_path: Path, rollup: list[dict[str, str | None]], line: str) -> None:
+    """W czerwonym rollupie linię zmienia też pierwszy check, więc ``--przeglad`` musi oddać regule cały rollup."""
+
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.update(1, statusCheckRollup=ci)
+    github.update(1, statusCheckRollup=rollup)
 
     answered = github.run("1", "--przeglad")
 
@@ -1408,7 +1381,12 @@ def test_werdykt_w_postaci_ze_skilla_dla_head_trafia_na_pr_jako_komentarz_ktory_
     assert (checked.returncode == 0) == (decision == "PASS"), checked.stdout + checked.stderr
 
 
-OLD = "0" * 40
+MANY_PROBLEMS = f"WERDYKT: FAIL {OLD}\nZnaleziska: 3 (Ważne 0, Drobne 4)"
+MANY_REASONS = (
+    f"werdykt dla {OLD[:7]}, a HEAD PR to {{head}}: przejrzyj git diff {OLD} {{head}} i wpisz SHA HEAD; "
+    "Znaleziska: 3, a Ważne 0 i Drobne 4 dają 4; Drobne 4: podaj najwyżej 3, najważniejsze; "
+    "FAIL z Ważne 0: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"
+)
 
 
 @pytest.mark.parametrize(
@@ -1423,27 +1401,26 @@ OLD = "0" * 40
         ("WERDYKT: PASS {head}\nZnaleziska: 4 (Ważne 0, Drobne 4)", "Drobne 4: podaj najwyżej 3, najważniejsze"),
         ("WERDYKT: PASS {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)", "PASS z Ważne 1: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
         ("WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 0, Drobne 1)", "FAIL z Ważne 0: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
-        (
-            f"WERDYKT: FAIL {OLD}\nZnaleziska: 3 (Ważne 0, Drobne 4)",
-            f"werdykt dla {OLD[:7]}, a HEAD PR to {{head}}: przejrzyj git diff {OLD} {{head}} i wpisz SHA HEAD; "
-            "Znaleziska: 3, a Ważne 0 i Drobne 4 dają 4; Drobne 4: podaj najwyżej 3, najważniejsze; "
-            "FAIL z Ważne 0: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych",
-        ),
+        (MANY_PROBLEMS, MANY_REASONS),
     ],
     ids=["pusty", "skrocony-sha", "male-litery", "inny-commit", "bez-linii-znalezisk", "zla-suma", "za-duzo-drobnych", "pass-z-waznym", "fail-bez-waznego", "kilka-naraz"],
 )
-def test_werdykt_niezgodny_z_postacia_ze_skilla_albo_z_head_nie_trafia_na_pr_a_odmowa_mowi_co_poprawic(
-    tmp_path: Path, verdict: str, reason: str
-) -> None:
+def test_plik_werdyktu_niezgodny_z_postacia_ze_skilla_albo_z_head_daje_przyczyny_co_poprawic(verdict: str, reason: str) -> None:
+    problems = werdykt_pr.file_problems(verdict.format(head=HEAD, short=HEAD[:7]), HEAD)
+
+    assert "; ".join(problems) == reason.format(head=HEAD, short=HEAD[:7])
+
+
+def test_werdykt_niezgodny_z_regulami_nie_trafia_na_pr_a_odmowa_podaje_wszystkie_przyczyny_i_plik(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
-    path.write_text(verdict.format(head=head, short=head[:7]), encoding="utf-8")
+    path.write_text(MANY_PROBLEMS, encoding="utf-8")
 
     answered = github.run("1", "--werdykt", str(path))
 
     assert answered.returncode == 1, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"WERDYKT ODMOWA | #1 | {reason.format(head=head, short=head[:7])}; popraw {path} i uruchom ponownie"
+    assert _last_line(answered) == f"WERDYKT ODMOWA | #1 | {MANY_REASONS.format(head=head)}; popraw {path} i uruchom ponownie"
     assert github.published() == []
 
 

@@ -29,46 +29,8 @@ import stan_pr
 import werdykt_pr
 import werdykt_scalenia
 
-JOB_NOT_FAILED = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
 SKILLS_FOR_CHANGE = Path("tools") / "skille_dla_zmiany.py"
 SKILLS_TIMEOUT_S = 300
-
-
-def _ci_line(rollup: list[dict[str, str | None]], head: str) -> str:
-    where = f"CI | {github.REQUIRED}"
-    others = [check for check in rollup if check.get("workflowName") and check.get("workflowName") != github.CI_WORKFLOW]
-    try:
-        run = stan_pr.latest_ci_run(rollup)
-    except stan_pr.UnknownRun as unknown:
-        return (
-            f"{where} nieznany na HEAD {head} | check „{unknown.name}” workflow „{github.CI_WORKFLOW}” bez identyfikatora "
-            f"runu w detailsUrl {unknown.url} | polecenia z linii LICZY CI nie są dowiedzione"
-        )
-    if run is None:
-        return f"{where} brak na HEAD {head} | CI nie biegło na tym HEAD: jeszcze nie wystartowało po pushu albo PR ma konflikt z bazą"
-    required = run.required
-    failed = sorted(
-        {
-            str(check.get("name"))
-            for check in run.checks
-            if check.get("name") != github.REQUIRED and check.get("status") == "COMPLETED" and check.get("conclusion") not in JOB_NOT_FAILED
-        }
-    )
-    jobs = f"padłe zadania: {', '.join(failed)}" if failed else ""
-    if required is not None and required.get("status") == "COMPLETED" and required.get("conclusion") != "SUCCESS":
-        why = jobs or f"bez padłego zadania, przyczynę podaje log „{github.REQUIRED}”"
-        logs = f"logi padłych zadań: gh run view {run.id} --log-failed"
-        return f"{where} failure na HEAD {head} | {why} | polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko {logs}"
-    if required is not None and not run.running:
-        running_others = sorted({str(check.get("name")) for check in others if check.get("status") != "COMPLETED"})
-        failed_others = sorted(
-            {str(check.get("name")) for check in others if check.get("status") == "COMPLETED" and check.get("conclusion") not in JOB_NOT_FAILED}
-        )
-        states = [f"{state}: {', '.join(names)}" for state, names in (("w toku", running_others), ("padłe", failed_others)) if names]
-        rest = f" | inne workflowy, na które czeka gotowość: {'; '.join(states)}" if states else ""
-        return f"{where} success na HEAD {head} | polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj{rest}"
-    running = [*run.running, *(check for check in others if check.get("status") != "COMPLETED")]
-    return f"{where} pending na HEAD {head} (w toku: {len(running)}{f'; {jobs}' if jobs else ''}) | polecenia z linii LICZY CI jeszcze bez wyniku"
 
 
 def _skills_for_change(head: str, fork: str) -> list[str]:
@@ -100,7 +62,7 @@ def print_context(number: int) -> int:
     print(repo.git(ROOT, "diff", "--stat", fork, pull.head, timeout=limit).rstrip())
     print(f"PLIKI | {len(files)}", *files, sep="\n")
     print(f"SKILLE | {SKILLS_FOR_CHANGE.as_posix()} {fork} na HEAD PR", *_skills_for_change(pull.head, fork), sep="\n")
-    print(_ci_line(list(pull.checks), pull.head))
+    print(stan_pr.ci_line(pull))
     print(*werdykt_pr.history(pull.verdicts, pull.head), sep="\n")
     print(f"PRZEGLĄD OK | #{pull.number} {pull.head[:7]}")
     return 0

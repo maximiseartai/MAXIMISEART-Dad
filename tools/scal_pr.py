@@ -80,22 +80,6 @@ class _Refused(Exception):
     pass
 
 
-def _ci_problem(rollup: tuple[dict[str, str | None], ...]) -> str | None:
-    try:
-        run = stan_pr.latest_ci_run(rollup)
-    except stan_pr.UnknownRun as unknown:
-        return f"CI: check „{unknown.name}” workflow „{github.CI_WORKFLOW}” bez identyfikatora runu w detailsUrl {unknown.url}"
-    if run is None:
-        return f"CI: brak „{github.REQUIRED}” z GitHub Actions na HEAD"
-    check = run.required
-    if check is None:
-        return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa"
-    result = (check.get("conclusion") if check.get("status") == "COMPLETED" else check.get("status")) or "?"
-    if result != "SUCCESS":
-        return f"CI: „{github.REQUIRED}” {result}"
-    return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa" if run.running else None
-
-
 def _body_problem(body: str) -> str | None:
     """Przyczyna odmowy, gdy opisowi brakuje nagłówka wzoru albo ma go nie po poprzednim; wzór to blok ``markdown``."""
 
@@ -122,7 +106,7 @@ def _problems(pull: Pull) -> list[str]:
         problems.append("PR jest szkicem")
     if pull.from_fork:
         problems.append("PR z forka")
-    return [*problems, *filter(None, [_ci_problem(pull.checks), _body_problem(pull.body), werdykt_pr.consent_problem(pull.verdicts, pull.head, pull.number)])]
+    return [*problems, *filter(None, [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull)])]
 
 
 def _remote_base(base: str) -> str:
