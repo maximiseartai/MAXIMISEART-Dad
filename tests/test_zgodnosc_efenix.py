@@ -61,6 +61,7 @@ from atrapy.atrapa_efenix import (
     LOGOUT,
     ORDER_PAGE,
     ORDER_SCRIPT,
+    POLL_S,
     PRICES,
     SAVE_QUANTITY,
     SEARCH,
@@ -791,7 +792,7 @@ def _in_front(atrapa: AtrapaEfenix, rewrites: Mapping[str, Rewrite]) -> Iterator
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, name="przed-atrapa-efenix")
+    thread = threading.Thread(target=server.serve_forever, args=(POLL_S,), name="przed-atrapa-efenix")
     thread.start()
     try:
         yield f"http://127.0.0.1:{server.server_address[1]}/{LIST_PAGE}"

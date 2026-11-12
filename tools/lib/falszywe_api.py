@@ -53,6 +53,8 @@ import potomne
 
 MODEL = "claude-opus-5-5"
 CONTACT_S = 30.0
+# Co tyle wątek fałszywego API sprawdza prośbę o zatrzymanie (domyślnie 0,5 s): tyle najwyżej czeka ``shutdown``.
+_POLL_S = 0.02
 NESTED = "MAXIMISEART_WYROCZNIA_W_SRODKU"
 _API_KEY = "sk-ant-wyrocznia"
 # Jedyne zmienne środowiska procesu wyroczni, które dostaje ``claude``; wyrocznie biegną tylko na macOS i Linuksie.
@@ -177,7 +179,7 @@ def claude(
                 pass  # wyrocznia zabiła ``claude`` po odpowiedzi, której już nie odczytało
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Api)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, args=(_POLL_S,), daemon=True).start()
 
     def watchdog() -> None:
         if not contacted.wait(contact_s):
