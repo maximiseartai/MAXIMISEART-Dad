@@ -22,6 +22,7 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fak
 from tests.fixtures.git_repo import commit, git, with_imports
 
 import czasy_ci
+import github as klient_github
 import naprawia
 import stan_pr
 import werdykt_pr
@@ -338,7 +339,7 @@ def _pull(**fields: object) -> stan_pr.Pull:
     """``stan_pr.pull`` PR 1 z HEAD ``HEAD`` na odpowiedzi ``gh pr view`` z ``fields``, z atrapą ``gh`` w procesie."""
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(stan_pr.github, "gh", lambda *arguments: json.dumps(_pr_view(1, HEAD, **fields)))
+        patch.setattr(klient_github, "gh", lambda *arguments: json.dumps(_pr_view(1, HEAD, **fields)))
         return stan_pr.pull(1)
 
 
