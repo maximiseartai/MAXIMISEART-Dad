@@ -446,14 +446,24 @@ def test_najnowszy_werdykt_dla_head_rozstrzyga_zgode_na_merge(verdicts: list[tup
 
 @pytest.mark.parametrize(
     ("verdicts", "refused"),
-    [([("comment", PASS), ("COMMENTED", "WERDYKT: FAIL {head}")], True), ([("COMMENTED", "WERDYKT: FAIL {head}"), ("comment", PASS)], False)],
-    ids=["recenzja-z-fail-po-komentarzu-pass", "komentarz-pass-po-recenzji-z-fail"],
+    [
+        ([("comment", PASS), ("COMMENTED", "WERDYKT: FAIL {head}")], True),
+        ([("COMMENTED", "WERDYKT: FAIL {head}"), ("comment", PASS)], False),
+        ([("comment", PASS), ("CHANGES_REQUESTED", "Popraw nazwę funkcji.")], True),
+        ([("comment", PASS), ("comment", "WERDYKT: FAIL {head}", "CONTRIBUTOR")], False),
+    ],
+    ids=["recenzja-z-fail-po-komentarzu-pass", "komentarz-pass-po-recenzji-z-fail", "prosba-o-zmiany-po-pass", "fail-kontrybutora-po-pass"],
 )
-def test_komentarze_i_recenzje_z_gh_licza_sie_w_kolejnosci_utworzenia(tmp_path: Path, verdicts: list[tuple[str, str]], refused: bool) -> None:
+def test_komentarze_i_recenzje_z_gh_licza_sie_w_kolejnosci_utworzenia(tmp_path: Path, verdicts: list[tuple[str, ...]], refused: bool) -> None:
+    """Rozstrzyga też element inny niż ostatni, więc ``scal_pr`` musi oddać regule wszystkie komentarze i recenzje."""
+
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    for kind, body in verdicts:
-        github.comment(1, body.format(head=head)) if kind == "comment" else github.review(1, body.format(head=head), state=kind)
+    for kind, body, *association in verdicts:
+        if kind == "comment":
+            github.comment(1, body.format(head=head), *association)
+        else:
+            github.review(1, body.format(head=head), *association, state=kind)
 
     answered = github.run("1", "--bez-merge")
 
@@ -486,6 +496,9 @@ def _run(run: int, *jobs: tuple[str, str, str | None], started: str = SAME_START
     ]
 
 
+RED_RUN_BEFORE_OLDER_GREEN = [*_run(42706832032, *RED_RUN), *_run(42701212234, *GREEN_RUN)]
+
+
 @pytest.mark.parametrize(
     ("rollup", "reason"),
     [
@@ -497,7 +510,7 @@ def _run(run: int, *jobs: tuple[str, str, str | None], started: str = SAME_START
         ([*_run(42701212234, *RED_RUN), *_run(42706832032, *RED_RUN), *_run(42707489817, *GREEN_RUN)], None),
         ([*_run(42707489817, *GREEN_RUN), *_run(42706832032, *RED_RUN), *_run(42701212234, *RED_RUN)], None),
         ([*_run(42701212234, *GREEN_RUN), *_run(42706832032, *RED_RUN)], "„Required CI status” FAILURE"),
-        ([*_run(42706832032, *RED_RUN), *_run(42701212234, *GREEN_RUN)], "„Required CI status” FAILURE"),
+        (RED_RUN_BEFORE_OLDER_GREEN, "„Required CI status” FAILURE"),
         ([*_run(9999, *RED_RUN), *_run(10000, *GREEN_RUN)], None),
         ([*_run(42707489817, *GREEN_RUN, started="2026-11-09T22:30:00Z"), *_run(42709423144, *RUNNING_RUN)], "run CI 42709423144 jeszcze trwa"),
         (
@@ -603,10 +616,15 @@ def test_pr_bez_naglowka_wzoru_skilla_pr_w_jego_kolejnosci_nie_jest_scalany(tmp_
         assert answered.returncode == 0, answered.stdout + answered.stderr
 
 
-def test_brak_naglowka_wzoru_jest_w_jednej_odmowie_z_czerwonym_ci_i_brakiem_werdyktu(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "rollup", [[_check_run("COMPLETED", "FAILURE")], RED_RUN_BEFORE_OLDER_GREEN], ids=["ci-czerwone", "nowy-czerwony-run-przed-starym-zielonym-w-rollupie"]
+)
+def test_brak_naglowka_wzoru_jest_w_jednej_odmowie_z_czerwonym_ci_i_brakiem_werdyktu(tmp_path: Path, rollup: list[dict[str, str | None]]) -> None:
+    """W drugim rollupie rozstrzyga run sprzed ostatniego checku, więc ``scal_pr`` musi oddać regule cały rollup."""
+
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.update(1, body="", statusCheckRollup=[_check_run("COMPLETED", "FAILURE")])
+    github.update(1, body="", statusCheckRollup=rollup)
 
     answered = github.run("1", "--bez-merge")
 
@@ -1100,6 +1118,16 @@ def test_przeglad_po_pass_dla_head_mowi_ze_werdykt_dotyczy_tego_head_a_rundy_z_f
 OTHER_RUN = "https://github.com/o/r/actions/runs/4000/job/2"
 PASSED = "polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj"
 UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi padłych zadań: gh run view 4077 --log-failed"
+RED_WITH_FAILED_JOBS = [
+    _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)"),
+    _check_run("COMPLETED", "TIMED_OUT", name="Mutation checks 2"),
+    _check_run("COMPLETED", "SUCCESS", name="Ruff, mypy"),
+    _check_run("COMPLETED", "SKIPPED", name="Frontend"),
+    _check_run("COMPLETED", "FAILURE", name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN),
+    _check_run("COMPLETED", "FAILURE"),
+]
+FAILED_JOBS = "padłe zadania: Mutation checks 2, pytest (Python 3.11, 1/2)"
+WAITING_VERIFY = _check_run("IN_PROGRESS", None, name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN)
 
 
 @pytest.mark.parametrize(
@@ -1109,7 +1137,7 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
         (
             [
                 *GREEN,
-                _check_run("IN_PROGRESS", None, name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN),
+                WAITING_VERIFY,
                 _check_run("COMPLETED", "FAILURE", name="Lint skilli", workflow="Skille", url=OTHER_RUN),
                 _check_run("COMPLETED", "SKIPPED", name="Notka", workflow="Skille", url=OTHER_RUN),
             ],
@@ -1127,17 +1155,7 @@ UNPROVEN = "polecenia z linii LICZY CI nie są dowiedzione, czytaj tylko logi pa
             [_check_run("IN_PROGRESS", None, name="Frontend"), _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)")],
             f"pending na HEAD {HEAD} (w toku: 1; padłe zadania: pytest (Python 3.11, 1/2)) | polecenia z linii LICZY CI jeszcze bez wyniku",
         ),
-        (
-            [
-                _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)"),
-                _check_run("COMPLETED", "TIMED_OUT", name="Mutation checks 2"),
-                _check_run("COMPLETED", "SUCCESS", name="Ruff, mypy"),
-                _check_run("COMPLETED", "SKIPPED", name="Frontend"),
-                _check_run("COMPLETED", "FAILURE", name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN),
-                _check_run("COMPLETED", "FAILURE"),
-            ],
-            f"failure na HEAD {HEAD} | padłe zadania: Mutation checks 2, pytest (Python 3.11, 1/2) | {UNPROVEN}",
-        ),
+        (RED_WITH_FAILED_JOBS, f"failure na HEAD {HEAD} | {FAILED_JOBS} | {UNPROVEN}"),
         (
             [_check_run("COMPLETED", "FAILURE", name="Plan CI", url=OTHER_RUN), _check_run("COMPLETED", "FAILURE")],
             f"failure na HEAD {HEAD} | bez padłego zadania, przyczynę podaje log „Required CI status” | {UNPROVEN}",
@@ -1195,17 +1213,25 @@ def test_linia_ci_przegladu_podaje_stan_required_ci_status_i_padle_zadania_najno
     assert stan_pr.ci_line(tuple(ci), HEAD) == f"CI | Required CI status {line}"
 
 
-def test_przeglad_podaje_linie_ci_z_rollupu_checkow_gh(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("rollup", "line"),
+    [
+        ([*GREEN, WAITING_VERIFY], f"success na HEAD {{head}} | {PASSED} | inne workflowy, na które czeka gotowość: w toku: Verify Centrum na Windowsie"),
+        (RED_WITH_FAILED_JOBS, f"failure na HEAD {{head}} | {FAILED_JOBS} | {UNPROVEN}"),
+    ],
+    ids=["zielony-a-inny-workflow-w-toku", "czerwony-z-padlymi-zadaniami-jego-runu"],
+)
+def test_przeglad_podaje_linie_ci_z_rollupu_checkow_gh(tmp_path: Path, rollup: list[dict[str, str | None]], line: str) -> None:
+    """W czerwonym rollupie linię zmienia też pierwszy check, więc ``--przeglad`` musi oddać regule cały rollup."""
+
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.update(1, statusCheckRollup=[*GREEN, _check_run("IN_PROGRESS", None, name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN)])
+    github.update(1, statusCheckRollup=rollup)
 
     answered = github.run("1", "--przeglad")
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
-    assert _lines(answered, "CI |") == [
-        f"CI | Required CI status success na HEAD {head} | {PASSED} | inne workflowy, na które czeka gotowość: w toku: Verify Centrum na Windowsie"
-    ]
+    assert _lines(answered, "CI |") == [f"CI | Required CI status {line.format(head=head)}"]
 
 
 def test_przeglad_oznacza_pass_dla_head_poza_regulami_werdyktu(tmp_path: Path) -> None:
