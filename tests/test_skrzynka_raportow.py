@@ -9,9 +9,15 @@ from __future__ import annotations
 
 import base64
 import codecs
+import copy
 from datetime import date, datetime, timedelta, timezone
 import email
-from email.message import EmailMessage
+from email.message import EmailMessage, Message
+from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
+from email.mime.message import MIMEMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import email.policy
 from email.utils import format_datetime
 import hashlib
@@ -19,8 +25,11 @@ import imaplib
 import smtplib
 from pathlib import Path
 import quopri
+import re
 from typing import Literal
 
+from hypothesis import HealthCheck, example, given, settings
+from hypothesis import strategies as st
 import pydantic
 import pytest
 
@@ -113,7 +122,7 @@ def test_skrzynka_raportow_otwiera_folder_wszystkich_maili_tylko_do_odczytu_i_po
     assert 'EXAMINE "[Gmail]/Wszystkie wiadomo&AVs-ci"' in atrapa.commands
     assert not WRITES & {name.removeprefix("UID ") for name in polecenia(atrapa)}
     fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
-    assert any("BODY.PEEK[]" in command for command in fetches)
+    assert any("BODY.PEEK[TEXT]" in command for command in fetches)
     assert fetches and all("BODY[" not in command.replace("BODY.PEEK[", "") for command in fetches)
     assert polecenia(atrapa)[-1] == "LOGOUT"
 
@@ -203,6 +212,141 @@ def test_skrzynka_z_wiecej_maili_niz_paczka_pobierania_oddaje_kazdy_mail(tmp_pat
     assert [mail.id for mail in found] == [MailId.of(f"<{uid}@x.invalid>") for uid in range(1, count + 1)]
     fetched = [command.split(" ")[2].split(",") for command in atrapa.commands if command.startswith("UID FETCH")]
     assert fetched and max(len(uids) for uids in fetched) <= FETCH_BATCH
+
+
+def z_zalacznikami(*, message_id: bytes | None = b"<z-zalacznikami@x.invalid>") -> bytes:
+    """Raport ze zdjęciem, PDF-em i przekazanym mailem, jak z telefonu Wykonawcy: tekst w ``multipart/alternative``."""
+
+    tekst = MIMEMultipart("alternative", _subparts=[MIMEText(TRESC, "plain", "utf-8"), MIMEText(f"<p>{TRESC}</p>", "html", "utf-8")])
+    zdjecie = MIMEImage(b"\xff\xd8" + bytes(range(256)) * 400, "jpeg")
+    zdjecie.add_header("Content-Disposition", "attachment", filename=("utf-8", "", "zdjęcie licznika.jpg"))
+    przekazany = MIMEText("40000009 tak", "plain", "utf-8")
+    przekazany["Subject"] = "Raport 01.11.2026"
+    root = MIMEMultipart(
+        "mixed",
+        _subparts=[tekst, zdjecie, MIMEApplication(b"%PDF-1.4" * 500, "pdf"), MIMEMessage(przekazany)],
+    )
+    root["From"] = "Jan Testowy <jan.testowy@przyklad.invalid>"
+    root["Subject"] = TEMAT
+    if message_id is not None:
+        root["Message-ID"] = message_id.decode()
+    return root.as_bytes(policy=email.policy.SMTP)
+
+
+def test_skrzynka_czyta_raport_bez_pobierania_zalacznikow(tmp_path: Path) -> None:
+    """Pełny mail ze zdjęciami to megabajty, a Gmail liczy pobranie treści za każdy mail: port bierze strukturę, nagłówki
+    i części tekstu, a treść załączników zostaje w skrzynce (pomiar 12.11.2026: 214 MB i 17–34 s dla 121 maili)."""
+
+    surowe = z_zalacznikami()
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [(mail.id, mail.subject, mail.text) for mail in found] == [(MailId.of("<z-zalacznikami@x.invalid>"), TEMAT, TRESC)]
+    fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
+    asked = {section for command in fetches for section in re.findall(r"BODY\.PEEK\[([^\]]*)\]", command)}
+    assert "" not in asked
+    assert asked <= {"HEADER.FIELDS (SUBJECT)", "HEADER", "1.MIME", "1.1.MIME", "1.1", "1.2.MIME", "1.2"}
+
+
+def test_mail_bez_message_id_port_pobiera_w_calosci_bo_jego_mailid_liczy_sie_z_bajtow_maila(tmp_path: Path) -> None:
+    surowe = z_zalacznikami(message_id=None)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [(mail.id, mail.text) for mail in found] == [(MailId.of(hashlib.sha256(surowe).hexdigest()), TRESC)]
+    assert any("BODY.PEEK[]" in command for command in atrapa.commands)
+
+
+def test_gdy_serwer_odmawia_czesci_maila_port_pobiera_mail_w_calosci(tmp_path: Path) -> None:
+    surowe = z_zalacznikami()
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)], refuse="sections") as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [(mail.subject, mail.text) for mail in found] == [(TEMAT, TRESC)]
+    assert any("BODY.PEEK[]" in command for command in atrapa.commands)
+
+
+def test_gdy_serwer_czyta_typ_czesci_inaczej_niz_email_port_pobiera_mail_w_calosci(tmp_path: Path) -> None:
+    """Mail z tekstem, który serwer opisuje jako zdjęcie: szkielet bez treści tej części zgubiłby Raport, więc port
+    pobiera wtedy cały mail."""
+
+    struktura = b'("IMAGE" "JPEG" NIL NIL NIL "BASE64" 10 NIL NIL NIL)'
+    mail = AtrapaMail(7, datetime(2026, 11, 8, 18, 5, tzinfo=TATA), surowy(), structure=struktura)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [mail.text for mail in found] == ["40000001 tak wymiana routera"]
+    assert any("BODY.PEEK[]" in command for command in atrapa.commands)
+
+
+def _related_ze_start_na_zdjecie() -> list[Message]:
+    """``multipart/related``, którego ``start`` wskazuje zdjęcie, a nie pierwszą część: ``get_body`` szuka treści w
+    zdjęciu i jej nie znajduje, więc szkielet musi mieć ``Content-ID`` zdjęcia z jego nagłówka."""
+
+    zdjecie = MIMEImage(b"\xff\xd8\xff", "jpeg")
+    zdjecie.add_header("Content-ID", "<zdjecie-1@x.invalid>")
+    related = MIMEMultipart("related", _subparts=[MIMEText("40000001 tak", "plain", "utf-8"), zdjecie])
+    related.set_param("start", "<zdjecie-1@x.invalid>")
+    return [related]
+
+
+def _tekst(draw: st.DrawFn) -> str:
+    return draw(st.text(alphabet="40000123 takniewymiaśćżółęńŁŻ,.\n", min_size=1, max_size=40)).strip() or "40000001 tak"
+
+
+@st.composite
+def czesc_maila(draw: st.DrawFn, glebokosc: int = 0) -> Message:
+    """Część maila w kształcie, jaki wysyła telefon albo program pocztowy Wykonawcy: tekst, HTML, zdjęcie, PDF, plik
+    tekstowy w załączniku, przekazany mail albo ``multipart`` (``mixed``, ``alternative``, ``related`` ze ``start``)."""
+
+    rodzaje = ["plain", "html", "zdjecie", "pdf", "plik-tekstowy", "przekazany"]
+    rodzaj = draw(st.sampled_from(rodzaje + (["mixed", "alternative", "related"] if glebokosc < 2 else [])))
+    if rodzaj in ("plain", "html"):
+        tekst = _tekst(draw)
+        czesc: Message = MIMEText(tekst if rodzaj == "plain" else f"<div>{tekst}</div>", rodzaj, draw(st.sampled_from(["utf-8", "iso-8859-2"])))
+    elif rodzaj == "zdjecie":
+        czesc = MIMEImage(draw(st.binary(min_size=1, max_size=64)), "jpeg")
+        czesc.add_header("Content-ID", f"<zdjecie-{draw(st.integers(0, 3))}@x.invalid>")
+    elif rodzaj == "pdf":
+        czesc = MIMEApplication(draw(st.binary(min_size=1, max_size=64)), "pdf")
+    elif rodzaj == "plik-tekstowy":
+        czesc = MIMEText(_tekst(draw), "plain", "utf-8")
+    elif rodzaj == "przekazany":
+        wewnetrzny = MIMEText(_tekst(draw), "plain", "utf-8")
+        wewnetrzny["Subject"] = "Raport 01.11.2026"
+        czesc = MIMEMessage(wewnetrzny)
+    else:
+        dzieci = draw(st.lists(czesc_maila(glebokosc + 1), min_size=1, max_size=3))
+        czesc = MIMEMultipart(rodzaj, _subparts=dzieci)
+        if rodzaj == "related" and draw(st.booleans()):
+            czesc.set_param("start", f"<zdjecie-{draw(st.integers(0, 3))}@x.invalid>")
+    if rodzaj not in ("mixed", "alternative", "related") and draw(st.booleans()):
+        nazwa = draw(st.sampled_from(["notatka.txt", "zdjęcie licznika.jpg", 'raport "x".pdf']))
+        czesc.add_header("Content-Disposition", draw(st.sampled_from(["attachment", "inline"])), filename=("utf-8", "", nazwa))
+    return czesc
+
+
+@settings(max_examples=60, derandomize=True, database=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(st.lists(czesc_maila(), min_size=1, max_size=4))
+@example(_related_ze_start_na_zdjecie())
+def test_skrzynka_bez_tresci_zalacznikow_daje_te_same_maile_co_rozbior_calego_maila(tmp_path: Path, czesci: list[Message]) -> None:
+    """``mail_of`` na mailu ze skrzynki daje to samo co na całym mailu (``mail_skeleton``): nadawca, temat, ``MailId``
+    i treść, którą wybiera ``get_body``, dla każdego kształtu maila z ``czesc_maila``."""
+
+    surowe = []
+    for uid, oryginal in enumerate(czesci, start=1):
+        czesc = copy.deepcopy(oryginal)
+        czesc["From"] = "Jan Testowy <jan.testowy@przyklad.invalid>"
+        czesc["Subject"] = TEMAT
+        czesc["Message-ID"] = f"<{uid}@x.invalid>"
+        surowe.append(czesc.as_bytes(policy=email.policy.SMTP))
+    przyszedl = datetime(2026, 11, 8, 18, 5, tzinfo=TATA)
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(uid, raw, przyszedl) for uid, raw in enumerate(surowe, 1)]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert found == tuple(mail for raw in surowe if (mail := mail_of(raw, przyszedl)) is not None)
+    assert not any("BODY.PEEK[]" in command for command in atrapa.commands)
 
 
 TEMAT = "Raport 08.11.2026 żółć"

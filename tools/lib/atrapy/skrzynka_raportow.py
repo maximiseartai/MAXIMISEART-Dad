@@ -5,7 +5,8 @@ Centrum, ``FolderInbox`` dla Skryptu dla maszyn i skilli oraz ``AtrapaImap`` i `
 plików ``.eml`` folderu tym samym rozbiorem MIME co port (``mail_of``), z chwilą przyjścia z nagłówka ``Date``. ``AtrapaImap`` to lokalny serwer
 IMAP na ``127.0.0.1`` z wolnym portem, z którym prawdziwy ``imaplib`` portu (``ImapInbox``) rozmawia jak z Gmailem: te
 same postacie odpowiedzi (literał ``{n}`` w FETCH, ``[READ-ONLY]`` po ``EXAMINE``, ``AUTHENTICATIONFAILED`` przy złym
-haśle, folder ``\\All`` w cudzysłowie). Zapisuje polecenia klienta (``LOGIN`` bez argumentów, bo niesie hasło) i
+haśle, folder ``\\All`` w cudzysłowie, ``BODYSTRUCTURE`` z typami wielkimi literami i nazwą pliku spoza ASCII jako
+literałem, ``NO`` na całe ``UID FETCH``, gdy któryś mail nie ma żądanej sekcji). Zapisuje polecenia klienta (``LOGIN`` bez argumentów, bo niesie hasło) i
 odmawia każdego polecenia, które zmienia skrzynkę: ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE``, ``APPEND``.
 Folder ``\\Sent`` („Wysłane”) ma maile ``sent``, a ``AtrapaSmtp`` to lokalny serwer SMTP, który przyjmuje maile po
 ``AUTH PLAIN`` (``535`` przy złym haśle, jak Gmail) i kładzie każdy przyjęty mail w „Wysłanych” swojej ``AtrapaImap`` z
@@ -20,6 +21,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 import email
+import email.message
 import email.policy
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -52,6 +54,7 @@ _HEADER_ITEMS: Final = {
 }
 _ALL: Final = "[Gmail]/Wszystkie wiadomo&AVs-ci"
 _SENT: Final = "[Gmail]/Wys&AUI-ane"
+_SECTION: Final = re.compile(r"BODY\.PEEK\[((?:HEADER|TEXT)|\d+(?:\.\d+)*(?:\.MIME)?)\]")
 # Co tyle ``serve_forever`` sprawdza prośbę o zatrzymanie: tyle najwyżej trwa wyjście z bloku ``with``.
 _POLL_S: Final = 0.02
 
@@ -135,13 +138,16 @@ class FolderInbox:
 @dataclass(frozen=True)
 class AtrapaMail:
     """Mail w atrapie: UID, chwila przyjęcia przez skrzynkę (``INTERNALDATE``, ze strefą), bajty MIME, flagi IMAP i to,
-    czy leży też w ``INBOX`` (``False``: tylko w folderze ``\\All``, jak mail zarchiwizowany w Gmailu)."""
+    czy leży też w ``INBOX`` (``False``: tylko w folderze ``\\All``, jak mail zarchiwizowany w Gmailu). ``structure`` to
+    ``BODYSTRUCTURE``, które atrapa oddaje zamiast policzonego z bajtów, jak serwer, który typ części czyta inaczej niż
+    pakiet ``email``."""
 
     uid: int
     arrived: datetime
     raw: bytes
     flags: tuple[str, ...] = ()
     in_inbox: bool = True
+    structure: bytes | None = None
 
 
 class AtrapaImap:
@@ -150,7 +156,7 @@ class AtrapaImap:
     Skrzynka ma ``INBOX`` i, gdy ``all_folder``, folder ``\\All`` z nazwą w modified UTF-7 i spacją: ``\\All`` pokazuje
     każdy mail, a ``INBOX`` maile z ``in_inbox`` (bez ``all_folder`` każdy). ``flags`` to bieżące flagi maili po UID, które
     oddaje ``UID FETCH … FLAGS``; ``marks_seen`` dopisuje ``\\Seen`` mailowi, którego treść klient pobrał, nawet przez
-    ``BODY.PEEK[]``, jak serwer, który nie dotrzymuje RFC 3501, a ``deletes_read`` taki mail usuwa ze skrzynki dla
+    ``BODY.PEEK[]``, ``[TEXT]`` albo ``[n]``, jak serwer, który nie dotrzymuje RFC 3501, a ``deletes_read`` taki mail usuwa ze skrzynki dla
     następnych sesji, jak filtr, który przenosi przeczytane maile. ``flags_reply="without_fetch"`` odpowiada na
     ``UID FETCH … FLAGS`` samym ``OK`` bez linii ``FETCH``, a ``flags_reply="unsolicited"`` dokłada do linii z flagami
     linię ``FETCH`` z flagami bez UID, jak serwer, który ogłasza flagę zmienioną w innej sesji. ``cut="greeting"`` zrywa każde połączenie przed
@@ -158,7 +164,8 @@ class AtrapaImap:
     ``cut="after_login"`` po udanym ``LOGIN`` czyta polecenia, ale odpowiada już tylko na ``CAPABILITY``, o które
     ``imaplib`` 3.14 pyta sam po ``LOGIN``, jak Gmail, który zamilkł w trakcie sesji: klient z limitem czasu dostaje
     wtedy ``TimeoutError``. ``refuse="login"`` odmawia ``LOGIN`` jak Gmail w chwilowej awarii (``NO [UNAVAILABLE]``, bez
-    ``AUTHENTICATIONFAILED``), a ``refuse="examine"`` odmawia otwarcia folderu. ``sent`` to maile folderu ``\\Sent``
+    ``AUTHENTICATIONFAILED``), ``refuse="examine"`` odmawia otwarcia folderu, a ``refuse="sections"`` każdego
+    ``UID FETCH`` treści części (``BODY.PEEK[TEXT]``, ``[n]``), jak Gmail, który nie umie podać sekcji. ``sent`` to maile folderu ``\\Sent``
     („Wysłane”, UID inne niż maili ``mails``), którego nie ma bez ``sent_folder``.
     """
 
@@ -170,7 +177,7 @@ class AtrapaImap:
         mails: Sequence[AtrapaMail] = (),
         all_folder: bool = True,
         cut: Literal["greeting", "after_login"] | None = None,
-        refuse: Literal["login", "examine"] | None = None,
+        refuse: Literal["login", "examine", "sections"] | None = None,
         marks_seen: bool = False,
         deletes_read: bool = False,
         flags_reply: Literal["without_fetch", "unsolicited"] | None = None,
@@ -278,8 +285,18 @@ class _Session(socketserver.StreamRequestHandler):
             self._send(f"* SEARCH {' '.join(str(mail.uid) for mail in _since(self._mails, arguments))}".rstrip().encode(), done)
         elif command == "UID FETCH":
             uids, _, items = arguments.partition(" ")
-            for number, mail in enumerate(self._mails, start=1):
-                if str(mail.uid) in uids.split(","):
+            asked = [(number, mail) for number, mail in enumerate(self._mails, start=1) if str(mail.uid) in uids.split(",")]
+            sections = _SECTION.findall(items)
+            content = any(name == "TEXT" or name[:1].isdigit() for name in sections)
+            if (atrapa.refuse == "sections" and content) or any(
+                _section(mail.raw, name) is None for _, mail in asked for name in sections
+            ):
+                self._send(f"{tag} NO Some messages could not be FETCHed (Failure)".encode())
+                return True
+            for number, mail in asked:
+                if sections or "BODYSTRUCTURE" in items:
+                    self._fetch_parts(number, mail, items, sections)
+                else:
                     self._fetch(number, mail, items)
             self._send(done)
         elif command == "LOGOUT":
@@ -314,6 +331,28 @@ class _Session(socketserver.StreamRequestHandler):
         head = f'* {number} FETCH (UID {mail.uid} INTERNALDATE "{internal}" {name} {{{len(literal)}}}\r\n'
         self.wfile.write(head.encode() + literal + b")\r\n")
 
+    def _fetch_parts(self, number: int, mail: AtrapaMail, items: str, sections: list[str]) -> None:
+        """``BODYSTRUCTURE`` i sekcje ``BODY.PEEK[HEADER]``, ``[TEXT]``, ``[n]`` i ``[n.MIME]`` jak Gmail: struktura z
+        typami wielkimi literami, nazwa pliku spoza ASCII jako literał, każda sekcja jako literał."""
+
+        atrapa = self.server.atrapa
+        if any(name == "TEXT" or (name[:1].isdigit() and not name.endswith(".MIME")) for name in sections):
+            if atrapa.marks_seen:
+                atrapa.flags.setdefault(mail.uid, set()).add("\\Seen")
+            if atrapa.deletes_read:
+                atrapa.deleted.add(mail.uid)
+        out = f"* {number} FETCH (UID {mail.uid}".encode()
+        if "INTERNALDATE" in items:
+            moment = mail.arrived
+            out += f' INTERNALDATE "{moment.day:02d}-{_MONTHS[moment.month - 1]}-{moment.year} {moment:%H:%M:%S %z}"'.encode()
+        if "BODYSTRUCTURE" in items:
+            out += b" BODYSTRUCTURE " + (mail.structure or _structure(_mime(mail.raw)))
+        for name in sections:
+            literal = _section(mail.raw, name)
+            assert literal is not None
+            out += f" BODY[{name}] {{{len(literal)}}}\r\n".encode() + literal
+        self.wfile.write(out + b")\r\n")
+
     def _logs_in(self, arguments: str) -> bool:
         atrapa = self.server.atrapa
         return atrapa.refuse != "login" and _strings(arguments) == [atrapa.address, atrapa.password]
@@ -339,6 +378,97 @@ def _since(mails: Sequence[AtrapaMail], arguments: str) -> list[AtrapaMail]:
         return []
     day = date(int(found[3]), _MONTHS.index(found[2]) + 1, int(found[1]))
     return [mail for mail in mails if mail.arrived.date() >= day]
+
+
+@dataclass(frozen=True)
+class _Mime:
+    """Część maila w bajtach: nagłówek z pustą linią, treść i, dla ``multipart``, części między granicami."""
+
+    header: bytes
+    body: bytes
+    parts: tuple[_Mime, ...]
+
+    @property
+    def message(self) -> email.message.Message:
+        return email.message_from_bytes(self.header, policy=email.policy.compat32)
+
+
+def _mime(raw: bytes) -> _Mime:
+    """Drzewo części maila po granicach ``boundary`` z nagłówków, z bajtami każdej części jak w mailu."""
+
+    found = re.search(rb"\r?\n\r?\n", raw)
+    split = len(raw) if found is None else found.end()
+    header, body = raw[:split], raw[split:]
+    message = email.message_from_bytes(header, policy=email.policy.compat32)
+    boundary = message.get_boundary()
+    if message.get_content_maintype() != "multipart" or boundary is None:
+        return _Mime(header, body, ())
+    delimiter = re.escape(b"--" + boundary.encode())
+    pieces = re.split(rb"(?:^|\r?\n)" + delimiter + rb"(?:--)?[ \t]*(?:\r?\n|$)", body)
+    return _Mime(header, body, tuple(_mime(piece) for piece in pieces[1:-1]))
+
+
+def _section(raw: bytes, name: str) -> bytes | None:
+    """Bajty sekcji ``BODY[name]`` (``HEADER``, ``TEXT``, ``n…`` albo ``n….MIME``); ``None``, gdy mail jej nie ma."""
+
+    root = _mime(raw)
+    if name in ("HEADER", "TEXT"):
+        return root.header if name == "HEADER" else root.body
+    path, mime = name.removesuffix(".MIME"), name.endswith(".MIME")
+    part = root
+    for number in path.split("."):
+        if not number.isdigit() or not 1 <= int(number) <= len(part.parts):
+            return None if part.parts or number != "1" or mime else part.body
+        part = part.parts[int(number) - 1]
+    return part.header if mime else part.body
+
+
+def _structure(part: _Mime) -> bytes:
+    """``BODYSTRUCTURE`` części w kształcie Gmaila (RFC 3501): ``multipart`` z podtypem i ``BOUNDARY``, część z
+    typem, parametrami, ``Content-ID``, opisem, kodowaniem, rozmiarem, liniami tekstu, ``Content-Disposition``."""
+
+    message = part.message
+    if part.parts:
+        children = b"".join(_structure(child) for child in part.parts)
+        boundary = _string(message.get_boundary() or "")
+        return b"(" + children + b" " + _string(message.get_content_subtype().upper()) + b' ("BOUNDARY" ' + boundary + b") NIL NIL)"
+    maintype, subtype = message.get_content_maintype().upper(), message.get_content_subtype().upper()
+    params = [_string(key.upper()) + b" " + _string(value) for key, value in (message.get_params() or [])[1:] if isinstance(value, str)]
+    fields = [
+        _string(maintype),
+        _string(subtype),
+        b"(" + b" ".join(params) + b")" if params else b"NIL",
+        _nstring(message.get("Content-ID")),
+        _nstring(message.get("Content-Description")),
+        _string((message.get("Content-Transfer-Encoding") or "7BIT").upper()),
+        str(len(part.body)).encode(),
+    ]
+    if maintype == "TEXT":
+        fields.append(str(part.body.count(b"\n")).encode())
+    if (maintype, subtype) == ("MESSAGE", "RFC822"):
+        fields += [b"(" + b" ".join([b"NIL"] * 10) + b")", _structure(_mime(part.body)), str(part.body.count(b"\n")).encode()]
+    disposition = message.get("Content-Disposition")
+    if disposition is None:
+        fields += [b"NIL", b"NIL", b"NIL"]
+    else:
+        kind, *rest = (piece.strip() for piece in str(disposition).split(";"))
+        pairs = [piece.partition("=") for piece in rest]
+        attributes = b" ".join(_string(key.upper()) + b" " + _string(value.strip('"')) for key, _, value in pairs)
+        fields += [b"NIL", b"(" + _string(kind.upper()) + b" " + (b"(" + attributes + b")" if pairs else b"NIL") + b")", b"NIL"]
+    return b"(" + b" ".join(fields) + b")"
+
+
+def _string(text: str) -> bytes:
+    """Napis IMAP: w cudzysłowie, a spoza ASCII albo z końcem linii jako literał ``{n}``."""
+
+    if text.isascii() and "\r" not in text and "\n" not in text:
+        return b'"' + text.replace("\\", "\\\\").replace('"', '\\"').encode() + b'"'
+    data = text.encode()
+    return f"{{{len(data)}}}\r\n".encode() + data
+
+
+def _nstring(text: object) -> bytes:
+    return b"NIL" if text is None else _string(str(text))
 
 
 def _header_fields(raw: bytes, names: Sequence[bytes]) -> bytes:
