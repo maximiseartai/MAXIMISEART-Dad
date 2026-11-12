@@ -390,6 +390,7 @@ def test_czerwony_main_po_zielonym_zderzeniu_ma_ostatni_zielony_pr_y_bisect_i_li
     assert "REQUIRED FAIL | pytest (Python 3.14, 2/3): jednostki z porażką: pytest:tests/test_a.py" in akcja.tresc
     assert f"git bisect start {main['pr11']} {main['pr10']}\ngit bisect run .venv/bin/python -m pytest tests/test_a.py" in akcja.tresc
     assert "To 2. zderzenie w ostatnich 7 dniach" in akcja.tresc
+    assert "Każda nowa porażka jest w teście, którego wejścia zmieniły oba" in akcja.tresc
 
 
 def _checkout_zgloszen(repo: Path, cel: Path) -> Path:
@@ -418,8 +419,11 @@ def test_czerwony_main_ma_issue_z_historii_main_w_checkoutcie_workflowu(main: di
     assert "PR-y scalone pomiędzy (1):\n- #11 fix: zmiana 11" in akcja.tresc
 
 
-def test_czerwony_main_bez_zderzenia_gdy_bramka_pr_testowala_main_z_poprzednim_scaleniem(main: dict[str, str]) -> None:
-    github = _czerwony_run(main, bramka_b="2026-10-26T10:05:00Z")
+@pytest.mark.parametrize("bramka_b", ["2026-10-26T10:05:00Z", "2026-10-26T10:00:00Z"], ids=["po scaleniu", "w sekundzie scalenia"])
+def test_czerwony_main_bez_zderzenia_gdy_bramka_pr_testowala_main_z_poprzednim_scaleniem(main: dict[str, str], bramka_b: str) -> None:
+    """Zderzenie liczy PR-y scalone po utworzeniu runu bramki, a scalenie #10 w tej samej sekundzie po nim nie jest."""
+
+    github = _czerwony_run(main, bramka_b=bramka_b)
 
     [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
 
@@ -461,13 +465,14 @@ def _zadanie_bez_testu(github: Nagrany, run_id: int, nazwa: str) -> None:
     ("porazki", "zadanie", "etykiety"),
     [
         (["tests/test_a.py::test_scalenie"], None, ("czerwony-main", "zderzenie")),
+        (["tests/test_a.py::test_scalenie", "tests/test_sprzatanie.py::test_01"], None, ("czerwony-main", "zderzenie")),
         (["tests/test_centrum.py::test_karta"], None, ("czerwony-main",)),
         (["tests/test_wycena.py::test_okno"], None, ("czerwony-main",)),
         (["tests/test_x.py::test_y"], None, ("czerwony-main",)),
         (["tests/test_a.py::test_scalenie", "tests/test_centrum.py::test_karta"], None, ("czerwony-main",)),
         (["tests/test_a.py::test_scalenie"], "Mutation checks (3/10)", ("czerwony-main",)),
     ],
-    ids=["test obu PR-ów", "test tylko B", "test tylko A", "test żadnego", "test obu i test tylko B", "test obu i zadanie bez testu"],
+    ids=["test obu PR-ów", "każdy test obu PR-ów", "test tylko B", "test tylko A", "test żadnego", "test obu i test tylko B", "test obu i zadanie bez testu"],
 )
 def test_zderzenie_tylko_gdy_kazda_nowa_porazka_jest_w_tescie_ktorego_wejscia_zmienily_oba_pr_y(
     main: dict[str, str], porazki: list[str], zadanie: str | None, etykiety: tuple[str, ...]
@@ -608,14 +613,15 @@ def test_zadanie_bez_podsumowania_pytest_porownuje_sie_po_nazwie(main: dict[str,
     assert "Nowe porażki (których nie było na rodzicu):\n\n```\n" + nowa + "\n```" in akcja.tresc
 
 
-def test_issue_zderzenia_wymienia_najwyzej_dwadziescia_nowych_porazek(main: dict[str, str]) -> None:
-    nowe = [f"tests/test_sprzatanie.py::test_{numer:02}" for numer in range(21)]
+@pytest.mark.parametrize(("liczba", "reszta"), [(20, []), (21, ["… i 1 więcej"])])
+def test_issue_zderzenia_wymienia_najwyzej_dwadziescia_nowych_porazek(main: dict[str, str], liczba: int, reszta: list[str]) -> None:
+    nowe = [f"tests/test_sprzatanie.py::test_{numer:02}" for numer in range(liczba)]
     github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", main_10="failure", porazki_10=["tests/test_a.py::test_stary"], porazki_11=nowe)
 
     [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
 
     assert isinstance(akcja, Zaloz)
-    assert _blok_kodu(akcja.tresc.split("Nowe porażki (których nie było na rodzicu):")[1]) == ["```", *nowe[:20], "… i 1 więcej", "```"]
+    assert _blok_kodu(akcja.tresc.split("Nowe porażki (których nie było na rodzicu):")[1]) == ["```", *nowe[:20], *reszta, "```"]
 
 
 @pytest.mark.parametrize(

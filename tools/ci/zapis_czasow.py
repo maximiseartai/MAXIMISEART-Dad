@@ -55,16 +55,18 @@ def _tor(runner: str) -> str:
 
 def _junit(plik: Path) -> list[Jednostka]:
     sekundy: dict[str, float] = defaultdict(float)
+    liczba: dict[str, int] = defaultdict(int)
     porazki = set()
     for test in wyniki_testow.testy(plik):
         if test.plik is None or test.sekundy is None:
             raise ValueError(f"test {test.nazwa} bez atrybutu file albo time (pytest bez junit_family = xunit1)")
         sekundy[test.plik] += test.sekundy
+        liczba[test.plik] += 1
         if test.wynik == "padł":
             porazki.add(test.plik)
     if not sekundy:
         raise ValueError("brak testów")
-    return [Jednostka(jednostka.pytest(nazwa), round(s, 3), "fail" if nazwa in porazki else "ok") for nazwa, s in sorted(sekundy.items())]
+    return [Jednostka(jednostka.pytest(nazwa), round(s, 3), "fail" if nazwa in porazki else "ok", liczba[nazwa]) for nazwa, s in sorted(sekundy.items())]
 
 
 def _wykonanie(plik: Path) -> tuple[str, str, list[Jednostka]]:
@@ -175,7 +177,7 @@ def _scal(args: argparse.Namespace) -> int:
         runy.add((zapis.run, zapis.proba, zapis.sha, zapis.zdarzenie))
         narzut = () if zapis.narzut_s is None else (Jednostka(jednostka.narzut(zapis.szablon), zapis.narzut_s, "ok"),)
         for praca in (*zapis.jednostki, *narzut):
-            obserwacja = {"run": zapis.run, "proba": zapis.proba, "zadanie": zapis.zadanie, "s": praca.s, "status": praca.status}
+            obserwacja = {"run": zapis.run, "proba": zapis.proba, "zadanie": zapis.zadanie, "s": praca.s, "status": praca.status, "testy": praca.testy}
             tory[zapis.tor][praca.klucz].append(obserwacja)
     if not pliki:
         bledy.append(f"brak zapisów zadań w {args.katalog}")

@@ -21,7 +21,7 @@ from rozliczenia.centrum.contract.metrics import ProcessRun
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.logs_disk import Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
+from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, Environment, LoggedInterruption, RunLog, StartFacts, Tool
@@ -588,6 +588,30 @@ def test_widok_logow_liczy_sie_raz_na_wersje_pliku(tmp_path: Path) -> None:
     after = viewed.of("efenix")
 
     assert (before, after, seen) == (([record.ended_at], [record.ended_at], []), [diagnosed.ended_at], [RUN_ID] * 2)
+
+
+def test_widoki_logow_procesu_ida_od_najnowszego_startu(tmp_path: Path) -> None:
+    """Zakończone Uruchomienia procesu idą od najnowszego (``RunCards.ended``), także gdy identyfikator starszego jest
+    dalej w alfabecie."""
+
+    newer = interrupted_logs(start("0" * 32, started_at=SECOND))
+    older = interrupted_logs(start("f" * 32, started_at=SECOND - timedelta(days=1)))
+    for record in (older, newer):
+        written(tmp_path, record)
+
+    assert on_disk(tmp_path).viewed(lambda logs: logs.run_id).of("efenix") == ["0" * 32, "f" * 32]
+
+
+def test_plik_ostatniego_startu_z_trescia_ktora_nie_jest_startem_daje_start_bez_ostatniego_uruchomienia(
+    tmp_path: Path,
+) -> None:
+    """Plik ostatniego startu, którego treść nie jest faktami startu (np. zmienił go inny program), to start Centrum bez
+    ostatniego Uruchomienia, jak bez pliku, a nie błąd."""
+
+    (tmp_path / LAST_STARTED_FILE).write_text("{", encoding="utf-8")
+    disk = on_disk(tmp_path)
+
+    assert (disk.last_start(), RunCards(disk, list).last(LeftBehindClosed())) == (None, None)
 
 
 def test_logi_urwanego_uruchomienia_nie_sa_karta_ostatniego_uruchomienia_procesu(tmp_path: Path) -> None:

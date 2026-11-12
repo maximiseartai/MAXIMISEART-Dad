@@ -88,7 +88,7 @@ from rozliczenia.efenix_window import (
 )
 from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
-from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault
+from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault, read_order
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState, ProgressSnapshot, SavingStep
@@ -1481,6 +1481,21 @@ def test_okno_emmetta_ma_dokladnie_jedno_okno_a_w_nim_dokladnie_jedna_propozycje
     observed = emmett_window(page)
 
     assert (observed, emmett_window_fault(observed)) == (window, fault)
+
+
+def test_puste_pole_ilosc_na_stronie_zlecenia_to_ilosc_zero_pozycji(page: Page) -> None:
+    """Strona zlecenia bez daty wykonania, z pustym polem Ilość pozycji 012 i ilością 3 pozycji 019: Wycena czyta pustą
+    datę jako brak daty, puste pole jako ilość 0 i zna ``id`` pola Ilość każdej pozycji."""
+
+    page.set_content(
+        '<span id="data_install"></span><span id="cena_all2">12.50</span>'
+        '<input class="wycena-ilosc" id="INDEKS_012_078" value=""><input class="wycena-ilosc" id="INDEKS_019_078" value="3">'
+    )
+
+    assert read_order(page) == (
+        OrderPricing(None, Decimal("12.50"), {"012": 0, "019": 3}),
+        {"012": "INDEKS_012_078", "019": "INDEKS_019_078"},
+    )
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(

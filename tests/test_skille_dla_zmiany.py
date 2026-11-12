@@ -18,6 +18,7 @@ import yaml
 from tests.fixtures.git_repo import commit, copy_files, git, with_imports
 
 import kroki_skilli
+import repo
 import wplyw_zmiany
 import zakres_runu
 
@@ -273,6 +274,13 @@ def test_baza_ktorej_nie_ma_albo_pusta_mimo_istniejacej_domyslnej_daje_nieznane_
     assert result.returncode == 1
     assert result.stdout.splitlines()[-1].startswith(f"{VERDICT}nieznane (git merge-base: ")
     assert argv[-1] in result.stdout
+
+
+def test_pomoc_opcji_baza_podaje_domyslna_galaz_bazy() -> None:
+    answered = subprocess.run([sys.executable, str(TOOLS / "skille_dla_zmiany.py"), "--help"], capture_output=True, text=True, encoding="utf-8", check=True)
+
+    options = " ".join(answered.stdout.partition("options:")[2].split())
+    assert f"--baza BAZA Commit albo gałąź, od której liczy się zmiana (domyślnie {repo.BASE})." in options
 
 
 def test_baza_z_opcja_baza_i_pozycyjna_daje_ten_sam_wynik_a_dwie_rozne_to_blad_uzycia(tmp_path: Path) -> None:
