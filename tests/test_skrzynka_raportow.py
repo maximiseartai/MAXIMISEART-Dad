@@ -203,15 +203,21 @@ def test_skrzynka_szuka_od_dnia_przed_wskazanym_bo_gmail_liczy_dzien_przyjecia_w
 
 
 def test_skrzynka_z_wiecej_maili_niz_paczka_pobierania_oddaje_kazdy_mail(tmp_path: Path) -> None:
-    count = 2 * FETCH_BATCH + 1
-    mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in range(1, count + 1)]
+    """UID bez przerw idą zakresem ``a:b``, a polecenie ma najwyżej ``FETCH_BATCH`` zakresów: tu same pojedyncze UID z
+    przerwami między nimi, więc paczek jest kilka. W przerwach leżą starsze Raporty spoza wyszukanych dni, których
+    zakres nie może objąć."""
+
+    uids = [2 * n for n in range(1, 2 * FETCH_BATCH + 2)] + [1001, 1002, 1003]
+    starsze = [w_skrzynce(uid, surowy(message_id=b"<starszy@x.invalid>"), datetime(2026, 11, 1, 9, 0, tzinfo=TATA)) for uid in (3, 1000)]
+    mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in uids] + starsze
 
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
         found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
 
-    assert [mail.id for mail in found] == [MailId.of(f"<{uid}@x.invalid>") for uid in range(1, count + 1)]
+    assert [mail.id for mail in found] == [MailId.of(f"<{uid}@x.invalid>") for uid in uids]
     fetched = [command.split(" ")[2].split(",") for command in atrapa.commands if command.startswith("UID FETCH")]
-    assert fetched and max(len(uids) for uids in fetched) <= FETCH_BATCH
+    assert fetched and max(len(items) for items in fetched) <= FETCH_BATCH
+    assert any("1001:1003" in items for items in fetched)
 
 
 def z_zalacznikami(*, message_id: bytes | None = b"<z-zalacznikami@x.invalid>") -> bytes:

@@ -76,7 +76,8 @@ SMTP_HOST: Final = "smtp.gmail.com"
 SMTP_PORT: Final = 465
 TIMEOUT_S: Final = 30
 FETCH_BATCH: Final = 100
-"""Najwięcej UID w jednym ``UID FETCH``, żeby polecenie miało ograniczoną długość przy każdej liczbie maili."""
+"""Najwięcej zakresów kolejnych UID (``5:9``) w jednym ``UID FETCH``, żeby polecenie miało ograniczoną długość przy
+każdej liczbie maili."""
 _MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _LIST_LINE: Final = re.compile(rb'\((?P<flags>[^)]*)\) (?:"(?:[^"\\]|\\.)*"|NIL) "(?P<name>(?:[^"\\]|\\.)*)"')
 _UID: Final = re.compile(rb"\bUID (\d+)\b")
@@ -341,8 +342,8 @@ def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dic
 
     light: dict[str, tuple[bytes, Structure, bytes]] = {}
     from_box: set[str] = set()
-    for batch in _batches(uids):
-        for response in _responses(imap.uid("FETCH", ",".join(batch), _LIGHT_ITEMS)):
+    for sequence, _ in _batches(uids):
+        for response in _responses(imap.uid("FETCH", sequence, _LIGHT_ITEMS)):
             described = _described(response)
             if described is None:
                 continue
@@ -379,8 +380,8 @@ def _fetch_sections(imap: imaplib.IMAP4, groups: Mapping[tuple[str, ...], list[s
 
     for names, members in groups.items():
         items = "(UID " + " ".join(f"BODY.PEEK[{name}]" for name in names) + ")"
-        for batch in _batches(members) if names else ():
-            for response in _responses(imap.uid("FETCH", ",".join(batch), items)):
+        for sequence, _ in _batches(members) if names else ():
+            for response in _responses(imap.uid("FETCH", sequence, items)):
                 number = response.get(b"UID")
                 taken = parts.get(number.decode("ascii")) if isinstance(number, bytes) else None
                 for name in names if taken is not None else ():
@@ -406,9 +407,22 @@ def _described(
     return uid.decode("ascii"), b'INTERNALDATE "' + internal + b'"', structure, header, *facts
 
 
-def _batches(uids: list[str]) -> Iterator[list[str]]:
-    for start in range(0, len(uids), FETCH_BATCH):
-        yield uids[start : start + FETCH_BATCH]
+def _batches(uids: list[str]) -> Iterator[tuple[str, list[str]]]:
+    """Paczki ``uids`` po najwyżej ``FETCH_BATCH`` zakresów kolejnych UID: zbiór sekwencji IMAP (``1:5,9``) i UID
+    paczki. Zakres ma tylko UID z ``uids``, więc serwer oddaje te same maile co przy wypisaniu każdego UID, a 800 maili
+    z 10 dni skrzynki taty to 23 zakresy, czyli jedno polecenie zamiast ośmiu (12.11.2026)."""
+
+    runs: list[list[int]] = []
+    for uid in uids:
+        number = int(uid)
+        if runs and number == runs[-1][-1] + 1:
+            runs[-1].append(number)
+        else:
+            runs.append([number])
+    for start in range(0, len(runs), FETCH_BATCH):
+        chunk = runs[start : start + FETCH_BATCH]
+        sequence = ",".join(f"{run[0]}:{run[-1]}" if len(run) > 1 else str(run[0]) for run in chunk)
+        yield sequence, [str(number) for run in chunk for number in run]
 
 
 def _responses(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchValue]]:
@@ -468,9 +482,8 @@ def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
     ``UnexpectedReply``."""
 
     flags = {}
-    for start in range(0, len(uids), FETCH_BATCH):
-        batch = uids[start : start + FETCH_BATCH]
-        lines = [line for line in _ok(imap.uid("FETCH", ",".join(batch), "(UID FLAGS)")) if line is not None]
+    for sequence, batch in _batches(uids):
+        lines = [line for line in _ok(imap.uid("FETCH", sequence, "(UID FLAGS)")) if line is not None]
         found = {}
         for line in lines:
             uid = _UID.search(line) if isinstance(line, bytes) else None
@@ -556,8 +569,8 @@ def _fetched(imap: imaplib.IMAP4, uids: list[str], items: str) -> dict[str, tupl
     """UID → (początek odpowiedzi FETCH, literał) dla ``uids`` w paczkach po ``FETCH_BATCH``."""
 
     fetched = {}
-    for start in range(0, len(uids), FETCH_BATCH):
-        for part in _ok(imap.uid("FETCH", ",".join(uids[start : start + FETCH_BATCH]), items)):
+    for sequence, _ in _batches(uids):
+        for part in _ok(imap.uid("FETCH", sequence, items)):
             if not isinstance(part, tuple):
                 continue
             prefix, literal = part

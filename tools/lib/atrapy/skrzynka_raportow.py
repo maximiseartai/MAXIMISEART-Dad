@@ -285,7 +285,8 @@ class _Session(socketserver.StreamRequestHandler):
             self._send(f"* SEARCH {' '.join(str(mail.uid) for mail in _since(self._mails, arguments))}".rstrip().encode(), done)
         elif command == "UID FETCH":
             uids, _, items = arguments.partition(" ")
-            asked = [(number, mail) for number, mail in enumerate(self._mails, start=1) if str(mail.uid) in uids.split(",")]
+            wanted = _uid_set(uids)
+            asked = [(number, mail) for number, mail in enumerate(self._mails, start=1) if mail.uid in wanted]
             sections = _SECTION.findall(items)
             content = any(name == "TEXT" or name[:1].isdigit() for name in sections)
             if (atrapa.refuse == "sections" and content) or any(
@@ -359,6 +360,16 @@ class _Session(socketserver.StreamRequestHandler):
 
     def _send(self, *lines: bytes) -> None:
         self.wfile.write(b"".join(line + b"\r\n" for line in lines))
+
+
+def _uid_set(text: str) -> set[int]:
+    """UID ze zbioru sekwencji IMAP: liczby i zakresy ``a:b`` po przecinku."""
+
+    found: set[int] = set()
+    for item in text.split(","):
+        first, _, last = item.partition(":")
+        found |= set(range(int(first), int(last or first) + 1))
+    return found
 
 
 def _strings(arguments: str) -> list[str]:
