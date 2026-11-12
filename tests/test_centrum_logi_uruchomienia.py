@@ -4117,6 +4117,22 @@ def test_uruchomienie_innego_procesu_nie_ma_dziennika_ani_postepu(tmp_path: Path
     assert (disk.journal.progress(settlement.run_id), list(disk.left_behind())) == (None, [])
 
 
+def test_koniec_innego_uruchomienia_nie_konczy_dziennika_wyceny(tmp_path: Path) -> None:
+    """Wpis końca należy do Uruchomienia, którego wynik niesie: koniec innego Uruchomienia zostawia dziennik Wyceny bez
+    wpisu końca, więc start Centrum dalej widzi w nim Wycenę, która nie doszła do wyniku."""
+
+    log = CentrumLog(tmp_path / "centrum.log")
+    disk = LogsOnDisk(log, journaled="efenix")
+
+    disk.started(PRICING_START)
+    disk.journal.begun(18, 1, 2)
+    disk.journal.end("f" * 32, "OK")
+    [left] = disk.left_behind()
+
+    assert left.journal is not None
+    assert (left.journal.started, left.journal.end) == (PRICING_START, None)
+
+
 def test_plik_ostatniego_startu_ktorego_nie_da_sie_zapisac_nie_zabiera_wycenie_dziennika(tmp_path: Path) -> None:
     """Start Wyceny pisze pierwszą linię dziennika, zanim zapisze plik ostatniego startu, więc plik ostatniego startu,
     którego nie da się zapisać (w miejscu jego pliku tymczasowego stoi katalog), zatrzymuje start Uruchomienia dopiero wtedy, gdy dziennik
