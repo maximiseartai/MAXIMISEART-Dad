@@ -148,6 +148,22 @@ READABLE_WORKERS = (Workers.BRAK, Workers.PUSTY, Workers.Z_ROZLICZENIEM)
 READABLE = states(collective=READABLE_COLLECTIVE, workers=READABLE_WORKERS)
 
 
+class System(enum.Enum):
+    WINDOWS = "Windows"
+    INNY = "macOS i Linux"
+
+
+# Where the states are built. Windows (Bypass Traverse Checking) answers a name missing from a folder without access
+# „no such file”, and macOS and Linux under ``chmod 0`` „access denied”, so the consumers answer differently there.
+SYSTEM = System.WINDOWS if sys.platform == "win32" else System.INNY
+
+
+def unit(scope: str, system: System) -> str:
+    """The unit of ``Excuse.after`` for a scope run on one system: an entry that shows only on Windows names it."""
+
+    return f"{scope} na {system.value}"
+
+
 @dataclass(frozen=True)
 class Scope:
     name: str
@@ -258,10 +274,13 @@ class Answer:
 
 @dataclass(frozen=True)
 class Observed:
-    """What an Excuse's shape judges: the folder state and the consumer that broke the rule."""
+    """What an Excuse's shape judges: the folder state, the consumer that broke the rule, what it did and the system the
+    state was built on."""
 
     state: FolderState
     consumer: Consumer
+    act: Act | None = None
+    system: System = SYSTEM
 
 
 @dataclass(frozen=True)
@@ -617,7 +636,7 @@ def judge(state: FolderState, answers: Sequence[Answer]) -> list[Violation]:
     status = reference(state)
     found = []
     for answer in answers:
-        observed = Observed(state, answer.consumer)
+        observed = Observed(state, answer.consumer, answer.act)
         if answer.consumer in ALLOWED and answer.act is not None:
             allowed = status is ALLOWED[answer.consumer]
             wrong = {
@@ -656,16 +675,31 @@ class StateShape:
     """The shape of a known finding or accepted risk, each part from its story (#920):
 
     - ``states``: the Folder okresu states in which the consumer breaks the rule, exactly;
-    - ``consumers``: the consumers that break it there.
+    - ``consumers``: the consumers that break it there;
+    - ``acts``: what they do there (every act when the story does not narrow it);
+    - ``systems``: the systems on which they do it (every system when the story does not narrow it).
 
-    Each part has in ``check_status_okresu_mutations.BOUNDARIES`` a broken variant just outside it, which must give a
-    new violation (``tests/test_mutacje_skilli.py``)."""
+    Each part that narrows something has in ``check_status_okresu_mutations.BOUNDARIES`` a broken variant just outside
+    it, which must give a new violation (``tests/test_mutacje_skilli.py``)."""
 
     states: frozenset[FolderState]
     consumers: frozenset[Consumer]
+    acts: frozenset[Act] = frozenset(Act)
+    systems: frozenset[System] = frozenset(System)
 
     def holds(self, observed: Observed) -> bool:
-        return observed.state in self.states and observed.consumer in self.consumers
+        return (
+            observed.state in self.states
+            and observed.consumer in self.consumers
+            and observed.act in self.acts
+            and observed.system in self.systems
+        )
+
+
+# Windows: a Folder okresu without access, without a Plik zbiorczy, its other files readable or not there.
+WINDOWS_UNREADABLE_WITHOUT_COLLECTIVE = states(
+    folder=(Folder.NIEDOSTEPNY,), collective=(Collective.BRAK,), workers=READABLE_WORKERS
+)
 
 
 KNOWN_FINDINGS: tuple[Excuse[StateShape], ...] = (
@@ -698,6 +732,36 @@ KNOWN_FINDINGS: tuple[Excuse[StateShape], ...] = (
             frozenset({Consumer.START_PRZYGOTOWANIA}),
         ),
         after=("czytelne", "niedostepne"),
+    ),
+    Excuse(
+        "Windows: Folder okresu bez dostępu jak okres bez Pliku zbiorczego",
+        "OTWARCIE",
+        "na Windows Folder okresu bez dostępu odpowiada na nazwę Pliku zbiorczego, którego w nim nie ma, „nie ma takiego "
+        "pliku” (Bypass Traverse Checking), a nie „odmowa dostępu”: Tablica okresów mówi „Nie udało się odczytać "
+        "folderu”, a Uzupełnienie mówi „Nie ma Pliku zbiorczego tego okresu” i Sprawdzanie Przebiegu rozliczeń "
+        "zatrzymuje się na BRAK_PLIKU_ZBIORCZEGO, zamiast powiedzieć, że folderu nie da się odczytać",
+        StateShape(
+            WINDOWS_UNREADABLE_WITHOUT_COLLECTIVE,
+            frozenset({Consumer.UZUPELNIANIE, Consumer.START_PRZEBIEGU}),
+            acts=frozenset({Act.ODMAWIA}),
+            systems=frozenset({System.WINDOWS}),
+        ),
+        after=(unit("niedostepne", System.WINDOWS),),
+    ),
+    Excuse(
+        "Windows: Przygotowanie w Folderze okresu bez dostępu",
+        "OTWARCIE",
+        "na Windows Folder okresu bez dostępu odpowiada na nazwy obu plików okresu, których w nim nie ma, „nie ma "
+        "takiego pliku”: Tablica okresów mówi „Nie udało się odczytać folderu”, a ensure_period_files_absent nie "
+        "widzi żadnego pliku okresu, więc Sprawdzanie Przygotowania przechodzi w okresie, którego Statusu nikt nie zna, "
+        "także gdy jest w nim Folder rozliczeń pracowników",
+        StateShape(
+            states(folder=(Folder.NIEDOSTEPNY,), internal=(Internal.BRAK,), collective=(Collective.BRAK,), workers=READABLE_WORKERS),
+            frozenset({Consumer.START_PRZYGOTOWANIA}),
+            acts=frozenset({Act.DZIALA}),
+            systems=frozenset({System.WINDOWS}),
+        ),
+        after=(unit("niedostepne", System.WINDOWS),),
     ),
 )
 
@@ -790,7 +854,7 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
         for violation, steps in report.violations:
             found = excused(violation.rule, violation.observed, known=KNOWN_FINDINGS, accepted=ACCEPTED_RISKS)
             if found is not None:
-                shown.add((found[1].name, report.scope.name))
+                shown.update((found[1].name, name) for name in (report.scope.name, unit(report.scope.name, SYSTEM)))
             if found is None or strict:
                 new += 1
                 lines.append(f"  NARUSZENIE {violation.rule}: {violation.text}")
@@ -800,10 +864,10 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
         for name, (kind, entry, items) in excuses.items():
             counted[name] = kind
             lines.append(f"  {excuse_line(kind, entry)}")
-            lines.append(f"    stany Folderu okresu: {len(items)}; pierwszy z nich:")
+            lines.append(f"    stany Folderu okresu: {len({violation.observed.state for violation, _ in items})}; pierwszy z nich:")
             lines.extend(f"    {number}. {step}" for number, step in enumerate(items[0][1], start=1))
         lines.append("")
-    finished = [report.scope.name for report in reports if not report.skipped]
+    finished = [name for report in reports if not report.skipped for name in (report.scope.name, unit(report.scope.name, SYSTEM))]
     disappeared = gone_lines(finished, shown, known=KNOWN_FINDINGS, accepted=ACCEPTED_RISKS)
     lines.extend(disappeared)
     verdict_line, code = verdict(
@@ -812,7 +876,8 @@ def summarize(reports: Sequence[ScopeReport], *, strict: bool = False) -> Outcom
         gone=len(disappeared),
         known=sum(kind == "known" for kind in counted.values()),
         accepted=sum(kind == "accepted" for kind in counted.values()),
-        gaps=gaps,
+        # A gap in one scope does not hide a new violation in another: the gap stays printed in its scope.
+        gaps=0 if new else gaps,
         gap_reason=GAP_REASON,
     )
     lines.append(verdict_line)

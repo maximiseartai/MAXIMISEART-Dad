@@ -1,6 +1,6 @@
 ---
 name: verify-status-okresu
-description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu reads one Folder okresu the same way, for every state of its files (each period file present or not, readable or not) - Tablica okresów and its steps, the start cards of Przygotowanie, Przebieg rozliczeń and Wycena w efenix, Uzupełnienie (`settled`), Wpisanie raportów (`report_entering._closed`) and the Sprawdzanie of Przygotowanie and Przebieg rozliczeń (`ensure_period_files_absent`, `ensure_worker_settlements_absent`). Use when a change touches `PeriodFolderObservation` or `PeriodFolder.observe` in `src/rozliczenia/period_folder.py`, `_closed` in `report_entering.py`, `_settled` in `centrum/filling.py`, `quantities_to_fill.py`, `_steps` or `read_board` in `centrum/period_board.py`, the choosers in `centrum/period_start.py` or `centrum/processes/`, `check_preparation` or `check_settlement` in `input_checks.py`, the two guards, or when `explore_status_okresu.py` fails.
+description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu reads one Folder okresu the same way, for every state of its files (each period file present or not; the Plik zbiorczy, the Folder rozliczeń pracowników and the Folder okresu itself readable or not) - Tablica okresów and its steps, the start cards of Przygotowanie, Przebieg rozliczeń and Wycena w efenix, Uzupełnienie (`settled`), Wpisanie raportów (`report_entering._closed`) and the Sprawdzanie of Przygotowanie and Przebieg rozliczeń (`ensure_period_files_absent`, `ensure_worker_settlements_absent`). Use when a change touches `PeriodFolderObservation` or `PeriodFolder.observe` in `src/rozliczenia/period_folder.py`, `_closed` in `report_entering.py`, `_settled` in `centrum/filling.py`, `quantities_to_fill.py`, `_steps` or `read_board` in `centrum/period_board.py`, the choosers in `centrum/period_start.py` or `centrum/processes/`, `check_preparation` or `check_settlement` in `input_checks.py`, the two guards, or when `explore_status_okresu.py` fails.
 pilnuje:
   - src/rozliczenia/period_folder.py
   - src/rozliczenia/file_state.py
@@ -34,6 +34,8 @@ ci: .agents/skills/verify-status-okresu/scripts/explore_status_okresu.py
 CI runs `explore_status_okresu.py` (the `ci:` key) in Mutation checks whenever a change touches a file in `pilnuje:`
 or this skill's folder, and `check_status_okresu_mutations.py` in full CI on `main` and nightly on `main`
 (`mutacje-nocne.yml`).
+Both run on Windows (track `MUTACJE`, `windows-latest`), where the third known finding shows; on macOS and Linux it
+does not, and its entries forgive nothing there.
 Run them locally only to reproduce a red CI step or the night's issue, or while you work on one consumer.
 What stays with you: „Does the change touch it?” (a new consumer of the Status okresu that the check does not ask
 escapes it), bringing the reference in line when the drift says so, and sorting a red run as „When the check fails”
@@ -113,7 +115,7 @@ The last line is the verdict:
 | `STATUS OKRESU OK, ZNANE USTALENIA: n, ZAAKCEPTOWANE RYZYKA: m` | 0 | Only the known findings and accepted risks below, each printed with its first state and every consumer's answer. A count of zero is left out. |
 | `STATUS OKRESU: NOWE NARUSZENIE (n)` | 1 | A rule breaks in a way not listed below, or a consumer crashed (`WYJATEK`) or answered in a way the checker cannot read (`NIEOCZEKIWANA_ODPOWIEDZ`, for example a renamed Komunikat code). |
 | `STATUS OKRESU: ZNALEZISKO ZNIKNĘŁO (n)` | 1 | A known finding or accepted risk did not show in a scope of its `after`. If a change fixed it, narrow or delete it in `KNOWN_FINDINGS` or `ACCEPTED_RISKS` and below. |
-| `STATUS OKRESU: LUKA MODELU (n)` | 2 | The system does not take access away here (a run as root, whom `chmod` does not stop, or `icacls` without effect on Windows), so scope `niedostepne` did not run. No verdict on it. |
+| `STATUS OKRESU: LUKA MODELU (n)` | 2 | The system does not take access away here (a run as root, whom `chmod` does not stop, or `icacls` without effect on Windows), so scope `niedostepne` did not run, and no other scope found a new violation (a new violation wins; the gap stays printed in its scope). No verdict on that scope. |
 
 ## How it works and what it covers
 
@@ -132,6 +134,10 @@ The starts run the Sprawdzanie of each process on valid synthetic Wzorce, so onl
 | --- | --- |
 | `czytelne` (13) | no Folder okresu; a Folder okresu with or without Rozliczenie wewnętrzne, with or without Plik zbiorczy, without, with an empty or with a filled Folder rozliczeń pracowników |
 | `niedostepne` (24) | as above, with the Plik zbiorczy or the Folder rozliczeń pracowników unreadable, and the Folder okresu itself unreadable |
+
+The Rozliczenie wewnętrzne is never unreadable on its own: no consumer reads its content, only whether its name is
+taken, so an unreadable one answers as a readable one (tried in review of #1338: the only difference is the ADR 0005
+state).
 
 Access is taken away with `chmod 0` on macOS and Linux, and on Windows, where `chmod` only sets the read-only
 attribute, with a deny entry for the user (`icacls`): reading the data of the Plik zbiorczy, and reading the data and
@@ -168,9 +174,31 @@ change fixes it, the check ends with `ZNALEZISKO ZNIKNĘŁO`: delete its entry f
    period says „Nie ma Pliku zbiorczego tego okresu. … najpierw przygotuj plik zbiorczy”. Replayed on 12 November 2026
    with `tools/uruchom_proces.py preparation`: the run ends `WYMAGA_SPRAWDZENIA` with a new Plik zbiorczy and
    Rozliczenie wewnętrzne next to the Folder rozliczeń pracowników.
+3. **Folder okresu bez dostępu na Windows** (OTWARCIE, Windows only; two entries). Dad loses access to the Folder
+   okresu (a share or permission change; the check takes reading the data and attributes away with `icacls /deny`,
+   inherited by everything inside) and it has no Plik zbiorczy. Windows lets a program look a name up in a folder it
+   cannot list (Bypass Traverse Checking) and answers „no such file” for a name not there, so a consumer that asks for
+   the Plik zbiorczy by name reads the period as one without it. Tablica okresów and the start cards say „Nie udało
+   się odczytać folderu”, but
+   - **Windows: Folder okresu bez dostępu jak okres bez Pliku zbiorczego**: Uzupełnienie says „Nie ma Pliku zbiorczego
+     tego okresu” and the Sprawdzanie of Przebieg rozliczeń stops on `BRAK_PLIKU_ZBIORCZEGO`, instead of saying that
+     the folder cannot be read;
+   - **Windows: Przygotowanie w Folderze okresu bez dostępu**: without the Rozliczenie wewnętrzne either,
+     `ensure_period_files_absent` sees no period file and the Sprawdzanie of Przygotowanie passes in a period whose
+     Status okresu nobody knows, also when it has a Folder rozliczeń pracowników.
+   Replayed on 12 November 2026 on the real code on Windows Server 2025 (CI of #1338, run 43136844005, job
+   130914219319, step `skill:verify-status-okresu/ci`): the checker built `08_14_09_2026` without access, asked each
+   consumer through its public entry point, and in each of the 6 states without a Plik zbiorczy got the answers
+   above (15 answers); with a Plik zbiorczy in the same folder every consumer said it could not read it. On macOS
+   (`chmod 0`) every consumer says it cannot read the folder.
+   Whether to fix it (each consumer tells „missing” from „cannot list the folder”), accept it in an ADR, or keep it
+   known is Maks's decision.
 
 An entry lives in `KNOWN_FINDINGS` of `explore_status_okresu.py` as an `Excuse` of `tools/lib/eksplorator.py` with its
-shape (`StateShape`): the folder states exactly (`states`) and the consumers (`consumers`).
+shape (`StateShape`): the folder states exactly (`states`), the consumers (`consumers`), what they do (`acts`) and the
+systems (`systems`); the last two narrow only the Windows entries.
+An entry that shows only on Windows names its scope with the system in `after` (`niedostepne na Windows`), so it does
+not give `ZNALEZISKO ZNIKNĘŁO` on macOS or Linux.
 Each part has a broken variant just outside it in `BOUNDARIES` of `check_status_okresu_mutations.py`, which must give a
 new violation; `tests/test_mutacje_skilli.py` reds an entry with a part without one.
 
@@ -215,10 +243,19 @@ It must end with `MUTACJE OK`: a Status okresu that ignores an empty Folder rozl
 deciding `settled` by the wrong Status okresu, Wpisanie raportów that closes no period, the karta Przebiegu rozliczeń
 offering a closed period, an unreadable folder read as a missing one, and the karta Przygotowania naming every period
 „Brak plików okresu” all give `NOWE NARUSZENIE`, and so does a state with an unreadable Plik zbiorczy built with a
-readable one, while taking access away without effect gives `LUKA MODELU`.
+readable one, while taking access away without effect gives `LUKA MODELU` (on Windows a deny entry that leaves
+reading, elsewhere a mode that leaves it). Taking access away without effect together with the karta Przebiegu
+rozliczeń offering a closed period gives `NOWE NARUSZENIE`: a gap in one scope does not hide a violation in another.
 The `BOUNDARIES` variants give `NOWE NARUSZENIE` too: Wpisanie raportów closing a period by its Rozliczenie wewnętrzne (outside `states` of the first finding, outside `consumers` of ADR 0005),
 Sprawdzanie of Przebieg rozliczeń without its guard (outside `consumers` of both findings), and the guard of
 Przygotowanie checking only the Rozliczenie wewnętrzne or also the Folder okresu (outside `states` of the second
 finding and of ADR 0005).
+For the Windows entries: the same reading judged as on another system, on Windows by `SYSTEM`, on macOS and Linux by a
+name in a folder without access read as missing (outside `systems` of both); a Plik zbiorczy in the folder without
+access read as missing (outside `states` of the first); a period file there read as missing by the guard of
+Przygotowanie (outside `states` of the second); Wpisanie raportów closing or opening a period whose folder it could not
+read (outside `consumers` of the first and of the second); the Sprawdzanie of Przebieg rozliczeń without checking the
+Plik zbiorczy, so it acts (outside `acts` of the first); and the guard of Przygotowanie seeing a period file that is
+not there, so it refuses (outside `acts` of the second).
 A mutation reported as `NIEAKTUALNA` no longer matches its file; rewrite its anchor and replacement against the new
 code so it breaks the same rule again.

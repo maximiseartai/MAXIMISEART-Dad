@@ -25,11 +25,29 @@ PREPARATION_FILES = Path("src/rozliczenia/preparation_files.py")
 FILLING = Path("src/rozliczenia/centrum/filling.py")
 PERIOD_START = Path("src/rozliczenia/centrum/period_start.py")
 SETTLEMENT_KIND = Path("src/rozliczenia/centrum/processes/settlement.py")
+FILE_STATE = Path("src/rozliczenia/file_state.py")
 EXPLORER_FILE = Path(".agents/skills/verify-status-okresu/scripts/explore_status_okresu.py")
 EXPLORER = (EXPLORER_FILE.as_posix(),)
 NEW = "STATUS OKRESU: NOWE NARUSZENIE"
 
 PERIOD_FILES_GUARD = "        for target in (folder.internal_settlement, folder.collective_file):\n"
+STAT_MISSING = "        status = path.stat()\n    except _ABSENT:\n"
+LSTAT_MISSING = "        os.lstat(path)\n    except _ABSENT:\n"
+ENTERING_UNREADABLE = (
+    "    except PeriodFolderInaccessible as error:\n"
+    "        raise StopError(messages.periods_folder_inaccessible(error.folder)) from error\n"
+)
+SETTLEMENT_CARD = Edit(
+    SETTLEMENT_KIND,
+    '            frozenset({"collective_file_prepared"}),\n',
+    '            frozenset({"collective_file_prepared", "worker_settlements_ready"}),\n',
+)
+# Taking access away without effect on every system: on Windows a deny entry that leaves reading, elsewhere a mode that
+# leaves it.
+ACCESS_WITHOUT_EFFECT = (
+    Edit(EXPLORER_FILE, '        rights = "(OI)(CI)(RD,RA)" if folder else "(RD)"\n', '        rights = "(WEA)"\n'),
+    Edit(EXPLORER_FILE, "        path.chmod(0)\n", "        path.chmod(stat.S_IRWXU)\n"),
+)
 
 ENTERING_CLOSED_BY_INTERNAL = Mutation(
     "Wpisanie raportów zamyka okres po Rozliczeniu wewnętrznym zamiast po Pliku zbiorczym",
@@ -56,6 +74,20 @@ SETTLEMENT_WITHOUT_GUARD = Mutation(
     ),
     EXPLORER,
     "Przebieg rozliczeń startuje w okresie, który Tablica okresów pokazuje jako zamknięty",
+    NEW,
+)
+
+# The Windows findings: on Windows a name missing from a Folder okresu without access reads as missing.
+UNREADABLE_ON_OTHER_SYSTEMS = Mutation(
+    "Folder okresu bez dostępu czytany jak okres bez Pliku zbiorczego poza Windows",
+    (
+        # On Windows: the harm the code does there, judged as on another system.
+        Edit(EXPLORER_FILE, 'SYSTEM = System.WINDOWS if sys.platform == "win32" else System.INNY\n', "SYSTEM = System.INNY\n"),
+        # On macOS and Linux: the same harm, a name in a folder without access read as missing, left alone on Windows.
+        Edit(FILE_STATE, STAT_MISSING, '        status = path.stat()\n    except (*_ABSENT, *((PermissionError,) if os.name != "nt" else ())):\n'),
+    ),
+    EXPLORER,
+    "na Macu albo Linuxie Uzupełnienie mówi „Nie ma Pliku zbiorczego” o okresie, którego folderu nie odczytało",
     NEW,
 )
 
@@ -96,6 +128,73 @@ BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {
         ),
         # Another consumer refuses a period with only the Rozliczenie wewnętrzne, which it should treat as open.
         "consumers": (ENTERING_CLOSED_BY_INTERNAL,),
+    },
+    "Windows: Folder okresu bez dostępu jak okres bez Pliku zbiorczego": {
+        "systems": (UNREADABLE_ON_OTHER_SYSTEMS,),
+        "states": (
+            Mutation(
+                "Plik zbiorczy w Folderze okresu bez dostępu czytany jak brak",
+                (Edit(FILE_STATE, STAT_MISSING, "        status = path.stat()\n    except (*_ABSENT, PermissionError):\n"),),
+                EXPLORER,
+                "Uzupełnienie mówi „Nie ma Pliku zbiorczego” o okresie, którego Plik zbiorczy jest w folderze bez dostępu",
+                NEW,
+            ),
+        ),
+        "consumers": (
+            Mutation(
+                "Wpisanie raportów zamyka okres, którego Folderu okresu nie odczytało",
+                (
+                    Edit(
+                        REPORT_ENTERING,
+                        ENTERING_UNREADABLE,
+                        "    except PeriodFolderInaccessible:\n"
+                        "        return tuple(period.token for period in periods if folders.locations.get(period))\n",
+                    ),
+                ),
+                EXPLORER,
+                "Wpisanie raportów pomija okres, którego folderu nie odczytało, zamiast powiedzieć tacie, że go nie odczytało",
+                NEW,
+            ),
+        ),
+        "acts": (
+            Mutation(
+                "Sprawdzanie Przebiegu rozliczeń bez sprawdzenia Pliku zbiorczego",
+                (Edit(INPUT_CHECKS, "        workbook_files.ensure_available(source)\n", "        pass\n"),),
+                EXPLORER,
+                "Przebieg rozliczeń startuje bez Pliku zbiorczego, także w Folderze okresu bez dostępu",
+                NEW,
+            ),
+        ),
+    },
+    "Windows: Przygotowanie w Folderze okresu bez dostępu": {
+        "systems": (UNREADABLE_ON_OTHER_SYSTEMS,),
+        "states": (
+            Mutation(
+                "Nienadpisywanie Przygotowania czyta plik okresu w folderze bez dostępu jak brak",
+                (Edit(FILE_STATE, LSTAT_MISSING, "        os.lstat(path)\n    except (*_ABSENT, PermissionError):\n"),),
+                EXPLORER,
+                "Przygotowanie startuje w Folderze okresu bez dostępu, w którym jest już Rozliczenie wewnętrzne",
+                NEW,
+            ),
+        ),
+        "consumers": (
+            Mutation(
+                "Wpisanie raportów wpisuje do okresu, którego Folderu okresu nie odczytało",
+                (Edit(REPORT_ENTERING, ENTERING_UNREADABLE, "    except PeriodFolderInaccessible:\n        return ()\n"),),
+                EXPLORER,
+                "Wpisanie raportów wpisuje do INTERMAX w dniach okresu, którego folderu nie odczytało",
+                NEW,
+            ),
+        ),
+        "acts": (
+            Mutation(
+                "Nienadpisywanie Przygotowania widzi plik okresu, którego nie ma",
+                (Edit(PREPARATION_FILES, "            if path_taken(target):\n", "            if not path_taken(target):\n"),),
+                EXPLORER,
+                "Przygotowanie zatrzymuje się na PLIK_OKRESU_ISTNIEJE w okresie bez plików okresu",
+                NEW,
+            ),
+        ),
     },
 }
 """Broken variants just outside each part of the shape of each known finding and accepted risk of the explorer
@@ -146,13 +245,7 @@ MUTATIONS = (
     ),
     Mutation(
         "karta Przebiegu rozliczeń daje okres z Rozliczeniami pracowników",
-        (
-            Edit(
-                SETTLEMENT_KIND,
-                '            frozenset({"collective_file_prepared"}),\n',
-                '            frozenset({"collective_file_prepared", "worker_settlements_ready"}),\n',
-            ),
-        ),
+        (SETTLEMENT_CARD,),
         EXPLORER,
         "karta obiecuje Przebieg rozliczeń, który zatrzyma się na FOLDER_ROZLICZEN_ISTNIEJE",
         NEW,
@@ -198,10 +291,17 @@ MUTATIONS = (
     ),
     Mutation(
         "odebranie dostępu bez skutku",
-        (Edit(EXPLORER_FILE, "        path.chmod(0)\n", "        pass\n"),),
+        ACCESS_WITHOUT_EFFECT,
         EXPLORER,
         "zakres niedostepne przechodzi bez żadnego stanu bez dostępu",
         "STATUS OKRESU: LUKA MODELU",
+    ),
+    Mutation(
+        "luka modelu w jednym zakresie i naruszenie w drugim",
+        (*ACCESS_WITHOUT_EFFECT, SETTLEMENT_CARD),
+        EXPLORER,
+        "luka zakresu niedostepne zasłania ostatnią linią naruszenie zakresu czytelne, a krok CI kończy się kodem luki",
+        NEW,
     ),
     *dict.fromkeys(mutation for parts in BOUNDARIES.values() for mutations in parts.values() for mutation in mutations),
 )
