@@ -256,7 +256,8 @@ def test_podstawa_pytest_bez_testu_podaje_przyczyne(command: tuple[str, ...], ca
 
     lines = answered.stdout.splitlines()
     expected = [f"PODSTAWA BEZ TESTU: {cause}"] if cause else []
-    assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[1:-1]) == (2, True, expected), answered.stdout
+    shown = (answered.returncode, answered.stdout.startswith("PODSTAWA CZERWONA: "), lines[1:-1])
+    assert shown == (2, True, expected), f"stdout:\n{answered.stdout}\nstderr:\n{answered.stderr}"
 
 
 def test_podstawa_z_conftest_ktorego_nie_da_sie_zaimportowac_nie_jest_nazwana_bledem_polecenia(tmp_path: Path) -> None:
