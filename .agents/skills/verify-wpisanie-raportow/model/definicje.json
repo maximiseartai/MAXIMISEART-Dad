@@ -1,15 +1,15 @@
 {
   "src/rozliczenia/worker_reports/_cells.py": {
-    "reconcile": "1e414d379f0f685c"
+    "reconcile": "24c1e54992807b1a"
   },
   "src/rozliczenia/worker_reports/_model.py": {
     "Window.of": "28961f03f61c2f9d",
     "Window.opens": "f15e07ab407b86b5",
-    "OwnEntries": "82d8c3c80e6bd59a",
+    "OwnEntries": "967c30375d75bd16",
     "Kept": "417281fbc0c25393"
   },
   "src/rozliczenia/worker_reports/__init__.py": {
-    "enter_reports": "2b3e64248171fa7d"
+    "enter_reports": "85205498034de99a"
   },
   "src/rozliczenia/report_entering.py": {
     "enter_from_mail": "50eca1f3bcbce934",

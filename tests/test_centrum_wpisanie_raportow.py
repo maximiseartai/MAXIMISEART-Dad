@@ -1495,8 +1495,91 @@ def test_numer_w_dwoch_miejscach_nie_przenosi_sie_a_stary_mail_nie_cofa_recznej_
     [problem] = _worker(_view(centrum), "anna.kowalska", "2026-11-08")["problems"]
     assert problem["reason"] == (
         "Zlecenie 40000001 jest w INTERMAX więcej niż raz: u anna.kowalska z 07.11.2026, u jan.testowy z 09.11.2026. "
-        "Centrum nie wie, którego z nich dotyczy Wpis od anna.kowalska z 08.11.2026, więc go nie wpisało i żadnego z nich "
-        "nie przeniosło."
+        "Centrum nie wie, którego z nich dotyczy Wpis od anna.kowalska z 08.11.2026, więc nie zmieniło żadnego z nich "
+        "przy tym kliknięciu."
+    )
+
+
+def test_wpis_centrum_w_zleceniu_przelozonym_na_jutro_nie_przechodzi_na_reczna_wartosc_drugiego_zlecenia_numeru(
+    tmp_path: Path,
+) -> None:
+    """Przegląd #1367 r3 Ważne 1 przez HTTP API: INTERMAX ma 40000001 u Jana 9.11 (pusty) i u Anny 8.11 z ręcznym „tak”
+    i opisem taty. Kliknięcie wpisuje Raport Jana do jego zlecenia, a stary Raport Anny daje różnice, które tata zostawia
+    („Zostaw moją”). Tata przekłada zlecenie Jana na jutro. Następne kliknięcie z tymi samymi mailami nie zmienia
+    INTERMAX: wpisy Centrum ze zlecenia Jana nie przechodzą na zlecenie Anny, więc jej „tak” zostaje."""
+
+    intermax = Intermax(
+        ordered=(
+            Order(datetime(2026, 11, 8, 9), "anna.kowalska", 40000001, cells=((NUMBER, 40000001), (SUCCESSFUL, "tak"), (COMPLETED, "montaż taty"))),
+            _order(8, 10, "jan.testowy", 40000009),
+            _order(9, 9, "anna.kowalska", 40000003),
+            _order(9, 10, "jan.testowy", 40000001),
+            _order(10, 9, "anna.kowalska", 40000004),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    mails = [
+        report(ANNA, "Raport 08.11.2026", "40000001 nie brak klienta", at=datetime(2026, 11, 9, 17)),
+        report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17, 5)),
+    ]
+
+    first = _click_at(centrum, ENTERING_NOW, mails)
+    differences = _worker(_view(centrum), "anna.kowalska", "2026-11-08")["problems"]
+    for difference in differences:
+        assert centrum.client.post("/api/report-entering/keep", json=difference["keep"]).status_code == 200
+    _tata_dates(centrum.register, 40000001, "jan.testowy", datetime(2026, 11, 10, 10))
+    by_tata = centrum.register.read_bytes()
+    second = _click_at(centrum, ENTERING_NOW, mails)
+
+    assert len(differences) == 2
+    assert [change["value"] for change in _entering(centrum, first)["changes"]] == ["tak", "wymiana"]
+    assert (_entering(centrum, second)["changes"], _entering(centrum, second)["moves"]) == ([], [])
+    assert centrum.register.read_bytes() == by_tata
+    assert _places(centrum.register, 40000001) == [
+        (datetime(2026, 11, 8, 9), "anna.kowalska", "tak", "montaż taty"),
+        (datetime(2026, 11, 10, 10), "jan.testowy", "tak", "wymiana"),
+    ]
+
+
+def test_numer_z_jutra_nie_jest_nieznany_ani_przenoszony_a_tata_widzi_jego_dzien(tmp_path: Path) -> None:
+    """Przegląd #1367 r3 Ważne 2 przez HTTP API: dziś 9.11, a tata wkleił już zlecenia na 10.11 (ADR 0019). Raport Jana
+    za 9.11 z numerem, który INTERMAX ma u Jana 8.11 i 10.11, nie przenosi zlecenia z 8.11, a Raport Anny za 9.11 z
+    numerem, który INTERMAX ma tylko 10.11, nie jest nieznanym numerem i nie zmienia zlecenia z jutra. INTERMAX zostaje
+    bajt w bajt, a tata widzi w okienku dnia z tematu oba dni numeru i dzień zlecenia z jutra."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(8, 9, "jan.testowy", 40000001),
+            _order(9, 9, "anna.kowalska", 40000003),
+            _order(9, 10, "jan.testowy", 40000009),
+            _order(10, 9, "anna.kowalska", 40000005),
+            _order(10, 10, "jan.testowy", 40000001),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    before = centrum.register.read_bytes()
+
+    view = _click_at(
+        centrum,
+        ENTERING_NOW,
+        [report(JAN, SUBJECT, "40000001 tak montaż"), report(ANNA, SUBJECT, "40000005 tak wymiana", at=datetime(2026, 11, 9, 17))],
+    )
+
+    assert centrum.register.read_bytes() == before
+    entering = _entering(centrum, view)
+    assert (entering["changes"], entering["moves"]) == ([], [])
+    assert [(problem["kind"], problem["worker"], problem["places"], problem["bar"]) for problem in entering["problems"]] == [
+        ("refused_move", "anna.kowalska", [], "after_today"),
+        ("repeated_number", "jan.testowy", [{"day": "2026-11-08", "worker": "jan.testowy"}, {"day": "2026-11-10", "worker": "jan.testowy"}], None),
+    ]
+    [refused] = _worker(_view(centrum), "anna.kowalska")["problems"]
+    assert refused["reason"] == (
+        "Wpis zlecenia 40000005 od anna.kowalska ma w temacie 09.11.2026, a INTERMAX ma to zlecenie w 10.11.2026. Centrum "
+        "go nie przeniosło i nie wpisało, bo dzień 10.11.2026 jeszcze nie nadszedł."
     )
 
 
@@ -1721,7 +1804,8 @@ def test_zlecenie_z_dnia_po_dzis_nie_jest_dopisane_drugi_raz_a_nastepnego_dnia_p
     """Przegląd #1374 r1 przez HTTP API: dziś 9.11, a INTERMAX ma już uporządkowany 10.11 (tata wkleja i porządkuje
     zlecenia jutra dzień wcześniej, ADR 0019). Jan zrobił zlecenie 40000055 z 10.11 już dziś i wpisał je do Raportu za
     9.11. Kliknięcie nie zmienia INTERMAX, więc numer nie stoi w nim dwa razy, a okienko Jana z 9.11 ma problem z tym
-    numerem. Kliknięcie 10.11 przenosi zlecenie na 9.11 z Wpisem (#1350)."""
+    numerem: dzień zlecenia jeszcze nie nadszedł (#1367 r4). Kliknięcie 10.11 przenosi zlecenie na 9.11 z Wpisem
+    (#1350)."""
 
     intermax = Intermax(
         ordered=(
@@ -1743,6 +1827,7 @@ def test_zlecenie_z_dnia_po_dzis_nie_jest_dopisane_drugi_raz_a_nastepnego_dnia_p
     assert unchanged, "kliknięcie nie dopisuje zlecenia, które INTERMAX ma w dniu po dziś"
     assert _entering(centrum, view)["added"] == []
     assert [problem["number"] for problem in problems] == ["40000055"]
+    assert "10.11.2026 jeszcze nie nadszedł" in problems[0]["reason"]
     assert _places(centrum.register, 40000055) == [(datetime(2026, 11, 9, 9), "jan.testowy", "tak", "montaż ONT")]
     assert [move["day"] for move in _entering(centrum, tomorrow)["moves"]] == ["2026-11-09"]
 
