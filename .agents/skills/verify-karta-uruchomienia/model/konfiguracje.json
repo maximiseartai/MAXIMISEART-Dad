@@ -103,6 +103,11 @@
         "obietnica": "AktualizacjaNieWraca",
         "przyczyna": "stary-odczyt",
         "znalezisko": "odpowiedź read() wysłanego przed kliknięciem (bez numeru zapytania) przychodzi po starcie aktualizacji z idle: karta pokazuje „Zaktualizuj narzędzie”, przestaje odpytywać i nie przeładuje się po ponownym starcie"
+      },
+      {
+        "obietnica": "AktualizacjaNieWraca",
+        "przyczyna": "stary-odczyt-petli",
+        "znalezisko": "odpowiedź getToolUpdate pętli odpytywania wysłanej w trakcie aktualizacji, która potem zawiodła, przychodzi po starcie następnej aktualizacji z failed (bez numeru zapytania): karta pokazuje Komunikat porażki poprzedniej i „Zaktualizuj narzędzie”, przestaje odpytywać i nie przeładuje się po ponownym starcie"
       }
     ]
   }

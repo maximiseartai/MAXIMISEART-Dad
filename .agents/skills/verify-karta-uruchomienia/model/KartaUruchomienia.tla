@@ -44,7 +44,7 @@ Ended(v) == v.stan \in {"idle", "wynik"}
 StanyAktualizacji == {"idle", "running", "updated", "failed"}
 
 ZnaneZnaleziska == {"cudze-uruchomienie-przed-odpowiedzia", "restart-przed-odpowiedzia", "druga-karta",
-                    "wybor-przed-wynikiem", "stary-odczyt"}
+                    "wybor-przed-wynikiem", "stary-odczyt", "stary-odczyt-petli"}
 
 VARIABLES
     \* --- serwer: RunHost ---
@@ -387,16 +387,20 @@ Restart ==
 
 (* ============================ Aktualizacja narzędzia ============================ *)
 
-\* show(result): stan od serwera zastępuje to, co karta pokazywała. Ślad: odpowiedź na odczyt, który serwer
-\* obsłużył przed startem trwającej aktualizacji.
-Pokaz(s, nr) ==
+\* show(result): stan od serwera zastępuje to, co karta pokazywała.
+Pokaz(s) ==
     /\ upd' = s
     /\ widzialTrwa' = (widzialTrwa \/ s = "running")
-    /\ slady' = IF nr < aNr /\ AktTrwa /\ s # "running" THEN slady \cup {"stary-odczyt"} ELSE slady
+\* Ślad przyczyny: odpowiedź s zapytania, które serwer obsłużył przed startem trwającej aktualizacji (nr < aNr),
+\* zastępuje jej stan. Odczyt przy wejściu (read) i pętla odpytywania mają osobne przyczyny, bo każde naprawia się
+\* osobno.
+Slad(s, nr, przyczyna) ==
+    slady' = IF nr < aNr /\ AktTrwa /\ s # "running" THEN slady \cup {przyczyna} ELSE slady
 
 \* ToolUpdateButton: useAction starting, setClicked(true), potem getHealth: instance.current = health.instance.
+\* Przycisk ma tylko disabled={busy}, więc działa też przed pierwszym odczytem (update === null).
 KlikAktualizuj ==
-    /\ Aktualizuj /\ ~Busy /\ upd # "null" /\ aNr < MaxAktualizacji
+    /\ Aktualizuj /\ ~Busy /\ aNr < MaxAktualizacji
     /\ startA' = [faza |-> "zdrowie", odp |-> "-"]
     /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, odczyty, petla, wejsc, zaladowan, pomocnicze>>
     /\ Historia
@@ -424,8 +428,8 @@ ObslugaStartuAkt ==
 KoniecStartuAkt ==
     /\ Aktualizuj /\ startA.faza = "odpowiedz"
     /\ startA' = [faza |-> "nie", odp |-> "-"]
-    /\ IF startA.odp = "running" THEN Pokaz("running", aNr) ELSE UNCHANGED <<upd, widzialTrwa, slady>>
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, instRef, odczyty, petla, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo>>
+    /\ IF startA.odp = "running" THEN Pokaz("running") ELSE UNCHANGED <<upd, widzialTrwa>>
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, instRef, odczyty, petla, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo, slady>>
     /\ Historia
 
 \* Wejście na stronę z przyciskiem: efekt ToolUpdateProvider przy załadowaniu strony i ToolUpdateStatus
@@ -448,7 +452,8 @@ ObslugaOdczytu(i) ==
 OdbierzOdczyt(i) ==
     /\ Aktualizuj /\ odczyty[i].faza = "odpowiedz"
     /\ odczyty' = [odczyty EXCEPT ![i].faza = "zrobiony"]
-    /\ IF odczyty[i].odp = "blad" THEN UNCHANGED <<upd, widzialTrwa, slady>> ELSE Pokaz(odczyty[i].odp, odczyty[i].nr)
+    /\ IF odczyty[i].odp = "blad" THEN UNCHANGED <<upd, widzialTrwa, slady>>
+       ELSE Pokaz(odczyty[i].odp) /\ Slad(odczyty[i].odp, odczyty[i].nr, "stary-odczyt")
     /\ UNCHANGED <<serwer, karta, aSrv, aNr, instRef, startA, petla, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo>>
     /\ Historia
 
@@ -473,8 +478,8 @@ ZdrowiePetli ==
     /\ Aktualizuj /\ petla.faza = "zdrowie"
     /\ (dziala /\ instRef # -1 /\ inst # instRef) => zaladowan < MaxZaladowan
     /\ IF ~dziala
-       THEN /\ petla' = Nic /\ Pokaz("running", aNr)
-            /\ UNCHANGED <<instRef, startA, odczyty, wejsc, zaladowan>>
+       THEN /\ petla' = Nic /\ Pokaz("running")
+            /\ UNCHANGED <<instRef, startA, odczyty, wejsc, zaladowan, slady>>
        ELSE IF instRef # -1 /\ inst # instRef
        THEN /\ Zaladuj /\ UNCHANGED slady
        ELSE /\ petla' = [faza |-> "wyslany", odp |-> "-", nr |-> 0]
@@ -489,11 +494,14 @@ ObslugaPetli ==
     /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, startA, odczyty, wejsc, zaladowan, pomocnicze>>
     /\ Historia
 
-\* getToolUpdate().then(show) w pętli; błąd przechodzi do .catch: show(running, restarting).
+\* getToolUpdate().then(show) w pętli, bez numeru zapytania jak read(); błąd przechodzi do .catch: show(running,
+\* restarting). Łańcuch wysłany w trakcie poprzedniej aktualizacji odpowiada też po starcie następnej: wynik
+\* poprzedniej zastępuje wtedy running.
 OdbierzPetli ==
     /\ Aktualizuj /\ petla.faza = "odpowiedz"
     /\ petla' = Nic
-    /\ Pokaz(IF petla.odp = "blad" THEN "running" ELSE petla.odp, IF petla.odp = "blad" THEN aNr ELSE petla.nr)
+    /\ LET s == IF petla.odp = "blad" THEN "running" ELSE petla.odp
+       IN Pokaz(s) /\ Slad(s, petla.nr, "stary-odczyt-petli")
     /\ UNCHANGED <<serwer, karta, aSrv, aNr, instRef, startA, odczyty, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo>>
     /\ Historia
 

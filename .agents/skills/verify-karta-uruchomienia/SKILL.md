@@ -93,7 +93,7 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | `PytanieODecyzje` | `Run.confirm`: the `awaiting_decision` view; today only Przygotowanie pliku zbiorczego asks, once per Uruchomienie (`collective_preparation`) |
 | `KoniecUruchomienia` | `RunHost.end`: the `finished` view (result or Zatrzymanie) and the end under one lock |
 | `Restart` | Centrum killed and started again: a new `RunHost` with `idle` (`previous` from the Logi), the tab's stream gets `error`, a request the old server did not handle fails |
-| `KlikAktualizuj` | `ToolUpdateButton` (`components/tool-update.tsx`, disabled by `busy`): `useAction` `starting`, `setClicked(true)`, `getHealth` |
+| `KlikAktualizuj` | `ToolUpdateButton` (`components/tool-update.tsx`, disabled only by `busy`, so also before the first read answers): `useAction` `starting`, `setClicked(true)`, `getHealth` |
 | `ZdrowieStartu` | `.then(health => { instance.current = health.instance; return startToolUpdate() })`; no answer ends the action with a toast |
 | `ObslugaStartuAkt` | `ToolUpdates.start`: `begin_update` (refused while an update runs) and the first step `running` as the answer |
 | `KoniecStartuAkt` | `.then(show)` of the start; a refusal is a toast and the card keeps its state |
@@ -102,7 +102,7 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | `OdbierzOdczyt` | `read`: `getToolUpdate().then(show, failRead)`; answers arrive in any order, and `failRead` leaves `update` as it is |
 | `Tik` | the effect on `update?.state === "running"`: after `POLL_MS` `getHealth`; the cleanup clears the timer, never a request already sent |
 | `ZdrowiePetli` | `getHealth().then`: `instance.current ??= health.instance`; another instance is `sessionStorage` and `window.location.reload()` (the new page reads again), the same one is `getToolUpdate()`; no answer is `.catch(() => show({state: "running", step: "restarting"}))` |
-| `OdbierzPetli` | `getToolUpdate().then(show)` in the poll; its failure goes to the same `.catch` |
+| `OdbierzPetli` | `getToolUpdate().then(show)` in the poll, with no request number either; its failure goes to the same `.catch` |
 | `AktPorazka` | `ToolUpdates._update`: a failure before the restart (`failed`, same Centrum) |
 | `AktZamkniecie`, `AktPonownyStart` | `ToolUpdates._restart`: Centrum closes, the restart guardian starts the new one (another `instance`), which reads the result once (`_after_restart`: `updated` or `failed`) |
 
@@ -134,7 +134,7 @@ py -3 .agents\skills\verify-karta-uruchomienia\scripts\sprawdz_karte_uruchomieni
 `--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
 known findings are `tools/lib/model_tlc.py`, which every skill with a TLA+ model shares; Java and `tla2tools.jar` come
 from `tools/lib/narzedzia_tlc.py` (pinned `jdk4py` and the jar in `.verification/` on first use; `TLC_JAVA` and
-`TLC_JAR` override them). The whole check took 43 s on Maks's Mac (2026-11-12): `druga-karta` 10 s, `restart` 20 s.
+`TLC_JAR` override them). The whole check took 41 s on Maks's Mac (2026-11-12): `druga-karta` 10 s, `restart` 20 s, `aktualizacja` 9 s.
 
 The last line is the verdict:
 
@@ -163,8 +163,9 @@ result.
 Then tell a real bug from a modeling error: replay the path on the real build. Serve Centrum on the synthetic fixture
 of `verify-centrum-rozliczen` (`create_centrum_fixture.py`, `serve_centrum.py`), open it in Playwright with
 `EventSource` replaced by an init script that hands the page the views you push, hold the answer of `POST /api/runs`,
-`POST /api/runs/{id}/decision` or `GET /api/tool-update` with `page.route` until the step of the path, and look at the
-buttons. A path that does not happen on the build means the model is wrong until you show it is not.
+`POST /api/runs/{id}/decision` or `GET /api/tool-update` until the step of the path, and look at the buttons.
+To hold a read that more requests follow, wrap `fetch` in an init script that keeps the response from the page until you release it: a `page.route` handler that returns without answering and is fulfilled later stopped Playwright from routing the page's next requests (2026-11-12), so the poll looked stopped also where it was not.
+A path that does not happen on the build means the model is wrong until you show it is not.
 
 ## Configurations
 
@@ -173,7 +174,7 @@ buttons. A path that does not happen on the build means the model is wrong until
 | `jedna-karta` | one tab, two starts, a Decyzja, one unreadable view, one broken stream | known `wybor-przed-wynikiem` |
 | `druga-karta` | a second tab starts and answers the Decyzja, two starts in all | known `wybor-przed-wynikiem`, `druga-karta`, `cudze-uruchomienie-przed-odpowiedzia` |
 | `restart` | Centrum starts again once at any moment, two starts, a Decyzja, one unreadable view | known `wybor-przed-wynikiem`, `restart-przed-odpowiedzia` |
-| `aktualizacja` | two page entries with a read, two updates, a failure or a restart, one reload | known `stary-odczyt` |
+| `aktualizacja` | two page entries with a read, two updates, a failure or a restart, one reload, a click before the first read | known `stary-odczyt`, `stary-odczyt-petli` |
 
 `Czesc` picks the part of the tab the configuration runs; the other part's actions stay disabled. Every
 configuration lets an Uruchomienie end with a result only (`MozeZatrzymac = FALSE`): a Zatrzymanie is the same
@@ -184,7 +185,7 @@ configuration lets an Uruchomienie end with a result only (`MozeZatrzymac = FALS
 Each finding is forgiven only for its promise and only when its cause happened before the event that breaks it (the
 variable `slady`, and for WynikNaKarcie the history of the Uruchomienie whose result is hidden); any other path is a
 new violation. Each was replayed on the real build of 12.11.2026 (Centrum on the synthetic fixture, the page as built,
-`EventSource` replaced, answers held with `page.route`).
+`EventSource` replaced, answers held with `page.route`, findings 5 and 6 with a wrapped `fetch`).
 
 1. **`wybor-przed-wynikiem`, WynikNaKarcie.** Dad sets `draft` before this tab has read the result of an Uruchomienie
    the server already runs: a step in the Tablica okresów (`DraftButton`), „Gotowe, rozlicz pracowników”, or a tile on
@@ -205,15 +206,28 @@ new violation. Each was replayed on the real build of 12.11.2026 (Centrum on the
    the `idle` of a restarted Centrum: the comment says `idle` before the answer is „zwykły stan świeżo uruchomionego
    Centrum”, but this `idle` comes from the new Centrum, and nothing follows it. Replayed: answer held while the stream
    showed `idle`; „Podgląd bez zapisu” disabled 3 s later, the start card with no explanation.
-5. **`stary-odczyt`, AktualizacjaNieWraca.** `read()` sends `getToolUpdate` with no request number. A read sent when
-   the page mounted (state `idle`) whose answer arrives after the start answered `running` replaces `running` with
-   `idle`: „Zaktualizuj narzędzie” is enabled again, „Pobieranie nowej wersji…” disappears, the poll stops (the effect
-   runs only on `running`), and the tab will not reload into the new version. Replayed on Konfiguracja: the second read
-   held until after the click; button enabled, no status, 0 reads in the next 2 s (without the held read: disabled,
-   status shown, 3 reads).
+5. **`stary-odczyt`, AktualizacjaNieWraca.** `read()` (the provider's first read and `ToolUpdateStatus` on mount)
+   sends `getToolUpdate` with no request number. A read sent when the page mounted (state `idle`) whose answer arrives
+   after the start answered `running` replaces `running` with `idle`: „Zaktualizuj narzędzie” is enabled again,
+   „Pobieranie nowej wersji…” disappears, the poll stops (the effect runs only on `running`), and the tab will not
+   reload into the new version. The model counts only answers of `read()` here (`OdbierzOdczyt`). Replayed on
+   Konfiguracja: the first read's answer kept from the page until after the click; button enabled, no status, 0 reads
+   in the next 2 s (without the held answer: disabled, status shown, 3–4 reads).
+6. **`stary-odczyt-petli`, AktualizacjaNieWraca.** The poll's `getToolUpdate` has no request number either, and the
+   effect's cleanup clears only the timer, never a chain already past `setTimeout`. Update 1 runs; the poll sends
+   `getHealth`, then `getToolUpdate`; update 1 fails and the server answers that read `failed`, but the answer is late.
+   Meanwhile a page entry's `read()` shows `failed` (the effect stops on a state that is not `running`), Dad clicks
+   „Zaktualizuj narzędzie” again and the start answers `running` (a new timer of `POLL_MS`). The late poll answer
+   arrives before that timer fires: `show(failed)` puts back update 1's Komunikat porażki, enables the button during
+   update 2, clears the new timer, and the tab neither polls nor reloads into the new version. A request number on
+   `read()` alone does not fix it, and the mutation script proves each fix removes only its own finding. Replayed on
+   Konfiguracja: the poll's answer `failed` kept from the page while Dad went to Tablica okresów and back (`failed`
+   shown) and clicked again, then released; button enabled, update 1's Komunikat shown, no „Pobieranie…”, 0 reads in
+   the next 2 s (released before leaving the page: disabled, „Pobieranie…”, 4 reads).
 
-Findings 3 and 4 need an answer that reaches the tab later than whole Uruchomienia or a restart; on Dad's computer the
-answer usually comes in milliseconds, so they are rare, but nothing in the code rules them out.
+Findings 3 and 4 need an answer that reaches the tab later than whole Uruchomienia or a restart, and findings 5 and 6
+an answer that reaches it later than a newer one; on Dad's computer the answer usually comes in milliseconds, so they
+are rare, but nothing in the code rules them out.
 
 ## Bring the model in line
 
@@ -233,7 +247,8 @@ When a definition from `model/definicje.json` or a guard in another file of `pil
 ## Scope
 
 Verified: the three promises over every order of the actions above for the bounds of each configuration (two starts,
-one Decyzja per Uruchomienie, one unreadable view, one broken stream, one restart, two updates, two reads, one reload).
+one Decyzja per Uruchomienie, one unreadable view, one broken stream, one restart, two updates, two reads, one poll
+chain, one reload).
 The server is only the source of views and answers; its slot „jedno naraz” and the rule that the result of every
 Uruchomienie stays among the views a tab reads (`WYNIK_NA_KARCIE`) belong to `verify-jedno-uruchomienie-naraz`.
 
@@ -254,9 +269,11 @@ Left out, each a reason the check can pass while the code is wrong:
 - **A tab that never showed the update running.** A start refused because another tab updates (`update_in_progress`)
   leaves „Zaktualizuj narzędzie” enabled during that update; AktualizacjaNieWraca promises only what this page showed.
   The state `up_to_date` („Masz najnowszą wersję”) is left out as one more state that is not running.
-- **Two poll chains at once.** The poll in the model has one chain in flight; the cleanup of the effect does not cancel
-  a sent `getHealth`, so the code can have two. Not checked: both are sent after the start answered `running`, so
-  neither should carry the `idle` of finding 5, but an answer of an old chain can still replace a newer state.
+- **Two poll chains at once.** The poll in the model has one chain in flight, so its next `Tik` waits for the answer.
+  The code starts a new timer on every new `update` while running (each step, each poll answer) and the cleanup does
+  not cancel a chain already sent, so two chains can be in flight. An old chain's answer that replaces a newer state is
+  checked (finding 6: its answer is from an update that has ended); two chains of the same update only add answers
+  of that update, which are `running` or its result.
 - **Dad's choices in the form other than `draft`** (which process and period), the Komunikaty, the toasts and timing:
   `POLL_MS`, the stream's poll every 50 ms and `retry` are left out, so every order counts, however unlikely.
 
