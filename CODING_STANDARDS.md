@@ -61,6 +61,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Code in `src/` keeps the response of every navigation of a browser tab: the efenix window opens a page only through `BrowserEfenix._go`, waits for a reload only through `BrowserEfenix._reloaded` (`src/rozliczenia/efenix_browser.py`) and asks `_error_page` about a page it could not read, and only Przekazanie (`forward_to_accept`) drops the response of its reload. | `tests/test_zapadki.py::test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona` (boundary: docstring of `dropped_navigation`) |
 | Code in `src/` does not `print`, because Dad never sees a console and a problem reaches him as a Komunikat; only `launcher.py` and `shortcut.py` print to the start console. | ruff `T201` (`per-file-ignores` in `pyproject.toml`) |
 | `zip` takes `strict=True` when both sides must have the same length, `strict=False` only with a comment naming the check that already reports a different length, and successive pairs come from `itertools.pairwise`. | ruff `B905`, `RUF007` |
+| Every current day or moment names its time zone: `datetime.now(timezone.utc)` for a moment that is stored or compared, and `datetime.now().astimezone().date()` for tata's local day. | ruff `DTZ` codes in `pyproject.toml` |
 
 ## Test Surface
 
