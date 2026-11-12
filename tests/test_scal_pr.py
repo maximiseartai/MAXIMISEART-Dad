@@ -311,29 +311,37 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     assert (github.checkout / "posprzatane").exists()
 
 
-@pytest.mark.parametrize("run", [{"databaseId": 4242, "url": "https://github.com/o/r/actions/runs/4242"}, None], ids=["run-jest", "runu-jeszcze-nie-ma"])
-def test_po_merge_do_main_linia_ci_main_podaje_run_ci_na_commicie_merge_a_ktory_skomentuje_czerwony_main(
-    tmp_path: Path, run: dict[str, object] | None
-) -> None:
-    """Czerwony `main` po własnym merge'u nie wracał do wątku, który scalał (#911, #971): agent nie wiedział, na który run czekać."""
+@pytest.mark.parametrize(
+    ("conclusion", "own"),
+    [
+        ("", "run commitu merge'a 4242 https://github.com/o/r/actions/runs/4242, o ile nowszy push nie anuluje go, zanim ruszy"),
+        ("cancelled", "run commitu merge'a 4242 anulowany, więc rozstrzyga run późniejszego commitu z gh run list --workflow CI --event push --branch main"),
+        (None, "runu commitu merge'a jeszcze nie ma, runy pokaże gh run list --workflow CI --event push --branch main"),
+    ],
+    ids=["run-czeka", "run-anulowany", "runu-jeszcze-nie-ma"],
+)
+def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany_run_z_merge_em(tmp_path: Path, conclusion: str | None, own: str) -> None:
+    """Czerwony `main` po własnym merge'u nie wracał do wątku, który scalał (#911, #971), a run commitu merge'a anuluje
+    nowszy push na `main`, gdy czeka za trwającym (#1449: runy merge'ów #1439, #1418, #1434 anulowane po 2 min, czerwień
+    przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a."""
 
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.comment(1, PASS.format(head=head))
-    if run is not None:
+    if conclusion is not None:
+        run = {"databaseId": 4242, "url": "https://github.com/o/r/actions/runs/4242", "conclusion": conclusion}
         (github.bin / "runs.json").write_text(json.dumps([run]), encoding="utf-8")
 
     merged = github.run("1")
 
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
-    query = ["run", "list", "--workflow", "CI", "--event", "push", "--commit", merge_commit]
-    found = f"run 4242 {run['url']}" if run else f"run jeszcze nieznany, znajdzie go gh {' '.join(query)}"
     assert merged.returncode == 0, merged.stdout + merged.stderr
     assert merged.stdout.splitlines()[-2:] == [
-        f"CI MAIN | {merge_commit[:7]} | {found} | zostaw obserwację PR do wyniku runu: czerwony main skomentuje ten PR",
+        f"CI MAIN | {merge_commit[:7]} | o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego commit zawiera merge: {own}"
+        " | obserwuj PR do zielonego main z tym merge'em albo do komentarza czerwonego main w PR",
         _last_line(merged),
     ]
-    assert github.run_lists() == [[*query, "--json", "databaseId,url"]]
+    assert github.run_lists() == [["run", "list", "--workflow", "CI", "--event", "push", "--branch", "main", "--commit", merge_commit, "--json", "databaseId,url,conclusion"]]
 
 
 @pytest.mark.parametrize(

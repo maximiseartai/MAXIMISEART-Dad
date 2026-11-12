@@ -49,7 +49,11 @@ class Nagrany:
         return odpowiedz
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
+        """Zapisuje wysłane; komentarz trafia też na listę komentarzy, gdy test ją nagrał, jak w API."""
+
         self.wyslane.append((metoda, sciezka, tresc))
+        if (komentarze := self.odpowiedzi.get(f"{sciezka}?per_page={STRONA}&page=1")) is not None:
+            komentarze.append({"body": tresc["body"]})
         return {"number": 900 + len(self.wyslane)}
 
 
@@ -315,9 +319,11 @@ def main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, 
     yield shas
 
 
-def _required(sha: str, wynik: str, run_id: int) -> dict[str, Any]:
+def _required(sha: str, wynik: str | None, run_id: int) -> dict[str, Any]:
+    """Check Required commitu z wynikiem ``wynik``; ``None`` to run anulowany, zanim ruszył, który checku nie ma."""
+
     check = {"status": "completed", "conclusion": wynik, "started_at": "2026-10-26T10:40:00Z", "details_url": f"{RUN_URL.format(run_id)}/job/1"}
-    return {f"{REPO}/commits/{sha}/check-runs?check_name=Required%20CI%20status&per_page=100": {"check_runs": [check]}}
+    return {f"{REPO}/commits/{sha}/check-runs?check_name=Required%20CI%20status&per_page=100": {"check_runs": [check] if wynik else []}}
 
 
 def _zadania(run_id: int, porazki: Sequence[str]) -> dict[str, Any]:
@@ -340,14 +346,14 @@ def _czerwony_run(
     *,
     bramka_b: str,
     otwarte: list[dict[str, Any]] | None = None,
-    main_10: str = "success",
+    main_10: str | None = "success",
     required_b: str = "success",
     required_9: str = "success",
     porazki_10: Sequence[str] = (),
     porazki_11: Sequence[str] = ("tests/test_a.py::test_scalenie",),
 ) -> Nagrany:
-    """Run 300 pushu na `main` z czerwonym Required na merge'u #11, po merge'u #10 z Required ``main_10`` (run 200)
-    i zielonym merge'u #9; run bramki #11 z wynikiem ``required_b`` utworzony ``bramka_b``, a bramka #9 z wynikiem
+    """Run 300 pushu na `main` z czerwonym Required na merge'u #11, po merge'u #10 z Required ``main_10`` (run 200,
+    ``None``: anulowany, zanim ruszył) i zielonym merge'u #9, a PR-y bez komentarzy; run bramki #11 z wynikiem ``required_b`` utworzony ``bramka_b``, a bramka #9 z wynikiem
     ``required_9``. ``porazki_10`` i ``porazki_11`` to testy z porażką w runach 200 i 300; domyślna porażka runu 300
     jest w teście, którego wejścia zmieniły #10 i #11."""
 
@@ -364,6 +370,7 @@ def _czerwony_run(
             **_required(main["pr10"], main_10, 200),
             **_required(main["pr9"], "success", 199),
             **{f"{REPO}/pulls/{numer}": {"head": {"sha": main[f"head{numer}"]}} for numer in (9, 10, 11)},
+            **{f"{REPO}/issues/{numer}/comments?per_page={STRONA}&page=1": [] for numer in (9, 10, 11)},
             **_required(main["head9"], required_9, 90),
             **_required(main["head10"], "success", 100),
             **_required(main["head11"], required_b, 111),
@@ -531,16 +538,6 @@ def test_zielony_main_zdejmuje_etykiete_zderzenia_gdy_zazielenil_sie_bez_zmiany_
     assert ("`main` zazielenił się bez poprawki, porażka niestabilna" in komentarz) == zdjeta
 
 
-def test_kolejny_czerwony_main_z_ta_sama_porazka_komentuje_otwarte_issue_zamiast_drugiego(main: dict[str, str]) -> None:
-    stara = ["tests/test_centrum.py::test_kontrola_ilosci[a - b]"]
-    otwarte = [{"number": 77, "body": f"<!-- czerwony-main {main['pr10']} -->"}]
-    github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", otwarte=otwarte, main_10="failure", porazki_10=stara, porazki_11=stara)
-
-    [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
-
-    assert isinstance(akcja, Skomentuj) and akcja.issue == 77
-
-
 @pytest.mark.parametrize("otwarte", [[{"number": 77, "body": "<!-- czerwony-main " + "c" * 40 + " -->"}], []], ids=["z otwartym issue", "bez issue"])
 def test_zderzenie_na_czerwonym_main_liczy_sie_po_nowej_porazce(main: dict[str, str], otwarte: list[dict[str, Any]]) -> None:
     stara, nowa = "tests/test_centrum.py::test_kontrola_ilosci", "tests/test_sprzatanie.py::test_worktree[merge - squash]"
@@ -582,24 +579,26 @@ def test_zielony_main_zamyka_issue_czerwonego_przodka_z_linkiem_do_runu(main: di
     ]
 
 
+@pytest.mark.parametrize("main_10", [None, "cancelled"], ids=["run merge'a anulowany przed startem", "run merge'a anulowany w biegu"])
 @pytest.mark.parametrize(("najwiecej", "komentowane"), [(10, [10, 11]), (1, [11])], ids=["cały zakres", "ostatnie ponad limit"])
-def test_nowe_issue_czerwonego_main_komentuje_pr_y_z_zakresu_raz_na_epizod_bez_oskarzenia(
-    main: dict[str, str], monkeypatch: pytest.MonkeyPatch, najwiecej: int, komentowane: list[int]
+def test_czerwony_run_komentuje_pr_y_o_ktorych_merge_u_rozstrzyga_takze_ten_z_anulowanym_runem_raz_na_pr_bez_oskarzenia(
+    main: dict[str, str], monkeypatch: pytest.MonkeyPatch, najwiecej: int, komentowane: list[int], main_10: str | None
 ) -> None:
-    """Czerwony `main` nie wracał do wątku, który scalał (#911, #971): issue wymieniało PR-y z zakresu, ale nic do nich
-    nie pisało. Ponowienie workflow trafia na otwarte issue i nie komentuje PR-ów drugi raz."""
+    """Czerwony `main` nie wracał do wątku, który scalał (#911, #971), a run commitu merge'a #10 anulował push merge'a #11
+    (#1449: 42 ze 100 runów pushu na `main` anulowane), więc o #10 rozstrzyga czerwony run merge'a #11. Ponowienie
+    workflow trafia na issue tego commitu i nie komentuje PR-ów drugi raz."""
 
     monkeypatch.setattr(zgloszenia_ci, "NAJWIECEJ_POWIADOMIEN", najwiecej)
-    github = _czerwony_run(main, bramka_b="2026-10-26T10:05:00Z", main_10="cancelled")
+    github = _czerwony_run(main, bramka_b="2026-10-26T10:05:00Z", main_10=main_10)
 
     linie = zgloszenia_ci.wykonaj(github, zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ), bez_zapisu=False)
 
     tytul = f"Czerwony main od {main['pr11'][:9]}"
     assert linie == ["ZGŁOSZENIA | założone #901 „" + tytul + "”", *(f"ZGŁOSZENIA | komentarz w PR #{pr} o #901" for pr in komentowane)]
     assert [wyslane[:2] for wyslane in github.wyslane] == [("POST", f"{REPO}/issues"), *(("POST", f"{REPO}/issues/{pr}/comments") for pr in komentowane)]
-    komentarze = {str(wyslane[2]["body"]) for wyslane in github.wyslane[1:]}
-    [komentarz] = komentarze
-    assert komentarz.startswith(f"#901 „{tytul}”\n\n`main` jest czerwony od {main['pr11'][:9]} ([run]({RUN_URL.format(300)})). PR-y scalone od ostatniego zielonego `main`: #10, #11.")
+    [komentarz] = {str(wyslane[2]["body"]) for wyslane in github.wyslane[1:]}
+    assert komentarz.startswith(f"#901\n\n`main` jest czerwony na commicie {main['pr11'][:9]} ([run]({RUN_URL.format(300)})), a ten run rozstrzyga o merge'u tego PR")
+    assert "Rozstrzyga o PR-ach: #10, #11." in komentarz
     assert "To nie znaczy, że czerwieni go ten PR" in komentarz
 
     github.odpowiedzi |= _issues("czerwony-main", "open", [{"number": 901, "body": f"<!-- czerwony-main {main['pr11']} -->"}])
@@ -609,29 +608,65 @@ def test_nowe_issue_czerwonego_main_komentuje_pr_y_z_zakresu_raz_na_epizod_bez_o
     assert [wyslane[:2] for wyslane in github.wyslane] == [("POST", f"{REPO}/issues/901/comments")]
 
 
-class NieprzyjmujeKomentarza(Nagrany):
-    """GitHub, który odrzuca komentarz w PR ``pr``, jak zablokowana rozmowa albo secondary rate limit."""
+def test_czerwony_run_na_czerwonym_main_komentuje_tylko_pr_y_scalone_po_poprzednim_rozstrzygnietym_runie(main: dict[str, str]) -> None:
+    """`main` był czerwony już na merge'u #10 (issue #77, #10 ma komentarz swojego runu): czerwony run merge'a #11 dopisuje
+    się do #77 i budzi tylko #11, o którego merge'u rozstrzyga."""
 
-    def __init__(self, odpowiedzi: dict[str, Any], pr: int) -> None:
-        super().__init__(odpowiedzi)
-        self.pr = pr
-
-    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
-        if sciezka == f"{REPO}/issues/{self.pr}/comments":
-            raise BladApi(f"gh api {sciezka}", "HTTP 403: You have exceeded a secondary rate limit")
-        return super().wyslij(metoda, sciezka, tresc)
-
-
-def test_komentarz_w_pr_ktory_sie_nie_udal_zostaje_w_logu_a_kolejne_pr_y_go_dostaja(main: dict[str, str]) -> None:
-    nagrany = _czerwony_run(main, bramka_b="2026-10-26T10:05:00Z", main_10="cancelled")
-    github = NieprzyjmujeKomentarza(nagrany.odpowiedzi, 10)
+    stara = ["tests/test_centrum.py::test_kontrola_ilosci[a - b]"]
+    otwarte = [{"number": 77, "body": f"<!-- czerwony-main {main['pr10']} -->"}]
+    github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", otwarte=otwarte, main_10="failure", porazki_10=stara, porazki_11=stara)
 
     linie = zgloszenia_ci.wykonaj(github, zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ), bez_zapisu=False)
 
-    assert linie[1:] == [
-        f"ZGŁOSZENIA | komentarz w PR #10 o #901 nieudany: gh api {REPO}/issues/10/comments: HTTP 403: You have exceeded a secondary rate limit",
-        "ZGŁOSZENIA | komentarz w PR #11 o #901",
-    ]
+    assert linie == ["ZGŁOSZENIA | komentarz w #77", "ZGŁOSZENIA | komentarz w PR #11 o #77"]
+
+
+def test_ponowienie_zderzenia_na_czerwonym_main_nie_zaklada_drugiego_issue_ani_nie_komentuje_pr_ow_drugi_raz(main: dict[str, str]) -> None:
+    """Zderzenie na czerwonym `main` zakłada własne issue obok otwartego #77; ponowienie workflow tego runu zakładało
+    drugie i drugi raz komentowało PR-y (przegląd #1448)."""
+
+    stara, nowa = "tests/test_centrum.py::test_kontrola_ilosci", "tests/test_sprzatanie.py::test_worktree[merge - squash]"
+    otwarte: list[dict[str, Any]] = [{"number": 77, "body": f"<!-- czerwony-main {main['pr10']} -->"}]
+    github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", otwarte=otwarte, main_10="failure", porazki_10=[stara], porazki_11=[stara, nowa])
+    pierwszy = zgloszenia_ci.wykonaj(github, zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ), bez_zapisu=False)
+    github.odpowiedzi |= _issues("czerwony-main", "open", [*otwarte, {"number": 901, "body": f"<!-- czerwony-main {main['pr11']} -->"}])
+
+    ponowienie = zgloszenia_ci.wykonaj(github, zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ), bez_zapisu=False)
+
+    assert pierwszy == [f"ZGŁOSZENIA | założone #901 „Czerwony main od {main['pr11'][:9]} (zderzenie #10 i #11)”", "ZGŁOSZENIA | komentarz w PR #11 o #901"]
+    assert ponowienie == ["ZGŁOSZENIA | komentarz w #901"]
+
+
+class NieprzyjmujeKomentarza(Nagrany):
+    """GitHub, który na komentarz w PR ``pr`` rzuca ``blad``, jak zablokowana rozmowa, secondary rate limit albo ``gh``
+    ponad limit czasu ``GhApi``."""
+
+    def __init__(self, odpowiedzi: dict[str, Any], pr: int, blad: Exception) -> None:
+        super().__init__(odpowiedzi)
+        self.pr = pr
+        self.blad = blad
+
+    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
+        if sciezka == f"{REPO}/issues/{self.pr}/comments":
+            raise self.blad
+        return super().wyslij(metoda, sciezka, tresc)
+
+
+@pytest.mark.parametrize(
+    ("blad", "powod"),
+    [
+        (BladApi(f"gh api {REPO}/issues/10/comments", "HTTP 403: You have exceeded a secondary rate limit"), f"gh api {REPO}/issues/10/comments: HTTP 403: You have exceeded a secondary rate limit"),
+        (subprocess.TimeoutExpired(["gh", "api"], 120), "Command '['gh', 'api']' timed out after 120 seconds"),
+    ],
+    ids=["odrzucony", "ponad limit czasu"],
+)
+def test_komentarz_w_pr_ktory_sie_nie_udal_zostaje_w_logu_a_kolejne_pr_y_go_dostaja(main: dict[str, str], blad: Exception, powod: str) -> None:
+    nagrany = _czerwony_run(main, bramka_b="2026-10-26T10:05:00Z", main_10="cancelled")
+    github = NieprzyjmujeKomentarza(nagrany.odpowiedzi, 10, blad)
+
+    linie = zgloszenia_ci.wykonaj(github, zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ), bez_zapisu=False)
+
+    assert linie[1:] == [f"ZGŁOSZENIA | komentarz w PR #10 o #901 nieudany: {powod}", "ZGŁOSZENIA | komentarz w PR #11 o #901"]
 
 
 def test_bez_zapisu_tylko_drukuje_akcje(main: dict[str, str]) -> None:
