@@ -10,10 +10,11 @@ A mistake is a class once it has happened twice: two review findings, two red ru
 Fix a class at the highest level that works, and say in the PR why a higher level did not:
 
 1. Architecture: one owner for each decision and one supported way for each task, internals hidden so the wrong import fails, and the old way deleted so no agent copies it.
-2. A type, a lint rule or a structure test whose error names the file, type or function to use instead.
-   Turn a rule on when it has no violation left, like the Zapadki in `pyproject.toml`, and when the pattern is already common, fail only when a change adds more.
+2. A type or a ruff or mypy rule whose error names the file, type or function to use instead (`banned-api` with `msg`).
+   Turn a rule on when it has no violation left, like the rules under `# Zapadki` in `pyproject.toml`.
 3. A test of the behaviour.
-4. A bullet in this file, last, because nothing fails when an agent skips it.
+4. When the pattern is already common, a ratchet in `tests/test_zapadki.py`: it fails only when a change adds an occurrence, its docstring states the literal boundary, and it raises nothing on the whole tree.
+5. A bullet in this file, last, because nothing fails when an agent skips it.
 
 A new check fails on the commit of the PR whose review found the mistake, raises no false alarm on a few recent merged PRs (`--ostatnie 5`, one of them with Windows-only code), and the PR body shows both runs (`tools/na_scalonych_pr.py`, skill `pr`).
 Fix the class, not the instance: when a review finds one case, look for every case of the same fault in the change and in the repository, and fix them together.

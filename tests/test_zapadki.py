@@ -29,7 +29,7 @@ _ORDER_NUMBER_HELPER = (
     " pyta strażnika reguły danych (ForbiddenValues.guard)"
 )
 
-# Pliki, które parsują Pythona ręcznie: wpis równa się stanowi z 12.11.2026 (23 pliki) i maleje z każdym zastąpionym.
+# Pliki, którym wolno parsować Pythona ręcznie: stan z 12.11.2026 (23 pliki); wpis maleje z każdym usuniętym plikiem.
 # Jeden napis z odstępami, bo graf wyboru testów (``tools/lib/wplyw_zmiany.py``) bierze ścieżkę z napisu testu za jego
 # zależność, a zapadki i tak biegną przy każdej zmianie (``ZAPADKI`` w ``tools/szybko.py``).
 PARSERS = frozenset(
@@ -63,12 +63,12 @@ PARSER_FOLDERS = ("tests", "tools", ".agents/skills")
 _PARSER_CALL = re.compile(r"(?<![\w.])(?:ast\.(?:parse|walk)\(|tokenize\.)")
 _NEW_PARSER = (
     "nowy plik z ręcznym parserem Pythona (ast.parse, ast.walk, tokenize): nazwij korzeń poprawki i napraw go na"
-    " najwyższym szczeblu z sekcji „Reguły i co ich pilnuje” w AGENTS.md: (a) jedna droga i jeden właściciel, (b) typ z"
-    " prywatnym dowodem albo reguła ruff lub mypy (banned-api TID251 z msg „użyj X” w pyproject.toml), (c) test"
-    " zachowania, (d) dopiero zapadka w tests/test_zapadki.py; plik, który mimo to parsuje, dopisz do PARSERS w"
-    " tests/test_zapadki.py z powodem w opisie PR"
+    " najwyższym szczeblu z sekcji „Reguły i co ich pilnuje” w AGENTS.md: (a) jedna droga i jeden właściciel, (b) typ"
+    " albo reguła ruff (banned-api TID251 z msg „użyj X” w pyproject.toml), (c) test zachowania, (d) dopiero zapadka"
+    " w tests/test_zapadki.py; plik, który mimo to parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w"
+    " opisie PR"
 )
-_GONE_PARSER = "plik nie parsuje już Pythona ręcznie albo zniknął: usuń go z PARSERS w tests/test_zapadki.py"
+_GONE_PARSER = "plik zniknął: usuń go z PARSERS w tests/test_zapadki.py"
 
 
 def _git(root: Path, *args: str) -> str:
@@ -196,12 +196,14 @@ def parsers_off_entry(root: Path, base: str) -> list[str]:
     zmiana dodaje, zmienia albo usuwa (zmiana nazwy to usunięcie i dodanie), gdy po zmianie jego tekst, z komentarzami i
     napisami, ma ``ast.parse(``, ``ast.walk(`` albo ``tokenize.``, a ``PARSERS`` go nie ma: nowy plik z ręcznym
     parserem albo istniejący, do którego zmiana dopisała pierwsze takie wywołanie.
-    Łapie też plik z ``PARSERS``, który zmiana usuwa albo z którego usuwa ostatnie takie wywołanie, bo wpis równa się
-    stanowi.
+    Z wpisu każe usunąć tylko plik z ``PARSERS``, którego zmiana usuwa.
+    Plik z ``PARSERS``, z którego zmiana usuwa ostatnie takie wywołanie, przechodzi i zostaje we wpisie, bo zapadka pada
+    tylko na dodanym: inaczej nocna mutacja, która usuwa linię parsera, byłaby WYKRYTA przez wpis, a nie przez test
+    zachowania, i linia bez testu nie trafiłaby do ``Przeżyte mutacje z #N`` (#670).
     Nie łapie matchera dopisanego do pliku z ``PARSERS`` ani do ``tests/test_zapadki.py``, regexu,
-    ``from ast import parse``, ``import ast as a``, ``compile(…, ast.PyCF_ONLY_AST)``, ``ast.NodeVisitor``, wywołania
-    pomocnika, który parsuje za wywołującego (``tests/fixtures/skladnia.py``), ani parsera w ``src/`` i poza tymi trzema
-    folderami; te zostają przeglądowi.
+    ``from ast import parse``, ``import ast as a``, samego ``import tokenize``, ``from tokenize import …``,
+    ``compile(…, ast.PyCF_ONLY_AST)``, ``ast.NodeVisitor``, wywołania pomocnika, który parsuje za wywołującego
+    (``tests/fixtures/skladnia.py``), ani parsera w ``src/`` i poza tymi trzema folderami; te zostają przeglądowi.
     Pliku z ``PARSERS``, którego zmiana nie dotyka, nie sprawdza.
     """
 
@@ -216,7 +218,7 @@ def parsers_off_entry(root: Path, base: str) -> list[str]:
         parses = file.is_file() and _PARSER_CALL.search(file.read_text(encoding="utf-8")) is not None
         if parses and path not in PARSERS:
             found.append(f"{path}: {_NEW_PARSER}")
-        elif not parses and path in PARSERS:
+        elif not file.is_file() and path in PARSERS:
             found.append(f"{path}: {_GONE_PARSER}")
     return found
 
@@ -282,6 +284,8 @@ def test_zapadka_parsera_widzi_nowy_plik_oznaczony_git_add_n(tmp_path: Path) -> 
         ("tests/test_nowy.py", "import re\n\nCALL = re.compile(r'open\\(')\n"),
         ("tests/test_nowy.py", "from ast import parse\n\ntree = parse(source)\n"),
         ("tests/test_nowy.py", "import ast as syntax\n\ntree = syntax.parse(source)\n"),
+        ("tests/test_nowy.py", "import tokenize\n"),
+        ("tests/test_nowy.py", "from tokenize import generate_tokens\n\ntokens = generate_tokens(readline)\n"),
         ("tests/test_nowy.py", "from tests.fixtures.skladnia import calls\n\nfound = calls(tree)\n"),
         ("tests/test_nowy.py", "tree = myast.parse(source)\nvalue = node.ast.walk(x)\n"),
         ("src/pakiet/nowy.py", "tree = ast.parse(source)\n"),
@@ -292,6 +296,8 @@ def test_zapadka_parsera_widzi_nowy_plik_oznaczony_git_add_n(tmp_path: Path) -> 
         "regex",
         "from-ast-import",
         "alias-modulu",
+        "import-tokenize",
+        "from-tokenize-import",
         "pomocnik",
         "inna-nazwa-przed-kropka",
         "src",
@@ -310,11 +316,7 @@ def test_zapadka_parsera_przepuszcza_formy_spoza_granicy(tmp_path: Path, path: s
     ("removed", "written", "expected"),
     [
         (True, {}, [f"{_IN_ENTRY}: {_GONE_PARSER}"]),
-        (
-            False,
-            {_IN_ENTRY: "from tests.fixtures.skladnia import calls\n"},
-            [f"{_IN_ENTRY}: {_GONE_PARSER}"],
-        ),
+        (False, {_IN_ENTRY: "from tests.fixtures.skladnia import calls\n"}, []),
         (
             True,
             {"tests/test_granice.py": "import ast\n\ntree = ast.parse(source)\n"},
@@ -323,7 +325,7 @@ def test_zapadka_parsera_przepuszcza_formy_spoza_granicy(tmp_path: Path, path: s
     ],
     ids=["usuniety", "bez-wywolania", "nowa-nazwa"],
 )
-def test_zapadka_parsera_kaze_usunac_z_wpisu_plik_ktory_przestal_parsowac(
+def test_zapadka_parsera_kaze_usunac_z_wpisu_tylko_plik_ktory_zniknal(
     tmp_path: Path, removed: bool, written: dict[str, str], expected: list[str]
 ) -> None:
     base = _repo_with_parser(tmp_path)
