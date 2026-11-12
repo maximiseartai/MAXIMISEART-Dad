@@ -251,11 +251,13 @@ def _window_day(
     problem: bool = False,
     mails: int = 1,
     taken: bool = False,
+    added: bool = False,
     reminders: tuple[str, ...] = (),
 ) -> Json:
     """A synthetic day of a Wykonawca: ``orders`` orders from ``number``, the last ``without`` without a report, with
     ``problem`` the first one a problem without `Zostaw moją`, with ``taken`` the last one taken over from
-    `wykonawca.a` (`TAKEN_NOTE`, a Przeniesienie zlecenia, #1347), and the moments of its Przypomnienia o raporcie."""
+    `wykonawca.a` (`TAKEN_NOTE`, a Przeniesienie zlecenia, #1347), with ``added`` the last one a Zlecenie dopisane z
+    raportu without `ADRES` (`ADDED_NOTE`, #1354), and the moments of its Przypomnienia o raporcie."""
 
     numbers = [str(number + offset) for offset in range(orders)]
     states = ["entered"] * (orders - without) + ["without_report"] * without
@@ -276,7 +278,10 @@ def _window_day(
         ]
         if problem
         else [],
-        "notes": [{"number": numbers[-1], "text": TAKEN_NOTE}] if taken else [],
+        "notes": [
+            *([{"number": numbers[-1], "text": TAKEN_NOTE}] if taken else []),
+            *([{"number": numbers[-1], "text": ADDED_NOTE}] if added else []),
+        ],
         "orders_detail": [_order(found, state) for found, state in zip(numbers, states, strict=True)],
         "reminders": list(reminders),
     }
@@ -286,6 +291,8 @@ TAKEN_NOTE = "przejęte od wykonawca.a"
 """The calm note of a Przeniesienie zlecenia in the popover of `wykonawca.b` 03.11 (#1347)."""
 HANDED_NOTE = "przekazane wykonawca.b"
 """The other side of it in the popover of `wykonawca.a` 03.11: a row of its own, because the order is no longer there."""
+ADDED_NOTE = "dopisane z raportu, uzupełnij resztę"
+"""The calm note of a Zlecenie dopisane z raportu without `ADRES` in the popover of `wykonawca.c` 09.11 (#1354)."""
 
 
 def _window_view(clicked_at: str) -> Json:
@@ -300,6 +307,7 @@ def _window_view(clicked_at: str) -> Json:
         ("wykonawca.a", "2026-11-10"): {"orders": 3, "without": 3, "mails": 0},
         ("wykonawca.b", "2026-11-03"): {"orders": 3, "problem": True, "taken": True},
         ("wykonawca.b", "2026-11-05"): {"orders": 2, "without": 1, "reminders": REMINDERS},
+        ("wykonawca.c", "2026-11-09"): {"orders": 4, "added": True},
         **{("wykonawca.c", day): {"orders": 0} for day in MAIL_ONLY},
     }
     workers = []
@@ -448,11 +456,19 @@ def _range_map(run: Run, page: Page) -> None:
         expect(popover).to_contain_text("Przypomnienie 04.11 08:00")
         run.capture(page, "295-raporty-przypomnienie-i-przeniesienie", full_page=False)
         _close(page, popover)
+        popover = _popover(page, "wykonawca.c", "2026-11-09")
+        added = popover.get_by_role("listitem").filter(has_text=ADDED_NOTE)
+        expect(added).to_have_count(1)
+        expect(added).to_contain_text("Wpisane")
+        expect(added).not_to_contain_text("Problem")
+        run.capture(page, "296-raporty-dopisane", full_page=False)
+        _close(page, popover)
         run.check(
             True,
             "the popover of 05.11 has the times of its Przypomnienia in Dad's time, 03.11 none; the page says the "
             "footer file is missing; the popover of wykonawca.a 03.11 has both „przekazane wykonawca.b” and its "
-            "Przypomnienie",
+            "Przypomnienie; the popover of wykonawca.c 09.11 has „dopisane z raportu, uzupełnij resztę” under its last "
+            "order, entered and without a Problem badge (#1354)",
         )
 
         page.get_by_role("button", name="Wcześniejsze dni", exact=True).click()
