@@ -8,11 +8,13 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   zamknięty w Excelu, więc przy kopii konfliktu albo INTERMAX otwartym w Excelu skrzynka nie jest czytana;
 - Odczyt danych: Pliki zbiorcze okresów okna (``scan_period_folders``), bo okres z Plikiem zbiorczym jest zamknięty, potem
   maile ze Skrzynki raportów od pierwszego dnia otwartego, a dopiero potem INTERMAX (``register_file.read``) i w każdym obszarze
-  wklejania uporządkowane wiersze z dni od pierwszego dnia okna (``raw_orders.ordered_rows``, w Kopii wejścia przez
-  ``PasteArea.copy_rows``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
+  wklejania uporządkowane wiersze z dni od ``Window.start`` (tydzień przed pierwszym dniem otwartym, nie przed dniem
+  wdrożenia: ``raw_orders.ordered_rows``, w Kopii wejścia przez ``PasteArea.copy_rows``) oraz Dni uporządkowane
+  (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
-- Planowanie: rdzeń raportów;
+- Planowanie: rdzeń raportów, z pamięcią z pliku sprzed wersji 4 zamienioną przy odczytanych zleceniach
+  (``OlderOwnEntries.upgraded``), bo rdzeń przyjmuje tylko ``OwnEntries``;
 - Zapisywanie: komórki i Przeniesienia zleceń bez Kopii INTERMAX (``intermax_cells.write_cells``), a po udanym zapisie
   pamięć własnych wpisów
   z dniem wdrożenia, także przy zerze wpisanych komórek; kopia konfliktu OneDrive, która pojawiła się obok INTERMAX do
@@ -64,7 +66,9 @@ from .worker_report_inbox import InboxUnreachable, Mails, PasswordRejected, Work
 from .worker_reports import (
     Kept,
     MailRead,
+    OlderOwnEntries,
     OrderKey,
+    OrderedDay,
     OwnEntries,
     OwnEntry,
     OwnMove,
@@ -97,10 +101,10 @@ __all__ = [
 @dataclass(frozen=True)
 class SavedState:
     """Pamięć z ostatniego udanego zapisu: dzień wdrożenia (``None``: jeszcze żadnego udanego kliknięcia) i własne
-    wpisy, a do tego decyzje taty „Zostaw moją” (``kept``)."""
+    wpisy (``OlderOwnEntries`` z pliku sprzed wersji 4), a do tego decyzje taty „Zostaw moją” (``kept``)."""
 
     rollout: date | None
-    memory: OwnEntries
+    memory: OwnEntries | OlderOwnEntries
     kept: frozenset[Kept] = frozenset()
 
 
@@ -197,9 +201,12 @@ class EnteringFacts:
 
     ``rollout_before``: dzień wdrożenia z pamięci przed kliknięciem (``None``: pierwsze), ``rollout``: dzień wdrożenia
     tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne
-    wpisy numerów, które mają Wpis w tym kliknięciu, z ich dnia, pod każdym Wykonawcą, bo wpisy idą za wierszem, a
+    wpisy numerów, które mają Wpis w tym kliknięciu, z każdego dnia, pod każdym Wykonawcą, bo wpisy idą za wierszem, tak
+    jak je dostał rdzeń (z pliku sprzed wersji 4 po ``OlderOwnEntries.upgraded``), więc odtworzenie z Logów daje ten sam
+    wynik, a
     ``kept``: decyzje „Zostaw moją” zleceń z Wpisem z migawki kliknięcia, ``moves_before``: pamięć zleceń (``OwnMove``)
-    numerów, które mają Wpis w tym kliknięciu. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
+    numerów, które mają Wpis w tym kliknięciu, z każdego dnia, bo zlecenie mogło przejść na inny dzień, a pamięć zostaje
+    pod dniem, w którym zostawiło je Centrum. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
     ``moves``: Przeniesienia zleceń do zapisu, ``notes``: informacje dla taty.
     """
 
@@ -282,7 +289,9 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     clicked_at = inputs.now()
     today = clicked_at.date()
 
-    def read() -> tuple[Window, RegisterFile, tuple[RegisterOrder, ...], int, tuple[ReportMail, ...]]:
+    def read() -> tuple[
+        Window, RegisterFile, tuple[RegisterOrder, ...], frozenset[OrderedDay], int, tuple[ReportMail, ...]
+    ]:
         closed = _closed(inputs.periods_directory, Window.periods(today, saved.rollout))
         window = Window.of(today, saved.rollout, closed)
         outcome = parts.inbox.mails_since(window.first)
@@ -301,15 +310,22 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 assert_never(outcome)
         with _stops_unusable():
             register = register_file.read(register_path, files)
-        orders = _orders(register, window.first, copy=files.copy is not None)
-        return window, register, orders, outcome.skipped, outcome.mails
+        orders = _orders(register, window.start, copy=files.copy is not None)
+        return window, register, orders, _ordered_days(register, window.start), outcome.skipped, outcome.mails
 
-    window, register, orders, skipped, mails = phases.read(read)
+    window, register, orders, ordered_days, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
+        remembered = saved.memory.upgraded(orders) if isinstance(saved.memory, OlderOwnEntries) else saved.memory
         found = enter_reports(
             ReportInputs(
-                mails=mails, addresses=addresses, orders=orders, window=window, memory=saved.memory, kept=saved.kept
+                mails=mails,
+                addresses=addresses,
+                orders=orders,
+                window=window,
+                memory=remembered,
+                kept=saved.kept,
+                ordered_days=ordered_days,
             )
         )
         reported = {
@@ -318,17 +334,17 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             if isinstance(read, ReadReport)
             for entry in read.entries
         }
-        numbers = {(key.number, key.day) for key in reported}
+        numbers = {key.number for key in reported}
         before = tuple(
             sorted(
-                (entry for entry in saved.memory.entries if (entry.key.number, entry.key.day) in numbers),
+                (entry for entry in remembered.entries if entry.key.number in numbers),
                 key=lambda entry: (entry.key, entry.column.value),
             )
         )
         kept = tuple(sorted((decision for decision in saved.kept if decision.key in reported), key=_kept_order))
         moves_before = tuple(
             sorted(
-                (move for move in saved.memory.moves if (move.number, move.day) in numbers),
+                (move for move in remembered.moves if move.number in numbers),
                 key=lambda move: (move.day, move.number),
             )
         )
@@ -437,6 +453,17 @@ def _sheet(facts: EnteringFacts) -> str:
     if facts.changes:
         return facts.changes[0].order.sheet
     return facts.moves[0].order.sheet if facts.moves else ""
+
+
+def _ordered_days(register: RegisterFile, since: date) -> frozenset[OrderedDay]:
+    """Dni uporządkowane od ``since`` w każdym obszarze wklejania (``raw_orders.ordered_days``, ta sama reguła co karta
+    Uporządkowania INTERMAX), każdy z arkuszem: tylko do nich rdzeń przenosi zlecenie z tego arkusza (ADR 0029)."""
+
+    found: set[OrderedDay] = set()
+    for area in paste_areas(register):
+        with _stops(lambda: messages.unsupported_shape(register.path, area.sheet), UnsupportedShape):
+            found |= {OrderedDay(area.sheet, day) for day in raw_orders.ordered_days(area.rows_from_bottom(), area.columns, since)}
+    return frozenset(found)
 
 
 def _orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[RegisterOrder, ...]:

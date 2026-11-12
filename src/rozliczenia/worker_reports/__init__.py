@@ -19,7 +19,6 @@ from . import _cells, _corrections, _entries, _figures, _matching, _moves, _subj
 from ._model import (
     SUBJECT_WORD,
     ConflictingVerdicts,
-    ForeignOrder,
     HandedOver,
     Kept,
     Login,
@@ -27,18 +26,24 @@ from ._model import (
     MailRead,
     ManualDifference,
     MissingVerdict,
+    MoveBar,
+    MovedFrom,
+    MovedTo,
+    OlderOwnEntries,
     OrderDetail,
+    OrderedDay,
     OrderKey,
     OrderNumber,
     OrderState,
-    OtherDay,
     OwnEntries,
     OwnEntry,
     OwnMove,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
+    RefusedMove,
     RegisterOrder,
+    RepeatedNumber,
     RepeatedOrder,
     ReportEntry,
     ReportInputs,
@@ -48,6 +53,7 @@ from ._model import (
     ReportsOutcome,
     SenderAddress,
     SubjectFault,
+    SubjectLost,
     TakenOver,
     UnknownNumber,
     UnknownSender,
@@ -79,7 +85,6 @@ __all__ = [
     "FIRST_REMINDER",
     "SUBJECT_WORD",
     "ConflictingVerdicts",
-    "ForeignOrder",
     "HandedOver",
     "Kept",
     "Login",
@@ -87,11 +92,15 @@ __all__ = [
     "MailRead",
     "ManualDifference",
     "MissingVerdict",
+    "MoveBar",
+    "MovedFrom",
+    "MovedTo",
+    "OlderOwnEntries",
     "OrderDetail",
+    "OrderedDay",
     "OrderKey",
     "OrderNumber",
     "OrderState",
-    "OtherDay",
     "OwnEntries",
     "OwnEntry",
     "OwnMove",
@@ -99,9 +108,11 @@ __all__ = [
     "ReadReport",
     "ReadStranger",
     "ReadUnreadable",
+    "RefusedMove",
     "RegisterOrder",
     "Reminder",
     "ReminderInputs",
+    "RepeatedNumber",
     "RepeatedOrder",
     "ReportEntry",
     "ReportInputs",
@@ -112,6 +123,7 @@ __all__ = [
     "SenderAddress",
     "SentReminder",
     "SubjectFault",
+    "SubjectLost",
     "TakenOver",
     "UnknownNumber",
     "UnknownSender",
@@ -135,19 +147,25 @@ __all__ = [
 def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     """Operacja Wpisania raportów: ten sam wynik dla tych samych wejść, w dowolnej kolejności maili.
 
-    Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``) z dniem otwartym w ``inputs.window``; inne maile
-    rdzeń pomija po cichu. Temat ze słowem ``raport`` bez dnia zleceń daje ``UnreadableSubject``, gdy mail przyszedł od
-    Wykonawcy w dniu otwartym. Wpis zaczyna numer z co najmniej tyloma cyframi, ile ma najkrótszy numer zlecenia z dni
-    otwartych (``_entries.entries``). Wpis trafia do zlecenia nadawcy z dnia z tematu, a bez niego do jedynego zlecenia
-    tego numeru u innego Wykonawcy w tym dniu, które wtedy przechodzi do nadawcy (Przeniesienie zlecenia, ADR 0029,
-    ``_matching.match``, ``_moves.moved``) z informacją dla taty po obu stronach. Przy kilku Wpisach jednego zlecenia
-    decyduje najpóźniejszy mail, także od innego Wykonawcy; mail z tą samą chwilą przyjścia i tym samym Message-ID
-    rozstrzyga treść odczytu. Wpis zmienia pustą komórkę albo własny wpis z ``inputs.memory``, którego nikt od tamtej pory nie zmienił, a
-    inna wartość komórki jest ręczna i zostaje z ``ManualDifference`` (``_cells.reconcile``). Problem z błędu Wykonawcy
-    znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``).
+    Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``) z dniem otwartym w ``inputs.window``, a od
+    Wykonawcy także z dniem w okresie z Plikiem zbiorczym od dnia wdrożenia (``Window.closes``), który daje tylko
+    niezgodne Wpisy; inne maile rdzeń pomija po cichu. Temat ze słowem ``raport`` bez dnia zleceń daje
+    ``UnreadableSubject``, gdy mail przyszedł od Wykonawcy w dniu otwartym. Które numery są w INTERMAX i ile mają
+    zleceń, mówi każde odczytane zlecenie (``inputs.orders``, także z dni zamkniętych i po dziś), a okno mówi tylko, do
+    których wolno pisać; Wpis zaczyna więc numer z co najmniej tyloma cyframi, ile ma najkrótszy numer odczytanego
+    zlecenia (``_entries.entries``). Wpis trafia do zlecenia nadawcy z dnia z tematu, a bez niego do jedynego zlecenia tego
+    numeru u innego Wykonawcy w tym dniu albo do jedynego zlecenia tego numeru z innego dnia: Przeniesienie zlecenia do
+    nadawcy i na dzień z tematu albo, przy pomylonym temacie, do nadawcy w dniu zlecenia (ADR 0029,
+    ``_matching.Board``, ``_moves.moved``), z informacją dla taty. Przy kilku Wpisach jednego zlecenia decyduje
+    najpóźniejszy mail, także od innego Wykonawcy; mail z tą samą chwilą przyjścia i tym samym Message-ID rozstrzyga
+    treść odczytu. Wpis zmienia pustą komórkę albo własny wpis z ``inputs.memory``, którego nikt od tamtej pory nie
+    zmienił, a inna wartość komórki jest ręczna i zostaje z ``ManualDifference`` (``_cells.reconcile``); własny wpis
+    pamięć ma tylko przy jedynym zleceniu numeru (``_moves._carried``). Problem z błędu Wykonawcy znika, gdy Wykonawca
+    przyśle poprawiony mail (``_corrections.standing``).
     """
 
-    orders = tuple(order for order in inputs.orders if inputs.window.opens(order.key.day))
+    window = inputs.window
+    orders = tuple(inputs.orders)
     digits = min((len(order.key.number) for order in orders), default=1)
     read: list[MailRead] = []
     problems: list[ReportProblem] = []
@@ -158,30 +176,33 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
             case None:
                 continue
             case SubjectFault():
-                if worker is not None and inputs.window.opens(mail.arrived.date()):
+                if worker is not None and window.opens(mail.arrived.date()):
                     numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
                     read.append(ReadUnreadable(mail.id, mail.arrived, worker, found, numbers))
-            case date() if not inputs.window.opens(found):
-                continue
-            case date() if worker is None:
+            case date() if worker is None and window.opens(found):
                 read.append(ReadStranger(mail.id, mail.arrived, found))
                 problems.append(UnknownSender(mail.id, mail.sender, found))
-            case date():
+            case date() if worker is not None and (window.opens(found) or window.closes(found)):
                 entries = _entries.entries(mail.text, digits)
                 read.append(ReadReport(mail.id, mail.arrived, worker, found, entries))
+            case date():
+                continue
     mails = tuple(sorted(read, key=_mail_order))
     reports = [found for found in mails if isinstance(found, ReadReport)]
-    remembered = {(move.number, move.day): move for move in inputs.memory.moves}
-    matched = _matching.match(reports, orders, remembered)
-    moved = _moves.moved(matched.accepted, orders, inputs.memory, inputs.window)
+    board = _matching.Board(orders, inputs.memory, window, inputs.ordered_days)
+    matched = board.match(reports)
+    moved = _moves.moved(matched.accepted, orders, inputs.memory, window)
     after = {order.row: order for order in moved.orders}
     targets = {key: (after[order.row], entry) for key, (order, entry) in matched.targets.items()}
     changes, differences, memory = _cells.reconcile(targets, moved.orders, moved.memory, inputs.kept)
     unreadable = [found for found in mails if isinstance(found, ReadUnreadable)]
-    standing = _corrections.standing([*problems, *matched.problems], reports, unreadable, orders, remembered)
+    standing = _corrections.standing([*problems, *matched.problems], reports, unreadable, orders, board)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
-    figures = _figures.worker_days(moved.orders, reports, problems_found, changes, moved.rows)
-    return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, moved.notes)
+    shown = [report for report in reports if window.opens(report.day)]
+    opened = [order for order in moved.orders if window.opens(order.key.day)]
+    figures = _figures.worker_days(opened, shown, problems_found, changes, moved.rows, frozenset(targets))
+    notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
+    return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes)
 
 
 def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]]:

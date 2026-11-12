@@ -20,7 +20,7 @@ from typing import cast
 from xml.etree import ElementTree
 import zipfile
 
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 import pytest
 from openpyxl import load_workbook
@@ -35,7 +35,7 @@ from rozliczenia.report_cells import CellChange, OrderMove, OrderRow, ReportColu
 from rozliczenia.run_context import RunContext
 from rozliczenia.workbook_parts import UnsupportedShape
 
-from atrapy.intermax import FIRST, HEADERS, NUMBER, ORDER_SHEET, WORKER, Intermax, Order, parts
+from atrapy.intermax import DATE, FIRST, HEADERS, NUMBER, ORDER_SHEET, WORKER, Intermax, Order, parts
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace
@@ -576,13 +576,14 @@ def _ordered_rows(ordered: Sequence[tuple[str, int]]) -> list[tuple[str, int | N
     [
         pytest.param(_move(11, "anna.kowalska", date(2026, 10, 26)), CellProblem.MOVE_NOT_ORDERED, id="Surowe zlecenie"),
         pytest.param(_move(3, "anna.kowalska"), CellProblem.MOVE_NOT_ORDERED, id="pusty wiersz"),
-        pytest.param(_move(2, "anna.kowalska", date(2026, 11, 10)), CellProblem.OTHER_DAY, id="inny dzień"),
+        pytest.param(_move(2, "anna.kowalska", date(2026, 11, 10)), CellProblem.NO_DAY, id="dzień bez zleceń"),
     ],
 )
-def test_przeniesienie_spoza_uporzadkowanego_wiersza_albo_na_inny_dzien_jest_odrzucone_przed_zapisem(
+def test_przeniesienie_spoza_uporzadkowanego_wiersza_albo_na_dzien_bez_zlecen_jest_odrzucone_przed_zapisem(
     tmp_path: Path, move: OrderMove, problem: CellProblem
 ) -> None:
-    """Zapis przenosi tylko uporządkowane zlecenie w obrębie jego dnia; Przeniesienie na inny dzień zostaje dla #1350."""
+    """Zapis przenosi tylko uporządkowane zlecenie i tylko pod uporządkowane zlecenia dnia docelowego w tym arkuszu
+    (#1350): dzień bez nich zostawia INTERMAX nietknięty."""
 
     intermax = Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "anna.kowalska", 40000002)))
     path = _register(tmp_path, intermax)
@@ -613,3 +614,322 @@ def test_inny_wykonawca_w_odczycie_kontrolnym_przeniesienia_nie_podmienia_interm
         outcome = _write(path, [], moves=[_move(2, "anna.kowalska")], disk=disk)
 
     assert outcome == Refusal.WRITE_MISMATCH
+
+
+EIGHTH = date(2026, 11, 8)
+
+
+def _at(day: date, hour: int, worker: str, number: int) -> Order:
+    return Order(datetime(day.year, day.month, day.day, hour, 30), worker, number, cells=((NUMBER, number),))
+
+
+def _dates(path: Path, last: int) -> dict[int, tuple[object, str]]:
+    """``NUMER ZL.`` → (``DATA GODZ. POCZ.``, format liczby) w wierszach od 2 do ``last``."""
+
+    sheet = load_workbook(path)[ORDER_SHEET]
+    found: dict[int, tuple[object, str]] = {}
+    for number in range(2, last + 1):
+        order, cell = sheet.cell(number, NUMBER).value, sheet.cell(number, DATE)
+        if isinstance(order, int):
+            found[order] = (cell.value, cell.number_format)
+    return found
+
+
+TWO_DAYS = (
+    _at(EIGHTH, 9, "anna.kowalska", 40000001),
+    _at(EIGHTH, 10, "zofia.nowa", 40000005),
+    _at(DAY, 9, "anna.kowalska", 40000003),
+    _at(DAY, 11, "jan.testowy", 40000004),
+)
+"""8.11: Anna, Zofia; 9.11: Anna, Jan; każdy segment z pustym wierszem pod sobą, żółty wiersz pod ostatnim."""
+
+
+def test_przeniesienie_na_inny_dzien_zmienia_dzien_z_ta_sama_godzina_i_staje_w_nowym_segmencie_dnia(tmp_path: Path) -> None:
+    """ADR 0029, #1350: zlecenie Jana z 9.11 przeniesione na 8.11 dostaje w ``DATA GODZ. POCZ.`` 8.11 z tą samą godziną
+    i formatem daty, a wiersz staje w nowym segmencie Jana na miejscu alfabetycznym między Anną a Zofią 8.11, z
+    Hiperłączem. Segment Jana w 9.11 znika z pustym wierszem nad sobą, więc żółty wiersz i wklejenie zostają na swoich
+    numerach, a Uporządkowanie INTERMAX stawia potem dzień tak jak bez Przeniesienia."""
+
+    intermax = Intermax(ordered=TWO_DAYS)
+    path = _register(tmp_path, intermax)
+    before = _dates(path, 9)
+    pasted = _sheet_rows(path, 20)[9:]
+
+    outcome = _write(path, [_change(8, ReportColumn.SUCCESSFUL, "tak")], moves=[_move(8, "jan.testowy", EIGHTH)])
+    still_pasted = _sheet_rows(path, 20)[9:]
+    ordered = order_register(OrderingInputs(path, tmp_path / "Kopie", now=lambda: NOW), RunContext())
+
+    assert outcome == CellsWritten(1, 1)
+    assert _sheet_rows(path, 10) == [
+        (40000001, "anna.kowalska", _link(40000001)),
+        "pusty",
+        (40000004, "jan.testowy", _link(40000004)),
+        "pusty",
+        (40000005, "zofia.nowa", _link(40000005)),
+        "pusty",
+        (40000003, "anna.kowalska", _link(40000003)),
+        "pusty",
+        "żółty",
+    ]
+    after = _dates(path, 10)
+    assert after[40000004] == (datetime(2026, 11, 8, 11, 30), before[40000004][1])
+    assert {number: value for number, value in after.items() if number != 40000004} == {
+        number: value for number, value in before.items() if number != 40000004
+    }
+    sheet = load_workbook(path)[ORDER_SHEET]
+    assert sheet.cell(4, SUCCESSFUL).value == "tak"
+    assert sheet.cell(4, WORKER).font.b == sheet.cell(2, WORKER).font.b
+    assert still_pasted == pasted
+    assert ordered.order_count == len(intermax.raw)
+
+
+def test_przeniesienie_na_pozniejszy_dzien_staje_pod_ostatnim_zleceniem_segmentu_nadawcy(tmp_path: Path) -> None:
+    """Zlecenie Anny z 8.11 przeniesione na 9.11 staje pod jej zleceniem 9.11; segment Anny 8.11 znika z pustym
+    wierszem pod sobą."""
+
+    path = _register(tmp_path, Intermax(ordered=TWO_DAYS))
+
+    _write(path, [], moves=[_move(2, "anna.kowalska", DAY)])
+
+    assert _sheet_rows(path, 10) == [
+        (40000005, "zofia.nowa", _link(40000005)),
+        "pusty",
+        (40000003, "anna.kowalska", _link(40000003)),
+        (40000001, "anna.kowalska", _link(40000001)),
+        "pusty",
+        (40000004, "jan.testowy", _link(40000004)),
+        "pusty",
+        "żółty",
+        "pusty",
+    ]
+    assert _dates(path, 10)[40000001][0] == datetime(2026, 11, 9, 9, 30)
+
+
+def test_przeniesienia_na_inny_dzien_i_w_tym_samym_dniu_w_jednym_kliknieciu_tworza_jeden_ciagly_segment(
+    tmp_path: Path,
+) -> None:
+    """Jan przejmuje zlecenie Anny z 8.11 i dostaje swoje zlecenie z 9.11 na 8.11 w tym samym kliknięciu: oba stoją w
+    jednym segmencie Jana 8.11, bez pustego wiersza między nimi."""
+
+    path = _register(tmp_path, Intermax(ordered=TWO_DAYS))
+
+    outcome = _write(path, [], moves=[_move(2, "jan.testowy", EIGHTH), _move(8, "jan.testowy", EIGHTH)])
+
+    assert outcome == CellsWritten(0, 2)
+    assert _sheet_rows(path, 9) == [
+        (40000001, "jan.testowy", _link(40000001)),
+        (40000004, "jan.testowy", _link(40000004)),
+        "pusty",
+        (40000005, "zofia.nowa", _link(40000005)),
+        "pusty",
+        (40000003, "anna.kowalska", _link(40000003)),
+        "pusty",
+        "żółty",
+    ]
+
+
+def _next_day(data: bytes) -> bytes:
+    return re.sub(rb'(<c r="C4"[^>]*><v>)(\d+)', lambda found: found.group(1) + b"%d" % (int(found.group(2)) + 1), data)
+
+
+def _other_style(data: bytes) -> bytes:
+    return re.sub(rb'<c r="C4" s="(\d+)"', lambda found: b'<c r="C4" s="%d"' % (int(found.group(1)) + 1), data)
+
+
+def _text_kind(data: bytes) -> bytes:
+    return re.sub(rb'<c r="C4"( s="\d+")?', lambda found: found.group(0) + b' t="str"', data)
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        pytest.param(_next_day, id="inny-dzien"),
+        pytest.param(_other_style, id="inny-styl"),
+        pytest.param(_text_kind, id="inny-rodzaj"),
+    ],
+)
+def test_inna_data_w_odczycie_kontrolnym_przeniesienia_na_inny_dzien_nie_podmienia_intermax(
+    tmp_path: Path, spoil: Callable[[bytes], bytes]
+) -> None:
+    """Kontrola zapisu sprawdza nową datę przeniesionego zlecenia: zapis z innym dniem niż w planie albo z datą w innym
+    stylu (formacie) czy rodzaju komórki (tekst zamiast liczby) to odmowa."""
+
+    path = _register(tmp_path, Intermax(ordered=TWO_DAYS, raw=()))
+
+    def spoiled(content: bytes) -> bytes:
+        return _zip_changed(content, lambda name, data: spoil(data) if name == SHEET_PART else data)
+
+    disk = FaultyDisk(read=lambda temporary: spoiled(LOCAL_DISK.read(temporary)))
+
+    with _untouched(path):
+        outcome = _write(path, [], moves=[_move(8, "jan.testowy", EIGHTH)], disk=disk)
+
+    assert outcome == Refusal.WRITE_MISMATCH
+
+
+def test_przeniesienie_na_inny_dzien_z_pierwszego_wiersza_segmentu_do_ktorego_idzie_inne_przeniesienie_zostawia_segmenty_ciagle(
+    tmp_path: Path,
+) -> None:
+    """Przegląd #1358 r1 dla dwóch dni: Jan przejmuje zlecenie Anny z 8.11, a pierwsze zlecenie segmentu Jana idzie do
+    Anny na 9.11 w tym samym kliknięciu. Zlecenie Anny staje pod ostatnim zleceniem Jana 8.11, a zlecenie Jana pod
+    zleceniem Anny 9.11: każdy Wykonawca ma w dniu jeden ciągły segment."""
+
+    intermax = Intermax(
+        ordered=(
+            _at(EIGHTH, 9, "anna.kowalska", 40000001),
+            _at(EIGHTH, 10, "jan.testowy", 40000002),
+            _at(EIGHTH, 11, "jan.testowy", 40000003),
+            _at(DAY, 9, "anna.kowalska", 40000004),
+        ),
+        raw=(),
+    )
+    path = _register(tmp_path, intermax)
+
+    outcome = _write(path, [], moves=[_move(2, "jan.testowy", EIGHTH), _move(4, "anna.kowalska", DAY)])
+
+    assert outcome == CellsWritten(0, 2)
+    assert _sheet_rows(path, 8) == [
+        (40000003, "jan.testowy", _link(40000003)),
+        (40000001, "jan.testowy", _link(40000001)),
+        "pusty",
+        (40000004, "anna.kowalska", _link(40000004)),
+        (40000002, "anna.kowalska", _link(40000002)),
+        "pusty",
+        "żółty",
+    ]
+    assert _dates(path, 8)[40000002][0] == datetime(2026, 11, 9, 10, 30)
+
+
+def test_zamiana_jedynych_zlecen_dwoch_dni_w_jednym_kliknieciu_staje_na_miejscu_dnia(tmp_path: Path) -> None:
+    """Przegląd #1367 r1 (Ważne 1): jedyne zlecenie 8.11 (Anna) idzie na 9.11, a zlecenie Jana z 9.11 na 8.11 w tym
+    samym kliknięciu. Rdzeń widzi oba dni jako Dni uporządkowane sprzed kliknięcia, więc zapis też: zlecenie Jana staje
+    tam, gdzie stał dzień 8.11, a zlecenie Anny w nowym segmencie Anny 9.11 przed Zofią. Zapis nie odrzuca kliknięcia."""
+
+    intermax = Intermax(
+        ordered=(
+            _at(EIGHTH, 9, "anna.kowalska", 40000001),
+            _at(DAY, 9, "jan.testowy", 40000004),
+            _at(DAY, 10, "zofia.nowa", 40000005),
+        ),
+        raw=(),
+    )
+    path = _register(tmp_path, intermax)
+
+    outcome = _write(path, [], moves=[_move(2, "anna.kowalska", DAY), _move(4, "jan.testowy", EIGHTH)])
+
+    assert outcome == CellsWritten(0, 2)
+    assert _sheet_rows(path, 8) == [
+        (40000004, "jan.testowy", _link(40000004)),
+        "pusty",
+        (40000001, "anna.kowalska", _link(40000001)),
+        "pusty",
+        (40000005, "zofia.nowa", _link(40000005)),
+        "pusty",
+        "żółty",
+    ]
+    dates = _dates(path, 8)
+    assert (dates[40000004][0], dates[40000001][0]) == (datetime(2026, 11, 8, 9, 30), datetime(2026, 11, 9, 9, 30))
+
+
+SEVENTH = date(2026, 11, 7)
+_THREE_DAYS = (SEVENTH, EIGHTH, DAY)
+
+_Planned = tuple[tuple[tuple[date, str, int], ...], dict[int, tuple[str, date]]]
+"""Uporządkowane zlecenia (dzień, Wykonawca, numer) w kolejności arkusza i Przeniesienia: numer → (Wykonawca, dzień)."""
+
+
+@st.composite
+def _days_with_moves(draw: st.DrawFn) -> _Planned:
+    """Dwa albo trzy uporządkowane dni (w każdym segmenty Wykonawców po kolei, 1–2 zlecenia) i Przeniesienia części
+    zleceń na inny dzień albo do innego Wykonawcy w tym samym kliknięciu."""
+
+    days = draw(st.sampled_from([_THREE_DAYS[:2], _THREE_DAYS[1:], _THREE_DAYS]))
+    ordered: list[tuple[date, str, int]] = []
+    for index, day in enumerate(days):
+        workers = sorted(draw(st.sets(st.sampled_from(_WORKERS), min_size=1, max_size=2)))
+        for segment, worker in enumerate(workers):
+            ordered += [(day, worker, 40000000 + 100 * index + 10 * segment + order) for order in range(draw(st.integers(1, 2)))]
+    moved = draw(st.sets(st.sampled_from([number for _, _, number in ordered]), min_size=1, max_size=4))
+    targets: dict[int, tuple[str, date]] = {}
+    for number in sorted(moved):
+        day, worker = next((day, worker) for day, worker, found in ordered if found == number)
+        places = [(other, when) for when in days for other in _WORKERS if (other, when) != (worker, day)]
+        targets[number] = draw(st.sampled_from(places))
+    return tuple(ordered), targets
+
+
+def _expected_rows(ordered: Sequence[tuple[date, str, int]], targets: dict[int, tuple[str, date]], rows_of: dict[int, int]) -> list[object]:
+    """Wiersze arkusza po kliknięciu jak w ``_sheet_rows``: każdy dzień w swoim miejscu, w nim segmenty Wykonawców
+    alfabetycznie z pustym wierszem między nimi, w segmencie najpierw zlecenia, które zostały, w kolejności arkusza, a
+    pod nimi przeniesione w kolejności wierszy sprzed zapisu. Puste wiersze między dniami i nad żółtym wierszem zostają
+    jak w atrapie (pusty wiersz, gdy ostatni Wykonawca dnia różni się od pierwszego następnego), a dzień bez zleceń
+    zostawia tylko je."""
+
+    days = sorted({day for day, _, _ in ordered})
+    rows: list[object] = []
+    for index, day in enumerate(days):
+        stay = [(worker, number) for when, worker, number in ordered if when == day and number not in targets]
+        come = sorted(((worker, number) for number, (worker, when) in targets.items() if when == day), key=lambda item: rows_of[item[1]])
+        previous: str | None = None
+        for worker in sorted({worker for worker, _ in stay + come}):
+            if previous is not None:
+                rows.append("pusty")
+            rows += [(number, worker, _link(number)) for found, number in stay + come if found == worker]
+            previous = worker
+        last = [worker for when, worker, _ in ordered if when == day][-1]
+        following = [worker for when, worker, _ in ordered if index + 1 < len(days) and when == days[index + 1]]
+        rows += ["pusty"] * (not following or following[0] != last)
+    return [*rows, "żółty"]
+
+
+@settings(max_examples=60, deadline=None, derandomize=True, database=None)
+@given(_days_with_moves())
+@example(
+    (
+        ((EIGHTH, "anna.kowalska", 40000001), (DAY, "jan.testowy", 40000101), (DAY, "zofia.nowa", 40000111)),
+        {40000001: ("anna.kowalska", DAY), 40000101: ("jan.testowy", EIGHTH)},
+    )
+).via("przegląd #1367 r1: zamiana jedynych zleceń dwóch dni")
+@example(
+    (
+        ((SEVENTH, "anna.kowalska", 40000001), (EIGHTH, "ewa.probna", 40000101), (DAY, "jan.testowy", 40000201)),
+        {
+            40000001: ("anna.kowalska", EIGHTH),
+            40000101: ("ewa.probna", DAY),
+            40000201: ("jan.testowy", SEVENTH),
+        },
+    )
+).via("łańcuch przez trzy dni, każdy dzień opróżniony i zapełniony")
+@example(
+    (
+        ((SEVENTH, "anna.kowalska", 40000001), (EIGHTH, "ewa.probna", 40000101)),
+        {40000101: ("ewa.probna", SEVENTH)},
+    )
+).via("dzień opróżniony do zera zleceń")
+def test_dowolne_przeniesienia_miedzy_dniami_jednego_klikniecia_zapis_przyjmuje_i_zostawia_uklad_uporzadkowania(
+    planned: _Planned,
+) -> None:
+    """Własność #1350 (przegląd #1367 r1): rdzeń przenosi tylko na Dzień uporządkowany arkusza zlecenia sprzed
+    kliknięcia, a każdy taki zbiór Przeniesień (wyjścia i wejścia dnia, łańcuchy przez dni, dzień opróżniony do zera
+    zleceń) zapis przyjmuje w całości, więc przyjmuje każdy plan rdzenia. Po zapisie arkusz ma dokładnie układ
+    ``_expected_rows``: dni na swoich miejscach, w każdym dniu każdy Wykonawca ma jeden segment, segmenty idą
+    alfabetycznie z jednym pustym wierszem między nimi, puste wiersze między dniami i żółty wiersz zostają, a
+    przeniesione zlecenie ma dzień docelowy z tą samą godziną i Hiperłącze."""
+
+    ordered, targets = planned
+    rows_of = {number: row for row, (_, number) in enumerate(_ordered_rows([(worker, number) for _, worker, number in ordered]), start=2) if number}
+    moves = [_move(rows_of[number], worker, day) for number, (worker, day) in targets.items()]
+    last = len(ordered) * 3 + 8
+    with tempfile.TemporaryDirectory() as folder:
+        path = _register(Path(folder), Intermax(ordered=tuple(_at(day, 9 + number % 10, worker, number) for day, worker, number in ordered), raw=()))
+        outcome = _write(path, [], moves=moves)
+        shown = _sheet_rows(path, last)
+        dates = _dates(path, last)
+
+    assert outcome == CellsWritten(0, len(moves))
+    expected = _expected_rows(ordered, targets, rows_of)
+    assert shown[: len(expected)] == expected
+    assert set(shown[len(expected) :]) <= {"pusty"}
+    for day, _, number in ordered:
+        moved = targets.get(number, (None, day))[1]
+        assert dates[number][0] == datetime(moved.year, moved.month, moved.day, 9 + number % 10, 30)

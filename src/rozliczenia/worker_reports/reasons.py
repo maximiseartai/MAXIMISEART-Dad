@@ -10,16 +10,20 @@ from typing import assert_never
 
 from . import (
     ConflictingVerdicts,
-    ForeignOrder,
     HandedOver,
     ManualDifference,
     MissingVerdict,
-    OtherDay,
+    MoveBar,
+    MovedFrom,
+    MovedTo,
+    RefusedMove,
+    RepeatedNumber,
     RepeatedOrder,
     ReportEntry,
     ReportNote,
     ReportProblem,
     SubjectFault,
+    SubjectLost,
     TakenOver,
     UnknownNumber,
     UnknownSender,
@@ -53,21 +57,21 @@ def reason(problem: ReportProblem) -> str:
             )
         case UnknownNumber(worker=worker, day=day, number=number):
             return f"Numer {number} nie jest zleceniem {worker} z {_day(day)}."
-        case ForeignOrder(worker=worker, day=day, number=number, owner=owner):
-            return (
-                f"Zlecenie {number} z {_day(day)} jest zleceniem {owner}, a Wpis przysłał {worker}, więc Centrum go "
-                "nie wpisało."
-            )
-        case OtherDay(worker=worker, day=day, number=number, order_days=order_days):
-            days = ", ".join(_day(order_day) for order_day in order_days)
-            return (
-                f"Zlecenie {number} od {worker} jest z {days}, a temat Raportu wykonawcy ma {_day(day)}, więc Centrum "
-                "go nie wpisało."
-            )
         case RepeatedOrder(worker=worker, day=day, number=number):
             return (
                 f"Zlecenie {number} jest dwa razy w dniu {_day(day)} u {worker}, więc Centrum niczego do niego nie "
                 "wpisało."
+            )
+        case RepeatedNumber(worker=worker, day=day, number=number, places=places):
+            where = ", ".join(f"u {owner} z {_day(order_day)}" for order_day, owner in places)
+            return (
+                f"Zlecenie {number} jest w INTERMAX więcej niż raz: {where}. Centrum nie wie, którego z nich dotyczy "
+                f"Wpis od {worker} z {_day(day)}, więc nie zmieniło żadnego z nich przy tym kliknięciu."
+            )
+        case RefusedMove(worker=worker, day=day, number=number, order_day=order_day, target=target, bar=bar):
+            return (
+                f"Wpis zlecenia {number} od {worker} ma w temacie {_day(day)}, a INTERMAX ma to zlecenie w "
+                f"{_day(order_day)}. Centrum go nie przeniosło i nie wpisało, bo {_bar(bar, target, order_day)}."
             )
         case ManualDifference(key=key, column=column, manual=manual, reported=reported):
             return (
@@ -79,19 +83,48 @@ def reason(problem: ReportProblem) -> str:
 
 
 def note(found: ReportNote) -> str:
-    """Informacja dla taty przy dniu Wykonawcy, krótko, bo stoi przy numerze zlecenia: tylko drugi Wykonawca."""
+    """Informacja dla taty przy dniu Wykonawcy, krótko, bo stoi przy numerze zlecenia: tylko drugi Wykonawca albo drugi
+    dzień."""
 
     match found:
         case TakenOver(previous=previous):
             return f"przejęte od {previous}"
         case HandedOver(successor=successor):
             return f"przekazane {successor}"
+        case MovedFrom(origin_day=origin_day):
+            return f"przeniesione z {_short(origin_day)}"
+        case MovedTo(target_day=target_day):
+            return f"przeniesione na {_short(target_day)}"
+        case SubjectLost(order_day=order_day):
+            return f"pomylony temat: wpisane do zlecenia z {_short(order_day)}"
         case _:
             assert_never(found)
 
 
 def _day(day: date) -> str:
     return f"{day:%d.%m.%Y}"
+
+
+def _short(day: date) -> str:
+    """Dzień bez roku i bez zera na początku, jak „4.11” w okienku dnia."""
+
+    return f"{day.day}.{day.month:02d}"
+
+
+def _bar(bar: MoveBar, target: date, order_day: date) -> str:
+    """Powód odmowy Przeniesienia: dzień, na który Wpis przeniósłby zlecenie (``target``), albo dzień zlecenia."""
+
+    match bar:
+        case MoveBar.NOT_ORDERED:
+            return f"dzień {_day(target)} nie jest jeszcze uporządkowany w INTERMAX"
+        case MoveBar.OTHER_SHEET:
+            return f"dzień {_day(target)} jest uporządkowany w innym arkuszu zleceń"
+        case MoveBar.CLOSED_TARGET:
+            return f"okres z dniem {_day(target)} ma już Plik zbiorczy"
+        case MoveBar.CLOSED_SOURCE:
+            return f"okres z dniem {_day(order_day)} ma już Plik zbiorczy"
+        case MoveBar.AFTER_TODAY:
+            return f"dzień {_day(order_day)} jeszcze nie nadszedł"
 
 
 def _subject(fault: SubjectFault) -> str:

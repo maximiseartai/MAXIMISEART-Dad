@@ -1,0 +1,32 @@
+{
+  "schema_version": 3,
+  "rollout": "2026-11-08",
+  "own": [
+    {
+      "number": "40000001",
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "column": "CZYNNOŚCI ZREALIZOWANE",
+      "value": "wymiana"
+    },
+    {
+      "number": "40000001",
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "column": "SKUTECZNE",
+      "value": "tak"
+    }
+  ],
+  "moves": [
+    {
+      "number": "40000001",
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "origin_day": "2026-11-09",
+      "origin_worker": "jan.testowy",
+      "origin_name": "jan.testowy",
+      "since": "2026-11-09T17:00:00+01:00",
+      "overridden": false
+    }
+  ]
+}
