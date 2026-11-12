@@ -135,8 +135,8 @@ od 2021 roku: około 42 tys. wierszy, cztery arkusze, około 6,5 MB, w OneDrive.
 - Własne pliki narzędzia z ADR 0004 obejmują Kopie INTERMAX. Nie są źródłem
   Statusu okresu, wyniku ani metryk; Centrum je wylicza z folderu Kopii i
   przywraca tylko Kopię, którą samo wymieniło.
-- Reguła w `CODING_STANDARDS.md` o modułach, które zapisują skoroszyt, i jej test
-  dostają moduł zapisu INTERMAX. Odczyt idzie przez to samo jedyne miejsce
+- Strażnik jednego zapisu skoroszytu (`tests/test_jeden_zapis_skoroszytu.py`)
+  dostaje moduł zapisu INTERMAX. Odczyt idzie przez to samo jedyne miejsce
   odczytu bajtów skoroszytu co w innych procesach.
 - Nienadpisywanie przestaje obejmować Rejestr zleceń.
 

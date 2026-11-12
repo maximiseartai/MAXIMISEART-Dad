@@ -5,7 +5,7 @@ pętli dostawał odmowę, ``&>`` było tłem, a wzorzec z zagnieżdżonym kwanty
 (#446); ``$(`` w apostrofach, ``sh -c '…'`` i zamiana cudzysłowów zmieniały werdykt (#496). Autor sprawdzał się na
 przykładach z tym samym założeniem co kod, więc fałszywych odmów nie widział.
 
-Tu oczekiwanie bierze się z docstringów hooków i tabeli reguł w ``AGENTS.md``: czekanie na CI albo pętla na
+Tu oczekiwanie bierze się z docstringów hooków: czekanie na CI albo pętla na
 ``pgrep -f`` na pierwszym planie dostaje odmowę, a reszta przechodzi. To, czym napis jest dla powłoki, rozstrzyga
 wyrocznia niezależna od hooka: ``shlex`` (tekst jest jednym argumentem, cudzysłów nie zmienia słów polecenia) i
 ``bash -n`` (wygenerowane polecenie jest poprawne składniowo). Przykłady są deterministyczne (``derandomize=True``,

@@ -339,7 +339,7 @@ def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(
     """Atrapa, do której skrypty skilla Centrum dochodzą importem, trafia w jego ``pilnuje:``, bo wybór importów nie
     liczy, a workflow Windows nie biegnie w pełnym CI ``main``: zmiana kopii w ``atrapy/pliki_taty.py`` nie uruchamiała
     ani podstawy Centrum, ani Windows (przegląd #1177 r3, wcześniej #1121 i #1125). Pakiet bez kodu (``__init__.py``)
-    się nie liczy. Atrapy innych skilli łapie pełne CI ``main`` (``docs/agents/skille.md``). Ścieżki skilli stoją
+    się nie liczy. Atrapy innych skilli łapie pełne CI ``main``. Ścieżki skilli stoją
     literałem, żeby graf wybierał test przy zmianie ich skryptów i ``SKILL.md``."""
 
     repository = wplyw_zmiany.Repository.scan(ROOT)

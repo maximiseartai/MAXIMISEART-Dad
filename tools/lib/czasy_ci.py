@@ -40,6 +40,7 @@ zamiast padać. Obserwacje zadania z kilku prób runu liczą się z ostatniej.
 
 Liczba testów pliku (``Czasy.testy``) to najmniejsza z runów suma jego testów w zadaniach runu: plan CI nie dzieli pliku
 na więcej udziałów, niż ma testów, bo udział bez testu nie zgłasza wyniku i czerwieni ``Required CI status``.
+Plik, któremu PR usunął testy poniżej liczby jego udziałów, wciąż może dostać udział bez testu.
 
 Koszt pliku testów (``KosztyPlikow``) to jego zmierzona praca, a pliku bez pomiaru mediana zmierzonych plików toru:
 tak ważą pliki plan CI, ``tools/szybko.py`` i test scalenia ``tools/scal_pr.py``. Dwa ostatnie liczą pracę pytestu

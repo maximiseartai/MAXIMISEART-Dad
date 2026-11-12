@@ -132,7 +132,7 @@ ręcznie. Ochrona ma trzy warstwy:
   tag z gałęzi agenta i pilnują jej testy w `tests/test_aktualizacja_narzedzia.py`.
 - **Brama pre-push odrzuca push agenta z `refs/tags/v*`.** Tag Wydania i
   GitHub Release tworzy tylko narzędzie Wydań, które ustawia
-  `MAXIMISEART_WYDANIE=1`. Reguła i jej strażnik są w tabeli `AGENTS.md`.
+  `MAXIMISEART_WYDANIE=1`. Reguła stoi w sekcji PR `AGENTS.md`.
   Granica strażnika: brama widzi tylko `git push`; `--no-verify`,
   `gh release create`, `gh api` i stronę GitHuba łapie tylko przegląd.
 - **Tagi Wydań się nie zmieniają.** Ruleset „Wydania v* bez przesuwania i
