@@ -1,4 +1,4 @@
-"""Kod decyduje na faktach, nie na kodzie Komunikatu (``CODING_STANDARDS.md``, Error Ownership).
+"""Kod decyduje na faktach, nie na kodzie Komunikatu.
 
 Plan procesu oddaje typowane fakty, a jedno miejsce na proces tłumaczy je na ostrzeżenia, Zatrzymania, wynik i
 Decyzję taty; Centrum rozliczeń też bierze fakt (``diagnosis.CheckResult.fixed_by_update``) albo gotowy wynik

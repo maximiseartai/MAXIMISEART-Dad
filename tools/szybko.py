@@ -22,7 +22,7 @@ bez sieci, każdy plik waży 0 i biegnie, a szybko mówi to linią ``SZYBKO | be
 czyta zmieniony plik konfiguracji, ma najwyżej 2, więc biegnie w budżecie przed testami bez drogi w grafie. Resztę liczy pełny pytest w CI, a szybko wypisuje ją przed wynikiem
 jako „zostawione CI”, więc ``SZYBKO OK`` znaczy, że przeszły uruchomione testy.
 
-Testy ``STRUCTURE`` modułu wpływu zmiany (reguły z tabel w ``AGENTS.md``, ``CODING_STANDARDS.md`` i ``docs/agents/`` oraz testy całego
+Testy ``STRUCTURE`` modułu wpływu zmiany (strażnicy reguł z ``RULE_GUARDS`` w ``tests/test_szybko.py`` oraz testy całego
 repozytorium) biegną przy każdej zmianie, a gdy ``--baza`` poszła dalej niż HEAD, także na mergu z nią (to drzewo
 sprawdza CI PR-u; numer ADR zajęty równolegle pada dopiero tam). Na mergu biegną tylko one, bez mypy, testów
 dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami. Zapadki (``ZAPADKI``) biegną przy każdej zmianie

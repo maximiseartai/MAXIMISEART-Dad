@@ -406,7 +406,14 @@ def test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz(tmp_path
                 stale.append(f"{script.relative_to(ROOT).as_posix()}: {mutation.name} → {found}")
 
     assert scripts
-    assert stale == []
+    assert stale == [], "\n".join(
+        [
+            *stale,
+            "Kotwica mutacji skryptu check_*_mutations.py skilla stoi w swoim pliku dokładnie raz: popraw tabelę mutacji "
+            "w tym samym PR, który zmienił kod pod kotwicą, bo skrypt mutacji na PR zwykle nie biegnie i zgubioną kotwicę "
+            "zobaczy dopiero noc.",
+        ]
+    )
 
 
 def test_krok_skilla_ktorego_skrypty_importuja_playwright_potrzebuje_przegladarki_a_skrypt_ma_tyle_czesci_ile_mutacji(
@@ -554,12 +561,21 @@ def test_kazde_przyjete_ryzyko_i_znane_ustalenie_eksploratora_ma_mutacje_tuz_za_
     """Przyjęte ryzyko albo znane ustalenie, które wybacza szerzej niż jego historia, przepuszcza zepsuty kod jako znany
     (#867 runda 3, #916 rundy 1 i 2). Każdy wpis ``ACCEPTED_RISKS`` i ``KNOWN_FINDINGS`` eksploratora skilla
     ``verify-*`` ma jawny kształt i w ``BOUNDARIES`` skryptu mutacji skilla mutację tuż za granicą każdej jego części
-    (``tests/fixtures/granice_ksztaltow.py``); nazwy wpisów i części pochodzą z kodu eksploratora."""
+    (``tests/fixtures/granice_ksztaltow.py``); nazwy wpisów i części pochodzą z kodu eksploratora.
+    Część, której wartość to każdy element jej wyliczenia, niczego nie zawęża i mutacji nie ma.
+
+    Granica: że mutacja daje nowe naruszenie, sprawdza skrypt mutacji w CI ``main`` i nocą, a czy kształt ma każdą część
+    historii wpisu i czy mutacja wychodzi poza tę jedną część (kontrola bez niej daje ``NIEWYKRYTA``), tylko przegląd."""
 
     gaps = _shape_gaps(ROOT)
 
     assert len(gaps) >= 5, gaps
-    assert {explorer: found for explorer, found in gaps.items() if found} == {}
+    assert {explorer: found for explorer, found in gaps.items() if found} == {}, (
+        "Każdy wpis ACCEPTED_RISKS i KNOWN_FINDINGS eksploratora to Excuse z tools/lib/eksplorator.py z jawnym kształtem "
+        "(shape: dataklasa, której każde pole to część historii wpisu), a w BOUNDARIES skryptu mutacji skilla pod nazwą "
+        "wpisu i każdej części, która coś zawęża, ma mutację tuż za granicą tej części: tę samą szkodę z tą jedną częścią "
+        "inną, w MUTATIONS, z poleceniem eksploratora i linią NOWE NARUSZENIE"
+    )
 
 
 _SHAPED = '''from dataclasses import dataclass

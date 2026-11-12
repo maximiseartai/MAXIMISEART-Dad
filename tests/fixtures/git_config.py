@@ -176,7 +176,10 @@ def _problem(environment: Mapping[str, str]) -> str | None:
 def _refuse(git_environment: Mapping[str, str] | None) -> None:
     problem = None if git_environment is None else _problem(git_environment)
     if problem is not None:
-        raise AssertionError(f"Test uruchamia gita ze środowiskiem bez konfiguracji testów: {problem}. Napraw: {_FIX}.")
+        raise AssertionError(
+            f"Test uruchamia gita ze środowiskiem bez konfiguracji testów: {problem}. Git w testach ma jedną konfigurację, "
+            f"tę samą na każdym komputerze, więc test nie zależy od konfiguracji Maksa ani runnera. Napraw: {_FIX}."
+        )
 
 
 def _launched_by_tool() -> bool:

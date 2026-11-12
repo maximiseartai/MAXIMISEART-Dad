@@ -684,11 +684,11 @@ def test_naglowek_dopisany_do_wzoru_skilla_pr_od_razu_obowiazuje(tmp_path: Path)
 @pytest.mark.parametrize(
     ("main_files", "pull_files", "reason"),
     [
-        ({"kod/nazwa.py": 'NAZWA = "z main"\n'}, {"kod/nazwa.py": 'NAZWA = "z PR"\n'}, "Konflikt z main {main}: kod/nazwa.py"),
+        ({"kod/nazwa.py": 'NAZWA = "z main"\n'}, {"kod/nazwa.py": 'NAZWA = "z PR"\n'}, "Konflikt z main {main}, zaktualizuj PR z bazy i rozwiąż: kod/nazwa.py"),
         (
             {"pyproject.toml": PYPROJECT.replace("[tool.mypy]", '[tool.ruff.lint]\nextend-select = ["B905"]\n\n[tool.mypy]')},
             {"kod/pary.py": "PARY = list(zip([1], [2]))\n"},
-            "Na scaleniu z main {main} pada: ruff",
+            "Na scaleniu z main {main} pada, zaktualizuj PR z bazy i popraw: ruff",
         ),
     ],
     ids=["konflikt", "regula-ruff-wlaczona-na-main-po-ci-pr"],

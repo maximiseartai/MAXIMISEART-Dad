@@ -70,7 +70,7 @@ def base_problem(copy: Path, where: str) -> str | None:
         failed = _failed_checks(copy)
     except _NoCheckResult as error:
         return f"{where}: {error}"
-    return f"{where} sam nie przechodzi: {', '.join(failed)}" if failed else None
+    return f"{where} sam nie przechodzi (czerwona baza, nie PR): {', '.join(failed)}" if failed else None
 
 
 def merge_verdict(copy: Path, where: str, base: str, base_problem: str | None, pull: PullRequest) -> Verdict:
@@ -79,7 +79,7 @@ def merge_verdict(copy: Path, where: str, base: str, base_problem: str | None, p
     except subprocess.CalledProcessError as error:
         return Verdict("error", f"git merge-tree z {where}: {error.stderr.strip()}")
     if merged.conflicts:
-        return Verdict("failure", f"Konflikt z {where}: {', '.join(merged.conflicts)}")
+        return Verdict("failure", f"Konflikt z {where}, zaktualizuj PR z bazy i rozwiąż: {', '.join(merged.conflicts)}")
     repo.run_git(copy, "read-tree", "-u", "--reset", merged.tree).check_returncode()
     try:
         failed = _failed_checks(copy)
@@ -88,5 +88,5 @@ def merge_verdict(copy: Path, where: str, base: str, base_problem: str | None, p
     if failed and base_problem:
         return Verdict("error", base_problem)
     if failed:
-        return Verdict("failure", f"Na scaleniu z {where} pada: {', '.join(failed)}")
+        return Verdict("failure", f"Na scaleniu z {where} pada, zaktualizuj PR z bazy i popraw: {', '.join(failed)}")
     return Verdict("success", f"Scalenie z {where} bez konfliktu, ruff i mypy (oba systemy) przechodzą")

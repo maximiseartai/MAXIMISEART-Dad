@@ -120,11 +120,14 @@ extend-select = [
     "RUF007",
     # subprocess.run bez check połyka błąd polecenia: check=True, chyba że kod potem czyta returncode.
     "PLW1510",
-    # Kod taty bez Any w sygnaturach i bez print (zakres w per-file-ignores).
+    # Kod taty bez Any w sygnaturach i bez print (zakres w per-file-ignores): sygnatura w src/ nazywa typ konkretny,
+    # object albo TypeVar, a problem trafia do taty Komunikatem, bo konsoli tata nie widzi (drukują tylko konsole startu
+    # Centrum i skrótu z per-file-ignores).
     "ANN401",
     "T201",
     # Dzień i chwila jawnie ze strefą: date.today() i datetime.now() biorą po cichu strefę komputera, a dzień okresu
     # i termin wyjątku zależą od tego, czyja to północ. DTZ001 (datetime(...) bez tzinfo, 146 stałych) jest poza zakresem.
+    # Chwila, którą kod zapisuje albo porównuje: datetime.now(timezone.utc); dzień taty: datetime.now().astimezone().date().
     "DTZ002",
     "DTZ003",
     "DTZ004",

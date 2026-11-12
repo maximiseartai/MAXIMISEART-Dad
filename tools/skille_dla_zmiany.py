@@ -8,7 +8,8 @@ repozytorium (``*`` obejmuje też ``/``). Skill obowiązuje, gdy zmieniony plik 
 folderze (``hits`` z ``tools/lib/kroki_skilli.py``): ten sam klucz, przy trafieniu w który na pull request biegnie w CI
 podstawa skilla. Skill bez klucza albo z kluczem, którego nie da się odczytać, obowiązuje zawsze.
 
-Każdy skill, który obowiązuje, dostaje linię ``<skill>: <plik> (<glob>), …``. Ostatnia linia to
+Każdy skill, który obowiązuje, dostaje linię ``<skill>: <plik> (<glob>), …``. Po nich, gdy jakiś skill obowiązuje, linia
+``CO DALEJ: …`` (``WHAT_NEXT``) mówi, co agent robi z wynikiem przed pushem. Ostatnia linia to
 ``SKILLE VERIFY: <skille po przecinku>`` albo ``SKILLE VERIFY: brak``: każdy skill, który obowiązuje, także taki,
 którego polecenia liczy CI, bo jego workflow ma kroki, których CI nie zrobi (osąd, prawdziwe Wzorce, Excel na Macu).
 Linie ``LICZY CI`` i ``LICZY NOC`` przed nią drukuje z zakresu runu (``tools/lib/zakres_runu.py``) tej zmiany, tego
@@ -43,6 +44,14 @@ from zakres_runu import Zdarzenie, zakres
 IN_CI = "LICZY CI"
 AT_NIGHT = "LICZY NOC"
 SHOWN = 3
+# Co agent robi z wynikiem przed pushem: linia przed ``LICZY CI``, gdy jakiś skill obowiązuje.
+WHAT_NEXT = (
+    f"CO DALEJ: załaduj każdy skill z ostatniej linii i wykonaj workflow z jego SKILL.md. Polecenia z linii {IN_CI} liczy "
+    f"CI na tym SHA, a skrypty z linii {AT_NIGHT} noc na main po merge'u: lokalnie uruchamiasz je tylko do odtworzenia "
+    "czerwonego kroku CI albo issue nocy, albo przy pracy nad jedną funkcją. Resztę workflow (osąd modelu i zrzutów, "
+    "prawdziwe Wzorce, Excel na Macu) robisz sam według sekcji „What CI runs and what stays local” w SKILL.md skilla. "
+    "VERIFY SKIP (kod 3) znaczy, że skill nic nie sprawdził, więc nie jest dowodem."
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -76,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
             at_night.append(f"{skill.name} ({', '.join(scripts)})")
         more = f" i {len(reasons) - SHOWN} innych" if len(reasons) > SHOWN else ""
         print(f"{skill.name}: {', '.join(reasons[:SHOWN])}{more}")
+    if chosen:
+        print(WHAT_NEXT)
     if in_ci:
         print(f"{IN_CI}: {'; '.join(in_ci)}")
     if at_night:

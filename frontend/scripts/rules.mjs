@@ -1,4 +1,4 @@
-// Reguły frontendu z CODING_STANDARDS, których Oxlint nie wyraża (brak no-restricted-syntax w Oxlint 1.88):
+// Reguły frontendu, których Oxlint nie wyraża (brak no-restricted-syntax w Oxlint 1.88):
 // 1. Każda właściwość schematów kontraktu (src/api/openapi.json) jest użyta w src poza generated/:
 //    jej nazwa występuje jako identyfikator (dostęp, destrukturyzacja, klucz obiektu) albo tekst literału.
 // 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`.
@@ -287,7 +287,12 @@ const called = new Set(operationCalls.map(({ operation }) => operation))
 const problems = [
   ...unused.map((key) => `Pole kontraktu ${key} nie jest użyte w src: pokaż je w UI albo usuń z kontraktu.`),
   ...staleExceptions.map((key) => `Wyjątek ${key} jest zbędny: pole jest już użyte w src.`),
-  ...comparisons.map((place) => `Porównanie nazwy procesu w przeglądarce: ${place}`),
+  ...comparisons.map(
+    (place) =>
+      `Porównanie nazwy procesu w przeglądarce: ${place}. UI nie rozgałęzia się na nazwie procesu: weź z kontraktu ` +
+      `pole, które niesie tę różnicę (albo dodaj je na serwerze), a plik, który musi porównać nazwę, wpisz do ` +
+      `PROCESS_COMPARISON_FILES z powodem.`,
+  ),
   ...network.map(({ place, kind }) => `Sieć albo JSON.parse poza NETWORK_FILES: ${place}. ${REPAIRS[kind]}`),
   ...staleNetworkFiles.map((key) => `Wyjątek ${key} w NETWORK_FILES jest zbędny: plik nie łączy się z serwerem.`),
   ...[...timed].flatMap((operation) =>

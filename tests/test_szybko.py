@@ -23,9 +23,6 @@ from wplyw_zmiany import STRUCTURE
 ROOT = Path(__file__).resolve().parents[1]
 
 BY_CHANGE_ONLY = {
-    "tests/test_git_w_testach.py": (
-        "sprawdza gita sesji testów, a nie całe repozytorium"
-    ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples), pliku tests/expected/komunikaty.txt i plików frontendu z UI_TEXTS (literały)"
@@ -41,28 +38,9 @@ BY_CHANGE_ONLY = {
         "sprawdza narzędzie na repozytoriach testu i atrapie GitHuba; mutacje-nocne.yml czyta ścieżką, którą graf widzi"
     ),
     "tests/test_plan_ci.py": "sprawdza plan na repozytoriach testu i atrapach czasów; graf wybiera go przy zmianie planu i ci.yml",
-    "tests/test_podstawa_w_czesciach.py": "sprawdza podział podstawy Centrum; graf wybiera go przy zmianie skilla i skrypt_skilla.py",
-    "tests/test_praca_w_tle.py": "sprawdza hook na pojedynczych wejściach Stop; graf wybiera go przy zmianie hooka i .claude/settings.json",
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
-    "tests/test_skille_dla_zmiany.py::test_liczy_ci_i_liczy_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_plan_pull_requestu_i_nocy": (
-        "sprawdza linie LICZY CI i LICZY NOC na repozytorium testu, a nie całe repozytorium"
-    ),
-    "tests/test_skille_dla_zmiany.py::test_skrypt_mutacji_modelu_przy_zmianie_modelu_stoi_w_liczy_ci_a_nie_w_liczy_noc": (
-        "sprawdza linie LICZY CI i LICZY NOC skryptu mutacji modelu na repozytorium testu, a nie całe repozytorium"
-    ),
-    "tests/test_skille_dla_zmiany.py::test_skill_z_poleceniami_w_ci_zostaje_w_skillach_verify_a_liczy_ci_wymienia_jego_polecenia": (
-        "sprawdza wybór skilli na repozytorium testu, a nie całe repozytorium"
-    ),
-    "tests/test_skille_dla_zmiany.py::test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill": (
-        "graf wybiera go przy zmianie skryptu i SKILL.md skilli Centrum (literały) i tools/lib/wplyw_zmiany.py, "
-        "a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
     "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
-    "tests/test_zgoda.py": (
-        "sprawdza hook zgody i jego wyrocznię na pojedynczych zdarzeniach; graf wybiera go przy zmianie hooka, wyroczni "
-        "i .claude/settings.json"
-    ),
 }
 
 # Strażnicy reguł, których komunikat mówi regułę: biegną przy każdym ``tools/szybko.py``, z wierszem tabeli reguł
@@ -100,6 +78,7 @@ RULE_GUARDS = frozenset(
     tests/test_spis_narzedzi.py::test_pierwsze_zdanie_narzedzia_z_obowiazkowa_podkomenda_ja_wymienia
     tests/test_spis_narzedzi.py::test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standardowa
     tests/test_struktura_testow.py
+    tests/test_struktura_testow.py::test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy
     tests/test_struktura_testow.py::test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow
     tests/test_struktura_testow.py::test_zapadki_nie_zglaszaja_zadnej_linii_testow
     tests/test_systemowy_python.py
@@ -116,7 +95,6 @@ RULE_GUARDS = frozenset(
 
 # Pliki z tabelami reguł: nagłówek po polsku w dokumentach procesu, po angielsku w ``CODING_STANDARDS.md``.
 RULE_TABLES = (
-    ROOT / "AGENTS.md",
     ROOT / "CODING_STANDARDS.md",
     ROOT / "docs" / "agents" / "pr-i-ci.md",
     ROOT / "docs" / "agents" / "skille.md",
