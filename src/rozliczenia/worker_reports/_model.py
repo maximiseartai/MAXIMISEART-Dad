@@ -338,7 +338,8 @@ def single_orders(orders: Iterable[RegisterOrder]) -> dict[OrderNumber, OrderKey
 class OwnEntries:
     """Pamięć własnych wpisów: najwyżej jeden wpis na komórkę zlecenia i najwyżej jedno Przeniesienie na numer i dzień
     (``moves``; pamięć sprzed Przeniesień ich nie ma). Wpisy ma tylko numer, który w chwili zapisu miał w odczytanych
-    dniach jedno zlecenie (``_cells.reconcile``), więc następne kliknięcie wie, że to był jeden wiersz."""
+    dniach jedno zlecenie (``_cells.reconcile``), więc następne kliknięcie wie, że to był jeden wiersz. Tę obietnicę daje
+    plik stanu w wersji 4; pamięć ze starszego pliku to ``OlderOwnEntries``."""
 
     entries: frozenset[OwnEntry]
     moves: frozenset[OwnMove] = frozenset()
@@ -352,6 +353,28 @@ class OwnEntries:
 
 
 OwnEntries.EMPTY = OwnEntries(frozenset())
+
+
+@dataclass(frozen=True)
+class OlderOwnEntries:
+    """Pamięć własnych wpisów z pliku stanu w wersji 1–3 (wersję 1 zapisują Wydania v0.7.0 i v0.8.0, wersję 3
+    ``main`` przed #1367): jej pisarz zapisywał wpisy do zlecenia nadawcy także przy numerze w kilku zleceniach, więc
+    wpis należy do miejsca z chwili zapisu (numer, dzień, Wykonawca), a nie do numeru, i nie spełnia obietnicy
+    ``OwnEntries``. Rdzeń jej nie przyjmuje: proces zamienia ją na ``OwnEntries`` przez ``upgraded`` przy odczytanych
+    zleceniach."""
+
+    memory: OwnEntries
+
+    def upgraded(self, orders: Iterable[RegisterOrder]) -> OwnEntries:
+        """Pamięć dla rdzenia przy zleceniach ``orders``, które proces odczytał przed kliknięciem: wpis zostaje tylko
+        przy jedynym zleceniu numeru w odczytanych dniach (``single_orders``), które ma dokładnie jego klucz. Wpis nie
+        idzie za wierszem: gdy numer ma teraz kilka zleceń albo jego zlecenie ma inny dzień lub Wykonawcę, wpis
+        przepada, a komórka liczy się jak wartość taty. Pamięć zleceń (``moves``) zostaje, bo ona tylko wstrzymuje
+        Przeniesienie (``may_move``)."""
+
+        single = single_orders(orders)
+        entries = frozenset(entry for entry in self.memory.entries if single.get(entry.key.number) == entry.key)
+        return OwnEntries(entries, self.memory.moves)
 
 
 @dataclass(frozen=True)
@@ -618,12 +641,17 @@ class MoveBar(Enum):
 @dataclass(frozen=True)
 class RefusedMove:
     """Wpis Wykonawcy ``worker`` z dniem z tematu ``day`` do jedynego zlecenia ``number``, które INTERMAX ma w dniu
-    ``order_day``, przeniósłby je tam, skąd albo dokąd nie wolno (``bar``); INTERMAX zostaje bez zmiany."""
+    ``order_day``, przeniósłby je tam, skąd albo dokąd nie wolno (``bar``); INTERMAX zostaje bez zmiany. ``target``:
+    dzień, na który Wpis przeniósłby zlecenie, gdy nie wolno pisać tam (``NOT_ORDERED``, ``OTHER_SHEET``,
+    ``CLOSED_TARGET``): dzień z tematu, a przy pomylonym temacie dzień zlecenia sprzed Przeniesień Centrum. Odmowa z
+    dnia zlecenia (``CLOSED_SOURCE``, ``AFTER_TODAY``) nie wybiera celu, więc ``target`` to ``order_day``, a dwa maile
+    nadawcy z tym dniem i numerem, z pomylonym tematem i bez, dają jedną odmowę."""
 
     worker: Login
     day: date
     number: OrderNumber
     order_day: date
+    target: date
     bar: MoveBar
 
     @property
@@ -831,8 +859,9 @@ def problem_order(
             return problem.day, problem.worker, problem.number, kind, (bar.name,)
         case ConflictingVerdicts() | RepeatedOrder() | RepeatedNumber():
             return problem.day, problem.worker, problem.number, kind, ()
-        case RefusedMove(day=day, order_day=order_day, bar=bar):
-            return problem.shown, problem.worker, problem.number, kind, (day.isoformat(), order_day.isoformat(), bar.name)
+        case RefusedMove(day=day, order_day=order_day, target=target, bar=bar):
+            days = (day.isoformat(), order_day.isoformat(), target.isoformat())
+            return problem.shown, problem.worker, problem.number, kind, (*days, bar.name)
         case ManualDifference(key=key, column=column, manual=manual, reported=reported):
             return key.day, key.worker, key.number, kind, (column.value, manual, reported)
         case _:

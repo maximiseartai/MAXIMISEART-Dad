@@ -52,7 +52,9 @@ wklejeniem. Tata poprawia wtedy INTERMAX ręcznie według maila, bo mail mówi, 
   dniem i Wykonawcą każdego z nich. Excel nie mówi, które z tych zleceń tata przeniósł, scalił albo usunął, więc Centrum
   pamięta swoje wpisy w komórkach tylko przy numerze z jednym zleceniem, a wartość w zleceniu numeru, który ma ich
   kilka, liczy jak wartość taty. Bez tej granicy stary mail cofał ręczną zmianę taty i nadpisywał jego wartość
-  (przeglądy #1367).
+  (przeglądy #1367). Pamięć zapisana przed tą granicą (Wydania v0.7.0 i v0.8.0) ma wpisy także przy numerze w kilku
+  zleceniach, więc po aktualizacji jej wpis liczy się tylko w miejscu z chwili zapisu: przy jedynym zleceniu numeru z
+  tym samym dniem i Wykonawcą, a inaczej komórka liczy się jak wartość taty (nowa wersja pliku pamięci, #1367).
 - **Okno mówi, gdzie wolno pisać, a nie, które numery są w Rejestrze.** Wpisanie raportów nie zmienia zleceń z dni po
   dziś: Wpis do numeru, który Rejestr ma tylko jutro, to problem z dniem zlecenia, a nie numer bez zlecenia, który
   dubluje zlecenie na jutro.

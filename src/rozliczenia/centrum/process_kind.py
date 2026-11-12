@@ -387,8 +387,9 @@ pełną ścieżkę), tak samo ``_Catalog``.
 ``PreparedRun`` nie jest dataclassą, więc mypy odrzuca też ``dataclasses.replace`` gotowego Uruchomienia, np. z innym
 plikiem metryk (``type-var``), a przypisanie jego pola (``Final``). Łapie tylko te postacie: nie łapie
 ``getattr(process_kind, "_CATALOG")``, wartości ``Any``, ``copy.copy`` gotowego Uruchomienia ani dowodu zaimportowanego
-z ``# noqa: TID251``. Konstruktor ``PreparedRun`` poza ``catalog.py``, także z takim dowodem, łapie
-``tests/test_granice_importow.py``."""
+z ``# noqa: TID251``. Konstruktor ``PreparedRun`` poza ``catalog.py``, także z takim dowodem, łapie po nazwie albo
+atrybucie ``PreparedRun`` ``tests/test_granice_importow.py``, ale nie ``type(gotowe)(…, _CATALOG)``; to zostaje
+przeglądowi."""
 
 
 @final

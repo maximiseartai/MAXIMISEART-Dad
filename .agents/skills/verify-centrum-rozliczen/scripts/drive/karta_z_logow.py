@@ -29,6 +29,7 @@ from atrapy.pliki_taty import LAST_STARTED_FILE
 
 FEATURE = "karta-z-logow"
 # What the live card has and the Logi do not hold: order_notes carry the order numbers and Wykonawcy of Wycena w efenix.
+# A deliberate copy of the requirement, not of the contract (docs/agents/skille.md, data about the outside world).
 LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
 INTERRUPTED_WHAT = "Centrum rozliczeń zamknęło się w trakcie tego Uruchomienia, więc nie ma jego wyniku."
 WRITE_ADVICE = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."

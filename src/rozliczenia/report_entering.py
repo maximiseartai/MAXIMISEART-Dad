@@ -15,7 +15,8 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   uporządkowane (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
-- Planowanie: rdzeń raportów;
+- Planowanie: rdzeń raportów, z pamięcią z pliku sprzed wersji 4 zamienioną przy odczytanych zleceniach
+  (``OlderOwnEntries.upgraded``), bo rdzeń przyjmuje tylko ``OwnEntries``;
 - Zapisywanie: komórki, Przeniesienia zleceń i Zlecenia dopisane z raportu bez Kopii INTERMAX
   (``intermax_cells.write_cells``), a po udanym zapisie
   pamięć własnych wpisów
@@ -68,6 +69,7 @@ from .worker_report_inbox import InboxUnreachable, Mails, PasswordRejected, Work
 from .worker_reports import (
     Kept,
     MailRead,
+    OlderOwnEntries,
     OrderKey,
     OrderNumber,
     OrderedDay,
@@ -104,10 +106,10 @@ __all__ = [
 @dataclass(frozen=True)
 class SavedState:
     """Pamięć z ostatniego udanego zapisu: dzień wdrożenia (``None``: jeszcze żadnego udanego kliknięcia) i własne
-    wpisy, a do tego decyzje taty „Zostaw moją” (``kept``)."""
+    wpisy (``OlderOwnEntries`` z pliku sprzed wersji 4), a do tego decyzje taty „Zostaw moją” (``kept``)."""
 
     rollout: date | None
-    memory: OwnEntries
+    memory: OwnEntries | OlderOwnEntries
     kept: frozenset[Kept] = frozenset()
 
 
@@ -204,7 +206,9 @@ class EnteringFacts:
 
     ``rollout_before``: dzień wdrożenia z pamięci przed kliknięciem (``None``: pierwsze), ``rollout``: dzień wdrożenia
     tego kliknięcia, ``closed``: tokeny okresów okna z Plikiem zbiorczym, po kolei. ``memory_before``: zapamiętane własne
-    wpisy numerów, które mają Wpis w tym kliknięciu, z każdego dnia, pod każdym Wykonawcą, bo wpisy idą za wierszem, a
+    wpisy numerów, które mają Wpis w tym kliknięciu, z każdego dnia, pod każdym Wykonawcą, bo wpisy idą za wierszem, tak
+    jak je dostał rdzeń (z pliku sprzed wersji 4 po ``OlderOwnEntries.upgraded``), więc odtworzenie z Logów daje ten sam
+    wynik, a
     ``kept``: decyzje „Zostaw moją” zleceń z Wpisem z migawki kliknięcia, ``moves_before``: pamięć zleceń (``OwnMove``)
     numerów, które mają Wpis w tym kliknięciu, z każdego dnia, bo zlecenie mogło przejść na inny dzień, a pamięć zostaje
     pod dniem, w którym zostawiło je Centrum. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
@@ -330,13 +334,14 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     window, register, orders, ordered_days, present, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
+        remembered = saved.memory.upgraded(orders) if isinstance(saved.memory, OlderOwnEntries) else saved.memory
         found = enter_reports(
             ReportInputs(
                 mails=mails,
                 addresses=addresses,
                 orders=orders,
                 window=window,
-                memory=saved.memory,
+                memory=remembered,
                 kept=saved.kept,
                 ordered_days=ordered_days,
                 present=frozenset(present),
@@ -351,14 +356,14 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         numbers = {key.number for key in reported}
         before = tuple(
             sorted(
-                (entry for entry in saved.memory.entries if entry.key.number in numbers),
+                (entry for entry in remembered.entries if entry.key.number in numbers),
                 key=lambda entry: (entry.key, entry.column.value),
             )
         )
         kept = tuple(sorted((decision for decision in saved.kept if decision.key in reported), key=_kept_order))
         moves_before = tuple(
             sorted(
-                (move for move in saved.memory.moves if move.number in numbers),
+                (move for move in remembered.moves if move.number in numbers),
                 key=lambda move: (move.day, move.number),
             )
         )

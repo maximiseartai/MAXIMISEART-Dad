@@ -315,7 +315,7 @@ class Board:
             if not opens or (mistaken and closed):
                 return []
             bar = MoveBar.CLOSED_SOURCE if closed else MoveBar.AFTER_TODAY
-            return [RefusedMove(report.worker, report.day, number, order_day, bar)]
+            return [RefusedMove(report.worker, report.day, number, order_day, order_day, bar)]
         if not mistaken:
             return self._claim(found, report, report.day, None)
         shown = report.day if opens else found.day
@@ -349,7 +349,7 @@ class Board:
         if not self._movable(order, report):
             return []
         bar = None if day == order.key.day else self._bar(order, day)
-        refused = None if bar is None else RefusedMove(report.worker, report.day, order.key.number, order.key.day, bar)
+        refused = None if bar is None else RefusedMove(report.worker, report.day, order.key.number, order.key.day, day, bar)
         return _Claim(order, day, report, (), lost, refused)
 
     def _movable(self, order: RegisterOrder, report: ReadReport) -> bool:

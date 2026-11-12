@@ -71,10 +71,10 @@ def reason(problem: ReportProblem) -> str:
                 f"Zlecenie {number} jest w INTERMAX więcej niż raz: {where}. Centrum nie wie, którego z nich dotyczy "
                 f"Wpis od {worker} z {_day(day)}, więc nie zmieniło żadnego z nich przy tym kliknięciu."
             )
-        case RefusedMove(worker=worker, day=day, number=number, order_day=order_day, bar=bar):
+        case RefusedMove(worker=worker, day=day, number=number, order_day=order_day, target=target, bar=bar):
             return (
                 f"Wpis zlecenia {number} od {worker} ma w temacie {_day(day)}, a INTERMAX ma to zlecenie w "
-                f"{_day(order_day)}. Centrum go nie przeniosło i nie wpisało, bo {_bar(bar, day, order_day)}."
+                f"{_day(order_day)}. Centrum go nie przeniosło i nie wpisało, bo {_bar(bar, target, order_day)}."
             )
         case ManualDifference(key=key, column=column, manual=manual, reported=reported):
             return (
@@ -116,14 +116,16 @@ def _short(day: date) -> str:
     return f"{day.day}.{day.month:02d}"
 
 
-def _bar(bar: MoveBar, day: date, order_day: date) -> str:
+def _bar(bar: MoveBar, target: date, order_day: date) -> str:
+    """Powód odmowy Przeniesienia: dzień, na który Wpis przeniósłby zlecenie (``target``), albo dzień zlecenia."""
+
     match bar:
         case MoveBar.NOT_ORDERED:
-            return f"dzień {_day(day)} nie jest jeszcze uporządkowany w INTERMAX"
+            return f"dzień {_day(target)} nie jest jeszcze uporządkowany w INTERMAX"
         case MoveBar.OTHER_SHEET:
-            return f"dzień {_day(day)} jest uporządkowany w innym arkuszu zleceń"
+            return f"dzień {_day(target)} jest uporządkowany w innym arkuszu zleceń"
         case MoveBar.CLOSED_TARGET:
-            return f"okres z dniem {_day(day)} ma już Plik zbiorczy"
+            return f"okres z dniem {_day(target)} ma już Plik zbiorczy"
         case MoveBar.CLOSED_SOURCE:
             return f"okres z dniem {_day(order_day)} ma już Plik zbiorczy"
         case MoveBar.AFTER_TODAY:

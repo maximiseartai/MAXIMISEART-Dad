@@ -82,7 +82,7 @@ otherwise):
 | `ZamkniecieOkresu`, `OtwarcieOkresu` | the Plik zbiorczy of the period appears (Przygotowanie) or Dad removes it; `report_entering._closed` gives `Window.of` the closed tokens and `Window.opens` leaves the order out of `orders` in `enter_reports` |
 | `PojawiaSieKopia`, `TataUsuwaKopie` | OneDrive puts a conflict copy beside INTERMAX; Dad merges it and removes it |
 | `Sprawdzanie` | Dad clicks; `RunHost.start` (one Uruchomienie at a time), `enter_from_mail` `check`: `FileReportState.load`, which reads the memory through `_TextFile.text` (`StateFile.retry` first, then the waiting text or the file) and `kept()` the same way, then `onedrive_conflicts.beside` (:276), whose copy is a Zatrzymanie before the mailbox |
-| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`enter_reports` → `_cells.reconcile` on the snapshot `saved.memory`, `saved.kept`, then `_cells.with_added`) and `save` (`write_cells` with the changes, the Przeniesienia zleceń and the Zlecenia dopisane z raportu of the click) as one step: without any of them `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
+| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`enter_reports` → `_cells.reconcile` on the snapshot `saved.memory`, `saved.kept`, then `_cells.with_added`; a memory file older than version 4 goes through `OlderOwnEntries.upgraded` first, Left out) and `save` (`write_cells` with the changes, the Przeniesienia zleceń and the Zlecenia dopisane z raportu of the click) as one step: without any of them `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
 | `ZapiszPamiec` | :382 `parts.state.save_memory` → `FileReportState.save_memory` → `_TextFile.write` → `StateFile.write`; an `OSError` keeps the text waiting and the process gives only the warning `memory_not_saved` |
 | `ZapiszWynik` | :383 `parts.state.save_result` (the `ClickResult` with `ManualDifference` among its problems) → `_TextFile.write`, then :385 `onedrive_conflicts.beside`: a copy is the Zatrzymanie `conflict_after_save`, otherwise the summary; one step, because nothing between them writes a file or INTERMAX |
 | `Odswiez` | a tab reads the Raporty view: `ReportEnteringEntry.view` → `FileReportState.shown` and `kept`, each `_TextFile.text` retries a waiting write |
@@ -292,14 +292,18 @@ otherwise a problem, which also only leaves an older Wpis in force. Its cells ke
 them), so after the click that wrote it the tool's own entry counts as Dad's value, as after `TataZmienia`: a later
 Wpis with another content gives a `ManualDifference` at the tool's own entry, which BezFalszywejRoznicy forbids for
 the model's one cell. The model leaves that cell out by design (direction safe: NieNadpisuje holds; decision for Maks
-in #1367). A Zlecenie dopisane z raportu (#1354) is, for the one cell, the empty cell that `Zapis` fills with the Wpis
-and remembers as the tool's own entry (`_cells.with_added`); only a number no row the process reads holds becomes one
+in #1367). A memory file older than version 4 (Wydania v0.7.0 and v0.8.0, `main` before #1367) loads as
+`OlderOwnEntries`, whose writer kept entries at a number of several orders too, so the process keeps such an entry
+only at the number's one order with the same day and Wykonawca as when it was saved and otherwise drops it, which
+makes its cell Dad's value as above (`OlderOwnEntries.upgraded`, #1367 r5); the model starts from a memory this code
+wrote. A Zlecenie dopisane z raportu (#1354) is, for the one cell, the empty cell that `Zapis` fills with the Wpis and
+remembers as the tool's own entry (`_cells.with_added`); only a number no row the process reads holds becomes one
 (`ReportInputs.present`, also a Surowe zlecenie and a row the core makes no order from: without `WYKONAWCA`, with the
-date as text, pasted from the app between ordered rows), so it never doubles a number of any row the process read. Dad deleting the added row leaves no value of his that a write could overwrite,
-and the click after it adds the row again only for a fresher mail (`_model.may_move` with the memory of the number),
-which the model's write into an empty cell over-approximates. The rollout day (it only moves the start of the window
-later, which leaves cells out), the reading of the
-mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
+date as text, pasted from the app between ordered rows), so it never doubles a number of any row the process read. Dad
+deleting the added row leaves no value of his that a write could overwrite, and the click after it adds the row again
+only for a fresher mail (`_model.may_move` with the memory of the number), which the model's write into an empty cell
+over-approximates. The rollout day (it only moves the start of the window later, which leaves cells out), the reading
+of the mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).
 

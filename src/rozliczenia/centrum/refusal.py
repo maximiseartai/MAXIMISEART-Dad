@@ -26,11 +26,14 @@ class _Catalog:
 _CATALOG: Final = _Catalog()
 """Dowód katalogu odmów: ``Refusal`` bez niego, także przez ``functools.partial(Refusal, 500)``, to błąd mypy (brak
 argumentu albo zły typ). Poza tym modułem ruff (``TID251`` w ``pyproject.toml``) odrzuca ``from … import _CATALOG``
-(także z aliasem) i atrybut modułu (``refusal._CATALOG``, także przez alias albo pełną ścieżkę), tak samo ``_Catalog``.
+(także z aliasem) i atrybut modułu (``refusal._CATALOG``, także przez alias albo pełną ścieżkę), tak samo ``_Catalog``
+i ``_refused``, która sama wkłada dowód.
 Mypy odrzuca też ``type(odmowa)(…)`` bez dowodu, a podklasę ``Refusal`` (``final``). Łapie tylko te postacie: nie łapie
-``getattr(refusal, "_CATALOG")``, wartości ``Any``, odmowy bez konstruktora (``Refusal.__new__(Refusal)``) ani klasy
-wyjętej z argumentów typu (``get_args(…)[0]``). Te w ``src`` łapie ``tests/test_komunikaty_expect.py``: poza katalogiem
-``Refusal`` stoi tylko jako typ."""
+``getattr(refusal, "_CATALOG")``, wartości ``Any``, dowodu ani ``_refused`` zaimportowanych z ``# noqa: TID251``,
+odmowy bez konstruktora (``Refusal.__new__(Refusal)``) ani klasy wyjętej z argumentów typu (``get_args(…)[0]``).
+``tests/test_komunikaty_expect.py`` łapie w ``src`` każde odwołanie do ``Refusal`` po nazwie poza typem, także
+``Refusal(…, _CATALOG)`` z dowodem z ``noqa``, ale nie ``type(odmowa)(…, _CATALOG)`` ani ``_refused(…)`` z ``noqa``;
+te zostają przeglądowi."""
 
 
 @final
@@ -45,6 +48,9 @@ class Refusal(Exception):
 
 
 def _refused(status_code: int, message: str) -> Refusal:
+    """Odmowa z dowodem katalogu dla fabryk tego modułu. Poza nim ruff (``TID251``) odrzuca ją jak ``_CATALOG``, bo
+    wkłada dowód za wywołującego, więc dałaby odmowę bez fabryki i bez próbki w ``tests/expected/komunikaty.txt``."""
+
     return Refusal(status_code, message, _CATALOG)
 
 
