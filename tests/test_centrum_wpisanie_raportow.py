@@ -1734,7 +1734,7 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
 
     assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
     assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 1"
-    assert saved["schema_version"] == 3
+    assert saved["schema_version"] == 4
     # Chwila maila ze strefą komputera (``report`` daje ``astimezone()``): na Macu „+01:00”, na Linuksie CI „Z”.
     jan_since, anna_since = datetime(2026, 11, 9, 17).astimezone(), datetime(2026, 11, 9, 17, 30).astimezone()
     assert [{**move, "since": datetime.fromisoformat(move["since"])} for move in saved["moves"]] == [
@@ -1800,7 +1800,66 @@ def test_plik_pamieci_w_wersji_2_z_galezi_czyta_sie_bez_pamieci_zlecen_zamiast_z
     assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
     assert _entering(centrum, view)["moves_before"] == []
     assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 2"
-    assert json.loads(_state(centrum).read_text(encoding="utf-8"))["schema_version"] == 3
+    assert json.loads(_state(centrum).read_text(encoding="utf-8"))["schema_version"] == 4
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [
+        pytest.param(ROOT / "tests" / "fixtures" / "wpisanie-raportow-stan-v1.json", id="wydanie-v0.8.0"),
+        pytest.param(ROOT / "tests" / "fixtures" / "wpisanie-raportow-stan-v3.json", id="main-przed-1367"),
+    ],
+)
+def test_plik_pamieci_ze_starszej_wersji_nie_niesie_wpisow_na_inne_zlecenie_numeru_z_reczna_wartoscia_taty(
+    tmp_path: Path, saved: Path
+) -> None:
+    """Przegląd #1367 r4 Ważne 1, cel Maksa: Centrum nigdy nie nadpisuje ręcznej wartości taty, także po aktualizacji.
+
+    Plik pamięci zapisało Centrum z Wydania v0.8.0 (wersja 1) albo z ``main`` przed #1367 (wersja 3), każde swoim kodem
+    przy tym samym kliknięciu: 40000001 stał u Anny w 8.11 z ręcznym „tak” i opisem taty i u Jana w 9.11, a Raport Jana
+    za 9.11 wpisał się do jego zlecenia, więc plik ma wpisy Jana przy numerze w dwóch zleceniach. Po aktualizacji, przed
+    pierwszym kliknięciem, tata usuwa wiersz Jana (duplikat). Raport Anny za 8.11 „nie” nie zmienia jej komórek: wpis
+    ze starszego pliku należy do miejsca z chwili zapisu (numer, dzień, Wykonawca) i nie przechodzi na inny wiersz,
+    więc obie komórki Anny są ręczne i zostają z różnicą. Logi mają pamięć, z którą liczyło kliknięcie, a plik pamięci
+    ma potem wersję 4 bez tych wpisów."""
+
+    intermax = Intermax(
+        ordered=(
+            Order(
+                datetime(2026, 11, 8, 9),
+                "anna.kowalska",
+                40000001,
+                cells=((NUMBER, 40000001), (SUCCESSFUL, "tak"), (COMPLETED, "montaż taty")),
+            ),
+            _order(8, 10, "jan.testowy", 40000009),
+            _order(9, 9, "anna.kowalska", 40000003),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax)
+    shutil.copyfile(saved, _state(centrum))
+    anna = report(ANNA, "Raport 08.11.2026", "40000001 nie brak klienta", at=datetime(2026, 11, 9, 17, 30))
+
+    view = _click_at(centrum, datetime(2026, 11, 9, 18, 30), [anna])
+
+    entering = _entering(centrum, view)
+    cell = {"number": 40000001, "day": "2026-11-08", "worker": "anna.kowalska"}
+    assert _cells(centrum.register)[40000001] == ("tak", "montaż taty"), "Centrum nadpisało ręczną wartość taty"
+    assert entering["changes"] == []
+    assert entering["problems"] == [
+        {
+            "kind": "manual_difference",
+            "cell": {**cell, "column": "CZYNNOŚCI ZREALIZOWANE", "value": "brak klienta"},
+            "manual": "montaż taty",
+        },
+        {"kind": "manual_difference", "cell": {**cell, "column": "SKUTECZNE", "value": "nie"}, "manual": "tak"},
+    ]
+    assert (entering["rollout_before"], entering["memory_before"]) == ("2026-11-08", [])
+    assert [problem["number"] for problem in _worker(_view(centrum), "anna.kowalska", "2026-11-08")["problems"]] == [
+        "40000001"
+    ] * 2
+    after = json.loads(_state(centrum).read_text(encoding="utf-8"))
+    assert (after["schema_version"], after["own"]) == (4, [])
 
 def test_bez_folderu_okresow_w_ustawieniach_karta_mowi_co_wskazac_a_start_jest_odrzucony(tmp_path: Path) -> None:
     """Bez folderu okresów kliknięcie nie wie, które okresy mają Plik zbiorczy, więc nie startuje i nie czyta skrzynki."""

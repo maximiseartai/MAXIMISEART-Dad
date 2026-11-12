@@ -1,12 +1,16 @@
 """Pliki Wpisania raportów w ``config`` (ADR 0028): jedyny moduł, który zna ich format. Każdy plik ma jednego pisarza.
 
-- ``wpisanie-raportow-stan.json``, ``{schema_version: 3, rollout, own: [{number, day, worker, column, value}], moves:
+- ``wpisanie-raportow-stan.json``, ``{schema_version: 4, rollout, own: [{number, day, worker, column, value}], moves:
   [{number, day, worker, origin_day, origin_worker, origin_name, since, overridden}]}``: dzień wdrożenia, komórki,
   które Wpisanie raportów samo wpisało, i pamięć zleceń, na które samo zadziałało Przeniesieniem albo Wpisem
-  (``OwnMove``, ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX.
-  Plik w wersji 1 (sprzed Przeniesień, v0.7.0) dalej się czyta, bez pamięci zleceń, dopóki następne kliknięcie nie
-  zapisze wersji 3. Wersja 2 była tylko na gałęzi #1358 (bez ``overridden``, w pierwszej rundzie też bez
-  ``origin_name`` i ``since``) i nigdy w Wydaniu: czyta się jak wersja 1, zamiast Zatrzymania.
+  (``OwnMove``, ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX. Wersja 4 (#1367) to obietnica pisarza:
+  ``own`` ma tylko numer, który w chwili zapisu miał w odczytanych dniach jedno zlecenie, pod jego kluczem
+  (``OwnEntries``), więc wpisy idą za wierszem.
+  Starsze wersje czyta ``load`` jako ``OlderOwnEntries``, bez Zatrzymania, a ich wpis należy do miejsca z chwili zapisu
+  (numer, dzień, Wykonawca), dopóki następne kliknięcie nie zapisze wersji 4: wersja 1 (Wydania v0.7.0 i v0.8.0, sprzed
+  Przeniesień) bez pamięci zleceń, wersja 2 (tylko gałąź #1358, bez ``overridden``, w pierwszej rundzie też bez
+  ``origin_name`` i ``since``, nigdy w Wydaniu) jak wersja 1, a wersja 3 (``main`` przed #1367, nigdy w Wydaniu) z
+  pamięcią zleceń.
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
   numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu i czy zlecenie ma Wpis), zdaniem o każdym problemie
@@ -45,6 +49,7 @@ from rozliczenia.worker_reports import (
     Login,
     ManualDifference,
     MissingVerdict,
+    OlderOwnEntries,
     OrderDetail,
     OrderKey,
     OrderNumber,
@@ -63,8 +68,9 @@ from rozliczenia.worker_reports import (
 from rozliczenia.worker_reports.reasons import note, reason
 
 _DECISIONS_VERSION: Final = 1
-_STATE_VERSION: Final = 3
-"""Wersja pliku pamięci: 3 dodała pamięć zleceń z Przeniesień (#1347); 2 była tylko na gałęzi #1347."""
+_STATE_VERSION: Final = 4
+"""Wersja pliku pamięci: 4 obiecuje wpisy tylko przy jedynym zleceniu numeru (#1367), 3 dodała pamięć zleceń z
+Przeniesień (#1347); 2 była tylko na gałęzi #1347."""
 _RESULT_VERSION: Final = 3
 """Wersja pliku wyniku: 2 dodała zlecenia dnia Wykonawcy (#1322), 3 informacje o Przeniesieniach (#1347)."""
 
@@ -112,14 +118,24 @@ class _StateV2(_Record):
     moves: list[dict[str, object]]
 
 
-class _State(_Record):
+class _StateV3(_Record):
+    """Plik pamięci z ``main`` przed #1367, z pamięcią zleceń, ale z wpisami także przy numerze w kilku zleceniach:
+    czyta go tylko ``load``."""
+
     schema_version: Literal[3]
     rollout: date
     own: list[_Own]
     moves: list[_Move]
 
 
-class _AnyState(RootModel[Annotated[_StateV1 | _StateV2 | _State, Field(discriminator="schema_version")]]):
+class _State(_Record):
+    schema_version: Literal[4]
+    rollout: date
+    own: list[_Own]
+    moves: list[_Move]
+
+
+class _AnyState(RootModel[Annotated[_StateV1 | _StateV2 | _StateV3 | _State, Field(discriminator="schema_version")]]):
     """Plik pamięci w którejkolwiek wersji, rozpoznanej po ``schema_version``."""
 
 
@@ -318,7 +334,8 @@ class FileReportState:
 
     def load(self) -> SavedState:
         """Pamięć i decyzje „Zostaw moją”: najpierw cała pamięć (``StateUnreadable``), potem decyzje
-        (``DecisionsUnreadable``), więc błąd decyzji znaczy, że pamięć jest poprawna."""
+        (``DecisionsUnreadable``), więc błąd decyzji znaczy, że pamięć jest poprawna. Pamięć z pliku sprzed wersji 4 to
+        ``OlderOwnEntries``."""
 
         text = self.memory.text()
         if text is None:
@@ -342,12 +359,12 @@ class FileReportState:
                     move.since,
                     move.overridden,
                 )
-                for move in (state.moves if isinstance(state, _State) else ())
+                for move in (state.moves if isinstance(state, _StateV3 | _State) else ())
             )
             memory = OwnEntries(entries, moves)
         except (ValidationError, ValueError) as error:
             raise StateUnreadable from error
-        return SavedState(state.rollout, memory, self.kept())
+        return SavedState(state.rollout, memory if isinstance(state, _State) else OlderOwnEntries(memory), self.kept())
 
     def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
         own = [
