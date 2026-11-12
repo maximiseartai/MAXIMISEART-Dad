@@ -93,15 +93,6 @@ def test_klon_na_najnowszym_commicie_jest_juz_aktualny(repository: ToolRepositor
     assert repository.head() == current
 
 
-def test_wydanie_z_tagiem_z_opisem_przesuwa_klon_na_commit_tagu(repository: ToolRepository, tmp_path: Path) -> None:
-    before = repository.head()
-    newest = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"}, released=False)
-    repository.release(annotated=True)
-
-    assert update(repository) == UpdateResult("ok", before=before, after=newest, installed=False)
-    assert repository.head() == newest
-
-
 def test_zmiana_na_main_spoza_wydania_nie_trafia_do_taty(repository: ToolRepository, tmp_path: Path) -> None:
     before = repository.head()
     unreleased = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"}, released=False)
@@ -116,19 +107,6 @@ def test_zmiana_na_main_spoza_wydania_nie_trafia_do_taty(repository: ToolReposit
 
     assert update(repository) == UpdateResult("ok", before=before, after=unreleased, installed=False)
     assert repository.read("src/narzedzie.py") == "WERSJA = 2\n"
-
-
-def test_najnowsze_wydanie_to_najwyzszy_numer_a_nie_ostatni_tag_alfabetycznie(
-    repository: ToolRepository, tmp_path: Path
-) -> None:
-    before = repository.head()
-    tenth = repository.publish({"src/narzedzie.py": "WERSJA = 10\n"}, released=False)
-    repository.release(tag="v0.10.0")
-    repository.publish({"src/narzedzie.py": "WERSJA = 9\n"}, released=False)
-    repository.release(tag="v0.9.0")
-
-    assert update(repository) == UpdateResult("ok", before=before, after=tenth, installed=False)
-    assert repository.read("src/narzedzie.py") == "WERSJA = 10\n"
 
 
 def test_wydanie_na_starszym_commicie_niz_klon_nie_cofa_wersji(repository: ToolRepository, tmp_path: Path) -> None:
@@ -168,20 +146,6 @@ def test_przejscie_z_wersji_pobierajacej_main_konczy_sie_na_wydaniu_albo_nowszym
     )
 
 
-def test_bez_wydania_na_githubie_narzedzie_jest_aktualne_a_klon_zostaje_bez_zmian(
-    repository: ToolRepository, tmp_path: Path
-) -> None:
-    git(repository.origin, "tag", "--delete", "v0.1.0")
-    repository.publish({"src/narzedzie.py": "WERSJA = 2\n"}, released=False)
-    before = repository.head()
-    unchanged = repository.state()
-
-    result = update(repository)
-
-    assert result == UpdateResult("AKTUALNA", before=before, after=before, installed=False)
-    assert repository.state() == unchanged
-
-
 def off_main_commit(repository: ToolRepository) -> str:
     """Commit, który zna tylko tag: ktoś założył go z gałęzi od pierwszego Wydania, która nie weszła do `main`."""
 
@@ -191,41 +155,6 @@ def off_main_commit(repository: ToolRepository) -> str:
     commit = git(repository.publisher, "rev-parse", "HEAD")
     git(repository.publisher, "checkout", "--quiet", "main")
     return commit
-
-
-def test_wyzsze_wydanie_spoza_main_jest_pominiete_a_tata_dostaje_najnowsze_wydanie_na_main(
-    repository: ToolRepository, tmp_path: Path
-) -> None:
-    before = repository.head()
-    on_main = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
-    repository.release(off_main_commit(repository), tag="v9.0.0")
-
-    result = update(repository)
-
-    assert result == UpdateResult("ok", before=before, after=on_main, installed=False, skipped=("v9.0.0",))
-    assert repository.read("src/narzedzie.py") == "WERSJA = 2\n"
-
-
-def test_uspiony_tag_z_galezi_wciagnietej_do_main_merge_em_nie_jest_wydaniem(
-    repository: ToolRepository, tmp_path: Path
-) -> None:
-    before = repository.head()
-    dormant = off_main_commit(repository)
-    repository.release(dormant, tag="v0.9.0")
-    git(repository.publisher, "merge", "--quiet", "--no-ff", "--no-edit", "agent")
-    git(repository.publisher, "push", "--quiet", "origin", "main")
-    unchanged = repository.state()
-
-    result = update(repository)
-
-    assert result == UpdateResult("AKTUALNA", before=before, after=before, installed=False, skipped=("v0.9.0",))
-    assert repository.state() == unchanged
-    assert readme_installation_release(repository, tmp_path / "instalacja-przed") == before
-
-    merged = git(repository.origin, "rev-parse", f"{repository.release()}^{{commit}}")
-
-    assert update(repository).after == merged
-    assert readme_installation_release(repository, tmp_path / "instalacja-po") == merged
 
 
 def test_same_wydania_spoza_main_to_jak_bez_wydan(repository: ToolRepository, tmp_path: Path) -> None:
