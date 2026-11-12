@@ -62,8 +62,12 @@ Kod, który biegnie tylko w takim procesie z ``-I`` uruchomionym przez inne narz
 nawet gdy test tamtego narzędzia by go wykrył: potrzebuje testu, który sam nazywa jego plik.
 Mutacja, po której pytest-timeout kończy test (``ZAWIESZENIE``), liczy się jak wykryta z dopiskiem ``liczona jako
 wykryta: pytest-timeout czerwieni test w CI`` (``silnik_mutacji.in_ci``) i nie biegnie z szerszymi testami. Mutacja, po której
-testy nie kończą się w ``--limit-s`` (``PRZEKROCZONY CZAS``), biegnie dalej jak przeżyta, bo test tylko wolniejszy CI
-przechodzi.
+testy nie kończą się w ``--limit-s`` (``PRZEKROCZONY CZAS``), nie jest wykryta, bo test tylko wolniejszy CI przechodzi: z
+przebiegu przed ostatnim biegnie dalej z szerszymi testami, z linią ``PRZEKROCZONY CZAS`` z nazwą przebiegu. Po ostatnim
+przebiegu nie jest też przeżyta: limit dotyczy całego polecenia ``pytest``, a sam zbiór testów pliku trwa blisko niego
+(run 42783639074, część 10/37: 802.59 s bez wykrycia), więc mutacja, po której test pada, potrafi go przekroczyć przed
+końcem ``-x`` (#1339). Gdy nie wykryje jej brama typów (cofnięcia fragmentu brama nie sprawdza), trafia do zapisu
+jako ``przekroczony_czas``, a do issue z dopiskiem, że noc nie dała jej werdyktu.
 Mutację, która przeżyła ostatni przebieg testów albo nie ma żadnego testu, sprawdza jeszcze brama typów
 (``silnik_mutacji.type_gate``): ruff i mypy obu systemów, kroki bramy pre-push. Mutacja, po której któryś zgłasza, że kod jest
 błędny (niezdefiniowana nazwa, błąd składni, błąd typów), to ``WYKRYTA PRZEZ BRAMĘ TYPÓW`` z nazwą kroku i tym błędem, i
@@ -81,15 +85,16 @@ fragmentu ma linię początku fragmentu, więc obejmuje je komentarz nad nim alb
 terminie nie obowiązuje, ale narzędzie widzi go dopiero przy
 następnej zmianie jego pliku, a komentarz ``mutacje-zmiany:`` w innej postaci kończy narzędzie błędem.
 
-Kończy się ``MUTACJE ZMIANY OK | …`` (kod 0) albo ``MUTACJE ZMIANY FAIL | …``: kodem 1, gdy przeżyły mutacje, kodem
-2, gdy wynik mutacji nic nie mówi (nieznana baza, zły wyjątek, testy padają albo nie kończą się w limicie czasu części
+Kończy się ``MUTACJE ZMIANY OK | …`` (kod 0) albo ``MUTACJE ZMIANY FAIL | …``: kodem 1, gdy przeżyły mutacje albo
+testy mutacji przekroczyły ``--limit-s`` w ostatnim przebiegu (``przekroczony czas <liczba>`` po liczbie przeżytych),
+kodem 2, gdy wynik mutacji nic nie mówi (nieznana baza, zły wyjątek, testy padają albo nie kończą się w limicie czasu części
 bez mutacji, odmowa ``tools/lib/ciezkie_ci.py``), a kodem 3, gdy limit czasu części (``--limit-czesci-s``) minął po
 pokryciu, przed werdyktem którejś mutacji. Po limicie żadne polecenie już nie biegnie, a mutacje bez wyniku dostają
 linię ``BEZ WERDYKTU``, więc część kończy się zapisem przed limitem czasu zadania CI.
 W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py``, w częściach
-workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje i mutacje bez
-werdyktu po limicie czasu części: plik, linię i opis z nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``),
-zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a do tego kod wyjścia; z nich
+workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje, mutacje bez
+werdyktu po limicie czasu części i mutacje z przekroczonym czasem testów w ostatnim przebiegu: plik, linię i opis z
+nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a do tego kod wyjścia; z nich
 ``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie.
 
 Granica: nie zastępuje mutacji z opisu PR. Obietnicę, której żadna z tych mutacji nie psuje (inny klucz
@@ -163,8 +168,13 @@ PART_LIMIT_S = 10500
 # ``tools/mutacje_nocne.py`` tylko zgłasza.
 OK = "MUTACJE ZMIANY OK"
 SURVIVED = "MUTACJE ZMIANY FAIL | przeżyło"
-# Kody wyjścia części, której zapis ``--zapis`` niesie wynik mutacji: 0 bez przeżytych, 1 z przeżytymi, 3 z mutacjami bez
-# werdyktu po limicie czasu części; kod 2 nic o mutacjach nie mówi.
+# Listy zapisu ``--zapis`` z mutacjami, które ``tools/mutacje_nocne.py`` zgłasza: przeżyte, bez werdyktu po limicie czasu
+# części i z testami, które w ostatnim przebiegu przekroczyły ``--limit-s`` (#1339).
+PRZEZYTE = "przezyte"
+BEZ_WERDYKTU = "bez_werdyktu"
+PRZEKROCZONY_CZAS = "przekroczony_czas"
+# Kody wyjścia części, której zapis ``--zapis`` niesie wynik mutacji: 0 bez przeżytych, 1 z przeżytymi albo z przekroczonym
+# czasem testów, 3 z mutacjami bez werdyktu po limicie czasu części; kod 2 nic o mutacjach nie mówi.
 KODY_Z_WYNIKIEM = frozenset({0, 1, 3})
 # Linia poleceń Windows ma najwyżej 32 767 znaków; dłuższa lista testów idzie jako pliki testów.
 COMMAND_LIMIT = 20_000
@@ -799,9 +809,8 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
     if refusal := ciezkie_ci.refusal({"change-mutations"}, args.odtwarzam, root=ROOT):
         print(refusal)
         return 2
-    survived: list[tuple[Mutant, str]] = []
-    unchecked: list[tuple[Mutant, str]] = []
-    code, result = _mutate(args, survived, unchecked, gate)
+    outcome = Outcome()
+    code, result = _mutate(args, outcome, gate)
     print(result)
     if args.zapis is not None:
         args.zapis.parent.mkdir(parents=True, exist_ok=True)
@@ -809,8 +818,9 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
             "czesc": str(args.czesc),
             "kod": code,
             "wynik": result,
-            "przezyte": [entry(mutant, text) for mutant, text in survived],
-            "bez_werdyktu": [entry(mutant, text) for mutant, text in unchecked],
+            PRZEZYTE: [entry(mutant, text) for mutant, text in outcome.survived],
+            BEZ_WERDYKTU: [entry(mutant, text) for mutant, text in outcome.unchecked],
+            PRZEKROCZONY_CZAS: [entry(mutant, text) for mutant, text in outcome.over_limit],
         }
         args.zapis.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
     return code
@@ -820,8 +830,18 @@ def _name(mutant: Mutant) -> str:
     return f"{mutant.path}:{mutant.line} {mutant.description}"
 
 
+@dataclass
+class Outcome:
+    """Mutacje części, które zgłasza noc, każda z treścią swojego pliku przed mutacją."""
+
+    survived: list[tuple[Mutant, str]] = field(default_factory=list)  # nie wykrył ich ani test, ani brama typów
+    unchecked: list[tuple[Mutant, str]] = field(default_factory=list)  # bez werdyktu po limicie czasu części
+    over_limit: list[tuple[Mutant, str]] = field(default_factory=list)  # ostatni przebieg testów to PRZEKROCZONY CZAS
+
+
 def entry(mutant: Mutant, text: str) -> dict[str, object]:
-    """Przeżyta albo bez werdyktu mutacja pliku o treści ``text`` w zapisie ``--zapis``, który czyta ``tools/mutacje_nocne.py``."""
+    """Przeżyta, bez werdyktu albo z przekroczonym czasem testów mutacja pliku o treści ``text`` w zapisie ``--zapis``,
+    który czyta ``tools/mutacje_nocne.py``."""
 
     return {"plik": mutant.path, "linia": mutant.line, "opis": mutant.description, "linie": sorted(mutant.lines), "klucz": fingerprint(mutant, text)}
 
@@ -922,12 +942,10 @@ class ZakresMutacji:
         return czesc.kawalek(self.mutanty)
 
 
-def _mutate(
-    args: argparse.Namespace, survived: list[tuple[Mutant, str]], unchecked: list[tuple[Mutant, str]], gate: silnik_mutacji.Gate
-) -> tuple[int, str]:
-    """Kod wyjścia i ostatnia linia; przeżyte mutacje z treścią ich pliku przed mutacją dopisuje do ``survived``, a mutacje
-    bez werdyktu po limicie czasu części do ``unchecked``."""
+def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gate) -> tuple[int, str]:
+    """Kod wyjścia i ostatnia linia; mutacje, które zgłasza noc, dopisuje do ``outcome``."""
 
+    survived, unchecked, over_limit = outcome.survived, outcome.unchecked, outcome.over_limit
     deadline = time.monotonic() + args.limit_czesci_s
     out_of_time = f"MUTACJE ZMIANY FAIL | limit czasu części {args.limit_czesci_s:g} s minął"
     czesc: Czesc = args.czesc
@@ -1014,7 +1032,10 @@ def _mutate(
                 continue
             if caught or verdict == silnik_mutacji.Verdict.NO_VERDICT or not remaining:
                 print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
-            elif remaining[1:]:
+                continue
+            if verdict == silnik_mutacji.Verdict.OVER_LIMIT:
+                print(f"{verdict}: {mutation.name} → {last}{label or ' (testy linii)'}, biegnie dalej z szerszymi testami", flush=True)
+            if remaining[1:]:
                 further.append((mutant, replace(mutation, command=_command(remaining[0])), remaining[1:]))
             else:
                 wide.append((mutant, replace(mutation, command=_command(remaining[0], args.rownolegle))))
@@ -1042,6 +1063,9 @@ def _mutate(
         caught, last = silnik_mutacji.in_ci(verdict, shown)
         if verdict == silnik_mutacji.Verdict.NO_VERDICT:
             unchecked.append((mutant, texts[mutant.path]))
+        elif verdict == silnik_mutacji.Verdict.OVER_LIMIT:
+            # Limit dotyczy całego zbioru testów, więc nie mówi, czy test łapie mutację: ani wykryta, ani przeżyta.
+            over_limit.append((mutant, texts[mutant.path]))
         elif not caught:
             survived.append((mutant, texts[mutant.path]))
         print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
@@ -1055,10 +1079,11 @@ def _mutate(
         flush=True,
     )
     summary = f"mutacje={len(found)} | wyjątki={excused} | innego systemu={other_system}"
+    over = f" | przekroczony czas {len(over_limit)}" if over_limit else ""
     if unchecked:
-        return 3, f"{out_of_time} przed werdyktem {len(unchecked)} mutacji | przeżyło {len(survived)} | {summary}"
-    if survived:
-        return 1, f"{SURVIVED} {len(survived)} | {summary}"
+        return 3, f"{out_of_time} przed werdyktem {len(unchecked)} mutacji | przeżyło {len(survived)}{over} | {summary}"
+    if survived or over_limit:
+        return 1, f"{SURVIVED} {len(survived)}{over} | {summary}"
     return 0, f"{OK} | {summary}"
 
 

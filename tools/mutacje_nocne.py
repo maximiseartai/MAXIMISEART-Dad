@@ -21,7 +21,8 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   plikami), sięgają Atrapy efenix, więc zadanie części instaluje Chromium tak jak zadanie pytest planu CI.
 - Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --do <do> --czesc k/n --zapis …``: kolejne mutacje z listy
   posortowanej po plikach, więc pokrycie biegnie na testach kilku plików, nie całej zmiany dnia.
-- ``zglos`` czyta zapisy części. Każdą przeżytą mutację i mutację bez werdyktu po limicie czasu części przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
+- ``zglos`` czyta zapisy części. Każdą przeżytą mutację, mutację bez werdyktu po limicie czasu części i mutację, której
+  testy w ostatnim przebiegu przekroczyły limit czasu mutacji, przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
   linie, które mutacja psuje, a nie linię jej nazwy, bo nazwę daje początek węzła, a w wielowierszowym ``if (`` zmienia
   się często tylko linia w środku. ``git blame`` tych linii daje commity nocy, bo to linie zmienione od bazy, a z nich
   liczy się ten, który linia pierwszych rodziców HEAD wniosła ostatni. Numer PR podaje temat commitu tej linii, który go wniósł
@@ -29,8 +30,9 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   temat scalenia mówi, który z nich je scalił. Bez numeru w temacie PR podaje ``gh api …/commits/<sha>/pulls``. Na PR
   przypada jedno issue ``Przeżyte mutacje z #N`` z etykietami ``ETYKIETY``, a w nim linie
   ``MUTACJA <plik>:<linia> <opis> | klucz <klucz>`` (z pól zapisu części: id jak w ``NIEWYKRYTA``, klucz z ``mutacje_zmiany.fingerprint``),
-  a mutacja bez werdyktu ma na końcu ``BEZ_WERDYKTU``: część po limicie czasu jej nie sprawdziła, więc noc nie wraca do
-  jej zakresu, a sprawdza ją agent PR-u.
+  a mutacja bez werdyktu ma na końcu dopisek swojego ``Rodzaj`` i radę w issue: część po limicie czasu jej nie
+  sprawdziła albo jej testy przekroczyły limit czasu mutacji (``--limit-s`` całego zbioru testów, #1339), więc noc nie
+  wraca do jej zakresu, a sprawdza ją agent PR-u.
   Mutacji, której klucz issue już ma w treści albo komentarzu, nie dostaje drugi raz; nowe idą do istniejącego issue
   komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``.
   Część bez zapisu albo z kodem wyjścia spoza ``mutacje_zmiany.KODY_Z_WYNIKIEM`` (testy padają albo nie kończą się
@@ -57,9 +59,11 @@ Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 import io
 import json
 import os
@@ -111,8 +115,35 @@ ARTEFAKT_ZAKRESU = "zakres-nocy"
 ZAKRES = "zakres.json"
 # Klucz z linii ``MUTACJA`` w treści issue; długość klucza daje ``mutacje_zmiany.fingerprint``.
 _KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]+)\b")
-# Koniec linii ``MUTACJA`` mutacji, której część nie dała werdyktu przed limitem czasu.
-BEZ_WERDYKTU = " | bez werdyktu w limicie czasu części"
+_RADA_MUTACJE = "uruchom ją `tools/mutacje.py`, a gdy test już ją wykrywa, napisz w komentarzu `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`"
+
+
+class Rodzaj(Enum):
+    """Mutacja, którą noc zgłasza: lista zapisu części (``tools/mutacje_zmiany.py --zapis``), z której przychodzi, koniec
+    jej linii ``MUTACJA``, jej nazwa w ostatniej linii ``zglos`` i rada w issue, gdy noc nie dała jej werdyktu."""
+
+    PRZEZYTA = (mutacje_zmiany.PRZEZYTE, "", "przeżyło", "")
+    BEZ_WERDYKTU = (
+        mutacje_zmiany.BEZ_WERDYKTU,
+        " | bez werdyktu w limicie czasu części",
+        "bez werdyktu",
+        f"to mutacja, której noc nie sprawdziła przed limitem czasu części: {_RADA_MUTACJE}.",
+    )
+    # Limit ``--limit-s`` dotyczy całego zbioru testów przebiegu, który bez mutacji trwa blisko niego, więc mutacja, po
+    # której test pada, potrafi go przekroczyć (#1339); mutacja, która tylko spowalnia test, przeżywa.
+    PRZEKROCZONY_CZAS = (
+        mutacje_zmiany.PRZEKROCZONY_CZAS,
+        " | przekroczony czas testów, bez werdyktu",
+        "przekroczony czas",
+        "to mutacja, której testy nie skończyły się w limicie czasu mutacji (`--limit-s` całego zbioru testów), więc noc nie wie, "
+        f"czy test ją łapie: {_RADA_MUTACJE}, a gdy przechodzi, tylko wolniej, dodaj test albo powód `nie warto`.",
+    )
+
+    def __init__(self, lista: str, dopisek: str, nazwa: str, rada: str) -> None:
+        self.lista = lista
+        self.dopisek = dopisek
+        self.nazwa = nazwa
+        self.rada = rada
 
 
 # --- plan ---
@@ -195,18 +226,18 @@ def zaplanuj(
 
 @dataclass(frozen=True)
 class Przezyta:
-    """Przeżyta mutacja z zapisu części, a z ``bez_werdyktu`` mutacja, której część nie dała werdyktu przed limitem
-    czasu: plik, linia i opis jej nazwy, zmienione linie, które psuje, i jej klucz."""
+    """Mutacja z zapisu części, którą noc zgłasza, z ``rodzaj`` swojej listy: plik, linia i opis jej nazwy, zmienione
+    linie, które psuje, i jej klucz."""
 
     plik: str
     linia: int
     opis: str
     linie: tuple[int, ...]
     klucz: str
-    bez_werdyktu: bool = False
+    rodzaj: Rodzaj = Rodzaj.PRZEZYTA
 
     @classmethod
-    def z_zapisu(cls, wpis: dict[str, Any], *, bez_werdyktu: bool = False) -> Przezyta:
+    def z_zapisu(cls, wpis: dict[str, Any], rodzaj: Rodzaj = Rodzaj.PRZEZYTA) -> Przezyta:
         """Wpis ``mutacje_zmiany.entry``; wpis bez któregoś pola, z polem ``null`` albo z polem innego typu to ``ValueError``."""
 
         if not isinstance(wpis, dict):
@@ -214,7 +245,7 @@ class Przezyta:
         if brak := next((pole for pole in ("plik", "linia", "opis", "linie", "klucz") if wpis.get(pole) is None), None):
             raise ValueError(f"wpis mutacji bez pola {brak!r}: {wpis}")
         try:
-            return cls(str(wpis["plik"]), int(wpis["linia"]), str(wpis["opis"]), tuple(wpis["linie"]), str(wpis["klucz"]), bez_werdyktu)
+            return cls(str(wpis["plik"]), int(wpis["linia"]), str(wpis["opis"]), tuple(wpis["linie"]), str(wpis["klucz"]), rodzaj)
         except TypeError as blad:
             raise ValueError(f"wpis mutacji z polem innego typu ({blad}): {wpis}") from None
 
@@ -222,11 +253,11 @@ class Przezyta:
     def w_issue(self) -> str:
         """Linia ``MUTACJA`` issue: nazwa jak w ``NIEWYKRYTA`` i klucz, po którym noc nie zgłasza jej drugi raz."""
 
-        return f"MUTACJA {self.plik}:{self.linia} {self.opis} | klucz {self.klucz}{BEZ_WERDYKTU if self.bez_werdyktu else ''}"
+        return f"MUTACJA {self.plik}:{self.linia} {self.opis} | klucz {self.klucz}{self.rodzaj.dopisek}"
 
 
 def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
-    """Przeżyte mutacje i mutacje bez werdyktu wszystkich części oraz przyczyny porażki części, które nie dały wyniku.
+    """Mutacje każdego ``Rodzaj`` wszystkich części oraz przyczyny porażki części, które nie dały wyniku.
 
     Część, której limit czasu minął po pokryciu (kod 3 ``tools/mutacje_zmiany.py``), dała wynik: jej mutacje bez werdyktu
     idą do issue jak przeżyte, więc nie zatrzymują bazy nocy."""
@@ -237,8 +268,7 @@ def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
         try:
             zapis = json.loads((katalog / f"{ARTEFAKT}{numer}" / ZAPIS).read_text(encoding="utf-8"))
             # Część, której limit czasu minął przed werdyktem części mutacji, też zapisuje przeżyte z reszty.
-            czesci = [Przezyta.z_zapisu(wpis) for wpis in zapis.get("przezyte") or []]
-            czesci += [Przezyta.z_zapisu(wpis, bez_werdyktu=True) for wpis in zapis.get("bez_werdyktu") or []]
+            czesci = [Przezyta.z_zapisu(wpis, rodzaj) for rodzaj in Rodzaj for wpis in zapis.get(rodzaj.lista) or []]
         except (OSError, ValueError) as blad:
             problemy.append(f"część {numer}/{liczba} bez zapisu: {blad}")
             continue
@@ -418,7 +448,7 @@ def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> 
                 "",
                 "Dla każdej linii `MUTACJA` dodaj test, który zabija tę mutację (dowód: `tools/mutacje.py`), albo napisz w komentarzu "
                 "`MUTACJA <plik>:<linia> <opis> | nie warto, bo <powód>`.",
-                *_rada_bez_werdyktu(mutacje),
+                *_rady(mutacje),
                 "Gdy każda linia ma test albo powód, zamknij issue (ADR 0021).",
             ]
             wynik.append(Zaloz(kto.tytul, "\n".join(tresc), ETYKIETY))
@@ -426,18 +456,16 @@ def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> 
         znane = "\n".join([issue.get("body") or "", *(komentarz["body"] or "" for komentarz in strony(github, f"{REPO}/issues/{issue['number']}/comments"))])
         klucze = {znalezione["klucz"] for znalezione in _KLUCZ.finditer(znane)}
         if nowe := [mutacja for mutacja in mutacje if mutacja.klucz not in klucze]:
-            tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu([mutacja.w_issue for mutacja in nowe]), *_rada_bez_werdyktu(nowe)]
+            tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu([mutacja.w_issue for mutacja in nowe]), *_rady(nowe)]
             wynik.append(_uzupelnij(issue, "\n".join(tresc)))
     return wynik
 
 
-def _rada_bez_werdyktu(mutacje: Sequence[Przezyta]) -> list[str]:
-    if not any(mutacja.bez_werdyktu for mutacja in mutacje):
-        return []
-    return [
-        f"Linia z `{BEZ_WERDYKTU.removeprefix(' | ')}` to mutacja, której noc nie sprawdziła przed limitem czasu części: "
-        "uruchom ją `tools/mutacje.py`, a gdy test już ją wykrywa, napisz w komentarzu `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`."
-    ]
+def _rady(mutacje: Sequence[Przezyta]) -> list[str]:
+    """Rada każdego rodzaju mutacji bez werdyktu, który jest wśród ``mutacje``."""
+
+    obecne = {mutacja.rodzaj for mutacja in mutacje}
+    return [f"Linia z `{rodzaj.dopisek.removeprefix(' | ')}` {rodzaj.rada}" for rodzaj in Rodzaj if rodzaj.rada and rodzaj in obecne]
 
 
 def _ma(tekst: str, linia: str) -> bool:
@@ -534,8 +562,8 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
         return 1
     skille = "" if plan_skilli is None else f" | zadania skilli {len(plan_skilli.zadania)} | padło skryptów {len(padly)}"
     skille += f" | blisko limitu czasu {len(blisko)}" if blisko else ""
-    bez_werdyktu = sum(mutacja.bez_werdyktu for mutacja in przezyte)
-    werdykty = f"przeżyło {len(przezyte) - bez_werdyktu}" + (f" | bez werdyktu {bez_werdyktu}" if bez_werdyktu else "")
+    liczby = Counter(mutacja.rodzaj for mutacja in przezyte)
+    werdykty = " | ".join(f"{rodzaj.nazwa} {liczby[rodzaj]}" for rodzaj in Rodzaj if rodzaj is Rodzaj.PRZEZYTA or liczby[rodzaj])
     print(f"MUTACJE NOCNE OK | części {liczba} | {werdykty}{skille}")
     return 0
 

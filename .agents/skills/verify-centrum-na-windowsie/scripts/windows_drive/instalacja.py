@@ -94,9 +94,10 @@ def drive(run: Run) -> None:
     run.check(pip.returncode == 0, "py -3 -m pip install -r requirements.txt succeeds in the tool's folder")
 
     run.step(FEATURE, "skrot")
-    desktop = Path(facts["desktop"])
+    desktop, startup = Path(facts["desktop"]), Path(facts["startup"])
     desktop.mkdir()
-    created = _python(run, "install_centrum_shortcut.py", "--folder", str(desktop))
+    startup.mkdir()
+    created = _python(run, "install_centrum_shortcut.py", "--folder", str(desktop), "--folder-autostartu", str(startup))
     print(f"  install_centrum_shortcut.py: {created.stdout.strip()} {created.stderr.strip()}".rstrip(), flush=True)
     link = Path(facts["shortcut"])
     code_page = windows_desktop.ansi_code_page()
@@ -118,3 +119,21 @@ def drive(run: Run) -> None:
     run.check(same_path(shortcut["WorkingDirectory"], run.tool), "it works in the tool's folder")
     icon = run.tool / "src" / "rozliczenia" / "centrum" / "centrum-rozliczen.ico"
     run.check(shortcut["IconLocation"].casefold() == f"{icon},0".casefold() and icon.is_file(), "its icon is Centrum's")
+
+    run.step(FEATURE, "autostart")
+    started_by_login = sorted(startup.glob("*.lnk"))
+    print(f"  Autostart shortcuts: {[ascii(found.name) for found in started_by_login]}", flush=True)
+    run.check([found.name for found in started_by_login] == [link.name], "the same step makes one shortcut in the Autostart folder")
+    run.check(
+        f"Utworzono skrót „Centrum rozliczeń” w Autostarcie (start po zalogowaniu, bez karty): {facts['startup']}"
+        in created.stdout,
+        "the step says where the Autostart shortcut is",
+    )
+    from_startup = windows_desktop.read_shortcut(started_by_login[0])
+    (run.evidence / "state" / "skrot-autostart.json").write_text(
+        json.dumps(from_startup, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    run.check(
+        from_startup == shortcut | {"Arguments": f'"{run.run_centrum}" "--no-browser"'},
+        "the Autostart shortcut is the desktop one with --no-browser, so Centrum starts at login without a tab",
+    )
