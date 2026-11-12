@@ -5,7 +5,9 @@ Port niczego w skrzynce nie zmienia: otwiera folder przez ``EXAMINE`` i pobiera 
 oznacza ich jako przeczytanych, i nie wysyła ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE`` ani ``APPEND``.
 Oddaje maile ze słowem ``SUBJECT_WORD`` w temacie, od każdego nadawcy oprócz samej skrzynki: Raport wykonawcy od
 adresu spoza pliku adresów rozpoznaje i pokazuje tacie rdzeń raportów, więc port nie filtruje po nadawcy. Mail, którego
-nie umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki.
+nie umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki. Treści
+załączników nie pobiera: z serwera bierze szkielet maila (``mail_skeleton``), z którego ``mail_of`` czyta to samo co z
+całego maila, a cały mail tylko wtedy, gdy szkieletu nie da się złożyć.
 
 Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło),
 który Maks pisze Notatnikiem albo PowerShellem, więc odczyt przyjmuje BOM UTF-8 i UTF-16. Hasło nie wychodzi z modułu:
@@ -27,7 +29,7 @@ wyniki porażek) i tak samo tylko do odczytu, żeby próba sprawdzała port, a n
 from __future__ import annotations
 
 import codecs
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -46,6 +48,7 @@ import ssl
 import time
 from typing import Final, Literal, Protocol, TypeVar
 
+from .mail_skeleton import FetchValue, Structure, UnknownReply, chosen, fetch_responses, sections, skeleton
 from .worker_reports import SUBJECT_WORD, MailId, Reminder, ReportMail, SenderAddress, SentReminder, reminder_day
 
 __all__ = [
@@ -73,12 +76,17 @@ SMTP_HOST: Final = "smtp.gmail.com"
 SMTP_PORT: Final = 465
 TIMEOUT_S: Final = 30
 FETCH_BATCH: Final = 100
-"""Najwięcej UID w jednym ``UID FETCH``, żeby polecenie miało ograniczoną długość przy każdej liczbie maili."""
+"""Najwięcej zakresów kolejnych UID (``5:9``) w jednym ``UID FETCH``, żeby polecenie miało ograniczoną długość przy
+każdej liczbie maili."""
 _MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _LIST_LINE: Final = re.compile(rb'\((?P<flags>[^)]*)\) (?:"(?:[^"\\]|\\.)*"|NIL) "(?P<name>(?:[^"\\]|\\.)*)"')
 _UID: Final = re.compile(rb"\bUID (\d+)\b")
 _FLAGS: Final = re.compile(rb"\bFLAGS \((?P<flags>[^)]*)\)")
 _SENT_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (SUBJECT TO)])"
+_LIGHT_ITEMS: Final = "(UID INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER])"
+_WHOLE_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[])"
+_BODY_PREFERENCE: Final = ("plain", "html")
+"""Treść maila to część ``text/plain``, a bez niej ``text/html`` (``mail_of``, ``mail_skeleton.chosen``)."""
 _SMTP_NETWORK: Final = (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)
 """Porażki SMTP, które są siecią, a nie odmową serwera, jak każdy inny ``OSError``: przypomnienie poczeka na następną
 próbę w tej porze. ``SMTPException`` dziedziczy po ``OSError``, więc idą przed odmową serwera."""
@@ -309,7 +317,7 @@ def _read(imap: imaplib.IMAP4, access: _Access, day: date) -> Mails:
     _ok(imap.select(_quoted(_folder(imap)), readonly=True))
     chosen = _with_subject_word(imap, _since(imap, day))
     mails, skipped = [], 0
-    for prefix, raw in _fetched(imap, chosen, "(UID INTERNALDATE BODY.PEEK[])").values():
+    for prefix, raw in _mail_bytes(imap, chosen, access.address).values():
         moment = imaplib.Internaldate2tuple(prefix)
         if moment is None:
             raise UnexpectedReply
@@ -320,6 +328,136 @@ def _read(imap: imaplib.IMAP4, access: _Access, day: date) -> Mails:
         elif mail.sender != access.address:
             mails.append(mail)
     return Mails(tuple(mails), skipped)
+
+
+def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dict[str, tuple[bytes, bytes]]:
+    """UID → (``INTERNALDATE`` jak początek odpowiedzi FETCH, bajty maila) dla ``uids``, w ich kolejności, bez maili od
+    samej skrzynki ``own`` (jej Przypomnień o raporcie), które port i tak pomija, a o nadawcy mówi już nagłówek: szkielet
+    bez treści załączników (``mail_skeleton``), a cały mail (``BODY.PEEK[]``) tylko wtedy, gdy szkieletu nie da się
+    złożyć albo mail nie ma ``Message-ID``, bo ``mail_of`` liczy wtedy jego ``MailId`` z bajtów całego maila.
+
+    Najpierw ``BODYSTRUCTURE`` i nagłówek w paczkach po ``FETCH_BATCH``, potem sekcje ``mail_skeleton.sections``:
+    jedno ``UID FETCH`` na paczkę maili z tą samą listą sekcji, bo Gmail odmawia całego polecenia, gdy któryś mail nie
+    ma żądanej sekcji. Odmowa albo odpowiedź spoza RFC 3501 przy tych poleceniach odsyła maile do pobrania w całości."""
+
+    light: dict[str, tuple[bytes, Structure, bytes]] = {}
+    from_box: set[str] = set()
+    for sequence, _ in _batches(uids):
+        for response in _responses(imap.uid("FETCH", sequence, _LIGHT_ITEMS)):
+            described = _described(response)
+            if described is None:
+                continue
+            uid, internal, structure, header, sender, identified = described
+            if sender == own:
+                from_box.add(uid)
+            elif identified:
+                light[uid] = (internal, structure, header)
+    groups: dict[tuple[str, ...], list[str]] = {}
+    for uid, (_, structure, _) in light.items():
+        groups.setdefault(sections(structure), []).append(uid)
+    parts: dict[str, dict[str, bytes]] = {uid: {} for uid in light}
+    _fetch_sections(imap, groups, parts)
+    missing: dict[tuple[str, ...], list[str]] = {}
+    for uid, (_, structure, header) in light.items():
+        found = _skeleton_of(structure, header, parts[uid])
+        if found is not None and found[1] is not None and found[1] not in parts[uid]:
+            missing.setdefault((found[1],), []).append(uid)
+    _fetch_sections(imap, missing, parts)
+    built: dict[str, tuple[bytes, bytes]] = {}
+    for uid, (internal, structure, header) in light.items():
+        found = _skeleton_of(structure, header, parts[uid])
+        if found is not None and (found[1] is None or found[1] in parts[uid]):
+            built[uid] = (internal, found[0])
+    whole = _fetched(imap, [uid for uid in uids if uid not in built and uid not in from_box], _WHOLE_ITEMS)
+    return {uid: mail for uid in uids if (mail := built.get(uid) or whole.get(uid)) is not None}
+
+
+def _skeleton_of(structure: Structure, header: bytes, parts: Mapping[str, bytes]) -> tuple[bytes, str | None] | None:
+    """Szkielet maila i sekcja części, którą wybiera ``mail_of`` (``None``: żadna); ``None``, gdy szkieletu nie da się
+    złożyć albo pakiet ``email`` nie umie rozebrać nagłówka którejś części: taki mail port pobiera w całości, a tam
+    ``mail_of`` liczy go jako pominięty, więc jeden zepsuty mail nie zatrzymuje odczytu skrzynki."""
+
+    # Pakiet email zgłasza na zepsutym nagłówku różne wyjątki, zależnie od wersji Pythona (jak ``mail_of``).
+    try:
+        raw = skeleton(structure, header, parts)
+        return None if raw is None else (raw, chosen(structure, raw, _BODY_PREFERENCE))
+    except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: taki mail port pobiera w całości
+        return None
+
+
+def _fetch_sections(imap: imaplib.IMAP4, groups: Mapping[tuple[str, ...], list[str]], parts: dict[str, dict[str, bytes]]) -> None:
+    """Dopisuje do ``parts`` sekcje ``BODY.PEEK[…]`` każdej grupy maili: jedno ``UID FETCH`` na paczkę maili z tą samą
+    listą sekcji, bo Gmail odmawia całego polecenia, gdy któryś mail nie ma żądanej sekcji."""
+
+    for names, members in groups.items():
+        items = "(UID " + " ".join(f"BODY.PEEK[{name}]" for name in names) + ")"
+        for sequence, _ in _batches(members) if names else ():
+            for response in _responses(imap.uid("FETCH", sequence, items)):
+                number = response.get(b"UID")
+                taken = parts.get(number.decode("ascii")) if isinstance(number, bytes) else None
+                for name in names if taken is not None else ():
+                    value = response.get(f"BODY[{name}]".encode("ascii"))
+                    if taken is not None and isinstance(value, bytes):
+                        taken[name] = value
+
+
+def _described(
+    response: Mapping[bytes, FetchValue],
+) -> tuple[str, bytes, Structure, bytes, SenderAddress | None, bool] | None:
+    """UID, ``INTERNALDATE`` jak początek odpowiedzi FETCH, ``BODYSTRUCTURE``, nagłówek maila, nadawca z ``From`` i to,
+    czy nagłówek ma ``Message-ID``, z odpowiedzi; ``None``, gdy czegoś brak, kształt jest nieznany albo nagłówka nie da
+    się rozebrać."""
+
+    uid, internal, header = (response.get(name) for name in (b"UID", b"INTERNALDATE", b"BODY[HEADER]"))
+    structure = Structure.of(response.get(b"BODYSTRUCTURE"))
+    if not (isinstance(uid, bytes) and isinstance(internal, bytes) and isinstance(header, bytes)) or structure is None:
+        return None
+    facts = _header_facts(header)
+    if facts is None:
+        return None
+    return uid.decode("ascii"), b'INTERNALDATE "' + internal + b'"', structure, header, *facts
+
+
+def _batches(uids: list[str]) -> Iterator[tuple[str, list[str]]]:
+    """Paczki ``uids`` po najwyżej ``FETCH_BATCH`` zakresów kolejnych UID: zbiór sekwencji IMAP (``1:5,9``) i UID
+    paczki. Zakres ma tylko UID z ``uids``, więc serwer oddaje te same maile co przy wypisaniu każdego UID, a 800 maili
+    z 10 dni skrzynki taty to 23 zakresy, czyli jedno polecenie zamiast ośmiu (12.11.2026)."""
+
+    runs: list[list[int]] = []
+    for uid in uids:
+        number = int(uid)
+        if runs and number == runs[-1][-1] + 1:
+            runs[-1].append(number)
+        else:
+            runs.append([number])
+    for start in range(0, len(runs), FETCH_BATCH):
+        chunk = runs[start : start + FETCH_BATCH]
+        sequence = ",".join(f"{run[0]}:{run[-1]}" if len(run) > 1 else str(run[0]) for run in chunk)
+        yield sequence, [str(number) for run in chunk for number in run]
+
+
+def _responses(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchValue]]:
+    """Odpowiedzi ``FETCH`` polecenia, które serwer przyjął; po odmowie albo w formie spoza RFC 3501 żadnej."""
+
+    status, data = reply
+    if status != "OK":
+        return []
+    try:
+        return fetch_responses(data)
+    except UnknownReply:
+        return []
+
+
+def _header_facts(header: bytes) -> tuple[SenderAddress | None, bool] | None:
+    """Nadawca z ``From`` tak, jak go czyta ``mail_of``, i to, czy nagłówek daje ``mail_of`` niepusty ``Message-ID``, z
+    którego liczy ``MailId`` bez bajtów treści; ``None``, gdy nagłówka nie da się rozebrać (port pobiera cały mail)."""
+
+    # Pakiet email zgłasza na zepsutym nagłówku różne wyjątki, zależnie od wersji Pythona (jak ``mail_of``).
+    try:
+        message = email.message_from_bytes(header, policy=email.policy.default)
+        return SenderAddress.of(str(message["From"] or "")), bool(str(message["Message-ID"] or ""))
+    except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: taki mail port pobiera w całości
+        return None
 
 
 def _survey(imap: imaplib.IMAP4, access: _Access, day: date) -> InboxSurvey:
@@ -355,9 +493,8 @@ def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
     ``UnexpectedReply``."""
 
     flags = {}
-    for start in range(0, len(uids), FETCH_BATCH):
-        batch = uids[start : start + FETCH_BATCH]
-        lines = [line for line in _ok(imap.uid("FETCH", ",".join(batch), "(UID FLAGS)")) if line is not None]
+    for sequence, batch in _batches(uids):
+        lines = [line for line in _ok(imap.uid("FETCH", sequence, "(UID FLAGS)")) if line is not None]
         found = {}
         for line in lines:
             uid = _UID.search(line) if isinstance(line, bytes) else None
@@ -443,8 +580,8 @@ def _fetched(imap: imaplib.IMAP4, uids: list[str], items: str) -> dict[str, tupl
     """UID → (początek odpowiedzi FETCH, literał) dla ``uids`` w paczkach po ``FETCH_BATCH``."""
 
     fetched = {}
-    for start in range(0, len(uids), FETCH_BATCH):
-        for part in _ok(imap.uid("FETCH", ",".join(uids[start : start + FETCH_BATCH]), items)):
+    for sequence, _ in _batches(uids):
+        for part in _ok(imap.uid("FETCH", sequence, items)):
             if not isinstance(part, tuple):
                 continue
             prefix, literal = part
@@ -485,7 +622,7 @@ def _report_mail(raw: bytes, arrived: datetime) -> ReportMail | None:
     sender = SenderAddress.of(str(message["From"] or ""))
     if sender is None:
         return None
-    body = message.get_body(preferencelist=("plain", "html"))
+    body = message.get_body(preferencelist=_BODY_PREFERENCE)
     text = ""
     if body is not None:
         content = _decoded(body)

@@ -22,6 +22,7 @@ pilnuje:
   - src/rozliczenia/input_checks.py
   - src/rozliczenia/input_copy.py
   - src/rozliczenia/intermax_*.py
+  - src/rozliczenia/mail_skeleton.py
   - src/rozliczenia/message.py
   - src/rozliczenia/onedrive_conflicts.py
   - src/rozliczenia/order_facts.py
