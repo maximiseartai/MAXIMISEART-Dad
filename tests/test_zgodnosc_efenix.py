@@ -74,7 +74,7 @@ from atrapy.atrapa_efenix import (
 )
 from atrapy.efenix import write_template_costs
 from tests.fixtures.expect import assert_expected
-from tests.fixtures.potomne import wait_for
+from tests.fixtures.potomne import wait_for, wait_for_value
 from atrapy.settlement import CellValue
 from atrapy.workbooks import active_worksheet
 
@@ -650,9 +650,7 @@ def chromium(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Chromium]:
                 )
                 try:
                     [idle] = own_context.pages
-                    active_port = profile / "DevToolsActivePort"
-                    wait_for(active_port.is_file, 30)
-                    endpoint = f"http://127.0.0.1:{active_port.read_text(encoding='utf-8').split()[0]}"
+                    endpoint = f"http://127.0.0.1:{_active_port(profile)}"
                     remote = playwright.chromium.connect_over_cdp(endpoint)
                     name, value = SESSION_COOKIE
                     remote.contexts[0].add_cookies([{"name": name, "value": value, "domain": "127.0.0.1", "path": "/"}])
@@ -684,6 +682,28 @@ def chromium(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Chromium]:
     finally:
         stop.set()
         owner.join()
+
+
+def _active_port(profile: Path) -> str:
+    """Port zdalnego debugowania z ``DevToolsActivePort`` profilu, gdy Chromium zapisał go już w całości.
+
+    Chromium pisze w tym pliku port, koniec linii i ścieżkę przeglądarki, a odczyt w chwili zapisu daje na Windows
+    ``PermissionError`` (8 z 151 biegów modułu na windows-latest, wszystkie przy starcie fixture ``chromium``), a gdzie
+    indziej pusty albo ucięty tekst. Port jest cały dopiero wtedy, gdy za nim stoi koniec linii.
+    """
+
+    active_port = profile / "DevToolsActivePort"
+
+    def written() -> str:
+        try:
+            return active_port.read_text(encoding="utf-8")
+        except (FileNotFoundError, PermissionError):
+            return ""
+
+    done, text = wait_for_value(written, lambda text: "\n" in text, 30)
+    if not done:
+        raise TimeoutError(f"Chromium nie zapisał portu w {active_port} w 30 s: {text!r}")
+    return text.split("\n")[0]
 
 
 @pytest.fixture
@@ -827,10 +847,6 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chrome: str, tmp_path: Pa
     assert set(atrapa.requested()) <= READING
 
 
-# Wyjątek bez terminu, zgoda Maksa 6.11.2026 (#979): `zgodnosc_efenix.py --emmett` uruchamia tylko Maks na swoim Macu,
-# więc ten test biegnie tylko na Macu i Linuksie. Na Windows CI wątek Playwrighta z fixture `chromium` ginie w trakcie
-# kliknięcia Maksa, a worker xdist pada („node down: Not properly terminated”, #975); kwarantanna (xfail) tego nie łapie.
-@pytest.mark.skipif(sys.platform == "win32", reason="#979: narzędzie Maksa tylko na Macu; worker xdist pada na Windows")
 @pytest.mark.parametrize("variant", EMMETT.values(), ids=EMMETT.keys())
 def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odczytem(
     chromium: Chromium, tmp_path: Path, variant: Emmett
