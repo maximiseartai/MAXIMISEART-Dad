@@ -222,7 +222,7 @@ class _Line:
 @dataclass
 class _Truth:
     """Wiedza wyroczni o wierszu: wartości, które Centrum (albo Wydanie v0.7.0/v0.8.0) wpisało do jego komórek, a od
-    tamtej pory nikt ich nie zmienił (``written``), najmniejsza możliwa chwila najświeższego maila, którego opis Centrum
+    tamtej pory nikt ich nie zmienił, a Centrum dalej je pamięta (``written``, ``_forget_unsure``), najmniejsza możliwa chwila najświeższego maila, którego opis Centrum
     wpisało do tego wiersza (``since``), oraz z tabeli przejść #1358: miejsce (Wykonawca i dzień) sprzed pierwszego
     Przeniesienia Centrum (``origin``), miejsce, w którym Centrum postawiło zlecenie (``placed``; ``None``: Centrum go nie
     przeniosło albo przeniosło z powrotem na ``origin``) i czy tata przeniósł je potem gdzie indziej (``overridden``)."""
@@ -397,6 +397,8 @@ def _planned(lines: Sequence[_Line], outcome: ReportsOutcome) -> MovePlan | Miss
 APPLIED = frozenset({"changes", "moves", "added"})
 """Pola ``ReportsOutcome``, które zmieniają INTERMAX: model arkusza zapisuje każde (``_written``)."""
 NOT_WRITTEN = frozenset({"problems", "workers", "mails", "memory", "notes"})
+"""Pola ``ReportsOutcome``, które INTERMAX nie zmieniają. Każde nowe pole wyniku czerwieni ten test (N8 w ``_click``),
+dopóki nie trafi tu albo, gdy zmienia INTERMAX, do ``APPLIED`` z zapisem w ``_written``."""
 
 
 def _moved(lines: Sequence[_Line], plan: MovePlan, fresh: int) -> list[_Line]:
@@ -615,6 +617,18 @@ def _carry_identity(register: _Register, orders: tuple[RegisterOrder, ...]) -> N
             register.truth[ident] = replace(old, written=dict(old.written))
 
 
+def _forget_unsure(register: _Register, orders: tuple[RegisterOrder, ...]) -> None:
+    """Druga połowa reguły pamięci (ADR 0029, „Numer w kilku zleceniach się nie przenosi”): wartości, które Centrum
+    wpisało do wierszy numeru, który kliknięcie odczytało w kilku zleceniach albo w żadnym, przestają być własne, bo
+    Excel nie mówi, który wiersz jest którym. Od tego kliknięcia liczą się jak wartość taty, także gdy numer ma potem
+    znów jedno zlecenie."""
+
+    counted = Counter(order.key.number for order in orders)
+    for line in register.lines:
+        if line.ident and counted[OrderNumber(str(line.number))] != 1:
+            register.truth[line.ident].written.clear()
+
+
 def _open(day: date | None, today: date) -> bool:
     """Dzień otwarty dla Wpisania raportów wprost z ADR 0028: od dnia wdrożenia do dziś, bez okresu z Plikiem
     zbiorczym."""
@@ -825,7 +839,11 @@ def _added_faults(
 
     - N9: zlecenie ma ``WYKONAWCA`` nadawcy, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` jednego Wpisu z jego maila;
     - N8 („Nie powstaje, gdy temat raportu jest pomyłką”): mail nie ma co najmniej dwóch Wpisów numerów, które odczytane
-      zlecenia mają tylko w innym dniu niż dzień dopisania, a których Centrum nie przenosiło ani nie dopisało;
+      zlecenia mają tylko u nadawcy i tylko w innym dniu niż dzień dopisania, a których Centrum nie przenosiło ani nie
+      dopisało. GLOSSARY (Wpis raportu) i ADR 0029 liczą do pomylonego tematu zlecenia tego Wykonawcy z innego dnia, a
+      rdzeń (``_matching.Board.match``) zlecenia każdego Wykonawcy z innego dnia; którą regułę chce Maks, jeszcze nie
+      wiadomo (opis #1406). Wyrocznia liczy więc tylko zlecenia nadawcy, przy których obie reguły dają ten sam wynik:
+      wtedy obie mówią „pomylony temat”, a przy mniej niż dwóch takich Wpisach wyrocznia nic nie twierdzi;
     - N8 („… Wykonawca poprawił raport późniejszym mailem bez tego numeru”): nie ma późniejszego Raportu wykonawcy
       nadawcy z tym samym dniem, bez tego numeru, z każdym innym numerem maila, który ma Wpis do zlecenia nadawcy z tego
       dnia;
@@ -858,7 +876,10 @@ def _added_faults(
         return (
             sum(
                 bool(placed[found])
-                and all(at.key.day != order.day for at in placed[found])
+                and all(
+                    at.key.day != order.day and at.key.worker == worker
+                    for at in placed[found]
+                )
                 and found not in register.touched
                 for found in others(sent)
             )
@@ -956,8 +977,9 @@ def _click(register: _Register) -> None:
     - N5 (docstring ``enter_reports``): te same maile w odwrotnej kolejności dają ten sam wynik;
     - N8 (ADR 0029, „Numer bez zlecenia to Zlecenie dopisane z raportu” i „Okno mówi, gdzie wolno pisać”): kliknięcie
       nie dodaje wiersza numeru, który INTERMAX ma w czytanym wierszu (``_known``), a numerowi Zlecenia dopisanego z
-      raportu dodaje jeden wiersz w dniu i u Wykonawcy z wyniku; model arkusza zapisuje każde pole wyniku, które
-      zmienia INTERMAX.
+      raportu dodaje jeden wiersz w dniu i u Wykonawcy z wyniku. To samo N8 pada też na każdym nowym polu
+      ``ReportsOutcome``, którego test jeszcze nie zna, bo nie wie, czy pole zmienia INTERMAX: pole, które je zmienia,
+      idzie do ``APPLIED`` z zapisem w ``_written``, a każde inne do ``NOT_WRITTEN``.
     """
 
     if register.changed:
@@ -966,6 +988,7 @@ def _click(register: _Register) -> None:
     read = _read(register.lines, window)
     orders = read.orders
     _carry_identity(register, orders)
+    _forget_unsure(register, orders)
     _observe(register, orders)
     memory = (
         register.memory
@@ -983,7 +1006,8 @@ def _click(register: _Register) -> None:
     unapplied = {found.name for found in fields(ReportsOutcome)} - APPLIED - NOT_WRITTEN
     if unapplied:
         faults.append(
-            f"N8: wynik rdzenia ma pola {sorted(unapplied)}, których model arkusza w tym teście nie zapisuje"
+            f"N8: wynik rdzenia ma nowe pola {sorted(unapplied)}: pole, które zmienia INTERMAX, dopisz do APPLIED i "
+            "zapisz w _written, a inne dopisz do NOT_WRITTEN"
         )
     assert not faults, "\n".join(faults)
 
@@ -1815,6 +1839,86 @@ SAME_ID = "<1@przyklad.invalid>"
         ("klik",),
     ],
 ).via("ADR 0029: numer bez 8 cyfr numeru z aplikacji firmowej się nie dopisuje")
+@example(
+    ((_order(ONE, UNREAD, ADAM), _order(THREE, SIXTH, ADAM)), frozenset()),
+    [
+        _sent(
+            ADAM,
+            "Raport 31.10.2026",
+            "40000002 tak 40000003 nie",
+            ((TWO, "tak", ""), (THREE, "nie", "")),
+        ),
+        ("klik",),
+        ("wkleja", _order(TWO, SIXTH, ADAM)),
+        ("klik",),
+        ("wkleja", _order(THREE, CLOSED_DAY, ADAM)),
+        ("klik",),
+        ("usuwa", 3),
+        ("poprawka", 0, 0, 1, THREE),
+        ("klik",),
+    ],
+).via(
+    "przegląd #1406 r1 Ważne 1: wpis Centrum przepada, gdy numer ma dwa zlecenia, i liczy się potem jak wartość taty"
+)
+@example(
+    (
+        (
+            _order(TWO, UNREAD, ADAM),
+            _order(TWO, UNREAD, ADAM),
+            _order(FOUR, SIXTH, ADAM),
+            ("z aplikacji", TWO, SIXTH, ADAM, None, None),
+            _order(ONE, SIXTH, ADAM),
+        ),
+        frozenset(),
+    ),
+    [
+        _sent(
+            EWA,
+            "Raport 31.10.2026",
+            "40000004 tak\n40000001 tak wymiana routera\n40000002 tak",
+            ((FOUR, "tak", ""), (ONE, "tak", "wymiana routera"), (TWO, "tak", "")),
+        ),
+        ("klik",),
+        ("dzień", 0, SEVENTH),
+        _sent(
+            EWA,
+            "Raport 31.10.2026",
+            "40000004 tak\n40000001 tak brak klienta",
+            ((FOUR, "tak", ""), (ONE, "tak", "brak klienta")),
+        ),
+        ("poprawka", 0, 0, 0, ""),
+        ("klik",),
+        ("dzień", 0, UNREAD),
+        ("klik",),
+    ],
+).via(
+    "przegląd #1406 r1 Ważne 1: wpis Centrum przepada, gdy kliknięcie nie odczytało żadnego zlecenia numeru"
+)
+@example(
+    ((_order(ONE, EIGHTH, JAN),), frozenset()),
+    [
+        _sent(
+            EWA,
+            "Raport 08.11.2026",
+            "40000001 tak wymiana routera",
+            ((ONE, "tak", "wymiana routera"),),
+        ),
+        ("klik",),
+        ("wykonawca", 0, JAN),
+        ("klik",),
+        ("wykonawca", 0, EWA),
+        ("klik",),
+        _sent(
+            ADAM,
+            "Raport 08.11.2026",
+            "40000001 nie brak klienta",
+            ((ONE, "nie", "brak klienta"),),
+        ),
+        ("klik",),
+    ],
+).via(
+    "przegląd #1406 r1 Drobne 1: tata oddał zlecenie i postawił je znów u Ewy, a pamięć dalej mówi, że to jego zmiana"
+)
 def test_wlasnosc_kazde_klikniecie_wpisania_raportow_trzyma_reguly_adr_0028_i_0029(
     start: Start, events: list[tuple[object, ...]]
 ) -> None:
