@@ -109,8 +109,8 @@ _RUN_ALL = (
     _Rule(".github/actions/", frozenset({_GATE, _SKILLS})),
     _Rule(".gitattributes", frozenset({_SKILLS})),
 )
-# Testy i węzły ``plik::test``, które biegną przy każdej zmianie: reguły z tabel w ``AGENTS.md``,
-# ``CODING_STANDARDS.md`` i ``docs/agents/`` oraz testy całego repozytorium, których graf nie wiąże ze zmianą.
+# Testy i węzły ``plik::test``, które biegną przy każdej zmianie: strażnicy reguł (``RULE_GUARDS`` w
+# ``tests/test_szybko.py``) oraz testy całego repozytorium, których graf nie wiąże ze zmianą.
 STRUCTURE = (
     "tests/test_adr.py",
     "tests/test_decyzje_na_faktach.py",

@@ -416,6 +416,7 @@ FEATURES = (
             "292-raporty-mapa-waska",
             "294-raporty-przypomnienia",
             "295-raporty-przypomnienie-i-przeniesienie",
+            "296-raporty-dopisane",
             "286-raporty-zatrzymanie",
         ),
     ),

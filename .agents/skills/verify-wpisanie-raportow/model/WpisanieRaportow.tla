@@ -159,7 +159,7 @@ NowyMail(w) ==
     /\ UNCHANGED <<komorka, autor, okresOtwarty, kopia, plikPamieci, plikWyniku, plikDecyzji, klik, karty, duchy,
                    liczniki, zdarzenia>>
 
-(* Przygotowanie tworzy Plik zbiorczy okresu: okres jest dla Wpisania raportów zamknięty (_closed).              *)
+(* Przygotowanie tworzy Plik zbiorczy okresu: okres jest dla Wpisania raportów zamknięty (closed_periods).       *)
 ZamkniecieOkresu ==
     /\ okresOtwarty /\ okresOtwarty' = FALSE
     /\ UNCHANGED <<komorka, autor, wpis, kopia, plikPamieci, plikWyniku, plikDecyzji, klik, karty, duchy, liczniki,

@@ -47,6 +47,7 @@ from rozliczenia.worker_report_inbox import (
     PasswordRejected,
 )
 from rozliczenia.worker_reports import (
+    AddBar,
     ConflictingVerdicts,
     Login,
     MailId,
@@ -1021,12 +1022,12 @@ def _click_at(centrum: EnteringCentrum, moment: datetime, mails: list[Any]) -> d
     return _finished(centrum)
 
 
-def test_pomylka_wykonawcy_w_numerze_daje_problem_a_jedyne_zlecenie_z_innego_dnia_przechodzi_na_dzien_z_tematu(
+def test_nowy_numer_jest_dopisany_a_jedyne_zlecenie_z_innego_dnia_przechodzi_na_dzien_z_tematu(
     tmp_path: Path,
 ) -> None:
-    """US 27–30: numer spoza zleceń daje problem z numerem, a Wpis Anny do zlecenia Jana przegrywa ze świeższym mailem
-    Jana (ADR 0029). Numer zlecenia Jana z 8.11 w Raporcie z 9.11 to jedyny niezgodny Wpis tego raportu, więc zlecenie
-    przechodzi na 9.11 z Wpisem (#1350), bez problemu."""
+    """ADR 0029: numer z 8 cyframi spoza zleceń (wcześniej problem, US 27–30 speca #1224) to Zlecenie dopisane z raportu
+    (#1354), a Wpis Anny do zlecenia Jana przegrywa ze świeższym mailem Jana. Numer zlecenia Jana z 8.11 w Raporcie z
+    9.11 to jedyny niezgodny Wpis tego raportu, więc zlecenie przechodzi na 9.11 z Wpisem (#1350), bez problemu."""
 
     centrum = entering_centrum(tmp_path, INTERMAX)
     _click_at(centrum, datetime(2026, 11, 8, 18), [])
@@ -1048,14 +1049,10 @@ def test_pomylka_wykonawcy_w_numerze_daje_problem_a_jedyne_zlecenie_z_innego_dni
         40000001: ("tak", "wymiana routera"),
         40000010: ("tak", "wymiana gniazda"),
     }
-    problems = _entering(centrum, view)["problems"]
-    assert [
-        (problem["kind"], problem["worker"], problem["number"], problem["owner"], problem["order_days"])
-        for problem in problems
-    ] == [("unknown_number", "jan.testowy", "30000077", None, [])]
-    assert {problem["day"] for problem in problems} == {"2026-11-09"}
+    assert _entering(centrum, view)["problems"] == []
+    assert [(added["number"], added["worker"]) for added in _entering(centrum, view)["added"]] == [(30000077, "jan.testowy")]
     assert _entering(centrum, view)["moves"] == [{"sheet": ORDER_SHEET, "row": 2, "day": "2026-11-09", "worker": "jan.testowy"}]
-    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
+    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 0, "unit": "count"}
 
 
 def test_ten_sam_numer_dwa_razy_u_wykonawcy_w_jednym_dniu_niczego_nie_wpisuje(tmp_path: Path) -> None:
@@ -1697,6 +1694,377 @@ def test_nadawca_bez_segmentu_w_dniu_dostaje_nowy_segment_na_miejscu_alfabetyczn
     assert not any(cell.value for cell in separator)
 
 
+def _address_written(register: Path, number: int) -> None:
+    """Tata wpisuje w Excelu ``ADRES`` dopisanego zlecenia ``number``."""
+
+    book = load_workbook(register)
+    [row] = [cell.row for cell in book[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == number]
+    book[ORDER_SHEET].cell(row, ADDRESS).value = "Ulica Testowa 7"
+    book.save(register)
+
+
+def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_przypomina_o_adresie_do_jego_wpisania(
+    tmp_path: Path,
+) -> None:
+    """Kryteria #1354 (ADR 0029, US 17–24): Jan przysłał Wpis numeru z 8 cyframi, którego INTERMAX nie ma w żadnym dniu.
+    Kliknięcie dopisuje wiersz pod ostatnim zleceniem Jana 9.11, przed pustym wierszem i żółtym wierszem dnia, z
+    ``NUMER ZL.``, dniem w ``DATA GODZ. POCZ.`` w formacie dat dnia, ``WYKONAWCA``, ``SKUTECZNE`` i ``CZYNNOŚCI
+    ZREALIZOWANE``, w wyglądzie uporządkowanego zlecenia bez Koloru operatora, zapisem bez Kopii INTERMAX; Logi mają
+    dopisanie. Okienko dnia Jana mówi „dopisane z raportu, uzupełnij resztę” bez treści ``ADRES``, a drugie kliknięcie
+    niczego nie dubluje. Gdy tata wpisze ``ADRES``, informacja znika."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak montaż ONT")])
+    date_format = _started(centrum.register, 40000001)[1]
+
+    view = _finished(centrum)
+    shown = _view(centrum)
+    after = centrum.register.read_bytes()
+    again = _finished(centrum)
+    unchanged = centrum.register.read_bytes() == after
+    still = _view(centrum)
+    _address_written(centrum.register, 40000077)
+    addressed = _finished(centrum)
+
+    assert _day_rows(centrum.register, 7) == [
+        (40000002, "anna.kowalska"),
+        "pusty",
+        (40000001, "jan.testowy"),
+        (40000077, "jan.testowy"),
+        "pusty",
+        "żółty",
+    ]
+    sheet = load_workbook(centrum.register)[ORDER_SHEET]
+    filled = {column: sheet.cell(5, column).value for column in range(1, LAST + 1) if column != ADDRESS}
+    assert {column: value for column, value in filled.items() if value is not None} == {
+        DATE: datetime(2026, 11, 9),
+        NUMBER: 40000077,
+        WORKER: "jan.testowy",
+        SUCCESSFUL: "tak",
+        COMPLETED: "montaż ONT",
+    }
+    assert sheet.cell(5, DATE).number_format == date_format
+    looks = [(cell.font.name, cell.font.sz, bool(cell.font.b), cell.border.left.style, cell.fill.fill_type) for cell in sheet[5][FIRST - 1 : LAST]]
+    assert looks == [("Calibri", 9 if column == WORKER else 8, column == WORKER, "thin", None) for column in range(FIRST, LAST + 1)]
+    assert not centrum.tool.intermax_copies.exists(), "Wpisanie raportów nie robi Kopii INTERMAX"
+    entering = _entering(centrum, view)
+    assert entering["added"] == [
+        {
+            "sheet": ORDER_SHEET,
+            "day": "2026-11-09",
+            "worker": "jan.testowy",
+            "number": 40000077,
+            "successful": "tak",
+            "completed": "montaż ONT",
+        }
+    ]
+    assert (entering["problems"], entering["moves"]) == ([], [])
+    assert view["result"]["summary"]["figures"][0] == {"label": "Wpisane", "value": 1, "unit": "count"}
+    jan = _worker(shown, "jan.testowy")
+    assert jan["notes"] == [{"number": "40000077", "text": "dopisane z raportu, uzupełnij resztę"}]
+    assert [order["number"] for order in jan["orders_detail"]] == ["40000001", "40000077"]
+    assert jan["problems"] == []
+    assert "Ulica" not in json.dumps(shown, ensure_ascii=False)
+    assert (_entering(centrum, again)["added"], _entering(centrum, again)["changes"]) == ([], [])
+    assert unchanged, "drugie kliknięcie nie zmienia INTERMAX"
+    assert _worker(still, "jan.testowy")["notes"] == jan["notes"]
+    assert (_entering(centrum, addressed)["added"], _entering(centrum, addressed)["changes"]) == ([], [])
+    assert _worker(_view(centrum), "jan.testowy")["notes"] == []
+
+
+def test_dopisanie_zapisuje_sie_w_pamieci_w_wersji_4_a_plik_wersji_3_z_dopisaniem_czyta_sie_bez_zatrzymania(
+    tmp_path: Path,
+) -> None:
+    """#1354 r4 po #1367 r5: kliknięcie, które dopisuje 40000077, zapisuje pamięć w wersji 4 z jego zleceniem jako
+    dopisanym (``moves[].added``) i jego komórkami jako własnymi wpisami. Plik w wersji 3 z ``added`` zapisała tylko ta
+    gałąź przed scaleniem #1367, nigdy Wydanie: kliknięcie czyta go bez Zatrzymania, nie dopisuje numeru drugi raz,
+    okienko dalej przypomina o adresie, a pamięć wraca do wersji 4 z tym samym dopisaniem."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)), raw=())
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak montaż ONT")])
+    _finished(centrum)
+    saved = json.loads(_state(centrum).read_text(encoding="utf-8"))
+    _state(centrum).write_text(json.dumps({**saved, "schema_version": 3}, ensure_ascii=False), encoding="utf-8")
+    after = centrum.register.read_bytes()
+
+    entering = _entering(centrum, _finished(centrum))
+
+    assert saved["schema_version"] == 4
+    assert [(move["number"], move["added"]) for move in saved["moves"]] == [("40000077", True)]
+    assert {(own["number"], own["column"], own["value"]) for own in saved["own"]} == {
+        ("40000077", "SKUTECZNE", "tak"),
+        ("40000077", "CZYNNOŚCI ZREALIZOWANE", "montaż ONT"),
+    }
+    assert centrum.register.read_bytes() == after, "plik wersji 3 z dopisaniem nie dopisuje numeru drugi raz"
+    assert (entering["added"], entering["problems"]) == ([], [])
+    assert [move["added"] for move in entering["moves_before"]] == [True]
+    assert _worker(_view(centrum), "jan.testowy")["notes"] == [{"number": "40000077", "text": "dopisane z raportu, uzupełnij resztę"}]
+    assert json.loads(_state(centrum).read_text(encoding="utf-8")) == saved
+
+
+def _day_with(row: Order) -> Intermax:
+    """Uporządkowany 9.11: zlecenie Jana, wiersz ``row`` i zlecenie Anny, bez Surowych zleceń."""
+
+    return Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), row, _order(9, 11, "anna.kowalska", 40000002)), raw=())
+
+
+_NINTH_AT_TEN = datetime(2026, 11, 9, 10)
+_ORDERLESS_ROWS = {
+    "surowe-zlecenia-na-dole": (INTERMAX, (40000003, 40000004)),
+    "bez-wykonawcy": (_day_with(Order(_NINTH_AT_TEN, "", 40000066, cells=((NUMBER, 40000066),))), (40000066,)),
+    "bez-wykonawcy-sprzed-dnia-wdrozenia": (
+        Intermax(
+            ordered=(
+                Order(datetime(2026, 11, 8, 10), "", 40000065, cells=((NUMBER, 40000065),)),
+                _order(9, 9, "jan.testowy", 40000001),
+                _order(9, 11, "anna.kowalska", 40000002),
+            ),
+            raw=(),
+        ),
+        (40000065,),
+    ),
+    "data-tekstem": (
+        _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000067, cells=((NUMBER, 40000067), (DATE, "09.11.2026 10:00")))),
+        (40000067,),
+    ),
+    "wyglad-z-aplikacji-i-zlecenie-nad-nim": (
+        _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000068, cells=((NUMBER, 40000068),), app_look=True)),
+        (40000001, 40000068),
+    ),
+    "przesuniety-wiersz-z-aplikacji": (
+        _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000069, cells=((NUMBER, 40000069),), shifted=True, app_look=True)),
+        (40000069,),
+    ),
+    "dwa-wklejenia-dolny-przesuniety": (
+        Intermax(
+            ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)),
+            raw=(
+                _order(10, 9, "jan.testowy", 40000080),
+                _order(10, 10, "jan.testowy", 40000081),
+                Order(datetime(2026, 11, 10, 11), "jan.testowy", 40000078, cells=((NUMBER, 40000078),), shifted=True),
+                _order(10, 12, "jan.testowy", 40000079),
+            ),
+            blank_in_paste=frozenset({2}),
+        ),
+        (40000078,),
+    ),
+}
+
+
+@pytest.mark.parametrize(("intermax", "numbers"), list(_ORDERLESS_ROWS.values()), ids=list(_ORDERLESS_ROWS))
+def test_klikniecie_nie_dopisuje_numeru_ktory_intermax_ma_w_przeczytanym_wierszu_bez_zlecenia(
+    tmp_path: Path, intermax: Intermax, numbers: tuple[int, ...]
+) -> None:
+    """Przegląd #1374 r2 Ważne 1 (ADR 0029: Centrum nigdy nie dubluje zlecenia, które INTERMAX już ma): dziś 9.11, a
+    Jan przysłał Raport za 9.11 z numerami, które INTERMAX ma w wierszu, z którego proces nie robi zlecenia. Kształty z
+    kopii INTERMAX taty i z Uporządkowania: Surowe zlecenia na dole arkusza (pierwsze przesunięte o dwie kolumny w lewo,
+    jak z aplikacji), uporządkowany wiersz bez ``WYKONAWCA`` (także z 8.11 sprzed dnia wdrożenia: to wiersz bez zlecenia,
+    a nie zlecenie sprzed okna), wiersz z ``DATA GODZ. POCZ.`` tekstem, wiersz z wyglądem z
+    aplikacji między uporządkowanymi (z nim zlecenie Jana nad nim, bo przegląd zleceń kończy się na takim wierszu),
+    taki wiersz przesunięty jak pierwszy wiersz wklejenia i przesunięty pierwszy wiersz dolnego z dwóch wklejeń bez
+    Uporządkowania między nimi, który reguła danych zna w obu położeniach (przegląd #1374 r3 Drobne 1: numer tylko z
+    pierwszego położenia dawał dubel). Kliknięcie nie zmienia INTERMAX, więc żaden numer nie stoi w
+    nim dwa razy, a okienko Jana z 9.11 ma problem z każdym numerem, który mówi, że zlecenie już jest. Logi mają te
+    numery, żeby odtworzenie postawiło je w INTERMAX."""
+
+    text = "\n".join(f"{number} tak montaż" for number in numbers)
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, text)])
+    before = centrum.register.read_bytes()
+
+    view = _finished(centrum)
+
+    assert centrum.register.read_bytes() == before, "kliknięcie nie dopisuje numeru, który INTERMAX już ma"
+    entering = _entering(centrum, view)
+    assert (entering["added"], [(problem["kind"], problem["bar"]) for problem in entering["problems"]]) == (
+        [],
+        [("unknown_number", "in_intermax")] * len(numbers),
+    )
+    assert entering["orderless"] == [{"sheet": ORDER_SHEET, "number": number, "day": None} for number in numbers]
+    problems = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert [problem["number"] for problem in problems] == [str(number) for number in numbers]
+    assert all(f"Zlecenie {problem['number']} z Wpisu od jan.testowy z 09.11.2026 jest już w INTERMAX" in problem["reason"] for problem in problems)
+
+
+def test_wiersz_bez_wykonawcy_nad_dziesiatkami_zlecen_dnia_nie_jest_dopisany_drugi_raz(tmp_path: Path) -> None:
+    """Przegląd #1374 r3 Drobne 2: dzień taty ma dziesiątki zleceń. Tata kliknął pierwszy raz 8.11, a INTERMAX ma wiersz
+    8.11 bez ``WYKONAWCA`` z 40000095 nad dwunastoma zleceniami Anny z 8.11, pod nimi dzień 9.11. Raport Jana za 9.11 z
+    tym numerem: przegląd numerów sięga przez cały dzień 8.11 (granica dni okna, nie dzień najniższego wiersza), więc
+    kliknięcie 9.11 nie dopisuje 40000095 drugi raz, a Jan ma problem, że zlecenie już jest."""
+
+    intermax = Intermax(
+        ordered=(
+            Order(datetime(2026, 11, 8, 7), "", 40000095, cells=((NUMBER, 40000095),)),
+            *(_order(8, 8, "anna.kowalska", 40000100 + index) for index in range(12)),
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 11, "anna.kowalska", 40000002),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    before = centrum.register.read_bytes()
+
+    entering = _entering(centrum, _click_at(centrum, ENTERING_NOW, [report(JAN, SUBJECT, "40000095 tak montaż")]))
+
+    assert centrum.register.read_bytes() == before, "kliknięcie nie dopisuje numeru, który INTERMAX już ma"
+    assert entering["added"] == []
+    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [("unknown_number", "in_intermax")]
+
+
+_REPASTED_NEXT_TO_ORDER = {
+    "surowe-zlecenie-na-dole": Intermax(
+        ordered=(
+            _order(8, 9, "anna.kowalska", 40000001),
+            _order(8, 10, "jan.testowy", 40000002),
+            _order(8, 12, "jan.testowy", 40000004),
+            _order(9, 9, "anna.kowalska", 40000003),
+        ),
+        raw=(_order(9, 14, "jan.testowy", 40000002), _order(9, 15, "anna.kowalska", 40000005)),
+    ),
+    "wiersz-bez-wykonawcy-w-dniu-z-tematu": Intermax(
+        ordered=(
+            _order(8, 9, "anna.kowalska", 40000001),
+            _order(8, 10, "jan.testowy", 40000002),
+            _order(8, 12, "jan.testowy", 40000004),
+            _order(9, 9, "anna.kowalska", 40000003),
+            Order(datetime(2026, 11, 9, 10), "", 40000002, cells=((NUMBER, 40000002),)),
+        ),
+        raw=(),
+    ),
+}
+
+
+@pytest.mark.parametrize("intermax", list(_REPASTED_NEXT_TO_ORDER.values()), ids=list(_REPASTED_NEXT_TO_ORDER))
+def test_zlecenie_numeru_z_drugim_wierszem_bez_zlecenia_nie_przechodzi_na_dzien_z_tematu(
+    tmp_path: Path, intermax: Intermax
+) -> None:
+    """Reguła #1367 „numer w kilku miejscach się nie przenosi” liczy też przeczytany wiersz bez zlecenia (przegląd #1374
+    r3): INTERMAX ma 40000002 jako zlecenie Jana z 8.11 (dzień otwarty od pierwszego kliknięcia 8.11) i drugi raz w 9.11
+    jako Surowe zlecenie na dole albo wiersz bez ``WYKONAWCA``. Raport Jana za 9.11 z tym numerem nie przenosi zlecenia z
+    8.11, bo 9.11 miałby wtedy ten numer dwa razy: INTERMAX zostaje bez zmian, a Jan ma problem z miejscem zlecenia i
+    zdaniem o wierszu bez zlecenia."""
+
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    before = centrum.register.read_bytes()
+
+    entering = _entering(centrum, _click_at(centrum, ENTERING_NOW, [report(JAN, SUBJECT, "40000002 tak montaż")]))
+
+    assert centrum.register.read_bytes() == before, "kliknięcie nie przenosi zlecenia obok wiersza z tym samym numerem"
+    assert (entering["moves"], entering["added"]) == ([], [])
+    assert [(problem["kind"], problem["number"]) for problem in entering["problems"]] == [("repeated_number", "40000002")]
+    [problem] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert "u jan.testowy z 08.11.2026 i w wierszu, z którego Centrum nie robi zlecenia" in problem["reason"]
+
+
+_EIGHTH_BEFORE_ROLLOUT = {
+    "zlecenie-pod-dniem": (INTERMAX, 40000010),
+    "zlecenie-nad-dziesiatkami-zlecen-dnia": (
+        Intermax(
+            ordered=(
+                _order(8, 7, "jan.testowy", 40000095),
+                *(_order(8, 8, "anna.kowalska", 40000100 + index) for index in range(12)),
+                _order(9, 9, "jan.testowy", 40000001),
+                _order(9, 11, "anna.kowalska", 40000002),
+            ),
+            raw=(),
+        ),
+        40000095,
+    ),
+}
+
+
+@pytest.mark.parametrize(("intermax", "number"), list(_EIGHTH_BEFORE_ROLLOUT.values()), ids=list(_EIGHTH_BEFORE_ROLLOUT))
+def test_zlecenie_sprzed_dnia_wdrozenia_nie_jest_dopisane_a_powod_mowi_o_dniu_sprzed_okna(
+    tmp_path: Path, intermax: Intermax, number: int
+) -> None:
+    """Przegląd #1374 r3 (Drobne 3 i granica dnia wdrożenia): tata klika pierwszy raz 9.11, więc zlecenia czyta od 9.11,
+    a INTERMAX ma pełne zlecenie Jana z 8.11 (z ``WYKONAWCA`` i datą z godziną), także nad dwunastoma zleceniami Anny z
+    8.11. Raport Jana za 9.11 z tym numerem nie dopisuje go drugi raz, bo numery proces czyta też z tygodnia przed
+    pierwszym dniem otwartym, sprzed dnia wdrożenia. Powód mówi, że zlecenie jest w dniu sprzed dni, które Centrum
+    czyta, a nie że wierszowi brakuje ``WYKONAWCA`` albo daty, i nie radzi kliknąć jeszcze raz, bo to nic nie zmieni.
+    Logi mają dzień zlecenia, żeby odtworzenie dało ten sam powód."""
+
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, f"{number} tak montaż")])
+    before = centrum.register.read_bytes()
+
+    entering = _entering(centrum, _finished(centrum))
+
+    assert centrum.register.read_bytes() == before, "kliknięcie nie dopisuje zlecenia, które INTERMAX ma przed dniem wdrożenia"
+    assert entering["added"] == []
+    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [("unknown_number", "before_window")]
+    assert entering["orderless"] == [{"sheet": ORDER_SHEET, "number": number, "day": "2026-11-08"}]
+    [problem] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert f"Zlecenie {number} z Wpisu od jan.testowy z 09.11.2026 jest już w INTERMAX, ale z dniem sprzed dni" in problem["reason"]
+    assert "WYKONAWCA" not in problem["reason"]
+    assert "kliknij jeszcze raz" not in problem["reason"]
+
+
+def test_zlecenie_z_dnia_po_dzis_nie_jest_dopisane_drugi_raz_a_nastepnego_dnia_przechodzi_na_dzien_z_tematu(
+    tmp_path: Path,
+) -> None:
+    """Przegląd #1374 r1 przez HTTP API: dziś 9.11, a INTERMAX ma już uporządkowany 10.11 (tata wkleja i porządkuje
+    zlecenia jutra dzień wcześniej, ADR 0019). Jan zrobił zlecenie 40000055 z 10.11 już dziś i wpisał je do Raportu za
+    9.11. Kliknięcie nie zmienia INTERMAX, więc numer nie stoi w nim dwa razy, a okienko Jana z 9.11 ma problem z tym
+    numerem: dzień zlecenia jeszcze nie nadszedł (#1367 r4). Kliknięcie 10.11 przenosi zlecenie na 9.11 z Wpisem
+    (#1350)."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "anna.kowalska", 40000002),
+            _order(9, 10, "jan.testowy", 40000001),
+            _order(10, 9, "jan.testowy", 40000055),
+        ),
+        raw=(),
+    )
+    mail = report(JAN, SUBJECT, "40000055 tak montaż ONT")
+    centrum = entering_centrum(tmp_path, intermax, [mail])
+    before = centrum.register.read_bytes()
+
+    view = _finished(centrum)
+    unchanged = centrum.register.read_bytes() == before
+    problems = _worker(_view(centrum), "jan.testowy")["problems"]
+    tomorrow = _click_at(centrum, datetime(2026, 11, 10, 18, 30), [mail])
+
+    assert unchanged, "kliknięcie nie dopisuje zlecenia, które INTERMAX ma w dniu po dziś"
+    assert _entering(centrum, view)["added"] == []
+    assert [problem["number"] for problem in problems] == ["40000055"]
+    assert "10.11.2026 jeszcze nie nadszedł" in problems[0]["reason"]
+    assert _places(centrum.register, 40000055) == [(datetime(2026, 11, 9, 9), "jan.testowy", "tak", "montaż ONT")]
+    assert [move["day"] for move in _entering(centrum, tomorrow)["moves"]] == ["2026-11-09"]
+
+
+def test_dopisane_zlecenie_przelozone_przez_tate_na_jutro_zostaje_na_jutro_przy_poprawionym_raporcie(tmp_path: Path) -> None:
+    """Przegląd #1374 r4 Ważne 1 przez HTTP API: dziś 9.11. Raport Jana za 9.11 dopisuje 40000077, a tata przekłada
+    dopisany wiersz na 10.11 10:00. Wieczorem Jan przysyła poprawiony Raport za 9.11 z tym numerem. Zlecenia z dnia po
+    dziś Wpis nie zmienia (ADR 0029), także dopisanego, więc kliknięcie nie zmienia INTERMAX, a tata widzi w okienku
+    Jana odmowę z dniem 10.11."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    added = report(JAN, SUBJECT, "40000077 tak montaż ONT", at=datetime(2026, 11, 9, 17))
+    first = _click_at(centrum, ENTERING_NOW, [added])
+    _tata_dates(centrum.register, 40000077, "jan.testowy", datetime(2026, 11, 10, 10))
+    before = centrum.register.read_bytes()
+    correction = report(JAN, SUBJECT, "40000077 nie brak klienta", at=datetime(2026, 11, 9, 19))
+
+    view = _click_at(centrum, datetime(2026, 11, 9, 19, 30), [added, correction])
+
+    assert [found["number"] for found in _entering(centrum, first)["added"]] == [40000077]
+    assert centrum.register.read_bytes() == before, "kliknięcie nie przenosi dopisanego zlecenia z jutra"
+    entering = _entering(centrum, view)
+    assert (entering["moves"], entering["changes"], entering["added"]) == ([], [], [])
+    assert [(problem["kind"], problem["number"], problem["bar"]) for problem in entering["problems"]] == [
+        ("refused_move", "40000077", "after_today")
+    ]
+    assert _places(centrum.register, 40000077) == [(datetime(2026, 11, 10, 10), "jan.testowy", "tak", "montaż ONT")]
+    [refused] = _worker(_view(centrum), "jan.testowy")["problems"]
+    assert "dzień 10.11.2026 jeszcze nie nadszedł" in refused["reason"]
+
+
 def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesienia_ktore_zatrzymuja_reczna_zmiane(
     tmp_path: Path,
 ) -> None:
@@ -1747,6 +2115,7 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
             "origin_name": "jan.testowy",
             "since": jan_since,
             "overridden": False,
+            "added": False,
         },
         {
             "number": "40000005",
@@ -1757,6 +2126,7 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
             "origin_name": "jan.testowy",
             "since": anna_since,
             "overridden": False,
+            "added": False,
         },
     ]
     assert _entering(centrum, again)["moves"] == []
@@ -1979,7 +2349,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
         intermax,
         [
             report(JAN, SUBJECT, "40000001 tak wymiana routera"),
-            report(ANNA, SUBJECT, "40000009 tak montaż"),
+            report(ANNA, SUBJECT, "400000099 tak montaż"),
             report(STRANGER, SUBJECT, "40000002 nie brak"),
         ],
     )
@@ -2000,7 +2370,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
     assert centrum.fake_inbox.days == read, "widok Raporty nie czyta skrzynki"
     assert datetime.fromisoformat(view["clicked_at"]) == ENTERING_NOW.astimezone()
     assert view["days"] == [{"day": "2026-11-09", "holiday": None}]
-    unknown = UnknownNumber(Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("40000009"))
+    unknown = UnknownNumber(Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("400000099"), AddBar.FORM)
     assert view["workers"] == [
         {
             "worker": "anna.kowalska",
@@ -2011,7 +2381,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "entered": 0,
                     "mails": 1,
                     "without_report": ["40000002"],
-                    "problems": [{"reason": reason(unknown), "number": "40000009", "keep": None}],
+                    "problems": [{"reason": reason(unknown), "number": "400000099", "keep": None}],
                     "notes": [],
                     "orders_detail": [
                         {"number": "40000002", "successful": None, "activities": None, "state": "without_report"}
@@ -2644,7 +3014,7 @@ def test_seria_przypomnien_ktora_wyszla_poza_pore_czeka_z_reszta_na_nastepna_por
 ) -> None:
     """Gdy zegar w trakcie serii przypomnień wyjdzie poza porę, w której seria ruszyła (minęła 22:00 albo 18:00, laptop
     zasnął i obudził się rano albo wieczorem innego dnia), reszta serii nie idzie, a wysłane przypomnienie ma chwilę
-    swojej wysyłki, nie początku sprawdzenia (ADR 0030 „nigdy w nocy”)."""
+    swojej wysyłki, nie początku sprawdzenia, w mailu i w wyniku dla widoku Raporty (ADR 0030 „nigdy w nocy”)."""
 
     class TickingMailbox(FakeMailbox):
         def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
@@ -2663,7 +3033,9 @@ def test_seria_przypomnien_ktora_wyszla_poza_pore_czeka_z_reszta_na_nastepna_por
     centrum.client.stop()
 
     assert [(reminder.worker, at) for reminder, at in mailbox.sends] == [("anna.kowalska", first_send.astimezone())]
-    assert [(sent["worker"], sent["day"]) for sent in _reminder_result(centrum)["sent"]] == [("anna.kowalska", "2026-11-09")]
+    assert [
+        (sent["worker"], sent["day"], datetime.fromisoformat(sent["sent_at"])) for sent in _reminder_result(centrum)["sent"]
+    ] == [("anna.kowalska", "2026-11-09", first_send.astimezone())]
 
 
 def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_porze(tmp_path: Path) -> None:
@@ -2691,6 +3063,57 @@ def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_por
         assert secret not in issue.body, secret
     assert len(mailbox.sends) == 1, "po odrzuconym haśle praca nie próbuje dalej w tej porze"
     assert _reminder_result(centrum)["failure"] == "haslo-odrzucone"
+    assert _failures_in_log(centrum) == ["przyczyna=haslo-odrzucone"]
+
+
+def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
+    """Pola każdej linii ``przypomnienia-porazka`` dziennika Centrum po nazwie zdarzenia, po kolei."""
+
+    log = centrum.tool.log_path.read_text(encoding="utf-8") if centrum.tool.log_path.exists() else ""
+    return [line.split(" przypomnienia-porazka ", 1)[1] for line in log.splitlines() if " przypomnienia-porazka " in line]
+
+
+@pytest.mark.parametrize(
+    ("cause", "broken"),
+    [
+        pytest.param("bez-ustawien", "ustawienia", id="bez-ustawien"),
+        pytest.param("bez-dostepu", "dostep", id="bez-dostepu"),
+        pytest.param("bez-adresow", "adresy", id="bez-adresow"),
+        pytest.param("okresy", "okresy", id="okresy"),
+        pytest.param("intermax", "intermax", id="intermax"),
+    ],
+)
+def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku(
+    tmp_path: Path, cause: str, broken: str
+) -> None:
+    """Każda porażka sprawdzenia z dniem wdrożenia, które nie doszło do skrzynki (bez INTERMAX w Ustawieniach taty, bez
+    pliku dostępu, bez pliku adresów, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
+    adresów, a wynik dla widoku Raporty ją nazywa; wyjątkiem jest tylko brak dnia wdrożenia, przy którym przypomnienia
+    są wyłączone (ADR 0030, przegląd #1372 r1 Drobne 1)."""
+
+    mailbox = FakeMailbox(state="missing" if broken == "dostep" else "ready")
+    centrum = entering_centrum(tmp_path, INTERMAX, chosen=broken != "ustawienia", reminder_mailbox=mailbox)
+    _reminders_set_up(centrum.tool)
+    if broken == "adresy":
+        centrum.tool.configuration.worker_addresses.unlink()
+    if broken == "okresy":
+        shutil.rmtree(centrum.periods_directory)
+    if broken == "intermax":
+        centrum.register.write_bytes(b"to nie jest skoroszyt")
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.moment.append(datetime(2026, 11, 10, 8, 31))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert mailbox.sends == []
+    assert [failure.split(" typ=")[0] for failure in _failures_in_log(centrum)] == [f"przyczyna={cause}"]
+    assert _reminder_result(centrum)["failure"] == cause
+    log = centrum.tool.log_path.read_text(encoding="utf-8")
+    for secret in (JAN, ANNA, SKRZYNKA, HASLO):
+        assert secret not in log, secret
 
 
 def test_praca_przypomnien_nie_blokuje_wpisania_raportow_ktore_biegnie_w_trakcie_wysylki(tmp_path: Path) -> None:
@@ -2736,7 +3159,8 @@ def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stop
     tmp_path: Path,
 ) -> None:
     """Kryterium #1351: po pracy przypomnień widok Raporty ma przy dniu 9.11 każdego Wykonawcy chwile wysłanych za ten
-    dzień przypomnień, z „Wysłanych” i z tego sprawdzenia, bez przypomnienia za inny dzień; brak pliku stopki widok mówi
+    dzień przypomnień do niego, z „Wysłanych” i z tego sprawdzenia, bez przypomnienia za inny dzień i bez przypomnień
+    innego Wykonawcy (Anna przysyła raport po porannym, więc wieczorne idzie tylko do Jana); brak pliku stopki widok mówi
     do następnego sprawdzenia po dodaniu pliku, a odpowiedź nie ma adresów, tematu ani stopki (US 44–45, ADR 0030)."""
 
     for_other_day = SentReminder(frozenset({SenderAddress(JAN)}), date(2026, 11, 8), datetime(2026, 11, 9, 8, 0).astimezone())
@@ -2756,6 +3180,7 @@ def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stop
         for_other_day,
         *(SentReminder(frozenset(reminder.recipients), reminder.day, at) for reminder, at in mailbox.sends),
     )
+    mailbox.outcome = (report(ANNA, "Raport 09.11.2026", "40000002 tak montaż"),)
     centrum.moment.append(datetime(2026, 11, 10, 18, 5))
     centrum.rhythm.tick()
     after_evening = _view(centrum)
@@ -2766,9 +3191,35 @@ def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stop
     assert (_reminders_of(shown, "jan.testowy"), _reminders_of(shown, "anna.kowalska")) == ([morning], [morning])
     assert shown["reminders_without_footer"] is True
     assert _reminders_of(after_evening, "jan.testowy") == [morning, evening]
+    assert _reminders_of(after_evening, "anna.kowalska") == [morning]
     assert after_evening["reminders_without_footer"] is False
     for secret in (JAN, ANNA, SKRZYNKA, "Przypomnienie: raport", "Pozdrawiam"):
         assert secret not in after_morning.text, secret
+
+
+def test_widok_raporty_mowi_o_braku_stopki_przed_pierwszym_kliknieciem_a_po_nieudanym_sprawdzeniu_milczy(
+    tmp_path: Path,
+) -> None:
+    """Informacja o brakującej stopce stoi w widoku Raporty także przed pierwszym kliknięciem „Wpisz raporty z maili”,
+    bo przypomnienia idą bez niego; sprawdzenie, które nie doszło do stopki (brak sieci przy odczycie skrzynki), niczego
+    o stopce nie twierdzi, choć pliku stopki dalej nie ma (#1351, przegląd #1364 r1 Drobne 2)."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum.tool, footer=None)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    before_click = _view(centrum)
+    mailbox.outcome = InboxUnreachable("TimeoutError")
+    centrum.moment.append(datetime(2026, 11, 10, 18, 5))
+    centrum.rhythm.tick()
+    after_failure = _view(centrum)
+    centrum.client.stop()
+
+    assert (before_click["clicked_at"], before_click["reminders_without_footer"]) == (None, True)
+    assert (_reminder_result(centrum)["failure"], after_failure["reminders_without_footer"]) == ("brak-sieci", False)
 
 
 @pytest.mark.parametrize("content", [b"{\"schema_version\": 1, \"sent\": [", b"\xff\xfe nie JSON", b'{"schema_version": 2, "footer": "missing", "sent": []}'])

@@ -1,61 +1,20 @@
 # CI na PR
 
-Kiedy PR jest gotowy i jak go scalić, mówi sekcja `PR: od pushu do merge'a` w [`AGENTS.md`](../../AGENTS.md).
+Kiedy PR jest gotowy i jak go scalić, mówi `tools/scal_pr.py --help`.
 Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-ci-w-poziomach.md).
 
 ## Co biegnie na PR
 
-- `Required CI status` przechodzi, gdy przeszły `Frontend`, `Ruff, mypy`, `Plan CI` i każde zadanie pytest i Mutation checks z planu runu.
-- `Frontend` oraz `Ruff, mypy` biegną na każdym PR, obok siebie i obok planu.
-- pytest biegnie na torach Windows 3.11 i Linux 3.14.
-  Każdy tor bierze pliki, które `tools/szybko.py` wybiera dla zmiany od bazy (bez jego budżetu czasu), i testy `STRUCTURE` z `tools/lib/wplyw_zmiany.py`.
-  Lokalne `tools/szybko.py` uruchamia z tego wyboru zawsze pliki w odległości najwyżej 1 od zmiany, a dalsze tylko w swoim budżecie czasu, i resztę wypisuje jako „zostawione CI”.
-  Pomija przy tym plik testu, który już przeszedł, jeśli od tamtej pory nie zmienił się ani on, ani nic, od czego zależy.
-- Zmiana ścieżki, która w tabeli reguł `tools/lib/wplyw_zmiany.py` uruchamia wszystko w bramce PR (`Context.PR_GATE`: pliki, od których zależy każdy test, oraz `.github/workflows/` i akcje złożone `.github/actions/`, które workflowy wołają), wybiera wszystkie pliki testów, E2E i straż czasu.
-- Co biegnie dla zdarzenia (push, PR, noc) i zmiany, rozstrzyga jeden moduł, zakres runu `tools/lib/zakres_runu.py`: plan CI go wycenia i pakuje, a `tools/skille_dla_zmiany.py` drukuje z niego linie `LICZY CI` i `LICZY NOC`.
-- E2E biegnie na Windows 3.11 przy zmianie pod `src/`, a straż czasu przy zmianie w domknięciu jej skryptów (`STRAZ` w `tools/lib/zakres_runu.py`).
-- Mutation checks biegną tylko wtedy, gdy zakres runu wybrał dla zmiany krok skilla (podstawę `ci:` albo skrypt mutacji modelu).
-  Kiedy ją wybiera, mówi [`docs/agents/skille.md`](skille.md).
-- Skrypty mutacji skilli (`check_*_mutations.py`) na PR nie biegną, tylko w pełnym CI `main` i nocą na `main` (sekcja `Change mutations` niżej).
-  Wyjątkiem jest skrypt mutacji modelu TLA+ skilla (dziś `check_model_kolejki_mutations.py`, `check_model_wznowienia_mutations.py` i `check_model_urwanego_mutations.py`), który biegnie na PR zmieniającym plik w `model/` skilla, sam skrypt, sprawdzenie, które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (ADR 0021, [`docs/agents/skille.md`](skille.md)).
-- Mutacje zmienionych linii na PR nie biegną, tylko nocą na `main` (sekcja `Change mutations` niżej).
-- Nowy push do PR anuluje run jego starszego commitu.
 - Co biegnie na swojej gałęzi, drukuje `.venv/bin/python tools/plan_ci.py plan --baza origin/main` (Windows: `py -3 tools/plan_ci.py plan --baza origin/main`).
   Linia `PLAN CI` podaje źródło plików (`wybór <n> plików` albo `FULL (<pliki>)`), a linie `WYBRANY` i `POMINIĘTY` kroki skilli z powodem.
 
-## Pełne CI na `main`
-
-- Push do `main` uruchamia każdy plik testów na Windows 3.11, Windows 3.14 i Linux 3.14, E2E na obu torach Windows, straż czasu na Windows 3.14 i wszystkie kroki skilli.
-- Trwający run `main` kończy się, a nowy merge podmienia tylko run, który czeka.
-
 ## Change mutations
 
-- Biegną raz na dobę (workflow `mutacje-nocne.yml`, ADR 0021) na `main`, na liniach plików `src/**/*.py` i `tools/**/*.py` zmienionych od commitu, do którego doszedł ostatni udany przebieg, a bez niego od 24 h wstecz.
-  W tym samym przebiegu biegną skrypty mutacji skilli, których folder, moduł, który skrypt importuje (silnik mutacji i jego zależności), uruchamiacz kroku albo sprawdzenie zmieniło się od tej bazy, w zadaniach z planu `tools/plan_ci.py plan --zdarzenie noc`.
-  Biegnie w nim też każda część każdego n od 1 do `ci-czesci` podstawy z `ci-czesci:`, którą zmiana od bazy wybrałaby na pull request, bo pull request uruchamia jej części tylko jednego n.
-  Ręczne uruchomienie workflow przyjmuje `od`, czyli commit, od którego liczyć zmiany.
-- `tools/mutacje_nocne.py` dzieli mutacje na części po najwyżej 24, a noc ma najwyżej 40 części.
-  Część kończy się w swoim limicie czasu (175 min) także z najdroższymi mutacjami zmierzonych nocy w każdym przebiegu: 16 po pełnym limicie mutacji (900 s) w testach linii, które biegną po 4 naraz, w testach kodu pliku, też po 4 naraz, i w testach pliku, które biegną po jednej (ADR 0021).
-  Gdy od bazy jest więcej mutacji, noc mutuje zmiany `main` tylko do commitu, do którego się mieszczą, a następna noc zaczyna od niego, więc zaległość przechodzi na kolejne noce.
-  Część, której testy sięgają Atrapy efenix, plan oznacza `przegladarka`, a jej zadanie instaluje Chromium tymi samymi krokami co zadanie pytest.
-  Bazę, koniec zakresu nocy i liczbę części drukuje bez testów `.venv/bin/python tools/mutacje_nocne.py plan`.
-- Każdą przeżytą mutację ostatnie zadanie przypisuje PR-owi, który ostatni zmienił zmienione linie, które ona psuje, i dopisuje linią `MUTACJA <plik>:<linia> <opis> | klucz <klucz>` do issue `Przeżyte mutacje z #N` z etykietą `ready-for-agent`.
-  Mutacja, której część nie dała werdyktu przed limitem czasu, trafia tam tak samo, z dopiskiem `| bez werdyktu w limicie czasu części`.
-  Mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS` (limit czasu mutacji dotyczy całego zbioru testów przebiegu), trafia tam z dopiskiem `| przekroczony czas testów, bez werdyktu`, bo noc nie wie, czy test ją łapie (#1339).
-  Klucz nie ma numerów linii, więc mutacja nie trafia do issue drugi raz, także gdy następny PR przesunie jej linie.
-- Skrypt mutacji skilla, który padł, ostatnie zadanie dopisuje linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` PR-u, który ostatni zmienił plik zmieniony od bazy, który uruchomił krok (`KrokSkilla.pliki` w `tools/lib/zakres_runu.py`): najpierw plik w folderze skilla, potem inny, a bez takiego pliku ostatni PR nocy, tak samo bez powtórzeń.
-  Część podstawy, która padła, trafia tam tak samo linią `SKRYPT <skrypt z ci:>`: bez zmiany folderu skilla do PR-u, który ostatni zmienił inny plik, który ją uruchomił, na przykład plik z jej `pilnuje:`.
-  Mutacja skryptu, której polecenie trwało ponad połowę limitu czasu mutacji, trafia tam linią `CZAS BLISKO LIMITU <skrypt> | <mutacja> | <czas> s z limitu --limit-s <limit> s`, także gdy skrypt przeszedł, i raz, bo issue porównuje ją bez czasu.
-- Issue naprawiasz testem, który zabija mutację (dowód z `tools/mutacje.py`), albo linią `MUTACJA <plik>:<linia> <opis> | nie warto, bo <powód>`, a potem je zamykasz.
+- Issue `Przeżyte mutacje z #N` naprawiasz testem, który zabija mutację (dowód z `tools/mutacje.py`), albo linią `MUTACJA <plik>:<linia> <opis> | nie warto, bo <powód>`, a potem je zamykasz.
   Mutację bez werdyktu albo z przekroczonym czasem testów najpierw uruchamiasz `tools/mutacje.py`, a gdy test już ją wykrywa, odpowiadasz linią `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`.
   Issue skryptu skilla naprawiasz poprawką sprawdzenia skilla albo tabeli mutacji, albo linią `SKRYPT <skrypt> | nie warto, bo <powód>`.
   Linię `CZAS BLISKO LIMITU` naprawiasz, przenosząc mutację do mniejszego zakresu sprawdzenia albo przyspieszając sprawdzenie, albo odpowiadasz `CZAS BLISKO LIMITU <skrypt> | <mutacja> | nie warto, bo <powód>`.
-- Ani `Required CI status`, ani `tools/scal_pr.py` na mutacje nie czekają.
-- Część bez wyniku (testy padają albo nie kończą się w limicie czasu części bez mutacji, zły wyjątek `# mutacje-zmiany:`) jest czerwona i czerwieni przebieg, więc następna noc liczy od tej samej bazy.
-  Przeżyte mutacje, mutacje bez werdyktu po limicie czasu części i mutacje z przekroczonym czasem testów zostawiają część zieloną, więc przebieg przesuwa bazę.
-  Limit czasu części (`PART_LIMIT_S` w `tools/mutacje_zmiany.py`, 175 min) kończy ją przed 180 min jej zadania, więc zapis zostaje, a mutacje bez wyniku mają w logu linię `BEZ WERDYKTU`.
-  Zadanie skryptów skilli bez zapisu też czerwieni przebieg.
-  Czerwoną część odtwarzasz na commicie runu: `git checkout --detach <headSha runu>` i `.venv/bin/python tools/mutacje_zmiany.py --baza <baza z planu> --do <do z planu> --czesc K/N --odtwarzam <run>`.
+- Czerwoną część nocy odtwarzasz na commicie runu: `git checkout --detach <headSha runu>` i `.venv/bin/python tools/mutacje_zmiany.py --baza <baza z planu> --do <do z planu> --czesc K/N --odtwarzam <run>`.
 
 ## Zadanie CI padło
 
@@ -67,19 +26,6 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 - Ciężkie zadania liczy GitHub w częściach: `mutations` po pushu (stan pokazuje `tools/praca_w_toku.py` albo `gh pr checks`), a `change-mutations` i skrypty mutacji skilli nocą na `main`.
   Część skryptu mutacji albo podstawy z planu (`#k/n` w nazwie jednostki) odtwarzasz przez `MUTACJE_CZESC=k/n` w środowisku polecenia tego skryptu albo polecenia `ci:`.
 
-## Plan runu, zadania pytest i Mutation checks
-
-- Ile zadań pytest startuje na każdym torze i które pliki testów (albo udziały długiego pliku) bierze każde, ustala zadanie `Plan CI` (`tools/plan_ci.py`) z czasów ostatnich zielonych runów `main`, a E2E i straż czasu dokłada do zadań Windows.
-- Plan dzieli kroki skilli (na PR podstawy `ci:` i skrypt mutacji modelu przy zmianie modelu, na `main` także każdy skrypt `check_*_mutations.py`) między zadania Mutation checks w tym samym limicie zadań runu i z tym samym celem ściany co pytest, a skrypt mutacji dłuższy niż zadanie dzieli na części, najwyżej po jednej na mutację.
-- Podstawę `ci:` plan dzieli tak samo, na najwyżej tyle części, ile mówi klucz `ci-czesci:` w `SKILL.md`, a podstawę bez niego nie dzieli wcale.
-  Linia każdego toru w planie nazywa najdłuższą jednostkę po podziale, poniżej której ściana zadania nie zejdzie.
-- `Required CI status` czerwienieje też wtedy, gdy części podzielonej jednostki jednego toru nie są w planie dokładnie raz każdą z `1/n`…`n/n`.
-- Chromium instaluje tylko zadanie Mutation checks z krokiem skilla, którego skrypty importują Playwright, i zadanie pytest z plikiem testów, który sięga Atrapy efenix (`PRZEGLADARKA` w `tools/lib/zakres_runu.py`), a nocą część Change mutations, której mutacje sprawdzają takie pliki testów.
-- `Required CI status` czerwienieje także wtedy, gdy planu nie ma albo zadanie planu (pytest albo Mutation checks) nie zgłosiło w zapisie czasów ostatniej próby którejś swojej jednostki albo zgłosiło ją z porażką, a linia `REQUIRED FAIL` nazywa zadanie i jednostkę.
-- Skrypt mutacji, którego wybór skilli by nie uruchomił (nazwa spoza wzorca, wskazany w `SKILL.md`, a usunięty), i zły klucz `ci:` plan zgłasza w `Required CI status` linią `REQUIRED FAIL | mutacje skilli: …`.
-- Porażkę jednego zadania pytest odtwarzasz przez `tools/ci_lokalnie.py --tylko pytest` albo przez pytest na plikach tego zadania.
-- Linia zadania w planie podaje liczbę jego plików i nazywa tylko udziały i kroki, a listę plików ma pole `jednostki` zadania w artefakcie `plan` runu (`gh run download <id runu> --name plan`).
-
 ## Status `scalenie z main`
 
 - Status `scalenie z main` na HEAD PR mówi, czy scalenie PR z obecnym `main` przechodzi bez konfliktu, ruff i mypy dla obu systemów (`tools/ci/status_scalenia.py` w workflow `scalenia.yml`, po każdym pushu do `main`).
@@ -88,17 +34,6 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 - `error` z „sam nie przechodzi” znaczy, że czerwony jest `main`, nie PR.
 - Brak statusu znaczy, że `main` nie zmienił się od pushu PR albo przebieg jeszcze trwa.
 
-## Test scalenia w `tools/scal_pr.py`
-
-- Przed merge'em `tools/scal_pr.py` uruchamia na scalonym drzewie pliki testów dotknięte i zmianą PR, i zmianą `main` od merge-base PR, w odległości najwyżej 1 od obu w grafie `tools/lib/wplyw_zmiany.py`.
-- Gdy `main` od merge-base się nie zmienił albo takich plików nie ma, nic nie biegnie.
-- Porażka to `SCAL ODMOWA` z nazwami testów, które padły, a test z kwarantanny nie czerwieni wyniku, jak w CI.
-- Czerwony `main` nie blokuje merge'u niewinnego PR: gdy test scalenia pada, te same pliki testów biegną jeszcze raz na samym `main`.
-  Test, który pada i tam, nie jest winą PR: merge przechodzi, a linia `SCAL OK` go wymienia (`na samym main … pada już: …`).
-  Odmowę daje tylko test, który pada na scaleniu, a na samym `main` nie.
-- Gdy suma czasów CI tych plików przekracza limit (`MERGE_TEST_BUDGET_S`), czasów CI nie ma albo któraś strona zmienia plik reguły wyboru testów, test scalenia nie biegnie, a linia `SCAL OK` mówi dlaczego (`test scalenia pominięty: …`).
-- Ile to kosztuje i czego nie łapie, mówi [ADR 0020](../adr/0020-ci-w-poziomach.md) (Konsekwencje).
-
 ## Czerwony `main`
 
 - Czerwony `main` nie blokuje merge'ów, a naprawia go od razu osobny PR.
@@ -106,17 +41,10 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 - Etykieta `zderzenie` w issue czerwonego `main` znaczy, że PR-y zielone osobno padły razem: każda nowa porażka jest w teście, którego wejścia zmieniły oba PR-y.
   Zielony `main`, który przyszedł bez zmiany wejść tych testów, zdejmuje ją z komentarzem, że porażka była niestabilna.
 
-## Każdy commit gałęzi
-
-- Każdy commit gałęzi sprawdzasz, gdy tego potrzebujesz (nic tego nie wymaga), przez `tools/ci_lokalnie.py --kazdy-commit`.
-
 ## Reguły i co ich pilnuje
 
 | Reguła | Co jej pilnuje |
 |---|---|
-| Rebase albo merge `main` do gałęzi robisz tylko przy konflikcie albo gdy `main` zmienił te same pliki co PR. | werdykt `AKTUALIZACJA` z `tools/praca_w_toku.py --aktualizacja`, drukowany też przez bramę `tools/hooks/pre-push`; `tests/test_praca_w_toku.py`, `tests/test_brama_pre_push.py` |
-| Ciężkie zadania CI (`change-mutations`, `mutations`) liczy GitHub, a lokalnie biegną tylko do odtworzenia porażki z runu Actions tej gałęzi albo, na jego commicie, z runu `mutacje-nocne.yml`. | `tools/lib/ciezkie_ci.py`, `tests/test_ciezkie_ci.py`, `tests/test_na_scalonych_pr.py` |
-| Lista dłuższa niż `TARGETED` mutacji w `tools/mutacje.py` to ręczne `change-mutations`, więc poza CI biegnie tylko z tymi samymi wyjątkami, a skrypty mutacji skilli `verify-*` (`check_all`) nie mają tego limitu. | `tools/lib/ciezkie_ci.py` (`TARGETED`), `tests/test_ciezkie_ci.py` |
 | Bramka PR uruchamia pytest na Windows 3.11 i Linux 3.14 na wyborze `tools/szybko.py` dla zmiany, a zmiana ścieżki z `Context.PR_GATE` (`tools/lib/wplyw_zmiany.py`) wybiera wszystkie pliki, E2E i straż czasu. | `tests/test_zakres_runu.py::test_bramka_pr_biegnie_na_windows_311_i_linuksie_z_wyborem_szybko_a_e2e_i_straz_czasu_tylko_przy_ich_zmianie` |
 | Do bramki PR dokładasz tylko to, co złapałoby defekt, który przez nią przeszedł, z dowodem z backtestu, a plan wzorcowych PR-ów L i C ponad limit testów, zadań albo prognozy ściany to decyzja Maksa. | limitu testów, zadań i prognozy ściany (+20%) pilnuje `tests/test_ksztalt_bramki.py`, a dowodu z backtestu tylko przegląd |
 | Trwający run `main` kończy się, a nowy push do PR anuluje run jego starszego commitu. | `tests/test_zadania_ci.py::test_push_do_main_nie_anuluje_trwajacego_runu_a_nowy_push_pr_anuluje_stary` |

@@ -67,7 +67,20 @@ from tests.fixtures.centrum_intermax import ENTERING_NOW, SENDERS, Clock, enteri
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
-from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
+from atrapy.intermax import (
+    ADDRESS,
+    APP_LAST,
+    CONTRACT_NUMBER,
+    DATE,
+    FIRST,
+    HEADERS,
+    LAST,
+    NUMBER,
+    ORDER_SHEET,
+    WORKER,
+    Intermax,
+    Order,
+)
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
     SettlingCentrum,
@@ -960,7 +973,9 @@ def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
     assert second["result"]["ending"] == "finished"
     produced = Produced(_archived_run(surroundings.report_box, tmp_path, second["run"]["id"]), ())
     problems = [problem["kind"] for problem in produced.record["report_entering"]["problems"]]
-    assert problems == ["unknown_sender"] * 3 + ["manual_difference", "unknown_number"], problems
+    assert problems == ["unknown_sender"] * 3 + ["manual_difference"], problems
+    added = [(found["number"], found["worker"]) for found in produced.record["report_entering"]["added"]]
+    assert added == [(40000099, "jan.testowy")], "nowy numer Jana z 8 cyframi to Zlecenie dopisane z raportu (#1354)"
     assert "klient nieobecny" in [change["value"] for change in produced.record["report_entering"]["changes"]]
     assert produced.record["report_entering"]["skipped"] == 2
     return produced
@@ -1507,6 +1522,52 @@ def test_klikniecie_bez_raportow_wykonawcow_i_z_pamiecia_niezapisana_u_taty_odtw
     assert [(code, lines[0]) for code, lines in replayed] == [(0, "ODTWORZENIE ZGODNE")] * 2, replayed
 
 
+def test_klikniecie_z_wpisami_numerow_z_wierszy_bez_zlecenia_odtwarza_sie_zgodnie_z_numerami_z_logow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#1354: Jan przysłał Wpisy numerów, które INTERMAX ma w wierszach bez zlecenia: Surowe zlecenie na dole arkusza,
+    uporządkowany wiersz z ``DATA GODZ. POCZ.`` tekstem, uporządkowany wiersz bez ``WYKONAWCA`` i zlecenie z 8.11 sprzed
+    dnia wdrożenia 9.11 (bez numeru w ``NUMER UMOWY`` i kolumnach z aplikacji, które strażnik reguły danych zna, więc
+    numer Wpisu wychodzi do Logów), numeru zlecenia Anny, które INTERMAX ma też jako Surowe zlecenie, i nowego numeru.
+    Logi mają numery z wierszy bez zlecenia (``orderless``, przy zleceniu sprzed okna z jego dniem) i dopisanie, a
+    odtworzenie, którego Kopia wejścia ma tylko uporządkowane wiersze zleceń od 9.11, stawia numery z Logów na dole
+    arkusza, więc nie dopisuje żadnego z nich, nie przenosi zlecenia Anny i daje ten sam wynik z tymi samymi powodami
+    (#1374 r4)."""
+
+    other = ((CONTRACT_NUMBER, "UM-surowe"), *((column, f"APP{column}") for column in range(LAST + 1, APP_LAST + 1)))
+    raw = tuple(
+        Order(datetime(2026, 11, 10, 9), "jan.testowy", number, cells=((NUMBER, number), *other))
+        for number in (40000030, 40000031, 40000002)
+    )
+    earlier = Order(datetime(2026, 11, 8, 9), "jan.testowy", 40000000, cells=((NUMBER, 40000000), *other))
+    text_date = Order(datetime(2026, 11, 9, 13), "jan.testowy", 40000033, cells=((NUMBER, 40000033), (DATE, "09.11.2026 13:00"), *other))
+    no_worker = Order(datetime(2026, 11, 9, 14), "", 40000034, cells=((NUMBER, 40000034), *other))
+    intermax = replace(REPORTED, ordered=(earlier, *REPORTED.ordered, text_date, no_worker), raw=raw)
+    surroundings = Surroundings()
+    text = "40000031 tak montaż\n40000032 nie brak klienta\n40000033 tak wymiana\n40000034 nie brak\n40000000 tak\n40000002 tak"
+    mails = [report(SENDERS["jan.testowy"], _REPORTED_DAY, text)]
+    centrum = entering_centrum(tmp_path / "taty", intermax, mails, surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    view = centrum.run_to_end()
+    logs = _archived_run(surroundings.report_box, tmp_path, view["run"]["id"])
+    entering = json.loads(gzip.decompress(logs.read_bytes()))["report_entering"]
+
+    code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
+
+    assert entering["orderless"] == [
+        {"sheet": ORDER_SHEET, "number": 40000000, "day": "2026-11-08"},
+        *({"sheet": ORDER_SHEET, "number": number, "day": None} for number in (40000002, 40000031, 40000033, 40000034)),
+    ]
+    assert [found["number"] for found in entering["added"]] == [40000032]
+    assert entering["moves"] == []
+    assert [(problem["kind"], problem["bar"]) for problem in entering["problems"]] == [
+        ("unknown_number", "before_window"),
+        ("repeated_number", None),
+        *[("unknown_number", "in_intermax")] * 3,
+    ]
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 def test_klikniecie_po_zostaw_moja_odtwarza_sie_zgodnie_z_decyzja_z_logow(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1535,7 +1596,9 @@ def test_klikniecie_po_zostaw_moja_odtwarza_sie_zgodnie_z_decyzja_z_logow(
 
     code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
 
-    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3 + ["unknown_number"]
+    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3
+    assert entering["added"] == [], "40000099 dopisało drugie kliknięcie, a trzecie go nie dubluje (#1354)"
+    assert [move["number"] for move in entering["moves_before"] if move["added"]] == [40000099]
     assert [(kept["number"], kept["column"], kept["value"]) for kept in entering["kept"]] == [(40000006, "SKUTECZNE", "tak")]
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 

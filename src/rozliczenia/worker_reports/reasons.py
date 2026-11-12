@@ -9,6 +9,9 @@ from datetime import date
 from typing import assert_never
 
 from . import (
+    ADDED_DIGITS,
+    AddBar,
+    Added,
     ConflictingVerdicts,
     HandedOver,
     ManualDifference,
@@ -55,8 +58,8 @@ def reason(problem: ReportProblem) -> str:
                 f"{number} różne Wpisy: {said}, więc Centrum nie zmieniło tego zlecenia przy tym kliknięciu. Sprawdź z "
                 "Wykonawcą, który Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail."
             )
-        case UnknownNumber(worker=worker, day=day, number=number):
-            return f"Numer {number} nie jest zleceniem {worker} z {_day(day)}."
+        case UnknownNumber():
+            return _unknown(problem)
         case RepeatedOrder(worker=worker, day=day, number=number):
             return (
                 f"Zlecenie {number} jest dwa razy w dniu {_day(day)} u {worker}, więc Centrum niczego do niego nie "
@@ -64,6 +67,11 @@ def reason(problem: ReportProblem) -> str:
             )
         case RepeatedNumber(worker=worker, day=day, number=number, places=places):
             where = ", ".join(f"u {owner} z {_day(order_day)}" for order_day, owner in places)
+            if len(places) == 1:
+                where += (
+                    " i w wierszu, z którego Centrum nie robi zlecenia (bez WYKONAWCA albo daty z godziną, Surowe "
+                    "zlecenie albo zlecenie sprzed dni, które Centrum czyta)"
+                )
             return (
                 f"Zlecenie {number} jest w INTERMAX więcej niż raz: {where}. Centrum nie wie, którego z nich dotyczy "
                 f"Wpis od {worker} z {_day(day)}, więc nie zmieniło żadnego z nich przy tym kliknięciu."
@@ -97,6 +105,8 @@ def note(found: ReportNote) -> str:
             return f"przeniesione na {_short(target_day)}"
         case SubjectLost(order_day=order_day):
             return f"pomylony temat: wpisane do zlecenia z {_short(order_day)}"
+        case Added():
+            return "dopisane z raportu, uzupełnij resztę"
         case _:
             assert_never(found)
 
@@ -125,6 +135,38 @@ def _bar(bar: MoveBar, target: date, order_day: date) -> str:
             return f"okres z dniem {_day(order_day)} ma już Plik zbiorczy"
         case MoveBar.AFTER_TODAY:
             return f"dzień {_day(order_day)} jeszcze nie nadszedł"
+
+
+def _unknown(problem: UnknownNumber) -> str:
+    number, worker, day = problem.number, problem.worker, problem.day
+    missing = f"Numeru {number} z Wpisu od {worker} z {_day(day)} nie ma w uporządkowanych zleceniach INTERMAX"
+    match problem.bar:
+        case AddBar.IN_INTERMAX:
+            return (
+                f"Zlecenie {number} z Wpisu od {worker} z {_day(day)} jest już w INTERMAX, ale nie jako uporządkowane "
+                "zlecenie z dniem i Wykonawcą: jego wiersz nie ma WYKONAWCA albo daty z godziną, jest Surowym zleceniem "
+                "albo stoi nad wierszem wklejonym z aplikacji. Centrum niczego do niego nie wpisało i nie dopisało go "
+                "drugi raz; uzupełnij ten wiersz albo uporządkuj INTERMAX i kliknij jeszcze raz."
+            )
+        case AddBar.BEFORE_WINDOW:
+            return (
+                f"Zlecenie {number} z Wpisu od {worker} z {_day(day)} jest już w INTERMAX, ale z dniem sprzed dni, których "
+                "zlecenia Centrum czyta przy tym kliknięciu (sprzed dnia wdrożenia albo ponad tydzień przed pierwszym "
+                "dniem otwartym). Centrum niczego do niego nie wpisało, nie przeniosło go i nie dopisało drugi raz; "
+                "jeśli Wpis go dotyczy, popraw ten wiersz ręcznie według maila."
+            )
+        case AddBar.FORM:
+            return (
+                f"{missing}, a Centrum go nie dopisało, bo dopisuje tylko numer z {ADDED_DIGITS} cyframi, jak numer z "
+                "aplikacji firmowej."
+            )
+        case AddBar.MISTAKEN_SUBJECT:
+            return (
+                f"{missing}, a Centrum go nie dopisało, bo Raport wykonawcy ma pomylony temat (co najmniej dwa zlecenia "
+                "z innego dnia)."
+            )
+        case AddBar.NOT_ORDERED:
+            return f"{missing}, a Centrum go nie dopisało, bo dzień {_day(day)} nie jest jeszcze uporządkowany w INTERMAX."
 
 
 def _subject(fault: SubjectFault) -> str:

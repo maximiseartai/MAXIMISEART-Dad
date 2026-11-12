@@ -65,6 +65,7 @@ def _order(worker: str = "Jan.Testowy", day: date = DAY, number: int = 40000001,
         worker=worker,
         successful=None,
         completed=None,
+        address=None,
     )
     assert order is not None
     return order

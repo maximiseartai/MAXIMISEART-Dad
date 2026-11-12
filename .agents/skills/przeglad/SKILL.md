@@ -6,7 +6,7 @@ description: Przegląd PR w tym repozytorium, wspólny dla autora i recenzenta -
 # Przegląd PR
 
 Ten skill ma wspólne reguły przeglądu i dwa tryby, które różnią się tylko krokami końcowymi: tryb autora, który czyta reguły, zanim zleci przegląd PR, i tryb recenzenta, który publikuje werdykt na PR.
-`PASS` mówi też, że skille `verify-*` z linii `SKILLE VERIFY` przeszły na tym SHA (gotowość w [`AGENTS.md`](../../../AGENTS.md)).
+`PASS` mówi też, że skille `verify-*` z linii `SKILLE VERIFY` przeszły na tym SHA (gotowość w `tools/scal_pr.py --help`).
 Zlecenie przeglądu i brief koordynatora dodają tylko cel i punkty do sprawdzenia, a co jest Ważne, jakie dowody i jak opublikować werdykt, ustala ten skill.
 
 ## Co jest porażką

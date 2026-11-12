@@ -30,7 +30,7 @@ Pełny zestaw biegnie po merge'u na `main`.
 CI ma cztery poziomy:
 
 1. **Lokalnie.** `tools/szybko.py` przed pushem.
-2. **Bramka PR.** `Required CI status` na PR, warunek gotowości z `AGENTS.md`.
+2. **Bramka PR.** `Required CI status` na PR, warunek gotowości z `tools/scal_pr.py --help`.
    Ruff, mypy i Frontend biegną zawsze, a E2E przy zmianie `src/`.
    pytest biegnie tylko na testach wybranych dla zmiany, na Windows 3.11 (minimum u taty) i Linux 3.14.
    Zmiana `.github/workflows/**` wybiera wszystko.

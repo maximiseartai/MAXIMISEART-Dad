@@ -1,9 +1,12 @@
-"""Przeniesienia zleceń kliknięcia: zlecenia po Przeniesieniach, operacje zapisu, pamięć zleceń i informacje dla taty.
+"""Przeniesienia i dopisania zleceń kliknięcia: zlecenia po Przeniesieniach, operacje zapisu, pamięć zleceń i informacje
+dla taty.
 
-Przeniesienie zlecenia (ADR 0029) zmienia Wykonawcę albo dzień zlecenia. Pamięć zlecenia (``OwnMove``) mówi, gdzie
-Centrum je zostawiło, gdzie stało przed pierwszym Przeniesieniem Centrum, na jaki najświeższy mail Centrum zadziałało i
-czy tata zmienił Wykonawcę albo dzień po Przeniesieniu Centrum, więc ręczna zmiana taty wygrywa (``_model.may_move``),
-a informacje o Przeniesieniu stoją przy każdym kliknięciu, dopóki INTERMAX ma zlecenie tam, gdzie je postawiło Centrum.
+Przeniesienie zlecenia (ADR 0029) zmienia Wykonawcę albo dzień zlecenia, a Zlecenie dopisane z raportu dodaje wiersz.
+Pamięć zlecenia (``OwnMove``) mówi, gdzie Centrum je zostawiło, gdzie stało przed pierwszym Przeniesieniem Centrum, na
+jaki najświeższy mail Centrum zadziałało, czy tata zmienił Wykonawcę albo dzień po Przeniesieniu Centrum i czy Centrum
+je dopisało, więc ręczna zmiana taty wygrywa (``_model.may_move``), informacje o Przeniesieniu stoją przy każdym
+kliknięciu, dopóki INTERMAX ma zlecenie tam, gdzie je postawiło Centrum, a informacja o dopisaniu, dopóki zlecenie nie
+ma ``ADRES``.
 """
 
 from __future__ import annotations
@@ -13,8 +16,10 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 
-from ..report_cells import OrderMove, OrderRow
+from ..report_cells import OrderAdded, OrderMove, OrderRow
+from ._matching import Addition
 from ._model import (
+    Added,
     HandedOver,
     Login,
     MovedFrom,
@@ -36,19 +41,21 @@ from ._model import (
 
 @dataclass(frozen=True)
 class Moved:
-    """Kliknięcie po Przeniesieniach: zlecenia z kluczem po kliknięciu (``orders``, w kolejności wejścia), wiersze
-    przeniesionych zleceń (``rows``), operacje zapisu (``moves``), pamięć własnych wpisów z kluczem po kliknięciu
-    (``memory``, z pamięcią zleceń po kliknięciu) i informacje dla taty (``notes``)."""
+    """Kliknięcie po Przeniesieniach i dopisaniach: zlecenia z kluczem po kliknięciu (``orders``, w kolejności wejścia,
+    bez dopisanych), wiersze przeniesionych zleceń (``rows``), operacje zapisu (``moves``, ``added``), pamięć własnych
+    wpisów z kluczem po kliknięciu (``memory``, z pamięcią zleceń po kliknięciu) i informacje dla taty (``notes``)."""
 
     orders: tuple[RegisterOrder, ...]
     rows: frozenset[OrderRow]
     moves: tuple[OrderMove, ...]
     memory: OwnEntries
     notes: tuple[ReportNote, ...]
+    added: tuple[OrderAdded, ...]
 
 
 def moved(
     accepted: Sequence[tuple[RegisterOrder, Login, date, datetime]],
+    additions: Sequence[Addition],
     orders: Sequence[RegisterOrder],
     memory: OwnEntries,
     window: Window,
@@ -68,8 +75,12 @@ def moved(
     ``since`` nie maleje. Przeniesienie, które dotyczy tylko jedynego zlecenia numeru (``_matching.Board``), zastępuje
     całą pamięć numeru pamięcią pod dniem docelowym, z miejscem u nadawcy i chwilą jego maila, z miejscem sprzed
     pierwszego Przeniesienia z pamięci, gdy zlecenie stało tam, gdzie je zostawiło Centrum, a inaczej z miejsca sprzed
-    tego Przeniesienia. Pamięć zlecenia zostaje, dopóki jej dzień jest otwarty. Własne wpisy idą za wierszem tylko przy
-    jedynym zleceniu numeru (``_carried``).
+    tego Przeniesienia, i z ``added``, gdy któraś pamięć numeru go miała. Pamięć zlecenia zostaje, dopóki jej dzień jest
+    otwarty. Własne wpisy idą za wierszem tylko przy jedynym zleceniu numeru (``_carried``).
+
+    Zlecenie dopisane z raportu (``additions``) dostaje pisownię ``WYKONAWCA`` jak przeniesione i pamięć z miejscem
+    dopisania jako miejscem sprzed Przeniesień, chwilą maila i ``added``, która zastępuje każdą pamięć jego numeru, bo
+    INTERMAX nie ma go w żadnym odczytanym dniu.
     """
 
     standing = tuple(move for move in memory.moves if window.opens(move.day))
@@ -95,15 +106,28 @@ def moved(
             origin = (order.key.day, order.key.worker, order.worker_name)
         for found in earlier:
             remembered.pop((found.number, found.day), None)
-        remembered[number, day] = OwnMove(number, day, worker, *origin, arrived)
+        added = any(found.added for found in earlier)
+        remembered[number, day] = OwnMove(number, day, worker, *origin, arrived, added=added)
+    operations: list[OrderAdded] = []
+    for addition in additions:
+        number, day, worker = addition.number, addition.day, addition.worker
+        name = _name(worker, day, orders, memory.moves)
+        operations.append(
+            OrderAdded(addition.sheet, day, name, number, addition.verdict.value, addition.activities or None)
+        )
+        for place in [place for place in remembered if place[0] == number]:
+            del remembered[place]
+        remembered[number, day] = OwnMove(number, day, worker, day, worker, name, addition.arrived, added=True)
     after = tuple(replace(order, key=keys[order.row]) if order.row in keys else order for order in orders)
     kept_moves = frozenset(remembered.values())
+    fresh = [Added(addition.day, addition.worker, addition.number) for addition in additions]
     return Moved(
         after,
         frozenset(keys),
         tuple(sorted(moves, key=lambda move: (move.order.sheet, move.order.row))),
         OwnEntries(_carried(memory.entries, after), kept_moves),
-        _notes(kept_moves, after),
+        tuple(sorted((*_notes(kept_moves, after), *fresh), key=note_order)),
+        tuple(sorted(operations, key=lambda added: (added.sheet, added.day, added.worker, added.number))),
     )
 
 
@@ -150,10 +174,18 @@ def _name(worker: Login, day: date, orders: Iterable[RegisterOrder], remembered:
 
 def _notes(moves: Iterable[OwnMove], orders: Sequence[RegisterOrder]) -> tuple[ReportNote, ...]:
     """Informacje o Przeniesieniach, które stoją: INTERMAX ma zlecenie tam, gdzie postawiło je Centrum, u innego
-    Wykonawcy (przejęte i przekazane) albo w innym dniu (przeniesione z i na) niż przed pierwszym Przeniesieniem."""
+    Wykonawcy (przejęte i przekazane) albo w innym dniu (przeniesione z i na) niż przed pierwszym Przeniesieniem. Do
+    tego informacja o dopisaniu przy każdym zleceniu INTERMAX bez ``ADRES``, którego pamięć numeru (``memories_of``) ma
+    ``added``, gdziekolwiek zlecenie teraz stoi: zlecenie numeru wklejone potem z aplikacji firmowej ma ``ADRES``, więc
+    informacja stoi tylko przy dopisanym."""
 
+    moves = tuple(moves)
     standing = {order.key for order in orders}
-    notes: list[ReportNote] = []
+    notes: list[ReportNote] = [
+        Added(order.key.day, order.key.worker, order.key.number)
+        for order in orders
+        if not order.addressed and any(move.added for move in memories_of(moves, order.key.number))
+    ]
     for move in moves:
         if OrderKey(move.number, move.day, move.worker) not in standing:
             continue

@@ -1,6 +1,6 @@
 ---
 name: verify-status-okresu
-description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu reads one Folder okresu the same way, for every state of its files (each period file present or not; the Plik zbiorczy, the Folder rozliczeń pracowników and the Folder okresu itself readable or not) - Tablica okresów and its steps, the start cards of Przygotowanie, Przebieg rozliczeń and Wycena w efenix, Uzupełnienie (`settled`), Wpisanie raportów (`report_entering._closed`) and the Sprawdzanie of Przygotowanie and Przebieg rozliczeń (`ensure_period_files_absent`, `ensure_worker_settlements_absent`). Use when a change touches `PeriodFolderObservation` or `PeriodFolder.observe` in `src/rozliczenia/period_folder.py`, `_closed` in `report_entering.py`, `_settled` in `centrum/filling.py`, `quantities_to_fill.py`, `_steps` or `read_board` in `centrum/period_board.py`, the choosers in `centrum/period_start.py` or `centrum/processes/`, `check_preparation` or `check_settlement` in `input_checks.py`, the two guards, or when `explore_status_okresu.py` fails.
+description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu reads one Folder okresu the same way, for every state of its files (each period file present or not; the Plik zbiorczy, the Folder rozliczeń pracowników and the Folder okresu itself readable or not) - Tablica okresów and its steps, the start cards of Przygotowanie, Przebieg rozliczeń and Wycena w efenix, Uzupełnienie (`settled`), Wpisanie raportów (`report_entering.closed_periods`) and the Sprawdzanie of Przygotowanie and Przebieg rozliczeń (`ensure_period_files_absent`, `ensure_worker_settlements_absent`). Use when a change touches `PeriodFolderObservation` or `PeriodFolder.observe` in `src/rozliczenia/period_folder.py`, `closed_periods` in `report_entering.py`, `_settled` in `centrum/filling.py`, `quantities_to_fill.py`, `_steps` or `read_board` in `centrum/period_board.py`, the choosers in `centrum/period_start.py` or `centrum/processes/`, `check_preparation` or `check_settlement` in `input_checks.py`, the two guards, or when `explore_status_okresu.py` fails.
 pilnuje:
   - src/rozliczenia/period_folder.py
   - src/rozliczenia/file_state.py
@@ -70,7 +70,7 @@ The check asks every consumer through its public entry point: `create_app` over 
 `input_checks.check_settlement` for the starts.
 Run it when a diff changes how any of them reads the Folder okresu or decides from it: `PeriodFolderObservation`,
 `PeriodFolder.observe`, `_listing`, `_exists` and `reading` in `period_folder.py`, `path_taken` and `file_state` in
-`file_state.py`, `_closed` and `read` in `report_entering.py`, `Window` in `worker_reports/_model.py`, `_settled` and
+`file_state.py`, `closed_periods` and `read` in `report_entering.py`, `Window` in `worker_reports/_model.py`, `_settled` and
 `read` in `centrum/filling.py`, `_steps`, `_path` and `read_board` in `centrum/period_board.py`, `_recent_choice` and the
 `ByStatus` and `RecentWeeks` choosers, `ensure_period_files_absent`, `ensure_worker_settlements_absent`, and the order
 of checks in `check_preparation` and `check_settlement`.
@@ -163,7 +163,7 @@ change fixes it, the check ends with `ZNALEZISKO ZNIKNĘŁO`: delete its entry f
 1. **Wpisanie raportów w zamkniętym okresie** (OTWARCIE). The Folder okresu has a Folder rozliczeń pracowników and no
    Plik zbiorczy: Dad moved, renamed or deleted the Plik zbiorczy after Przebieg rozliczeń, or OneDrive renamed it in a
    conflict. `PeriodFolderObservation.status` says `worker_settlements_ready`, so Tablica okresów shows „Rozliczenia
-   pracowników gotowe” and „Okres zamknięty”. `report_entering._closed` looks only at `collective_file_exists`, so
+   pracowników gotowe” and „Okres zamknięty”. `report_entering.closed_periods` looks only at `collective_file_exists`, so
    `Window.first` is the period's Tuesday and Wpisanie raportów writes `SKUTECZNE` and `CZYNNOŚCI ZREALIZOWANE` into
    INTERMAX orders of the closed period. Replayed on 12 November 2026 with a whole `enter_from_mail` and a Raport
    wykonawcy from 9.09.2026: 2 cells written; with the Plik zbiorczy back, 0.

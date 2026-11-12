@@ -1,6 +1,6 @@
 ---
 name: verify-wpisanie-raportow
-description: Model-check with TLA+ (TLC) one report cell of Wpisanie raportów z maili (ADR 0028, spec #1224) across Dad's click „Wpisz raporty z maili” (`enter_from_mail` in `src/rozliczenia/report_entering.py`), the cell rules (`reconcile` in `src/rozliczenia/worker_reports/_cells.py`), the three files in `config/` (memory of own entries `wpisanie-raportow-stan.json`, the result for the Raporty view `wpisanie-raportow-wynik.json` and the „Zostaw moją” decisions `wpisanie-raportow-decyzje.json`, written through `FileReportState` and `_TextFile` in `src/rozliczenia/centrum/report_entering_state.py` on `StateFile` in `atomic_file.py`, whose failed write waits in memory), „Zostaw moją” from another tab (`ReportEnteringEntry.keep` in `report_entering_run.py`, `FileReportState.keep` under `_deciding`), Dad or his worker changing the cell in Excel, a new mail, a Plik zbiorczy that closes and reopens the period, an OneDrive conflict copy, a refused INTERMAX write and Centrum switching off at any step. It checks that the tool never overwrites a value Dad typed, that „Zostaw moją” keeps the difference out of the view, that the tool's own entry never shows as a manual difference, and that a conflict copy stops the click. Use when a change touches `reconcile`, `enter_reports`, `Window.of` or `Window.opens`, `OwnEntries` or `Kept`, `enter_from_mail` (the order of `write_cells`, `save_memory`, `save_result` and the conflict checks), `_closed`, `SavedState`, `write_cells` (what it returns), `_TextFile`, `FileReportState` (`load`, `save_memory`, `save_result`, `shown`, `kept`, `keep`, `of_work`), `ReportEnteringEntry.keep` or `view`, `_view`, `StateFile`, the assignment `report_files` in `create_app`, `RunHost.start`, or when the check of this skill fails.
+description: Model-check with TLA+ (TLC) one report cell of Wpisanie raportów z maili (ADR 0028, spec #1224) across Dad's click „Wpisz raporty z maili” (`enter_from_mail` in `src/rozliczenia/report_entering.py`), the cell rules (`reconcile` in `src/rozliczenia/worker_reports/_cells.py`), the three files in `config/` (memory of own entries `wpisanie-raportow-stan.json`, the result for the Raporty view `wpisanie-raportow-wynik.json` and the „Zostaw moją” decisions `wpisanie-raportow-decyzje.json`, written through `FileReportState` and `_TextFile` in `src/rozliczenia/centrum/report_entering_state.py` on `StateFile` in `atomic_file.py`, whose failed write waits in memory), „Zostaw moją” from another tab (`ReportEnteringEntry.keep` in `report_entering_run.py`, `FileReportState.keep` under `_deciding`), Dad or his worker changing the cell in Excel, a new mail, a Plik zbiorczy that closes and reopens the period, an OneDrive conflict copy, a refused INTERMAX write and Centrum switching off at any step. It checks that the tool never overwrites a value Dad typed, that „Zostaw moją” keeps the difference out of the view, that the tool's own entry never shows as a manual difference, and that a conflict copy stops the click. Use when a change touches `reconcile`, `enter_reports`, `Window.of` or `Window.opens`, `OwnEntries` or `Kept`, `enter_from_mail` (the order of `write_cells`, `save_memory`, `save_result` and the conflict checks), `closed_periods`, `SavedState`, `write_cells` (what it returns), `_TextFile`, `FileReportState` (`load`, `save_memory`, `save_result`, `shown`, `kept`, `keep`, `of_work`), `ReportEnteringEntry.keep` or `view`, `_view`, `StateFile`, the assignment `report_files` in `create_app`, `RunHost.start`, or when the check of this skill fails.
 pilnuje:
   - src/rozliczenia/worker_reports/_cells.py
   - src/rozliczenia/worker_reports/_model.py
@@ -79,10 +79,10 @@ otherwise):
 | --- | --- |
 | `TataZmienia` | Dad or his worker (through OneDrive) types a value into the cell or clears it and saves INTERMAX |
 | `NowyMail` | a Raport wykonawcy with another content of the Wpis for this order arrives; the latest mail wins (`enter_reports`) |
-| `ZamkniecieOkresu`, `OtwarcieOkresu` | the Plik zbiorczy of the period appears (Przygotowanie) or Dad removes it; `report_entering._closed` gives `Window.of` the closed tokens and `Window.opens` leaves the order out of `orders` in `enter_reports` |
+| `ZamkniecieOkresu`, `OtwarcieOkresu` | the Plik zbiorczy of the period appears (Przygotowanie) or Dad removes it; `report_entering.closed_periods` gives `Window.of` the closed tokens and `Window.opens` leaves the order out of `orders` in `enter_reports` |
 | `PojawiaSieKopia`, `TataUsuwaKopie` | OneDrive puts a conflict copy beside INTERMAX; Dad merges it and removes it |
 | `Sprawdzanie` | Dad clicks; `RunHost.start` (one Uruchomienie at a time), `enter_from_mail` `check`: `FileReportState.load`, which reads the memory through `_TextFile.text` (`StateFile.retry` first, then the waiting text or the file) and `kept()` the same way, then `onedrive_conflicts.beside` (:276), whose copy is a Zatrzymanie before the mailbox |
-| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`enter_reports` → `_cells.reconcile` on the snapshot `saved.memory`, `saved.kept`; a memory file older than version 4 goes through `OlderOwnEntries.upgraded` first, Left out) and `save` (`write_cells` with the changes and the Przeniesienia zleceń of the click) as one step: without changes and Przeniesienia `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
+| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`enter_reports` → `_cells.reconcile` on the snapshot `saved.memory`, `saved.kept`, then `_cells.with_added`; a memory file older than version 4 goes through `OlderOwnEntries.upgraded` first, Left out) and `save` (`write_cells` with the changes, the Przeniesienia zleceń and the Zlecenia dopisane z raportu of the click) as one step: without any of them `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
 | `ZapiszPamiec` | :382 `parts.state.save_memory` → `FileReportState.save_memory` → `_TextFile.write` → `StateFile.write`; an `OSError` keeps the text waiting and the process gives only the warning `memory_not_saved` |
 | `ZapiszWynik` | :383 `parts.state.save_result` (the `ClickResult` with `ManualDifference` among its problems) → `_TextFile.write`, then :385 `onedrive_conflicts.beside`: a copy is the Zatrzymanie `conflict_after_save`, otherwise the summary; one step, because nothing between them writes a file or INTERMAX |
 | `Odswiez` | a tab reads the Raporty view: `ReportEnteringEntry.view` → `FileReportState.shown` and `kept`, each `_TextFile.text` retries a waiting write |
@@ -93,7 +93,7 @@ otherwise):
 
 The script compares these definitions with their digests (`model/definicje.json`: file → name → digest): `reconcile` in
 `worker_reports/_cells.py`; `Window.of`, `Window.opens`, `OwnEntries`, `Kept` in `worker_reports/_model.py`;
-`enter_reports` in `worker_reports/__init__.py`; `enter_from_mail`, `_closed`, `SavedState` in `report_entering.py`;
+`enter_reports` in `worker_reports/__init__.py`; `enter_from_mail`, `closed_periods`, `SavedState` in `report_entering.py`;
 `write_cells` in `intermax_cells.py`; `_TextFile`, `FileReportState.of_work`, `load`, `save_memory`, `save_result`,
 `shown`, `kept`, `keep` in `centrum/report_entering_state.py`; `ReportEnteringEntry.keep`, `ReportEnteringEntry.view`,
 `_view` in `centrum/report_entering_run.py`; `StateFile` in `centrum/atomic_file.py`; the assignment
@@ -281,23 +281,33 @@ order to them or to the day of the subject, and the cell's own entries go with t
 the click, after a Przeniesienie and after Dad's change of `WYKONAWCA` or of the day alike, only while the number has
 one order in the days the process reads, after today too (`_moves._carried`), so for the one cell the model has it is
 the newest Wpis of `NowyMail`, whoever sent it and whichever day its subject has; a mistaken subject (two or more
-Wpisy with another day) only decides which order the Wpis reaches, and a Raport wykonawcy whose day lies in a period
+Wpisy with another day; an order of a number the tool added counts for none, `_matching.Board._added`, #1374 r4, but
+the day of that order still picks the route, so a Wpis never moves it from a day that is not open, #1374 r5)
+only decides which order the Wpis reaches, and a Raport wykonawcy whose day lies in a period
 with a Plik zbiorczy reaches an order of an open day only that way, so both are `NowyMail` too. Dad's change of
 `WYKONAWCA` or of the day (the memory of the number `OwnMove`, found by `_model.memories_of`, and the rule
 `_model.may_move`, whose transition table `tests/test_rdzen_raportow.py` checks as a property) only leaves an older
-Wpis in force, which `NowyMail` also covers. A number the read days hold in several orders (a closed day or one after
-today too) moves none of them and reaches only the sender's one order in the day of the subject (`_matching.Board`),
-otherwise a problem, which also only leaves an older Wpis in force. Its cells keep no own entries in the memory
+Wpis in force, which `NowyMail` also covers. A number the process reads in several rows (several orders, a closed day
+or one after today too, or an order and a row the core makes no order from, `ReportInputs.present`, #1374 r4) moves
+none of them and reaches only the sender's one order in the day of the subject (`_matching.Board`), otherwise a
+problem, which also only leaves an older Wpis in force. A number in several orders keeps no own entries in the memory
 (`_cells.reconcile`, #1367 r4: Excel does not tell which row of the number is which after Dad deletes, merges or swaps
 them), so after the click that wrote it the tool's own entry counts as Dad's value, as after `TataZmienia`: a later
 Wpis with another content gives a `ManualDifference` at the tool's own entry, which BezFalszywejRoznicy forbids for
 the model's one cell. The model leaves that cell out by design (direction safe: NieNadpisuje holds; decision for Maks
 in #1367). A memory file older than version 4 (Wydania v0.7.0 and v0.8.0, `main` before #1367) loads as
-`OlderOwnEntries`, whose writer kept entries at a number of several orders too, so the process keeps such an entry only
-at the number's one order with the same day and Wykonawca as when it was saved and otherwise drops it, which makes its
-cell Dad's value as above (`OlderOwnEntries.upgraded`, #1367 r5); the model starts from a memory this code wrote. The
-rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
-mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
+`OlderOwnEntries`, whose writer kept entries at a number of several orders too, so the process keeps such an entry
+only at the number's one order with the same day and Wykonawca as when it was saved and otherwise drops it, which
+makes its cell Dad's value as above (`OlderOwnEntries.upgraded`, #1367 r5); the model starts from a memory this code
+wrote. A Zlecenie dopisane z raportu (#1354) is, for the one cell, the empty cell that `Zapis` fills with the Wpis and
+remembers as the tool's own entry (`_cells.with_added`); only a number no row the process reads holds becomes one
+(`ReportInputs.present`, also a Surowe zlecenie, a row the core makes no order from: without `WYKONAWCA`, with the
+date as text, pasted from the app between ordered rows, and a row from the week before the first open day, before the
+rollout day too: `Window.numbers_since`), so it never doubles a number of any row the process read. Dad
+deleting the added row leaves no value of his that a write could overwrite, and the click after it adds the row again
+only for a fresher mail (`_model.may_move` with the memory of the number), which the model's write into an empty cell
+over-approximates. The rollout day (it only moves the start of the window later, which leaves cells out), the reading
+of the mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).
 

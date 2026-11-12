@@ -31,11 +31,21 @@ ConflictingVerdicts
 ConflictingVerdicts
   Raport wykonawcy od jan.testowy z 08.11.2026, który przyszedł 08.11.2026 o 18:05, ma dla zlecenia 40000001 różne Wpisy: „t wymiana” i „nieskuteczne brak klienta”, więc Centrum nie zmieniło tego zlecenia przy tym kliknięciu. Sprawdź z Wykonawcą, który Wpis jest dobry, i wpisz go ręcznie albo poczekaj na poprawiony mail.
 UnknownNumber
-  Numer 12345678 nie jest zleceniem jan.testowy z 08.11.2026.
+  Zlecenie 40000099 z Wpisu od jan.testowy z 08.11.2026 jest już w INTERMAX, ale nie jako uporządkowane zlecenie z dniem i Wykonawcą: jego wiersz nie ma WYKONAWCA albo daty z godziną, jest Surowym zleceniem albo stoi nad wierszem wklejonym z aplikacji. Centrum niczego do niego nie wpisało i nie dopisało go drugi raz; uzupełnij ten wiersz albo uporządkuj INTERMAX i kliknij jeszcze raz.
+UnknownNumber
+  Zlecenie 40000099 z Wpisu od jan.testowy z 08.11.2026 jest już w INTERMAX, ale z dniem sprzed dni, których zlecenia Centrum czyta przy tym kliknięciu (sprzed dnia wdrożenia albo ponad tydzień przed pierwszym dniem otwartym). Centrum niczego do niego nie wpisało, nie przeniosło go i nie dopisało drugi raz; jeśli Wpis go dotyczy, popraw ten wiersz ręcznie według maila.
+UnknownNumber
+  Numeru 4000009 z Wpisu od jan.testowy z 08.11.2026 nie ma w uporządkowanych zleceniach INTERMAX, a Centrum go nie dopisało, bo dopisuje tylko numer z 8 cyframi, jak numer z aplikacji firmowej.
+UnknownNumber
+  Numeru 40000099 z Wpisu od jan.testowy z 08.11.2026 nie ma w uporządkowanych zleceniach INTERMAX, a Centrum go nie dopisało, bo Raport wykonawcy ma pomylony temat (co najmniej dwa zlecenia z innego dnia).
+UnknownNumber
+  Numeru 40000099 z Wpisu od jan.testowy z 08.11.2026 nie ma w uporządkowanych zleceniach INTERMAX, a Centrum go nie dopisało, bo dzień 08.11.2026 nie jest jeszcze uporządkowany w INTERMAX.
 RepeatedOrder
   Zlecenie 40000001 jest dwa razy w dniu 08.11.2026 u jan.testowy, więc Centrum niczego do niego nie wpisało.
 RepeatedNumber
   Zlecenie 40000001 jest w INTERMAX więcej niż raz: u ewa.probna z 06.11.2026, u jan.testowy z 07.11.2026. Centrum nie wie, którego z nich dotyczy Wpis od jan.testowy z 08.11.2026, więc nie zmieniło żadnego z nich przy tym kliknięciu.
+RepeatedNumber
+  Zlecenie 40000001 jest w INTERMAX więcej niż raz: u jan.testowy z 07.11.2026 i w wierszu, z którego Centrum nie robi zlecenia (bez WYKONAWCA albo daty z godziną, Surowe zlecenie albo zlecenie sprzed dni, które Centrum czyta). Centrum nie wie, którego z nich dotyczy Wpis od jan.testowy z 08.11.2026, więc nie zmieniło żadnego z nich przy tym kliknięciu.
 RefusedMove
   Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. Centrum go nie przeniosło i nie wpisało, bo dzień 08.11.2026 nie jest jeszcze uporządkowany w INTERMAX.
 RefusedMove

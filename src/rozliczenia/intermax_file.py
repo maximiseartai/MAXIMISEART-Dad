@@ -2,9 +2,9 @@
 raportów i ich sprawdzenie.
 
 Komórki Wpisania raportów (``with_cells``, ``check_cells``) zmieniają tylko tekst wskazanych komórek arkusza zleceń, z
-wyglądem uporządkowanego wiersza (``_Looks.text``), a Przeniesienia zleceń (``raw_orders.MovePlan``) dodatkowo numery
-wierszy od pierwszego bloku dnia do końca arkusza; reszta pliku zostaje bajt w bajt (opis w ``with_cells``). Dalej
-o dniu Uporządkowania.
+wyglądem uporządkowanego wiersza (``_Looks.text``), a Przeniesienia i Zlecenia dopisane z raportu
+(``raw_orders.MovePlan``) dodatkowo numery wierszy od pierwszego bloku dnia do końca arkusza i nowe wiersze; reszta
+pliku zostaje bajt w bajt (opis w ``with_cells``). Dalej o dniu Uporządkowania.
 
 Rejestr czyta ``register_file``; pisarz bierze z niego części paczki (``RegisterPackage``) i XML obszaru wklejania
 (``PasteArea.sheet_xml``), a style zapisu (czcionki, wypełnienia, obramowanie) czyta sam, dopiero przy zapisie.
@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import html
 import re
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 import struct
 import zipfile
 import zlib
@@ -56,7 +56,17 @@ from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
 
 from . import workbook_files
 from .intermax_replace import WriteMismatch
-from .raw_orders import DayPlan, IntermaxEntry, MovePlan, NewSeparator, OperatorColor, OrderColumns, RawBlock
+from .raw_orders import (
+    AddedRow,
+    DayPlan,
+    IntermaxEntry,
+    MovePlan,
+    NewOrder,
+    NewSeparator,
+    OperatorColor,
+    OrderColumns,
+    RawBlock,
+)
 from .register_columns import ORDERED_FONT, ORDERED_SIZE, WORKER_SIZE
 from .register_file import PasteArea, RegisterFile, RegisterPackage
 from .row_look import BORDER
@@ -172,7 +182,8 @@ Cells = Mapping[PasteArea, Mapping[tuple[int, int], str]]
 """Komórki Wpisania raportów: obszar wklejania arkusza zleceń → (wiersz, kolumna od 1) → tekst."""
 
 Moves = Mapping[PasteArea, MovePlan]
-"""Przeniesienia zleceń Wpisania raportów: obszar wklejania arkusza zleceń → plan jego wierszy (``raw_orders.plan_moves``)."""
+"""Przeniesienia i dopisania zleceń Wpisania raportów: obszar wklejania arkusza zleceń → plan jego wierszy
+(``raw_orders.plan_moves``)."""
 
 
 def with_cells(register: RegisterFile, cells: Cells, moves: Moves | None = None) -> bytes:
@@ -183,8 +194,9 @@ def with_cells(register: RegisterFile, cells: Cells, moves: Moves | None = None)
     pliku, zachowuje swój styl, a komórka, której nie ma, dostaje styl tekstu uporządkowanego wiersza
     (``_Looks.text``), dopisany do ``xl/styles.xml`` tylko wtedy, gdy go tam nie ma. Potem Przeniesienia (``_moved``):
     wiersze od ``MovePlan.first`` do końca arkusza stają w kolejności planu, przeniesione zlecenie dostaje tekst
-    ``WYKONAWCA``, a przeniesione na inny dzień nowy dzień w ``DATA GODZ. POCZ.`` (``_shifted``), a nowy pusty wiersz
-    między segmentami wygląd z Uporządkowania INTERMAX. Każda inna część i każdy inny
+    ``WYKONAWCA``, a przeniesione na inny dzień nowy dzień w ``DATA GODZ. POCZ.`` (``_shifted``), nowy pusty wiersz
+    między segmentami wygląd z Uporządkowania INTERMAX, a dopisane zlecenie (``_added_row``) swoje wartości z wyglądem
+    Uporządkowania bez Koloru operatora. Każda inna część i każdy inny
     bajt arkusza zostają, także widok i aktywna karta. ``UnsupportedShape``, gdy komórka ma formułę albo leży w
     scaleniu, gdy przesuwany wiersz ma formułę albo gdy zakres (poza Hiperłączem jednej komórki) sięga przesuwanych
     wierszy, a ``WorkbookError``, gdy stylów nie da się odczytać.
@@ -369,6 +381,12 @@ def _moved(sheet: RowsFromBottom, columns: OrderColumns, plan: MovePlan, looks: 
             look = _row_look(xml[model.start : model.end])
             rows.append(_order_row(b"", number, 0, columns, looks, look, OperatorColor(), {}))
             continue
+        if isinstance(slot, NewOrder):
+            model = by_number[slot.model]
+            model_xml = xml[model.start : model.end]
+            cells = _added_cells(model_xml, columns, plan.added[slot.added], slot.days)
+            rows.append(_added_row(number, columns, looks, _row_look(model_xml), cells))
+            continue
         found = by_number.get(slot)
         if found is None:
             continue
@@ -390,6 +408,41 @@ def _moved(sheet: RowsFromBottom, columns: OrderColumns, plan: MovePlan, looks: 
     end = region[-1].end if region else sheet.end
     tail = _renumbered_hyperlinks(xml[tail_at:], _new_numbers(plan), plan.first)
     return b"".join((head, xml[sheet.start : start], *rows, xml[end:tail_at], tail))
+
+
+def _added_cells(model_xml: bytes, columns: OrderColumns, row: AddedRow, days: int) -> dict[int, SheetCell]:
+    """Komórki z wartością dopisanego zlecenia bez stylu (poza datą): ``WYKONAWCA`` i teksty ``row`` tekstem
+    wbudowanym, liczby liczbą, a ``DATA GODZ. POCZ.`` część dnia liczby daty wiersza ``model_xml`` większa o ``days``,
+    z atrybutami (styl, rodzaj) komórki daty tego wiersza; ``UnsupportedShape``, gdy ta komórka nie jest liczbą."""
+
+    model = next((cell for cell in sheet_cells(model_xml) if cell.column == columns.date), None)
+    if model is None or model.value is None or model.kind not in (None, b"n"):
+        raise UnsupportedShape("data")
+    serial = format(Decimal(model.value.decode("ascii")).to_integral_value(ROUND_FLOOR) + days, "f").encode("ascii")
+    cells = {columns.date: SheetCell(columns.date, model.attributes, b"<v>%s</v>" % serial)}
+    for column, value in {**row.cells, columns.worker: row.worker}.items():
+        if isinstance(value, int):
+            cells[column] = SheetCell(column, b"", b"<v>%d</v>" % value)
+        else:
+            text = html.escape(value, quote=False).encode("utf-8")
+            cells[column] = SheetCell(column, b' t="inlineStr"', b"<is><t>%s</t></is>" % text)
+    return cells
+
+
+def _added_row(number: int, columns: OrderColumns, looks: _Looks, row_look: bytes, cells: Mapping[int, SheetCell]) -> bytes:
+    """Wiersz ``<row>`` dopisanego zlecenia pod numerem ``number`` z wyglądem ``row_look``: komórki od A do ``UWAGI``
+    (i komórki ``cells`` za nią) w wyglądzie Uporządkowania bez Koloru operatora (``_Looks.style``), z wartościami
+    ``cells``; data zostaje w stylu komórki daty wiersza dnia."""
+
+    written: list[bytes] = []
+    for column in sorted({*range(1, columns.last + 1), *cells}):
+        cell = cells.get(column, SheetCell(column, b"", None))
+        if column == columns.date and column in cells:
+            written.append(cell.xml(column, number))
+        else:
+            style = looks.style(columns, column, 0, None)
+            written.append(cell.xml(column, number, cell.unstyled + b' s="%d"' % style))
+    return b'<row r="%d"%s>' % (number, row_look) + b"".join(written) + b"</row>"
 
 
 def _shifted(row_xml: bytes, column: int, days: int) -> bytes:
@@ -435,7 +488,8 @@ def _check_moved(before: RowsFromBottom, written: bytes, columns: OrderColumns, 
     """``WriteMismatch``, gdy arkusz ``written`` różni się od ``before`` (arkusza z komórkami, przed przesunięciem)
     czymś więcej niż wierszami ``plan`` pod nowymi numerami: każdy wiersz planu ma te same komórki (treść, rodzaj i styl),
     przeniesione zlecenie ``WYKONAWCA`` z planu, a na inny dzień ``DATA GODZ. POCZ.`` większą o dni z planu w tym samym
-    typie i stylu, a nowy pusty wiersz żadnej wartości; bajty nad ``plan.first`` się nie zmieniają."""
+    typie i stylu, nowy pusty wiersz żadnej wartości, a dopisane zlecenie dokładnie wartości z planu (treść i rodzaj, a
+    data także styl komórki daty wiersza dnia); bajty nad ``plan.first`` się nie zmieniają."""
 
     try:
         data = RowsFromBottom(written)
@@ -458,6 +512,21 @@ def _check_moved(before: RowsFromBottom, written: bytes, columns: OrderColumns, 
         found = written_rows.get(number)
         if isinstance(slot, NewSeparator):
             if found is None or any(cell.valued for cell in sheet_cells(written[found.start : found.end])):
+                raise WriteMismatch(f"wiersz {number}")
+            expected.add(number)
+            continue
+        if isinstance(slot, NewOrder):
+            model = source_rows[slot.model]
+            wanted = _added_cells(before.xml[model.start : model.end], columns, plan.added[slot.added], slot.days)
+            got = {cell.column: cell for cell in sheet_cells(written[found.start : found.end])} if found else {}
+            valued = {column for column, cell in got.items() if cell.valued}
+            date_cell = got.get(columns.date)
+            if (
+                valued != set(wanted)
+                or any((got[column].content, got[column].kind) != (cell.content, cell.kind) for column, cell in wanted.items())
+                or date_cell is None
+                or date_cell.style != wanted[columns.date].style
+            ):
                 raise WriteMismatch(f"wiersz {number}")
             expected.add(number)
             continue

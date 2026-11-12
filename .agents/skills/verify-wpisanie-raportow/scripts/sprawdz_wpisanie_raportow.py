@@ -25,7 +25,7 @@ from model_tlc import Model, Obietnica, Stan, main
 _STEPS = {
     "TataZmienia": "tata (albo jego pracownik przez OneDrive) wpisuje w komórkę INTERMAX {komorka}",
     "NowyMail": "Wykonawca przysyła Raport wykonawcy z Wpisem {wpis} dla tego zlecenia",
-    "ZamkniecieOkresu": "Przygotowanie tworzy Plik zbiorczy okresu, okres jest zamknięty (_closed)",
+    "ZamkniecieOkresu": "Przygotowanie tworzy Plik zbiorczy okresu, okres jest zamknięty (closed_periods)",
     "OtwarcieOkresu": "tata usuwa Plik zbiorczy okresu, okres znów jest otwarty",
     "PojawiaSieKopia": "OneDrive kładzie obok INTERMAX kopię konfliktu",
     "TataUsuwaKopie": "tata scala kopię konfliktu i ją usuwa",

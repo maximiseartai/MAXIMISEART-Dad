@@ -18,6 +18,7 @@ import yaml
 from tests.fixtures.git_repo import commit, copy_files, git, with_imports
 
 import kroki_skilli
+import repo
 import wplyw_zmiany
 import zakres_runu
 
@@ -275,6 +276,13 @@ def test_baza_ktorej_nie_ma_albo_pusta_mimo_istniejacej_domyslnej_daje_nieznane_
     assert argv[-1] in result.stdout
 
 
+def test_pomoc_opcji_baza_podaje_domyslna_galaz_bazy() -> None:
+    answered = subprocess.run([sys.executable, str(TOOLS / "skille_dla_zmiany.py"), "--help"], capture_output=True, text=True, encoding="utf-8", check=True)
+
+    options = " ".join(answered.stdout.partition("options:")[2].split())
+    assert f"--baza BAZA Commit albo gałąź, od której liczy się zmiana (domyślnie {repo.BASE})." in options
+
+
 def test_baza_z_opcja_baza_i_pozycyjna_daje_ten_sam_wynik_a_dwie_rozne_to_blad_uzycia(tmp_path: Path) -> None:
     base = _repo(tmp_path)
     _append(tmp_path, "docs/b.md")
@@ -331,7 +339,7 @@ def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(
     """Atrapa, do której skrypty skilla Centrum dochodzą importem, trafia w jego ``pilnuje:``, bo wybór importów nie
     liczy, a workflow Windows nie biegnie w pełnym CI ``main``: zmiana kopii w ``atrapy/pliki_taty.py`` nie uruchamiała
     ani podstawy Centrum, ani Windows (przegląd #1177 r3, wcześniej #1121 i #1125). Pakiet bez kodu (``__init__.py``)
-    się nie liczy. Atrapy innych skilli łapie pełne CI ``main`` (``docs/agents/skille.md``). Ścieżki skilli stoją
+    się nie liczy. Atrapy innych skilli łapie pełne CI ``main``. Ścieżki skilli stoją
     literałem, żeby graf wybierał test przy zmianie ich skryptów i ``SKILL.md``."""
 
     repository = wplyw_zmiany.Repository.scan(ROOT)

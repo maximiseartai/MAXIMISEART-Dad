@@ -81,8 +81,9 @@ _END: Final = re.compile(
 - pierwsza linia nagłówków cytatu Outlooka ``Od: …`` albo ``From: …`` (po dwukropku spacja).
 
 Inne postacie cytatu (``Wiadomość napisana przez … w dniu …:`` z Apple Mail po polsku, ``Od:`` bez spacji, cytat bez
-żadnego znacznika) to granica: tekst cytatu czyta się jak treść, a fałszywego Wpisu z cytowanego przypomnienia nie
-daje i tak, bo jedyne numery w nim to numery z przykładu."""
+żadnego znacznika) to granica: tekst cytatu czyta się jak treść. Numery z przykładu w cytowanym przypomnieniu Wpisu nie
+dają (``EXAMPLE_NUMBERS``), ale liczba ze stopki taty na jego końcu, która zaczyna linię i ma co najmniej ``digits``
+cyfr bez spacji (np. numer telefonu), daje wtedy Wpis bez znaku, a z niego problem numeru."""
 _FOOTER: Final = re.compile(r"(?:wysłane|wysłano) ze? .*|sent from .*|get outlook for .*", re.IGNORECASE)
 _DESCRIPTION_EDGES: Final = " ,;:-–—"
 
