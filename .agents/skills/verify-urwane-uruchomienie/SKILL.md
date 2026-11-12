@@ -21,6 +21,7 @@ pilnuje:
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
 ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
+ci-czesci: 2
 ---
 
 # Verify Urwane Uruchomienie (TLA+)
@@ -29,7 +30,10 @@ ci: .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomieni
 
 CI runs `sprawdz_urwane_uruchomienie.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
-step. In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
+step. CI runs it in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, `UNITS` in `sprawdz_urwane_uruchomienie.py`): the
+configuration `wszystko` alone, because it took 239–245 s of 284–288 s on Windows CI (probe run 43305166779), and the
+other seven together; `--config` picks its configurations whatever the part.
+In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
 `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
 `check_model_urwanego_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_urwane_uruchomienie.py`, and in full CI and nightly on `main` after a change of this skill's folder.
