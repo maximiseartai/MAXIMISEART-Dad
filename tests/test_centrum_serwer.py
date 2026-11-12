@@ -104,8 +104,10 @@ def test_zamkniecie_po_starcie_zapisuje_stop_zanim_port_jest_wolny(tmp_path: Pat
     path = tmp_path / "centrum-rozliczen.log"
     log = _PortAtStop(path)
     shutdown = Shutdown(log)
+    since = new_line()
 
     code = serve(FastAPI(), listener=listen_locally(0), on_ready=lambda _url: shutdown.request(), shutdown=shutdown, log=log)
+    join_threads_since(since)
 
     assert code == 0
     assert _events(path) == ["start", "zamkniecie", "stop"]
@@ -120,13 +122,20 @@ def test_nieudany_start_nie_zapisuje_ani_startu_ani_stopu(tmp_path: Path) -> Non
 
     path = tmp_path / "centrum-rozliczen.log"
     log = _PortAtStop(path)
+    shutdown = Shutdown(log)
     listener = listen_locally(0)
     port = listener.getsockname()[1]
+    since = new_line()
 
     with pytest.raises(SystemExit):
-        serve(FastAPI(lifespan=failing), listener=listener, on_ready=lambda _url: None, shutdown=Shutdown(log), log=log)
+        serve(FastAPI(lifespan=failing), listener=listener, on_ready=lambda _url: None, shutdown=shutdown, log=log)
+    events = _events(path)
+    # Po nieudanym starcie u taty kończy się proces; w teście wątek ``serve``, który czeka na prośbę o zamknięcie,
+    # skończy się dopiero po niej.
+    shutdown.request()
+    join_threads_since(since)
 
-    assert _events(path) == []
+    assert events == []
     listen_locally(port).close()
 
 
@@ -358,15 +367,21 @@ def test_timer_pytest_timeout_z_watku_testu_nie_nalezy_do_linii_testu() -> None:
 
 
 @pytest.fixture(scope="module")
-def centra_po_tescie() -> Iterator[list[CentrumClient]]:
-    """Klienci Centrum, których wątki sprawdza koniec modułu, czyli chwila po zakończeniu testu, który ich utworzył."""
+def watki_centrow_po_tescie() -> Iterator[list[threading.Thread]]:
+    """Wątki Centrów testu, żywe na jego końcu, które sprawdza koniec modułu, czyli chwila po ich zatrzymaniu w conftest.
 
-    clients: list[CentrumClient] = []
-    yield clients
-    assert [thread.name for client in clients for thread in client.threads()] == []
+    Sprawdza te wątki, nie linie klientów (``CentrumClient.threads``): z ``--dist worksteal`` worker bierze po tym teście
+    inne testy modułu, a wątki, które one uruchamiają, też należą do linii od ``since`` klientów (#1330).
+    """
+
+    threads: list[threading.Thread] = []
+    yield threads
+    assert [thread.name for thread in threads if thread.is_alive()] == []
 
 
-def test_kazde_centrum_testu_bez_stop_zatrzymuje_sie_po_tescie_razem_z_watkami(centra_po_tescie: list[CentrumClient]) -> None:
+def test_kazde_centrum_testu_bez_stop_zatrzymuje_sie_po_tescie_razem_z_watkami(
+    watki_centrow_po_tescie: list[threading.Thread],
+) -> None:
     # Reguła „test nie zostawia wątku” nie zależy od tego, czy autor zawołał ``stop``: conftest po teście zatrzymuje
     # każde Centrum testu, nie tylko pierwsze albo ostatnie.
     def started(name: str) -> CentrumClient:
@@ -380,14 +395,12 @@ def test_kazde_centrum_testu_bez_stop_zatrzymuje_sie_po_tescie_razem_z_watkami(c
 
         client = CentrumClient(FastAPI(lifespan=lifespan))
         client.__enter__()
-        centra_po_tescie.append(client)
         return client
 
     first, second = started("praca-pierwszego-centrum"), started("praca-drugiego-centrum")
+    watki_centrow_po_tescie.extend(thread for client in (first, second) for thread in client.threads())
 
-    assert {"praca-pierwszego-centrum", "praca-drugiego-centrum"} <= {
-        thread.name for client in (first, second) for thread in client.threads()
-    }
+    assert {"praca-pierwszego-centrum", "praca-drugiego-centrum"} <= {thread.name for thread in watki_centrow_po_tescie}
 
 
 # Centrum testu, które przy zamknięciu (``lifespan``) pisze do swojego dziennika ścieżkę katalogu tymczasowego testów.
