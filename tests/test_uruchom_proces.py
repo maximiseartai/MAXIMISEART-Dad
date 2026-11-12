@@ -9,7 +9,6 @@ import itertools
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +46,7 @@ from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 
 from tests.fixtures.centrum import ToolDirectory
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
+from tests.fixtures.wyciek import zawiera_wartosc
 from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
     INTERNAL_SETTLEMENT_NAME,
@@ -487,10 +487,10 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
 ) -> None:
     au = float(amount_of({"012": 2}))
     orders = [
-        EfenixOrder("#9401", cells={"O": 2}, amount=au),  # wiersz 18: gotowe po dopisaniu
-        EfenixOrder("#9402"),  # 19: inny status
-        EfenixOrder("#9403", cells={"O": 2}, amount=au + 10),  # 20: kwota inna niż AU
-        EfenixOrder("#9404", cells={"O": 2}, amount=au, emmett={"012": 3}),  # 21: Ostrzeżenie Emmetta, O większe niż w pliku
+        EfenixOrder("#94001", cells={"O": 2}, amount=au),  # wiersz 18: gotowe po dopisaniu
+        EfenixOrder("#94002"),  # 19: inny status
+        EfenixOrder("#94003", cells={"O": 2}, amount=au + 10),  # 20: kwota inna niż AU
+        EfenixOrder("#94004", cells={"O": 2}, amount=au, emmett={"012": 3}),  # 21: Ostrzeżenie Emmetta, O większe niż w pliku
     ]
     source = write_collective_file(tmp_path, orders)
     metrics = tmp_path / "metrics.jsonl"
@@ -528,10 +528,8 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
     assert amounts in result["warnings"][1]["what"]
     assert "pozycja INDEKS_012 (kolumna O): efenix 3, plik 2" in result["warnings"][2]["what"]
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
-    # Numer zlecenia jako osobny ciąg cyfr: w chwilach (mikrosekundy) „9401” bywa w środku, a numer sklejony ze słowem
-    # („Zlecenie9401”) dalej jest wyciekiem.
-    number = re.compile(r"(?<![0-9])9401(?![0-9])")
-    assert (number.search(json.dumps(result)), number.search(metrics.read_text(encoding="utf-8"))) == (None, None)
+    texts = (json.dumps(result), metrics.read_text(encoding="utf-8"))
+    assert [zawiera_wartosc(text, orders[0].number) for text in texts] == [False, False]
 
 
 def test_wycena_w_efenix_ze_skryptu_dla_maszyn_z_przekazaniem_przekazuje_gotowe_zlecenie_do_akceptacji(tmp_path: Path) -> None:

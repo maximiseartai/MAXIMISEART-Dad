@@ -13,6 +13,7 @@ import pytest
 
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, Guarded, free_text
 from tests.fixtures.formy_telefonu import CELL_FORMS, PhoneForm
+from tests.fixtures.wyciek import zawiera_wartosc
 
 ADDRESS_NOTE = "Reguła danych: zamaskowano wartość kolumny ADRES w: tekst."
 ORANGE_NOTE = "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: tekst."
@@ -80,6 +81,17 @@ def test_kazda_praca_centrum_ma_wlasna_pamiec_zakazanych_wartosci() -> None:
     first.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5")
 
     assert second.guard("Syntetyczna Lipowa 5", "tekst") == Guarded("Syntetyczna Lipowa 5", ())
+
+
+def test_wyrocznia_wycieku_w_testach_widzi_numer_zlecenia_tak_jak_straznik() -> None:
+    texts = ("ślad d41f94001ab0", "2026-11-12T10:00:00.394001", 'zlecenie "94001"', "#94001, wiersz 18")
+
+    assert [zawiera_wartosc(text, "#94001") for text in texts] == [False, False, True, True]
+
+
+def test_wyrocznia_wycieku_w_testach_nie_przyjmuje_numeru_ktorego_straznik_nie_szuka() -> None:
+    with pytest.raises(ValueError, match="krótszej niż 5 znaków"):
+        zawiera_wartosc("#9401, wiersz 18", "#9401")
 
 
 def test_numer_zlecenia_po_krzyzyku_nie_jest_telefonem_a_te_same_cyfry_bez_krzyzyka_sa() -> None:

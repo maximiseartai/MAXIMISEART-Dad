@@ -116,6 +116,7 @@ from atrapy.preparation import (
 from tests.fixtures.run_cards import first_view, restored, unlisted
 from atrapy.settlement import MARKED, SOURCE_NAME, CellValue, write_quantity_source
 from tests.fixtures.tool_clone import ToolRepository, git_failing_on, tool_repository
+from tests.fixtures.wyciek import zawiera_wartosc
 from atrapy.widok_skrzynki import shown
 from atrapy.workbooks import active_worksheet, rewrite_parts
 
@@ -1993,7 +1994,7 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
     ]
     text = log_files(centrum)[0].read_text(encoding="utf-8")
     traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
-    assert [order.number for order in STOPPED_AT_SECOND if order.number.removeprefix("#") in traced_text] == []
+    assert [order.number for order in STOPPED_AT_SECOND if zawiera_wartosc(traced_text, order.number)] == []
     assert [marker for marker in ("TESTOWA", "Testowa", "Miasto-Dzielnica") if marker in text] == [], "ADRES"
 
 
@@ -2163,7 +2164,7 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_b
     assert utc(record["started_at"]) <= moments[0]
     assert moments == sorted(moments) and moments[-1] <= utc(record["ended_at"]), "godziny działań w kolejności zleceń"
     traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
-    assert [order.number for order in PRICED if order.number.removeprefix("#") in traced_text] == [], "ślad bez numeru"
+    assert [order.number for order in PRICED if zawiera_wartosc(traced_text, order.number)] == [], "ślad bez numeru"
     private = ["TESTOWA", "Testowa", "PRYWATNA", "Miasto-Dzielnica", in_json(tmp_path)]
     assert [marker for marker in private if any(marker in text for text in texts)] == []
 

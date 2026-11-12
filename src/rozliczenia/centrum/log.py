@@ -14,7 +14,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 import threading
-from typing import Literal
+from typing import Literal, final
 
 from rozliczenia.centrum.tool_update import UPDATED
 
@@ -290,10 +290,14 @@ class CentrumLog:
         session = lines[starts[-1] :] if starts else lines
         return [line for line in session if event_of(line) != VIEW_TIMING_EVENT][-limit:]
 
+    # Format wpisu i zapis są tylko tutaj: wyrocznia podaje własny zapis przez ``append``, a podklasa, która je nadpisuje
+    # (#1115), to błąd mypy (``final``).
+    @final
     def _write(self, event: str, **facts: str | int) -> None:
         moment = datetime.now().astimezone().isoformat(timespec="seconds")
         self._append(" ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())]))
 
+    @final
     def _to_file(self, line: str) -> None:
         try:
             with self._lock:

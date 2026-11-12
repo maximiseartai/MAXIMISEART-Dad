@@ -8,7 +8,8 @@ robi. W porze czyta Ustawienia taty (INTERMAX, folder okresów), z ``config`` dz
 wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
 kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
 której sprawdzenie ruszyło (minęła 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
-czeka na następną porę, która zna wysłane z „Wysłanych”.
+czeka na następną porę, która zna wysłane z „Wysłanych”. Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z
+niego bierze przypomnienia praca Centrum i próba Przypomnień przed Wydaniem (``tools/proba_przypomnien.py``).
 
 Pora tego dnia jest załatwiona, gdy sprawdzenie skończy się bez porażki, którą naprawia czas: wtedy do końca pory nie
 czyta już niczego. Brak sieci (``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje
@@ -46,7 +47,7 @@ from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings import Settings, SettingsStore
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import workers
@@ -66,6 +67,7 @@ from rozliczenia.worker_report_inbox import (
 )
 from rozliczenia.worker_reports import (
     Pora,
+    Reminder,
     ReminderInputs,
     SentReminder,
     Window,
@@ -216,49 +218,21 @@ class ReportReminders:
         self._write(now, pora, found)
 
     def _send(self, now: datetime, found: _Check) -> None:
-        settings = self._store.load()
-        rollout = _rollout(self._config / REMINDERS_ROLLOUT)
-        if rollout is None:
-            found.failed = _Failed("bez-wdrozenia")
-            return
-        if settings.register is None or settings.periods_directory is None:
-            found.failed = _Failed("bez-ustawien")
-            return
-        if self._mailbox.access() != "ready":
-            found.failed = _Failed("bez-dostepu")
-            return
-        addresses = self._addresses()
-        if addresses is None:
-            found.failed = _Failed("bez-adresow")
-            return
-        today = now.date()
-        try:
-            closed = _closed(settings.periods_directory, Window.periods(today, rollout))
-        except StopError:
-            found.failed = _Failed("okresy")
-            return
-        window = Window.of(today, rollout, closed)
-        try:
-            register = register_file.read(settings.register, self._files, despite_excel_lock=True)
-            orders = _orders(register, window.first, copy=False)
-        except (WorkbookError, StopError) as error:
-            found.failed = _Failed("intermax", type(error).__name__)
-            return
-        mails = self._mailbox.mails_since(window.first)
-        if not isinstance(mails, Mails):
-            self._failed(mails, found)
-            return
-        sent = self._mailbox.sent_reminders(window.first)
-        if not isinstance(sent, SentReminders):
-            self._failed(sent, found)
-            return
-        footer = _footer(self._config / REMINDERS_FOOTER)
-        found.footer = "missing" if footer is None else "present"
-        found.sent = [*_by_worker(sent.reminders, addresses)]
-        due = reminders_due(ReminderInputs(now, window, orders, mails.mails, sent.reminders, addresses, footer))
-        for reminder in due:
+        read = due_reminders(now, self._store.load(), self._config, self._configuration, self._mailbox, self._files)
+        match read:
+            case NotRead():
+                found.failed = _Failed(read.cause, read.failure)
+                return
+            case PasswordRejected() | InboxUnreachable():
+                self._failed(read, found)
+                return
+            case DueReminders():
+                pass
+        found.footer = "missing" if read.footer is None else "present"
+        found.sent = [*_by_worker(read.sent, read.addresses)]
+        for reminder in read.due:
             moment = self._now()
-            if (moment.date(), reminder_pora(moment)) != (today, reminder_pora(now)):
+            if (moment.date(), reminder_pora(moment)) != (now.date(), reminder_pora(now)):
                 return
             outcome = self._mailbox.send(reminder, moment)
             match outcome:
@@ -282,15 +256,6 @@ class ReportReminders:
             case InboxUnreachable(cause=cause):
                 found.failed = _Failed("brak-sieci", cause)
 
-    def _addresses(self) -> WorkerAddresses | None:
-        found = workers(self._configuration.worker_config)
-        if not isinstance(found, dict):
-            return None
-        try:
-            return worker_addresses.load(self._configuration.worker_addresses, workers=found)
-        except AddressesError:
-            return None
-
     def _write(self, now: datetime, pora: Pora, found: _Check) -> None:
         document = {
             "schema_version": _RESULT_VERSION,
@@ -304,6 +269,85 @@ class ReportReminders:
             ],
         }
         self._result.write(json.dumps(document, ensure_ascii=False, indent=2) + "\n")
+
+
+NotReadCause = Literal["bez-wdrozenia", "bez-ustawien", "bez-dostepu", "bez-adresow", "okresy", "intermax"]
+"""Przyczyny ``ReminderFailure``, przy których sprawdzenie nie doszło do skrzynki albo do rdzenia."""
+
+
+@dataclass(frozen=True)
+class DueReminders:
+    """Odczyt sprawdzenia, które doszło do przypomnień: przypomnienia, które należą się teraz, przypomnienia z
+    „Wysłanych”, adresy Wykonawców i stopka taty (``None``: bez pliku stopki)."""
+
+    due: tuple[Reminder, ...]
+    sent: tuple[SentReminder, ...]
+    addresses: WorkerAddresses
+    footer: str | None
+
+
+@dataclass(frozen=True)
+class NotRead:
+    """Sprawdzenie nie doszło do przypomnień przez plik, Ustawienia albo INTERMAX: przyczyna i nazwa typu wyjątku."""
+
+    cause: NotReadCause
+    failure: str | None = None
+
+
+def due_reminders(
+    now: datetime,
+    settings: Settings,
+    config: Path,
+    configuration: ConfigurationFiles,
+    mailbox: ReminderMailbox,
+    files: DadFiles,
+) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
+    """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: dzień wdrożenia
+    i stopka z ``config``, Ustawienia taty ``settings``, Konfiguracja i plik adresów, Pliki zbiorcze okresów okna,
+    INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``. Niczego nie wysyła i nie zapisuje: wysyła
+    praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
+    Wykonawców."""
+
+    rollout = _rollout(config / REMINDERS_ROLLOUT)
+    if rollout is None:
+        return NotRead("bez-wdrozenia")
+    if settings.register is None or settings.periods_directory is None:
+        return NotRead("bez-ustawien")
+    if mailbox.access() != "ready":
+        return NotRead("bez-dostepu")
+    addresses = _addresses(configuration)
+    if addresses is None:
+        return NotRead("bez-adresow")
+    today = now.date()
+    try:
+        closed = _closed(settings.periods_directory, Window.periods(today, rollout))
+    except StopError:
+        return NotRead("okresy")
+    window = Window.of(today, rollout, closed)
+    try:
+        register = register_file.read(settings.register, files, despite_excel_lock=True)
+        orders = _orders(register, window.first, copy=False)
+    except (WorkbookError, StopError) as error:
+        return NotRead("intermax", type(error).__name__)
+    mails = mailbox.mails_since(window.first)
+    if not isinstance(mails, Mails):
+        return mails
+    sent = mailbox.sent_reminders(window.first)
+    if not isinstance(sent, SentReminders):
+        return sent
+    footer = _footer(config / REMINDERS_FOOTER)
+    due = reminders_due(ReminderInputs(now, window, orders, mails.mails, sent.reminders, addresses, footer))
+    return DueReminders(due, sent.reminders, addresses, footer)
+
+
+def _addresses(configuration: ConfigurationFiles) -> WorkerAddresses | None:
+    found = workers(configuration.worker_config)
+    if not isinstance(found, dict):
+        return None
+    try:
+        return worker_addresses.load(configuration.worker_addresses, workers=found)
+    except AddressesError:
+        return None
 
 
 def _pora(now: datetime) -> str:
