@@ -708,7 +708,7 @@ KNOWN_FINDINGS: tuple[Excuse[StateShape], ...] = (
         "OTWARCIE",
         "Folder rozliczeń pracowników jest, a Pliku zbiorczego nie ma (tata przeniósł, usunął albo przemianował go po "
         "Przebiegu rozliczeń): Tablica okresów pokazuje „Rozliczenia pracowników gotowe” i „Okres zamknięty”, a "
-        "report_entering._closed patrzy tylko na collective_file_exists, więc Wpisanie raportów czyta Skrzynkę raportów "
+        "report_entering.closed_periods patrzy tylko na collective_file_exists, więc Wpisanie raportów czyta Skrzynkę raportów "
         "od wtorku okresu i wpisuje do INTERMAX w jego dniach",
         StateShape(
             states(collective=(Collective.BRAK,), workers=(Workers.PUSTY, Workers.Z_ROZLICZENIEM)),

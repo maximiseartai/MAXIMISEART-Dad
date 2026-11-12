@@ -26,6 +26,7 @@ import pytest
 from rozliczenia.centrum import tool_update
 
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.potomne import wait_for_value
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, FakeInstaller, ToolRepository, centrum_tool_repository, free_port, centrum_health
 
@@ -45,13 +46,14 @@ def _get(port: int, path: str, *, timeout_s: float = 30) -> dict[str, Any]:
 
 
 @contextmanager
-def _shortcut(clone: Path, port: int) -> Iterator[subprocess.Popen[str]]:
-    """Tata klika skrót: ``run_centrum.py`` z klonu; po bloku Centrum zamyka się razem z każdym procesem potomnym."""
+def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterator[subprocess.Popen[str]]:
+    """Tata klika skrót: ``run_centrum.py`` z klonu; po bloku Centrum zamyka się razem z każdym procesem potomnym.
+    ``browser``: program podstawiony jako przeglądarka (zmienna ``BROWSER``)."""
 
     process = subprocess.Popen(
         [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
         cwd=clone,
-        env=os.environ | {"PYTHONUTF8": "1"},
+        env=_environment(browser),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -67,6 +69,18 @@ def _shortcut(clone: Path, port: int) -> Iterator[subprocess.Popen[str]]:
         elif process.poll() is None:
             os.killpg(process.pid, signal.SIGTERM)
         process.communicate(timeout=30)
+
+
+def _environment(browser: Path | None) -> dict[str, str]:
+    return os.environ | {"PYTHONUTF8": "1"} | ({} if browser is None else {"BROWSER": str(browser)})
+
+
+def _browser_recorder(directory: Path) -> tuple[Path, Path]:
+    """Program podstawiony jako przeglądarka, który dopisuje otwierany adres do pliku, i ten plik."""
+
+    record = directory / "otwarte-adresy.txt"
+    script = f"import sys\nwith open({str(record)!r}, 'a', encoding='utf-8') as record:\n    record.write(sys.argv[1] + '\\n')\n"
+    return fake_cli(directory, "przegladarka", script), record
 
 
 def _refusal(process: subprocess.Popen[str], port: int) -> tuple[int, str]:
@@ -215,3 +229,37 @@ def test_gdy_dysk_odmowi_skrotowi_zapisu_porazki_po_cofnieciu_nastepny_start_pok
         "Nie udało się zaktualizować narzędzia z nieoczekiwanego powodu.",
         "retry",
     )
+
+
+def test_skrot_z_autostartu_po_cofnieciu_przerwanej_aktualizacji_startuje_centrum_dalej_bez_karty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0030 „Centrum w Autostarcie, bez karty”: skrót z Autostartu (``--no-browser``) trafia na Aktualizację
+    narzędzia przerwaną wyłączeniem komputera, cofa ją i startuje Centrum od nowa z dysku z tymi samymi argumentami, więc
+    karta się nie otwiera; skrót z pulpitu kliknięty potem otwiera kartę działającego Centrum (przegląd #1355 r1)."""
+
+    monkeypatch.setattr(tool_update, "GUARDIAN_LEASE_S", 0.0)
+    repository = centrum_tool_repository(tmp_path / "repozytoria")
+    before = repository.head()
+    repository.publish({"NOWA_WERSJA.txt": "druga wersja narzędzia\n"})
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository))
+    _update_until(centrum, lambda view: view.get("step") == "restarting")
+    browser, opened = _browser_recorder(tmp_path / "przegladarka")
+    port = free_port()
+
+    with _shortcut(repository.clone, port, browser=browser) as shortcut:
+        health = centrum_health(port, process=shortcut)
+        desktop = subprocess.run(
+            [sys.executable, str(repository.clone / "run_centrum.py"), "--port", str(port)],
+            cwd=repository.clone,
+            env=_environment(browser),
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        addresses = opened.read_text(encoding="utf-8").split() if opened.exists() else []
+
+    assert health["commit"] == before[:7]
+    assert repository.head() == before
+    assert desktop.returncode == 0, desktop.stdout
+    assert addresses == [f"http://127.0.0.1:{port}/"], "skrót z Autostartu po cofnięciu otworzył kartę"

@@ -20,9 +20,10 @@ nieczytelny INTERMAX zostawia porę otwartą: naprawa Maksa albo taty działa od
 Praca nie jest Uruchomieniem procesu: nie przechodzi przez ``RunHost``, więc nie blokuje innych Uruchomień i ich nie
 czeka, nie bierze INTERMAX na wyłączność i nie pisze Kopii wejścia ani Logów Uruchomienia. Każda wysyłka i każda
 porażka trafia do dziennika Centrum, bez adresów, Wykonawców i treści maili (ADR 0028); tę samą porażkę dziennik
-dostaje raz, aż przyczyna się zmieni. Wynik ostatniego sprawdzenia w porze leży w ``REMINDERS_RESULT`` dla widoku
-Raporty: ``{schema_version: 1, checked_at, pora, failure, footer, sent: [{worker, day, sent_at}]}``, gdzie ``sent`` to
-przypomnienia z „Wysłanych” i z tego sprawdzenia przypisane Wykonawcom z listy adresów (pusta lista, gdy sprawdzenie
+dostaje raz, aż przyczyna się zmieni. Wyjątkiem jest brak dnia wdrożenia (``bez-wdrozenia``): przypomnienia są wtedy
+wyłączone, a nie zepsute, więc sprawdzenie nie zostawia śladu ani w dzienniku, ani w ``config``, a pora zostaje
+otwarta. Wynik ostatniego sprawdzenia w porze z dniem wdrożenia leży w ``REMINDERS_RESULT`` dla widoku Raporty:
+``{schema_version: 1, checked_at, pora, failure, footer, sent: [{worker, day, sent_at}]}``, gdzie ``sent`` to przypomnienia z „Wysłanych” i z tego sprawdzenia przypisane Wykonawcom z listy adresów (pusta lista, gdy sprawdzenie
 nie doszło do „Wysłanych”), a ``footer`` to ``present``, ``missing`` albo ``null`` przed odczytem stopki. Widok Raporty
 czyta go przez ``ReportReminders.shown`` tym samym kształtem (``_Result``): chwile wysłania po Wykonawcy i dniu i to, czy
 ostatnie sprawdzenie nie znalazło stopki (#1351).
@@ -52,7 +53,7 @@ from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import workers
 from rozliczenia.message import StopError
-from rozliczenia.report_entering import _closed, _orders
+from rozliczenia.report_entering import closed_periods, register_orders
 from rozliczenia.tool_files import REMINDERS_FOOTER, REMINDERS_RESULT, REMINDERS_ROLLOUT
 from rozliczenia.workbook_files import WorkbookError
 from rozliczenia.worker_addresses import AddressesError
@@ -324,13 +325,13 @@ def due_reminders(
         return NotRead("bez-adresow")
     today = now.date()
     try:
-        closed = _closed(settings.periods_directory, Window.periods(today, rollout))
+        closed = closed_periods(settings.periods_directory, Window.periods(today, rollout))
     except StopError:
         return NotRead("okresy")
     window = Window.of(today, rollout, closed)
     try:
         register = register_file.read(settings.register, files, despite_excel_lock=True)
-        orders = _orders(register, window.first, copy=False)
+        orders = register_orders(register, window.first, copy=False)
     except (WorkbookError, StopError) as error:
         return NotRead("intermax", type(error).__name__)
     mails = mailbox.mails_since(window.first)

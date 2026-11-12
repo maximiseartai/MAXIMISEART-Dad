@@ -2951,6 +2951,45 @@ def test_problem_z_bledu_wykonawcy_zostaje_bez_raportu_wyslanego_jeszcze_raz(
     assert problem in outcome.problems
 
 
+@pytest.mark.parametrize(
+    ("worker", "taken_by", "problems"),
+    [
+        pytest.param("Jan.Testowy", ADAM, (), id="przeniesione-od-nadawcy"),
+        pytest.param(
+            "Adam.Inny",
+            JAN,
+            (UnknownNumber(JAN_LOGIN, DAY, OrderNumber("400000091"), AddBar.FORM),),
+            id="przeniesione-do-nadawcy",
+        ),
+    ],
+)
+def test_regula_poprawki_liczy_zlecenia_wykonawcy_sprzed_przeniesien_centrum_w_kazdym_kliknieciu(
+    worker: str, taken_by: str, problems: tuple[ReportProblem, ...]
+) -> None:
+    """ADR 0029, reguła poprawionego maila (US 40), przegląd #1374 r5 Drobne 2: zlecenie 40000001 z 8.11 stoi u
+    ``worker``, a pierwsze kliknięcie przenosi je Raportem ``taken_by``. Potem Jan przysyła Raport za 8.11 z 40000001 i
+    numerem z 9 cyframi, a zaraz poprawkę z 40000001 i 40000009. Reguła liczy zlecenia Jana z 8.11 sprzed Przeniesień
+    Centrum, więc gdy 40000001 było jego, poprawka zdejmuje problem nieznanego numeru, a gdy przeniosło je do niego
+    Centrum, nie jest poprawką i problem stoi; tak samo w drugim i trzecim kliknięciu, choć między nimi Raport Jana
+    przenosi zlecenie."""
+
+    orders = [_order(worker=worker)]
+    taken = _mail(taken_by, SUBJECT, "40000001 tak montaż")
+    mails = [
+        taken,
+        _mail(JAN, SUBJECT, "40000001 tak montaż\n400000091 tak montaż", EVENING + timedelta(hours=1)),
+        _mail(JAN, SUBJECT, "40000001 tak montaż\n40000009 tak montaż", EVENING + timedelta(hours=2)),
+    ]
+
+    first = enter_reports(_inputs([taken], orders, ordered=[DAY]))
+    after_first = _after(orders, first)
+    second = enter_reports(_inputs(mails, after_first, ordered=[DAY], memory=first.memory))
+    third = enter_reports(_inputs(mails, _after(after_first, second), ordered=[DAY], memory=second.memory))
+
+    assert [move.order for move in first.moves] == [ROW]
+    assert (second.problems, third.problems) == (problems, problems)
+
+
 def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_intermax() -> None:
     """``entered`` liczy zlecenia z ``tak`` albo ``nie`` w ``SKUTECZNE`` po kliknięciu, także wpisane ręcznie, a zlecenia
     dnia idą od góry arkusza, choć proces czyta je od dołu, z ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie

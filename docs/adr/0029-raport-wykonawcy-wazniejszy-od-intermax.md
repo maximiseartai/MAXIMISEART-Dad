@@ -40,9 +40,13 @@ wklejeniem. Tata poprawia wtedy INTERMAX ręcznie według maila, bo mail mówi, 
   z tygodnia przed pierwszym dniem otwartym, także sprzed dnia wdrożenia, więc w pierwszych tygodniach po wdrożeniu nie
   dopisuje zlecenia wklejonego przed nim. Numer z takiego wiersza to problem dla taty. Nie przy pomylonym temacie i nie
   do dnia, który nie jest Dniem uporządkowanym. Dzień dopisanego zlecenia dał raport, a nie tata, więc nie liczy się
-  do pomylonego tematu innych raportów. Poza tym progiem dopisane zlecenie jest jak każde inne: Wpis nie przenosi go z
-  dnia w okresie z Plikiem zbiorczym ani z dnia po dziś, także gdy tata je tam przełożył, a przy pomylonym temacie
-  zostaje ono w swoim dniu (#1374).
+  do pomylonego tematu innych raportów. Tak samo reguła poprawionego maila (późniejszy raport Wykonawcy, który powtarza
+  każdy Wpis wcześniejszego do jego zleceń z tego dnia) liczy zlecenia Wykonawcy z dnia sprzed Przeniesień Centrum, bez
+  dopisanych, żeby następne kliknięcie dawało to samo co jedno. Poprawka, która powtarza tylko zlecenie dopisane albo
+  przeniesione do nadawcy przez Centrum we wcześniejszym kliknięciu, nie jest więc poprawką: literówka wcześniejszego
+  maila się dopisuje, a problem z błędu Wykonawcy zostaje. Poza tymi dwiema regułami dopisane zlecenie jest jak każde
+  inne: Wpis nie przenosi go z dnia w okresie z Plikiem zbiorczym ani z dnia po dziś, także gdy tata je tam przełożył, a
+  przy pomylonym temacie zostaje ono w swoim dniu (#1374).
 - **Wiersz idzie za zleceniem.** Przeniesienie zmienia dzień w `DATA GODZ. POCZ.` (godzina zostaje) albo `WYKONAWCA` i
   przenosi wiersz pod zlecenia nadawcy w tym dniu, w razie potrzeby do nowego segmentu na miejscu alfabetycznym, żeby
   dzień zachował układ z Uporządkowania INTERMAX. Przeniesienie idzie tylko do Dnia uporządkowanego, bo wiersz w dniu z
