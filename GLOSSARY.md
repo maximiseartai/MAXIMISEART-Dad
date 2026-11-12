@@ -19,9 +19,9 @@ zlecenia skopiowane z aplikacji firmowej. Tata nazywa go też INTERMAX; obie
 nazwy znaczą to samo. Jest jedynym źródłem prawdy o zleceniach wszystkich
 okresów. Zawiera między zleceniami całkowicie puste wiersze. Procesy go
 czytają. Uporządkowanie INTERMAX zmienia w nim tylko Surowe zlecenia i widok
-po otwarciu, Wpisanie raportów tylko `SKUTECZNE` i `CZYNNOŚCI ZREALIZOWANE`
-uporządkowanych zleceń, a przywrócenie Kopii INTERMAX zastępuje go w całości tą
-kopią. Edytują go tata na swoim komputerze i jeden jego pracownik na swoim.
+po otwarciu, Wpisanie raportów tylko zlecenia uporządkowanych dni (`SKUTECZNE`,
+`CZYNNOŚCI ZREALIZOWANE`, Przeniesienie zlecenia i Zlecenie dopisane z
+raportu), a przywrócenie Kopii INTERMAX zastępuje go w całości tą kopią. Edytują go tata na swoim komputerze i jeden jego pracownik na swoim.
 
 ## Aplikacja firmowa
 
@@ -241,7 +241,10 @@ Rejestrze, który tata uzupełnia, a nie trzeci stan zlecenia.
 Mail, który Wykonawca wysyła ze swojego adresu na skrzynkę raportów taty, z
 tematem `Raport` i datą dnia zleceń (dzień, miesiąc, rok rozdzielone `.`, `_`
 albo `/`), bez względu na wielkość liter, bez `Re:` ani `Fwd:` w temacie. Ma
-jeden albo więcej Wpisów raportu, niekoniecznie każdy w osobnej linii. Inne maile w tej skrzynce, także od
+jeden albo więcej Wpisów raportu, niekoniecznie każdy w osobnej linii.
+Raportem wykonawcy za dzień jest też odpowiedź Wykonawcy na Przypomnienie o
+raporcie za ten dzień, a jego Wpisami tylko tekst nad cytatem, bez numerów z
+przykładu w przypomnieniu. Inne maile w tej skrzynce, także od
 Wykonawców, nie są Raportami wykonawcy.
 _Avoid_: mail, raport (bez dopowiedzenia), sprawozdanie
 
@@ -249,9 +252,13 @@ _Avoid_: mail, raport (bez dopowiedzenia), sprawozdanie
 
 Część Raportu wykonawcy o jednym zleceniu: numer z `NUMER ZL.`, `tak` albo
 `nie` jak w `SKUTECZNE` i wykonane czynności albo powód nieskuteczności, słowa
-rozdzielone spacją, bez względu na wielkość liter. Dotyczy zlecenia tego
-Wykonawcy z dnia z tematu raportu. Późniejszy Wpis raportu tego samego
-zlecenia od tego samego Wykonawcy jest poprawką wcześniejszego.
+rozdzielone spacją, bez względu na wielkość liter. Dotyczy zlecenia o tym
+numerze, a jego dzień i Wykonawca to dzień z tematu i nadawca raportu, także
+gdy Rejestr zleceń mówi inaczej. Wyjątek: gdy w jednym raporcie co najmniej dwa
+Wpisy mają numery zleceń tego Wykonawcy z innego dnia niż dzień z tematu, temat
+jest pomyłką i te Wpisy dotyczą zleceń z ich dnia w Rejestrze. Późniejszy Wpis
+raportu tego samego zlecenia, od tego samego albo innego Wykonawcy, wygrywa z
+wcześniejszym.
 _Avoid_: linia raportu, Wpis urządzenia i czynności INTERMAX (to wpis
 Uporządkowania)
 
@@ -259,16 +266,51 @@ Uporządkowania)
 
 Proces, który tata uruchamia na żądanie i który przenosi Wpisy raportu do
 uporządkowanych zleceń w Rejestrze zleceń: `tak` albo `nie` do `SKUTECZNE`, a
-czynności albo powód nieskuteczności do `CZYNNOŚCI ZREALIZOWANE`. Wpisuje
-tylko do pustej komórki albo do komórki z własnym wcześniejszym wpisem, której
-od tamtej pory nikt nie zmienił; ręczna wartość taty albo pracownika zawsze
-wygrywa. Pisze tylko do zamkniętego Rejestru zleceń. Za każdym razem czyta
+czynności albo powód nieskuteczności do `CZYNNOŚCI ZREALIZOWANE`. Raport
+wykonawcy jest ważniejszy od Rejestru w dniu i Wykonawcy zlecenia, więc
+Wpisanie raportów robi też Przeniesienie zlecenia i Zlecenie dopisane z
+raportu, a o każdej takiej zmianie i o temacie, który przegrał z Rejestrem,
+informuje tatę przy dniu Wykonawcy w widoku Raporty. Zmienia tylko to, co jest
+puste albo co samo wcześniej zmieniło, a od tamtej pory nikt tego nie ruszył;
+ręczna wartość albo ręczna zmiana taty lub pracownika zawsze wygrywa. Pisze tylko do zamkniętego Rejestru zleceń. Za każdym razem czyta
 wszystkie Raporty wykonawców z dni od jego wdrożenia w okresach, które nie
 mają jeszcze Pliku zbiorczego; okres z Plikiem zbiorczym jest dla niego
 zamknięty. Dzień zleceń jest
 uporządkowany, zanim Wykonawcy wyślą jego raporty, bo Uporządkowanie INTERMAX
 przygotowuje im dzień do pracy.
 _Avoid_: import maili, synchronizacja
+
+## Przeniesienie zlecenia
+
+Zmiana dnia albo Wykonawcy zlecenia w Rejestrze zleceń według Wpisu raportu:
+zlecenie dostaje dzień z tematu albo nadawcę raportu i trafia pod zlecenia tego
+Wykonawcy w tym dniu, w jego segmencie albo w nowym segmencie na jego miejscu
+w kolejności alfabetycznej. Tak przechodzi zlecenie, które Wykonawca przejął od
+innego, albo wykonał innego dnia, niż mówi Rejestr. Nie przenosi zlecenia do
+okresu ani z okresu, który ma Plik zbiorczy.
+_Avoid_: korekta INTERMAX, poprawka daty
+
+## Zlecenie dopisane z raportu
+
+Zlecenie, które Wpisanie raportów dopisało do Rejestru zleceń, bo numeru z
+Wpisu raportu, w postaci numeru z aplikacji firmowej (8 cyfr), nie ma w żadnym
+otwartym dniu Rejestru. Stoi pod zleceniami nadawcy w dniu z tematu i ma tylko
+`NUMER ZL.`, dzień, `WYKONAWCA`, `SKUTECZNE` i `CZYNNOŚCI ZREALIZOWANE`; resztę
+uzupełnia tata, a widok Raporty przypomina mu o tym, dopóki zlecenie nie ma
+`ADRES`. Nie powstaje, gdy temat raportu jest pomyłką albo dzień z tematu nie
+jest Dniem uporządkowanym.
+_Avoid_: nowe zlecenie, brakujące zlecenie
+
+## Przypomnienie o raporcie
+
+Mail ze skrzynki raportów taty do Wykonawcy z listy adresów Wykonawców, który
+ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu
+wykonawcy za ten dzień. Prosi o raport za ten dzień, podaje wzór tematu i
+treści i kończy się stopką taty. Pierwsze idzie o 8:00 następnego dnia, kolejne
+o 8:00 i 18:00, aż raport przyjdzie albo okres dnia dostanie Plik zbiorczy;
+nigdy w nocy i nigdy za dni sprzed wdrożenia przypomnień. Każdy brakujący dzień
+ma własne przypomnienia.
+_Avoid_: monit, ponaglenie
 
 ## Rozliczenie wewnętrzne
 
