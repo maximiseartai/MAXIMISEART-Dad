@@ -65,6 +65,55 @@ BY_CHANGE_ONLY = {
     ),
 }
 
+# Strażnicy reguł, których komunikat mówi regułę: biegną przy każdym ``tools/szybko.py``, z wierszem tabeli reguł
+# albo bez. Jeden napis z odstępami, bo ścieżka w napisie testu to dla grafu zależność (``tests/test_ksztalt_bramki.py``).
+RULE_GUARDS = frozenset(
+    """
+    tests/test_adr.py
+    tests/test_decyzje_na_faktach.py
+    tests/test_dokumenty_regul.py
+    tests/test_granice_importow.py
+    tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow
+    tests/test_granice_importow.py::test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy
+    tests/test_jeden_odczyt_skoroszytu.py
+    tests/test_jeden_zapis_skoroszytu.py
+    tests/test_ksztalt_bramki.py
+    tests/test_kwarantanna.py
+    tests/test_mapy_funkcji.py
+    tests/test_miejsce_skilli.py
+    tests/test_mutacje_skilli.py::test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen
+    tests/test_mutacje_skilli.py::test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz
+    tests/test_potomne.py
+    tests/test_potomne.py::test_narzedzia_pytaja_gita_przez_repo_a_polecenia_ktore_trwaja_uruchamiaja_przez_potomne_run
+    tests/test_skille_dla_zmiany.py::test_agents_md_nie_wymienia_skilli_verify
+    tests/test_skille_dla_zmiany.py::test_kazdy_skill_verify_deklaruje_pilnuje
+    tests/test_skille_dla_zmiany.py::test_skill_nie_kaze_uruchamiac_przed_pushem_tego_co_liczy_ci
+    tests/test_skille_dla_zmiany.py::test_skill_z_poleceniami_w_ci_mowi_co_liczy_ci_a_co_zostaje_lokalnie
+    tests/test_skrypty_bez_instalacji.py
+    tests/test_skrypty_bez_instalacji.py::test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api
+    tests/test_slowo_flaky_test.py
+    tests/test_spis_narzedzi.py
+    tests/test_spis_narzedzi.py::test_biblioteka_narzedzi_nie_importuje_narzedzia_z_tools
+    tests/test_spis_narzedzi.py::test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela
+    tests/test_spis_narzedzi.py::test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci
+    tests/test_spis_narzedzi.py::test_narzedzie_uruchamia_gh_tylko_przez_github
+    tests/test_spis_narzedzi.py::test_pierwsze_zdanie_narzedzia_z_obowiazkowa_podkomenda_ja_wymienia
+    tests/test_spis_narzedzi.py::test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standardowa
+    tests/test_struktura_testow.py
+    tests/test_struktura_testow.py::test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow
+    tests/test_struktura_testow.py::test_zapadki_nie_zglaszaja_zadnej_linii_testow
+    tests/test_systemowy_python.py
+    tests/test_uszkodzone_wejscia.py
+    tests/test_wycofane_pojecia.py
+    tests/test_wywolanie_skryptow_skilli.py
+    tests/test_zapadki.py::test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona
+    tests/test_zapadki.py::test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu
+    tests/test_zapadki.py::test_stan_pliku_w_src_tylko_przez_file_state
+    tests/test_zapadki.py::test_watki_testu_tylko_przez_linie_watkow
+    tests/test_zapadki.py::test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc
+    """.split()
+)
+
 # Pliki z tabelami reguł: nagłówek po polsku w dokumentach procesu, po angielsku w ``CODING_STANDARDS.md``.
 RULE_TABLES = (
     ROOT / "AGENTS.md",
@@ -798,7 +847,10 @@ def _named_tests(guard: str) -> list[str]:
 
 
 def test_kazdy_test_z_tabel_regul_jest_testem_struktury_albo_ma_powod() -> None:
-    """Tabele reguł żyją w ``RULE_TABLES``: plik bez tabeli i tabela w innym pliku Markdown wywracają test.
+    """Każdy strażnik z ``RULE_GUARDS`` biegnie przy każdym szybko, a test z tabeli reguł jest w ``RULE_GUARDS`` albo ma
+    powód w ``BY_CHANGE_ONLY``; usunięty wiersz tabeli nie zdejmuje więc strażnika ze ``STRUCTURE``.
+
+    Tabele reguł żyją w ``RULE_TABLES``: plik bez tabeli i tabela w innym pliku Markdown wywracają test.
 
     Węzeł ``plik::test`` z tabeli biegnie sam albo z całym plikiem, bo inny węzeł tego pliku w ``STRUCTURE`` go nie
     uruchamia; sam plik z tabeli wystarcza z dowolnym swoim węzłem.
@@ -834,10 +886,11 @@ def test_kazdy_test_z_tabel_regul_jest_testem_struktury_albo_ma_powod() -> None:
     }
     assert outside == {}, "tabela w pliku reguł to tabela reguł: nagłówek z RULE_TABLE_HEADERS"
     assert elsewhere == [], "dopisz plik z tabelą reguł do RULE_TABLES"
-    runs_every_time = {test for test in named if test in STRUCTURE or test in files_with_node or test.partition("::")[0] in whole_files}
+    runs_every_time = {test for test in RULE_GUARDS if test in STRUCTURE or test in files_with_node or test.partition("::")[0] in whole_files}
+    assert RULE_GUARDS - runs_every_time == set(), "strażnik reguły biegnie przy każdym szybko: dopisz go do STRUCTURE w tools/lib/wplyw_zmiany.py"
     with_reason = {test for test in named if {test, test.partition("::")[0]} & BY_CHANGE_ONLY.keys()}
-    undecided = named - runs_every_time - with_reason
-    assert undecided == set(), "dopisz test do STRUCTURE w tools/lib/wplyw_zmiany.py albo powód do BY_CHANGE_ONLY"
+    undecided = named - RULE_GUARDS - with_reason
+    assert undecided == set(), "dopisz test do RULE_GUARDS i STRUCTURE w tools/lib/wplyw_zmiany.py albo powód do BY_CHANGE_ONLY"
     named_files = {test.partition("::")[0] for test in named}
     assert BY_CHANGE_ONLY.keys() - named - named_files == set(), "BY_CHANGE_ONLY ma test spoza tabeli"
     assert collected.returncode == 0, collected.stdout

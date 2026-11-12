@@ -295,8 +295,9 @@ def test_kazde_miejsce_tworzace_komunikat_ma_probke_w_pliku_expect() -> None:
     creating = {path.relative_to(ROOT).as_posix(): places for path in (ROOT / "src").rglob("*.py") if (places := _creating(path))}
     outside = {_source(module): set(samples) for module, samples in OUTSIDE_CATALOGS.values()}
 
-    assert set(creating) == {_source(module) for module, _ in CATALOGS.values()} | set(outside)
-    assert {path: creating[path] for path in outside} == outside
+    reason = "Komunikat tworzy tylko moduł z CATALOGS albo OUTSIDE_CATALOGS: przenieś tworzenie do katalogu albo dopisz moduł z próbkami"
+    assert set(creating) == {_source(module) for module, _ in CATALOGS.values()} | set(outside), reason
+    assert {path: creating[path] for path in outside} == outside, reason
 
 
 @pytest.mark.parametrize("catalog", [*CATALOGS, REFUSAL_CATALOG])
@@ -308,7 +309,7 @@ def test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu(catalog: str) -> None
         if function.__module__ == module.__name__ and not name.startswith("_")
     }
 
-    assert set(samples) == public
+    assert set(samples) == public, "każda publiczna funkcja katalogu ma próbkę: dopisz ją w message_samples albo zrób funkcję prywatną"
 
 
 def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:

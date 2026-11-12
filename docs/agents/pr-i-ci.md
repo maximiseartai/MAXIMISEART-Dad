@@ -1,6 +1,6 @@
 # CI na PR
 
-Kiedy PR jest gotowy i jak go scalić, mówi sekcja `PR: od pushu do merge'a` w [`AGENTS.md`](../../AGENTS.md).
+Kiedy PR jest gotowy i jak go scalić, mówi `tools/scal_pr.py --help`.
 Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-ci-w-poziomach.md).
 
 ## Co biegnie na PR

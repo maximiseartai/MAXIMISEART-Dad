@@ -21,7 +21,7 @@ Pomiar na poligonie (publiczna kopia repozytorium, `claude -p` na Opusie, 19 syt
 - Pierwsze zdanie ma jedną linię 80–160 znaków, a jego pierwsze trzy słowa odróżniają narzędzie od innych.
   Narzędzie z obowiązkową podkomendą wymienia ją w tym zdaniu w nawiasie, np. `(plan --baza origin/main)`.
 - `AGENTS.md` i skille nie wskazują `tools/ci/`, a dokument agenta ani docstring narzędzia nie każe uruchamiać skryptu z `tools/ci/`.
-- Reguły i ich strażników opisuje sekcja „Tools and Platforms” w `CODING_STANDARDS.md`.
+- Tych reguł pilnuje `tests/test_spis_narzedzi.py`, a jego komunikaty je mówią.
 
 ## Dowód
 
