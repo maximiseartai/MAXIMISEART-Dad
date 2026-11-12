@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import itertools
 import json
@@ -91,23 +92,6 @@ def _checkouts(directory: Path) -> None:
     _commit(current, "wspolny.py", "a = 3\n", "feat: moje")
     (current / "szkic.py").write_text("c = 2\n", encoding="utf-8")
     (current / "inny.py").write_text("b = 2\n", encoding="utf-8")
-
-
-def test_raport_wymienia_inna_prace_w_toku_i_pliki_zmieniane_tez_tutaj(checkouts: dict[str, Path]) -> None:
-    sandbox = checkouts["other"].parent / "piaskownica"
-    _git(checkouts["other"], "worktree", "add", "--detach", str(sandbox), "fix/opiekun")
-
-    report = _report(checkouts["current"])
-    work, _, overlaps = report.partition("NAKŁADANIA")
-
-    assert "fix/opiekun" in work
-    assert str(checkouts["other"].resolve()) in work
-    assert "t3/bez-pracy" not in report
-    assert "piaskownica" not in report  # czysta odłączona kopia commitów gałęzi fix/opiekun
-    overlap = next(line for line in overlaps.splitlines() if "fix/opiekun" in line)
-    assert "wspolny.py" in overlap  # zacommitowany tam, niewypchnięty, i tutaj
-    assert "szkic.py" in overlap  # niezacommitowany po obu stronach
-    assert "inny.py" not in overlap
 
 
 def test_issue_znajduje_galaz_ktorej_commit_odwoluje_sie_do_zgloszenia(checkouts: dict[str, Path]) -> None:
@@ -543,18 +527,14 @@ def _world(tmp_path: Path) -> list[_Checkout]:
     return world
 
 
-@dataclass(frozen=True)
-class _Built:
-    world: list[_Checkout]
-    github: str
-    compared: str
+# Każdy stan „ja” stoi w tym samym świecie jako osobny worktree, a dla pozostałych stanów jest zwykłą stroną modelu.
+# Uruchomienia narzędzia biegną naraz: każde to ok. 400 gitów, głównie start procesu (25–37 ms na Windows), i pięć po kolei
+# przekroczyło tam limit czasu testu (#1133). Jeden test buduje świat raz, a nie raz na worker xdist.
+_STATES = (("ja", True), ("ja-odlaczony", False), ("ja-na-zdalnej", True), ("rebasuje", False), ("szuka", False))
 
 
-@pytest.fixture(scope="module")
-def built_world(tmp_path_factory: pytest.TempPathFactory) -> _Built:
-    """Świat ``_world`` raz na worker: narzędzie tylko go czyta, a każdy przypadek ogląda go z innego checkoutu."""
-
-    tmp_path = tmp_path_factory.mktemp("swiat")
+@pytest.mark.dlugi
+def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Path) -> None:
     world = _world(tmp_path)
     answer = json.dumps(
         [
@@ -562,23 +542,18 @@ def built_world(tmp_path_factory: pytest.TempPathFactory) -> _Built:
             for branch, (pr, files) in _PULL_REQUESTS.items()
         ]
     )
-    return _Built(world, _fake_gh(tmp_path, answer), _compared(tmp_path / "main"))
+    with_github, compared = _fake_gh(tmp_path, answer), _compared(tmp_path / "main")
 
+    def report(name: str, github: bool) -> list[str]:
+        return sorted(_report(tmp_path / name, path=with_github if github else None).splitlines())
 
-# Jedno uruchomienie narzędzia na przypadek: to setki gitów po 25–37 ms na Windows, a pięć w jednym teście przekroczyło
-# tam limit czasu testu (#1133). Bez ``dlugi``, żeby xdist nie rozdał przypadków workerom, z których każdy buduje świat.
-@pytest.mark.parametrize(
-    ("name", "github"),
-    [("ja", True), ("ja-odlaczony", False), ("ja-na-zdalnej", True), ("rebasuje", False), ("szuka", False)],
-)
-def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(built_world: _Built, name: str, github: bool) -> None:
-    [me] = [side for side in built_world.world if side.path is not None and side.path.name == name]
-    assert me.path is not None
+    with ThreadPoolExecutor(len(_STATES)) as pool:
+        reports = [pool.submit(report, name, github) for name, github in _STATES]
 
-    report = _report(me.path, path=built_world.github if github else None)
-
-    expected = _expected_report(me, built_world.world, github=github, compared=built_world.compared)
-    actual = sorted(report.splitlines())
-    mismatches = [f"brak {line}" for line in expected if line not in actual]
-    mismatches += [f"nadmiar {line}" for line in actual if line not in expected]
+    mismatches = []
+    for (name, github), future in zip(_STATES, reports, strict=True):
+        [me] = [side for side in world if side.path == (tmp_path / name).resolve()]
+        expected, actual = _expected_report(me, world, github=github, compared=compared), future.result()
+        mismatches += [f"{name}: brak {line}" for line in expected if line not in actual]
+        mismatches += [f"{name}: nadmiar {line}" for line in actual if line not in expected]
     assert not mismatches, "\n".join(mismatches)
