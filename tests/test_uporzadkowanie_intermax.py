@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import functools
 import os
 import re
 import struct
@@ -253,11 +254,25 @@ _LONG_PASTE = tuple(
 )
 
 
+@functools.cache
+def _long_workbook(raw: tuple[Order, ...]) -> tuple[bytes, Layout]:
+    """Bajty, nie plik ani skoroszyt: żaden test nie zmieni wejścia innego. Budowa openpyxl-em trwa prawie sekundę."""
+
+    with TemporaryDirectory() as folder:
+        path = Path(folder) / REGISTER_NAME
+        layout = Intermax(ordered=_OLDER_DAYS + _WEEK, raw=raw).write(path)
+        assert len(parts(path)[_SHEET]) > 600_000
+        return path.read_bytes(), layout
+
+
 def _long_register(tmp_path: Path, raw: Sequence[Order] = Intermax().raw) -> tuple[Path, Layout]:
     """INTERMAX, którego arkusz zleceń ma ponad pół MB XML: Uporządkowanie czyta tylko jego dół."""
 
-    path, layout = _register(tmp_path, Intermax(ordered=_OLDER_DAYS + _WEEK, raw=raw))
-    assert len(parts(path)[_SHEET]) > 600_000
+    content, layout = _long_workbook(tuple(raw))
+    folder = tmp_path / "OneDrive"
+    folder.mkdir(exist_ok=True)
+    path = folder / REGISTER_NAME
+    path.write_bytes(content)
     return path, layout
 
 
