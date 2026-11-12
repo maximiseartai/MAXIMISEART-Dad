@@ -1807,7 +1807,10 @@ def _click_keeping_invariants(
         assert all(
             line.since is None or mail.arrived > line.since for line in lines if line.number == added.number
         ), ("N3: dopisanie usuniętego wiersza bez maila świeższego od wpisanego do niego", added)
-        cells = {ReportColumn.SUCCESSFUL: added.successful, ReportColumn.COMPLETED: added.completed}
+        cells: dict[ReportColumn, str | None] = {
+            ReportColumn.SUCCESSFUL: added.successful,
+            ReportColumn.COMPLETED: added.completed,
+        }
         written = {column: value for column, value in cells.items() if value is not None}
         line = _Line(added.number, added.day, worker, cells, written, mail.arrived)
         present[len(lines)] = line
