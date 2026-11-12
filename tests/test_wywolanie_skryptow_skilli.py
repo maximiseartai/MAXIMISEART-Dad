@@ -169,15 +169,22 @@ def test_self_test_pisze_probe_sprzatania_do_podanego_katalogu_przebiegu(tmp_pat
     assert sorted(path.name for path in run_dir.iterdir()) == ["evidence", "runs"]
 
 
-@pytest.mark.parametrize(
-    "row_value",
-    ["SYNTHETIC-3", "PREP-SYN-ADRES-4", "ZL-78201", "UM-78205", "Ulica 78203"],
-    ids=["przebieg", "przygotowanie", "intermax-numer-zl", "intermax-numer-umowy", "intermax-adres"],
-)
-def test_self_test_odrzuca_dowod_z_wartoscia_wiersza_kazdego_fixture_skilla(tmp_path: Path, row_value: str) -> None:
+ROW_VALUE_EVIDENCE = {
+    "przebieg.txt": "SYNTHETIC-3",
+    "przygotowanie.txt": "PREP-SYN-ADRES-4",
+    "intermax-numer-zl.txt": "ZL-78201",
+    "intermax-numer-umowy.txt": "UM-78205",
+    "intermax-adres.txt": "Ulica 78203",
+}
+
+
+# Jeden plik osobno: kod wyjścia przy dokładnie jednym błędzie, którego przebieg z pięcioma błędami nie widzi (#1435 r1).
+@pytest.mark.parametrize("names", [tuple(ROW_VALUE_EVIDENCE), ("przebieg.txt",)], ids=["kazdy-fixture", "jeden-plik"])
+def test_self_test_odrzuca_dowod_z_wartoscia_wiersza_kazdego_fixture_skilla(tmp_path: Path, names: tuple[str, ...]) -> None:
     evidence = tmp_path / "dowody"
     evidence.mkdir()
-    (evidence / "wynik.txt").write_text(f"VERIFY OK | wiersz={row_value}\n", encoding="utf-8")
+    for name in names:
+        (evidence / name).write_text(f"VERIFY OK | wiersz={ROW_VALUE_EVIDENCE[name]}\n", encoding="utf-8")
 
     done = _script(
         SKILLS / "verify-rozliczenia" / "scripts" / "self_test.py",
@@ -185,8 +192,11 @@ def test_self_test_odrzuca_dowod_z_wartoscia_wiersza_kazdego_fixture_skilla(tmp_
         cwd=tmp_path,
     )
 
+    # One run for all files proves each value only if every file is named on its own line.
+    found = "SELF-TEST FAIL: source row content found in evidence: "
+    flagged = {line.removeprefix(found) for line in done.stderr.splitlines() if line.startswith(found)}
     assert done.returncode == 1, done.stdout + done.stderr
-    assert "source row content found in evidence: wynik.txt" in done.stdout + done.stderr
+    assert flagged == set(names), done.stderr
 
 
 @pytest.mark.parametrize(
