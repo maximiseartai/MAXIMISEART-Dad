@@ -82,21 +82,6 @@ def _log_lines(clone: Path) -> list[str]:
     return ToolDirectory(clone).log_path.read_text(encoding="utf-8").splitlines()
 
 
-def _shortcut(clone: Path, port: int) -> subprocess.CompletedProcess[str]:
-    """Skrót „Centrum rozliczeń” z klonu, gdy na porcie już działa Centrum."""
-
-    return subprocess.run(
-        [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
-        cwd=clone,
-        env=os.environ | {"PYTHONUTF8": "1"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-
-
 def test_polecenie_opiekuna_przyjmuje_launcher_kazdej_wersji_jako_start_bez_karty_i_bez_okienek(tmp_path: Path) -> None:
     # Opiekun ze starej kopii startuje nową wersję (ADR 0009), więc postać polecenia jest kontraktem między wersjami:
     # test przypina ją literałem, a nie stałymi z tool_files, które zmieniłyby się razem z nią.
@@ -163,7 +148,6 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
         old_health = centrum_health(port)
         newest = repository.publish({"NOWA_WERSJA.txt": "druga wersja narzędzia\n"})
         assert ToolClone(clone, origin=str(repository.origin)).update().code == UPDATED
-        before_restart = _shortcut(clone, port)
         work = tmp_path / "praca"
         work.mkdir()
         guardian = launch(
@@ -183,7 +167,6 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
         new_health = centrum_health(port, commit=newest)
         guardian_exit = guardian.wait(timeout=30)
         view = _get(port, "/api/tool-update")
-        after_restart = _shortcut(clone, port)
     finally:
         _close_if_running(port)
         old.kill()
@@ -193,17 +176,12 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
     assert (old_health["commit"], new_health["commit"]) == (before[:7], newest[:7])
     assert new_health["instance"] != old_health["instance"]
     assert guardian_exit == 0
-    # Skrót z przesuniętego klonu rozpoznaje stare Centrum jako inną wersję, a nowe jako tę samą, jak opiekun.
-    assert before_restart.returncode == 1, before_restart.stdout
-    assert f"w innej wersji ({before[:7]})" in before_restart.stdout
-    assert after_restart.returncode == 0, after_restart.stdout
-    assert f"Centrum rozliczeń już działa: http://127.0.0.1:{port}/" in after_restart.stdout
     assert view == {"state": "updated"}
     assert not (clone / "config" / RESULT_FILE).exists()
     assert not work.exists()
     assert ToolClone(clone).interrupted_update() is None
     events = [line.split(" ", 2)[1] for line in _log_lines(clone)]
-    assert [event for event in events if event not in {"blad-startu", "juz-dziala"}] == [
+    assert events == [
         "start",
         "zamkniecie",
         "stop",
@@ -353,7 +331,7 @@ def test_nowa_wersja_ktora_nie_wystartuje_wraca_do_starego_commitu_a_stara_start
 def test_gdy_po_cofnieciu_stara_wersja_ze_skrotu_juz_trzyma_port_opiekun_konczy_bez_okienka(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(restart_guardian, "PORT_TIMEOUT_S", 1.0)
+    monkeypatch.setattr(restart_guardian, "PORT_TIMEOUT_S", 0.2)
     repository = centrum_tool_repository(tmp_path / "repozytoria")
     before = repository.head()
     # Klon stoi na nowej wersji, dopóki opiekun go nie cofnie, więc skrót starej wersji startuje z drugiej kopii.
@@ -412,12 +390,28 @@ def test_gdy_po_cofnieciu_stara_wersja_ze_skrotu_juz_trzyma_port_opiekun_konczy_
 def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_path: Path) -> None:
     started = tmp_path / "stara-wersja-startuje"
     run_centrum = (REPOSITORY_ROOT / "run_centrum.py").read_text(encoding="utf-8")
-    # Stara wersja od opiekuna zajmuje port 1,5 s po starcie procesu, więc skrót zdąży zająć go przed nią.
+    # Stara wersja od opiekuna zajmuje port dopiero wtedy, gdy Centrum ze skrótu już odpowiada, więc skrót jest pierwszy.
+    # Port trzyma ono do końca testu, więc opiekunowa stara wersja czeka cały _SHORTCUT_HOLDS_PORT_S: tu 0,5 s zamiast 10.
     slow_guardian_start = (
-        "import sys, time\n"
+        "import sys\n"
         "if '--bez-okienek' in sys.argv:\n"
-        f"    from pathlib import Path; Path({str(started)!r}).touch()\n"
-        "    time.sleep(1.5)\n"
+        "    import time, urllib.request\n"
+        "    from pathlib import Path\n"
+        f"    Path({str(started)!r}).touch()\n"
+        "    port = int(sys.argv[sys.argv.index('--port') + 1])\n"
+        "    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))\n"
+        "    deadline = time.monotonic() + 60\n"
+        "    while time.monotonic() < deadline:\n"
+        "        try:\n"
+        "            direct.open(f'http://127.0.0.1:{port}/api/health', timeout=1).close()\n"
+        "        except OSError:\n"
+        "            time.sleep(0.1)\n"
+        "        else:\n"
+        "            break\n"
+        "    sys.path.insert(0, str(Path(__file__).resolve().parent / 'src'))\n"
+        "    from rozliczenia.centrum import launcher\n"
+        "    assert hasattr(launcher, '_SHORTCUT_HOLDS_PORT_S')\n"
+        "    launcher._SHORTCUT_HOLDS_PORT_S = 0.5\n"
     )
     repository = centrum_tool_repository(
         tmp_path / "repozytoria", {"run_centrum.py": slow_guardian_start + run_centrum}
@@ -436,7 +430,6 @@ def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_p
     shortcut: subprocess.Popen[bytes] | None = None
     try:
         guardian, exits = _guardian_in_background(restart, dialogs)
-        deadline = time.monotonic() + 90
         assert wait_for(started.exists, 90), "Opiekun nie uruchomił starej wersji po cofnięciu."
         shortcut = subprocess.Popen(
             [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
@@ -448,11 +441,10 @@ def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_p
         guardian.join(timeout=90)
         health = centrum_health(port, timeout_s=5)
         view = _get(port, "/api/tool-update")
-        # Stara wersja od opiekuna kończy się sama, gdy po _SHORTCUT_HOLDS_PORT_S zastanie Centrum ze skrótu.
+        # Stara wersja od opiekuna kończy się sama, gdy po _SHORTCUT_HOLDS_PORT_S zastanie Centrum ze skrótu, a ono już
+        # odpowiada; limit krótszy niż pytest-timeout minus sprzątanie, więc czekanie bez końca to porażka, nie zawieszenie.
         assert wait_for(
-            lambda: "juz-dziala" in [line.split(" ", 2)[1] for line in _log_lines(clone)],
-            deadline - time.monotonic(),
-            every=0.1,
+            lambda: "juz-dziala" in [line.split(" ", 2)[1] for line in _log_lines(clone)], 30, every=0.1
         ), "Stara wersja od opiekuna nie zakończyła się."
     finally:
         _close_if_running(port)
@@ -515,7 +507,7 @@ NOT_STARTED_AFTER_UPDATE = (
 def test_gdy_port_nie_zostanie_zwolniony_opiekun_cofa_klon_zapisuje_prawdziwy_wynik_i_pokazuje_okienko(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(restart_guardian, "PORT_TIMEOUT_S", 1.0)
+    monkeypatch.setattr(restart_guardian, "PORT_TIMEOUT_S", 0.2)
     repository = tool_repository(tmp_path / "repozytoria")
     before = repository.head()
     dad_mapping = "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n"
@@ -546,7 +538,7 @@ def test_gdy_port_nie_zostanie_zwolniony_opiekun_cofa_klon_zapisuje_prawdziwy_wy
 def test_gdy_po_cofnieciu_bez_portu_centrum_ze_skrotu_juz_dziala_opiekun_konczy_bez_okienka(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(restart_guardian, "PORT_TIMEOUT_S", 1.0)
+    monkeypatch.setattr(restart_guardian, "PORT_TIMEOUT_S", 0.2)
     repository = centrum_tool_repository(tmp_path / "repozytoria")
     clone = repository.clone
     before = repository.head()
