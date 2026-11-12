@@ -1,0 +1,178 @@
+{
+  "zwykle": {
+    "opis": "Dwa kliknięcia „Wyślij do Maksa”, jedna Uwaga taty, jedno zgaśnięcie, skrzynka raz bez odpowiedzi, Maks zamyka jedno issue.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "MaxUwag": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiSieci": 1,
+      "MaxAwariiPlikuStanu": 0,
+      "MaxAwariiKolejki": 0,
+      "MaxWyjatkowKolejki": 0,
+      "MaxOdrzucen": 0,
+      "MaxZamkniec": 1
+    },
+    "znane": [
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-zgloszenia",
+        "znalezisko": "Centrum gaśnie po DadCases.add, a przed Outbox.post w Reports._queue: plik stanu ma sprawę Zgłoszenia bez numeru, kolejka nie ma pliku, a _pending zatrzymuje każde następne kliknięcie i powrót problemu"
+      },
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-uwagi",
+        "znalezisko": "Centrum gaśnie po DadCases.add, a przed Outbox.post w dad_notes.send: Uwaga taty czeka w Powiadomieniach na zawsze, a jej tekstu nie ma nigdzie"
+      }
+    ]
+  },
+  "odrzucona": {
+    "opis": "Dwa kliknięcia, jedno zgaśnięcie, skrzynka raz bez odpowiedzi, jedna wysyłka z treścią, którą Skrzynka odrzuca.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "MaxUwag": 0,
+      "MaxZgasniec": 1,
+      "MaxAwariiSieci": 1,
+      "MaxAwariiPlikuStanu": 0,
+      "MaxAwariiKolejki": 0,
+      "MaxWyjatkowKolejki": 0,
+      "MaxOdrzucen": 1,
+      "MaxZamkniec": 0
+    },
+    "znane": [
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-zgloszenia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "OdrzuconaNieCzeka",
+        "przyczyna": "pokaz-po-odrzuceniu",
+        "znalezisko": "ReportHandle.send liczy wynik DadCases.queued, zanim uchwyt usłyszał odrzucenie treści, a pokazuje go po nim: karta wraca z „odrzucone” do „czeka w kolejce”, a _done zatrzymuje każde następne kliknięcie do końca pracy Centrum"
+      }
+    ]
+  },
+  "plik-stanu": {
+    "opis": "Jedno kliknięcie, jedna Uwaga taty, jedno zgaśnięcie, jeden nieudany zapis config/sprawy-taty.json.",
+    "stale": {
+      "MaxKlikniec": 1,
+      "MaxUwag": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiSieci": 0,
+      "MaxAwariiPlikuStanu": 1,
+      "MaxAwariiKolejki": 0,
+      "MaxWyjatkowKolejki": 0,
+      "MaxOdrzucen": 0,
+      "MaxZamkniec": 0
+    },
+    "znane": [
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-zgloszenia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-uwagi",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "plik-stanu-niedostepny",
+        "znalezisko": "DadCases.numbered nie zapisuje numeru (StateFile: OSError), kolejka usuwa plik doręczonej wysyłki, a Centrum gaśnie przed następnym zapisem: po starcie sprawa czeka bez pliku kolejki"
+      }
+    ]
+  },
+  "kolejka": {
+    "opis": "Dwa kliknięcia, jedna Uwaga taty, jedno zgaśnięcie, Outbox.post raz False i raz z wyjątkiem.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "MaxUwag": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiSieci": 0,
+      "MaxAwariiPlikuStanu": 0,
+      "MaxAwariiKolejki": 1,
+      "MaxWyjatkowKolejki": 1,
+      "MaxOdrzucen": 0,
+      "MaxZamkniec": 0
+    },
+    "znane": [
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-zgloszenia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-uwagi",
+        "znalezisko": "jak w zwykle"
+      }
+    ]
+  },
+  "plik-stanu-kolejka": {
+    "opis": "Jedno kliknięcie, jedna Uwaga taty, jedno zgaśnięcie, jeden nieudany zapis config/sprawy-taty.json, Outbox.post raz False: zapis withdraw albo forget zawodzi.",
+    "stale": {
+      "MaxKlikniec": 1,
+      "MaxUwag": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiSieci": 0,
+      "MaxAwariiPlikuStanu": 1,
+      "MaxAwariiKolejki": 1,
+      "MaxWyjatkowKolejki": 0,
+      "MaxOdrzucen": 0,
+      "MaxZamkniec": 0
+    },
+    "znane": [
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-zgloszenia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-uwagi",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "plik-stanu-niedostepny",
+        "znalezisko": "jak w plik-stanu"
+      },
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "wycofanie-bez-zapisu",
+        "znalezisko": "Outbox.post zwraca False, finally w Reports._queue woła DadCases.withdraw, którego zapis config/sprawy-taty.json zawodzi (StateFile trzyma treść w pamięci), a Centrum gaśnie przed następnym zapisem: po starcie sprawa Zgłoszenia czeka bez pliku kolejki, a _pending zatrzymuje każde następne kliknięcie"
+      },
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zapomnienie-bez-zapisu",
+        "znalezisko": "Outbox.post zwraca False, dad_notes.send woła DadCases.forget, którego zapis config/sprawy-taty.json zawodzi, a Centrum gaśnie przed następnym zapisem: po starcie Uwaga taty, której tata dostał odmowę, czeka w Powiadomieniach na zawsze"
+      }
+    ]
+  },
+  "powrot": {
+    "opis": "Dwa kliknięcia, dwa zgaśnięcia, skrzynka raz bez odpowiedzi, jedna odrzucana treść, Maks zamyka jedno issue: powrót problemu po starcie.",
+    "stale": {
+      "MaxKlikniec": 2,
+      "MaxUwag": 0,
+      "MaxZgasniec": 2,
+      "MaxAwariiSieci": 1,
+      "MaxAwariiPlikuStanu": 0,
+      "MaxAwariiKolejki": 0,
+      "MaxWyjatkowKolejki": 0,
+      "MaxOdrzucen": 1,
+      "MaxZamkniec": 1
+    },
+    "znane": [
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-zgloszenia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "OdrzuconaNieCzeka",
+        "przyczyna": "pokaz-po-odrzuceniu",
+        "znalezisko": "jak w odrzucona"
+      }
+    ]
+  }
+}
