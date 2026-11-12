@@ -1775,6 +1775,36 @@ def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_p
     assert _worker(_view(centrum), "jan.testowy")["notes"] == []
 
 
+def test_dopisanie_zapisuje_sie_w_pamieci_w_wersji_4_a_plik_wersji_3_z_dopisaniem_czyta_sie_bez_zatrzymania(
+    tmp_path: Path,
+) -> None:
+    """#1354 r4 po #1367 r5: kliknięcie, które dopisuje 40000077, zapisuje pamięć w wersji 4 z jego zleceniem jako
+    dopisanym (``moves[].added``) i jego komórkami jako własnymi wpisami. Plik w wersji 3 z ``added`` zapisała tylko ta
+    gałąź przed scaleniem #1367, nigdy Wydanie: kliknięcie czyta go bez Zatrzymania, nie dopisuje numeru drugi raz,
+    okienko dalej przypomina o adresie, a pamięć wraca do wersji 4 z tym samym dopisaniem."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)), raw=())
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak montaż ONT")])
+    _finished(centrum)
+    saved = json.loads(_state(centrum).read_text(encoding="utf-8"))
+    _state(centrum).write_text(json.dumps({**saved, "schema_version": 3}, ensure_ascii=False), encoding="utf-8")
+    after = centrum.register.read_bytes()
+
+    entering = _entering(centrum, _finished(centrum))
+
+    assert saved["schema_version"] == 4
+    assert [(move["number"], move["added"]) for move in saved["moves"]] == [("40000077", True)]
+    assert {(own["number"], own["column"], own["value"]) for own in saved["own"]} == {
+        ("40000077", "SKUTECZNE", "tak"),
+        ("40000077", "CZYNNOŚCI ZREALIZOWANE", "montaż ONT"),
+    }
+    assert centrum.register.read_bytes() == after, "plik wersji 3 z dopisaniem nie dopisuje numeru drugi raz"
+    assert (entering["added"], entering["problems"]) == ([], [])
+    assert [move["added"] for move in entering["moves_before"]] == [True]
+    assert _worker(_view(centrum), "jan.testowy")["notes"] == [{"number": "40000077", "text": "dopisane z raportu, uzupełnij resztę"}]
+    assert json.loads(_state(centrum).read_text(encoding="utf-8")) == saved
+
+
 def _day_with(row: Order) -> Intermax:
     """Uporządkowany 9.11: zlecenie Jana, wiersz ``row`` i zlecenie Anny, bez Surowych zleceń."""
 
