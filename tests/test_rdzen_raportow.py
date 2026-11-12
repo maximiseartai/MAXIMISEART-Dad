@@ -716,6 +716,11 @@ def test_wpisy_dwoch_wykonawcow_numeru_z_jednym_wierszem_zostaja_pod_swoimi_kluc
     assert outcome.memory.entries == {jan_entry}
 
 
+SEVENTH, SIXTH = date(2026, 11, 7), date(2026, 11, 6)
+OPEN_DAYS = (SIXTH, SEVENTH, DAY)
+"""Dni uporządkowane arkusza ``Zlecenia``: wszystkie dni otwarte okna od 6.11."""
+
+
 _NAMES = {Login("jan.testowy"): "Jan.Testowy", Login("ewa.probna"): "Ewa.Probna", Login("adam.inny"): "Adam.Inny"}
 _SENT_FROM = {Login("jan.testowy"): JAN, Login("ewa.probna"): EWA, Login("adam.inny"): ADAM}
 _EVENTS = st.lists(
@@ -726,23 +731,43 @@ _EVENTS = st.lists(
     ),
     max_size=14,
 )
+_EVENTS_WITH_DAYS = st.lists(
+    st.one_of(
+        st.tuples(
+            st.just("mail"),
+            st.sampled_from(sorted(_NAMES)),
+            st.integers(0, 4),
+            st.sampled_from(["tak", "nie", ""]),
+            st.sampled_from(OPEN_DAYS),
+        ),
+        st.tuples(st.just("tata"), st.sampled_from(sorted(_NAMES))),
+        st.tuples(st.just("tata"), st.sampled_from(OPEN_DAYS)),
+        st.just(("click",)),
+    ),
+    max_size=14,
+)
+"""Zdarzenia własności z Przeniesieniami między dniami (#1350): mail ma dzień z tematu, a tata zmienia też dzień."""
+
+_Place = tuple[Login, date]
+"""Miejsce zlecenia w tabeli przejść: Wykonawca i dzień."""
 
 
 @dataclass(frozen=True)
 class _Remembered:
     """Pamięć zlecenia w wyroczni, wprost z tabeli przejść: miejsce Centrum, miejsce sprzed pierwszego Przeniesienia,
-    ``since`` i czy tata zmienił Wykonawcę po Przeniesieniu Centrum."""
+    ``since`` i czy tata zmienił miejsce po Przeniesieniu Centrum."""
 
-    placed: Login
-    origin: Login
+    placed: _Place
+    origin: _Place
     since: datetime
     held: bool
 
 
 def _table(
-    remembered: _Remembered | None, current: Login, mails: Sequence[tuple[ReportMail, Login, str]]
-) -> tuple[Login, _Remembered | None, tuple[ReportMail, Login, str] | None]:
-    """Tabela przejść z opisu #1358 bez kodu produkcyjnego: Wykonawca zlecenia po kliknięciu, pamięć po kliknięciu i
+    remembered: _Remembered | None, current: _Place, mails: Sequence[tuple[ReportMail, _Place, str]]
+) -> tuple[_Place, _Remembered | None, tuple[ReportMail, _Place, str] | None]:
+    """Tabela przejść z opisu #1358 bez kodu produkcyjnego, z miejscem = Wykonawca i dzień (jeden Wpis w raporcie, więc
+    każdy mail stawia zlecenie u nadawcy w dniu z tematu): miejsce zlecenia po kliknięciu, pamięć po kliknięciu i
     zwycięski mail (``None``: żaden Wpis się nie liczy)."""
 
     held = remembered is not None and (
@@ -756,15 +781,66 @@ def _table(
     if not counted:
         return current, None if remembered is None else replace(remembered, held=held), None
     winner = max(counted, key=lambda found: (found[0].arrived, found[0].id.digest))
-    mail, sender, verdict = winner
+    mail, target, verdict = winner
     if not verdict:
         return current, None if remembered is None else replace(remembered, held=held), winner
-    if sender == current:
+    if target == current:
         if remembered is None:
             return current, _Remembered(current, current, mail.arrived, held=False), winner
         return current, replace(remembered, since=max(remembered.since, mail.arrived), held=held), winner
     origin = remembered.origin if remembered is not None and remembered.placed == current else current
-    return sender, _Remembered(sender, origin, mail.arrived, held=False), winner
+    return target, _Remembered(target, origin, mail.arrived, held=False), winner
+
+
+def _follows_table(events: Sequence[tuple[object, ...]]) -> None:
+    """Po każdym kliknięciu ciągu ``events`` zlecenie stoi w miejscu z tabeli przejść (``_table``), z Wpisem zwycięskiego
+    maila w komórkach, bez różnicy z ręczną wartością (tata nie zmienia komórek, więc każda wartość jest wpisem Centrum),
+    z informacjami tylko wtedy, gdy stoi tam, gdzie je przeniosło Centrum, a powtórne kliknięcie bez nowych zdarzeń nic
+    nie zmienia."""
+
+    orders = [_order()]
+    mails: list[tuple[ReportMail, _Place, str]] = []
+    memory = OwnEntries.EMPTY
+    remembered: _Remembered | None = None
+    for index, event in enumerate(events):
+        match event:
+            case ("mail", str(login), int(minutes), str(verdict), *rest):
+                [day] = rest or [DAY]
+                assert isinstance(day, date)
+                text = f"40000001 {verdict} opis {index}".replace("  ", " ")
+                subject = f"Raport {day:%d.%m.%Y}"
+                sent = _mail(_SENT_FROM[Login(login)], subject, text, EVENING + timedelta(minutes=minutes), f"<{index}@x.invalid>")
+                mails.append((sent, (Login(login), day), verdict))
+            case ("tata", str(login)):
+                orders = _given_to(orders, _NAMES[Login(login)])
+            case ("tata", date() as day):
+                [order] = orders
+                orders = [
+                    _order(
+                        order.row,
+                        number=order.key.number,
+                        day=day,
+                        worker=order.worker_name,
+                        successful=order.successful,
+                        completed=order.completed,
+                    )
+                ]
+            case _:
+                [order] = orders
+                expected, remembered, winner = _table(remembered, (order.key.worker, order.key.day), mails)
+                inputs = [found[0] for found in mails]
+                outcome = enter_reports(_inputs(inputs, orders, memory=memory, rollout=SIXTH, ordered=OPEN_DAYS))
+                orders, memory = _after(orders, outcome), outcome.memory
+                again = enter_reports(_inputs(inputs, orders, memory=memory, rollout=SIXTH, ordered=OPEN_DAYS))
+
+                [after] = orders
+                assert (after.key.worker, after.key.day) == expected
+                if winner is not None and winner[2]:
+                    assert (after.successful, after.completed) == (winner[2], winner[0].text.split(maxsplit=2)[2])
+                assert not [problem for problem in outcome.problems if isinstance(problem, ManualDifference)]
+                standing = remembered is not None and remembered.placed == expected != remembered.origin
+                assert bool(outcome.notes) == standing
+                assert (again.changes, again.moves, again.memory) == ((), (), memory)
 
 
 @settings(derandomize=True, database=None, max_examples=300)
@@ -795,38 +871,47 @@ def _table(
 )
 def test_zlecenie_po_kazdym_kliknieciu_stoi_tam_gdzie_mowi_tabela_przejsc(events: list[tuple[object, ...]]) -> None:
     """ADR 0029 „Ręczna zmiana dalej wygrywa”, US 3, 15, 16: dowolny ciąg maili (nadawca, chwila, ``tak``/``nie`` albo
-    brak), ręcznych zmian ``WYKONAWCA`` przez tatę i kliknięć. Po każdym kliknięciu zlecenie stoi u Wykonawcy z tabeli
-    przejść (``_table``), z Wpisem zwycięskiego maila w komórkach, bez różnicy z ręczną wartością (tata nie zmienia
-    komórek, więc każda wartość jest wpisem Centrum), z informacjami tylko wtedy, gdy stoi tam, gdzie je przeniosło
-    Centrum, a powtórne kliknięcie bez nowych zdarzeń nic nie zmienia."""
+    brak), ręcznych zmian ``WYKONAWCA`` przez tatę i kliknięć daje po każdym kliknięciu to, co tabela przejść
+    (``_follows_table``)."""
 
-    orders = [_order()]
-    mails: list[tuple[ReportMail, Login, str]] = []
-    memory = OwnEntries.EMPTY
-    remembered: _Remembered | None = None
-    for index, event in enumerate(events):
-        match event:
-            case ("mail", str(login), int(minutes), str(verdict)):
-                text = f"40000001 {verdict} opis {index}".replace("  ", " ")
-                sent = _mail(_SENT_FROM[Login(login)], SUBJECT, text, EVENING + timedelta(minutes=minutes), f"<{index}@x.invalid>")
-                mails.append((sent, Login(login), verdict))
-            case ("tata", str(login)):
-                orders = _given_to(orders, _NAMES[Login(login)])
-            case _:
-                [order] = orders
-                expected, remembered, winner = _table(remembered, order.key.worker, mails)
-                outcome = enter_reports(_inputs([found[0] for found in mails], orders, memory=memory))
-                orders, memory = _after(orders, outcome), outcome.memory
-                again = enter_reports(_inputs([found[0] for found in mails], orders, memory=memory))
+    _follows_table(events)
 
-                [after] = orders
-                assert after.key.worker == expected
-                if winner is not None and winner[2]:
-                    assert (after.successful, after.completed) == (winner[2], winner[0].text.split(maxsplit=2)[2])
-                assert not [problem for problem in outcome.problems if isinstance(problem, ManualDifference)]
-                standing = remembered is not None and remembered.placed == expected != remembered.origin
-                assert bool(outcome.notes) == standing
-                assert (again.changes, again.moves, again.memory) == ((), (), memory)
+
+@settings(derandomize=True, database=None, max_examples=300)
+@given(_EVENTS_WITH_DAYS)
+@example(
+    [
+        ("mail", "jan.testowy", 0, "tak", SEVENTH),
+        ("click",),
+        ("tata", SIXTH),
+        ("mail", "ewa.probna", 3, "nie", SIXTH),
+        ("click",),
+        ("tata", SEVENTH),
+        ("click",),
+    ]
+)
+@example(
+    [
+        ("mail", "ewa.probna", 0, "nie", SEVENTH),
+        ("click",),
+        ("tata", DAY),
+        ("mail", "jan.testowy", 3, "tak", DAY),
+        ("click",),
+        ("tata", SEVENTH),
+        ("click",),
+        ("mail", "jan.testowy", 4, "tak", DAY),
+        ("click",),
+    ]
+)
+def test_zlecenie_po_kazdym_kliknieciu_stoi_tam_gdzie_mowi_tabela_przejsc_takze_miedzy_dniami(
+    events: list[tuple[object, ...]],
+) -> None:
+    """#1350 z tabelą przejść #1358 (miejsce = Wykonawca i dzień): dowolny ciąg maili z dniem z tematu z dni otwartych,
+    ręcznych zmian ``WYKONAWCA`` albo dnia przez tatę i kliknięć daje po każdym kliknięciu to, co tabela przejść
+    (``_follows_table``): Przeniesienie na inny dzień podlega tej samej regule ``may_move`` co Przeniesienie do innego
+    Wykonawcy."""
+
+    _follows_table(events)
 
 
 def test_miejsce_zlecenia_z_dnia_poza_oknem_wypada_z_pamieci() -> None:
@@ -879,11 +964,6 @@ def test_dwa_zlecenia_jana_przejete_przez_ewe_bez_segmentu_przechodza_razem_po_w
 
 
 # --- Zlecenie z innego dnia (#1350, ADR 0029): Przeniesienie na dzień z tematu albo pomylony temat ---
-
-SEVENTH, SIXTH = date(2026, 11, 7), date(2026, 11, 6)
-OPEN_DAYS = (SIXTH, SEVENTH, DAY)
-"""Dni uporządkowane arkusza ``Zlecenia``: wszystkie dni otwarte okna od 6.11."""
-
 
 def _numbered(index: int, day: date = DAY, worker: str = "Jan.Testowy") -> RegisterOrder:
     return _order(OrderRow("Zlecenia", 200 + index), number=f"4000{index:04d}", day=day, worker=worker)
@@ -986,6 +1066,39 @@ def test_zlecenie_cudze_i_z_innego_dnia_zmienia_wykonawce_zawsze_a_dzien_wedlug_
         SubjectLost(DAY, JAN_LOGIN, number, SEVENTH),
         SubjectLost(DAY, JAN_LOGIN, OrderNumber("40000002"), SIXTH),
     }
+
+
+@pytest.mark.parametrize(
+    ("orders", "moved", "problems"),
+    [
+        pytest.param(
+            [_numbered(1, SEVENTH), _numbered(2, SIXTH, "Ewa.Probna")],
+            OrderRow("Zlecenia", 201),
+            (),
+            id="zlecenie-nadawcy-przed-cudzym",
+        ),
+        pytest.param(
+            [_numbered(1, SEVENTH, "Ewa.Probna"), _numbered(2, SIXTH, "Anna.Kowalska")],
+            None,
+            (OtherDay(JAN_LOGIN, DAY, OrderNumber("40000001"), (SIXTH, SEVENTH)),),
+            id="dwa-cudze-to-problem-z-oboma-dniami",
+        ),
+    ],
+)
+def test_niezgodny_wpis_trafia_do_jedynego_zlecenia_nadawcy_z_innego_dnia_a_bez_niego_do_jedynego_zlecenia_numeru(
+    orders: list[RegisterOrder], moved: OrderRow | None, problems: tuple[ReportProblem, ...]
+) -> None:
+    """Reguła kandydata niezgodnego Wpisu (opis #1367, przegląd #1367 r1 Ważne 2): Raport Jana za 8.11 z numerem, który
+    INTERMAX ma u Jana 7.11 i u Ewy 6.11, przenosi zlecenie Jana, bo jego zlecenie jest bliżej zamiaru nadawcy niż
+    cudze. Bez zlecenia nadawcy dwa cudze zlecenia z różnych dni to ``OtherDay`` z oboma dniami, bez zmian."""
+
+    numbered = [replace(order, key=replace(order.key, number=OrderNumber("40000001"))) for order in orders]
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "40000001 tak montaż")], numbered, rollout=SIXTH, ordered=OPEN_DAYS))
+
+    assert outcome.moves == (() if moved is None else (OrderMove(moved, DAY, "Jan.Testowy"),))
+    assert outcome.problems == problems
+    assert {change.order for change in outcome.changes} == (set() if moved is None else {moved})
 
 
 @pytest.mark.parametrize(
