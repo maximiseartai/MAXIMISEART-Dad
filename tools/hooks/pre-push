@@ -8,8 +8,8 @@ Push agenta, który wysyła tag ``refs/tags/v*``, brama odrzuca, zanim cokolwiek
 taty (ADR 0014), a agenci pushują z konta Maksa, więc GitHub ich nie odróżni. Tag Wydania wypycha tylko narzędzie
 Wydań (#316), które ustawia ``MAXIMISEART_WYDANIE=1``; żaden agent nie ustawia tej zmiennej sam. Granica: brama
 widzi tylko ``git push`` z hookami; ``git push --no-verify``, ``git tag``, ``gh release`` i ``gh api`` w Bashu agenta
-odrzuca hook ``PreToolUse`` ``tools/hooks/czekanie.py`` (granica w jego docstringu), a stronę GitHuba łapie tylko
-przegląd.
+odrzuca hook ``PreToolUse`` ``tools/hooks/reczne_wydanie.py``, a stronę GitHuba, skrypt z pliku albo w Pythonie,
+``gh api graphql`` i resztę granicy z docstringu hooka łapie tylko przegląd.
 
 Kroki bierze z ``tools/ci_lokalnie.py``, uruchomionego Pythonem z ``.venv`` checkoutu. Włącza ją
 ``tools/setup_worktree.py`` (``core.hooksPath``), tylko na macOS i Linuksie; git uruchamia ją w katalogu głównym

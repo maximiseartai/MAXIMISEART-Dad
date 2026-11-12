@@ -1,8 +1,8 @@
-"""Hook ``tools/hooks/czekanie.py``: agent nie czeka blokująco na CI ani w pętli na ``pgrep -f`` i nie robi Wydania ręcznie.
+"""Hook ``tools/hooks/czekanie.py``: agent nie czeka blokująco na CI ani w pętli na ``pgrep -f``.
 
-Polecenia czekania pochodzą z historii agentów z 20–25.10.2026 (``calls.jsonl`` pomiaru czasu narzędzi), skrócone
-tylko o ``cd`` do worktree i o długie ścieżki; polecenia Wydania to formy z docstringu hooka i sondy z przeglądu #1403.
-Każdy test uruchamia hook tak jak Claude Code: JSON na stdin, a odmowa to kod 2 z przyczyną na stderr.
+Polecenia pochodzą z historii agentów z 20–25.10.2026 (``calls.jsonl`` pomiaru czasu narzędzi), skrócone tylko o
+``cd`` do worktree i o długie ścieżki. Każdy test uruchamia hook tak jak Claude Code: JSON na stdin, a odmowa to
+kod 2 z przyczyną na stderr.
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ from pathlib import Path
 import subprocess
 import sys
 import tracemalloc
+from typing import Any
 
 import pytest
-import repo
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "tools" / "hooks" / "czekanie.py"
@@ -216,113 +216,14 @@ PASSING = (
     "bash backup.sh 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
 )
 
-# Sondy przeglądu #1403 r1: obie przechodziły hook bez słowa.
-REVIEW_PROBES = (
-    "gh release create v9.9.9 --generate-notes",
-    "gh api repos/maximiseartai/MAXIMISEART-Dad/git/refs -f ref=refs/tags/v9.9.9 -f sha=$(git rev-parse HEAD)",
-)
-RELEASES = (
-    *REVIEW_PROBES,
-    "gh-axi release create v1.0.0",
-    "gh release -R maximiseartai/MAXIMISEART-Dad create v9.9.9 --notes x",
-    "/opt/homebrew/bin/gh release create v9.9.9",
-    "'gh' release create v9.9.9",
-    "timeout 60 gh release create v9.9.9",
-    "gh release edit v0.8.0 --draft=false",
-    "gh release delete v0.8.0 -y",
-    "gh release upload v0.8.0 notka.txt",
-    "gh api -X POST repos/o/r/releases -f tag_name=v9.9.9",
-    "gh api repos/o/r/releases -f tag_name=v9.9.9",
-    "gh api --method=PATCH repos/o/r/releases/123 -F draft=false",
-    "gh api -XDELETE repos/o/r/git/refs/tags/v0.8.0",
-    "gh api repos/o/r/git/refs --input ref.json",
-    "gh api repos/o/r/git/refs -F ref=@ref.txt -f sha=abc",
-    "gh api repos/o/r/git/refs -f 'ref=refs/tags/v9.9.9' -f sha=abc",
-    "gh api repos/o/r/git/refs -f ref=refs/tags/$TAG -f sha=abc",
-    "git push --no-verify origin v9.9.9",
-    "git push --no-verify origin refs/tags/v9.9.9",
-    "git push origin HEAD:refs/tags/v9.9.9",
-    "git push origin tag v9.9.9",
-    "git push origin tag $TAG",
-    "git push origin +v9.9.9",
-    "git push --tags",
-    "git push origin main --follow-tags",
-    "git push --mirror origin",
-    "git -C /x -c core.hooksPath=/dev/null push -n origin +v1.0:v1.0",
-    "git push origin :refs/tags/v0.8.0",
-    "git push origin 'refs/tags/*:refs/tags/*'",
-    # Zmienna wpisana w polecenie nie jest sesją narzędzia Wydań.
-    "MAXIMISEART_WYDANIE=1 git push --no-verify origin v9.9.9",
-    "git tag v9.9.9",
-    "git tag -a v9.9.9 -m 'Wydanie 9.9.9'",
-    'git tag -am "Wydanie 9" v9.9.9 abc123',
-    "git tag -f v0.8.0 HEAD",
-    "git tag -mdone v9.9.9",
-    "git tag -amdone v9.9.9",
-    "git tag refs/tags/v9.9.9",
-    "git tag $TAG",
-    'git tag -s "v9.9.9"',
-    "cd x && git tag v9.9.9 && git push --no-verify origin v9.9.9",
-    "bash -c 'gh release create v9.9.9'",
-    "echo $(git tag v9.9.9)",
-    "echo `git tag v9.9.9`",
-    "git tag v9.9.9 >/dev/null 2>&1",
-)
-NOT_RELEASES = (
-    "gh pr create --title x --body-file - <<'EOF'\nOdmawia gh release create v9.9.9 i git tag v9.9.9\nEOF",
-    "git commit -m 'hook odmawia gh release create v9.9.9 i git push --tags'",
-    "git push -u origin chore/guard-release-tags",
-    "git push origin HEAD",
-    "git push --force-with-lease origin HEAD:refs/heads/x",
-    "git push origin verify-centrum",
-    "git push origin $BRANCH",
-    ".venv/bin/python tools/wydanie.py plan --plik ~/.t3/notes/wydanie/plan.json",
-    ".venv/bin/python tools/wydanie.py wydaj --plan p.json --co-nowego c.txt --potwierdzam",
-    "gh release list",
-    "gh release view v0.8.0",
-    "gh release -R maximiseartai/MAXIMISEART-Dad view v0.8.0",
-    "gh release 'view' v0.8.0",
-    "gh release download v0.8.0",
-    "gh release --help",
-    "gh api repos/o/r/releases/latest --jq .tag_name",
-    "gh api -X GET repos/o/r/releases -f per_page=5",
-    "gh api --method=GET repos/o/r/releases -f per_page=5",
-    "gh api repos/o/r/git/refs -f ref=refs/heads/x -f sha=abc",
-    "gh api repos/o/r/issues/1/comments -f body=x",
-    "git tag",
-    "git tag -l 'v*'",
-    "git tag --list v*",
-    "git tag -d v9.9.9",
-    "git tag --contains HEAD",
-    "git tag --sort=-creatordate | head",
-    "git tag -n5",
-    "git tag --merged origin/main",
-    "git tag proba-123",
-    "git tag -f u68-wip >/dev/null && git reset -q --hard origin/main",
-    "git tag -f bez-linii 2> /dev/null; git push origin HEAD >>push.log 2>&1",
-    "git push origin feat/x <<<v9.9.9",
-    "git fetch origin --tags",
-    "git log --oneline v0.8.0..HEAD",
-    "git describe --tags",
-    "git worktree add --detach ~/.t3/worktrees/wydanie-v0.9.0 abc",
-)
+
+def _hook(stdin: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([sys.executable, str(HOOK)], input=stdin, capture_output=True, text=True, check=False)
 
 
-def _hook(stdin: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(HOOK)], input=stdin, capture_output=True, text=True, check=False, env=env
-    )
-
-
-def _bash(
-    command: str, in_background: bool = False, env: dict[str, str] | None = None
-) -> subprocess.CompletedProcess[str]:
+def _bash(command: str, in_background: bool = False) -> subprocess.CompletedProcess[str]:
     tool_input = {"command": command, "description": "x", "run_in_background": in_background}
-    return _hook(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": tool_input}), env)
-
-
-def _without_release_tool() -> dict[str, str]:
-    return {name: value for name, value in os.environ.items() if name != repo.RELEASE_OVERRIDE}
+    return _hook(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": tool_input}))
 
 
 @pytest.mark.parametrize("command", CI_LOOPS + WATCHES)
@@ -360,43 +261,13 @@ def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
 
-@pytest.mark.parametrize("in_background", [False, True], ids=["pierwszy-plan", "w-tle"])
-@pytest.mark.parametrize("command", RELEASES)
-def test_reczne_wydanie_dostaje_odmowe_z_droga_przez_narzedzie_wydan(command: str, in_background: bool) -> None:
-    hooked = _bash(command, in_background, env=_without_release_tool())
-
-    assert hooked.returncode == 2, hooked.stderr
-    assert "skill wydanie" in hooked.stderr
-    assert "tools/wydanie.py plan" in hooked.stderr
-    assert "--no-verify" in hooked.stderr
-
-
-@pytest.mark.parametrize("command", NOT_RELEASES)
-def test_polecenie_obok_wydania_przechodzi_bez_slowa(command: str) -> None:
-    hooked = _bash(command, env=_without_release_tool())
-
-    assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
-
-
-@pytest.mark.parametrize("command", REVIEW_PROBES)
-def test_sesja_narzedzia_wydan_przechodzi_a_inna_wartosc_zmiennej_nie(command: str) -> None:
-    released = _bash(command, env={**os.environ, repo.RELEASE_OVERRIDE: "1"})
-    other = _bash(command, env={**os.environ, repo.RELEASE_OVERRIDE: "0"})
-
-    assert (released.returncode, released.stderr) == (0, "")
-    assert other.returncode == 2, other.stderr
-
-
-def test_sesja_narzedzia_wydan_dalej_nie_czeka_na_ci() -> None:
-    hooked = _bash(f"gh release create v9.9.9; {CI_LOOPS[0]}", env={**os.environ, repo.RELEASE_OVERRIDE: "1"})
-
-    assert hooked.returncode == 2
-    assert "watch_pull_request" in hooked.stderr
+def _bash_hooks(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [hook for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
 
 
 def _configured_timeout() -> float:
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    (timeout,) = [hook["timeout"] for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
+    (timeout,) = [hook["timeout"] for hook in _bash_hooks(entries) if "czekanie.py" in hook["command"]]
     return float(timeout)
 
 
@@ -505,16 +376,16 @@ def test_hook_bez_stdin_przechodzi() -> None:
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
 
-def _configured(project: Path, bash: str = PGREP_LOOPS[0]) -> list[subprocess.CompletedProcess[str]]:
+def _configured(project: Path) -> list[subprocess.CompletedProcess[str]]:
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    commands = [hook["command"] for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
-    tool_input = {"command": bash, "run_in_background": False}
+    commands = [hook["command"] for hook in _bash_hooks(entries) if "czekanie.py" in hook["command"]]
+    tool_input = {"command": PGREP_LOOPS[0], "run_in_background": False}
     return [
         subprocess.run(
             command,
             shell=True,
             input=json.dumps({"tool_name": "Bash", "tool_input": tool_input}),
-            env={**_without_release_tool(), "CLAUDE_PROJECT_DIR": str(project)},
+            env={**os.environ, "CLAUDE_PROJECT_DIR": str(project)},
             capture_output=True,
             text=True,
             check=False,
@@ -528,14 +399,6 @@ def test_ustawienia_projektu_wpinaja_hook_dla_basha() -> None:
     hooked = _configured(ROOT)
 
     assert [(run.returncode, "pgrep -f" in run.stderr) for run in hooked] == [(2, True)]
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
-@pytest.mark.parametrize("command", REVIEW_PROBES)
-def test_ustawienia_projektu_odmawiaja_sond_wydania_z_przegladu(command: str) -> None:
-    hooked = _configured(ROOT, command)
-
-    assert [(run.returncode, "tools/wydanie.py" in run.stderr) for run in hooked] == [(2, True)]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")

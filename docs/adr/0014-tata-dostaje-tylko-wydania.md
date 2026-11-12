@@ -134,9 +134,9 @@ ręcznie. Ochrona ma trzy warstwy:
   GitHub Release tworzy tylko narzędzie Wydań, które ustawia
   `MAXIMISEART_WYDANIE=1`. Brama widzi tylko `git push`; `git push
   --no-verify`, `git tag`, `gh release` i `gh api` w Bashu agenta odrzuca
-  hook `PreToolUse` `tools/hooks/czekanie.py` z drogą przez skill `wydanie`,
-  a stronę GitHuba, skrypt i formy spoza granicy w docstringu hooka łapie
-  tylko przegląd.
+  hook `PreToolUse` `tools/hooks/reczne_wydanie.py` z drogą przez skill `wydanie`,
+  a stronę GitHuba, skrypt z pliku albo w Pythonie, `gh api graphql` i resztę
+  granicy z docstringu hooka łapie tylko przegląd.
 - **Tagi Wydań się nie zmieniają.** Ruleset „Wydania v* bez przesuwania i
   usuwania” (id `25751654`, reguły `update` i `deletion`, bez wyjątków) blokuje
   przesunięcie i usunięcie tagów `v*`, także adminowi; założenie nowego tagu

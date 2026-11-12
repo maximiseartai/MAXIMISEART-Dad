@@ -10,6 +10,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test ! -f \"$CLAUDE_PROJECT_DIR/tools/hooks/reczne_wydanie.py\" || python3 \"$CLAUDE_PROJECT_DIR/tools/hooks/reczne_wydanie.py\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [

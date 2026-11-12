@@ -55,7 +55,7 @@ def _load(path: Path) -> ModuleType:
 
 czekanie = _load(CZEKANIE)
 zgoda = _load(ZGODA)
-REFUSALS = {"ci": czekanie.CI_LOOP, "pgrep": czekanie.PGREP_LOOP, "watch": czekanie.WATCHING, "wydanie": czekanie.RELEASE}
+REFUSALS = {"ci": czekanie.CI_LOOP, "pgrep": czekanie.PGREP_LOOP, "watch": czekanie.WATCHING}
 
 
 @dataclass(frozen=True)
@@ -444,53 +444,6 @@ def test_ujecie_argumentu_w_cudzyslow_nie_zmienia_werdyktu(template: Template, q
 
     assert shlex.split(quoted) == shlex.split(bare)
     assert _judged(quoted) == _judged(bare) == template.refusals
-
-
-RELEASE = frozenset({"wydanie"})
-# Formy ręcznego Wydania z docstringu hooka; argumenty bez słów kluczowych, więc każdy można ująć w cudzysłów.
-RELEASES = (
-    Template("gh release create {} --notes {}", ("v9.9.9", "x"), RELEASE),
-    Template("gh release {} {} {}", ("delete", "v0.8.0", "-y"), RELEASE),
-    Template("gh api {} {} {} {} {}", ("-X", "POST", "repos/o/r/releases", "-f", "tag_name=v9.9.9"), RELEASE),
-    Template("gh api {} {} {}", ("repos/o/r/git/refs", "-f", "ref=refs/tags/v9.9.9"), RELEASE),
-    Template("gh api {} {} {}", ("--method=DELETE", "repos/o/r/git/refs/tags/v0.8.0", "--silent"), RELEASE),
-    Template("git push {} {} {}", ("--no-verify", "origin", "v9.9.9"), RELEASE),
-    Template("git push {} {}", ("origin", "+HEAD:refs/tags/v9.9.9"), RELEASE),
-    Template("git push {} {}", ("origin", "--tags"), RELEASE),
-    Template("git tag {} {} {} {}", ("-a", "v9.9.9", "-m", "Wydanie"), RELEASE),
-    # Te same programy bez Wydania.
-    Template("gh release view {}", ("v0.8.0",), frozenset()),
-    Template("gh api {} {} {} {}", ("-X", "GET", "repos/o/r/releases", "--paginate"), frozenset()),
-    Template("gh api {} {} {}", ("repos/o/r/git/refs", "-f", "ref=refs/heads/x"), frozenset()),
-    Template("git push {} {} {}", ("-u", "origin", "verify-centrum"), frozenset()),
-    Template("git tag {} {}", ("-l", "v*"), frozenset()),
-)
-
-
-@PROPERTY
-@given(
-    template=st.sampled_from(RELEASES),
-    quotes=st.lists(st.sampled_from(("", "'", '"')), max_size=5),
-    in_background=st.booleans(),
-)
-def test_wydanie_dostaje_odmowe_w_kazdym_ujeciu_argumentow_i_takze_w_tle(
-    template: Template, quotes: list[str], in_background: bool
-) -> None:
-    bare, quoted = template.text(), template.text(quotes)
-    refusal = czekanie.judge(quoted, in_background=in_background)
-
-    assert shlex.split(quoted) == shlex.split(bare)
-    assert (refusal is czekanie.RELEASE) == bool(template.refusals)
-
-
-@PROPERTY
-@given(template=st.sampled_from(RELEASES), program=st.sampled_from(PROGRAMS), quote=st.sampled_from(("'", '"')))
-def test_wydanie_w_tekscie_argumentu_nie_jest_poleceniem(template: Template, program: str, quote: str) -> None:
-    text = template.text()
-    searched = f"{program} {_quoted_argument(text, quote)} wyniki.log"
-
-    assert shlex.split(searched) == [*shlex.split(program), text, "wyniki.log"]
-    assert czekanie.judge(searched, in_background=False) is None
 
 
 REDIRECTIONS = (
@@ -888,10 +841,6 @@ FRAGMENTS = (
     "{1..",
     "x",
     "a b",
-    "git push origin ",
-    "git tag -m ",
-    "gh release ",
-    "gh api -X ",
 )
 PREFIXES = ("", "until x; do sleep 1; ", "while :; do sleep 1; gh pr checks 1; done ", "echo '", 'echo "')
 
@@ -907,9 +856,6 @@ PREFIXES = ("", "until x; do sleep 1; ", "while :; do sleep 1; gh pr checks 1; d
 @example(prefix="", unit="gh pr checks 1 ")
 @example(prefix="until x; do sleep 1; ", unit="gh api x ")
 @example(prefix="", unit='"$(')
-# Odcinki od słowa programu do następnego: ``git`` i ``gh`` czytane do końca polecenia rosłyby z kwadratem.
-@example(prefix="", unit="git push origin tag ")
-@example(prefix="", unit="gh api -X ")
 @given(prefix=st.sampled_from(PREFIXES), unit=st.lists(st.sampled_from(FRAGMENTS), min_size=1, max_size=3).map("".join))
 def test_czas_werdyktu_rosnie_najwyzej_liniowo_z_dlugoscia_polecenia(prefix: str, unit: str) -> None:
     repeats = -(-4000 // len(unit))
