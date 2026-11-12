@@ -11,7 +11,7 @@ przypomnienia należą się w tej chwili.
 
 Potem wysyła przez SMTP Gmaila **jedno** przypomnienie, a jedynym adresatem jest adres z ``--do`` (adres Maksa):
 pierwsze należne przypomnienie (najstarszy dzień) z adresatami zamienionymi na ten adres, a gdy nic się nie należy
-(np. w nocy), przypomnienie za wczoraj. Temat, treść ze wzorem Raportu wykonawcy i stopkę ma takie, jakie dostałby
+(np. w nocy albo od 17:00 do 18:00), przypomnienie za wczoraj. Temat, treść ze wzorem Raportu wykonawcy i stopkę ma takie, jakie dostałby
 Wykonawca. Na adres z listy adresów Wykonawców narzędzie nie wysyła nigdy: taki adres w ``--do`` to odmowa bez
 wysyłki. Odmowa porównuje cały adres bez względu na wielkość liter, więc inny adres tej samej skrzynki
 Wykonawcy (w Gmailu z ``+…`` albo z kropkami w części przed ``@``) przechodzi i mail do niego dojdzie: ``--do`` to
@@ -22,8 +22,8 @@ ASCII (polskie słowa bez polskich liter, jak próba IMAP ``tools/proba_skrzynki
 
     PROBA PRZYPOMNIEN OK | pora=<p> | przypomnienia=<n> | wykonawcy=<n> | dni=<n> | wyslano 1 na podany adres
 
-``pora`` to ``poranna`` (8:00–18:00), ``wieczorna`` (18:00–22:00) albo ``noc`` (wtedy przypomnienia nie idą i liczby
-to zera), ``przypomnienia`` to liczba przypomnień, które praca Centrum wysłałaby teraz, ``wykonawcy`` liczba ich
+``pora`` to ``poranna`` (8:00–17:00), ``wieczorna`` (18:00–22:00) albo ``brak`` (17:00–18:00 i noc 22:00–8:00: wtedy
+przypomnienia nie idą i liczby to zera), ``przypomnienia`` to liczba przypomnień, które praca Centrum wysłałaby teraz, ``wykonawcy`` liczba ich
 Wykonawców, a ``dni`` liczba dni, za które są. Porażka to ``PROBA PRZYPOMNIEN FAIL | <powód>`` (kod 1), każda z
 własnym powodem: brak pliku dnia wdrożenia, Ustawień taty, pliku dostępu albo adresów, nieczytelny folder okresów albo
 INTERMAX (nazwa typu błędu), odrzucone hasło aplikacji albo niedostępna skrzynka przy odczycie skrzynki. Porażka po
@@ -96,7 +96,7 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
             pass
     pora = reminder_pora(now)
     counts = (
-        f"pora={'noc' if pora is None else pora.value} | przypomnienia={len(read.due)}"
+        f"pora={'brak' if pora is None else pora.value} | przypomnienia={len(read.due)}"
         f" | wykonawcy={len({reminder.worker for reminder in read.due})} | dni={len({reminder.day for reminder in read.due})}"
     )
     if target in read.addresses.logins:

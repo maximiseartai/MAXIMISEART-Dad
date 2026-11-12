@@ -25,8 +25,10 @@ class Pora(Enum):
     EVENING = "wieczorna"
 
 
-_PORY: Final = ((Pora.MORNING, time(8), time(18)), (Pora.EVENING, time(18), time(22)))
-"""Pora poranna od 8:00 do 18:00 i wieczorna od 18:00 do 22:00, bez końca pory; poza nimi przypomnienia nie idą."""
+_PORY: Final = ((Pora.MORNING, time(8), time(17)), (Pora.EVENING, time(18), time(22)))
+"""Pora poranna od 8:00 do 17:00 i wieczorna od 18:00 do 22:00, bez końca pory (16:59 to poranna, 17:00 już nie);
+poza nimi przypomnienia nie idą. Poranne przypomnienie nie nadrabia się od 17:00, żeby laptop włączony tuż przed 18:00
+nie wysłał Wykonawcy dwóch przypomnień w kilka minut (decyzja Maksa 12.11, ADR 0030)."""
 
 FIRST_REMINDER: Final = time(8)
 """Przypomnienie za dzień X należy się od tej godziny dnia X+1."""
@@ -75,7 +77,7 @@ class Reminder:
 
 
 def reminder_pora(now: datetime) -> Pora | None:
-    """Pora chwili ``now``; ``None`` w nocy, od 22:00 do 8:00."""
+    """Pora chwili ``now``; ``None`` poza porami: od 17:00 do 18:00 i w nocy, od 22:00 do 8:00."""
 
     return next((pora for pora, start, end in _PORY if start <= now.time() < end), None)
 

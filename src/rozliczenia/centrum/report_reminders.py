@@ -7,7 +7,7 @@ robi. W porze czyta Ustawienia taty (INTERMAX, folder okresów), z ``config`` dz
 (``REMINDERS_FOOTER``), Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii
 wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
 kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
-której sprawdzenie ruszyło (minęła 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
+której sprawdzenie ruszyło (minęła 17:00 albo 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
 czeka na następną porę, która zna wysłane z „Wysłanych”. Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z
 niego bierze przypomnienia praca Centrum i próba Przypomnień przed Wydaniem (``tools/proba_przypomnien.py``).
 

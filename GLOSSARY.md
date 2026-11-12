@@ -317,7 +317,8 @@ wykonawcy za ten dzień. Prosi o raport za ten dzień, podaje wzór tematu i
 treści i kończy się stopką taty. Pierwsze idzie o 8:00 następnego dnia, kolejne
 o 8:00 i 18:00, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres
 dnia dostanie Plik zbiorczy; nigdy w nocy i nigdy za dni sprzed wdrożenia
-przypomnień. Każdy brakujący dzień ma własne przypomnienia.
+przypomnień. Poranne nadrabia się po włączeniu laptopa do 16:59, a od 17:00 do
+18:00 nie idzie żadne. Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie
 
 ## Rozliczenie wewnętrzne
