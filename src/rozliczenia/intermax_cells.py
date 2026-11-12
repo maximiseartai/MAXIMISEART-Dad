@@ -1,10 +1,12 @@
-"""Zapis komórek Wpisania raportów do INTERMAX bez Kopii INTERMAX (ADR 0028).
+"""Zapis komórek i Przeniesień zleceń Wpisania raportów do INTERMAX bez Kopii INTERMAX (ADR 0028, ADR 0029).
 
-Operacją jest ``write_cells``: dostaje Rejestr zleceń przeczytany przez proces (``register_file.read``) i zmiany komórek
-z rdzenia Wpisania raportów (``report_cells.CellChange``). Najpierw odrzuca całość, gdy którakolwiek zmiana nie trafia
-w ``SKUTECZNE`` albo ``CZYNNOŚCI ZREALIZOWANE`` uporządkowanego wiersza zlecenia (``CellProblem``), a INTERMAX zostaje
-wtedy nietknięty. Inaczej bajty z tylko tymi komórkami (``intermax_file.with_cells``) zastępują INTERMAX tą samą
-podmianą co Uporządkowanie INTERMAX, bez Kopii (``intermax_replace.replace_without_copy``), z odczytem kontrolnym
+Operacją jest ``write_cells``: dostaje Rejestr zleceń przeczytany przez proces (``register_file.read``), zmiany komórek
+(``report_cells.CellChange``) i Przeniesienia zleceń (``report_cells.OrderMove``) z rdzenia Wpisania raportów. Najpierw
+odrzuca całość, gdy którakolwiek zmiana nie trafia w ``SKUTECZNE`` albo ``CZYNNOŚCI ZREALIZOWANE`` uporządkowanego
+wiersza zlecenia albo Przeniesienie nie zaczyna się w uporządkowanym wierszu albo idzie na inny dzień (``CellProblem``),
+a INTERMAX zostaje wtedy nietknięty. Inaczej bajty z tylko tymi komórkami, a potem z wierszami w układzie dnia z planu
+Przeniesień (``raw_orders.plan_moves``, ``intermax_file.with_cells``) zastępują INTERMAX tą samą podmianą co
+Uporządkowanie INTERMAX, bez Kopii (``intermax_replace.replace_without_copy``), z odczytem kontrolnym
 ``intermax_file.check_cells``. Podmiana porównuje INTERMAX z bajtami, które proces przeczytał, więc zmiana pracownika
 wgrana przez OneDrive w przerwie przed ponowną próbą daje odmowę, a nie zostaje nadpisana.
 
@@ -18,15 +20,16 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Final
 
 from . import intermax_file, raw_orders
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting, replace_without_copy
-from .raw_orders import RowLook
+from .raw_orders import MovePlan, RowLook
 from .register_columns import COMPLETED, SUCCESSFUL, Column
 from .register_file import OrderSheets, PasteArea, RegisterFile
-from .report_cells import CellChange, ReportColumn
+from .report_cells import CellChange, OrderMove, ReportColumn
 
 __all__ = ["CellProblem", "CellsWritten", "Rejected", "write_cells"]
 
@@ -50,51 +53,101 @@ class CellProblem(Enum):
     REPEATED = "ta sama komórka więcej niż raz"
     UNWRITABLE_TEXT = "tekst, którego komórka nie przyjmie"
     """Znak spoza XML albo więcej niż 32767 znaków."""
+    MOVE_NOT_ORDERED = "Przeniesienie spoza uporządkowanego wiersza zlecenia"
+    """Przeniesienie z wiersza, który nie jest uporządkowanym wierszem zlecenia z datą, albo drugi raz z tego samego
+    wiersza."""
+    OTHER_DAY = "Przeniesienie na inny dzień niż dzień zlecenia"
+    """Zapis przenosi dziś tylko w obrębie dnia zlecenia."""
 
 
 @dataclass(frozen=True)
 class Rejected:
-    """Zmiany, których INTERMAX nie dostał, każda z powodem; żadna inna zmiana też nie trafiła do INTERMAX."""
+    """Zmiany i Przeniesienia, których INTERMAX nie dostał, każde z powodem; żadna inna zmiana też nie trafiła do
+    INTERMAX."""
 
-    problems: tuple[tuple[CellChange, CellProblem], ...]
+    problems: tuple[tuple[CellChange | OrderMove, CellProblem], ...]
 
 
 @dataclass(frozen=True)
 class CellsWritten:
-    """INTERMAX ma wszystkie zmiany; ``count``: ile komórek (0: INTERMAX nietknięty)."""
+    """INTERMAX ma wszystkie zmiany; ``count``: ile komórek, ``moved``: ile Przeniesień zleceń (oba 0: INTERMAX
+    nietknięty)."""
 
     count: int
+    moved: int = 0
 
 
 def write_cells(
     register: RegisterFile,
     changes: Sequence[CellChange],
+    moves: Sequence[OrderMove] = (),
     *,
     waiting: Waiting,
     disk: Disk = LOCAL_DISK,
 ) -> CellsWritten | Rejected | Refusal:
-    """Wpisuje ``changes`` do INTERMAX ``register`` bez Kopii INTERMAX albo nie zmienia go wcale.
+    """Wpisuje ``changes`` i Przeniesienia ``moves`` do INTERMAX ``register`` bez Kopii INTERMAX albo nie zmienia go
+    wcale. Wiersze zmian i Przeniesień są wierszami INTERMAX ``register``: komórki wpisują się przed przeniesieniem
+    wiersza, więc idą z nim.
 
-    ``Rejected`` przed zapisem, gdy którakolwiek zmiana nie trafia w komórkę raportu uporządkowanego wiersza, a
-    ``Refusal`` podmiany (Excel, OneDrive, nieudany albo niezgodny zapis) tak samo jak w Uporządkowaniu INTERMAX.
-    ``UnsupportedShape``, gdy komórka ma formułę, leży w scaleniu albo wierszy arkusza nie da się rozdzielić, a
-    ``WorkbookError``, gdy stylów INTERMAX nie da się odczytać; INTERMAX zostaje wtedy nietknięty.
+    ``Rejected`` przed zapisem, gdy którakolwiek zmiana nie trafia w komórkę raportu uporządkowanego wiersza albo
+    Przeniesienie nie zaczyna się w uporządkowanym wierszu zlecenia albo idzie na inny dzień, a ``Refusal`` podmiany
+    (Excel, OneDrive, nieudany albo niezgodny zapis) tak samo jak w Uporządkowaniu INTERMAX. ``UnsupportedShape``, gdy
+    komórka albo przesuwany wiersz ma formułę, komórka leży w scaleniu, zakres sięga przesuwanych wierszy albo wierszy
+    arkusza nie da się rozdzielić, a ``WorkbookError``, gdy stylów INTERMAX nie da się odczytać; INTERMAX zostaje wtedy
+    nietknięty.
     """
 
     cells, problems = _cells(register, changes)
-    if problems:
-        return Rejected(problems)
-    if not changes:
+    plans, refused = _plans(register, moves)
+    if problems or refused:
+        return Rejected((*problems, *refused))
+    if not changes and not moves:
         return CellsWritten(0)
 
     def written_as_planned(written: bytes) -> None:
-        intermax_file.check_cells(register, written, cells)
+        intermax_file.check_cells(register, written, cells, plans)
 
-    content = intermax_file.with_cells(register, cells)
+    content = intermax_file.with_cells(register, cells, plans)
     refusal = replace_without_copy(
         register.path, register.content, content, written_as_planned, waiting=waiting, disk=disk
     )
-    return CellsWritten(len(changes)) if refusal is None else refusal
+    return CellsWritten(len(changes), len(moves)) if refusal is None else refusal
+
+
+def _plans(
+    register: RegisterFile, moves: Sequence[OrderMove]
+) -> tuple[dict[PasteArea, MovePlan], tuple[tuple[OrderMove, CellProblem], ...]]:
+    """Plan Przeniesień każdego obszaru wklejania z Przeniesieniami i Przeniesienia odrzucone z powodem."""
+
+    sheets = register.order_sheets.sheets if isinstance(register.order_sheets, OrderSheets) else ()
+    areas = {sheet.name: sheet.paste for sheet in sheets if sheet.paste is not None}
+    wanted: dict[PasteArea, dict[int, str]] = {}
+    problems: list[tuple[OrderMove, CellProblem]] = []
+    for move in moves:
+        area = areas.get(move.order.sheet)
+        facts = None if area is None else _ordered_row(area, move.order.row)
+        when = None if facts is None or area is None else facts.value(area.columns.date)
+        if area is None or not isinstance(when, datetime) or move.order.row in wanted.get(area, {}):
+            problems.append((move, CellProblem.MOVE_NOT_ORDERED))
+        elif when.date() != move.day:
+            problems.append((move, CellProblem.OTHER_DAY))
+        else:
+            wanted.setdefault(area, {})[move.order.row] = move.worker
+    if problems:
+        return {}, tuple(problems)
+    return {area: raw_orders.plan_moves(area.rows_from_bottom(), area.columns, rows) for area, rows in wanted.items()}, ()
+
+
+def _ordered_row(area: PasteArea, number: int) -> raw_orders.RowFacts | None:
+    """Fakty uporządkowanego wiersza ``number`` obszaru ``area``; ``None``, gdy wiersza nie ma albo nie jest
+    uporządkowany."""
+
+    for facts in area.rows_from_bottom():
+        if facts.number < number:
+            return None
+        if facts.number == number:
+            return facts if raw_orders.look(facts, area.columns) is RowLook.ORDERED else None
+    return None
 
 
 def _cells(

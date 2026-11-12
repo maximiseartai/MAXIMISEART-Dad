@@ -2,7 +2,8 @@
 raportów i ich sprawdzenie.
 
 Komórki Wpisania raportów (``with_cells``, ``check_cells``) zmieniają tylko tekst wskazanych komórek arkusza zleceń, z
-wyglądem uporządkowanego wiersza (``_Looks.text``), a reszta pliku zostaje bajt w bajt (opis w ``with_cells``). Dalej
+wyglądem uporządkowanego wiersza (``_Looks.text``), a Przeniesienia zleceń (``raw_orders.MovePlan``) dodatkowo numery
+wierszy od pierwszego bloku dnia do końca arkusza; reszta pliku zostaje bajt w bajt (opis w ``with_cells``). Dalej
 o dniu Uporządkowania.
 
 Rejestr czyta ``register_file``; pisarz bierze z niego części paczki (``RegisterPackage``) i XML obszaru wklejania
@@ -54,7 +55,7 @@ from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
 
 from . import workbook_files
 from .intermax_replace import WriteMismatch
-from .raw_orders import DayPlan, IntermaxEntry, OperatorColor, OrderColumns, RawBlock
+from .raw_orders import DayPlan, IntermaxEntry, MovePlan, NewSeparator, OperatorColor, OrderColumns, RawBlock
 from .register_columns import ORDERED_FONT, ORDERED_SIZE, WORKER_SIZE
 from .register_file import PasteArea, RegisterFile, RegisterPackage
 from .row_look import BORDER
@@ -168,15 +169,22 @@ def check(register: RegisterFile, written: bytes, area: PasteArea, block: RawBlo
 Cells = Mapping[PasteArea, Mapping[tuple[int, int], str]]
 """Komórki Wpisania raportów: obszar wklejania arkusza zleceń → (wiersz, kolumna od 1) → tekst."""
 
+Moves = Mapping[PasteArea, MovePlan]
+"""Przeniesienia zleceń Wpisania raportów: obszar wklejania arkusza zleceń → plan jego wierszy (``raw_orders.plan_moves``)."""
 
-def with_cells(register: RegisterFile, cells: Cells) -> bytes:
-    """Bajty INTERMAX, w których zmieniają się tylko komórki ``cells`` (Wpisanie raportów, ADR 0028).
+
+def with_cells(register: RegisterFile, cells: Cells, moves: Moves | None = None) -> bytes:
+    """Bajty INTERMAX, w których zmieniają się tylko komórki ``cells`` i wiersze Przeniesień ``moves`` (Wpisanie
+    raportów, ADR 0028 i 0029).
 
     Komórka dostaje tekst wbudowany (``inlineStr``), jak Wpis urządzenia i czynności INTERMAX. Komórka, która jest w
     pliku, zachowuje swój styl, a komórka, której nie ma, dostaje styl tekstu uporządkowanego wiersza
-    (``_Looks.text``), dopisany do ``xl/styles.xml`` tylko wtedy, gdy go tam nie ma. Każda inna część i każdy inny
+    (``_Looks.text``), dopisany do ``xl/styles.xml`` tylko wtedy, gdy go tam nie ma. Potem Przeniesienia (``_moved``):
+    wiersze od ``MovePlan.first`` do końca arkusza stają w kolejności planu, przeniesione zlecenie dostaje tekst
+    ``WYKONAWCA``, a nowy pusty wiersz między segmentami wygląd z Uporządkowania INTERMAX. Każda inna część i każdy inny
     bajt arkusza zostają, także widok i aktywna karta. ``UnsupportedShape``, gdy komórka ma formułę albo leży w
-    scaleniu, a ``WorkbookError``, gdy stylów nie da się odczytać.
+    scaleniu, gdy przesuwany wiersz ma formułę albo gdy zakres (poza Hiperłączem jednej komórki) sięga przesuwanych
+    wierszy, a ``WorkbookError``, gdy stylów nie da się odczytać.
     """
 
     package = register.package
@@ -184,15 +192,20 @@ def with_cells(register: RegisterFile, cells: Cells) -> bytes:
     with workbook_files.unreadable_as_error(register.path):
         looks = _Looks(_WriteStyles.of(styles))
     parts = {area.part: _sheet_with_cells(area.sheet_xml, targets, looks) for area, targets in cells.items()}
+    for area, plan in (moves or {}).items():
+        sheet = RowsFromBottom(parts.get(area.part, area.sheet_xml.xml))
+        parts[area.part] = _moved(sheet, area.columns, plan, looks)
     parts[package.styles_part] = looks.styles(styles)
     return _archive([(info, parts.get(info.filename, package.parts[info.filename])) for info in package.infos])
 
 
-def check_cells(register: RegisterFile, written: bytes, cells: Cells) -> None:
-    """``WriteMismatch``, gdy ``written`` różni się od INTERMAX czymś więcej niż tekstem komórek ``cells`` i stylami
-    dopisanymi na końcu list ``xl/styles.xml``.
+def check_cells(register: RegisterFile, written: bytes, cells: Cells, moves: Moves | None = None) -> None:
+    """``WriteMismatch``, gdy ``written`` różni się od INTERMAX czymś więcej niż tekstem komórek ``cells``, wierszami
+    Przeniesień ``moves`` i stylami dopisanymi na końcu list ``xl/styles.xml``.
 
-    Uszkodzenie ``written`` zgłasza jak odczyt skoroszytu (``workbook_files.unreadable_as_error``).
+    Arkusz z Przeniesieniami sprawdza najpierw komórki na arkuszu przed przesunięciem wierszy, a potem każdy wiersz
+    pod nowym numerem (``_check_moved``). Uszkodzenie ``written`` zgłasza jak odczyt skoroszytu
+    (``workbook_files.unreadable_as_error``).
     """
 
     package = register.package
@@ -201,13 +214,24 @@ def check_cells(register: RegisterFile, written: bytes, cells: Cells) -> None:
         parts = {name: archive.read(name) for name in names}
     if names != [info.filename for info in package.infos]:
         raise WriteMismatch("części")
-    changed = {area.part: (area, targets) for area, targets in cells.items()}
+    plans = moves or {}
+    changed = {area.part: area for area in (*cells, *plans)}
     for name in names:
         if name not in changed and name != package.styles_part and parts[name] != package.parts[name]:
             raise WriteMismatch(name)
     _check_styles(package.parts[package.styles_part], parts[package.styles_part])
-    for name, (area, targets) in changed.items():
-        _check_sheet_cells(area.sheet_xml, parts[name], targets)
+    styles = package.parts[package.styles_part]
+    for name, area in changed.items():
+        targets = cells.get(area, {})
+        plan = plans.get(area)
+        if plan is None:
+            _check_sheet_cells(area.sheet_xml, parts[name], targets)
+            continue
+        with workbook_files.unreadable_as_error(register.path):
+            looks = _Looks(_WriteStyles.of(styles))
+        before = _sheet_with_cells(area.sheet_xml, targets, looks) if targets else area.sheet_xml.xml
+        _check_sheet_cells(area.sheet_xml, before, targets)
+        _check_moved(RowsFromBottom(before), parts[name], area.columns, plan)
 
 
 def _rows_of(targets: Mapping[tuple[int, int], str]) -> dict[int, dict[int, str]]:
@@ -292,6 +316,144 @@ def _text_cell(column: int, row: int, style: int | re.Match[bytes] | None, text:
             attributes = b""
     content = b"<is><t>%s</t></is>" % html.escape(text, quote=False).encode("utf-8")
     return SheetCell(column, b"", content).xml(column, row, attributes + b' t="inlineStr"')
+
+
+_ROW_NUMBER: Final = re.compile(rb'^<row r="\d+"')
+_CELL_NUMBER: Final = re.compile(rb'(<c r="[A-Z]{1,3})\d+"')
+
+
+def _renumbered(row_xml: bytes, number: int) -> bytes:
+    """Wiersz ``<row>`` pod numerem ``number``: ``r`` wiersza i każdej jego komórki; reszta bajt w bajt."""
+
+    row_xml = _ROW_NUMBER.sub(b'<row r="%d"' % number, row_xml, count=1)
+    return _CELL_NUMBER.sub(rb'\g<1>%d"' % number, row_xml)
+
+
+def _row_look(row_xml: bytes) -> bytes:
+    """Atrybuty wyglądu ``<row>`` (styl wiersza, wysokość) wiersza ``row_xml``, jak ``_RowLooks``."""
+
+    attributes = row_attributes(row_xml[: row_xml.index(b">") + 1])
+    return b"".join(b' %s="%s"' % (name, attributes[name]) for name in _ROW_LOOK if name in attributes)
+
+
+def _new_numbers(plan: MovePlan) -> dict[int, int]:
+    """Wiersz sprzed zapisu → jego numer po zapisie, dla wierszy planu."""
+
+    return {slot: plan.first + index for index, slot in enumerate(plan.rows) if isinstance(slot, int)}
+
+
+def _moved(sheet: RowsFromBottom, columns: OrderColumns, plan: MovePlan, looks: _Looks) -> bytes:
+    """XML arkusza z wierszami od ``plan.first`` w kolejności planu.
+
+    Wiersz, który zostaje pod swoim numerem i nie jest przenoszony, zostaje bajt w bajt. Inny dostaje nowy numer
+    (``_renumbered``), a przeniesione zlecenie tekst ``WYKONAWCA`` w stylu swojej komórki (``_row_with_cells``). Nowy
+    pusty wiersz między segmentami ma puste komórki od A do ``UWAGI`` z wyglądem Uporządkowania (``_order_row``) i
+    wygląd ``<row>`` przeniesionego zlecenia. Hiperłącza przesuwanych wierszy idą z nimi, a ``<dimension>`` sięga
+    ostatniego wiersza, gdy arkusz urósł.
+    """
+
+    xml = sheet.xml
+    region = sheet.above(plan.first - 1)
+    by_number = {row.number: row for row in region}
+    tail_at = sheet.end + len(b"</sheetData>")
+    _require_writable(xml[tail_at:], plan.first - 1)
+    rows: list[bytes] = []
+    for index, slot in enumerate(plan.rows):
+        number = plan.first + index
+        if isinstance(slot, NewSeparator):
+            model = by_number[slot.model]
+            look = _row_look(xml[model.start : model.end])
+            rows.append(_order_row(b"", number, 0, columns, looks, look, OperatorColor(), {}))
+            continue
+        found = by_number.get(slot)
+        if found is None:
+            continue
+        row_xml = xml[found.start : found.end]
+        if slot == number and slot not in plan.workers:
+            rows.append(row_xml)
+            continue
+        if _FORMULA.search(row_xml):
+            raise UnsupportedShape("formuła")
+        row_xml = _renumbered(row_xml, number)
+        if slot in plan.workers:
+            row_xml = _row_with_cells(row_xml, number, {columns.worker: plan.workers[slot]}, looks)
+        rows.append(row_xml)
+    last = plan.first + len(plan.rows) - 1
+    head = _with_dimension(xml[: sheet.start], last, columns.last)
+    start = region[0].start if region else sheet.end
+    end = region[-1].end if region else sheet.end
+    tail = _renumbered_hyperlinks(xml[tail_at:], _new_numbers(plan), plan.first)
+    return b"".join((head, xml[sheet.start : start], *rows, xml[end:tail_at], tail))
+
+
+def _renumbered_hyperlinks(tail: bytes, numbers: Mapping[int, int], first: int) -> bytes:
+    """Ogon arkusza z Hiperłączami przesuwanych wierszy pod nowymi numerami; Hiperłącze na kilka komórek albo w wierszu,
+    który zniknął, to ``UnsupportedShape``."""
+
+    def moved(found: re.Match[bytes]) -> bytes:
+        reference = found.group(2).decode("ascii")
+        column, number = coordinate_from_string(reference.split(":")[0])
+        if number < first:
+            return found.group(0)
+        if ":" in reference or number not in numbers:
+            raise UnsupportedShape("Hiperłącze")
+        return found.group(1) + f"{column}{numbers[number]}".encode("ascii") + found.group(3)
+
+    return _HYPERLINK_REF.sub(moved, tail)
+
+
+def _check_moved(before: RowsFromBottom, written: bytes, columns: OrderColumns, plan: MovePlan) -> None:
+    """``WriteMismatch``, gdy arkusz ``written`` różni się od ``before`` (arkusza z komórkami, przed przesunięciem)
+    czymś więcej niż wierszami ``plan`` pod nowymi numerami: każdy wiersz planu ma te same komórki (treść, rodzaj i styl),
+    przeniesione zlecenie ``WYKONAWCA`` z planu, a nowy pusty wiersz żadnej wartości; bajty nad ``plan.first`` się nie
+    zmieniają."""
+
+    try:
+        data = RowsFromBottom(written)
+        written_rows = {row.number: row for row in data.above(plan.first - 1)}
+        source_rows = {row.number: row for row in before.above(plan.first - 1)}
+    except IrregularSheetData as error:
+        raise WriteMismatch("arkusz") from error
+    first_source = min(source_rows.values(), key=lambda row: row.start, default=None)
+    first_written = min(written_rows.values(), key=lambda row: row.start, default=None)
+    if (first_source is None) != (first_written is None):
+        raise WriteMismatch("wiersze")
+    above = before.xml[before.start : first_source.start if first_source else before.end]
+    if _DIMENSION.sub(b"", before.xml[: before.start]) != _DIMENSION.sub(b"", written[: data.start]) or (
+        above != written[data.start : first_written.start if first_written else data.end]
+    ):
+        raise WriteMismatch("wiersze nad Przeniesieniem")
+    expected: set[int] = set()
+    for index, slot in enumerate(plan.rows):
+        number = plan.first + index
+        found = written_rows.get(number)
+        if isinstance(slot, NewSeparator):
+            if found is None or any(cell.valued for cell in sheet_cells(written[found.start : found.end])):
+                raise WriteMismatch(f"wiersz {number}")
+            expected.add(number)
+            continue
+        source = source_rows.get(slot)
+        if source is None:
+            continue
+        expected.add(number)
+        if found is None:
+            raise WriteMismatch(f"wiersz {number}")
+        old = {cell.column: cell for cell in sheet_cells(before.xml[source.start : source.end])}
+        new = {cell.column: cell for cell in sheet_cells(written[found.start : found.end])}
+        if slot in plan.workers:
+            cell = new.pop(columns.worker, None)
+            old.pop(columns.worker, None)
+            if cell is None or cell.kind != b"inlineStr" or _inline_text(cell) != plan.workers[slot]:
+                raise WriteMismatch(f"wiersz {number}")
+        if {column: (cell.content, cell.kind, cell.style) for column, cell in old.items()} != {
+            column: (cell.content, cell.kind, cell.style) for column, cell in new.items()
+        }:
+            raise WriteMismatch(f"wiersz {number}")
+    if set(written_rows) != expected:
+        raise WriteMismatch("wiersze Przeniesienia")
+    tail = before.xml[before.end :]
+    if _renumbered_hyperlinks(tail, _new_numbers(plan), plan.first) != written[data.end :]:
+        raise WriteMismatch("ogon arkusza")
 
 
 def _check_sheet_cells(original: RowsFromBottom, written: bytes, targets: Mapping[tuple[int, int], str]) -> None:

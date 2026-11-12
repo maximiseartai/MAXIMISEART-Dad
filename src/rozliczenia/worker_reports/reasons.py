@@ -1,4 +1,4 @@
-"""Zdanie dla taty o problemie Wpisania raportów, do widoku Raporty.
+"""Zdanie dla taty o problemie i o informacji Wpisania raportów, do widoku Raporty.
 
 Zdanie nie ma adresu nadawcy: adres spoza listy widok Raporty pokazuje osobno (``SenderAddress.shown``, ADR 0028).
 """
@@ -11,20 +11,23 @@ from typing import assert_never
 from . import (
     ConflictingVerdicts,
     ForeignOrder,
+    HandedOver,
     ManualDifference,
     MissingVerdict,
     OtherDay,
     RepeatedOrder,
     ReportEntry,
+    ReportNote,
     ReportProblem,
     SubjectFault,
+    TakenOver,
     UnknownNumber,
     UnknownSender,
     UnreadableSubject,
     VerdictFault,
 )
 
-__all__ = ["reason"]
+__all__ = ["note", "reason"]
 
 
 def reason(problem: ReportProblem) -> str:
@@ -73,6 +76,18 @@ def reason(problem: ReportProblem) -> str:
             )
         case _:
             assert_never(problem)
+
+
+def note(found: ReportNote) -> str:
+    """Informacja dla taty przy dniu Wykonawcy, krótko, bo stoi przy numerze zlecenia: tylko drugi Wykonawca."""
+
+    match found:
+        case TakenOver(previous=previous):
+            return f"przejęte od {previous}"
+        case HandedOver(successor=successor):
+            return f"przekazane {successor}"
+        case _:
+            assert_never(found)
 
 
 def _day(day: date) -> str:

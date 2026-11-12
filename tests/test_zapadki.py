@@ -29,6 +29,14 @@ _ORDER_NUMBER_HELPER = (
     " pyta strażnika reguły danych (ForbiddenValues.guard)"
 )
 
+# Stan ścieżki bez file_state, jak ``copy.path.exists()`` w ea69c32bea i ``old.is_file()`` w 5f4e134ba5.
+_BARE_FILE_STATE = re.compile(r"\.(?:exists|is_file|is_dir)\(\s*\)|\bos\.path\.(?:exists|lexists|isfile|isdir)\(")
+_FILE_STATE = "src/rozliczenia/file_state.py"
+_FILE_STATE_HELPER = (
+    "stan pliku poza file_state: zapytaj src/rozliczenia/file_state.py (file_state, path_state, path_taken, a o wpis"
+    " folder_entries entry_kind), które rozróżnia brak od pliku niedostępnego (OneDrive, folder bez dostępu)"
+)
+
 
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
@@ -90,6 +98,88 @@ def test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc() -> N
         if path != "tests/test_zapadki.py" and order_number_oracle(line)
     ]
     assert found == []
+
+
+def bare_file_state(line: str) -> bool:
+    """Czy linia ``src/`` pyta o stan ścieżki z pominięciem ``file_state``.
+
+    Łapie tylko ``.exists()``, ``.is_file()`` i ``.is_dir()`` bez argumentów, także ze spacją w nawiasie (na ``Path`` i
+    na wpisie ``os.DirEntry``), oraz ``os.path.exists(``, ``os.path.lexists(``, ``os.path.isfile(`` i
+    ``os.path.isdir(``, także w komentarzu i napisie. Nie łapie ``.iterdir()`` (#1249 dodał świadome
+    ``register.parent.iterdir()`` w ``try``/``except OSError``, którego po linii nie odróżnić od błędu #1021),
+    ``os.listdir``, ``os.scandir``, ``glob``, ``stat`` i ``try``/``except OSError`` napisanych od nowa, wywołań z
+    argumentem (``is_file(follow_symlinks=False)``) ani rozbitych na kilka linii, metody pod inną nazwą
+    (``check = path.exists``), ``Path.exists(path)``, ``os.path`` pod aliasem (``import os.path as osp``) ani ``exists``
+    z ``from os.path import``; te zostają przeglądowi.
+    Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
+    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
+    """
+
+    return _BARE_FILE_STATE.search(line) is not None
+
+
+def file_state_bypasses(root: Path, base: str) -> list[str]:
+    """Linie ``src/`` poza ``file_state.py``, które zmiana od ``base`` dodaje z ``bare_file_state``, z komunikatem."""
+
+    return [
+        f"{path}:{number}: {_FILE_STATE_HELPER}"
+        for path, number, line in _added_lines(root, base, "src")
+        if path != _FILE_STATE and bare_file_state(line)
+    ]
+
+
+def test_stan_pliku_w_src_tylko_przez_file_state() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    assert file_state_bypasses(ROOT, base) == []
+
+
+def test_zapadka_stanu_pliku_widzi_tylko_src_poza_file_state(tmp_path: Path) -> None:
+    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    for path in (_FILE_STATE, "src/rozliczenia/kopia.py", "tests/test_kopii.py", "tools/narzedzie.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("def taken(path):\n    return path.exists()\n", encoding="utf-8")
+
+    found = file_state_bypasses(tmp_path, base)
+
+    assert found == [f"src/rozliczenia/kopia.py:2: {_FILE_STATE_HELPER}"]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "    taken = copy.path.exists()",
+        "    return old.name if old.is_file() else None",
+        "    if STATIC_DIRECTORY.is_dir():",
+        "    for entry in entries if entry.is_dir() and _YEAR_FOLDER.fullmatch(entry.name)",
+        "    return os.path.exists(excel_lock_file(path))",
+        "            collective_file_exists=os.path.isfile(path),",
+        "    if not path.exists( ):",
+    ],
+)
+def test_zapadka_lapie_stan_pliku_poza_file_state(line: str) -> None:
+    assert bare_file_state(line)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        '    return old.name if file_state(old) == "file" else None',
+        "    if path_taken(self._state):",
+        '    present = [period_place_label(place) for place in places if observed.exists(place)]',
+        "                taken = disk.exists(copy.path)",
+        # Formy, których zapadka według docstringu nie łapie.
+        "        names = sorted(path.name for path in register.parent.iterdir())",
+        "    return path.is_file(follow_symlinks=False)",
+        "    names = os.listdir(folder)",
+    ],
+)
+def test_zapadka_przepuszcza_file_state_i_metody_domeny(line: str) -> None:
+    assert not bare_file_state(line)
 
 
 @pytest.mark.parametrize(

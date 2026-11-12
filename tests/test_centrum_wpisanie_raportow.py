@@ -24,6 +24,7 @@ import threading
 from typing import Any
 
 from openpyxl import load_workbook
+from openpyxl.utils.cell import get_column_letter
 import pytest
 
 from rozliczenia.intermax_replace import LOCAL_DISK
@@ -47,7 +48,6 @@ from rozliczenia.worker_report_inbox import (
 )
 from rozliczenia.worker_reports import (
     ConflictingVerdicts,
-    ForeignOrder,
     Login,
     MailId,
     OrderNumber,
@@ -56,12 +56,13 @@ from rozliczenia.worker_reports import (
     SenderAddress,
     SentReminder,
     SubjectFault,
+    UnknownNumber,
     UnreadableSubject,
     Verdict,
 )
 from rozliczenia.worker_reports.reasons import reason
 
-from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, Intermax, Order
+from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
 from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
@@ -1023,8 +1024,9 @@ def _click_at(centrum: EnteringCentrum, moment: datetime, mails: list[Any]) -> d
 def test_pomylka_wykonawcy_w_numerze_albo_dniu_daje_problem_z_powodem_a_wpis_trafia_tylko_do_zlecenia_nadawcy_z_dnia(
     tmp_path: Path,
 ) -> None:
-    """US 27–30: numer zlecenia Jana od Anny, numer zlecenia Jana z 8.11 w Raporcie z 9.11 i numer spoza zleceń dają
-    problemy z oboma Wykonawcami, obiema datami i numerem; wpisuje się tylko Wpis Jana do jego zlecenia z 9.11."""
+    """US 27–30: numer zlecenia Jana z 8.11 w Raporcie z 9.11 i numer spoza zleceń dają problemy z obiema datami i
+    numerem, a Wpis Anny do zlecenia Jana przegrywa ze świeższym mailem Jana (ADR 0029); wpisuje się tylko Wpis Jana do
+    jego zlecenia z 9.11."""
 
     centrum = entering_centrum(tmp_path, INTERMAX)
     _click_at(centrum, datetime(2026, 11, 8, 18), [])
@@ -1034,7 +1036,7 @@ def test_pomylka_wykonawcy_w_numerze_albo_dniu_daje_problem_z_powodem_a_wpis_tra
         centrum,
         ENTERING_NOW,
         [
-            report(ANNA, SUBJECT, "40000001 tak montaż"),
+            report(ANNA, SUBJECT, "40000001 tak montaż", at=datetime(2026, 11, 9, 17)),
             report(JAN, SUBJECT, "40000010 tak wymiana gniazda"),
             report(JAN, SUBJECT, "30000077 tak wymiana modemu"),
             report(JAN, SUBJECT, "40000001 tak wymiana routera"),
@@ -1047,12 +1049,11 @@ def test_pomylka_wykonawcy_w_numerze_albo_dniu_daje_problem_z_powodem_a_wpis_tra
         (problem["kind"], problem["worker"], problem["number"], problem["owner"], problem["order_days"])
         for problem in problems
     ] == [
-        ("foreign_order", "anna.kowalska", "40000001", "jan.testowy", []),
         ("unknown_number", "jan.testowy", "30000077", None, []),
         ("other_day", "jan.testowy", "40000010", None, ["2026-11-08"]),
     ]
     assert {problem["day"] for problem in problems} == {"2026-11-09"}
-    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 3, "unit": "count"}
+    assert view["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 2, "unit": "count"}
 
 
 def test_ten_sam_numer_dwa_razy_u_wykonawcy_w_jednym_dniu_niczego_nie_wpisuje(tmp_path: Path) -> None:
@@ -1136,7 +1137,8 @@ def test_raport_z_ostatniego_dnia_okresu_wpisuje_sie_w_nowym_okresie_dopoki_okre
 
 def test_te_same_maile_w_innej_kolejnosci_i_drugie_klikniecie_daja_ten_sam_wynik(tmp_path: Path) -> None:
     """Kryterium #1229: kolejność, w jakiej skrzynka oddaje maile, nie zmienia wpisanych komórek ani problemów, a drugie
-    kliknięcie z tymi samymi mailami niczego nie zmienia i ma te same problemy."""
+    kliknięcie z tymi samymi mailami niczego nie zmienia i ma te same problemy. Wpis Anny do zlecenia Jana przegrywa ze
+    świeższym mailem Jana, więc zlecenie zostaje u Jana bez problemu (ADR 0029)."""
 
     mails = [
         report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17)),
@@ -1157,10 +1159,314 @@ def test_te_same_maile_w_innej_kolejnosci_i_drugie_klikniecie_daja_ten_sam_wynik
     assert [(result["changes"], result["problems"]) for result in results] == [
         (results[0]["changes"], results[0]["problems"])
     ] * 2
-    assert [problem["kind"] for problem in results[0]["problems"]] == ["unknown_sender", "foreign_order"]
+    assert [problem["kind"] for problem in results[0]["problems"]] == ["unknown_sender"]
+    assert results[0]["moves"] == []
     repeated = _entering(forward, again)
     assert (repeated["changes"], repeated["problems"]) == ([], results[0]["problems"])
 
+
+def _day_rows(register: Path, last: int) -> list[object]:
+    """Wiersze arkusza zleceń od 2 do ``last``: (``NUMER ZL.``, ``WYKONAWCA``) zlecenia, „żółty” wiersz taty albo
+    „pusty”."""
+
+    sheet = load_workbook(register)[ORDER_SHEET]
+    rows: list[object] = []
+    for number in range(2, last + 1):
+        if any(sheet.cell(number, column).value is not None for column in range(1, LAST + 1)):
+            rows.append((sheet.cell(number, NUMBER).value, sheet.cell(number, WORKER).value))
+        else:
+            rows.append("żółty" if sheet.row_dimensions[number].fill.fgColor.rgb == "FFFFFF00" else "pusty")
+    return rows
+
+
+def _order_look(register: Path, number: int) -> list[tuple[object, ...]]:
+    """Wygląd komórek od B do ``UWAGI`` wiersza zlecenia ``number`` poza ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE``, które
+    dostają Wpis: krój, rozmiar, pogrubienie i ramka, z Hiperłączem ``NUMER ZL.``."""
+
+    sheet = load_workbook(register)[ORDER_SHEET]
+    [row] = [cell.row for cell in sheet[get_column_letter(NUMBER)] if cell.value == number]
+    cells = [sheet.cell(row, column) for column in range(FIRST, LAST + 1) if column not in (SUCCESSFUL, COMPLETED)]
+    link = sheet.cell(row, NUMBER).hyperlink
+    return [
+        *((cell.font.name, cell.font.sz, cell.font.b, cell.border.left.style, cell.border.bottom.style) for cell in cells),
+        (None if link is None else link.target,),
+    ]
+
+
+def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja_w_okienku_dnia_po_obu_stronach(
+    tmp_path: Path,
+) -> None:
+    """Kryterium #1347 (ADR 0029): Anna przysłała Wpis zlecenia 40000001, które INTERMAX ma u Jana w tym samym dniu.
+    Kliknięcie zmienia ``WYKONAWCA`` na Annę i stawia wiersz pod jej ostatnim zleceniem, z wyglądem i Hiperłączem
+    uporządkowanego zlecenia i z jej Wpisem, zapisem bez Kopii INTERMAX; pusty wiersz między segmentami i żółty wiersz
+    dnia zostają na miejscach. Okienko dnia pokazuje „przejęte od jan.testowy” u Anny i „przekazane anna.kowalska” u
+    Jana, bez problemu i bez ``ADRES``, ``NUMER UMOWY`` i treści maila; drugie kliknięcie niczego nie zmienia."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 10, "jan.testowy", 40000005),
+            _order(9, 11, "anna.kowalska", 40000002),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax, [report(ANNA, SUBJECT, "40000001 tak montaż gniazda")])
+    look = _order_look(centrum.register, 40000001)
+    assert _day_rows(centrum.register, 7) == [
+        (40000001, "jan.testowy"),
+        (40000005, "jan.testowy"),
+        "pusty",
+        (40000002, "anna.kowalska"),
+        "pusty",
+        "żółty",
+    ]
+
+    view = _finished(centrum)
+    shown = _view(centrum)
+    after = centrum.register.read_bytes()
+    again = _finished(centrum)
+
+    assert _day_rows(centrum.register, 7) == [
+        (40000005, "jan.testowy"),
+        "pusty",
+        (40000002, "anna.kowalska"),
+        (40000001, "anna.kowalska"),
+        "pusty",
+        "żółty",
+    ]
+    assert _order_look(centrum.register, 40000001) == look
+    assert _cells(centrum.register)[40000001] == ("tak", "montaż gniazda")
+    assert not centrum.tool.intermax_copies.exists(), "Wpisanie raportów nie robi Kopii INTERMAX"
+    assert _entering(centrum, view)["moves"] == [{"sheet": ORDER_SHEET, "row": 2, "day": "2026-11-09", "worker": "anna.kowalska"}]
+    assert _entering(centrum, view)["problems"] == []
+    anna, jan = _worker(shown, "anna.kowalska"), _worker(shown, "jan.testowy")
+    assert anna["notes"] == [{"number": "40000001", "text": "przejęte od jan.testowy"}]
+    assert jan["notes"] == [{"number": "40000001", "text": "przekazane anna.kowalska"}]
+    assert [order["number"] for order in anna["orders_detail"]] == ["40000002", "40000001"]
+    assert [order["number"] for order in jan["orders_detail"]] == ["40000005"]
+    assert (anna["problems"], jan["problems"]) == ([], [])
+    text = json.dumps(shown, ensure_ascii=False)
+    assert "Ulica" not in text and "UM-" not in text and "montaż gniazda" not in text.replace('"activities": "montaż gniazda"', "")
+    assert (_entering(centrum, again)["changes"], _entering(centrum, again)["moves"]) == ([], [])
+    assert centrum.register.read_bytes() == after
+    assert _worker(_view(centrum), "anna.kowalska")["notes"] == anna["notes"]
+
+
+def test_reczna_zmiana_wykonawcy_po_wpisie_zostaje_przy_starym_mailu_a_swiezszy_mail_przenosi(tmp_path: Path) -> None:
+    """ADR 0029 „Ręczna zmiana dalej wygrywa”, przegląd #1358 r1: kliknięcie wpisało Wpis Jana do jego zlecenia, a tata
+    dał potem zlecenie Annie w Excelu. Następne kliknięcie z tym samym mailem zostawia zlecenie u Anny bez zapisu
+    INTERMAX; świeższy mail Jana (US 3) przenosi je z powrotem pod jego zlecenia, z informacją w okienku dnia."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "anna.kowalska", 40000002),
+            _order(9, 10, "jan.testowy", 40000001),
+            _order(9, 11, "jan.testowy", 40000005),
+        ),
+        raw=(),
+    )
+    first = report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path, intermax, [first])
+    _finished(centrum)
+    sheet = load_workbook(centrum.register)
+    [row] = [cell.row for cell in sheet[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == 40000001]
+    sheet[ORDER_SHEET].cell(row, WORKER).value = "anna.kowalska"
+    sheet.save(centrum.register)
+    by_tata = centrum.register.read_bytes()
+
+    same = _finished(centrum)
+    kept = centrum.register.read_bytes()
+    centrum.fake_inbox.outcome = [first, report(JAN, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 18))]
+    newer = _finished(centrum)
+
+    assert (_entering(centrum, same)["changes"], _entering(centrum, same)["moves"]) == ([], [])
+    assert kept == by_tata
+    assert _entering(centrum, newer)["moves"] == [{"sheet": ORDER_SHEET, "row": row, "day": "2026-11-09", "worker": "jan.testowy"}]
+    assert _day_rows(centrum.register, 7) == [
+        (40000002, "anna.kowalska"),
+        "pusty",
+        (40000005, "jan.testowy"),
+        (40000001, "jan.testowy"),
+        "pusty",
+        "żółty",
+    ]
+    assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny")
+    assert _worker(_view(centrum), "jan.testowy")["notes"] == [{"number": "40000001", "text": "przejęte od anna.kowalska"}]
+
+
+def _given_to(register: Path, number: int, worker: str) -> None:
+    """Tata zmienia w Excelu ``WYKONAWCA`` zlecenia ``number`` na ``worker``."""
+
+    book = load_workbook(register)
+    [row] = [cell.row for cell in book[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == number]
+    book[ORDER_SHEET].cell(row, WORKER).value = worker
+    book.save(register)
+
+
+def test_druga_reczna_zmiana_wykonawcy_nie_wraca_mailem_ktory_centrum_juz_przyjelo(tmp_path: Path) -> None:
+    """Przegląd #1358 r2 (C), ADR 0029 „Ręczna zmiana dalej wygrywa”: kliknięcie wpisało Wpis Jana, tata dał zlecenie
+    Annie, kliknięcie wpisało u niej jej Wpis, a tata oddał zlecenie Janowi. Następne kliknięcie z tymi samymi mailami
+    zostawia zlecenie u Jana: mail Anny Centrum już przyjęło. Wpis Jana wraca do komórek, które Centrum samo wpisało, bez
+    różnicy z ręczną wartością i bez informacji o Przeniesieniu."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)),
+        raw=(),
+    )
+    jan = report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17))
+    anna = report(ANNA, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 17, 30))
+    centrum = entering_centrum(tmp_path, intermax, [jan])
+    _finished(centrum)
+    _given_to(centrum.register, 40000001, "anna.kowalska")
+    centrum.fake_inbox.outcome = [jan, anna]
+    at_anna = _finished(centrum)
+    _given_to(centrum.register, 40000001, "jan.testowy")
+
+    back = _finished(centrum)
+    shown = _view(centrum)
+
+    assert _entering(centrum, at_anna)["moves"] == []
+    assert _entering(centrum, back)["moves"] == []
+    assert _entering(centrum, back)["problems"] == []
+    assert _cells(centrum.register)[40000001] == ("tak", "wymiana")
+    assert _day_rows(centrum.register, 6) == [(40000002, "anna.kowalska"), "pusty", (40000001, "jan.testowy"), "pusty", "żółty"]
+    assert (_worker(shown, "jan.testowy")["notes"], _worker(shown, "jan.testowy")["problems"]) == ([], [])
+
+
+def test_nadawca_bez_segmentu_w_dniu_dostaje_nowy_segment_na_miejscu_alfabetycznym(tmp_path: Path) -> None:
+    """Kryterium #1347: Anna nie ma zleceń 9.11, a przejmuje jedno z dwóch zleceń Jana. Jej nowy segment staje przed
+    segmentem Jana (alfabetycznie), z jednym pustym wierszem między segmentami z wyglądem pustego wiersza Uporządkowania
+    (Calibri 8 z cienką ramką, ``WYKONAWCA`` Calibri 9); żółty wiersz dnia zostaje jeden pusty wiersz pod dniem, który
+    urósł o wiersz."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax, [report(ANNA, SUBJECT, "40000005 nie klient nieobecny")])
+
+    _finished(centrum)
+
+    assert _day_rows(centrum.register, 7) == [
+        (40000005, "anna.kowalska"),
+        "pusty",
+        (40000001, "jan.testowy"),
+        "pusty",
+        "żółty",
+        "pusty",
+    ]
+    sheet = load_workbook(centrum.register)[ORDER_SHEET]
+    separator = [sheet.cell(3, column) for column in range(FIRST, LAST + 1)]
+    assert [(cell.font.name, cell.font.sz, cell.border.left.style) for cell in separator] == [
+        ("Calibri", 9 if cell.column == WORKER else 8, "thin") for cell in separator
+    ]
+    assert not any(cell.value for cell in separator)
+
+
+def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesienia_ktore_zatrzymuja_reczna_zmiane(
+    tmp_path: Path,
+) -> None:
+    """Kryterium #1347: plik pamięci w wersji 1 (bez Przeniesień) czyta się bez błędu, z dniem wdrożenia i własnym
+    wpisem, który poprawka Jana dalej nadpisuje. Kliknięcie z Przeniesieniem zlecenia Jana do Anny zapisuje wersję 3 z
+    tym Przeniesieniem i z miejscem zlecenia Jana, którego Wpis przyjęło u Jana, z pisownią ``WYKONAWCA`` i chwilą
+    maila, więc gdy tata odda potem zlecenie Janowi w Excelu, następne kliknięcie go nie przenosi."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 10, "jan.testowy", 40000005),
+            _order(9, 11, "anna.kowalska", 40000002),
+        ),
+        raw=(),
+    )
+    mails = [
+        report(JAN, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 17)),
+        report(ANNA, SUBJECT, "40000005 tak montaż", at=datetime(2026, 11, 9, 17, 30)),
+    ]
+    centrum = entering_centrum(tmp_path, intermax, mails)
+    _tata_writes(centrum.register, 40000001, "tak")
+    own = {"number": "40000001", "day": "2026-11-09", "worker": "jan.testowy", "column": "SKUTECZNE", "value": "tak"}
+    _state(centrum).write_text(
+        json.dumps({"schema_version": 1, "rollout": "2026-11-09", "own": [own]}, ensure_ascii=False), encoding="utf-8"
+    )
+
+    view = _finished(centrum)
+    saved = json.loads(_state(centrum).read_text(encoding="utf-8"))
+    sheet = load_workbook(centrum.register)
+    [row] = [cell.row for cell in sheet[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == 40000005]
+    sheet[ORDER_SHEET].cell(row, WORKER).value = "jan.testowy"
+    sheet.save(centrum.register)
+    again = _finished(centrum)
+
+    assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
+    assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 1"
+    assert saved["schema_version"] == 3
+    # Chwila maila ze strefą komputera (``report`` daje ``astimezone()``): na Macu „+01:00”, na Linuksie CI „Z”.
+    jan_since, anna_since = datetime(2026, 11, 9, 17).astimezone(), datetime(2026, 11, 9, 17, 30).astimezone()
+    assert [{**move, "since": datetime.fromisoformat(move["since"])} for move in saved["moves"]] == [
+        {
+            "number": "40000001",
+            "day": "2026-11-09",
+            "worker": "jan.testowy",
+            "origin_day": "2026-11-09",
+            "origin_worker": "jan.testowy",
+            "origin_name": "jan.testowy",
+            "since": jan_since,
+            "overridden": False,
+        },
+        {
+            "number": "40000005",
+            "day": "2026-11-09",
+            "worker": "anna.kowalska",
+            "origin_day": "2026-11-09",
+            "origin_worker": "jan.testowy",
+            "origin_name": "jan.testowy",
+            "since": anna_since,
+            "overridden": False,
+        },
+    ]
+    assert _entering(centrum, again)["moves"] == []
+    assert _entering(centrum, again)["moves_before"] == [
+        {**move, "number": int(move["number"])} for move in saved["moves"]
+    ]
+
+
+_BRANCH_MOVE = {"number": "40000001", "day": "2026-11-09", "worker": "jan.testowy", "origin_day": "2026-11-09"}
+
+
+@pytest.mark.parametrize(
+    "move",
+    [
+        pytest.param({**_BRANCH_MOVE, "origin_worker": "anna.kowalska"}, id="runda-1"),
+        pytest.param(
+            {**_BRANCH_MOVE, "origin_worker": "anna.kowalska", "origin_name": "Anna", "since": "2026-11-09T17:00:00+01:00"},
+            id="runda-2",
+        ),
+    ],
+)
+def test_plik_pamieci_w_wersji_2_z_galezi_czyta_sie_bez_pamieci_zlecen_zamiast_zatrzymania(
+    tmp_path: Path, move: dict[str, str]
+) -> None:
+    """Plik pamięci w wersji 2 powstał tylko na gałęzi #1358 przed jej trzecią rundą, w dwóch postaciach ``moves``.
+    Kliknięcie go czyta jak wersję 1: dzień wdrożenia i własny wpis, który poprawka Jana dalej nadpisuje, ale bez
+    pamięci zleceń (Logi: ``moves_before`` puste), a zapisuje wersję 3."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "anna.kowalska", 40000005)), raw=())
+    centrum = entering_centrum(
+        tmp_path, intermax, [report(JAN, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 17))]
+    )
+    _tata_writes(centrum.register, 40000001, "tak")
+    own = {"number": "40000001", "day": "2026-11-09", "worker": "jan.testowy", "column": "SKUTECZNE", "value": "tak"}
+    _state(centrum).write_text(
+        json.dumps({"schema_version": 2, "rollout": "2026-11-09", "own": [own], "moves": [move]}), encoding="utf-8"
+    )
+
+    view = _finished(centrum)
+
+    assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
+    assert _entering(centrum, view)["moves_before"] == []
+    assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 2"
+    assert json.loads(_state(centrum).read_text(encoding="utf-8"))["schema_version"] == 3
 
 def test_bez_folderu_okresow_w_ustawieniach_karta_mowi_co_wskazac_a_start_jest_odrzucony(tmp_path: Path) -> None:
     """Bez folderu okresów kliknięcie nie wie, które okresy mają Plik zbiorczy, więc nie startuje i nie czyta skrzynki."""
@@ -1268,7 +1574,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
         intermax,
         [
             report(JAN, SUBJECT, "40000001 tak wymiana routera"),
-            report(ANNA, SUBJECT, "40000001 tak montaż"),
+            report(ANNA, SUBJECT, "40000009 tak montaż"),
             report(STRANGER, SUBJECT, "40000002 nie brak"),
         ],
     )
@@ -1289,7 +1595,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
     assert centrum.fake_inbox.days == read, "widok Raporty nie czyta skrzynki"
     assert datetime.fromisoformat(view["clicked_at"]) == ENTERING_NOW.astimezone()
     assert view["days"] == [{"day": "2026-11-09", "holiday": None}]
-    foreign = ForeignOrder(Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("40000001"), Login("jan.testowy"))
+    unknown = UnknownNumber(Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("40000009"))
     assert view["workers"] == [
         {
             "worker": "anna.kowalska",
@@ -1300,7 +1606,8 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "entered": 0,
                     "mails": 1,
                     "without_report": ["40000002"],
-                    "problems": [{"reason": reason(foreign), "number": "40000001", "keep": None}],
+                    "problems": [{"reason": reason(unknown), "number": "40000009", "keep": None}],
+                    "notes": [],
                     "orders_detail": [
                         {"number": "40000002", "successful": None, "activities": None, "state": "without_report"}
                     ],
@@ -1318,6 +1625,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "mails": 1,
                     "without_report": ["40000005"],
                     "problems": [],
+                    "notes": [],
                     "orders_detail": [
                         {"number": "40000001", "successful": "tak", "activities": "wymiana routera", "state": "entered"},
                         {"number": "40000005", "successful": None, "activities": None, "state": "without_report"},
@@ -1476,6 +1784,7 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
         "mails": 0,
         "without_report": [],
         "problems": [{"reason": reason(unreadable), "number": None, "keep": None}],
+        "notes": [],
         "orders_detail": [],
         "reminders": [],
     }

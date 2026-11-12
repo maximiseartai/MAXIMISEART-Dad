@@ -1382,6 +1382,18 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "value": "nie",
             }
         ],
+        "moves": [{"sheet": "Arkusz zleceń syntetyczny", "row": 31, "day": "2026-11-05", "worker": "wykonawca.drugi"}],
+        "moves_before": [
+            {
+                "number": 40000004,
+                "day": "2026-11-05",
+                "worker": "wykonawca.drugi",
+                "origin_day": "2026-11-05",
+                "origin_worker": "wykonawca.syntetyczny",
+                "origin_name": "Wykonawca.Syntetyczny",
+                "since": "2026-11-05T18:05:00+01:00",
+            }
+        ],
         "written": 1,
     },
     "input_copy": [

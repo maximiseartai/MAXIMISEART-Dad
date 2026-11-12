@@ -18,7 +18,7 @@ import sys
 
 import pytest
 
-from rozliczenia.file_state import file_state, folder_entries, path_state, path_taken, remove_file
+from rozliczenia.file_state import entry_kind, file_state, folder_entries, path_state, path_taken, remove_file
 
 ABSENT = [
     pytest.param(FileNotFoundError(errno.ENOENT, "Nie można odnaleźć pliku"), id="brak"),
@@ -87,6 +87,24 @@ def test_listowanie_daje_wpisy_folderu_a_brak_folderu_albo_plik_na_jego_miejscu_
     assert [entry.name for entry in folder_entries(tmp_path / "Folder") or []] == ["plik"]
     assert folder_entries(tmp_path / "brak") is None
     assert folder_entries(tmp_path / "plik") is None
+
+
+def test_wpis_listowania_jest_plikiem_albo_folderem(tmp_path: Path) -> None:
+    (tmp_path / "Folder").mkdir()
+    (tmp_path / "plik").write_bytes(b"")
+
+    assert {entry.name: entry_kind(entry) for entry in folder_entries(tmp_path) or []} == {"Folder": "folder", "plik": "file"}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="dowiązanie w Windows wymaga uprawnień administratora")
+def test_wpis_listowania_ze_skrotem_ma_rodzaj_celu_a_zepsuty_skrot_to_brak(tmp_path: Path) -> None:
+    (tmp_path / "Folder").mkdir()
+    (tmp_path / "skrót do folderu").symlink_to(tmp_path / "Folder")
+    (tmp_path / "zepsuty skrót").symlink_to(tmp_path / "brak")
+
+    kinds = {entry.name: entry_kind(entry) for entry in folder_entries(tmp_path) or []}
+
+    assert kinds == {"Folder": "folder", "skrót do folderu": "folder", "zepsuty skrót": "missing"}
 
 
 @pytest.mark.parametrize("error", ABSENT)

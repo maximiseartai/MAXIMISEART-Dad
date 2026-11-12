@@ -86,6 +86,8 @@ HOLIDAYS = {"2026-11-01": "Wszystkich Świętych", WINDOW_TODAY: "Narodowe Świ�
 MAIL_ONLY = ("2026-11-07", "2026-11-08")
 # Przypomnienia o raporcie za 05.11 do wykonawca.b, 06.11 at 8:00 and 18:00 in Dad's time (UTC+1 in November).
 REMINDERS = ("2026-11-06T07:00:00Z", "2026-11-06T17:00:00Z")
+HANDED_REMINDER = ("2026-11-04T07:00:00Z",)
+"""The Przypomnienie of `wykonawca.a` for 03.11, before his late Raport: one popover with a note and a Przypomnienie."""
 WINDOW_WORKERS = ("wykonawca.a", "wykonawca.b", "wykonawca.c")
 
 Json = dict[str, Any]
@@ -248,10 +250,12 @@ def _window_day(
     without: int = 0,
     problem: bool = False,
     mails: int = 1,
+    taken: bool = False,
     reminders: tuple[str, ...] = (),
 ) -> Json:
     """A synthetic day of a Wykonawca: ``orders`` orders from ``number``, the last ``without`` without a report, with
-    ``problem`` the first one a problem without `Zostaw moją`, and the moments of its Przypomnienia o raporcie."""
+    ``problem`` the first one a problem without `Zostaw moją`, with ``taken`` the last one taken over from
+    `wykonawca.a` (`TAKEN_NOTE`, a Przeniesienie zlecenia, #1347), and the moments of its Przypomnienia o raporcie."""
 
     numbers = [str(number + offset) for offset in range(orders)]
     states = ["entered"] * (orders - without) + ["without_report"] * without
@@ -272,9 +276,16 @@ def _window_day(
         ]
         if problem
         else [],
+        "notes": [{"number": numbers[-1], "text": TAKEN_NOTE}] if taken else [],
         "orders_detail": [_order(found, state) for found, state in zip(numbers, states, strict=True)],
         "reminders": list(reminders),
     }
+
+
+TAKEN_NOTE = "przejęte od wykonawca.a"
+"""The calm note of a Przeniesienie zlecenia in the popover of `wykonawca.b` 03.11 (#1347)."""
+HANDED_NOTE = "przekazane wykonawca.b"
+"""The other side of it in the popover of `wykonawca.a` 03.11: a row of its own, because the order is no longer there."""
 
 
 def _window_view(clicked_at: str) -> Json:
@@ -285,18 +296,23 @@ def _window_view(clicked_at: str) -> Json:
     days = [(WINDOW_FIRST + timedelta(days=offset)).isoformat() for offset in range(17)]
     workdays = [day for day in days if date.fromisoformat(day).weekday() < 6 and day not in HOLIDAYS]
     special: dict[tuple[str, str], dict[str, Any]] = {
+        ("wykonawca.a", "2026-11-03"): {"orders": 2, "reminders": HANDED_REMINDER},
         ("wykonawca.a", "2026-11-10"): {"orders": 3, "without": 3, "mails": 0},
-        ("wykonawca.b", "2026-11-03"): {"orders": 3, "problem": True},
+        ("wykonawca.b", "2026-11-03"): {"orders": 3, "problem": True, "taken": True},
         ("wykonawca.b", "2026-11-05"): {"orders": 2, "without": 1, "reminders": REMINDERS},
         **{("wykonawca.c", day): {"orders": 0} for day in MAIL_ONLY},
     }
     workers = []
+    tiles: dict[tuple[str, str], Json] = {}
     for index, worker in enumerate(WINDOW_WORKERS):
         worker_days = []
         for position, day in enumerate(day for day in days if day in workdays or (worker, day) in special):
             shape: dict[str, Any] = special.get((worker, day), {"orders": index + 2})
-            worker_days.append(_window_day(day, 40100000 + index * 1000 + position * 10, **shape))
+            tiles[worker, day] = _window_day(day, 40100000 + index * 1000 + position * 10, **shape)
+            worker_days.append(tiles[worker, day])
         workers.append({"worker": worker, "days": worker_days})
+    [taken] = tiles["wykonawca.b", "2026-11-03"]["notes"]
+    tiles["wykonawca.a", "2026-11-03"]["notes"].append({"number": taken["number"], "text": HANDED_NOTE})
     return {
         "clicked_at": clicked_at,
         "today": WINDOW_TODAY,
@@ -393,7 +409,17 @@ def _range_map(run: Run, page: Page) -> None:
             popover = _popover(page, "wykonawca.b", "2026-11-03")
             expect(popover).to_contain_text("różne Wpisy")
             expect(popover.get_by_role("button", name="Zostaw moją")).to_have_count(0)
+            taken = popover.get_by_role("listitem").filter(has_text=TAKEN_NOTE)
+            expect(taken).to_have_count(1)
+            expect(taken).to_contain_text("Wpisane")
+            expect(taken).not_to_contain_text("Problem")
             run.capture(page, "288-raporty-mapa-jasna", full_page=False)
+            _close(page, popover)
+            popover = _popover(page, "wykonawca.a", "2026-11-03")
+            handed = popover.get_by_role("listitem").filter(has_text=HANDED_NOTE)
+            expect(handed).to_have_count(1)
+            expect(handed).not_to_contain_text("Wpisane")
+            expect(handed).not_to_contain_text("Problem")
             _close(page, popover)
             switch_theme(page, "ciemny")
             popover = _popover(page, "wykonawca.b", "2026-11-03")
@@ -401,7 +427,12 @@ def _range_map(run: Run, page: Page) -> None:
             _close(page, popover)
         finally:
             switch_theme(page, "ciemny" if was_dark else "jasny")
-        run.check(True, "the popover of a tile shows the problem's sentence, in the light and the dark theme")
+        run.check(
+            True,
+            "the popover of a tile shows the problem's sentence and, under the taken order, the calm note "
+            "„przejęte od wykonawca.a” without a Problem badge, in the light and the dark theme; the popover of "
+            "wykonawca.a shows „przekazane wykonawca.b” as a row of its own, without a badge",
+        )
 
         run.step(FEATURE, "przypomnienia")
         expect(page.get_by_text("Przypomnienia o raporcie idą bez Twojej stopki", exact=False)).to_be_visible()
@@ -412,7 +443,17 @@ def _range_map(run: Run, page: Page) -> None:
         popover = _popover(page, "wykonawca.b", "2026-11-03")
         expect(popover.get_by_text("Przypomnieni", exact=False)).to_have_count(0)
         _close(page, popover)
-        run.check(True, "the popover of 05.11 has the times of its Przypomnienia in Dad's time, 03.11 none; the page says the footer file is missing")
+        popover = _popover(page, "wykonawca.a", "2026-11-03")
+        expect(popover.get_by_role("listitem").filter(has_text=HANDED_NOTE)).to_have_count(1)
+        expect(popover).to_contain_text("Przypomnienie 04.11 08:00")
+        run.capture(page, "295-raporty-przypomnienie-i-przeniesienie", full_page=False)
+        _close(page, popover)
+        run.check(
+            True,
+            "the popover of 05.11 has the times of its Przypomnienia in Dad's time, 03.11 none; the page says the "
+            "footer file is missing; the popover of wykonawca.a 03.11 has both „przekazane wykonawca.b” and its "
+            "Przypomnienie",
+        )
 
         page.get_by_role("button", name="Wcześniejsze dni", exact=True).click()
         expect(_range(page)).to_contain_text("26 paź – 4 lis")

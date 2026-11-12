@@ -63,6 +63,7 @@ import tempfile
 import time
 from typing import IO, Final, Literal, TypeGuard
 
+from rozliczenia.file_state import file_state, path_taken
 from rozliczenia.tool_files import REPOSITORY_URL, TOOL_ROOT, config_dir
 
 BRANCH: Final = "main"
@@ -267,7 +268,7 @@ def find_git(
         base = environ.get(variable)
         if base:
             candidates.append(Path(base, *folders, "cmd", "git.exe"))
-    return next((candidate for candidate in candidates if candidate.is_file()), None)
+    return next((candidate for candidate in candidates if file_state(candidate) == "file"), None)
 
 
 def _registered_git_for_windows(hive: str) -> str | None:
@@ -480,7 +481,7 @@ def _roll_back(git: _Git, journal: _Journal) -> None:
         raise JournalKept("brak dziennika")
     if git.text("rev-parse", "HEAD") not in (update.before, update.after):
         raise JournalKept("klon na innym commicie")
-    names = [copy.relative_to(journal.backup).as_posix() for copy in journal.backup.rglob("*") if copy.is_file()]
+    names = [copy.relative_to(journal.backup).as_posix() for copy in journal.backup.rglob("*") if file_state(copy) == "file"]
     for name in names:
         (git.root / name).unlink(missing_ok=True)
     try:
@@ -633,7 +634,7 @@ class _Journal:
     def begin(self, root: Path, names: Iterable[str], before: str, after: str) -> None:
         """Trwająca aktualizacja to ``JournalKept``."""
 
-        if self._state.exists():
+        if path_taken(self._state):
             raise JournalKept("poprzednia aktualizacja w toku")
         self.end()
         for name in names:
@@ -693,7 +694,7 @@ class _DadFiles:
         listed = git.output(
             "diff", "--name-only", "-z", "--no-renames", "--diff-filter=D", "HEAD", fetched, "--", "config/"
         )
-        return cls(tuple(name for name in listed.split("\0") if name and (git.root / name).is_file()))
+        return cls(tuple(name for name in listed.split("\0") if name and file_state(git.root / name) != "missing"))
 
     @contextmanager
     def set_aside(self, git: _Git, backup: Path) -> Iterator[None]:

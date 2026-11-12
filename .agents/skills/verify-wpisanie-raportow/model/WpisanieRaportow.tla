@@ -185,7 +185,7 @@ TataUsuwaKopie ==
 
 (* Tata klika „Wpisz raporty z maili”; enter_from_mail, faza Sprawdzanie (check): ReportState.load, czyli            *)
 (* FileReportState.load: _TextFile.text pamięci (StateFile.retry odłożonej treści, potem ona albo plik), potem kept() *)
-(* tak samo dla decyzji, a dalej onedrive_conflicts.beside (report_entering.py :265): kopia konfliktu to Zatrzymanie, *)
+(* tak samo dla decyzji, a dalej onedrive_conflicts.beside (report_entering.py :274): kopia konfliktu to Zatrzymanie, *)
 (* zanim proces przeczyta skrzynkę.                                                                                 *)
 Sprawdzanie ==
     /\ faza = "wolne"
@@ -219,7 +219,7 @@ PrzyczynaNadpisania ==
     ELSE {}
 
 (* Odczyt danych (skrzynka, INTERMAX), Planowanie (enter_reports: _cells.reconcile) i Zapisywanie (write_cells,     *)
-(* report_entering.py :340) jako jeden krok: okno między odczytem INTERMAX a podmianą to znane znalezisko 1 skilla    *)
+(* report_entering.py :359) jako jeden krok: okno między odczytem INTERMAX a podmianą to znane znalezisko 1 skilla    *)
 (* verify-zapis-intermax. Bez zmian write_cells zwraca CellsWritten(0) bez podmiany; odmowa (Refusal, Rejected) to   *)
 (* Zatrzymanie z INTERMAX nietkniętym i bez zapisu pamięci ani wyniku.                                              *)
 Zapis ==
@@ -254,7 +254,7 @@ Zapis ==
              /\ UNCHANGED <<wpis, okresOtwarty, kopia, zostawione, liczniki, falszywe, bezDecyzji>>
     /\ UNCHANGED <<plikPamieci, plikWyniku, plikDecyzji, karty>>
 
-(* report_entering.py :353: parts.state.save_memory po udanym zapisie INTERMAX, także przy zerze wpisanych komórek: *)
+(* report_entering.py :372: parts.state.save_memory po udanym zapisie INTERMAX, także przy zerze wpisanych komórek: *)
 (* FileReportState.save_memory → _TextFile.write → StateFile.write; OSError zostawia treść odłożoną w pamięci, a     *)
 (* proces daje tylko ostrzeżenie (memory_not_saved) i idzie dalej.                                                 *)
 ZapiszPamiec ==
@@ -273,9 +273,9 @@ ZapiszPamiec ==
                    bezPamieci, upuszczona, zostawione, zgasniecia, awarieIntermax, awarieWyniku, awarieDecyzji,
                    zdarzenia>>
 
-(* report_entering.py :354: parts.state.save_result (ClickResult z problemami, w nich ManualDifference) →          *)
+(* report_entering.py :373: parts.state.save_result (ClickResult z problemami, w nich ManualDifference) →          *)
 (* _TextFile.write; OSError zostawia treść odłożoną, a widok pokazuje ją z pamięci. Zaraz potem, w tym samym kroku,  *)
-(* :356 onedrive_conflicts.beside: kopia konfliktu to Zatrzymanie dla taty (conflict_after_save) z podsumowaniem,   *)
+(* :375 onedrive_conflicts.beside: kopia konfliktu to Zatrzymanie dla taty (conflict_after_save) z podsumowaniem,   *)
 (* bez niej podsumowanie, i Uruchomienie się kończy. Jeden krok, bo między nimi nic nie pisze plików ani INTERMAX:    *)
 (* zgaśnięcie tam gubi tylko to, co gubi zgaśnięcie po końcu, a kopia, która pojawi się tam, pojawia się przed nim.   *)
 ZapiszWynik ==
@@ -315,7 +315,7 @@ ZostawSprawdz(k) ==
     /\ tresc' = [tresc EXCEPT ![k] = PokazanaRoznica]
     /\ UNCHANGED <<swiat, plikPamieci, plikWyniku, plikDecyzji, klik, odczyt, blokada, duchy, liczniki, zdarzenia>>
 
-(* FileReportState.keep pod blokadą _deciding (report_entering_state.py :362-363): kept(), czyli dawne decyzje.      *)
+(* FileReportState.keep pod blokadą _deciding (report_entering_state.py :440-441): kept(), czyli dawne decyzje.      *)
 ZostawCzytaj(k) ==
     /\ etap[k] = "sprawdzona"
     /\ blokada = 0
@@ -324,7 +324,7 @@ ZostawCzytaj(k) ==
     /\ odczyt' = [odczyt EXCEPT ![k] = DecyzjeWidoku]
     /\ UNCHANGED <<swiat, plikPamieci, plikWyniku, plikDecyzji, klik, tresc, duchy, liczniki, zdarzenia>>
 
-(* Dalej pod tą samą blokadą (:364-366): decisions.write dawnych decyzji z nową; keep nie patrzy na wynik zapisu, więc *)
+(* Dalej pod tą samą blokadą (:442-444): decisions.write dawnych decyzji z nową; keep nie patrzy na wynik zapisu, więc *)
 (* tata dostaje widok bez różnicy także wtedy, gdy decyzja tylko czeka w pamięci.                                   *)
 ZostawZapisz(k) ==
     /\ etap[k] = "czyta"

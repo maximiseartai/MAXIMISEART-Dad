@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime
 
 from . import _matching
@@ -13,6 +13,7 @@ from ._model import (
     MailId,
     OrderNumber,
     OtherDay,
+    OwnMove,
     ReadReport,
     ReadUnreadable,
     RegisterOrder,
@@ -27,8 +28,10 @@ def standing(
     reports: Sequence[ReadReport],
     unreadable: Sequence[ReadUnreadable],
     orders: Sequence[RegisterOrder],
+    moves: Mapping[tuple[OrderNumber, date], OwnMove],
 ) -> set[ReportProblem]:
-    """Problemy, które dalej stoją po poprawionych mailach (US 40).
+    """Problemy, które dalej stoją po poprawionych mailach (US 40); ``moves``: miejsca zleceń z pamięci, jak w
+    ``_matching.match``.
 
     Stary mail zostaje w skrzynce, więc rdzeń liczy jego problemy przy każdym kliknięciu. Poprawionym mailem jest
     późniejszy Raport wykonawcy tego samego Wykonawcy z dnia poprawki, który ma numer każdego Wpisu wcześniejszego
@@ -68,7 +71,7 @@ def standing(
             found.add(UnreadableSubject(read.mail, read.worker, read.arrived, read.fault))
     for report in reports:
         numbers = frozenset(entry.number for entry in report.entries)
-        for problem in _matching.match([report], orders)[1]:
+        for problem in _matching.match([report], orders, moves).problems:
             match problem:
                 case UnknownNumber(day=day) | ForeignOrder(day=day):
                     on = {day}

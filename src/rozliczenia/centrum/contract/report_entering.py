@@ -45,6 +45,14 @@ class ReportsProblem(Model):
     keep: KeptCell | None
 
 
+class ReportsNote(Model):
+    """Informacja z ostatniego kliknięcia przy dniu Wykonawcy o zmianie, którą Centrum zrobiło w INTERMAX (ADR 0029):
+    numer zlecenia i krótkie zdanie, np. „przejęte od …” albo „przekazane …”. Nie jest problemem ani Zgłoszeniem."""
+
+    number: str
+    text: str
+
+
 class ReportsOrder(Model):
     """Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
     zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez
@@ -59,8 +67,8 @@ class ReportsOrder(Model):
 class ReportsWorkerDay(Model):
     """Dzień Wykonawcy z ostatniego kliknięcia: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po
     kliknięciu, kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”,
-    numery zleceń bez żadnego Wpisu i zlecenia dnia (``orders_detail``; ``None``: wynik kliknięcia sprzed listy zleceń,
-    dopóki tata nie kliknie znowu)."""
+    informacje o Przeniesieniach zleceń (``notes``), numery zleceń bez żadnego Wpisu i zlecenia dnia (``orders_detail``;
+    ``None``: wynik kliknięcia sprzed listy zleceń, dopóki tata nie kliknie znowu)."""
 
     day: date
     orders: int
@@ -68,6 +76,7 @@ class ReportsWorkerDay(Model):
     mails: int
     without_report: list[str]
     problems: list[ReportsProblem]
+    notes: list[ReportsNote]
     orders_detail: list[ReportsOrder] | None
     reminders: list[datetime]
     """Chwile wysłania Przypomnień o raporcie za ten dzień do tego Wykonawcy z ostatniego sprawdzenia pracy przypomnień,
@@ -75,7 +84,8 @@ class ReportsWorkerDay(Model):
 
 
 class ReportsWorker(Model):
-    """Wykonawca z ostatniego kliknięcia i jego dni ze zleceniami, Raportem wykonawcy albo problemem, od najstarszego."""
+    """Wykonawca z ostatniego kliknięcia i jego dni ze zleceniami, Raportem wykonawcy, problemem albo informacją, od
+    najstarszego."""
 
     worker: str
     days: list[ReportsWorkerDay]

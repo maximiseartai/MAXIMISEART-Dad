@@ -11,7 +11,7 @@
     "restore": "f9554b08fd8a2a3d"
   },
   "src/rozliczenia/intermax_cells.py": {
-    "write_cells": "996f1aced1b7b456"
+    "write_cells": "9d75ea620e814443"
   },
   "src/rozliczenia/intermax_copies.py": {
     "cały plik": "aa395719d3e3a41c"
@@ -29,7 +29,7 @@
   "src/rozliczenia/workbook_files.py": {
     "workbook_content": "f0d5aac3aa904193",
     "ensure_available": "43504c7a8d5bafbb",
-    "is_open_in_excel": "c7c3a02ce0376fb6",
+    "is_open_in_excel": "c7204b3cbe842c49",
     "excel_lock_file": "8b99b688550753a1",
     "file_bytes": "74b76f71ea2cab19",
     "unreadable_as_error": "21475619b90b4105"

@@ -70,6 +70,7 @@ from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool
 from rozliczenia.centrum.version import SERVICE, short_commit
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
+from rozliczenia.file_state import path_state
 from rozliczenia.run_context import RunContexts, TemplateCheck, check_on_disk
 from rozliczenia.intermax_copies import default_directory as default_intermax_copies
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
@@ -302,7 +303,7 @@ def create_app(
     app.include_router(tool_update_router(updates))
     app.include_router(shutdown_router(shutdown))
     app.include_router(timing_router(log))
-    if STATIC_DIRECTORY.is_dir():  # bez buildu (np. świeży katalog roboczy frontendu) działa samo API
+    if path_state(STATIC_DIRECTORY) == "folder":  # bez buildu (np. świeży katalog roboczy frontendu) działa samo API
         app.mount("/", _Frontend(directory=STATIC_DIRECTORY, html=True), name="frontend")
     return app
 

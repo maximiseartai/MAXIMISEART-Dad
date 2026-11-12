@@ -69,7 +69,7 @@ the same harm, with that one part other than its story says, so each must give a
 SAME_ORDER = (
     "    def _same_order(self, part: PagePart) -> None:\n"
     "        if parse_qs(urlparse(self._page.url).query).get(\"id\") != [self._order_id]:\n"
-    "            raise UnexpectedPage(part, OtherShape(Shape.LOGIN_FORM))\n\n"
+    "            raise WindowStop.of(part, OtherShape(Shape.LOGIN_FORM))\n\n"
 )
 
 MUTATIONS = (
@@ -111,7 +111,7 @@ MUTATIONS = (
     ),
     Mutation(
         "okno rzuca zwykły RuntimeError zamiast UnexpectedPage przy złej liczbie elementów",
-        (Edit(BROWSER, "            raise UnexpectedPage(part, ElementCount(element.selector, count))\n", "            raise RuntimeError(element.selector)\n"),),
+        (Edit(BROWSER, "            raise WindowStop.of(part, ElementCount(element.selector, count))\n", "            raise RuntimeError(element.selector)\n"),),
         EXPLORER,
         "tata wraca na listę, okno nie znajduje elementu zlecenia i Uruchomienie kończy się EFENIX_BLAD_NIEOCZEKIWANY",
         NEW,

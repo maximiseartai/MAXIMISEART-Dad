@@ -37,7 +37,7 @@ MUTATIONS = (
     ),
     Mutation(
         "podsumowanie bez Pliku zbiorczego proponuje go otworzyć",
-        (Edit(FILLING, "collective_file_exists=os.path.isfile(path)", "collective_file_exists=True"),),
+        (Edit(FILLING, "collective_file_exists=file_state(path) == \"file\"", "collective_file_exists=True"),),
         UZUPELNIENIE,
         "tata klika „Otwórz Plik zbiorczy” w okresie bez pliku i dostaje tylko „Nie udało się otworzyć”",
     ),
