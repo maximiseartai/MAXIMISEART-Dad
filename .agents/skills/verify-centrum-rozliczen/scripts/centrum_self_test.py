@@ -61,7 +61,8 @@ CLOCK_ANSWER_S = 5.0
 # Deleting, moving or replacing a file or folder fails on Windows while another process holds it open (WinError 32,
 # #921), so the drive does it only through the retrying helpers of ``drive/common.py`` (``DRIVE_HELPERS``). The forms
 # the guard ``_removals`` catches and its boundary are the tables of its docstring and of features/README.md; ruff
-# ``TID251`` (``drive/ruff.toml``) rejects the functions of ``os``, ``shutil`` and the pathlib classes it can resolve.
+# ``TID251`` (``drive/ruff.toml``) rejects the functions of ``os``, ``shutil`` and the pathlib classes it can resolve,
+# each ban with a sample in ``tests/test_zakazy_ruff.py``.
 # Only deletions and moves have attributes of these names (pathlib, ``os``, ``shutil``): form 1 takes them on anything.
 ONLY_REMOVING = frozenset({"unlink", "rename", "rmdir", "rmtree", "removedirs", "renames", "move_into"})
 # Path methods whose names other objects share (``str.replace``, ``page.mouse.move``): form 2.

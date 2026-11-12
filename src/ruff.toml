@@ -1,6 +1,6 @@
 # Ruff bierze banned-api z najbliższego pliku konfiguracji w całości, a nie dokłada do tabeli rodzica: pierwsze wpisy
 # to kopia tabeli z pyproject.toml (tests/test_zakazy_ruff.py pilnuje, że żadnego nie gubi), a ostatnie obowiązują tylko
-# w src/. Wyjątek dostaje swoją linię: # noqa: TID251 - <powód>.
+# w src/, każdy z próbką w tests/test_zakazy_ruff.py. Wyjątek dostaje swoją linię: # noqa: TID251 - <powód>.
 extend = "../pyproject.toml"
 
 [lint.flake8-tidy-imports.banned-api]

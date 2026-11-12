@@ -170,7 +170,8 @@ def test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow() -> None:
     )
 
 
-# Każda postać wstawki katalogu narzędzi, którą zna sprawdzenie (``sys.path`` odrzuca ruff ``TID251``).
+# Każda postać wstawki katalogu narzędzi, którą zna sprawdzenie (``sys.path`` odrzuca ruff ``TID251``, z próbkami w
+# ``tests/test_zakazy_ruff.py``).
 TOOLS_ON_PATH = {
     "monkeypatch-z-katalogu-windows": 'def f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend("C:\\\\repo\\\\tools")',
     "monkeypatch-z-nazwy-przez-nazwe": 'REPO = ROOT\nTOOLS = REPO / "tools"\nLIB = TOOLS / "lib"\ndef f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend(str(LIB))',
