@@ -41,6 +41,11 @@ Centrum czytać skrzynkę raportów taty w Gmailu przez IMAP, zmienia regułę
 prywatności dla widoku Raporty (wybrane pola zleceń i Wpisów raportu) i dodaje
 własne pliki Wpisania raportów, z których pamięć własnych wpisów rozstrzyga o
 wyniku procesu.
+[ADR 0029](0029-raport-wykonawcy-wazniejszy-od-intermax.md) poszerza pamięć
+własnych wpisów o Przeniesienia zleceń i Zlecenia dopisane z raportu.
+[ADR 0030](0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md) pozwala
+Centrum wysyłać Przypomnienia o raporcie przez SMTP Gmaila, dodaje plik stopki
+taty w `config/` i pokazuje w widoku Raporty pory wysłanych przypomnień.
 
 ## Decyzja
 

@@ -20,6 +20,13 @@ ADR:
 - [ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md): dochodzi drugi sekret na komputerze taty, hasło aplikacji
   Google do skrzynki raportów.
 
+Zdania tego ADR zmieniają później:
+[ADR 0029](0029-raport-wykonawcy-wazniejszy-od-intermax.md) (Wpisanie raportów przenosi i dopisuje zlecenia według
+Raportu wykonawcy, a pamięć własnych wpisów obejmuje te zmiany) i
+[ADR 0030](0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md) (Centrum startuje samo, wysyła Przypomnienia o
+raporcie przez SMTP tym samym hasłem aplikacji, ma plik stopki taty w `config/`, a widok Raporty pokazuje
+przypomnienia).
+
 ## Kontekst
 
 Wykonawcy wysyłają tacie Raporty wykonawcy mailem: w temacie `Raport` i data dnia zleceń, w treści numer zlecenia,

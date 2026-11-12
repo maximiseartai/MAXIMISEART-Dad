@@ -1,0 +1,59 @@
+{
+  "src/rozliczenia/centrum/dad_cases.py": {
+    "CaseKind": "74e09b4b980ec359",
+    "Case": "a497b7781dd77570",
+    "DadCases.add": "7194be746badb229",
+    "DadCases.withdraw": "5115725f36c370fb",
+    "DadCases.forget": "c9cc0cf4c5934181",
+    "DadCases.find": "b78af0b06702a6ac",
+    "DadCases.numbered": "8a4e5c3c4a027540",
+    "DadCases.rejected": "98992bda1b31120e",
+    "DadCases._tell": "1e8e84990e5bd0f8",
+    "DadCases.queued": "0c7a40e4a9360a4a",
+    "DadCases.state": "5d4e30fc59ec3346",
+    "DadCases.ask_box": "e3a1fd7c56d40546",
+    "DadCases._close": "3874ba3ff2074875",
+    "DadCases._change": "630dbba6cc7ddb19",
+    "_load": "b626cf70da80f9bc"
+  },
+  "src/rozliczenia/centrum/reports.py": {
+    "ReportHandle.__init__": "963c0eb0fb7f92be",
+    "ReportHandle.prepare": "eb6990ab663a8309",
+    "ReportHandle._ask": "e3ca0b191657c601",
+    "ReportHandle.send": "5dcb65f44dbd60ce",
+    "ReportHandle._rejected": "a4921ba0e5f38360",
+    "ReportHandle._delivered": "a75dc87bd31fd1dd",
+    "ReportHandle._done": "0e070b0ed9b7a49c",
+    "ReportHandle._show": "34463b95f4c705c0",
+    "Reports.__init__": "5cb3d34fabd0e2d5",
+    "Reports.handle": "5b8dc9ce041dbe39",
+    "Reports._heard": "85f65a53791e3c05",
+    "Reports._queue": "21b62582ddcce42c",
+    "Reports._pending": "933676e05a1deb0a",
+    "Reports._ask_box": "dd0928ff48ccdd20",
+    "Reports._state_of": "92c365569ed8ffdb"
+  },
+  "src/rozliczenia/centrum/dad_notes.py": {
+    "send": "bc5f5ece58a78ccf"
+  },
+  "src/rozliczenia/centrum/case_delivery.py": {
+    "case_outbox": "f61164f509cfb309",
+    "_CaseDelivery.delivered": "27f56c8a9d1170ba",
+    "_CaseDelivery.rejected": "6206265634e1591a",
+    "_case": "f6993dced108c94a"
+  },
+  "src/rozliczenia/centrum/outbox.py": {
+    "Outbox.resume": "2a67b7d7c8f5622c",
+    "Outbox.post": "7de488e97083c425",
+    "Outbox.wait_delivered": "1d38b4544e2ddfc4",
+    "Outbox._send_all": "6ce16b9dc87b40f0",
+    "Outbox._mark_delivered": "03180b6b20fe0ccc"
+  },
+  "src/rozliczenia/centrum/atomic_file.py": {
+    "StateFile": "71beaa3fba9d5cdd"
+  },
+  "src/rozliczenia/centrum/notifications.py": {
+    "Notifications.view": "c78f2de86c448cc1",
+    "Notifications._ask_box": "852b202ffb45ab22"
+  }
+}
