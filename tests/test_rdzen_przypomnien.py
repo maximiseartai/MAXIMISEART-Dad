@@ -219,6 +219,7 @@ def test_przypomnienie_za_inny_dzien_albo_do_innego_wykonawcy_nie_zamyka_pory() 
         pytest.param(_mail(JAN, "Raport 09.11.2026", "40000001 tak montaż"), True, id="pelny"),
         pytest.param(_mail(JAN, "Raport 09.11.2026", "dziś nic"), True, id="niepelny-bez-wpisu"),
         pytest.param(_mail(JAN_PRYWATNY, "raport 9.11.26", ""), True, id="drugi-adres-krotka-data"),
+        pytest.param(_mail(JAN, "Raport 09.11.2016", "40000001 tak montaż"), True, id="literowka-w-roku"),
         pytest.param(_mail(JAN, "Raport 9.11", "40000001 tak montaż"), False, id="nieczytelny-bez-roku"),
         pytest.param(_mail(JAN, "Raport z poniedziałku", "40000001 tak montaż"), False, id="nieczytelny-bez-daty"),
         pytest.param(_mail(JAN, "Re: Raport 09.11.2026", "40000001 tak montaż"), False, id="odpowiedz"),

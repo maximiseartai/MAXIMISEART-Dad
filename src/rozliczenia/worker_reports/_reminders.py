@@ -105,7 +105,7 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
 
     Przypomnienie za dzień X należy się Wykonawcy z listy adresów, który ma zlecenie dnia X, od ``FIRST_REMINDER`` dnia
     X+1, w porze (``reminder_pora``), w której tego dnia nie poszło jeszcze przypomnienie za X do żadnego jego adresu,
-    dopóki nie przyśle czytelnego Raportu wykonawcy za X (temat daje dzień X, treść bez znaczenia) z któregokolwiek
+    dopóki nie przyśle czytelnego Raportu wykonawcy za X (temat daje dzień X, także z literówką w roku, treść bez znaczenia) z któregokolwiek
     adresu z listy. Liczą się tylko dni otwarte okna (``Window.opens``): od dnia wdrożenia przypomnień, bez okresów z
     Plikiem zbiorczym. Każdy dzień ma osobne przypomnienie.
     """
@@ -118,7 +118,7 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
     reported = {
         (worker, day)
         for mail in inputs.mails
-        if isinstance(day := _subject.read(mail.subject), date) and (worker := logins.get(mail.sender)) is not None
+        if isinstance(day := _subject.read(mail.subject, mail.arrived.date()), date) and (worker := logins.get(mail.sender)) is not None
     }
     reminded = {
         (worker, sent.day)
