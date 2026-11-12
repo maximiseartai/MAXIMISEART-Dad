@@ -5,16 +5,16 @@
   "src/rozliczenia/worker_reports/_model.py": {
     "Window.of": "28961f03f61c2f9d",
     "Window.opens": "f15e07ab407b86b5",
-    "OwnEntries": "967c30375d75bd16",
+    "OwnEntries": "48594af020368135",
     "Kept": "417281fbc0c25393"
   },
   "src/rozliczenia/worker_reports/__init__.py": {
     "enter_reports": "55223769a59d9328"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "e1ceed19f48400a3",
+    "enter_from_mail": "9b351bbcc4ae5569",
     "_closed": "0dba7524418354f7",
-    "SavedState": "abe2b515b6132306"
+    "SavedState": "61cca2a0f5c0d9c4"
   },
   "src/rozliczenia/intermax_cells.py": {
     "write_cells": "841bb88ce41a92e2"
@@ -22,7 +22,7 @@
   "src/rozliczenia/centrum/report_entering_state.py": {
     "_TextFile": "9c433f212b12cb17",
     "FileReportState.of_work": "2b62d28982518644",
-    "FileReportState.load": "3e86157a9cb9f7ef",
+    "FileReportState.load": "4474522ddce52fc9",
     "FileReportState.save_memory": "f321e38c47f0d856",
     "FileReportState.save_result": "c054fa963d01bc4d",
     "FileReportState.shown": "fcf8146651a93b97",
