@@ -38,12 +38,10 @@ UnknownNumber
   Numeru 40000099 z Wpisu od jan.testowy z 08.11.2026 nie ma w uporządkowanych zleceniach INTERMAX, a Centrum go nie dopisało, bo Raport wykonawcy ma pomylony temat (co najmniej dwa zlecenia z innego dnia).
 UnknownNumber
   Numeru 40000099 z Wpisu od jan.testowy z 08.11.2026 nie ma w uporządkowanych zleceniach INTERMAX, a Centrum go nie dopisało, bo dzień 08.11.2026 nie jest jeszcze uporządkowany w INTERMAX.
-ForeignOrder
-  Zlecenie 40000001 z 08.11.2026 jest zleceniem ewa.probna, a Wpis przysłał jan.testowy, więc Centrum go nie wpisało.
-OtherDay
-  Zlecenie 40000001 od jan.testowy jest z 06.11.2026, 07.11.2026, a temat Raportu wykonawcy ma 08.11.2026, więc Centrum go nie wpisało.
 RepeatedOrder
   Zlecenie 40000001 jest dwa razy w dniu 08.11.2026 u jan.testowy, więc Centrum niczego do niego nie wpisało.
+RepeatedNumber
+  Zlecenie 40000001 jest w INTERMAX więcej niż raz: u ewa.probna z 06.11.2026, u jan.testowy z 07.11.2026. Centrum nie wie, którego z nich dotyczy Wpis od jan.testowy z 08.11.2026, więc go nie wpisało i żadnego z nich nie przeniosło.
 RefusedMove
   Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. Centrum go nie przeniosło i nie wpisało, bo dzień 08.11.2026 nie jest jeszcze uporządkowany w INTERMAX.
 RefusedMove

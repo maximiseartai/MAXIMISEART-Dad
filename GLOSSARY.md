@@ -287,8 +287,9 @@ zlecenie dostaje dzień z tematu albo nadawcę raportu i trafia pod zlecenia teg
 Wykonawcy w tym dniu, w jego segmencie albo w nowym segmencie na jego miejscu
 w kolejności alfabetycznej. Tak przechodzi zlecenie, które Wykonawca przejął od
 innego, albo wykonał innego dnia, niż mówi Rejestr. Przenosi tylko do Dnia
-uporządkowanego i nie przenosi zlecenia do okresu ani z okresu, który ma Plik
-zbiorczy; wtedy zostaje problem dla taty.
+uporządkowanego, nie przenosi zlecenia do okresu ani z okresu, który ma Plik
+zbiorczy, i nie przenosi zlecenia, którego numer Rejestr ma w otwartych dniach
+więcej niż raz; wtedy zostaje problem dla taty.
 _Avoid_: korekta INTERMAX, poprawka daty
 
 ## Zlecenie dopisane z raportu

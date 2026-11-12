@@ -1426,6 +1426,80 @@ def test_raport_za_dzien_okresu_z_plikiem_zbiorczym_nie_przenosi_zlecenia_a_prob
     [problem] = _worker(_view(centrum), "jan.testowy", "2026-11-10")["problems"]
     assert problem["number"] == "40000002"
     assert "okres z dniem 09.11.2026 ma już Plik zbiorczy" in problem["reason"]
+def _tata_dates(register: Path, number: int, worker: str, when: datetime) -> None:
+    """Tata zmienia w Excelu ``DATA GODZ. POCZ.`` zlecenia ``number`` Wykonawcy ``worker`` na ``when`` i zapisuje
+    INTERMAX (bez Excela na dysku); wiersz zostaje na swoim miejscu."""
+
+    book = load_workbook(register)
+    sheet = book[ORDER_SHEET]
+    [row] = [
+        cell.row for cell in sheet[get_column_letter(NUMBER)] if cell.value == number and sheet.cell(cell.row, WORKER).value == worker
+    ]
+    sheet.cell(row, DATE).value = when
+    book.save(register)
+
+
+def _places(register: Path, number: int) -> list[tuple[object, ...]]:
+    """``DATA GODZ. POCZ.``, ``WYKONAWCA``, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` każdego wiersza zlecenia
+    ``number``, po kolei."""
+
+    sheet = load_workbook(register)[ORDER_SHEET]
+    return [
+        tuple(sheet.cell(cell.row, column).value for column in (DATE, WORKER, SUCCESSFUL, COMPLETED))
+        for cell in sheet[get_column_letter(NUMBER)]
+        if cell.value == number
+    ]
+
+
+def test_numer_w_dwoch_miejscach_nie_przenosi_sie_a_stary_mail_nie_cofa_recznej_zmiany_dnia(tmp_path: Path) -> None:
+    """Przegląd #1367 r2 Ważne 1 przez HTTP API: INTERMAX ma 40000001 u Anny 7.11 i u Jana 8.11. Kliknięcie wpisuje Raport
+    Jana za 8.11 do jego zlecenia, a tata zmienia jego dzień na 9.11 10:00. Potem Anna przysyła świeższy Raport za 8.11 z
+    tym numerem. Numer w dwóch miejscach nie przenosi żadnego zlecenia w żadnym kliknięciu, więc stary mail Jana nie
+    cofa zmiany taty, a tata widzi w okienku dnia z tematu każdego niewpisanego maila oba miejsca numeru."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(7, 9, "anna.kowalska", 40000001),
+            _order(7, 10, "jan.testowy", 40000009),
+            _order(8, 9, "anna.kowalska", 40000003),
+            _order(8, 10, "jan.testowy", 40000001),
+            _order(9, 9, "anna.kowalska", 40000004),
+            _order(9, 10, "jan.testowy", 40000005),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 7, 18), [])
+    jan_mail = report(JAN, "Raport 08.11.2026", "40000001 tak wymiana", at=datetime(2026, 11, 9, 17))
+    anna_mail = report(ANNA, "Raport 08.11.2026", "40000001 tak montaż", at=datetime(2026, 11, 9, 18))
+
+    first = _click_at(centrum, ENTERING_NOW, [jan_mail])
+    _tata_dates(centrum.register, 40000001, "jan.testowy", datetime(2026, 11, 9, 10))
+    second = _click_at(centrum, ENTERING_NOW, [jan_mail])
+    third = _click_at(centrum, ENTERING_NOW, [jan_mail, anna_mail])
+    fourth = _click_at(centrum, ENTERING_NOW, [jan_mail, anna_mail])
+
+    assert _entering(centrum, first)["changes"] != []
+    assert [_entering(centrum, view)["moves"] for view in (first, second, third, fourth)] == [[], [], [], []]
+    assert _places(centrum.register, 40000001) == [
+        (datetime(2026, 11, 7, 9), "anna.kowalska", None, None),
+        (datetime(2026, 11, 9, 10), "jan.testowy", "tak", "wymiana"),
+    ]
+    places = [{"day": "2026-11-07", "worker": "anna.kowalska"}, {"day": "2026-11-09", "worker": "jan.testowy"}]
+    assert [
+        (problem["kind"], problem["worker"], problem["day"], problem["places"]) for problem in _entering(centrum, fourth)["problems"]
+    ] == [
+        ("repeated_number", "anna.kowalska", "2026-11-08", places),
+        ("repeated_number", "jan.testowy", "2026-11-08", places),
+    ]
+    [problem] = _worker(_view(centrum), "anna.kowalska", "2026-11-08")["problems"]
+    assert problem["reason"] == (
+        "Zlecenie 40000001 jest w INTERMAX więcej niż raz: u anna.kowalska z 07.11.2026, u jan.testowy z 09.11.2026. "
+        "Centrum nie wie, którego z nich dotyczy Wpis od anna.kowalska z 08.11.2026, więc go nie wpisało i żadnego z nich "
+        "nie przeniosło."
+    )
+
+
 def test_reczna_zmiana_wykonawcy_po_wpisie_zostaje_przy_starym_mailu_a_swiezszy_mail_przenosi(tmp_path: Path) -> None:
     """ADR 0029 „Ręczna zmiana dalej wygrywa”, przegląd #1358 r1: kliknięcie wpisało Wpis Jana do jego zlecenia, a tata
     dał potem zlecenie Annie w Excelu. Następne kliknięcie z tym samym mailem zostawia zlecenie u Anny bez zapisu
@@ -2423,7 +2497,7 @@ def test_praca_przypomnien_bez_dnia_wdrozenia_w_nocy_i_przed_8_dnia_nastepnego_n
 
     centrum.rhythm.tick()
     assert mailbox.days == [], "bez dnia wdrożenia skrzynka nie jest czytana"
-    assert _reminder_result(centrum)["failure"] == "bez-wdrozenia"
+    assert not (centrum.tool.config / REMINDERS_RESULT).exists(), "bez dnia wdrożenia praca nie pisze do config"
     (centrum.tool.config / REMINDERS_ROLLOUT).write_text("2026-11-09\n", encoding="utf-8")
     for moment in (datetime(2026, 11, 9, 21, 1), datetime(2026, 11, 9, 21, 2), datetime(2026, 11, 9, 23, 0), datetime(2026, 11, 10, 7, 59)):
         centrum.moment.append(moment)

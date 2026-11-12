@@ -285,11 +285,14 @@ Wpisy with another day) only decides which order the Wpis reaches, and a Raport 
 with a Plik zbiorczy reaches an order of an open day only that way, so both are `NowyMail` too. Dad's change of
 `WYKONAWCA` or of the day (the memory of the order `OwnMove`, found by `_model.memories_of`, and the rule
 `_model.may_move`, whose transition table `tests/test_rdzen_raportow.py` checks as a property) only leaves an older
-Wpis in force, which `NowyMail` also covers. A Zlecenie dopisane z raportu (#1354) is, for the one cell, the empty
-cell that `Zapis` fills with the Wpis and remembers as the tool's own entry (`_cells.with_added`); Dad deleting the
-added row leaves no value of his that a write could overwrite, and the click after it adds the row again only for a
-fresher mail (`_model.may_move` for every memory of the number), which the model's write into an empty cell
-over-approximates. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
+Wpis in force, which `NowyMail` also covers. A number the open days hold in several orders moves none of them and
+reaches only the sender's one order in the day of the subject (`_matching.Board`), otherwise a problem, which also
+only leaves an older Wpis in force; after Dad merges two orders of a number into one, the own entries of both stay
+under their keys (`_moves._following`), so the cell counts as Dad's value, as after `TataZmienia`. A Zlecenie dopisane
+z raportu (#1354) is, for the one cell, the empty cell that `Zapis` fills with the Wpis and remembers as the tool's own
+entry (`_cells.with_added`); Dad deleting the added row leaves no value of his that a write could overwrite, and the
+click after it adds the row again only for a fresher mail (`_model.may_move` for every memory of the number), which
+the model's write into an empty cell over-approximates. The rollout day (it only moves the start of the window later, which leaves cells out), the reading of the
 mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).

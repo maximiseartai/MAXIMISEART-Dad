@@ -13,15 +13,14 @@ from . import (
     AddBar,
     Added,
     ConflictingVerdicts,
-    ForeignOrder,
     HandedOver,
     ManualDifference,
     MissingVerdict,
     MoveBar,
     MovedFrom,
     MovedTo,
-    OtherDay,
     RefusedMove,
+    RepeatedNumber,
     RepeatedOrder,
     ReportEntry,
     ReportNote,
@@ -64,21 +63,16 @@ def reason(problem: ReportProblem) -> str:
                 f"Numeru {number} z Wpisu od {worker} z {_day(day)} nie ma w uporządkowanych zleceniach INTERMAX, a "
                 f"Centrum go nie dopisało, bo {_add_bar(bar, day)}."
             )
-        case ForeignOrder(worker=worker, day=day, number=number, owner=owner):
-            return (
-                f"Zlecenie {number} z {_day(day)} jest zleceniem {owner}, a Wpis przysłał {worker}, więc Centrum go "
-                "nie wpisało."
-            )
-        case OtherDay(worker=worker, day=day, number=number, order_days=order_days):
-            days = ", ".join(_day(order_day) for order_day in order_days)
-            return (
-                f"Zlecenie {number} od {worker} jest z {days}, a temat Raportu wykonawcy ma {_day(day)}, więc Centrum "
-                "go nie wpisało."
-            )
         case RepeatedOrder(worker=worker, day=day, number=number):
             return (
                 f"Zlecenie {number} jest dwa razy w dniu {_day(day)} u {worker}, więc Centrum niczego do niego nie "
                 "wpisało."
+            )
+        case RepeatedNumber(worker=worker, day=day, number=number, places=places):
+            where = ", ".join(f"u {owner} z {_day(order_day)}" for order_day, owner in places)
+            return (
+                f"Zlecenie {number} jest w INTERMAX więcej niż raz: {where}. Centrum nie wie, którego z nich dotyczy "
+                f"Wpis od {worker} z {_day(day)}, więc go nie wpisało i żadnego z nich nie przeniosło."
             )
         case RefusedMove(worker=worker, day=day, number=number, order_day=order_day, bar=bar):
             return (

@@ -11,8 +11,8 @@ ma ``ADRES``.
 
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 
@@ -68,34 +68,34 @@ def moved(
     pamięci (``origin_name`` zlecenia, które zaczęło się u nadawcy), a bez żadnego jego login.
 
     Pamięć zlecenia (``memories_of``): najpierw obserwacja, czy tata zmienił Wykonawcę albo dzień po Przeniesieniu
-    Centrum (``overridden``, zostaje). Wpis przyjęty w miejscu zlecenia z INTERMAX zakłada pamięć, gdy jej nie było
-    (Centrum zostawiło zlecenie tam), a inaczej tylko podnosi ``since``: miejsce Centrum nie idzie za ręczną zmianą taty.
-    Przeniesienie zastępuje pamięć zlecenia pamięcią pod dniem docelowym, z miejscem u nadawcy i chwilą jego maila, z
-    miejscem sprzed pierwszego Przeniesienia z pamięci, gdy zlecenie stało tam, gdzie je zostawiło Centrum, a inaczej z
-    miejsca sprzed tego Przeniesienia, i z ``added``, gdy któraś pamięć zlecenia go miała. Pamięć zlecenia zostaje,
-    dopóki jej dzień jest otwarty. Własne wpisy idą za wierszem (``_following``).
+    Centrum (``overridden``, zostaje, ``_observed``). Wpis przyjęty w miejscu zlecenia z INTERMAX zakłada pamięć, gdy jej
+    nie było (Centrum zostawiło zlecenie tam), a inaczej tylko podnosi ``since``, także pamięci założonej w tym kliknięciu
+    Wpisem do drugiego zlecenia numeru z tego dnia: miejsce Centrum nie idzie za ręczną zmianą taty, a ``since`` nie
+    maleje. Przeniesienie, które dotyczy tylko jedynego zlecenia numeru (``_matching.Board``), zastępuje całą
+    pamięć numeru pamięcią pod dniem docelowym, z miejscem u nadawcy i chwilą jego maila, z miejscem sprzed pierwszego
+    Przeniesienia z pamięci, gdy zlecenie stało tam, gdzie je zostawiło Centrum, a inaczej z miejsca sprzed tego
+    Przeniesienia, i z ``added``, gdy któraś pamięć zlecenia go miała. Pamięć zlecenia zostaje, dopóki jej dzień jest
+    otwarty. Własne wpisy idą za wierszem (``_following``).
 
     Zlecenie dopisane z raportu (``additions``) dostaje pisownię ``WYKONAWCA`` jak przeniesione i pamięć z miejscem
     dopisania jako miejscem sprzed Przeniesień, chwilą maila i ``added``, która zastępuje każdą pamięć jego numeru, bo
     INTERMAX nie ma go nigdzie.
     """
 
-    rows = _rows(orders)
-    places = frozenset(rows)
+    counted = Counter(order.key.number for order in orders)
     standing = tuple(move for move in memory.moves if window.opens(move.day))
-    observed = tuple(_observed(move, standing, rows) for move in standing)
+    observed = tuple(_observed(move, orders) for move in standing)
     remembered = {(move.number, move.day): move for move in observed}
     keys: dict[OrderRow, OrderKey] = {}
     moves: list[OrderMove] = []
     for order, worker, day, arrived in accepted:
         number = order.key.number
-        earlier = memories_of(observed, order.key, places)
+        earlier = memories_of(remembered.values(), order.key, alone=counted[number] == 1)
         if (worker, day) == (order.key.worker, order.key.day):
             if not earlier:
                 remembered[number, day] = OwnMove(number, day, worker, day, worker, order.worker_name, arrived)
             for found in earlier:
-                if (now := remembered.get((found.number, found.day))) is not None:
-                    remembered[found.number, found.day] = replace(now, since=max(now.since, arrived))
+                remembered[found.number, found.day] = replace(found, since=max(found.since, arrived))
             continue
         keys[order.row] = OrderKey(number, day, worker)
         moves.append(OrderMove(order.row, day, _name(worker, day, orders, memory.moves)))
@@ -141,27 +141,13 @@ def _rows(orders: Iterable[RegisterOrder]) -> dict[tuple[OrderNumber, date], lis
     return dict(found)
 
 
-def _observed(
-    move: OwnMove, memory: Iterable[OwnMove], rows: Mapping[tuple[OrderNumber, date], Sequence[OrderKey]]
-) -> OwnMove:
-    """Pamięć zlecenia po obserwacji kliknięcia: gdy pamięć dotyczy jednego zlecenia w INTERMAX (``memories_of``), a
-    tata zmienił jego Wykonawcę albo dzień po Przeniesieniu Centrum, pamięć to zapamiętuje (``overridden``); przy kilku
-    zleceniach albo żadnym czeka."""
+def _observed(move: OwnMove, orders: Iterable[RegisterOrder]) -> OwnMove:
+    """Pamięć zlecenia po obserwacji kliknięcia: gdy Przeniesienie Centrum stoi w pamięci, a żadne zlecenie jej numeru
+    nie stoi tam, gdzie je zostawiło Centrum (``OwnMove.left``), tata zmienił Wykonawcę albo dzień tego zlecenia, i
+    pamięć to zapamiętuje (``overridden``), także gdy numer ma kilka zleceń albo żadnego."""
 
-    memory = tuple(memory)
-    places: Collection[tuple[OrderNumber, date]] = rows.keys()
-    current = [
-        key
-        for (number, _), found in rows.items()
-        if number == move.number
-        for key in found
-        if move in memories_of(memory, key, places)
-    ]
-    match current:
-        case [one] if move.overridden_at(one.worker, one.day):
-            return replace(move, overridden=True)
-        case _:
-            return move
+    places = [(order.key.worker, order.key.day) for order in orders if order.key.number == move.number]
+    return replace(move, overridden=True) if move.left(places) else move
 
 
 def _following(
@@ -173,24 +159,33 @@ def _following(
     Centrum przeniosło w tym kliknięciu, idą na jego nowy klucz (``renamed``). Wpisy innego zlecenia (także po ręcznej
     zmianie ``WYKONAWCA`` albo dnia, która nie rusza komórek) idą do jedynego wiersza ich numeru z ich dnia, a gdy w tym
     dniu nie ma już tego numeru, do jedynego wiersza tego numeru w dniach otwartych, i tylko gdy pamięć ma wpisy tego
-    numeru i dnia jednego Wykonawcy. Inaczej zostają pod swoim kluczem, a ``_cells.reconcile`` zatrzyma tylko te, których
-    komórka dalej ma zapamiętaną wartość."""
+    numeru i dnia jednego Wykonawcy. Wpisy jednego klucza przechodzą tylko na klucz, na który nie przechodzą wpisy
+    innego klucza (także te, które pod nim zostają): tata mógł scalić dwa zlecenia numeru w jedno, a wtedy Excel nie
+    mówi, czyje wartości stoją w komórkach. Inaczej zostają pod swoim kluczem, a ``_cells.reconcile`` zatrzyma tylko te,
+    których komórka dalej ma zapamiętaną wartość."""
 
     entries = tuple(entries)
     workers: defaultdict[tuple[OrderNumber, date], set[Login]] = defaultdict(set)
     for entry in entries:
         workers[entry.key.number, entry.key.day].add(entry.key.worker)
 
-    def key(entry: OwnEntry) -> OrderKey:
-        if entry.key in renamed:
-            return renamed[entry.key]
-        place = (entry.key.number, entry.key.day)
-        found = rows.get(place) or [key for (number, _), keys in rows.items() if number == entry.key.number for key in keys]
+    def target(key: OrderKey) -> OrderKey:
+        if key in renamed:
+            return renamed[key]
+        place = (key.number, key.day)
+        found = rows.get(place) or [other for (number, _), keys in rows.items() if number == key.number for other in keys]
         match found:
             case [current] if len(workers[place]) == 1:
                 return current
             case _:
-                return entry.key
+                return key
+
+    proposed = {entry.key: target(entry.key) for entry in entries}
+    landing = Counter(proposed.values())
+
+    def key(entry: OwnEntry) -> OrderKey:
+        found = proposed[entry.key]
+        return found if landing[found] == 1 else entry.key
 
     return frozenset(replace(entry, key=key(entry)) for entry in entries)
 
@@ -214,11 +209,12 @@ def _notes(moves: Iterable[OwnMove], orders: Sequence[RegisterOrder]) -> tuple[R
 
     moves = tuple(moves)
     standing = {order.key for order in orders}
-    places = frozenset((order.key.number, order.key.day) for order in orders)
+    counted = Counter(order.key.number for order in orders)
     notes: list[ReportNote] = [
         Added(order.key.day, order.key.worker, order.key.number)
         for order in orders
-        if not order.addressed and any(move.added for move in memories_of(moves, order.key, places))
+        if not order.addressed
+        and any(move.added for move in memories_of(moves, order.key, alone=counted[order.key.number] == 1))
     ]
     for move in moves:
         if OrderKey(move.number, move.day, move.worker) not in standing:

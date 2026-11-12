@@ -42,7 +42,6 @@ from rozliczenia.report_entering import ClickResult, DecisionsUnreadable, SavedS
 from rozliczenia.tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_RESULT, REPORT_ENTERING_STATE
 from rozliczenia.worker_reports import (
     ConflictingVerdicts,
-    ForeignOrder,
     Kept,
     Login,
     ManualDifference,
@@ -50,11 +49,11 @@ from rozliczenia.worker_reports import (
     OrderDetail,
     OrderKey,
     OrderNumber,
-    OtherDay,
     RefusedMove,
     OwnEntries,
     OwnEntry,
     OwnMove,
+    RepeatedNumber,
     RepeatedOrder,
     ReportNote,
     ReportProblem,
@@ -502,7 +501,7 @@ def _problem(problem: ReportProblem) -> _Problem:
             return _Problem(day=arrived.date(), worker=worker, number=None, reason=said, sender=None, difference=None)
         case UnknownSender(sender=sender, day=day):
             return _Problem(day=day, worker=None, number=None, reason=said, sender=sender.shown(), difference=None)
-        case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | ForeignOrder() | OtherDay() | RepeatedOrder():
+        case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber():
             return _Problem(
                 day=problem.day, worker=problem.worker, number=problem.number, reason=said, sender=None, difference=None
             )

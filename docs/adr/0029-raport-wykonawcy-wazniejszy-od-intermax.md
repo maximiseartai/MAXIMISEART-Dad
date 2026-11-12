@@ -44,6 +44,10 @@ wklejeniem. Tata poprawia wtedy INTERMAX ręcznie według maila, bo mail mówi, 
   problem dla taty.
 - **Ręczna zmiana dalej wygrywa.** Wpisanie raportów zmienia tylko to, co jest puste albo co samo zmieniło, a od tamtej
   pory nikt tego nie ruszył. Gdy tata przeniesie zlecenie z powrotem, Centrum go nie przenosi drugi raz.
+- **Numer w kilku zleceniach się nie przenosi.** Gdy Rejestr zleceń ma numer z Wpisu w otwartych dniach więcej niż raz,
+  Wpisanie raportów nie przenosi żadnego z tych zleceń: Wpis trafia tylko do jedynego zlecenia nadawcy w dniu z tematu,
+  a inaczej zostaje problem z dniem i Wykonawcą każdego z nich. Excel nie mówi, które z tych zleceń tata przeniósł, więc
+  Centrum nie wie, czyja jest pamięć jego zmian, a bez tej granicy stary mail cofał ręczną zmianę taty (przegląd #1367).
 - **Informacja, nie Zgłoszenie.** Każde Przeniesienie, Zlecenie dopisane z raportu i temat, który przegrał z INTERMAX,
   widać w okienku dnia Wykonawcy na mapie cieplnej widoku Raporty; Przeniesienie po obu stronach (skąd i dokąd).
 

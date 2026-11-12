@@ -8,15 +8,14 @@ from datetime import date, datetime
 
 from . import _matching
 from ._model import (
-    ForeignOrder,
     Login,
     MailId,
     OrderNumber,
-    OtherDay,
     ReadReport,
     ReadUnreadable,
     RefusedMove,
     RegisterOrder,
+    RepeatedNumber,
     ReportProblem,
     UnknownNumber,
     UnreadableSubject,
@@ -40,7 +39,7 @@ def standing(
     maila do zleceń tego Wykonawcy z tego dnia, a takich Wpisów jest co najmniej jeden. Reguła porównuje tylko numery:
     nie sprawdza ``tak``/``nie`` ani opisu i nie wymaga, żeby poprawiony mail powtórzył resztę wcześniejszego. Kolejny
     raport bez tych numerów problemu nie usuwa, bo nieznany numer może być zleceniem, którego brak w INTERMAX.
-    Poprawiony mail usuwa nieznany numer i cudze zlecenie z dnia z tematu, inną datę z dniem zlecenia (dzień
+    Poprawiony mail usuwa nieznany numer z dnia z tematu, numer z kilkoma zleceniami z dniem któregoś z nich (dzień
     poprawki to dzień zlecenia), Przeniesienie na dzień, do którego nie wolno, tak samo z dniem zlecenia i nieczytelny
     temat (``unreadable``: odczyty maili z nieczytelnym tematem z numerami ich Wpisów). Nieznany numer znika też, gdy
     ten numer dopisał w tym kliknięciu późniejszy mail (od każdego Wykonawcy), bo zlecenie już jest. Ostrzeżenie
@@ -66,7 +65,7 @@ def standing(
     found: set[ReportProblem] = set()
     for problem in problems:
         match problem:
-            case UnknownNumber() | ForeignOrder() | OtherDay() | RefusedMove():
+            case UnknownNumber() | RepeatedNumber() | RefusedMove():
                 continue
             case _:
                 found.add(problem)
@@ -82,10 +81,10 @@ def standing(
                     report.mail,
                 ):
                     continue
-                case UnknownNumber(day=day) | ForeignOrder(day=day):
+                case UnknownNumber(day=day):
                     on = {day}
-                case OtherDay(order_days=order_days):
-                    on = set(order_days)
+                case RepeatedNumber(places=places):
+                    on = {day for day, _ in places}
                 case RefusedMove(order_day=order_day):
                     on = {order_day}
                 case _:

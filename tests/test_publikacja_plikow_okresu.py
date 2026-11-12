@@ -14,11 +14,12 @@ import importlib.util
 import os
 import stat
 import sys
-import threading
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+from tests.fixtures.linie_watkow import started_threads
 
 # Harmonogramy i różne stany każdego zakresu zmierzone na c5d8bb3d, a `dwa-uruchomienia` ponownie po Nienadpisywaniu
 # jednym krokiem ``os.lstat`` (``file_state.path_taken``), te same na Pythonie 3.11, 3.12 i 3.14. Drzewo
@@ -86,7 +87,7 @@ def test_publikacja_plikow_okresu_zachowuje_nienadpisywanie_i_razem_albo_zaden_w
     assert interleaved, "w żadnym harmonogramie drugie Uruchomienie procesu nie ruszyło przed końcem pierwszego"
 
 
-def test_sprawdzenie_publikacji_prowadzi_uruchomienia_bez_watkow_systemu(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sprawdzenie_publikacji_prowadzi_uruchomienia_bez_watkow_systemu() -> None:
     """Czas sprawdzenia nie zależy od tego, jak zajęte są procesory runnera.
 
     Wątek systemu na każde Uruchomienie procesu w każdym harmonogramie oddawał sterowanie przez jądro przy każdym
@@ -95,20 +96,10 @@ def test_sprawdzenie_publikacji_prowadzi_uruchomienia_bez_watkow_systemu(monkeyp
     """
 
     explorer = _load_explorer()
-    started: list[str] = []
-    start = threading.Thread.start
-    checking = threading.current_thread()
 
-    def counted(thread: threading.Thread) -> None:
-        # Wątki tła zostawione przez wcześniejsze testy w tym workerze startują swoje wątki same; liczy się tylko to,
-        # co uruchomiło sprawdzenie.
-        if threading.current_thread() is checking:
-            started.append(thread.name)
-        start(thread)
-
-    monkeypatch.setattr(threading.Thread, "start", counted)
-
-    report = explorer.explore(explorer.SCOPES["jedno-uruchomienie"])
+    # Wątki tła zostawione przez wcześniejsze testy w tym workerze należą do ich linii, nie do linii sprawdzenia.
+    with started_threads() as started:
+        report = explorer.explore(explorer.SCOPES["jedno-uruchomienie"])
 
     assert report.undisturbed_successes
     assert started == []

@@ -1,6 +1,7 @@
-"""Dopasowanie Wpisów raportu do zleceń (ADR 0029): zlecenie nadawcy z dnia z tematu, jedyne zlecenie tego numeru u
-innego Wykonawcy w tym dniu (Przeniesienie zlecenia), jedyne zlecenie tego numeru z innego dnia (Przeniesienie na
-dzień z tematu albo pomylony temat) albo, bez zlecenia tego numeru, Zlecenie dopisane z raportu, a przy kilku Wpisach
+"""Dopasowanie Wpisów raportu do zleceń (ADR 0029): jedyne zlecenie numeru w dniach otwartych u nadawcy w dniu z tematu,
+u innego Wykonawcy w tym dniu (Przeniesienie zlecenia) albo z innego dnia (Przeniesienie na dzień z tematu albo pomylony
+temat); numer w kilku zleceniach tylko do zlecenia nadawcy z dnia z tematu, bez Przeniesienia; numer, którego INTERMAX
+nie ma, jako Zlecenie dopisane z raportu; przy kilku Wpisach
 najpóźniejszy mail."""
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from ._model import (
     ADDED_DIGITS,
     AddBar,
     ConflictingVerdicts,
-    ForeignOrder,
     Login,
     MailId,
     MissingVerdict,
@@ -23,11 +23,11 @@ from ._model import (
     OrderedDay,
     OrderKey,
     OrderNumber,
-    OtherDay,
     OwnEntries,
     ReadReport,
     RefusedMove,
     RegisterOrder,
+    RepeatedNumber,
     RepeatedOrder,
     ReportEntry,
     ReportProblem,
@@ -112,10 +112,12 @@ class Board:
     numery Surowych zleceń (``pasted``).
 
     Dzień i Wykonawca sprzed Przeniesień Centrum sprawiają, że Wpis liczy się do progu pomylonego tematu tak samo przed
-    Przeniesieniem i po nim, więc kolejne kliknięcia dają to samo co jedno. Czy Wpis może zmienić dzień albo Wykonawcę
-    zlecenia, mówi reguła ``may_move`` dla pamięci zlecenia (``_movable``), a czy może dopisać numer, którego INTERMAX
-    już nie ma, ta sama reguła dla każdej pamięci tego numeru (``_addable``); gdy nie może, nic się nie dzieje, bez
-    problemu (ADR 0029 „Ręczna zmiana dalej wygrywa”).
+    Przeniesieniem i po nim, więc kolejne kliknięcia dają to samo co jedno. Miejsce zmienia tylko jedyne zlecenie
+    numeru w dniach otwartych, a czy Wpis może zmienić jego dzień albo Wykonawcę, mówi reguła ``may_move`` dla każdej
+    pamięci tego numeru (``_movable``), a czy może dopisać numer, którego INTERMAX już nie ma, ta sama reguła dla każdej
+    pamięci tego numeru (``_addable``); gdy nie może, nic się nie dzieje, bez problemu (ADR 0029 „Ręczna zmiana dalej
+    wygrywa”). Numer w kilku zleceniach dni otwartych nie zmienia miejsca żadnego z nich (``_repeated``), bo Excel nie
+    mówi, które z nich tata przeniósł, więc pamięć numeru nie wie, do którego należy.
     """
 
     def __init__(
@@ -130,7 +132,6 @@ class Board:
         self._memory = tuple(move for move in memory.moves if window.opens(move.day))
         self._pasted = pasted
         self._orders = tuple(orders)
-        self._places = frozenset((order.key.number, order.key.day) for order in orders)
         standing = {OrderKey(move.number, move.day, move.worker): move for move in self._memory}
         self._numbered: defaultdict[OrderNumber, list[_Placed]] = defaultdict(list)
         for order in orders:
@@ -150,12 +151,14 @@ class Board:
         ``reports`` idą w kolejności przyjścia, więc późniejszy mail zastępuje Wpisy wcześniejszego, także mail innego
         Wykonawcy i mail z innym dniem z tematu. Wpis każdego numeru Raportu wykonawcy z dniem z tematu D jest zgodny,
         gdy zlecenie tego numeru stoi w dniu D, niezgodny, gdy stoi tylko w innych dniach (otwartych albo zamkniętych z
-        ``closed``), a nieznany, gdy nie ma go nigdzie (``UnknownNumber``). Zgodny Wpis trafia do zlecenia nadawcy, a
-        bez niego do jedynego zlecenia innego Wykonawcy z dnia D (Przeniesienie zlecenia), jak w ``_same_day``. Niezgodny
-        Wpis trafia do jedynego zlecenia z innego dnia (najpierw zlecenia nadawcy): jeden niezgodny Wpis w raporcie
-        przenosi je na dzień D, a co najmniej ``MISTAKEN_SUBJECT`` to pomylony temat i zlecenie zostaje w swoim dniu, z
-        informacją ``SubjectLost`` (``_other_day``). Wykonawca zmienia się na nadawcę zawsze. Raport z dniem D w okresie
-        z Plikiem zbiorczym daje tylko niezgodne Wpisy: pomylony temat wpisuje się do zleceń z ich dnia, a jeden Wpis
+        ``closed``), a nieznany, gdy nie ma go nigdzie (``_unknown``). Numer z jednym zleceniem w dniach otwartych:
+        zgodny Wpis trafia do niego, u nadawcy albo u innego Wykonawcy z dnia D (Przeniesienie zlecenia, ``_claim``),
+        a niezgodny Wpis trafia do niego w innym dniu: jeden niezgodny Wpis w raporcie przenosi je na dzień D, a co
+        najmniej ``MISTAKEN_SUBJECT`` to pomylony temat i zlecenie zostaje w swoim dniu, z informacją ``SubjectLost``
+        (``_other_day``); Wykonawca zmienia się na nadawcę zawsze. Numer z kilkoma zleceniami w dniach otwartych trafia
+        tylko do jedynego zlecenia nadawcy w dniu D, bez Przeniesienia, a inaczej daje ``RepeatedOrder`` albo
+        ``RepeatedNumber`` (``_repeated``); liczy się do progu jak każdy niezgodny Wpis. Raport z dniem D w okresie z
+        Plikiem zbiorczym daje tylko niezgodne Wpisy: pomylony temat wpisuje się do zleceń z ich dnia, a jeden Wpis
         to ``RefusedMove``. Zwycięski Wpis bez ``tak`` ani ``nie`` to ``MissingVerdict`` zamiast celu, bo nie wiadomo,
         co Wykonawca miał na myśli, a zwycięski mail z Wpisami numeru o przeciwnym zamiarze (``_entries.entries``) to
         ``ConflictingVerdicts``; w obu zlecenie zostaje, gdzie stoi.
@@ -176,13 +179,16 @@ class Board:
             other_day = [number for number in said if self._other_day_number(number, report.day)]
             mistaken = len(other_day) >= MISTAKEN_SUBJECT
             for number, written in said.items():
-                found: _Claim | _New | list[ReportProblem]
-                if number in other_day:
-                    found = self._other_day(report, number, mistaken)
-                elif not self._window.opens(report.day):
+                placed = self._numbered.get(number, [])
+                if number not in other_day and not self._window.opens(report.day):
                     continue
-                elif self._numbered.get(number):
-                    found = self._same_day(report, number)
+                found: _Claim | _New | list[ReportProblem]
+                if len(placed) > 1:
+                    found = self._repeated(report, number, placed)
+                elif number in other_day:
+                    found = self._other_day(report, number, placed, mistaken)
+                elif placed:
+                    found = self._claim(placed[0], report, report.day, None)
                 else:
                     found = self._unknown(report, number, mistaken)
                 if isinstance(found, _Claim):
@@ -235,26 +241,6 @@ class Board:
             return False
         return bool(placed) or bool(self._closed.get(number))
 
-    def _same_day(self, report: ReadReport, number: OrderNumber) -> _Claim | list[ReportProblem]:
-        """Zgodny Wpis z dniem otwartym: zlecenie nadawcy z tego dnia (dwa to ``RepeatedOrder``), a bez niego jedyne
-        zlecenie innego Wykonawcy z tego dnia, chyba że nadawca ma ten numer w innym dniu (``OtherDay``); kilka zleceń
-        innych Wykonawców to ``ForeignOrder`` z każdym."""
-
-        placed = self._numbered.get(number, [])
-        same_day = [found for found in placed if found.day == report.day]
-        own = [found for found in same_day if found.worker == report.worker]
-        if len(own) > 1:
-            return [RepeatedOrder(report.worker, report.day, number)]
-        if own:
-            return self._claim(own[0], report, report.day, None)
-        own_days = sorted({found.day for found in placed if found.worker == report.worker})
-        if own_days:
-            return [OtherDay(report.worker, report.day, number, tuple(own_days))]
-        if len(same_day) == 1:
-            return self._claim(same_day[0], report, report.day, None)
-        owners = sorted({found.worker for found in same_day})
-        return [ForeignOrder(report.worker, report.day, number, owner) for owner in owners]
-
     def _unknown(self, report: ReadReport, number: OrderNumber, mistaken: bool) -> _New | list[ReportProblem]:
         """Wpis numeru, którego nie ma w żadnym odczytanym dniu, z Raportu wykonawcy z dniem otwartym: Zlecenie dopisane
         z raportu w arkuszu ``_sheet``, a gdy nie wolno, ``UnknownNumber`` z pierwszym powodem z ``AddBar`` (Surowe
@@ -292,29 +278,41 @@ class Board:
         found = [memory for memory in self._memory if memory.number == number]
         return all(may_move(memory, report.worker, report.day, report.arrived) for memory in found)
 
-    def _other_day(self, report: ReadReport, number: OrderNumber, mistaken: bool) -> _Claim | list[ReportProblem]:
-        """Niezgodny Wpis: jedyne zlecenie nadawcy z innego dnia otwartego, a bez niego jedyne zlecenie tego numeru;
-        kilka to ``OtherDay`` ze wszystkimi ich dniami. Pomylony temat (``mistaken``) zostawia zlecenie w jego dniu,
-        jeden niezgodny Wpis przenosi je na dzień z tematu. Numer tylko w dniach zamkniętych to ``RefusedMove`` z
-        ``CLOSED_SOURCE`` przy jednym niezgodnym Wpisie z dniem otwartym, a inaczej nic, bo okres z Plikiem zbiorczym jest
-        zamknięty. Raport z dniem zamkniętym nie daje innych problemów niż ``RefusedMove``, bo jego dnia tata nie widzi."""
+    def _other_day(
+        self, report: ReadReport, number: OrderNumber, placed: Sequence[_Placed], mistaken: bool
+    ) -> _Claim | list[ReportProblem]:
+        """Niezgodny Wpis: jedyne zlecenie numeru z innego dnia otwartego. Pomylony temat (``mistaken``) zostawia je w
+        jego dniu, jeden niezgodny Wpis przenosi je na dzień z tematu. Numer tylko w dniach zamkniętych to
+        ``RefusedMove`` z ``CLOSED_SOURCE`` przy jednym niezgodnym Wpisie z dniem otwartym, a inaczej nic, bo okres z
+        Plikiem zbiorczym jest zamknięty. Raport z dniem zamkniętym nie daje innych problemów niż ``RefusedMove``, bo
+        jego dnia tata nie widzi."""
 
-        placed = self._numbered.get(number, [])
-        own = [found for found in placed if found.worker == report.worker]
-        candidates = own or placed
         opens = self._window.opens(report.day)
-        if len(candidates) > 1:
-            days = tuple(sorted({found.day for found in candidates}))
-            return [OtherDay(report.worker, report.day, number, days)] if opens else []
-        if not candidates:
-            if mistaken or not opens:
-                return []
-            return [RefusedMove(report.worker, report.day, number, min(self._closed[number]), MoveBar.CLOSED_SOURCE)]
-        [found] = candidates
-        if not mistaken:
-            return self._claim(found, report, report.day, None)
-        shown = report.day if opens else found.day
-        return self._claim(found, report, found.day, SubjectLost(shown, report.worker, number, found.day))
+        match placed:
+            case [found]:
+                if not mistaken:
+                    return self._claim(found, report, report.day, None)
+                shown = report.day if opens else found.day
+                return self._claim(found, report, found.day, SubjectLost(shown, report.worker, number, found.day))
+            case _:
+                if mistaken or not opens:
+                    return []
+                return [RefusedMove(report.worker, report.day, number, min(self._closed[number]), MoveBar.CLOSED_SOURCE)]
+
+    def _repeated(self, report: ReadReport, number: OrderNumber, placed: Sequence[_Placed]) -> _Claim | list[ReportProblem]:
+        """Numer w kilku zleceniach dni otwartych: Wpis trafia tylko do jedynego zlecenia nadawcy, które INTERMAX ma w
+        dniu z tematu, bez Przeniesienia. Kilka takich zleceń to ``RepeatedOrder``, a żadne to ``RepeatedNumber`` z
+        miejscem każdego zlecenia numeru; raport z dniem zamkniętym nie daje problemu, bo jego dnia tata nie widzi."""
+
+        here = [found for found in placed if (found.order.key.day, found.order.key.worker) == (report.day, report.worker)]
+        if len(here) == 1:
+            return _Claim(here[0].order, report.day, report, (), None)
+        if not self._window.opens(report.day):
+            return []
+        if here:
+            return [RepeatedOrder(report.worker, report.day, number)]
+        places = tuple(sorted((found.order.key.day, found.order.key.worker) for found in placed))
+        return [RepeatedNumber(report.worker, report.day, number, places)]
 
     def _claim(self, found: _Placed, report: ReadReport, day: date, lost: SubjectLost | None) -> _Claim | list[ReportProblem]:
         """Wpis stawia zlecenie ``found`` w dniu ``day`` u nadawcy, gdy wolno: bez zmiany miejsca zawsze, a ze zmianą
@@ -333,11 +331,11 @@ class Board:
         return _Claim(order, day, report, (), lost)
 
     def _movable(self, order: RegisterOrder, report: ReadReport) -> bool:
-        """Czy Wpis ``report`` może zmienić Wykonawcę albo dzień zlecenia ``order``: ``may_move`` dla każdej pamięci
-        tego zlecenia (``memories_of``), a gdy jej nie ma, ``may_move`` bez pamięci."""
+        """Czy Wpis ``report`` może zmienić Wykonawcę albo dzień jedynego zlecenia numeru ``order``: ``may_move`` dla
+        każdej pamięci tego zlecenia (``memories_of``), a gdy jej nie ma, ``may_move`` bez pamięci."""
 
         key = order.key
-        found = memories_of(self._memory, key, self._places)
+        found = memories_of(self._memory, key, alone=True)
         return all(may_move(memory, key.worker, key.day, report.arrived) for memory in found or (None,))
 
     def _bar(self, order: RegisterOrder, day: date) -> MoveBar | None:

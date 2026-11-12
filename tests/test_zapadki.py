@@ -37,6 +37,16 @@ _FILE_STATE_HELPER = (
     " folder_entries entry_kind), które rozróżnia brak od pliku niedostępnego (OneDrive, folder bez dostępu)"
 )
 
+# Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``
+# w 0e304aec7 (#633, czerwony main: wątki innych testów policzone jako wątki sprawdzenia).
+_WORKER_THREADS = re.compile(r"\bactive_count\(|\bThread\.start\b|\bThread,\s*[\"']start[\"']")
+_THREAD_LINES = "tests/fixtures/linie_watkow.py"
+_THREAD_LINES_HELPER = (
+    "wątki procesu workera pytest poza linią testu: zapytaj tests/fixtures/linie_watkow.py (new_line i threads_since o"
+    " wątki, które żyją, started_threads o wątki uruchomione w bloku), bo w workerze żyją też wątki wcześniejszych testów"
+    " i timer pytest-timeout"
+)
+
 # Pliki, którym wolno parsować Pythona ręcznie: stan z 12.11.2026 (23 pliki); wpis maleje z każdym usuniętym plikiem.
 # Jeden napis z odstępami, bo graf wyboru testów (``tools/lib/wplyw_zmiany.py``) bierze ścieżkę z napisu testu za jego
 # zależność, a zapadki i tak biegną przy każdej zmianie (``ZAPADKI`` w ``tools/szybko.py``).
@@ -253,6 +263,91 @@ def test_zapadka_lapie_wlasna_wyrocznie_numeru_zlecenia(line: str) -> None:
 )
 def test_zapadka_przepuszcza_zawiera_wartosc_i_inne_wyrazenia(line: str) -> None:
     assert not order_number_oracle(line)
+
+
+def worker_threads(line: str) -> bool:
+    """Czy linia testu pyta o wątki procesu workera pytest z pominięciem ``linie_watkow``.
+
+    Łapie tylko ``active_count(`` (także ``threading.active_count(``), ``Thread.start`` jako całą nazwę (odczyt,
+    podmiana i wywołanie ``threading.Thread.start``) oraz ``Thread,`` i napis ``"start"`` albo ``'start'``
+    (``monkeypatch.setattr(threading.Thread, "start", …)``), także w komentarzu, docstringu i napisie z kodem procesu
+    potomnego. Nie łapie ``threading.enumerate()`` przed i po (#1297 i #1308 dodały tę formę w scalonych PR-ach bez
+    rundy FAIL, więc zapadka na niej dałaby alarm na historii; jej przykłady zniknęły z ``tests/``),
+    ``thread.start()`` na wątku, ``super().start()``, ``ModelThread.start``, ``sys._current_frames``,
+    ``threading._active``, ``setattr`` z nazwą klasy w zmiennej ani podmiany ``Thread.run`` i ``Thread.__init__``; te
+    zostają przeglądowi.
+    Żadna forma nie trafia w dzisiejsze ``tests/``, gdy każda jego linia jest dodana
+    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
+    """
+
+    return _WORKER_THREADS.search(line) is not None
+
+
+def worker_thread_counts(root: Path, base: str) -> list[str]:
+    """Linie ``tests/`` poza ``linie_watkow.py`` i tym plikiem, które zmiana od ``base`` dodaje z ``worker_threads``."""
+
+    return [
+        f"{path}:{number}: {_THREAD_LINES_HELPER}"
+        for path, number, line in _added_lines(root, base, "tests")
+        if path not in {_THREAD_LINES, "tests/test_zapadki.py"} and worker_threads(line)
+    ]
+
+
+def test_watki_testu_tylko_przez_linie_watkow() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    assert worker_thread_counts(ROOT, base) == []
+
+
+def test_zapadka_watkow_widzi_tylko_tests_poza_linie_watkow(tmp_path: Path) -> None:
+    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    for path in (_THREAD_LINES, "tests/test_zapadki.py", "tests/test_watkow.py", "src/rozliczenia/watki.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
+
+    found = worker_thread_counts(tmp_path, base)
+
+    assert found == [f"tests/test_watkow.py:2: {_THREAD_LINES_HELPER}"]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "    start = threading.Thread.start",
+        '    monkeypatch.setattr(threading.Thread, "start", counted)',
+        "    monkeypatch.setattr(threading.Thread, 'start', counted)",
+        "threading.Thread.start = counted",
+        "    assert threading.active_count() == before",
+        "        threading.Thread.start(thread)",
+    ],
+)
+def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
+    assert worker_threads(line)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "    since = new_line()",
+        "    assert wait_for(lambda: threads_since(since) == [], seconds=10)",
+        "    with started_threads() as started:",
+        "        asking.start()",
+        "        super().start()",
+        "    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)",
+        "    for index, thread in enumerate(threads):",
+        # Formy, których zapadka według docstringu nie łapie.
+        "    before = set(threading.enumerate())",
+        '        checks = [thread for thread in threading.enumerate() if thread.name == "powiadomienia-sprawdzanie"]',
+        '    monkeypatch.setattr(threading.Thread, "run", counted)',
+        '    monkeypatch.setattr(klasa, "start", counted)',
+    ],
+)
+def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
+    assert not worker_threads(line)
 
 
 def test_zapadka_widzi_linie_dodane_od_bazy_i_nowe_pliki_a_nie_usuniete_ani_spoza_folderu(tmp_path: Path) -> None:
