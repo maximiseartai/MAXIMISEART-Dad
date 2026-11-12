@@ -11,8 +11,12 @@ potem je wykonuje; z ``--bez-zapisu`` tylko je drukuje.
 - **Czerwony `main`.** Push na `main` z ``Required CI status`` ``failure`` zakłada issue ``CzerwonyMain`` z etykietą
   ``czerwony-main``, gdy żadne nie jest otwarte, a inaczej dopisuje komentarz do otwartego: jedno na raz. Issue ma
   ostatni zielony commit linii pierwszych rodziców `main`, PR-y scalone pomiędzy, przyczyny z linii ``REQUIRED FAIL``
-  i polecenie ``git bisect``. Push na `main` z zielonym Required zamyka komentarzem z linkiem do runu otwarte issue,
-  którego czerwony commit jest jego przodkiem.
+  i polecenie ``git bisect``. Nowe issue dostaje też komentarz w każdym PR z tej listy (najwyżej ``NAJWIECEJ_POWIADOMIEN``
+  ostatnich), z linkiem do issue i runu, więc wątek, który obserwuje swój scalony PR, budzi się na czerwony `main`.
+  Komentarz idzie tylko z założeniem issue, więc ponowienie workflow albo kolejny czerwony run do otwartego issue go nie
+  powtarza. Nie mówi, że PR czerwieni `main`: porażka może być w innym PR z listy, ze zderzenia albo niestabilna, bo
+  test z kwarantanny i test, który przeszedł po ponowieniu, Required nie czerwienią. Push na `main` z zielonym Required
+  zamyka komentarzem z linkiem do runu otwarte issue, którego czerwony commit jest jego przodkiem.
 - **Zderzenie** (Q26, #959). Gdy scalenie PR B czerwieni `main` nową porażką, B ma zielone Required na swoim HEAD, a po
   utworzeniu runu tej bramki weszły do `main` PR-y A (także z zielonym Required na HEAD), których bramka B nie widziała,
   issue dostaje etykietę ``zderzenie`` z numerami A i B i liczbą zderzeń z ostatnich 7 dni, ale tylko wtedy, gdy każda
@@ -49,7 +53,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
-from github import MERGE, REPO, REQUIRED, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis
+from github import MERGE, REPO, REQUIRED, SQUASH, Akcja, GhApi, GitHub, Powiadom, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis
 from github import wykonaj as wykonaj_akcje
 from jednostka import Rodzaj
 import niestabilne_testy
@@ -60,6 +64,8 @@ import wplyw_zmiany
 FLAKY_TEST, CZERWONY_MAIN, ZDERZENIE = "flaky-test", "czerwony-main", "zderzenie"
 # Tyle flaky testów jednego runu trafia do issue; reszta to znak awarii, a nie flaky testów.
 NAJWIECEJ_FLAKY_TESTOW = 10
+# Tyle ostatnich PR-ów z zakresu czerwonego `main` dostaje komentarz (secondary rate limit GitHuba na tworzenie treści).
+NAJWIECEJ_POWIADOMIEN = 10
 # Tyle nowych porażek zderzenia wymienia issue.
 NAJWIECEJ_NOWYCH = 20
 # Id testu w tytule i w treści issue (GitHub przyjmuje tytuł do 256 znaków).
@@ -128,6 +134,16 @@ class CzerwonyMain:
     @property
     def etykiety(self) -> tuple[str, ...]:
         return (CZERWONY_MAIN, *((ZDERZENIE,) if self.zderzenie else ()))
+
+    @property
+    def powiadom(self) -> Powiadom:
+        pr = self.pr[-NAJWIECEJ_POWIADOMIEN:]
+        linie = [
+            f"`main` jest czerwony od {self.commit[:9]} ([run]({self.run})). PR-y scalone od ostatniego zielonego `main`: {_numery(self.pr)}.",
+            "To nie znaczy, że czerwieni go ten PR: porażka może być w innym PR z listy issue, ze zderzenia albo niestabilna.",
+            "Wątek, który scalał ten PR: przeczytaj przyczyny w issue i napisz w nim, czy naprawiasz; naprawia osobny PR (`docs/agents/pr-i-ci.md`).",
+        ]
+        return Powiadom(tuple(p.numer for p in pr), "\n".join(linie))
 
     @property
     def tresc(self) -> str:
@@ -249,7 +265,9 @@ def _main(github: GitHub, root: Path, run: Run, teraz: datetime) -> list[Akcja]:
     pr = _pr(root, zielony[0], run.sha) if zielony else ()
     poprzednie = otwarte[0]["number"] if otwarte else None
     czerwony = CzerwonyMain(run.sha, run.url, zielony[0] if zielony else None, zielony[1] if zielony else None, pr, przyczyny, zderzenie, poprzednie)
-    return [Zaloz(czerwony.tytul, czerwony.tresc, czerwony.etykiety)]
+    if len(pr) > NAJWIECEJ_POWIADOMIEN:
+        print(f"ZGŁOSZENIA | {len(pr)} PR-ów od ostatniego zielonego `main`, komentuję {NAJWIECEJ_POWIADOMIEN} ostatnich")
+    return [Zaloz(czerwony.tytul, czerwony.tresc, czerwony.etykiety, czerwony.powiadom)]
 
 
 def _zamkniecie(github: GitHub, root: Path, issue: Mapping[str, Any], czerwony: str, zielony: Run) -> Zamknij:

@@ -26,7 +26,7 @@ from tests.fixtures.git_repo import commit, git
 
 import niestabilne_testy
 import zgloszenia_ci
-from github import REPO, REQUIRED, STRONA, Skomentuj, Zaloz, Zamknij
+from github import REPO, REQUIRED, STRONA, BladApi, Skomentuj, Zaloz, Zamknij
 
 ROOT = Path(__file__).resolve().parents[1]
 ZGLOSZENIA = ROOT / ".github" / "workflows" / "zgloszenia.yml"
@@ -579,6 +579,58 @@ def test_zielony_main_zamyka_issue_czerwonego_przodka_z_linkiem_do_runu(main: di
             ("POST", f"{REPO}/issues/{issue}/comments", {"body": f"Zielony `main` na commicie {main['pr11']} ([run]({RUN_URL.format(400)}))."}),
             ("PATCH", f"{REPO}/issues/{issue}", {"state": "closed", "state_reason": "completed"}),
         )
+    ]
+
+
+@pytest.mark.parametrize(("najwiecej", "komentowane"), [(10, [10, 11]), (1, [11])], ids=["cały zakres", "ostatnie ponad limit"])
+def test_nowe_issue_czerwonego_main_komentuje_pr_y_z_zakresu_raz_na_epizod_bez_oskarzenia(
+    main: dict[str, str], monkeypatch: pytest.MonkeyPatch, najwiecej: int, komentowane: list[int]
+) -> None:
+    """Czerwony `main` nie wracał do wątku, który scalał (#911, #971): issue wymieniało PR-y z zakresu, ale nic do nich
+    nie pisało. Ponowienie workflow trafia na otwarte issue i nie komentuje PR-ów drugi raz."""
+
+    monkeypatch.setattr(zgloszenia_ci, "NAJWIECEJ_POWIADOMIEN", najwiecej)
+    github = _czerwony_run(main, bramka_b="2026-10-26T10:05:00Z", main_10="cancelled")
+
+    linie = zgloszenia_ci.wykonaj(github, zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ), bez_zapisu=False)
+
+    tytul = f"Czerwony main od {main['pr11'][:9]}"
+    assert linie == ["ZGŁOSZENIA | założone #901 „" + tytul + "”", *(f"ZGŁOSZENIA | komentarz w PR #{pr} o #901" for pr in komentowane)]
+    assert [wyslane[:2] for wyslane in github.wyslane] == [("POST", f"{REPO}/issues"), *(("POST", f"{REPO}/issues/{pr}/comments") for pr in komentowane)]
+    komentarze = {str(wyslane[2]["body"]) for wyslane in github.wyslane[1:]}
+    [komentarz] = komentarze
+    assert komentarz.startswith(f"#901 „{tytul}”\n\n`main` jest czerwony od {main['pr11'][:9]} ([run]({RUN_URL.format(300)})). PR-y scalone od ostatniego zielonego `main`: #10, #11.")
+    assert "To nie znaczy, że czerwieni go ten PR" in komentarz
+
+    github.odpowiedzi |= _issues("czerwony-main", "open", [{"number": 901, "body": f"<!-- czerwony-main {main['pr11']} -->"}])
+    github.wyslane.clear()
+    zgloszenia_ci.wykonaj(github, zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ), bez_zapisu=False)
+
+    assert [wyslane[:2] for wyslane in github.wyslane] == [("POST", f"{REPO}/issues/901/comments")]
+
+
+class NieprzyjmujeKomentarza(Nagrany):
+    """GitHub, który odrzuca komentarz w PR ``pr``, jak zablokowana rozmowa albo secondary rate limit."""
+
+    def __init__(self, odpowiedzi: dict[str, Any], pr: int) -> None:
+        super().__init__(odpowiedzi)
+        self.pr = pr
+
+    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
+        if sciezka == f"{REPO}/issues/{self.pr}/comments":
+            raise BladApi(f"gh api {sciezka}", "HTTP 403: You have exceeded a secondary rate limit")
+        return super().wyslij(metoda, sciezka, tresc)
+
+
+def test_komentarz_w_pr_ktory_sie_nie_udal_zostaje_w_logu_a_kolejne_pr_y_go_dostaja(main: dict[str, str]) -> None:
+    nagrany = _czerwony_run(main, bramka_b="2026-10-26T10:05:00Z", main_10="cancelled")
+    github = NieprzyjmujeKomentarza(nagrany.odpowiedzi, 10)
+
+    linie = zgloszenia_ci.wykonaj(github, zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ), bez_zapisu=False)
+
+    assert linie[1:] == [
+        f"ZGŁOSZENIA | komentarz w PR #10 o #901 nieudany: gh api {REPO}/issues/10/comments: HTTP 403: You have exceeded a secondary rate limit",
+        "ZGŁOSZENIA | komentarz w PR #11 o #901",
     ]
 
 

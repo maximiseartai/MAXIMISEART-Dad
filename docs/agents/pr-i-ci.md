@@ -28,6 +28,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 - Czerwony `main` nie blokuje merge'ów, a naprawia go od razu osobny PR.
   PR, nad którym pracujesz, zostaje przy swojej zmianie.
+- Nowe issue czerwonego `main` komentuje każdy PR scalony od ostatniego zielonego `main`, a `tools/scal_pr.py` po merge'u podaje w linii `CI MAIN` run, który obejmie merge, więc obserwację scalonego PR zostawiasz do wyniku tego runu.
 - Etykieta `zderzenie` w issue czerwonego `main` znaczy, że PR-y zielone osobno padły razem: każda nowa porażka jest w teście, którego wejścia zmieniły oba PR-y.
   Zielony `main`, który przyszedł bez zmiany wejść tych testów, zdejmuje ją z komentarzem, że porażka była niestabilna.
 

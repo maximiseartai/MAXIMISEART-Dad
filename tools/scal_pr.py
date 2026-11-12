@@ -29,6 +29,10 @@ Przed merge'em sprawdza, że baza w ``origin`` nie przesunęła się w trakcie s
 usuwa, tylko mówi, które lokalne gałęzie i worktree można usunąć. Sprzątanie, które przekroczy czas, kończy się
 ostrzeżeniem w linii ``SCAL OK``, bo PR jest już scalony.
 
+Po merge'u do ``main`` linia ``CI MAIN`` przed ``SCAL OK`` podaje run workflow ``CI`` na commicie merge'a albo, gdy GitHub
+go jeszcze nie utworzył, polecenie ``gh run list``, które go znajdzie. Obserwację PR zostaw do wyniku tego runu: gdy
+czerwieni `main`, ``tools/ci/zgloszenia_ci.py`` zakłada issue i komentuje scalony PR.
+
 Kod 0 i ``SCAL OK`` znaczą, że PR jest scalony (albo z ``--bez-merge``: że byłby); linia po merge'u podaje SHA
 commitu merge'a i bazy, z którą sprawdziła scalenie, a gdy test scalenia biegł albo został pominięty, także jego
 wynik. Kod 1 to odmowa albo błąd narzędzia (``SCAL FAIL``).
@@ -51,7 +55,7 @@ import github
 import kontekst_przegladu
 import naprawia
 import potomne
-from repo import REMOTE, ROOT
+from repo import MAIN, REMOTE, ROOT
 import repo
 import stan_pr
 from stan_pr import Pull
@@ -150,6 +154,18 @@ def _merge_commit(number: int) -> str | None:
         return None
 
 
+def _main_ci(merge_commit: str | None) -> str:
+    """Linia ``CI MAIN`` o runie CI na commicie merge'a do `main`."""
+
+    query = ["run", "list", "--workflow", github.CI_WORKFLOW, "--event", "push", "--commit", merge_commit or "<SHA merge'a>"]
+    try:
+        runs = json.loads(github.gh(*query, "--json", "databaseId,url")) if merge_commit else []
+    except (subprocess.SubprocessError, OSError, ValueError):
+        runs = []
+    found = f"run {runs[0]['databaseId']} {runs[0]['url']}" if runs else f"run jeszcze nieznany, znajdzie go gh {' '.join(query)}"
+    return f"CI MAIN | {(merge_commit or '?')[:7]} | {found} | zostaw obserwację PR do wyniku runu: czerwony main skomentuje ten PR"
+
+
 def _clean_up() -> str:
     try:
         done = potomne.run([sys.executable, str(CLEANUP)], cwd=ROOT, timeout=CLEANUP_TIMEOUT_S, echo=True)
@@ -186,7 +202,10 @@ def _merge(number: int, *, merge: bool) -> int:
     github.gh("pr", "merge", str(number), "--merge", "--match-head-commit", pull.head)
     merge_commit = _merge_commit(number)
     closed = naprawia.close_fixed(pull, merged=True, merge_commit=merge_commit)
-    print(f"SCAL OK | {where} | scalony do {pull.base} jako {(merge_commit or '?')[:7]} (baza {base[:7]}){merge_test}{closed} | {_clean_up()}")
+    cleaned = _clean_up()
+    if pull.base == MAIN:
+        print(_main_ci(merge_commit))
+    print(f"SCAL OK | {where} | scalony do {pull.base} jako {(merge_commit or '?')[:7]} (baza {base[:7]}){merge_test}{closed} | {cleaned}")
     return 0
 
 

@@ -103,6 +103,12 @@ elif arguments[:2] == ["pr", "comment"]:
     with (here / "comments.jsonl").open("a") as log:
         log.write(json.dumps([arguments[2], body]) + "\\n")
     print(f"https://github.com/{REPO}/pull/{arguments[2]}#issuecomment-{len(pull['comments'])}")
+elif arguments[:2] == ["run", "list"]:
+    with (here / "run_lists.jsonl").open("a") as log:
+        log.write(json.dumps(arguments) + "\\n")
+    runs = here / "runs.json"
+    merged = arguments[arguments.index("--commit") + 1] == git("rev-parse", "refs/heads/main")
+    print(runs.read_text() if merged and runs.exists() else "[]")
 elif arguments[:2] == ["issue", "close"]:
     issues[arguments[2]] = json.dumps({"state": "closed"})
     (here / "issues.json").write_text(json.dumps(issues))
@@ -230,6 +236,9 @@ class MergeGitHub(FakeGitHub):
         self.update(number, headRefOid=head)
         return head
 
+    def run_lists(self) -> list[list[str]]:
+        return self._log("run_lists.jsonl")
+
     def repo_views(self) -> list[list[str]]:
         return self._log("repo_views.jsonl")
 
@@ -300,6 +309,31 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     assert git(github.origin, "rev-list", "--parents", "-n", "1", merge_commit).split()[1:] == [main, head]
     assert github.merges() == [["pr", "merge", "1", "--merge", "--match-head-commit", head]]
     assert (github.checkout / "posprzatane").exists()
+
+
+@pytest.mark.parametrize("run", [{"databaseId": 4242, "url": "https://github.com/o/r/actions/runs/4242"}, None], ids=["run-jest", "runu-jeszcze-nie-ma"])
+def test_po_merge_do_main_linia_ci_main_podaje_run_ci_na_commicie_merge_a_ktory_skomentuje_czerwony_main(
+    tmp_path: Path, run: dict[str, object] | None
+) -> None:
+    """Czerwony `main` po własnym merge'u nie wracał do wątku, który scalał (#911, #971): agent nie wiedział, na który run czekać."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    if run is not None:
+        (github.bin / "runs.json").write_text(json.dumps([run]), encoding="utf-8")
+
+    merged = github.run("1")
+
+    merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
+    query = ["run", "list", "--workflow", "CI", "--event", "push", "--commit", merge_commit]
+    found = f"run 4242 {run['url']}" if run else f"run jeszcze nieznany, znajdzie go gh {' '.join(query)}"
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert merged.stdout.splitlines()[-2:] == [
+        f"CI MAIN | {merge_commit[:7]} | {found} | zostaw obserwację PR do wyniku runu: czerwony main skomentuje ten PR",
+        _last_line(merged),
+    ]
+    assert github.run_lists() == [[*query, "--json", "databaseId,url"]]
 
 
 @pytest.mark.parametrize(

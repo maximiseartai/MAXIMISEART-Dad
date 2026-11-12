@@ -137,10 +137,20 @@ def blok_kodu(linie: Sequence[str]) -> list[str]:
 
 
 @dataclass(frozen=True)
+class Powiadom:
+    """Komentarz ``tresc`` w każdym z PR-ów ``pr`` po założeniu issue; ``wykonaj`` zaczyna go linkiem do tego issue, a
+    komentarz, który się nie udał, zapisuje linią i idzie do następnego PR, bo issue już jest."""
+
+    pr: tuple[int, ...]
+    tresc: str
+
+
+@dataclass(frozen=True)
 class Zaloz:
     tytul: str
     tresc: str
     etykiety: tuple[str, ...]
+    powiadom: Powiadom = Powiadom((), "")
 
 
 @dataclass(frozen=True)
@@ -166,9 +176,16 @@ def wykonaj(github: GitHub, akcje: Sequence[Akcja], prefiks: str) -> list[str]:
     linie = []
     for akcja in akcje:
         match akcja:
-            case Zaloz(tytul, tresc, etykiety):
+            case Zaloz(tytul, tresc, etykiety, powiadom):
                 numer = github.wyslij("POST", f"{REPO}/issues", {"title": tytul, "body": tresc, "labels": list(etykiety)})["number"]
                 linie.append(f"{prefiks} | założone #{numer} „{tytul}”")
+                for pr in powiadom.pr:
+                    try:
+                        github.wyslij("POST", f"{REPO}/issues/{pr}/comments", {"body": f"#{numer} „{tytul}”\n\n{powiadom.tresc}"})
+                    except (BladApi, subprocess.TimeoutExpired) as blad:
+                        linie.append(f"{prefiks} | komentarz w PR #{pr} o #{numer} nieudany: {blad}")
+                    else:
+                        linie.append(f"{prefiks} | komentarz w PR #{pr} o #{numer}")
             case Skomentuj(issue, tresc, otworz):
                 github.wyslij("POST", f"{REPO}/issues/{issue}/comments", {"body": tresc})
                 if otworz:
@@ -188,8 +205,8 @@ def opis(akcja: Akcja) -> str:
     """Co akcja zrobi, bez wykonania (podgląd ``--bez-zapisu``)."""
 
     match akcja:
-        case Zaloz(tytul, _, etykiety):
-            return f"załóż issue „{tytul}” z etykietami {', '.join(etykiety)}"
+        case Zaloz(tytul, _, etykiety, powiadom):
+            return f"załóż issue „{tytul}” z etykietami {', '.join(etykiety)}" + (f" i skomentuj PR {', '.join(f'#{pr}' for pr in powiadom.pr)}" if powiadom.pr else "")
         case Skomentuj(issue, _, otworz):
             return f"skomentuj #{issue}" + (f" i otwórz ponownie z etykietami {', '.join(otworz)}" if otworz else "")
         case Zamknij(issue, _, zdejmij):
