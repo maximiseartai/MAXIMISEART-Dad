@@ -17,8 +17,8 @@ import pytest
 from openpyxl import load_workbook
 
 from rozliczenia.period_folder import collective_file_name_with
-from rozliczenia import tool_files
-from rozliczenia.worker_config import load_worker_mapping
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from tests.fixtures.benchmark import (
     data_row_entries,
     frozen_reference,
@@ -31,7 +31,7 @@ from tests.fixtures.benchmark import (
     write_templates,
 )
 from tests.fixtures.potomne import wait_for
-from atrapy.settlement import write_mapping
+from atrapy.settlement import WORKERS, write_worker_list
 import benchmark.referencja as referencja
 from benchmark.uruchomienie import Przebieg
 from porownanie_znaczeniowe import CATEGORIES
@@ -83,7 +83,7 @@ def maszyna_pomiarow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_benchmark_mierzy_przebieg_rozliczen_na_lustrze_i_opisuje_pomiar_bez_danych_wykonawcow(
     tmp_path: Path,
 ) -> None:
-    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
+    config = write_worker_list(tmp_path / WORKERS_FILE)
     journal = tmp_path / "dziennik.jsonl"
     mirror = tmp_path / "lustro"
     arguments = [
@@ -92,7 +92,7 @@ def test_benchmark_mierzy_przebieg_rozliczen_na_lustrze_i_opisuje_pomiar_bez_dan
         "maly-tydzien",
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
-        "--config",
+        "--wykonawcy",
         str(config),
         "--mirror-dir",
         str(mirror),
@@ -159,7 +159,7 @@ def test_benchmark_mierzy_przebieg_rozliczen_na_lustrze_i_opisuje_pomiar_bez_dan
     )
     secrets = identifying_values(collective_file)
     assert len(secrets) == 4 * 6
-    secrets |= {*load_worker_mapping(config), *load_worker_mapping(config).values()}
+    secrets |= {*WORKERS, *WORKERS.values()}
     assert {secret for secret in secrets if secret in published} == set()
 
 
@@ -232,7 +232,7 @@ def test_straz_czasu_opisuje_ostatni_pomiar_i_pada_tylko_powyzej_budzetu(
 
 
 def test_benchmark_porownuje_pomiar_z_wynikiem_referencyjnym_zamrozonym_z_commita(tmp_path: Path) -> None:
-    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
+    config = write_worker_list(tmp_path / WORKERS_FILE)
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     common = [
@@ -240,7 +240,7 @@ def test_benchmark_porownuje_pomiar_z_wynikiem_referencyjnym_zamrozonym_z_commit
         "maly-tydzien",
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
-        "--config",
+        "--wykonawcy",
         str(config),
         "--mirror-dir",
         str(tmp_path / "lustro"),
@@ -279,7 +279,7 @@ def test_benchmark_porownuje_pomiar_z_wynikiem_referencyjnym_zamrozonym_z_commit
     assert "| komunikaty | 0 |" in gate
 
     published = "".join(result.stdout + result.stderr for result in (frozen, consistent, inconsistent, comment))
-    secrets = {*load_worker_mapping(config), *load_worker_mapping(config).values()}
+    secrets = {*WORKERS, *WORKERS.values()}
     assert {secret for secret in secrets if secret in published} == set()
 
 
@@ -289,7 +289,7 @@ def test_benchmark_porownuje_pomiar_z_wynikiem_referencyjnym_zamrozonym_z_commit
 def test_pomiar_czeka_az_skonczy_sie_inny_pomiar_z_tymi_samymi_wynikami_referencyjnymi(
     tmp_path: Path, command: list[str]
 ) -> None:
-    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
+    config = write_worker_list(tmp_path / WORKERS_FILE)
     references = tmp_path / "referencje"
     mirror = tmp_path / "lustro"
     arguments = [
@@ -298,7 +298,7 @@ def test_pomiar_czeka_az_skonczy_sie_inny_pomiar_z_tymi_samymi_wynikami_referenc
         "maly-tydzien",
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
-        "--config",
+        "--wykonawcy",
         str(config),
         "--mirror-dir",
         str(mirror),
@@ -320,7 +320,7 @@ def test_pomiar_czeka_az_skonczy_sie_inny_pomiar_z_tymi_samymi_wynikami_referenc
     assert still_waiting
     assert not mirror_during_wait  # nic ciężkiego nie rusza, dopóki trwa inny pomiar
     assert mirror.is_dir()
-    secrets = {*load_worker_mapping(config), *load_worker_mapping(config).values()}
+    secrets = {*WORKERS, *WORKERS.values()}
     assert {secret for secret in secrets if secret in notice} == set()
 
 
@@ -337,8 +337,8 @@ def test_pomiar_czeka_az_inny_pomiar_zwolni_maszyne(tmp_path: Path, maszyna_pomi
         "maly-tydzien",
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
-        "--config",
-        str(write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)),
+        "--wykonawcy",
+        str(write_worker_list(tmp_path / WORKERS_FILE)),
         "--mirror-dir",
         str(mirror),
         "--reference-dir",
@@ -443,9 +443,9 @@ def test_komentarz_pokazuje_start_procesu_takze_obok_pomiaru_sprzed_jego_mierzen
     ]
 
 
-def test_pomiar_z_niepoprawna_konfiguracja_wykonawcow_konczy_sie_przyczyna_z_katalogu_przebiegu(tmp_path: Path) -> None:
-    config = tmp_path / tool_files.WORKER_CONFIG.name
-    config.write_text("schema_version: 2\nworkers:\n  a: A\n", encoding="utf-8")
+def test_pomiar_ze_zla_lista_wykonawcow_konczy_sie_zdaniem_wlasciciela_ustawien(tmp_path: Path) -> None:
+    config = tmp_path / WORKERS_FILE
+    config.write_text("schema_version: 2\nwykonawcy: []\n", encoding="utf-8")
     journal = tmp_path / "dziennik.jsonl"
 
     measured = run_benchmark(
@@ -454,7 +454,7 @@ def test_pomiar_z_niepoprawna_konfiguracja_wykonawcow_konczy_sie_przyczyna_z_kat
         "maly-tydzien",
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
-        "--config",
+        "--wykonawcy",
         str(config),
         "--mirror-dir",
         str(tmp_path / "lustro"),
@@ -467,13 +467,13 @@ def test_pomiar_z_niepoprawna_konfiguracja_wykonawcow_konczy_sie_przyczyna_z_kat
     )
 
     assert measured.returncode == 1
-    reason = "Nie można odczytać konfiguracji wykonawców. Nieobsługiwana wersja konfiguracji."
+    reason = settings_messages.other_schema(WORKERS_FILE)
     assert f"{reason} Plik: {config}" in measured.stderr
     assert not journal.exists()
 
 
 def test_pomiar_z_innym_wzorcem_rozliczenia_pracownika_nie_ma_pasujacego_wyniku_referencyjnego(tmp_path: Path) -> None:
-    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
+    config = write_worker_list(tmp_path / WORKERS_FILE)
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     templates = write_templates(tmp_path / "wzorce")
@@ -483,7 +483,7 @@ def test_pomiar_z_innym_wzorcem_rozliczenia_pracownika_nie_ma_pasujacego_wyniku_
     common = [
         "--scenario",
         "maly-tydzien",
-        "--config",
+        "--wykonawcy",
         str(config),
         "--mirror-dir",
         str(tmp_path / "lustro"),
@@ -510,7 +510,7 @@ def test_pomiar_z_innym_wzorcem_rozliczenia_pracownika_nie_ma_pasujacego_wyniku_
 def test_bramka_poprawnosci_liczy_rozne_liczniki_komunikaty_i_podsumowanie_kazde_w_swojej_kategorii(
     tmp_path: Path,
 ) -> None:
-    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
+    config = write_worker_list(tmp_path / WORKERS_FILE)
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     common = [
@@ -518,7 +518,7 @@ def test_bramka_poprawnosci_liczy_rozne_liczniki_komunikaty_i_podsumowanie_kazde
         "maly-tydzien",
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
-        "--config",
+        "--wykonawcy",
         str(config),
         "--mirror-dir",
         str(tmp_path / "lustro"),
@@ -576,7 +576,7 @@ def test_bramka_poprawnosci_jest_niezgodna_przy_roznicy_tylko_w_jednej_kategorii
 def test_pomiar_z_wynikiem_referencyjnym_w_formacie_terminala_konczy_sie_poleceniem_ponownego_zamrozenia(
     tmp_path: Path,
 ) -> None:
-    config = write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)
+    config = write_worker_list(tmp_path / WORKERS_FILE)
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     common = [
@@ -584,7 +584,7 @@ def test_pomiar_z_wynikiem_referencyjnym_w_formacie_terminala_konczy_sie_polecen
         "maly-tydzien",
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
-        "--config",
+        "--wykonawcy",
         str(config),
         "--mirror-dir",
         str(tmp_path / "lustro"),
@@ -624,8 +624,8 @@ def test_zabity_benchmark_nie_zostawia_wstrzymanego_przebiegu_ani_kopii_commitu(
         "maly-tydzien",
         "--templates-dir",
         str(write_templates(tmp_path / "wzorce")),
-        "--config",
-        str(write_mapping(tmp_path / tool_files.WORKER_CONFIG.name)),
+        "--wykonawcy",
+        str(write_worker_list(tmp_path / WORKERS_FILE)),
         "--mirror-dir",
         str(mirror),
         "--reference-dir",

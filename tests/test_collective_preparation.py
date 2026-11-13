@@ -1171,12 +1171,11 @@ def test_zlecenie_skuteczne_with_worker_outside_worker_config_stops_with_identif
 
     assert error.message.code == "NIEZNANY_WYKONAWCA"
     assert error.message.text == (
-        "Co się stało: Zlecenia skuteczne mają wykonawców spoza konfiguracji wykonawców: "
+        "Co się stało: Zlecenia skuteczne mają wykonawców spoza Listy Wykonawców: "
         "nowy.wykonawca, (pusty). Nie utworzono żadnego pliku.\n"
         f"Gdzie: plik {REGISTER_NAME}, arkusz ZLECENIA, nowy.wykonawca: wiersze 2, 4; (pusty): wiersz 6\n"
-        "Co zrobić: Dopisz identyfikator wykonawcy do konfiguracji wykonawców (worker_mapping.yaml), "
-        "tej samej co w Przebiegu rozliczeń, albo popraw WYKONAWCA we wskazanych wierszach Rejestru zleceń. "
-        "Zapisz i zamknij Rejestr, i uruchom ponownie."
+        "Co zrobić: Dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców, albo popraw WYKONAWCA we "
+        "wskazanych wierszach Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie."
     )
     assert "ktos.nieskuteczny" not in error.message.text
 

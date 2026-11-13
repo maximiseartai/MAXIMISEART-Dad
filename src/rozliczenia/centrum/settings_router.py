@@ -12,19 +12,22 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import settings as settings_contract
+from rozliczenia.centrum.contract import settings_workers as settings_workers_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.settings.files import Bad, Good, Unreadable
+from rozliczenia.centrum.settings.files import Bad, Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import DEFAULT_THEME, FOLDERS, FolderSettings, SettingState
 from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
 from rozliczenia.file_state import file_state
+from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
@@ -121,23 +124,68 @@ def _path(value: str | None) -> Path | None:
 def describe(view: SettingsView) -> settings_contract.Settings:
     """Ustawienia Centrum dla przeglądarki: przy złym pliku ostatnie dobre wartości i zdanie o problemie."""
 
+    workers = _workers(view.workers)
     match view.folders:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")
             return settings_contract.Settings(
-                order_register=unreadable, periods_directory=unreadable, theme=DEFAULT_THEME, folders_problem=None
+                order_register=unreadable,
+                periods_directory=unreadable,
+                theme=DEFAULT_THEME,
+                folders_problem=None,
+                workers=workers,
             )
         case Good(value=folders):
             problem = None
         case Bad(problem=bad, usable=usable):
             folders = FolderSettings() if usable is None else usable
-            problem = settings_contract.SettingProblem(field=bad.field, message=bad.sentence)
+            problem = settings_workers_contract.SettingProblem(field=bad.field, message=bad.sentence)
     return settings_contract.Settings(
         order_register=_describe_path(folders.register, folders.register_state),
         periods_directory=_describe_path(folders.periods_directory, folders.periods_directory_state),
         theme=folders.theme,
         folders_problem=problem,
+        workers=workers,
     )
+
+
+def _workers(read: Read[WorkerList] | Unreadable) -> settings_workers_contract.WorkerListSetting:
+    """Lista Wykonawców w kolejności z pliku; przy złym pliku ostatnia dobra (bez niej pusta) i zdanie o problemie."""
+
+    match read:
+        case Good(value=workers):
+            state: Literal["good", "bad", "unreadable"] = "good"
+            problem = None
+        case Bad(problem=bad, usable=usable):
+            state, workers = "bad", usable or WorkerList(())
+            problem = settings_workers_contract.SettingProblem(field=bad.field, message=bad.sentence)
+        case Unreadable():
+            state, workers, problem = "unreadable", WorkerList(()), None
+    return settings_workers_contract.WorkerListSetting(
+        state=state,
+        workers=[
+            settings_workers_contract.ListedWorker(
+                logins=list(worker.logins),
+                name=worker.name,
+                addresses=[address.shown() for address in worker.addresses],
+                active=worker.active,
+                reminders=worker.reminders,
+            )
+            for worker in workers.workers
+        ],
+        unresolved=[_unresolved(item) for item in workers.unresolved],
+        problem=problem,
+    )
+
+
+def _unresolved(item: Unresolved) -> settings_workers_contract.UnmatchedLogin | settings_workers_contract.AddressesNotMoved:
+    match item:
+        case UnmatchedLogin(login=login, addresses=addresses):
+            return settings_workers_contract.UnmatchedLogin(
+                reason="login_bez_wykonawcy", login=login, addresses=[address.shown() for address in addresses]
+            )
+        case AddressesNotMoved(sentence=sentence):
+            return settings_workers_contract.AddressesNotMoved(reason="adresy_nieprzeniesione", message=sentence)
 
 
 def _describe_path(path: Path | None, state: SettingState) -> settings_contract.PathSetting:

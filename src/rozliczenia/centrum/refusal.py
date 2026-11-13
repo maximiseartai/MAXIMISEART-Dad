@@ -131,6 +131,24 @@ def setting_refused(problem: FieldProblem) -> Refusal:
     return _refused(422, problem.sentence, problem.field)
 
 
+def workers_unusable(problem: FieldProblem | None) -> Refusal:
+    """Proces nie startuje bez Listy Wykonawców: plik ma złe ustawienie i nie ma ostatniej dobrej listy (``problem``)
+    albo system nie daje go teraz czytać (``None``)."""
+
+    if problem is None:
+        return _refused(
+            409, "Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie."
+        )
+    return _refused(409, f"Lista Wykonawców ma złe ustawienie: {problem.sentence} Popraw ją w Ustawieniach.", problem.field)
+
+
+def report_entering_without_addresses() -> Refusal:
+    """Wpisanie raportów nie startuje, gdy żaden Wykonawca z Listy Wykonawców nie ma adresu: żaden mail nie byłby
+    Raportem wykonawcy."""
+
+    return _refused(409, "Na Liście Wykonawców nikt nie ma jeszcze adresu. Dopisz adresy Wykonawców w Ustawieniach.")
+
+
 def settings_change_unknown() -> Refusal:
     return _refused(404, "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.")
 
@@ -273,17 +291,15 @@ def note_not_queued() -> Refusal:
     return _refused(500, "Uwaga się nie zapisała i nie pójdzie do Maksa. Spróbuj wysłać ją jeszcze raz.")
 
 
-ReportEnteringFile = Literal["inbox_access", "worker_addresses"]
+ReportEnteringFile = Literal["inbox_access"]
 """Plik w ``config``, który prowadzi Maks, bez którego Wpisanie raportów nie startuje: dostęp do skrzynki raportów
-(``skrzynka-raportow.txt``) albo adresy Wykonawców (``adresy-wykonawcow.yaml``)."""
+(``skrzynka-raportow.txt``)."""
 
 
 def _report_entering_file(missing: ReportEnteringFile) -> str:
     match missing:
         case "inbox_access":
             return "hasła do skrzynki raportów (plik skrzynka-raportow.txt)"
-        case "worker_addresses":
-            return "adresów Wykonawców (plik adresy-wykonawcow.yaml)"
         case _:
             assert_never(missing)
 

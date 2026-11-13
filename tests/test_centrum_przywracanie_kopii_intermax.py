@@ -25,6 +25,7 @@ from tests.fixtures.intermax_disk import denied, failing_replace, no_space, part
 from tests.fixtures.centrum_intermax import NOW, REGISTER_NAME, Clock, OrderingCentrum, copies, open_in_excel, ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum
 from tests.fixtures.centrum import ToolDirectory, views_until
+from atrapy.settlement import worker_list, write_worker_list
 from atrapy.preparation import PERIOD, incomplete_period_rows
 
 ORDERED = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
@@ -521,8 +522,9 @@ def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa
     periods_directory = tmp_path / "Okresy"
     periods_directory.mkdir()
     centrum = _ordered(tmp_path, periods_directory)
-    # Wpisanie raportów bez folderu okresów i pliku adresów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
-    ToolDirectory(tmp_path).configuration.worker_addresses.touch()
+    # Wpisanie raportów bez folderu okresów i adresu na Liście Wykonawców odmawia startu, zanim zapyta o miejsce „jedno
+    # naraz”.
+    write_worker_list(ToolDirectory(tmp_path).worker_list, worker_list(addresses={"adrian.testowy": ["adrian@przyklad.invalid"]}))
     during: dict[str, Any] = {}
 
     def replacing(source: Path, target: Path) -> None:

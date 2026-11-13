@@ -12,7 +12,10 @@ from typing import Any, Final, NoReturn
 import pytest
 
 from rozliczenia import preparation_messages
+from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.report_box import Refused, Unreachable
@@ -52,6 +55,7 @@ from atrapy.preparation import (
     month_periods_folder,
     write_register,
 )
+from atrapy.settlement import WORKERS, worker_list, write_worker_list
 
 
 def lock(path: Path) -> Path:
@@ -373,6 +377,26 @@ def test_zgloszenie_ma_zmiany_ustawien_z_30_dni_z_folderem_sama_nazwa_bez_sciezk
     assert not zawiera_wartosc("\n".join(lines), account.name)
 
 
+def test_zgloszenie_podaje_zmiane_listy_wykonawcow_bez_loginu_nazwy_i_adresu(tmp_path: Path) -> None:
+    """D4 projektu Ustawień: zmiana Listy Wykonawców w Zgłoszeniu to tylko „dodano”, „usunięto” albo „zmieniono
+    Wykonawcę” z nazwami pól, bez loginów, nazw i adresów Wykonawców."""
+
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    names = {**WORKERS, "dariusz.fikcyjny2": "Dariusz Zmieniony", "nowy.wykonawca": "Nowy Wykonawca"}
+    write_worker_list(centrum.tool.worker_list, worker_list(names, {"nowy.wykonawca": ["nowy@przyklad.invalid"]}))
+
+    body = diagnose(centrum, run_id)["report"]["body"]
+
+    lines = body.splitlines()
+    start = lines.index("## Zmiany Ustawień (30 dni)")
+    assert lines[start + 2].endswith(
+        f"· spoza Centrum · {WORKERS_FILE} · zmieniono Wykonawcę (pola: nazwa); dodano Wykonawcę"
+    ), lines[start : start + 4]
+    for secret in ("dariusz.fikcyjny2", "Dariusz Zmieniony", "nowy.wykonawca", "Nowy Wykonawca", "nowy@przyklad.invalid"):
+        assert not zawiera_wartosc(body, secret), secret
+
+
 def test_zgloszenie_podaje_zmiane_ustawien_z_wydania_z_numerem_wydania_i_id_zmiany(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     at = local_now() - timedelta(days=1)
@@ -490,7 +514,7 @@ def test_diagnoza_przygotowania_sprawdza_po_kolei_ustawienia_onedrive_rejestr_wz
         ("Rejestr zleceń", "Nie jest otwarty w Excelu, otwiera się i ma wymagane nagłówki."),
         ("Wzorzec rozliczenia wewnętrznego", "Wzorzec rozliczenia wewnętrznego.xlsx przechodzi Sprawdzanie."),
         ("Wzorzec pliku zbiorczego", "Wzorzec pliku zbiorczego.xlsx przechodzi Sprawdzanie."),
-        ("Konfiguracja wykonawców", "Wczytuje się."),
+        ("Lista Wykonawców", "Wykonawców na liście: 3."),
         ("Folder okresu", "Folderu 08_14_09_2026 jeszcze nie ma."),
         ("Pliki okresu w Excelu", "Żaden plik okresu nie jest otwarty w Excelu."),
         ("Aktualność narzędzia", "Najnowsza wersja z GitHuba, commit 3c1d0a9."),
@@ -556,9 +580,9 @@ def test_zatrzymanie_do_maksa_bez_wzorca_wyjasnia_brak_wzorca(tmp_path: Path) ->
             "W Rejestrze zleceń brakuje wymaganego nagłówka SKUTECZNE. Nie utworzono żadnego pliku.",
         ),
         (
-            lambda centrum: centrum.fixture.config_path.write_text("workers: [", encoding="utf-8"),
-            "Konfiguracja wykonawców",
-            "Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.",
+            lambda centrum: centrum.fixture.config_path.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8"),
+            "Lista Wykonawców",
+            diagnosis_messages.worker_list_bad(settings_messages.damaged(WORKERS_FILE)).what,
         ),
         (
             lambda centrum: (month_periods_folder(centrum.fixture.periods_directory, "09_Wrzesień_2026") / PERIOD).mkdir(),
@@ -566,7 +590,7 @@ def test_zatrzymanie_do_maksa_bez_wzorca_wyjasnia_brak_wzorca(tmp_path: Path) ->
             None,
         ),
     ],
-    ids=["brak-rejestru", "brak-folderu-okresow", "uszkodzony-rejestr", "brak-naglowka", "zla-konfiguracja", "folder-okresu-w-miesiacu"],
+    ids=["brak-rejestru", "brak-folderu-okresow", "uszkodzony-rejestr", "brak-naglowka", "zla-lista-wykonawcow", "folder-okresu-w-miesiacu"],
 )
 def test_diagnoza_wyjasnia_pierwszym_sprawdzeniem_ktore_nie_przeszlo(
     tmp_path: Path,
@@ -585,32 +609,6 @@ def test_diagnoza_wyjasnia_pierwszym_sprawdzeniem_ktore_nie_przeszlo(
     else:
         assert (diagnosis["explanation"]["what"], check_states(diagnosis)[label]) == (what, "failed")
         assert next(check["detail"] for check in diagnosis["checks"] if check["label"] == label) == what
-
-
-@pytest.mark.parametrize(
-    "make_centrum",
-    [lambda tmp_path: preparing_centrum(tmp_path), lambda tmp_path: settling_centrum(tmp_path)],
-    ids=["przygotowanie", "przebieg"],
-)
-@pytest.mark.parametrize(
-    "broken_config",
-    [b"\xff\xfe\x00 nie utf-8", "schema_version: 2\nworkers:\n  a: Wykonawca Testowy\n".encode()],
-    ids=["spoza-utf-8", "zly-schemat"],
-)
-def test_diagnoza_potwierdza_zatrzymanie_procesu_na_uszkodzonej_konfiguracji_wykonawcow(
-    tmp_path: Path, make_centrum: Callable[[Path], PreparingCentrum | SettlingCentrum], broken_config: bytes
-) -> None:
-    centrum = make_centrum(tmp_path)
-    if isinstance(centrum, PreparingCentrum):
-        centrum.fixture.config_path.write_bytes(broken_config)
-    else:
-        centrum.configuration.worker_config.write_bytes(broken_config)
-    stopped = run_to_end(centrum, dry_run=True)
-
-    diagnosis = diagnose(centrum, stopped["run"]["id"])
-
-    assert (diagnosis["explanation"], diagnosis["confirms_stop"]) == (stopped["result"]["stops"][0], True)
-    assert check_states(diagnosis)["Konfiguracja wykonawców"] == "failed"
 
 
 def test_folder_okresu_w_kilku_miesiacach_wyjasnia_ktory_zostawic(tmp_path: Path) -> None:
@@ -833,7 +831,7 @@ def test_diagnoza_przebiegu_sprawdza_wzorzec_pracownika_i_plik_zbiorczy(tmp_path
         ("Ustawienia taty", "passed"),
         ("Pliki w OneDrive", "passed"),
         ("Wzorzec rozliczenia pracownika", "passed"),
-        ("Konfiguracja wykonawców", "passed"),
+        ("Lista Wykonawców", "passed"),
         ("Folder okresu", "passed"),
         ("Pliki okresu w Excelu", "passed"),
         ("Aktualność narzędzia", "passed"),

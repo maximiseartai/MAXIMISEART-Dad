@@ -54,7 +54,7 @@ from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
-from rozliczenia.centrum.settings.release_changes import ReleaseChange
+from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, RateLimited, ReleaseAnswer, ToolFreshness
 from rozliczenia.centrum.tool_update import Release, ToolClone
@@ -64,8 +64,8 @@ from rozliczenia.intermax_copies import default_directory as default_intermax_co
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk
 from rozliczenia.run_context import TemplateCheck, check_on_disk
 from rozliczenia.workbook_files import ByteSource, file_bytes
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 from rozliczenia.worker_report_inbox import ReminderMailbox, WorkerReportInbox
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, stop_after_test, threads_since
@@ -442,7 +442,7 @@ class ToolDirectory:
 
     @property
     def config(self) -> Path:
-        """Folder ``config``: Ustawienia Centrum, Wzorce, Konfiguracja wykonawców, Token do Zgłoszeń i pliki stanu."""
+        """Folder ``config``: Ustawienia Centrum, Wzorce, Token do Zgłoszeń i pliki stanu."""
 
         return tool_files.config_dir(self.root)
 
@@ -477,12 +477,16 @@ class ToolDirectory:
     @property
     def configuration(self) -> ConfigurationFiles:
         return ConfigurationFiles(
-            worker_config=self._moved(tool_files.WORKER_CONFIG),
-            worker_addresses=self.config / WORKER_ADDRESSES_FILE,
             internal_template=self._moved(tool_files.INTERNAL_TEMPLATE),
             collective_template=self._moved(tool_files.COLLECTIVE_TEMPLATE),
             worker_template=self._moved(tool_files.WORKER_TEMPLATE),
         )
+
+    @property
+    def worker_list(self) -> Path:
+        """Lista Wykonawców w Ustawieniach Centrum."""
+
+        return self.config / WORKERS_FILE
 
     @property
     def metrics(self) -> MetricsPaths:

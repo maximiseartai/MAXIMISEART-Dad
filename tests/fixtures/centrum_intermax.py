@@ -38,6 +38,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import Engines, Surroundings
 from atrapy.intermax import Intermax, Layout
+from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import FakeInbox, FakeMailbox
 from tests.fixtures.intermax_disk import FaultyDisk
 
@@ -296,13 +297,8 @@ def entering_centrum(
     periods_directory.mkdir()
     tool = ToolDirectory(tmp_path)
     tool.config.mkdir(parents=True, exist_ok=True)
-    tool.configuration.worker_config.write_text(
-        json.dumps({"schema_version": 1, "workers": WORKERS}, ensure_ascii=False), encoding="utf-8"
-    )
     listed = {login: [address] for login, address in SENDERS.items()} if addresses is None else addresses
-    tool.configuration.worker_addresses.write_text(
-        json.dumps({"schema_version": 1, "wykonawcy": listed}, ensure_ascii=False), encoding="utf-8"
-    )
+    write_worker_list(tool.worker_list, worker_list(WORKERS, listed))
     surroundings = surroundings or Surroundings()
     engines = Engines(tool.metrics)
     inbox = inbox or FakeInbox(mails, access)

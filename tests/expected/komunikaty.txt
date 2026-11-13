@@ -179,14 +179,14 @@ invalid_successful_values #3 [ZLE_SKUTECZNE]
   Co zrobić: Wpisz tak albo nie we wskazanych komórkach Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie.
 
 unknown_workers #1 [NIEZNANY_WYKONAWCA]
-  Co się stało: Zlecenie skuteczne ma wykonawcę spoza konfiguracji wykonawców: nowy.wykonawca. Nie utworzono żadnego pliku.
+  Co się stało: Zlecenie skuteczne ma wykonawcę spoza Listy Wykonawców: nowy.wykonawca. Nie utworzono żadnego pliku.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, arkusz ZLECENIA, nowy.wykonawca: wiersz 4
-  Co zrobić: Dopisz identyfikator wykonawcy do konfiguracji wykonawców (worker_mapping.yaml), tej samej co w Przebiegu rozliczeń, albo popraw WYKONAWCA we wskazanych wierszach Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie.
+  Co zrobić: Dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców, albo popraw WYKONAWCA we wskazanych wierszach Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie.
 
 unknown_workers #2 [NIEZNANY_WYKONAWCA]
-  Co się stało: Zlecenia skuteczne mają wykonawców spoza konfiguracji wykonawców: nowy.wykonawca, . Nie utworzono żadnego pliku.
+  Co się stało: Zlecenia skuteczne mają wykonawców spoza Listy Wykonawców: nowy.wykonawca, . Nie utworzono żadnego pliku.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, arkusz ZLECENIA, nowy.wykonawca: wiersze 4, 9; : wiersz 6
-  Co zrobić: Dopisz identyfikator wykonawcy do konfiguracji wykonawców (worker_mapping.yaml), tej samej co w Przebiegu rozliczeń, albo popraw WYKONAWCA we wskazanych wierszach Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie.
+  Co zrobić: Dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców, albo popraw WYKONAWCA we wskazanych wierszach Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie.
 
 no_period_orders [BRAK_ZLECEN_OKRESU]
   Co się stało: W Rejestrze zleceń nie ma żadnego zlecenia z tego okresu. Nie utworzono żadnego pliku.
@@ -406,14 +406,14 @@ worker_template_unusable_in_saving #6 [BLAD_SZABLONU_PRACOWNIKA]
   Co zrobić: Uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 unmapped_worker #1 [NIEZNANY_WYKONAWCA]
-  Co się stało: W Pliku zbiorczym jest WYKONAWCA spoza konfiguracji wykonawców: jan.nieznany. Nie utworzono żadnego pliku pracownika.
+  Co się stało: W Pliku zbiorczym jest WYKONAWCA spoza Listy Wykonawców: jan.nieznany. Nie utworzono żadnego pliku pracownika.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, kolumna H
-  Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy do konfiguracji wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
+  Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
 
 unmapped_worker #2 [NIEZNANY_WYKONAWCA]
-  Co się stało: W Pliku zbiorczym są WYKONAWCY spoza konfiguracji wykonawców: jan.nieznany, ewa.nieznana. Nie utworzono żadnego pliku pracownika.
+  Co się stało: W Pliku zbiorczym są WYKONAWCY spoza Listy Wykonawców: jan.nieznany, ewa.nieznana. Nie utworzono żadnego pliku pracownika.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, kolumna H
-  Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy do konfiguracji wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
+  Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
 
 rows_without_worker [WIERSZE_BEZ_WYKONAWCY]
   Co się stało: Nie wszystkie Wiersze danych Pliku zbiorczego mają WYKONAWCĘ. Nie utworzono żadnego pliku pracownika.
@@ -421,9 +421,9 @@ rows_without_worker [WIERSZE_BEZ_WYKONAWCY]
   Co zrobić: Uruchom Podgląd bez zapisu: lista problemów pokaże wiersze. Wpisz WYKONAWCĘ w kolumnie H tych wierszy. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
 
 unmapped_worker_warning [BRAK_MAPOWANIA]
-  Co się stało: Nieznany identyfikator WYKONAWCA: jan.nieznany. Nie ma go w konfiguracji wykonawców.
+  Co się stało: Nieznany identyfikator WYKONAWCA: jan.nieznany. Nie ma go w Liście Wykonawców.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
-  Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy do konfiguracji wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
+  Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
 
 row_without_worker_warning [BRAK_WYKONAWCY]
   Co się stało: Wiersz 19 ma dane, ale nie ma wykonawcy w kolumnie H.
@@ -473,73 +473,6 @@ summary_not_shown [BLAD_PODSUMOWANIA]
 plan_not_shown [BLAD_PLANU]
   Co się stało: Nie udało się pokazać planu. Nic nie zapisano.
   Gdzie: Przebieg rozliczeń
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-=== Konfiguracja wykonawców (src/rozliczenia/worker_config_messages.py) ===
-
-worker_config_problem #1 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #2 [NIEDOSTEPNA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #3 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #4 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #5 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Nieobsługiwana wersja konfiguracji.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #6 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja musi być mapą z sekcją workers.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #7 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja workers musi zawierać co najmniej jeden wpis.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #8 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera niepoprawny identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #9 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera pusty identyfikator lub nazwę pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #10 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera powtórzony identyfikator pracownika.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #11 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika nieprawidłową dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #12 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Konfiguracja zawiera nazwę pracownika zbyt długą dla nazwy pliku.
-  Gdzie: plik worker_mapping.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-worker_config_problem #13 [ZLA_KONFIGURACJA_WYKONAWCOW]
-  Co się stało: Nie można odczytać konfiguracji wykonawców. Dwóch identyfikatorów wskazuje ten sam plik pracownika: Jan Testowy / jan testowy
-  Gdzie: plik worker_mapping.yaml, folder config
   Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
 
 === Start Centrum rozliczeń (src/rozliczenia/centrum/start_problems.py) ===
@@ -595,6 +528,16 @@ period_file_open [PLIK_OKRESU_OTWARTY]
   Co się stało: Plik okresu jest otwarty w Excelu.
   Gdzie: plik Rozliczenie wew. 08_14_09_2026.xlsx, folder 08_14_09_2026
   Co zrobić: Zapisz i zamknij plik w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$Rozliczenie wew. 08_14_09_2026.xlsx i uruchom ponownie.
+
+worker_list_bad [ZLA_LISTA_WYKONAWCOW]
+  Co się stało: Lista Wykonawców ma złe ustawienie. Ten login jest już na Liście Wykonawców. Jeden login należy do jednego Wykonawcy.
+  Gdzie: Lista Wykonawców w Ustawieniach Centrum
+  Co zrobić: Otwórz Ustawienia, sekcję Wykonawcy, popraw wskazane pole i uruchom ponownie.
+
+worker_list_unreadable [NIEDOSTEPNA_LISTA_WYKONAWCOW]
+  Co się stało: Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program.
+  Gdzie: Lista Wykonawców w Ustawieniach Centrum
+  Co zrobić: Zamknij program, który może trzymać plik, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 === Uzupełnienie pliku zbiorczego (src/rozliczenia/centrum/fill_messages.py) ===
 
@@ -1280,51 +1223,6 @@ inbox_unreachable [RAPORTY_SKRZYNKA_NIEDOSTEPNA]
   Gdzie: skrzynka raportów w Gmailu
   Co zrobić: Spróbuj za chwilę: sprawdź połączenie z internetem i kliknij jeszcze raz. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
-addresses_unusable #1 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: nie ma pliku. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-addresses_unusable #2 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: system nie oddał pliku. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-addresses_unusable #3 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: plik nie jest zapisany w UTF-8. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-addresses_unusable #4 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: plik nie jest poprawnym YAML-em. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-addresses_unusable #5 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: plik nie ma schema_version: 1. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-addresses_unusable #6 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: plik nie ma Wykonawców. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-addresses_unusable #7 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: któryś Wykonawca nie ma listy adresów albo wpis nie jest adresem. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-addresses_unusable #8 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: ten sam adres stoi dwa razy. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
-addresses_unusable #9 [RAPORTY_ZLE_ADRESY_WYKONAWCOW]
-  Co się stało: Nie można użyć adresów Wykonawców: któryś Wykonawca nie jest w konfiguracji wykonawców. INTERMAX nie został zmieniony.
-  Gdzie: plik adresy-wykonawcow.yaml, folder config
-  Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie.
-
 periods_directory_missing [RAPORTY_BRAK_FOLDERU_OKRESOW]
   Co się stało: Nie znaleziono folderu okresów, więc maili nie przeczytano. INTERMAX nie został zmieniony.
   Gdzie: folder Dane\INEA
@@ -1456,6 +1354,42 @@ periods_directory_path [zdanie]
 unknown_theme [zdanie]
   Motyw może być tylko ciemny albo jasny.
 
+bad_field [zdanie]
+  Plik wykonawcy.yaml w folderze config ma złą wartość pola wykonawcy[0].aktywny. Zapisz Ustawienia jeszcze raz.
+
+worker_without_login [zdanie]
+  Każdy Wykonawca musi mieć co najmniej jeden login z kolumny WYKONAWCA.
+
+worker_login_empty [zdanie]
+  Login Wykonawcy nie może być pusty. Wpisz go tak, jak w kolumnie WYKONAWCA.
+
+worker_login_repeated [zdanie]
+  Ten login jest już na Liście Wykonawców. Jeden login należy do jednego Wykonawcy.
+
+worker_name_empty [zdanie]
+  Wpisz nazwę Wykonawcy, taką jak w nazwie jego Rozliczenia pracownika.
+
+worker_name_invalid [zdanie]
+  Nazwa Wykonawcy jest częścią nazwy pliku, więc nie może mieć znaków < > : " / \ | ? * ani kropki albo spacji na końcu.
+
+worker_name_too_long [zdanie]
+  Nazwa Wykonawcy jest za długa na nazwę pliku Rozliczenia pracownika. Skróć ją.
+
+worker_same_file [zdanie]
+  Dwóch Wykonawców ma nazwę, która daje ten sam plik Rozliczenia pracownika. Nazwy muszą się różnić.
+
+worker_address_invalid [zdanie]
+  Adres Wykonawcy to jeden adres e-mail w postaci nazwa@domena.
+
+worker_address_repeated [zdanie]
+  Ten adres jest już na Liście Wykonawców. Jeden adres należy do jednego Wykonawcy.
+
+workers_not_moved [zdanie]
+  Listy Wykonawców nie utworzono ze starego pliku worker_mapping.yaml w folderze config: plik nie jest poprawnym YAML. Dodaj Wykonawców w Ustawieniach.
+
+addresses_not_moved [zdanie]
+  Adresów Wykonawców nie przeniesiono ze starego pliku adresy-wykonawcow.yaml w folderze config: ten sam adres stoi dwa razy. Dopisz je Wykonawcom w Ustawieniach.
+
 === Odmowy Centrum rozliczeń (src/rozliczenia/centrum/refusal.py) ===
 
 not_local_address [HTTP 403]
@@ -1490,6 +1424,15 @@ settings_not_saved [HTTP 500]
 
 setting_refused [HTTP 422]
   Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru.
+
+workers_unusable #1 [HTTP 409]
+  Lista Wykonawców ma złe ustawienie: Dwóch Wykonawców ma nazwę, która daje ten sam plik Rozliczenia pracownika. Nazwy muszą się różnić. Popraw ją w Ustawieniach.
+
+workers_unusable #2 [HTTP 409]
+  Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie.
+
+report_entering_without_addresses [HTTP 409]
+  Na Liście Wykonawców nikt nie ma jeszcze adresu. Dopisz adresy Wykonawców w Ustawieniach.
 
 settings_change_unknown [HTTP 404]
   Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.
@@ -1605,14 +1548,8 @@ run_not_in_history [HTTP 404]
 note_not_queued [HTTP 500]
   Uwaga się nie zapisała i nie pójdzie do Maksa. Spróbuj wysłać ją jeszcze raz.
 
-report_entering_not_set_up #1 [HTTP 409]
+report_entering_not_set_up [HTTP 409]
   Wpisanie raportów nie jest jeszcze ustawione: w folderze config brakuje hasła do skrzynki raportów (plik skrzynka-raportow.txt). Dopisze je Maks.
-
-report_entering_not_set_up #2 [HTTP 409]
-  Wpisanie raportów nie jest jeszcze ustawione: w folderze config brakuje adresów Wykonawców (plik adresy-wykonawcow.yaml). Dopisze je Maks.
-
-report_entering_not_set_up #3 [HTTP 409]
-  Wpisanie raportów nie jest jeszcze ustawione: w folderze config brakuje hasła do skrzynki raportów (plik skrzynka-raportow.txt) i adresów Wykonawców (plik adresy-wykonawcow.yaml). Dopisze je Maks.
 
 reports_unreadable [HTTP 500]
   Nie udało się odczytać wyniku Wpisania raportów ani decyzji „Zostaw moją”. Odśwież kartę, a gdy to się powtarza, wyślij Uwagę ogólną.

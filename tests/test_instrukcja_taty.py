@@ -12,7 +12,7 @@ też muszą odpowiadać „Co się stało” Komunikatu.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import inspect
 from pathlib import Path
 import re
@@ -43,7 +43,6 @@ from tests.fixtures.message_samples import (
     SETTLEMENT_SAMPLES,
     START_SAMPLES,
     UPDATE_SAMPLES,
-    WORKER_CONFIG_SAMPLES,
     Samples,
 )
 
@@ -61,9 +60,7 @@ class Catalog:
     ``outside_centrum`` to fabryki, których Komunikatu Centrum rozliczeń nigdy
     nie pokazuje, więc instrukcja ich nie cytuje. ``hidden_folders`` to foldery
     ze ścieżek próbek leżące wyżej niż folder nadrzędny wskazywanego pliku albo
-    folderu; trzy części Komunikatu ich nie pokazują. ``shared`` to próbki
-    katalogu wspólnego kilku procesów (Konfiguracja wykonawców), którego
-    Komunikaty sekcja objaśnia tak jak własne.
+    folderu; trzy części Komunikatu ich nie pokazują.
     """
 
     module: ModuleType
@@ -71,7 +68,6 @@ class Catalog:
     samples: Samples
     outside_centrum: frozenset[str] = frozenset()
     hidden_folders: frozenset[str] = ABOVE_CONFIG
-    shared: Samples = field(default_factory=dict)
 
     def factories(self) -> set[str]:
         return {
@@ -92,11 +88,11 @@ class Catalog:
         }
 
     def messages(self) -> list[Message]:
-        return [sample() for samples in (*self.samples.values(), *self.shared.values()) for sample in samples]
+        return [sample() for samples in self.samples.values() for sample in samples]
 
     def shown_messages(self) -> list[Message]:
         own = [samples for name, samples in self.samples.items() if name not in self.outside_centrum]
-        return [sample() for samples in (*own, *self.shared.values()) for sample in samples]
+        return [sample() for samples in own for sample in samples]
 
 
 CATALOGS = {
@@ -107,7 +103,6 @@ CATALOGS = {
         PREPARATION_SAMPLES,
         # Centrum przyjmuje tylko okres z kalendarza okresów; zły token zgłasza silnik tylko skryptowi dla maszyn.
         outside_centrum=frozenset({"invalid_period_token"}),
-        shared=WORKER_CONFIG_SAMPLES,
     ),
     "przebieg-rozliczen": Catalog(
         settlement_messages,
@@ -115,7 +110,6 @@ CATALOGS = {
         SETTLEMENT_SAMPLES,
         # Przebieg wskazuje najwyżej folder okresu, więc folderów nad nim nie widać.
         hidden_folders=ABOVE_CONFIG | {"Dane", "INEA"},
-        shared=WORKER_CONFIG_SAMPLES,
     ),
     "start-centrum-rozliczen": Catalog(start_problems, "### Komunikaty startu Centrum rozliczeń", START_SAMPLES),
     # Diagnoza wskazuje najwyżej Folder okresu, więc folderów nad nim nie widać.

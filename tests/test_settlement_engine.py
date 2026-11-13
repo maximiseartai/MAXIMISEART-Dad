@@ -65,6 +65,7 @@ from atrapy.settlement import (
     WORKER_TEMPLATE_COLUMN_WIDTHS,
     link_order_numbers,
     make_fixture,
+    worker_list,
     write_source,
     write_template,
 )
@@ -144,7 +145,7 @@ def test_przygotowanie_skoroszytow_pracownikow_publikuje_folder_rozliczen_pracow
     finally:
         template_workbook.close()
 
-    summary = run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     expected_files = {
         f"Rozliczenie {PERIOD} - {name}.xlsx"
@@ -271,7 +272,7 @@ def test_wiersze_danych_rozliczenia_pracownika_maja_wyroznienia_pliku_zbiorczego
     assert expected_highlights["A19"][:2] == (None, None)
     assert header_font != ("Times New Roman", 9)
 
-    summary = run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert summary.written_count == 2
     written_workbook = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx")
@@ -315,7 +316,7 @@ def test_znacznik_efenix_i_znacznik_przekazania_w_adresie_nie_przechodza_do_rozl
     template_cell = (Font(name="Times New Roman", sz=9), PatternFill(fill_type="solid", fgColor="FF0000FF"))
     style_cells({"B18": template_cell, "B19": template_cell, "C18": template_cell})(worker_template_path)
 
-    summary = run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert summary.written_count == 2
     # Szablon pracownika Adriana dostaje wiersze 18 i 20 Pliku zbiorczego, Darka wiersz 19.
@@ -344,7 +345,7 @@ def test_numer_zlecenia_w_rozliczeniu_pracownika_ma_hiperlacze_z_pliku_zbiorczeg
     source_path, target_directory, config_path, worker_template_path = complete_run
     links = link_order_numbers(source_path, "https://przyklad.invalid/zlecenie?tw=1&caseId=SYN-")
 
-    summary = run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert (summary.written_count, summary.empty_count, summary.warnings) == (2, 1, [])
     # Szablon pracownika Adriana dostaje pierwsze i trzecie zlecenie Pliku zbiorczego, Darka drugie.
@@ -366,7 +367,7 @@ def test_hiperlacze_wzorca_w_wierszu_danych_znika_a_poza_wierszami_danych_zostaj
     finally:
         workbook.close()
 
-    summary = run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert summary.written_count == 2
     written = target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"
@@ -386,7 +387,7 @@ def test_przebieg_rozliczen_na_wzorcu_z_formula_w_wierszu_danych_zapisuje_jak_op
     twin = refused_by_copy(Path(shutil.copy(worker_template_path, tmp_path / "bliźniak Wzorca.xlsx")))
     TemplateFile.worker_settlement(twin).create(expected_directory / adrian, adrian_rows)
 
-    summary = run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert (summary.written_count, summary.empty_count, summary.warnings) == (2, 1, [])
     assert worker_template_path.read_bytes() == worker_template_before
@@ -406,7 +407,7 @@ def test_kazde_rozliczenie_pracownika_takze_puste_ma_szerokosci_kolumn_wzorca_ro
 ) -> None:
     source_path, target_directory, config_path, worker_template_path = make_complete_run_fixture(tmp_path)
 
-    summary = run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert summary.empty_count == 1
     expected = [WORKER_TEMPLATE_COLUMN_WIDTHS.get(column) for column in range(1, 48)]
@@ -436,7 +437,7 @@ def test_kazde_rozliczenie_pracownika_takze_puste_otwiera_sie_z_widokiem_wzorca_
         refused_by_copy(worker_template_path)
     expected = opening_view(worker_template_path)
 
-    summary = run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert summary.empty_count == 1
     assert view_of(expected) == view
@@ -493,7 +494,7 @@ def test_wykonawca_bez_mapowania_albo_wiersz_danych_bez_wykonawcy_wstrzymuje_pub
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -522,18 +523,18 @@ def test_zatrzymanie_i_podglad_nazywaja_kazdego_nieznanego_wykonawce_raz(
     worker_template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
     preview = run_settlements(
-        SettlementInputs(source_path, config_path, worker_template_path, dry_run=True),
+        SettlementInputs(source_path, worker_list(), worker_template_path, dry_run=True),
         RunContext(),
     )
 
     assert raised.value.message.what == (
-        f"W Pliku zbiorczym {subject} spoza konfiguracji wykonawców: {', '.join(named)}. "
+        f"W Pliku zbiorczym {subject} spoza Listy Wykonawców: {', '.join(named)}. "
         "Nie utworzono żadnego pliku pracownika."
     )
     assert [warning.what for warning in preview.warnings] == [
-        f"Nieznany identyfikator WYKONAWCA: {worker}. Nie ma go w konfiguracji wykonawców." for worker in named
+        f"Nieznany identyfikator WYKONAWCA: {worker}. Nie ma go w Liście Wykonawców." for worker in named
     ]
 
 
@@ -543,13 +544,13 @@ def test_podglad_bez_zapisu_pokazuje_problemy_wierszy_danych_i_plan_kazdego_wyko
     recorded: list[ProgressEvent] = []
 
     summary = run_settlements(
-        SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name, dry_run=True),
+        SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name, dry_run=True),
         RunContext(observer=recorded.append),
     )
 
     assert [(warning.code, warning.what) for warning in summary.warnings] == [
         ("BRAK_WYKONAWCY", "Wiersz 20 ma dane, ale nie ma wykonawcy w kolumnie H."),
-        ("BRAK_MAPOWANIA", "Nieznany identyfikator WYKONAWCA: andrzej.nieznany2. Nie ma go w konfiguracji wykonawców."),
+        ("BRAK_MAPOWANIA", "Nieznany identyfikator WYKONAWCA: andrzej.nieznany2. Nie ma go w Liście Wykonawców."),
     ]
     counted = [(type(event), event.issue_count) for event in recorded if isinstance(event, (IssueCountReady, PlanReady))]
     assert counted == [(IssueCountReady, 1), (PlanReady, 2)]
@@ -575,7 +576,7 @@ def test_nieczytelny_plik_zbiorczy_zatrzymuje_przebieg_rozliczen_bezpiecznym_kom
 
     with pytest.raises(StopError) as stop:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -620,7 +621,7 @@ def test_format_liczby_bez_definicji_poza_kolumnami_wygladu_nie_zatrzymuje_przeb
     with_undefined_number_format("M18")(source_path)
 
     run_settlements(
-        SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+        SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
         RunContext(),
     )
 
@@ -633,7 +634,7 @@ def test_format_liczby_bez_definicji_w_kolumnach_wygladu_to_uszkodzony_plik_zbio
 
     with pytest.raises(StopError) as stop:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -668,7 +669,7 @@ def test_plik_zbiorczy_niedostepny_do_odczytu_nie_jest_nazwany_uszkodzonym(
 
     with pytest.raises(StopError) as stop:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -685,7 +686,7 @@ def test_plik_zbiorczy_otwarty_w_excelu_zatrzymuje_przebieg_rozliczen_i_zostawia
 
     with pytest.raises(StopError) as stop:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -708,7 +709,7 @@ def test_plik_zbiorczy_bez_wykonawca_w_h17_zatrzymuje_przebieg_rozliczen(tmp_pat
 
     with pytest.raises(StopError) as stop:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -724,7 +725,7 @@ def test_istniejacy_folder_rozliczen_pracownikow_nie_jest_nadpisywany(complete_r
     sentinel.write_text("zachowaj", encoding="utf-8")
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert raised.value.message.code == "FOLDER_ROZLICZEN_ISTNIEJE"
     assert sentinel.read_text(encoding="utf-8") == "zachowaj"
@@ -744,7 +745,7 @@ def test_folder_rozliczen_pracownikow_ktorego_nie_da_sie_sprawdzic_zatrzymuje_za
     monkeypatch.setattr(os, "lstat", lstat_without_access)
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert raised.value.message == settlement_messages.write_failed(target_directory)
     assert sorted(path.name for path in target_directory.parent.iterdir()) == [source_path.name]
@@ -810,7 +811,7 @@ def test_wzorzec_rozliczenia_pracownika_ktorego_nie_mozna_uzyc_zatrzymuje_sprawd
     damage(worker_template_path)
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path, dry_run=dry_run), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path, dry_run=dry_run), RunContext())
 
     assert raised.value.message.code == "ZLY_WZORZEC_PRACOWNIKA"
     assert raised.value.message.what == f"{UNUSABLE_WORKER_TEMPLATE_PREFIX} {detail}"
@@ -824,27 +825,10 @@ def test_wzorzec_rozliczenia_pracownika_spoza_formatow_skoroszytu_jest_nieczytel
     (tmp_path / tool_files.WORKER_TEMPLATE.name).rename(worker_template_path)
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert raised.value.message.code == "ZLY_WZORZEC_PRACOWNIKA"
     assert raised.value.message.what == f"{UNUSABLE_WORKER_TEMPLATE_PREFIX} Nie można odczytać Wzorca rozliczenia pracownika."
-    assert not target_directory.exists()
-
-
-def test_niepoprawna_konfiguracja_wykonawcow_zatrzymuje_sprawdzanie(tmp_path: Path) -> None:
-    source_path, target_directory, config_path = make_fixture(tmp_path)
-    config_path.write_text("workers: [", encoding="utf-8")
-
-    with pytest.raises(StopError) as raised:
-        run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
-            RunContext(),
-        )
-
-    assert (raised.value.message.code, raised.value.message.what) == (
-        "ZLA_KONFIGURACJA_WYKONAWCOW",
-        "Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.",
-    )
     assert not target_directory.exists()
 
 
@@ -858,7 +842,7 @@ def test_wzorzec_rozliczenia_pracownika_otwarty_w_zapisywaniu_wstrzymuje_publika
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, worker_template_path),
+            SettlementInputs(source_path, worker_list(), worker_template_path),
             RunContext(observer=lock_in_saving),
         )
 
@@ -897,7 +881,7 @@ def test_wzorzec_rozliczenia_pracownika_zepsuty_po_sprawdzaniu_wstrzymuje_publik
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, worker_template_path),
+            SettlementInputs(source_path, worker_list(), worker_template_path),
             RunContext(observer=damage_in_saving),
         )
 
@@ -924,7 +908,7 @@ def test_wzorzec_rozliczenia_pracownika_ze_scaleniem_w_wierszach_danych_zatrzymu
     worker_template_before = worker_template_path.read_bytes()
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert raised.value.message.code == "BLAD_SZABLONU_PRACOWNIKA"
     assert raised.value.message.what == FIRST_WORKER_FILE_FAILED
@@ -958,7 +942,7 @@ def test_blad_odczytu_wzorca_rozliczenia_pracownika_z_dysku_wstrzymuje_publikacj
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, worker_template_path),
+            SettlementInputs(source_path, worker_list(), worker_template_path),
             RunContext(observer=follow_phase),
         )
 
@@ -984,7 +968,7 @@ def test_nieudany_zapis_rozliczenia_pracownika_wstrzymuje_publikacje(
     monkeypatch.setattr(os, "replace", fail_replacing_workbook)
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert raised.value.message.code == "BLAD_SZABLONU_PRACOWNIKA"
     assert "Adrian Testowy" in raised.value.message.what
@@ -1019,7 +1003,7 @@ def test_plik_tymczasowy_trzymany_przez_onedrive_po_nieudanym_zapisie_nazywa_roz
     monkeypatch.setattr(os, "unlink", hold_temporary_workbook)
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert raised.value.message.code == "BLAD_SZABLONU_PRACOWNIKA"
     assert "Adrian Testowy" in raised.value.message.what
@@ -1070,7 +1054,7 @@ def test_nieudana_publikacja_folderu_rozliczen_pracownikow_zatrzymuje_kodem_publ
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -1125,7 +1109,7 @@ def test_zatrzymanie_wskazuje_folder_tymczasowy_trzymany_przez_onedrive(
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -1152,7 +1136,7 @@ def test_ponowna_nieudana_publikacja_z_folderem_tymczasowym_jest_powtorka(
     for _ in range(2):
         with pytest.raises(StopError) as raised:
             run_settlements(
-                SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+                SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
                 RunContext(),
             )
         stops.append(Stop("stop", raised.value.message))
@@ -1173,7 +1157,7 @@ def test_folder_rozliczen_pracownikow_utworzony_w_trakcie_zapisywania_nie_jest_n
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, worker_template_path),
+            SettlementInputs(source_path, worker_list(), worker_template_path),
             RunContext(observer=create_folder_in_saving),
         )
 
@@ -1198,7 +1182,7 @@ def test_brak_wzorca_rozliczenia_pracownika_podpowiada_zmiane_nazwy_tylko_pliku_
     worker_template_path.rename(tmp_path / moved_to)
 
     with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert raised.value.message.what == (
         f"{UNUSABLE_WORKER_TEMPLATE_PREFIX} "
@@ -1218,7 +1202,7 @@ def test_wzorzec_rozliczenia_pracownika_w_folderze_bez_dostepu_zatrzymuje_komuni
     template_folder.chmod(0)
     try:
         with pytest.raises(StopError) as raised:
-            run_settlements(SettlementInputs(source_path, config_path, worker_template_path), RunContext())
+            run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
     finally:
         template_folder.chmod(0o755)
 
@@ -1249,7 +1233,7 @@ def test_rozliczenie_wewnetrzne_albo_plik_zbiorczy_poza_folderem_okresu_zatrzymu
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, tmp_path / "missing.yaml", tmp_path / "missing.xlsx"),
+            SettlementInputs(source_path, worker_list(), tmp_path / "missing.xlsx"),
             RunContext(),
         )
 
@@ -1262,7 +1246,7 @@ def test_plik_zbiorczy_z_tokenem_ktory_nie_jest_okresem_zatrzymuje_przebieg_rozl
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -1307,7 +1291,7 @@ def test_failed_przetworzenie_szablonu_pracownika_emits_failure_without_false_co
 
     with pytest.raises(stopped_as) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(observer=recorded.append),
         )
 
@@ -1332,7 +1316,7 @@ def test_failed_przetworzenie_szablonu_pracownika_emits_failure_without_false_co
 
     monkeypatch.setattr(os, "replace", real_replace)
     summary = run_settlements(
-        SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+        SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
         RunContext(),
     )
     assert summary.written_count == 2
@@ -1352,7 +1336,7 @@ def test_progress_projection_accepts_whole_przebieg_rozliczen(
     projection = ProgressProjection()
 
     summary = run_settlements(
-        SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name, dry_run=dry_run),
+        SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name, dry_run=dry_run),
         RunContext(observer=projected(projection)),
     )
 
@@ -1385,7 +1369,7 @@ def test_progress_projection_accepts_przebieg_rozliczen_interrupted_in_zapisywan
 
     with pytest.raises(StopError):
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(observer=projected(projection)),
         )
 

@@ -16,7 +16,7 @@ from rozliczenia import tool_files
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.quantity_rules import QuantityColumn
 from rozliczenia.run_context import RunContext
-from atrapy.settlement import PERIOD, CellValue, make_fixture, write_quantity_source
+from atrapy.settlement import CellValue, make_fixture, PERIOD, worker_list, write_quantity_source
 from atrapy.workbooks import active_worksheet, hyperlinks, marked_for_copy, refused_by_copy, written_by_copy
 
 AP, AK = QuantityColumn.AP, QuantityColumn.AK
@@ -74,8 +74,8 @@ def test_rozliczenie_pracownika_nie_ma_ilosci_tylko_dla_inea_a_plik_zbiorczy_i_k
     highlight_and_link_ap18(source_path)
     source_before = source_path.read_bytes()
 
-    preview = run_settlements(SettlementInputs(source_path, config_path, template_path, dry_run=True), RunContext())
-    summary = run_settlements(SettlementInputs(source_path, config_path, template_path), RunContext())
+    preview = run_settlements(SettlementInputs(source_path, worker_list(), template_path, dry_run=True), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), template_path), RunContext())
 
     assert dict(summary.inea_only_cleared) == {AP: 2, AK: 2}, "puste AP w wierszu GNIAZDO się nie liczy, 0 się liczy"
     assert dict(preview.inea_only_cleared) == dict(summary.inea_only_cleared)
@@ -109,7 +109,7 @@ def test_bez_naglowka_urzadzenia_rozliczenie_pracownika_ma_ilosci_jak_plik_zbior
         workbook.close()
 
     summary = run_settlements(
-        SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+        SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
         RunContext(),
     )
 

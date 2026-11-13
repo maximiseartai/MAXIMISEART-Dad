@@ -65,7 +65,7 @@ def freeze_reference(
                     raise BenchmarkError(
                         f"Commit {sha[:7]} nie ma skryptu {SCRIPT.as_posix()}, przez który benchmark uruchamia "
                         "Przebieg rozliczeń. Zamroź wynik referencyjny z commita, który go ma: python tools/benchmark_przebiegu.py "
-                        "freeze --commit SHA z tymi samymi --scenario, --templates-dir i --config."
+                        "freeze --commit SHA z tymi samymi --scenario, --templates-dir i --wykonawcy."
                     )
                 przebieg = run_przebieg(checkout, mirror, config, worker_template, scratch)
         except subprocess.CalledProcessError as error:
@@ -91,7 +91,7 @@ def _load_reference(folder: Path) -> Reference:
         raise BenchmarkError(
             f"Wynik referencyjny {folder.name[:7]} ma stary format: linie terminala sprzed przejścia benchmarku "
             f"na skrypt {SCRIPT.as_posix()}. Usuń {folder} i zamroź wynik od nowa: python tools/benchmark_przebiegu.py "
-            "freeze --commit SHA z tymi samymi --scenario, --templates-dir i --config, z commita, który ma ten skrypt."
+            "freeze --commit SHA z tymi samymi --scenario, --templates-dir i --wykonawcy, z commita, który ma ten skrypt."
         )
     return Reference(folder, frozen["counters"], frozen["result"])
 

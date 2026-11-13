@@ -153,15 +153,19 @@ def _theme(value: object) -> Theme | None:
     return next((theme for theme in THEMES if theme == value), None)
 
 
-def shown(key: str, value: str | None) -> str:
-    """Wartość klucza w Zgłoszeniu: ścieżka tylko nazwą pliku albo ostatniego folderu (jak w Komunikatach), bo pełna
+def reported(change: KeyChange) -> str:
+    """Zmiana klucza w Zgłoszeniu: ścieżka tylko nazwą pliku albo ostatniego folderu (jak w Komunikatach), bo pełna
     ścieżka ma nazwę konta taty; motyw wprost."""
 
+    return f"{change.key}: {_shown(change.key, change.before)} → {_shown(change.key, change.after)}"
+
+
+def _shown(key: str, value: str | None) -> str:
     if value is None:
         return "nie ustawiono"
     return value if key.endswith(f".{THEME}") else PureWindowsPath(value).name
 
 
 FOLDERS: Final = SettingsFile(
-    name=SETTINGS_FILE, parse=parse, dump=dump, diff=diff, restore=restore, shown=shown, default=FolderSettings()
+    name=SETTINGS_FILE, parse=parse, dump=dump, diff=diff, restore=restore, reported=reported, default=FolderSettings()
 )

@@ -59,7 +59,6 @@ import sys
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
@@ -99,8 +98,9 @@ from atrapy.pliki_taty import (
     worker_settlements_name,
 )
 from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
-from rozliczenia.tool_files import WORKER_CONFIG, config_dir
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.centrum.settings.workers import WORKERS as WORKER_LIST_FILE, WORKERS_FILE
+from rozliczenia.tool_files import config_dir
+from rozliczenia.worker_list import WorkerEntry, WorkerList
 
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
 PREPARATION_COUNTERS = {"period_orders": 9, "successful_orders": 8, "skipped_empty_rows": 1, "warnings": 0}
@@ -207,30 +207,16 @@ def _template(path: Path, header_row: int, headers: tuple[str, ...], price_list:
 
 
 def _configuration(config: Path) -> dict[str, str]:
-    worker_config = config / WORKER_CONFIG.name
-    worker_config.write_text(
-        yaml.safe_dump(
-            {"schema_version": 1, "workers": dict(zip(WORKER_IDS, (*WORKERS, EMPTY_WORKER), strict=True))},
-            allow_unicode=True,
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    # Synthetic addresses of the Wykonawcy for Wpisanie raportów, never a real mailbox.
-    worker_addresses = config / WORKER_ADDRESSES_FILE
-    worker_addresses.write_text(
-        yaml.safe_dump(
-            {"schema_version": 1, "wykonawcy": {worker: [f"{worker}@przyklad.invalid"] for worker in WORKER_IDS}},
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
+    # Lista Wykonawców with synthetic addresses for Wpisanie raportów, never a real mailbox.
+    names = dict(zip(WORKER_IDS, (*WORKERS, EMPTY_WORKER), strict=True))
+    workers = WorkerList.of([WorkerEntry([login], name, [f"{login}@przyklad.invalid"]) for login, name in names.items()])
+    assert isinstance(workers, WorkerList), workers
+    worker_list = config / WORKERS_FILE
+    worker_list.write_text(WORKER_LIST_FILE.dump(workers), encoding="utf-8")
     _template(config / INTERNAL_TEMPLATE_NAME, 1, INTERNAL_HEADERS)
     _template(config / COLLECTIVE_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS, PRICE_LIST)
     _template(config / WORKER_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS)
     return {
-        "worker_config": str(worker_config),
-        "worker_addresses": str(worker_addresses),
         "internal_template": str(config / INTERNAL_TEMPLATE_NAME),
         "collective_template": str(config / COLLECTIVE_TEMPLATE_NAME),
         "worker_template": str(config / WORKER_TEMPLATE_NAME),

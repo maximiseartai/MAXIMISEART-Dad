@@ -1,7 +1,7 @@
 """Sprawdzanie plików taty w obu procesach, to samo w Diagnozie i Konfiguracji Centrum rozliczeń.
 
 Wzorce sprawdza Sprawdzanie Wzorca (``run_context.TemplateCheck``), które proces i Centrum dostają jako zależność, a
-bajty plików taty czyta uchwyt plików taty (``dad_files.DadFiles``). Błąd czytnika (``WorkbookError``, ``PeriodFolderError``, ``WorkerConfigError``) moduł
+bajty plików taty czyta uchwyt plików taty (``dad_files.DadFiles``). Błąd czytnika (``WorkbookError``, ``PeriodFolderError``) moduł
 sam tłumaczy na Komunikat procesu, który z tego pliku korzysta: proces zatrzymuje się nim (``StopError``), a Diagnoza i
 Konfiguracja pokazują go jako przyczynę albo problem pliku. Rejestr zleceń Przygotowania czyta i tłumaczy jego widok
 Rejestru (``preparation_register``), a tu Sprawdzanie sprawdza tylko, że Rejestr jest dostępny.
@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Final
 
 from . import preparation_files, settlement_files, settlement_messages, workbook_files
-from . import worker_config_messages
 from . import preparation_messages as messages
 from .file_state import file_state
 from .message import Message, StopError
@@ -32,7 +31,7 @@ from .run_context import TemplateCheck
 from .settlement_period import SettlementPeriod, parse_period_token
 from .template_file import TemplateFile
 from .workbook_files import Problem, WorkbookError
-from .worker_config import WorkerConfigError, load_worker_mapping
+from .worker_list import WorkerList
 
 
 # Dawna nazwa Wzorca rozliczenia pracownika, zmieniona 18.10.2026 przed pierwszym Wydaniem (v0.1.0). Usuń ją razem z
@@ -110,7 +109,7 @@ def check_preparation(
     register: Path,
     periods_directory: Path,
     period: str,
-    config: Path,
+    workers: WorkerList,
     *,
     internal_template: Path,
     collective_template: Path,
@@ -125,11 +124,11 @@ def check_preparation(
     collective = ProcessTemplate.collective(collective_template).checked(template_check)
     files = PeriodFiles(internal, collective, _locate_period_folder(periods_directory, settlement_period))
     preparation_files.ensure_period_files_absent(files)
-    return files, _worker_mapping(config)
+    return files, dict(workers.names())
 
 
 def check_settlement(
-    source: Path, config: Path, worker_template: Path, template_check: TemplateCheck
+    source: Path, workers: WorkerList, worker_template: Path, template_check: TemplateCheck
 ) -> tuple[PeriodFolder, dict[str, str], TemplateFile]:
     """Sprawdzanie Przebiegu rozliczeń: Folder okresu Pliku zbiorczego, Wykonawcy i sprawdzony Wzorzec albo zatrzymanie."""
 
@@ -140,17 +139,7 @@ def check_settlement(
     except PeriodFolderError as error:
         raise StopError(settlement_messages.collective_file_invalid(source, error)) from error
     settlement_files.ensure_worker_settlements_absent(folder.worker_settlements)
-    mapping = _worker_mapping(config)
-    return folder, mapping, ProcessTemplate.worker(worker_template).checked(template_check)
-
-
-def workers(config: Path) -> dict[str, str] | Message:
-    """Wykonawcy z konfiguracji wykonawców albo Komunikat, którym zatrzymałby się na niej każdy proces."""
-
-    try:
-        return _worker_mapping(config)
-    except StopError as stop:
-        return stop.message
+    return folder, dict(workers.names()), ProcessTemplate.worker(worker_template).checked(template_check)
 
 
 @contextmanager
@@ -159,13 +148,6 @@ def _stops(explain: Callable[[WorkbookError], Message]) -> Iterator[None]:
         yield
     except WorkbookError as error:
         raise StopError(explain(error)) from error
-
-
-def _worker_mapping(config: Path) -> dict[str, str]:
-    try:
-        return load_worker_mapping(config)
-    except WorkerConfigError as error:
-        raise StopError(worker_config_messages.worker_config_problem(config, error)) from error
 
 
 def _parse_period(token: str) -> SettlementPeriod:

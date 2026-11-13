@@ -33,6 +33,8 @@ from rozliczenia.centrum.tool_update import (
     read_result,
 )
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY
@@ -98,7 +100,9 @@ def test_polecenie_opiekuna_przyjmuje_launcher_kazdej_wersji_jako_start_bez_kart
 def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> None:
     # Cofnięcie Aktualizacji startuje starą wersję na plikach, które zostawiła nowa (ADR 0009), więc nazwy przypina literał.
     files = {
-        "WORKER_CONFIG": tool_files.WORKER_CONFIG,
+        "WORKER_LIST": tool_files.CONFIG_DIR / WORKERS_FILE,
+        "OLD_WORKER_MAPPING": tool_files.CONFIG_DIR / OLD_MAPPING_FILE,
+        "OLD_WORKER_ADDRESSES": tool_files.CONFIG_DIR / OLD_ADDRESSES_FILE,
         "WORKER_TEMPLATE": tool_files.WORKER_TEMPLATE,
         "COLLECTIVE_TEMPLATE": tool_files.COLLECTIVE_TEMPLATE,
         "INTERNAL_TEMPLATE": tool_files.INTERNAL_TEMPLATE,
@@ -115,7 +119,9 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
     }
 
     assert {name: path.relative_to(tool_files.TOOL_ROOT).as_posix() for name, path in files.items()} == {
-        "WORKER_CONFIG": "config/worker_mapping.yaml",
+        "WORKER_LIST": "config/wykonawcy.yaml",
+        "OLD_WORKER_MAPPING": "config/worker_mapping.yaml",
+        "OLD_WORKER_ADDRESSES": "config/adresy-wykonawcow.yaml",
         "WORKER_TEMPLATE": "config/Wzorzec rozliczenia pracownika.xlsx",
         "COLLECTIVE_TEMPLATE": "config/Wzorzec pliku zbiorczego.xlsx",
         "INTERNAL_TEMPLATE": "config/Wzorzec rozliczenia wewnętrznego.xlsx",
@@ -190,7 +196,9 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
     assert not work.exists()
     assert ToolClone(clone).interrupted_update() is None
     events = [line.split(" ", 2)[1] for line in _log_lines(clone)]
+    # Zmiany Ustawień z Wydania stosuje tylko pierwszy start: nowa wersja ma je już w pamięci właściciela.
     assert events == [
+        "ustawienia-wydanie",
         "start",
         "zamkniecie",
         "stop",

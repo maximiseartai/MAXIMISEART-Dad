@@ -5,6 +5,22 @@ export type ClientOptions = {
 };
 
 /**
+ * AddressesNotMoved
+ *
+ * Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego.
+ */
+export type AddressesNotMoved = {
+    /**
+     * Reason
+     */
+    reason: 'adresy_nieprzeniesione';
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
  * ApiTiming
  *
  * Jedno zapytanie API widoku: czas w przeglądarce i czas serwera z ``Server-Timing`` (``None``: brak nagłówka).
@@ -952,6 +968,35 @@ export type KindToFill = {
      * Done
      */
     done: boolean;
+};
+
+/**
+ * ListedWorker
+ *
+ * Wykonawca z Listy Wykonawców: loginy z kolumny WYKONAWCA, nazwa w Rozliczeniu pracownika, adresy Raportów
+ * wykonawcy, ``active``: nie jest Nieaktywnym Wykonawcą, ``reminders``: dostaje Przypomnienia o raporcie.
+ */
+export type ListedWorker = {
+    /**
+     * Logins
+     */
+    logins: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+    /**
+     * Active
+     */
+    active: boolean;
+    /**
+     * Reminders
+     */
+    reminders: boolean;
 };
 
 /**
@@ -2727,7 +2772,7 @@ export type Sent = {
 /**
  * SettingProblem
  *
- * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego
+ * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``wykonawcy[2].adresy[0]``) albo ``None`` dla całego
  * pliku i zdanie dla taty.
  */
 export type SettingProblem = {
@@ -2781,6 +2826,7 @@ export type Settings = {
      */
     theme: 'dark' | 'light';
     folders_problem: SettingProblem | null;
+    workers: WorkerListSetting;
 };
 
 /**
@@ -3008,6 +3054,26 @@ export type UnknownReportSender = {
 };
 
 /**
+ * UnmatchedLogin
+ *
+ * Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców.
+ */
+export type UnmatchedLogin = {
+    /**
+     * Reason
+     */
+    reason: 'login_bez_wykonawcy';
+    /**
+     * Login
+     */
+    login: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+};
+
+/**
  * UnreadablePath
  *
  * Pliku Ustawień Centrum nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
@@ -3113,6 +3179,28 @@ export type WithoutQuantityUnread = {
 };
 
 /**
+ * WorkerListSetting
+ *
+ * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
+ * ``unreadable`` (system nie daje teraz czytać pliku, lista pusta).
+ */
+export type WorkerListSetting = {
+    /**
+     * State
+     */
+    state: 'good' | 'bad' | 'unreadable';
+    /**
+     * Workers
+     */
+    workers: Array<ListedWorker>;
+    /**
+     * Unresolved
+     */
+    unresolved: Array<UnmatchedLogin | AddressesNotMoved>;
+    problem: SettingProblem | null;
+};
+
+/**
  * WorkerSettlement
  *
  * Rozliczenie pracownika jednego Wykonawcy: nazwa pliku, liczba jego zleceń w okresie i czy szablon jest pusty.
@@ -3151,7 +3239,7 @@ export type WorkerSettlementRequest = {
 /**
  * WorkersReady
  *
- * Nazwy Wykonawców w kolejności z konfiguracji wykonawców.
+ * Nazwy Wykonawców w kolejności z Listy Wykonawców.
  */
 export type WorkersReady = {
     /**

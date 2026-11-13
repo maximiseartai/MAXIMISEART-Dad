@@ -94,18 +94,18 @@ Historia czasów jest dopisywana lokalnie do `.rozliczenia-metrics.jsonl`. P50 i
 P95 pojawiają się w Metrykach Centrum po pięciu ukończonych obserwacjach tego
 samego trybu (`RUN` albo `DRY-RUN`).
 
-### Konfiguracja wykonawców
+### Lista Wykonawców
 
-Prawdziwa Konfiguracja wykonawców zawiera imiona i nazwiska pracowników taty,
-więc leży tylko na jego komputerze, tak jak Wzorce: `config/worker_mapping.yaml`
-jest w `.gitignore`. W repozytorium jest tylko
-`config/worker_mapping.example.yaml` z syntetycznymi Wykonawcami, który pokazuje
-format. Przy instalacji skopiuj na komputer taty jego prawdziwy plik jako
-`config\worker_mapping.yaml`; bez niego oba procesy zatrzymują się w Sprawdzaniu
-z komunikatem o Konfiguracji wykonawców. Testy i skrypty weryfikacyjne używają
-wyłącznie syntetycznych Wykonawców i nie czytają tego pliku.
+Prawdziwa Lista Wykonawców zawiera imiona, nazwiska i adresy pracowników taty,
+więc leży tylko na jego komputerze, tak jak Wzorce: `config/wykonawcy.yaml`
+jest w `.gitignore`. W repozytorium jest tylko `config/wykonawcy.example.yaml`
+z syntetycznymi Wykonawcami, który pokazuje format. Pierwszy start Centrum po
+Aktualizacji łączy stare pliki `config\worker_mapping.yaml` i
+`config\adresy-wykonawcow.yaml` w Listę Wykonawców i zostawia je jako kopię.
+Testy i skrypty weryfikacyjne używają wyłącznie syntetycznych Wykonawców i nie
+czytają tego pliku.
 
-Plik był kiedyś śledzony w repozytorium. Commit, który przestał go śledzić,
+Stary plik `worker_mapping.yaml` był kiedyś śledzony w repozytorium. Commit, który przestał go śledzić,
 usuwa go przy `git pull` z kopii, w której jeszcze był śledzony. Pierwszą
 aktualizację po tej zmianie u taty zrób więc tak (`git checkout` cofa lokalną
 zmianę pliku, przez którą `git pull` by się zatrzymał; kopia ją zachowuje):

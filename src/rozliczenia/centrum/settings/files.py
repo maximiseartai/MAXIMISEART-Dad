@@ -44,6 +44,18 @@ class Unreadable:
 Read = Good[T] | Bad[T]
 
 
+def usable(read: Read[T] | Unreadable) -> T | None:
+    """Wartość, na której proces może biec: dobra albo ostatnia dobra przy złym pliku; ``None``: żadnej nie ma."""
+
+    match read:
+        case Good(value=value):
+            return value
+        case Bad(usable=value):
+            return value
+        case Unreadable():
+            return None
+
+
 @dataclass(frozen=True)
 class KeyChange:
     """Zmiana jednego klucza (``sekcja.pole``) w wierszu Historii Ustawień: wartość przed i po, ``None``: nie ustawiono."""
@@ -60,8 +72,8 @@ class SettingsFile(Generic[T]):
     ``parse`` dostaje bajty pliku (``None``: pliku nie ma) i daje wartość albo pierwszy problem, ``dump`` daje treść
     pliku, ``diff`` klucze, które różnią dwie wartości, a ``restore`` wartość z kluczami ustawionymi na ich wartość
     ``before``. ``restore`` może dać wartość, której ``parse`` nie przyjmie; właściciel sprawdza ją jak każdą zmianę.
-    ``shown`` daje wartość klucza dla Zgłoszenia, bez danych osobowych. Plik ``secret`` ma w Historii tylko klucze, bez
-    wartości, i nie da się go cofnąć.
+    ``reported`` daje zmianę klucza dla Zgłoszenia, a ``logged`` klucz dla Logów Centrum, oba bez danych osobowych. Plik
+    ``secret`` ma w Historii tylko klucze, bez wartości, i nie da się go cofnąć.
     """
 
     name: str
@@ -69,6 +81,7 @@ class SettingsFile(Generic[T]):
     dump: Callable[[T], str]
     diff: Callable[[T, T], tuple[KeyChange, ...]]
     restore: Callable[[T, tuple[KeyChange, ...]], T]
-    shown: Callable[[str, str | None], str]
+    reported: Callable[[KeyChange], str]
     default: T
+    logged: Callable[[str], str] = str
     secret: bool = False

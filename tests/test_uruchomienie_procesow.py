@@ -26,7 +26,7 @@ from tests.fixtures.clock import ManualClock
 from tests.fixtures.fake_process import fail
 from atrapy.interlocutor import Tata
 from atrapy.preparation import PreparationFixture, incomplete_period_fixture, make_preparation_fixture, register_order
-from atrapy.settlement import NOT_A_PERIOD, PERIOD, make_fixture, make_preview_fixture
+from atrapy.settlement import make_fixture, make_preview_fixture, NOT_A_PERIOD, PERIOD, worker_list
 from atrapy.workbooks import refused_by_copy
 
 PHASES = {"Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"}
@@ -46,7 +46,7 @@ def settlement(tmp_path: Path, *, period: str = PERIOD) -> ProcessCase:
     worker_template = config.parent / tool_files.WORKER_TEMPLATE.name
     return ProcessCase(
         process=settlement_process.PROCESS,
-        inputs=lambda dry_run: SettlementInputs(source, config, worker_template, dry_run),
+        inputs=lambda dry_run: SettlementInputs(source, worker_list(), worker_template, dry_run),
         period_files=(target_directory,),
         client_data_markers=("syntetyczny adres", "#1"),
         templates=(worker_template,),
@@ -61,7 +61,7 @@ def preparation(tmp_path: Path, *, period: str = PERIOD, fixture: PreparationFix
             fixture.register_path,
             fixture.periods_directory,
             period,
-            fixture.config_path,
+            worker_list(),
             fixture.internal_template_path,
             fixture.collective_template_path,
             dry_run,
@@ -230,7 +230,7 @@ def test_problem_przebiegu_rozliczen_i_ostrzezenie_przygotowania_sa_licznikami_r
     worker_template = config.parent / tool_files.WORKER_TEMPLATE.name
     settled = run_process(
         settlement_process.PROCESS,
-        SettlementInputs(source, config, worker_template, dry_run=True),
+        SettlementInputs(source, worker_list(), worker_template, dry_run=True),
         Tata(),
         view=summary_view,
         metrics_path=tmp_path / "przebieg.jsonl",

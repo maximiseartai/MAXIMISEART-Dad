@@ -6,7 +6,7 @@ Jedyną operacją jest ``replay()``. Kształt danych:
 - Logi Uruchomienia (``run_logs.RunLog`` tego drzewa) dają proces, tryb, okres, wynik i ślad do porównania, a Kopia
   wejścia wiersze plików taty. Wpisanie raportów ma maile ze Skrzynki raportów tylko jako Wpisy raportu w Logach
   (``report_entering``), więc odtworzenie podaje je procesowi jako maile w postaci kanonicznej
-  (``worker_reports.as_mail``) od adresów ``@odtworzenie.invalid``, z Konfiguracją wykonawców i plikiem adresów z
+  (``worker_reports.as_mail``) od adresów ``@odtworzenie.invalid``, z Listą Wykonawców z
   loginów Wpisów oraz z pamięcią wpisów i decyzjami „Zostaw moją” sprzed kliknięcia z Logów.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
   pusta Kopia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu wyników szukania, wiersz Kopii albo
@@ -24,8 +24,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   danych zna dwie kolumny na lewo od nagłówka (#918), wiersze wklejenia INTERMAX krój wiersza z aplikacji, a wiersze
   INTERMAX Wpisania raportów krój uporządkowanych wierszy, bo Kopia ma tylko uporządkowane wiersze. W miejscu kolumn
   ``ADRES`` i numeru Orange stoją wartości syntetyczne z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``),
-  których żaden plik taty nie ma. Wzorce i Konfigurację wykonawców daje folder ``configuration``, bo Logi mają z nich
-  tylko nazwę i rozmiar.
+  których żaden plik taty nie ma. Wzorce i Listę Wykonawców (``wykonawcy.yaml``) daje folder ``configuration``, bo Logi
+  mają z nich tylko nazwę i rozmiar.
 - Proces biegnie przez to samo Uruchomienie co w Centrum (``process_kind.PreparedRun.conduct``: ten sam rdzeń i wpis
   katalogu procesów), z Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``EndedRun.of``,
   ``logs_of`` i strażnik (``guard_logs``), jak w Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa
@@ -44,7 +44,7 @@ zapisuje, i metryki. Nic nie idzie do Skrzynki Zgłoszeń, bo odtworzenie nie ma
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Container, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -69,6 +69,9 @@ from rozliczenia.centrum import stops
 from rozliczenia.centrum.logs_of_run import logs_of
 from rozliczenia.centrum.efenix_chrome import atrapa_opening
 from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.memory import settings_bytes
+from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.centrum.process_kind import (
     ConfigurationNeed,
     HostParts,
@@ -126,6 +129,7 @@ from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
+from rozliczenia.worker_list import WorkerEntry, WorkerList
 from rozliczenia.worker_reports import (
     Kept,
     Login,
@@ -332,9 +336,9 @@ def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, conf
             )
         ]
     limits = [*_guard_limits(record), *_typed_limits(copied), *_masked_limits(record), *rebuild.limits(record)]
-    needs = _from_configuration(kind, rebuild.configuration)
-    if needs:
-        limits.append(_configuration_limit(record, configuration, needs))
+    names = _from_configuration(kind, rebuild)
+    if names:
+        limits.append(_configuration_limit(record, configuration, names))
     if record.stop_kind == "repeated":
         limits.append(
             Limit(
@@ -411,18 +415,18 @@ def _masked_limits(record: RunLog) -> list[Limit]:
     ]
 
 
-def _configuration_limit(record: RunLog, configuration: Path | None, needs: Sequence[ConfigurationNeed]) -> Limit:
-    """Konfiguracja wykonawców i Wzorce (``needs``) z folderu ``configuration``: bez folderu odtworzenie nie biegnie, a
+def _configuration_limit(record: RunLog, configuration: Path | None, names: Sequence[str]) -> Limit:
+    """Lista Wykonawców i Wzorce (pliki ``names``) z folderu ``configuration``: bez folderu odtworzenie nie biegnie, a
     plik, którego w nim nie ma, i rozmiar inny niż plik taty w Logach (``environment.files``) raport nazywa."""
 
     if configuration is None or not configuration.is_dir():
         return Limit(
-            f"nie ma folderu z Konfiguracją wykonawców i Wzorcami ({configuration or 'brak'}, --konfiguracja): Logi ich "
+            f"nie ma folderu z Listą Wykonawców i Wzorcami ({configuration or 'brak'}, --konfiguracja): Logi ich "
             "nie niosą, a proces bez nich nie biegnie",
             blocking=True,
         )
     logged = {file.name: file.size for file in (record.environment.files or ())}
-    paths = [ConfigurationFiles.in_folder(configuration).path(need) for need in needs]
+    paths = [configuration / name for name in names]
     missing = [path.name for path in paths if not path.is_file()]
     sizes = [
         f"{path.name}: u taty {logged[path.name]} B, tu {path.stat().st_size} B"
@@ -430,7 +434,7 @@ def _configuration_limit(record: RunLog, configuration: Path | None, needs: Sequ
         if path.is_file() and logged.get(path.name) not in (None, path.stat().st_size)
     ]
     text = (
-        f"Konfiguracja wykonawców i Wzorce nie są w Logach: odtworzenie czyta je z {configuration}, a Logi mają tylko "
+        f"Lista Wykonawców i Wzorce nie są w Logach: odtworzenie czyta je z {configuration}, a Logi mają tylko "
         "nazwę i rozmiar plików taty"
     )
     if missing:
@@ -471,16 +475,17 @@ class _Rebuilt:
     paths: Mapping[PathNeed, Path]
     parts: HostParts = field(default_factory=HostParts)
     limits: list[Limit] = field(default_factory=list)
+    workers: WorkerList | None = None
 
 
 @dataclass(frozen=True)
 class _Rebuild:
     """Odtworzenie jednego procesu w tym, czego katalog procesów nie wie: granice Logów i odbudowa plików z Logów.
-    ``configuration``: pliki Konfiguracji, które odbudowa pisze z Logów, więc nie biorą się z folderu Konfiguracji."""
+    ``workers``: odbudowa daje Listę Wykonawców z Logów, więc nie bierze się ona z folderu Konfiguracji."""
 
     limits: Callable[[RunLog], list[Limit]]
     files: Callable[[RunLog, _Work], _Rebuilt]
-    configuration: tuple[ConfigurationNeed, ...] = ()
+    workers: bool = False
 
 
 def _cell(value: LoggedCell) -> _Written:
@@ -856,7 +861,7 @@ def _entering_limits(record: RunLog) -> list[Limit]:
 
 
 def _entering(record: RunLog, work: _Work) -> _Rebuilt:
-    """INTERMAX z uporządkowanych wierszy Kopii wejścia, Konfiguracja wykonawców i plik adresów z loginów Wpisów,
+    """INTERMAX z uporządkowanych wierszy Kopii wejścia, Lista Wykonawców z loginów Wpisów,
     Skrzynka raportów z maili w postaci kanonicznej (``worker_reports.as_mail``), pamięć wpisów z ``rollout_before`` i
     ``memory_before`` z decyzjami „Zostaw moją” z ``kept``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
     zegar z dniem kliknięcia u taty. Numery z Wpisu, które INTERMAX taty miał w przeczytanym wierszu bez zlecenia
@@ -870,11 +875,8 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     reads = [] if entering is None else [logged_read(mail) for mail in entering.mails]
     logins = sorted({read.worker for read in reads if not isinstance(read, ReadStranger)}) or [_NO_WORKER]
     senders = {login: _sender(f"wykonawca-{index}") for index, login in enumerate(logins)}
-    files = ConfigurationFiles.in_folder(work.folder("konfiguracja"))
-    workers = {"schema_version": 1, "workers": {login: login for login in logins}}
-    addresses = {"schema_version": 1, "wykonawcy": {login: [sender.shown()] for login, sender in senders.items()}}
-    files.path("worker_config").write_text(json.dumps(workers, ensure_ascii=False), encoding="utf-8")
-    files.path("worker_addresses").write_text(json.dumps(addresses, ensure_ascii=False), encoding="utf-8")
+    workers = WorkerList.of([WorkerEntry([login], login, [sender.shown()]) for login, sender in senders.items()])
+    assert isinstance(workers, WorkerList), "login Wpisu jest nazwą pliku, bo Logi niosą go po Liście Wykonawców taty"
     strangers = iter(_strangers(entering))
     mails = [as_mail(read, next(strangers) if isinstance(read, ReadStranger) else senders[read.worker]) for read in reads]
     saved = SavedState(None, OwnEntries.EMPTY) if entering is None else _saved(entering)
@@ -888,13 +890,8 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
         collective = PeriodFolder(periods, parse_period_token(token)).collective_file
         collective.parent.mkdir(parents=True, exist_ok=True)
         collective.touch()
-    paths: dict[PathNeed, Path] = {
-        "register": register,
-        "periods_directory": periods,
-        "worker_config": files.path("worker_config"),
-        "worker_addresses": files.path("worker_addresses"),
-    }
-    return _Rebuilt(paths, parts, limits)
+    paths: dict[PathNeed, Path] = {"register": register, "periods_directory": periods}
+    return _Rebuilt(paths, parts, limits, workers)
 
 
 def _add_orderless(register: Path, entering: LoggedReports) -> None:
@@ -1049,15 +1046,17 @@ def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:
         case "efenix":
             return _Rebuild(_efenix_limits, _efenix)
         case "report_entering":
-            return _Rebuild(_entering_limits, _entering, configuration=("worker_config", "worker_addresses"))
+            return _Rebuild(_entering_limits, _entering, workers=True)
         case _:
             assert_never(key)
 
 
-def _from_configuration(kind: ProcessKind[Any, Any], rebuilt: Container[str]) -> list[ConfigurationNeed]:
-    """Pliki Konfiguracji procesu ``kind``, które odtworzenie bierze z folderu Konfiguracji, a nie z odbudowy."""
+def _from_configuration(kind: ProcessKind[Any, Any], rebuild: _Rebuild) -> list[str]:
+    """Pliki procesu ``kind``, które odtworzenie bierze z folderu Konfiguracji, a nie z odbudowy: Wzorce i Lista
+    Wykonawców."""
 
-    return [need for need in kind.configuration_needs if need not in rebuilt]
+    templates = [ConfigurationFiles.in_folder(Path()).path(need).name for need in kind.configuration_needs]
+    return [*templates, WORKERS_FILE] if "workers" in kind.needs and not rebuild.workers else templates
 
 
 def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work) -> PreparedRun[Any, Any]:
@@ -1065,9 +1064,10 @@ def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, wo
     metryk w katalogu roboczym w miejscu pliku metryk procesu. Okres Uporządkowania INTERMAX to okres dnia z zegara
     procesu u taty (ADR 0019), więc start podaje okres tylko procesowi z okresem."""
 
-    paths = {**rebuilt.paths, **_configured(work, _from_configuration(kind, rebuilt.paths))}
+    paths = {**rebuilt.paths, **_configured(work, kind.configuration_needs)}
     period = record.period if isinstance(kind, PeriodProcessKind) else None
-    start = Start(paths, period=period, dry_run=record.mode.dry_run, pricing=record.pricing)
+    workers = rebuilt.workers if rebuilt.workers is not None else _configured_workers(work) if "workers" in kind.needs else None
+    start = Start(paths, period=period, dry_run=record.mode.dry_run, pricing=record.pricing, workers=workers)
     metrics = work.path("metryki.jsonl")
     return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts().new())
 
@@ -1078,6 +1078,20 @@ def _configured(work: _Work, needs: Sequence[ConfigurationNeed]) -> dict[PathNee
     assert work.configuration is not None, "bez folderu Konfiguracji _configuration_limit blokuje odtworzenie"
     files = ConfigurationFiles.in_folder(work.configuration)
     return {need: files.path(need) for need in needs}
+
+
+def _configured_workers(work: _Work) -> WorkerList:
+    """Lista Wykonawców z ``wykonawcy.yaml`` folderu Konfiguracji regułą właściciela Ustawień Centrum; brak pliku to
+    pusta lista, jak w Centrum, a zła treść to błąd odtworzenia (``ValueError`` ze zdaniem)."""
+
+    assert work.configuration is not None, "bez folderu Konfiguracji _configuration_limit blokuje odtworzenie"
+    data = settings_bytes(work.configuration / WORKERS_FILE)
+    if isinstance(data, OSError):
+        raise data
+    parsed = WORKERS.parse(data)
+    if isinstance(parsed, FieldProblem):
+        raise ValueError(f"{WORKERS_FILE}: {parsed.sentence}")
+    return parsed
 
 
 # --- przebieg -------------------------------------------------------------------------------------------------------

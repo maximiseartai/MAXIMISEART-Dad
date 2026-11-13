@@ -1,4 +1,4 @@
-"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw i Historia Ustawień."""
+"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, Lista Wykonawców i Historia Ustawień."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Model
+from rozliczenia.centrum.contract.settings_workers import SettingProblem, WorkerListSetting
 
 
 class NotSetPath(Model):
@@ -52,14 +53,6 @@ PathSetting = Annotated[
 Theme = Literal["dark", "light"]
 
 
-class SettingProblem(Model):
-    """Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego
-    pliku i zdanie dla taty."""
-
-    field: str | None
-    message: str
-
-
 class Settings(Model):
     """Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
     dobre wartości, a bez nich nie ustawiono i motyw domyślny."""
@@ -68,6 +61,7 @@ class Settings(Model):
     periods_directory: PathSetting
     theme: Theme
     folders_problem: SettingProblem | None
+    workers: WorkerListSetting
 
 
 class Choice(Model):

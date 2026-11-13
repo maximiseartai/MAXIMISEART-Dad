@@ -18,6 +18,7 @@ import sys
 import pytest
 
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
@@ -259,7 +260,7 @@ def test_nazwy_plikow_narzedzia_i_stanu_centrum_biora_testy_od_wlasciciela() -> 
     )
     pinned = {owned for name in CONTRACTS for node in _owned_literals(TESTS / name, names) for owned in names if _ends_with(str(node.value), owned)}
 
-    assert {tool_files.WORKER_CONFIG.name, REPORT_KEY_FILE} <= names, "_owned_names nie widzi już tool_files albo stałych *_FILE"
+    assert {tool_files.WORKER_TEMPLATE.name, WORKERS_FILE, REPORT_KEY_FILE} <= names, "_owned_names nie widzi już tool_files albo stałych *_FILE"
     assert found == [], "weź nazwę od właściciela (tool_files, ToolDirectory w tests/fixtures/centrum.py, stała modułu Centrum)"
     assert sorted(names - pinned) == [], "przypnij nazwę literałem w teście kontraktu z CONTRACTS"
 

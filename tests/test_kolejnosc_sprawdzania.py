@@ -28,7 +28,7 @@ from atrapy.preparation import (
     month_periods_folder,
 )
 from tests.fixtures.operacje import run_preparation
-from atrapy.settlement import NOT_A_PERIOD, make_fixture
+from atrapy.settlement import NOT_A_PERIOD, make_fixture, worker_list
 
 NOT_A_WORKBOOK = b"to nie jest skoroszyt"
 INVALID_YAML = "workers: ["
@@ -63,7 +63,7 @@ class Settlement:
 
     def stop(self) -> Message:
         with pytest.raises(StopError) as raised:
-            run_settlements(SettlementInputs(self.source, self.config, self.worker_template), RunContext())
+            run_settlements(SettlementInputs(self.source, worker_list(), self.worker_template), RunContext())
         return raised.value.message
 
 
@@ -137,12 +137,6 @@ PREPARATION: Sequence[Fault[Preparation]] = (
     Fault("brak-folderu-okresu", "folder okresów", _period_folder_only_in_other_layout, "BRAK_FOLDERU_OKRESU"),
     Fault("plik-okresu-istnieje", "folder okresów", _period_file_exists, "PLIK_OKRESU_ISTNIEJE"),
     Fault(
-        "zla-konfiguracja-wykonawcow",
-        "konfiguracja wykonawców",
-        lambda world: world.fixture.config_path.write_text(INVALID_YAML, encoding="utf-8"),
-        "ZLA_KONFIGURACJA_WYKONAWCOW",
-    ),
-    Fault(
         "uszkodzony-rejestr",
         "rejestr",
         lambda world: world.fixture.register_path.write_bytes(NOT_A_WORKBOOK),
@@ -158,12 +152,6 @@ SETTLEMENT: Sequence[Fault[Settlement]] = (
         "folder rozliczeń pracowników",
         _worker_settlements_exist,
         "FOLDER_ROZLICZEN_ISTNIEJE",
-    ),
-    Fault(
-        "zla-konfiguracja-wykonawcow",
-        "konfiguracja wykonawców",
-        lambda world: world.config.write_text(INVALID_YAML, encoding="utf-8"),
-        "ZLA_KONFIGURACJA_WYKONAWCOW",
     ),
     Fault(
         "brak-wzorca-pracownika",

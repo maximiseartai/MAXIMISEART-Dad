@@ -3540,7 +3540,16 @@ def test_odpowiedz_na_przypomnienie_konczy_przypomnienia_za_ten_dzien(subject: s
     inputs = _inputs([mail], [_order()], today=now.date(), rollout=DAY - timedelta(days=1))
 
     found = reminders_due(
-        ReminderInputs(now, inputs.window, inputs.orders, inputs.mails, (), inputs.addresses, footer=None)
+        ReminderInputs(
+            now,
+            inputs.window,
+            inputs.orders,
+            inputs.mails,
+            (),
+            inputs.addresses,
+            frozenset(inputs.addresses.logins.values()),
+            footer=None,
+        )
     )
 
     assert [(reminder.worker, reminder.day) for reminder in found] == due

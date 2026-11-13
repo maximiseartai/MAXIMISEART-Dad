@@ -49,12 +49,11 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-import yaml
 from fastapi.testclient import TestClient
 
 from atrapy import pliki_taty
 from atrapy.preparation import PreparationFixture, make_preparation_fixture
-from atrapy.settlement import MARKED, write_quantity_source, write_template
+from atrapy.settlement import MARKED, worker_list, write_quantity_source, write_template
 from atrapy.skrzynka_raportow import FakeInbox
 from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
 from rozliczenia.centrum.app import create_app
@@ -69,7 +68,7 @@ from rozliczenia.report_entering import EnteringInputs, ReportEnteringParts, Rep
 from rozliczenia.run_context import RunContext, check_on_disk
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.wall_clock import local_now
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_report_inbox import PasswordRejected
 from rozliczenia.worker_reports import OwnEntries
 import rozjazd_modelu
@@ -318,7 +317,7 @@ class Inputs:
 
     preparation: PreparationFixture
     worker_template: Path
-    addresses: Path
+    workers: WorkerList
     collective_bytes: Path
 
 
@@ -327,14 +326,10 @@ def make_inputs(root: Path) -> Inputs:
     preparation = make_preparation_fixture(root)
     worker_template = root / "config" / pliki_taty.WORKER_TEMPLATE_NAME
     write_template(worker_template)
-    addresses = root / "config" / WORKER_ADDRESSES_FILE
-    addresses.write_text(
-        yaml.safe_dump({"schema_version": 1, "wykonawcy": {"adrian.testowy": ["adrian.testowy@przyklad.invalid"]}}),
-        encoding="utf-8",
-    )
+    workers = worker_list(addresses={"adrian.testowy": ["adrian.testowy@przyklad.invalid"]})
     collective_bytes = root / "plik-zbiorczy.xlsx"
     write_quantity_source(collective_bytes, [MARKED, {}])
-    return Inputs(preparation, worker_template, addresses, collective_bytes)
+    return Inputs(preparation, worker_template, workers, collective_bytes)
 
 
 @contextmanager
@@ -554,8 +549,7 @@ def ask_entering(inputs: Inputs, periods: Path) -> Answer:
     entering = EnteringInputs(
         inputs.preparation.register_path,
         periods,
-        inputs.preparation.config_path,
-        inputs.addresses,
+        inputs.workers,
         ReportEnteringParts(inbox, ReportStateInMemory(SavedState(PERIOD.tuesday, OwnEntries.EMPTY))),
         now=lambda: CLICKED_AT,
     )
@@ -601,7 +595,7 @@ def ask_starts(inputs: Inputs, periods: Path) -> list[Answer]:
                 fixture.register_path,
                 periods,
                 PERIOD.token,
-                fixture.config_path,
+                inputs.workers,
                 internal_template=fixture.internal_template_path,
                 collective_template=fixture.collective_template_path,
                 template_check=check_on_disk,
@@ -609,7 +603,7 @@ def ask_starts(inputs: Inputs, periods: Path) -> list[Answer]:
         ),
         _start(
             Consumer.START_PRZEBIEGU,
-            lambda: check_settlement(collective_file, fixture.config_path, inputs.worker_template, check_on_disk),
+            lambda: check_settlement(collective_file, inputs.workers, inputs.worker_template, check_on_disk),
         ),
     ]
 

@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-import yaml
 from openpyxl.utils import get_column_letter
 
+from atrapy.settlement import worker_list, write_worker_list
 from atrapy.pliki_taty import (
     AMOUNT_COLUMN,
     COLLECTIVE_HEADERS,
@@ -28,7 +28,7 @@ from atrapy.pliki_taty import (
     INTERNAL_HEADERS,
     INTERNAL_TEMPLATE_NAME,
     QUANTITY_COLUMNS,
-    WORKER_CONFIG_NAME,
+    WORKER_LIST_NAME,
     WORKER_TEMPLATE_NAME,
 )
 
@@ -686,17 +686,14 @@ def write_internal_template(path: Path) -> None:
 
 
 def write_worker_config(path: Path) -> None:
-    """Konfiguracja wykonawców z 20 syntetycznymi Wykonawcami (tyle Szablonów pracowników ma tata)."""
+    """Lista Wykonawców z 20 syntetycznymi Wykonawcami (tyle Szablonów pracowników ma tata)."""
 
-    workers = {f"wykonawca.syntetyczny{number:02d}": f"Wykonawca Syntetyczny {number:02d}" for number in range(1, WORKERS + 1)}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump({"schema_version": 1, "workers": workers}, allow_unicode=True, sort_keys=False), encoding="utf-8"
-    )
+    names = {f"wykonawca.syntetyczny{number:02d}": f"Wykonawca Syntetyczny {number:02d}" for number in range(1, WORKERS + 1)}
+    write_worker_list(path, worker_list(names))
 
 
 def write_synthetic_templates(directory: Path, data_rows: int = FULL_DATA_ROWS) -> None:
     write_settlement_template(directory / WORKER_TEMPLATE_NAME, "GODZINA", data_rows, comments=True)
     write_settlement_template(directory / COLLECTIVE_TEMPLATE_NAME, COLLECTIVE_HEADERS[0], data_rows)
     write_internal_template(directory / INTERNAL_TEMPLATE_NAME)
-    write_worker_config(directory / WORKER_CONFIG_NAME)
+    write_worker_config(directory / WORKER_LIST_NAME)

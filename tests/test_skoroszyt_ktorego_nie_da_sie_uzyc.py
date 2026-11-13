@@ -23,7 +23,7 @@ from tests.fixtures.centrum import CentrumClient, ToolDirectory, centrum_app
 from tests.fixtures.centrum_processes import write_configuration
 from atrapy.preparation import make_preparation_fixture
 from tests.fixtures.operacje import run_preparation
-from atrapy.settlement import make_fixture
+from atrapy.settlement import make_fixture, worker_list
 from atrapy.workbooks import active_worksheet
 
 
@@ -48,7 +48,7 @@ def test_przebieg_bez_pliku_zbiorczego_zatrzymuje_sprawdzanie_brakiem_pliku_zbio
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
             RunContext(),
         )
 
@@ -67,7 +67,7 @@ def test_przebieg_bez_wzorca_rozliczenia_pracownika_w_zapisywaniu_nie_tworzy_sko
 
     with pytest.raises(StopError) as raised:
         run_settlements(
-            SettlementInputs(source_path, config_path, worker_template_path),
+            SettlementInputs(source_path, worker_list(), worker_template_path),
             RunContext(observer=remove_before_first_file),
         )
 

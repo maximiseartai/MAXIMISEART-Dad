@@ -101,7 +101,6 @@ def plan_period_orders(
     register_path: Path,
     sheets: Sequence[RegisterSheet],
     period: SettlementPeriod,
-    config_path: Path,
     worker_mapping: Mapping[str, str],
 ) -> Plan:
     """Wybiera zlecenia okresu po dacie, w kolejności Rejestru, sprawdza reguły zleceń i stosuje Reguły ilości."""
@@ -124,7 +123,7 @@ def plan_period_orders(
     _check_successful_values(register_path, register, orders)
     unknown_workers = _unknown_workers(orders, worker_mapping)
     if unknown_workers:
-        raise StopError(messages.unknown_workers(register_path, register.name, config_path, unknown_workers))
+        raise StopError(messages.unknown_workers(register_path, register.name, unknown_workers))
     skipped_empty_rows = sum(1 for row in register.empty_rows if first_row < row < last_row)
     collective_rows = [CollectiveRow.of(order) for order in orders if order.is_successful]
     return Plan(period, register.name, orders, collective_rows, skipped_empty_rows)
@@ -168,7 +167,7 @@ def _period_sheet(register_path: Path, sheets: Sequence[RegisterSheet], period: 
 def _unknown_workers(
     orders: Sequence[PeriodOrder], worker_mapping: Mapping[str, str]
 ) -> list[tuple[str, list[int]]]:
-    """Wykonawcy Zleceń skutecznych spoza konfiguracji wykonawców, z numerami wierszy Rejestru."""
+    """Wykonawcy Zleceń skutecznych spoza Listy Wykonawców, z numerami wierszy Rejestru."""
 
     unknown: dict[str, tuple[str, list[int]]] = {}
     for order in orders:

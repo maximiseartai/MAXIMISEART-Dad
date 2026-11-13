@@ -122,7 +122,7 @@ from atrapy.efenix import ADDRESS, DAY, Order, write_collective_file
 from atrapy.interlocutor import Tata
 from tests.fixtures.okno_w_procesie import okno
 from tests.fixtures.przegladarka import chromium, page_of
-from atrapy.settlement import PERIOD, write_mapping, write_template
+from atrapy.settlement import PERIOD, worker_list, write_template
 from atrapy.workbooks import active_worksheet, rewrite_parts
 
 # Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie, strona zlecenia i skrypty obu stron.
@@ -3690,7 +3690,7 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
     assert _marked(source) == [18, 19]
 
     summary = run_settlements(
-        SettlementInputs(source, write_mapping(tmp_path / tool_files.WORKER_CONFIG.name), template),
+        SettlementInputs(source, worker_list(), template),
         RunContext(),
     )
 

@@ -1,6 +1,6 @@
 """Ustawienia Centrum: jedyny czytelnik i pisarz plików Ustawień w ``config``, ich Historii i pamięci (ADR 0032).
 
-Na start obejmuje plik Folderów i motywu (``folders``). ``CentrumSettings`` czyta go przy każdym odczycie od nowa, więc
+Obejmuje plik Folderów i motywu (``folders``) i Listę Wykonawców (``workers``). ``CentrumSettings`` czyta go przy każdym odczycie od nowa, więc
 zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 
@@ -49,6 +49,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+import re
 import threading
 from typing import Any, Final, TypeVar
 import uuid
@@ -69,7 +70,9 @@ from rozliczenia.centrum.settings.history import (
     RowSource,
 )
 from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, Remembered, settings_bytes
-from rozliczenia.centrum.settings.release_changes import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.workers import WORKERS
+from rozliczenia.worker_list import WorkerList
 
 T = TypeVar("T")
 
@@ -81,9 +84,11 @@ HISTORY_UNREADABLE: Final = "- Historii Ustawień nie dało się przeczytać"
 
 @dataclass(frozen=True)
 class SettingsSnapshot:
-    """Wartości Ustawień Centrum z jednej chwili: dobre, a przy złym pliku ostatnie dobre albo domyślne."""
+    """Wartości Ustawień Centrum z jednej chwili. Foldery: dobre, a przy złym pliku ostatnie dobre albo domyślne.
+    Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (``workers_usable``)."""
 
     folders: FolderSettings
+    workers: Read[WorkerList] | Unreadable
 
 
 @dataclass(frozen=True)
@@ -91,6 +96,7 @@ class SettingsView:
     """Ustawienia Centrum dla okna Ustawień: każda sekcja z wartością albo złym ustawieniem."""
 
     folders: Read[FolderSettings] | Unreadable
+    workers: Read[WorkerList] | Unreadable
 
 
 @dataclass(frozen=True)
@@ -138,11 +144,11 @@ class CentrumSettings:
         """Wartości dla procesu: raz na start Uruchomienia, który kończy na nich bez względu na późniejsze zmiany."""
 
         with self._lock:
-            return SettingsSnapshot(folders=_usable(self._observe(FOLDERS), FOLDERS))
+            return SettingsSnapshot(folders=_usable(self._observe(FOLDERS), FOLDERS), workers=self._observe(WORKERS))
 
     def view(self) -> SettingsView:
         with self._lock:
-            return SettingsView(folders=self._observe(FOLDERS))
+            return SettingsView(folders=self._observe(FOLDERS), workers=self._observe(WORKERS))
 
     def change(self, file: SettingsFile[T], edit: Callable[[T], T]) -> Saved | Refused | NotSaved:
         """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową."""
@@ -315,7 +321,8 @@ class CentrumSettings:
         self._remember(file, Remembered(seen=new, good=new))
         if row is None:
             return Saved(change=None)
-        self._log.settings_changed(file=file.name, keys=tuple(change.key for change in changes), source=source.kind)
+        keys = tuple(dict.fromkeys(file.logged(change.key) for change in changes))
+        self._log.settings_changed(file=file.name, keys=keys, source=source.kind)
         return Saved(change=row.id)
 
     def _put_back(self, file: SettingsFile[T], data: bytes | None) -> None:
@@ -357,7 +364,8 @@ class CentrumSettings:
 
     def _observed(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
         """Wartość pliku w stanie ``data`` (``None``: brak pliku) po porównaniu z pamięcią: stan wyjściowy bez wiersza,
-        ten sam stan bez niczego albo zmiana spoza Centrum z jednym wierszem."""
+        ten sam stan bez niczego albo zmiana spoza Centrum z jednym wierszem. Zła treść ma ostatnią dobrą treść z pamięci,
+        a bez niej (także po przyjętym braku pliku) ``usable`` ``None``, więc proces bez Listy Wykonawców nie startuje."""
 
         parsed = file.parse(data)
         remembered = self._memory.read(file.name)
@@ -368,19 +376,20 @@ class CentrumSettings:
                 self._log.settings_bad(file=file.name, field=parsed.field or "plik")
             self._remember(file, Remembered(seen=data, good=None if isinstance(parsed, FieldProblem) else data))
             return _read(parsed, None)
-        before = _good_value(remembered.good, file)
+        good = None if remembered.good is None else _good_value(remembered.good, file)
+        before = file.default if good is None else good
         if data == remembered.seen:
-            return _read(parsed, before)
+            return _read(parsed, good)
         try:
             self._history.append(self._outside_row(file, data, parsed, before))
         except OSError:
             self._log.settings_external(file=file.name, result="bez-zapisu")
-            return _read(parsed, before)
+            return _read(parsed, good)
         self._remember(file, Remembered(seen=data, good=remembered.good if isinstance(parsed, FieldProblem) else data))
         if isinstance(parsed, FieldProblem):
             self._log.settings_bad(file=file.name, field=parsed.field or "plik")
             self._log.settings_external(file=file.name, result="odrzucono")
-            return Bad(parsed, before)
+            return Bad(parsed, good)
         self._log.settings_external(file=file.name, result="zapisano")
         return Good(parsed)
 
@@ -400,7 +409,7 @@ class CentrumSettings:
     def _row(
         self, file: SettingsFile[T], changes: tuple[KeyChange, ...], source: RowSource, *, undoes: str | None, undoable: bool
     ) -> HistoryRow:
-        sections = {change.key.partition(".")[0] for change in changes}
+        sections = {_SECTION.split(change.key, maxsplit=1)[0] for change in changes}
         return HistoryRow(
             id=uuid.uuid4().hex,
             at=self._now(),
@@ -416,22 +425,30 @@ class CentrumSettings:
         )
 
 
-_FILES: Final[dict[str, SettingsFile[FolderSettings]]] = {FOLDERS.name: FOLDERS}
+_FILES: Final[dict[str, SettingsFile[Any]]] = {FOLDERS.name: FOLDERS, WORKERS.name: WORKERS}
+_SECTION: Final = re.compile(r"[.\[]")
+"""Sekcja klucza Historii to jego początek do kropki (``foldery.rejestr_zlecen``) albo nawiasu (``wykonawcy[login]``)."""
 
 
 def read_snapshot(config: Path) -> SettingsSnapshot:
-    """Migawka bez zapisu dla narzędzi i Skryptu dla maszyn: plik, przy złej treści ostatnia dobra z pamięci właściciela
-    albo wartości domyślne; nie dopisuje Historii ani pamięci."""
+    """Migawka bez zapisu dla narzędzi i Skryptu dla maszyn: plik, przy złej treści ostatnia dobra z pamięci właściciela;
+    nie dopisuje Historii ani pamięci."""
 
-    data = settings_bytes(config / FOLDERS.name)
+    return SettingsSnapshot(folders=_usable(_unobserved(config, FOLDERS), FOLDERS), workers=_unobserved(config, WORKERS))
+
+
+def _unobserved(config: Path, file: SettingsFile[T]) -> Read[T] | Unreadable:
+    """Wartość pliku bez porównania z pamięcią: zła treść z ostatnią dobrą z pamięci właściciela, gdy ją ma."""
+
+    data = settings_bytes(config / file.name)
     if isinstance(data, OSError):
-        return SettingsSnapshot(folders=FOLDERS.default)
-    parsed = FOLDERS.parse(data)
+        return Unreadable()
+    parsed = file.parse(data)
     if not isinstance(parsed, FieldProblem):
-        return SettingsSnapshot(folders=parsed)
-    remembered = Memory(config, lambda _: None).read(FOLDERS.name)
+        return Good(parsed)
+    remembered = Memory(config, lambda _: None).read(file.name)
     good = remembered.good if isinstance(remembered, Remembered) else None
-    return SettingsSnapshot(folders=_good_value(good, FOLDERS))
+    return Bad(parsed, None if good is None else _good_value(good, file))
 
 
 def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:
@@ -465,10 +482,7 @@ def _reported(row: HistoryRow) -> str:
         return f"{head} · zmieniono: " + ", ".join(change.key for change in row.changes)
     undo = " · cofnięcie" if row.undoes is not None else ""
     removed = " · usunięto plik" if row.removed else ""
-    return f"{head}{undo}{removed} · " + "; ".join(
-        f"{change.key}: {file.shown(change.key, change.before)} → {file.shown(change.key, change.after)}"
-        for change in row.changes
-    )
+    return f"{head}{undo}{removed} · " + "; ".join(file.reported(change.change()) for change in row.changes)
 
 
 def _reported_source(source: RowSource) -> str:

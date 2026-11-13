@@ -113,7 +113,7 @@ def _settlement(change: Callable[[Path], None] | None = None, *, preview: bool =
         source, _, config = (make_preview_fixture if unmapped else make_fixture)(folder)
         if change is not None:
             change(source)
-        arguments: list[str | Path] = ["--source", source, "--config", config, "--worker-template", folder / WORKER_TEMPLATE_NAME]
+        arguments: list[str | Path] = ["--source", source, "--wykonawcy", config, "--worker-template", folder / WORKER_TEMPLATE_NAME]
         return [*arguments, "--dry-run"] if preview else arguments
 
     return build
@@ -207,7 +207,7 @@ def _preparation(
             "--register", made.register_path,
             "--periods-directory", made.periods_directory,
             "--period", PERIOD,
-            "--config", made.config_path,
+            "--wykonawcy", made.config_path,
             "--internal-template", made.internal_template_path,
             "--collective-template", made.collective_template_path,
         ]  # fmt: skip

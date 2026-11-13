@@ -20,16 +20,16 @@ from atrapy.scenariusz_rozliczen import (
     UNMAPPED_ROW,
     WORKER_TEMPLATE_NAME,
 )
-from atrapy.pliki_taty import WORKER_CONFIG_NAME
+from atrapy.pliki_taty import WORKER_LIST_NAME
 from atrapy.settlement import (
     PERIOD,
     SOURCE_NAME,
     WORKERS,
     SourceRow,
     link_order_numbers,
-    write_mapping,
     write_source_rows,
     write_template,
+    write_worker_list,
 )
 
 
@@ -45,7 +45,7 @@ def _write_fixture(root: Path, *, include_unmapped: bool) -> None:
     source = period_directory / SOURCE_NAME
     worker_template = root / WORKER_TEMPLATE_NAME
     _write_source(source, include_unmapped=include_unmapped)
-    write_mapping(root / WORKER_CONFIG_NAME)
+    write_worker_list(root / WORKER_LIST_NAME)
     write_template(worker_template)
     manifest = {
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
