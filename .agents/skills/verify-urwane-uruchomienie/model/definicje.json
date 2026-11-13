@@ -56,7 +56,7 @@
     "remove_file": "09898070a34c3c70"
   },
   "src/rozliczenia/centrum/app.py": {
-    "create_app.lifespan": "c7fc1cf30456a119",
+    "create_app.lifespan": "53d8b4cfe25ee19b",
     "create_app.app": "e785cecd149b3fec",
     "create_app.disk": "07384769816122dd",
     "create_app.comments": "f11aeb98dc5cead7",

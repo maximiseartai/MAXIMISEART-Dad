@@ -471,6 +471,7 @@ REFUSALS: RefusalSamples = {
     ],
     "settings_change_unknown": [refusal.settings_change_unknown],
     "settings_change_not_undoable": [refusal.settings_change_not_undoable],
+    "settings_history_unreadable": [refusal.settings_history_unreadable],
     "autostart_not_changed": [refusal.autostart_not_changed],
     "unknown_period": [refusal.unknown_period],
     "period_folder_lookup": [

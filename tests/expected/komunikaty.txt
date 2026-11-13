@@ -1503,6 +1503,9 @@ settings_change_unknown [HTTP 404]
 settings_change_not_undoable [HTTP 404]
   Tej zmiany nie da się cofnąć.
 
+settings_history_unreadable [HTTP 500]
+  Nie udało się odczytać Historii Ustawień. Odśwież okno Ustawień za chwilę.
+
 autostart_not_changed [HTTP 500]
   Nie udało się zmienić startu Centrum razem z Windows. Spróbuj ponownie. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie.
 
