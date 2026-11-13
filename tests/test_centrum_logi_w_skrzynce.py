@@ -2131,9 +2131,9 @@ def test_logi_wpisania_raportow_sprzed_dni_zamknietych_bez_pola_closed_odtwarzaj
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
-def _guard_cut_in_mails(record: dict[str, Any]) -> None:
-    record["technical_notes"].append(
-        "Reguła danych: pominięto report_entering.mails[5]: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
+def _guard_cut(place: str) -> Callable[[dict[str, Any]], None]:
+    return lambda record: record["technical_notes"].append(
+        f"Reguła danych: pominięto {place}: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
     )
 
 
@@ -2164,9 +2164,14 @@ ENTERING_LIMITS: dict[str, tuple[Callable[[dict[str, Any]], None], int, tuple[st
         ("NIE DA SIĘ ODTWORZYĆ: pamięć wpisów w Logach ma zlecenie 4000007 Wykonawcy jan.testowy z 09.11.2026 tylko jako liczbę",),
     ),
     "ciecie_straznika_we_wpisach": (
-        _guard_cut_in_mails,
+        _guard_cut("report_entering.mails[5]"),
         3,
         ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach report_entering.mails[5]",),
+    ),
+    "ciecie_straznika_w_przeniesieniach_przed": (
+        _guard_cut("report_entering.moves_before[0]"),
+        3,
+        ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach report_entering.moves_before[0]",),
     ),
     "bez_wpisow_przed_rdzeniem": (
         lambda record: record.update(report_entering=None),
@@ -2187,8 +2192,8 @@ def test_granica_logow_wpisania_raportow_jest_w_raporcie_a_blokujaca_konczy_odtw
 ) -> None:
     """Czego Logi Wpisania raportów nie niosą, raport mówi: maile taty i czynności pod maską są zastrzeżeniem przy każdym
     odtworzeniu, a Logi bez Wpisów i Zatrzymanie przy zapisie u taty zastrzeżeniem przy
-    różnicy. Numer Wpisu zamaskowany jak telefon, numer pamięci bez Wpisu z nim i cięcie strażnika we Wpisach kończą
-    odtworzenie bez uruchomienia procesu (kod 3)."""
+    różnicy. Numer Wpisu zamaskowany jak telefon, numer pamięci bez Wpisu z nim i cięcie strażnika w dowolnym polu Logów
+    Wpisania raportów kończą odtworzenie bez uruchomienia procesu (kod 3)."""
 
     change, expected_code, expected = ENTERING_LIMITS[case]
     produced = _report_entering(tmp_path / "taty")

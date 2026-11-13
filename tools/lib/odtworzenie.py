@@ -361,8 +361,9 @@ def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, conf
 def _guard_limits(record: RunLog) -> list[Limit]:
     """Miejsca Logów, które strażnik reguły danych pominął albo zostawił puste (``guard_cuts``), bo maska trafiła
     w pole, które jej nie przyjmuje. W wejściu odtworzenia (Kopia wejścia bez odcisku pliku, ślad zleceń efenix, z którego
-    powstaje Atrapa) to granica blokująca: odtworzone wejście nie jest wejściem taty, a różnica wskazałaby fałszywą
-    przyczynę. Poza wejściem to zastrzeżenie: różnica w tym miejscu jest skutkiem maski."""
+    powstaje Atrapa, każde pole Logów Wpisania raportów, bo wejście buduje się z wielu z nich) to granica blokująca:
+    odtworzone wejście nie jest wejściem taty, a różnica wskazałaby fałszywą przyczynę. Poza wejściem to zastrzeżenie:
+    różnica w tym miejscu jest skutkiem maski."""
 
     limits: list[Limit] = []
     for cut in guard_cuts(record):
@@ -376,12 +377,8 @@ def _guard_limits(record: RunLog) -> list[Limit]:
 
 
 def _replay_input(cut: GuardCut) -> bool:
-    return (
-        cut.field == "efenix_orders"
-        or (cut.field == "input_copy" and ".fingerprint" not in cut.place)
-        or cut.place.startswith(
-            ("report_entering.mails", "report_entering.memory_before", "report_entering.kept", "report_entering.skipped")
-        )
+    return cut.field in ("efenix_orders", "report_entering") or (
+        cut.field == "input_copy" and ".fingerprint" not in cut.place
     )
 
 
