@@ -1,9 +1,12 @@
 """Ustawienia Centrum: jedyny czytelnik i pisarz plików Ustawień w ``config``, ich Historii i pamięci (ADR 0032).
 
-Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``) i plik dostępu do skrzynki raportów
+Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``), plik dostępu do skrzynki raportów
 (``inbox``), który jest sekretem: jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma
-tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``. ``CentrumSettings`` czyta go przy każdym odczycie od nowa, więc
-zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej wartościach.
+tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, i przełącznik startu
+razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``: każde ustawienie
+ma swoje miejsce (``_Place``), z którego właściciel czyta stan i do którego go zapisuje, a reszta drogi jest wspólna.
+``CentrumSettings`` czyta je przy każdym odczycie od nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę
+(``snapshot``) na start Uruchomienia i kończy na jej wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
@@ -47,18 +50,20 @@ Moduł nie wczytuje FastAPI: czyta go też katalog procesów i gospodarze Urucho
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 from pathlib import Path
 import re
 import threading
-from typing import Any, Final, TypeVar
+from typing import Any, Final, Protocol, TypeVar
 import uuid
 
 from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.platform import Autostart
+from rozliczenia.centrum.settings.autostart import AUTOSTART, AutostartPlace, Unsupported
 from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, KeyChange, Read, SettingsFile, Unreadable
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
 from rozliczenia.centrum.settings import inbox
@@ -105,6 +110,7 @@ class SettingsView:
     folders: Read[FolderSettings] | Unreadable
     workers: Read[WorkerList] | Unreadable
     inbox: Read[InboxFile] | Unreadable
+    autostart: Read[bool] | Unreadable | Unsupported
 
 
 @dataclass(frozen=True)
@@ -133,12 +139,50 @@ class NotUndoable:
     known: bool
 
 
+class _Place(Protocol):
+    """Miejsce stanu jednego ustawienia: plik w ``config`` albo skrót w folderze Autostart."""
+
+    def unsupported(self) -> FieldProblem | None:
+        """Odmowa każdej zmiany, gdy tego ustawienia na tym komputerze nie ma; ``None``: ustawienie działa."""
+
+    def read(self) -> bytes | None | OSError:
+        """Stan: treść albo ``None`` (brak pliku); ``OSError``, gdy system nie daje go teraz przeczytać."""
+
+    def write(self, data: bytes | None) -> None:
+        """Zapisuje stan (``None``: usuwa plik); ``OSError``, gdy się nie udało."""
+
+
+@dataclass(frozen=True)
+class _ConfigFile:
+    path: Path
+    pause: Callable[[float], None]
+
+    def unsupported(self) -> FieldProblem | None:
+        return None
+
+    def read(self) -> bytes | None | OSError:
+        return settings_bytes(self.path)
+
+    def write(self, data: bytes | None) -> None:
+        if data is None:
+            self.path.unlink(missing_ok=True)
+        else:
+            replace_atomically(self.path, data, pause=self.pause)
+
+
 class CentrumSettings:
     def __init__(
-        self, config: Path, *, log: CentrumLog, now: Callable[[], datetime], pause: Callable[[float], None]
+        self,
+        config: Path,
+        *,
+        log: CentrumLog,
+        now: Callable[[], datetime],
+        pause: Callable[[float], None],
+        autostart: Autostart,
     ) -> None:
-        """Ustawienia w folderze ``config``; ``now`` daje chwilę wiersza Historii, a ``pause`` czeka przed kolejną próbą
-        odczytu albo zapisu pliku, który system na chwilę trzyma."""
+        """Ustawienia w folderze ``config`` i skrót Centrum w folderze Autostart (``autostart``); ``now`` daje chwilę
+        wiersza Historii, a ``pause`` czeka przed kolejną próbą odczytu albo zapisu pliku, który system na chwilę
+        trzyma."""
 
         self._config = config
         self._log = log
@@ -147,6 +191,12 @@ class CentrumSettings:
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
+        self._places: Mapping[str, _Place] = {
+            FOLDERS.name: _ConfigFile(config / FOLDERS.name, pause),
+            WORKERS.name: _ConfigFile(config / WORKERS.name, pause),
+            INBOX.name: _ConfigFile(config / INBOX.name, pause),
+            AUTOSTART.name: AutostartPlace(autostart),
+        }
 
     def snapshot(self) -> SettingsSnapshot:
         """Wartości dla procesu: raz na start Uruchomienia, który kończy na nich bez względu na późniejsze zmiany."""
@@ -160,7 +210,13 @@ class CentrumSettings:
 
     def view(self) -> SettingsView:
         with self._lock:
-            return SettingsView(folders=self._observe(FOLDERS), workers=self._observe(WORKERS), inbox=self._observe(INBOX))
+            autostart = self._places[AUTOSTART.name].unsupported()
+            return SettingsView(
+                folders=self._observe(FOLDERS),
+                workers=self._observe(WORKERS),
+                inbox=self._observe(INBOX),
+                autostart=Unsupported() if autostart is not None else self._observe(AUTOSTART),
+            )
 
     def change(self, file: SettingsFile[T], edit: Callable[[T], T]) -> Saved | Refused | NotSaved:
         """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową."""
@@ -191,7 +247,8 @@ class CentrumSettings:
 
         with self._lock:
             for file in _FILES.values():
-                self._observe(file)
+                if self._places[file.name].unsupported() is None:
+                    self._observe(file)
             return self._history.read()
 
     def apply_release_changes(
@@ -304,7 +361,11 @@ class CentrumSettings:
     def _change(
         self, file: SettingsFile[T], edit: Callable[[T], T], *, undoes: str | None, source: RowSource, undoable: bool
     ) -> Saved | Refused | NotSaved:
-        data = self._bytes_for_change(file)
+        place = self._places[file.name]
+        unsupported = place.unsupported()
+        if unsupported is not None:
+            return Refused(unsupported)
+        data = self._bytes_for_change(place)
         if isinstance(data, Unreadable) or isinstance(self._memory.read(file.name), Unreadable):
             self._log.settings_unreadable(cause="dostep")
             return NotSaved()
@@ -323,14 +384,14 @@ class CentrumSettings:
             self._memory.keep_rejected(file.name, data, self._now())
         row = self._row(file, changes, source, undoes=undoes, undoable=undoable) if changes else None
         try:
-            replace_atomically(self._config / file.name, new, pause=self._pause)
+            place.write(new)
         except OSError:
             return NotSaved()
         if row is not None:
             try:
                 self._history.append(row)
             except OSError:
-                self._put_back(file, data)
+                self._put_back(place, data)
                 return NotSaved()
         self._remember(file, Remembered(seen=new, good=new))
         if row is None:
@@ -339,15 +400,12 @@ class CentrumSettings:
         self._log.settings_changed(file=file.name, keys=keys, source=source.kind)
         return Saved(change=row.id)
 
-    def _put_back(self, file: SettingsFile[T], data: bytes | None) -> None:
-        """Poprzednia treść pliku po zapisie, którego wiersza nie dało się dopisać; pamięć jeszcze jej nie zmieniła.
-        Treść, której nie da się przywrócić, wyrówna następny odczyt jako zmianę spoza Centrum."""
+    def _put_back(self, place: _Place, data: bytes | None) -> None:
+        """Poprzedni stan po zapisie, którego wiersza nie dało się dopisać; pamięć jeszcze go nie zmieniła. Stan,
+        którego nie da się przywrócić, wyrówna następny odczyt jako zmianę spoza Centrum."""
 
         try:
-            if data is None:
-                (self._config / file.name).unlink(missing_ok=True)
-            else:
-                replace_atomically(self._config / file.name, data, pause=self._pause)
+            place.write(data)
         except OSError as failure:
             self._log.unexpected_failure(failure, where="przywrócenie Ustawień po nieudanym wierszu Historii")
 
@@ -362,19 +420,19 @@ class CentrumSettings:
         except OSError as failure:
             self._log.unexpected_failure(failure, where="pamięć Ustawień")
 
-    def _bytes_for_change(self, file: SettingsFile[T]) -> bytes | None | Unreadable:
-        """Bajty pliku przed zmianą; plik, którego system nie daje czytać, czyta ponownie po kolejnych przerwach."""
+    def _bytes_for_change(self, place: _Place) -> bytes | None | Unreadable:
+        """Stan przed zmianą; stan, którego system nie daje czytać, czyta ponownie po kolejnych przerwach."""
 
-        data = settings_bytes(self._config / file.name)
+        data = place.read()
         for seconds in RETRY_PAUSES_S:
             if not isinstance(data, OSError):
                 break
             self._pause(seconds)
-            data = settings_bytes(self._config / file.name)
+            data = place.read()
         return Unreadable() if isinstance(data, OSError) else data
 
     def _observe(self, file: SettingsFile[T]) -> Read[T] | Unreadable:
-        data = settings_bytes(self._config / file.name)
+        data = self._places[file.name].read()
         if isinstance(data, OSError):
             return Unreadable()
         return self._observed(file, data)
@@ -446,9 +504,14 @@ class CentrumSettings:
         )
 
 
-_UNDOABLE: Final[dict[str, SettingsFile[Any]]] = {FOLDERS.name: FOLDERS, WORKERS.name: WORKERS}
+# Każdy plik ma własny typ wartości, a właściciel oddaje wartość tylko temu plikowi, z którego ją wziął.
+_UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
+    FOLDERS.name: FOLDERS,
+    WORKERS.name: WORKERS,
+    AUTOSTART.name: AUTOSTART,
+}
 """Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu."""
-_FILES: Final[dict[str, SettingsFile[Any]]] = {**_UNDOABLE, INBOX.name: INBOX}
+_FILES: Final[Mapping[str, SettingsFile[Any]]] = {**_UNDOABLE, INBOX.name: INBOX}
 """Każdy plik właściciela; ``history`` porównuje z pamięcią każdy z nich."""
 _SECTION: Final = re.compile(r"[.\[]")
 """Sekcja klucza Historii to jego początek do kropki (``foldery.rejestr_zlecen``) albo nawiasu (``wykonawcy[login]``)."""

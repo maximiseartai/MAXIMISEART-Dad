@@ -100,6 +100,14 @@ def addresses_not_moved(old_file: str, reason: str) -> str:
         f"Adresów Wykonawców nie przeniesiono ze starego pliku {old_file} w folderze config: {reason}. Dopisz je "
         "Wykonawcom w Ustawieniach."
     )
+def autostart_unsupported() -> str:
+    return "Start razem z Windows działa tylko na komputerze z Windows."
+
+
+def autostart_unreadable() -> str:
+    return "Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę."
+
+
 def inbox_not_text() -> str:
     return "Plik skrzynka-raportow.txt w folderze config nie jest tekstem. Poproś Maksa o nowy plik."
 

@@ -45,7 +45,7 @@ from rozliczenia.centrum.metrics import History, metrics_router
 from rozliczenia.centrum.notifications import Notifications, notifications_router
 from rozliczenia.centrum.period_board import periods_router
 from rozliczenia.centrum.period_start import PeriodStarts
-from rozliczenia.centrum.platform import Platform
+from rozliczenia.centrum.platform import Autostart, Platform
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_box import GitHubReportBox, ReportBox
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
@@ -95,6 +95,7 @@ def create_app(
     *,
     config: Path,
     platform: Platform,
+    autostart: Autostart,
     log: CentrumLog,
     shutdown: Shutdown,
     today: Callable[[], date] = dad_today,
@@ -194,7 +195,7 @@ def create_app(
 
     # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
     # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień.
-    settings = CentrumSettings(config, log=log, now=local_now, pause=pause)
+    settings = CentrumSettings(config, log=log, now=local_now, pause=pause, autostart=autostart)
     # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
     # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)

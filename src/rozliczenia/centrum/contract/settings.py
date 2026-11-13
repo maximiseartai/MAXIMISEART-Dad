@@ -1,5 +1,5 @@
-"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, skrzynka raportów, Lista Wykonawców i Historia
-Ustawień."""
+"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, skrzynka raportów, Lista Wykonawców, start razem
+z Windows i Historia Ustawień."""
 
 from __future__ import annotations
 
@@ -54,6 +54,15 @@ PathSetting = Annotated[
 Theme = Literal["dark", "light"]
 
 
+class AutostartSetting(Model):
+    """Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma
+    Autostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:
+    zdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``."""
+
+    state: Literal["on", "off", "unsupported", "unreadable"]
+    reason: str | None
+
+
 class InboxSetting(Model):
     """Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy."""
 
@@ -73,6 +82,7 @@ class Settings(Model):
     workers: WorkerListSetting
     inbox: InboxSetting
     inbox_problem: SettingProblem | None
+    autostart: AutostartSetting
 
 
 class Choice(Model):
@@ -86,6 +96,12 @@ class Choice(Model):
 
 class ThemeChange(Model):
     theme: Theme
+
+
+class AutostartChange(Model):
+    """Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa."""
+
+    enabled: bool
 
 
 class InboxPasswordChange(Model):

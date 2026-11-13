@@ -160,6 +160,8 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "addresses_not_moved": [
                 partial(settings_messages.addresses_not_moved, OLD_ADDRESSES_FILE, "ten sam adres stoi dwa razy")
             ],
+            "autostart_unsupported": [settings_messages.autostart_unsupported],
+            "autostart_unreadable": [settings_messages.autostart_unreadable],
         },
     ),
 }

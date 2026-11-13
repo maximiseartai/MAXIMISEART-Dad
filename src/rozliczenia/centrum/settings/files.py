@@ -30,6 +30,8 @@ FieldName = Literal[
     "adresy",
     "aktywny",
     "przypomnienia",
+    # przełącznik startu razem z Windows (skrót w folderze Autostart)
+    "autostart",
 ]
 """Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``."""
 

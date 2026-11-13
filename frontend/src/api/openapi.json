@@ -1706,6 +1706,47 @@
         }
       }
     },
+    "/api/settings/autostart": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Autostart",
+        "operationId": "changeAutostart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutostartChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/folders": {
       "put": {
         "tags": [
@@ -2264,6 +2305,7 @@
               "changeTheme",
               "changeInboxPassword",
               "changeFolders",
+              "changeAutostart",
               "getSettingsHistory",
               "undoSettingsChange",
               "getPeriodBoard",
@@ -2331,6 +2373,54 @@
         ],
         "title": "ApiTiming",
         "description": "Jedno zapytanie API widoku: czas w przeglądarce i czas serwera z ``Server-Timing`` (``None``: brak nagłówka)."
+      },
+      "AutostartChange": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "AutostartChange",
+        "description": "Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa."
+      },
+      "AutostartSetting": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "unsupported",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "reason"
+        ],
+        "title": "AutostartSetting",
+        "description": "Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma\nAutostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:\nzdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``."
       },
       "BoardFile": {
         "properties": {
@@ -7037,6 +7127,9 @@
                 "type": "null"
               }
             ]
+          },
+          "autostart": {
+            "$ref": "#/components/schemas/AutostartSetting"
           }
         },
         "additionalProperties": false,
@@ -7048,7 +7141,8 @@
           "folders_problem",
           "workers",
           "inbox",
-          "inbox_problem"
+          "inbox_problem",
+          "autostart"
         ],
         "title": "Settings",
         "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła."
