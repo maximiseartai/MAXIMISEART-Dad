@@ -14,10 +14,12 @@ też w kopii starego commitu.
 from __future__ import annotations
 
 from collections.abc import Iterator
+import importlib.util
 import os
 from pathlib import Path
 import re
 import subprocess
+from typing import Final
 
 import pytest
 
@@ -147,28 +149,29 @@ def order_number_oracle(line: str) -> bool:
     """Czy linia testu sprawdza wyciek numeru zlecenia własną definicją zamiast ``zawiera_wartosc``.
 
     Łapie tylko napis ``(?<!``, po nim opcjonalnie ``[``, a po nim ``\\d`` z jednym ukośnikiem albo ``0-9``: tak zaczyna
-    się ``(?<![0-9a-f])``, ``(?<![0-9])``, ``(?<!0-9`` i ``r"(?<!\\d)"``. Nie łapie ``"(?<!\\\\d)"`` (dwa ukośniki w napisie
-    bez ``r``), klasy, w której ``0-9`` nie stoi zaraz po ``[`` (``(?<![a-f0-9])``), ``\\b`` wokół liczby, literału liczby
-    przed ``not in``, numeru ze zmiennej, ``str.find``, ``count``, ``re.search`` na samym numerze, lookaheadu bez
-    lookbehindu ani wyrażenia złożonego w kilku liniach; te zostają przeglądowi. Każda forma ma 0 trafień, gdy każda
-    linia ``tests/`` jest dodana (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``),
-    dlatego literał liczby przed ``not in`` nie jest formą: w ``tests/`` stoją poprawne ``"2026" not in`` i ``"999999" not
-    in``.
+    się ``(?<![0-9a-f])``, ``(?<![0-9])``, ``(?<!0-9`` i ``r"(?<!\\d)"``. Postacie, których nie łapie ani zapadka, ani
+    ruff, są próbkami ``ZNANE_LUKI`` tego pliku. Każda forma ma 0 trafień, gdy każda linia ``tests/`` jest dodana
+    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
     """
 
     return _ORDER_NUMBER_ORACLE.search(line) is not None
+
+
+def order_number_oracles(root: Path, base: str) -> list[str]:
+    """Linie ``tests/`` poza tym plikiem, które zmiana od ``base`` dodaje z ``order_number_oracle``, z komunikatem."""
+
+    return [
+        f"{path}:{number}: {_ORDER_NUMBER_HELPER}"
+        for path, number, line in _added_lines(root, base, "tests")
+        if path != "tests/test_zapadki.py" and order_number_oracle(line)
+    ]
 
 
 def test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc() -> None:
     base = _base()
     if base is None:
         pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    found = [
-        f"{path}:{number}: {_ORDER_NUMBER_HELPER}"
-        for path, number, line in _added_lines(ROOT, base, "tests")
-        if path != "tests/test_zapadki.py" and order_number_oracle(line)
-    ]
-    assert found == []
+    assert order_number_oracles(ROOT, base) == []
 
 
 def bare_file_state(line: str) -> bool:
@@ -176,12 +179,8 @@ def bare_file_state(line: str) -> bool:
 
     Łapie tylko ``.exists()``, ``.is_file()`` i ``.is_dir()`` bez argumentów, także ze spacją w nawiasie (na ``Path`` i
     na wpisie ``os.DirEntry``), oraz ``os.path.exists(``, ``os.path.lexists(``, ``os.path.isfile(`` i
-    ``os.path.isdir(``, także w komentarzu i napisie. Nie łapie ``.iterdir()`` (#1249 dodał świadome
-    ``register.parent.iterdir()`` w ``try``/``except OSError``, którego po linii nie odróżnić od błędu #1021),
-    ``os.listdir``, ``os.scandir``, ``glob``, ``stat`` i ``try``/``except OSError`` napisanych od nowa, wywołań z
-    argumentem (``is_file(follow_symlinks=False)``) ani rozbitych na kilka linii, metody pod inną nazwą
-    (``check = path.exists``), ``Path.exists(path)``, ``os.path`` pod aliasem (``import os.path as osp``) ani ``exists``
-    z ``from os.path import``; te zostają przeglądowi.
+    ``os.path.isdir(``, także w komentarzu i napisie. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami
+    ``ZNANE_LUKI`` tego pliku.
     Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
     (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
     """
@@ -245,10 +244,6 @@ def test_zapadka_lapie_stan_pliku_poza_file_state(line: str) -> None:
         "    if path_taken(self._state):",
         '    present = [period_place_label(place) for place in places if observed.exists(place)]',
         "                taken = disk.exists(copy.path)",
-        # Formy, których zapadka według docstringu nie łapie.
-        "        names = sorted(path.name for path in register.parent.iterdir())",
-        "    return path.is_file(follow_symlinks=False)",
-        "    names = os.listdir(folder)",
     ],
 )
 def test_zapadka_przepuszcza_file_state_i_metody_domeny(line: str) -> None:
@@ -276,11 +271,6 @@ def test_zapadka_lapie_wlasna_wyrocznie_numeru_zlecenia(line: str) -> None:
         'assert "TESTOWA" not in text',
         'assert "2026" in text',
         'assert re.fullmatch(r"CZAS: ([0-9]+) s", line)',
-        # Formy, których zapadka według docstringu nie łapie.
-        'number = re.compile("(?<!\\\\d)94001(?!\\\\d)")',
-        'number = re.compile(r"(?<![a-f0-9])94001(?![a-f0-9])")',
-        r'assert not re.search(r"\b94001\b", text)',
-        'assert "94001" not in (tmp_path / "slad.json").read_text(encoding="utf-8")',
     ],
 )
 def test_zapadka_przepuszcza_zawiera_wartosc_i_inne_wyrazenia(line: str) -> None:
@@ -293,12 +283,7 @@ def worker_threads(line: str) -> bool:
     Łapie tylko ``active_count(`` (także ``threading.active_count(``), ``Thread.start`` jako całą nazwę (odczyt,
     podmiana i wywołanie ``threading.Thread.start``) oraz ``Thread,`` i napis ``"start"`` albo ``'start'``
     (``monkeypatch.setattr(threading.Thread, "start", …)``), także w komentarzu, docstringu i napisie z kodem procesu
-    potomnego. Nie łapie ``threading.enumerate()`` przed i po (#1297 i #1308 dodały tę formę w scalonych PR-ach bez
-    rundy FAIL, więc zapadka na niej dałaby alarm na historii; jej przykłady zniknęły z ``tests/``),
-    ``thread.start()`` na wątku, ``super().start()``, ``ModelThread.start``, ``sys._current_frames``,
-    ``threading._active``, ``setattr`` z nazwą klasy w zmiennej, podmiany ``Thread.run`` i ``Thread.__init__`` ani
-    wywołania rozbitego na kilka linii (``monkeypatch.setattr(``, pod nim ``threading.Thread,`` i ``"start",``, jak łamie
-    je ruff format przy magicznym przecinku); te zostają przeglądowi.
+    potomnego. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami ``ZNANE_LUKI`` tego pliku.
     W kodzie ``threading.Thread.start`` i ``threading.active_count`` odrzuca wcześniej, także w CI, ruff (``TID251`` w
     ``tests/ruff.toml``), ale nie na linii z ``# noqa: TID251`` ani w napisie, więc zapadka zostaje.
     Żadna forma nie trafia w dzisiejsze ``tests/``, gdy każda jego linia jest dodana
@@ -371,11 +356,6 @@ def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
         "        super().start()",
         "    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)",
         "    for index, thread in enumerate(threads):",
-        # Formy, których zapadka według docstringu nie łapie.
-        "    before = set(threading.enumerate())",
-        '        checks = [thread for thread in threading.enumerate() if thread.name == "powiadomienia-sprawdzanie"]',
-        '    monkeypatch.setattr(threading.Thread, "run", counted)',
-        '    monkeypatch.setattr(klasa, "start", counted)',
         # Granice całej nazwy: inna nazwa, która zaczyna się od ``start`` albo kończy na ``active_count``.
         "    began = threading.Thread.started_at",
         "    threading.Thread.start_soon(work)",
@@ -396,17 +376,11 @@ def dropped_navigation(line: str, previous: str) -> bool:
     środku) bez ``as`` po nim; obie także w linii napisu wielowierszowego. Przepuszcza każdą z nich, gdy ``previous``
     bez końcowych odstępów kończy się ``(``, ``[`` albo ``,`` tak, jak stoi, albo po zdjęciu wszystkiego od pierwszego
     odstępu z ``#`` (komentarz na końcu), bo tak ruff format łamie nawigację podaną dalej jako argument albo element
-    listy (``return _checked(`` i pod nim ``page.goto(…``), także gdy ta linia jest nową instrukcją po linii z ``,`` na
-    końcu (krotka bez nawiasu) albo elementem listy, której nikt nie czyta. Odstęp z ``#`` w napisie ``previous``
-    (``"strona #1",``) nie daje więc alarmu. Nie łapie odpowiedzi przypisanej, zwróconej albo podanej dalej w tej samej
-    linii, nawigacji po linii, której komentarz albo napis od odstępu z ``#`` kończy się ``(``, ``[`` albo ``,``
-    (``wait()  # najpierw lista,``), nawigacji po linii, której tekst przed odstępem z ``#`` kończy się ``,``, ``(``
-    albo ``[`` (``log("lista, #1")``), ``as _`` ani nieużytej zmiennej po ``as``, ``expect_navigation`` z nawiasem w kilku
-    liniach, nawigacji na wyniku wywołania (``context.new_page().goto(``), ``wait_for_url`` i ``wait_for_load_state``,
-    metody pod inną nazwą
-    (``go = page.goto``) ani nawigacji w pliku bez linii, która po wcięciu zaczyna się od ``from playwright`` albo
-    ``import playwright`` (karta podana bez adnotacji); import pod ``if TYPE_CHECKING:`` się liczy. Te zostają
-    przeglądowi. Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
+    listy (``return _checked(`` i pod nim ``page.goto(…``). Odstęp z ``#`` w napisie ``previous`` (``"strona #1",``)
+    nie daje więc alarmu. Odpowiedź przypisana, zwrócona albo podana dalej w tej samej linii przechodzi. Plik bez linii,
+    która po wcięciu zaczyna się od ``from playwright`` albo ``import playwright``, zapadka pomija; import pod
+    ``if TYPE_CHECKING:`` się liczy. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami ``ZNANE_LUKI`` tego
+    pliku. Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
     (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
     """
 
@@ -544,11 +518,6 @@ def test_zapadka_lapie_odrzucona_odpowiedz_nawigacji(previous: str, line: str) -
         "        return self._read_order(self._go(urljoin(self._url, f\"{ORDER_PAGE}?id={order.order_id}\")))",
         "        self._reloaded(accept)",
         "    # page.goto(url) odrzuca odpowiedź",
-        # Formy, których zapadka według docstringu nie łapie.
-        "    with page.expect_navigation(",
-        "    browser.contexts[0].new_page().goto(address)",
-        "    page.wait_for_url(url)",
-        "    with page.expect_navigation() as _:",
     ],
 )
 def test_zapadka_przepuszcza_odpowiedz_nawigacji_ktora_ktos_czyta(line: str) -> None:
@@ -748,3 +717,339 @@ def test_zapadka_parsera_kaze_usunac_z_wpisu_tylko_plik_ktory_zniknal(
     _git(tmp_path, "add", "-A")
 
     assert parsers_off_entry(tmp_path, base) == expected
+
+
+def _empty_base(root: Path) -> str:
+    """Repozytorium gita w ``root`` z pustym commitem bazy, więc każdy plik zapisany potem jest dodany; zwraca bazę."""
+
+    _git(root, "init", "-q")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "--allow-empty", "-m", "baza")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+_PAGE = "from playwright.sync_api import Page\n\n\n"
+
+# Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
+# regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.
+ZNANE_LUKI: Final = {
+    "test_stan_pliku_w_src_tylko_przez_file_state": {
+        # Po linii nie odróżnić od świadomego ``register.parent.iterdir()`` w ``try``/``except OSError`` z #1249.
+        "lista folderu z iterdir": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return path.name in {entry.name for entry in path.parent.iterdir()}
+""",
+        "os.scandir": """\
+import os
+
+
+def taken(folder: str, name: str) -> bool:
+    with os.scandir(folder) as entries:
+        return any(entry.name == name for entry in entries)
+""",
+        "glob": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return any(path.parent.glob(path.name))
+""",
+        "stat": """\
+from pathlib import Path
+import stat
+
+
+def is_folder(path: Path) -> bool:
+    return stat.S_ISDIR(path.stat().st_mode)
+""",
+        "try i except OSError napisane od nowa": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    try:
+        path.open("rb").close()
+    except OSError:
+        return False
+    return True
+""",
+        "wywołanie z argumentem": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return path.is_file(follow_symlinks=False)
+""",
+        "wywołanie rozbite na dwie linie": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return path.exists(
+    )
+""",
+        "metoda pod inną nazwą": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    check = path.exists
+    return check()
+""",
+        "metoda wołana na klasie": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return Path.exists(path)
+""",
+        "os.path pod aliasem": """\
+import os.path as osp
+
+
+def taken(path: str) -> bool:
+    return osp.exists(path)
+""",
+        "exists z from os.path import": """\
+from os.path import exists
+
+
+def taken(path: str) -> bool:
+    return exists(path)
+""",
+    },
+    "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": {
+        "po linii, której komentarz kończy się przecinkiem": _PAGE
+        + """\
+def open_order(page: Page, url: str) -> None:
+    page.wait_for_timeout(0)  # najpierw lista,
+    page.goto(url)
+""",
+        "po linii, której tekst przed odstępem z # kończy się przecinkiem": _PAGE
+        + """\
+def open_order(page: Page, url: str) -> None:
+    page.evaluate("1, #1")
+    page.goto(url)
+""",
+        "as _": _PAGE
+        + """\
+def open_order(page: Page) -> None:
+    with page.expect_navigation() as _:
+        page.click("a")
+""",
+        "expect_navigation z nawiasem w kilku liniach": _PAGE
+        + """\
+def open_order(page: Page) -> None:
+    with page.expect_navigation(
+        timeout=1000,
+    ):
+        page.click("a")
+""",
+        "nawigacja na wyniku wywołania": _PAGE
+        + """\
+def open_order(page: Page, url: str) -> None:
+    page.context.new_page().goto(url)
+""",
+        "wait_for_url": _PAGE
+        + """\
+def open_order(page: Page, url: str) -> None:
+    page.click("a")
+    page.wait_for_url(url)
+""",
+        "wait_for_load_state": _PAGE
+        + """\
+def open_order(page: Page) -> None:
+    page.click("a")
+    page.wait_for_load_state()
+""",
+        "metoda pod inną nazwą": _PAGE
+        + """\
+def open_order(page: Page, url: str) -> None:
+    go = page.goto
+    go(url)
+""",
+        "karta bez importu playwright": """\
+from typing import Protocol
+
+
+class Tab(Protocol):
+    def goto(self, url: str) -> object: ...
+
+
+def open_order(page: Tab, url: str) -> None:
+    page.goto(url)
+""",
+        "nowa instrukcja po krotce bez nawiasu": _PAGE
+        + """\
+def open_order(page: Page, url: str) -> tuple[str]:
+    names = url,
+    page.goto(url)
+    return names
+""",
+        "element listy, której nikt nie czyta": _PAGE
+        + """\
+def open_order(page: Page, url: str) -> None:
+    [
+        page.goto(url),
+    ]
+""",
+    },
+    "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": {
+        "lookbehind z dwoma ukośnikami w napisie bez r": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search("(?<!\\d)94001(?!\\d)", text) is None
+''',
+        "klasa, w której 0-9 nie stoi zaraz po [": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"(?<![a-f0-9])94001(?![a-f0-9])", text) is None
+''',
+        r"\b wokół numeru": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"\b94001\b", text) is None
+''',
+        # W ``tests/`` stoją poprawne ``"2026" not in`` i ``"999999" not in``.
+        "literał numeru przed not in": """\
+def test_bez_numeru(text: str) -> None:
+    assert "94001" not in text
+""",
+        "numer ze zmiennej": """\
+def test_bez_numeru(text: str, number: str) -> None:
+    assert number not in text
+""",
+        "str.find": """\
+def test_bez_numeru(text: str) -> None:
+    assert text.find("94001") == -1
+""",
+        "count": """\
+def test_bez_numeru(text: str) -> None:
+    assert text.count("94001") == 0
+""",
+        "re.search na samym numerze": """\
+import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search("94001", text) is None
+""",
+        "lookahead bez lookbehindu": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"94001(?!\d)", text) is None
+''',
+        "lookbehind złożony w kilku liniach": r'''import re
+
+NUMBER = re.compile(
+    r"(?<!"
+    r"\d)94001"
+)
+
+
+def test_bez_numeru(text: str) -> None:
+    assert NUMBER.search(text) is None
+''',
+    },
+    "test_watki_testu_tylko_przez_linie_watkow": {
+        # #1297 i #1308 dodały tę postać w scalonych PR-ach bez rundy FAIL, więc zapadka na niej dałaby alarm na historii.
+        "threading.enumerate przed i po": """\
+import threading
+
+
+def test_bez_nowych_watkow() -> None:
+    before = set(threading.enumerate())
+    assert set(threading.enumerate()) == before
+""",
+        "sys._current_frames": """\
+import sys
+
+
+def test_bez_nowych_watkow() -> None:
+    assert len(sys._current_frames()) == 1
+""",
+        "threading._active": """\
+import threading
+
+
+def test_bez_nowych_watkow() -> None:
+    assert len(threading._active) == 1
+""",
+        "setattr z klasą wątku w zmiennej": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    thread_class = threading.Thread
+    monkeypatch.setattr(thread_class, "start", lambda self: None)
+""",
+        "podmiana Thread.run": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(threading.Thread, "run", lambda self: None)
+""",
+        "podmiana Thread.__init__": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(threading.Thread, "__init__", lambda self, *args, **kwargs: None)
+""",
+        "setattr rozbity na kilka linii": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        threading.Thread,
+        "start",
+        lambda self: None,
+    )
+""",
+    },
+}
+
+# Test zapadki → folder repozytorium, w którym zapadka szuka, i jej sprawdzenie dodanych linii.
+_ZAPADKI: Final = {
+    "test_stan_pliku_w_src_tylko_przez_file_state": ("src/rozliczenia", file_state_bypasses),
+    "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": ("src/rozliczenia", navigation_drops),
+    "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": ("tests", order_number_oracles),
+    "test_watki_testu_tylko_przez_linie_watkow": ("tests", worker_thread_counts),
+}
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+@pytest.mark.parametrize("zapadka", sorted(ZNANE_LUKI))
+def test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff(tmp_path: Path, zapadka: str) -> None:
+    """Każda próbka ``ZNANE_LUKI`` zapadki, zapisana jako nowy plik jej folderu, przechodzi przez jej sprawdzenie
+    dodanych linii i ruff z konfiguracją tego folderu. Pomocnik ``znane_luki`` importuje się tu, a nie na górze modułu,
+    bo pomiar zapadek kładzie ten plik na starych commitach, które go nie mają."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    folder, sprawdzenie = _ZAPADKI[zapadka]
+    base = _empty_base(tmp_path)
+    (tmp_path / folder).mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI[zapadka], tmp_path / folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / folder / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for linia in sprawdzenie(tmp_path, base):
+        zgloszenia[opisy[linia.split(":", 1)[0]]].append(f"{zapadka}: {linia}")
+
+    assert_znane_luki(zgloszenia, f"tests/test_zapadki.py::{zapadka}")
