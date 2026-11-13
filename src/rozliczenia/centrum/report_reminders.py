@@ -17,9 +17,11 @@ czyta już niczego poza Ustawieniami. Załatwiona jest pora przy tych porach z U
 nowe sprawdzenie, a przed drugim mailem tej samej nazwanej pory chronią „Wysłane”. Nazwaną porę przypomnienia z
 „Wysłanych” liczą pory z chwili jego wysyłki, nie bieżące (decyzja Maksa W1 w #1568): poranne wysłane o 8:05 zamyka
 poranną porę tego dnia także po jej przesunięciu na 9:00–17:00. Dlatego sprawdzenie w porze zapisuje przed wysyłką
-pory, przy których sprawdza, gdy różnią się od ostatnio zapisanych (``REMINDERS_SCHEDULES``, ``SchedulesInEffect``);
-bez tego pliku albo z plikiem nieczytelnym liczą pory bieżące. Brak sieci (``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje
-znowu, a przypomnienia, które już poszły, zna z „Wysłanych”. Odrzucone hasło aplikacji zakłada Zgłoszenie do Maksa
+pory, przy których sprawdza, gdy różnią się od ostatnio zapisanych (``REMINDERS_SCHEDULES``, ``SchedulesInEffect``).
+Bez tego pliku wysyłała tylko wersja sprzed Ustawień Centrum, więc liczą pory z ADR 0030 (dzień Aktualizacji), a z
+plikiem nieczytelnym pory z ADR 0030 razem z bieżącymi, zapisane w pliku na następne starty. Brak sieci
+(``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje znowu, a przypomnienia, które
+już poszły, zna z „Wysłanych”. Odrzucone hasło aplikacji zakłada Zgłoszenie do Maksa
 (``ReminderReport``) i zamyka porę, żeby Gmail nie dostawał złego hasła co minutę. Brak pliku, Ustawienia albo
 nieczytelny INTERMAX zostawia porę otwartą: naprawa Maksa albo taty działa od następnej minuty.
 
@@ -46,7 +48,7 @@ from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Final, Literal, Protocol
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from rozliczenia import register_file
 from rozliczenia.centrum import reminder_messages
@@ -71,6 +73,7 @@ from rozliczenia.worker_report_inbox import (
     SentReminders,
 )
 from rozliczenia.worker_reports import (
+    OLD_VERSION_SCHEDULES,
     Pora,
     Reminder,
     ReminderInputs,
@@ -235,7 +238,7 @@ class ReportReminders:
         """Pory, przy których sprawdzała praca, z porami tego sprawdzenia; nowe zapisuje przed wysyłką. Nieudany zapis
         czeka w ``StateFile``, a do ponownego startu Centrum pory zna pamięć."""
 
-        before = self._in_effect if self._in_effect is not None else schedules_in_effect(self._schedules.path)
+        before = self._in_effect if self._in_effect is not None else schedules_in_effect(self._schedules.path, schedule)
         self._in_effect = before.checked(now, schedule)
         if self._in_effect is not before:
             self._schedules.write(_schedules_document(self._in_effect))
@@ -375,60 +378,62 @@ class _Range(BaseModel):
     do: time
 
 
-class _Since(BaseModel):
-    od: datetime
+class _Schedule(BaseModel):
     poranna: _Range
     wieczorna: _Range
     pierwsze: time
 
+    def schedule(self) -> ReminderSchedule:
+        return ReminderSchedule(
+            TimeRange(self.poranna.od, self.poranna.do), TimeRange(self.wieczorna.od, self.wieczorna.do), self.pierwsze
+        )
+
+
+class _Since(_Schedule):
+    od: datetime
+
 
 class _Schedules(BaseModel):
-    """Kształt pliku ``REMINDERS_SCHEDULES``, który pisze ``_schedules_document``."""
+    """Kształt pliku ``REMINDERS_SCHEDULES``, który pisze ``_schedules_document``: pory sprzed pierwszego wpisu
+    (``przed``) i wpisy pór od chwili ich pierwszego sprawdzenia (``pory``)."""
 
     schema_version: Literal[1]
+    przed: list[_Schedule] = Field(min_length=1)
     pory: list[_Since]
 
 
-def schedules_in_effect(path: Path) -> SchedulesInEffect:
-    """Pory, przy których sprawdzała praca przypomnień, z pliku ``REMINDERS_SCHEDULES``; bez pliku, z plikiem
-    nieczytelnym albo z chwilą bez strefy bez wpisów, więc pory „Wysłanych” to wtedy bieżące."""
+def schedules_in_effect(path: Path, current: ReminderSchedule) -> SchedulesInEffect:
+    """Pory, przy których sprawdzała praca przypomnień, z pliku ``REMINDERS_SCHEDULES``. Bez pliku praca tej wersji
+    jeszcze nie sprawdzała w porze, więc przypomnienia z „Wysłanych” wysłała wersja sprzed Ustawień Centrum przy porach
+    z ADR 0030. Z plikiem nieczytelnym albo z chwilą bez strefy nie wiadomo, przy jakich porach sprawdzała, więc
+    wysłane liczą pory z ADR 0030 i bieżące ``current``: więcej zamkniętych pór, a nie drugi mail tej samej pory."""
 
     try:
         found = _Schedules.model_validate_json(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return SchedulesInEffect()
     except (OSError, UnicodeDecodeError, ValidationError):
-        return SchedulesInEffect()
+        return SchedulesInEffect(OLD_VERSION_SCHEDULES | {current})
     if any(entry.od.tzinfo is None for entry in found.pory):
-        return SchedulesInEffect()
+        return SchedulesInEffect(OLD_VERSION_SCHEDULES | {current})
     return SchedulesInEffect(
-        tuple(
-            ScheduleSince(
-                entry.od,
-                ReminderSchedule(
-                    TimeRange(entry.poranna.od, entry.poranna.do),
-                    TimeRange(entry.wieczorna.od, entry.wieczorna.do),
-                    entry.pierwsze,
-                ),
-            )
-            for entry in sorted(found.pory, key=lambda entry: entry.od)
-        )
+        frozenset(entry.schedule() for entry in found.przed),
+        tuple(ScheduleSince(entry.od, entry.schedule()) for entry in sorted(found.pory, key=lambda entry: entry.od)),
     )
 
 
 def _schedules_document(in_effect: SchedulesInEffect) -> str:
-    def shown(found: TimeRange) -> dict[str, str]:
-        return {"od": f"{found.start:%H:%M}", "do": f"{found.end:%H:%M}"}
+    def shown(schedule: ReminderSchedule) -> dict[str, object]:
+        return {
+            "poranna": {"od": f"{schedule.morning.start:%H:%M}", "do": f"{schedule.morning.end:%H:%M}"},
+            "wieczorna": {"od": f"{schedule.evening.start:%H:%M}", "do": f"{schedule.evening.end:%H:%M}"},
+            "pierwsze": f"{schedule.first:%H:%M}",
+        }
 
     document = {
         "schema_version": _RESULT_VERSION,
-        "pory": [
-            {
-                "od": change.since.isoformat(),
-                "poranna": shown(change.schedule.morning),
-                "wieczorna": shown(change.schedule.evening),
-                "pierwsze": f"{change.schedule.first:%H:%M}",
-            }
-            for change in in_effect.changes
-        ],
+        "przed": sorted((shown(schedule) for schedule in in_effect.before), key=lambda found: json.dumps(found)),
+        "pory": [{"od": change.since.isoformat(), **shown(change.schedule)} for change in in_effect.changes],
     }
     return json.dumps(document, ensure_ascii=False, indent=2) + "\n"
 

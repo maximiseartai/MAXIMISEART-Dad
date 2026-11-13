@@ -86,7 +86,7 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
     """Jedna linia wyniku próby; wysyła najwyżej jeden mail, tylko do ``target``."""
 
     snapshot = read_snapshot(config)
-    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES))
+    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, snapshot.reminders.schedule))
     match read:
         case NotRead():
             return f"{FAIL} | {_not_read(read)}"

@@ -24,7 +24,9 @@ Ustawienia Centrum z dzisiejszymi wartościami jako domyślnymi; temat zostaje s
 przykładem też. Dzień wdrożenia przypomnień i stopka z plików Maksa w `config/` przechodzą przy pierwszym starcie po
 Aktualizacji do Ustawień Centrum (`przypomnienia.yaml`), a przypomnienia włącza i wyłącza tata przełącznikiem. Porę
 przypomnienia z „Wysłanych” liczą pory z chwili jego wysyłki, które praca przypomnień zapisuje w `config/`
-(`przypomnienia-pory.json`), więc Centrum ma odtąd ten jeden plik stanu przypomnień.
+(`przypomnienia-pory.json`). To zmienia zdanie Decyzji, że Centrum nie ma własnego pliku stanu przypomnień: w
+`config/` leżą dwa, wynik ostatniego sprawdzenia dla widoku Raporty (`przypomnienia-wynik.json`) i te pory, a pamięcią
+wysłanych zostaje folder „Wysłane”.
 
 ## Kontekst
 

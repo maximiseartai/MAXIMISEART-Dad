@@ -141,25 +141,29 @@ class ScheduleSince:
     schedule: ReminderSchedule
 
 
+OLD_VERSION_SCHEDULES: Final = frozenset({DEFAULT_SCHEDULE})
+"""Pory przypomnień sprzed pierwszego sprawdzenia, które zapisało pory: wysyłała wtedy tylko wersja sprzed Ustawień
+Centrum, a ona znała jedne pory, stałe z ADR 0030 (przegląd #1568 r2 W1)."""
+
+
 @dataclass(frozen=True)
 class SchedulesInEffect:
     """Pory przypomnień, przy których praca przypomnień sprawdzała, od najstarszych: każde obowiązują od chwili swojego
-    pierwszego sprawdzenia do chwili następnych. Z nich nazwana pora przypomnienia z „Wysłanych”: ta, w której poszło
-    przy porach z chwili wysyłki, a nie przy bieżących (decyzja Maksa W1 w #1568). Bez wpisów pory się nie zmieniały,
-    więc obowiązują bieżące."""
+    pierwszego sprawdzenia do chwili następnych, a przed pierwszym obowiązują pory ``before``. Z nich nazwana pora
+    przypomnienia z „Wysłanych”: ta, w której poszło przy porach z chwili wysyłki, a nie przy bieżących (decyzja Maksa
+    W1 w #1568)."""
 
+    before: frozenset[ReminderSchedule] = OLD_VERSION_SCHEDULES
     changes: tuple[ScheduleSince, ...] = ()
 
-    def around(self, moment: datetime, current: ReminderSchedule) -> frozenset[ReminderSchedule]:
+    def around(self, moment: datetime) -> frozenset[ReminderSchedule]:
         """Pory obowiązujące w chwili ``moment`` z zapasem ``CLOCK_MARGIN`` w obie strony; przed pierwszym wpisem
-        pierwsze, a bez wpisów ``current``. Przy zmianie pór blisko wysyłki mail zamyka nazwaną porę przy obu porach,
-        bo dwa maile tej samej pory są gorsze niż przypomnienie, które poczeka do następnej pory."""
+        ``before``. Przy zmianie pór blisko wysyłki mail zamyka nazwaną porę przy obu porach, bo dwa maile tej samej
+        pory są gorsze niż przypomnienie, które poczeka do następnej pory."""
 
-        if not self.changes:
-            return frozenset({current})
         start, end = moment - CLOCK_MARGIN, moment + CLOCK_MARGIN
         earlier = [change.schedule for change in self.changes if change.since <= start]
-        found = {earlier[-1] if earlier else self.changes[0].schedule}
+        found = {earlier[-1]} if earlier else set(self.before)
         return frozenset(found | {change.schedule for change in self.changes if start < change.since <= end})
 
     def checked(self, moment: datetime, schedule: ReminderSchedule) -> SchedulesInEffect:
@@ -171,7 +175,7 @@ class SchedulesInEffect:
         cutoff = moment - timedelta(days=1)
         older = [change for change in self.changes if change.since < cutoff]
         recent = [change for change in self.changes if change.since >= cutoff]
-        return SchedulesInEffect((*older[-1:], *recent, ScheduleSince(moment, schedule)))
+        return SchedulesInEffect(self.before, (*older[-1:], *recent, ScheduleSince(moment, schedule)))
 
 
 @dataclass(frozen=True)
@@ -181,7 +185,7 @@ class ReminderInputs:
     Wykonawców z Listy Wykonawców (także tych, którym przypomnienia nie idą: ich Raport wykonawcy dalej jest raportem),
     loginy Wykonawców, którym przypomnienia idą (``reminded``: aktywni z włączonymi przypomnieniami), Ustawienia
     przypomnień (pory, godzina pierwszego, treść i stopka) i pory, przy których praca przypomnień sprawdzała
-    (``in_effect``; bez nich pory „Wysłanych” to bieżące)."""
+    (``in_effect``; bez nich pory „Wysłanych” to pory z ADR 0030, jedyne pory wersji sprzed Ustawień Centrum)."""
 
     now: datetime
     window: Window
@@ -259,7 +263,7 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
         (worker, sent.day)
         for sent in inputs.sent
         if (moment := sent.sent_at.astimezone(now.tzinfo)).date() == now.date()
-        and pora in {reminder_pora(moment, found) for found in inputs.in_effect.around(moment, schedule)}
+        and pora in {reminder_pora(moment, found) for found in inputs.in_effect.around(moment)}
         for recipient in sent.recipients
         if (worker := logins.get(recipient)) is not None
     }

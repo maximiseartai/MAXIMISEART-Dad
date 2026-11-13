@@ -34,6 +34,7 @@ from rozliczenia.intermax_replace import LOCAL_DISK
 from rozliczenia.public_holidays import public_holidays
 from rozliczenia.tool_files import (
     REMINDERS_RESULT,
+    REMINDERS_SCHEDULES,
     REPORT_ENTERING_DECISIONS,
     REPORT_ENTERING_RESULT,
     REPORT_ENTERING_STATE,
@@ -2975,10 +2976,15 @@ def test_zmiana_pory_i_godziny_pierwszego_przypomnienia_dziala_od_nastepnego_spr
 
 @dataclass
 class SentFolderMailbox(FakeMailbox):
-    """Skrzynka przypomnień, której „Wysłane” mają każde przypomnienie wysłane przez nią, z chwilą wysyłki, jak Gmail."""
+    """Skrzynka przypomnień, której „Wysłane” mają każde przypomnienie wysłane przez nią, z chwilą wysyłki według zegara
+    Gmaila, który odchodzi od zegara laptopa taty o ``gmail_clock``."""
+
+    gmail_clock: timedelta = timedelta()
 
     def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
-        return SentReminders(tuple(SentReminder(frozenset(reminder.recipients), reminder.day, at) for reminder, at in self.sends))
+        return SentReminders(
+            tuple(SentReminder(frozenset(reminder.recipients), reminder.day, at + self.gmail_clock) for reminder, at in self.sends)
+        )
 
 
 @pytest.mark.parametrize(
@@ -3071,6 +3077,128 @@ def test_pora_ktora_dzis_jeszcze_nie_poszla_po_zmianie_por_wysyla_przypomnienie_
     ]
 
 
+def _old_version_sends(tmp_path: Path, at: datetime) -> list[tuple[Reminder, datetime]]:
+    """Przypomnienia, które stara wersja (stałe pory z ADR 0030) wysłała o ``at`` do Anny i Jana, jak w jej „Wysłanych”."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(at)
+    centrum.client.start()
+    centrum.rhythm.tick()
+    centrum.client.stop()
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska", "jan.testowy"]
+    return list(mailbox.sends)
+
+
+@pytest.mark.parametrize(
+    ("sent_at", "updated_at", "later", "checked_at"),
+    [
+        (time(8, 5), time(17, 20), {"morning": {"start": "09:00", "end": "17:45"}}, time(17, 21)),
+        (time(18, 5), time(22, 10), {"evening": {"start": "19:00", "end": "23:00"}}, time(22, 11)),
+    ],
+    ids=["poranna", "wieczorna"],
+)
+def test_w_dniu_aktualizacji_zmiana_por_po_wysylce_starej_wersji_nie_daje_drugiego_maila_tej_samej_pory(
+    tmp_path: Path, sent_at: time, updated_at: time, later: dict[str, object], checked_at: time
+) -> None:
+    """Sonda W1 r2 (#1568): stara wersja wysłała przypomnienia przy stałych porach z ADR 0030, a pór z chwili wysyłki nie
+    zapisała. Centrum po Aktualizacji startuje poza porą, tata zmienia w Ustawieniach porę tak, że chwila wysyłki leży
+    już poza nią, a następne sprawdzenie w nowej porze nie wysyła drugiego, bo stara wersja znała tylko pory z ADR 0030."""
+
+    day = date(2026, 11, 10)
+    mailbox = SentFolderMailbox(sends=_old_version_sends(tmp_path / "stara", datetime.combine(day, sent_at)))
+    centrum = entering_centrum(tmp_path / "nowa", INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
+    (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
+    (centrum.tool.config / OLD_ROLLOUT_FILE).write_bytes(b"2026-11-09\n")
+    (centrum.tool.config / OLD_FOOTER_FILE).write_bytes(b"Pozdrawiam\nTata\n")
+    centrum.moment.append(datetime.combine(day, updated_at))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    changed = centrum.client.put("/api/settings/reminders", json=_reminders_form(**later, footer="Pozdrawiam\nTata\n"))
+    centrum.moment.append(datetime.combine(day, checked_at))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", sent_at),
+        ("jan.testowy", sent_at),
+    ], "drugi mail tej samej pory w dniu Aktualizacji"
+
+
+def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_sprzed_zmiany(tmp_path: Path) -> None:
+    """Zapas zegara (``CLOCK_MARGIN``): o 7:30 praca sprawdza przy porannej 7:00–9:00, tata wydłuża ją do 17:00, a
+    sprawdzenie o 9:30 wysyła przypomnienia. Zegar Gmaila spóźnia się o półtorej minuty, więc „Wysłane” mają 9:28:30,
+    jeszcze przed zapisem nowych pór. Po ponownym starcie o 9:35 te maile dalej zamykają poranną, choć przy porach sprzed
+    zmiany 9:28:30 leży poza porą."""
+
+    mailbox = SentFolderMailbox(gmail_clock=-timedelta(seconds=90))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    short = _reminders_form(morning={"start": "07:00", "end": "09:00"}, footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=short).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 7, 30))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    longer = _reminders_form(morning={"start": "07:00", "end": "17:00"}, footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=longer).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 9, 30))
+    centrum.rhythm.tick()
+    centrum.restart()
+    centrum.client.start()
+    centrum.moment.append(datetime(2026, 11, 10, 9, 35))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(9, 30)),
+        ("jan.testowy", time(9, 30)),
+    ]
+
+
+_NAIVE_SCHEDULES = b"""{"schema_version": 1,
+ "przed": [{"poranna": {"od": "08:00", "do": "17:00"}, "wieczorna": {"od": "18:00", "do": "22:00"}, "pierwsze": "08:00"}],
+ "pory": [{"od": "2026-11-10T07:00:00", "poranna": {"od": "08:00", "do": "17:00"},
+  "wieczorna": {"od": "18:00", "do": "22:00"}, "pierwsze": "08:00"}]}
+"""
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [b"{", b'{"schema_version": 1, "przed": [], "pory": []}\n', _NAIVE_SCHEDULES],
+    ids=["urwany", "bez-por-przed", "chwila-bez-strefy"],
+)
+def test_nieczytelny_plik_por_liczy_wyslane_takze_przy_biezacych_porach_az_po_nastepny_start(
+    tmp_path: Path, broken: bytes
+) -> None:
+    """Przy porannej 6:00–17:00 przypomnienia idą o 7:00, poza porami z ADR 0030. Plik pór psuje się, a Centrum
+    startuje znowu o 7:30 i o 7:45: nie wiadomo, przy jakich porach ta wersja wysyłała, więc maile z 7:00 zamykają
+    poranną przy porach z ADR 0030 i przy bieżących, także po starcie, przed którym praca zapisała plik od nowa."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    early = _reminders_form(morning={"start": "06:00", "end": "17:00"}, first="06:00", footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=early).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 7, 0))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    centrum.client.stop()
+    (centrum.tool.config / REMINDERS_SCHEDULES).write_bytes(broken)
+    for minute in (30, 45):
+        centrum.restart()
+        centrum.client.start()
+        centrum.moment.append(datetime(2026, 11, 10, 7, minute))
+        centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(7, 0)),
+        ("jan.testowy", time(7, 0)),
+    ]
+
+
 _HALF_HOURS = st.lists(st.integers(6 * 2, 23 * 2 + 1), min_size=4, max_size=4, unique=True).map(sorted)
 """Cztery różne pełne albo połówkowe godziny od 6:00 do 23:30, rosnąco: początek i koniec porannej i wieczornej."""
 
@@ -3085,12 +3213,17 @@ def _pory(draw: st.DrawFn) -> tuple[tuple[time, time], tuple[time, time]]:
     return (found[0], found[1]), (found[2], found[3])
 
 
-_DAY_MINUTES = st.integers(7 * 60, 23 * 60 + 58)
+_FIRST_MINUTE, _LAST_MINUTE = 7 * 60, 23 * 60 + 58
+_DAY_MINUTES = st.integers(_FIRST_MINUTE, _LAST_MINUTE)
 _EVENTS = st.lists(
     st.tuples(_DAY_MINUTES, st.one_of(_pory(), st.just("sprawdzenie"), st.just("restart"))), min_size=1, max_size=12
 )
 """Zdarzenia dnia 10.11.2026 po minutach: tata zapisuje pory, rytm sprawdza przypomnienia albo Centrum startuje znowu.
-Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, jak u taty."""
+Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, jak u taty. W dniu Aktualizacji test
+ściska minuty zdarzeń za chwilę wysyłki starej wersji."""
+_OLD_VERSION = st.one_of(st.none(), st.integers(8 * 60, 17 * 60 - 1), st.integers(18 * 60, 22 * 60 - 1))
+"""Minuta dnia, w której stara wersja wysłała przypomnienia w porze z ADR 0030 przed Aktualizacją (bez pliku pór);
+``None``: dzień bez Aktualizacji."""
 
 
 # Bez zmniejszania przykładu: każdy próbowany przykład to nowe Centrum, więc zmniejszanie złego przykładu trwa dłużej
@@ -3099,17 +3232,18 @@ Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, ja
     derandomize=True,
     database=None,
     deadline=None,
-    max_examples=40,
+    max_examples=60,
     phases=[Phase.explicit, Phase.generate],
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
-@given(events=_EVENTS)
+@given(old_version=_OLD_VERSION, events=_EVENTS)
 def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_tej_samej_pory(
-    tmp_path_factory: pytest.TempPathFactory, events: list[tuple[int, object]]
+    tmp_path_factory: pytest.TempPathFactory, old_version: int | None, events: list[tuple[int, object]]
 ) -> None:
     """Decyzja W1 (#1568): przy dowolnych zmianach pór w ciągu dnia, sprawdzeniach i ponownych startach Centrum każde
     przypomnienie idzie w porze obowiązującej w chwili jego sprawdzenia, a Wykonawca dostaje za dzień raportu najwyżej
-    jedno przypomnienie w każdej nazwanej porze (porannej, wieczornej) tego dnia."""
+    jedno przypomnienie w każdej nazwanej porze (porannej, wieczornej) tego dnia, także w dniu Aktualizacji, gdy
+    „Wysłane” mają już przypomnienia starej wersji, a pliku pór jeszcze nie ma (W1 r2)."""
 
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path_factory.mktemp("pory"), INTERMAX, reminder_mailbox=mailbox)
@@ -3117,9 +3251,20 @@ def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_t
     day = date(2026, 11, 10)
     in_effect: tuple[tuple[time, time], tuple[time, time]] = ((time(8), time(17)), (time(18), time(22)))
     named: list[tuple[str, str]] = []
+    if old_version is not None:
+        old_moment = time(old_version // 60, old_version % 60)
+        centrum.moment.append(datetime.combine(day, old_moment))
+        centrum.client.start()
+        centrum.rhythm.tick()
+        centrum.client.stop()
+        (centrum.tool.config / REMINDERS_SCHEDULES).unlink()
+        named += [(reminder.worker, _named_pora(old_moment, in_effect)) for reminder, _ in mailbox.sends]
+        centrum.restart()
+    first = _FIRST_MINUTE if old_version is None else old_version + 1
     moments: list[tuple[int, object]] = []
     for minute, event in sorted(events, key=lambda found: found[0]):
-        moments += [(minute, event)] if event == "sprawdzenie" else [(minute, event), (minute + 1, "sprawdzenie")]
+        at = first + (minute - _FIRST_MINUTE) * (_LAST_MINUTE - first) // (_LAST_MINUTE - _FIRST_MINUTE)
+        moments += [(at, event)] if event == "sprawdzenie" else [(at, event), (at + 1, "sprawdzenie")]
     moments.sort(key=lambda found: found[0])
     centrum.client.start()
     try:

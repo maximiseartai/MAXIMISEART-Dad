@@ -51,7 +51,8 @@ w `config/` prowadzone przez Maksa, Wzorce w Excelu albo stałe w kodzie.
   Nowe pory działają od następnego sprawdzenia dla pór, które tego dnia jeszcze nie poszły. Folder „Wysłane” zna
   tylko chwilę wysyłki, więc praca przypomnień zapisuje w `config/` pory, przy których sprawdzała, i od kiedy
   (`przypomnienia-pory.json`); to zmienia zdanie ADR 0030, że Centrum nie ma własnego pliku stanu przypomnień.
-  Pamięcią wysłanych zostaje „Wysłane”.
+  Pamięcią wysłanych zostaje „Wysłane”. Przypomnienia sprzed pierwszego zapisu pór wysłała wersja sprzed Ustawień
+  Centrum, więc liczą pory z ADR 0030, także w dniu Aktualizacji, gdy tata od razu zmieni pory.
 - **Hasło skrzynki raportów wymienia tata** polem, które nigdy nie pokazuje starej wartości. Token do Zgłoszeń
   zostaje u Maksa; tata widzi jego stan.
 - **Furtka Maksa.** Wydanie zmienia Ustawienia Centrum tylko jawną, nazwaną zmianą. Trafia ona do Historii z

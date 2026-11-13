@@ -31,6 +31,7 @@ from rozliczenia.worker_reports import (
     ReminderSchedule,
     ReminderSettings,
     ReportMail,
+    SchedulesInEffect,
     SenderAddress,
     SentReminder,
     TimeRange,
@@ -96,6 +97,7 @@ def _due(
     footer: str = "",
     workers: WorkerList | None = None,
     settings: ReminderSettings | None = None,
+    in_effect: SchedulesInEffect | None = None,
 ) -> tuple[Reminder, ...]:
     listed = workers or _workers()
     return reminders_due(
@@ -108,6 +110,7 @@ def _due(
             addresses=listed.addresses(),
             reminded=listed.reminded(),
             settings=settings or replace(DEFAULT_REMINDERS, enabled=True, since=rollout, footer=footer),
+            in_effect=in_effect or SchedulesInEffect(),
         )
     )
 
@@ -223,9 +226,12 @@ def test_pory_i_godzina_pierwszego_przypomnienia_z_ustawien_zastepuja_pory_z_adr
 ) -> None:
     """ADR 0032: pory i godzina pierwszego przypomnienia z Ustawień Centrum działają jak dawne stałe. Pierwsze
     przypomnienie za dzień X idzie od 9:15 dnia X+1, najwyżej jedno w porze 6:30–12:00 i 15:00–19:30, bez końca pory, a
-    poza nimi, także w dawnych porach z ADR 0030, nie idzie żadne."""
+    poza nimi, także w dawnych porach z ADR 0030, nie idzie żadne. Praca przypomnień sprawdzała tylko przy tych porach,
+    więc wysłane liczą się w nich."""
 
-    assert _days(_due(now, sent=[_sent(DAY, moment) for moment in sent], settings=SHIFTED)) == expected
+    always = SchedulesInEffect(frozenset({SHIFTED.schedule}))
+
+    assert _days(_due(now, sent=[_sent(DAY, moment) for moment in sent], settings=SHIFTED, in_effect=always)) == expected
 
 
 def test_pierwsze_zdanie_taty_ma_dzien_w_kazdym_miejscu_pola_a_wzor_i_przyklad_zostaja() -> None:
