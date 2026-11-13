@@ -895,13 +895,15 @@ def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_za
     assert (plan["do"], plan["mutacje"]) == (commity[0], "2")
 
 
-# Limit czasu części w teście: części biegną naprawdę, jak krok zadania części w mutacje-nocne.yml.
-CZAS_CZESCI_S = 20
+# Limit czasu mutacji części w teście: części biegną naprawdę, jak krok zadania części w mutacje-nocne.yml, ale limit liczy
+# się od końca pokrycia (``--limit-po-pokryciu-s``), bo pokrycie pod obciążeniem trwało ponad 20 s (#1461). Mutacje części
+# z szybkimi testami trwały na Macu 0,56–1,10 s przy load 16–77, ponad 13 razy krócej.
+LIMIT_MUTACJI_S = 15
 
 
 def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path) -> subprocess.CompletedProcess[str]:
     zapis = zapisy / f"{mutacje_nocne.ARTEFAKT}{numer}" / mutacje_nocne.ZAPIS
-    polecenie = ["--baza", plan["baza"], "--do", plan["do"], "--czesc", f"{numer}/{plan['liczba']}", "--limit-czesci-s", str(CZAS_CZESCI_S), "--zapis", str(zapis)]
+    polecenie = ["--baza", plan["baza"], "--do", plan["do"], "--czesc", f"{numer}/{plan['liczba']}", "--limit-po-pokryciu-s", str(LIMIT_MUTACJI_S), "--zapis", str(zapis)]
     return subprocess.run(
         [sys.executable, "tools/mutacje_zmiany.py", *polecenie],
         cwd=repo,
@@ -918,11 +920,12 @@ def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path) -> subpro
 def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_nastepna_zaczyna_za_nia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Części biegną naprawdę z limitem czasu ``CZAS_CZESCI_S``. Testy zmiany PR #1 kończą się od razu, a test zmiany PR #2
-    po każdej jej mutacji śpi 300 s, więc jej część kończy limit czasu przed werdyktem. Noc i tak jest udana: mutacje bez
-    werdyktu idą do issue PR #2, a następna noc zaczyna od końca tego zakresu, nie od tej samej bazy."""
+    """Części biegną naprawdę z limitem mutacji ``LIMIT_MUTACJI_S``. Testy zmiany PR #1 kończą się od razu, a test zmiany PR #2
+    po każdej jej mutacji śpi półtora limitu, więc jej część kończy limit przed werdyktem, a limit dwa razy dłuższy już
+    nie. Noc i tak jest udana: mutacje bez werdyktu idą do issue PR #2, a następna noc zaczyna od końca tego zakresu, nie
+    od tej samej bazy."""
 
-    test_b = "import time\n\nfrom rozliczenia.b import b\n\n\ndef test_b() -> None:\n    if b(2):\n        time.sleep(300)\n    assert b(3) is True\n"
+    test_b = f"import time\n\nfrom rozliczenia.b import b\n\n\ndef test_b() -> None:\n    if b(2):\n        time.sleep({LIMIT_MUTACJI_S * 1.5})\n    assert b(3) is True\n"
     pliki = {
         ".gitignore": "__pycache__/\n",
         "src/rozliczenia/__init__.py": "",
@@ -947,7 +950,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     kod = mutacje_nocne.zglos(github, repo, plan["baza"], zapisy, len(czesci), RUN)
 
     assert [czesc.returncode for czesc in czesci] == [0, 3], [czesc.stdout for czesc in czesci]
-    assert czesci[1].stdout.splitlines()[-1].startswith(f"MUTACJE ZMIANY FAIL | limit czasu części {CZAS_CZESCI_S} s minął przed werdyktem 2 mutacji")
+    assert czesci[1].stdout.splitlines()[-1].startswith(f"MUTACJE ZMIANY FAIL | limit czasu części {LIMIT_MUTACJI_S} s po pokryciu minął przed werdyktem 2 mutacji")
     assert (kod, capsys.readouterr().out.splitlines()[-1]) == (0, "MUTACJE NOCNE OK | części 2 | przeżyło 0 | bez werdyktu 2")
     (issue,) = github.issues
     assert issue["title"] == "Przeżyte mutacje z #2"

@@ -91,6 +91,11 @@ kodem 2, gdy wynik mutacji nic nie mówi (nieznana baza, zły wyjątek, testy pa
 bez mutacji, odmowa ``tools/lib/ciezkie_ci.py``), a kodem 3, gdy limit czasu części (``--limit-czesci-s``) minął po
 pokryciu, przed werdyktem którejś mutacji. Po limicie żadne polecenie już nie biegnie, a mutacje bez wyniku dostają
 linię ``BEZ WERDYKTU``, więc część kończy się zapisem przed limitem czasu zadania CI.
+Limit części liczy się od startu, razem z pokryciem, bo chroni zadanie CI. ``--limit-po-pokryciu-s`` daje mutacjom
+osobny limit liczony od końca pokrycia (kod 3 jak po limicie części, który i tak obowiązuje). Pokrycie pod obciążeniem
+trwa kilka razy dłużej (#1461: ok. 1 s na cichym Macu, ponad 20 s przy load 23–31), więc podaje go test, w którym limit
+ma minąć w mutacjach, a nie w pokryciu. Noc go nie podaje: osobny limit mutacji zabierałby im czas, który dziś zostawia
+im krótsze pokrycie.
 W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py``, w częściach
 workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje, mutacje bez
 werdyktu po limicie czasu części i mutacje z przekroczonym czasem testów w ostatnim przebiegu: plik, linię i opis z
@@ -800,6 +805,11 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
         "--limit-czesci-s", type=float, default=PART_LIMIT_S, help=f"Limit czasu całej części w sekundach (domyślnie {PART_LIMIT_S})."
     )
     parser.add_argument(
+        "--limit-po-pokryciu-s",
+        type=float,
+        help="Limit czasu mutacji części w sekundach, liczony od końca pokrycia; całą część i tak kończy --limit-czesci-s.",
+    )
+    parser.add_argument(
         "--do", default="", help="Tylko mutacje linii, które ostatni zmienił commit linii pierwszych rodziców zawarty w tym (zakres nocy z planu)."
     )
     parser.add_argument("--czesc", metavar="K/N", type=_part, default=Czesc(1, 1), help="Tylko K-ty z N kolejnych kawałków listy mutacji.")
@@ -982,6 +992,10 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
             print("\n".join((done.stdout + done.stderr).rstrip().splitlines()[-30:]))
             return 2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
         print(f"Pokrycie: {len(coverage.lines)} testów wykonało zmienione linie, {len(coverage.spawners)} uruchomiło proces.", flush=True)
+    # Pokrycie pod obciążeniem trwa kilka razy dłużej, więc limit liczony od startu zostawiałby mutacjom zmienny czas (#1461).
+    if args.limit_po_pokryciu_s is not None and (after := time.monotonic() + args.limit_po_pokryciu_s) < deadline:
+        deadline = after
+        out_of_time = f"MUTACJE ZMIANY FAIL | limit czasu części {args.limit_po_pokryciu_s:g} s po pokryciu minął"
     today = datetime.datetime.now(datetime.UTC).date()
     narrow: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []  # i testy dalszych przebiegów, gdy pierwszy przeżyje
     # Mutacje, które przeżyły testy, z werdyktem, jego linią i dopiskiem przebiegu; sprawdza je jeszcze brama typów.

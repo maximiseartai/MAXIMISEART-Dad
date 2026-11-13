@@ -315,7 +315,10 @@ def test_czesc_konczy_sie_zapisem_w_limicie_czasu_czesci_takze_gdy_mutacja_zawie
     one = "\n\ndef jeden() -> int:\n    return 1\n"
     record = tmp_path / "zapis" / "czesc.json"
 
-    done = _run(_repo(tmp_path / "repo", hangs, CHANGED + one, BASE + one), "--rownolegle", "1", "--limit-czesci-s", "15", "--zapis", str(record))
+    # Bez limitu po pokryciu zawieszona mutacja kończy się po ``--limit-s`` przekroczonym czasem (kod 1), a nie wiesza
+    # testu; z nim ``--limit-s`` nie mija pierwszy, bo mutacja startuje po końcu pokrycia, od którego liczy się limit.
+    arguments = ("--rownolegle", "1", "--limit-po-pokryciu-s", "15", "--limit-s", "20", "--zapis", str(record))
+    done = _run(_repo(tmp_path / "repo", hangs, CHANGED + one, BASE + one), *arguments)
 
     assert done.returncode == 3, done.stdout + done.stderr
     verdicts = [line for line in done.stdout.splitlines() if " → " in line]
@@ -324,7 +327,7 @@ def test_czesc_konczy_sie_zapisem_w_limicie_czasu_czesci_takze_gdy_mutacja_zawie
     assert len(verdicts) == 2 and verdicts[0].startswith("BEZ WERDYKTU: src/rozliczenia/warunek.py:2 bez `b` w `and` → brak wyniku po "), done.stdout
     assert verdicts[1] == "BEZ WERDYKTU: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy → czas minął, zanim się zaczęła", done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert written["wynik"] == "MUTACJE ZMIANY FAIL | limit czasu części 15 s minął przed werdyktem 2 mutacji | przeżyło 0 | mutacje=2 | wyjątki=0 | innego systemu=0"
+    assert written["wynik"] == "MUTACJE ZMIANY FAIL | limit czasu części 15 s po pokryciu minął przed werdyktem 2 mutacji | przeżyło 0 | mutacje=2 | wyjątki=0 | innego systemu=0"
     # Testy zawieszone do końca czasu części to nie przeżyta mutacja, ale noc zgłasza ją jako mutację bez werdyktu.
     assert written["przezyte"] == []
     assert [(_named(entry), entry["linie"]) for entry in written["bez_werdyktu"]] == [
@@ -426,7 +429,7 @@ def test_mutacja_ktora_zawiesza_dopiero_testy_pliku_konczy_sie_bez_werdyktu_w_li
     )
     record = tmp_path / "zapis" / "czesc.json"
 
-    done = _run(_repo(tmp_path / "repo", tests, "LIMIT = 5\n", "LIMIT = 3\n"), "--limit-czesci-s", "15", "--zapis", str(record))
+    done = _run(_repo(tmp_path / "repo", tests, "LIMIT = 5\n", "LIMIT = 3\n"), "--limit-po-pokryciu-s", "15", "--limit-s", "20", "--zapis", str(record))
 
     assert done.returncode == 3, done.stdout + done.stderr
     verdict = next(line for line in done.stdout.splitlines() if " → " in line)
@@ -451,6 +454,23 @@ def test_mutacja_ktora_wiesza_dopiero_test_pliku_do_limitu_pytest_timeout_jest_w
     hang = "→ Failed: Timeout (>3.0s) from pytest-timeout. (liczona jako wykryta: pytest-timeout czerwieni test w CI) (testy pliku)"
     assert f"ZAWIESZENIE: src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy {hang}" in done.stdout.splitlines(), done.stdout
     assert json.loads(record.read_text(encoding="utf-8"))["przezyte"] == []
+
+
+# Limit mutacji części liczony od końca pokrycia; mutacje z testami, które padają od razu, trwały na Macu 0,56–1,10 s przy
+# load 16–77, ponad 13 razy krócej (#1461).
+LIMIT_PO_POKRYCIU_S = 15
+
+
+def test_limit_po_pokryciu_liczy_czas_mutacji_od_konca_pokrycia_wiec_wolne_pokrycie_nie_zabiera_go_mutacjom(tmp_path: Path) -> None:
+    """#1461: pokrycie pod obciążeniem trwa kilka razy dłużej, a limit liczony od startu kończył część przed mutacjami,
+    choć kod był poprawny. Tu testy bez mutacji śpią cały limit, a po każdej mutacji padają na asercji przed snem."""
+
+    slow = "import time\n\n" + ALL_CASES + f"    time.sleep({LIMIT_PO_POKRYCIU_S})\n"
+    record = tmp_path / "zapis" / "czesc.json"
+
+    done = _run(_repo(tmp_path / "repo", slow), "--limit-po-pokryciu-s", str(LIMIT_PO_POKRYCIU_S), "--zapis", str(record))
+
+    assert (done.returncode, done.stdout.splitlines()[-1]) == (0, "MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0"), done.stdout + done.stderr
 
 
 def test_czesc_z_testem_zawieszonym_bez_mutacji_konczy_sie_zapisem_w_limicie_czasu_czesci(tmp_path: Path) -> None:
