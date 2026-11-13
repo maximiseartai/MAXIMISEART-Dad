@@ -2,9 +2,9 @@ name: Rozmiar PR
 
 # Each PR gets one label size:XS … size:XXL from its effective changed lines (tools/ci/rozmiar_pr.py, after t3code's
 # pr-size.yml) and, when it adds process machinery lines without removing more (directory rule REGULY in that script,
-# exceptions in the base's tools/lib/szopa.toml, ADR 0034), changes that list or the counter, or moves a file into
-# another group, the label „wymaga ZGODA SZOPA”, which an admin's comment ZGODA SZOPA takes off. The labels only
-# inform: no ruleset or Required CI status depends on this workflow.
+# exceptions in the base's tools/lib/szopa.toml, ADR 0034) or changes that list, the counter or this workflow, the
+# label „wymaga ZGODA SZOPA”, which an admin's comment ZGODA SZOPA takes off. The labels only inform: no ruleset or
+# Required CI status depends on this workflow.
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] the PR's commits are only git data here, never run
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
