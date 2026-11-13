@@ -304,12 +304,12 @@ FEATURES = (
     Feature(
         "edytor-regul-ilosci",
         (
-            "360-edytor-podglad-szerokie",
-            "361-edytor-zla-wartosc",
-            "362-edytor-zamkniecie-bez-zapisu",
-            "363-edytor-zapisana",
-            "364-edytor-historia",
-            "365-edytor-waskie",
+            "380-edytor-podglad-szerokie",
+            "381-edytor-zla-wartosc",
+            "382-edytor-zamkniecie-bez-zapisu",
+            "383-edytor-zapisana",
+            "384-edytor-historia",
+            "385-edytor-waskie",
         ),
         needs=("przebieg-rozliczen",),
     ),

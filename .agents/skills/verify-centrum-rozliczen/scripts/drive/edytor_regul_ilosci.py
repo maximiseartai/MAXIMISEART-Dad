@@ -104,7 +104,7 @@ def drive(run: Run, page: Page) -> None:
     expect(summed).to_contain_text(SENTENCE)
     run.check(True, "two rules into V show their sum with both rules („V = 3, bo reguły …”)")
     summed.scroll_into_view_if_needed()
-    _capture(run, page, "360-edytor-podglad-szerokie", answer, full_page=False)
+    _capture(run, page, "380-edytor-podglad-szerokie", answer, full_page=False)
 
     run.step(FEATURE, "edytor-zla-regula")
     value.fill("")
@@ -112,14 +112,14 @@ def drive(run: Run, page: Page) -> None:
     column = window.get_by_role("listitem", name="Kolumna 1", exact=True)
     expect(column.get_by_role("alert")).to_have_text("Wartość musi być liczbą całkowitą od 1 do 999.")
     run.check(not rules_file.exists(), "a rule the server refuses is one sentence at its field, and nothing is saved")
-    _capture(run, page, "361-edytor-zla-wartosc", answer, full_page=False)
+    _capture(run, page, "381-edytor-zla-wartosc", answer, full_page=False)
     value.fill("2")
 
     run.step(FEATURE, "edytor-niezapisany")
     page.keyboard.press("Escape")
     leaving = page.get_by_role("alertdialog")
     expect(leaving).to_contain_text("Zamknąć bez zapisu?")
-    _capture(run, page, "362-edytor-zamkniecie-bez-zapisu", answer, full_page=False)
+    _capture(run, page, "382-edytor-zamkniecie-bez-zapisu", answer, full_page=False)
     leaving.get_by_role("button", name="Wróć", exact=True).click()
     expect(window.get_by_role("heading", name="Nowa reguła", exact=True)).to_be_visible()
     run.check(True, "closing the window with an unsaved rule asks first, and „Wróć” keeps the form")
@@ -133,7 +133,7 @@ def drive(run: Run, page: Page) -> None:
         [rule["id"] for rule in after] == [*(rule["id"] for rule in before), "regula-1"] and rules_file.exists(),
         "„Zapisz” adds the rule at the end of the server's rules and writes the file of Reguły ilości",
     )
-    run.capture(page, "363-edytor-zapisana")
+    run.capture(page, "383-edytor-zapisana")
 
     run.step(FEATURE, "edytor-historia")
     window = open_settings(page, "Historia")
@@ -141,7 +141,7 @@ def drive(run: Run, page: Page) -> None:
     expect(newest).to_contain_text("Reguła ilości")
     expect(newest).to_contain_text(f"Dodano: {SENTENCE}")
     run.check(True, "Historia reads the change of a rule as its sentence, not the file's text")
-    run.capture(page, "364-edytor-historia", full_page=False)
+    run.capture(page, "384-edytor-historia", full_page=False)
     newest.get_by_role("button", name="Cofnij: Reguła ilości", exact=True).click()
     expect(window.get_by_role("list", name="Zmiany").get_by_role("listitem").first).to_contain_text(f"Usunięto: {SENTENCE}")
     run.check(
@@ -164,7 +164,7 @@ def drive(run: Run, page: Page) -> None:
         run.check(True, "a rule opened without a change has its sentence and changes no row")
         page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         run.check(True, "on a narrow window the editor and its preview wrap without a horizontal scroll")
-        run.capture(page, "365-edytor-waskie", full_page=False)
+        run.capture(page, "385-edytor-waskie", full_page=False)
         window.get_by_role("button", name="Anuluj", exact=True).click()
         expect(window.get_by_role("button", name="Dodaj regułę", exact=True)).to_be_visible()
         close_settings(page)
