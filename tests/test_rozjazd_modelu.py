@@ -153,61 +153,29 @@ def test_zmiana_obok_kodu_opisanego_modelem_nie_jest_rozjazdem(tmp_path: Path, n
     assert rozjazd_modelu.rozjazd(skill, tmp_path) is None
 
 
-def _branch_beside_main(origin: Path, definition: bool) -> None:
-    """Na ``origin`` gałąź ``zmiana`` z dwoma commitami (z ``definition`` zmiana definicji opisanej modelem bez
-    przeliczenia skrótów, bez niego zmiana obok), a ``main`` poszedł dalej o zmianę obok."""
+def test_galaz_po_rebase_nie_daje_rozjazdu_w_plytkim_klonie(tmp_path: Path) -> None:
+    """Przed #1060 rebase przepisywał Sync commit z ``SKILL.md``, a płytki klon CI go nie miał: rozjazd bez zmiany kodu.
 
+    Porównanie czyta tylko pliki, a cherry-pick i squash gałęzi dają to samo drzewo co rebase, więc wystarczy rebase;
+    zmianę definicji po przepisaniu gałęzi łapie ``test_zmiana_kodu_opisanego_modelem…[cialo-definicji]``."""
+
+    origin = tmp_path / "origin"
     _skill(origin)
     git(origin, "init", "--quiet", "--initial-branch", "main")
     commit(origin, "model opisuje kod")
     git(origin, "switch", "--quiet", "--create", "zmiana")
     _edit(origin, CODE, "    return 2 + zapisz()\n", "    return 20 + zapisz()\n")
     commit(origin, "zmiana obok")
-    if definition:
-        _edit(origin, CODE, "    return 1\n", "    return 10\n")
-    else:
-        _write(origin, "inny.txt", "na gałęzi\n")
+    _write(origin, "inny.txt", "na gałęzi\n")
     commit(origin, "druga zmiana")
     git(origin, "switch", "--quiet", "main")
     _write(origin, "src/pakiet/nowy.py", "Y = 1\n")
     commit(origin, "main dalej")
-
-
-def _rewritten(origin: Path, how: str) -> None:
-    """Gałąź ``zmiana`` przepisana na ``main`` tak, jak przepisuje ją autor PR albo merge: ``rebase``, ``cherry-pick``
-    jej commitów na ``main`` albo ``squash`` w jeden commit; przepisana gałąź zostaje bieżąca."""
-
-    if how == "rebase":
-        git(origin, "rebase", "--quiet", "main", "zmiana")
-        return
-    git(origin, "switch", "--quiet", "--create", "przepisana", "main")
-    if how == "cherry-pick":
-        git(origin, "cherry-pick", "main..zmiana")
-    else:
-        git(origin, "merge", "--quiet", "--squash", "zmiana")
-        commit(origin, "squash")
-
-
-@pytest.mark.parametrize("how", ["rebase", "cherry-pick", "squash"])
-def test_galaz_przepisana_rebase_cherry_pick_albo_squash_nie_daje_rozjazdu_w_plytkim_klonie(tmp_path: Path, how: str) -> None:
-    """Przed #1060 rebase przepisywał Sync commit z ``SKILL.md``, a płytki klon CI go nie miał: rozjazd bez zmiany kodu."""
-
-    origin = tmp_path / "origin"
-    _branch_beside_main(origin, definition=False)
-    _rewritten(origin, how)
+    git(origin, "rebase", "--quiet", "main", "zmiana")
     clone = tmp_path / "klon"
-    git(tmp_path, "clone", "--quiet", "--depth", "1", "--branch", git(origin, "branch", "--show-current"), origin.as_uri(), str(clone))
+    git(tmp_path, "clone", "--quiet", "--depth", "1", "--branch", "zmiana", origin.as_uri(), str(clone))
 
     assert rozjazd_modelu.rozjazd(clone / SKILL, clone) is None
-
-
-@pytest.mark.parametrize("how", ["rebase", "cherry-pick", "squash"])
-def test_zmiana_definicji_bez_przeliczenia_zostaje_rozjazdem_po_rebase_cherry_pick_i_squash(tmp_path: Path, how: str) -> None:
-    origin = tmp_path / "origin"
-    _branch_beside_main(origin, definition=True)
-    _rewritten(origin, how)
-
-    assert rozjazd_modelu.rozjazd(origin / SKILL, origin) == f"kod opisany modelem zmienił się: {CODE} zapisz. {STEPS}"
 
 
 def test_przeliczenie_skrotow_po_zmianie_kodu_konczy_rozjazd_i_wymienia_przeliczone(tmp_path: Path) -> None:

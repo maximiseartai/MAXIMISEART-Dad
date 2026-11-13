@@ -8,8 +8,6 @@ import shutil
 import subprocess
 import sys
 
-import pytest
-
 from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,12 +52,12 @@ def test_polecenie_biegnie_na_commicie_z_narzedziami_checkoutu_takze_niezacommit
     assert (repo.parent / "wyniki" / f"{first[:8]}.txt").read_text(encoding="utf-8").strip() == "stare dane nowe narzędzie"
 
 
-@pytest.mark.parametrize("revision", ["origin/main", "HEAD^1"])
-def test_commit_podany_nazwa_rewizji_ma_etykiete_i_plik_wyniku_ze_skrotu_sha(tmp_path: Path, revision: str) -> None:
-    repo, first = _repo(tmp_path)
-    git(repo, "update-ref", "refs/remotes/origin/main", first)
+def test_commit_podany_nazwa_rewizji_ma_etykiete_i_plik_wyniku_ze_skrotu_sha(tmp_path: Path) -> None:
+    """Nazwę zdalnej gałęzi (``origin/main``) sprawdza ``test_narzedzie_uruchomione_spoza_repozytorium…``."""
 
-    done = _run(repo, "--commit", revision, "--", "tools/wypisz.py")
+    repo, first = _repo(tmp_path)
+
+    done = _run(repo, "--commit", "HEAD^1", "--", "tools/wypisz.py")
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert done.stdout.startswith(f"{first[:8]} | {first[:8]} | ")

@@ -2,8 +2,10 @@
 z pominięciem ``tools/ponow_ci.py``.
 
 Polecenia pochodzą z historii agentów z 20–25.10.2026 (``calls.jsonl`` pomiaru czasu narzędzi), a ponowienia z 5–11.11
-(recall klasy K1 hillclimbu CI 12.11), skrócone tylko o ``cd`` do worktree, długie ścieżki i dopiski do notatek. Każdy test uruchamia hook tak jak Claude Code: JSON na stdin, a odmowa to
-kod 2 z przyczyną na stderr.
+(recall klasy K1 hillclimbu CI 12.11), skrócone tylko o ``cd`` do worktree, długie ścieżki i dopiski do notatek. Korpus
+ocenia ``judge`` hooka wczytanego raz, bo protokół nie zależy od treści polecenia: JSON polecenia ma tylko znaki ASCII.
+Protokół, wejście, którego nie da się odczytać, i limit z ustawień sprawdzają testy, które uruchamiają hook tak jak Claude
+Code: JSON na stdin, a odmowa to kod 2 z przyczyną na stderr.
 """
 
 from __future__ import annotations
@@ -15,12 +17,25 @@ from pathlib import Path
 import subprocess
 import sys
 import tracemalloc
+from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "tools" / "hooks" / "czekanie.py"
 SETTINGS = ROOT / ".claude" / "settings.json"
+
+
+def _load() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("czekanie", HOOK)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+hook = _load()
 
 CI_LOOPS = (
     "until s=$(gh pr checks 234 --json name,bucket 2>/dev/null) && [ -n \"$s\" ] && [ \"$s\" != \"[]\" ] && "
@@ -317,47 +332,61 @@ def _bash(command: str, in_background: bool = False) -> subprocess.CompletedProc
     return _hook(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": tool_input}))
 
 
-@pytest.mark.parametrize("command", CI_LOOPS + WATCHES)
-def test_czekanie_na_ci_na_pierwszym_planie_dostaje_odmowe_z_droga_przez_powiadomienie(command: str) -> None:
-    hooked = _bash(command)
-
-    assert hooked.returncode == 2, hooked.stderr
-    assert "pełny SHA" in hooked.stderr
-    assert "watch_pull_request" in hooked.stderr
-    assert "run_in_background: true" in hooked.stderr
-    assert "t3_background_wait" in hooked.stderr
+@pytest.mark.parametrize(
+    ("command", "refusal"),
+    [pytest.param(command, hook.CI_LOOP, id=command) for command in CI_LOOPS]
+    + [pytest.param(command, hook.WATCHING, id=command) for command in WATCHES],
+)
+def test_czekanie_na_ci_na_pierwszym_planie_dostaje_odmowe(command: str, refusal: object) -> None:
+    assert hook.judge(command, in_background=False) is refusal
 
 
 @pytest.mark.parametrize("command", PGREP_LOOPS)
-def test_petla_na_pgrep_dostaje_odmowe_z_powiadomieniem_zadania_w_tle(command: str) -> None:
-    hooked = _bash(command)
-
-    assert hooked.returncode == 2, hooked.stderr
-    assert "pgrep -f znajduje własną powłokę" in hooked.stderr
-    assert "run_in_background: true" in hooked.stderr
-    assert "t3_background_wait" in hooked.stderr
+def test_petla_na_pgrep_dostaje_odmowe(command: str) -> None:
+    assert hook.judge(command, in_background=False) is hook.PGREP_LOOP
 
 
 @pytest.mark.parametrize("in_background", [False, True])
 @pytest.mark.parametrize("command", RERUNS)
-def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe_z_poleceniem_narzedzia(command: str, in_background: bool) -> None:
-    hooked = _bash(command, in_background=in_background)
-
-    assert hooked.returncode == 2, hooked.stderr
-    assert "tools/ponow_ci.py N" in hooked.stderr
-    assert "--run ID" in hooked.stderr
+def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe(command: str, in_background: bool) -> None:
+    assert hook.judge(command, in_background=in_background) is hook.RERUN
 
 
 @pytest.mark.parametrize("command", PASSING)
-def test_inne_polecenie_przechodzi_bez_slowa(command: str) -> None:
-    hooked = _bash(command)
-
-    assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
+def test_inne_polecenie_przechodzi(command: str) -> None:
+    assert hook.judge(command, in_background=False) is None
 
 
 @pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS)
 def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
-    hooked = _bash(command, in_background=True)
+    assert hook.judge(command, in_background=True) is None
+
+
+ROAD_THROUGH_NOTIFICATION = ("pełny SHA", "watch_pull_request", "run_in_background: true", "t3_background_wait")
+
+
+@pytest.mark.parametrize(
+    ("command", "in_background", "said"),
+    [
+        pytest.param(CI_LOOPS[0], False, ROAD_THROUGH_NOTIFICATION, id="petla-na-ci"),
+        pytest.param(WATCHES[0], False, ROAD_THROUGH_NOTIFICATION, id="watch"),
+        pytest.param(PGREP_LOOPS[0], False, ("pgrep -f znajduje własną powłokę", "run_in_background: true", "t3_background_wait"), id="pgrep"),
+        pytest.param(RERUNS[0], True, ("tools/ponow_ci.py N", "--run ID"), id="ponowienie-w-tle"),
+    ],
+)
+def test_hook_odmawia_kodem_2_z_przyczyna_na_stderr(command: str, in_background: bool, said: tuple[str, ...]) -> None:
+    hooked = _bash(command, in_background=in_background)
+
+    assert (hooked.returncode, hooked.stdout) == (2, ""), hooked.stderr
+    assert [text for text in said if text not in hooked.stderr] == [], hooked.stderr
+
+
+@pytest.mark.parametrize(
+    ("command", "in_background"),
+    [pytest.param(PASSING[0], False, id="inne-polecenie"), pytest.param(CI_LOOPS[0], True, id="czekanie-w-tle")],
+)
+def test_hook_przepuszcza_bez_slowa(command: str, in_background: bool) -> None:
+    hooked = _bash(command, in_background=in_background)
 
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
@@ -415,13 +444,8 @@ def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) ->
     assert hooked.returncode == 2, hooked.stderr
 
 
-def test_hook_trzyma_w_pamieci_jedno_cialo_petli_naraz(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hook_trzyma_w_pamieci_jedno_cialo_petli_naraz() -> None:
     # Ciała 2000 zagnieżdżonych pętli to razem 24 MB, a 40 000 to 10 GB, których runner Windows nie ma.
-    spec = importlib.util.spec_from_file_location("czekanie", HOOK)
-    assert spec is not None and spec.loader is not None
-    hook = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(sys.modules, spec.name, hook)
-    spec.loader.exec_module(hook)
     command = "until x; do " * 2000 + "sleep 1; gh pr checks 1"
 
     tracemalloc.start()
