@@ -1105,22 +1105,52 @@ def test_cofniecie_usuniecia_reguly_przywraca_ja_obok_reguly_dodanej_po_niej_a_c
     assert {rule: sentence for rule, sentence in rule_sentences(app).items() if rule.startswith("regula-")} == {ids["B"]: b}
 
 
-# Krok taty w oknie Ustawień: zapis w edytorze albo „Cofnij” wiersza Historii; liczba wybiera regułę albo wiersz.
+def test_nowa_regula_przy_historii_bez_odczytu_to_odmowa_bez_zapisu_a_cofniecie_usuniecia_nie_rusza_reguly_dodanej_potem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tata dodaje regułę A i ją usuwa, a potem dodaje B, gdy system nie daje czytać Historii Ustawień (plik trzyma
+    OneDrive), choć dopisanie wiersza działa. Bez kluczy Historii B mogłaby dostać id usuniętej A i zniknąć po „Cofnij”
+    usunięcia A, więc zapis jest odmową ze zdaniem i nic się nie zapisuje. B dodana, gdy Historia znów się czyta, ma
+    własne id, a „Cofnij” usunięcia A przywraca A obok niej."""
+
+    app = centrum(tmp_path)
+    ids = _edits(app, (("dodaj", "A"), ("usun", "A")))
+    rules_before, rows_before = (app.tool.config / RULES_FILE).read_bytes(), history_rows(app)
+
+    with unreadable_history(monkeypatch):
+        refused = app.client.post(QUANTITY_RULES_URL, json=EDITED["B"])
+    rules_after, rows_after = (app.tool.config / RULES_FILE).read_bytes(), history_rows(app)
+    b = _edits(app, (("dodaj", "B"),))["B"]
+    restored = app.client.post(f"/api/settings/history/{rows_before[0]['id']}/undo")
+
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert (rules_after, rows_after) == (rules_before, rows_before)
+    assert b != ids["A"]
+    assert restored.status_code == 200, restored.text
+    assert {rule: sentence for rule, sentence in rule_sentences(app).items() if rule.startswith("regula-")} == {
+        ids["A"]: _sentence(EDITED["A"]),
+        b: _sentence(EDITED["B"]),
+    }
+
+
+# Krok taty w oknie Ustawień: zapis w edytorze (także nowej reguły, gdy Historii nie da się przeczytać) albo „Cofnij”
+# wiersza Historii; liczba wybiera regułę albo wiersz.
 _STEP = st.one_of(
     st.tuples(st.just("dodaj"), st.sampled_from(sorted(EDITED))),
     st.tuples(st.just("zmien"), st.integers(0, 9), st.sampled_from(sorted(EDITED))),
     st.tuples(st.just("usun"), st.integers(0, 9)),
     st.tuples(st.just("cofnij"), st.integers(0, 9)),
+    st.tuples(st.just("dodaj bez historii"), st.sampled_from(sorted(EDITED))),
 )
 
 
 def test_po_dowolnych_zapisach_edytora_i_cofnieciach_kazda_regula_ma_wlasne_id_a_cofniecie_zmienia_tylko_regule_wiersza(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Po dowolnych zapisach taty w edytorze i cofnięciach z Historii: nowa reguła dostaje id, którego nie miała żadna
     reguła przed nią, a „Cofnij” wiersza zmienia tylko regułę tego wiersza (usuwa ją albo przywraca jej zdanie
     „przed”), każda inna reguła zostaje, jak była; cofnięcie, którego nie da się wykonać, nie zmienia żadnej reguły i
-    mówi zdaniem dlaczego."""
+    mówi zdaniem dlaczego. Nowa reguła, gdy Historii nie da się przeczytać, to odmowa ze zdaniem bez zmiany reguł."""
 
     examples = itertools.count()
 
@@ -1139,6 +1169,10 @@ def test_po_dowolnych_zapisach_edytora_i_cofnieciach_kazda_regula_ma_wlasne_id_a
                     assert added not in given_ids, f"id {added} usuniętej reguły wróciło do nowej"
                     given_ids.add(added)
                     expected[added] = _sentence(EDITED[name])
+                case ("dodaj bez historii", name):
+                    with unreadable_history(monkeypatch):
+                        response = app.client.post(QUANTITY_RULES_URL, json=EDITED[name])
+                    assert (response.status_code, response.json()) == (500, {"message": SETTINGS_NOT_SAVED}), steps
                 case ("zmien", index, name) if ids:
                     rule_id = ids[index % len(ids)]
                     response = app.client.put(f"{QUANTITY_RULES_URL}/{rule_id}", json=EDITED[name])
@@ -1162,7 +1196,7 @@ def test_po_dowolnych_zapisach_edytora_i_cofnieciach_kazda_regula_ma_wlasne_id_a
                         assert response.json()["message"], response.text
                 case _:
                     continue
-            assert response.status_code in (200, 409, 422), response.text
+            assert response.status_code in (200, 409, 422) or step[0] == "dodaj bez historii", response.text
             shown = {rule_id: sentence for rule_id, sentence in rule_sentences(app).items() if rule_id.startswith("regula-")}
             assert shown == expected, steps
 
