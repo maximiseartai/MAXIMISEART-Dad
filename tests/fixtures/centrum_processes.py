@@ -580,7 +580,7 @@ def settings_changed_at(centrum: PreparingCentrum) -> list[str]:
     źródło i plik."""
 
     rows = centrum.client.get("/api/settings/history").json()["rows"]
-    return [f"- {datetime.fromisoformat(row['at']):%Y-%m-%d %H:%M} · tata · {SETTINGS_FILE}" for row in rows]
+    return [f"- {datetime.fromisoformat(row['at']).astimezone():%Y-%m-%d %H:%M} · tata · {SETTINGS_FILE}" for row in rows]
 
 
 def run_logs_handled(centrum: PreparingCentrum | SettlingCentrum) -> None:
