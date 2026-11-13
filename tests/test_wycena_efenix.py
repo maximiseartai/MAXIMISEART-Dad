@@ -1400,11 +1400,16 @@ CHANGED: dict[Changed, tuple[PagePart, WindowCause, WindowAction]] = {
 }
 
 
+# Zmiany budowy, przy których okno czeka cały swój czas, zanim stanie; przy pozostałych staje od razu.
+_WAITING = (Changed.DATE_DIALOG, Changed.HIDDEN_EMMETT, Changed.STALE_AMOUNT, Changed.NUMBER_FIELD_GONE)
+
+
 @pytest.mark.parametrize("changed", [changed for changed in Changed if changed is not Changed.OTHER_ANIMATIONS_IN_INFO])
 def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_maksa_z_czescia_strony(
     tmp_path: Path, page: Page, changed: Changed
 ) -> None:
-    """Zatrzymanie przychodzi w czasie okna (tu 3 s), także przy elemencie obecnym, ale niewidocznym.
+    """Zatrzymanie przychodzi w czasie okna (tu 1 s przy zmianach, przy których okno czeka, a 3 s przy pozostałych), także
+    przy elemencie obecnym, ale niewidocznym: działanie, które się nie udało, trwa krócej niż dwa czasy okna.
 
     Tylko zapis ilości (kwota, która się nie odświeża, i odpowiedź w innym zapisie) zatrzymuje wycenę po zmianie w efenix
     (Wycena Emmetta i ilość). To Zatrzymanie okna jak każde inne, „do Maksa”, więc Centrum daje przy nim Diagnozę i
@@ -1415,8 +1420,9 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     order = Order("#9501", cells={"O": 1}, amount=_au({"012": 1}))
     # Okno daty wykonania okno efenix otwiera tylko przy pustej dacie wykonania w efenix.
     in_efenix = replace(order.in_efenix("901"), execution_date=None if changed is Changed.DATE_DIALOG else DAY)
+    timeout_ms = 1_000 if changed in _WAITING else 3_000
     with atrapa_efenix([in_efenix], changed=changed) as atrapa:
-        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=3_000)
+        outcome = _price(tmp_path, page, atrapa.url, [order], timeout_ms=timeout_ms)
         changes = atrapa.status_changes()
 
     assert (_stop(outcome), changes, _kept(outcome)) == ("EFENIX_OKNO_ZATRZYMANE", 0, changed in (Changed.STALE_AMOUNT, Changed.QUANTITY_ANSWER, Changed.QUANTITY_RESULT))
@@ -1430,6 +1436,7 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     stopped_at = facts.stopped_at.failed
     assert stopped_at is not None
     assert (facts.part, facts.cause, stopped_at.action) == (part, cause, failed)
+    assert stopped_at.duration_ms < 2 * timeout_ms, stopped_at
 
 
 _DIALOG = '<div id="dialog_emmett">{}</div>'
@@ -2708,24 +2715,25 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     tmp_path: Path, browser: Browser, whole_run: _WholeRun, outage: Outage, first: int
 ) -> None:
     """Sieć zrywa każde żądanie od żądania ``first`` pełnej Wyceny (także w połowie odpowiedzi), odpowiedź staje w połowie
-    albo efenix odpowiada wolniej niż czas okna (tu 3 s), aż połączenie wróci. Wycena nigdy nie wisi i nie kończy się
+    albo efenix odpowiada wolniej niż czas okna (tu 2 s), aż połączenie wróci. Wycena nigdy nie wisi i nie kończy się
     nieoczekiwanym błędem: lista zleceń, której okno nie otworzyło przy starcie, to „Nie udało się otworzyć efenix” dla
     taty, a każde późniejsze odcięcie to jedno Zatrzymanie okna do Maksa, z Diagnozą i Zgłoszeniem, bez zgadywania
     przyczyny. Logi Uruchomienia mają przyczynę techniczną (przy błędzie przeglądarki z nazwanym działaniem), wiersz
     zlecenia, przy którym okno stanęło, z jego miejscem w przebiegu i działaniem, które się nie udało, oraz ślad każdego
-    zlecenia przed nim. Komunikat, że w efenix nic się nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w
-    nowym oknie efenix jak u taty, kończy się zawsze tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez
-    przerwy, także po odcięciu między „Załaduj do zlecenia” a odczytem przeładowanej strony (dawniej wyjątek #774) i po
-    zerwanym zapisie ilości (dawniej #864): zlecenie z Wyceną Emmetta albo z częścią ilości proces dokańcza do pliku bez
-    ponownego ładowania Emmetta (ADR 0026)."""
+    zlecenia przed nim, a działanie, które się nie udało, trwa krócej niż dwa czasy okna. Komunikat, że w efenix nic się
+    nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w nowym oknie efenix jak u taty, kończy się
+    zawsze tym samym stanem efenix i Pliku zbiorczego co jeden przebieg bez przerwy, także po odcięciu między „Załaduj
+    do zlecenia” a odczytem przeładowanej strony (dawniej wyjątek #774) i po zerwanym zapisie ilości (dawniej #864):
+    zlecenie z Wyceną Emmetta albo z częścią ilości proces dokańcza do pliku bez ponownego ładowania Emmetta (ADR 0026)."""
 
     resumed = tmp_path / PERIOD / whole_run.original.name
     resumed.parent.mkdir(parents=True)
     shutil.copy2(whole_run.original, resumed)
+    timeout_ms = 2_000
     with atrapa_efenix(_two_in_efenix(), outage_from=(outage, first)) as atrapa:
         untouched = _pricing(atrapa)
         with page_of(browser) as window:
-            stopped = _run(resumed, window, atrapa.url, timeout_ms=3_000)
+            stopped = _run(resumed, window, atrapa.url, timeout_ms=timeout_ms)
         after_stop = _pricing(atrapa)
         atrapa.reconnect()
         with page_of(browser) as window:
@@ -2752,7 +2760,8 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     at = facts.stopped_at
     assert (None if at is None else at.row) in rows, (at, rows)
     if at is not None:
-        assert (at.place, at.total, at.failed is not None) == (at.row - 17, 2, True), at
+        assert (at.place, at.total) == (at.row - 17, 2), at
+        assert at.failed is not None and at.failed.duration_ms < 2 * timeout_ms, at
     assert [result.order.row for result in facts.summary.results] == list(range(18, 18 if at is None else at.row))
     assert _kept(stopped) or after_stop == untouched, (after_stop, untouched)
     assert status_changes == 0
