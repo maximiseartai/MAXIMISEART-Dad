@@ -23,7 +23,6 @@ import re
 import shlex
 import subprocess
 import sys
-import time
 from typing import Any, cast
 import urllib.parse
 import zipfile
@@ -898,11 +897,17 @@ def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_za
 
 # Limit czasu części, która kończy się sama: chroni tylko przed zawieszeniem, więc pod obciążeniem nie mija (#1461).
 CZAS_CZESCI_S = 45
+# Limit części, której mutacje śpią 300 s, więc mija w mutacjach, gdy pokrycie przed nimi zdąży: ok. 1 s na cichym
+# Macu, do 10 s przy 64 pętlach CPU na 16 rdzeniach. Stały, bo limit z pomiaru wcześniejszego kroku wywraca skok
+# obciążenia między krokami (#1509).
+CZAS_CZESCI_DO_LIMITU_S = 20
+# Start narzędzia przed jego terminem i sprzątanie po nim (ok. 0,5 s) mają tyle zapasu, a limit + 10 s i limit × 2 nie.
+PO_LIMICIE_S = 9
 
 
 def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path, limit_s: int = CZAS_CZESCI_S) -> subprocess.CompletedProcess[str]:
-    """Część biegnie naprawdę, jak krok zadania części w mutacje-nocne.yml; część bez zapisu przed dwukrotnością
-    ``limit_s`` to porażka, więc test łapie limit części usunięty i dwa razy większy."""
+    """Część biegnie naprawdę, jak krok zadania części w mutacje-nocne.yml; część bez zapisu przed ``limit_s`` +
+    ``PO_LIMICIE_S`` to porażka, więc test łapie limit części usunięty, większy o 10 s i dwa razy większy."""
 
     zapis = zapisy / f"{mutacje_nocne.ARTEFAKT}{numer}" / mutacje_nocne.ZAPIS
     polecenie = ["--baza", plan["baza"], "--do", plan["do"], "--czesc", f"{numer}/{plan['liczba']}", "--limit-czesci-s", str(limit_s), "--zapis", str(zapis)]
@@ -915,11 +920,11 @@ def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path, limit_s: 
             capture_output=True,
             text=True,
             encoding="utf-8",
-            timeout=2 * limit_s,
+            timeout=limit_s + PO_LIMICIE_S,
             check=False,
         )
     except subprocess.TimeoutExpired:
-        pytest.fail(f"część {numer} nie skończyła się zapisem przed {2 * limit_s} s, dwukrotnością swojego limitu czasu {limit_s} s")
+        pytest.fail(f"część {numer} nie skończyła się zapisem przed {limit_s + PO_LIMICIE_S} s, {PO_LIMICIE_S} s po swoim limicie czasu {limit_s} s")
 
 
 def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_nastepna_zaczyna_za_nia(
@@ -950,16 +955,11 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 2, na_czesc=2)
     zapisy = tmp_path / "zapisy"
 
-    start = time.monotonic()
-    czesci = [_czesc(repo, plan, 1, zapisy)]
-    # Część 2 nie dostaje werdyktu tylko po upływie swojego limitu, ale przed nim musi skończyć pokrycie. Część 1 zrobiła
-    # więcej: start, to samo pokrycie i dwa przebiegi mutacji, więc limit z jej czasu rośnie z tempem maszyny (#1461).
-    limit_s = math.ceil(2 * (time.monotonic() - start))
-    czesci.append(_czesc(repo, plan, 2, zapisy, limit_s))
+    czesci = [_czesc(repo, plan, 1, zapisy), _czesc(repo, plan, 2, zapisy, CZAS_CZESCI_DO_LIMITU_S)]
     kod = mutacje_nocne.zglos(github, repo, plan["baza"], zapisy, len(czesci), RUN)
 
     assert (plan["liczba"], [czesc.returncode for czesc in czesci]) == ("2", [0, 3]), [czesc.stdout for czesc in czesci]
-    assert czesci[1].stdout.splitlines()[-1].startswith(f"MUTACJE ZMIANY FAIL | limit czasu części {limit_s} s minął przed werdyktem 2 mutacji")
+    assert czesci[1].stdout.splitlines()[-1].startswith(f"MUTACJE ZMIANY FAIL | limit czasu części {CZAS_CZESCI_DO_LIMITU_S} s minął przed werdyktem 2 mutacji")
     assert (kod, capsys.readouterr().out.splitlines()[-1]) == (0, "MUTACJE NOCNE OK | części 2 | przeżyło 0 | bez werdyktu 2")
     (issue,) = github.issues
     assert issue["title"] == "Przeżyte mutacje z #2"
