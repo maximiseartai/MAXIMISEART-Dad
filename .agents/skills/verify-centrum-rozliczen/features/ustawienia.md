@@ -23,8 +23,9 @@ window) is `okno-ustawien.md`.
 - `ustawienia-nieczytelny-plik`: while the settings file cannot be read, both paths show `Nie da się teraz odczytać Ustawień Centrum`, not `Nie wskazano`.
 - `ustawienia-niedostepna-sciezka`: a Rejestr zleceń and a folder okresów in a folder Dad cannot open now show `Nie da się teraz odczytać: <name>`, not `Nie ma już`.
 - `ustawienia-motyw`: `Jasny` under Motyw in Wygląd switches to light, and the choice survives a reload.
-- `ustawienia-zapisano-cofnij`: a switch of Motyw saves at once and shows the toast `Zapisano` with `Cofnij`, wide and narrow; `Cofnij` takes the theme back and says `Cofnięto`.
-- `ustawienia-blad-w-oknie`: a save of Motyw that fails shows `Nie udało się` inside the window Ustawienia, where nothing covers it, and the theme stays as it was.
+- `ustawienia-zapisano-cofnij`: a switch of Motyw saves at once and shows the toast `Zapisano` with `Cofnij`, wide and narrow; `Cofnij` takes the theme back and says `Cofnięto` in the window Ustawienia.
+- `ustawienia-blad-w-oknie`: a save of Motyw that fails shows `Nie udało się` inside the window Ustawienia, where nothing covers it, and the page is back in the theme of the settings file at once, without a reload.
+- `ustawienia-blad-po-zamknieciu`: a save of Motyw that fails after Dad closed the window Ustawienia shows `Nie udało się` over the page, and the theme stays as it was.
 - `ustawienia-historia`: Historia lists the changes from the newest, with before → after, when, and `spoza Centrum` for a change of the settings file by hand; `Cofnij` on a row is a new row on top, and an undo the server refuses is one sentence under its row.
 - `ustawienia-historia-wydanie`: a row of Historia whose change came with a Release reads `Wydanie <version>`, not `spoza Centrum`.
 - `ustawienia-odmowa-przy-polu`: a wrong Rejestr zleceń, typed with `Wpisz` or picked, is not saved, and the sentence of the 422 stands under the field; Esc leaves the field, not the window.

@@ -185,6 +185,12 @@ def drive(run: Run, page: Page) -> None:
         expect(intermax).to_contain_text(register.name)
         expect(intermax.get_by_role("link", name="Ustaw w Ustawieniach")).to_have_count(0)
         run.check(True, "a chosen INTERMAX on Raporty shows its name without „Ustaw w Ustawieniach”")
+        for state, shown in (("missing", "Nie ma już"), ("inaccessible", "Nie da się teraz odczytać")):
+            answer["order_register"] = {"state": state, "path": str(register), "name": register.name}
+            page.reload()
+            expect(intermax).to_contain_text(f"{shown}: {register.name}")
+            expect(intermax.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_have_attribute("href", FOLDERS)
+            run.check(True, f"a chosen INTERMAX in state {state} on Raporty links to Foldery")
     finally:
         page.unroute("**/api/settings")
     page.reload()
