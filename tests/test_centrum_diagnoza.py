@@ -229,6 +229,20 @@ NOT_FOUND = {
 }
 
 
+def test_diagnoza_bierze_ustawienia_ze_startu_uruchomienia_a_nie_zmienione_po_zatrzymaniu(tmp_path: Path) -> None:
+    """Diagnoza wyjaśnia Zatrzymanie Uruchomienia, więc sprawdza Rejestr zleceń i folder okresów z jego startu, nawet
+    gdy tata zmienił je w Ustawieniach Centrum po Zatrzymaniu."""
+
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    elsewhere = tmp_path / "Inny folder"
+    chosen_folders(centrum, elsewhere / "ZLECENIA INNE.xlsx", elsewhere)
+
+    diagnosis = diagnose(centrum, run_id)
+
+    assert check(diagnosis, "Ustawienia taty") == ("passed", "Rejestr zleceń i folder okresów są na miejscu.")
+
+
 def chosen_folders(centrum: PreparingCentrum, register: Path, periods: Path) -> None:
     """Rejestr zleceń i folder okresów zapisane w sekcji Foldery przed Uruchomieniem, którego Diagnozę test ogląda:
     Diagnoza bierze Ustawienia Centrum ze startu Uruchomienia."""
