@@ -394,8 +394,8 @@ def schedules_in_effect(path: Path) -> SchedulesInEffect:
     nieczytelnym albo z chwilą bez strefy bez wpisów, więc pory „Wysłanych” to wtedy bieżące."""
 
     try:
-        found = _Schedules.model_validate_json(path.read_bytes())
-    except (OSError, ValidationError):
+        found = _Schedules.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValidationError):
         return SchedulesInEffect()
     if any(entry.od.tzinfo is None for entry in found.pory):
         return SchedulesInEffect()

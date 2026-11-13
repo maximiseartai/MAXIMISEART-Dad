@@ -24,7 +24,7 @@ import smtplib
 import threading
 from typing import Any
 
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, Phase, given, settings
 from hypothesis import strategies as st
 from openpyxl import load_workbook
 from openpyxl.utils.cell import get_column_letter
@@ -3093,11 +3093,14 @@ _EVENTS = st.lists(
 Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, jak u taty."""
 
 
+# Bez zmniejszania przykładu: każdy próbowany przykład to nowe Centrum, więc zmniejszanie złego przykładu trwa dłużej
+# niż limit testu, a przykład z najwyżej 12 zdarzeniami czyta się i bez niego.
 @settings(
     derandomize=True,
     database=None,
     deadline=None,
     max_examples=40,
+    phases=[Phase.explicit, Phase.generate],
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 @given(events=_EVENTS)
