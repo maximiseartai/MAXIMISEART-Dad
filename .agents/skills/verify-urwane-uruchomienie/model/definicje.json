@@ -88,7 +88,7 @@
   "src/rozliczenia/centrum/server.py": {
     "AFTER_START": "c0a7e2b361f39be2",
     "after_start": "dda17dfeee9413a2",
-    "serve": "270772876700de0c",
+    "serve": "82e8b0ef557e7425",
     "_Server": "8ceb23258608b3c4"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
