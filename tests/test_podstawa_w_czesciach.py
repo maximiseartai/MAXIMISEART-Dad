@@ -202,6 +202,7 @@ class _Playwright(ModuleType):
 
     Error = type("Error", (Exception,), {})
     TimeoutError = type("TimeoutError", (Exception,), {})
+    Expect = type("Expect", (), {"set_options": lambda self, timeout: None})
 
     def __getattr__(self, name: str) -> Any:
         return type(name, (), {"__init__": lambda self, *args, **kwargs: None})

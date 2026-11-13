@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
 from drive.common import DriveFailure, Run, dad_context
+from drive.waiting import Budget
 from skrypt_skilla import Parser
 from harness import Log
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -70,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
             browser = playwright.chromium.launch()
             try:
                 page = dad_context(browser).new_page()
-                page.set_default_timeout(10_000)
+                page.set_default_timeout(Budget.SCREEN.ms)
                 for name in selected:
                     drive(run, page, name, driven, options)
             except Exception as exc:

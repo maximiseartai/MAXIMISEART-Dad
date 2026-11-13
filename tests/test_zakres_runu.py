@@ -20,10 +20,12 @@ from tests.fixtures.git_repo import repository
 from jednostka import Klucz
 import kroki_skilli
 import setup_worktree
-from wplyw_zmiany import STRUCTURE, Repository
+from wplyw_zmiany import STRUCTURE, Context, Repository
 from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres
 
 ROOT = Path(__file__).resolve().parents[1]
+# Pliki, których zmiana uruchamia wszystko w kontekście, z tabeli jej właściciela (tools/lib/wplyw_zmiany.py), nie z kopii.
+EVERY_SKILL_STEP, WHOLE_PR_GATE = (next(path for path in context.paths() if not path.endswith("/")) for context in (Context.SKILL_STEPS, Context.PR_GATE))
 
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
 CHECKED = "src/pakiet/sprawdzany.py"
@@ -47,7 +49,6 @@ SKILLS = {
     "src/pakiet/routing.py": "Z = 3\n",
     ANCHORS: "X\n",
     "docs/opis.md": "opis\n",
-    "requirements.txt": "pytest\n",
     ".agents/skills/verify-a/SKILL.md": GUARDED,
     ".agents/skills/verify-a/scripts/sprawdz_a.py": "from pakiet import sprawdzany\n",
     ".agents/skills/verify-a/scripts/check_a_mutations.py": WITH_TABLE,
@@ -101,7 +102,7 @@ WINDOWS, LINUX = "windows-3.13", "linux-3.14"
         ("tools/raport.py", "wybór 0 plików", [], ()),
         ("README.md", "wybór 0 plików", [], ()),
         (".github/workflows/ci.yml", "FULL (.github/workflows/ci.yml)", None, ("e2e", "timing")),
-        ("requirements.txt", "FULL (requirements.txt)", None, ("e2e", "timing")),
+        (WHOLE_PR_GATE, f"FULL ({WHOLE_PR_GATE})", None, ("e2e", "timing")),
     ],
     ids=["test", "src poza straza czasu", "src w domknieciu strazy czasu", "skrypt strazy czasu", "tools", "dokument", "workflow", "plik FULL"],
 )
@@ -216,7 +217,7 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         ("tools/lib/ciezkie_ci.py", False),
         (".agents/skills/verify-a/scripts/sprawdz_a.py", True),
         (".agents/skills/verify-a/SKILL.md", True),
-        ("requirements.txt", True),
+        (EVERY_SKILL_STEP, True),
         # Uruchamiacz kroku i silnik mutacji, który skrypt importuje, z każdym modułem, do którego silnik dochodzi.
         ("tools/ci/wykonaj_zadanie.py", True),
         ("tools/lib/kroki_skilli.py", True),
@@ -462,7 +463,7 @@ def _model_skill(name: str, edited: tuple[str, ...]) -> dict[str, str]:
         (".agents/skills/verify-m/model-notatki.md", False),
         (".agents/skills/verify-m/modele/M.tla", False),
         ("tools/lib/silnik_mutacji.py", False),
-        ("requirements.txt", False),
+        (EVERY_SKILL_STEP, False),
         ("src/pakiet/routing.py", False),
     ],
 )
@@ -506,7 +507,7 @@ BASELINE_D = ".agents/skills/verify-d/scripts/sprawdz_d.py"
         # Import sprawdzenia spoza pilnuje nie uruchamia podstawy na PR (ADR 0020): pełne CI main ją uruchamia.
         ("src/pakiet/pomocnik.py", False),
         (".agents/skills/verify-d/SKILL.md", True),
-        ("requirements.txt", True),
+        (EVERY_SKILL_STEP, True),
         ("tools/ci/wykonaj_zadanie.py", False),
     ],
 )
@@ -565,6 +566,22 @@ def test_na_pull_request_i_pushu_biegna_same_podstawy_a_noca_same_skrypty_mutacj
     assert decisions["verify-a/ci"][1].startswith(baseline[1]) and decisions[SCRIPT_A][1].startswith(script[1]), decisions
 
 
+@pytest.mark.parametrize(("event", "runs"), [(Zdarzenie.PULL_REQUEST, False), (Zdarzenie.PUSH, True)], ids=["pull-request", "push"])
+def test_zmiana_samego_requirements_nie_wybiera_podstawy_na_pull_request_a_push_do_main_ja_uruchamia(
+    tmp_path: Path, event: Zdarzenie, runs: bool
+) -> None:
+    """Granica Z9 w ``tests/test_zadania_ci.py`` zna tylko część dróg, którymi ``requirements.txt`` mógłby trafić do
+    środowiska kroku skilla, a droga spoza niej omija tylko wybór na PR, bo push do ``main`` uruchamia podstawę zawsze."""
+
+    command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command)})
+
+    decisions = _decisions(zakres(event, frozenset({"requirements.txt"}), repo))
+
+    assert "requirements.txt" not in Context.SKILL_STEPS.paths()
+    assert decisions["verify-a/ci"][0] is runs, decisions
+
+
 @pytest.mark.parametrize(
     ("arguments", "event", "changed", "separately", "script"),
     [
@@ -611,7 +628,7 @@ def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_reques
     assert all(w.czesci == () for w in praca.wybrane if w.krok.verdict is not None)
 
 
-ROUTING, ENGINE, LIBRARIES = "src/pakiet/routing.py", "tools/lib/silnik_mutacji.py", "requirements.txt"
+ROUTING, ENGINE, LIBRARIES = "src/pakiet/routing.py", "tools/lib/silnik_mutacji.py", EVERY_SKILL_STEP
 FOLDER_C = ".agents/skills/verify-c/scripts/check_c_mutations.py"
 # Podstawa w częściach skilla bez pilnuje.
 BASELINE_E = ".agents/skills/verify-e/scripts/sprawdz_e.py"

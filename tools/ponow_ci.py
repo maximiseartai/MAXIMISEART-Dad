@@ -6,8 +6,9 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
 1. Run, który jeszcze trwa, nie jest ponawiany: GitHub odrzuca wtedy ponowienie („already running”), a T3 budzi wątek
    już po pierwszym padniętym zadaniu. Linia ``PONÓW CZEKA`` mówi, ile zadań biegnie.
 2. Każde padnięte zadanie ostatniej próby runu (``Required CI status`` tylko, gdy padł sam) narzędzie klasyfikuje
-   po jego logu. Awaria to log z sygnaturą z ``SYGNATURY`` i bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
-   z porażek runów CI z 2–12.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
+   po jego logu. Awaria to sygnatura z ``SYGNATURY`` w kroku, który zaczerwienił zadanie (pierwszym kroku z ``failure``,
+   ``log_porazki``), i log bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
+   z porażek runów CI z 2–13.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
    pobrania TLC ``narzedzia_tlc.CHWILOWA_AWARIA``, bez trwałego HTTP 404 i innej sumy SHA-256). Znany flaky test
    to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``).
    Każda inna porażka, także nieznana, to defekt.
@@ -41,7 +42,7 @@ z 2–12.11 takiego przypadku nie było i jego sygnatury nie znamy.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -71,6 +72,13 @@ NAJWIECEJ_TESTOW = 5
 _LINE = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
 # Id testu kończy się przed `` - <błąd>`` pytest, bo błąd też bywa w nawiasach kwadratowych.
 TEST_LINE = re.compile(_LINE + r"(?:FAILED|ERROR) (tests/[\w/]+\.py(?:::\w+)+(?:\[.*?\])?)(?= - |\s*$)")
+# Znaczniki runnera w logu zadania: każdy wykonany krok zaczyna się nagłówkiem ``##[group]Run``, podkroki akcji złożonej
+# (``uses: ./.github/actions/chromium``) mają swoje nagłówki między ``##[start-action`` i ``##[end-action``, a kroki
+# ``Post …`` i ``Complete job`` po krokach zadania zaczynają się swoją pierwszą linią.
+_NAGLOWEK_KROKU = re.compile(_LINE + r"##\[group\]Run ")
+_PODKROKI = re.compile(_LINE + r"##\[(start|end)-action ")
+_PO_KROKACH = re.compile(_LINE + r"(?:Post job cleanup\.|Cleaning up orphan processes)")
+_POZA_KROKAMI = frozenset({"Set up job", "Complete job"})
 
 
 @dataclass(frozen=True)
@@ -85,6 +93,15 @@ SYGNATURY = (
     Sygnatura("instalacja przeglądarek", re.compile(_LINE + r"Failed to install browsers"), "41959078147 (5.11, apt)"),
     Sygnatura("pobranie narzędzia TLC", re.compile(_LINE + re.escape(narzedzia_tlc.CHWILOWA_AWARIA)), "42571178441 (9.11, HTTP 504)"),
     Sygnatura("HTTP 5xx serwera", re.compile(_LINE + r"urllib\.error\.HTTPError: HTTP Error 5\d\d"), "42000370217 (5.11, HTTP 504)"),
+    # Komunikat actions/download-artifact i upload-artifact (@actions/artifact, ``retryableRequest``): przyczyną chwilową
+    # jest błąd sieci z listy ``NetworkError`` (``Unable to make request``) i wyczerpane ponowienia (``Failed to make request
+    # after N attempts``), które dają HTTP 429 i 5xx, odpowiedź, która nie jest JSON-em, przy dowolnym statusie i błąd sieci
+    # z kodem spoza tej listy. Brak artefaktu i inny status z odpowiedzią JSON (``Received non-retryable error``) są defektem.
+    Sygnatura(
+        "usługa artefaktów GitHuba",
+        re.compile(_LINE + r"##\[error\](?:Unable to download artifact\(s\): )?Failed to \w*Artifact\w*: (?:Unable to make request|Failed to make request after \d+ attempts): "),
+        "43439867902 (13.11, ETIMEDOUT)",
+    ),
 )
 
 # Początek nazwy zadania w ci.yml i zadanie ``tools/ci_lokalnie.py --tylko``, które je odtwarza.
@@ -132,10 +149,47 @@ def klasyfikuj(zadania: Sequence[Zadanie], flaky: frozenset[str]) -> Werdykt:
     return Defekt(tuple(zadanie for zadanie in zadania if not zadanie.sygnatury or zadanie.testy))
 
 
-def zadanie(nazwa: str, log: str) -> Zadanie:
+def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
+    """Linie kroku, który zaczerwienił zadanie: pierwszego kroku z ``conclusion: failure`` w API zadań, które podaje
+    kroki po ``number`` (5813 zadań prób z 30.10–13.11).
+
+    Po nim biegną tylko kroki ``if: failure()`` (wysłanie dowodów w ci.yml) i kroki z ``continue-on-error`` (wysłanie
+    czasów), które też drukują ``##[error]`` i padają na tej samej awarii usługi artefaktów, a porażki zadania nie
+    zmieniają; krok z ``continue-on-error`` przed nim ma ``conclusion: success``. Linie kroku wyznaczają nagłówki
+    ``##[group]Run``: n-ty nagłówek poza akcją złożoną zaczyna n-ty krok bez ``skipped`` (bez ``Set up job``,
+    ``Complete job`` i ``Post …``), a krok kończy się przed następnym nagłówkiem albo przed pierwszym krokiem ``Post``.
+    Tak było w każdym z 659 padniętych zadań prób runów z 30.10–13.11 (logi zadań z API). Gdy liczba nagłówków się nie
+    zgadza, krok jest niepewny i funkcja nie daje linii, czyli defekt; tak samo zadanie bez kroku z ``failure`` (timeout,
+    ``startup_failure``).
+    """
+
+    wykonane = [
+        krok for krok in kroki if krok["conclusion"] != "skipped" and krok["name"] not in _POZA_KROKAMI and not krok["name"].startswith("Post ")
+    ]
+    padly = next((numer for numer, krok in enumerate(wykonane) if krok["conclusion"] == "failure"), None)
+    linie = log.splitlines(keepends=True)
+    poczatki: list[int] = []
+    koniec, akcje = len(linie), 0
+    for numer, linia in enumerate(linie):
+        if found := _PODKROKI.match(linia):
+            akcje += 1 if found[1] == "start" else -1
+        elif akcje == 0 and _NAGLOWEK_KROKU.match(linia):
+            poczatki.append(numer)
+        elif akcje == 0 and _PO_KROKACH.match(linia):
+            koniec = numer
+            break
+    if padly is None or len(poczatki) != len(wykonane):
+        return ""
+    return "".join(linie[poczatki[padly] : [*poczatki, koniec][padly + 1]])
+
+
+def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie:
+    """Sygnatury z kroku, który zaczerwienił zadanie (``log_porazki``), i padnięte testy z całego logu zadania."""
+
+    porazka = log_porazki(log, kroki)
     return Zadanie(
         nazwa,
-        tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(log)),
+        tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(porazka)),
         tuple(dict.fromkeys(found[1] for found in TEST_LINE.finditer(log))),
     )
 
@@ -189,7 +243,10 @@ def _zadania_proby(api: GitHub, run: int, proba: int) -> list[dict[str, Any]]:
 def _werdykt(api: GitHub, run: int, proba: int, flaky: frozenset[str]) -> Werdykt:
     padniete = [job for job in _zadania_proby(api, run, proba) if job["conclusion"] in FAILED_JOB]
     bez_required = [job for job in padniete if job["name"] != github.REQUIRED]
-    zadania = [zadanie(job["name"], api.bajty(f"{REPO}/actions/jobs/{job['id']}/logs").decode("utf-8", errors="replace")) for job in bez_required or padniete]
+    zadania = [
+        zadanie(job["name"], api.bajty(f"{REPO}/actions/jobs/{job['id']}/logs").decode("utf-8", errors="replace"), job.get("steps") or ())
+        for job in bez_required or padniete
+    ]
     return klasyfikuj(zadania, flaky)
 
 
