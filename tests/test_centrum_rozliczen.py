@@ -1931,7 +1931,66 @@ def test_proces_nie_startuje_na_pustej_liscie_gdy_przeniesienie_czeka_na_stary_p
     assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING_SENTENCE)})
 
 
-WORKER = "  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
+@contextmanager
+def held_release_changes(tool: ToolDirectory, monkeypatch: pytest.MonkeyPatch, fault: str) -> Iterator[None]:
+    """Do końca bloku start Centrum wstrzymuje zmiany z Wydania: system nie daje czytać Historii Ustawień
+    (``bez-historii``) albo pamięć zmian z Wydań ma uszkodzoną treść (``bez-pamieci``)."""
+
+    if fault == "bez-pamieci":
+        memory = tool.config / MEMORY_DIRECTORY / APPLIED_FILE
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text('{"schema_version": 1, "zmiany": {"2026-11-lista-wyk', encoding="utf-8")
+        yield
+        return
+    with unreadable_history(monkeypatch):
+        yield
+
+
+@pytest.mark.parametrize(
+    ("mapping", "addresses"),
+    [(OLD_MAPPING, OLD_ADDRESSES), (OLD_MAPPING, None), (None, OLD_ADDRESSES)],
+    ids=["oba-stare-pliki", "tylko-wykonawcy", "tylko-adresy"],
+)
+@pytest.mark.parametrize("fault", ["bez-historii", "bez-pamieci"])
+def test_przeniesienie_wstrzymane_przy_starcie_ze_starym_plikiem_wykonawcow_czeka_zamiast_pustej_dobrej_listy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, mapping: str | None, addresses: str | None
+) -> None:
+    """Przegląd #1569 r2, D2: start, który przy pierwszym starcie Wydania z Listą Wykonawców wstrzymuje przeniesienie,
+    bo nie da się przeczytać Historii Ustawień albo pamięci zmian z Wydań, a któryś stary plik Wykonawców leży w
+    ``config``, daje sekcji Wykonawcy to samo złe ustawienie co stary plik bez prawa odczytu, a Przebieg rozliczeń nie
+    startuje na pustej liście."""
+
+    tool = settling_centrum(tmp_path).tool
+    tool.worker_list.unlink()
+    old_files(tool, mapping, addresses)
+    with held_release_changes(tool, monkeypatch, fault):
+        client = started(tool, RELEASE_CHANGES)
+        workers = client.get("/api/settings").json()["workers"]
+        refused = client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
+        client.stop()
+
+    assert (tool.worker_list.exists(), workers) == (False, {"state": "bad", "workers": [], "unresolved": [], "problem": WAITING})
+    assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING_SENTENCE)})
+
+
+@pytest.mark.parametrize("fault", ["bez-historii", "bez-pamieci"])
+def test_przeniesienie_wstrzymane_przy_starcie_bez_starych_plikow_wykonawcow_to_pusta_dobra_lista(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    """Bez starych plików Wykonawców przeniesienie nie ma czego przenieść, więc wstrzymane przy starcie nie jest
+    złym ustawieniem: sekcja Wykonawcy ma pustą dobrą listę, jak po przeniesieniu bez starych plików."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    with held_release_changes(tool, monkeypatch, fault):
+        client = started(tool, RELEASE_CHANGES)
+        workers = client.get("/api/settings").json()["workers"]
+        client.stop()
+
+    assert (workers["state"], workers["workers"], workers["problem"]) == ("good", [], None)
+
+
+WORKER ="  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
 
 
 @pytest.mark.parametrize(
@@ -2563,6 +2622,30 @@ def test_reczny_plik_przypomnien_z_porami_zachodzacymi_to_zle_ustawienie_z_polem
     )
     assert (reminders["morning"], reminders["first"]) == ({"start": "08:00", "end": "17:00"}, "07:30")
     assert [(row["source"], row["refused"]) for row in history_rows(app)][:1] == [("outside", True)]
+
+
+def test_zla_wartosc_pola_pliku_przypomnien_kaze_zapisac_ustawienia_a_zapis_taty_ja_naprawia(tmp_path: Path) -> None:
+    """Plik przypomnień tata zmienia w oknie Ustawień, więc zdanie złej wartości pola mówi „Zapisz Ustawienia jeszcze
+    raz.”, a nie „Poprawia go Maks.”, i zapis sekcji przez tatę naprawia plik (przegląd #1568 r4, D1)."""
+
+    app = centrum(tmp_path)
+    app.client.put("/api/settings/reminders", json=reminders_form(first="07:30"))
+    path = app.tool.config / REMINDERS_FILE
+    content = path.read_text(encoding="utf-8").replace("pora_wieczorna:\n  od: '18:00'\n  do: '22:00'", "pora_wieczorna: wieczorem")
+    path.write_text(content, encoding="utf-8")
+
+    bad = app.client.get("/api/settings").json()["reminders"]
+    saved = app.client.put("/api/settings/reminders", json=reminders_form(first="08:00"))
+    after = app.client.get("/api/settings").json()["reminders"]
+
+    assert (bad["state"], bad["problem"]) == (
+        "bad",
+        {
+            "field": "pora_wieczorna",
+            "message": settings_messages.bad_field(REMINDERS_FILE, FieldPath("pora_wieczorna"), settings_messages.SAVE_AGAIN),
+        },
+    )
+    assert (saved.status_code, after["state"], after["first"]) == (200, "good", "08:00")
 
 
 def migrated_reminders(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]:

@@ -197,10 +197,11 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         # Trafienie w pilnuje uruchamia podstawę skilla na PR, a skrypt mutacji nie (ADR 0020).
         ("src/pakiet/routing.py", False),
         (".agents/skills/verify-b/SKILL.md", False),
-        # Plik, który mutacje zmieniają, i importy sprawdzenia: pytest bramki i pełne CI main, nie skrypt mutacji nocą.
-        (CHECKED, False),
-        (ANCHORS, False),
-        ("src/pakiet/pomocnik.py", False),
+        # Kod, który sprawdzenie importuje, wprost albo dalej: push go już nie mutuje, więc skrypt biegnie nocą (Z1, 13.11).
+        (CHECKED, True),
+        ("src/pakiet/pomocnik.py", True),
+        # Plik, który mutacja psuje, choć sprawdzenie go nie importuje (proces, ``pytest.main``, plik danych).
+        (ANCHORS, True),
         # Polityka zakresu i samo narzędzie z wiersza poleceń (z jego odmową ciężkiego CI) nie biegną w procesie skryptu.
         ("tools/lib/zakres_runu.py", False),
         ("tools/mutacje.py", False),
@@ -251,12 +252,32 @@ def test_noca_sprawdzenie_spoza_folderu_skilla_uruchamia_skrypt_ktorego_mutacje_
     assert (SCRIPT_A in _runs(praca), "verify-b/check_b_mutations.py" in _runs(praca)) == (False, True)
 
 
+def test_noca_zmiana_pliku_ktory_psuje_mutacja_skilla_uruchamia_jej_skrypt_w_katalogu_repozytorium() -> None:
+    """Skrypt mutacji biegnie tylko nocą (ADR 0021, Z1), więc zmiana pliku, który psuje jego mutacja, musi go nocą
+    wybrać, także gdy sprawdzenie sięga pliku procesem Centrum, ``pytest.main`` albo ścieżką, a nie importem (#1575 r1:
+    13 z 28 skryptów). Jeden zakres nocy z każdym takim plikiem: zmienione pliki, które uruchamiają wybrany skrypt
+    (``KrokSkilla.pliki``), obejmują każdy plik jego mutacji."""
+
+    katalog = kroki_skilli.Katalog.skanuj(ROOT)
+    psute = {
+        step.key: {edit.file.as_posix() for mutation in kroki_skilli._mutations(step.root / step.command[0]) for edit in mutation.edits}
+        for step in katalog.kroki
+        if step.verdict is not None
+    }
+
+    praca = zakres(Zdarzenie.NOC, frozenset().union(*psute.values()), ROOT)
+
+    uruchamiaja = {w.krok.key: w.pliki for w in praca.wybrane}
+    assert len(psute) >= 28
+    assert {key: sorted(files - uruchamiaja.get(key, frozenset())) for key, files in psute.items()} == {key: [] for key in psute}
+
+
 @pytest.mark.parametrize(
     ("event", "runs"),
-    [(Zdarzenie.NOC, ["verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"]), (Zdarzenie.PUSH, [SCRIPT_A, "verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"])],
+    [(Zdarzenie.NOC, ["verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"]), (Zdarzenie.PUSH, [])],
     ids=["noc", "push"],
 )
-def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_biegnie_wszystko(
+def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_pomija_kazdy_skrypt_mutacji(
     tmp_path: Path, event: Zdarzenie, runs: list[str]
 ) -> None:
     repo = repository(tmp_path / "repo", SKILLS)
@@ -264,7 +285,6 @@ def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_bieg
     praca = zakres(event, frozenset(), repo)
 
     assert sorted(_runs(praca)) == runs
-    assert ({w.powod for w in praca.wybrane} == {""}) == (event is Zdarzenie.PUSH)
 
 
 @pytest.mark.parametrize(
@@ -383,6 +403,8 @@ def test_reguly_kroku_skilla_licza_od_korzenia_checkoutu_skilla(tmp_path: Path) 
         "tools/lib/z.py",
         *kroki_skilli.LAUNCHER,
         BASELINE_K,
+        ANCHORS,
+        CHECKED,
     )
     assert kroki_skilli.ci_command(skill / "SKILL.md") == (BASELINE_K,)
 
@@ -517,11 +539,13 @@ def test_powod_podstawy_wymienia_najwyzej_trzy_zmienione_pliki_i_liczbe_pozostal
     ("event", "baseline", "script"),
     [
         (Zdarzenie.PULL_REQUEST, (True, "zmienione: "), (False, "skrypt mutacji biegnie nocą")),
+        # Na pushu do main każda podstawa, bez względu na zmianę, a skrypt mutacji tylko nocą (Z1, 13.11).
+        (Zdarzenie.PUSH, (True, ""), (False, "skrypt mutacji biegnie nocą")),
         (Zdarzenie.NOC, (False, "podstawa biegnie na pull request, nie nocą"), (True, "zmienione: ")),
     ],
-    ids=["pull-request", "noc"],
+    ids=["pull-request", "push", "noc"],
 )
-def test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
+def test_na_pull_request_i_pushu_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
     tmp_path: Path, event: Zdarzenie, baseline: tuple[bool, str], script: tuple[bool, str]
 ) -> None:
     command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
@@ -536,8 +560,10 @@ def test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
 @pytest.mark.parametrize(
     ("arguments", "event", "changed", "separately", "script"),
     [
-        ("", Zdarzenie.PUSH, "", False, True),
-        (" --pelny", Zdarzenie.PUSH, "", True, True),
+        # Na pushu skrypt mutacji nie biegnie, więc biegnie podstawa, którą uruchamia bez mutacji.
+        ("", Zdarzenie.PUSH, "", True, False),
+        (" --pelny", Zdarzenie.PUSH, "", True, False),
+        ("", Zdarzenie.NOC, ".agents/skills/verify-a/scripts/sprawdz_a.py", False, True),
         # Na PR biegnie sama podstawa, także przy zmianie folderu skilla, bo skrypt mutacji biegnie nocą.
         ("", Zdarzenie.PULL_REQUEST, "src/pakiet/routing.py", True, False),
         ("", Zdarzenie.PULL_REQUEST, ".agents/skills/verify-a/scripts/sprawdz_a.py", True, False),
