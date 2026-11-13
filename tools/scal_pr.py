@@ -110,9 +110,9 @@ def _problems(pull: Pull) -> list[str]:
         problems.append("PR jest szkicem")
     if pull.from_fork:
         problems.append("PR z forka")
-    deployed = szablon_werdyktu.deployed(pull.base)
-    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, deployed)]
-    return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, deployed)]
+    template = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
+    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template)]
+    return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER))]
 
 
 def _remote_base(base: str) -> str:
@@ -176,7 +176,7 @@ def _publish_verdict(number: int, path: Path) -> int:
     pull = stan_pr.pull(number)
     text = path.read_text(encoding="utf-8")
     werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
-    if problems := werdykt_pr.publish_problems(text, pull, szablon_werdyktu.deployed(pull.base)):
+    if problems := werdykt_pr.publish_problems(text, pull, werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
     url = github.gh("pr", "comment", str(number), "--body-file", str(path)).strip()

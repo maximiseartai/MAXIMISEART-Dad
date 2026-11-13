@@ -53,7 +53,7 @@ The scope is the area (`intermax`, `centrum`, `plan`, `agents`), and the subject
 
 A PR adds `## Korzeń` between `## Evidence` and `## Merge Danger` when a `FAIL` verdict of the PR had a Ważne, or when the PR fixes a red `main` ([ADR 0031](../../../docs/adr/0031-korzen-po-fail-i-chwasty.md), section „Korzeń i chwast” of the skill [`przeglad`](../przeglad/SKILL.md)).
 A red-`main` fix names its issue on a line `Część #N` (labelled `czerwony-main`); a PR for a flaky test names the `Flaky test:` issue instead and needs no section.
-A thread whose first verdict came before the verdict template finishes the old way, without the section.
+A thread whose first verdict came before this check was merged (the merge that added `tools/lib/bramka_korzenia.py`) finishes the old way, without the section.
 `tools/scal_pr.py` reads the block below as the pattern of its refusal and refuses to merge while the section misses something:
 
 ```markdown

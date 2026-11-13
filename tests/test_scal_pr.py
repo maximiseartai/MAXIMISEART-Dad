@@ -181,21 +181,27 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
 
 
 class MergeGitHub(FakeGitHub):
-    def __init__(self, tmp_path: Path, files: dict[str, str]) -> None:
-        super().__init__(
-            tmp_path,
-            {
-                ".gitignore": ".mypy_cache/\n.ruff_cache/\n__pycache__/\nposprzatane\n",
-                "pyproject.toml": PYPROJECT,
-                ".agents/skills/pr/SKILL.md": TEMPLATE.read_text(encoding="utf-8"),
-                ".agents/skills/przeglad/SKILL.md": (REVIEW / "SKILL.md").read_text(encoding="utf-8"),
-                ".agents/skills/przeglad/korzenie.toml": (REVIEW / "korzenie.toml").read_text(encoding="utf-8"),
-                "tools/sprzatanie.py": CLEANUP,
-                **files,
-            },
-            tool="tools/scal_pr.py",
-            gh=FAKE_GH,
-        )
+    def __init__(self, tmp_path: Path, files: dict[str, str], *, started: str = "2026-11-01T00:00:00Z") -> None:
+        """Commit ``start`` ma datę ``started``, a z kopią narzędzia dodaje moduł bramki korzenia, więc to chwila jej
+        wdrożenia na ``main`` (``bramka_korzenia.MARKER``); domyślnie po werdyktach atrapy (24.10.2026), więc ich wątki
+        kończą bez bramki, a ``GATE_BEFORE_VERDICTS`` ją w nich włącza."""
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("GIT_COMMITTER_DATE", started)
+            super().__init__(
+                tmp_path,
+                {
+                    ".gitignore": ".mypy_cache/\n.ruff_cache/\n__pycache__/\nposprzatane\n",
+                    "pyproject.toml": PYPROJECT,
+                    ".agents/skills/pr/SKILL.md": TEMPLATE.read_text(encoding="utf-8"),
+                    ".agents/skills/przeglad/SKILL.md": (REVIEW / "SKILL.md").read_text(encoding="utf-8"),
+                    ".agents/skills/przeglad/korzenie.toml": (REVIEW / "korzenie.toml").read_text(encoding="utf-8"),
+                    "tools/sprzatanie.py": CLEANUP,
+                    **files,
+                },
+                tool="tools/scal_pr.py",
+                gh=FAKE_GH,
+            )
         _empty_state(self.bin)
         self.pulls: dict[str, dict[str, object]] = {}
         self.issues: dict[str, str] = {}
@@ -218,6 +224,11 @@ class MergeGitHub(FakeGitHub):
 
     def comment(self, number: int, body: str, association: str = "OWNER") -> None:
         self._write(number, "comments", _verdict("comment", body, association, when=self._now()))
+
+    def edited_comment(self, number: int, body: str) -> None:
+        """Komentarz konta z prawem zapisu, którego treść zmieniono po utworzeniu (``includesCreatedEdit``)."""
+
+        self._write(number, "comments", {**_verdict("comment", body, when=self._now()), "includesCreatedEdit": True})
 
     def review(self, number: int, body: str, association: str = "OWNER", *, state: str = "COMMENTED") -> None:
         self._write(number, "reviews", _verdict(state, body, association, when=self._now()))
@@ -1686,7 +1697,7 @@ FAIL_OLD = f"WERDYKT: FAIL {OLD}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n- Ważne: 
 def test_szablon_obowiazuje_od_wdrozenia_a_watek_z_werdyktem_sprzed_niego_konczy_po_staremu(
     verdicts: list[tuple[str, ...]], deployed: datetime | None, applies: bool
 ) -> None:
-    assert werdykt_pr.template_applies(_written(*verdicts), deployed) is applies
+    assert werdykt_pr.rule_applies(_written(*verdicts), deployed) is applies
 
 
 @pytest.mark.parametrize(
@@ -1706,7 +1717,7 @@ def test_komentarz_sprzed_wdrozenia_zmieniony_na_werdykt_nie_postarza_watku_a_re
     ]
     pull = _pull(comments=comments)
 
-    assert werdykt_pr.template_applies(pull, AFTER_FIRST) is True
+    assert werdykt_pr.rule_applies(pull, AFTER_FIRST) is True
     assert (werdykt_pr.consent_problem(pull, AFTER_FIRST) or "").startswith(f"werdykt: PASS dla {HEAD[:7]} nie przechodzi reguł --werdykt (")
 
 
@@ -1786,17 +1797,21 @@ PASS_RESOLVES_NEW = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\
 RED = {korzenie_pr.RED_MAIN: "czerwony-main"}
 FLAKY = {korzenie_pr.FLAKY: "flaky-test"}
 UPROOTED_IN = f"korzeń: W1 r1: Wyrwany w #{korzenie_pr.ROOT_PR}"
+GATE_BEFORE_VERDICTS = "2026-09-01T00:00:00Z"
 
 
-def _root_gate(tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], *, deployed: str = "2026-10-01T00:00:00Z") -> subprocess.CompletedProcess[str]:
-    """``--bez-merge`` PR 1 z werdyktami ``verdicts`` (na starszym commicie, więc PR nie ma zgody) i opisem ``body``
-    z ``korzenie_pr.OPISY``; ``setup`` podaje stan i opis PR korzenia (``root``), etykiety issues (``labels``), skill
-    ``przeglad`` na bazie (``skill_base``, domyślnie ``baza``) i na HEAD (``skill``) i kod dopisany do listy korzeni na
-    HEAD (``listed``)."""
+def _root_gate(
+    tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], *, gate: str = GATE_BEFORE_VERDICTS, edited: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """``--bez-merge`` PR 1 z werdyktami ``verdicts`` (na starszym commicie, więc PR nie ma zgody, a pierwszy powstaje
+    24.10.2026 o 3:00:01, w komentarzu edytowanym, gdy ``edited``) i opisem ``body`` z ``korzenie_pr.OPISY``, z bramką
+    korzenia wdrożoną na ``main`` w chwili ``gate``, a szablonem 1.10.2026; ``setup`` podaje stan i opis PR korzenia
+    (``root``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``, domyślnie ``baza``) i na HEAD
+    (``skill``) i kod dopisany do listy korzeni na HEAD (``listed``)."""
 
     skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill})
-    _deploy_template(github, merged=deployed)
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill}, started=gate)
+    _deploy_template(github)
     files = {"kod/inne.py": "INNE: int = 1\n"}
     if "skill" in setup:
         files[szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix()] = korzenie_pr.SKILL[str(setup["skill"])]
@@ -1809,8 +1824,11 @@ def _root_gate(tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, 
         github.pulls[str(korzenie_pr.ROOT_PR)] = _pr_view(korzenie_pr.ROOT_PR, OLD, state=state, body=korzenie_pr.PR_KORZENIA[root_body])
     for number, label in cast(dict[int, str], setup.get("labels", {})).items():
         github.answer_issue(number, answer=json.dumps({"state": "closed", "labels": [{"name": label}]}))
-    for verdict in verdicts:
-        github.comment(1, verdict.format(commit=OLD))
+    for index, verdict in enumerate(verdicts):
+        if edited and index == 0:
+            github.edited_comment(1, verdict.format(commit=OLD))
+        else:
+            github.comment(1, verdict.format(commit=OLD))
     return github.run("1", "--bez-merge")
 
 
@@ -1925,15 +1943,31 @@ def test_bramka_korzenia_odmawia_merge_dopoki_sekcja_korzen_nie_ma_bloku_na_kazd
     assert ("wzór sekcji (.agents/skills/pr/SKILL.md): ## Korzeń / ### W1 r2: R-BEZ-TESTU / Szczebel: (c)" in last) == bool(fragments), last
 
 
-def test_watek_z_werdyktem_sprzed_wdrozenia_szablonu_konczy_po_staremu_bez_sekcji_korzen(tmp_path: Path) -> None:
-    answered = _root_gate(tmp_path, [FAIL_W1], "bez-sekcji", {}, deployed="2026-10-24T12:00:00Z")
+# Decyzja Q20 dla bramki korzenia: wątki, które już pracują, kończą po swojemu, więc bramka liczy wątek od chwili
+# własnego wdrożenia (merge, który dodał jej moduł), nie od wdrożenia szablonu 1.10.2026; pierwszy werdykt powstaje
+# 24.10.2026 o 3:00:01, a werdykt w komentarzu edytowanym wątku nie postarza.
+@pytest.mark.parametrize(
+    ("gate", "edited", "required"),
+    [
+        ("2026-10-24T03:00:02Z", False, False),
+        ("2026-10-24T03:00:01Z", False, True),
+        ("2026-10-24T12:00:00Z", True, True),
+    ],
+    ids=["pierwszy-werdykt-przed-wdrozeniem-bramki", "pierwszy-werdykt-w-chwili-wdrozenia-bramki", "edytowany-werdykt-nie-postarza-watku"],
+)
+def test_bramka_korzenia_obowiazuje_w_watku_od_wlasnego_wdrozenia_a_nie_od_wdrozenia_szablonu(
+    tmp_path: Path, gate: str, edited: bool, required: bool
+) -> None:
+    answered = _root_gate(tmp_path, [FAIL_W1], "bez-sekcji", {}, gate=gate, edited=edited)
 
-    assert _last_line(answered).startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
-    assert "korzeń" not in _last_line(answered), answered.stdout
+    last = _last_line(answered)
+    assert last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
+    assert ("korzeń: brak sekcji „## Korzeń”, a PR ma werdykt FAIL z Ważnym" in last) == required, last
 
 
 def test_odmowa_bramki_korzenia_podaje_wzor_a_opis_poprawiony_bez_nowego_commita_i_werdyktu_daje_merge(tmp_path: Path) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]})
+    files = {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}
+    github = MergeGitHub(tmp_path, files, started=GATE_BEFORE_VERDICTS)
     _deploy_template(github)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=korzenie_pr.OPISY["bez-sekcji"])

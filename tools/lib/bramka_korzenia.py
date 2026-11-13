@@ -2,8 +2,14 @@
 ``## Korzeń`` z blokiem na każde Ważne i każdy czerwony `main`, który PR naprawia, a każdy kod ``NOWY`` z werdyktów PR
 stoi na liście korzeni na HEAD.
 
-Bramka obowiązuje w wątku z szablonem werdyktu (``werdykt_pr.template_applies``, ta sama funkcja co przy publikacji
-werdyktu i zgodzie na merge, decyzja Q20); wątek, który kończy po staremu, przechodzi ją bez sprawdzania. Sekcja jest
+Bramka obowiązuje od własnego wdrożenia, nie od wdrożenia szablonu (decyzja Q20: wątki, które już pracują, kończą
+po swojemu): w wątku, którego najstarszy nieedytowany werdykt od konta z prawem zapisu nie powstał przed chwilą
+wdrożenia bramki na bazie PR. Rozstrzyga to ta sama funkcja co dla szablonu, ``werdykt_pr.rule_applies``, z chwilą
+``werdykt_pr.deployment`` dla pliku ``MARKER``: commitem merge'a (``--first-parent``), który dodał do bazy ten moduł.
+Wyznacza go moduł, a nie sekcja „Root section” skilla ``pr``, bo moduł jest plikiem, który dodał PR wdrożenia bramki,
+więc jego dodanie Git znajduje bez czytania treści, a sekcja to zmiana istniejącego pliku, którą zmieni każda późniejsza
+poprawka wzoru. Bramka wchodzi po szablonie, więc wątek, w którym obowiązuje, ma też szablon; wątek, który kończy po
+staremu, przechodzi ją bez sprawdzania. Sekcja jest
 wymagana, gdy PR miał werdykt ``FAIL`` z Ważnym (dowolnego commitu) albo naprawia czerwony `main` (Q10, Q17). PR
 naprawia czerwony `main`, gdy linia jego opisu zaczyna się od „Część” albo „Naprawia” z listą numerów, na której stoi
 issue tego repozytorium z etykietą ``czerwony-main`` (``github.CZERWONY_MAIN``, zakłada je ``tools/ci/zgloszenia_ci.py``);
@@ -34,7 +40,8 @@ dodał do sekcji „Co jest porażką” skilla ``przeglad`` punkt listy z linki
 opisuje ten korzeń i czy szczebel jest najwyższy działający, ocenia recenzent następnej rundy (Q2, Q7), tak jak treść
 Dowodu, której narzędzie nie odtwarza. Rozmiaru wyrwania (Q8: ponad M według etykiety ``size:`` z
 ``tools/ci/rozmiar_pr.py`` idzie osobnym PR-em korzenia) bramka nie liczy, bo w jednym PR nie oddzieli linii korzenia
-od linii funkcji.
+od linii funkcji: czy wyrwanie mieści się w PR, czy idzie do PR korzenia, rozstrzyga recenzent według skilla
+``przeglad``.
 
 ``Wyrwany w #M`` przechodzi, gdy PR ``#M`` jest scalony (``gh pr view``), a jego opis ma linię akapitu albo punkt listy
 ``Korzeń z #N: R-KOD`` z linkiem GitHuba do tego PR i kodem bloku (Q14). Oba odwołania są linkami GitHuba, więc
@@ -64,6 +71,7 @@ from szablon_werdyktu import CODE, Item
 import werdykt_pr
 
 SECTION = "Korzeń"
+MARKER = "tools/lib/bramka_korzenia.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia bramki (werdykt_pr.deployment)
 PATTERN_SKILL = ROOT / ".agents" / "skills" / "pr" / "SKILL.md"
 PATTERN_SECTION = "Root section"
 FAILURES = "Co jest porażką"
@@ -88,10 +96,10 @@ class _Block:
 
 
 def problems(pull: Pull, deployed: datetime | None) -> list[str]:
-    """Przyczyny odmowy merge'a ``pull`` z bramki korzenia; ``deployed`` to chwila wdrożenia szablonu na bazie PR
-    (``szablon_werdyktu.deployed``), a baza i HEAD PR są już pobrane z ``origin``."""
+    """Przyczyny odmowy merge'a ``pull`` z bramki korzenia; ``deployed`` to chwila wdrożenia bramki na bazie PR
+    (``werdykt_pr.deployment`` z ``MARKER``), a baza i HEAD PR są już pobrane z ``origin``."""
 
-    if not werdykt_pr.template_applies(pull, deployed):
+    if not werdykt_pr.rule_applies(pull, deployed):
         return []
     try:
         rounds = werdykt_pr.rounds(pull)

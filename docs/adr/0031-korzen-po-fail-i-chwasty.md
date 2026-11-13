@@ -50,6 +50,8 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
   Werdykt w komentarzu edytowanym (`includesCreatedEdit`) nadal jest werdyktem, ale wątku nie postarza, bo jego treść mogła powstać po wdrożeniu.
   Chwila wdrożenia to data commitu, który dodał ten ADR na bazie PR, liczona po `--first-parent`: na `main` to commit merge'a PR wdrożenia, a na gałęzi stosu commit z jej własnej historii (scalenie `main` do niej albo commit autora, którego datę zmienia rebase), a na bazie, do której ten ADR jeszcze nie wszedł, szablon nie obowiązuje.
   Komentarzem, także edytowanym, nie da się przesunąć chwili wdrożenia, a przed merge'em nikt jej nie zgaduje.
+  Bramka korzenia (PR 2) obowiązuje od własnego wdrożenia, nie od wdrożenia szablonu, bo wątki, które pracowały przed nią, kończą po swojemu: wymaga sekcji `## Korzeń` tylko w wątku, którego najstarszy nieedytowany werdykt od konta z prawem zapisu nie powstał przed nią.
+  Chwilę wdrożenia bramki wyznacza ta sama reguła co szablonu (`werdykt_pr.deployment` i `werdykt_pr.rule_applies`), ale dla pliku `tools/lib/bramka_korzenia.py`, który dodał PR wdrożenia bramki: na `main` to commit merge'a tego PR.
 
 ### Rejestr i chwasty
 
@@ -59,7 +61,8 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
   PR naprawia czerwony `main`, gdy linia „Część #N” albo „Naprawia #N” jego opisu wskazuje issue z etykietą `czerwony-main`; flaky test ma własne issue z etykietą `flaky-test`, więc sekcji nie wymaga.
   Szczebel (e) wymaga, żeby PR dopisał do „Co jest porażką” skilla `przeglad` punkt z linkiem do PR; czy punkt opisuje ten korzeń, ocenia recenzent.
 - PR korzenia ma linię „Korzeń z #N: R-KOD”, PR z funkcją „Wyrwany w #M”; `scal_pr` sprawdza linie i kolejność merge'a (Q14).
-  Oba numery to linki GitHuba, więc GitHub pokazuje je na osi czasu obu PR-ów; rozmiaru ponad M (Q8) narzędzie nie liczy, bo w jednym PR nie oddzieli linii korzenia od linii funkcji.
+  Oba numery to linki GitHuba, więc GitHub pokazuje je na osi czasu obu PR-ów.
+  Granica mechanizmu: rozmiaru ponad M (Q8) bramka nie liczy, bo w jednym PR nie oddzieli linii korzenia od linii funkcji, więc o tym, czy wyrwanie mieści się w PR, czy idzie do PR korzenia, rozstrzyga recenzent według skilla `przeglad`.
 - Zgoda z góry na automatyczne issue „Chwast: R-KOD” z szablonem bez wolnej prozy (Korzeń, Wystąpienia, „Gotowe, gdy”), z etykietami `chwast` i `ready-for-agent`; zamyka je PR z „Korzeń z #issue” (Q12, Q15).
 - Historyczne korzenie z powtórzeniami, których nic nie wyrwało, dostają issues do naprawy; jednorazowy audyt na `main` odtwarza przypadki kodów z co najmniej 2 PR-ów i zakłada issue tylko tam, gdzie nic dziś ich nie łapie (Q13, Q16).
 - Pomiar co poniedziałek: GitHub Actions o 6:00 aktualizuje issue „Rejestr korzeni” liczbami z szablonu, a zadanie T3 o 8:00 dokłada osąd o kodach i kartę w wątku (Q19, Q23).

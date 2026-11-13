@@ -28,26 +28,21 @@ z Gita (HEAD pobiera wywołujący), i tylko wtedy, gdy werdykt ma pole ``Korzeń
 wczytuje, to odmowa z przyczyną. Odmowa kończy się wzorem szablonu, który narzędzie bierze z bloku ``markdown``
 sekcji „Postać werdyktu” skilla.
 
-Szablon jest wdrożony od chwili, w której ADR 0031 wszedł do bazy PR (``deployed``): to data commitu, który na
-``origin/<baza>`` dodał ADR, liczona po ``--first-parent``. Na ``main`` to commit merge'a PR wdrożenia, a nie commit
-autora, który powstał przed merge'em, gdy szablon jeszcze nie działał. Na gałęzi stosu to commit z jej własnej
-historii: scalenie ``main`` do niej albo commit autora, którego datę zmienia rebase. Na bazie, do której ADR jeszcze
-nie wszedł, szablon nie obowiązuje (``None``). Chwila płynie z historii bazy, więc nie trzeba jej zgadywać przed
-merge'em, a każdy checkout po pobraniu bazy dostaje tę samą; komentarzem, także edytowanym, nie da się jej przesunąć.
+Szablon jest wdrożony od chwili, w której ADR 0031 (``ADR``) wszedł do bazy PR, a czy obowiązuje w wątku,
+rozstrzyga ``werdykt_pr.rule_applies`` z chwilą ``werdykt_pr.deployment`` (decyzja Q20).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 import re
 import tomllib
 
 import github
-from repo import REMOTE, ROOT
+from repo import ROOT
 import repo
 from stan_pr import Pull
 
@@ -189,13 +184,6 @@ def items(html: str) -> list[Item]:
     parser.feed(html)
     parser.close()
     return parser.items
-
-
-def deployed(base: str) -> datetime | None:
-    """Chwila wdrożenia szablonu na bazie ``base`` pobranej z ``origin``; ``None``, gdy ADR 0031 jeszcze do niej nie wszedł."""
-
-    added = repo.git(ROOT, "log", "--first-parent", "--diff-filter=A", "--format=%cI", f"refs/remotes/{REMOTE}/{base}", "--", ADR).split()
-    return datetime.fromisoformat(added[-1]) if added else None
 
 
 def listed_codes(text: str) -> frozenset[str]:
