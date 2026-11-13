@@ -1,5 +1,5 @@
-# Reguły ilości z Wydania (ADR 0033): dzisiejsze reguły z instrukcji taty (spec #268, ADR 0012, 0018) przepisane z kodu
-# bez zmiany wyniku. Ten sam format ma plik config/reguly-ilosci.yaml taty (quantity_rules_file). Kolejność reguł nie
+# Reguły ilości z Wydania (ADR 0033): reguły z instrukcji taty (spec #268, ADR 0012, 0018), te same co w kodzie sprzed
+# silnika (brama na prawdziwych danych, #1471). Ten sam format ma plik config/reguly-ilosci.yaml taty (quantity_rules_file). Kolejność reguł nie
 # zmienia ilości, ale daje kolejność kolumn w podpowiedzi dla wiersza bez reguły (V, T i N).
 schema_version: 1
 reguly:
