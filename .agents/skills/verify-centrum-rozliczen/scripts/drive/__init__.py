@@ -116,6 +116,7 @@ FEATURES = (
     Feature(
         "uklad-folderow-taty",
         (
+            "102-uklad-taty-foldery",
             "15-uklad-taty-tablica",
             "16-uklad-taty-otwieranie",
         ),

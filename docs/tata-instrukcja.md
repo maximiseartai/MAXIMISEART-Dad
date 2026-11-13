@@ -78,7 +78,9 @@ komputerze. Nie otwiera czarnego okna konsoli.
 3. Za pierwszym razem kliknij `Ustawienia` (zębatka w lewym dolnym rogu, nad
    `Zamknij Centrum rozliczeń`) i w sekcji `Foldery` wskaż folder okresów, czyli
    `Załączniki` w OneDrive (ten z folderami `Rozliczenia 2025`,
-   `Rozliczenia 2026`), i Rejestr zleceń. Centrum je zapamięta.
+   `Rozliczenia 2026`), i Rejestr zleceń. Centrum je zapamięta. Gdy wskażesz
+   folder tygodnia, `INEA` albo miesiąca, Centrum i tak zapamięta `Załączniki`
+   i dopisze przy nim „wszystkie lata”.
 
 Zamknięcie karty przeglądarki nie wyłącza Centrum. Żeby wrócić, kliknij skrót
 jeszcze raz: otworzy się karta działającego Centrum, a nie druga kopia.
