@@ -117,20 +117,24 @@ def test_kazde_zadanie_z_mutacjami_instaluje_ruff_i_mypy_bramy_typow_z_dodatku_d
     assert set(installs) >= {("ci.yml", "mutations"), ("mutacje-nocne.yml", "change-mutations"), ("mutacje-nocne.yml", "skill-mutations")}
 
 
+INSTALLERS = (["uv", "pip", "install"], ["python", "-m", "pip", "install"])
+
+
 def _dependency_files(command: str) -> set[str]:
-    """Pliki zależności polecenia ``uv pip install``: plik ``-r``/``--requirement`` i ``pyproject.toml`` instalacji
-    katalogu repo (``-e``/``--editable`` albo pozycyjnie: ``.``, ``./``, ``.[dodatek]``). Parser jest zamknięty: zapis,
-    którego nie zna, kończy test błędem z tym zapisem, zamiast po cichu zgubić plik, z którego zadanie instaluje."""
+    """Pliki zależności polecenia ``uv pip install`` albo ``python -m pip install``: plik ``-r``/``--requirement`` i
+    ``pyproject.toml`` instalacji katalogu repo (``-e``/``--editable`` albo pozycyjnie: ``.``, ``./``, ``.[dodatek]``).
+    Parser jest zamknięty: zapis, którego nie zna, kończy test błędem z tym zapisem, zamiast po cichu zgubić plik, z
+    którego zadanie instaluje."""
 
     def local(path: str) -> str:
         assert path.split("[")[0].rstrip("/") == ".", f"instalacja spoza katalogu repo: {path!r} w {command!r}"
         return "pyproject.toml"
 
     tokens = shlex.split(command)
-    start = next(index for index in range(len(tokens) - 2) if tokens[index : index + 3] == ["uv", "pip", "install"]) + 3
+    start = next(index + len(prefix) for index in range(len(tokens)) for prefix in INSTALLERS if tokens[index : index + len(prefix)] == prefix)
     files, rest = set(), iter(tokens[start:])
     for token in rest:
-        if token == "--system":
+        if token in {"--system", "--disable-pip-version-check"}:
             continue
         if token == "--python":
             next(rest)
@@ -151,7 +155,7 @@ def test_zmiana_pliku_zaleznosci_zadan_krokow_skilli_uruchamia_kroki_skilli() ->
     uruchamiać każdy krok skilla (#293); dodatek dev zastąpił w nich ``requirements.txt``, a reguła została przy nim."""
 
     installed = {
-        (workflow.name, name): set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "uv pip install" in step.get("run", "")))
+        (workflow.name, name): set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "pip install" in step.get("run", "")))
         for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
         for name, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items()
         if "tools/ci/wykonaj_zadanie.py" in str(job.get("steps")) and (workflow, name) != (WORKFLOW, "pytest")

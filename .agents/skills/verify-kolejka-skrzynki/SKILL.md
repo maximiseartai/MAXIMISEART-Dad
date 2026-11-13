@@ -25,7 +25,7 @@ ci-czesci: 5
 CI runs `sprawdz_kolejke.py` (the `ci:` key) in Mutation checks whenever a change touches this skill:
 it runs the checker of the real code (`explore_outbox.py`) and the TLA+ model (`sprawdz_model_kolejki.py`, TLC,
 as the `ci:` of `verify-aktualizacja-narzedzia` does), each to its end. Its units (`UNITS` in
-`sprawdz_kolejke.py`) are five groups of scopes and five groups of model configurations (58–265 s each on Windows CI);
+`sprawdz_kolejke.py`) are five groups of scopes and five groups of model configurations (58–265 s each on Windows CI, run 43290270296, n 1);
 CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part).
 A part takes units by count, not by time, so their order interleaves heavy and light units: on the unit times of pull
 request run 43290270296 it gives a longest part of 323 s with four or five parts.

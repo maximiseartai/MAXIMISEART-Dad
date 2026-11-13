@@ -745,7 +745,8 @@ def _gate(created: float, required: float, *, attempt: int = 1, conclusion: str 
 
 
 class _ActionsApi:
-    """API Actions jednego dnia (3.11): lista runów ``ci.yml`` i zadania każdego runu, a run bez zadań to 404 jak ``GhApi``."""
+    """API Actions jednego dnia (3.11): lista runów ``ci.yml`` i zadania każdego runu, a run bez zadań i próba bez wyniku
+    (``None`` w ``proby``) to 404 jak ``GhApi``."""
 
     def __init__(self, runs: list[dict[str, object]]) -> None:
         self.runs = runs
@@ -758,7 +759,9 @@ class _ActionsApi:
             run = next(run for run in self.runs if str(run["id"]) == run_id)
             conclusions = run.get("proby", {})
             assert isinstance(conclusions, dict)
-            return {"conclusion": conclusions.get(int(attempt), "failure")}
+            if (conclusion := conclusions.get(int(attempt), "failure")) is None:
+                raise BladApi(f"gh api {sciezka}", "gh: Not Found (HTTP 404)")
+            return {"conclusion": conclusion}
         jobs = next(run["jobs"] for run in self.runs if sciezka.startswith(f"repos/{{owner}}/{{repo}}/actions/runs/{run['id']}/jobs?"))
         if jobs is None:
             raise BladApi(f"gh api {sciezka}", "gh: Not Found (HTTP 404)")
@@ -843,6 +846,16 @@ def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_
         (1020, 13),
         (None, None),
     ]
+
+
+def test_pomiar_ci_z_bledem_api_wyniku_wczesniejszej_proby_zglasza_run_i_konczy_sie_kodem_1(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Bez wyniku próby 1 pomiar nie wie, czy jej Required był werdyktem, więc run to błąd API, a nie run bez anulowanych prób."""
+
+    github = _ActionsApi([{**_ci_run(20, "push", "0" * 40, 0, [*_gate(0, 10, conclusion="failure"), *_gate(12, 20, attempt=2)], attempts=2), "proby": {1: None}}])
+
+    code = pomiar_ci.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-03", "--do", "2026-11-03"], root=tmp_path, github=github)
+
+    assert (code, capsys.readouterr().err.splitlines()) == (1, ["POMIAR CI | błąd API run 20: gh api repos/{owner}/{repo}/actions/runs/20/attempts/1: gh: Not Found (HTTP 404)"])
 
 
 def test_pomiar_ci_zna_kazde_zadanie_bramki_z_ci_yml_i_jego_krok_pracy() -> None:
