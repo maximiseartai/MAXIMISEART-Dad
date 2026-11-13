@@ -468,9 +468,12 @@ def _glob_matches(parts: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
 
 
 def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
-    """Katalog pakietu → jego pliki inne niż Python, także z podkatalogów, które nie są pakietami (``centrum/static``)."""
+    """Katalog pakietu → jego pliki inne niż Python, także z podkatalogów, które nie są pakietami (``centrum/static``).
 
-    packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"}
+    Pakiet ``tests`` nie ma danych: ``tests/__init__.py`` robiłby z każdego pliku spod ``tests/expected/`` wejście każdego
+    testu, a test, który czyta taki plik, nazywa go albo jego katalog."""
+
+    packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"} - {"tests"}
     data: dict[str, set[str]] = defaultdict(set)
     for file in files:
         if file.endswith(".py"):
