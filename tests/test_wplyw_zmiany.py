@@ -158,12 +158,12 @@ def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, 
 @pytest.mark.parametrize(
     "files",
     [
-        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests/expected/raport').read_text()\n"},
+        {"tests/test_x.py": "def test_x() -> None:\n    with open('tests/expected/raport', encoding='utf-8') as plik:\n        assert plik.read()\n"},
         {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests', 'expected', 'raport').read_text()\n"},
         {"tests/test_x.py": "from pathlib import Path\n\nA = Path('tests') / 'expected' / 'raport'\n\n\ndef test_x() -> None:\n    assert A.read_text()\n"},
         {
-            "tests/pomoc.py": "from pathlib import Path\n\nA = Path('tests/expected/raport')\n",
-            "tests/test_x.py": "from tests.pomoc import A\n\n\ndef test_x() -> None:\n    assert A.read_text()\n",
+            "tests/pomoc.py": "A = 'tests/expected/raport'\n",
+            "tests/test_x.py": "from tests.pomoc import A\n\n\ndef test_x() -> None:\n    with open(A, encoding='utf-8') as plik:\n        assert plik.read()\n",
         },
     ],
     ids=["napis od korzenia", "Path z kawałków", "stała z operatorem /", "napis w module, który test importuje"],
