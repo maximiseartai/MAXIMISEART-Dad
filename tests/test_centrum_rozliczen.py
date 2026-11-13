@@ -39,7 +39,7 @@ from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY
+from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.release_changes import (
     Edit,
@@ -1113,12 +1113,10 @@ def unreadable_history(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Do końca bloku system nie daje czytać pliku Historii (jak plik trzymany przez OneDrive), a dopisanie wiersza działa:
     zmiana z Wydania, która mimo to by weszła, zapisuje się, więc widać ją w motywie i w wierszach Historii."""
 
-    real = history_module.settings_bytes
-
     def locked(path: Path) -> bytes | None | OSError:
         if path.name == HISTORY_FILE:
             return PermissionError(errno.EACCES, "plik trzymany przez system", str(path))
-        return real(path)
+        return settings_bytes(path)
 
     with monkeypatch.context() as patch:
         patch.setattr(history_module, "settings_bytes", locked)
