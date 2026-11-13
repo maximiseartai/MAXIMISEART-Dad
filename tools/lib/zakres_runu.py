@@ -27,12 +27,13 @@ jego mutacja psuje plik w folderze ``model/`` skilla), gdy zmieniony jest plik w
 które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (silnik ``tools/lib/model_tlc.py``); inne
 skrypty mutacji biegną nocą (ADR 0021). Nocą biegnie skrypt mutacji, gdy zmieniony jest plik w folderze skilla,
 moduł, który skrypt importuje (silnik ``tools/lib/silnik_mutacji.py`` i jego zależności), uruchamiacz kroku
-(``LAUNCHER``), sprawdzenie, które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje, i podstawa z ``ci-czesci`` przy tej samej
+(``LAUNCHER``), sprawdzenie, które uruchamiają jego mutacje, moduł, który to sprawdzenie importuje, albo plik, który psuje
+jego mutacja (``Edit.file``, także plik, po który sprawdzenie sięga procesem albo ``pytest.main``), i podstawa z ``ci-czesci`` przy tej samej
 zmianie co na pull request, każdą częścią każdej liczby części od 1 do ``ci-czesci`` (``KrokSkilla.czesci``), bo pull
 request uruchamia części jednej liczby, którą plan wybiera z celu ściany.
 Zmiana ścieżki z ``Context.SKILL_STEPS`` uruchamia każdy krok swojego rodzaju, a skill bez klucza ``pilnuje`` albo z
-kluczem, którego nie da się odczytać, biegnie zawsze. Plików, które krok czyta bez importu, wybór nie
-liczy: każdą podstawę uruchamia pełne CI ``main``, a kotwice mutacji pilnuje pytest. Podstawa, którą wybrany skrypt
+kluczem, którego nie da się odczytać, biegnie zawsze. Innych plików, które krok czyta bez importu, wybór nie
+liczy: każdą podstawę uruchamia pełne CI ``main``, a skrypt mutacji noc, którą uruchomi inna zmiana. Podstawa, którą wybrany skrypt
 mutacji jej skilla i tak uruchamia bez mutacji (podstawa ``check_all``), nie biegnie drugi raz.
 
 Polecenia skilla, które CI liczy, to wybrane kroki skilla i wywołania jego skryptów w krokach CI torów runu; nic więcej
@@ -310,7 +311,7 @@ def _skrypt(step: Step, zmiana: frozenset[str], repository: Callable[[], Reposit
         return True, reason, files
     if touched:
         return True, _changes(touched), files
-    return False, "zmiany nie dotykają folderu skilla, importów skryptu, uruchamiacza kroku ani sprawdzeń, które uruchamiają mutacje skryptu, ani ich importów", files
+    return False, "zmiany nie dotykają folderu skilla, importów skryptu, uruchamiacza kroku ani sprawdzeń, które uruchamiają mutacje skryptu, ich importów ani plików, które psują te mutacje", files
 
 
 def _skrypt_modelu(step: Step, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:

@@ -200,8 +200,8 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         # Kod, który sprawdzenie importuje, wprost albo dalej: push go już nie mutuje, więc skrypt biegnie nocą (Z1, 13.11).
         (CHECKED, True),
         ("src/pakiet/pomocnik.py", True),
-        # Kotwica spoza importów sprawdzenia: pilnuje jej pytest (``tests/test_mutacje_skilli.py``).
-        (ANCHORS, False),
+        # Plik, który mutacja psuje, choć sprawdzenie go nie importuje (proces, ``pytest.main``, plik danych).
+        (ANCHORS, True),
         # Polityka zakresu i samo narzędzie z wiersza poleceń (z jego odmową ciężkiego CI) nie biegną w procesie skryptu.
         ("tools/lib/zakres_runu.py", False),
         ("tools/mutacje.py", False),
@@ -250,6 +250,26 @@ def test_noca_sprawdzenie_spoza_folderu_skilla_uruchamia_skrypt_ktorego_mutacje_
     praca = zakres(Zdarzenie.NOC, frozenset({checker}), repo)
 
     assert (SCRIPT_A in _runs(praca), "verify-b/check_b_mutations.py" in _runs(praca)) == (False, True)
+
+
+def test_noca_zmiana_pliku_ktory_psuje_mutacja_skilla_uruchamia_jej_skrypt_w_katalogu_repozytorium() -> None:
+    """Skrypt mutacji biegnie tylko nocą (ADR 0021, Z1), więc zmiana pliku, który psuje jego mutacja, musi go nocą
+    wybrać, także gdy sprawdzenie sięga pliku procesem Centrum, ``pytest.main`` albo ścieżką, a nie importem (#1575 r1:
+    13 z 28 skryptów). Jeden zakres nocy z każdym takim plikiem: zmienione pliki, które uruchamiają wybrany skrypt
+    (``KrokSkilla.pliki``), obejmują każdy plik jego mutacji."""
+
+    katalog = kroki_skilli.Katalog.skanuj(ROOT)
+    psute = {
+        step.key: {edit.file.as_posix() for mutation in kroki_skilli._mutations(step.root / step.command[0]) for edit in mutation.edits}
+        for step in katalog.kroki
+        if step.verdict is not None
+    }
+
+    praca = zakres(Zdarzenie.NOC, frozenset().union(*psute.values()), ROOT)
+
+    uruchamiaja = {w.krok.key: w.pliki for w in praca.wybrane}
+    assert len(psute) >= 28
+    assert {key: sorted(files - uruchamiaja.get(key, frozenset())) for key, files in psute.items()} == {key: [] for key in psute}
 
 
 @pytest.mark.parametrize(
@@ -383,6 +403,8 @@ def test_reguly_kroku_skilla_licza_od_korzenia_checkoutu_skilla(tmp_path: Path) 
         "tools/lib/z.py",
         *kroki_skilli.LAUNCHER,
         BASELINE_K,
+        ANCHORS,
+        CHECKED,
     )
     assert kroki_skilli.ci_command(skill / "SKILL.md") == (BASELINE_K,)
 

@@ -267,11 +267,15 @@ def _steps(root: Path, failed: dict[str, str]) -> list[Step]:
 def watched(step: Step, imported: Callable[[str], Iterable[str]]) -> tuple[str, ...]:
     """Ścieżki, których zmiana uruchamia skrypt mutacji ``step``: folder skilla (z ``/`` na końcu), pliki, które skrypt
     importuje (``imported``, ``Repository.imported``: silnik mutacji i jego zależności), ``LAUNCHER``, sprawdzenia,
-    które uruchamiają jego mutacje, i pliki, które te sprawdzenia importują (kod, którego zmiana spowalnia sprawdzenie
-    albo przesuwa jego mutacje); tabela, której nie da się wczytać, to wyjątek z ``exec_module``."""
+    które uruchamiają jego mutacje, pliki, które te sprawdzenia importują (kod, którego zmiana spowalnia sprawdzenie
+    albo przesuwa jego mutacje), i pliki, które mutacje psują (``Edit.file``), także te, po które sprawdzenie sięga
+    procesem, ``pytest.main`` albo ścieżką, a nie importem; tabela, której nie da się wczytać, to wyjątek
+    z ``exec_module``."""
 
-    checkers = sorted({mutation.command[0] for mutation in _mutations(step.root / step.command[0])})
-    reached = sorted({name for checker in checkers for name in imported(checker)} - {step.command[0], *checkers})
+    mutations = _mutations(step.root / step.command[0])
+    checkers = sorted({mutation.command[0] for mutation in mutations})
+    edited = {edit.file.as_posix() for mutation in mutations for edit in mutation.edits}
+    reached = sorted(({name for checker in checkers for name in imported(checker)} | edited) - {step.command[0], *checkers})
     return (step.folder, *sorted(imported(step.command[0])), *LAUNCHER, *checkers, *reached)
 
 

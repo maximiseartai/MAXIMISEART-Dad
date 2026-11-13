@@ -12,7 +12,7 @@ Zmieniona 6.11 (#935, Maks 5.11: „gotowe dla agenta”): ostrzeżenie `CZAS BL
 Zmieniona 6.11 (przegląd architektury 6.11, decyzja koordynatora w trybie auto Maksa): ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od`, jak części (sekcja Decyzja).
 Zmieniona 12.11 (#1339, bieg issues w trybie auto Maksa): mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS`, trafia do issue z dopiskiem, że noc nie dała jej werdyktu, a nie jako przeżyta; dalej nie jest wykryta (sekcje Decyzja i Odrzucone warianty).
 Zmieniona 12.11 (hillclimb CI, budżet Maksa z 12.11: najwyżej 20 zadań nocy naraz): noc zajmuje najwyżej 17 zadań części i 3 zadania skryptów skilli naraz, a części startują od najdroższej według pracy testów na `main` (sekcje Decyzja i Odrzucone warianty).
-Zmieniona 13.11 (Z1, zgoda Maksa): skrypty mutacji skilli nie biegną w pełnym CI `main`, tylko nocą, a noc uruchamia skrypt także przy zmianie modułu, który importuje sprawdzenie jego mutacji (sekcje Kontekst, Decyzja, Konsekwencje i Odrzucone warianty).
+Zmieniona 13.11 (Z1, zgoda Maksa): skrypty mutacji skilli nie biegną w pełnym CI `main`, tylko nocą, a noc uruchamia skrypt także przy zmianie modułu, który importuje sprawdzenie jego mutacji, i pliku, który psuje jego mutacja (sekcje Kontekst, Decyzja, Konsekwencje i Odrzucone warianty).
 
 ## Kontekst
 
@@ -85,12 +85,14 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Część, która nie dała wyniku (testy padają albo nie kończą się w limicie części bez mutacji, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz, z tym samym limitem mutacji.
   Przeżyte mutacje i mutacje bez werdyktu po limicie części to wynik, więc zostawiają część zieloną.
 - Skrypty mutacji skilli też nie biegną na PR: Mutation checks na PR to same podstawy `ci:` skilli, których `pilnuje:` albo folder trafia zmiana.
-  Ta sama noc uruchamia skrypty skilli, których folder, runner mutacji, sprawdzenie albo moduł, który sprawdzenie importuje, zmieniło się od jej bazy, w zadaniach planu `tools/plan_ci.py plan --zdarzenie noc`.
+  Ta sama noc uruchamia skrypty skilli, których folder, runner mutacji, sprawdzenie, moduł, który sprawdzenie importuje, albo plik, który psuje mutacja (`Edit.file` z tabeli skryptu), zmienił się od jej bazy, w zadaniach planu `tools/plan_ci.py plan --zdarzenie noc`.
   Pełne CI `main` od 13.11 (Z1) nie uruchamia żadnego skryptu mutacji skilla, tylko każdą podstawę `ci:`, także tę, którą skrypt uruchamia bez mutacji.
   Moduły, które sprawdzenie importuje, noc liczy od Z1, bo sama zmiana kodu produktu może spowolnić sprawdzenie albo przesunąć jego mutację, a dotąd przy takiej zmianie skrypt uruchamiało tylko pełne CI `main`.
   Każdy z 5 epizodów wyżej noc wybrałaby i bez tego, bo jego PR zmieniał folder skilla; #667 zmieniał też `src/rozliczenia/centrum/outbox.py`, który importują sprawdzenia trzech innych skryptów.
   W 5 dobach `main` przed 13.11 noc wybierałaby 18–28 z 28 skryptów zamiast 11–28, a w 3 z nich już dziś wszystkie 28, więc ściana nocy nie przekracza dzisiejszej najdłuższej.
-  Kotwicę mutacji w pliku, którego sprawdzenie nie importuje, pilnuje pytest (`tests/test_mutacje_skilli.py`, #670).
+  Plik, który psuje mutacja, noc bierze z tej samej tabeli mutacji skryptu, bo 13 z 28 skryptów psuje plik, którego sprawdzenie nie importuje: 11 skryptów Centrum sięga go procesem Centrum, `check_quantity_rules_mutations.py` przez `pytest.main`, a `check_github_skrzynki_mutations.py` psuje plik testu (#1575, przegląd r1).
+  W 5 dobach `main` przed 13.11 te pliki nie dokładają nocy żadnego skryptu, a `tests/test_zakres_runu.py` sprawdza na katalogu skilli, że zmiana każdego z nich wybiera nocą jego skrypt.
+  Kotwicę mutacji, która przestała stać w swoim pliku, pilnuje już na PR pytest (`tests/test_mutacje_skilli.py`, #670).
   Skrypt, który padł, trafia linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił plik zmieniony od bazy, który uruchomił krok (`KrokSkilla.pliki` w `tools/lib/zakres_runu.py`): najpierw plik w folderze skilla, potem inny, a bez takiego pliku ostatni PR nocy; linia trafia tam bez powtórzeń, a zadanie bez zapisu czerwieni przebieg.
   Mutacja skryptu, której polecenie trwało ponad połowę limitu czasu mutacji (`CZAS BLISKO LIMITU`, `tools/mutacje.py`), trafia do tego samego issue linią `CZAS BLISKO LIMITU <skrypt> | <mutacja> | <czas> s z limitu --limit-s <limit> s`, także gdy skrypt przeszedł.
   Trafia tam raz, bo issue porównuje skrypt i mutację bez czasu, który zmienia się co noc, więc rosnący czas mutacji widać w issue, zanim `PRZEKROCZONY CZAS` zaczerwieni skrypt (#911, #935).
@@ -113,6 +115,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   PR, który by ją zamknął, jest osobną pracą z kolejki `ready-for-agent`.
 - Recenzent nie omawia już mutacji w `PASS`, a przegląd PR kończy się razem z bramką.
 - PR, który osłabia sprawdzenie skilla tak, że jego mutacja przeżywa, pokaże dopiero noc, która przypisze porażkę do issue jego PR (od Z1, 13.11, pełne CI `main` już tego nie pokazuje).
+  Noc widzi go, gdy zmienia folder skilla, sprawdzenie, moduł, który sprawdzenie importuje, albo plik, który psuje mutacja; zmianę innego pliku, który sprawdzenie czyta bez importu, pokaże dopiero noc, którą uruchomi inna zmiana.
   Wydanie nie czeka na noc: commit z zielonym pełnym CI `main` jest do wydania, choć skrypt mutacji skilla na nim pada, bo taki skrypt mierzy jakość sprawdzenia, a nie produkt, który dostaje tata.
   Wyjątkiem jest zmiana modelu TLA+ skilla ze skryptem mutacji modelu: ta dostaje czerwone Mutation checks na PR.
 - Noc mutuje zmiany wielu PR-ów naraz, więc pokrycie biegnie na testach wielu plików; części po plikach trzymają je w limicie czasu części.
