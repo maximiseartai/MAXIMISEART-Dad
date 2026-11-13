@@ -8,41 +8,33 @@ from typing import Any
 
 from playwright.sync_api import Locator, Page, ViewportSize, expect
 
-from drive.common import DAD_VIEWPORT, Run, close_settings, open_settings, read_text, settings_title, settings_window
+from drive.common import (
+    DAD_VIEWPORT,
+    QUANTITY_DIFFERENCES as URL,
+    Run,
+    capture_quantity_rules,
+    close_settings,
+    open_settings,
+    read_text,
+    settings_title,
+    settings_window,
+    without_row_texts,
+)
 
 FEATURE = "roznice-z-kontroli"
 NARROW: ViewportSize = {"width": 420, "height": 860}
-URL = "/api/settings/quantity-rules/differences"
 RULES_URL = "/api/settings/quantity-rules"
 TITLE = "Tu wpisałeś inaczej niż reguła"
-HIDDEN = "<tekst wiersza>"
 
 
 def _differences(run: Run, name: str) -> dict[str, Any]:
     """The server's list; the evidence keeps it without the texts of the rows (workbook content)."""
 
     answer: dict[str, Any] = run.api(URL, name)
-    shown = {
-        **answer,
-        "differences": [
-            {**difference, "devices": HIDDEN, "activities": HIDDEN} for difference in answer.get("differences", [])
-        ],
-    }
-    (run.evidence / "api" / f"{name}.json").write_text(json.dumps(shown, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    texts = [difference[key] for difference in answer.get("differences", []) for key in ("devices", "activities")]
+    shown = without_row_texts(json.dumps(answer, ensure_ascii=False, indent=2), texts)
+    (run.evidence / "api" / f"{name}.json").write_text(shown + "\n", encoding="utf-8")
     return answer
-
-
-def _capture(run: Run, page: Page, name: str, answer: dict[str, Any], *, full_page: bool = False) -> None:
-    """Screenshot with the list; its ARIA snapshot keeps the row texts out, like the saved answer."""
-
-    run.capture(page, name, full_page=full_page)
-    snapshot = run.evidence / "aria" / f"{name}.txt"
-    text = read_text(snapshot)
-    for difference in answer.get("differences", []):
-        for value in (difference["devices"], difference["activities"]):
-            if value:
-                text = text.replace(value, HIDDEN)
-    snapshot.write_text(text, encoding="utf-8")
 
 
 def _item(window: Locator, difference: dict[str, Any]) -> Locator:
@@ -75,7 +67,7 @@ def drive(run: Run, page: Page) -> None:
     expect(item).to_contain_text(f"reguła {first['rule']} · wpisałeś {first['tata']}")
     expect(item).to_contain_text(f"{first['period']} · wiersz {first['row']} · {first['when']}")
     run.check(True, "the first difference shows the server's column, rule value, Dad's entry and row, without UMOWA")
-    _capture(run, page, "390-roznice-lista-szerokie", answer)
+    capture_quantity_rules(run, page, "390-roznice-lista-szerokie", full_page=False)
 
     run.step(FEATURE, "roznice-popraw-regule")
     item.get_by_role("button", name="Popraw regułę", exact=True).click()
@@ -86,7 +78,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(True, "„Popraw regułę” opens a new rule with the conditions of the server's form for this difference")
     expect(window.get_by_role("button", name="Zapisz", exact=True)).to_be_enabled()
     run.check(True, "the form from a difference is unsaved from the start, so „Zapisz” takes it as it is")
-    _capture(run, page, "391-roznice-popraw-regule", answer)
+    capture_quantity_rules(run, page, "391-roznice-popraw-regule", full_page=False)
     window.get_by_role("button", name="Anuluj", exact=True).click()
     expect(window.get_by_role("region", name=TITLE, exact=True)).to_be_visible()
     run.check(
@@ -106,7 +98,7 @@ def drive(run: Run, page: Page) -> None:
     saved = window.locator("[data-slot=toast]:not([data-ending-style])").filter(has=page.get_by_text("Zapisano", exact=True))
     expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
     run.check(True, "the exception says „Zapisano” with „Cofnij” like every change of Ustawienia")
-    _capture(run, page, "392-roznice-wyjatek", answer)
+    capture_quantity_rules(run, page, "392-roznice-wyjatek", full_page=False)
 
     run.step(FEATURE, "roznice-historia")
     window = open_settings(page, "Historia")
@@ -130,7 +122,7 @@ def drive(run: Run, page: Page) -> None:
         page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         run.check(True, "on a narrow window the list of differences wraps without a horizontal scroll")
         _item(window, first).scroll_into_view_if_needed()
-        _capture(run, page, "394-roznice-waskie", answer)
+        capture_quantity_rules(run, page, "394-roznice-waskie", full_page=False)
         close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
