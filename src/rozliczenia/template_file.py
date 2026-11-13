@@ -28,7 +28,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from .highlights import PLAIN
 from .register_columns import TARGET_HEADERS
-from .quantity_rules import QuantityColumn
 from .row_look import GENERAL, RowLook, wraps
 from .template_copy import InvalidValue, Package, Recalculation, Row, SheetLayout, TemplateCopy
 from .collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, INPUT_COLUMNS, LOOK_COLUMNS, QUANTITY_COLUMNS
@@ -43,6 +42,7 @@ from .workbook_files import (
     header_columns,
     is_blank,
     open_workbook,  # noqa: TID251 - template_file czyta Wzorzec
+    price_list,
     template_content,  # noqa: TID251 - template_file czyta Wzorzec
 )
 from .workbook_parts import UnsupportedShape
@@ -134,6 +134,8 @@ class _Outline:
     title: str
     header: Sequence[object]
     """Wartości wiersza nagłówka od kolumny A."""
+    whole_header: Sequence[object]
+    """Wartości całego wiersza nagłówka od kolumny A, także nazwy pozycji cennika N:AP."""
     merged_ranges: tuple[CellRange, ...]
     """Scalenia aktywnego arkusza w kolejności, w jakiej daje je openpyxl."""
     zero_row_count: int
@@ -230,6 +232,12 @@ class TemplateFile:
             sheet = _active_worksheet(self.path, workbook)
             self._check_settlement_template(sheet.title, self._header(sheet), self._has_input_data(sheet))
 
+    def price_list(self) -> Mapping[str, str]:
+        """Nazwy pozycji cennika z wiersza nagłówka Wzorca pliku okresu (litera N:AP → tekst, pusta komórka ``""``),
+        z tego samego odczytu co Sprawdzanie; ``WorkbookError``, gdy Wzorca nie da się przeczytać."""
+
+        return price_list(self._read_outline().whole_header)
+
     def plan(self, row_count: int) -> TemplatePlan:
         """Planowanie ``row_count`` Wierszy danych: nagłówki docelowe jak przy Sprawdzaniu, a scalenie w
         komórkach, do których trafią, to zły układ z ``MergedCells``."""
@@ -294,13 +302,14 @@ class TemplateFile:
             if copy is not None:
                 # Ten sam zbiór, którym openpyxl trzyma scalenia arkusza, więc i ta sama kolejność.
                 merged_ranges = tuple(MultiCellRange([CellRange(reference) for reference in copy.merged_cells]).ranges)
-                self._outline = _Outline(copy.title, copy.header, merged_ranges, copy.zero_row_count)
+                self._outline = _Outline(copy.title, copy.header, copy.whole_header, merged_ranges, copy.zero_row_count)
             else:
                 with self._openpyxl_workbook() as workbook:
                     sheet = _active_worksheet(self.path, workbook)
                     self._outline = _Outline(
                         sheet.title,
                         self._header(sheet),
+                        [cell.value for cell in sheet[self._rules.sheet.header_row]],
                         tuple(sheet.merged_cells.ranges),
                         _zero_row_count(sheet, self._rules.sheet),
                     )
@@ -409,7 +418,7 @@ def _last_written_column(layout: SheetLayout, columns: Collection[int]) -> int:
     return max(layout.look_columns, *columns)
 
 
-_NO_QUANTITIES: MappingProxyType[QuantityColumn, Never] = MappingProxyType({})
+_NO_QUANTITIES: MappingProxyType[str, Never] = MappingProxyType({})
 
 
 def _in_columns(rows: Sequence[DataRow] | Sequence[RegisterRow], target_columns: Mapping[str, int]) -> list[Row]:

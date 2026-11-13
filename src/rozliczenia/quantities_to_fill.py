@@ -1,12 +1,13 @@
 """Ilości do uzupełnienia: wiersze Pliku zbiorczego, w których Ilości usług wpisuje tata, i czy już coś wpisał.
 
 Czysta funkcja ``quantities_to_fill`` na Wierszach danych zapisanego Pliku zbiorczego, przeliczana przy każdym
-odczycie; nic nie jest przechowywane. Rodzaj wiersza wynika tylko z typu wyniku Reguł ilości (``evaluate``), a
+odczycie; nic nie jest przechowywane. Rodzaj wiersza wynika tylko z typu wyniku Reguł ilości (``evaluate``) na
+regułach podanych przy odczycie, a
 kolumny, w których wpis taty się liczy, to kolumny poza porównywanymi przez Kontrolę ilości (``compared_columns``),
 więc ta lista i Kontrola ilości się nie rozjadą. Puste i 0 to to samo, jak w Kontroli ilości.
 
-Wiersz bez reguły jest zrobiony, gdy ma ilość różną od 0 poza V, T i N, a wiersz z opisu, gdy ma ją gdziekolwiek
-w N:AP. Każda komórka N:AP wiersza pokazuje wartość z pliku: w kolumnie, którą wyznaczają Reguły ilości, jako
+Wiersz bez reguły jest zrobiony, gdy ma ilość różną od 0 poza kolumnami reguł dla składnika spoza listy (z Wydania
+V, T i N), a wiersz z opisu, gdy ma ją gdziekolwiek w N:AP. Każda komórka N:AP wiersza pokazuje wartość z pliku: w kolumnie, którą wyznaczają Reguły ilości, jako
 kolumnę narzędzia, która nie robi wiersza zrobionym, a w pozostałych jako wpis taty. Wyniku Reguł ilości obok
 wartości z pliku nie ma, bo porównanie ich to Kontrola ilości, która zostaje dla Maksa.
 Wiersz z ``DATA``, która nie jest datą, nie ma wyniku reguł, więc nie trafia do żadnego rodzaju. Kolumny z opisu
@@ -23,8 +24,8 @@ from typing import Final
 
 from .collective_layout import QUANTITY_LETTERS
 from .order_facts import OrderFacts, TataValue
-from .quantity_check import WITHOUT_RULE_COLUMNS, QuantityCheck, check, compared_columns
-from .quantity_rules import DESCRIPTION_COLUMNS, FromDescription, RuleResult, WithoutRule, evaluate
+from .quantity_check import QuantityCheck, check, compared_columns
+from .quantity_engine import DESCRIPTION_COLUMNS, FromDescription, QuantityRules, RuleResult, WithoutRule, evaluate
 from .register_columns import ACTIVITIES, COMPLETED, DEVICES, WORKER, Column
 
 
@@ -32,7 +33,7 @@ class FillKind(StrEnum):
     """Rodzaj Ilości do uzupełnienia, który ma listę wierszy."""
 
     WITHOUT_RULE = "without_rule"
-    """Nieznane ``URZĄDZENIA``: Reguły ilości dały najwyżej V, T i N."""
+    """Nieznane ``URZĄDZENIA``: Reguły ilości dały najwyżej ilości reguł dla składnika spoza listy (z Wydania V, T i N)."""
     FROM_DESCRIPTION = "from_description"
     """Prewencja, niedostępność usług albo puste ``URZĄDZENIA``: Reguły ilości nie dały nic."""
 
@@ -43,13 +44,16 @@ _KINDS: Final[Mapping[type[RuleResult], FillKind]] = {
 }
 
 
-def fill_hint(kind: FillKind) -> str:
+def fill_hint(kind: FillKind, rules: QuantityRules) -> str:
     """Podpowiedź dla taty, co wpisuje w wierszach rodzaju ``kind``: te same kolumny, które robią wiersz zrobionym."""
 
     match kind:
         case FillKind.WITHOUT_RULE:
-            *first, last = WITHOUT_RULE_COLUMNS
-            return f"Dopisz ilości poza {', '.join(first)} i {last}."
+            columns = rules.without_rule_columns
+            if not columns:
+                return "Dopisz ilości."
+            listed = columns[0] if len(columns) == 1 else f"{', '.join(columns[:-1])} i {columns[-1]}"
+            return f"Dopisz ilości poza {listed}."
         case FillKind.FROM_DESCRIPTION:
             return "Wpisz ilości według opisu technika."
 
@@ -142,19 +146,20 @@ class QuantitiesToFill:
         return tuple(sorted(row.number for kind in self.kinds for row in kind.rows if not row.done))
 
 
-def quantities_to_fill(rows: Sequence[NumberedOrder], *, settled: bool) -> QuantitiesToFill:
-    """``settled``: Przebieg rozliczeń okresu się odbył, więc wiersz bez wpisu taty jest „bez ilości”."""
+def quantities_to_fill(rows: Sequence[NumberedOrder], rules: QuantityRules, *, settled: bool) -> QuantitiesToFill:
+    """``rules``: Reguły ilości, którymi liczyć; ``settled``: Przebieg rozliczeń okresu się odbył, więc wiersz bez wpisu
+    taty jest „bez ilości”."""
 
     listed: dict[FillKind, list[RowToFill]] = {kind: [] for kind in FillKind}
     for row in rows:
         content = row.order.content
         if content is None:
             continue
-        rule = evaluate(content)
+        rule = evaluate(rules, content)
         kind = _KINDS.get(type(rule))
         if kind is not None:
-            listed[kind].append(_row(row, rule, settled=settled))
-    control = check(tuple(row.order for row in rows))
+            listed[kind].append(_row(row, rule, rules, settled=settled))
+    control = check(tuple(row.order for row in rows), rules)
     assert isinstance(control, QuantityCheck)  # ``check`` nie porównuje tylko przy brakujących nagłówkach
     return QuantitiesToFill(
         tuple(KindToFill(kind, tuple(found)) for kind, found in listed.items()),
@@ -162,8 +167,8 @@ def quantities_to_fill(rows: Sequence[NumberedOrder], *, settled: bool) -> Quant
     )
 
 
-def _row(row: NumberedOrder, rule: RuleResult, *, settled: bool) -> RowToFill:
-    cells = _cells(row.order, rule)
+def _row(row: NumberedOrder, rule: RuleResult, rules: QuantityRules, *, settled: bool) -> RowToFill:
+    cells = _cells(row.order, rule, rules)
     if any(cell.source is CellSource.TATA for cell in cells):
         state = RowState.DONE
     else:
@@ -171,8 +176,8 @@ def _row(row: NumberedOrder, rule: RuleResult, *, settled: bool) -> RowToFill:
     return RowToFill(row.number, row.texts, cells, state)
 
 
-def _cells(order: OrderFacts, rule: RuleResult) -> tuple[QuantityCell, ...]:
-    compared = compared_columns(rule)
+def _cells(order: OrderFacts, rule: RuleResult, rules: QuantityRules) -> tuple[QuantityCell, ...]:
+    compared = compared_columns(rule, rules)
     return tuple(_cell(order.quantity(column), column in compared) for column in QUANTITY_LETTERS)
 
 

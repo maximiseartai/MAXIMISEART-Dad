@@ -3,7 +3,7 @@
 Rytm (``ReminderRhythm``, u taty ``MinuteRhythm``) woła ``ReportReminders.check`` co minutę od startu Centrum do jego
 zamknięcia. Sprawdzenie bierze chwilę z zegara Centrum (``now``) i poza porą przypomnień (``reminder_pora``) nic nie
 robi. W porze czyta Ustawienia taty (INTERMAX, folder okresów), z ``config`` dzień wdrożenia przypomnień
-(``REMINDERS_ROLLOUT``, bez niego nic nie wysyła), Konfigurację wykonawców, plik adresów Wykonawców i stopkę taty
+(``REMINDERS_ROLLOUT``, bez niego nic nie wysyła), Listę Wykonawców z migawki Ustawień Centrum i stopkę taty
 (``REMINDERS_FOOTER``), Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii
 wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
 kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
@@ -42,21 +42,19 @@ from typing import Final, Literal, Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from rozliczenia import register_file, worker_addresses
+from rozliczenia import register_file
 from rozliczenia.centrum import reminder_messages
 from rozliczenia.centrum.atomic_file import StateFile
-from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
-from rozliczenia.centrum.settings import Settings, SettingsStore
+from rozliczenia.centrum.settings.files import usable
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
-from rozliczenia.input_checks import workers
 from rozliczenia.message import StopError
 from rozliczenia.report_entering import closed_periods, register_orders
 from rozliczenia.tool_files import REMINDERS_FOOTER, REMINDERS_RESULT, REMINDERS_ROLLOUT
 from rozliczenia.workbook_files import WorkbookError
-from rozliczenia.worker_addresses import AddressesError
 from rozliczenia.worker_report_inbox import (
     InboxUnreachable,
     MailRefused,
@@ -156,8 +154,7 @@ class ReportReminders:
     def __init__(
         self,
         work: CentrumWork,
-        store: SettingsStore,
-        configuration: ConfigurationFiles,
+        settings: CentrumSettings,
         mailbox: ReminderMailbox,
         files: DadFiles,
         reports: Reports,
@@ -165,8 +162,7 @@ class ReportReminders:
     ) -> None:
         self._config = work.config
         self._log = work.log
-        self._store = store
-        self._configuration = configuration
+        self._settings = settings
         self._mailbox = mailbox
         self._files = files
         self._reports = reports
@@ -223,7 +219,7 @@ class ReportReminders:
         self._write(now, pora, found)
 
     def _send(self, now: datetime, found: _Check) -> None:
-        read = due_reminders(now, self._store.load(), self._config, self._configuration, self._mailbox, self._files)
+        read = due_reminders(now, self._settings.snapshot(), self._config, self._mailbox, self._files)
         match read:
             case NotRead():
                 found.failed = _Failed(read.cause, read.failure)
@@ -301,18 +297,18 @@ class NotRead:
 
 def due_reminders(
     now: datetime,
-    settings: Settings,
+    snapshot: SettingsSnapshot,
     config: Path,
-    configuration: ConfigurationFiles,
     mailbox: ReminderMailbox,
     files: DadFiles,
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
     """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: dzień wdrożenia
-    i stopka z ``config``, Ustawienia taty ``settings``, Konfiguracja i plik adresów, Pliki zbiorcze okresów okna,
+    i stopka z ``config``, Ustawienia taty i Lista Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
     INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``. Niczego nie wysyła i nie zapisuje: wysyła
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""
 
+    settings = snapshot.folders
     rollout = _rollout(config / REMINDERS_ROLLOUT)
     if rollout is None:
         return NotRead("bez-wdrozenia")
@@ -320,9 +316,10 @@ def due_reminders(
         return NotRead("bez-ustawien")
     if mailbox.access() != "ready":
         return NotRead("bez-dostepu")
-    addresses = _addresses(configuration)
-    if addresses is None:
+    workers = usable(snapshot.workers)
+    if workers is None:
         return NotRead("bez-adresow")
+    addresses = workers.addresses()
     today = now.date()
     try:
         closed = closed_periods(settings.periods_directory, Window.periods(today, rollout))
@@ -341,18 +338,9 @@ def due_reminders(
     if not isinstance(sent, SentReminders):
         return sent
     footer = _footer(config / REMINDERS_FOOTER)
-    due = reminders_due(ReminderInputs(now, window, orders, mails.mails, sent.reminders, addresses, footer))
+    due = reminders_due(ReminderInputs(now, window, orders, mails.mails, sent.reminders, addresses, workers.reminded(), footer))
     return DueReminders(due, sent.reminders, addresses, footer)
 
-
-def _addresses(configuration: ConfigurationFiles) -> WorkerAddresses | None:
-    found = workers(configuration.worker_config)
-    if not isinstance(found, dict):
-        return None
-    try:
-        return worker_addresses.load(configuration.worker_addresses, workers=found)
-    except AddressesError:
-        return None
 
 
 def _pora(now: datetime) -> str:

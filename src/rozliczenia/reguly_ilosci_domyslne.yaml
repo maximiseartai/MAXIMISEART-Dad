@@ -1,0 +1,91 @@
+# Reguły ilości z Wydania (ADR 0033): reguły z instrukcji taty (spec #268, ADR 0012, 0018), te same co w kodzie sprzed
+# silnika (brama na prawdziwych danych, #1471). Ten sam format ma plik config/reguly-ilosci.yaml taty (quantity_rules_file). Kolejność reguł nie
+# zmienia ilości, ale daje kolejność kolumn w podpowiedzi dla wiersza bez reguły (V, T i N).
+schema_version: 1
+reguly:
+  - {id: z-opisu-puste, zakres: kazde, jesli: [{rodzaj: urzadzenia, tryb: puste}], to: {rodzaj: nic}}
+  - {id: z-opisu-prewencja, zakres: kazde, jesli: [{rodzaj: urzadzenia, tryb: dokladnie, tekst: prewencja}], to: {rodzaj: nic}}
+  - id: z-opisu-niedostepnosc-uslug
+    zakres: kazde
+    jesli: [{rodzaj: urzadzenia, tryb: dokladnie, tekst: niedostępność usług}]
+    to: {rodzaj: nic}
+  - id: v-znane
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: instalacja-reczna, zaprzeczony: true}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: V, wartosc: 1, razy: raz}]}
+  - {id: v-nieznane, zakres: nieznane, jesli: [], to: {rodzaj: wpisz, wpisy: [{kolumna: V, wartosc: 1, razy: raz}]}}
+  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}
+  - id: dodatek-usterka-pn-pt
+    zakres: kazde
+    jesli: [{rodzaj: skladnik, skladnik: usterka}, {rodzaj: data, dni: [0, 1, 2, 3, 4], od: "17:00"}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: N, wartosc: 45, razy: raz}]}
+  - id: dodatek-usterka-sobota
+    zakres: kazde
+    jesli: [{rodzaj: skladnik, skladnik: usterka}, {rodzaj: data, dni: [5], od: "00:00"}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: N, wartosc: 45, razy: raz}]}
+  - id: nokia
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: nokia}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia}]}
+  - id: nokia-bez-routera-akt-int
+    zakres: znane
+    jesli:
+      - {rodzaj: skladnik, skladnik: nokia}
+      - {rodzaj: grupa, grupa: router, zaprzeczony: true}
+      - {rodzaj: czynnosci, tekst: akt int}
+    to: {rodzaj: wpisz, wpisy: [{kolumna: O, wartosc: 1, razy: raz}]}
+  - id: nokia-router
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: nokia-router}]
+    to:
+      rodzaj: wpisz
+      wpisy:
+        - {kolumna: O, wartosc: 1, razy: liczba, skladnik: nokia-router}
+        - {kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}
+  - id: technicolor
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: technicolor}]
+    to:
+      rodzaj: wpisz
+      wpisy:
+        - {kolumna: O, wartosc: 1, razy: liczba, skladnik: technicolor}
+        - {kolumna: Z, wartosc: 1, razy: liczba, skladnik: technicolor}
+        - {kolumna: AK, wartosc: 1, razy: liczba, skladnik: technicolor}
+  - id: gateway
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: gateway}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: O, wartosc: 1, razy: liczba, skladnik: gateway}]}
+  - id: gateway-z-extenderem
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: gateway}, {rodzaj: grupa, grupa: extender}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: AO, wartosc: 1, razy: liczba, skladnik: gateway}]}
+  - id: wifi6extra
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: wifi6extra}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: AG, wartosc: 1, razy: liczba, skladnik: wifi6extra}]}
+  - id: usterka
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: usterka}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: AI, wartosc: 1, razy: liczba, skladnik: usterka}]}
+  - id: gniazdo
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: gniazdo}]
+    to:
+      rodzaj: wpisz
+      wpisy:
+        - {kolumna: AE, wartosc: 1, razy: liczba, skladnik: gniazdo}
+        - {kolumna: AP, wartosc: 1, razy: liczba, skladnik: gniazdo}
+  - id: zmiana-instalacji
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: zmiana-instalacji}]
+    to: {rodzaj: wpisz, wpisy: [{kolumna: AM, wartosc: 1, razy: liczba, skladnik: zmiana-instalacji}]}
+  - id: instalacja-reczna
+    zakres: znane
+    jesli: [{rodzaj: skladnik, skladnik: instalacja-reczna}]
+    to:
+      rodzaj: wpisz
+      wpisy:
+        - {kolumna: AN, wartosc: 1, razy: sztuki, skladnik: instalacja-reczna}
+        - {kolumna: V, wartosc: 1, razy: sztuki, skladnik: instalacja-reczna}
+  - {id: inea-gniazdo, zakres: kazde, jesli: [{rodzaj: urzadzenia, tryb: zawieraja, tekst: gniazdo}], to: {rodzaj: pusta, kolumny: [AP]}}
+  - {id: inea-technicolor, zakres: kazde, jesli: [{rodzaj: urzadzenia, tryb: zawieraja, tekst: technicolor}], to: {rodzaj: pusta, kolumny: [AK]}}

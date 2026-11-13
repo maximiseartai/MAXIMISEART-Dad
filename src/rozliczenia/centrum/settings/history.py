@@ -1,0 +1,156 @@
+"""Historia Ustawień w ``config/historia-ustawien.jsonl``: jeden wiersz JSON na jeden zapis, dopisywany linia po linii.
+
+Wiersz mówi, kiedy, skąd (tata, zmiana z Wydania albo zmiana spoza Centrum), który plik i które klucze się zmieniły,
+z wartością przed i po (sekret bez wartości), czy da się go cofnąć, czy plik usunięto i czy zmiana weszła (``zapisano``)
+albo została odrzucona z powodem.
+Linia, której nie da się przeczytać (np. urwana zgaśnięciem Centrum), jest pomijana i liczona; Historii się nie przycina.
+Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie pusta Historia: nie wiadomo wtedy, co już weszło.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
+from typing import Annotated, Final, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S
+from rozliczenia.centrum.settings.files import KeyChange, Unreadable
+from rozliczenia.centrum.settings.memory import settings_bytes
+
+HISTORY_FILE: Final = "historia-ustawien.jsonl"
+_VERSION: Final = 1
+
+RowResult = Literal["zapisano", "odrzucono"]
+
+
+class _Model(BaseModel):
+    """Model pliku Historii: pola po angielsku w kodzie, a w pliku pod polskimi nazwami (``validation_alias``)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
+
+
+class ByDad(_Model):
+    """Zapis taty w Centrum, także cofnięcie."""
+
+    kind: Literal["tata"] = Field(default="tata", validation_alias="rodzaj", serialization_alias="rodzaj")
+
+
+class Outside(_Model):
+    """Plik w ``config`` zmieniony poza Centrum."""
+
+    kind: Literal["spoza"] = Field(default="spoza", validation_alias="rodzaj", serialization_alias="rodzaj")
+
+
+class ReleaseOrigin(_Model):
+    """Wersja narzędzia, której Wydanie niesie zmianę: numer Wydania (``0.9.0``) i skrót commitu; ``None``: nie wiadomo
+    (commit bez tagu Wydania albo narzędzie bez Gita)."""
+
+    release: str | None = Field(validation_alias="wydanie", serialization_alias="wydanie")
+    commit: str | None
+
+
+class FromRelease(ReleaseOrigin):
+    """Zmiana Ustawień z Wydania (``release_changes``): wersja narzędzia i id zmiany."""
+
+    kind: Literal["wydanie"] = Field(default="wydanie", validation_alias="rodzaj", serialization_alias="rodzaj")
+    change: str = Field(validation_alias="zmiana", serialization_alias="zmiana")
+
+
+RowSource = Annotated[ByDad | Outside | FromRelease, Field(discriminator="kind")]
+"""Skąd zmiana: zapis taty, zmiana z Wydania albo plik zmieniony poza Centrum."""
+
+
+class RowChange(_Model):
+    key: str = Field(validation_alias="klucz", serialization_alias="klucz")
+    before: str | None = Field(validation_alias="przed", serialization_alias="przed")
+    after: str | None = Field(validation_alias="po", serialization_alias="po")
+
+    @classmethod
+    def of(cls, change: KeyChange) -> RowChange:
+        return cls(key=change.key, before=change.before, after=change.after)
+
+    def change(self) -> KeyChange:
+        return KeyChange(self.key, self.before, self.after)
+
+
+class HistoryRow(_Model):
+    """Wiersz Historii Ustawień. ``removed``: plik usunięty poza Centrum, więc jego klucze wróciły do wartości domyślnych."""
+
+    version: Literal[1] = Field(default=_VERSION, validation_alias="v", serialization_alias="v")
+    id: str
+    at: datetime = Field(validation_alias="kiedy", serialization_alias="kiedy")
+    source: RowSource = Field(validation_alias="zrodlo", serialization_alias="zrodlo")
+    undoes: str | None = Field(validation_alias="cofa", serialization_alias="cofa")
+    file: str = Field(validation_alias="plik", serialization_alias="plik")
+    section: str | None = Field(validation_alias="sekcja", serialization_alias="sekcja")
+    changes: tuple[RowChange, ...] = Field(validation_alias="zmiany", serialization_alias="zmiany")
+    secret: bool = Field(validation_alias="sekret", serialization_alias="sekret")
+    undoable: bool = Field(validation_alias="cofalny", serialization_alias="cofalny")
+    result: RowResult = Field(validation_alias="wynik", serialization_alias="wynik")
+    reason: str | None = Field(validation_alias="powod", serialization_alias="powod")
+    removed: bool = Field(default=False, validation_alias="usunieto", serialization_alias="usunieto")
+
+    def key_changes(self) -> tuple[KeyChange, ...]:
+        return tuple(change.change() for change in self.changes)
+
+
+class HistoryRead(_Model):
+    """Wiersze Historii od najnowszego i liczba linii, których nie dało się przeczytać."""
+
+    rows: tuple[HistoryRow, ...]
+    skipped: int
+
+
+class History:
+    def __init__(self, config: Path, pause: Callable[[float], None]) -> None:
+        self._path = config / HISTORY_FILE
+        self._pause = pause
+
+    def append(self, row: HistoryRow) -> None:
+        """Dopisuje wiersz, ponawiając po przerwach ``RETRY_PAUSES_S``; ``OSError``, gdy mimo to się nie udało.
+
+        Linię urwaną zgaśnięciem Centrum wiersz zaczyna od nowej linii, więc nie skleja się z nią.
+        """
+
+        line = row.model_dump_json(by_alias=True).encode("utf-8") + b"\n"
+        for seconds in (*RETRY_PAUSES_S, None):
+            try:
+                self._write(line)
+                return
+            except OSError:
+                if seconds is None:
+                    raise
+                self._pause(seconds)
+
+    def _write(self, line: bytes) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._path.open("a+b") as history:
+            if history.tell() > 0:
+                history.seek(-1, 2)
+                if history.read(1) != b"\n":
+                    line = b"\n" + line
+            history.write(line)
+
+    def read(self) -> HistoryRead | Unreadable:
+        """Wiersze od najnowszego; brak pliku to pusta Historia, a ``Unreadable``: plik jest, ale system nie daje go
+        teraz czytać."""
+
+        data = settings_bytes(self._path)
+        if isinstance(data, OSError):
+            return Unreadable()
+        if data is None:
+            return HistoryRead(rows=(), skipped=0)
+        lines = data.splitlines()
+        rows: list[HistoryRow] = []
+        skipped = 0
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                rows.append(HistoryRow.model_validate_json(line))
+            except ValidationError:
+                skipped += 1
+        return HistoryRead(rows=tuple(reversed(rows)), skipped=skipped)

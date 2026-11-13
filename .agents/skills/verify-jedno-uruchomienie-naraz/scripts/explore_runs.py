@@ -76,7 +76,9 @@ from rozliczenia.decision import Decision
 from rozliczenia.message import Message
 from rozliczenia.process_run import Interlocutor
 from rozliczenia.progress import ProgressProjection
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.run_context import RunContext
+from rozliczenia.worker_list import WorkerList
 from eksplorator import Choices, Excuse, Interleaving, Shape, Thread, excuse_line, excused, gone_lines, schedules, verdict
 import rozjazd_modelu
 
@@ -497,12 +499,13 @@ def prepared_run(scheduler: Scheduler) -> process_kind.PreparedRun[Any, Any]:
             {
                 "register": Path("Rejestr.xlsx"),
                 "periods_directory": Path("okresy"),
-                "worker_config": Path("konfiguracja.xlsx"),
                 "internal_template": Path("wewnetrzny.xlsx"),
                 "collective_template": Path("zbiorczy.xlsx"),
             },
             period="08_14_09_2026",
             dry_run=False,
+            workers=WorkerList(()),
+            quantity_rules=DEFAULT_QUANTITY_RULES,
         ),
         process_kind.HostParts(),
         RunContext(),
@@ -606,7 +609,7 @@ def wire(scheduler: Scheduler) -> World:
         )
 
     class NoStops:
-        def ended(self, info: object, stop: object, *, shown: object) -> None:
+        def ended(self, info: object, stop: object, *, shown: object, settings: object) -> None:
             if stop is not None:
                 raise ModelGap("Zatrzymanie w Stops.ended; model kończy każde Uruchomienie sukcesem")
 

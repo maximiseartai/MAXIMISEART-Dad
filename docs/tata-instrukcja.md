@@ -15,7 +15,7 @@ Oba kroki robisz w Centrum rozliczeń, które otwierasz skrótem na pulpicie:
 | Otworzyć Plik zbiorczy, Rozliczenie wewnętrzne albo Folder okresu | Jedno kliknięcie w wierszu okresu |
 | Przygotować plik zbiorczy | Strona `Uruchomienia`, proces `Przygotowanie pliku zbiorczego` |
 | Utworzyć rozliczenia pracowników | Strona `Uruchomienia`, proces `Przebieg rozliczeń` |
-| Zaktualizować narzędzie | Przycisk `Zaktualizuj narzędzie`, gdy jest nowsza wersja: na stronie `Konfiguracja`, w Powiadomieniach i w Diagnozie |
+| Zaktualizować narzędzie | Przycisk `Zaktualizuj narzędzie`, gdy jest nowsza wersja: w oknie `Ustawienia` (sekcja `Narzędzie`), w Powiadomieniach i w Diagnozie |
 | Napisać do Maksa, ogólnie albo o jednym Uruchomieniu | Ikona „Napisz do Maksa” w prawym górnym rogu albo na karcie Uruchomienia |
 
 ## Pierwsza instalacja
@@ -34,7 +34,9 @@ Pierwszą instalację robi osoba utrzymująca narzędzie:
    trafia do Autostartu Windows, więc Centrum startuje samo po zalogowaniu, bez
    otwierania karty; kartę otwierasz skrótem z pulpitu. Drugie polecenie
    powtórz tylko po przeniesieniu folderu narzędzia albo po instalacji nowego
-   Pythona.
+   Pythona. Start razem z Windows wyłączasz i włączasz przełącznikiem
+   `Uruchamiaj Centrum razem z Windows` w oknie `Ustawienia`, w sekcji
+   `Narzędzie`.
 
 Osoba utrzymująca narzędzie umieszcza w folderze `config` narzędzia trzy
 wzorce: `Wzorzec rozliczenia wewnętrznego.xlsx`, `Wzorzec pliku zbiorczego.xlsx`
@@ -43,11 +45,10 @@ pracownika bez nazwy wykonawcy (u Ciebie `Rozliczenie {okres} -.xlsx`); z niego
 powstają pliki pracowników.
 Nie zmieniaj ich i nie podmieniaj plikami z poprzedniego tygodnia.
 
-W tym samym folderze `config` osoba utrzymująca narzędzie umieszcza też
-konfigurację wykonawców `worker_mapping.yaml`, czyli listę Twoich pracowników.
-Ten plik jest tylko na Twoim komputerze, nie w internecie. Plik
-`worker_mapping.example.yaml` obok to przykład z wymyślonymi nazwiskami;
-narzędzie z niego nie korzysta.
+W tym samym folderze `config` leży też Lista Wykonawców `wykonawcy.yaml`,
+czyli lista Twoich pracowników z ich adresami. Ten plik jest tylko na Twoim
+komputerze, nie w internecie. Plik `wykonawcy.example.yaml` obok to przykład z
+wymyślonymi nazwiskami; narzędzie z niego nie korzysta.
 
 ### Foldery tygodni
 
@@ -74,9 +75,12 @@ komputerze. Nie otwiera czarnego okna konsoli.
 1. Dwukrotnie kliknij skrót „Centrum rozliczeń” na pulpicie.
 2. Po chwili przeglądarka sama otworzy kartę Centrum rozliczeń
    (`http://127.0.0.1:47811/`).
-3. Za pierwszym razem na stronie `Okresy` wskaż folder okresów, czyli
+3. Za pierwszym razem kliknij `Ustawienia` (zębatka w lewym dolnym rogu, nad
+   `Zamknij Centrum rozliczeń`) i w sekcji `Foldery` wskaż folder okresów, czyli
    `Załączniki` w OneDrive (ten z folderami `Rozliczenia 2025`,
-   `Rozliczenia 2026`), i Rejestr zleceń. Centrum je zapamięta.
+   `Rozliczenia 2026`), i Rejestr zleceń. Centrum je zapamięta. Gdy wskażesz
+   folder tygodnia, `INEA` albo miesiąca, Centrum i tak zapamięta `Załączniki`
+   i dopisze przy nim „wszystkie lata”.
 
 Zamknięcie karty przeglądarki nie wyłącza Centrum. Żeby wrócić, kliknij skrót
 jeszcze raz: otworzy się karta działającego Centrum, a nie druga kopia.
@@ -129,6 +133,8 @@ otwarty w Excelu) albo jednym z tych:
 | „Jest nowsza wersja narzędzia” | Kliknij `Zaktualizuj narzędzie` przy wyjaśnieniu (niżej, „Aktualizacja narzędzia”). Gdy karta Centrum sama się odświeży, uruchom proces ponownie. Bez internetu Diagnoza tego nie sprawdza. |
 | „Plik okresu jest otwarty w Excelu” | Zapisz i zamknij wskazany plik w Excelu i uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik zaczynający się od `~$`. |
 | „Plik jest tylko w OneDrive w chmurze” | W Eksploratorze plików kliknij wskazany plik prawym przyciskiem myszy i wybierz „Zawsze zachowuj na tym urządzeniu”. Gdy ikona chmurki zmieni się w zielony znacznik, uruchom ponownie. |
+| „Lista Wykonawców ma złe ustawienie” | Otwórz `Ustawienia`, sekcję `Wykonawcy`, popraw pole, które wskazuje komunikat, i uruchom ponownie. |
+| „Nie można teraz odczytać Listy Wykonawców” | Zamknij program, który może trzymać plik (np. antywirus), i uruchom ponownie. Gdy komunikat wraca, przekaż go osobie utrzymującej narzędzie. |
 
 ### Zgłoszenie do Maksa
 
@@ -171,9 +177,9 @@ trzeba skontaktować się z Maksem.
 |---|---|
 | „Nie udało się zapisać Zgłoszenia na tym komputerze” | Kliknij `Spróbuj ponownie`. Jeśli komunikat wraca, rozwiń `Co zostanie wysłane`, skopiuj treść i wklej ją do maila do Maksa. Po odświeżeniu karty najpierw kliknij `Diagnoza`. |
 
-Na stronie `Konfiguracja` widać `Zgłoszenia: gotowe`, gdy Token do Zgłoszeń
-jest na komputerze, `Zgłoszenia: brak tokenu`, gdy go nie ma, albo
-`Zgłoszenia: token odrzucony`, gdy GitHub go nie przyjmuje. Wtedy powiedz
+W oknie `Ustawienia`, w sekcji `Zgłoszenia`, widać `Gotowe`, gdy Token do Zgłoszeń
+jest na komputerze, `Brak tokenu`, gdy go nie ma, albo
+`Token odrzucony`, gdy GitHub go nie przyjmuje. Wtedy powiedz
 Maksowi. Token wpisuje Maks; Ty niczego tam nie wpisujesz.
 
 ### Napisz do Maksa
@@ -227,13 +233,13 @@ zniknie, gdy się uda.
 
 ### Aktualizacja narzędzia
 
-Na stronie `Konfiguracja`, w karcie `Narzędzie`, widać wersję narzędzia, np.
-`Wersja 1a2b3c4 od 20.10.2026`, i czy jest najnowsza: `Aktualna`, `Jest nowsza
+W oknie `Ustawienia`, w sekcji `Narzędzie`, widać wersję narzędzia, np.
+`1a2b3c4 od 20.10.2026`, i czy jest najnowsza: `Aktualna`, `Jest nowsza
 wersja` albo `Nie sprawdzono` (bez internetu). Gdy Maks zapyta, którą wersję
-masz, przeczytaj mu ją. Przycisk `Zaktualizuj narzędzie` jest w Konfiguracji i w
+masz, przeczytaj mu ją. Przycisk `Zaktualizuj narzędzie` jest w tej sekcji i w
 Diagnozie tylko wtedy, gdy jest nowsza wersja.
 
-1. Kliknij `Zaktualizuj narzędzie`: na stronie `Konfiguracja` albo w
+1. Kliknij `Zaktualizuj narzędzie`: w oknie `Ustawienia` albo w
    Diagnozie. Oba przyciski robią to samo.
 2. Poczekaj. Pod przyciskiem widać `Pobieranie nowej wersji…`, a gdy nowa
    wersja potrzebuje nowych bibliotek, potem `Instalowanie bibliotek…` (to może
@@ -306,8 +312,8 @@ Narzędzie tylko czyta Rejestr zleceń i wzorce. Nigdy ich nie zmienia.
 
 ### Kroki
 
-Rejestr zleceń i folder okresów wskazujesz raz w `Ustawieniach` na stronie
-`Okresy`; potem Centrum je pamięta.
+Rejestr zleceń i folder okresów wskazujesz raz w oknie `Ustawienia`, w sekcji
+`Foldery`; potem Centrum je pamięta.
 
 1. Na stronie `Okresy` karta `Następny krok` pokazuje ostatni pełny okres.
    Kliknij `Podgląd bez zapisu`. Żeby przygotować inny tydzień, kliknij
@@ -391,7 +397,7 @@ z `.staging-` na końcu). To nie są Foldery okresu.
 | Co się stało (fragment) | Co zrobić |
 |---|---|
 | „Rejestr zleceń jest otwarty w Excelu” | Zapisz i zamknij Rejestr zleceń, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z folderu Rejestru pozostawiony plik `~$ZLECENIA INTERMAX OD 08_11_2021.xlsx`. |
-| „Nie znaleziono Rejestru zleceń” | W `Ustawieniach` na stronie `Okresy` wskaż właściwy plik Rejestru zleceń i uruchom ponownie. |
+| „Nie znaleziono Rejestru zleceń” | W oknie `Ustawienia`, w sekcji `Foldery`, wskaż właściwy plik Rejestru zleceń i uruchom ponownie. |
 | „Nie można teraz odczytać Rejestru zleceń” | Nie poprawiaj Rejestru. Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy Rejestr otwiera się w Excelu. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Nie można odczytać Rejestru zleceń” | Sprawdź, czy Rejestr otwiera się w Excelu i jest zapisany jako `.xlsx`. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „nie znaleziono arkusza ze zleceniami” | Sprawdź, czy w `Ustawieniach` wskazano plik Rejestru zleceń. Pierwszy wiersz arkusza ze zleceniami musi mieć wszystkie nagłówki wymienione w komunikacie. |
@@ -401,10 +407,10 @@ z `.staging-` na końcu). To nie są Foldery okresu.
 | „Wklejone zlecenia na dole Rejestru zleceń nie są jeszcze uporządkowane, a mogą należeć do tego okresu” | W Centrum rozliczeń kliknij `Uporządkuj INTERMAX`, potem uruchom Przygotowanie ponownie. Jeśli Uporządkowanie się zatrzyma, jego komunikat mówi, który wiersz poprawić. |
 | „bez poprawnej daty w kolumnie DATA GODZ. POCZ.” | We wskazanych wierszach wpisz datę zlecenia albo wyczyść cały wiersz, jeśli jest zbędny. Zapisz i zamknij Rejestr, uruchom ponownie. |
 | „tak ani nie w SKUTECZNE” | `Gdzie` pokazuje komórki Rejestru zleceń, np. `L42081`: osobno puste i osobno z inną wartością, z jej treścią w cudzysłowie. We wszystkich wskazanych komórkach wpisz `tak` albo `nie`. Braki w `SKUTECZNE` poprawiaj w Rejestrze zleceń przed uruchomieniem, a nie w Rozliczeniu wewnętrznym, bo Rozliczenie wewnętrzne powstaje z Rejestru. Zapisz i zamknij Rejestr, uruchom ponownie. |
-| „spoza konfiguracji wykonawców” | Literówkę w `WYKONAWCA` popraw we wskazanych wierszach Rejestru. Nowego wykonawcę trzeba dopisać do konfiguracji wykonawców (`config\worker_mapping.yaml`, tej samej co w Przebiegu rozliczeń); poproś o to osobę utrzymującą narzędzie. |
+| „spoza Listy Wykonawców” | Literówkę w `WYKONAWCA` popraw we wskazanych wierszach Rejestru. Nowego Wykonawcę dodaj w `Ustawieniach`, w Liście Wykonawców (tej samej co w Przebiegu rozliczeń). |
 | „nie ma żadnego zlecenia z tego okresu” | Sprawdź, czy wybrano właściwy okres i czy eksport zleceń jest zapisany w Rejestrze. Uruchom ponownie. |
 | „Plik tego okresu już istnieje” | Narzędzie nie nadpisuje plików okresu, żeby nie stracić ręcznych poprawek. Sprawdź okres. Jeśli plik ma powstać od nowa, przenieś albo usuń wskazany plik i uruchom ponownie. Jeśli w Folderze okresu jest samo Rozliczenie wewnętrzne, bez Pliku zbiorczego, a poprzednie uruchomienie nie doszło do wyniku (np. zabrakło prądu), to jest niedokończony zapis: usuń to Rozliczenie wewnętrzne i uruchom ponownie. |
-| „Nie znaleziono folderu okresów” | W `Ustawieniach` na stronie `Okresy` wskaż istniejący folder okresów, np. `Załączniki`, i uruchom ponownie. |
+| „Nie znaleziono folderu okresów” | W oknie `Ustawienia`, w sekcji `Foldery`, wskaż istniejący folder okresów, np. `Załączniki`, i uruchom ponownie. |
 | „Nie można teraz odczytać folderu” | Otwórz folder wskazany w `Gdzie` w Eksploratorze plików. Jeśli się nie otwiera albo OneDrive pokazuje błąd, uruchom OneDrive i poczekaj, aż skończy synchronizację, potem uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „w żadnym folderze miesiąca” | W `Rozliczenia {rok}` nie ma folderu tego tygodnia. W folderze `INEA` miesiąca, do którego należy tydzień, załóż pusty folder o nazwie okresu, np. `13_19_10_2026`, i uruchom ponownie. Pliki w nim zrobi narzędzie. |
 | „jest w więcej niż jednym folderze miesiąca” | `Gdzie` pokazuje oba miesiące z folderem tego tygodnia. Zostaw folder tylko w tym miesiącu, w którym ma być rozliczony: drugi usuń albo zmień mu nazwę, np. dopisz na końcu ` stary`. Uruchom ponownie. |
@@ -416,8 +422,6 @@ z `.staging-` na końcu). To nie są Foldery okresu.
 | „We wzorcu brakuje nagłówka” | Przekaż komunikat osobie utrzymującej narzędzie. |
 | „Wzorzec pliku zbiorczego ma nagłówek WYKONAWCA w kolumnie” | Przebieg rozliczeń czyta wykonawcę tylko z kolumny H. Otwórz `config\Wzorzec pliku zbiorczego.xlsx` i w wierszu 17 przenieś WYKONAWCA do kolumny H, a nagłówek z kolumny H do kolumny wskazanej w komunikacie. Zapisz i zamknij wzorzec, uruchom ponownie. Jeśli nie wiesz, jak to zrobić, przekaż komunikat osobie utrzymującej narzędzie. |
 | „We wzorcu są scalone komórki” | Przekaż komunikat osobie utrzymującej narzędzie. |
-| „Nie można teraz odczytać konfiguracji wykonawców” | Nie poprawiaj konfiguracji wykonawców. Przekaż komunikat osobie utrzymującej narzędzie. |
-| „Nie można odczytać konfiguracji wykonawców” | Przekaż komunikat osobie utrzymującej narzędzie. Ta sama konfiguracja jest potrzebna w Przebiegu rozliczeń. |
 | „Zapisano tylko jeden z dwóch plików okresu” | Usuń z Folderu okresu plik wskazany w `Gdzie` i uruchom ponownie. Jeśli Windows nie pozwala go usunąć, odczekaj chwilę, bo plik może sprawdzać antywirus albo OneDrive. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Nie udało się zapisać plików okresu” | Sprawdź, czy folder okresów jest dostępny i czy pliki okresu nie są otwarte w Excelu, potem uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Wystąpił nieoczekiwany błąd” | Kliknij `Uruchom ponownie`. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
@@ -567,12 +571,10 @@ okresu każdy folder, którego nazwa zaczyna się tak, jak podaje komunikat
 | „Nie można teraz odczytać Pliku zbiorczego” | Nie poprawiaj Pliku zbiorczego. Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy plik otwiera się w Excelu. Zamknij go i kliknij `Uruchom ponownie`. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Plik zbiorczy nie nadaje się do Przebiegu rozliczeń” | Dalsza część komunikatu mówi, co jest nie tak (np. plik nie otwiera się w Excelu albo nie ma nagłówka WYKONAWCA). Popraw Plik zbiorczy, zapisz go, zamknij i uruchom ponownie. |
 | „Folder rozliczeń pracowników tego okresu już istnieje” | Rozliczenia pracowników tego okresu już są; narzędzie ich nie nadpisze. Sprawdź, czy wybrano właściwy okres. Żeby utworzyć je od nowa, najpierw przenieś Folder rozliczeń pracowników poza Folder okresu. |
-| „Nie można teraz odczytać konfiguracji wykonawców” | Nie poprawiaj konfiguracji wykonawców. Przekaż komunikat osobie utrzymującej narzędzie. |
-| „Nie można odczytać konfiguracji wykonawców” | Przekaż komunikat osobie utrzymującej narzędzie. Ta sama konfiguracja jest potrzebna w Przygotowaniu pliku zbiorczego. |
 | „Nie można użyć Wzorca rozliczenia pracownika” | Jeśli Wzorzec jest otwarty w Excelu, zamknij go bez zapisywania i uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat o otwartym Wzorcu wraca, usuń z folderu `config` pozostawiony plik `~$Wzorzec rozliczenia pracownika.xlsx`. Jeśli komunikat prosi o zmianę nazwy `placeholder.xlsx`, zrób to jak w części „Gdy pojawi się problem” niżej. W innym wypadku przekaż komunikat osobie utrzymującej narzędzie. |
-| „spoza konfiguracji wykonawców” | Komunikat podaje każdy taki identyfikator WYKONAWCA. Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy. Zapisz, zamknij i uruchom ponownie. |
+| „spoza Listy Wykonawców” | Komunikat podaje każdy taki identyfikator WYKONAWCA. Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę w `Ustawieniach`, w Liście Wykonawców. Zapisz, zamknij i uruchom ponownie. |
 | „Nie wszystkie Wiersze danych Pliku zbiorczego mają WYKONAWCĘ” | Uruchom `Podgląd bez zapisu`: problemy pokażą numery wierszy. Wpisz w nich WYKONAWCĘ w kolumnie H, zapisz, zamknij i uruchom ponownie. |
-| „Nieznany identyfikator WYKONAWCA” | Problem z podglądu (wynik wymaga sprawdzenia), osobny dla każdego identyfikatora, który podaje. Popraw ten identyfikator w kolumnie H albo poproś o dopisanie Wykonawcy do konfiguracji wykonawców. |
+| „Nieznany identyfikator WYKONAWCA” | Problem z podglądu (wynik wymaga sprawdzenia), osobny dla każdego identyfikatora, który podaje. Popraw ten identyfikator w kolumnie H albo dodaj Wykonawcę w `Ustawieniach`, w Liście Wykonawców. |
 | „ma dane, ale nie ma wykonawcy w kolumnie H” | Problem z podglądu (wynik wymaga sprawdzenia). Wpisz WYKONAWCĘ we wskazanym wierszu albo wyczyść wiersz, jeśli jest zbędny. |
 | „Nie udało się przygotować skoroszytu pracownika” | Kliknij `Uruchom ponownie`. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Nie można utworzyć skoroszytów z Wzorca rozliczenia pracownika” | Kliknij `Uruchom ponownie`. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |

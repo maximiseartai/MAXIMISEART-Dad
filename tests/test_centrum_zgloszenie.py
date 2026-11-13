@@ -43,6 +43,7 @@ from tests.fixtures.centrum_intermax import ordering_centrum
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.centrum_processes import (
+    settings_changed_at,
     on_register_read,
     PreparingCentrum,
     SettlingCentrum,
@@ -105,7 +106,7 @@ def test_klucz_zapisany_z_bom_wysyla_zgloszenie(tmp_path: Path, content: bytes) 
     assert centrum.surroundings.report_box.keys == [REPORT_KEY]
 
 
-def test_zgloszenie_ma_komunikat_uruchomienie_narzedzie_diagnoze_i_dziennik(tmp_path: Path) -> None:
+def test_zgloszenie_ma_komunikat_uruchomienie_narzedzie_diagnoze_zmiany_ustawien_i_dziennik(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     centrum.fixture.collective_template_path.unlink()
     stopped = run_to_end(centrum, dry_run=True)
@@ -127,6 +128,7 @@ def test_zgloszenie_ma_komunikat_uruchomienie_narzedzie_diagnoze_i_dziennik(tmp_
     log_lines = centrum.log_path.read_text(encoding="utf-8").splitlines()
     diagnosed = next(index for index, line in enumerate(log_lines) if line.split(" ", 2)[1] == "diagnoza")
     results = {"passed": "przeszło", "failed": "nie przeszło", "not_checked": "nie sprawdzono"}
+    at = settings_changed_at(centrum)
     assert body.splitlines() == [
         "Zgłoszenie z Centrum rozliczeń.",
         "",
@@ -156,6 +158,11 @@ def test_zgloszenie_ma_komunikat_uruchomienie_narzedzie_diagnoze_i_dziennik(tmp_
         "| Sprawdzenie | Wynik | Szczegóły |",
         "| --- | --- | --- |",
         *(f"| {check['label']} | {results[check['state']]} | {check['detail']} |" for check in diagnosis["checks"]),
+        "",
+        "## Zmiany Ustawień (30 dni)",
+        "",
+        f"{at[0]} · foldery.folder_okresow: nie ustawiono → {centrum.fixture.periods_directory.name}",
+        f"{at[1]} · foldery.rejestr_zlecen: nie ustawiono → {centrum.fixture.register_path.name}",
         "",
         "## Dziennik Centrum rozliczeń",
         "",
@@ -205,7 +212,7 @@ def test_adres_wpisany_jako_wykonawca_wychodzi_w_tytule_zgloszenia_zamaskowany_z
     [report] = centrum.surroundings.report_box.sent
     assert {"title": report.title, "body": report.body} == preview
     assert "Kwarcowa" not in report.title + report.body
-    assert "spoza konfiguracji wykonawców: [adres]." in report.title
+    assert "spoza Listy Wykonawców: [adres]." in report.title
     assert report.body.endswith(
         "## Uwagi techniczne\n\n"
         "- Reguła danych: zamaskowano wartość kolumny ADRES w: tytuł Zgłoszenia.\n"

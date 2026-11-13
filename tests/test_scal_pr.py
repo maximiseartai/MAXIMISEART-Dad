@@ -1,24 +1,26 @@
 """``tools/scal_pr.py``: agent scala PR tylko przy zielonym CI na HEAD, werdykcie PASS dla HEAD, opisie z sekcjami wzoru
 skilla ``pr`` i scaleniu z bieżącą bazą, które przechodzi ruff i mypy.
 
-Testy biegną na prawdziwym Gicie z repozytorium bare jako ``origin`` (z ``refs/pull/N/head`` jak na GitHubie)
-i na prawdziwym ``tools/ci_lokalnie.py --tylko ruff,mypy`` na małym kodzie. Atrapa ``gh`` podaje stan PR i zapisuje
-wywołania ``gh pr merge`` zamiast scalać.
+Testy biegną na prawdziwym Gicie z repozytorium bare jako ``origin`` (z ``refs/pull/N/head`` jak na GitHubie).
+Prawdziwe ``tools/ci_lokalnie.py --tylko ruff,mypy`` na małym kodzie sprawdza scalenie tylko w testach z
+``real_checks``; reszta ma w commicie ``start`` atrapę, która drukuje ``CI LOKALNIE OK``. Atrapa ``gh`` podaje stan PR
+i zapisuje wywołania ``gh pr merge`` zamiast scalać.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
-import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
+from typing import cast
 
 import pytest
 
-from tests.fixtures import opisy_pr, werdykty_szablonu
+from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
 from tests.fixtures.git_repo import commit, git, with_imports
 
@@ -37,9 +39,11 @@ REVIEW = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "przeglad"
 BODY = opisy_pr.wzor("Cel.")
 SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
 PYPROJECT = '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nstrict = true\nfiles = ["kod"]\n'
+CHECKS_PASS = "print('CI LOKALNIE OK')\n"
 CLEANUP = 'import pathlib\n\npathlib.Path("posprzatane").write_text("tak")\nprint("SPRZĄTANIE OK | 0 usuniętych")\n'
-FAKE_GH = """\
-import json, os, pathlib, subprocess, sys, time
+# Atrapa ``gh`` składa ``bodyHTML`` treści w odpowiedziach GraphQL z HTML renderera (``tests/fixtures/body_html.py``).
+FAKE_GH = f"import sys\nsys.path.insert(0, {str(TOOLS.parent)!r})\nfrom tests.fixtures.body_html import body_html\n" + """\
+import json, os, pathlib, re, subprocess, sys, time
 
 here = pathlib.Path(sys.argv[0]).parent
 arguments = sys.argv[1:]
@@ -56,6 +60,15 @@ def git(*command):
 
 
 REPO = "maximiseartai/MAXIMISEART-Dad"
+
+
+def html_node(node, starts):
+    # Węzeł PR GraphQL z bodyHTML każdej treści; komentarze i recenzje (listy) po 100 od indeksu starts[kind].
+    found = {**node, "bodyHTML": body_html(node["body"], markdown)}
+    for kind, start in starts.items():
+        page = [{**verdict, "bodyHTML": body_html(verdict["body"], markdown)} for verdict in node[kind][start : start + 100]]
+        found[kind] = {"pageInfo": {"hasNextPage": start + 100 < len(node[kind]), "endCursor": str(start + 100)}, "nodes": page}
+    return found
 
 
 if arguments[:2] == ["pr", "view"]:
@@ -91,6 +104,7 @@ elif arguments[0] == "api" and arguments[1].startswith(f"repos/{REPO}/issues/"):
     number = arguments[1].rpartition("/")[2]
     if issues.get(number) == "zawiesza":
         time.sleep(60)
+        print(json.dumps({"state": "open"}))
     elif number in issues:
         print(issues[number])
     else:
@@ -115,6 +129,64 @@ elif arguments[:2] == ["run", "list"]:
     runs = here / "runs.json"
     merged = arguments[arguments.index("--commit") + 1] == git("rev-parse", "refs/heads/main")
     print(runs.read_text() if merged and runs.exists() else "[]")
+elif arguments[:2] == ["api", "graphql"] and "label=chwast" in arguments:
+    # otwarte issues chwastów: po założeniu issue (weeds_after.json nie null) to issues innej publikacji i każde
+    # założone tu
+    writes = [json.loads(line) for line in (here / "writes.jsonl").read_text().splitlines()] if (here / "writes.jsonl").exists() else []
+    created = [{"number": 9001, "title": sent["title"], "body": sent["body"]} for method, path, sent in writes if [method, path] == ["POST", "repos/{owner}/{repo}/issues"]]
+    after = json.loads((here / "weeds_after.json").read_text())
+    found = [*after, *created] if created and after is not None else json.loads((here / "weeds.json").read_text())
+    nodes = [{**issue, "bodyHTML": body_html(str(issue["body"]), markdown)} for issue in found]
+    print(json.dumps({"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes}}}}))
+elif arguments[:2] == ["api", "graphql"] and any(argument.startswith("number=") for argument in arguments):
+    # jeden PR z pulls.json (pola gh pr view) albo z graphql.json, komentarze i recenzje po 100 od kursora
+    variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value in {"-f", "-F"})
+    with (here / "pull_queries.jsonl").open("a") as out:
+        out.write(json.dumps({key: value for key, value in variables.items() if key != "query"}) + "\\n")
+    if variables["number"] in pulls:
+        node = {**pulls[variables["number"]], "mergedAt": None}
+    else:
+        node = next(node for node in json.loads((here / "graphql.json").read_text()) if str(node["number"]) == variables["number"])
+        node.update({kind: node[kind]["nodes"] for kind in ("comments", "reviews")})
+    print(json.dumps({"data": {"repository": {"pullRequest": html_node(node, {kind: 0 if variables[kind] == "null" else int(variables[kind]) for kind in ("comments", "reviews")})}}}))
+elif arguments[:2] == ["api", "graphql"]:
+    # GraphQL search PR-ów jak GitHub: kwalifikatory updated/created z >= i <=, sort:<pole>-<kierunek> i first; zmiana
+    # z graphql_changes.json ("po": tyle wcześniejszych zapytań) zmienia PR między stronami.
+    variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value in {"-f", "-F"})
+    log = here / "graphql.jsonl"
+    calls = len(log.read_text().splitlines()) if log.exists() else 0
+    with log.open("a") as out:
+        out.write(json.dumps({key: value for key, value in variables.items() if key != "query"}) + "\\n")
+    nodes = json.loads((here / "graphql.json").read_text())
+    for change in json.loads((here / "graphql_changes.json").read_text()):
+        if calls >= change["po"]:
+            next(node for node in nodes if node["number"] == change["number"]).update(change["pola"])
+    terms = variables["q"].split()
+    if f"repo:{REPO}" not in terms or "is:pr" not in terms:
+        sys.exit(f"atrapa gh nie zna wyszukiwania: {terms}")
+    for field, sign, value in (re.fullmatch(r"(updated|created):([<>]=)(.+)", term).groups() for term in terms if re.fullmatch(r"(updated|created):[<>]=.+", term)):
+        nodes = [node for node in nodes if (node[field + "At"] >= value if sign == ">=" else node[field + "At"] <= value)]
+    field, direction = next(term for term in terms if term.startswith("sort:")).removeprefix("sort:").split("-")
+    nodes.sort(key=lambda node: (node[field + "At"], node["number"]), reverse=direction == "desc")
+    found = [html_node({**node, **{kind: node[kind]["nodes"] for kind in ("comments", "reviews")}}, {"comments": 0, "reviews": 0}) for node in nodes[: int(variables["first"])]]
+    print(json.dumps({"data": {"search": {"nodes": found}}}))
+elif arguments[0] == "api" and any(argument.startswith("repos/{owner}/{repo}/") for argument in arguments):
+    method = arguments[arguments.index("--method") + 1] if "--method" in arguments else "GET"
+    path = next(argument for argument in arguments if argument.startswith("repos/{owner}/{repo}/"))
+    if method != "GET":
+        with (here / "writes.jsonl").open("a") as log:
+            log.write(json.dumps([method, path, json.loads(sys.stdin.read())]) + "\\n")
+    if method == "GET" and path.startswith("repos/{owner}/{repo}/labels?"):
+        print(json.dumps([{"name": name} for name in json.loads((here / "labels.json").read_text())]))
+    elif method == "POST" and path == "repos/{owner}/{repo}/issues":
+        print(json.dumps({"number": 9001}))
+    elif method in {"PATCH", "POST"}:
+        print("{}")
+    else:
+        sys.exit(f"atrapa gh nie zna: {arguments}")
+elif arguments[0] == "api" and arguments[1].startswith(f"repos/{REPO}/collaborators/"):
+    login = arguments[1].split("/")[-2]
+    print(json.dumps({"permission": json.loads((here / "permissions.json").read_text()).get(login, "none")}))
 elif arguments[:2] == ["issue", "close"]:
     issues[arguments[2]] = json.dumps({"state": "closed"})
     (here / "issues.json").write_text(json.dumps(issues))
@@ -180,7 +252,14 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
 
 
 class MergeGitHub(FakeGitHub):
-    def __init__(self, tmp_path: Path, files: dict[str, str]) -> None:
+    def __init__(self, tmp_path: Path, files: dict[str, str], *, started: str = "2026-11-01T00:00:00Z", real_checks: bool = False) -> None:
+        """Commit ``start`` ma datę ``started``, a z kopią narzędzia dodaje moduł bramki korzenia, więc to chwila jej
+        wdrożenia na ``main`` (``bramka_korzenia.MARKER``); domyślnie po werdyktach atrapy (24.10.2026), więc ich wątki
+        kończą bez bramki, a ``GATE_BEFORE_VERDICTS`` ją w nich włącza.
+
+        Bez ``real_checks`` ``tools/ci_lokalnie.py`` w ``start`` to atrapa ``CHECKS_PASS``: stoi po obu stronach
+        scalenia, więc nie zmienia plików zmiany PR ani ``main`` i wyboru testu scalenia."""
+
         super().__init__(
             tmp_path,
             {
@@ -190,17 +269,29 @@ class MergeGitHub(FakeGitHub):
                 ".agents/skills/przeglad/SKILL.md": (REVIEW / "SKILL.md").read_text(encoding="utf-8"),
                 ".agents/skills/przeglad/korzenie.toml": (REVIEW / "korzenie.toml").read_text(encoding="utf-8"),
                 "tools/sprzatanie.py": CLEANUP,
+                **({} if real_checks else {"tools/ci_lokalnie.py": CHECKS_PASS}),
                 **files,
             },
             tool="tools/scal_pr.py",
             gh=FAKE_GH,
+            started=started,
         )
         _empty_state(self.bin)
         self.pulls: dict[str, dict[str, object]] = {}
         self.issues: dict[str, str] = {}
         self.repo_view = _repo_view("main")  # zaczęte od „gh: ” to błąd ``gh repo view``
-        self.markdown = {**opisy_pr.rendered(), **werdykty_szablonu.rendered()}  # HTML opisu i treści werdyktu, a jak w ``answer_issue`` błąd albo ``zawiesza``
+        self.markdown = {**opisy_pr.rendered(), **werdykty_szablonu.rendered(), **korzenie_pr.rendered(), **chwasty.rendered()}  # HTML opisu i treści werdyktu, a jak w ``answer_issue`` błąd albo ``zawiesza``
+        self.graphql: list[dict[str, object]] = []  # PR-y repozytorium dla wyszukiwania rejestru korzeni
+        self.graphql_changes: list[dict[str, object]] = []  # zmiany PR-ów po danej liczbie zapytań GraphQL
+        self.weeds: list[dict[str, object]] = []  # otwarte issues z etykietą chwast
+        self.weeds_after: list[dict[str, object]] | None = None  # otwarte issues innej publikacji po założeniu issue
+        self.labels = ["ready-for-agent"]
+        self.permissions: dict[str, str] = {}  # prawo konta do repozytorium z ``gh api …/collaborators/<login>/permission``
         self.written = 0
+
+    def environment(self) -> dict[str, str]:
+        # Test scalenia biegnie na jednym-dwóch plikach testów, a liczbę workerów brałby z pytesta, który go uruchomił.
+        return {**super().environment(), "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
 
     def open_pull(self, number: int, files: dict[str, str], *, parent: str = "") -> str:
         """HEAD nowego PR z zielonym CI i bez werdyktu: commit ``files`` na ``parent`` (domyślnie commit ``start``)."""
@@ -217,6 +308,11 @@ class MergeGitHub(FakeGitHub):
 
     def comment(self, number: int, body: str, association: str = "OWNER") -> None:
         self._write(number, "comments", _verdict("comment", body, association, when=self._now()))
+
+    def edited_comment(self, number: int, body: str) -> None:
+        """Komentarz konta z prawem zapisu, którego treść zmieniono po utworzeniu (``includesCreatedEdit``)."""
+
+        self._write(number, "comments", {**_verdict("comment", body, when=self._now()), "includesCreatedEdit": True})
 
     def review(self, number: int, body: str, association: str = "OWNER", *, state: str = "COMMENTED") -> None:
         self._write(number, "reviews", _verdict(state, body, association, when=self._now()))
@@ -235,7 +331,8 @@ class MergeGitHub(FakeGitHub):
         self.answer_issue(*numbers, answer=json.dumps({"state": state}))
 
     def answer_issue(self, *numbers: int, answer: str) -> None:
-        """``gh api`` issue ``numbers`` drukuje ``answer``, a ``zawiesza`` każe mu czekać minutę."""
+        """``gh api`` issue ``numbers`` drukuje ``answer``, a ``zawiesza`` każe mu czekać minutę i podać issue otwarte,
+        więc narzędzie bez limitu ``gh`` by je zamknęło."""
 
         self.issues.update(dict.fromkeys(map(str, numbers), answer))
         self._save()
@@ -268,6 +365,11 @@ class MergeGitHub(FakeGitHub):
     def renders(self) -> list[list[str]]:
         return self._log("renders.jsonl")
 
+    def writes(self) -> list[list[str]]:
+        """Zapisy ``gh api --method`` w repozytorium checkoutu: metoda, ścieżka i treść."""
+
+        return self._log("writes.jsonl")
+
     def _log(self, name: str) -> list[list[str]]:
         log = self.bin / name
         return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
@@ -277,19 +379,31 @@ class MergeGitHub(FakeGitHub):
         (self.bin / "issues.json").write_text(json.dumps(self.issues), encoding="utf-8")
         (self.bin / "repo_view").write_text(self.repo_view, encoding="utf-8")
         (self.bin / "markdown.json").write_text(json.dumps(self.markdown), encoding="utf-8")
-
-
-def _fake_gh(tmp_path: Path) -> Path:
-    """Katalog atrapy ``gh`` bez PR-ów i issues, która renderuje opisy z ``tests/fixtures/opisy_pr.json``."""
-
-    directory = tmp_path / "bin"
-    fake_cli(directory, "gh", FAKE_GH)
-    _empty_state(directory)
-    return directory
+        for name, value in (
+            ("graphql.json", self.graphql),
+            ("graphql_changes.json", self.graphql_changes),
+            ("weeds.json", self.weeds),
+            ("weeds_after.json", self.weeds_after),
+            ("labels.json", self.labels),
+            ("permissions.json", self.permissions),
+        ):
+            (self.bin / name).write_text(json.dumps(value), encoding="utf-8")
 
 
 def _empty_state(directory: Path) -> None:
-    for name, empty in (("pulls.json", "{}"), ("issues.json", "{}"), ("repo_view", ""), ("markdown.json", json.dumps({**opisy_pr.rendered(), **werdykty_szablonu.rendered()}))):
+    rendered = {**opisy_pr.rendered(), **werdykty_szablonu.rendered(), **korzenie_pr.rendered(), **chwasty.rendered()}
+    for name, empty in (
+        ("pulls.json", "{}"),
+        ("issues.json", "{}"),
+        ("repo_view", ""),
+        ("markdown.json", json.dumps(rendered)),
+        ("graphql.json", "[]"),
+        ("graphql_changes.json", "[]"),
+        ("weeds.json", "[]"),
+        ("weeds_after.json", "null"),
+        ("labels.json", "[]"),
+        ("permissions.json", "{}"),
+    ):
         (directory / name).write_text(empty, encoding="utf-8")
 
 
@@ -304,7 +418,7 @@ def _short_github_timeout(github: MergeGitHub) -> str:
 
 
 def _repo_view(default_branch: str) -> str:
-    return json.dumps({"defaultBranchRef": {"name": default_branch}})
+    return json.dumps({"defaultBranchRef": {"name": default_branch}, "nameWithOwner": opisy_pr.REPO})
 
 
 def _last_line(answered: subprocess.CompletedProcess[str]) -> str:
@@ -324,18 +438,15 @@ def _deploy_template(github: MergeGitHub, *, authored: str = "2026-10-01T00:00:0
 
 
 def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, real_checks=True)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     main = github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
     github.comment(1, f"WERDYKT: FAIL {head}\n- krytyczne: brak testu")
     github.comment(1, f"Poprawione w {head[:7]}.")
     github.comment(1, f"WERDYKT: PASS {head}\nZnaleziska: 1 (Ważne 0, Drobne 1)\n- Drobne: nazwa")
 
-    checked = github.run("1", "--bez-merge")
     merged = github.run("1")
 
-    assert checked.returncode == 0, checked.stdout + checked.stderr
-    assert _last_line(checked).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a z main {main[:7]}")
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
     assert merged.returncode == 0, merged.stdout + merged.stderr
     assert _last_line(merged) == (
@@ -739,7 +850,7 @@ def test_naglowek_dopisany_do_wzoru_skilla_pr_od_razu_obowiazuje(tmp_path: Path)
 def test_pr_ktory_nie_scala_sie_czysto_z_biezacym_main_nie_jest_scalany(
     tmp_path: Path, main_files: dict[str, str], pull_files: dict[str, str], reason: str
 ) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "kod/nazwa.py": 'NAZWA = "pierwsza"\n'})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "kod/nazwa.py": 'NAZWA = "pierwsza"\n'}, real_checks=True)
     head = github.open_pull(1, pull_files)
     github.comment(1, PASS.format(head=head))
     main = github.push_main(main_files)
@@ -832,7 +943,7 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
         ({SUM_TEST_FILE: SUM_TEST + DESCRIBED_TEST}, ABS_SUM, None, f"pada: {SUM_TEST_FILE}::test_suma_opisana[dwa i dwa]"),
         # Błąd kolekcji nowego pliku testów nie ma id testu, więc odmowa nazywa plik.
         ({NEGATIVE_TEST_FILE: "from kod import suma\n\nassert suma(-1, -1) == -2\n"}, ABS_SUM, None, f"pada: {NEGATIVE_TEST_FILE}"),
-        ({SUM_TEST_FILE: SUM_TEST + SLOW_TEST}, ABS_SUM, ("MERGE_TEST_TIMEOUT_S = 300", "MERGE_TEST_TIMEOUT_S = 5"), f"bez wyniku po 5 s: {SUM_TEST_FILE}"),
+        ({SUM_TEST_FILE: SUM_TEST + SLOW_TEST}, ABS_SUM, ("MERGE_TEST_TIMEOUT_S = 300", "MERGE_TEST_TIMEOUT_S = 1"), f"bez wyniku po 1 s: {SUM_TEST_FILE}"),
         (
             {SUM_TEST_FILE: SUM_TEST + NEGATIVE_TEST},
             ABS_SUM,
@@ -1018,8 +1129,11 @@ def test_bez_domyslnej_galezi_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwar
     assert github.closed() == []
 
 
-@pytest.mark.parametrize("answer", ["gh: HTTP 502", "\n", "zawiesza"], ids=["blad-http", "pusta-odpowiedz", "gh-po-czasie"])
-def test_bez_html_opisu_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_ostrzezeniem(tmp_path: Path, answer: str) -> None:
+# ``gh`` po czasie czeka limit w każdym przebiegu, a „nie sprawdzono” z ``--bez-merge`` to ten sam ``except`` co błąd HTTP.
+@pytest.mark.parametrize(
+    ("answer", "dry_run"), [("gh: HTTP 502", True), ("\n", True), ("zawiesza", False)], ids=["blad-http", "pusta-odpowiedz", "gh-po-czasie"]
+)
+def test_bez_html_opisu_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_ostrzezeniem(tmp_path: Path, answer: str, dry_run: bool) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"}, parent=_short_github_timeout(github))
     github.open_issues(3)
@@ -1027,11 +1141,12 @@ def test_bez_html_opisu_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_o
     github.update(1, body=opisy_pr.SCALENIE["jedno"])
     github.comment(1, PASS.format(head=head))
 
-    checked = github.run("1", "--bez-merge")
+    if dry_run:
+        checked = github.run("1", "--bez-merge")
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+        assert _last_line(checked).endswith("(--bez-merge) | UWAGA: GitHub nie wyrenderował opisu PR, nie sprawdzono „Naprawia”")
     merged = github.run("1")
 
-    assert checked.returncode == 0, checked.stdout + checked.stderr
-    assert _last_line(checked).endswith("(--bez-merge) | UWAGA: GitHub nie wyrenderował opisu PR, nie sprawdzono „Naprawia”")
     assert merged.returncode == 0, merged.stdout + merged.stderr
     warning = "UWAGA: GitHub nie wyrenderował opisu PR, nie zamknięto issues z „Naprawia”, zamknij je ręcznie"
     assert f" | {warning} | " in _last_line(merged)
@@ -1047,11 +1162,13 @@ def test_porazka_zamykania_issue_nie_odwoluje_scalenia(tmp_path: Path) -> None:
     github.answer_issue(10, answer="")
     github.answer_issue(11, answer="{}")
     github.answer_issue(12, answer="[]")
-    github.answer_issue(13, answer="zawiesza")
+    github.answer_issue(13, answer="")
     github.update(1, body=opisy_pr.SCALENIE["porazki"])
     github.comment(1, PASS.format(head=head))
 
     checked = github.run("1", "--bez-merge")
+    # Tylko w przebiegu z merge'em: ``gh`` po czasie czeka limit, a w ``--bez-merge`` daje ten sam ``except`` co #10.
+    github.answer_issue(13, answer="zawiesza")
     answered = github.run("1")
 
     failed = "#14, #10, #11, #12, #13"
@@ -1079,26 +1196,41 @@ def test_bez_commitu_merge_od_githuba_issues_zostaja_otwarte_z_ostrzezeniem(tmp_
     assert github.closed() == []
 
 
+def _render_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``gh`` klienta GitHuba renderuje w procesie testu jak ``gh api markdown`` atrapy ``FAKE_GH``: HTML opisu
+    z ``opisy_pr.json`` tylko dla prośby z ``mode=gfm`` i ``context`` tego repozytorium bez względu na litery.
+    Drogę przez program ``gh`` sprawdzają testy przebiegu narzędzia (``test_po_merge_zamyka…``)."""
+
+    rendered = opisy_pr.rendered()
+
+    def gh(*arguments: str, wejscie: str | None = None, limit_s: float | None = None, cwd: Path | None = None) -> str:
+        assert arguments == ("api", "markdown", "--input", "-") and wejscie is not None, arguments
+        request = json.loads(wejscie)
+        assert request.keys() == {"text", "mode", "context"} and request["mode"] == "gfm", request
+        assert request["context"].casefold() == opisy_pr.REPO.casefold(), request
+        return rendered[request["text"]]
+
+    monkeypatch.setattr(klient_github, "gh", gh)
+
+
 @pytest.mark.parametrize(("body", "fixes"), [case[1:] for case in opisy_pr.PRZYPADKI], ids=[case[0] for case in opisy_pr.PRZYPADKI])
 def test_naprawia_wskazuje_issues_tego_repo_tylko_na_poczatku_linii_tekstu_ktory_github_pokazuje(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, fixes: tuple[int, ...]
+    monkeypatch: pytest.MonkeyPatch, body: str, fixes: tuple[int, ...]
 ) -> None:
-    monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
+    _render_in_process(monkeypatch)
 
     assert naprawia.fixed_issues(body, opisy_pr.REPO) == fixes
 
 
-def test_naprawia_wskazuje_issues_tego_repo_bez_wzgledu_na_wielkosc_liter_jego_nazwy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
+def test_naprawia_wskazuje_issues_tego_repo_bez_wzgledu_na_wielkosc_liter_jego_nazwy(monkeypatch: pytest.MonkeyPatch) -> None:
+    _render_in_process(monkeypatch)
 
     assert naprawia.fixed_issues(opisy_pr.SCALENIE["dwa"], opisy_pr.REPO.swapcase()) == (3, 4)
 
 
 @pytest.mark.parametrize(("number", "fixes"), opisy_pr.PRAWDZIWE.items(), ids=[f"pr-{number}" for number in opisy_pr.PRAWDZIWE])
-def test_opisy_scalonych_pr_wskazuja_issues_ktore_github_zostawil_otwarte(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, number: int, fixes: tuple[int, ...]
-) -> None:
-    monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
+def test_opisy_scalonych_pr_wskazuja_issues_ktore_github_zostawil_otwarte(monkeypatch: pytest.MonkeyPatch, number: int, fixes: tuple[int, ...]) -> None:
+    _render_in_process(monkeypatch)
 
     assert naprawia.fixed_issues(opisy_pr.real_body(number), opisy_pr.REPO) == fixes
 
@@ -1512,8 +1644,7 @@ def _git_hanging_on(github: MergeGitHub, subcommand: str) -> None:
 )
 def test_git_ktory_wisi_konczy_sie_linia_fail_po_limicie_githuba(tmp_path: Path, mode: list[str], subcommand: str, label: str) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    # Scalenie z bazą sprawdza tu atrapa ruff i mypy, bo sprawdzenie nie jest celem testu.
-    head = github.open_pull(1, {"tools/ci_lokalnie.py": "print('CI LOKALNIE OK')\n"}, parent=_short_github_timeout(github))
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"}, parent=_short_github_timeout(github))
     github.comment(1, PASS.format(head=head))
     _git_hanging_on(github, subcommand)
 
@@ -1685,7 +1816,7 @@ FAIL_OLD = f"WERDYKT: FAIL {OLD}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n- Ważne: 
 def test_szablon_obowiazuje_od_wdrozenia_a_watek_z_werdyktem_sprzed_niego_konczy_po_staremu(
     verdicts: list[tuple[str, ...]], deployed: datetime | None, applies: bool
 ) -> None:
-    assert werdykt_pr.template_applies(_written(*verdicts), deployed) is applies
+    assert werdykt_pr.rule_applies(_written(*verdicts), deployed) is applies
 
 
 @pytest.mark.parametrize(
@@ -1705,7 +1836,7 @@ def test_komentarz_sprzed_wdrozenia_zmieniony_na_werdykt_nie_postarza_watku_a_re
     ]
     pull = _pull(comments=comments)
 
-    assert werdykt_pr.template_applies(pull, AFTER_FIRST) is True
+    assert werdykt_pr.rule_applies(pull, AFTER_FIRST) is True
     assert (werdykt_pr.consent_problem(pull, AFTER_FIRST) or "").startswith(f"werdykt: PASS dla {HEAD[:7]} nie przechodzi reguł --werdykt (")
 
 
@@ -1722,7 +1853,7 @@ PROSE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werd
         ("2026-10-01T00:00:00Z", FAIL_OLD, PASS, True),
         ("2026-10-01T00:00:00Z", FAIL_OLD, PROSE_PASS, True),
         ("2026-10-24T03:00:01Z", "Komentarz bez werdyktu.", PASS, True),
-        ("2026-10-01T00:00:00Z", FAIL_OLD, SPRAWDZONE_PASS, True),
+        ("2026-10-01T00:00:00Z", None, SPRAWDZONE_PASS, True),
     ],
     ids=[
         "niewdrozony",
@@ -1773,3 +1904,671 @@ def test_pass_w_watku_z_szablonem_bez_html_tresci_od_githuba_nie_jest_zgoda_a_od
 
     assert checked.returncode != 0, checked.stdout + checked.stderr
     assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (GitHub nie wyrenderował treści werdyktu (" in _last_line(checked), checked.stdout
+
+
+# Bramka korzenia (ADR 0031, decyzje Q8, Q10, Q14, Q17, Q18, Q20, Q25, Q26): po FAIL z Ważnym albo przy naprawie
+# czerwonego main opis PR ma sekcję „## Korzeń” z blokiem na każde Ważne według wzoru „Root section” skilla pr.
+FAIL_W1 = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"]
+FAIL_NEW_CODE = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["korzen-0"]
+PASS_RESOLVES = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-w1-r1"]
+FAIL_WITHOUT_ROOT = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + korzenie_pr.WERDYKTY["wazne-bez-korzenia"]
+PASS_RESOLVES_NEW = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-nowym-kodem"]
+# FAIL opublikowany poza --werdykt: kod spoza listy bez NOWY, bez linii Znaleziska, z Ważne 0 i z dwoma Ważnymi prozą.
+FAIL_UNLISTED = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["korzen-3"]
+FAIL_PROSE = "WERDYKT: FAIL {commit}\nTest nie łapie regresji w kod/inne.py:1.\n"
+FAIL_MAJORS_0 = "WERDYKT: FAIL {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n"
+FAIL_TWO_MAJORS = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 2, Drobne 0)\n" + korzenie_pr.WERDYKTY["wazne-bez-korzenia"]
+SECTION_FOR_FAIL = "korzeń: brak sekcji „## Korzeń”, a PR ma werdykt FAIL z Ważnym; brak bloku „### W1 r1: R-KOD”"
+UNLISTED = "nie stoi na liście .agents/skills/przeglad/korzenie.toml na HEAD: użyj kodu z listy albo dopisz go z opisem i przykładem PR"
+NEW_POINT = "korzeń: W1 r1: Szczebel (e) wymaga nowego punktu z linkiem do tego PR (#1) dopisanego w tym PR do sekcji „Co jest porażką”"
+RED = {korzenie_pr.RED_MAIN: "czerwony-main"}
+FLAKY = {korzenie_pr.FLAKY: "flaky-test"}
+UPROOTED_IN = f"korzeń: W1 r1: Wyrwany w #{korzenie_pr.ROOT_PR}"
+GATE_BEFORE_VERDICTS = "2026-09-01T00:00:00Z"
+
+
+def _root_gate(
+    tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], *, gate: str = GATE_BEFORE_VERDICTS, edited: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """``--bez-merge`` PR 1 z werdyktami ``verdicts`` (na starszym commicie, więc PR nie ma zgody, a pierwszy powstaje
+    24.10.2026 o 3:00:01, w komentarzu edytowanym, gdy ``edited``) i opisem ``body`` z ``korzenie_pr.OPISY``, z bramką
+    korzenia wdrożoną na ``main`` w chwili ``gate``, a szablonem 1.10.2026; ``setup`` podaje stan i opis PR korzenia
+    (``root``: stan, opis i opcjonalnie gałąź, do której go scalono, domyślnie ``main``), domyślną gałąź repozytorium
+    albo błąd ``gh repo view`` (``repo_view``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``,
+    domyślnie ``baza``) i na HEAD (``skill``), kod dopisany do listy korzeni na HEAD (``listed``), chwilę założenia
+    issues z ``labels`` (``issue_created``), PR-y z zapytania rejestru korzeni (``registry``) i komentarz ze zgodą
+    Maksa z ``chwasty.ZGODY`` od konta z danym prawem do repozytorium (``consent``: klucz i prawo) po werdyktach."""
+
+    skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill}, started=gate)
+    _deploy_template(github)
+    files = {"kod/inne.py": "INNE: int = 1\n"}
+    if "skill" in setup:
+        files[szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix()] = korzenie_pr.SKILL[str(setup["skill"])]
+    if "listed" in setup:
+        files[szablon_werdyktu.LIST] = (REVIEW / "korzenie.toml").read_text(encoding="utf-8") + str(setup["listed"])
+    github.open_pull(1, files)
+    github.update(1, body=korzenie_pr.OPISY[body])
+    if "root" in setup:
+        state, root_body, *merged_into = cast(tuple[str, ...], setup["root"])
+        root = _pr_view(korzenie_pr.ROOT_PR, OLD, state=state, body=korzenie_pr.PR_KORZENIA[root_body], baseRefName=next(iter(merged_into), "main"))
+        github.pulls[str(korzenie_pr.ROOT_PR)] = root
+    if "repo_view" in setup:
+        github.repo_view = str(setup["repo_view"])
+    for number, label in cast(dict[int, str], setup.get("labels", {})).items():
+        created = {"created_at": setup["issue_created"]} if "issue_created" in setup else {}
+        github.answer_issue(number, answer=json.dumps({"state": "closed", "labels": [{"name": label}], **created}))
+    github.graphql = cast(list[dict[str, object]], setup.get("registry", []))
+    github._save()
+    for index, verdict in enumerate(verdicts):
+        if edited and index == 0:
+            github.edited_comment(1, verdict.format(commit=OLD))
+        else:
+            github.comment(1, verdict.format(commit=OLD))
+    if "consent" in setup:
+        consent, permission = cast(tuple[str, str], setup["consent"])
+        github.permissions = {"recenzent": permission}
+        github.comment(1, chwasty.ZGODY[consent])
+    return github.run("1", "--bez-merge")
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "body", "setup", "fragments"),
+    [
+        ([FAIL_W1], "bez-sekcji", {}, ["korzeń: brak sekcji „## Korzeń”, a PR ma werdykt FAIL z Ważnym; brak bloku „### W1 r1: R-BEZ-TESTU”"]),
+        ([FAIL_W1], "szczebel-c", {}, []),
+        ([FAIL_W1], "szczebel-a", {}, []),
+        ([FAIL_W1], "szczebel-b-wyzej-w-linii-pola", {}, []),
+        (
+            [FAIL_W1],
+            "blok-innego-waznego",
+            {},
+            ["korzeń: brak bloku „### W1 r1: R-BEZ-TESTU”", "korzeń: blok „### W2 r1: R-BEZ-TESTU”, a PR nie ma takiego Ważnego ani czerwonego main"],
+        ),
+        ([FAIL_W1], "blok-dwa-razy", {}, ["korzeń: blok „### W1 r1: R-BEZ-TESTU” powtórzony"]),
+        ([FAIL_W1], "inny-kod", {}, ["korzeń: W1 r1: kod R-DRUGA-DROGA, a ostatni werdykt, który go dotyczy, podaje R-BEZ-TESTU"]),
+        ([FAIL_W1, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
+        ([FAIL_W1, PASS_RESOLVES], "szczebel-c", {}, ["korzeń: W1 r1: kod R-BEZ-TESTU, a ostatni werdykt, który go dotyczy, podaje R-DRUGA-DROGA"]),
+        ([FAIL_W1], "szczebel-c-bez-wyzej-nie", {}, ["korzeń: W1 r1: po Szczeblu (c) linia „Wyżej nie, bo: (a) - zdanie” z jedną linią na każdy wyższy szczebel (a), (b)"]),
+        ([FAIL_W1], "szczebel-c-bez-zdania-dla-b", {}, ["korzeń: W1 r1: „Wyżej nie, bo:” ma jedną linię „(x) - zdanie” na każdy wyższy szczebel (a), (b) po kolei"]),
+        ([FAIL_W1], "szczebel-a-z-wyzej-nie", {}, ["korzeń: W1 r1: przy (a) nie ma wyższego szczebla"]),
+        ([FAIL_W1], "bez-dowodu", {}, ["korzeń: W1 r1: brak pola „Dowód: <polecenie i wynik>” na końcu bloku"]),
+        ([FAIL_W1], "bez-szczebla", {}, ["korzeń: W1 r1: pierwsza linia bloku to „Szczebel: (a) - mechanizm” ze szczeblem od (a) do (e) albo „Wyrwany w #M”"]),
+        ([FAIL_W1], "szczebel-e", {}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-linkiem-do-pr"}, []),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-przykladem"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-bez-przykladu"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-przykladem-poza-sekcja"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkt-z-przykladem-zmieniony-z-linkiem-do-pr"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkty-bazy-zamienione-z-linkiem-do-pr"}, [NEW_POINT]),
+        ([FAIL_W1], "cytat-pola-w-bloku-kodu", {}, []),
+        ([FAIL_W1], "cytat-pola-bez-bloku-kodu", {}, ["korzeń: blok „### W1 r1: R-DRUGA-DROGA” powtórzony"]),
+        ([FAIL_W1], "wyrwany", {"root": ("OPEN", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest otwarty, a scala się go do domyślnej gałęzi przed tym PR"]),
+        ([FAIL_W1], "wyrwany", {"root": ("CLOSED", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest zamknięty bez merge'a"]),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "inny-kod")}, [f"{UPROOTED_IN}: opis PR korzenia nie ma linii „Korzeń z #1: R-BEZ-TESTU” z linkiem do tego PR"]),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "inny-pr")}, [f"{UPROOTED_IN}: opis PR korzenia nie ma linii „Korzeń z #1: R-BEZ-TESTU”"]),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod")}, []),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod", "feat/stos")}, [f"{UPROOTED_IN}: PR korzenia scalony do feat/stos, a nie do domyślnej gałęzi main"]),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod"), "repo_view": _repo_view("trunk")}, [f"{UPROOTED_IN}: PR korzenia scalony do main, a nie do domyślnej gałęzi trunk"]),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod"), "repo_view": "gh: HTTP 502"}, [f"{UPROOTED_IN}: GitHub nie podał domyślnej gałęzi repozytorium"]),
+        ([FAIL_W1], "wyrwany", {}, [f"{UPROOTED_IN}: GitHub nie podał stanu PR"]),
+        ([FAIL_W1], "wyrwany-z-dowodem", {"root": ("MERGED", "ten-kod")}, [f"korzeń: W1 r1: po „Wyrwany w #{korzenie_pr.ROOT_PR}” nic więcej, a jest linia „{korzenie_pr.EVIDENCE}”"]),
+        ([FAIL_W1], "wyrwany-bez-linku", {}, ["korzeń: W1 r1: Wyrwany w #9999999 bez linku GitHuba do PR tego repo"]),
+        ([FAIL_W1], "wyrwany-w-issue", {}, [f"korzeń: W1 r1: Wyrwany w #{korzenie_pr.RED_MAIN} bez linku GitHuba do PR tego repo"]),
+        ([FAIL_NEW_CODE], "nowy-kod", {}, [f"korzeń: kod R-NOWY-KOD (NOWY z werdyktu, blok „### W1 r1”) {UNLISTED}"]),
+        ([FAIL_NEW_CODE], "nowy-kod", {"listed": NEW_CODE}, []),
+        ([FAIL_W1, PASS_RESOLVES_NEW], "nowy-kod", {}, [f"korzeń: kod R-NOWY-KOD (NOWY z werdyktu, blok „### W1 r1”) {UNLISTED}"]),
+        ([FAIL_UNLISTED], "nowy-kod", {}, [f"korzeń: kod R-NOWY-KOD (blok „### W1 r1”) {UNLISTED}"]),
+        ([FAIL_UNLISTED], "nowy-kod", {"listed": NEW_CODE}, []),
+        ([], "czerwony-main-bez-sekcji", {"labels": RED}, [f"korzeń: brak sekcji „## Korzeń”, a PR ma naprawę czerwonego main; brak bloku „### Czerwony main #{korzenie_pr.RED_MAIN}: R-KOD”"]),
+        ([], "czerwony-main", {"labels": RED}, []),
+        ([], "czerwony-main-kod-spoza-listy", {"labels": RED}, [f"korzeń: kod R-WYMYSLONY-KOD (blok „### Czerwony main #{korzenie_pr.RED_MAIN}”) {UNLISTED}"]),
+        ([], "czerwony-main-bez-sekcji", {}, [f"korzeń: GitHub nie podał etykiet #{korzenie_pr.RED_MAIN}, więc nie wiadomo, czy to czerwony main"]),
+        ([PASS_RESOLVES], "bez-sekcji", {}, ["korzeń: punkt „Korzeń W1 r1: R-DRUGA-DROGA” werdyktu r1 nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"]),
+        ([FAIL_WITHOUT_ROOT], "szczebel-c", {}, ["korzeń: W1 r1: werdykt nie podaje kodu korzenia w szablonie, więc kod podaje recenzent następnej rundy punktem „Korzeń W1 r1: R-KOD - zdanie”"]),
+        ([FAIL_WITHOUT_ROOT, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
+        ([FAIL_PROSE], "bez-sekcji", {}, [SECTION_FOR_FAIL]),
+        ([FAIL_MAJORS_0], "bez-sekcji", {}, [SECTION_FOR_FAIL]),
+        ([FAIL_PROSE], "szczebel-c", {}, ["korzeń: W1 r1: werdykt nie podaje kodu korzenia w szablonie"]),
+        ([FAIL_PROSE, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
+        ([FAIL_TWO_MAJORS, PASS_RESOLVES], "kod-rozstrzygniety", {}, ["korzeń: brak bloku „### W2 r1: R-KOD”"]),
+        ([FAIL_W1], "proza-w-sekcji", {}, ["korzeń: w sekcji „## Korzeń” przed blokiem jest linia „Korzeń wyrwany w tym PR.”"]),
+        ([FAIL_W1], "naglowek-poza-wzorem", {}, ["korzeń: nagłówek „### W1: R-BEZ-TESTU” to nie „### W<n> r<runda>: R-KOD”", "korzeń: brak bloku „### W1 r1: R-BEZ-TESTU”"]),
+        ([FAIL_W1], "dowod-6-linii", {}, ["korzeń: W1 r1: Dowód ma 6 linii, najwyżej 5"]),
+        ([], "flaky-test", {"labels": FLAKY}, []),
+    ],
+    ids=[
+        "brak-sekcji",
+        "szczebel-c-z-wyzej-nie-i-dowodem",
+        "szczebel-a-bez-wyzej-nie",
+        "szczebel-b-ze-zdaniem-w-linii-pola",
+        "brak-bloku-dla-waznego",
+        "blok-powtorzony",
+        "kod-inny-niz-w-werdykcie",
+        "kod-rozstrzygniety-pozniejszym-werdyktem",
+        "kod-sprzed-rozstrzygniecia",
+        "szczebel-c-bez-wyzej-nie",
+        "szczebel-c-bez-zdania-dla-b",
+        "szczebel-a-z-wyzej-nie",
+        "bez-dowodu",
+        "bez-szczebla",
+        "szczebel-e-bez-punktu-w-skillu",
+        "szczebel-e-z-nowym-punktem-z-linkiem-do-pr",
+        "szczebel-e-z-punktem-z-przykladem-innego-pr",
+        "szczebel-e-z-punktem-bez-przykladu",
+        "szczebel-e-z-punktem-poza-sekcja",
+        "szczebel-e-z-punktem-ktory-byl-na-bazie",
+        "szczebel-e-z-punktem-bazy-zmienionym-o-link-do-pr",
+        "szczebel-e-z-nowym-punktem-i-zmienionym-punktem-bazy",
+        "szczebel-e-z-nowym-punktem-i-punktami-bazy-w-innej-kolejnosci",
+        "cytat-pola-w-bloku-kodu",
+        "cytat-pola-bez-bloku-kodu",
+        "wyrwany-w-otwartym-pr",
+        "wyrwany-w-zamknietym-bez-merge",
+        "wyrwany-w-pr-z-innym-kodem",
+        "wyrwany-w-pr-z-linia-innego-pr",
+        "wyrwany-w-scalonym-pr-z-tym-kodem",
+        "wyrwany-w-pr-scalonym-do-galezi-stosu",
+        "wyrwany-w-pr-scalonym-poza-domyslna-galaz",
+        "wyrwany-bez-domyslnej-galezi-z-githuba",
+        "wyrwany-bez-stanu-pr-korzenia-z-githuba",
+        "wyrwany-z-czymkolwiek-dalej",
+        "wyrwany-bez-linku",
+        "wyrwany-w-issue",
+        "nowy-kod-spoza-listy-head",
+        "nowy-kod-na-liscie-head",
+        "nowy-kod-z-rozstrzygniecia-spoza-listy",
+        "kod-bloku-waznego-spoza-listy-head",
+        "kod-bloku-waznego-na-liscie-head",
+        "czerwony-main-bez-sekcji",
+        "czerwony-main-z-blokiem",
+        "czerwony-main-z-kodem-spoza-listy",
+        "bez-etykiet-issue-z-githuba",
+        "rozstrzygniecie-bez-waznego",
+        "wazne-bez-kodu-w-szablonie",
+        "wazne-bez-kodu-rozstrzygniete",
+        "fail-bez-linii-znaleziska-bez-sekcji",
+        "fail-z-wazne-0-bez-sekcji",
+        "fail-bez-linii-znaleziska-z-blokiem-w1-bez-kodu",
+        "fail-bez-linii-znaleziska-z-kodem-rozstrzygnietym",
+        "blok-na-kazde-wazne-z-linii-znaleziska",
+        "proza-w-sekcji-przed-blokiem",
+        "naglowek-poza-wzorem",
+        "dowod-6-linii",
+        "flaky-test-bez-sekcji",
+    ],
+)
+def test_bramka_korzenia_odmawia_merge_dopoki_sekcja_korzen_nie_ma_bloku_na_kazde_wazne_i_czerwony_main(
+    tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], fragments: list[str]
+) -> None:
+    answered = _root_gate(tmp_path, verdicts, body, setup)
+
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
+    missing = [fragment for fragment in fragments if fragment not in last]
+    assert missing == [], last
+    assert ("korzeń:" in last) == bool(fragments), last
+    assert ("wzór sekcji (.agents/skills/pr/SKILL.md): ## Korzeń / ### W1 r2: R-BEZ-TESTU / Szczebel: (c)" in last) == bool(fragments), last
+
+
+# Decyzja Q20 dla bramki korzenia: wątki, które już pracują, kończą po swojemu, więc bramka liczy wątek od chwili
+# własnego wdrożenia (merge, który dodał jej moduł), nie od wdrożenia szablonu 1.10.2026; pierwszy werdykt powstaje
+# 24.10.2026 o 3:00:01, a werdykt w komentarzu edytowanym wątku nie postarza.
+@pytest.mark.parametrize(
+    ("gate", "edited", "required"),
+    [
+        ("2026-10-24T03:00:02Z", False, False),
+        ("2026-10-24T03:00:01Z", False, True),
+        ("2026-10-24T12:00:00Z", True, True),
+    ],
+    ids=["pierwszy-werdykt-przed-wdrozeniem-bramki", "pierwszy-werdykt-w-chwili-wdrozenia-bramki", "edytowany-werdykt-nie-postarza-watku"],
+)
+def test_bramka_korzenia_obowiazuje_w_watku_od_wlasnego_wdrozenia_a_nie_od_wdrozenia_szablonu(
+    tmp_path: Path, gate: str, edited: bool, required: bool
+) -> None:
+    answered = _root_gate(tmp_path, [FAIL_W1], "bez-sekcji", {}, gate=gate, edited=edited)
+
+    last = _last_line(answered)
+    assert last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
+    assert ("korzeń: brak sekcji „## Korzeń”, a PR ma werdykt FAIL z Ważnym" in last) == required, last
+
+
+def test_odmowa_bramki_korzenia_podaje_wzor_a_opis_poprawiony_bez_nowego_commita_i_werdyktu_daje_merge(tmp_path: Path) -> None:
+    files = {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}
+    github = MergeGitHub(tmp_path, files, started=GATE_BEFORE_VERDICTS)
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, body=korzenie_pr.OPISY["bez-sekcji"])
+    github.comment(1, FAIL_W1.format(commit=OLD))
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+
+    refused = github.run("1", "--bez-merge")
+    github.update(1, body=korzenie_pr.OPISY["szczebel-c"])
+    merged = github.run("1")
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert _last_line(refused).startswith(f"SCAL ODMOWA | #1 {head[:7]} | korzeń: brak sekcji „## Korzeń”"), refused.stdout
+    assert _last_line(refused).endswith("; opis popraw przez gh pr edit 1 --body-file PLIK, bez nowego commita i bez nowego werdyktu"), refused.stdout
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert github.merges() == [["pr", "merge", "1", "--merge", "--match-head-commit", head]]
+
+
+@pytest.mark.parametrize(
+    ("verdict", "fragment"),
+    [
+        ("rozstrzyga-w1-r1", None),
+        ("rozstrzyga-nowym-kodem", None),
+        ("rozstrzyga-kodem-spoza-listy", "punkt „Korzeń W1 r1”: kod R-NIE-MA spoza listy"),
+        ("rozstrzygniecie-bez-rundy", "punkt „Korzeń W1: R-DRUGA-DROGA - bez rundy.” to nie rozstrzygnięcie „Korzeń W<n> r<runda>: R-KOD - zdanie”"),
+    ],
+    ids=["kod-z-listy", "nowy-kod-spoza-listy", "kod-spoza-listy", "bez-rundy"],
+)
+def test_punkt_rozstrzygniecia_kodu_w_sprawdzone_przechodzi_tylko_z_runda_i_kodem_jak_pole_korzen(verdict: str, fragment: str | None) -> None:
+    problems = szablon_werdyktu.problems(korzenie_pr.html(korzenie_pr.WERDYKTY[verdict]), (0, 0), lambda: ROOTS)
+
+    assert (problems == []) == (fragment is None), problems
+    assert fragment is None or any(fragment in problem for problem in problems), problems
+
+
+def test_kazda_tresc_bramki_korzenia_ma_html_z_renderera_githuba() -> None:
+    assert sorted(korzenie_pr.rendered()) == sorted(set(korzenie_pr.bodies())), "odśwież: .venv/bin/python -m tests.fixtures.korzenie_pr"
+
+
+# Rejestr korzeni i issues „Chwast: R-KOD” (ADR 0031, decyzje Q11, Q12, Q13, Q15, Q22): wystąpienie kodu to Ważne
+# z kodem w werdykcie FAIL po wdrożeniu szablonu (1.10.2026 w ``_deploy_template``) albo blok czerwonego main
+# w opisie PR scalonego po wdrożeniu; chwast to kod z wystąpieniami w co najmniej 2 różnych PR-ach.
+AFTER_DEPLOYMENT = "2026-10-20T00:00:00Z"
+BEFORE_DEPLOYMENT = "2026-09-20T00:00:00Z"
+UPDATED = "2026-10-24T05:00:00Z"
+FAIL_TWO_SAME = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 2, Drobne 0)\n" + chwasty.WERDYKTY["dwa-wazne-z-tym-samym-kodem"]
+FAIL_OTHER_CODE = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + chwasty.WERDYKTY["inny-kod"]
+OWN_ROW = "| #1 | W1 r1 | - | - |"
+WEED_TITLE = f"Chwast: {chwasty.CODE}"
+
+
+def _node(
+    verdicts: list[tuple[str, str]],
+    *,
+    body: str = "",
+    merged: str | None = None,
+    edited: bool = False,
+    number: int = chwasty.OTHER,
+    created: str = BEFORE_DEPLOYMENT,
+    updated: str = UPDATED,
+) -> dict[str, object]:
+    """PR ``number`` z zapytania GraphQL rejestru korzeni: komentarze ``verdicts`` (treść i chwila utworzenia, w komentarzu
+    edytowanym, gdy ``edited``), opis ``body``, chwila merge'a ``merged``, założenia ``created`` i ostatniej zmiany
+    ``updated``."""
+
+    comments = [{**_verdict("comment", text.format(commit=OLD), when=when), "includesCreatedEdit": edited} for text, when in verdicts]
+    return {
+        "number": number,
+        "title": f"PR {number}",
+        "state": "MERGED" if merged else "OPEN",
+        "isDraft": False,
+        "isCrossRepository": False,
+        "baseRefName": "main",
+        "headRefOid": OLD,
+        "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
+        "body": body,
+        "createdAt": created,
+        "updatedAt": updated,
+        "mergedAt": merged,
+        "comments": {"pageInfo": {"hasNextPage": False}, "nodes": comments},
+        "reviews": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+    }
+
+
+RUNG_B = korzenie_pr.OPISY["szczebel-b-wyzej-w-linii-pola"]
+RUNG_A = korzenie_pr.OPISY["szczebel-a"]
+MERGED_B = _node([(FAIL_W1, AFTER_DEPLOYMENT)], body=RUNG_B, merged=AFTER_DEPLOYMENT)
+MERGED_A = _node([(FAIL_W1, AFTER_DEPLOYMENT)], body=RUNG_A, merged=AFTER_DEPLOYMENT)
+
+
+def _sent(write: list[str]) -> dict[str, object]:
+    """Treść JSON zapisu ``gh api --method`` z ``MergeGitHub.writes``."""
+
+    return cast(dict[str, object], cast(object, write[2]))
+
+
+def _publish(
+    tmp_path: Path,
+    own: list[str],
+    verdict: str,
+    others: list[dict[str, object]],
+    weeds: list[dict[str, object]] | None = None,
+    weeds_after: list[dict[str, object]] | None = None,
+) -> tuple[MergeGitHub, subprocess.CompletedProcess[str]]:
+    """``--werdykt`` z ``verdict`` na PR 1 po jego werdyktach ``own`` (na starszym commicie), gdy zapytanie rejestru
+    podaje PR-y ``others``, a otwarte issues z etykietą chwast to ``weeds``, po założeniu issue zaś ``weeds_after``
+    (issues innej publikacji) i założone."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.graphql = others
+    github.weeds = weeds or []
+    github.weeds_after = weeds_after
+    github._save()
+    for text in own:
+        github.comment(1, text.format(commit=OLD))
+    path = tmp_path / "werdykt.md"
+    path.write_text(verdict.format(commit=head), encoding="utf-8")
+    return github, github.run("1", "--werdykt", str(path))
+
+
+@pytest.mark.parametrize(
+    ("own", "verdict", "others", "rows"),
+    [
+        ([], FAIL_W1, [MERGED_B], [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | (b) | reguła ruff. |"]),
+        ([], FAIL_W1, [_node([(FAIL_W1, AFTER_DEPLOYMENT)])], [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | - | - |"]),
+        ([], FAIL_W1, [_node([], body=korzenie_pr.OPISY["czerwony-main"], merged=AFTER_DEPLOYMENT)], [OWN_ROW, f"| #{chwasty.OTHER} | Czerwony main #{korzenie_pr.RED_MAIN} | (a) | jeden właściciel. |"]),
+        ([], FAIL_W1, [_node([(FAIL_W1, AFTER_DEPLOYMENT)], edited=True)], [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | - | - |"]),
+        ([], FAIL_W1, [_node([(FAIL_W1, AFTER_DEPLOYMENT), (PASS_RESOLVES, AFTER_DEPLOYMENT)])], None),
+        ([], FAIL_TWO_SAME, [], None),
+        ([FAIL_W1], FAIL_W1, [], None),
+        ([], FAIL_W1, [_node([(FAIL_W1, BEFORE_DEPLOYMENT)])], None),
+        ([], FAIL_W1, [_node([(FAIL_W1, BEFORE_DEPLOYMENT)], edited=True)], None),
+        ([], FAIL_W1, [_node([(PASS_RESOLVES, BEFORE_DEPLOYMENT), (FAIL_W1, AFTER_DEPLOYMENT)])], None),
+        ([], FAIL_W1, [_node([], body=korzenie_pr.OPISY["czerwony-main"], merged=BEFORE_DEPLOYMENT)], None),
+        ([], FAIL_W1, [_node([(FAIL_OTHER_CODE, AFTER_DEPLOYMENT)])], None),
+    ],
+    ids=[
+        "powrot-w-innym-scalonym-pr-ze-szczeblem-z-sekcji",
+        "powrot-w-innym-otwartym-pr-bez-szczebla",
+        "powrot-jako-czerwony-main-scalonego-pr",
+        "powrot-w-edytowanym-werdykcie-po-wdrozeniu",
+        "kod-rozstrzygniety-w-innym-pr-na-inny",
+        "drugie-wazne-z-tym-kodem-w-tym-samym-werdykcie",
+        "ten-sam-kod-w-poprzedniej-rundzie-tego-pr",
+        "wystapienie-sprzed-wdrozenia",
+        "edytowany-werdykt-sprzed-wdrozenia",
+        "watek-z-pierwszym-werdyktem-sprzed-wdrozenia",
+        "czerwony-main-scalony-przed-wdrozeniem",
+        "inny-kod-w-innym-pr",
+    ],
+)
+def test_werdykt_z_kodem_ktory_ma_wystapienie_w_innym_pr_zaklada_issue_chwastu_z_szablonu_a_werdykt_sie_publikuje(
+    tmp_path: Path, own: list[str], verdict: str, others: list[dict[str, object]], rows: list[str] | None
+) -> None:
+    github, answered = _publish(tmp_path, own, verdict, others)
+
+    last = _last_line(answered)
+    assert answered.returncode == 0 and last.startswith("WERDYKT OK | #1 "), answered.stdout + answered.stderr
+    assert len(github.published()) == 1
+    if rows is None:
+        assert github.writes() == [], github.writes()
+        assert last.endswith(f"#issuecomment-{len(own) + 1}"), last
+        return
+    created = [write for write in github.writes() if write[:2] == ["POST", "repos/{owner}/{repo}/issues"]]
+    assert [_sent(write)["title"] for write in created] == [WEED_TITLE], github.writes()
+    assert _sent(created[0])["labels"] == ["chwast", "ready-for-agent"]
+    body = str(_sent(created[0])["body"])
+    lines = body.splitlines()
+    headings = [line for line in lines if line.startswith("## ")]
+    assert headings == ["## Korzeń", "## Wystąpienia", "## Gotowe, gdy"], body
+    table = [line for line in lines if line.startswith("| #")]
+    assert chwasty.TABLE in lines and table == rows, body
+    assert [write[:2] for write in github.writes()] == [["POST", "repos/{owner}/{repo}/labels"], ["POST", "repos/{owner}/{repo}/issues"]]
+    assert _sent(github.writes()[0])["name"] == "chwast"
+    assert last.endswith(f" | CHWAST założona etykieta chwast | CHWAST założone #9001 „{WEED_TITLE}”"), last
+
+
+@pytest.mark.parametrize(
+    ("issue", "edited", "suffix"),
+    [
+        ("w-szablonie", True, f" | CHWAST zmieniona treść #{chwasty.WEED_ISSUE}"),
+        ("z-proza", False, f" | CHWAST UWAGA: #{chwasty.WEED_ISSUE} „{WEED_TITLE}” nie ma treści w szablonie, dopisz wystąpienia ręcznie"),
+    ],
+    ids=["issue-w-szablonie-dostaje-wiersz", "issue-poza-szablonem-zostaje-z-ostrzezeniem"],
+)
+def test_otwarte_issue_chwastu_dostaje_wiersz_wystapienia_w_tresci_bez_nowego_komentarza(tmp_path: Path, issue: str, edited: bool, suffix: str) -> None:
+    weed = {"number": chwasty.WEED_ISSUE, "title": WEED_TITLE, "body": chwasty.ISSUES[issue]}
+
+    github, answered = _publish(tmp_path, [], FAIL_W1, [MERGED_B], [weed])
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered).endswith(suffix), answered.stdout
+    if not edited:
+        assert github.writes() == []
+        return
+    [(method, path, sent)] = github.writes()
+    assert (method, path) == ("PATCH", f"repos/{{owner}}/{{repo}}/issues/{chwasty.WEED_ISSUE}")
+    assert set(cast(dict[str, str], sent)) == {"body"}
+    table = [line for line in cast(dict[str, str], sent)["body"].splitlines() if line.startswith("| #")]
+    assert table == [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | (b) | reguła ruff. |"]
+
+
+# Decyzja Q11: blok Ważnego z kodem, który inny scalony PR już wyrwał, ma szczebel wyższy niż najwyższy wcześniejszy,
+# a po (a) merge wymaga komentarza konta właściciela repo z linią „ZGODA KORZEŃ: R-KOD”.
+HIGHER_THAN_B = "korzeń: W1 r1: kod R-BEZ-TESTU wyrwano już na szczeblu (b) w #1436, więc powrót wyrywa się szczebel wyżej, (a), a jest ({rung}) (ADR 0031, Q11)"
+CONSENT_NEEDED = "korzeń: W1 r1: kod R-BEZ-TESTU wrócił po wyrwaniu na szczeblu (a) w #1436, a wyżej niż (a) się nie da, więc decyduje Maks: merge wymaga w tym PR komentarza konta właściciela repo z linią „ZGODA KORZEŃ: R-BEZ-TESTU”"
+
+
+@pytest.mark.parametrize(
+    ("body", "registry", "consent", "fragments"),
+    [
+        ("szczebel-c", [MERGED_B], None, [HIGHER_THAN_B.format(rung="c")]),
+        ("szczebel-b-wyzej-w-linii-pola", [MERGED_B], None, [HIGHER_THAN_B.format(rung="b")]),
+        ("szczebel-a", [MERGED_B], None, []),
+        ("szczebel-c", [_node([(FAIL_W1, AFTER_DEPLOYMENT)], body=RUNG_B)], None, []),
+        ("szczebel-c", [_node([(FAIL_W1, AFTER_DEPLOYMENT)], merged=AFTER_DEPLOYMENT)], None, []),
+        ("szczebel-a", [MERGED_A], None, [CONSENT_NEEDED]),
+        ("szczebel-a", [MERGED_A], ("zgoda", "admin"), []),
+        ("szczebel-a", [MERGED_A], ("zgoda", "write"), [CONSENT_NEEDED]),
+        ("szczebel-a", [MERGED_A], ("zgoda-w-bloku-kodu", "admin"), [CONSENT_NEEDED]),
+        ("szczebel-a", [MERGED_A], ("zgoda-na-inny-kod", "admin"), [CONSENT_NEEDED]),
+    ],
+    ids=[
+        "szczebel-nizszy-niz-wczesniejszy",
+        "szczebel-rowny-wczesniejszemu",
+        "szczebel-wyzszy-niz-wczesniejszy",
+        "wczesniejszy-szczebel-w-pr-nie-scalonym-sie-nie-liczy",
+        "wystapienie-w-scalonym-pr-bez-szczebla-sie-nie-liczy",
+        "po-a-bez-zgody-maksa",
+        "po-a-ze-zgoda-konta-wlasciciela",
+        "po-a-ze-zgoda-konta-bez-prawa-admin",
+        "po-a-ze-zgoda-w-bloku-kodu",
+        "po-a-ze-zgoda-na-inny-kod",
+    ],
+)
+def test_powrot_korzenia_wymaga_szczebla_wyzej_niz_wczesniejsze_wyrwanie_a_po_a_zgody_maksa(
+    tmp_path: Path, body: str, registry: list[dict[str, object]], consent: tuple[str, str] | None, fragments: list[str]
+) -> None:
+    answered = _root_gate(tmp_path, [FAIL_W1], body, {"registry": registry, **({"consent": consent} if consent else {})})
+
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
+    missing = [fragment for fragment in fragments if fragment not in last]
+    assert missing == [], last
+    assert ("korzeń:" in last) == bool(fragments), last
+
+
+# Q11: wcześniejsze wyrwanie to tylko merge przed chwilą, w której kod wystąpił w tym PR: utworzeniem werdyktu
+# Ważnego (FAIL_W1 w _root_gate powstaje 24.10.2026 o 3:00:01) także wtedy, gdy późniejszy werdykt (tu PASS_RESOLVES
+# o 3:00:04) rozstrzyga je innym kodem (Q25), albo założeniem issue czerwonego main.
+PASS_CONFIRMS = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + chwasty.WERDYKTY["potwierdza-kod"]
+RED_CONSENT_NEEDED = f"korzeń: Czerwony main #{korzenie_pr.RED_MAIN}: kod R-BEZ-TESTU wrócił po wyrwaniu na szczeblu (a) w #1436"
+RESOLVED_LATER = [FAIL_W1, "Poprawione w {commit}.", "Poprawione w {commit}.", PASS_RESOLVES]
+OTHER_CODE_FAIL = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + chwasty.WERDYKTY["inny-kod"]
+OTHER_CODE_HIGHER = "korzeń: W1 r1: kod R-DRUGA-DROGA wyrwano już na szczeblu (c) w #1436, więc powrót wyrywa się szczebel wyżej"
+
+
+def _merged_a(merged: str) -> list[dict[str, object]]:
+    return [_node([(FAIL_W1, AFTER_DEPLOYMENT)], body=RUNG_A, merged=merged)]
+
+
+def _merged_other_code_c(merged: str) -> list[dict[str, object]]:
+    return [_node([(OTHER_CODE_FAIL, AFTER_DEPLOYMENT)], body=korzenie_pr.OPISY["inny-kod"], merged=merged)]
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "body", "setup", "fragments"),
+    [
+        ([FAIL_W1], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:00Z")}, [CONSENT_NEEDED]),
+        ([FAIL_W1], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:01Z")}, []),
+        ([FAIL_W1], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:02Z")}, []),
+        ([FAIL_W1, "Poprawione w {commit}.", PASS_CONFIRMS], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:02Z")}, []),
+        (RESOLVED_LATER, "kod-rozstrzygniety", {"registry": _merged_other_code_c("2026-10-24T03:00:00Z")}, [OTHER_CODE_HIGHER]),
+        (RESOLVED_LATER, "kod-rozstrzygniety", {"registry": _merged_other_code_c("2026-10-24T03:00:02Z")}, []),
+        ([], "czerwony-main", {"labels": RED, "issue_created": "2026-10-20T00:00:01Z", "registry": [MERGED_A]}, [RED_CONSENT_NEEDED]),
+        ([], "czerwony-main", {"labels": RED, "issue_created": "2026-10-19T23:59:59Z", "registry": [MERGED_A]}, []),
+    ],
+    ids=[
+        "merge-sekunde-przed-waznym-sie-liczy",
+        "merge-w-sekundzie-waznego-sie-nie-liczy",
+        "merge-sekunde-po-waznym-sie-nie-liczy",
+        "chwila-pierwszego-werdyktu-z-kodem-a-nie-potwierdzenia",
+        "rozstrzygniecie-innym-kodem-merge-przed-waznym-sie-liczy",
+        "rozstrzygniecie-innym-kodem-merge-po-waznym-a-przed-rozstrzygnieciem-sie-nie-liczy",
+        "merge-przed-zalozeniem-issue-czerwonego-main-sie-liczy",
+        "merge-po-zalozeniu-issue-czerwonego-main-sie-nie-liczy",
+    ],
+)
+def test_wczesniejsze_wyrwanie_to_tylko_merge_przed_chwila_wystapienia_kodu_w_tym_pr(
+    tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], fragments: list[str]
+) -> None:
+    answered = _root_gate(tmp_path, verdicts, body, setup)
+
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
+    missing = [fragment for fragment in fragments if fragment not in last]
+    assert missing == [], last
+    assert ("korzeń:" in last) == bool(fragments), last
+
+
+@pytest.mark.parametrize(
+    ("other", "edited", "closed"),
+    [(9000, 9000, 9001), (9002, None, 9002)],
+    ids=["inna-publikacja-zalozyla-wczesniej", "inna-publikacja-zalozyla-pozniej"],
+)
+def test_dwie_publikacje_z_tym_samym_kodem_zostawiaja_najstarsze_issue_chwastu_z_wierszami_obu(tmp_path: Path, other: int, edited: int | None, closed: int) -> None:
+    weed = {"number": other, "title": WEED_TITLE, "body": chwasty.ISSUES["w-szablonie"]}
+
+    github, answered = _publish(tmp_path, [], FAIL_W1, [MERGED_B], weeds_after=[weed])
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    issue = "repos/{owner}/{repo}/issues/"
+    after = github.writes()[2:]
+    assert [write[:2] for write in after] == [*([["PATCH", f"{issue}{edited}"]] if edited else []), ["POST", f"{issue}{closed}/comments"], ["PATCH", f"{issue}{closed}"]], github.writes()
+    assert _sent(after[-2]) == {"body": f"Duplikat #{min(other, 9001)}"}
+    assert _sent(after[-1])["state"] == "closed"
+    if edited:
+        assert [line for line in str(_sent(after[0])["body"]).splitlines() if line.startswith("| #")] == [OWN_ROW, chwasty.OTHER_ROW]
+    assert _last_line(answered).endswith(f"CHWAST zamknięte #{closed}"), answered.stdout
+
+
+@pytest.mark.parametrize(
+    ("title", "closed", "suffix"),
+    [
+        (WEED_TITLE, True, f" | zamknięte: #{chwasty.WEED_ISSUE} |"),
+        ("Chwast: R-DRUGA-DROGA", False, f" | UWAGA: #{chwasty.WEED_ISSUE} z „Korzeń z” to nie otwarte issue „Chwast: R-KOD” z tym kodem, nie zamknięte |"),
+    ],
+    ids=["issue-chwastu-z-tym-kodem", "issue-chwastu-innego-kodu"],
+)
+def test_merge_pr_z_linia_korzen_z_issue_zamyka_issue_chwastu_z_komentarzem_o_pr_i_commicie_merge(tmp_path: Path, title: str, closed: bool, suffix: str) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.answer_issue(chwasty.WEED_ISSUE, answer=json.dumps({"state": "open", "title": title}))
+    github.update(1, body=chwasty.OPISY["wyrywa-chwast"])
+    github.comment(1, PASS.format(head=head))
+
+    merged = github.run("1")
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert suffix in _last_line(merged), merged.stdout
+    merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
+    comment = f"Naprawione przez #1, scalone jako {merge_commit}."
+    assert github.closed() == ([["issue", "close", str(chwasty.WEED_ISSUE), "--repo", opisy_pr.REPO, "--comment", comment]] if closed else [])
+
+
+@pytest.mark.parametrize("dry", [True, False], ids=["bez-zapisu", "z-zapisem"])
+def test_chwasty_z_rejestru_od_wdrozenia_zaklada_te_same_issues_co_publikacja_a_bez_zapisu_tylko_je_podaje(tmp_path: Path, dry: bool) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
+    _deploy_template(github)
+    github.graphql = [MERGED_B, _node([(FAIL_W1, AFTER_DEPLOYMENT)], number=1), _node([(FAIL_W1, BEFORE_DEPLOYMENT)], number=2)]
+    github._save()
+
+    answered = _chwasty(github, dry=dry)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    lines = answered.stdout.splitlines()
+    assert lines[-1] == f"CHWASTY OK | 2 wystąpień, chwasty: {chwasty.CODE}", answered.stdout
+    if dry:
+        assert lines[:-1] == ["CHWAST | bez zapisu: załóż etykietę chwast", f"CHWAST | bez zapisu: załóż issue „{WEED_TITLE}” z etykietami chwast, ready-for-agent"]
+        assert github.writes() == []
+    else:
+        assert lines[:-1] == ["CHWAST | założona etykieta chwast", f"CHWAST | założone #9001 „{WEED_TITLE}”"]
+        table = [line for line in str(_sent(github.writes()[1])["body"]).splitlines() if line.startswith("| #")]
+        assert table == [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | (b) | reguła ruff. |"]
+
+
+def _chwasty(github: MergeGitHub, *, dry: bool) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(github.checkout / "tools" / "chwasty.py"), *(["--bez-zapisu"] if dry else [])],
+        cwd=github.checkout,
+        env=github.environment(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+
+def _registry(github: MergeGitHub, pulls: list[dict[str, object]], changes: list[dict[str, object]] | None = None) -> None:
+    github.graphql = pulls
+    github.graphql_changes = changes or []
+    _deploy_template(github)
+    github._save()
+
+
+def test_rejestr_czyta_kazdy_pr_zmieniony_od_wdrozenia_takze_gdy_pr_zmienia_sie_miedzy_stronami(tmp_path: Path) -> None:
+    """30 PR-ów to dwie strony, a #125 z drugiej strony (w kolejności założenia i w kolejności ostatniej zmiany)
+    dostaje werdykt po pobraniu pierwszej, jak przy publikacji w trakcie skanu."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
+    pulls = [_node([(FAIL_W1, AFTER_DEPLOYMENT)], number=number, created=f"2026-10-02T00:{number - 100:02d}:00Z", updated=f"2026-10-24T05:{130 - number:02d}:00Z") for number in range(100, 130)]
+    _registry(github, pulls, [{"po": 1, "number": 125, "pola": {"updatedAt": "2026-10-24T23:00:00Z"}}])
+
+    answered = _chwasty(github, dry=True)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == f"CHWASTY OK | 30 wystąpień, chwasty: {chwasty.CODE}", answered.stdout
+
+
+def test_rejestr_doczytuje_komentarze_pr_ponad_pierwsza_setke_zapytaniem_o_ten_pr(tmp_path: Path) -> None:
+    """PR #1 ma 150 komentarzy, a werdykt ``FAIL`` z kodem to 101. z nich, więc strona wyszukiwania go nie podaje:
+    rejestr doczytuje komentarze tego PR z GraphQL po 100 od kursora, z HTML treści, bez renderowania."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
+    comments = [*[("", AFTER_DEPLOYMENT)] * 100, (FAIL_W1, AFTER_DEPLOYMENT), *[("", AFTER_DEPLOYMENT)] * 49]
+    _registry(github, [MERGED_B, _node(comments, number=1)])
+
+    answered = _chwasty(github, dry=True)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == f"CHWASTY OK | 2 wystąpień, chwasty: {chwasty.CODE}", answered.stdout
+    assert [(query["number"], query["comments"]) for query in cast(list[dict[str, str]], github._log("pull_queries.jsonl"))] == [("1", "null"), ("1", "100")]
+    assert github.renders() == []
+
+
+def test_skan_rejestru_czyta_tylko_pr_zmienione_od_wdrozenia(tmp_path: Path) -> None:
+    """45 PR-ów zmienionych przed wdrożeniem szablonu (1.10.2026) skan pomija bez czytania: jedna strona z PR-em
+    zmienionym po wdrożeniu."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
+    before = [_node([], number=number, created=f"2026-09-02T00:{number - 100:02d}:00Z", updated=f"2026-09-30T23:{number - 100:02d}:00Z") for number in range(100, 145)]
+    _registry(github, [*before, _node([(FAIL_W1, AFTER_DEPLOYMENT)], number=1)])
+
+    answered = _chwasty(github, dry=True)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == "CHWASTY OK | 1 wystąpień, chwasty: brak", answered.stdout
+    assert len(github._log("graphql.jsonl")) == 1, github._log("graphql.jsonl")
+
+
+def test_kazda_tresc_rejestru_korzeni_ma_html_z_renderera_githuba() -> None:
+    assert sorted(chwasty.rendered()) == sorted(set(chwasty.bodies())), "odśwież: .venv/bin/python -m tests.fixtures.chwasty"

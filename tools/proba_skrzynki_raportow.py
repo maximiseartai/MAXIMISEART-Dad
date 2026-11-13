@@ -3,10 +3,11 @@
 Narzędzie dla Maksa, poza CI (Granica 4 speca #1224, ADR 0028). Port IMAP Skrzynki raportów
 (``rozliczenia.worker_report_inbox.ImapInbox``) CI sprawdza tylko na ``AtrapaImap``, więc prawdziwego Gmaila sprawdza
 ta próba: tym samym portem, z tym samym plikiem dostępu ``config/skrzynka-raportow.txt`` (linia 1 adres skrzynki,
-linia 2 hasło aplikacji Google) i plikiem adresów Wykonawców ``config/adresy-wykonawcow.yaml``, co Wpisanie raportów.
+linia 2 hasło aplikacji Google) i Listą Wykonawców ``config/wykonawcy.yaml``, co Wpisanie raportów.
 Po kolei:
 
-1. czyta plik adresów z Konfiguracją wykonawców (``config/worker_mapping.yaml``), jak Wpisanie raportów;
+1. czyta adresy z Listy Wykonawców przez Ustawienia Centrum bez zapisu (``read_snapshot``), jak Wpisanie raportów:
+   przy złym pliku ostatnia dobra lista, a bez niej albo bez żadnego adresu próba nie przechodzi;
 2. czyta flagi IMAP każdego maila z dni od dnia przed ``--od`` w folderze, który czyta port (``\\All``, a bez niego
    ``INBOX``), i liczy maile ze słowem ``raport`` w temacie w tym folderze i w ``INBOX`` (``ImapInbox.survey``);
 3. czyta Raporty wykonawców od ``--od`` portem (``mails_since``) i przepuszcza je przez rdzeń raportów
@@ -89,9 +90,8 @@ from typing import Final, TextIO
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE, AddressesError
-from rozliczenia.worker_addresses import load as load_addresses
-from rozliczenia.worker_config import WorkerConfigError, load_worker_mapping
+from rozliczenia.centrum.settings.files import usable
+from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
     ImapInbox,
@@ -143,14 +143,12 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: Revi
             raise ProbeFailed(f"nieczytelny plik dostepu config/{INBOX_ACCESS_FILE}")
         case "ready":
             pass
-    try:
-        workers = load_worker_mapping(config / tool_files.WORKER_CONFIG.name)
-    except WorkerConfigError as error:
-        raise ProbeFailed(f"Konfiguracja wykonawcow: {_problem(error.reason)}") from None
-    try:
-        addresses = load_addresses(config / WORKER_ADDRESSES_FILE, workers=workers)
-    except AddressesError as error:
-        raise ProbeFailed(f"plik adresow Wykonawcow: {_problem(error.problem)}") from None
+    workers = usable(read_snapshot(config).workers)
+    if workers is None:
+        raise ProbeFailed("Lista Wykonawcow ma zle ustawienie albo nie da sie jej teraz odczytac")
+    addresses = workers.addresses()
+    if not addresses.logins:
+        raise ProbeFailed("na Liscie Wykonawcow nikt nie ma adresu")
 
     before = _survey(inbox, since, "pierwszym odczycie flag")
     read = inbox.mails_since(since)
@@ -353,12 +351,6 @@ def _unreachable(found: PasswordRejected | InboxUnreachable, when: str) -> str:
             return f"skrzynka niedostepna przy {when}: {cause}"
 
 
-def _problem(problem: object) -> str:
-    """Rodzaj problemu pliku: sam napis albo nazwa typu, bez pól, w których bywa login."""
-
-    return problem if isinstance(problem, str) else type(problem).__name__
-
-
 def _count(mails: Sequence[ReportMail], pattern: re.Pattern[str]) -> int:
     return sum(1 for mail in mails if pattern.search(mail.subject) or pattern.search(mail.text))
 
@@ -391,7 +383,7 @@ def main(argv: Sequence[str] | None = None, *, connect: Callable[[], imaplib.IMA
         "--config",
         type=Path,
         default=tool_files.CONFIG_DIR,
-        help="Folder config z plikiem dostępu i plikiem adresów (domyślnie config klonu narzędzia, jak w Centrum).",
+        help="Folder config z plikiem dostępu i Listą Wykonawców (domyślnie config klonu narzędzia, jak w Centrum).",
     )
     parser.add_argument(
         "--przeglad",
@@ -407,7 +399,7 @@ def main(argv: Sequence[str] | None = None, *, connect: Callable[[], imaplib.IMA
     if args.nadpisz and args.przeglad is None:
         parser.error("--nadpisz dotyczy tylko --przeglad")
     review = None if args.przeglad is None else ReviewFile.of(args.przeglad, args.nadpisz)
-    inbox = ImapInbox(args.config) if connect is None else ImapInbox(args.config, connect=connect)
+    inbox = ImapInbox(lambda: read_snapshot(args.config).inbox, connect=connect)
     try:
         if review is not None and (refusal := review.refusal()) is not None:
             raise ProbeFailed(refusal)

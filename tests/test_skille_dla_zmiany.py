@@ -7,6 +7,7 @@ Testy zachowania budują własne repozytorium z kopią narzędzia. Testy struktu
 from __future__ import annotations
 
 from collections.abc import Iterator
+import functools
 from pathlib import Path
 import re
 import subprocess
@@ -340,6 +341,13 @@ def test_workflow_skilla_windows_biegnie_dla_tych_samych_sciezek_co_jego_pilnuje
     }, "paths workflow skilla Windows to jego pilnuje: i folder skilla: dopisz ścieżkę w obu miejscach"
 
 
+@functools.cache
+def _repository() -> wplyw_zmiany.Repository:
+    """Graf importów checkoutu raz na proces, bo skan całego repozytorium to najdroższy krok modułu, a testy go tylko czytają."""
+
+    return wplyw_zmiany.Repository.scan(ROOT)
+
+
 @pytest.mark.parametrize("skill", ["verify-centrum-rozliczen", "verify-centrum-na-windowsie"])
 def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(skill: str) -> None:
     """Atrapa, do której skrypty skilla Centrum dochodzą importem, trafia w jego ``pilnuje:``, bo wybór importów nie
@@ -348,7 +356,7 @@ def test_zmiana_atrapy_ktora_importuja_skrypty_skilla_centrum_wybiera_ten_skill(
     się nie liczy. Atrapy innych skilli łapie pełne CI ``main``. Ścieżki skilli stoją
     literałem, żeby graf wybierał test przy zmianie ich skryptów i ``SKILL.md``."""
 
-    repository = wplyw_zmiany.Repository.scan(ROOT)
+    repository = _repository()
     centrum = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen"
     windows = ROOT / ".agents" / "skills" / "verify-centrum-na-windowsie"
     folder, scripts = {
@@ -377,12 +385,19 @@ CI_AND_LOCAL = "## What CI runs and what stays local"
 SKILL_COMMAND = re.compile(r"\.agents/skills/([\w-]+)/scripts/([\w/]+\.py)((?:[ \t]+[^\s`\"']+)*)")
 
 
+@functools.cache
+def _catalog() -> kroki_skilli.Katalog:
+    """Katalog kroków skilli checkoutu raz na proces, bo ``_ci_commands`` pyta o niego dla każdego skilla."""
+
+    return kroki_skilli.Katalog.skanuj(ROOT)
+
+
 def _ci_commands(skill: Path) -> set[tuple[str, ...]]:
     """Polecenia skilla (nazwa skryptu z argumentami), które CI liczy w którymś runie: jego kroki (podstawa ``ci:``,
     skrypty mutacji) i wywołania jego skryptów w krokach CI planu; skrypt mutacji bez argumentów obejmuje każde swoje
     wywołanie."""
 
-    steps = kroki_skilli.Katalog.skanuj(ROOT).kroki
+    steps = _catalog().kroki
     ci_steps = zakres_runu.KROKI.values()
     runs = {(Path(step.command[0]).name, *step.command[1:]) for step in steps if step.skill == skill}
     return runs | {run for ci_step in ci_steps for run in ci_step.wywolania(skill.name)}

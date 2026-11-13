@@ -18,6 +18,7 @@ import sys
 import pytest
 
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
@@ -259,7 +260,7 @@ def test_nazwy_plikow_narzedzia_i_stanu_centrum_biora_testy_od_wlasciciela() -> 
     )
     pinned = {owned for name in CONTRACTS for node in _owned_literals(TESTS / name, names) for owned in names if _ends_with(str(node.value), owned)}
 
-    assert {tool_files.WORKER_CONFIG.name, REPORT_KEY_FILE} <= names, "_owned_names nie widzi już tool_files albo stałych *_FILE"
+    assert {tool_files.WORKER_TEMPLATE.name, WORKERS_FILE, REPORT_KEY_FILE} <= names, "_owned_names nie widzi już tool_files albo stałych *_FILE"
     assert found == [], "weź nazwę od właściciela (tool_files, ToolDirectory w tests/fixtures/centrum.py, stała modułu Centrum)"
     assert sorted(names - pinned) == [], "przypnij nazwę literałem w teście kontraktu z CONTRACTS"
 
@@ -427,6 +428,10 @@ CONSTANT_TIME_BOUNDS = {
     "::took < wait_s * 1.8": (
         "skrzynka trzyma odpowiedź do końca testu, a granica poniżej dwóch skróconych limitów CHECK_WAIT_S (1 s) łapie "
         "Powiadomienia, które czekają dwa razy dłużej"
+    ),
+    "test_mutacje.py::test_polecenie_bez_wyniku_w_limicie_czasu_narzedzia_daje_przekroczony_czas::2 <= int(spent[1]) < 4": (
+        "polecenie mutacji śpi 60 s, linia CZAS mierzy samo polecenie (bez startu narzędzia i kopii), a granica poniżej "
+        "dwóch limitów --limit-s (2 s) łapie silnik, który kończy je dwa razy później"
     ),
     "test_weryfikacja_w_excelu.py::test_start_excela_bez_zgody_na_automatyzacje_konczy_sie_od_razu_nazwana_przyczyna"
     "::time.monotonic() - started < 10": (

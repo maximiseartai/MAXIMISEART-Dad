@@ -13,11 +13,11 @@ który wynika z samego kodu, więc świeży worktree wybiera tak samo. Zmiana pl
 (``Context.TESTS`` tego modułu: konfiguracja i zależności, ``conftest.py`` każdego testu i fixture gita, którą
 wczytuje dla całej sesji), wybiera wszystkie testy. Test, który już przeszedł na tych samych plikach, nie biegnie
 drugi raz: pamięć zielonych testów leży w katalogu gita worktree. Krok pytest bierze ``czasy_ci.WORKERY_LOKALNE``
-workerów, chyba że ustawiono ``PYTEST_XDIST_AUTO_NUM_WORKERS``.
+workerów, chyba że ustawiono ``PYTEST_XDIST_AUTO_NUM_WORKERS``, a ściana i budżet są na tylu samych workerów.
 
-Z wybranych testów biegną zawsze pliki w odległości najwyżej 1 od zmiany w grafie zależności (``plan``), czyli
-zmienione albo zależne wprost od zmienionego pliku, a dalsze po odległości i czasie w CI rosnąco, dopóki mieszczą
-się w budżecie ``BUDGET_S``. Czas pliku to jego koszt na Linuksie z ostatnich runów main (``czasy_ci.lokalne``,
+Z wybranych testów biegną zawsze zmienione pliki testów (``plan``), a dalsze po odległości od zmiany w grafie
+zależności i czasie w CI rosnąco: zależne wprost od zmienionego pliku (odległość 1), dopóki mieszczą się w ścianie
+``WALL_S``, czyli krok pytest kończy się przed limitem 600 s polecenia Basha agenta, a dalsze w budżecie ``BUDGET_S``. Czas pliku to jego koszt na Linuksie z ostatnich runów main (``czasy_ci.lokalne``,
 kopia w ``.git/czasy-ci`` odświeżana raz na dobę, a po nieudanym pobraniu w następnym przebiegu); bez niej, na przykład
 bez sieci, każdy plik waży 0 i biegnie, a szybko mówi to linią ``SZYBKO | bez czasów CI (<przyczyna>)``. Test, który importuje albo
 czyta zmieniony plik konfiguracji, ma najwyżej 2, więc biegnie w budżecie przed testami bez drogi w grafie. Resztę liczy pełny pytest w CI, a szybko wypisuje ją przed wynikiem
@@ -86,6 +86,11 @@ ZAPADKA_BAZA = "MAXIMISEART_ZAPADKA_BAZA"
 # Sekundy czasów CI na workera. Porażki pytest w szybko z 23–24.10 łapie ten sam plan od 20 s wzwyż, bo prawie
 # wszystkie padły w odległości 0–1 albo w testach struktury, więc budżet stoi blisko tej granicy.
 BUDGET_S = 45.0
+# Sekundy czasów CI na workera dla plików zależnych wprost od zmiany. Mac agenta biegnie wybór w 0,3–1,7 jego czasu
+# w CI (20 przekroczeń limitu 5–12.11, mediana 0,6, p90 0,88), więc z testami struktury (~40 s na workera) przy p90
+# krok pytest kończy się przed ~480 s, pod limitem 600 s polecenia Basha agenta. Pod obciążeniem innymi agentami limitu
+# ściana nie zapewnia: przegląd #1486 zmierzył 603 s przy load5 16–53.
+WALL_S = 500.0
 # Importuje każdy moduł ``src/`` i wypisuje te, które padają; moduł, który się nie importuje, wywraca każdy test.
 IMPORT_ALL = """\
 import importlib, pathlib, sys
@@ -128,15 +133,25 @@ class Plan:
     deferred_s: float
 
 
-def plan(tests: Iterable[str], distances: dict[str, int], costs: czasy_ci.KosztyPlikow, budget_s: float = BUDGET_S) -> Plan:
-    """Pliki w odległości najwyżej 1 od zmiany biegną zawsze, także ponad budżet. Dalsze, po odległości i koszcie
-    rosnąco, biegną, gdy suma kosztów na ``czasy_ci.WORKERY_LOKALNE`` workerów mieści się jeszcze w ``budget_s``."""
+def plan(
+    tests: Iterable[str],
+    distances: dict[str, int],
+    costs: czasy_ci.KosztyPlikow,
+    *,
+    workers: int,
+    budget_s: float = BUDGET_S,
+    wall_s: float = WALL_S,
+) -> Plan:
+    """Pliki zmienione (odległość 0) biegną zawsze. Dalsze, po odległości i koszcie rosnąco, biegną, gdy suma kosztów
+    na ``workers`` workerów kroku pytest mieści się jeszcze w ``wall_s`` (odległość 1) albo w ``budget_s`` (dalsze)."""
 
     cost = {test: costs.s(test) for test in tests}
-    capacity, used = budget_s * czasy_ci.WORKERY_LOKALNE, 0.0
+    used = 0.0
     run, deferred = [], []
     for test in sorted(cost, key=lambda test: (distances.get(test, math.inf), cost[test], test)):
-        if distances.get(test, math.inf) <= 1 or used + cost[test] <= capacity:
+        distance = distances.get(test, math.inf)
+        limit = math.inf if distance == 0 else (wall_s if distance == 1 else budget_s) * workers
+        if used + cost[test] <= limit:
             run.append(test)
             used += cost[test]
         else:
@@ -258,8 +273,8 @@ def _steps(root: Path, tests: Iterable[str], junit: Path, changed: frozenset[str
 
 def _environment(root: Path, base: str) -> dict[str, str]:
     return {
-        "PYTEST_XDIST_AUTO_NUM_WORKERS": str(czasy_ci.WORKERY_LOKALNE),
         **environment(root),
+        "PYTEST_XDIST_AUTO_NUM_WORKERS": str(czasy_ci.workery_lokalne()),
         "PYTHON": sys.executable,
         ZAPADKA_BAZA: base,
     }
@@ -343,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     selection = _select(changed)
     memory = GreenMemory.of_checkout()
-    chosen = plan(memory.to_run(selection), selection.distances, _times(ROOT))
+    chosen = plan(memory.to_run(selection), selection.distances, _times(ROOT), workers=czasy_ci.workery_lokalne())
     print(_describe(selection, chosen, changed, args.baza), flush=True)
     if drift := _model_drift(ROOT, changed):
         print("FAIL rozjazd modelu (bez TLC)\n" + "\n".join(drift), flush=True)

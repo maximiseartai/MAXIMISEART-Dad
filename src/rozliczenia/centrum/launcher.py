@@ -53,7 +53,6 @@ from rozliczenia.tool_files import (
     NO_BROWSER_FLAG,
     NO_DIALOGS_FLAG,
     PORT_FLAG,
-    SETTINGS,
     TOOL_ROOT,
     centrum_script,
     listen_locally,
@@ -145,6 +144,7 @@ def _start(
         from rozliczenia.centrum.app import create_app
         from rozliczenia.centrum.platform import system_platform
         from rozliczenia.centrum.server import serve
+        from rozliczenia.centrum.shortcut import system_autostart
         from rozliczenia.centrum.shutdown import Shutdown
     except ModuleNotFoundError as missing:
         listener.close()
@@ -155,7 +155,9 @@ def _start(
         open_tab(address)
 
     shutdown = Shutdown(log)
-    app = create_app(settings_path=SETTINGS, platform=system_platform(), log=log, shutdown=shutdown)
+    app = create_app(
+        config=CONFIG_DIR, platform=system_platform(), autostart=system_autostart(), log=log, shutdown=shutdown
+    )
     return serve(app, listener=listener, on_ready=announce, shutdown=shutdown, log=log)
 
 

@@ -1,6 +1,6 @@
-"""Przywracanie Kopii INTERMAX z Konfiguracji Centrum rozliczeń przez HTTP API, jak widzi je przeglądarka (#472).
+"""Przywracanie Kopii INTERMAX z Ustawień Centrum rozliczeń przez HTTP API, jak widzi je przeglądarka (#472).
 
-Konfiguracja wymienia Kopie INTERMAX od najnowszej z datą i godziną z nazwy, a przywrócenie wybranej najpierw robi
+Okno Ustawień wymienia Kopie INTERMAX od najnowszej z datą i godziną z nazwy, a przywrócenie wybranej najpierw robi
 Kopię stanu bieżącego ``INTERMAX przed przywróceniem RRRR-MM-DD GG-MM-SS.xlsx``, potem atomowo podmienia INTERMAX
 (ADR 0019). Odmowa zostawia INTERMAX i Kopie takie, jak były.
 """
@@ -25,6 +25,7 @@ from tests.fixtures.intermax_disk import denied, failing_replace, no_space, part
 from tests.fixtures.centrum_intermax import NOW, REGISTER_NAME, Clock, OrderingCentrum, copies, open_in_excel, ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum
 from tests.fixtures.centrum import ToolDirectory, views_until
+from atrapy.settlement import worker_list, write_worker_list
 from atrapy.preparation import PERIOD, incomplete_period_rows
 
 ORDERED = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
@@ -152,7 +153,8 @@ def test_folderu_kopii_ktorego_nie_da_sie_odczytac_konfiguracja_nazywa_a_przywro
         "what": f"Nie można teraz odczytać folderu Kopii INTERMAX. {UNCHANGED}",
         "where": f"folder {tmp_path.name}\\Kopie INTERMAX",
         "action": (
-            "Odśwież Konfigurację za chwilę. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
+            "Poczekaj chwilę i odśwież stronę. "
+            "Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
         ),
     }
     assert listed == {"copies": [], "problem": expected}
@@ -294,7 +296,9 @@ def test_drugie_przywrocenie_w_tej_samej_sekundzie_mowi_ze_kopie_przywrocono_prz
     assert refused == {
         "what": "Przed chwilą przywrócono już kopię INTERMAX, więc ta kopia nie została przywrócona.",
         "where": f"folder {tmp_path.name}\\Kopie INTERMAX",
-        "action": "Odśwież Konfigurację i sprawdź listę kopii. Jeśli nadal trzeba, przywróć kopię jeszcze raz.",
+        "action": (
+            "Sprawdź listę kopii w Ustawieniach, w sekcji Kopie INTERMAX. Jeśli nadal trzeba, przywróć kopię jeszcze raz."
+        ),
     }
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
 
@@ -318,7 +322,7 @@ def test_przywrocenie_kopii_ktorej_lista_nie_wymienia_odmawia(tmp_path: Path, na
     assert refused == {
         "what": f"Tej Kopii INTERMAX już nie ma. {UNCHANGED}",
         "where": f"folder {tmp_path.name}\\Kopie INTERMAX, {name}",
-        "action": "Odśwież Konfigurację i wybierz kopię z listy.",
+        "action": "Wybierz kopię z listy w Ustawieniach, w sekcji Kopie INTERMAX.",
     }
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
 
@@ -405,7 +409,7 @@ def test_kopia_usunieta_miedzy_lista_a_odczytem_to_komunikat_ze_jej_juz_nie_ma(
     assert refused == {
         "what": f"Tej Kopii INTERMAX już nie ma. {UNCHANGED}",
         "where": f"folder {tmp_path.name}\\Kopie INTERMAX, {ORDERED}",
-        "action": "Odśwież Konfigurację i wybierz kopię z listy.",
+        "action": "Wybierz kopię z listy w Ustawieniach, w sekcji Kopie INTERMAX.",
     }
     assert (centrum.register.read_bytes(), copies(centrum)) == (before, [])
 
@@ -518,8 +522,9 @@ def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa
     periods_directory = tmp_path / "Okresy"
     periods_directory.mkdir()
     centrum = _ordered(tmp_path, periods_directory)
-    # Wpisanie raportów bez folderu okresów i pliku adresów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
-    ToolDirectory(tmp_path).configuration.worker_addresses.touch()
+    # Wpisanie raportów bez folderu okresów i adresu na Liście Wykonawców odmawia startu, zanim zapyta o miejsce „jedno
+    # naraz”.
+    write_worker_list(ToolDirectory(tmp_path).worker_list, worker_list(addresses={"adrian.testowy": ["adrian@przyklad.invalid"]}))
     during: dict[str, Any] = {}
 
     def replacing(source: Path, target: Path) -> None:

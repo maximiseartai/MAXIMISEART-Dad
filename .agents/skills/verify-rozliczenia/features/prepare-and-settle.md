@@ -25,7 +25,7 @@ own synthetic input; only this one hands the output of one process to the other.
 ## How to get to it (user POV)
 
 - Dad runs Przygotowanie pliku zbiorczego in Centrum rozliczeń, fills the Plik zbiorczy in Excel, saves and closes it, then runs Przebieg rozliczeń for the same period in Centrum.
-- Verification passes every input explicitly: first `py -3 tools\uruchom_proces.py preparation --register <rejestr> --periods-directory <folder okresów> --period 08_14_09_2026 --config <mapping> --internal-template <wzorzec> --collective-template <wzorzec> --metrics <metrics> [--dry-run]`, then `py -3 tools\uruchom_proces.py settlement --source <Folder okresu>\Rozliczenie 08_14_09_2026 - zbiorcze.xlsx --config <mapping> --worker-template <wzorzec> --metrics <metrics> [--dry-run]`.
+- Verification passes every input explicitly: first `py -3 tools\uruchom_proces.py preparation --register <rejestr> --periods-directory <folder okresów> --period 08_14_09_2026 --wykonawcy <wykonawcy.yaml> --internal-template <wzorzec> --collective-template <wzorzec> --metrics <metrics> [--dry-run]`, then `py -3 tools\uruchom_proces.py settlement --source <Folder okresu>\Rozliczenie 08_14_09_2026 - zbiorcze.xlsx --wykonawcy <wykonawcy.yaml> --worker-template <wzorzec> --metrics <metrics> [--dry-run]`.
 
 ## Driving it with PowerShell and the machine script
 

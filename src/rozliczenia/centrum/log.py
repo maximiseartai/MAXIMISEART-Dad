@@ -44,8 +44,15 @@ ReminderFailure = Literal[
     "haslo-odrzucone",
     "odmowa-wysylki",
 ]
-# Dlaczego zmiany Ustawień taty nie zapisano: plik jest, ale system nie daje go czytać.
-SettingsUnreadableCause = Literal["dostep"]
+# Dlaczego zmiany Ustawień taty nie zapisano: plik Ustawień (``dostep``) albo Historia Ustawień (``historia``) jest, ale
+# system nie daje go czytać.
+SettingsUnreadableCause = Literal["dostep", "historia"]
+# Co Ustawienia Centrum zrobiły z plikiem zmienionym poza Centrum; ``bez-zapisu``: wiersza Historii albo pamięci nie
+# dało się zapisać, więc następny odczyt spróbuje jeszcze raz.
+SettingsExternalResult = Literal["zapisano", "odrzucono", "bez-zapisu"]
+SettingsReleaseResult = Literal[
+    "zastosowano", "bez-zmian", "odrzucono", "pozniej", "bez-zapisu", "bez-pamieci", "bez-historii"
+]
 
 
 class CentrumLog:
@@ -57,6 +64,8 @@ class CentrumLog:
         self._lock = threading.Lock()
         self._view_timings = 0
         self._append = self._to_file if append is None else append
+        self._held: list[str] | None = None
+        self._hold_lock = threading.Lock()
 
     @property
     def directory(self) -> Path:
@@ -64,8 +73,27 @@ class CentrumLog:
 
         return self._path.parent
 
+    def hold_until_started(self) -> None:
+        """Wpisy z przygotowania serwera (zmiany Ustawień z Wydania, pierwszy odczyt Ustawień) czekają na wpis
+        ``start``, więc dziennik każdego startu zaczyna się od ``start`` z portem i wersją; ``started`` zapisuje je
+        zaraz po nim, a ``release_held`` bez niego, gdy start się nie udał."""
+
+        with self._hold_lock:
+            self._held = []
+
     def started(self, *, port: int, version: str, console: bool) -> None:
-        self._write("start", port=port, wersja=version, konsola="tak" if console else "nie")
+        with self._hold_lock:
+            self._append(self._line("start", port=port, wersja=version, konsola="tak" if console else "nie"))
+            self._flush_held()
+
+    def release_held(self) -> None:
+        with self._hold_lock:
+            self._flush_held()
+
+    def _flush_held(self) -> None:
+        held, self._held = self._held or [], None
+        for line in held:
+            self._append(line)
 
     def already_running(self, *, port: int) -> None:
         """Ponowne uruchomienie trafiło na działające Centrum tej samej wersji i tylko otworzyło kartę."""
@@ -168,9 +196,31 @@ class CentrumLog:
         self._write("dziennik-wyceny-niedostepny", typ=type(failure).__name__, miejsce=where)
 
     def settings_unreadable(self, *, cause: SettingsUnreadableCause) -> None:
-        """Zmiany Ustawień taty nie zapisano, bo ich pliku nie dało się przeczytać; plik zostaje bez zmian."""
+        """Zmiany Ustawień Centrum nie zapisano, bo jej pliku albo Historii nie dało się przeczytać; plik zostaje bez
+        zmian."""
 
         self._write("ustawienia-bez-zapisu", przyczyna=cause)
+
+    def settings_changed(self, *, file: str, keys: Sequence[str], source: str) -> None:
+        """Zapisana zmiana Ustawień Centrum: plik, klucze (``foldery.folder_okresow``) i źródło, bez wartości."""
+
+        self._write("ustawienia-zmiana", plik=file, klucze=",".join(keys), zrodlo=source)
+
+    def settings_external(self, *, file: str, result: SettingsExternalResult) -> None:
+        """Plik Ustawień Centrum zmieniony poza Centrum: przyjęty, odrzucony jako zła treść albo bez zapisu wiersza."""
+
+        self._write("ustawienia-spoza", plik=file, wynik=result)
+
+    def settings_release(self, *, change: str, result: SettingsReleaseResult) -> None:
+        """Zmiana Ustawień Centrum z Wydania przy starcie: id zmiany i wynik (``pozniej``, ``bez-zapisu``, ``bez-pamieci``
+        i ``bez-historii`` wracają przy następnym starcie), bez wartości."""
+
+        self._write("ustawienia-wydanie", zmiana=change, wynik=result)
+
+    def settings_bad(self, *, file: str, field: str) -> None:
+        """Złe ustawienie w pliku Ustawień Centrum: pole (``plik`` dla całego pliku), bez treści pliku."""
+
+        self._write("ustawienia-zle", plik=file, pole=field)
 
     def unexpected_failure(self, failure: BaseException, *, where: str) -> None:
         """Nieoczekiwany wyjątek: tylko nazwa typu i miejsce (np. trasa API), bez tekstu wyjątku."""
@@ -294,8 +344,18 @@ class CentrumLog:
     # (#1115), to błąd mypy (``final``).
     @final
     def _write(self, event: str, **facts: str | int) -> None:
+        line = self._line(event, **facts)
+        with self._hold_lock:
+            if self._held is not None:
+                self._held.append(line)
+                return
+        self._append(line)
+
+    @final
+    @staticmethod
+    def _line(event: str, **facts: str | int) -> str:
         moment = local_now().isoformat(timespec="seconds")
-        self._append(" ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())]))
+        return " ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())])
 
     @final
     def _to_file(self, line: str) -> None:

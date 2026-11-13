@@ -4,7 +4,9 @@ import { takeRequestsSince } from "@/api/client"
 import { recordViewTiming } from "@/api/centrum"
 import type { ViewTiming } from "@/api/generated"
 import { zViewTiming } from "@/api/generated/zod.gen"
-import type { Page } from "@/pages"
+
+/** Widok, który się mierzy: strona z `PAGES` albo okno Ustawień; jego nagłówek nosi `data-page` z tym `id`. */
+type View = { id: ViewTiming["page"] }
 
 type ViewStart = { kind: ViewTiming["kind"]; at: number }
 
@@ -58,8 +60,8 @@ function visibleSkeleton() {
   }
 }
 
-function isReady(page: Page): boolean {
-  return document.querySelector(`h1[data-page="${page.id}"]`) !== null && document.querySelector(LOADING) === null
+function isReady(page: View): boolean {
+  return document.querySelector(`[data-page="${page.id}"]`) !== null && document.querySelector(LOADING) === null
 }
 
 // Chromium podaje FCP dopiero po wyświetleniu klatki, czasem później niż gotowa treść.
@@ -90,7 +92,7 @@ function firstContentfulPaint(): Promise<number | null> {
  * dziennika Centrum: czas do gotowej treści, FCP przy zimnym starcie, czas widocznego szkieletu i zapytania API
  * z czasem serwera. Pomiar niczego nie pokazuje tacie; pomiar, którego kontrakt nie przyjmie, przepada.
  */
-export function useViewTiming(page: Page) {
+export function useViewTiming(page: View) {
   React.useEffect(() => {
     const start = viewStart
     const skeleton = visibleSkeleton()

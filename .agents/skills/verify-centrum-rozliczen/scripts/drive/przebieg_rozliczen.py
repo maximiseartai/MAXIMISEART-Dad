@@ -30,7 +30,7 @@ from drive.common import (
     stop_banner,
 )
 from harness import Log, Pace
-from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
+from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER, UNKNOWN_WORKER
 from atrapy.workbooks import excel_lock
 
 SETTLEMENT = "przebieg-rozliczen"
@@ -40,10 +40,6 @@ TEMPLATE_PACING_MS = 2500
 # Where Dad types quantities in his Plik zbiorczy: a deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z
 # src”) and not rozliczenia.collective_layout, because the drive plays Dad and the fixture builds his files by hand.
 WORKER_COLUMN, QUANTITY_COLUMN, FIRST_DATA_ROW = 8, 14, 18  # H (WYKONAWCA), N (first quantity), row 18
-UNMAPPED_WORKER_ACTION = (
-    "Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy do konfiguracji "
-    "wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie."
-)
 NAMES_ROW = re.compile(r"\bWiersz \d+\b")
 REMINDER = "Zapisz i zamknij Plik zbiorczy w Excelu"
 # Counts Dad's returns to the window, so a step can show that a new read came without one.
@@ -470,17 +466,21 @@ def drive(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Uruchom", exact=True).click()
     page.get_by_role("alertdialog", name="Uruchomić z zapisem?").get_by_role("button", name="Uruchom", exact=True).click()
     stop = stop_banner(page)
-    expect(stop).to_contain_text("W Pliku zbiorczym jest WYKONAWCA spoza konfiguracji wykonawców")
-    expect(stop).to_contain_text(UNMAPPED_WORKER_ACTION)
+    # The unknown login and column H, not a copy of the Komunikat's sentence: its wording has one owner, the Komunikat
+    # catalog with its samples in tests/expected/komunikaty.txt, and a copy here drifted from it (#1529 r1).
+    expect(stop).to_contain_text(UNKNOWN_WORKER)
     expect(stop.get_by_text("lista problemów pokaże wiersze")).to_have_count(0)
     result = finished_result(run, "przebieg-nieznany-wykonawca")
     stops = result["stops"]
     assert isinstance(stops, list)
     [message] = stops
     assert isinstance(message, dict)
+    expect(stop).to_contain_text(str(message["action"]))
     run.check(
-        (result["ending"], message["action"]) == ("stop", UNMAPPED_WORKER_ACTION),
-        "the RUN stops on the Wykonawca missing from the konfiguracja wykonawców and Co zrobić starts with column H",
+        result["ending"] == "stop"
+        and UNKNOWN_WORKER in str(message["what"])
+        and str(message["action"]).startswith("Popraw WYKONAWCĘ w kolumnie H"),
+        "the RUN stops naming the Wykonawca missing from the Lista Wykonawców and Co zrobić starts with column H",
     )
     run.check(
         bool(preview_warnings) and not any(NAMES_ROW.search(str(warning["what"])) for warning in preview_warnings),

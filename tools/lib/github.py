@@ -4,7 +4,7 @@
 ``LIMIT_S`` (``None`` bez limitu), a porażka to ``subprocess.CalledProcessError`` z wyjściem błędów programu.
 ``GhApi`` pyta ``gh api`` o repozytorium checkoutu (``REPO``), a ``strony`` czyta listę API po ``STRONA`` wpisów do
 ostatniej niepełnej strony, więc lista dłuższa od strony nie gubi wpisów. Akcje issue (``Zaloz``, ``Skomentuj``,
-``Zamknij``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję.
+``Zamknij``, ``Edytuj``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję.
 
 W workflow ``gh`` dostaje token z ``GH_TOKEN``, lokalnie z logowania Maksa. Moduł używa tylko biblioteki standardowej,
 bo Zgłoszenia CI biegną systemowym ``python3`` runnera.
@@ -86,6 +86,38 @@ def html_markdownu(tekst: str, repozytorium: str) -> str:
     if not html.strip():
         raise ValueError("GitHub zwrócił pusty HTML")
     return html
+
+
+def domyslna_galaz(repozytorium: str) -> str:
+    """Nazwa domyślnej gałęzi ``repozytorium`` (``właściciel/nazwa``) z ``gh repo view``."""
+
+    return str(json.loads(gh("repo", "view", repozytorium, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"])
+
+
+@dataclass(frozen=True)
+class LinkGithuba:
+    """Odwołanie do issue albo PR, które renderer GitHuba (``html_markdownu``) zamienił na link: repozytorium
+    ``właściciel/nazwa``, numer i ``rodzaj`` z ``data-hovercard-type`` (``issue`` albo ``pull_request``), który GitHub
+    ustala ze stanu numeru u siebie."""
+
+    repozytorium: str
+    numer: int
+    rodzaj: str
+
+    def w(self, repozytorium: str) -> bool:
+        """Czy link wskazuje ``repozytorium`` (właściciel i nazwa bez względu na wielkość liter)."""
+
+        return self.repozytorium.casefold() == repozytorium.casefold()
+
+
+def link_githuba(atrybuty: Sequence[tuple[str, str | None]]) -> LinkGithuba | None:
+    """Link z atrybutów znacznika ``<a>`` HTML renderera GitHuba; ``None``, gdy to nie link do issue ani PR (``issue-link``)."""
+
+    wartosci = dict(atrybuty)
+    if "issue-link" not in (wartosci.get("class") or "").split():
+        return None
+    _, wlasciciel, nazwa, _, numer = urllib.parse.urlsplit(wartosci.get("data-url") or "").path.split("/")
+    return LinkGithuba(f"{wlasciciel}/{nazwa}", int(numer), wartosci.get("data-hovercard-type") or "")
 
 
 class GitHub(Protocol):
@@ -200,7 +232,15 @@ class Zamknij:
     zdejmij: tuple[str, ...] = ()  # etykiety, które zamknięcie zdejmuje z issue
 
 
-Akcja = Zaloz | Skomentuj | Zamknij
+@dataclass(frozen=True)
+class Edytuj:
+    """Nowa treść issue, bez komentarza."""
+
+    issue: int
+    tresc: str
+
+
+Akcja = Zaloz | Skomentuj | Zamknij | Edytuj
 
 
 def wykonaj(github: GitHub, akcje: Sequence[Akcja], prefiks: str) -> list[str]:
@@ -226,6 +266,9 @@ def wykonaj(github: GitHub, akcje: Sequence[Akcja], prefiks: str) -> list[str]:
                     github.wyslij("DELETE", f"{REPO}/issues/{issue}/labels/{urllib.parse.quote(etykieta)}", {})
                 github.wyslij("PATCH", f"{REPO}/issues/{issue}", {"state": "closed", "state_reason": "completed"})
                 linie.append(f"{prefiks} | zamknięte #{issue}" + "".join(f", zdjęta etykieta {etykieta}" for etykieta in zdejmij))
+            case Edytuj(issue, tresc):
+                github.wyslij("PATCH", f"{REPO}/issues/{issue}", {"body": tresc})
+                linie.append(f"{prefiks} | zmieniona treść #{issue}")
     return linie
 
 
@@ -255,3 +298,5 @@ def opis(akcja: Akcja) -> str:
             return f"skomentuj #{issue}" + (f" i otwórz ponownie z etykietami {', '.join(otworz)}" if otworz else "") + _opis_powiadom(powiadom)
         case Zamknij(issue, _, zdejmij):
             return f"zamknij #{issue} z komentarzem" + "".join(f", zdejmij etykietę {etykieta}" for etykieta in zdejmij)
+        case Edytuj(issue, _):
+            return f"zmień treść #{issue} bez komentarza"

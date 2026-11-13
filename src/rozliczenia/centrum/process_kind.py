@@ -28,14 +28,16 @@ from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
-from rozliczenia.centrum.settings import Settings, SettingState
+from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
+from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
 from rozliczenia.efenix_window import OpenEfenix
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
-from rozliczenia.order_facts import CollectiveOrders
+from rozliczenia.quantity_check import CheckResult
+from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.period_folder import PeriodStatus
 from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs
 from rozliczenia.progress import ProgressSnapshot
@@ -43,6 +45,7 @@ from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 from rozliczenia.wall_clock import local_now
+from rozliczenia.worker_list import WorkerList
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
@@ -51,14 +54,14 @@ SettingField = Literal["register", "periods_directory"]
 # Wzorzec, który proces czyta; Konfiguracja wymienia każdy pod jego rolą.
 TemplateRole = Literal["internal", "collective", "worker"]
 TemplateNeed = Literal["internal_template", "collective_template", "worker_template"]
-ConfigurationNeed = Literal["worker_config", "worker_addresses", TemplateNeed]
-"""Plik Konfiguracji (``configuration.ConfigurationFiles``): Konfiguracja wykonawców, plik adresów Wykonawców albo
-Wzorzec."""
+ConfigurationNeed = TemplateNeed
+"""Plik Konfiguracji (``configuration.ConfigurationFiles``): Wzorzec."""
 PathNeed = Literal["register", "periods_directory", "collective_file", "copies_directory", ConfigurationNeed]
-Need = PathNeed | Literal["period", "efenix_window", "worker_report_inbox"]
+Need = PathNeed | Literal["period", "workers", "efenix_window", "worker_report_inbox"]
 """Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
 ścieżkę (``period_start``, ``intermax_run``, ``report_entering_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie
-odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``efenix_window``: okno efenix gospodarza
+odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``workers``: Lista Wykonawców (``Start.workers``),
+``efenix_window``: okno efenix gospodarza
 (``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``)."""
 
 
@@ -84,20 +87,43 @@ class Start:
     ``paths`` ma ścieżkę każdej potrzeby-pliku procesu (sprawdza ``Catalog.prepared``). ``period``: token okresu, gdy
     gospodarz go zna (karta, ``--period``, Logi); ``None``: okres wynika z wejścia. ``pricing``: tryb Wyceny w efenix
     wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
-    trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``.
+    trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: migawka Ustawień Centrum z chwili
+    startu, z której Logi Uruchomienia i Diagnoza Zatrzymania biorą pliki procesu; ``None``: gospodarz bez Ustawień
+    Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu (Centrum: migawka Ustawień,
+    Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces jej nie potrzebuje.
+    ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z chwili startu; gospodarz
+    bez Ustawień Centrum podaje Reguły ilości z Wydania. Pole nie ma wartości domyślnej, więc każdy gospodarz mówi, skąd
+    ma reguły.
     """
 
     paths: Mapping[PathNeed, Path]
     period: str | None
     dry_run: bool
     pricing: runs_contract.Pricing | None = None
+    settings: FolderSettings | None = None
+    workers: WorkerList | None = None
+    quantity_rules: QuantityRules = field(kw_only=True)
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]
 
+    def worker_list(self) -> WorkerList:
+        assert self.workers is not None, "Catalog.prepared sprawdza potrzebę workers"
+        return self.workers
+
     def token(self) -> str:
         assert self.period is not None, "Catalog.prepared sprawdza potrzebę period"
         return self.period
+
+
+def workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
+    """Lista Wykonawców dla startu Uruchomienia z migawki Ustawień: dobra, a przy złym ustawieniu ostatnia dobra;
+    ``Refusal``, gdy ostatniej dobrej nie ma albo pliku nie da się teraz przeczytać."""
+
+    found = usable(workers)
+    if found is None:
+        raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)
+    return found
 
 
 @dataclass(frozen=True)
@@ -146,14 +172,14 @@ class NeededSetting:
     field: SettingField
     missing: Callable[[Path], Message]
 
-    def chosen(self, settings: Settings) -> Path | None:
+    def chosen(self, settings: FolderSettings) -> Path | None:
         match self.field:
             case "register":
                 return settings.register
             case "periods_directory":
                 return settings.periods_directory
 
-    def state(self, settings: Settings) -> SettingState:
+    def state(self, settings: FolderSettings) -> SettingState:
         match self.field:
             case "register":
                 return settings.register_state
@@ -172,7 +198,7 @@ SimpleCheck = Literal[
     "tool_freshness",
     "report_key",
     "centrum_log",
-    "worker_config",
+    "worker_list",
 ]
 
 
@@ -232,8 +258,8 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     ``journaled``: proces pisze dziennik Wyceny w efenix (``logs_disk.LogsOnDisk``). ``short_title``: krótka nazwa
     procesu w filtrach Metryk. ``logs``: dodatki Logów Uruchomienia procesu (``run_logs.ProcessLogs``) z podsumowania
     silnika (``None``: Uruchomienie bez wyniku) i faktów Zatrzymania (``process_run.Stop.facts``; ``None`` bez nich).
-    ``quantity_check``: Zlecenia z podsumowania, które po zapisie sprawdza Kontrola ilości (ADR 0013); ``None``: proces
-    bez Kontroli ilości.
+    ``quantity_check``: Kontrola ilości Zleceń z podsumowania Regułami ilości tego Uruchomienia, po zapisie (ADR 0013);
+    ``None``: proces bez Kontroli ilości.
     """
 
     key: common_contract.ProcessKey
@@ -247,7 +273,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     checks: tuple[CheckStep, ...]
     journaled: bool = False
     logs: Callable[[SummaryT | None, object], ProcessLogs] = lambda _summary, _facts: ProcessLogs()
-    quantity_check: Callable[[SummaryT], CollectiveOrders] | None = None
+    quantity_check: Callable[[SummaryT], CheckResult] | None = None
 
     def __post_init__(self) -> None:
         modes = self.view.pricing_modes
@@ -319,17 +345,17 @@ class ProcessKind(Generic[InputsT, SummaryT]):
             register_name=self.view.register_name,
         )
 
-    def settings_blocker(self, settings: Settings) -> str | None:
+    def settings_blocker(self, settings: FolderSettings) -> str | None:
         """„Najpierw wskaż …” z nazwami niewskazanych Ustawień procesu; ``None``, gdy wszystkie są wskazane."""
 
         unchosen = self._unchosen(settings)
         return None if unchosen is None else unchosen.message
 
-    def _unchosen(self, settings: Settings) -> Refusal | None:
+    def _unchosen(self, settings: FolderSettings) -> Refusal | None:
         missing = [setting.name for setting in self.settings if setting.chosen(settings) is None]
         return refusal.first_choose(missing) if missing else None
 
-    def required_paths(self, settings: Settings) -> Mapping[SettingField, Path]:
+    def required_paths(self, settings: FolderSettings) -> Mapping[SettingField, Path]:
         """Wskazane ścieżki Ustawień procesu; ``Refusal`` ze zdaniem ``settings_blocker``, gdy czegoś brakuje."""
 
         unchosen = self._unchosen(settings)
@@ -396,12 +422,13 @@ przeglądowi."""
 class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
-    w efenix (``None``: proces bez trybów), ``engine``: silnik z katalogu (``run_process``; inny daje tylko wyrocznia
+    w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
+    ``engine``: silnik z katalogu (``run_process``; inny daje tylko wyrocznia
     ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``). Powstaje tylko w ``Catalog.prepared``
     (``_CATALOG``).
     """
 
-    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing")
+    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing", "settings")
 
     def __init__(
         self,
@@ -413,6 +440,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         pricing: runs_contract.Pricing | None,
         engine: Engine,
         proof: _Catalog,
+        settings: FolderSettings | None = None,
     ) -> None:
         self.kind: Final = kind
         self.period: Final = period
@@ -421,6 +449,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         self.metrics: Final = metrics
         self.pricing: Final = pricing
         self.engine: Final = engine
+        self.settings: Final = settings
 
     @property
     def dry_run(self) -> bool:

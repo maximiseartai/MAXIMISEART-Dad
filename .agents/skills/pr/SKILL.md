@@ -49,6 +49,48 @@ The scope is the area (`intermax`, `centrum`, `plan`, `agents`), and the subject
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
+## Root section
+
+A PR adds `## Korzeń` between `## Evidence` and `## Merge Danger` when the PR had a `FAIL` verdict, or when the PR fixes a red `main` ([ADR 0031](../../../docs/adr/0031-korzen-po-fail-i-chwasty.md), section „Korzeń i chwast” of the skill [`przeglad`](../przeglad/SKILL.md)).
+A red-`main` fix names its issue on a line `Część #N` (labelled `czerwony-main`); a PR for a flaky test names the `Flaky test:` issue instead and needs no section.
+A thread whose first verdict came before this check was merged (the merge that added `tools/lib/bramka_korzenia.py`) finishes the old way, without the section.
+`tools/scal_pr.py` reads the block below as the pattern of its refusal and refuses to merge while the section misses something:
+
+```markdown
+## Korzeń
+
+### W1 r2: R-BEZ-TESTU
+Szczebel: (c) - <mechanizm, który łapie całą klasę>
+Wyżej nie, bo:
+(a) - <czemu nie działa>
+(b) - <czemu nie działa>
+Dowód: <polecenie i wynik, np. linia MUTACJE OK; cytat z polem w bloku kodu>
+
+### W2 r2: R-DRUGA-DROGA
+Wyrwany w #<PR korzenia>
+
+### Czerwony main #<issue>: R-KOD
+Szczebel: (a) - <mechanizm>
+Dowód: <polecenie i wynik>
+```
+
+- One block per Ważne of every `FAIL` verdict: `W<n>` from the verdict and `r<k>` for the k-th verdict of the PR (the k-th line `WERDYKT` with PASS or FAIL in `--przeglad`).
+  A `FAIL` without the line `Znaleziska:` or with `Ważne 0` (published outside `--werdykt`) still needs the block `W1 r<k>`.
+  The code is the one from the last verdict about that Ważne: its `Korzeń:` field, or a later reviewer's point `Korzeń W<n> r<k>: R-KOD - zdanie` under `## Sprawdzone`.
+  To dispute a code, answer the verdict with the reason; the next reviewer decides with that point.
+- One block per red-`main` issue, with a code chosen by the author.
+- Every code of the section, in a Ważne block and in a red-`main` block, stands in `korzenie.toml` on HEAD.
+- `Szczebel:` names the highest rung that works, and `Wyżej nie, bo:` gives one line `(x) - zdanie` for each higher rung, in ladder order; rung (a) has no such line.
+  Rung (e) needs this PR to add a new point linking to this PR (`#N`) to „Co jest porażką” in the skill `przeglad` and to leave the other points as on the base: an edited point of the base is not a new point.
+- `Dowód:` is a command with its result, at most 5 lines of at most 300 characters, as in the verdict.
+- A root larger than `size:M` (the label the CI workflow „Rozmiar PR” puts on a PR) goes in its own root PR, merged first into the default branch: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.
+  Write both numbers as bare `#N`, so GitHub links the two PRs on their timelines.
+- Every `NOWY` code from the verdicts stands in `korzenie.toml` on HEAD before the merge.
+- A code that another merged PR already uprooted (a block with `Szczebel:` in its `## Korzeń`) needs a rung higher than the highest earlier one, closer to (a).
+  After (a) no higher rung exists, so Maks decides: the merge needs a comment in this PR from an account with `admin` rights on the repository with the line `ZGODA KORZEŃ: R-KOD`.
+- A PR that uproots a weed names its issue on a line `Korzeń z #N: R-KOD`, and `tools/scal_pr.py` closes the issue `Chwast: R-KOD` after the merge.
+- Fix a refused section with `gh pr edit N --body-file FILE`: no new commit and no new verdict.
+
 ## Language and length
 
 - Write the prose in Polish, with the terms of `GLOSSARY.md` (Komunikat, Zatrzymanie, Uruchomienie procesu, Wzorzec), and keep the template's headings and bold labels as they are.

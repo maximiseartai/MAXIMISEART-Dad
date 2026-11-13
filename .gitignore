@@ -22,7 +22,7 @@ logs/
 .DS_Store
 # Pliki Centrum w config/ (Uwagi taty, adresy Skrzynki, klucz) nie trafiają do publicznego repozytorium.
 config/*
-!config/worker_mapping.example.yaml
+!config/wykonawcy.example.yaml
 node_modules/
 .benchmark/
 # Junit, wykonanie i czasy jednostek zadania CI (tools/ci/wykonaj_zadanie.py, tools/ci/zapis_czasow.py), plan runu (tools/plan_ci.py) i flaky testy z kwarantanną (tools/lib/niestabilne_testy.py), artefakty runu.

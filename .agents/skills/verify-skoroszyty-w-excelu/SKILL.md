@@ -16,7 +16,10 @@ pilnuje:
   - src/rozliczenia/register_columns.py
   - src/rozliczenia/preparation_files.py
   - src/rozliczenia/preparation_process.py
-  - src/rozliczenia/quantity_rules.py
+  - src/rozliczenia/quantity_engine.py
+  - src/rozliczenia/quantity_rules_file.py
+  - src/rozliczenia/reguly_ilosci_domyslne.yaml
+  - src/rozliczenia/lista_urzadzen_domyslna.yaml
   - src/rozliczenia/engine.py
   - src/rozliczenia/inea_only_quantities.py
   - src/rozliczenia/period_folder.py
@@ -122,7 +125,7 @@ The runner runs the doctor after creating the fixture; its output is
 
 `DOCTOR OK` means: macOS, Python 3.13 or newer, Excel installed, Excel's
 container exists, the desk is inside it and empty, the fixture has the Rejestr,
-`worker_mapping.yaml` and `INEA`, both linked Wzorce have an external link used by a formula, the fixture
+`wykonawcy.yaml` and `INEA`, both linked Wzorce have an external link used by a formula, the fixture
 has no Folder okresu yet, and a running Excel answers AppleScript with no dialog
 and holds no workbook named like this run's (Excel refuses two workbooks of the
 same name). `excel.py status` is the read-only check of Excel alone.

@@ -35,6 +35,18 @@ class Feature(NamedTuple):
 # The order of `all`. CI drives `all` in consecutive parts of it (`ci-czesci` in SKILL.md), each part on a fresh
 # fixture and Centrum, so a feature also starts right after the fixture or after any earlier feature of the order.
 FEATURES = (
+    # Checks the files unset, so it runs before `ustawienia` sets them; it sets nothing itself.
+    Feature(
+        "okno-ustawien",
+        (
+            "300-okno-stopka-menu",
+            "301-okno-szerokie",
+            "302-okno-foldery",
+            "303-okno-z-raportow",
+            "304-okno-waskie",
+            "305-okno-waskie-wybor",
+        ),
+    ),
     Feature(
         "ustawienia",
         (
@@ -47,6 +59,36 @@ FEATURES = (
             "275-ustawienia-nieczytelny-plik",
             "276-ustawienia-niedostepna-sciezka",
             "05-ustawienia-motyw-jasny",
+            "306-ustawienia-zapisano-cofnij",
+            "307-ustawienia-zapisano-waskie",
+            "315-ustawienia-blad-w-oknie",
+            "341-ustawienia-blad-po-zamknieciu",
+            "308-ustawienia-historia",
+            "309-ustawienia-historia-waska",
+            "340-ustawienia-historia-wydanie",
+            "310-ustawienia-odmowa-przy-polu",
+            "311-ustawienia-odmowa-waska",
+            "312-ustawienia-zle-pole",
+            "313-ustawienia-zly-plik",
+            "314-ustawienia-historia-bez-cofniecia",
+            "330-ustawienia-autostart",
+            "331-ustawienia-autostart-waskie",
+            "332-ustawienia-autostart-spoza",
+            "333-ustawienia-autostart-bez-windows",
+            "319-ustawienia-zle-stare-haslo",
+            "316-ustawienia-haslo-przyjete",
+            "317-ustawienia-historia-hasla",
+            "318-ustawienia-haslo-waskie",
+        ),
+    ),
+    Feature(
+        "reguly-ilosci",
+        (
+            "350-reguly-ilosci-szerokie",
+            "351-reguly-ilosci-bez-wzorca",
+            "352-urzadzenia-szerokie",
+            "353-reguly-ilosci-waskie",
+            "354-urzadzenia-waskie",
         ),
     ),
     Feature(
@@ -74,6 +116,7 @@ FEATURES = (
     Feature(
         "uklad-folderow-taty",
         (
+            "102-uklad-taty-foldery",
             "15-uklad-taty-tablica",
             "16-uklad-taty-otwieranie",
         ),
@@ -262,8 +305,7 @@ FEATURES = (
             "58-diagnoza-nieoczekiwany-wyjatek",
             "59-diagnoza-nieoczekiwany-wyjatek-zgloszenie",
             "59b-diagnoza-klucz-odrzucony",
-            "59c-diagnoza-konfiguracja-wykonawcow",
-            "59d-diagnoza-konfiguracja-wykonawcow-niedostepna",
+            "59c-diagnoza-lista-wykonawcow",
         ),
     ),
     # Diagnoses one more such stop with the scripted GitHub and OneDrive.
@@ -463,7 +505,6 @@ FEATURES = (
             "84-wydajnosc-okresy",
             "85-wydajnosc-uruchomienia",
             "86-wydajnosc-metryki",
-            "87-wydajnosc-konfiguracja",
         ),
         evidence=(
             "wydajnosc/raport.json",

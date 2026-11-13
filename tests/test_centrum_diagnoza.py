@@ -3,21 +3,28 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
-from typing import Any, NoReturn
+import time
+from typing import Any, Final, NoReturn
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from rozliczenia import preparation_messages
-from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
+from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.message import Message
 from rozliczenia.template_file import TemplateFile
+from rozliczenia.wall_clock import local_now
+from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
@@ -42,6 +49,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
+from tests.fixtures.wyciek import zawiera_wartosc
 from atrapy.preparation import (
     INTERNAL_SETTLEMENT_NAME,
     PERIOD,
@@ -50,6 +58,7 @@ from atrapy.preparation import (
     month_periods_folder,
     write_register,
 )
+from atrapy.settlement import WORKERS, worker_list, write_worker_list
 
 
 def lock(path: Path) -> Path:
@@ -227,6 +236,30 @@ NOT_FOUND = {
 }
 
 
+def test_diagnoza_bierze_ustawienia_ze_startu_uruchomienia_a_nie_zmienione_po_zatrzymaniu(tmp_path: Path) -> None:
+    """Diagnoza wyjaśnia Zatrzymanie Uruchomienia, więc sprawdza Rejestr zleceń i folder okresów z jego startu, nawet
+    gdy tata zmienił je w Ustawieniach Centrum po Zatrzymaniu."""
+
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    elsewhere = tmp_path / "Inny folder"
+    chosen_folders(centrum, elsewhere / "ZLECENIA INNE.xlsx", elsewhere)
+
+    diagnosis = diagnose(centrum, run_id)
+
+    assert check(diagnosis, "Ustawienia taty") == ("passed", "Rejestr zleceń i folder okresów są na miejscu.")
+
+
+def chosen_folders(centrum: PreparingCentrum, register: Path, periods: Path) -> None:
+    """Rejestr zleceń i folder okresów zapisane w sekcji Foldery przed Uruchomieniem, którego Diagnozę test ogląda:
+    Diagnoza bierze Ustawienia Centrum ze startu Uruchomienia."""
+
+    saved = centrum.client.put(
+        "/api/settings/folders", json={"order_register": str(register), "periods_directory": str(periods)}
+    )
+    assert saved.status_code == 200, saved.json()
+
+
 def diagnose(centrum: PreparingCentrum | SettlingCentrum, run_id: str) -> dict[str, Any]:
     response = centrum.client.post(f"/api/runs/{run_id}/diagnosis")
     assert response.status_code == 200, response.json()
@@ -260,11 +293,11 @@ def test_diagnoza_rejestru_w_folderze_bez_dostepu_wyjasnia_niedostepnosc_a_nie_b
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    run_id = stopped_for_maks(centrum)
     folder = tmp_path / "Rejestr"
     folder.mkdir()
     register = centrum.fixture.register_path.rename(folder / centrum.fixture.register_path.name)
-    SettingsStore(centrum.tool.settings, log=CentrumLog(centrum.log_path), pause=lambda _: None).update(register=register)
+    chosen_folders(centrum, register, centrum.fixture.periods_directory)
+    run_id = stopped_for_maks(centrum)
     path_checks(monkeypatch)
 
     with without_access(folder):
@@ -285,13 +318,11 @@ def test_diagnoza_folderu_okresow_w_folderze_bez_dostepu_wyjasnia_niedostepnosc_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    run_id = stopped_for_maks(centrum)
     onedrive = tmp_path / "OneDrive"
     onedrive.mkdir()
     periods = centrum.fixture.periods_directory.rename(onedrive / centrum.fixture.periods_directory.name)
-    SettingsStore(centrum.tool.settings, log=CentrumLog(centrum.log_path), pause=lambda _: None).update(
-        periods_directory=periods
-    )
+    chosen_folders(centrum, centrum.fixture.register_path, periods)
+    run_id = stopped_for_maks(centrum)
     path_checks(monkeypatch)
 
     with without_access(onedrive):
@@ -306,18 +337,183 @@ def test_diagnoza_brakujacego_folderu_okresow_wyjasnia_brak_jak_przygotowanie_ch
     tmp_path: Path,
 ) -> None:
     centrum = preparing_centrum(tmp_path)
-    run_id = stopped_for_maks(centrum)
     year = tmp_path / "Załączniki" / "Rozliczenia 2026"
     (year / "10_Październik_2026" / "INEA").mkdir(parents=True)
-    periods = year / "11_Listopad_2026" / "INEA"
-    SettingsStore(centrum.tool.settings, log=CentrumLog(centrum.log_path), pause=lambda _: None).update(
-        periods_directory=periods
+    (year / "11_Listopad_2026").mkdir()
+    periods = centrum.fixture.periods_directory.rename(year / "11_Listopad_2026" / "INEA")
+    (periods / centrum.fixture.period_directory.name).mkdir(exist_ok=True)
+    # Folder okresów zapisany w środku układu przed #1472: wybór zapisałby dziś Załączniki.
+    centrum.tool.settings.write_text(
+        FOLDERS.dump(FolderSettings(register=centrum.fixture.register_path, periods_directory=periods)), encoding="utf-8"
     )
+    run_id = stopped_for_maks(centrum)
+    periods.rename(year / "11_Listopad_2026" / "INEA-przeniesiony")
 
     with without_access(year / "10_Październik_2026"):
         diagnosis = diagnose(centrum, run_id)
 
     assert diagnosis["explanation"] == explanation_of(preparation_messages.periods_directory_missing(periods))
+
+
+def test_zgloszenie_ma_zmiany_ustawien_z_30_dni_z_folderem_sama_nazwa_bez_sciezki_konta(tmp_path: Path) -> None:
+    """Zgłoszenie podaje zmiany Ustawień Centrum z ostatnich 30 dni (ADR 0032), bez danych osobowych: folder i plik
+    tylko nazwą, bo pełna ścieżka ma nazwę konta taty."""
+
+    centrum = preparing_centrum(tmp_path)
+    account = tmp_path / "Konto Taty Syntetyczne"
+    account.mkdir()
+    periods = centrum.fixture.periods_directory.rename(account / "Załączniki")
+    with (centrum.tool.config / HISTORY_FILE).open("a", encoding="utf-8") as history:
+        history.write(_history_row(local_now() - timedelta(days=31), "wyglad.motyw", "dark", "light"))
+    chosen_folders(centrum, centrum.fixture.register_path, periods)
+    run_id = stopped_for_maks(centrum)
+
+    lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    at = [f"- {datetime.fromisoformat(row['at']).astimezone():%Y-%m-%d %H:%M} · tata · {SETTINGS_FILE}" for row in _history(centrum)]
+    start = lines.index("## Zmiany Ustawień (30 dni)")
+    assert lines[start : start + 6] == [
+        "## Zmiany Ustawień (30 dni)",
+        "",
+        f"{at[0]} · foldery.folder_okresow: INEA → Załączniki",
+        f"{at[2]} · foldery.folder_okresow: nie ustawiono → INEA",
+        f"{at[3]} · foldery.rejestr_zlecen: nie ustawiono → {centrum.fixture.register_path.name}",
+        "",
+    ]
+    assert not zawiera_wartosc("\n".join(lines), account.name)
+
+
+def test_zgloszenie_podaje_zmiane_listy_wykonawcow_bez_loginu_nazwy_i_adresu(tmp_path: Path) -> None:
+    """D4 projektu Ustawień: zmiana Listy Wykonawców w Zgłoszeniu to tylko „dodano”, „usunięto” albo „zmieniono
+    Wykonawcę” z nazwami pól, bez loginów, nazw i adresów Wykonawców."""
+
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    names = {**WORKERS, "dariusz.fikcyjny2": "Dariusz Zmieniony", "nowy.wykonawca": "Nowy Wykonawca"}
+    write_worker_list(centrum.tool.worker_list, worker_list(names, {"nowy.wykonawca": ["nowy@przyklad.invalid"]}))
+
+    body = diagnose(centrum, run_id)["report"]["body"]
+
+    lines = body.splitlines()
+    start = lines.index("## Zmiany Ustawień (30 dni)")
+    assert lines[start + 2].endswith(
+        f"· spoza Centrum · {WORKERS_FILE} · zmieniono Wykonawcę (pola: nazwa); dodano Wykonawcę"
+    ), lines[start : start + 4]
+    for secret in ("dariusz.fikcyjny2", "Dariusz Zmieniony", "nowy.wykonawca", "Nowy Wykonawca", "nowy@przyklad.invalid"):
+        assert not zawiera_wartosc(body, secret), secret
+def test_zgloszenie_ma_zmiane_hasla_skrzynki_samym_kluczem_bez_hasla(tmp_path: Path) -> None:
+    """Zmiana hasła skrzynki raportów trafia do Zgłoszenia jako „zmieniono: skrzynka.haslo”, bez starego i nowego hasła
+    (#1469, D4 projektu Ustawień)."""
+
+    centrum = preparing_centrum(tmp_path)
+    access = centrum.tool.config / INBOX_ACCESS_FILE
+    access.write_text("raporty@przyklad.invalid\nstare haslo maksa\n", encoding="utf-8")
+    centrum.client.get("/api/settings")
+    centrum.client.put("/api/settings/inbox-password", json={"password": "nowe haslo taty"})
+    chosen_folders(centrum, centrum.fixture.register_path, centrum.fixture.periods_directory)
+    run_id = stopped_for_maks(centrum)
+
+    body = diagnose(centrum, run_id)["report"]["body"]
+
+    [secret] = [row for row in _history(centrum) if row["secret"] and row["source"] == "tata"]
+    at = f"{datetime.fromisoformat(secret['at']).astimezone():%Y-%m-%d %H:%M}"
+    assert f"- {at} · tata · {INBOX_ACCESS_FILE} · zmieniono: skrzynka.haslo" in body.splitlines()
+    assert [word for word in ("haslo maksa", "haslo taty", "haslomaksa", "haslotaty") if word in body] == []
+
+
+def test_zgloszenie_ma_reczna_zmiane_pliku_ustawien_sprzed_chwili_jako_zmiane_spoza_centrum(tmp_path: Path) -> None:
+    """Maks zmienia plik Ustawień ręcznie tuż przed Zgłoszeniem i nikt nie czyta Ustawień w międzyczasie: Zgłoszenie
+    i tak ma tę zmianę jako „spoza Centrum” (ADR 0032)."""
+
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    settings = centrum.tool.config / SETTINGS_FILE
+    written = settings.read_text(encoding="utf-8")
+    assert written.count("motyw: dark\n") == 1
+    settings.write_text(written.replace("motyw: dark\n", "motyw: light\n"), encoding="utf-8")
+
+    lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    [outside] = [row for row in _history(centrum) if row["source"] == "outside"]
+    at = f"{datetime.fromisoformat(outside['at']).astimezone():%Y-%m-%d %H:%M}"
+    assert f"- {at} · spoza Centrum · {SETTINGS_FILE} · wyglad.motyw: dark → light" in lines
+
+
+def test_zgloszenie_podaje_chwile_zmiany_ustawien_w_strefie_taty_takze_gdy_jego_strefa_nie_jest_utc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tata i Maks czytają chwilę zmiany w Zgłoszeniu w czasie Polski, a runner CI jest w UTC, więc test wymusza strefę
+    taty, w której oba zapisy się różnią."""
+
+    if sys.platform == "win32":
+        pytest.skip("time.tzset jest tylko w systemach POSIX")
+    monkeypatch.setenv("TZ", "Europe/Warsaw")
+    time.tzset()
+    try:
+        centrum = preparing_centrum(tmp_path)
+        centrum.client.put("/api/settings/theme", json={"theme": "light"})
+        run_id = stopped_for_maks(centrum)
+        lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    [theme] = [row for row in _history(centrum) if row["changes"][0]["key"] == "wyglad.motyw"]
+    at = datetime.fromisoformat(theme["at"]).astimezone(ZoneInfo("Europe/Warsaw"))
+    assert f"- {at:%Y-%m-%d %H:%M} · tata · {SETTINGS_FILE} · wyglad.motyw: dark → light" in lines
+
+
+def test_zgloszenie_podaje_zmiane_ustawien_z_wydania_z_numerem_wydania_i_id_zmiany(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    at = local_now() - timedelta(days=1)
+    with (centrum.tool.config / HISTORY_FILE).open("a", encoding="utf-8") as history:
+        history.write(_history_row(at, "wyglad.motyw", "dark", "light", source=RELEASE_SOURCE))
+    run_id = stopped_for_maks(centrum)
+
+    lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    assert f"- {at:%Y-%m-%d %H:%M} · Wydanie 0.9.0 (2026-11-motyw-jasny) · {SETTINGS_FILE} · wyglad.motyw: dark → light" in lines
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_zgloszenie_przy_historii_ustawien_bez_dostepu_mowi_to_zamiast_bez_zmian(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+
+    with without_access(centrum.tool.config / HISTORY_FILE):
+        lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    start = lines.index("## Zmiany Ustawień (30 dni)")
+    assert lines[start : start + 4] == ["## Zmiany Ustawień (30 dni)", "", "- Historii Ustawień nie dało się przeczytać", ""]
+
+
+def _history(centrum: PreparingCentrum) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = centrum.client.get("/api/settings/history").json()["rows"]
+    return rows
+
+
+RELEASE_SOURCE: Final = {"rodzaj": "wydanie", "wydanie": "0.9.0", "commit": "abc1234", "zmiana": "2026-11-motyw-jasny"}
+
+
+def _history_row(at: datetime, key: str, before: str, after: str, *, source: dict[str, str] | None = None) -> str:
+    """Wiersz Historii Ustawień zapisany wcześniej, z chwilą ``at`` i źródłem ``source``, w formacie pliku
+    ``historia-ustawien.jsonl``."""
+
+    row = {
+        "v": 1,
+        "id": "wiersz-sprzed-okna",
+        "kiedy": at.isoformat(),
+        "zrodlo": source or {"rodzaj": "tata"},
+        "cofa": None,
+        "plik": SETTINGS_FILE,
+        "sekcja": key.partition(".")[0],
+        "zmiany": [{"klucz": key, "przed": before, "po": after}],
+        "sekret": False,
+        "cofalny": True,
+        "wynik": "zapisano",
+        "powod": None,
+    }
+    return json.dumps(row, ensure_ascii=False) + "\n"
 
 
 def test_diagnoza_dla_zatrzymania_dla_taty_jest_odrzucona(tmp_path: Path) -> None:
@@ -384,12 +580,12 @@ def test_diagnoza_przygotowania_sprawdza_po_kolei_ustawienia_onedrive_rejestr_wz
         ("Rejestr zleceń", "Nie jest otwarty w Excelu, otwiera się i ma wymagane nagłówki."),
         ("Wzorzec rozliczenia wewnętrznego", "Wzorzec rozliczenia wewnętrznego.xlsx przechodzi Sprawdzanie."),
         ("Wzorzec pliku zbiorczego", "Wzorzec pliku zbiorczego.xlsx przechodzi Sprawdzanie."),
-        ("Konfiguracja wykonawców", "Wczytuje się."),
+        ("Lista Wykonawców", "Wykonawców na liście: 3."),
         ("Folder okresu", "Folderu 08_14_09_2026 jeszcze nie ma."),
         ("Pliki okresu w Excelu", "Żaden plik okresu nie jest otwarty w Excelu."),
         ("Aktualność narzędzia", "Najnowsza wersja z GitHuba, commit 3c1d0a9."),
         ("Token do Zgłoszeń", "Na tym komputerze nie ma Tokenu do Zgłoszeń. Zgłoszenie poczeka, aż Maks go wpisze."),
-        ("Dziennik Centrum rozliczeń", "Ostatnie wpisy od startu Centrum: 4."),
+        ("Dziennik Centrum rozliczeń", "Ostatnie wpisy od startu Centrum: 6."),
     ]
 
 
@@ -450,9 +646,9 @@ def test_zatrzymanie_do_maksa_bez_wzorca_wyjasnia_brak_wzorca(tmp_path: Path) ->
             "W Rejestrze zleceń brakuje wymaganego nagłówka SKUTECZNE. Nie utworzono żadnego pliku.",
         ),
         (
-            lambda centrum: centrum.fixture.config_path.write_text("workers: [", encoding="utf-8"),
-            "Konfiguracja wykonawców",
-            "Nie można odczytać konfiguracji wykonawców. Plik nie jest poprawnym YAML.",
+            lambda centrum: centrum.fixture.config_path.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8"),
+            "Lista Wykonawców",
+            diagnosis_messages.worker_list_bad(settings_messages.damaged(WORKERS_FILE)).what,
         ),
         (
             lambda centrum: (month_periods_folder(centrum.fixture.periods_directory, "09_Wrzesień_2026") / PERIOD).mkdir(),
@@ -460,7 +656,7 @@ def test_zatrzymanie_do_maksa_bez_wzorca_wyjasnia_brak_wzorca(tmp_path: Path) ->
             None,
         ),
     ],
-    ids=["brak-rejestru", "brak-folderu-okresow", "uszkodzony-rejestr", "brak-naglowka", "zla-konfiguracja", "folder-okresu-w-miesiacu"],
+    ids=["brak-rejestru", "brak-folderu-okresow", "uszkodzony-rejestr", "brak-naglowka", "zla-lista-wykonawcow", "folder-okresu-w-miesiacu"],
 )
 def test_diagnoza_wyjasnia_pierwszym_sprawdzeniem_ktore_nie_przeszlo(
     tmp_path: Path,
@@ -479,32 +675,6 @@ def test_diagnoza_wyjasnia_pierwszym_sprawdzeniem_ktore_nie_przeszlo(
     else:
         assert (diagnosis["explanation"]["what"], check_states(diagnosis)[label]) == (what, "failed")
         assert next(check["detail"] for check in diagnosis["checks"] if check["label"] == label) == what
-
-
-@pytest.mark.parametrize(
-    "make_centrum",
-    [lambda tmp_path: preparing_centrum(tmp_path), lambda tmp_path: settling_centrum(tmp_path)],
-    ids=["przygotowanie", "przebieg"],
-)
-@pytest.mark.parametrize(
-    "broken_config",
-    [b"\xff\xfe\x00 nie utf-8", "schema_version: 2\nworkers:\n  a: Wykonawca Testowy\n".encode()],
-    ids=["spoza-utf-8", "zly-schemat"],
-)
-def test_diagnoza_potwierdza_zatrzymanie_procesu_na_uszkodzonej_konfiguracji_wykonawcow(
-    tmp_path: Path, make_centrum: Callable[[Path], PreparingCentrum | SettlingCentrum], broken_config: bytes
-) -> None:
-    centrum = make_centrum(tmp_path)
-    if isinstance(centrum, PreparingCentrum):
-        centrum.fixture.config_path.write_bytes(broken_config)
-    else:
-        centrum.configuration.worker_config.write_bytes(broken_config)
-    stopped = run_to_end(centrum, dry_run=True)
-
-    diagnosis = diagnose(centrum, stopped["run"]["id"])
-
-    assert (diagnosis["explanation"], diagnosis["confirms_stop"]) == (stopped["result"]["stops"][0], True)
-    assert check_states(diagnosis)["Konfiguracja wykonawców"] == "failed"
 
 
 def test_folder_okresu_w_kilku_miesiacach_wyjasnia_ktory_zostawic(tmp_path: Path) -> None:
@@ -595,7 +765,7 @@ def test_nieoczekiwany_wyjatek_bez_przyczyny_na_komputerze_kaze_wyslac_do_maksa_
     assert (diagnosis["explanation"], diagnosis["next_action"]) == (NOT_FOUND, "report")
     assert check(diagnosis, "Dziennik Centrum rozliczeń") == (
         "passed",
-        "Ostatnie wpisy od startu Centrum: 5, w tym nieoczekiwany wyjątek.",
+        "Ostatnie wpisy od startu Centrum: 7, w tym nieoczekiwany wyjątek.",
     )
 
 
@@ -679,7 +849,7 @@ def test_pomiary_widokow_po_nieoczekiwanym_wyjatku_nie_wypieraja_go_z_dziennika_
     assert diagnosis["next_action"] == "report"
     assert check(diagnosis, "Dziennik Centrum rozliczeń") == (
         "passed",
-        "Ostatnie wpisy od startu Centrum: 5, w tym nieoczekiwany wyjątek.",
+        "Ostatnie wpisy od startu Centrum: 7, w tym nieoczekiwany wyjątek.",
     )
 
 
@@ -695,7 +865,7 @@ def test_urwany_znak_w_dzienniku_nie_blokuje_diagnozy_a_nieoczekiwany_wyjatek_je
     assert diagnosis["next_action"] == "report"
     assert check(diagnosis, "Dziennik Centrum rozliczeń") == (
         "passed",
-        "Ostatnie wpisy od startu Centrum: 6, w tym nieoczekiwany wyjątek.",
+        "Ostatnie wpisy od startu Centrum: 8, w tym nieoczekiwany wyjątek.",
     )
 
 
@@ -712,7 +882,7 @@ def test_wyjatek_w_dzienniku_sprzed_startu_centrum_nie_jest_wymieniony(tmp_path:
 
     diagnosis = diagnose(centrum, run_id)
 
-    assert check(diagnosis, "Dziennik Centrum rozliczeń") == ("passed", "Ostatnie wpisy od startu Centrum: 5.")
+    assert check(diagnosis, "Dziennik Centrum rozliczeń") == ("passed", "Ostatnie wpisy od startu Centrum: 7.")
 
 
 def test_diagnoza_przebiegu_sprawdza_wzorzec_pracownika_i_plik_zbiorczy(tmp_path: Path) -> None:
@@ -727,7 +897,7 @@ def test_diagnoza_przebiegu_sprawdza_wzorzec_pracownika_i_plik_zbiorczy(tmp_path
         ("Ustawienia taty", "passed"),
         ("Pliki w OneDrive", "passed"),
         ("Wzorzec rozliczenia pracownika", "passed"),
-        ("Konfiguracja wykonawców", "passed"),
+        ("Lista Wykonawców", "passed"),
         ("Folder okresu", "passed"),
         ("Pliki okresu w Excelu", "passed"),
         ("Aktualność narzędzia", "passed"),

@@ -1,6 +1,6 @@
 """Przebieg rozliczeń: syntetyczne pliki taty dla testów, narzędzi i skryptów skilli.
 
-Plik zbiorczy, Wzorzec rozliczenia pracownika i konfiguracja wykonawców są
+Plik zbiorczy, Wzorzec rozliczenia pracownika i Lista Wykonawców są
 budowane w katalogu tymczasowym. Nie zawierają prawdziwych danych klientów.
 """
 
@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
-import yaml
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
@@ -29,6 +28,8 @@ from atrapy.pliki_taty import (
     WORKER_COLUMN,
 )
 from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, set_view
+from rozliczenia.centrum.settings.workers import WORKERS as WORKER_LIST_FILE
+from rozliczenia.worker_list import WorkerEntry, WorkerList
 
 PERIOD = "08_14_09_2026"
 
@@ -39,7 +40,7 @@ NOT_A_PERIOD = "09_15_09_2026"  # wygląda jak token okresu, ale 9 września 202
 SOURCE_NAME = pliki_taty.collective_file_name(PERIOD)
 
 
-# Konfiguracja wykonawców: identyfikator Wykonawcy z pliku -> nazwa w Rozliczeniu pracownika.
+# Lista Wykonawców: login Wykonawcy z pliku -> nazwa w Rozliczeniu pracownika.
 WORKERS: dict[str, str] = {
     "adrian.testowy": "Adrian Testowy",
     "dariusz.fikcyjny2": "Darek Fikcyjny",
@@ -47,11 +48,19 @@ WORKERS: dict[str, str] = {
 }
 
 
-def write_mapping(path: Path) -> Path:
-    path.write_text(
-        yaml.safe_dump({"schema_version": 1, "workers": WORKERS}, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+def worker_list(names: Mapping[str, str] = WORKERS, addresses: Mapping[str, Sequence[str]] | None = None) -> WorkerList:
+    """Lista Wykonawców z loginów i nazw ``names`` (domyślnie ``WORKERS``), z adresami ``addresses`` po loginie."""
+
+    found = WorkerList.of([WorkerEntry([login], name, (addresses or {}).get(login, ())) for login, name in names.items()])
+    assert isinstance(found, WorkerList), found
+    return found
+
+
+def write_worker_list(path: Path, workers: WorkerList | None = None) -> Path:
+    """Plik Listy Wykonawców ``wykonawcy.yaml`` w kształcie właściciela Ustawień Centrum (domyślnie ``worker_list()``)."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(WORKER_LIST_FILE.dump(worker_list() if workers is None else workers), encoding="utf-8")
     return path
 
 
@@ -201,7 +210,7 @@ def make_fixture(tmp_path: Path, period: str = PERIOD) -> tuple[Path, Path, Path
     target_directory = period_directory / pliki_taty.worker_settlements_name(period)
     source_path = period_directory / pliki_taty.collective_file_name(period)
     write_source(source_path, include_unmapped=False)
-    config_path = write_mapping(tmp_path / pliki_taty.WORKER_CONFIG_NAME)
+    config_path = write_worker_list(tmp_path / pliki_taty.WORKER_LIST_NAME)
     write_template(tmp_path / pliki_taty.WORKER_TEMPLATE_NAME)
     return source_path, target_directory, config_path
 

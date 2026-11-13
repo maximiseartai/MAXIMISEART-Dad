@@ -4,6 +4,7 @@ import type {
   DadNoteText,
   DecisionAnswer,
   FillKind,
+  FoldersChange,
   GetCurrentRunResponse,
   GetIntermaxDaysResponse,
   GetIntermaxSetupResponse,
@@ -112,6 +113,36 @@ export function choosePeriodsDirectory() {
 
 export function changeTheme(theme: Theme) {
   return call("changeTheme", { body: { theme } })
+}
+
+/** Przełącznik startu razem z Windows: `true` zakłada skrót Centrum w folderze Autostart, `false` go usuwa. */
+export function changeAutostart(enabled: boolean) {
+  return call("changeAutostart", { body: { enabled } })
+}
+
+/** Nowe hasło aplikacji skrzynki raportów; odpowiedź mówi, czy skrzynka je przyjęła, i nigdy nie niesie hasła. */
+export function changeInboxPassword(password: string) {
+  return call("changeInboxPassword", { body: { password } })
+}
+
+/** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */
+export function changeFolders(folders: FoldersChange) {
+  return call("changeFolders", { body: folders })
+}
+
+/** Historia Ustawień od najnowszej zmiany. */
+export function getSettingsHistory() {
+  return call("getSettingsHistory")
+}
+
+/** Reguły ilości jako zdania i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. */
+export function getQuantityRules() {
+  return call("getQuantityRules")
+}
+
+/** Cofa zmianę z Historii Ustawień; cofnięcie samo jest nową zmianą z własnym wierszem. */
+export function undoSettingsChange(change: string) {
+  return call("undoSettingsChange", { path: { change_id: change } })
 }
 
 export function getPeriodBoard() {

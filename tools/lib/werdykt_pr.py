@@ -17,22 +17,33 @@ to ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>`` z pełnym SHA bieżąceg
 (Ważne a, Drobne b)`` z ``N = a + b``, ``PASS`` ma zero Ważnych, ``FAIL`` co najmniej jedno, a Drobnych jest
 najwyżej trzy, a w wątku z szablonem treść pod nimi idzie za szablonem ze skilla ``przeglad`` (``szablon_werdyktu``:
 Ważne z polami ``Gdzie``, ``Dowód``, ``Korzeń`` i ``Szczebel``, Drobne z polem ``Gdzie``, na końcu ``## Sprawdzone``,
-a kod korzenia z zamkniętej listy albo ``NOWY`` spoza niej). Czy wątek ma szablon, rozstrzyga jedna funkcja,
-``template_applies``, i przy publikacji, i przy zgodzie na merge (ADR 0031, decyzja Q20): szablon obowiązuje, gdy
-jest wdrożony na bazie PR (``szablon_werdyktu.deployed``), a najstarszy werdykt PR, dowolnego commitu, nie powstał
-przed chwilą wdrożenia (``createdAt`` komentarza albo ``submittedAt`` recenzji z GitHuba, których komentarzem nie da
-się zmienić). Wątek, którego pierwszy werdykt jest starszy, kończy po staremu: tylko dwie pierwsze linie. Werdykt bez
+a kod korzenia z zamkniętej listy albo ``NOWY`` spoza niej). Czy reguła wątku obowiązuje w PR, rozstrzyga jedna
+funkcja, ``rule_applies``, dla szablonu przy publikacji i przy zgodzie na merge i dla bramki korzenia przy merge'u
+(ADR 0031, decyzja Q20): reguła obowiązuje, gdy jest wdrożona na bazie PR (``deployment``), a najstarszy werdykt PR,
+dowolnego commitu, nie powstał przed chwilą jej wdrożenia (``createdAt`` komentarza albo ``submittedAt`` recenzji
+z GitHuba, których komentarzem nie da się zmienić). Wątek, którego pierwszy werdykt jest starszy, kończy po staremu:
+bez szablonu tylko dwie pierwsze linie, bez bramki korzenia bez sekcji ``## Korzeń``. Werdykt bez
 czasu, którego GitHub nie podał, wątku nie postarza, tak jak werdykt w komentarzu edytowanym (``includesCreatedEdit``),
 który nadal jest werdyktem: komentarzem, także edytowanym, nie da się przesunąć chwili wdrożenia ani postarzyć wątku. Merge liczy więc ``PASS`` w wątku z szablonem jako zgodę tylko
 wtedy, gdy przechodzi szablon, także gdy opublikowano go z pominięciem ``--werdykt``, a odmowa podaje przyczyny
 i wzór. Inaczej niczego nie publikuje i kończy się linią ``WERDYKT ODMOWA | #N | <przyczyny>``, w której
 każda przyczyna mówi, co poprawić w pliku. Opublikowany werdykt kończy się linią ``WERDYKT OK | #N <sha> | <PASS
 albo FAIL> | <adres komentarza>``.
+
+Regułę wdrożoną wyznacza plik, który dodał PR jej wdrożenia (``deployment``), a chwila wdrożenia to data commitu,
+który na ``origin/<baza>`` dodał ten plik, liczona po ``--first-parent``. Na ``main`` to commit merge'a PR wdrożenia,
+a nie commit autora, który powstał przed merge'em, gdy reguła jeszcze nie działała. Na gałęzi stosu to commit z jej
+własnej historii: scalenie ``main`` do niej albo commit autora, którego datę zmienia rebase. Na bazie, do której plik
+jeszcze nie wszedł, reguła nie obowiązuje (``None``). Chwila płynie z historii bazy, więc nie trzeba jej zgadywać
+przed merge'em, a każdy checkout po pobraniu bazy dostaje tę samą; komentarzem, także edytowanym, nie da się jej
+przesunąć. Szablon wyznacza ADR 0031 (``szablon_werdyktu.ADR``), a bramkę korzenia jej moduł
+(``bramka_korzenia.MARKER``), więc wątki, które miały werdykt przed merge'em bramki, kończą bez niej, choć szablon
+już mają.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -40,6 +51,8 @@ import re
 from typing import Literal
 
 import github
+from repo import REMOTE, ROOT
+import repo
 from stan_pr import Pull
 import szablon_werdyktu
 
@@ -65,6 +78,7 @@ class Verdict:
     stance: Stance | None
     problems: tuple[str, ...]
     body: str
+    html: str | None = None  # HTML całej treści z pola ``bodyHTML`` GraphQL, gdy werdykt przyszedł stamtąd
 
 
 def read(verdict: dict[str, object], head: str) -> Verdict | None:
@@ -85,7 +99,8 @@ def read(verdict: dict[str, object], head: str) -> Verdict | None:
     author = verdict.get("author")
     login = str(author.get("login", "?")) if isinstance(author, dict) else "?"
     when = str(verdict.get("createdAt") or verdict.get("submittedAt") or "?")
-    return Verdict(when, login, tuple(lines[:2]), decision, commit, stance, problems, str(verdict["body"]))
+    html = verdict.get("bodyHTML")
+    return Verdict(when, login, tuple(lines[:2]), decision, commit, stance, problems, str(verdict["body"]), None if html is None else str(html))
 
 
 def text_lines(body: object) -> list[str]:
@@ -96,7 +111,7 @@ def text_lines(body: object) -> list[str]:
 
 def consent_problem(pull: Pull, deployed: datetime | None) -> str | None:
     """Przyczyna odmowy merge'a PR, gdy najnowszy werdykt dla jego HEAD nie jest zgodą; ``deployed`` to chwila
-    wdrożenia szablonu na bazie PR (``szablon_werdyktu.deployed``)."""
+    wdrożenia szablonu na bazie PR (``deployment`` z ``szablon_werdyktu.ADR``)."""
 
     head = pull.head
     publish = f"tools/scal_pr.py {pull.number} --werdykt PLIK"
@@ -107,7 +122,7 @@ def consent_problem(pull: Pull, deployed: datetime | None) -> str | None:
     if latest is None:
         return f"werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opublikuj werdykt przez {publish}"
     problems = list(latest.problems)
-    if latest.stance is Stance.CONSENT and template_applies(pull, deployed):
+    if latest.stance is Stance.CONSENT and rule_applies(pull, deployed):
         problems = _template_problems(latest.body, pull)
     if problems:
         return f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt ({'; '.join(problems)}); popraw plik werdyktu i opublikuj go przez {publish}"
@@ -161,16 +176,26 @@ def file_problems(text: str, head: str) -> list[str]:
 
 def publish_problems(text: str, pull: Pull, deployed: datetime | None) -> list[str]:
     """Co poprawić w pliku werdyktu przed publikacją na ``pull``: dwie pierwsze linie, a w wątku z szablonem
-    (``template_applies``) także treść według ``szablon_werdyktu``."""
+    (``rule_applies`` z chwilą wdrożenia szablonu ``deployed``, ``deployment`` z ``szablon_werdyktu.ADR``) także treść według ``szablon_werdyktu``."""
 
     problems = file_problems(text, pull.head)
-    return [*problems, *_template_problems(text, pull)] if template_applies(pull, deployed) else problems
+    return [*problems, *_template_problems(text, pull)] if rule_applies(pull, deployed) else problems
 
 
-def template_applies(pull: Pull, deployed: datetime | None) -> bool:
-    """Czy werdykt na ``pull`` idzie za szablonem: szablon jest wdrożony (``deployed`` to nie ``None``), a najstarszy
-    werdykt PR (z linią ``WERDYKT:``, od konta z prawem zapisu) nie powstał przed chwilą ``deployed`` (decyzja Q20).
-    Werdykt w komentarzu edytowanym (``includesCreatedEdit``) wątku nie postarza, bo jego treść mogła powstać później."""
+def deployment(base: str, marker: str) -> datetime | None:
+    """Chwila wdrożenia reguły wątku na bazie ``base`` pobranej z ``origin``: data commitu, który po ``--first-parent``
+    dodał do niej plik ``marker`` (ścieżka względem korzenia repozytorium); ``None``, gdy plik jeszcze do niej nie
+    wszedł. Szukany jest dodany plik pod tą ścieżką, więc późniejsza zmiana nazwy pliku nie przesuwa chwili."""
+
+    added = repo.git(ROOT, "log", "--first-parent", "--diff-filter=A", "--format=%cI", f"refs/remotes/{REMOTE}/{base}", "--", marker).split()
+    return datetime.fromisoformat(added[-1]) if added else None
+
+
+def rule_applies(pull: Pull, deployed: datetime | None) -> bool:
+    """Czy reguła wątku wdrożona w chwili ``deployed`` (``deployment``) obowiązuje w ``pull``: jest wdrożona (``deployed``
+    to nie ``None``), a najstarszy werdykt PR (z linią ``WERDYKT:``, od konta z prawem zapisu) nie powstał przed tą
+    chwilą (decyzja Q20). Werdykt w komentarzu edytowanym (``includesCreatedEdit``) wątku nie postarza, bo jego treść
+    mogła powstać później."""
 
     if deployed is None:
         return False
@@ -187,16 +212,77 @@ def _moment(when: str) -> datetime | None:
         return None
 
 
-def _template_problems(text: str, pull: Pull) -> list[str]:
-    """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje GitHub."""
+def _content(text: str) -> tuple[str, tuple[int, int] | None]:
+    """Treść pod dwiema pierwszymi niepustymi liniami ``text`` i liczby Ważnych i Drobnych z linii ``Znaleziska:``
+    (``None``, gdy jej nie ma)."""
 
     lines = str(text).splitlines()
     filled = [index for index, line in enumerate(lines) if line.strip()]
     rest = "\n".join(lines[filled[1] + 1 :]) if len(filled) > 1 else ""
     findings = FINDINGS_LINE.fullmatch(lines[filled[1]].strip()) if len(filled) > 1 else None
-    declared = (int(findings[2]), int(findings[3])) if findings else None
+    return rest, (int(findings[2]), int(findings[3])) if findings else None
+
+
+def _html(rest: str, pull: Pull) -> str:
+    return github.html_markdownu(rest, pull.repository) if rest.strip() else ""
+
+
+def _template_problems(text: str, pull: Pull) -> list[str]:
+    """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje GitHub."""
+
+    rest, declared = _content(text)
     try:
-        html = github.html_markdownu(rest, pull.repository) if rest.strip() else ""
+        html = _html(rest, pull)
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera (gh z błędem albo po czasie, pusty HTML) to odmowa z przyczyną
         return [f"GitHub nie wyrenderował treści werdyktu ({error}), uruchom ponownie"]
     return szablon_werdyktu.problems(html, declared, lambda: szablon_werdyktu.pull_codes(pull))
+
+
+@dataclass(frozen=True)
+class Round:
+    """Runda przeglądu: ``number``-ty werdykt PR (od 1, w kolejności utworzenia, dowolnego commitu), liczba Ważnych
+    z jego linii ``Znaleziska:`` (``None``, gdy jej nie ma) i kody korzeni jego treści z ``szablon_werdyktu.findings``."""
+
+    number: int
+    verdict: Verdict
+    declared_majors: int | None
+    findings: szablon_werdyktu.Findings
+
+
+Content = Callable[[Verdict], Sequence[szablon_werdyktu.Item]]
+
+
+def rounds(pull: Pull, content: Content) -> list[Round]:
+    """Rundy przeglądu ``pull``: werdykty z linią ``WERDYKT:`` od kont z prawem zapisu, jak przy zgodzie na merge.
+
+    Jednostki treści każdego pod dwiema pierwszymi liniami daje ``content``: ``rendered`` (bramka korzenia) albo
+    ``from_graphql`` (rejestr korzeni); jego błąd to wyjątek."""
+
+    found = [verdict for verdict in (read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None and verdict.decision is not None]
+    result = []
+    for number, verdict in enumerate(found, start=1):
+        declared = _content(verdict.body)[1]
+        result.append(Round(number, verdict, declared[0] if declared else None, szablon_werdyktu.findings(content(verdict))))
+    return result
+
+
+def rendered(pull: Pull) -> Content:
+    """Jednostki treści werdyktu ``pull`` pod dwiema pierwszymi liniami z renderera GitHuba, jedno ``POST /markdown``
+    na werdykt; bramka korzenia czyta tak werdykty jednego PR przy merge'u."""
+
+    return lambda verdict: szablon_werdyktu.items(_html(_content(verdict.body)[0], pull))
+
+
+def from_graphql(verdict: Verdict) -> list[szablon_werdyktu.Item]:
+    """Jednostki treści werdyktu pod dwiema pierwszymi liniami z pola ``bodyHTML`` GraphQL, bez wywołania API; rejestr
+    korzeni czyta tak każdy werdykt skanu. ``bodyHTML`` to HTML całej treści, a dwie pierwsze linie werdyktu
+    (``WERDYKT:`` i ``Znaleziska:``) GitHub stawia jako dwie linie akapitu, więc treść pod nimi to jednostki po
+    dwóch pierwszych; tak samo, gdy druga linia to nagłówek albo punkt listy. Te same jednostki co ``rendered`` dały
+    13.11.2026 wszystkie 230 werdyktów i opisów PR-ów z 11–13.11 (``tests/fixtures/body_html.json``). Granica: druga
+    linia, która w akapicie nie stoi sama (podkreślenie nagłówka ``---``, linia ciągnąca punkt listy), daje inne
+    jednostki niż ``rendered``, a werdykt bez linii ``Znaleziska:`` i tak nie przechodzi ``--werdykt``. Werdykt bez
+    ``bodyHTML`` to ``ValueError``."""
+
+    if verdict.html is None:
+        raise ValueError(f"werdykt {verdict.when} {verdict.login} bez bodyHTML z GraphQL")
+    return szablon_werdyktu.items(verdict.html)[2:]

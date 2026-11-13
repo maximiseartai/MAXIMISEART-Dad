@@ -2,19 +2,28 @@
 
 from __future__ import annotations
 
+import base64
 import errno
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Sequence
+import time
+import unicodedata
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Literal, get_args
+import imaplib
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
 from rozliczenia.settlement_period import parse_period_token
@@ -31,19 +40,51 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
+from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
-from rozliczenia.tool_files import LOG_PATH, SETTINGS
-from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.settings import Settings, SettingsStore
+from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
+from rozliczenia.centrum.settings import history as history_module
+from rozliczenia.centrum.settings.files import FieldPath
+from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
+from rozliczenia.centrum.settings.history import HISTORY_FILE
+from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
+from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
+from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.settings.proposal import (
+    Edit,
+    Later,
+    Nothing,
+    Proposal,
+    Refuse,
+    ReleaseChange,
+    ReleaseInputs,
+)
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia.centrum.tool_freshness import ToolFreshness
+from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES, RULES_FILE
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
     CENTRUM,
     TOOL_COMMIT,
     Centrum,
+    CentrumClient,
+    FakePlatform,
     ROOT,
+    ToolDirectory,
     centrum,
+    centrum_app,
     view_timing,
 )
+from tests.fixtures.centrum_processes import run_to_end, settling_centrum, stopped_for_maks, write_dad_quantity_rules
+from tests.fixtures.tool_clone import tool_repository
+
+from atrapy.settlement import PERIOD, worker_list, write_worker_list
+from atrapy.skrzynka_raportow import AtrapaImap
+from atrapy.preparation import write_collective_template
 
 import export_openapi
 
@@ -187,13 +228,29 @@ def test_localhost_jest_dozwolonym_naglowkiem_host(tmp_path: Path) -> None:
 
 NOT_SET = {"state": "not_set"}
 UNREADABLE = {"state": "unreadable"}
+# Sekcja Wykonawcy bez pliku Listy Wykonawców: pusta lista jest dobra (DESIGN D10).
+NO_WORKERS: dict[str, object] = {"state": "good", "workers": [], "unresolved": [], "problem": None}
+DAMAGED = "Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."
+REGISTER_PATH = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
+PERIODS_PATH = "Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru."
+NO_INBOX: dict[str, object] = {"inbox": {"address": None, "password": False}, "inbox_problem": None}
+"""Skrzynka raportów bez pliku dostępu: bez adresu i bez hasła (#1469)."""
 
 
 def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
     response = centrum(tmp_path).client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "theme": "dark"}
+    assert response.json() == {
+        "order_register": NOT_SET,
+        "periods_directory": NOT_SET,
+        "periods_all_years": False,
+        "theme": "dark",
+        "folders_problem": None,
+        "workers": NO_WORKERS,
+        **NO_INBOX,
+        "autostart": AUTOSTART_SHOWN_OFF,
+    }
 
 
 def test_wskazany_rejestr_zlecen_i_folder_okresow_sa_zapamietane(tmp_path: Path) -> None:
@@ -232,7 +289,7 @@ def test_anulowane_okno_wyboru_nie_zmienia_ustawien(tmp_path: Path) -> None:
     assert response.json()["settings"]["periods_directory"]["path"] == str(periods)
 
 
-def test_uszkodzony_plik_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
+def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosciami_domyslnymi(tmp_path: Path) -> None:
     app = centrum(tmp_path)
     app.settings_path.parent.mkdir(parents=True)
     app.settings_path.write_text("rejestr: [nie zamknięta lista\n", encoding="utf-8")
@@ -240,7 +297,16 @@ def test_uszkodzony_plik_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
     response = app.client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "theme": "dark"}
+    assert response.json() == {
+        "order_register": NOT_SET,
+        "periods_directory": NOT_SET,
+        "periods_all_years": False,
+        "theme": "dark",
+        "folders_problem": {"field": None, "message": DAMAGED},
+        "workers": NO_WORKERS,
+        **NO_INBOX,
+        "autostart": AUTOSTART_SHOWN_OFF,
+    }
 
 
 def test_nieistniejacy_zapamietany_folder_okresow_jest_wyraznie_oznaczony(tmp_path: Path) -> None:
@@ -283,7 +349,12 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
         {
             "order_register": {"state": "inaccessible", "path": str(register), "name": register.name},
             "periods_directory": {"state": "inaccessible", "path": str(periods), "name": "INEA"},
+            "periods_all_years": False,
             "theme": "dark",
+            "folders_problem": None,
+            "workers": NO_WORKERS,
+            **NO_INBOX,
+            "autostart": AUTOSTART_SHOWN_OFF,
         },
     )
 
@@ -302,7 +373,16 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
 
     assert (response.status_code, response.json()) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark"},
+        {
+            "order_register": UNREADABLE,
+            "periods_directory": UNREADABLE,
+            "periods_all_years": False,
+            "theme": "dark",
+            "folders_problem": None,
+            "workers": NO_WORKERS,
+            **NO_INBOX,
+            "autostart": AUTOSTART_SHOWN_OFF,
+        },
     )
 
 
@@ -323,27 +403,40 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
 
     assert (response.status_code, response.json()["settings"]) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark"},
+        {
+            "order_register": UNREADABLE,
+            "periods_directory": UNREADABLE,
+            "periods_all_years": False,
+            "theme": "dark",
+            "folders_problem": None,
+            "workers": NO_WORKERS,
+            **NO_INBOX,
+            "autostart": AUTOSTART_SHOWN_OFF,
+        },
     )
 
 
 @pytest.mark.parametrize(
     "local_file",
     [
-        SETTINGS,
+        CONFIG_DIR / SETTINGS_FILE,
+        CONFIG_DIR / HISTORY_FILE,
+        CONFIG_DIR / MEMORY_DIRECTORY / f"{SETTINGS_FILE}.json",
         LOG_PATH,
-        SETTINGS.parent / CENTRUM_RUNS_FILE,
-        SETTINGS.parent / REPORT_KEY_FILE,
-        SETTINGS.parent / DAD_CASES_FILE,
-        SETTINGS.parent / OLD_REPORTS_FILE,
-        SETTINGS.parent / UNSENT_DIRECTORY / QUEUE_DIRECTORY / "20261024T101500000000Z-0001-zgloszenie-3f2a9c1b.json",
-        SETTINGS.parent / OLD_NOTES_FILE,
-        SETTINGS.parent / NOTIFICATIONS_FILE,
-        SETTINGS.parent / ADDRESSES_FILE,
-        SETTINGS.parent / "plik-z-przyszlej-wersji.json",
+        CONFIG_DIR / CENTRUM_RUNS_FILE,
+        CONFIG_DIR / REPORT_KEY_FILE,
+        CONFIG_DIR / DAD_CASES_FILE,
+        CONFIG_DIR / OLD_REPORTS_FILE,
+        CONFIG_DIR / UNSENT_DIRECTORY / QUEUE_DIRECTORY / "20261024T101500000000Z-0001-zgloszenie-3f2a9c1b.json",
+        CONFIG_DIR / OLD_NOTES_FILE,
+        CONFIG_DIR / NOTIFICATIONS_FILE,
+        CONFIG_DIR / ADDRESSES_FILE,
+        CONFIG_DIR / "plik-z-przyszlej-wersji.json",
     ],
     ids=[
-        "ustawienia-taty",
+        "ustawienia-centrum",
+        "historia-ustawien",
+        "pamiec-ustawien",
         "dziennik-centrum",
         "dziennik-uruchomien-z-centrum",
         "klucz-do-zgloszen",
@@ -376,6 +469,13 @@ SETTINGS_NOT_SAVED = (
     "Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, "
     "nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie."
 )
+AUTOSTART_NOT_CHANGED = (
+    "Nie udało się zmienić startu Centrum razem z Windows. Spróbuj ponownie. "
+    "Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie."
+)
+AUTOSTART_UNSUPPORTED = "Start razem z Windows działa tylko na komputerze z Windows."
+AUTOSTART_SHOWN_OFF = {"state": "off", "reason": None}
+AUTOSTART_UNREADABLE = "Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę."
 
 
 @pytest.mark.parametrize(
@@ -400,7 +500,12 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
     assert app.client.get("/api/settings").json() == {
         "order_register": NOT_SET,
         "periods_directory": NOT_SET,
+        "periods_all_years": False,
         "theme": "light",
+        "folders_problem": None,
+        "workers": NO_WORKERS,
+        **NO_INBOX,
+        "autostart": AUTOSTART_SHOWN_OFF,
     }
 
 
@@ -420,28 +525,1900 @@ def test_zmiana_motywu_przy_niedostepnym_pliku_ustawien_nie_wymazuje_folderu_okr
     assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
     assert kept == saved
     assert "ustawienia-bez-zapisu przyczyna=dostep" in app.log_path.read_text(encoding="utf-8")
-    assert (again.json()["theme"], again.json()["periods_directory"]["path"]) == ("light", str(periods))
+    assert (again.json()["settings"]["theme"], again.json()["settings"]["periods_directory"]["path"]) == (
+        "light",
+        str(periods),
+    )
 
 
 @NO_ACCESS_ON_WINDOWS
 def test_plik_ustawien_niedostepny_na_chwile_przyjmuje_zmiane_po_ponowieniu(tmp_path: Path) -> None:
-    path = tmp_path / "config" / "ustawienia.yaml"
+    tool = ToolDirectory(tmp_path)
+    periods = tmp_path / "INEA"
+    periods.mkdir()
     pauses: list[float] = []
 
     def access_back(seconds: float) -> None:
         pauses.append(seconds)
-        path.chmod(0o644)
+        tool.settings.chmod(0o644)
 
-    store = SettingsStore(path, log=CentrumLog(tmp_path / "dziennik.log"), pause=access_back)
-    store.update(periods_directory=tmp_path / "INEA")
-    path.chmod(0)
+    client = CentrumClient(centrum_app(tool, platform=FakePlatform(chosen_folders=[periods]), pause=access_back))
+    client.post("/api/settings/periods-directory/choose")
+    tool.settings.chmod(0)
     try:
-        updated = store.update(theme="light")
+        changed = client.put("/api/settings/theme", json={"theme": "light"})
     finally:
-        path.chmod(0o644)
+        tool.settings.chmod(0o644)
 
-    assert updated == store.load() == Settings(periods_directory=tmp_path / "INEA", theme="light")
+    assert (changed.json()["settings"]["theme"], changed.json()["settings"]["periods_directory"]["path"]) == (
+        "light",
+        str(periods),
+    )
     assert len(pauses) == 1
+
+
+def history_rows(app: Centrum) -> list[dict[str, Any]]:
+    response = app.client.get("/api/settings/history")
+    assert response.status_code == 200
+    rows: list[dict[str, Any]] = response.json()["rows"]
+    return rows
+
+
+def changes(rows: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
+    return [(row["source"], row["changes"]) for row in rows]
+
+
+def test_zmiana_folderow_rejestru_i_motywu_ma_wiersz_historii_z_wartoscia_przed_i_po_a_w_dzienniku_bez_wartosci(
+    tmp_path: Path,
+) -> None:
+    register = tmp_path / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
+    register.touch()
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    app = centrum(tmp_path)
+    app.platform.chosen_files.append(register)
+
+    chosen = app.client.post("/api/settings/register/choose")
+    saved = app.client.put("/api/settings/folders", json={"order_register": str(register), "periods_directory": str(periods)})
+    themed = app.client.put("/api/settings/theme", json={"theme": "light"})
+    rows = history_rows(app)
+
+    assert [(row["source"], row["section"], row["changes"], row["undoable"]) for row in rows] == [
+        ("tata", "wyglad", [{"key": "wyglad.motyw", "before": "dark", "after": "light"}], True),
+        ("tata", "foldery", [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}], True),
+        ("tata", "foldery", [{"key": "foldery.rejestr_zlecen", "before": None, "after": str(register)}], True),
+    ]
+    assert [chosen.json()["change"], saved.json()["change"], themed.json()["change"]] == [row["id"] for row in rows[::-1]]
+    log = app.log_path.read_text(encoding="utf-8")
+    assert "ustawienia-zmiana plik=centrum-ustawienia.yaml klucze=foldery.folder_okresow zrodlo=tata" in log
+    assert (str(periods) in log, register.name in log) == (False, False)
+
+
+def test_zapis_bez_zmiany_nie_ma_wiersza_historii(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    same = app.client.put("/api/settings/theme", json={"theme": "dark"})
+
+    assert (same.status_code, history_rows(app), app.settings_path.exists()) == (200, [], False)
+
+
+def test_cofniecie_przywraca_wartosc_jako_nowy_wiersz_a_cofniecie_cofniecia_przywraca_zmiane(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.client.put("/api/settings/theme", json={"theme": "light"})
+    [changed] = history_rows(app)
+
+    undone = app.client.post(f"/api/settings/history/{changed['id']}/undo")
+    redone = app.client.post(f"/api/settings/history/{undone.json()['change']}/undo")
+    rows = history_rows(app)
+
+    assert (undone.json()["settings"]["theme"], redone.json()["settings"]["theme"]) == ("dark", "light")
+    assert [(row["undoes"], row["changes"]) for row in rows] == [
+        (undone.json()["change"], [{"key": "wyglad.motyw", "before": "dark", "after": "light"}]),
+        (changed["id"], [{"key": "wyglad.motyw", "before": "light", "after": "dark"}]),
+        (None, [{"key": "wyglad.motyw", "before": "dark", "after": "light"}]),
+    ]
+    assert app.client.get("/api/settings").json()["theme"] == "light"
+
+
+def test_cofniecie_zmiany_ktorej_nie_ma_w_historii_jest_odmowa(tmp_path: Path) -> None:
+    refused = centrum(tmp_path).client.post("/api/settings/history/nie-ma-takiej/undo")
+
+    assert (refused.status_code, refused.json()) == (
+        404,
+        {"message": "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień."},
+    )
+
+
+QUANTITY_RULES_URL = "/api/settings/quantity-rules"
+
+
+def rule_sentences(app: Centrum) -> dict[str, str]:
+    """Zdanie każdej reguły z odpowiedzi sekcji Reguły ilości; kolumna jako „nazwa (litera)” albo sama litera."""
+
+    response = app.client.get(QUANTITY_RULES_URL)
+    assert response.status_code == 200, response.text
+    return {
+        rule["id"]: "".join(
+            part["text"] if part["kind"] == "text" else part["letter"] if part["name"] is None else f"{part['name']} ({part['letter']})"
+            for part in rule["sentence"]
+        )
+        for rule in response.json()["rules"]
+    }
+
+
+def test_kazda_regula_ilosci_z_wydania_ma_w_ustawieniach_zdanie_jesli_to_a_bez_wzorca_kolumna_to_litera(tmp_path: Path) -> None:
+    response = centrum(tmp_path).client.get(QUANTITY_RULES_URL).json()
+    sentences = rule_sentences(centrum(tmp_path))
+
+    assert [(rule["id"], rule["scope"]) for rule in response["rules"]] == [
+        (rule.id, {"znane": "known", "nieznane": "unknown", "kazde": "every"}[rule.scope.value])
+        for rule in DEFAULT_QUANTITY_RULES.rules
+    ]
+    assert all(sentence[0].isupper() and sentence.endswith(".") for sentence in sentences.values())
+    assert (response["rules_problem"], response["devices_problem"]) == (None, None)
+    # Zdania wybranych reguł, po jednej na każdy rodzaj warunku, działania i mnożnika (ADR 0033).
+    assert {rule: sentences[rule] for rule in RULE_SENTENCES} == RULE_SENTENCES
+
+
+RULE_SENTENCES = {
+    "z-opisu-puste": "Jeśli URZĄDZENIA są puste, to nic nie wpisuj w tym zleceniu.",
+    "z-opisu-prewencja": "Jeśli URZĄDZENIA to dokładnie „prewencja”, to nic nie wpisuj w tym zleceniu.",
+    "v-znane": "Wpisz 1 w V, ale nie gdy URZĄDZENIA zawierają „instalacja ręczna”.",
+    "v-nieznane": "Wpisz 1 w V.",
+    "t-umowa-u": "Jeśli UMOWA zaczyna się od słowa „u”, to wpisz 1 w T.",
+    "dodatek-usterka-pn-pt": "Jeśli URZĄDZENIA zawierają „usterka” i DATA to poniedziałek–piątek od 17:00, to wpisz 45 w N.",
+    "dodatek-usterka-sobota": "Jeśli URZĄDZENIA zawierają „usterka” i DATA to sobota od 0:00, to wpisz 45 w N.",
+    "nokia-bez-routera-akt-int": (
+        "Jeśli URZĄDZENIA zawierają „nokia” i CZYNNOŚCI zawierają „akt int”, "
+        "ale nie gdy zlecenie ma urządzenie z grupy router, to wpisz 1 w O."
+    ),
+    "technicolor": "Jeśli URZĄDZENIA zawierają „technicolor”, to wpisz liczbę „technicolor” w O, Z i AK.",
+    "gateway-z-extenderem": (
+        "Jeśli URZĄDZENIA zawierają „gateway” i zlecenie ma urządzenie z grupy extender, to wpisz liczbę „gateway” w AO."
+    ),
+    "instalacja-reczna": (
+        "Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz „N szt” z CZYNNOŚCI za każde „instalacja ręczna” w AN i V."
+    ),
+    "inea-gniazdo": "Jeśli URZĄDZENIA zawierają tekst „gniazdo”, to zostaw AP pustą w Rozliczeniu pracownika.",
+}
+
+
+def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    template = write_collective_template(app.tool.configuration.collective_template)
+    workbook = load_workbook(template)
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet["Z17"], sheet["AK17"] = "ONT  Nokia\nz montażem", "Technicolor (opis)"
+    workbook.save(template)
+
+    sentences = rule_sentences(app)
+
+    assert sentences["technicolor"] == (
+        "Jeśli URZĄDZENIA zawierają „technicolor”, to wpisz liczbę „technicolor” w O, ONT Nokia z montażem (Z) "
+        "i Technicolor (opis) (AK)."
+    )
+    assert sentences["inea-gniazdo"] == "Jeśli URZĄDZENIA zawierają tekst „gniazdo”, to zostaw demontaż (AP) pustą w Rozliczeniu pracownika."
+
+
+def test_lista_urzadzen_w_ustawieniach_ma_kazdy_skladnik_z_innymi_zapisami_i_grupa(tmp_path: Path) -> None:
+    devices = centrum(tmp_path).client.get(QUANTITY_RULES_URL).json()["devices"]
+
+    assert [device["id"] for device in devices] == [component.id for component in DEFAULT_QUANTITY_RULES.devices.components]
+    shown = {device["id"]: (device["name"], device["other_spellings"], device["group"]) for device in devices}
+    assert (shown["gateway"], shown["usterka"], shown["fut"]) == (
+        ("gateway", ["zyxel"], "router"),
+        ("usterka", ["usterka hurt", "usterka wew"], None),
+        ("fut", [], "tv"),
+    )
+
+
+NOKIA_Z = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia}"
+MANUAL_INSTALLATION = "  - {id: instalacja-reczna, zapisy: [instalacja ręczna, wizja]}\n"
+NEW_COMPONENT = "  - {id: nowy, zapisy: [nowy]}\n"
+
+
+def test_lista_urzadzen_bez_skladnika_regul_ilosci_to_zle_ustawienie_listy_a_procesy_licza_ostatnia_dobra_para(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("wartosc: 1", "wartosc: 2"))
+    rule_sentences(app)
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, "")
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert (response["rules_problem"], response["devices_problem"]) == (
+        None,
+        {
+            "field": None,
+            "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „instalacja ręczna”, którego potrzebują "
+            "Reguły ilości, więc Centrum liczy ostatnią dobrą Listą Urządzeń.",
+        },
+    )
+    assert "instalacja-reczna" in [device["id"] for device in response["devices"]]
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z."
+    tools_see = read_snapshot(app.tool.config).quantity_rules
+    assert (tools_see.devices, tools_see.rules == DEFAULT_QUANTITY_RULES.rules) == (DEFAULT_QUANTITY_RULES.devices, False)
+    assert [(row["file"], row["refused"]) for row in history_rows(app)] == [(DEVICES_FILE, True)]
+
+
+def test_lista_urzadzen_bez_skladnika_taty_z_reguly_nazywa_go_tak_jak_sekcja_urzadzenia(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + "  - {id: ont-x, zapisy: [ont x]}\n")
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: ont-x"))
+    rule_sentences(app)
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION)
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert response["devices_problem"] == {
+        "field": None,
+        "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „ont x”, którego potrzebują Reguły ilości, "
+        "więc Centrum liczy ostatnią dobrą Listą Urządzeń.",
+    }
+    assert {device["id"]: device["name"] for device in response["devices"]}["ont-x"] == "ont x"
+
+
+def test_uszkodzona_lista_urzadzen_to_zle_ustawienie_listy_a_widac_ostatnia_dobra_liste(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    rule_sentences(app)
+    devices.write_text("urzadzenia: [", encoding="utf-8")
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert (response["rules_problem"], response["devices_problem"]) == (
+        None,
+        {"field": None, "message": f"Plik {DEVICES_FILE} w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."},
+    )
+    assert "nowy" in [device["id"] for device in response["devices"]]
+
+
+def _rules_changed_under_damaged_dad_list(app: Centrum) -> Path:
+    """Lista Urządzeń taty ze składnikiem spoza listy z Wydania i reguła z tym składnikiem, obie przyjęte; potem lista
+    się psuje, a reguła zmienia wartość: pasuje tylko do ostatniej dobrej listy z pamięci, nie do listy z Wydania."""
+
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+    rule_sentences(app)
+    devices.write_text("urzadzenia: [", encoding="utf-8")
+    rule_sentences(app)
+    return write_dad_quantity_rules(
+        app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy").replace("wartosc: 1", "wartosc: 2")
+    )
+
+
+def test_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty_przy_uszkodzonej_liscie_dziala_od_razu(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    _rules_changed_under_damaged_dad_list(app)
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert response["rules_problem"] is None
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nowy” w Z."
+
+
+def test_narzedzia_licza_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty_przy_uszkodzonej_liscie(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    rules = _rules_changed_under_damaged_dad_list(app)
+
+    tools_see = read_snapshot(app.tool.config).quantity_rules
+
+    assert tools_see.rules == RULES.parse(rules.read_bytes())
+    assert "nowy" in [component.id for component in tools_see.devices.components]
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_procesy_licza_regulami_z_wydania(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+    rule_sentences(app)
+
+    with without_access(devices):
+        response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert (response["rules_problem"]["message"], response["devices_problem"]["message"]) == (
+        f"Plik {RULES_FILE} w folderze config: Składnika „nowy” nie ma na Liście Urządzeń.",
+        f"Pliku {DEVICES_FILE} w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.",
+    )
+    assert [device["id"] for device in response["devices"]] == [component.id for component in DEFAULT_QUANTITY_RULES.devices.components]
+
+
+def test_regula_ze_skladnikiem_spoza_listy_jest_zla_a_po_dopisaniu_skladnika_dziala_z_wierszem_historii(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    rule_sentences(app)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+
+    refused = app.client.get(QUANTITY_RULES_URL).json()["rules_problem"]
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+
+    assert refused == {
+        "field": None,
+        "message": f"Plik {RULES_FILE} w folderze config: Składnika „nowy” nie ma na Liście Urządzeń.",
+    }
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nowy” w Z."
+    assert [(row["file"], row["refused"], [change["key"] for change in row["changes"]]) for row in history_rows(app)] == [
+        (DEVICES_FILE, False, ["urzadzenia.nowy"]),
+        (RULES_FILE, False, ["reguly.nokia"]),
+        (RULES_FILE, True, []),
+    ]
+
+
+def test_cofniecie_po_ktorym_regula_ma_skladnik_spoza_listy_urzadzen_jest_odmowa_i_nic_sie_nie_zapisuje(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    rule_sentences(app)
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    rule_sentences(app)
+    rules = write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+    rule_sentences(app)
+    rows = history_rows(app)
+    files = (devices.read_bytes(), rules.read_bytes())
+    [devices_row] = [row for row in rows if row["file"] == DEVICES_FILE]
+
+    undone = app.client.post(f"/api/settings/history/{devices_row['id']}/undo")
+
+    assert (undone.status_code, undone.json()) == (
+        422,
+        {
+            "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „nowy”, którego potrzebują Reguły ilości, "
+            "więc Centrum liczy ostatnią dobrą Listą Urządzeń."
+        },
+    )
+    assert (devices.read_bytes(), rules.read_bytes(), history_rows(app)) == (*files, rows)
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nowy” w Z."
+
+
+def test_zly_plik_regul_ilosci_to_zle_ustawienie_a_procesy_licza_ostatnimi_dobrymi(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    good = write_dad_quantity_rules(
+        app.tool, RULES_FILE, "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia}", "{kolumna: Z, wartosc: 2, razy: liczba, skladnik: nokia}"
+    )
+    rule_sentences(app)
+    good.write_text(good.read_text(encoding="utf-8").replace("wartosc: 2", "wartosc: 0"), encoding="utf-8")
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert response["rules_problem"] == {
+        "field": None,
+        "message": f"Plik {RULES_FILE} w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.",
+    }
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z."
+    assert [(row["source"], row["refused"]) for row in history_rows(app)] == [("outside", True)]
+
+
+def test_regula_ilosci_zmieniona_poza_centrum_dziala_od_razu_ma_wiersz_historii_i_da_sie_ja_cofnac(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    rule_sentences(app)
+    write_dad_quantity_rules(
+        app.tool, RULES_FILE, "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia}", "{kolumna: Z, wartosc: 2, razy: liczba, skladnik: nokia}"
+    )
+
+    changed = rule_sentences(app)["nokia"]
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert changed == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z."
+    assert (row["source"], row["file"], row["section"], [change["key"] for change in row["changes"]]) == (
+        "outside",
+        RULES_FILE,
+        "reguly",
+        ["reguly.nokia"],
+    )
+    assert undone.status_code == 200, undone.text
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nokia” w Z."
+    assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules
+
+
+def test_regula_ilosci_usunieta_poza_centrum_po_cofnieciu_wraca_na_koniec_listy(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    rule_sentences(app)
+    contract_rule = "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n"
+    write_dad_quantity_rules(app.tool, RULES_FILE, contract_rule, "")
+    rule_sentences(app)
+    [row] = history_rows(app)
+
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    others = [rule.id for rule in DEFAULT_QUANTITY_RULES.rules if rule.id != "t-umowa-u"]
+    assert list(rule_sentences(app)) == [*others, "t-umowa-u"]
+
+
+@pytest.mark.parametrize(
+    ("register", "periods", "problem"),
+    [
+        ("ZLECENIA INTERMAX.xlsx", None, {"message": REGISTER_PATH, "field": "rejestr_zlecen"}),
+        ("rejestr.csv", None, {"message": REGISTER_PATH, "field": "rejestr_zlecen"}),
+        (None, "INEA", {"message": PERIODS_PATH, "field": "folder_okresow"}),
+    ],
+    ids=["rejestr-bez-pelnej-sciezki", "rejestr-nie-xlsx", "folder-bez-pelnej-sciezki"],
+)
+def test_zla_wartosc_folderow_sie_nie_zapisuje_a_odmowa_ma_pole_i_zdanie(
+    tmp_path: Path, register: str | None, periods: str | None, problem: dict[str, str]
+) -> None:
+    app, chosen = with_periods_directory(tmp_path)
+    saved = app.settings_path.read_bytes()
+    full = {"rejestr.csv": str(tmp_path / "rejestr.csv")}
+
+    refused = app.client.put(
+        "/api/settings/folders",
+        json={"order_register": full.get(register or "", register), "periods_directory": periods or str(chosen)},
+    )
+
+    assert (refused.status_code, refused.json()) == (422, problem)
+    assert (app.settings_path.read_bytes(), len(history_rows(app))) == (saved, 1)
+
+
+def test_reczna_zmiana_pliku_ustawien_ma_jeden_wiersz_spoza_centrum_z_wartoscia_przed_i_po(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\nmotyw: light\n", encoding="utf-8")
+
+    read = app.client.get("/api/settings")
+    again = app.client.get("/api/settings")
+    rows = history_rows(app)
+
+    assert (read.status_code, read.json()["periods_directory"]["path"], read.json()["theme"]) == (200, str(other), "light")
+    assert again.json() == read.json()
+    assert changes(rows) == [
+        (
+            "outside",
+            [
+                {"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)},
+                {"key": "wyglad.motyw", "before": "dark", "after": "light"},
+            ],
+        ),
+        ("tata", [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}]),
+    ]
+    assert rows[0]["undoable"] is True
+    assert "ustawienia-spoza plik=centrum-ustawienia.yaml wynik=zapisano" in app.log_path.read_text(encoding="utf-8")
+
+
+def test_historia_otwarta_zaraz_po_recznej_zmianie_pliku_ustawien_pokazuje_jej_wiersz(tmp_path: Path) -> None:
+    """Tata otwiera Historię w oknie Ustawień, zanim cokolwiek innego przeczytało Ustawienia po zmianie Maksa."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\n", encoding="utf-8")
+
+    assert changes(history_rows(app))[0] == (
+        "outside",
+        [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}],
+    )
+
+
+def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_i_jednym_wierszem_bez_cofniecia(
+    tmp_path: Path,
+) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    app.settings_path.write_text("schema_version: 1\nfolder_okresow: INEA\n", encoding="utf-8")
+
+    first = app.client.get("/api/settings")
+    second = app.client.get("/api/settings")
+    rows = history_rows(app)
+    undo = app.client.post(f"/api/settings/history/{rows[0]['id']}/undo")
+
+    assert (first.status_code, first.json()) == (
+        200,
+        {
+            "order_register": NOT_SET,
+            "periods_directory": {"state": "ready", "path": str(periods), "name": "INEA"},
+            "periods_all_years": False,
+            "theme": "dark",
+            "folders_problem": {"field": "folder_okresow", "message": PERIODS_PATH},
+            "workers": NO_WORKERS,
+            **NO_INBOX,
+            "autostart": AUTOSTART_SHOWN_OFF,
+        },
+    )
+    assert second.json() == first.json()
+    assert [(row["source"], row["refused"], row["undoable"], row["reason"]) for row in rows] == [
+        ("outside", True, False, PERIODS_PATH),
+        ("tata", False, True, None),
+    ]
+    assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
+    log = app.log_path.read_text(encoding="utf-8")
+    assert log.count("ustawienia-zle plik=centrum-ustawienia.yaml pole=folder_okresow") == 1
+
+
+def test_reczne_przepisanie_pliku_ustawien_z_tymi_samymi_wartosciami_ma_wiersz_bez_cofniecia(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.settings_path.write_bytes(b"# kopia Maksa\n" + app.settings_path.read_bytes())
+
+    app.client.get("/api/settings")
+    rows = history_rows(app)
+    undo = app.client.post(f"/api/settings/history/{rows[0]['id']}/undo")
+
+    assert [(row["source"], row["changes"], row["undoable"]) for row in rows[:1]] == [("outside", [], False)]
+    assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
+
+
+def test_migawka_narzedzi_przy_zlej_tresci_pliku_ustawien_ma_ostatni_dobry_folder(tmp_path: Path) -> None:
+    """``tools/proba_przypomnien.py`` czyta Ustawienia bez Centrum: zepsuty ręcznie plik nie zabiera mu folderu okresów."""
+
+    app, periods = with_periods_directory(tmp_path)
+    app.settings_path.write_text("schema_version: 1\nfolder_okresow: INEA\n", encoding="utf-8")
+
+    assert read_snapshot(app.tool.config).folders.periods_directory == periods
+
+
+def test_zla_tresc_potem_dobra_i_znow_ta_sama_zla_tresc_maja_po_wierszu_spoza_centrum(tmp_path: Path) -> None:
+    """Maks psuje plik, naprawia go innym folderem i psuje tak samo jak za pierwszym razem: Historia mówi o każdym."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    bad = "schema_version: 1\nfolder_okresow: INEA\n"
+    for content in (bad, f"schema_version: 1\nfolder_okresow: '{other}'\n", bad):
+        app.settings_path.write_text(content, encoding="utf-8")
+        view = app.client.get("/api/settings").json()
+    rows = history_rows(app)
+
+    assert (view["periods_directory"]["path"], view["folders_problem"]) == (
+        str(other),
+        {"field": "folder_okresow", "message": PERIODS_PATH},
+    )
+    assert [(row["source"], row["refused"], row["changes"]) for row in rows] == [
+        ("outside", True, []),
+        ("outside", False, [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}]),
+        ("outside", True, []),
+        ("tata", False, [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}]),
+    ]
+
+
+def test_plik_ustawien_usuniety_i_przywrocony_z_kopii_poza_centrum_ma_dwa_wiersze(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    saved = app.settings_path.read_bytes()
+
+    app.settings_path.unlink()
+    removed = app.client.get("/api/settings").json()
+    app.settings_path.write_bytes(saved)
+    restored = app.client.get("/api/settings").json()
+    rows = history_rows(app)
+
+    assert (removed["periods_directory"], restored["periods_directory"]["path"]) == (NOT_SET, str(periods))
+    assert [(row["source"], row["removed"], row["changes"]) for row in rows[:2]] == [
+        ("outside", False, [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}]),
+        ("outside", True, [{"key": "foldery.folder_okresow", "before": str(periods), "after": None}]),
+    ]
+
+
+def test_cofniecie_usuniecia_pliku_ustawien_poza_centrum_przywraca_folder(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    app.settings_path.unlink()
+    app.client.get("/api/settings")
+    removal = history_rows(app)[0]
+
+    undone = app.client.post(f"/api/settings/history/{removal['id']}/undo")
+
+    assert (undone.status_code, undone.json()["settings"]["periods_directory"]["path"]) == (200, str(periods))
+    assert [(row["source"], row["undoes"]) for row in history_rows(app)[:2]] == [
+        ("tata", removal["id"]),
+        ("outside", None),
+    ]
+
+
+def test_plik_ustawien_sprzed_wydania_jest_stanem_wyjsciowym_a_pozniejsza_reczna_zmiana_ma_wiersz(
+    tmp_path: Path,
+) -> None:
+    """Pierwszy start wersji z Historią zastaje plik taty bez pamięci: przyjmuje go bez wiersza, a dalej już widzi zmiany."""
+
+    periods = tmp_path / "INEA"
+    other = tmp_path / "Załączniki"
+    periods.mkdir()
+    other.mkdir()
+    app = centrum(tmp_path)
+    app.settings_path.parent.mkdir(parents=True)
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{periods}'\n", encoding="utf-8")
+
+    first = app.client.get("/api/settings").json()
+    rows_after_first = history_rows(app)
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\n", encoding="utf-8")
+    app.client.get("/api/settings")
+
+    assert (first["periods_directory"]["path"], rows_after_first) == (str(periods), [])
+    assert changes(history_rows(app)) == [
+        ("outside", [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}])
+    ]
+
+
+def test_zapis_taty_przy_zlej_tresci_pliku_zmienia_ostatnia_dobra_wartosc(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    app.settings_path.write_text("schema_version: 1\nfolder_okresow: INEA\n", encoding="utf-8")
+
+    changed = app.client.put("/api/settings/theme", json={"theme": "light"})
+
+    assert (changed.status_code, changed.json()["settings"]["periods_directory"]["path"], changed.json()["settings"]["folders_problem"]) == (
+        200,
+        str(periods),
+        None,
+    )
+    assert changes(history_rows(app))[0] == ("tata", [{"key": "wyglad.motyw", "before": "dark", "after": "light"}])
+
+
+def test_zmiana_ktorej_wiersza_historii_nie_da_sie_dopisac_zostawia_plik_ustawien_bez_zmiany(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    saved = app.settings_path.read_bytes()
+    history = app.tool.config / HISTORY_FILE
+    history.unlink()
+    history.mkdir()
+
+    refused = app.client.put("/api/settings/theme", json={"theme": "light"})
+
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert app.settings_path.read_bytes() == saved
+    history.rmdir()
+    assert app.client.get("/api/settings").json()["theme"] == "dark"
+    assert history_rows(app) == []
+
+
+def test_pierwszy_wybor_taty_ktorego_wiersza_historii_nie_da_sie_dopisac_nie_zostawia_pliku_ustawien(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    history = app.tool.config / HISTORY_FILE
+    history.mkdir(parents=True)
+
+    refused = app.client.put("/api/settings/theme", json={"theme": "light"})
+    history.rmdir()
+    after = app.client.get("/api/settings").json()
+
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert (app.settings_path.exists(), after["theme"], history_rows(app)) == (False, "dark", [])
+
+
+@pytest.mark.parametrize("bad", [False, True], ids=["dobra-tresc", "zla-tresc"])
+def test_reczna_zmiana_przy_historii_ktorej_nie_da_sie_dopisac_dostaje_wiersz_przy_nastepnym_odczycie(
+    tmp_path: Path, bad: bool
+) -> None:
+    """OneDrive albo antywirus trzyma Historię, gdy Maks zmienia plik ręcznie: zmiana działa, a wiersz dochodzi później."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    history = app.tool.config / HISTORY_FILE
+    kept = history.read_bytes()
+    history.unlink()
+    history.mkdir()
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{'INEA' if bad else other}'\n", encoding="utf-8")
+
+    held = app.client.get("/api/settings").json()
+    history.rmdir()
+    history.write_bytes(kept)
+    app.client.get("/api/settings")
+    app.client.get("/api/settings")
+    rows = history_rows(app)
+
+    assert held["periods_directory"]["path"] == str(periods if bad else other)
+    assert [(row["source"], row["refused"]) for row in rows] == [("outside", bad), ("tata", False)]
+    assert rows[0]["changes"] == (
+        [] if bad else [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}]
+    )
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_reczna_zmiana_przy_nieczytelnej_pamieci_ustawien_dostaje_wiersz_gdy_pamiec_wroci(tmp_path: Path) -> None:
+    """Pamięci, której system nie daje czytać, Centrum nie zgaduje: zapis taty czeka, a ręczna zmiana nie ginie."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    memory = app.tool.config / MEMORY_DIRECTORY / f"{SETTINGS_FILE}.json"
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\n", encoding="utf-8")
+
+    memory.chmod(0)
+    try:
+        read = app.client.get("/api/settings")
+        refused = app.client.put("/api/settings/theme", json={"theme": "light"})
+    finally:
+        memory.chmod(0o644)
+    app.client.get("/api/settings")
+
+    assert (read.json()["periods_directory"]["path"], refused.status_code) == (str(other), 500)
+    assert changes(history_rows(app)) == [
+        ("outside", [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}]),
+        ("tata", [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}]),
+    ]
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_plik_historii_zajety_na_chwile_przyjmuje_wiersz_po_ponowieniu(tmp_path: Path) -> None:
+    """Antywirus trzyma Historię Ustawień przez chwilę: zmiana taty wchodzi z wierszem, a nie kończy się odmową."""
+
+    tool = ToolDirectory(tmp_path)
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    history = tool.config / HISTORY_FILE
+    pauses: list[float] = []
+
+    def access_back(seconds: float) -> None:
+        pauses.append(seconds)
+        history.chmod(0o644)
+
+    client = CentrumClient(centrum_app(tool, platform=FakePlatform(chosen_folders=[periods]), pause=access_back))
+    client.post("/api/settings/periods-directory/choose")
+    history.chmod(0)
+    try:
+        changed = client.put("/api/settings/theme", json={"theme": "light"})
+    finally:
+        history.chmod(0o644)
+    rows = client.get("/api/settings/history").json()["rows"]
+
+    assert (changed.status_code, changed.json()["settings"]["theme"]) == (200, "light")
+    assert [row["changes"][0]["key"] for row in rows] == ["wyglad.motyw", "foldery.folder_okresow"]
+    assert len(pauses) == 1
+
+
+def test_urwana_linia_historii_jest_pominieta_i_policzona(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    with (app.tool.config / HISTORY_FILE).open("a", encoding="utf-8") as history:
+        history.write('{"v":1,"id":"urwa')
+
+    app.client.put("/api/settings/theme", json={"theme": "light"})
+    read = app.client.get("/api/settings/history").json()
+
+    assert ([row["changes"][0]["key"] for row in read["rows"]], read["skipped"]) == (
+        ["wyglad.motyw", "foldery.folder_okresow"],
+        1,
+    )
+
+
+def config_bytes(config: Path) -> dict[str, bytes]:
+    """Każdy plik folderu ``config`` z jego bajtami, po ścieżce względem ``config``."""
+
+    return {path.relative_to(config).as_posix(): path.read_bytes() for path in sorted(config.rglob("*")) if path.is_file()}
+
+
+def started(tool: ToolDirectory, changes: tuple[ReleaseChange[Any], ...], **options: Any) -> CentrumClient:
+    """Centrum uruchomione jak u taty na katalogu narzędzia ``tool``, z Wydaniem, które niesie zmiany ``changes``."""
+
+    client = CentrumClient(centrum_app(tool, release_changes=changes, **options))
+    client.start()
+    return client
+
+
+def light_theme(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
+    return Edit(lambda current: replace(current, theme="light"))
+
+
+LIGHT_THEME = ReleaseChange("2026-11-motyw-jasny", FOLDERS, light_theme)
+
+
+def test_start_centrum_z_wydania_bez_zmian_ustawien_zostawia_pliki_config_bajt_w_bajt(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.client.put("/api/settings/theme", json={"theme": "light"})
+    app.client.stop()
+    before = config_bytes(app.tool.config)
+
+    started(app.tool, ()).stop()
+    started(app.tool, ()).stop()
+
+    assert config_bytes(app.tool.config) == before
+
+
+def test_zmiana_ustawien_z_wydania_wchodzi_raz_z_numerem_wydania_w_historii_a_tata_ja_cofa(tmp_path: Path) -> None:
+    repository = tool_repository(tmp_path / "repozytoria")
+    freshness = ToolFreshness.of_clone(repository.clone, repository.github_releases, repository.published)
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+
+    first = started(tool, (LIGHT_THEME,), tool_freshness=freshness)
+    [applied] = first.get("/api/settings/history").json()["rows"]
+    theme = first.get("/api/settings").json()["theme"]
+    first.stop()
+    second = started(tool, (LIGHT_THEME,), tool_freshness=freshness)
+    undone = second.post(f"/api/settings/history/{applied['id']}/undo")
+    second.stop()
+    after_undo = config_bytes(tool.config)
+    third = started(tool, (LIGHT_THEME,), tool_freshness=freshness)
+    rows = third.get("/api/settings/history").json()["rows"]
+    third_theme = third.get("/api/settings").json()["theme"]
+    third.stop()
+
+    assert theme == "light"
+    assert (applied["source"], applied["release"], applied["changes"], applied["undoable"]) == (
+        "release",
+        {"version": "0.1.0", "commit": repository.head()[:7], "change": "2026-11-motyw-jasny"},
+        [{"key": "wyglad.motyw", "before": "dark", "after": "light"}],
+        True,
+    )
+    assert (undone.status_code, undone.json()["settings"]["theme"]) == (200, "dark")
+    assert [(row["source"], row["undoes"]) for row in rows] == [("tata", applied["id"]), ("release", None)]
+    assert (third_theme, config_bytes(tool.config)) == ("dark", after_undo)
+    log = tool.log_path.read_text(encoding="utf-8")
+    assert "ustawienia-zmiana plik=centrum-ustawienia.yaml klucze=wyglad.motyw zrodlo=wydanie" in log
+    assert log.count("ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=zastosowano") == 1
+
+
+def test_uszkodzona_pamiec_zmian_z_wydan_wstrzymuje_zmiany_zeby_cofnieta_nie_weszla_drugi_raz(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    memory = tool.config / MEMORY_DIRECTORY / APPLIED_FILE
+    memory.parent.mkdir(parents=True)
+    memory.write_text('{"schema_version": 1, "zmiany": {"2026-11-motyw-jas', encoding="utf-8")
+
+    client = started(tool, (LIGHT_THEME,))
+    theme = client.get("/api/settings").json()["theme"]
+    rows = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+
+    assert (theme, rows) == ("dark", [])
+    assert "ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=bez-pamieci" in tool.log_path.read_text(encoding="utf-8")
+
+
+def test_zmiana_ustawien_z_wydania_bez_cofniecia_nie_ma_cofnij(tmp_path: Path) -> None:
+    def migrated(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
+        return Edit(lambda current: replace(current, theme="light"), undoable=False)
+
+    client = started(ToolDirectory(tmp_path), (ReleaseChange("2026-11-migracja", FOLDERS, migrated),))
+    [row] = client.get("/api/settings/history").json()["rows"]
+    undo = client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (row["source"], row["undoable"]) == ("release", False)
+    assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
+
+
+# --- Lista Wykonawców (#1473, ADR 0032): przeniesienie starych plików i reguły pliku ------------------------------------
+
+JAN = "jan.testowy@przyklad.invalid"
+ANNA = "anna.przyklad@przyklad.invalid"
+OBCY = "obcy@przyklad.invalid"
+OLD_MAPPING = "schema_version: 1\nworkers:\n  Jan.Testowy: Jan Testowy\n  anna.przyklad: Anna Przykład\n  ewa.bez: Ewa Bez\n"
+OLD_ADDRESSES = (
+    f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{JAN}]\n  anna.przyklad: [{ANNA}]\n  obcy.login: [{OBCY}]\n"
+)
+
+
+def listed(logins: list[str], name: str, addresses: list[str]) -> dict[str, object]:
+    """Wykonawca w sekcji Wykonawcy: aktywny, z przypomnieniami, tak jak przenosi go przeniesienie."""
+
+    return {"logins": logins, "name": name, "addresses": addresses, "active": True, "reminders": True}
+
+
+def old_files(tool: ToolDirectory, mapping: str | bytes | None, addresses: str | bytes | None) -> dict[str, bytes]:
+    """Stare pliki Wykonawców w ``config`` taty sprzed Wydania z Listą Wykonawców; ``None``: pliku nie ma."""
+
+    tool.config.mkdir(parents=True, exist_ok=True)
+    written: dict[str, bytes] = {}
+    for name, content in ((OLD_MAPPING_FILE, mapping), (OLD_ADDRESSES_FILE, addresses)):
+        if content is not None:
+            data = content.encode("utf-8") if isinstance(content, str) else content
+            (tool.config / name).write_bytes(data)
+            written[name] = data
+    return written
+
+
+def migrated(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Sekcja Wykonawcy i Historia Ustawień po pierwszym starcie Wydania z Listą Wykonawców."""
+
+    client = started(tool, RELEASE_CHANGES)
+    workers = client.get("/api/settings").json()["workers"]
+    rows = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+    return workers, rows
+
+
+def test_przeniesienie_laczy_konfiguracje_i_adresy_w_liste_wykonawcow_a_adres_spoza_konfiguracji_zostaje_dla_taty(
+    tmp_path: Path,
+) -> None:
+    """DESIGN §4.2: login z adresami i login bez adresów przechodzą jako aktywni Wykonawcy z przypomnieniami, adres przy
+    loginie spoza Konfiguracji wykonawców tata widzi do rozstrzygnięcia, a stare pliki zostają bajt w bajt."""
+
+    tool = ToolDirectory(tmp_path)
+    old = old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+
+    workers, rows = migrated(tool)
+
+    assert workers == {
+        "state": "good",
+        "workers": [
+            listed(["jan.testowy"], "Jan Testowy", [JAN]),
+            listed(["anna.przyklad"], "Anna Przykład", [ANNA]),
+            listed(["ewa.bez"], "Ewa Bez", []),
+        ],
+        "unresolved": [{"reason": "login_bez_wykonawcy", "login": "obcy.login", "addresses": [OBCY]}],
+        "problem": None,
+    }
+    [row] = rows
+    assert (row["source"], row["release"]["change"], row["file"], row["section"], row["undoable"], row["refused"]) == (
+        "release",
+        "2026-11-lista-wykonawcow",
+        WORKERS_FILE,
+        "wykonawcy",
+        False,
+        False,
+    )
+    assert {name: (tool.config / name).read_bytes() for name in old} == old
+
+
+@pytest.mark.parametrize(
+    ("addresses", "reason"),
+    [
+        pytest.param("wykonawcy: [", "plik nie jest poprawnym YAML", id="zly-yaml"),
+        pytest.param(f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{JAN}, {JAN}]\n", "ten sam adres stoi dwa razy", id="adres-dwa-razy"),
+        pytest.param(b"\xff\xfe nie UTF-8", "plik nie jest zapisany w UTF-8", id="spoza-utf-8"),
+    ],
+)
+def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
+    tmp_path: Path, addresses: str | bytes, reason: str
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, OLD_MAPPING, addresses)
+
+    workers, _ = migrated(tool)
+
+    assert [worker["addresses"] for worker in workers["workers"]] == [[], [], []]
+    assert workers["unresolved"] == [
+        {"reason": "adresy_nieprzeniesione", "message": settings_messages.addresses_not_moved(OLD_ADDRESSES_FILE, reason)}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("mapping", "reason"),
+    [
+        pytest.param("workers: [", "plik nie jest poprawnym YAML", id="zly-yaml"),
+        pytest.param("schema_version: 2\nworkers:\n  a: A\n", "plik nie ma schema_version: 1", id="inna-wersja"),
+        pytest.param("schema_version: 1\nworkers:\n  a: A\n  A: B\n", "identyfikator Wykonawcy stoi dwa razy", id="login-dwa-razy"),
+    ],
+)
+def test_zla_konfiguracja_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia(
+    tmp_path: Path, mapping: str, reason: str
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, mapping, OLD_ADDRESSES)
+
+    workers, rows = migrated(tool)
+
+    assert not tool.worker_list.exists()
+    assert workers["workers"] == []
+    assert [(row["source"], row["refused"], row["reason"]) for row in rows] == [
+        ("release", True, settings_messages.workers_not_moved(OLD_MAPPING_FILE, reason))
+    ]
+
+
+def test_konfiguracja_wykonawcow_ktorej_reguly_nie_przechodza_na_liscie_jest_odrzucona_z_powodem(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, "schema_version: 1\nworkers:\n  a: Ten Sam\n  b: ten sam\n", None)
+
+    _, rows = migrated(tool)
+
+    assert not tool.worker_list.exists()
+    assert [(row["refused"], row["reason"]) for row in rows] == [
+        (True, settings_messages.workers_not_moved(OLD_MAPPING_FILE, "Wykonawcy z adresami łamią reguły Listy Wykonawców"))
+    ]
+
+
+def test_same_adresy_bez_konfiguracji_wykonawcow_czekaja_na_tate_zamiast_zniknac(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, None, OLD_ADDRESSES)
+
+    workers, _ = migrated(tool)
+
+    assert workers["workers"] == []
+    assert [item["login"] for item in workers["unresolved"]] == ["jan.testowy", "anna.przyklad", "obcy.login"]
+
+
+@pytest.mark.parametrize("existing", [False, True], ids=["bez-starych-plikow", "lista-juz-jest"])
+def test_przeniesienie_bez_starych_plikow_albo_po_liscie_niczego_nie_pisze(tmp_path: Path, existing: bool) -> None:
+    tool = ToolDirectory(tmp_path)
+    if existing:
+        old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+        write_worker_list(tool.worker_list, worker_list({"kamil.syntetyczny": "Kamil Syntetyczny"}))
+    before = tool.worker_list.read_bytes() if existing else None
+
+    workers, rows = migrated(tool)
+
+    assert rows == []
+    assert (tool.worker_list.read_bytes() if tool.worker_list.exists() else None) == before
+    assert [worker["name"] for worker in workers["workers"]] == (["Kamil Syntetyczny"] if existing else [])
+
+
+@NO_ACCESS_ON_WINDOWS
+@pytest.mark.parametrize("locked", [OLD_MAPPING_FILE, OLD_ADDRESSES_FILE])
+def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast_zostawic_tate_bez_wykonawcow(
+    tmp_path: Path, locked: str
+) -> None:
+    """DESIGN §4.2: stary plik, którego system nie daje teraz czytać, nie jest ani zły, ani brakujący. Przeniesienie
+    czeka bez Listy Wykonawców i bez wiersza Historii, a następny start z czytelnym plikiem przenosi Wykonawców z
+    adresami (odmowa zostałaby zapamiętana na zawsze, a brak pliku dałby listę bez Wykonawców albo bez adresów)."""
+
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+    with without_access(tool.config / locked):
+        locked_workers, locked_rows = migrated(tool)
+        listed_while_locked = tool.worker_list.exists()
+
+    workers, rows = migrated(tool)
+
+    assert (listed_while_locked, locked_rows, locked_workers["workers"]) == (False, [], [])
+    assert workers["workers"] == [
+        listed(["jan.testowy"], "Jan Testowy", [JAN]),
+        listed(["anna.przyklad"], "Anna Przykład", [ANNA]),
+        listed(["ewa.bez"], "Ewa Bez", []),
+    ]
+    assert [(row["source"], row["refused"]) for row in rows] == [("release", False)]
+
+
+WORKER = "  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
+
+
+@pytest.mark.parametrize(
+    ("entries", "field", "sentence"),
+    [
+        pytest.param("  - {nazwa: 'Jan/Testowy', loginy: [jan]}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_invalid(), id="nazwa-nie-do-pliku"),
+        pytest.param("  - {nazwa: 'Jan Testowy.', loginy: [jan]}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_invalid(), id="kropka-na-koncu"),
+        pytest.param(f"  - {{nazwa: {'J' * 300}, loginy: [jan]}}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_too_long(), id="nazwa-za-dluga"),
+        pytest.param(WORKER + "  - {nazwa: Jan Drugi, loginy: [Jan.Testowy]}\n", "wykonawcy[1].loginy[0]", settings_messages.worker_login_repeated(), id="powtorzony-login"),
+        pytest.param(WORKER + "  - {nazwa: 'jan  testowy', loginy: [jan.drugi]}\n", "wykonawcy[1].nazwa", settings_messages.worker_same_file(), id="dwie-nazwy-jeden-plik"),
+        pytest.param(WORKER + "  - {nazwa: Anna, loginy: [anna], adresy: [" + JAN.upper() + "]}\n", "wykonawcy[1].adresy[0]", settings_messages.worker_address_repeated(), id="adres-u-dwoch-wykonawcow"),
+        pytest.param("  - {nazwa: Jan, loginy: [jan], adresy: [jan]}\n", "wykonawcy[0].adresy[0]", settings_messages.worker_address_invalid(), id="nie-adres"),
+        pytest.param("  - {nazwa: Jan, loginy: [jan], adresy: ['Jan <" + JAN + ">']}\n", "wykonawcy[0].adresy[0]", settings_messages.worker_address_invalid(), id="adres-z-nazwa"),
+        pytest.param("  - {nazwa: Jan, loginy: []}\n", "wykonawcy[0].loginy", settings_messages.worker_without_login(), id="bez-loginu"),
+        pytest.param("  - {nazwa: '', loginy: [jan]}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_empty(), id="pusta-nazwa"),
+    ],
+)
+def test_lista_wykonawcow_lamiaca_regule_to_zle_ustawienie_z_polem_bez_nazwy_loginu_i_adresu(
+    tmp_path: Path, entries: str, field: str, sentence: str
+) -> None:
+    """Sprawdzenia dzisiejszego czytnika Konfiguracji wykonawców (nazwa jako nazwa pliku, długość, powtórzony login, dwie
+    nazwy na jeden plik) i adresów działają na Liście Wykonawców, a nowa reguła odrzuca adres u dwóch Wykonawców."""
+
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    app.tool.worker_list.write_text(f"schema_version: 1\nwykonawcy:\n{entries}", encoding="utf-8")
+
+    workers = app.client.get("/api/settings").json()["workers"]
+
+    assert workers == {"state": "bad", "workers": [], "unresolved": [], "problem": {"field": field, "message": sentence}}
+
+
+LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kamil.wyciek@przyklad.invalid"
+
+
+@pytest.mark.parametrize(
+    ("content", "field", "sentence"),
+    [
+        pytest.param(
+            f"wykonawcy:\n  - {LEAKED_LOGIN}: {LEAKED_NAME}\n",
+            "wykonawcy[0]",
+            settings_messages.worker_unknown_key(WORKERS_FILE, 1, 1),
+            id="stary-ksztalt-wpisu",
+        ),
+        pytest.param(
+            f"{LEAKED_LOGIN}: {LEAKED_NAME}\nwykonawcy: []\n",
+            None,
+            settings_messages.unknown_key(WORKERS_FILE, 2),
+            id="login-na-gorze-pliku",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], {LEAKED_ADDRESS}: tak}}\n",
+            "wykonawcy[0]",
+            settings_messages.worker_unknown_key(WORKERS_FILE, 1, 3),
+            id="adres-w-miejscu-pola",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: {LEAKED_LOGIN}}}\n",
+            "wykonawcy[0].loginy",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy")),
+            id="login-zamiast-listy",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], aktywny: {LEAKED_NAME}}}\n",
+            "wykonawcy[0].aktywny",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny")),
+            id="nazwa-zamiast-tak-nie",
+        ),
+        pytest.param(
+            f"do_rozstrzygniecia:\n  - {{login: {LEAKED_LOGIN}, adresy: [{LEAKED_ADDRESS}], powod: {LEAKED_NAME}}}\n",
+            "do_rozstrzygniecia[0]",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("do_rozstrzygniecia", 0)),
+            id="zly-wpis-do-rozstrzygniecia",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: '{LEAKED_NAME}/', loginy: [{LEAKED_LOGIN}], adresy: [{LEAKED_ADDRESS}]}}\n",
+            "wykonawcy[0].nazwa",
+            settings_messages.worker_name_invalid(),
+            id="nazwa-nie-do-pliku",
+        ),
+    ],
+)
+def test_zly_plik_listy_wykonawcow_mowi_wpis_po_numerze_bez_loginu_nazwy_i_adresu_w_logach_i_zgloszeniu(
+    tmp_path: Path, content: str, field: str | None, sentence: str
+) -> None:
+    """Pole problemu składa się tylko ze znanych nazw pól i numerów, więc tekst z pliku (stary kształt wpisu ``login:
+    Nazwa``, klucz-adres, wartość nie tego typu) nie trafia do odpowiedzi, Logów Centrum ani Zgłoszenia (przegląd #1529
+    r1, W3)."""
+
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.client.get("/api/settings")
+    centrum_.tool.worker_list.write_text(f"schema_version: 1\n{content}", encoding="utf-8")
+
+    settings = centrum_.client.get("/api/settings")
+    run_id = stopped_for_maks(centrum_)
+    report = centrum_.client.post(f"/api/runs/{run_id}/diagnosis").json()["report"]["body"]
+
+    assert settings.json()["workers"]["problem"] == {"field": field, "message": sentence}
+    seen = {
+        "odpowiedź": settings.text,
+        "Logi Centrum": centrum_.tool.log_path.read_text(encoding="utf-8"),
+        "Zgłoszenie": report,
+    }
+    assert sentence in report
+    leaks = [(where, secret) for where, text in seen.items() for secret in (LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS) if secret in text]
+    assert leaks == []
+
+
+def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej(tmp_path: Path) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.client.get("/api/settings")
+    centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+
+    view = run_to_end(centrum_, dry_run=True)
+
+    assert (view["result"]["result"], view["result"]["ending"]) == ("OK", "finished")
+
+
+def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_poprawic(tmp_path: Path) -> None:
+    """Zła Lista Wykonawców bez ostatniej dobrej (po usunięciu pliku nie ma już dobrej treści) odmawia startu procesu."""
+
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.tool.worker_list.unlink()
+    centrum_.client.get("/api/settings")
+    centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n", encoding="utf-8")
+
+    started_run = centrum_.client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
+
+    assert (started_run.status_code, started_run.json()) == (
+        409,
+        {
+            "message": f"Lista Wykonawców ma złe ustawienie: {settings_messages.worker_without_login()} Popraw ją w Ustawieniach.",
+            "field": "wykonawcy[0].loginy",
+        },
+    )
+
+
+def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia_a_dziennik_bez_danych_osobowych(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}, {"jan.testowy": [JAN]}))
+    app.client.get("/api/settings")
+    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Nowak", "anna.przyklad": "Anna Przykład"}))
+
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert [(change["key"], change["before"] is None, change["after"] is None) for change in row["changes"]] == [
+        ("wykonawcy[jan.testowy]", False, False),
+        ("wykonawcy[anna.przyklad]", True, False),
+    ]
+    assert row["section"] == "wykonawcy"
+    assert [worker["name"] for worker in undone.json()["settings"]["workers"]["workers"]] == ["Jan Testowy"]
+    assert undone.json()["settings"]["workers"]["workers"][0]["addresses"] == [JAN]
+    log = app.tool.log_path.read_text(encoding="utf-8")
+    assert "ustawienia-spoza plik=wykonawcy.yaml wynik=zapisano" in log
+    assert "ustawienia-zmiana plik=wykonawcy.yaml klucze=wykonawcy zrodlo=tata" in log
+    for secret in ("jan.testowy", "Jan Nowak", "anna.przyklad", JAN):
+        assert secret not in log, secret
+
+
+def bad_periods_directory(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
+    return Edit(lambda current: replace(current, periods_directory=Path("INEA")))
+
+
+WORKERS_MISSING = "Listy Wykonawców nie ma, bo pliku identyfikatorów nie da się przeczytać."
+
+
+def refused(_inputs: ReleaseInputs[FolderSettings]) -> Refuse:
+    return Refuse(WORKERS_MISSING)
+
+
+@pytest.mark.parametrize(
+    ("propose", "reason"),
+    [(bad_periods_directory, PERIODS_PATH), (refused, WORKERS_MISSING)],
+    ids=["zla-wartosc", "odmowa-zmiany"],
+)
+def test_zmiana_ustawien_z_wydania_ktora_nie_przechodzi_sprawdzen_nie_wchodzi_a_historia_mowi_dlaczego(
+    tmp_path: Path, propose: Callable[[ReleaseInputs[FolderSettings]], Proposal[FolderSettings]], reason: str
+) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.client.stop()
+    saved = app.settings_path.read_bytes()
+    change = ReleaseChange("2026-11-zla-zmiana", FOLDERS, propose)
+
+    started(app.tool, (change,)).stop()
+    again = started(app.tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert app.settings_path.read_bytes() == saved
+    assert [(row["source"], row["refused"], row["undoable"], row["reason"]) for row in rows] == [
+        ("release", True, False, reason),
+        ("tata", False, True, None),
+    ]
+    assert rows[0]["release"]["change"] == "2026-11-zla-zmiana"
+    assert "ustawienia-wydanie zmiana=2026-11-zla-zmiana wynik=odrzucono" in app.log_path.read_text(encoding="utf-8")
+
+
+def test_zmiana_ustawien_z_wydania_odlozona_na_pozniej_wraca_przy_nastepnym_starcie(tmp_path: Path) -> None:
+    attachments = tmp_path / "Załączniki"
+
+    def periods_from_attachments(_inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:
+        if not attachments.is_dir():
+            return Later("OneDrive nie oddał jeszcze folderu Załączniki")
+        return Edit(lambda current: replace(current, periods_directory=attachments))
+
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    change = ReleaseChange("2026-11-folder-zalaczniki", FOLDERS, periods_from_attachments)
+
+    started(tool, (change,)).stop()
+    later = config_bytes(tool.config)
+    attachments.mkdir()
+    again = started(tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    periods = again.get("/api/settings").json()["periods_directory"]
+    again.stop()
+
+    assert [name for name in (SETTINGS_FILE, HISTORY_FILE, f"{MEMORY_DIRECTORY}/{APPLIED_FILE}") if name in later] == []
+    assert ([row["source"] for row in rows], periods["path"]) == (["release"], str(attachments))
+    assert "ustawienia-wydanie zmiana=2026-11-folder-zalaczniki wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "proposal",
+    [Nothing(), Edit(lambda current: replace(current, theme="dark"))],
+    ids=["nic-do-zmiany", "edycja-bez-roznicy"],
+)
+def test_zmiana_ustawien_z_wydania_bez_niczego_do_zmiany_nie_wraca_i_nie_ma_wiersza(
+    tmp_path: Path, proposal: Proposal[FolderSettings]
+) -> None:
+    asked: list[str] = []
+
+    def nothing(_inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:
+        asked.append("zapytana")
+        return proposal
+
+    tool = ToolDirectory(tmp_path)
+    change = ReleaseChange("2026-11-nic", FOLDERS, nothing)
+
+    started(tool, (change,)).stop()
+    again = started(tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (asked, rows) == (["zapytana"], [])
+    assert "ustawienia-wydanie zmiana=2026-11-nic wynik=bez-zmian" in tool.log_path.read_text(encoding="utf-8")
+
+
+def test_zmiana_ustawien_z_wydania_ktorej_nie_da_sie_zapisac_wraca_przy_nastepnym_starcie(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.client.stop()
+    saved = app.settings_path.read_bytes()
+    history = app.tool.config / HISTORY_FILE
+    rows_before = history.read_bytes()
+    history.unlink()
+    history.mkdir()
+
+    started(app.tool, (LIGHT_THEME,)).stop()
+    blocked = app.settings_path.read_bytes()
+    history.rmdir()
+    history.write_bytes(rows_before)
+    again = started(app.tool, (LIGHT_THEME,))
+    theme = again.get("/api/settings").json()["theme"]
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (blocked, theme) == (saved, "light")
+    assert [row["source"] for row in rows] == ["release", "tata"]
+    log = app.log_path.read_text(encoding="utf-8")
+    assert log.index("zmiana=2026-11-motyw-jasny wynik=bez-zapisu") < log.index("zmiana=2026-11-motyw-jasny wynik=zastosowano")
+
+
+@contextmanager
+def read_only_memory(tool: ToolDirectory) -> Iterator[None]:
+    """Folder pamięci Ustawień tylko do odczytu do końca bloku: żaden zapis pamięci się nie udaje."""
+
+    memory = tool.config / MEMORY_DIRECTORY
+    memory.mkdir(parents=True, exist_ok=True)
+    memory.chmod(0o555)
+    try:
+        yield
+    finally:
+        memory.chmod(0o755)
+
+
+@contextmanager
+def unreadable_history(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Do końca bloku system nie daje czytać pliku Historii (jak plik trzymany przez OneDrive), a dopisanie wiersza działa:
+    zmiana z Wydania, która mimo to by weszła, zapisuje się, więc widać ją w motywie i w wierszach Historii."""
+
+    def locked(path: Path) -> bytes | None | OSError:
+        if path.name == HISTORY_FILE:
+            return PermissionError(errno.EACCES, "plik trzymany przez system", str(path))
+        return settings_bytes(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(history_module, "settings_bytes", locked)
+        yield
+
+
+def applied_and_undone(tool: ToolDirectory) -> tuple[dict[str, Any], str]:
+    """Start, w którym zmiana z Wydania ``LIGHT_THEME`` wchodzi, a tata ją cofa: jej wiersz Historii i motyw po cofnięciu."""
+
+    first = started(tool, (LIGHT_THEME,))
+    [applied] = first.get("/api/settings/history").json()["rows"]
+    undone: str = first.post(f"/api/settings/history/{applied['id']}/undo").json()["settings"]["theme"]
+    first.stop()
+    return applied, undone
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca_po_cofnieciu_przez_tate(tmp_path: Path) -> None:
+    """Wiersz Historii idzie przed pamięcią zmian z Wydań, więc nieudany zapis pamięci nie puszcza zmiany drugi raz."""
+
+    tool = ToolDirectory(tmp_path)
+    with read_only_memory(tool):
+        applied, undone = applied_and_undone(tool)
+    again = started(tool, (LIGHT_THEME,))
+    theme = again.get("/api/settings").json()["theme"]
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (applied["source"], undone, theme) == ("release", "dark", "dark")
+    assert [row["source"] for row in rows] == ["tata", "release"]
+    assert "ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=bez-pamieci" in tool.log_path.read_text(encoding="utf-8")
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_historia_bez_dostepu_przy_starcie_wstrzymuje_zmiane_z_wydania_ktora_tata_cofnal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Historia, której system przy starcie nie daje czytać, nie jest pustą Historią: zmiana z Wydania, którą tata cofnął,
+    a której pamięć nie ma, nie wchodzi drugi raz."""
+
+    tool = ToolDirectory(tmp_path)
+    with read_only_memory(tool):
+        applied_and_undone(tool)
+    with unreadable_history(monkeypatch):
+        again = started(tool, (LIGHT_THEME,))
+    theme = again.get("/api/settings").json()["theme"]
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (theme, [row["source"] for row in rows]) == ("dark", ["tata", "release"])
+    assert "ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=bez-historii" in tool.log_path.read_text(encoding="utf-8")
+
+
+def test_zmiana_z_wydania_wstrzymana_przez_historie_bez_dostepu_wchodzi_przy_nastepnym_starcie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.client.stop()
+
+    with unreadable_history(monkeypatch):
+        held = started(app.tool, (LIGHT_THEME,))
+        held_theme = held.get("/api/settings").json()["theme"]
+        held.stop()
+    again = started(app.tool, (LIGHT_THEME,))
+    theme = again.get("/api/settings").json()["theme"]
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (held_theme, theme) == ("dark", "light")
+    assert [row["source"] for row in rows] == ["release", "tata"]
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_historia_ustawien_bez_dostepu_to_odmowa_okna_i_cofniecia_a_nie_pusta_historia(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    [row] = app.client.get("/api/settings/history").json()["rows"]
+    saved = app.settings_path.read_bytes()
+
+    with without_access(app.tool.config / HISTORY_FILE):
+        history = app.client.get("/api/settings/history")
+        undo = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (history.status_code, history.json()) == (
+        500,
+        {"message": "Nie udało się odczytać Historii Ustawień. Odśwież okno Ustawień za chwilę."},
+    )
+    assert (undo.status_code, app.settings_path.read_bytes()) == (500, saved)
+    assert "ustawienia-bez-zapisu przyczyna=historia" in app.log_path.read_text(encoding="utf-8")
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_odrzucona_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca(tmp_path: Path) -> None:
+    asked: list[str] = []
+
+    def refused_once(_inputs: ReleaseInputs[FolderSettings]) -> Refuse:
+        asked.append("zapytana")
+        return Refuse(WORKERS_MISSING)
+
+    tool = ToolDirectory(tmp_path)
+    change = ReleaseChange("2026-11-odmowa", FOLDERS, refused_once)
+
+    with read_only_memory(tool):
+        started(tool, (change,)).stop()
+    again = started(tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (asked, [(row["source"], row["refused"]) for row in rows]) == (["zapytana"], [("release", True)])
+
+
+def test_odrzucona_zmiana_z_wydania_bez_wiersza_historii_wraca_przy_nastepnym_starcie(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    history = tool.config / HISTORY_FILE
+    history.mkdir(parents=True)
+    change = ReleaseChange("2026-11-zla-zmiana", FOLDERS, refused)
+
+    started(tool, (change,)).stop()
+    history.rmdir()
+    again = started(tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert [(row["source"], row["reason"]) for row in rows] == [("release", WORKERS_MISSING)]
+    log = tool.log_path.read_text(encoding="utf-8")
+    assert log.index("zmiana=2026-11-zla-zmiana wynik=bez-zapisu") < log.index("zmiana=2026-11-zla-zmiana wynik=odrzucono")
+
+
+def test_wyjatek_w_zmianie_ustawien_z_wydania_nie_zatrzymuje_startu_centrum_a_zmiana_wraca(tmp_path: Path) -> None:
+    asked: list[str] = []
+
+    def failing(_inputs: ReleaseInputs[FolderSettings]) -> Nothing:
+        asked.append("zapytana")
+        raise KeyError("pole")
+
+    tool = ToolDirectory(tmp_path)
+    change = ReleaseChange("2026-11-z-bledem", FOLDERS, failing)
+
+    started(tool, (change,)).stop()
+    again = started(tool, (change,))
+    health = again.get("/api/health")
+    again.stop()
+
+    assert (health.status_code, asked) == (200, ["zapytana", "zapytana"])
+    log = tool.log_path.read_text(encoding="utf-8")
+    assert log.count('nieoczekiwany-wyjatek typ=KeyError miejsce="zmiana Ustawień z Wydania 2026-11-z-bledem"') == 2
+
+
+def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze_w_strefie_taty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Schemat przeglądarki przyjmuje tylko chwilę w UTC („Z”); na komputerze w UTC każda chwila tak wygląda.
+    if sys.platform == "win32":
+        pytest.skip("time.tzset jest tylko w systemach POSIX")
+    monkeypatch.setenv("TZ", "Europe/Warsaw")
+    time.tzset()
+    try:
+        app = centrum(tmp_path)
+        app.client.put("/api/settings/theme", json={"theme": "light"})
+        [row] = history_rows(app)
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    assert row["at"].endswith("Z")
+
+
+AUTOSTART_ON = {"key": "narzedzie.autostart", "before": "wylaczony", "after": "wlaczony"}
+AUTOSTART_OFF = {"key": "narzedzie.autostart", "before": "wlaczony", "after": "wylaczony"}
+
+
+def autostart(app: Centrum, enabled: bool) -> Any:
+    return app.client.put("/api/settings/autostart", json={"enabled": enabled})
+
+
+def test_przelacznik_autostartu_dwa_razy_wlaczony_daje_jeden_skrot_a_wylaczony_go_usuwa(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    before = app.client.get("/api/settings").json()["autostart"]["state"]
+
+    enabled, again = autostart(app, True), autostart(app, True)
+    shortcuts_after_two = sorted(path.name for path in app.autostart.folder.iterdir())
+    disabled = autostart(app, False)
+    rows = history_rows(app)
+
+    assert before == "off"
+    assert (enabled.json()["settings"]["autostart"]["state"], again.json()["settings"]["autostart"]["state"]) == ("on", "on")
+    assert shortcuts_after_two == [SHORTCUT_FILE]
+    assert (again.json()["change"], app.autostart.enabled) == (None, 1)
+    assert (disabled.json()["settings"]["autostart"]["state"], list(app.autostart.folder.iterdir())) == ("off", [])
+    assert [(row["source"], row["section"], row["changes"], row["undoable"]) for row in rows] == [
+        ("tata", "narzedzie", [AUTOSTART_OFF], True),
+        ("tata", "narzedzie", [AUTOSTART_ON], True),
+    ]
+    assert [enabled.json()["change"], disabled.json()["change"]] == [row["id"] for row in rows[::-1]]
+    assert "ustawienia-zmiana plik=autostart klucze=narzedzie.autostart zrodlo=tata" in app.log_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_skrot_autostartu_z_instalacji_jest_stanem_wyjsciowym_a_usuniety_recznie_to_wylaczony_z_wierszem_spoza_centrum(
+    tmp_path: Path,
+) -> None:
+    """Polecenie instalacji założyło skrót przed Wydaniem z Ustawieniami; potem ktoś usuwa go z folderu Autostart."""
+
+    app = centrum(tmp_path)
+    app.autostart.enable()
+    installed = app.client.get("/api/settings").json()["autostart"]["state"]
+    rows_after_install = history_rows(app)
+
+    app.autostart.disable()
+    removed = app.client.get("/api/settings").json()["autostart"]["state"]
+    again = app.client.get("/api/settings").json()["autostart"]["state"]
+    [outside] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{outside['id']}/undo")
+
+    assert (installed, rows_after_install) == ("on", [])
+    assert (removed, again) == ("off", "off")
+    assert (outside["source"], outside["changes"], outside["undoable"], outside["removed"]) == (
+        "outside",
+        [AUTOSTART_OFF],
+        True,
+        False,
+    )
+    assert (undone.json()["settings"]["autostart"]["state"], [path.name for path in app.autostart.folder.iterdir()]) == (
+        "on",
+        [SHORTCUT_FILE],
+    )
+    assert "ustawienia-spoza plik=autostart wynik=zapisano" in app.log_path.read_text(encoding="utf-8")
+
+
+def test_wlaczenie_autostartu_ktorego_wiersza_historii_nie_da_sie_dopisac_nie_zostawia_skrotu(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.client.get("/api/settings")
+    history = app.tool.config / HISTORY_FILE
+    history.mkdir(parents=True)
+
+    refused = autostart(app, True)
+    history.rmdir()
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (list(app.autostart.folder.iterdir()), app.client.get("/api/settings").json()["autostart"]) == ([], AUTOSTART_SHOWN_OFF)
+    assert history_rows(app) == []
+
+
+def test_skrot_autostartu_ktorego_system_nie_daje_zalozyc_zostawia_stan_bez_zmiany_i_bez_wiersza(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.autostart.failure = PermissionError(errno.EACCES, "Odmowa dostępu")
+
+    refused = autostart(app, True)
+    app.autostart.failure = None
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (app.client.get("/api/settings").json()["autostart"], history_rows(app)) == (AUTOSTART_SHOWN_OFF, [])
+
+
+def test_folder_autostartu_ktorego_nie_da_sie_sprawdzic_to_zdanie_przy_przelaczniku_a_nie_skrot_usuniety(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    autostart(app, True)
+    app.autostart.unreadable = True
+
+    shown = app.client.get("/api/settings").json()["autostart"]
+    refused = autostart(app, False)
+    app.autostart.unreadable = False
+
+    assert shown == {"state": "unreadable", "reason": AUTOSTART_UNREADABLE}
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert ([path.name for path in app.autostart.folder.iterdir()], len(history_rows(app))) == ([SHORTCUT_FILE], 1)
+
+
+class PowerShellWithCodePage1252:
+    """PowerShell z WScript.Shell na Windows ze stroną kodową ANSI 1252 (angielski Windows, runner CI): zapisuje skrót
+    pod nazwą przepuszczoną przez tę stronę kodową, w której nie ma „ń”, więc ``ń`` zostaje ``n``.
+
+    ``takes_s``: tyle sekund PowerShell pisze skrót; dłużej niż limit czasu wołającego to ``TimeoutExpired`` jak w
+    ``platform.run_console_program``, po zapisaniu skrótu. ``exit_code``: kod wyjścia PowerShella po zapisaniu skrótu,
+    np. 1, gdy ``Save()`` zapisał część pliku i padł.
+    """
+
+    def __init__(self) -> None:
+        self.takes_s = 1.0
+        self.exit_code = 0
+
+    def __call__(
+        self, command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        assert env is not None
+        link = Path(env["CENTRUM_SKROT_PLIK"])
+        in_code_page = unicodedata.normalize("NFKD", link.name).encode("cp1252", errors="ignore").decode("cp1252")
+        (link.parent / in_code_page).write_bytes(b"skrot")
+        if self.takes_s > timeout_s:
+            raise subprocess.TimeoutExpired(list(command), timeout_s)
+        return subprocess.CompletedProcess(list(command), self.exit_code, "", "")
+
+
+def startup_shortcut(tmp_path: Path, powershell: PowerShellWithCodePage1252) -> tuple[CentrumClient, Path]:
+    folder, windowless_python = tmp_path / "autostart", tmp_path / "pythonw.exe"
+    folder.mkdir()
+    windowless_python.write_bytes(b"")
+    autostart = StartupShortcut(folder, program=windowless_python, run=powershell)
+    return CentrumClient(centrum_app(ToolDirectory(tmp_path), autostart=autostart)), folder
+
+
+def test_przelacznik_autostartu_zaklada_skrot_centrum_rozliczen_lnk_takze_gdy_strona_kodowa_windows_nie_ma_litery_n(
+    tmp_path: Path,
+) -> None:
+    client, folder = startup_shortcut(tmp_path, PowerShellWithCodePage1252())
+
+    enabled = client.put("/api/settings/autostart", json={"enabled": True})
+    after_enable = sorted(path.name for path in folder.iterdir())
+    disabled = client.put("/api/settings/autostart", json={"enabled": False})
+
+    assert (enabled.status_code, enabled.json()["settings"]["autostart"]["state"]) == (200, "on"), enabled.text
+    assert after_enable == ["Centrum rozliczeń.lnk"]
+    assert (disabled.json()["settings"]["autostart"]["state"], list(folder.iterdir())) == ("off", [])
+
+
+def test_powershell_ktory_nie_zapisze_skrotu_w_limicie_czasu_to_odmowa_bez_skrotu_a_ustawienia_dalej_odpowiadaja(
+    tmp_path: Path,
+) -> None:
+    powershell = PowerShellWithCodePage1252()
+    client, folder = startup_shortcut(tmp_path, powershell)
+    powershell.takes_s = 60  # zawieszony na minutę, a blokada Ustawień nie czeka tyle
+
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+    powershell.takes_s = 1.0
+    after_refusal = list(folder.iterdir())
+    shown = client.get("/api/settings").json()["autostart"]
+    enabled = client.put("/api/settings/autostart", json={"enabled": True})
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (shown, after_refusal) == (AUTOSTART_SHOWN_OFF, [])
+    assert enabled.json()["settings"]["autostart"]["state"] == "on"
+    assert [path.name for path in folder.iterdir()] == ["Centrum rozliczeń.lnk"]
+
+
+def test_powershell_ktory_skonczy_bledem_po_zapisaniu_czesci_skrotu_to_odmowa_bez_skrotu_w_autostarcie(tmp_path: Path) -> None:
+    powershell = PowerShellWithCodePage1252()
+    client, folder = startup_shortcut(tmp_path, powershell)
+    powershell.exit_code = 1
+
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (client.get("/api/settings").json()["autostart"], list(folder.iterdir())) == (AUTOSTART_SHOWN_OFF, [])
+
+
+def test_plik_przerwanego_zapisu_skrotu_nie_zostaje_w_autostarcie_przy_przelaczniku_wylaczonym(tmp_path: Path) -> None:
+    """Centrum zgasło w trakcie PowerShella, który potem dokończył zapis pod nazwą pośrednią: Windows uruchomiłby z
+    niego Centrum po zalogowaniu, choć przełącznik mówi „off”."""
+
+    client, folder = startup_shortcut(tmp_path, PowerShellWithCodePage1252())
+    client.put("/api/settings/autostart", json={"enabled": True})
+    client.put("/api/settings/autostart", json={"enabled": False})
+    (folder / "Centrum rozliczen (zapis).lnk").write_bytes(b"skrot")
+
+    shown = client.get("/api/settings").json()["autostart"]
+
+    assert (shown, list(folder.iterdir())) == (AUTOSTART_SHOWN_OFF, [])
+    assert [row["source"] for row in client.get("/api/settings/history").json()["rows"]] == ["tata", "tata"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Autostart Windows jest tylko na Windows; tu komputer bez niego.")
+def test_na_komputerze_bez_windows_przelacznik_autostartu_jest_nieaktywny_z_jednym_zdaniem(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    client = CentrumClient(centrum_app(tool, autostart=system_autostart()))
+
+    shown = client.get("/api/settings").json()["autostart"]
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+    history = client.get("/api/settings/history").json()
+
+    assert shown == {"state": "unsupported", "reason": AUTOSTART_UNSUPPORTED}
+    assert (refused.status_code, refused.json()) == (422, {"message": AUTOSTART_UNSUPPORTED, "field": "autostart"})
+    assert (history["rows"], (tool.config / MEMORY_DIRECTORY / "autostart.json").exists()) == ([], False)
+
+
+# --- Hasło skrzynki raportów (#1469): pole bez starego hasła, jedna próba logowania, Historia bez wartości -------------
+
+SKRZYNKA = "raporty@przyklad.invalid"
+STARE_HASLO = "stare haslo maksa"
+NOWE_HASLO = "nowe haslo taty"
+"""Hasło aplikacji tak, jak je wpisuje tata (Google pokazuje je w czwórkach ze spacjami); plik dostaje je bez spacji."""
+
+
+def _inbox_centrum(tmp_path: Path, imap: AtrapaImap | None = None) -> tuple[CentrumClient, ToolDirectory]:
+    """Centrum z plikiem skrzynki napisanym przez Maksa w Notatniku (BOM UTF-8, CRLF); bez ``imap`` skrzynka bez sieci."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True, exist_ok=True)
+    (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
+    if imap is None:
+        return CentrumClient(centrum_app(tool)), tool
+    return CentrumClient(centrum_app(tool, inbox_connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port))), tool
+
+
+def _files_with_password(tool: ToolDirectory, passwords: Sequence[str]) -> list[str]:
+    """Pliki katalogu narzędzia poza plikiem skrzynki, w których jest któreś z ``passwords`` otwartym tekstem.
+
+    Hasło szuka się też bez spacji, bo tak trafia do pliku skrzynki; rekurencyjnie, więc i w pamięci odrzuconych.
+    """
+
+    secrets = {form.encode() for password in passwords for form in (password, password.replace(" ", ""))}
+    access = tool.config / INBOX_ACCESS_FILE
+    files = [path for path in sorted(tool.root.rglob("*")) if path.is_file() and path != access]
+    return [path.relative_to(tool.root).as_posix() for path in files if any(secret in path.read_bytes() for secret in secrets)]
+
+
+@pytest.mark.parametrize(
+    ("haslo_skrzynki", "zerwanie", "wynik", "polecenia"),
+    [
+        (NOWE_HASLO.replace(" ", ""), None, "accepted", ["LOGIN", "LOGOUT"]),
+        ("inne haslo w gmailu", None, "rejected", ["LOGIN", "LOGOUT"]),
+        (NOWE_HASLO.replace(" ", ""), "greeting", "no_network", []),
+    ],
+    ids=["przyjete", "odrzucone", "brak-sieci"],
+)
+def test_nowe_haslo_skrzynki_zastepuje_tylko_linie_hasla_a_jedna_proba_logowania_mowi_czy_skrzynka_je_przyjela(
+    tmp_path: Path, haslo_skrzynki: str, zerwanie: Literal["greeting"] | None, wynik: str, polecenia: list[str]
+) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=haslo_skrzynki, cut=zerwanie) as imap:
+        client, tool = _inbox_centrum(tmp_path, imap)
+        saved = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+        # ``imaplib`` 3.11 pyta o ``CAPABILITY`` osobno, a 3.14 bierze je z powitania: to nie decyzja portu.
+        commands = [command for command in imap.commands if command != "CAPABILITY"]
+
+    assert (saved.status_code, saved.json()["login"]) == (200, wynik)
+    assert commands == polecenia
+    assert saved.json()["settings"]["inbox"] == {"address": SKRZYNKA, "password": True}
+    assert (tool.config / INBOX_ACCESS_FILE).read_bytes() == f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode("utf-8-sig")
+
+
+def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_historia_ma_wiersz_bez_cofniecia(
+    tmp_path: Path,
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    shown = client.get("/api/settings")
+
+    saved = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    again = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    read = client.get("/api/settings")
+    history = client.get("/api/settings/history")
+    [row] = history.json()["rows"]
+    undo = client.post(f"/api/settings/history/{row['id']}/undo")
+    client.stop()
+
+    assert (saved.json()["login"], saved.json()["change"], again.json()["change"]) == ("no_network", row["id"], None)
+    assert (row["source"], row["section"], row["secret"], row["undoable"]) == ("tata", "skrzynka", True, False)
+    assert row["changes"] == [{"key": "skrzynka.haslo", "before": None, "after": None}]
+    assert undo.status_code == 404
+    responses = [shown, saved, again, read, history, undo]
+    secrets = [secret for value in (STARE_HASLO, NOWE_HASLO) for secret in (value, value.replace(" ", ""))]
+    assert [secret for secret in secrets for response in responses if secret.encode() in response.content] == []
+    assert _files_with_password(tool, [STARE_HASLO, NOWE_HASLO]) == []
+    assert tool.log_path.is_file()
+    # Pamięć zapisuje bajty jako base64, którego `_files_with_password` nie rozpozna, więc sam odcisk sprawdza się wprost.
+    remembered = json.loads((tool.config / MEMORY_DIRECTORY / f"{INBOX_ACCESS_FILE}.json").read_bytes())
+    access = (tool.config / INBOX_ACCESS_FILE).read_bytes()
+    assert (base64.urlsafe_b64decode(remembered["widziany"]), remembered["dobry"]) == (hashlib.sha256(access).digest(), None)
+
+
+def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Path) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    client.get("/api/settings")
+    (tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\nhaslo od maksa\n", encoding="utf-8")
+
+    rows = client.get("/api/settings/history").json()["rows"]
+    again = client.get("/api/settings/history").json()["rows"]
+
+    assert [(row["source"], row["changes"], row["secret"], row["undoable"]) for row in rows] == [
+        ("outside", [{"key": "skrzynka.dostep", "before": None, "after": None}], True, False)
+    ]
+    assert again == rows
+    assert b"haslo" not in client.get("/api/settings/history").content
+
+
+@pytest.mark.parametrize(
+    ("plik", "haslo", "pole"),
+    [
+        (f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n", "   ", "haslo"),
+        (f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n", "hasło taty", "haslo"),
+        ("\r\n\r\n", NOWE_HASLO, "adres"),
+        (None, NOWE_HASLO, "adres"),
+    ],
+    ids=["puste", "polskie-znaki", "plik-bez-adresu", "bez-pliku"],
+)
+def test_haslo_ktorego_skrzynka_nie_uzyje_jest_odmowa_przy_polu_bez_zapisu_i_bez_logowania(
+    tmp_path: Path, plik: str | None, haslo: str, pole: str
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    if plik is None:
+        access.unlink()
+    else:
+        access.write_text(plik, encoding="utf-8")
+    before = access.read_bytes() if plik is not None else None
+
+    refused = client.put("/api/settings/inbox-password", json={"password": haslo})
+
+    assert (refused.status_code, refused.json()["field"]) == (422, pole)
+    assert (access.read_bytes() if access.exists() else None) == before
+    assert client.get("/api/settings/history").json()["rows"] == []
+
+
+ZLE_ADRES = "Adres skrzynki raportów w pliku skrzynka-raportow.txt jest zły. Poprawia go Maks."
+ZLE_HASLO = "Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków."
+NIE_TEKST = "Plik skrzynka-raportow.txt w folderze config nie jest tekstem. Poproś Maksa o nowy plik."
+
+
+@pytest.mark.parametrize(
+    ("plik", "skrzynka", "problem", "zapis"),
+    [
+        (
+            f"{SKRZYNKA}\r\nstarehasło\r\n".encode("utf-8-sig"),
+            {"address": SKRZYNKA, "password": True},
+            {"field": "haslo", "message": ZLE_HASLO},
+            f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode("utf-8-sig"),
+        ),
+        (
+            f"Skrzynka <{SKRZYNKA}>\r\n{STARE_HASLO}\r\n".encode(),
+            {"address": None, "password": True},
+            {"field": "adres", "message": ZLE_ADRES},
+            None,
+        ),
+        (b"\xff\xfe\x00\xd8", {"address": None, "password": False}, {"field": None, "message": NIE_TEKST}, None),
+    ],
+    ids=["zle-stare-haslo", "zly-adres", "nie-tekst"],
+)
+def test_zly_plik_skrzynki_ma_zdanie_w_ustawieniach_a_nowe_haslo_taty_naprawia_tylko_zle_stare_haslo(
+    tmp_path: Path, plik: bytes, skrzynka: dict[str, object], problem: dict[str, object], zapis: bytes | None
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    access.write_bytes(plik)
+
+    shown = client.get("/api/settings").json()
+    put = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    rows = client.get("/api/settings/history").json()["rows"]
+
+    assert (shown["inbox"], shown["inbox_problem"]) == (skrzynka, problem)
+    if zapis is None:
+        refused = put.json()
+        assert (put.status_code, refused.get("field"), refused["message"]) == (422, problem["field"], problem["message"])
+        assert (access.read_bytes(), rows) == (plik, [])
+    else:
+        assert (put.status_code, put.json()["settings"]["inbox"], put.json()["settings"]["inbox_problem"]) == (
+            200,
+            {"address": SKRZYNKA, "password": True},
+            None,
+        )
+        assert access.read_bytes() == zapis
+        assert [change["key"] for row in rows for change in row["changes"]] == ["skrzynka.haslo"]
+    assert _files_with_password(tool, ["starehasło", STARE_HASLO, NOWE_HASLO]) == []
+
+
+@pytest.mark.parametrize(
+    ("plik", "zapis"),
+    [
+        (f"{SKRZYNKA}\nstare\n# notatka maksa\n".encode(), f"{SKRZYNKA}\nnowehaslotaty\n# notatka maksa\n".encode()),
+        (f"{SKRZYNKA}\r\nstare\r\n".encode("utf-16"), f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode()),
+    ],
+    ids=["lf-i-dalsze-linie", "utf-16"],
+)
+def test_nowe_haslo_zostawia_znak_konca_linii_i_dalsze_linie_pliku_maksa(tmp_path: Path, plik: bytes, zapis: bytes) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    access.write_bytes(plik)
+
+    put = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+
+    assert (put.status_code, access.read_bytes()) == (200, zapis)
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:
@@ -602,16 +2579,23 @@ def with_dad_layout(tmp_path: Path, chosen_month: str | None = None) -> tuple[Ce
     Folder okresów to ``Załączniki`` albo, z ``chosen_month``, folder ``INEA`` tego miesiąca.
     """
 
+    root = dad_layout(tmp_path)
+    app = centrum(tmp_path)
+    app.platform.chosen_folders.append(root if chosen_month is None else inea(root, chosen_month))
+    app.client.post("/api/settings/periods-directory/choose")
+    return app, root
+
+
+def dad_layout(tmp_path: Path) -> Path:
+    """Układ folderów taty ``Załączniki``: Rozliczenia {rok}\\{miesiąc}\\INEA z folderem obok miesięcy."""
+
     root = tmp_path / "Załączniki"
     for month in ("12_Grudzień_2025",):
         (root / "Rozliczenia 2025" / month / "INEA").mkdir(parents=True)
     for month in ("09_Wrzesień_2026", "10_Październik_2026", "11_Listopad_2026"):
         (root / "Rozliczenia 2026" / month / "INEA").mkdir(parents=True)
     (root / "Rozliczenia 2026" / "Nowe rozliczenia wzór od 01_2026" / "Podpisane").mkdir(parents=True)
-    app = centrum(tmp_path)
-    app.platform.chosen_folders.append(root if chosen_month is None else inea(root, chosen_month))
-    app.client.post("/api/settings/periods-directory/choose")
-    return app, root
+    return root
 
 
 def inea(root: Path, month: str, year: int = 2026) -> Path:
@@ -690,6 +2674,240 @@ def test_w_ukladzie_folderow_taty_tydzien_w_dwoch_miesiacach_nie_jest_otwierany(
         "Zostaw go tylko w jednym."
     }
     assert app.platform.opened == []
+
+
+# Folder wskazany w środku układu folderów taty, względem ``Załączniki`` (#1472).
+INSIDE_DAD_LAYOUT = [
+    pytest.param(("Rozliczenia 2026", "11_Listopad_2026", "INEA", "27_02_11_2026"), id="tydzien"),
+    pytest.param(("Rozliczenia 2026", "10_Październik_2026", "INEA"), id="inea-miesiaca"),
+    pytest.param(("Rozliczenia 2026", "10_Październik_2026"), id="miesiac"),
+    pytest.param(("Rozliczenia 2025",), id="rok"),
+]
+
+
+def choose_periods_directory(app: Centrum, folder: Path, way: str) -> dict[str, Any]:
+    """Ustawienia po wskazaniu ``folder`` oknem wyboru (``okno``) albo ścieżką wpisaną w sekcji Foldery (``wpisana``)."""
+
+    if way == "okno":
+        app.platform.chosen_folders.append(folder)
+        response = app.client.post("/api/settings/periods-directory/choose")
+    else:
+        response = app.client.put("/api/settings/folders", json={"order_register": None, "periods_directory": str(folder)})
+    assert response.status_code == 200
+    return dict(response.json()["settings"])
+
+
+@pytest.mark.parametrize("way", ["okno", "wpisana"])
+@pytest.mark.parametrize("inside", INSIDE_DAD_LAYOUT)
+def test_folder_wskazany_w_srodku_ukladu_folderow_taty_zapisuje_sie_jako_zalaczniki_wszystkich_lat(
+    tmp_path: Path, inside: tuple[str, ...], way: str
+) -> None:
+    root = dad_layout(tmp_path)
+    pointed = root.joinpath(*inside)
+    pointed.mkdir(exist_ok=True)
+    app = centrum(tmp_path)
+
+    settings = choose_periods_directory(app, pointed, way)
+    [row] = app.client.get("/api/settings/history").json()["rows"]
+    after_restart = centrum(tmp_path).client.get("/api/settings").json()
+
+    assert (settings["periods_directory"], settings["periods_all_years"]) == (
+        {"state": "ready", "path": str(root), "name": "Załączniki"},
+        True,
+    )
+    assert after_restart == settings
+    assert row["changes"] == [{"key": "foldery.folder_okresow", "before": None, "after": str(root)}]
+
+
+@pytest.mark.parametrize("way", ["okno", "wpisana"])
+@pytest.mark.parametrize("inside", [(), ("22_28_09_2026",)], ids=["folder-okresow", "folder-okresu"])
+def test_folder_wskazany_w_ukladzie_plaskim_zapisuje_sie_taki_jak_wskazany(
+    tmp_path: Path, inside: tuple[str, ...], way: str
+) -> None:
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    write_period_files(periods, "22_28_09_2026")
+    pointed = periods.joinpath(*inside)
+    app = centrum(tmp_path)
+
+    settings = choose_periods_directory(app, pointed, way)
+
+    assert (settings["periods_directory"], settings["periods_all_years"]) == (
+        {"state": "ready", "path": str(pointed), "name": pointed.name},
+        False,
+    )
+
+
+@NO_ACCESS_ON_WINDOWS
+@pytest.mark.parametrize("way", ["okno", "wpisana"])
+def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskazany(tmp_path: Path, way: str) -> None:
+    """Układu nad folderem bez dostępu nie widać, więc zapisuje się wskazany folder, a nie błąd wyboru."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    app = centrum(tmp_path)
+
+    with without_access(week):
+        settings = choose_periods_directory(app, week, way)
+
+    assert settings["periods_directory"]["path"] == str(week)
+
+
+def test_rejestr_zmieniony_w_sekcji_foldery_zostawia_folder_okresow_cofniety_do_tygodnia(tmp_path: Path) -> None:
+    """Formularz sekcji odsyła obie ścieżki, więc zapisany już folder okresów zostaje, nawet w środku układu."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    register = tmp_path / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
+    register.touch()
+    app = centrum(tmp_path)
+    write_folder_settings(app.tool, FolderSettings(periods_directory=week))
+
+    settings = app.client.put(
+        "/api/settings/folders", json={"order_register": str(register), "periods_directory": str(week)}
+    ).json()["settings"]
+
+    assert (settings["order_register"]["path"], settings["periods_directory"]["path"]) == (str(register), str(week))
+
+
+def write_folder_settings(tool: ToolDirectory, folders: FolderSettings) -> None:
+    """Plik Ustawień Centrum zapisany przed Wydaniem, np. z folderem okresów wskazanym w środku układu."""
+
+    tool.settings.parent.mkdir(parents=True, exist_ok=True)
+    tool.settings.write_text(FOLDERS.dump(folders), encoding="utf-8")
+
+
+PERIODS_FROM_ATTACHMENTS = "2026-11-folder-okresow-od-zalacznikow"
+
+
+@pytest.mark.parametrize("inside", [*INSIDE_DAD_LAYOUT[:3], pytest.param(None, id="tydzien-przeniesiony")])
+def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_jako_zmiana_z_wydania_z_cofnij(
+    tmp_path: Path, inside: tuple[str, ...] | None
+) -> None:
+    repository = tool_repository(tmp_path / "repozytoria")
+    freshness = ToolFreshness.of_clone(repository.clone, repository.github_releases, repository.published)
+    root = dad_layout(tmp_path)
+    saved = inea(root, "11_Listopad_2026") / "27_02_11_2026" if inside is None else root.joinpath(*inside)
+    if inside is not None:
+        saved.mkdir(exist_ok=True)
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=saved))
+
+    first = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
+    [applied] = first.get("/api/settings/history").json()["rows"]
+    periods = first.get("/api/settings").json()["periods_directory"]
+    first.stop()
+    after_update = config_bytes(tool.config)
+    second = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
+    second.stop()
+    unchanged = config_bytes(tool.config)
+    third = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
+    undone = third.post(f"/api/settings/history/{applied['id']}/undo").json()["settings"]["periods_directory"]
+    third.stop()
+    fourth = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
+    after_undo = fourth.get("/api/settings").json()["periods_directory"]
+    rows = fourth.get("/api/settings/history").json()["rows"]
+    fourth.stop()
+
+    assert periods == {"state": "ready", "path": str(root), "name": "Załączniki"}
+    assert (applied["source"], applied["release"], applied["changes"], applied["undoable"]) == (
+        "release",
+        {"version": "0.1.0", "commit": repository.head()[:7], "change": PERIODS_FROM_ATTACHMENTS},
+        [{"key": "foldery.folder_okresow", "before": str(saved), "after": str(root)}],
+        True,
+    )
+    assert unchanged == after_update
+    assert (undone["path"], after_undo["path"]) == (str(saved), str(saved))
+    assert [row["source"] for row in rows] == ["tata", "release"]
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [
+        pytest.param(("Załączniki",), id="zalaczniki"),
+        pytest.param(("INEA",), id="uklad-plaski"),
+        pytest.param(("INEA", "22_28_09_2026"), id="folder-okresu-w-ukladzie-plaskim"),
+        pytest.param(None, id="nie-wskazano"),
+    ],
+)
+def test_folder_okresow_od_korzenia_ukladu_zostaje_po_aktualizacji_bez_wiersza_i_bez_zmiany_pliku(
+    tmp_path: Path, saved: tuple[str, ...] | None
+) -> None:
+    dad_layout(tmp_path)
+    (tmp_path / "INEA" / "22_28_09_2026").mkdir(parents=True)
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=None if saved is None else tmp_path.joinpath(*saved)))
+    before = tool.settings.read_bytes()
+
+    started(tool, RELEASE_CHANGES).stop()
+    again = started(tool, RELEASE_CHANGES)
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (tool.settings.read_bytes(), rows) == (before, [])
+    assert tool.log_path.read_text(encoding="utf-8").count(f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=bez-zmian") == 1
+
+
+@pytest.mark.parametrize(
+    "obstacle", [pytest.param("bez-dostepu", marks=NO_ACCESS_ON_WINDOWS), "onedrive-nie-oddal-zalacznikow"]
+)
+def test_folder_okresow_nieczytelny_przy_starcie_po_aktualizacji_zamienia_sie_na_zalaczniki_przy_nastepnym(
+    tmp_path: Path, obstacle: str
+) -> None:
+    """Folder bez dostępu albo folder, którego nie ma, a nad nim nie widać układu: zmiana czeka, a nie kończy się
+    „nic do zmiany”, bo wtedy tydzień zostałby zapisany na zawsze."""
+
+    root = tmp_path / "Załączniki"
+    month = inea(root, "10_Październik_2026")
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=month))
+
+    if obstacle == "bez-dostepu":
+        dad_layout(tmp_path)
+        with without_access(root):
+            started(tool, RELEASE_CHANGES).stop()
+    else:
+        started(tool, RELEASE_CHANGES).stop()
+        dad_layout(tmp_path)
+    later = tool.settings.read_bytes()
+    again = started(tool, RELEASE_CHANGES)
+    periods = again.get("/api/settings").json()["periods_directory"]
+    again.stop()
+
+    assert FOLDERS.parse(later) == FolderSettings(periods_directory=month)
+    assert periods["path"] == str(root)
+    assert f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
+
+
+def test_zly_plik_ustawien_z_tygodniem_zostaje_po_aktualizacji_bajt_w_bajt_a_zmiana_wchodzi_po_naprawie(
+    tmp_path: Path,
+) -> None:
+    """Przy złym pliku Centrum zna ostatnią dobrą wartość, ale zmiana z Wydania nie nadpisuje nią pliku taty."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=week))
+    started(tool, ()).stop()
+    bad = FOLDERS.dump(FolderSettings(periods_directory=week)) + "nieznany_klucz: 1\n"
+    tool.settings.write_text(bad, encoding="utf-8")
+
+    while_bad = started(tool, RELEASE_CHANGES)
+    problem = while_bad.get("/api/settings").json()["folders_problem"]
+    while_bad.stop()
+    after_bad = tool.settings.read_text(encoding="utf-8")
+    write_folder_settings(tool, FolderSettings(periods_directory=week))
+    repaired = started(tool, RELEASE_CHANGES)
+    periods = repaired.get("/api/settings").json()["periods_directory"]
+    repaired.stop()
+
+    assert problem is not None
+    assert after_bad == bad
+    assert f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
+    assert periods["path"] == str(root)
 
 
 def stages(row: dict[str, object]) -> list[str]:
@@ -1142,11 +3360,8 @@ def test_tablica_okresow_bez_folderu_okresow_mowi_o_braku_choc_folder_innego_mie
     year = tmp_path / "Załączniki" / "Rozliczenia 2026"
     (year / "10_Październik_2026" / "INEA").mkdir(parents=True)
     periods = year / "11_Listopad_2026" / "INEA"
-    periods.mkdir(parents=True)
     app = centrum(tmp_path)
-    app.platform.chosen_folders.append(periods)
-    app.client.post("/api/settings/periods-directory/choose")
-    periods.rmdir()
+    write_folder_settings(app.tool, FolderSettings(periods_directory=periods))  # zapis sprzed #1472, w środku układu
 
     with without_access(year / "10_Październik_2026"):
         board = app.client.get("/api/periods")
@@ -1314,6 +3529,9 @@ def test_nieoczekiwany_wyjatek_daje_bezpieczny_komunikat_i_wpis_bez_tekstu_wyjat
     assert response.json() == {
         "message": "W Centrum rozliczeń wystąpił nieoczekiwany błąd. Odśwież kartę i spróbuj ponownie."
     }
-    assert log_lines(app) == ['nieoczekiwany-wyjatek typ=RuntimeError miejsce="POST /api/periods/{token}/open"']
+    assert log_lines(app) == [
+        "ustawienia-zmiana plik=centrum-ustawienia.yaml klucze=foldery.folder_okresow zrodlo=tata",
+        'nieoczekiwany-wyjatek typ=RuntimeError miejsce="POST /api/periods/{token}/open"',
+    ]
     log = app.log_path.read_text(encoding="utf-8")
     assert "Syntetyczna" not in log and "CENTRUM-SYN-ROW" not in log and str(periods) not in log

@@ -21,10 +21,10 @@ from typing import Any, Literal
 import pytest
 import proba_skrzynki_raportow
 
-from rozliczenia import tool_files
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_report_inbox import FETCH_BATCH, INBOX_ACCESS_FILE
 
+from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail
 
 SKRZYNKA = "raporty.taty@przyklad.invalid"
@@ -96,13 +96,9 @@ def skrzynka_z_raportami() -> list[AtrapaMail]:
 
 def config(folder: Path, *, adresy: bool = True) -> Path:
     (folder / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\nabcd efgh ijkl mnop\n", encoding="utf-8")
-    (folder / tool_files.WORKER_CONFIG.name).write_text(
-        "schema_version: 1\nworkers:\n  jan.testowy: Jan Testowy\n  anna.probna: Anna Próbna\n", encoding="utf-8"
-    )
-    if adresy:
-        (folder / WORKER_ADDRESSES_FILE).write_text(
-            f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{WYKONAWCA}]\n  anna.probna: [{DRUGI}]\n", encoding="utf-8"
-        )
+    names = {"jan.testowy": "Jan Testowy", "anna.probna": "Anna Próbna"}
+    addresses = {"jan.testowy": [WYKONAWCA], "anna.probna": [DRUGI]} if adresy else {}
+    write_worker_list(folder / WORKERS_FILE, worker_list(names, addresses))
     return folder
 
 
@@ -345,11 +341,13 @@ def test_proba_z_odrzuconym_haslem_albo_bez_sieci_konczy_sie_linia_fail_z_powode
     assert "abcd efgh ijkl mnop" not in "".join(atrapa.commands)
 
 
-def test_proba_bez_pliku_adresow_nie_laczy_sie_ze_skrzynka(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_proba_bez_adresow_na_liscie_wykonawcow_nie_laczy_sie_ze_skrzynka(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=skrzynka_z_raportami()) as atrapa:
         code, lines = proba(capsys, config(tmp_path, adresy=False), lokalnie(atrapa.port))
 
-    assert (code, lines) == (1, ["PROBA IMAP FAIL | plik adresow Wykonawcow: missing"])
+    assert (code, lines) == (1, ["PROBA IMAP FAIL | na Liscie Wykonawcow nikt nie ma adresu"])
     assert atrapa.commands == []
 
 

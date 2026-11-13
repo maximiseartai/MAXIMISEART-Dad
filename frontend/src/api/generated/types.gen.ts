@@ -5,6 +5,22 @@ export type ClientOptions = {
 };
 
 /**
+ * AddressesNotMoved
+ *
+ * Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego.
+ */
+export type AddressesNotMoved = {
+    /**
+     * Reason
+     */
+    reason: 'adresy_nieprzeniesione';
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
  * ApiTiming
  *
  * Jedno zapytanie API widoku: czas w przeglądarce i czas serwera z ``Server-Timing`` (``None``: brak nagłówka).
@@ -13,7 +29,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'getQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -22,6 +38,36 @@ export type ApiTiming = {
      * Server Ms
      */
     server_ms: number | null;
+};
+
+/**
+ * AutostartChange
+ *
+ * Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa.
+ */
+export type AutostartChange = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * AutostartSetting
+ *
+ * Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma
+ * Autostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:
+ * zdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``.
+ */
+export type AutostartSetting = {
+    /**
+     * State
+     */
+    state: 'on' | 'off' | 'unsupported' | 'unreadable';
+    /**
+     * Reason
+     */
+    reason: string | null;
 };
 
 /**
@@ -103,10 +149,16 @@ export type CellSource = 'tool' | 'tata' | 'empty';
 /**
  * Choice
  *
- * Ustawienia po natywnym oknie wyboru: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
+ * Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
+ * anulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);
+ * ``None``: bez zmiany i bez wiersza.
  */
 export type Choice = {
     settings: Settings;
+    /**
+     * Change
+     */
+    change?: string | null;
 };
 
 /**
@@ -397,6 +449,30 @@ export type DescriptionColumn = {
 };
 
 /**
+ * DeviceComponent
+ *
+ * Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna).
+ */
+export type DeviceComponent = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Other Spellings
+     */
+    other_spellings: Array<string>;
+    /**
+     * Group
+     */
+    group: 'router' | 'tv' | 'extender' | null;
+};
+
+/**
  * Diagnosis
  *
  * Wynik Diagnozy Zatrzymania: wyjaśnienie w trzech częściach i każde sprawdzenie po kolei.
@@ -501,6 +577,22 @@ export type FillStep = {
 };
 
 /**
+ * FoldersChange
+ *
+ * Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie.
+ */
+export type FoldersChange = {
+    /**
+     * Order Register
+     */
+    order_register: string | null;
+    /**
+     * Periods Directory
+     */
+    periods_directory: string | null;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -536,6 +628,105 @@ export type Health = {
 };
 
 /**
+ * HistoryChange
+ *
+ * Zmiana jednego klucza (``foldery.folder_okresow``): wartość przed i po, ``None``: nie ustawiono albo sekret.
+ */
+export type HistoryChange = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Before
+     */
+    before: string | null;
+    /**
+     * After
+     */
+    after: string | null;
+};
+
+/**
+ * HistoryRelease
+ *
+ * Zmiana z Wydania: numer Wydania (``0.9.0``) i skrót commitu narzędzia (``None``: nie wiadomo) oraz id zmiany.
+ */
+export type HistoryRelease = {
+    /**
+     * Version
+     */
+    version: string | null;
+    /**
+     * Commit
+     */
+    commit: string | null;
+    /**
+     * Change
+     */
+    change: string;
+};
+
+/**
+ * HistoryRow
+ *
+ * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
+ * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
+ * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
+ */
+export type HistoryRow = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Source
+     */
+    source: 'tata' | 'outside' | 'release';
+    release: HistoryRelease | null;
+    /**
+     * Undoes
+     */
+    undoes: string | null;
+    /**
+     * File
+     */
+    file: string;
+    /**
+     * Section
+     */
+    section: string | null;
+    /**
+     * Changes
+     */
+    changes: Array<HistoryChange>;
+    /**
+     * Secret
+     */
+    secret: boolean;
+    /**
+     * Undoable
+     */
+    undoable: boolean;
+    /**
+     * Refused
+     */
+    refused: boolean;
+    /**
+     * Removed
+     */
+    removed: boolean;
+    /**
+     * Reason
+     */
+    reason: string | null;
+};
+
+/**
  * InaccessiblePath
  *
  * Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa).
@@ -553,6 +744,51 @@ export type InaccessiblePath = {
      * Name
      */
     name: string;
+};
+
+/**
+ * InboxPasswordChange
+ *
+ * Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis).
+ */
+export type InboxPasswordChange = {
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
+ * InboxPasswordSaved
+ *
+ * Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”.
+ */
+export type InboxPasswordSaved = {
+    settings: Settings;
+    /**
+     * Change
+     */
+    change?: string | null;
+    /**
+     * Login
+     */
+    login: 'accepted' | 'rejected' | 'no_network';
+};
+
+/**
+ * InboxSetting
+ *
+ * Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy.
+ */
+export type InboxSetting = {
+    /**
+     * Address
+     */
+    address: string | null;
+    /**
+     * Password
+     */
+    password: boolean;
 };
 
 /**
@@ -831,6 +1067,35 @@ export type KindToFill = {
      * Done
      */
     done: boolean;
+};
+
+/**
+ * ListedWorker
+ *
+ * Wykonawca z Listy Wykonawców: loginy z kolumny WYKONAWCA, nazwa w Rozliczeniu pracownika, adresy Raportów
+ * wykonawcy, ``active``: nie jest Nieaktywnym Wykonawcą, ``reminders``: dostaje Przypomnienia o raporcie.
+ */
+export type ListedWorker = {
+    /**
+     * Logins
+     */
+    logins: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+    /**
+     * Active
+     */
+    active: boolean;
+    /**
+     * Reminders
+     */
+    reminders: boolean;
 };
 
 /**
@@ -1423,13 +1688,18 @@ export type PricingNotification = {
 /**
  * Problem
  *
- * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku.
+ * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku; ``field``: pole formularza,
+ * którego dotyczy zła wartość (np. ``folder_okresow`` w Ustawieniach Centrum).
  */
 export type Problem = {
     /**
      * Message
      */
     message: string;
+    /**
+     * Field
+     */
+    field?: string | null;
 };
 
 /**
@@ -1709,6 +1979,45 @@ export type QuantitiesToFillReady = {
      * Description Columns
      */
     description_columns: Array<DescriptionColumn>;
+};
+
+/**
+ * QuantityRuleSentence
+ *
+ * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł.
+ */
+export type QuantityRuleSentence = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Scope
+     */
+    scope: 'known' | 'unknown' | 'every';
+    /**
+     * Sentence
+     */
+    sentence: Array<SentenceText | SentenceColumn>;
+};
+
+/**
+ * QuantityRulesSettings
+ *
+ * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
+ * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to.
+ */
+export type QuantityRulesSettings = {
+    /**
+     * Rules
+     */
+    rules: Array<QuantityRuleSentence>;
+    /**
+     * Devices
+     */
+    devices: Array<DeviceComponent>;
+    rules_problem: SettingProblem | null;
+    devices_problem: SettingProblem | null;
 };
 
 /**
@@ -2599,7 +2908,64 @@ export type Sent = {
 };
 
 /**
+ * SentenceColumn
+ *
+ * Kolumna Ilości usług w zdaniu: litera i nazwa pozycji cennika z wiersza 17 Wzorca pliku zbiorczego; ``None``:
+ * Wzorca nie da się przeczytać albo komórka jest pusta.
+ */
+export type SentenceColumn = {
+    /**
+     * Kind
+     */
+    kind: 'column';
+    /**
+     * Letter
+     */
+    letter: string;
+    /**
+     * Name
+     */
+    name: string | null;
+};
+
+/**
+ * SentenceText
+ */
+export type SentenceText = {
+    /**
+     * Kind
+     */
+    kind: 'text';
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * SettingProblem
+ *
+ * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``wykonawcy[2].adresy[0]``) albo ``None`` dla całego
+ * pliku i zdanie dla taty.
+ */
+export type SettingProblem = {
+    /**
+     * Field
+     */
+    field: string | null;
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
  * Settings
+ *
+ * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
+ * jest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum
+ * widzi Foldery okresu wszystkich lat (``Załączniki``).
  */
 export type Settings = {
     /**
@@ -2631,9 +2997,34 @@ export type Settings = {
         state: 'ready';
     } & ReadyPath);
     /**
+     * Periods All Years
+     */
+    periods_all_years: boolean;
+    /**
      * Theme
      */
     theme: 'dark' | 'light';
+    folders_problem: SettingProblem | null;
+    workers: WorkerListSetting;
+    inbox: InboxSetting;
+    inbox_problem: SettingProblem | null;
+    autostart: AutostartSetting;
+};
+
+/**
+ * SettingsHistory
+ *
+ * Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać.
+ */
+export type SettingsHistory = {
+    /**
+     * Rows
+     */
+    rows: Array<HistoryRow>;
+    /**
+     * Skipped
+     */
+    skipped: number;
 };
 
 /**
@@ -2845,9 +3236,29 @@ export type UnknownReportSender = {
 };
 
 /**
+ * UnmatchedLogin
+ *
+ * Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców.
+ */
+export type UnmatchedLogin = {
+    /**
+     * Reason
+     */
+    reason: 'login_bez_wykonawcy';
+    /**
+     * Login
+     */
+    login: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+};
+
+/**
  * UnreadablePath
  *
- * Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
+ * Pliku Ustawień Centrum nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
  */
 export type UnreadablePath = {
     /**
@@ -2900,7 +3311,7 @@ export type ViewTiming = {
     /**
      * Page
      */
-    page: 'okresy' | 'uruchomienia' | 'metryki' | 'konfiguracja' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
+    page: 'okresy' | 'uruchomienia' | 'metryki' | 'ustawienia' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
     /**
      * Ready Ms
      */
@@ -2950,6 +3361,28 @@ export type WithoutQuantityUnread = {
 };
 
 /**
+ * WorkerListSetting
+ *
+ * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
+ * ``unreadable`` (system nie daje teraz czytać pliku, lista pusta).
+ */
+export type WorkerListSetting = {
+    /**
+     * State
+     */
+    state: 'good' | 'bad' | 'unreadable';
+    /**
+     * Workers
+     */
+    workers: Array<ListedWorker>;
+    /**
+     * Unresolved
+     */
+    unresolved: Array<UnmatchedLogin | AddressesNotMoved>;
+    problem: SettingProblem | null;
+};
+
+/**
  * WorkerSettlement
  *
  * Rozliczenie pracownika jednego Wykonawcy: nazwa pliku, liczba jego zleceń w okresie i czy szablon jest pusty.
@@ -2988,7 +3421,7 @@ export type WorkerSettlementRequest = {
 /**
  * WorkersReady
  *
- * Nazwy Wykonawców w kolejności z konfiguracji wykonawców.
+ * Nazwy Wykonawców w kolejności z Listy Wykonawców.
  */
 export type WorkersReady = {
     /**
@@ -4502,6 +4935,131 @@ export type GetSettingsResponses = {
 
 export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponses];
 
+export type ChangeAutostartData = {
+    body: AutostartChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/autostart';
+};
+
+export type ChangeAutostartErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeAutostartError = ChangeAutostartErrors[keyof ChangeAutostartErrors];
+
+export type ChangeAutostartResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeAutostartResponse = ChangeAutostartResponses[keyof ChangeAutostartResponses];
+
+export type ChangeFoldersData = {
+    body: FoldersChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/folders';
+};
+
+export type ChangeFoldersErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeFoldersError = ChangeFoldersErrors[keyof ChangeFoldersErrors];
+
+export type ChangeFoldersResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeFoldersResponse = ChangeFoldersResponses[keyof ChangeFoldersResponses];
+
+export type GetSettingsHistoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/history';
+};
+
+export type GetSettingsHistoryResponses = {
+    /**
+     * Successful Response
+     */
+    200: SettingsHistory;
+};
+
+export type GetSettingsHistoryResponse = GetSettingsHistoryResponses[keyof GetSettingsHistoryResponses];
+
+export type UndoSettingsChangeData = {
+    body?: never;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/api/settings/history/{change_id}/undo';
+};
+
+export type UndoSettingsChangeErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type UndoSettingsChangeError = UndoSettingsChangeErrors[keyof UndoSettingsChangeErrors];
+
+export type UndoSettingsChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type UndoSettingsChangeResponse = UndoSettingsChangeResponses[keyof UndoSettingsChangeResponses];
+
+export type ChangeInboxPasswordData = {
+    body: InboxPasswordChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/inbox-password';
+};
+
+export type ChangeInboxPasswordErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeInboxPasswordError = ChangeInboxPasswordErrors[keyof ChangeInboxPasswordErrors];
+
+export type ChangeInboxPasswordResponses = {
+    /**
+     * Successful Response
+     */
+    200: InboxPasswordSaved;
+};
+
+export type ChangeInboxPasswordResponse = ChangeInboxPasswordResponses[keyof ChangeInboxPasswordResponses];
+
 export type ChoosePeriodsDirectoryData = {
     body?: never;
     path?: never;
@@ -4517,6 +5075,22 @@ export type ChoosePeriodsDirectoryResponses = {
 };
 
 export type ChoosePeriodsDirectoryResponse = ChoosePeriodsDirectoryResponses[keyof ChoosePeriodsDirectoryResponses];
+
+export type GetQuantityRulesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/quantity-rules';
+};
+
+export type GetQuantityRulesResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSettings;
+};
+
+export type GetQuantityRulesResponse = GetQuantityRulesResponses[keyof GetQuantityRulesResponses];
 
 export type ChooseRegisterData = {
     body?: never;
@@ -4583,7 +5157,7 @@ export type ChangeThemeResponses = {
     /**
      * Successful Response
      */
-    200: Settings;
+    200: Choice;
 };
 
 export type ChangeThemeResponse = ChangeThemeResponses[keyof ChangeThemeResponses];

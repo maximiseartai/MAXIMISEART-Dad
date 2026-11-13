@@ -28,10 +28,19 @@ const SCHEMAS_OUTSIDE_UI = new Map([
   ["ValidationError", "domyślny błąd walidacji FastAPI, część HTTPValidationError"],
 ])
 
+// Wyjątek z terminem: Lista Wykonawców (#1473 P7) daje w kontrakcie Ustawień pola Wykonawców, których sekcja
+// Wykonawcy okna Ustawień użyje dopiero w P8 (#1473); wpis pada jako zbędny, gdy P8 go użyje.
+// Zgoda: koordynator programu #1463 (pełne auto), 13.11.2026.
+const UNTIL_WORKERS_SECTION = "kontrakt Listy Wykonawców (#1473 P7), którego sekcja Wykonawcy użyje w P8 (#1473)"
+
 // Pola kontraktu, których UI nie pokazuje; każde z uzasadnieniem. Pole użyte w src trzeba stąd usunąć.
 const FIELDS_OUTSIDE_UI = new Map([
   ["Health.service", "czyta je launcher Centrum (launcher.py), nie przeglądarka"],
   ["RunEvent.sequence", "numer zdarzenia strumienia SSE, nie treść dla taty"],
+  ["ListedWorker.logins", UNTIL_WORKERS_SECTION],
+  ["ListedWorker.addresses", UNTIL_WORKERS_SECTION],
+  ["UnmatchedLogin.addresses", UNTIL_WORKERS_SECTION],
+  ["WorkerListSetting.unresolved", UNTIL_WORKERS_SECTION],
 ])
 
 // Pliki, które wolno rozgałęziać po nazwie procesu; każdy z uzasadnieniem.

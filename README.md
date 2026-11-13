@@ -73,9 +73,9 @@ GitHuba token fine-grained (tylko repozytorium
 zapis, ważność do roku) i wpisuje go jako jedyną linię do
 `config\zgloszenia-klucz.txt` na komputerze taty. Plik jest poza Gitem. Bez
 niego Zgłoszenia czekają w Kolejce wysyłki w `config\zgloszenia\kolejka\` i
-wychodzą same, gdy token się pojawi, a Konfiguracja pokazuje „Zgłoszenia: brak
+wychodzą same, gdy token się pojawi, a okno Ustawień w sekcji Zgłoszenia pokazuje „Brak
 tokenu”. Gdy GitHub nie przyjmuje tokenu (wygasł albo nie ma uprawnień),
-Konfiguracja pokazuje „Zgłoszenia: token odrzucony”. W obu przypadkach tata
+pokazuje tam „Token odrzucony”. W obu przypadkach tata
 widzi przy Zgłoszeniu, Uwadze taty i w Powiadomieniach „Token do Zgłoszeń nie
 działa. Skontaktuj się z Maksem.”
 
@@ -94,18 +94,18 @@ Historia czasów jest dopisywana lokalnie do `.rozliczenia-metrics.jsonl`. P50 i
 P95 pojawiają się w Metrykach Centrum po pięciu ukończonych obserwacjach tego
 samego trybu (`RUN` albo `DRY-RUN`).
 
-### Konfiguracja wykonawców
+### Lista Wykonawców
 
-Prawdziwa Konfiguracja wykonawców zawiera imiona i nazwiska pracowników taty,
-więc leży tylko na jego komputerze, tak jak Wzorce: `config/worker_mapping.yaml`
-jest w `.gitignore`. W repozytorium jest tylko
-`config/worker_mapping.example.yaml` z syntetycznymi Wykonawcami, który pokazuje
-format. Przy instalacji skopiuj na komputer taty jego prawdziwy plik jako
-`config\worker_mapping.yaml`; bez niego oba procesy zatrzymują się w Sprawdzaniu
-z komunikatem o Konfiguracji wykonawców. Testy i skrypty weryfikacyjne używają
-wyłącznie syntetycznych Wykonawców i nie czytają tego pliku.
+Prawdziwa Lista Wykonawców zawiera imiona, nazwiska i adresy pracowników taty,
+więc leży tylko na jego komputerze, tak jak Wzorce: `config/wykonawcy.yaml`
+jest w `.gitignore`. W repozytorium jest tylko `config/wykonawcy.example.yaml`
+z syntetycznymi Wykonawcami, który pokazuje format. Pierwszy start Centrum po
+Aktualizacji łączy stare pliki `config\worker_mapping.yaml` i
+`config\adresy-wykonawcow.yaml` w Listę Wykonawców i zostawia je jako kopię.
+Testy i skrypty weryfikacyjne używają wyłącznie syntetycznych Wykonawców i nie
+czytają tego pliku.
 
-Plik był kiedyś śledzony w repozytorium. Commit, który przestał go śledzić,
+Stary plik `worker_mapping.yaml` był kiedyś śledzony w repozytorium. Commit, który przestał go śledzić,
 usuwa go przy `git pull` z kopii, w której jeszcze był śledzony. Pierwszą
 aktualizację po tej zmianie u taty zrób więc tak (`git checkout` cofa lokalną
 zmianę pliku, przez którą `git pull` by się zatrzymał; kopia ją zachowuje):
@@ -180,8 +180,10 @@ powstają razem albo żaden.
   `AJ`, `AK`, `AL`, `AM`), które uzupełnia tata. Dlatego zapis kończy się
   wynikiem wymagającym sprawdzenia, a podgląd bez zapisu z tymi samymi
   ostrzeżeniami wynikiem OK.
-- Reguły ilości są w `src/rozliczenia/quantity_rules.py`, a
-  `tests/test_ilosci_uslug.py` sprawdza je z każdą linią instrukcji taty.
+- Reguły ilości z Wydania są danymi w `src/rozliczenia/reguly_ilosci_domyslne.yaml`
+  i `src/rozliczenia/lista_urzadzen_domyslna.yaml`, a liczy je silnik
+  `src/rozliczenia/quantity_engine.py`. `tests/test_ilosci_uslug.py` sprawdza je
+  z każdą linią instrukcji taty.
   `tools/pomiar_regul_ilosci.py` porównuje je z Plikami zbiorczymi, które
   wypełnił tata. Uruchamia go tylko Maks na swoim Macu, a wynik to same liczby
   i teksty `URZĄDZENIA`.
@@ -439,6 +441,10 @@ wystarczają zależności z `requirements.txt`, bez Node.
   z `--no-browser`: Centrum startuje samo po zalogowaniu taty, bez karty, żeby
   Przypomnienia o raporcie szły bez jego kliknięcia
   ([ADR 0030](docs/adr/0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md)).
+  Przełącznik „Uruchamiaj Centrum razem z Windows” w Ustawieniach (sekcja
+  Narzędzie) zakłada albo usuwa ten sam skrót (`shortcut.StartupShortcut`), a
+  jego stan to obecność skrótu, więc skrót usunięty ręcznie widać jako
+  wyłączony i jako zmianę spoza Centrum w Historii Ustawień.
   Ponowne kliknięcie rozpoznaje działające Centrum po `/api/health` (tożsamość
   i commit narzędzia, z którego wystartowało) i tylko otwiera kartę, a start z
   `--no-browser` przy działającym Centrum kończy się bez karty. Błąd
@@ -459,7 +465,11 @@ wystarczają zależności z `requirements.txt`, bez Node.
   w nagłówku `Server-Timing`; wpisy `pomiar` oddzielają wolny odczyt plików z
   OneDrive od wolnej przeglądarki.
 - Ustawienia Centrum (Rejestr zleceń, folder okresów, motyw) są w
-  `config/centrum-ustawienia.yaml`, poza gitem.
+  `config/centrum-ustawienia.yaml`, ich Historia w `config/historia-ustawien.jsonl`,
+  a ostatni przyjęty stan i ostatnia dobra treść każdego pliku w
+  `config/ustawienia-pamiec/`, wszystko poza gitem. Każdą ręczną zmianę pliku
+  (także usunięcie i złą treść) Centrum zapisuje w Historii jednym wierszem
+  spoza Centrum, a złą treść pokazuje jako złe ustawienie z ostatnią dobrą wartością.
 - Metryki czytają przy każdym odczycie oba pliki metryk
   (`.rozliczenia-metrics.jsonl`, `.przygotowanie-pliku-zbiorczego-metrics.jsonl`)
   bez zmiany schematu, więc widać w nich także Uruchomienia spoza Centrum.
@@ -492,7 +502,7 @@ npm run build      # build do src/rozliczenia/centrum/static/
   wejścia `inputs`, a proces z okresem także karta startu `PeriodStart`),
   jego pozycja w `KINDS` (`centrum/catalog.py`), a procesu z okresem także
   kafelek w `_TILES` (`centrum/period_start.py`). Start, Diagnoza, Logi
-  Uruchomienia, karty z Logów, Metryki i Konfiguracja pytają wpis, więc
+  Uruchomienia, karty z Logów, Metryki i okno Ustawień pytają wpis, więc
   `runs.py` i one się nie zmieniają; czego brakuje, mówi
   `tests/test_katalog_procesow.py`.
 

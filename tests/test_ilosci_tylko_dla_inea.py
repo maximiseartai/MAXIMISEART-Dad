@@ -14,12 +14,11 @@ import pytest
 
 from rozliczenia import tool_files
 from rozliczenia.engine import SettlementInputs, run_settlements
-from rozliczenia.quantity_rules import QuantityColumn
 from rozliczenia.run_context import RunContext
-from atrapy.settlement import PERIOD, CellValue, make_fixture, write_quantity_source
+from atrapy.settlement import CellValue, make_fixture, PERIOD, worker_list, write_quantity_source
 from atrapy.workbooks import active_worksheet, hyperlinks, marked_for_copy, refused_by_copy, written_by_copy
 
-AP, AK = QuantityColumn.AP, QuantityColumn.AK
+AP, AK = "AP", "AK"
 HIGHLIGHT = "FFFFFF00"
 LINK = "https://przyklad.invalid/ilosc"
 
@@ -74,8 +73,8 @@ def test_rozliczenie_pracownika_nie_ma_ilosci_tylko_dla_inea_a_plik_zbiorczy_i_k
     highlight_and_link_ap18(source_path)
     source_before = source_path.read_bytes()
 
-    preview = run_settlements(SettlementInputs(source_path, config_path, template_path, dry_run=True), RunContext())
-    summary = run_settlements(SettlementInputs(source_path, config_path, template_path), RunContext())
+    preview = run_settlements(SettlementInputs(source_path, worker_list(), template_path, dry_run=True), RunContext())
+    summary = run_settlements(SettlementInputs(source_path, worker_list(), template_path), RunContext())
 
     assert dict(summary.inea_only_cleared) == {AP: 2, AK: 2}, "puste AP w wierszu GNIAZDO się nie liczy, 0 się liczy"
     assert dict(preview.inea_only_cleared) == dict(summary.inea_only_cleared)
@@ -98,21 +97,35 @@ def test_rozliczenie_pracownika_nie_ma_ilosci_tylko_dla_inea_a_plik_zbiorczy_i_k
     assert "AP18" not in hyperlinks(written)
 
 
-def test_bez_naglowka_urzadzenia_rozliczenie_pracownika_ma_ilosci_jak_plik_zbiorczy(tmp_path: Path) -> None:
+# Ilości tylko dla INEA czytają same URZĄDZENIA (ADR 0018), więc bez nagłówka UMOWA, CZYNNOŚCI albo DATA czyszczą
+# jak przy pustej komórce, a bez nagłówka URZĄDZENIA nie wiadomo, gdzie szukać słowa, i nic nie znika.
+@pytest.mark.parametrize(
+    ("header", "emptied"),
+    [
+        pytest.param("D17", set(), id="bez-urzadzen"),
+        pytest.param("C17", EMPTIED, id="bez-umowy"),
+        pytest.param("E17", EMPTIED, id="bez-czynnosci"),
+        pytest.param("G17", EMPTIED, id="bez-daty"),
+    ],
+)
+def test_bez_naglowka_kolumny_tresci_zlecenia_rozliczenie_pracownika_czysci_tylko_wedlug_urzadzen(
+    tmp_path: Path, header: str, emptied: set[tuple[str, int]]
+) -> None:
     source_path, target_directory, config_path = make_fixture(tmp_path)
     write_quantity_source(source_path, ROWS)
     workbook = load_workbook(source_path)
     try:
-        active_worksheet(workbook)["D17"] = None
+        active_worksheet(workbook)[header] = None
         workbook.save(source_path)
     finally:
         workbook.close()
 
     summary = run_settlements(
-        SettlementInputs(source_path, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name),
+        SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
         RunContext(),
     )
 
-    assert dict(summary.inea_only_cleared) == {AP: 0, AK: 0}
+    assert dict(summary.inea_only_cleared) == ({AP: 2, AK: 2} if emptied else {AP: 0, AK: 0})
     written = target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"
-    assert a_at(written, range(18, 23)) == a_at(source_path, range(18, 23))
+    source = a_at(source_path, range(18, 23))
+    assert a_at(written, range(18, 23)) == {key: None if key in emptied else value for key, value in source.items()}

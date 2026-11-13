@@ -1706,6 +1706,203 @@
         }
       }
     },
+    "/api/settings/autostart": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Autostart",
+        "operationId": "changeAutostart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutostartChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/folders": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Folders",
+        "operationId": "changeFolders",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FoldersChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/history": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "History",
+        "operationId": "getSettingsHistory",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsHistory"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/history/{change_id}/undo": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Undo",
+        "operationId": "undoSettingsChange",
+        "parameters": [
+          {
+            "name": "change_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Change Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/inbox-password": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Inbox Password",
+        "description": "Nowe hasło zastępuje tylko linię hasła pliku; po każdym udanym zapisie jedna próba logowania mówi, czy\nskrzynka je przyjęła. Odrzucone hasło zostaje zapisane, a tata wpisuje je jeszcze raz.",
+        "operationId": "changeInboxPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxPasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxPasswordSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/periods-directory/choose": {
       "post": {
         "tags": [
@@ -1720,6 +1917,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/quantity-rules": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Read",
+        "operationId": "getQuantityRules",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSettings"
                 }
               }
             }
@@ -1812,7 +2030,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Settings"
+                  "$ref": "#/components/schemas/Choice"
                 }
               }
             }
@@ -2074,6 +2292,27 @@
   },
   "components": {
     "schemas": {
+      "AddressesNotMoved": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "const": "adresy_nieprzeniesione",
+            "title": "Reason"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "message"
+        ],
+        "title": "AddressesNotMoved",
+        "description": "Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego."
+      },
       "ApiTiming": {
         "properties": {
           "operation": {
@@ -2085,6 +2324,12 @@
               "openRegister",
               "choosePeriodsDirectory",
               "changeTheme",
+              "changeInboxPassword",
+              "changeFolders",
+              "changeAutostart",
+              "getSettingsHistory",
+              "getQuantityRules",
+              "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
               "getQuantitiesToFill",
@@ -2150,6 +2395,54 @@
         ],
         "title": "ApiTiming",
         "description": "Jedno zapytanie API widoku: czas w przeglądarce i czas serwera z ``Server-Timing`` (``None``: brak nagłówka)."
+      },
+      "AutostartChange": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "AutostartChange",
+        "description": "Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa."
+      },
+      "AutostartSetting": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "unsupported",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "reason"
+        ],
+        "title": "AutostartSetting",
+        "description": "Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma\nAutostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:\nzdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``."
       },
       "BoardFile": {
         "properties": {
@@ -2279,6 +2572,17 @@
         "properties": {
           "settings": {
             "$ref": "#/components/schemas/Settings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
           }
         },
         "additionalProperties": false,
@@ -2287,7 +2591,7 @@
           "settings"
         ],
         "title": "Choice",
-        "description": "Ustawienia po natywnym oknie wyboru: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia."
+        "description": "Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,\nanulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);\n``None``: bez zmiany i bez wiersza."
       },
       "ClosedStep": {
         "properties": {
@@ -2743,6 +3047,51 @@
         "title": "DescriptionColumn",
         "description": "Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał."
       },
+      "DeviceComponent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "other_spellings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Other Spellings"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "router",
+                  "tv",
+                  "extender"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "other_spellings",
+          "group"
+        ],
+        "title": "DeviceComponent",
+        "description": "Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna)."
+      },
       "Diagnosis": {
         "properties": {
           "explanation": {
@@ -2887,6 +3236,40 @@
         "title": "FillStep",
         "description": "Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;\n``then`` to krok po nim, Wycena w efenix."
       },
+      "FoldersChange": {
+        "properties": {
+          "order_register": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Register"
+          },
+          "periods_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Periods Directory"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "order_register",
+          "periods_directory"
+        ],
+        "title": "FoldersChange",
+        "description": "Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2933,6 +3316,195 @@
         "title": "Health",
         "description": "Tożsamość działającego Centrum.\n\n``commit`` to skrócony commit narzędzia, z którego Centrum wystartowało, jak na Konfiguracji (``None`` poza\nklonem Gita); po nim launcher i opiekun ponownego startu rozpoznają wersję działającego Centrum, a karta\npokazuje go w „Zaktualizowano”. ``instance`` to losowy identyfikator tego startu Centrum: po ponownym starcie\njest inny, także gdy commit się nie zmienił."
       },
+      "HistoryChange": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "before",
+          "after"
+        ],
+        "title": "HistoryChange",
+        "description": "Zmiana jednego klucza (``foldery.folder_okresow``): wartość przed i po, ``None``: nie ustawiono albo sekret."
+      },
+      "HistoryRelease": {
+        "properties": {
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "change": {
+            "type": "string",
+            "title": "Change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "commit",
+          "change"
+        ],
+        "title": "HistoryRelease",
+        "description": "Zmiana z Wydania: numer Wydania (``0.9.0``) i skrót commitu narzędzia (``None``: nie wiadomo) oraz id zmiany."
+      },
+      "HistoryRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "tata",
+              "outside",
+              "release"
+            ],
+            "title": "Source"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistoryRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "undoes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undoes"
+          },
+          "file": {
+            "type": "string",
+            "title": "File"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "secret": {
+            "type": "boolean",
+            "title": "Secret"
+          },
+          "undoable": {
+            "type": "boolean",
+            "title": "Undoable"
+          },
+          "refused": {
+            "type": "boolean",
+            "title": "Refused"
+          },
+          "removed": {
+            "type": "boolean",
+            "title": "Removed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "source",
+          "release",
+          "undoes",
+          "file",
+          "section",
+          "changes",
+          "secret",
+          "undoable",
+          "refused",
+          "removed",
+          "reason"
+        ],
+        "title": "HistoryRow",
+        "description": "Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;\n``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,\nz powodem ``reason``; ``removed``: plik usunięty poza Centrum."
+      },
       "InaccessiblePath": {
         "properties": {
           "state": {
@@ -2958,6 +3530,83 @@
         ],
         "title": "InaccessiblePath",
         "description": "Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa)."
+      },
+      "InboxPasswordChange": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "InboxPasswordChange",
+        "description": "Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis)."
+      },
+      "InboxPasswordSaved": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "login": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected",
+              "no_network"
+            ],
+            "title": "Login"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings",
+          "login"
+        ],
+        "title": "InboxPasswordSaved",
+        "description": "Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”."
+      },
+      "InboxSetting": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "password": {
+            "type": "boolean",
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address",
+          "password"
+        ],
+        "title": "InboxSetting",
+        "description": "Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy."
       },
       "IntermaxCopies": {
         "properties": {
@@ -3384,6 +4033,47 @@
         ],
         "title": "KindToFill",
         "description": "Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma.\n\n``hint``: co tata wpisuje w wierszach rodzaju, z reguły, która robi wiersz zrobionym."
+      },
+      "ListedWorker": {
+        "properties": {
+          "logins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logins"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "reminders": {
+            "type": "boolean",
+            "title": "Reminders"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "logins",
+          "name",
+          "addresses",
+          "active",
+          "reminders"
+        ],
+        "title": "ListedWorker",
+        "description": "Wykonawca z Listy Wykonawców: loginy z kolumny WYKONAWCA, nazwa w Rozliczeniu pracownika, adresy Raportów\nwykonawcy, ``active``: nie jest Nieaktywnym Wykonawcą, ``reminders``: dostaje Przypomnienia o raporcie."
       },
       "LoggedOutcome": {
         "properties": {
@@ -4405,6 +5095,17 @@
           "message": {
             "type": "string",
             "title": "Message"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
           }
         },
         "additionalProperties": false,
@@ -4413,7 +5114,7 @@
           "message"
         ],
         "title": "Problem",
-        "description": "Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku."
+        "description": "Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku; ``field``: pole formularza,\nktórego dotyczy zła wartość (np. ``folder_okresow`` w Ustawieniach Centrum)."
       },
       "ProcessFacts": {
         "properties": {
@@ -4886,6 +5587,101 @@
         ],
         "title": "QuantitiesToFillReady",
         "description": "Ilości do uzupełnienia okresu przeliczone z zapisanego Pliku zbiorczego; ``kinds`` ma każdy rodzaj z listą.\n\n``settled``: Przebieg rozliczeń okresu się odbył (Status okresu Rozliczenia pracowników gotowe), więc strona jest\npodglądem bez „Gotowe, rozlicz pracowników”, a wiersz bez wpisu taty jest „bez ilości”."
+      },
+      "QuantityRuleSentence": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "known",
+              "unknown",
+              "every"
+            ],
+            "title": "Scope"
+          },
+          "sentence": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SentenceText"
+                },
+                {
+                  "$ref": "#/components/schemas/SentenceColumn"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "column": "#/components/schemas/SentenceColumn",
+                  "text": "#/components/schemas/SentenceText"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Sentence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "sentence"
+        ],
+        "title": "QuantityRuleSentence",
+        "description": "Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł."
+      },
+      "QuantityRulesSettings": {
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/QuantityRuleSentence"
+            },
+            "type": "array",
+            "title": "Rules"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceComponent"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "rules_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "devices_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rules",
+          "devices",
+          "rules_problem",
+          "devices_problem"
+        ],
+        "title": "QuantityRulesSettings",
+        "description": "Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i\n``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to."
       },
       "Queued": {
         "properties": {
@@ -6371,6 +7167,86 @@
         "title": "Sent",
         "description": "Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później."
       },
+      "SentenceColumn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "column",
+            "title": "Kind"
+          },
+          "letter": {
+            "type": "string",
+            "title": "Letter"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "letter",
+          "name"
+        ],
+        "title": "SentenceColumn",
+        "description": "Kolumna Ilości usług w zdaniu: litera i nazwa pozycji cennika z wiersza 17 Wzorca pliku zbiorczego; ``None``:\nWzorca nie da się przeczytać albo komórka jest pusta."
+      },
+      "SentenceText": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "text",
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "SentenceText"
+      },
+      "SettingProblem": {
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "SettingProblem",
+        "description": "Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``wykonawcy[2].adresy[0]``) albo ``None`` dla całego\npliku i zdanie dla taty."
+      },
       "Settings": {
         "properties": {
           "order_register": {
@@ -6433,6 +7309,10 @@
               }
             }
           },
+          "periods_all_years": {
+            "type": "boolean",
+            "title": "Periods All Years"
+          },
           "theme": {
             "type": "string",
             "enum": [
@@ -6440,6 +7320,35 @@
               "light"
             ],
             "title": "Theme"
+          },
+          "folders_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workers": {
+            "$ref": "#/components/schemas/WorkerListSetting"
+          },
+          "inbox": {
+            "$ref": "#/components/schemas/InboxSetting"
+          },
+          "inbox_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "autostart": {
+            "$ref": "#/components/schemas/AutostartSetting"
           }
         },
         "additionalProperties": false,
@@ -6447,9 +7356,39 @@
         "required": [
           "order_register",
           "periods_directory",
-          "theme"
+          "periods_all_years",
+          "theme",
+          "folders_problem",
+          "workers",
+          "inbox",
+          "inbox_problem",
+          "autostart"
         ],
-        "title": "Settings"
+        "title": "Settings",
+        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``)."
+      },
+      "SettingsHistory": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rows",
+          "skipped"
+        ],
+        "title": "SettingsHistory",
+        "description": "Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać."
       },
       "SolvedCase": {
         "properties": {
@@ -6770,6 +7709,35 @@
         "title": "UnknownReportSender",
         "description": "Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty."
       },
+      "UnmatchedLogin": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "const": "login_bez_wykonawcy",
+            "title": "Reason"
+          },
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "login",
+          "addresses"
+        ],
+        "title": "UnmatchedLogin",
+        "description": "Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców."
+      },
       "UnreadablePath": {
         "properties": {
           "state": {
@@ -6784,7 +7752,7 @@
           "state"
         ],
         "title": "UnreadablePath",
-        "description": "Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano."
+        "description": "Pliku Ustawień Centrum nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano."
       },
       "ValidationError": {
         "properties": {
@@ -6842,7 +7810,7 @@
               "okresy",
               "uruchomienia",
               "metryki",
-              "konfiguracja",
+              "ustawienia",
               "powiadomienia",
               "uzupelnienie",
               "raporty"
@@ -6940,6 +7908,67 @@
         "title": "WithoutQuantityUnread",
         "description": "Pliku zbiorczego nie udało się odczytać, więc nie wiadomo, które wiersze są bez ilości; start zostaje możliwy."
       },
+      "WorkerListSetting": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/ListedWorker"
+            },
+            "type": "array",
+            "title": "Workers"
+          },
+          "unresolved": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/UnmatchedLogin"
+                },
+                {
+                  "$ref": "#/components/schemas/AddressesNotMoved"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "reason",
+                "mapping": {
+                  "adresy_nieprzeniesione": "#/components/schemas/AddressesNotMoved",
+                  "login_bez_wykonawcy": "#/components/schemas/UnmatchedLogin"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Unresolved"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "workers",
+          "unresolved",
+          "problem"
+        ],
+        "title": "WorkerListSetting",
+        "description": "Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo\n``unreadable`` (system nie daje teraz czytać pliku, lista pusta)."
+      },
       "WorkerSettlement": {
         "properties": {
           "worker": {
@@ -7007,7 +8036,7 @@
           "names"
         ],
         "title": "WorkersReady",
-        "description": "Nazwy Wykonawców w kolejności z konfiguracji wykonawców."
+        "description": "Nazwy Wykonawców w kolejności z Listy Wykonawców."
       },
       "WorkersUnreadable": {
         "properties": {

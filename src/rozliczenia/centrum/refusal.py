@@ -12,7 +12,8 @@ from collections.abc import Sequence
 from typing import Final, Literal, assert_never, final
 
 from rozliczenia.centrum.contract.common import Problem
-from rozliczenia.message import explorer_check
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.message import explorer_check, refer_if
 from rozliczenia.period_folder import PeriodFolderLookupError, PeriodPlace, month_folder_label, period_place_label
 
 
@@ -41,17 +42,18 @@ class Refusal(Exception):
     """Serwer odmawia żądania; ``create_app`` zamienia odmowę na odpowiedź ``Problem``. Tworzy ją tylko fabryka tego
     katalogu (``_CATALOG``), a podklasę z własnym konstruktorem bez dowodu odrzuca mypy (``final``)."""
 
-    def __init__(self, status_code: int, message: str, proof: _Catalog) -> None:
+    def __init__(self, status_code: int, message: str, proof: _Catalog, field: str | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.message = message
+        self.field = field
 
 
-def _refused(status_code: int, message: str) -> Refusal:
+def _refused(status_code: int, message: str, field: str | None = None) -> Refusal:
     """Odmowa z dowodem katalogu dla fabryk tego modułu. Poza nim ruff (``TID251``) odrzuca ją jak ``_CATALOG``, bo
     wkłada dowód za wywołującego, więc dałaby odmowę bez fabryki i bez próbki w ``tests/expected/komunikaty.txt``."""
 
-    return Refusal(status_code, message, _CATALOG)
+    return Refusal(status_code, message, _CATALOG, field)
 
 
 # Odmowy akcji na zasobie w OpenAPI: brak zasobu (404) albo zły stan (409), obie jako ``Problem``.
@@ -120,6 +122,57 @@ def settings_not_saved() -> Refusal:
         500,
         "Nie udało się zapisać Ustawień taty w folderze config. "
         + explorer_check("folder", "spróbuj ponownie", read_only=True),
+    )
+
+
+def setting_refused(problem: FieldProblem) -> Refusal:
+    """Zła wartość Ustawień Centrum: nic się nie zapisało, a odmowa niesie pole i zdanie, co poprawić."""
+
+    return _refused(422, problem.sentence, problem.place)
+
+
+def workers_unusable(problem: FieldProblem | None) -> Refusal:
+    """Proces nie startuje bez Listy Wykonawców: plik ma złe ustawienie i nie ma ostatniej dobrej listy (``problem``)
+    albo system nie daje go teraz czytać (``None``)."""
+
+    if problem is None:
+        return _refused(
+            409, "Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie."
+        )
+    return _refused(409, f"Lista Wykonawców ma złe ustawienie: {problem.sentence} Popraw ją w Ustawieniach.", problem.place)
+
+
+def report_entering_without_addresses() -> Refusal:
+    """Wpisanie raportów nie startuje, gdy żaden Wykonawca z Listy Wykonawców nie ma adresu: żaden mail nie byłby
+    Raportem wykonawcy."""
+
+    return _refused(409, "Na Liście Wykonawców nikt nie ma jeszcze adresu. Dopisz adresy Wykonawców w Ustawieniach.")
+
+
+def settings_change_unknown() -> Refusal:
+    return _refused(404, "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.")
+
+
+def settings_change_not_undoable() -> Refusal:
+    """Wiersz Historii Ustawień bez „Cofnij”: zmiana sekretu albo zła treść spoza Centrum, której Centrum nie przyjęło."""
+
+    return _refused(404, "Tej zmiany nie da się cofnąć.")
+
+
+def settings_history_unreadable() -> Refusal:
+    """Plik Historii Ustawień jest, ale system nie daje go teraz czytać (np. trzyma go OneDrive)."""
+
+    return _refused(500, "Nie udało się odczytać Historii Ustawień. Odśwież okno Ustawień za chwilę.")
+
+
+def autostart_not_changed() -> Refusal:
+    """Skrótu Centrum w folderze Autostart nie dało się założyć ani usunąć albo zmiany nie dało się zapisać w Historii
+    Ustawień; skrót zostaje w stanie sprzed przełączenia."""
+
+    return _refused(
+        500,
+        "Nie udało się zmienić startu Centrum razem z Windows. Spróbuj ponownie. "
+        + refer_if("Jeśli komunikat wraca", request="przekaż go"),
     )
 
 
@@ -249,17 +302,15 @@ def note_not_queued() -> Refusal:
     return _refused(500, "Uwaga się nie zapisała i nie pójdzie do Maksa. Spróbuj wysłać ją jeszcze raz.")
 
 
-ReportEnteringFile = Literal["inbox_access", "worker_addresses"]
+ReportEnteringFile = Literal["inbox_access"]
 """Plik w ``config``, który prowadzi Maks, bez którego Wpisanie raportów nie startuje: dostęp do skrzynki raportów
-(``skrzynka-raportow.txt``) albo adresy Wykonawców (``adresy-wykonawcow.yaml``)."""
+(``skrzynka-raportow.txt``)."""
 
 
 def _report_entering_file(missing: ReportEnteringFile) -> str:
     match missing:
         case "inbox_access":
             return "hasła do skrzynki raportów (plik skrzynka-raportow.txt)"
-        case "worker_addresses":
-            return "adresów Wykonawców (plik adresy-wykonawcow.yaml)"
         case _:
             assert_never(missing)
 

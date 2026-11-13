@@ -17,6 +17,7 @@ import pytest
 
 from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
+from rozliczenia.centrum.settings.quantity_rules import RULES_FILE
 
 from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
@@ -28,7 +29,7 @@ from tests.fixtures.centrum import (
     without_times,
     write_report_key,
 )
-from tests.fixtures.centrum_processes import SettlingCentrum, run_to_end, settling_centrum
+from tests.fixtures.centrum_processes import SettlingCentrum, run_to_end, settling_centrum, write_dad_quantity_rules
 from tests.fixtures.potomne import wait_for
 from atrapy.settlement import MARKED, CellValue, PERIOD, write_quantity_source
 
@@ -189,6 +190,18 @@ def test_przy_zera_roznic_kontrola_ilosci_tez_powstaje_z_tytulem_bez_roznic(tmp_
     assert issue.title == f"Kontrola ilości {PERIOD}: bez różnic"
     assert "- Różnice w kolumnach Reguł ilości: 0\n" in issue.body
     assert "## Różnice" not in issue.body
+
+
+def test_kontrola_ilosci_liczy_regulami_ilosci_z_ustawien_ktorymi_liczyl_jej_przebieg(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, [TATA_ROWS[0]])
+    rule = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}"
+    write_dad_quantity_rules(centrum.tool, RULES_FILE, rule, rule.replace("wartosc: 1", "wartosc: 2"))
+
+    run_to_end(centrum, dry_run=False)
+
+    body = sent_check(centrum).body
+    assert "- Różnice w kolumnach Reguł ilości: 1\n" in body
+    assert "| Z | 2 | 1 | `instalacja` | `u` | wt 10 | 1 |\n" in body
 
 
 def test_plik_zbiorczy_bez_naglowka_kolumny_wejscia_daje_kontrole_bez_porownania(tmp_path: Path) -> None:

@@ -19,6 +19,7 @@ W tym repo Ważne były zwykle:
 - zachowanie widoczne tylko na Windows albo na najstarszym Pythonie z `requires-python` (brak `tzdata`, krok zegara `time.monotonic()` pod dawnym minimum 3.11, import, który pada tylko pod najstarszym Pythonem);
 - stan, który jedna część przebiegu zakłada po innej (część podstawy skilla startująca od środka porządku);
 - przypisanie albo zakres liczony od złej linii lub złego commitu (np. `git blame` pierwszej linii wielowierszowej instrukcji).
+- zmiana wspólnego elementu okna Centrum (sekcja okna Ustawień, menu, toast, okno dialogowe), która wywraca funkcję drive `verify-centrum-rozliczen` inną niż ta, którą autor uruchomił (#1517: nowa sekcja wywróciła `okno-ustawien`, które wymienia każdą sekcję).
 
 Dziura w sprawdzeniu to też defekt zachowania.
 W PR, który dodaje albo zmienia sprawdzenie (test struktury, checker, hook, skrypt mutacji, bramka CI, reguła lintu), Ważne jest odtworzony przypadek, który według wiersza reguły, docstringu albo opisu PR to sprawdzenie powinno wywrócić, a ono go przepuszcza, i wywrócenie się sprawdzenia na poprawnym wejściu.
@@ -34,7 +35,7 @@ Istniejące wcześniej to tylko defekt, który powtarzasz na merge-base bez tej 
 Przypadek zbudowany tylko z pliku spoza dziedziny, którą wyznacza decyzja Maksa w ADR (dziś pliki łamiące pewniki wklejenia INTERMAX, [ADR 0025](../../../docs/adr/0025-regula-danych-wysylki-do-skrzynki.md), sekcja „Pewniki i granica dziedziny”), nie jest defektem.
 Styl, nazwy i formatowanie zostawiasz ruffowi, mypy i lintom frontendu.
 
-Korzeń wyrwany na szczeblu (e) dopisuje tu punkt z przykładem PR, który czyta autor i recenzent (sekcja niżej).
+Korzeń wyrwany na szczeblu (e) dopisuje tu nowy punkt z linkiem do PR, który go dopisuje, jako przykładem, a punkt czyta autor i recenzent (sekcja niżej).
 
 ## Korzeń i chwast
 
@@ -50,7 +51,7 @@ Ta sama reguła obowiązuje przy poprawce operatora.
   - (b) typ, z którym zła droga nie przechodzi mypy, albo reguła ruff (`banned-api` z `msg` „użyj X”);
   - (c) test zachowania, który łapie całą klasę, nie tylko ten przypadek;
   - (d) zapadka w `tests/test_zapadki.py`, która pada tylko na dodanych liniach (warunki w [`CODING_STANDARDS.md`](../../../CODING_STANDARDS.md));
-  - (e) punkt z przykładem PR w sekcji „Co jest porażką” tego skilla.
+  - (e) nowy punkt z linkiem do PR, który go dopisuje, w sekcji „Co jest porażką” tego skilla.
 
   Zapadka (d) stoi między (c) a (e), bo jest deterministyczna, a (e) to proza: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają, a (e) tylko wtedy, gdy (a)–(d) nie działają.
   Przy (d) i przy (e) autor pisze jedno zdanie, czemu wyżej się nie da.
@@ -67,12 +68,15 @@ Reguły szczebla i dowodu:
   Recenzent następnej rundy powtarza ten dowód i jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
 - Korzeń, który wraca po wcześniejszym wyrwaniu, wyrywa się szczebel wyżej niż poprzednio.
   Gdy wyższego nie ma, także po szczeblu (e), decyduje Maks.
-- Autor może zakwestionować kod korzenia z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy kodem w swoim werdykcie.
-  Rejestr korzeni bierze kod z ostatniego werdyktu PR.
+- Autor może zakwestionować kod korzenia z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy kodem w swoim werdykcie: punktem `Korzeń W<n> r<k>: R-KOD - zdanie` w `## Sprawdzone`, gdzie `r<k>` to `k`-ty werdykt PR.
+  Rejestr korzeni i bramka korzenia biorą kod z ostatniego werdyktu, który dotyczy tego Ważnego.
+- Autor opisuje wyrwanie każdego Ważnego w sekcji `## Korzeń` opisu PR według wzoru sekcji „Root section” skilla [`pr`](../pr/SKILL.md), a `tools/scal_pr.py` odmawia merge'a, dopóki sekcji czegoś brakuje.
+  Większy korzeń (ponad `size:M`) idzie osobnym PR-em korzenia z linią `Korzeń z #N: R-KOD`, który scala się najpierw.
+  Rozmiaru wyrwania `tools/scal_pr.py` nie liczy, więc recenzent rozstrzyga, czy wyrwanie mieści się w PR (do `size:M`), czy należy do PR korzenia.
 - Gdy żaden kod z listy nie pasuje, recenzent pisze `Korzeń: NOWY R-KOD - opis` z kodem, którego na liście nie ma, a nie najbliższy kod, bo zły kod zafałszowałby rejestr powtórzeń.
   `tools/scal_pr.py --werdykt` przyjmuje `NOWY` tylko z kodem w postaci kodów listy, którego nie ma na liście HEAD PR, i z niepustym opisem.
   Autor dopisuje ten kod do [`korzenie.toml`](korzenie.toml) w swoim PR, z jednym zdaniem i przykładem PR, a kolejne werdykty piszą go już bez `NOWY`.
-  NOWY kod musi być na liście przed merge'em PR; pilnuje tego bramka korzenia (ADR 0031, PR 2).
+  NOWY kod musi być na liście przed merge'em PR, a bez niego `tools/scal_pr.py` odmawia merge'a.
 
 ## Dowody
 
@@ -105,6 +109,7 @@ Gdzie: <plik:linia>
 Pierwsza linia to `WERDYKT: PASS <pełny SHA HEAD>` albo `WERDYKT: FAIL <pełny SHA HEAD>`, a druga `Znaleziska: N (Ważne a, Drobne b)`.
 Ważne (`### W1.`, `### W2.`) stoją przed Drobnymi (`### D1.`), każde z polami w kolejności szablonu.
 `PASS` bez znalezisk ma tylko dwie pierwsze linie i `## Sprawdzone`.
+Punkt `## Sprawdzone`, który zaczyna się od `Korzeń `, to rozstrzygnięcie kodu Ważnego z wcześniejszej rundy (`- Korzeń W1 r1: R-KOD - zdanie`, sekcja „Korzeń i chwast”), a kod sprawdza się jak w polu `Korzeń:`.
 Treść czyta renderer GitHuba, więc pole albo nagłówek liczy się tylko poza blokiem kodu: wynik, który cytuje linię `Korzeń:`, `Gdzie:` albo `### W…`, ujmij w blok ``` albo ~~~.
 Dowód dłuższy niż 5 linii albo z linią ponad 300 znaków zapisz w pliku obok werdyktu i podaj w Dowodzie jego ścieżkę.
 `tools/scal_pr.py <PR> --werdykt <plik>` sprawdza tę postać przed publikacją i odmawia z przyczynami i wzorem, a merge liczy `PASS` jako zgodę tylko w tej samej postaci, także gdy ktoś opublikował go inaczej, więc werdykt publikuj tylko tym poleceniem.
@@ -137,7 +142,7 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
    ```
 
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
-3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast”, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
+3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)), a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
    Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście albo dzielisz PR.
 
 ## Tryb recenzenta: werdykt na PR
@@ -159,4 +164,5 @@ Recenzent pracuje we własnym odłączonym checkoucie HEAD PR (`git fetch origin
 4. Opublikuj werdykt: `.venv/bin/python tools/scal_pr.py <PR> --werdykt <plik>`.
    Narzędzie sprawdza obie linie, SHA HEAD i szablon, a gdy odmawia, popraw plik według jego komunikatu i wzoru i uruchom je ponownie.
    Gdy HEAD PR zmienił się w trakcie, przejrzyj diff od przejrzanego SHA do nowego HEAD, zanim zmienisz SHA w pliku.
+   Gdy kod Ważnego ma wystąpienie w innym PR, narzędzie zakłada issue „Chwast: R-KOD” albo dopisuje wiersz do otwartego i podaje to w linii `WERDYKT OK` po `| CHWAST`.
    Krok kończy się linią `WERDYKT OK` z adresem komentarza: oddaj wywołującemu ścieżkę pliku i tę linię.

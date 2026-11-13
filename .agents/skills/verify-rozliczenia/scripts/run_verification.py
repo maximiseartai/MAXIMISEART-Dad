@@ -25,9 +25,11 @@ from atrapy.scenariusz_rozliczen import (
     PERIODS_DIRECTORY,
     REGISTER_NAME,
     TEMPLATES_DIRECTORY,
+    UNMAPPED_WORKER,
     WORKER_SETTLEMENTS_DIRECTORY,
     WORKER_TEMPLATE_NAME,
 )
+from atrapy.pliki_taty import WORKER_LIST_NAME
 from atrapy.settlement import PERIOD, SOURCE_NAME
 from rozliczenia.tool_files import config_dir
 from atrapy.workbooks import excel_lock
@@ -234,7 +236,7 @@ def _run_settlement_workflow(
 
     environment = child_environment()
     source = run_root / PERIOD / SOURCE_NAME
-    config = run_root / "worker_mapping.yaml"
+    config = run_root / WORKER_LIST_NAME
     metrics = run_root / "metrics.jsonl"
 
     fixture_arguments = [str(HELPER_DIRECTORY / "create_fixture.py"), "--root", str(run_root)]
@@ -254,7 +256,7 @@ def _run_settlement_workflow(
         "settlement",
         "--source",
         str(source),
-        "--config",
+        "--wykonawcy",
         str(config),
         "--worker-template",
         str(run_root / WORKER_TEMPLATE_NAME),
@@ -322,8 +324,8 @@ def _run_preparation_stage(
         str(run_root / PERIODS_DIRECTORY),
         "--period",
         PERIOD,
-        "--config",
-        str(config_directory / "worker_mapping.yaml"),
+        "--wykonawcy",
+        str(config_directory / WORKER_LIST_NAME),
         "--internal-template",
         str(config_directory / INTERNAL_TEMPLATE_NAME),
         "--collective-template",
@@ -398,8 +400,8 @@ def _run_chain_workflow(
         "settlement",
         "--source",
         str(run_root / PERIODS_DIRECTORY / PERIOD / SOURCE_NAME),
-        "--config",
-        str(config_directory / "worker_mapping.yaml"),
+        "--wykonawcy",
+        str(config_directory / WORKER_LIST_NAME),
         "--worker-template",
         str(config_directory / WORKER_TEMPLATE_NAME),
     ]
@@ -557,7 +559,7 @@ WORKFLOW_VARIANTS = {
         run_exit=1,
         assertion="no-publish",
         expected_stop="NIEZNANY_WYKONAWCA",
-        expected_stop_what="spoza konfiguracji wykonawców: unknown.synthetic.",
+        expected_stop_what=UNMAPPED_WORKER,
     ),
     "preparation": WorkflowVariant(PREPARATION),
     "preparation-real-templates": WorkflowVariant(PREPARATION, templates="config"),

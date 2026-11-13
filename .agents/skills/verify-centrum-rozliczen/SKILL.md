@@ -46,7 +46,9 @@ The `check_centrum_<feature>_mutations.py` scripts run in full CI on `main` and 
 after a change of this skill's folder. Run `all` and the mutations locally only to reproduce a red Mutation checks step
 or the night's issue. What stays with you: drive the feature you change and look at its
 screenshots after a UI change, because a passing run does not judge visual
-quality. `wydajnosc` is never part of `all` and runs only locally (`features/wydajnosc.md`).
+quality. A change of a shared element also drives every feature that sees it, not only your own: a section of the window
+Ustawienia drives `okno-ustawien` (it lists every section) and `ustawienia`, and the window, menu, toasts or dialogs also
+`uwaga-taty`. `wydajnosc` is never part of `all` and runs only locally (`features/wydajnosc.md`).
 The real-mailbox review of Wpisanie raportów never runs in CI either: it needs Dad's real Gmail, the access file and
 Maks's consent (`features/wpisanie-raportow.md`, section Real mailbox).
 
@@ -58,7 +60,7 @@ Run from the repository root (Windows: `py -3`; macOS/Linux: `.venv/bin/python`)
 py -3 .agents\skills\verify-centrum-rozliczen\scripts\run_centrum_verification.py
 ```
 
-`--feature ustawienia`, `--feature tablica-okresow`, `--feature tablica-skrocona`, `--feature uklad-folderow-taty`, `--feature konfiguracja`, `--feature aktualizacja`,
+`--feature okno-ustawien`, `--feature ustawienia`, `--feature reguly-ilosci`, `--feature tablica-okresow`, `--feature tablica-skrocona`, `--feature uklad-folderow-taty`, `--feature konfiguracja`, `--feature aktualizacja`,
 `--feature metryki`, `--feature blad-odczytu`, `--feature przygotowanie-pliku-zbiorczego`, `--feature uzupelnienie`,
 `--feature przebieg-rozliczen`, `--feature uporzadkowanie-intermax`, `--feature kopie-intermax`, `--feature kontrola-ilosci`, `--feature diagnoza`, `--feature aktualnosc-i-onedrive`, `--feature zgloszenie`, `--feature uwaga-taty`, `--feature logi-uruchomienia`, `--feature karta-z-logow`, `--feature powiadomienia`, `--feature pomiar-u-taty`, `--feature wpisanie-raportow`, `--feature wycena-w-efenix`, or `--feature start-i-zamykanie` drives one
 feature; the default `all` drives every feature in `features/` except `wydajnosc`, ending
@@ -156,11 +158,12 @@ built frontend, and the settings and metrics files belong to this run. The docto
 
 `scripts/drive_centrum.py` is the harness, with each feature's steps in `scripts/drive/<feature>.py`: Playwright for Python, sync API,
 Chromium at 1440×1000, locale `pl-PL`. It finds elements by ARIA role and
-accessible name, the same Polish names Dad reads: buttons such as
-`Wskaż folder okresów`, `Zmień Rejestr zleceń`, `Włącz motyw jasny`, and
-`Plik zbiorczy, okres 29_05_10_2026`; the table `Tablica okresów`; the region
-`Następny krok`; the groups `Rejestr zleceń` and `Folder okresów`; on
-Konfiguracja the groups named after each Wzorzec and the list `Wykonawcy`. The recipes
+accessible name, the same Polish names Dad reads: the link `Ustawienia` in the
+menu's footer and the dialog `Ustawienia` it opens, buttons such as
+`Zmień Rejestr zleceń` (section Foldery) and `Plik zbiorczy, okres 29_05_10_2026`;
+the table `Tablica okresów`; the region `Następny krok`; the groups
+`Rejestr zleceń` and `Folder okresów` of Uruchomienia; in Ustawienia the list items
+named after each Wzorzec and the list `Wykonawcy`. The recipes
 and their exact handles are in the feature files. To drive one feature against
 a running instance:
 

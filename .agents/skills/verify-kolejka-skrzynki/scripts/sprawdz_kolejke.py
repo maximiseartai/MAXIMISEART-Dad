@@ -32,22 +32,22 @@ def _configs(*names: str) -> tuple[str, tuple[str, ...]]:
 
 
 # Jednostka to skrypt skilla z argumentami; każda biegnie od świeżego startu. Część bierze kolejne jednostki po ich
-# liczbie, nie po czasie, więc kolejność przeplata ciężkie jednostki z lekkimi. Na czasach jednostek z runu PR
-# 43290270296 (Windows CI, 12.11: ``archiwum-diagnoza`` 265 s, grupa z ``postep`` 193 s, ``archiwum`` 146 s, grupa
-# z ``diagnoza`` 136 s, konfiguracja ``starsza`` 97 s, pozostałe 58–107 s) ta kolejność daje przy czterech i pięciu
-# częściach (tyle plan bierze na PR) najdłuższą część 323 s; najlepsza z wszystkich kolejności tych jednostek.
-# Najdłuższa niepodzielna jednostka to zakres ``archiwum-diagnoza``.
+# liczbie, nie po czasie, więc kolejność przeplata ciężkie jednostki z lekkimi. Na medianach jednostek z 20 zadań
+# Windows CI (12–13.11: ``archiwum-diagnoza`` 236 s, grupa z ``postep`` 193 s, grupy z ``watek-okresu`` i z ``diagnoza``
+# po 150 s, pozostałe 70–114 s) ta kolejność daje najdłuższą część 236 s przy sześciu częściach, 307 s przy pięciu i
+# 333 s przy czterech (tyle plan bierze na PR); najlepsza z wszystkich kolejności tych jednostek. Przy sześciu
+# częściach ``archiwum-diagnoza``, najdłuższa niepodzielna jednostka, stoi sama.
 UNITS = (
-    _scopes("archiwum-diagnoza"),
-    _configs("archiwum", "logi", "odczyt"),
-    _scopes("watek-okresu", "watek-okresu-lista", "zgloszenie", "zgloszenie-wrocilo", "zgloszenie-lista"),
-    _configs("okres", "diagnoza", "zgloszenie", "znane"),
-    _scopes("diagnoza", "diagnoza-odczyt", "archiwum-puste-repo"),
-    _configs("starsza"),
     _scopes("postep", "archiwum-lista", "nowe-issue", "nowe-issue-lista", "znane-issue"),
     _configs("archiwum-lista", "odmowa-tresci", "dwa-procesy", "dwie-kolejki"),
     _scopes("archiwum"),
+    _scopes("diagnoza", "diagnoza-odczyt", "archiwum-puste-repo"),
     _configs("postep", "puste-repo", "nowe"),
+    _scopes("archiwum-diagnoza"),
+    _configs("okres", "diagnoza", "zgloszenie", "znane"),
+    _configs("archiwum", "logi", "odczyt"),
+    _configs("starsza"),
+    _scopes("watek-okresu", "watek-okresu-lista", "zgloszenie", "zgloszenie-wrocilo", "zgloszenie-lista"),
 )
 
 

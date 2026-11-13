@@ -25,6 +25,8 @@ _PROCESS = "Uporządkowanie INTERMAX"
 _UNCHANGED = "INTERMAX nie został zmieniony."
 _INTERMAX = DadWorkbook("INTERMAX", "INTERMAX", "order_register", _UNCHANGED, "uruchom ponownie")
 _AGAIN = "przywróć kopię jeszcze raz"
+# Miejsce w Centrum, w którym tata widzi i przywraca Kopie INTERMAX; Komunikaty o Kopiach nazywają je tylko stąd.
+_COPIES_PLACE = "w Ustawieniach, w sekcji Kopie INTERMAX"
 
 
 @dataclass(frozen=True)
@@ -300,7 +302,7 @@ def refused(refusal: Refusal, register: Path, copies: Path, replacement: Replace
                 code="PRZYWRACANIE_PRZED_CHWILA",
                 what="Przed chwilą przywrócono już kopię INTERMAX, więc ta kopia nie została przywrócona.",
                 where=folder_label(copies),
-                action=f"Odśwież Konfigurację i sprawdź listę kopii. Jeśli nadal trzeba, {_AGAIN}.",
+                action=f"Sprawdź listę kopii {_COPIES_PLACE}. Jeśli nadal trzeba, {_AGAIN}.",
             )
         case Refusal.COPY_FAILED | Refusal.COPY_EXISTS:
             return _disk_failed(replacement.no_copy_code, replacement.no_copy, folder_label(copies), replacement)
@@ -330,13 +332,13 @@ def old_copies_kept(directory: Path, replacement: Replacement) -> Message:
 
 
 def copies_unreadable(directory: Path) -> Message:
-    """Folderu Kopii INTERMAX nie da się odczytać: Konfiguracja nie pokaże Kopii, a przywrócenie nie zacznie."""
+    """Folderu Kopii INTERMAX nie da się odczytać: Ustawienia nie pokażą Kopii, a przywrócenie nie zacznie."""
 
     return Message(
         code="KOPIE_INTERMAX_NIEDOSTEPNE",
         what=f"Nie można teraz odczytać folderu Kopii INTERMAX. {_UNCHANGED}",
         where=folder_label(directory),
-        action=f"Odśwież Konfigurację za chwilę. {IF_ERROR_RETURNS}",
+        action=f"Poczekaj chwilę i odśwież stronę. {IF_ERROR_RETURNS}",
     )
 
 
@@ -347,7 +349,7 @@ def copy_missing(directory: Path, name: str) -> Message:
         code="BRAK_KOPII_INTERMAX",
         what=f"Tej Kopii INTERMAX już nie ma. {_UNCHANGED}",
         where=f"{folder_label(directory)}, {name}",
-        action="Odśwież Konfigurację i wybierz kopię z listy.",
+        action=f"Wybierz kopię z listy {_COPIES_PLACE}.",
     )
 
 

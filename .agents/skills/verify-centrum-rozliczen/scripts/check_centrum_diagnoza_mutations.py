@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import DIAGNOZA, SETTINGS_ROUTER, WORKER_CONFIG
+from cele_mutacji_centrum import DIAGNOSIS, DIAGNOZA, PROCESS_KIND, SETTINGS_ROUTER
 from silnik_mutacji import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -24,17 +24,24 @@ MUTATIONS = (
         "tata klika „Otwórz Rejestr zleceń” przy Zatrzymaniu do poprawy, a Excel się nie otwiera",
     ),
     Mutation(
-        "Konfiguracja wykonawców bez dostępu jest brakującym plikiem",
+        "zła Lista Wykonawców przechodzi sprawdzenie Diagnozy",
+        (Edit(DIAGNOSIS, "    if isinstance(workers, Good):\n", "    if True:\n"),),
+        DIAGNOZA,
+        "tata widzi w Diagnozie, że Lista Wykonawców jest dobra, choć nie da się jej użyć",
+    ),
+    Mutation(
+        "Lista Wykonawców bez odczytu startuje proces na pustej liście",
         (
             Edit(
-                WORKER_CONFIG,
-                '    return WorkerConfigError("missing" if file_state(config_path) == "missing" else "inaccessible")\n',
-                '    return WorkerConfigError("missing")\n',
+                PROCESS_KIND,
+                "        raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)\n",
+                "        return WorkerList(())\n",
             ),
         ),
         DIAGNOZA,
-        "tata widzi „Nie można odczytać konfiguracji wykonawców.” zamiast Komunikatu, że plik jest teraz niedostępny",
+        "proces startuje bez Wykonawców i zatrzymuje się na każdym jako nieznanym zamiast odmowy ze zdaniem",
     ),
+
 )
 
 

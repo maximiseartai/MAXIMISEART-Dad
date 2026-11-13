@@ -3,30 +3,53 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from playwright.sync_api import Page, expect
 
-from drive.common import Run, last_opened_is, next_step_names_current_step, period_row
+from drive.common import (
+    Run,
+    close_settings,
+    last_opened_is,
+    next_step_names_current_step,
+    open_settings,
+    period_row,
+    point_in_settings,
+)
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 
 def _choose_folder(run: Run, page: Page, path: str) -> None:
-    """Points Centrum to ``path``: from the empty state when run alone, through the settings card otherwise."""
+    """Points Centrum to ``path`` in the section Foldery of Ustawienia, over Okresy."""
 
-    run.answer_picker(path)
-    unset = run.api("/api/settings", "uklad-taty-ustawienia")["periods_directory"] == {"state": "not_set"}
-    name = "Wskaż folder okresów" if unset else "Zmień Folder okresów"
-    page.get_by_role("button", name=name, exact=True).click()
-    run.wait_for(lambda: run.remembered("folder_okresow") == path, f"the settings file remembers {Path(path).name}")
+    point_in_settings(run, page, "Folder okresów", path)
 
 
 def drive(run: Run, page: Page) -> None:
     feature = "uklad-folderow-taty"
     dad = run.fixture["dad_layout"]
 
-    run.step(feature, "taty-tygodnie-ze-wszystkich-miesiecy")
+    run.step(feature, "taty-wskazany-tydzien")
     page.goto(run.url)
-    _choose_folder(run, page, dad["periods_directory"])
+    window = open_settings(page, "Foldery")
+    run.answer_picker(dad["week"])
+    window.get_by_role("button", name=re.compile(r"^(Wskaż|Zmień) Folder okresów$")).click()
+    run.wait_for(
+        lambda: run.remembered("folder_okresow") == dad["periods_directory"],
+        "a week folder chosen in Foldery is saved as Załączniki, the root of Dad's layout",
+    )
+    settings = run.api("/api/settings", "uklad-taty-ustawienia")
+    run.check(
+        settings["periods_directory"] == {"state": "ready", "path": dad["periods_directory"], "name": "Załączniki"}
+        and settings["periods_all_years"] is True,
+        "the server describes the folder okresów as Załączniki of all years",
+    )
+    expect(window.get_by_text("Załączniki – wszystkie lata", exact=True)).to_be_visible()
+    run.check(True, "section Foldery shows Załączniki with „wszystkie lata”, not the week Dad pointed to")
+    run.capture(page, "102-uklad-taty-foldery")
+    close_settings(page)
+
+    run.step(feature, "taty-tygodnie-ze-wszystkich-miesiecy")
     rows = run.api("/api/periods", "uklad-taty-tablica")["periods"]
     assert isinstance(rows, list)
     run.check(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from rozliczenia import settlement_messages, settlement_process
+from rozliczenia import quantity_check, settlement_messages, settlement_process
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import (
     PERIODS_DIRECTORY,
@@ -19,7 +19,6 @@ from rozliczenia.centrum.process_kind import (
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, count_figure
 from rozliczenia.engine import SettlementInputs, SettlementSummary
-from rozliczenia.order_facts import CollectiveOrders
 from rozliczenia.period_folder import period_status_label
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.tool_files import SETTLEMENT_METRICS
@@ -73,20 +72,21 @@ def _logs(summary: SettlementSummary | None, _facts: object) -> ProcessLogs:
     return ProcessLogs(
         inea_only_cleared=None
         if summary is None
-        else {column.value: count for column, count in summary.inea_only_cleared.items()}
+        else dict(summary.inea_only_cleared)
     )
 
 
-def _quantity_check(summary: SettlementSummary) -> CollectiveOrders:
-    return summary.orders
+def _quantity_check(summary: SettlementSummary) -> quantity_check.CheckResult:
+    return quantity_check.check(summary.orders, summary.quantity_rules)
 
 
 def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
     return SettlementInputs(
         start.path("collective_file"),
         dry_run=start.dry_run,
-        config_path=start.path("worker_config"),
+        workers=start.worker_list(),
         worker_template_path=start.path("worker_template"),
+        quantity_rules=start.quantity_rules,
     )
 
 
@@ -106,7 +106,7 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     ),
     core=settlement_process.PROCESS,
     default_metrics=SETTLEMENT_METRICS,
-    needs=("collective_file", "worker_config", "worker_template"),
+    needs=("collective_file", "workers", "worker_template"),
     inputs=_inputs,
     start=PeriodStart(
         creates="Rozliczenia pracowników",
@@ -121,7 +121,7 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
         "tata_settings",
         "files_in_onedrive",
         "templates",
-        "worker_config",
+        "worker_list",
         PeriodFolderCheck(collective_file_missing=settlement_messages.collective_file_missing),
         "period_files_in_excel",
         *TAIL,

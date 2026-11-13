@@ -2,8 +2,8 @@
 
 Diagnozę tata uruchamia przy Zatrzymaniu „do Maksa” albo przy powtórce
 (``stops``). Każde sprawdzenie używa istniejącej reguły procesu albo
-Konfiguracji (odczyt Rejestru zleceń, Sprawdzanie wzorców, wczytanie
-konfiguracji wykonawców, odszukanie Folderu okresu, plik blokady Excela) i
+Konfiguracji (odczyt Rejestru zleceń, Sprawdzanie wzorców, Lista
+Wykonawców z Ustawień Centrum, odszukanie Folderu okresu, plik blokady Excela) i
 gotowego Komunikatu z katalogu procesu; tylko przyczyny bez Komunikatu procesu
 mają własny katalog (``diagnosis_messages``). Wyjaśnienie to Komunikat
 pierwszego sprawdzenia, które nie przeszło, a gdy przeszły wszystkie:
@@ -54,9 +54,11 @@ from rozliczenia.period_folder import (
     locate_period_folder,
     period_place_label,
 )
-from rozliczenia.centrum.settings import Settings
+from rozliczenia.centrum.settings.files import Good, Read, Unreadable
+from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
+from rozliczenia.worker_list import WorkerList
 
 _LOG_ENTRIES: Final = 20
 
@@ -164,7 +166,7 @@ class _ProcessFiles:
 
     declaration: ProcessKind[Any, Any]
     period: SettlementPeriod
-    settings: Settings
+    settings: FolderSettings
     configuration: ConfigurationFiles
 
     @cached_property
@@ -203,7 +205,7 @@ class _ProcessFiles:
 
 
 def files_of_process(
-    process: common_contract.ProcessKey, period: str, *, settings: Settings, configuration: ConfigurationFiles
+    process: common_contract.ProcessKey, period: str, *, settings: FolderSettings, configuration: ConfigurationFiles
 ) -> list[Path]:
     """Pliki taty Uruchomienia procesu ``process`` dla tokenu okresu ``period``, ta sama lista co w sprawdzeniu OneDrive.
 
@@ -221,6 +223,7 @@ class _Computer(_ProcessFiles):
     surroundings: Surroundings
     template_check: TemplateCheck
     dad_files: DadFiles
+    workers: Read[WorkerList] | Unreadable
 
     @cached_property
     def log_entries(self) -> tuple[str, ...]:
@@ -358,12 +361,14 @@ def _template_check(template: Template) -> _CheckRun:
     return check
 
 
-@_check("Konfiguracja wykonawców")
-def _worker_config(computer: _Computer, label: str) -> list[CheckResult]:
-    """Konfiguracja wykonawców tym samym Komunikatem, którym zatrzymał się proces Uruchomienia."""
+@_check("Lista Wykonawców")
+def _worker_list(computer: _Computer, label: str) -> list[CheckResult]:
+    """Lista Wykonawców z Ustawień Centrum tym samym Komunikatem co w Konfiguracji."""
 
-    problem = workers_problem(computer.configuration.worker_config)
-    return [CheckResult.passed(label, "Wczytuje się.") if problem is None else CheckResult.failed(label, problem)]
+    workers = computer.workers
+    if isinstance(workers, Good):
+        return [CheckResult.passed(label, f"Wykonawców na liście: {len(workers.value.workers)}.")]
+    return [CheckResult.failed(label, workers_problem(workers))]
 
 
 def _period_folder(
@@ -461,8 +466,8 @@ def _check_of(step: CheckStep) -> _Check:
             return _report_key
         case "centrum_log":
             return _centrum_log
-        case "worker_config":
-            return _worker_config
+        case "worker_list":
+            return _worker_list
         case PeriodFolderCheck(collective_file_missing=missing):
             return _Check("Folder okresu", lambda computer, label: _period_folder(computer, label, missing))
 
@@ -471,21 +476,24 @@ def diagnose(
     process: common_contract.ProcessKey,
     period: str,
     *,
-    settings: Settings,
+    settings: FolderSettings,
     configuration: ConfigurationFiles,
     log: CentrumLog,
     surroundings: Surroundings,
     template_check: TemplateCheck,
     files: DadFiles,
+    workers: Read[WorkerList] | Unreadable,
 ) -> Diagnosis:
     """Wszystkie sprawdzenia procesu ``process``, tylko do odczytu.
 
     Pliki taty czyta uchwyt ``files``, którego pamięć poznaje komórki zakazanych kolumn przeczytanego Rejestru zleceń
-    (reguła danych, ADR 0025).
+    (reguła danych, ADR 0025). ``workers``: Lista Wykonawców z migawki Ustawień Centrum w chwili Diagnozy.
     """
 
     declaration = declaration_of(process)
-    computer = _Computer(declaration, parse_period_token(period), settings, configuration, log, surroundings, template_check, files)
+    computer = _Computer(
+        declaration, parse_period_token(period), settings, configuration, log, surroundings, template_check, files, workers
+    )
     checks: list[CheckResult] = []
     for step in declaration.checks:
         checks.extend(_check_of(step).results(computer))

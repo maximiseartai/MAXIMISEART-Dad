@@ -17,6 +17,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, QUANTITY_COLUMNS
 from atrapy.preparation import write_collective_template, write_internal_template
 from atrapy.settlement import write_template
@@ -33,10 +34,10 @@ INTERNAL_TEMPLATE = tool_files.INTERNAL_TEMPLATE.name
 # Mała odmiana syntetycznych Wzorców: kilka grup wspólnych formuł (co 64 wiersze), szybka w pytest.
 SMALL_DATA_ROWS = 150
 
-# Pliki repozytorium, których benchmark nie może zmienić: Ustawienia taty i historie metryk procesów.
+# Pliki repozytorium, których benchmark nie może zmienić: Lista Wykonawców i historie metryk procesów. Ustawień
+# Centrum benchmark nie dotyka, bo biegnie przez Skrypt dla maszyn, który ich nie pisze (rozliczenia.centrum.settings).
 PROTECTED_REPOSITORY_FILES = (
-    tool_files.SETTINGS,
-    tool_files.WORKER_CONFIG,
+    tool_files.CONFIG_DIR / WORKERS_FILE,
     tool_files.SETTLEMENT_METRICS,
     tool_files.PREPARATION_METRICS,
 )

@@ -20,7 +20,7 @@ rozliczeniowy taty, nie kalendarz, więc Folder okresu jest szukany, a nie
 wyliczany (``locate_period_folder``). Tata zakłada go sam; brak albo ten sam
 okres w dwóch miesiącach to ``PeriodFolderLookupError``. Folder okresów
 wskazany wewnątrz ``Rozliczenia {rok}`` (np. ``INEA`` jednego miesiąca) to ten
-sam układ liczony od folderu nad ``Rozliczenia {rok}``, więc brakujący Folder
+sam układ liczony od folderu nad ``Rozliczenia {rok}`` (``layout_root``), więc brakujący Folder
 okresu nie powstaje w złym miesiącu.
 
 Folder, którego nie da się odczytać (brak dostępu, OneDrive nie działa), to
@@ -370,6 +370,28 @@ def _layout(periods_directory: Path, entries: Iterable[os.DirEntry[str]]) -> tup
         ):
             return directory.parent, month_folders
     return periods_directory, []
+
+
+@dataclass(frozen=True)
+class LayoutRoot:
+    """Folder, od którego liczy się układ folderów okresów (``PeriodFolders.layout_root``); ``by_years``: układ
+    folderów taty z folderami ``INEA`` miesięcy w ``Rozliczenia {rok}``, inaczej układ płaski."""
+
+    directory: Path
+    by_years: bool
+
+
+def layout_root(path: Path) -> LayoutRoot:
+    """Folder, od którego Centrum liczy układ folderów okresów wskazanych w ``path``, tym samym rachunkiem co
+    ``scan_period_folders``: dla tygodnia, ``INEA`` albo miesiąca w ``Rozliczenia {rok}`` to folder nad nim
+    (``Załączniki``), w układzie płaskim sam ``path``.
+
+    Folder, którego nie ma, liczy się od folderów nad nim, więc tydzień przeniesiony przez tatę dalej prowadzi do
+    ``Załączniki``. Folder bez dostępu to ``PeriodFolderInaccessible``.
+    """
+
+    directory, month_folders = _layout(path, _listing(path) or ())
+    return LayoutRoot(directory, bool(month_folders))
 
 
 def month_folder_label(periods_directory: Path, month_periods_folder: Path) -> str:

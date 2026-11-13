@@ -122,7 +122,7 @@ from atrapy.efenix import ADDRESS, DAY, Order, write_collective_file
 from atrapy.interlocutor import Tata
 from tests.fixtures.okno_w_procesie import okno
 from tests.fixtures.przegladarka import chromium, page_of
-from atrapy.settlement import PERIOD, write_mapping, write_template
+from atrapy.settlement import PERIOD, worker_list, write_template
 from atrapy.workbooks import active_worksheet, rewrite_parts
 
 # Żądania, które niczego w efenix nie zmieniają: lista zleceń, szukanie, strona zlecenia i skrypty obu stron.
@@ -2597,10 +2597,6 @@ def _resumed_orders() -> list[Order]:
         # Zlecenie 1 ma dwa zapisy ilości, więc trzeci to pierwsza ilość zlecenia 2, a czwarty wylogowuje w jego połowie.
         pytest.param((SAVE_QUANTITY, 3), id="w-połowie-ilości-zlecenia"),
         pytest.param((LOAD_EMMETT, 1), id="przy-wycenie-emmetta"),
-        pytest.param((SET_DATE, 1), id="przy-dacie-wykonania"),
-        # Strona zlecenia 1 otwiera się trzy razy, więc piąte otwarcie to zlecenie 2 po dacie wykonania.
-        pytest.param((ORDER_PAGE, 4), id="przy-otwarciu-po-dacie"),
-        pytest.param((SEARCH, 1), id="przy-szukaniu"),
     ],
 )
 def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix_i_plik_zbiorczy_co_jeden_przebieg(
@@ -2663,16 +2659,25 @@ WHOLE_RUN = (
     ("GET", LIST_PAGE), ("GET", LIST_SCRIPT), ("POST", SEARCH), *_ONE_ORDER,
     ("GET", LIST_PAGE), ("GET", LIST_SCRIPT), ("POST", SEARCH), ("POST", SEARCH), *_ONE_ORDER,
 )
-# Przegląd w CI: zerwane połączenie od każdego żądania, a pozostałe tryby od pierwszego szukania, pierwszej propozycji
-# Emmetta i pierwszego zapisu ilości, odpowiedzi, których treść czyta samo okno. Pełny przegląd, każde żądanie w każdym trybie (116 przypadków, ok. 8 min
-# procesora), uruchamiasz przed zmianą okna efenix albo odcięcia Atrapy efenix:
+# Przegląd w CI: zerwane połączenie od każdego żądania pierwszego zlecenia i listy drugiego, a od żądań strony drugiego
+# zlecenia tylko od jego zapisów. Zerwane żądanie nie dochodzi do efenix, więc odcięcie przy zapisie zostawia drugie
+# zlecenie w stanie sprzed zapisu, a każdy stan, w którym może zastać je wznowienie, ma tak jeden przypadek. Zatrzymanie
+# przy innym żądaniu strony drugiego zlecenia to to samo działanie okna co przy tym żądaniu pierwszego, a miejsce,
+# ślad i zmianę w efenix z poprzedniego zlecenia sprawdza już lista drugiego. Pozostałe tryby od pierwszego szukania,
+# pierwszej propozycji Emmetta i pierwszego zapisu ilości, odpowiedzi, których treść czyta samo okno. Pełny przegląd,
+# każde żądanie w każdym trybie (116 przypadków, ok. 8 min procesora), uruchamiasz przed zmianą okna efenix albo
+# odcięcia Atrapy efenix:
 # ``PELNY_PRZEGLAD_EFENIX=1 .venv/bin/python -m pytest tests/test_wycena_efenix.py -n 8 -k od_kazdego_zadania``.
 _READ_BY_WINDOW = tuple(WHOLE_RUN.index(("POST", path)) for path in (SEARCH, FILL_EMMETT, SAVE_QUANTITY))
+_SECOND_ORDER_PAGE = WHOLE_RUN.index(("GET", ORDER_PAGE), WHOLE_RUN.index(("GET", LIST_PAGE), 1))
+_WRITES = {("POST", path) for path in (SET_DATE, LOAD_EMMETT, SAVE_QUANTITY)}
 SWEEP = [
     pytest.param(first, outage, id=f"{first:02d}-{path.replace('/', '-')}-{outage.name}")
-    for first, (_method, path) in enumerate(WHOLE_RUN)
+    for first, (method, path) in enumerate(WHOLE_RUN)
     for outage in Outage
-    if os.environ.get("PELNY_PRZEGLAD_EFENIX") == "1" or outage is Outage.CUT or first in _READ_BY_WINDOW
+    if os.environ.get("PELNY_PRZEGLAD_EFENIX") == "1"
+    or (outage is Outage.CUT and (first < _SECOND_ORDER_PAGE or (method, path) in _WRITES))
+    or first in _READ_BY_WINDOW
 ]
 
 
@@ -3685,7 +3690,7 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
     assert _marked(source) == [18, 19]
 
     summary = run_settlements(
-        SettlementInputs(source, write_mapping(tmp_path / tool_files.WORKER_CONFIG.name), template),
+        SettlementInputs(source, worker_list(), template),
         RunContext(),
     )
 

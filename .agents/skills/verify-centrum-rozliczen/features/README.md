@@ -39,8 +39,8 @@ in `<feature>.md` next to this file, driven by the skill's
 - No settings are set when a run starts.
 - Only for `wydajnosc`, the fixture is created with `--wariant rok-pracy`: `<root>/Rok pracy/Załączniki` holds 52 periods in Dad's layout and the metrics files hold a year of records (see `wydajnosc.md`).
 - `<root>/aktualizacja/` holds the run's tool for `aktualizacja`: a clone (`klon`) on the first synthetic commit, with Dad's files in its `config/`, and a bare local "origin" (`origin.git`) one commit ahead that stops tracking his changed konfiguracja wykonawców, plus a branch `biblioteki` one commit later that needs a library pip cannot install offline and a branch `nie-startuje` whose Centrum does not start. Centrum's own commit is the clone's `HEAD`, and Aktualizacja narzędzia moves only this clone. The clone's `run_centrum.py` serves the run's scripted Centrum, so the Centrum the restart guardian starts after an update is again this run's.
-- The run's `config/` holds a synthetic `worker_mapping.yaml` (three Wykonawcy)
-  and the three Wzorce, valid for the engine's Sprawdzanie; Konfiguracja reads
+- The run's `config/` holds a synthetic Lista Wykonawców `wykonawcy.yaml` (three Wykonawcy)
+  and the three Wzorce, valid for the engine's Sprawdzanie; the configuration read of Ustawienia reads
   these, never Dad's `config/`.
 
 ## Driving conventions
@@ -49,6 +49,8 @@ in `<feature>.md` next to this file, driven by the skill's
   and accessible name; the names are Polish UI text, so copy them exactly
   (`exact=True`: Playwright otherwise matches case-insensitive substrings, and
   `Wskaż folder okresów` differs from `Wskaż Folder okresów` only in case).
+- Open the window Ustawienia with `open_settings` (`drive/common.py`), point a file with `point_in_settings` and close the
+  window with `close_settings`: the window is a modal, so the menu and the page under it take no click while it is open.
 - Name a period in combobox `Okres` with `period_choice` (`drive/common.py`): its days from the token, its Status okresu, and the token, as in `wt 06.10 – pon 12.10 · ostatni pełny · 06_12_10_2026`.
 - Answer a native picker by writing the path to `<root>/picker/answer.txt`
   before the click. Leave the file absent to cancel.

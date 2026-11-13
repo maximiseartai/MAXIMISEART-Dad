@@ -3,6 +3,16 @@
 import * as z from 'zod';
 
 /**
+ * AddressesNotMoved
+ *
+ * Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego.
+ */
+export const zAddressesNotMoved = z.object({
+    reason: z.literal('adresy_nieprzeniesione'),
+    message: z.string()
+});
+
+/**
  * ApiTiming
  *
  * Jedno zapytanie API widoku: czas w przeglądarce i czas serwera z ``Server-Timing`` (``None``: brak nagłówka).
@@ -15,6 +25,12 @@ export const zApiTiming = z.object({
         'openRegister',
         'choosePeriodsDirectory',
         'changeTheme',
+        'changeInboxPassword',
+        'changeFolders',
+        'changeAutostart',
+        'getSettingsHistory',
+        'getQuantityRules',
+        'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
         'getQuantitiesToFill',
@@ -51,6 +67,32 @@ export const zApiTiming = z.object({
     ]),
     browser_ms: z.int().gte(0).lte(600000),
     server_ms: z.int().gte(0).lte(600000).nullable()
+});
+
+/**
+ * AutostartChange
+ *
+ * Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa.
+ */
+export const zAutostartChange = z.object({
+    enabled: z.boolean()
+});
+
+/**
+ * AutostartSetting
+ *
+ * Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma
+ * Autostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:
+ * zdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``.
+ */
+export const zAutostartSetting = z.object({
+    state: z.enum([
+        'on',
+        'off',
+        'unsupported',
+        'unreadable'
+    ]),
+    reason: z.string().nullable()
 });
 
 /**
@@ -217,6 +259,22 @@ export const zDescriptionColumn = z.object({
 });
 
 /**
+ * DeviceComponent
+ *
+ * Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna).
+ */
+export const zDeviceComponent = z.object({
+    id: z.string(),
+    name: z.string(),
+    other_spellings: z.array(z.string()),
+    group: z.enum([
+        'router',
+        'tv',
+        'extender'
+    ]).nullable()
+});
+
+/**
  * DiagnosisCheck
  *
  * Jedno sprawdzenie Diagnozy: co sprawdzono, czy przeszło i krótko dlaczego, bez pełnych ścieżek.
@@ -250,6 +308,16 @@ export const zFigure = z.object({
 export const zFillKind = z.enum(['without_rule', 'from_description']);
 
 /**
+ * FoldersChange
+ *
+ * Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie.
+ */
+export const zFoldersChange = z.object({
+    order_register: z.string().nullable(),
+    periods_directory: z.string().nullable()
+});
+
+/**
  * Health
  *
  * Tożsamość działającego Centrum.
@@ -266,6 +334,55 @@ export const zHealth = z.object({
 });
 
 /**
+ * HistoryChange
+ *
+ * Zmiana jednego klucza (``foldery.folder_okresow``): wartość przed i po, ``None``: nie ustawiono albo sekret.
+ */
+export const zHistoryChange = z.object({
+    key: z.string(),
+    before: z.string().nullable(),
+    after: z.string().nullable()
+});
+
+/**
+ * HistoryRelease
+ *
+ * Zmiana z Wydania: numer Wydania (``0.9.0``) i skrót commitu narzędzia (``None``: nie wiadomo) oraz id zmiany.
+ */
+export const zHistoryRelease = z.object({
+    version: z.string().nullable(),
+    commit: z.string().nullable(),
+    change: z.string()
+});
+
+/**
+ * HistoryRow
+ *
+ * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
+ * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
+ * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
+ */
+export const zHistoryRow = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    source: z.enum([
+        'tata',
+        'outside',
+        'release'
+    ]),
+    release: zHistoryRelease.nullable(),
+    undoes: z.string().nullable(),
+    file: z.string(),
+    section: z.string().nullable(),
+    changes: z.array(zHistoryChange),
+    secret: z.boolean(),
+    undoable: z.boolean(),
+    refused: z.boolean(),
+    removed: z.boolean(),
+    reason: z.string().nullable()
+});
+
+/**
  * InaccessiblePath
  *
  * Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa).
@@ -274,6 +391,25 @@ export const zInaccessiblePath = z.object({
     state: z.literal('inaccessible'),
     path: z.string(),
     name: z.string()
+});
+
+/**
+ * InboxPasswordChange
+ *
+ * Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis).
+ */
+export const zInboxPasswordChange = z.object({
+    password: z.string()
+});
+
+/**
+ * InboxSetting
+ *
+ * Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy.
+ */
+export const zInboxSetting = z.object({
+    address: z.string().nullable(),
+    password: z.boolean()
 });
 
 /**
@@ -335,6 +471,20 @@ export const zKindTableCell = z.object({
         z.int(),
         z.literal('nieliczbowa')
     ])
+});
+
+/**
+ * ListedWorker
+ *
+ * Wykonawca z Listy Wykonawców: loginy z kolumny WYKONAWCA, nazwa w Rozliczeniu pracownika, adresy Raportów
+ * wykonawcy, ``active``: nie jest Nieaktywnym Wykonawcą, ``reminders``: dostaje Przypomnienia o raporcie.
+ */
+export const zListedWorker = z.object({
+    logins: z.array(z.string()),
+    name: z.string(),
+    addresses: z.array(z.string()),
+    active: z.boolean(),
+    reminders: z.boolean()
 });
 
 /**
@@ -608,10 +758,12 @@ export const zPricingNotification = z.object({
 /**
  * Problem
  *
- * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku.
+ * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku; ``field``: pole formularza,
+ * którego dotyczy zła wartość (np. ``folder_okresow`` w Ustawieniach Centrum).
  */
 export const zProblem = z.object({
-    message: z.string()
+    message: z.string(),
+    field: z.string().nullish()
 });
 
 /**
@@ -1380,6 +1532,75 @@ export const zReportNotification = z.object({
 });
 
 /**
+ * SentenceColumn
+ *
+ * Kolumna Ilości usług w zdaniu: litera i nazwa pozycji cennika z wiersza 17 Wzorca pliku zbiorczego; ``None``:
+ * Wzorca nie da się przeczytać albo komórka jest pusta.
+ */
+export const zSentenceColumn = z.object({
+    kind: z.literal('column'),
+    letter: z.string(),
+    name: z.string().nullable()
+});
+
+/**
+ * SentenceText
+ */
+export const zSentenceText = z.object({
+    kind: z.literal('text'),
+    text: z.string()
+});
+
+/**
+ * QuantityRuleSentence
+ *
+ * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł.
+ */
+export const zQuantityRuleSentence = z.object({
+    id: z.string(),
+    scope: z.enum([
+        'known',
+        'unknown',
+        'every'
+    ]),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+});
+
+/**
+ * SettingProblem
+ *
+ * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``wykonawcy[2].adresy[0]``) albo ``None`` dla całego
+ * pliku i zdanie dla taty.
+ */
+export const zSettingProblem = z.object({
+    field: z.string().nullable(),
+    message: z.string()
+});
+
+/**
+ * QuantityRulesSettings
+ *
+ * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
+ * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to.
+ */
+export const zQuantityRulesSettings = z.object({
+    rules: z.array(zQuantityRuleSentence),
+    devices: z.array(zDeviceComponent),
+    rules_problem: zSettingProblem.nullable(),
+    devices_problem: zSettingProblem.nullable()
+});
+
+/**
+ * SettingsHistory
+ *
+ * Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać.
+ */
+export const zSettingsHistory = z.object({
+    rows: z.array(zHistoryRow),
+    skipped: z.int()
+});
+
+/**
  * SolvedCase
  *
  * Sprawa wysłana z tego komputera, którą Wydanie rozwiązuje: Uwaga taty nazwana tytułem, Zgłoszenie jego
@@ -1567,42 +1788,23 @@ export const zReportsView = z.object({
 });
 
 /**
+ * UnmatchedLogin
+ *
+ * Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców.
+ */
+export const zUnmatchedLogin = z.object({
+    reason: z.literal('login_bez_wykonawcy'),
+    login: z.string(),
+    addresses: z.array(z.string())
+});
+
+/**
  * UnreadablePath
  *
- * Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
+ * Pliku Ustawień Centrum nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
  */
 export const zUnreadablePath = z.object({
     state: z.literal('unreadable')
-});
-
-/**
- * Settings
- */
-export const zSettings = z.object({
-    order_register: z.discriminatedUnion('state', [
-        zNotSetPath,
-        zMissingPath,
-        zInaccessiblePath,
-        zUnreadablePath,
-        zReadyPath
-    ]),
-    periods_directory: z.discriminatedUnion('state', [
-        zNotSetPath,
-        zMissingPath,
-        zInaccessiblePath,
-        zUnreadablePath,
-        zReadyPath
-    ]),
-    theme: z.enum(['dark', 'light'])
-});
-
-/**
- * Choice
- *
- * Ustawienia po natywnym oknie wyboru: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
- */
-export const zChoice = z.object({
-    settings: zSettings
 });
 
 /**
@@ -1637,7 +1839,7 @@ export const zViewTiming = z.object({
         'okresy',
         'uruchomienia',
         'metryki',
-        'konfiguracja',
+        'ustawienia',
         'powiadomienia',
         'uzupelnienie',
         'raporty'
@@ -1667,6 +1869,82 @@ export const zWithoutQuantityRead = z.object({
  */
 export const zWithoutQuantityUnread = z.object({
     state: z.literal('unread')
+});
+
+/**
+ * WorkerListSetting
+ *
+ * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
+ * ``unreadable`` (system nie daje teraz czytać pliku, lista pusta).
+ */
+export const zWorkerListSetting = z.object({
+    state: z.enum([
+        'good',
+        'bad',
+        'unreadable'
+    ]),
+    workers: z.array(zListedWorker),
+    unresolved: z.array(z.union([zUnmatchedLogin, zAddressesNotMoved])),
+    problem: zSettingProblem.nullable()
+});
+
+/**
+ * Settings
+ *
+ * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
+ * jest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum
+ * widzi Foldery okresu wszystkich lat (``Załączniki``).
+ */
+export const zSettings = z.object({
+    order_register: z.discriminatedUnion('state', [
+        zNotSetPath,
+        zMissingPath,
+        zInaccessiblePath,
+        zUnreadablePath,
+        zReadyPath
+    ]),
+    periods_directory: z.discriminatedUnion('state', [
+        zNotSetPath,
+        zMissingPath,
+        zInaccessiblePath,
+        zUnreadablePath,
+        zReadyPath
+    ]),
+    periods_all_years: z.boolean(),
+    theme: z.enum(['dark', 'light']),
+    folders_problem: zSettingProblem.nullable(),
+    workers: zWorkerListSetting,
+    inbox: zInboxSetting,
+    inbox_problem: zSettingProblem.nullable(),
+    autostart: zAutostartSetting
+});
+
+/**
+ * Choice
+ *
+ * Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
+ * anulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);
+ * ``None``: bez zmiany i bez wiersza.
+ */
+export const zChoice = z.object({
+    settings: zSettings,
+    change: z.string().nullish()
+});
+
+/**
+ * InboxPasswordSaved
+ *
+ * Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”.
+ */
+export const zInboxPasswordSaved = z.object({
+    settings: zSettings,
+    change: z.string().nullish(),
+    login: z.enum([
+        'accepted',
+        'rejected',
+        'no_network'
+    ])
 });
 
 /**
@@ -1926,7 +2204,7 @@ export const zWorkerSettlementRequest = z.object({
 /**
  * WorkersReady
  *
- * Nazwy Wykonawców w kolejności z konfiguracji wykonawców.
+ * Nazwy Wykonawców w kolejności z Listy Wykonawców.
  */
 export const zWorkersReady = z.object({
     state: z.literal('ready'),
@@ -2605,10 +2883,50 @@ export const zReportRunResponse = z.discriminatedUnion('state', [
  */
 export const zGetSettingsResponse = zSettings;
 
+export const zChangeAutostartBody = zAutostartChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeAutostartResponse = zChoice;
+
+export const zChangeFoldersBody = zFoldersChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeFoldersResponse = zChoice;
+
+/**
+ * Successful Response
+ */
+export const zGetSettingsHistoryResponse = zSettingsHistory;
+
+export const zUndoSettingsChangePath = z.object({
+    change_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zUndoSettingsChangeResponse = zChoice;
+
+export const zChangeInboxPasswordBody = zInboxPasswordChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeInboxPasswordResponse = zInboxPasswordSaved;
+
 /**
  * Successful Response
  */
 export const zChoosePeriodsDirectoryResponse = zChoice;
+
+/**
+ * Successful Response
+ */
+export const zGetQuantityRulesResponse = zQuantityRulesSettings;
 
 /**
  * Successful Response
@@ -2625,7 +2943,7 @@ export const zChangeThemeBody = zThemeChange;
 /**
  * Successful Response
  */
-export const zChangeThemeResponse = zSettings;
+export const zChangeThemeResponse = zChoice;
 
 /**
  * Successful Response

@@ -13,7 +13,9 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    check workflow ``CI`` bez identyfikatora runu w ``detailsUrl`` to odmowa;
 3. najnowszy werdykt dla HEAD PR to ``PASS`` w postaci, którą publikuje ``--werdykt`` (niżej);
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
-   wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje;
+   wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje; w wątku z szablonem
+   werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
+   ``NOWY`` z werdyktów stoi na liście korzeni na HEAD (bramka korzenia, ``bramka_korzenia``, niżej);
 5. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
    scalonym drzewie (``werdykt_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
 6. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
@@ -53,10 +55,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import bramka_korzenia
 import github
 import kontekst_przegladu
 import naprawia
 import potomne
+import rejestr_korzeni
 from repo import MAIN, REMOTE, ROOT
 import repo
 import stan_pr
@@ -107,7 +111,9 @@ def _problems(pull: Pull) -> list[str]:
         problems.append("PR jest szkicem")
     if pull.from_fork:
         problems.append("PR z forka")
-    return [*problems, *filter(None, [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, szablon_werdyktu.deployed(pull.base))])]
+    template = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
+    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template)]
+    return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER))]
 
 
 def _remote_base(base: str) -> str:
@@ -171,11 +177,13 @@ def _publish_verdict(number: int, path: Path) -> int:
     pull = stan_pr.pull(number)
     text = path.read_text(encoding="utf-8")
     werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
-    if problems := werdykt_pr.publish_problems(text, pull, szablon_werdyktu.deployed(pull.base)):
+    deployed = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
+    if problems := werdykt_pr.publish_problems(text, pull, deployed):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
     url = github.gh("pr", "comment", str(number), "--body-file", str(path)).strip()
-    print(f"WERDYKT OK | #{pull.number} {pull.head[:7]} | {werdykt_pr.text_lines(text)[0].split()[1]} | {url}")
+    weeds = rejestr_korzeni.after_verdict(pull.number, text, pull.base, deployed, pull.repository)
+    print(f"WERDYKT OK | #{pull.number} {pull.head[:7]} | {werdykt_pr.text_lines(text)[0].split()[1]} | {url}{weeds}")
     return 0
 
 
@@ -203,7 +211,7 @@ def _merge(number: int, *, merge: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
+    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, bramka_korzenia.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
         description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )

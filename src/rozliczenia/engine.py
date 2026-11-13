@@ -15,6 +15,8 @@ from .dad_files import DadFiles
 from .inea_only_quantities import Cleared
 from .message import Message, StopError
 from .order_facts import CollectiveOrders
+from .quantity_engine import QuantityRules
+from .quantity_rules_file import DEFAULT_QUANTITY_RULES
 from .phase_runner import PhaseRunner
 from .workbook_files import DataRow, WorkbookError
 from .workbook_save import WorkbookSaveError
@@ -22,19 +24,22 @@ from .text import normalize_text
 from .write_routes import Route, RouteCounts, TemplateKind
 from .period_folder import collective_period_token
 from .run_context import RunContext
+from .worker_list import WorkerList
 
 
 @dataclass(frozen=True)
 class SettlementInputs:
     """Wejście procesu Przebiegu rozliczeń, gotowe przed startem silnika.
 
-    Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da).
+    Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). ``quantity_rules``: Reguły ilości tego
+    Uruchomienia, z których Przebieg liczy Ilości tylko dla INEA, a Kontrola ilości po nim Ilości usług.
     """
 
     source: Path
-    config_path: Path
+    workers: WorkerList
     worker_template_path: Path
     dry_run: bool = False
+    quantity_rules: QuantityRules = DEFAULT_QUANTITY_RULES
 
     @property
     def period(self) -> str:
@@ -83,6 +88,8 @@ class SettlementSummary:
     """Dozwolona treść każdego Wiersza danych, który Przebieg wczytał: dla Kontroli ilości w Centrum."""
     inea_only_cleared: Cleared = field(default_factory=lambda: MappingProxyType({}))
     """Liczba wyczyszczonych komórek Ilości tylko dla INEA w każdej kolumnie: tylko dla Logów Uruchomienia."""
+    quantity_rules: QuantityRules = field(default=DEFAULT_QUANTITY_RULES, repr=False)
+    """Reguły ilości, z których Przebieg liczył: Kontrola ilości po nim liczy tymi samymi."""
     results: list[WorkerResult] = field(default_factory=list)
     warnings: list[Message] = field(default_factory=list)
     """Ostrzeżenia Podglądu bez zapisu z katalogu Przebiegu rozliczeń; Przebieg z zapisem zatrzymuje się na nich."""
@@ -122,12 +129,12 @@ class SettlementSummary:
 
 
 def _read_source_rows(
-    source_path: Path, files: DadFiles
+    source_path: Path, files: DadFiles, rules: QuantityRules
 ) -> tuple[dict[str, list[DataRow]], list[int], CollectiveOrders, Cleared]:
     """Wiersze danych bez Wykonawcy nie trafiają do grup; zostają ich numery. W grupach nie ma Ilości tylko dla INEA."""
 
     try:
-        read = collective_file.read_data_rows(source_path, files)
+        read = collective_file.read_data_rows(source_path, files, rules)
     except WorkbookError as error:
         raise StopError(settlement_messages.collective_file_unusable(error)) from error
     rows_by_worker: defaultdict[str, list[DataRow]] = defaultdict(list)
@@ -140,11 +147,11 @@ def _read_source_rows(
 class _Plan:
     rows_by_target: dict[str, list[DataRow]]
     unmapped_workers: tuple[str, ...]
-    """Identyfikatory WYKONAWCA spoza Konfiguracji wykonawców, każdy raz, w pisowni i kolejności Pliku zbiorczego."""
+    """Identyfikatory WYKONAWCA spoza Listy Wykonawców, każdy raz, w pisowni i kolejności Pliku zbiorczego."""
     rows_without_worker: tuple[int, ...]
 
 
-def _plan_rows(mapping: dict[str, str], rows_by_worker: dict[str, list[DataRow]], without_worker: list[int]) -> _Plan:
+def _plan_rows(mapping: Mapping[str, str], rows_by_worker: dict[str, list[DataRow]], without_worker: list[int]) -> _Plan:
     rows_by_target: defaultdict[str, list[DataRow]] = defaultdict(list)
     unmapped: list[str] = []
     for source_worker, rows in rows_by_worker.items():
@@ -173,16 +180,15 @@ def run_settlements(inputs: SettlementInputs, context: RunContext) -> Settlement
     phases = PhaseRunner(context.observer, clock=context.clock.now)
     files, dry_run = context.files, inputs.dry_run
     source_path = inputs.source.expanduser().resolve()
-    config_path = inputs.config_path.expanduser().resolve()
     worker_template_path = inputs.worker_template_path.expanduser().resolve()
 
     folder, mapping, worker_template = phases.check(
-        lambda: input_checks.check_settlement(source_path, config_path, worker_template_path, context.template_check)
+        lambda: input_checks.check_settlement(source_path, inputs.workers, worker_template_path, context.template_check)
     )
     target_directory = folder.worker_settlements
-    worker_names = list(mapping.values())
+    worker_names = list(dict.fromkeys(mapping.values()))
     rows_by_worker, without_worker, orders, inea_only = phases.read(
-        lambda: _read_source_rows(source_path, files),
+        lambda: _read_source_rows(source_path, files, inputs.quantity_rules),
         issue_count=lambda read_rows: len(read_rows[1]),
     )
 
@@ -196,7 +202,13 @@ def run_settlements(inputs: SettlementInputs, context: RunContext) -> Settlement
         issue_count=lambda planned: len(planned[1]),
     )
     summary = SettlementSummary(
-        folder.period.token, source_path, target_directory, orders=orders, inea_only_cleared=inea_only, warnings=warnings
+        folder.period.token,
+        source_path,
+        target_directory,
+        orders=orders,
+        inea_only_cleared=inea_only,
+        quantity_rules=inputs.quantity_rules,
+        warnings=warnings,
     )
 
     def settle(directory: Path, worker_name: str) -> WorkerResult:

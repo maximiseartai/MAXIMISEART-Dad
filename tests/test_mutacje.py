@@ -118,7 +118,7 @@ def test_polecenie_czerwone_bez_mutacji_nie_daje_werdyktu() -> None:
 
 @pytest.mark.parametrize(
     ("end", "limit_s", "last"),
-    [("sys.exit(1)", "600", "CLEANUP OK"), ("threading.Event().wait()", "5", "brak wyniku po 5 s")],
+    [("sys.exit(1)", "600", "CLEANUP OK"), ("threading.Event().wait()", "2", "brak wyniku po 2 s")],
     ids=["pada", "po-limicie"],
 )
 def test_czerwona_podstawa_pokazuje_pod_swoja_linia_koniec_stdout_i_stderr(end: str, limit_s: str, last: str) -> None:
@@ -141,7 +141,8 @@ def test_czerwona_podstawa_pokazuje_pod_swoja_linia_koniec_stdout_i_stderr(end: 
             stderr=stderr,
             text=True,
             encoding="utf-8",
-            timeout=120,
+            # Krócej niż pytest-timeout (120 s): narzędzie, które nie kończy podstawy po --limit-s, pada tu, a nie wisi.
+            timeout=60,
             check=False,
         )
 
@@ -299,11 +300,11 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
     (repo / script).parent.mkdir(parents=True)
     (repo / script).write_text(
         "import sys\nfrom pathlib import Path\nsys.path.insert(0, 'tools/lib')\nfrom silnik_mutacji import Edit, Mutation, check_all\n\n"
-        "slow = ('-c', 'import time, rozliczenia\\nif rozliczenia.WARTOSC == 1:\\n    time.sleep(3.5)\\nraise SystemExit(rozliczenia.WARTOSC)')\n"
+        "slow = ('-c', 'import time, rozliczenia\\nif rozliczenia.WARTOSC == 1:\\n    time.sleep(2)\\nraise SystemExit(rozliczenia.WARTOSC)')\n"
         "MUTATIONS = (\n"
         f"    Mutation('wolna', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), slow),\n"
         f"    Mutation('szybka', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 2'),), slow),\n"
-        ")\nraise SystemExit(check_all(MUTATIONS, limit_s=6))\n",
+        ")\nraise SystemExit(check_all(MUTATIONS, limit_s=4))\n",
         encoding="utf-8",
     )
 
@@ -320,16 +321,21 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
     assert len(times) == 3, shown
     slow = re.fullmatch(r"CZAS: wolna → ([0-9]+) s", times[0])
     fast = re.fullmatch(r"CZAS: szybka → ([0-9]+) s", times[1])
-    warned = re.fullmatch(rf"CZAS BLISKO LIMITU: {re.escape(script)} \(MUTACJE_CZESC=1/1\): wolna → ([0-9]+) s z limitu --limit-s 6 s .*", times[2])
+    warned = re.fullmatch(rf"CZAS BLISKO LIMITU: {re.escape(script)} \(MUTACJE_CZESC=1/1\): wolna → ([0-9]+) s z limitu --limit-s 4 s .*", times[2])
     assert slow and fast and warned, shown
     assert "to jeszcze nie porażka, ale przenieś mutację do mniejszego zakresu sprawdzenia albo przyspiesz sprawdzenie" in times[2], shown
-    # Wolna śpi 3,5 s więcej niż szybka, a żadna nie biegnie dłużej niż cały skrypt na zegarze testu.
-    assert (3 <= int(slow[1]) <= round(took), int(fast[1]) < int(slow[1]), warned[1] == slow[1]) == (True, True, True), shown
+    # Wolna śpi połowę limitu, więc jej polecenie zawsze trwa ponad połowę, a szybka nie śpi; żadna nie biegnie dłużej
+    # niż cały skrypt na zegarze testu.
+    assert (2 <= int(slow[1]) <= round(took), int(fast[1]) < int(slow[1]), warned[1] == slow[1]) == (True, True, True), shown
     # Z linii ostrzeżenia noc odtwarza skrypt, część, mutację, czas i limit, które zgłasza w issue PR-u (#935).
-    assert silnik_mutacji.near_limits(answered) == [silnik_mutacji.NearLimit(script, "1/1", "wolna", int(slow[1]), 6)], shown
+    assert silnik_mutacji.near_limits(answered) == [silnik_mutacji.NearLimit(script, "1/1", "wolna", int(slow[1]), 4)], shown
 
 
 def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polecen_swoich_mutacji(tmp_path: Path) -> None:
+    """Podstawa części biegnie po kolei dla każdego polecenia jej mutacji, więc część bierze mutacje jednego polecenia
+    razem: tu sześć mutacji trzech poleceń w dwóch częściach uruchamia cztery podstawy, a nie sześć, jak przy podziale
+    co drugą po nazwie (m1, m3, m5 i m2, m4, m6 to w obu częściach polecenia A, B i C)."""
+
     repo = _small_repository(tmp_path)
     log = tmp_path / "polecenia"
 
@@ -338,10 +344,10 @@ def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polec
         writes = f"open(os.environ['DZIENNIK'], 'a').write('{name} ' + str(rozliczenia.WARTOSC) + ' ' + {seen} + chr(10))"
         return ["-c", f"import os, rozliczenia\n{writes}\nraise SystemExit(rozliczenia.WARTOSC)"]
 
-    table = [{"nazwa": f"m{number}", "zmiany": [[PACKAGE, "WARTOSC = 0", "WARTOSC = 1"]], "polecenie": command("AB"[number % 2])} for number in range(1, 6)]
+    table = [{"nazwa": f"m{number}", "zmiany": [[PACKAGE, "WARTOSC = 0", "WARTOSC = 1"]], "polecenie": command("CAB"[number % 3])} for number in range(1, 7)]
     seen = {}
     # Każda część to osobne zadanie CI z tą samą tabelą, a kolejność tabeli nie zmienia podziału.
-    for part, order in (("1/3", table), ("2/3", table[::-1]), ("3/3", table[2:] + table[:2]), ("6/6", table)):
+    for part, order in (("1/2", table), ("2/2", table[::-1]), ("2/3", table[2:] + table[:2]), ("1/7", table)):
         (tmp_path / "mutacje.json").write_text(json.dumps(order), encoding="utf-8")
         log.write_text("", encoding="utf-8")
         answered = _in_repository(repo, "--plik", str(tmp_path / "mutacje.json"), "--", "-c", "", env=WITHOUT_XDIST_WORKERS | {"MUTACJE_CZESC": part, "DZIENNIK": str(log)})
@@ -353,10 +359,10 @@ def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polec
     broken = _in_repository(repo, "--plik", str(tmp_path / "mutacje.json"), "--", "-c", "", env=WITHOUT_XDIST_WORKERS | {"MUTACJE_CZESC": "0/3", "DZIENNIK": str(log)})
 
     assert seen == {
-        "1/3": (0, "MUTACJE OK", ["m1", "m4"], ["A", "B"], {"-"}),
-        "2/3": (0, "MUTACJE OK", ["m2", "m5"], ["A", "B"], {"-"}),
-        "3/3": (0, "MUTACJE OK", ["m3"], ["B"], {"-"}),
-        "6/6": (0, "MUTACJE OK", [], [], set()),
+        "1/2": (0, "MUTACJE OK", ["m1", "m2", "m4"], ["A", "B"], {"-"}),
+        "2/2": (0, "MUTACJE OK", ["m3", "m5", "m6"], ["B", "C"], {"-"}),
+        "2/3": (0, "MUTACJE OK", ["m2", "m5"], ["B"], {"-"}),
+        "1/7": (0, "MUTACJE OK", [], [], set()),
     }
     assert broken.returncode == 1 and "MUTACJE_CZESC to K/N z 1 <= K <= N, nie '0/3'" in broken.stderr, broken.stderr
 
@@ -460,7 +466,7 @@ def test_polecenie_bez_wyniku_w_limicie_czasu_narzedzia_daje_przekroczony_czas(t
     repo, mutation, _, _ = _hanging_repository(tmp_path)
 
     answered = subprocess.run(
-        [sys.executable, str(repo / "tools" / "mutacje.py"), "--limit-s", "5", *mutation],
+        [sys.executable, str(repo / "tools" / "mutacje.py"), "--limit-s", "2", *mutation],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -468,8 +474,11 @@ def test_polecenie_bez_wyniku_w_limicie_czasu_narzedzia_daje_przekroczony_czas(t
         check=False,
     )
 
-    expected = "PRZEKROCZONY CZAS: mutacja → brak wyniku po 5 s (limit --limit-s narzędzia, nie pytest-timeout)"
+    expected = "PRZEKROCZONY CZAS: mutacja → brak wyniku po 2 s (limit --limit-s narzędzia, nie pytest-timeout)"
     assert (answered.returncode, answered.stdout.splitlines()[0]) == (1, expected)
+    # Polecenie kończy się z limitem, a nie później: tekst werdyktu podaje limit z argumentu, nie czas, który minął.
+    spent = re.search(r"^CZAS: mutacja → ([0-9]+) s$", answered.stderr, re.MULTILINE)
+    assert spent and 2 <= int(spent[1]) < 4, answered.stderr
 
 
 @pytest.mark.parametrize(
@@ -628,6 +637,193 @@ def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dot
     assert re.fullmatch(rf"NIEWYKRYTA: mutacja → 1 passed[^(]* in [0-9.]+s {note}", answered.stdout.splitlines()[0]), answered.stdout + answered.stderr
 
 
+LOOSE_OLD_TEST = "import rozliczenia\n\n\ndef test_stary():\n    assert rozliczenia.WARTOSC < 5\n"
+ASSERTING_NEW_TEST = "import rozliczenia\n\n\ndef test_nowy():\n    assert {condition}\n"
+STRICT_NEW_TEST = ASSERTING_NEW_TEST.format(condition="rozliczenia.WARTOSC == {value}")
+# Drugi test pada po mutacji tylko za pierwszym w tym samym procesie.
+NEIGHBOURS_TEST = (
+    "import rozliczenia\n\n\ndef test_sasiad():\n    rozliczenia.SLAD = rozliczenia.WARTOSC\n\n\n"
+    "def test_po_sasiedzie():\n    assert getattr(rozliczenia, 'SLAD', 0) < 5\n"
+)
+OTHER_TEST = "\n\ndef test_inny():\n    assert True\n"
+CAUGHT_BY_OLD = (
+    "JUŻ ŁAPIE tests/test_stary.py::test_stary: ten test sprzed zmiany sam łapie mutację „{name}” (pada z nią, bez niej "
+    "przechodzi), więc sprawdź, czy nowy test dodaje coś ponad niego; asercję możesz dopisać tam"
+)
+TWO_MUTATIONS = [{"nazwa": name, "zmiany": [[PACKAGE, "WARTOSC = 0", f"WARTOSC = {value}"]]} for name, value in (("m1-ujemna", -1), ("m2-duza", 7))]
+
+
+def _branch_with_new_test(path: Path, old_at_base: str, old_in_branch: str, new: str, value: int = 0, files: dict[str, str] | None = None) -> tuple[Path, str]:
+    """Repozytorium, którego gałąź dopisuje ``new`` jako ``tests/test_n.py`` nad ``glowna`` z ``tests/test_stary.py``,
+    i skrót merge-base; świeże czasy CI bez pomiarów, chyba że test dopisze własne."""
+
+    repo = repository(path / "repo", {PACKAGE: "WARTOSC = 0\n", ".gitignore": "__pycache__/\n", "tests/test_stary.py": old_at_base, **(files or {})})
+    forked = commit(repo, "baza")
+    git(repo, "branch", "glowna")
+    (repo / PACKAGE).write_text(f"WARTOSC = {value}\n", encoding="utf-8")
+    (repo / "tests" / "test_stary.py").write_text(old_in_branch, encoding="utf-8")
+    (repo / "tests" / "test_n.py").write_text(new, encoding="utf-8")
+    commit(repo, "nowy test")
+    # Bez pomiaru każdy plik waży 0, więc szybko.plan bierze każdy, a narzędzie nie pobiera czasów z GitHuba.
+    (repo / ".git" / "czasy-ci").mkdir(exist_ok=True)
+    (repo / ".git" / "czasy-ci" / "pobrane").touch()
+    return repo, forked[:8]
+
+
+def _two_mutations(repo: Path, tmp_path: Path, selected: str, *arguments: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Narzędzie w ``repo`` z „m1-ujemna” (0 → -1) i „m2-duza” (0 → 7) na poleceniu pytest z ``selected``."""
+
+    plan = tmp_path / "mutacje.json"
+    plan.write_text(json.dumps(TWO_MUTATIONS), encoding="utf-8")
+    return _in_repository(repo, "--baza", "glowna", *arguments, "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected, env=env or ONE_WORKER)
+
+
+def _already_lines(answered: subprocess.CompletedProcess[str], mutations: list[str]) -> list[str]:
+    """Linie ``JUŻ ŁAPIE`` ze stderr przebiegu, w którym każda z ``mutations`` jest WYKRYTA, a stdout i kod są jak bez
+    sprawdzenia; żadna linia nie radzi usunąć testu, bo tego, czy nowy test dodaje coś ponad stary, narzędzie nie wie."""
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == "MUTACJE OK", answered.stdout
+    assert [line.split(" → ")[0] for line in answered.stdout.splitlines()[:-1]] == [f"WYKRYTA: {name}" for name in mutations], answered.stdout
+    assert "usuń" not in answered.stderr.lower(), answered.stderr
+    return [found for found in answered.stderr.splitlines() if found.startswith("JUŻ ŁAPIE")]
+
+
+@pytest.mark.parametrize(
+    ("value", "old_at_base", "old_in_branch", "mutated", "selected", "lines"),  # lines: wzorce re z {base}, skrótem merge-base
+    [
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_n.py", [re.escape(CAUGHT_BY_OLD.format(name="mutacja"))]),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 1, "tests/test_n.py", []),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST.replace("< 5", "< 6"), 7, "tests/test_n.py", []),
+        (6, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_n.py", [r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: tests/test_stary.py::test_stary sam daje z mutacją WYKRYTA \(1 failed in [0-9.]+s\), bez niej WYKRYTA \(1 failed in [0-9.]+s\), więc niczego nie dowodzi"]),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_stary.py", ["JUŻ ŁAPIE NIESPRAWDZONE: mutacja: polecenie nie wybiera testu dodanego ani zmienionego od merge-base {base}"]),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST + OTHER_TEST, 7, "tests/test_stary.py::test_stary", ["JUŻ ŁAPIE NIESPRAWDZONE: mutacja: polecenie nie wybiera testu dodanego ani zmienionego od merge-base {base}"]),
+        (0, NEIGHBOURS_TEST, NEIGHBOURS_TEST, 7, "tests/test_n.py", [r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: tests/test_stary.py::test_po_sasiedzie sam daje z mutacją NIEWYKRYTA \(1 passed in [0-9.]+s\), bez niej NIEWYKRYTA \(1 passed in [0-9.]+s\), więc niczego nie dowodzi"]),
+    ],
+    ids=["stary-test-lapie", "lapie-tylko-nowy", "stary-test-zmieniony-w-galezi", "stary-test-czerwony-bez-mutacji", "polecenie-bez-nowego-testu", "polecenie-ze-starym-testem-zmienionego-pliku", "stary-test-pada-tylko-za-sasiadem"],
+)
+def test_wykryta_mutacja_ktora_lapie_test_sprzed_zmiany_dostaje_juz_lapie_a_werdykt_i_kod_zostaja(
+    tmp_path: Path, value: int, old_at_base: str, old_in_branch: str, mutated: int, selected: str, lines: list[str]
+) -> None:
+    """Gałąź dopisuje ścisły test, a test sprzed niej łapie mutację albo nie (T2: repro recenzenta na drugiej warstwie).
+
+    Linia na stderr nie zmienia stdout ani kodu wyjścia. Test zmieniony w gałęzi niczego nie dowodzi, tak samo test,
+    który pada też bez mutacji, albo po mutacji tylko za sąsiadem. Test sprzed zmiany w pliku, do którego gałąź dopisała
+    inny test, nie jest nowym testem polecenia.
+    """
+
+    repo, base = _branch_with_new_test(tmp_path, old_at_base, old_in_branch, STRICT_NEW_TEST.format(value=value), value)
+    command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected)
+
+    answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, f"WARTOSC = {value}", f"WARTOSC = {mutated}", "--", *command, env=ONE_WORKER)
+
+    found = _already_lines(answered, ["mutacja"])
+    expected = [line.format(base=base) for line in lines]
+    assert len(found) == len(expected) and all(map(re.fullmatch, expected, found)), answered.stderr
+
+
+# Kolekcja (``--collect-only``) dłuższa niż limit sprawdzenia w teście, a przebiegi testów bez czekania.
+SLOW_COLLECTION = {"tests/conftest.py": "import sys, time\n\nif '--collect-only' in sys.argv:\n    time.sleep(20)\n"}
+SETS_TRACE = {"tests/test_a.py": "import rozliczenia\n\n\ndef test_ustawia():\n    rozliczenia.SLAD = rozliczenia.WARTOSC\n"}
+
+
+@pytest.mark.parametrize(
+    ("new", "arguments", "files", "lines"),
+    [
+        (ASSERTING_NEW_TEST.format(condition="rozliczenia.WARTOSC >= 0"), (), {}, [CAUGHT_BY_OLD.format(name="m2-duza")]),
+        (ASSERTING_NEW_TEST.format(condition="getattr(rozliczenia, 'SLAD', 0) >= 0 and rozliczenia.WARTOSC < 5"), (), SETS_TRACE, [CAUGHT_BY_OLD.format(name="m2-duza")]),
+        (ASSERTING_NEW_TEST.format(condition="0 <= rozliczenia.WARTOSC < 5"), ("--juz-lapie-s", "0"), {}, [f"JUŻ ŁAPIE NIESPRAWDZONE: {name}: minął limit sprawdzenia 0 s" for name in ("m1-ujemna", "m2-duza")]),
+        (
+            ASSERTING_NEW_TEST.format(condition="0 <= rozliczenia.WARTOSC < 5"),
+            ("--juz-lapie-s", "5"),
+            SLOW_COLLECTION,
+            ["JUŻ ŁAPIE NIESPRAWDZONE: m1-ujemna: kolekcja testów polecenia nie skończyła się w limicie", "JUŻ ŁAPIE NIESPRAWDZONE: m2-duza: minął limit sprawdzenia 5 s"],
+        ),
+    ],
+    ids=["nowy-test-nie-lapie-mutacji-starego", "nowy-test-lapie-tylko-za-sasiadem", "limit-calego-sprawdzenia", "kolekcja-w-limicie-sprawdzenia"],
+)
+def test_juz_lapie_mowi_tylko_o_mutacji_ktora_sam_lapie_test_sprzed_zmiany(
+    tmp_path: Path, new: str, arguments: tuple[str, ...], files: dict[str, str], lines: list[str]
+) -> None:
+    """Polecenie z całym katalogiem testów i dwie mutacje: „m1-ujemna” w poleceniu łapie tylko nowy test (sam albo za
+    testem sprzed zmiany, który ustawia mu stan), a „m2-duza” także test sprzed zmiany `WARTOSC < 5` (przegląd #1493 r1
+    i r2).
+
+    Linię faktu dostaje tylko „m2-duza”, a żadna linia nie radzi usunąć nowego testu, który jako jedyny łapie
+    „m1-ujemna”. Limit obejmuje całe sprawdzenie, z kolekcją.
+    """
+
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, new, files=files)
+
+    answered = _two_mutations(repo, tmp_path, "tests", *arguments)
+
+    assert _already_lines(answered, ["m1-ujemna", "m2-duza"]) == lines, answered.stderr
+
+
+def test_juz_lapie_milczy_gdy_mutacja_nie_padla_w_poleceniu(tmp_path: Path) -> None:
+    """„m2-duza” przeżywa nowy test, choć łapie ją test sprzed zmiany: linia o mutacji, która w poleceniu nie padła, nie
+    ma czego dotyczyć, więc przy kodzie 1 sprawdzenie nie biegnie, a werdykty zostają."""
+
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, ASSERTING_NEW_TEST.format(condition="rozliczenia.WARTOSC >= 0"))
+
+    answered = _two_mutations(repo, tmp_path, "tests/test_n.py")
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert [line.split(" → ")[0] for line in answered.stdout.splitlines()] == ["WYKRYTA: m1-ujemna", "NIEWYKRYTA: m2-duza", "MUTACJE: 1 bez oczekiwanego wyniku"], answered.stdout
+    assert "JUŻ ŁAPIE" not in answered.stderr, answered.stderr
+
+
+def test_juz_lapie_w_czesci_mutacji_nie_mowi_o_mutacjach_spoza_niej(tmp_path: Path) -> None:
+    """Z ``MUTACJE_CZESC`` polecenie biegło tylko z mutacjami części, więc fakt o mutacji spoza niej (tu „m2-duza”, którą
+    łapie test sprzed zmiany) byłby o mutacji, która w poleceniu nie padła."""
+
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, ASSERTING_NEW_TEST.format(condition="0 <= rozliczenia.WARTOSC < 5"))
+
+    answered = _two_mutations(repo, tmp_path, "tests", env=ONE_WORKER | {"MUTACJE_CZESC": "1/2"})
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert [line.split(" → ")[0] for line in answered.stdout.splitlines()] == ["MUTACJE CZĘŚĆ 1/2: 1 z 2 mutacji", "WYKRYTA: m1-ujemna", "MUTACJE OK"], answered.stdout
+    assert [line for line in answered.stderr.splitlines() if line.startswith("JUŻ ŁAPIE")] == [
+        "JUŻ ŁAPIE NIESPRAWDZONE: MUTACJE_CZESC=1/2: część mówi, że padły tylko jej mutacje, a sprawdzenie nie wie które"
+    ], answered.stderr
+
+
+def test_juz_lapie_mowi_o_plikach_testow_sprzed_zmiany_odlozonych_przez_szybko(tmp_path: Path) -> None:
+    """„m1-ujemna” łapie tylko test sprzed zmiany, który stoi dalej od mutacji, a czasy CI ważą go ponad budżet szybko,
+    więc nie biegnie, a „m2-duza” łapie test obok: brak linii o „m1-ujemna” nie może wyglądać na zachowanie naprawdę
+    nowe (przegląd #1493 r1). Plik samych nowych testów szybko też odkłada, ale to nie plik testów sprzed zmiany, więc
+    liczba odłożonych go nie liczy (przegląd #1493 r2)."""
+
+    far = {
+        "src/posrednik.py": "from rozliczenia import WARTOSC\n",
+        "tests/test_daleki.py": "import posrednik\n\n\ndef test_daleki():\n    assert posrednik.WARTOSC >= 0\n",
+    }
+    seconds = {"tests/test_stary.py": 0.1, "tests/test_n.py": 10_000.0, "tests/test_daleki.py": 10_000.0}
+    lane = {f"pytest:{path}": [{"run": 1, "proba": 1, "zadanie": "z", "s": s, "status": "ok", "testy": 1}] for path, s in seconds.items()}
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, STRICT_NEW_TEST.format(value=0), files=far)
+    (repo / ".git" / "czasy-ci" / "1.json").write_text(json.dumps({"runy": [{"run": 1}], "tory": {"linux-3.14": lane}}), encoding="utf-8")
+
+    answered = _two_mutations(repo, tmp_path, "tests/test_n.py")
+
+    assert _already_lines(answered, ["m1-ujemna", "m2-duza"]) == [
+        "JUŻ ŁAPIE NIESPRAWDZONE: m1-ujemna: pliki testów sprzed zmiany odłożone przez szybko ponad budżet nie biegły (odłożone: 1)",
+        CAUGHT_BY_OLD.format(name="m2-duza"),
+    ], answered.stderr
+
+
+def test_mutacja_z_oczekiwana_linia_nie_dostaje_juz_lapie(tmp_path: Path) -> None:
+    """Mutację z ``oczekiwane`` wykrywa linia wyjścia, nie porażka testu, więc sprawdzenie testami sprzed zmiany jej nie
+    dotyczy, choć ten sam test sprzed zmiany ją łapie."""
+
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, STRICT_NEW_TEST.format(value=0))
+    plan = tmp_path / "mutacje.json"
+    plan.write_text(json.dumps([{"nazwa": "z linia", "zmiany": [[PACKAGE, "WARTOSC = 0", "WARTOSC = 7"]], "oczekiwane": "1 failed"}]), encoding="utf-8")
+
+    answered = _in_repository(repo, "--baza", "glowna", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER)
+
+    assert _already_lines(answered, ["z linia"]) == [], answered.stderr
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGINT do jednego procesu jest sygnałem POSIX")
 def test_przerwane_narzedzie_konczy_trwajace_mutacje_i_sprzata(tmp_path: Path) -> None:
     repo, mutation, started, beats = _hanging_repository(tmp_path)
@@ -652,6 +848,7 @@ def test_przerwane_narzedzie_konczy_trwajace_mutacje_i_sprzata(tmp_path: Path) -
 
 # Środowisko wywołującego bez wartości ``-n auto``, którą ustawia ``tools/szybko.py``.
 WITHOUT_XDIST_WORKERS = {name: value for name, value in os.environ.items() if name != "PYTEST_XDIST_AUTO_NUM_WORKERS"}
+ONE_WORKER = {**WITHOUT_XDIST_WORKERS, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
 
 
 def _small_repository(path: Path) -> Path:
@@ -725,7 +922,11 @@ def test_skrypt_mutacji_skilla_daje_zagniezdzonemu_pytest_n_auto_jednego_workera
 
 
 # Narzędzie na komputerze z ``cores`` rdzeniami: ``os.cpu_count`` podmieniony przed jego startem.
-ON_CORES = "import os, runpy, sys; _, cores, *sys.argv = sys.argv; os.cpu_count = lambda: int(cores); runpy.run_path(sys.argv[0], run_name='__main__')"
+# Jak ``python tools/mutacje.py``: katalog skryptu na początku ``sys.path`` (runpy.run_path go nie dopisuje).
+ON_CORES = (
+    "import os, runpy, sys; _, cores, *sys.argv = sys.argv; os.cpu_count = lambda: int(cores); "
+    "sys.path.insert(0, os.path.dirname(sys.argv[0])); runpy.run_path(sys.argv[0], run_name='__main__')"
+)
 
 
 @pytest.mark.parametrize(("cores", "at_once"), [(3, 3), (16, 8)], ids=["runner-ci-mniej-rdzeni-niz-8", "mac-wiecej-rdzeni-niz-8"])
@@ -768,25 +969,29 @@ def test_naraz_biegnie_najwyzej_tyle_mutacji_ile_rdzeni_i_najwyzej_osiem(tmp_pat
 
 
 
-def _skill_check(tmp_path: Path, anchor: str, replacement: str, *, hang_s: int, limit_s: int) -> subprocess.CompletedProcess[str]:
-    """``check_all`` skryptu mutacji skilla z atrapą bramy (``FAKE_GATE``) i jedną mutacją pakietu, której polecenie to
-    pytest z testem ``test_wisi`` (z flagą ``WISI`` śpi do pytest-timeout po ``hang_s`` s) i ``test_wolno`` (z flagą
-    ``WOLNO`` śpi ponad ``limit_s``)."""
+WISI_TEST = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_wisi.py")
+# Z flagą ``WOLNO`` czeka na zdarzenie, które nie nadejdzie, a bez niej kończy się zaraz po starcie Pythona: przed
+# limitem, który ma minąć, stoi tylko start interpretera, a nie start pytest.
+WAITS = ("-c", "import threading, rozliczenia\nif rozliczenia.WOLNO:\n    threading.Event().wait()\n")
 
-    tests = (
-        "import time\n\nimport pytest\nimport rozliczenia\n\n\n"
-        f"@pytest.mark.timeout({hang_s})\ndef test_wisi():\n    if rozliczenia.WISI:\n        time.sleep(60)\n\n\n"
-        "def test_wolno():\n    if rozliczenia.WOLNO:\n        time.sleep(60)\n"
-    )
+
+def _skill_check(
+    tmp_path: Path, anchor: str, replacement: str, *, hang_s: int, limit_s: int, command: tuple[str, ...] = WISI_TEST
+) -> subprocess.CompletedProcess[str]:
+    """``check_all`` skryptu mutacji skilla z atrapą bramy (``FAKE_GATE``) i jedną mutacją pakietu z poleceniem
+    ``command``: ``WISI_TEST`` to pytest z testem ``test_wisi`` (z flagą ``WISI`` śpi do pytest-timeout po ``hang_s``
+    s), a ``WAITS`` z flagą ``WOLNO`` czeka bez końca."""
+
+    tests = f"import time\n\nimport pytest\nimport rozliczenia\n\n\n@pytest.mark.timeout({hang_s})\ndef test_wisi():\n    if rozliczenia.WISI:\n        time.sleep(60)\n"
     repo = repository(tmp_path / "repo", {PACKAGE: "WISI = False\nWOLNO = False\nNIC = 0\n", "tests/test_wisi.py": tests})
     commit(repo, "baza")
-    command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_wisi.py")
     script = (
         "import sys\nsys.path.insert(0, 'tools/lib')\nfrom pathlib import Path\nimport silnik_mutacji\nfrom silnik_mutacji import Edit, Mutation, check_all\n"
         f"{FAKE_GATE}\nmutation = Mutation('m', (Edit(Path({PACKAGE!r}), {anchor!r}, {replacement!r}),), {command!r})\n"
         f"raise SystemExit(check_all([mutation], limit_s={limit_s}, gate=brama))\n"
     )
-    return subprocess.run([sys.executable, "-c", script], cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
+    # Krócej niż pytest-timeout (120 s): silnik, który nie kończy ``WAITS`` po limicie, pada tu, a nie wisi.
+    return subprocess.run([sys.executable, "-c", script], cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
 
 
 @pytest.mark.parametrize(
@@ -797,9 +1002,9 @@ def _skill_check(tmp_path: Path, anchor: str, replacement: str, *, hang_s: int, 
             "WOLNO = False",
             "WOLNO = True",
             1,
-            [re.escape("PRZEKROCZONY CZAS: m → brak wyniku po 8 s (limit --limit-s narzędzia, nie pytest-timeout)"), "MUTACJE: 1 bez oczekiwanego wyniku"],
+            [re.escape("PRZEKROCZONY CZAS: m → brak wyniku po 2 s (limit --limit-s narzędzia, nie pytest-timeout)"), "MUTACJE: 1 bez oczekiwanego wyniku"],
         ),
-        pytest.param("NIC = 0", "NIC = 1", 1, [r"NIEWYKRYTA: m → 2 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
+        pytest.param("NIC = 0", "NIC = 1", 1, [r"NIEWYKRYTA: m → 1 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
         pytest.param(
             "NIC = 0", "NIC = 1  # brama: mypy assignment", 0, [re.escape("WYKRYTA PRZEZ BRAMĘ TYPÓW: m → mypy: src/rozliczenia/__init__.py:3: assignment"), "MUTACJE OK"]
         ),
@@ -821,11 +1026,11 @@ def _skill_check(tmp_path: Path, anchor: str, replacement: str, *, hang_s: int, 
             0,
             [re.escape("WYKRYTA PRZEZ BRAMĘ TYPÓW: m → ruff: src/rozliczenia/__init__.py:3: invalid-syntax"), "MUTACJE OK"],
         ),
-        pytest.param("NIC = 0", "NIC = 1  # brama: ruff F401", 1, [r"NIEWYKRYTA: m → 2 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
-        pytest.param("NIC = 0", "NIC = 1  # brama: mypy unused-ignore", 1, [r"NIEWYKRYTA: m → 2 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
-        pytest.param("NIC = 0", "NIC = 1  # brama: mypy redundant-cast", 1, [r"NIEWYKRYTA: m → 2 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
-        pytest.param("NIC = 0", "NIC = 1  # brama: mypy no-any-return", 1, [r"NIEWYKRYTA: m → 2 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
-        pytest.param("NIC = 0", "NIC = 1  # brama: mypy -", 1, [r"NIEWYKRYTA: m → 2 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
+        pytest.param("NIC = 0", "NIC = 1  # brama: ruff F401", 1, [r"NIEWYKRYTA: m → 1 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
+        pytest.param("NIC = 0", "NIC = 1  # brama: mypy unused-ignore", 1, [r"NIEWYKRYTA: m → 1 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
+        pytest.param("NIC = 0", "NIC = 1  # brama: mypy redundant-cast", 1, [r"NIEWYKRYTA: m → 1 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
+        pytest.param("NIC = 0", "NIC = 1  # brama: mypy no-any-return", 1, [r"NIEWYKRYTA: m → 1 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
+        pytest.param("NIC = 0", "NIC = 1  # brama: mypy -", 1, [r"NIEWYKRYTA: m → 1 passed in .*", "MUTACJE: 1 bez oczekiwanego wyniku"]),
         pytest.param(
             "NIC = 0",
             "NIC = 1  # brama: mypy późno",
@@ -866,7 +1071,9 @@ def test_skrypt_mutacji_skilla_liczy_zawieszenie_i_brame_typow_jak_wykryta_a_inn
     wpuściło (#703); nieużyty import, ``# type: ignore`` albo ``cast`` i wynik ``Any`` to tylko artefakt mutacji jednej
     linii."""
 
-    answered = _skill_check(tmp_path, anchor, replacement, hang_s=1, limit_s=8)
+    # Mutacja flagi WOLNO ma przekroczyć limit, więc biegnie poleceniem WAITS z krótkim limitem.
+    waits = anchor == "WOLNO = False"
+    answered = _skill_check(tmp_path, anchor, replacement, hang_s=1, limit_s=2 if waits else 8, command=WAITS if waits else WISI_TEST)
 
     shown = answered.stdout.splitlines()
     assert answered.returncode == code and len(shown) == len(lines), answered.stdout + answered.stderr
@@ -875,27 +1082,30 @@ def test_skrypt_mutacji_skilla_liczy_zawieszenie_i_brame_typow_jak_wykryta_a_inn
 
 
 @pytest.mark.parametrize(
-    ("anchor", "replacement", "verdict", "least"),
+    ("anchor", "replacement", "verdict", "command", "limit_s", "least"),
     [
-        pytest.param("WISI = False", "WISI = True", r"ZAWIESZENIE: m → .*Timeout.*", 5, id="zawieszenie"),
+        pytest.param("WISI = False", "WISI = True", r"ZAWIESZENIE: m → .*Timeout.*", WISI_TEST, 10, 5, id="zawieszenie"),
         pytest.param(
             "WOLNO = False",
             "WOLNO = True  # brama: mypy exhaustive-match",
             re.escape("WYKRYTA PRZEZ BRAMĘ TYPÓW: m → mypy: src/rozliczenia/__init__.py:2: exhaustive-match"),
-            10,
+            WAITS,
+            2,
+            2,
             id="przekroczony-czas-brama-mypy",
         ),
     ],
 )
 def test_mutacja_liczona_jako_wykryta_po_dlugim_poleceniu_pokazuje_jego_czas_i_ostrzega_o_limicie(
-    tmp_path: Path, anchor: str, replacement: str, verdict: str, least: int
+    tmp_path: Path, anchor: str, replacement: str, verdict: str, command: tuple[str, ...], limit_s: int, least: int
 ) -> None:
     """ZAWIESZENIE i PRZEKROCZONY CZAS, który brama typów zmienia w WYKRYTA PRZEZ BRAMĘ TYPÓW, kończą się ``MUTACJE OK``,
     więc tylko linie ``CZAS`` i ``CZAS BLISKO LIMITU`` mówią w logu, że polecenie zużyło ponad połowę limitu albo cały
-    (#927): pytest-timeout po 5 s z limitu 10 s albo cały limit 10 s, a nie dłużej niż cały skrypt na zegarze testu."""
+    (#927): pytest-timeout po połowie limitu albo cały limit, a nie dłużej niż cały skrypt na zegarze testu ani niż dwa
+    limity."""
 
     started = time.perf_counter()
-    answered = _skill_check(tmp_path, anchor, replacement, hang_s=5, limit_s=10)
+    answered = _skill_check(tmp_path, anchor, replacement, hang_s=limit_s // 2, limit_s=limit_s, command=command)
     took = time.perf_counter() - started
 
     shown = answered.stdout + answered.stderr
@@ -904,8 +1114,9 @@ def test_mutacja_liczona_jako_wykryta_po_dlugim_poleceniu_pokazuje_jego_czas_i_o
     times = answered.stderr.splitlines()
     assert len(times) == 2, shown
     spent = re.fullmatch(r"CZAS: m → ([0-9]+) s", times[0])
-    warned = re.fullmatch(r"CZAS BLISKO LIMITU: .*: m → ([0-9]+) s z limitu --limit-s 10 s .*", times[1])
+    warned = re.fullmatch(rf"CZAS BLISKO LIMITU: .*: m → ([0-9]+) s z limitu --limit-s {limit_s} s .*", times[1])
     assert spent and warned and warned[1] == spent[1] and least <= int(spent[1]) <= round(took), shown
+    assert int(spent[1]) < 2 * limit_s, shown
 
 
 LINUX_1 = "pytest (Python 3.14, Linux, 1/2)"

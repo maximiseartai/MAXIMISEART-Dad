@@ -29,6 +29,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 - Czerwony `main` nie blokuje merge'ów, a naprawia go od razu osobny PR.
   PR, nad którym pracujesz, zostaje przy swojej zmianie.
+  PR naprawy wskazuje issue czerwonego `main` linią `Część #N` (zamyka je następny zielony `main`) i ma sekcję `## Korzeń` według skilla [`pr`](../../.agents/skills/pr/SKILL.md), a PR flaky testu wskazuje issue `Flaky test:` i sekcji nie ma.
 - O merge'u rozstrzyga pierwszy nieanulowany run CI pushu na `main`, którego commit zawiera merge: nowszy push anuluje run, który czeka za trwającym (ADR 0020).
   Czerwony taki run komentuje każdy PR, o którego merge'u rozstrzyga, a `tools/scal_pr.py` mówi to w linii `CI MAIN`, więc obserwację scalonego PR zostawiasz do zielonego `main` z tym merge'em albo do komentarza czerwonego `main` w PR.
 - Etykieta `zderzenie` w issue czerwonego `main` znaczy, że PR-y zielone osobno padły razem: każda nowa porażka jest w teście, którego wejścia zmieniły oba PR-y.

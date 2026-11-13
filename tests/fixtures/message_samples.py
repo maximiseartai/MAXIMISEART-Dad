@@ -16,7 +16,7 @@ from typing import get_args
 from rozliczenia import tool_files
 from rozliczenia import efenix_messages, intermax_messages, intermax_replace, report_entering_messages
 from rozliczenia import preparation_messages as messages
-from rozliczenia import settlement_messages, worker_config_messages
+from rozliczenia import settlement_messages
 from rozliczenia.centrum import (
     diagnosis_messages,
     fill_messages,
@@ -29,6 +29,8 @@ from rozliczenia.centrum import (
 )
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_window import ForwardRefusal, PagePart
@@ -51,12 +53,9 @@ from rozliczenia.period_folder import (
     PeriodFolderLookupError,
     PeriodPlace,
 )
-from rozliczenia.quantity_rules import DESCRIPTION_COLUMNS
+from rozliczenia.quantity_engine import DESCRIPTION_COLUMNS
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.workbook_files import MergedCells, MissingHeader, Problem, WorkbookError
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE, AddressesProblem, UnknownLogin
-from rozliczenia.worker_config import SameWorkerFile, WorkerConfigError
-from rozliczenia.worker_reports import Login
 
 REGISTER = Path("C:/Dane/ZLECENIA INTERMAX OD 08_11_2021.xlsx")
 PERIODS = Path("C:/Dane/INEA")
@@ -66,47 +65,18 @@ JUNE = DAD_PERIODS / "Rozliczenia 2026" / "06_Czerwiec_2026" / "INEA"
 JULY = DAD_PERIODS / "Rozliczenia 2026" / "07_Lipiec_2026" / "INEA"
 PARSED_PERIOD = parse_period_token("08_14_09_2026")
 TEMPLATE = tool_files.config_dir(Path("C:/Narzedzie")) / tool_files.COLLECTIVE_TEMPLATE.name
-CONFIG = tool_files.config_dir(Path("//nas/Wspolne/Narzedzie")) / tool_files.WORKER_CONFIG.name
 SHEET = "ZLECENIA"
 PERIOD = "08_14_09_2026"
 SOURCE = PeriodFolder(PERIODS, PARSED_PERIOD).collective_file
 WORKER_SETTLEMENTS = PeriodFolder(PERIODS, PARSED_PERIOD).worker_settlements
 INTERNAL_SETTLEMENT = PeriodFolder(PERIODS, PARSED_PERIOD).internal_settlement
 WORKER_TEMPLATE = tool_files.config_dir(Path("C:/Narzedzie")) / tool_files.WORKER_TEMPLATE.name
-MISSING_CONFIG = WorkerConfigError("missing")
-INACCESSIBLE_CONFIG = WorkerConfigError("inaccessible")
-CONFIG_NOT_UTF8 = WorkerConfigError("not_utf8")
-CONFIG_NOT_YAML = WorkerConfigError("not_yaml")
-INVALID_CONFIG = WorkerConfigError("unsupported_version")
-# Pozostałe złamane reguły konfiguracji; każda ma swoje zdanie w Komunikacie.
-BROKEN_CONFIG_RULES = [
-    WorkerConfigError("not_mapping"),
-    WorkerConfigError("no_workers"),
-    WorkerConfigError("not_text_entry"),
-    WorkerConfigError("empty_entry"),
-    WorkerConfigError("repeated_id"),
-    WorkerConfigError("invalid_worker_name"),
-    WorkerConfigError("too_long_worker_name"),
-    WorkerConfigError(SameWorkerFile("Jan Testowy", "jan testowy")),
-]
-# Foldery nad folderem config z próbek; żaden Komunikat ich nie pokazuje.
 ABOVE_CONFIG = frozenset({"Wspolne", "Narzedzie"})
 
 Samples = Mapping[str, Sequence[Callable[[], Message]]]
 
 
 # Każda fabryka katalogu z przykładowymi argumentami; warianty liczby pojedynczej i mnogiej osobno.
-# Konfigurację wykonawców objaśniają sekcje instrukcji obu procesów, które ją czytają.
-WORKER_CONFIG_SAMPLES: Samples = {
-    "worker_config_problem": [
-        lambda: worker_config_messages.worker_config_problem(CONFIG, MISSING_CONFIG),
-        lambda: worker_config_messages.worker_config_problem(CONFIG, INACCESSIBLE_CONFIG),
-        lambda: worker_config_messages.worker_config_problem(CONFIG, CONFIG_NOT_UTF8),
-        lambda: worker_config_messages.worker_config_problem(CONFIG, CONFIG_NOT_YAML),
-        lambda: worker_config_messages.worker_config_problem(CONFIG, INVALID_CONFIG),
-        *(partial(worker_config_messages.worker_config_problem, CONFIG, error) for error in BROKEN_CONFIG_RULES),
-    ],
-}
 PREPARATION_SAMPLES: Samples = {
     "invalid_period_token": [lambda: messages.invalid_period_token("08_14_9_2026")],
     "period_file_exists": [lambda: messages.period_file_exists(PERIOD_DIRECTORY, INTERNAL_SETTLEMENT.name)],
@@ -156,8 +126,8 @@ PREPARATION_SAMPLES: Samples = {
         lambda: messages.invalid_successful_values(REGISTER, SHEET, "L", [], [messages.CellContent(n, "tsk") for n in range(2, 14)]),
     ],
     "unknown_workers": [
-        lambda: messages.unknown_workers(REGISTER, SHEET, CONFIG, [("nowy.wykonawca", [4])]),
-        lambda: messages.unknown_workers(REGISTER, SHEET, CONFIG, [("nowy.wykonawca", [4, 9]), ("", [6])]),
+        lambda: messages.unknown_workers(REGISTER, SHEET, [("nowy.wykonawca", [4])]),
+        lambda: messages.unknown_workers(REGISTER, SHEET, [("nowy.wykonawca", [4, 9]), ("", [6])]),
     ],
     "no_period_orders": [lambda: messages.no_period_orders(REGISTER, SHEET, PERIOD)],
     "too_few_zero_rows": [
@@ -271,6 +241,8 @@ DIAGNOSIS_SAMPLES: Samples = {
     "newer_tool_version": [diagnosis_messages.newer_tool_version],
     "file_only_in_cloud": [lambda: diagnosis_messages.file_only_in_cloud(SOURCE)],
     "period_file_open": [lambda: diagnosis_messages.period_file_open(PERIOD_DIRECTORY / INTERNAL_SETTLEMENT.name)],
+    "worker_list_bad": [lambda: diagnosis_messages.worker_list_bad(settings_messages.worker_login_repeated())],
+    "worker_list_unreadable": [diagnosis_messages.worker_list_unreadable],
 }
 
 FILL_SAMPLES: Samples = {
@@ -414,8 +386,6 @@ INTERMAX_SAMPLES: Samples = {
     "summary_not_shown": [intermax_messages.summary_not_shown],
 }
 
-ADDRESSES = tool_files.config_dir(Path("C:/Narzedzie")) / WORKER_ADDRESSES_FILE
-_ADDRESSES_PROBLEMS: tuple[AddressesProblem, ...] = (*get_args(get_args(AddressesProblem)[0]), UnknownLogin(Login("jan.testowy")))
 # Kopia konfliktu OneDrive obok INTERMAX: jego nazwa z dopiskiem nazwy komputera (``onedrive_conflicts``).
 CONFLICT_COPY = REGISTER.with_name(f"{REGISTER.stem}-LAPTOP-TATY{REGISTER.suffix}")
 REPORT_ENTERING_SAMPLES: Samples = {
@@ -423,9 +393,6 @@ REPORT_ENTERING_SAMPLES: Samples = {
     "inbox_access_unreadable": [report_entering_messages.inbox_access_unreadable],
     "password_rejected": [report_entering_messages.password_rejected],
     "inbox_unreachable": [report_entering_messages.inbox_unreachable],
-    "addresses_unusable": [
-        partial(report_entering_messages.addresses_unusable, ADDRESSES, problem) for problem in _ADDRESSES_PROBLEMS
-    ],
     "periods_directory_missing": [lambda: report_entering_messages.periods_directory_missing(PERIODS)],
     "periods_folder_inaccessible": [
         lambda: report_entering_messages.periods_folder_inaccessible(PERIODS),
@@ -445,8 +412,6 @@ REPORT_ENTERING_SAMPLES: Samples = {
 RefusalSamples = Mapping[str, Sequence[Callable[[], refusal.Refusal]]]
 _REPORT_ENTERING_MISSING: tuple[tuple[refusal.ReportEnteringFile, ...], ...] = (
     ("inbox_access",),
-    ("worker_addresses",),
-    ("inbox_access", "worker_addresses"),
 )
 _RETRIES: tuple[refusal.Retry, ...] = get_args(refusal.Retry)
 
@@ -464,6 +429,18 @@ REFUSALS: RefusalSamples = {
     "register_unavailable": [partial(refusal.register_unavailable, REGISTER.name)],
     "register_missing": [partial(refusal.register_missing, REGISTER.name)],
     "settings_not_saved": [refusal.settings_not_saved],
+    "setting_refused": [
+        lambda: refusal.setting_refused(FieldProblem(FieldPath("folder_okresow"), settings_messages.periods_directory_path()))
+    ],
+    "workers_unusable": [
+        lambda: refusal.workers_unusable(FieldProblem(FieldPath("wykonawcy", 1, "nazwa"), settings_messages.worker_same_file())),
+        lambda: refusal.workers_unusable(None),
+    ],
+    "report_entering_without_addresses": [refusal.report_entering_without_addresses],
+    "settings_change_unknown": [refusal.settings_change_unknown],
+    "settings_change_not_undoable": [refusal.settings_change_not_undoable],
+    "settings_history_unreadable": [refusal.settings_history_unreadable],
+    "autostart_not_changed": [refusal.autostart_not_changed],
     "unknown_period": [refusal.unknown_period],
     "period_folder_lookup": [
         lambda: refusal.period_folder_lookup(PeriodFolderLookupError(DAD_PERIODS, PARSED_PERIOD, ())),

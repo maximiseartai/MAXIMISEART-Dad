@@ -1,6 +1,6 @@
 {
   "src/rozliczenia/centrum/tool_update.py": {
-    "cały plik": "edb10deafb174216"
+    "cały plik": "6241ea79e6281ebb"
   },
   "src/rozliczenia/centrum/tool_updates.py": {
     "cały plik": "b6bd55ba27b4dc77"
@@ -9,10 +9,10 @@
     "cały plik": "d19abe19952bf17a"
   },
   "src/rozliczenia/centrum/launcher.py": {
-    "cały plik": "a549bd43fd370937"
+    "cały plik": "230b9023d048ea1d"
   },
   "src/rozliczenia/tool_files.py": {
-    "config_dir": "5ed8e57bffc412f1",
+    "config_dir": "06c5392c68096be2",
     "centrum_script": "b4f22ab7663f077e",
     "start_command": "757b7db3a594171b",
     "listen_locally": "447af6975944743e",

@@ -10,23 +10,23 @@ import re
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive.common import Run, move, read_bytes, remove, served_version, unreadable, version_line
-from drive.teksty import UPDATE_BUTTON, WRITE
+from drive.common import Run, move, open_settings, read_bytes, remove, served_version, settings_window, unreadable, version_line
+from drive.teksty import UPDATE_BUTTON
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from atrapy.workbooks import EXCEL_LOCK_PREFIX, excel_lock
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
-REPORT_TO_MAINTAINER = "Przekaż ten komunikat osobie utrzymującej narzędzie."
 INACCESSIBLE_TEMPLATE = "Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program."
-INACCESSIBLE_WORKER_CONFIG = (
-    "Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program."
-)
+INACCESSIBLE_WORKER_LIST = "Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program."
+WORKER_LIST_PLACE = "Lista Wykonawców w Ustawieniach Centrum"
 
 
 def _configuration_snapshot(files: dict[str, Path]) -> dict[str, tuple[bytes, int]]:
-    """Bytes and modification time of every configuration file of the fixture, plus every lock file."""
+    """Bytes and modification time of every configuration file of the fixture and the Lista Wykonawców, plus every lock
+    file."""
 
     config = next(iter(files.values())).parent
-    paths = [*files.values(), *config.glob(f"{EXCEL_LOCK_PREFIX}*")]
+    paths = [*files.values(), config / WORKERS_FILE, *config.glob(f"{EXCEL_LOCK_PREFIX}*")]
     return {path.name: (read_bytes(path), path.stat().st_mtime_ns) for path in sorted(paths)}
 
 
@@ -44,7 +44,9 @@ def _changed(path: Path) -> Iterator[None]:
 
 
 def _template_group(page: Page, label: str) -> Locator:
-    return page.get_by_role("group", name=label, exact=True)
+    """The row of the Wzorzec ``label`` in the section Wzorce of Ustawienia."""
+
+    return settings_window(page).get_by_role("listitem", name=label, exact=True)
 
 
 def _shown_as_ready(page: Page, label: str) -> None:
@@ -75,8 +77,8 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "konfiguracja-gotowa")
     page.goto(run.url)
-    page.get_by_role("link", name="Konfiguracja", exact=True).click()
-    expect(page.get_by_role("heading", name="Konfiguracja", level=1)).to_be_visible()
+    window = open_settings(page, "Wzorce")
+    alerts = window.get_by_role("alert")
     configuration = run.api("/api/configuration", "konfiguracja-gotowa")
     templates = configuration["templates"]
     assert isinstance(templates, list)
@@ -96,25 +98,18 @@ def drive(run: Run, page: Page) -> None:
     )
     for label in TEMPLATE_LABELS:
         _shown_as_ready(page, label)
-    expect(page.get_by_text("3 z 3", exact=True)).to_be_visible()
-    expect(page.get_by_role("list", name="Wykonawcy").get_by_role("listitem")).to_have_text(run.fixture["workers"])
-    expect(page.get_by_role("region", name="Narzędzie").get_by_text(version_line(commit, since), exact=True)).to_be_visible()
-    expect(page.get_by_role("alert")).to_have_count(0)
-    run.check(True, "the screen shows the same Wzorce, Wykonawcy, and version, with no problem")
+    expect(alerts).to_have_count(0)
     run.capture(page, "10-konfiguracja-gotowa")
+    open_settings(page, "Wykonawcy")
+    expect(window.get_by_role("list", name="Wykonawcy").get_by_role("listitem")).to_have_text(run.fixture["workers"])
+    open_settings(page, "Narzędzie")
+    expect(window.get_by_role("listitem", name="Wersja narzędzia").get_by_text(version_line(commit, since), exact=True)).to_be_visible()
+    run.check(True, "the window shows the same Wzorce, Wykonawcy, and version, with no problem")
 
     run.step(feature, "konfiguracja-tylko-do-odczytu")
-    page.get_by_text("Tylko do odczytu", exact=True).hover()
-    expect(page.get_by_text("Zmiany robi osoba utrzymująca narzędzie.", exact=True)).to_be_visible()
-    buttons = page.locator("main").get_by_role("button")
     run.check(
-        page.url.endswith("#/konfiguracja")
-        and buttons.count() == 4
-        and buttons.filter(has_text=UPDATE_BUTTON).count() == 0
-        and page.locator("main").get_by_role("button", name=WRITE, exact=True).count() == 1
-        and page.locator("main").get_by_role("button", name="Powiadomienia", exact=False).count() == 1,
-        "the page offers no action besides the header's menu, `Napisz do Maksa`, Powiadomienia and theme buttons; the current tool"
-        " has no `Zaktualizuj narzędzie`",
+        window.get_by_role("button", name=UPDATE_BUTTON).count() == 0,
+        "the section Narzędzie has no `Zaktualizuj narzędzie` for the current tool",
     )
     offer = run.api("/api/configuration", "konfiguracja-tylko-do-odczytu")
     run.check(
@@ -122,7 +117,11 @@ def drive(run: Run, page: Page) -> None:
         "the server offers no Aktualizacja narzędzia for the current tool",
     )
     run.capture(page, "11-konfiguracja-tylko-do-odczytu", full_page=False)
-    page.mouse.move(0, 0)
+    for section in ("Wzorce", "Wykonawcy"):
+        open_settings(page, section)
+        expect(window.locator("[data-slot=settings-section]").get_by_role("button")).to_have_count(0)
+    run.check(True, "the sections Wzorce and Wykonawcy offer no action on these files: Dad changes them elsewhere")
+    open_settings(page, "Wzorce")
 
     run.step(feature, "konfiguracja-wzorzec-otwarty")
     collective = files["collective_template"]
@@ -132,10 +131,11 @@ def drive(run: Run, page: Page) -> None:
         page.reload()
         expect(_template_group(page, "Wzorzec pliku zbiorczego")).to_contain_text("Otwarty w Excelu")
         _expect_badge_icon(page, "Wzorzec pliku zbiorczego", "text-warning")
-        message = page.get_by_role("alert", name="Ostrzeżenie", exact=True).filter(has_text="Wzorzec jest otwarty w Excelu.")
+        message = window.get_by_role("alert", name="Ostrzeżenie", exact=True).filter(
+            has_text="Wzorzec jest otwarty w Excelu."
+        )
         expect(message).to_contain_text(f"plik {collective.name}, folder config")
         expect(message).to_contain_text(f"usuń z tego samego folderu pozostawiony plik ~${collective.name}")
-        expect(page.get_by_text("2 z 3", exact=True)).to_be_visible()
         answer = _template_answer(run, "konfiguracja-wzorzec-otwarty", "Wzorzec pliku zbiorczego")
         run.check(answer["problem"] == "open_in_excel", "the server reports the Wzorzec as open in Excel")
         run.capture(page, "12-konfiguracja-wzorzec-otwarty")
@@ -154,7 +154,7 @@ def drive(run: Run, page: Page) -> None:
             page.reload()
             group = _template_group(page, "Wzorzec rozliczenia wewnętrznego")
             expect(group).to_contain_text("Nie przechodzi sprawdzenia")
-            message = page.get_by_role("alert").filter(has_text=INACCESSIBLE_TEMPLATE)
+            message = alerts.filter(has_text=INACCESSIBLE_TEMPLATE)
             expect(message).to_contain_text(f"plik {internal.name}, folder config")
             run.check("uszkodzon" not in message.inner_text(), "a Wzorzec without access is niedostępny, never uszkodzony")
             answer = _template_answer(run, "konfiguracja-wzorzec-niedostepny", "Wzorzec rozliczenia wewnętrznego")
@@ -163,7 +163,7 @@ def drive(run: Run, page: Page) -> None:
         print("  harness: access to the Wzorzec is back", flush=True)
         page.evaluate("window.dispatchEvent(new FocusEvent('focus'))")
         _shown_as_ready(page, "Wzorzec rozliczenia wewnętrznego")
-        expect(page.get_by_role("alert")).to_have_count(0)
+        expect(alerts).to_have_count(0)
         answer = _template_answer(run, "konfiguracja-wzorzec-dostepny", "Wzorzec rozliczenia wewnętrznego")
         run.check(
             answer["state"] == "ready",
@@ -179,7 +179,7 @@ def drive(run: Run, page: Page) -> None:
         page.reload()
         expect(_template_group(page, "Wzorzec rozliczenia pracownika")).to_contain_text("Brak pliku")
         _expect_badge_icon(page, "Wzorzec rozliczenia pracownika", "text-destructive")
-        message = page.get_by_role("alert", name="Zatrzymanie", exact=True).filter(
+        message = window.get_by_role("alert", name="Zatrzymanie", exact=True).filter(
             has_text=f"Nie znaleziono Wzorca rozliczenia pracownika: {worker_template.name}."
         )
         # The same message as the Przebieg rozliczeń stop for this Wzorzec.
@@ -192,18 +192,18 @@ def drive(run: Run, page: Page) -> None:
         move(moved, worker_template)
 
     run.step(feature, "konfiguracja-nieczytelna-konfiguracja-wykonawcow")
-    worker_config = files["worker_config"]
+    worker_config = files["worker_template"].parent / WORKERS_FILE
     moved = worker_config.with_name(worker_config.name + ".przeniesiony")
     move(worker_config, moved)
     try:
-        worker_config.write_text("workers: [niedomknięta lista\n", encoding="utf-8")
+        worker_config.write_text("schema_version: 1\nwykonawcy: [niedomknięta lista\n", encoding="utf-8")
         page.reload()
-        # The same message as the stop of each process on this konfiguracja wykonawców.
-        message = page.get_by_role("alert").filter(has_text="Nie można odczytać konfiguracji wykonawców.")
-        expect(message).to_contain_text("Plik nie jest poprawnym YAML.")
-        expect(message).to_contain_text(f"plik {worker_config.name}")
-        expect(message).to_contain_text(REPORT_TO_MAINTAINER)
-        expect(page.get_by_role("list", name="Wykonawcy")).to_have_count(0)
+        open_settings(page, "Wykonawcy")
+        # The same message as the Diagnoza step of the Lista Wykonawców.
+        message = alerts.filter(has_text="Lista Wykonawców ma złe ustawienie.")
+        expect(message).to_contain_text(f"Plik {WORKERS_FILE} w folderze config ma uszkodzoną treść.")
+        expect(message).to_contain_text(WORKER_LIST_PLACE)
+        expect(window.get_by_role("list", name="Wykonawcy")).to_have_count(0)
         workers = run.api("/api/configuration", "konfiguracja-nieczytelna-konfiguracja-wykonawcow")["workers"]
         assert isinstance(workers, dict)
         run.check(workers["state"] == "unreadable", "the server reports the konfiguracja wykonawców as unreadable")
@@ -215,15 +215,14 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "konfiguracja-niedostepna-konfiguracja-wykonawcow")
     with unreadable(worker_config):
         page.reload()
-        # The same message as Przebieg rozliczeń's stop on this konfiguracja wykonawców.
-        message = page.get_by_role("alert").filter(has_text=INACCESSIBLE_WORKER_CONFIG)
-        expect(message).to_contain_text(f"plik {worker_config.name}, folder config")
-        expect(message).to_contain_text(REPORT_TO_MAINTAINER)
+        # The same message as the Diagnoza step of the Lista Wykonawców.
+        message = alerts.filter(has_text=INACCESSIBLE_WORKER_LIST)
+        expect(message).to_contain_text(WORKER_LIST_PLACE)
         run.check(
             all(word not in message.inner_text() for word in ("uszkodzon", "niepoprawn")),
             "a konfiguracja wykonawców without access is niedostępna, never uszkodzona or niepoprawna",
         )
-        expect(page.get_by_role("list", name="Wykonawcy")).to_have_count(0)
+        expect(window.get_by_role("list", name="Wykonawcy")).to_have_count(0)
         workers = run.api("/api/configuration", "konfiguracja-niedostepna-konfiguracja-wykonawcow")["workers"]
         assert isinstance(workers, dict)
         run.check(workers["state"] == "unreadable", "the server reports the konfiguracja wykonawców as unreadable")
@@ -231,6 +230,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "konfiguracja-bez-zmian")
     page.reload()
+    open_settings(page, "Wzorce")
     for label in TEMPLATE_LABELS:
         _shown_as_ready(page, label)
     run.check(

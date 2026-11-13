@@ -15,8 +15,10 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 
@@ -277,12 +279,17 @@ def start_shortcut(link: Path) -> None:
 
 
 def read_shortcut(link: Path) -> dict[str, str]:
-    output = _powershell(
-        _UTF8 + "$l = (New-Object -ComObject WScript.Shell).CreateShortcut($env:SKROT); "
-        "@{TargetPath=$l.TargetPath; Arguments=$l.Arguments; WorkingDirectory=$l.WorkingDirectory; "
-        "IconLocation=$l.IconLocation} | ConvertTo-Json -Compress",
-        {"SKROT": str(link)},
-    )
+    """The ``.lnk``'s fields through ``WScript.Shell``, which reads paths in the ANSI code page, so from an ASCII copy."""
+
+    with tempfile.TemporaryDirectory() as directory:
+        copy = Path(directory) / "shortcut.lnk"
+        shutil.copyfile(link, copy)
+        output = _powershell(
+            _UTF8 + "$l = (New-Object -ComObject WScript.Shell).CreateShortcut($env:SKROT); "
+            "@{TargetPath=$l.TargetPath; Arguments=$l.Arguments; WorkingDirectory=$l.WorkingDirectory; "
+            "IconLocation=$l.IconLocation} | ConvertTo-Json -Compress",
+            {"SKROT": str(copy)},
+        )
     shortcut = json.loads(output)
     assert isinstance(shortcut, dict)
     return {str(key): str(value) for key, value in shortcut.items()}

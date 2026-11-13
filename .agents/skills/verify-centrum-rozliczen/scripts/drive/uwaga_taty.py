@@ -16,6 +16,7 @@ from playwright.sync_api import FloatRect, Locator, Page, Request, ViewportSize,
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from drive.common import (
+    CENTRE_TAKES_CLICK,
     PAGES,
     REPORT_KEY,
     box_issues,
@@ -37,6 +38,7 @@ from drive.common import (
     remove,
     Run,
     start_centrum,
+    shown_theme,
     switch_theme,
     toggle_theme,
 )
@@ -99,12 +101,6 @@ NOT_IN_HISTORY = "Tego Uruchomienia nie ma w historii Centrum. Wybierz inne albo
 LAPTOP = ViewportSize(width=1280, height=720)
 # Measured as painted: in the frame after the next, whose ResizeObserver has already scrolled the list for the last
 # change. A layout read between React's commit and that frame sees the list shrunk but not yet scrolled.
-# „Wyślij” takes a click at its centre: the topmost element there is the button or part of it.
-CLICKABLE = """button => {
-    const box = button.getBoundingClientRect()
-    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-    return hit !== null && button.contains(hit)
-}"""
 WHOLLY_SHOWN = """element => new Promise(measured => requestAnimationFrame(() => requestAnimationFrame(() => {
     const box = element.getBoundingClientRect()
     const inside = outer => box.top >= outer.top - 0.5 && box.bottom <= outer.bottom + 0.5
@@ -298,14 +294,14 @@ def _send_misplaced(page: Page, dialog: Locator) -> list[str]:
     shown = send.evaluate(WHOLLY_SHOWN)
     if not (_boxed(frame, button) and shown["shown"]):
         wrong.append(f"„Wyślij” {button} is not wholly inside the dialog {frame} or is clipped ({shown})")
-    if not send.is_enabled() or not send.evaluate(CLICKABLE):
+    if not send.is_enabled() or not send.evaluate(CENTRE_TAKES_CLICK):
         wrong.append("„Wyślij” does not take a click at its centre")
     if (label := caption.bounding_box()) is None or _overlap(toggle, label):
         wrong.append(f"the switch „Dotyczy” {toggle} overlaps the caption „Maks dostanie” {label}")
     for name, part in (("the switch „Dotyczy”", switch), ("the caption „Maks dostanie”", caption)):
         part.scroll_into_view_if_needed()
         shown = part.evaluate(WHOLLY_SHOWN)
-        if not (shown["shown"] and part.evaluate(CLICKABLE)):
+        if not (shown["shown"] and part.evaluate(CENTRE_TAKES_CLICK)):
             wrong.append(f"{name} scrolled into view is not wholly shown or does not take a click at its centre ({shown})")
     return wrong
 
@@ -335,7 +331,7 @@ def _drive_low_windows(run: Run, page: Page) -> None:
         for second_theme in (False, True):
             if second_theme:
                 toggle_theme(page)
-            theme = "jasny" if page.locator("header").get_by_role("button", name="Włącz motyw ciemny").count() else "ciemny"
+            theme = shown_theme(page)
             themes.append(theme)
             for window, kind in ((screen, "lines"), *LOW_WINDOWS):
                 page.set_viewport_size(window)
@@ -467,12 +463,12 @@ def drive(run: Run, page: Page) -> None:
         page.goto(run.url + f"#/{page_id}")
         expect(page.get_by_role("heading", name=heading, exact=True)).to_be_visible()
         write = page.get_by_role("button", name=WRITE, exact=True)
-        theme = page.get_by_role("button", name="Włącz motyw", exact=False)
+        bell = page.locator("header").get_by_role("button", name="Powiadomienia", exact=False)
         expect(write).to_be_visible()
-        write_box, theme_box = write.bounding_box(), theme.bounding_box()
+        write_box, bell_box = write.bounding_box(), bell.bounding_box()
         run.check(
-            write_box is not None and theme_box is not None and write_box["x"] < theme_box["x"],
-            f"{heading}: the header has „{WRITE}” left of the theme toggle",
+            write_box is not None and bell_box is not None and write_box["x"] < bell_box["x"],
+            f"{heading}: the header has „{WRITE}” left of the bell Powiadomienia",
         )
     page.get_by_role("button", name=WRITE, exact=True).hover()
     expect(page.get_by_text(WRITE, exact=True)).to_be_visible()

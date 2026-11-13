@@ -84,7 +84,6 @@ from openpyxl.styles.borders import Border
 
 from .highlights import PLAIN, Highlights
 from .hyperlinks import Hyperlink
-from .quantity_rules import QuantityColumn
 from .row_look import GENERAL, CellLook, RowLook, wraps
 from .workbook_files import DataCell
 from .workbook_parts import (
@@ -223,7 +222,7 @@ class Row:
 
     cells: Mapping[int, DataCell]
     """Kolumna od 1 → komórka z wartością, Wyróżnieniami, formatem liczby i Hiperłączem; każda kolumna Wiersza danych."""
-    quantities: Mapping[QuantityColumn, int]
+    quantities: Mapping[str, int]
     """Litera kolumny → liczba wpisana w komórkę Wzorca z jej stylem; tylko w ``SheetLayout.quantity_columns``."""
 
 

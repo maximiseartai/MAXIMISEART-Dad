@@ -4,8 +4,8 @@ Narzędzie dla Maksa, poza CI (spec #1344, US 57–58, ADR 0030). Pracę Przypom
 ``AtrapaImap`` i ``AtrapaSmtp``, więc prawdziwy Gmail, INTERMAX taty, treść i stopkę sprawdza ta próba. Czyta to samo
 i tą samą drogą co praca przypomnień Centrum (``rozliczenia.centrum.report_reminders.due_reminders``): z folderu
 ``--config`` dzień wdrożenia przypomnień (``przypomnienia-od.txt``), Ustawienia taty (``centrum-ustawienia.yaml``:
-INTERMAX i folder okresów), plik dostępu do skrzynki raportów (``skrzynka-raportow.txt``), Konfigurację wykonawców,
-plik adresów Wykonawców i stopkę taty (``stopka-przypomnien.txt``), potem Pliki zbiorcze okresów, INTERMAX tylko do
+INTERMAX i folder okresów), plik dostępu do skrzynki raportów (``skrzynka-raportow.txt``), Listę Wykonawców
+(``wykonawcy.yaml``) i stopkę taty (``stopka-przypomnien.txt``), potem Pliki zbiorcze okresów, INTERMAX tylko do
 odczytu (także otwarty w Excelu), skrzynkę i jej „Wysłane” tylko do odczytu, i pyta rdzeń raportów, które
 przypomnienia należą się w tej chwili.
 
@@ -43,24 +43,21 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime, timedelta
 import imaplib
-import os
 from pathlib import Path
 import smtplib
 import sys
-import time
 from typing import Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
-from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
     ImapInbox,
+    InboxState,
     InboxUnreachable,
     MailRefused,
     MailSent,
@@ -83,10 +80,7 @@ _NOT_SENT: Final = "mail nie poszedl"
 def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) -> str:
     """Jedna linia wyniku próby; wysyła najwyżej jeden mail, tylko do ``target``."""
 
-    settings = SettingsStore(
-        config / tool_files.SETTINGS.name, log=CentrumLog(Path(os.devnull), append=lambda _: None), pause=time.sleep
-    ).load()
-    read = due_reminders(now, settings, config, ConfigurationFiles.in_folder(config), inbox, DadFiles())
+    read = due_reminders(now, read_snapshot(config), config, inbox, DadFiles())
     match read:
         case NotRead():
             return f"{FAIL} | {_not_read(read)}"
@@ -131,7 +125,7 @@ def _not_read(read: NotRead) -> str:
         case "bez-dostepu":
             return f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"
         case "bez-adresow":
-            return "brak albo zly plik adresow Wykonawcow albo Konfiguracja wykonawcow"
+            return "zla albo nieczytelna Lista Wykonawcow"
         case "okresy":
             return "nieczytelny folder okresow"
         case "intermax":
@@ -175,11 +169,11 @@ def main(
     target = SenderAddress.of(args.do)
     if target is None:
         parser.error("--do to jeden adres lokalna@domena")
-    inbox = (
-        ImapInbox(args.config)
-        if connect is None or smtp is None
-        else ImapInbox(args.config, connect=connect, smtp=smtp)
-    )
+
+    def access() -> InboxState:
+        return read_snapshot(args.config).inbox
+
+    inbox = ImapInbox(access) if connect is None or smtp is None else ImapInbox(access, connect=connect, smtp=smtp)
     line = probe(now(), args.config, inbox, target)
     print(line)
     return 0 if line.startswith(OK) else 1

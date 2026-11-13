@@ -42,9 +42,9 @@ from odtworzenie import (
     replay,
     stop_cause,
 )
-from rozliczenia import tool_files
 from rozliczenia.tool_files import REPORT_ENTERING_STATE
-from rozliczenia import intermax_copies
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia import intermax_copies, settlement_messages
 from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.outbox import RETRY_S
@@ -266,8 +266,8 @@ def test_komentarz_ma_podsumowanie_uruchomienia_i_odnosnik_do_pliku_w_archiwum_k
     assert box(centrum).archived(ARCHIVE) == {name: local}
 
 
-def _broken_worker_config(centrum: SettlingCentrum) -> None:
-    centrum.configuration.worker_config.write_text(":: nie yaml", encoding="utf-8")
+def _stop_for_maks(centrum: SettlingCentrum) -> None:
+    centrum.engines.stop = settlement_messages.summary_not_shown()
 
 
 def _failing_engine(centrum: SettlingCentrum) -> None:
@@ -291,10 +291,10 @@ SUMMARIES: Final[dict[str, tuple[Callable[[SettlingCentrum], None], bool, bool, 
         ["- Wynik: WYMAGA_SPRAWDZENIA", "- Komunikaty: `BRAK_MAPOWANIA` (ostrzeżenie)"],
     ),
     "do-maksa": (
-        _broken_worker_config,
+        _stop_for_maks,
         False,
         False,
-        ["- Wynik: BLAD_KRYTYCZNY, Zatrzymanie do Maksa", "- Komunikaty: `ZLA_KONFIGURACJA_WYKONAWCOW` (Zatrzymanie)"],
+        ["- Wynik: BLAD_KRYTYCZNY, Zatrzymanie do Maksa", "- Komunikaty: `BLAD_PODSUMOWANIA` (Zatrzymanie)"],
     ),
     "nieoczekiwany-wyjatek": (
         _failing_engine,
@@ -514,7 +514,7 @@ def test_inna_wada_sprawdzenia_za_tym_samym_wyjasnieniem_zmienia_komentarz_logow
     run_id = unexpected_exception(centrum)
     thread_with(centrum, comments=1)
     centrum.configuration.worker_template.write_bytes(b"to nie jest skoroszyt")
-    workers = centrum.configuration.worker_config
+    workers = centrum.tool.worker_list
     workers.write_bytes("wykonawcy: [".encode())
     not_yaml = diagnose(centrum, run_id)
     sent = [diagnosed_logs(centrum, edits=1)]
@@ -523,13 +523,13 @@ def test_inna_wada_sprawdzenia_za_tym_samym_wyjasnieniem_zmienia_komentarz_logow
     not_utf8 = diagnose(centrum, run_id)
 
     sent.append(diagnosed_logs(centrum, edits=2))
-    label = "Konfiguracja wykonawców"
+    label = "Lista Wykonawców"
     assert [diagnosis["explanation"] for diagnosis in (not_yaml, not_utf8)] == [not_yaml["explanation"]] * 2
     assert check_detail(not_yaml, label) != check_detail(not_utf8, label)
     logged = [logs["diagnosis"] for logs in sent]
     checks = [next(check for check in diagnosis["checks"] if check["label"] == label) for diagnosis in logged]
     assert [(check["code"], check["detail"]) for check in checks] == [
-        ("ZLA_KONFIGURACJA_WYKONAWCOW", check_detail(diagnosis, label)) for diagnosis in (not_yaml, not_utf8)
+        ("ZLA_LISTA_WYKONAWCOW", check_detail(diagnosis, label)) for diagnosis in (not_yaml, not_utf8)
     ]
 
 
@@ -1036,7 +1036,7 @@ PROCESSES = {
     "efenix": _efenix,
     "report_entering": _report_entering,
 }
-_CONFIGURATION = "- Konfiguracja wykonawców i Wzorce nie są w Logach"
+_CONFIGURATION = "- Lista Wykonawców i Wzorce nie są w Logach"
 # Granice zgodnego odtworzenia Logów każdego procesu, po kolei (początek linii pod „Granice:”): to, czego Logi tego
 # procesu nie niosą, bez braków w folderze Konfiguracji i arkusza, w którym odtworzenie nie wie, gdzie stały ADRES i
 # NUMER UMOWY. Maski strażnika są tylko przy Wpisaniu raportów: Raport Jana i jego wiersz INTERMAX mają telefon.
@@ -1168,7 +1168,7 @@ def _other_cell(record: dict[str, Any]) -> None:
 
 
 def _other_config_size(record: dict[str, Any]) -> None:
-    record["environment"]["files"] = [{"name": tool_files.WORKER_CONFIG.name, "size": 1, "online_only": None}]
+    record["environment"]["files"] = [{"name": WORKERS_FILE, "size": 1, "online_only": None}]
 
 
 # Granica Logów: zmiana pliku Logów Przebiegu, folder Konfiguracji (``None``: folder Centrum taty), kod wyjścia i linia
@@ -1201,14 +1201,14 @@ LIMITS = {
         3,
         "NIE DA SIĘ ODTWORZYĆ: Kopia Pliku zbiorczego nie ma jednego arkusza z nagłówkami w wierszu 17",
     ),
-    "bez_folderu_konfiguracji": (lambda record: None, "nie-ma", 3, "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Konfiguracją"),
+    "bez_folderu_konfiguracji": (lambda record: None, "nie-ma", 3, "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Listą Wykonawców"),
     "maska_strazinka_w_kopii": (
         _cell_with_phone,
         None,
         0,
         "- Kopia wejścia ma maski strażnika reguły danych ([telefon] ×1): odtworzenie czyta maskę w miejscu wartości taty",
     ),
-    "inny_rozmiar_konfiguracji": (_other_config_size, None, 0, "- Konfiguracja wykonawców i Wzorce nie są w Logach"),
+    "inny_rozmiar_konfiguracji": (_other_config_size, None, 0, _CONFIGURATION),
 }
 
 
@@ -1236,8 +1236,8 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
         granice = lines[lines.index("Granice:") + 1 :]
         assert [line for line in granice if line.startswith(expected)], granice
     if case == "inny_rozmiar_konfiguracji":
-        size = (configuration / tool_files.WORKER_CONFIG.name).stat().st_size
-        assert any(line.endswith(f"inny rozmiar niż u taty: worker_mapping.yaml: u taty 1 B, tu {size} B") for line in lines)
+        size = (configuration / WORKERS_FILE).stat().st_size
+        assert any(line.endswith(f"inny rozmiar niż u taty: {WORKERS_FILE}: u taty 1 B, tu {size} B") for line in lines)
 
 
 # Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.
@@ -1265,21 +1265,21 @@ def test_kopia_wejscia_z_dwoma_plikami_konczy_odtworzenie_granica_procesu_jedneg
     assert (code, lines[0]) == (3, f"NIE DA SIĘ ODTWORZYĆ: Kopia wejścia ma 2 pliki, a {ONE_FILE[process]} czyta jeden"), lines
 
 
-def test_folder_konfiguracji_bez_konfiguracji_wykonawcow_raport_nazywa_brakujacy_plik(
+def test_folder_konfiguracji_bez_listy_wykonawcow_raport_nazywa_brakujacy_plik(
     tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Folder Konfiguracji z Wzorcami, a bez Konfiguracji wykonawców: raport mówi pod „Granice:”, którego pliku w nim
+    """Folder Konfiguracji z Wzorcami, a bez Listy Wykonawców: raport mówi pod „Granice:”, którego pliku w nim
     nie ma, bo bez niego Przebieg rozliczeń kończy się inaczej niż u taty."""
 
     produced = shared_logs("settlement")
     folder = tmp_path / "bez-konfiguracji-wykonawcow"
     shutil.copytree(produced.archived.parent / "config", folder)
-    (folder / tool_files.WORKER_CONFIG.name).unlink()
+    (folder / WORKERS_FILE).unlink()
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--konfiguracja", folder)
 
     [configuration] = [line for line in lines if line.startswith(_CONFIGURATION)]
-    assert (code, configuration.endswith(f"; w folderze nie ma: {tool_files.WORKER_CONFIG.name}")) == (1, True), lines
+    assert (code, configuration.endswith(f"; w folderze nie ma: {WORKERS_FILE}")) == (1, True), lines
 
 
 def test_odtworzenie_bez_folderu_konfiguracji_mowi_ze_folderu_nie_podano(tmp_path: Path, shared_logs: Callable[[str], Produced]) -> None:
@@ -1291,7 +1291,7 @@ def test_odtworzenie_bez_folderu_konfiguracji_mowi_ze_folderu_nie_podano(tmp_pat
     report = replay(record, work=tmp_path / "odtworzenie", configuration=None)
 
     assert report.lines(record, "kod")[0] == (
-        "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Konfiguracją wykonawców i Wzorcami (brak, --konfiguracja): Logi ich nie "
+        "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Listą Wykonawców i Wzorcami (brak, --konfiguracja): Logi ich nie "
         "niosą, a proces bez nich nie biegnie"
     )
 

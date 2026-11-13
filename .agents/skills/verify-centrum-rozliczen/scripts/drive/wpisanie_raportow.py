@@ -15,10 +15,12 @@ from drive.common import (
     FOCUS,
     Run,
     active_run_signs,
+    choose_periods_directory,
     current_run,
     ended_run_shown,
     figure,
     move,
+    point_in_settings,
     read_bytes,
     read_json,
     remove,
@@ -119,12 +121,9 @@ def _to_setup(run: Run, page: Page, name: str) -> None:
 
 
 def _choose(run: Run, page: Page, path: str) -> None:
-    """Dad points INTERMAX on Raporty to ``path`` through the native picker (harness answers it)."""
+    """Dad points INTERMAX (the Rejestr zleceń) to ``path`` in Ustawienia over Raporty (harness answers the picker)."""
 
-    run.answer_picker(path)
-    verb = "Wskaż" if run.remembered("rejestr_zlecen") is None else "Zmień"
-    page.get_by_role("group", name="INTERMAX", exact=True).get_by_role("button", name=f"{verb} INTERMAX", exact=True).click()
-    run.wait_for(lambda: run.remembered("rejestr_zlecen") == path, f"INTERMAX set to {Path(path).name}")
+    point_in_settings(run, page, "Rejestr zleceń", path)
 
 
 def _short(day: str) -> str:
@@ -585,9 +584,7 @@ def drive(run: Run, page: Page) -> None:
     settings = run.api("/api/settings", "raporty-ustawienia")
     if settings["periods_directory"] == {"state": "not_set"}:
         page.goto(run.url + "#/okresy")
-        run.answer_picker(run.fixture["periods_directory"])
-        page.get_by_role("button", name="Wskaż folder okresów", exact=True).click()
-        expect(page.get_by_role("table", name="Tablica okresów")).to_be_visible()
+        choose_periods_directory(run, page)
     _to_setup(run, page, "raporty-uruchomienia")
     expect(page.get_by_role("region", name=BUTTON, exact=True)).to_have_count(0)
     expect(page.get_by_role("button", name=BUTTON, exact=True)).to_have_count(0)

@@ -126,7 +126,9 @@ class Computer:
         keyed = KeyedBox(self.box, lambda: read_report_key(self.config), clock=self.clock)
         stored = DadCases(work)
         outbox = case_outbox(work, keyed, stored)
-        reports = Reports(work, keyed, outbox, lambda: TOOL_COMMIT, stored, search_deadline_s=self.search_deadline_s)
+        reports = Reports(
+            work, keyed, outbox, lambda: TOOL_COMMIT, stored, search_deadline_s=self.search_deadline_s, settings_changes=tuple
+        )
         self.outbox, self.keyed, self.stored = outbox, keyed, stored
         return reports
 
@@ -344,7 +346,7 @@ def test_zgloszenie_nieudanej_aktualizacji_po_instalacji_bibliotek_bez_commitu_p
 
 def test_zgloszenie_dokladnie_na_granicy_jednej_czesci_wysylki_jest_cale(computer: Computer) -> None:
     result = UpdateResult(NO_CONNECTION, TOOL_COMMIT, None)
-    frame = update_report(result, ("",)).report(commit=None, previous=None).body
+    frame = update_report(result, ("",)).report(commit=None, previous=None, settings=()).body
     entry = "x" * (PART_LIMIT - len(frame))
 
     body = sent_alone(computer, update_report(result, (entry,)))

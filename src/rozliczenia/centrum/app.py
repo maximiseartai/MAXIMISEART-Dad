@@ -45,7 +45,7 @@ from rozliczenia.centrum.metrics import History, metrics_router
 from rozliczenia.centrum.notifications import Notifications, notifications_router
 from rozliczenia.centrum.period_board import periods_router
 from rozliczenia.centrum.period_start import PeriodStarts
-from rozliczenia.centrum.platform import Platform
+from rozliczenia.centrum.platform import Autostart, Platform
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_box import GitHubReportBox, ReportBox
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
@@ -59,8 +59,13 @@ from rozliczenia.centrum.report_entering_state import FileReportState
 from rozliczenia.centrum.report_reminders import MinuteRhythm, ReminderRhythm, ReportReminders
 from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.server import AFTER_START
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.history import ReleaseOrigin
+from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.proposal import ReleaseChange
+from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
+from rozliczenia.centrum.quantity_rules_router import quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
 from rozliczenia.centrum.timing import server_timing, timing_router
@@ -79,7 +84,7 @@ from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.workbook_files import ByteSource, file_bytes  # noqa: TID251 - domyślne źródło bajtów uchwytu (create_app(source=...))
-from rozliczenia.worker_report_inbox import ImapInbox, ReminderMailbox, WorkerReportInbox
+from rozliczenia.worker_report_inbox import ImapConnect, ImapInbox, ReminderMailbox, WorkerReportInbox
 from rozliczenia.wall_clock import dad_today, local_now
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
@@ -89,8 +94,9 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 def create_app(
     *,
-    settings_path: Path,
+    config: Path,
     platform: Platform,
+    autostart: Autostart,
     log: CentrumLog,
     shutdown: Shutdown,
     today: Callable[[], date] = dad_today,
@@ -110,14 +116,18 @@ def create_app(
     intermax_disk: Disk = LOCAL_DISK,
     now: Callable[[], datetime] = local_now,
     efenix_window: EfenixWindow | None = None,
+    inbox_connect: ImapConnect | None = None,
     worker_report_inbox: WorkerReportInbox | None = None,
     reminder_mailbox: ReminderMailbox | None = None,
     reminder_rhythm: ReminderRhythm | None = None,
+    release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
 ) -> FastAPI:
-    work = CentrumWork(config=settings_path.parent, log=log, clock=clock, pause=pause)
+    work = CentrumWork(config=config, log=log, clock=clock, pause=pause)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:
+        # Zmiany Ustawień Centrum z Wydania: przed pierwszym zapytaniem i przed Przypomnieniami, które czytają Ustawienia.
+        settings.apply_release_changes(release_changes, release_origin)
         # Powiadomienia: pierwsze pytanie skrzynki o stan spraw taty przy starcie, nie dopiero przy odczycie.
         notifications.check_in_background()
         # Klucz do Zgłoszeń: pierwsze sprawdzenie w tle, żeby Konfiguracja nie czekała na Skrzynkę.
@@ -184,10 +194,16 @@ def create_app(
     def health() -> Health:
         return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
 
-    store = SettingsStore(settings_path, log=log, pause=pause)
-    app.include_router(settings_router(store, platform))
+    # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
+    # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień.
+    settings = CentrumSettings(config, log=log, now=local_now, pause=pause, autostart=autostart)
+    # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
+    # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
+    inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
+    app.include_router(settings_router(settings, platform, inbox.try_login))
     configuration = configuration_files or ConfigurationFiles.default()
-    app.include_router(periods_router(store, platform, today, catalog))
+    app.include_router(quantity_rules_router(settings, configuration.collective_template))
+    app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
     cases = DadCases(work)
@@ -197,6 +213,16 @@ def create_app(
     # do pamięci.
     freshness = tool_freshness or ToolFreshness.of_system(box.github_key)
     release = RememberedRelease(freshness.release, clock=clock)
+
+    def release_origin() -> ReleaseOrigin:
+        """Wersja narzędzia tego Centrum dla wiersza Historii zmiany z Wydania: numer Wydania i skrót commitu."""
+
+        commit = freshness.local()
+        at_commit = None if commit is None else freshness.wydanie(commit)
+        return ReleaseOrigin(
+            release=None if at_commit is None else at_commit.version, commit=None if commit is None else short_commit(commit)
+        )
+
     # Diagnoza: commit `main` z GitHuba, atrybuty OneDrive i werdykt Skrzynki o kluczu to granice komputera taty.
     surroundings = Surroundings(
         replace(freshness, release=release.fresh),
@@ -207,17 +233,29 @@ def create_app(
     # bajtów ``source``, a jego pamięć to pamięć reguły danych pracy.
     files = DadFiles(source=source, forbidden=work.forbidden)
     filling = FillingReads(work, files)
-    app.include_router(filling_router(store, log, surroundings.cloud_files, filling))
+    app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))
     outbox = case_outbox(work, box, cases)
     reports = Reports(
-        work, box, outbox, surroundings.tool_freshness.local, cases, search_deadline_s=report_search_deadline_s
+        work,
+        box,
+        outbox,
+        surroundings.tool_freshness.local,
+        cases,
+        search_deadline_s=report_search_deadline_s,
+        settings_changes=settings.reported_changes,
     )
+
+    def folders(at_start: FolderSettings | None) -> FolderSettings:
+        """Ustawienia Centrum ze startu Uruchomienia, a bez migawki (Urwane Uruchomienie) bieżące."""
+
+        return settings.snapshot().folders if at_start is None else at_start
+
     disk = LogsOnDisk(log, journaled=catalog.journaled)
     records = RecordMaker(
         commit=surroundings.tool_freshness.local,
         wydanie=surroundings.tool_freshness.wydanie,
-        files=lambda process, period: files_of_process(
-            process, period, settings=store.load(), configuration=configuration
+        files=lambda process, period, at_start: files_of_process(
+            process, period, settings=folders(at_start), configuration=configuration
         ),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
@@ -225,22 +263,22 @@ def create_app(
     comments = RunComments(work, disk, outbox, records)
     stops = Stops(
         reports,
-        lambda process, period: diagnose(
+        lambda process, period, at_start: diagnose(
             process,
             period,
-            settings=store.load(),
+            settings=folders(at_start),
             configuration=configuration,
             log=log,
             surroundings=surroundings,
             template_check=template_check,
             files=files,
+            workers=settings.snapshot().workers,
         ),
         log,
         comments,
     )
     contexts = RunContexts(files=files, template_check=template_check)
     # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
-    # Skrzynka raportów taty w Gmailu z plikiem dostępu w ``config``; testy i skille podają atrapę.
     report_files = FileReportState.of_work(work)
     parts = HostParts(
         efenix=(efenix_window or EfenixWindow.of_tata()).opening(),
@@ -248,21 +286,21 @@ def create_app(
         now=now,
         waiting=Waiting(clock, pause),
         disk=intermax_disk,
-        reports=ReportEnteringParts(worker_report_inbox or ImapInbox(work.config), report_files),
+        reports=ReportEnteringParts(worker_report_inbox or inbox, report_files),
     )
-    starts = PeriodStarts(store, configuration, catalog, today, contexts, parts)
+    starts = PeriodStarts(settings, configuration, catalog, today, contexts, parts)
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
-        store, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
+        settings, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
     # Przypomnienia o raporcie czytają INTERMAX tym samym uchwytem plików taty, bez Kopii wejścia, a skrzynkę i jej
     # „Wysłane” przez port skrzynki raportów; testy i skille podają atrapę skrzynki i rytm.
     reminders = ReportReminders(
-        work, store, configuration, reminder_mailbox or ImapInbox(work.config), files, reports, now
+        work, settings, reminder_mailbox or inbox, files, reports, now
     )
     # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX; jej widok Raporty
     # pokazuje też wynik ostatniego sprawdzenia przypomnień.
-    report_entering = ReportEnteringEntry(store, catalog, configuration, parts, contexts, report_files, reminders.shown)
+    report_entering = ReportEnteringEntry(settings, catalog, configuration, parts, contexts, report_files, reminders.shown)
     rhythm = reminder_rhythm or MinuteRhythm()
     cards = RunCards(disk, history.runs)
     closed = comments.close_left_behind()
@@ -299,7 +337,12 @@ def create_app(
     app.include_router(metrics_router(history, today))
     app.include_router(
         configuration_router(
-            configuration, surroundings.tool_freshness, release, lambda: box.judge(wait_s=CONFIGURATION_WAIT_S), template_check
+            configuration,
+            surroundings.tool_freshness,
+            release,
+            lambda: box.judge(wait_s=CONFIGURATION_WAIT_S),
+            template_check,
+            lambda: settings.snapshot().workers,
         )
     )
     app.include_router(tool_update_router(updates))
@@ -311,7 +354,8 @@ def create_app(
 
 
 def _problem(refused: Refusal) -> Response:
-    return JSONResponse(Problem(message=refused.message).model_dump(), status_code=refused.status_code)
+    problem = Problem(message=refused.message, field=refused.field)
+    return JSONResponse(problem.model_dump(exclude_none=True), status_code=refused.status_code)
 
 
 class _Frontend(StaticFiles):

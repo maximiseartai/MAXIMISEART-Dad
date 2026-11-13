@@ -73,10 +73,13 @@ jej startu (kod 2 i linia ``CIĘŻKIE CI ODMOWA``) na zasadach ``tools/lib/ciezk
 ``check_<co>_mutations.py`` skilli ``verify-*`` używają tego samego silnika przez ``check_all``, który
 takiego limitu nie ma.
 
-Z ``MUTACJE_CZESC=K/N`` w środowisku ``check_all`` sprawdza tylko K-tą z N części tabeli: mutacje w kolejności nazw,
-co N-tą od K-tej, więc część nie zależy od kolejności tabeli, a N części sprawdza każdą mutację dokładnie raz. Podstawa
-części to tylko polecenia jej mutacji, a część bez mutacji kończy się ``MUTACJE OK``. Tak plan CI
-(``tools/plan_ci.py``) dzieli długi skrypt mutacji skilla na zadania bez zmiany skryptu.
+Z ``MUTACJE_CZESC=K/N`` w środowisku ``check_all`` sprawdza tylko K-tą z N części tabeli: K-ty z N kolejnych kawałków
+mutacji ułożonych po poleceniu, potem po nazwie, więc część nie zależy od kolejności tabeli, a N części sprawdza każdą
+mutację dokładnie raz. Podstawa części to tylko polecenia jej mutacji, po kolei, a część bez mutacji kończy się
+``MUTACJE OK``. Kawałki po poleceniu dają każdemu poleceniu podstawę w jednej części, a tylko na granicy kawałków w
+dwóch: przy podziale co N-tą po nazwie każda z czterech części skryptu mutacji modelu Kolejki Skrzynki uruchamiała
+podstawę 5–9 z jego 13 poleceń i trwała 316–550 s (zadania Mutation checks runów PR 43363580640, 43365452211,
+43368688448). Tak plan CI (``tools/plan_ci.py``) dzieli długi skrypt mutacji skilla na zadania bez zmiany skryptu.
 
 ``check_all`` drukuje na stderr czas polecenia każdej mutacji (linia ``CZAS``) i ostrzeżenie ``CZAS BLISKO LIMITU`` dla
 mutacji, której polecenie trwało ponad połowę ``--limit-s`` (``NEAR_LIMIT``), więc rosnący czas widać w logu, zanim
@@ -596,14 +599,15 @@ def type_gate(
 
 
 def _part(mutations: Sequence[Mutation], part: str) -> list[Mutation]:
-    """Mutacje części ``K/N`` (``Czesc.co_nta`` po nazwie) w kolejności tabeli; zła postać to ``ValueError`` z nazwą zmiennej."""
+    """Mutacje części ``K/N`` (``Czesc.kawalek`` po poleceniu i nazwie) w kolejności tabeli; zła postać to ``ValueError``
+    z nazwą zmiennej."""
 
     try:
         czesc = Czesc.z_tekstu(part)
     except ValueError as error:
         raise ValueError(f"{ZMIENNA_CZESCI} to {error}") from None
-    by_name = sorted(range(len(mutations)), key=lambda index: (mutations[index].name, repr(mutations[index])))
-    chosen = set(czesc.co_nta(by_name))
+    by_command = sorted(range(len(mutations)), key=lambda index: (mutations[index].command, mutations[index].name, repr(mutations[index])))
+    chosen = set(czesc.kawalek(by_command))
     return [mutation for index, mutation in enumerate(mutations) if index in chosen]
 
 

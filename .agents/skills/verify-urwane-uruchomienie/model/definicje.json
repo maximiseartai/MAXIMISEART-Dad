@@ -29,7 +29,7 @@
     "RunComments._keep": "f103fc7564914779",
     "RunComments.close_left_behind": "e2478851c6d9d2c8",
     "RunComments.send_left_behind": "c525813f4ae4f058",
-    "RecordMaker.interrupted": "de53a5143d62971d"
+    "RecordMaker.interrupted": "0349f465d08b9c25"
   },
   "src/rozliczenia/centrum/logs_disk.py": {
     "LogsOnDisk.logs": "09cb03e3fedd9628",
@@ -56,7 +56,7 @@
     "remove_file": "09898070a34c3c70"
   },
   "src/rozliczenia/centrum/app.py": {
-    "create_app.lifespan": "c7fc1cf30456a119",
+    "create_app.lifespan": "53d8b4cfe25ee19b",
     "create_app.app": "e785cecd149b3fec",
     "create_app.disk": "07384769816122dd",
     "create_app.comments": "f11aeb98dc5cead7",
@@ -82,17 +82,17 @@
     "_superseded": "563aa9a41628837b"
   },
   "src/rozliczenia/centrum/launcher.py": {
-    "_start": "d93f6411bc6064ea",
+    "_start": "9592aabfd44f1273",
     "_listen_when_released": "f8e942c859e06ae0"
   },
   "src/rozliczenia/centrum/server.py": {
     "AFTER_START": "c0a7e2b361f39be2",
     "after_start": "dda17dfeee9413a2",
-    "serve": "270772876700de0c",
+    "serve": "82e8b0ef557e7425",
     "_Server": "8ceb23258608b3c4"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
-    "replace_atomically": "9e12247e22fdd059"
+    "replace_atomically": "d3549c3aa56844ea"
   },
   "src/rozliczenia/efenix_pricing.py": {
     "price_orders.save": "944904a2f85b713b"

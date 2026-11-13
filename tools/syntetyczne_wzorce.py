@@ -5,8 +5,8 @@ Użycie (z katalogu repozytorium):
     python tools/syntetyczne_wzorce.py FOLDER [--data-rows N]
 
 Do ``FOLDER`` trafiają trzy Wzorce pod nazwami, pod którymi leżą w ``config`` (folder nadaje się
-dla ``tools/benchmark_przebiegu.py --templates-dir``), oraz ``worker_mapping.yaml``: Konfiguracja
-20 syntetycznych Wykonawców. Wzorców taty nie ma w repozytorium, a CI potrzebuje skoroszytów,
+dla ``tools/benchmark_przebiegu.py --templates-dir``), oraz ``wykonawcy.yaml``: Lista Wykonawców
+z 20 syntetycznymi Wykonawcami. Wzorców taty nie ma w repozytorium, a CI potrzebuje skoroszytów,
 których wczytanie i zapis kosztują tyle samo.
 
 Wzorzec rozliczenia pracownika i Wzorzec pliku zbiorczego mają kształt Wzorców taty (spec #141):
@@ -30,6 +30,7 @@ import argparse
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from atrapy.wzorce import FULL_DATA_ROWS, SHARED_FORMULA_ROWS, write_synthetic_templates
@@ -37,7 +38,7 @@ from atrapy.wzorce import FULL_DATA_ROWS, SHARED_FORMULA_ROWS, write_synthetic_t
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("directory", type=Path, help="Folder na Wzorce i Konfigurację wykonawców.")
+    parser.add_argument("directory", type=Path, help="Folder na Wzorce i Listę Wykonawców.")
     parser.add_argument(
         "--data-rows",
         type=int,

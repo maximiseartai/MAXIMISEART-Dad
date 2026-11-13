@@ -22,15 +22,16 @@ from hypothesis import strategies as st
 from rozliczenia import tool_files
 from rozliczenia import client_data
 from rozliczenia.engine import SettlementInputs, run_settlements
-from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult, WithoutRule, evaluate
+from rozliczenia.quantity_engine import OrderContent, RuleResult, WithoutRule, evaluate
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
 from rozliczenia.run_context import RunContext
 from tests.fixtures.formy_telefonu import MASKED, PHONE
-from atrapy.settlement import CellValue, make_fixture, write_quantity_source
+from atrapy.settlement import CellValue, make_fixture, worker_list, write_quantity_source
 
 PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples=100)
 
-# Składniki URZĄDZENIA z instrukcji taty (spec #268) i z docstringu Reguł ilości, w zapisie z Rejestru.
+# Zapisy składników URZĄDZENIA z instrukcji taty (spec #268) i z Listy Urządzeń z Wydania, w zapisie z Rejestru.
 COMPONENTS = (
     "nokia",
     "nokia zte",
@@ -50,14 +51,14 @@ COMPONENTS = (
     "instalacja ręczna",
     "wizja",
 )
-# Litery bez ``x``, bo doklejone ``xg`` znika z URZĄDZENIA (docstring Reguł ilości).
+# Litery bez ``x``, bo doklejone ``xg`` znika z URZĄDZENIA (docstring ``quantity_engine``).
 LETTERS = "abcdefghijklmnopqrstuvwyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWYZĄĆĘŁŃÓŚŹŻ"
 SEPARATORS = (" ", "  ", ",", ", ", " ,", ",,", " , ")
 TUESDAY_MORNING = datetime(2026, 10, 27, 9)
 
 
 def _rules(devices: str, activities: str = "") -> RuleResult:
-    return evaluate(OrderContent.of("", devices, activities, TUESDAY_MORNING))
+    return evaluate(DEFAULT_QUANTITY_RULES, OrderContent.of("", devices, activities, TUESDAY_MORNING))
 
 
 @st.composite
@@ -144,9 +145,9 @@ def test_samo_nokia_z_akt_int_w_dowolnym_miejscu_czynnosci_daje_jedno_o_na_zlece
 
     with_phrase = _rules(devices, before + phrase + after + again)
 
-    assert with_phrase.quantities.get(QuantityColumn.O) == 1, (devices, before + phrase + after + again)
+    assert with_phrase.quantities.get("O") == 1, (devices, before + phrase + after + again)
     assert with_phrase == _rules(devices, "akt int")
-    assert QuantityColumn.O not in _rules(devices, before + after).quantities
+    assert "O" not in _rules(devices, before + after).quantities
 
 
 # Ilości tylko dla INEA (ADR 0018): kolumna → słowo w URZĄDZENIA. Oba słowa mają ``o``, a wypełnienie wiersza nie,
@@ -181,7 +182,7 @@ def test_ilosci_tylko_dla_inea_przy_slowie_w_dowolnym_miejscu_urzadzen_bez_wzgle
     def cleared_cells_match_words(rows: list[tuple[dict[str, CellValue], set[str]]]) -> None:
         write_quantity_source(source_path, [cells for cells, _ in rows])
 
-        preview = run_settlements(SettlementInputs(source_path, config_path, template_path, dry_run=True), RunContext())
+        preview = run_settlements(SettlementInputs(source_path, worker_list(), template_path, dry_run=True), RunContext())
 
         expected = {column: sum(1 for cells, words in rows if column in words and cells[column] is not None) for column in INEA_ONLY}
         assert {str(column): count for column, count in preview.inea_only_cleared.items()} == expected, [cells["D"] for cells, _ in rows]

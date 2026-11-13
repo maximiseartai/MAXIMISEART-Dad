@@ -100,6 +100,8 @@ class Catalog:
             raise ValueError(f"{kind.title} potrzebuje plików {sorted(kind.path_needs)}, a start ma {sorted(start.paths)}")
         if "period" in kind.needs and start.period is None:
             raise ValueError(f"{kind.title} potrzebuje okresu")
+        if "workers" in kind.needs and start.workers is None:
+            raise ValueError(f"{kind.title} potrzebuje Listy Wykonawców, a start jej nie ma")
         if "efenix_window" in kind.needs and parts.efenix is None:
             raise ValueError(f"{kind.title} potrzebuje okna efenix")
         if "worker_report_inbox" in kind.needs and parts.reports is None:
@@ -109,7 +111,9 @@ class Catalog:
         pricing = kind.pricing_of(start.pricing)
         inputs = kind.inputs(replace(start, pricing=pricing), parts)
         period = inputs.period if start.period is None else start.period
-        return PreparedRun(kind, period, inputs, context, self.metrics(key), pricing, self.engine, _CATALOG)
+        return PreparedRun(
+            kind, period, inputs, context, self.metrics(key), pricing, self.engine, _CATALOG, start.settings
+        )
 
 
 CATALOG: Final = Catalog.default()

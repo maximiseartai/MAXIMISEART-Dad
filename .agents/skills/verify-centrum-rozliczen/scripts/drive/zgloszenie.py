@@ -12,6 +12,7 @@ from drive.common import (
     REPORT_KEY,
     advance_clock,
     box_issues,
+    close_settings,
     close_centrum,
     drop_report_key,
     edit_issue,
@@ -19,6 +20,7 @@ from drive.common import (
     finished_result,
     finished_view,
     move,
+    open_settings,
     open_setup,
     queued,
     queued_posts,
@@ -173,29 +175,30 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "61b-zgloszenie-bez-klucza-powiadomienia")
 
     run.step(FEATURE, "zgloszenie-konfiguracja")
-    page.get_by_role("link", name="Konfiguracja", exact=True).click()
-    expect(page.get_by_text("Zgłoszenia: brak tokenu", exact=True)).to_be_visible()
+    connection = open_settings(page, "Zgłoszenia").get_by_role("listitem", name="Skrzynka Zgłoszeń")
+    expect(connection).to_contain_text("Brak tokenu")
     run.capture(page, "62-zgloszenie-konfiguracja-brak-klucza")
     print(f"  harness: Maks writes the key to config/{REPORT_KEY_FILE}", flush=True)
     key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     configuration = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja")
-    expect(page.get_by_text("Zgłoszenia: gotowe", exact=True)).to_be_visible()
-    run.check(configuration["reports"] == "ready", "Konfiguracja reports the key as ready")
+    expect(connection).to_contain_text("Gotowe")
+    run.check(configuration["reports"] == "ready", "Ustawienia report the key as ready")
     run.check(REPORT_KEY not in json.dumps(configuration) and REPORT_KEY not in page.content(), "the key value never reaches the browser")
     run.capture(page, "63-zgloszenie-konfiguracja-gotowe")
     print("  harness: the skrzynka refuses the key Maks writes next (an expired token)", flush=True)
     refusing = Switch.KEY_REFUSED.on(run.root)
     key_file.write_text(REPORT_KEY + "_WYGASLY\n", encoding="utf-8")
     refused = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja-odrzucony")
-    expect(page.get_by_text("Zgłoszenia: token odrzucony", exact=True)).to_be_visible()
-    run.check(refused["reports"] == "refused_key", "Konfiguracja reports the refused key")
+    expect(connection).to_contain_text("Token odrzucony")
+    run.check(refused["reports"] == "refused_key", "Ustawienia report the refused key")
     run.capture(page, "63b-zgloszenie-konfiguracja-odrzucony")
     print("  harness: Maks writes a new key the skrzynka accepts", flush=True)
     remove(refusing)
     key_file.write_text(REPORT_KEY + "\n", encoding="utf-8")
     accepted = reload_with_answer(run, page, "/api/configuration", "zgloszenie-konfiguracja-nowy-token")
-    expect(page.get_by_text("Zgłoszenia: gotowe", exact=True)).to_be_visible()
-    run.check(accepted["reports"] == "ready", "Konfiguracja reports the new key as ready")
+    expect(connection).to_contain_text("Gotowe")
+    run.check(accepted["reports"] == "ready", "Ustawienia report the new key as ready")
+    close_settings(page)
 
     run.step(FEATURE, "zgloszenie-wyslane")
     page.get_by_role("link", name="Uruchomienia", exact=True).click()

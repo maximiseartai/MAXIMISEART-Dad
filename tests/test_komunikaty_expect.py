@@ -18,6 +18,7 @@ Centrum rozliczeń ma powód w ``QUOTES_OUTSIDE_UI``.
 from __future__ import annotations
 
 import ast
+from functools import partial
 from collections.abc import Callable, Iterator, Mapping, Sequence, Set
 import importlib
 import inspect
@@ -38,7 +39,6 @@ from rozliczenia import (
     settlement_messages,
     tool_files,
     workbook_messages,
-    worker_config_messages,
 )
 from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
@@ -55,11 +55,16 @@ from rozliczenia.centrum import (
     update_messages,
 )
 from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.settings.files import FieldPath
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.message import Message, StopError
 from rozliczenia.period_folder import PeriodFolderError, PeriodFolderInaccessible, PeriodFolderLookupError
 from rozliczenia.workbook_files import WorkbookError
 from rozliczenia.workbook_save import WorkbookSaveError
-from rozliczenia.worker_config import WorkerConfigError
 
 from tests.fixtures import message_samples
 from tests.fixtures.expect import assert_expected
@@ -79,7 +84,6 @@ from tests.fixtures.message_samples import (
     SETTLEMENT_SAMPLES,
     START_SAMPLES,
     UPDATE_SAMPLES,
-    WORKER_CONFIG_SAMPLES,
     Samples,
 )
 from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
@@ -88,7 +92,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
     "Przygotowanie pliku zbiorczego": (messages, PREPARATION_SAMPLES),
     "Przebieg rozliczeń": (settlement_messages, SETTLEMENT_SAMPLES),
-    "Konfiguracja wykonawców": (worker_config_messages, WORKER_CONFIG_SAMPLES),
     "Start Centrum rozliczeń": (start_problems, START_SAMPLES),
     "Diagnoza": (diagnosis_messages, DIAGNOSIS_SAMPLES),
     "Uzupełnienie pliku zbiorczego": (fill_messages, FILL_SAMPLES),
@@ -130,6 +133,42 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
     "Karta Wpisania raportów (zdania)": (
         report_entering_run,
         {"conflict_note": [lambda: report_entering_run.conflict_note(message_samples.CONFLICT_COPY)]},
+    ),
+    "Ustawienia Centrum (zdania)": (
+        settings_messages,
+        {
+            "not_text": [partial(settings_messages.not_text, SETTINGS_FILE)],
+            "damaged": [partial(settings_messages.damaged, SETTINGS_FILE)],
+            "other_schema": [partial(settings_messages.other_schema, SETTINGS_FILE)],
+            "unknown_key": [partial(settings_messages.unknown_key, SETTINGS_FILE, 2)],
+            "register_path": [settings_messages.register_path],
+            "periods_directory_path": [settings_messages.periods_directory_path],
+            "unknown_theme": [settings_messages.unknown_theme],
+            "bad_field": [partial(settings_messages.bad_field, WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny"))],
+            "worker_unknown_key": [partial(settings_messages.worker_unknown_key, WORKERS_FILE, 1, 1)],
+            "worker_without_login": [settings_messages.worker_without_login],
+            "worker_login_empty": [settings_messages.worker_login_empty],
+            "worker_login_repeated": [settings_messages.worker_login_repeated],
+            "worker_name_empty": [settings_messages.worker_name_empty],
+            "worker_name_invalid": [settings_messages.worker_name_invalid],
+            "worker_name_too_long": [settings_messages.worker_name_too_long],
+            "worker_same_file": [settings_messages.worker_same_file],
+            "worker_address_invalid": [settings_messages.worker_address_invalid],
+            "worker_address_repeated": [settings_messages.worker_address_repeated],
+            "workers_not_moved": [
+                partial(settings_messages.workers_not_moved, OLD_MAPPING_FILE, "plik nie jest poprawnym YAML")
+            ],
+            "addresses_not_moved": [
+                partial(settings_messages.addresses_not_moved, OLD_ADDRESSES_FILE, "ten sam adres stoi dwa razy")
+            ],
+            "autostart_unsupported": [settings_messages.autostart_unsupported],
+            "autostart_unreadable": [settings_messages.autostart_unreadable],
+            "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],
+            "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],
+            "quantity_rules_problem": [
+                partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
+            ],
+        },
     ),
 }
 
@@ -484,7 +523,7 @@ def test_blad_ktory_proces_tlumaczy_na_komunikat_niesie_fakty_a_nie_tekst() -> N
     } | {f"{error.__name__}.args" for error in errors & in_signatures if not inspect.isfunction(error.__init__)}
 
     assert with_text == set()
-    assert {WorkbookError, WorkerConfigError, PeriodFolderError, PeriodFolderLookupError} <= in_signatures
+    assert {WorkbookError, PeriodFolderError, PeriodFolderLookupError} <= in_signatures
     assert {PeriodFolderInaccessible, WorkbookSaveError} <= caught
 
 
@@ -517,6 +556,7 @@ QUOTES_OUTSIDE_UI: Final = {
     ".Rozliczenie pracowników 08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
     tool_files.WORKER_TEMPLATE.name: "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
     "Diagnoza": "napis przycisku w drugiej gałęzi warunku (pages/runs/diagnosis.tsx), postaci, której test nie czyta; sprawdza przegląd",
+    "instalacja ręczna": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
 }
 
 

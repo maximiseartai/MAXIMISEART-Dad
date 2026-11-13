@@ -41,7 +41,7 @@ import time
 import traceback
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -49,25 +49,27 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
-import yaml
 from fastapi.testclient import TestClient
 
 from atrapy import pliki_taty
 from atrapy.preparation import PreparationFixture, make_preparation_fixture
-from atrapy.settlement import MARKED, write_quantity_source, write_template
+from atrapy.settlement import MARKED, worker_list, write_quantity_source, write_template
 from atrapy.skrzynka_raportow import FakeInbox
 from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.platform import NO_AUTOSTART
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.input_checks import check_preparation, check_settlement
 from rozliczenia.message import StopError
 from rozliczenia.report_entering import EnteringInputs, ReportEnteringParts, ReportStateInMemory, SavedState, enter_from_mail
 from rozliczenia.run_context import RunContext, check_on_disk
 from rozliczenia.settlement_period import parse_period_token
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.wall_clock import local_now
+from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_report_inbox import PasswordRejected
 from rozliczenia.worker_reports import OwnEntries
 import rozjazd_modelu
@@ -316,7 +318,7 @@ class Inputs:
 
     preparation: PreparationFixture
     worker_template: Path
-    addresses: Path
+    workers: WorkerList
     collective_bytes: Path
 
 
@@ -325,14 +327,10 @@ def make_inputs(root: Path) -> Inputs:
     preparation = make_preparation_fixture(root)
     worker_template = root / "config" / pliki_taty.WORKER_TEMPLATE_NAME
     write_template(worker_template)
-    addresses = root / "config" / WORKER_ADDRESSES_FILE
-    addresses.write_text(
-        yaml.safe_dump({"schema_version": 1, "wykonawcy": {"adrian.testowy": ["adrian.testowy@przyklad.invalid"]}}),
-        encoding="utf-8",
-    )
+    workers = worker_list(addresses={"adrian.testowy": ["adrian.testowy@przyklad.invalid"]})
     collective_bytes = root / "plik-zbiorczy.xlsx"
     write_quantity_source(collective_bytes, [MARKED, {}])
-    return Inputs(preparation, worker_template, addresses, collective_bytes)
+    return Inputs(preparation, worker_template, workers, collective_bytes)
 
 
 @contextmanager
@@ -453,17 +451,19 @@ def _centrum(case: Path, periods: Path) -> TestClient:
     config = case / "config"
     config.mkdir()
     log = CentrumLog(config / "centrum.log")
-    settings = config / "centrum-ustawienia.yaml"
     app = create_app(
-        settings_path=settings,
+        config=config,
         platform=_Platform(),
+        autostart=NO_AUTOSTART,
         log=log,
         shutdown=Shutdown(log),
         today=lambda: TODAY,
         # No Historia: the Wycena w efenix of the period was never run.
         catalog=CATALOG.with_metrics({key: config / f"metryki-{key}.jsonl" for key in CATALOG.metrics_paths}),
     )
-    SettingsStore(settings, log=log, pause=lambda _: None).update(periods_directory=periods)
+    CentrumSettings(config, log=log, now=local_now, pause=lambda _: None, autostart=NO_AUTOSTART).change(
+        FOLDERS, lambda folders: replace(folders, periods_directory=periods)
+    )
     # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
     return TestClient(app, base_url="http://127.0.0.1")
 
@@ -551,8 +551,7 @@ def ask_entering(inputs: Inputs, periods: Path) -> Answer:
     entering = EnteringInputs(
         inputs.preparation.register_path,
         periods,
-        inputs.preparation.config_path,
-        inputs.addresses,
+        inputs.workers,
         ReportEnteringParts(inbox, ReportStateInMemory(SavedState(PERIOD.tuesday, OwnEntries.EMPTY))),
         now=lambda: CLICKED_AT,
     )
@@ -598,7 +597,7 @@ def ask_starts(inputs: Inputs, periods: Path) -> list[Answer]:
                 fixture.register_path,
                 periods,
                 PERIOD.token,
-                fixture.config_path,
+                inputs.workers,
                 internal_template=fixture.internal_template_path,
                 collective_template=fixture.collective_template_path,
                 template_check=check_on_disk,
@@ -606,7 +605,7 @@ def ask_starts(inputs: Inputs, periods: Path) -> list[Answer]:
         ),
         _start(
             Consumer.START_PRZEBIEGU,
-            lambda: check_settlement(collective_file, fixture.config_path, inputs.worker_template, check_on_disk),
+            lambda: check_settlement(collective_file, inputs.workers, inputs.worker_template, check_on_disk),
         ),
     ]
 

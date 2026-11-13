@@ -13,14 +13,18 @@ from playwright.sync_api import Locator, Page, expect
 from drive.common import (
     Run,
     advance_clock,
+    close_settings,
     answers,
     move,
+    open_settings,
     read_bytes,
     read_json,
     read_text,
     release_only,
     remove,
     served_version,
+    settings_title,
+    settings_window,
     version_line,
 )
 from harness import File, Pace, Switch
@@ -28,6 +32,8 @@ from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
 from atrapy.pliki_taty import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
 from rozliczenia.centrum.tool_update import RESULT_FILE
 
+# The section Narzędzie of Ustawienia: version, Aktualność and „Zaktualizuj narzędzie”.
+TOOL_SECTION = "#/ustawienia/narzedzie"
 FEATURE = "aktualizacja"
 UPDATED = "Zaktualizowano"
 RESTARTING = "Ponowne uruchamianie Centrum…"
@@ -51,7 +57,7 @@ RESTART_PACING_MS = 3000
 OK_ON_OLD_VERSION_PACING_MS = 5000
 # The restart guardian waits up to 60 s for the new Centrum; the tab reloads when it answers.
 RESTART_TIMEOUT_MS = 60_000
-# Konfiguracja keeps GitHub's answer about the newest Wydanie for 10 minutes of Centrum's clock.
+# The read of the configuration (`/api/configuration`) keeps GitHub's answer about the newest Wydanie for 10 minutes of Centrum's clock.
 MAIN_KEPT_MIN = 10
 # A Wydanie GitHub names but the update does not take: the clone and the local origin never had this commit.
 DORMANT_RELEASE = "e" * 40
@@ -63,14 +69,14 @@ def _git(clone: Path, *args: str) -> str:
 
 
 def _github_main(run: Run, commit: str) -> None:
-    """The newest Wydanie on the scripted GitHub is ``commit``; Centrum's clock moves past the time Konfiguracja keeps the old answer."""
+    """The newest Wydanie on the scripted GitHub is ``commit``; Centrum's clock moves past the time Centrum keeps the old answer."""
 
     File.MAIN_COMMIT.write(run.root, commit)
     _forget_github_answer(run)
 
 
 def _forget_github_answer(run: Run) -> None:
-    advance_clock(run, MAIN_KEPT_MIN, "Konfiguracja asks GitHub again")
+    advance_clock(run, MAIN_KEPT_MIN, "Centrum asks GitHub again")
 
 
 def _github_dormant_release(run: Run) -> None:
@@ -124,7 +130,7 @@ def _without_internet(run: Run) -> Iterator[None]:
 def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first: str) -> None:
     run.step(FEATURE, "aktualizacja-brak-sieci")
     with _without_internet(run):
-        # Harness: Centrum was busy for a moment as Dad entered Konfiguracja, so the read of the update's state failed.
+        # Harness: Centrum was busy for a moment as Dad opened the section Narzędzie, so the read of the update's state failed.
         page.route("**/api/tool-update", lambda route: route.abort() if route.request.method == "GET" else route.fallback())
         try:
             page.reload()
@@ -186,13 +192,15 @@ def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first
         configuration = run.api("/api/configuration", "aktualizacja-brak-sieci-konfiguracja")
         run.check(
             (configuration["freshness"], configuration["update_offered"]) == ("not_checked", False),
-            "without GitHub's answer Konfiguracja offers no update; the failed update's Komunikat stays in the card",
+            "without GitHub's answer Ustawienia offer no update; the failed update's Komunikat stays in the card",
         )
         run.capture(page, "117-aktualizacja-brak-sieci-bez-przycisku")
 
 
 def _tool_card(page: Page) -> Locator:
-    return page.get_by_role("region", name="Narzędzie", exact=True)
+    """The section Narzędzie of Ustawienia, where Dad sees the version and updates the tool."""
+
+    return settings_window(page).locator("[data-slot=settings-section]")
 
 
 def _status(page: Page, text: str) -> Locator:
@@ -238,7 +246,7 @@ def drive(run: Run, page: Page) -> None:
             _git(clone, "status", "--porcelain", "--", WORKER_MAPPING) == f"M {WORKER_MAPPING}",
             "Dad changed the tracked konfiguracja wykonawców in the clone",
         )
-        page.goto(run.url + "#/konfiguracja")
+        page.goto(run.url + TOOL_SECTION)
         page.reload()
         card = _tool_card(page)
         first_commit, first_since = served_version(run)
@@ -313,8 +321,8 @@ def drive(run: Run, page: Page) -> None:
         expect(toast).to_be_visible(timeout=RESTART_TIMEOUT_MS)
         expect(toast).to_contain_text(f"Centrum działa w wersji {newest[:7]}.")
         run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
-        expect(page.get_by_role("heading", name="Konfiguracja", exact=True)).to_be_visible()
-        run.check(True, "the reloaded tab is back on Konfiguracja in the new version")
+        expect(settings_title(page)).to_have_text("Ustawienia/Narzędzie")
+        run.check(True, "the reloaded tab is back on Ustawienia, section Narzędzie, in the new version")
         card = _tool_card(page)
         updated_commit, since = served_version(run)
         expect(card.get_by_text(version_line(updated_commit, since), exact=True)).to_be_visible()
@@ -333,7 +341,7 @@ def drive(run: Run, page: Page) -> None:
         run.check(
             (updated_commit, configuration["version"], configuration["freshness"], configuration["update_offered"])
             == (newest, {"commit": newest[:7], "since": since}, "current", False),
-            "Konfiguracja reports the new commit as current, since the day of the update, and offers no update",
+            "Ustawienia report the new commit as current, since the day of the update, and offers no update",
         )
         run.check(
             not (run.config / RESULT_FILE).exists(),
@@ -372,7 +380,7 @@ def drive(run: Run, page: Page) -> None:
             _drive_ok_on_old_version(run, page, tool["not_starting"])
         finally:
             remove(restart_pacing, missing_ok=True)
-        # Later features (pomiar-u-taty) expect Konfiguracja without an alert: one more click on the restored
+        # Later features (pomiar-u-taty) expect Ustawienia without an alert: one more click on the restored
         # Wydanie replaces the failed installation with `Masz najnowszą wersję.`, which the last reload drops.
         print("  harness: the newest Wydanie in the local origin is the newest commit again", flush=True)
         release_only(origin, newest)
@@ -390,7 +398,7 @@ def drive(run: Run, page: Page) -> None:
         expect(card).to_contain_text("Aktualna")
         expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_have_count(0)
         expect(page.get_by_role("alert")).to_have_count(0)
-        run.check(True, "with GitHub's newest Wydanie on the tool's commit, Konfiguracja shows it current, with no button and no alert")
+        run.check(True, "with GitHub's newest Wydanie on the tool's commit, Ustawienia show it current, with no button and no alert")
         expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_have_count(0)
         run.check(True, f"the card no longer says „{UP_TO_DATE}”")
         run.check(
@@ -493,7 +501,8 @@ def _drive_new_version_not_starting(
     run.wait_for(lambda: not answers(run.url), "the old Centrum has closed, and no Centrum answers yet")
     _entered(_status(page, RESTARTING))
     run.capture(page, "135-aktualizacja-nie-wystartowala-ponowny-start", live=True)
-    print("  Dad goes to Uruchomienia while Centrum restarts", flush=True)
+    print("  Dad closes Ustawienia and goes to Uruchomienia while Centrum restarts", flush=True)
+    close_settings(page)
     page.get_by_role("link", name="Uruchomienia", exact=True).click()
     expect(page.get_by_role("heading", name="Uruchomienia", exact=True)).to_be_visible()
     remove(restart_pacing)
@@ -540,13 +549,12 @@ def _drive_new_version_not_starting(
     )
     run.capture(page, "136-aktualizacja-nie-wystartowala")
 
-    page.get_by_role("link", name="Konfiguracja", exact=True).click()
+    open_settings(page, "Narzędzie")
     card = _tool_card(page)
     expect(card).to_contain_text(newest[:7])
     expect(card).to_contain_text("Jest nowsza wersja")
-    expect(page.get_by_role("alert").filter(has_text=NEW_VERSION_FAILED)).to_have_count(1)
-    expect(card.get_by_role("alert")).to_have_count(0)
-    run.check(True, "on Konfiguracja the same Komunikat stands once, under the title, and the card shows the old version")
+    expect(card.get_by_role("alert").filter(has_text=NEW_VERSION_FAILED)).to_have_count(1)
+    run.check(True, "in Ustawienia the same Komunikat stands once, in the section Narzędzie, with the old version")
     run.capture(page, "137-aktualizacja-nie-wystartowala-konfiguracja")
 
 
@@ -597,21 +605,21 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     run.check(not answers(run.url), "the harness put „ok” back before the old version started")
     remove(restart_pacing)
 
-    message = page.get_by_role("alert").filter(has_text=UNEXPECTED)
+    message = _tool_card(page).get_by_role("alert").filter(has_text=UNEXPECTED)
     expect(message).to_be_visible(timeout=RESTART_TIMEOUT_MS)
     run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
-    expect(page.get_by_role("heading", name="Konfiguracja", exact=True)).to_be_visible()
+    expect(settings_title(page)).to_have_text("Ustawienia/Narzędzie")
     expect(message).to_contain_text("narzędzie na tym komputerze")
     expect(message).to_contain_text(
         "Narzędzie działa dalej w poprzedniej wersji. Kliknij „Zaktualizuj narzędzie” jeszcze raz. "
         "Jeśli komunikat wraca, kliknij „Wyślij do Maksa”."
     )
-    expect(page.get_by_role("button", name=REPORT_BUTTON, exact=True)).to_be_visible()
+    expect(_tool_card(page).get_by_role("button", name=REPORT_BUTTON, exact=True)).to_be_visible()
     expect(page.get_by_role("region", name="Notifications").get_by_role("dialog", name=UPDATED)).to_have_count(0)
     card = _tool_card(page)
     expect(card).to_contain_text(newest[:7])
     expect(card).to_contain_text("Jest nowsza wersja")
-    run.check(True, "Konfiguracja shows the failure under its title, no `Zaktualizowano`, and the card the old version")
+    run.check(True, "the section Narzędzie shows the failure, no `Zaktualizowano`, and the old version")
     view = run.api("/api/tool-update", "aktualizacja-ok-przy-starej-wersji")
     run.check(
         (view["state"], view["message"], view["next_action"])

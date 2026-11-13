@@ -5,13 +5,13 @@ Skrypt dla maszyn: jedno Uruchomienie procesu, wynik jako JSON.
 Użycie (z katalogu repozytorium):
 
     python tools/uruchom_proces.py settlement --source PLIK_ZBIORCZY [--dry-run]
-        [--config PLIK] [--worker-template PLIK] [--metrics PLIK]
+        [--wykonawcy PLIK] [--worker-template PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py preparation --register REJESTR --periods-directory FOLDER --period TOKEN
-        [--dry-run] [--config PLIK] [--internal-template PLIK] [--collective-template PLIK] [--metrics PLIK]
+        [--dry-run] [--wykonawcy PLIK] [--internal-template PLIK] [--collective-template PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py intermax --register REJESTR [--copies FOLDER] [--metrics PLIK]
     python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--z-przekazaniem] [--metrics PLIK]
     python tools/uruchom_proces.py report_entering --register REJESTR --periods-directory FOLDER --maile FOLDER
-        [--config PLIK] [--adresy-wykonawcow PLIK] [--metrics PLIK]
+        [--wykonawcy PLIK] [--metrics PLIK]
 
 ``settlement`` to Przebieg rozliczeń, ``preparation`` Przygotowanie pliku
 zbiorczego, ``intermax`` Uporządkowanie INTERMAX (klucze procesu z kontraktu
@@ -28,9 +28,11 @@ podglądu bez zapisu: zawsze
 zapisuje, a Kopia INTERMAX trafia do ``--copies`` (bez parametru folder Kopii
 narzędzia), z nazwą z zegara komputera. Proces prowadzi ten
 sam rdzeń Uruchomienia procesu co w Centrum, więc wynik ma te same liczby,
-etykiety i Komunikaty co karta Uruchomienia. Bez parametru Konfiguracja
-wykonawców i Wzorce są te z Centrum (``ConfigurationFiles.default()``), a plik
-metryk to plik metryk procesu. Skrypt nie czyta Ustawień taty, nie otwiera okien
+etykiety i Komunikaty co karta Uruchomienia. Bez parametru Lista Wykonawców
+i Wzorce są te z Centrum (``config/wykonawcy.yaml``, ``ConfigurationFiles.default()``), a plik
+metryk to plik metryk procesu. Listę Wykonawców ``--wykonawcy`` czyta reguła właściciela Ustawień Centrum
+(``WORKERS.parse``) bez zapisu Historii i pamięci: brak pliku to pusta lista, a zła treść kończy Skrypt kodem 1 ze
+zdaniem na stderr, bez JSON. Skrypt nie czyta Ustawień taty (Reguły ilości są te z Wydania), nie otwiera okien
 wyboru i nie pyta o nic: każdą Decyzję taty odrzuca, więc nigdy nie czeka.
 
 Na stdout trafia jeden obiekt JSON (UTF-8, ``ProcessResult``):
@@ -77,11 +79,17 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.memory import settings_bytes
+from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.decision import Decision
 from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, RunResult, StopEnding
 from rozliczenia.run_context import RunContext
+from rozliczenia.tool_files import CONFIG_DIR
+from rozliczenia.worker_list import WorkerList
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
 
 from atrapy.skrzynka_raportow import FolderInbox
@@ -177,8 +185,8 @@ def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag:
             return _Flag("--periods-directory", "Folder okresów.")
         case "period":
             return _Flag("--period", "Token okresu, np. 08_14_09_2026.", path=False)
-        case "worker_config":
-            return _Flag("--config", "Konfiguracja wykonawców.", _CONFIGURATION.path(need))
+        case "workers":
+            return _Flag("--wykonawcy", "Lista Wykonawców (plik wykonawcy.yaml).", CONFIG_DIR / WORKERS_FILE)
         case "internal_template":
             return _Flag("--internal-template", "Wzorzec rozliczenia wewnętrznego.", _CONFIGURATION.path(need))
         case "collective_template":
@@ -189,8 +197,6 @@ def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag:
             return _Flag("--copies", "Folder Kopii INTERMAX.", intermax_copies.default_directory())
         case "efenix_window":
             return _Flag("--efenix-url", "Adres listy zleceń efenix (w testach Atrapy efenix).", path=False)
-        case "worker_addresses":
-            return _Flag("--adresy-wykonawcow", "Plik adresów Wykonawców.", _CONFIGURATION.path(need))
         case "worker_report_inbox":
             return _Flag("--maile", "Folder maili .eml w miejscu Skrzynki raportów.")
         case _:
@@ -232,14 +238,28 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> Start:
+def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace, parser: argparse.ArgumentParser) -> Start:
     values = vars(args)
     return Start(
         {need: values[need] for need in kind.path_needs},
         period=values.get("period"),
         dry_run=values.get("dry_run", False),
         pricing="z Przekazaniem" if values.get("handover") else None,
+        workers=_workers(args.workers, parser) if "workers" in kind.needs else None,
+        quantity_rules=DEFAULT_QUANTITY_RULES,
     )
+
+
+def _workers(path: Path, parser: argparse.ArgumentParser) -> WorkerList:
+    """Lista Wykonawców z pliku ``path`` regułą właściciela Ustawień Centrum; zły plik kończy Skrypt kodem 1."""
+
+    data = settings_bytes(path)
+    if isinstance(data, OSError):
+        parser.error(f"--wykonawcy: nie można teraz odczytać pliku {path.name}")
+    parsed = WORKERS.parse(data)
+    if isinstance(parsed, FieldProblem):
+        parser.error(f"--wykonawcy: {parsed.sentence}")
+    return parsed
 
 
 def _parts(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> HostParts:
@@ -258,11 +278,12 @@ def _parts(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> HostParts:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
     kind = CATALOG.kind(args.process)
     # Bez Kopii wejścia, z plikiem metryk ``--metrics`` w miejscu pliku metryk procesu.
     prepared = CATALOG.with_metrics({kind.key: args.metrics}).prepared(
-        kind.key, _start(kind, args), _parts(kind, args), RunContext()
+        kind.key, _start(kind, args, parser), _parts(kind, args), RunContext()
     )
     unattended = _Unattended(prepared.progress_view)
     outcome = prepared.conduct(unattended)

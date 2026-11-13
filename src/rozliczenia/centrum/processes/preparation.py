@@ -55,9 +55,10 @@ def _inputs(start: Start, _parts: HostParts) -> PreparationInputs:
         start.path("periods_directory"),
         start.token(),
         dry_run=start.dry_run,
-        config_path=start.path("worker_config"),
+        workers=start.worker_list(),
         internal_template_path=start.path("internal_template"),
         collective_template_path=start.path("collective_template"),
+        quantity_rules=start.quantity_rules,
     )
 
 
@@ -79,7 +80,7 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
     view=_VIEW,
     core=preparation_process.PROCESS,
     default_metrics=PREPARATION_METRICS,
-    needs=("register", "periods_directory", "period", "worker_config", "internal_template", "collective_template"),
+    needs=("register", "periods_directory", "period", "workers", "internal_template", "collective_template"),
     inputs=_inputs,
     start=PeriodStart(creates="Rozliczenie wewnętrzne i Plik zbiorczy", chooser=RecentWeeks(8)),
     settings=(
@@ -91,7 +92,7 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
         "files_in_onedrive",
         "register",
         "templates",
-        "worker_config",
+        "worker_list",
         PeriodFolderCheck(collective_file_missing=None),
         "period_files_in_excel",
         *TAIL,

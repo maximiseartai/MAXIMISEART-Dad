@@ -781,11 +781,7 @@ def test_noc_bez_wstrzyknietego_githuba_pobiera_czasy_klientem_czasy_ci(tmp_path
     zapytania, a nie klientem nocy, którego zawieszony ``gh`` trzymałby plan do limitu zadania."""
 
     repo, baza, artefakt = _noc_z_czasami(tmp_path, monkeypatch)
-    noc = GitHubWPamieci()
-    domyslne = mutacje_nocne.main.__kwdefaults__
-    assert domyslne is not None
-    monkeypatch.setattr(mutacje_nocne, "GITHUB", noc)
-    monkeypatch.setitem(domyslne, "github", noc)
+    monkeypatch.setattr(mutacje_nocne, "GITHUB", GitHubWPamieci())
     monkeypatch.setattr(czasy_ci, "GITHUB", _GitHubCzasow(artefakt))
 
     assert mutacje_nocne.main(["plan", "--od", baza], root=repo) == 0

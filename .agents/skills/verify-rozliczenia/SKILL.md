@@ -22,6 +22,7 @@ pilnuje:
   - src/rozliczenia/input_checks.py
   - src/rozliczenia/input_copy.py
   - src/rozliczenia/intermax_*.py
+  - src/rozliczenia/lista_urzadzen_domyslna.yaml
   - src/rozliczenia/mail_skeleton.py
   - src/rozliczenia/message.py
   - src/rozliczenia/onedrive_conflicts.py
@@ -35,6 +36,7 @@ pilnuje:
   - src/rozliczenia/raw_orders.py
   - src/rozliczenia/register_columns.py
   - src/rozliczenia/register_file.py
+  - src/rozliczenia/reguly_ilosci_domyslne.yaml
   - src/rozliczenia/report_cells.py
   - src/rozliczenia/report_entering*.py
   - src/rozliczenia/row_look.py
@@ -49,8 +51,7 @@ pilnuje:
   - src/rozliczenia/tool_files.py
   - src/rozliczenia/wall_clock.py
   - src/rozliczenia/workbook_*.py
-  - src/rozliczenia/worker_addresses.py
-  - src/rozliczenia/worker_config*.py
+  - src/rozliczenia/worker_list.py
   - src/rozliczenia/worker_report_inbox.py
   - src/rozliczenia/worker_reports/*.py
   - src/rozliczenia/write_routes.py
@@ -310,8 +311,11 @@ and it appears nowhere else in the result.
 
 ## Reguły ilości
 
-After a change to `src/rozliczenia/quantity_rules.py` or to its conformance
-test `tests/test_ilosci_uslug.py`, the night on `main` proves that the test
+After a change to the Reguły ilości z Wydania
+(`src/rozliczenia/reguly_ilosci_domyslne.yaml`), the Lista Urządzeń z Wydania
+(`src/rozliczenia/lista_urzadzen_domyslna.yaml`), their engine
+`src/rozliczenia/quantity_engine.py` or the conformance test
+`tests/test_ilosci_uslug.py`, the night on `main` proves that the test
 still catches a single broken rule. Run it locally only to reproduce a red
 Mutation checks step or the night's issue, or after you rewrite a mutation:
 
@@ -320,18 +324,20 @@ py -3 .agents\skills\verify-rozliczenia\scripts\check_quantity_rules_mutations.p
 ```
 
 It must end with `MUTACJE OK`. Each mutation breaks one rule of Dad's
-instruction on a copy of the checkout, and `quantity_rules_conformance.py` must
+instruction where it lives (a rule or a component in the YAML files, reading
+the cells, P, Q and S in the engine) on a copy of the checkout, and
+`quantity_rules_conformance.py` must
 fail on it: TV devices in Z instead of Q and P once per router, the 45 zł
 surcharge (its amount, the 17:00 threshold, its days, only for a usterka),
-S not as the sum O+P+Q+AG, single components, a known name (`usterka hurt`,
+S not as the number of router, TV and extender devices, single components, a known name (`usterka hurt`,
 `wizja`) becoming unknown, pieces from `CZYNNOŚCI`, T from the first word of
 `UMOWA`, `prewencja` without quantities, O from `akt int` in `CZYNNOŚCI`
-only for `nokia` without a router (also with a TV device), once per order,
+only for `nokia` without a router, once per order,
 in any letter case and outside S, spelling
 variants (`XG`, spaces around `*` and before `szt`), and rows without a rule. The check first runs
 unbroken, so a red baseline fails the script instead of counting as detection.
-It takes about 6 s on a Mac. CI runs it in the `mutations` job. A mutation
-reported as `NIEAKTUALNA` no longer matches `quantity_rules.py`: rewrite its
+It took 19 s on a busy Mac for 34 mutations (13.11.2026). CI runs it in the `mutations` job. A mutation
+reported as `NIEAKTUALNA` no longer matches its file: rewrite its
 anchor and replacement so it breaks the same rule in the new code. A new rule
 gets a case in the test and a mutation here.
 
