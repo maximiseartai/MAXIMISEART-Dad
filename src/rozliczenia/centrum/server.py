@@ -58,12 +58,14 @@ def serve(
         server.should_exit = True
 
     threading.Thread(target=stop_when_asked, name="centrum-zamkniecie", daemon=True).start()
+    log.hold_until_started()
     try:
         server.run(sockets=[listener])
     except Exception as failure:
         log.unexpected_failure(failure, where="serwer")
         return 1
     finally:
+        log.release_held()
         listener.close()
     return 0 if server.started else 1
 

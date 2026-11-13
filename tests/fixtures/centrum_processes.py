@@ -29,6 +29,7 @@ from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.tool_update import ToolClone, find_git
 from rozliczenia.efenix_pace import Pace
+from rozliczenia.message import Message, StopError
 from rozliczenia.period_folder import worker_settlements_name_with
 from rozliczenia.process_run import Outcome, Process, ProcessInputs, ProcessSummary, run_process
 from rozliczenia.telemetry import CompletedResult
@@ -64,7 +65,7 @@ from atrapy.preparation import (
     write_collective_template,
     write_internal_template,
 )
-from atrapy.settlement import PERIOD as SETTLEMENT_PERIOD, SOURCE_NAME, write_mapping, write_source, write_template
+from atrapy.settlement import PERIOD as SETTLEMENT_PERIOD, SOURCE_NAME, write_source, write_template, write_worker_list
 from tests.fixtures.tool_clone import FakeInstaller, ToolRepository
 
 # Środa po okresie 08_14_09_2026, więc to on jest ostatnim pełnym okresem.
@@ -81,7 +82,8 @@ class Engines:
 
     ``fail_engine``: silnik rzuca nieoczekiwany wyjątek, zanim przeczyta pliki taty. ``fail_summary``:
     silnik kończy pracę, a wynik procesu (``Process.result``) rzuca wyjątek, czyli podsumowania nie da się pokazać.
-    ``fail_core``: sam rdzeń Uruchomienia (``run_process``) rzuca wyjątek, więc nie oddaje wyniku. ``release``:
+    ``fail_core``: sam rdzeń Uruchomienia (``run_process``) rzuca wyjątek, więc nie oddaje wyniku. ``stop``: silnik
+    zatrzymuje się tym Komunikatem, zanim przeczyta pliki taty (np. Zatrzymanie „do Maksa”). ``release``:
     rdzeń czeka przed pracą, aż test go puści (``set``), a ``held`` mówi, że już czeka.
     """
 
@@ -89,6 +91,7 @@ class Engines:
     fail_engine: bool = False
     fail_summary: bool = False
     fail_core: bool = False
+    stop: Message | None = None
     release: threading.Event | None = None
     held: threading.Event = field(default_factory=threading.Event)
 
@@ -107,6 +110,8 @@ class Engines:
                 assert self.release.wait(STOP_S), "test nie puścił rdzenia"
             if self.fail_engine:
                 raise RuntimeError("nieprzewidziany błąd przy SYN-001")
+            if self.stop is not None:
+                raise StopError(self.stop)
             return real.execute(inputs, context)
 
         def result(inputs: InputsT, summary: SummaryT) -> CompletedResult:
@@ -362,7 +367,6 @@ def _preparation_client(
 ) -> CentrumClient:
     configuration = replace(
         ToolDirectory(tmp_path).configuration,
-        worker_config=fixture.config_path,
         internal_template=fixture.internal_template_path,
         collective_template=fixture.collective_template_path,
     )
@@ -531,7 +535,7 @@ def settling_centrum(
     tool.config.mkdir()
     configuration = tool.configuration
     write_template(configuration.worker_template)
-    write_mapping(configuration.worker_config)
+    write_worker_list(tool.worker_list)
     engines = Engines(tool.metrics)
     surroundings = surroundings or Surroundings()
     platform = FakePlatform(chosen_files=[register], chosen_folders=[periods_directory])
@@ -555,7 +559,7 @@ def settling_centrum(
 def write_configuration(tool: ToolDirectory) -> ConfigurationFiles:
     files = tool.configuration
     tool.config.mkdir(parents=True, exist_ok=True)
-    write_mapping(files.worker_config)
+    write_worker_list(tool.worker_list)
     write_internal_template(files.internal_template)
     write_collective_template(files.collective_template)
     write_template(files.worker_template)

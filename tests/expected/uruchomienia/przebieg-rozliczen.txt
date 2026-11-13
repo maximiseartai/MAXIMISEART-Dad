@@ -129,9 +129,9 @@ Rozliczenie pracownika: Darek Fikcyjny | Rozliczenie 08_14_09_2026 - Darek Fikcy
 Rozliczenie pracownika: Kamil Syntetyczny | Rozliczenie 08_14_09_2026 - Kamil Syntetyczny.xlsx | zlecenia 0, pusty
 Ostrzeżenia:
   BRAK_MAPOWANIA
-    Co się stało: Nieznany identyfikator WYKONAWCA: andrzej.nieznany2. Nie ma go w konfiguracji wykonawców.
+    Co się stało: Nieznany identyfikator WYKONAWCA: andrzej.nieznany2. Nie ma go w Liście Wykonawców.
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026
-    Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy do konfiguracji wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
+    Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
 Zatrzymanie: brak
 Uwagi techniczne: brak
 Pliki wynikowe: brak
@@ -151,9 +151,9 @@ Liczby postępu:
 Podsumowanie: brak
 Ostrzeżenia: brak
 Zatrzymanie (stop): NIEZNANY_WYKONAWCA
-  Co się stało: W Pliku zbiorczym jest WYKONAWCA spoza konfiguracji wykonawców: andrzej.nieznany2. Nie utworzono żadnego pliku pracownika.
+  Co się stało: W Pliku zbiorczym jest WYKONAWCA spoza Listy Wykonawców: andrzej.nieznany2. Nie utworzono żadnego pliku pracownika.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, folder 08_14_09_2026, kolumna H
-  Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy do konfiguracji wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
+  Co zrobić: Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.
 Uwagi techniczne: brak
 Pliki wynikowe: brak
 

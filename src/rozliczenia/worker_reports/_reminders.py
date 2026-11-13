@@ -54,7 +54,9 @@ class SentReminder:
 class ReminderInputs:
     """Wejście ``reminders_due``: chwila ze strefą taty, okno dni (od dnia wdrożenia przypomnień, bez okresów z Plikiem
     zbiorczym), uporządkowane zlecenia INTERMAX, maile ze Skrzynki raportów, przypomnienia z „Wysłanych”, adresy
-    Wykonawców i stopka taty (``None``: bez pliku stopki)."""
+    Wykonawców z Listy Wykonawców (także tych, którym przypomnienia nie idą: ich Raport wykonawcy dalej jest raportem),
+    loginy Wykonawców, którym przypomnienia idą (``reminded``: aktywni z włączonymi przypomnieniami), i stopka taty
+    (``None``: bez pliku stopki)."""
 
     now: datetime
     window: Window
@@ -62,6 +64,7 @@ class ReminderInputs:
     mails: Sequence[ReportMail]
     sent: Sequence[SentReminder]
     addresses: WorkerAddresses
+    reminded: frozenset[Login]
     footer: str | None
 
 
@@ -103,7 +106,8 @@ def reminder_text(day: date, footer: str | None) -> str:
 def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
     """Przypomnienia, które należą się w chwili ``inputs.now``, po dniu i Wykonawcy.
 
-    Przypomnienie za dzień X należy się Wykonawcy z listy adresów, który ma zlecenie dnia X, od ``FIRST_REMINDER`` dnia
+    Przypomnienie za dzień X należy się Wykonawcy z listy adresów, któremu przypomnienia idą (``reminded``), który ma
+    zlecenie dnia X, od ``FIRST_REMINDER`` dnia
     X+1, w porze (``reminder_pora``), w której tego dnia nie poszło jeszcze przypomnienie za X do żadnego jego adresu,
     dopóki nie przyśle czytelnego Raportu wykonawcy za X (temat daje dzień X, także z literówką w roku, treść bez znaczenia) z któregokolwiek
     adresu z listy. Liczą się tylko dni otwarte okna (``Window.opens``): od dnia wdrożenia przypomnień, bez okresów z
@@ -137,6 +141,7 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
         if inputs.window.opens(order.key.day)
         and now >= datetime.combine(order.key.day + timedelta(days=1), FIRST_REMINDER, now.tzinfo)
         and order.key.worker in recipients
+        and order.key.worker in inputs.reminded
         and (order.key.worker, order.key.day) not in answered
     }
     return tuple(

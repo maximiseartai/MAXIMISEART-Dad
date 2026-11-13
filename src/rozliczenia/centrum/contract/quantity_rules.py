@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Model
-from rozliczenia.centrum.contract.settings import SettingProblem
+from rozliczenia.centrum.contract.settings_workers import SettingProblem
 
 
 class SentenceText(Model):

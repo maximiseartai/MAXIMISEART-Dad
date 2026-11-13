@@ -17,6 +17,10 @@ extend = "../pyproject.toml"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.tool_files.SETTINGS".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"
 "rozliczenia.tool_files.settings_file".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"
+"rozliczenia.tool_files.WORKER_CONFIG".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); nazwę pliku daje WORKERS_FILE"
+"rozliczenia.worker_config".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); typ to rozliczenia.worker_list.WorkerList"
+"rozliczenia.worker_addresses".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); adresy daje WorkerList.addresses()"
+"rozliczenia.worker_config_messages".msg = "zła Lista Wykonawców ma Komunikat w rozliczenia.centrum.configuration.workers_problem"
 # Plik taty czyta jedna droga (tests/test_jeden_odczyt_skoroszytu.py): bajty i skoroszyt obok uchwytu omijają
 # sprawdzenie dostępności, źródło bajtów uchwytu, pamięć reguły danych i Kopię wejścia (#1087).
 "rozliczenia.workbook_files.file_bytes".msg = "wartości pliku taty czytaj uchwytem DadFiles.read z rozliczenia.dad_files"

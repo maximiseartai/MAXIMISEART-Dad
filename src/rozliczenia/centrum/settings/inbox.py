@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, KeyChange, Read, SettingsFile, Unreadable
+from rozliczenia.centrum.settings.files import Bad, FieldPath, FieldProblem, Good, KeyChange, Read, SettingsFile, Unreadable
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, InboxCredentials, InboxState
 from rozliczenia.worker_reports import SenderAddress
 
@@ -78,9 +78,9 @@ def parse(data: bytes | None) -> InboxFile | FieldProblem:
     if not inbox.address_line.strip() or not inbox.password:
         return inbox
     if inbox.address is None:
-        return FieldProblem(ADDRESS, messages.inbox_address())
+        return FieldProblem(FieldPath(ADDRESS), messages.inbox_address())
     if not inbox.password.isascii():
-        return FieldProblem(PASSWORD, messages.inbox_password_text())
+        return FieldProblem(FieldPath(PASSWORD), messages.inbox_password_text())
     return inbox
 
 
@@ -91,10 +91,10 @@ def new_password(read: Read[InboxFile] | Unreadable, typed: str) -> str | FieldP
 
     password = "".join(typed.split())
     if not password:
-        return FieldProblem(PASSWORD, messages.inbox_password_empty())
+        return FieldProblem(FieldPath(PASSWORD), messages.inbox_password_empty())
     match read:
         case Good(value=inbox) if not inbox.address_line.strip():
-            return FieldProblem(ADDRESS, messages.inbox_no_address())
+            return FieldProblem(FieldPath(ADDRESS), messages.inbox_no_address())
         case _:
             return password
 
@@ -117,8 +117,10 @@ def restore(inbox: InboxFile, changes: tuple[KeyChange, ...]) -> InboxFile:
     return inbox
 
 
-def shown(key: str, value: str | None) -> str:
-    return "zmieniono"
+def reported(change: KeyChange) -> str:
+    """Zgłoszenie nie dostaje wartości sekretu (wiersz sekretu ma tylko klucze, więc właściciel tego nie woła)."""
+
+    return f"{change.key}: zmieniono"
 
 
 def state(read: Read[InboxFile] | Unreadable) -> InboxState:
@@ -141,7 +143,7 @@ INBOX: Final = SettingsFile(
     dump=dump,
     diff=diff,
     restore=restore,
-    shown=shown,
+    reported=reported,
     default=InboxFile(),
     secret=True,
     unchecked=unchecked,

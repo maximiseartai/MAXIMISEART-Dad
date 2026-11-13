@@ -304,8 +304,7 @@ FEATURES = (
             "58-diagnoza-nieoczekiwany-wyjatek",
             "59-diagnoza-nieoczekiwany-wyjatek-zgloszenie",
             "59b-diagnoza-klucz-odrzucony",
-            "59c-diagnoza-konfiguracja-wykonawcow",
-            "59d-diagnoza-konfiguracja-wykonawcow-niedostepna",
+            "59c-diagnoza-lista-wykonawcow",
         ),
     ),
     # Diagnoses one more such stop with the scripted GitHub and OneDrive.

@@ -27,7 +27,7 @@ from atrapy.pliki_taty import (
     QUANTITY_COLUMNS,
     REGISTER_NAME,
 )
-from atrapy.settlement import write_mapping
+from atrapy.settlement import write_worker_list
 from atrapy.workbooks import TEMPLATE_VIEW, View, active_worksheet, add_external_link_fixture, set_view
 
 PERIOD = "08_14_09_2026"
@@ -408,7 +408,7 @@ def make_preparation_fixture(tmp_path: Path, rows: list[RegisterRow] | None = No
     return PreparationFixture(
         register_path=write_register(tmp_path / REGISTER_NAME, rows),
         periods_directory=periods_directory,
-        config_path=write_mapping(config_directory / pliki_taty.WORKER_CONFIG_NAME),
+        config_path=write_worker_list(config_directory / pliki_taty.WORKER_LIST_NAME),
         internal_template_path=write_internal_template(
             config_directory / pliki_taty.INTERNAL_TEMPLATE_NAME
         ),

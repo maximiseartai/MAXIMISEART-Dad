@@ -11,7 +11,7 @@ Z syntetycznymi Wzorcami (bez Wzorców taty, jak w CI):
 
     python tools/syntetyczne_wzorce.py .benchmark/syntetyczne-wzorce
     python tools/benchmark_przebiegu.py measure --templates-dir .benchmark/syntetyczne-wzorce \\
-        --config .benchmark/syntetyczne-wzorce/worker_mapping.yaml --machine mac-m4max-syntetyczne
+        --wykonawcy .benchmark/syntetyczne-wzorce/wykonawcy.yaml --machine mac-m4max-syntetyczne
 
 ``measure`` buduje lustro folderów taty (albo używa istniejącego), uruchamia na nim
 Przebieg rozliczeń 3 razy jako osobny proces Pythona przez skrypt dla maszyn
@@ -47,17 +47,18 @@ takim wynikiem kończy się błędem z poleceniem ponownego zamrożenia.
 Lustro to ``Załączniki/Rozliczenia 2026/10_Październik_2026/INEA/06_12_10_2026`` z
 Plikiem zbiorczym, który Przygotowanie pliku zbiorczego (``tools/uruchom_proces.py
 preparation``) tworzy z deterministycznego, syntetycznego Rejestru zleceń. Wykonawcy
-pochodzą z Konfiguracji wykonawców; adresy i numery są fikcyjne. Potem benchmark wpisuje w każdy
+pochodzą z Listy Wykonawców; adresy i numery są fikcyjne. Potem benchmark wpisuje w każdy
 Wiersz danych Pliku zbiorczego syntetyczne ilości w ``N:AP``, a w część z nich
 obciążenia i uwagi w ``AQ:AT``, tak jak tata przed Przebiegiem. Plik zbiorczy lustra to
 więc wynik Przygotowania pliku zbiorczego (dane wejściowe ``A:K``) plus syntetyczne wpisy
 w ``N:AT``, które tata uzupełnia w Excelu między oboma procesami. Wzorce są brane z folderu
 ``--templates-dir`` pod nazwami, pod którymi leżą w ``config``; domyślnie z ``config``
 tego checkoutu, a gdy ich tam nie ma (świeży worktree), z ``config`` głównego checkoutu.
-Tak samo domyślna Konfiguracja wykonawców (``--config``): prawdziwy
-``config/worker_mapping.yaml`` jest poza gitem (w repozytorium jest tylko
-``worker_mapping.example.yaml``), więc benchmark szuka go w tym checkoucie, a potem w
-głównym.
+Tak samo domyślna Lista Wykonawców (``--wykonawcy``): prawdziwy
+``config/wykonawcy.yaml`` jest poza gitem (w repozytorium jest tylko
+``wykonawcy.example.yaml``), więc benchmark szuka go w tym checkoucie, a potem w
+głównym. ``freeze`` uruchamia skrypt dla maszyn commita z ``--wykonawcy``, więc commit sprzed Listy Wykonawców (#1473)
+nie da wyniku referencyjnego.
 
 Czas ściany każdego uruchomienia dzieli się na trzy części: start procesu (od uruchomienia
 procesu Pythona do startu silnika: interpreter, importy, argumenty, wejście procesu;
@@ -94,7 +95,7 @@ from benchmark.dziennik import (
     render_comment,
     spread_text,
 )
-from benchmark.lustro import SCENARIOS, default_templates_directory, default_worker_config, ensure_mirror, template_paths
+from benchmark.lustro import SCENARIOS, default_templates_directory, default_worker_list, ensure_mirror, template_paths
 from benchmark.pomiar import RUNS, exclusive_measurement, measure, measurement_lock
 from benchmark.referencja import find_reference, freeze_reference, reference_folder
 from quiet_machine import MachineBusy, QuietMachine
@@ -122,7 +123,7 @@ def _parser() -> argparse.ArgumentParser:
         mirror_parser.add_argument("--scenario", choices=list(SCENARIOS), default="typowy-tydzien")
         mirror_parser.add_argument("--templates-dir", type=Path, help="Folder z trzema Wzorcami (nazwy jak w config).")
         mirror_parser.add_argument(
-            "--config", type=Path, help="Konfiguracja wykonawców; domyślnie config/worker_mapping.yaml jak Wzorce."
+            "--wykonawcy", type=Path, help="Lista Wykonawców; domyślnie config/wykonawcy.yaml jak Wzorce."
         )
         mirror_parser.add_argument("--mirror-dir", type=Path, default=DEFAULT_DIRECTORY / "lustro")
         mirror_parser.add_argument("--reference-dir", type=Path, default=DEFAULT_DIRECTORY / "reference")
@@ -159,7 +160,7 @@ def _guard(journal: Path, budget_ms: int, summary_path: Path | None) -> int:
 
 def _measure_or_freeze(args: argparse.Namespace, references: Path) -> dict[str, Any] | None:
     templates = template_paths((args.templates_dir or default_templates_directory()).expanduser().resolve())
-    config = (args.config or default_worker_config()).expanduser().resolve()
+    config = (args.wykonawcy or default_worker_list()).expanduser().resolve()
     mirror, built = ensure_mirror(args.mirror_dir.expanduser().resolve(), args.scenario, config, templates)
     print(f"Lustro {'zbudowane' if built else 'istniejące'}: {mirror}", flush=True)
     if args.command == "freeze":

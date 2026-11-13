@@ -51,6 +51,7 @@ from atrapy.scenariusz_rozliczen import (
     worker_settlement_name,
 )
 from atrapy.scenariusz_rozliczen import QUANTITIES as ORDER_QUANTITIES
+from atrapy.pliki_taty import WORKER_LIST_NAME
 from atrapy.settlement import PERIOD, WORKERS
 
 SCRIPT = Path(__file__).resolve()
@@ -221,7 +222,7 @@ def preparation(run: Run) -> None:
             "--register", str(run.fixture / REGISTER_NAME),
             "--periods-directory", str(run.fixture / PERIODS_DIRECTORY),
             "--period", PERIOD,
-            "--config", str(run.config / "worker_mapping.yaml"),
+            "--wykonawcy", str(run.config / WORKER_LIST_NAME),
             "--internal-template", str(run.config / TEMPLATE_NAMES[0]),
             "--collective-template", str(run.config / TEMPLATE_NAMES[1]),
             "--metrics", str(run.root / "przygotowanie-metrics.jsonl"),
@@ -245,7 +246,7 @@ def settlement(run: Run) -> None:
         [
             str(PROCESS_SCRIPT), "settlement",
             "--source", str(run.collective_file),
-            "--config", str(run.config / "worker_mapping.yaml"),
+            "--wykonawcy", str(run.config / WORKER_LIST_NAME),
             "--worker-template", str(run.config / TEMPLATE_NAMES[2]),
             "--metrics", str(run.root / "przebieg-metrics.jsonl"),
         ],

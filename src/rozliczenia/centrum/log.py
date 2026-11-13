@@ -64,6 +64,8 @@ class CentrumLog:
         self._lock = threading.Lock()
         self._view_timings = 0
         self._append = self._to_file if append is None else append
+        self._held: list[str] | None = None
+        self._hold_lock = threading.Lock()
 
     @property
     def directory(self) -> Path:
@@ -71,8 +73,27 @@ class CentrumLog:
 
         return self._path.parent
 
+    def hold_until_started(self) -> None:
+        """Wpisy z przygotowania serwera (zmiany Ustawień z Wydania, pierwszy odczyt Ustawień) czekają na wpis
+        ``start``, więc dziennik każdego startu zaczyna się od ``start`` z portem i wersją; ``started`` zapisuje je
+        zaraz po nim, a ``release_held`` bez niego, gdy start się nie udał."""
+
+        with self._hold_lock:
+            self._held = []
+
     def started(self, *, port: int, version: str, console: bool) -> None:
-        self._write("start", port=port, wersja=version, konsola="tak" if console else "nie")
+        with self._hold_lock:
+            self._append(self._line("start", port=port, wersja=version, konsola="tak" if console else "nie"))
+            self._flush_held()
+
+    def release_held(self) -> None:
+        with self._hold_lock:
+            self._flush_held()
+
+    def _flush_held(self) -> None:
+        held, self._held = self._held or [], None
+        for line in held:
+            self._append(line)
 
     def already_running(self, *, port: int) -> None:
         """Ponowne uruchomienie trafiło na działające Centrum tej samej wersji i tylko otworzyło kartę."""
@@ -323,8 +344,18 @@ class CentrumLog:
     # (#1115), to błąd mypy (``final``).
     @final
     def _write(self, event: str, **facts: str | int) -> None:
+        line = self._line(event, **facts)
+        with self._hold_lock:
+            if self._held is not None:
+                self._held.append(line)
+                return
+        self._append(line)
+
+    @final
+    @staticmethod
+    def _line(event: str, **facts: str | int) -> str:
         moment = local_now().isoformat(timespec="seconds")
-        self._append(" ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())]))
+        return " ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())])
 
     @final
     def _to_file(self, line: str) -> None:

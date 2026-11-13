@@ -43,7 +43,7 @@ TemplateStatus = Annotated[TemplateReady | TemplateProblem, Field(discriminator=
 
 
 class WorkersReady(Model):
-    """Nazwy Wykonawców w kolejności z konfiguracji wykonawców."""
+    """Nazwy Wykonawców w kolejności z Listy Wykonawców."""
 
     state: Literal["ready"]
     names: list[str]

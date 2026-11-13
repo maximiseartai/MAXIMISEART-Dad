@@ -34,6 +34,7 @@ from atrapy.pliki_taty import (
     HEADER_ROW,
     INTERNAL_HEADERS,
     QUANTITY_COLUMNS,
+    WORKER_LIST_NAME,
 )
 from atrapy.preparation import REGISTER_HEADERS
 from atrapy.scenariusz_rozliczen import (
@@ -49,7 +50,7 @@ from atrapy.scenariusz_rozliczen import (
     WORKER_TEMPLATE_NAME,
     register_values,
 )
-from atrapy.settlement import PERIOD, WORKERS, write_mapping
+from atrapy.settlement import PERIOD, WORKERS, write_worker_list
 from atrapy.workbooks import active_worksheet
 
 COLLECTIVE_ZERO_ROWS = 8
@@ -254,7 +255,7 @@ def _write_fixture(root: Path, templates_from: Path | None, *, with_worker_templ
             _write_worker_template(worker_template)
         else:
             shutil.copyfile(templates_from / WORKER_TEMPLATE_NAME, worker_template)
-    write_mapping(config_directory / "worker_mapping.yaml")
+    write_worker_list(config_directory / WORKER_LIST_NAME)
     manifest = {
         "register_sha256": _sha256(register),
         "internal_template_sha256": _sha256(internal_template),

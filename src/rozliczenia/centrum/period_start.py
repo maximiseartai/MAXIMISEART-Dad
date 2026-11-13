@@ -3,7 +3,7 @@
 Każdy proces z okresem (``process_kind.PeriodProcessKind``) ma na karcie Uruchomień kafelek z okresami do wyboru, a
 start z okresem przechodzi przez te same odmowy dla taty w tej samej kolejności. Co różni procesy (co powstaje, jak
 wybrać okresy, odmowa podglądu), mówi ``PeriodStart`` wpisu. Pliki wejścia biorą się z Ustawień taty, Folderu okresu i
-Konfiguracji; tata nie wskazuje ich przy starcie.
+Konfiguracji, a Lista Wykonawców z migawki Ustawień Centrum; tata nie wskazuje ich przy starcie.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from rozliczenia.centrum.process_kind import (
     RecentWeeks,
     SettingField,
     Start,
+    workers_at_start,
 )
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.owner import CentrumSettings
@@ -74,6 +75,7 @@ class PeriodStarts:
             pricing=request.pricing if kind.view.pricing_modes else None,
             settings=folders,
             quantity_rules=snapshot.quantity_rules,
+            workers=workers_at_start(snapshot.workers) if "workers" in kind.needs else None,
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())
 
@@ -83,7 +85,7 @@ class PeriodStarts:
                 return chosen[need]
             case "collective_file":
                 return located_period_folder(chosen["periods_directory"], period).collective_file
-            case "worker_config" | "worker_addresses" | "internal_template" | "collective_template" | "worker_template":
+            case "internal_template" | "collective_template" | "worker_template":
                 return self.configuration.path(need)
             case "copies_directory":
                 raise ValueError("Kopie INTERMAX ma tylko Uporządkowanie INTERMAX, które nie ma okresu (ADR 0019)")

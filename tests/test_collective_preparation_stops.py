@@ -944,36 +944,6 @@ def test_nienadpisywanie_w_folderze_okresu_bez_dostepu_zatrzymuje_niedostepnosci
     assert [path.name for path in fixture.periods_directory.iterdir()] == [PERIOD]
 
 
-def test_zlamana_regula_konfiguracji_wykonawcow_zatrzymuje_przygotowanie_ze_szczegolem(tmp_path: Path) -> None:
-    fixture = make_preparation_fixture(tmp_path)
-    fixture.config_path.write_text("schema_version: 1\nworkers:\n  a: Ten Sam\n  b: ten sam\n", encoding="utf-8")
-
-    error = stop_preparation(fixture)
-
-    assert error.message.code == "ZLA_KONFIGURACJA_WYKONAWCOW"
-    assert error.message.text == (
-        "Co się stało: Nie można odczytać konfiguracji wykonawców. "
-        "Dwóch identyfikatorów wskazuje ten sam plik pracownika: Ten Sam / ten sam\n"
-        "Gdzie: plik worker_mapping.yaml, folder config\n"
-        "Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie."
-    )
-
-
-def test_nieczytelna_konfiguracja_wykonawcow_zatrzymuje_przygotowanie_bez_powtorzenia(tmp_path: Path) -> None:
-    fixture = make_preparation_fixture(tmp_path)
-    fixture.config_path.unlink()
-    fixture.config_path.mkdir()
-
-    error = stop_preparation(fixture)
-
-    assert error.message.code == "ZLA_KONFIGURACJA_WYKONAWCOW"
-    assert error.message.text == (
-        "Co się stało: Nie można odczytać konfiguracji wykonawców.\n"
-        "Gdzie: plik worker_mapping.yaml, folder config\n"
-        "Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie."
-    )
-
-
 @pytest.mark.parametrize("period_directory_exists", [False, True])
 def test_failed_save_of_plik_zbiorczy_leaves_no_period_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, period_directory_exists: bool

@@ -31,6 +31,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia import period_folder
+from rozliczenia.centrum import diagnosis_messages, refusal
 from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
@@ -42,7 +43,6 @@ from rozliczenia.centrum.keyed_box import OPENING_FILE
 from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.tool_update import RESULT_FILE
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
@@ -59,7 +59,7 @@ from tests.fixtures.centrum_processes import Engines
 from tests.fixtures.linie_watkow import new_line, threads_since
 from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.preparation import PERIOD, write_collective_template, write_internal_template, write_register
-from atrapy.settlement import CellValue, write_quantity_source, write_template
+from atrapy.settlement import CellValue, worker_list, write_quantity_source, write_template, write_worker_list
 
 TODAY = date(2026, 9, 16)
 NOW = datetime(2026, 9, 16, 8, 30)
@@ -73,7 +73,6 @@ HEALTHY_COLLECTIVE_ROWS: tuple[dict[str, CellValue], ...] = (
 # Słowa Komunikatu o zepsutym pliku; plik bez dostępu jest cały i tata nie ma go naprawiać w Excelu.
 # Spacja odróżnia je od ścieżek tmp_path, które zawierają nazwę testu.
 DAMAGED = (" uszkodzon", " niepoprawn")
-WORKER_CONFIG_INACCESSIBLE = "Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program."
 GENERIC_500 = "W Centrum rozliczeń wystąpił nieoczekiwany błąd. Odśwież kartę i spróbuj ponownie."
 DIAGNOSIS_UNEXPECTED = "Nie udało się sprawdzić: nieoczekiwany błąd."
 
@@ -86,8 +85,7 @@ MONTH = "Załączniki/Rozliczenia 2026/09_Wrzesien_2026"
 TOOL = ToolDirectory(Path())
 FILES: dict[str, tuple[str, str]] = {
     "ustawienia": (TOOL.settings.as_posix(), TEXT),
-    "konfiguracja_wykonawcow": (TOOL.configuration.worker_config.as_posix(), TEXT),
-    "adresy_wykonawcow": (TOOL.configuration.worker_addresses.as_posix(), TEXT),
+    "lista_wykonawcow": (TOOL.worker_list.as_posix(), TEXT),
     "klucz_zgloszen": (TOOL.report_key.as_posix(), TEXT),
     "sprawy_taty": ((TOOL.config / DAD_CASES_FILE).as_posix(), TEXT),
     "wyslane_zgloszenia": ((TOOL.config / OLD_REPORTS_FILE).as_posix(), TEXT),
@@ -274,14 +272,7 @@ def _build(root: Path) -> None:
     write_template(world.path("wzorzec_pracownika"))
     # Plik zbiorczy z nagłówkami Wzorca, więc wejście getQuantitiesToFill przy innym zepsutym pliku czyta zdrowy plik.
     write_quantity_source(world.path("plik_zbiorczy"), HEALTHY_COLLECTIVE_ROWS)
-    world.path("konfiguracja_wykonawcow").write_text(
-        "# Wykonawcy zespołu z Łodzi\nschema_version: 1\nworkers:\n"
-        "  adrian.testowy: Adrian Testowy\n  dariusz.fikcyjny2: Darek Fikcyjny\n  kamil.syntetyczny: Kamil Syntetyczny\n",
-        encoding="utf-8",
-    )
-    world.path("adresy_wykonawcow").write_text(
-        "schema_version: 1\nwykonawcy:\n  adrian.testowy: [adrian@przyklad.invalid]\n", encoding="utf-8"
-    )
+    write_worker_list(world.path("lista_wykonawcow"), worker_list(addresses={"adrian.testowy": ["adrian@przyklad.invalid"]}))
     world.path("klucz_zgloszen").write_text("github_pat_SYNTETYCZNY123\n", encoding="utf-8")
     # „Wyślij” Uwagi poniżej przenosi sprawy z obu starych plików do pliku Spraw taty.
     world.path("wyslane_zgloszenia").write_text(json.dumps([SENT_REPORT], ensure_ascii=False) + "\n", encoding="utf-8")
@@ -526,13 +517,15 @@ NOT_SWEPT: dict[str, str] = {
     "bez plików taty; zła wartość, zły plik skrzynki i trzy wyniki logowania: test_centrum_rozliczen",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
-_BOARD = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
-_SETTINGS = {"ustawienia", "rejestr", "folder_okresow"}
+# Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
+_OWNER = {"ustawienia", "lista_wykonawcow"}
+_BOARD = _FOLDERS | _OWNER | {"plik_zbiorczy"}
+_SETTINGS = _OWNER | {"rejestr", "folder_okresow"}
 _METRICS = {"metryki_przygotowania", "metryki_przebiegu", "metryki_uporzadkowania"}
 _NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "uwagi_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
-_RUN = {"ustawienia", "rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}
-_PREPARATION = _RUN | _FOLDERS | {"konfiguracja_wykonawcow", "metryki_przygotowania", "wzorzec_wewnetrzny", "wzorzec_zbiorczy"}
-_SETTLEMENT = _RUN | _FOLDERS | {"konfiguracja_wykonawcow", "metryki_przebiegu", "plik_zbiorczy", "wzorzec_pracownika"}
+_RUN = _OWNER | {"rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}
+_PREPARATION = _RUN | _FOLDERS | {"metryki_przygotowania", "wzorzec_wewnetrzny", "wzorzec_zbiorczy"}
+_SETTLEMENT = _RUN | _FOLDERS | {"metryki_przebiegu", "plik_zbiorczy", "wzorzec_pracownika"}
 _ORDERING = _RUN | {"metryki_uporzadkowania"}
 # Pliki, które wejście czyta: macierz psuje plik tylko w wejściach, które po niego sięgają, bo w pozostałych wynik jest
 # wynikiem zdrowego świata. Pilnuje tego test_wejscie_siega_tylko_po_pliki_z_tabeli_odczytow; plik z READ_AT_START stoi
@@ -541,7 +534,7 @@ READS: dict[str, set[str]] = {
     "getSettings": _SETTINGS,
     "chooseRegister": _SETTINGS,
     "choosePeriodsDirectory": _SETTINGS,
-    "openRegister": {"ustawienia", "rejestr"},
+    "openRegister": _OWNER | {"rejestr"},
     "changeTheme": _SETTINGS | {"dziennik_centrum"},
     "getPeriodBoard": _BOARD,
     "openPeriodPath": _BOARD,
@@ -549,24 +542,19 @@ READS: dict[str, set[str]] = {
     "getCollectiveFileVersion": _BOARD,
     "getWithoutQuantity": _BOARD,
     "getKindTable": _BOARD,
-    "openWorkerSettlement": _FOLDERS | {"ustawienia"},
+    "openWorkerSettlement": _FOLDERS | _OWNER,
     "getRunSetup": _BOARD
     | {"rejestr", "metryki_przygotowania", "metryki_przebiegu", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
-    "getIntermaxSetup": {"ustawienia", "rejestr", "logi_uruchomien"},
-    "getIntermaxDays": {"ustawienia", "rejestr"},
+    "getIntermaxSetup": _OWNER | {"rejestr", "logi_uruchomien"},
+    "getIntermaxDays": _OWNER | {"rejestr"},
     "getIntermaxCopies": {"folder_kopii_intermax", "kopia_intermax"},
     "getReportEnteringSetup": _METRICS
-    | {"ustawienia", "rejestr", "folder_okresow", "logi_uruchomien", "adresy_wykonawcow", "folder_kopii_intermax"},
-    "restoreIntermaxCopy": {"ustawienia", "rejestr", "folder_kopii_intermax", "kopia_intermax"},
+    | _OWNER
+    | {"rejestr", "folder_okresow", "logi_uruchomien", "folder_kopii_intermax"},
+    "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
     "getQuantityRules": {"wzorzec_zbiorczy"},
-    "getConfiguration": {
-        "klucz_zgloszen",
-        "konfiguracja_wykonawcow",
-        "wzorzec_wewnetrzny",
-        "wzorzec_zbiorczy",
-        "wzorzec_pracownika",
-    },
+    "getConfiguration": _OWNER | {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,
     "getToolUpdate": set(),
@@ -581,7 +569,7 @@ READS: dict[str, set[str]] = {
     "zapis[wpisanie]": _RUN
     | _FOLDERS
     | _METRICS
-    | {"konfiguracja_wykonawcow", "adresy_wykonawcow", "folder_kopii_intermax"},
+    | {"folder_kopii_intermax"},
     "diagnoza[przygotowanie]": _PREPARATION | {"sprawy_taty"},
     "diagnoza[przebieg]": _SETTLEMENT,
     "diagnoza[uporzadkowanie]": _ORDERING | {"sprawy_taty"},
@@ -790,7 +778,6 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "wynik_aktualizacji": TOOL.config / RESULT_FILE,
         "dzialania_taty": TOOL.log_path.parent / DAD_ACTIONS_FILE,
         "dostep_skrzynki_raportow": TOOL.config / INBOX_ACCESS_FILE,
-        "adresy_wykonawcow": TOOL.config / WORKER_ADDRESSES_FILE,
         "reguly_ilosci": TOOL.config / RULES_FILE,
         "lista_urzadzen": TOOL.config / DEVICES_FILE,
     }
@@ -811,7 +798,6 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "wynik_aktualizacji": "config/centrum-aktualizacja.json",
         "dzialania_taty": "logs/dzialania-taty.jsonl",
         "dostep_skrzynki_raportow": "config/skrzynka-raportow.txt",
-        "adresy_wykonawcow": "config/adresy-wykonawcow.yaml",
         "reguly_ilosci": "config/reguly-ilosci.yaml",
         "lista_urzadzen": "config/lista-urzadzen.yaml",
     }
@@ -861,30 +847,22 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
 
 
 @pytest.mark.parametrize(("process", "period"), [("preparation", PERIOD), ("settlement", SETTLEMENT_PERIOD)])
-def test_konfiguracja_wykonawcow_bez_odczytu_jest_niedostepna_w_zatrzymaniu_diagnozie_i_na_karcie(
+def test_lista_wykonawcow_bez_odczytu_wstrzymuje_start_i_jest_niedostepna_na_karcie_konfiguracji(
     world_template: Path, tmp_path: Path, process: str, period: str
 ) -> None:
     world = World(tmp_path / "swiat")
     shutil.copytree(world_template, world.root)
     client = _remembering_choices(world)
-    config = world.path("konfiguracja_wykonawcow")
-    _inaccessible(config)
+    listed = world.path("lista_wykonawcow")
+    _inaccessible(listed)
     try:
         card = client.get("/api/configuration").json()["workers"]
-        run_id = _run_with_diagnosis(client, process, period)
-        stop = finished_view(client)["result"]["stops"][0]
-        diagnosis = client.post(f"/api/runs/{run_id}/diagnosis").json()
+        started = client.post("/api/runs", json={"process": process, "period": period, "mode": "DRY-RUN"})
     finally:
-        _readable_again(config)
+        _readable_again(listed)
 
-    where = "plik worker_mapping.yaml, folder config"
-    assert (stop["what"], stop["where"]) == (WORKER_CONFIG_INACCESSIBLE, where)
-    assert (diagnosis["explanation"], diagnosis["confirms_stop"]) == (stop, True)
-    assert (card["state"], card["message"]["what"], card["message"]["where"]) == (
-        "unreadable",
-        WORKER_CONFIG_INACCESSIBLE,
-        where,
-    )
+    assert (started.status_code, started.json()["message"]) == (409, refusal.workers_unusable(None).message)
+    assert (card["state"], card["message"]["what"]) == ("unreadable", diagnosis_messages.worker_list_unreadable().what)
 
 
 def test_folder_miesiaca_znikajacy_w_trakcie_listowania_jest_pominiety(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

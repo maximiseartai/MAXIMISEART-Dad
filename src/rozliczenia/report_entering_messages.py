@@ -1,7 +1,7 @@
 """Katalog Komunikatów Wpisania raportów dla taty (zasady treści: zob. ``message``, ADR 0028).
 
 Komunikaty o samym INTERMAX (brak, Excel, OneDrive, nieudany zapis) daje ``intermax_messages`` z ``ENTERING``, tak jak
-w Uporządkowaniu INTERMAX. Tu są Komunikaty o Skrzynce raportów, pliku adresów, pamięci własnych wpisów, decyzjach
+w Uporządkowaniu INTERMAX. Tu są Komunikaty o Skrzynce raportów, pamięci własnych wpisów, decyzjach
 „Zostaw moją” i zapisie komórek. Żaden nie zawiera hasła aplikacji, adresu skrzynki ani nadawcy, tematu ani treści maila, numeru zlecenia ani
 loginu Wykonawcy: pliki w ``config`` prowadzi Maks, więc każda ich usterka idzie do niego.
 """
@@ -13,7 +13,6 @@ from typing import Final
 
 from .message import IF_ERROR_RETURNS, Message, explorer_check, file_label, folder_label
 from .tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_STATE
-from .worker_addresses import AddressesProblem, UnknownLogin
 from .worker_report_inbox import INBOX_ACCESS_FILE
 
 _PROCESS: Final = "Wpisanie raportów"
@@ -118,38 +117,6 @@ def periods_folder_inaccessible(folder: Path) -> Message:
         where=folder_label(folder),
         action=explorer_check("folder", "kliknij jeszcze raz"),
     )
-
-
-def addresses_unusable(addresses: Path, problem: AddressesProblem) -> Message:
-    """Pliku adresów Wykonawców nie da się użyć; Komunikat mówi, co jest nie tak, bez adresu i loginu."""
-
-    return Message.to_maintainer(
-        code="RAPORTY_ZLE_ADRESY_WYKONAWCOW",
-        what=f"Nie można użyć adresów Wykonawców: {_addresses(problem)}. {_UNCHANGED}",
-        where=file_label(addresses),
-    )
-
-
-def _addresses(problem: AddressesProblem) -> str:
-    match problem:
-        case "missing":
-            return "nie ma pliku"
-        case "inaccessible":
-            return "system nie oddał pliku"
-        case "not_utf8":
-            return "plik nie jest zapisany w UTF-8"
-        case "not_yaml":
-            return "plik nie jest poprawnym YAML-em"
-        case "unsupported_version":
-            return "plik nie ma schema_version: 1"
-        case "no_workers":
-            return "plik nie ma Wykonawców"
-        case "not_address":
-            return "któryś Wykonawca nie ma listy adresów albo wpis nie jest adresem"
-        case "repeated_address":
-            return "ten sam adres stoi dwa razy"
-        case UnknownLogin():
-            return "któryś Wykonawca nie jest w konfiguracji wykonawców"
 
 
 def state_unreadable() -> Message:

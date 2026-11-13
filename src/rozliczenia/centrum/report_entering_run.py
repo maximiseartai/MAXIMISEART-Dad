@@ -1,14 +1,14 @@
 """Wpisanie raportów z Centrum rozliczeń: karta poza okresami, wejście procesu z Ustawień taty i start (ADR 0028).
 
 INTERMAX to Rejestr zleceń z Ustawień taty, folder okresów też z nich (okres z Plikiem zbiorczym jest dla Wpisania
-raportów zamknięty), Konfiguracja wykonawców i plik adresów Wykonawców leżą w ``config``, a
+raportów zamknięty), Lista Wykonawców z migawki Ustawień Centrum, a
 Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``). Proces nie należy do okresu: okres
 Uruchomienia to okres dzisiejszej daty z zegara procesu, ustalony przy starcie (ADR 0019), więc Logi Uruchomienia
 trafiają do Skrzynki Zgłoszeń przy tym okresie. Start biegnie w miejscu „jedno naraz” ``RunHost``, więc nie zaczyna się
 w czasie innego Uruchomienia, Aktualizacji narzędzia ani przywracania Kopii INTERMAX.
 
-Bez pliku dostępu do skrzynki raportów albo pliku adresów Wykonawców karta mówi, którego brakuje, a start jest
-odrzucony. Kopię konfliktu OneDrive obok INTERMAX karta pokazuje z instrukcją i blokuje przycisk, a kliknięcie ze
+Bez pliku dostępu do skrzynki raportów karta mówi, że go brakuje, a bez adresu żadnego Wykonawcy na Liście Wykonawców,
+że trzeba je dopisać; start jest wtedy odrzucony. Kopię konfliktu OneDrive obok INTERMAX karta pokazuje z instrukcją i blokuje przycisk, a kliknięcie ze
 starej karty kończy się Zatrzymaniem „dla taty” z tą samą instrukcją, zanim proces przeczyta skrzynkę (spec #1224,
 US 46 i 51).
 
@@ -39,18 +39,27 @@ from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook,
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import report_entering as report_entering_contract
 from rozliczenia.centrum.contract import runs as runs_contract
-from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY, HostParts, NeededSetting, PathNeed, PreparedRun, Start
+from rozliczenia.centrum.process_kind import (
+    PERIODS_DIRECTORY,
+    HostParts,
+    NeededSetting,
+    PathNeed,
+    PreparedRun,
+    Start,
+    workers_at_start,
+)
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.report_entering_state import FileReportState, ShownNote, ShownProblem, ShownResult, ShownWorker
 from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
+from rozliczenia.centrum.settings.files import Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.owner import CentrumSettings
-from rozliczenia.file_state import file_state
 from rozliczenia.public_holidays import public_holidays
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import DecisionsUnreadable, StateUnreadable
 from rozliczenia.run_context import RunContexts
+from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_reports import Kept, Login, OrderKey, OrderNumber, OrderState
 
 _KIND: Final = declaration_of("report_entering")
@@ -86,12 +95,13 @@ class ReportEnteringEntry:
     def setup(self, last: runs_contract.RunRestored | None) -> report_entering_contract.ReportEnteringSetup:
         """Stan przycisku na ekranie Raporty przed kliknięciem z ostatnim Wpisaniem raportów ``last`` z Logów Uruchomienia."""
 
-        settings = self.settings.snapshot().folders
+        snapshot = self.settings.snapshot()
+        settings = snapshot.folders
         register = settings.register
         return report_entering_contract.ReportEnteringSetup(
             title=_KIND.title,
             reminder=_VIEW.reminder,
-            blocker=_blocker(_unchosen(settings)) or self._not_set_up() or _conflict(register),
+            blocker=_blocker(_unchosen(settings)) or self._not_set_up() or _no_addresses(snapshot.workers) or _conflict(register),
             open_in_excel=[] if register is None else open_in_excel([InputWorkbook(_VIEW.register_name, register, "data_file")]),
             last=last,
         )
@@ -109,8 +119,18 @@ class ReportEnteringEntry:
         }
         if missing := self._missing():
             raise refusal.report_entering_not_set_up(missing)
+        workers = workers_at_start(snapshot.workers)
+        if not workers.addresses().logins:
+            raise refusal.report_entering_without_addresses()
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
-        start = Start(paths, period=None, dry_run=False, settings=settings, quantity_rules=snapshot.quantity_rules)
+        start = Start(
+            paths,
+            period=None,
+            dry_run=False,
+            settings=settings,
+            workers=workers,
+            quantity_rules=snapshot.quantity_rules,
+        )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:
@@ -143,8 +163,6 @@ class ReportEnteringEntry:
         missing: list[refusal.ReportEnteringFile] = []
         if self.parts.report_entering().inbox.access() == "missing":
             missing.append("inbox_access")
-        if file_state(self.configuration.path("worker_addresses")) == "missing":
-            missing.append("worker_addresses")
         return missing
 
     def _not_set_up(self) -> str | None:
@@ -157,6 +175,14 @@ def _unchosen(settings: FolderSettings) -> refusal.Refusal | None:
 
     missing = [setting.name for setting in _SETTINGS if setting.chosen(settings) is None]
     return refusal.first_choose(missing) if missing else None
+
+
+def _no_addresses(workers: Read[WorkerList] | Unreadable) -> str | None:
+    """Blokada karty, gdy na dobrej Liście Wykonawców nikt nie ma adresu; złą listę karta zostawia odmowie startu."""
+
+    if isinstance(workers, Good) and not workers.value.addresses().logins:
+        return refusal.report_entering_without_addresses().message
+    return None
 
 
 def _blocker(unchosen: refusal.Refusal | None) -> str | None:

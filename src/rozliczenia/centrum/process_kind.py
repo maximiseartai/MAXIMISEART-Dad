@@ -28,6 +28,7 @@ from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
+from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
 from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
@@ -44,6 +45,7 @@ from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 from rozliczenia.wall_clock import local_now
+from rozliczenia.worker_list import WorkerList
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
@@ -52,14 +54,14 @@ SettingField = Literal["register", "periods_directory"]
 # Wzorzec, który proces czyta; Konfiguracja wymienia każdy pod jego rolą.
 TemplateRole = Literal["internal", "collective", "worker"]
 TemplateNeed = Literal["internal_template", "collective_template", "worker_template"]
-ConfigurationNeed = Literal["worker_config", "worker_addresses", TemplateNeed]
-"""Plik Konfiguracji (``configuration.ConfigurationFiles``): Konfiguracja wykonawców, plik adresów Wykonawców albo
-Wzorzec."""
+ConfigurationNeed = TemplateNeed
+"""Plik Konfiguracji (``configuration.ConfigurationFiles``): Wzorzec."""
 PathNeed = Literal["register", "periods_directory", "collective_file", "copies_directory", ConfigurationNeed]
-Need = PathNeed | Literal["period", "efenix_window", "worker_report_inbox"]
+Need = PathNeed | Literal["period", "workers", "efenix_window", "worker_report_inbox"]
 """Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
 ścieżkę (``period_start``, ``intermax_run``, ``report_entering_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie
-odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``efenix_window``: okno efenix gospodarza
+odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``workers``: Lista Wykonawców (``Start.workers``),
+``efenix_window``: okno efenix gospodarza
 (``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``)."""
 
 
@@ -87,9 +89,11 @@ class Start:
     wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
     trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: migawka Ustawień Centrum z chwili
     startu, z której Logi Uruchomienia i Diagnoza Zatrzymania biorą pliki procesu; ``None``: gospodarz bez Ustawień
-    Centrum (Skrypt dla maszyn, odtworzenie). ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki
-    Ustawień Centrum z chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania. Pole nie ma
-    wartości domyślnej, więc każdy gospodarz mówi, skąd ma reguły.
+    Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu (Centrum: migawka Ustawień,
+    Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces jej nie potrzebuje.
+    ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z chwili startu; gospodarz
+    bez Ustawień Centrum podaje Reguły ilości z Wydania. Pole nie ma wartości domyślnej, więc każdy gospodarz mówi, skąd
+    ma reguły.
     """
 
     paths: Mapping[PathNeed, Path]
@@ -97,14 +101,29 @@ class Start:
     dry_run: bool
     pricing: runs_contract.Pricing | None = None
     settings: FolderSettings | None = None
+    workers: WorkerList | None = None
     quantity_rules: QuantityRules = field(kw_only=True)
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]
 
+    def worker_list(self) -> WorkerList:
+        assert self.workers is not None, "Catalog.prepared sprawdza potrzebę workers"
+        return self.workers
+
     def token(self) -> str:
         assert self.period is not None, "Catalog.prepared sprawdza potrzebę period"
         return self.period
+
+
+def workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
+    """Lista Wykonawców dla startu Uruchomienia z migawki Ustawień: dobra, a przy złym ustawieniu ostatnia dobra;
+    ``Refusal``, gdy ostatniej dobrej nie ma albo pliku nie da się teraz przeczytać."""
+
+    found = usable(workers)
+    if found is None:
+        raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)
+    return found
 
 
 @dataclass(frozen=True)
@@ -179,7 +198,7 @@ SimpleCheck = Literal[
     "tool_freshness",
     "report_key",
     "centrum_log",
-    "worker_config",
+    "worker_list",
 ]
 
 

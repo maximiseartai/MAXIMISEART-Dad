@@ -14,7 +14,7 @@ import threading
 from fastapi import APIRouter
 
 from rozliczenia.centrum.contract import quantity_rules as contract
-from rozliczenia.centrum.contract.settings import SettingProblem
+from rozliczenia.centrum.contract.settings_workers import SettingProblem
 from rozliczenia.centrum.rule_sentences import rule_sentence
 from rozliczenia.centrum.settings.files import FieldProblem
 from rozliczenia.centrum.settings.owner import CentrumSettings
@@ -75,4 +75,4 @@ def _rules(rules: QuantityRules, names: Mapping[str, str]) -> list[contract.Quan
 
 
 def _problem(problem: FieldProblem | None) -> SettingProblem | None:
-    return None if problem is None else SettingProblem(field=problem.field, message=problem.sentence)
+    return None if problem is None else SettingProblem(field=problem.place, message=problem.sentence)

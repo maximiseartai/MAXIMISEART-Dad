@@ -70,7 +70,10 @@ def _document(file: str, data: bytes) -> object | FieldProblem:
 
 
 def _problem(file: str, problem: RulesProblem) -> FieldProblem:
-    return FieldProblem(problem.field, messages.quantity_rules_problem(file, problem.message))
+    """Problem całego pliku: miejsce w silniku (``reguly[nokia].to``) ma id reguł i klucze z pliku taty, a pole
+    ``FieldPath`` przyjmuje tylko znane nazwy pól, więc miejsce zostaje w zdaniu silnika, nie w polu."""
+
+    return FieldProblem(None, messages.quantity_rules_problem(file, problem.message))
 
 
 @lru_cache(maxsize=4)
@@ -151,9 +154,13 @@ _RULE_ENTRIES: Final = _Entries[QuantityRule](RULES_SECTION, dump_rule, parse_ru
 _DEVICE_ENTRIES: Final = _Entries[Component](DEVICES_SECTION, dump_component, parse_component)
 
 
-def _shown(_key: str, value: str | None) -> str:
-    """Wartość w Zgłoszeniu: reguła albo składnik nie mają danych osobowych, więc wprost."""
+def _reported(change: KeyChange) -> str:
+    """Zmiana w Zgłoszeniu: reguła albo składnik nie mają danych osobowych, więc wprost."""
 
+    return f"{change.key}: {_shown(change.before)} → {_shown(change.after)}"
+
+
+def _shown(value: str | None) -> str:
     return "nie ustawiono" if value is None else value
 
 
@@ -163,7 +170,7 @@ RULES: Final = SettingsFile[tuple[QuantityRule, ...]](
     dump=lambda rules: _dump(dump_rule_list(rules)),
     diff=_RULE_ENTRIES.diff,
     restore=_RULE_ENTRIES.restore,
-    shown=_shown,
+    reported=_reported,
     default=DEFAULT_QUANTITY_RULES.rules,
 )
 DEVICES: Final = SettingsFile[tuple[Component, ...]](
@@ -172,7 +179,7 @@ DEVICES: Final = SettingsFile[tuple[Component, ...]](
     dump=lambda components: _dump(dump_components(components)),
     diff=_DEVICE_ENTRIES.diff,
     restore=_DEVICE_ENTRIES.restore,
-    shown=_shown,
+    reported=_reported,
     default=DEFAULT_QUANTITY_RULES.devices.components,
 )
 
