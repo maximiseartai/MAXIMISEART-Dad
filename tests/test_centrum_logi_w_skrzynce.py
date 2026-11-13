@@ -51,7 +51,7 @@ from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG, KINDS
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
-from rozliczenia.centrum.report_entering_logs import EnteringReplay, LoggedReports, Unreplayable
+from rozliczenia.centrum.report_entering_logs import EnteringReplay, LoggedReports, ReplayedOrderless, Unreplayable
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
@@ -2304,9 +2304,9 @@ def test_wpisanie_raportow_z_logow_wraca_jako_te_same_fakty_klikniecia_z_numerem
     assert replayed.saved == SavedState(
         facts.rollout_before, OwnEntries(frozenset(facts.memory_before), frozenset(facts.moves_before)), frozenset(facts.kept)
     )
-    assert [mail.read for mail in replayed.mails] == list(facts.mails)
-    assert [mail.sender for mail in replayed.mails] == [JAN, ANNA, 0, 1, 0]
-    assert replayed.orderless == facts.orderless
+    assert replayed.mails == facts.mails
+    assert replayed.strangers == (0, 1, 0)
+    assert replayed.orderless == (ReplayedOrderless("Zlecenia", "040000001", None),)
     assert (replayed.today, replayed.closed, replayed.skipped, replayed.reservations) == (
         facts.today,
         facts.closed,
@@ -2334,13 +2334,19 @@ UNREPLAYABLE: Final[dict[str, tuple[Callable[[dict[str, Any]], None], str]]] = {
         _second_form,
         "decyzje „Zostaw moją” w Logach ma zlecenie 40000002 Wykonawcy jan.testowy z 09.11.2026 tylko jako liczbę",
     ),
+    "dwa_przeniesienia_jednej_postaci_numeru_z_jednego_dnia": (
+        lambda entering: entering["moves_before"].append({**entering["moves_before"][0], "worker": "ola.testowa"}),
+        "pamięć wpisów i zleceń w Logach z numerami w postaci z Wpisów raportu łamie regułę pamięci (Pamięć własnych "
+        "wpisów ma dwa Przeniesienia jednego zlecenia w jednym dniu)",
+    ),
 }
 
 
 @pytest.mark.parametrize("case", UNREPLAYABLE)
 def test_logi_wpisania_raportow_bez_numeru_zlecenia_nie_daja_wejscia_klikniecia(case: str) -> None:
-    """Numer Wpisu z maską strażnika i numer pamięci albo decyzji „Zostaw moją”, którego postaci nie wyznacza dokładnie
-    jeden Wpis, nie dają wejścia kliknięcia, tylko powód."""
+    """Numer Wpisu z maską strażnika, numer pamięci albo decyzji „Zostaw moją”, którego postaci nie wyznacza dokładnie
+    jeden Wpis, i pamięć zleceń, w której postacie numerów z Wpisów dają dwa Przeniesienia jednego zlecenia w jednym
+    dniu, nie dają wejścia kliknięcia, tylko powód."""
 
     change, reason = UNREPLAYABLE[case]
     entering = _logged_reports(_entering_facts())
@@ -2422,48 +2428,18 @@ def _clicks_with_forms(draw: st.DrawFn) -> EnteringFacts:
     )
 
 
-def _determined(facts: EnteringFacts) -> tuple[bool, bool, bool]:
-    """Czy Logi kliknięcia wyznaczają postać numerów jego pamięci wpisów i zleceń, decyzji „Zostaw moją” i numerów bez
-    zlecenia. Logi mają te numery tylko jako liczbę, a postać numeru to postać tej liczby z Wpisów: pod Wykonawcą i
-    dniem z Wpisami tej liczby tylko ich postać. Wyznaczają, gdy każdy numer ma do wyboru tylko swoją postać."""
-
-    written: dict[tuple[int, date, str], set[OrderNumber]] = {}
-    for mail in facts.mails:
-        assert isinstance(mail, ReadReport)
-        for entry in mail.entries:
-            written.setdefault((int(entry.number), mail.day, mail.worker), set()).add(entry.number)
-
-    def any_day(number: OrderNumber) -> set[OrderNumber]:
-        return {form for (value, _, _), found in written.items() if value == int(number) for form in found}
-
-    def only(key: OrderKey) -> bool:
-        return (written.get((int(key.number), key.day, key.worker)) or any_day(key.number)) == {key.number}
-
-    return (
-        all(only(entry.key) for entry in facts.memory_before)
-        and all(only(OrderKey(move.number, move.day, move.worker)) for move in facts.moves_before),
-        all(only(decision.key) for decision in facts.kept),
-        all(any_day(found.number) == {found.number} for found in facts.orderless),
-    )
-
-
 @PROPERTY
 @given(_clicks_with_forms())
-def test_pamiec_z_kilkoma_zleceniami_jednej_liczby_wraca_z_logow_jak_w_kliknieciu(facts: EnteringFacts) -> None:
+def test_odczyt_wejscia_klikniecia_z_logow_z_kilkoma_postaciami_jednej_liczby_nie_rzuca_wyjatku(
+    facts: EnteringFacts,
+) -> None:
     """Numer z zerami na początku i bez nich to różne zlecenia, a Logi mają numer pamięci tylko jako liczbę. Odczyt
-    wejścia kliknięcia z pliku Logów daje powód, dla którego Logi go nie wyznaczają, albo pamięć wpisów i zleceń,
-    decyzje „Zostaw moją” i numery bez zlecenia takie jak w kliknięciu tam, gdzie Logi wyznaczają ich postać
-    (``_determined``); nigdy wyjątek."""
+    wejścia kliknięcia z pliku Logów daje wejście albo powód, dla którego Logi go nie wyznaczają, nigdy wyjątek, bo
+    wyjątek kończy odtworzenie bez raportu."""
 
     replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
 
-    if isinstance(replayed, EnteringReplay):
-        clicked = (OwnEntries(frozenset(facts.memory_before), frozenset(facts.moves_before)), frozenset(facts.kept), facts.orderless)
-        found = (replayed.saved.memory, replayed.saved.kept, replayed.orderless)
-        determined = _determined(facts)
-        assert [part for part, known in zip(found, determined, strict=True) if known] == [
-            part for part, known in zip(clicked, determined, strict=True) if known
-        ], (found, determined)
+    assert isinstance(replayed, EnteringReplay | Unreplayable), replayed
 
 
 # Wpisy po dniu i Wykonawcy i miejsca dwóch Przeniesień jednej liczby z jednego dnia: pierwsze w Logach (po dniu i

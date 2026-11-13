@@ -11,7 +11,7 @@ czytają karta z Logów, Historia i odtworzenie.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence, Set
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Annotated, Final, Literal, assert_never
@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 from rozliczenia.client_data import MASKS
 from rozliczenia.report_cells import ReportColumn
-from rozliczenia.report_entering import EnteringFacts, EnteringSummary, Orderless, SavedState
+from rozliczenia.report_entering import EnteringFacts, EnteringSummary, SavedState
 from rozliczenia.worker_reports import (
     AddBar,
     ConflictingVerdicts,
@@ -74,10 +74,6 @@ class LoggedReportEntry(_Record):
             fault=entry.fault,
             activities=entry.activities,
         )
-
-    def _entry(self) -> ReportEntry:
-        verdict = None if self.verdict is None else Verdict(self.verdict)
-        return ReportEntry(OrderNumber(self.number), verdict, self.fault, self.activities)
 
 
 class LoggedReportMail(_Record):
@@ -141,9 +137,20 @@ def _mail(read: MailRead) -> LoggedMail:
 
 
 def _read(mail: LoggedMail) -> MailRead:
+    """Odczyt maila z jego zapisu w Logach, czyli zapis w drugą stronę: odtworzenie Uruchomienia z Logów (#1233) podaje
+    go procesowi jako mail w postaci kanonicznej (``worker_reports.as_mail``)."""
+
     match mail:
         case LoggedReportMail():
-            entries = tuple(entry._entry() for entry in mail.entries)
+            entries = tuple(
+                ReportEntry(
+                    OrderNumber(entry.number),
+                    None if entry.verdict is None else Verdict(entry.verdict),
+                    entry.fault,
+                    entry.activities,
+                )
+                for entry in mail.entries
+            )
             return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
         case LoggedUnreadableMail():
             numbers = frozenset(OrderNumber(number) for number in mail.numbers or ())
@@ -242,10 +249,6 @@ class LoggedOwnEntry(_Record):
     @classmethod
     def of(cls, key: OrderKey, column: ReportColumn, value: str) -> LoggedOwnEntry:
         return cls(number=int(key.number), day=key.day, worker=key.worker, column=column, value=value)
-
-    def _key(self, numbers: _Numbers) -> OrderKey | None:
-        number = numbers.exact(self.number, self.day, self.worker)
-        return None if number is None else OrderKey(number, self.day, Login(self.worker))
 
 
 class LoggedManualProblem(_Record):
@@ -370,9 +373,6 @@ class LoggedOrderless(_Record):
     number: int
     day: date | None = None
 
-    def _orderless(self, numbers: _Numbers) -> Orderless:
-        return Orderless(self.sheet, numbers.written(self.number), self.day)
-
 
 class LoggedOwnMove(_Record):
     """Pamięć zlecenia Wpisania raportów (``OwnMove``): numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u którego
@@ -403,19 +403,6 @@ class LoggedOwnMove(_Record):
             since=move.since,
             overridden=move.overridden,
             added=move.added,
-        )
-
-    def _move(self, number: OrderNumber) -> OwnMove:
-        return OwnMove(
-            number,
-            self.day,
-            Login(self.worker),
-            self.origin_day,
-            Login(self.origin_worker),
-            self.origin_name,
-            self.since,
-            self.overridden,
-            self.added,
         )
 
 
@@ -509,63 +496,34 @@ class LoggedReports(_Record):
         kliknięcia i numery bez zlecenia, z zastrzeżeniami, a ``Unreplayable``, gdy Logi nie wyznaczają numeru zlecenia
         Wpisu albo pamięci."""
 
-        entries = [entry for mail in self.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
-        masked = [entry.number for entry in entries if not _digits(entry.number)]
+        masked = [entry.number for entry in _logged_entries(self) if not _digits(entry.number)]
         if masked:
             return Unreplayable(
                 f"Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ({masked[0]}: 9 cyfr "
                 "z rzędu strażnik bierze za telefon), więc odtworzenie nie wie, do którego zlecenia szedł ten Wpis"
             )
-        numbers = _Numbers.of(self.mails)
-        memory = _keyed(numbers, "pamięć wpisów", self.memory_before)
-        if isinstance(memory, Unreplayable):
-            return memory
-        kept = _keyed(numbers, "decyzje „Zostaw moją”", self.kept)
-        if isinstance(kept, Unreplayable):
-            return kept
-        entered = frozenset(OwnEntry(key, logged.column, logged.value) for key, logged in memory)
+        numbers = _numbers(self)
+        for name, logged in (("pamięć wpisów", self.memory_before), ("decyzje „Zostaw moją”", self.kept)):
+            unknown = [entry for entry in logged if len(_texts(numbers, entry.number, entry.day, entry.worker)) != 1]
+            if unknown:
+                entry = unknown[0]
+                return Unreplayable(
+                    f"{name} w Logach ma zlecenie {entry.number} Wykonawcy {entry.worker} z {entry.day:%d.%m.%Y} "
+                    "tylko jako liczbę, a jego numeru nie ma w dokładnie jednym Wpisie raportu w Logach, więc "
+                    "odtworzenie nie wie, czy numer ma zera na początku"
+                )
         try:
-            own = OwnEntries(entered, frozenset(numbers.moved(self.moves_before)))
+            saved = _saved(self)
         except ValueError as error:
             return Unreplayable(
                 f"pamięć wpisów i zleceń w Logach z numerami w postaci z Wpisów raportu łamie regułę pamięci "
                 f"({str(error).rstrip('.')}), a Logi mają jej numery tylko jako liczbę, więc odtworzenie nie wie, które z "
                 "nich mają zera na początku"
             )
-        saved = SavedState(
-            self.rollout_before, own, frozenset(Kept(key, logged.column, logged.value) for key, logged in kept)
-        )
-        return EnteringReplay(
-            today=self.today,
-            closed=tuple(self.closed),
-            skipped=self.skipped,
-            mails=self._mails(),
-            saved=saved,
-            orderless=tuple(logged._orderless(numbers) for logged in self.orderless),
-            reservations=self._reservations(entries),
-        )
-
-    def _mails(self) -> tuple[ReplayedMail, ...]:
-        """Maile spoza listy adresów dostają po kolei jeden z tylu adresów, ile problemów nieznanego nadawcy mają w Logach
-        ich skrót i dzień, bo rdzeń daje jeden problem na różny adres maili z tym Message-ID."""
-
-        senders = Counter((problem.mail, problem.day) for problem in self.problems if isinstance(problem, LoggedSenderProblem))
-        seen: Counter[tuple[str, date]] = Counter()
-        mails: list[ReplayedMail] = []
-        for mail in self.mails:
-            read = _read(mail)
-            match read:
-                case ReadStranger():
-                    key = (read.mail.digest, read.day)
-                    mails.append(ReplayedMail(read, seen[key] % max(senders[key], 1)))
-                    seen[key] += 1
-                case _:
-                    mails.append(ReplayedMail(read, read.worker))
-        return tuple(mails)
-
-    def _reservations(self, entries: Sequence[LoggedReportEntry]) -> tuple[str, ...]:
         reservations: list[str] = []
-        counted = Counter({mask: sum(entry.activities.count(mask) for entry in entries) for mask in MASKS})
+        counted = Counter(
+            {mask: sum(entry.activities.count(mask) for entry in _logged_entries(self)) for mask in MASKS}
+        )
         if +counted:
             masks = ", ".join(f"{mask} ×{count}" for mask, count in (+counted).most_common())
             reservations.append(
@@ -578,38 +536,49 @@ class LoggedReports(_Record):
                 "więc ostrzeżenie o nieczytelnym temacie, które u taty zdjął poprawiony mail, wraca w odtworzeniu jako "
                 "różnica"
             )
-        return tuple(reservations)
-
-
-@dataclass(frozen=True)
-class ReplayedMail:
-    """Mail z Logów dla odtworzenia: odczyt i nadawca, czyli login Wykonawcy albo numer jednego z różnych adresów spoza
-    listy adresów maili z tym skrótem i dniem."""
-
-    read: MailRead
-    sender: Login | int
+        return EnteringReplay(
+            today=self.today,
+            closed=tuple(self.closed),
+            skipped=self.skipped,
+            mails=tuple(_read(mail) for mail in self.mails),
+            strangers=tuple(_strangers(self)),
+            saved=saved,
+            orderless=tuple(_orderless(self)),
+            reservations=tuple(reservations),
+        )
 
 
 @dataclass(frozen=True)
 class EnteringReplay:
     """Wejście kliknięcia Wpisania raportów z Logów: dzień kliknięcia, tokeny okresów zamkniętych, maile, których
-    Skrzynka raportów nie umiała przeczytać, przeczytane maile po kolei, pamięć wpisów i decyzje „Zostaw moją” sprzed
-    kliknięcia, numery z Wpisem z wierszy INTERMAX bez zlecenia (z zerem na początku, gdy Wpis go ma) i zastrzeżenia
-    odtworzenia, które z nich wynikają."""
+    Skrzynka raportów nie umiała przeczytać, przeczytane maile po kolei, numer adresu każdego maila spoza listy adresów
+    po kolei, pamięć wpisów i decyzje „Zostaw moją” sprzed kliknięcia, numery z Wpisem z wierszy INTERMAX bez
+    zlecenia i zastrzeżenia odtworzenia, które z nich wynikają."""
 
     today: date
     closed: tuple[str, ...]
     skipped: int
-    mails: tuple[ReplayedMail, ...]
+    mails: tuple[MailRead, ...]
+    strangers: tuple[int, ...]
     saved: SavedState
-    orderless: tuple[Orderless, ...]
+    orderless: tuple[ReplayedOrderless, ...]
     reservations: tuple[str, ...]
 
     @classmethod
     def without_logs(cls, today: date) -> EnteringReplay:
         """Kliknięcie z dnia ``today`` bez Logów Wpisania raportów: pusta skrzynka i pamięć bez dnia wdrożenia."""
 
-        return cls(today, (), 0, (), SavedState(None, OwnEntries.EMPTY), (), ())
+        return cls(today, (), 0, (), (), SavedState(None, OwnEntries.EMPTY), (), ())
+
+
+@dataclass(frozen=True)
+class ReplayedOrderless:
+    """Numer bez zlecenia z Logów (``LoggedOrderless``) z wartością ``NUMER ZL.`` wiersza, który odtworzenie stawia na
+    dole arkusza ``sheet``: postać z zerem na początku z Wpisu, gdy Wpis ją ma, a inaczej liczba."""
+
+    sheet: str
+    number: str | int
+    day: date | None
 
 
 @dataclass(frozen=True)
@@ -619,79 +588,92 @@ class Unreplayable:
     reason: str
 
 
-def _keyed(
-    numbers: _Numbers, name: str, logged: Sequence[LoggedOwnEntry]
-) -> list[tuple[OrderKey, LoggedOwnEntry]] | Unreplayable:
-    keyed: list[tuple[OrderKey, LoggedOwnEntry]] = []
-    for entry in logged:
-        key = entry._key(numbers)
-        if key is None:
-            return Unreplayable(
-                f"{name} w Logach ma zlecenie {entry.number} Wykonawcy {entry.worker} z {entry.day:%d.%m.%Y} tylko jako "
-                "liczbę, a jego numeru nie ma w dokładnie jednym Wpisie raportu w Logach, więc odtworzenie nie wie, czy "
-                "numer ma zera na początku"
-            )
-        keyed.append((key, entry))
-    return keyed
+def _strangers(entering: LoggedReports) -> list[int]:
+    """Numer adresu każdego maila spoza listy adresów w Logach, po kolei: jeden z tylu adresów, ile problemów nieznanego
+    nadawcy mają w Logach jego skrót i dzień, bo rdzeń daje jeden problem na różny adres maili z tym Message-ID."""
+
+    senders = Counter((problem.mail, problem.day) for problem in entering.problems if isinstance(problem, LoggedSenderProblem))
+    seen: Counter[tuple[str, date]] = Counter()
+    found: list[int] = []
+    for mail in entering.mails:
+        if isinstance(mail, LoggedStrangerMail):
+            key = (mail.mail, mail.day)
+            found.append(seen[key] % max(senders[key], 1))
+            seen[key] += 1
+    return found
 
 
 def _digits(number: str) -> bool:
     return number.isascii() and number.isdigit()
 
 
-@dataclass(frozen=True)
-class _Numbers:
-    """Postacie numerów Wpisów raportu w Logach po liczbie, dniu z tematu i Wykonawcy. Pamięć wpisów, decyzje „Zostaw
-    moją”, pamięć zleceń i numery bez zlecenia mają w Logach numer tylko jako liczbę (``LoggedOwnEntry``), a dotyczą
-    tylko numerów z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie."""
+def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
+    return [entry for mail in entering.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
 
-    forms: Mapping[tuple[int, date, str], Set[str]]
 
-    @classmethod
-    def of(cls, mails: Sequence[LoggedMail]) -> _Numbers:
-        forms: dict[tuple[int, date, str], set[str]] = {}
-        for mail in mails:
-            if isinstance(mail, LoggedReportMail):
-                for entry in mail.entries:
-                    if _digits(entry.number):
-                        forms.setdefault((int(entry.number), mail.day, mail.worker), set()).add(entry.number)
-        return cls({key: frozenset(found) for key, found in forms.items()})
+def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: date, worker: str) -> set[str]:
+    """Postacie numeru ``number`` z dnia ``day`` we Wpisach raportu Wykonawcy ``worker`` w Logach, bez jego Wpisu od
+    każdego Wykonawcy z tego dnia, a bez Wpisu z tego dnia z każdego dnia: wpis pamięci idzie za wierszem, więc może
+    stać pod Wykonawcą, który nie przysłał Raportu, i pod dniem innym niż temat Raportu (Przeniesienie na inny dzień)."""
 
-    def exact(self, number: int, day: date, worker: str) -> OrderNumber | None:
-        """Jedyna postać numeru ``number`` z dnia ``day`` we Wpisach Wykonawcy ``worker``, bez jego Wpisu we Wpisach
-        każdego Wykonawcy z tego dnia, a bez Wpisu z tego dnia we Wpisach z każdego dnia: wpis pamięci idzie za
-        wierszem, więc może stać pod Wykonawcą, który nie przysłał Raportu, i pod dniem innym niż temat Raportu
-        (Przeniesienie na inny dzień). ``None``: postaci nie ma albo jest ich kilka."""
+    return (
+        numbers.get((number, day, worker))
+        or {text for (value, found, _), texts in numbers.items() if (value, found) == (number, day) for text in texts}
+        or {text for (value, _, _), texts in numbers.items() if value == number for text in texts}
+    )
 
-        found = (
-            self.forms.get((number, day, worker))
-            or {form for (value, on, _), forms in self.forms.items() if (value, on) == (number, day) for form in forms}
-            or self._any_day(number)
+
+def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
+    """Numery Wpisów raportu w Logach po liczbie, dniu i Wykonawcy: pamięć wpisów ma w Logach numer tylko jako liczbę,
+    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie."""
+
+    numbers: dict[tuple[int, date, str], set[str]] = {}
+    for mail in entering.mails:
+        if isinstance(mail, LoggedReportMail):
+            for entry in mail.entries:
+                if _digits(entry.number):
+                    numbers.setdefault((int(entry.number), mail.day, mail.worker), set()).add(entry.number)
+    return numbers
+
+
+def _saved(entering: LoggedReports) -> SavedState:
+    numbers = _numbers(entering)
+
+    def key(logged: LoggedOwnEntry) -> OrderKey:
+        [number] = _texts(numbers, logged.number, logged.day, logged.worker)
+        return OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
+
+    def number(logged: LoggedOwnMove) -> OrderNumber:
+        found = _texts(numbers, logged.number, logged.day, logged.worker)
+        # 0123 i 123 to dwa zlecenia, a Logi niosą numer pamięci tylko jako liczbę, więc jedyna postać spod Wpisu
+        # Wykonawcy i dnia Przeniesienia odchodzi z nim i każde następne Przeniesienie tej liczby bierze inną postać.
+        return OrderNumber(found.pop() if len(found) == 1 else str(logged.number))
+
+    entries = frozenset(OwnEntry(key(logged), logged.column, logged.value) for logged in entering.memory_before)
+    kept = frozenset(Kept(key(logged), logged.column, logged.value) for logged in entering.kept)
+    moves = frozenset(
+        OwnMove(
+            number(logged),
+            logged.day,
+            Login(logged.worker),
+            logged.origin_day,
+            Login(logged.origin_worker),
+            logged.origin_name,
+            logged.since,
+            logged.overridden,
+            logged.added,
         )
-        return OrderNumber(next(iter(found))) if len(found) == 1 else None
+        for logged in entering.moves_before
+    )
+    return SavedState(entering.rollout_before, OwnEntries(entries, moves), kept)
 
-    def moved(self, moves: Sequence[LoggedOwnMove]) -> list[OwnMove]:
-        """Pamięć zleceń z Logów w ich kolejności (po dniu i numerze), z numerem w postaci, którą wyznacza ``exact``, a
-        bez niej jako liczbą. 0123 i 123 to dwa zlecenia, a Wpisanie raportów zakłada pamięć zlecenia tylko wtedy, gdy
-        jego numer nie ma żadnej (``memories_of``), więc jedyna postać z Wpisów Wykonawcy i dnia Przeniesienia należy
-        tylko do niego: każde następne Przeniesienie tej liczby, z tego samego albo innego dnia, szuka postaci we
-        Wpisach bez nich."""
 
-        numbers = self
-        found: list[OwnMove] = []
-        for move in moves:
-            key = (move.number, move.day, move.worker)
-            number = numbers.exact(*key)
-            if number is not None and key in numbers.forms:
-                numbers = _Numbers({other: forms for other, forms in numbers.forms.items() if other != key})
-            found.append(move._move(OrderNumber(str(move.number)) if number is None else number))
-        return found
-
-    def written(self, number: int) -> OrderNumber:
-        """Postać numeru ``number`` z zerem na początku z Wpisu z dowolnego dnia, a bez niej liczba."""
-
-        zero = sorted(form for form in self._any_day(number) if form.startswith("0"))
-        return OrderNumber(zero[0] if zero else str(number))
-
-    def _any_day(self, number: int) -> set[str]:
-        return {form for (value, _, _), forms in self.forms.items() if value == number for form in forms}
+def _orderless(entering: LoggedReports) -> list[ReplayedOrderless]:
+    numbers = _numbers(entering)
+    replayed: list[ReplayedOrderless] = []
+    for logged in entering.orderless:
+        number = logged.number
+        texts = {text for (value, _, _), found in numbers.items() if value == number for text in found}
+        zero = sorted(text for text in texts if text.startswith("0"))
+        replayed.append(ReplayedOrderless(logged.sheet, zero[0] if zero else number, logged.day))
+    return replayed

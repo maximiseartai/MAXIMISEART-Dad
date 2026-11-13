@@ -82,7 +82,7 @@ from rozliczenia.centrum.process_kind import (
     ProcessKind,
     Start,
 )
-from rozliczenia.centrum.report_entering_logs import EnteringReplay, Unreplayable
+from rozliczenia.centrum.report_entering_logs import EnteringReplay, ReplayedOrderless, Unreplayable
 from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import EndedRun
@@ -108,14 +108,14 @@ from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.quantity_engine import QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
-from rozliczenia.report_entering import ClickResult, Orderless, ReportEnteringParts, SavedState
+from rozliczenia.report_entering import ClickResult, ReportEnteringParts, SavedState
 from rozliczenia import report_entering_messages
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 from rozliczenia.worker_list import WorkerEntry, WorkerList
-from rozliczenia.worker_reports import Login, OwnEntries, SenderAddress, as_mail
+from rozliczenia.worker_reports import Login, OwnEntries, ReadStranger, SenderAddress, as_mail
 
 from atrapy.skrzynka_raportow import FakeInbox
 import atrapa_z_logow
@@ -845,16 +845,15 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     assert isinstance(replay, EnteringReplay), "Logi bez wejścia kliknięcia to granica blokująca (_entering_limits)"
     if replay.orderless:
         _add_orderless(register, replay)
-    logins = sorted({mail.sender for mail in replay.mails if not isinstance(mail.sender, int)}) or [_NO_WORKER]
+    reads = replay.mails
+    logins = sorted({read.worker for read in reads if not isinstance(read, ReadStranger)}) or [_NO_WORKER]
     senders = {login: _sender(f"wykonawca-{index}") for index, login in enumerate(logins)}
     workers = WorkerList.of([WorkerEntry([login], login, [sender.shown()]) for login, sender in senders.items()])
     assert isinstance(workers, WorkerList), "login Wpisu jest nazwą pliku, bo Logi niosą go po Liście Wykonawców taty"
+    strangers = iter(replay.strangers)
     mails = [
-        as_mail(
-            mail.read,
-            _sender(f"obcy-{mail.read.mail.digest}-{mail.sender}") if isinstance(mail.sender, int) else senders[mail.sender],
-        )
-        for mail in replay.mails
+        as_mail(read, _sender(f"obcy-{read.mail.digest}-{next(strangers)}") if isinstance(read, ReadStranger) else senders[read.worker])
+        for read in reads
     ]
     moment = datetime.combine(replay.today, started.timetz())
     warned = any(message.code == _MEMORY_NOT_SAVED for message in record.messages)
@@ -879,19 +878,20 @@ def _add_orderless(register: Path, replay: EnteringReplay) -> None:
     ten dzień i ``WYKONAWCA``, więc rdzeń daje ten sam powód (``AddBar.BEFORE_WINDOW``)."""
 
     workbook = load_workbook(register)
-    by_sheet: dict[str, list[Orderless]] = {}
-    for found in replay.orderless:
-        by_sheet.setdefault(found.sheet, []).append(found)
+    by_sheet: dict[str, list[ReplayedOrderless]] = {}
+    for logged in replay.orderless:
+        by_sheet.setdefault(logged.sheet, []).append(logged)
     for name, orderless in by_sheet.items():
         sheet = workbook[name]
         header = {normalize_text(cell.value): cell.column for cell in sheet[1] if cell.value is not None}
         first = sheet.max_row + 2
-        for index, found in enumerate(orderless):
+        for index, logged in enumerate(orderless):
+            day = replay.today if logged.day is None else logged.day
             cells: dict[Column, datetime | int | str] = {
-                DATE: datetime.combine(replay.today if found.day is None else found.day, time()),
-                ORDER_NUMBER: found.number if found.number.startswith("0") else int(found.number),
+                DATE: datetime.combine(day, time()),
+                ORDER_NUMBER: logged.number,
             }
-            if found.day is not None:
+            if logged.day is not None:
                 cells[WORKER] = _NO_WORKER
             shift = SHIFT if index == 0 else 0
             for column, value in cells.items():
