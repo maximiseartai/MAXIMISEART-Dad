@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from pathlib import Path
 
+from openpyxl import load_workbook
 import pytest
 import yaml
 
@@ -21,7 +22,7 @@ from rozliczenia.collective_preparation import PreparationInputs, prepare_collec
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.order_facts import MissingHeaders
-from rozliczenia.quantities_to_fill import FillKind, fill_hint, quantities_to_fill
+from rozliczenia.quantities_to_fill import FillKind, RowState, fill_hint, quantities_to_fill
 from rozliczenia.quantity_engine import (
     ActivitiesContain,
     Component,
@@ -62,6 +63,7 @@ from rozliczenia.quantity_rules_file import (
 from rozliczenia.run_context import RunContext
 from atrapy.preparation import PERIOD, cell_values, make_preparation_fixture, register_order
 from atrapy.settlement import write_template
+from atrapy.workbooks import active_worksheet
 
 DEVICES = DeviceList(
     (
@@ -510,10 +512,24 @@ def _quantities_in(path: Path, row: int) -> dict[str, object]:
     return {letter: value for letter, value in zip(QUANTITY_LETTERS, values, strict=True) if value not in (None, 0)}
 
 
+def _tata_writes(path: Path, cells: dict[str, int]) -> None:
+    workbook = load_workbook(path)
+    try:
+        for reference, value in cells.items():
+            active_worksheet(workbook)[reference] = value
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+
 def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze_swojego_wejscia(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(
         tmp_path,
-        [register_order(1, TUESDAY) | {"URZĄDZENIA": "fut"}, register_order(2, TUESDAY) | {"URZĄDZENIA": "foo"}],
+        [
+            register_order(1, TUESDAY) | {"URZĄDZENIA": "fut"},
+            register_order(2, TUESDAY) | {"URZĄDZENIA": "foo"},
+            register_order(3, TUESDAY) | {"URZĄDZENIA": "prewencja"},
+        ],
     )
     worker_template = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(worker_template)
@@ -530,6 +546,8 @@ def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze
         ),
         RunContext(),
     )
+    prepared = [_quantities_in(preparation.collective_file, row) for row in (18, 19, 20)]
+    _tata_writes(preparation.collective_file, {"AA18": 6, "V19": 1})
     settlement = run_settlements(
         SettlementInputs(preparation.collective_file, fixture.config_path, worker_template, quantity_rules=OWN_RULES),
         RunContext(),
@@ -539,15 +557,25 @@ def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze
     assert not isinstance(read, MissingHeaders)
     to_fill = quantities_to_fill(read.rows, OWN_RULES, settled=False)
 
-    assert [_quantities_in(preparation.collective_file, row) for row in (18, 19)] == [{"Q": 1, "S": 1, "AA": 7}, {"T": 1}]
+    assert prepared == [{"Q": 1, "S": 1, "AA": 7}, {"T": 1}, {"T": 1}], "prewencja nie jest tu z opisu"
     [worker_file] = (result.output_file for result in settlement.results if result.rows)
     assert _quantities_in(worker_file, 18) == {"Q": 1, "S": 1}
     assert dict(settlement.inea_only_cleared) == {"AA": 1}
     assert isinstance(check, quantity_check.QuantityCheck)
-    assert (check.compared, check.unruled_rows, check.difference_count) == (1, 1, 0)
+    assert (check.compared, check.unruled_rows, check.from_description) == (1, 2, 0)
+    assert [(difference.column, difference.rule, difference.tata) for difference in check.differences] == [("AA", 7, 6)]
+    assert dict(check.unruled["foo"].values) == {("V", 1): 1}, "V nie jest kolumną reguł dla składnika spoza listy"
     assert "AA" not in check.other_columns
-    assert [(kind.kind, [row.number for row in kind.rows]) for kind in to_fill.kinds] == [
-        (FillKind.WITHOUT_RULE, [19]),
+    assert [(kind.kind, [(row.number, row.state) for row in kind.rows]) for kind in to_fill.kinds] == [
+        (FillKind.WITHOUT_RULE, [(19, RowState.DONE), (20, RowState.TO_FILL)]),
         (FillKind.FROM_DESCRIPTION, []),
     ]
     assert fill_hint(FillKind.WITHOUT_RULE, OWN_RULES) == "Dopisz ilości poza T."
+
+
+def test_podpowiedz_wiersza_bez_reguly_wymienia_kolumny_regul_dla_skladnika_spoza_listy() -> None:
+    only_known = _rules(_rule("z", scope=Scope.KNOWN, action=_fill("Z", 1)))
+
+    assert fill_hint(FillKind.WITHOUT_RULE, DEFAULT_QUANTITY_RULES) == "Dopisz ilości poza V, T i N."
+    assert fill_hint(FillKind.WITHOUT_RULE, only_known) == "Dopisz ilości."
+    assert fill_hint(FillKind.FROM_DESCRIPTION, only_known) == "Wpisz ilości według opisu technika."
