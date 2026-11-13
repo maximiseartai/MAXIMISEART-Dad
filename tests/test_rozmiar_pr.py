@@ -337,6 +337,7 @@ def test_atrybut_diff_albo_binary_spoza_bajtow_pliku_nie_zeruje_linii_licznika_s
         ('[maszyneria]\n"tools/a.py" = "tests/test_a.py"\n', "jednostka tools/a.py ma mieć listę plików testów"),
         ('[produkt]\n"src/" = ["tests/test_a.py"]\n[maszyneria]\n"tools/a.py" = ["tests/test_a.py"]\n', "tests/test_a.py stoi na liście dwa razy"),
     ],
+    ids=["obca-tabela", "testy-nie-lista", "powtorzony-wpis"],
 )
 def test_lista_dwoch_szop_innego_ksztaltu_albo_z_powtorzonym_wpisem_to_blad(tekst: str, blad: str) -> None:
     with pytest.raises(ValueError, match=re.escape(blad)):
