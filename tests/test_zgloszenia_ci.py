@@ -891,9 +891,10 @@ def _krok(numer: int, krok: Krok) -> dict[str, Any]:
     return {"number": numer, "name": nazwa, "conclusion": wynik, "started_at": f"{czasy[0]}Z", "completed_at": f"{czasy[-1]}Z"}
 
 
-def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_toku: int = 0) -> dict[str, Any]:
+def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_toku: int = 0, koniec_linii: str = "\n") -> dict[str, Any]:
     """Zadania próby runu: padnięte z krokami i logami, ``Required CI status`` padły po nich, jedno zielone i ``w_toku``
-    biegnących. Log zadania to logi jego kroków po kolei, jak w API, a krok ``skipped`` nie ma w nim linii."""
+    biegnących. Log zadania to logi jego kroków po kolei, jak w API, a krok ``skipped`` nie ma w nim linii; linie kończy
+    ``koniec_linii`` (log zadania Windows z API ma ``\\r\\n``)."""
 
     kroki = {run_id * 100 + numer: (nazwa, _kroki(log)) for numer, (nazwa, log) in enumerate(logi.items())}
     kroki[run_id * 100 + 99] = (REQUIRED, [_wykonany("Require every CI check to succeed", "failure", "2026-11-11T14:00:00Z REQUIRED FAIL\n")])
@@ -909,7 +910,7 @@ def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_t
     return {
         f"{REPO}/actions/runs/{run_id}/attempts/{proba}/jobs?per_page=100&page=1": {"total_count": len(zadania), "jobs": zadania},
         **{
-            f"{REPO}/actions/jobs/{id_zadania}/logs": "".join(log for _, wynik, log in jego if wynik != "skipped").encode()
+            f"{REPO}/actions/jobs/{id_zadania}/logs": "".join(log for _, wynik, log in jego if wynik != "skipped").replace("\n", koniec_linii).encode()
             for id_zadania, (_, jego) in kroki.items()
         },
     }
@@ -923,11 +924,19 @@ def _runy_ci(runy: list[dict[str, Any]]) -> dict[str, Any]:
     return {f"{adres}&page={numer}": {"total_count": len(runy), "workflow_runs": strona} for numer, strona in enumerate(strony, start=1)}
 
 
-def _github(run: dict[str, Any], logi: Mapping[str, str | list[Krok]], *, ponowione: tuple[dict[str, Any], ...] = (), flaky: tuple[str, ...] = (), odpowiedzi: dict[str, Any] | None = None) -> Nagrany:
+def _github(
+    run: dict[str, Any],
+    logi: Mapping[str, str | list[Krok]],
+    *,
+    ponowione: tuple[dict[str, Any], ...] = (),
+    flaky: tuple[str, ...] = (),
+    odpowiedzi: dict[str, Any] | None = None,
+    koniec_linii: str = "\n",
+) -> Nagrany:
     return Nagrany(
         {
             f"{REPO}/actions/runs/{run['id']}": run,
-            **_proba(run["id"], run["run_attempt"], logi),
+            **_proba(run["id"], run["run_attempt"], logi, koniec_linii=koniec_linii),
             **_runy_ci([run, *ponowione]),
             **_issues(niestabilne_testy.ETYKIETA_FLAKY, "open", [{"number": 7, "title": niestabilne_testy.tytul_issue(test)} for test in flaky]),
             **(odpowiedzi or {}),
@@ -1006,17 +1015,19 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         "wyslanie-artefaktu-http-503", "wyslanie-artefaktu-http-403", "brak-artefaktu", "cytat-artefaktu-w-sprawdzeniu",
     ],
 )
+@pytest.mark.parametrize("koniec_linii", ["\n", "\r\n"], ids=["lf", "crlf-windows"])
 def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
-    logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool
+    logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool, koniec_linii: str
 ) -> None:
     """Sygnatura awarii liczy się tylko w kroku, który zaczerwienił zadanie, czyli w pierwszym kroku z ``failure``: krok
     z ``continue-on-error`` i krok ``if: failure()`` po nim też drukują ``##[error]``, ale defektu nie zamieniają w awarię,
-    a gdy nagłówki kroków w logu nie pasują do kroków z API, porażka jest defektem."""
+    a gdy nagłówki kroków w logu nie pasują do kroków z API, porażka jest defektem. Log zadania Windows (``\\r\\n``) daje
+    ten sam wynik co log z Linuksa."""
 
     run = _run_ci(42435998596)
     ponowienia = Ponowienia()
 
-    wynik = ponow_ci.ponow(_github(run, logi, flaky=flaky), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
+    wynik = ponow_ci.ponow(_github(run, logi, flaky=flaky, koniec_linii=koniec_linii), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
 
     assert linia in wynik.linia
     assert (wynik.kod, ponowienia.zapisane) == ((0, [("rerun", run["id"])]) if ponowiony else (1, []))

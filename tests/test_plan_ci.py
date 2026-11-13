@@ -424,6 +424,30 @@ def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_
         plan_runu.Plan.z_json(unknown)
 
 
+def test_plan_zapisany_przed_dopisanym_polem_czyta_sie_z_digest_zapisow_jego_zadan() -> None:
+    """Artefakt ``plan`` runu main 43523010762 (13.11) nie ma ``zmienione_pliki_testow``, a czytają taki plik
+    ``tools/pomiar_ci.py --artefakty`` i ``tools/mutacje.py --jak-ci``: pole bierze wartość domyślną, a digest planu jest
+    tym z pliku, który stoi też w zapisach czasów jego zadań."""
+
+    tekst = (ROOT / "tests/fixtures/plan-43523010762.json").read_text(encoding="utf-8")
+
+    plan = plan_runu.Plan.z_json(tekst)
+
+    assert "zmienione_pliki_testow" not in json.loads(tekst)
+    assert (len(plan.zadania), plan.zmienione_pliki_testow, plan.digest) == (20, (), json.loads(tekst)["digest"])
+
+
+def test_plan_z_dopisanym_polem_zmienionym_po_zapisie_jest_nieczytelny() -> None:
+    """Dopisane pole z wartością inną niż domyślna wchodzi do digest, więc plik, w którym ktoś je zmienił, to ``ValueError``."""
+
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py",), 401.0)
+    tekst = plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,), zmienione_pliki_testow=("tests/test_adr.py",)).do_json()
+
+    assert plan_runu.Plan.z_json(tekst).zmienione_pliki_testow == ("tests/test_adr.py",)
+    with pytest.raises(ValueError, match="digest"):
+        plan_runu.Plan.z_json(tekst.replace('"tests/test_adr.py"\n ]', '"tests/test_b.py"\n ]'))
+
+
 @pytest.mark.parametrize("unit", ["tests/test_adr.py", "pytest:", "krok:e2e#0/2", "mutacje:verify-a/ci", "skill:verify-a/ci#3/2"])
 def test_plan_z_jednostka_spoza_postaci_klucza_jest_nieczytelny_zanim_zadanie_cokolwiek_uruchomi(unit: str) -> None:
     """Zadanie i Required czytają jednostki planu tylko w postaci klucza ``<rodzaj>:<nazwa>[#k/n]``, więc plan z inną

@@ -188,8 +188,13 @@ def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
 
 
 def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie:
-    """Sygnatury z kroku, który zaczerwienił zadanie (``log_porazki``), i padnięte testy z całego logu zadania."""
+    """Sygnatury z kroku, który zaczerwienił zadanie (``log_porazki``), i padnięte testy z całego logu zadania.
 
+    Log zadania Windows z API kończy linie ``\\r\\n`` (``pytest (Python 3.13, 5/5)`` runu 43523010762: 593 z 600 linii), a wzorce
+    czytają linie zakończone ``\\n``, więc funkcja zamienia ``\\r\\n`` na ``\\n`` raz, zanim czyta log którymkolwiek wzorcem.
+    """
+
+    log = log.replace("\r\n", "\n")
     porazka = log_porazki(log, kroki)
     return Zadanie(
         nazwa,

@@ -14,16 +14,22 @@ Moduł używa tylko biblioteki standardowej, bo plan i werdykt biegną systemowy
 from __future__ import annotations
 
 from collections.abc import Collection
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 import hashlib
 import json
 import math
 from pathlib import Path
+from typing import Any
 
 from jednostka import Klucz, Rodzaj
 from zakres_runu import KROKI, MUTACJE, TORY, Zdarzenie
 
 WERSJA = 1
+# Pola planu dopisane w wersji ``WERSJA`` po pierwszych zapisach. Plan zapisany przed polem (artefakt ``plan`` starszego
+# runu, który czytają ``tools/pomiar_ci.py --artefakty`` i ``tools/mutacje.py --jak-ci``) go nie ma, więc odczyt bierze
+# wartość domyślną z dataclass ``Plan``, a ``digest`` liczy pole tylko z wartością inną niż domyślna: digest takiego planu
+# zgadza się z zapisanym w nim i z zapisami czasów jego zadań.
+DOPISANE_POLA = frozenset({"zmienione_pliki_testow"})
 # Artefakt runu ``ci.yml`` z planem i plik planu w nim (``--wyjscie`` zadania ``plan``).
 ARTEFAKT = "plan"
 PLIK = "plan.json"
@@ -67,7 +73,9 @@ class Plan:
 
     @property
     def digest(self) -> str:
-        tresc = json.dumps(asdict(self), sort_keys=True, ensure_ascii=False)
+        domyslne = {pole.name: pole.default for pole in fields(self)}
+        pola = {nazwa: wartosc for nazwa, wartosc in asdict(self).items() if nazwa not in DOPISANE_POLA or wartosc != domyslne[nazwa]}
+        tresc = json.dumps(pola, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(tresc.encode("utf-8")).hexdigest()
 
     def do_json(self) -> str:
@@ -75,14 +83,17 @@ class Plan:
 
     @classmethod
     def z_json(cls, tekst: str) -> Plan:
-        """Plan z pliku; treść niezgodna z ``digest`` to ``ValueError``, bo zadania biegłyby z innego planu."""
+        """Plan z pliku; treść niezgodna z ``digest`` to ``ValueError``, bo zadania biegłyby z innego planu.
+
+        Lista JSON jest krotką, a pole, którego plik nie ma, bierze wartość domyślną z dataclass (``DOPISANE_POLA``)."""
 
         dane = json.loads(tekst)
         if dane.pop("wersja", None) != WERSJA:
             raise ValueError(f"plan w wersji innej niż {WERSJA}")
         digest = dane.pop("digest")
         zadania = tuple(Zadanie(**{**zadanie, "jednostki": tuple(zadanie["jednostki"])}) for zadanie in dane.pop("zadania"))
-        plan = cls(**{**dane, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "runy": tuple(dane["runy"]), "zadania": zadania, "bledy": tuple(dane["bledy"]), "zmienione_pliki_testow": tuple(dane["zmienione_pliki_testow"])})
+        pola: dict[str, Any] = {nazwa: tuple(wartosc) if isinstance(wartosc, list) else wartosc for nazwa, wartosc in dane.items()}
+        plan = cls(**{**pola, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "zadania": zadania})
         if plan.digest != digest:
             raise ValueError(f"treść planu nie zgadza się z jego digest {digest[:12]}")
         # Klucz jednostki w innej postaci to ValueError, jak plan w innej wersji.

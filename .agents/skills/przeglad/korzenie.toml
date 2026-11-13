@@ -130,3 +130,7 @@ przyklad = 1457
 [R-STAN-KROKU]
 opis = "Krok skilla albo testu zostawia włączoną pracę w tle albo zmieniony stan, a późniejsza funkcja tego samego przebiegu zakłada stan sprzed niego."
 przyklad = 1568
+
+[R-FORMAT-ZAPISU]
+opis = "Pole dopisane do zapisywanego formatu (artefakt, plik stanu) bez wartości domyślnej przy odczycie i bez nowej wersji, więc zapis starszego runu albo Wydania wywraca narzędzie, które go czyta."
+przyklad = 1584
