@@ -23,16 +23,21 @@ złym źródłem, a zgaśnięcie po wierszu przed pamięcią do tego jeszcze pow
 nie daje żadne miejsce. Cofnięcie to nowy zapis wartości sprzed zmiany, z tymi samymi sprawdzeniami.
 
 Zmiany z Wydania (``release_changes``) właściciel stosuje przy starcie Centrum, przed pierwszym zapytaniem, tym samym
-zapisem co zmianę taty, tylko ze źródłem ``wydanie``. Każda zmiana z wynikiem (weszła, nic do zmiany, odrzucona) trafia do
-pamięci zmian z Wydań i już nie wraca; ``Later``, wyjątek w kodzie zmiany i zapis, który się nie udał, wracają przy
-następnym starcie. Kolejność to plik → wiersz Historii → pamięć pliku → pamięć zmian z Wydań, a zmianę z wierszem
-Historii o jej id start uznaje za zastosowaną (i dopisuje do pamięci), więc przerwa albo nieudany zapis po wierszu nie
-puszcza zmiany drugi raz, także po cofnięciu przez tatę; przerwa przed wierszem zostawia zmianę do ponownego
-zastosowania, a edycja deklaratywna nie daje wtedy drugiej różnicy. Granica: wynik bez wiersza (nic do zmiany) z
-nieudanym zapisem pamięci wraca przy następnym starcie, więc wartość, którą tata potem zmienił, edycja ustawi znowu.
-Pamięć, której nie da się przeczytać, wstrzymuje wszystkie zmiany do czasu, aż da się ją przeczytać, bo bez niej zmiana
-cofnięta przez tatę weszłaby jeszcze raz. Pamięć utracona w całości (usunięty folder) puszcza jeszcze raz każdą zmianę
-bez wiersza w Historii.
+zapisem co zmianę taty, tylko ze źródłem ``wydanie``. Co już weszło, mówią dwa źródła: pamięć zmian z Wydań i wiersze
+Historii z id zmiany. Zmiany stosują się tylko wtedy, gdy oba dają się przeczytać: pamięć, której nie da się przeczytać
+(``AppliedUnknown``), albo Historia, której system nie daje teraz czytać (``Unreadable``), wstrzymuje przy tym starcie
+każdą zmianę z linią w dzienniku Centrum, a następny start próbuje znowu, bo bez nich zmiana cofnięta przez tatę weszłaby
+jeszcze raz. Historię start czyta tylko wtedy, gdy pamięć nie ma którejś zmiany.
+Każda zmiana z wynikiem (weszła, nic do zmiany, odrzucona) trafia do pamięci i już nie wraca; ``Later``, wyjątek w kodzie
+zmiany i zapis, który się nie udał (także wiersz ``odrzucono``, którego nie da się dopisać), wracają przy następnym
+starcie. Kolejność to plik → wiersz Historii → pamięć pliku → pamięć zmian z Wydań, a zmianę z wierszem Historii o jej id
+(``zapisano`` albo ``odrzucono``) start uznaje za zastosowaną i dopisuje do pamięci, więc przerwa albo nieudany zapis
+pamięci po wierszu nie puszcza zmiany drugi raz, także po cofnięciu przez tatę. Przerwa przed wierszem zostawia zmianę
+do ponownego zastosowania, a edycja deklaratywna nie daje wtedy drugiej różnicy.
+Granice: wynik bez wiersza (nic do zmiany) z nieudanym zapisem pamięci wraca przy następnym starcie, więc wartość, którą
+tata potem zmienił, edycja ustawi znowu. Historia czytelna, ale bez wiersza zmiany (linia urwana zgaśnięciem albo plik
+zmieniony poza Centrum) przy pamięci bez tej zmiany puszcza ją jeszcze raz, tak samo jak pamięć utracona w całości
+(usunięty folder).
 
 Moduł nie wczytuje FastAPI: czyta go też katalog procesów i gospodarze Uruchomień, a interfejs HTTP jest w
 ``settings_router``. Narzędzia i Skrypt dla maszyn czytają przez ``read_snapshot``, które niczego nie pisze.
@@ -70,6 +75,8 @@ T = TypeVar("T")
 
 REPORTED_CHANGES: Final = 20
 """Najwyżej tyle najnowszych wierszy Historii podaje Zgłoszenie."""
+HISTORY_UNREADABLE: Final = "- Historii Ustawień nie dało się przeczytać"
+"""Linia Zgłoszenia zamiast zmian, gdy system nie daje czytać pliku Historii."""
 
 
 @dataclass(frozen=True)
@@ -147,7 +154,11 @@ class CentrumSettings:
         """Cofnięcie wiersza Historii: nowy zapis taty z wartościami sprzed tej zmiany; cofnięcie cofnięcia też."""
 
         with self._lock:
-            row = next((row for row in self._history.read().rows if row.id == row_id), None)
+            history = self._history.read()
+            if isinstance(history, Unreadable):
+                self._log.settings_unreadable(cause="historia")
+                return NotSaved()
+            row = next((row for row in history.rows if row.id == row_id), None)
             if row is None:
                 return NotUndoable(known=False)
             file = _FILES.get(row.file)
@@ -156,7 +167,7 @@ class CentrumSettings:
             changes = row.key_changes()
             return self._undo(file, changes, row.id)
 
-    def history(self) -> HistoryRead:
+    def history(self) -> HistoryRead | Unreadable:
         with self._lock:
             return self._history.read()
 
@@ -176,6 +187,10 @@ class CentrumSettings:
             if not pending:
                 return
             in_history = self._release_rows()
+            if isinstance(in_history, Unreadable):
+                for change in pending:
+                    self._log.settings_release(change=change.id, result="bez-historii")
+                return
             version: ReleaseOrigin | None = None
             for change in pending:
                 done = in_history.get(change.id)
@@ -195,12 +210,15 @@ class CentrumSettings:
                 except OSError:
                     self._log.settings_release(change=change.id, result="bez-pamieci")
 
-    def _release_rows(self) -> dict[str, Applied]:
+    def _release_rows(self) -> dict[str, Applied] | Unreadable:
         """Zmiany z Wydania, które mają wiersz Historii, choć pamięć ich nie ma: wiersz idzie przed pamięcią, więc zmiana z
         wierszem weszła (albo została odrzucona) i nie wraca, także gdy tata ją już cofnął."""
 
+        history = self._history.read()
+        if isinstance(history, Unreadable):
+            return history
         found: dict[str, Applied] = {}
-        for row in self._history.read().rows:
+        for row in history.rows:
             if isinstance(row.source, FromRelease) and row.source.change not in found:
                 found[row.source.change] = Applied(
                     at=row.at,
@@ -247,10 +265,14 @@ class CentrumSettings:
 
     def reported_changes(self, days: int = 30) -> tuple[str, ...]:
         """Linie Zgłoszenia o zmianach z ostatnich ``days`` dni (najwyżej ``REPORTED_CHANGES``, od najnowszej): kiedy,
-        skąd, klucze i tylko wartości bez danych osobowych (folder samą nazwą, motyw), sekret samym znacznikiem."""
+        skąd, klucze i tylko wartości bez danych osobowych (folder samą nazwą, motyw), sekret samym znacznikiem;
+        przy Historii, której system nie daje czytać, jedna linia ``HISTORY_UNREADABLE``."""
 
+        history = self.history()
+        if isinstance(history, Unreadable):
+            return (HISTORY_UNREADABLE,)
         since = self._now() - timedelta(days=days)
-        rows = [row for row in self.history().rows if row.at >= since][:REPORTED_CHANGES]
+        rows = [row for row in history.rows if row.at >= since][:REPORTED_CHANGES]
         return tuple(_reported(row) for row in rows)
 
     def _undo(self, file: SettingsFile[T], changes: tuple[KeyChange, ...], row_id: str) -> Saved | Refused | NotSaved:

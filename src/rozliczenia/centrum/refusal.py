@@ -141,6 +141,12 @@ def settings_change_not_undoable() -> Refusal:
     return _refused(404, "Tej zmiany nie da się cofnąć.")
 
 
+def settings_history_unreadable() -> Refusal:
+    """Plik Historii Ustawień jest, ale system nie daje go teraz czytać (np. trzyma go OneDrive)."""
+
+    return _refused(500, "Nie udało się odczytać Historii Ustawień. Odśwież okno Ustawień za chwilę.")
+
+
 def unknown_period() -> Refusal:
     return _refused(404, "Nie ma takiego okresu.")
 

@@ -2,8 +2,8 @@
 okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, Historia Ustawień i cofnięcie jej wiersza.
 
 Pliki Ustawień, ich Historia i reguły zapisu należą do ``settings``; tu są tylko żądania przeglądarki i ich odmowy:
-zła wartość to 422 z polem, plik, którego nie da się przeczytać albo zapisać, to 500, a wiersz Historii bez „Cofnij”
-to 404.
+zła wartość to 422 z polem, plik albo Historia, których nie da się przeczytać albo zapisać, to 500, a wiersz Historii
+bez „Cofnij” to 404.
 """
 
 from __future__ import annotations
@@ -86,6 +86,8 @@ def settings_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
     @router.get("/history", operation_id="getSettingsHistory")
     def history() -> settings_contract.SettingsHistory:
         read = settings.history()
+        if isinstance(read, Unreadable):
+            raise refusal.settings_history_unreadable()
         return settings_contract.SettingsHistory(rows=[_row(row) for row in read.rows], skipped=read.skipped)
 
     @router.post("/history/{change_id}/undo", operation_id="undoSettingsChange", responses=_NOT_UNDOABLE)

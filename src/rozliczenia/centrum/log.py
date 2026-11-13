@@ -44,12 +44,15 @@ ReminderFailure = Literal[
     "haslo-odrzucone",
     "odmowa-wysylki",
 ]
-# Dlaczego zmiany Ustawień taty nie zapisano: plik jest, ale system nie daje go czytać.
-SettingsUnreadableCause = Literal["dostep"]
+# Dlaczego zmiany Ustawień taty nie zapisano: plik Ustawień (``dostep``) albo Historia Ustawień (``historia``) jest, ale
+# system nie daje go czytać.
+SettingsUnreadableCause = Literal["dostep", "historia"]
 # Co Ustawienia Centrum zrobiły z plikiem zmienionym poza Centrum; ``bez-zapisu``: wiersza Historii albo pamięci nie
 # dało się zapisać, więc następny odczyt spróbuje jeszcze raz.
 SettingsExternalResult = Literal["zapisano", "odrzucono", "bez-zapisu"]
-SettingsReleaseResult = Literal["zastosowano", "bez-zmian", "odrzucono", "pozniej", "bez-zapisu", "bez-pamieci"]
+SettingsReleaseResult = Literal[
+    "zastosowano", "bez-zmian", "odrzucono", "pozniej", "bez-zapisu", "bez-pamieci", "bez-historii"
+]
 
 
 class CentrumLog:
@@ -172,7 +175,8 @@ class CentrumLog:
         self._write("dziennik-wyceny-niedostepny", typ=type(failure).__name__, miejsce=where)
 
     def settings_unreadable(self, *, cause: SettingsUnreadableCause) -> None:
-        """Zmiany Ustawień Centrum nie zapisano, bo ich pliku nie dało się przeczytać; plik zostaje bez zmian."""
+        """Zmiany Ustawień Centrum nie zapisano, bo jej pliku albo Historii nie dało się przeczytać; plik zostaje bez
+        zmian."""
 
         self._write("ustawienia-bez-zapisu", przyczyna=cause)
 
@@ -187,8 +191,8 @@ class CentrumLog:
         self._write("ustawienia-spoza", plik=file, wynik=result)
 
     def settings_release(self, *, change: str, result: SettingsReleaseResult) -> None:
-        """Zmiana Ustawień Centrum z Wydania przy starcie: id zmiany i wynik (``pozniej``, ``bez-zapisu`` i
-        ``bez-pamieci`` wracają przy następnym starcie), bez wartości."""
+        """Zmiana Ustawień Centrum z Wydania przy starcie: id zmiany i wynik (``pozniej``, ``bez-zapisu``, ``bez-pamieci``
+        i ``bez-historii`` wracają przy następnym starcie), bez wartości."""
 
         self._write("ustawienia-wydanie", zmiana=change, wynik=result)
 

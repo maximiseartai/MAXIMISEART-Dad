@@ -385,6 +385,18 @@ def test_zgloszenie_podaje_zmiane_ustawien_z_wydania_z_numerem_wydania_i_id_zmia
     assert f"- {at:%Y-%m-%d %H:%M} · Wydanie 0.9.0 (2026-11-motyw-jasny) · {SETTINGS_FILE} · wyglad.motyw: dark → light" in lines
 
 
+@NO_ACCESS_ON_WINDOWS
+def test_zgloszenie_przy_historii_ustawien_bez_dostepu_mowi_to_zamiast_bez_zmian(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+
+    with without_access(centrum.tool.config / HISTORY_FILE):
+        lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    start = lines.index("## Zmiany Ustawień (30 dni)")
+    assert lines[start : start + 4] == ["## Zmiany Ustawień (30 dni)", "", "- Historii Ustawień nie dało się przeczytać", ""]
+
+
 def _history(centrum: PreparingCentrum) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = centrum.client.get("/api/settings/history").json()["rows"]
     return rows

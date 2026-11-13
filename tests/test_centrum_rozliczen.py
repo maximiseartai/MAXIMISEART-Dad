@@ -9,7 +9,8 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
@@ -1012,21 +1013,36 @@ def test_zmiana_ustawien_z_wydania_ktorej_nie_da_sie_zapisac_wraca_przy_nastepny
     assert log.index("zmiana=2026-11-motyw-jasny wynik=bez-zapisu") < log.index("zmiana=2026-11-motyw-jasny wynik=zastosowano")
 
 
+@contextmanager
+def read_only_memory(tool: ToolDirectory) -> Iterator[None]:
+    """Folder pamięci Ustawień tylko do odczytu do końca bloku: żaden zapis pamięci się nie udaje."""
+
+    memory = tool.config / MEMORY_DIRECTORY
+    memory.mkdir(parents=True, exist_ok=True)
+    memory.chmod(0o555)
+    try:
+        yield
+    finally:
+        memory.chmod(0o755)
+
+
+def applied_and_undone(tool: ToolDirectory) -> tuple[dict[str, Any], str]:
+    """Start, w którym zmiana z Wydania ``LIGHT_THEME`` wchodzi, a tata ją cofa: jej wiersz Historii i motyw po cofnięciu."""
+
+    first = started(tool, (LIGHT_THEME,))
+    [applied] = first.get("/api/settings/history").json()["rows"]
+    undone: str = first.post(f"/api/settings/history/{applied['id']}/undo").json()["settings"]["theme"]
+    first.stop()
+    return applied, undone
+
+
 @NO_ACCESS_ON_WINDOWS
 def test_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca_po_cofnieciu_przez_tate(tmp_path: Path) -> None:
     """Wiersz Historii idzie przed pamięcią zmian z Wydań, więc nieudany zapis pamięci nie puszcza zmiany drugi raz."""
 
     tool = ToolDirectory(tmp_path)
-    memory = tool.config / MEMORY_DIRECTORY
-    memory.mkdir(parents=True)
-    memory.chmod(0o555)
-    try:
-        first = started(tool, (LIGHT_THEME,))
-        [applied] = first.get("/api/settings/history").json()["rows"]
-        undone = first.post(f"/api/settings/history/{applied['id']}/undo").json()["settings"]["theme"]
-        first.stop()
-    finally:
-        memory.chmod(0o755)
+    with read_only_memory(tool):
+        applied, undone = applied_and_undone(tool)
     again = started(tool, (LIGHT_THEME,))
     theme = again.get("/api/settings").json()["theme"]
     rows = again.get("/api/settings/history").json()["rows"]
@@ -1035,6 +1051,97 @@ def test_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca_po_cofnieciu
     assert (applied["source"], undone, theme) == ("release", "dark", "dark")
     assert [row["source"] for row in rows] == ["tata", "release"]
     assert "ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=bez-pamieci" in tool.log_path.read_text(encoding="utf-8")
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_historia_bez_dostepu_przy_starcie_wstrzymuje_zmiane_z_wydania_ktora_tata_cofnal(tmp_path: Path) -> None:
+    """Historia, której system przy starcie nie daje czytać, nie jest pustą Historią: zmiana z Wydania, którą tata cofnął,
+    a której pamięć nie ma, nie wchodzi drugi raz."""
+
+    tool = ToolDirectory(tmp_path)
+    with read_only_memory(tool):
+        applied_and_undone(tool)
+    with without_access(tool.config / HISTORY_FILE):
+        again = started(tool, (LIGHT_THEME,))
+    theme = again.get("/api/settings").json()["theme"]
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (theme, [row["source"] for row in rows]) == ("dark", ["tata", "release"])
+    assert "ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=bez-historii" in tool.log_path.read_text(encoding="utf-8")
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_zmiana_z_wydania_wstrzymana_przez_historie_bez_dostepu_wchodzi_przy_nastepnym_starcie(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.client.stop()
+
+    with without_access(app.tool.config / HISTORY_FILE):
+        held = started(app.tool, (LIGHT_THEME,))
+        held_theme = held.get("/api/settings").json()["theme"]
+        held.stop()
+    again = started(app.tool, (LIGHT_THEME,))
+    theme = again.get("/api/settings").json()["theme"]
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (held_theme, theme) == ("dark", "light")
+    assert [row["source"] for row in rows] == ["release", "tata"]
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_historia_ustawien_bez_dostepu_to_odmowa_okna_i_cofniecia_a_nie_pusta_historia(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    [row] = app.client.get("/api/settings/history").json()["rows"]
+    saved = app.settings_path.read_bytes()
+
+    with without_access(app.tool.config / HISTORY_FILE):
+        history = app.client.get("/api/settings/history")
+        undo = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (history.status_code, history.json()) == (
+        500,
+        {"message": "Nie udało się odczytać Historii Ustawień. Odśwież okno Ustawień za chwilę."},
+    )
+    assert (undo.status_code, app.settings_path.read_bytes()) == (500, saved)
+    assert "ustawienia-bez-zapisu przyczyna=historia" in app.log_path.read_text(encoding="utf-8")
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_odrzucona_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca(tmp_path: Path) -> None:
+    asked: list[str] = []
+
+    def refused_once(_inputs: ReleaseInputs[FolderSettings]) -> Refuse:
+        asked.append("zapytana")
+        return Refuse(WORKERS_MISSING)
+
+    tool = ToolDirectory(tmp_path)
+    change = ReleaseChange("2026-11-odmowa", FOLDERS, refused_once)
+
+    with read_only_memory(tool):
+        started(tool, (change,)).stop()
+    again = started(tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (asked, [(row["source"], row["refused"]) for row in rows]) == (["zapytana"], [("release", True)])
+
+
+def test_odrzucona_zmiana_z_wydania_bez_wiersza_historii_wraca_przy_nastepnym_starcie(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    history = tool.config / HISTORY_FILE
+    history.mkdir(parents=True)
+    change = ReleaseChange("2026-11-zla-zmiana", FOLDERS, refused)
+
+    started(tool, (change,)).stop()
+    history.rmdir()
+    again = started(tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert [(row["source"], row["reason"]) for row in rows] == [("release", WORKERS_MISSING)]
+    log = tool.log_path.read_text(encoding="utf-8")
+    assert log.index("zmiana=2026-11-zla-zmiana wynik=bez-zapisu") < log.index("zmiana=2026-11-zla-zmiana wynik=odrzucono")
 
 
 def test_wyjatek_w_zmianie_ustawien_z_wydania_nie_zatrzymuje_startu_centrum_a_zmiana_wraca(tmp_path: Path) -> None:

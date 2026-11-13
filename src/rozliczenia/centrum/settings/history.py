@@ -4,6 +4,7 @@ Wiersz mówi, kiedy, skąd (tata, zmiana z Wydania albo zmiana spoza Centrum), k
 z wartością przed i po (sekret bez wartości), czy da się go cofnąć, czy plik usunięto i czy zmiana weszła (``zapisano``)
 albo została odrzucona z powodem.
 Linia, której nie da się przeczytać (np. urwana zgaśnięciem Centrum), jest pomijana i liczona; Historii się nie przycina.
+Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie pusta Historia: nie wiadomo wtedy, co już weszło.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import Annotated, Final, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S
-from rozliczenia.centrum.settings.files import KeyChange
+from rozliczenia.centrum.settings.files import KeyChange, Unreadable
 from rozliczenia.centrum.settings.memory import settings_bytes
 
 HISTORY_FILE: Final = "historia-ustawien.jsonl"
@@ -133,11 +134,14 @@ class History:
                     line = b"\n" + line
             history.write(line)
 
-    def read(self) -> HistoryRead:
-        """Wiersze od najnowszego; brak pliku albo plik, którego nie da się czytać, to pusta Historia."""
+    def read(self) -> HistoryRead | Unreadable:
+        """Wiersze od najnowszego; brak pliku to pusta Historia, a ``Unreadable``: plik jest, ale system nie daje go
+        teraz czytać."""
 
         data = settings_bytes(self._path)
-        if data is None or isinstance(data, OSError):
+        if isinstance(data, OSError):
+            return Unreadable()
+        if data is None:
             return HistoryRead(rows=(), skipped=0)
         lines = data.splitlines()
         rows: list[HistoryRow] = []
