@@ -263,3 +263,42 @@ def test_blad_spoza_stanow_jeszcze_nie_konczy_czekanie_od_razu(common: ModuleTyp
         run.wait_for(updated, "the update wrote its result")
 
     assert reads == [1]
+
+
+class _Zegar:
+    """Zegar czekania drive'u w teście: sen przesuwa go od razu, więc budżet 60 s mija bez minuty czekania."""
+
+    def __init__(self) -> None:
+        self.teraz = 0.0
+
+    def monotonic(self) -> float:
+        return self.teraz
+
+    def sleep(self, seconds: float) -> None:
+        self.teraz += seconds
+
+
+def test_czekanie_drive_konczy_sie_po_budzecie_podanym_przez_wywolanie_a_nie_po_domyslnym(
+    common: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Każdy nazwany budżet i liczba sekund z ``Run.wait_for`` to limit tego czekania: stan, który nie nadchodzi, kończy
+    czekanie zaraz po nim, a nie po domyślnym ``Budget.SCREEN`` (przegląd #1663)."""
+
+    waiting = importlib.import_module("drive.waiting")
+    zegar = _Zegar()
+    monkeypatch.setattr(waiting, "time", zegar)
+    run = _run(common, tmp_path)
+    limits: dict[str, tuple[float, float]] = {}
+
+    for budget in waiting.Budget:
+        start = zegar.teraz
+        with pytest.raises(waiting.TimedOut, match="timed out: the state comes"):
+            waiting.until(lambda: None, "the state comes", budget)
+        limits[budget.name] = (budget.value, zegar.teraz - start)
+    start = zegar.teraz
+    with pytest.raises(common.DriveFailure, match="timed out: the state comes"):
+        run.wait_for(lambda: False, "the state comes", timeout_s=0.3)
+    limits["0.3 s"] = (0.3, zegar.teraz - start)
+
+    outside = [name for name, (limit, waited) in limits.items() if not limit < waited <= limit + 2 * waiting.POLL_S]
+    assert outside == [], limits
