@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from typing import cast
 
 import pytest
 
@@ -1801,9 +1802,9 @@ def _root_gate(tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, 
     github.open_pull(1, files)
     github.update(1, body=korzenie_pr.OPISY[body])
     if "root" in setup:
-        state, root_body = setup["root"]  # type: ignore[misc]
+        state, root_body = cast(tuple[str, str], setup["root"])
         github.pulls[str(korzenie_pr.ROOT_PR)] = _pr_view(korzenie_pr.ROOT_PR, OLD, state=state, body=korzenie_pr.PR_KORZENIA[root_body])
-    for number, label in dict(setup.get("labels") or {}).items():  # type: ignore[call-overload]
+    for number, label in cast(dict[int, str], setup.get("labels", {})).items():
         github.answer_issue(number, answer=json.dumps({"state": "closed", "labels": [{"name": label}]}))
     for verdict in verdicts:
         github.comment(1, verdict.format(commit=OLD))
