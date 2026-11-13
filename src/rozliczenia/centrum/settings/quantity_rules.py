@@ -13,8 +13,15 @@ Wydania (``_completed_devices``), bez zmiany pliku taty. Zapis taty wygrywa: sk�
 których lista taty nie ma, a składnik, którego każdy zapis ma lista taty, nie dochodzi wcale. Lista bez takiego składnika
 nie jest zła, a reguły liczą tak, jakby żadne zlecenie go nie miało (``without_components``); sekcja Urządzenia mówi o nim
 zdaniem (``taken_problem``). Do pliku taty uzupełnienie trafia tylko z zapisem taty pary, jedną drogą właściciela:
-zmiana listy dostaje listę uzupełnioną i zapisuje ją uzupełnioną znowu (``completing``), a pierwszy plik reguł taty
+zmiana listy dostaje listę uzupełnioną i zapisuje ją uzupełnioną znowu (``dad_devices_edit``), a pierwszy plik reguł taty
 zapisuje się z listą, do której pasuje (``devices_for_dad_rules``).
+
+Zapis taty pary (formularz sekcji i „Cofnij”) sprawdza się tu jako zmiana, nie jako plik: para przed zmianą była dobra,
+więc odmowa mówi, co ta zmiana psuje, i jest taka sama bez względu na to, skąd przyszła. Zmiana listy, po której zapis
+mają dwa składniki, to ``TakenSpelling`` z nazwą składnika, który miał go wcześniej, a zmiana, po której reguła traci
+składnik, to zdanie tej reguły z nazwą składnika (``dad_devices_edit``). Zmiana reguł, po której reguła potrzebuje
+składnika spoza listy, to zdanie tej reguły ze składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``).
+Zdania ``rules_problem`` i ``devices_problem`` mówią tylko o pliku, który naprawdę jest zły.
 
 Wartością pliku są same krotki reguł i składników, bo cofnięcie (``restore``) może złożyć wartość, której ``parse`` nie
 przyjmie, a właściciel sprawdza ją dopiero przez ``dump`` i ``parse``. Klucz Historii to ``reguly.<id>`` albo
@@ -23,13 +30,15 @@ przyjmie, a właściciel sprawdza ją dopiero przez ``dump`` i ``parse``. Klucz 
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from functools import lru_cache
+import json
 from typing import Final
 
 import yaml
 
+from rozliczenia.centrum.rule_sentences import plain_sentence, rule_sentence
 from rozliczenia.centrum.settings import messages
 from rozliczenia.centrum.settings.files import EntriesById, FieldProblem, KeyChange, SettingsFile, settings_yaml
 from rozliczenia.quantity_engine import (
@@ -205,30 +214,153 @@ def taken_problem(rules: tuple[QuantityRule, ...], devices: tuple[Component, ...
     if completion is None or not completion.absent:
         return None
     spelling, owner = _taken(completion, devices)
-    return FieldProblem(None, messages.release_component_taken(spelling, owner.spellings[0], _how(owner, completion)))
+    return FieldProblem(None, messages.release_component_taken(spelling, owner.spellings[0], _how(spelling, owner, completion)))
 
 
 DevicesEdit = Callable[[tuple[Component, ...]], tuple[Component, ...] | FieldProblem]
 """Zmiana Listy Urządzeń taty: bieżąca lista → lista po zmianie albo problem, który jest odmową bez zapisu."""
 
+ColumnNames = Callable[[], Mapping[str, str]]
+"""Nazwy pozycji cennika po literze kolumny do zdania reguły w odmowie; czytane dopiero przy odmowie."""
 
-def completing(edit: DevicesEdit, rules: tuple[QuantityRule, ...]) -> DevicesEdit:
-    """Zmiana taty ``edit`` Listy Urządzeń przy Regułach ilości z Wydania ``rules``. Dostaje listę uzupełnioną
-    (``_completed_devices``), więc tata zmienia składnik z Wydania tak, jak go widzi w sekcji, a lista po niej jest
-    uzupełniona znowu i z nim zapisana. Składnik dodany uzupełnieniem, którego zmiana nie ruszyła, dochodzi od nowa z
-    zapisami, których lista po zmianie nie ma: zmiana, która zwalnia jego zapis (usunięcie składnika taty, cofnięcie jego
-    dodania), oddaje mu ten zapis."""
 
-    def completed_edit(current: tuple[Component, ...]) -> tuple[Component, ...] | FieldProblem:
-        completion = _completion(current, rules)
-        joined = () if completion is None else completion.joined
-        changed = edit(current if completion is None else completion.devices)
+@dataclass(frozen=True)
+class TakenSpelling(FieldProblem):
+    """Odmowa zmiany taty Listy Urządzeń, po której zapis ``spelling`` miałyby dwa składniki; zdanie nazywa składnik, który
+    miał go przed zmianą, a formularz sekcji Urządzenia stawia je przy polu z tym zapisem."""
+
+    spelling: str
+
+
+@dataclass(frozen=True)
+class UnlistedComponent(FieldProblem):
+    """Odmowa zmiany taty Reguł ilości, po której reguła potrzebuje składnika ``component`` spoza Listy Urządzeń; edytor
+    reguły stawia ją przy polu z tym składnikiem."""
+
+    component: str
+
+
+def dad_devices_edit(edit: DevicesEdit, rules: tuple[QuantityRule, ...], names: ColumnNames, *, release: bool) -> DevicesEdit:
+    """Zmiana taty ``edit`` Listy Urządzeń przy regułach ``rules`` z pliku taty albo z Wydania (``release``: tata nie ma
+    pliku reguł), sprawdzona jako zmiana tymi samymi zdaniami dla formularza i „Cofnij”: zapis, który po niej mają dwa
+    składniki, to ``TakenSpelling``, a usunięcie składnika, którego potrzebuje reguła, którą liczy Centrum, to zdanie tej
+    reguły z nazwą składnika (``names``: kolumny z cennika).
+
+    Przy Regułach ilości z Wydania zmiana dostaje listę uzupełnioną (``_completed_devices``), więc tata zmienia składnik z
+    Wydania tak, jak go widzi w sekcji, a lista po niej jest uzupełniona znowu i z nim zapisana. Składnik dodany
+    uzupełnieniem, którego zmiana nie ruszyła, dochodzi od nowa z zapisami, których lista po zmianie nie ma: zmiana, która
+    zwalnia jego zapis (usunięcie składnika taty, cofnięcie jego dodania), oddaje mu ten zapis. Usunięty składnik, którego
+    potrzebuje reguła, wraca wtedy z Listy Urządzeń z Wydania, więc odmowa należy się tylko, gdy wróciłby taki sam (zmiana
+    nic by nie zmieniła): inny zastępuje składnik taty, a bez wolnego zapisu reguły liczą bez niego (zapis taty wygrywa,
+    ``taken_problem``)."""
+
+    def checked_edit(current: tuple[Component, ...]) -> tuple[Component, ...] | FieldProblem:
+        completion = _completion(current, rules) if release else None
+        start = current if completion is None else completion.devices
+        changed = edit(start)
         if isinstance(changed, FieldProblem):
             return changed
-        untouched = frozenset(component.id for component in joined if component in changed)
-        return _completed_devices(tuple(component for component in changed if component.id not in untouched), rules)
+        problem = _list_problem(start, changed)
+        if problem is not None:
+            return problem
+        if completion is None:
+            final, counted = changed, rules
+        else:
+            untouched = frozenset(component.id for component in completion.joined if component in changed)
+            final = _completed_devices(tuple(component for component in changed if component.id not in untouched), rules)
+            counted = completion.rules
+        lost = _lost_component(start, changed, final, counted, names, release=completion is not None)
+        return final if lost is None else lost
 
-    return completed_edit
+    return checked_edit
+
+
+def dad_rules_problem(
+    rules: tuple[QuantityRule, ...], devices: tuple[Component, ...], names: ColumnNames, unlisted: Callable[[str], str]
+) -> FieldProblem | None:
+    """Odmowa zmiany taty Reguł ilości, po której reguły ``rules`` nie pasują do Listy Urządzeń ``devices``, zdaniem o tej
+    zmianie: reguła, której składnika lista nie ma, to zdanie tej reguły ze składnikiem nazwanym ``unlisted`` (jak ostatnio
+    na liście, ``listed_name``), a inny problem to zdanie silnika bez pliku. ``None``: reguły pasują."""
+
+    listed = DeviceList(devices)
+    for rule in rules:
+        problem = _refusal((rule,), devices)
+        if problem is not None and problem.component is not None:
+            name = unlisted(problem.component)
+            sentence = plain_sentence(rule_sentence(rule, listed, names(), unlisted={problem.component: name}))
+            return UnlistedComponent(None, messages.rule_needs_component(name, sentence), problem.component)
+    problem = _refusal(rules, devices)
+    return None if problem is None else FieldProblem(None, problem.message)
+
+
+def listed_name(component: str, changes: Iterable[KeyChange]) -> str:
+    """Nazwa składnika ``component``, którego nie ma na Liście Urządzeń: pierwszy zapis z najnowszej wartości jego klucza
+    w Historii Ustawień (``changes`` od najnowszej zmiany), potem z Listy Urządzeń z Wydania, a bez obu identyfikator."""
+
+    key = f"{DEVICES_SECTION}.{component}"
+    for change in changes:
+        for value in (change.after, change.before) if change.key == key else ():
+            try:
+                found = None if value is None else _component(json.loads(value))
+            except ValueError:
+                continue
+            if found is not None:
+                return found.spellings[0]
+    return _name(component, DEFAULT_QUANTITY_RULES.devices.components)
+
+
+def _list_problem(before: tuple[Component, ...], after: tuple[Component, ...]) -> FieldProblem | None:
+    """Odmowa zmiany Listy Urządzeń ``before`` → ``after``, po której lista nie jest dobra sama w sobie: zapis u dwóch
+    składników (``TakenSpelling``) albo inny niezmiennik silnika jego zdaniem, bez pliku."""
+
+    taken = _taken_spelling(before, after)
+    if taken is not None:
+        return taken
+    try:
+        DeviceList(after)
+    except QuantityRulesRefused as refused:
+        return FieldProblem(None, refused.problem.message)
+    return None
+
+
+def _lost_component(
+    before: tuple[Component, ...],
+    after: tuple[Component, ...],
+    final: tuple[Component, ...],
+    rules: tuple[QuantityRule, ...],
+    names: ColumnNames,
+    *,
+    release: bool,
+) -> FieldProblem | None:
+    """Odmowa zmiany Listy Urządzeń ``before`` → ``after``, po której reguła ``rules`` traci składnik: zdanie tej reguły ze
+    składnikiem nazwanym jak przed zmianą. Przy Regułach ilości z Wydania (``release``) lista zapisuje się uzupełniona
+    (``final``), więc odmowa jest tylko wtedy, gdy uzupełnienie oddałoby ten sam składnik i zmiana nic by nie zmieniła."""
+
+    kept = {component.id: component for component in before}
+    supplied = {component.id: component for component in final}
+    listed = DeviceList(before)
+    for rule in rules:
+        problem = _refusal((rule,), after)
+        if problem is None or problem.component is None:
+            continue
+        if release and supplied.get(problem.component) != kept.get(problem.component):
+            continue
+        sentence = plain_sentence(rule_sentence(rule, listed, names()))
+        return FieldProblem(None, messages.component_used_by_rule(_name(problem.component, before), sentence))
+    return None
+
+
+def _taken_spelling(before: tuple[Component, ...], after: tuple[Component, ...]) -> TakenSpelling | None:
+    """Pierwszy zapis składnika zmienionego albo dodanego zmianą, który ma też inny składnik listy ``after``, nazwany przy
+    składniku, który go ma; ``None``: każdy zapis ma jeden składnik."""
+
+    kept = frozenset(before)
+    for component in sorted(after, key=lambda component: component in kept):
+        for spelling in component.spellings:
+            owner = next((other for other in after if other.id != component.id and spelling in other.spellings), None)
+            if owner is not None:
+                return TakenSpelling(None, messages.spelling_taken(spelling, owner.spellings[0]), spelling)
+    return None
 
 
 def devices_for_dad_rules(
@@ -248,7 +380,7 @@ def devices_for_dad_rules(
         return completion.devices
     spelling, owner = _taken(completion, devices)
     now = _completion(devices, counted)
-    how = _how(owner, completion if now is None else now)
+    how = _how(spelling, owner, completion if now is None else now)
     return FieldProblem(None, messages.rules_wait_for_release_component(spelling, owner.spellings[0], how))
 
 
@@ -318,13 +450,15 @@ def _taken(completion: _Completion, devices: tuple[Component, ...]) -> tuple[str
     return spelling, next(component for component in devices if spelling in component.spellings)
 
 
-def _how(owner: Component, completion: _Completion) -> messages.TakenAction:
-    """Jak zwolnić zapis składnika ``owner``: usunąć zapis, gdy ma inne, usunąć składnik, którego nie potrzebuje żadna
-    reguła, którą liczą procesy, a inaczej zmienić jego nazwę."""
+def _how(spelling: str, owner: Component, completion: _Completion) -> messages.TakenAction:
+    """Jak zwolnić zapis ``spelling`` składnika ``owner`` działaniem, które ma formularz sekcji Urządzenia: usunąć go z
+    innych zapisów (× przy nim), usunąć składnik bez innych zapisów, którego nie potrzebuje żadna reguła, którą liczą
+    procesy, a nazwę składnika (pierwszy zapis) zmienić."""
 
-    if len(owner.spellings) > 1:
+    if spelling in owner.spellings[1:]:
         return "zapis"
-    if _refusal(completion.rules, tuple(component for component in completion.devices if component.id != owner.id)) is None:
+    others = tuple(component for component in completion.devices if component.id != owner.id)
+    if len(owner.spellings) == 1 and _refusal(completion.rules, others) is None:
         return "skladnik"
     return "nazwa"
 

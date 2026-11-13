@@ -471,7 +471,14 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         catalog=CATALOG.with_metrics({key: config / f"metryki-{key}.jsonl" for key in CATALOG.metrics_paths}),
     )
     CentrumSettings(
-        config, log=log, now=local_now, pause=lambda _: None, autostart=NO_AUTOSTART, periods=WorkerPeriods(DadFiles())
+        config,
+        log=log,
+        now=local_now,
+        pause=lambda _: None,
+        autostart=NO_AUTOSTART,
+        periods=WorkerPeriods(DadFiles()),
+        # The folder change below refuses nothing, so no rule sentence needs column names.
+        column_names=lambda: {},
     ).change(FOLDERS, lambda folders: replace(folders, periods_directory=periods))
     # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
     return TestClient(app, base_url="http://127.0.0.1")

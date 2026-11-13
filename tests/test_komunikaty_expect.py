@@ -192,13 +192,34 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "rule_hour": [settings_messages.rule_hour],
             "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],
             "needed_by_release_rules": [partial(settings_messages.needed_by_release_rules, "wizja")],
+            # Zapis usuwa się tylko spośród innych zapisów składnika, a nazwę zmienia się albo usuwa cały składnik.
             "release_component_taken": [
-                partial(settings_messages.release_component_taken, "instalacja ręczna", "instalacja ręczna", how)
+                partial(settings_messages.release_component_taken, "wizja" if how == "zapis" else "instalacja ręczna", "instalacja ręczna", how)
                 for how in get_args(settings_messages.TakenAction)
             ],
             "rules_wait_for_release_component": [
-                partial(settings_messages.rules_wait_for_release_component, "instalacja ręczna", "instalacja ręczna", how)
+                partial(
+                    settings_messages.rules_wait_for_release_component,
+                    "wizja" if how == "zapis" else "instalacja ręczna",
+                    "instalacja ręczna",
+                    how,
+                )
                 for how in get_args(settings_messages.TakenAction)
+            ],
+            "spelling_taken": [partial(settings_messages.spelling_taken, "wizja", "instalacja ręczna")],
+            "component_used_by_rule": [
+                partial(
+                    settings_messages.component_used_by_rule,
+                    "instalacja ręczna",
+                    "Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz 1 w AN.",
+                )
+            ],
+            "rule_needs_component": [
+                partial(
+                    settings_messages.rule_needs_component,
+                    "instalacja ręczna",
+                    "Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz 1 w AN.",
+                )
             ],
             "quantity_rules_problem": [
                 partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")

@@ -3,7 +3,8 @@
 Zdanie ma postać „Jeśli A i B, ale nie gdy C albo D, to działanie.”: warunki bez zaprzeczenia, potem zaprzeczone („ale
 nie gdy”), potem działanie. Reguła bez warunków to samo działanie, a reguła z samymi zaprzeczonymi to działanie z „ale
 nie gdy”. Zakresu zdanie nie mówi: okno Ustawień grupuje według niego reguły. Składnik nazywa jego pierwszy zapis z
-Listy Urządzeń, a kolumna to osobna część zdania z literą i nazwą pozycji cennika, którą pokazuje okno.
+Listy Urządzeń (składnik spoza niej nazwa, którą poda wołający, a bez niej identyfikator), a kolumna to osobna część
+zdania z literą i nazwą pozycji cennika, którą pokazuje okno.
 
 Każdy rodzaj warunku i działania ma tu swoje zdanie (``match`` z ``assert_never``), więc nowy rodzaj w słowniku nie
 przejdzie mypy bez zdania.
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import time
+from types import MappingProxyType
 from typing import Final, assert_never
 
 from rozliczenia.centrum.contract.quantity_rules import SentenceColumn, SentencePart, SentenceText
@@ -38,14 +40,20 @@ from rozliczenia.quantity_engine import (
 
 _DAYS: Final = ("poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela")
 _GROUPS: Final[Mapping[DeviceGroup, str]] = {DeviceGroup.ROUTER: "router", DeviceGroup.TV: "TV", DeviceGroup.EXTENDER: "extender"}
+_NONE: Final[Mapping[str, str]] = MappingProxyType({})
 
 
-def rule_sentence(rule: QuantityRule, devices: DeviceList, names: Mapping[str, str]) -> list[SentencePart]:
-    """Zdanie reguły ``rule``; ``names``: litera kolumny → nazwa pozycji cennika (brak albo ``""``: sama litera)."""
+def rule_sentence(
+    rule: QuantityRule, devices: DeviceList, names: Mapping[str, str], *, unlisted: Mapping[str, str] = _NONE
+) -> list[SentencePart]:
+    """Zdanie reguły ``rule``; ``names``: litera kolumny → nazwa pozycji cennika (brak albo ``""``: sama litera),
+    ``unlisted``: identyfikator składnika spoza listy ``devices`` → jego nazwa (np. w odmowie reguły, której składnika
+    lista już nie ma)."""
 
-    held = [_condition(condition, devices) for condition in rule.conditions if not condition.negated]
-    excepted = [_condition(condition, devices) for condition in rule.conditions if condition.negated]
-    action = _action(rule.action, devices, names)
+    components = {**unlisted, **{component.id: component.spellings[0] for component in devices.components}}
+    held = [_condition(condition, components) for condition in rule.conditions if not condition.negated]
+    excepted = [_condition(condition, components) for condition in rule.conditions if condition.negated]
+    action = _action(rule.action, components, names)
     exception = f"ale nie gdy {_joined(excepted, ' albo ')}" if excepted else ""
     if held:
         return _parts(f"Jeśli {_joined(held, ' i ')}{', ' + exception if exception else ''}, to ", *action, ".")
@@ -72,16 +80,16 @@ def plain_sentence(parts: Sequence[SentencePart]) -> str:
     )
 
 
-def component_name(component: str, devices: DeviceList) -> str:
-    """Nazwa składnika dla taty: jego pierwszy zapis z Listy Urządzeń (identyfikator, gdy go tam nie ma)."""
+def _named(component: str, components: Mapping[str, str]) -> str:
+    """Nazwa składnika dla taty (``components``: identyfikator → nazwa); identyfikator, gdy nazwy nie ma."""
 
-    return next((found.spellings[0] for found in devices.components if found.id == component), component)
+    return components.get(component, component)
 
 
-def _condition(condition: Condition, devices: DeviceList) -> str:
+def _condition(condition: Condition, components: Mapping[str, str]) -> str:
     match condition:
         case ContainsComponent(component=component):
-            return f"URZĄDZENIA zawierają „{component_name(component, devices)}”"
+            return f"URZĄDZENIA zawierają „{_named(component, components)}”"
         case DevicesText(mode=mode, text=text):
             match mode:
                 case TextMode.EMPTY:
@@ -104,12 +112,14 @@ def _condition(condition: Condition, devices: DeviceList) -> str:
             assert_never(condition)
 
 
-def _action(action: Fill | WriteNothing | LeaveEmpty, devices: DeviceList, names: Mapping[str, str]) -> list[str | SentenceColumn]:
+def _action(
+    action: Fill | WriteNothing | LeaveEmpty, components: Mapping[str, str], names: Mapping[str, str]
+) -> list[str | SentenceColumn]:
     match action:
         case Fill(writes=writes):
             amounts: dict[str, list[str]] = {}
             for write in writes:
-                amounts.setdefault(_amount(write, devices), []).append(write.column)
+                amounts.setdefault(_amount(write, components), []).append(write.column)
             parts: list[str | SentenceColumn] = ["wpisz "]
             for index, (amount, columns) in enumerate(amounts.items()):
                 parts += [" oraz " if index else "", f"{amount} w ", *_columns(columns, names)]
@@ -123,15 +133,15 @@ def _action(action: Fill | WriteNothing | LeaveEmpty, devices: DeviceList, names
             assert_never(action)
 
 
-def _amount(write: Write, devices: DeviceList) -> str:
+def _amount(write: Write, components: Mapping[str, str]) -> str:
     times = "" if write.value == 1 else f"{write.value} × "
     match write.multiplier:
         case Multiplier.ONCE:
             return str(write.value)
         case Multiplier.COMPONENT:
-            return f"{times}liczbę „{component_name(write.component or '', devices)}”"
+            return f"{times}liczbę „{_named(write.component or '', components)}”"
         case Multiplier.PIECES:
-            return f"{times}„N szt” z CZYNNOŚCI za każde „{component_name(write.component or '', devices)}”"
+            return f"{times}„N szt” z CZYNNOŚCI za każde „{_named(write.component or '', components)}”"
         case _:
             assert_never(write.multiplier)
 

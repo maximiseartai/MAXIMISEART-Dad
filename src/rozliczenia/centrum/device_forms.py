@@ -2,10 +2,10 @@
 Listy Urządzeń.
 
 Zapisy z formularza Centrum zapisuje tak, jak Reguły ilości czytają słowa ``URZĄDZENIA`` (``device_spelling``), a
-powtórzony zapis w jednym składniku liczy się raz. Formularz odmawia z polem (``nazwa``, ``zapisy[<n>]``) składnika bez
-nazwy, zapisu z gwiazdką i zapisu, który ma już inny składnik, nazwany jego nazwą. Usunięcie składnika, którego
-potrzebuje reguła, to odmowa ze zdaniem tej reguły (``needed_by``), a resztę niezmienników listy sprawdza silnik
-(``DeviceList``). Przy zapisie właściciel Ustawień sprawdza jeszcze raz listę razem z regułami (``CentrumSettings``).
+powtórzony zapis w jednym składniku liczy się raz. Formularz odmawia z polem (``nazwa``, ``zapisy[<n>]``) tylko tego,
+czego sam nie wyrazi: składnika bez nazwy i zapisu z gwiazdką. Listę po zmianie sprawdza właściciel Ustawień jako zmianę
+pary, tak samo dla formularza i „Cofnij” (``CentrumSettings._dad_change``): zapis, który ma już inny składnik, i
+składnik, którego potrzebuje reguła; pole formularza z zapisem, którego dotyczy jego odmowa, daje ``field_of``.
 
 Nowy składnik dostaje id ze swojej nazwy (każdy ciąg znaków innych niż litery i cyfry na „-”, bo id stoi w adresie jego
 zmiany i usunięcia; zajęte z kolejnym numerem) i staje na końcu listy. Zajęte jest
@@ -23,17 +23,9 @@ from typing import Final, assert_never
 
 from rozliczenia.centrum.contract import quantity_rules as contract
 from rozliczenia.centrum.rule_forms import GROUPS
-from rozliczenia.centrum.rule_sentences import plain_sentence, rule_sentence
 from rozliczenia.centrum.settings import messages
 from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
-from rozliczenia.quantity_engine import (
-    Component,
-    DeviceGroup,
-    DeviceList,
-    QuantityRules,
-    QuantityRulesRefused,
-    device_spelling,
-)
+from rozliczenia.quantity_engine import Component, DeviceGroup, device_spelling
 
 _GROUP_OF: Final[Mapping[contract.DeviceGroup, DeviceGroup]] = {shown: group for group, shown in GROUPS.items()}
 _NOT_IN_ID: Final = re.compile(r"[\W_]+")
@@ -78,71 +70,58 @@ def device_component(component: Component) -> contract.DeviceComponent:
 def edited(
     components: tuple[Component, ...], edit: DeviceEdit, used: frozenset[str]
 ) -> tuple[Component, ...] | FieldProblem | UnknownComponent:
-    """Lista ``components`` po zmianie ``edit`` sprawdzona przez silnik; ``used``: id składników z wierszy Historii,
-    których nowy składnik nie dostanie. ``FieldProblem``: zły formularz albo lista, ``UnknownComponent``: zmiana albo
+    """Lista ``components`` po zmianie ``edit``, jeszcze niesprawdzona jako lista; ``used``: id składników z wierszy
+    Historii, których nowy składnik nie dostanie. ``FieldProblem``: zły formularz, ``UnknownComponent``: zmiana albo
     usunięcie składnika, którego nie ma."""
 
     match edit:
         case AddComponent(form=form):
-            built = _component(form, _new_id(components, form, used), components)
-            after = built if isinstance(built, FieldProblem) else (*components, built)
+            built = _component(form, _new_id(components, form, used))
+            return built if isinstance(built, FieldProblem) else (*components, built)
         case ChangeComponent(component=identifier, form=form):
             if identifier not in {component.id for component in components}:
                 return UnknownComponent()
-            others = tuple(component for component in components if component.id != identifier)
-            built = _component(form, identifier, others)
-            after = built if isinstance(built, FieldProblem) else tuple(built if old.id == identifier else old for old in components)
+            built = _component(form, identifier)
+            return built if isinstance(built, FieldProblem) else tuple(built if old.id == identifier else old for old in components)
         case RemoveComponent(component=identifier):
             if identifier not in {component.id for component in components}:
                 return UnknownComponent()
-            after = tuple(component for component in components if component.id != identifier)
+            return tuple(component for component in components if component.id != identifier)
         case _:
             assert_never(edit)
-    if isinstance(after, FieldProblem):
-        return after
-    try:
-        DeviceList(after)
-    except QuantityRulesRefused as refused:
-        return FieldProblem(None, refused.problem.message)
-    return after
 
 
-def needed_by(
-    rules: QuantityRules, components: tuple[Component, ...], names: Mapping[str, str]
-) -> FieldProblem | None:
-    """Odmowa listy ``components``, której brakuje składnika potrzebnego regule ``rules`` (pierwszej takiej), ze
-    zdaniem tej reguły; składnik i reguła nazwane jak w oknie Ustawień (``names``: kolumna → nazwa z cennika)."""
+def field_of(edit: DeviceEdit, spelling: str) -> FieldPath | None:
+    """Pole formularza zmiany ``edit``, w którym tata wpisał zapis ``spelling`` (``None``: usunięcie składnika albo zapis
+    spoza formularza): przy nim stoi odmowa właściciela o tym zapisie."""
 
-    devices = DeviceList(components)
-    for rule in rules.rules:
-        try:
-            QuantityRules((rule,), devices)
-        except QuantityRulesRefused as refused:
-            missing = refused.problem.component
-            if missing is not None:
-                name = next(component.spellings[0] for component in rules.devices.components if component.id == missing)
-                sentence = plain_sentence(rule_sentence(rule, rules.devices, names))
-                return FieldProblem(None, messages.component_used_by_rule(name, sentence))
-    return None
+    match edit:
+        case AddComponent(form=form) | ChangeComponent(form=form):
+            return next((field for field, typed in _typed(form) if typed == spelling), None)
+        case RemoveComponent():
+            return None
+        case _:
+            assert_never(edit)
 
 
-def _component(form: contract.ComponentForm, identifier: str, others: tuple[Component, ...]) -> Component | FieldProblem:
-    name = device_spelling(form.name)
-    if not name:
-        return FieldProblem(FieldPath("nazwa"), messages.component_name_empty())
-    typed = [(FieldPath("nazwa"), name)] + [
+def _typed(form: contract.ComponentForm) -> list[tuple[FieldPath, str]]:
+    """Zapisy formularza w postaci zapisu Listy Urządzeń, każdy z polem, z którego pochodzi."""
+
+    return [(FieldPath("nazwa"), device_spelling(form.name))] + [
         (FieldPath("zapisy", index), device_spelling(spelling)) for index, spelling in enumerate(form.other_spellings)
     ]
-    owners = {spelling: other for other in others for spelling in other.spellings}
+
+
+def _component(form: contract.ComponentForm, identifier: str) -> Component | FieldProblem:
+    typed = _typed(form)
+    if not typed[0][1]:
+        return FieldProblem(FieldPath("nazwa"), messages.component_name_empty())
     spellings: dict[str, None] = {}
     for field, spelling in typed:
         if not spelling:
             continue
         if "*" in spelling:
             return FieldProblem(field, messages.spelling_with_star(spelling))
-        owner = owners.get(spelling)
-        if owner is not None:
-            return FieldProblem(field, messages.spelling_taken(spelling, owner.spellings[0]))
         spellings[spelling] = None
     return Component(identifier, tuple(spellings), None if form.group is None else _GROUP_OF[form.group])
 

@@ -261,6 +261,16 @@ def component_used_by_rule(component: str, rule: str) -> str:
     return f"Składnika „{component}” potrzebuje reguła: {rule} Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości."
 
 
+def rule_needs_component(component: str, rule: str) -> str:
+    """Reguła, której składnika nie ma na Liście Urządzeń (np. „Cofnij” jej usunięcia po usunięciu składnika);
+    ``component``: jego nazwa, jak ostatnio na liście, ``rule``: zdanie reguły „jeśli … to …”."""
+
+    return (
+        f"Reguła potrzebuje składnika „{component}”, którego nie ma na Liście Urządzeń: {rule} Najpierw dodaj ten składnik "
+        "w sekcji Urządzenia."
+    )
+
+
 def needed_by_release_rules(component: str) -> str:
     """Lista Urządzeń taty bez składnika, którego potrzebują Reguły ilości z Wydania (tata nie ma pliku reguł);
     ``component``: jego nazwa z Listy Urządzeń z Wydania."""

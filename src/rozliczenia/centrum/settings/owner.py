@@ -15,10 +15,13 @@ zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego ni
 uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z Wydania (tata nie ma pliku reguł) są zawsze
 dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten składnik z Listy Urządzeń z Wydania; składnik,
 którego każdy zapis ma lista taty, nie dochodzi, a lista bez niego jest dobra (``quantity_rules``). Plik, który zaczyna
-pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak zmiana jego treści. Przy Regułach ilości z Wydania
-każdy zapis taty pary (formularz, „Cofnij”, „Dodaj” z podpowiedzi) idzie przez ``_dad_change``: zmiana listy dostaje
-listę uzupełnioną i zapisuje ją uzupełnioną, a pierwszy plik reguł taty zapisuje najpierw listę, do której pasuje, albo
-odmawia zdaniem o zapisie, który tata musi zwolnić (``quantity_rules.completing``, ``devices_for_dad_rules``).
+pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak zmiana jego treści.
+Każdy zapis taty pary (formularz sekcji, „Dodaj” z podpowiedzi, „Popraw regułę”, „Cofnij”) idzie przez ``_dad_change``,
+które sprawdza go jako zmianę, zanim ``_checked`` zobaczy plik: odmowa mówi, co zmiana psuje (zapis u dwóch składników,
+składnik potrzebny regule, reguła bez składnika, zapis, który tata musi zwolnić dla składnika z Wydania), tym samym
+zdaniem dla formularza i „Cofnij”, a zdanie reguły ma kolumny z cennika (``column_names``). Przy Regułach ilości z
+Wydania zmiana listy dostaje listę uzupełnioną i zapisuje ją uzupełnioną, a pierwszy plik reguł taty zapisuje najpierw
+listę, do której pasuje (``quantity_rules.dad_devices_edit``, ``devices_for_dad_rules``, ``dad_rules_problem``).
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
 bajty) z ostatnim stanem przyjętym w pamięci (``memory``). Inny stan to zmiana spoza Centrum i dokładnie jeden wiersz
@@ -118,17 +121,20 @@ from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, Quantit
 from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES,
     RULES,
+    ColumnNames,
     DevicesEdit,
-    completing,
+    dad_devices_edit,
+    dad_rules_problem,
     devices_for_dad_rules,
     devices_problem,
+    listed_name,
     quantity_rules,
     rules_problem,
     taken_problem,
 )
 from rozliczenia.centrum.settings.reminders import REMINDERS
 from rozliczenia.centrum.settings.workers import WORKERS
-from rozliczenia.quantity_engine import Component, QuantityRule, QuantityRules
+from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_periods import InPeriod, InRegister, NotInPeriods, Unchecked, WorkerPeriods
 from rozliczenia.worker_report_inbox import InboxState
@@ -140,6 +146,8 @@ REPORTED_CHANGES: Final = 20
 """Najwyżej tyle najnowszych wierszy Historii podaje Zgłoszenie."""
 HISTORY_UNREADABLE: Final = "- Historii Ustawień nie dało się przeczytać"
 """Linia Zgłoszenia zamiast zmian, gdy system nie daje czytać pliku Historii."""
+_RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | FieldProblem]
+"""Zmiana taty Reguł ilości: bieżące reguły → reguły po zmianie albo problem, który jest odmową bez zapisu."""
 
 
 @dataclass(frozen=True)
@@ -261,16 +269,19 @@ class CentrumSettings:
         pause: Callable[[float], None],
         autostart: Autostart,
         periods: WorkerPeriods,
+        column_names: ColumnNames,
     ) -> None:
         """Ustawienia w folderze ``config`` i skrót Centrum w folderze Autostart (``autostart``); ``now`` daje chwilę
         wiersza Historii, a ``pause`` czeka przed kolejną próbą odczytu albo zapisu pliku, który system na chwilę
-        trzyma. ``periods`` szuka w okresach loginów, które zmiana taty usuwa z Listy Wykonawców."""
+        trzyma. ``periods`` szuka w okresach loginów, które zmiana taty usuwa z Listy Wykonawców, a ``column_names``
+        daje nazwy kolumn z cennika do zdania reguły w odmowie zmiany pary."""
 
         self._config = config
         self._log = log
         self._now = now
         self._pause = pause
         self._periods = periods
+        self._column_names = column_names
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
@@ -325,7 +336,7 @@ class CentrumSettings:
         return self._by_dad(file, edit, undoes=None)
 
     def change_with_used_keys(
-        self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T]
+        self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T | FieldProblem]
     ) -> Saved | Refused | NotSaved:
         """Zapis taty jak ``change``, w którym ``edit`` dostaje też klucze pliku z wierszy Historii (``used_keys``),
         przeczytane pod tą samą blokadą co zapis: nowy wpis dostaje wtedy klucz, którego nie zna żaden wiersz, więc
@@ -338,14 +349,13 @@ class CentrumSettings:
                 return NotSaved()
             return self._dad_change(file, lambda current: edit(current, keys), undoes=None, checked=frozenset())
 
-    def devices_for_rules(self, rules: tuple[QuantityRule, ...]) -> tuple[Component, ...] | FieldProblem:
-        """Lista Urządzeń, z którą zapis taty reguł ``rules`` (``change`` pliku reguł) da procesom pasującą parę, albo
-        odmowa tego zapisu, ta sama co w ``_dad_change``: podgląd zmiany reguły sprawdza nią to, co sprawdzi zapis."""
+    def rules_after(self, edit: _RulesEdit) -> QuantityRules | FieldProblem:
+        """Reguły ilości z Listą Urządzeń, które da zapis taty zmiany ``edit`` pliku reguł, albo jego odmowa, bez zapisu:
+        podgląd zmiany reguły sprawdza tym to samo, co sprawdzi zapis (``_dad_rules``)."""
 
         with self._lock:
-            if not self._release():
-                return self._quantity_rules().rules.devices.components
-            return devices_for_dad_rules(_usable(self._observe(DEVICES), DEVICES), rules, _usable(self._observe(RULES), RULES))
+            paired = self._rules_after(edit)
+            return paired if isinstance(paired, FieldProblem) else QuantityRules(paired[0], DeviceList(paired[1]))
 
     def _release(self) -> bool:
         """Procesy liczą Regułami ilości z Wydania: tata nie ma pliku reguł."""
@@ -577,49 +587,66 @@ class CentrumSettings:
     def _dad_change(
         self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: str | None, checked: frozenset[str]
     ) -> Saved | Refused | NotSaved:
-        """Zapis taty pod blokadą; jedyna droga, którą zapis taty Listy Urządzeń albo Reguł ilości dostaje uzupełnienie
-        listy przy Regułach ilości z Wydania (tata nie ma pliku reguł). Zmiana listy dostaje listę uzupełnioną i zapisuje
-        ją uzupełnioną (``completing``). Pierwszy plik reguł taty zapisuje najpierw listę, do której pasuje, osobnym
-        wierszem Historii, albo odmawia zdaniem o zapisie, który tata musi zwolnić (``devices_for_dad_rules``)."""
+        """Zapis taty pod blokadą; jedyna droga zapisu taty Listy Urządzeń i Reguł ilości, więc jedyne miejsce, które
+        sprawdza go jako zmianę pary i daje odmowę zdaniem o tej zmianie (``_dad_devices``, ``_dad_rules``)."""
 
         paired: Mapping[str, Callable[..., Saved | Refused | NotSaved]] = {
             DEVICES.name: self._dad_devices,
             RULES.name: self._dad_rules,
         }
         write = paired.get(file.name)
-        if write is None or not self._release():
+        if write is None:
             return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
         return write(edit, undoes=undoes, checked=checked)
 
     def _dad_devices(self, edit: DevicesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
-        """Zmiana taty Listy Urządzeń przy Regułach ilości z Wydania: na liście uzupełnionej i zapisana uzupełniona."""
+        """Zmiana taty Listy Urządzeń sprawdzona jako zmiana z regułami, którymi liczy Centrum; przy Regułach ilości z
+        Wydania na liście uzupełnionej i zapisana uzupełniona (``dad_devices_edit``)."""
 
-        completed = completing(edit, _usable(self._observe(RULES), RULES))
-        return self._change(DEVICES, completed, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
+        rules = _usable(self._observe(RULES), RULES)
+        changed = dad_devices_edit(edit, rules, self._column_names, release=self._release())
+        return self._change(DEVICES, changed, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
 
-    def _dad_rules(
-        self,
-        edit: Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | FieldProblem],
-        *,
-        undoes: str | None,
-        checked: frozenset[str],
-    ) -> Saved | Refused | NotSaved:
-        """Pierwszy plik reguł taty w miejsce Reguł ilości z Wydania: najpierw lista, do której pasuje (osobny wiersz
-        Historii, jak „ołówek, Zapisz” przy składniku z Wydania), albo odmowa, gdy składnika nie da się dodać."""
+    def _dad_rules(self, edit: _RulesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
+        """Zmiana taty Reguł ilości sprawdzona jako zmiana z Listą Urządzeń (``_rules_after``). Pierwszy plik reguł taty w
+        miejsce Reguł ilości z Wydania zapisuje najpierw listę, do której pasuje (osobny wiersz Historii, jak „ołówek,
+        Zapisz” przy składniku z Wydania)."""
 
-        release = _usable(self._observe(RULES), RULES)
-        rules = edit(release)
-        if isinstance(rules, FieldProblem):
-            return Refused(rules)
-        devices = _usable(self._observe(DEVICES), DEVICES)
-        needed = devices_for_dad_rules(devices, rules, release)
-        if isinstance(needed, FieldProblem):
-            return Refused(needed)
-        if needed != devices:
-            listed = self._change(DEVICES, lambda _: needed, undoes=None, source=ByDad(), undoable=True, checked=checked)
+        paired = self._rules_after(edit)
+        if isinstance(paired, FieldProblem):
+            return Refused(paired)
+        _, devices = paired
+        if devices != _usable(self._observe(DEVICES), DEVICES):
+            listed = self._change(DEVICES, lambda _: devices, undoes=None, source=ByDad(), undoable=True, checked=checked)
             if not isinstance(listed, Saved):
                 return listed
         return self._change(RULES, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
+
+    def _rules_after(self, edit: _RulesEdit) -> tuple[tuple[QuantityRule, ...], tuple[Component, ...]] | FieldProblem:
+        """Reguły po zmianie taty ``edit`` z Listą Urządzeń, z którą się zapiszą, albo odmowa zdaniem o tej zmianie: przy
+        Regułach ilości z Wydania lista dostaje składniki z Wydania, których reguły potrzebują, albo zmiana czeka na
+        zapis, który tata musi zwolnić (``devices_for_dad_rules``); reguła bez składnika na liście to jej zdanie ze
+        składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``)."""
+
+        current = _usable(self._observe(RULES), RULES)
+        rules = edit(current)
+        if isinstance(rules, FieldProblem):
+            return rules
+        devices = _usable(self._observe(DEVICES), DEVICES)
+        if self._release():
+            needed = devices_for_dad_rules(devices, rules, current)
+            if isinstance(needed, FieldProblem):
+                return needed
+            devices = needed
+        problem = dad_rules_problem(rules, devices, self._column_names, self._listed_name)
+        return (rules, devices) if problem is None else problem
+
+    def _listed_name(self, component: str) -> str:
+        """Nazwa składnika spoza Listy Urządzeń z wierszy Historii Ustawień listy (``listed_name``)."""
+
+        history = self._history.read()
+        rows = () if isinstance(history, Unreadable) else history.rows
+        return listed_name(component, (change.change() for row in rows if row.file == DEVICES.name for change in row.changes))
 
     def _removed_logins(self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]) -> RemovedLogins | None:
         """Loginy, które ``edit`` usunąłby teraz z Listy Wykonawców; ``None`` też przy odmowie, którą da ``_change``."""

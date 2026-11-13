@@ -58,6 +58,7 @@ from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
+from rozliczenia.centrum.rule_forms import form_of
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.proposal import (
     Edit,
@@ -78,8 +79,8 @@ from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, DEVICES_SECTION, RULES, RULES_FILE
-from rozliczenia.quantity_engine import Component, DeviceList, QuantityRules, QuantityRulesRefused
-from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
+from rozliczenia.quantity_engine import Component, ContainsComponent, DeviceList, Fill, QuantityRules, QuantityRulesRefused, RulesProblem
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES, parse_rule
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
 from tests.fixtures.centrum import (
     CENTRUM,
@@ -1310,8 +1311,8 @@ def test_skladnik_wydania_bez_zapisu_spoza_listy_taty_liczy_sie_jakby_go_nie_byl
     assert shown["devices_problem"] == {
         "field": None,
         "message": "Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja "
-        "ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, usuń zapis „instalacja ręczna” ze składnika "
-        "„instalacja ręczna”: ołówek przy nim, potem „Zapisz”.",
+        "ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, zmień nazwę składnika „instalacja ręczna”: "
+        "ołówek przy nim, potem „Zapisz”.",
     }
     assert counted.devices.components == dad_list
     rules = {rule.id: rule for rule in counted.rules}
@@ -1387,7 +1388,7 @@ def test_zmiana_reguly_przy_skladniku_wydania_ktorego_zapisy_ma_tata_czeka_na_zw
     own = added.json()["quantity_rules"]["devices"][-1]["id"]
     release_without_manual_installation()
     rule = _nokia_rule(app, 2)
-    waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "zapis")
+    waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "nazwa")
 
     shown = app.client.get(QUANTITY_RULES_URL).json()
     saved = app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=rule)
@@ -1398,7 +1399,8 @@ def test_zmiana_reguly_przy_skladniku_wydania_ktorego_zapisy_ma_tata_czeka_na_zw
     assert (saved.status_code, saved.json()["message"]) == (422, waiting)
     assert (previewed.status_code, previewed.json()["message"]) == (422, waiting)
     assert settings_bytes(app.tool.config / RULES_FILE) is None
-    freed = app.client.put(f"{DEVICES_URL}/{own}", json={"name": "instalacja ręczna", "other_spellings": [], "group": None})
+    # Działanie ze zdania: zmiana nazwy składnika taty zwalnia zapis „instalacja ręczna”, a „wizja” zostaje u taty.
+    freed = app.client.put(f"{DEVICES_URL}/{own}", json={"name": "ręczna", "other_spellings": ["wizja"], "group": None})
     assert freed.status_code == 200, freed.text
     saved = app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=rule)
     assert saved.status_code == 200, saved.text
@@ -1426,7 +1428,7 @@ def test_cofniecie_zmiany_reguly_po_usunieciu_pliku_regul_przy_skladniku_wydania
     undone = app.client.post(f"/api/settings/history/{second['id']}/undo")
 
     if others:
-        waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "zapis")
+        waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "nazwa")
         assert (undone.status_code, undone.json()["message"]) == (422, waiting)
         assert (settings_bytes(app.tool.config / RULES_FILE), settings_bytes(app.tool.config / DEVICES_FILE)) == (None, devices_before)
     else:
@@ -1473,7 +1475,8 @@ _DAD_LIST_STEP = st.one_of(
 
 
 def _proposed(app: Centrum, message: str) -> tuple[str, str, dict[str, Any] | None]:
-    """Działanie, które proponuje zdanie sekcji Urządzenia ``message``: metoda, adres i formularz."""
+    """Działanie, które proponuje zdanie sekcji Urządzenia ``message``, tak jak je wykona formularz: metoda, adres i
+    formularz. Zapis usuwa się tylko × przy innym zapisie (nazwy formularz nie usuwa), a składnik „Usuń składnik"."""
 
     for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]:
         url = f"{DEVICES_URL}/{device['id']}"
@@ -1481,16 +1484,16 @@ def _proposed(app: Centrum, message: str) -> tuple[str, str, dict[str, Any] | No
         if message == settings_messages.needed_by_release_rules(device["name"]):
             return "PUT", url, form
         for spelling in (device["name"], *device["other_spellings"]):
-            left = [kept for kept in (device["name"], *device["other_spellings"]) if kept != spelling]
             proposals: dict[settings_messages.TakenAction, tuple[str, str, dict[str, Any] | None]] = {
-                "zapis": ("PUT", url, {**form, "name": (left or [""])[0], "other_spellings": left[1:]}),
                 "skladnik": ("DELETE", url, None),
                 "nazwa": ("PUT", url, {**form, "name": "zapis taty"}),
             }
+            if spelling in device["other_spellings"]:
+                proposals["zapis"] = ("PUT", url, {**form, "other_spellings": [kept for kept in device["other_spellings"] if kept != spelling]})
             for how, proposal in proposals.items():
                 if message == settings_messages.release_component_taken(spelling, device["name"], how):
                     return proposal
-    raise AssertionError(f"zdanie bez działania: {message}")
+    raise AssertionError(f"zdanie bez działania, które ma formularz: {message}")
 
 
 def _holds_dad_spellings(app: Centrum, context: object) -> None:
@@ -1502,26 +1505,48 @@ def _holds_dad_spellings(app: Centrum, context: object) -> None:
             assert counted.devices.find(spelling.split()) == ([(component, 1)], True), (context, spelling)
 
 
+def _release_rule_components() -> frozenset[str]:
+    """Identyfikatory składników, których potrzebują Reguły ilości z Wydania (warunek „zawierają” albo wpis razy składnik)."""
+
+    needed = {condition.component for rule in DEFAULT_QUANTITY_RULES.rules for condition in rule.conditions if isinstance(condition, ContainsComponent)}
+    needed |= {
+        write.component
+        for rule in DEFAULT_QUANTITY_RULES.rules
+        if isinstance(rule.action, Fill)
+        for write in rule.action.writes
+        if write.component is not None
+    }
+    return frozenset(needed)
+
+
 def _undo_holds(app: Centrum, row: dict[str, Any], context: object) -> None:
     """„Cofnij” wiersza Listy Urządzeń przechodzi albo odmawia bez zmiany pliku zdaniem, które jest prawdą: przywrócony
-    składnik ma zapis, który ma już inny składnik listy taty (każdy zapis należy do jednego składnika)."""
+    składnik ma zapis, który ma już inny składnik listy taty (każdy zapis należy do jednego składnika), albo „Cofnij” usuwa
+    składnik, którego potrzebują Reguły ilości z Wydania (zdanie reguły z jego nazwą z sekcji)."""
 
     before = settings_bytes(app.tool.config / DEVICES_FILE)
+    shown = {device["id"]: device["name"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]}
     restored = {component.id: component.spellings for component in _dad_list(app) or ()}
+    removed: set[str] = set()
     for change in row["changes"]:
         identifier = change["key"].removeprefix(f"{DEVICES_SECTION}.")
         restored.pop(identifier, None)
         if change["before"] is not None:
             restored[identifier] = tuple(json.loads(change["before"])["zapisy"])
+        elif identifier in shown:
+            removed.add(identifier)
     owners = Counter(spelling for spellings in restored.values() for spelling in spellings)
     shared = sorted(spelling for spelling, count in owners.items() if count > 1)
+    truthful = [f"Zapis „{spelling}” ma już składnik „" for spelling in shared] + [
+        f"Składnika „{shown[identifier]}” potrzebuje reguła: " for identifier in sorted(removed & _release_rule_components())
+    ]
 
     undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
 
     if undone.status_code == 200:
         return
-    assert undone.status_code == 422 and shared, (context, undone.text)
-    assert any(f"Zapis „{spelling}” ma już składnik" in undone.json()["message"] for spelling in shared), (context, undone.text)
+    assert undone.status_code == 422, (context, undone.text)
+    assert any(undone.json()["message"].startswith(sentence) for sentence in truthful), (context, truthful, undone.text)
     assert settings_bytes(app.tool.config / DEVICES_FILE) == before, context
 
 
@@ -1590,6 +1615,256 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
             assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules, (steps, undos)
 
     list_holds()
+
+
+def _rule_with(component: str) -> dict[str, Any]:
+    """Formularz reguły „Jeśli URZĄDZENIA zawierają składnik, to wpisz 3 × jego liczbę w Z” dla składnika ``component``."""
+
+    return {
+        "scope": "known",
+        "conditions": [{"kind": "component", "component": component, "negated": False}],
+        "action": {"kind": "fill", "writes": [{"column": "Z", "value": 3, "multiplier": "component", "component": component}]},
+    }
+
+
+ONT_Y_RULE = "Jeśli URZĄDZENIA zawierają „ont y”, to wpisz 3 × liczbę „ont y” w Z."
+
+
+def test_cofniecie_dodania_skladnika_potrzebnego_regule_taty_odmawia_zdaniem_tej_reguly_tak_samo_jak_usuniecie_w_sekcji(
+    tmp_path: Path,
+) -> None:
+    """Sonda przeglądu #1577 r3, składnik: tata ma własny plik reguł, dodał składnik „ont y” i regułę z nim. „Usuń
+    składnik” i „Cofnij” dodania to ta sama zmiana, więc obie odmawiają tym samym zdaniem reguły z nazwą składnika, a nie
+    zdaniem o pliku, który jest dobry."""
+
+    app = centrum(tmp_path)
+    assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
+    added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
+    own = added.json()["quantity_rules"]["devices"][-1]["id"]
+    [add_row] = [row for row in history_rows(app) if row["file"] == DEVICES_FILE]
+    assert app.client.post(QUANTITY_RULES_URL, json=_rule_with(own)).status_code == 200
+    files = (settings_bytes(app.tool.config / DEVICES_FILE), settings_bytes(app.tool.config / RULES_FILE))
+
+    removed = app.client.delete(f"{DEVICES_URL}/{own}")
+    undone = app.client.post(f"/api/settings/history/{add_row['id']}/undo")
+
+    refused = {
+        "message": f"Składnika „ont y” potrzebuje reguła: {ONT_Y_RULE} Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości."
+    }
+    assert [(removed.status_code, removed.json()), (undone.status_code, undone.json())] == [(422, refused)] * 2
+    assert (settings_bytes(app.tool.config / DEVICES_FILE), settings_bytes(app.tool.config / RULES_FILE)) == files
+    section = app.client.get(QUANTITY_RULES_URL).json()
+    assert (section["devices_problem"], section["rules_problem"]) == (None, None)
+
+
+def test_cofniecie_usuniecia_reguly_ze_skladnikiem_usunietym_potem_odmawia_zdaniem_reguly_z_nazwa_skladnika_jak_edytor(
+    tmp_path: Path,
+) -> None:
+    """Sonda przeglądu #1577 r3, reguła: tata usunął regułę ze składnikiem „ont y”, potem sam składnik. „Cofnij” usunięcia
+    reguły i ta sama reguła z edytora to ta sama zmiana: obie odmawiają zdaniem reguły ze składnikiem nazwanym tak, jak
+    tata go widział na liście (nie jego identyfikatorem), a edytor stawia je przy polu składnika."""
+
+    app = centrum(tmp_path)
+    added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
+    own = added.json()["quantity_rules"]["devices"][-1]["id"]
+    saved = app.client.post(QUANTITY_RULES_URL, json=_rule_with(own))
+    rule_id = next(rule["id"] for rule in saved.json()["quantity_rules"]["rules"] if rule["rule"] == _rule_with(own))
+    assert app.client.delete(f"{QUANTITY_RULES_URL}/{rule_id}").status_code == 200
+    [remove_row, *_] = [row for row in history_rows(app) if row["file"] == RULES_FILE]
+    assert app.client.delete(f"{DEVICES_URL}/{own}").status_code == 200
+    files = (settings_bytes(app.tool.config / DEVICES_FILE), settings_bytes(app.tool.config / RULES_FILE))
+
+    undone = app.client.post(f"/api/settings/history/{remove_row['id']}/undo")
+    again = app.client.post(QUANTITY_RULES_URL, json=_rule_with(own))
+
+    sentence = f"Reguła potrzebuje składnika „ont y”, którego nie ma na Liście Urządzeń: {ONT_Y_RULE} Najpierw dodaj ten składnik w sekcji Urządzenia."
+    assert (undone.status_code, undone.json()) == (422, {"message": sentence})
+    assert (again.status_code, again.json()) == (422, {"message": sentence, "field": "jesli[0].skladnik"})
+    assert (settings_bytes(app.tool.config / DEVICES_FILE), settings_bytes(app.tool.config / RULES_FILE)) == files
+
+
+# Formularze składnika w teście równoważności: „ont z” bierze zapis „ont x”, a „nokia” zapis „ont y”.
+_PAIR_FORMS: dict[str, dict[str, Any]] = {
+    "ont x": {"name": "ont x", "other_spellings": ["ont-x2"], "group": None},
+    "ont y": {"name": "ont y", "other_spellings": [], "group": None},
+    "ont z": {"name": "ont z", "other_spellings": ["ont x"], "group": "tv"},
+    "nokia": {"name": "nokia", "other_spellings": ["ont y"], "group": None},
+}
+# Zmiana taty z formularza sekcji Urządzenia albo Reguły ilości, albo „Cofnij” wiersza Historii; liczba wybiera składnik,
+# regułę albo wiersz, a ujemna liczy od końca listy, gdzie stoją składniki i reguły dodane przez tatę.
+_PAIR_INDEX = st.integers(-3, 40)
+_PAIR_STEP = st.one_of(
+    st.tuples(st.just("dodaj składnik"), st.sampled_from(sorted(_PAIR_FORMS))),
+    st.tuples(st.just("zmień składnik"), _PAIR_INDEX, st.sampled_from(sorted(_PAIR_FORMS))),
+    st.tuples(st.just("usuń składnik"), _PAIR_INDEX),
+    st.tuples(st.just("dodaj regułę"), _PAIR_INDEX),
+    st.tuples(st.just("zmień regułę"), _PAIR_INDEX, _PAIR_INDEX),
+    st.tuples(st.just("usuń regułę"), _PAIR_INDEX),
+    st.tuples(st.just("cofnij"), st.integers(0, 9)),
+)
+
+
+def _pair_state(app: Centrum) -> tuple[object, ...]:
+    """Stan sekcji Urządzenia i Reguły ilości bez identyfikatorów, które formularz nadaje inaczej niż „Cofnij”: składniki
+    (nazwa, inne zapisy, grupa), zdania reguł i zdania obu sekcji."""
+
+    section = app.client.get(QUANTITY_RULES_URL).json()
+    devices = sorted((device["name"], tuple(device["other_spellings"]), device["group"] or "") for device in section["devices"])
+    return devices, sorted(rule_sentences(app).values()), section["devices_problem"], section["rules_problem"]
+
+
+def _form_doing(app: Centrum, change: dict[str, Any]) -> tuple[str, str, dict[str, Any] | None] | None:
+    """Żądanie formularza, które robi na bieżącym stanie tę samą zmianę co „Cofnij” zmiany ``change``: klucz wraca do
+    wartości sprzed niej (``None``: zmiana nic by nie zrobiła, bo wpisu już nie ma)."""
+
+    section, _, identifier = change["key"].partition(".")
+    shown = app.client.get(QUANTITY_RULES_URL).json()
+    present = identifier in {entry["id"] for entry in shown["devices" if section == DEVICES_SECTION else "rules"]}
+    url = f"{DEVICES_URL if section == DEVICES_SECTION else QUANTITY_RULES_URL}"
+    if change["before"] is None:
+        return ("DELETE", f"{url}/{identifier}", None) if present else None
+    entry = json.loads(change["before"])
+    if section == DEVICES_SECTION:
+        form: dict[str, Any] = {"name": entry["zapisy"][0], "other_spellings": entry["zapisy"][1:], "group": entry.get("grupa")}
+    else:
+        # Formularz reguły tak, jak edytor dostaje ją z sekcji Reguły ilości (``rule`` reguły w odpowiedzi).
+        rule = parse_rule(entry)
+        assert not isinstance(rule, RulesProblem), entry
+        form = form_of(rule).model_dump(mode="json")
+    return ("PUT", f"{url}/{identifier}", form) if present else ("POST", url, form)
+
+
+def _rule_components(form: Mapping[str, Any]) -> list[str]:
+    """Składniki, których potrzebuje reguła z formularza ``form``, w kolejności pól: warunki, potem wpisy."""
+
+    conditions = [condition.get("component") for condition in form["conditions"]]
+    writes = [write.get("component") for write in (form["action"] or {}).get("writes", [])]
+    return [component for component in conditions + writes if component is not None]
+
+
+def _due_refusal(app: Centrum, request: tuple[str, str, dict[str, Any] | None], names: Mapping[str, str]) -> str | None:
+    """Początek zdania odmowy, która należy się zmianie ``request`` taty z plikiem reguł, z modelu stanu sekcji, nie z
+    kodu: usunięcie składnika, którego potrzebuje reguła, zapis, który ma już inny składnik, albo reguła ze składnikiem
+    spoza listy, nazwanym tak, jak tata go ostatnio widział (``names``); ``None``: zmiana przechodzi."""
+
+    method, url, form = request
+    shown = app.client.get(QUANTITY_RULES_URL).json()
+    devices = {device["id"]: (device["name"], *device["other_spellings"]) for device in shown["devices"]}
+    needed = {component for rule in shown["rules"] for component in _rule_components(rule["rule"])}
+    identifier = url.rpartition("/")[2]
+    if url.startswith(DEVICES_URL):
+        if method == "DELETE":
+            return f"Składnika „{devices[identifier][0]}” potrzebuje reguła: " if identifier in needed else None
+        assert form is not None
+        for spelling in dict.fromkeys((form["name"], *form["other_spellings"])):
+            owner = next((spellings[0] for other, spellings in devices.items() if other != identifier and spelling in spellings), None)
+            if owner is not None:
+                return f"Zapis „{spelling}” ma już składnik „{owner}”. Jeden zapis należy do jednego składnika."
+        return None
+    if method == "DELETE":
+        return None
+    assert form is not None
+    missing = next((component for component in _rule_components(form) if component not in devices), None)
+    return None if missing is None else f"Reguła potrzebuje składnika „{names[missing]}”, którego nie ma na Liście Urządzeń: "
+
+
+def test_cofniecie_zmiany_taty_listy_urzadzen_albo_regul_ilosci_daje_to_samo_co_formularz_robiacy_ta_sama_zmiane(
+    tmp_path: Path,
+) -> None:
+    """Reguła równoważności granicy (przegląd #1577 r3): po dowolnych zmianach taty z formularzy sekcji Urządzenia i Reguły
+    ilości (dodaj, zmień, usuń składnik albo regułę) i „Cofnij” każdy wiersz Historii takiej zmiany cofa się na kopii stanu
+    tak samo jak formularz, który robi na tym samym stanie tę samą zmianę: ten sam status i to samo zdanie odmowy, albo
+    ten sam stan obu sekcji. Z plikiem reguł taty model stanu sekcji mówi też, czy odmowa się należy i jakim zdaniem:
+    usunięcie składnika, którego potrzebuje reguła, zapis u dwóch składników i reguła ze składnikiem spoza listy, zawsze
+    z nazwą, którą tata widział, a nie identyfikatorem."""
+
+    examples = itertools.count()
+
+    @settings(derandomize=True, database=None, deadline=None, max_examples=20)
+    @given(st.booleans(), st.lists(_PAIR_STEP, min_size=2, max_size=7), st.lists(st.integers(0, 9), min_size=1, max_size=2))
+    # Sonda przeglądu #1577 r3: „Cofnij” dodania składnika, którego potrzebuje reguła taty, i „Cofnij” usunięcia reguły
+    # po usunięciu jej składnika.
+    @example(True, [("dodaj składnik", "ont y"), ("dodaj regułę", -1)], [1])
+    @example(False, [("dodaj składnik", "ont y"), ("dodaj regułę", -1), ("usuń regułę", -1), ("usuń składnik", -1)], [1])
+    # „Cofnij” usunięcia składnika, którego zapis ma już nowy składnik.
+    @example(True, [("dodaj składnik", "ont x"), ("usuń składnik", -1), ("dodaj składnik", "ont z")], [1])
+    # „Cofnij” zmiany składnika, której zapis ma już inny składnik, i zmiany reguły na składnik usunięty potem.
+    @example(True, [("dodaj składnik", "ont y"), ("zmień składnik", -1, "ont x"), ("zmień składnik", 0, "nokia")], [1])
+    @example(True, [("dodaj składnik", "ont y"), ("dodaj regułę", 0), ("zmień regułę", -1, -1), ("zmień regułę", -1, 0), ("usuń składnik", -1)], [1])
+    def pair_holds(own_rules: bool, steps: list[tuple[Any, ...]], checks: list[int]) -> None:
+        root = tmp_path / str(next(examples))
+        app = centrum(root / "centrum")
+        names: dict[str, str] = {}
+
+        def seen() -> None:
+            names.update({device["id"]: device["name"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]})
+
+        if own_rules:
+            assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
+        seen()
+        for step in steps:
+            shown = app.client.get(QUANTITY_RULES_URL).json()
+            devices = [device["id"] for device in shown["devices"]]
+            rules = [rule["id"] for rule in shown["rules"]]
+            match step:
+                case ("dodaj składnik", form):
+                    response = app.client.post(DEVICES_URL, json=_PAIR_FORMS[form])
+                case ("zmień składnik", index, form):
+                    response = app.client.put(f"{DEVICES_URL}/{devices[index % len(devices)]}", json=_PAIR_FORMS[form])
+                case ("usuń składnik", index):
+                    response = app.client.delete(f"{DEVICES_URL}/{devices[index % len(devices)]}")
+                case ("dodaj regułę", index):
+                    response = app.client.post(QUANTITY_RULES_URL, json=_rule_with(devices[index % len(devices)]))
+                case ("zmień regułę", rule, index) if rules:
+                    response = app.client.put(f"{QUANTITY_RULES_URL}/{rules[rule % len(rules)]}", json=_rule_with(devices[index % len(devices)]))
+                case ("usuń regułę", rule) if rules:
+                    response = app.client.delete(f"{QUANTITY_RULES_URL}/{rules[rule % len(rules)]}")
+                case ("cofnij", index):
+                    undoable = [row for row in history_rows(app) if row["undoable"] and not row["refused"]]
+                    if not undoable:
+                        continue
+                    response = app.client.post(f"/api/settings/history/{undoable[index % len(undoable)]['id']}/undo")
+                case _:
+                    continue
+            assert response.status_code in (200, 422), (steps, step, response.text)
+            seen()
+
+        rows = [
+            row
+            for row in history_rows(app)
+            if row["source"] == "tata" and row["undoable"] and not row["refused"] and len(row["changes"]) == 1
+            and row["file"] in (DEVICES_FILE, RULES_FILE)
+        ]
+        for position, check in enumerate(checks if rows else []):
+            row = rows[check % len(rows)]
+            [change] = row["changes"]
+            request = _form_doing(app, change)
+            if request is None:
+                continue
+            due = _due_refusal(app, request, names) if settings_bytes(app.tool.config / RULES_FILE) is not None else None
+            context = (own_rules, steps, change, request)
+            twins = []
+            for side in ("cofnij", "formularz"):
+                shutil.copytree(app.tool.config, ToolDirectory(root / f"{position}-{side}").config)
+                twins.append(centrum(root / f"{position}-{side}"))
+            undo_side, form_side = twins
+            undone = undo_side.client.post(f"/api/settings/history/{row['id']}/undo")
+            method, url, body = request
+            formed = form_side.client.request(method, url, json=body)
+
+            assert undone.status_code == formed.status_code, (context, undone.text, formed.text)
+            if undone.status_code == 200:
+                assert _pair_state(undo_side) == _pair_state(form_side), context
+            else:
+                assert undone.json()["message"] == formed.json()["message"], context
+                assert "folderze config" not in undone.json()["message"], context
+            if settings_bytes(app.tool.config / RULES_FILE) is not None:
+                assert undone.status_code == (200 if due is None else 422), (context, due, undone.text)
+                assert due is None or undone.json()["message"].startswith(due), (context, due, undone.text)
+            for twin in twins:
+                twin.client.stop()
+
+    pair_holds()
 
 
 def _rules_changed_under_damaged_dad_list(app: Centrum) -> Path:
@@ -1685,14 +1960,14 @@ def test_cofniecie_po_ktorym_regula_ma_skladnik_spoza_listy_urzadzen_jest_odmowa
     [devices_row] = [row for row in rows if row["file"] == DEVICES_FILE]
 
     undone = app.client.post(f"/api/settings/history/{devices_row['id']}/undo")
+    removed = app.client.delete(f"{DEVICES_URL}/nowy")
 
-    assert (undone.status_code, undone.json()) == (
-        422,
-        {
-            "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „nowy”, którego potrzebują Reguły ilości, "
-            "więc Centrum liczy ostatnią dobrą Listą Urządzeń."
-        },
-    )
+    # „Cofnij” dodania składnika to jego usunięcie: odmowa mówi o tej zmianie tak jak formularz, nie o pliku, który jest dobry.
+    refused = {
+        "message": "Składnika „nowy” potrzebuje reguła: Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nowy” w Z. "
+        "Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości."
+    }
+    assert [(undone.status_code, undone.json()), (removed.status_code, removed.json())] == [(422, refused)] * 2
     assert (devices.read_bytes(), rules.read_bytes(), history_rows(app)) == (*files, rows)
     assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nowy” w Z."
 
@@ -2016,7 +2291,9 @@ def _sentence(rule: dict[str, Any]) -> str:
         (
             {**EDITOR_RULE, "conditions": [{"kind": "component", "component": "nie-ma-takiego", "negated": False}]},
             "jesli[0].skladnik",
-            "Składnika „nie-ma-takiego” nie ma na Liście Urządzeń.",
+            # Składnika nie było nigdy na liście ani w Historii, więc nazwy nie ma: zostaje identyfikator.
+            "Reguła potrzebuje składnika „nie-ma-takiego”, którego nie ma na Liście Urządzeń: Jeśli URZĄDZENIA zawierają "
+            "„nie-ma-takiego”, to wpisz 2 w AA. Najpierw dodaj ten składnik w sekcji Urządzenia.",
         ),
     ],
     ids=["bez-dzialania", "kolumna-spoza-n-ap", "kolumna-wbudowana", "pusta-spoza-n-ap", "tekst-nie-malymi", "godzina", "skladnik"],

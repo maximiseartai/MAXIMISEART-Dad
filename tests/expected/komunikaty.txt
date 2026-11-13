@@ -1471,7 +1471,7 @@ needed_by_release_rules [zdanie]
   Reguły ilości z Wydania potrzebują składnika „wizja”, którego nie ma na Liście Urządzeń, więc Centrum bierze go z Listy Urządzeń z Wydania. Żeby został na liście, zapisz go: ołówek przy nim, potem „Zapisz”.
 
 release_component_taken #1 [zdanie]
-  Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, usuń zapis „instalacja ręczna” ze składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
+  Reguły ilości z Wydania mają składnik „wizja”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, usuń zapis „wizja” ze składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
 
 release_component_taken #2 [zdanie]
   Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, usuń składnik „instalacja ręczna”: ołówek przy nim, potem „Usuń składnik”.
@@ -1480,13 +1480,22 @@ release_component_taken #3 [zdanie]
   Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, zmień nazwę składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
 
 rules_wait_for_release_component #1 [zdanie]
-  Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia usuń zapis „instalacja ręczna” ze składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
+  Reguły ilości z Wydania mają składnik „wizja”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia usuń zapis „wizja” ze składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
 
 rules_wait_for_release_component #2 [zdanie]
   Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia usuń składnik „instalacja ręczna”: ołówek przy nim, potem „Usuń składnik”.
 
 rules_wait_for_release_component #3 [zdanie]
   Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia zmień nazwę składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
+
+spelling_taken [zdanie]
+  Zapis „wizja” ma już składnik „instalacja ręczna”. Jeden zapis należy do jednego składnika.
+
+component_used_by_rule [zdanie]
+  Składnika „instalacja ręczna” potrzebuje reguła: Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz 1 w AN. Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości.
+
+rule_needs_component [zdanie]
+  Reguła potrzebuje składnika „instalacja ręczna”, którego nie ma na Liście Urządzeń: Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz 1 w AN. Najpierw dodaj ten składnik w sekcji Urządzenia.
 
 quantity_rules_problem [zdanie]
   Plik reguly-ilosci.yaml w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.
