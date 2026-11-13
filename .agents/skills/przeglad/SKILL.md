@@ -34,7 +34,7 @@ Istniejące wcześniej to tylko defekt, który powtarzasz na merge-base bez tej 
 Przypadek zbudowany tylko z pliku spoza dziedziny, którą wyznacza decyzja Maksa w ADR (dziś pliki łamiące pewniki wklejenia INTERMAX, [ADR 0025](../../../docs/adr/0025-regula-danych-wysylki-do-skrzynki.md), sekcja „Pewniki i granica dziedziny”), nie jest defektem.
 Styl, nazwy i formatowanie zostawiasz ruffowi, mypy i lintom frontendu.
 
-Korzeń wyrwany na szczeblu (e) dopisuje tu punkt z przykładem PR, który czyta autor i recenzent (sekcja niżej).
+Korzeń wyrwany na szczeblu (e) dopisuje tu nowy punkt z linkiem do PR, który go dopisuje, jako przykładem, a punkt czyta autor i recenzent (sekcja niżej).
 
 ## Korzeń i chwast
 
@@ -50,7 +50,7 @@ Ta sama reguła obowiązuje przy poprawce operatora.
   - (b) typ, z którym zła droga nie przechodzi mypy, albo reguła ruff (`banned-api` z `msg` „użyj X”);
   - (c) test zachowania, który łapie całą klasę, nie tylko ten przypadek;
   - (d) zapadka w `tests/test_zapadki.py`, która pada tylko na dodanych liniach (warunki w [`CODING_STANDARDS.md`](../../../CODING_STANDARDS.md));
-  - (e) punkt z przykładem PR w sekcji „Co jest porażką” tego skilla.
+  - (e) nowy punkt z linkiem do PR, który go dopisuje, w sekcji „Co jest porażką” tego skilla.
 
   Zapadka (d) stoi między (c) a (e), bo jest deterministyczna, a (e) to proza: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają, a (e) tylko wtedy, gdy (a)–(d) nie działają.
   Przy (d) i przy (e) autor pisze jedno zdanie, czemu wyżej się nie da.

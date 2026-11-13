@@ -6,7 +6,7 @@ i Q26: blok ``### W<n> r<k>: R-KOD`` na każde Ważne werdyktów ``FAIL``, ``Szc
 każdy wyższy szczebel, ``Dowód``, ``Wyrwany w #M`` z PR-em korzenia, który ma linię ``Korzeń z #N: R-KOD``, blok
 ``### Czerwony main #N: R-KOD`` i punkt w „Co jest porażką” przy szczeblu (e). Numery to prawdziwe PR-y i issues
 tego repo, bo renderer linkuje tylko istniejące i odróżnia issue od PR po stanie na GitHubie: #1 i #1436 to PR-y,
-#1456 issue czerwonego `main`, #1485 issue flaky testu, #1457 PR przykładu w skillu. Testy biegną na PR 1 jako PR
+#1456 issue czerwonego `main`, #1485 issue flaky testu, #1457 PR przykładu innego PR w skillu. Testy biegną na PR 1 jako PR
 z funkcją, a #1436 udaje PR korzenia.
 
 ``korzenie_pr.json`` trzyma HTML każdej treści z ``gh api markdown`` (``mode=gfm``, ``context`` to ``REPO``), a testy
@@ -89,6 +89,7 @@ OPISY = {
     "wyrwany-w-issue": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{RED_MAIN}")),
     "czerwony-main-bez-sekcji": body(why=f"Część #{RED_MAIN}"),
     "czerwony-main": body(_lines(f"### Czerwony main #{RED_MAIN}: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", EVIDENCE), why=f"Część #{RED_MAIN}"),
+    "czerwony-main-kod-spoza-listy": body(_lines(f"### Czerwony main #{RED_MAIN}: R-WYMYSLONY-KOD", "Szczebel: (a) - jeden właściciel.", EVIDENCE), why=f"Część #{RED_MAIN}"),
     "flaky-test": body(why=f"Część #{FLAKY}"),
     "kod-rozstrzygniety": body(C_BLOCK.replace("R-BEZ-TESTU", "R-DRUGA-DROGA")),
     "proza-w-sekcji": body("Korzeń wyrwany w tym PR.", C_BLOCK),
@@ -106,6 +107,14 @@ SKILL = {
     "punkt-z-przykladem": _lines(*_FAILURES, "- Nowy punkt z przykładem #1457.", "", "## Dowody", "", "Tekst.", ""),
     "punkt-bez-przykladu": _lines(*_FAILURES, "- Nowy punkt bez przykładu.", "", "## Dowody", "", "Tekst.", ""),
     "punkt-z-przykladem-poza-sekcja": _lines(*_FAILURES, "", "## Dowody", "", "- Punkt z przykładem #1457.", ""),
+    "punkt-z-linkiem-do-pr": _lines(*_FAILURES, f"- Nowy punkt z przykładem #{FEATURE}.", "", "## Dowody", "", "Tekst.", ""),
+    "punkt-z-przykladem-zmieniony-z-linkiem-do-pr": _lines(*_FAILURES, f"- Nowy punkt z przykładem #1457 i #{FEATURE}.", "", "## Dowody", "", "Tekst.", ""),
+    "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy": _lines(
+        "# Przegląd", "", "## Co jest porażką", "", "- Punkt bez przykładu, przeredagowany.", f"- Nowy punkt z przykładem #{FEATURE}.", "", "## Dowody", "", "Tekst.", ""
+    ),
+    "punkty-bazy-zamienione-z-linkiem-do-pr": _lines(
+        "# Przegląd", "", "## Co jest porażką", "", "- Nowy punkt z przykładem #1457.", "- Punkt bez przykładu.", f"- Nowy punkt z przykładem #{FEATURE}.", "", "## Dowody", "", "Tekst.", ""
+    ),
 }
 # Treści werdyktów pod dwiema pierwszymi liniami: punkt rozstrzygnięcia kodu w „## Sprawdzone” (decyzja Q25).
 WERDYKTY = {

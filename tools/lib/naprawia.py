@@ -160,7 +160,7 @@ def close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
         return ""
     unchecked = "nie zamknięto issues z „Naprawia”, zamknij je ręcznie" if merged else "nie sprawdzono „Naprawia”"
     try:
-        default_branch = str(json.loads(github.gh("repo", "view", pull.repository, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"])
+        default_branch = github.domyslna_galaz(pull.repository)
     except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
         return f" | UWAGA: GitHub nie podał domyślnej gałęzi, {unchecked}"
     if pull.base != default_branch:

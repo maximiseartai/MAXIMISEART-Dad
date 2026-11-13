@@ -88,6 +88,12 @@ def html_markdownu(tekst: str, repozytorium: str) -> str:
     return html
 
 
+def domyslna_galaz(repozytorium: str) -> str:
+    """Nazwa domyślnej gałęzi ``repozytorium`` (``właściciel/nazwa``) z ``gh repo view``."""
+
+    return str(json.loads(gh("repo", "view", repozytorium, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"])
+
+
 @dataclass(frozen=True)
 class LinkGithuba:
     """Odwołanie do issue albo PR, które renderer GitHuba (``html_markdownu``) zamienił na link: repozytorium

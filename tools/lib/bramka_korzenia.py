@@ -10,12 +10,17 @@ Wyznacza go moduł, a nie sekcja „Root section” skilla ``pr``, bo moduł jes
 więc jego dodanie Git znajduje bez czytania treści, a sekcja to zmiana istniejącego pliku, którą zmieni każda późniejsza
 poprawka wzoru. Bramka wchodzi po szablonie, więc wątek, w którym obowiązuje, ma też szablon; wątek, który kończy po
 staremu, przechodzi ją bez sprawdzania. Sekcja jest
-wymagana, gdy PR miał werdykt ``FAIL`` z Ważnym (dowolnego commitu) albo naprawia czerwony `main` (Q10, Q17). PR
+wymagana, gdy PR miał werdykt ``FAIL`` (dowolnego commitu) albo naprawia czerwony `main` (Q10, Q17). ``FAIL`` daje
+tylko Ważne (skill ``przeglad``), więc sekcję wymaga sama decyzja ``FAIL``, także bez linii ``Znaleziska:`` albo
+z ``Ważne 0`` (werdykt opublikowany poza ``--werdykt``). PR
 naprawia czerwony `main`, gdy linia jego opisu zaczyna się od „Część” albo „Naprawia” z listą numerów, na której stoi
 issue tego repozytorium z etykietą ``czerwony-main`` (``github.CZERWONY_MAIN``, zakłada je ``tools/ci/zgloszenia_ci.py``);
 linię i listę czyta ``naprawia.listed_issues`` według tych samych reguł co „Naprawia”, a etykiety podaje ``gh api``.
+Granica: PR naprawy, który wskazuje issue inaczej (np. „Część: #N” albo „Naprawia czerwony main #N”), bramka liczy jak
+PR bez naprawy czerwonego `main`; linię „Część #N” każe pisać ``docs/agents/pr-i-ci.md`` i skill ``pr``, a jej brak
+łapie recenzent.
 Flaky test ma własne issue z etykietą ``flaky-test``, więc PR, który wskazuje tylko je, sekcji nie potrzebuje (Q10).
-Opis bez słów „Część” i „Naprawia” i bez Ważnych bramka pomija bez pytania GitHuba.
+Opis bez słów „Część” i „Naprawia” i bez werdyktu ``FAIL`` bramka pomija bez pytania GitHuba.
 
 Opis PR, werdykty, opis PR korzenia i sekcję „Co jest porażką” skilla ``przeglad`` czyta renderer GitHuba
 (``github.html_markdownu``) przez ``szablon_werdyktu.items``, więc pola liczą się tylko poza blokami kodu, a cytat pola
@@ -25,29 +30,34 @@ w niej tylko bloki ``###``, a w bloku tylko linie akapitu i (w Dowodzie) bloki k
 - nagłówek ``### W<n> r<k>: R-KOD`` dla Ważnego ``W<n>`` z werdyktu ``FAIL`` rundy ``k`` (``k``-ty werdykt PR, od 1,
   ``werdykt_pr.rounds``), z kodem z ostatniego werdyktu, który go dotyczy: z pola ``Korzeń:`` tego Ważnego albo
   z późniejszego punktu ``Korzeń W<n> r<k>: R-KOD - zdanie`` w „## Sprawdzone”, którym recenzent następnej rundy
-  rozstrzyga kod zakwestionowany przez autora (Q25); Ważne werdyktu to ``W1`` … ``W<a>`` z linii ``Znaleziska:`` i każde
-  ``### W<n>.`` jego treści, a Ważne bez kodu w szablonie dostaje kod tylko z takiego punktu;
+  rozstrzyga kod zakwestionowany przez autora (Q25); Ważne werdyktu to ``W1`` … ``W<a>`` z linii ``Znaleziska:``
+  (co najmniej ``W1``) i każde ``### W<n>.`` jego treści, a Ważne bez kodu w szablonie dostaje kod tylko z takiego
+  punktu;
 - nagłówek ``### Czerwony main #<N>: R-KOD`` dla issue czerwonego `main` ``#N`` z linii „Część” albo „Naprawia”
-  z kodem z listy na HEAD, który wybiera autor;
+  z kodem, który wybiera autor;
 - potem ``Wyrwany w #M`` (link GitHuba do PR tego repozytorium) i nic więcej, albo ``Szczebel: (x) - mechanizm`` ze
   szczeblem od (a) do (e), przy szczeblu niższym niż (a) ``Wyżej nie, bo:`` z jedną linią ``(y) - zdanie`` na każdy
   wyższy szczebel, w kolejności drabiny (pierwsza może stać w linii pola), i na końcu ``Dowód:`` jak w szablonie
   werdyktu (``szablon_werdyktu.evidence_problems``: od 1 do 5 linii po najwyżej 300 znaków, bloki kodu się liczą).
 
 Bloku brakującego, nadmiarowego, powtórzonego albo z innym kodem bramka odmawia. Szczebel (e) wymaga, żeby HEAD PR
-dodał do sekcji „Co jest porażką” skilla ``przeglad`` punkt listy z linkiem GitHuba do PR tego repozytorium
-(przykład), którego nie było na bazie scalenia z bazą PR (Q26). Granica: bramka sprawdza, że taki punkt przybył, a czy
+dopisał do sekcji „Co jest porażką” skilla ``przeglad`` nowy punkt listy z linkiem GitHuba do tego PR (przykład),
+a pozostałe punkty zostawił jak na bazie scalenia z bazą PR (Q26), więc zmieniony punkt bazy nie jest nowym punktem.
+Granica: bramka sprawdza, że taki punkt przybył, a czy
 opisuje ten korzeń i czy szczebel jest najwyższy działający, ocenia recenzent następnej rundy (Q2, Q7), tak jak treść
 Dowodu, której narzędzie nie odtwarza. Rozmiaru wyrwania (Q8: ponad M według etykiety ``size:`` z
 ``tools/ci/rozmiar_pr.py`` idzie osobnym PR-em korzenia) bramka nie liczy, bo w jednym PR nie oddzieli linii korzenia
 od linii funkcji: czy wyrwanie mieści się w PR, czy idzie do PR korzenia, rozstrzyga recenzent według skilla
 ``przeglad``.
 
-``Wyrwany w #M`` przechodzi, gdy PR ``#M`` jest scalony (``gh pr view``), a jego opis ma linię akapitu albo punkt listy
-``Korzeń z #N: R-KOD`` z linkiem GitHuba do tego PR i kodem bloku (Q14). Oba odwołania są linkami GitHuba, więc
-GitHub pokazuje je na osi czasu obu PR-ów. Każdy kod ``NOWY`` z pól ``Korzeń:`` i punktów rozstrzygnięcia werdyktów PR
-stoi na liście ``szablon_werdyktu.LIST`` na HEAD PR (Q18). Błąd GitHuba (renderer, ``gh api`` issue, ``gh pr view``)
-to odmowa z przyczyną.
+``Wyrwany w #M`` przechodzi, gdy PR ``#M`` jest scalony do domyślnej gałęzi repozytorium (``gh pr view``, baza PR
+równa ``github.domyslna_galaz``), a jego opis ma linię akapitu albo punkt listy ``Korzeń z #N: R-KOD`` z linkiem
+GitHuba do tego PR i kodem bloku (Q14). Oba odwołania są linkami GitHuba, więc GitHub pokazuje je na osi czasu obu
+PR-ów. Każdy kod bramki stoi na liście ``szablon_werdyktu.LIST`` na HEAD PR (Q18): kod nagłówka każdego bloku sekcji
+(``W<n> r<k>`` i ``Czerwony main #N``) i każdy kod ``NOWY`` z pól ``Korzeń:`` i punktów rozstrzygnięcia werdyktów PR.
+Sprawdza je jedna funkcja, ``_unlisted``, bo kod bloku Ważnego z werdyktu opublikowanego poza ``--werdykt`` nie przeszedł
+kontroli listy przy publikacji, a kod bloku czerwonego `main` nie przechodzi jej nigdzie indziej. Błąd GitHuba
+(renderer, ``gh api`` issue, ``gh pr view``, ``gh repo view``) to odmowa z przyczyną.
 
 Odmowa podaje każdą brakującą rzecz, wzór sekcji z bloku ``markdown`` sekcji „Root section” skilla ``pr`` i to, że
 opis poprawia ``gh pr edit N --body-file PLIK`` bez nowego commita i bez nowego werdyktu.
@@ -107,27 +117,37 @@ def problems(pull: Pull, deployed: datetime | None) -> list[str]:
         return [f"korzeń: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie"]
     found: list[str] = []
     expected = _expected(rounds, found)
-    found.extend(_new_codes(rounds, pull))
-    if not expected and not any(word in pull.body for word in RED_MAIN_WORDS):
-        return _refusal(found, pull)
-    try:
-        html = github.html_markdownu(pull.body, pull.repository)
-    except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
-        return [*found, f"korzeń: GitHub nie wyrenderował opisu PR ({error}), uruchom ponownie"]
-    red = _red_main(html, pull, found)
-    expected.update({f"Czerwony main #{number}": None for number in red})
-    if expected:
-        found.extend(_section(szablon_werdyktu.items(html), expected, pull))
+    codes = {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)}
+    if expected or any(word in pull.body for word in RED_MAIN_WORDS):
+        found.extend(_described(pull, expected, codes))
+    found.extend(_unlisted(codes, pull))
     return _refusal(found, pull)
 
 
+def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, list[str]]) -> list[str]:
+    """Przyczyny z opisu PR: czerwony `main` z linii „Część” i „Naprawia” i sekcja ``## Korzeń``, której kody bloków
+    trafiają do ``codes``."""
+
+    try:
+        html = github.html_markdownu(pull.body, pull.repository)
+    except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
+        return [f"korzeń: GitHub nie wyrenderował opisu PR ({error}), uruchom ponownie"]
+    found: list[str] = []
+    red = _red_main(html, pull, found)
+    expected.update({f"Czerwony main #{number}": None for number in red})
+    if expected:
+        found.extend(_section(szablon_werdyktu.items(html), expected, pull, codes))
+    return found
+
+
 def _expected(rounds: Sequence[werdykt_pr.Round], found: list[str]) -> dict[str, str | None]:
-    """Nagłówki bloków ``W<n> r<k>`` każdego Ważnego werdyktów ``FAIL`` z kodem z ostatniego werdyktu, który go dotyczy."""
+    """Nagłówki bloków ``W<n> r<k>`` każdego Ważnego werdyktów ``FAIL`` z kodem z ostatniego werdyktu, który go dotyczy;
+    ``FAIL`` bez linii ``Znaleziska:`` albo z ``Ważne 0`` ma ``W1``, bo ``FAIL`` daje tylko Ważne."""
 
     codes: dict[str, str | None] = {}
     for current in rounds:
         if current.verdict.decision == "FAIL":
-            labels = [*(f"W{index}" for index in range(1, (current.declared_majors or 0) + 1)), *(root.label for root in current.findings.majors)]
+            labels = [*(f"W{index}" for index in range(1, max(current.declared_majors or 0, 1) + 1)), *(root.label for root in current.findings.majors)]
             codes.update(dict.fromkeys(f"{label} r{current.number}" for label in dict.fromkeys(labels)))
             codes.update({f"{root.label} r{current.number}": root.code for root in current.findings.majors if root.code is not None})
         for resolution in current.findings.resolutions:
@@ -139,15 +159,25 @@ def _expected(rounds: Sequence[werdykt_pr.Round], found: list[str]) -> dict[str,
     return codes
 
 
-def _new_codes(rounds: Sequence[werdykt_pr.Round], pull: Pull) -> list[str]:
-    new = sorted({root.code for current in rounds for root in (*current.findings.majors, *current.findings.resolutions) if root.new and root.code})
-    if not new:
+def _new_codes(rounds: Sequence[werdykt_pr.Round]) -> list[str]:
+    return sorted({root.code for current in rounds for root in (*current.findings.majors, *current.findings.resolutions) if root.new and root.code})
+
+
+def _unlisted(codes: dict[str, list[str]], pull: Pull) -> list[str]:
+    """Jedyna kontrola listy korzeni bramki: każdy kod ``codes`` (``NOWY`` z werdyktów i kod nagłówka każdego bloku
+    sekcji, z miejscami, w których stoi) stoi na liście ``szablon_werdyktu.LIST`` na HEAD PR."""
+
+    if not codes:
         return []
     try:
         listed = szablon_werdyktu.pull_codes(pull)
     except szablon_werdyktu.CodesUnavailable as error:
         return [f"korzeń: {error}"]
-    return [f"korzeń: NOWY {code} z werdyktu nie stoi na liście {szablon_werdyktu.LIST} na HEAD: dopisz go z opisem i przykładem PR" for code in new if code not in listed]
+    return [
+        f"korzeń: kod {code} ({', '.join(where)}) nie stoi na liście {szablon_werdyktu.LIST} na HEAD: użyj kodu z listy albo dopisz go z opisem i przykładem PR"
+        for code, where in sorted(codes.items())
+        if code not in listed
+    ]
 
 
 def _red_main(html: str, pull: Pull, found: list[str]) -> list[int]:
@@ -163,7 +193,7 @@ def _red_main(html: str, pull: Pull, found: list[str]) -> list[int]:
     return red
 
 
-def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull) -> list[str]:
+def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull, codes: dict[str, list[str]]) -> list[str]:
     starts = [index for index, item in enumerate(units) if item.kind == "h2" and item.text == SECTION]
     missing = [f"brak bloku „### {heading}: {code or 'R-KOD'}”" for heading, code in expected.items()]
     if not starts:
@@ -177,6 +207,7 @@ def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull)
         after = next((later for later in range(index + 1, end) if units[later].kind == "h3"), end)
         block = _heading(item, found)
         if block is not None:
+            codes.setdefault(block.code, []).append(f"blok „### {block.heading}”")
             if block.heading in blocks:
                 found.append(f"korzeń: blok „### {item.text}” powtórzony")
             blocks[block.heading] = _Block(block.heading, block.code, tuple(units[index + 1 : after]))
@@ -259,11 +290,10 @@ def _root_pull(block: _Block, line: Item, number: int, pull: Pull) -> list[str]:
     if not _links_to(line, pull, number, PULL_REQUEST):
         return [f"{label} bez linku GitHuba do PR tego repo: napisz numer PR korzenia jako #{number}"]
     try:
-        root = json.loads(github.gh("pr", "view", str(number), "--json", "state,body"))
+        root = json.loads(github.gh("pr", "view", str(number), "--json", "state,body,baseRefName"))
     except Exception as error:  # noqa: BLE001 - każdy błąd GitHuba to odmowa z przyczyną
         return [f"{label}: GitHub nie podał stanu PR ({error}), uruchom ponownie"]
-    state = {"MERGED": None, "OPEN": "jest otwarty"}.get(root["state"], "jest zamknięty bez merge'a")
-    found = [f"{label}: PR korzenia {state}, a scala się go przed tym PR"] if state else []
+    found = _root_merged(label, root, pull)
     try:
         units = szablon_werdyktu.items(github.html_markdownu(root["body"], pull.repository))
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
@@ -271,6 +301,21 @@ def _root_pull(block: _Block, line: Item, number: int, pull: Pull) -> list[str]:
     if not any(_root_line(item, pull) == block.code for item in units):
         found.append(f"{label}: opis PR korzenia nie ma linii „Korzeń z #{pull.number}: {block.code}” z linkiem do tego PR")
     return found
+
+
+def _root_merged(label: str, root: dict[str, str], pull: Pull) -> list[str]:
+    """Przyczyna, gdy PR korzenia ``root`` (``gh pr view`` ze stanem i bazą) nie jest scalony do domyślnej gałęzi."""
+
+    if root["state"] != "MERGED":
+        state = "jest otwarty" if root["state"] == "OPEN" else "jest zamknięty bez merge'a"
+        return [f"{label}: PR korzenia {state}, a scala się go do domyślnej gałęzi przed tym PR"]
+    try:
+        default = github.domyslna_galaz(pull.repository)
+    except Exception as error:  # noqa: BLE001 - każdy błąd GitHuba to odmowa z przyczyną
+        return [f"{label}: GitHub nie podał domyślnej gałęzi repozytorium ({error}), uruchom ponownie"]
+    if root["baseRefName"] != default:
+        return [f"{label}: PR korzenia scalony do {root['baseRefName']}, a nie do domyślnej gałęzi {default}"]
+    return []
 
 
 def _root_line(item: Item, pull: Pull) -> str | None:
@@ -282,7 +327,10 @@ def _root_line(item: Item, pull: Pull) -> str | None:
 
 
 def _failure_point(block: _Block, pull: Pull) -> list[str]:
-    """Przyczyna, gdy HEAD PR nie dodał do „Co jest porażką” skilla ``przeglad`` punktu z linkiem do PR (szczebel (e))."""
+    """Przyczyna, gdy HEAD PR nie dopisał do „Co jest porażką” skilla ``przeglad`` nowego punktu z linkiem do tego PR
+    (szczebel (e)): punkty HEAD bez linku do tego PR to dokładnie punkty bazy, w tej samej kolejności, a co najmniej
+    jeden punkt HEAD ma ten link. Punkt z bazy zmieniony w PR (przeredagowany, przeniesiony, z dopisanym linkiem) nie
+    jest więc nowym punktem."""
 
     label = f"korzeń: {block.heading}: Szczebel (e)"
     try:
@@ -290,10 +338,13 @@ def _failure_point(block: _Block, pull: Pull) -> list[str]:
         before, after = (_points(repo.git(ROOT, "show", f"{commit}:{REVIEW_SKILL}"), pull) for commit in (base, pull.head))
     except Exception as error:  # noqa: BLE001 - każdy błąd Gita albo renderera to odmowa z przyczyną
         return [f"{label}: nie odczytano sekcji „{FAILURES}” skilla przeglad na bazie i HEAD ({error}), uruchom ponownie"]
-    texts = {item.text for item in before}
-    if any(item.text not in texts and any(link.w(pull.repository) and link.rodzaj == PULL_REQUEST for link in item.links) for item in after):
+    kept = [item.text for item in after if not _links_to(item, pull, pull.number, PULL_REQUEST)]
+    if len(kept) < len(after) and kept == [item.text for item in before]:
         return []
-    return [f"{label} wymaga punktu z przykładem PR (#N) dopisanego w tym PR do sekcji „{FAILURES}” w {REVIEW_SKILL}"]
+    return [
+        f"{label} wymaga nowego punktu z linkiem do tego PR (#{pull.number}) dopisanego w tym PR do sekcji „{FAILURES}” w {REVIEW_SKILL}, "
+        "a pozostałe punkty sekcji zostają jak na bazie: zmieniony punkt z bazy to nie nowy punkt"
+    ]
 
 
 def _points(text: str, pull: Pull) -> list[Item]:

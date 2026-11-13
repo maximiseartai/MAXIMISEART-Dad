@@ -1794,6 +1794,14 @@ FAIL_NEW_CODE = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" +
 PASS_RESOLVES = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-w1-r1"]
 FAIL_WITHOUT_ROOT = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + korzenie_pr.WERDYKTY["wazne-bez-korzenia"]
 PASS_RESOLVES_NEW = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-nowym-kodem"]
+# FAIL opublikowany poza --werdykt: kod spoza listy bez NOWY, bez linii Znaleziska, z Ważne 0 i z dwoma Ważnymi prozą.
+FAIL_UNLISTED = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["korzen-3"]
+FAIL_PROSE = "WERDYKT: FAIL {commit}\nTest nie łapie regresji w kod/inne.py:1.\n"
+FAIL_MAJORS_0 = "WERDYKT: FAIL {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n"
+FAIL_TWO_MAJORS = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 2, Drobne 0)\n" + korzenie_pr.WERDYKTY["wazne-bez-korzenia"]
+SECTION_FOR_FAIL = "korzeń: brak sekcji „## Korzeń”, a PR ma werdykt FAIL z Ważnym; brak bloku „### W1 r1: R-KOD”"
+UNLISTED = "nie stoi na liście .agents/skills/przeglad/korzenie.toml na HEAD: użyj kodu z listy albo dopisz go z opisem i przykładem PR"
+NEW_POINT = "korzeń: W1 r1: Szczebel (e) wymaga nowego punktu z linkiem do tego PR (#1) dopisanego w tym PR do sekcji „Co jest porażką”"
 RED = {korzenie_pr.RED_MAIN: "czerwony-main"}
 FLAKY = {korzenie_pr.FLAKY: "flaky-test"}
 UPROOTED_IN = f"korzeń: W1 r1: Wyrwany w #{korzenie_pr.ROOT_PR}"
@@ -1806,8 +1814,9 @@ def _root_gate(
     """``--bez-merge`` PR 1 z werdyktami ``verdicts`` (na starszym commicie, więc PR nie ma zgody, a pierwszy powstaje
     24.10.2026 o 3:00:01, w komentarzu edytowanym, gdy ``edited``) i opisem ``body`` z ``korzenie_pr.OPISY``, z bramką
     korzenia wdrożoną na ``main`` w chwili ``gate``, a szablonem 1.10.2026; ``setup`` podaje stan i opis PR korzenia
-    (``root``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``, domyślnie ``baza``) i na HEAD
-    (``skill``) i kod dopisany do listy korzeni na HEAD (``listed``)."""
+    (``root``: stan, opis i opcjonalnie gałąź, do której go scalono, domyślnie ``main``), domyślną gałąź repozytorium
+    albo błąd ``gh repo view`` (``repo_view``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``,
+    domyślnie ``baza``) i na HEAD (``skill``) i kod dopisany do listy korzeni na HEAD (``listed``)."""
 
     skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill}, started=gate)
@@ -1820,8 +1829,11 @@ def _root_gate(
     github.open_pull(1, files)
     github.update(1, body=korzenie_pr.OPISY[body])
     if "root" in setup:
-        state, root_body = cast(tuple[str, str], setup["root"])
-        github.pulls[str(korzenie_pr.ROOT_PR)] = _pr_view(korzenie_pr.ROOT_PR, OLD, state=state, body=korzenie_pr.PR_KORZENIA[root_body])
+        state, root_body, *merged_into = cast(tuple[str, ...], setup["root"])
+        root = _pr_view(korzenie_pr.ROOT_PR, OLD, state=state, body=korzenie_pr.PR_KORZENIA[root_body], baseRefName=next(iter(merged_into), "main"))
+        github.pulls[str(korzenie_pr.ROOT_PR)] = root
+    if "repo_view" in setup:
+        github.repo_view = str(setup["repo_view"])
     for number, label in cast(dict[int, str], setup.get("labels", {})).items():
         github.answer_issue(number, answer=json.dumps({"state": "closed", "labels": [{"name": label}]}))
     for index, verdict in enumerate(verdicts):
@@ -1854,31 +1866,46 @@ def _root_gate(
         ([FAIL_W1], "szczebel-a-z-wyzej-nie", {}, ["korzeń: W1 r1: przy (a) nie ma wyższego szczebla"]),
         ([FAIL_W1], "bez-dowodu", {}, ["korzeń: W1 r1: brak pola „Dowód: <polecenie i wynik>” na końcu bloku"]),
         ([FAIL_W1], "bez-szczebla", {}, ["korzeń: W1 r1: pierwsza linia bloku to „Szczebel: (a) - mechanizm” ze szczeblem od (a) do (e) albo „Wyrwany w #M”"]),
-        ([FAIL_W1], "szczebel-e", {}, ["korzeń: W1 r1: Szczebel (e) wymaga punktu z przykładem PR (#N) dopisanego w tym PR do sekcji „Co jest porażką”"]),
-        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-przykladem"}, []),
-        ([FAIL_W1], "szczebel-e", {"skill": "punkt-bez-przykladu"}, ["korzeń: W1 r1: Szczebel (e) wymaga punktu z przykładem PR"]),
-        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-przykladem-poza-sekcja"}, ["korzeń: W1 r1: Szczebel (e) wymaga punktu z przykładem PR"]),
-        ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem"}, ["korzeń: W1 r1: Szczebel (e) wymaga punktu z przykładem PR"]),
+        ([FAIL_W1], "szczebel-e", {}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-linkiem-do-pr"}, []),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-przykladem"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-bez-przykladu"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-przykladem-poza-sekcja"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkt-z-przykladem-zmieniony-z-linkiem-do-pr"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkty-bazy-zamienione-z-linkiem-do-pr"}, [NEW_POINT]),
         ([FAIL_W1], "cytat-pola-w-bloku-kodu", {}, []),
         ([FAIL_W1], "cytat-pola-bez-bloku-kodu", {}, ["korzeń: blok „### W1 r1: R-DRUGA-DROGA” powtórzony"]),
-        ([FAIL_W1], "wyrwany", {"root": ("OPEN", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest otwarty, a scala się go przed tym PR"]),
+        ([FAIL_W1], "wyrwany", {"root": ("OPEN", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest otwarty, a scala się go do domyślnej gałęzi przed tym PR"]),
         ([FAIL_W1], "wyrwany", {"root": ("CLOSED", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest zamknięty bez merge'a"]),
         ([FAIL_W1], "wyrwany", {"root": ("MERGED", "inny-kod")}, [f"{UPROOTED_IN}: opis PR korzenia nie ma linii „Korzeń z #1: R-BEZ-TESTU” z linkiem do tego PR"]),
         ([FAIL_W1], "wyrwany", {"root": ("MERGED", "inny-pr")}, [f"{UPROOTED_IN}: opis PR korzenia nie ma linii „Korzeń z #1: R-BEZ-TESTU”"]),
         ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod")}, []),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod", "feat/stos")}, [f"{UPROOTED_IN}: PR korzenia scalony do feat/stos, a nie do domyślnej gałęzi main"]),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod"), "repo_view": _repo_view("trunk")}, [f"{UPROOTED_IN}: PR korzenia scalony do main, a nie do domyślnej gałęzi trunk"]),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod"), "repo_view": "gh: HTTP 502"}, [f"{UPROOTED_IN}: GitHub nie podał domyślnej gałęzi repozytorium"]),
         ([FAIL_W1], "wyrwany", {}, [f"{UPROOTED_IN}: GitHub nie podał stanu PR"]),
         ([FAIL_W1], "wyrwany-z-dowodem", {"root": ("MERGED", "ten-kod")}, [f"korzeń: W1 r1: po „Wyrwany w #{korzenie_pr.ROOT_PR}” nic więcej, a jest linia „{korzenie_pr.EVIDENCE}”"]),
         ([FAIL_W1], "wyrwany-bez-linku", {}, ["korzeń: W1 r1: Wyrwany w #9999999 bez linku GitHuba do PR tego repo"]),
         ([FAIL_W1], "wyrwany-w-issue", {}, [f"korzeń: W1 r1: Wyrwany w #{korzenie_pr.RED_MAIN} bez linku GitHuba do PR tego repo"]),
-        ([FAIL_NEW_CODE], "nowy-kod", {}, ["korzeń: NOWY R-NOWY-KOD z werdyktu nie stoi na liście .agents/skills/przeglad/korzenie.toml na HEAD"]),
+        ([FAIL_NEW_CODE], "nowy-kod", {}, [f"korzeń: kod R-NOWY-KOD (NOWY z werdyktu, blok „### W1 r1”) {UNLISTED}"]),
         ([FAIL_NEW_CODE], "nowy-kod", {"listed": NEW_CODE}, []),
-        ([FAIL_W1, PASS_RESOLVES_NEW], "nowy-kod", {}, ["korzeń: NOWY R-NOWY-KOD z werdyktu nie stoi na liście"]),
+        ([FAIL_W1, PASS_RESOLVES_NEW], "nowy-kod", {}, [f"korzeń: kod R-NOWY-KOD (NOWY z werdyktu, blok „### W1 r1”) {UNLISTED}"]),
+        ([FAIL_UNLISTED], "nowy-kod", {}, [f"korzeń: kod R-NOWY-KOD (blok „### W1 r1”) {UNLISTED}"]),
+        ([FAIL_UNLISTED], "nowy-kod", {"listed": NEW_CODE}, []),
         ([], "czerwony-main-bez-sekcji", {"labels": RED}, [f"korzeń: brak sekcji „## Korzeń”, a PR ma naprawę czerwonego main; brak bloku „### Czerwony main #{korzenie_pr.RED_MAIN}: R-KOD”"]),
         ([], "czerwony-main", {"labels": RED}, []),
+        ([], "czerwony-main-kod-spoza-listy", {"labels": RED}, [f"korzeń: kod R-WYMYSLONY-KOD (blok „### Czerwony main #{korzenie_pr.RED_MAIN}”) {UNLISTED}"]),
         ([], "czerwony-main-bez-sekcji", {}, [f"korzeń: GitHub nie podał etykiet #{korzenie_pr.RED_MAIN}, więc nie wiadomo, czy to czerwony main"]),
         ([PASS_RESOLVES], "bez-sekcji", {}, ["korzeń: punkt „Korzeń W1 r1: R-DRUGA-DROGA” werdyktu r1 nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"]),
         ([FAIL_WITHOUT_ROOT], "szczebel-c", {}, ["korzeń: W1 r1: werdykt nie podaje kodu korzenia w szablonie, więc kod podaje recenzent następnej rundy punktem „Korzeń W1 r1: R-KOD - zdanie”"]),
         ([FAIL_WITHOUT_ROOT, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
+        ([FAIL_PROSE], "bez-sekcji", {}, [SECTION_FOR_FAIL]),
+        ([FAIL_MAJORS_0], "bez-sekcji", {}, [SECTION_FOR_FAIL]),
+        ([FAIL_PROSE], "szczebel-c", {}, ["korzeń: W1 r1: werdykt nie podaje kodu korzenia w szablonie"]),
+        ([FAIL_PROSE, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
+        ([FAIL_TWO_MAJORS, PASS_RESOLVES], "kod-rozstrzygniety", {}, ["korzeń: brak bloku „### W2 r1: R-KOD”"]),
         ([FAIL_W1], "proza-w-sekcji", {}, ["korzeń: w sekcji „## Korzeń” przed blokiem jest linia „Korzeń wyrwany w tym PR.”"]),
         ([FAIL_W1], "naglowek-poza-wzorem", {}, ["korzeń: nagłówek „### W1: R-BEZ-TESTU” to nie „### W<n> r<runda>: R-KOD”", "korzeń: brak bloku „### W1 r1: R-BEZ-TESTU”"]),
         ([FAIL_W1], "dowod-6-linii", {}, ["korzeń: W1 r1: Dowód ma 6 linii, najwyżej 5"]),
@@ -1900,10 +1927,14 @@ def _root_gate(
         "bez-dowodu",
         "bez-szczebla",
         "szczebel-e-bez-punktu-w-skillu",
-        "szczebel-e-z-punktem-z-przykladem",
+        "szczebel-e-z-nowym-punktem-z-linkiem-do-pr",
+        "szczebel-e-z-punktem-z-przykladem-innego-pr",
         "szczebel-e-z-punktem-bez-przykladu",
         "szczebel-e-z-punktem-poza-sekcja",
         "szczebel-e-z-punktem-ktory-byl-na-bazie",
+        "szczebel-e-z-punktem-bazy-zmienionym-o-link-do-pr",
+        "szczebel-e-z-nowym-punktem-i-zmienionym-punktem-bazy",
+        "szczebel-e-z-nowym-punktem-i-punktami-bazy-w-innej-kolejnosci",
         "cytat-pola-w-bloku-kodu",
         "cytat-pola-bez-bloku-kodu",
         "wyrwany-w-otwartym-pr",
@@ -1911,6 +1942,9 @@ def _root_gate(
         "wyrwany-w-pr-z-innym-kodem",
         "wyrwany-w-pr-z-linia-innego-pr",
         "wyrwany-w-scalonym-pr-z-tym-kodem",
+        "wyrwany-w-pr-scalonym-do-galezi-stosu",
+        "wyrwany-w-pr-scalonym-poza-domyslna-galaz",
+        "wyrwany-bez-domyslnej-galezi-z-githuba",
         "wyrwany-bez-stanu-pr-korzenia-z-githuba",
         "wyrwany-z-czymkolwiek-dalej",
         "wyrwany-bez-linku",
@@ -1918,12 +1952,20 @@ def _root_gate(
         "nowy-kod-spoza-listy-head",
         "nowy-kod-na-liscie-head",
         "nowy-kod-z-rozstrzygniecia-spoza-listy",
+        "kod-bloku-waznego-spoza-listy-head",
+        "kod-bloku-waznego-na-liscie-head",
         "czerwony-main-bez-sekcji",
         "czerwony-main-z-blokiem",
+        "czerwony-main-z-kodem-spoza-listy",
         "bez-etykiet-issue-z-githuba",
         "rozstrzygniecie-bez-waznego",
         "wazne-bez-kodu-w-szablonie",
         "wazne-bez-kodu-rozstrzygniete",
+        "fail-bez-linii-znaleziska-bez-sekcji",
+        "fail-z-wazne-0-bez-sekcji",
+        "fail-bez-linii-znaleziska-z-blokiem-w1-bez-kodu",
+        "fail-bez-linii-znaleziska-z-kodem-rozstrzygnietym",
+        "blok-na-kazde-wazne-z-linii-znaleziska",
         "proza-w-sekcji-przed-blokiem",
         "naglowek-poza-wzorem",
         "dowod-6-linii",
