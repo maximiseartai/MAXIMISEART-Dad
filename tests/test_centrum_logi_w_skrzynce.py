@@ -10,7 +10,7 @@ i śladem. Żaden test nie łączy się z GitHubem.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 import copy
 from dataclasses import dataclass, replace
@@ -26,6 +26,8 @@ import shutil
 import subprocess
 from typing import Any, Final, Protocol
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import pytest
@@ -2347,6 +2349,149 @@ def test_logi_wpisania_raportow_bez_numeru_zlecenia_nie_daja_wejscia_klikniecia(
     replayed = LoggedReports.model_validate(entering).replay()
 
     assert isinstance(replayed, Unreplayable) and replayed.reason.startswith(reason), replayed
+
+
+OLA: Final = Login("ola.testowa")
+FORM_DAYS: Final = (date(2026, 11, 5), date(2026, 11, 8), CLICK_DAY)
+FORM_WORKERS: Final = (JAN, ANNA, OLA)
+# Numer z zerami na początku i bez nich to w INTERMAX różne zlecenia jednej liczby.
+FORMS: Final = (OrderNumber("0040000001"), OrderNumber("040000001"), OrderNumber("40000001"))
+PROPERTY: Final = settings(derandomize=True, database=None, deadline=None, max_examples=150)
+
+
+def _click_with_forms(
+    reported: dict[tuple[date, Login], frozenset[OrderNumber]],
+    moved: Sequence[OrderKey],
+    entries: Sequence[OwnEntry] = (),
+    kept: Sequence[Kept] = (),
+    orderless: Sequence[Orderless] = (),
+) -> EnteringFacts:
+    """Fakty kliknięcia z Wpisami ``reported`` po dniu i Wykonawcy i z pamięcią sprzed kliknięcia, pamięć zleceń w
+    kolejności, w której zapisuje ją kliknięcie (po dniu i numerze)."""
+
+    arrived = datetime(2026, 11, 9, 18, 0).astimezone()
+    mails = tuple(
+        ReadReport(
+            MailId(f"{index:016x}"),
+            arrived,
+            worker,
+            day,
+            tuple(ReportEntry(form, Intent.YES, None, "montaż") for form in sorted(forms)),
+        )
+        for index, ((day, worker), forms) in enumerate(sorted(reported.items()))
+    )
+    moves = (OwnMove(key.number, key.day, key.worker, key.day, key.worker, "Jan Testowy", arrived) for key in moved)
+    return EnteringFacts(
+        today=CLICK_DAY,
+        rollout_before=date(2026, 11, 2),
+        rollout=date(2026, 11, 2),
+        closed=(),
+        memory_before=tuple(sorted(entries, key=lambda entry: (entry.key, entry.column.value))),
+        kept=tuple(kept),
+        skipped=0,
+        mails=mails,
+        problems=(),
+        changes=(),
+        moves_before=tuple(sorted(moves, key=lambda move: (move.day, move.number))),
+        orderless=tuple(orderless),
+    )
+
+
+@st.composite
+def _clicks_with_forms(draw: st.DrawFn) -> EnteringFacts:
+    """Fakty kliknięcia z kilkoma postaciami jednej liczby we Wpisach od jednego albo kilku Wykonawców z jednego albo
+    kilku dni: pamięć wpisów, decyzja „Zostaw moją” i pamięć zleceń pod Wpisem albo pod dowolnym dniem i Wykonawcą, z
+    najwyżej jednym Przeniesieniem zlecenia (tak pamięć zapisuje Wpisanie raportów od #1367 r4, ``memories_of``), i
+    numer bez zlecenia."""
+
+    places = st.tuples(st.sampled_from(FORM_DAYS), st.sampled_from(FORM_WORKERS))
+    single = st.sampled_from(FORMS).map(lambda form: frozenset({form}))
+    forms = st.one_of(single, single, st.frozensets(st.sampled_from(FORMS), min_size=2, max_size=2))
+    reported = draw(st.dictionaries(places, forms, min_size=2, max_size=4))
+    keys = sorted(OrderKey(form, day, worker) for (day, worker), found in reported.items() for form in found)
+    numbers = st.sampled_from(sorted({key.number for key in keys}))
+    elsewhere = st.builds(OrderKey, numbers, st.sampled_from(FORM_DAYS), st.sampled_from(FORM_WORKERS))
+    placed = st.one_of(st.sampled_from(keys), st.sampled_from(keys), elsewhere)
+    columns = st.sampled_from(ReportColumn)
+    return _click_with_forms(
+        reported,
+        draw(st.lists(placed, min_size=1, max_size=3, unique_by=lambda key: key.number)),
+        draw(st.lists(st.builds(OwnEntry, placed, columns, st.just("tak")), max_size=1)),
+        draw(st.lists(st.builds(Kept, st.sampled_from(keys), columns, st.just("brak klienta")), max_size=1)),
+        draw(st.lists(st.builds(Orderless, st.just("Zlecenia"), numbers, st.sampled_from((None, *FORM_DAYS))), max_size=1)),
+    )
+
+
+def _determined(facts: EnteringFacts) -> tuple[bool, bool, bool]:
+    """Czy Logi kliknięcia wyznaczają postać numerów jego pamięci wpisów i zleceń, decyzji „Zostaw moją” i numerów bez
+    zlecenia. Logi mają te numery tylko jako liczbę, a postać numeru to postać tej liczby z Wpisów: pod Wykonawcą i
+    dniem z Wpisami tej liczby tylko ich postać. Wyznaczają, gdy każdy numer ma do wyboru tylko swoją postać."""
+
+    written: dict[tuple[int, date, str], set[OrderNumber]] = {}
+    for mail in facts.mails:
+        assert isinstance(mail, ReadReport)
+        for entry in mail.entries:
+            written.setdefault((int(entry.number), mail.day, mail.worker), set()).add(entry.number)
+
+    def any_day(number: OrderNumber) -> set[OrderNumber]:
+        return {form for (value, _, _), found in written.items() if value == int(number) for form in found}
+
+    def only(key: OrderKey) -> bool:
+        return (written.get((int(key.number), key.day, key.worker)) or any_day(key.number)) == {key.number}
+
+    return (
+        all(only(entry.key) for entry in facts.memory_before)
+        and all(only(OrderKey(move.number, move.day, move.worker)) for move in facts.moves_before),
+        all(only(decision.key) for decision in facts.kept),
+        all(any_day(found.number) == {found.number} for found in facts.orderless),
+    )
+
+
+@PROPERTY
+@given(_clicks_with_forms())
+def test_pamiec_z_kilkoma_zleceniami_jednej_liczby_wraca_z_logow_jak_w_kliknieciu(facts: EnteringFacts) -> None:
+    """Numer z zerami na początku i bez nich to różne zlecenia, a Logi mają numer pamięci tylko jako liczbę. Odczyt
+    wejścia kliknięcia z pliku Logów daje powód, dla którego Logi go nie wyznaczają, albo pamięć wpisów i zleceń,
+    decyzje „Zostaw moją” i numery bez zlecenia takie jak w kliknięciu tam, gdzie Logi wyznaczają ich postać
+    (``_determined``); nigdy wyjątek."""
+
+    replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
+
+    if isinstance(replayed, EnteringReplay):
+        clicked = (OwnEntries(frozenset(facts.memory_before), frozenset(facts.moves_before)), frozenset(facts.kept), facts.orderless)
+        found = (replayed.saved.memory, replayed.saved.kept, replayed.orderless)
+        determined = _determined(facts)
+        assert [part for part, known in zip(found, determined, strict=True) if known] == [
+            part for part, known in zip(clicked, determined, strict=True) if known
+        ], (found, determined)
+
+
+# Wpisy po dniu i Wykonawcy i miejsca dwóch Przeniesień jednej liczby z jednego dnia: pierwsze w Logach (po dniu i
+# numerze) pod Wpisem swojego Wykonawcy i dnia, drugie pod Wykonawcą bez Wpisu z tego dnia.
+TWO_MOVES_ONE_DAY: Final[dict[str, tuple[dict[tuple[date, Login], frozenset[OrderNumber]], tuple[OrderKey, OrderKey]]]] = {
+    "postac_drugiego_z_innego_dnia": (
+        {(CLICK_DAY, JAN): frozenset({FORMS[1]}), (FORM_DAYS[0], ANNA): frozenset({FORMS[2]})},
+        (OrderKey(FORMS[1], CLICK_DAY, JAN), OrderKey(FORMS[2], CLICK_DAY, ANNA)),
+    ),
+    "postac_drugiego_od_innego_wykonawcy_z_tego_dnia": (
+        {(CLICK_DAY, JAN): frozenset({FORMS[0]}), (CLICK_DAY, OLA): frozenset({FORMS[1]})},
+        (OrderKey(FORMS[0], CLICK_DAY, JAN), OrderKey(FORMS[1], CLICK_DAY, ANNA)),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", TWO_MOVES_ONE_DAY)
+def test_dwa_przeniesienia_jednej_liczby_z_jednego_dnia_wracaja_z_logow_jako_dwa_zlecenia(case: str) -> None:
+    """Zlecenie ma najwyżej jedno Przeniesienie na dzień, więc z dwóch Przeniesień jednej liczby z jednego dnia to pod
+    Wpisem swojego Wykonawcy i dnia ma postać z tego Wpisu, a drugie, które idzie w Logach po nim, drugą postać tej
+    liczby z Wpisów: odczyt wejścia kliknięcia z pliku Logów daje tę samą pamięć zleceń co kliknięcie."""
+
+    facts = _click_with_forms(*TWO_MOVES_ONE_DAY[case])
+
+    replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    assert replayed.saved.memory == OwnEntries(frozenset(), frozenset(facts.moves_before))
 
 
 def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen(

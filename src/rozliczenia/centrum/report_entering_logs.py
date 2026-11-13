@@ -405,12 +405,9 @@ class LoggedOwnMove(_Record):
             added=move.added,
         )
 
-    def _move(self, numbers: _Numbers) -> OwnMove:
-        """Numer w postaci z jedynego Wpisu, który go wyznacza, a bez takiego Wpisu jako liczba."""
-
-        number = numbers.exact(self.number, self.day, self.worker)
+    def _move(self, number: OrderNumber) -> OwnMove:
         return OwnMove(
-            OrderNumber(str(self.number)) if number is None else number,
+            number,
             self.day,
             Login(self.worker),
             self.origin_day,
@@ -526,11 +523,17 @@ class LoggedReports(_Record):
         kept = _keyed(numbers, "decyzje „Zostaw moją”", self.kept)
         if isinstance(kept, Unreplayable):
             return kept
-        moves = frozenset(logged._move(numbers) for logged in self.moves_before)
+        entered = frozenset(OwnEntry(key, logged.column, logged.value) for key, logged in memory)
+        try:
+            own = OwnEntries(entered, frozenset(numbers.moved(self.moves_before)))
+        except ValueError as error:
+            return Unreplayable(
+                f"pamięć wpisów i zleceń w Logach z numerami w postaci z Wpisów raportu łamie regułę pamięci "
+                f"({str(error).rstrip('.')}), a Logi mają jej numery tylko jako liczbę, więc odtworzenie nie wie, które z "
+                "nich mają zera na początku"
+            )
         saved = SavedState(
-            self.rollout_before,
-            OwnEntries(frozenset(OwnEntry(key, logged.column, logged.value) for key, logged in memory), moves),
-            frozenset(Kept(key, logged.column, logged.value) for key, logged in kept),
+            self.rollout_before, own, frozenset(Kept(key, logged.column, logged.value) for key, logged in kept)
         )
         return EnteringReplay(
             today=self.today,
@@ -666,6 +669,23 @@ class _Numbers:
             or self._any_day(number)
         )
         return OrderNumber(next(iter(found))) if len(found) == 1 else None
+
+    def moved(self, moves: Sequence[LoggedOwnMove]) -> list[OwnMove]:
+        """Pamięć zleceń z Logów w ich kolejności (po dniu i numerze), z numerem w postaci, którą wyznacza ``exact``, a
+        bez niej jako liczbą. 0123 i 123 to dwa zlecenia, a Wpisanie raportów zakłada pamięć zlecenia tylko wtedy, gdy
+        jego numer nie ma żadnej (``memories_of``), więc jedyna postać z Wpisów Wykonawcy i dnia Przeniesienia należy
+        tylko do niego: każde następne Przeniesienie tej liczby, z tego samego albo innego dnia, szuka postaci we
+        Wpisach bez nich."""
+
+        numbers = self
+        found: list[OwnMove] = []
+        for move in moves:
+            key = (move.number, move.day, move.worker)
+            number = numbers.exact(*key)
+            if number is not None and key in numbers.forms:
+                numbers = _Numbers({other: forms for other, forms in numbers.forms.items() if other != key})
+            found.append(move._move(OrderNumber(str(move.number)) if number is None else number))
+        return found
 
     def written(self, number: int) -> OrderNumber:
         """Postać numeru ``number`` z zerem na początku z Wpisu z dowolnego dnia, a bez niej liczba."""
