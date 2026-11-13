@@ -33,7 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from atrapy.scenariusz_centrum import ROW_MARKER
-from rozliczenia.tool_files import settings_file
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.tool_files import config_dir
 
 from harness import File, issue_file
 
@@ -532,7 +533,7 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch) / "run"
         root.mkdir()
-        settings = settings_file(root)
+        settings = config_dir(root) / SETTINGS_FILE
         File.FIXTURE.write(root, json.dumps({"settings": str(settings)}))
         run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
         run.run_logs_dir.mkdir(parents=True)

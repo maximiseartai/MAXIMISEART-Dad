@@ -58,7 +58,8 @@ from rozliczenia.centrum.report_entering_state import FileReportState
 from rozliczenia.centrum.report_reminders import MinuteRhythm, ReminderRhythm, ReportReminders
 from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.server import AFTER_START
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.settings_router import settings_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
@@ -88,7 +89,7 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 def create_app(
     *,
-    settings_path: Path,
+    config: Path,
     platform: Platform,
     log: CentrumLog,
     shutdown: Shutdown,
@@ -113,7 +114,7 @@ def create_app(
     reminder_mailbox: ReminderMailbox | None = None,
     reminder_rhythm: ReminderRhythm | None = None,
 ) -> FastAPI:
-    work = CentrumWork(config=settings_path.parent, log=log, clock=clock, pause=pause)
+    work = CentrumWork(config=config, log=log, clock=clock, pause=pause)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:
@@ -183,10 +184,12 @@ def create_app(
     def health() -> Health:
         return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
 
-    store = SettingsStore(settings_path, log=log, pause=pause)
-    app.include_router(settings_router(store, platform))
+    # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
+    # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień.
+    settings = CentrumSettings(config, log=log, now=local_now, pause=pause)
+    app.include_router(settings_router(settings, platform))
     configuration = configuration_files or ConfigurationFiles.default()
-    app.include_router(periods_router(store, platform, today, catalog))
+    app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
     cases = DadCases(work)
@@ -206,17 +209,29 @@ def create_app(
     # bajtów ``source``, a jego pamięć to pamięć reguły danych pracy.
     files = DadFiles(source=source, forbidden=work.forbidden)
     filling = FillingReads(work, files)
-    app.include_router(filling_router(store, log, surroundings.cloud_files, filling))
+    app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))
     outbox = case_outbox(work, box, cases)
     reports = Reports(
-        work, box, outbox, surroundings.tool_freshness.local, cases, search_deadline_s=report_search_deadline_s
+        work,
+        box,
+        outbox,
+        surroundings.tool_freshness.local,
+        cases,
+        search_deadline_s=report_search_deadline_s,
+        settings_changes=settings.reported_changes,
     )
+
+    def folders(at_start: FolderSettings | None) -> FolderSettings:
+        """Ustawienia Centrum ze startu Uruchomienia, a bez migawki (Urwane Uruchomienie) bieżące."""
+
+        return settings.snapshot().folders if at_start is None else at_start
+
     disk = LogsOnDisk(log, journaled=catalog.journaled)
     records = RecordMaker(
         commit=surroundings.tool_freshness.local,
         wydanie=surroundings.tool_freshness.wydanie,
-        files=lambda process, period: files_of_process(
-            process, period, settings=store.load(), configuration=configuration
+        files=lambda process, period, at_start: files_of_process(
+            process, period, settings=folders(at_start), configuration=configuration
         ),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
@@ -224,10 +239,10 @@ def create_app(
     comments = RunComments(work, disk, outbox, records)
     stops = Stops(
         reports,
-        lambda process, period: diagnose(
+        lambda process, period, at_start: diagnose(
             process,
             period,
-            settings=store.load(),
+            settings=folders(at_start),
             configuration=configuration,
             log=log,
             surroundings=surroundings,
@@ -249,19 +264,19 @@ def create_app(
         disk=intermax_disk,
         reports=ReportEnteringParts(worker_report_inbox or ImapInbox(work.config), report_files),
     )
-    starts = PeriodStarts(store, configuration, catalog, today, contexts, parts)
+    starts = PeriodStarts(settings, configuration, catalog, today, contexts, parts)
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
-        store, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
+        settings, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
     # Przypomnienia o raporcie czytają INTERMAX tym samym uchwytem plików taty, bez Kopii wejścia, a skrzynkę i jej
     # „Wysłane” przez port skrzynki raportów; testy i skille podają atrapę skrzynki i rytm.
     reminders = ReportReminders(
-        work, store, configuration, reminder_mailbox or ImapInbox(work.config), files, reports, now
+        work, settings, configuration, reminder_mailbox or ImapInbox(work.config), files, reports, now
     )
     # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX; jej widok Raporty
     # pokazuje też wynik ostatniego sprawdzenia przypomnień.
-    report_entering = ReportEnteringEntry(store, catalog, configuration, parts, contexts, report_files, reminders.shown)
+    report_entering = ReportEnteringEntry(settings, catalog, configuration, parts, contexts, report_files, reminders.shown)
     rhythm = reminder_rhythm or MinuteRhythm()
     cards = RunCards(disk, history.runs)
     closed = comments.close_left_behind()
@@ -310,7 +325,8 @@ def create_app(
 
 
 def _problem(refused: Refusal) -> Response:
-    return JSONResponse(Problem(message=refused.message).model_dump(), status_code=refused.status_code)
+    problem = Problem(message=refused.message, field=refused.field)
+    return JSONResponse(problem.model_dump(exclude_none=True), status_code=refused.status_code)
 
 
 class _Frontend(StaticFiles):

@@ -139,7 +139,7 @@ class StopReport:
     def period(self) -> str:
         return self.run.period
 
-    def report(self, *, commit: str | None, previous: int | None) -> Report:
+    def report(self, *, commit: str | None, previous: int | None, settings: Sequence[str]) -> Report:
         run, message, diagnosis, trace = self.run, self.stop.message, self.diagnosis, self.stop.trace
         fingerprint = self.fingerprint.digest
         explanation = diagnosis.explanation
@@ -167,6 +167,7 @@ class StopReport:
                     for check in diagnosis.checks
                 ),
                 "",
+                *_settings_lines(settings),
                 *_log_lines(diagnosis.log_entries, dropped_entries),
             ]
 
@@ -191,7 +192,7 @@ class UpdateReport:
     def period(self) -> None:
         return None
 
-    def report(self, *, commit: str | None, previous: int | None) -> Report:
+    def report(self, *, commit: str | None, previous: int | None, settings: Sequence[str]) -> Report:
         result, fingerprint = self.result, self.fingerprint.digest
 
         def lines(_dropped_frames: int, dropped_entries: int) -> list[str]:
@@ -205,6 +206,7 @@ class UpdateReport:
                 f"- Biblioteki instalowane: {'tak' if result.installed else 'nie'}",
                 "",
                 *_tool_lines(fingerprint, previous),
+                *_settings_lines(settings),
                 *_log_lines(self.log_entries, dropped_entries),
             ]
 
@@ -228,13 +230,14 @@ class ReminderReport:
     def period(self) -> None:
         return None
 
-    def report(self, *, commit: str | None, previous: int | None) -> Report:
+    def report(self, *, commit: str | None, previous: int | None, settings: Sequence[str]) -> Report:
         fingerprint = self.fingerprint.digest
 
         def lines(_dropped_frames: int, dropped_entries: int) -> list[str]:
             return [
                 *_message_lines(self.message),
                 *_tool_lines(fingerprint, previous, commit=f"- Commit: {commit or 'nieznany'}"),
+                *_settings_lines(settings),
                 *_log_lines(self.log_entries, dropped_entries),
             ]
 
@@ -270,6 +273,13 @@ def _tool_lines(fingerprint: str, previous: int | None, *, commit: str | None = 
         *([] if previous is None else [f"- Poprzednie Zgłoszenie: #{previous}"]),
         "",
     ]
+
+
+def _settings_lines(changes: Sequence[str]) -> list[str]:
+    """Sekcja zmian Ustawień Centrum z ostatnich 30 dni (``CentrumSettings.reported_changes``): bez nazw, adresów i
+    sekretów, bo te linie ich nie mają."""
+
+    return ["## Zmiany Ustawień (30 dni)", "", *(changes or ["- bez zmian"]), ""]
 
 
 def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
@@ -533,8 +543,12 @@ class Reports:
         cases: DadCases,
         *,
         search_deadline_s: float,
+        settings_changes: Callable[[], tuple[str, ...]],
     ) -> None:
+        """``settings_changes`` daje linie zmian Ustawień Centrum z ostatnich 30 dni do każdego Zgłoszenia."""
+
         self._commit = commit
+        self._settings_changes = settings_changes
         self._forbidden = work.forbidden
         self._search_deadline_s = search_deadline_s
         self._cases = cases
@@ -578,7 +592,8 @@ class Reports:
         fingerprint = source.fingerprint.digest
         sent = [case.number for case in self._cases.all() if case.kind == REPORT and case.id == fingerprint]
         previous = next((number for number in reversed(sent) if number is not None), None)
-        return _Preview(_guarded(source.report(commit=self._commit(), previous=previous), self._forbidden), source.period)
+        report = source.report(commit=self._commit(), previous=previous, settings=self._settings_changes())
+        return _Preview(_guarded(report, self._forbidden), source.period)
 
     def _queue(self, preview: _Preview) -> diagnosis_contract.ReportState:
         fingerprint = preview.report.fingerprint

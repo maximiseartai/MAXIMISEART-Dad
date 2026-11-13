@@ -29,6 +29,8 @@ from rozliczenia.centrum import (
     update_messages,
 )
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.files import FieldProblem
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_window import ForwardRefusal, PagePart
@@ -464,6 +466,11 @@ REFUSALS: RefusalSamples = {
     "register_unavailable": [partial(refusal.register_unavailable, REGISTER.name)],
     "register_missing": [partial(refusal.register_missing, REGISTER.name)],
     "settings_not_saved": [refusal.settings_not_saved],
+    "setting_refused": [
+        lambda: refusal.setting_refused(FieldProblem("folder_okresow", settings_messages.periods_directory_path()))
+    ],
+    "settings_change_unknown": [refusal.settings_change_unknown],
+    "settings_change_not_undoable": [refusal.settings_change_not_undoable],
     "unknown_period": [refusal.unknown_period],
     "period_folder_lookup": [
         lambda: refusal.period_folder_lookup(PeriodFolderLookupError(DAD_PERIODS, PARSED_PERIOD, ())),

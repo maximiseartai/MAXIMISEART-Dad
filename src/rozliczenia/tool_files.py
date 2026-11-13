@@ -23,12 +23,6 @@ def config_dir(root: Path) -> Path:
     return root / "config"
 
 
-def settings_file(root: Path) -> Path:
-    """Ustawienia taty (folder okresów, Rejestr zleceń) w ``config`` klonu narzędzia w ``root``."""
-
-    return config_dir(root) / "centrum-ustawienia.yaml"
-
-
 def log_path(root: Path) -> Path:
     """Dziennik Centrum rozliczeń klonu narzędzia w ``root``; obok niego w ``logs`` leżą Logi Uruchomienia."""
 
@@ -40,7 +34,6 @@ WORKER_CONFIG: Final = CONFIG_DIR / "worker_mapping.yaml"
 WORKER_TEMPLATE: Final = CONFIG_DIR / "Wzorzec rozliczenia pracownika.xlsx"
 COLLECTIVE_TEMPLATE: Final = CONFIG_DIR / "Wzorzec pliku zbiorczego.xlsx"
 INTERNAL_TEMPLATE: Final = CONFIG_DIR / "Wzorzec rozliczenia wewnętrznego.xlsx"
-SETTINGS: Final = settings_file(TOOL_ROOT)
 
 SETTLEMENT_METRICS: Final = TOOL_ROOT / ".rozliczenia-metrics.jsonl"
 PREPARATION_METRICS: Final = TOOL_ROOT / ".przygotowanie-pliku-zbiorczego-metrics.jsonl"

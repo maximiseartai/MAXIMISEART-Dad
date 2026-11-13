@@ -48,7 +48,8 @@ from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
-from rozliczenia.centrum.settings import Settings, SettingsStore
+from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import workers
@@ -156,7 +157,7 @@ class ReportReminders:
     def __init__(
         self,
         work: CentrumWork,
-        store: SettingsStore,
+        settings: CentrumSettings,
         configuration: ConfigurationFiles,
         mailbox: ReminderMailbox,
         files: DadFiles,
@@ -165,7 +166,7 @@ class ReportReminders:
     ) -> None:
         self._config = work.config
         self._log = work.log
-        self._store = store
+        self._settings = settings
         self._configuration = configuration
         self._mailbox = mailbox
         self._files = files
@@ -223,7 +224,7 @@ class ReportReminders:
         self._write(now, pora, found)
 
     def _send(self, now: datetime, found: _Check) -> None:
-        read = due_reminders(now, self._store.load(), self._config, self._configuration, self._mailbox, self._files)
+        read = due_reminders(now, self._settings.snapshot().folders, self._config, self._configuration, self._mailbox, self._files)
         match read:
             case NotRead():
                 found.failed = _Failed(read.cause, read.failure)
@@ -301,7 +302,7 @@ class NotRead:
 
 def due_reminders(
     now: datetime,
-    settings: Settings,
+    settings: FolderSettings,
     config: Path,
     configuration: ConfigurationFiles,
     mailbox: ReminderMailbox,

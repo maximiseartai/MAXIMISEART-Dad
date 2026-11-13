@@ -1433,6 +1433,29 @@ stop_note [zdanie]
 conflict_note [zdanie]
   Obok INTERMAX leży kopia konfliktu OneDrive ZLECENIA INTERMAX OD 08_11_2021-LAPTOP-TATY.xlsx. Otwórz w Excelu INTERMAX i tę kopię, przepisz do INTERMAX zmiany, których w nim brakuje, zapisz go i usuń kopię. Potem odśwież kartę.
 
+=== Ustawienia Centrum (zdania) (src/rozliczenia/centrum/settings/messages.py) ===
+
+not_text [zdanie]
+  Plik centrum-ustawienia.yaml w folderze config nie jest tekstem UTF-8. Zapisz Ustawienia jeszcze raz.
+
+damaged [zdanie]
+  Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz.
+
+other_schema [zdanie]
+  Plik centrum-ustawienia.yaml w folderze config zapisała inna wersja narzędzia. Zapisz Ustawienia jeszcze raz.
+
+unknown_key [zdanie]
+  Plik centrum-ustawienia.yaml w folderze config ma nieznane pole folder_okresu. Zapisz Ustawienia jeszcze raz.
+
+register_path [zdanie]
+  Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru.
+
+periods_directory_path [zdanie]
+  Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru.
+
+unknown_theme [zdanie]
+  Motyw może być tylko ciemny albo jasny.
+
 === Odmowy Centrum rozliczeń (src/rozliczenia/centrum/refusal.py) ===
 
 not_local_address [HTTP 403]
@@ -1464,6 +1487,15 @@ register_missing [HTTP 404]
 
 settings_not_saved [HTTP 500]
   Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie.
+
+setting_refused [HTTP 422]
+  Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru.
+
+settings_change_unknown [HTTP 404]
+  Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.
+
+settings_change_not_undoable [HTTP 404]
+  Tej zmiany nie da się cofnąć.
 
 unknown_period [HTTP 404]
   Nie ma takiego okresu.

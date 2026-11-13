@@ -43,20 +43,17 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime, timedelta
 import imaplib
-import os
 from pathlib import Path
 import smtplib
 import sys
-import time
 from typing import Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
@@ -83,9 +80,7 @@ _NOT_SENT: Final = "mail nie poszedl"
 def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) -> str:
     """Jedna linia wyniku próby; wysyła najwyżej jeden mail, tylko do ``target``."""
 
-    settings = SettingsStore(
-        config / tool_files.SETTINGS.name, log=CentrumLog(Path(os.devnull), append=lambda _: None), pause=time.sleep
-    ).load()
+    settings = read_snapshot(config).folders
     read = due_reminders(now, settings, config, ConfigurationFiles.in_folder(config), inbox, DadFiles())
     match read:
         case NotRead():

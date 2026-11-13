@@ -26,7 +26,7 @@ from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.file_state import file_state, path_state
 from rozliczenia.period_folder import (
     PeriodFolder,
@@ -226,28 +226,28 @@ def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> 
         raise refusal.period_folder_lookup(error) from None
 
 
-def requested_folder(store: SettingsStore, token: str) -> PeriodFolder:
+def requested_folder(settings: CentrumSettings, token: str) -> PeriodFolder:
     """Folder okresu z tokenu żądania przeglądarki; bez folderu okresów na miejscu odmowa „Najpierw wskaż …”, a folder
     okresów, którego nie da się odczytać, to ``PeriodFolderInaccessible`` z jego odszukania."""
 
-    periods_directory = store.load().periods_directory_to_read
+    periods_directory = settings.snapshot().folders.periods_directory_to_read
     if periods_directory is None:
         raise refusal.first_choose((PERIODS_DIRECTORY.name,))
     return located_period_folder(periods_directory, requested_period(token))
 
 
 def periods_router(
-    store: SettingsStore, platform: Platform, today: Callable[[], date], catalog: Catalog
+    settings: CentrumSettings, platform: Platform, today: Callable[[], date], catalog: Catalog
 ) -> APIRouter:
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 
     @router.get("", operation_id="getPeriodBoard")
     def board() -> periods_contract.PeriodBoard:
-        return read_board(store.load().periods_directory, today(), catalog)
+        return read_board(settings.snapshot().folders.periods_directory, today(), catalog)
 
     @router.post("/{token}/open", operation_id="openPeriodPath", responses=NOT_FOUND_OR_CONFLICT)
     def open_period_path(token: str, request: periods_contract.OpenRequest) -> common_contract.Opened:
-        folder = requested_folder(store, token)
+        folder = requested_folder(settings, token)
         path = folder.path_of(request.target)
         match path_state(path):
             case "inaccessible":
@@ -265,7 +265,7 @@ def periods_router(
         responses=NOT_FOUND_OR_CONFLICT,
     )
     def open_worker_settlement(token: str, request: periods_contract.WorkerSettlementRequest) -> common_contract.Opened:
-        folder = requested_folder(store, token)
+        folder = requested_folder(settings, token)
         path = folder.worker_settlement(request.worker)
         # Nazwa Wykonawcy z „/”, „\” albo „..” wyprowadziłaby ścieżkę poza Folder rozliczeń pracowników.
         inside = path.parent == folder.worker_settlements

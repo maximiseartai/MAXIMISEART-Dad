@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.domain import RunMode
@@ -36,6 +37,7 @@ from rozliczenia.workbook_files import ByteSource, file_bytes
 from tests.fixtures.centrum import (
     NO_EFENIX,
     RUN_LOGS_IN_BACKGROUND,
+    STOP_S,
     CentrumClient,
     FakeGitHub,
     FakeOneDrive,
@@ -77,13 +79,16 @@ class Engines:
 
     ``fail_engine``: silnik rzuca nieoczekiwany wyjątek, zanim przeczyta pliki taty. ``fail_summary``:
     silnik kończy pracę, a wynik procesu (``Process.result``) rzuca wyjątek, czyli podsumowania nie da się pokazać.
-    ``fail_core``: sam rdzeń Uruchomienia (``run_process``) rzuca wyjątek, więc nie oddaje wyniku.
+    ``fail_core``: sam rdzeń Uruchomienia (``run_process``) rzuca wyjątek, więc nie oddaje wyniku. ``release``:
+    rdzeń czeka przed pracą, aż test go puści (``set``), a ``held`` mówi, że już czeka.
     """
 
     metrics: MetricsPaths
     fail_engine: bool = False
     fail_summary: bool = False
     fail_core: bool = False
+    release: threading.Event | None = None
+    held: threading.Event = field(default_factory=threading.Event)
 
     def catalog(self) -> Catalog:
         return self.metrics.catalog().steered(self._steered).with_engine(self._engine)
@@ -95,6 +100,9 @@ class Engines:
 
     def _steered(self, real: Process[InputsT, SummaryT, RunContext]) -> Process[InputsT, SummaryT, RunContext]:
         def execute(inputs: InputsT, context: RunContext) -> SummaryT:
+            if self.release is not None:
+                self.held.set()
+                assert self.release.wait(STOP_S), "test nie puścił rdzenia"
             if self.fail_engine:
                 raise RuntimeError("nieprzewidziany błąd przy SYN-001")
             return real.execute(inputs, context)
@@ -565,6 +573,14 @@ def stopped_for_maks(centrum: PreparingCentrum | SettlingCentrum) -> str:
     assert view["result"]["stop_kind"] == "for_maks"
     run_logs_handled(centrum)
     return str(view["run"]["id"])
+
+
+def settings_changed_at(centrum: PreparingCentrum) -> list[str]:
+    """Początek linii Zgłoszenia o każdej zmianie Ustawień Centrum, od najnowszej: chwila wiersza Historii Ustawień,
+    źródło i plik."""
+
+    rows = centrum.client.get("/api/settings/history").json()["rows"]
+    return [f"- {datetime.fromisoformat(row['at']):%Y-%m-%d %H:%M} · tata · {SETTINGS_FILE}" for row in rows]
 
 
 def run_logs_handled(centrum: PreparingCentrum | SettlingCentrum) -> None:
