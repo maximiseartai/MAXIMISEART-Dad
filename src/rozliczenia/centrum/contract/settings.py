@@ -62,10 +62,12 @@ class SettingProblem(Model):
 
 class Settings(Model):
     """Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
-    dobre wartości, a bez nich nie ustawiono i motyw domyślny."""
+    dobre wartości, a bez nich nie ustawiono i motyw domyślny. ``periods_all_years``: folder okresów to korzeń układu
+    folderów taty, z którego Centrum widzi Foldery okresu wszystkich lat (``Załączniki``)."""
 
     order_register: PathSetting
     periods_directory: PathSetting
+    periods_all_years: bool
     theme: Theme
     folders_problem: SettingProblem | None
 

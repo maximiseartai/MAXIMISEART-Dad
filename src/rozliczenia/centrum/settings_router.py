@@ -21,7 +21,13 @@ from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.settings.files import Bad, Good, Unreadable
-from rozliczenia.centrum.settings.folders import DEFAULT_THEME, FOLDERS, FolderSettings, SettingState
+from rozliczenia.centrum.settings.folders import (
+    DEFAULT_THEME,
+    FOLDERS,
+    FolderSettings,
+    SettingState,
+    periods_directory_root,
+)
 from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
 from rozliczenia.file_state import file_state
@@ -49,7 +55,15 @@ def settings_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
     @router.put("/folders", operation_id="changeFolders", responses=_REFUSED)
     def change_folders(change: settings_contract.FoldersChange) -> settings_contract.Choice:
         register, periods_directory = _path(change.order_register), _path(change.periods_directory)
-        return saved(lambda current: replace(current, register=register, periods_directory=periods_directory))
+        root = None if periods_directory is None else periods_directory_root(periods_directory)
+
+        # Sekcja odsyła obie ścieżki, więc zapisany folder okresów zostaje, jaki jest (np. tydzień, do którego tata
+        # cofnął zmianę z Wydania), a od korzenia układu zapisuje się tylko folder wskazany na nowo.
+        def edit(current: FolderSettings) -> FolderSettings:
+            kept = periods_directory == current.periods_directory
+            return replace(current, register=register, periods_directory=periods_directory if kept else root)
+
+        return saved(edit)
 
     @router.post("/register/choose", operation_id="chooseRegister")
     def choose_register() -> settings_contract.Choice:
@@ -78,7 +92,8 @@ def settings_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
         chosen = platform.choose_folder(_PERIODS_DIALOG)
         if chosen is None:
             return settings_contract.Choice(settings=describe(settings.view()))
-        return saved(lambda current: replace(current, periods_directory=chosen))
+        root = periods_directory_root(chosen)
+        return saved(lambda current: replace(current, periods_directory=root))
 
     @router.put("/theme", operation_id="changeTheme")
     def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Choice:
@@ -125,7 +140,11 @@ def describe(view: SettingsView) -> settings_contract.Settings:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")
             return settings_contract.Settings(
-                order_register=unreadable, periods_directory=unreadable, theme=DEFAULT_THEME, folders_problem=None
+                order_register=unreadable,
+                periods_directory=unreadable,
+                periods_all_years=False,
+                theme=DEFAULT_THEME,
+                folders_problem=None,
             )
         case Good(value=folders):
             problem = None
@@ -135,6 +154,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
     return settings_contract.Settings(
         order_register=_describe_path(folders.register, folders.register_state),
         periods_directory=_describe_path(folders.periods_directory, folders.periods_directory_state),
+        periods_all_years=folders.periods_directory_all_years,
         theme=folders.theme,
         folders_problem=problem,
     )

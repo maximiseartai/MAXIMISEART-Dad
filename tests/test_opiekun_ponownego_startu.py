@@ -190,7 +190,9 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
     assert not work.exists()
     assert ToolClone(clone).interrupted_update() is None
     events = [line.split(" ", 2)[1] for line in _log_lines(clone)]
+    # Pierwszy start klonu zapamiętuje zmiany Ustawień z Wydania (bez folderu okresów: nic do zmiany), drugi już nie.
     assert events == [
+        "ustawienia-wydanie",
         "start",
         "zamkniecie",
         "stop",

@@ -13,7 +13,7 @@ import pytest
 
 from rozliczenia import preparation_messages
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
-from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.message import Message
@@ -335,7 +335,10 @@ def test_diagnoza_brakujacego_folderu_okresow_wyjasnia_brak_jak_przygotowanie_ch
     (year / "11_Listopad_2026").mkdir()
     periods = centrum.fixture.periods_directory.rename(year / "11_Listopad_2026" / "INEA")
     (periods / centrum.fixture.period_directory.name).mkdir(exist_ok=True)
-    chosen_folders(centrum, centrum.fixture.register_path, periods)
+    # Folder okresów zapisany w środku układu przed #1472: wybór zapisałby dziś Załączniki.
+    centrum.tool.settings.write_text(
+        FOLDERS.dump(FolderSettings(register=centrum.fixture.register_path, periods_directory=periods)), encoding="utf-8"
+    )
     run_id = stopped_for_maks(centrum)
     periods.rename(year / "11_Listopad_2026" / "INEA-przeniesiony")
 

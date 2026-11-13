@@ -521,7 +521,7 @@ NOT_SWEPT: dict[str, str] = {
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 _BOARD = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
-_SETTINGS = {"ustawienia", "rejestr", "folder_okresow"}
+_SETTINGS = {"ustawienia", "rejestr", "folder_okresow", "folder_miesiaca"}  # miesiąc: korzeń układu (#1472)
 _METRICS = {"metryki_przygotowania", "metryki_przebiegu", "metryki_uporzadkowania"}
 _NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "uwagi_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
 _RUN = {"ustawienia", "rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}

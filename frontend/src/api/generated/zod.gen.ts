@@ -1664,7 +1664,8 @@ export const zUnreadablePath = z.object({
  * Settings
  *
  * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
- * dobre wartości, a bez nich nie ustawiono i motyw domyślny.
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny. ``periods_all_years``: folder okresów to korzeń układu
+ * folderów taty, z którego Centrum widzi Foldery okresu wszystkich lat (``Załączniki``).
  */
 export const zSettings = z.object({
     order_register: z.discriminatedUnion('state', [
@@ -1681,6 +1682,7 @@ export const zSettings = z.object({
         zUnreadablePath,
         zReadyPath
     ]),
+    periods_all_years: z.boolean(),
     theme: z.enum(['dark', 'light']),
     folders_problem: zSettingProblem.nullable()
 });
