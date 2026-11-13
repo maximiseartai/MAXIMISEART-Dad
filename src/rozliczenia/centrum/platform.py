@@ -10,6 +10,11 @@ Przed startem serwera (``launcher``) są jeszcze dwie akcje systemowe:
 ``has_console()`` i ``show_start_problem()``, czyli natywne okienko z
 komunikatem startu, gdy Centrum uruchomiono skrótem bez konsoli. Moduł używa
 tylko biblioteki standardowej.
+
+Autostart Windows to osobny port (``Autostart``): skrót „Centrum rozliczeń” w
+folderze Autostart taty, który przełącznik w Ustawieniach zakłada albo usuwa.
+Na Windows obsługuje go ``shortcut.StartupShortcut`` (``shortcut.system_autostart``),
+a komputer bez Windows go nie ma (``NO_AUTOSTART``).
 """
 
 from __future__ import annotations
@@ -18,10 +23,10 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Protocol, TextIO
+from typing import Any, Final, Literal, Protocol, TextIO
 
 FileTypes = Sequence[tuple[str, str]]  # (opis, wzorzec nazwy) w oknie wyboru pliku
 
@@ -35,6 +40,76 @@ class Platform(Protocol):
 
     def choose_folder(self, title: str) -> Path | None:
         """Natywne okno wyboru folderu; ``None``, gdy tata anulował."""
+
+
+AutostartState = Literal["on", "off", "unsupported"]
+"""Skrót Centrum w folderze Autostart jest, nie ma go albo komputer nie ma Autostartu Windows."""
+
+
+class Autostart(Protocol):
+    def state(self) -> AutostartState:
+        """Czy skrót Centrum jest w folderze Autostart; ``OSError``, gdy folderu nie da się teraz sprawdzić."""
+
+    def enable(self) -> None:
+        """Zakłada albo nadpisuje skrót Centrum w folderze Autostart; ``OSError``, gdy się nie udało."""
+
+    def disable(self) -> None:
+        """Usuwa skrót Centrum z folderu Autostart (brak skrótu to nie błąd); ``OSError``, gdy się nie udało."""
+
+
+class _NoAutostart:
+    """Komputer bez Autostartu Windows: stan ``unsupported``, a zmiany nie dochodzą tu, bo odmawia ich właściciel
+    Ustawień."""
+
+    def state(self) -> AutostartState:
+        return "unsupported"
+
+    def enable(self) -> None:
+        raise OSError("Ten komputer nie ma Autostartu Windows.")
+
+    def disable(self) -> None:
+        raise OSError("Ten komputer nie ma Autostartu Windows.")
+
+
+NO_AUTOSTART: Final[Autostart] = _NoAutostart()
+
+NO_CONSOLE_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+"""Flaga Windows, z którą program konsolowy uruchomiony z Centrum nie otwiera tacie okna konsoli; poza Windows 0.
+
+Centrum ze skrótu działa pod ``pythonw``, bez konsoli, więc każdy program konsolowy (PowerShell, pip, Git) dostałby
+od Windows własne okno, które mignie tacie i zabierze fokus przeglądarce. Programy czekające na wynik Centrum
+uruchamia przez ``run_console_program``, a ``Popen`` z innymi flagami dokłada do nich tę."""
+
+
+class ConsoleRun(Protocol):
+    def __call__(
+        self, command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Uruchamia program konsolowy i czeka na niego; ``subprocess.TimeoutExpired`` po ``timeout_s``."""
+
+
+def run_console_program(
+    command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Program konsolowy bez okna konsoli i bez wejścia, z wyjściem jako tekst UTF-8; wynik czyta wołający po kodzie.
+
+    Po ``timeout_s`` zabija program i rzuca ``subprocess.TimeoutExpired``, więc zawieszony program nie trzyma
+    wołającego (np. blokady Ustawień) bez końca.
+    """
+
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8-sig",
+        errors="replace",
+        timeout=timeout_s,
+        check=False,
+        creationflags=NO_CONSOLE_WINDOW,
+    )
 
 
 def has_console() -> bool:

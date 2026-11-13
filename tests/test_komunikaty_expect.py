@@ -144,6 +144,8 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "register_path": [settings_messages.register_path],
             "periods_directory_path": [settings_messages.periods_directory_path],
             "unknown_theme": [settings_messages.unknown_theme],
+            "autostart_unsupported": [settings_messages.autostart_unsupported],
+            "autostart_unreadable": [settings_messages.autostart_unreadable],
         },
     ),
 }

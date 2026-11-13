@@ -15,7 +15,17 @@ FEATURE = "okno-ustawien"
 # The groups of sections in the order of ADR 0032 that have a section now; Ilości has none yet.
 SHOWN_GROUPS = ("Praca", "Pliki", "Połączenia", "Narzędzie", "Historia")
 HIDDEN_GROUPS = ("Ilości",)
-SECTIONS = ("Foldery", "Wykonawcy", "Wzorce", "Kopie INTERMAX", "Zgłoszenia", "Narzędzie", "Wygląd", "Historia")
+SECTIONS = (
+    "Foldery",
+    "Wykonawcy",
+    "Wzorce",
+    "Kopie INTERMAX",
+    "Skrzynka raportów",
+    "Zgłoszenia",
+    "Narzędzie",
+    "Wygląd",
+    "Historia",
+)
 FOLDERS = "#/ustawienia/foldery"
 # Dad's narrow browser window, where the window Ustawienia fills the screen.
 NARROW: ViewportSize = {"width": 420, "height": 860}

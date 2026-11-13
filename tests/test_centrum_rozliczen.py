@@ -10,12 +10,14 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterator, Sequence
+import unicodedata
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Literal, get_args
+import imaplib
 
 from fastapi.testclient import TestClient
 import pytest
@@ -34,6 +36,7 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
+from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings import history as history_module
@@ -52,6 +55,7 @@ from rozliczenia.centrum.settings.release_changes import (
     ReleaseInputs,
 )
 from rozliczenia.centrum.tool_freshness import ToolFreshness
+from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
     CENTRUM,
@@ -67,6 +71,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.tool_clone import tool_repository
 
+from atrapy.skrzynka_raportow import AtrapaImap
 import export_openapi
 
 
@@ -212,13 +217,15 @@ UNREADABLE = {"state": "unreadable"}
 DAMAGED = "Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."
 REGISTER_PATH = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
 PERIODS_PATH = "Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru."
+NO_INBOX: dict[str, object] = {"inbox": {"address": None, "password": False}, "inbox_problem": None}
+"""Skrzynka raportów bez pliku dostępu: bez adresu i bez hasła (#1469)."""
 
 
 def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
     response = centrum(tmp_path).client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "periods_all_years": False, "theme": "dark", "folders_problem": None}
+    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "periods_all_years": False, "theme": "dark", "folders_problem": None, **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF}
 
 
 def test_wskazany_rejestr_zlecen_i_folder_okresow_sa_zapamietane(tmp_path: Path) -> None:
@@ -271,6 +278,7 @@ def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosci
         "periods_all_years": False,
         "theme": "dark",
         "folders_problem": {"field": None, "message": DAMAGED},
+        **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF,
     }
 
 
@@ -317,6 +325,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
             "periods_all_years": False,
             "theme": "dark",
             "folders_problem": None,
+            **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF,
         },
     )
 
@@ -335,7 +344,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
 
     assert (response.status_code, response.json()) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "periods_all_years": False, "theme": "dark", "folders_problem": None},
+        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "periods_all_years": False, "theme": "dark", "folders_problem": None, **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF},
     )
 
 
@@ -356,7 +365,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
 
     assert (response.status_code, response.json()["settings"]) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "periods_all_years": False, "theme": "dark", "folders_problem": None},
+        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "periods_all_years": False, "theme": "dark", "folders_problem": None, **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF},
     )
 
 
@@ -413,6 +422,13 @@ SETTINGS_NOT_SAVED = (
     "Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, "
     "nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie."
 )
+AUTOSTART_NOT_CHANGED = (
+    "Nie udało się zmienić startu Centrum razem z Windows. Spróbuj ponownie. "
+    "Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie."
+)
+AUTOSTART_UNSUPPORTED = "Start razem z Windows działa tylko na komputerze z Windows."
+AUTOSTART_SHOWN_OFF = {"state": "off", "reason": None}
+AUTOSTART_UNREADABLE = "Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę."
 
 
 @pytest.mark.parametrize(
@@ -440,6 +456,7 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
         "periods_all_years": False,
         "theme": "light",
         "folders_problem": None,
+        **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF,
     }
 
 
@@ -647,6 +664,7 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
             "periods_all_years": False,
             "theme": "dark",
             "folders_problem": {"field": "folder_okresow", "message": PERIODS_PATH},
+            **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF,
         },
     )
     assert second.json() == first.json()
@@ -1292,6 +1310,408 @@ def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze
         time.tzset()
 
     assert row["at"].endswith("Z")
+
+
+AUTOSTART_ON = {"key": "narzedzie.autostart", "before": "wylaczony", "after": "wlaczony"}
+AUTOSTART_OFF = {"key": "narzedzie.autostart", "before": "wlaczony", "after": "wylaczony"}
+
+
+def autostart(app: Centrum, enabled: bool) -> Any:
+    return app.client.put("/api/settings/autostart", json={"enabled": enabled})
+
+
+def test_przelacznik_autostartu_dwa_razy_wlaczony_daje_jeden_skrot_a_wylaczony_go_usuwa(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    before = app.client.get("/api/settings").json()["autostart"]["state"]
+
+    enabled, again = autostart(app, True), autostart(app, True)
+    shortcuts_after_two = sorted(path.name for path in app.autostart.folder.iterdir())
+    disabled = autostart(app, False)
+    rows = history_rows(app)
+
+    assert before == "off"
+    assert (enabled.json()["settings"]["autostart"]["state"], again.json()["settings"]["autostart"]["state"]) == ("on", "on")
+    assert shortcuts_after_two == [SHORTCUT_FILE]
+    assert (again.json()["change"], app.autostart.enabled) == (None, 1)
+    assert (disabled.json()["settings"]["autostart"]["state"], list(app.autostart.folder.iterdir())) == ("off", [])
+    assert [(row["source"], row["section"], row["changes"], row["undoable"]) for row in rows] == [
+        ("tata", "narzedzie", [AUTOSTART_OFF], True),
+        ("tata", "narzedzie", [AUTOSTART_ON], True),
+    ]
+    assert [enabled.json()["change"], disabled.json()["change"]] == [row["id"] for row in rows[::-1]]
+    assert "ustawienia-zmiana plik=autostart klucze=narzedzie.autostart zrodlo=tata" in app.log_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_skrot_autostartu_z_instalacji_jest_stanem_wyjsciowym_a_usuniety_recznie_to_wylaczony_z_wierszem_spoza_centrum(
+    tmp_path: Path,
+) -> None:
+    """Polecenie instalacji założyło skrót przed Wydaniem z Ustawieniami; potem ktoś usuwa go z folderu Autostart."""
+
+    app = centrum(tmp_path)
+    app.autostart.enable()
+    installed = app.client.get("/api/settings").json()["autostart"]["state"]
+    rows_after_install = history_rows(app)
+
+    app.autostart.disable()
+    removed = app.client.get("/api/settings").json()["autostart"]["state"]
+    again = app.client.get("/api/settings").json()["autostart"]["state"]
+    [outside] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{outside['id']}/undo")
+
+    assert (installed, rows_after_install) == ("on", [])
+    assert (removed, again) == ("off", "off")
+    assert (outside["source"], outside["changes"], outside["undoable"], outside["removed"]) == (
+        "outside",
+        [AUTOSTART_OFF],
+        True,
+        False,
+    )
+    assert (undone.json()["settings"]["autostart"]["state"], [path.name for path in app.autostart.folder.iterdir()]) == (
+        "on",
+        [SHORTCUT_FILE],
+    )
+    assert "ustawienia-spoza plik=autostart wynik=zapisano" in app.log_path.read_text(encoding="utf-8")
+
+
+def test_wlaczenie_autostartu_ktorego_wiersza_historii_nie_da_sie_dopisac_nie_zostawia_skrotu(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.client.get("/api/settings")
+    history = app.tool.config / HISTORY_FILE
+    history.mkdir(parents=True)
+
+    refused = autostart(app, True)
+    history.rmdir()
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (list(app.autostart.folder.iterdir()), app.client.get("/api/settings").json()["autostart"]) == ([], AUTOSTART_SHOWN_OFF)
+    assert history_rows(app) == []
+
+
+def test_skrot_autostartu_ktorego_system_nie_daje_zalozyc_zostawia_stan_bez_zmiany_i_bez_wiersza(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.autostart.failure = PermissionError(errno.EACCES, "Odmowa dostępu")
+
+    refused = autostart(app, True)
+    app.autostart.failure = None
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (app.client.get("/api/settings").json()["autostart"], history_rows(app)) == (AUTOSTART_SHOWN_OFF, [])
+
+
+def test_folder_autostartu_ktorego_nie_da_sie_sprawdzic_to_zdanie_przy_przelaczniku_a_nie_skrot_usuniety(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    autostart(app, True)
+    app.autostart.unreadable = True
+
+    shown = app.client.get("/api/settings").json()["autostart"]
+    refused = autostart(app, False)
+    app.autostart.unreadable = False
+
+    assert shown == {"state": "unreadable", "reason": AUTOSTART_UNREADABLE}
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert ([path.name for path in app.autostart.folder.iterdir()], len(history_rows(app))) == ([SHORTCUT_FILE], 1)
+
+
+class PowerShellWithCodePage1252:
+    """PowerShell z WScript.Shell na Windows ze stroną kodową ANSI 1252 (angielski Windows, runner CI): zapisuje skrót
+    pod nazwą przepuszczoną przez tę stronę kodową, w której nie ma „ń”, więc ``ń`` zostaje ``n``.
+
+    ``takes_s``: tyle sekund PowerShell pisze skrót; dłużej niż limit czasu wołającego to ``TimeoutExpired`` jak w
+    ``platform.run_console_program``, po zapisaniu skrótu. ``exit_code``: kod wyjścia PowerShella po zapisaniu skrótu,
+    np. 1, gdy ``Save()`` zapisał część pliku i padł.
+    """
+
+    def __init__(self) -> None:
+        self.takes_s = 1.0
+        self.exit_code = 0
+
+    def __call__(
+        self, command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        assert env is not None
+        link = Path(env["CENTRUM_SKROT_PLIK"])
+        in_code_page = unicodedata.normalize("NFKD", link.name).encode("cp1252", errors="ignore").decode("cp1252")
+        (link.parent / in_code_page).write_bytes(b"skrot")
+        if self.takes_s > timeout_s:
+            raise subprocess.TimeoutExpired(list(command), timeout_s)
+        return subprocess.CompletedProcess(list(command), self.exit_code, "", "")
+
+
+def startup_shortcut(tmp_path: Path, powershell: PowerShellWithCodePage1252) -> tuple[CentrumClient, Path]:
+    folder, windowless_python = tmp_path / "autostart", tmp_path / "pythonw.exe"
+    folder.mkdir()
+    windowless_python.write_bytes(b"")
+    autostart = StartupShortcut(folder, program=windowless_python, run=powershell)
+    return CentrumClient(centrum_app(ToolDirectory(tmp_path), autostart=autostart)), folder
+
+
+def test_przelacznik_autostartu_zaklada_skrot_centrum_rozliczen_lnk_takze_gdy_strona_kodowa_windows_nie_ma_litery_n(
+    tmp_path: Path,
+) -> None:
+    client, folder = startup_shortcut(tmp_path, PowerShellWithCodePage1252())
+
+    enabled = client.put("/api/settings/autostart", json={"enabled": True})
+    after_enable = sorted(path.name for path in folder.iterdir())
+    disabled = client.put("/api/settings/autostart", json={"enabled": False})
+
+    assert (enabled.status_code, enabled.json()["settings"]["autostart"]["state"]) == (200, "on"), enabled.text
+    assert after_enable == ["Centrum rozliczeń.lnk"]
+    assert (disabled.json()["settings"]["autostart"]["state"], list(folder.iterdir())) == ("off", [])
+
+
+def test_powershell_ktory_nie_zapisze_skrotu_w_limicie_czasu_to_odmowa_bez_skrotu_a_ustawienia_dalej_odpowiadaja(
+    tmp_path: Path,
+) -> None:
+    powershell = PowerShellWithCodePage1252()
+    client, folder = startup_shortcut(tmp_path, powershell)
+    powershell.takes_s = 60  # zawieszony na minutę, a blokada Ustawień nie czeka tyle
+
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+    powershell.takes_s = 1.0
+    after_refusal = list(folder.iterdir())
+    shown = client.get("/api/settings").json()["autostart"]
+    enabled = client.put("/api/settings/autostart", json={"enabled": True})
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (shown, after_refusal) == (AUTOSTART_SHOWN_OFF, [])
+    assert enabled.json()["settings"]["autostart"]["state"] == "on"
+    assert [path.name for path in folder.iterdir()] == ["Centrum rozliczeń.lnk"]
+
+
+def test_powershell_ktory_skonczy_bledem_po_zapisaniu_czesci_skrotu_to_odmowa_bez_skrotu_w_autostarcie(tmp_path: Path) -> None:
+    powershell = PowerShellWithCodePage1252()
+    client, folder = startup_shortcut(tmp_path, powershell)
+    powershell.exit_code = 1
+
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (client.get("/api/settings").json()["autostart"], list(folder.iterdir())) == (AUTOSTART_SHOWN_OFF, [])
+
+
+def test_plik_przerwanego_zapisu_skrotu_nie_zostaje_w_autostarcie_przy_przelaczniku_wylaczonym(tmp_path: Path) -> None:
+    """Centrum zgasło w trakcie PowerShella, który potem dokończył zapis pod nazwą pośrednią: Windows uruchomiłby z
+    niego Centrum po zalogowaniu, choć przełącznik mówi „off”."""
+
+    client, folder = startup_shortcut(tmp_path, PowerShellWithCodePage1252())
+    client.put("/api/settings/autostart", json={"enabled": True})
+    client.put("/api/settings/autostart", json={"enabled": False})
+    (folder / "Centrum rozliczen (zapis).lnk").write_bytes(b"skrot")
+
+    shown = client.get("/api/settings").json()["autostart"]
+
+    assert (shown, list(folder.iterdir())) == (AUTOSTART_SHOWN_OFF, [])
+    assert [row["source"] for row in client.get("/api/settings/history").json()["rows"]] == ["tata", "tata"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Autostart Windows jest tylko na Windows; tu komputer bez niego.")
+def test_na_komputerze_bez_windows_przelacznik_autostartu_jest_nieaktywny_z_jednym_zdaniem(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    client = CentrumClient(centrum_app(tool, autostart=system_autostart()))
+
+    shown = client.get("/api/settings").json()["autostart"]
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+    history = client.get("/api/settings/history").json()
+
+    assert shown == {"state": "unsupported", "reason": AUTOSTART_UNSUPPORTED}
+    assert (refused.status_code, refused.json()) == (422, {"message": AUTOSTART_UNSUPPORTED, "field": "autostart"})
+    assert (history["rows"], (tool.config / MEMORY_DIRECTORY / "autostart.json").exists()) == ([], False)
+
+
+# --- Hasło skrzynki raportów (#1469): pole bez starego hasła, jedna próba logowania, Historia bez wartości -------------
+
+SKRZYNKA = "raporty@przyklad.invalid"
+STARE_HASLO = "stare haslo maksa"
+NOWE_HASLO = "nowe haslo taty"
+"""Hasło aplikacji tak, jak je wpisuje tata (Google pokazuje je w czwórkach ze spacjami); plik dostaje je bez spacji."""
+
+
+def _inbox_centrum(tmp_path: Path, imap: AtrapaImap | None = None) -> tuple[CentrumClient, ToolDirectory]:
+    """Centrum z plikiem skrzynki napisanym przez Maksa w Notatniku (BOM UTF-8, CRLF); bez ``imap`` skrzynka bez sieci."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True, exist_ok=True)
+    (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
+    if imap is None:
+        return CentrumClient(centrum_app(tool)), tool
+    return CentrumClient(centrum_app(tool, inbox_connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port))), tool
+
+
+def _files_with_password(tool: ToolDirectory, passwords: Sequence[str]) -> list[str]:
+    """Pliki katalogu narzędzia poza plikiem skrzynki, w których jest któreś z ``passwords`` otwartym tekstem.
+
+    Hasło szuka się też bez spacji, bo tak trafia do pliku skrzynki; rekurencyjnie, więc i w pamięci odrzuconych.
+    """
+
+    secrets = {form.encode() for password in passwords for form in (password, password.replace(" ", ""))}
+    access = tool.config / INBOX_ACCESS_FILE
+    files = [path for path in sorted(tool.root.rglob("*")) if path.is_file() and path != access]
+    return [path.relative_to(tool.root).as_posix() for path in files if any(secret in path.read_bytes() for secret in secrets)]
+
+
+@pytest.mark.parametrize(
+    ("haslo_skrzynki", "zerwanie", "wynik", "polecenia"),
+    [
+        (NOWE_HASLO.replace(" ", ""), None, "accepted", ["LOGIN", "LOGOUT"]),
+        ("inne haslo w gmailu", None, "rejected", ["LOGIN", "LOGOUT"]),
+        (NOWE_HASLO.replace(" ", ""), "greeting", "no_network", []),
+    ],
+    ids=["przyjete", "odrzucone", "brak-sieci"],
+)
+def test_nowe_haslo_skrzynki_zastepuje_tylko_linie_hasla_a_jedna_proba_logowania_mowi_czy_skrzynka_je_przyjela(
+    tmp_path: Path, haslo_skrzynki: str, zerwanie: Literal["greeting"] | None, wynik: str, polecenia: list[str]
+) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=haslo_skrzynki, cut=zerwanie) as imap:
+        client, tool = _inbox_centrum(tmp_path, imap)
+        saved = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+        # ``imaplib`` 3.11 pyta o ``CAPABILITY`` osobno, a 3.14 bierze je z powitania: to nie decyzja portu.
+        commands = [command for command in imap.commands if command != "CAPABILITY"]
+
+    assert (saved.status_code, saved.json()["login"]) == (200, wynik)
+    assert commands == polecenia
+    assert saved.json()["settings"]["inbox"] == {"address": SKRZYNKA, "password": True}
+    assert (tool.config / INBOX_ACCESS_FILE).read_bytes() == f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode("utf-8-sig")
+
+
+def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_historia_ma_wiersz_bez_cofniecia(
+    tmp_path: Path,
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    shown = client.get("/api/settings")
+
+    saved = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    again = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    read = client.get("/api/settings")
+    history = client.get("/api/settings/history")
+    [row] = history.json()["rows"]
+    undo = client.post(f"/api/settings/history/{row['id']}/undo")
+    client.stop()
+
+    assert (saved.json()["login"], saved.json()["change"], again.json()["change"]) == ("no_network", row["id"], None)
+    assert (row["source"], row["section"], row["secret"], row["undoable"]) == ("tata", "skrzynka", True, False)
+    assert row["changes"] == [{"key": "skrzynka.haslo", "before": None, "after": None}]
+    assert undo.status_code == 404
+    responses = [shown, saved, again, read, history, undo]
+    secrets = [secret for value in (STARE_HASLO, NOWE_HASLO) for secret in (value, value.replace(" ", ""))]
+    assert [secret for secret in secrets for response in responses if secret.encode() in response.content] == []
+    assert _files_with_password(tool, [STARE_HASLO, NOWE_HASLO]) == []
+    assert tool.log_path.is_file()
+
+
+def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Path) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    client.get("/api/settings")
+    (tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\nhaslo od maksa\n", encoding="utf-8")
+
+    rows = client.get("/api/settings/history").json()["rows"]
+    again = client.get("/api/settings/history").json()["rows"]
+
+    assert [(row["source"], row["changes"], row["secret"], row["undoable"]) for row in rows] == [
+        ("outside", [{"key": "skrzynka.dostep", "before": None, "after": None}], True, False)
+    ]
+    assert again == rows
+    assert b"haslo" not in client.get("/api/settings/history").content
+
+
+@pytest.mark.parametrize(
+    ("plik", "haslo", "pole"),
+    [
+        (f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n", "   ", "haslo"),
+        (f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n", "hasło taty", "haslo"),
+        ("\r\n\r\n", NOWE_HASLO, "adres"),
+        (None, NOWE_HASLO, "adres"),
+    ],
+    ids=["puste", "polskie-znaki", "plik-bez-adresu", "bez-pliku"],
+)
+def test_haslo_ktorego_skrzynka_nie_uzyje_jest_odmowa_przy_polu_bez_zapisu_i_bez_logowania(
+    tmp_path: Path, plik: str | None, haslo: str, pole: str
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    if plik is None:
+        access.unlink()
+    else:
+        access.write_text(plik, encoding="utf-8")
+    before = access.read_bytes() if plik is not None else None
+
+    refused = client.put("/api/settings/inbox-password", json={"password": haslo})
+
+    assert (refused.status_code, refused.json()["field"]) == (422, pole)
+    assert (access.read_bytes() if access.exists() else None) == before
+    assert client.get("/api/settings/history").json()["rows"] == []
+
+
+ZLE_ADRES = "Adres skrzynki raportów w pliku skrzynka-raportow.txt jest zły. Poprawia go Maks."
+ZLE_HASLO = "Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków."
+NIE_TEKST = "Plik skrzynka-raportow.txt w folderze config nie jest tekstem. Poproś Maksa o nowy plik."
+
+
+@pytest.mark.parametrize(
+    ("plik", "skrzynka", "problem", "zapis"),
+    [
+        (
+            f"{SKRZYNKA}\r\nstarehasło\r\n".encode("utf-8-sig"),
+            {"address": SKRZYNKA, "password": True},
+            {"field": "haslo", "message": ZLE_HASLO},
+            f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode("utf-8-sig"),
+        ),
+        (
+            f"Skrzynka <{SKRZYNKA}>\r\n{STARE_HASLO}\r\n".encode(),
+            {"address": None, "password": True},
+            {"field": "adres", "message": ZLE_ADRES},
+            None,
+        ),
+        (b"\xff\xfe\x00\xd8", {"address": None, "password": False}, {"field": None, "message": NIE_TEKST}, None),
+    ],
+    ids=["zle-stare-haslo", "zly-adres", "nie-tekst"],
+)
+def test_zly_plik_skrzynki_ma_zdanie_w_ustawieniach_a_nowe_haslo_taty_naprawia_tylko_zle_stare_haslo(
+    tmp_path: Path, plik: bytes, skrzynka: dict[str, object], problem: dict[str, object], zapis: bytes | None
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    access.write_bytes(plik)
+
+    shown = client.get("/api/settings").json()
+    put = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    rows = client.get("/api/settings/history").json()["rows"]
+
+    assert (shown["inbox"], shown["inbox_problem"]) == (skrzynka, problem)
+    if zapis is None:
+        refused = put.json()
+        assert (put.status_code, refused.get("field"), refused["message"]) == (422, problem["field"], problem["message"])
+        assert (access.read_bytes(), rows) == (plik, [])
+    else:
+        assert (put.status_code, put.json()["settings"]["inbox"], put.json()["settings"]["inbox_problem"]) == (
+            200,
+            {"address": SKRZYNKA, "password": True},
+            None,
+        )
+        assert access.read_bytes() == zapis
+        assert [change["key"] for row in rows for change in row["changes"]] == ["skrzynka.haslo"]
+    assert _files_with_password(tool, ["starehasło", STARE_HASLO, NOWE_HASLO]) == []
+
+
+@pytest.mark.parametrize(
+    ("plik", "zapis"),
+    [
+        (f"{SKRZYNKA}\nstare\n# notatka maksa\n".encode(), f"{SKRZYNKA}\nnowehaslotaty\n# notatka maksa\n".encode()),
+        (f"{SKRZYNKA}\r\nstare\r\n".encode("utf-16"), f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode()),
+    ],
+    ids=["lf-i-dalsze-linie", "utf-16"],
+)
+def test_nowe_haslo_zostawia_znak_konca_linii_i_dalsze_linie_pliku_maksa(tmp_path: Path, plik: bytes, zapis: bytes) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    access.write_bytes(plik)
+
+    put = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+
+    assert (put.status_code, access.read_bytes()) == (200, zapis)
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:

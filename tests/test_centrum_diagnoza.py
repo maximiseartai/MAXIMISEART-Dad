@@ -19,6 +19,7 @@ from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.message import Message
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.wall_clock import local_now
+from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
@@ -374,6 +375,26 @@ def test_zgloszenie_ma_zmiany_ustawien_z_30_dni_z_folderem_sama_nazwa_bez_sciezk
         "",
     ]
     assert not zawiera_wartosc("\n".join(lines), account.name)
+
+
+def test_zgloszenie_ma_zmiane_hasla_skrzynki_samym_kluczem_bez_hasla(tmp_path: Path) -> None:
+    """Zmiana hasła skrzynki raportów trafia do Zgłoszenia jako „zmieniono: skrzynka.haslo”, bez starego i nowego hasła
+    (#1469, D4 projektu Ustawień)."""
+
+    centrum = preparing_centrum(tmp_path)
+    access = centrum.tool.config / INBOX_ACCESS_FILE
+    access.write_text("raporty@przyklad.invalid\nstare haslo maksa\n", encoding="utf-8")
+    centrum.client.get("/api/settings")
+    centrum.client.put("/api/settings/inbox-password", json={"password": "nowe haslo taty"})
+    chosen_folders(centrum, centrum.fixture.register_path, centrum.fixture.periods_directory)
+    run_id = stopped_for_maks(centrum)
+
+    body = diagnose(centrum, run_id)["report"]["body"]
+
+    [secret] = [row for row in _history(centrum) if row["secret"] and row["source"] == "tata"]
+    at = f"{datetime.fromisoformat(secret['at']).astimezone():%Y-%m-%d %H:%M}"
+    assert f"- {at} · tata · {INBOX_ACCESS_FILE} · zmieniono: skrzynka.haslo" in body.splitlines()
+    assert [word for word in ("haslo maksa", "haslo taty", "haslomaksa", "haslotaty") if word in body] == []
 
 
 def test_zgloszenie_podaje_zmiane_ustawien_z_wydania_z_numerem_wydania_i_id_zmiany(tmp_path: Path) -> None:

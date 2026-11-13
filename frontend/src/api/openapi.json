@@ -1706,6 +1706,47 @@
         }
       }
     },
+    "/api/settings/autostart": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Autostart",
+        "operationId": "changeAutostart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutostartChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/folders": {
       "put": {
         "tags": [
@@ -1806,6 +1847,48 @@
               }
             },
             "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/inbox-password": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Inbox Password",
+        "description": "Nowe hasło zastępuje tylko linię hasła pliku; po każdym udanym zapisie jedna próba logowania mówi, czy\nskrzynka je przyjęła. Odrzucone hasło zostaje zapisane, a tata wpisuje je jeszcze raz.",
+        "operationId": "changeInboxPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxPasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxPasswordSaved"
+                }
+              }
+            }
           },
           "422": {
             "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
@@ -2199,7 +2282,9 @@
               "openRegister",
               "choosePeriodsDirectory",
               "changeTheme",
+              "changeInboxPassword",
               "changeFolders",
+              "changeAutostart",
               "getSettingsHistory",
               "undoSettingsChange",
               "getPeriodBoard",
@@ -2267,6 +2352,54 @@
         ],
         "title": "ApiTiming",
         "description": "Jedno zapytanie API widoku: czas w przeglądarce i czas serwera z ``Server-Timing`` (``None``: brak nagłówka)."
+      },
+      "AutostartChange": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "AutostartChange",
+        "description": "Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa."
+      },
+      "AutostartSetting": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "unsupported",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "reason"
+        ],
+        "title": "AutostartSetting",
+        "description": "Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma\nAutostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:\nzdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``."
       },
       "BoardFile": {
         "properties": {
@@ -3309,6 +3442,83 @@
         ],
         "title": "InaccessiblePath",
         "description": "Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa)."
+      },
+      "InboxPasswordChange": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "InboxPasswordChange",
+        "description": "Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis)."
+      },
+      "InboxPasswordSaved": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "login": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected",
+              "no_network"
+            ],
+            "title": "Login"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings",
+          "login"
+        ],
+        "title": "InboxPasswordSaved",
+        "description": "Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”."
+      },
+      "InboxSetting": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "password": {
+            "type": "boolean",
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address",
+          "password"
+        ],
+        "title": "InboxSetting",
+        "description": "Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy."
       },
       "IntermaxCopies": {
         "properties": {
@@ -6843,6 +7053,22 @@
                 "type": "null"
               }
             ]
+          },
+          "inbox": {
+            "$ref": "#/components/schemas/InboxSetting"
+          },
+          "inbox_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "autostart": {
+            "$ref": "#/components/schemas/AutostartSetting"
           }
         },
         "additionalProperties": false,
@@ -6852,10 +7078,13 @@
           "periods_directory",
           "periods_all_years",
           "theme",
-          "folders_problem"
+          "folders_problem",
+          "inbox",
+          "inbox_problem",
+          "autostart"
         ],
         "title": "Settings",
-        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. ``periods_all_years``: folder okresów to korzeń układu\nfolderów taty, z którego Centrum widzi Foldery okresu wszystkich lat (``Załączniki``)."
+        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``)."
       },
       "SettingsHistory": {
         "properties": {

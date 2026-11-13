@@ -15,7 +15,9 @@ export const zApiTiming = z.object({
         'openRegister',
         'choosePeriodsDirectory',
         'changeTheme',
+        'changeInboxPassword',
         'changeFolders',
+        'changeAutostart',
         'getSettingsHistory',
         'undoSettingsChange',
         'getPeriodBoard',
@@ -54,6 +56,32 @@ export const zApiTiming = z.object({
     ]),
     browser_ms: z.int().gte(0).lte(600000),
     server_ms: z.int().gte(0).lte(600000).nullable()
+});
+
+/**
+ * AutostartChange
+ *
+ * Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa.
+ */
+export const zAutostartChange = z.object({
+    enabled: z.boolean()
+});
+
+/**
+ * AutostartSetting
+ *
+ * Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma
+ * Autostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:
+ * zdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``.
+ */
+export const zAutostartSetting = z.object({
+    state: z.enum([
+        'on',
+        'off',
+        'unsupported',
+        'unreadable'
+    ]),
+    reason: z.string().nullable()
 });
 
 /**
@@ -336,6 +364,25 @@ export const zInaccessiblePath = z.object({
     state: z.literal('inaccessible'),
     path: z.string(),
     name: z.string()
+});
+
+/**
+ * InboxPasswordChange
+ *
+ * Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis).
+ */
+export const zInboxPasswordChange = z.object({
+    password: z.string()
+});
+
+/**
+ * InboxSetting
+ *
+ * Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy.
+ */
+export const zInboxSetting = z.object({
+    address: z.string().nullable(),
+    password: z.boolean()
 });
 
 /**
@@ -1664,8 +1711,9 @@ export const zUnreadablePath = z.object({
  * Settings
  *
  * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
- * dobre wartości, a bez nich nie ustawiono i motyw domyślny. ``periods_all_years``: folder okresów to korzeń układu
- * folderów taty, z którego Centrum widzi Foldery okresu wszystkich lat (``Załączniki``).
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
+ * jest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum
+ * widzi Foldery okresu wszystkich lat (``Załączniki``).
  */
 export const zSettings = z.object({
     order_register: z.discriminatedUnion('state', [
@@ -1684,7 +1732,10 @@ export const zSettings = z.object({
     ]),
     periods_all_years: z.boolean(),
     theme: z.enum(['dark', 'light']),
-    folders_problem: zSettingProblem.nullable()
+    folders_problem: zSettingProblem.nullable(),
+    inbox: zInboxSetting,
+    inbox_problem: zSettingProblem.nullable(),
+    autostart: zAutostartSetting
 });
 
 /**
@@ -1697,6 +1748,21 @@ export const zSettings = z.object({
 export const zChoice = z.object({
     settings: zSettings,
     change: z.string().nullish()
+});
+
+/**
+ * InboxPasswordSaved
+ *
+ * Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”.
+ */
+export const zInboxPasswordSaved = z.object({
+    settings: zSettings,
+    change: z.string().nullish(),
+    login: z.enum([
+        'accepted',
+        'rejected',
+        'no_network'
+    ])
 });
 
 /**
@@ -2699,6 +2765,13 @@ export const zReportRunResponse = z.discriminatedUnion('state', [
  */
 export const zGetSettingsResponse = zSettings;
 
+export const zChangeAutostartBody = zAutostartChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeAutostartResponse = zChoice;
+
 export const zChangeFoldersBody = zFoldersChange;
 
 /**
@@ -2719,6 +2792,13 @@ export const zUndoSettingsChangePath = z.object({
  * Successful Response
  */
 export const zUndoSettingsChangeResponse = zChoice;
+
+export const zChangeInboxPasswordBody = zInboxPasswordChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeInboxPasswordResponse = zInboxPasswordSaved;
 
 /**
  * Successful Response

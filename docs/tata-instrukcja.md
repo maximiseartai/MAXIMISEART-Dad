@@ -34,7 +34,9 @@ Pierwszą instalację robi osoba utrzymująca narzędzie:
    trafia do Autostartu Windows, więc Centrum startuje samo po zalogowaniu, bez
    otwierania karty; kartę otwierasz skrótem z pulpitu. Drugie polecenie
    powtórz tylko po przeniesieniu folderu narzędzia albo po instalacji nowego
-   Pythona.
+   Pythona. Start razem z Windows wyłączasz i włączasz przełącznikiem
+   `Uruchamiaj Centrum razem z Windows` w oknie `Ustawienia`, w sekcji
+   `Narzędzie`.
 
 Osoba utrzymująca narzędzie umieszcza w folderze `config` narzędzia trzy
 wzorce: `Wzorzec rozliczenia wewnętrznego.xlsx`, `Wzorzec pliku zbiorczego.xlsx`

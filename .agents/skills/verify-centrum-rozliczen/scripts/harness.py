@@ -56,6 +56,12 @@ class Pace(Enum):
             time.sleep(int(path.read_text(encoding="utf-8")) / 1000)
 
 
+INBOX_ADDRESS = "raporty@przyklad.invalid"
+INBOX_PASSWORD = "nowehaslotaty"
+"""The skrzynka raportów the served Centrum logs in to (an ``AtrapaImap``, never Dad's Gmail) and the one password it
+accepts."""
+
+
 class Switch(Enum):
     """A failure the served Centrum scripts while this file exists; the drive turns it off by removing the file."""
 
@@ -64,6 +70,8 @@ class Switch(Enum):
     ARCHIVE_REFUSED = f"{_BOX}/odmawia-archiwum"  # every step of an Archiwum is refused (GitHub's 403)
     GITHUB_OFFLINE = f"{_GITHUB}/brak-sieci"  # GitHub's Wydania are out of reach
     REGISTER_FAULT = "awaria/odczyt-rejestru"  # reading the Rejestr zleceń raises an exception the process does not expect
+    NO_AUTOSTART = "skrot-autostartu/bez-windows"  # the computer has no Windows Autostart, like a Mac
+    INBOX_OFFLINE = "skrzynka-raportow/brak-sieci"  # the skrzynka raportów (its atrapa IMAP) is out of reach
 
     def file(self, root: Path) -> Path:
         return root / self.value
@@ -119,6 +127,7 @@ class File(Enum):
     CLOCK_MOVE = "zegar/przesuniecie-min.txt"  # the minutes Centrum's clock moved forward
     # The served Centrum writes these, the drive reads them.
     CLOCK_DIED = "zegar/budzik-padl.txt"  # the traceback of the clock's wake-up thread that died
+    AUTOSTART_SHORTCUT = "skrot-autostartu/Centrum rozliczeń.lnk"  # Centrum's shortcut in the Autostart folder; the drive may remove it
     EFENIX_ADDRESS = f"{_EFENIX}/adres.txt"  # the address of the Atrapa efenix
     SERVER = "server.json"  # the pid and port of the served Centrum
     # The fixture writes this, both sides read it.

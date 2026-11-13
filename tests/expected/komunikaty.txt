@@ -1456,6 +1456,12 @@ periods_directory_path [zdanie]
 unknown_theme [zdanie]
   Motyw może być tylko ciemny albo jasny.
 
+autostart_unsupported [zdanie]
+  Start razem z Windows działa tylko na komputerze z Windows.
+
+autostart_unreadable [zdanie]
+  Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę.
+
 === Odmowy Centrum rozliczeń (src/rozliczenia/centrum/refusal.py) ===
 
 not_local_address [HTTP 403]
@@ -1499,6 +1505,9 @@ settings_change_not_undoable [HTTP 404]
 
 settings_history_unreadable [HTTP 500]
   Nie udało się odczytać Historii Ustawień. Odśwież okno Ustawień za chwilę.
+
+autostart_not_changed [HTTP 500]
+  Nie udało się zmienić startu Centrum razem z Windows. Spróbuj ponownie. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie.
 
 unknown_period [HTTP 404]
   Nie ma takiego okresu.

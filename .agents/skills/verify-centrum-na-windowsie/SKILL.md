@@ -161,8 +161,8 @@ Proof standards:
 - The stand-ins are the browser recorder and the local origin; both are labelled `harness:` in `drive.txt`.
 - Look at `pulpit/` after a change to a native window: a passing run does not judge how it looks.
 - GitHub's runner is a stand-in for Dad's laptop. It does not prove: Dad's Polish Windows (code page 1250; the runner
-  is English, 1252, so `WScript.Shell` writes the shortcut as `Centrum rozliczen.lnk` and only `ó` can be the
-  Polish letter in the tool's path), OneDrive's online-only files, Python from python.org via `py -3` (the runner's comes from
+  is English, 1252, so only `ó` can be the Polish letter in the tool's path, while the shortcut's own name
+  `Centrum rozliczeń.lnk` is the same in both code pages), OneDrive's online-only files, Python from python.org via `py -3` (the runner's comes from
   `actions/setup-python`), Git for Windows installed outside `PATH`, Excel as the program for `.xlsx` (the runner has
   none, so the drive opens only a folder), a touch screen, and the real desktop. Those stay unverified until Dad's
   computer runs them.

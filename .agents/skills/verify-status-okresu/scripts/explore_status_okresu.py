@@ -60,6 +60,7 @@ from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.platform import NO_AUTOSTART
 from rozliczenia.centrum.settings.folders import FOLDERS
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.shutdown import Shutdown
@@ -458,13 +459,14 @@ def _centrum(case: Path, periods: Path) -> TestClient:
     app = create_app(
         config=config,
         platform=_Platform(),
+        autostart=NO_AUTOSTART,
         log=log,
         shutdown=Shutdown(log),
         today=lambda: TODAY,
         # No Historia: the Wycena w efenix of the period was never run.
         catalog=CATALOG.with_metrics({key: config / f"metryki-{key}.jsonl" for key in CATALOG.metrics_paths}),
     )
-    CentrumSettings(config, log=log, now=local_now, pause=lambda _: None).change(
+    CentrumSettings(config, log=log, now=local_now, pause=lambda _: None, autostart=NO_AUTOSTART).change(
         FOLDERS, lambda folders: replace(folders, periods_directory=periods)
     )
     # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.

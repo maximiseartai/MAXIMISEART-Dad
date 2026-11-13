@@ -19,6 +19,11 @@ const THEMES = new Map([
   ["light", "Jasny"],
 ])
 
+const AUTOSTART = new Map([
+  ["wlaczony", "Włączony"],
+  ["wylaczony", "Wyłączony"],
+])
+
 /** Nazwa ścieżki: ostatni człon, pełna ścieżka w podpowiedzi. */
 function pathName(value: string): string {
   return value.split(/[\\/]/).findLast((part) => part !== "") ?? value
@@ -31,6 +36,9 @@ const KEYS = new Map<string, Key>([
   ["foldery.rejestr_zlecen", { label: "Rejestr zleceń", shown: pathName }],
   ["foldery.folder_okresow", { label: "Folder okresów", shown: pathName }],
   ["wyglad.motyw", { label: "Motyw", shown: (value) => THEMES.get(value) ?? value }],
+  ["skrzynka.haslo", { label: "Hasło skrzynki raportów", shown: (value) => value }],
+  ["skrzynka.dostep", { label: "Dostęp do skrzynki raportów", shown: (value) => value }],
+  ["narzedzie.autostart", { label: "Start razem z Windows", shown: (value) => AUTOSTART.get(value) ?? value }],
 ])
 
 function keyOf(change: HistoryChange): Key {

@@ -515,9 +515,13 @@ NOT_SWEPT: dict[str, str] = {
     "keepManualValue": "zapisuje tylko plik decyzji w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
     "changeFolders": "zapisuje ścieżki z żądania i oddaje stan ścieżek jak getSettings, bez treści plików taty; zła wartość "
     "i niedostępny plik Ustawień: test_centrum_rozliczen",
+    "changeAutostart": "zakłada albo usuwa skrót w folderze Autostart i oddaje stan ścieżek jak getSettings, bez treści "
+    "plików taty; porażka skrótu i Historii: test_centrum_rozliczen",
     "getSettingsHistory": "czyta tylko Historię Ustawień w config, nie pliki taty; urwana linia: test_centrum_rozliczen",
     "undoSettingsChange": "cofa wiersz Historii Ustawień jak changeTheme i changeFolders, bez treści plików taty: "
     "test_centrum_rozliczen",
+    "changeInboxPassword": "zmienia tylko linię hasła pliku dostępu skrzynki raportów w config i loguje się do skrzynki, "
+    "bez plików taty; zła wartość, zły plik skrzynki i trzy wyniki logowania: test_centrum_rozliczen",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 _BOARD = _FOLDERS | {"ustawienia", "plik_zbiorczy"}

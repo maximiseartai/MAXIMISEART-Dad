@@ -45,7 +45,7 @@ from rozliczenia.centrum.metrics import History, metrics_router
 from rozliczenia.centrum.notifications import Notifications, notifications_router
 from rozliczenia.centrum.period_board import periods_router
 from rozliczenia.centrum.period_start import PeriodStarts
-from rozliczenia.centrum.platform import Platform
+from rozliczenia.centrum.platform import Autostart, Platform
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_box import GitHubReportBox, ReportBox
 from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
@@ -82,7 +82,7 @@ from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.workbook_files import ByteSource, file_bytes  # noqa: TID251 - domyślne źródło bajtów uchwytu (create_app(source=...))
-from rozliczenia.worker_report_inbox import ImapInbox, ReminderMailbox, WorkerReportInbox
+from rozliczenia.worker_report_inbox import ImapConnect, ImapInbox, ReminderMailbox, WorkerReportInbox
 from rozliczenia.wall_clock import dad_today, local_now
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
@@ -94,6 +94,7 @@ def create_app(
     *,
     config: Path,
     platform: Platform,
+    autostart: Autostart,
     log: CentrumLog,
     shutdown: Shutdown,
     today: Callable[[], date] = dad_today,
@@ -113,6 +114,7 @@ def create_app(
     intermax_disk: Disk = LOCAL_DISK,
     now: Callable[[], datetime] = local_now,
     efenix_window: EfenixWindow | None = None,
+    inbox_connect: ImapConnect | None = None,
     worker_report_inbox: WorkerReportInbox | None = None,
     reminder_mailbox: ReminderMailbox | None = None,
     reminder_rhythm: ReminderRhythm | None = None,
@@ -192,8 +194,11 @@ def create_app(
 
     # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
     # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień.
-    settings = CentrumSettings(config, log=log, now=local_now, pause=pause)
-    app.include_router(settings_router(settings, platform))
+    settings = CentrumSettings(config, log=log, now=local_now, pause=pause, autostart=autostart)
+    # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
+    # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
+    inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
+    app.include_router(settings_router(settings, platform, inbox.try_login))
     configuration = configuration_files or ConfigurationFiles.default()
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
@@ -270,7 +275,6 @@ def create_app(
     )
     contexts = RunContexts(files=files, template_check=template_check)
     # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
-    # Skrzynka raportów taty w Gmailu z plikiem dostępu w ``config``; testy i skille podają atrapę.
     report_files = FileReportState.of_work(work)
     parts = HostParts(
         efenix=(efenix_window or EfenixWindow.of_tata()).opening(),
@@ -278,7 +282,7 @@ def create_app(
         now=now,
         waiting=Waiting(clock, pause),
         disk=intermax_disk,
-        reports=ReportEnteringParts(worker_report_inbox or ImapInbox(work.config), report_files),
+        reports=ReportEnteringParts(worker_report_inbox or inbox, report_files),
     )
     starts = PeriodStarts(settings, configuration, catalog, today, contexts, parts)
     # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
@@ -288,7 +292,7 @@ def create_app(
     # Przypomnienia o raporcie czytają INTERMAX tym samym uchwytem plików taty, bez Kopii wejścia, a skrzynkę i jej
     # „Wysłane” przez port skrzynki raportów; testy i skille podają atrapę skrzynki i rytm.
     reminders = ReportReminders(
-        work, settings, configuration, reminder_mailbox or ImapInbox(work.config), files, reports, now
+        work, settings, configuration, reminder_mailbox or inbox, files, reports, now
     )
     # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX; jej widok Raporty
     # pokazuje też wynik ostatniego sprawdzenia przypomnień.
