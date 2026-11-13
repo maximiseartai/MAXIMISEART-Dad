@@ -750,6 +750,7 @@ def _reminders(run: Run, page: Page) -> None:
     expect(preview).to_contain_text("Dzień dobry, czekam na raport za ")
     expect(preview).to_contain_text("Tata Testowy")
     run.check(not reminders.exists(), "the preview shows Dad's sentence and footer before anything is saved")
+    preview.scroll_into_view_if_needed()
     run.capture(page, "361-ustawienia-przypomnienia-podglad", full_page=False)
 
     window.get_by_role("button", name="Zapisz przypomnienia", exact=True).click()

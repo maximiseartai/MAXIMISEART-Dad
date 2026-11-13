@@ -283,11 +283,15 @@ function TimeInput({
   onChange: (value: string) => void
 }) {
   return (
+    // Tekst `GG:MM`, a nie pole czasu przeglądarki: to w angielskim systemie pokazuje 12-godzinny zegar z AM/PM.
     <Input
-      type="time"
+      inputMode="numeric"
+      autoComplete="off"
+      maxLength={5}
+      placeholder="GG:MM"
       aria-label={label}
       aria-invalid={invalid}
-      className="w-28 tabular-nums"
+      className="w-[4.75rem] text-center tabular-nums"
       value={value}
       onChange={(event) => onChange(event.target.value)}
     />
