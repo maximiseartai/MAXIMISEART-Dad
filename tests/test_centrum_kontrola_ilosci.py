@@ -816,6 +816,18 @@ def test_wyjatek_zostaje_po_zmianie_reguly_a_inny_wpis_taty_w_tej_komorce_to_now
     assert (ak(after_tata), after_tata["exceptions"]) == ([(22, 2, 3), (23, 2, 1)], 0)
 
 
+def test_wyjatek_jednego_z_dwoch_takich_samych_zlecen_nie_ukrywa_drugiego(tmp_path: Path) -> None:
+    """Dwa zlecenia o tej samej treści, porze i wpisie taty to dwie różnice: wyjątek jest jednego zlecenia."""
+
+    late_fault = TATA_ROWS[3]
+    centrum = centrum_with(tmp_path, [late_fault, late_fault])
+    run_to_end(centrum, dry_run=False)
+
+    saved = marked(centrum, at(differences(centrum), 18, "N"))
+
+    assert [(d["row"], d["column"]) for d in saved["differences"]["differences"]] == [(19, "N")]
+
+
 def test_cofnij_wyjatku_w_historii_przywraca_roznice_a_historia_mowi_zdaniem(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)

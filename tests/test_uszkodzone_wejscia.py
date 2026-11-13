@@ -44,6 +44,7 @@ from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.tool_update import RESULT_FILE
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
@@ -808,6 +809,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "dostep_skrzynki_raportow": TOOL.config / INBOX_ACCESS_FILE,
         "reguly_ilosci": TOOL.config / RULES_FILE,
         "lista_urzadzen": TOOL.config / DEVICES_FILE,
+        "wyjatki_kontroli_ilosci": TOOL.config / EXCEPTIONS_FILE,
     }
 
     assert state | {name: path.as_posix() for name, path in others.items()} == {
@@ -828,6 +830,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "dostep_skrzynki_raportow": "config/skrzynka-raportow.txt",
         "reguly_ilosci": "config/reguly-ilosci.yaml",
         "lista_urzadzen": "config/lista-urzadzen.yaml",
+        "wyjatki_kontroli_ilosci": "config/wyjatki-ilosci.yaml",
     }
 
 
