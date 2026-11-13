@@ -41,6 +41,16 @@ Kod 0 i ``SCAL OK`` znaczą, że PR jest scalony (albo z ``--bez-merge``: że by
 commitu merge'a i bazy, z którą sprawdziła scalenie, a gdy test scalenia biegł albo został pominięty, także jego
 wynik. Kod 1 to odmowa albo błąd narzędzia (``SCAL FAIL``).
 
+Werdykt (``--werdykt``) i merge (także ``--bez-merge``) sądzi kod ``origin/<baza PR>`` tuż po pobraniu bazy, nie kod
+checkoutu, z którego je uruchomiono: reguły werdyktu, bramki korzenia i wzoru opisu żyją w ``tools/`` i w plikach
+skilli, a checkout gałęzi PR albo stary checkout `main` może mieć ich starszą albo zmienioną wersję (#1573). Checkout,
+którego HEAD to ten commit bazy, bez zmian w plikach śledzonych przez Gita, sądzi sam. Każdy inny uruchamia to samo
+polecenie z odłączonej kopii tego commitu (``potomne.commit_copy``) tym samym Pythonem, z tym samym katalogiem
+roboczym, i kończy się jej kodem, a linia ``SĘDZIA`` przed jej wyjściem mówi, z którego commitu są reguły. PR, który
+sam zmienia te reguły, sądzi więc wersja z bazy, a jego zmiana obowiązuje od jego merge'a. Kopia, której baza
+w ``origin`` przesunęła się, zanim pobrała ją ponownie, nie uruchamia następnej kopii, tylko odmawia z poleceniem, by
+uruchomić ponownie. ``--przeglad`` biegnie w checkoucie, z którego go uruchomiono.
+
 Komentarze, recenzje i checki pochodzą z jednego ``gh pr view --json``, które doczytuje wszystkie strony
 komentarzy (sprawdzone na PR z 337 komentarzami, gh 2.101).
 """
@@ -49,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -73,6 +84,9 @@ import werdykt_scalenia
 CLEANUP = ROOT / "tools" / "sprzatanie.py"
 TEMPLATE = ROOT / ".agents" / "skills" / "pr" / "SKILL.md"
 CLEANUP_TIMEOUT_S = 300
+# Zmienna środowiska kopii bazy, którą uruchamia ``_judged_from_base``; kopia zdejmuje ją od razu, więc jej procesy
+# potomne (test scalenia z testami tego narzędzia) jej nie dziedziczą, a ``scal_pr.py`` bazy, który jej nie zna, ją pomija.
+FROM_BASE_COPY = "SCAL_PR_Z_KOPII_BAZY"
 EXAMPLES = """\
     .venv/bin/python tools/scal_pr.py 336               # sprawdza i scala
     .venv/bin/python tools/scal_pr.py 336 --bez-merge   # tylko sprawdza
@@ -122,11 +136,29 @@ def _remote_base(base: str) -> str:
     return listed.stdout.partition("\t")[0]
 
 
-def _check(pull: Pull) -> tuple[str, str]:
-    """SHA bazy, z którą scalenie przeszło, i dopisek linii ``SCAL OK`` o teście scalenia."""
+def _judged_from_base(pull: Pull, base: str, label: str, argv: list[str], *, from_copy: bool) -> int | None:
+    """``None``, gdy ten checkout to czysty checkout ``base`` (SHA ``origin/<baza PR>`` tuż po pobraniu) i sądzi sam;
+    inaczej kod wyjścia polecenia ``argv`` uruchomionego z kopii ``base``, a w kopii (``from_copy``) odmowa."""
+
+    head = repo.git(ROOT, "rev-parse", "HEAD").strip()
+    changed = repo.run_git(ROOT, "diff", "--quiet", "HEAD").returncode != 0
+    if head == base and not changed:
+        return None
+    if from_copy:
+        print(f"{label} ODMOWA | #{pull.number} | {pull.base} zmienił się w trakcie sprawdzania, uruchom ponownie")
+        return 1
+    here = f"{head[:7]}{' ze zmianami' if changed else ''}"
+    print(f"SĘDZIA | #{pull.number} | reguły z {REMOTE}/{pull.base} {base[:7]}, nie z checkoutu {here}: biegnę z kopii tego commitu", flush=True)
+    with potomne.commit_copy(ROOT, base) as copy:
+        command = [sys.executable, str(copy / "tools" / "scal_pr.py"), *argv]
+        environment = {**os.environ, FROM_BASE_COPY: "1", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+        return potomne.run(command, cwd=Path.cwd(), env=environment, echo=True).returncode
+
+
+def _check(pull: Pull, base: str) -> str:
+    """Dopisek linii ``SCAL OK`` o teście scalenia z bazą ``base`` (SHA ``origin/<baza PR>``)."""
 
     checked = werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)
-    base = werdykt_scalenia.fetch(pull.base, [checked])
     if problems := _problems(pull):
         raise _Refused("; ".join(problems))
     where = f"{pull.base} {base[:7]}"
@@ -135,7 +167,7 @@ def _check(pull: Pull) -> tuple[str, str]:
         verdict = werdykt_scalenia.merge_verdict(copy, where, base, None, checked)
         if verdict.state != "success":
             raise _Refused(verdict.description)
-        return base, testy_scalenia.merge_test(copy, where, base, pull.head)
+        return testy_scalenia.merge_test(copy, where, base, pull.head)
 
 
 def _merge_commit(number: int) -> str | None:
@@ -173,25 +205,22 @@ def _clean_up() -> str:
     return f"sprzątanie: {result or f'kod {done.returncode}'}"
 
 
-def _publish_verdict(number: int, path: Path) -> int:
-    pull = stan_pr.pull(number)
+def _publish_verdict(pull: Pull, path: Path) -> int:
     text = path.read_text(encoding="utf-8")
-    werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
     deployed = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
     if problems := werdykt_pr.publish_problems(text, pull, deployed):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
-    url = github.gh("pr", "comment", str(number), "--body-file", str(path)).strip()
+    url = github.gh("pr", "comment", str(pull.number), "--body-file", str(path)).strip()
     weeds = rejestr_korzeni.after_verdict(pull.number, text, pull.base, deployed, pull.repository)
     print(f"WERDYKT OK | #{pull.number} {pull.head[:7]} | {werdykt_pr.text_lines(text)[0].split()[1]} | {url}{weeds}")
     return 0
 
 
-def _merge(number: int, *, merge: bool) -> int:
-    pull = stan_pr.pull(number)
+def _merge(pull: Pull, base: str, *, merge: bool) -> int:
     where = f"#{pull.number} {pull.head[:7]}"
     try:
-        base, merge_test = _check(pull)
+        merge_test = _check(pull, base)
         if merge and _remote_base(pull.base) != base:
             raise _Refused(f"{pull.base} zmienił się w trakcie sprawdzania, uruchom ponownie")
     except (_Refused, testy_scalenia.Refused) as refusal:
@@ -200,8 +229,8 @@ def _merge(number: int, *, merge: bool) -> int:
     if not merge:
         print(f"SCAL OK | {where} | gotowy do merge'a z {pull.base} {base[:7]}, bez merge'a (--bez-merge){merge_test}{naprawia.close_fixed(pull, merged=False, merge_commit=None)}")
         return 0
-    github.gh("pr", "merge", str(number), "--merge", "--match-head-commit", pull.head)
-    merge_commit = _merge_commit(number)
+    github.gh("pr", "merge", str(pull.number), "--merge", "--match-head-commit", pull.head)
+    merge_commit = _merge_commit(pull.number)
     closed = naprawia.close_fixed(pull, merged=True, merge_commit=merge_commit)
     cleaned = _clean_up()
     if pull.base == MAIN:
@@ -220,14 +249,20 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--bez-merge", action="store_true", help="Sprawdź gotowość, ale nie scalaj.")
     mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
     mode.add_argument("--werdykt", type=Path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
-    args = parser.parse_args(argv)
+    from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
+    given = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(given)
     label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "SCAL"
     try:
         if args.przeglad:
             return kontekst_przegladu.print_context(args.numer)
+        pull = stan_pr.pull(args.numer)
+        base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
+        if (judged := _judged_from_base(pull, base, label, given, from_copy=from_copy)) is not None:
+            return judged
         if args.werdykt:
-            return _publish_verdict(args.numer, args.werdykt)
-        return _merge(args.numer, merge=not args.bez_merge)
+            return _publish_verdict(pull, args.werdykt)
+        return _merge(pull, base, merge=not args.bez_merge)
     except subprocess.CalledProcessError as error:
         command = " ".join(str(part) for part in error.cmd)
         print(f"{label} FAIL | {command}: {(error.stderr or error.stdout or '').strip()}")

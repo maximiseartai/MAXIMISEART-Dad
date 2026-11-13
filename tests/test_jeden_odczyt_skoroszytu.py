@@ -72,8 +72,8 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
     ): "klucz Zgłoszeń to plik tekstowy; bez dostępu jest brakiem klucza",
     (
         "read_bytes",
-        "rozliczenia/centrum/report_reminders.py::_text",
-    ): "dzień wdrożenia i stopka Przypomnień o raporcie to pliki tekstowe Maksa w config, nie pliki taty",
+        "rozliczenia/centrum/settings/migrations/reminders.py::_text",
+    ): "stare pliki dnia wdrożenia i stopki Przypomnień o raporcie to pliki tekstowe Maksa w config, nie pliki taty",
     (
         "read_bytes",
         "rozliczenia/centrum/settings/memory.py::settings_bytes",

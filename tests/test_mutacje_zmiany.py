@@ -21,6 +21,7 @@ from tests.fixtures.git_repo import commit, copy_files, git, repository, with_im
 
 from jednostka import Czesc
 from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected
+import niestabilne_testy
 import pokrycie_procesu
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -994,6 +995,31 @@ def test_testy_ktore_padaja_bez_mutacji_koncza_sie_bez_werdyktu_mutacji(tmp_path
 
     assert done.returncode == 2, done.stdout + done.stderr
     assert "NIEWYKRYTA" not in done.stdout and "WYKRYTA" not in done.stdout
+
+
+@pytest.mark.parametrize(("failures", "code"), [(1, 0), (2, 2)], ids=["pada-raz", "pada-dwa-razy"])
+def test_test_ktory_bez_mutacji_pada_raz_jest_flaky_testem_a_czesc_mutuje_dalej(tmp_path: Path, failures: int, code: int) -> None:
+    counter = tmp_path / "przebiegi"
+    flaky = (
+        f"\n\ndef test_niestabilny() -> None:\n    licznik = Path({str(counter)!r})\n"
+        "    przebieg = int(licznik.read_text()) if licznik.exists() else 0\n    licznik.write_text(str(przebieg + 1))\n"
+        f"    assert przebieg >= {failures}\n"
+    )
+    repo = _repo(tmp_path / "repo", "from pathlib import Path\n\n" + ALL_CASES + flaky)
+
+    done = _run(repo)
+
+    assert done.returncode == code, done.stdout + done.stderr
+    record = repo / ".ci-niestabilne" / "flaky-testy.json"
+    if code:
+        assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
+        assert not record.exists()
+        return
+    assert "FLAKY TESTY | przeszły po ponowieniu: tests/test_warunek.py::test_niestabilny" in done.stdout.splitlines()
+    assert done.stdout.splitlines()[-1].startswith("MUTACJE ZMIANY OK | mutacje=2")
+    assert [(flaky.test, flaky.zadanie) for flaky in niestabilne_testy.flaky_testy_z_json(record.read_text(encoding="utf-8"))[0]] == [
+        ("tests/test_warunek.py::test_niestabilny", "Change mutations (1/1)")
+    ]
 
 
 def test_zmieniona_linia_narzedzia_dostaje_mutacje_jak_linia_src(tmp_path: Path) -> None:

@@ -496,9 +496,20 @@ def _glob_matches(parts: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
 
 
 def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
-    """Katalog pakietu → jego pliki inne niż Python, także z podkatalogów, które nie są pakietami (``centrum/static``)."""
+    """Katalog pakietu → jego pliki inne niż Python, także z podkatalogów, które nie są pakietami (``centrum/static``).
 
-    packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"}
+    Pakiet ``tests`` nie ma danych: ``tests/__init__.py`` robiłby z każdego pliku spod ``tests/expected/`` i z
+    ``tests/ruff.toml`` wejście każdego testu. ``tests/fixtures`` zostaje pakietem z danymi, bo jego plik czyta fixture
+    (``uwagi-taty-z-powiadomieniami.json`` dla ``test_zgloszenia_ci.py``).
+
+    Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request tylko wtedy, gdy graf
+    (``sciezki_w_kodzie``) zobaczy ścieżkę tego pliku w pliku testu albo w module, który test importuje. Ten docstring
+    nie wylicza form, które graf widzi: wyznaczają je przypadki ``test_test_widzi_plik_spod_tests_czytany_droga_grafu``
+    (widziane) i ``test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu`` (przykłady niewidzianych, nie pełna
+    lista). Test czytający plik drogą, której graf nie widzi, wypada z wyboru na pull request, a łapie go pełne CI
+    ``main`` (ADR 0020)."""
+
+    packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"} - {"tests"}
     data: dict[str, set[str]] = defaultdict(set)
     for file in files:
         if file.endswith(".py"):

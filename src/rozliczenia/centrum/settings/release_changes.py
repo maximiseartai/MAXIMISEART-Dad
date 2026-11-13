@@ -17,6 +17,7 @@ from typing import Any, Final
 
 from rozliczenia.centrum.settings.files import Good
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
+from rozliczenia.centrum.settings.migrations import reminders as reminders_migration
 from rozliczenia.centrum.settings.migrations import workers as workers_migration
 from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Proposal, ReleaseChange, ReleaseInputs
 from rozliczenia.period_folder import PeriodFolderInaccessible, layout_root
@@ -51,5 +52,6 @@ def periods_directory_from_layout_root(inputs: ReleaseInputs[FolderSettings]) ->
 RELEASE_CHANGES: Final[tuple[ReleaseChange[Any], ...]] = (
     workers_migration.CHANGE,
     ReleaseChange("2026-11-folder-okresow-od-zalacznikow", FOLDERS, periods_directory_from_layout_root),
+    reminders_migration.CHANGE,
 )
 """Zmiany Ustawień Centrum, które niesie to Wydanie i każde poprzednie."""
