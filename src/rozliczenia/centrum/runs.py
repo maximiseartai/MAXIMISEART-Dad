@@ -121,7 +121,7 @@ class EndedRun:
     settings: SettingsSnapshot | None = None
     """Migawka Ustawień Centrum ze startu Uruchomienia (``PreparedRun.settings``), z której Logi biorą pliki procesu."""
     start_warnings: tuple[Message, ...] = ()
-    """Ostrzeżenia ze startu (``PreparedRun.warnings``): proces biegł na ostatniej dobrej Liście Wykonawców."""
+    """Ostrzeżenia ze startu (``Start.warnings``): proces biegł na ostatniej dobrej Liście Wykonawców."""
 
     @classmethod
     def of(
@@ -175,10 +175,16 @@ class EndedRun:
         return () if self.stopped is None else (self.stopped.stop.message,)
 
     @property
-    def warnings(self) -> tuple[Message, ...]:
-        """Ostrzeżenia ze startu, potem ostrzeżenia wyniku (przy Zatrzymaniu tylko ze startu)."""
+    def result_warnings(self) -> tuple[Message, ...]:
+        """Ostrzeżenia wyniku; przy Zatrzymaniu żadnych."""
 
-        return self.start_warnings + (() if self.shown is None else tuple(self.shown.warnings))
+        return () if self.shown is None else tuple(self.shown.warnings)
+
+    @property
+    def warnings(self) -> tuple[Message, ...]:
+        """Ostrzeżenia ze startu, potem ostrzeżenia wyniku."""
+
+        return self.start_warnings + self.result_warnings
 
     def card(self, view: ProcessView[Any]) -> runs_contract.RunOutcome:
         stopped = self.stopped

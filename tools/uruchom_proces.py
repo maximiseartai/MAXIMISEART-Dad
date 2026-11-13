@@ -246,6 +246,7 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace, parser: argpar
         pricing="z Przekazaniem" if values.get("handover") else None,
         workers=_workers(args.workers, parser) if "workers" in kind.needs else None,
         quantity_rules=DEFAULT_QUANTITY_RULES,
+        warnings=(),
     )
 
 

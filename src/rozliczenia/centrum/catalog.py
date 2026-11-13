@@ -112,7 +112,16 @@ class Catalog:
         inputs = kind.inputs(replace(start, pricing=pricing), parts)
         period = inputs.period if start.period is None else start.period
         return PreparedRun(
-            kind, period, inputs, context, self.metrics(key), pricing, self.engine, _CATALOG, start.settings
+            kind,
+            period,
+            inputs,
+            context,
+            self.metrics(key),
+            pricing,
+            self.engine,
+            _CATALOG,
+            start.settings,
+            start.warnings,
         )
 
 

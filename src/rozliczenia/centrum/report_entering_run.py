@@ -46,6 +46,7 @@ from rozliczenia.centrum.process_kind import (
     PathNeed,
     PreparedRun,
     Start,
+    start_warnings,
     workers_at_start,
 )
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
@@ -130,6 +131,7 @@ class ReportEnteringEntry:
             settings=snapshot,
             workers=workers,
             quantity_rules=snapshot.quantity_rules,
+            warnings=start_warnings(snapshot, _KIND.needs),
         )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 

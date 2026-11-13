@@ -14,7 +14,7 @@ Granicę importów modułu opisuje i sprawdza ``tests/test_granice_importow.py``
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -89,13 +89,14 @@ class Start:
     gospodarz go zna (karta, ``--period``, Logi); ``None``: okres wynika z wejścia. ``pricing``: tryb Wyceny w efenix
     wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
     trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: migawka Ustawień Centrum z chwili
-    startu, z której Logi Uruchomienia biorą pliki procesu, a Diagnoza Zatrzymania pliki i Listę Wykonawców, a karta
-    ostrzeżenie o ostatniej dobrej Liście Wykonawców; ``None``: gospodarz bez Ustawień Centrum (Skrypt dla maszyn,
-    odtworzenie). ``workers``: Lista Wykonawców z chwili startu (Centrum: migawka Ustawień,
-    Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces jej nie potrzebuje.
-    ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z chwili startu; gospodarz
-    bez Ustawień Centrum podaje Reguły ilości z Wydania. Pole nie ma wartości domyślnej, więc każdy gospodarz mówi, skąd
-    ma reguły.
+    startu, z której Logi Uruchomienia biorą pliki procesu, a Diagnoza Zatrzymania pliki i Listę Wykonawców; ``None``:
+    gospodarz bez Ustawień Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu
+    (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces
+    jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z
+    chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania. ``warnings``: ostrzeżenia startu na
+    kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_warnings`` z migawki Ustawień, Skrypt dla
+    maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ani ``warnings`` nie mają wartości
+    domyślnej, więc każdy gospodarz mówi, skąd je ma.
     """
 
     paths: Mapping[PathNeed, Path]
@@ -105,6 +106,7 @@ class Start:
     settings: SettingsSnapshot | None = None
     workers: WorkerList | None = None
     quantity_rules: QuantityRules = field(kw_only=True)
+    warnings: tuple[Message, ...] = field(kw_only=True)
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]
@@ -128,10 +130,12 @@ def workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
     return found
 
 
-def workers_warnings(workers: Read[WorkerList] | Unreadable) -> tuple[Message, ...]:
-    """Ostrzeżenie karty Uruchomienia, które biegnie na ostatniej dobrej Liście Wykonawców, bo plik ma złe ustawienie."""
+def start_warnings(settings: SettingsSnapshot, needs: Sequence[Need]) -> tuple[Message, ...]:
+    """Ostrzeżenia startu Uruchomienia procesu o potrzebach ``needs`` z migawki Ustawień Centrum (``Start.warnings``):
+    proces z Listą Wykonawców biegnie na ostatniej dobrej liście, bo plik ma złe ustawienie."""
 
-    if isinstance(workers, Bad) and workers.usable is not None:
+    workers = settings.workers
+    if "workers" in needs and isinstance(workers, Bad) and workers.usable is not None:
         return (diagnosis_messages.worker_list_last_good(workers.problem.sentence),)
     return ()
 
@@ -433,12 +437,12 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
     w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
-    ``engine``: silnik z katalogu (``run_process``; inny daje tylko wyrocznia
-    ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``). Powstaje tylko w ``Catalog.prepared``
-    (``_CATALOG``).
+    ``warnings``: ostrzeżenia startu na kartę i do Logów (``Start.warnings``), ``engine``: silnik z katalogu
+    (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
+    Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
     """
 
-    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing", "settings")
+    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing", "settings", "warnings")
 
     def __init__(
         self,
@@ -450,7 +454,8 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         pricing: runs_contract.Pricing | None,
         engine: Engine,
         proof: _Catalog,
-        settings: SettingsSnapshot | None = None,
+        settings: SettingsSnapshot | None,
+        warnings: tuple[Message, ...],
     ) -> None:
         self.kind: Final = kind
         self.period: Final = period
@@ -460,18 +465,11 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         self.pricing: Final = pricing
         self.engine: Final = engine
         self.settings: Final = settings
+        self.warnings: Final = warnings
 
     @property
     def dry_run(self) -> bool:
         return self.kind.core.dry_run(self.inputs)
-
-    @property
-    def warnings(self) -> tuple[Message, ...]:
-        """Ostrzeżenia ze startu na kartę i do Logów: proces z Listą Wykonawców biegnie na ostatniej dobrej liście."""
-
-        if self.settings is None or "workers" not in self.kind.needs:
-            return ()
-        return workers_warnings(self.settings.workers)
 
     @property
     def input_copy(self) -> InputCopy | None:

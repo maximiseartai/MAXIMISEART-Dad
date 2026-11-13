@@ -31,6 +31,7 @@ from rozliczenia.centrum.process_kind import (
     RecentWeeks,
     SettingField,
     Start,
+    start_warnings,
     workers_at_start,
 )
 from rozliczenia.centrum.settings.folders import FolderSettings
@@ -76,6 +77,7 @@ class PeriodStarts:
             settings=snapshot,
             quantity_rules=snapshot.quantity_rules,
             workers=workers_at_start(snapshot.workers) if "workers" in kind.needs else None,
+            warnings=start_warnings(snapshot, kind.needs),
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())
 

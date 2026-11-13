@@ -1101,6 +1101,29 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
         assert actions == {"szukanie", "otwarcie zlecenia", "data wykonania", "Wycena Emmetta", "ilość"}
 
 
+def test_uruchomienie_na_ostatniej_dobrej_liscie_wykonawcow_odtwarza_sie_z_ostrzezeniem_startu_z_logow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Przebieg rozliczeń, który biegł na ostatniej dobrej Liście Wykonawców, bo plik dostał złą treść po odczycie
+    Ustawień, ma ostrzeżenie startu w Logach jako fakt startu, a odtworzenie bierze je z Logów, bo Ustawień Centrum
+    Logi nie mają: odtworzenie na folderze Konfiguracji z dobrą listą jest zgodne, a nie różne na samym ostrzeżeniu."""
+
+    centrum = settling_centrum(tmp_path)
+    write_report_key(ToolDirectory(tmp_path))
+    assert centrum.client.get("/api/settings").json()["workers"]["state"] == "good"
+    good = centrum.tool.worker_list.read_bytes()
+    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+    assert run_to_end(centrum, dry_run=True)["result"]["result"] == "OK"
+    produced = Produced(_archive_file(centrum, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
+    centrum.tool.worker_list.write_bytes(good)
+    logged = [(message["code"], message.get("at_start")) for message in produced.record["messages"]]
+    assert logged == [("LISTA_WYKONAWCOW_OSTATNIA_DOBRA", True)], logged
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 @pytest.mark.parametrize(
     ("pricing", "change", "replayed_pricing"),
     [
