@@ -102,7 +102,9 @@ jest w `.gitignore`. W repozytorium jest tylko `config/wykonawcy.example.yaml`
 z syntetycznymi Wykonawcami, który pokazuje format. Tata prowadzi Listę
 Wykonawców sam w oknie Ustawienia, w sekcji Wykonawcy (ADR 0032): dodaje,
 zmienia i oznacza Nieaktywnego, a usuwa tylko Wykonawcę, którego login nie
-występuje w żadnym okresie. Pierwszy start Centrum po
+występuje w żadnym okresie. Sekcja podpowiada loginy z ostatnich zleceń Rejestru
+zleceń, których nie ma na liście, a adres nadawcy Raportu wykonawcy spoza listy
+tata przypisuje Wykonawcy z widoku Raporty. Pierwszy start Centrum po
 Aktualizacji łączy stare pliki `config\worker_mapping.yaml` i
 `config\adresy-wykonawcow.yaml` w Listę Wykonawców i zostawia je jako kopię.
 Testy i skrypty weryfikacyjne używają wyłącznie syntetycznych Wykonawców i nie

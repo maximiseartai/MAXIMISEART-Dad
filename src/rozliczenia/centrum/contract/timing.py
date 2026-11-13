@@ -28,6 +28,8 @@ ApiOperation = Literal[
     "changeWorker",
     "switchWorker",
     "removeWorker",
+    "getWorkerSuggestions",
+    "assignWorkerAddress",
     "chooseRegister",
     "openRegister",
     "choosePeriodsDirectory",

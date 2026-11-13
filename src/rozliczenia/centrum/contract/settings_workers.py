@@ -73,6 +73,31 @@ class WorkerEdit(WorkerForm):
     rename_confirmed: bool = False
 
 
+class WorkerAddress(Model):
+    """Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do
+    Wykonawcy…”)."""
+
+    address: str
+
+
+class WorkerSuggestion(Model):
+    """Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych
+    zleceń ma."""
+
+    login: str
+    orders: int
+
+
+class WorkerSuggestions(Model):
+    """Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
+    puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać); ``message``:
+    zdanie dla taty przy ``not_set`` i ``unreadable``."""
+
+    state: Literal["read", "not_set", "unreadable"]
+    suggestions: list[WorkerSuggestion]
+    message: str | None
+
+
 class WorkerSwitches(Model):
     """Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo
     ``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik."""

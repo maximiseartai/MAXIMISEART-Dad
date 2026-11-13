@@ -501,6 +501,7 @@ ENTRIES: dict[str, Entry] = {
     "sendDadNote": _route("sendDadNote", "POST", "/api/dad-notes", DAD_NOTE),
     "uwaga-przypieta": _pinned_dad_note(),
     "usuniecie-wykonawcy": _worker_removal(),
+    "getWorkerSuggestions": _route("getWorkerSuggestions", "GET", "/api/settings/workers/suggestions"),
     "podglad[przygotowanie]": _process_run("preparation", PERIOD),
     "podglad[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD),
     "zapis[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD, saving=True),
@@ -539,6 +540,8 @@ NOT_SWEPT: dict[str, str] = {
     "przypomnienia po przełączniku: test_centrum_rozliczen, test_centrum_wpisanie_raportow",
     "changeWorker": "usunięty login sprawdza okresy tą samą drogą co usuniecie-wykonawcy, a ostrzeżenie o starej nazwie "
     "listuje tylko Foldery rozliczeń pracowników i nieczytelnego folderu nie zgłasza; odmowy: test_centrum_rozliczen",
+    "assignWorkerAddress": "dopisuje tylko adres w Liście Wykonawców w config, bez plików taty; adres innego Wykonawcy i "
+    "cofnięcie: test_centrum_wpisanie_raportow",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
@@ -591,6 +594,7 @@ READS: dict[str, set[str]] = {
     "sendDadNote": {"dziennik_centrum", "folder_zgloszen", "klucz_zgloszen", "sprawy_taty"},
     "uwaga-przypieta": _METRICS | {"uruchomienia_centrum", "adresy_skrzynki"},
     "usuniecie-wykonawcy": _SETTINGS | _FOLDERS | {"plik_zbiorczy", "dziennik_centrum"},
+    "getWorkerSuggestions": _OWNER | {"rejestr"},
     "podglad[przygotowanie]": _PREPARATION,
     "podglad[przebieg]": _SETTLEMENT,
     "zapis[przebieg]": _SETTLEMENT,

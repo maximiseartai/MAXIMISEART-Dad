@@ -174,6 +174,16 @@ export function removeWorker(login: string) {
   return call("removeWorker", { path: { login } })
 }
 
+/** Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców albo zdanie, dlaczego ich nie ma. */
+export function getWorkerSuggestions() {
+  return call("getWorkerSuggestions")
+}
+
+/** „Przypisz do Wykonawcy…”: adres nieznanego nadawcy u Wykonawcy z loginem `login`, zapisany od razu. */
+export function assignWorkerAddress(login: string, address: string) {
+  return call("assignWorkerAddress", { path: { login }, body: { address } })
+}
+
 /** Historia Ustawień od najnowszej zmiany. */
 export function getSettingsHistory() {
   return call("getSettingsHistory")

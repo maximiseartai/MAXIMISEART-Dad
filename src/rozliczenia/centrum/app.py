@@ -196,9 +196,9 @@ def create_app(
     def health() -> Health:
         return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
 
-    # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie, dni INTERMAX i sprawdzenie okresów przy usunięciu
-    # loginu z Listy Wykonawców czytają nim pliki taty ze źródła bajtów ``source``, a jego pamięć to pamięć reguły danych
-    # pracy.
+    # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie, dni INTERMAX, sprawdzenie okresów przy usunięciu
+    # loginu z Listy Wykonawców i podpowiedzi sekcji Wykonawcy czytają nim pliki taty ze źródła bajtów ``source``, a jego
+    # pamięć to pamięć reguły danych pracy.
     files = DadFiles(source=source, forbidden=work.forbidden)
     # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
     # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień.
@@ -235,7 +235,7 @@ def create_app(
         cloud_files or CloudFiles.of_system(),
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
-    app.include_router(workers_router(settings))
+    app.include_router(workers_router(settings, files, today))
     app.include_router(quantity_rules_router(settings, price_list, RecentCollectiveFiles(files)))
     filling = FillingReads(work, files)
     app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))

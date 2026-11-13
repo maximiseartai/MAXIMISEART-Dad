@@ -62,6 +62,12 @@ drugi login; zmiana zapisuje się przyciskiem `Zapisz`. Przełącznik
 Pracownika, który ma zlecenia w Rejestrze zleceń albo w Pliku zbiorczym
 któregoś tygodnia, nie da się usunąć: gdy odchodzi, kliknij
 `Oznacz jako nieaktywnego`, a jego tygodnie dalej się rozliczą.
+Pod listą sekcja podpowiada loginy z kolumny `WYKONAWCA` zleceń bieżącego
+tygodnia i 4 poprzednich, których nie ma na liście: `Dodaj Wykonawcę` przy
+loginie otwiera formularz z wpisanym loginem. Gdy raport przyjdzie z adresu
+spoza listy, widok `Raporty` pokazuje ten adres z przyciskiem
+`Przypisz do Wykonawcy…`: wybierz pracownika, a adres dopisze się od razu i
+następne `Wpisz raporty z maili` wpisze ten raport.
 
 ### Foldery tygodni
 

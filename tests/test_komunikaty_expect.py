@@ -162,6 +162,8 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "worker_address_repeated": [settings_messages.worker_address_repeated],
             "worker_unknown": [settings_messages.worker_unknown],
             "worker_list_changed": [settings_messages.worker_list_changed],
+            "worker_suggestions_not_set": [settings_messages.worker_suggestions_not_set],
+            "worker_suggestions_unreadable": [settings_messages.worker_suggestions_unreadable],
             "worker_rename_old_files": [
                 partial(settings_messages.worker_rename_old_files, ("08_14_09_2026",)),
                 partial(settings_messages.worker_rename_old_files, ("08_14_09_2026", "01_07_09_2026", "25_31_08_2026")),

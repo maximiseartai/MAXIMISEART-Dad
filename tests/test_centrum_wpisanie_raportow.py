@@ -69,6 +69,7 @@ from rozliczenia.worker_reports import (
     SentReminder,
     SubjectFault,
     UnknownNumber,
+    UnknownSender,
     UnreadableSubject,
     Verdict,
 )
@@ -1116,6 +1117,95 @@ def test_raport_z_adresu_spoza_listy_wpisuje_sie_przy_nastepnym_kliknieciu_po_do
     assert _entering(centrum, second)["problems"] == []
     assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
     assert new_address not in json.dumps(centrum.run_logs(), ensure_ascii=False)
+
+
+NEW_ADDRESS = "jan.nowy@przyklad.invalid"
+
+
+def _assign(centrum: EnteringCentrum, login: str, address: str) -> Any:
+    """„Przypisz do Wykonawcy…” z widoku Raporty: adres nieznanego nadawcy u Wykonawcy z loginem ``login``."""
+
+    return centrum.client.post(f"/api/settings/workers/{login}/addresses", json={"address": address})
+
+
+def _addresses(centrum: EnteringCentrum) -> dict[str, list[str]]:
+    """Adresy Wykonawców z sekcji Wykonawcy po pierwszym loginie."""
+
+    workers = centrum.client.get("/api/settings").json()["workers"]["workers"]
+    return {worker["logins"][0]: worker["addresses"] for worker in workers}
+
+
+def _worker_rows(centrum: EnteringCentrum) -> list[dict[str, Any]]:
+    """Wiersze Historii Ustawień o Liście Wykonawców, od najnowszego."""
+
+    return [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
+
+
+def test_tata_przypisuje_nieznanego_nadawce_do_wykonawcy_a_nastepne_wpisanie_raportow_rozpoznaje_jego_raport(
+    tmp_path: Path,
+) -> None:
+    """US 25, ADR 0028: Raport z nowego adresu Jana stoi w widoku Raporty jako nieznany nadawca z samym dniem, adresem i
+    powodem, bez tematu i treści maila. Tata przypisuje adres Janowi: adres dopisuje się na Liście Wykonawców, nadawca w
+    widoku Raporty jest przypisany do Jana jeszcze przed następnym kliknięciem, a następne kliknięcie wpisuje ten sam mail
+    bez innej pracy."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
+    before = _cells(centrum.register)
+    _finished(centrum)
+    first = _view(centrum)
+
+    assigned = _assign(centrum, "jan.testowy", NEW_ADDRESS)
+    shown = _view(centrum)
+    second = _finished(centrum)
+
+    sender = SenderAddress.of(NEW_ADDRESS)
+    assert sender is not None
+    assert first["unknown_senders"] == [
+        {
+            "day": "2026-11-09",
+            "sender": NEW_ADDRESS,
+            "reason": reason(UnknownSender(MailId.of("<raport@przyklad.invalid>"), sender, date(2026, 11, 9))),
+            "worker": None,
+        }
+    ]
+    shown_first = json.dumps(first, ensure_ascii=False)
+    assert SUBJECT not in shown_first and "wymiana routera" not in shown_first, "widok Raporty bez tematu i treści maila"
+    assert assigned.status_code == 200, assigned.json()
+    assert _addresses(centrum)["jan.testowy"] == [JAN, NEW_ADDRESS]
+    assert [found["worker"] for found in shown["unknown_senders"]] == ["jan.testowy"]
+    assert _entering(centrum, second)["problems"] == []
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+
+
+def test_adres_innego_wykonawcy_nie_przypisuje_sie_a_cofniecie_przypisania_przywraca_nieznanego_nadawce(
+    tmp_path: Path,
+) -> None:
+    """US 25, 28: adresu, który ma już inny Wykonawca, nie da się przypisać: odmowa przy polu adresu, a Lista Wykonawców i
+    Historia zostają bez zmian. Przypisanie ma wiersz Historii z „Cofnij”, które zdejmuje adres, więc nadawca w widoku
+    Raporty znowu jest nieznany."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
+    _finished(centrum)
+    listed_before = centrum.tool.worker_list.read_bytes()
+
+    refused = _assign(centrum, "anna.kowalska", JAN.upper())
+    listed_after_refusal = centrum.tool.worker_list.read_bytes()
+    rows_after_refusal = _worker_rows(centrum)
+    assigned = _assign(centrum, "anna.kowalska", NEW_ADDRESS)
+    [row] = _worker_rows(centrum)
+    undone = centrum.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (refused.status_code, refused.json()) == (
+        422,
+        {"message": settings_messages.worker_address_repeated(), "field": "adresy[1]"},
+    )
+    assert listed_after_refusal == listed_before
+    assert rows_after_refusal == []
+    assert assigned.status_code == 200, assigned.json()
+    assert (row["id"], row["section"], row["undoable"]) == (assigned.json()["change"], "wykonawcy", True)
+    assert undone.status_code == 200, undone.json()
+    assert _addresses(centrum)["anna.kowalska"] == [ANNA]
+    assert [found["worker"] for found in _view(centrum)["unknown_senders"]] == [None]
 
 
 @pytest.mark.parametrize(

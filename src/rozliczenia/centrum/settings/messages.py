@@ -116,6 +116,22 @@ def worker_rename_old_files(periods: tuple[str, ...]) -> str:
     )
 
 
+def worker_suggestions_not_set() -> str:
+    """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo tata nie wskazał Rejestru zleceń."""
+
+    return "Wskaż Rejestr zleceń w sekcji Foldery, a Centrum podpowie loginy nowych Wykonawców z ostatnich zleceń."
+
+
+def worker_suggestions_unreadable() -> str:
+    """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo Rejestru zleceń nie da się teraz przeczytać (nie ma go, brak
+    dostępu, nie jest skoroszytem, bez arkuszy zleceń); stan pliku pokazuje sekcja Foldery."""
+
+    return (
+        "Nie da się teraz przeczytać Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź "
+        "Rejestr w sekcji Foldery."
+    )
+
+
 def workers_not_moved(old_file: str, reason: str) -> str:
     return (
         f"Listy Wykonawców nie utworzono ze starego pliku {old_file} w folderze config: {reason}. Dodaj Wykonawców w "
