@@ -37,6 +37,7 @@ from rozliczenia.tool_files import (
     REPORT_ENTERING_RESULT,
     REPORT_ENTERING_STATE,
 )
+from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
     ImapInbox,
@@ -297,7 +298,7 @@ def test_odrzucone_haslo_skrzynki_raportow_nie_trafia_do_api_strumienia_logow_zg
             tmp_path,
             INTERMAX,
             surroundings=surroundings,
-            inbox=ImapInbox(tool.config, connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port)),
+            inbox=ImapInbox(lambda: read_snapshot(tool.config).inbox, connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port)),
         )
         started = centrum.start()
         events = _events_until_finished(centrum)
@@ -2841,7 +2842,7 @@ def test_praca_przypomnien_wysyla_przypomnienie_do_atrapy_smtp_raz_w_porze_takze
     anna_report = _report_in_inbox(1, ANNA, "Raport 09.11.2026", datetime(2026, 11, 9, 19, 0))
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[anna_report]) as imap, AtrapaSmtp(imap) as smtp:
         mailbox = ImapInbox(
-            ToolDirectory(tmp_path).config,
+            lambda: read_snapshot(ToolDirectory(tmp_path).config).inbox,
             connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port),
             smtp=lambda: smtplib.SMTP("127.0.0.1", smtp.port, timeout=10),
         )

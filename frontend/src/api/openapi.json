@@ -1820,6 +1820,48 @@
         }
       }
     },
+    "/api/settings/inbox-password": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Inbox Password",
+        "description": "Nowe hasło zastępuje tylko linię hasła pliku; po każdym udanym zapisie jedna próba logowania mówi, czy\nskrzynka je przyjęła. Odrzucone hasło zostaje zapisane, a tata wpisuje je jeszcze raz.",
+        "operationId": "changeInboxPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxPasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxPasswordSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/periods-directory/choose": {
       "post": {
         "tags": [
@@ -2220,6 +2262,7 @@
               "openRegister",
               "choosePeriodsDirectory",
               "changeTheme",
+              "changeInboxPassword",
               "changeFolders",
               "getSettingsHistory",
               "getQuantityRules",
@@ -3376,6 +3419,83 @@
         ],
         "title": "InaccessiblePath",
         "description": "Zapamiętana ścieżka, której nie da się teraz odczytać (np. folder bez dostępu albo OneDrive, który nie działa)."
+      },
+      "InboxPasswordChange": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "InboxPasswordChange",
+        "description": "Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis)."
+      },
+      "InboxPasswordSaved": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "login": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected",
+              "no_network"
+            ],
+            "title": "Login"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings",
+          "login"
+        ],
+        "title": "InboxPasswordSaved",
+        "description": "Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”."
+      },
+      "InboxSetting": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "password": {
+            "type": "boolean",
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address",
+          "password"
+        ],
+        "title": "InboxSetting",
+        "description": "Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy."
       },
       "IntermaxCopies": {
         "properties": {
@@ -7054,6 +7174,19 @@
                 "type": "null"
               }
             ]
+          },
+          "inbox": {
+            "$ref": "#/components/schemas/InboxSetting"
+          },
+          "inbox_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -7062,10 +7195,12 @@
           "order_register",
           "periods_directory",
           "theme",
-          "folders_problem"
+          "folders_problem",
+          "inbox",
+          "inbox_problem"
         ],
         "title": "Settings",
-        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny."
+        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła."
       },
       "SettingsHistory": {
         "properties": {

@@ -30,7 +30,8 @@ class Good(Generic[T]):
 @dataclass(frozen=True)
 class Bad(Generic[T]):
     """Złe ustawienie: problem treści pliku i ostatnia dobra wartość z pamięci właściciela (``None``: nieznana, więc
-    obowiązują wartości domyślne pliku)."""
+    obowiązują wartości domyślne pliku). Sekret, którego treści pamięć nie trzyma, ma tu wartość samej złej treści
+    (``SettingsFile.unchecked``; ``None``: treść nie daje wartości)."""
 
     problem: FieldProblem
     usable: T | None
@@ -61,7 +62,9 @@ class SettingsFile(Generic[T]):
     pliku, ``diff`` klucze, które różnią dwie wartości, a ``restore`` wartość z kluczami ustawionymi na ich wartość
     ``before``. ``restore`` może dać wartość, której ``parse`` nie przyjmie; właściciel sprawdza ją jak każdą zmianę.
     ``shown`` daje wartość klucza dla Zgłoszenia, bez danych osobowych. Plik ``secret`` ma w Historii tylko klucze, bez
-    wartości, i nie da się go cofnąć.
+    wartości, i nie da się go cofnąć. Ostatniej dobrej treści sekretu nikt nie pamięta, więc ``unchecked`` daje wartość
+    jego treści bez reguł ``parse`` (``None``: treść nie daje wartości): zapis taty na złej treści zaczyna od niej, a
+    ``parse`` zapisu odrzuca to, czego zapis nie naprawił.
     """
 
     name: str
@@ -72,3 +75,4 @@ class SettingsFile(Generic[T]):
     shown: Callable[[str, str | None], str]
     default: T
     secret: bool = False
+    unchecked: Callable[[bytes | None], T | None] | None = None

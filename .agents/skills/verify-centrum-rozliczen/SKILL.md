@@ -46,7 +46,9 @@ The `check_centrum_<feature>_mutations.py` scripts run in full CI on `main` and 
 after a change of this skill's folder. Run `all` and the mutations locally only to reproduce a red Mutation checks step
 or the night's issue. What stays with you: drive the feature you change and look at its
 screenshots after a UI change, because a passing run does not judge visual
-quality. `wydajnosc` is never part of `all` and runs only locally (`features/wydajnosc.md`).
+quality. A change of a shared element also drives every feature that sees it, not only your own: a section of the window
+Ustawienia drives `okno-ustawien` (it lists every section) and `ustawienia`, and the window, menu, toasts or dialogs also
+`uwaga-taty`. `wydajnosc` is never part of `all` and runs only locally (`features/wydajnosc.md`).
 The real-mailbox review of Wpisanie raportów never runs in CI either: it needs Dad's real Gmail, the access file and
 Maks's consent (`features/wpisanie-raportow.md`, section Real mailbox).
 

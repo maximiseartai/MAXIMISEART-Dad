@@ -6,6 +6,7 @@ import {
   HistoryIcon,
   InboxIcon,
   ListChecksIcon,
+  MailIcon,
   PaletteIcon,
   RouterIcon,
   UsersIcon,
@@ -17,6 +18,7 @@ import { FOLDERS_SECTION } from "@/components/setting-path"
 import { AppearanceSection } from "@/pages/settings/appearance-section"
 import { FoldersSection } from "@/pages/settings/folders-section"
 import { HistorySection } from "@/pages/settings/history-section"
+import { InboxSection } from "@/pages/settings/inbox-section"
 import { IntermaxCopiesSection } from "@/pages/settings/intermax-copies-section"
 import { DevicesSection, QuantityRulesSection } from "@/pages/settings/quantity-rules-section"
 import { ReportsSection } from "@/pages/settings/reports-section"
@@ -40,6 +42,7 @@ export const SETTINGS_SECTIONS = [
   { id: "urzadzenia", title: "Urządzenia", group: "Ilości", icon: RouterIcon, Content: DevicesSection },
   { id: "wzorce", title: "Wzorce", group: "Pliki", icon: FileSpreadsheetIcon, Content: TemplatesSection },
   { id: "kopie-intermax", title: "Kopie INTERMAX", group: "Pliki", icon: ArchiveRestoreIcon, Content: IntermaxCopiesSection },
+  { id: "skrzynka-raportow", title: "Skrzynka raportów", group: "Połączenia", icon: MailIcon, Content: InboxSection },
   { id: "zgloszenia", title: "Zgłoszenia", group: "Połączenia", icon: InboxIcon, Content: ReportsSection },
   { id: "narzedzie", title: "Narzędzie", group: "Narzędzie", icon: WrenchIcon, Content: ToolSection },
   { id: "wyglad", title: "Wygląd", group: "Narzędzie", icon: PaletteIcon, Content: AppearanceSection },

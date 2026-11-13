@@ -1,5 +1,6 @@
 """Interfejs HTTP Ustawień Centrum: odczyt wszystkich sekcji, zapis sekcji Foldery, wybór Rejestru zleceń i folderu
-okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, Historia Ustawień i cofnięcie jej wiersza.
+okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, zmiana hasła skrzynki raportów z próbą logowania,
+Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma w żadnej odpowiedzi.
 
 Pliki Ustawień, ich Historia i reguły zapisu należą do ``settings``; tu są tylko żądania przeglądarki i ich odmowy:
 zła wartość to 422 z polem, plik albo Historia, których nie da się przeczytać albo zapisać, to 500, a wiersz Historii
@@ -20,11 +21,14 @@ from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.settings.files import Bad, Good, Unreadable
+from rozliczenia.centrum.settings import inbox
+from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import DEFAULT_THEME, FOLDERS, FolderSettings, SettingState
+from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
 from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
 from rozliczenia.file_state import file_state
+from rozliczenia.worker_report_inbox import LoginResult
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
@@ -36,7 +40,9 @@ _REFUSED: dict[int | str, dict[str, object]] = {
 _NOT_UNDOABLE: dict[int | str, dict[str, object]] = {404: {"model": common_contract.Problem}, **_REFUSED}
 
 
-def settings_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
+def settings_router(settings: CentrumSettings, platform: Platform, inbox_login: Callable[[], LoginResult]) -> APIRouter:
+    """``inbox_login`` to jedna próba logowania do skrzynki raportów z bieżącym plikiem dostępu."""
+
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
     def saved(edit: Callable[[FolderSettings], FolderSettings]) -> settings_contract.Choice:
@@ -84,6 +90,17 @@ def settings_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
     def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Choice:
         return saved(lambda current: replace(current, theme=change.theme))
 
+    @router.put("/inbox-password", operation_id="changeInboxPassword", responses=_REFUSED)
+    def change_inbox_password(change: settings_contract.InboxPasswordChange) -> settings_contract.InboxPasswordSaved:
+        """Nowe hasło zastępuje tylko linię hasła pliku; po każdym udanym zapisie jedna próba logowania mówi, czy
+        skrzynka je przyjęła. Odrzucone hasło zostaje zapisane, a tata wpisuje je jeszcze raz."""
+
+        password = inbox.new_password(settings.view().inbox, change.password)
+        if isinstance(password, FieldProblem):
+            raise refusal.setting_refused(password)
+        saved = _choice(settings, settings.change(INBOX, lambda current: replace(current, password=password)))
+        return settings_contract.InboxPasswordSaved(settings=saved.settings, change=saved.change, login=inbox_login())
+
     @router.get("/history", operation_id="getSettingsHistory")
     def history() -> settings_contract.SettingsHistory:
         read = settings.history()
@@ -121,11 +138,17 @@ def _path(value: str | None) -> Path | None:
 def describe(view: SettingsView) -> settings_contract.Settings:
     """Ustawienia Centrum dla przeglądarki: przy złym pliku ostatnie dobre wartości i zdanie o problemie."""
 
+    inbox_setting, inbox_problem = _describe_inbox(view.inbox)
     match view.folders:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")
             return settings_contract.Settings(
-                order_register=unreadable, periods_directory=unreadable, theme=DEFAULT_THEME, folders_problem=None
+                order_register=unreadable,
+                periods_directory=unreadable,
+                theme=DEFAULT_THEME,
+                folders_problem=None,
+                inbox=inbox_setting,
+                inbox_problem=inbox_problem,
             )
         case Good(value=folders):
             problem = None
@@ -137,6 +160,31 @@ def describe(view: SettingsView) -> settings_contract.Settings:
         periods_directory=_describe_path(folders.periods_directory, folders.periods_directory_state),
         theme=folders.theme,
         folders_problem=problem,
+        inbox=inbox_setting,
+        inbox_problem=inbox_problem,
+    )
+
+
+def _describe_inbox(
+    read: Read[InboxFile] | Unreadable,
+) -> tuple[settings_contract.InboxSetting, settings_contract.SettingProblem | None]:
+    """Adres skrzynki i to, czy jest hasło, bez wartości hasła; zła treść ma zdanie o problemie i dobry adres z niej
+    (przy złym starym haśle tata wpisuje nowe), a nieczytelna to skrzynka bez nich."""
+
+    match read:
+        case Good(value=found):
+            return _inbox_setting(found), None
+        case Bad(problem=bad, usable=found):
+            problem = settings_contract.SettingProblem(field=bad.field, message=bad.sentence)
+            return _inbox_setting(found), problem
+        case Unreadable():
+            return _inbox_setting(None), None
+
+
+def _inbox_setting(found: InboxFile | None) -> settings_contract.InboxSetting:
+    address = None if found is None else found.address
+    return settings_contract.InboxSetting(
+        address=None if address is None else address.shown(), password=found is not None and bool(found.password)
     )
 
 

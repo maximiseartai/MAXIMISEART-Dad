@@ -15,7 +15,8 @@ from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Literal, get_args
+import imaplib
 
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
@@ -53,6 +54,7 @@ from rozliczenia.centrum.settings.release_changes import (
     ReleaseInputs,
 )
 from rozliczenia.centrum.tool_freshness import ToolFreshness
+from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
@@ -70,6 +72,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.tool_clone import tool_repository
 
+from atrapy.skrzynka_raportow import AtrapaImap
 from tests.fixtures.centrum_processes import write_dad_quantity_rules
 from atrapy.preparation import write_collective_template
 
@@ -218,13 +221,15 @@ UNREADABLE = {"state": "unreadable"}
 DAMAGED = "Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."
 REGISTER_PATH = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
 PERIODS_PATH = "Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru."
+NO_INBOX: dict[str, object] = {"inbox": {"address": None, "password": False}, "inbox_problem": None}
+"""Skrzynka raportów bez pliku dostępu: bez adresu i bez hasła (#1469)."""
 
 
 def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
     response = centrum(tmp_path).client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "theme": "dark", "folders_problem": None}
+    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "theme": "dark", "folders_problem": None, **NO_INBOX}
 
 
 def test_wskazany_rejestr_zlecen_i_folder_okresow_sa_zapamietane(tmp_path: Path) -> None:
@@ -276,6 +281,7 @@ def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosci
         "periods_directory": NOT_SET,
         "theme": "dark",
         "folders_problem": {"field": None, "message": DAMAGED},
+        **NO_INBOX,
     }
 
 
@@ -321,6 +327,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
             "periods_directory": {"state": "inaccessible", "path": str(periods), "name": "INEA"},
             "theme": "dark",
             "folders_problem": None,
+            **NO_INBOX,
         },
     )
 
@@ -339,7 +346,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
 
     assert (response.status_code, response.json()) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark", "folders_problem": None},
+        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark", "folders_problem": None, **NO_INBOX},
     )
 
 
@@ -360,7 +367,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
 
     assert (response.status_code, response.json()["settings"]) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark", "folders_problem": None},
+        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark", "folders_problem": None, **NO_INBOX},
     )
 
 
@@ -443,6 +450,7 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
         "periods_directory": NOT_SET,
         "theme": "light",
         "folders_problem": None,
+        **NO_INBOX,
     }
 
 
@@ -793,6 +801,7 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
             "periods_directory": {"state": "ready", "path": str(periods), "name": "INEA"},
             "theme": "dark",
             "folders_problem": {"field": "folder_okresow", "message": PERIODS_PATH},
+            **NO_INBOX,
         },
     )
     assert second.json() == first.json()
@@ -1438,6 +1447,198 @@ def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze
         time.tzset()
 
     assert row["at"].endswith("Z")
+
+
+# --- Hasło skrzynki raportów (#1469): pole bez starego hasła, jedna próba logowania, Historia bez wartości -------------
+
+SKRZYNKA = "raporty@przyklad.invalid"
+STARE_HASLO = "stare haslo maksa"
+NOWE_HASLO = "nowe haslo taty"
+"""Hasło aplikacji tak, jak je wpisuje tata (Google pokazuje je w czwórkach ze spacjami); plik dostaje je bez spacji."""
+
+
+def _inbox_centrum(tmp_path: Path, imap: AtrapaImap | None = None) -> tuple[CentrumClient, ToolDirectory]:
+    """Centrum z plikiem skrzynki napisanym przez Maksa w Notatniku (BOM UTF-8, CRLF); bez ``imap`` skrzynka bez sieci."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True, exist_ok=True)
+    (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
+    if imap is None:
+        return CentrumClient(centrum_app(tool)), tool
+    return CentrumClient(centrum_app(tool, inbox_connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port))), tool
+
+
+def _files_with_password(tool: ToolDirectory, passwords: Sequence[str]) -> list[str]:
+    """Pliki katalogu narzędzia poza plikiem skrzynki, w których jest któreś z ``passwords`` otwartym tekstem.
+
+    Hasło szuka się też bez spacji, bo tak trafia do pliku skrzynki; rekurencyjnie, więc i w pamięci odrzuconych.
+    """
+
+    secrets = {form.encode() for password in passwords for form in (password, password.replace(" ", ""))}
+    access = tool.config / INBOX_ACCESS_FILE
+    files = [path for path in sorted(tool.root.rglob("*")) if path.is_file() and path != access]
+    return [path.relative_to(tool.root).as_posix() for path in files if any(secret in path.read_bytes() for secret in secrets)]
+
+
+@pytest.mark.parametrize(
+    ("haslo_skrzynki", "zerwanie", "wynik", "polecenia"),
+    [
+        (NOWE_HASLO.replace(" ", ""), None, "accepted", ["LOGIN", "LOGOUT"]),
+        ("inne haslo w gmailu", None, "rejected", ["LOGIN", "LOGOUT"]),
+        (NOWE_HASLO.replace(" ", ""), "greeting", "no_network", []),
+    ],
+    ids=["przyjete", "odrzucone", "brak-sieci"],
+)
+def test_nowe_haslo_skrzynki_zastepuje_tylko_linie_hasla_a_jedna_proba_logowania_mowi_czy_skrzynka_je_przyjela(
+    tmp_path: Path, haslo_skrzynki: str, zerwanie: Literal["greeting"] | None, wynik: str, polecenia: list[str]
+) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=haslo_skrzynki, cut=zerwanie) as imap:
+        client, tool = _inbox_centrum(tmp_path, imap)
+        saved = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+        # ``imaplib`` 3.11 pyta o ``CAPABILITY`` osobno, a 3.14 bierze je z powitania: to nie decyzja portu.
+        commands = [command for command in imap.commands if command != "CAPABILITY"]
+
+    assert (saved.status_code, saved.json()["login"]) == (200, wynik)
+    assert commands == polecenia
+    assert saved.json()["settings"]["inbox"] == {"address": SKRZYNKA, "password": True}
+    assert (tool.config / INBOX_ACCESS_FILE).read_bytes() == f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode("utf-8-sig")
+
+
+def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_historia_ma_wiersz_bez_cofniecia(
+    tmp_path: Path,
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    shown = client.get("/api/settings")
+
+    saved = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    again = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    read = client.get("/api/settings")
+    history = client.get("/api/settings/history")
+    [row] = history.json()["rows"]
+    undo = client.post(f"/api/settings/history/{row['id']}/undo")
+    client.stop()
+
+    assert (saved.json()["login"], saved.json()["change"], again.json()["change"]) == ("no_network", row["id"], None)
+    assert (row["source"], row["section"], row["secret"], row["undoable"]) == ("tata", "skrzynka", True, False)
+    assert row["changes"] == [{"key": "skrzynka.haslo", "before": None, "after": None}]
+    assert undo.status_code == 404
+    responses = [shown, saved, again, read, history, undo]
+    secrets = [secret for value in (STARE_HASLO, NOWE_HASLO) for secret in (value, value.replace(" ", ""))]
+    assert [secret for secret in secrets for response in responses if secret.encode() in response.content] == []
+    assert _files_with_password(tool, [STARE_HASLO, NOWE_HASLO]) == []
+    assert tool.log_path.is_file()
+
+
+def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Path) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    client.get("/api/settings")
+    (tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\nhaslo od maksa\n", encoding="utf-8")
+
+    rows = client.get("/api/settings/history").json()["rows"]
+    again = client.get("/api/settings/history").json()["rows"]
+
+    assert [(row["source"], row["changes"], row["secret"], row["undoable"]) for row in rows] == [
+        ("outside", [{"key": "skrzynka.dostep", "before": None, "after": None}], True, False)
+    ]
+    assert again == rows
+    assert b"haslo" not in client.get("/api/settings/history").content
+
+
+@pytest.mark.parametrize(
+    ("plik", "haslo", "pole"),
+    [
+        (f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n", "   ", "haslo"),
+        (f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n", "hasło taty", "haslo"),
+        ("\r\n\r\n", NOWE_HASLO, "adres"),
+        (None, NOWE_HASLO, "adres"),
+    ],
+    ids=["puste", "polskie-znaki", "plik-bez-adresu", "bez-pliku"],
+)
+def test_haslo_ktorego_skrzynka_nie_uzyje_jest_odmowa_przy_polu_bez_zapisu_i_bez_logowania(
+    tmp_path: Path, plik: str | None, haslo: str, pole: str
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    if plik is None:
+        access.unlink()
+    else:
+        access.write_text(plik, encoding="utf-8")
+    before = access.read_bytes() if plik is not None else None
+
+    refused = client.put("/api/settings/inbox-password", json={"password": haslo})
+
+    assert (refused.status_code, refused.json()["field"]) == (422, pole)
+    assert (access.read_bytes() if access.exists() else None) == before
+    assert client.get("/api/settings/history").json()["rows"] == []
+
+
+ZLE_ADRES = "Adres skrzynki raportów w pliku skrzynka-raportow.txt jest zły. Poprawia go Maks."
+ZLE_HASLO = "Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków."
+NIE_TEKST = "Plik skrzynka-raportow.txt w folderze config nie jest tekstem. Poproś Maksa o nowy plik."
+
+
+@pytest.mark.parametrize(
+    ("plik", "skrzynka", "problem", "zapis"),
+    [
+        (
+            f"{SKRZYNKA}\r\nstarehasło\r\n".encode("utf-8-sig"),
+            {"address": SKRZYNKA, "password": True},
+            {"field": "haslo", "message": ZLE_HASLO},
+            f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode("utf-8-sig"),
+        ),
+        (
+            f"Skrzynka <{SKRZYNKA}>\r\n{STARE_HASLO}\r\n".encode(),
+            {"address": None, "password": True},
+            {"field": "adres", "message": ZLE_ADRES},
+            None,
+        ),
+        (b"\xff\xfe\x00\xd8", {"address": None, "password": False}, {"field": None, "message": NIE_TEKST}, None),
+    ],
+    ids=["zle-stare-haslo", "zly-adres", "nie-tekst"],
+)
+def test_zly_plik_skrzynki_ma_zdanie_w_ustawieniach_a_nowe_haslo_taty_naprawia_tylko_zle_stare_haslo(
+    tmp_path: Path, plik: bytes, skrzynka: dict[str, object], problem: dict[str, object], zapis: bytes | None
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    access.write_bytes(plik)
+
+    shown = client.get("/api/settings").json()
+    put = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    rows = client.get("/api/settings/history").json()["rows"]
+
+    assert (shown["inbox"], shown["inbox_problem"]) == (skrzynka, problem)
+    if zapis is None:
+        refused = put.json()
+        assert (put.status_code, refused.get("field"), refused["message"]) == (422, problem["field"], problem["message"])
+        assert (access.read_bytes(), rows) == (plik, [])
+    else:
+        assert (put.status_code, put.json()["settings"]["inbox"], put.json()["settings"]["inbox_problem"]) == (
+            200,
+            {"address": SKRZYNKA, "password": True},
+            None,
+        )
+        assert access.read_bytes() == zapis
+        assert [change["key"] for row in rows for change in row["changes"]] == ["skrzynka.haslo"]
+    assert _files_with_password(tool, ["starehasło", STARE_HASLO, NOWE_HASLO]) == []
+
+
+@pytest.mark.parametrize(
+    ("plik", "zapis"),
+    [
+        (f"{SKRZYNKA}\nstare\n# notatka maksa\n".encode(), f"{SKRZYNKA}\nnowehaslotaty\n# notatka maksa\n".encode()),
+        (f"{SKRZYNKA}\r\nstare\r\n".encode("utf-16"), f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode()),
+    ],
+    ids=["lf-i-dalsze-linie", "utf-16"],
+)
+def test_nowe_haslo_zostawia_znak_konca_linii_i_dalsze_linie_pliku_maksa(tmp_path: Path, plik: bytes, zapis: bytes) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    access.write_bytes(plik)
+
+    put = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+
+    assert (put.status_code, access.read_bytes()) == (200, zapis)
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:

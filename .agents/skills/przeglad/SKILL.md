@@ -19,6 +19,7 @@ W tym repo Ważne były zwykle:
 - zachowanie widoczne tylko na Windows albo na najstarszym Pythonie z `requires-python` (brak `tzdata`, krok zegara `time.monotonic()` pod dawnym minimum 3.11, import, który pada tylko pod najstarszym Pythonem);
 - stan, który jedna część przebiegu zakłada po innej (część podstawy skilla startująca od środka porządku);
 - przypisanie albo zakres liczony od złej linii lub złego commitu (np. `git blame` pierwszej linii wielowierszowej instrukcji).
+- zmiana wspólnego elementu okna Centrum (sekcja okna Ustawień, menu, toast, okno dialogowe), która wywraca funkcję drive `verify-centrum-rozliczen` inną niż ta, którą autor uruchomił (#1517: nowa sekcja wywróciła `okno-ustawien`, które wymienia każdą sekcję).
 
 Dziura w sprawdzeniu to też defekt zachowania.
 W PR, który dodaje albo zmienia sprawdzenie (test struktury, checker, hook, skrypt mutacji, bramka CI, reguła lintu), Ważne jest odtworzony przypadek, który według wiersza reguły, docstringu albo opisu PR to sprawdzenie powinno wywrócić, a ono go przepuszcza, i wywrócenie się sprawdzenia na poprawnym wejściu.

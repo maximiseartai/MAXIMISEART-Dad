@@ -21,6 +21,7 @@ SECTIONS = (
     "Urządzenia",
     "Wzorce",
     "Kopie INTERMAX",
+    "Skrzynka raportów",
     "Zgłoszenia",
     "Narzędzie",
     "Wygląd",
